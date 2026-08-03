@@ -1,0 +1,179 @@
+using Gtk 4.0;
+
+template $ShellControlCenterPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-expanded",
+    ]
+
+    /* Zone 1: Header (Title + Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "CONTROL CENTER";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ READY ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body */
+    Box {
+      orientation: vertical;
+      spacing: 10;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      /* Sliders */
+      /* Volume Row */
+      Box {
+        orientation: horizontal;
+        spacing: 8;
+
+        Image {
+          icon-name: "audio-volume-high-symbolic";
+          pixel-size: 18;
+        }
+
+        Scale vol_scale {
+          orientation: horizontal;
+          hexpand: true;
+
+          adjustment: Adjustment {
+            lower: 0;
+            upper: 100;
+            step-increment: 1;
+          };
+        }
+
+        Label vol_val_lbl {
+          label: "50%";
+          width-request: 40;
+        }
+      }
+
+      /* Brightness Row */
+      Box {
+        orientation: horizontal;
+        spacing: 8;
+
+        Image {
+          icon-name: "display-brightness-symbolic";
+          pixel-size: 18;
+        }
+
+        Scale bright_scale {
+          orientation: horizontal;
+          hexpand: true;
+
+          adjustment: Adjustment {
+            lower: 0;
+            upper: 100;
+            step-increment: 1;
+          };
+        }
+
+        Label bright_val_lbl {
+          label: "50%";
+          width-request: 40;
+        }
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* 2x2 Quick Toggles Grid */
+      Grid toggle_grid {
+        row-spacing: 8;
+        column-spacing: 8;
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Power Profiles */
+      Label {
+        label: "POWER PROFILE";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Box {
+        orientation: horizontal;
+        spacing: 4;
+
+        CheckButton prof_saver {
+          label: "Saver";
+        }
+
+        CheckButton prof_balanced {
+          label: "Balanced";
+          active: true;
+        }
+
+        CheckButton prof_perf {
+          label: "Performance";
+        }
+      }
+    }
+
+    /* Zone 3: Footer (Actions) */
+    Box {
+      orientation: horizontal;
+      spacing: 6;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button btn_settings {
+        label: "⚙ Settings";
+        hexpand: true;
+      }
+
+      Button btn_lock {
+        label: "🔒 Lock";
+        hexpand: true;
+      }
+
+      Button btn_suspend {
+        label: "🌙 Suspend";
+        hexpand: true;
+      }
+
+      Button btn_power {
+        label: "⏻ Power";
+        hexpand: true;
+      }
+    }
+  }
+}

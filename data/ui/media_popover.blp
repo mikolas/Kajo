@@ -1,0 +1,211 @@
+using Gtk 4.0;
+
+template $ShellMediaPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-expanded",
+    ]
+
+    /* Zone 1: Header (Title + Status Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "MEDIA";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ NO PLAYER ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body (2-Column Hero Album Art Left, Controls Right) */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      /* Column 1: Full-Height Hero Album Art */
+      Image pop_art_img {
+        icon-name: "tb-player-play-symbolic";
+        pixel-size: 128;
+        width-request: 128;
+        height-request: 128;
+        valign: center;
+        halign: center;
+
+        styles [
+          "shell-media-art-hero",
+        ]
+      }
+
+      /* Column 2: Metadata + VU Meters + Transport Controls */
+      Box {
+        orientation: vertical;
+        spacing: 8;
+        hexpand: true;
+
+        /* Row 1: Song & Artist Metadata */
+        Box info_vbox {
+          orientation: vertical;
+          spacing: 2;
+          hexpand: true;
+
+          Label pop_title_label {
+            label: "No Track Selected";
+            xalign: 0;
+            ellipsize: end;
+            max-width-chars: 22;
+            width-chars: 10;
+
+            styles [
+              "shell-media-title",
+            ]
+          }
+
+          Label pop_artist_label {
+            label: "Unknown Artist";
+            xalign: 0;
+            ellipsize: end;
+            max-width-chars: 22;
+            width-chars: 10;
+
+            styles [
+              "shell-media-artist",
+            ]
+          }
+        }
+
+        /* Row 2: Stereo Audio VU Meter */
+        Box vu_vbox {
+          orientation: vertical;
+          spacing: 3;
+
+          /* Left Channel */
+          Box {
+            orientation: horizontal;
+            spacing: 4;
+
+            Label {
+              label: "L";
+
+              styles [
+                "dim-label",
+              ]
+            }
+
+            LevelBar meter_l {
+              hexpand: true;
+              min-value: 0.0;
+              max-value: 1.0;
+              value: 0.0;
+            }
+
+            Label lbl_peak_l {
+              label: "0%";
+              width-chars: 4;
+              xalign: 1.0;
+
+              styles [
+                "dim-label",
+              ]
+            }
+          }
+
+          /* Right Channel */
+          Box {
+            orientation: horizontal;
+            spacing: 4;
+
+            Label {
+              label: "R";
+
+              styles [
+                "dim-label",
+              ]
+            }
+
+            LevelBar meter_r {
+              hexpand: true;
+              min-value: 0.0;
+              max-value: 1.0;
+              value: 0.0;
+            }
+
+            Label lbl_peak_r {
+              label: "0%";
+              width-chars: 4;
+              xalign: 1.0;
+
+              styles [
+                "dim-label",
+              ]
+            }
+          }
+        }
+
+        /* Row 3: Transport Button Bar */
+        Box {
+          orientation: horizontal;
+          spacing: 6;
+          halign: start;
+
+          Button prev_btn {
+            label: "PREV";
+            has-frame: false;
+          }
+
+          Button play_btn {
+            label: "PLAY";
+            has-frame: false;
+          }
+
+          Button next_btn {
+            label: "NEXT";
+            has-frame: false;
+          }
+        }
+      }
+    }
+
+    /* Zone 3: Footer (Actions) */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button open_player_btn {
+        label: "OPEN PLAYER";
+        has-frame: false;
+        halign: end;
+        hexpand: true;
+      }
+    }
+  }
+}

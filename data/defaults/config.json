@@ -1,0 +1,46 @@
+{
+  "panel": {
+    "position": "bottom",
+    "height": 39,
+    "layer": "top",
+    "widget_mode": "icon",
+    "icon_size": 24
+  },
+  "autohide": {
+    "enabled": true,
+    "reveal_delay": 200,
+    "hide_delay": 1000,
+    "reveal_duration": 150,
+    "hide_duration": 200
+  },
+  "notifications": {
+    "toast_timeout_ms": 8000,
+    "max_notification_history": 50
+  },
+  "layout": {
+    "left": [
+      "launcher",
+      "workspaces",
+      {"id": "window", "mode": "full"}
+    ],
+    "center": [
+      {"id": "clock", "mode": "full"}
+    ],
+    "right": [
+      "tray",
+      {"id": "notifications", "mode": "icon"},
+      {"id": "media", "mode": "icon"},
+      {"id": "network", "mode": "icon"},
+      {"id": "bluetooth", "mode": "icon"},
+      {"id": "cpu-mem", "mode": "icon"},
+      {"id": "keyboard-layout", "mode": "label"},
+      {"id": "volume", "mode": "icon"},
+      {"id": "battery", "mode": "icon"},
+      {"id": "privacy", "mode": "icon"},
+      {"id": "theme", "mode": "icon"},
+      {"id": "custom-script", "mode": "icon"},
+      {"id": "control-center", "mode": "icon"},
+      {"id": "power", "mode": "icon"}
+    ]
+  }
+}

@@ -1,0 +1,88 @@
+using Gtk 4.0;
+
+template $SettingsPageNotifications : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    /* Toast Display Timeout Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Toast Display Timeout:";
+      }
+
+      Scale scale_tout {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 3000;
+          upper: 30000;
+          step-increment: 1000;
+        };
+      }
+
+      Label lbl_tout_val {
+        label: "8000ms (8s)";
+      }
+    }
+
+    /* Toast Click Action Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Toast Click Action:";
+      }
+
+      DropDown combo_click {
+        hexpand: true;
+      }
+    }
+
+    /* Max History Items Retained Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Max History Items Retained:";
+      }
+
+      Scale scale_hist {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 20;
+          upper: 200;
+          step-increment: 10;
+        };
+      }
+
+      Label lbl_hist_val {
+        label: "50 items";
+      }
+    }
+
+    /* Apply Button */
+    Button btn_save {
+      label: "[ SAVE NOTIFICATION PREFERENCES ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+}

@@ -1,0 +1,92 @@
+using Gtk 4.0;
+
+template $SettingsPageBluetooth : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  /* Bluetooth Power Switch Card */
+  Box {
+    orientation: horizontal;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label {
+      label: "Bluetooth Radio Power";
+      hexpand: true;
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Switch sw_bt {
+      active: true;
+    }
+  }
+
+  /* Paired Bluetooth Devices Container */
+  Box card_paired {
+    orientation: vertical;
+    spacing: 8;
+
+    styles [
+      "section-card-center",
+    ]
+
+    Label {
+      label: "PAIRED BLUETOOTH DEVICES";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Box list_devices {
+      orientation: vertical;
+      spacing: 4;
+    }
+  }
+
+  /* Discovered Nearby Devices Container */
+  Box card_disc {
+    orientation: vertical;
+    spacing: 8;
+
+    styles [
+      "section-card-right",
+    ]
+
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      Label {
+        label: "NEARBY DISCOVERABLE DEVICES";
+        hexpand: true;
+        halign: start;
+
+        styles [
+          "heading",
+        ]
+      }
+
+      Button btn_scan {
+        label: "🔍 SCAN NEARBY DEVICES";
+
+        styles [
+          "flat",
+        ]
+      }
+    }
+
+    Box list_disc {
+      orientation: vertical;
+      spacing: 4;
+    }
+  }
+}

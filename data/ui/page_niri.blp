@@ -1,0 +1,102 @@
+using Gtk 4.0;
+
+template $SettingsPageNiri : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    /* Target Namespace Selector Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Target Layer Namespace:";
+      }
+
+      DropDown combo_ns {
+        hexpand: true;
+      }
+    }
+
+    /* Opacity Slider Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Surface Layer Opacity:";
+      }
+
+      Scale scale_op {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 20;
+          upper: 100;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_op_val {
+        label: "85%";
+      }
+    }
+
+    /* Window Gap Slider Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Workspace Window Gaps:";
+      }
+
+      Scale scale_gap {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 0;
+          upper: 32;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_gap_val {
+        label: "12px";
+      }
+    }
+
+    /* XRay Dropdown Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Background Blur XRay Mode:";
+      }
+
+      DropDown combo_xray {
+        hexpand: true;
+      }
+    }
+
+    /* Apply Button */
+    Button btn_apply {
+      label: "[ SAVE & RELOAD NIRI CONFIG ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+}

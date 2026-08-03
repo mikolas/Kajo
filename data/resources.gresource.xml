@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/org/kajo/shell">
+    <file compressed="true" alias="ui/network_popover.ui">network_popover.ui</file>
+    <file compressed="true" alias="ui/bluetooth_popover.ui">bluetooth_popover.ui</file>
+    <file compressed="true" alias="ui/media_popover.ui">media_popover.ui</file>
+    <file compressed="true" alias="ui/volume_popover.ui">volume_popover.ui</file>
+    <file compressed="true" alias="ui/battery_popover.ui">battery_popover.ui</file>
+    <file compressed="true" alias="ui/control_center_popover.ui">control_center_popover.ui</file>
+    <file compressed="true" alias="ui/theme_popover.ui">theme_popover.ui</file>
+    <file compressed="true" alias="ui/notifications_popover.ui">notifications_popover.ui</file>
+    <file compressed="true" alias="ui/privacy_popover.ui">privacy_popover.ui</file>
+    <file compressed="true" alias="ui/cpu_mem_popover.ui">cpu_mem_popover.ui</file>
+    <file compressed="true" alias="ui/osd_window.ui">osd_window.ui</file>
+    <file compressed="true" alias="ui/launcher_window.ui">launcher_window.ui</file>
+    <file compressed="true" alias="ui/page_about.ui">page_about.ui</file>
+    <file compressed="true" alias="ui/page_panel.ui">page_panel.ui</file>
+    <file compressed="true" alias="ui/page_widgets.ui">page_widgets.ui</file>
+    <file compressed="true" alias="ui/page_niri.ui">page_niri.ui</file>
+    <file compressed="true" alias="ui/page_theme.ui">page_theme.ui</file>
+    <file compressed="true" alias="ui/page_notifications.ui">page_notifications.ui</file>
+    <file compressed="true" alias="ui/page_displays.ui">page_displays.ui</file>
+    <file compressed="true" alias="ui/page_network.ui">page_network.ui</file>
+    <file compressed="true" alias="ui/page_bluetooth.ui">page_bluetooth.ui</file>
+    <file compressed="true" alias="ui/page_audio.ui">page_audio.ui</file>
+  </gresource>
+</gresources>

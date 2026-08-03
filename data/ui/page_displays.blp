@@ -1,0 +1,82 @@
+using Gtk 4.0;
+
+template $SettingsPageDisplays : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    /* Active Monitor Information Card Header */
+    Label lbl_mon_hdr {
+      label: "Monitor Information";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    /* Resolution Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Resolution & Refresh Rate:";
+      }
+
+      DropDown combo_res {
+        hexpand: true;
+      }
+    }
+
+    /* Orientation Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Display Orientation:";
+      }
+
+      DropDown combo_orient {
+        hexpand: true;
+      }
+    }
+
+    /* Scale Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Display Fractional Scale:";
+      }
+
+      DropDown combo_scale {
+        hexpand: true;
+      }
+    }
+
+    /* Feature Tiles Grid */
+    Grid grid_features {
+      column-spacing: 8;
+      row-spacing: 8;
+    }
+
+    /* Apply Button */
+    Button btn_apply {
+      label: "[ APPLY DISPLAY SETTINGS ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+}

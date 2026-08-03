@@ -1,0 +1,59 @@
+using Gtk 4.0;
+
+template $ShellThemePopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-medium",
+    ]
+
+    /* Zone 1: Header (Title + Status Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "ACCENT COLORS";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ LIVE ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body (Accent Color Grid) */
+    Box {
+      orientation: vertical;
+      spacing: 8;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      Grid preset_grid {
+        column-spacing: 8;
+        row-spacing: 8;
+        column-homogeneous: true;
+        row-homogeneous: true;
+      }
+    }
+  }
+}

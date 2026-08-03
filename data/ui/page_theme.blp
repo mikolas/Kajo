@@ -1,0 +1,79 @@
+using Gtk 4.0;
+
+template $SettingsPageTheme : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    /* System Accent Selector Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Metro System Accent Color:";
+      }
+
+      DropDown combo_palette {
+        hexpand: true;
+      }
+    }
+
+    /* Swatches Header */
+    Label {
+      label: "METRO ACCENT COLOR PALETTE SWATCHES";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    /* Swatches Grid */
+    Grid grid_swatches {
+      column-spacing: 8;
+      row-spacing: 8;
+    }
+
+    /* Font Size Scale Slider Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "UI Monospace Typography Size:";
+      }
+
+      Scale scale_font {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 11;
+          upper: 15;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_font_val {
+        label: "13px Fira Code";
+      }
+    }
+
+    /* Apply Button */
+    Button btn_css {
+      label: "[ LIVE RELOAD GTK CSS ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+}

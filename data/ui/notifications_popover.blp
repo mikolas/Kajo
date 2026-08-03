@@ -1,0 +1,78 @@
+using Gtk 4.0;
+
+template $ShellNotificationsPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-expanded",
+    ]
+
+    /* Zone 1: Header (Title + Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "NOTIFICATIONS";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ RECENT ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body (Scrolled List) */
+    Box {
+      orientation: vertical;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      ScrolledWindow {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        max-content-height: 260;
+        propagate-natural-height: true;
+
+        Box list_vbox {
+          orientation: vertical;
+          spacing: 4;
+        }
+      }
+    }
+
+    /* Zone 3: Footer (Actions) */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button clear_btn {
+        label: "CLEAR ALL";
+        has-frame: false;
+      }
+    }
+  }
+}

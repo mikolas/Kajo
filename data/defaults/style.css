@@ -1,0 +1,878 @@
+/* Kajo - Metro UI Theme (Windows 8/10 Flat Aesthetic) */
+/* 
+ * Design Tokens & Color Palette
+ */
+
+@define-color metro-panel-bg      rgba(24, 24, 24, 0.82);
+@define-color metro-surface-bg    #141414;
+@define-color metro-surface-hover #222222;
+@define-color metro-border        #2b2b2b;
+@define-color metro-accent        #0078d4;  /* Windows Cobalt Blue */
+@define-color metro-accent-hover  #1084d8;
+@define-color metro-fg-primary    #ffffff;
+@define-color metro-fg-secondary  #a0a0a0;
+@define-color metro-urgent        #e81123;  /* Metro Crimson */
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Global Font Reset (Fira Code) ─── */
+/* ═══════════════════════════════════════════════ */
+
+* {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Panel Surface ─── */
+/* ═══════════════════════════════════════════════ */
+
+window,
+window.shell-panel,
+.shell-panel {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    padding: 0;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+}
+
+#panel-container {
+    background-color: @metro-panel-bg;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#panel-container.autohide-hidden {
+    background-color: transparent;
+    border: none;
+}
+
+#panel-container.autohide-visible {
+    background-color: @metro-panel-bg;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Base Panel Widgets (MenuButtons / Buttons) ─── */
+
+.shell-widget,
+.shell-widget > button,
+menubutton.shell-widget > button {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    color: @metro-fg-primary;
+    padding: 0 4px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    min-height: 32px;
+}
+
+.shell-widget:hover,
+.shell-widget > button:hover,
+menubutton.shell-widget > button:hover {
+    background-color: @metro-surface-hover;
+    border-radius: 0px;
+}
+
+.shell-widget:active,
+.shell-widget:checked,
+.shell-widget > button:active,
+menubutton.shell-widget > button:active {
+    background-color: @metro-accent;
+    border-radius: 0px;
+    color: #ffffff;
+}
+
+.shell-widget image {
+    color: @metro-fg-primary;
+    min-width: 24px;
+    min-height: 24px;
+    -gtk-icon-size: 24px;
+}
+
+.shell-widget label {
+    color: @metro-fg-primary;
+}
+
+/* ─── Clock ─── */
+.shell-widget-clock label {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* ─── Workspaces (Flat Sharp Tiles) ─── */
+.shell-widget-workspaces {
+    padding: 0 2px;
+}
+
+.shell-widget-workspaces .workspace {
+    padding: 3px 8px;
+    border-radius: 0px;
+    margin: 0 2px;
+    border: 1px solid transparent;
+}
+
+.shell-widget-workspaces .workspace.active,
+.shell-widget-workspaces .workspace.focused {
+    background-color: transparent;
+    border-bottom: 2px solid @metro-accent;
+    color: #ffffff;
+}
+
+.shell-widget-workspaces .workspace.urgent {
+    background-color: @metro-urgent;
+    color: #ffffff;
+}
+
+.shell-widget-workspaces button {
+    background: transparent;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    color: @metro-fg-primary;
+    padding: 0 2px;
+}
+
+.shell-widget-workspaces button label {
+    color: @metro-fg-primary;
+    font-weight: 600;
+}
+
+.shell-widget-workspaces .workspace.active button label {
+    color: #ffffff;
+}
+
+.shell-widget-workspaces .workspace-app-icon {
+    padding: 0 2px;
+    min-width: 18px;
+    min-height: 18px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.shell-widget-workspaces .workspace-app-icon:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 0px;
+}
+
+.shell-widget-workspaces .workspace-app-icon image {
+    color: @metro-fg-primary;
+    opacity: 0.95;
+}
+
+/* ─── Volume ─── */
+.shell-widget-volume.muted label,
+.shell-widget-volume.muted image {
+    color: @metro-fg-secondary;
+}
+
+/* ─── Battery ─── */
+.shell-widget-battery.critical label,
+.shell-widget-battery.critical image {
+    color: @metro-urgent;
+}
+
+/* ─── Window Title ─── */
+.shell-widget-window label {
+    color: @metro-fg-secondary;
+    font-weight: 400;
+}
+
+/* ─── Layout Sections ─── */
+.shell-panel-left,
+.shell-panel-center,
+.shell-panel-right {
+    padding: 0 4px;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Pure Flat Metro Popovers (GTK4 Clean Selectors) ─── */
+/* ═══════════════════════════════════════════════ */
+
+popover,
+popover.shell-popover {
+    background: transparent;
+    background-image: none;
+    border: none;
+    padding: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+popover > contents,
+popover contents {
+    background-color: @metro-surface-bg;
+    background-image: none;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    outline: none;
+    padding: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+popover contents:focus {
+    border-color: @metro-accent;
+}
+
+popover > arrow {
+    background-color: @metro-surface-bg;
+    border: 1px solid @metro-accent;
+}
+
+/* ─── Standard Popover Width Tiers ─── */
+.popover-compact {
+    min-width: 280px;
+}
+
+.popover-medium {
+    min-width: 380px;
+}
+
+.popover-expanded {
+    min-width: 480px;
+}
+
+/* ─── 3-Zone Architecture ─── */
+.shell-popover-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid @metro-border;
+}
+
+.shell-popover-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: @metro-fg-primary;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.shell-popover-subtitle {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: @metro-fg-secondary;
+    margin-top: 4px;
+    margin-bottom: 2px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.shell-popover-badge {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    color: @metro-accent;
+    background-color: transparent;
+    padding: 2px 4px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.shell-popover-badge.urgent {
+    color: @metro-urgent;
+}
+
+.shell-popover-body {
+    padding: 12px 14px;
+}
+
+.shell-popover-footer {
+    padding: 10px 14px;
+    border-top: 1px solid @metro-border;
+}
+
+.shell-popover-list {
+    background: transparent;
+    border: 1px solid @metro-border;
+    margin-bottom: 6px;
+}
+
+/* ─── Uniform Row Item Indicators ─── */
+.shell-row-item {
+    padding: 6px 8px;
+    border-radius: 0px;
+    background-color: transparent;
+    border-left: 2px solid transparent;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.shell-row-item:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-border;
+}
+
+.shell-row-item.active,
+.shell-row-item.connected {
+    border-left: 2px solid @metro-accent;
+    background-color: rgba(0, 120, 212, 0.08);
+}
+
+.shell-row-item.urgent,
+.shell-row-item.error {
+    border-left: 2px solid @metro-urgent;
+    background-color: rgba(232, 17, 35, 0.08);
+}
+
+/* ─── Media Artwork & Labels ─── */
+.shell-media-art {
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+}
+
+.shell-media-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+}
+
+.shell-media-artist {
+    font-size: 10px;
+    color: @metro-fg-secondary;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── OSD Overlays & Notification Toasts ─── */
+/* ═══════════════════════════════════════════════ */
+
+.shell-osd-card,
+.shell-notification-card {
+    background-color: @metro-surface-bg;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 12px 16px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+.shell-osd-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+    min-width: 42px;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Metro Launcher Surface ─── */
+/* ═══════════════════════════════════════════════ */
+
+.shell-launcher-card {
+    background-color: @metro-surface-bg;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 16px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+}
+
+.shell-launcher-input {
+    background-color: #141414;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 6px 10px;
+    font-size: 13px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    outline: none;
+    box-shadow: none;
+}
+
+.shell-launcher-input:focus,
+.shell-launcher-input:focus-within {
+    border-color: @metro-accent;
+    background-color: #1a1a1a;
+    outline: none;
+}
+
+.shell-launcher-listbox {
+    background: transparent;
+    border: none;
+    margin-top: 8px;
+}
+
+.shell-launcher-row {
+    padding: 8px 12px;
+    border-radius: 0px;
+    background: transparent;
+    color: @metro-fg-primary;
+}
+
+.shell-launcher-row label {
+    color: @metro-fg-primary;
+    font-size: 13px;
+}
+
+.shell-launcher-listbox row:selected .shell-launcher-row {
+    background-color: @metro-accent;
+}
+
+.shell-launcher-listbox row:selected .shell-launcher-row label {
+    color: #ffffff;
+}
+
+/* Buttons inside Popover & Settings Window */
+popover button,
+window.shell-settings-window button {
+    background: transparent;
+    background-color: #141414;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    color: @metro-fg-primary;
+    padding: 6px 12px;
+    font-weight: 500;
+    font-size: 11px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+popover button:hover,
+window.shell-settings-window button:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+popover button:active,
+window.shell-settings-window button:active {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+popover button.destructive-action,
+window.shell-settings-window button.destructive-action {
+    background-color: transparent;
+    border-color: @metro-urgent;
+    color: @metro-urgent;
+}
+
+popover button.destructive-action:hover,
+window.shell-settings-window button.destructive-action:hover {
+    background-color: @metro-urgent;
+    color: #ffffff;
+}
+
+/* Separators */
+popover separator,
+window.shell-settings-window separator {
+    margin: 8px 0;
+    background-color: @metro-border;
+    min-height: 1px;
+}
+
+/* Sliders (GtkScale) */
+popover scale trough,
+window.shell-settings-window scale trough {
+    background-color: #262626;
+    border-radius: 0px;
+    min-height: 4px;
+}
+
+popover scale trough highlight,
+window.shell-settings-window scale trough highlight {
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+popover scale slider,
+window.shell-settings-window scale slider {
+    background-color: #ffffff;
+    border-radius: 0px;
+    min-width: 18px;
+    min-height: 18px;
+    border: none;
+    box-shadow: none;
+}
+
+popover scale slider:hover,
+window.shell-settings-window scale slider:hover {
+    background-color: @metro-accent-hover;
+}
+
+/* Level Bars */
+popover levelbar trough,
+window.shell-settings-window levelbar trough {
+    background-color: #262626;
+    border-radius: 0px;
+    min-height: 6px;
+}
+
+popover levelbar trough block.filled {
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.empty {
+    background-color: transparent;
+}
+
+/* Radio / Check Buttons */
+popover checkbutton {
+    padding: 6px 10px;
+    border-radius: 0px;
+    color: @metro-fg-primary;
+}
+
+popover checkbutton:hover {
+    background-color: @metro-surface-hover;
+}
+
+popover checkbutton check,
+popover checkbutton radio {
+    background-color: #262626;
+    border: 1px solid #444444;
+    border-radius: 0px;
+}
+
+popover checkbutton:checked check,
+popover checkbutton:checked radio {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+/* Calendar */
+popover calendar {
+    background-color: transparent;
+    color: @metro-fg-primary;
+    border: none;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+popover calendar header {
+    color: @metro-fg-primary;
+    font-weight: 600;
+}
+
+popover calendar .day:selected {
+    background-color: @metro-accent;
+    color: #ffffff;
+    border-radius: 0px;
+}
+
+/* Process List */
+.process-row {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    padding: 3px 6px;
+    color: @metro-fg-primary;
+    background-color: transparent;
+}
+
+.process-row:hover {
+    background-color: @metro-surface-hover;
+}
+
+/* Metro GtkDropDown & Popover List Styling */
+dropdown,
+dropdown > button {
+    background-color: @metro-surface-bg;
+    background-image: none;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 4px 8px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+}
+
+dropdown > button:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+}
+
+dropdown popover,
+dropdown popover contents {
+    background-color: @metro-surface-bg;
+    background-image: none;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 2px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+}
+
+dropdown listview,
+dropdown listview row {
+    background-color: @metro-surface-bg;
+    color: @metro-fg-primary;
+    padding: 6px 10px;
+    border-radius: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+}
+
+dropdown listview row:hover,
+dropdown listview row:selected {
+    background-color: @metro-accent;
+    color: #ffffff;
+}
+
+/* Metro Album Art Thumbnail */
+.shell-media-art {
+    background-color: #0c0c0c;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 2px;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Frameless Metro Settings Surface ─── */
+/* ═══════════════════════════════════════════════ */
+
+window.shell-settings-window {
+    background-color: rgba(20, 20, 20, 0.96);
+    color: #ffffff;
+    border: 1px solid #0078d4;
+    border-radius: 0px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+window.shell-settings-window box,
+window.shell-settings-window scrolledwindow,
+window.shell-settings-window viewport,
+window.shell-settings-window stack {
+    background-color: #141414;
+    color: #ffffff;
+}
+
+window.shell-settings-window paned > separator {
+    background-color: #2b2b2b;
+    min-width: 1px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    box-shadow: none;
+}
+
+window.shell-settings-window paned > separator > handle {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    min-width: 1px;
+    margin: 0;
+    padding: 0;
+}
+
+window.shell-settings-window .settings-header-bar {
+    background-color: #141414;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 6px 12px;
+}
+
+window.shell-settings-window .settings-header-title {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #ffffff;
+}
+
+window.shell-settings-window .settings-close-btn {
+    background: transparent;
+    border: none;
+    color: #a0a0a0;
+    padding: 2px 8px;
+    font-size: 14px;
+    min-height: 24px;
+}
+
+window.shell-settings-window .settings-close-btn:hover {
+    background-color: #e81123;
+    color: #ffffff;
+}
+
+window.shell-settings-window .navigation-sidebar {
+    background-color: #141414;
+    border-right: 1px solid #2b2b2b;
+    padding: 4px;
+}
+
+window.shell-settings-window .navigation-sidebar listview row,
+window.shell-settings-window .navigation-sidebar row {
+    background-color: transparent;
+    border-left: 2px solid transparent;
+    padding: 8px 12px;
+    color: #a0a0a0;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    font-weight: 500;
+    min-height: 32px;
+}
+
+window.shell-settings-window .sidebar-label {
+    background: transparent;
+    background-color: transparent;
+    color: inherit;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+window.shell-settings-window .navigation-sidebar row:hover {
+    background-color: #222222;
+    color: #ffffff;
+}
+
+window.shell-settings-window .navigation-sidebar row:selected {
+    background-color: #0078d4;
+    border-left: 3px solid #ffffff;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+window.shell-settings-window .navigation-sidebar row:selected .sidebar-label {
+    color: #ffffff;
+}
+
+window.shell-settings-window .shell-popover-card {
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
+    border-radius: 0px;
+    box-shadow: none;
+    margin: 8px;
+}
+
+window.shell-settings-window .shell-popover-card:hover {
+    border-color: #0078d4;
+}
+
+window.shell-settings-window .shell-popover-header {
+    background-color: #141414;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 8px 12px;
+}
+
+window.shell-settings-window .shell-popover-body {
+    padding: 12px;
+    background-color: #181818;
+}
+
+window.shell-settings-window .shell-popover-footer {
+    background-color: #141414;
+    border-top: 1px solid #2b2b2b;
+    padding: 8px 12px;
+}
+
+/* ─── Section Cards & Uniform Widget Grids ─── */
+window.shell-settings-window .settings-sidebar-vbox {
+    background-color: #141414;
+    border-right: 1px solid #2b2b2b;
+}
+
+window.shell-settings-window .sidebar-category-header {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #0078d4;
+    text-transform: uppercase;
+    margin-top: 12px;
+    margin-bottom: 4px;
+    margin-left: 12px;
+}
+
+window.shell-settings-window .section-card {
+    background-color: #1a1a1a;
+    border: 1px solid #2d2d2d;
+    border-radius: 0px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+}
+
+window.shell-settings-window .section-card:hover {
+    border-color: #0078d4;
+    background-color: #202020;
+}
+
+window.shell-settings-window .section-card-left {
+    background-color: #1a1a1a;
+    border: 1px solid #2d2d2d;
+    border-left: 4px solid #0078d4;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+window.shell-settings-window .section-card-center {
+    background-color: #1a1a1a;
+    border: 1px solid #2d2d2d;
+    border-left: 4px solid #ff8c00;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+window.shell-settings-window .section-card-right {
+    background-color: #1a1a1a;
+    border: 1px solid #2d2d2d;
+    border-left: 4px solid #107c41;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+window.shell-settings-window .widget-row-card {
+    background-color: #222222;
+    border: 1px solid #333333;
+    padding: 6px 10px;
+    margin-bottom: 4px;
+}
+
+window.shell-settings-window .widget-row-card:hover {
+    background-color: #2a2a2a;
+    border-color: #0078d4;
+}
+
+window.shell-settings-window .action-btn-danger:hover {
+    background-color: #e81123;
+    color: #ffffff;
+}
+
+/* ─── Media VU Meter & LevelBar Color Coding ─── */
+.shell-popover levelbar block.low {
+    background-color: #0078d4;
+    border-radius: 0px;
+}
+
+.shell-popover levelbar block.high {
+    background-color: #ff8c00;
+    border-radius: 0px;
+}
+
+.shell-popover levelbar block.full {
+    background-color: #e81123;
+    border-radius: 0px;
+}
+
+.shell-popover levelbar trough {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 0px;
+    padding: 1px;
+}
+
+.peak-warn {
+    color: #ff8c00;
+    font-weight: 600;
+}
+
+.peak-clip {
+    color: #e81123;
+    font-weight: 700;
+}
+
+.shell-media-art-hero {
+    background-color: #1a1a1a;
+    border: 1px solid #2d2d2d;
+    border-radius: 0px;
+    min-width: 128px;
+    min-height: 128px;
+}

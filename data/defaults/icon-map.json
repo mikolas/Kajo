@@ -1,0 +1,175 @@
+{
+  "_comment": "App ID to icon name mapping. Keys are glob patterns matched against Wayland app_id. Values are icon names (without path). Order matters: first match wins.",
+
+  "firefox": "si-firefox-symbolic",
+  "org.mozilla.firefox": "si-firefox-symbolic",
+  "librewolf": "si-firefox-symbolic",
+  "*firefox*": "si-firefox-symbolic",
+
+  "google-chrome": "si-googlechrome-symbolic",
+  "google-chrome-stable": "si-googlechrome-symbolic",
+  "chromium": "si-googlechrome-symbolic",
+  "chromium-browser": "si-googlechrome-symbolic",
+  "org.chromium.Chromium": "si-googlechrome-symbolic",
+  "thorium-browser": "si-googlechrome-symbolic",
+  "thorium": "si-googlechrome-symbolic",
+  "*thorium*": "si-googlechrome-symbolic",
+  "chrome-*": "si-googlechrome-symbolic",
+  "*chrom*": "si-googlechrome-symbolic",
+
+  "brave-browser": "si-brave-symbolic",
+  "com.brave.Browser": "si-brave-symbolic",
+  "*brave*": "si-brave-symbolic",
+
+  "vivaldi": "si-vivaldi-symbolic",
+  "vivaldi-stable": "si-vivaldi-symbolic",
+  "*vivaldi*": "si-vivaldi-symbolic",
+
+  "opera": "si-opera-symbolic",
+  "*opera*": "si-opera-symbolic",
+
+  "code": "si-visualstudiocode-symbolic",
+  "code-oss": "si-visualstudiocode-symbolic",
+  "Code": "si-visualstudiocode-symbolic",
+  "visual-studio-code": "si-visualstudiocode-symbolic",
+  "com.visualstudio.code": "si-visualstudiocode-symbolic",
+  "*code*": "si-visualstudiocode-symbolic",
+
+  "vscodium": "si-vscodium-symbolic",
+  "com.vscodium.codium": "si-vscodium-symbolic",
+
+  "dev.zed.Zed": "si-zedindustries-symbolic",
+  "zed": "si-zedindustries-symbolic",
+
+  "neovim": "si-neovim-symbolic",
+  "nvim": "si-neovim-symbolic",
+  "vim": "si-vim-symbolic",
+  "sublime_text": "si-sublimetext-symbolic",
+
+  "jetbrains-idea": "si-intellijidea-symbolic",
+  "jetbrains-clion": "si-clion-symbolic",
+  "jetbrains-goland": "si-goland-symbolic",
+  "jetbrains-pycharm": "si-pycharm-symbolic",
+  "jetbrains-webstorm": "si-webstorm-symbolic",
+  "*jetbrains*": "si-jetbrains-symbolic",
+
+  "kitty": "tb-cat-symbolic",
+  "*kitty*": "tb-cat-symbolic",
+
+  "Alacritty": "si-alacritty-symbolic",
+  "alacritty": "si-alacritty-symbolic",
+  "org.alacritty.Alacritty": "si-alacritty-symbolic",
+
+  "foot": "tb-terminal-symbolic",
+  "foot-extra": "tb-terminal-symbolic",
+  "*foot*": "tb-terminal-symbolic",
+
+  "ghostty": "si-ghostty-symbolic",
+  "*ghostty*": "si-ghostty-symbolic",
+
+  "org.wezfurlong.wezterm": "si-wezterm-symbolic",
+  "wezterm": "si-wezterm-symbolic",
+
+  "com.raggesilver.BlackBox": "tb-terminal-2-symbolic",
+  "org.gnome.Terminal": "si-gnometerminal-symbolic",
+  "gnome-terminal": "si-gnometerminal-symbolic",
+  "org.gnome.Console": "si-gnometerminal-symbolic",
+  "xterm": "tb-terminal-symbolic",
+  "*term*": "tb-terminal-symbolic",
+  "*console*": "tb-terminal-symbolic",
+
+  "discord": "si-discord-symbolic",
+  "com.discordapp.Discord": "si-discord-symbolic",
+  "vesktop": "si-discord-symbolic",
+  "*discord*": "si-discord-symbolic",
+
+  "org.telegram.desktop": "si-telegram-symbolic",
+  "telegram-desktop": "si-telegram-symbolic",
+  "*telegram*": "si-telegram-symbolic",
+
+  "signal": "si-signal-symbolic",
+  "org.signal.Signal": "si-signal-symbolic",
+
+  "element": "si-element-symbolic",
+  "io.element.Element": "si-element-symbolic",
+
+  "*whatsapp*": "si-whatsapp-symbolic",
+  "*slack*": "si-slack-symbolic",
+  "*teams*": "si-microsoftteams-symbolic",
+  "*zoom*": "si-zoom-symbolic",
+
+  "spotify": "si-spotify-symbolic",
+  "com.spotify.Client": "si-spotify-symbolic",
+  "*spotify*": "si-spotify-symbolic",
+
+  "mpv": "si-mpv-symbolic",
+  "io.mpv.Mpv": "si-mpv-symbolic",
+
+  "vlc": "si-vlcmediaplayer-symbolic",
+  "org.videolan.VLC": "si-vlcmediaplayer-symbolic",
+
+  "com.obsproject.Studio": "si-obsstudio-symbolic",
+  "obs": "si-obsstudio-symbolic",
+
+  "gimp": "si-gimp-symbolic",
+  "org.gimp.GIMP": "si-gimp-symbolic",
+
+  "inkscape": "si-inkscape-symbolic",
+  "org.inkscape.Inkscape": "si-inkscape-symbolic",
+
+  "blender": "si-blender-symbolic",
+  "org.blender.Blender": "si-blender-symbolic",
+
+  "thunderbird": "si-thunderbird-symbolic",
+  "org.mozilla.Thunderbird": "si-thunderbird-symbolic",
+
+  "libreoffice": "si-libreoffice-symbolic",
+  "libreoffice-writer": "si-libreoffice-symbolic",
+  "libreoffice-calc": "si-libreoffice-symbolic",
+  "libreoffice-impress": "si-libreoffice-symbolic",
+  "*libreoffice*": "si-libreoffice-symbolic",
+
+  "obsidian": "si-obsidian-symbolic",
+  "md.obsidian.Obsidian": "si-obsidian-symbolic",
+
+  "notion": "si-notion-symbolic",
+
+  "org.gnome.Nautilus": "tb-folder-symbolic",
+  "nautilus": "tb-folder-symbolic",
+  "thunar": "tb-folder-symbolic",
+  "*files*": "tb-folder-symbolic",
+  "*nautilus*": "tb-folder-symbolic",
+
+  "org.gnome.Settings": "tb-settings-symbolic",
+
+  "docker": "si-docker-symbolic",
+  "steam": "si-steam-symbolic",
+  "com.valvesoftware.Steam": "si-steam-symbolic",
+
+  "htop": "tb-chart-bar-symbolic",
+  "btop": "tb-chart-bar-symbolic",
+
+  "bitwarden": "si-bitwarden-symbolic",
+  "com.bitwarden.desktop": "si-bitwarden-symbolic",
+  "org.keepassxc.KeePassXC": "si-keepassxc-symbolic",
+  "keepassxc": "si-keepassxc-symbolic",
+
+  "postman": "si-postman-symbolic",
+  "com.getpostman.Postman": "si-postman-symbolic",
+  "insomnia": "si-insomnia-symbolic",
+
+  "figma": "si-figma-symbolic",
+  "*figma*": "si-figma-symbolic",
+
+  "org.qbittorrent.qBittorrent": "si-qbittorrent-symbolic",
+  "transmission-gtk": "si-transmission-symbolic",
+
+  "com.nextcloud.desktopclient.nextcloud": "si-nextcloud-symbolic",
+  "*nextcloud*": "si-nextcloud-symbolic",
+  "*dropbox*": "si-dropbox-symbolic",
+
+  "*audacity*": "si-audacity-symbolic",
+  "*kdenlive*": "si-kdenlive-symbolic",
+
+  "org.wireshark.Wireshark": "si-wireshark-symbolic"
+}

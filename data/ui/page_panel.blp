@@ -1,0 +1,94 @@
+using Gtk 4.0;
+
+template $SettingsPagePanel : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    /* Position Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Panel Edge Position:";
+      }
+
+      DropDown combo_pos {
+        hexpand: true;
+      }
+    }
+
+    /* Quick Toggles Grid */
+    Grid toggle_grid {
+      column-spacing: 8;
+      row-spacing: 8;
+    }
+
+    /* Thickness Scale Slider Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Panel Thickness:";
+      }
+
+      Scale scale_height {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 24;
+          upper: 56;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_height_val {
+        label: "32px";
+      }
+    }
+
+    /* Reveal Delay Slider Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Autohide Reveal Delay:";
+      }
+
+      Scale scale_rev {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 50;
+          upper: 500;
+          step-increment: 25;
+        };
+      }
+
+      Label lbl_rev_val {
+        label: "150ms";
+      }
+    }
+
+    /* Action Row */
+    Button btn_apply {
+      label: "[ APPLY PANEL GEOMETRY ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+}

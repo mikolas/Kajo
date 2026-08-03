@@ -1,0 +1,39 @@
+using Gtk 4.0;
+
+template $ShellLauncherWindow : Window {
+  styles [
+    "shell-launcher-surface",
+  ]
+
+  Box card {
+    orientation: vertical;
+    spacing: 10;
+    width-request: 560;
+    height-request: 420;
+    halign: center;
+    valign: center;
+
+    styles [
+      "shell-launcher-card",
+    ]
+
+    SearchEntry search_entry {
+      styles [
+        "shell-launcher-input",
+      ]
+    }
+
+    ScrolledWindow scrolled_win {
+      vexpand: true;
+      hscrollbar-policy: never;
+      vscrollbar-policy: automatic;
+      max-content-height: 320;
+
+      ListBox list_box {
+        styles [
+          "shell-launcher-listbox",
+        ]
+      }
+    }
+  }
+}

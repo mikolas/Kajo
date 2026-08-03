@@ -1,0 +1,118 @@
+using Gtk 4.0;
+
+template $SettingsPageAudio : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  /* Output Sound Section */
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label {
+      label: "OUTPUT SOUND DEVICES & ROUTING";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Output Sound Device:";
+      }
+
+      DropDown combo_sink {
+        hexpand: true;
+      }
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Master Output Volume:";
+      }
+
+      Scale scale_vol {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 0;
+          upper: 100;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_vol_val {
+        label: "65%";
+      }
+    }
+  }
+
+  /* Input Microphone Section */
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-center",
+    ]
+
+    Label {
+      label: "INPUT SOUND DEVICES & MICROPHONE";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Input Microphone Device:";
+      }
+
+      DropDown combo_source {
+        hexpand: true;
+      }
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Microphone Gain Level:";
+      }
+
+      Scale scale_mic {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 0;
+          upper: 100;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_mic_val {
+        label: "80%";
+      }
+    }
+  }
+}

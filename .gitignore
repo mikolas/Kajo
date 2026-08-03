@@ -1,0 +1,14 @@
+# Build directory
+builddir/
+build/
+*.o
+*.so
+*.a
+
+# Local Private Documentation Archive (Never push to remote)
+docs/archive/
+
+# Temporary / Scratch files
+scratch/
+*.tmp
+*.log

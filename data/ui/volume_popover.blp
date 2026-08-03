@@ -1,0 +1,113 @@
+using Gtk 4.0;
+
+template $ShellVolumePopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-medium",
+    ]
+
+    /* Zone 1: Header (Title + Status Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "VOLUME";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label input_label {
+        label: "[ -- ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body (Master Slider + Device Selector) */
+    Box {
+      orientation: vertical;
+      spacing: 8;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      Box {
+        orientation: horizontal;
+        spacing: 8;
+
+        Image {
+          icon-name: "audio-volume-high-symbolic";
+        }
+
+        Scale master_scale {
+          orientation: horizontal;
+          draw-value: false;
+          hexpand: true;
+
+          adjustment: Adjustment {
+            lower: 0;
+            upper: 150;
+            step-increment: 1;
+          };
+        }
+      }
+
+      Label {
+        label: "AUDIO SINK";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      DropDown device_dropdown {
+        hexpand: true;
+      }
+
+      Box apps_box {
+        orientation: vertical;
+        spacing: 4;
+      }
+    }
+
+    /* Zone 3: Footer (Actions) */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button mute_button {
+        label: "MUTE SINK";
+        has-frame: false;
+      }
+
+      Button settings_btn {
+        label: "SETTINGS";
+        has-frame: false;
+        halign: end;
+        hexpand: true;
+      }
+    }
+  }
+}

@@ -1,0 +1,202 @@
+using Gtk 4.0;
+
+template $ShellCpuMemPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-compact",
+    ]
+
+    /* Zone 1: Header (Title + Dual Badges) */
+    Box {
+      orientation: horizontal;
+      spacing: 6;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "SYSTEM TELEMETRY";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label power_badge {
+        label: "[ -- W ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ LIVE ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body */
+    Box {
+      orientation: vertical;
+      spacing: 8;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      /* Section 1: CPU Load */
+      Box {
+        orientation: horizontal;
+
+        Label {
+          label: "CPU LOAD";
+          xalign: 0;
+          hexpand: true;
+
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
+
+        Label cpu_power_sublabel {
+          label: "Power: -- W";
+          xalign: 1;
+
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
+      }
+
+      Label cpu_overall_label {
+        label: "CPU: --% (-- Cores)";
+        xalign: 0;
+      }
+
+      Grid cores_grid {
+        column-spacing: 12;
+        row-spacing: 4;
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Section 2: Memory Usage */
+      Label {
+        label: "MEMORY USAGE";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Label mem_label {
+        label: "Memory: -- / -- GB (--%)";
+        xalign: 0;
+      }
+
+      LevelBar mem_bar {
+        min-value: 0;
+        max-value: 1;
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Section 3: Storage Usage */
+      Label {
+        label: "STORAGE USAGE";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Box disks_box {
+        orientation: vertical;
+        spacing: 4;
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Section 4: Network Throughput */
+      Label {
+        label: "NETWORK THROUGHPUT";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Label net_label {
+        label: "Network: ⬇ 0.0 KB/s  ⬆ 0.0 KB/s";
+        xalign: 0;
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Section 4: Top Processes */
+      Label {
+        label: "TOP PROCESSES";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Box top_procs_box {
+        orientation: vertical;
+        spacing: 2;
+      }
+    }
+
+    /* Zone 3: Footer (Hardware Stats) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Label temp_label {
+        label: "Temperature: -- °C";
+        xalign: 0;
+        hexpand: true;
+      }
+
+      Label fan_label {
+        label: "Fan: -- RPM";
+        xalign: 0.5;
+        hexpand: true;
+      }
+
+      Label power_label {
+        label: "Power Draw: -- W";
+        xalign: 1;
+      }
+    }
+  }
+}

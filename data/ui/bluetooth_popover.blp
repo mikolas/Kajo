@@ -1,0 +1,129 @@
+using Gtk 4.0;
+
+template $ShellBluetoothPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-medium",
+    ]
+
+    /* Zone 1: Header (Title + Status Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "BLUETOOTH";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_label {
+        label: "[ READY ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body (Adapter Power + Scrollable Device Lists) */
+    Box {
+      orientation: vertical;
+      spacing: 6;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      Box {
+        orientation: horizontal;
+        spacing: 8;
+
+        Label {
+          label: "Adapter Power";
+          hexpand: true;
+          xalign: 0;
+        }
+
+        Switch power_switch {}
+      }
+
+      ScrolledWindow devices_scroll {
+        hscrollbar-policy: never;
+        vscrollbar-policy: automatic;
+        max-content-height: 200;
+        propagate-natural-height: true;
+
+        Box {
+          orientation: vertical;
+          spacing: 6;
+
+          Label paired_section_label {
+            label: "PAIRED DEVICES";
+            xalign: 0;
+
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
+
+          ListBox paired_list_box {
+            styles [
+              "shell-popover-list",
+            ]
+          }
+
+          Label discovered_section_label {
+            label: "DISCOVERED DEVICES";
+            xalign: 0;
+
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
+
+          ListBox discovered_list_box {
+            styles [
+              "shell-popover-list",
+            ]
+          }
+        }
+      }
+    }
+
+    /* Zone 3: Footer (Actions) */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button scan_btn {
+        label: "RE-SCAN";
+        has-frame: false;
+      }
+
+      Button settings_btn {
+        label: "BT SETTINGS";
+        has-frame: false;
+        halign: end;
+        hexpand: true;
+      }
+    }
+  }
+}

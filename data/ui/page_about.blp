@@ -1,0 +1,48 @@
+using Gtk 4.0;
+
+template $SettingsPageAbout : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  Box card_box {
+    orientation: vertical;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label title_label {
+      label: "Kajo & Control Center v0.1.0";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Label kernel_label {
+      label: "Kernel: Linux";
+      halign: start;
+    }
+
+    Label cpu_label {
+      label: "Processor: System CPU";
+      halign: start;
+    }
+
+    Label mem_label {
+      label: "Memory: System RAM";
+      halign: start;
+    }
+
+    Label gtk_label {
+      label: "Toolkit: GTK4 + PipeWire + BlueZ5";
+      halign: start;
+    }
+
+    Label niri_label {
+      label: "Compositor: Niri Wayland Scrollable Tiling Compositor";
+      halign: start;
+    }
+  }
+}

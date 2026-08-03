@@ -1,0 +1,140 @@
+using Gtk 4.0;
+
+template $ShellBatteryPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-medium",
+    ]
+
+    /* Zone 1: Header (Title + Health Badge) */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "BATTERY & POWER";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ HEALTHY ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body */
+    Box {
+      orientation: vertical;
+      spacing: 8;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      /* Section 1: Battery Status */
+      Label {
+        label: "BATTERY STATUS";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Label pct_label {
+        label: "Battery: --%";
+        xalign: 0;
+      }
+
+      LevelBar pct_bar {
+        min-value: 0;
+        max-value: 1;
+        value: 0;
+      }
+
+      Label status_label {
+        label: "Status: Discharging";
+        xalign: 0;
+      }
+
+      Label time_label {
+        label: "Time remaining: --";
+        xalign: 0;
+      }
+
+      Label energy_label {
+        label: "Power Draw: -- W";
+        xalign: 0;
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Section 2: Power Profile */
+      Label {
+        label: "POWER PROFILE";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      CheckButton profile_power_saver {
+        label: "Power Saver";
+      }
+
+      CheckButton profile_balanced {
+        label: "Balanced";
+        active: true;
+      }
+
+      CheckButton profile_performance {
+        label: "Performance";
+      }
+
+      Separator {
+        orientation: horizontal;
+      }
+
+      /* Section 3: Display Brightness */
+      Label {
+        label: "BRIGHTNESS";
+        xalign: 0;
+
+        styles [
+          "shell-popover-subtitle",
+        ]
+      }
+
+      Scale brightness_scale {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 0;
+          upper: 100;
+          step-increment: 1;
+        };
+      }
+    }
+  }
+}

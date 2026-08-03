@@ -1,0 +1,72 @@
+using Gtk 4.0;
+
+template $SettingsPageWidgets : Box {
+  orientation: vertical;
+  spacing: 12;
+
+  /* Left Section Card */
+  Box card_left {
+    orientation: vertical;
+    spacing: 8;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label lbl_left {
+      label: "🔵 1. LEFT PANEL SECTION";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+  }
+
+  /* Center Section Card */
+  Box card_center {
+    orientation: vertical;
+    spacing: 8;
+
+    styles [
+      "section-card-center",
+    ]
+
+    Label lbl_center {
+      label: "🟠 2. CENTER PANEL SECTION";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+  }
+
+  /* Right Section Card */
+  Box card_right {
+    orientation: vertical;
+    spacing: 8;
+
+    styles [
+      "section-card-right",
+    ]
+
+    Label lbl_right {
+      label: "🟢 3. RIGHT PANEL SECTION";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+  }
+
+  /* Action Button */
+  Button btn_apply {
+    label: "[ APPLY PANEL WIDGET LAYOUT ]";
+
+    styles [
+      "flat",
+    ]
+  }
+}

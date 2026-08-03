@@ -1,0 +1,38 @@
+using Gtk 4.0;
+
+template $ShellOSDWindow : Window {
+  styles [
+    "shell-osd",
+  ]
+
+  Box card_box {
+    orientation: horizontal;
+    spacing: 10;
+    width-request: 240;
+    height-request: 48;
+
+    styles [
+      "shell-osd-card",
+    ]
+
+    Image icon_img {
+      icon-name: "audio-volume-high-symbolic";
+      pixel-size: 24;
+    }
+
+    LevelBar level_bar {
+      min-value: 0;
+      max-value: 1;
+      hexpand: true;
+      valign: center;
+    }
+
+    Label label {
+      label: "100%";
+
+      styles [
+        "shell-osd-label",
+      ]
+    }
+  }
+}
