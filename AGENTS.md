@@ -47,6 +47,10 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 ❌ **8. NO CLAIMING SUCCESS WITHOUT COMPILING**
 - Never declare a feature complete or fixed without running `meson compile -C builddir` and verifying 0 errors and 0 warnings.
 
+❌ **9. NO MARKDOWN FILES IN PROJECT ROOT**
+- **NEVER** create `.md` markdown files in the project root directory unless explicitly requested by the user.
+- Always create documentation, scratch files, plans, and specs inside the `scratch/` directory.
+
 ---
 
 ## 3. Mandatory Development Standards (What MUST be Done)
@@ -77,15 +81,18 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 ## 5. Git Branching, Commit Discipline & Public PR Workflow
 
 ❌ **1. NO DIRECT COMMITS TO `master`**
-- Direct commits or pushes to `master` are **strictly forbidden**. `master` represents public, stable releases.
+- Direct commits or pushes to `master` are **strictly forbidden** (unless explicitly requested by the user). `master` represents public, stable releases.
 
 🌿 **2. FEATURE & BUGFIX BRANCHES ONLY**
-- All development must take place on dedicated feature or bugfix branches (e.g., `feat/settings-redesign`, `fix/volume-ipc`).
+- All development must take place on dedicated local feature or bugfix branches (e.g., `feat/media-spectrum-analyzer`, `fix/codebase-audit`).
 
-🔒 **3. NO PREMATURE / INCOMPLETE COMMITS**
+🔒 **3. NO PREMATURE / UNREQUESTED REMOTE PUSHES**
+- **NEVER** push local feature or bugfix branches to remote (`origin`) unless explicitly requested by the user. Keep all interim development commits 100% local.
+
+🔒 **4. NO INCOMPLETE COMMITS**
 - **NEVER** commit work until the entire feature or bugfix on that branch is 100% complete, fully tested, and verified clean (`meson compile -C builddir` with 0 errors and 0 warnings).
 
-🐙 **4. PULL REQUESTS VIA `gh` CLI**
+🐙 **5. PULL REQUESTS VIA `gh` CLI**
 - All code changes must be submitted via Pull Requests (`gh pr create`) and merged (`gh pr merge`) after thorough review.
 
 ---
@@ -95,3 +102,4 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 1. Run `meson compile -C builddir` $\rightarrow$ Must compile cleanly with 0 errors and 0 warnings.
 2. Run test executable (e.g. `./builddir/kajo-settings --page network`) $\rightarrow$ Verify CSS styles load correctly without console errors.
 3. Check git diff $\rightarrow$ Ensure formatting matches project style and no temporary scratch files are staged.
+
