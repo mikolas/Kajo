@@ -535,20 +535,29 @@ cc_refresh_state(ControlCenterWidget *cc)
 static gboolean
 on_cc_tick(gpointer user_data)
 {
-    cc_refresh_state((ControlCenterWidget *)user_data);
+    ControlCenterWidget *cc = (ControlCenterWidget *)user_data;
+    if (!cc || !cc->popover || !gtk_widget_get_mapped(cc->popover))
+        return G_SOURCE_CONTINUE;
+
+    cc_refresh_state(cc);
     return G_SOURCE_CONTINUE;
 }
 
 static void
-on_popover_visibility_changed(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+on_cc_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (gtk_widget_get_visible(GTK_WIDGET(gobject))) {
-        shell_autohide_lock(shell_panel_get_autohide(cc->base.app ? shell_app_get_panel(cc->base.app) : NULL));
-        cc_refresh_state(cc);
-    } else {
-        shell_autohide_unlock(shell_panel_get_autohide(cc->base.app ? shell_app_get_panel(cc->base.app) : NULL));
-    }
+    if (!cc) return;
+    shell_autohide_lock(shell_panel_get_autohide(cc->base.app ? shell_app_get_panel(cc->base.app) : NULL));
+    cc_refresh_state(cc);
+}
+
+static void
+on_cc_popover_closed(GtkPopover *popover G_GNUC_UNUSED, gpointer user_data)
+{
+    ControlCenterWidget *cc = user_data;
+    if (!cc) return;
+    shell_autohide_unlock(shell_panel_get_autohide(cc->base.app ? shell_app_get_panel(cc->base.app) : NULL));
 }
 
 /* ─── Tile Creation Helper ─── */
@@ -726,7 +735,8 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
     g_signal_connect(popover->btn_power, "clicked", G_CALLBACK(on_action_power_clicked), cc);
 
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(cc->button), cc->popover);
-    g_signal_connect(cc->popover, "notify::visible", G_CALLBACK(on_popover_visibility_changed), cc);
+    g_signal_connect(cc->popover, "map", G_CALLBACK(on_cc_popover_map), cc);
+    g_signal_connect(cc->popover, "closed", G_CALLBACK(on_cc_popover_closed), cc);
 
     /* Connect PulseAudio C API */
     cc->pa_ml = pa_glib_mainloop_new(NULL);

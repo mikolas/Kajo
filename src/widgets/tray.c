@@ -148,7 +148,11 @@ add_tray_item(TrayWidget *tray, const gchar *service)
     if (tray->bus && item->service) {
         item->name_watcher_id = g_bus_watch_name_on_connection(
             tray->bus, item->service, G_BUS_NAME_WATCHER_FLAGS_NONE,
-            NULL, on_tray_item_vanished, pair, NULL);
+            NULL, on_tray_item_vanished, pair, g_free);
+    } else {
+        /* If no bus watcher created, free pair manually */
+        g_free(pair);
+        item->signal_pair = NULL;
     }
 
     refresh_tray_item(tray, item);
@@ -189,7 +193,6 @@ remove_tray_item(TrayWidget *tray, const gchar *service)
                 g_object_unref(it->proxy);
                 it->proxy = NULL;
             }
-            g_free(it->signal_pair);
             g_free(it->service);
             g_free(it->object_path);
             g_free(it->icon_name);

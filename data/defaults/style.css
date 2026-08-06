@@ -876,3 +876,21 @@ window.shell-settings-window .action-btn-danger:hover {
     min-width: 128px;
     min-height: 128px;
 }
+
+/* ─── 16-Band Hero Spectrum Analyzer ─── */
+.shell-popover levelbar block {
+    border-radius: 0px;
+}
+
+.shell-popover levelbar.vertical block.filled {
+    background-color: #00d8f0;
+    border: none;
+    margin: 0 1px;
+}
+
+.shell-popover levelbar.vertical block.empty {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: none;
+    margin: 0 1px;
+}
+

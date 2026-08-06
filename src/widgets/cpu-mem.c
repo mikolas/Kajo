@@ -600,7 +600,10 @@ static void cpu_mem_update(CpuMemWidget *cm)
     g_free(panel_text);
     shell_widget_apply_mode_visibility(cm->base.mode, cm->icon_img, cm->panel_label);
 
-    /* Popover: CPU overall with Frequency */
+    /* POPOUT-GATED RESOURCE MANAGEMENT:
+       Only perform sysfs 128-core frequency scans, per-core levelbars, disk IO, and top process sorting when popout is OPEN */
+    gboolean popover_open = cm->popover && gtk_widget_get_mapped(cm->popover);
+    if (!popover_open) return;
     double max_ghz = 0, avg_ghz = 0;
     gchar *cpu_text;
     if (cpu_mem_read_freq(&max_ghz, &avg_ghz)) {
@@ -810,6 +813,14 @@ shell_cpu_mem_popover_class_init(ShellCpuMemPopoverClass *klass)
 
 /* --- Widget interface --- */
 
+static void on_cpu_mem_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    CpuMemWidget *cm = user_data;
+    if (cm) {
+        cpu_mem_update(cm);
+    }
+}
+
 static ShellWidget *cpu_mem_create(ShellCompositor *compositor G_GNUC_UNUSED)
 {
     CpuMemWidget *cm = g_new0(CpuMemWidget, 1);
@@ -846,6 +857,8 @@ static ShellWidget *cpu_mem_create(ShellCompositor *compositor G_GNUC_UNUSED)
     cm->power_label = popover->power_label;
     cm->status_badge = popover->status_badge;
     cm->power_badge = popover->power_badge;
+
+    g_signal_connect(cm->popover, "map", G_CALLBACK(on_cpu_mem_popover_map), cm);
 
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(cm->button), cm->popover);
 
