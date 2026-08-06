@@ -219,11 +219,14 @@ decode_and_set_pixmap(GtkWidget *icon_img, GVariant *pixmap_var)
 
     gint w, h;
     GVariant *bytes_var;
-    while (g_variant_iter_loop(&iter, "(ii@ay)", &w, &h, &bytes_var)) {
+    while (g_variant_iter_next(&iter, "(ii@ay)", &w, &h, &bytes_var)) {
         if (w > 0 && h > 0 && w <= 256 && h <= 256 && w > best_w) {
+            if (best_bytes_var) g_variant_unref(best_bytes_var);
             best_w = w;
             best_h = h;
             best_bytes_var = bytes_var;
+        } else {
+            g_variant_unref(bytes_var);
         }
     }
 
@@ -232,8 +235,10 @@ decode_and_set_pixmap(GtkWidget *icon_img, GVariant *pixmap_var)
 
     gsize data_len = 0;
     const guchar *raw_data = (const guchar *)g_variant_get_fixed_array(best_bytes_var, &data_len, sizeof(guchar));
-    if (!raw_data || data_len < (gsize)(best_w * best_h * 4))
+    if (!raw_data || data_len < (gsize)(best_w * best_h * 4)) {
+        g_variant_unref(best_bytes_var);
         return FALSE;
+    }
 
     guchar *rgba = g_malloc(best_w * best_h * 4);
     for (int i = 0; i < best_w * best_h; i++) {
@@ -243,6 +248,8 @@ decode_and_set_pixmap(GtkWidget *icon_img, GVariant *pixmap_var)
         rgba[i * 4 + 2] = (pixel & 0xFF);         /* B */
         rgba[i * 4 + 3] = (pixel >> 24) & 0xFF; /* A */
     }
+
+    g_variant_unref(best_bytes_var);
 
     GBytes *gbytes = g_bytes_new_take(rgba, best_w * best_h * 4);
     GdkTexture *texture = gdk_memory_texture_new(best_w, best_h, GDK_MEMORY_R8G8B8A8, gbytes, best_w * 4);
