@@ -11,7 +11,7 @@ Built in standard C17 with GTK4, gtk4-layer-shell, and Blueprint Markup. Designe
 ### 🖥️ Status Panel & Telemetry
 - **20 Built-in Widgets**: Workspaces, clock, volume dropdown, control center, battery, network, bluetooth, media, CPU/memory, disk telemetry, network throughput, theme picker, keyboard layout, system tray, notifications, power menu, privacy, DND, idle-inhibitor, and custom user scripts.
 - **Hardware Telemetry**: Real-time normalized CPU load (`btop` parity), 2-column per-core load grid (`C01`...`C12`), RAPL/HWMON power draw (Watts), physical disk space (`statvfs`/`/proc/mounts` deduplication), and live dual network throughput (`⬇ RX` / `⬆ TX`).
-- **MPRIS Media & Audio VU Meters**: Dynamic player bus discovery prioritizing active playing media, 2-column hero album art popover, and 30 FPS stereo audio VU meters with peak-hold physics.
+- **16-Band Live PulseAudio FFT Spectrum Visualizer**: Dynamic MPRIS player bus discovery, 2-column hero album art popover, and real-time 16-band vertical FFT spectrum analyzer ($86\text{ Hz} \dots 21.5\text{ kHz}$) using a zero-dependency 512-point Cooley-Tukey FFT engine with logarithmic $\log_{10}$ decibel compression and volume-independent dynamic auto-sensitivity (`auto_sens`).
 - **Persistent Audio Control**: Integrated PulseAudio/WirePlumber C API sink selector (`pa_context_set_default_sink`).
 - **Metro Theme & Accent Switcher**: Live accent color switcher with 8 presets (Cobalt Blue, Windows Purple, Catppuccin, Nord, Emerald, Crimson, Amber Gold, Cyberpunk Cyan) dynamically updating UI controls and telemetry LevelBars in sub-10ms.
 
@@ -24,7 +24,9 @@ Built in standard C17 with GTK4, gtk4-layer-shell, and Blueprint Markup. Designe
 - **Sub-Millisecond OSD**: Instant UNIX domain socket IPC overlays for volume, brightness, and media feedback.
 - **Notification Daemon**: Integrated `org.freedesktop.Notifications` server with unread history popover, PWA window title focus routing, and custom toast timeouts.
 
-### ⚡ Performance & Reliability
+### ⚡ Performance, Zero-CPU Popout Gating & Reliability
+- **Popout-Gated Resource Architecture**: PulseAudio monitor streams start corked (`PA_STREAM_START_CORKED`); 30 FPS FFT timers, audio callbacks, sysfs 128-core frequency reads, and popover widget decodes run **only when popouts are mapped open**. Background idle CPU footprint is $<0.05\%$.
+- **Robust StatusNotifierItem Tray Engine**: Full `org.kde.StatusNotifierWatcher` implementation with safe GIO name watcher lifecycle, ARGB32 `IconPixmap` bitmap decoding, and fallback theme lookups for Electron, Qt, and GTK applications.
 - **Zero Command Spawning**: 100% native GDBus, PulseAudio C API, and Niri socket IPC.
 - **Smart Icon Engine**: Case-insensitive `.desktop` file parsing via `GKeyFile`, `Papirus-Dark` theme integration, and GTK symbolic fallback pipeline.
 - **OLED Auto-Hide**: 100% transparent edge trigger strip with smooth cubic ease reveal/hide animations.
