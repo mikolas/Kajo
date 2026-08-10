@@ -37,6 +37,16 @@ template $ShellMediaPopover : Popover {
           "shell-popover-badge",
         ]
       }
+
+      Button visualizer_toggle_btn {
+        label: "📊";
+        has-frame: false;
+        tooltip-text: "Cycle Visualizer Mode (Spectrum / VU / Off)";
+
+        styles [
+          "flat",
+        ]
+      }
     }
 
     /* Zone 2: Body (2-Column Hero Album Art Left, Controls Right) */
@@ -62,7 +72,7 @@ template $ShellMediaPopover : Popover {
         ]
       }
 
-      /* Column 2: Metadata + VU Meters + Transport Controls */
+      /* Column 2: Metadata + Spectrum / VU Meters + Transport Controls */
       Box {
         orientation: vertical;
         spacing: 8;
@@ -99,10 +109,36 @@ template $ShellMediaPopover : Popover {
           }
         }
 
-        /* Row 2: Stereo Audio VU Meter */
+        /* Row 2: 16-Band Hero Spectrum Analyzer */
+        Box spectrum_vbox {
+          orientation: horizontal;
+          spacing: 2;
+          height-request: 44;
+          valign: center;
+
+          LevelBar spectrum_bar_0  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_1  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_2  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_3  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_4  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_5  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_6  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_7  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_8  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_9  { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_10 { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_11 { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_12 { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_13 { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_14 { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+          LevelBar spectrum_bar_15 { orientation: vertical; inverted: true; min-value: 0.0; max-value: 1.0; value: 0.0; hexpand: true; }
+        }
+
+        /* Row 2b: Stereo Audio VU Meter (Fallback Mode) */
         Box vu_vbox {
           orientation: vertical;
           spacing: 3;
+          visible: false;
 
           /* Left Channel */
           Box {

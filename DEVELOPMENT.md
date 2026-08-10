@@ -25,7 +25,7 @@ src/settings/main.c                 kajo-settings standalone entry point (org.ka
 src/settings/settings_window.h/c    Control panel window layout, sidebar, & 7 settings pages
 src/ipc/socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
 src/widgets/widget.h                Widget VTable interface (create, update, destroy)
-src/widgets/registry.h/c            19 panel widget registrations
+src/widgets/registry.h/c            20 panel widget registrations
 src/widgets/*.c                     Individual widget implementations
 ```
 
