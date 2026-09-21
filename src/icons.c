@@ -103,6 +103,7 @@ try_desktop_file_icon(GtkIconTheme *theme, const gchar *desktop_filename, gchar 
 
     GKeyFile *kf = g_key_file_new();
     gboolean loaded = FALSE;
+    const gchar *res = NULL;
 
     if (g_path_is_absolute(desktop_id)) {
         loaded = g_key_file_load_from_file(kf, desktop_id, G_KEY_FILE_NONE, NULL);
@@ -118,18 +119,14 @@ try_desktop_file_icon(GtkIconTheme *theme, const gchar *desktop_filename, gchar 
     if (loaded) {
         gchar *icon_name = g_key_file_get_string(kf, "Desktop Entry", "Icon", NULL);
         if (icon_name != NULL && icon_name[0] != '\0') {
-            const gchar *res = try_resolve_name(theme, icon_name, buf, buf_size);
-            g_free(icon_name);
-            g_key_file_free(kf);
-            g_free(desktop_id);
-            if (res) return res;
+            res = try_resolve_name(theme, icon_name, buf, buf_size);
         }
-        if (icon_name) g_free(icon_name);
+        g_free(icon_name);
     }
 
     g_key_file_free(kf);
     g_free(desktop_id);
-    return NULL;
+    return res;
 }
 
 const gchar *
