@@ -71,6 +71,90 @@ binds {
 
 ---
 
+## 📖 User Guide
+
+### 💻 Command-Line Interface (CLI) Arguments
+
+#### `kajo` (Desktop Shell & Client)
+When invoked with no arguments, `kajo` starts as the primary background Wayland desktop shell daemon. When invoked with any of the following arguments, it acts as an instant IPC client communicating with the running daemon via `$XDG_RUNTIME_DIR/kajo.sock`:
+
+| Option / Argument | Aliases | Description |
+|---|---|---|
+| *(no arguments)* | — | Launches the desktop shell daemon (status panel, launcher overlay, OSD, notification server). |
+| `--toggle-launcher` | `-t`, `launcher-toggle` | Toggles the visibility of the application launcher surface overlay. |
+| `--volume-up` | `volume-up` | Increases default PulseAudio sink volume by 5% and displays the OSD overlay. |
+| `--volume-down` | `volume-down` | Decreases default PulseAudio sink volume by 5% and displays the OSD overlay. |
+| `--volume-mute` | `volume-mute` | Toggles the mute state of the default sink and displays the OSD overlay. |
+| `--brightness-up` | `brightness-up` | Increases monitor backlight brightness by 5% and displays the OSD overlay. |
+| `--brightness-down` | `brightness-down` | Decreases monitor backlight brightness by 5% and displays the OSD overlay. |
+
+#### `kajo-settings` (Control Panel)
+The standalone system settings application provides access to system preferences, display outputs, audio mixing, and appearance:
+
+| Option / Flag | Description |
+|---|---|
+| *(no arguments)* | Opens the settings window on the default page (`displays`). |
+| `-p <PAGE>`, `--page <PAGE>` | Opens the settings window directly navigated to the specified page ID. |
+
+**Available Page Identifiers (`--page`):**
+| Page ID | Title | Description |
+|---|---|---|
+| `displays` | Displays & Monitors | Monitor outputs, resolutions, refresh rates, scaling, and VRR settings. |
+| `network` | Network & Wi-Fi | Active network interfaces, IP addresses, and Wi-Fi access point discovery. |
+| `bluetooth` | Bluetooth & Devices | Bluetooth adapter toggle, paired devices, and live scanning for nearby devices. |
+| `audio` | Audio & PipeWire | Stream volume mixer, master volume, and sink/source routing. |
+| `theme` | Theme & Accents | 8 curated Metro accent color tiles (Cobalt Blue, Windows Purple, Catppuccin, Nord, Emerald, Crimson, Amber Gold, Cyberpunk Cyan). |
+| `panel` | Panel & Geometry | Panel edge position (top/bottom), bar height/thickness, and autohide reveal delays. |
+| `widgets` | Widgets Layout | Active panel widgets ordering and per-widget display modes (`icon`, `label`, `both`). |
+| `notifications` | Notifications | Notification toast timeouts, Do-Not-Disturb (DND) toggle, and notification history limits. |
+| `niri` | Niri Compositor | Window rules, floating behaviors, gaps, borders, and focus ring styling. |
+| `about` | About System | CPU, RAM, kernel version, compositor information, and OS specifications. |
+
+**Examples:**
+```bash
+# Open directly to Wi-Fi scanner
+kajo-settings --page network
+
+# Open directly to Metro accent theme switcher
+kajo-settings --page theme
+
+# Open directly to PipeWire audio stream mixer
+kajo-settings -p audio
+```
+
+---
+
+### ⌨️ Keyboard Shortcuts & Navigation
+
+#### 1. Launcher Keyboard Shortcuts
+When the launcher overlay is summoned (`kajo --toggle-launcher` or <kbd>Mod</kbd>+<kbd>D</kbd>):
+
+| Key | Action |
+|---|---|
+| <kbd>Down</kbd> | Move selection to the next search result (with automatic scrolling). |
+| <kbd>Up</kbd> | Move selection to the previous search result (with automatic scrolling). |
+| <kbd>Enter</kbd> / <kbd>Keypad Enter</kbd> | Activate the selected item (or first item if none highlighted). |
+| <kbd>Escape</kbd> | Dismiss and close the launcher overlay. |
+
+#### 2. Launcher Search Prefix Modes (Plugins)
+Typing special prefix characters into the launcher search entry activates specialized plugins:
+
+| Prefix | Mode | Example Query | Behavior & Action on Enter |
+|---|---|---|---|
+| `:` | **Emoji Picker** | `:cat`, `:fire`, `:smile` | Queries 1,914 embedded emojis by name and keyword. Pressing <kbd>Enter</kbd> copies the emoji directly to your clipboard. |
+| `=` | **Calculator** | `= (24 * 60) + 120` | Evaluates arithmetic expressions using TinyExpr. Pressing <kbd>Enter</kbd> copies the calculated result to your clipboard. |
+| `>` | **Shell Command** | `> htop`, `> ping 1.1.1.1` | Executes the command in `x-terminal-emulator` (or spawns directly). |
+| `w:` or `W:` | **Window Switcher** | `w:code`, `w:firefox` | Searches open Wayland windows by title or application ID. Pressing <kbd>Enter</kbd> instantly focuses the window workspace. |
+| *(None)* | **Application Search** | `terminal`, `web`, `calc` | Fuzzy searches `.desktop` applications by name, keywords, and comment, sorted by launch frequency. |
+
+#### 3. Settings Window Controls
+- **Category Filter**: Focus the header search box (<kbd>Ctrl</kbd>+<kbd>F</kbd> or click) to filter the sidebar preference categories.
+- **Floating / Tiling Toggle**: Click `🗗 FLOAT / TILE` in the header bar to toggle the settings window between Niri tiled column and floating state.
+- **Responsive Navigation**: In narrow viewports (< 768px), click `‹ Back` to return to the category navigation list.
+- **Dismiss**: Click `✕` or press <kbd>Escape</kbd> to close the settings window.
+
+---
+
 ## 📄 Configuration Files
 
 All user edits made via `kajo-settings` or manual edits are strictly written to your user XDG configuration directory (`~/.config/`). Master user files (such as `~/.config/niri/config.kdl`) are **never modified directly**.

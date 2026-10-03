@@ -8,9 +8,9 @@ This document establishes the architecture rules, forbidden practices, design st
 
 The project delivers a modern, lightweight Wayland desktop shell and settings application built for the **Niri Wayland Compositor**.
 
-- **Languages**: Standard C17 (`-std=c17`), GTK4 (`gtk4`), GTK Layer Shell (`gtk4-layer-shell-0`), GLib/GIO (`gio-2.0`), PulseAudio/PipeWire (`libpulse`).
+- **Languages**: Standard C17 (`-std=c17`), GTK4 (`gtk4`), GTK Layer Shell (`gtk4-layer-shell-0`), GLib/GIO (`gio-2.0`), PulseAudio/PipeWire (`libpulse`), Blueprint Markup (`blueprint-compiler`), embedded math parser (`tinyexpr`).
 - **Build System**: Meson (`meson`) & Ninja (`ninja`).
-- **System Buses**: System D-Bus (`org.freedesktop.NetworkManager`, `org.bluez`, `org.freedesktop.UPower`).
+- **System Buses**: System D-Bus (`org.freedesktop.NetworkManager`, `org.bluez`, `org.freedesktop.UPower`), MPRIS2 (`org.mpris.MediaPlayer2.*`), StatusNotifierItem (`org.kde.StatusNotifierWatcher`).
 - **Styling System**: Custom Vanilla GTK CSS (`data/defaults/style.css`), scoped to `window.shell-settings-window` and `.shell-popover`.
 
 ---
@@ -35,6 +35,7 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 ❌ **5. NO MEMORY OR GVARIANT LEAKS**
 - Always unref `GVariant*` objects (`g_variant_unref`), D-Bus proxies (`g_object_unref`), error structs (`g_clear_error`), and string allocations (`g_free`).
 - Always remove existing child widgets from container boxes before repopulating dynamic D-Bus lists.
+- For D-Bus byte array/iterators (such as StatusNotifierItem `IconPixmap`), always step through iterators safely and validate buffer sizes before reading.
 
 ❌ **6. NO UN-SCOPED DYNAMIC CSS PROVIDERS**
 - **NEVER** pass generic element node selectors like `box { ... }` or `button { ... }` to `gtk_css_provider_load_from_string()` when registering providers via `gtk_style_context_add_provider_for_display()`.
@@ -51,14 +52,21 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 - **NEVER** create `.md` markdown files in the project root directory unless explicitly requested by the user.
 - Always create documentation, scratch files, plans, and specs inside the `scratch/` directory.
 
+❌ **10. NO UNGATED BACKGROUND TIMERS OR AUDIO MONITORING**
+- **NEVER** leave PulseAudio monitor streams capturing or high-frequency render timers (such as 30 FPS spectrum FFT visualizers or multi-core sysfs polling) active when popovers/popouts are unmapped.
+- Always start monitor streams corked (`PA_STREAM_START_CORKED`), uncork on widget `map`, and re-cork on widget `unmap` to ensure idle background CPU consumption remains below 0.05%.
+
+❌ **11. NO DOUBLE-FREE IN ICON RESOLUTION FALLBACKS**
+- In icon lookup pipelines, never free an unowned or caller-owned string before trying alternative icon names or desktop file parsing fallbacks.
+
 ---
 
 ## 3. Mandatory Development Standards (What MUST be Done)
 
 ### A. Architectural Organization
-- **Main Settings Container**: [src/settings/settings_window.c](file:///home/mikolas/src/Kajo/src/settings/settings_window.c) serves purely as a lightweight container shell (~150 lines) managing the sidebar list and `GtkStack`.
+- **Main Settings Container**: [src/settings/settings_window.c](file:///home/mikolas/src/Kajo/src/settings/settings_window.c) serves purely as a lightweight container shell managing the sidebar list and `GtkStack`.
 - **Modular Pages**: Individual preference pages live under [src/settings/pages/](file:///home/mikolas/src/Kajo/src/settings/pages/):
-  - `page_panel.c`, `page_widgets.c`, `page_niri.c`, `page_displays.c`, `page_network.c`, `page_bluetooth.c`, `page_audio.c`, `page_notifications.c`, `page_theme.c`, `page_about.c`.
+  - `page_displays.c`, `page_network.c`, `page_bluetooth.c`, `page_audio.c`, `page_theme.c`, `page_panel.c`, `page_widgets.c`, `page_notifications.c`, `page_niri.c`, `page_about.c`.
 - **Shared Helpers**: Common UI builders (`create_settings_page_card`, `create_string_dropdown`, `create_metro_toggle_tile`, `create_simple_item_row`) live in [src/settings/settings_common.c](file:///home/mikolas/src/Kajo/src/settings/settings_common.c).
 
 ### B. Dynamic D-Bus Scanning & Auto-Refresh
@@ -67,6 +75,9 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 
 ### C. Declarative UI Architecture (Blueprint)
 - All UI templates for popouts (`src/widgets/`) and settings pages (`src/settings/pages/`) use Blueprint Markup (`.blp`) compiled via `blueprint-compiler` to define static layouts, headers, and button bars, while using `gtk_widget_class_bind_template_child()` to append dynamic live D-Bus rows in C.
+
+### D. Popout-Gated Resource Architecture
+- All telemetry, spectrum analysis, or resource-monitoring popouts must connect to GTK `map` and `unmap` signals to enable and disable timers, monitor streams, and thread loops so background resource usage remains near zero.
 
 ---
 
@@ -92,8 +103,9 @@ The project delivers a modern, lightweight Wayland desktop shell and settings ap
 🔒 **4. NO INCOMPLETE COMMITS**
 - **NEVER** commit work until the entire feature or bugfix on that branch is 100% complete, fully tested, and verified clean (`meson compile -C builddir` with 0 errors and 0 warnings).
 
-🐙 **5. PULL REQUESTS VIA `gh` CLI**
-- All code changes must be submitted via Pull Requests (`gh pr create`) and merged (`gh pr merge`) after thorough review.
+🐙 **5. PULL REQUESTS & MERGING**
+- When GitHub CLI (`gh`) is available, submit changes via Pull Requests (`gh pr create`).
+- When merging branches locally to `master` upon user request, ensure a clean fast-forward or clean merge, verify compilation, and only push when explicitly asked by the user.
 
 ---
 

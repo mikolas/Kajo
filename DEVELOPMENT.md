@@ -15,17 +15,22 @@ src/panel.h/c                       Panel layer-shell surface & OLED trigger str
 src/autohide.h/c                    Autohide reveal/hide state machine
 src/config.h/c                      JSON configuration parser & serializer (shell_config_save)
 src/theme.h/c                       3-Tier GTK CSS theme engine & GFileMonitor hot-reload
-src/icons.h/c                       Icon resolution (Fluent UI SVGs + system theme fallback)
+src/icons.h/c                       Icon resolution (Fluent UI SVGs + Papirus fallback)
 src/compositor/compositor.h         Compositor abstraction interface
 src/compositor/niri.c               Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
 src/launcher/launcher_surface.h/c   App launcher overlay surface & plugin router
+src/launcher/emoji_dataset.h        Embedded dataset with 1,914 emoji entries
 src/osd/osd.h/c                     Volume/brightness/toast OSD overlay surface
 src/notifications/daemon.h/c        D-Bus notification daemon (org.freedesktop.Notifications)
 src/settings/main.c                 kajo-settings standalone entry point (org.kajo.Settings)
-src/settings/settings_window.h/c    Control panel window layout, sidebar, & 7 settings pages
+src/settings/settings_window.h/c    Control panel window layout, sidebar, & 10 settings pages
+src/settings/pages/page_*.c         Individual preference pages (displays, network, audio, etc.)
 src/ipc/socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
+src/vendor/tinyexpr/                TinyExpr lightweight recursive-descent math evaluator
 src/widgets/widget.h                Widget VTable interface (create, update, destroy)
-src/widgets/registry.h/c            20 panel widget registrations
+src/widgets/registry.h/c            Panel widget registrations
+src/widgets/media.c                 MPRIS controller, album art & 16-band live FFT visualizer
+src/widgets/tray.c                  StatusNotifierItem (SNI) tray watcher & ARGB32 pixmap decoder
 src/widgets/*.c                     Individual widget implementations
 ```
 
@@ -40,12 +45,13 @@ src/widgets/*.c                     Individual widget implementations
 * `gio-2.0`
 * `libpulse`
 * `libpulse-mainloop-glib`
+* `blueprint-compiler`
 
 ### Debug Compilation
 ```sh
 # Clone and setup debug build with symbol table
-git clone git@github.com:mikolas/desktop.git
-cd desktop
+git clone git@github.com:mikolas/Kajo.git
+cd Kajo
 meson setup builddir -Dbuildtype=debug
 ninja -C builddir
 ```
@@ -57,6 +63,9 @@ NIRI_SOCKET=/run/user/1000/niri.sock ./builddir/kajo
 
 # Run control panel app
 ./builddir/kajo-settings
+
+# Run control panel directly opened to a specific page
+./builddir/kajo-settings --page network
 ```
 
 ---
@@ -69,12 +78,16 @@ Client commands are transmitted over the UNIX domain socket in instant IPC clien
 /* Protocol Payload Format: <command_string>\n */
 ```
 
-* `launcher-toggle`: Toggles application launcher surface overlay.
-* `volume-up`: Increases PulseAudio sink volume by 5% and triggers OSD.
-* `volume-down`: Decreases PulseAudio sink volume by 5% and triggers OSD.
-* `volume-mute`: Toggles PulseAudio sink mute state and triggers OSD.
-* `brightness-up`: Increases display brightness via Logind Seat API.
-* `brightness-down`: Decreases display brightness via Logind Seat API.
+| IPC Command | Aliases | Description |
+|---|---|---|
+| `launcher-toggle` | `toggle-launcher` | Toggles the application launcher surface overlay. |
+| `launcher-open` | — | Displays the application launcher surface overlay. |
+| `launcher-close` | — | Hides the application launcher surface overlay. |
+| `volume-up` | `volume+` | Increases PulseAudio sink volume by 5% and triggers OSD. |
+| `volume-down` | `volume-` | Decreases PulseAudio sink volume by 5% and triggers OSD. |
+| `volume-mute` | `volume-toggle` | Toggles PulseAudio sink mute state and triggers OSD. |
+| `brightness-up` | `brightness+` | Increases display brightness via Logind Seat API and triggers OSD. |
+| `brightness-down` | `brightness-` | Decreases display brightness via Logind Seat API and triggers OSD. |
 
 ---
 
@@ -142,3 +155,11 @@ All pull requests and code modifications must adhere to the following rules:
 
 6. **Unified Metro Flat Aesthetic Standard**:
    * All UI surfaces must conform to the 100% flat Metro design system: `#141414` dark surface, 13px Fira Code monospace typography, crisp 1px `#2b2b2b` pane dividers, and flat 2-state Metro toggle tiles.
+
+7. **Zero-CPU Popout Gating Architecture**:
+   * All high-frequency render timers (e.g. 30 FPS FFT animation loops) and PulseAudio monitor recording streams **MUST** be gated behind GTK `map` / `unmap` signal handlers.
+   * Streams must start corked (`PA_STREAM_START_CORKED`), uncork when the popout opens, and re-cork immediately when closed so background idle CPU consumption remains below 0.05%.
+
+8. **Safe D-Bus Iterators and Icon Pipeline Memory Lifecycle**:
+   * For complex D-Bus payload structures (such as StatusNotifierItem `IconPixmap` `a(iiay)`), iterators must be verified for valid bounds and strides.
+   * Icon fallback resolution must never double-free strings passed into or returned from lookup chains.
