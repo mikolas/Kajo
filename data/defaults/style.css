@@ -46,14 +46,12 @@ window.shell-panel,
 #panel-container.autohide-hidden {
     background-color: transparent;
     border: none;
-    opacity: 0;
 }
 
 #panel-container.autohide-visible {
     background-color: @metro-panel-bg;
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     border-top: 1px solid rgba(255, 255, 255, 0.08);
-    opacity: 1;
 }
 
 /* ─── Base Panel Widgets (MenuButtons / Buttons) ─── */
