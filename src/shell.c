@@ -9,6 +9,9 @@
 #include "notifications/daemon.h"
 #include "launcher/launcher_surface.h"
 #include "ipc/socket.h"
+#include "lock/session_lock.h"
+#include "lock/screensaver.h"
+#include "lock/idle_manager.h"
 
 static void
 shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPosition position)
@@ -89,9 +92,12 @@ shell_app_activate(ShellApp *self)
     self->compositor     = shell_compositor_new();
     self->active_widgets = g_ptr_array_new();
 
-    /* Create Launcher Surface & IPC Socket Listener */
-    self->launcher = shell_launcher_surface_new(self->compositor);
-    self->ipc      = shell_ipc_socket_new(self);
+    /* Create Launcher Surface, Session Lock, Screen Saver, Idle Manager & IPC Socket Listener */
+    self->launcher     = shell_launcher_surface_new(self->compositor);
+    self->session_lock = shell_session_lock_new(self);
+    self->screensaver  = shell_screensaver_new(self);
+    self->idle_manager = shell_idle_manager_new(self);
+    self->ipc          = shell_ipc_socket_new(self);
 
     /* Instantiate widgets from config layout */
     shell_app_instantiate_widgets(self, self->config->layout_left, PANEL_WIDGET_LEFT);
@@ -106,10 +112,43 @@ shell_app_activate(ShellApp *self)
 }
 
 void
+shell_app_lock_session(ShellApp *self)
+{
+    if (!self || !self->session_lock)
+        return;
+
+    shell_session_lock_activate(self->session_lock);
+}
+
+void
+shell_app_start_screensaver(ShellApp *self)
+{
+    if (!self || !self->screensaver)
+        return;
+
+    shell_screensaver_start(self->screensaver);
+}
+
+void
 shell_app_destroy(ShellApp *self)
 {
     if (!self)
         return;
+
+    if (self->idle_manager) {
+        shell_idle_manager_destroy(self->idle_manager);
+        self->idle_manager = NULL;
+    }
+
+    if (self->screensaver) {
+        shell_screensaver_destroy(self->screensaver);
+        self->screensaver = NULL;
+    }
+
+    if (self->session_lock) {
+        shell_session_lock_destroy(self->session_lock);
+        self->session_lock = NULL;
+    }
 
     /* Disable and destroy all active widgets */
     if (self->active_widgets) {
@@ -446,10 +485,14 @@ shell_app_reload_config(ShellApp *self)
     self->config = new_config;
     shell_config_destroy(old_config);
 
-    shell_panel_apply_config(self->panel, self->config);
+    shell_panel_reload_config(self->panel, self->config);
 
     if (self->notifications) {
         shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
+    }
+
+    if (self->idle_manager) {
+        shell_idle_manager_reload_config(self->idle_manager);
     }
 
     /* Hold references to all current GTK widget roots while detaching from panel boxes */

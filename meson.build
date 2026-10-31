@@ -19,13 +19,36 @@ add_project_arguments(
 
 cc = meson.get_compiler('c')
 m_dep = cc.find_library('m', required: true)
+pam_dep = cc.find_library('pam', required: true)
 
 gtk4_dep = dependency('gtk4', version: '>= 4.12')
+gtk4_wayland_dep = dependency('gtk4-wayland', required: true)
 layer_shell_dep = dependency('gtk4-layer-shell-0', 'gtk4-layer-shell', fallback: ['gtk4-layer-shell', 'gtk_layer_shell'])
+wayland_client_dep = dependency('wayland-client', required: true)
+wayland_protocols_dep = dependency('wayland-protocols', required: true)
 json_glib_dep = dependency('json-glib-1.0')
 gio_dep = dependency('gio-2.0')
+gio_unix_dep = dependency('gio-unix-2.0')
 pulse_dep = dependency('libpulse')
 pulse_glib_dep = dependency('libpulse-mainloop-glib')
+
+wayland_scanner = find_program('wayland-scanner', required: true)
+wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
+ext_idle_notify_xml = wl_protocols_dir / 'staging/ext-idle-notify/ext-idle-notify-v1.xml'
+
+ext_idle_notify_header = custom_target(
+  'ext-idle-notify-v1-client-protocol.h',
+  input: ext_idle_notify_xml,
+  output: 'ext-idle-notify-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+
+ext_idle_notify_code = custom_target(
+  'ext-idle-notify-v1-protocol.c',
+  input: ext_idle_notify_xml,
+  output: 'ext-idle-notify-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
 
 sources = files(
   'src/main.c',
@@ -60,6 +83,10 @@ sources = files(
   'src/osd/osd.c',
   'src/notifications/daemon.c',
   'src/launcher/launcher_surface.c',
+  'src/lock/pam_auth.c',
+  'src/lock/screensaver.c',
+  'src/lock/session_lock.c',
+  'src/lock/idle_manager.c',
   'src/vendor/tinyexpr/tinyexpr.c',
   'src/ipc/socket.c',
   'src/compositor/niri.c',
@@ -116,14 +143,20 @@ shell_resources = gnome.compile_resources(
 executable(
   'kajo',
   sources,
+  ext_idle_notify_header,
+  ext_idle_notify_code,
   shell_resources,
   dependencies: [
-    gtk4_dep,
     layer_shell_dep,
+    gtk4_dep,
+    gtk4_wayland_dep,
+    wayland_client_dep,
     json_glib_dep,
     gio_dep,
+    gio_unix_dep,
     pulse_dep,
     pulse_glib_dep,
+    pam_dep,
     m_dep,
   ],
   install: true,
@@ -159,6 +192,7 @@ executable(
     layer_shell_dep,
     json_glib_dep,
     gio_dep,
+    gio_unix_dep,
     pulse_dep,
     pulse_glib_dep,
   ],
@@ -182,3 +216,96 @@ install_data(
   'data/icons/kajo-symbolic.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
+
+# --- Automated Test Suite (meson test -C builddir) ---
+
+test_config_exe = executable(
+  'test-config',
+  files('tests/test_config.c', 'src/config.c'),
+  dependencies: [gio_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('config-roundtrip', test_config_exe)
+
+test_pam_exe = executable(
+  'test-pam-auth',
+  files('tests/test_pam_auth.c', 'src/lock/pam_auth.c'),
+  dependencies: [gio_dep, pam_dep],
+  build_by_default: false,
+)
+test('pam-auth', test_pam_exe)
+
+test_idle_exe = executable(
+  'test-idle-manager',
+  files('tests/test_idle_manager.c', 'src/lock/idle_manager.c'),
+  ext_idle_notify_header,
+  ext_idle_notify_code,
+  dependencies: [gtk4_dep, gtk4_wayland_dep, wayland_client_dep, gio_dep, gio_unix_dep],
+  build_by_default: false,
+)
+test('idle-manager', test_idle_exe)
+
+test_ipc_exe = executable(
+  'test-ipc',
+  files('tests/test_ipc.c', 'src/ipc/socket.c'),
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep],
+  build_by_default: false,
+)
+test('ipc-socket', test_ipc_exe)
+
+test_autohide_exe = executable(
+  'test-autohide',
+  files('tests/test_autohide.c', 'src/autohide.c', 'src/config.c'),
+  dependencies: [layer_shell_dep, gtk4_dep, json_glib_dep, gio_dep],
+  build_by_default: false,
+)
+test('autohide-state', test_autohide_exe)
+
+widget_sources = files(
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+  'src/dbus_helpers.c',
+  'src/compositor/niri.c',
+  'src/widgets/registry.c',
+  'src/widgets/clock.c',
+  'src/widgets/volume.c',
+  'src/widgets/workspaces.c',
+  'src/widgets/window.c',
+  'src/widgets/keyboard-layout.c',
+  'src/widgets/battery.c',
+  'src/widgets/cpu-mem.c',
+  'src/widgets/custom-script.c',
+  'src/widgets/power.c',
+  'src/widgets/network.c',
+  'src/widgets/bluetooth.c',
+  'src/widgets/media.c',
+  'src/widgets/idle-inhibitor.c',
+  'src/widgets/dnd.c',
+  'src/widgets/privacy.c',
+  'src/widgets/tray.c',
+  'src/widgets/launcher.c',
+  'src/widgets/notifications.c',
+  'src/widgets/control-center.c',
+  'src/widgets/theme.c',
+)
+
+test_registry_exe = executable(
+  'test-registry',
+  files('tests/test_registry.c'),
+  widget_sources,
+  shell_resources,
+  dependencies: [
+    layer_shell_dep,
+    gtk4_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    pulse_dep,
+    pulse_glib_dep,
+    m_dep,
+  ],
+  build_by_default: false,
+)
+test('widget-registry', test_registry_exe)
+

@@ -149,7 +149,10 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 
     if (combo_pos) config->panel_position = (gtk_drop_down_get_selected(combo_pos) == 1) ? PANEL_POSITION_BOTTOM : PANEL_POSITION_TOP;
     if (scale_height) config->panel_height = (int)gtk_range_get_value(scale_height);
-    if (scale_rev) config->autohide_reveal_delay = (int)gtk_range_get_value(scale_rev);
+    if (scale_rev) {
+        config->autohide_reveal_delay = (int)gtk_range_get_value(scale_rev);
+        config->autohide_reveal_duration = (int)gtk_range_get_value(scale_rev);
+    }
     if (tile_hide) config->autohide_enabled = gtk_widget_has_css_class(tile_hide, "active");
 
     const gchar *xdg_config = g_get_user_config_dir();

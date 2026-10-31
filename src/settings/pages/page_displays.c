@@ -1,5 +1,6 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include <gio/gunixsocketaddress.h>
 #include <json-glib/json-glib.h>
 #include <string.h>
 
@@ -19,6 +20,46 @@ on_vrr_tile_clicked(GtkButton *btn, gpointer user_data)
     if (!lbl_sub) return;
     gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
     gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Adaptive Sync Active" : "Adaptive Sync Disabled");
+}
+
+static gboolean
+send_kajo_ipc_command(const gchar *command)
+{
+    if (!command)
+        return FALSE;
+
+    const gchar *runtime_dir = g_getenv("XDG_RUNTIME_DIR");
+    if (!runtime_dir)
+        runtime_dir = "/tmp";
+
+    g_autofree gchar *path = g_build_filename(runtime_dir, "kajo.sock", NULL);
+    if (!g_file_test(path, G_FILE_TEST_EXISTS))
+        return FALSE;
+
+    GError *error = NULL;
+    GSocket *socket = g_socket_new(G_SOCKET_FAMILY_UNIX,
+                                   G_SOCKET_TYPE_STREAM,
+                                   G_SOCKET_PROTOCOL_DEFAULT,
+                                   &error);
+    if (!socket) {
+        if (error)
+            g_clear_error(&error);
+        return FALSE;
+    }
+
+    GSocketAddress *address = g_unix_socket_address_new(path);
+    gboolean ok = FALSE;
+    if (g_socket_connect(socket, address, NULL, NULL)) {
+        GSocketConnection *conn = g_socket_connection_factory_create_connection(socket);
+        GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
+        g_autofree gchar *msg = g_strconcat(command, "\n", NULL);
+        ok = g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
+        g_object_unref(conn);
+    }
+
+    g_object_unref(address);
+    g_object_unref(socket);
+    return ok;
 }
 
 static void
@@ -120,6 +161,15 @@ typedef struct _SettingsPageDisplays {
     GtkWidget *btn_apply;
 
     GPtrArray *raw_modes;
+
+    GtkWidget *combo_ss_mode;
+    GtkWidget *combo_ss_timeout;
+    GtkWidget *combo_dpms_timeout;
+    GtkWidget *combo_lock_timeout;
+    GtkWidget *sw_lock_suspend;
+    GtkWidget *btn_preview_ss;
+    GtkWidget *btn_lock_now;
+    GtkWidget *btn_apply_idle;
 } SettingsPageDisplays;
 
 typedef struct _SettingsPageDisplaysClass {
@@ -127,6 +177,80 @@ typedef struct _SettingsPageDisplaysClass {
 } SettingsPageDisplaysClass;
 
 G_DEFINE_TYPE(SettingsPageDisplays, settings_page_displays, GTK_TYPE_BOX)
+
+static const gint ss_timeout_values[]   = {  60, 300, 600,  900, 1800, 0 };
+static const gint dpms_timeout_values[] = { 300, 600, 900, 1800,    0 };
+static const gint lock_timeout_values[] = { 300, 600, 900, 1800,    0 };
+
+static guint
+timeout_sec_to_index(gint sec, const gint *values, guint count, guint fallback_idx)
+{
+    for (guint i = 0; i < count; i++) {
+        if (values[i] == sec)
+            return i;
+    }
+    return fallback_idx;
+}
+
+static void
+on_preview_screensaver_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+{
+    send_kajo_ipc_command("screensaver");
+}
+
+static void
+on_lock_now_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+{
+    send_kajo_ipc_command("lock");
+}
+
+static void
+on_apply_idle_clicked(GtkButton *btn, gpointer user_data)
+{
+    SettingsPageDisplays *page = user_data;
+    if (!page)
+        return;
+
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg)
+        cfg = shell_config_get_default();
+
+    /* Mode */
+    guint mode_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_ss_mode));
+    g_free(cfg->screensaver_mode);
+    if (mode_sel == 1)
+        cfg->screensaver_mode = g_strdup("dpms");
+    else if (mode_sel == 2)
+        cfg->screensaver_mode = g_strdup("disabled");
+    else
+        cfg->screensaver_mode = g_strdup("overlay");
+
+    /* Timeouts */
+    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_ss_timeout));
+    if (ss_sel < G_N_ELEMENTS(ss_timeout_values))
+        cfg->screensaver_timeout_sec = ss_timeout_values[ss_sel];
+
+    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_dpms_timeout));
+    if (dpms_sel < G_N_ELEMENTS(dpms_timeout_values))
+        cfg->dpms_timeout_sec = dpms_timeout_values[dpms_sel];
+
+    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_lock_timeout));
+    if (lock_sel < G_N_ELEMENTS(lock_timeout_values))
+        cfg->lock_timeout_sec = lock_timeout_values[lock_sel];
+
+    cfg->lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(page->sw_lock_suspend));
+
+    const gchar *xdg_config = g_get_user_config_dir();
+    g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
+    shell_config_save(cfg, cfg_path);
+    shell_config_destroy(cfg);
+
+    send_kajo_ipc_command("reload-config");
+
+    if (btn) {
+        gtk_button_set_label(btn, "[ ✓ SAVED & APPLIED TO SHELL ]");
+    }
+}
 
 static void
 settings_page_displays_dispose(GObject *object)
@@ -164,6 +288,15 @@ settings_page_displays_class_init(SettingsPageDisplaysClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_scale);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, grid_features);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply);
+
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_ss_mode);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_ss_timeout);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_dpms_timeout);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_lock_timeout);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_lock_suspend);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_preview_ss);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_lock_now);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_idle);
 }
 
 GtkWidget *
@@ -383,6 +516,88 @@ build_page_displays(void)
     g_object_set_data_full(G_OBJECT(page->btn_apply), "make_model", make_model_str, g_free);
 
     g_signal_connect(page->btn_apply, "clicked", G_CALLBACK(on_apply_displays_clicked), NULL);
+
+    /* Populate Screen Saver & Session Lock controls from current config */
+    ShellConfig *cfg = shell_config_load(NULL);
+
+    const char *ss_mode_items[] = {
+        "Metro Clock Overlay",
+        "Turn Off Monitors (DPMS)",
+        "Disabled",
+        NULL
+    };
+    GtkStringList *slist_ss_mode = gtk_string_list_new(ss_mode_items);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ss_mode), G_LIST_MODEL(slist_ss_mode));
+    if (cfg && cfg->screensaver_mode) {
+        if (g_strcmp0(cfg->screensaver_mode, "dpms") == 0)
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 1);
+        else if (g_strcmp0(cfg->screensaver_mode, "disabled") == 0)
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 2);
+        else
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 0);
+    }
+
+    const char *ss_timeout_items[] = {
+        "1 Minute",
+        "5 Minutes (Default)",
+        "10 Minutes",
+        "15 Minutes",
+        "30 Minutes",
+        "Never (Disabled)",
+        NULL
+    };
+    GtkStringList *slist_ss_timeout = gtk_string_list_new(ss_timeout_items);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ss_timeout), G_LIST_MODEL(slist_ss_timeout));
+    gtk_drop_down_set_selected(
+        GTK_DROP_DOWN(page->combo_ss_timeout),
+        timeout_sec_to_index(cfg ? cfg->screensaver_timeout_sec : 300,
+                             ss_timeout_values,
+                             G_N_ELEMENTS(ss_timeout_values),
+                             1));
+
+    const char *dpms_timeout_items[] = {
+        "5 Minutes",
+        "10 Minutes (Default)",
+        "15 Minutes",
+        "30 Minutes",
+        "Never (Disabled)",
+        NULL
+    };
+    GtkStringList *slist_dpms_timeout = gtk_string_list_new(dpms_timeout_items);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_dpms_timeout), G_LIST_MODEL(slist_dpms_timeout));
+    gtk_drop_down_set_selected(
+        GTK_DROP_DOWN(page->combo_dpms_timeout),
+        timeout_sec_to_index(cfg ? cfg->dpms_timeout_sec : 600,
+                             dpms_timeout_values,
+                             G_N_ELEMENTS(dpms_timeout_values),
+                             1));
+
+    const char *lock_timeout_items[] = {
+        "5 Minutes",
+        "10 Minutes",
+        "15 Minutes (Default)",
+        "30 Minutes",
+        "Never (Disabled)",
+        NULL
+    };
+    GtkStringList *slist_lock_timeout = gtk_string_list_new(lock_timeout_items);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_lock_timeout), G_LIST_MODEL(slist_lock_timeout));
+    gtk_drop_down_set_selected(
+        GTK_DROP_DOWN(page->combo_lock_timeout),
+        timeout_sec_to_index(cfg ? cfg->lock_timeout_sec : 900,
+                             lock_timeout_values,
+                             G_N_ELEMENTS(lock_timeout_values),
+                             2));
+
+    gtk_switch_set_active(GTK_SWITCH(page->sw_lock_suspend),
+                          cfg ? cfg->lock_on_suspend : TRUE);
+
+    if (cfg)
+        shell_config_destroy(cfg);
+
+    g_signal_connect(page->btn_preview_ss, "clicked", G_CALLBACK(on_preview_screensaver_clicked), page);
+    g_signal_connect(page->btn_lock_now, "clicked", G_CALLBACK(on_lock_now_clicked), page);
+    g_signal_connect(page->btn_apply_idle, "clicked", G_CALLBACK(on_apply_idle_clicked), page);
 
     return create_settings_page_card("DISPLAY OUTPUTS & RESOLUTION", "[ NIRI IPC ACTIVE ]", GTK_WIDGET(page), NULL);
 }

@@ -17,6 +17,13 @@
     "toast_timeout_ms": 8000,
     "max_notification_history": 50
   },
+  "idle": {
+    "screensaver_mode": "overlay",
+    "screensaver_timeout_sec": 300,
+    "dpms_timeout_sec": 600,
+    "lock_timeout_sec": 900,
+    "lock_on_suspend": true
+  },
   "layout": {
     "left": [
       "launcher",

@@ -105,6 +105,26 @@ volume_mute_idle_cb(gpointer user_data)
 }
 
 static gboolean
+lock_session_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app) {
+        shell_app_lock_session(app);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+screensaver_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app) {
+        shell_app_start_screensaver(app);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
 reload_config_idle_cb(gpointer user_data)
 {
     ShellApp *app = user_data;
@@ -178,9 +198,13 @@ on_incoming_connection(GSocketService *service,
             add_idle_command(ipc, volume_down_idle_cb);
         } else if (g_strcmp0(line, "volume-mute") == 0 || g_strcmp0(line, "volume-toggle") == 0) {
             add_idle_command(ipc, volume_mute_idle_cb);
-        } else if (g_strcmp0(line, "reload-config") == 0) {
+        } else if (g_strcmp0(line, "lock") == 0 || g_strcmp0(line, "lock-session") == 0) {
+            add_idle_command(ipc, lock_session_idle_cb);
+        } else if (g_strcmp0(line, "screensaver") == 0 || g_strcmp0(line, "start-screensaver") == 0) {
+            add_idle_command(ipc, screensaver_idle_cb);
+        } else if (g_strcmp0(line, "reload-config") == 0 || strstr(line, "\"reload-config\"") != NULL) {
             add_idle_command(ipc, reload_config_idle_cb);
-        } else if (g_strcmp0(line, "reload-theme") == 0) {
+        } else if (g_strcmp0(line, "reload-theme") == 0 || strstr(line, "\"reload-theme\"") != NULL) {
             add_idle_command(ipc, reload_theme_idle_cb);
         }
         g_free(line);

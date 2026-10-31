@@ -59,6 +59,12 @@ struct _ShellConfig {
     gchar          *accent_color;
     gint            ui_font_size_px;
 
+    gchar          *screensaver_mode;         /* "overlay", "dpms", or "disabled" */
+    gint            screensaver_timeout_sec;
+    gint            dpms_timeout_sec;
+    gint            lock_timeout_sec;
+    gboolean        lock_on_suspend;
+
     GPtrArray      *layout_left;   /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_center; /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_right;  /* Array of ShellWidgetConfig* */

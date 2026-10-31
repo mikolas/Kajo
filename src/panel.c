@@ -141,29 +141,6 @@ shell_panel_new(ShellApp *app)
     return panel;
 }
 
-void
-shell_panel_apply_config(ShellPanel *panel, ShellConfig *config)
-{
-    if (!panel || !config || !panel->window)
-        return;
-
-    if (config->panel_position == PANEL_POSITION_TOP) {
-        gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
-        gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
-    } else {
-        gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, FALSE);
-        gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
-    }
-
-    gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1, config->panel_height);
-
-    if (panel->autohide) {
-        shell_autohide_destroy(panel->autohide);
-        panel->autohide = NULL;
-    }
-    panel->autohide = shell_autohide_new(panel, config);
-}
-
 static void
 auto_register_popovers_in_widget(ShellPanel *panel, GtkWidget *widget)
 {
@@ -239,6 +216,29 @@ shell_panel_register_popover(ShellPanel *panel, GtkPopover *popover)
         return;
     g_object_set_data(G_OBJECT(popover), "kajo-popover-registered", GINT_TO_POINTER(1));
     g_signal_connect(popover, "notify::visible", G_CALLBACK(on_popover_visible_changed), panel);
+}
+
+void
+shell_panel_reload_config(ShellPanel *panel, ShellConfig *config)
+{
+    if (!panel || !config)
+        return;
+
+    if (panel->window) {
+        if (config->panel_position == PANEL_POSITION_TOP) {
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+        } else {
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, FALSE);
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
+        }
+        gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1,
+                                    config->panel_height > 0 ? config->panel_height : 32);
+    }
+
+    if (panel->autohide) {
+        shell_autohide_reload_config(panel->autohide, config);
+    }
 }
 
 void
