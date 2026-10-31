@@ -12,6 +12,7 @@
 #include "lock/session_lock.h"
 #include "lock/screensaver.h"
 #include "lock/idle_manager.h"
+#include "posture/posture_manager.h"
 
 static void
 shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPosition position)
@@ -92,12 +93,13 @@ shell_app_activate(ShellApp *self)
     self->compositor     = shell_compositor_new();
     self->active_widgets = g_ptr_array_new();
 
-    /* Create Launcher Surface, Session Lock, Screen Saver, Idle Manager & IPC Socket Listener */
-    self->launcher     = shell_launcher_surface_new(self->compositor);
-    self->session_lock = shell_session_lock_new(self);
-    self->screensaver  = shell_screensaver_new(self);
-    self->idle_manager = shell_idle_manager_new(self);
-    self->ipc          = shell_ipc_socket_new(self);
+    /* Create Launcher Surface, Session Lock, Screen Saver, Idle Manager, Posture Manager & IPC Socket Listener */
+    self->launcher        = shell_launcher_surface_new(self->compositor);
+    self->session_lock    = shell_session_lock_new(self);
+    self->screensaver     = shell_screensaver_new(self);
+    self->idle_manager    = shell_idle_manager_new(self);
+    self->posture_manager = shell_posture_manager_new(self);
+    self->ipc             = shell_ipc_socket_new(self);
 
     /* Instantiate widgets from config layout */
     shell_app_instantiate_widgets(self, self->config->layout_left, PANEL_WIDGET_LEFT);
@@ -134,6 +136,11 @@ shell_app_destroy(ShellApp *self)
 {
     if (!self)
         return;
+
+    if (self->posture_manager) {
+        shell_posture_manager_destroy(self->posture_manager);
+        self->posture_manager = NULL;
+    }
 
     if (self->idle_manager) {
         shell_idle_manager_destroy(self->idle_manager);
@@ -493,6 +500,10 @@ shell_app_reload_config(ShellApp *self)
 
     if (self->idle_manager) {
         shell_idle_manager_reload_config(self->idle_manager);
+    }
+
+    if (self->posture_manager) {
+        shell_posture_manager_reload_config(self->posture_manager);
     }
 
     /* Hold references to all current GTK widget roots while detaching from panel boxes */

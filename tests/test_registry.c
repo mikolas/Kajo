@@ -8,6 +8,7 @@
 #include "../src/notifications/daemon.h"
 #include "../src/launcher/launcher_surface.h"
 #include "../src/lock/idle_manager.h"
+#include "../src/posture/posture_manager.h"
 #include <glib.h>
 
 /* Stubs for shell_app_* entry points referenced by widget callbacks */
@@ -146,6 +147,16 @@ shell_idle_manager_remove_listener(ShellIdleManager           *self G_GNUC_UNUSE
 {
 }
 
+void
+shell_brightness_change(ShellApp *self G_GNUC_UNUSED, gint delta_percent G_GNUC_UNUSED)
+{
+}
+
+void
+shell_posture_manager_reload_config(ShellPostureManager *self G_GNUC_UNUSED)
+{
+}
+
 static void
 test_widget_registry_integrity(void)
 {
@@ -182,6 +193,7 @@ test_widget_registry_integrity(void)
     g_assert_nonnull(shell_widget_registry_find(reg, "network"));
     g_assert_nonnull(shell_widget_registry_find(reg, "bluetooth"));
     g_assert_nonnull(shell_widget_registry_find(reg, "volume"));
+    g_assert_nonnull(shell_widget_registry_find(reg, "backlight"));
     g_assert_null(shell_widget_registry_find(reg, "nonexistent-widget-id"));
 
     shell_widget_registry_destroy(reg);

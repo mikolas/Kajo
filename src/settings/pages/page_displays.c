@@ -1,8 +1,12 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include "../../hardware/hw_caps.h"
+#include "../../hardware/kbd_backlight.h"
+#include <fcntl.h>
 #include <gio/gunixsocketaddress.h>
 #include <json-glib/json-glib.h>
 #include <string.h>
+#include <unistd.h>
 
 static void
 run_niri_output_cmd(const char *out_name, const char *action, const char *arg)
@@ -170,6 +174,24 @@ typedef struct _SettingsPageDisplays {
     GtkWidget *btn_preview_ss;
     GtkWidget *btn_lock_now;
     GtkWidget *btn_apply_idle;
+
+    /* Keyboard Backlight & Timeout Card */
+    GtkWidget *card_kbd_backlight;
+    GtkWidget *combo_kbd_level;
+    GtkWidget *row_kbd_timeout;
+    GtkWidget *combo_kbd_timeout;
+    GtkWidget *btn_apply_kbd;
+
+    /* 360° Foldable Posture Card */
+    GtkWidget *card_posture;
+    GtkWidget *lbl_sensor_status;
+    GtkWidget *row_posture_autorotate;
+    GtkWidget *sw_posture_autorotate;
+    GtkWidget *row_posture_disable_kbd;
+    GtkWidget *sw_posture_disable_kbd;
+    GtkWidget *row_posture_disable_touch;
+    GtkWidget *sw_posture_disable_touch;
+    GtkWidget *btn_apply_posture;
 } SettingsPageDisplays;
 
 typedef struct _SettingsPageDisplaysClass {
@@ -252,6 +274,110 @@ on_apply_idle_clicked(GtkButton *btn, gpointer user_data)
     }
 }
 
+static const gint kbd_timeout_values[] = { 0, 30, 180 };
+
+static void
+write_inhibit_paths_direct(GPtrArray *paths, gboolean inhibit)
+{
+    if (!paths)
+        return;
+    const gchar *val = inhibit ? "1\n" : "0\n";
+    size_t len = strlen(val);
+    for (guint i = 0; i < paths->len; i++) {
+        const gchar *p = g_ptr_array_index(paths, i);
+        if (!p)
+            continue;
+        int fd = open(p, O_WRONLY);
+        if (fd >= 0) {
+            ssize_t unused G_GNUC_UNUSED = write(fd, val, len);
+            close(fd);
+        }
+    }
+}
+
+static void
+on_apply_kbd_clicked(GtkButton *btn, gpointer user_data)
+{
+    SettingsPageDisplays *page = user_data;
+    if (!page)
+        return;
+
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg)
+        cfg = shell_config_get_default();
+
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    gint sel = (gint)gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_kbd_level));
+
+    if (caps && caps->kbd_bl_backend == KBD_BL_HP_EC) {
+        /* On HP EC: sel == 0 -> Wake/Enable Keylights, sel == 1 -> Leave Off on Boot */
+        cfg->kbd_backlight_level = (sel == 0) ? 2 : 0;
+        if (sel == 0 && shell_kbd_backlight_get_level() <= 0) {
+            shell_kbd_backlight_set_level(2);
+        }
+    } else {
+        gint level = CLAMP(sel, 0, 2);
+        cfg->kbd_backlight_level = level;
+        shell_kbd_backlight_set_level(level);
+    }
+
+    if (shell_kbd_backlight_has_timeout()) {
+        guint t_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_kbd_timeout));
+        if (t_sel < G_N_ELEMENTS(kbd_timeout_values)) {
+            cfg->kbd_backlight_timeout_sec = kbd_timeout_values[t_sel];
+            shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
+        }
+    }
+
+    const gchar *xdg_config = g_get_user_config_dir();
+    g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
+    shell_config_save(cfg, cfg_path);
+    shell_config_destroy(cfg);
+
+    send_kajo_ipc_command("reload-config");
+
+    if (btn) {
+        gtk_button_set_label(btn, "[ ✓ KEYBOARD BACKLIGHT APPLIED ]");
+    }
+}
+
+static void
+on_apply_posture_clicked(GtkButton *btn, gpointer user_data)
+{
+    SettingsPageDisplays *page = user_data;
+    if (!page)
+        return;
+
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg)
+        cfg = shell_config_get_default();
+
+    cfg->posture_auto_rotate = gtk_switch_get_active(GTK_SWITCH(page->sw_posture_autorotate));
+    cfg->posture_disable_kbd_in_tablet = gtk_switch_get_active(GTK_SWITCH(page->sw_posture_disable_kbd));
+    cfg->posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(page->sw_posture_disable_touch));
+
+    /* Apply input inhibition immediately for current posture */
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    if (caps) {
+        gdouble deg = 0.0;
+        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
+        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && cfg->posture_disable_touch_in_laptop);
+    }
+
+    const gchar *xdg_config = g_get_user_config_dir();
+    g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
+    shell_config_save(cfg, cfg_path);
+    shell_config_destroy(cfg);
+
+    send_kajo_ipc_command("reload-config");
+
+    if (btn) {
+        gtk_button_set_label(btn, "[ ✓ 360° POSTURE SETTINGS APPLIED ]");
+    }
+}
+
 static void
 settings_page_displays_dispose(GObject *object)
 {
@@ -297,6 +423,22 @@ settings_page_displays_class_init(SettingsPageDisplaysClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_preview_ss);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_lock_now);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_idle);
+
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, card_kbd_backlight);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_kbd_level);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_kbd_timeout);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_kbd_timeout);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_kbd);
+
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, card_posture);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, lbl_sensor_status);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_posture_autorotate);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_posture_autorotate);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_posture_disable_kbd);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_posture_disable_kbd);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_posture_disable_touch);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_posture_disable_touch);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_posture);
 }
 
 GtkWidget *
@@ -591,6 +733,90 @@ build_page_displays(void)
 
     gtk_switch_set_active(GTK_SWITCH(page->sw_lock_suspend),
                           cfg ? cfg->lock_on_suspend : TRUE);
+
+    /* Hardware-gated Keyboard Backlight & Timeout Card */
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    if (caps && caps->kbd_bl_backend != KBD_BL_NONE) {
+        gtk_widget_set_visible(page->card_kbd_backlight, TRUE);
+
+        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
+            const char *hp_kbd_items[] = {
+                "Wake / Enable Keylights (F4 cycles Low / High)",
+                "Do Not Auto-Wake Keylights on Startup",
+                NULL
+            };
+            GtkStringList *slist_kbd_lvl = gtk_string_list_new(hp_kbd_items);
+            gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_kbd_level), G_LIST_MODEL(slist_kbd_lvl));
+            g_object_unref(slist_kbd_lvl);
+
+            gint saved_lvl = cfg ? cfg->kbd_backlight_level : 2;
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_kbd_level), (saved_lvl > 0) ? 0 : 1);
+        } else {
+            const char *kbd_level_items[] = {
+                "Off (0%)",
+                "Low (50%)",
+                "High (100%)",
+                NULL
+            };
+            GtkStringList *slist_kbd_lvl = gtk_string_list_new(kbd_level_items);
+            gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_kbd_level), G_LIST_MODEL(slist_kbd_lvl));
+            g_object_unref(slist_kbd_lvl);
+
+            gint live_lvl = shell_kbd_backlight_get_level();
+            if (live_lvl < 0)
+                live_lvl = cfg ? cfg->kbd_backlight_level : 2;
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_kbd_level), (guint)CLAMP(live_lvl, 0, 2));
+        }
+
+        gtk_widget_set_visible(page->row_kbd_timeout, caps->has_kbd_timeout);
+        if (caps->has_kbd_timeout) {
+            const char *kbd_timeout_items[] = {
+                "Always On (Never Timeout)",
+                "30 Seconds",
+                "3 Minutes",
+                NULL
+            };
+            GtkStringList *slist_kbd_t = gtk_string_list_new(kbd_timeout_items);
+            gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_kbd_timeout), G_LIST_MODEL(slist_kbd_t));
+            g_object_unref(slist_kbd_t);
+
+            gint live_t = shell_kbd_backlight_get_timeout_sec();
+            if (live_t < 0)
+                live_t = cfg ? cfg->kbd_backlight_timeout_sec : 0;
+            gtk_drop_down_set_selected(
+                GTK_DROP_DOWN(page->combo_kbd_timeout),
+                timeout_sec_to_index(live_t, kbd_timeout_values, G_N_ELEMENTS(kbd_timeout_values), 0));
+        }
+
+        g_signal_connect(page->btn_apply_kbd, "clicked", G_CALLBACK(on_apply_kbd_clicked), page);
+    }
+
+    /* Hardware-gated 360° Foldable Posture Card */
+    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
+        gtk_widget_set_visible(page->card_posture, TRUE);
+
+        gdouble hinge_deg = 0.0;
+        if (shell_hw_caps_read_hinge_angle_deg(caps, &hinge_deg)) {
+            const gchar *p_mode = (hinge_deg >= 180.0) ? "Tablet / Tent Mode" : "Laptop Mode";
+            g_autofree gchar *status_txt = g_strdup_printf(
+                "Intel ISH Hinge Sensor Active (Current Angle: %.0f° — %s)",
+                hinge_deg, p_mode);
+            gtk_label_set_text(GTK_LABEL(page->lbl_sensor_status), status_txt);
+        }
+
+        gtk_widget_set_visible(page->row_posture_autorotate, caps->has_accel_sensor);
+        gtk_widget_set_visible(page->row_posture_disable_kbd, caps->has_internal_kbd || caps->has_touchpad);
+        gtk_widget_set_visible(page->row_posture_disable_touch, caps->has_touchscreen);
+
+        gtk_switch_set_active(GTK_SWITCH(page->sw_posture_autorotate),
+                              cfg ? cfg->posture_auto_rotate : TRUE);
+        gtk_switch_set_active(GTK_SWITCH(page->sw_posture_disable_kbd),
+                              cfg ? cfg->posture_disable_kbd_in_tablet : TRUE);
+        gtk_switch_set_active(GTK_SWITCH(page->sw_posture_disable_touch),
+                              cfg ? cfg->posture_disable_touch_in_laptop : FALSE);
+
+        g_signal_connect(page->btn_apply_posture, "clicked", G_CALLBACK(on_apply_posture_clicked), page);
+    }
 
     if (cfg)
         shell_config_destroy(cfg);

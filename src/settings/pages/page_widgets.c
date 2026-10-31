@@ -40,6 +40,7 @@ static const char *ALL_WIDGET_IDS[] = {
     "keyboard-layout",
     "volume",
     "battery",
+    "backlight",
     "privacy",
     "theme",
     "custom-script",
@@ -194,6 +195,7 @@ widget_id_to_icon(const char *id)
     if (g_strcmp0(id, "volume") == 0) return "audio-volume-high-symbolic";
     if (g_strcmp0(id, "network") == 0) return "network-wireless-symbolic";
     if (g_strcmp0(id, "battery") == 0) return "battery-good-symbolic";
+    if (g_strcmp0(id, "backlight") == 0) return "display-brightness-symbolic";
     if (g_strcmp0(id, "notifications") == 0) return "notifications-disabled-symbolic";
     if (g_strcmp0(id, "control-center") == 0) return "emblem-system-symbolic";
     if (g_strcmp0(id, "bluetooth") == 0) return "bluetooth-active-symbolic";

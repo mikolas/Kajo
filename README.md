@@ -12,7 +12,7 @@ The project builds and installs three integrated executables plus a `greetd` ses
 
 | Executable | Purpose |
 | :--- | :--- |
-| **`kajo`** | Primary Wayland desktop shell daemon (status panel, 20 live widgets, multi-plugin app launcher, OSD overlays, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
+| **`kajo`** | Primary Wayland desktop shell daemon (status panel, 21 live widgets, multi-plugin app launcher, OSD overlays, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, 360° foldable posture & auto-rotation manager, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
 | **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC, and Kajo IPC integration. |
 | **`kajo-greeter`** | Graphical Wayland login greeter for `greetd` supporting both `niri` (`gtk4-layer-shell` multi-monitor) and `cage` (XDG fullscreen kiosk) compositors. |
 | **`kajo-greeter-session`** | Wrapper launcher script for `/etc/greetd/config.toml`. |
@@ -22,7 +22,13 @@ The project builds and installs three integrated executables plus a `greetd` ses
 ## ✨ Key Features
 
 ### 🖥️ Status Panel & Hardware Telemetry (`kajo`)
-- **20 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery, network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), active window title, launcher button, and custom user scripts.
+- **21 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery (with multi-level capacity indicator icons), backlight & posture (`backlight`), network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), active window title, launcher button, and custom user scripts.
+- **360° Foldable Posture, Auto-Rotation & Backlight Control**:
+  - **Runtime Hardware Capability Probing**: Dynamically detects Intel ISH `hinge` (`in_angl0_raw`) and `accel_3d` IIO sensors, `/sys/class/input/input*/inhibited` attributes, and keyboard backlight controllers (`/sys/class/leds/*::kbd_backlight` and HP Embedded Controller `0x97` `HKBL` / `0x96` `HKBT`). On desktop PCs without foldable sensors or backlights, zero timers run and foldable/backlight settings stay hidden.
+  - **Hysteresis Posture State Machine**: Automatically transitions to Tablet/Tent mode at `>= 180°` and returns to Laptop mode at `<= 168°`.
+  - **Posture-Gated Screen Auto-Rotation**: Claims `net.hadess.SensorProxy` (with direct IIO `accel_3d` fallback) in Tablet/Tent mode to rotate the built-in display via Niri IPC (`normal`, `90`, `180`, `270`), and locks orientation to `0°` in Laptop mode.
+  - **Input Device Inhibition**: Optionally inhibits the built-in keyboard & touchpad in Tablet mode and the finger touchscreen in Laptop mode (while keeping active stylus pen input enabled).
+  - **Keyboard Backlight & Auto-Off Timeout**: Controls keyboard illumination (`Off`, `Low`, `High`) and hardware auto-off timeout (`Always On`, `30 Seconds`, `3 Minutes`), restoring your saved setting on boot.
 - **16-Band Live FFT Spectrum Visualizer**: Dynamic MPRIS2 player discovery, album art hero view, and a 30 FPS 16-band Cooley-Tukey FFT spectrum analyzer capturing directly from `@DEFAULT_MONITOR@` (corked automatically when the popover closes for 0.0% background CPU usage).
 - **OLED Smart Autohide**: Smooth cubic-bezier slide animations with a 2px transparent Wayland edge trigger strip, popover/launcher hold-open guards, and live config reload.
 
@@ -81,6 +87,21 @@ Kajo uses an automatic 3-tier asset resolution chain:
 1. **User Overrides (`~/.config/kajo/`)**: Created automatically when you click **Apply / Save** in `kajo-settings` (`~/.config/kajo/config.json` and `~/.config/kajo/theme-override.css`).
 2. **Installed System/User Share (`~/.local/share/kajo/defaults/` & `/usr/local/share/kajo/defaults/`)**: Installed automatically by `meson install -C builddir`.
 3. **Source Tree Fallback (`data/defaults/`)**: Used automatically when running binaries directly from `./builddir/`.
+
+### 4. Laptop / 2-in-1 Convertible Permissions (`udev` & `ec_sys`)
+On 2-in-1 convertibles and laptops with Embedded Controller keyboard backlight/timeout control (such as the HP OmniBook X Flip 14), install the bundled `udev`, `modules-load.d`, `modprobe.d`, and `tmpfiles.d` rules from [`data/udev/`](data/udev/) so `kajo` and `kajo-settings` can manage `/sys/class/input/input*/inhibited` and `/sys/kernel/debug/ec/ec0/io` without root prompts:
+
+```bash
+sudo cp data/udev/90-kajo-hardware.rules /etc/udev/rules.d/
+sudo cp data/udev/kajo-ec-modules.conf /etc/modules-load.d/kajo-ec.conf
+sudo cp data/udev/kajo-ec-modprobe.conf /etc/modprobe.d/kajo-ec.conf
+sudo cp data/udev/kajo-ec-tmpfiles.conf /etc/tmpfiles.d/kajo-ec.conf
+sudo modprobe -r ec_sys 2>/dev/null; sudo modprobe ec_sys write_support=1
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/kajo-ec.conf
+sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
+```
+
+See [`HARDWARE_FINDINGS.md`](HARDWARE_FINDINGS.md) and [`SPEC_FOLDABLE_SENSORS.md`](SPEC_FOLDABLE_SENSORS.md) for full hardware register maps (`0x97` `HKBL` brightness, `0x96` `HKBT` timeout), Intel ISH firmware extraction instructions, and IIO sensor details.
 
 ---
 
@@ -224,7 +245,7 @@ When the launcher is open (`Mod+D` or `kajo --toggle-launcher`):
 
 | Path | Managed By | Purpose |
 | :--- | :--- | :--- |
-| **`~/.config/kajo/config.json`** | `kajo-settings` / User | Panel edge, height, autohide settings, widget layout (`left`, `center`, `right`), widget modes, notification timeout, and `idle` security settings (`screensaver_mode`, `screensaver_timeout_sec`, `dpms_timeout_sec`, `lock_timeout_sec`, `lock_on_suspend`). |
+| **`~/.config/kajo/config.json`** | `kajo-settings` / User | Panel edge, height, autohide settings, widget layout (`left`, `center`, `right`), widget modes, notification timeout, `idle` security settings (`screensaver_mode`, `screensaver_timeout_sec`, `dpms_timeout_sec`, `lock_timeout_sec`, `lock_on_suspend`), `posture` (`auto_rotate`, `disable_kbd_in_tablet`, `disable_touch_in_laptop`), and `keyboard_backlight` (`level`, `timeout_sec`). |
 | **`~/.config/kajo/theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) and user CSS overrides, hot-reloaded via IPC. |
 | **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and Niri layout/focus-ring settings. |
 | **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins (falls back to `~/.cache/kajo/greeter-state.json` in `--test` mode). |

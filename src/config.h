@@ -65,6 +65,15 @@ struct _ShellConfig {
     gint            lock_timeout_sec;
     gboolean        lock_on_suspend;
 
+    /* 360° Foldable Posture & Sensors */
+    gboolean        posture_auto_rotate;
+    gboolean        posture_disable_kbd_in_tablet;
+    gboolean        posture_disable_touch_in_laptop;
+
+    /* Keyboard Backlight & Auto-Off Timeout */
+    gint            kbd_backlight_level;       /* 0 = Off, 1 = Low, 2 = High */
+    gint            kbd_backlight_timeout_sec; /* 0 = Always On, 30 = 30s, 180 = 3m */
+
     GPtrArray      *layout_left;   /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_center; /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_right;  /* Array of ShellWidgetConfig* */
