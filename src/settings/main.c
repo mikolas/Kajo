@@ -15,12 +15,6 @@ static GOptionEntry entries[] = {
 static void
 on_app_activate(GtkApplication *app, gpointer user_data G_GNUC_UNUSED)
 {
-    /* Force GTK4 Dark Theme preference */
-    GtkSettings *gtk_settings = gtk_settings_get_default();
-    if (gtk_settings) {
-        g_object_set(gtk_settings, "gtk-application-prefer-dark-theme", TRUE, NULL);
-    }
-
     if (!g_settings_theme) {
         ShellConfig *config = shell_config_load(NULL);
         g_settings_theme = shell_theme_new(config ? config->css_path : NULL);
