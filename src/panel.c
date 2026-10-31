@@ -5,19 +5,57 @@
 
 #include <gtk4-layer-shell.h>
 
+static gboolean
+is_event_on_panel_surface(GtkEventControllerMotion *controller, ShellPanel *panel)
+{
+    GdkEvent *event = gtk_event_controller_get_current_event(GTK_EVENT_CONTROLLER(controller));
+    if (!event || !panel || !panel->window)
+        return TRUE;
+
+    GdkSurface *ev_surface = gdk_event_get_surface(event);
+    GdkSurface *win_surface = gtk_native_get_surface(GTK_NATIVE(panel->window));
+    if (ev_surface && win_surface && ev_surface != win_surface)
+        return FALSE;
+
+    return TRUE;
+}
+
 static void
 on_panel_enter(GtkEventControllerMotion *controller,
                gdouble                   x,
                gdouble                   y,
                gpointer                  user_data)
 {
-    (void)controller;
     (void)x;
     (void)y;
 
     ShellPanel *panel = user_data;
-    if (panel->autohide)
-        shell_autohide_enter(panel->autohide);
+    if (!panel || !panel->autohide)
+        return;
+
+    if (!is_event_on_panel_surface(controller, panel))
+        return;
+
+    shell_autohide_enter(panel->autohide);
+}
+
+static void
+on_panel_motion(GtkEventControllerMotion *controller,
+                gdouble                   x,
+                gdouble                   y,
+                gpointer                  user_data)
+{
+    (void)x;
+    (void)y;
+
+    ShellPanel *panel = user_data;
+    if (!panel || !panel->autohide)
+        return;
+
+    if (!is_event_on_panel_surface(controller, panel))
+        return;
+
+    shell_autohide_enter(panel->autohide);
 }
 
 static void
@@ -27,7 +65,7 @@ on_panel_leave(GtkEventControllerMotion *controller,
     (void)controller;
 
     ShellPanel *panel = user_data;
-    if (panel->autohide)
+    if (panel && panel->autohide)
         shell_autohide_leave(panel->autohide);
 }
 
@@ -93,6 +131,7 @@ shell_panel_new(ShellApp *app)
     /* Set up motion event controller for autohide */
     GtkEventController *motion = gtk_event_controller_motion_new();
     g_signal_connect(motion, "enter", G_CALLBACK(on_panel_enter), panel);
+    g_signal_connect(motion, "motion", G_CALLBACK(on_panel_motion), panel);
     g_signal_connect(motion, "leave", G_CALLBACK(on_panel_leave), panel);
     gtk_widget_add_controller(GTK_WIDGET(panel->window), motion);
 
@@ -152,14 +191,19 @@ shell_panel_add_widget(ShellPanel          *panel,
 }
 
 static void
-on_popover_visible_changed(GObject *gobject, GParamSpec *pspec, gpointer user_data)
+on_popover_visible_changed(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     ShellPanel *panel = user_data;
     if (!panel || !panel->autohide) return;
 
-    if (gtk_widget_get_visible(GTK_WIDGET(gobject))) {
+    gboolean visible = gtk_widget_get_visible(GTK_WIDGET(gobject));
+    gboolean was_locked = GPOINTER_TO_INT(g_object_get_data(gobject, "kajo-autohide-locked"));
+
+    if (visible && !was_locked) {
+        g_object_set_data(gobject, "kajo-autohide-locked", GINT_TO_POINTER(1));
         shell_autohide_lock(panel->autohide);
-    } else {
+    } else if (!visible && was_locked) {
+        g_object_set_data(gobject, "kajo-autohide-locked", GINT_TO_POINTER(0));
         shell_autohide_unlock(panel->autohide);
     }
 }
@@ -168,7 +212,33 @@ void
 shell_panel_register_popover(ShellPanel *panel, GtkPopover *popover)
 {
     if (!panel || !popover) return;
+    if (g_object_get_data(G_OBJECT(popover), "kajo-popover-registered"))
+        return;
+    g_object_set_data(G_OBJECT(popover), "kajo-popover-registered", GINT_TO_POINTER(1));
     g_signal_connect(popover, "notify::visible", G_CALLBACK(on_popover_visible_changed), panel);
+}
+
+void
+shell_panel_reload_config(ShellPanel *panel, ShellConfig *config)
+{
+    if (!panel || !config)
+        return;
+
+    if (panel->window) {
+        if (config->panel_position == PANEL_POSITION_TOP) {
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+        } else {
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, FALSE);
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
+        }
+        gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1,
+                                    config->panel_height > 0 ? config->panel_height : 32);
+    }
+
+    if (panel->autohide) {
+        shell_autohide_reload_config(panel->autohide, config);
+    }
 }
 
 void

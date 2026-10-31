@@ -580,16 +580,7 @@ on_cc_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
     if (!cc) return;
-    shell_autohide_lock(shell_panel_get_autohide(cc->base.app ? shell_app_get_panel(cc->base.app) : NULL));
     cc_refresh_state(cc);
-}
-
-static void
-on_cc_popover_closed(GtkPopover *popover G_GNUC_UNUSED, gpointer user_data)
-{
-    ControlCenterWidget *cc = user_data;
-    if (!cc) return;
-    shell_autohide_unlock(shell_panel_get_autohide(cc->base.app ? shell_app_get_panel(cc->base.app) : NULL));
 }
 
 /* ─── Tile Creation Helper ─── */
@@ -768,7 +759,6 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
 
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(cc->button), cc->popover);
     g_signal_connect(cc->popover, "map", G_CALLBACK(on_cc_popover_map), cc);
-    g_signal_connect(cc->popover, "closed", G_CALLBACK(on_cc_popover_closed), cc);
 
     /* Connect PulseAudio C API */
     cc->pa_ml = pa_glib_mainloop_new(NULL);

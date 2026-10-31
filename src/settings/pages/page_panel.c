@@ -1,5 +1,79 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include <gio/gio.h>
+#include <gio/gunixsocketaddress.h>
+
+static void
+notify_shell_ipc(const gchar *json_cmd)
+{
+    const gchar *runtime_dir = g_get_user_runtime_dir();
+    if (!runtime_dir)
+        return;
+
+    g_autofree gchar *sock_path = g_build_filename(runtime_dir, "kajo.sock", NULL);
+    if (!g_file_test(sock_path, G_FILE_TEST_EXISTS))
+        return;
+
+    g_autoptr(GSocketClient) client = g_socket_client_new();
+    g_autoptr(GSocketAddress) addr = g_unix_socket_address_new(sock_path);
+    g_autoptr(GSocketConnection) conn = g_socket_client_connect(
+        client, G_SOCKET_CONNECTABLE(addr), NULL, NULL);
+    if (!conn)
+        return;
+
+    GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
+    g_autofree gchar *line = g_strdup_printf("%s\n", json_cmd);
+    g_output_stream_write_all(out, line, strlen(line), NULL, NULL, NULL);
+}
+
+static void
+update_tile_subtitle(GtkWidget *tile, const gchar *subtitle)
+{
+    if (!tile || !subtitle)
+        return;
+    GtkWidget *hbox = gtk_button_get_child(GTK_BUTTON(tile));
+    if (!hbox)
+        return;
+    GtkWidget *vbox = gtk_widget_get_last_child(hbox);
+    if (!vbox)
+        return;
+    GtkWidget *sub_lbl = gtk_widget_get_last_child(vbox);
+    if (sub_lbl && GTK_IS_LABEL(sub_lbl)) {
+        gtk_label_set_text(GTK_LABEL(sub_lbl), subtitle);
+    }
+}
+
+static void
+on_tile_hide_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
+{
+    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
+    update_tile_subtitle(GTK_WIDGET(btn), active ? "Enabled" : "Disabled");
+}
+
+static void
+on_tile_edge_clicked(GtkButton *btn, gpointer user_data)
+{
+    GtkDropDown *combo_pos = GTK_DROP_DOWN(user_data);
+    gboolean bottom = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
+    update_tile_subtitle(GTK_WIDGET(btn), bottom ? "Bottom Position" : "Top Position");
+    if (combo_pos && gtk_drop_down_get_selected(combo_pos) != (bottom ? 1u : 0u)) {
+        gtk_drop_down_set_selected(combo_pos, bottom ? 1u : 0u);
+    }
+}
+
+static void
+on_combo_pos_changed(GtkDropDown *combo, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    GtkWidget *tile_edge = GTK_WIDGET(user_data);
+    if (!tile_edge)
+        return;
+    gboolean bottom = (gtk_drop_down_get_selected(combo) == 1);
+    if (bottom)
+        gtk_widget_add_css_class(tile_edge, "active");
+    else
+        gtk_widget_remove_css_class(tile_edge, "active");
+    update_tile_subtitle(tile_edge, bottom ? "Bottom Position" : "Top Position");
+}
 
 /* ─── Declarative GtkBox Template Subclass ─── */
 
@@ -85,7 +159,10 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 
     if (combo_pos) config->panel_position = (gtk_drop_down_get_selected(combo_pos) == 1) ? PANEL_POSITION_BOTTOM : PANEL_POSITION_TOP;
     if (scale_height) config->panel_height = (int)gtk_range_get_value(scale_height);
-    if (scale_rev) config->autohide_reveal_delay = (int)gtk_range_get_value(scale_rev);
+    if (scale_rev) {
+        config->autohide_reveal_delay = (int)gtk_range_get_value(scale_rev);
+        config->autohide_reveal_duration = (int)gtk_range_get_value(scale_rev);
+    }
     if (tile_hide) config->autohide_enabled = gtk_widget_has_css_class(tile_hide, "active");
 
     const gchar *xdg_config = g_get_user_config_dir();
@@ -100,6 +177,7 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
     g_free(dir);
     g_free(path);
 
+    notify_shell_ipc("{\"command\":\"reload-config\"}");
     niri_send_action("{\"Action\":\"ReloadConfig\"}");
 }
 
@@ -120,6 +198,10 @@ build_page_panel(void)
     GtkWidget *tile_hide = create_metro_toggle_tile("view-reveal-symbolic", "Autohide", config->autohide_enabled ? "Enabled" : "Disabled", config->autohide_enabled);
     GtkWidget *tile_shadow = create_metro_toggle_tile("layer-visible-symbolic", "Panel Blur", "Active (rgba 82%)", TRUE);
     GtkWidget *tile_margin = create_metro_toggle_tile("zoom-fit-best-symbolic", "Outer Margins", "0px Full Width", FALSE);
+
+    g_signal_connect_after(tile_edge, "clicked", G_CALLBACK(on_tile_edge_clicked), page->combo_pos);
+    g_signal_connect_after(tile_hide, "clicked", G_CALLBACK(on_tile_hide_clicked), NULL);
+    g_signal_connect(page->combo_pos, "notify::selected", G_CALLBACK(on_combo_pos_changed), tile_edge);
 
     gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_edge, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_hide, 1, 0, 1, 1);

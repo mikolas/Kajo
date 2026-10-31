@@ -27,9 +27,11 @@ struct _ShellAutohide {
     guint          tick_callback_id;
 
     gboolean       enabled;
+    gboolean       pointer_inside;
     gint           hide_delay;
     gint           reveal_duration;
     gint           panel_height;
+    gint           edge_strip_px;
     gint           popover_count;
     GtkLayerShellEdge edge;
 
@@ -40,6 +42,7 @@ struct _ShellAutohide {
 };
 
 ShellAutohide *shell_autohide_new(ShellPanel *panel, ShellConfig *config);
+void           shell_autohide_reload_config(ShellAutohide *self, ShellConfig *config);
 void           shell_autohide_enter(ShellAutohide *self);
 void           shell_autohide_leave(ShellAutohide *self);
 void           shell_autohide_lock(ShellAutohide *self);
