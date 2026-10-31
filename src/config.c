@@ -143,6 +143,9 @@ resolve_defaults_config_path(void)
         return local_share;
     g_free(local_share);
 
+    if (g_file_test("/usr/local/share/kajo/defaults/config.json", G_FILE_TEST_EXISTS))
+        return g_strdup("/usr/local/share/kajo/defaults/config.json");
+
     return g_strdup("/usr/share/kajo/defaults/config.json");
 }
 

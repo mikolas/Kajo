@@ -69,12 +69,22 @@ resolve_css_path(const gchar *css_path)
         return local_share_path;
     g_free(local_share_path);
 
-    /* 3. System Installed Environment (/usr/share/kajo/defaults/style.css) */
+    /* 3. System Local Installed Environment (/usr/local/share/kajo/defaults/style.css) */
+    const gchar *usr_local_path = "/usr/local/share/kajo/defaults/style.css";
+    if (g_file_test(usr_local_path, G_FILE_TEST_EXISTS))
+        return g_strdup(usr_local_path);
+
+    /* 4. System Installed Environment (/usr/share/kajo/defaults/style.css) */
     const gchar *system_path = "/usr/share/kajo/defaults/style.css";
     if (g_file_test(system_path, G_FILE_TEST_EXISTS))
         return g_strdup(system_path);
 
-    /* 4. User Config Path (~/.config/kajo/style.css) */
+    /* 5. System Config Path (/etc/kajo/style.css) */
+    const gchar *etc_path = "/etc/kajo/style.css";
+    if (g_file_test(etc_path, G_FILE_TEST_EXISTS))
+        return g_strdup(etc_path);
+
+    /* 6. User Config Path (~/.config/kajo/style.css) */
     const gchar *xdg_config = g_get_user_config_dir();
     gchar *user_path = g_build_filename(xdg_config, "kajo", "style.css", NULL);
     if (g_file_test(user_path, G_FILE_TEST_EXISTS))
@@ -117,6 +127,9 @@ shell_theme_new(const gchar *css_path)
         if (theme->monitor) {
             g_signal_connect(theme->monitor, "changed", G_CALLBACK(on_css_file_changed), theme);
         }
+    } else {
+        g_message("Loading embedded fallback CSS from GResource '/org/kajo/shell/defaults/style.css'");
+        gtk_css_provider_load_from_resource(theme->provider, "/org/kajo/shell/defaults/style.css");
     }
 
     if (theme->override_css_path) {

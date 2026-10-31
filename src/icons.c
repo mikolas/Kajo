@@ -34,6 +34,7 @@ shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
     /* Standard pixmaps & themes */
     ADD_ICON_PATHS("/usr/share/pixmaps");
     ADD_ICON_PATHS("/usr/share/icons");
+    ADD_ICON_PATHS("/usr/local/share/icons");
 
     /* 1. Development Build Environment */
     ADD_ICON_PATHS("/home/mikolas/src/desktop/data/icons");
@@ -49,7 +50,8 @@ shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
     ADD_ICON_PATHS(user_path);
     g_free(user_path);
 
-    /* 3. System Installed Environment (/usr/share/kajo/icons) */
+    /* 3. System Installed Environments (/usr/local/share/kajo/icons & /usr/share/kajo/icons) */
+    ADD_ICON_PATHS("/usr/local/share/kajo/icons");
     ADD_ICON_PATHS("/usr/share/kajo/icons");
 
     /* 4. XDG User Icons Directory (~/.local/share/icons) */
