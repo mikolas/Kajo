@@ -342,3 +342,161 @@ shell_volume_toggle_mute(ShellApp *self)
         }
     }
 }
+
+static void
+update_reused_widget_mode_visibility(ShellWidget *w)
+{
+    if (!w || !w->klass) return;
+    if (g_strcmp0(w->klass->id, "notifications") == 0 ||
+        g_strcmp0(w->klass->id, "workspaces") == 0 ||
+        g_strcmp0(w->klass->id, "tray") == 0) {
+        return;
+    }
+
+    GtkWidget *root = w->klass->get_widget(w);
+    if (!root) return;
+
+    GtkWidget *content = NULL;
+    if (GTK_IS_MENU_BUTTON(root)) {
+        content = gtk_menu_button_get_child(GTK_MENU_BUTTON(root));
+    } else if (GTK_IS_BUTTON(root)) {
+        content = gtk_button_get_child(GTK_BUTTON(root));
+    }
+
+    if (!content) return;
+
+    if (GTK_IS_LABEL(content)) {
+        shell_widget_apply_mode_visibility(w->mode, NULL, content);
+    } else if (GTK_IS_IMAGE(content)) {
+        shell_widget_apply_mode_visibility(w->mode, content, NULL);
+    } else if (GTK_IS_BOX(content)) {
+        GtkWidget *icon_img = NULL;
+        GtkWidget *label = NULL;
+        for (GtkWidget *child = gtk_widget_get_first_child(content);
+             child != NULL;
+             child = gtk_widget_get_next_sibling(child)) {
+            if (!icon_img && GTK_IS_IMAGE(child)) icon_img = child;
+            else if (!label && GTK_IS_LABEL(child)) label = child;
+        }
+        shell_widget_apply_mode_visibility(w->mode, icon_img, label);
+    }
+}
+
+static void
+reconcile_section_widgets(ShellApp            *self,
+                          GPtrArray           *configs,
+                          PanelWidgetPosition  position,
+                          GPtrArray           *old_widgets,
+                          GPtrArray           *new_active)
+{
+    if (!configs) return;
+
+    for (guint i = 0; i < configs->len; i++) {
+        ShellWidgetConfig *wc = g_ptr_array_index(configs, i);
+        if (!wc || !wc->id) continue;
+
+        ShellWidget *reused = NULL;
+        for (guint j = 0; j < old_widgets->len; j++) {
+            ShellWidget *cand = g_ptr_array_index(old_widgets, j);
+            if (cand && cand->klass && g_strcmp0(cand->klass->id, wc->id) == 0) {
+                reused = cand;
+                g_ptr_array_remove_index(old_widgets, j);
+                break;
+            }
+        }
+
+        if (reused) {
+            reused->mode = wc->mode;
+            update_reused_widget_mode_visibility(reused);
+            GtkWidget *gtk_widget = reused->klass->get_widget(reused);
+            if (gtk_widget) {
+                shell_panel_add_widget(self->panel, position, gtk_widget);
+            }
+            g_ptr_array_add(new_active, reused);
+        } else {
+            const ShellWidgetClass *klass = shell_widget_registry_find(self->registry, wc->id);
+            if (!klass) continue;
+
+            ShellWidget *widget = klass->create(self->compositor);
+            if (!widget) continue;
+
+            widget->klass = klass;
+            widget->app   = self;
+            widget->mode  = wc->mode;
+            klass->enable(widget);
+
+            GtkWidget *gtk_widget = klass->get_widget(widget);
+            if (gtk_widget) {
+                shell_panel_add_widget(self->panel, position, gtk_widget);
+            }
+            g_ptr_array_add(new_active, widget);
+        }
+    }
+}
+
+void
+shell_app_reload_config(ShellApp *self)
+{
+    if (!self || !self->panel) return;
+
+    ShellConfig *new_config = shell_config_load(NULL);
+    if (!new_config) return;
+
+    ShellConfig *old_config = self->config;
+    self->config = new_config;
+    shell_config_destroy(old_config);
+
+    shell_panel_apply_config(self->panel, self->config);
+
+    if (self->notifications) {
+        shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
+    }
+
+    /* Hold references to all current GTK widget roots while detaching from panel boxes */
+    GPtrArray *held_gtk_widgets = g_ptr_array_new_with_free_func(g_object_unref);
+    if (self->active_widgets) {
+        for (guint i = 0; i < self->active_widgets->len; i++) {
+            ShellWidget *w = g_ptr_array_index(self->active_widgets, i);
+            GtkWidget *gw = (w && w->klass) ? w->klass->get_widget(w) : NULL;
+            if (gw) {
+                g_ptr_array_add(held_gtk_widgets, g_object_ref(gw));
+                GtkWidget *parent = gtk_widget_get_parent(gw);
+                if (parent && GTK_IS_BOX(parent)) {
+                    gtk_box_remove(GTK_BOX(parent), gw);
+                }
+            }
+        }
+    }
+
+    if (self->panel->widgets) {
+        g_ptr_array_set_size(self->panel->widgets, 0);
+    }
+
+    GPtrArray *old_widgets = self->active_widgets ? self->active_widgets : g_ptr_array_new();
+    GPtrArray *new_active = g_ptr_array_new();
+
+    reconcile_section_widgets(self, self->config->layout_left, PANEL_WIDGET_LEFT, old_widgets, new_active);
+    reconcile_section_widgets(self, self->config->layout_center, PANEL_WIDGET_CENTER, old_widgets, new_active);
+    reconcile_section_widgets(self, self->config->layout_right, PANEL_WIDGET_RIGHT, old_widgets, new_active);
+
+    /* Destroy any widgets no longer present in the new layout */
+    for (guint i = 0; i < old_widgets->len; i++) {
+        ShellWidget *w = g_ptr_array_index(old_widgets, i);
+        if (w && w->klass) {
+            w->klass->disable(w);
+            w->klass->destroy(w);
+        }
+    }
+    g_ptr_array_free(old_widgets, TRUE);
+    g_ptr_array_unref(held_gtk_widgets);
+
+    self->active_widgets = new_active;
+    g_message("Reloaded shell configuration and reconciled %u active panel widgets", new_active->len);
+}
+
+void
+shell_app_reload_theme(ShellApp *self)
+{
+    if (!self || !self->theme) return;
+    shell_theme_reload(self->theme);
+}

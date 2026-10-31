@@ -54,20 +54,20 @@ resolve_css_path(const gchar *css_path)
     if (css_path && g_file_test(css_path, G_FILE_TEST_EXISTS))
         return g_strdup(css_path);
 
-    /* 1. User Config Path (~/.config/kajo/style.css) */
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *user_path = g_build_filename(xdg_config, "kajo", "style.css", NULL);
-    if (g_file_test(user_path, G_FILE_TEST_EXISTS))
-        return user_path;
-    g_free(user_path);
-
-    /* 2. Development / Build Environment (data/defaults/style.css) */
+    /* 1. Development / Build Environment (data/defaults/style.css) */
     gchar *cwd = g_get_current_dir();
     gchar *dev_path = g_build_filename(cwd, "data", "defaults", "style.css", NULL);
     g_free(cwd);
     if (g_file_test(dev_path, G_FILE_TEST_EXISTS))
         return dev_path;
     g_free(dev_path);
+
+    /* 2. User Config Path (~/.config/kajo/style.css) */
+    const gchar *xdg_config = g_get_user_config_dir();
+    gchar *user_path = g_build_filename(xdg_config, "kajo", "style.css", NULL);
+    if (g_file_test(user_path, G_FILE_TEST_EXISTS))
+        return user_path;
+    g_free(user_path);
 
     /* 3. Installed Environment (/usr/share/kajo/defaults/style.css) */
     const gchar *system_path = "/usr/share/kajo/defaults/style.css";
@@ -143,6 +143,16 @@ shell_theme_apply(ShellTheme *theme, GdkDisplay *display)
             GTK_STYLE_PROVIDER(theme->override_provider),
             GTK_STYLE_PROVIDER_PRIORITY_USER + 10);
     }
+}
+
+void
+shell_theme_reload(ShellTheme *theme)
+{
+    if (!theme)
+        return;
+
+    theme_reload_css(theme);
+    theme_reload_override_css(theme);
 }
 
 void

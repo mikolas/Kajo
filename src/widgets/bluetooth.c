@@ -486,20 +486,25 @@ refresh_bluetooth_state(BluetoothWidget *bt)
     }
 
     if (bt->adapter_proxy == NULL) {
-        gchar *adapter_path = g_strdup("/org/bluez/hci0");
+        gchar *adapter_path = NULL;
         if (bt->object_manager) {
             GList *objects = g_dbus_object_manager_get_objects(bt->object_manager);
             for (GList *l = objects; l != NULL; l = l->next) {
                 GDBusObject *obj = G_DBUS_OBJECT(l->data);
                 GDBusInterface *iface = g_dbus_object_get_interface(obj, BLUEZ_ADAPTER_INTERFACE);
                 if (iface) {
-                    g_free(adapter_path);
                     adapter_path = g_strdup(g_dbus_object_get_object_path(obj));
                     g_object_unref(iface);
                     break;
                 }
             }
             g_list_free_full(objects, g_object_unref);
+        }
+
+        if (!adapter_path) {
+            bt->is_powered = FALSE;
+            update_bluetooth_ui(bt);
+            return;
         }
 
         GError *error = NULL;

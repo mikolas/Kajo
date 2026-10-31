@@ -104,6 +104,26 @@ volume_mute_idle_cb(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
+static gboolean
+reload_config_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app) {
+        shell_app_reload_config(app);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+reload_theme_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app) {
+        shell_app_reload_theme(app);
+    }
+    return G_SOURCE_REMOVE;
+}
+
 static void
 add_idle_command(ShellIPCSocket *ipc, GSourceFunc func)
 {
@@ -158,6 +178,10 @@ on_incoming_connection(GSocketService *service,
             add_idle_command(ipc, volume_down_idle_cb);
         } else if (g_strcmp0(line, "volume-mute") == 0 || g_strcmp0(line, "volume-toggle") == 0) {
             add_idle_command(ipc, volume_mute_idle_cb);
+        } else if (g_strcmp0(line, "reload-config") == 0) {
+            add_idle_command(ipc, reload_config_idle_cb);
+        } else if (g_strcmp0(line, "reload-theme") == 0) {
+            add_idle_command(ipc, reload_theme_idle_cb);
         }
         g_free(line);
     }

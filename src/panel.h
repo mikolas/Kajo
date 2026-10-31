@@ -9,6 +9,7 @@ extern "C" {
 
 typedef struct _ShellApp      ShellApp;
 typedef struct _ShellAutohide ShellAutohide;
+typedef struct _ShellConfig   ShellConfig;
 
 typedef enum {
     PANEL_WIDGET_LEFT = 0,
@@ -30,6 +31,7 @@ struct _ShellPanel {
 };
 
 ShellPanel *shell_panel_new(ShellApp *app);
+void        shell_panel_apply_config(ShellPanel *panel, ShellConfig *config);
 void        shell_panel_add_widget(ShellPanel *panel, PanelWidgetPosition position, GtkWidget *widget);
 void        shell_panel_register_popover(ShellPanel *panel, GtkPopover *popover);
 void        shell_panel_show(ShellPanel *panel);

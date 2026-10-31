@@ -29,7 +29,7 @@ template $SettingsPageNetwork : Box {
   }
 
   /* Active Connection Card Container */
-  Box card_act {
+  Box {
     orientation: vertical;
     spacing: 8;
 
@@ -44,6 +44,11 @@ template $SettingsPageNetwork : Box {
       styles [
         "heading",
       ]
+    }
+
+    Box card_act {
+      orientation: vertical;
+      spacing: 4;
     }
   }
 

@@ -21,6 +21,13 @@ typedef struct _SettingsPageNotificationsClass {
 G_DEFINE_TYPE(SettingsPageNotifications, settings_page_notifications, GTK_TYPE_BOX)
 
 static void
+settings_page_notifications_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_notifications_get_type());
+    G_OBJECT_CLASS(settings_page_notifications_parent_class)->dispose(object);
+}
+
+static void
 settings_page_notifications_init(SettingsPageNotifications *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -29,7 +36,10 @@ settings_page_notifications_init(SettingsPageNotifications *self)
 static void
 settings_page_notifications_class_init(SettingsPageNotificationsClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = settings_page_notifications_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/page_notifications.ui");
@@ -46,30 +56,45 @@ static void
 on_scale_tout_changed(GtkRange *range, gpointer user_data)
 {
     GtkLabel *lbl = GTK_LABEL(user_data);
-    gchar *str = g_strdup_printf("%dms (%ds)", (int)gtk_range_get_value(range), (int)gtk_range_get_value(range) / 1000);
+    int val = (int)gtk_range_get_value(range);
+    g_autofree gchar *str = g_strdup_printf("%dms (%ds)", val, val / 1000);
     gtk_label_set_text(lbl, str);
-    g_free(str);
 }
 
 static void
 on_scale_hist_changed(GtkRange *range, gpointer user_data)
 {
     GtkLabel *lbl = GTK_LABEL(user_data);
-    gchar *str = g_strdup_printf("%d items", (int)gtk_range_get_value(range));
+    g_autofree gchar *str = g_strdup_printf("%d items", (int)gtk_range_get_value(range));
     gtk_label_set_text(lbl, str);
-    g_free(str);
 }
 
 static void
-on_save_notifications_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_save_notifications_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    g_message("Saved notification settings.");
+    SettingsPageNotifications *self = (SettingsPageNotifications *)user_data;
+    ShellConfig *config = shell_config_load(NULL);
+
+    config->toast_timeout_ms = (gint)gtk_range_get_value(GTK_RANGE(self->scale_tout));
+    config->max_notification_history = (gint)gtk_range_get_value(GTK_RANGE(self->scale_hist));
+
+    g_autofree gchar *path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+    if (shell_config_save(config, path)) {
+        g_message("Saved notification settings to %s (timeout=%dms, history=%d)",
+                  path, config->toast_timeout_ms, config->max_notification_history);
+        settings_send_ipc_command("reload-config");
+    } else {
+        g_warning("Failed to save notification settings to %s", path);
+    }
+
+    shell_config_destroy(config);
 }
 
 GtkWidget *
 build_page_notifications(void)
 {
     SettingsPageNotifications *page = g_object_new(settings_page_notifications_get_type(), NULL);
+    ShellConfig *config = shell_config_load(NULL);
 
     const char *click_items[] = {
         "Focus Source App Window in Niri (Default)",
@@ -79,14 +104,21 @@ build_page_notifications(void)
     };
     GtkStringList *slist = gtk_string_list_new(click_items);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_click), G_LIST_MODEL(slist));
+    g_object_unref(slist);
 
-    gtk_range_set_value(GTK_RANGE(page->scale_tout), 8000);
     g_signal_connect(page->scale_tout, "value-changed", G_CALLBACK(on_scale_tout_changed), page->lbl_tout_val);
+    gtk_range_set_value(GTK_RANGE(page->scale_tout),
+                        config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
+    on_scale_tout_changed(GTK_RANGE(page->scale_tout), page->lbl_tout_val);
 
-    gtk_range_set_value(GTK_RANGE(page->scale_hist), 50);
     g_signal_connect(page->scale_hist, "value-changed", G_CALLBACK(on_scale_hist_changed), page->lbl_hist_val);
+    gtk_range_set_value(GTK_RANGE(page->scale_hist),
+                        config->max_notification_history > 0 ? config->max_notification_history : 50);
+    on_scale_hist_changed(GTK_RANGE(page->scale_hist), page->lbl_hist_val);
 
-    g_signal_connect(page->btn_save, "clicked", G_CALLBACK(on_save_notifications_clicked), NULL);
+    shell_config_destroy(config);
+
+    g_signal_connect(page->btn_save, "clicked", G_CALLBACK(on_save_notifications_clicked), page);
 
     return create_settings_page_card("NOTIFICATION TOASTS & OS DAEMON", "[ NOTIFICATION DAEMON ]", GTK_WIDGET(page), NULL);
 }

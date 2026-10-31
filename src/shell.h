@@ -44,6 +44,8 @@ ShellOSD    *shell_app_get_osd(ShellApp *self);
 void         shell_brightness_change(ShellApp *self, gint delta_percent);
 void         shell_volume_change(ShellApp *self, gint delta_percent);
 void         shell_volume_toggle_mute(ShellApp *self);
+void         shell_app_reload_config(ShellApp *self);
+void         shell_app_reload_theme(ShellApp *self);
 
 #ifdef __cplusplus
 }

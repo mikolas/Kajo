@@ -634,7 +634,7 @@ dropdown listview row:selected {
 window.shell-settings-window {
     background-color: rgba(20, 20, 20, 0.96);
     color: #ffffff;
-    border: 1px solid #0078d4;
+    border: 1px solid @metro-accent;
     border-radius: 0px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
@@ -727,7 +727,7 @@ window.shell-settings-window .navigation-sidebar row:hover {
 }
 
 window.shell-settings-window .navigation-sidebar row:selected {
-    background-color: #0078d4;
+    background-color: @metro-accent;
     border-left: 3px solid #ffffff;
     color: #ffffff;
     font-weight: 600;
@@ -746,7 +746,7 @@ window.shell-settings-window .shell-popover-card {
 }
 
 window.shell-settings-window .shell-popover-card:hover {
-    border-color: #0078d4;
+    border-color: @metro-accent;
 }
 
 window.shell-settings-window .shell-popover-header {
@@ -772,12 +772,25 @@ window.shell-settings-window .settings-sidebar-vbox {
     border-right: 1px solid #2b2b2b;
 }
 
+window.shell-settings-window .sidebar-header-row,
+window.shell-settings-window .navigation-sidebar row.sidebar-header-row {
+    background-color: transparent;
+    border: none;
+    border-left: none;
+    padding: 0;
+    min-height: 24px;
+}
+
+window.shell-settings-window .navigation-sidebar row.sidebar-header-row:hover {
+    background-color: transparent;
+}
+
 window.shell-settings-window .sidebar-category-header {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
-    color: #0078d4;
+    color: @metro-accent;
     text-transform: uppercase;
     margin-top: 12px;
     margin-bottom: 4px;
@@ -792,15 +805,16 @@ window.shell-settings-window .section-card {
     margin-bottom: 8px;
 }
 
-window.shell-settings-window .section-card:hover {
-    border-color: #0078d4;
+window.shell-settings-window .section-card:hover,
+window.shell-settings-window .section-card.active {
+    border-color: @metro-accent;
     background-color: #202020;
 }
 
 window.shell-settings-window .section-card-left {
     background-color: #1a1a1a;
     border: 1px solid #2d2d2d;
-    border-left: 4px solid #0078d4;
+    border-left: 4px solid @metro-accent;
     padding: 12px;
     margin-bottom: 8px;
 }

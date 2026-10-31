@@ -136,18 +136,22 @@ shell_config_load(const gchar *path)
     if (path) {
         resolved_path = g_strdup(path);
     } else {
-        gchar *cwd = g_get_current_dir();
-        gchar *dev_config = g_build_filename(cwd, "data", "defaults", "config.json", NULL);
-        g_free(cwd);
-        if (g_file_test(dev_config, G_FILE_TEST_EXISTS)) {
-            resolved_path = dev_config;
+        /* 1. User Config Path (~/.config/kajo/config.json) */
+        const gchar *xdg_config = g_get_user_config_dir();
+        gchar *user_config = g_build_filename(xdg_config, "kajo", "config.json", NULL);
+        if (g_file_test(user_config, G_FILE_TEST_EXISTS)) {
+            resolved_path = user_config;
         } else {
-            g_free(dev_config);
-            const gchar *xdg_config = g_get_user_config_dir();
-            resolved_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
-
-            if (!g_file_test(resolved_path, G_FILE_TEST_EXISTS)) {
-                g_free(resolved_path);
+            g_free(user_config);
+            /* 2. Development / Build Environment (data/defaults/config.json) */
+            gchar *cwd = g_get_current_dir();
+            gchar *dev_config = g_build_filename(cwd, "data", "defaults", "config.json", NULL);
+            g_free(cwd);
+            if (g_file_test(dev_config, G_FILE_TEST_EXISTS)) {
+                resolved_path = dev_config;
+            } else {
+                g_free(dev_config);
+                /* 3. Installed Environment (/usr/share/kajo/defaults/config.json) */
                 resolved_path = g_strdup("/usr/share/kajo/defaults/config.json");
             }
         }
@@ -327,10 +331,53 @@ shell_config_load(const gchar *path)
     return config;
 }
 
+static void
+serialize_widget_config_array(JsonBuilder *builder, const gchar *name, GPtrArray *arr)
+{
+    json_builder_set_member_name(builder, name);
+    json_builder_begin_array(builder);
+    if (arr) {
+        for (guint i = 0; i < arr->len; i++) {
+            ShellWidgetConfig *wc = g_ptr_array_index(arr, i);
+            if (!wc || !wc->id) continue;
+            json_builder_begin_object(builder);
+            json_builder_set_member_name(builder, "id");
+            json_builder_add_string_value(builder, wc->id);
+            json_builder_set_member_name(builder, "mode");
+            json_builder_add_string_value(builder,
+                wc->mode == WIDGET_MODE_FULL ? "full" :
+                (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
+            if (wc->interval_sec > 0) {
+                json_builder_set_member_name(builder, "interval_sec");
+                json_builder_add_int_value(builder, wc->interval_sec);
+            }
+            if (wc->exec_cmd) {
+                json_builder_set_member_name(builder, "exec_cmd");
+                json_builder_add_string_value(builder, wc->exec_cmd);
+            }
+            if (wc->click_left_cmd) {
+                json_builder_set_member_name(builder, "click_left_cmd");
+                json_builder_add_string_value(builder, wc->click_left_cmd);
+            }
+            if (wc->click_right_cmd) {
+                json_builder_set_member_name(builder, "click_right_cmd");
+                json_builder_add_string_value(builder, wc->click_right_cmd);
+            }
+            json_builder_end_object(builder);
+        }
+    }
+    json_builder_end_array(builder);
+}
+
 gboolean
 shell_config_save(ShellConfig *config, const gchar *path)
 {
     if (!config || !path) return FALSE;
+
+    g_autofree gchar *dir = g_path_get_dirname(path);
+    if (dir && *dir) {
+        g_mkdir_with_parents(dir, 0755);
+    }
 
     g_autoptr(JsonBuilder) builder = json_builder_new();
     json_builder_begin_object(builder);
@@ -373,6 +420,14 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_set_member_name(builder, "osd_height");
     json_builder_add_int_value(builder, config->osd_height > 0 ? config->osd_height : 120);
 
+    json_builder_set_member_name(builder, "notifications");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "toast_timeout_ms");
+    json_builder_add_int_value(builder, config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
+    json_builder_set_member_name(builder, "max_notification_history");
+    json_builder_add_int_value(builder, config->max_notification_history > 0 ? config->max_notification_history : 50);
+    json_builder_end_object(builder);
+
     json_builder_set_member_name(builder, "toast_timeout_ms");
     json_builder_add_int_value(builder, config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
 
@@ -403,56 +458,19 @@ shell_config_save(ShellConfig *config, const gchar *path)
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");
     json_builder_begin_object(builder);
-
-    /* left array */
-    json_builder_set_member_name(builder, "left");
-    json_builder_begin_array(builder);
-    if (config->layout_left) {
-        for (guint i = 0; i < config->layout_left->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_left, i);
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, wc->id);
-            json_builder_set_member_name(builder, "mode");
-            json_builder_add_string_value(builder, wc->mode == WIDGET_MODE_FULL ? "full" : (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
-            json_builder_end_object(builder);
-        }
-    }
-    json_builder_end_array(builder);
-
-    /* center array */
-    json_builder_set_member_name(builder, "center");
-    json_builder_begin_array(builder);
-    if (config->layout_center) {
-        for (guint i = 0; i < config->layout_center->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_center, i);
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, wc->id);
-            json_builder_set_member_name(builder, "mode");
-            json_builder_add_string_value(builder, wc->mode == WIDGET_MODE_FULL ? "full" : (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
-            json_builder_end_object(builder);
-        }
-    }
-    json_builder_end_array(builder);
-
-    /* right array */
-    json_builder_set_member_name(builder, "right");
-    json_builder_begin_array(builder);
-    if (config->layout_right) {
-        for (guint i = 0; i < config->layout_right->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_right, i);
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, wc->id);
-            json_builder_set_member_name(builder, "mode");
-            json_builder_add_string_value(builder, wc->mode == WIDGET_MODE_FULL ? "full" : (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
-            json_builder_end_object(builder);
-        }
-    }
-    json_builder_end_array(builder);
-
+    serialize_widget_config_array(builder, "left", config->layout_left);
+    serialize_widget_config_array(builder, "center", config->layout_center);
+    serialize_widget_config_array(builder, "right", config->layout_right);
     json_builder_end_object(builder);
+
+    if (config->css_path) {
+        json_builder_set_member_name(builder, "css_path");
+        json_builder_add_string_value(builder, config->css_path);
+    }
+    if (config->icon_map_path) {
+        json_builder_set_member_name(builder, "icon_map_path");
+        json_builder_add_string_value(builder, config->icon_map_path);
+    }
 
     json_builder_end_object(builder);
 
