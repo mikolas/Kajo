@@ -253,6 +253,14 @@ test_ipc_exe = executable(
 )
 test('ipc-socket', test_ipc_exe)
 
+test_autohide_exe = executable(
+  'test-autohide',
+  files('tests/test_autohide.c', 'src/autohide.c', 'src/config.c'),
+  dependencies: [layer_shell_dep, gtk4_dep, json_glib_dep, gio_dep],
+  build_by_default: false,
+)
+test('autohide-state', test_autohide_exe)
+
 widget_sources = files(
   'src/config.c',
   'src/theme.c',

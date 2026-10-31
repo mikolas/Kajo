@@ -219,11 +219,37 @@ shell_panel_register_popover(ShellPanel *panel, GtkPopover *popover)
 }
 
 void
+shell_panel_reload_config(ShellPanel *panel, ShellConfig *config)
+{
+    if (!panel || !config)
+        return;
+
+    if (panel->window) {
+        if (config->panel_position == PANEL_POSITION_TOP) {
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
+        } else {
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, FALSE);
+            gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
+        }
+        gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1,
+                                    config->panel_height > 0 ? config->panel_height : 32);
+    }
+
+    if (panel->autohide) {
+        shell_autohide_reload_config(panel->autohide, config);
+    }
+}
+
+void
 shell_panel_show(ShellPanel *panel)
 {
     if (!panel)
         return;
     gtk_window_present(panel->window);
+    if (panel->autohide && panel->app) {
+        shell_autohide_reload_config(panel->autohide, shell_app_get_config(panel->app));
+    }
 }
 
 void

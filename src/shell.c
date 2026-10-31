@@ -146,6 +146,10 @@ shell_app_reload_config(ShellApp *self)
         shell_idle_manager_reload_config(self->idle_manager);
     }
 
+    if (self->panel) {
+        shell_panel_reload_config(self->panel, self->config);
+    }
+
     shell_app_reload_theme(self);
 }
 
