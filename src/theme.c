@@ -54,14 +54,7 @@ resolve_css_path(const gchar *css_path)
     if (css_path && g_file_test(css_path, G_FILE_TEST_EXISTS))
         return g_strdup(css_path);
 
-    /* 1. User Config Path (~/.config/kajo/style.css) */
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *user_path = g_build_filename(xdg_config, "kajo", "style.css", NULL);
-    if (g_file_test(user_path, G_FILE_TEST_EXISTS))
-        return user_path;
-    g_free(user_path);
-
-    /* 2. Development / Build Environment (data/defaults/style.css) */
+    /* 1. Development / Build Environment (data/defaults/style.css) */
     gchar *cwd = g_get_current_dir();
     gchar *dev_path = g_build_filename(cwd, "data", "defaults", "style.css", NULL);
     g_free(cwd);
@@ -69,10 +62,24 @@ resolve_css_path(const gchar *css_path)
         return dev_path;
     g_free(dev_path);
 
-    /* 3. Installed Environment (/usr/share/kajo/defaults/style.css) */
+    /* 2. User Local Installed Environment (~/.local/share/kajo/defaults/style.css) */
+    gchar *local_share_path = g_build_filename(
+        g_get_user_data_dir(), "kajo", "defaults", "style.css", NULL);
+    if (g_file_test(local_share_path, G_FILE_TEST_EXISTS))
+        return local_share_path;
+    g_free(local_share_path);
+
+    /* 3. System Installed Environment (/usr/share/kajo/defaults/style.css) */
     const gchar *system_path = "/usr/share/kajo/defaults/style.css";
     if (g_file_test(system_path, G_FILE_TEST_EXISTS))
         return g_strdup(system_path);
+
+    /* 4. User Config Path (~/.config/kajo/style.css) */
+    const gchar *xdg_config = g_get_user_config_dir();
+    gchar *user_path = g_build_filename(xdg_config, "kajo", "style.css", NULL);
+    if (g_file_test(user_path, G_FILE_TEST_EXISTS))
+        return user_path;
+    g_free(user_path);
 
     return NULL;
 }

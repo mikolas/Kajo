@@ -13,6 +13,7 @@
 #include "../icons.h"
 #include "../autohide.h"
 #include "../dbus_helpers.h"
+#include "../lock/idle_manager.h"
 
 #define POWER_PROFILES_BUS_NAME  "net.hadess.PowerProfiles"
 #define POWER_PROFILES_PATH      "/net/hadess/PowerProfiles"
@@ -444,10 +445,11 @@ on_dnd_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 }
 
 static void
-on_idle_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+update_cc_idle_ui(ControlCenterWidget *cc)
 {
-    ControlCenterWidget *cc = user_data;
-    cc->idle_enabled = !cc->idle_enabled;
+    if (!cc || !cc->idle_btn || !cc->idle_sub_lbl)
+        return;
+
     if (cc->idle_enabled) {
         gtk_widget_add_css_class(cc->idle_btn, "active");
         gtk_label_set_text(GTK_LABEL(cc->idle_sub_lbl), "Screen Awake");
@@ -455,6 +457,29 @@ on_idle_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         gtk_widget_remove_css_class(cc->idle_btn, "active");
         gtk_label_set_text(GTK_LABEL(cc->idle_sub_lbl), "Disabled");
     }
+}
+
+static void
+on_cc_idle_manager_changed(gboolean inhibited, gpointer user_data)
+{
+    ControlCenterWidget *cc = user_data;
+    if (!cc)
+        return;
+    cc->idle_enabled = inhibited;
+    update_cc_idle_ui(cc);
+}
+
+static void
+on_idle_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    ControlCenterWidget *cc = user_data;
+    if (!cc)
+        return;
+    cc->idle_enabled = !cc->idle_enabled;
+    if (cc->base.app && cc->base.app->idle_manager) {
+        shell_idle_manager_set_inhibited(cc->base.app->idle_manager, cc->idle_enabled);
+    }
+    update_cc_idle_ui(cc);
 }
 
 static void
@@ -478,17 +503,24 @@ call_logind_manager_method(const char *method_name, GVariant *parameters)
 }
 
 static void
-on_action_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_action_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    if (!g_spawn_command_line_async("./builddir/kajo-settings", NULL)) {
-        g_spawn_command_line_async("kajo-settings", NULL);
-    }
+    ControlCenterWidget *cc = user_data;
+    shell_spawn_settings(NULL, cc ? cc->popover : NULL);
 }
 
 static void
-on_action_lock_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_action_lock_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    call_logind_manager_method("LockSessions", NULL);
+    ControlCenterWidget *cc = user_data;
+    if (cc && cc->popover) {
+        gtk_popover_popdown(GTK_POPOVER(cc->popover));
+    }
+    if (cc && cc->base.app) {
+        shell_app_lock_session(cc->base.app);
+    } else {
+        call_logind_manager_method("LockSessions", NULL);
+    }
 }
 
 static void
@@ -804,6 +836,12 @@ control_center_enable(ShellWidget *widget)
     if (cc) {
         shell_widget_apply_mode_visibility(widget->mode, cc->icon_img, cc->label);
         gtk_image_set_pixel_size(GTK_IMAGE(cc->icon_img), shell_widget_get_icon_size(widget));
+        if (widget->app && widget->app->idle_manager) {
+            cc->idle_enabled = shell_idle_manager_get_inhibited(widget->app->idle_manager);
+            shell_idle_manager_add_listener(widget->app->idle_manager,
+                                            on_cc_idle_manager_changed, cc);
+            update_cc_idle_ui(cc);
+        }
     }
     if (cc->refresh_timer_id == 0) {
         cc_refresh_state(cc);
@@ -815,6 +853,10 @@ static void
 control_center_disable(ShellWidget *widget)
 {
     ControlCenterWidget *cc = (ControlCenterWidget *)widget;
+    if (cc && widget && widget->app && widget->app->idle_manager) {
+        shell_idle_manager_remove_listener(widget->app->idle_manager,
+                                           on_cc_idle_manager_changed, cc);
+    }
     if (cc->refresh_timer_id > 0) {
         g_source_remove(cc->refresh_timer_id);
         cc->refresh_timer_id = 0;

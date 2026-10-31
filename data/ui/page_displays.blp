@@ -79,4 +79,149 @@ template $SettingsPageDisplays : Box {
       ]
     }
   }
+
+  /* Screen Saver & Session Lock Card */
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-center",
+    ]
+
+    Label {
+      label: "SCREEN SAVER & SESSION LOCK";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Label {
+      label: "Configure idle screen blanking, Metro clock screen saver, and PAM session lock.";
+      halign: start;
+
+      styles [
+        "dim-label",
+      ]
+    }
+
+    /* Screen Saver Mode Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Screen Saver Mode:";
+        halign: start;
+        hexpand: true;
+      }
+
+      DropDown combo_ss_mode {}
+    }
+
+    /* Screen Saver Timeout Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Screen Saver Timeout:";
+        halign: start;
+        hexpand: true;
+      }
+
+      DropDown combo_ss_timeout {}
+    }
+
+    /* DPMS Timeout Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Monitor Power-Off (DPMS) Timeout:";
+        halign: start;
+        hexpand: true;
+      }
+
+      DropDown combo_dpms_timeout {}
+    }
+
+    /* Auto-Lock Timeout Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Automatic Session Lock Timeout:";
+        halign: start;
+        hexpand: true;
+      }
+
+      DropDown combo_lock_timeout {}
+    }
+
+    /* Lock on Suspend Switch Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Box {
+        orientation: vertical;
+        spacing: 2;
+        hexpand: true;
+
+        Label {
+          label: "Lock Session on System Suspend";
+          halign: start;
+        }
+
+        Label {
+          label: "Automatically lock the session before entering sleep or closing the lid";
+          halign: start;
+
+          styles [
+            "dim-label",
+          ]
+        }
+      }
+
+      Switch sw_lock_suspend {
+        valign: center;
+      }
+    }
+
+    /* Action Buttons Row */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+      homogeneous: true;
+
+      Button btn_preview_ss {
+        label: "[ 🖥 PREVIEW SCREEN SAVER ]";
+
+        styles [
+          "flat",
+        ]
+      }
+
+      Button btn_lock_now {
+        label: "[ 🔒 LOCK SCREEN NOW ]";
+
+        styles [
+          "flat",
+        ]
+      }
+    }
+
+    Button btn_apply_idle {
+      label: "[ SAVE SCREEN SAVER & LOCK SETTINGS ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
 }

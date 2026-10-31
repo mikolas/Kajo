@@ -112,6 +112,12 @@ shell_config_get_default(void)
     config->accent_color             = g_strdup("#0078d4");
     config->ui_font_size_px          = 13;
 
+    config->screensaver_mode         = g_strdup("overlay");
+    config->screensaver_timeout_sec  = 300;
+    config->dpms_timeout_sec         = 600;
+    config->lock_timeout_sec         = 900;
+    config->lock_on_suspend          = TRUE;
+
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
     config->layout_right          = g_ptr_array_new_full(0, free_widget_config);
@@ -120,6 +126,24 @@ shell_config_get_default(void)
     config->icon_map_path         = NULL;
 
     return config;
+}
+
+static gchar *
+resolve_defaults_config_path(void)
+{
+    gchar *cwd = g_get_current_dir();
+    gchar *dev_config = g_build_filename(cwd, "data", "defaults", "config.json", NULL);
+    g_free(cwd);
+    if (g_file_test(dev_config, G_FILE_TEST_EXISTS))
+        return dev_config;
+    g_free(dev_config);
+
+    gchar *local_share = g_build_filename(g_get_user_data_dir(), "kajo", "defaults", "config.json", NULL);
+    if (g_file_test(local_share, G_FILE_TEST_EXISTS))
+        return local_share;
+    g_free(local_share);
+
+    return g_strdup("/usr/share/kajo/defaults/config.json");
 }
 
 ShellConfig *
@@ -132,24 +156,21 @@ shell_config_load(const gchar *path)
     ShellConfig *config = NULL;
     gchar *resolved_path = NULL;
 
-    /* Resolve config file path */
+    /* Resolve config file path:
+     * 1. Explicit path if provided
+     * 2. User config (~/.config/kajo/config.json)
+     * 3. Defaults (./data/defaults/config.json -> ~/.local/share/kajo/defaults/config.json -> /usr/share/kajo/defaults/config.json)
+     */
     if (path) {
         resolved_path = g_strdup(path);
     } else {
-        gchar *cwd = g_get_current_dir();
-        gchar *dev_config = g_build_filename(cwd, "data", "defaults", "config.json", NULL);
-        g_free(cwd);
-        if (g_file_test(dev_config, G_FILE_TEST_EXISTS)) {
-            resolved_path = dev_config;
+        const gchar *xdg_config = g_get_user_config_dir();
+        gchar *user_config = g_build_filename(xdg_config, "kajo", "config.json", NULL);
+        if (g_file_test(user_config, G_FILE_TEST_EXISTS)) {
+            resolved_path = user_config;
         } else {
-            g_free(dev_config);
-            const gchar *xdg_config = g_get_user_config_dir();
-            resolved_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
-
-            if (!g_file_test(resolved_path, G_FILE_TEST_EXISTS)) {
-                g_free(resolved_path);
-                resolved_path = g_strdup("/usr/share/kajo/defaults/config.json");
-            }
+            g_free(user_config);
+            resolved_path = resolve_defaults_config_path();
         }
     }
 
@@ -177,8 +198,16 @@ shell_config_load(const gchar *path)
     root = json_node_get_object(root_node);
     config = shell_config_get_default();
 
-    /* Panel settings */
-    if (json_object_has_member(root, "panel")) {
+    /* Panel settings (nested object or legacy flat keys) */
+    if (json_object_has_member(root, "position")) {
+        const gchar *pos = json_object_get_string_member(root, "position");
+        config->panel_position = (g_strcmp0(pos, "bottom") == 0) ? PANEL_POSITION_BOTTOM : PANEL_POSITION_TOP;
+    }
+    if (json_object_has_member(root, "height")) {
+        config->panel_height = (gint)json_object_get_int_member(root, "height");
+    }
+    if (json_object_has_member(root, "panel") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "panel"))) {
         JsonObject *panel = json_object_get_object_member(root, "panel");
 
         if (json_object_has_member(panel, "position")) {
@@ -207,21 +236,48 @@ shell_config_load(const gchar *path)
         }
     }
 
-    /* Autohide settings */
+    /* Autohide settings (nested object or legacy boolean) */
     if (json_object_has_member(root, "autohide")) {
-        JsonObject *autohide = json_object_get_object_member(root, "autohide");
+        JsonNode *ah_node = json_object_get_member(root, "autohide");
+        if (JSON_NODE_HOLDS_VALUE(ah_node)) {
+            config->autohide_enabled = json_node_get_boolean(ah_node);
+        } else if (JSON_NODE_HOLDS_OBJECT(ah_node)) {
+            JsonObject *autohide = json_node_get_object(ah_node);
 
-        if (json_object_has_member(autohide, "enabled"))
-            config->autohide_enabled = json_object_get_boolean_member(autohide, "enabled");
+            if (json_object_has_member(autohide, "enabled"))
+                config->autohide_enabled = json_object_get_boolean_member(autohide, "enabled");
 
-        if (json_object_has_member(autohide, "hide_delay"))
-            config->autohide_hide_delay = (gint)json_object_get_int_member(autohide, "hide_delay");
+            if (json_object_has_member(autohide, "hide_delay"))
+                config->autohide_hide_delay = (gint)json_object_get_int_member(autohide, "hide_delay");
 
-        if (json_object_has_member(autohide, "reveal_delay"))
-            config->autohide_reveal_delay = (gint)json_object_get_int_member(autohide, "reveal_delay");
+            if (json_object_has_member(autohide, "reveal_delay"))
+                config->autohide_reveal_delay = (gint)json_object_get_int_member(autohide, "reveal_delay");
 
-        if (json_object_has_member(autohide, "reveal_duration"))
-            config->autohide_reveal_duration = (gint)json_object_get_int_member(autohide, "reveal_duration");
+            if (json_object_has_member(autohide, "reveal_duration"))
+                config->autohide_reveal_duration = (gint)json_object_get_int_member(autohide, "reveal_duration");
+        }
+    }
+
+    /* Idle & Screen Lock settings */
+    if (json_object_has_member(root, "idle") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "idle"))) {
+        JsonObject *idle_obj = json_object_get_object_member(root, "idle");
+        if (json_object_has_member(idle_obj, "screensaver_mode")) {
+            g_free(config->screensaver_mode);
+            config->screensaver_mode = g_strdup(json_object_get_string_member(idle_obj, "screensaver_mode"));
+        }
+        if (json_object_has_member(idle_obj, "screensaver_timeout_sec")) {
+            config->screensaver_timeout_sec = (gint)json_object_get_int_member(idle_obj, "screensaver_timeout_sec");
+        }
+        if (json_object_has_member(idle_obj, "dpms_timeout_sec")) {
+            config->dpms_timeout_sec = (gint)json_object_get_int_member(idle_obj, "dpms_timeout_sec");
+        }
+        if (json_object_has_member(idle_obj, "lock_timeout_sec")) {
+            config->lock_timeout_sec = (gint)json_object_get_int_member(idle_obj, "lock_timeout_sec");
+        }
+        if (json_object_has_member(idle_obj, "lock_on_suspend")) {
+            config->lock_on_suspend = json_object_get_boolean_member(idle_obj, "lock_on_suspend");
+        }
     }
 
     /* UI Configurability parameters */
@@ -277,7 +333,8 @@ shell_config_load(const gchar *path)
         config->ui_font_size_px = (gint)json_object_get_int_member(root, "ui_font_size_px");
 
     /* Layout settings */
-    if (json_object_has_member(root, "layout")) {
+    if (json_object_has_member(root, "layout") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "layout"))) {
         JsonObject *layout = json_object_get_object_member(root, "layout");
 
         if (json_object_has_member(layout, "left")) {
@@ -299,6 +356,41 @@ shell_config_load(const gchar *path)
         }
     }
 
+    /* If user config had no widgets at all, populate layout from defaults */
+    if ((!config->layout_left || config->layout_left->len == 0) &&
+        (!config->layout_center || config->layout_center->len == 0) &&
+        (!config->layout_right || config->layout_right->len == 0)) {
+        g_autofree gchar *def_path = resolve_defaults_config_path();
+        if (def_path && g_file_test(def_path, G_FILE_TEST_EXISTS)) {
+            g_autoptr(JsonParser) def_parser = json_parser_new();
+            if (json_parser_load_from_file(def_parser, def_path, NULL)) {
+                JsonNode *def_root_node = json_parser_get_root(def_parser);
+                if (def_root_node && JSON_NODE_HOLDS_OBJECT(def_root_node)) {
+                    JsonObject *def_root = json_node_get_object(def_root_node);
+                    if (json_object_has_member(def_root, "layout") &&
+                        JSON_NODE_HOLDS_OBJECT(json_object_get_member(def_root, "layout"))) {
+                        JsonObject *def_layout = json_object_get_object_member(def_root, "layout");
+                        if (json_object_has_member(def_layout, "left")) {
+                            if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
+                            config->layout_left = json_array_to_widget_configs(
+                                json_object_get_array_member(def_layout, "left"), config->default_widget_mode);
+                        }
+                        if (json_object_has_member(def_layout, "center")) {
+                            if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
+                            config->layout_center = json_array_to_widget_configs(
+                                json_object_get_array_member(def_layout, "center"), config->default_widget_mode);
+                        }
+                        if (json_object_has_member(def_layout, "right")) {
+                            if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);
+                            config->layout_right = json_array_to_widget_configs(
+                                json_object_get_array_member(def_layout, "right"), config->default_widget_mode);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     /* CSS path */
     if (json_object_has_member(root, "css_path")) {
         g_free(config->css_path);
@@ -314,22 +406,111 @@ shell_config_load(const gchar *path)
     return config;
 }
 
+static void
+serialize_widget_array(JsonBuilder *builder, const gchar *member_name, GPtrArray *arr)
+{
+    json_builder_set_member_name(builder, member_name);
+    json_builder_begin_array(builder);
+    if (arr) {
+        for (guint i = 0; i < arr->len; i++) {
+            ShellWidgetConfig *wc = g_ptr_array_index(arr, i);
+            if (!wc || !wc->id) continue;
+            json_builder_begin_object(builder);
+            json_builder_set_member_name(builder, "id");
+            json_builder_add_string_value(builder, wc->id);
+            json_builder_set_member_name(builder, "mode");
+            json_builder_add_string_value(builder,
+                wc->mode == WIDGET_MODE_FULL ? "full" :
+                (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
+            if (wc->interval_sec > 0) {
+                json_builder_set_member_name(builder, "interval_sec");
+                json_builder_add_int_value(builder, wc->interval_sec);
+            }
+            if (wc->exec_cmd && *wc->exec_cmd) {
+                json_builder_set_member_name(builder, "exec_cmd");
+                json_builder_add_string_value(builder, wc->exec_cmd);
+            }
+            if (wc->click_left_cmd && *wc->click_left_cmd) {
+                json_builder_set_member_name(builder, "click_left_cmd");
+                json_builder_add_string_value(builder, wc->click_left_cmd);
+            }
+            if (wc->click_right_cmd && *wc->click_right_cmd) {
+                json_builder_set_member_name(builder, "click_right_cmd");
+                json_builder_add_string_value(builder, wc->click_right_cmd);
+            }
+            json_builder_end_object(builder);
+        }
+    }
+    json_builder_end_array(builder);
+}
+
 gboolean
 shell_config_save(ShellConfig *config, const gchar *path)
 {
     if (!config || !path) return FALSE;
 
+    gchar *dir = g_path_get_dirname(path);
+    if (dir) {
+        g_mkdir_with_parents(dir, 0755);
+        g_free(dir);
+    }
+
     g_autoptr(JsonBuilder) builder = json_builder_new();
     json_builder_begin_object(builder);
 
+    /* Panel object */
+    json_builder_set_member_name(builder, "panel");
+    json_builder_begin_object(builder);
     json_builder_set_member_name(builder, "position");
     json_builder_add_string_value(builder, config->panel_position == PANEL_POSITION_BOTTOM ? "bottom" : "top");
-
     json_builder_set_member_name(builder, "height");
-    json_builder_add_int_value(builder, config->panel_height);
+    json_builder_add_int_value(builder, config->panel_height > 0 ? config->panel_height : 32);
+    json_builder_set_member_name(builder, "layer");
+    json_builder_add_string_value(builder, config->panel_layer ? config->panel_layer : "top");
+    json_builder_set_member_name(builder, "widget_mode");
+    json_builder_add_string_value(builder,
+        config->default_widget_mode == WIDGET_MODE_FULL ? "full" :
+        (config->default_widget_mode == WIDGET_MODE_LABEL ? "label" : "icon"));
+    json_builder_set_member_name(builder, "icon_size");
+    json_builder_add_int_value(builder, config->icon_size > 0 ? config->icon_size : 24);
+    json_builder_end_object(builder);
 
+    /* Autohide object */
     json_builder_set_member_name(builder, "autohide");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "enabled");
     json_builder_add_boolean_value(builder, config->autohide_enabled);
+    json_builder_set_member_name(builder, "hide_delay");
+    json_builder_add_int_value(builder, config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300);
+    json_builder_set_member_name(builder, "reveal_delay");
+    json_builder_add_int_value(builder, config->autohide_reveal_delay > 0 ? config->autohide_reveal_delay : 150);
+    json_builder_set_member_name(builder, "reveal_duration");
+    json_builder_add_int_value(builder, config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 250);
+    json_builder_end_object(builder);
+
+    /* Notifications object */
+    json_builder_set_member_name(builder, "notifications");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "toast_timeout_ms");
+    json_builder_add_int_value(builder, config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
+    json_builder_set_member_name(builder, "max_notification_history");
+    json_builder_add_int_value(builder, config->max_notification_history > 0 ? config->max_notification_history : 50);
+    json_builder_end_object(builder);
+
+    /* Idle & Screen Lock object */
+    json_builder_set_member_name(builder, "idle");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "screensaver_mode");
+    json_builder_add_string_value(builder, config->screensaver_mode ? config->screensaver_mode : "overlay");
+    json_builder_set_member_name(builder, "screensaver_timeout_sec");
+    json_builder_add_int_value(builder, config->screensaver_timeout_sec >= 0 ? config->screensaver_timeout_sec : 300);
+    json_builder_set_member_name(builder, "dpms_timeout_sec");
+    json_builder_add_int_value(builder, config->dpms_timeout_sec >= 0 ? config->dpms_timeout_sec : 600);
+    json_builder_set_member_name(builder, "lock_timeout_sec");
+    json_builder_add_int_value(builder, config->lock_timeout_sec >= 0 ? config->lock_timeout_sec : 900);
+    json_builder_set_member_name(builder, "lock_on_suspend");
+    json_builder_add_boolean_value(builder, config->lock_on_suspend);
+    json_builder_end_object(builder);
 
     json_builder_set_member_name(builder, "autohide_edge_strip_px");
     json_builder_add_int_value(builder, config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2);
@@ -373,55 +554,9 @@ shell_config_save(ShellConfig *config, const gchar *path)
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");
     json_builder_begin_object(builder);
-
-    /* left array */
-    json_builder_set_member_name(builder, "left");
-    json_builder_begin_array(builder);
-    if (config->layout_left) {
-        for (guint i = 0; i < config->layout_left->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_left, i);
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, wc->id);
-            json_builder_set_member_name(builder, "mode");
-            json_builder_add_string_value(builder, wc->mode == WIDGET_MODE_FULL ? "full" : (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
-            json_builder_end_object(builder);
-        }
-    }
-    json_builder_end_array(builder);
-
-    /* center array */
-    json_builder_set_member_name(builder, "center");
-    json_builder_begin_array(builder);
-    if (config->layout_center) {
-        for (guint i = 0; i < config->layout_center->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_center, i);
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, wc->id);
-            json_builder_set_member_name(builder, "mode");
-            json_builder_add_string_value(builder, wc->mode == WIDGET_MODE_FULL ? "full" : (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
-            json_builder_end_object(builder);
-        }
-    }
-    json_builder_end_array(builder);
-
-    /* right array */
-    json_builder_set_member_name(builder, "right");
-    json_builder_begin_array(builder);
-    if (config->layout_right) {
-        for (guint i = 0; i < config->layout_right->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_right, i);
-            json_builder_begin_object(builder);
-            json_builder_set_member_name(builder, "id");
-            json_builder_add_string_value(builder, wc->id);
-            json_builder_set_member_name(builder, "mode");
-            json_builder_add_string_value(builder, wc->mode == WIDGET_MODE_FULL ? "full" : (wc->mode == WIDGET_MODE_LABEL ? "label" : "icon"));
-            json_builder_end_object(builder);
-        }
-    }
-    json_builder_end_array(builder);
-
+    serialize_widget_array(builder, "left", config->layout_left);
+    serialize_widget_array(builder, "center", config->layout_center);
+    serialize_widget_array(builder, "right", config->layout_right);
     json_builder_end_object(builder);
 
     json_builder_end_object(builder);
@@ -442,6 +577,7 @@ shell_config_destroy(ShellConfig *config)
 
     g_free(config->panel_layer);
     g_free(config->accent_color);
+    g_free(config->screensaver_mode);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
     if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
     if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);

@@ -16,6 +16,9 @@ typedef struct _ShellOSD             ShellOSD;
 typedef struct _ShellNotificationDaemon ShellNotificationDaemon;
 typedef struct _ShellLauncherSurface ShellLauncherSurface;
 typedef struct _ShellIPCSocket       ShellIPCSocket;
+typedef struct _ShellSessionLock     ShellSessionLock;
+typedef struct _ShellScreensaver     ShellScreensaver;
+typedef struct _ShellIdleManager     ShellIdleManager;
 
 typedef struct _ShellApp ShellApp;
 
@@ -30,12 +33,19 @@ struct _ShellApp {
     ShellNotificationDaemon *notifications;
     ShellLauncherSurface    *launcher;
     ShellIPCSocket          *ipc;
+    ShellSessionLock        *session_lock;
+    ShellScreensaver        *screensaver;
+    ShellIdleManager        *idle_manager;
     GPtrArray               *active_widgets;
 };
 
 ShellApp    *shell_app_new(GtkApplication *app);
 void         shell_app_activate(ShellApp *self);
 void         shell_app_destroy(ShellApp *self);
+void         shell_app_reload_config(ShellApp *self);
+void         shell_app_reload_theme(ShellApp *self);
+void         shell_app_lock_session(ShellApp *self);
+void         shell_app_start_screensaver(ShellApp *self);
 ShellConfig *shell_app_get_config(ShellApp *self);
 ShellNotificationDaemon *shell_app_get_notification_daemon(ShellApp *self);
 ShellPanel  *shell_app_get_panel(ShellApp *self);
