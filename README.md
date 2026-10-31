@@ -23,12 +23,13 @@ The project builds and installs three integrated executables plus a `greetd` ses
 
 ### 🖥️ Status Panel & Hardware Telemetry (`kajo`)
 - **21 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery (with multi-level capacity indicator icons), backlight & posture (`backlight`), network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), active window title, launcher button, and custom user scripts.
-- **360° Foldable Posture, Auto-Rotation & Backlight Control**:
+- **360° Foldable Posture, Auto-Rotation & Backlight Control *(Experimental)***:
+  > ⚠️ **Experimental Feature**: Foldable sensor posture tracking, auto-rotation, input inhibition, and Embedded Controller keyboard backlight/timeout management are currently **experimental** until fully proven and stabilized across hardware.
   - **Runtime Hardware Capability Probing**: Dynamically detects Intel ISH `hinge` (`in_angl0_raw`) and `accel_3d` IIO sensors, `/sys/class/input/input*/inhibited` attributes, and keyboard backlight controllers (`/sys/class/leds/*::kbd_backlight` and HP Embedded Controller `0x97` `HKBL` / `0x96` `HKBT`). On desktop PCs without foldable sensors or backlights, zero timers run and foldable/backlight settings stay hidden.
   - **Hysteresis Posture State Machine**: Automatically transitions to Tablet/Tent mode at `>= 180°` and returns to Laptop mode at `<= 168°`.
   - **Posture-Gated Screen Auto-Rotation**: Claims `net.hadess.SensorProxy` (with direct IIO `accel_3d` fallback) in Tablet/Tent mode to rotate the built-in display via Niri IPC (`normal`, `90`, `180`, `270`), and locks orientation to `0°` in Laptop mode.
   - **Input Device Inhibition**: Optionally inhibits the built-in keyboard & touchpad in Tablet mode and the finger touchscreen in Laptop mode (while keeping active stylus pen input enabled).
-  - **Keyboard Backlight & Auto-Off Timeout**: Controls keyboard illumination (`Off`, `Low`, `High`) and hardware auto-off timeout (`Always On`, `30 Seconds`, `3 Minutes`), restoring your saved setting on boot.
+  - **Keyboard Backlight & Auto-Off Timeout**: Controls keyboard illumination (`Wake / Turn On` on HP EC or `Off`/`Low`/`High` on standard sysfs LEDs) and hardware auto-off timeout (`Always On`, `30 Seconds`, `3 Minutes`), restoring your saved setting on boot.
 - **16-Band Live FFT Spectrum Visualizer**: Dynamic MPRIS2 player discovery, album art hero view, and a 30 FPS 16-band Cooley-Tukey FFT spectrum analyzer capturing directly from `@DEFAULT_MONITOR@` (corked automatically when the popover closes for 0.0% background CPU usage).
 - **OLED Smart Autohide**: Smooth cubic-bezier slide animations with a 2px transparent Wayland edge trigger strip, popover/launcher hold-open guards, and live config reload.
 
@@ -88,7 +89,9 @@ Kajo uses an automatic 3-tier asset resolution chain:
 2. **Installed System/User Share (`~/.local/share/kajo/defaults/` & `/usr/local/share/kajo/defaults/`)**: Installed automatically by `meson install -C builddir`.
 3. **Source Tree Fallback (`data/defaults/`)**: Used automatically when running binaries directly from `./builddir/`.
 
-### 4. Laptop / 2-in-1 Convertible Permissions (`udev` & `ec_sys`)
+### 4. Laptop / 2-in-1 Convertible Permissions (`udev` & `ec_sys` — *Experimental*)
+> ⚠️ **Experimental**: Hardware posture & Embedded Controller support is currently experimental while undergoing stabilization.
+
 On 2-in-1 convertibles and laptops with Embedded Controller keyboard backlight/timeout control (such as the HP OmniBook X Flip 14), install the bundled `udev`, `modules-load.d`, `modprobe.d`, and `tmpfiles.d` rules from [`data/udev/`](data/udev/) so `kajo` and `kajo-settings` can manage `/sys/class/input/input*/inhibited` and `/sys/kernel/debug/ec/ec0/io` without root prompts:
 
 ```bash
