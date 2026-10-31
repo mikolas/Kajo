@@ -21,6 +21,7 @@ struct _ShellTheme {
 
 ShellTheme *shell_theme_new(const gchar *css_path);
 void        shell_theme_apply(ShellTheme *theme, GdkDisplay *display);
+void        shell_theme_reload(ShellTheme *theme);
 void        shell_theme_destroy(ShellTheme *theme);
 
 #ifdef __cplusplus

@@ -120,11 +120,6 @@ shell_dbus_bluez_set_powered(gboolean powered)
         }
         g_list_free_full(objects, g_object_unref);
         g_object_unref(om);
-    } else {
-        /* Fallback to default adapter /org/bluez/hci0 */
-        shell_dbus_set_property_sync(
-            G_BUS_TYPE_SYSTEM, "org.bluez", "/org/bluez/hci0",
-            "org.bluez.Adapter1", "Powered", g_variant_new_boolean(powered));
     }
 
     if (error) g_clear_error(&error);
@@ -138,13 +133,41 @@ shell_dbus_bluez_device_action(const char *dev_path, const char *action)
     GError *error = NULL;
 
     if (g_strcmp0(action, "RemoveDevice") == 0) {
-        GVariant *res = shell_dbus_call_method_sync(
-            G_BUS_TYPE_SYSTEM, "org.bluez", "/org/bluez/hci0",
-            "org.bluez.Adapter1", "RemoveDevice", g_variant_new("(o)", dev_path));
-        if (res) {
-            g_variant_unref(res);
-            return TRUE;
+        gchar *adapter_path = NULL;
+        GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+        if (bus) {
+            GDBusProxy *dev_proxy = g_dbus_proxy_new_sync(
+                bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
+                "org.bluez", dev_path, "org.bluez.Device1", NULL, NULL);
+            if (dev_proxy) {
+                GVariant *prop = g_dbus_proxy_get_cached_property(dev_proxy, "Adapter");
+                if (prop) {
+                    adapter_path = g_strdup(g_variant_get_string(prop, NULL));
+                    g_variant_unref(prop);
+                }
+                g_object_unref(dev_proxy);
+            }
+            g_object_unref(bus);
         }
+
+        if (!adapter_path) {
+            const char *dev_sub = strstr(dev_path, "/dev_");
+            if (dev_sub) {
+                adapter_path = g_strndup(dev_path, dev_sub - dev_path);
+            }
+        }
+
+        if (adapter_path) {
+            GVariant *res = shell_dbus_call_method_sync(
+                G_BUS_TYPE_SYSTEM, "org.bluez", adapter_path,
+                "org.bluez.Adapter1", "RemoveDevice", g_variant_new("(o)", dev_path));
+            g_free(adapter_path);
+            if (res) {
+                g_variant_unref(res);
+                return TRUE;
+            }
+        }
+        if (error) g_clear_error(&error);
         return FALSE;
     }
 

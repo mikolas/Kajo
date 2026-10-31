@@ -1,79 +1,5 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
-#include <gio/gio.h>
-#include <gio/gunixsocketaddress.h>
-
-static void
-notify_shell_ipc(const gchar *json_cmd)
-{
-    const gchar *runtime_dir = g_get_user_runtime_dir();
-    if (!runtime_dir)
-        return;
-
-    g_autofree gchar *sock_path = g_build_filename(runtime_dir, "kajo.sock", NULL);
-    if (!g_file_test(sock_path, G_FILE_TEST_EXISTS))
-        return;
-
-    g_autoptr(GSocketClient) client = g_socket_client_new();
-    g_autoptr(GSocketAddress) addr = g_unix_socket_address_new(sock_path);
-    g_autoptr(GSocketConnection) conn = g_socket_client_connect(
-        client, G_SOCKET_CONNECTABLE(addr), NULL, NULL);
-    if (!conn)
-        return;
-
-    GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
-    g_autofree gchar *line = g_strdup_printf("%s\n", json_cmd);
-    g_output_stream_write_all(out, line, strlen(line), NULL, NULL, NULL);
-}
-
-static void
-update_tile_subtitle(GtkWidget *tile, const gchar *subtitle)
-{
-    if (!tile || !subtitle)
-        return;
-    GtkWidget *hbox = gtk_button_get_child(GTK_BUTTON(tile));
-    if (!hbox)
-        return;
-    GtkWidget *vbox = gtk_widget_get_last_child(hbox);
-    if (!vbox)
-        return;
-    GtkWidget *sub_lbl = gtk_widget_get_last_child(vbox);
-    if (sub_lbl && GTK_IS_LABEL(sub_lbl)) {
-        gtk_label_set_text(GTK_LABEL(sub_lbl), subtitle);
-    }
-}
-
-static void
-on_tile_hide_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    update_tile_subtitle(GTK_WIDGET(btn), active ? "Enabled" : "Disabled");
-}
-
-static void
-on_tile_edge_clicked(GtkButton *btn, gpointer user_data)
-{
-    GtkDropDown *combo_pos = GTK_DROP_DOWN(user_data);
-    gboolean bottom = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    update_tile_subtitle(GTK_WIDGET(btn), bottom ? "Bottom Position" : "Top Position");
-    if (combo_pos && gtk_drop_down_get_selected(combo_pos) != (bottom ? 1u : 0u)) {
-        gtk_drop_down_set_selected(combo_pos, bottom ? 1u : 0u);
-    }
-}
-
-static void
-on_combo_pos_changed(GtkDropDown *combo, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    GtkWidget *tile_edge = GTK_WIDGET(user_data);
-    if (!tile_edge)
-        return;
-    gboolean bottom = (gtk_drop_down_get_selected(combo) == 1);
-    if (bottom)
-        gtk_widget_add_css_class(tile_edge, "active");
-    else
-        gtk_widget_remove_css_class(tile_edge, "active");
-    update_tile_subtitle(tile_edge, bottom ? "Bottom Position" : "Top Position");
-}
 
 /* ─── Declarative GtkBox Template Subclass ─── */
 
@@ -147,6 +73,70 @@ on_scale_rev_changed(GtkRange *range, gpointer user_data)
 }
 
 static void
+on_combo_pos_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    GtkWidget *tile_edge = GTK_WIDGET(user_data);
+    guint selected = gtk_drop_down_get_selected(dropdown);
+    gboolean is_bottom = (selected == 1);
+
+    if (is_bottom) {
+        gtk_widget_add_css_class(tile_edge, "active");
+    } else {
+        gtk_widget_remove_css_class(tile_edge, "active");
+    }
+
+    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(tile_edge), "tile-subtitle-label");
+    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
+        gtk_label_set_text(GTK_LABEL(lbl_sub), is_bottom ? "Bottom Position" : "Top Position");
+    }
+}
+
+static void
+on_tile_edge_clicked(GtkButton *btn, gpointer user_data)
+{
+    GtkDropDown *combo_pos = GTK_DROP_DOWN(user_data);
+    gboolean is_bottom = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
+    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
+    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
+        gtk_label_set_text(GTK_LABEL(lbl_sub), is_bottom ? "Bottom Position" : "Top Position");
+    }
+    guint target = is_bottom ? 1 : 0;
+    if (gtk_drop_down_get_selected(combo_pos) != target) {
+        gtk_drop_down_set_selected(combo_pos, target);
+    }
+}
+
+static void
+on_tile_hide_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
+{
+    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
+    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
+    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
+        gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Enabled" : "Disabled");
+    }
+}
+
+static void
+on_tile_shadow_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
+{
+    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
+    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
+    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
+        gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Active (rgba 82%)" : "Solid Surface");
+    }
+}
+
+static void
+on_tile_margin_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
+{
+    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
+    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
+    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
+        gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "8px Floating" : "0px Full Width");
+    }
+}
+
+static void
 on_apply_panel_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
     ShellConfig *config = shell_config_load(NULL);
@@ -172,12 +162,12 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 
     if (shell_config_save(config, path)) {
         g_message("Saved panel configuration to %s", path);
+        settings_send_ipc_command("reload-config");
     }
     shell_config_destroy(config);
     g_free(dir);
     g_free(path);
 
-    notify_shell_ipc("{\"command\":\"reload-config\"}");
     niri_send_action("{\"Action\":\"ReloadConfig\"}");
 }
 
@@ -191,6 +181,7 @@ build_page_panel(void)
     const char *pos_items[] = { "Top Edge (Default)", "Bottom Edge", NULL };
     GtkStringList *slist = gtk_string_list_new(pos_items);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_pos), G_LIST_MODEL(slist));
+    g_object_unref(slist);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_pos), config->panel_position == PANEL_POSITION_BOTTOM ? 1 : 0);
 
     /* Quick Toggle Tiles Grid */
@@ -199,9 +190,11 @@ build_page_panel(void)
     GtkWidget *tile_shadow = create_metro_toggle_tile("layer-visible-symbolic", "Panel Blur", "Active (rgba 82%)", TRUE);
     GtkWidget *tile_margin = create_metro_toggle_tile("zoom-fit-best-symbolic", "Outer Margins", "0px Full Width", FALSE);
 
+    g_signal_connect(page->combo_pos, "notify::selected", G_CALLBACK(on_combo_pos_changed), tile_edge);
     g_signal_connect_after(tile_edge, "clicked", G_CALLBACK(on_tile_edge_clicked), page->combo_pos);
     g_signal_connect_after(tile_hide, "clicked", G_CALLBACK(on_tile_hide_clicked), NULL);
-    g_signal_connect(page->combo_pos, "notify::selected", G_CALLBACK(on_combo_pos_changed), tile_edge);
+    g_signal_connect_after(tile_shadow, "clicked", G_CALLBACK(on_tile_shadow_clicked), NULL);
+    g_signal_connect_after(tile_margin, "clicked", G_CALLBACK(on_tile_margin_clicked), NULL);
 
     gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_edge, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_hide, 1, 0, 1, 1);

@@ -486,20 +486,25 @@ refresh_bluetooth_state(BluetoothWidget *bt)
     }
 
     if (bt->adapter_proxy == NULL) {
-        gchar *adapter_path = g_strdup("/org/bluez/hci0");
+        gchar *adapter_path = NULL;
         if (bt->object_manager) {
             GList *objects = g_dbus_object_manager_get_objects(bt->object_manager);
             for (GList *l = objects; l != NULL; l = l->next) {
                 GDBusObject *obj = G_DBUS_OBJECT(l->data);
                 GDBusInterface *iface = g_dbus_object_get_interface(obj, BLUEZ_ADAPTER_INTERFACE);
                 if (iface) {
-                    g_free(adapter_path);
                     adapter_path = g_strdup(g_dbus_object_get_object_path(obj));
                     g_object_unref(iface);
                     break;
                 }
             }
             g_list_free_full(objects, g_object_unref);
+        }
+
+        if (!adapter_path) {
+            bt->is_powered = FALSE;
+            update_bluetooth_ui(bt);
+            return;
         }
 
         GError *error = NULL;
@@ -584,11 +589,10 @@ update_bluetooth_ui(BluetoothWidget *bt)
 }
 
 static void
-on_launch_bluetooth_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_launch_bluetooth_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    if (!g_spawn_command_line_async("./builddir/kajo-settings --page bluetooth", NULL)) {
-        g_spawn_command_line_async("kajo-settings --page bluetooth", NULL);
-    }
+    BluetoothWidget *bt = user_data;
+    shell_spawn_settings("bluetooth", bt ? bt->popover : NULL);
 }
 
 /* ─── Declarative GtkPopover Template Subclass ─── */
@@ -660,7 +664,7 @@ build_bluetooth_popover(BluetoothWidget *bt)
                      G_CALLBACK(on_scan_clicked), bt);
 
     g_signal_connect(popover->settings_btn, "clicked",
-                     G_CALLBACK(on_launch_bluetooth_settings_clicked), NULL);
+                     G_CALLBACK(on_launch_bluetooth_settings_clicked), bt);
 
     return GTK_WIDGET(popover);
 }

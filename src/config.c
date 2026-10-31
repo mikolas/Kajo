@@ -449,10 +449,9 @@ shell_config_save(ShellConfig *config, const gchar *path)
 {
     if (!config || !path) return FALSE;
 
-    gchar *dir = g_path_get_dirname(path);
-    if (dir) {
+    g_autofree gchar *dir = g_path_get_dirname(path);
+    if (dir && *dir) {
         g_mkdir_with_parents(dir, 0755);
-        g_free(dir);
     }
 
     g_autoptr(JsonBuilder) builder = json_builder_new();
@@ -558,6 +557,15 @@ shell_config_save(ShellConfig *config, const gchar *path)
     serialize_widget_array(builder, "center", config->layout_center);
     serialize_widget_array(builder, "right", config->layout_right);
     json_builder_end_object(builder);
+
+    if (config->css_path) {
+        json_builder_set_member_name(builder, "css_path");
+        json_builder_add_string_value(builder, config->css_path);
+    }
+    if (config->icon_map_path) {
+        json_builder_set_member_name(builder, "icon_map_path");
+        json_builder_add_string_value(builder, config->icon_map_path);
+    }
 
     json_builder_end_object(builder);
 

@@ -3,6 +3,54 @@
 #include "../../dbus_helpers.h"
 #include <string.h>
 
+typedef struct {
+    GtkWidget *list_devices;
+    GtkWidget *list_disc;
+} BluetoothScanData;
+
+static void populate_real_bluetooth_devices(GtkWidget *list_devices, GtkWidget *list_disc);
+static void schedule_bt_refresh(GtkWidget *list_devices, GtkWidget *list_disc);
+
+static gboolean
+query_bluez_adapter_powered(void)
+{
+    gboolean powered = TRUE;
+    GError *error = NULL;
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    if (!bus) {
+        if (error) g_clear_error(&error);
+        return powered;
+    }
+
+    GDBusObjectManager *om = g_dbus_object_manager_client_new_sync(
+        bus, G_DBUS_OBJECT_MANAGER_CLIENT_FLAGS_NONE,
+        "org.bluez", "/", NULL, NULL, NULL, NULL, &error);
+    if (error) g_clear_error(&error);
+
+    if (om) {
+        GList *objects = g_dbus_object_manager_get_objects(om);
+        for (GList *l = objects; l != NULL; l = l->next) {
+            GDBusObject *obj = G_DBUS_OBJECT(l->data);
+            GDBusInterface *iface = g_dbus_object_get_interface(obj, "org.bluez.Adapter1");
+            if (iface) {
+                GDBusProxy *proxy = G_DBUS_PROXY(iface);
+                GVariant *v_pow = g_dbus_proxy_get_cached_property(proxy, "Powered");
+                if (v_pow) {
+                    powered = g_variant_get_boolean(v_pow);
+                    g_variant_unref(v_pow);
+                }
+                g_object_unref(iface);
+                break;
+            }
+        }
+        g_list_free_full(objects, g_object_unref);
+        g_object_unref(om);
+    }
+
+    g_object_unref(bus);
+    return powered;
+}
+
 static void
 on_bt_power_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data G_GNUC_UNUSED)
 {
@@ -14,6 +62,10 @@ on_bt_device_connect_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
     const char *path = g_object_get_data(G_OBJECT(btn), "dev-path");
     if (path) shell_dbus_bluez_device_action(path, "Connect");
+
+    GtkWidget *list_devices = g_object_get_data(G_OBJECT(btn), "list_devices");
+    GtkWidget *list_disc = g_object_get_data(G_OBJECT(btn), "list_disc");
+    schedule_bt_refresh(list_devices, list_disc);
 }
 
 static void
@@ -21,6 +73,10 @@ on_bt_device_disconnect_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED
 {
     const char *path = g_object_get_data(G_OBJECT(btn), "dev-path");
     if (path) shell_dbus_bluez_device_action(path, "Disconnect");
+
+    GtkWidget *list_devices = g_object_get_data(G_OBJECT(btn), "list_devices");
+    GtkWidget *list_disc = g_object_get_data(G_OBJECT(btn), "list_disc");
+    schedule_bt_refresh(list_devices, list_disc);
 }
 
 static void
@@ -28,12 +84,11 @@ on_bt_device_forget_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
     const char *path = g_object_get_data(G_OBJECT(btn), "dev-path");
     if (path) shell_dbus_bluez_device_action(path, "RemoveDevice");
-}
 
-typedef struct {
-    GtkWidget *list_devices;
-    GtkWidget *list_disc;
-} BluetoothScanData;
+    GtkWidget *list_devices = g_object_get_data(G_OBJECT(btn), "list_devices");
+    GtkWidget *list_disc = g_object_get_data(G_OBJECT(btn), "list_disc");
+    schedule_bt_refresh(list_devices, list_disc);
+}
 
 static void
 populate_real_bluetooth_devices(GtkWidget *list_devices, GtkWidget *list_disc)
@@ -58,22 +113,29 @@ populate_real_bluetooth_devices(GtkWidget *list_devices, GtkWidget *list_disc)
                 icon_name = "phone-symbolic";
         }
 
+        g_autofree gchar *mac_str = format_mac_address_from_bluez_path(dev->path);
+        const char *addr_display = mac_str ? mac_str : dev->path;
+
         if (dev->paired) {
             paired_count++;
             GtkWidget *btn_conn = create_action_button(
                 dev->connected ? "Disconnect" : "Connect",
                 "dev-path", dev->path,
                 G_CALLBACK(dev->connected ? on_bt_device_disconnect_clicked : on_bt_device_connect_clicked), NULL);
+            g_object_set_data(G_OBJECT(btn_conn), "list_devices", list_devices);
+            g_object_set_data(G_OBJECT(btn_conn), "list_disc", list_disc);
 
             GtkWidget *btn_forget = create_action_button(
                 "Forget", "dev-path", dev->path,
                 G_CALLBACK(on_bt_device_forget_clicked), NULL);
+            g_object_set_data(G_OBJECT(btn_forget), "list_devices", list_devices);
+            g_object_set_data(G_OBJECT(btn_forget), "list_disc", list_disc);
 
             GtkWidget *btn_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
             gtk_box_append(GTK_BOX(btn_box), btn_conn);
             gtk_box_append(GTK_BOX(btn_box), btn_forget);
 
-            gchar *sub = g_strdup_printf("%s | Address: %s", dev->connected ? "Connected" : "Paired (Offline)", dev->path);
+            gchar *sub = g_strdup_printf("%s | Address: %s", dev->connected ? "Connected" : "Paired (Offline)", addr_display);
             GtkWidget *row = create_simple_item_row(icon_name, dev->name, sub, btn_box);
             g_free(sub);
 
@@ -83,8 +145,10 @@ populate_real_bluetooth_devices(GtkWidget *list_devices, GtkWidget *list_disc)
             GtkWidget *btn_pair = create_action_button(
                 "Pair Device", "dev-path", dev->path,
                 G_CALLBACK(on_bt_device_connect_clicked), NULL);
+            g_object_set_data(G_OBJECT(btn_pair), "list_devices", list_devices);
+            g_object_set_data(G_OBJECT(btn_pair), "list_disc", list_disc);
 
-            gchar *sub = g_strdup_printf("Discovered Nearby Device | %s", dev->path);
+            gchar *sub = g_strdup_printf("Discovered Nearby Device | %s", addr_display);
             GtkWidget *row = create_simple_item_row(icon_name, dev->name, sub, btn_pair);
             g_free(sub);
 
@@ -97,11 +161,12 @@ populate_real_bluetooth_devices(GtkWidget *list_devices, GtkWidget *list_disc)
     }
 
     if (disc_count == 0) {
-        gtk_box_append(GTK_BOX(list_disc), create_empty_state_label("No nearby Bluetooth devices discovered. Click '[ 🔍 SCAN FOR NEARBY BLUETOOTH DEVICES ]'."));
+        gtk_box_append(GTK_BOX(list_disc), create_empty_state_label("No nearby Bluetooth devices discovered. Click '🔍 SCAN NEARBY DEVICES'."));
     }
 
     g_ptr_array_unref(devices);
 }
+
 static gboolean
 on_bt_scan_refresh_timeout(gpointer user_data)
 {
@@ -122,6 +187,18 @@ on_bt_scan_refresh_timeout(gpointer user_data)
         g_free(data);
     }
     return G_SOURCE_REMOVE;
+}
+
+static void
+schedule_bt_refresh(GtkWidget *list_devices, GtkWidget *list_disc)
+{
+    if (!list_devices || !list_disc) return;
+    BluetoothScanData *data = g_new0(BluetoothScanData, 1);
+    data->list_devices = list_devices;
+    data->list_disc = list_disc;
+    g_object_add_weak_pointer(G_OBJECT(list_devices), (gpointer *)&data->list_devices);
+    g_object_add_weak_pointer(G_OBJECT(list_disc), (gpointer *)&data->list_disc);
+    g_timeout_add(1500, on_bt_scan_refresh_timeout, data);
 }
 
 static void
@@ -164,15 +241,7 @@ on_bt_scan_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 
     GtkWidget *list_devices = g_object_get_data(G_OBJECT(btn), "list_devices");
     GtkWidget *list_disc = g_object_get_data(G_OBJECT(btn), "list_disc");
-
-    if (list_devices && list_disc) {
-        BluetoothScanData *data = g_new0(BluetoothScanData, 1);
-        data->list_devices = list_devices;
-        data->list_disc = list_disc;
-        g_object_add_weak_pointer(G_OBJECT(list_devices), (gpointer *)&data->list_devices);
-        g_object_add_weak_pointer(G_OBJECT(list_disc), (gpointer *)&data->list_disc);
-        g_timeout_add(1500, on_bt_scan_refresh_timeout, data);
-    }
+    schedule_bt_refresh(list_devices, list_disc);
 }
 
 
@@ -194,6 +263,13 @@ typedef struct _SettingsPageBluetoothClass {
 G_DEFINE_TYPE(SettingsPageBluetooth, settings_page_bluetooth, GTK_TYPE_BOX)
 
 static void
+settings_page_bluetooth_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_bluetooth_get_type());
+    G_OBJECT_CLASS(settings_page_bluetooth_parent_class)->dispose(object);
+}
+
+static void
 settings_page_bluetooth_init(SettingsPageBluetooth *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -202,7 +278,10 @@ settings_page_bluetooth_init(SettingsPageBluetooth *self)
 static void
 settings_page_bluetooth_class_init(SettingsPageBluetoothClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = settings_page_bluetooth_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/page_bluetooth.ui");
@@ -218,6 +297,7 @@ build_page_bluetooth(void)
 {
     SettingsPageBluetooth *page = g_object_new(settings_page_bluetooth_get_type(), NULL);
 
+    gtk_switch_set_active(GTK_SWITCH(page->sw_bt), query_bluez_adapter_powered());
     g_signal_connect(page->sw_bt, "state-set", G_CALLBACK(on_bt_power_switch_toggled), NULL);
 
     populate_real_bluetooth_devices(page->list_devices, page->list_disc);

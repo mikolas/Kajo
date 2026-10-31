@@ -23,6 +23,13 @@ typedef struct _SettingsPageAboutClass {
 G_DEFINE_TYPE(SettingsPageAbout, settings_page_about, GTK_TYPE_BOX)
 
 static void
+settings_page_about_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_about_get_type());
+    G_OBJECT_CLASS(settings_page_about_parent_class)->dispose(object);
+}
+
+static void
 settings_page_about_init(SettingsPageAbout *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -31,7 +38,10 @@ settings_page_about_init(SettingsPageAbout *self)
 static void
 settings_page_about_class_init(SettingsPageAboutClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = settings_page_about_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/page_about.ui");

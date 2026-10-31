@@ -1,4 +1,5 @@
 #include "settings_common.h"
+#include <gio/gunixsocketaddress.h>
 #include <string.h>
 
 GtkWidget *
@@ -95,6 +96,22 @@ create_sidebar_row(const gchar *icon_name, const gchar *label_text, const gchar 
 }
 
 GtkWidget *
+create_sidebar_row_with_keywords(const gchar *icon_name, const gchar *label_text, const gchar *subtitle_text, const gchar *page_name, const gchar *keywords)
+{
+    GtkWidget *row = create_sidebar_row(icon_name, label_text, subtitle_text, page_name);
+    if (keywords) {
+        g_object_set_data_full(G_OBJECT(row), "keywords", g_strdup(keywords), g_free);
+    }
+    if (label_text) {
+        g_object_set_data_full(G_OBJECT(row), "label-text", g_strdup(label_text), g_free);
+    }
+    if (subtitle_text) {
+        g_object_set_data_full(G_OBJECT(row), "subtitle-text", g_strdup(subtitle_text), g_free);
+    }
+    return row;
+}
+
+GtkWidget *
 create_action_row(const gchar *icon_name, const gchar *title, const gchar *subtitle, GtkWidget *control)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
@@ -179,6 +196,7 @@ create_metro_toggle_tile(const gchar *icon_name, const gchar *title, const gchar
     GtkWidget *lbl_sub = gtk_label_new(subtitle);
     gtk_widget_add_css_class(lbl_sub, "tile-subtitle");
     gtk_widget_set_halign(lbl_sub, GTK_ALIGN_START);
+    g_object_set_data(G_OBJECT(btn), "tile-subtitle-label", lbl_sub);
 
     gtk_box_append(GTK_BOX(vbox), lbl_title);
     gtk_box_append(GTK_BOX(vbox), lbl_sub);
@@ -228,4 +246,62 @@ is_mac_address_string(const char *str)
 {
     if (!str || strlen(str) != 17) return FALSE;
     return (str[2] == ':' && str[5] == ':' && str[8] == ':' && str[11] == ':' && str[14] == ':');
+}
+
+gchar *
+format_mac_address_from_bluez_path(const char *path)
+{
+    if (!path) return g_strdup("--");
+    const char *dev = strstr(path, "dev_");
+    if (dev && strlen(dev) >= 21) {
+        dev += 4; /* skip dev_ */
+        return g_strdup_printf("%c%c:%c%c:%c%c:%c%c:%c%c:%c%c",
+            dev[0], dev[1], dev[3], dev[4], dev[6], dev[7],
+            dev[9], dev[10], dev[12], dev[13], dev[15], dev[16]);
+    }
+    return g_strdup(path);
+}
+
+gboolean
+settings_send_ipc_command(const gchar *command)
+{
+    if (!command) return FALSE;
+    const gchar *runtime_dir = g_getenv("XDG_RUNTIME_DIR");
+    if (!runtime_dir) runtime_dir = "/tmp";
+    gchar *path = g_build_filename(runtime_dir, "kajo.sock", NULL);
+
+    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
+        g_free(path);
+        return FALSE;
+    }
+
+    GError *error = NULL;
+    GSocket *socket = g_socket_new(G_SOCKET_FAMILY_UNIX, G_SOCKET_TYPE_STREAM, G_SOCKET_PROTOCOL_DEFAULT, &error);
+    if (!socket) {
+        if (error) g_clear_error(&error);
+        g_free(path);
+        return FALSE;
+    }
+
+    GSocketAddress *address = g_unix_socket_address_new(path);
+    if (g_socket_connect(socket, address, NULL, NULL)) {
+        GSocketConnection *conn = g_socket_connection_factory_create_connection(socket);
+        GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
+
+        gchar *msg = g_strconcat(command, "\n", NULL);
+        g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
+        g_free(msg);
+
+        g_object_unref(conn);
+        g_object_unref(address);
+        g_object_unref(socket);
+        g_free(path);
+        return TRUE;
+    }
+
+    if (error) g_clear_error(&error);
+    g_object_unref(address);
+    g_object_unref(socket);
+    g_free(path);
+    return FALSE;
 }

@@ -54,6 +54,13 @@ update_dnd_ui(DndWidget *dnd)
     }
 }
 
+static void
+on_dnd_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    DndWidget *dnd = user_data;
+    shell_spawn_settings("notifications", dnd ? dnd->popover : NULL);
+}
+
 static GtkWidget *
 build_dnd_popover(DndWidget *dnd)
 {
@@ -105,6 +112,7 @@ build_dnd_popover(DndWidget *dnd)
     gtk_button_set_has_frame(GTK_BUTTON(settings_btn), FALSE);
     gtk_widget_set_halign(settings_btn, GTK_ALIGN_END);
     gtk_widget_set_hexpand(settings_btn, TRUE);
+    g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_dnd_settings_clicked), dnd);
 
     gtk_box_append(GTK_BOX(footer_box), settings_btn);
     gtk_box_append(GTK_BOX(main_box), footer_box);

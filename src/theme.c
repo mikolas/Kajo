@@ -153,6 +153,16 @@ shell_theme_apply(ShellTheme *theme, GdkDisplay *display)
 }
 
 void
+shell_theme_reload(ShellTheme *theme)
+{
+    if (!theme)
+        return;
+
+    theme_reload_css(theme);
+    theme_reload_override_css(theme);
+}
+
+void
 shell_theme_destroy(ShellTheme *theme)
 {
     if (!theme)

@@ -260,11 +260,10 @@ on_timer_tick(gpointer user_data)
 }
 
 static void
-on_launch_network_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_launch_network_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    if (!g_spawn_command_line_async("./builddir/kajo-settings --page network", NULL)) {
-        g_spawn_command_line_async("kajo-settings --page network", NULL);
-    }
+    NetworkWidget *net = user_data;
+    shell_spawn_settings("network", net ? net->popover : NULL);
 }
 
 /* ─── Declarative GtkPopover Template Subclass ─── */
@@ -324,7 +323,7 @@ build_network_popover(NetworkWidget *net)
                      G_CALLBACK(on_wifi_switch_toggled), net);
 
     g_signal_connect(popover->settings_btn, "clicked",
-                     G_CALLBACK(on_launch_network_settings_clicked), NULL);
+                     G_CALLBACK(on_launch_network_settings_clicked), net);
 
     return GTK_WIDGET(popover);
 }

@@ -463,7 +463,7 @@ media_pa_context_state_cb(pa_context *ctx, void *userdata)
             };
 
             /* Connect stream to default sink's monitor starting CORKED (zero background CPU!) */
-            pa_stream_connect_record(media->pa_stream_rec, NULL, &attr,
+            pa_stream_connect_record(media->pa_stream_rec, "@DEFAULT_MONITOR@", &attr,
                                      PA_STREAM_PEAK_DETECT | PA_STREAM_ADJUST_LATENCY | PA_STREAM_START_CORKED);
         }
     }

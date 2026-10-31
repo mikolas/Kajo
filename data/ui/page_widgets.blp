@@ -61,6 +61,32 @@ template $SettingsPageWidgets : Box {
     }
   }
 
+  /* Add Widget Bar */
+  Box add_bar {
+    orientation: horizontal;
+    spacing: 8;
+
+    Label {
+      label: "Add Widget";
+      hexpand: true;
+      halign: start;
+    }
+
+    DropDown combo_add_widget {}
+
+    DropDown combo_add_section {}
+
+    DropDown combo_add_mode {}
+
+    Button btn_add {
+      label: "[ + ADD WIDGET ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+
   /* Action Button */
   Button btn_apply {
     label: "[ APPLY PANEL WIDGET LAYOUT ]";
