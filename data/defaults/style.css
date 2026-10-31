@@ -958,24 +958,52 @@ window.shell-lock-window .lock-badge-label {
     color: #8a8a98;
 }
 
-window.shell-lock-window .lock-password-entry {
+window.shell-lock-window button {
+    background: none;
+    background-image: none;
+    box-shadow: none;
+    text-shadow: none;
+    outline: none;
+}
+
+window.shell-lock-window .lock-password-entry,
+window.shell-lock-window .lock-password-entry > text {
+    background: none;
+    background-image: none;
     background-color: #161620;
+    color: #ffffff;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-lock-window .lock-password-entry {
     border: 1px solid #323244;
     border-radius: 0px;
-    color: #ffffff;
     padding: 8px 12px;
     min-height: 38px;
 }
 
+window.shell-lock-window .lock-password-entry > image {
+    color: #8a8a98;
+    background: transparent;
+}
+
+window.shell-lock-window .lock-password-entry > image:hover {
+    color: #ffffff;
+}
+
 window.shell-lock-window .lock-password-entry:focus-within {
-    border-color: #0078d4;
+    border-color: @metro-accent;
 }
 
 window.shell-lock-window .lock-submit-btn {
-    background-color: #0078d4;
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
     color: #ffffff;
-    border: 1px solid #0078d4;
+    border: 1px solid @metro-accent;
     border-radius: 0px;
+    box-shadow: none;
     font-size: 16px;
     font-weight: 700;
     min-width: 44px;
@@ -983,7 +1011,8 @@ window.shell-lock-window .lock-submit-btn {
 }
 
 window.shell-lock-window .lock-submit-btn:hover {
-    background-color: #1084e0;
+    background-image: none;
+    background-color: @metro-accent-hover;
 }
 
 window.shell-lock-window .lock-status-label {
@@ -1003,9 +1032,12 @@ window.shell-lock-window .lock-status-label.error {
 }
 
 window.shell-lock-window .lock-action-btn {
-    background-color: rgba(24, 24, 34, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: none;
+    background-image: none;
+    background-color: #181822;
+    border: 1px solid #323244;
     border-radius: 0px;
+    box-shadow: none;
     color: #c8c8d4;
     font-size: 11px;
     font-weight: 700;
@@ -1014,8 +1046,9 @@ window.shell-lock-window .lock-action-btn {
 }
 
 window.shell-lock-window .lock-action-btn:hover {
-    background-color: #0078d4;
-    border-color: #0078d4;
+    background-image: none;
+    background-color: @metro-accent;
+    border-color: @metro-accent;
     color: #ffffff;
 }
 
@@ -1067,9 +1100,12 @@ window.shell-lock-window .greeter-field-label {
 }
 
 window.shell-lock-window .greeter-dropdown > button {
+    background: none;
+    background-image: none;
     background-color: #161620;
     border: 1px solid #323244;
     border-radius: 0px;
+    box-shadow: none;
     color: #ffffff;
     padding: 8px 12px;
     min-height: 36px;
@@ -1077,10 +1113,13 @@ window.shell-lock-window .greeter-dropdown > button {
 
 window.shell-lock-window .greeter-dropdown > button:hover,
 window.shell-lock-window .greeter-dropdown > button:focus {
+    background-image: none;
+    background-color: #1e1e2c;
     border-color: @metro-accent;
 }
 
 window.shell-lock-window .greeter-poweroff-btn:hover {
+    background-image: none;
     background-color: #e81123;
     border-color: #e81123;
     color: #ffffff;

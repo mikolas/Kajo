@@ -139,6 +139,11 @@ shell_theme_apply(ShellTheme *theme, GdkDisplay *display)
     if (!theme || !display)
         return;
 
+    GtkSettings *gtk_settings = gtk_settings_get_for_display(display);
+    if (gtk_settings) {
+        g_object_set(gtk_settings, "gtk-application-prefer-dark-theme", TRUE, NULL);
+    }
+
     if (theme->provider) {
         gtk_style_context_add_provider_for_display(display,
             GTK_STYLE_PROVIDER(theme->provider),
