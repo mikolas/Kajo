@@ -45,8 +45,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Build as normal user first if builddir/kajo-greeter is missing
-if [ "$ACTION" != "restore" ] && [ ! -x "$PROJECT_ROOT/builddir/kajo-greeter" ]; then
+# Ensure builddir/kajo-greeter is freshly compiled as normal user before elevating privileges
+if [ "$ACTION" != "restore" ] && [ "$(id -u)" -ne 0 ]; then
     echo "==> Building kajo-greeter in $PROJECT_ROOT/builddir..."
     meson compile -C "$PROJECT_ROOT/builddir" kajo-greeter
 fi
