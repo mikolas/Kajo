@@ -199,6 +199,42 @@ executable(
   install: true,
 )
 
+greeter_sources = files(
+  'src/greeter/main.c',
+  'src/greeter/greetd_ipc.c',
+  'src/greeter/greeter_users.c',
+  'src/lock/pam_auth.c',
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+)
+
+executable(
+  'kajo-greeter',
+  greeter_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    layer_shell_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    pam_dep,
+  ],
+  install: true,
+)
+
+install_data(
+  'data/greetd/kajo-greeter-session',
+  install_dir: get_option('bindir'),
+  install_mode: 'rwxr-xr-x',
+)
+
+install_data(
+  'data/greetd/niri-greeter.kdl',
+  install_dir: get_option('datadir') / 'kajo' / 'greetd',
+)
+
 install_subdir(
   'data/defaults',
   install_dir: get_option('datadir') / 'kajo' / 'defaults',
@@ -260,6 +296,14 @@ test_autohide_exe = executable(
   build_by_default: false,
 )
 test('autohide-state', test_autohide_exe)
+
+test_greetd_exe = executable(
+  'test-greetd-ipc',
+  files('tests/test_greetd_ipc.c', 'src/greeter/greetd_ipc.c', 'src/greeter/greeter_users.c'),
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('greetd-ipc', test_greetd_exe)
 
 widget_sources = files(
   'src/config.c',

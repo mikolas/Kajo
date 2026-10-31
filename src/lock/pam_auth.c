@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 typedef struct {
+    gchar *username;
     gchar *password;
 } PamAuthData;
 
@@ -31,6 +32,7 @@ pam_auth_data_free(gpointer data)
         secure_zero_memory(auth->password, strlen(auth->password));
         g_free(auth->password);
     }
+    g_free(auth->username);
     g_free(auth);
 }
 
@@ -159,12 +161,14 @@ pam_auth_thread_func(GTask        *task,
         return;
     }
 
-    const char *username = NULL;
-    struct passwd *pw = getpwuid(getuid());
-    if (pw && pw->pw_name && pw->pw_name[0] != '\0')
-        username = pw->pw_name;
-    else
-        username = g_get_user_name();
+    const char *username = (auth->username && auth->username[0] != '\0') ? auth->username : NULL;
+    if (!username) {
+        struct passwd *pw = getpwuid(getuid());
+        if (pw && pw->pw_name && pw->pw_name[0] != '\0')
+            username = pw->pw_name;
+        else
+            username = g_get_user_name();
+    }
 
     if (!username || username[0] == '\0') {
         g_task_return_new_error(task,
@@ -215,18 +219,29 @@ pam_auth_thread_func(GTask        *task,
 }
 
 void
-shell_pam_authenticate_async(const gchar        *password,
-                             GCancellable       *cancellable,
-                             GAsyncReadyCallback callback,
-                             gpointer            user_data)
+shell_pam_authenticate_user_async(const gchar        *username,
+                                  const gchar        *password,
+                                  GCancellable       *cancellable,
+                                  GAsyncReadyCallback callback,
+                                  gpointer            user_data)
 {
     PamAuthData *auth = g_new0(PamAuthData, 1);
+    auth->username = (username && username[0] != '\0') ? g_strdup(username) : NULL;
     auth->password = g_strdup(password ? password : "");
 
     GTask *task = g_task_new(NULL, cancellable, callback, user_data);
     g_task_set_task_data(task, auth, pam_auth_data_free);
     g_task_run_in_thread(task, pam_auth_thread_func);
     g_object_unref(task);
+}
+
+void
+shell_pam_authenticate_async(const gchar        *password,
+                             GCancellable       *cancellable,
+                             GAsyncReadyCallback callback,
+                             gpointer            user_data)
+{
+    shell_pam_authenticate_user_async(NULL, password, cancellable, callback, user_data);
 }
 
 gboolean

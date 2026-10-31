@@ -7,6 +7,12 @@
 extern "C" {
 #endif
 
+void     shell_pam_authenticate_user_async(const gchar        *username,
+                                           const gchar        *password,
+                                           GCancellable       *cancellable,
+                                           GAsyncReadyCallback callback,
+                                           gpointer            user_data);
+
 void     shell_pam_authenticate_async(const gchar        *password,
                                       GCancellable       *cancellable,
                                       GAsyncReadyCallback callback,

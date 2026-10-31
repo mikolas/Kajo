@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "session_lock.h"
 #include "pam_auth.h"
 #include "screensaver.h"
@@ -8,6 +9,7 @@
 #include <gtk4-session-lock.h>
 #include <gio/gio.h>
 #include <pwd.h>
+#include <string.h>
 #include <unistd.h>
 
 typedef struct {
@@ -136,6 +138,8 @@ set_surfaces_auth_state(ShellSessionLock *self,
             continue;
 
         if (surf->password_entry) {
+            gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(surf->password_entry), FALSE);
+            gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(surf->password_entry), TRUE);
             if (clear_entries)
                 gtk_editable_set_text(GTK_EDITABLE(surf->password_entry), "");
             gtk_widget_set_sensitive(surf->password_entry, !busy);
@@ -217,10 +221,13 @@ submit_password_from_surface(LockMonitorSurface *surf)
     }
 
     self->auth_in_progress = TRUE;
-    g_autofree gchar *pw_copy = g_strdup(pw);
-    set_surfaces_auth_state(self, TRUE, "⟳ Verifying credentials...", FALSE, FALSE);
+    gsize pw_len = strlen(pw);
+    gchar *pw_copy = g_strdup(pw);
+    set_surfaces_auth_state(self, TRUE, "⟳ Verifying credentials...", FALSE, TRUE);
 
     shell_pam_authenticate_async(pw_copy, self->cancellable, on_pam_auth_complete, self);
+    explicit_bzero(pw_copy, pw_len);
+    g_free(pw_copy);
 }
 
 static void
@@ -276,8 +283,7 @@ on_lock_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
 
     if (keyval == GDK_KEY_Escape) {
         if (surf->password_entry && !surf->owner->auth_in_progress) {
-            gtk_editable_set_text(GTK_EDITABLE(surf->password_entry), "");
-            set_surfaces_auth_state(surf->owner, FALSE, NULL, FALSE, FALSE);
+            set_surfaces_auth_state(surf->owner, FALSE, NULL, FALSE, TRUE);
             focus_password_entry_preserve_cursor(surf);
         }
         return TRUE;
@@ -704,6 +710,7 @@ shell_session_lock_activate(ShellSessionLock *self)
 
     self->is_locked = TRUE;
     self->auth_in_progress = FALSE;
+    gtk_window_set_interactive_debugging(FALSE);
 
     if (!gtk_session_lock_instance_lock(self->lock_instance)) {
         self->is_locked = FALSE;

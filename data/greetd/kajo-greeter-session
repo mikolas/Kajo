@@ -1,0 +1,46 @@
+#!/bin/sh
+# Wrapper session script for greetd (/etc/greetd/config.toml)
+# Supports both niri (default, multi-monitor + HiDPI) and cage (--compositor cage)
+
+COMPOSITOR="niri"
+CMD=""
+USER=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --compositor)
+            COMPOSITOR="$2"
+            shift 2
+            ;;
+        --cmd|-c)
+            CMD="$2"
+            shift 2
+            ;;
+        --user|-u)
+            USER="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+[ -n "$CMD" ] && export KAJO_GREETER_CMD="$CMD"
+[ -n "$USER" ] && export KAJO_GREETER_USER="$USER"
+
+if [ "$COMPOSITOR" = "cage" ] || ! command -v niri >/dev/null 2>&1; then
+    exec cage -s -- kajo-greeter
+fi
+
+for cfg in \
+    "/etc/greetd/niri-greeter.kdl" \
+    "/usr/local/share/kajo/greetd/niri-greeter.kdl" \
+    "/usr/share/kajo/greetd/niri-greeter.kdl" \
+    "$HOME/.local/share/kajo/greetd/niri-greeter.kdl"; do
+    if [ -f "$cfg" ]; then
+        exec niri -c "$cfg"
+    fi
+done
+
+exec niri
