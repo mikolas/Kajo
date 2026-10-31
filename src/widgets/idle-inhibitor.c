@@ -54,6 +54,13 @@ update_inhibitor_ui(IdleInhibitorWidget *in)
     }
 }
 
+static void
+on_inhibitor_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    IdleInhibitorWidget *in = user_data;
+    shell_spawn_settings("displays", in ? in->popover : NULL);
+}
+
 static GtkWidget *
 build_inhibitor_popover(IdleInhibitorWidget *in)
 {
@@ -105,6 +112,7 @@ build_inhibitor_popover(IdleInhibitorWidget *in)
     gtk_button_set_has_frame(GTK_BUTTON(settings_btn), FALSE);
     gtk_widget_set_halign(settings_btn, GTK_ALIGN_END);
     gtk_widget_set_hexpand(settings_btn, TRUE);
+    g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_inhibitor_settings_clicked), in);
 
     gtk_box_append(GTK_BOX(footer_box), settings_btn);
     gtk_box_append(GTK_BOX(main_box), footer_box);

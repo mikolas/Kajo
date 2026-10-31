@@ -478,11 +478,10 @@ call_logind_manager_method(const char *method_name, GVariant *parameters)
 }
 
 static void
-on_action_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_action_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    if (!g_spawn_command_line_async("./builddir/kajo-settings", NULL)) {
-        g_spawn_command_line_async("kajo-settings", NULL);
-    }
+    ControlCenterWidget *cc = user_data;
+    shell_spawn_settings(NULL, cc ? cc->popover : NULL);
 }
 
 static void

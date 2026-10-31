@@ -556,6 +556,13 @@ shell_volume_popover_class_init(ShellVolumePopoverClass *klass)
 
 /* ─── Popover construction ─── */
 
+static void
+on_volume_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    VolumeWidget *vol = user_data;
+    shell_spawn_settings("audio", vol ? vol->popover : NULL);
+}
+
 static GtkWidget *volume_build_popover(VolumeWidget *vol)
 {
     ShellVolumePopover *popover = g_object_new(shell_volume_popover_get_type(), NULL);
@@ -577,6 +584,9 @@ static GtkWidget *volume_build_popover(VolumeWidget *vol)
 
     g_signal_connect(vol->mute_button, "clicked",
                      G_CALLBACK(volume_mute_clicked), vol);
+
+    g_signal_connect(popover->settings_btn, "clicked",
+                     G_CALLBACK(on_volume_settings_clicked), vol);
 
     return GTK_WIDGET(popover);
 }

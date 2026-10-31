@@ -151,8 +151,16 @@ shell_config_load(const gchar *path)
                 resolved_path = dev_config;
             } else {
                 g_free(dev_config);
-                /* 3. Installed Environment (/usr/share/kajo/defaults/config.json) */
-                resolved_path = g_strdup("/usr/share/kajo/defaults/config.json");
+                /* 3. User Local Installed Environment (~/.local/share/kajo/defaults/config.json) */
+                gchar *local_share_config = g_build_filename(
+                    g_get_user_data_dir(), "kajo", "defaults", "config.json", NULL);
+                if (g_file_test(local_share_config, G_FILE_TEST_EXISTS)) {
+                    resolved_path = local_share_config;
+                } else {
+                    g_free(local_share_config);
+                    /* 4. System Installed Environment (/usr/share/kajo/defaults/config.json) */
+                    resolved_path = g_strdup("/usr/share/kajo/defaults/config.json");
+                }
             }
         }
     }

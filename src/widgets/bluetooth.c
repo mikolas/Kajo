@@ -589,11 +589,10 @@ update_bluetooth_ui(BluetoothWidget *bt)
 }
 
 static void
-on_launch_bluetooth_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_launch_bluetooth_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    if (!g_spawn_command_line_async("./builddir/kajo-settings --page bluetooth", NULL)) {
-        g_spawn_command_line_async("kajo-settings --page bluetooth", NULL);
-    }
+    BluetoothWidget *bt = user_data;
+    shell_spawn_settings("bluetooth", bt ? bt->popover : NULL);
 }
 
 /* ─── Declarative GtkPopover Template Subclass ─── */
@@ -665,7 +664,7 @@ build_bluetooth_popover(BluetoothWidget *bt)
                      G_CALLBACK(on_scan_clicked), bt);
 
     g_signal_connect(popover->settings_btn, "clicked",
-                     G_CALLBACK(on_launch_bluetooth_settings_clicked), NULL);
+                     G_CALLBACK(on_launch_bluetooth_settings_clicked), bt);
 
     return GTK_WIDGET(popover);
 }
