@@ -1,165 +1,193 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, and contribution standards for developers working on `kajo` and `kajo-settings`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-settings`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is built in C17 using GTK4, `gtk4-layer-shell`, `json-glib`, `gio`, `libpulse`, and `libpulse-mainloop-glib`.
+The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `json-glib-1.0`, `gio-2.0`, `libpulse`, `libpulse-mainloop-glib`, and `libpam`.
 
 ```
-src/main.c                          Daemon entry point & IPC client mode
-src/shell.h/c                       ShellApp — core subsystem wiring & GTK application
-src/panel.h/c                       Panel layer-shell surface & OLED trigger strip
-src/autohide.h/c                    Autohide reveal/hide state machine
-src/config.h/c                      JSON configuration parser & serializer (shell_config_save)
-src/theme.h/c                       3-Tier GTK CSS theme engine & GFileMonitor hot-reload
-src/icons.h/c                       Icon resolution (Fluent UI SVGs + Papirus fallback)
-src/compositor/compositor.h         Compositor abstraction interface
-src/compositor/niri.c               Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
-src/launcher/launcher_surface.h/c   App launcher overlay surface & plugin router
-src/launcher/emoji_dataset.h        Embedded dataset with 1,914 emoji entries
-src/osd/osd.h/c                     Volume/brightness/toast OSD overlay surface
-src/notifications/daemon.h/c        D-Bus notification daemon (org.freedesktop.Notifications)
-src/settings/main.c                 kajo-settings standalone entry point (org.kajo.Settings)
-src/settings/settings_window.h/c    Control panel window layout, sidebar, & 10 settings pages
-src/settings/pages/page_*.c         Individual preference pages (displays, network, audio, etc.)
-src/ipc/socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
-src/vendor/tinyexpr/                TinyExpr lightweight recursive-descent math evaluator
-src/widgets/widget.h                Widget VTable interface (create, update, destroy)
-src/widgets/registry.h/c            Panel widget registrations
-src/widgets/media.c                 MPRIS controller, album art & 16-band live FFT visualizer
-src/widgets/tray.c                  StatusNotifierItem (SNI) tray watcher & ARGB32 pixmap decoder
-src/widgets/*.c                     Individual widget implementations
+src/
+├── main.c                          kajo daemon entry point & IPC client mode
+├── shell.h/c                       ShellApp — core subsystem wiring & live widget reconciliation
+├── panel.h/c                       Panel layer-shell surface & 2px Wayland autohide trigger strip
+├── autohide.h/c                    Autohide reveal/hide state machine & live config reload
+├── config.h/c                      JSON configuration parser & serializer (3-tier path resolution)
+├── theme.h/c                       GTK CSS theme engine, override loader & GFileMonitor hot-reload
+├── icons.h/c                       Icon resolution (Fluent UI SVGs + desktop/theme fallback)
+├── dbus_helpers.h/c                Shared GDBus helpers (NetworkManager, BlueZ, UPower)
+├── compositor/
+│   ├── compositor.h                Compositor abstraction interface
+│   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
+├── ipc/
+│   └── socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
+├── launcher/
+│   ├── launcher_surface.h/c        App launcher overlay surface & prefix plugin router
+│   └── emoji_dataset.h             Embedded dataset with 1,914 emoji entries
+├── lock/
+│   ├── session_lock.h/c            Wayland ext-session-lock-v1 lock screen & logind integration
+│   ├── pam_auth.h/c                Asynchronous GTask PAM authentication worker (libpam)
+│   ├── screensaver.h/c             Fullscreen layer-shell Metro screen saver & Niri DPMS control
+│   └── idle_manager.h/c            Wayland ext-idle-notify-v1 seat timers & logind idle inhibitor FD
+├── greeter/
+│   ├── main.c                      kajo-greeter GTK4 Layer-Shell / XDG fullscreen / --test UI
+│   ├── greetd_ipc.h/c              greetd UNIX socket ($GREETD_SOCK) binary framing & GTask client
+│   └── greeter_users.h/c           POSIX getpwent() user discovery & .desktop session parser
+├── notifications/
+│   └── daemon.h/c                  Freedesktop notification server (org.freedesktop.Notifications)
+├── osd/
+│   └── osd.h/c                     Volume, brightness & status OSD overlay surface
+├── settings/
+│   ├── main.c                      kajo-settings standalone entry point (org.kajo.Settings)
+│   ├── settings_window.h/c         Settings container shell, category sidebar & GtkStack
+│   ├── settings_common.h/c         Shared Metro card, tile, dropdown & IPC helpers
+│   └── pages/
+│       └── page_*.c                10 modular preference pages (displays, network, bluetooth,
+│                                   audio, theme, panel, widgets, notifications, niri, about)
+├── vendor/
+│   └── tinyexpr/                   TinyExpr recursive-descent math expression evaluator
+└── widgets/
+    ├── widget.h                    ShellWidgetClass vtable interface & mode visibility helper
+    ├── registry.h/c                Panel widget registry
+    ├── media.c                     MPRIS2 controller & 16-band Cooley-Tukey FFT visualizer
+    ├── tray.c                      StatusNotifierItem (SNI) watcher & ARGB32 pixmap decoder
+    └── *.c                         20 built-in panel widget implementations
+
+data/
+├── defaults/
+│   ├── config.json                 Default panel, widget, notification & idle configuration
+│   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, lock, greeter)
+│   └── icon-map.json               Logical-to-symbolic icon mappings
+├── greetd/
+│   ├── niri-greeter.kdl            Locked-down Niri configuration for the greetd login session
+│   └── kajo-greeter-session        Wrapper launcher script for /etc/greetd/config.toml
+└── ui/
+    └── *.blp                       Blueprint Markup (.blp) declarative UI templates
+
+tests/
+├── test_config.c                   Config JSON load/save roundtrip & defaults resolution tests
+├── test_pam_auth.c                 Async PAM worker error/null/cancellation handling tests
+├── test_idle_manager.c             Idle manager timeout & inhibitor state machine tests
+├── test_ipc.c                      UNIX domain socket IPC server/client dispatch tests
+├── test_autohide.c                 Autohide state transitions, hold-open & margin calculation tests
+├── test_registry.c                 Widget registry completeness & lifecycle tests
+└── test_greetd_ipc.c               greetd binary framing, auth roundtrip & session parser tests
 ```
 
 ---
 
-## 2. Debug Build & Development Workflow
+## 2. Build, Test & Debug Workflow
 
 ### Prerequisites
-* `gtk4` (≥ 4.12)
-* `gtk4-layer-shell`
-* `json-glib-1.0`
-* `gio-2.0`
-* `libpulse`
-* `libpulse-mainloop-glib`
-* `blueprint-compiler`
+- `gtk4` (≥ 4.12), `gtk4-layer-shell` (≥ 1.0)
+- `wayland-client`, `wayland-protocols`, `wayland-scanner`
+- `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
+- `libpulse`, `libpulse-mainloop-glib`
+- `pam` (`libpam`)
+- `blueprint-compiler`, `meson`, `ninja`
 
-### Debug Compilation
-```sh
-# Clone and setup debug build with symbol table
-git clone git@github.com:mikolas/Kajo.git
-cd Kajo
-meson setup builddir -Dbuildtype=debug
-ninja -C builddir
+### Compiling & Running the Test Suite
+Every change must compile with **0 errors and 0 warnings** and pass all 7 automated GTest suites:
+
+```bash
+# Configure (defaults to prefix=~/.local)
+meson setup builddir
+
+# Compile all targets (kajo, kajo-settings, kajo-greeter)
+meson compile -C builddir
+
+# Run all 7 automated GTest suites
+meson test -C builddir
+
+# Install to ~/.local/bin and ~/.local/share/kajo
+meson install -C builddir
 ```
 
-### Running Executables in Debug Mode
-```sh
-# Run main shell in verbose debug mode (requires Niri compositor)
-NIRI_SOCKET=/run/user/1000/niri.sock ./builddir/kajo
+### Automated Test Suites (`meson test -C builddir`)
+| Suite Name | Binary | Coverage |
+| :--- | :--- | :--- |
+| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` fields, defaults fallback. |
+| `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
+| `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
+| `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
+| `autohide-state` | `test-autohide` | Panel autohide states (`VISIBLE`, `HIDING`, `HIDDEN`, `REVEALING`), 2px trigger strip margins, popover/launcher hold-open, and live config reload. |
+| `ipc-socket` | `test-ipc` | `$XDG_RUNTIME_DIR/kajo.sock` command dispatch (`lock`, `screensaver`, `reload-config`, etc.). |
+| `widget-registry` | `test-registry` | Verifies all 20 registered `ShellWidgetClass` definitions have valid `.id` and `.name` fields. |
 
-# Run control panel app
-./builddir/kajo-settings
+### Running & Debugging Individual Executables
+```bash
+# 1. Run main desktop shell
+./builddir/kajo
 
-# Run control panel directly opened to a specific page
-./builddir/kajo-settings --page network
+# 2. Run settings app directly on a specific page
+./builddir/kajo-settings --page audio
+
+# 3. Run kajo-greeter in safe desktop preview mode (uses PAM verification, no logout)
+./builddir/kajo-greeter --test --cmd niri-session
+
+# 4. Run kajo-greeter inside a nested Niri compositor window on your desktop
+KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
 ```
 
 ---
 
-## 3. UNIX Domain Socket IPC Protocol Reference (`$XDG_RUNTIME_DIR/kajo.sock`)
+## 3. IPC Protocol Reference
 
-Client commands are transmitted over the UNIX domain socket in instant IPC client mode:
+### A. Kajo Shell Socket (`$XDG_RUNTIME_DIR/kajo.sock`)
+Line-delimited UTF-8 commands (`<command>\n`) sent by `kajo <flag>` or `kajo-settings`:
 
-```c
-/* Protocol Payload Format: <command_string>\n */
-```
+| Command | Aliases | Action |
+| :--- | :--- | :--- |
+| `launcher-toggle` | `toggle-launcher` | Toggles the application launcher overlay. |
+| `launcher-open` | — | Opens the application launcher overlay. |
+| `launcher-close` | — | Closes the application launcher overlay. |
+| `lock` | `lock-session` | Activates the `ext-session-lock-v1` PAM lock screen. |
+| `screensaver` | `start-screensaver` | Activates the fullscreen Metro screen saver overlay. |
+| `reload-config` | — | Reloads `~/.config/kajo/config.json` and reconciles panel geometry, idle timers, and active widgets in-place. |
+| `reload-theme` | — | Reloads `style.css` and `~/.config/kajo/theme-override.css` across all surfaces. |
+| `volume-up` | `volume+` | Increases default audio sink volume by 5% + shows OSD. |
+| `volume-down` | `volume-` | Decreases default audio sink volume by 5% + shows OSD. |
+| `volume-mute` | `volume-toggle` | Toggles default audio sink mute + shows OSD. |
+| `brightness-up` | `brightness+` | Increases backlight brightness by 5% + shows OSD. |
+| `brightness-down` | `brightness-` | Decreases backlight brightness by 5% + shows OSD. |
 
-| IPC Command | Aliases | Description |
-|---|---|---|
-| `launcher-toggle` | `toggle-launcher` | Toggles the application launcher surface overlay. |
-| `launcher-open` | — | Displays the application launcher surface overlay. |
-| `launcher-close` | — | Hides the application launcher surface overlay. |
-| `volume-up` | `volume+` | Increases PulseAudio sink volume by 5% and triggers OSD. |
-| `volume-down` | `volume-` | Decreases PulseAudio sink volume by 5% and triggers OSD. |
-| `volume-mute` | `volume-toggle` | Toggles PulseAudio sink mute state and triggers OSD. |
-| `brightness-up` | `brightness+` | Increases display brightness via Logind Seat API and triggers OSD. |
-| `brightness-down` | `brightness-` | Decreases display brightness via Logind Seat API and triggers OSD. |
+### B. `greetd` Socket (`$GREETD_SOCK`)
+Binary length-prefixed framing (`uint32_t` native-endian length + UTF-8 JSON payload) implemented in `src/greeter/greetd_ipc.c`:
+1. `{"type": "create_session", "username": "<user>"}`
+2. `{"type": "post_auth_message_response", "response": "<password>"}`
+3. `{"type": "start_session", "cmd": ["..."], "env": ["..."]}` (or `{"type": "cancel_session"}` on failure).
 
 ---
 
 ## 4. How to Add a New Panel Widget
 
-To add a new widget to the desktop panel:
-
-1. **Create Source File** (`src/widgets/my_widget.c`):
-   Implement the `ShellWidgetClass` vtable:
+1. **Create `src/widgets/my_widget.c`**:
+   Every `ShellWidgetClass` **must** initialize both `.id` and `.name` (Rule #7):
    ```c
    #include "widget.h"
 
-   static GtkWidget *my_widget_create(ShellWidget *widget, ShellApp *app) {
-       /* Construct GTK4 widget */
-   }
-
-   static void my_widget_update(ShellWidget *widget) {
-       /* Update widget UI */
-   }
-
-   static void my_widget_destroy(ShellWidget *widget) {
-       /* Free private resources */
-   }
-
    const ShellWidgetClass my_widget_class = {
-       .name = "my-widget",
-       .create = my_widget_create,
-       .update = my_widget_update,
+       .id      = "my-widget",
+       .name    = "My Widget",
+       .create  = my_widget_create,
        .destroy = my_widget_destroy,
+       .get_widget = my_widget_get_widget,
+       .enable  = my_widget_enable,
+       .disable = my_widget_disable,
    };
    ```
-
-2. **Register in Registry** (`src/widgets/registry.c`):
-   ```c
-   extern const ShellWidgetClass my_widget_class;
-   shell_widget_registry_register("my-widget", &my_widget_class);
-   ```
-
-3. **Update Build System** (`meson.build`):
-   Add `'src/widgets/my_widget.c'` to `desktop_shell_sources`.
+2. **Register in `src/widgets/registry.c`** and add `'src/widgets/my_widget.c'` to `sources` and `widget_sources` in `meson.build`.
 
 ---
 
-## 5. Strict Contribution Rules & Coding Standards
+## 5. Strict Coding, Resource & Security Standards
 
-All pull requests and code modifications must adhere to the following rules:
-
-1. **Zero External Shell Commands Policy**:
-   * All system controls (audio, network, session power, compositor actions) **MUST** use native C APIs, GDBus (`gio`), or UNIX domain sockets (`$NIRI_SOCKET`).
-   * Spawning external CLI binaries (`pactl`, `wpctl`, `nmcli`, `loginctl`, `pavucontrol`) via `g_spawn_command_line_sync` is strictly prohibited.
-
-2. **User Master Configuration File Sanctity**:
-   * **NEVER** touch, mutate, or edit user master configuration files (such as `~/.config/niri/config.kdl`).
-   * All shell-managed compositor rules belong strictly in modular include files (`~/.config/niri/config.d/00-kajo.kdl`, `~/.config/niri/config.d/10-outputs.kdl`).
-
-3. **Strict XDG Configuration Directory Scoping**:
-   * All settings persistence must write strictly to user XDG paths (`~/.config/kajo/` via `g_get_user_config_dir()`).
-   * Never write files to `/tmp`, project root, or desktop directories during runtime.
-
-4. **Locale-Independent String & Float Parsing**:
-   * Always use `g_ascii_strtod()` for string-to-float conversions to prevent locale bugs on non-US systems.
-
-5. **Non-Empty String Guards in Window Matching**:
-   * All string searching in compositor window focus logic (`niri.c`) must be explicitly guarded against empty strings (`*str != '\0'`) to prevent matching window #0.
-
-6. **Unified Metro Flat Aesthetic Standard**:
-   * All UI surfaces must conform to the 100% flat Metro design system: `#141414` dark surface, 13px Fira Code monospace typography, crisp 1px `#2b2b2b` pane dividers, and flat 2-state Metro toggle tiles.
-
-7. **Zero-CPU Popout Gating Architecture**:
-   * All high-frequency render timers (e.g. 30 FPS FFT animation loops) and PulseAudio monitor recording streams **MUST** be gated behind GTK `map` / `unmap` signal handlers.
-   * Streams must start corked (`PA_STREAM_START_CORKED`), uncork when the popout opens, and re-cork immediately when closed so background idle CPU consumption remains below 0.05%.
-
-8. **Safe D-Bus Iterators and Icon Pipeline Memory Lifecycle**:
-   * For complex D-Bus payload structures (such as StatusNotifierItem `IconPixmap` `a(iiay)`), iterators must be verified for valid bounds and strides.
-   * Icon fallback resolution must never double-free strings passed into or returned from lookup chains.
+1. **No Mock Data in UI**: All Wi-Fi APs, Bluetooth devices, PipeWire sinks/sources/streams, UPower batteries, Niri outputs, and system users/sessions must query live system interfaces.
+2. **Popout-Gated Resource Architecture**: PulseAudio monitor streams (`@DEFAULT_MONITOR@`) must start corked (`PA_STREAM_START_CORKED`), uncork on popover `map`, and re-cork on popover `closed`/`unmap`. High-frequency timers (30 FPS FFT) must be removed when unmapped so idle background CPU stays $<0.05\%$.
+3. **Credential & Lock/Greeter Hardening**:
+   - Never leave plaintext passwords in `GtkPasswordEntry` while asynchronous PAM or `greetd` verification is in flight—copy, clear the widget buffer immediately, reset `show-peek-icon` (`FALSE` $\rightarrow$ `TRUE`) so visibility returns to masked mode, and scrub temporary buffers with `explicit_bzero()`.
+   - Never pass passwords through `JsonBuilder` / `JsonGenerator` (which allocate unscrubbed heap copies).
+   - Always disable GTK interactive debugging (`gtk_window_set_interactive_debugging(FALSE)`) on lock and greeter surfaces, and set `prctl(PR_SET_DUMPABLE, 0)` in `kajo-greeter`.
+4. **Autohide Wayland Surface Visibility**: Never set `opacity: 0` on `#panel-container.autohide-hidden` in `style.css` (GTK4 skips rendering nodes with `opacity: 0`, which prevents Wayland surface buffer commits and breaks pointer enter events on the 2px trigger strip).

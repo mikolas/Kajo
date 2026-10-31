@@ -1052,4 +1052,39 @@ window.shell-screensaver-window .screensaver-hint-label {
     color: rgba(255, 255, 255, 0.35);
 }
 
+/* ─── Kajo Greeter Surface (.shell-greeter-window) ─── */
+window.shell-lock-window .lock-card.auth-error {
+    border-color: #e81123;
+    border-top: 3px solid #e81123;
+}
+
+window.shell-lock-window .greeter-field-label {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #8a8a98;
+    margin-top: 4px;
+}
+
+window.shell-lock-window .greeter-dropdown > button {
+    background-color: #161620;
+    border: 1px solid #323244;
+    border-radius: 0px;
+    color: #ffffff;
+    padding: 8px 12px;
+    min-height: 36px;
+}
+
+window.shell-lock-window .greeter-dropdown > button:hover,
+window.shell-lock-window .greeter-dropdown > button:focus {
+    border-color: @metro-accent;
+}
+
+window.shell-lock-window .greeter-poweroff-btn:hover {
+    background-color: #e81123;
+    border-color: #e81123;
+    color: #ffffff;
+}
+
+
 

@@ -1,198 +1,240 @@
 # Kajo
 
-A high-performance, lightweight Wayland desktop environment and control panel for the [Niri](https://github.com/niri-wm/niri) compositor. Provides an integrated status panel, application launcher, on-screen display overlays, and a Freedesktop notification daemon as a single process.
+A high-performance, lightweight Wayland desktop shell, system settings suite, session lock, and `greetd` login greeter built for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
 
-Built in standard C17 with GTK4, gtk4-layer-shell, and Blueprint Markup. Designed for OLED displays, minimal resource usage, and complete keyboard-driven operation.
+Built in standard C17 with GTK4, `gtk4-layer-shell`, `libpulse`, `libpam`, and Blueprint Markup. Designed for OLED displays, sub-0.05% idle CPU usage, and keyboard-driven operation.
 
 ---
 
-## 🌟 Key Features
+## 🌟 Overview of Executables
 
-### 🖥️ Status Panel & Telemetry
-- **20 Built-in Widgets**: Workspaces, clock, volume dropdown, control center, battery, network, bluetooth, media, CPU/memory, disk telemetry, network throughput, theme picker, keyboard layout, system tray, notifications, power menu, privacy, DND, idle-inhibitor, and custom user scripts.
-- **Hardware Telemetry**: Real-time normalized CPU load (`btop` parity), 2-column per-core load grid (`C01`...`C12`), RAPL/HWMON power draw (Watts), physical disk space (`statvfs`/`/proc/mounts` deduplication), and live dual network throughput (`⬇ RX` / `⬆ TX`).
-- **16-Band Live PulseAudio FFT Spectrum Visualizer**: Dynamic MPRIS player bus discovery, 2-column hero album art popover, and real-time 16-band vertical FFT spectrum analyzer ($86\text{ Hz} \dots 21.5\text{ kHz}$) using a zero-dependency 512-point Cooley-Tukey FFT engine with logarithmic $\log_{10}$ decibel compression and volume-independent dynamic auto-sensitivity (`auto_sens`).
-- **Persistent Audio Control**: Integrated PulseAudio/WirePlumber C API sink selector (`pa_context_set_default_sink`).
-- **Metro Theme & Accent Switcher**: Live accent color switcher with 8 presets (Cobalt Blue, Windows Purple, Catppuccin, Nord, Emerald, Crimson, Amber Gold, Cyberpunk Cyan) dynamically updating UI controls and telemetry LevelBars in sub-10ms.
+The project builds and installs three integrated executables plus a `greetd` session wrapper:
 
-### ⚙️ Kajo Settings Control Panel *(Under Construction / Proof of Concept)*
-- **Proof of Concept Application (`kajo-settings`)**: The current settings application serves as an initial functional proof-of-concept for display output configuration, Niri window rules, and per-application WirePlumber audio stream mixing.
-- **Upcoming Revamp**: `kajo-settings` is undergoing active redesign and will be completely overhauled in an upcoming release.
+| Executable | Purpose |
+| :--- | :--- |
+| **`kajo`** | Primary Wayland desktop shell daemon (status panel, 20 live widgets, multi-plugin app launcher, OSD overlays, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
+| **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC, and Kajo IPC integration. |
+| **`kajo-greeter`** | Graphical Wayland login greeter for `greetd` supporting both `niri` (`gtk4-layer-shell` multi-monitor) and `cage` (XDG fullscreen kiosk) compositors. |
+| **`kajo-greeter-session`** | Wrapper launcher script for `/etc/greetd/config.toml`. |
 
-### 🚀 Launcher, OSD & Notifications
-- **Multi-Plugin Launcher**: Keyboard-driven app launcher, emoji picker (1914 entries), calculator, terminal command runner, and window switcher.
-- **Sub-Millisecond OSD**: Instant UNIX domain socket IPC overlays for volume, brightness, and media feedback.
-- **Notification Daemon**: Integrated `org.freedesktop.Notifications` server with unread history popover, PWA window title focus routing, and custom toast timeouts.
+---
 
-### ⚡ Performance, Zero-CPU Popout Gating & Reliability
-- **Popout-Gated Resource Architecture**: PulseAudio monitor streams start corked (`PA_STREAM_START_CORKED`); 30 FPS FFT timers, audio callbacks, sysfs 128-core frequency reads, and popover widget decodes run **only when popouts are mapped open**. Background idle CPU footprint is $<0.05\%$.
-- **Robust StatusNotifierItem Tray Engine**: Full `org.kde.StatusNotifierWatcher` implementation with safe GIO name watcher lifecycle, ARGB32 `IconPixmap` bitmap decoding, and fallback theme lookups for Electron, Qt, and GTK applications.
-- **Zero Command Spawning**: 100% native GDBus, PulseAudio C API, and Niri socket IPC.
-- **Smart Icon Engine**: Case-insensitive `.desktop` file parsing via `GKeyFile`, `Papirus-Dark` theme integration, and GTK symbolic fallback pipeline.
-- **OLED Auto-Hide**: 100% transparent edge trigger strip with smooth cubic ease reveal/hide animations.
+## ✨ Key Features
+
+### 🖥️ Status Panel & Hardware Telemetry (`kajo`)
+- **20 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery, network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), active window title, launcher button, and custom user scripts.
+- **16-Band Live FFT Spectrum Visualizer**: Dynamic MPRIS2 player discovery, album art hero view, and a 30 FPS 16-band Cooley-Tukey FFT spectrum analyzer capturing directly from `@DEFAULT_MONITOR@` (corked automatically when the popover closes for 0.0% background CPU usage).
+- **OLED Smart Autohide**: Smooth cubic-bezier slide animations with a 2px transparent Wayland edge trigger strip, popover/launcher hold-open guards, and live config reload.
+
+### 🔒 Native Session Lock, Screen Saver & Idle Manager (`kajo`)
+- **Wayland Session Lock (`ext-session-lock-v1`)**: Multi-monitor lock screen via `gtk4-session-lock` with asynchronous non-blocking PAM authentication (`libpam`), `systemd-logind` `Lock`/`Unlock`/`PrepareForSleep` integration, and scrubbed credential memory (`explicit_bzero`).
+- **Metro Screen Saver**: Fullscreen layer-shell overlay with 3 visual modes (`clock`, `tiles`, `blank`) and OLED burn-in drift protection, plus automatic Niri DPMS monitor power-off.
+- **Wayland Idle & Sleep Manager (`ext-idle-notify-v1`)**: Configurable inactivity timeouts for screen saver, monitor DPMS power-off, and automatic session lock, synchronized with the panel and Control Center **Keep Awake** (`systemd-logind` idle inhibitor FD).
+
+### ⚙️ Kajo Settings Application (`kajo-settings`)
+- **Displays & Idle Security (`displays`)**: Queries live monitor modes, refresh rates, fractional scale, orientation, and VRR from `niri msg -j outputs`, applies changes immediately via Niri IPC, persists to `~/.config/niri/config.kdl`, and configures Screen Saver & Session Lock timeouts.
+- **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, and inline WPA/WPA2 password authentication.
+- **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery (`GDBusObjectManager`), live device scanning, pairing, and connection toggling.
+- **Audio & PipeWire (`audio`)**: Asynchronous non-blocking PulseAudio/PipeWire context for default output sink selection, microphone input gain/mute, and per-application stream volume sliders.
+- **Theme (`theme`), Panel (`panel`), Widgets (`widgets`), Notifications (`notifications`), Niri (`niri`), About (`about`)**: Live accent color switching (`@metro-accent`), panel edge/height/autohide configuration, interactive widget ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) reconciliation without restarting `kajo`.
+
+### 🔐 Kajo Login Greeter (`kajo-greeter`)
+- **Native `greetd` IPC Client**: Speaks the `greetd` binary protocol (`$GREETD_SOCK`) with zero-copy scrubbed password serialization, `prctl(PR_SET_DUMPABLE, 0)` core-dump protection, and GTK Inspector lockout.
+- **Automatic User & Session Discovery**: Enumerates human users via `getpwent()` and parses `/usr/share/wayland-sessions/*.desktop` & `/usr/share/xsessions/*.desktop`, remembering the last user and session.
+- **Dual Compositor & Desktop Preview Support**: Runs natively on multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage` (`--fullscreen`), or inside your active desktop session (`kajo-greeter --test`) for instant previewing without logging out.
 
 ---
 
 ## 🛠️ Building and Installing
 
-### Dependencies
-`gtk4` (≥ 4.12), `gtk4-layer-shell`, `json-glib`, `gio-2.0`, `libpulse`, `libpulse-mainloop-glib`, `blueprint-compiler`
+### 1. System Dependencies
+Ensure the following development packages are installed (Arch Linux / CachyOS package names shown):
+- `gtk4` (≥ 4.12)
+- `gtk4-layer-shell` (≥ 1.0, includes `gtk4-session-lock`)
+- `wayland`, `wayland-protocols`
+- `json-glib`, `glib2` (`gio-2.0`, `gio-unix-2.0`)
+- `libpulse` (`libpulse`, `libpulse-mainloop-glib`)
+- `pam` (`libpam`)
+- `blueprint-compiler`, `meson`, `ninja`
 
-```sh
+```bash
+sudo pacman -S --needed gtk4 gtk4-layer-shell wayland wayland-protocols \
+    json-glib glib2 libpulse pam blueprint-compiler meson ninja
+```
+
+### 2. Build & User Installation (`~/.local`)
+By default, `meson.build` configures `prefix=~/.local`, installing binaries to `~/.local/bin` and default data/icons to `~/.local/share/kajo/`:
+
+```bash
 meson setup builddir
 meson compile -C builddir
+meson test -C builddir
 meson install -C builddir
 ```
 
-By default, `meson.build` sets the installation prefix to `~/.local`, placing binaries in `~/.local/bin` and data assets in `~/.local/share/kajo/`.
+Ensure `~/.local/bin` is in your `$PATH`.
 
-### Running & Keybinding Integration in Niri
+### 3. Do You Need to Copy Config or Theme Files Manually?
+**No.** You do **not** need to copy `data/defaults/config.json` or `data/defaults/style.css` into `~/.config/kajo/`.
+
+Kajo uses an automatic 3-tier asset resolution chain:
+1. **User Overrides (`~/.config/kajo/`)**: Created automatically when you click **Apply / Save** in `kajo-settings` (`~/.config/kajo/config.json` and `~/.config/kajo/theme-override.css`).
+2. **Installed System/User Share (`~/.local/share/kajo/defaults/` & `/usr/local/share/kajo/defaults/`)**: Installed automatically by `meson install -C builddir`.
+3. **Source Tree Fallback (`data/defaults/`)**: Used automatically when running binaries directly from `./builddir/`.
+
+---
+
+## 🖥️ Configuring Kajo for Niri
 
 Add the following to your `~/.config/niri/config.kdl`:
 
 ```kdl
-// 1. Include modular desktop settings (managed by kajo-settings)
-include "config.d/*.kdl"
-
-// 2. Launch kajo at startup
+// 1. Launch Kajo shell daemon at session startup
 spawn-at-startup "kajo"
 
-// 3. Keybindings (Fast UNIX Domain Socket Client Mode)
+// 2. Recommended Keybindings (Instant UNIX Socket IPC Client Mode)
 binds {
-    Mod+D { spawn "kajo" "--toggle-launcher"; }
-    Mod+S { spawn "kajo-settings"; }
-    XF86AudioRaiseVolume { spawn "kajo" "--volume-up"; }
-    XF86AudioLowerVolume { spawn "kajo" "--volume-down"; }
-    XF86AudioMute        { spawn "kajo" "--volume-mute"; }
-    XF86MonBrightnessUp   { spawn "kajo" "--brightness-up"; }
-    XF86MonBrightnessDown { spawn "kajo" "--brightness-down"; }
+    // Application Launcher & Settings
+    Mod+D             { spawn "kajo" "--toggle-launcher"; }
+    Mod+S             { spawn "kajo-settings"; }
+
+    // Session Lock & Screen Saver
+    Mod+Shift+L       { spawn "kajo" "--lock"; }
+    Mod+Shift+S       { spawn "kajo" "--screensaver"; }
+
+    // Audio Volume & Mute (with Kajo OSD)
+    XF86AudioRaiseVolume allow-when-locked=true { spawn "kajo" "--volume-up"; }
+    XF86AudioLowerVolume allow-when-locked=true { spawn "kajo" "--volume-down"; }
+    XF86AudioMute        allow-when-locked=true { spawn "kajo" "--volume-mute"; }
+
+    // Display Backlight Brightness (with Kajo OSD)
+    XF86MonBrightnessUp   allow-when-locked=true { spawn "kajo" "--brightness-up"; }
+    XF86MonBrightnessDown allow-when-locked=true { spawn "kajo" "--brightness-down"; }
 }
 ```
 
 ---
 
-## 📖 User Guide
+## 🔐 Installing & Testing `kajo-greeter` for `greetd`
 
-### 💻 Command-Line Interface (CLI) Arguments
+### Testing Without Logging Out (Two Safe Desktop Modes)
 
-#### `kajo` (Desktop Shell & Client)
-When invoked with no arguments, `kajo` starts as the primary background Wayland desktop shell daemon. When invoked with any of the following arguments, it acts as an instant IPC client communicating with the running daemon via `$XDG_RUNTIME_DIR/kajo.sock`:
+Before enabling `kajo-greeter` in `/etc/greetd/config.toml`, you can test it directly inside your running desktop session:
+
+1. **Stage 1 — Instant Window Preview (`--test`)**:
+   Opens `kajo-greeter` in a regular `1280x800` window on your desktop and verifies your password against PAM (`libpam`) without starting a new session:
+   ```bash
+   ./builddir/kajo-greeter --test --cmd niri-session
+   ```
+   *(Press `Ctrl+Esc` at any time to close the preview window.)*
+
+2. **Stage 2 — Nested `niri` Compositor Test**:
+   Runs a nested windowed `niri` compositor using the locked-down greeter config:
+   ```bash
+   KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
+   ```
+
+### System-Wide Installation for `greetd`
+
+Because the `greetd` daemon runs as the unprivileged system user `greeter` (which cannot access `/home/<user>/.local/`), use the bundled installer script [data/greetd/install-greeter.sh](data/greetd/install-greeter.sh) to copy `kajo-greeter`, `kajo-greeter-session`, `niri-greeter.kdl`, and the default theme/icons to `/usr/local` and `/etc/greetd`:
+
+```bash
+# Install files to /usr/local & /etc/greetd
+./data/greetd/install-greeter.sh
+
+# Or install AND automatically activate in /etc/greetd/config.toml (backs up config.toml.bak)
+./data/greetd/install-greeter.sh --enable
+
+# To revert /etc/greetd/config.toml back to your previous greeter at any time:
+./data/greetd/install-greeter.sh --restore
+```
+
+If configuring `/etc/greetd/config.toml` manually:
+
+**Option A — Using `niri` (Recommended: Multi-Monitor + Native HiDPI)**:
+```toml
+[terminal]
+vt = 1
+
+[default_session]
+command = "kajo-greeter-session --cmd niri-session"
+user = "greeter"
+```
+
+**Option B — Using `cage` (Single-Monitor Kiosk Compositor)**:
+```toml
+[terminal]
+vt = 1
+
+[default_session]
+command = "cage -s -- kajo-greeter --cmd niri-session"
+user = "greeter"
+```
+
+---
+
+## 💻 Command-Line Interface (CLI) Reference
+
+### 1. `kajo` (Desktop Shell Daemon & IPC Client)
+When invoked with no arguments, `kajo` starts as the Wayland desktop shell daemon. When invoked with an argument, it sends an IPC command to `$XDG_RUNTIME_DIR/kajo.sock`:
 
 | Option / Argument | Aliases | Description |
-|---|---|---|
-| *(no arguments)* | — | Launches the desktop shell daemon (status panel, launcher overlay, OSD, notification server). |
-| `--toggle-launcher` | `-t`, `launcher-toggle` | Toggles the visibility of the application launcher surface overlay. |
-| `--volume-up` | `volume-up` | Increases default PulseAudio sink volume by 5% and displays the OSD overlay. |
-| `--volume-down` | `volume-down` | Decreases default PulseAudio sink volume by 5% and displays the OSD overlay. |
-| `--volume-mute` | `volume-mute` | Toggles the mute state of the default sink and displays the OSD overlay. |
-| `--brightness-up` | `brightness-up` | Increases monitor backlight brightness by 5% and displays the OSD overlay. |
-| `--brightness-down` | `brightness-down` | Decreases monitor backlight brightness by 5% and displays the OSD overlay. |
+| :--- | :--- | :--- |
+| *(no arguments)* | — | Starts the Kajo Wayland desktop shell daemon. |
+| `--toggle-launcher` | `-t`, `launcher-toggle` | Toggles the application launcher overlay. |
+| `--lock` | `lock` | Immediately activates the `ext-session-lock-v1` PAM lock screen. |
+| `--screensaver` | `screensaver` | Immediately starts the fullscreen Metro screen saver overlay. |
+| `--volume-up` | `volume-up` | Increases default audio sink volume by 5% and shows OSD. |
+| `--volume-down` | `volume-down` | Decreases default audio sink volume by 5% and shows OSD. |
+| `--volume-mute` | `volume-mute` | Toggles default audio sink mute state and shows OSD. |
+| `--brightness-up` | `brightness-up` | Increases display backlight brightness by 5% and shows OSD. |
+| `--brightness-down` | `brightness-down` | Decreases display backlight brightness by 5% and shows OSD. |
 
-#### `kajo-settings` (Control Panel)
-The standalone system settings application provides access to system preferences, display outputs, audio mixing, and appearance:
-
+### 2. `kajo-settings` (System Settings Application)
 | Option / Flag | Description |
-|---|---|
-| *(no arguments)* | Opens the settings window on the default page (`displays`). |
-| `-p <PAGE>`, `--page <PAGE>` | Opens the settings window directly navigated to the specified page ID. |
-
-**Available Page Identifiers (`--page`):**
-| Page ID | Title | Description |
-|---|---|---|
-| `displays` | Displays & Monitors | Monitor outputs, resolutions, refresh rates, scaling, and VRR settings. |
-| `network` | Network & Wi-Fi | Active network interfaces, IP addresses, and Wi-Fi access point discovery. |
-| `bluetooth` | Bluetooth & Devices | Bluetooth adapter toggle, paired devices, and live scanning for nearby devices. |
-| `audio` | Audio & PipeWire | Stream volume mixer, master volume, and sink/source routing. |
-| `theme` | Theme & Accents | 8 curated Metro accent color tiles (Cobalt Blue, Windows Purple, Catppuccin, Nord, Emerald, Crimson, Amber Gold, Cyberpunk Cyan). |
-| `panel` | Panel & Geometry | Panel edge position (top/bottom), bar height/thickness, and autohide reveal delays. |
-| `widgets` | Widgets Layout | Active panel widgets ordering and per-widget display modes (`icon`, `label`, `both`). |
-| `notifications` | Notifications | Notification toast timeouts, Do-Not-Disturb (DND) toggle, and notification history limits. |
-| `niri` | Niri Compositor | Window rules, floating behaviors, gaps, borders, and focus ring styling. |
-| `about` | About System | CPU, RAM, kernel version, compositor information, and OS specifications. |
-
-**Examples:**
-```bash
-# Open directly to Wi-Fi scanner
-kajo-settings --page network
-
-# Open directly to Metro accent theme switcher
-kajo-settings --page theme
-
-# Open directly to PipeWire audio stream mixer
-kajo-settings -p audio
-```
-
----
-
-### ⌨️ Keyboard Shortcuts & Navigation
-
-#### 1. Launcher Keyboard Shortcuts
-When the launcher overlay is summoned (`kajo --toggle-launcher` or <kbd>Mod</kbd>+<kbd>D</kbd>):
-
-| Key | Action |
-|---|---|
-| <kbd>Down</kbd> | Move selection to the next search result (with automatic scrolling). |
-| <kbd>Up</kbd> | Move selection to the previous search result (with automatic scrolling). |
-| <kbd>Enter</kbd> / <kbd>Keypad Enter</kbd> | Activate the selected item (or first item if none highlighted). |
-| <kbd>Escape</kbd> | Dismiss and close the launcher overlay. |
-
-#### 2. Launcher Search Prefix Modes (Plugins)
-Typing special prefix characters into the launcher search entry activates specialized plugins:
-
-| Prefix | Mode | Example Query | Behavior & Action on Enter |
-|---|---|---|---|
-| `:` | **Emoji Picker** | `:cat`, `:fire`, `:smile` | Queries 1,914 embedded emojis by name and keyword. Pressing <kbd>Enter</kbd> copies the emoji directly to your clipboard. |
-| `=` | **Calculator** | `= (24 * 60) + 120` | Evaluates arithmetic expressions using TinyExpr. Pressing <kbd>Enter</kbd> copies the calculated result to your clipboard. |
-| `>` | **Shell Command** | `> htop`, `> ping 1.1.1.1` | Executes the command in `x-terminal-emulator` (or spawns directly). |
-| `w:` or `W:` | **Window Switcher** | `w:code`, `w:firefox` | Searches open Wayland windows by title or application ID. Pressing <kbd>Enter</kbd> instantly focuses the window workspace. |
-| *(None)* | **Application Search** | `terminal`, `web`, `calc` | Fuzzy searches `.desktop` applications by name, keywords, and comment, sorted by launch frequency. |
-
-#### 3. Settings Window Controls
-- **Category Filter**: Focus the header search box (<kbd>Ctrl</kbd>+<kbd>F</kbd> or click) to filter the sidebar preference categories.
-- **Floating / Tiling Toggle**: Click `🗗 FLOAT / TILE` in the header bar to toggle the settings window between Niri tiled column and floating state.
-- **Responsive Navigation**: In narrow viewports (< 768px), click `‹ Back` to return to the category navigation list.
-- **Dismiss**: Click `✕` or press <kbd>Escape</kbd> to close the settings window.
-
----
-
-## 📄 Configuration Files
-
-All user edits made via `kajo-settings` or manual edits are strictly written to your user XDG configuration directory (`~/.config/`). Master user files (such as `~/.config/niri/config.kdl`) are **never modified directly**.
-
-| Configuration File Path | Purpose & Managed Settings |
 | :--- | :--- |
-| **`~/.config/kajo/config.json`** | Panel geometry, edge position (top/bottom), autohide delays, widget modes (`icon`, `label`, `full`), custom script widgets (`custom-script`), notification toast timeouts (`toast_timeout_ms`), and max history limits. |
-| **`~/.config/niri/config.d/00-kajo.kdl`** | Modular Niri include file managed by `kajo-settings` for panel layer rules (opacity, blur, xray), floating window rules, gaps, and focus ring colors. *(Requires `include "config.d/*.kdl"` in `config.kdl`)*. |
-| **`~/.config/niri/config.d/10-outputs.kdl`** | Modular Niri include file for hardware display outputs, resolutions, refresh rates, scaling, and VRR. |
-| **`~/.config/kajo/style.d/00-accent.css`** | GTK CSS theme snippet managed by `kajo-settings` defining live Metro accent color tokens (`@define-color metro-accent #0078d4;`). |
-| **`~/.config/kajo/style.css`** | User custom GTK CSS stylesheet overrides. |
+| *(no arguments)* | Opens the settings window on the default `displays` page. |
+| `-p <PAGE>`, `--page <PAGE>` | Opens directly to a specific page: `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, or `about`. |
 
-### 🛠️ Custom Script Widgets (`custom-script`)
+### 3. `kajo-greeter` (`greetd` Login Greeter)
+| Option / Flag | Description |
+| :--- | :--- |
+| `-c <CMD>`, `--cmd <CMD>` | Default session command (also read from `$KAJO_GREETER_CMD`). |
+| `-u <USER>`, `--user <USER>` | Pre-selected username (also read from `$KAJO_GREETER_USER`). |
+| `-f`, `--fullscreen` | Force standard XDG fullscreen window mode (used automatically under `cage`). |
+| `-t`, `--test` | Desktop preview mode (`1280x800` window using PAM verification; automatically disabled if `$GREETD_SOCK` is set). |
 
-`kajo` supports custom user script widgets that execute shell commands or scripts at configurable intervals and display real-time output in the panel:
+---
 
-```json
-"widgets": {
-  "custom_weather": {
-    "type": "custom-script",
-    "exec_cmd": "data/examples/scripts/weather.sh Helsinki",
-    "interval_sec": 60,
-    "click_left_cmd": "zen https://wttr.in/Helsinki",
-    "click_right_cmd": "kitty -e curl wttr.in/Helsinki",
-    "mode": "both",
-    "icon": "weather-clear-symbolic"
-  }
-}
-```
+## ⌨️ Launcher Search Prefix Modes
 
-Pre-made example scripts are bundled in `data/examples/scripts/` (`weather.sh`, `crypto.py`, `vpn_status.sh`, `disk_usage.sh`). For full documentation, refer to [docs/script_widgets.md](docs/script_widgets.md).
+When the launcher is open (`Mod+D` or `kajo --toggle-launcher`):
+
+| Prefix | Plugin Mode | Example | Action on `Enter` |
+| :--- | :--- | :--- | :--- |
+| *(None)* | **App Search** | `firefox`, `term` | Launches matching `.desktop` application. |
+| `:` | **Emoji Picker** | `:fire`, `:rocket` | Copies selected emoji (from 1,914 entries) to clipboard. |
+| `=` | **Calculator** | `= (24 * 60) + 120` | Evaluates math expression via TinyExpr and copies result. |
+| `>` | **Shell Command** | `> htop` | Runs command in terminal or spawns directly. |
+| `w:` / `W:` | **Window Switcher** | `w:code` | Focuses matching open Niri window. |
+
+---
+
+## 📄 Configuration File Locations
+
+| Path | Managed By | Purpose |
+| :--- | :--- | :--- |
+| **`~/.config/kajo/config.json`** | `kajo-settings` / User | Panel edge, height, autohide settings, widget layout (`left`, `center`, `right`), widget modes, notification timeout, and `idle` security settings (`screensaver_mode`, `screensaver_timeout_sec`, `dpms_timeout_sec`, `lock_timeout_sec`, `lock_on_suspend`). |
+| **`~/.config/kajo/theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) and user CSS overrides, hot-reloaded via IPC. |
+| **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and Niri layout/focus-ring settings. |
+| **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins (falls back to `~/.cache/kajo/greeter-state.json` in `--test` mode). |
 
 ---
 
 ## 📄 License & Attribution
 
-- **Icons**: Incorporates [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) by Microsoft Corporation, used under the MIT License.
-- **License**: This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+- **Icons**: Incorporates [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) by Microsoft Corporation (MIT License).
+- **License**: MIT License — see [LICENSE](LICENSE).
 
 ## Author
 

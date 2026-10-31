@@ -1,0 +1,35 @@
+// Minimal locked-down Niri configuration for kajo-greeter
+input {
+    keyboard {
+        xkb {
+        }
+    }
+    touchpad {
+        tap
+        natural-scroll
+    }
+}
+
+layout {
+    gaps 0
+    border {
+        off
+    }
+    focus-ring {
+        off
+    }
+}
+
+animations {
+    off
+}
+
+hotkey-overlay {
+    skip-at-startup
+}
+
+spawn-at-startup "sh" "-c" "kajo-greeter; niri msg action quit --skip-confirmation"
+
+binds {
+    // Intentionally empty for login security
+}
