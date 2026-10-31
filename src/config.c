@@ -178,6 +178,14 @@ shell_config_load(const gchar *path)
     config = shell_config_get_default();
 
     /* Panel settings */
+    if (json_object_has_member(root, "position")) {
+        const gchar *pos = json_object_get_string_member(root, "position");
+        config->panel_position = (g_strcmp0(pos, "bottom") == 0) ? PANEL_POSITION_BOTTOM : PANEL_POSITION_TOP;
+    }
+    if (json_object_has_member(root, "height")) {
+        config->panel_height = (gint)json_object_get_int_member(root, "height");
+    }
+
     if (json_object_has_member(root, "panel")) {
         JsonObject *panel = json_object_get_object_member(root, "panel");
 
@@ -209,19 +217,24 @@ shell_config_load(const gchar *path)
 
     /* Autohide settings */
     if (json_object_has_member(root, "autohide")) {
-        JsonObject *autohide = json_object_get_object_member(root, "autohide");
+        JsonNode *ah_node = json_object_get_member(root, "autohide");
+        if (JSON_NODE_HOLDS_VALUE(ah_node)) {
+            config->autohide_enabled = json_node_get_boolean(ah_node);
+        } else if (JSON_NODE_HOLDS_OBJECT(ah_node)) {
+            JsonObject *autohide = json_node_get_object(ah_node);
 
-        if (json_object_has_member(autohide, "enabled"))
-            config->autohide_enabled = json_object_get_boolean_member(autohide, "enabled");
+            if (json_object_has_member(autohide, "enabled"))
+                config->autohide_enabled = json_object_get_boolean_member(autohide, "enabled");
 
-        if (json_object_has_member(autohide, "hide_delay"))
-            config->autohide_hide_delay = (gint)json_object_get_int_member(autohide, "hide_delay");
+            if (json_object_has_member(autohide, "hide_delay"))
+                config->autohide_hide_delay = (gint)json_object_get_int_member(autohide, "hide_delay");
 
-        if (json_object_has_member(autohide, "reveal_delay"))
-            config->autohide_reveal_delay = (gint)json_object_get_int_member(autohide, "reveal_delay");
+            if (json_object_has_member(autohide, "reveal_delay"))
+                config->autohide_reveal_delay = (gint)json_object_get_int_member(autohide, "reveal_delay");
 
-        if (json_object_has_member(autohide, "reveal_duration"))
-            config->autohide_reveal_duration = (gint)json_object_get_int_member(autohide, "reveal_duration");
+            if (json_object_has_member(autohide, "reveal_duration"))
+                config->autohide_reveal_duration = (gint)json_object_get_int_member(autohide, "reveal_duration");
+        }
     }
 
     /* UI Configurability parameters */
@@ -322,14 +335,31 @@ shell_config_save(ShellConfig *config, const gchar *path)
     g_autoptr(JsonBuilder) builder = json_builder_new();
     json_builder_begin_object(builder);
 
+    json_builder_set_member_name(builder, "panel");
+    json_builder_begin_object(builder);
     json_builder_set_member_name(builder, "position");
     json_builder_add_string_value(builder, config->panel_position == PANEL_POSITION_BOTTOM ? "bottom" : "top");
-
     json_builder_set_member_name(builder, "height");
     json_builder_add_int_value(builder, config->panel_height);
+    json_builder_set_member_name(builder, "layer");
+    json_builder_add_string_value(builder, config->panel_layer ? config->panel_layer : "top");
+    json_builder_set_member_name(builder, "widget_mode");
+    json_builder_add_string_value(builder, config->default_widget_mode == WIDGET_MODE_FULL ? "full" : (config->default_widget_mode == WIDGET_MODE_LABEL ? "label" : "icon"));
+    json_builder_set_member_name(builder, "icon_size");
+    json_builder_add_int_value(builder, config->icon_size > 0 ? config->icon_size : 24);
+    json_builder_end_object(builder);
 
     json_builder_set_member_name(builder, "autohide");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "enabled");
     json_builder_add_boolean_value(builder, config->autohide_enabled);
+    json_builder_set_member_name(builder, "hide_delay");
+    json_builder_add_int_value(builder, config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300);
+    json_builder_set_member_name(builder, "reveal_delay");
+    json_builder_add_int_value(builder, config->autohide_reveal_delay > 0 ? config->autohide_reveal_delay : 150);
+    json_builder_set_member_name(builder, "reveal_duration");
+    json_builder_add_int_value(builder, config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 250);
+    json_builder_end_object(builder);
 
     json_builder_set_member_name(builder, "autohide_edge_strip_px");
     json_builder_add_int_value(builder, config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2);

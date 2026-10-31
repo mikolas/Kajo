@@ -330,8 +330,10 @@ on_key_pressed(GtkEventControllerKey *controller,
         row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(ls->list_box), idx + 1);
         if (row) {
             gtk_list_box_select_row(GTK_LIST_BOX(ls->list_box), row);
-            gdouble row_y = 0.0;
-            if (gtk_widget_translate_coordinates(GTK_WIDGET(row), ls->list_box, 0, 0, NULL, &row_y)) {
+            graphene_point_t pt = GRAPHENE_POINT_INIT(0.f, 0.f);
+            graphene_point_t out_pt;
+            if (gtk_widget_compute_point(GTK_WIDGET(row), ls->list_box, &pt, &out_pt)) {
+                gdouble row_y = (gdouble)out_pt.y;
                 GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(ls->scrolled_win));
                 gdouble page_size = gtk_adjustment_get_page_size(vadj);
                 gdouble val = gtk_adjustment_get_value(vadj);
@@ -348,8 +350,10 @@ on_key_pressed(GtkEventControllerKey *controller,
             row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(ls->list_box), idx - 1);
             if (row) {
                 gtk_list_box_select_row(GTK_LIST_BOX(ls->list_box), row);
-                gdouble row_y = 0.0;
-                if (gtk_widget_translate_coordinates(GTK_WIDGET(row), ls->list_box, 0, 0, NULL, &row_y)) {
+                graphene_point_t pt = GRAPHENE_POINT_INIT(0.f, 0.f);
+                graphene_point_t out_pt;
+                if (gtk_widget_compute_point(GTK_WIDGET(row), ls->list_box, &pt, &out_pt)) {
+                    gdouble row_y = (gdouble)out_pt.y;
                     GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(ls->scrolled_win));
                     gdouble val = gtk_adjustment_get_value(vadj);
                     if (row_y < val) {
