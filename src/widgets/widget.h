@@ -57,6 +57,35 @@ shell_widget_get_icon_size(ShellWidget *widget)
     return 24;
 }
 
+static inline void
+shell_spawn_settings(const char *page, GtkWidget *popover)
+{
+    if (popover && GTK_IS_POPOVER(popover)) {
+        gtk_popover_popdown(GTK_POPOVER(popover));
+    }
+
+    g_autofree gchar *bin = g_find_program_in_path("kajo-settings");
+    if (!bin) {
+        g_autofree gchar *local_bin = g_build_filename(
+            g_get_home_dir(), ".local", "bin", "kajo-settings", NULL);
+        if (g_file_test(local_bin, G_FILE_TEST_IS_EXECUTABLE)) {
+            bin = g_steal_pointer(&local_bin);
+        }
+    }
+    if (!bin && g_file_test("/usr/bin/kajo-settings", G_FILE_TEST_IS_EXECUTABLE)) {
+        bin = g_strdup("/usr/bin/kajo-settings");
+    }
+    if (!bin) {
+        bin = g_strdup("kajo-settings");
+    }
+
+    g_autofree gchar *cmd = (page && *page)
+        ? g_strdup_printf("%s --page %s", bin, page)
+        : g_strdup(bin);
+
+    g_spawn_command_line_async(cmd, NULL);
+}
+
 #ifdef __cplusplus
 }
 #endif

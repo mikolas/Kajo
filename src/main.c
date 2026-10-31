@@ -103,6 +103,38 @@ main(int argc, char *argv[])
                     g_printerr("kajo is not running.\n");
                     return 1;
                 }
+            } else if (g_strcmp0(argv[i], "--lock") == 0 ||
+                       g_strcmp0(argv[i], "lock") == 0) {
+                if (shell_ipc_send_command("lock")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
+            } else if (g_strcmp0(argv[i], "--screensaver") == 0 ||
+                       g_strcmp0(argv[i], "screensaver") == 0) {
+                if (shell_ipc_send_command("screensaver")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
+            } else if (g_strcmp0(argv[i], "--reload-config") == 0 ||
+                       g_strcmp0(argv[i], "reload-config") == 0) {
+                if (shell_ipc_send_command("reload-config")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
+            } else if (g_strcmp0(argv[i], "--reload-theme") == 0 ||
+                       g_strcmp0(argv[i], "reload-theme") == 0) {
+                if (shell_ipc_send_command("reload-theme")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
             }
         }
     }

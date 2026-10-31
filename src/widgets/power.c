@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include "widget.h"
+#include "../shell.h"
 #include "../compositor/compositor.h"
 
 #define LOGIND_BUS_NAME    "org.freedesktop.login1"
@@ -132,11 +133,15 @@ static void on_hibernate_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_dat
 static void on_lock_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     PowerWidget *pw = user_data;
-    if (pw->logind_proxy) {
+    if (pw && pw->popover) {
+        gtk_popover_popdown(GTK_POPOVER(pw->popover));
+    }
+    if (pw && pw->base.app) {
+        shell_app_lock_session(pw->base.app);
+    } else if (pw && pw->logind_proxy) {
         g_dbus_proxy_call(pw->logind_proxy, "LockSessions", NULL,
                           G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
     }
-    gtk_popover_popdown(GTK_POPOVER(pw->popover));
 }
 
 static void on_logout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
