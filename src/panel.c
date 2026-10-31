@@ -247,9 +247,6 @@ shell_panel_show(ShellPanel *panel)
     if (!panel)
         return;
     gtk_window_present(panel->window);
-    if (panel->autohide && panel->app) {
-        shell_autohide_reload_config(panel->autohide, shell_app_get_config(panel->app));
-    }
 }
 
 void

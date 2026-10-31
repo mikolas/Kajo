@@ -25,21 +25,8 @@ autohide_set_margin(ShellAutohide *self, gint margin)
 static gint
 autohide_get_hidden_margin(ShellAutohide *self)
 {
-    GtkWindow *window = shell_panel_get_window(self->panel);
-    gint height = self->panel_height;
-    if (window) {
-        gint alloc_h = gtk_widget_get_height(GTK_WIDGET(window));
-        if (alloc_h <= 0) {
-            gint min_h = 0, nat_h = 0;
-            gtk_widget_measure(GTK_WIDGET(window), GTK_ORIENTATION_VERTICAL, -1,
-                               &min_h, &nat_h, NULL, NULL);
-            alloc_h = MAX(min_h, nat_h);
-        }
-        if (alloc_h > height)
-            height = alloc_h;
-    }
     gint strip = self->edge_strip_px > 0 ? self->edge_strip_px : 2;
-    return -(height - strip);
+    return -(self->panel_height - strip);
 }
 
 static gboolean
