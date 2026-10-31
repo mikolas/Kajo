@@ -238,6 +238,32 @@ on_submit_btn_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 }
 
 static gboolean
+password_entry_has_focus(LockMonitorSurface *surf)
+{
+    if (!surf || !surf->window || !surf->password_entry)
+        return FALSE;
+
+    if (gtk_widget_get_focus_child(surf->password_entry) != NULL)
+        return TRUE;
+
+    GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(surf->window));
+    return (focus && (focus == surf->password_entry ||
+                      gtk_widget_is_ancestor(focus, surf->password_entry)));
+}
+
+static void
+focus_password_entry_preserve_cursor(LockMonitorSurface *surf)
+{
+    if (!surf || !surf->password_entry)
+        return;
+
+    if (!password_entry_has_focus(surf)) {
+        gtk_widget_grab_focus(surf->password_entry);
+        gtk_editable_set_position(GTK_EDITABLE(surf->password_entry), -1);
+    }
+}
+
+static gboolean
 on_lock_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
                     guint                  keyval,
                     guint                  keycode G_GNUC_UNUSED,
@@ -248,22 +274,16 @@ on_lock_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
     if (!surf || !surf->owner)
         return FALSE;
 
-    /* Wake monitors if they were powered off */
-    shell_screensaver_set_dpms(TRUE);
-
     if (keyval == GDK_KEY_Escape) {
         if (surf->password_entry && !surf->owner->auth_in_progress) {
             gtk_editable_set_text(GTK_EDITABLE(surf->password_entry), "");
             set_surfaces_auth_state(surf->owner, FALSE, NULL, FALSE, FALSE);
-            gtk_widget_grab_focus(surf->password_entry);
+            focus_password_entry_preserve_cursor(surf);
         }
         return TRUE;
     }
 
-    if (surf->password_entry && !gtk_widget_has_focus(surf->password_entry)) {
-        gtk_widget_grab_focus(surf->password_entry);
-    }
-
+    focus_password_entry_preserve_cursor(surf);
     return FALSE;
 }
 
@@ -400,6 +420,7 @@ on_lock_monitor(GtkSessionLockInstance *instance,
 
     surf->submit_btn = gtk_button_new_with_label("→");
     gtk_widget_add_css_class(surf->submit_btn, "lock-submit-btn");
+    gtk_widget_set_focus_on_click(surf->submit_btn, FALSE);
     g_signal_connect(surf->submit_btn, "clicked", G_CALLBACK(on_submit_btn_clicked), surf);
 
     gtk_box_append(GTK_BOX(input_row), surf->password_entry);
@@ -423,10 +444,12 @@ on_lock_monitor(GtkSessionLockInstance *instance,
 
     GtkWidget *btn_screen_off = gtk_button_new_with_label("[ 🌙 SCREEN OFF ]");
     gtk_widget_add_css_class(btn_screen_off, "lock-action-btn");
+    gtk_widget_set_focus_on_click(btn_screen_off, FALSE);
     g_signal_connect(btn_screen_off, "clicked", G_CALLBACK(on_screen_off_clicked), self);
 
     GtkWidget *btn_suspend = gtk_button_new_with_label("[ ⏻ SUSPEND ]");
     gtk_widget_add_css_class(btn_suspend, "lock-action-btn");
+    gtk_widget_set_focus_on_click(btn_suspend, FALSE);
     g_signal_connect(btn_suspend, "clicked", G_CALLBACK(on_lock_suspend_clicked), self);
 
     gtk_box_append(GTK_BOX(footer_bar), btn_screen_off);
