@@ -16,7 +16,9 @@ greetd_response_free(GreetdResponse *resp)
 }
 
 static GSocketConnection *
-connect_greetd_socket(const gchar *socket_path, GError **error)
+connect_greetd_socket(const gchar  *socket_path,
+                      GCancellable *cancellable,
+                      GError      **error)
 {
     const gchar *path = socket_path;
     if (!path || path[0] == '\0')
@@ -31,7 +33,7 @@ connect_greetd_socket(const gchar *socket_path, GError **error)
     g_autoptr(GSocketAddress) addr = g_unix_socket_address_new(path);
     g_autoptr(GSocketClient) client = g_socket_client_new();
 
-    return g_socket_client_connect(client, G_SOCKET_CONNECTABLE(addr), NULL, error);
+    return g_socket_client_connect(client, G_SOCKET_CONNECTABLE(addr), cancellable, error);
 }
 
 static GreetdResponse *
@@ -90,6 +92,7 @@ parse_greetd_response_json(const gchar *json_str, gssize len, GError **error)
 static GreetdResponse *
 send_and_receive_on_connection(GSocketConnection *conn,
                                const gchar       *request_json,
+                               GCancellable      *cancellable,
                                GError           **error)
 {
     GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
@@ -98,16 +101,16 @@ send_and_receive_on_connection(GSocketConnection *conn,
     uint32_t req_len = (uint32_t)strlen(request_json);
     gsize bytes_written = 0;
 
-    if (!g_output_stream_write_all(out, &req_len, sizeof(req_len), &bytes_written, NULL, error))
+    if (!g_output_stream_write_all(out, &req_len, sizeof(req_len), &bytes_written, cancellable, error))
         return NULL;
-    if (!g_output_stream_write_all(out, request_json, req_len, &bytes_written, NULL, error))
+    if (!g_output_stream_write_all(out, request_json, req_len, &bytes_written, cancellable, error))
         return NULL;
-    if (!g_output_stream_flush(out, NULL, error))
+    if (!g_output_stream_flush(out, cancellable, error))
         return NULL;
 
     uint32_t resp_len = 0;
     gsize bytes_read = 0;
-    if (!g_input_stream_read_all(in, &resp_len, sizeof(resp_len), &bytes_read, NULL, error))
+    if (!g_input_stream_read_all(in, &resp_len, sizeof(resp_len), &bytes_read, cancellable, error))
         return NULL;
 
     if (bytes_read != sizeof(resp_len) || resp_len == 0 || resp_len > 65536) {
@@ -117,23 +120,11 @@ send_and_receive_on_connection(GSocketConnection *conn,
     }
 
     g_autofree gchar *buf = g_malloc(resp_len + 1);
-    if (!g_input_stream_read_all(in, buf, resp_len, &bytes_read, NULL, error))
+    if (!g_input_stream_read_all(in, buf, resp_len, &bytes_read, cancellable, error))
         return NULL;
     buf[resp_len] = '\0';
 
     return parse_greetd_response_json(buf, (gssize)resp_len, error);
-}
-
-GreetdResponse *
-greetd_ipc_roundtrip(const gchar *socket_path,
-                     const gchar *request_json,
-                     GError     **error)
-{
-    g_autoptr(GSocketConnection) conn = connect_greetd_socket(socket_path, error);
-    if (!conn)
-        return NULL;
-
-    return send_and_receive_on_connection(conn, request_json, error);
 }
 
 static gchar *
@@ -284,19 +275,19 @@ cancel_greetd_session_quiet(GSocketConnection *conn)
     if (!conn)
         return;
     g_autoptr(GreetdResponse) resp = send_and_receive_on_connection(
-        conn, "{\"type\":\"cancel_session\"}", NULL);
+        conn, "{\"type\":\"cancel_session\"}", NULL, NULL);
 }
 
 static void
 greetd_auth_worker_thread(GTask        *task,
                           gpointer      source_object G_GNUC_UNUSED,
                           gpointer      task_data,
-                          GCancellable *cancellable G_GNUC_UNUSED)
+                          GCancellable *cancellable)
 {
     GreetdAuthJob *job = task_data;
     GError *error = NULL;
 
-    g_autoptr(GSocketConnection) conn = connect_greetd_socket(job->socket_path, &error);
+    g_autoptr(GSocketConnection) conn = connect_greetd_socket(job->socket_path, cancellable, &error);
     if (!conn) {
         g_task_return_error(task, error);
         return;
@@ -304,7 +295,7 @@ greetd_auth_worker_thread(GTask        *task,
 
     /* Step 1: create_session */
     g_autofree gchar *create_json = build_create_session_json(job->username);
-    g_autoptr(GreetdResponse) resp = send_and_receive_on_connection(conn, create_json, &error);
+    g_autoptr(GreetdResponse) resp = send_and_receive_on_connection(conn, create_json, cancellable, &error);
     if (!resp) {
         g_task_return_error(task, error);
         return;
@@ -335,7 +326,7 @@ greetd_auth_worker_thread(GTask        *task,
         }
 
         g_clear_pointer(&resp, greetd_response_free);
-        resp = send_and_receive_on_connection(conn, send_json, &error);
+        resp = send_and_receive_on_connection(conn, send_json, cancellable, &error);
         if (send_json) {
             explicit_bzero(send_json, send_cap);
             g_free(send_json);
@@ -367,7 +358,7 @@ greetd_auth_worker_thread(GTask        *task,
     g_autofree gchar *start_json = build_start_session_json(
         (const gchar *const *)job->cmd, (const gchar *const *)job->env);
     g_clear_pointer(&resp, greetd_response_free);
-    resp = send_and_receive_on_connection(conn, start_json, &error);
+    resp = send_and_receive_on_connection(conn, start_json, cancellable, &error);
     if (!resp) {
         cancel_greetd_session_quiet(conn);
         g_task_return_error(task, error);

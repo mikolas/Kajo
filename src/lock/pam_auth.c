@@ -1,6 +1,5 @@
 #include "pam_auth.h"
 
-#include <pwd.h>
 #include <security/pam_appl.h>
 #include <stdlib.h>
 #include <string.h>
@@ -146,7 +145,7 @@ static void
 pam_auth_thread_func(GTask        *task,
                      gpointer      source_object G_GNUC_UNUSED,
                      gpointer      task_data,
-                     GCancellable *cancellable G_GNUC_UNUSED)
+                     GCancellable *cancellable)
 {
     PamAuthData *auth = task_data;
 
@@ -162,14 +161,6 @@ pam_auth_thread_func(GTask        *task,
     }
 
     const char *username = (auth->username && auth->username[0] != '\0') ? auth->username : NULL;
-    if (!username) {
-        struct passwd *pw = getpwuid(getuid());
-        if (pw && pw->pw_name && pw->pw_name[0] != '\0')
-            username = pw->pw_name;
-        else
-            username = g_get_user_name();
-    }
-
     if (!username || username[0] == '\0') {
         g_task_return_new_error(task,
                                 G_IO_ERROR,
@@ -189,6 +180,11 @@ pam_auth_thread_func(GTask        *task,
 
     int last_ret = PAM_AUTH_ERR;
     for (int i = 0; services[i] != NULL; i++) {
+        if (g_cancellable_is_cancelled(cancellable)) {
+            g_task_return_error_if_cancelled(task);
+            return;
+        }
+
         g_autofree gchar *service_path = g_build_filename("/etc/pam.d", services[i], NULL);
         if (!g_file_test(service_path, G_FILE_TEST_EXISTS))
             continue;
@@ -200,8 +196,8 @@ pam_auth_thread_func(GTask        *task,
         }
 
         last_ret = ret;
-        /* If pam_unix definitively rejected the password on vlock/system-auth, stop unless it was a system error */
-        if (ret == PAM_MAXTRIES)
+        /* Only fall back to other PAM service names if the PAM service/module could not be loaded */
+        if (ret != PAM_SERVICE_ERR && ret != PAM_OPEN_ERR && ret != PAM_SYMBOL_ERR)
             break;
     }
 
@@ -226,7 +222,8 @@ shell_pam_authenticate_user_async(const gchar        *username,
                                   gpointer            user_data)
 {
     PamAuthData *auth = g_new0(PamAuthData, 1);
-    auth->username = (username && username[0] != '\0') ? g_strdup(username) : NULL;
+    const gchar *resolved_user = (username && username[0] != '\0') ? username : g_get_user_name();
+    auth->username = (resolved_user && resolved_user[0] != '\0') ? g_strdup(resolved_user) : NULL;
     auth->password = g_strdup(password ? password : "");
 
     GTask *task = g_task_new(NULL, cancellable, callback, user_data);
@@ -241,7 +238,7 @@ shell_pam_authenticate_async(const gchar        *password,
                              GAsyncReadyCallback callback,
                              gpointer            user_data)
 {
-    shell_pam_authenticate_user_async(NULL, password, cancellable, callback, user_data);
+    shell_pam_authenticate_user_async(g_get_user_name(), password, cancellable, callback, user_data);
 }
 
 gboolean

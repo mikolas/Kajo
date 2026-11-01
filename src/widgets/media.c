@@ -70,8 +70,16 @@ typedef struct {
     gchar *artist;
     gchar *title;
     gchar *art_url;
+    gchar *last_art_url;
     gchar *active_player_bus;
 } MediaWidget;
+
+static inline void
+unref_pa_op(pa_operation *op)
+{
+    if (op)
+        pa_operation_unref(op);
+}
 
 static void update_media_ui(MediaWidget *media);
 static void refresh_media_state(MediaWidget *media);
@@ -86,7 +94,7 @@ get_mpris_property(GDBusProxy *proxy, const char *prop_name)
     GVariant *res = g_dbus_proxy_call_sync(
         proxy, "org.freedesktop.DBus.Properties.Get",
         g_variant_new("(ss)", MPRIS_PLAYER_INTERFACE, prop_name),
-        G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+        G_DBUS_CALL_FLAGS_NONE, 500, NULL, NULL);
     if (res != NULL) {
         GVariant *inner = NULL;
         g_variant_get(res, "(v)", &inner);
@@ -210,7 +218,7 @@ refresh_media_state(MediaWidget *media)
         GVariant *res = g_dbus_connection_call_sync(
             conn, "org.freedesktop.DBus", "/org/freedesktop/DBus",
             "org.freedesktop.DBus", "ListNames", NULL,
-            G_VARIANT_TYPE("(as)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+            G_VARIANT_TYPE("(as)"), G_DBUS_CALL_FLAGS_NONE, 500, NULL, NULL);
 
         if (res != NULL) {
             GVariantIter *iter;
@@ -220,12 +228,8 @@ refresh_media_state(MediaWidget *media)
                 if (g_str_has_prefix(name, MPRIS_BUS_PREFIX)) {
                     if (!first_found_bus) first_found_bus = g_strdup(name);
 
-                    GDBusProxy *temp_proxy = g_dbus_proxy_new_for_bus_sync(
-                        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
-                        name, "/org/mpris/MediaPlayer2",
-                        MPRIS_PLAYER_INTERFACE, NULL, NULL);
-                    if (temp_proxy) {
-                        GVariant *status_var = get_mpris_property(temp_proxy, "PlaybackStatus");
+                    if (media->mpris_proxy && g_strcmp0(media->active_player_bus, name) == 0) {
+                        GVariant *status_var = get_mpris_property(media->mpris_proxy, "PlaybackStatus");
                         if (status_var) {
                             const gchar *status_str = g_variant_get_string(status_var, NULL);
                             if (g_strcmp0(status_str, "Playing") == 0) {
@@ -233,7 +237,23 @@ refresh_media_state(MediaWidget *media)
                             }
                             g_variant_unref(status_var);
                         }
-                        g_object_unref(temp_proxy);
+                    } else {
+                        GDBusProxy *temp_proxy = g_dbus_proxy_new_for_bus_sync(
+                            G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_DO_NOT_CONNECT_SIGNALS, NULL,
+                            name, "/org/mpris/MediaPlayer2",
+                            MPRIS_PLAYER_INTERFACE, NULL, NULL);
+                        if (temp_proxy) {
+                            g_dbus_proxy_set_default_timeout(temp_proxy, 500);
+                            GVariant *status_var = get_mpris_property(temp_proxy, "PlaybackStatus");
+                            if (status_var) {
+                                const gchar *status_str = g_variant_get_string(status_var, NULL);
+                                if (g_strcmp0(status_str, "Playing") == 0) {
+                                    best_playing_bus = g_strdup(name);
+                                }
+                                g_variant_unref(status_var);
+                            }
+                            g_object_unref(temp_proxy);
+                        }
                     }
                     if (best_playing_bus) break;
                 }
@@ -256,14 +276,17 @@ refresh_media_state(MediaWidget *media)
         media->active_player_bus = g_strdup(target_bus);
 
         if (media->active_player_bus) {
-            GError *error = NULL;
+            GError *proxy_err = NULL;
             media->mpris_proxy = g_dbus_proxy_new_for_bus_sync(
                 G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
                 media->active_player_bus, "/org/mpris/MediaPlayer2",
-                MPRIS_PLAYER_INTERFACE, NULL, &error);
-            if (error) {
-                g_warning("media: failed to connect to player %s: %s", media->active_player_bus, error->message);
-                g_clear_error(&error);
+                MPRIS_PLAYER_INTERFACE, NULL, &proxy_err);
+            if (media->mpris_proxy) {
+                g_dbus_proxy_set_default_timeout(media->mpris_proxy, 500);
+            }
+            if (proxy_err) {
+                g_warning("media: failed to connect to player %s: %s", media->active_player_bus, proxy_err->message);
+                g_clear_error(&proxy_err);
             }
         }
     }
@@ -374,8 +397,11 @@ update_media_ui(MediaWidget *media)
         gtk_widget_set_tooltip_text(media->pop_artist_label, a);
     }
 
-    /* Render Album Art Thumbnail */
-    if (media->pop_art_img != NULL) {
+    /* Render Album Art Thumbnail (cached by URL to avoid redundant disk I/O) */
+    if (media->pop_art_img != NULL && g_strcmp0(media->art_url, media->last_art_url) != 0) {
+        g_free(media->last_art_url);
+        media->last_art_url = g_strdup(media->art_url);
+
         GFile *file = NULL;
         if (media->art_url && g_str_has_prefix(media->art_url, "file://")) {
             file = g_file_new_for_uri(media->art_url);
@@ -534,21 +560,13 @@ on_vu_meter_30fps_tick(gpointer user_data)
         /* 16-Band Kajo Live FFT Spectrum Engine */
         static float auto_sens = 1.0f; /* Global Dynamic Auto-Sensitivity Scalar */
 
-        if (media->is_playing) {
+        if (media->is_playing && media->has_live_pcm) {
             float real[512], imag[512];
 
-            if (media->has_live_pcm) {
-                /* Pass raw unscaled PCM audio samples directly into FFT */
-                for (int i = 0; i < 512; i++) {
-                    real[i] = media->live_pcm_buffer[i];
-                    imag[i] = 0.0f;
-                }
-            } else {
-                /* Baseline noise floor when waiting for audio stream */
-                for (int i = 0; i < 512; i++) {
-                    real[i] = ((float)(rand() % 100) / 1000.0f);
-                    imag[i] = 0.0f;
-                }
+            /* Pass raw unscaled PCM audio samples directly into FFT */
+            for (int i = 0; i < 512; i++) {
+                real[i] = media->live_pcm_buffer[i];
+                imag[i] = 0.0f;
             }
             kajo_fft_512(real, imag);
 
@@ -621,10 +639,18 @@ on_vu_meter_30fps_tick(gpointer user_data)
             }
         }
     } else if (media->visualizer_mode == VISUALIZER_MODE_VU_METERS) {
-        /* Stereo L/R VU Meter Mode */
-        if (media->is_playing) {
-            double new_target_l = (double)(rand() % 65 + 35) / 100.0;
-            double new_target_r = (double)(rand() % 65 + 35) / 100.0;
+        /* Real PCM L/R VU Meter Mode */
+        if (media->is_playing && media->has_live_pcm) {
+            float max_l = 0.0f;
+            float max_r = 0.0f;
+            for (int i = 0; i < 512; i += 2) {
+                float abs_l = fabsf(media->live_pcm_buffer[i]);
+                float abs_r = fabsf(media->live_pcm_buffer[i + 1]);
+                if (abs_l > max_l) max_l = abs_l;
+                if (abs_r > max_r) max_r = abs_r;
+            }
+            double new_target_l = CLAMP((double)log10f(1.0f + max_l * 9.0f), 0.0, 1.0);
+            double new_target_r = CLAMP((double)log10f(1.0f + max_r * 9.0f), 0.0, 1.0);
 
             if (new_target_l > media->peak_l) media->peak_l = new_target_l;
             else media->peak_l *= 0.72;
@@ -700,6 +726,13 @@ typedef struct _ShellMediaPopoverClass {
 G_DEFINE_TYPE(ShellMediaPopover, shell_media_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_media_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_media_popover_get_type());
+    G_OBJECT_CLASS(shell_media_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_media_popover_init(ShellMediaPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -708,6 +741,7 @@ shell_media_popover_init(ShellMediaPopover *self)
 static void
 shell_media_popover_class_init(ShellMediaPopoverClass *klass)
 {
+    G_OBJECT_CLASS(klass)->dispose = shell_media_popover_dispose;
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
 
     gtk_widget_class_set_template_from_resource(
@@ -787,7 +821,7 @@ on_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 
     if (media->pa_stream_rec) {
         /* Uncork stream to resume audio monitoring when popover opens */
-        pa_stream_cork(media->pa_stream_rec, 0, NULL, NULL);
+        unref_pa_op(pa_stream_cork(media->pa_stream_rec, 0, NULL, NULL));
     }
 
     if (media->vu_timer_id == 0) {
@@ -805,15 +839,22 @@ on_popover_closed(GtkPopover *popover G_GNUC_UNUSED, gpointer user_data)
     MediaWidget *media = user_data;
     if (!media) return;
 
+    media->is_hovered = FALSE;
+
     if (media->pa_stream_rec) {
         /* Cork stream to achieve 0.0% background CPU usage when popover closes */
-        pa_stream_cork(media->pa_stream_rec, 1, NULL, NULL);
+        unref_pa_op(pa_stream_cork(media->pa_stream_rec, 1, NULL, NULL));
     }
 
     if (media->vu_timer_id != 0) {
         /* Destroy 30 FPS visualizer timer when popover closes for ZERO GLib timer wakeups! */
         g_source_remove(media->vu_timer_id);
         media->vu_timer_id = 0;
+    }
+
+    if (media->ticker_timer_id != 0) {
+        g_source_remove(media->ticker_timer_id);
+        media->ticker_timer_id = 0;
     }
 }
 
@@ -947,6 +988,17 @@ media_widget_destroy(ShellWidget *widget)
         media->pa_ml = NULL;
     }
 
+    if (media->popover)
+        g_signal_handlers_disconnect_by_data(media->popover, media);
+    if (media->prev_btn)
+        g_signal_handlers_disconnect_by_data(media->prev_btn, media);
+    if (media->play_btn)
+        g_signal_handlers_disconnect_by_data(media->play_btn, media);
+    if (media->next_btn)
+        g_signal_handlers_disconnect_by_data(media->next_btn, media);
+    if (media->visualizer_toggle_btn)
+        g_signal_handlers_disconnect_by_data(media->visualizer_toggle_btn, media);
+
     if (media->mpris_proxy != NULL) {
         g_object_unref(media->mpris_proxy);
         media->mpris_proxy = NULL;
@@ -955,6 +1007,7 @@ media_widget_destroy(ShellWidget *widget)
     g_free(media->artist);
     g_free(media->title);
     g_free(media->art_url);
+    g_free(media->last_art_url);
     g_free(media->active_player_bus);
     g_free(media);
 }
@@ -971,14 +1024,32 @@ media_widget_enable(ShellWidget *widget)
 {
     MediaWidget *media = (MediaWidget *)widget;
     if (media) {
+        if (media->icon_img)
+            gtk_image_set_pixel_size(GTK_IMAGE(media->icon_img), shell_widget_get_icon_size(widget));
         shell_widget_apply_mode_visibility(widget->mode, media->icon_img, media->label);
+        if (media->timer_id == 0)
+            media->timer_id = g_timeout_add_seconds(2, on_media_timer_tick, media);
     }
 }
 
 static void
 media_widget_disable(ShellWidget *widget)
 {
-    (void)widget;
+    MediaWidget *media = (MediaWidget *)widget;
+    if (!media)
+        return;
+    if (media->timer_id != 0) {
+        g_source_remove(media->timer_id);
+        media->timer_id = 0;
+    }
+    if (media->vu_timer_id != 0) {
+        g_source_remove(media->vu_timer_id);
+        media->vu_timer_id = 0;
+    }
+    if (media->ticker_timer_id != 0) {
+        g_source_remove(media->ticker_timer_id);
+        media->ticker_timer_id = 0;
+    }
 }
 
 const ShellWidgetClass media_widget_class = {

@@ -28,7 +28,10 @@ on_css_file_changed(GFileMonitor      *monitor G_GNUC_UNUSED,
     ShellTheme *theme = user_data;
 
     if (event_type == G_FILE_MONITOR_EVENT_CHANGED ||
-        event_type == G_FILE_MONITOR_EVENT_CREATED) {
+        event_type == G_FILE_MONITOR_EVENT_CREATED ||
+        event_type == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
+        event_type == G_FILE_MONITOR_EVENT_MOVED_IN ||
+        event_type == G_FILE_MONITOR_EVENT_RENAMED) {
         theme_reload_css(theme);
     }
 }
@@ -43,7 +46,10 @@ on_override_file_changed(GFileMonitor      *monitor G_GNUC_UNUSED,
     ShellTheme *theme = user_data;
 
     if (event_type == G_FILE_MONITOR_EVENT_CHANGED ||
-        event_type == G_FILE_MONITOR_EVENT_CREATED) {
+        event_type == G_FILE_MONITOR_EVENT_CREATED ||
+        event_type == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
+        event_type == G_FILE_MONITOR_EVENT_MOVED_IN ||
+        event_type == G_FILE_MONITOR_EVENT_RENAMED) {
         theme_reload_override_css(theme);
     }
 }
@@ -187,20 +193,29 @@ shell_theme_destroy(ShellTheme *theme)
         return;
 
     if (theme->monitor) {
+        g_signal_handlers_disconnect_by_data(theme->monitor, theme);
         g_file_monitor_cancel(theme->monitor);
         g_object_unref(theme->monitor);
     }
 
     if (theme->override_monitor) {
+        g_signal_handlers_disconnect_by_data(theme->override_monitor, theme);
         g_file_monitor_cancel(theme->override_monitor);
         g_object_unref(theme->override_monitor);
     }
 
-    if (theme->provider)
+    GdkDisplay *display = gdk_display_get_default();
+    if (theme->provider) {
+        if (display)
+            gtk_style_context_remove_provider_for_display(display, GTK_STYLE_PROVIDER(theme->provider));
         g_object_unref(theme->provider);
+    }
 
-    if (theme->override_provider)
+    if (theme->override_provider) {
+        if (display)
+            gtk_style_context_remove_provider_for_display(display, GTK_STYLE_PROVIDER(theme->override_provider));
         g_object_unref(theme->override_provider);
+    }
 
     g_free(theme->css_path);
     g_free(theme->override_css_path);

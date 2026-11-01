@@ -305,9 +305,10 @@ workspaces_enable(ShellWidget *widget)
 static void
 workspaces_disable(ShellWidget *widget)
 {
-    (void)widget;
-    /* Callbacks remain registered but widget won't crash if called after disable.
-     * Full unsubscription will be handled in destroy via compositor cleanup. */
+    WorkspacesWidget *ws = (WorkspacesWidget *)widget;
+    if (ws && ws->compositor) {
+        shell_compositor_remove_callbacks(ws->compositor, ws);
+    }
 }
 
 const ShellWidgetClass workspaces_widget_class = {

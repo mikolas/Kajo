@@ -23,17 +23,50 @@ typedef struct {
     guint timer_id;
 } ShellNotificationToast;
 
+typedef struct {
+    NotificationHistoryCallback cb;
+    gpointer                    ud;
+} CBEntry;
+
 struct _ShellNotificationDaemon {
     GDBusConnection *bus;
     guint owner_id;
     guint reg_id;
     guint32 next_id;
     gint toast_timeout_ms;
+    gint max_history;
+    gboolean dnd_enabled;
     gpointer app_ptr;               /* ShellApp pointer */
     GPtrArray *toasts;
     GPtrArray *history;             /* ShellNotificationItem */
-    GArray    *history_callbacks;   /* CallbackEntry */
+    GArray    *history_callbacks;   /* CBEntry */
 };
+
+static void
+emit_history_changed(ShellNotificationDaemon *daemon)
+{
+    if (!daemon || !daemon->history_callbacks || daemon->history_callbacks->len == 0)
+        return;
+
+    guint len = daemon->history_callbacks->len;
+    CBEntry *snapshot = g_memdup2(daemon->history_callbacks->data, len * sizeof(CBEntry));
+    for (guint i = 0; i < len; i++) {
+        if (snapshot[i].cb)
+            snapshot[i].cb(daemon, snapshot[i].ud);
+    }
+    g_free(snapshot);
+}
+
+static void
+trim_history(ShellNotificationDaemon *daemon)
+{
+    if (!daemon || !daemon->history)
+        return;
+    guint max_len = (guint)(daemon->max_history > 0 ? daemon->max_history : 50);
+    if (daemon->history->len > max_len) {
+        g_ptr_array_set_size(daemon->history, max_len);
+    }
+}
 
 static const gchar notifications_introspection_xml[] =
     "<node>"
@@ -126,6 +159,10 @@ on_toast_card_pressed(GtkGestureClick *gesture G_GNUC_UNUSED, gint n_press G_GNU
     ShellNotificationToast *toast = user_data;
     if (!toast) return;
 
+    ShellNotificationDaemon *daemon = toast->daemon;
+    if (!daemon || !daemon->toasts || !g_ptr_array_remove_fast(daemon->toasts, toast))
+        return;
+
     if (toast->timer_id) {
         g_source_remove(toast->timer_id);
         toast->timer_id = 0;
@@ -135,23 +172,16 @@ on_toast_card_pressed(GtkGestureClick *gesture G_GNUC_UNUSED, gint n_press G_GNU
         gtk_widget_set_visible(toast->toast_window, FALSE);
     }
 
-    ShellNotificationDaemon *daemon = toast->daemon;
+    /* 1. Emit Freedesktop ActionInvoked D-Bus signal so Teams, Chrome, Firefox, Telegram handle app routing */
+    shell_notification_daemon_emit_action_invoked(daemon, toast->id, "default");
+    shell_notification_daemon_emit_notification_closed(daemon, toast->id, 2 /* user dismissed */);
 
-    if (daemon) {
-        /* 1. Emit Freedesktop ActionInvoked D-Bus signal so Teams, Chrome, Firefox, Telegram handle app routing */
-        shell_notification_daemon_emit_action_invoked(daemon, toast->id, "default");
-        shell_notification_daemon_emit_notification_closed(daemon, toast->id, 2 /* user dismissed */);
-
-        /* 2. Compositor window focus */
-        if (daemon->app_ptr) {
-            ShellApp *app = (ShellApp *)daemon->app_ptr;
-            ShellCompositor *compositor = shell_app_get_compositor(app);
-            if (compositor) {
-                shell_compositor_focus_app(compositor, toast->app_name, toast->desktop_entry, toast->app_icon);
-            }
-        }
-        if (daemon->toasts) {
-            g_ptr_array_remove(daemon->toasts, toast);
+    /* 2. Compositor window focus */
+    if (daemon->app_ptr) {
+        ShellApp *app = (ShellApp *)daemon->app_ptr;
+        ShellCompositor *compositor = shell_app_get_compositor(app);
+        if (compositor) {
+            shell_compositor_focus_app(compositor, toast->app_name, toast->desktop_entry, toast->app_icon);
         }
     }
 
@@ -261,21 +291,33 @@ handle_notifications_method_call(GDBusConnection *connection,
         guint32 id = (replaces_id != 0) ? replaces_id : ++daemon->next_id;
 
         if (replaces_id != 0) {
+            if (daemon->toasts) {
+                for (guint i = 0; i < daemon->toasts->len; i++) {
+                    ShellNotificationToast *t = g_ptr_array_index(daemon->toasts, i);
+                    if (t && t->id == replaces_id) {
+                        g_ptr_array_remove_index(daemon->toasts, i);
+                        toast_free(t);
+                        break;
+                    }
+                }
+            }
             shell_notification_daemon_remove_item(daemon, replaces_id);
         }
 
-        ShellNotificationToast *toast = g_new0(ShellNotificationToast, 1);
-        toast->id = id;
-        toast->app_name = g_strdup(app_name);
-        toast->desktop_entry = g_strdup(desktop_entry);
-        toast->summary = g_strdup(summary);
-        toast->body = g_strdup(body);
-        toast->app_icon = g_strdup(app_icon);
-        toast->expire_timeout = expire_timeout;
-        toast->daemon = daemon;
+        if (!daemon->dnd_enabled) {
+            ShellNotificationToast *toast = g_new0(ShellNotificationToast, 1);
+            toast->id = id;
+            toast->app_name = g_strdup(app_name);
+            toast->desktop_entry = g_strdup(desktop_entry);
+            toast->summary = g_strdup(summary);
+            toast->body = g_strdup(body);
+            toast->app_icon = g_strdup(app_icon);
+            toast->expire_timeout = expire_timeout;
+            toast->daemon = daemon;
 
-        g_ptr_array_add(daemon->toasts, toast);
-        create_notification_toast_card(daemon, toast);
+            g_ptr_array_add(daemon->toasts, toast);
+            create_notification_toast_card(daemon, toast);
+        }
 
         /* Add to history stack */
         ShellNotificationItem *item = g_new0(ShellNotificationItem, 1);
@@ -292,15 +334,8 @@ handle_notifications_method_call(GDBusConnection *connection,
         g_date_time_unref(now);
 
         g_ptr_array_insert(daemon->history, 0, item); /* Most recent first */
-
-        /* Emit history callbacks */
-        if (daemon->history_callbacks) {
-            for (guint i = 0; i < daemon->history_callbacks->len; i++) {
-                typedef struct { gpointer cb; gpointer ud; } CBEntry;
-                CBEntry *e = &g_array_index(daemon->history_callbacks, CBEntry, i);
-                ((NotificationHistoryCallback)e->cb)(daemon, e->ud);
-            }
-        }
+        trim_history(daemon);
+        emit_history_changed(daemon);
 
         g_variant_iter_free(actions_iter);
         g_variant_iter_free(hints_iter);
@@ -318,6 +353,21 @@ handle_notifications_method_call(GDBusConnection *connection,
             invocation,
             g_variant_new("(ssss)", "kajo", "mikolas", "0.1.0", "1.2"));
     } else if (g_strcmp0(method_name, "CloseNotification") == 0) {
+        guint32 close_id = 0;
+        g_variant_get(parameters, "(u)", &close_id);
+        if (close_id > 0 && daemon->toasts) {
+            for (guint i = 0; i < daemon->toasts->len; i++) {
+                ShellNotificationToast *t = g_ptr_array_index(daemon->toasts, i);
+                if (t && t->id == close_id) {
+                    g_ptr_array_remove_index(daemon->toasts, i);
+                    toast_free(t);
+                    break;
+                }
+            }
+        }
+        if (close_id > 0) {
+            shell_notification_daemon_emit_notification_closed(daemon, close_id, 3 /* closed by CloseNotification */);
+        }
         g_dbus_method_invocation_return_value(invocation, NULL);
     }
 }
@@ -350,9 +400,11 @@ shell_notification_daemon_new(void)
 {
     ShellNotificationDaemon *daemon = g_new0(ShellNotificationDaemon, 1);
     daemon->next_id = 1;
+    daemon->toast_timeout_ms = 8000;
+    daemon->max_history = 50;
+    daemon->dnd_enabled = FALSE;
     daemon->toasts = g_ptr_array_new();
     daemon->history = g_ptr_array_new_with_free_func((GDestroyNotify)notification_item_free);
-    typedef struct { gpointer cb; gpointer ud; } CBEntry;
     daemon->history_callbacks = g_array_new(FALSE, FALSE, sizeof(CBEntry));
 
     daemon->owner_id = g_bus_own_name(
@@ -421,15 +473,7 @@ shell_notification_daemon_clear_history(ShellNotificationDaemon *daemon)
     if (!daemon || !daemon->history) return;
 
     g_ptr_array_set_size(daemon->history, 0);
-
-    /* Emit callbacks */
-    if (daemon->history_callbacks) {
-        for (guint i = 0; i < daemon->history_callbacks->len; i++) {
-            typedef struct { gpointer cb; gpointer ud; } CBEntry;
-            CBEntry *e = &g_array_index(daemon->history_callbacks, CBEntry, i);
-            ((NotificationHistoryCallback)e->cb)(daemon, e->ud);
-        }
-    }
+    emit_history_changed(daemon);
 }
 
 void
@@ -445,22 +489,14 @@ shell_notification_daemon_remove_item(ShellNotificationDaemon *daemon, guint32 i
         }
     }
 
-    /* Emit callbacks */
-    if (daemon->history_callbacks) {
-        for (guint i = 0; i < daemon->history_callbacks->len; i++) {
-            typedef struct { gpointer cb; gpointer ud; } CBEntry;
-            CBEntry *e = &g_array_index(daemon->history_callbacks, CBEntry, i);
-            ((NotificationHistoryCallback)e->cb)(daemon, e->ud);
-        }
-    }
+    emit_history_changed(daemon);
 }
 
 void
 shell_notification_daemon_on_history_changed(ShellNotificationDaemon *daemon, NotificationHistoryCallback cb, gpointer user_data)
 {
     if (!daemon || !cb) return;
-    typedef struct { gpointer cb; gpointer ud; } CBEntry;
-    CBEntry entry = { (gpointer)cb, user_data };
+    CBEntry entry = { cb, user_data };
     g_array_append_val(daemon->history_callbacks, entry);
 }
 
@@ -469,7 +505,6 @@ shell_notification_daemon_remove_callbacks(ShellNotificationDaemon *daemon, gpoi
 {
     if (!daemon || !daemon->history_callbacks || !user_data) return;
     for (guint i = 0; i < daemon->history_callbacks->len; ) {
-        typedef struct { gpointer cb; gpointer ud; } CBEntry;
         CBEntry *e = &g_array_index(daemon->history_callbacks, CBEntry, i);
         if (e->ud == user_data) {
             g_array_remove_index(daemon->history_callbacks, i);
@@ -485,6 +520,37 @@ shell_notification_daemon_set_toast_timeout(ShellNotificationDaemon *daemon, gin
     if (daemon) {
         daemon->toast_timeout_ms = timeout_ms;
     }
+}
+
+void
+shell_notification_daemon_set_max_history(ShellNotificationDaemon *daemon, gint max_history)
+{
+    if (!daemon) return;
+    daemon->max_history = max_history > 0 ? max_history : 50;
+    if (daemon->history && daemon->history->len > (guint)daemon->max_history) {
+        trim_history(daemon);
+        emit_history_changed(daemon);
+    }
+}
+
+void
+shell_notification_daemon_set_dnd(ShellNotificationDaemon *daemon, gboolean dnd)
+{
+    if (!daemon) return;
+    daemon->dnd_enabled = dnd ? TRUE : FALSE;
+    if (daemon->dnd_enabled && daemon->toasts) {
+        for (guint i = 0; i < daemon->toasts->len; i++) {
+            ShellNotificationToast *t = g_ptr_array_index(daemon->toasts, i);
+            toast_free(t);
+        }
+        g_ptr_array_set_size(daemon->toasts, 0);
+    }
+}
+
+gboolean
+shell_notification_daemon_get_dnd(ShellNotificationDaemon *daemon)
+{
+    return daemon ? daemon->dnd_enabled : FALSE;
 }
 
 void

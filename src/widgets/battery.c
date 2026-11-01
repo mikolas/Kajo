@@ -2,6 +2,7 @@
 #include <gio/gio.h>
 #include "widget.h"
 #include "../compositor/compositor.h"
+#include "../hardware/hw_caps.h"
 
 #define UPOWER_BUS_NAME       "org.freedesktop.UPower"
 #define UPOWER_DEVICE_PATH    "/org/freedesktop/UPower/devices/DisplayDevice"
@@ -42,8 +43,6 @@ typedef struct {
     gulong         upower_signal_id;
     gulong         profiles_signal_id;
     /* Backlight */
-    gchar         *backlight_path;
-    gint           max_brightness;
     gboolean       updating_profile;
     gboolean       updating_brightness;
     GCancellable  *cancellable;
@@ -51,115 +50,16 @@ typedef struct {
 
 /* --- Backlight helpers --- */
 
-static gchar *find_backlight_path(void)
+static gint battery_read_brightness_pct(void)
 {
-    GDir *dir = g_dir_open("/sys/class/backlight", 0, NULL);
-    if (!dir)
-        return NULL;
-
-    const gchar *entry;
-    gchar *result = NULL;
-    while ((entry = g_dir_read_name(dir)) != NULL) {
-        result = g_build_filename("/sys/class/backlight", entry, NULL);
-        break;
-    }
-    g_dir_close(dir);
-    return result;
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    return shell_hw_caps_get_display_brightness_pct(caps);
 }
 
-static gint read_sysfs_int(const gchar *path)
+static void battery_set_brightness_pct(gint pct)
 {
-    gchar *contents = NULL;
-    if (!g_file_get_contents(path, &contents, NULL, NULL))
-        return -1;
-    gint val = atoi(contents);
-    g_free(contents);
-    return val;
-}
-
-static gint battery_read_brightness_pct(BatteryWidget *batt)
-{
-    if (!batt->backlight_path || batt->max_brightness <= 0)
-        return -1;
-
-    gchar *path = g_build_filename(batt->backlight_path, "brightness", NULL);
-    gint val = read_sysfs_int(path);
-    g_free(path);
-
-    if (val < 0)
-        return -1;
-    return (val * 100) / batt->max_brightness;
-}
-
-static gchar *
-get_active_session_path(GDBusConnection *bus)
-{
-    GError *error = NULL;
-    GVariant *res = g_dbus_connection_call_sync(
-        bus,
-        "org.freedesktop.login1",
-        "/org/freedesktop/login1/seat/seat0",
-        "org.freedesktop.DBus.Properties",
-        "Get",
-        g_variant_new("(ss)", "org.freedesktop.login1.Seat", "ActiveSession"),
-        G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NONE,
-        1000,
-        NULL,
-        &error);
-
-    if (!res) {
-        if (error) g_error_free(error);
-        return g_strdup("/org/freedesktop/login1/session/auto");
-    }
-
-    GVariant *v = NULL;
-    g_variant_get(res, "(v)", &v);
-    g_variant_unref(res);
-
-    if (!v)
-        return g_strdup("/org/freedesktop/login1/session/auto");
-
-    const gchar *session_id = NULL;
-    const gchar *session_path = NULL;
-    g_variant_get(v, "(&s&o)", &session_id, &session_path);
-
-    gchar *path = g_strdup(session_path);
-    g_variant_unref(v);
-
-    if (path && *path)
-        return path;
-    g_free(path);
-    return g_strdup("/org/freedesktop/login1/session/auto");
-}
-
-static void battery_set_brightness_pct(BatteryWidget *batt, gint pct)
-{
-    if (!batt->backlight_path || batt->max_brightness <= 0)
-        return;
-
-    gint val = (pct * batt->max_brightness) / 100;
-    if (val < 1) val = 1;
-    if (val > batt->max_brightness) val = batt->max_brightness;
-
-    gchar *device_name = g_path_get_basename(batt->backlight_path);
-
-    GError *error = NULL;
-    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (bus) {
-        gchar *session_path = get_active_session_path(bus);
-        g_dbus_connection_call(
-            bus,
-            "org.freedesktop.login1",
-            session_path,
-            "org.freedesktop.login1.Session",
-            "SetBrightness",
-            g_variant_new("(ssu)", "backlight", device_name, (guint32)val),
-            NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-        g_free(session_path);
-        g_object_unref(bus);
-    }
-    g_free(device_name);
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    shell_hw_caps_set_display_brightness_pct(caps, pct);
 }
 
 /* --- Power profiles --- */
@@ -228,87 +128,13 @@ static void on_profile_performance_toggled(GtkCheckButton *btn, gpointer user_da
 static void on_brightness_changed(GtkRange *range, gpointer user_data)
 {
     BatteryWidget *batt = user_data;
-    if (batt->updating_brightness)
+    if (!batt || batt->updating_brightness)
         return;
     gint pct = (gint)gtk_range_get_value(range);
-    battery_set_brightness_pct(batt, pct);
+    battery_set_brightness_pct(pct);
 }
 
 /* --- Battery update --- */
-
-static double battery_read_rapl_watts(void)
-{
-    static guint64 prev_energy = 0;
-    static gint64 prev_time = 0;
-    static const char *rapl_paths[] = {
-        "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj",
-        "/sys/class/powercap/intel-rapl:0/energy_uj",
-        "/sys/class/powercap/amd_energy/energy1_input",
-        NULL
-    };
-    for (int i = 0; rapl_paths[i] != NULL; i++) {
-        gchar *contents = NULL;
-        if (g_file_get_contents(rapl_paths[i], &contents, NULL, NULL)) {
-            guint64 cur_energy = g_ascii_strtoull(contents, NULL, 10);
-            g_free(contents);
-            if (cur_energy > 0) {
-                gint64 now = g_get_monotonic_time();
-                if (prev_energy > 0 && prev_time > 0 && cur_energy >= prev_energy) {
-                    double dt_sec = (double)(now - prev_time) / 1000000.0;
-                    if (dt_sec > 0.1) {
-                        double watts = ((double)(cur_energy - prev_energy) / 1000000.0) / dt_sec;
-                        prev_energy = cur_energy;
-                        prev_time = now;
-                        return watts;
-                    }
-                }
-                prev_energy = cur_energy;
-                prev_time = now;
-            }
-        }
-    }
-
-    /* Fallback: HWMON instant power inputs (zenpower / CPU power sensors) */
-    for (int h = 0; h < 12; h++) {
-        gchar name_path[128];
-        snprintf(name_path, sizeof(name_path), "/sys/class/hwmon/hwmon%d/name", h);
-        gchar *sensor_name = NULL;
-        if (g_file_get_contents(name_path, &sensor_name, NULL, NULL)) {
-            g_strstrip(sensor_name);
-            if (g_strcmp0(sensor_name, "amdgpu") == 0 ||
-                g_strcmp0(sensor_name, "nvidia") == 0 ||
-                g_strcmp0(sensor_name, "nouveau") == 0 ||
-                g_strcmp0(sensor_name, "nvme") == 0) {
-                g_free(sensor_name);
-                continue;
-            }
-            g_free(sensor_name);
-        }
-
-        guint64 total_microwatts = 0;
-        int found_rails = 0;
-
-        for (int p = 1; p <= 4; p++) {
-            gchar hwmon_path[128];
-            snprintf(hwmon_path, sizeof(hwmon_path), "/sys/class/hwmon/hwmon%d/power%d_input", h, p);
-            gchar *contents = NULL;
-            if (g_file_get_contents(hwmon_path, &contents, NULL, NULL)) {
-                guint64 microwatts = g_ascii_strtoull(contents, NULL, 10);
-                g_free(contents);
-                if (microwatts > 0) {
-                    total_microwatts += microwatts;
-                    found_rails++;
-                }
-            }
-        }
-
-        if (found_rails > 0 && total_microwatts > 0) {
-            return (double)total_microwatts / 1000000.0;
-        }
-    }
-
-    return 0.0;
-}
 
 static void battery_update(BatteryWidget *batt)
 {
@@ -395,29 +221,22 @@ static void battery_update(BatteryWidget *batt)
     }
     gtk_widget_set_visible(batt->time_label, TRUE);
 
-    /* Energy rate (power draw / charge rate) */
-    if (energy_rate <= 0.01) {
-        /* Sysfs fallback for power_now */
-        gint sysfs_power = read_sysfs_int("/sys/class/power_supply/BAT0/power_now");
-        if (sysfs_power > 0) {
-            energy_rate = (double)sysfs_power / 1000000.0;
+    /* Energy rate (power draw / charge rate) - only poll RAPL sysfs when popover is mapped */
+    if (batt->popover && gtk_widget_get_mapped(batt->popover)) {
+        if (energy_rate <= 0.01) {
+            energy_rate = shell_hw_caps_read_rapl_watts();
         }
+        if (energy_rate > 0.01) {
+            gchar *rate_str = g_strdup_printf("Power Draw: %.1f W", energy_rate);
+            gtk_label_set_text(GTK_LABEL(batt->energy_label), rate_str);
+            g_free(rate_str);
+        } else if (state == UPOWER_STATE_FULL) {
+            gtk_label_set_text(GTK_LABEL(batt->energy_label), "Power Draw: 0.0 W (AC Power)");
+        } else {
+            gtk_label_set_text(GTK_LABEL(batt->energy_label), "Power Draw: -- W");
+        }
+        gtk_widget_set_visible(batt->energy_label, TRUE);
     }
-    if (energy_rate <= 0.01) {
-        /* RAPL fallback for AC power */
-        energy_rate = battery_read_rapl_watts();
-    }
-
-    if (energy_rate > 0.01) {
-        gchar *rate_str = g_strdup_printf("Power Draw: %.1f W", energy_rate);
-        gtk_label_set_text(GTK_LABEL(batt->energy_label), rate_str);
-        g_free(rate_str);
-    } else if (state == UPOWER_STATE_FULL) {
-        gtk_label_set_text(GTK_LABEL(batt->energy_label), "Power Draw: 0.0 W (AC Power)");
-    } else {
-        gtk_label_set_text(GTK_LABEL(batt->energy_label), "Power Draw: -- W");
-    }
-    gtk_widget_set_visible(batt->energy_label, TRUE);
 }
 
 static void battery_properties_changed(GDBusProxy *proxy G_GNUC_UNUSED,
@@ -442,7 +261,6 @@ static void battery_upower_proxy_ready(GObject *source G_GNUC_UNUSED,
                                        GAsyncResult *res,
                                        gpointer user_data)
 {
-    BatteryWidget *batt = user_data;
     GError *error = NULL;
     GDBusProxy *proxy = g_dbus_proxy_new_for_bus_finish(res, &error);
 
@@ -459,6 +277,7 @@ static void battery_upower_proxy_ready(GObject *source G_GNUC_UNUSED,
         return;
     }
 
+    BatteryWidget *batt = user_data;
     batt->upower_proxy = proxy;
     batt->upower_signal_id = g_signal_connect(batt->upower_proxy, "g-properties-changed",
                                               G_CALLBACK(battery_properties_changed), batt);
@@ -469,7 +288,6 @@ static void battery_profiles_proxy_ready(GObject *source G_GNUC_UNUSED,
                                          GAsyncResult *res,
                                          gpointer user_data)
 {
-    BatteryWidget *batt = user_data;
     GError *error = NULL;
     GDBusProxy *proxy = g_dbus_proxy_new_for_bus_finish(res, &error);
 
@@ -486,6 +304,7 @@ static void battery_profiles_proxy_ready(GObject *source G_GNUC_UNUSED,
         return;
     }
 
+    BatteryWidget *batt = user_data;
     batt->profiles_proxy = proxy;
     batt->profiles_signal_id = g_signal_connect(batt->profiles_proxy, "g-properties-changed",
                                                 G_CALLBACK(profiles_properties_changed), batt);
@@ -517,6 +336,13 @@ typedef struct _ShellBatteryPopoverClass {
 G_DEFINE_TYPE(ShellBatteryPopover, shell_battery_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_battery_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_battery_popover_get_type());
+    G_OBJECT_CLASS(shell_battery_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_battery_popover_init(ShellBatteryPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -525,7 +351,10 @@ shell_battery_popover_init(ShellBatteryPopover *self)
 static void
 shell_battery_popover_class_init(ShellBatteryPopoverClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = shell_battery_popover_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/battery_popover.ui");
@@ -542,6 +371,20 @@ shell_battery_popover_class_init(ShellBatteryPopoverClass *klass)
 }
 
 /* --- Widget interface --- */
+
+static void on_battery_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    BatteryWidget *batt = user_data;
+    if (!batt)
+        return;
+    gint cur_bright = battery_read_brightness_pct();
+    if (cur_bright >= 0 && batt->brightness_scale && GTK_IS_RANGE(batt->brightness_scale)) {
+        batt->updating_brightness = TRUE;
+        gtk_range_set_value(GTK_RANGE(batt->brightness_scale), (double)cur_bright);
+        batt->updating_brightness = FALSE;
+    }
+    battery_update(batt);
+}
 
 static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
 {
@@ -573,7 +416,7 @@ static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
     g_signal_connect(batt->profile_performance, "toggled",
                      G_CALLBACK(on_profile_performance_toggled), batt);
 
-    gint cur_bright = battery_read_brightness_pct(batt);
+    gint cur_bright = battery_read_brightness_pct();
     if (cur_bright >= 0 && batt->brightness_scale && GTK_IS_RANGE(batt->brightness_scale)) {
         batt->updating_brightness = TRUE;
         gtk_range_set_value(GTK_RANGE(batt->brightness_scale), (double)cur_bright);
@@ -582,6 +425,8 @@ static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
 
     g_signal_connect(batt->brightness_scale, "value-changed",
                      G_CALLBACK(on_brightness_changed), batt);
+    g_signal_connect(GTK_WIDGET(popover), "map",
+                     G_CALLBACK(on_battery_popover_map), batt);
 
     return GTK_WIDGET(popover);
 }
@@ -589,14 +434,6 @@ static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
 static ShellWidget *battery_create(ShellCompositor *compositor G_GNUC_UNUSED)
 {
     BatteryWidget *batt = g_new0(BatteryWidget, 1);
-
-    /* Backlight setup */
-    batt->backlight_path = find_backlight_path();
-    if (batt->backlight_path) {
-        gchar *max_path = g_build_filename(batt->backlight_path, "max_brightness", NULL);
-        batt->max_brightness = read_sysfs_int(max_path);
-        g_free(max_path);
-    }
 
     /* Panel: icon + label */
     batt->panel_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
@@ -631,6 +468,22 @@ static gboolean battery_tick(gpointer user_data)
 static void battery_destroy(ShellWidget *widget)
 {
     BatteryWidget *batt = (BatteryWidget *)widget;
+    if (!batt)
+        return;
+
+    batt->updating_profile = TRUE;
+    batt->updating_brightness = TRUE;
+
+    if (batt->profile_power_saver)
+        g_signal_handlers_disconnect_by_data(batt->profile_power_saver, batt);
+    if (batt->profile_balanced)
+        g_signal_handlers_disconnect_by_data(batt->profile_balanced, batt);
+    if (batt->profile_performance)
+        g_signal_handlers_disconnect_by_data(batt->profile_performance, batt);
+    if (batt->brightness_scale)
+        g_signal_handlers_disconnect_by_data(batt->brightness_scale, batt);
+    if (batt->popover)
+        g_signal_handlers_disconnect_by_data(batt->popover, batt);
 
     if (batt->timer_id > 0) {
         g_source_remove(batt->timer_id);
@@ -651,7 +504,6 @@ static void battery_destroy(ShellWidget *widget)
             g_signal_handler_disconnect(batt->profiles_proxy, batt->profiles_signal_id);
         g_object_unref(batt->profiles_proxy);
     }
-    g_free(batt->backlight_path);
     g_free(batt);
 }
 
@@ -664,6 +516,9 @@ static void battery_enable(ShellWidget *widget)
 {
     BatteryWidget *batt = (BatteryWidget *)widget;
     if (batt) {
+        if (batt->panel_image) {
+            gtk_image_set_pixel_size(GTK_IMAGE(batt->panel_image), shell_widget_get_icon_size(widget));
+        }
         shell_widget_apply_mode_visibility(widget->mode, batt->panel_image, batt->panel_label);
         if (!batt->cancellable || g_cancellable_is_cancelled(batt->cancellable)) {
             if (batt->cancellable) g_object_unref(batt->cancellable);

@@ -69,6 +69,18 @@ on_panel_leave(GtkEventControllerMotion *controller,
         shell_autohide_leave(panel->autohide);
 }
 
+static GtkLayerShellLayer
+parse_panel_layer(const gchar *layer_str)
+{
+    if (g_strcmp0(layer_str, "overlay") == 0)
+        return GTK_LAYER_SHELL_LAYER_OVERLAY;
+    if (g_strcmp0(layer_str, "bottom") == 0)
+        return GTK_LAYER_SHELL_LAYER_BOTTOM;
+    if (g_strcmp0(layer_str, "background") == 0)
+        return GTK_LAYER_SHELL_LAYER_BACKGROUND;
+    return GTK_LAYER_SHELL_LAYER_TOP;
+}
+
 ShellPanel *
 shell_panel_new(ShellApp *app)
 {
@@ -80,11 +92,12 @@ shell_panel_new(ShellApp *app)
 
     /* Create the panel window */
     panel->window = GTK_WINDOW(gtk_window_new());
+    g_object_set_data(G_OBJECT(panel->window), "kajo-shell-panel", panel);
     gtk_widget_add_css_class(GTK_WIDGET(panel->window), "shell-panel");
 
     /* Configure gtk4-layer-shell */
     gtk_layer_init_for_window(panel->window);
-    gtk_layer_set_layer(panel->window, GTK_LAYER_SHELL_LAYER_TOP);
+    gtk_layer_set_layer(panel->window, parse_panel_layer(config->panel_layer));
     gtk_layer_set_namespace(panel->window, "kajo");
 
     /* Anchor to top-left and top-right to stretch across the top */
@@ -193,7 +206,8 @@ shell_panel_add_widget(ShellPanel          *panel,
 static void
 on_popover_visible_changed(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
-    ShellPanel *panel = user_data;
+    if (!user_data) return;
+    ShellPanel *panel = g_object_get_data(G_OBJECT(user_data), "kajo-shell-panel");
     if (!panel || !panel->autohide) return;
 
     gboolean visible = gtk_widget_get_visible(GTK_WIDGET(gobject));
@@ -208,14 +222,32 @@ on_popover_visible_changed(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gp
     }
 }
 
+static void
+on_popover_unmapped_or_destroyed(GtkWidget *widget, gpointer user_data)
+{
+    if (!user_data) return;
+    ShellPanel *panel = g_object_get_data(G_OBJECT(user_data), "kajo-shell-panel");
+    gboolean was_locked = GPOINTER_TO_INT(g_object_get_data(G_OBJECT(widget), "kajo-autohide-locked"));
+    if (was_locked) {
+        g_object_set_data(G_OBJECT(widget), "kajo-autohide-locked", GINT_TO_POINTER(0));
+        if (panel && panel->autohide)
+            shell_autohide_unlock(panel->autohide);
+    }
+}
+
 void
 shell_panel_register_popover(ShellPanel *panel, GtkPopover *popover)
 {
-    if (!panel || !popover) return;
+    if (!panel || !panel->window || !popover) return;
     if (g_object_get_data(G_OBJECT(popover), "kajo-popover-registered"))
         return;
     g_object_set_data(G_OBJECT(popover), "kajo-popover-registered", GINT_TO_POINTER(1));
-    g_signal_connect(popover, "notify::visible", G_CALLBACK(on_popover_visible_changed), panel);
+    g_signal_connect_object(popover, "notify::visible",
+                            G_CALLBACK(on_popover_visible_changed), panel->window, 0);
+    g_signal_connect_object(popover, "unmap",
+                            G_CALLBACK(on_popover_unmapped_or_destroyed), panel->window, 0);
+    g_signal_connect_object(popover, "destroy",
+                            G_CALLBACK(on_popover_unmapped_or_destroyed), panel->window, 0);
 }
 
 void
@@ -225,6 +257,7 @@ shell_panel_reload_config(ShellPanel *panel, ShellConfig *config)
         return;
 
     if (panel->window) {
+        gtk_layer_set_layer(panel->window, parse_panel_layer(config->panel_layer));
         if (config->panel_position == PANEL_POSITION_TOP) {
             gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
             gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);
@@ -254,6 +287,10 @@ shell_panel_destroy(ShellPanel *panel)
 {
     if (!panel)
         return;
+
+    if (panel->window) {
+        g_object_set_data(G_OBJECT(panel->window), "kajo-shell-panel", NULL);
+    }
 
     if (panel->autohide) {
         shell_autohide_destroy(panel->autohide);

@@ -144,11 +144,19 @@ static void on_lock_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     }
 }
 
-static void on_logout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+static void on_logout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    pid_t ppid = getppid();
-    if (ppid > 1)
-        kill(ppid, SIGTERM);
+    PowerWidget *pw = user_data;
+    if (pw && pw->popover) {
+        gtk_popover_popdown(GTK_POPOVER(pw->popover));
+    }
+    GError *err = NULL;
+    if (!g_spawn_command_line_async("niri msg action quit --skip-confirmation", &err)) {
+        if (err) {
+            g_warning("power: failed to run niri quit: %s", err->message);
+            g_clear_error(&err);
+        }
+    }
 }
 
 /* --- Popover opened callback: reset to main view --- */
@@ -291,6 +299,10 @@ static ShellWidget *power_create(ShellCompositor *compositor G_GNUC_UNUSED)
 static void power_destroy(ShellWidget *widget)
 {
     PowerWidget *pw = (PowerWidget *)widget;
+    if (!pw)
+        return;
+    if (pw->popover)
+        g_signal_handlers_disconnect_by_data(pw->popover, pw);
     if (pw->cancellable) {
         g_cancellable_cancel(pw->cancellable);
         g_object_unref(pw->cancellable);

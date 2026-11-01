@@ -13,11 +13,20 @@
 #include "../icons.h"
 #include "../autohide.h"
 #include "../dbus_helpers.h"
+#include "../hardware/hw_caps.h"
 #include "../lock/idle_manager.h"
+#include "../notifications/daemon.h"
 
 #define POWER_PROFILES_BUS_NAME  "net.hadess.PowerProfiles"
 #define POWER_PROFILES_PATH      "/net/hadess/PowerProfiles"
 #define POWER_PROFILES_IFACE     "net.hadess.PowerProfiles"
+
+static inline void
+unref_pa_op(pa_operation *op)
+{
+    if (op)
+        pa_operation_unref(op);
+}
 
 typedef struct {
     ShellWidget    base;
@@ -61,8 +70,6 @@ typedef struct {
     GDBusProxy    *profiles_proxy;
     GDBusProxy    *nm_proxy;
     gulong         profiles_signal_id;
-    gchar         *backlight_path;
-    gint           max_brightness;
 
     gboolean       wifi_enabled;
     gboolean       bt_enabled;
@@ -75,118 +82,18 @@ typedef struct {
 
 /* ─── Backlight Helper ─── */
 
-static gchar *
-cc_find_backlight_path(void)
-{
-    GDir *dir = g_dir_open("/sys/class/backlight", 0, NULL);
-    if (!dir)
-        return NULL;
-
-    const gchar *entry;
-    gchar *result = NULL;
-    while ((entry = g_dir_read_name(dir)) != NULL) {
-        result = g_build_filename("/sys/class/backlight", entry, NULL);
-        break;
-    }
-    g_dir_close(dir);
-    return result;
-}
-
 static gint
-cc_read_sysfs_int(const gchar *path)
+cc_read_brightness_pct(void)
 {
-    gchar *contents = NULL;
-    if (!g_file_get_contents(path, &contents, NULL, NULL))
-        return -1;
-    gint val = atoi(contents);
-    g_free(contents);
-    return val;
-}
-
-static gchar *
-cc_get_active_session_path(GDBusConnection *bus)
-{
-    GError *error = NULL;
-    GVariant *res = g_dbus_connection_call_sync(
-        bus,
-        "org.freedesktop.login1",
-        "/org/freedesktop/login1/seat/seat0",
-        "org.freedesktop.DBus.Properties",
-        "Get",
-        g_variant_new("(ss)", "org.freedesktop.login1.Seat", "ActiveSession"),
-        G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NONE,
-        1000,
-        NULL,
-        &error);
-
-    if (!res) {
-        if (error) g_error_free(error);
-        return g_strdup("/org/freedesktop/login1/session/auto");
-    }
-
-    GVariant *v = NULL;
-    g_variant_get(res, "(v)", &v);
-    g_variant_unref(res);
-
-    if (!v)
-        return g_strdup("/org/freedesktop/login1/session/auto");
-
-    const gchar *session_id = NULL;
-    const gchar *session_path = NULL;
-    g_variant_get(v, "(&s&o)", &session_id, &session_path);
-
-    gchar *path = g_strdup(session_path);
-    g_variant_unref(v);
-
-    if (path && *path)
-        return path;
-    g_free(path);
-    return g_strdup("/org/freedesktop/login1/session/auto");
-}
-
-static gint
-cc_read_brightness_pct(ControlCenterWidget *cc)
-{
-    if (!cc->backlight_path || cc->max_brightness <= 0)
-        return -1;
-
-    gchar *path = g_build_filename(cc->backlight_path, "actual_brightness", NULL);
-    gint val = cc_read_sysfs_int(path);
-    g_free(path);
-
-    if (val < 0) return -1;
-    return (val * 100) / cc->max_brightness;
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    return shell_hw_caps_get_display_brightness_pct(caps);
 }
 
 static void
-cc_set_brightness_pct(ControlCenterWidget *cc, gint pct)
+cc_set_brightness_pct(gint pct)
 {
-    if (!cc->backlight_path || cc->max_brightness <= 0)
-        return;
-
-    gint val = (pct * cc->max_brightness) / 100;
-    if (val < 1) val = 1;
-    if (val > cc->max_brightness) val = cc->max_brightness;
-
-    gchar *device_name = g_path_get_basename(cc->backlight_path);
-
-    GError *error = NULL;
-    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (bus) {
-        gchar *session_path = cc_get_active_session_path(bus);
-        g_dbus_connection_call(
-            bus,
-            "org.freedesktop.login1",
-            session_path,
-            "org.freedesktop.login1.Session",
-            "SetBrightness",
-            g_variant_new("(ssu)", "backlight", device_name, (guint32)val),
-            NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-        g_free(session_path);
-        g_object_unref(bus);
-    }
-    g_free(device_name);
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    shell_hw_caps_set_display_brightness_pct(caps, pct);
 }
 
 /* ─── PulseAudio C API Volume Integration ─── */
@@ -245,7 +152,7 @@ cc_server_info_cb(pa_context *ctx, const pa_server_info *info, void *userdata)
 
     g_free(cc->default_sink_name);
     cc->default_sink_name = g_strdup(info->default_sink_name);
-    pa_context_get_sink_info_by_name(ctx, cc->default_sink_name, cc_sink_info_cb, cc);
+    unref_pa_op(pa_context_get_sink_info_by_name(ctx, cc->default_sink_name, cc_sink_info_cb, cc));
 }
 
 static void
@@ -255,7 +162,7 @@ cc_context_subscribe_cb(pa_context *ctx, pa_subscription_event_type_t t,
     ControlCenterWidget *cc = userdata;
     if ((t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SINK ||
         (t & PA_SUBSCRIPTION_EVENT_FACILITY_MASK) == PA_SUBSCRIPTION_EVENT_SERVER) {
-        pa_context_get_server_info(ctx, cc_server_info_cb, cc);
+        unref_pa_op(pa_context_get_server_info(ctx, cc_server_info_cb, cc));
     }
 }
 
@@ -265,8 +172,8 @@ cc_context_state_cb(pa_context *ctx, void *userdata)
     ControlCenterWidget *cc = userdata;
     if (pa_context_get_state(ctx) == PA_CONTEXT_READY) {
         pa_context_set_subscribe_callback(ctx, cc_context_subscribe_cb, cc);
-        pa_context_subscribe(ctx, PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SERVER, NULL, NULL);
-        pa_context_get_server_info(ctx, cc_server_info_cb, cc);
+        unref_pa_op(pa_context_subscribe(ctx, PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SERVER, NULL, NULL));
+        unref_pa_op(pa_context_get_server_info(ctx, cc_server_info_cb, cc));
     }
 }
 
@@ -277,22 +184,22 @@ static void cc_update_profile_radios(ControlCenterWidget *cc);
 static void
 cc_profiles_proxy_ready(GObject *source G_GNUC_UNUSED, GAsyncResult *res, gpointer user_data)
 {
-    ControlCenterWidget *cc = user_data;
     GError *error = NULL;
     GDBusProxy *proxy = g_dbus_proxy_new_for_bus_finish(res, &error);
 
-    if (!cc || (cc->cancellable && g_cancellable_is_cancelled(cc->cancellable)) ||
-        g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
-        if (error) g_clear_error(&error);
+    if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&error);
         if (proxy) g_object_unref(proxy);
         return;
     }
 
-    if (!proxy) {
-        if (error) g_clear_error(&error);
+    if (!proxy || !user_data) {
+        g_clear_error(&error);
+        if (proxy) g_object_unref(proxy);
         return;
     }
 
+    ControlCenterWidget *cc = user_data;
     cc->profiles_proxy = proxy;
     g_signal_connect_swapped(cc->profiles_proxy, "g-properties-changed", G_CALLBACK(cc_update_profile_radios), cc);
     cc_update_profile_radios(cc);
@@ -359,14 +266,14 @@ static void
 on_vol_changed(GtkRange *range, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (cc->updating_vol) return;
+    if (!cc || cc->updating_vol) return;
 
     guint32 percent = (guint32)gtk_range_get_value(range);
     cc->volume_percent = percent;
 
     if (cc->pa_ctx && pa_context_get_state(cc->pa_ctx) == PA_CONTEXT_READY && cc->default_sink_name) {
         pa_cvolume cv = cc_make_cvolume(percent, 2);
-        pa_context_set_sink_volume_by_name(cc->pa_ctx, cc->default_sink_name, &cv, NULL, NULL);
+        unref_pa_op(pa_context_set_sink_volume_by_name(cc->pa_ctx, cc->default_sink_name, &cv, NULL, NULL));
     }
 
     gchar buf[32];
@@ -380,9 +287,9 @@ static void
 on_bright_changed(GtkRange *range, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (cc->updating_bright) return;
+    if (!cc || cc->updating_bright) return;
     gint val = (gint)gtk_range_get_value(range);
-    cc_set_brightness_pct(cc, val);
+    cc_set_brightness_pct(val);
     gchar buf[32];
     snprintf(buf, sizeof(buf), "%d%%", val);
     gtk_label_set_text(GTK_LABEL(cc->bright_val_lbl), buf);
@@ -435,6 +342,9 @@ on_dnd_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
     cc->dnd_enabled = !cc->dnd_enabled;
+    if (cc->base.app && cc->base.app->notifications) {
+        shell_notification_daemon_set_dnd(cc->base.app->notifications, cc->dnd_enabled);
+    }
     if (cc->dnd_enabled) {
         gtk_widget_add_css_class(cc->dnd_btn, "active");
         gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "On (Alerts Muted)");
@@ -542,11 +452,11 @@ cc_refresh_state(ControlCenterWidget *cc)
 {
     /* Update volume from PulseAudio / PipeWire */
     if (cc->pa_ctx && pa_context_get_state(cc->pa_ctx) == PA_CONTEXT_READY) {
-        pa_context_get_server_info(cc->pa_ctx, cc_server_info_cb, cc);
+        unref_pa_op(pa_context_get_server_info(cc->pa_ctx, cc_server_info_cb, cc));
     }
 
     /* Update brightness scale */
-    gint bright = cc_read_brightness_pct(cc);
+    gint bright = cc_read_brightness_pct();
     if (bright >= 0) {
         cc->updating_bright = TRUE;
         if (cc->bright_scale && GTK_IS_RANGE(cc->bright_scale)) {
@@ -558,6 +468,43 @@ cc_refresh_state(ControlCenterWidget *cc)
             gtk_label_set_text(GTK_LABEL(cc->bright_val_lbl), buf);
         }
         cc->updating_bright = FALSE;
+    }
+
+    if (cc->popover && gtk_widget_get_mapped(cc->popover)) {
+        cc->wifi_enabled = shell_dbus_nm_get_wireless_enabled();
+        if (cc->wifi_btn && cc->wifi_sub_lbl) {
+            if (cc->wifi_enabled) {
+                gtk_widget_add_css_class(cc->wifi_btn, "active");
+                gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Enabled");
+            } else {
+                gtk_widget_remove_css_class(cc->wifi_btn, "active");
+                gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Disabled");
+            }
+        }
+
+        cc->bt_enabled = shell_dbus_bluez_get_powered();
+        if (cc->bt_btn && cc->bt_sub_lbl) {
+            if (cc->bt_enabled) {
+                gtk_widget_add_css_class(cc->bt_btn, "active");
+                gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Enabled");
+            } else {
+                gtk_widget_remove_css_class(cc->bt_btn, "active");
+                gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Disabled");
+            }
+        }
+    }
+
+    if (cc->base.app && cc->base.app->notifications) {
+        cc->dnd_enabled = shell_notification_daemon_get_dnd(cc->base.app->notifications);
+    }
+    if (cc->dnd_btn && cc->dnd_sub_lbl) {
+        if (cc->dnd_enabled) {
+            gtk_widget_add_css_class(cc->dnd_btn, "active");
+            gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "On (Alerts Muted)");
+        } else {
+            gtk_widget_remove_css_class(cc->dnd_btn, "active");
+            gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "Off (Alerts On)");
+        }
     }
 
     cc_update_profile_radios(cc);
@@ -581,6 +528,20 @@ on_cc_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
     ControlCenterWidget *cc = user_data;
     if (!cc) return;
     cc_refresh_state(cc);
+    if (cc->refresh_timer_id == 0) {
+        cc->refresh_timer_id = g_timeout_add_seconds(1, on_cc_tick, cc);
+    }
+}
+
+static void
+on_cc_popover_unmap(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    ControlCenterWidget *cc = user_data;
+    if (!cc) return;
+    if (cc->refresh_timer_id > 0) {
+        g_source_remove(cc->refresh_timer_id);
+        cc->refresh_timer_id = 0;
+    }
 }
 
 /* ─── Tile Creation Helper ─── */
@@ -646,6 +607,13 @@ typedef struct _ShellControlCenterPopoverClass {
 G_DEFINE_TYPE(ShellControlCenterPopover, shell_control_center_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_control_center_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_control_center_popover_get_type());
+    G_OBJECT_CLASS(shell_control_center_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_control_center_popover_init(ShellControlCenterPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -654,7 +622,10 @@ shell_control_center_popover_init(ShellControlCenterPopover *self)
 static void
 shell_control_center_popover_class_init(ShellControlCenterPopoverClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = shell_control_center_popover_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/control_center_popover.ui");
@@ -681,14 +652,6 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
     ControlCenterWidget *cc = g_new0(ControlCenterWidget, 1);
     cc->wifi_enabled = TRUE;
     cc->bt_enabled = TRUE;
-
-    /* Backlight setup */
-    cc->backlight_path = cc_find_backlight_path();
-    if (cc->backlight_path) {
-        gchar *max_path = g_build_filename(cc->backlight_path, "max_brightness", NULL);
-        cc->max_brightness = cc_read_sysfs_int(max_path);
-        g_free(max_path);
-    }
 
     /* Panel Button */
     GtkWidget *panel_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
@@ -759,6 +722,7 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
 
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(cc->button), cc->popover);
     g_signal_connect(cc->popover, "map", G_CALLBACK(on_cc_popover_map), cc);
+    g_signal_connect(cc->popover, "unmap", G_CALLBACK(on_cc_popover_unmap), cc);
 
     /* Connect PulseAudio C API */
     cc->pa_ml = pa_glib_mainloop_new(NULL);
@@ -784,19 +748,57 @@ static void
 control_center_destroy(ShellWidget *widget)
 {
     ControlCenterWidget *cc = (ControlCenterWidget *)widget;
+    if (!cc)
+        return;
+
+    cc->updating_vol = TRUE;
+    cc->updating_bright = TRUE;
+    cc->updating_profile = TRUE;
+
+    if (cc->vol_scale)
+        g_signal_handlers_disconnect_by_data(cc->vol_scale, cc);
+    if (cc->bright_scale)
+        g_signal_handlers_disconnect_by_data(cc->bright_scale, cc);
+    if (cc->prof_saver)
+        g_signal_handlers_disconnect_by_data(cc->prof_saver, cc);
+    if (cc->prof_balanced)
+        g_signal_handlers_disconnect_by_data(cc->prof_balanced, cc);
+    if (cc->prof_perf)
+        g_signal_handlers_disconnect_by_data(cc->prof_perf, cc);
+    if (cc->wifi_btn)
+        g_signal_handlers_disconnect_by_data(cc->wifi_btn, cc);
+    if (cc->bt_btn)
+        g_signal_handlers_disconnect_by_data(cc->bt_btn, cc);
+    if (cc->dnd_btn)
+        g_signal_handlers_disconnect_by_data(cc->dnd_btn, cc);
+    if (cc->idle_btn)
+        g_signal_handlers_disconnect_by_data(cc->idle_btn, cc);
+    if (cc->popover) {
+        g_signal_handlers_disconnect_by_data(cc->popover, cc);
+        ShellControlCenterPopover *pop = (ShellControlCenterPopover *)cc->popover;
+        if (pop->btn_settings)
+            g_signal_handlers_disconnect_by_data(pop->btn_settings, cc);
+        if (pop->btn_lock)
+            g_signal_handlers_disconnect_by_data(pop->btn_lock, cc);
+        if (pop->btn_suspend)
+            g_signal_handlers_disconnect_by_data(pop->btn_suspend, cc);
+        if (pop->btn_power)
+            g_signal_handlers_disconnect_by_data(pop->btn_power, cc);
+    }
+
     if (cc->cancellable) {
         g_cancellable_cancel(cc->cancellable);
         g_clear_object(&cc->cancellable);
     }
-    if (cc->refresh_timer_id > 0)
+    if (cc->refresh_timer_id > 0) {
         g_source_remove(cc->refresh_timer_id);
+        cc->refresh_timer_id = 0;
+    }
     if (cc->profiles_proxy) {
         g_signal_handlers_disconnect_by_data(cc->profiles_proxy, cc);
         g_object_unref(cc->profiles_proxy);
         cc->profiles_proxy = NULL;
     }
-    if (cc->backlight_path)
-        g_free(cc->backlight_path);
 
     if (cc->pa_ctx) {
         pa_context_set_state_callback(cc->pa_ctx, NULL, NULL);
@@ -832,10 +834,7 @@ control_center_enable(ShellWidget *widget)
                                             on_cc_idle_manager_changed, cc);
             update_cc_idle_ui(cc);
         }
-    }
-    if (cc->refresh_timer_id == 0) {
         cc_refresh_state(cc);
-        cc->refresh_timer_id = g_timeout_add_seconds(1, on_cc_tick, cc);
     }
 }
 
@@ -847,7 +846,7 @@ control_center_disable(ShellWidget *widget)
         shell_idle_manager_remove_listener(widget->app->idle_manager,
                                            on_cc_idle_manager_changed, cc);
     }
-    if (cc->refresh_timer_id > 0) {
+    if (cc && cc->refresh_timer_id > 0) {
         g_source_remove(cc->refresh_timer_id);
         cc->refresh_timer_id = 0;
     }

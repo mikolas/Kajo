@@ -3,6 +3,7 @@
 #include "../config.h"
 #include "../theme.h"
 #include "../icons.h"
+#include "../hardware/hw_caps.h"
 
 static char *target_page = NULL;
 static ShellTheme *g_settings_theme = NULL;
@@ -35,6 +36,8 @@ on_app_shutdown(GtkApplication *app G_GNUC_UNUSED, gpointer user_data G_GNUC_UNU
         g_settings_theme = NULL;
     }
     shell_icons_cleanup();
+    shell_hw_caps_cleanup();
+    g_clear_pointer(&target_page, g_free);
 }
 
 int

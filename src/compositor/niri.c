@@ -548,20 +548,18 @@ niri_connect(ShellCompositor *compositor)
         return;
     }
 
-    g_socket_set_blocking(socket, FALSE);
-
     compositor->conn = g_socket_connection_factory_create_connection(socket);
-    g_object_unref(socket);
     g_object_unref(address);
 
     if (!compositor->conn) {
         g_warning("niri: failed to create socket connection");
+        g_object_unref(socket);
         return;
     }
 
     compositor->connected = TRUE;
 
-    /* Send the EventStream request */
+    /* Send the EventStream request while socket is still in blocking mode */
     GOutputStream *ostream = g_io_stream_get_output_stream(G_IO_STREAM(compositor->conn));
     const gchar *request = "\"EventStream\"\n";
     gsize bytes_written = 0;
@@ -571,9 +569,13 @@ niri_connect(ShellCompositor *compositor)
         g_warning("niri: failed to send EventStream request: %s", error->message);
         g_error_free(error);
         g_clear_object(&compositor->conn);
+        g_object_unref(socket);
         compositor->connected = FALSE;
         return;
     }
+
+    g_socket_set_blocking(socket, FALSE);
+    g_object_unref(socket);
 
     /* Set up async line reading */
     GInputStream *istream = g_io_stream_get_input_stream(G_IO_STREAM(compositor->conn));
@@ -611,65 +613,10 @@ on_niri_reconnect_timer(gpointer user_data)
 void
 niri_send_action(const gchar *json_str)
 {
-    const gchar *socket_path = g_getenv("NIRI_SOCKET");
-    if (!socket_path) {
-        g_warning("niri: NIRI_SOCKET not set, cannot send action");
+    if (!json_str)
         return;
-    }
-
-    GError *error = NULL;
-    GSocket *socket = g_socket_new(G_SOCKET_FAMILY_UNIX,
-                                   G_SOCKET_TYPE_STREAM,
-                                   G_SOCKET_PROTOCOL_DEFAULT,
-                                   &error);
-    if (!socket) {
-        g_warning("niri: action socket creation failed: %s", error->message);
-        g_error_free(error);
-        return;
-    }
-
-    GSocketAddress *address = g_unix_socket_address_new(socket_path);
-    if (!g_socket_connect(socket, address, NULL, &error)) {
-        g_warning("niri: action connect failed: %s", error->message);
-        g_error_free(error);
-        g_object_unref(socket);
-        g_object_unref(address);
-        return;
-    }
-
-    GSocketConnection *conn = g_socket_connection_factory_create_connection(socket);
-    g_object_unref(socket);
-    g_object_unref(address);
-
-    if (!conn) {
-        g_warning("niri: failed to create action connection");
-        return;
-    }
-
-    GOutputStream *ostream = g_io_stream_get_output_stream(G_IO_STREAM(conn));
-    gchar *request = g_strdup_printf("%s\n", json_str);
-    gsize bytes_written = 0;
-
-    if (!g_output_stream_write_all(ostream, request, strlen(request),
-                                   &bytes_written, NULL, &error)) {
-        g_warning("niri: failed to send action: %s", error->message);
-        g_error_free(error);
-    } else {
-        /* Read response (one line) */
-        GInputStream *istream = g_io_stream_get_input_stream(G_IO_STREAM(conn));
-        GDataInputStream *data_input = g_data_input_stream_new(istream);
-        gchar *response = g_data_input_stream_read_line_utf8(data_input, NULL, NULL, &error);
-        if (error) {
-            g_warning("niri: failed to read action response: %s", error->message);
-            g_error_free(error);
-        }
-        g_free(response);
-        g_object_unref(data_input);
-    }
-
-    g_free(request);
-    g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
-    g_object_unref(conn);
+    gchar *resp = niri_send_ipc_request(json_str);
+    g_free(resp);
 }
 
 gchar *

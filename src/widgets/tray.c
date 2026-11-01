@@ -16,6 +16,7 @@ typedef struct {
     gchar *service;
     gchar *object_path;
     GDBusProxy *proxy;
+    GCancellable *cancellable;
     GtkWidget *button;
     GtkWidget *icon_img;
     gchar *icon_name;
@@ -83,46 +84,71 @@ on_tray_item_clicked(GtkButton *btn, gpointer user_data)
 }
 
 static void
+on_sni_proxy_ready(GObject *source G_GNUC_UNUSED,
+                   GAsyncResult *res,
+                   gpointer user_data)
+{
+    GError *error = NULL;
+    GDBusProxy *proxy = g_dbus_proxy_new_for_bus_finish(res, &error);
+    if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_clear_error(&error);
+        if (proxy)
+            g_object_unref(proxy);
+        return;
+    }
+
+    TrayPair *pair = user_data;
+    if (!proxy) {
+        g_clear_error(&error);
+        if (pair && pair->tray && pair->item) {
+            remove_tray_item(pair->tray, pair->item->service);
+        }
+        return;
+    }
+
+    TrayItem *item = pair->item;
+    g_dbus_proxy_set_default_timeout(proxy, 1000);
+    item->proxy = proxy;
+    item->signal_id = g_signal_connect(item->proxy, "g-signal", G_CALLBACK(on_sni_signal), pair);
+    refresh_tray_item(pair->tray, item);
+}
+
+static void
 add_tray_item(TrayWidget *tray, const gchar *service)
 {
     if (!service || !*service)
         return;
 
-    /* Check if already added */
-    for (guint i = 0; i < tray->items->len; i++) {
-        TrayItem *it = g_ptr_array_index(tray->items, i);
-        if (g_strcmp0(it->service, service) == 0)
-            return;
-    }
-
-    TrayItem *item = g_new0(TrayItem, 1);
-    item->service = g_strdup(service);
+    gchar *parsed_service = NULL;
+    gchar *parsed_path = NULL;
 
     /* Determine service name and object path */
     if (service[0] == '/') {
-        item->object_path = g_strdup(service);
+        parsed_service = g_strdup(service);
+        parsed_path = g_strdup(service);
     } else if (strstr(service, "/") != NULL) {
         gchar **parts = g_strsplit(service, "/", 2);
-        g_free(item->service);
-        item->service = g_strdup(parts[0]);
-        item->object_path = g_strconcat("/", parts[1], NULL);
+        parsed_service = g_strdup(parts[0]);
+        parsed_path = g_strconcat("/", parts[1], NULL);
         g_strfreev(parts);
     } else {
-        item->object_path = g_strdup("/StatusNotifierItem");
+        parsed_service = g_strdup(service);
+        parsed_path = g_strdup("/StatusNotifierItem");
     }
 
-    GError *error = NULL;
-    item->proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
-        item->service, item->object_path, SNI_INTERFACE, NULL, &error);
-
-    if (error != NULL) {
-        g_clear_error(&error);
-        g_free(item->service);
-        g_free(item->object_path);
-        g_free(item);
-        return;
+    /* Check if already added */
+    for (guint i = 0; i < tray->items->len; i++) {
+        TrayItem *it = g_ptr_array_index(tray->items, i);
+        if (g_strcmp0(it->service, parsed_service) == 0) {
+            g_free(parsed_service);
+            g_free(parsed_path);
+            return;
+        }
     }
+
+    TrayItem *item = g_new0(TrayItem, 1);
+    item->service = parsed_service;
+    item->object_path = parsed_path;
 
     /* Build UI Button */
     item->button = gtk_button_new();
@@ -143,19 +169,18 @@ add_tray_item(TrayWidget *tray, const gchar *service)
     pair->tray = tray;
     pair->item = item;
     item->signal_pair = pair;
-    item->signal_id = g_signal_connect(item->proxy, "g-signal", G_CALLBACK(on_sni_signal), pair);
+    item->cancellable = g_cancellable_new();
 
     if (tray->bus && item->service) {
         item->name_watcher_id = g_bus_watch_name_on_connection(
             tray->bus, item->service, G_BUS_NAME_WATCHER_FLAGS_NONE,
             NULL, on_tray_item_vanished, pair, g_free);
-    } else {
-        /* If no bus watcher created, free pair manually */
-        g_free(pair);
-        item->signal_pair = NULL;
     }
 
-    refresh_tray_item(tray, item);
+    g_dbus_proxy_new_for_bus(
+        G_BUS_TYPE_SESSION, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        item->service, item->object_path, SNI_INTERFACE,
+        item->cancellable, on_sni_proxy_ready, pair);
 }
 
 static void
@@ -178,16 +203,25 @@ remove_tray_item(TrayWidget *tray, const gchar *service)
     for (guint i = 0; i < tray->items->len; i++) {
         TrayItem *it = g_ptr_array_index(tray->items, i);
         if (g_strcmp0(it->service, service) == 0) {
-            if (it->button) {
-                gtk_box_remove(GTK_BOX(tray->box), it->button);
+            if (it->cancellable) {
+                g_cancellable_cancel(it->cancellable);
+                g_clear_object(&it->cancellable);
             }
-            if (it->name_watcher_id > 0) {
-                g_bus_unwatch_name(it->name_watcher_id);
-                it->name_watcher_id = 0;
+            if (it->button) {
+                g_signal_handlers_disconnect_by_data(it->button, it);
+                gtk_box_remove(GTK_BOX(tray->box), it->button);
             }
             if (it->signal_id > 0 && it->proxy) {
                 g_signal_handler_disconnect(it->proxy, it->signal_id);
                 it->signal_id = 0;
+            }
+            if (it->name_watcher_id > 0) {
+                g_bus_unwatch_name(it->name_watcher_id);
+                it->name_watcher_id = 0;
+                it->signal_pair = NULL;
+            } else {
+                g_free(it->signal_pair);
+                it->signal_pair = NULL;
             }
             if (it->proxy) {
                 g_object_unref(it->proxy);
@@ -500,12 +534,26 @@ tray_widget_destroy(ShellWidget *widget)
     if (tray->items) {
         for (guint i = 0; i < tray->items->len; i++) {
             TrayItem *it = g_ptr_array_index(tray->items, i);
+            if (it->cancellable) {
+                g_cancellable_cancel(it->cancellable);
+                g_clear_object(&it->cancellable);
+            }
+            if (it->button) {
+                g_signal_handlers_disconnect_by_data(it->button, it);
+            }
             if (it->signal_id > 0 && it->proxy) {
                 g_signal_handler_disconnect(it->proxy, it->signal_id);
                 it->signal_id = 0;
             }
+            if (it->name_watcher_id > 0) {
+                g_bus_unwatch_name(it->name_watcher_id);
+                it->name_watcher_id = 0;
+                it->signal_pair = NULL;
+            } else {
+                g_free(it->signal_pair);
+                it->signal_pair = NULL;
+            }
             if (it->proxy) g_object_unref(it->proxy);
-            g_free(it->signal_pair);
             g_free(it->service);
             g_free(it->object_path);
             g_free(it->icon_name);

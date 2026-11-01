@@ -74,6 +74,8 @@ on_save_notifications_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     SettingsPageNotifications *self = (SettingsPageNotifications *)user_data;
     ShellConfig *config = shell_config_load(NULL);
+    if (!config)
+        config = shell_config_get_default();
 
     config->toast_timeout_ms = (gint)gtk_range_get_value(GTK_RANGE(self->scale_tout));
     config->max_notification_history = (gint)gtk_range_get_value(GTK_RANGE(self->scale_hist));
@@ -95,6 +97,8 @@ build_page_notifications(void)
 {
     SettingsPageNotifications *page = g_object_new(settings_page_notifications_get_type(), NULL);
     ShellConfig *config = shell_config_load(NULL);
+    if (!config)
+        config = shell_config_get_default();
 
     const char *click_items[] = {
         "Focus Source App Window in Niri (Default)",

@@ -71,6 +71,13 @@ typedef struct _ShellBacklightPopoverClass {
 G_DEFINE_TYPE(ShellBacklightPopover, shell_backlight_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_backlight_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_backlight_popover_get_type());
+    G_OBJECT_CLASS(shell_backlight_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_backlight_popover_init(ShellBacklightPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -79,7 +86,10 @@ shell_backlight_popover_init(ShellBacklightPopover *self)
 static void
 shell_backlight_popover_class_init(ShellBacklightPopoverClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = shell_backlight_popover_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/backlight_popover.ui");
@@ -424,7 +434,33 @@ backlight_create(ShellCompositor *compositor G_GNUC_UNUSED)
 static void
 backlight_destroy(ShellWidget *widget)
 {
-    g_free(widget);
+    BacklightWidget *bl = (BacklightWidget *)widget;
+    if (!bl)
+        return;
+
+    bl->updating_ui = TRUE;
+    if (bl->scale_display)
+        g_signal_handlers_disconnect_by_data(bl->scale_display, bl);
+    if (bl->btn_kbd_wake)
+        g_signal_handlers_disconnect_by_data(bl->btn_kbd_wake, bl);
+    if (bl->btn_kbd_off)
+        g_signal_handlers_disconnect_by_data(bl->btn_kbd_off, bl);
+    if (bl->btn_kbd_low)
+        g_signal_handlers_disconnect_by_data(bl->btn_kbd_low, bl);
+    if (bl->btn_kbd_high)
+        g_signal_handlers_disconnect_by_data(bl->btn_kbd_high, bl);
+    if (bl->btn_timeout_always)
+        g_signal_handlers_disconnect_by_data(bl->btn_timeout_always, bl);
+    if (bl->btn_timeout_30s)
+        g_signal_handlers_disconnect_by_data(bl->btn_timeout_30s, bl);
+    if (bl->btn_timeout_3m)
+        g_signal_handlers_disconnect_by_data(bl->btn_timeout_3m, bl);
+    if (bl->sw_autorotate)
+        g_signal_handlers_disconnect_by_data(bl->sw_autorotate, bl);
+    if (bl->popover)
+        g_signal_handlers_disconnect_by_data(bl->popover, bl);
+
+    g_free(bl);
 }
 
 static GtkWidget *
@@ -439,6 +475,10 @@ backlight_enable(ShellWidget *widget)
     BacklightWidget *bl = (BacklightWidget *)widget;
     if (!bl)
         return;
+
+    if (bl->panel_image) {
+        gtk_image_set_pixel_size(GTK_IMAGE(bl->panel_image), shell_widget_get_icon_size(widget));
+    }
 
     const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
     gboolean supported = caps && (caps->has_display_backlight ||

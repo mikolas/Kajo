@@ -182,10 +182,11 @@ register_agent(BluetoothWidget *bt)
     }
 }
 
-static void
+static gboolean
 on_power_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data G_GNUC_UNUSED)
 {
     shell_dbus_bluez_set_powered(state);
+    return FALSE;
 }
 
 static void
@@ -618,6 +619,13 @@ typedef struct _ShellBluetoothPopoverClass {
 G_DEFINE_TYPE(ShellBluetoothPopover, shell_bluetooth_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_bluetooth_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_bluetooth_popover_get_type());
+    G_OBJECT_CLASS(shell_bluetooth_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_bluetooth_popover_init(ShellBluetoothPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -626,7 +634,10 @@ shell_bluetooth_popover_init(ShellBluetoothPopover *self)
 static void
 shell_bluetooth_popover_class_init(ShellBluetoothPopoverClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = shell_bluetooth_popover_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/bluetooth_popover.ui");
@@ -707,6 +718,19 @@ bluetooth_widget_destroy(ShellWidget *widget)
     BluetoothWidget *bt = (BluetoothWidget *)widget;
     if (bt == NULL) return;
 
+    if (bt->popover) {
+        g_signal_handlers_disconnect_by_data(bt->popover, bt);
+        ShellBluetoothPopover *pop = (ShellBluetoothPopover *)bt->popover;
+        if (pop->settings_btn)
+            g_signal_handlers_disconnect_by_data(pop->settings_btn, bt);
+    }
+    if (bt->power_switch)
+        g_signal_handlers_disconnect_by_data(bt->power_switch, bt);
+    if (bt->scan_btn)
+        g_signal_handlers_disconnect_by_data(bt->scan_btn, bt);
+    clear_list_box(bt->paired_list_box);
+    clear_list_box(bt->discovered_list_box);
+
     if (bt->agent_reg_id > 0 && bt->bus != NULL) {
         g_dbus_connection_unregister_object(bt->bus, bt->agent_reg_id);
     }
@@ -738,6 +762,9 @@ bluetooth_widget_enable(ShellWidget *widget)
 {
     BluetoothWidget *bt = (BluetoothWidget *)widget;
     if (bt) {
+        if (bt->icon_img) {
+            gtk_image_set_pixel_size(GTK_IMAGE(bt->icon_img), shell_widget_get_icon_size(widget));
+        }
         shell_widget_apply_mode_visibility(widget->mode, bt->icon_img, bt->label);
     }
 }

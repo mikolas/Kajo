@@ -128,6 +128,8 @@ static void window_destroy(ShellWidget *widget)
 {
     WindowWidget *win = (WindowWidget *)widget;
     if (win) {
+        if (win->close_btn)
+            g_signal_handlers_disconnect_by_data(win->close_btn, win);
         if (win->compositor) {
             shell_compositor_remove_callbacks(win->compositor, win);
         }
@@ -145,7 +147,7 @@ static void window_enable(ShellWidget *widget)
 {
     WindowWidget *win = (WindowWidget *)widget;
 
-    if (win->compositor != NULL) {
+    if (win && win->compositor != NULL) {
         shell_compositor_on_window_focus_changed(win->compositor, on_window_focus_changed, win);
         shell_compositor_on_windows_changed(win->compositor, on_window_focus_changed, win);
         window_update(win);
@@ -155,7 +157,9 @@ static void window_enable(ShellWidget *widget)
 static void window_disable(ShellWidget *widget)
 {
     WindowWidget *win = (WindowWidget *)widget;
-    (void)win;
+    if (win && win->compositor) {
+        shell_compositor_remove_callbacks(win->compositor, win);
+    }
 }
 
 const ShellWidgetClass window_widget_class = {

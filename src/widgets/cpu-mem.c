@@ -8,6 +8,7 @@
 #include <mntent.h>
 #include "widget.h"
 #include "../compositor/compositor.h"
+#include "../hardware/hw_caps.h"
 
 #define CPU_MEM_INTERVAL_SECONDS 2
 #define MAX_CORES 128
@@ -257,7 +258,7 @@ static void cpu_mem_update_network(CpuMemWidget *cm)
     fclose(fp);
 
     gint64 now = g_get_monotonic_time();
-    if (cm->prev_net_time > 0 && cm->prev_rx_bytes <= total_rx) {
+    if (cm->prev_net_time > 0 && cm->prev_rx_bytes <= total_rx && cm->prev_tx_bytes <= total_tx) {
         double dt = (double)(now - cm->prev_net_time) / 1000000.0;
         if (dt > 0.1) {
             double rx_speed = (double)(total_rx - cm->prev_rx_bytes) / dt;
@@ -316,99 +317,13 @@ static gboolean cpu_mem_read_fan_rpm(int *out_rpm)
 
 /* --- CPU Power Draw (Watts) --- */
 
-static gboolean cpu_mem_read_power(CpuMemWidget *cm, double *out_watts)
+static gboolean cpu_mem_read_power(CpuMemWidget *cm G_GNUC_UNUSED, double *out_watts)
 {
-    /* 1. Try RAPL energy accumulators (Intel RAPL & AMD RAPL) */
-    static const char *rapl_paths[] = {
-        "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj",
-        "/sys/class/powercap/intel-rapl:0/energy_uj",
-        "/sys/class/powercap/amd_energy/energy1_input",
-        "/sys/class/powercap/intel-rapl/intel-rapl:1/energy_uj",
-        NULL
-    };
-
-    for (int i = 0; rapl_paths[i] != NULL; i++) {
-        gchar *contents = NULL;
-        if (g_file_get_contents(rapl_paths[i], &contents, NULL, NULL)) {
-            guint64 cur_energy_uj = g_ascii_strtoull(contents, NULL, 10);
-            g_free(contents);
-            if (cur_energy_uj > 0) {
-                gint64 now = g_get_monotonic_time();
-                if (cm->prev_energy_uj > 0 && cm->prev_power_time > 0 && cur_energy_uj >= cm->prev_energy_uj) {
-                    double dt_sec = (double)(now - cm->prev_power_time) / 1000000.0;
-                    if (dt_sec > 0.1) {
-                        guint64 d_energy_uj = cur_energy_uj - cm->prev_energy_uj;
-                        *out_watts = ((double)d_energy_uj / 1000000.0) / dt_sec;
-                        cm->prev_energy_uj = cur_energy_uj;
-                        cm->prev_power_time = now;
-                        return TRUE;
-                    }
-                }
-                cm->prev_energy_uj = cur_energy_uj;
-                cm->prev_power_time = now;
-                return FALSE;
-            }
-        }
+    double watts = shell_hw_caps_read_rapl_watts();
+    if (watts > 0.01) {
+        *out_watts = watts;
+        return TRUE;
     }
-
-    /* 2. Try HWMON instant power inputs (/sys/class/hwmon/hwmonN/power*_input), skipping GPU/storage sensors */
-    for (int h = 0; h < 12; h++) {
-        gchar name_path[128];
-        snprintf(name_path, sizeof(name_path), "/sys/class/hwmon/hwmon%d/name", h);
-        gchar *sensor_name = NULL;
-        if (g_file_get_contents(name_path, &sensor_name, NULL, NULL)) {
-            g_strstrip(sensor_name);
-            if (g_strcmp0(sensor_name, "amdgpu") == 0 ||
-                g_strcmp0(sensor_name, "nvidia") == 0 ||
-                g_strcmp0(sensor_name, "nouveau") == 0 ||
-                g_strcmp0(sensor_name, "nvme") == 0) {
-                g_free(sensor_name);
-                continue;
-            }
-            g_free(sensor_name);
-        }
-
-        guint64 total_microwatts = 0;
-        int found_rails = 0;
-
-        for (int p = 1; p <= 4; p++) {
-            gchar hwmon_path[128];
-            snprintf(hwmon_path, sizeof(hwmon_path), "/sys/class/hwmon/hwmon%d/power%d_input", h, p);
-            gchar *contents = NULL;
-            if (g_file_get_contents(hwmon_path, &contents, NULL, NULL)) {
-                guint64 microwatts = g_ascii_strtoull(contents, NULL, 10);
-                g_free(contents);
-                if (microwatts > 0) {
-                    total_microwatts += microwatts;
-                    found_rails++;
-                }
-            }
-        }
-
-        if (found_rails > 0 && total_microwatts > 0) {
-            *out_watts = (double)total_microwatts / 1000000.0;
-            return TRUE;
-        }
-    }
-
-    /* 3. Try laptop power supply battery fallback (/sys/class/power_supply/BATN/power_now) */
-    static const char *bat_paths[] = {
-        "/sys/class/power_supply/BAT0/power_now",
-        "/sys/class/power_supply/BAT1/power_now",
-        NULL
-    };
-    for (int b = 0; bat_paths[b] != NULL; b++) {
-        gchar *contents = NULL;
-        if (g_file_get_contents(bat_paths[b], &contents, NULL, NULL)) {
-            guint64 microwatts = g_ascii_strtoull(contents, NULL, 10);
-            g_free(contents);
-            if (microwatts > 0) {
-                *out_watts = (double)microwatts / 1000000.0;
-                return TRUE;
-            }
-        }
-    }
-
     return FALSE;
 }
 
@@ -460,11 +375,12 @@ static void cpu_mem_get_top_procs(CpuMemWidget *cm, ProcInfo *procs, gint *out_c
 
         guint64 utime = 0, stime = 0;
         int field = 3;
-        gchar *tok = strtok(p, " ");
+        gchar *saveptr = NULL;
+        gchar *tok = strtok_r(p, " ", &saveptr);
         while (tok) {
             if (field == 14) utime = strtoull(tok, NULL, 10);
             if (field == 15) { stime = strtoull(tok, NULL, 10); break; }
-            tok = strtok(NULL, " ");
+            tok = strtok_r(NULL, " ", &saveptr);
             field++;
         }
         g_free(stat_contents);
@@ -783,6 +699,13 @@ typedef struct _ShellCpuMemPopoverClass {
 G_DEFINE_TYPE(ShellCpuMemPopover, shell_cpu_mem_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_cpu_mem_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_cpu_mem_popover_get_type());
+    G_OBJECT_CLASS(shell_cpu_mem_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_cpu_mem_popover_init(ShellCpuMemPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -791,7 +714,10 @@ shell_cpu_mem_popover_init(ShellCpuMemPopover *self)
 static void
 shell_cpu_mem_popover_class_init(ShellCpuMemPopoverClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = shell_cpu_mem_popover_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/cpu_mem_popover.ui");
@@ -868,6 +794,8 @@ static ShellWidget *cpu_mem_create(ShellCompositor *compositor G_GNUC_UNUSED)
 static void cpu_mem_destroy(ShellWidget *widget)
 {
     CpuMemWidget *cm = (CpuMemWidget *)widget;
+    if (cm->popover)
+        g_signal_handlers_disconnect_by_data(cm->popover, cm);
     if (cm->timer_id > 0)
         g_source_remove(cm->timer_id);
     if (cm->proc_table)
@@ -884,6 +812,9 @@ static void cpu_mem_enable(ShellWidget *widget)
 {
     CpuMemWidget *cm = (CpuMemWidget *)widget;
     if (cm) {
+        if (cm->icon_img) {
+            gtk_image_set_pixel_size(GTK_IMAGE(cm->icon_img), shell_widget_get_icon_size(widget));
+        }
         shell_widget_apply_mode_visibility(widget->mode, cm->icon_img, cm->panel_label);
     }
     if (cm->timer_id == 0) {

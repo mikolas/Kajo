@@ -12,6 +12,7 @@ typedef struct {
     GtkWidget  *badge_label;
     GtkWidget  *popover;
     GtkWidget  *list_vbox;
+    GtkWidget  *clear_btn;
 } NotificationsWidget;
 
 static void rebuild_notification_list(NotificationsWidget *nw);
@@ -36,11 +37,16 @@ on_remove_item_clicked(GtkButton *btn, gpointer user_data)
 }
 
 static void
-on_card_pressed(GtkGestureClick *gesture, gint n_press G_GNUC_UNUSED, gdouble x G_GNUC_UNUSED, gdouble y G_GNUC_UNUSED, gpointer user_data)
+on_card_pressed(GtkGestureClick *gesture, gint n_press G_GNUC_UNUSED, gdouble x, gdouble y, gpointer user_data)
 {
     NotificationsWidget *nw = user_data;
     GtkWidget *card = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
     if (!card || !nw->base.app) return;
+
+    /* Ignore clicks that land on the dismiss button inside the card */
+    GtkWidget *picked = gtk_widget_pick(card, x, y, GTK_PICK_DEFAULT);
+    if (picked && (GTK_IS_BUTTON(picked) || gtk_widget_get_ancestor(picked, GTK_TYPE_BUTTON) != NULL))
+        return;
 
     guint32 id = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(card), "notification-id"));
     const char *app_name = g_object_get_data(G_OBJECT(card), "app-name");
@@ -194,6 +200,13 @@ typedef struct _ShellNotificationsPopoverClass {
 G_DEFINE_TYPE(ShellNotificationsPopover, shell_notifications_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_notifications_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_notifications_popover_get_type());
+    G_OBJECT_CLASS(shell_notifications_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_notifications_popover_init(ShellNotificationsPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -202,6 +215,7 @@ shell_notifications_popover_init(ShellNotificationsPopover *self)
 static void
 shell_notifications_popover_class_init(ShellNotificationsPopoverClass *klass)
 {
+    G_OBJECT_CLASS(klass)->dispose = shell_notifications_popover_dispose;
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
 
     gtk_widget_class_set_template_from_resource(
@@ -217,6 +231,7 @@ build_notifications_popover(NotificationsWidget *nw)
     ShellNotificationsPopover *popover = g_object_new(shell_notifications_popover_get_type(), NULL);
 
     nw->list_vbox = popover->list_vbox;
+    nw->clear_btn = popover->clear_btn;
     g_signal_connect(popover->clear_btn, "clicked", G_CALLBACK(on_clear_all_clicked), nw);
 
     return GTK_WIDGET(popover);
@@ -255,6 +270,8 @@ notifications_widget_destroy(ShellWidget *widget)
 {
     NotificationsWidget *nw = (NotificationsWidget *)widget;
     if (nw) {
+        if (nw->clear_btn)
+            g_signal_handlers_disconnect_by_data(nw->clear_btn, nw);
         if (nw->base.app && shell_app_get_notification_daemon(nw->base.app)) {
             shell_notification_daemon_remove_callbacks(
                 shell_app_get_notification_daemon(nw->base.app), nw);
@@ -274,7 +291,7 @@ static void
 notifications_widget_enable(ShellWidget *widget)
 {
     NotificationsWidget *nw = (NotificationsWidget *)widget;
-    if (nw->base.app && shell_app_get_notification_daemon(nw->base.app)) {
+    if (nw && nw->base.app && shell_app_get_notification_daemon(nw->base.app)) {
         shell_notification_daemon_on_history_changed(
             shell_app_get_notification_daemon(nw->base.app),
             on_notification_history_changed, nw);
@@ -285,6 +302,11 @@ notifications_widget_enable(ShellWidget *widget)
 static void
 notifications_widget_disable(ShellWidget *widget)
 {
+    NotificationsWidget *nw = (NotificationsWidget *)widget;
+    if (nw && nw->base.app && shell_app_get_notification_daemon(nw->base.app)) {
+        shell_notification_daemon_remove_callbacks(
+            shell_app_get_notification_daemon(nw->base.app), nw);
+    }
 }
 
 const ShellWidgetClass notifications_widget_class = {

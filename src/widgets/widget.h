@@ -86,6 +86,10 @@ shell_spawn_settings(const char *page, GtkWidget *popover)
     g_spawn_command_line_async(cmd, NULL);
 }
 
+void volume_widget_change_volume(ShellWidget *widget, gint delta_percent);
+void volume_widget_toggle_mute(ShellWidget *widget);
+void custom_script_widget_configure(ShellWidget *widget, const ShellWidgetConfig *wc);
+
 #ifdef __cplusplus
 }
 #endif
