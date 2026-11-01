@@ -80,6 +80,193 @@ template $SettingsPageDisplays : Box {
     }
   }
 
+  /* Keyboard Backlight & Timeout Card (visible only when hardware present) */
+  Box card_kbd_backlight {
+    orientation: vertical;
+    spacing: 12;
+    visible: false;
+
+    styles [
+      "section-card-right",
+    ]
+
+    Label {
+      label: "KEYBOARD BACKLIGHT & TIMEOUT";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Label {
+      label: "Configure built-in keyboard illumination brightness and automatic turn-off timeout.";
+      halign: start;
+
+      styles [
+        "dim-label",
+      ]
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Keyboard Backlight Brightness:";
+        halign: start;
+        hexpand: true;
+      }
+
+      DropDown combo_kbd_level {}
+    }
+
+    Box row_kbd_timeout {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Keyboard Backlight Auto-Off Timeout:";
+        halign: start;
+        hexpand: true;
+      }
+
+      DropDown combo_kbd_timeout {}
+    }
+
+    Button btn_apply_kbd {
+      label: "[ SAVE & APPLY KEYBOARD BACKLIGHT ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+
+  /* 360° Foldable Posture & Sensors Card (visible only when hinge/accel sensors present) */
+  Box card_posture {
+    orientation: vertical;
+    spacing: 12;
+    visible: false;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label {
+      label: "360° FOLDABLE POSTURE & SENSORS";
+      halign: start;
+
+      styles [
+        "heading",
+      ]
+    }
+
+    Label lbl_sensor_status {
+      label: "Foldable hinge & orientation sensors active.";
+      halign: start;
+
+      styles [
+        "dim-label",
+      ]
+    }
+
+    Box row_posture_autorotate {
+      orientation: horizontal;
+      spacing: 12;
+
+      Box {
+        orientation: vertical;
+        spacing: 2;
+        hexpand: true;
+
+        Label {
+          label: "Auto-Rotate Display in Tablet / Tent Mode";
+          halign: start;
+        }
+
+        Label {
+          label: "Rotate built-in display using the accelerometer when folded >= 180° (locks to 0° in Laptop mode)";
+          halign: start;
+
+          styles [
+            "dim-label",
+          ]
+        }
+      }
+
+      Switch sw_posture_autorotate {
+        valign: center;
+      }
+    }
+
+    Box row_posture_disable_kbd {
+      orientation: horizontal;
+      spacing: 12;
+
+      Box {
+        orientation: vertical;
+        spacing: 2;
+        hexpand: true;
+
+        Label {
+          label: "Disable Keyboard & Touchpad in Tablet Mode";
+          halign: start;
+        }
+
+        Label {
+          label: "Inhibit built-in keyboard and touchpad input and turn off keyboard backlight when folded >= 180°";
+          halign: start;
+
+          styles [
+            "dim-label",
+          ]
+        }
+      }
+
+      Switch sw_posture_disable_kbd {
+        valign: center;
+      }
+    }
+
+    Box row_posture_disable_touch {
+      orientation: horizontal;
+      spacing: 12;
+
+      Box {
+        orientation: vertical;
+        spacing: 2;
+        hexpand: true;
+
+        Label {
+          label: "Disable Touchscreen in Laptop Mode";
+          halign: start;
+        }
+
+        Label {
+          label: "Inhibit finger touch in Laptop mode (<= 168°) while keeping active pen / stylus enabled";
+          halign: start;
+
+          styles [
+            "dim-label",
+          ]
+        }
+      }
+
+      Switch sw_posture_disable_touch {
+        valign: center;
+      }
+    }
+
+    Button btn_apply_posture {
+      label: "[ SAVE & APPLY 360° POSTURE SETTINGS ]";
+
+      styles [
+        "flat",
+      ]
+    }
+  }
+
   /* Screen Saver & Session Lock Card */
   Box {
     orientation: vertical;

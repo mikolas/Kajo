@@ -118,6 +118,13 @@ shell_config_get_default(void)
     config->lock_timeout_sec         = 900;
     config->lock_on_suspend          = TRUE;
 
+    config->posture_auto_rotate             = TRUE;
+    config->posture_disable_kbd_in_tablet   = TRUE;
+    config->posture_disable_touch_in_laptop = FALSE;
+
+    config->kbd_backlight_level       = 2;
+    config->kbd_backlight_timeout_sec = 0;
+
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
     config->layout_right          = g_ptr_array_new_full(0, free_widget_config);
@@ -280,6 +287,33 @@ shell_config_load(const gchar *path)
         }
         if (json_object_has_member(idle_obj, "lock_on_suspend")) {
             config->lock_on_suspend = json_object_get_boolean_member(idle_obj, "lock_on_suspend");
+        }
+    }
+
+    /* 360° Foldable Posture settings */
+    if (json_object_has_member(root, "posture") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "posture"))) {
+        JsonObject *posture_obj = json_object_get_object_member(root, "posture");
+        if (json_object_has_member(posture_obj, "auto_rotate")) {
+            config->posture_auto_rotate = json_object_get_boolean_member(posture_obj, "auto_rotate");
+        }
+        if (json_object_has_member(posture_obj, "disable_kbd_in_tablet")) {
+            config->posture_disable_kbd_in_tablet = json_object_get_boolean_member(posture_obj, "disable_kbd_in_tablet");
+        }
+        if (json_object_has_member(posture_obj, "disable_touch_in_laptop")) {
+            config->posture_disable_touch_in_laptop = json_object_get_boolean_member(posture_obj, "disable_touch_in_laptop");
+        }
+    }
+
+    /* Keyboard Backlight settings */
+    if (json_object_has_member(root, "keyboard_backlight") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "keyboard_backlight"))) {
+        JsonObject *kbd_obj = json_object_get_object_member(root, "keyboard_backlight");
+        if (json_object_has_member(kbd_obj, "level")) {
+            config->kbd_backlight_level = (gint)json_object_get_int_member(kbd_obj, "level");
+        }
+        if (json_object_has_member(kbd_obj, "timeout_sec")) {
+            config->kbd_backlight_timeout_sec = (gint)json_object_get_int_member(kbd_obj, "timeout_sec");
         }
     }
 
@@ -512,6 +546,26 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_int_value(builder, config->lock_timeout_sec >= 0 ? config->lock_timeout_sec : 900);
     json_builder_set_member_name(builder, "lock_on_suspend");
     json_builder_add_boolean_value(builder, config->lock_on_suspend);
+    json_builder_end_object(builder);
+
+    /* 360° Foldable Posture object */
+    json_builder_set_member_name(builder, "posture");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "auto_rotate");
+    json_builder_add_boolean_value(builder, config->posture_auto_rotate);
+    json_builder_set_member_name(builder, "disable_kbd_in_tablet");
+    json_builder_add_boolean_value(builder, config->posture_disable_kbd_in_tablet);
+    json_builder_set_member_name(builder, "disable_touch_in_laptop");
+    json_builder_add_boolean_value(builder, config->posture_disable_touch_in_laptop);
+    json_builder_end_object(builder);
+
+    /* Keyboard Backlight object */
+    json_builder_set_member_name(builder, "keyboard_backlight");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "level");
+    json_builder_add_int_value(builder, CLAMP(config->kbd_backlight_level, 0, 2));
+    json_builder_set_member_name(builder, "timeout_sec");
+    json_builder_add_int_value(builder, config->kbd_backlight_timeout_sec >= 0 ? config->kbd_backlight_timeout_sec : 0);
     json_builder_end_object(builder);
 
     json_builder_set_member_name(builder, "autohide_edge_strip_px");

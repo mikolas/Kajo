@@ -26,6 +26,13 @@ test_config_defaults(void)
     g_assert_cmpint(cfg->lock_timeout_sec, ==, 900);
     g_assert_true(cfg->lock_on_suspend);
 
+    /* Posture & Keyboard Backlight defaults */
+    g_assert_true(cfg->posture_auto_rotate);
+    g_assert_true(cfg->posture_disable_kbd_in_tablet);
+    g_assert_false(cfg->posture_disable_touch_in_laptop);
+    g_assert_cmpint(cfg->kbd_backlight_level, ==, 2);
+    g_assert_cmpint(cfg->kbd_backlight_timeout_sec, ==, 0);
+
     g_assert_nonnull(cfg->layout_left);
     g_assert_nonnull(cfg->layout_center);
     g_assert_nonnull(cfg->layout_right);
@@ -62,6 +69,12 @@ test_config_save_and_load_roundtrip(void)
     orig->dpms_timeout_sec = 300;
     orig->lock_timeout_sec = 600;
     orig->lock_on_suspend = FALSE;
+
+    orig->posture_auto_rotate = FALSE;
+    orig->posture_disable_kbd_in_tablet = FALSE;
+    orig->posture_disable_touch_in_laptop = TRUE;
+    orig->kbd_backlight_level = 1;
+    orig->kbd_backlight_timeout_sec = 30;
 
     g_free(orig->accent_color);
     orig->accent_color = g_strdup("#ff8c00");
@@ -111,6 +124,12 @@ test_config_save_and_load_roundtrip(void)
     g_assert_cmpint(loaded->dpms_timeout_sec, ==, 300);
     g_assert_cmpint(loaded->lock_timeout_sec, ==, 600);
     g_assert_false(loaded->lock_on_suspend);
+
+    g_assert_false(loaded->posture_auto_rotate);
+    g_assert_false(loaded->posture_disable_kbd_in_tablet);
+    g_assert_true(loaded->posture_disable_touch_in_laptop);
+    g_assert_cmpint(loaded->kbd_backlight_level, ==, 1);
+    g_assert_cmpint(loaded->kbd_backlight_timeout_sec, ==, 30);
 
     g_assert_cmpstr(loaded->accent_color, ==, "#ff8c00");
     g_assert_cmpint(loaded->ui_font_size_px, ==, 14);

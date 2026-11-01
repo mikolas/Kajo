@@ -1,0 +1,233 @@
+using Gtk 4.0;
+
+template $ShellBacklightPopover : Popover {
+  styles [
+    "shell-popover",
+  ]
+
+  Box {
+    orientation: vertical;
+
+    styles [
+      "popover-medium",
+    ]
+
+    /* Zone 1: Header */
+    Box {
+      orientation: horizontal;
+
+      styles [
+        "shell-popover-header",
+      ]
+
+      Label title_label {
+        label: "BACKLIGHT & POSTURE";
+        xalign: 0;
+        hexpand: true;
+
+        styles [
+          "shell-popover-title",
+        ]
+      }
+
+      Label status_badge {
+        label: "[ READY ]";
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* Zone 2: Body */
+    Box {
+      orientation: vertical;
+      spacing: 8;
+
+      styles [
+        "shell-popover-body",
+      ]
+
+      /* Section 1: Display Brightness */
+      Box box_display {
+        orientation: vertical;
+        spacing: 6;
+
+        Box {
+          orientation: horizontal;
+
+          Label {
+            label: "DISPLAY BRIGHTNESS";
+            xalign: 0;
+            hexpand: true;
+
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
+
+          Label lbl_display_pct {
+            label: "--%";
+          }
+        }
+
+        Scale scale_display {
+          orientation: horizontal;
+          hexpand: true;
+
+          adjustment: Adjustment {
+            lower: 1;
+            upper: 100;
+            step-increment: 1;
+          };
+        }
+      }
+
+      /* Section 2: Keyboard Backlight & Timeout */
+      Box box_kbd {
+        orientation: vertical;
+        spacing: 8;
+
+        Separator {
+          orientation: horizontal;
+        }
+
+        Label {
+          label: "KEYBOARD BACKLIGHT";
+          xalign: 0;
+
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
+
+        Label lbl_kbd_status {
+          label: "Status: High (F4 cycles level)";
+          xalign: 0;
+        }
+
+        Button btn_kbd_wake {
+          label: "[ 💡 WAKE / TURN ON KEYLIGHTS ]";
+          visible: false;
+
+          styles [
+            "flat",
+          ]
+        }
+
+        Box box_kbd_levels {
+          orientation: horizontal;
+          spacing: 6;
+          homogeneous: true;
+
+          Button btn_kbd_off {
+            label: "Off";
+
+            styles [
+              "flat",
+            ]
+          }
+
+          Button btn_kbd_low {
+            label: "Low";
+
+            styles [
+              "flat",
+            ]
+          }
+
+          Button btn_kbd_high {
+            label: "High";
+
+            styles [
+              "flat",
+            ]
+          }
+        }
+
+        Box box_kbd_timeout {
+          orientation: vertical;
+          spacing: 6;
+
+          Label {
+            label: "KEYBOARD AUTO-OFF TIMEOUT";
+            xalign: 0;
+
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
+
+          Box {
+            orientation: horizontal;
+            spacing: 6;
+            homogeneous: true;
+
+            Button btn_timeout_always {
+              label: "Always On";
+
+              styles [
+                "flat",
+              ]
+            }
+
+            Button btn_timeout_30s {
+              label: "30s";
+
+              styles [
+                "flat",
+              ]
+            }
+
+            Button btn_timeout_3m {
+              label: "3m";
+
+              styles [
+                "flat",
+              ]
+            }
+          }
+        }
+      }
+
+      /* Section 3: 360° Foldable Posture & Auto-Rotate */
+      Box box_posture {
+        orientation: vertical;
+        spacing: 6;
+
+        Separator {
+          orientation: horizontal;
+        }
+
+        Label {
+          label: "360° FOLDABLE POSTURE";
+          xalign: 0;
+
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
+
+        Label lbl_posture_status {
+          label: "Posture: Laptop Mode";
+          xalign: 0;
+        }
+
+        Box {
+          orientation: horizontal;
+          spacing: 8;
+
+          Label {
+            label: "Auto-Rotate in Tablet Mode";
+            xalign: 0;
+            hexpand: true;
+          }
+
+          Switch sw_autorotate {
+            valign: center;
+          }
+        }
+      }
+    }
+  }
+}

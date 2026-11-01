@@ -7,6 +7,7 @@ extern const ShellWidgetClass window_widget_class;
 extern const ShellWidgetClass keyboard_layout_widget_class;
 extern const ShellWidgetClass volume_widget_class;
 extern const ShellWidgetClass battery_widget_class;
+extern const ShellWidgetClass backlight_widget_class;
 extern const ShellWidgetClass cpu_mem_widget_class;
 extern const ShellWidgetClass custom_script_widget_class;
 extern const ShellWidgetClass power_widget_class;
@@ -33,6 +34,7 @@ static void register_builtin_widgets(ShellWidgetRegistry *registry)
     g_ptr_array_add(registry->classes, (gpointer)&keyboard_layout_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&volume_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&battery_widget_class);
+    g_ptr_array_add(registry->classes, (gpointer)&backlight_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&cpu_mem_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&custom_script_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&power_widget_class);

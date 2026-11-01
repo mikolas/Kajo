@@ -337,17 +337,19 @@ static void battery_update(BatteryWidget *batt)
     if (v_ttf) { time_to_full = g_variant_get_int64(v_ttf); g_variant_unref(v_ttf); }
     if (v_rate) { energy_rate = g_variant_get_double(v_rate); g_variant_unref(v_rate); }
 
-    const gchar *icon_name = "tb-battery-symbolic";
+    const gchar *icon_name = "tb-battery-4-symbolic";
     if (state == UPOWER_STATE_CHARGING) {
         icon_name = "tb-battery-charging-symbolic";
-    } else if (percentage <= 25) {
+    } else if (percentage <= 10.0) {
+        icon_name = "tb-battery-symbolic";
+    } else if (percentage <= 32.0) {
         icon_name = "tb-battery-1-symbolic";
-    } else if (percentage <= 50) {
+    } else if (percentage <= 55.0) {
         icon_name = "tb-battery-2-symbolic";
-    } else if (percentage <= 75) {
+    } else if (percentage <= 80.0) {
         icon_name = "tb-battery-3-symbolic";
     } else {
-        icon_name = "tb-battery-symbolic";
+        icon_name = "tb-battery-4-symbolic";
     }
 
     /* Panel */
@@ -598,7 +600,7 @@ static ShellWidget *battery_create(ShellCompositor *compositor G_GNUC_UNUSED)
 
     /* Panel: icon + label */
     batt->panel_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    batt->panel_image = gtk_image_new_from_icon_name("fl-battery-symbolic");
+    batt->panel_image = gtk_image_new_from_icon_name("tb-battery-4-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(batt->panel_image), shell_widget_get_icon_size((ShellWidget *)batt));
     batt->panel_label = gtk_label_new("--");
     gtk_box_append(GTK_BOX(batt->panel_box), batt->panel_image);
