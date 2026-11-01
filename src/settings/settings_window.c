@@ -6,6 +6,41 @@
 static void select_sidebar_row_by_name(SettingsApp *app_ctx, const gchar *target_page);
 
 static void
+ensure_settings_page(SettingsApp *app_ctx, const gchar *page_name)
+{
+    if (!app_ctx || !app_ctx->stack || !page_name)
+        return;
+
+    if (gtk_stack_get_child_by_name(GTK_STACK(app_ctx->stack), page_name) != NULL)
+        return;
+
+    GtkWidget *page = NULL;
+    if (g_strcmp0(page_name, "displays") == 0)
+        page = build_page_displays();
+    else if (g_strcmp0(page_name, "network") == 0)
+        page = build_page_network();
+    else if (g_strcmp0(page_name, "bluetooth") == 0)
+        page = build_page_bluetooth();
+    else if (g_strcmp0(page_name, "audio") == 0)
+        page = build_page_audio();
+    else if (g_strcmp0(page_name, "theme") == 0)
+        page = build_page_theme();
+    else if (g_strcmp0(page_name, "panel") == 0)
+        page = build_page_panel();
+    else if (g_strcmp0(page_name, "widgets") == 0)
+        page = build_page_widgets();
+    else if (g_strcmp0(page_name, "notifications") == 0)
+        page = build_page_notifications();
+    else if (g_strcmp0(page_name, "niri") == 0)
+        page = build_page_niri();
+    else if (g_strcmp0(page_name, "about") == 0)
+        page = build_page_about();
+
+    if (page != NULL)
+        gtk_stack_add_named(GTK_STACK(app_ctx->stack), page, page_name);
+}
+
+static void
 update_responsive_layout(SettingsApp *app_ctx, int width)
 {
     if (!app_ctx || !app_ctx->sidebar_vbox || !app_ctx->stack_scroll ||
@@ -97,6 +132,7 @@ on_sidebar_row_selected(GtkListBox *box G_GNUC_UNUSED, GtkListBoxRow *row, gpoin
 
     const gchar *page_name = g_object_get_data(G_OBJECT(child), "page-name");
     if (page_name && app_ctx->stack) {
+        ensure_settings_page(app_ctx, page_name);
         gtk_stack_set_visible_child_name(GTK_STACK(app_ctx->stack), page_name);
 
         if (app_ctx->is_narrow_mode) {
@@ -211,6 +247,7 @@ select_sidebar_row_by_name(SettingsApp *app_ctx, const gchar *target_page)
             if (row_child) {
                 const gchar *name = g_object_get_data(G_OBJECT(row_child), "page-name");
                 if (g_strcmp0(name, target_page) == 0) {
+                    ensure_settings_page(app_ctx, target_page);
                     gtk_list_box_select_row(GTK_LIST_BOX(app_ctx->sidebar_list), GTK_LIST_BOX_ROW(child));
                     if (app_ctx->stack) {
                         gtk_stack_set_visible_child_name(GTK_STACK(app_ctx->stack), target_page);
@@ -224,7 +261,7 @@ select_sidebar_row_by_name(SettingsApp *app_ctx, const gchar *target_page)
 }
 
 GtkWidget *
-desktop_settings_window_new(GtkApplication *app)
+desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_page)
 {
     SettingsApp *app_ctx = g_new0(SettingsApp, 1);
 
@@ -350,20 +387,9 @@ desktop_settings_window_new(GtkApplication *app)
     gtk_box_append(GTK_BOX(app_ctx->sidebar_vbox), sidebar_scroll);
     gtk_paned_set_start_child(GTK_PANED(app_ctx->paned), app_ctx->sidebar_vbox);
 
-    /* Right GtkStack Pages Container */
+    /* Right GtkStack Pages Container (pages are lazy-loaded on selection) */
     app_ctx->stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(app_ctx->stack), GTK_STACK_TRANSITION_TYPE_CROSSFADE);
-
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_displays(), "displays");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_network(), "network");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_bluetooth(), "bluetooth");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_audio(), "audio");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_theme(), "theme");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_panel(), "panel");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_widgets(), "widgets");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_notifications(), "notifications");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_niri(), "niri");
-    gtk_stack_add_named(GTK_STACK(app_ctx->stack), build_page_about(), "about");
 
     GtkWidget *stack_scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(stack_scroll), app_ctx->stack);
@@ -377,8 +403,12 @@ desktop_settings_window_new(GtkApplication *app)
     gtk_window_set_child(GTK_WINDOW(app_ctx->window), main_vbox);
     g_object_set_data_full(G_OBJECT(app_ctx->window), "app-ctx", app_ctx, g_free);
 
-    /* Select initial default page */
-    select_sidebar_row_by_name(app_ctx, "displays");
+    /* Select initial page (lazy-builds only the requested page) */
+    const gchar *target = (initial_page && initial_page[0] != '\0') ? initial_page : "displays";
+    select_sidebar_row_by_name(app_ctx, target);
+    if (!gtk_list_box_get_selected_row(GTK_LIST_BOX(app_ctx->sidebar_list))) {
+        select_sidebar_row_by_name(app_ctx, "displays");
+    }
 
     g_signal_connect(app_ctx->window, "notify::default-width", G_CALLBACK(on_window_size_changed), app_ctx);
     g_signal_connect(app_ctx->window, "realize", G_CALLBACK(on_window_realize), app_ctx);
@@ -387,12 +417,7 @@ desktop_settings_window_new(GtkApplication *app)
 }
 
 GtkWidget *
-desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_page)
+desktop_settings_window_new(GtkApplication *app)
 {
-    GtkWidget *win = desktop_settings_window_new(app);
-    if (initial_page && initial_page[0] != '\0') {
-        SettingsApp *app_ctx = g_object_get_data(G_OBJECT(win), "app-ctx");
-        select_sidebar_row_by_name(app_ctx, initial_page);
-    }
-    return win;
+    return desktop_settings_window_new_with_page(app, "displays");
 }
