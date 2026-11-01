@@ -34,7 +34,7 @@ typedef struct _SettingsPageAudio {
 } SettingsPageAudio;
 
 typedef struct {
-    SettingsPageAudio *self;
+    GWeakRef self_ref;
     guint query_seq;
 } AudioQueryTag;
 
@@ -43,6 +43,23 @@ typedef struct _SettingsPageAudioClass {
 } SettingsPageAudioClass;
 
 G_DEFINE_TYPE(SettingsPageAudio, settings_page_audio, GTK_TYPE_BOX)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(SettingsPageAudio, g_object_unref)
+
+static inline void
+unref_pa_op(pa_operation *op)
+{
+    if (op)
+        pa_operation_unref(op);
+}
+
+static void
+audio_query_tag_free(AudioQueryTag *tag)
+{
+    if (!tag)
+        return;
+    g_weak_ref_clear(&tag->self_ref);
+    g_free(tag);
+}
 
 static void audio_query_server_info(SettingsPageAudio *self);
 static void audio_query_sinks(SettingsPageAudio *self);
@@ -103,20 +120,25 @@ static void
 audio_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info, int eol, void *userdata)
 {
     AudioQueryTag *tag = userdata;
-    if (!tag || !tag->self) {
-        g_free(tag);
+    if (!tag)
+        return;
+
+    g_autoptr(SettingsPageAudio) self = g_weak_ref_get(&tag->self_ref);
+    if (!self) {
+        if (eol != 0)
+            audio_query_tag_free(tag);
         return;
     }
-    SettingsPageAudio *self = tag->self;
 
     if (tag->query_seq != self->sink_query_seq) {
-        if (eol != 0) g_free(tag);
+        if (eol != 0)
+            audio_query_tag_free(tag);
         return;
     }
 
     if (eol != 0) {
         self->updating_sinks = FALSE;
-        g_free(tag);
+        audio_query_tag_free(tag);
         return;
     }
     if (!info) return;
@@ -140,20 +162,25 @@ static void
 audio_source_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source_info *info, int eol, void *userdata)
 {
     AudioQueryTag *tag = userdata;
-    if (!tag || !tag->self) {
-        g_free(tag);
+    if (!tag)
+        return;
+
+    g_autoptr(SettingsPageAudio) self = g_weak_ref_get(&tag->self_ref);
+    if (!self) {
+        if (eol != 0)
+            audio_query_tag_free(tag);
         return;
     }
-    SettingsPageAudio *self = tag->self;
 
     if (tag->query_seq != self->source_query_seq) {
-        if (eol != 0) g_free(tag);
+        if (eol != 0)
+            audio_query_tag_free(tag);
         return;
     }
 
     if (eol != 0) {
         self->updating_sources = FALSE;
-        g_free(tag);
+        audio_query_tag_free(tag);
         return;
     }
     if (!info) return;
@@ -185,12 +212,12 @@ audio_server_info_cb(pa_context *ctx, const pa_server_info *info, void *userdata
     if (info->default_sink_name) {
         g_free(self->default_sink_name);
         self->default_sink_name = g_strdup(info->default_sink_name);
-        pa_context_get_sink_info_by_name(ctx, self->default_sink_name, audio_sink_info_cb, self);
+        unref_pa_op(pa_context_get_sink_info_by_name(ctx, self->default_sink_name, audio_sink_info_cb, self));
     }
     if (info->default_source_name) {
         g_free(self->default_source_name);
         self->default_source_name = g_strdup(info->default_source_name);
-        pa_context_get_source_info_by_name(ctx, self->default_source_name, audio_source_info_cb, self);
+        unref_pa_op(pa_context_get_source_info_by_name(ctx, self->default_source_name, audio_source_info_cb, self));
     }
 }
 
@@ -198,7 +225,7 @@ static void
 audio_query_server_info(SettingsPageAudio *self)
 {
     if (!self->pa_ctx || pa_context_get_state(self->pa_ctx) != PA_CONTEXT_READY) return;
-    pa_context_get_server_info(self->pa_ctx, audio_server_info_cb, self);
+    unref_pa_op(pa_context_get_server_info(self->pa_ctx, audio_server_info_cb, self));
 }
 
 static void
@@ -217,9 +244,9 @@ audio_query_sinks(SettingsPageAudio *self)
     gtk_drop_down_set_model(GTK_DROP_DOWN(self->combo_sink), G_LIST_MODEL(self->sink_string_list));
 
     AudioQueryTag *tag = g_new0(AudioQueryTag, 1);
-    tag->self = self;
+    g_weak_ref_init(&tag->self_ref, self);
     tag->query_seq = self->sink_query_seq;
-    pa_context_get_sink_info_list(self->pa_ctx, audio_sink_list_cb, tag);
+    unref_pa_op(pa_context_get_sink_info_list(self->pa_ctx, audio_sink_list_cb, tag));
 }
 
 static void
@@ -238,9 +265,9 @@ audio_query_sources(SettingsPageAudio *self)
     gtk_drop_down_set_model(GTK_DROP_DOWN(self->combo_source), G_LIST_MODEL(self->source_string_list));
 
     AudioQueryTag *tag = g_new0(AudioQueryTag, 1);
-    tag->self = self;
+    g_weak_ref_init(&tag->self_ref, self);
     tag->query_seq = self->source_query_seq;
-    pa_context_get_source_info_list(self->pa_ctx, audio_source_list_cb, tag);
+    unref_pa_op(pa_context_get_source_info_list(self->pa_ctx, audio_source_list_cb, tag));
 }
 
 static void
@@ -276,11 +303,11 @@ audio_context_state_cb(pa_context *ctx, void *userdata)
 
     if (state == PA_CONTEXT_READY) {
         pa_context_set_subscribe_callback(ctx, audio_subscription_cb, self);
-        pa_context_subscribe(ctx,
+        unref_pa_op(pa_context_subscribe(ctx,
             PA_SUBSCRIPTION_MASK_SINK |
             PA_SUBSCRIPTION_MASK_SOURCE |
             PA_SUBSCRIPTION_MASK_SERVER,
-            NULL, NULL);
+            NULL, NULL));
 
         audio_query_server_info(self);
         audio_query_sinks(self);
@@ -303,7 +330,7 @@ on_audio_vol_changed(GtkRange *range, gpointer user_data)
     pa_volume_t vol = (pa_volume_t)(val * PA_VOLUME_NORM / 100.0);
     pa_cvolume cv;
     pa_cvolume_set(&cv, self->sink_channels ? self->sink_channels : 2, vol);
-    pa_context_set_sink_volume_by_name(self->pa_ctx, self->default_sink_name, &cv, NULL, NULL);
+    unref_pa_op(pa_context_set_sink_volume_by_name(self->pa_ctx, self->default_sink_name, &cv, NULL, NULL));
 }
 
 static void
@@ -321,7 +348,7 @@ on_audio_mic_changed(GtkRange *range, gpointer user_data)
     pa_volume_t vol = (pa_volume_t)(val * PA_VOLUME_NORM / 100.0);
     pa_cvolume cv;
     pa_cvolume_set(&cv, self->source_channels ? self->source_channels : 2, vol);
-    pa_context_set_source_volume_by_name(self->pa_ctx, self->default_source_name, &cv, NULL, NULL);
+    unref_pa_op(pa_context_set_source_volume_by_name(self->pa_ctx, self->default_source_name, &cv, NULL, NULL));
 }
 
 static void
@@ -337,7 +364,7 @@ on_sink_selected(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer use
         if (name && g_strcmp0(name, self->default_sink_name) != 0) {
             g_free(self->default_sink_name);
             self->default_sink_name = g_strdup(name);
-            pa_context_set_default_sink(self->pa_ctx, name, NULL, NULL);
+            unref_pa_op(pa_context_set_default_sink(self->pa_ctx, name, NULL, NULL));
             audio_query_server_info(self);
         }
     }
@@ -356,7 +383,7 @@ on_source_selected(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer u
         if (name && g_strcmp0(name, self->default_source_name) != 0) {
             g_free(self->default_source_name);
             self->default_source_name = g_strdup(name);
-            pa_context_set_default_source(self->pa_ctx, name, NULL, NULL);
+            unref_pa_op(pa_context_set_default_source(self->pa_ctx, name, NULL, NULL));
             audio_query_server_info(self);
         }
     }

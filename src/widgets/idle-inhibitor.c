@@ -179,6 +179,12 @@ idle_inhibitor_widget_destroy(ShellWidget *widget)
     IdleInhibitorWidget *in = (IdleInhibitorWidget *)widget;
     if (in == NULL)
         return;
+    if (in->base.app && in->base.app->idle_manager) {
+        shell_idle_manager_remove_listener(in->base.app->idle_manager,
+                                           on_idle_manager_changed, in);
+    }
+    if (in->toggle_switch)
+        g_signal_handlers_disconnect_by_data(in->toggle_switch, in);
     g_free(in);
 }
 
@@ -194,6 +200,8 @@ idle_inhibitor_widget_enable(ShellWidget *widget)
 {
     IdleInhibitorWidget *in = (IdleInhibitorWidget *)widget;
     if (in) {
+        if (in->icon_img)
+            gtk_image_set_pixel_size(GTK_IMAGE(in->icon_img), shell_widget_get_icon_size(widget));
         if (widget->app && widget->app->idle_manager) {
             in->is_inhibited = shell_idle_manager_get_inhibited(widget->app->idle_manager);
             shell_idle_manager_add_listener(widget->app->idle_manager,

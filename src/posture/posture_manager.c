@@ -341,18 +341,6 @@ shell_posture_manager_reload_config(ShellPostureManager *self)
     }
 }
 
-ShellPostureState
-shell_posture_manager_get_state(ShellPostureManager *self)
-{
-    return self ? self->state : SHELL_POSTURE_UNKNOWN;
-}
-
-gdouble
-shell_posture_manager_get_hinge_angle(ShellPostureManager *self)
-{
-    return self ? self->last_hinge_deg : -1.0;
-}
-
 void
 shell_posture_manager_destroy(ShellPostureManager *self)
 {

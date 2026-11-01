@@ -27,7 +27,9 @@ static void keyboard_layout_update_panel(KeyboardLayoutWidget *kl)
     }
 
     const CompositorKeyboardLayouts *layouts = shell_compositor_get_keyboard_layouts(kl->compositor);
-    if (!layouts || !layouts->names || !layouts->names[layouts->current_idx]) {
+    if (!layouts || !layouts->names ||
+        layouts->current_idx >= g_strv_length(layouts->names) ||
+        !layouts->names[layouts->current_idx]) {
         gtk_label_set_text(GTK_LABEL(kl->panel_label), "??");
         return;
     }
@@ -73,6 +75,12 @@ static void on_radio_toggled(GtkCheckButton *btn, gpointer user_data)
 
 static void keyboard_layout_rebuild_radios(KeyboardLayoutWidget *kl)
 {
+    kl->updating = TRUE;
+    for (gint i = 0; i < kl->num_radios; i++) {
+        if (kl->radio_buttons[i])
+            g_signal_handlers_disconnect_by_data(kl->radio_buttons[i], kl);
+    }
+
     /* Remove existing children */
     GtkWidget *child;
     while ((child = gtk_widget_get_first_child(kl->layouts_box)) != NULL)
@@ -80,6 +88,7 @@ static void keyboard_layout_rebuild_radios(KeyboardLayoutWidget *kl)
 
     kl->num_radios = 0;
     memset(kl->radio_buttons, 0, sizeof(kl->radio_buttons));
+    kl->updating = FALSE;
 
     if (!kl->compositor)
         return;
@@ -175,6 +184,11 @@ static void keyboard_layout_destroy(ShellWidget *widget)
 {
     KeyboardLayoutWidget *kl = (KeyboardLayoutWidget *)widget;
     if (kl) {
+        kl->updating = TRUE;
+        for (gint i = 0; i < kl->num_radios; i++) {
+            if (kl->radio_buttons[i])
+                g_signal_handlers_disconnect_by_data(kl->radio_buttons[i], kl);
+        }
         if (kl->compositor) {
             shell_compositor_remove_callbacks(kl->compositor, kl);
         }
@@ -191,10 +205,12 @@ static void keyboard_layout_enable(ShellWidget *widget)
 {
     KeyboardLayoutWidget *kl = (KeyboardLayoutWidget *)widget;
     if (kl) {
+        if (kl->icon_img)
+            gtk_image_set_pixel_size(GTK_IMAGE(kl->icon_img), shell_widget_get_icon_size(widget));
         shell_widget_apply_mode_visibility(widget->mode, kl->icon_img, kl->panel_label);
     }
 
-    if (kl->compositor) {
+    if (kl && kl->compositor) {
         shell_compositor_on_keyboard_layout_changed(kl->compositor, on_keyboard_layout_changed, kl);
         keyboard_layout_rebuild_radios(kl);
         keyboard_layout_update_panel(kl);
@@ -203,8 +219,10 @@ static void keyboard_layout_enable(ShellWidget *widget)
 
 static void keyboard_layout_disable(ShellWidget *widget)
 {
-    (void)widget;
-    /* Callbacks remain registered; cleanup in destroy */
+    KeyboardLayoutWidget *kl = (KeyboardLayoutWidget *)widget;
+    if (kl && kl->compositor) {
+        shell_compositor_remove_callbacks(kl->compositor, kl);
+    }
 }
 
 const ShellWidgetClass keyboard_layout_widget_class = {

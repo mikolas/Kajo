@@ -60,6 +60,7 @@ lock_monitor_surface_free(gpointer data)
         return;
     if (surf->window) {
         g_signal_handlers_disconnect_by_func(surf->window, on_lock_window_destroy, surf);
+        gtk_window_destroy(GTK_WINDOW(surf->window));
         surf->window = NULL;
     }
     g_free(surf);
@@ -172,10 +173,13 @@ on_pam_auth_complete(GObject      *source_object G_GNUC_UNUSED,
                      GAsyncResult *res,
                      gpointer      user_data)
 {
-    ShellSessionLock *self = user_data;
     g_autoptr(GError) error = NULL;
     gboolean ok = shell_pam_authenticate_finish(res, &error);
 
+    if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        return;
+
+    ShellSessionLock *self = user_data;
     if (!self)
         return;
 
@@ -776,6 +780,7 @@ shell_session_lock_destroy(ShellSessionLock *self)
     }
 
     if (self->lock_instance) {
+        g_signal_handlers_disconnect_by_data(self->lock_instance, self);
         g_object_unref(self->lock_instance);
         self->lock_instance = NULL;
     }

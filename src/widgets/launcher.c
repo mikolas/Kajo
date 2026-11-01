@@ -56,6 +56,8 @@ launcher_widget_destroy(ShellWidget *widget)
     LauncherWidget *lw = (LauncherWidget *)widget;
     if (lw == NULL)
         return;
+    if (lw->button)
+        g_signal_handlers_disconnect_by_data(lw->button, lw);
     g_free(lw);
 }
 
@@ -71,6 +73,8 @@ launcher_widget_enable(ShellWidget *widget)
 {
     LauncherWidget *lw = (LauncherWidget *)widget;
     if (lw) {
+        if (lw->icon_img)
+            gtk_image_set_pixel_size(GTK_IMAGE(lw->icon_img), shell_widget_get_icon_size(widget));
         shell_widget_apply_mode_visibility(widget->mode, lw->icon_img, lw->label);
     }
 }

@@ -1,4 +1,6 @@
 #include "widget.h"
+#include "../shell.h"
+#include "../notifications/daemon.h"
 #include <gtk/gtk.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,17 +17,36 @@ typedef struct {
 
     GtkWidget *dnd_switch;
     GtkWidget *status_label;
+    GtkWidget *settings_btn;
 
     gboolean is_dnd;
 } DndWidget;
 
 static void update_dnd_ui(DndWidget *dnd);
 
-static void
-on_dnd_switch_toggled(GtkSwitch *sw, gboolean state, gpointer user_data)
+static gboolean
+on_dnd_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data)
 {
     DndWidget *dnd = user_data;
+    if (!dnd)
+        return FALSE;
     dnd->is_dnd = state;
+    if (dnd->base.app && dnd->base.app->notifications) {
+        shell_notification_daemon_set_dnd(dnd->base.app->notifications, state);
+    }
+    update_dnd_ui(dnd);
+    return FALSE;
+}
+
+static void
+on_dnd_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    DndWidget *dnd = user_data;
+    if (!dnd)
+        return;
+    if (dnd->base.app && dnd->base.app->notifications) {
+        dnd->is_dnd = shell_notification_daemon_get_dnd(dnd->base.app->notifications);
+    }
     update_dnd_ui(dnd);
 }
 
@@ -113,11 +134,13 @@ build_dnd_popover(DndWidget *dnd)
     gtk_widget_set_halign(settings_btn, GTK_ALIGN_END);
     gtk_widget_set_hexpand(settings_btn, TRUE);
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_dnd_settings_clicked), dnd);
+    dnd->settings_btn = settings_btn;
 
     gtk_box_append(GTK_BOX(footer_box), settings_btn);
     gtk_box_append(GTK_BOX(main_box), footer_box);
 
     gtk_popover_set_child(GTK_POPOVER(popover), main_box);
+    g_signal_connect(popover, "map", G_CALLBACK(on_dnd_popover_map), dnd);
     return popover;
 }
 
@@ -159,6 +182,14 @@ dnd_widget_destroy(ShellWidget *widget)
     DndWidget *dnd = (DndWidget *)widget;
     if (dnd == NULL)
         return;
+
+    if (dnd->dnd_switch)
+        g_signal_handlers_disconnect_by_data(dnd->dnd_switch, dnd);
+    if (dnd->settings_btn)
+        g_signal_handlers_disconnect_by_data(dnd->settings_btn, dnd);
+    if (dnd->popover)
+        g_signal_handlers_disconnect_by_data(dnd->popover, dnd);
+
     g_free(dnd);
 }
 
@@ -174,7 +205,13 @@ dnd_widget_enable(ShellWidget *widget)
 {
     DndWidget *dnd = (DndWidget *)widget;
     if (dnd) {
-        shell_widget_apply_mode_visibility(widget->mode, dnd->icon_img, dnd->label);
+        if (dnd->icon_img) {
+            gtk_image_set_pixel_size(GTK_IMAGE(dnd->icon_img), shell_widget_get_icon_size(widget));
+        }
+        if (widget->app && widget->app->notifications) {
+            dnd->is_dnd = shell_notification_daemon_get_dnd(widget->app->notifications);
+        }
+        update_dnd_ui(dnd);
     }
 }
 

@@ -8,6 +8,11 @@ static void select_sidebar_row_by_name(SettingsApp *app_ctx, const gchar *target
 static void
 update_responsive_layout(SettingsApp *app_ctx, int width)
 {
+    if (!app_ctx || !app_ctx->sidebar_vbox || !app_ctx->stack_scroll ||
+        !GTK_IS_WIDGET(app_ctx->sidebar_vbox) || !GTK_IS_WIDGET(app_ctx->stack_scroll)) {
+        return;
+    }
+
     gboolean narrow = (width < 768);
     app_ctx->is_narrow_mode = narrow;
 
@@ -40,7 +45,9 @@ update_responsive_layout(SettingsApp *app_ctx, int width)
 static void
 on_surface_width_changed(GdkSurface *surface, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
-    SettingsApp *app_ctx = user_data;
+    GtkWidget *window = GTK_WIDGET(user_data);
+    SettingsApp *app_ctx = g_object_get_data(G_OBJECT(window), "app-ctx");
+    if (!app_ctx) return;
     int width = gdk_surface_get_width(surface);
     if (width > 0) {
         update_responsive_layout(app_ctx, width);
@@ -52,7 +59,7 @@ on_window_realize(GtkWidget *widget, gpointer user_data)
 {
     GdkSurface *surface = gtk_native_get_surface(GTK_NATIVE(widget));
     if (surface) {
-        g_signal_connect(surface, "notify::width", G_CALLBACK(on_surface_width_changed), user_data);
+        g_signal_connect_object(surface, "notify::width", G_CALLBACK(on_surface_width_changed), widget, 0);
         int width = gdk_surface_get_width(surface);
         if (width > 0) {
             update_responsive_layout((SettingsApp *)user_data, width);

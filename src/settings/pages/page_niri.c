@@ -37,6 +37,8 @@ G_DEFINE_TYPE(SettingsPageNiri, settings_page_niri, GTK_TYPE_BOX)
 static void
 settings_page_niri_dispose(GObject *object)
 {
+    SettingsPageNiri *self = (SettingsPageNiri *)object;
+    self->syncing_ui = TRUE;
     gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_niri_get_type());
     G_OBJECT_CLASS(settings_page_niri_parent_class)->dispose(object);
 }
@@ -105,6 +107,8 @@ static void
 on_combo_ns_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui) return;
+
     guint idx = gtk_drop_down_get_selected(dropdown);
     if (idx >= N_NIRI_NAMESPACES) idx = 0;
 

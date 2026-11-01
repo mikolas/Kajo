@@ -3,14 +3,27 @@
 #include "../../dbus_helpers.h"
 #include <string.h>
 
-typedef struct {
-    GtkWidget *card_act;
-    GtkWidget *list_scan;
-    GtkWidget *sw_wifi;
-} NetworkScanData;
+/* ─── Declarative GtkBox Template Subclass ─── */
 
-static void populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget *sw_wifi);
-static void schedule_net_refresh(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget *sw_wifi);
+typedef struct _SettingsPageNetwork {
+    GtkBox parent_instance;
+
+    GtkWidget *sw_wifi;
+    GtkWidget *card_act;
+    GtkWidget *btn_scan;
+    GtkWidget *list_scan;
+
+    guint refresh_timer_id;
+} SettingsPageNetwork;
+
+typedef struct _SettingsPageNetworkClass {
+    GtkBoxClass parent_class;
+} SettingsPageNetworkClass;
+
+G_DEFINE_TYPE(SettingsPageNetwork, settings_page_network, GTK_TYPE_BOX)
+
+static void populate_real_network_data(SettingsPageNetwork *self);
+static void schedule_net_refresh(SettingsPageNetwork *self);
 
 static void
 on_net_wifi_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data G_GNUC_UNUSED)
@@ -19,8 +32,9 @@ on_net_wifi_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer
 }
 
 static void
-on_net_ap_connect_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
+on_net_ap_connect_clicked(GtkButton *btn, gpointer user_data)
 {
+    SettingsPageNetwork *self = user_data;
     const char *ap_path = g_object_get_data(G_OBJECT(btn), "ap-path");
     if (!ap_path) return;
 
@@ -39,13 +53,13 @@ on_net_ap_connect_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
     if (nm_proxy) {
         gchar *wifi_dev_path = NULL;
         GVariant *res = g_dbus_proxy_call_sync(
-            nm_proxy, "GetDevices", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+            nm_proxy, "GetDevices", NULL, G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
 
         if (res) {
             GVariant *dev_arr = g_variant_get_child_value(res, 0);
             GVariantIter iter;
             g_variant_iter_init(&iter, dev_arr);
-            const char *dev_path = NULL;
+            const gchar *dev_path = NULL;
 
             while (g_variant_iter_loop(&iter, "&o", &dev_path)) {
                 GDBusProxy *dev_proxy = g_dbus_proxy_new_sync(
@@ -81,57 +95,43 @@ on_net_ap_connect_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
     if (error) g_clear_error(&error);
     g_object_unref(bus);
 
-    GtkWidget *card_act = g_object_get_data(G_OBJECT(btn), "card_act");
-    GtkWidget *list_scan = g_object_get_data(G_OBJECT(btn), "list_scan");
-    GtkWidget *sw_wifi = g_object_get_data(G_OBJECT(btn), "sw_wifi");
-    if (card_act && list_scan && sw_wifi) {
-        schedule_net_refresh(card_act, list_scan, sw_wifi);
-    }
+    schedule_net_refresh(self);
 }
 
 static gboolean
 on_net_scan_refresh_timeout(gpointer user_data)
 {
-    NetworkScanData *data = user_data;
-    if (data) {
-        if (data->card_act && data->list_scan && data->sw_wifi) {
-            GtkWidget *child;
-            while ((child = gtk_widget_get_first_child(data->card_act)) != NULL) {
-                gtk_box_remove(GTK_BOX(data->card_act), child);
-            }
-            while ((child = gtk_widget_get_first_child(data->list_scan)) != NULL) {
-                gtk_box_remove(GTK_BOX(data->list_scan), child);
-            }
-            populate_real_network_data(data->card_act, data->list_scan, data->sw_wifi);
+    SettingsPageNetwork *self = user_data;
+    self->refresh_timer_id = 0;
+
+    if (self->card_act && self->list_scan && self->sw_wifi) {
+        GtkWidget *child;
+        while ((child = gtk_widget_get_first_child(self->card_act)) != NULL) {
+            gtk_box_remove(GTK_BOX(self->card_act), child);
         }
-        if (data->card_act) g_object_remove_weak_pointer(G_OBJECT(data->card_act), (gpointer *)&data->card_act);
-        if (data->list_scan) g_object_remove_weak_pointer(G_OBJECT(data->list_scan), (gpointer *)&data->list_scan);
-        if (data->sw_wifi) g_object_remove_weak_pointer(G_OBJECT(data->sw_wifi), (gpointer *)&data->sw_wifi);
-        g_free(data);
+        while ((child = gtk_widget_get_first_child(self->list_scan)) != NULL) {
+            gtk_box_remove(GTK_BOX(self->list_scan), child);
+        }
+        populate_real_network_data(self);
     }
     return G_SOURCE_REMOVE;
 }
 
 static void
-schedule_net_refresh(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget *sw_wifi)
+schedule_net_refresh(SettingsPageNetwork *self)
 {
-    if (!card_act || !list_scan || !sw_wifi) return;
-    NetworkScanData *data = g_new0(NetworkScanData, 1);
-    data->card_act = card_act;
-    data->list_scan = list_scan;
-    data->sw_wifi = sw_wifi;
-    g_object_add_weak_pointer(G_OBJECT(card_act), (gpointer *)&data->card_act);
-    g_object_add_weak_pointer(G_OBJECT(list_scan), (gpointer *)&data->list_scan);
-    g_object_add_weak_pointer(G_OBJECT(sw_wifi), (gpointer *)&data->sw_wifi);
-    g_timeout_add(1500, on_net_scan_refresh_timeout, data);
+    if (!self) return;
+    if (self->refresh_timer_id != 0) {
+        g_source_remove(self->refresh_timer_id);
+        self->refresh_timer_id = 0;
+    }
+    self->refresh_timer_id = g_timeout_add(1500, on_net_scan_refresh_timeout, self);
 }
 
 static void
-on_net_scan_clicked(GtkButton *btn, gpointer user_data)
+on_net_scan_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    GtkWidget *card_act = g_object_get_data(G_OBJECT(btn), "card_act");
-    GtkWidget *list_scan = g_object_get_data(G_OBJECT(btn), "list_scan");
-    GtkWidget *sw_wifi = g_object_get_data(G_OBJECT(btn), "sw_wifi");
+    SettingsPageNetwork *self = user_data;
 
     GError *error = NULL;
     GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
@@ -144,15 +144,15 @@ on_net_scan_clicked(GtkButton *btn, gpointer user_data)
         if (nm_proxy) {
             GVariant *res = g_dbus_proxy_call_sync(
                 nm_proxy, "GetDevices", NULL,
-                G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+                G_DBUS_CALL_FLAGS_NONE, 3000, NULL, &error);
 
             if (res) {
                 GVariant *dev_arr = g_variant_get_child_value(res, 0);
                 GVariantIter iter;
                 g_variant_iter_init(&iter, dev_arr);
-                const char *dev_path = NULL;
+                const gchar *dev_path = NULL;
 
-                while (g_variant_iter_loop(&iter, "o", &dev_path)) {
+                while (g_variant_iter_loop(&iter, "&o", &dev_path)) {
                     GDBusProxy *dev_proxy = g_dbus_proxy_new_sync(
                         bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
                         "org.freedesktop.NetworkManager", dev_path,
@@ -189,14 +189,14 @@ on_net_scan_clicked(GtkButton *btn, gpointer user_data)
         g_object_unref(bus);
     }
 
-    if (card_act && list_scan && sw_wifi) {
-        schedule_net_refresh(card_act, list_scan, sw_wifi);
-    }
+    schedule_net_refresh(self);
 }
 
 static void
-populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget *sw_wifi)
+populate_real_network_data(SettingsPageNetwork *self)
 {
+    if (!self || !self->card_act || !self->list_scan || !self->sw_wifi) return;
+
     GError *error = NULL;
     GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
     if (!bus) {
@@ -214,7 +214,7 @@ populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget 
     if (nm_proxy) {
         GVariant *wifi_var = g_dbus_proxy_get_cached_property(nm_proxy, "WirelessEnabled");
         if (wifi_var) {
-            gtk_switch_set_active(GTK_SWITCH(sw_wifi), g_variant_get_boolean(wifi_var));
+            gtk_switch_set_active(GTK_SWITCH(self->sw_wifi), g_variant_get_boolean(wifi_var));
             g_variant_unref(wifi_var);
         }
 
@@ -225,9 +225,9 @@ populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget 
         if (active_conns) {
             GVariantIter iter;
             g_variant_iter_init(&iter, active_conns);
-            const char *conn_path = NULL;
+            const gchar *conn_path = NULL;
 
-            while (g_variant_iter_loop(&iter, "o", &conn_path)) {
+            while (g_variant_iter_loop(&iter, "&o", &conn_path)) {
                 GDBusProxy *conn_proxy = g_dbus_proxy_new_sync(
                     bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
                     "org.freedesktop.NetworkManager", conn_path,
@@ -274,8 +274,8 @@ populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget 
                     GtkWidget *lbl_ip = gtk_label_new(ip_msg);
                     gtk_widget_set_halign(lbl_ip, GTK_ALIGN_START);
 
-                    gtk_box_append(GTK_BOX(card_act), lbl_ssid);
-                    gtk_box_append(GTK_BOX(card_act), lbl_ip);
+                    gtk_box_append(GTK_BOX(self->card_act), lbl_ssid);
+                    gtk_box_append(GTK_BOX(self->card_act), lbl_ip);
 
                     g_free(ssid_msg);
                     g_free(ip_msg);
@@ -293,7 +293,7 @@ populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget 
         if (!found_active) {
             GtkWidget *lbl_none = gtk_label_new("No active network connection currently established.");
             gtk_widget_set_halign(lbl_none, GTK_ALIGN_START);
-            gtk_box_append(GTK_BOX(card_act), lbl_none);
+            gtk_box_append(GTK_BOX(self->card_act), lbl_none);
         }
 
         /* Scan Real Access Points on Wi-Fi Device */
@@ -305,24 +305,24 @@ populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget 
             if (!ap->ssid || strlen(ap->ssid) == 0) continue;
 
             ap_count++;
-            const char *sec_str = "Encrypted (WPA/WPA2/WPA3)";
+            const char *sec_str = ap->active ? "Connected | Encrypted (WPA/WPA2/WPA3)" : "Encrypted (WPA/WPA2/WPA3)";
             GtkWidget *btn_conn = create_action_button(
-                "Connect", "ap-path", ap->path,
-                G_CALLBACK(on_net_ap_connect_clicked), NULL);
-            g_object_set_data(G_OBJECT(btn_conn), "card_act", card_act);
-            g_object_set_data(G_OBJECT(btn_conn), "list_scan", list_scan);
-            g_object_set_data(G_OBJECT(btn_conn), "sw_wifi", sw_wifi);
+                ap->active ? "Connected" : "Connect", "ap-path", ap->path,
+                G_CALLBACK(on_net_ap_connect_clicked), self);
+            if (ap->active) {
+                gtk_widget_set_sensitive(btn_conn, FALSE);
+            }
 
             gchar *sub = g_strdup_printf("Signal: %u%% | %s", ap->strength, sec_str);
             GtkWidget *row = create_simple_item_row("network-wireless-symbolic", ap->ssid, sub, btn_conn);
             g_free(sub);
 
-            gtk_box_append(GTK_BOX(list_scan), row);
+            gtk_box_append(GTK_BOX(self->list_scan), row);
         }
         g_ptr_array_unref(aps);
 
         if (ap_count == 0) {
-            gtk_box_append(GTK_BOX(list_scan),
+            gtk_box_append(GTK_BOX(self->list_scan),
                 create_empty_state_label("No Wi-Fi access points found. Click '🔍 REFRESH SCAN'."));
         }
 
@@ -331,27 +331,14 @@ populate_real_network_data(GtkWidget *card_act, GtkWidget *list_scan, GtkWidget 
     g_object_unref(bus);
 }
 
-
-/* ─── Declarative GtkBox Template Subclass ─── */
-
-typedef struct _SettingsPageNetwork {
-    GtkBox parent_instance;
-
-    GtkWidget *sw_wifi;
-    GtkWidget *card_act;
-    GtkWidget *btn_scan;
-    GtkWidget *list_scan;
-} SettingsPageNetwork;
-
-typedef struct _SettingsPageNetworkClass {
-    GtkBoxClass parent_class;
-} SettingsPageNetworkClass;
-
-G_DEFINE_TYPE(SettingsPageNetwork, settings_page_network, GTK_TYPE_BOX)
-
 static void
 settings_page_network_dispose(GObject *object)
 {
+    SettingsPageNetwork *self = (SettingsPageNetwork *)object;
+    if (self->refresh_timer_id != 0) {
+        g_source_remove(self->refresh_timer_id);
+        self->refresh_timer_id = 0;
+    }
     gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_network_get_type());
     G_OBJECT_CLASS(settings_page_network_parent_class)->dispose(object);
 }
@@ -384,14 +371,10 @@ build_page_network(void)
 {
     SettingsPageNetwork *page = g_object_new(settings_page_network_get_type(), NULL);
 
-    populate_real_network_data(page->card_act, page->list_scan, page->sw_wifi);
+    populate_real_network_data(page);
     g_signal_connect(page->sw_wifi, "state-set", G_CALLBACK(on_net_wifi_switch_toggled), NULL);
 
-    g_object_set_data(G_OBJECT(page->btn_scan), "card_act", page->card_act);
-    g_object_set_data(G_OBJECT(page->btn_scan), "list_scan", page->list_scan);
-    g_object_set_data(G_OBJECT(page->btn_scan), "sw_wifi", page->sw_wifi);
-
-    g_signal_connect(page->btn_scan, "clicked", G_CALLBACK(on_net_scan_clicked), NULL);
+    g_signal_connect(page->btn_scan, "clicked", G_CALLBACK(on_net_scan_clicked), page);
 
     return create_settings_page_card("NETWORKMANAGER WI-FI & ETHERNET", "[ LIVE D-BUS ]", GTK_WIDGET(page), NULL);
 }
