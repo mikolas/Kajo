@@ -37,8 +37,6 @@ shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
     ADD_ICON_PATHS("/usr/local/share/icons");
 
     /* 1. Development Build Environment */
-    ADD_ICON_PATHS("/home/mikolas/src/desktop/data/icons");
-
     gchar *cwd = g_get_current_dir();
     gchar *dev_path = g_build_filename(cwd, "data", "icons", NULL);
     g_free(cwd);

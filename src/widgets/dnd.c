@@ -39,6 +39,19 @@ on_dnd_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user
 }
 
 static void
+on_daemon_dnd_changed(ShellNotificationDaemon *daemon, gpointer user_data)
+{
+    DndWidget *dnd = user_data;
+    if (!dnd || !daemon)
+        return;
+    gboolean new_dnd = shell_notification_daemon_get_dnd(daemon);
+    if (dnd->is_dnd != new_dnd) {
+        dnd->is_dnd = new_dnd;
+        update_dnd_ui(dnd);
+    }
+}
+
+static void
 on_dnd_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     DndWidget *dnd = user_data;
@@ -183,6 +196,10 @@ dnd_widget_destroy(ShellWidget *widget)
     if (dnd == NULL)
         return;
 
+    if (dnd->base.app && dnd->base.app->notifications) {
+        shell_notification_daemon_remove_callbacks(dnd->base.app->notifications, dnd);
+    }
+
     if (dnd->dnd_switch)
         g_signal_handlers_disconnect_by_data(dnd->dnd_switch, dnd);
     if (dnd->settings_btn)
@@ -209,6 +226,9 @@ dnd_widget_enable(ShellWidget *widget)
             gtk_image_set_pixel_size(GTK_IMAGE(dnd->icon_img), shell_widget_get_icon_size(widget));
         }
         if (widget->app && widget->app->notifications) {
+            shell_notification_daemon_remove_callbacks(widget->app->notifications, dnd);
+            shell_notification_daemon_on_history_changed(widget->app->notifications,
+                                                         on_daemon_dnd_changed, dnd);
             dnd->is_dnd = shell_notification_daemon_get_dnd(widget->app->notifications);
         }
         update_dnd_ui(dnd);
@@ -218,7 +238,10 @@ dnd_widget_enable(ShellWidget *widget)
 static void
 dnd_widget_disable(ShellWidget *widget)
 {
-    (void)widget;
+    DndWidget *dnd = (DndWidget *)widget;
+    if (dnd && widget && widget->app && widget->app->notifications) {
+        shell_notification_daemon_remove_callbacks(widget->app->notifications, dnd);
+    }
 }
 
 const ShellWidgetClass dnd_widget_class = {

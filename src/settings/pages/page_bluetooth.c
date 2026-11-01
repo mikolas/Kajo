@@ -26,10 +26,14 @@ static void populate_real_bluetooth_devices(SettingsPageBluetooth *self);
 static void refresh_bt_lists(SettingsPageBluetooth *self);
 static void schedule_bt_refresh(SettingsPageBluetooth *self);
 
-static void
-on_bt_power_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data G_GNUC_UNUSED)
+static gboolean
+on_bt_power_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data)
 {
+    SettingsPageBluetooth *self = user_data;
     shell_dbus_bluez_set_powered(state);
+    if (self)
+        schedule_bt_refresh(self);
+    return FALSE;
 }
 
 static void
@@ -285,7 +289,7 @@ build_page_bluetooth(void)
     SettingsPageBluetooth *page = g_object_new(settings_page_bluetooth_get_type(), NULL);
 
     gtk_switch_set_active(GTK_SWITCH(page->sw_bt), shell_dbus_bluez_get_powered());
-    g_signal_connect(page->sw_bt, "state-set", G_CALLBACK(on_bt_power_switch_toggled), NULL);
+    g_signal_connect(page->sw_bt, "state-set", G_CALLBACK(on_bt_power_switch_toggled), page);
 
     populate_real_bluetooth_devices(page);
 

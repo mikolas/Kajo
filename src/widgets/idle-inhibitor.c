@@ -17,6 +17,7 @@ typedef struct {
 
     GtkWidget *toggle_switch;
     GtkWidget *status_label;
+    GtkWidget *settings_btn;
 
     gboolean is_inhibited;
 } IdleInhibitorWidget;
@@ -133,6 +134,7 @@ build_inhibitor_popover(IdleInhibitorWidget *in)
     gtk_widget_set_halign(settings_btn, GTK_ALIGN_END);
     gtk_widget_set_hexpand(settings_btn, TRUE);
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_inhibitor_settings_clicked), in);
+    in->settings_btn = settings_btn;
 
     gtk_box_append(GTK_BOX(footer_box), settings_btn);
     gtk_box_append(GTK_BOX(main_box), footer_box);
@@ -185,6 +187,8 @@ idle_inhibitor_widget_destroy(ShellWidget *widget)
     }
     if (in->toggle_switch)
         g_signal_handlers_disconnect_by_data(in->toggle_switch, in);
+    if (in->settings_btn)
+        g_signal_handlers_disconnect_by_data(in->settings_btn, in);
     g_free(in);
 }
 

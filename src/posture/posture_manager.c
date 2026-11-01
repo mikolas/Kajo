@@ -256,6 +256,13 @@ on_sensor_proxy_ready(GObject      *source G_GNUC_UNUSED,
         return;
     }
 
+    if (self->sensor_proxy) {
+        if (self->sensor_sig_id > 0) {
+            g_signal_handler_disconnect(self->sensor_proxy, self->sensor_sig_id);
+            self->sensor_sig_id = 0;
+        }
+        g_clear_object(&self->sensor_proxy);
+    }
     self->sensor_proxy = proxy;
     self->sensor_sig_id = g_signal_connect(proxy,
                                            "g-properties-changed",

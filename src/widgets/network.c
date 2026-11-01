@@ -33,6 +33,7 @@ typedef struct {
     GtkWidget *net_speed_label;
     GtkWidget *active_signal_bar;
     GtkWidget *ap_list_box;
+    GtkWidget *settings_btn;
 
     /* Network Throughput State */
     guint64 prev_rx_bytes;
@@ -41,6 +42,8 @@ typedef struct {
 
     /* D-Bus proxies */
     GDBusProxy *nm_proxy;
+    GDBusProxy *conn_proxy;
+    gchar *active_conn_path;
     guint timer_id;
 
     gboolean wifi_enabled;
@@ -64,9 +67,25 @@ on_wifi_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer use
 }
 
 static void
+on_nm_properties_changed(GDBusProxy *proxy G_GNUC_UNUSED,
+                         GVariant   *changed_properties G_GNUC_UNUSED,
+                         GStrv       invalidated_properties G_GNUC_UNUSED,
+                         gpointer    user_data)
+{
+    NetworkWidget *net = user_data;
+    if (net)
+        refresh_network_state(net);
+}
+
+static void
 fetch_primary_connection_info(NetworkWidget *net, const gchar *active_path)
 {
     if (active_path == NULL || g_strcmp0(active_path, "/") == 0) {
+        if (net->conn_proxy) {
+            g_signal_handlers_disconnect_by_data(net->conn_proxy, net);
+            g_clear_object(&net->conn_proxy);
+        }
+        g_clear_pointer(&net->active_conn_path, g_free);
         net->is_connected = FALSE;
         g_free(net->primary_ssid);
         net->primary_ssid = NULL;
@@ -77,16 +96,29 @@ fetch_primary_connection_info(NetworkWidget *net, const gchar *active_path)
         return;
     }
 
-    GError *error = NULL;
-    GDBusProxy *conn_proxy = g_dbus_proxy_new_for_bus_sync(
-        G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, NULL,
-        NM_DBUS_SERVICE, active_path, NM_ACTIVE_CONN_INTERFACE, NULL, &error);
+    if (!net->conn_proxy || g_strcmp0(net->active_conn_path, active_path) != 0) {
+        if (net->conn_proxy) {
+            g_signal_handlers_disconnect_by_data(net->conn_proxy, net);
+            g_clear_object(&net->conn_proxy);
+        }
+        g_free(net->active_conn_path);
+        net->active_conn_path = g_strdup(active_path);
 
-    if (error != NULL) {
-        g_clear_error(&error);
-        return;
+        GError *error = NULL;
+        net->conn_proxy = g_dbus_proxy_new_for_bus_sync(
+            G_BUS_TYPE_SYSTEM, G_DBUS_PROXY_FLAGS_NONE, NULL,
+            NM_DBUS_SERVICE, active_path, NM_ACTIVE_CONN_INTERFACE, NULL, &error);
+
+        if (error != NULL || !net->conn_proxy) {
+            g_clear_error(&error);
+            g_clear_object(&net->conn_proxy);
+            return;
+        }
+        g_signal_connect(net->conn_proxy, "g-properties-changed",
+                         G_CALLBACK(on_nm_properties_changed), net);
     }
 
+    GDBusProxy *conn_proxy = net->conn_proxy;
     GVariant *id_var = g_dbus_proxy_get_cached_property(conn_proxy, "Id");
     GVariant *type_var = g_dbus_proxy_get_cached_property(conn_proxy, "Type");
 
@@ -134,8 +166,6 @@ fetch_primary_connection_info(NetworkWidget *net, const gchar *active_path)
             g_variant_unref(ip4_var);
         }
     }
-
-    g_object_unref(conn_proxy);
 }
 
 static void
@@ -329,8 +359,24 @@ static void
 on_network_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     NetworkWidget *net = user_data;
-    if (net)
-        refresh_network_state(net);
+    if (!net)
+        return;
+    refresh_network_state(net);
+    if (net->timer_id == 0) {
+        net->timer_id = g_timeout_add_seconds(3, on_timer_tick, net);
+    }
+}
+
+static void
+on_network_popover_unmap(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    NetworkWidget *net = user_data;
+    if (!net)
+        return;
+    if (net->timer_id != 0) {
+        g_source_remove(net->timer_id);
+        net->timer_id = 0;
+    }
 }
 
 static GtkWidget *
@@ -342,8 +388,10 @@ build_network_popover(NetworkWidget *net)
     net->active_ssid_label = popover->active_ssid_label;
     net->active_ip_label = popover->active_ip_label;
     net->net_speed_label = popover->net_speed_label;
+    net->settings_btn = popover->settings_btn;
 
     g_signal_connect(popover, "map", G_CALLBACK(on_network_popover_map), net);
+    g_signal_connect(popover, "unmap", G_CALLBACK(on_network_popover_unmap), net);
 
     g_signal_connect(popover->wifi_switch, "state-set",
                      G_CALLBACK(on_wifi_switch_toggled), net);
@@ -392,9 +440,12 @@ network_widget_create(ShellCompositor *compositor)
     if (error != NULL) {
         g_clear_error(&error);
     }
+    if (net->nm_proxy != NULL) {
+        g_signal_connect(net->nm_proxy, "g-properties-changed",
+                         G_CALLBACK(on_nm_properties_changed), net);
+    }
 
     refresh_network_state(net);
-    net->timer_id = g_timeout_add_seconds(3, on_timer_tick, net);
 
     return (ShellWidget *)net;
 }
@@ -413,14 +464,23 @@ network_widget_destroy(ShellWidget *widget)
 
     if (net->wifi_switch)
         g_signal_handlers_disconnect_by_data(net->wifi_switch, net);
+    if (net->settings_btn)
+        g_signal_handlers_disconnect_by_data(net->settings_btn, net);
     if (net->popover)
         g_signal_handlers_disconnect_by_data(net->popover, net);
 
+    if (net->conn_proxy != NULL) {
+        g_signal_handlers_disconnect_by_data(net->conn_proxy, net);
+        g_object_unref(net->conn_proxy);
+        net->conn_proxy = NULL;
+    }
     if (net->nm_proxy != NULL) {
+        g_signal_handlers_disconnect_by_data(net->nm_proxy, net);
         g_object_unref(net->nm_proxy);
         net->nm_proxy = NULL;
     }
 
+    g_free(net->active_conn_path);
     g_free(net->primary_ssid);
     g_free(net->primary_ip);
     g_free(net);
@@ -441,9 +501,7 @@ network_widget_enable(ShellWidget *widget)
         if (net->icon_img)
             gtk_image_set_pixel_size(GTK_IMAGE(net->icon_img), shell_widget_get_icon_size(widget));
         shell_widget_apply_mode_visibility(widget->mode, net->icon_img, net->label);
-        if (net->timer_id == 0) {
-            net->timer_id = g_timeout_add_seconds(3, on_timer_tick, net);
-        }
+        refresh_network_state(net);
     }
 }
 

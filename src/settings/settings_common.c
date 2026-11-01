@@ -292,6 +292,7 @@ settings_send_ipc_command(const gchar *command)
         g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
         g_free(msg);
 
+        g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
         g_object_unref(conn);
         g_object_unref(address);
         g_object_unref(socket);
@@ -304,4 +305,20 @@ settings_send_ipc_command(const gchar *command)
     g_object_unref(socket);
     g_free(path);
     return FALSE;
+}
+
+static ShellTheme *g_shared_settings_theme = NULL;
+
+void
+settings_set_global_theme(ShellTheme *theme)
+{
+    g_shared_settings_theme = theme;
+}
+
+void
+settings_reload_global_theme(void)
+{
+    if (g_shared_settings_theme) {
+        shell_theme_reload(g_shared_settings_theme);
+    }
 }

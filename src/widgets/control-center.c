@@ -200,6 +200,10 @@ cc_profiles_proxy_ready(GObject *source G_GNUC_UNUSED, GAsyncResult *res, gpoint
     }
 
     ControlCenterWidget *cc = user_data;
+    if (cc->profiles_proxy) {
+        g_signal_handlers_disconnect_by_data(cc->profiles_proxy, cc);
+        g_clear_object(&cc->profiles_proxy);
+    }
     cc->profiles_proxy = proxy;
     g_signal_connect_swapped(cc->profiles_proxy, "g-properties-changed", G_CALLBACK(cc_update_profile_radios), cc);
     cc_update_profile_radios(cc);
@@ -448,6 +452,35 @@ on_action_power_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_
 /* ─── State Refresh ─── */
 
 static void
+cc_refresh_dbus_toggles(ControlCenterWidget *cc)
+{
+    if (!cc)
+        return;
+
+    cc->wifi_enabled = shell_dbus_nm_get_wireless_enabled();
+    if (cc->wifi_btn && cc->wifi_sub_lbl) {
+        if (cc->wifi_enabled) {
+            gtk_widget_add_css_class(cc->wifi_btn, "active");
+            gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Enabled");
+        } else {
+            gtk_widget_remove_css_class(cc->wifi_btn, "active");
+            gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Disabled");
+        }
+    }
+
+    cc->bt_enabled = shell_dbus_bluez_get_powered();
+    if (cc->bt_btn && cc->bt_sub_lbl) {
+        if (cc->bt_enabled) {
+            gtk_widget_add_css_class(cc->bt_btn, "active");
+            gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Enabled");
+        } else {
+            gtk_widget_remove_css_class(cc->bt_btn, "active");
+            gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Disabled");
+        }
+    }
+}
+
+static void
 cc_refresh_state(ControlCenterWidget *cc)
 {
     /* Update volume from PulseAudio / PipeWire */
@@ -468,30 +501,6 @@ cc_refresh_state(ControlCenterWidget *cc)
             gtk_label_set_text(GTK_LABEL(cc->bright_val_lbl), buf);
         }
         cc->updating_bright = FALSE;
-    }
-
-    if (cc->popover && gtk_widget_get_mapped(cc->popover)) {
-        cc->wifi_enabled = shell_dbus_nm_get_wireless_enabled();
-        if (cc->wifi_btn && cc->wifi_sub_lbl) {
-            if (cc->wifi_enabled) {
-                gtk_widget_add_css_class(cc->wifi_btn, "active");
-                gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Enabled");
-            } else {
-                gtk_widget_remove_css_class(cc->wifi_btn, "active");
-                gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Disabled");
-            }
-        }
-
-        cc->bt_enabled = shell_dbus_bluez_get_powered();
-        if (cc->bt_btn && cc->bt_sub_lbl) {
-            if (cc->bt_enabled) {
-                gtk_widget_add_css_class(cc->bt_btn, "active");
-                gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Enabled");
-            } else {
-                gtk_widget_remove_css_class(cc->bt_btn, "active");
-                gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Disabled");
-            }
-        }
     }
 
     if (cc->base.app && cc->base.app->notifications) {
@@ -527,6 +536,7 @@ on_cc_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
     if (!cc) return;
+    cc_refresh_dbus_toggles(cc);
     cc_refresh_state(cc);
     if (cc->refresh_timer_id == 0) {
         cc->refresh_timer_id = g_timeout_add_seconds(1, on_cc_tick, cc);

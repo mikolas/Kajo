@@ -831,20 +831,45 @@ on_monitors_changed(GListModel *monitors,
                     gpointer    user_data)
 {
     GreeterApp *app = user_data;
-    if (!app || !app->use_layer_shell)
+    if (!app || !app->use_layer_shell || !app->surfaces)
         return;
 
-    if (removed > 0 && app->surfaces && position < app->surfaces->len) {
+    if (removed > 0 && position < app->surfaces->len) {
         guint max_rem = app->surfaces->len - position;
         guint n_rem = MIN(removed, max_rem);
         g_ptr_array_remove_range(app->surfaces, position, n_rem);
     }
 
-    for (guint i = 0; i < added; i++) {
-        GdkMonitor *mon = g_list_model_get_item(monitors, position + i);
-        if (mon) {
-            build_greeter_surface(app, mon, (app->surfaces->len == 0));
-            g_object_unref(mon);
+    gboolean has_primary = FALSE;
+    for (guint i = 0; i < app->surfaces->len; i++) {
+        GreeterSurface *s = g_ptr_array_index(app->surfaces, i);
+        if (s && s->is_primary) {
+            has_primary = TRUE;
+            break;
+        }
+    }
+
+    /* If the primary surface (monitor 0) was removed or displaced, rebuild all
+       surfaces so monitor 0 always hosts the login card and exclusive keyboard focus */
+    if (!has_primary && app->surfaces->len > 0) {
+        g_ptr_array_set_size(app->surfaces, 0);
+        guint n_monitors = monitors ? g_list_model_get_n_items(monitors) : 0;
+        for (guint i = 0; i < n_monitors; i++) {
+            GdkMonitor *mon = g_list_model_get_item(monitors, i);
+            if (mon) {
+                build_greeter_surface(app, mon, (i == 0));
+                g_object_unref(mon);
+            }
+        }
+    } else {
+        for (guint i = 0; i < added; i++) {
+            GdkMonitor *mon = g_list_model_get_item(monitors, position + i);
+            if (mon) {
+                build_greeter_surface(app, mon, !has_primary && (i == 0));
+                if (!has_primary && i == 0)
+                    has_primary = TRUE;
+                g_object_unref(mon);
+            }
         }
     }
     update_greeter_clocks(app);

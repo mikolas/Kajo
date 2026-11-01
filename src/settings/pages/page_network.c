@@ -25,10 +25,14 @@ G_DEFINE_TYPE(SettingsPageNetwork, settings_page_network, GTK_TYPE_BOX)
 static void populate_real_network_data(SettingsPageNetwork *self);
 static void schedule_net_refresh(SettingsPageNetwork *self);
 
-static void
-on_net_wifi_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data G_GNUC_UNUSED)
+static gboolean
+on_net_wifi_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data)
 {
+    SettingsPageNetwork *self = user_data;
     shell_dbus_nm_set_wireless_enabled(state);
+    if (self)
+        schedule_net_refresh(self);
+    return FALSE;
 }
 
 static void
@@ -214,7 +218,9 @@ populate_real_network_data(SettingsPageNetwork *self)
     if (nm_proxy) {
         GVariant *wifi_var = g_dbus_proxy_get_cached_property(nm_proxy, "WirelessEnabled");
         if (wifi_var) {
+            g_signal_handlers_block_by_func(self->sw_wifi, G_CALLBACK(on_net_wifi_switch_toggled), self);
             gtk_switch_set_active(GTK_SWITCH(self->sw_wifi), g_variant_get_boolean(wifi_var));
+            g_signal_handlers_unblock_by_func(self->sw_wifi, G_CALLBACK(on_net_wifi_switch_toggled), self);
             g_variant_unref(wifi_var);
         }
 
@@ -372,7 +378,7 @@ build_page_network(void)
     SettingsPageNetwork *page = g_object_new(settings_page_network_get_type(), NULL);
 
     populate_real_network_data(page);
-    g_signal_connect(page->sw_wifi, "state-set", G_CALLBACK(on_net_wifi_switch_toggled), NULL);
+    g_signal_connect(page->sw_wifi, "state-set", G_CALLBACK(on_net_wifi_switch_toggled), page);
 
     g_signal_connect(page->btn_scan, "clicked", G_CALLBACK(on_net_scan_clicked), page);
 

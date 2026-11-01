@@ -12,6 +12,7 @@ struct _ShellIPCSocket {
     GSocketService *service;
     gchar *socket_path;
     GArray *pending_sources;
+    GPtrArray *active_clients;
 };
 
 static gchar *
@@ -230,7 +231,14 @@ on_ipc_line_read(GObject      *source_object,
         client->timeout_id = 0;
     }
 
-    if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && line != NULL) {
+    if (client->ipc && client->ipc->active_clients) {
+        g_ptr_array_remove_fast(client->ipc->active_clients, client);
+    }
+
+    if (client->ipc != NULL &&
+        !g_cancellable_is_cancelled(client->cancellable) &&
+        !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED) &&
+        line != NULL) {
         ipc_dispatch_line(client->ipc, line);
     }
 
@@ -263,6 +271,10 @@ on_incoming_connection(GSocketService *service G_GNUC_UNUSED,
     client->data_input = g_data_input_stream_new(input);
     client->cancellable = g_cancellable_new();
     client->timeout_id = g_timeout_add(1000, on_ipc_read_timeout, client);
+
+    if (ipc->active_clients) {
+        g_ptr_array_add(ipc->active_clients, client);
+    }
 
     g_data_input_stream_read_line_async(client->data_input,
                                         G_PRIORITY_DEFAULT,
@@ -298,6 +310,7 @@ shell_ipc_send_command(const gchar *command)
         g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
         g_free(msg);
 
+        g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
         g_object_unref(conn);
         g_object_unref(address);
         g_object_unref(socket);
@@ -318,6 +331,7 @@ shell_ipc_socket_new(ShellApp *app)
     ipc->app = app;
     ipc->socket_path = get_ipc_socket_path();
     ipc->pending_sources = g_array_new(FALSE, FALSE, sizeof(guint));
+    ipc->active_clients = g_ptr_array_new();
 
     /* Unlink old socket file if left over */
     g_unlink(ipc->socket_path);
@@ -344,6 +358,24 @@ shell_ipc_socket_destroy(ShellIPCSocket *ipc)
     if (!ipc)
         return;
 
+    if (ipc->active_clients) {
+        for (guint i = 0; i < ipc->active_clients->len; i++) {
+            IPCClientRead *client = g_ptr_array_index(ipc->active_clients, i);
+            if (!client)
+                continue;
+            client->ipc = NULL;
+            if (client->timeout_id > 0) {
+                g_source_remove(client->timeout_id);
+                client->timeout_id = 0;
+            }
+            if (client->cancellable) {
+                g_cancellable_cancel(client->cancellable);
+            }
+        }
+        g_ptr_array_free(ipc->active_clients, TRUE);
+        ipc->active_clients = NULL;
+    }
+
     if (ipc->pending_sources) {
         for (guint i = 0; i < ipc->pending_sources->len; i++) {
             guint id = g_array_index(ipc->pending_sources, guint, i);
@@ -359,6 +391,7 @@ shell_ipc_socket_destroy(ShellIPCSocket *ipc)
     }
 
     if (ipc->service) {
+        g_signal_handlers_disconnect_by_data(ipc->service, ipc);
         g_socket_service_stop(ipc->service);
         g_object_unref(ipc->service);
     }

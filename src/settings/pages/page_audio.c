@@ -26,6 +26,7 @@ typedef struct _SettingsPageAudio {
     GPtrArray        *source_names;
     GtkStringList    *sink_string_list;
     GtkStringList    *source_string_list;
+    GPtrArray        *pending_tags;
     guint             sink_query_seq;
     guint             source_query_seq;
     gboolean          updating_sinks;
@@ -131,14 +132,21 @@ audio_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info, int 
     }
 
     if (tag->query_seq != self->sink_query_seq) {
-        if (eol != 0)
-            audio_query_tag_free(tag);
+        if (eol != 0) {
+            if (self->pending_tags)
+                g_ptr_array_remove_fast(self->pending_tags, tag);
+            else
+                audio_query_tag_free(tag);
+        }
         return;
     }
 
     if (eol != 0) {
         self->updating_sinks = FALSE;
-        audio_query_tag_free(tag);
+        if (self->pending_tags)
+            g_ptr_array_remove_fast(self->pending_tags, tag);
+        else
+            audio_query_tag_free(tag);
         return;
     }
     if (!info) return;
@@ -173,14 +181,21 @@ audio_source_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source_info *info, 
     }
 
     if (tag->query_seq != self->source_query_seq) {
-        if (eol != 0)
-            audio_query_tag_free(tag);
+        if (eol != 0) {
+            if (self->pending_tags)
+                g_ptr_array_remove_fast(self->pending_tags, tag);
+            else
+                audio_query_tag_free(tag);
+        }
         return;
     }
 
     if (eol != 0) {
         self->updating_sources = FALSE;
-        audio_query_tag_free(tag);
+        if (self->pending_tags)
+            g_ptr_array_remove_fast(self->pending_tags, tag);
+        else
+            audio_query_tag_free(tag);
         return;
     }
     if (!info) return;
@@ -246,7 +261,18 @@ audio_query_sinks(SettingsPageAudio *self)
     AudioQueryTag *tag = g_new0(AudioQueryTag, 1);
     g_weak_ref_init(&tag->self_ref, self);
     tag->query_seq = self->sink_query_seq;
-    unref_pa_op(pa_context_get_sink_info_list(self->pa_ctx, audio_sink_list_cb, tag));
+    if (self->pending_tags)
+        g_ptr_array_add(self->pending_tags, tag);
+    pa_operation *op = pa_context_get_sink_info_list(self->pa_ctx, audio_sink_list_cb, tag);
+    if (!op) {
+        self->updating_sinks = FALSE;
+        if (self->pending_tags)
+            g_ptr_array_remove_fast(self->pending_tags, tag);
+        else
+            audio_query_tag_free(tag);
+    } else {
+        pa_operation_unref(op);
+    }
 }
 
 static void
@@ -267,7 +293,18 @@ audio_query_sources(SettingsPageAudio *self)
     AudioQueryTag *tag = g_new0(AudioQueryTag, 1);
     g_weak_ref_init(&tag->self_ref, self);
     tag->query_seq = self->source_query_seq;
-    unref_pa_op(pa_context_get_source_info_list(self->pa_ctx, audio_source_list_cb, tag));
+    if (self->pending_tags)
+        g_ptr_array_add(self->pending_tags, tag);
+    pa_operation *op = pa_context_get_source_info_list(self->pa_ctx, audio_source_list_cb, tag);
+    if (!op) {
+        self->updating_sources = FALSE;
+        if (self->pending_tags)
+            g_ptr_array_remove_fast(self->pending_tags, tag);
+        else
+            audio_query_tag_free(tag);
+    } else {
+        pa_operation_unref(op);
+    }
 }
 
 static void
@@ -409,6 +446,11 @@ settings_page_audio_dispose(GObject *object)
         self->pa_ml = NULL;
     }
 
+    if (self->pending_tags) {
+        g_ptr_array_free(self->pending_tags, TRUE);
+        self->pending_tags = NULL;
+    }
+
     g_clear_pointer(&self->default_sink_name, g_free);
     g_clear_pointer(&self->default_source_name, g_free);
 
@@ -437,6 +479,7 @@ settings_page_audio_init(SettingsPageAudio *self)
     self->source_channels = 2;
     self->sink_names = g_ptr_array_new_with_free_func(g_free);
     self->source_names = g_ptr_array_new_with_free_func(g_free);
+    self->pending_tags = g_ptr_array_new_with_free_func((GDestroyNotify)audio_query_tag_free);
 
     self->sink_string_list = gtk_string_list_new(NULL);
     gtk_drop_down_set_model(GTK_DROP_DOWN(self->combo_sink), G_LIST_MODEL(self->sink_string_list));

@@ -16,11 +16,14 @@ typedef struct {
 } LauncherWidget;
 
 static void
-on_launcher_btn_clicked(GtkButton *btn, gpointer user_data)
+on_launcher_btn_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     LauncherWidget *lw = user_data;
-    if (lw && lw->base.klass) {
-        /* Trigger launcher toggle via IPC/app context */
+    if (!lw || !lw->base.klass)
+        return;
+    if (lw->base.app && lw->base.app->launcher) {
+        shell_launcher_surface_toggle(lw->base.app->launcher);
+    } else {
         shell_ipc_send_command("launcher-toggle");
     }
 }

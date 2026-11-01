@@ -537,13 +537,18 @@ void
 shell_notification_daemon_set_dnd(ShellNotificationDaemon *daemon, gboolean dnd)
 {
     if (!daemon) return;
-    daemon->dnd_enabled = dnd ? TRUE : FALSE;
+    gboolean new_val = dnd ? TRUE : FALSE;
+    gboolean changed = (daemon->dnd_enabled != new_val);
+    daemon->dnd_enabled = new_val;
     if (daemon->dnd_enabled && daemon->toasts) {
         for (guint i = 0; i < daemon->toasts->len; i++) {
             ShellNotificationToast *t = g_ptr_array_index(daemon->toasts, i);
             toast_free(t);
         }
         g_ptr_array_set_size(daemon->toasts, 0);
+    }
+    if (changed) {
+        emit_history_changed(daemon);
     }
 }
 

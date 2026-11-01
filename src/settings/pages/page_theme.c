@@ -86,6 +86,9 @@ write_theme_override_and_config(SettingsPageTheme *self)
         shell_config_destroy(config);
     }
 
+    settings_reload_global_theme();
+    settings_send_ipc_command("reload-theme");
+
     g_message("Applied Metro accent '%s' (%s, %dpx) -> '%s'",
               preset->name, preset->accent, font_px, theme_css_path);
 }
@@ -278,7 +281,7 @@ build_page_theme(void)
         gtk_grid_attach(GTK_GRID(page->grid_swatches), card, col, row, 1, 1);
     }
 
-    int init_font = (config && config->ui_font_size_px >= 11 && config->ui_font_size_px <= 15)
+    int init_font = (config && config->ui_font_size_px >= 11 && config->ui_font_size_px <= 20)
                         ? config->ui_font_size_px
                         : 13;
     gtk_range_set_value(GTK_RANGE(page->scale_font), init_font);

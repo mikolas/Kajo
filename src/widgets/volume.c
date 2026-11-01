@@ -20,9 +20,11 @@ typedef struct {
     GtkWidget *popover;
     GtkWidget *master_scale;    /* volume slider */
     GtkWidget *mute_button;
+    GtkWidget *settings_btn;
     GtkWidget *device_dropdown; /* GtkDropDown for output devices */
     GtkStringList *string_list;
     GPtrArray *sink_names;
+    GPtrArray *pending_tags;
     gboolean updating_dropdown;
     GtkWidget *apps_box;        /* container for per-app sliders */
     GtkWidget *input_label;     /* source name */
@@ -144,12 +146,6 @@ static void volume_sink_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_inf
                                           (gpointer)G_CALLBACK(volume_master_scale_changed), vol);
     }
 
-    /* Update mute button label */
-    if (vol->mute_button) {
-        gtk_button_set_label(GTK_BUTTON(vol->mute_button),
-                             vol->muted ? "Unmute" : "Mute");
-    }
-
     if (!vol->initialized) {
         vol->initialized = TRUE;
     } else if (changed && vol->base.app) {
@@ -233,13 +229,21 @@ static void volume_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_inf
     VolumeWidget *vol = tag->vol;
 
     if (tag->query_seq != vol->sink_query_seq) {
-        if (eol != 0) g_free(tag);
+        if (eol != 0) {
+            if (vol->pending_tags)
+                g_ptr_array_remove_fast(vol->pending_tags, tag);
+            else
+                g_free(tag);
+        }
         return;
     }
 
     if (eol != 0) {
         vol->updating_dropdown = FALSE;
-        g_free(tag);
+        if (vol->pending_tags)
+            g_ptr_array_remove_fast(vol->pending_tags, tag);
+        else
+            g_free(tag);
         return;
     }
     if (!info)
@@ -266,11 +270,21 @@ static void volume_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_inf
     }
 }
 
-static void volume_clear_container(GtkWidget *container)
+static void volume_clear_container(GtkWidget *container, VolumeWidget *vol)
 {
+    if (!container)
+        return;
     GtkWidget *child;
-    while ((child = gtk_widget_get_first_child(container)) != NULL)
+    while ((child = gtk_widget_get_first_child(container)) != NULL) {
+        if (vol) {
+            for (GtkWidget *sub = gtk_widget_get_first_child(child);
+                 sub != NULL;
+                 sub = gtk_widget_get_next_sibling(sub)) {
+                g_signal_handlers_disconnect_by_data(sub, vol);
+            }
+        }
         gtk_box_remove(GTK_BOX(container), child);
+    }
 }
 
 static void volume_query_sinks(VolumeWidget *vol)
@@ -298,11 +312,16 @@ static void volume_query_sinks(VolumeWidget *vol)
     SinkQueryTag *tag = g_new0(SinkQueryTag, 1);
     tag->vol = vol;
     tag->query_seq = vol->sink_query_seq;
+    if (vol->pending_tags)
+        g_ptr_array_add(vol->pending_tags, tag);
 
     pa_operation *op = pa_context_get_sink_info_list(vol->pa_ctx, volume_sink_list_cb, tag);
     if (!op) {
         vol->updating_dropdown = FALSE;
-        g_free(tag);
+        if (vol->pending_tags)
+            g_ptr_array_remove_fast(vol->pending_tags, tag);
+        else
+            g_free(tag);
     } else {
         pa_operation_unref(op);
     }
@@ -372,7 +391,7 @@ static void volume_query_sink_inputs(VolumeWidget *vol)
         pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
         return;
 
-    volume_clear_container(vol->apps_box);
+    volume_clear_container(vol->apps_box, vol);
     unref_pa_op(pa_context_get_sink_input_info_list(vol->pa_ctx,
                                                     volume_sink_input_list_cb, vol));
 }
@@ -395,8 +414,10 @@ static void volume_source_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source
 
     const char *desc = info->description ? info->description : info->name;
     gchar input_buf[128];
-    snprintf(input_buf, sizeof(input_buf), "%s (%u%%)", desc, percent);
-    gtk_label_set_text(GTK_LABEL(vol->input_label), input_buf);
+    snprintf(input_buf, sizeof(input_buf), "Input: %s (%u%%)", desc, percent);
+    if (vol->input_label) {
+        gtk_widget_set_tooltip_text(vol->input_label, input_buf);
+    }
 }
 
 static void volume_query_default_source(VolumeWidget *vol)
@@ -596,6 +617,7 @@ static GtkWidget *volume_build_popover(VolumeWidget *vol)
     vol->device_dropdown = popover->device_dropdown;
     vol->apps_box = popover->apps_box;
     vol->mute_button = popover->mute_button;
+    vol->settings_btn = popover->settings_btn;
 
     vol->string_list = gtk_string_list_new(NULL);
     gtk_drop_down_set_model(GTK_DROP_DOWN(vol->device_dropdown), G_LIST_MODEL(vol->string_list));
@@ -623,6 +645,7 @@ static ShellWidget *volume_create(ShellCompositor *compositor)
     vol->base.klass = &volume_widget_class;
     vol->compositor = compositor;
     vol->sink_names = g_ptr_array_new_with_free_func(g_free);
+    vol->pending_tags = g_ptr_array_new_with_free_func(g_free);
 
     /* Panel button: GtkMenuButton (flat) with icon + label */
     vol->button = gtk_menu_button_new();
@@ -670,12 +693,18 @@ static void volume_destroy(ShellWidget *widget)
 {
     VolumeWidget *vol = (VolumeWidget *)widget;
 
+    vol->sink_query_seq++;
+
     if (vol->master_scale)
         g_signal_handlers_disconnect_by_data(vol->master_scale, vol);
     if (vol->device_dropdown)
         g_signal_handlers_disconnect_by_data(vol->device_dropdown, vol);
     if (vol->mute_button)
         g_signal_handlers_disconnect_by_data(vol->mute_button, vol);
+    if (vol->settings_btn)
+        g_signal_handlers_disconnect_by_data(vol->settings_btn, vol);
+    if (vol->apps_box)
+        volume_clear_container(vol->apps_box, vol);
 
     if (vol->sink_names) {
         g_ptr_array_free(vol->sink_names, TRUE);
@@ -693,6 +722,11 @@ static void volume_destroy(ShellWidget *widget)
     if (vol->pa_ml) {
         pa_glib_mainloop_free(vol->pa_ml);
         vol->pa_ml = NULL;
+    }
+
+    if (vol->pending_tags) {
+        g_ptr_array_free(vol->pending_tags, TRUE);
+        vol->pending_tags = NULL;
     }
 
     if (vol->string_list) {

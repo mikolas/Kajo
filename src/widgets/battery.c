@@ -278,6 +278,13 @@ static void battery_upower_proxy_ready(GObject *source G_GNUC_UNUSED,
     }
 
     BatteryWidget *batt = user_data;
+    if (batt->upower_proxy) {
+        if (batt->upower_signal_id > 0) {
+            g_signal_handler_disconnect(batt->upower_proxy, batt->upower_signal_id);
+            batt->upower_signal_id = 0;
+        }
+        g_clear_object(&batt->upower_proxy);
+    }
     batt->upower_proxy = proxy;
     batt->upower_signal_id = g_signal_connect(batt->upower_proxy, "g-properties-changed",
                                               G_CALLBACK(battery_properties_changed), batt);
@@ -305,6 +312,13 @@ static void battery_profiles_proxy_ready(GObject *source G_GNUC_UNUSED,
     }
 
     BatteryWidget *batt = user_data;
+    if (batt->profiles_proxy) {
+        if (batt->profiles_signal_id > 0) {
+            g_signal_handler_disconnect(batt->profiles_proxy, batt->profiles_signal_id);
+            batt->profiles_signal_id = 0;
+        }
+        g_clear_object(&batt->profiles_proxy);
+    }
     batt->profiles_proxy = proxy;
     batt->profiles_signal_id = g_signal_connect(batt->profiles_proxy, "g-properties-changed",
                                                 G_CALLBACK(profiles_properties_changed), batt);

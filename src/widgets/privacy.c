@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 extern const ShellWidgetClass privacy_widget_class;
@@ -80,17 +81,32 @@ check_v4l2_camera_active(void)
     if (!proc_dir)
         return FALSE;
 
+    uid_t my_uid = getuid();
+    pid_t my_pid = getpid();
     gboolean active = FALSE;
     const gchar *pid_entry = NULL;
     while (!active && (pid_entry = g_dir_read_name(proc_dir)) != NULL) {
         if (!g_ascii_isdigit(pid_entry[0]))
             continue;
-        gchar *fd_dir_path = g_build_filename("/proc", pid_entry, "fd", NULL);
+        if ((pid_t)atol(pid_entry) == my_pid)
+            continue;
+
+        char proc_pid_path[64];
+        g_snprintf(proc_pid_path, sizeof(proc_pid_path), "/proc/%s", pid_entry);
+        struct stat st;
+        if (stat(proc_pid_path, &st) != 0 || st.st_uid != my_uid)
+            continue;
+
+        char fd_dir_path[80];
+        g_snprintf(fd_dir_path, sizeof(fd_dir_path), "/proc/%s/fd", pid_entry);
         GDir *fd_dir = g_dir_open(fd_dir_path, 0, NULL);
         if (fd_dir) {
             const gchar *fd_entry = NULL;
             while (!active && (fd_entry = g_dir_read_name(fd_dir)) != NULL) {
-                gchar *fd_path = g_build_filename(fd_dir_path, fd_entry, NULL);
+                if (!g_ascii_isdigit(fd_entry[0]))
+                    continue;
+                char fd_path[128];
+                g_snprintf(fd_path, sizeof(fd_path), "%s/%s", fd_dir_path, fd_entry);
                 char target[256];
                 ssize_t len = readlink(fd_path, target, sizeof(target) - 1);
                 if (len > 0) {
@@ -98,11 +114,9 @@ check_v4l2_camera_active(void)
                     if (g_str_has_prefix(target, "/dev/video"))
                         active = TRUE;
                 }
-                g_free(fd_path);
             }
             g_dir_close(fd_dir);
         }
-        g_free(fd_dir_path);
     }
     g_dir_close(proc_dir);
     return active;
