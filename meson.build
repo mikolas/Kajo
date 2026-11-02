@@ -14,6 +14,7 @@ add_project_arguments(
   '-Wall',
   '-Wextra',
   '-Wno-unused-parameter',
+  '-DKAJO_SOURCE_DIR="' + meson.current_source_dir() + '"',
   language: 'c',
 )
 
@@ -254,6 +255,12 @@ install_subdir(
   strip_directory: true,
 )
 
+install_subdir(
+  'data/shaders',
+  install_dir: get_option('datadir') / 'kajo' / 'shaders',
+  strip_directory: true,
+)
+
 install_data(
   'data/icons/kajo.svg',
   'data/icons/kajo-symbolic.svg',
@@ -362,4 +369,16 @@ test_registry_exe = executable(
   build_by_default: false,
 )
 test('widget-registry', test_registry_exe)
+
+egl_dep = dependency('egl', required: false)
+glesv2_dep = dependency('glesv2', required: false)
+if egl_dep.found() and glesv2_dep.found()
+  test_shaders_exe = executable(
+    'test-shaders',
+    files('tests/test_shaders.c'),
+    dependencies: [gio_dep, egl_dep, glesv2_dep],
+    build_by_default: false,
+  )
+  test('niri-shaders', test_shaders_exe)
+endif
 

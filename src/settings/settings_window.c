@@ -368,8 +368,8 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     /* Domain 3: DESKTOP & WORKSPACE */
     add_sidebar_category(GTK_LIST_BOX(app_ctx->sidebar_list), "DESKTOP & WORKSPACE");
     GtkWidget *r_niri = create_sidebar_row_with_keywords(
-        "view-grid-symbolic", "Niri Compositor", "Window Rules & Keybindings", "niri",
-        "niri compositor rules layout gaps blur xray window floating tiling kdl");
+        "view-grid-symbolic", "Niri Compositor", "Layer Rules, Shaders & Gaps", "niri",
+        "niri compositor rules layout gaps blur xray window floating tiling kdl shader shaders glsl animation open close resize transition");
     GtkWidget *r_abt  = create_sidebar_row_with_keywords(
         "fl-power-symbolic", "About System", "Hardware Specs, OS Version", "about",
         "about system hardware specs cpu memory ram kernel version os linux desktop");
