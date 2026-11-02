@@ -26,46 +26,6 @@ on_vrr_tile_clicked(GtkButton *btn, gpointer user_data)
     gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Adaptive Sync Active" : "Adaptive Sync Disabled");
 }
 
-static gboolean
-send_kajo_ipc_command(const gchar *command)
-{
-    if (!command)
-        return FALSE;
-
-    const gchar *runtime_dir = g_getenv("XDG_RUNTIME_DIR");
-    if (!runtime_dir)
-        runtime_dir = "/tmp";
-
-    g_autofree gchar *path = g_build_filename(runtime_dir, "kajo.sock", NULL);
-    if (!g_file_test(path, G_FILE_TEST_EXISTS))
-        return FALSE;
-
-    GError *error = NULL;
-    GSocket *socket = g_socket_new(G_SOCKET_FAMILY_UNIX,
-                                   G_SOCKET_TYPE_STREAM,
-                                   G_SOCKET_PROTOCOL_DEFAULT,
-                                   &error);
-    if (!socket) {
-        if (error)
-            g_clear_error(&error);
-        return FALSE;
-    }
-
-    GSocketAddress *address = g_unix_socket_address_new(path);
-    gboolean ok = FALSE;
-    if (g_socket_connect(socket, address, NULL, NULL)) {
-        GSocketConnection *conn = g_socket_connection_factory_create_connection(socket);
-        GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
-        g_autofree gchar *msg = g_strconcat(command, "\n", NULL);
-        ok = g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
-        g_object_unref(conn);
-    }
-
-    g_object_unref(address);
-    g_object_unref(socket);
-    return ok;
-}
-
 static void
 on_apply_displays_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
@@ -217,13 +177,13 @@ timeout_sec_to_index(gint sec, const gint *values, guint count, guint fallback_i
 static void
 on_preview_screensaver_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    send_kajo_ipc_command("screensaver");
+    settings_send_ipc_command("screensaver");
 }
 
 static void
 on_lock_now_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    send_kajo_ipc_command("lock");
+    settings_send_ipc_command("lock");
 }
 
 static void
@@ -267,7 +227,7 @@ on_apply_idle_clicked(GtkButton *btn, gpointer user_data)
     shell_config_save(cfg, cfg_path);
     shell_config_destroy(cfg);
 
-    send_kajo_ipc_command("reload-config");
+    settings_send_ipc_command("reload-config");
 
     if (btn) {
         gtk_button_set_label(btn, "[ ✓ SAVED & APPLIED TO SHELL ]");
@@ -334,7 +294,7 @@ on_apply_kbd_clicked(GtkButton *btn, gpointer user_data)
     shell_config_save(cfg, cfg_path);
     shell_config_destroy(cfg);
 
-    send_kajo_ipc_command("reload-config");
+    settings_send_ipc_command("reload-config");
 
     if (btn) {
         gtk_button_set_label(btn, "[ ✓ KEYBOARD BACKLIGHT APPLIED ]");
@@ -371,7 +331,7 @@ on_apply_posture_clicked(GtkButton *btn, gpointer user_data)
     shell_config_save(cfg, cfg_path);
     shell_config_destroy(cfg);
 
-    send_kajo_ipc_command("reload-config");
+    settings_send_ipc_command("reload-config");
 
     if (btn) {
         gtk_button_set_label(btn, "[ ✓ 360° POSTURE SETTINGS APPLIED ]");
@@ -634,9 +594,7 @@ build_page_displays(void)
     if (!vrr_avail) {
         gtk_widget_set_sensitive(tile_vrr, FALSE);
     } else {
-        GtkWidget *hbox = gtk_button_get_child(GTK_BUTTON(tile_vrr));
-        GtkWidget *vbox = hbox ? gtk_widget_get_last_child(hbox) : NULL;
-        GtkWidget *lbl_sub = vbox ? gtk_widget_get_last_child(vbox) : NULL;
+        GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(tile_vrr), "tile-subtitle-label");
         if (lbl_sub) {
             g_signal_connect_after(tile_vrr, "clicked", G_CALLBACK(on_vrr_tile_clicked), lbl_sub);
         }
@@ -670,6 +628,7 @@ build_page_displays(void)
     };
     GtkStringList *slist_ss_mode = gtk_string_list_new(ss_mode_items);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ss_mode), G_LIST_MODEL(slist_ss_mode));
+    g_object_unref(slist_ss_mode);
     if (cfg && cfg->screensaver_mode) {
         if (g_strcmp0(cfg->screensaver_mode, "dpms") == 0)
             gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 1);
@@ -690,6 +649,7 @@ build_page_displays(void)
     };
     GtkStringList *slist_ss_timeout = gtk_string_list_new(ss_timeout_items);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ss_timeout), G_LIST_MODEL(slist_ss_timeout));
+    g_object_unref(slist_ss_timeout);
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(page->combo_ss_timeout),
         timeout_sec_to_index(cfg ? cfg->screensaver_timeout_sec : 300,
@@ -707,6 +667,7 @@ build_page_displays(void)
     };
     GtkStringList *slist_dpms_timeout = gtk_string_list_new(dpms_timeout_items);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_dpms_timeout), G_LIST_MODEL(slist_dpms_timeout));
+    g_object_unref(slist_dpms_timeout);
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(page->combo_dpms_timeout),
         timeout_sec_to_index(cfg ? cfg->dpms_timeout_sec : 600,
@@ -724,6 +685,7 @@ build_page_displays(void)
     };
     GtkStringList *slist_lock_timeout = gtk_string_list_new(lock_timeout_items);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_lock_timeout), G_LIST_MODEL(slist_lock_timeout));
+    g_object_unref(slist_lock_timeout);
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(page->combo_lock_timeout),
         timeout_sec_to_index(cfg ? cfg->lock_timeout_sec : 900,

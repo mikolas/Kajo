@@ -13,12 +13,6 @@ shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
 
     fallback_icon = g_strdup("application-x-executable-symbolic");
 
-    /* Prefer Papirus-Dark icon theme for rich full-color & symbolic app icons */
-    GtkSettings *settings = gtk_settings_get_default();
-    if (settings != NULL) {
-        g_object_set(settings, "gtk-icon-theme-name", "Papirus-Dark", NULL);
-    }
-
     GtkIconTheme *theme = gtk_icon_theme_get_for_display(gdk_display_get_default());
 
     #define ADD_ICON_PATHS(root_dir) do { \
@@ -31,14 +25,7 @@ shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
         } \
     } while(0)
 
-    /* Standard pixmaps & themes */
-    ADD_ICON_PATHS("/usr/share/pixmaps");
-    ADD_ICON_PATHS("/usr/share/icons");
-    ADD_ICON_PATHS("/usr/local/share/icons");
-
     /* 1. Development Build Environment */
-    ADD_ICON_PATHS("/home/mikolas/src/desktop/data/icons");
-
     gchar *cwd = g_get_current_dir();
     gchar *dev_path = g_build_filename(cwd, "data", "icons", NULL);
     g_free(cwd);
@@ -53,11 +40,6 @@ shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
     /* 3. System Installed Environments (/usr/local/share/kajo/icons & /usr/share/kajo/icons) */
     ADD_ICON_PATHS("/usr/local/share/kajo/icons");
     ADD_ICON_PATHS("/usr/share/kajo/icons");
-
-    /* 4. XDG User Icons Directory (~/.local/share/icons) */
-    gchar *xdg_user_icons = g_build_filename(g_get_user_data_dir(), "icons", NULL);
-    ADD_ICON_PATHS(xdg_user_icons);
-    g_free(xdg_user_icons);
 
     #undef ADD_ICON_PATHS
 }

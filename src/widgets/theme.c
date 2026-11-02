@@ -36,6 +36,7 @@ typedef struct {
     GtkWidget *label;
     GtkWidget *popover;
     GtkWidget *preset_grid;
+    GtkCssProvider *swatch_providers[N_ACCENTS];
 } ThemeWidget;
 
 /* ─── Write Pure Accent Overrides (2 Lines Only) ─── */
@@ -83,6 +84,13 @@ typedef struct _ShellThemePopoverClass {
 G_DEFINE_TYPE(ShellThemePopover, shell_theme_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_theme_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_theme_popover_get_type());
+    G_OBJECT_CLASS(shell_theme_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_theme_popover_init(ShellThemePopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -91,6 +99,7 @@ shell_theme_popover_init(ShellThemePopover *self)
 static void
 shell_theme_popover_class_init(ShellThemePopoverClass *klass)
 {
+    G_OBJECT_CLASS(klass)->dispose = shell_theme_popover_dispose;
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
 
     gtk_widget_class_set_template_from_resource(
@@ -149,7 +158,7 @@ theme_widget_create(ShellCompositor *compositor G_GNUC_UNUSED)
                                                    GTK_STYLE_PROVIDER(p), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
         g_free(swatch_class);
         g_free(swatch_css);
-        g_object_unref(p);
+        tw->swatch_providers[i] = p;
 
         GtkWidget *name_label = gtk_label_new(ACCENTS[i].name);
         gtk_label_set_xalign(GTK_LABEL(name_label), 0.0);
@@ -175,7 +184,19 @@ static void
 theme_widget_destroy(ShellWidget *widget)
 {
     ThemeWidget *tw = (ThemeWidget *)widget;
-    if (tw) g_free(tw);
+    if (tw) {
+        GdkDisplay *display = gdk_display_get_default();
+        for (size_t i = 0; i < N_ACCENTS; i++) {
+            if (tw->swatch_providers[i]) {
+                if (display) {
+                    gtk_style_context_remove_provider_for_display(
+                        display, GTK_STYLE_PROVIDER(tw->swatch_providers[i]));
+                }
+                g_clear_object(&tw->swatch_providers[i]);
+            }
+        }
+        g_free(tw);
+    }
 }
 
 static GtkWidget *
@@ -188,7 +209,13 @@ static void
 theme_widget_enable(ShellWidget *widget)
 {
     ThemeWidget *tw = (ThemeWidget *)widget;
-    if (tw && tw->button) gtk_widget_set_visible(tw->button, TRUE);
+    if (tw) {
+        if (tw->icon_img)
+            gtk_image_set_pixel_size(GTK_IMAGE(tw->icon_img), shell_widget_get_icon_size(widget));
+        shell_widget_apply_mode_visibility(widget->mode, tw->icon_img, tw->label);
+        if (tw->button)
+            gtk_widget_set_visible(tw->button, TRUE);
+    }
 }
 
 static void

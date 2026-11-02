@@ -34,6 +34,7 @@ typedef struct _SettingsPageTheme {
     GtkWidget *btn_css;
 
     GtkWidget *swatch_buttons[N_ACCENTS];
+    GtkCssProvider *swatch_providers[N_ACCENTS];
     guint current_preset_idx;
     gboolean syncing_ui;
 } SettingsPageTheme;
@@ -73,6 +74,8 @@ write_theme_override_and_config(SettingsPageTheme *self)
     g_string_free(css, TRUE);
 
     ShellConfig *config = shell_config_load(NULL);
+    if (!config)
+        config = shell_config_get_default();
     if (config) {
         g_free(config->accent_color);
         config->accent_color = g_strdup(preset->accent);
@@ -82,6 +85,9 @@ write_theme_override_and_config(SettingsPageTheme *self)
         shell_config_save(config, cfg_path);
         shell_config_destroy(config);
     }
+
+    settings_reload_global_theme();
+    settings_send_ipc_command("reload-theme");
 
     g_message("Applied Metro accent '%s' (%s, %dpx) -> '%s'",
               preset->name, preset->accent, font_px, theme_css_path);
@@ -137,6 +143,17 @@ on_combo_palette_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED,
 static void
 settings_page_theme_dispose(GObject *object)
 {
+    SettingsPageTheme *self = (SettingsPageTheme *)object;
+    GdkDisplay *display = gdk_display_get_default();
+    for (size_t i = 0; i < N_ACCENTS; i++) {
+        if (self->swatch_providers[i]) {
+            if (display) {
+                gtk_style_context_remove_provider_for_display(
+                    display, GTK_STYLE_PROVIDER(self->swatch_providers[i]));
+            }
+            g_clear_object(&self->swatch_providers[i]);
+        }
+    }
     gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_theme_get_type());
     G_OBJECT_CLASS(settings_page_theme_parent_class)->dispose(object);
 }
@@ -245,9 +262,9 @@ build_page_theme(void)
         gtk_css_provider_load_from_string(p, swatch_css);
         gtk_style_context_add_provider_for_display(gdk_display_get_default(),
                                                    GTK_STYLE_PROVIDER(p), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        page->swatch_providers[i] = p;
         g_free(swatch_class);
         g_free(swatch_css);
-        g_object_unref(p);
 
         GtkWidget *name_label = gtk_label_new(ACCENTS[i].name);
         gtk_label_set_xalign(GTK_LABEL(name_label), 0.0);
@@ -264,7 +281,7 @@ build_page_theme(void)
         gtk_grid_attach(GTK_GRID(page->grid_swatches), card, col, row, 1, 1);
     }
 
-    int init_font = (config && config->ui_font_size_px >= 11 && config->ui_font_size_px <= 15)
+    int init_font = (config && config->ui_font_size_px >= 11 && config->ui_font_size_px <= 20)
                         ? config->ui_font_size_px
                         : 13;
     gtk_range_set_value(GTK_RANGE(page->scale_font), init_font);

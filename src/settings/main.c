@@ -1,8 +1,10 @@
 #include <gtk/gtk.h>
 #include "settings_window.h"
+#include "settings_common.h"
 #include "../config.h"
 #include "../theme.h"
 #include "../icons.h"
+#include "../hardware/hw_caps.h"
 
 static char *target_page = NULL;
 static ShellTheme *g_settings_theme = NULL;
@@ -19,6 +21,7 @@ on_app_activate(GtkApplication *app, gpointer user_data G_GNUC_UNUSED)
         ShellConfig *config = shell_config_load(NULL);
         g_settings_theme = shell_theme_new(config ? config->css_path : NULL);
         shell_theme_apply(g_settings_theme, gdk_display_get_default());
+        settings_set_global_theme(g_settings_theme);
         shell_icons_init(config ? config->icon_map_path : NULL);
         if (config) shell_config_destroy(config);
     }
@@ -30,11 +33,14 @@ on_app_activate(GtkApplication *app, gpointer user_data G_GNUC_UNUSED)
 static void
 on_app_shutdown(GtkApplication *app G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
+    settings_set_global_theme(NULL);
     if (g_settings_theme) {
         shell_theme_destroy(g_settings_theme);
         g_settings_theme = NULL;
     }
     shell_icons_cleanup();
+    shell_hw_caps_cleanup();
+    g_clear_pointer(&target_page, g_free);
 }
 
 int

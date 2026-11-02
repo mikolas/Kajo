@@ -159,6 +159,10 @@ static void clock_destroy(ShellWidget *widget)
 {
     ClockWidget *clock = (ClockWidget *)widget;
 
+    if (clock->popover) {
+        g_signal_handlers_disconnect_by_data(clock->popover, clock);
+    }
+
     if (clock->timer_id > 0) {
         g_source_remove(clock->timer_id);
         clock->timer_id = 0;

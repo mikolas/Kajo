@@ -29,10 +29,16 @@ shell_dbus_set_property_sync(GBusType bus_type,
                               const char *property_name,
                               GVariant *value)
 {
+    if (value)
+        g_variant_ref_sink(value);
+    else
+        return FALSE;
+
     GError *error = NULL;
     GDBusConnection *bus = g_bus_get_sync(bus_type, NULL, &error);
     if (!bus) {
         if (error) g_clear_error(&error);
+        g_variant_unref(value);
         return FALSE;
     }
 
@@ -45,7 +51,7 @@ shell_dbus_set_property_sync(GBusType bus_type,
         GVariant *res = g_dbus_proxy_call_sync(
             proxy, "org.freedesktop.DBus.Properties.Set",
             g_variant_new("(ssv)", interface_name, property_name, value),
-            G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+            G_DBUS_CALL_FLAGS_NONE, 3000, NULL, &error);
         if (res) {
             g_variant_unref(res);
             success = TRUE;
@@ -54,6 +60,7 @@ shell_dbus_set_property_sync(GBusType bus_type,
     }
 
     if (error) g_clear_error(&error);
+    g_variant_unref(value);
     g_object_unref(bus);
     return success;
 }
@@ -66,10 +73,14 @@ shell_dbus_call_method_sync(GBusType bus_type,
                               const char *method_name,
                               GVariant *parameters)
 {
+    if (parameters)
+        g_variant_ref_sink(parameters);
+
     GError *error = NULL;
     GDBusConnection *bus = g_bus_get_sync(bus_type, NULL, &error);
     if (!bus) {
         if (error) g_clear_error(&error);
+        if (parameters) g_variant_unref(parameters);
         return NULL;
     }
 
@@ -81,11 +92,12 @@ shell_dbus_call_method_sync(GBusType bus_type,
     if (proxy) {
         result = g_dbus_proxy_call_sync(
             proxy, method_name, parameters,
-            G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+            G_DBUS_CALL_FLAGS_NONE, 3000, NULL, &error);
         g_object_unref(proxy);
     }
 
     if (error) g_clear_error(&error);
+    if (parameters) g_variant_unref(parameters);
     g_object_unref(bus);
     return result;
 }
@@ -124,6 +136,46 @@ shell_dbus_bluez_set_powered(gboolean powered)
 
     if (error) g_clear_error(&error);
     g_object_unref(bus);
+}
+
+gboolean
+shell_dbus_bluez_get_powered(void)
+{
+    gboolean powered = FALSE;
+    GError *error = NULL;
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    if (!bus) {
+        if (error) g_clear_error(&error);
+        return FALSE;
+    }
+
+    GDBusObjectManager *om = g_dbus_object_manager_client_new_sync(
+        bus, G_DBUS_OBJECT_MANAGER_CLIENT_FLAGS_NONE,
+        "org.bluez", "/", NULL, NULL, NULL, NULL, &error);
+    if (error) g_clear_error(&error);
+
+    if (om) {
+        GList *objects = g_dbus_object_manager_get_objects(om);
+        for (GList *l = objects; l != NULL; l = l->next) {
+            GDBusObject *obj = G_DBUS_OBJECT(l->data);
+            GDBusInterface *iface = g_dbus_object_get_interface(obj, "org.bluez.Adapter1");
+            if (iface) {
+                GDBusProxy *proxy = G_DBUS_PROXY(iface);
+                GVariant *v_pow = g_dbus_proxy_get_cached_property(proxy, "Powered");
+                if (v_pow) {
+                    powered = g_variant_get_boolean(v_pow);
+                    g_variant_unref(v_pow);
+                }
+                g_object_unref(iface);
+                break;
+            }
+        }
+        g_list_free_full(objects, g_object_unref);
+        g_object_unref(om);
+    }
+
+    g_object_unref(bus);
+    return powered;
 }
 
 gboolean
@@ -183,6 +235,67 @@ shell_dbus_bluez_device_action(const char *dev_path, const char *action)
     return FALSE;
 }
 
+void
+shell_dbus_bluez_device_action_async(const char *dev_path,
+                                     const char *action,
+                                     GAsyncReadyCallback callback,
+                                     gpointer user_data)
+{
+    if (!dev_path || !action) {
+        if (callback) callback(NULL, NULL, user_data);
+        return;
+    }
+
+    GError *error = NULL;
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    if (!bus) {
+        if (error) g_clear_error(&error);
+        if (callback) callback(NULL, NULL, user_data);
+        return;
+    }
+
+    if (g_strcmp0(action, "RemoveDevice") == 0) {
+        gchar *adapter_path = NULL;
+        GDBusProxy *dev_proxy = g_dbus_proxy_new_sync(
+            bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
+            "org.bluez", dev_path, "org.bluez.Device1", NULL, NULL);
+        if (dev_proxy) {
+            GVariant *prop = g_dbus_proxy_get_cached_property(dev_proxy, "Adapter");
+            if (prop) {
+                adapter_path = g_strdup(g_variant_get_string(prop, NULL));
+                g_variant_unref(prop);
+            }
+            g_object_unref(dev_proxy);
+        }
+
+        if (!adapter_path) {
+            const char *dev_sub = strstr(dev_path, "/dev_");
+            if (dev_sub) {
+                adapter_path = g_strndup(dev_path, dev_sub - dev_path);
+            }
+        }
+
+        if (adapter_path) {
+            g_dbus_connection_call(
+                bus, "org.bluez", adapter_path,
+                "org.bluez.Adapter1", "RemoveDevice",
+                g_variant_new("(o)", dev_path),
+                NULL, G_DBUS_CALL_FLAGS_NONE, 15000, NULL, callback, user_data);
+            g_free(adapter_path);
+        } else if (callback) {
+            callback(NULL, NULL, user_data);
+        }
+        g_object_unref(bus);
+        return;
+    }
+
+    g_dbus_connection_call(
+        bus, "org.bluez", dev_path,
+        "org.bluez.Device1", action,
+        NULL, NULL, G_DBUS_CALL_FLAGS_NONE, 15000, NULL, callback, user_data);
+    g_object_unref(bus);
+}
+
 GPtrArray *
 shell_dbus_bluez_get_devices(void)
 {
@@ -211,6 +324,7 @@ shell_dbus_bluez_get_devices(void)
             GVariant *name_var = g_dbus_proxy_get_cached_property(proxy, "Name");
             GVariant *alias_var = g_dbus_proxy_get_cached_property(proxy, "Alias");
             GVariant *icon_var = g_dbus_proxy_get_cached_property(proxy, "Icon");
+            GVariant *addr_var = g_dbus_proxy_get_cached_property(proxy, "Address");
             GVariant *paired_var = g_dbus_proxy_get_cached_property(proxy, "Paired");
             GVariant *conn_var = g_dbus_proxy_get_cached_property(proxy, "Connected");
 
@@ -223,6 +337,7 @@ shell_dbus_bluez_get_devices(void)
                 dev->name = g_strdup(dev_name);
                 dev->path = g_strdup(obj_path);
                 dev->icon = icon_var ? g_variant_dup_string(icon_var, NULL) : g_strdup("bluetooth-symbolic");
+                dev->address = addr_var ? g_variant_dup_string(addr_var, NULL) : NULL;
                 dev->paired = paired_var ? g_variant_get_boolean(paired_var) : FALSE;
                 dev->connected = conn_var ? g_variant_get_boolean(conn_var) : FALSE;
                 g_ptr_array_add(arr, dev);
@@ -231,6 +346,7 @@ shell_dbus_bluez_get_devices(void)
             if (name_var) g_variant_unref(name_var);
             if (alias_var) g_variant_unref(alias_var);
             if (icon_var) g_variant_unref(icon_var);
+            if (addr_var) g_variant_unref(addr_var);
             if (paired_var) g_variant_unref(paired_var);
             if (conn_var) g_variant_unref(conn_var);
             g_object_unref(iface);
@@ -253,6 +369,36 @@ shell_dbus_nm_set_wireless_enabled(gboolean enabled)
         "WirelessEnabled", g_variant_new_boolean(enabled));
 }
 
+gboolean
+shell_dbus_nm_get_wireless_enabled(void)
+{
+    gboolean enabled = FALSE;
+    GError *error = NULL;
+    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+    if (!bus) {
+        if (error) g_clear_error(&error);
+        return FALSE;
+    }
+
+    GDBusProxy *nm_proxy = g_dbus_proxy_new_sync(
+        bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
+        "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager",
+        "org.freedesktop.NetworkManager", NULL, &error);
+    if (error) g_clear_error(&error);
+
+    if (nm_proxy) {
+        GVariant *wifi_var = g_dbus_proxy_get_cached_property(nm_proxy, "WirelessEnabled");
+        if (wifi_var) {
+            enabled = g_variant_get_boolean(wifi_var);
+            g_variant_unref(wifi_var);
+        }
+        g_object_unref(nm_proxy);
+    }
+
+    g_object_unref(bus);
+    return enabled;
+}
+
 GPtrArray *
 shell_dbus_nm_get_access_points(void)
 {
@@ -271,7 +417,7 @@ shell_dbus_nm_get_access_points(void)
 
     if (nm_proxy) {
         GVariant *devs_var = g_dbus_proxy_call_sync(
-            nm_proxy, "GetDevices", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
+            nm_proxy, "GetDevices", NULL, G_DBUS_CALL_FLAGS_NONE, 3000, NULL, &error);
 
         if (devs_var) {
             GVariantIter *iter = NULL;
@@ -296,8 +442,11 @@ shell_dbus_nm_get_access_points(void)
                         "org.freedesktop.NetworkManager.Device.Wireless", NULL, NULL);
 
                     if (wifi_proxy) {
+                        GVariant *active_ap_var = g_dbus_proxy_get_cached_property(wifi_proxy, "ActiveAccessPoint");
+                        const char *active_ap_path = active_ap_var ? g_variant_get_string(active_ap_var, NULL) : NULL;
+
                         GVariant *aps_var = g_dbus_proxy_call_sync(
-                            wifi_proxy, "GetAccessPoints", NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL);
+                            wifi_proxy, "GetAccessPoints", NULL, G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
 
                         if (aps_var) {
                             GVariantIter *ap_iter = NULL;
@@ -323,6 +472,7 @@ shell_dbus_nm_get_access_points(void)
                                                 ap->ssid = ssid_str;
                                                 ap->path = g_strdup(ap_path);
                                                 ap->strength = strength_var ? g_variant_get_byte(strength_var) : 0;
+                                                ap->active = (active_ap_path && g_strcmp0(ap_path, active_ap_path) == 0);
                                                 g_ptr_array_add(arr, ap);
                                             } else {
                                                 g_free(ssid_str);
@@ -337,6 +487,7 @@ shell_dbus_nm_get_access_points(void)
                             g_variant_iter_free(ap_iter);
                             g_variant_unref(aps_var);
                         }
+                        if (active_ap_var) g_variant_unref(active_ap_var);
                         g_object_unref(wifi_proxy);
                     }
                 }

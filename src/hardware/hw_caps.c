@@ -1,10 +1,13 @@
 #include "hw_caps.h"
 #include <gio/gio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
-static ShellHwCaps *cached_caps = NULL;
+static ShellHwCaps     *cached_caps = NULL;
+static GDBusConnection *cached_system_bus = NULL;
+static gchar           *cached_session_path = NULL;
 
 static gchar *
 read_trimmed_file(const gchar *path)
@@ -235,6 +238,17 @@ shell_hw_caps_get(gboolean refresh)
     return cached_caps;
 }
 
+void
+shell_hw_caps_cleanup(void)
+{
+    if (cached_caps) {
+        free_hw_caps(cached_caps);
+        cached_caps = NULL;
+    }
+    g_clear_pointer(&cached_session_path, g_free);
+    g_clear_object(&cached_system_bus);
+}
+
 gboolean
 shell_hw_caps_read_hinge_angle_deg(const ShellHwCaps *caps, gdouble *out_deg)
 {
@@ -319,22 +333,122 @@ shell_hw_caps_set_display_brightness_pct(const ShellHwCaps *caps, gint pct)
         val = 1;
 
     g_autofree gchar *device_name = g_path_get_basename(caps->display_backlight_dir);
-    GError *error = NULL;
-    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (!bus) {
-        g_clear_error(&error);
-        return FALSE;
+    if (!cached_system_bus) {
+        GError *error = NULL;
+        cached_system_bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
+        if (!cached_system_bus) {
+            g_clear_error(&error);
+            return FALSE;
+        }
     }
 
-    g_autofree gchar *session_path = get_active_login1_session_path(bus);
+    if (!cached_session_path) {
+        cached_session_path = get_active_login1_session_path(cached_system_bus);
+    }
+
     g_dbus_connection_call(
-        bus,
+        cached_system_bus,
         "org.freedesktop.login1",
-        session_path,
+        cached_session_path,
         "org.freedesktop.login1.Session",
         "SetBrightness",
         g_variant_new("(ssu)", "backlight", device_name, (guint32)val),
         NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-    g_object_unref(bus);
     return TRUE;
+}
+
+gdouble
+shell_hw_caps_read_rapl_watts(void)
+{
+    static guint64 prev_energy = 0;
+    static gint64  prev_time   = 0;
+    static gdouble last_watts  = 0.0;
+
+    static const char *rapl_paths[] = {
+        "/sys/class/powercap/intel-rapl/intel-rapl:0/energy_uj",
+        "/sys/class/powercap/intel-rapl:0/energy_uj",
+        "/sys/class/powercap/amd_energy/energy1_input",
+        "/sys/class/powercap/intel-rapl/intel-rapl:1/energy_uj",
+        NULL
+    };
+
+    for (int i = 0; rapl_paths[i] != NULL; i++) {
+        gchar *contents = NULL;
+        if (g_file_get_contents(rapl_paths[i], &contents, NULL, NULL)) {
+            guint64 cur_energy = g_ascii_strtoull(contents, NULL, 10);
+            g_free(contents);
+            if (cur_energy > 0) {
+                gint64 now = g_get_monotonic_time();
+                if (prev_energy > 0 && prev_time > 0 && cur_energy >= prev_energy) {
+                    gdouble dt_sec = (gdouble)(now - prev_time) / 1000000.0;
+                    if (dt_sec > 0.1) {
+                        last_watts  = ((gdouble)(cur_energy - prev_energy) / 1000000.0) / dt_sec;
+                        prev_energy = cur_energy;
+                        prev_time   = now;
+                        return last_watts;
+                    }
+                    return last_watts;
+                }
+                prev_energy = cur_energy;
+                prev_time   = now;
+                break;
+            }
+        }
+    }
+
+    /* Fallback 1: HWMON instant power inputs (skipping GPU/NVMe sensors) */
+    for (int h = 0; h < 12; h++) {
+        gchar name_path[128];
+        snprintf(name_path, sizeof(name_path), "/sys/class/hwmon/hwmon%d/name", h);
+        gchar *sensor_name = NULL;
+        if (g_file_get_contents(name_path, &sensor_name, NULL, NULL)) {
+            g_strstrip(sensor_name);
+            if (g_strcmp0(sensor_name, "amdgpu") == 0 ||
+                g_strcmp0(sensor_name, "nvidia") == 0 ||
+                g_strcmp0(sensor_name, "nouveau") == 0 ||
+                g_strcmp0(sensor_name, "nvme") == 0) {
+                g_free(sensor_name);
+                continue;
+            }
+            g_free(sensor_name);
+        }
+
+        guint64 total_microwatts = 0;
+        int found_rails = 0;
+
+        for (int p = 1; p <= 4; p++) {
+            gchar hwmon_path[128];
+            snprintf(hwmon_path, sizeof(hwmon_path), "/sys/class/hwmon/hwmon%d/power%d_input", h, p);
+            gchar *contents = NULL;
+            if (g_file_get_contents(hwmon_path, &contents, NULL, NULL)) {
+                guint64 microwatts = g_ascii_strtoull(contents, NULL, 10);
+                g_free(contents);
+                if (microwatts > 0) {
+                    total_microwatts += microwatts;
+                    found_rails++;
+                }
+            }
+        }
+
+        if (found_rails > 0 && total_microwatts > 0)
+            return (gdouble)total_microwatts / 1000000.0;
+    }
+
+    /* Fallback 2: Laptop power supply battery power_now */
+    static const char *bat_paths[] = {
+        "/sys/class/power_supply/BAT0/power_now",
+        "/sys/class/power_supply/BAT1/power_now",
+        NULL
+    };
+    for (int b = 0; bat_paths[b] != NULL; b++) {
+        gchar *contents = NULL;
+        if (g_file_get_contents(bat_paths[b], &contents, NULL, NULL)) {
+            guint64 microwatts = g_ascii_strtoull(contents, NULL, 10);
+            g_free(contents);
+            if (microwatts > 0)
+                return (gdouble)microwatts / 1000000.0;
+        }
+    }
+
+    return 0.0;
 }

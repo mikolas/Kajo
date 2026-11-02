@@ -12,6 +12,7 @@ struct _ShellIPCSocket {
     GSocketService *service;
     gchar *socket_path;
     GArray *pending_sources;
+    GPtrArray *active_clients;
 };
 
 static gchar *
@@ -163,57 +164,123 @@ add_idle_command(ShellIPCSocket *ipc, GSourceFunc func)
     }
 }
 
+typedef struct {
+    ShellIPCSocket    *ipc;
+    GSocketConnection *connection;
+    GDataInputStream  *data_input;
+    GCancellable      *cancellable;
+    guint              timeout_id;
+} IPCClientRead;
+
+static void
+ipc_dispatch_line(ShellIPCSocket *ipc, gchar *line)
+{
+    if (!ipc || !line)
+        return;
+
+    g_strstrip(line);
+    if (g_strcmp0(line, "launcher-toggle") == 0 || g_strcmp0(line, "toggle-launcher") == 0) {
+        add_idle_command(ipc, toggle_launcher_idle_cb);
+    } else if (g_strcmp0(line, "launcher-open") == 0) {
+        add_idle_command(ipc, show_launcher_idle_cb);
+    } else if (g_strcmp0(line, "launcher-close") == 0) {
+        add_idle_command(ipc, hide_launcher_idle_cb);
+    } else if (g_strcmp0(line, "brightness-up") == 0 || g_strcmp0(line, "brightness+") == 0) {
+        add_idle_command(ipc, brightness_up_idle_cb);
+    } else if (g_strcmp0(line, "brightness-down") == 0 || g_strcmp0(line, "brightness-") == 0) {
+        add_idle_command(ipc, brightness_down_idle_cb);
+    } else if (g_strcmp0(line, "volume-up") == 0 || g_strcmp0(line, "volume+") == 0) {
+        add_idle_command(ipc, volume_up_idle_cb);
+    } else if (g_strcmp0(line, "volume-down") == 0 || g_strcmp0(line, "volume-") == 0) {
+        add_idle_command(ipc, volume_down_idle_cb);
+    } else if (g_strcmp0(line, "volume-mute") == 0 || g_strcmp0(line, "volume-toggle") == 0) {
+        add_idle_command(ipc, volume_mute_idle_cb);
+    } else if (g_strcmp0(line, "lock") == 0 || g_strcmp0(line, "lock-session") == 0) {
+        add_idle_command(ipc, lock_session_idle_cb);
+    } else if (g_strcmp0(line, "screensaver") == 0 || g_strcmp0(line, "start-screensaver") == 0) {
+        add_idle_command(ipc, screensaver_idle_cb);
+    } else if (g_strcmp0(line, "reload-config") == 0 || strstr(line, "\"reload-config\"") != NULL) {
+        add_idle_command(ipc, reload_config_idle_cb);
+    } else if (g_strcmp0(line, "reload-theme") == 0 || strstr(line, "\"reload-theme\"") != NULL) {
+        add_idle_command(ipc, reload_theme_idle_cb);
+    }
+}
+
 static gboolean
-on_incoming_connection(GSocketService *service,
+on_ipc_read_timeout(gpointer user_data)
+{
+    IPCClientRead *client = user_data;
+    client->timeout_id = 0;
+    if (client->cancellable)
+        g_cancellable_cancel(client->cancellable);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+on_ipc_line_read(GObject      *source_object,
+                 GAsyncResult *res,
+                 gpointer      user_data)
+{
+    IPCClientRead *client = user_data;
+    GDataInputStream *data_input = G_DATA_INPUT_STREAM(source_object);
+    GError *error = NULL;
+    gchar *line = g_data_input_stream_read_line_finish(data_input, res, NULL, &error);
+
+    if (client->timeout_id > 0) {
+        g_source_remove(client->timeout_id);
+        client->timeout_id = 0;
+    }
+
+    if (client->ipc && client->ipc->active_clients) {
+        g_ptr_array_remove_fast(client->ipc->active_clients, client);
+    }
+
+    if (client->ipc != NULL &&
+        !g_cancellable_is_cancelled(client->cancellable) &&
+        !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED) &&
+        line != NULL) {
+        ipc_dispatch_line(client->ipc, line);
+    }
+
+    g_clear_error(&error);
+    g_free(line);
+
+    if (client->connection) {
+        g_io_stream_close(G_IO_STREAM(client->connection), NULL, NULL);
+        g_object_unref(client->connection);
+    }
+    g_clear_object(&client->data_input);
+    g_clear_object(&client->cancellable);
+    g_free(client);
+}
+
+static gboolean
+on_incoming_connection(GSocketService *service G_GNUC_UNUSED,
                        GSocketConnection *connection,
-                       GObject *source_object,
+                       GObject *source_object G_GNUC_UNUSED,
                        gpointer user_data)
 {
     ShellIPCSocket *ipc = user_data;
+    if (!ipc || !connection)
+        return FALSE;
+
+    IPCClientRead *client = g_new0(IPCClientRead, 1);
+    client->ipc = ipc;
+    client->connection = g_object_ref(connection);
     GInputStream *input = g_io_stream_get_input_stream(G_IO_STREAM(connection));
-    GDataInputStream *data_input = g_data_input_stream_new(input);
+    client->data_input = g_data_input_stream_new(input);
+    client->cancellable = g_cancellable_new();
+    client->timeout_id = g_timeout_add(1000, on_ipc_read_timeout, client);
 
-    GError *error = NULL;
-    gchar *line = g_data_input_stream_read_line(data_input, NULL, NULL, &error);
-
-    if (error) {
-        g_clear_error(&error);
+    if (ipc->active_clients) {
+        g_ptr_array_add(ipc->active_clients, client);
     }
 
-    if (line != NULL) {
-        g_strstrip(line);
-        if (g_strcmp0(line, "launcher-toggle") == 0 || g_strcmp0(line, "toggle-launcher") == 0) {
-            add_idle_command(ipc, toggle_launcher_idle_cb);
-        } else if (g_strcmp0(line, "launcher-open") == 0) {
-            add_idle_command(ipc, show_launcher_idle_cb);
-        } else if (g_strcmp0(line, "launcher-close") == 0) {
-            add_idle_command(ipc, hide_launcher_idle_cb);
-        } else if (g_strcmp0(line, "brightness-up") == 0 || g_strcmp0(line, "brightness+") == 0) {
-            add_idle_command(ipc, brightness_up_idle_cb);
-        } else if (g_strcmp0(line, "brightness-down") == 0 || g_strcmp0(line, "brightness-") == 0) {
-            add_idle_command(ipc, brightness_down_idle_cb);
-        } else if (g_strcmp0(line, "volume-up") == 0 || g_strcmp0(line, "volume+") == 0) {
-            add_idle_command(ipc, volume_up_idle_cb);
-        } else if (g_strcmp0(line, "volume-down") == 0 || g_strcmp0(line, "volume-") == 0) {
-            add_idle_command(ipc, volume_down_idle_cb);
-        } else if (g_strcmp0(line, "volume-mute") == 0 || g_strcmp0(line, "volume-toggle") == 0) {
-            add_idle_command(ipc, volume_mute_idle_cb);
-        } else if (g_strcmp0(line, "lock") == 0 || g_strcmp0(line, "lock-session") == 0) {
-            add_idle_command(ipc, lock_session_idle_cb);
-        } else if (g_strcmp0(line, "screensaver") == 0 || g_strcmp0(line, "start-screensaver") == 0) {
-            add_idle_command(ipc, screensaver_idle_cb);
-        } else if (g_strcmp0(line, "reload-config") == 0 || strstr(line, "\"reload-config\"") != NULL) {
-            add_idle_command(ipc, reload_config_idle_cb);
-        } else if (g_strcmp0(line, "reload-theme") == 0 || strstr(line, "\"reload-theme\"") != NULL) {
-            add_idle_command(ipc, reload_theme_idle_cb);
-        }
-        g_free(line);
-    }
-
-    g_object_unref(data_input);
-    if (connection) {
-        g_io_stream_close(G_IO_STREAM(connection), NULL, NULL);
-    }
+    g_data_input_stream_read_line_async(client->data_input,
+                                        G_PRIORITY_DEFAULT,
+                                        client->cancellable,
+                                        on_ipc_line_read,
+                                        client);
     return FALSE;
 }
 
@@ -243,6 +310,7 @@ shell_ipc_send_command(const gchar *command)
         g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
         g_free(msg);
 
+        g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
         g_object_unref(conn);
         g_object_unref(address);
         g_object_unref(socket);
@@ -263,6 +331,7 @@ shell_ipc_socket_new(ShellApp *app)
     ipc->app = app;
     ipc->socket_path = get_ipc_socket_path();
     ipc->pending_sources = g_array_new(FALSE, FALSE, sizeof(guint));
+    ipc->active_clients = g_ptr_array_new();
 
     /* Unlink old socket file if left over */
     g_unlink(ipc->socket_path);
@@ -289,6 +358,24 @@ shell_ipc_socket_destroy(ShellIPCSocket *ipc)
     if (!ipc)
         return;
 
+    if (ipc->active_clients) {
+        for (guint i = 0; i < ipc->active_clients->len; i++) {
+            IPCClientRead *client = g_ptr_array_index(ipc->active_clients, i);
+            if (!client)
+                continue;
+            client->ipc = NULL;
+            if (client->timeout_id > 0) {
+                g_source_remove(client->timeout_id);
+                client->timeout_id = 0;
+            }
+            if (client->cancellable) {
+                g_cancellable_cancel(client->cancellable);
+            }
+        }
+        g_ptr_array_free(ipc->active_clients, TRUE);
+        ipc->active_clients = NULL;
+    }
+
     if (ipc->pending_sources) {
         for (guint i = 0; i < ipc->pending_sources->len; i++) {
             guint id = g_array_index(ipc->pending_sources, guint, i);
@@ -304,6 +391,7 @@ shell_ipc_socket_destroy(ShellIPCSocket *ipc)
     }
 
     if (ipc->service) {
+        g_signal_handlers_disconnect_by_data(ipc->service, ipc);
         g_socket_service_stop(ipc->service);
         g_object_unref(ipc->service);
     }

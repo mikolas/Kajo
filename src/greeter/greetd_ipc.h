@@ -37,11 +37,6 @@ typedef struct {
 void            greetd_response_free(GreetdResponse *resp);
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(GreetdResponse, greetd_response_free)
 
-/* Low-level single message roundtrip over a greetd UNIX socket path */
-GreetdResponse *greetd_ipc_roundtrip(const gchar  *socket_path,
-                                     const gchar  *request_json,
-                                     GError      **error);
-
 /* High-level asynchronous authentication + session start workflow */
 void            greetd_authenticate_and_start_async(const gchar        *socket_path,
                                                     const gchar        *username,

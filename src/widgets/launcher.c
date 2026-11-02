@@ -16,11 +16,14 @@ typedef struct {
 } LauncherWidget;
 
 static void
-on_launcher_btn_clicked(GtkButton *btn, gpointer user_data)
+on_launcher_btn_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     LauncherWidget *lw = user_data;
-    if (lw && lw->base.klass) {
-        /* Trigger launcher toggle via IPC/app context */
+    if (!lw || !lw->base.klass)
+        return;
+    if (lw->base.app && lw->base.app->launcher) {
+        shell_launcher_surface_toggle(lw->base.app->launcher);
+    } else {
         shell_ipc_send_command("launcher-toggle");
     }
 }
@@ -56,6 +59,8 @@ launcher_widget_destroy(ShellWidget *widget)
     LauncherWidget *lw = (LauncherWidget *)widget;
     if (lw == NULL)
         return;
+    if (lw->button)
+        g_signal_handlers_disconnect_by_data(lw->button, lw);
     g_free(lw);
 }
 
@@ -71,6 +76,8 @@ launcher_widget_enable(ShellWidget *widget)
 {
     LauncherWidget *lw = (LauncherWidget *)widget;
     if (lw) {
+        if (lw->icon_img)
+            gtk_image_set_pixel_size(GTK_IMAGE(lw->icon_img), shell_widget_get_icon_size(widget));
         shell_widget_apply_mode_visibility(widget->mode, lw->icon_img, lw->label);
     }
 }

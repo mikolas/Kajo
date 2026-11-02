@@ -9,7 +9,7 @@
 
 #define HP_EC_IO_PATH        "/sys/kernel/debug/ec/ec0/io"
 #define HP_EC_OFFSET_HKBT    0x96  /* 150: Keyboard Backlight Auto-Off Timeout (0x00=Always On, 0x01=30s, 0x03=3m) */
-#define HP_EC_OFFSET_HKBL    0x97  /* 151: Keyboard Backlight Brightness Level (0x00=Off, 0x01=Low, 0x02=High) */
+#define HP_EC_OFFSET_HKBL    0x97  /* 151: Keyboard Backlight Brightness Level (0x00=Off, 0x02=Low 50%, 0x01=High 100%) */
 
 static gboolean
 hp_ec_read_byte(off_t offset, guint8 *out_val)
@@ -121,15 +121,33 @@ shell_kbd_backlight_set_level(gint level)
     gint clamped = CLAMP(level, 0, max_lvl > 0 ? max_lvl : 2);
 
     if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
-        return hp_ec_write_byte(HP_EC_OFFSET_HKBL, (guint8)clamped);
+        /* Per DSDT _Q9B: 0x00 = Off (0%), 0x02 = Low (50%), 0x01 = High (100%) */
+        guint8 ec_val = 0x00;
+        if (clamped == 1)
+            ec_val = 0x02;
+        else if (clamped >= 2)
+            ec_val = 0x01;
+        return hp_ec_write_byte(HP_EC_OFFSET_HKBL, ec_val);
     }
 
     if (caps->kbd_bl_backend == KBD_BL_SYSFS_LEDS && caps->kbd_led_dir) {
-        /* Try UPower KbdBacklight D-Bus first */
+        /* Try direct sysfs write first */
+        g_autofree gchar *cur_path = g_build_filename(caps->kbd_led_dir, "brightness", NULL);
+        gchar buf[16];
+        int len = snprintf(buf, sizeof(buf), "%d\n", clamped);
+        int fd = open(cur_path, O_WRONLY);
+        if (fd >= 0) {
+            ssize_t n = write(fd, buf, (size_t)len);
+            close(fd);
+            if (n == len)
+                return TRUE;
+        }
+
+        /* Fallback to asynchronous UPower KbdBacklight D-Bus call */
         GError *error = NULL;
         GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
         if (bus) {
-            GVariant *res = g_dbus_connection_call_sync(
+            g_dbus_connection_call(
                 bus,
                 "org.freedesktop.UPower",
                 "/org/freedesktop/UPower/KbdBacklight",
@@ -140,25 +158,12 @@ shell_kbd_backlight_set_level(gint level)
                 G_DBUS_CALL_FLAGS_NONE,
                 1000,
                 NULL,
+                NULL,
                 NULL);
             g_object_unref(bus);
-            if (res) {
-                g_variant_unref(res);
-                return TRUE;
-            }
+            return TRUE;
         }
         g_clear_error(&error);
-
-        /* Direct sysfs write fallback */
-        g_autofree gchar *cur_path = g_build_filename(caps->kbd_led_dir, "brightness", NULL);
-        gchar buf[16];
-        int len = snprintf(buf, sizeof(buf), "%d\n", clamped);
-        int fd = open(cur_path, O_WRONLY);
-        if (fd >= 0) {
-            ssize_t n = write(fd, buf, (size_t)len);
-            close(fd);
-            return (n == len);
-        }
         return FALSE;
     }
 

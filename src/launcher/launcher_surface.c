@@ -186,9 +186,18 @@ index_desktop_files_dir(GPtrArray *apps, const gchar *dir_path)
                 gchar *comment = g_key_file_get_string(keyfile, "Desktop Entry", "Comment", NULL);
 
                 if (name && exec) {
-                    gchar *clean_exec = g_strdup(exec);
-                    gchar *p = strchr(clean_exec, '%');
-                    if (p) *p = '\0';
+                    /* Strip FreeDesktop %f, %u, %F, %U, etc. field codes per token */
+                    gchar **tokens = g_strsplit(exec, " ", -1);
+                    GString *cleaned = g_string_new(NULL);
+                    for (gint t = 0; tokens && tokens[t] != NULL; t++) {
+                        if (tokens[t][0] == '%')
+                            continue;
+                        if (cleaned->len > 0)
+                            g_string_append_c(cleaned, ' ');
+                        g_string_append(cleaned, tokens[t]);
+                    }
+                    g_strfreev(tokens);
+                    gchar *clean_exec = g_string_free(cleaned, FALSE);
                     g_strstrip(clean_exec);
 
                     AppEntry *app = g_new0(AppEntry, 1);
@@ -573,6 +582,13 @@ typedef struct _ShellLauncherWindowClass {
 G_DEFINE_TYPE(ShellLauncherWindow, shell_launcher_window, GTK_TYPE_WINDOW)
 
 static void
+shell_launcher_window_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_launcher_window_get_type());
+    G_OBJECT_CLASS(shell_launcher_window_parent_class)->dispose(object);
+}
+
+static void
 shell_launcher_window_init(ShellLauncherWindow *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -581,6 +597,7 @@ shell_launcher_window_init(ShellLauncherWindow *self)
 static void
 shell_launcher_window_class_init(ShellLauncherWindowClass *klass)
 {
+    G_OBJECT_CLASS(klass)->dispose = shell_launcher_window_dispose;
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
 
     gtk_widget_class_set_template_from_resource(

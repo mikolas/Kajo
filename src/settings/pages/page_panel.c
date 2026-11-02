@@ -21,6 +21,8 @@ typedef struct _SettingsPagePanelClass {
 
 G_DEFINE_TYPE(SettingsPagePanel, settings_page_panel, GTK_TYPE_BOX)
 
+static void on_combo_pos_changed(GtkDropDown *dropdown, GParamSpec *pspec, gpointer user_data);
+
 static void
 settings_page_panel_init(SettingsPagePanel *self)
 {
@@ -30,6 +32,12 @@ settings_page_panel_init(SettingsPagePanel *self)
 static void
 settings_page_panel_dispose(GObject *object)
 {
+    SettingsPagePanel *self = (SettingsPagePanel *)object;
+    if (self->combo_pos) {
+        g_signal_handlers_disconnect_matched(
+            self->combo_pos, G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
+            G_CALLBACK(on_combo_pos_changed), NULL);
+    }
     gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_panel_get_type());
     G_OBJECT_CLASS(settings_page_panel_parent_class)->dispose(object);
 }
@@ -140,7 +148,7 @@ static void
 on_apply_panel_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
     ShellConfig *config = shell_config_load(NULL);
-    if (!config) return;
+    if (!config) config = shell_config_get_default();
 
     GtkDropDown *combo_pos = g_object_get_data(G_OBJECT(btn), "combo_pos");
     GtkRange *scale_height = g_object_get_data(G_OBJECT(btn), "scale_height");
@@ -176,7 +184,7 @@ build_page_panel(void)
 {
     SettingsPagePanel *page = g_object_new(settings_page_panel_get_type(), NULL);
     ShellConfig *config = shell_config_load(NULL);
-    if (!config) return GTK_WIDGET(page);
+    if (!config) config = shell_config_get_default();
 
     const char *pos_items[] = { "Top Edge (Default)", "Bottom Edge", NULL };
     GtkStringList *slist = gtk_string_list_new(pos_items);

@@ -336,7 +336,8 @@ shell_config_load(const gchar *path)
     if (json_object_has_member(root, "max_notification_history"))
         config->max_notification_history = (gint)json_object_get_int_member(root, "max_notification_history");
 
-    if (json_object_has_member(root, "notifications")) {
+    if (json_object_has_member(root, "notifications") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "notifications"))) {
         JsonObject *notif_obj = json_object_get_object_member(root, "notifications");
         if (notif_obj) {
             if (json_object_has_member(notif_obj, "toast_timeout_ms"))
@@ -374,19 +375,22 @@ shell_config_load(const gchar *path)
         JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "layout"))) {
         JsonObject *layout = json_object_get_object_member(root, "layout");
 
-        if (json_object_has_member(layout, "left")) {
+        if (json_object_has_member(layout, "left") &&
+            JSON_NODE_HOLDS_ARRAY(json_object_get_member(layout, "left"))) {
             if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
             config->layout_left = json_array_to_widget_configs(
                 json_object_get_array_member(layout, "left"), config->default_widget_mode);
         }
 
-        if (json_object_has_member(layout, "center")) {
+        if (json_object_has_member(layout, "center") &&
+            JSON_NODE_HOLDS_ARRAY(json_object_get_member(layout, "center"))) {
             if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
             config->layout_center = json_array_to_widget_configs(
                 json_object_get_array_member(layout, "center"), config->default_widget_mode);
         }
 
-        if (json_object_has_member(layout, "right")) {
+        if (json_object_has_member(layout, "right") &&
+            JSON_NODE_HOLDS_ARRAY(json_object_get_member(layout, "right"))) {
             if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);
             config->layout_right = json_array_to_widget_configs(
                 json_object_get_array_member(layout, "right"), config->default_widget_mode);
@@ -407,17 +411,20 @@ shell_config_load(const gchar *path)
                     if (json_object_has_member(def_root, "layout") &&
                         JSON_NODE_HOLDS_OBJECT(json_object_get_member(def_root, "layout"))) {
                         JsonObject *def_layout = json_object_get_object_member(def_root, "layout");
-                        if (json_object_has_member(def_layout, "left")) {
+                        if (json_object_has_member(def_layout, "left") &&
+                            JSON_NODE_HOLDS_ARRAY(json_object_get_member(def_layout, "left"))) {
                             if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
                             config->layout_left = json_array_to_widget_configs(
                                 json_object_get_array_member(def_layout, "left"), config->default_widget_mode);
                         }
-                        if (json_object_has_member(def_layout, "center")) {
+                        if (json_object_has_member(def_layout, "center") &&
+                            JSON_NODE_HOLDS_ARRAY(json_object_get_member(def_layout, "center"))) {
                             if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
                             config->layout_center = json_array_to_widget_configs(
                                 json_object_get_array_member(def_layout, "center"), config->default_widget_mode);
                         }
-                        if (json_object_has_member(def_layout, "right")) {
+                        if (json_object_has_member(def_layout, "right") &&
+                            JSON_NODE_HOLDS_ARRAY(json_object_get_member(def_layout, "right"))) {
                             if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);
                             config->layout_right = json_array_to_widget_configs(
                                 json_object_get_array_member(def_layout, "right"), config->default_widget_mode);
@@ -579,12 +586,6 @@ shell_config_save(ShellConfig *config, const gchar *path)
 
     json_builder_set_member_name(builder, "osd_height");
     json_builder_add_int_value(builder, config->osd_height > 0 ? config->osd_height : 120);
-
-    json_builder_set_member_name(builder, "toast_timeout_ms");
-    json_builder_add_int_value(builder, config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
-
-    json_builder_set_member_name(builder, "max_notification_history");
-    json_builder_add_int_value(builder, config->max_notification_history > 0 ? config->max_notification_history : 50);
 
     json_builder_set_member_name(builder, "launcher_width");
     json_builder_add_int_value(builder, config->launcher_width > 0 ? config->launcher_width : 640);

@@ -32,6 +32,8 @@ GtkWidget *create_action_button(const char *label, const char *payload_key, cons
 GtkWidget *create_empty_state_label(const char *message);
 
 gboolean settings_send_ipc_command(const gchar *command);
+void     settings_set_global_theme(ShellTheme *theme);
+void     settings_reload_global_theme(void);
 gchar   *format_mac_address_from_bluez_path(const char *path);
 gboolean is_mac_address_string(const char *str);
 

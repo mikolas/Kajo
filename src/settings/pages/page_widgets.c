@@ -130,12 +130,7 @@ on_widget_up_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     GtkWidget *prev = gtk_widget_get_prev_sibling(row);
     if (prev && g_object_get_data(G_OBJECT(prev), "widget-id") != NULL) {
         GtkWidget *prev_prev = gtk_widget_get_prev_sibling(prev);
-        if (prev_prev) {
-            g_object_ref(row);
-            gtk_box_remove(GTK_BOX(parent), row);
-            gtk_box_insert_child_after(GTK_BOX(parent), row, prev_prev);
-            g_object_unref(row);
-        }
+        gtk_box_reorder_child_after(GTK_BOX(parent), row, prev_prev);
     }
 }
 
@@ -148,10 +143,7 @@ on_widget_down_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 
     GtkWidget *next = gtk_widget_get_next_sibling(row);
     if (next) {
-        g_object_ref(row);
-        gtk_box_remove(GTK_BOX(parent), row);
-        gtk_box_insert_child_after(GTK_BOX(parent), row, next);
-        g_object_unref(row);
+        gtk_box_reorder_child_after(GTK_BOX(parent), row, next);
     }
 }
 
@@ -353,6 +345,8 @@ on_apply_widget_layout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
     ShellConfig *config = shell_config_load(NULL);
+    if (!config)
+        config = shell_config_get_default();
 
     GPtrArray *new_left = collect_card_widget_configs(self->card_left, config->layout_left);
     GPtrArray *new_center = collect_card_widget_configs(self->card_center, config->layout_center);
@@ -382,6 +376,8 @@ build_page_widgets(void)
 {
     SettingsPageWidgets *page = g_object_new(settings_page_widgets_get_type(), NULL);
     ShellConfig *config = shell_config_load(NULL);
+    if (!config)
+        config = shell_config_get_default();
 
     /* 1. LEFT PANEL SECTION */
     if (config->layout_left && config->layout_left->len > 0) {

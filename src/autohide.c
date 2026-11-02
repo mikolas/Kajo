@@ -11,15 +11,9 @@ autohide_set_margin(ShellAutohide *self, gint margin)
     if (!window)
         return;
 
+    /* Slide the panel in/out via layer-shell margin while keeping exclusive zone at 0
+     * (overlay mode) so the compositor does not reflow tiled windows during animations. */
     gtk_layer_set_margin(window, self->edge, margin);
-
-    /* NOTE: exclusive zone is NOT updated here per-frame.
-     * Updating it on every frame causes compositor layout reflows (niri
-     * recalculates all window bounds) 60+ times/sec, leading to frame drops.
-     * Instead, exclusive zone is set only at animation boundaries:
-     *   - On reveal START: set to panel_height (so windows reflow once)
-     *   - On hide END: set to 0 (windows reclaim space once)
-     * See shell_autohide_trigger() and the tick callback completion. */
 }
 
 static gint

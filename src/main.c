@@ -1,5 +1,6 @@
 #include "shell.h"
 #include "icons.h"
+#include "hardware/hw_caps.h"
 
 #include <gtk/gtk.h>
 #include <glib-unix.h>
@@ -27,12 +28,14 @@ on_shutdown(GtkApplication *app, gpointer user_data)
 
     if (sigint_id > 0) { g_source_remove(sigint_id); sigint_id = 0; }
     if (sigterm_id > 0) { g_source_remove(sigterm_id); sigterm_id = 0; }
-    shell_icons_cleanup();
 
     if (g_shell_app) {
         shell_app_destroy(g_shell_app);
         g_shell_app = NULL;
     }
+
+    shell_icons_cleanup();
+    shell_hw_caps_cleanup();
 }
 
 static gboolean
@@ -154,6 +157,7 @@ main(int argc, char *argv[])
     if (sigint_id > 0) { g_source_remove(sigint_id); sigint_id = 0; }
     if (sigterm_id > 0) { g_source_remove(sigterm_id); sigterm_id = 0; }
     shell_icons_cleanup();
+    shell_hw_caps_cleanup();
 
     return status;
 }

@@ -182,10 +182,11 @@ register_agent(BluetoothWidget *bt)
     }
 }
 
-static void
+static gboolean
 on_power_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer user_data G_GNUC_UNUSED)
 {
     shell_dbus_bluez_set_powered(state);
+    return FALSE;
 }
 
 static void
@@ -266,6 +267,50 @@ clear_list_box(GtkWidget *list_box)
 }
 
 static void
+update_connected_devices_summary(BluetoothWidget *bt)
+{
+    g_free(bt->connected_device_name);
+    bt->connected_device_name = NULL;
+    bt->connected_count = 0;
+
+    if (!bt->is_powered || !bt->object_manager)
+        return;
+
+    GList *objects = g_dbus_object_manager_get_objects(bt->object_manager);
+    for (GList *l = objects; l != NULL; l = l->next) {
+        GDBusObject *obj = G_DBUS_OBJECT(l->data);
+        GDBusInterface *iface = g_dbus_object_get_interface(obj, BLUEZ_DEVICE_INTERFACE);
+        if (!iface)
+            continue;
+
+        GDBusProxy *dev_proxy = G_DBUS_PROXY(iface);
+        GVariant *conn_v = g_dbus_proxy_get_cached_property(dev_proxy, "Connected");
+        gboolean connected = conn_v ? g_variant_get_boolean(conn_v) : FALSE;
+        if (conn_v)
+            g_variant_unref(conn_v);
+
+        if (connected) {
+            GVariant *alias_v = g_dbus_proxy_get_cached_property(dev_proxy, "Alias");
+            GVariant *name_v = g_dbus_proxy_get_cached_property(dev_proxy, "Name");
+            const char *name = alias_v ? g_variant_get_string(alias_v, NULL)
+                                       : (name_v ? g_variant_get_string(name_v, NULL) : NULL);
+            if (name && !is_mac_address_format(name)) {
+                bt->connected_count++;
+                if (!bt->connected_device_name) {
+                    bt->connected_device_name = g_strdup(name);
+                }
+            }
+            if (alias_v)
+                g_variant_unref(alias_v);
+            if (name_v)
+                g_variant_unref(name_v);
+        }
+        g_object_unref(iface);
+    }
+    g_list_free_full(objects, g_object_unref);
+}
+
+static void
 refresh_devices_list(BluetoothWidget *bt)
 {
     if (bt->object_manager == NULL || bt->paired_list_box == NULL) return;
@@ -293,27 +338,51 @@ refresh_devices_list(BluetoothWidget *bt)
     gtk_widget_set_visible(bt->discovered_section_label, TRUE);
     gtk_widget_set_visible(bt->discovered_list_box, TRUE);
 
-    GPtrArray *devices = shell_dbus_bluez_get_devices();
-    for (guint i = 0; i < devices->len; i++) {
-        ShellBluetoothDevice *dev = g_ptr_array_index(devices, i);
-        if (!dev->name || is_mac_address_format(dev->name)) continue;
+    GList *objects = g_dbus_object_manager_get_objects(bt->object_manager);
+    for (GList *l = objects; l != NULL; l = l->next) {
+        GDBusObject *obj = G_DBUS_OBJECT(l->data);
+        GDBusInterface *iface = g_dbus_object_get_interface(obj, BLUEZ_DEVICE_INTERFACE);
+        if (!iface)
+            continue;
 
-        if (dev->connected) {
+        GDBusProxy *dev_proxy = G_DBUS_PROXY(iface);
+        const char *dev_path = g_dbus_object_get_object_path(obj);
+
+        GVariant *alias_v = g_dbus_proxy_get_cached_property(dev_proxy, "Alias");
+        GVariant *name_v = g_dbus_proxy_get_cached_property(dev_proxy, "Name");
+        GVariant *paired_v = g_dbus_proxy_get_cached_property(dev_proxy, "Paired");
+        GVariant *conn_v = g_dbus_proxy_get_cached_property(dev_proxy, "Connected");
+
+        const char *dev_name = alias_v ? g_variant_get_string(alias_v, NULL)
+                                       : (name_v ? g_variant_get_string(name_v, NULL) : NULL);
+        gboolean dev_paired = paired_v ? g_variant_get_boolean(paired_v) : FALSE;
+        gboolean dev_connected = conn_v ? g_variant_get_boolean(conn_v) : FALSE;
+
+        if (!dev_name || is_mac_address_format(dev_name)) {
+            if (alias_v) g_variant_unref(alias_v);
+            if (name_v) g_variant_unref(name_v);
+            if (paired_v) g_variant_unref(paired_v);
+            if (conn_v) g_variant_unref(conn_v);
+            g_object_unref(iface);
+            continue;
+        }
+
+        if (dev_connected) {
             bt->connected_count++;
             if (!bt->connected_device_name) {
-                bt->connected_device_name = g_strdup(dev->name);
+                bt->connected_device_name = g_strdup(dev_name);
             }
         }
 
-        if (dev->paired) {
+        if (dev_paired) {
             paired_count++;
             GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
             gtk_widget_add_css_class(row_box, "shell-row-item");
-            if (dev->connected) {
+            if (dev_connected) {
                 gtk_widget_add_css_class(row_box, "connected");
             }
 
-            GtkWidget *icon = gtk_image_new_from_icon_name(dev->connected ? "fl-bluetooth-symbolic" : "fl-bluetooth-off-symbolic");
+            GtkWidget *icon = gtk_image_new_from_icon_name(dev_connected ? "fl-bluetooth-symbolic" : "fl-bluetooth-off-symbolic");
             gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
             gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
             gtk_box_append(GTK_BOX(row_box), icon);
@@ -321,29 +390,29 @@ refresh_devices_list(BluetoothWidget *bt)
             GtkWidget *lbl_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
             gtk_widget_set_hexpand(lbl_vbox, TRUE);
 
-            GtkWidget *name_lbl = gtk_label_new(dev->name);
+            GtkWidget *name_lbl = gtk_label_new(dev_name);
             gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0);
             gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
-            gtk_widget_set_tooltip_text(name_lbl, dev->name);
+            gtk_widget_set_tooltip_text(name_lbl, dev_name);
             gtk_widget_set_hexpand(name_lbl, TRUE);
             gtk_box_append(GTK_BOX(lbl_vbox), name_lbl);
 
-            GtkWidget *sub_lbl = gtk_label_new(dev->connected ? "Connected" : "Paired");
+            GtkWidget *sub_lbl = gtk_label_new(dev_connected ? "Connected" : "Paired");
             gtk_label_set_xalign(GTK_LABEL(sub_lbl), 0.0);
             gtk_widget_add_css_class(sub_lbl, "shell-popover-subtitle");
             gtk_box_append(GTK_BOX(lbl_vbox), sub_lbl);
 
             gtk_box_append(GTK_BOX(row_box), lbl_vbox);
 
-            GtkWidget *act_btn = gtk_button_new_with_label(dev->connected ? "Disconnect" : "Connect");
+            GtkWidget *act_btn = gtk_button_new_with_label(dev_connected ? "Disconnect" : "Connect");
             gtk_widget_set_valign(act_btn, GTK_ALIGN_CENTER);
-            if (dev->connected) {
+            if (dev_connected) {
                 gtk_widget_add_css_class(act_btn, "destructive-action");
             }
-            g_object_set_data_full(G_OBJECT(act_btn), "dev-path", g_strdup(dev->path), g_free);
+            g_object_set_data_full(G_OBJECT(act_btn), "dev-path", g_strdup(dev_path), g_free);
             g_object_set_data(G_OBJECT(act_btn), "bt-widget", bt);
             g_signal_connect(act_btn, "clicked",
-                             G_CALLBACK(dev->connected ? on_disconnect_clicked : on_connect_clicked), NULL);
+                             G_CALLBACK(dev_connected ? on_disconnect_clicked : on_connect_clicked), NULL);
             gtk_box_append(GTK_BOX(row_box), act_btn);
             gtk_list_box_append(GTK_LIST_BOX(bt->paired_list_box), row_box);
         } else {
@@ -359,10 +428,10 @@ refresh_devices_list(BluetoothWidget *bt)
             GtkWidget *lbl_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
             gtk_widget_set_hexpand(lbl_vbox, TRUE);
 
-            GtkWidget *name_lbl = gtk_label_new(dev->name);
+            GtkWidget *name_lbl = gtk_label_new(dev_name);
             gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0);
             gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
-            gtk_widget_set_tooltip_text(name_lbl, dev->name);
+            gtk_widget_set_tooltip_text(name_lbl, dev_name);
             gtk_widget_set_hexpand(name_lbl, TRUE);
             gtk_box_append(GTK_BOX(lbl_vbox), name_lbl);
 
@@ -375,14 +444,20 @@ refresh_devices_list(BluetoothWidget *bt)
 
             GtkWidget *act_btn = gtk_button_new_with_label("Pair");
             gtk_widget_set_valign(act_btn, GTK_ALIGN_CENTER);
-            g_object_set_data_full(G_OBJECT(act_btn), "dev-path", g_strdup(dev->path), g_free);
+            g_object_set_data_full(G_OBJECT(act_btn), "dev-path", g_strdup(dev_path), g_free);
             g_object_set_data(G_OBJECT(act_btn), "bt-widget", bt);
             g_signal_connect(act_btn, "clicked", G_CALLBACK(on_pair_clicked), NULL);
             gtk_box_append(GTK_BOX(row_box), act_btn);
             gtk_list_box_append(GTK_LIST_BOX(bt->discovered_list_box), row_box);
         }
+
+        if (alias_v) g_variant_unref(alias_v);
+        if (name_v) g_variant_unref(name_v);
+        if (paired_v) g_variant_unref(paired_v);
+        if (conn_v) g_variant_unref(conn_v);
+        g_object_unref(iface);
     }
-    g_ptr_array_unref(devices);
+    g_list_free_full(objects, g_object_unref);
 
     /* Display Placeholders when empty */
     if (paired_count == 0) {
@@ -412,10 +487,7 @@ on_object_added_or_removed(GDBusObjectManager *manager, GDBusObject *object, gpo
 {
     (void)manager; (void)object;
     BluetoothWidget *bt = user_data;
-    update_bluetooth_ui(bt);
-    if (is_popover_open(bt)) {
-        refresh_devices_list(bt);
-    }
+    refresh_bluetooth_state(bt);
 }
 
 static void
@@ -429,10 +501,7 @@ on_interface_proxy_properties_changed(GDBusObjectManager *manager,
     (void)manager; (void)object_proxy; (void)interface_proxy;
     (void)changed_properties; (void)invalidated_properties;
     BluetoothWidget *bt = user_data;
-    update_bluetooth_ui(bt);
-    if (is_popover_open(bt)) {
-        refresh_devices_list(bt);
-    }
+    refresh_bluetooth_state(bt);
 }
 
 static void
@@ -537,6 +606,8 @@ refresh_bluetooth_state(BluetoothWidget *bt)
 
     if (is_popover_open(bt)) {
         refresh_devices_list(bt);
+    } else {
+        update_connected_devices_summary(bt);
     }
     update_bluetooth_ui(bt);
 }
@@ -618,6 +689,13 @@ typedef struct _ShellBluetoothPopoverClass {
 G_DEFINE_TYPE(ShellBluetoothPopover, shell_bluetooth_popover, GTK_TYPE_POPOVER)
 
 static void
+shell_bluetooth_popover_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_bluetooth_popover_get_type());
+    G_OBJECT_CLASS(shell_bluetooth_popover_parent_class)->dispose(object);
+}
+
+static void
 shell_bluetooth_popover_init(ShellBluetoothPopover *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -626,7 +704,10 @@ shell_bluetooth_popover_init(ShellBluetoothPopover *self)
 static void
 shell_bluetooth_popover_class_init(ShellBluetoothPopoverClass *klass)
 {
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
+
+    object_class->dispose = shell_bluetooth_popover_dispose;
 
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/bluetooth_popover.ui");
@@ -707,6 +788,19 @@ bluetooth_widget_destroy(ShellWidget *widget)
     BluetoothWidget *bt = (BluetoothWidget *)widget;
     if (bt == NULL) return;
 
+    if (bt->popover) {
+        g_signal_handlers_disconnect_by_data(bt->popover, bt);
+        ShellBluetoothPopover *pop = (ShellBluetoothPopover *)bt->popover;
+        if (pop->settings_btn)
+            g_signal_handlers_disconnect_by_data(pop->settings_btn, bt);
+    }
+    if (bt->power_switch)
+        g_signal_handlers_disconnect_by_data(bt->power_switch, bt);
+    if (bt->scan_btn)
+        g_signal_handlers_disconnect_by_data(bt->scan_btn, bt);
+    clear_list_box(bt->paired_list_box);
+    clear_list_box(bt->discovered_list_box);
+
     if (bt->agent_reg_id > 0 && bt->bus != NULL) {
         g_dbus_connection_unregister_object(bt->bus, bt->agent_reg_id);
     }
@@ -738,6 +832,9 @@ bluetooth_widget_enable(ShellWidget *widget)
 {
     BluetoothWidget *bt = (BluetoothWidget *)widget;
     if (bt) {
+        if (bt->icon_img) {
+            gtk_image_set_pixel_size(GTK_IMAGE(bt->icon_img), shell_widget_get_icon_size(widget));
+        }
         shell_widget_apply_mode_visibility(widget->mode, bt->icon_img, bt->label);
     }
 }

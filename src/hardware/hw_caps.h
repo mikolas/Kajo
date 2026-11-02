@@ -41,6 +41,7 @@ typedef struct {
 
 /* Returns a process-wide cached hardware capability descriptor (or re-probes if refresh == TRUE) */
 const ShellHwCaps *shell_hw_caps_get(gboolean refresh);
+void               shell_hw_caps_cleanup(void);
 
 /* Reads the current hinge angle in degrees (0.0 - 360.0). Returns TRUE on success. */
 gboolean           shell_hw_caps_read_hinge_angle_deg(const ShellHwCaps *caps, gdouble *out_deg);
@@ -48,6 +49,9 @@ gboolean           shell_hw_caps_read_hinge_angle_deg(const ShellHwCaps *caps, g
 /* Display backlight percentage helpers (0 - 100) */
 gint               shell_hw_caps_get_display_brightness_pct(const ShellHwCaps *caps);
 gboolean           shell_hw_caps_set_display_brightness_pct(const ShellHwCaps *caps, gint pct);
+
+/* Shared RAPL / hwmon / BAT0 power draw reader in Watts */
+gdouble            shell_hw_caps_read_rapl_watts(void);
 
 #ifdef __cplusplus
 }

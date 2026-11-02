@@ -144,11 +144,19 @@ static void on_lock_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     }
 }
 
-static void on_logout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+static void on_logout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
-    pid_t ppid = getppid();
-    if (ppid > 1)
-        kill(ppid, SIGTERM);
+    PowerWidget *pw = user_data;
+    if (pw && pw->popover) {
+        gtk_popover_popdown(GTK_POPOVER(pw->popover));
+    }
+    GError *err = NULL;
+    if (!g_spawn_command_line_async("niri msg action quit --skip-confirmation", &err)) {
+        if (err) {
+            g_warning("power: failed to run niri quit: %s", err->message);
+            g_clear_error(&err);
+        }
+    }
 }
 
 /* --- Popover opened callback: reset to main view --- */
@@ -200,6 +208,7 @@ static void power_logind_proxy_ready(GObject *source G_GNUC_UNUSED,
         return;
     }
 
+    g_clear_object(&pw->logind_proxy);
     pw->logind_proxy = proxy;
 }
 
@@ -291,6 +300,29 @@ static ShellWidget *power_create(ShellCompositor *compositor G_GNUC_UNUSED)
 static void power_destroy(ShellWidget *widget)
 {
     PowerWidget *pw = (PowerWidget *)widget;
+    if (!pw)
+        return;
+    if (pw->main_box) {
+        for (GtkWidget *child = gtk_widget_get_first_child(pw->main_box);
+             child != NULL;
+             child = gtk_widget_get_next_sibling(child)) {
+            g_signal_handlers_disconnect_by_data(child, pw);
+        }
+    }
+    if (pw->confirm_box) {
+        for (GtkWidget *child = gtk_widget_get_first_child(pw->confirm_box);
+             child != NULL;
+             child = gtk_widget_get_next_sibling(child)) {
+            g_signal_handlers_disconnect_by_data(child, pw);
+            for (GtkWidget *sub = gtk_widget_get_first_child(child);
+                 sub != NULL;
+                 sub = gtk_widget_get_next_sibling(sub)) {
+                g_signal_handlers_disconnect_by_data(sub, pw);
+            }
+        }
+    }
+    if (pw->popover)
+        g_signal_handlers_disconnect_by_data(pw->popover, pw);
     if (pw->cancellable) {
         g_cancellable_cancel(pw->cancellable);
         g_object_unref(pw->cancellable);
@@ -310,10 +342,8 @@ static void power_enable(ShellWidget *widget)
 {
     PowerWidget *pw = (PowerWidget *)widget;
 
-    if (!pw->logind_proxy) {
-        if (!pw->cancellable) {
-            pw->cancellable = g_cancellable_new();
-        }
+    if (!pw->logind_proxy && !pw->cancellable) {
+        pw->cancellable = g_cancellable_new();
         g_dbus_proxy_new_for_bus(G_BUS_TYPE_SYSTEM,
                                  G_DBUS_PROXY_FLAGS_NONE,
                                  NULL,

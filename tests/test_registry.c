@@ -90,6 +90,17 @@ shell_notification_daemon_remove_item(ShellNotificationDaemon *daemon G_GNUC_UNU
 }
 
 void
+shell_notification_daemon_set_dnd(ShellNotificationDaemon *daemon G_GNUC_UNUSED, gboolean dnd G_GNUC_UNUSED)
+{
+}
+
+gboolean
+shell_notification_daemon_get_dnd(ShellNotificationDaemon *daemon G_GNUC_UNUSED)
+{
+    return FALSE;
+}
+
+void
 shell_notification_daemon_on_history_changed(ShellNotificationDaemon    *daemon G_GNUC_UNUSED,
                                              NotificationHistoryCallback cb G_GNUC_UNUSED,
                                              gpointer                    user_data G_GNUC_UNUSED)

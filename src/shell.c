@@ -13,6 +13,7 @@
 #include "lock/screensaver.h"
 #include "lock/idle_manager.h"
 #include "posture/posture_manager.h"
+#include "hardware/hw_caps.h"
 
 static void
 shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPosition position)
@@ -33,6 +34,9 @@ shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPos
         widget->klass = klass;
         widget->app   = self;
         widget->mode  = wc->mode;
+        if (g_strcmp0(wc->id, "custom-script") == 0) {
+            custom_script_widget_configure(widget, wc);
+        }
         klass->enable(widget);
 
         GtkWidget *gtk_widget = klass->get_widget(widget);
@@ -87,6 +91,7 @@ shell_app_activate(ShellApp *self)
     self->notifications = shell_notification_daemon_new();
     shell_notification_daemon_set_app(self->notifications, self);
     shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
+    shell_notification_daemon_set_max_history(self->notifications, self->config->max_notification_history);
 
     /* Create widget registry and compositor */
     self->registry       = shell_widget_registry_new();
@@ -168,6 +173,25 @@ shell_app_destroy(ShellApp *self)
         self->active_widgets = NULL;
     }
 
+    if (self->ipc) {
+        shell_ipc_socket_destroy(self->ipc);
+        self->ipc = NULL;
+    }
+
+    /* Destroy Launcher, Notifications & OSD before compositor */
+    if (self->launcher) {
+        shell_launcher_surface_destroy(self->launcher);
+        self->launcher = NULL;
+    }
+    if (self->notifications) {
+        shell_notification_daemon_destroy(self->notifications);
+        self->notifications = NULL;
+    }
+    if (self->osd) {
+        shell_osd_destroy(self->osd);
+        self->osd = NULL;
+    }
+
     /* Destroy compositor */
     if (self->compositor) {
         shell_compositor_destroy(self->compositor);
@@ -178,24 +202,6 @@ shell_app_destroy(ShellApp *self)
     if (self->registry) {
         shell_widget_registry_destroy(self->registry);
         self->registry = NULL;
-    }
-
-    /* Destroy OSD & Notifications & Launcher */
-    if (self->osd) {
-        shell_osd_destroy(self->osd);
-        self->osd = NULL;
-    }
-    if (self->notifications) {
-        shell_notification_daemon_destroy(self->notifications);
-        self->notifications = NULL;
-    }
-    if (self->launcher) {
-        shell_launcher_surface_destroy(self->launcher);
-        self->launcher = NULL;
-    }
-    if (self->ipc) {
-        shell_ipc_socket_destroy(self->ipc);
-        self->ipc = NULL;
     }
 
     shell_panel_destroy(self->panel);
@@ -240,123 +246,27 @@ shell_app_get_osd(ShellApp *self)
     return self ? self->osd : NULL;
 }
 
-static gchar *
-get_active_session_path(GDBusConnection *bus)
-{
-    GError *error = NULL;
-    GVariant *res = g_dbus_connection_call_sync(
-        bus,
-        "org.freedesktop.login1",
-        "/org/freedesktop/login1/seat/seat0",
-        "org.freedesktop.DBus.Properties",
-        "Get",
-        g_variant_new("(ss)", "org.freedesktop.login1.Seat", "ActiveSession"),
-        G_VARIANT_TYPE("(v)"),
-        G_DBUS_CALL_FLAGS_NONE,
-        1000,
-        NULL,
-        &error);
-
-    if (!res) {
-        if (error) g_clear_error(&error);
-        return g_strdup("/org/freedesktop/login1/session/auto");
-    }
-
-    GVariant *v = NULL;
-    g_variant_get(res, "(v)", &v);
-    g_variant_unref(res);
-
-    if (!v)
-        return g_strdup("/org/freedesktop/login1/session/auto");
-
-    const gchar *session_id = NULL;
-    const gchar *session_path = NULL;
-    g_variant_get(v, "(&s&o)", &session_id, &session_path);
-
-    gchar *path = g_strdup(session_path);
-    g_variant_unref(v);
-
-    if (path && *path)
-        return path;
-    g_free(path);
-    return g_strdup("/org/freedesktop/login1/session/auto");
-}
-
 void
 shell_brightness_change(ShellApp *self, gint delta_percent)
 {
     if (!self) return;
 
-    GDir *dir = g_dir_open("/sys/class/backlight", 0, NULL);
-    if (!dir) return;
-
-    const gchar *raw_dev_name = g_dir_read_name(dir);
-    if (!raw_dev_name) {
-        g_dir_close(dir);
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    if (!caps || !caps->has_display_backlight)
         return;
-    }
-    gchar *device_name = g_strdup(raw_dev_name);
-    g_dir_close(dir);
 
-    gchar *backlight_dir = g_build_filename("/sys/class/backlight", device_name, NULL);
-    gchar *cur_path = g_build_filename(backlight_dir, "actual_brightness", NULL);
-    gchar *max_path = g_build_filename(backlight_dir, "max_brightness", NULL);
-
-    gchar *cur_str = NULL, *max_str = NULL;
-    g_file_get_contents(cur_path, &cur_str, NULL, NULL);
-    g_file_get_contents(max_path, &max_str, NULL, NULL);
-
-    g_free(backlight_dir);
-    g_free(cur_path);
-    g_free(max_path);
-
-    if (!cur_str || !max_str) {
-        g_free(cur_str);
-        g_free(max_str);
-        g_free(device_name);
+    gint cur_pct = shell_hw_caps_get_display_brightness_pct(caps);
+    if (cur_pct < 0)
         return;
-    }
-
-    gint cur_val = atoi(cur_str);
-    gint max_val = atoi(max_str);
-    g_free(cur_str);
-    g_free(max_str);
-
-    if (max_val <= 0) {
-        g_free(device_name);
-        return;
-    }
 
     gint step_pct = ABS(delta_percent);
-    if (step_pct < 1) step_pct = 5;
-    gint step_val = (step_pct * max_val) / 100;
-    if (step_val < 1) step_val = 1;
+    if (step_pct < 1)
+        step_pct = 5;
 
-    gint new_val = (delta_percent > 0) ? (cur_val + step_val) : (cur_val - step_val);
-    if (new_val < 1) new_val = 1;
-    if (new_val > max_val) new_val = max_val;
+    gint new_pct = (delta_percent > 0) ? (cur_pct + step_pct) : (cur_pct - step_pct);
+    new_pct = CLAMP(new_pct, 1, 100);
 
-    gint new_pct = (new_val * 100) / max_val;
-
-    GError *error = NULL;
-    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (bus) {
-        gchar *session_path = get_active_session_path(bus);
-        g_dbus_connection_call(
-            bus,
-            "org.freedesktop.login1",
-            session_path,
-            "org.freedesktop.login1.Session",
-            "SetBrightness",
-            g_variant_new("(ssu)", "backlight", device_name, (guint32)new_val),
-            NULL, G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-        g_free(session_path);
-        g_object_unref(bus);
-    }
-    if (error) g_clear_error(&error);
-    g_free(device_name);
-
-    if (self->osd) {
+    if (shell_hw_caps_set_display_brightness_pct(caps, new_pct) && self->osd) {
         shell_osd_show_brightness(self->osd, new_pct);
     }
 }
@@ -368,7 +278,6 @@ shell_volume_change(ShellApp *self, gint delta_percent)
     for (guint i = 0; i < self->active_widgets->len; i++) {
         ShellWidget *w = g_ptr_array_index(self->active_widgets, i);
         if (w && w->klass && g_strcmp0(w->klass->id, "volume") == 0) {
-            extern void volume_widget_change_volume(ShellWidget *widget, gint delta_percent);
             volume_widget_change_volume(w, delta_percent);
             break;
         }
@@ -382,7 +291,6 @@ shell_volume_toggle_mute(ShellApp *self)
     for (guint i = 0; i < self->active_widgets->len; i++) {
         ShellWidget *w = g_ptr_array_index(self->active_widgets, i);
         if (w && w->klass && g_strcmp0(w->klass->id, "volume") == 0) {
-            extern void volume_widget_toggle_mute(ShellWidget *widget);
             volume_widget_toggle_mute(w);
             break;
         }
@@ -453,6 +361,9 @@ reconcile_section_widgets(ShellApp            *self,
 
         if (reused) {
             reused->mode = wc->mode;
+            if (g_strcmp0(wc->id, "custom-script") == 0) {
+                custom_script_widget_configure(reused, wc);
+            }
             update_reused_widget_mode_visibility(reused);
             GtkWidget *gtk_widget = reused->klass->get_widget(reused);
             if (gtk_widget) {
@@ -469,6 +380,9 @@ reconcile_section_widgets(ShellApp            *self,
             widget->klass = klass;
             widget->app   = self;
             widget->mode  = wc->mode;
+            if (g_strcmp0(wc->id, "custom-script") == 0) {
+                custom_script_widget_configure(widget, wc);
+            }
             klass->enable(widget);
 
             GtkWidget *gtk_widget = klass->get_widget(widget);
@@ -496,6 +410,7 @@ shell_app_reload_config(ShellApp *self)
 
     if (self->notifications) {
         shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
+        shell_notification_daemon_set_max_history(self->notifications, self->config->max_notification_history);
     }
 
     if (self->idle_manager) {
@@ -533,16 +448,24 @@ shell_app_reload_config(ShellApp *self)
     reconcile_section_widgets(self, self->config->layout_center, PANEL_WIDGET_CENTER, old_widgets, new_active);
     reconcile_section_widgets(self, self->config->layout_right, PANEL_WIDGET_RIGHT, old_widgets, new_active);
 
+    /* Disable removed widgets before GTK disposes their widget trees */
+    for (guint i = 0; i < old_widgets->len; i++) {
+        ShellWidget *w = g_ptr_array_index(old_widgets, i);
+        if (w && w->klass && w->klass->disable) {
+            w->klass->disable(w);
+        }
+    }
+
+    g_ptr_array_unref(held_gtk_widgets);
+
     /* Destroy any widgets no longer present in the new layout */
     for (guint i = 0; i < old_widgets->len; i++) {
         ShellWidget *w = g_ptr_array_index(old_widgets, i);
-        if (w && w->klass) {
-            w->klass->disable(w);
+        if (w && w->klass && w->klass->destroy) {
             w->klass->destroy(w);
         }
     }
     g_ptr_array_free(old_widgets, TRUE);
-    g_ptr_array_unref(held_gtk_widgets);
 
     self->active_widgets = new_active;
     g_message("Reloaded shell configuration and reconciled %u active panel widgets", new_active->len);

@@ -43,11 +43,17 @@ GVariant *shell_dbus_call_method_sync(GBusType bus_type,
 
 /* BlueZ Helpers */
 void shell_dbus_bluez_set_powered(gboolean powered);
+gboolean shell_dbus_bluez_get_powered(void);
 gboolean shell_dbus_bluez_device_action(const char *dev_path, const char *action);
+void shell_dbus_bluez_device_action_async(const char *dev_path,
+                                          const char *action,
+                                          GAsyncReadyCallback callback,
+                                          gpointer user_data);
 GPtrArray *shell_dbus_bluez_get_devices(void);
 
 /* NetworkManager Helpers */
 void shell_dbus_nm_set_wireless_enabled(gboolean enabled);
+gboolean shell_dbus_nm_get_wireless_enabled(void);
 GPtrArray *shell_dbus_nm_get_access_points(void);
 
 G_END_DECLS

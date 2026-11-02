@@ -40,6 +40,13 @@ typedef struct _ShellOSDWindowClass {
 G_DEFINE_TYPE(ShellOSDWindow, shell_osd_window, GTK_TYPE_WINDOW)
 
 static void
+shell_osd_window_dispose(GObject *object)
+{
+    gtk_widget_dispose_template(GTK_WIDGET(object), shell_osd_window_get_type());
+    G_OBJECT_CLASS(shell_osd_window_parent_class)->dispose(object);
+}
+
+static void
 shell_osd_window_init(ShellOSDWindow *self)
 {
     gtk_widget_init_template(GTK_WIDGET(self));
@@ -48,6 +55,7 @@ shell_osd_window_init(ShellOSDWindow *self)
 static void
 shell_osd_window_class_init(ShellOSDWindowClass *klass)
 {
+    G_OBJECT_CLASS(klass)->dispose = shell_osd_window_dispose;
     GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
 
     gtk_widget_class_set_template_from_resource(

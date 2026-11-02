@@ -66,6 +66,25 @@ struct _GreeterApp {
 };
 
 static void
+on_greeter_window_destroy(GtkWidget *widget, gpointer user_data)
+{
+    GreeterSurface *surf = user_data;
+    if (surf && surf->window == widget) {
+        surf->window         = NULL;
+        surf->clock_label    = NULL;
+        surf->date_label     = NULL;
+        surf->card           = NULL;
+        surf->realname_label = NULL;
+        surf->username_badge = NULL;
+        surf->combo_user     = NULL;
+        surf->password_entry = NULL;
+        surf->submit_btn     = NULL;
+        surf->combo_session  = NULL;
+        surf->status_label   = NULL;
+    }
+}
+
+static void
 greeter_surface_free(gpointer data)
 {
     GreeterSurface *surf = data;
@@ -74,6 +93,11 @@ greeter_surface_free(gpointer data)
     if (surf->shake_timer_id > 0) {
         g_source_remove(surf->shake_timer_id);
         surf->shake_timer_id = 0;
+    }
+    if (surf->window) {
+        g_signal_handlers_disconnect_by_func(surf->window, on_greeter_window_destroy, surf);
+        gtk_window_destroy(GTK_WINDOW(surf->window));
+        surf->window = NULL;
     }
     g_free(surf);
 }
@@ -584,6 +608,7 @@ build_greeter_surface(GreeterApp *app, GdkMonitor *monitor, gboolean is_primary)
         gtk_window_fullscreen(GTK_WINDOW(win));
     }
 
+    g_signal_connect(win, "destroy", G_CALLBACK(on_greeter_window_destroy), surf);
     g_signal_connect(win, "map", G_CALLBACK(on_window_mapped), surf);
     g_signal_connect(win, "close-request", G_CALLBACK(on_window_close_request), surf);
 
@@ -801,19 +826,50 @@ build_greeter_surface(GreeterApp *app, GdkMonitor *monitor, gboolean is_primary)
 static void
 on_monitors_changed(GListModel *monitors,
                     guint       position,
-                    guint       removed G_GNUC_UNUSED,
+                    guint       removed,
                     guint       added,
                     gpointer    user_data)
 {
     GreeterApp *app = user_data;
-    if (!app || !app->use_layer_shell)
+    if (!app || !app->use_layer_shell || !app->surfaces)
         return;
 
-    for (guint i = 0; i < added; i++) {
-        GdkMonitor *mon = g_list_model_get_item(monitors, position + i);
-        if (mon) {
-            build_greeter_surface(app, mon, (app->surfaces->len == 0));
-            g_object_unref(mon);
+    if (removed > 0 && position < app->surfaces->len) {
+        guint max_rem = app->surfaces->len - position;
+        guint n_rem = MIN(removed, max_rem);
+        g_ptr_array_remove_range(app->surfaces, position, n_rem);
+    }
+
+    gboolean has_primary = FALSE;
+    for (guint i = 0; i < app->surfaces->len; i++) {
+        GreeterSurface *s = g_ptr_array_index(app->surfaces, i);
+        if (s && s->is_primary) {
+            has_primary = TRUE;
+            break;
+        }
+    }
+
+    /* If the primary surface (monitor 0) was removed or displaced, rebuild all
+       surfaces so monitor 0 always hosts the login card and exclusive keyboard focus */
+    if (!has_primary && app->surfaces->len > 0) {
+        g_ptr_array_set_size(app->surfaces, 0);
+        guint n_monitors = monitors ? g_list_model_get_n_items(monitors) : 0;
+        for (guint i = 0; i < n_monitors; i++) {
+            GdkMonitor *mon = g_list_model_get_item(monitors, i);
+            if (mon) {
+                build_greeter_surface(app, mon, (i == 0));
+                g_object_unref(mon);
+            }
+        }
+    } else {
+        for (guint i = 0; i < added; i++) {
+            GdkMonitor *mon = g_list_model_get_item(monitors, position + i);
+            if (mon) {
+                build_greeter_surface(app, mon, !has_primary && (i == 0));
+                if (!has_primary && i == 0)
+                    has_primary = TRUE;
+                g_object_unref(mon);
+            }
         }
     }
     update_greeter_clocks(app);
@@ -944,15 +1000,23 @@ main(int argc, char *argv[])
         app.clock_timer_id = 0;
     }
 
+    GdkDisplay *display = gdk_display_get_default();
+    if (display) {
+        GListModel *monitors = gdk_display_get_monitors(display);
+        if (monitors)
+            g_signal_handlers_disconnect_by_func(monitors, on_monitors_changed, &app);
+    }
+
     g_cancellable_cancel(app.cancellable);
     g_clear_object(&app.cancellable);
     g_clear_object(&app.system_bus);
-    g_clear_object(&app.gtk_app);
     g_ptr_array_free(app.surfaces, TRUE);
+    g_clear_object(&app.gtk_app);
     g_ptr_array_free(app.users, TRUE);
     g_ptr_array_free(app.sessions, TRUE);
     shell_theme_destroy(app.theme);
     shell_config_destroy(app.config);
+    shell_icons_cleanup();
     g_free(opt_default_cmd);
     g_free(opt_default_user);
 
