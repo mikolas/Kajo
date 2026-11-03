@@ -1,6 +1,7 @@
 #include "socket.h"
 #include "../shell.h"
 #include "../launcher/launcher_surface.h"
+#include "../osk/osk.h"
 #include <gio/gunixsocketaddress.h>
 #include <glib/gstdio.h>
 #include <stdio.h>
@@ -145,6 +146,36 @@ reload_theme_idle_cb(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
+static gboolean
+toggle_osk_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app && app->osk) {
+        shell_osk_toggle(app->osk);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+show_osk_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app && app->osk) {
+        shell_osk_show(app->osk, TRUE);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+hide_osk_idle_cb(gpointer user_data)
+{
+    ShellApp *app = user_data;
+    if (app && app->osk) {
+        shell_osk_hide(app->osk);
+    }
+    return G_SOURCE_REMOVE;
+}
+
 static void
 add_idle_command(ShellIPCSocket *ipc, GSourceFunc func)
 {
@@ -203,6 +234,12 @@ ipc_dispatch_line(ShellIPCSocket *ipc, gchar *line)
         add_idle_command(ipc, reload_config_idle_cb);
     } else if (g_strcmp0(line, "reload-theme") == 0 || strstr(line, "\"reload-theme\"") != NULL) {
         add_idle_command(ipc, reload_theme_idle_cb);
+    } else if (g_strcmp0(line, "toggle-osk") == 0 || g_strcmp0(line, "osk-toggle") == 0) {
+        add_idle_command(ipc, toggle_osk_idle_cb);
+    } else if (g_strcmp0(line, "show-osk") == 0 || g_strcmp0(line, "osk-open") == 0) {
+        add_idle_command(ipc, show_osk_idle_cb);
+    } else if (g_strcmp0(line, "hide-osk") == 0 || g_strcmp0(line, "osk-close") == 0) {
+        add_idle_command(ipc, hide_osk_idle_cb);
     }
 }
 

@@ -101,6 +101,10 @@ shell_config_get_default(void)
     config->touch_swipe_right      = g_strdup("control-center");
     config->touch_swipe_horizontal = g_strdup("workspace");
 
+    config->osk_auto_show_mode     = g_strdup("tablet");
+    config->osk_push_windows       = TRUE;
+    config->osk_height_px          = 260;
+
     config->osd_timeout_ms           = 1500;
     config->osd_width                = 200;
     config->osd_height               = 120;
@@ -270,6 +274,31 @@ shell_config_load(const gchar *path)
                 g_free(config->touch_swipe_horizontal);
                 config->touch_swipe_horizontal = g_strdup(json_object_get_string_member(tg, "swipe_horizontal"));
             }
+            if (json_object_has_member(tg, "osk_auto_show_mode")) {
+                g_free(config->osk_auto_show_mode);
+                config->osk_auto_show_mode = g_strdup(json_object_get_string_member(tg, "osk_auto_show_mode"));
+            }
+            if (json_object_has_member(tg, "osk_push_windows")) {
+                config->osk_push_windows = json_object_get_boolean_member(tg, "osk_push_windows");
+            }
+            if (json_object_has_member(tg, "osk_height_px")) {
+                config->osk_height_px = (gint)json_object_get_int_member(tg, "osk_height_px");
+            }
+        }
+    }
+
+    if (json_object_has_member(root, "osk") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "osk"))) {
+        JsonObject *osk = json_object_get_object_member(root, "osk");
+        if (json_object_has_member(osk, "auto_show_mode")) {
+            g_free(config->osk_auto_show_mode);
+            config->osk_auto_show_mode = g_strdup(json_object_get_string_member(osk, "auto_show_mode"));
+        }
+        if (json_object_has_member(osk, "push_windows")) {
+            config->osk_push_windows = json_object_get_boolean_member(osk, "push_windows");
+        }
+        if (json_object_has_member(osk, "height_px")) {
+            config->osk_height_px = (gint)json_object_get_int_member(osk, "height_px");
         }
     }
 
@@ -576,6 +605,12 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_string_value(builder, config->touch_swipe_right ? config->touch_swipe_right : "control-center");
     json_builder_set_member_name(builder, "swipe_horizontal");
     json_builder_add_string_value(builder, config->touch_swipe_horizontal ? config->touch_swipe_horizontal : "workspace");
+    json_builder_set_member_name(builder, "osk_auto_show_mode");
+    json_builder_add_string_value(builder, config->osk_auto_show_mode ? config->osk_auto_show_mode : "tablet");
+    json_builder_set_member_name(builder, "osk_push_windows");
+    json_builder_add_boolean_value(builder, config->osk_push_windows);
+    json_builder_set_member_name(builder, "osk_height_px");
+    json_builder_add_int_value(builder, config->osk_height_px > 0 ? config->osk_height_px : 260);
     json_builder_end_object(builder);
     json_builder_end_object(builder);
 
@@ -706,6 +741,7 @@ shell_config_destroy(ShellConfig *config)
     g_free(config->touch_swipe_center);
     g_free(config->touch_swipe_right);
     g_free(config->touch_swipe_horizontal);
+    g_free(config->osk_auto_show_mode);
     g_free(config->accent_color);
     g_free(config->screensaver_mode);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);

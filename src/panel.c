@@ -4,6 +4,7 @@
 #include "autohide.h"
 #include "widgets/registry.h"
 #include "launcher/launcher_surface.h"
+#include "osk/osk.h"
 #include "compositor/compositor.h"
 
 #include <gtk4-layer-shell.h>
@@ -221,6 +222,8 @@ on_panel_swipe(GtkGestureSwipe *gesture,
             close_all_panel_popovers(panel);
             if (panel->app->launcher)
                 shell_launcher_surface_hide(panel->app->launcher);
+            if (panel->app->osk)
+                shell_osk_hide(panel->app->osk);
             if (panel->autohide && panel->autohide->enabled)
                 shell_autohide_force_hide(panel->autohide);
             gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
@@ -245,6 +248,10 @@ on_panel_swipe(GtkGestureSwipe *gesture,
             } else if (g_strcmp0(right_act, "notifications") == 0) {
                 open_panel_widget_popover_by_id(panel, "notifications");
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            } else if (g_strcmp0(right_act, "osk") == 0) {
+                if (panel->app->osk)
+                    shell_osk_toggle(panel->app->osk);
+                gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
             }
         } else {
             const gchar *center_act = cfg->touch_swipe_center ? cfg->touch_swipe_center : "launcher";
@@ -254,6 +261,10 @@ on_panel_swipe(GtkGestureSwipe *gesture,
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
             } else if (g_strcmp0(center_act, "overview") == 0) {
                 niri_send_action("{\"Action\":{\"ToggleOverview\":{}}}");
+                gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            } else if (g_strcmp0(center_act, "osk") == 0) {
+                if (panel->app->osk)
+                    shell_osk_toggle(panel->app->osk);
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
             }
         }

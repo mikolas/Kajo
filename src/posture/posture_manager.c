@@ -384,3 +384,9 @@ shell_posture_manager_destroy(ShellPostureManager *self)
     g_free(self->last_transform);
     g_free(self);
 }
+
+ShellPostureState
+shell_posture_manager_get_state(ShellPostureManager *self)
+{
+    return self ? self->state : SHELL_POSTURE_UNKNOWN;
+}

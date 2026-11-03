@@ -187,6 +187,69 @@ template $SettingsPagePanel : Box {
       }
     }
 
+    Label {
+      label: "VIRTUAL KEYBOARD (ON-SCREEN KEYBOARD)";
+      halign: start;
+      margin-top: 8;
+
+      styles [
+        "shell-popover-section-title",
+      ]
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Auto-Show Virtual Keyboard:";
+        halign: start;
+      }
+
+      DropDown combo_osk_mode {
+        hexpand: true;
+      }
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Window Layout Behavior:";
+        halign: start;
+      }
+
+      DropDown combo_osk_push {
+        hexpand: true;
+      }
+    }
+
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Virtual Keyboard Height:";
+        halign: start;
+      }
+
+      Scale scale_osk_height {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 180;
+          upper: 420;
+          step-increment: 10;
+        };
+      }
+
+      Label lbl_osk_height_val {
+        label: "260px";
+      }
+    }
+
     /* Action Row */
     Button btn_apply {
       label: "[ APPLY PANEL & TOUCH SETTINGS ]";

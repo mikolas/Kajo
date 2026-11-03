@@ -22,12 +22,14 @@ extern const ShellWidgetClass launcher_widget_class;
 extern const ShellWidgetClass notifications_widget_class;
 extern const ShellWidgetClass control_center_widget_class;
 extern const ShellWidgetClass theme_widget_class;
+extern const ShellWidgetClass osk_widget_class;
 
 static void register_builtin_widgets(ShellWidgetRegistry *registry)
 {
     g_ptr_array_add(registry->classes, (gpointer)&launcher_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&control_center_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&theme_widget_class);
+    g_ptr_array_add(registry->classes, (gpointer)&osk_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&clock_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&workspaces_widget_class);
     g_ptr_array_add(registry->classes, (gpointer)&window_widget_class);

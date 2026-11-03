@@ -49,6 +49,11 @@ struct _ShellConfig {
     gchar          *touch_swipe_right;      /* "control-center", "notifications", "none" */
     gchar          *touch_swipe_horizontal; /* "workspace", "column", "none" */
 
+    /* Virtual Keyboard (On-Screen Keyboard) */
+    gchar          *osk_auto_show_mode;     /* "tablet", "always", "manual" */
+    gboolean        osk_push_windows;
+    gint            osk_height_px;
+
     gint            osd_timeout_ms;
     gint            osd_width;
     gint            osd_height;

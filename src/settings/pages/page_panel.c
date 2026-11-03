@@ -2,18 +2,20 @@
 #include "../settings_pages.h"
 #include <string.h>
 
-static const char *SWIPE_CENTER_IDS[] = { "launcher", "overview", "none" };
+static const char *SWIPE_CENTER_IDS[] = { "launcher", "overview", "osk", "none" };
 static const char *SWIPE_CENTER_LABELS[] = {
     "Open App Launcher (Default)",
     "Toggle Niri Overview",
+    "Toggle Virtual Keyboard",
     "Disabled",
     NULL
 };
 
-static const char *SWIPE_RIGHT_IDS[] = { "control-center", "notifications", "none" };
+static const char *SWIPE_RIGHT_IDS[] = { "control-center", "notifications", "osk", "none" };
 static const char *SWIPE_RIGHT_LABELS[] = {
     "Open Control Center (Default)",
     "Open Notifications Center",
+    "Toggle Virtual Keyboard",
     "Disabled",
     NULL
 };
@@ -23,6 +25,20 @@ static const char *SWIPE_HORIZ_LABELS[] = {
     "Switch Workspace Up / Down (Default)",
     "Switch Window Column Left / Right",
     "Disabled",
+    NULL
+};
+
+static const char *OSK_MODE_IDS[] = { "tablet", "always", "manual" };
+static const char *OSK_MODE_LABELS[] = {
+    "In Tablet Mode Only (Default)",
+    "Always When Text Input Focused",
+    "Manual Toggle Only",
+    NULL
+};
+
+static const char *OSK_PUSH_LABELS[] = {
+    "Push Tiled Windows Up (Exclusive Zone)",
+    "Float Over Windows",
     NULL
 };
 
@@ -44,6 +60,11 @@ typedef struct _SettingsPagePanel {
     GtkWidget *combo_swipe_horiz;
     GtkWidget *scale_touch_dwell;
     GtkWidget *lbl_touch_dwell_val;
+
+    GtkWidget *combo_osk_mode;
+    GtkWidget *combo_osk_push;
+    GtkWidget *scale_osk_height;
+    GtkWidget *lbl_osk_height_val;
 
     GtkWidget *btn_apply;
 } SettingsPagePanel;
@@ -99,6 +120,11 @@ settings_page_panel_class_init(SettingsPagePanelClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_horiz);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_touch_dwell);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_touch_dwell_val);
+
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_osk_mode);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_osk_push);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_osk_height);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_osk_height_val);
 
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, btn_apply);
 }
@@ -255,6 +281,19 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data)
     if (page->scale_touch_dwell)
         config->touch_dwell_ms = (int)gtk_range_get_value(GTK_RANGE(page->scale_touch_dwell));
 
+    if (page->combo_osk_mode) {
+        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_osk_mode));
+        if (idx >= G_N_ELEMENTS(OSK_MODE_IDS)) idx = 0;
+        g_free(config->osk_auto_show_mode);
+        config->osk_auto_show_mode = g_strdup(OSK_MODE_IDS[idx]);
+    }
+
+    if (page->combo_osk_push)
+        config->osk_push_windows = (gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_osk_push)) == 0);
+
+    if (page->scale_osk_height)
+        config->osk_height_px = (int)gtk_range_get_value(GTK_RANGE(page->scale_osk_height));
+
     const gchar *xdg_config = g_get_user_config_dir();
     gchar *dir = g_build_filename(xdg_config, "kajo", NULL);
     g_mkdir_with_parents(dir, 0755);
@@ -348,6 +387,26 @@ build_page_panel(void)
 
     g_signal_connect(page->scale_touch_dwell, "value-changed",
                      G_CALLBACK(on_scale_touch_dwell_changed), page->lbl_touch_dwell_val);
+
+    GtkStringList *osk_mode_list = gtk_string_list_new(OSK_MODE_LABELS);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_osk_mode), G_LIST_MODEL(osk_mode_list));
+    g_object_unref(osk_mode_list);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_osk_mode),
+                               find_id_index(OSK_MODE_IDS, G_N_ELEMENTS(OSK_MODE_IDS), config->osk_auto_show_mode));
+
+    GtkStringList *osk_push_list = gtk_string_list_new(OSK_PUSH_LABELS);
+    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_osk_push), G_LIST_MODEL(osk_push_list));
+    g_object_unref(osk_push_list);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_osk_push), config->osk_push_windows ? 0 : 1);
+
+    gint osk_h = config->osk_height_px >= 180 ? config->osk_height_px : 260;
+    gtk_range_set_value(GTK_RANGE(page->scale_osk_height), osk_h);
+    gchar *osk_h_str = g_strdup_printf("%dpx", osk_h);
+    gtk_label_set_text(GTK_LABEL(page->lbl_osk_height_val), osk_h_str);
+    g_free(osk_h_str);
+
+    g_signal_connect(page->scale_osk_height, "value-changed",
+                     G_CALLBACK(on_scale_height_changed), page->lbl_osk_height_val);
 
     shell_config_destroy(config);
 
