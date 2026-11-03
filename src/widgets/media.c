@@ -58,6 +58,7 @@ typedef struct {
     pa_glib_mainloop *pa_ml;
     pa_context       *pa_ctx;
     pa_stream        *pa_stream_rec;
+    guint             pa_reconnect_timer_id;
     float             live_pcm_buffer[512];
     float             live_pcm_l[512];
     float             live_pcm_r[512];
@@ -585,13 +586,41 @@ media_stream_read_cb(pa_stream *stream, size_t nbytes G_GNUC_UNUSED, void *userd
     pa_stream_drop(stream);
 }
 
+static void media_connect_pa_context(MediaWidget *media);
+
+static gboolean
+media_pa_reconnect_cb(gpointer userdata)
+{
+    MediaWidget *media = userdata;
+    if (!media)
+        return G_SOURCE_REMOVE;
+
+    media->pa_reconnect_timer_id = 0;
+    media_connect_pa_context(media);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+media_schedule_pa_reconnect(MediaWidget *media)
+{
+    if (!media || !media->pa_ml || media->pa_reconnect_timer_id != 0)
+        return;
+
+    media->pa_reconnect_timer_id = g_timeout_add(1000, media_pa_reconnect_cb, media);
+}
+
 static void
 media_pa_context_state_cb(pa_context *ctx, void *userdata)
 {
     MediaWidget *media = userdata;
     if (!media || !ctx) return;
 
-    if (pa_context_get_state(ctx) == PA_CONTEXT_READY) {
+    pa_context_state_t state = pa_context_get_state(ctx);
+    if (state == PA_CONTEXT_READY) {
+        if (media->pa_reconnect_timer_id != 0) {
+            g_source_remove(media->pa_reconnect_timer_id);
+            media->pa_reconnect_timer_id = 0;
+        }
         pa_sample_spec ss = {
             .format = PA_SAMPLE_FLOAT32LE,
             .rate = 44100,
@@ -610,9 +639,51 @@ media_pa_context_state_cb(pa_context *ctx, void *userdata)
                 .fragsize = 512 * 2 * sizeof(float)
             };
 
-            /* Connect stream to default sink's monitor starting CORKED (zero background CPU!) */
-            pa_stream_connect_record(media->pa_stream_rec, "@DEFAULT_MONITOR@", &attr,
-                                     PA_STREAM_PEAK_DETECT | PA_STREAM_ADJUST_LATENCY | PA_STREAM_START_CORKED);
+            gboolean popover_open = media->popover && gtk_widget_get_mapped(media->popover);
+            pa_stream_flags_t flags = PA_STREAM_PEAK_DETECT | PA_STREAM_ADJUST_LATENCY;
+            if (!popover_open)
+                flags |= PA_STREAM_START_CORKED;
+
+            /* Connect stream to default sink's monitor starting CORKED when closed (zero background CPU!) */
+            pa_stream_connect_record(media->pa_stream_rec, "@DEFAULT_MONITOR@", &attr, flags);
+        }
+    } else if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
+        media_schedule_pa_reconnect(media);
+    }
+}
+
+static void
+media_connect_pa_context(MediaWidget *media)
+{
+    if (!media || !media->pa_ml)
+        return;
+
+    if (media->pa_reconnect_timer_id != 0) {
+        g_source_remove(media->pa_reconnect_timer_id);
+        media->pa_reconnect_timer_id = 0;
+    }
+
+    if (media->pa_stream_rec) {
+        pa_stream_set_read_callback(media->pa_stream_rec, NULL, NULL);
+        pa_stream_set_state_callback(media->pa_stream_rec, NULL, NULL);
+        pa_stream_disconnect(media->pa_stream_rec);
+        pa_stream_unref(media->pa_stream_rec);
+        media->pa_stream_rec = NULL;
+    }
+
+    if (media->pa_ctx) {
+        pa_context_set_state_callback(media->pa_ctx, NULL, NULL);
+        pa_context_disconnect(media->pa_ctx);
+        pa_context_unref(media->pa_ctx);
+        media->pa_ctx = NULL;
+    }
+
+    pa_mainloop_api *api = pa_glib_mainloop_get_api(media->pa_ml);
+    media->pa_ctx = pa_context_new(api, "shell-media-spectrum");
+    if (media->pa_ctx) {
+        pa_context_set_state_callback(media->pa_ctx, media_pa_context_state_cb, media);
+        if (pa_context_connect(media->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL) < 0) {
+            media_schedule_pa_reconnect(media);
         }
     }
 }
@@ -624,13 +695,7 @@ init_media_pulseaudio_stream(MediaWidget *media)
 
     media->pa_ml = pa_glib_mainloop_new(NULL);
     if (media->pa_ml) {
-        pa_mainloop_api *api = pa_glib_mainloop_get_api(media->pa_ml);
-        media->pa_ctx = pa_context_new(api, "shell-media-spectrum");
-
-        if (media->pa_ctx) {
-            pa_context_set_state_callback(media->pa_ctx, media_pa_context_state_cb, media);
-            pa_context_connect(media->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL);
-        }
+        media_connect_pa_context(media);
     }
 }
 
@@ -1095,6 +1160,11 @@ media_widget_destroy(ShellWidget *widget)
     if (media->ticker_timer_id != 0) {
         g_source_remove(media->ticker_timer_id);
         media->ticker_timer_id = 0;
+    }
+
+    if (media->pa_reconnect_timer_id != 0) {
+        g_source_remove(media->pa_reconnect_timer_id);
+        media->pa_reconnect_timer_id = 0;
     }
 
     if (media->pa_stream_rec) {

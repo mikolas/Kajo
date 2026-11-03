@@ -32,10 +32,12 @@ typedef struct {
     pa_context *pa_ctx;
     gchar *default_sink_name;
     gchar *default_source_name;
+    guint8 sink_channels;
     guint32 volume_percent;     /* 0..150 */
     gboolean muted;
     gboolean initialized;
     guint sink_query_seq;
+    guint reconnect_timer_id;
 } VolumeWidget;
 
 typedef struct {
@@ -47,6 +49,8 @@ static void volume_query_default_sink(VolumeWidget *vol);
 static void volume_query_sinks(VolumeWidget *vol);
 static void volume_query_sink_inputs(VolumeWidget *vol);
 static void volume_query_default_source(VolumeWidget *vol);
+static void volume_sync_dropdown_selection(VolumeWidget *vol);
+static void volume_connect_pa_context(VolumeWidget *vol);
 static void volume_master_scale_changed(GtkRange *range, gpointer userdata);
 static void on_device_dropdown_selected(GObject *gobject, GParamSpec *pspec, gpointer userdata);
 
@@ -128,6 +132,9 @@ static void volume_sink_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_inf
     if (!vol->default_sink_name || g_strcmp0(info->name, vol->default_sink_name) != 0)
         return;
 
+    if (info->volume.channels > 0)
+        vol->sink_channels = info->volume.channels;
+
     guint32 new_percent = volume_percent_from_cvolume(&info->volume);
     gboolean new_muted = info->mute ? TRUE : FALSE;
     gboolean changed = (vol->volume_percent != new_percent || vol->muted != new_muted);
@@ -181,6 +188,7 @@ static void volume_server_info_cb(pa_context *ctx, const pa_server_info *info,
     }
 
     if (vol->default_sink_name) {
+        volume_sync_dropdown_selection(vol);
         unref_pa_op(pa_context_get_sink_info_by_name(ctx, vol->default_sink_name,
                                                      volume_sink_info_cb, vol));
     }
@@ -198,6 +206,22 @@ static void volume_query_default_sink(VolumeWidget *vol)
 
 /* ─── Output device list (sinks enumeration) ─── */
 
+static void volume_sync_dropdown_selection(VolumeWidget *vol)
+{
+    if (!vol || !vol->device_dropdown || !vol->sink_names || !vol->default_sink_name)
+        return;
+
+    for (guint i = 0; i < vol->sink_names->len; i++) {
+        const char *name = g_ptr_array_index(vol->sink_names, i);
+        if (g_strcmp0(name, vol->default_sink_name) == 0) {
+            g_signal_handlers_block_by_func(vol->device_dropdown, on_device_dropdown_selected, vol);
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(vol->device_dropdown), i);
+            g_signal_handlers_unblock_by_func(vol->device_dropdown, on_device_dropdown_selected, vol);
+            break;
+        }
+    }
+}
+
 static void on_device_dropdown_selected(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer userdata)
 {
     VolumeWidget *vol = userdata;
@@ -212,7 +236,8 @@ static void on_device_dropdown_selected(GObject *gobject, GParamSpec *pspec G_GN
                 g_free(vol->default_sink_name);
                 vol->default_sink_name = g_strdup(sink_name);
                 unref_pa_op(pa_context_set_default_sink(vol->pa_ctx, sink_name, NULL, NULL));
-                volume_query_default_sink(vol);
+                unref_pa_op(pa_context_get_sink_info_by_name(vol->pa_ctx, vol->default_sink_name,
+                                                             volume_sink_info_cb, vol));
             }
         }
     }
@@ -240,6 +265,7 @@ static void volume_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_inf
 
     if (eol != 0) {
         vol->updating_dropdown = FALSE;
+        volume_sync_dropdown_selection(vol);
         if (vol->pending_tags)
             g_ptr_array_remove_fast(vol->pending_tags, tag);
         else
@@ -256,17 +282,14 @@ static void volume_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_inf
             return;
     }
 
-    const char *desc = info->description ? info->description : info->name;
+    const char *desc = (info->description && info->description[0] != '\0') ? info->description : info->name;
     g_ptr_array_add(vol->sink_names, g_strdup(info->name));
     gtk_string_list_append(vol->string_list, desc);
 
     if (vol->default_sink_name && g_strcmp0(info->name, vol->default_sink_name) == 0) {
-        guint idx = vol->sink_names->len - 1;
-        if (vol->device_dropdown) {
-            g_signal_handlers_block_by_func(vol->device_dropdown, on_device_dropdown_selected, vol);
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(vol->device_dropdown), idx);
-            g_signal_handlers_unblock_by_func(vol->device_dropdown, on_device_dropdown_selected, vol);
-        }
+        if (info->volume.channels > 0)
+            vol->sink_channels = info->volume.channels;
+        volume_sync_dropdown_selection(vol);
     }
 }
 
@@ -439,18 +462,46 @@ static void volume_subscription_cb(pa_context *ctx G_GNUC_UNUSED,
 {
     VolumeWidget *vol = userdata;
     unsigned facility = type & PA_SUBSCRIPTION_EVENT_FACILITY_MASK;
+    unsigned ev_type = type & PA_SUBSCRIPTION_EVENT_TYPE_MASK;
 
-    if (facility == PA_SUBSCRIPTION_EVENT_SINK) {
+    if (facility == PA_SUBSCRIPTION_EVENT_SERVER) {
         volume_query_default_sink(vol);
         volume_query_sinks(vol);
+    } else if (facility == PA_SUBSCRIPTION_EVENT_SINK) {
+        volume_query_default_sink(vol);
+        if (ev_type == PA_SUBSCRIPTION_EVENT_NEW ||
+            ev_type == PA_SUBSCRIPTION_EVENT_REMOVE) {
+            volume_query_sinks(vol);
+        }
     } else if (facility == PA_SUBSCRIPTION_EVENT_SINK_INPUT) {
-        volume_query_sink_inputs(vol);
+        if (vol->popover && gtk_widget_get_mapped(vol->popover)) {
+            volume_query_sink_inputs(vol);
+        }
     } else if (facility == PA_SUBSCRIPTION_EVENT_SOURCE) {
         volume_query_default_source(vol);
     }
 }
 
-/* ─── PA context state callback ─── */
+/* ─── PA context state callback & auto-reconnect ─── */
+
+static gboolean volume_pa_reconnect_cb(gpointer userdata)
+{
+    VolumeWidget *vol = userdata;
+    if (!vol)
+        return G_SOURCE_REMOVE;
+
+    vol->reconnect_timer_id = 0;
+    volume_connect_pa_context(vol);
+    return G_SOURCE_REMOVE;
+}
+
+static void volume_schedule_reconnect(VolumeWidget *vol)
+{
+    if (!vol || !vol->pa_ml || vol->reconnect_timer_id != 0)
+        return;
+
+    vol->reconnect_timer_id = g_timeout_add(1000, volume_pa_reconnect_cb, vol);
+}
 
 static void volume_context_state_cb(pa_context *ctx, void *userdata)
 {
@@ -459,24 +510,56 @@ static void volume_context_state_cb(pa_context *ctx, void *userdata)
 
     switch (state) {
     case PA_CONTEXT_READY:
+        if (vol->reconnect_timer_id != 0) {
+            g_source_remove(vol->reconnect_timer_id);
+            vol->reconnect_timer_id = 0;
+        }
         pa_context_set_subscribe_callback(ctx, volume_subscription_cb, vol);
         unref_pa_op(pa_context_subscribe(ctx,
             PA_SUBSCRIPTION_MASK_SINK |
             PA_SUBSCRIPTION_MASK_SINK_INPUT |
-            PA_SUBSCRIPTION_MASK_SOURCE,
+            PA_SUBSCRIPTION_MASK_SOURCE |
+            PA_SUBSCRIPTION_MASK_SERVER,
             NULL, NULL));
         volume_query_default_sink(vol);
         volume_query_sinks(vol);
-        volume_query_sink_inputs(vol);
+        if (vol->popover && gtk_widget_get_mapped(vol->popover)) {
+            volume_query_sink_inputs(vol);
+        }
         break;
     case PA_CONTEXT_FAILED:
     case PA_CONTEXT_TERMINATED:
         gtk_label_set_text(GTK_LABEL(vol->label), "--");
         gtk_image_set_from_icon_name(GTK_IMAGE(vol->icon),
                                      "audio-volume-muted-symbolic");
+        volume_schedule_reconnect(vol);
         break;
     default:
         break;
+    }
+}
+
+static void volume_connect_pa_context(VolumeWidget *vol)
+{
+    if (!vol || !vol->pa_ml)
+        return;
+
+    if (vol->pa_ctx) {
+        pa_context_set_state_callback(vol->pa_ctx, NULL, NULL);
+        pa_context_set_subscribe_callback(vol->pa_ctx, NULL, NULL);
+        pa_context_disconnect(vol->pa_ctx);
+        pa_context_unref(vol->pa_ctx);
+        vol->pa_ctx = NULL;
+    }
+
+    vol->initialized = FALSE;
+    pa_mainloop_api *api = pa_glib_mainloop_get_api(vol->pa_ml);
+    vol->pa_ctx = pa_context_new(api, "shell-volume-widget");
+    if (vol->pa_ctx) {
+        pa_context_set_state_callback(vol->pa_ctx, volume_context_state_cb, vol);
+        if (pa_context_connect(vol->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL) < 0) {
+            volume_schedule_reconnect(vol);
+        }
     }
 }
 
@@ -485,12 +568,13 @@ static void volume_context_state_cb(pa_context *ctx, void *userdata)
 static void volume_set_volume_absolute(VolumeWidget *vol, guint32 percent)
 {
     if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY ||
-        !vol->default_sink_name)
+        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
         return;
 
-    pa_cvolume cv = volume_make_cvolume(percent, 2);
-    unref_pa_op(pa_context_set_sink_volume_by_name(vol->pa_ctx, vol->default_sink_name,
+    const char *sink = vol->default_sink_name ? vol->default_sink_name : "@DEFAULT_SINK@";
+    int channels = vol->sink_channels > 0 ? (int)vol->sink_channels : 2;
+    pa_cvolume cv = volume_make_cvolume(percent, channels);
+    unref_pa_op(pa_context_set_sink_volume_by_name(vol->pa_ctx, sink,
                                                    &cv, NULL, NULL));
 }
 
@@ -528,11 +612,11 @@ static void volume_mute_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer userdata)
     VolumeWidget *vol = userdata;
 
     if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY ||
-        !vol->default_sink_name)
+        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
         return;
 
-    unref_pa_op(pa_context_set_sink_mute_by_name(vol->pa_ctx, vol->default_sink_name,
+    const char *sink = vol->default_sink_name ? vol->default_sink_name : "@DEFAULT_SINK@";
+    unref_pa_op(pa_context_set_sink_mute_by_name(vol->pa_ctx, sink,
                                                  !vol->muted, NULL, NULL));
 }
 
@@ -608,6 +692,17 @@ on_volume_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     shell_spawn_settings("audio", vol ? vol->popover : NULL);
 }
 
+static void
+on_volume_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    VolumeWidget *vol = user_data;
+    if (!vol)
+        return;
+    volume_query_default_sink(vol);
+    volume_query_sinks(vol);
+    volume_query_sink_inputs(vol);
+}
+
 static GtkWidget *volume_build_popover(VolumeWidget *vol)
 {
     ShellVolumePopover *popover = g_object_new(shell_volume_popover_get_type(), NULL);
@@ -634,6 +729,9 @@ static GtkWidget *volume_build_popover(VolumeWidget *vol)
     g_signal_connect(popover->settings_btn, "clicked",
                      G_CALLBACK(on_volume_settings_clicked), vol);
 
+    g_signal_connect(popover, "map",
+                     G_CALLBACK(on_volume_popover_map), vol);
+
     return GTK_WIDGET(popover);
 }
 
@@ -644,6 +742,7 @@ static ShellWidget *volume_create(ShellCompositor *compositor)
     VolumeWidget *vol = g_new0(VolumeWidget, 1);
     vol->base.klass = &volume_widget_class;
     vol->compositor = compositor;
+    vol->sink_channels = 2;
     vol->sink_names = g_ptr_array_new_with_free_func(g_free);
     vol->pending_tags = g_ptr_array_new_with_free_func(g_free);
 
@@ -676,14 +775,7 @@ static ShellWidget *volume_create(ShellCompositor *compositor)
     /* Connect to PulseAudio */
     vol->pa_ml = pa_glib_mainloop_new(NULL);
     if (vol->pa_ml) {
-        pa_mainloop_api *api = pa_glib_mainloop_get_api(vol->pa_ml);
-        vol->pa_ctx = pa_context_new(api, "shell-volume-widget");
-
-        if (vol->pa_ctx) {
-            pa_context_set_state_callback(vol->pa_ctx,
-                                          volume_context_state_cb, vol);
-            pa_context_connect(vol->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL);
-        }
+        volume_connect_pa_context(vol);
     }
 
     return (ShellWidget *)vol;
@@ -695,6 +787,13 @@ static void volume_destroy(ShellWidget *widget)
 
     vol->sink_query_seq++;
 
+    if (vol->reconnect_timer_id != 0) {
+        g_source_remove(vol->reconnect_timer_id);
+        vol->reconnect_timer_id = 0;
+    }
+
+    if (vol->popover)
+        g_signal_handlers_disconnect_by_data(vol->popover, vol);
     if (vol->master_scale)
         g_signal_handlers_disconnect_by_data(vol->master_scale, vol);
     if (vol->device_dropdown)

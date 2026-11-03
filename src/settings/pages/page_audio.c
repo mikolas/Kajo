@@ -29,6 +29,7 @@ typedef struct _SettingsPageAudio {
     GPtrArray        *pending_tags;
     guint             sink_query_seq;
     guint             source_query_seq;
+    guint             reconnect_timer_id;
     gboolean          updating_sinks;
     gboolean          updating_sources;
     gboolean          updating_ui;
@@ -65,6 +66,9 @@ audio_query_tag_free(AudioQueryTag *tag)
 static void audio_query_server_info(SettingsPageAudio *self);
 static void audio_query_sinks(SettingsPageAudio *self);
 static void audio_query_sources(SettingsPageAudio *self);
+static void audio_sync_sink_selection(SettingsPageAudio *self);
+static void audio_sync_source_selection(SettingsPageAudio *self);
+static void audio_connect_pa_context(SettingsPageAudio *self);
 
 static guint32
 audio_cvolume_to_percent(const pa_cvolume *cv)
@@ -118,6 +122,42 @@ audio_source_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source_info *info, 
 }
 
 static void
+audio_sync_sink_selection(SettingsPageAudio *self)
+{
+    if (!self || !self->combo_sink || !self->sink_names || !self->default_sink_name)
+        return;
+
+    for (guint i = 0; i < self->sink_names->len; i++) {
+        const char *name = g_ptr_array_index(self->sink_names, i);
+        if (g_strcmp0(name, self->default_sink_name) == 0) {
+            gboolean prev = self->updating_ui;
+            self->updating_ui = TRUE;
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_sink), i);
+            self->updating_ui = prev;
+            break;
+        }
+    }
+}
+
+static void
+audio_sync_source_selection(SettingsPageAudio *self)
+{
+    if (!self || !self->combo_source || !self->source_names || !self->default_source_name)
+        return;
+
+    for (guint i = 0; i < self->source_names->len; i++) {
+        const char *name = g_ptr_array_index(self->source_names, i);
+        if (g_strcmp0(name, self->default_source_name) == 0) {
+            gboolean prev = self->updating_ui;
+            self->updating_ui = TRUE;
+            gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_source), i);
+            self->updating_ui = prev;
+            break;
+        }
+    }
+}
+
+static void
 audio_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info, int eol, void *userdata)
 {
     AudioQueryTag *tag = userdata;
@@ -143,6 +183,7 @@ audio_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info, int 
 
     if (eol != 0) {
         self->updating_sinks = FALSE;
+        audio_sync_sink_selection(self);
         if (self->pending_tags)
             g_ptr_array_remove_fast(self->pending_tags, tag);
         else
@@ -161,8 +202,9 @@ audio_sink_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info, int 
     gtk_string_list_append(self->sink_string_list, desc);
 
     if (self->default_sink_name && g_strcmp0(info->name, self->default_sink_name) == 0) {
-        guint idx = self->sink_names->len - 1;
-        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_sink), idx);
+        if (info->volume.channels > 0)
+            self->sink_channels = info->volume.channels;
+        audio_sync_sink_selection(self);
     }
 }
 
@@ -192,6 +234,7 @@ audio_source_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source_info *info, 
 
     if (eol != 0) {
         self->updating_sources = FALSE;
+        audio_sync_source_selection(self);
         if (self->pending_tags)
             g_ptr_array_remove_fast(self->pending_tags, tag);
         else
@@ -213,8 +256,9 @@ audio_source_list_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source_info *info, 
     gtk_string_list_append(self->source_string_list, desc);
 
     if (self->default_source_name && g_strcmp0(info->name, self->default_source_name) == 0) {
-        guint idx = self->source_names->len - 1;
-        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_source), idx);
+        if (info->volume.channels > 0)
+            self->source_channels = info->volume.channels;
+        audio_sync_source_selection(self);
     }
 }
 
@@ -227,11 +271,13 @@ audio_server_info_cb(pa_context *ctx, const pa_server_info *info, void *userdata
     if (info->default_sink_name) {
         g_free(self->default_sink_name);
         self->default_sink_name = g_strdup(info->default_sink_name);
+        audio_sync_sink_selection(self);
         unref_pa_op(pa_context_get_sink_info_by_name(ctx, self->default_sink_name, audio_sink_info_cb, self));
     }
     if (info->default_source_name) {
         g_free(self->default_source_name);
         self->default_source_name = g_strdup(info->default_source_name);
+        audio_sync_source_selection(self);
         unref_pa_op(pa_context_get_source_info_by_name(ctx, self->default_source_name, audio_source_info_cb, self));
     }
 }
@@ -332,6 +378,27 @@ audio_subscription_cb(pa_context *ctx G_GNUC_UNUSED, pa_subscription_event_type_
     }
 }
 
+static gboolean
+audio_pa_reconnect_cb(gpointer userdata)
+{
+    SettingsPageAudio *self = userdata;
+    if (!self)
+        return G_SOURCE_REMOVE;
+
+    self->reconnect_timer_id = 0;
+    audio_connect_pa_context(self);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+audio_schedule_pa_reconnect(SettingsPageAudio *self)
+{
+    if (!self || !self->pa_ml || self->reconnect_timer_id != 0)
+        return;
+
+    self->reconnect_timer_id = g_timeout_add(1000, audio_pa_reconnect_cb, self);
+}
+
 static void
 audio_context_state_cb(pa_context *ctx, void *userdata)
 {
@@ -339,6 +406,10 @@ audio_context_state_cb(pa_context *ctx, void *userdata)
     pa_context_state_t state = pa_context_get_state(ctx);
 
     if (state == PA_CONTEXT_READY) {
+        if (self->reconnect_timer_id != 0) {
+            g_source_remove(self->reconnect_timer_id);
+            self->reconnect_timer_id = 0;
+        }
         pa_context_set_subscribe_callback(ctx, audio_subscription_cb, self);
         unref_pa_op(pa_context_subscribe(ctx,
             PA_SUBSCRIPTION_MASK_SINK |
@@ -349,6 +420,32 @@ audio_context_state_cb(pa_context *ctx, void *userdata)
         audio_query_server_info(self);
         audio_query_sinks(self);
         audio_query_sources(self);
+    } else if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
+        audio_schedule_pa_reconnect(self);
+    }
+}
+
+static void
+audio_connect_pa_context(SettingsPageAudio *self)
+{
+    if (!self || !self->pa_ml)
+        return;
+
+    if (self->pa_ctx) {
+        pa_context_set_state_callback(self->pa_ctx, NULL, NULL);
+        pa_context_set_subscribe_callback(self->pa_ctx, NULL, NULL);
+        pa_context_disconnect(self->pa_ctx);
+        pa_context_unref(self->pa_ctx);
+        self->pa_ctx = NULL;
+    }
+
+    pa_mainloop_api *api = pa_glib_mainloop_get_api(self->pa_ml);
+    self->pa_ctx = pa_context_new(api, "kajo-settings");
+    if (self->pa_ctx) {
+        pa_context_set_state_callback(self->pa_ctx, audio_context_state_cb, self);
+        if (pa_context_connect(self->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL) < 0) {
+            audio_schedule_pa_reconnect(self);
+        }
     }
 }
 
@@ -434,6 +531,11 @@ settings_page_audio_dispose(GObject *object)
     self->sink_query_seq++;
     self->source_query_seq++;
 
+    if (self->reconnect_timer_id != 0) {
+        g_source_remove(self->reconnect_timer_id);
+        self->reconnect_timer_id = 0;
+    }
+
     if (self->pa_ctx) {
         pa_context_set_state_callback(self->pa_ctx, NULL, NULL);
         pa_context_set_subscribe_callback(self->pa_ctx, NULL, NULL);
@@ -490,12 +592,7 @@ settings_page_audio_init(SettingsPageAudio *self)
     /* Initialize PulseAudio / PipeWire context via GLib mainloop */
     self->pa_ml = pa_glib_mainloop_new(NULL);
     if (self->pa_ml) {
-        pa_mainloop_api *api = pa_glib_mainloop_get_api(self->pa_ml);
-        self->pa_ctx = pa_context_new(api, "kajo-settings");
-        if (self->pa_ctx) {
-            pa_context_set_state_callback(self->pa_ctx, audio_context_state_cb, self);
-            pa_context_connect(self->pa_ctx, NULL, PA_CONTEXT_NOFLAGS, NULL);
-        }
+        audio_connect_pa_context(self);
     }
 }
 
