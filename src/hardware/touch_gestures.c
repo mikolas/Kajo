@@ -6,8 +6,12 @@
 #include "../autohide.h"
 #include "../compositor/compositor.h"
 #include "../launcher/launcher_surface.h"
+#include "../posture/posture_manager.h"
 #include "../osk/osk.h"
 
+#include <gtk/gtk.h>
+#include <gdk/wayland/gdkwayland.h>
+#include <wayland-client.h>
 #include <glib-unix.h>
 #include <linux/input.h>
 #include <sys/ioctl.h>
@@ -26,6 +30,12 @@ struct _ShellTouchGestures {
     int                fd;
     guint              watch_id;
     ShellTouchTracker  tracker;
+
+    struct wl_display  *wl_display;
+    struct wl_registry *wl_registry;
+    GPtrArray          *wl_outputs;
+    gboolean            has_wl_transform;
+    int32_t             wl_rotation_deg;
 };
 
 void
@@ -41,6 +51,19 @@ shell_touch_tracker_init(ShellTouchTracker *tracker,
     tracker->min_y = min_y;
     tracker->max_y = (max_y > min_y) ? max_y : 2256;
     tracker->res_y = (res_y > 0) ? res_y : 12;
+    tracker->rotation_deg = 0;
+}
+
+void
+shell_touch_tracker_set_rotation(ShellTouchTracker *tracker, int32_t rotation_deg)
+{
+    if (!tracker) return;
+    int32_t norm = ((rotation_deg % 360) + 360) % 360;
+    if (norm == 90 || norm == 180 || norm == 270) {
+        tracker->rotation_deg = norm;
+    } else {
+        tracker->rotation_deg = 0;
+    }
 }
 
 static void
@@ -51,6 +74,57 @@ reanchor_active_slots(ShellTouchTracker *tracker)
             tracker->slots[i].start_x = tracker->slots[i].cur_x;
             tracker->slots[i].start_y = tracker->slots[i].cur_y;
         }
+    }
+}
+
+static void
+transform_delta_mm(int32_t rotation_deg, double raw_dx_mm, double raw_dy_mm,
+                   double *out_dx_mm, double *out_dy_mm)
+{
+    switch (rotation_deg) {
+        case 90:
+            /* WL_OUTPUT_TRANSFORM_90 (left-up): screen X is -raw Y, screen Y is +raw X */
+            *out_dx_mm = -raw_dy_mm;
+            *out_dy_mm =  raw_dx_mm;
+            break;
+        case 180:
+            /* WL_OUTPUT_TRANSFORM_180 (bottom-up): screen X is -raw X, screen Y is -raw Y */
+            *out_dx_mm = -raw_dx_mm;
+            *out_dy_mm = -raw_dy_mm;
+            break;
+        case 270:
+            /* WL_OUTPUT_TRANSFORM_270 (right-up): screen X is +raw Y, screen Y is -raw X */
+            *out_dx_mm =  raw_dy_mm;
+            *out_dy_mm = -raw_dx_mm;
+            break;
+        default:
+            *out_dx_mm = raw_dx_mm;
+            *out_dy_mm = raw_dy_mm;
+            break;
+    }
+}
+
+static void
+transform_norm_point(int32_t rotation_deg, double raw_x_norm, double raw_y_norm,
+                     double *out_x_norm, double *out_y_norm)
+{
+    switch (rotation_deg) {
+        case 90:
+            *out_x_norm = 1.0 - raw_y_norm;
+            *out_y_norm = raw_x_norm;
+            break;
+        case 180:
+            *out_x_norm = 1.0 - raw_x_norm;
+            *out_y_norm = 1.0 - raw_y_norm;
+            break;
+        case 270:
+            *out_x_norm = raw_y_norm;
+            *out_y_norm = 1.0 - raw_x_norm;
+            break;
+        default:
+            *out_x_norm = raw_x_norm;
+            *out_y_norm = raw_y_norm;
+            break;
     }
 }
 
@@ -101,8 +175,8 @@ shell_touch_tracker_feed_event(ShellTouchTracker *tracker,
 
     /* Count active fingers that have valid initial coordinates */
     int active_count = 0;
-    double sum_dx_mm = 0.0;
-    double sum_dy_mm = 0.0;
+    double sum_raw_dx_mm = 0.0;
+    double sum_raw_dy_mm = 0.0;
     int first_active_idx = -1;
 
     for (int i = 0; i < MAX_MT_SLOTS; i++) {
@@ -110,8 +184,8 @@ shell_touch_tracker_feed_event(ShellTouchTracker *tracker,
         if (s->active && s->has_x && s->has_y) {
             if (first_active_idx < 0) first_active_idx = i;
             active_count++;
-            sum_dx_mm += (double)(s->cur_x - s->start_x) / (double)tracker->res_x;
-            sum_dy_mm += (double)(s->cur_y - s->start_y) / (double)tracker->res_y;
+            sum_raw_dx_mm += (double)(s->cur_x - s->start_x) / (double)tracker->res_x;
+            sum_raw_dy_mm += (double)(s->cur_y - s->start_y) / (double)tracker->res_y;
         }
     }
 
@@ -134,8 +208,13 @@ shell_touch_tracker_feed_event(ShellTouchTracker *tracker,
         return TOUCH_GESTURE_NONE;
     }
 
-    double avg_dx_mm = sum_dx_mm / (double)active_count;
-    double avg_dy_mm = sum_dy_mm / (double)active_count;
+    double raw_dx_mm = sum_raw_dx_mm / (double)active_count;
+    double raw_dy_mm = sum_raw_dy_mm / (double)active_count;
+
+    double avg_dx_mm = 0.0;
+    double avg_dy_mm = 0.0;
+    transform_delta_mm(tracker->rotation_deg, raw_dx_mm, raw_dy_mm, &avg_dx_mm, &avg_dy_mm);
+
     double abs_dx = fabs(avg_dx_mm);
     double abs_dy = fabs(avg_dy_mm);
 
@@ -166,8 +245,12 @@ shell_touch_tracker_feed_event(ShellTouchTracker *tracker,
         double height_span = (double)(tracker->max_y - tracker->min_y);
         if (width_span <= 0.0 || height_span <= 0.0) return TOUCH_GESTURE_NONE;
 
-        double start_y_norm = (double)(s->start_y - tracker->min_y) / height_span;
-        double start_x_norm = (double)(s->start_x - tracker->min_x) / width_span;
+        double raw_x_norm = (double)(s->start_x - tracker->min_x) / width_span;
+        double raw_y_norm = (double)(s->start_y - tracker->min_y) / height_span;
+
+        double start_x_norm = 0.0;
+        double start_y_norm = 0.0;
+        transform_norm_point(tracker->rotation_deg, raw_x_norm, raw_y_norm, &start_x_norm, &start_y_norm);
 
         if (!tracker->edge_reveal_triggered && abs_dy > 1.3 * abs_dx && abs_dy >= EDGE_SWIPE_MM) {
             if (start_y_norm <= EDGE_BEZEL_RATIO && avg_dy_mm > 0.0) {
@@ -185,6 +268,103 @@ shell_touch_tracker_feed_event(ShellTouchTracker *tracker,
 
     return TOUCH_GESTURE_NONE;
 }
+
+/* --- Wayland wl_output Transform Listener --- */
+
+static void
+on_output_geometry(void *data,
+                   struct wl_output *wl_output G_GNUC_UNUSED,
+                   int32_t x G_GNUC_UNUSED,
+                   int32_t y G_GNUC_UNUSED,
+                   int32_t physical_width G_GNUC_UNUSED,
+                   int32_t physical_height G_GNUC_UNUSED,
+                   int32_t subpixel G_GNUC_UNUSED,
+                   const char *make G_GNUC_UNUSED,
+                   const char *model G_GNUC_UNUSED,
+                   int32_t transform)
+{
+    ShellTouchGestures *self = data;
+    if (!self) return;
+
+    int32_t deg = 0;
+    switch (transform) {
+        case WL_OUTPUT_TRANSFORM_90:
+        case WL_OUTPUT_TRANSFORM_FLIPPED_90:
+            deg = 90;
+            break;
+        case WL_OUTPUT_TRANSFORM_180:
+        case WL_OUTPUT_TRANSFORM_FLIPPED_180:
+            deg = 180;
+            break;
+        case WL_OUTPUT_TRANSFORM_270:
+        case WL_OUTPUT_TRANSFORM_FLIPPED_270:
+            deg = 270;
+            break;
+        default:
+            deg = 0;
+            break;
+    }
+
+    self->has_wl_transform = TRUE;
+    self->wl_rotation_deg = deg;
+    shell_touch_tracker_set_rotation(&self->tracker, deg);
+}
+
+static void
+on_output_mode(void *data G_GNUC_UNUSED, struct wl_output *wl_output G_GNUC_UNUSED,
+               uint32_t flags G_GNUC_UNUSED, int32_t width G_GNUC_UNUSED,
+               int32_t height G_GNUC_UNUSED, int32_t refresh G_GNUC_UNUSED) {}
+
+static void
+on_output_done(void *data G_GNUC_UNUSED, struct wl_output *wl_output G_GNUC_UNUSED) {}
+
+static void
+on_output_scale(void *data G_GNUC_UNUSED, struct wl_output *wl_output G_GNUC_UNUSED,
+                int32_t factor G_GNUC_UNUSED) {}
+
+static void
+on_output_name(void *data G_GNUC_UNUSED, struct wl_output *wl_output G_GNUC_UNUSED,
+               const char *name G_GNUC_UNUSED) {}
+
+static void
+on_output_description(void *data G_GNUC_UNUSED, struct wl_output *wl_output G_GNUC_UNUSED,
+                      const char *description G_GNUC_UNUSED) {}
+
+static const struct wl_output_listener output_listener = {
+    .geometry    = on_output_geometry,
+    .mode        = on_output_mode,
+    .done        = on_output_done,
+    .scale       = on_output_scale,
+    .name        = on_output_name,
+    .description = on_output_description,
+};
+
+static void
+on_registry_global(void *data, struct wl_registry *registry,
+                   uint32_t name, const char *interface, uint32_t version)
+{
+    ShellTouchGestures *self = data;
+    if (!self || !interface) return;
+
+    if (strcmp(interface, wl_output_interface.name) == 0) {
+        uint32_t bind_ver = version < 4 ? version : 4;
+        struct wl_output *out = wl_registry_bind(registry, name, &wl_output_interface, bind_ver);
+        if (out) {
+            wl_output_add_listener(out, &output_listener, self);
+            g_ptr_array_add(self->wl_outputs, out);
+        }
+    }
+}
+
+static void
+on_registry_global_remove(void *data G_GNUC_UNUSED,
+                          struct wl_registry *registry G_GNUC_UNUSED,
+                          uint32_t name G_GNUC_UNUSED) {}
+
+static const struct wl_registry_listener registry_listener = {
+    .global        = on_registry_global,
+    .global_remove = on_registry_global_remove,
+};
 
 static void
 dispatch_touch_gesture(ShellTouchGestures *self, ShellTouchGestureType gesture)
@@ -238,6 +418,13 @@ on_evdev_readable(gint fd, GIOCondition condition, gpointer user_data)
     if (condition & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
         self->watch_id = 0;
         return G_SOURCE_REMOVE;
+    }
+
+    if (!self->has_wl_transform && self->app && self->app->posture_manager) {
+        shell_touch_tracker_set_rotation(
+            &self->tracker,
+            shell_posture_manager_get_rotation_deg(self->app->posture_manager)
+        );
     }
 
     struct input_event ev[32];
@@ -305,7 +492,21 @@ shell_touch_gestures_new(ShellApp *app)
 {
     ShellTouchGestures *self = g_new0(ShellTouchGestures, 1);
     self->app = app;
+    self->wl_outputs = g_ptr_array_new();
     self->fd = open_direct_touchscreen_evdev(&self->tracker);
+
+    GdkDisplay *display = gdk_display_get_default();
+    if (display && GDK_IS_WAYLAND_DISPLAY(display)) {
+        self->wl_display = gdk_wayland_display_get_wl_display(display);
+        if (self->wl_display) {
+            self->wl_registry = wl_display_get_registry(self->wl_display);
+            if (self->wl_registry) {
+                wl_registry_add_listener(self->wl_registry, &registry_listener, self);
+                wl_display_roundtrip(self->wl_display);
+            }
+        }
+    }
+
     if (self->fd >= 0) {
         self->watch_id = g_unix_fd_add(
             self->fd,
@@ -328,6 +529,18 @@ shell_touch_gestures_destroy(ShellTouchGestures *self)
     if (self->fd >= 0) {
         close(self->fd);
         self->fd = -1;
+    }
+    if (self->wl_outputs) {
+        for (guint i = 0; i < self->wl_outputs->len; i++) {
+            struct wl_output *out = g_ptr_array_index(self->wl_outputs, i);
+            if (out) wl_output_destroy(out);
+        }
+        g_ptr_array_free(self->wl_outputs, TRUE);
+        self->wl_outputs = NULL;
+    }
+    if (self->wl_registry) {
+        wl_registry_destroy(self->wl_registry);
+        self->wl_registry = NULL;
     }
     g_free(self);
 }

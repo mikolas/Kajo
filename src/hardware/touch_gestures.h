@@ -32,6 +32,7 @@ typedef struct {
 typedef struct {
     int32_t        min_x, max_x, res_x;
     int32_t        min_y, max_y, res_y;
+    int32_t        rotation_deg; /* 0, 90, 180, 270 */
     int32_t        current_slot;
     ShellTouchSlot slots[10];
     int32_t        max_fingers_in_gesture;
@@ -43,6 +44,8 @@ typedef struct {
 void                  shell_touch_tracker_init(ShellTouchTracker *tracker,
                                                int32_t min_x, int32_t max_x, int32_t res_x,
                                                int32_t min_y, int32_t max_y, int32_t res_y);
+void                  shell_touch_tracker_set_rotation(ShellTouchTracker *tracker,
+                                                       int32_t rotation_deg);
 ShellTouchGestureType shell_touch_tracker_feed_event(ShellTouchTracker *tracker,
                                                      uint16_t type,
                                                      uint16_t code,

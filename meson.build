@@ -424,7 +424,7 @@ test('osk-xkb', test_osk_xkb_exe)
 test_touch_gestures_exe = executable(
   'test-touch-gestures',
   files('tests/test_touch_gestures.c', 'src/hardware/touch_gestures.c'),
-  dependencies: [layer_shell_dep, gtk4_dep, gio_dep, gio_unix_dep, m_dep],
+  dependencies: [layer_shell_dep, gtk4_dep, gtk4_wayland_dep, wayland_client_dep, gio_dep, gio_unix_dep, m_dep],
   build_by_default: false,
 )
 test('touch-gestures', test_touch_gestures_exe)

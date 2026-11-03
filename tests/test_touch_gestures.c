@@ -3,6 +3,7 @@
 #include "../src/config.h"
 #include "../src/autohide.h"
 #include "../src/compositor/compositor.h"
+#include "../src/posture/posture_manager.h"
 #include <linux/input-event-codes.h>
 #include <glib.h>
 
@@ -20,6 +21,12 @@ niri_send_action(const char *json_action G_GNUC_UNUSED)
 void
 shell_autohide_touch_reveal(ShellAutohide *self G_GNUC_UNUSED, gint dwell_ms G_GNUC_UNUSED)
 {
+}
+
+gint
+shell_posture_manager_get_rotation_deg(ShellPostureManager *self G_GNUC_UNUSED)
+{
+    return 0;
 }
 
 static void
@@ -113,6 +120,53 @@ test_4f_overview_and_1f_edge_swipe(void)
     g_assert_cmpint(shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0), ==, TOUCH_GESTURE_EDGE_BOTTOM_INWARD);
 }
 
+static void
+test_rotated_90_180_270_orientations(void)
+{
+    ShellTouchTracker t;
+    shell_touch_tracker_init(&t, 0, 3600, 12, 0, 2256, 12);
+
+    /* At 90 deg (left-up): screen UP (-screen_dy) corresponds to raw_dx < 0 */
+    shell_touch_tracker_set_rotation(&t, 90);
+    put_finger_down(&t, 0, 1, 1800, 1000);
+    put_finger_down(&t, 1, 2, 1800, 1100);
+    put_finger_down(&t, 2, 3, 1800, 1200);
+    shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0);
+
+    move_finger(&t, 0, 1560, 1000);
+    move_finger(&t, 1, 1560, 1100);
+    move_finger(&t, 2, 1560, 1200);
+    g_assert_cmpint(shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0), ==, TOUCH_GESTURE_3F_SWIPE_UP);
+    for (int i = 0; i < 3; i++) lift_finger(&t, i);
+    shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0);
+
+    /* At 180 deg (bottom-up): screen UP (-screen_dy) corresponds to raw_dy > 0 */
+    shell_touch_tracker_set_rotation(&t, 180);
+    put_finger_down(&t, 0, 4, 1000, 1000);
+    put_finger_down(&t, 1, 5, 1100, 1000);
+    put_finger_down(&t, 2, 6, 1200, 1000);
+    shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0);
+
+    move_finger(&t, 0, 1000, 1240);
+    move_finger(&t, 1, 1100, 1240);
+    move_finger(&t, 2, 1200, 1240);
+    g_assert_cmpint(shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0), ==, TOUCH_GESTURE_3F_SWIPE_UP);
+    for (int i = 0; i < 3; i++) lift_finger(&t, i);
+    shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0);
+
+    /* At 270 deg (right-up): screen UP (-screen_dy) corresponds to raw_dx > 0 */
+    shell_touch_tracker_set_rotation(&t, 270);
+    put_finger_down(&t, 0, 7, 1800, 1000);
+    put_finger_down(&t, 1, 8, 1800, 1100);
+    put_finger_down(&t, 2, 9, 1800, 1200);
+    shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0);
+
+    move_finger(&t, 0, 2040, 1000);
+    move_finger(&t, 1, 2040, 1100);
+    move_finger(&t, 2, 2040, 1200);
+    g_assert_cmpint(shell_touch_tracker_feed_event(&t, EV_SYN, SYN_REPORT, 0), ==, TOUCH_GESTURE_3F_SWIPE_UP);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -120,6 +174,7 @@ main(int argc, char *argv[])
 
     g_test_add_func("/touch-gestures/3f-vertical-and-horizontal", test_3f_vertical_and_horizontal_swipes);
     g_test_add_func("/touch-gestures/4f-overview-and-1f-edge", test_4f_overview_and_1f_edge_swipe);
+    g_test_add_func("/touch-gestures/rotated-90-180-270", test_rotated_90_180_270_orientations);
 
     return g_test_run();
 }
