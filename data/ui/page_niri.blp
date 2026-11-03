@@ -2,8 +2,9 @@ using Gtk 4.0;
 
 template $SettingsPageNiri : Box {
   orientation: vertical;
-  spacing: 12;
+  spacing: 16;
 
+  /* Card 1: Layer Rules & Workspace Gaps */
   Box {
     orientation: vertical;
     spacing: 12;
@@ -11,6 +12,15 @@ template $SettingsPageNiri : Box {
     styles [
       "section-card-left",
     ]
+
+    Label {
+      label: "LAYER SURFACE RULES & GAPS";
+      halign: start;
+
+      styles [
+        "settings-section-title",
+      ]
+    }
 
     /* Target Namespace Selector Row */
     Box {
@@ -89,14 +99,145 @@ template $SettingsPageNiri : Box {
         hexpand: true;
       }
     }
+  }
 
-    /* Apply Button */
-    Button btn_apply {
-      label: "[ SAVE & RELOAD NIRI CONFIG ]";
+  /* Card 2: Window Transition Shaders (GLSL) */
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label {
+      label: "WINDOW TRANSITION SHADERS (GLSL)";
+      halign: start;
 
       styles [
-        "flat",
+        "settings-section-title",
       ]
+    }
+
+    /* Window Open Shader Preset */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Window Open Shader:";
+      }
+
+      DropDown combo_shader_open {
+        hexpand: true;
+      }
+    }
+
+    /* Window Open Duration & Curve */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Open Duration & Curve:";
+      }
+
+      Scale scale_open_dur {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 50;
+          upper: 800;
+          step-increment: 10;
+        };
+      }
+
+      Label lbl_open_dur_val {
+        label: "150ms";
+      }
+
+      DropDown combo_open_curve {
+      }
+    }
+
+    /* Window Close Shader Preset */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Window Close Shader:";
+      }
+
+      DropDown combo_shader_close {
+        hexpand: true;
+      }
+    }
+
+    /* Window Close Duration & Curve */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Close Duration & Curve:";
+      }
+
+      Scale scale_close_dur {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 50;
+          upper: 800;
+          step-increment: 10;
+        };
+      }
+
+      Label lbl_close_dur_val {
+        label: "150ms";
+      }
+
+      DropDown combo_close_curve {
+      }
+    }
+
+    /* Window Resize Shader Preset */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Window Resize Shader:";
+      }
+
+      DropDown combo_shader_resize {
+        hexpand: true;
+      }
+    }
+
+    /* Action Bar */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Button btn_apply {
+        label: "[ SAVE & RELOAD NIRI CONFIG ]";
+        hexpand: true;
+
+        styles [
+          "flat",
+        ]
+      }
+
+      Button btn_test_shader {
+        label: "[ ▶ TEST TRANSITION ]";
+
+        styles [
+          "flat",
+        ]
+      }
     }
   }
 }

@@ -100,9 +100,26 @@ printf '\x02' | sudo dd of=/sys/kernel/debug/ec/ec0/io bs=1 seek=151 count=1 con
   # Output: ish_lnlm_12128606_e4cc03e5.bin.zst
   ```
 - **Installation**:
-  1. Extracted `ishS_SI_5.8.0.7718.bin` (645,632 bytes, FW base `5.8.0.7718`, project `1.0.0.12584`) from the Windows driver store.
-  2. Compressed with `zstd` and installed to `/usr/lib/firmware/intel/ish/ish_lnlm_12128606_e4cc03e5.bin.zst` (SHA-256: `260c35318ff2f07b05c0dae511fb0aa99e07147d30e354d2bf4ea0cfa83233ac`).
-  3. Backed up to `/home/mikolas/ish_lnlm_12128606_e4cc03e5.bin.zst`.
+  1. Extracted `ishS_SI_5.8.0.7718.bin` (645,632 bytes, FW base `5.8.0.7718`, project `1.0.0.12584`) / `ishS_SI_5.8.0.7727.bin` from Windows:
+     - **HP SoftPaq (`C:\SWSetup`) Path**:
+       ```text
+       C:\SWSetup\sp165754\src\Driver\IshHeci\FWImage\0003\ishS_SI_5.8.0.7727.bin
+       ```
+       *(Linux USB/mount path used: `/run/media/mikolas/YUMI/HP/SWSetup/sp165754/src/Driver/IshHeci/FWImage/0003/ishS_SI_5.8.0.7727.bin`)*
+     - **Installed Windows 11 `DriverStore` Path (`IshHeci.inf`)**:
+       ```text
+       C:\Windows\System32\DriverStore\FileRepository\ishheci.inf_amd64_*\FWImage\0003\ishS_SI_5.8.0.7718.bin
+       ```
+  2. Compressed with `zstd` and installed to `/usr/lib/firmware/intel/ish/ish_lnlm_12128606_e4cc03e5.bin.zst` (SHA-256: `260c35318ff2f07b05c0dae511fb0aa99e07147d30e354d2bf4ea0cfa83233ac`):
+     ```bash
+     cd /usr/lib/firmware/intel/ish
+     sudo cp ~/Documents/ishS_SI_5.8.0.7718.bin .
+     sudo zstd ishS_SI_5.8.0.7718.bin
+     sudo rm ishS_SI_5.8.0.7718.bin
+     sudo cp ishS_SI_5.8.0.7718.bin.zst ish_lnlm_12128606_e4cc03e5.bin.zst
+     sudo modprobe -r intel_ish_ipc && sudo modprobe intel_ish_ipc
+     ```
+  3. Backed up to `/home/mikolas/ish_lnlm_12128606_e4cc03e5.bin.zst` (and raw uncompressed binary in `/home/mikolas/Documents/ishS_SI_5.8.0.7718.bin`).
 
 ### 2.2 Enumerated IIO & Input Sensors
 
