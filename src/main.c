@@ -138,6 +138,30 @@ main(int argc, char *argv[])
                     g_printerr("kajo is not running.\n");
                     return 1;
                 }
+            } else if (g_strcmp0(argv[i], "--toggle-osk") == 0 ||
+                       g_strcmp0(argv[i], "toggle-osk") == 0) {
+                if (shell_ipc_send_command("toggle-osk")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
+            } else if (g_strcmp0(argv[i], "--show-osk") == 0 ||
+                       g_strcmp0(argv[i], "show-osk") == 0) {
+                if (shell_ipc_send_command("show-osk")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
+            } else if (g_strcmp0(argv[i], "--hide-osk") == 0 ||
+                       g_strcmp0(argv[i], "hide-osk") == 0) {
+                if (shell_ipc_send_command("hide-osk")) {
+                    return 0;
+                } else {
+                    g_printerr("kajo is not running.\n");
+                    return 1;
+                }
             }
         }
     }

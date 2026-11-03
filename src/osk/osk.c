@@ -599,12 +599,11 @@ static void refresh_all_key_labels(ShellOSK *self) {
                 }
             }
         } else if (kb->kind == OSK_BTN_GLOBE) {
-            g_autofree char *globe_txt = g_strdup_printf("🌐 %s", group_short);
-            gtk_label_set_text(GTK_LABEL(kb->primary_label), globe_txt);
+            gtk_label_set_text(GTK_LABEL(kb->primary_label), group_short);
         } else if (kb->kind == OSK_BTN_MOD_SHIFT) {
             update_mod_button_classes(kb->button, self->mod_shift);
             gtk_label_set_text(GTK_LABEL(kb->primary_label),
-                self->mod_shift == MOD_STATE_LOCKED ? "⇪ Caps" : "⇧ Shift");
+                self->mod_shift == MOD_STATE_LOCKED ? "⇪" : "⇧");
         } else if (kb->kind == OSK_BTN_MOD_CTRL) {
             update_mod_button_classes(kb->button, self->mod_ctrl);
         } else if (kb->kind == OSK_BTN_MOD_ALT) {
@@ -646,31 +645,32 @@ static GtkWidget *create_osk_key(
     }
     if (hexpand_wide) {
         gtk_widget_add_css_class(btn, "osk-key-space");
-        gtk_widget_set_size_request(btn, 180, -1);
     }
 
-    GtkWidget *overlay_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_valign(overlay_box, GTK_ALIGN_FILL);
-    gtk_widget_set_halign(overlay_box, GTK_ALIGN_FILL);
+    GtkWidget *overlay = gtk_overlay_new();
+    gtk_widget_set_hexpand(overlay, TRUE);
+    gtk_widget_set_vexpand(overlay, TRUE);
+
+    const char *init_text = static_label ? static_label : (symbol_utf8 ? symbol_utf8 : "");
+    GtkWidget *lbl = gtk_label_new(init_text);
+    gtk_widget_add_css_class(lbl, "osk-key-label");
+    gtk_widget_set_hexpand(lbl, TRUE);
+    gtk_widget_set_vexpand(lbl, TRUE);
+    gtk_widget_set_halign(lbl, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+    gtk_overlay_set_child(GTK_OVERLAY(overlay), lbl);
 
     if (kind == OSK_BTN_EVDEV && static_label == NULL) {
         GtkWidget *hint = gtk_label_new("");
         gtk_widget_add_css_class(hint, "osk-key-hint");
         gtk_widget_set_halign(hint, GTK_ALIGN_END);
         gtk_widget_set_valign(hint, GTK_ALIGN_START);
-        gtk_box_append(GTK_BOX(overlay_box), hint);
+        gtk_widget_set_can_target(hint, FALSE);
+        gtk_overlay_add_overlay(GTK_OVERLAY(overlay), hint);
         kb->hint_label = hint;
     }
 
-    const char *init_text = static_label ? static_label : (symbol_utf8 ? symbol_utf8 : "");
-    GtkWidget *lbl = gtk_label_new(init_text);
-    gtk_widget_add_css_class(lbl, "osk-key-label");
-    gtk_widget_set_vexpand(lbl, TRUE);
-    gtk_widget_set_halign(lbl, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
-    gtk_box_append(GTK_BOX(overlay_box), lbl);
-
-    gtk_button_set_child(GTK_BUTTON(btn), overlay_box);
+    gtk_button_set_child(GTK_BUTTON(btn), overlay);
 
     GtkGesture *click = gtk_gesture_click_new();
     gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click), 0);
@@ -685,134 +685,144 @@ static GtkWidget *create_osk_key(
     return btn;
 }
 
+static GtkWidget *create_osk_grid(void) {
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_row_homogeneous(GTK_GRID(grid), TRUE);
+    gtk_grid_set_column_homogeneous(GTK_GRID(grid), TRUE);
+    gtk_grid_set_row_spacing(GTK_GRID(grid), 4);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 4);
+    gtk_widget_set_hexpand(grid, TRUE);
+    gtk_widget_set_vexpand(grid, TRUE);
+    return grid;
+}
+
 static GtkWidget *build_alpha_layer(ShellOSK *self) {
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-    gtk_widget_set_hexpand(vbox, TRUE);
-    gtk_widget_set_vexpand(vbox, TRUE);
+    /* 28-column homogeneous grid (1 standard key = 2 columns) modeled after Windows Touch Keyboard */
+    GtkWidget *grid = create_osk_grid();
+    int col = 0;
 
-    /* Row 0: Esc, Tab, Number Row 1..0, +, ´ */
-    GtkWidget *row0 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_set_homogeneous(GTK_BOX(row0), TRUE);
-    gtk_box_append(GTK_BOX(row0), create_osk_key(self, OSK_BTN_EVDEV, 1,  "Esc", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row0), create_osk_key(self, OSK_BTN_EVDEV, 15, "Tab", NULL, FALSE, TRUE, FALSE));
-    for (uint32_t code = 2; code <= 13; code++) {
-        gtk_box_append(GTK_BOX(row0), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE));
+    /* Row 0: Esc (2), 1..0 + (22), Backspace (4) = 28 cols */
+    col = 0;
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
+    col += 2;
+    for (uint32_t code = 2; code <= 12; code++) {
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 0, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(vbox), row0);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE), col, 0, 4, 1);
 
-    /* Row 1: q w e r t y u i o p å/[ (16..26) */
-    GtkWidget *row1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_set_homogeneous(GTK_BOX(row1), TRUE);
+    /* Row 1: Tab (3), q w e r t y u i o p å (22), Del (3) = 28 cols */
+    col = 0;
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 15, "Tab", NULL, FALSE, TRUE, FALSE), col, 1, 3, 1);
+    col += 3;
     for (uint32_t code = 16; code <= 26; code++) {
-        gtk_box_append(GTK_BOX(row1), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 1, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(vbox), row1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE, TRUE, FALSE), col, 1, 3, 1);
 
-    /* Row 2: a s d f g h j k l ö/; ä/' (30..40) */
-    GtkWidget *row2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_set_homogeneous(GTK_BOX(row2), TRUE);
+    /* Row 2: <> (2), a s d f g h j k l ö ä (22), Enter (4) = 28 cols */
+    col = 0;
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 86, NULL, NULL, FALSE, FALSE, FALSE), col, 2, 2, 1);
+    col += 2;
     for (uint32_t code = 30; code <= 40; code++) {
-        gtk_box_append(GTK_BOX(row2), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 2, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(vbox), row2);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 28, "⏎", NULL, FALSE, TRUE, FALSE), col, 2, 4, 1);
 
-    /* Row 3: Shift, <>, z x c v b n m , . -, Backspace */
-    GtkWidget *row3 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_MOD_SHIFT, 0, "⇧ Shift", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 86, NULL, NULL, FALSE, FALSE, FALSE));
+    /* Row 3: Left Shift (4), z x c v b n m , . - (20), Right Shift (4) = 28 cols */
+    col = 0;
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SHIFT, 0, "⇧", NULL, FALSE, TRUE, FALSE), col, 3, 4, 1);
+    col += 4;
     for (uint32_t code = 44; code <= 53; code++) {
-        gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 3, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(vbox), row3);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SHIFT, 0, "⇧", NULL, FALSE, TRUE, FALSE), col, 3, 4, 1);
 
-    /* Row 4: ?123, Ctrl, Super, Alt, Globe, Space, AltGr, Arrows, Enter, Hide */
-    GtkWidget *row4 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_LAYER_SYM, 0, "?123", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_CTRL,  0, "Ctrl", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_SUPER, 0, "Super", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_ALT,   0, "Alt", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_GLOBE,     0, "🌐", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,    57, "Space", NULL, TRUE, FALSE, TRUE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_ALTGR, 0, "AltGr", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,   105, "←", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,   103, "↑", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,   108, "↓", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,   106, "→", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,    28, "⏎", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_HIDE,      0, "⌨↓", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(vbox), row4);
+    /* Row 4: &123 (2), Ctrl (2), Super (2), Alt (2), Globe (2), Space (6), AltGr (2), Arrows (8), Hide (2) = 28 cols */
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_LAYER_SYM, 0, "&123",  NULL, FALSE, TRUE,  FALSE),  0, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_CTRL,  0, "Ctrl",  NULL, FALSE, TRUE,  FALSE),  2, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SUPER, 0, "Super", NULL, FALSE, TRUE,  FALSE),  4, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALT,   0, "Alt",   NULL, FALSE, TRUE,  FALSE),  6, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_GLOBE,     0, "FI",    NULL, FALSE, TRUE,  FALSE),  8, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,    57, "",      NULL, TRUE,  FALSE, TRUE),  10, 4, 6, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALTGR, 0, "AltGr", NULL, FALSE, TRUE,  FALSE), 16, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   105, "←",     NULL, TRUE,  TRUE,  FALSE), 18, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   103, "↑",     NULL, TRUE,  TRUE,  FALSE), 20, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   108, "↓",     NULL, TRUE,  TRUE,  FALSE), 22, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   106, "→",     NULL, TRUE,  TRUE,  FALSE), 24, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_HIDE,      0, "⌨↓",    NULL, FALSE, TRUE,  FALSE), 26, 4, 2, 1);
 
-    return vbox;
+    return grid;
 }
 
 static GtkWidget *build_symbols_layer(ShellOSK *self) {
-    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 5);
-    gtk_widget_set_hexpand(vbox, TRUE);
-    gtk_widget_set_vexpand(vbox, TRUE);
+    GtkWidget *grid = create_osk_grid();
+    int col = 0;
 
-    /* Row 0: Esc, F1..F12, Del */
-    GtkWidget *row0 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_set_homogeneous(GTK_BOX(row0), TRUE);
-    gtk_box_append(GTK_BOX(row0), create_osk_key(self, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE));
+    /* Row 0: Esc (2), F1..F12 (24), Backspace (2) = 28 cols */
+    col = 0;
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
+    col += 2;
     static const struct { uint32_t code; const char *lbl; } fkeys[] = {
         {59, "F1"}, {60, "F2"}, {61, "F3"}, {62, "F4"}, {63, "F5"}, {64, "F6"},
         {65, "F7"}, {66, "F8"}, {67, "F9"}, {68, "F10"}, {87, "F11"}, {88, "F12"}
     };
     for (size_t i = 0; i < G_N_ELEMENTS(fkeys); i++) {
-        gtk_box_append(GTK_BOX(row0), create_osk_key(self, OSK_BTN_EVDEV, fkeys[i].code, fkeys[i].lbl, NULL, FALSE, TRUE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, fkeys[i].code, fkeys[i].lbl, NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(row0), create_osk_key(self, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(vbox), row0);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE), col, 0, 2, 1);
 
-    /* Row 1: Direct one-tap symbols (@ # € $ % & { [ ] } \ |) */
-    GtkWidget *row1 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_set_homogeneous(GTK_BOX(row1), TRUE);
+    /* Row 1: Direct one-tap symbols (@ # € $ % & { [ ] } \ |) (24) + Home (2) + End (2) = 28 cols */
+    col = 0;
     static const char *sym_row1[] = { "@", "#", "€", "$", "%", "&", "{", "[", "]", "}", "\\", "|" };
     for (size_t i = 0; i < G_N_ELEMENTS(sym_row1); i++) {
-        gtk_box_append(GTK_BOX(row1), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row1[i], FALSE, FALSE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row1[i], FALSE, FALSE, FALSE), col, 1, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(vbox), row1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 102, "Home", NULL, FALSE, TRUE, FALSE), 24, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 107, "End",  NULL, FALSE, TRUE, FALSE), 26, 1, 2, 1);
 
-    /* Row 2: Direct one-tap symbols (~ ^ < > ( ) - _ = + * /) */
-    GtkWidget *row2 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_set_homogeneous(GTK_BOX(row2), TRUE);
+    /* Row 2: Direct one-tap symbols (~ ^ < > ( ) - _ = + * /) (24) + PgUp (2) + PgDn (2) = 28 cols */
+    col = 0;
     static const char *sym_row2[] = { "~", "^", "<", ">", "(", ")", "-", "_", "=", "+", "*", "/" };
     for (size_t i = 0; i < G_N_ELEMENTS(sym_row2); i++) {
-        gtk_box_append(GTK_BOX(row2), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row2[i], FALSE, FALSE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row2[i], FALSE, FALSE, FALSE), col, 2, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(vbox), row2);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 104, "PgUp", NULL, FALSE, TRUE, FALSE), 24, 2, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 109, "PgDn", NULL, FALSE, TRUE, FALSE), 26, 2, 2, 1);
 
-    /* Row 3: Direct one-tap punctuation (! ? " ' ` : ; , .) + Home/PgUp/PgDn/End + Backspace */
-    GtkWidget *row3 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
+    /* Row 3: Direct one-tap punctuation (! ? " ' ` : ; , .) + ´ + Ins + Del + Enter (4) = 28 cols */
+    col = 0;
     static const char *sym_row3[] = { "!", "?", "\"", "'", "`", ":", ";", ",", "." };
     for (size_t i = 0; i < G_N_ELEMENTS(sym_row3); i++) {
-        gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row3[i], FALSE, FALSE, FALSE));
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row3[i], FALSE, FALSE, FALSE), col, 3, 2, 1);
+        col += 2;
     }
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 102, "Home", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 104, "PgUp", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 109, "PgDn", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 107, "End",  NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row3), create_osk_key(self, OSK_BTN_EVDEV, 14,  "⌫",    NULL, TRUE,  TRUE, FALSE));
-    gtk_box_append(GTK_BOX(vbox), row3);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 13,  NULL,  NULL, FALSE, FALSE, FALSE), 18, 3, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 110, "Ins", NULL, FALSE, TRUE,  FALSE), 20, 3, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE,  TRUE,  FALSE), 22, 3, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 28,  "⏎",   NULL, FALSE, TRUE,  FALSE), 24, 3, 4, 1);
 
-    /* Row 4: ABC, Ctrl, Super, Alt, Globe, Space, Arrows, Enter, Hide */
-    GtkWidget *row4 = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_LAYER_ALPHA, 0, "ABC", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_CTRL,    0, "Ctrl", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_SUPER,   0, "Super", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_MOD_ALT,     0, "Alt", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_GLOBE,       0, "🌐", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,      57, "Space", NULL, TRUE, FALSE, TRUE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,     105, "←", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,     103, "↑", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,     108, "↓", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,     106, "→", NULL, TRUE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_EVDEV,      28, "⏎", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(row4), create_osk_key(self, OSK_BTN_HIDE,        0, "⌨↓", NULL, FALSE, TRUE, FALSE));
-    gtk_box_append(GTK_BOX(vbox), row4);
+    /* Row 4: ABC (2), Ctrl (2), Super (2), Alt (2), Globe (2), Space (6), AltGr (2), Arrows (8), Hide (2) = 28 cols */
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_LAYER_ALPHA, 0, "ABC",   NULL, FALSE, TRUE,  FALSE),  0, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_CTRL,    0, "Ctrl",  NULL, FALSE, TRUE,  FALSE),  2, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SUPER,   0, "Super", NULL, FALSE, TRUE,  FALSE),  4, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALT,     0, "Alt",   NULL, FALSE, TRUE,  FALSE),  6, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_GLOBE,       0, "FI",    NULL, FALSE, TRUE,  FALSE),  8, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,      57, "",      NULL, TRUE,  FALSE, TRUE),  10, 4, 6, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALTGR,   0, "AltGr", NULL, FALSE, TRUE,  FALSE), 16, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     105, "←",     NULL, TRUE,  TRUE,  FALSE), 18, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     103, "↑",     NULL, TRUE,  TRUE,  FALSE), 20, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     108, "↓",     NULL, TRUE,  TRUE,  FALSE), 22, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     106, "→",     NULL, TRUE,  TRUE,  FALSE), 24, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_HIDE,        0, "⌨↓",    NULL, FALSE, TRUE,  FALSE), 26, 4, 2, 1);
 
-    return vbox;
+    return grid;
 }
 
 static void build_osk_window(ShellOSK *self) {
@@ -835,13 +845,17 @@ static void build_osk_window(ShellOSK *self) {
 
     GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_add_css_class(outer, "osk-container");
-    gtk_widget_set_margin_start(outer, 8);
-    gtk_widget_set_margin_end(outer, 8);
-    gtk_widget_set_margin_top(outer, 6);
-    gtk_widget_set_margin_bottom(outer, 6);
+    gtk_widget_set_hexpand(outer, TRUE);
+    gtk_widget_set_vexpand(outer, TRUE);
+    gtk_widget_set_margin_start(outer, 6);
+    gtk_widget_set_margin_end(outer, 6);
+    gtk_widget_set_margin_top(outer, 5);
+    gtk_widget_set_margin_bottom(outer, 5);
 
     GtkWidget *stack = gtk_stack_new();
     self->layer_stack = GTK_STACK(stack);
+    gtk_widget_set_hexpand(stack, TRUE);
+    gtk_widget_set_vexpand(stack, TRUE);
     gtk_stack_set_transition_type(self->layer_stack, GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(self->layer_stack, 120);
 
