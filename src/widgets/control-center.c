@@ -63,7 +63,9 @@ typedef struct {
     pa_glib_mainloop *pa_ml;
     pa_context   *pa_ctx;
     gchar        *default_sink_name;
+    guint8        sink_channels;
     guint32       volume_percent;
+    guint         pa_reconnect_timer_id;
 
     /* State & D-Bus */
     GCancellable *cancellable;
@@ -128,6 +130,9 @@ cc_sink_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info,
     if (!cc->default_sink_name || g_strcmp0(info->name, cc->default_sink_name) != 0)
         return;
 
+    if (info->volume.channels > 0)
+        cc->sink_channels = info->volume.channels;
+
     guint32 new_percent = cc_percent_from_cvolume(&info->volume);
     cc->volume_percent = new_percent;
 
@@ -166,14 +171,68 @@ cc_context_subscribe_cb(pa_context *ctx, pa_subscription_event_type_t t,
     }
 }
 
+static void cc_connect_pa_context(ControlCenterWidget *cc);
+
+static gboolean
+cc_pa_reconnect_cb(gpointer userdata)
+{
+    ControlCenterWidget *cc = userdata;
+    if (!cc)
+        return G_SOURCE_REMOVE;
+
+    cc->pa_reconnect_timer_id = 0;
+    cc_connect_pa_context(cc);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+cc_schedule_pa_reconnect(ControlCenterWidget *cc)
+{
+    if (!cc || !cc->pa_ml || cc->pa_reconnect_timer_id != 0)
+        return;
+
+    cc->pa_reconnect_timer_id = g_timeout_add(1000, cc_pa_reconnect_cb, cc);
+}
+
 static void
 cc_context_state_cb(pa_context *ctx, void *userdata)
 {
     ControlCenterWidget *cc = userdata;
-    if (pa_context_get_state(ctx) == PA_CONTEXT_READY) {
+    pa_context_state_t state = pa_context_get_state(ctx);
+    if (state == PA_CONTEXT_READY) {
+        if (cc->pa_reconnect_timer_id != 0) {
+            g_source_remove(cc->pa_reconnect_timer_id);
+            cc->pa_reconnect_timer_id = 0;
+        }
         pa_context_set_subscribe_callback(ctx, cc_context_subscribe_cb, cc);
         unref_pa_op(pa_context_subscribe(ctx, PA_SUBSCRIPTION_MASK_SINK | PA_SUBSCRIPTION_MASK_SERVER, NULL, NULL));
         unref_pa_op(pa_context_get_server_info(ctx, cc_server_info_cb, cc));
+    } else if (state == PA_CONTEXT_FAILED || state == PA_CONTEXT_TERMINATED) {
+        cc_schedule_pa_reconnect(cc);
+    }
+}
+
+static void
+cc_connect_pa_context(ControlCenterWidget *cc)
+{
+    if (!cc || !cc->pa_ml)
+        return;
+
+    if (cc->pa_ctx) {
+        pa_context_set_state_callback(cc->pa_ctx, NULL, NULL);
+        pa_context_set_subscribe_callback(cc->pa_ctx, NULL, NULL);
+        pa_context_disconnect(cc->pa_ctx);
+        pa_context_unref(cc->pa_ctx);
+        cc->pa_ctx = NULL;
+    }
+
+    pa_mainloop_api *api = pa_glib_mainloop_get_api(cc->pa_ml);
+    cc->pa_ctx = pa_context_new(api, "shell-control-center");
+    if (cc->pa_ctx) {
+        pa_context_set_state_callback(cc->pa_ctx, cc_context_state_cb, cc);
+        if (pa_context_connect(cc->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL) < 0) {
+            cc_schedule_pa_reconnect(cc);
+        }
     }
 }
 
@@ -275,9 +334,11 @@ on_vol_changed(GtkRange *range, gpointer user_data)
     guint32 percent = (guint32)gtk_range_get_value(range);
     cc->volume_percent = percent;
 
-    if (cc->pa_ctx && pa_context_get_state(cc->pa_ctx) == PA_CONTEXT_READY && cc->default_sink_name) {
-        pa_cvolume cv = cc_make_cvolume(percent, 2);
-        unref_pa_op(pa_context_set_sink_volume_by_name(cc->pa_ctx, cc->default_sink_name, &cv, NULL, NULL));
+    if (cc->pa_ctx && pa_context_get_state(cc->pa_ctx) == PA_CONTEXT_READY) {
+        const char *sink = cc->default_sink_name ? cc->default_sink_name : "@DEFAULT_SINK@";
+        int channels = cc->sink_channels > 0 ? (int)cc->sink_channels : 2;
+        pa_cvolume cv = cc_make_cvolume(percent, channels);
+        unref_pa_op(pa_context_set_sink_volume_by_name(cc->pa_ctx, sink, &cv, NULL, NULL));
     }
 
     gchar buf[32];
@@ -660,6 +721,7 @@ static ShellWidget *
 control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
 {
     ControlCenterWidget *cc = g_new0(ControlCenterWidget, 1);
+    cc->sink_channels = 2;
     cc->wifi_enabled = TRUE;
     cc->bt_enabled = TRUE;
 
@@ -737,12 +799,7 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
     /* Connect PulseAudio C API */
     cc->pa_ml = pa_glib_mainloop_new(NULL);
     if (cc->pa_ml) {
-        pa_mainloop_api *api = pa_glib_mainloop_get_api(cc->pa_ml);
-        cc->pa_ctx = pa_context_new(api, "shell-control-center");
-        if (cc->pa_ctx) {
-            pa_context_set_state_callback(cc->pa_ctx, cc_context_state_cb, cc);
-            pa_context_connect(cc->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL);
-        }
+        cc_connect_pa_context(cc);
     }
 
     cc->cancellable = g_cancellable_new();
@@ -803,6 +860,10 @@ control_center_destroy(ShellWidget *widget)
     if (cc->refresh_timer_id > 0) {
         g_source_remove(cc->refresh_timer_id);
         cc->refresh_timer_id = 0;
+    }
+    if (cc->pa_reconnect_timer_id > 0) {
+        g_source_remove(cc->pa_reconnect_timer_id);
+        cc->pa_reconnect_timer_id = 0;
     }
     if (cc->profiles_proxy) {
         g_signal_handlers_disconnect_by_data(cc->profiles_proxy, cc);
