@@ -99,7 +99,7 @@ shell_config_get_default(void)
     config->touch_dwell_ms         = 4000;
     config->touch_swipe_center     = g_strdup("launcher");
     config->touch_swipe_right      = g_strdup("control-center");
-    config->touch_swipe_horizontal = g_strdup("workspace");
+    config->touch_swipe_horizontal = g_strdup("column");
 
     config->osk_auto_show_mode     = g_strdup("tablet");
     config->osk_push_windows       = TRUE;
@@ -604,7 +604,7 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_set_member_name(builder, "swipe_right");
     json_builder_add_string_value(builder, config->touch_swipe_right ? config->touch_swipe_right : "control-center");
     json_builder_set_member_name(builder, "swipe_horizontal");
-    json_builder_add_string_value(builder, config->touch_swipe_horizontal ? config->touch_swipe_horizontal : "workspace");
+    json_builder_add_string_value(builder, config->touch_swipe_horizontal ? config->touch_swipe_horizontal : "column");
     json_builder_set_member_name(builder, "osk_auto_show_mode");
     json_builder_add_string_value(builder, config->osk_auto_show_mode ? config->osk_auto_show_mode : "tablet");
     json_builder_set_member_name(builder, "osk_push_windows");

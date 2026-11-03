@@ -20,7 +20,7 @@ test_config_defaults(void)
     g_assert_cmpint(cfg->touch_dwell_ms, ==, 4000);
     g_assert_cmpstr(cfg->touch_swipe_center, ==, "launcher");
     g_assert_cmpstr(cfg->touch_swipe_right, ==, "control-center");
-    g_assert_cmpstr(cfg->touch_swipe_horizontal, ==, "workspace");
+    g_assert_cmpstr(cfg->touch_swipe_horizontal, ==, "column");
     g_assert_cmpstr(cfg->osk_auto_show_mode, ==, "tablet");
     g_assert_true(cfg->osk_push_windows);
     g_assert_cmpint(cfg->osk_height_px, ==, 260);
@@ -75,7 +75,7 @@ test_config_save_and_load_roundtrip(void)
     g_free(orig->touch_swipe_right);
     orig->touch_swipe_right = g_strdup("notifications");
     g_free(orig->touch_swipe_horizontal);
-    orig->touch_swipe_horizontal = g_strdup("column");
+    orig->touch_swipe_horizontal = g_strdup("workspace");
     g_free(orig->osk_auto_show_mode);
     orig->osk_auto_show_mode = g_strdup("always");
     orig->osk_push_windows = FALSE;
@@ -141,7 +141,7 @@ test_config_save_and_load_roundtrip(void)
     g_assert_cmpint(loaded->touch_dwell_ms, ==, 5500);
     g_assert_cmpstr(loaded->touch_swipe_center, ==, "overview");
     g_assert_cmpstr(loaded->touch_swipe_right, ==, "notifications");
-    g_assert_cmpstr(loaded->touch_swipe_horizontal, ==, "column");
+    g_assert_cmpstr(loaded->touch_swipe_horizontal, ==, "workspace");
     g_assert_cmpstr(loaded->osk_auto_show_mode, ==, "always");
     g_assert_false(loaded->osk_push_windows);
     g_assert_cmpint(loaded->osk_height_px, ==, 310);

@@ -15,6 +15,7 @@
 #include "posture/posture_manager.h"
 #include "osk/osk.h"
 #include "hardware/hw_caps.h"
+#include "hardware/touch_gestures.h"
 
 static void
 shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPosition position)
@@ -106,6 +107,7 @@ shell_app_activate(ShellApp *self)
     self->idle_manager    = shell_idle_manager_new(self);
     self->posture_manager = shell_posture_manager_new(self);
     self->osk             = shell_osk_new(self);
+    self->touch_gestures  = shell_touch_gestures_new(self);
     self->ipc             = shell_ipc_socket_new(self);
 
     /* Instantiate widgets from config layout */
@@ -143,6 +145,11 @@ shell_app_destroy(ShellApp *self)
 {
     if (!self)
         return;
+
+    if (self->touch_gestures) {
+        shell_touch_gestures_destroy(self->touch_gestures);
+        self->touch_gestures = NULL;
+    }
 
     if (self->osk) {
         shell_osk_destroy(self->osk);

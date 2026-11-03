@@ -20,10 +20,10 @@ static const char *SWIPE_RIGHT_LABELS[] = {
     NULL
 };
 
-static const char *SWIPE_HORIZ_IDS[] = { "workspace", "column", "none" };
+static const char *SWIPE_HORIZ_IDS[] = { "column", "workspace", "none" };
 static const char *SWIPE_HORIZ_LABELS[] = {
-    "Switch Workspace Up / Down (Default)",
-    "Switch Window Column Left / Right",
+    "Switch Window Column Left / Right (Default)",
+    "Switch Workspace Up / Down",
     "Disabled",
     NULL
 };

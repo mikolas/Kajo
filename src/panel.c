@@ -190,9 +190,9 @@ on_panel_swipe(GtkGestureSwipe *gesture,
     gdouble abs_vx = fabs(vx);
     gdouble abs_vy = fabs(vy);
 
-    /* Horizontal Swipe across the panel (Workspace or Column switch) */
+    /* Horizontal Swipe across the panel (Column or Workspace switch) */
     if (abs_vx > 1.35 * abs_vy && abs_vx >= 200.0) {
-        const gchar *horiz_mode = cfg->touch_swipe_horizontal ? cfg->touch_swipe_horizontal : "workspace";
+        const gchar *horiz_mode = cfg->touch_swipe_horizontal ? cfg->touch_swipe_horizontal : "column";
         if (g_strcmp0(horiz_mode, "workspace") == 0) {
             if (vx < 0.0)
                 niri_send_action("{\"Action\":{\"FocusWorkspaceDown\":{}}}");

@@ -127,6 +127,7 @@ sources = files(
   'src/lock/idle_manager.c',
   'src/hardware/hw_caps.c',
   'src/hardware/kbd_backlight.c',
+  'src/hardware/touch_gestures.c',
   'src/posture/posture_manager.c',
   'src/vendor/tinyexpr/tinyexpr.c',
   'src/ipc/socket.c',
@@ -419,6 +420,14 @@ test_osk_xkb_exe = executable(
   build_by_default: false,
 )
 test('osk-xkb', test_osk_xkb_exe)
+
+test_touch_gestures_exe = executable(
+  'test-touch-gestures',
+  files('tests/test_touch_gestures.c', 'src/hardware/touch_gestures.c'),
+  dependencies: [layer_shell_dep, gtk4_dep, gio_dep, gio_unix_dep, m_dep],
+  build_by_default: false,
+)
+test('touch-gestures', test_touch_gestures_exe)
 
 egl_dep = dependency('egl', required: false)
 glesv2_dep = dependency('glesv2', required: false)

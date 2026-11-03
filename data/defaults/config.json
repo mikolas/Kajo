@@ -10,7 +10,7 @@
       "dwell_ms": 4000,
       "swipe_center": "launcher",
       "swipe_right": "control-center",
-      "swipe_horizontal": "workspace",
+      "swipe_horizontal": "column",
       "osk_auto_show_mode": "tablet",
       "osk_push_windows": true,
       "osk_height_px": 260
