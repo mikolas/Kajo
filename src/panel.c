@@ -2,8 +2,13 @@
 #include "shell.h"
 #include "config.h"
 #include "autohide.h"
+#include "widgets/registry.h"
+#include "launcher/launcher_surface.h"
+#include "compositor/compositor.h"
 
 #include <gtk4-layer-shell.h>
+#include <math.h>
+#include <string.h>
 
 static gboolean
 is_event_on_panel_surface(GtkEventControllerMotion *controller, ShellPanel *panel)
@@ -67,6 +72,192 @@ on_panel_leave(GtkEventControllerMotion *controller,
     ShellPanel *panel = user_data;
     if (panel && panel->autohide)
         shell_autohide_leave(panel->autohide);
+}
+
+static GtkMenuButton *
+find_menu_button_recursive(GtkWidget *widget)
+{
+    if (!widget)
+        return NULL;
+    if (GTK_IS_MENU_BUTTON(widget))
+        return GTK_MENU_BUTTON(widget);
+
+    for (GtkWidget *child = gtk_widget_get_first_child(widget);
+         child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        GtkMenuButton *found = find_menu_button_recursive(child);
+        if (found)
+            return found;
+    }
+    return NULL;
+}
+
+static gboolean
+open_panel_widget_popover_by_id(ShellPanel *panel, const gchar *widget_id)
+{
+    if (!panel || !panel->app || !panel->app->active_widgets || !widget_id)
+        return FALSE;
+
+    for (guint i = 0; i < panel->app->active_widgets->len; i++) {
+        ShellWidget *w = g_ptr_array_index(panel->app->active_widgets, i);
+        if (!w || !w->klass || g_strcmp0(w->klass->id, widget_id) != 0)
+            continue;
+
+        GtkWidget *root = w->klass->get_widget(w);
+        GtkMenuButton *mb = find_menu_button_recursive(root);
+        if (mb) {
+            GtkPopover *pop = gtk_menu_button_get_popover(mb);
+            if (pop) {
+                gtk_popover_popup(pop);
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
+static void
+close_popovers_recursive(GtkWidget *widget)
+{
+    if (!widget)
+        return;
+
+    if (GTK_IS_MENU_BUTTON(widget)) {
+        GtkPopover *pop = gtk_menu_button_get_popover(GTK_MENU_BUTTON(widget));
+        if (pop && gtk_widget_get_visible(GTK_WIDGET(pop))) {
+            gtk_popover_popdown(pop);
+        }
+    }
+
+    for (GtkWidget *child = gtk_widget_get_first_child(widget);
+         child != NULL;
+         child = gtk_widget_get_next_sibling(child)) {
+        close_popovers_recursive(child);
+    }
+}
+
+static void
+close_all_panel_popovers(ShellPanel *panel)
+{
+    if (!panel || !panel->container)
+        return;
+    close_popovers_recursive(panel->container);
+}
+
+static void
+on_panel_swipe_begin(GtkGesture       *gesture,
+                     GdkEventSequence *sequence,
+                     gpointer          user_data)
+{
+    ShellPanel *panel = (ShellPanel *)user_data;
+    if (!panel || !panel->app)
+        return;
+
+    ShellConfig *cfg = shell_app_get_config(panel->app);
+    if (!cfg || !cfg->touch_gestures_enabled)
+        return;
+
+    gdouble sx = 0.0, sy = 0.0;
+    if (gtk_gesture_get_point(gesture, sequence, &sx, &sy)) {
+        panel->swipe_start_x = sx;
+    }
+
+    panel->swipe_started_while_hidden = FALSE;
+    if (panel->autohide && panel->autohide->enabled) {
+        if (panel->autohide->state == AUTOHIDE_HIDDEN ||
+            panel->autohide->state == AUTOHIDE_HIDING) {
+            panel->swipe_started_while_hidden = TRUE;
+        }
+        shell_autohide_touch_reveal(panel->autohide, cfg->touch_dwell_ms);
+    }
+}
+
+static void
+on_panel_swipe(GtkGestureSwipe *gesture,
+               gdouble          vx,
+               gdouble          vy,
+               gpointer         user_data)
+{
+    ShellPanel *panel = (ShellPanel *)user_data;
+    if (!panel || !panel->app)
+        return;
+
+    ShellConfig *cfg = shell_app_get_config(panel->app);
+    if (!cfg || !cfg->touch_gestures_enabled)
+        return;
+
+    gdouble abs_vx = fabs(vx);
+    gdouble abs_vy = fabs(vy);
+
+    /* Horizontal Swipe across the panel (Workspace or Column switch) */
+    if (abs_vx > 1.35 * abs_vy && abs_vx >= 200.0) {
+        const gchar *horiz_mode = cfg->touch_swipe_horizontal ? cfg->touch_swipe_horizontal : "workspace";
+        if (g_strcmp0(horiz_mode, "workspace") == 0) {
+            if (vx < 0.0)
+                niri_send_action("{\"Action\":{\"FocusWorkspaceDown\":{}}}");
+            else
+                niri_send_action("{\"Action\":{\"FocusWorkspaceUp\":{}}}");
+            gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+        } else if (g_strcmp0(horiz_mode, "column") == 0) {
+            if (vx < 0.0)
+                niri_send_action("{\"Action\":{\"FocusColumnRight\":{}}}");
+            else
+                niri_send_action("{\"Action\":{\"FocusColumnLeft\":{}}}");
+            gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+        }
+
+        if (panel->autohide && panel->autohide->enabled)
+            shell_autohide_touch_reveal(panel->autohide, cfg->touch_dwell_ms);
+        return;
+    }
+
+    /* Vertical Swipe on the panel (Inward reveal/open vs Outward dismiss/hide) */
+    if (abs_vy > 1.2 * abs_vx && abs_vy >= 180.0) {
+        gboolean is_bottom = (cfg->panel_position == PANEL_POSITION_BOTTOM);
+        gboolean inward  = is_bottom ? (vy < 0.0) : (vy > 0.0);
+        gboolean outward = !inward;
+
+        if (outward) {
+            close_all_panel_popovers(panel);
+            if (panel->app->launcher)
+                shell_launcher_surface_hide(panel->app->launcher);
+            if (panel->autohide && panel->autohide->enabled)
+                shell_autohide_force_hide(panel->autohide);
+            gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            return;
+        }
+
+        /* If the panel was hidden and the user did a gentle edge swipe, just reveal the panel */
+        if (panel->swipe_started_while_hidden && abs_vy < 750.0) {
+            gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            return;
+        }
+
+        int width = panel->window ? gtk_widget_get_width(GTK_WIDGET(panel->window)) : 0;
+        gboolean is_right_zone = (width > 0 && panel->swipe_start_x >= (gdouble)width * 0.66);
+
+        if (is_right_zone) {
+            const gchar *right_act = cfg->touch_swipe_right ? cfg->touch_swipe_right : "control-center";
+            if (g_strcmp0(right_act, "control-center") == 0) {
+                if (!open_panel_widget_popover_by_id(panel, "control-center"))
+                    open_panel_widget_popover_by_id(panel, "notifications");
+                gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            } else if (g_strcmp0(right_act, "notifications") == 0) {
+                open_panel_widget_popover_by_id(panel, "notifications");
+                gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            }
+        } else {
+            const gchar *center_act = cfg->touch_swipe_center ? cfg->touch_swipe_center : "launcher";
+            if (g_strcmp0(center_act, "launcher") == 0) {
+                if (panel->app->launcher)
+                    shell_launcher_surface_toggle(panel->app->launcher);
+                gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            } else if (g_strcmp0(center_act, "overview") == 0) {
+                niri_send_action("{\"Action\":{\"ToggleOverview\":{}}}");
+                gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+            }
+        }
+    }
 }
 
 static GtkLayerShellLayer
@@ -147,6 +338,13 @@ shell_panel_new(ShellApp *app)
     g_signal_connect(motion, "motion", G_CALLBACK(on_panel_motion), panel);
     g_signal_connect(motion, "leave", G_CALLBACK(on_panel_leave), panel);
     gtk_widget_add_controller(GTK_WIDGET(panel->window), motion);
+
+    /* Set up touch/swipe gesture controller for panel & edge gestures */
+    GtkGesture *swipe = gtk_gesture_swipe_new();
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(swipe), GTK_PHASE_CAPTURE);
+    g_signal_connect(swipe, "begin", G_CALLBACK(on_panel_swipe_begin), panel);
+    g_signal_connect(swipe, "swipe", G_CALLBACK(on_panel_swipe), panel);
+    gtk_widget_add_controller(GTK_WIDGET(panel->window), GTK_EVENT_CONTROLLER(swipe));
 
     /* Initialize autohide */
     panel->autohide = shell_autohide_new(panel, config);

@@ -351,8 +351,8 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
         "fl-color-symbolic", "Theme & Accents", "Metro Accent Color Switcher", "theme",
         "theme accent color palette font css metro style appearance");
     GtkWidget *r_pnl  = create_sidebar_row_with_keywords(
-        "fl-sliders-symbolic", "Panel & Geometry", "Thickness, Auto-Hide, Position", "panel",
-        "panel geometry autohide height position top bottom thickness delay edge bar");
+        "fl-sliders-symbolic", "Panel & Touch", "Geometry, Auto-Hide, Swipe Gestures", "panel",
+        "panel geometry autohide height position top bottom thickness delay edge bar touch touchscreen gesture gestures swipe");
     GtkWidget *r_wgt  = create_sidebar_row_with_keywords(
         "fl-apps-symbolic", "Widgets Layout", "Panel Widgets Ordering", "widgets",
         "widgets layout ordering panel left center right items dock add remove");

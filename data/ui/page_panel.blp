@@ -81,10 +81,115 @@ template $SettingsPagePanel : Box {
         label: "150ms";
       }
     }
+  }
+
+  /* Card 2: Touchscreen & Swipe Gestures */
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-left",
+    ]
+
+    Label {
+      label: "TOUCHSCREEN & SWIPE GESTURES";
+      halign: start;
+
+      styles [
+        "shell-popover-section-title",
+      ]
+    }
+
+    /* Enable Touch Gestures Row */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Panel Touch & Edge Swipes:";
+        halign: start;
+      }
+
+      DropDown combo_touch_enabled {
+        hexpand: true;
+      }
+    }
+
+    /* Center / Left Edge Swipe Action */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Center / Left Inward Swipe:";
+        halign: start;
+      }
+
+      DropDown combo_swipe_center {
+        hexpand: true;
+      }
+    }
+
+    /* Right Edge Swipe Action */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Right Zone Inward Swipe:";
+        halign: start;
+      }
+
+      DropDown combo_swipe_right {
+        hexpand: true;
+      }
+    }
+
+    /* Horizontal Panel Swipe Action */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Horizontal Panel Swipe:";
+        halign: start;
+      }
+
+      DropDown combo_swipe_horiz {
+        hexpand: true;
+      }
+    }
+
+    /* Touch Dwell Duration Slider */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Autohide Touch Dwell Time:";
+        halign: start;
+      }
+
+      Scale scale_touch_dwell {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 1000;
+          upper: 8000;
+          step-increment: 500;
+        };
+      }
+
+      Label lbl_touch_dwell_val {
+        label: "4000ms";
+      }
+    }
 
     /* Action Row */
     Button btn_apply {
-      label: "[ APPLY PANEL GEOMETRY ]";
+      label: "[ APPLY PANEL & TOUCH SETTINGS ]";
 
       styles [
         "flat",

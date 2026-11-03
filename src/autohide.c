@@ -20,6 +20,8 @@ static gint
 autohide_get_hidden_margin(ShellAutohide *self)
 {
     gint strip = self->edge_strip_px > 0 ? self->edge_strip_px : 2;
+    if (self->touch_gestures_enabled && strip < 6)
+        strip = 6;
     return -(self->panel_height - strip);
 }
 
@@ -130,6 +132,7 @@ shell_autohide_new(ShellPanel *panel, ShellConfig *config)
 
     self->panel           = panel;
     self->enabled         = config->autohide_enabled;
+    self->touch_gestures_enabled = config->touch_gestures_enabled;
     self->pointer_inside  = FALSE;
     self->hide_delay      = config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300;
     self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
@@ -146,7 +149,8 @@ shell_autohide_new(ShellPanel *panel, ShellConfig *config)
     if (self->enabled) {
         /* Start hidden (keep active edge strip for motion enter) */
         self->state = AUTOHIDE_HIDDEN;
-        autohide_set_margin(self, autohide_get_hidden_margin(self));
+        self->anim_target_margin = autohide_get_hidden_margin(self);
+        autohide_set_margin(self, self->anim_target_margin);
         GtkWidget *container = shell_panel_get_container(self->panel);
         if (container) {
             gtk_widget_remove_css_class(container, "autohide-visible");
@@ -178,6 +182,7 @@ shell_autohide_reload_config(ShellAutohide *self, ShellConfig *config)
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
     self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
     self->enabled         = config->autohide_enabled;
+    self->touch_gestures_enabled = config->touch_gestures_enabled;
 
     GtkWidget *container = shell_panel_get_container(self->panel);
 
@@ -307,6 +312,52 @@ shell_autohide_leave(ShellAutohide *self)
         }
         self->hide_timeout_id = g_timeout_add(
             (guint)self->hide_delay, on_hide_timeout, self);
+    }
+}
+
+void
+shell_autohide_touch_reveal(ShellAutohide *self, gint dwell_ms)
+{
+    if (!self || !self->enabled)
+        return;
+
+    self->pointer_inside = FALSE;
+
+    if (self->hide_timeout_id != 0) {
+        g_source_remove(self->hide_timeout_id);
+        self->hide_timeout_id = 0;
+    }
+
+    if (self->state == AUTOHIDE_HIDDEN || self->state == AUTOHIDE_HIDING) {
+        self->state = AUTOHIDE_REVEALING;
+        autohide_start_animation(self, 0);
+    }
+
+    if (self->popover_count == 0) {
+        guint timeout = (guint)MAX(dwell_ms, self->hide_delay);
+        self->hide_timeout_id = g_timeout_add(timeout, on_hide_timeout, self);
+    }
+}
+
+void
+shell_autohide_force_hide(ShellAutohide *self)
+{
+    if (!self || !self->enabled)
+        return;
+
+    self->pointer_inside = FALSE;
+
+    if (self->hide_timeout_id != 0) {
+        g_source_remove(self->hide_timeout_id);
+        self->hide_timeout_id = 0;
+    }
+
+    if (self->popover_count > 0)
+        return;
+
+    if (self->state == AUTOHIDE_VISIBLE || self->state == AUTOHIDE_REVEALING) {
+        self->state = AUTOHIDE_HIDING;
+        autohide_start_animation(self, autohide_get_hidden_margin(self));
     }
 }
 

@@ -42,6 +42,13 @@ struct _ShellConfig {
     gint            autohide_reveal_duration;
     gint            autohide_edge_strip_px;
 
+    /* Touchscreen & Swipe Gestures */
+    gboolean        touch_gestures_enabled;
+    gint            touch_dwell_ms;
+    gchar          *touch_swipe_center;     /* "launcher", "overview", "none" */
+    gchar          *touch_swipe_right;      /* "control-center", "notifications", "none" */
+    gchar          *touch_swipe_horizontal; /* "workspace", "column", "none" */
+
     gint            osd_timeout_ms;
     gint            osd_width;
     gint            osd_height;

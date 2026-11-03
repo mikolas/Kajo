@@ -16,6 +16,11 @@ test_config_defaults(void)
     g_assert_cmpint(cfg->icon_size, ==, 24);
 
     g_assert_false(cfg->autohide_enabled);
+    g_assert_true(cfg->touch_gestures_enabled);
+    g_assert_cmpint(cfg->touch_dwell_ms, ==, 4000);
+    g_assert_cmpstr(cfg->touch_swipe_center, ==, "launcher");
+    g_assert_cmpstr(cfg->touch_swipe_right, ==, "control-center");
+    g_assert_cmpstr(cfg->touch_swipe_horizontal, ==, "workspace");
     g_assert_cmpint(cfg->toast_timeout_ms, ==, 8000);
     g_assert_cmpint(cfg->max_notification_history, ==, 50);
 
@@ -59,6 +64,15 @@ test_config_save_and_load_roundtrip(void)
     orig->autohide_hide_delay = 500;
     orig->autohide_reveal_delay = 120;
     orig->autohide_reveal_duration = 180;
+
+    orig->touch_gestures_enabled = FALSE;
+    orig->touch_dwell_ms = 5500;
+    g_free(orig->touch_swipe_center);
+    orig->touch_swipe_center = g_strdup("overview");
+    g_free(orig->touch_swipe_right);
+    orig->touch_swipe_right = g_strdup("notifications");
+    g_free(orig->touch_swipe_horizontal);
+    orig->touch_swipe_horizontal = g_strdup("column");
 
     orig->toast_timeout_ms = 5000;
     orig->max_notification_history = 100;
@@ -115,6 +129,12 @@ test_config_save_and_load_roundtrip(void)
     g_assert_cmpint(loaded->autohide_hide_delay, ==, 500);
     g_assert_cmpint(loaded->autohide_reveal_delay, ==, 120);
     g_assert_cmpint(loaded->autohide_reveal_duration, ==, 180);
+
+    g_assert_false(loaded->touch_gestures_enabled);
+    g_assert_cmpint(loaded->touch_dwell_ms, ==, 5500);
+    g_assert_cmpstr(loaded->touch_swipe_center, ==, "overview");
+    g_assert_cmpstr(loaded->touch_swipe_right, ==, "notifications");
+    g_assert_cmpstr(loaded->touch_swipe_horizontal, ==, "column");
 
     g_assert_cmpint(loaded->toast_timeout_ms, ==, 5000);
     g_assert_cmpint(loaded->max_notification_history, ==, 100);

@@ -4,7 +4,14 @@
     "height": 39,
     "layer": "top",
     "widget_mode": "icon",
-    "icon_size": 24
+    "icon_size": 24,
+    "touch_gestures": {
+      "enabled": true,
+      "dwell_ms": 4000,
+      "swipe_center": "launcher",
+      "swipe_right": "control-center",
+      "swipe_horizontal": "workspace"
+    }
   },
   "autohide": {
     "enabled": true,
