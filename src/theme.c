@@ -68,6 +68,17 @@ resolve_css_path(const gchar *css_path)
         return dev_path;
     g_free(dev_path);
 
+    gchar *exe_path = g_file_read_link("/proc/self/exe", NULL);
+    if (exe_path) {
+        gchar *exe_dir = g_path_get_dirname(exe_path);
+        gchar *exe_dev_path = g_build_filename(exe_dir, "..", "data", "defaults", "style.css", NULL);
+        g_free(exe_dir);
+        g_free(exe_path);
+        if (g_file_test(exe_dev_path, G_FILE_TEST_EXISTS))
+            return exe_dev_path;
+        g_free(exe_dev_path);
+    }
+
     /* 2. User Local Installed Environment (~/.local/share/kajo/defaults/style.css) */
     gchar *local_share_path = g_build_filename(
         g_get_user_data_dir(), "kajo", "defaults", "style.css", NULL);
