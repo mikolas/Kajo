@@ -1,0 +1,507 @@
+using Gtk 4.0;
+
+template $KajoFilesWindow : ApplicationWindow {
+  title: "KAJO FILES";
+  default-width: 1120;
+  default-height: 700;
+  decorated: false;
+
+  styles [
+    "shell-settings-window",
+    "shell-files-window",
+  ]
+
+  Overlay root_overlay {
+    hexpand: true;
+    vexpand: true;
+
+    Box main_vbox {
+      orientation: vertical;
+      spacing: 0;
+      hexpand: true;
+      vexpand: true;
+
+      /* Zone 1: Frameless Metro Header Bar */
+      WindowHandle {
+        Box header_bar {
+          orientation: horizontal;
+          spacing: 8;
+
+          styles [
+            "settings-header-bar",
+          ]
+
+          Button btn_sidebar_toggle {
+            label: "☰ PLACES";
+            visible: false;
+
+            styles [
+              "flat",
+            ]
+          }
+
+          Label title_label {
+            label: "📁 KAJO FILES";
+            halign: start;
+
+            styles [
+              "settings-header-title",
+            ]
+          }
+
+          Box nav_btn_box {
+            orientation: horizontal;
+            spacing: 2;
+
+            Button btn_back {
+              label: "←";
+              tooltip-text: "Back (Alt+Left)";
+
+              styles [
+                "flat",
+                "files-nav-btn",
+              ]
+            }
+
+            Button btn_forward {
+              label: "→";
+              tooltip-text: "Forward (Alt+Right)";
+
+              styles [
+                "flat",
+                "files-nav-btn",
+              ]
+            }
+
+            Button btn_up {
+              label: "↑";
+              tooltip-text: "Parent Directory (Backspace)";
+
+              styles [
+                "flat",
+                "files-nav-btn",
+              ]
+            }
+
+            Button btn_reload {
+              label: "↻";
+              tooltip-text: "Reload Directory (F5)";
+
+              styles [
+                "flat",
+                "files-nav-btn",
+              ]
+            }
+          }
+
+          Stack location_stack {
+            hexpand: true;
+            transition-type: crossfade;
+
+            StackPage {
+              name: "breadcrumbs";
+              child: Box {
+                orientation: horizontal;
+                spacing: 4;
+
+                ScrolledWindow {
+                  hexpand: true;
+                  hscrollbar-policy: automatic;
+                  vscrollbar-policy: never;
+
+                  Box breadcrumb_box {
+                    orientation: horizontal;
+                    spacing: 2;
+                    valign: center;
+                  }
+                }
+
+                Button btn_edit_uri {
+                  label: "✎";
+                  tooltip-text: "Edit Location URI (Ctrl+L)";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+              };
+            }
+
+            StackPage {
+              name: "entry";
+              child: Entry uri_entry {
+                hexpand: true;
+                placeholder-text: "Enter path or URI (file://, smb://, sftp://, trash:///)...";
+
+                styles [
+                  "shell-launcher-input",
+                ]
+              };
+            }
+          }
+
+          SearchEntry search_entry {
+            width-request: 180;
+            placeholder-text: "Filter (Ctrl+F)...";
+
+            styles [
+              "shell-launcher-input",
+            ]
+          }
+
+          Button btn_view_grid {
+            label: "⊞";
+            tooltip-text: "Metro Tile Grid View (Ctrl+1)";
+
+            styles [
+              "flat",
+              "files-nav-btn",
+            ]
+          }
+
+          Button btn_view_list {
+            label: "☰";
+            tooltip-text: "Details List View (Ctrl+2)";
+
+            styles [
+              "flat",
+              "files-nav-btn",
+            ]
+          }
+
+          Button btn_inspector {
+            label: "ⓘ";
+            tooltip-text: "Toggle Inspector Pane (Ctrl+I)";
+
+            styles [
+              "flat",
+              "files-nav-btn",
+            ]
+          }
+
+          Button btn_float {
+            label: "🗗 FLOAT / TILE";
+
+            styles [
+              "flat",
+            ]
+          }
+
+          Button btn_close {
+            label: "✕";
+
+            styles [
+              "settings-close-btn",
+            ]
+          }
+        }
+      }
+
+      /* Zone 2: Command & Sort Ribbon */
+      Box action_ribbon {
+        orientation: horizontal;
+        spacing: 8;
+
+        styles [
+          "files-action-ribbon",
+        ]
+
+        Label current_uri_badge {
+          label: "PATH: ~";
+          hexpand: true;
+          halign: start;
+          ellipsize: middle;
+
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
+
+        Button btn_new_folder {
+          label: "+ NEW FOLDER";
+          tooltip-text: "Create New Folder (Ctrl+Shift+N)";
+
+          styles [
+            "flat",
+          ]
+        }
+
+        Button btn_paste {
+          label: "📋 PASTE";
+          tooltip-text: "Paste Clipboard Files (Ctrl+V)";
+
+          styles [
+            "flat",
+          ]
+        }
+
+        Button btn_hidden {
+          label: "👁 HIDDEN";
+          tooltip-text: "Toggle Dotfiles (Ctrl+H)";
+
+          styles [
+            "flat",
+          ]
+        }
+
+        Button btn_sort {
+          label: "⇅ SORT: NAME ▲";
+          tooltip-text: "Cycle Sort Order (Name / Size / Modified / Type)";
+
+          styles [
+            "flat",
+          ]
+        }
+
+        Button btn_terminal {
+          label: ">_ TERMINAL";
+          tooltip-text: "Open Terminal Here (Ctrl+Shift+T)";
+
+          styles [
+            "flat",
+          ]
+        }
+      }
+
+      /* Zone 3: 3-Pane Split Workspace (Sidebar | Content | Inspector) */
+      Box body_hbox {
+        orientation: horizontal;
+        spacing: 0;
+        hexpand: true;
+        vexpand: true;
+
+        /* Left Places & Volumes Sidebar */
+        Box sidebar_vbox {
+          orientation: vertical;
+          spacing: 0;
+          width-request: 250;
+
+          styles [
+            "settings-sidebar-vbox",
+          ]
+
+          ScrolledWindow {
+            vexpand: true;
+            hscrollbar-policy: never;
+            vscrollbar-policy: automatic;
+
+            ListBox sidebar_list {
+              styles [
+                "navigation-sidebar",
+              ]
+            }
+          }
+        }
+
+        /* Center Directory View + Contextual Banners */
+        Box content_vbox {
+          orientation: vertical;
+          spacing: 0;
+          hexpand: true;
+          vexpand: true;
+
+          /* Banner 1: Inline GVFS / LUKS Auth Banner */
+          Revealer auth_banner_revealer {
+            transition-type: slide_down;
+            reveal-child: false;
+          }
+
+          /* Banner 2: Inline Connect to Remote Server Bar */
+          Revealer connect_banner_revealer {
+            transition-type: slide_down;
+            reveal-child: false;
+          }
+
+          /* Banner 3: Contextual Trash Bar (trash:///) */
+          Revealer trash_banner_revealer {
+            transition-type: slide_down;
+            reveal-child: false;
+          }
+
+          /* Banner 4: Inline Prompt Bar (New Folder / Rename / Delete Confirm) */
+          Revealer prompt_banner_revealer {
+            transition-type: slide_down;
+            reveal-child: false;
+          }
+
+          /* Main Directory Stack */
+          Stack view_stack {
+            hexpand: true;
+            vexpand: true;
+            transition-type: crossfade;
+
+            StackPage {
+              name: "grid";
+              child: ScrolledWindow {
+                hexpand: true;
+                vexpand: true;
+                hscrollbar-policy: never;
+                vscrollbar-policy: automatic;
+
+                FlowBox grid_flowbox {
+                  valign: start;
+                  max-children-per-line: 12;
+                  min-children-per-line: 2;
+                  row-spacing: 8;
+                  column-spacing: 8;
+                  homogeneous: true;
+                  selection-mode: single;
+                  activate-on-single-click: false;
+
+                  styles [
+                    "files-tile-grid",
+                  ]
+                }
+              };
+            }
+
+            StackPage {
+              name: "list";
+              child: Box {
+                orientation: vertical;
+                spacing: 0;
+                hexpand: true;
+                vexpand: true;
+
+                Box list_header_bar {
+                  orientation: horizontal;
+                  spacing: 8;
+
+                  styles [
+                    "files-list-header",
+                  ]
+
+                  Label {
+                    label: "NAME";
+                    hexpand: true;
+                    halign: start;
+
+                    styles [
+                      "files-col-header",
+                    ]
+                  }
+
+                  Label {
+                    label: "SIZE";
+                    width-request: 100;
+                    halign: end;
+
+                    styles [
+                      "files-col-header",
+                    ]
+                  }
+
+                  Label {
+                    label: "TYPE";
+                    width-request: 160;
+                    halign: start;
+
+                    styles [
+                      "files-col-header",
+                    ]
+                  }
+
+                  Label {
+                    label: "MODIFIED";
+                    width-request: 140;
+                    halign: end;
+
+                    styles [
+                      "files-col-header",
+                    ]
+                  }
+                }
+
+                ScrolledWindow {
+                  hexpand: true;
+                  vexpand: true;
+                  hscrollbar-policy: never;
+                  vscrollbar-policy: automatic;
+
+                  ListBox details_listbox {
+                    selection-mode: single;
+                    activate-on-single-click: false;
+
+                    styles [
+                      "files-details-list",
+                    ]
+                  }
+                }
+              };
+            }
+
+            StackPage {
+              name: "empty";
+              child: Box {
+                orientation: vertical;
+                spacing: 8;
+                valign: center;
+                halign: center;
+
+                Label empty_label {
+                  label: "DIRECTORY IS EMPTY";
+
+                  styles [
+                    "empty-state-label",
+                  ]
+                }
+              };
+            }
+          }
+        }
+
+        /* Right Toggleable Inspector Pane */
+        Box inspector_vbox {
+          orientation: vertical;
+          spacing: 0;
+          width-request: 230;
+          visible: false;
+
+          styles [
+            "files-inspector-pane",
+          ]
+        }
+      }
+
+      /* Zone 4: Bottom Status & Capacity Bar */
+      Box status_bar {
+        orientation: horizontal;
+        spacing: 12;
+
+        styles [
+          "files-status-bar",
+        ]
+
+        Label status_left_label {
+          label: "READY";
+          hexpand: true;
+          halign: start;
+          ellipsize: end;
+
+          styles [
+            "files-status-text",
+          ]
+        }
+
+        Label status_right_label {
+          label: "";
+          halign: end;
+
+          styles [
+            "files-status-text",
+          ]
+        }
+
+        LevelBar fs_usage_bar {
+          width-request: 96;
+          valign: center;
+
+          styles [
+            "files-drive-bar",
+          ]
+        }
+      }
+    }
+  }
+}
