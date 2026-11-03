@@ -7,7 +7,7 @@ This document tracks completed milestones, active specifications, and future fir
 ## 1. Visual & Architectural Identity ("Aero + Metro")
 
 All Kajo components and standalone applications share a unified design language:
-- **Frameless Aero + Metro Chrome:** Custom `GtkWindowHandle` header bar with technical uppercase titles (`⚙ SYSTEM SETTINGS`, `📁 KAJO FILES`, `🎬 KAJO PLAYER`), `🗗 FLOAT / TILE` Niri IPC button, and `#e81123` close button.
+- **Frameless Aero + Metro Chrome:** Custom `GtkWindowHandle` header bar with technical uppercase titles (`⚙ SYSTEM SETTINGS`, `📁 KAJO FILES`), `🗗 FLOAT / TILE` Niri IPC button, and `#e81123` close button.
 - **Crisp Dark Surfaces:** `#111111` / `#141414` / `#181818` surfaces, `0px` corner radius on cards and windows, `1px solid #2b2b2b` structural borders, and live `@metro-accent` highlights synced from `~/.config/kajo/style.d/00-accent.css`.
 - **Technical Monospace Typography:** `Fira Code` headers, status badges (`[ MKV | 14.8 MB ]`), and telemetry readouts.
 - **Popout- & Map-Gated Resource Discipline:** Zero background CPU/audio polling when surfaces or previews are unmapped.
@@ -29,10 +29,18 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-## 3. Planned First-Party Desktop Applications & Ideas
+## 3. Future Roadmap (Not Yet Implemented)
 
-### 3.1 Kajo Media Player (`kajo-player`, `org.kajo.Player`)
-> **Inspiration:** Evolved directly from the `kajo-files` Quick Look video preview window aesthetic.
+| Planned Component / Feature | Status | Target Binary / Scope |
+| :--- | :---: | :--- |
+| **Kajo Media Player** | 📋 Planned | `kajo-player` (`org.kajo.Player`) |
+| **`kajo-files` Phase 2** | 📋 Planned | `kajo-files` (Archive extraction, context menu, DnD) |
+| **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
+| **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
+| **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
+
+### 3.1 [PLANNED] Kajo Media Player (`kajo-player`, `org.kajo.Player`)
+> **Status:** 📋 **Not Yet Implemented** — Future standalone application inspired by the `kajo-files` Quick Look video preview aesthetic.
 
 - **Visual Design:**
   - Frameless `window.shell-settings-window.shell-player-window` surface with `1px solid @metro-accent` border, top `🎬 KAJO PLAYER` header bar, technical codec/resolution badge (`[ HEVC | 3840×2160 @ 60fps | 7.1 FLAC ]`), `🗗 FLOAT / TILE` button, and a 1-click **Picture-in-Picture (PiP)** floating pin button.
@@ -48,7 +56,7 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.2 `kajo-files` Phase 2 Enhancements
+### 3.2 [PLANNED] `kajo-files` Phase 2 Enhancements
 - **1-Click Archive Extraction & Compression (`libarchive`):**
   - Contextual `[ 📦 EXTRACT HERE ]` and `[ 📦 COMPRESS SELECTED ]` actions in `kajo-files` for `.zip`, `.tar.gz`, `.tar.xz`, `.tar.zst`, and `.7z`.
 - **Right-Click Context Popover Menu:**
@@ -60,13 +68,13 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.3 Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
+### 3.3 [PLANNED] Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
 - Dedicated full-window PDF, EPUB, and high-resolution image viewer sharing the Poppler + Cairo rendering pipeline from `kajo-files`.
 - Features continuous/two-page PDF scrolling, document outline/bookmarks sidebar, full-text search, zoom presets, and image rotation/cropping.
 
 ---
 
-### 3.4 Kajo System Monitor (`kajo-monitor`, `org.kajo.Monitor`)
+### 3.4 [PLANNED] Kajo System Monitor (`kajo-monitor`, `org.kajo.Monitor`)
 - Full-window companion to the panel `cpu-mem` telemetry widget:
   - Live per-core CPU frequency & utilization grid.
   - Memory, ZRAM/Swap, GPU, and NVMe I/O graphs.
@@ -74,7 +82,7 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.5 Kajo Capture (`kajo-capture`, `org.kajo.Capture`)
+### 3.5 [PLANNED] Kajo Capture (`kajo-capture`, `org.kajo.Capture`)
 - Native Wayland screenshot & screen-recording utility integrating with Niri and PipeWire:
   - Region, active window, or full output capture.
   - Quick Metro markup bar (crop, arrow, rectangle, redact/pixelate, copy to Wayland clipboard, save to `~/Pictures/Screenshots`).
