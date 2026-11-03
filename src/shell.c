@@ -13,7 +13,9 @@
 #include "lock/screensaver.h"
 #include "lock/idle_manager.h"
 #include "posture/posture_manager.h"
+#include "osk/osk.h"
 #include "hardware/hw_caps.h"
+#include "hardware/touch_gestures.h"
 
 static void
 shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPosition position)
@@ -104,6 +106,8 @@ shell_app_activate(ShellApp *self)
     self->screensaver     = shell_screensaver_new(self);
     self->idle_manager    = shell_idle_manager_new(self);
     self->posture_manager = shell_posture_manager_new(self);
+    self->osk             = shell_osk_new(self);
+    self->touch_gestures  = shell_touch_gestures_new(self);
     self->ipc             = shell_ipc_socket_new(self);
 
     /* Instantiate widgets from config layout */
@@ -141,6 +145,16 @@ shell_app_destroy(ShellApp *self)
 {
     if (!self)
         return;
+
+    if (self->touch_gestures) {
+        shell_touch_gestures_destroy(self->touch_gestures);
+        self->touch_gestures = NULL;
+    }
+
+    if (self->osk) {
+        shell_osk_destroy(self->osk);
+        self->osk = NULL;
+    }
 
     if (self->posture_manager) {
         shell_posture_manager_destroy(self->posture_manager);
@@ -419,6 +433,10 @@ shell_app_reload_config(ShellApp *self)
 
     if (self->posture_manager) {
         shell_posture_manager_reload_config(self->posture_manager);
+    }
+
+    if (self->osk) {
+        shell_osk_apply_config(self->osk);
     }
 
     /* Hold references to all current GTK widget roots while detaching from panel boxes */

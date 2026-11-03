@@ -2,6 +2,7 @@
 #include "../compositor/compositor.h"
 #include "../shell.h"
 #include <gtk4-layer-shell.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -154,7 +155,40 @@ on_toast_idle_free(gpointer user_data)
 }
 
 static void
-on_toast_card_pressed(GtkGestureClick *gesture G_GNUC_UNUSED, gint n_press G_GNUC_UNUSED, gdouble x G_GNUC_UNUSED, gdouble y G_GNUC_UNUSED, gpointer user_data)
+on_toast_card_swiped(GtkGestureSwipe *gesture,
+                     gdouble          vx,
+                     gdouble          vy,
+                     gpointer         user_data)
+{
+    ShellNotificationToast *toast = (ShellNotificationToast *)user_data;
+    if (!toast)
+        return;
+
+    /* Dismiss toast on horizontal swipe or upward swipe */
+    if (fabs(vx) < 180.0 && vy > -180.0)
+        return;
+
+    gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+
+    ShellNotificationDaemon *daemon = toast->daemon;
+    if (!daemon || !daemon->toasts || !g_ptr_array_remove_fast(daemon->toasts, toast))
+        return;
+
+    if (toast->timer_id) {
+        g_source_remove(toast->timer_id);
+        toast->timer_id = 0;
+    }
+
+    if (toast->toast_window) {
+        gtk_widget_set_visible(toast->toast_window, FALSE);
+    }
+
+    shell_notification_daemon_emit_notification_closed(daemon, toast->id, 2 /* user dismissed */);
+    g_idle_add(on_toast_idle_free, toast);
+}
+
+static void
+on_toast_card_released(GtkGestureClick *gesture G_GNUC_UNUSED, gint n_press G_GNUC_UNUSED, gdouble x G_GNUC_UNUSED, gdouble y G_GNUC_UNUSED, gpointer user_data)
 {
     ShellNotificationToast *toast = user_data;
     if (!toast) return;
@@ -241,9 +275,15 @@ create_notification_toast_card(ShellNotificationDaemon *daemon, ShellNotificatio
     gtk_box_append(GTK_BOX(card), icon);
     gtk_box_append(GTK_BOX(card), vbox);
 
+    /* Swipe Gesture Controller (dismiss without focusing app) */
+    GtkGesture *swipe = gtk_gesture_swipe_new();
+    gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(swipe), GTK_PHASE_CAPTURE);
+    g_signal_connect(swipe, "swipe", G_CALLBACK(on_toast_card_swiped), toast);
+    gtk_widget_add_controller(card, GTK_EVENT_CONTROLLER(swipe));
+
     /* Click Gesture Controller */
     GtkGestureClick *click = GTK_GESTURE_CLICK(gtk_gesture_click_new());
-    g_signal_connect(click, "pressed", G_CALLBACK(on_toast_card_pressed), toast);
+    g_signal_connect(click, "released", G_CALLBACK(on_toast_card_released), toast);
     gtk_widget_add_controller(card, GTK_EVENT_CONTROLLER(click));
 
     gtk_window_set_child(GTK_WINDOW(toast->toast_window), card);

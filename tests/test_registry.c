@@ -9,7 +9,13 @@
 #include "../src/launcher/launcher_surface.h"
 #include "../src/lock/idle_manager.h"
 #include "../src/posture/posture_manager.h"
+#include "../src/osk/osk.h"
 #include <glib.h>
+
+void
+shell_osk_toggle(ShellOSK *self G_GNUC_UNUSED)
+{
+}
 
 /* Stubs for shell_app_* entry points referenced by widget callbacks */
 ShellConfig *

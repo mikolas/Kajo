@@ -28,6 +28,8 @@ struct _ShellPanel {
     ShellAutohide *autohide;
     ShellApp      *app;
     GPtrArray     *widgets;
+    gdouble        swipe_start_x;
+    gboolean       swipe_started_while_hidden;
 };
 
 ShellPanel *shell_panel_new(ShellApp *app);

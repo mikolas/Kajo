@@ -95,6 +95,16 @@ shell_config_get_default(void)
     config->autohide_reveal_duration = 250;
     config->autohide_edge_strip_px = 2;
 
+    config->touch_gestures_enabled = TRUE;
+    config->touch_dwell_ms         = 4000;
+    config->touch_swipe_center     = g_strdup("launcher");
+    config->touch_swipe_right      = g_strdup("control-center");
+    config->touch_swipe_horizontal = g_strdup("column");
+
+    config->osk_auto_show_mode     = g_strdup("tablet");
+    config->osk_push_windows       = TRUE;
+    config->osk_height_px          = 260;
+
     config->osd_timeout_ms           = 1500;
     config->osd_width                = 200;
     config->osd_height               = 120;
@@ -243,6 +253,73 @@ shell_config_load(const gchar *path)
 
         if (json_object_has_member(panel, "icon_size")) {
             config->icon_size = (gint)json_object_get_int_member(panel, "icon_size");
+        }
+
+        if (json_object_has_member(panel, "touch_gestures") &&
+            JSON_NODE_HOLDS_OBJECT(json_object_get_member(panel, "touch_gestures"))) {
+            JsonObject *tg = json_object_get_object_member(panel, "touch_gestures");
+            if (json_object_has_member(tg, "enabled"))
+                config->touch_gestures_enabled = json_object_get_boolean_member(tg, "enabled");
+            if (json_object_has_member(tg, "dwell_ms"))
+                config->touch_dwell_ms = (gint)json_object_get_int_member(tg, "dwell_ms");
+            if (json_object_has_member(tg, "swipe_center")) {
+                g_free(config->touch_swipe_center);
+                config->touch_swipe_center = g_strdup(json_object_get_string_member(tg, "swipe_center"));
+            }
+            if (json_object_has_member(tg, "swipe_right")) {
+                g_free(config->touch_swipe_right);
+                config->touch_swipe_right = g_strdup(json_object_get_string_member(tg, "swipe_right"));
+            }
+            if (json_object_has_member(tg, "swipe_horizontal")) {
+                g_free(config->touch_swipe_horizontal);
+                config->touch_swipe_horizontal = g_strdup(json_object_get_string_member(tg, "swipe_horizontal"));
+            }
+            if (json_object_has_member(tg, "osk_auto_show_mode")) {
+                g_free(config->osk_auto_show_mode);
+                config->osk_auto_show_mode = g_strdup(json_object_get_string_member(tg, "osk_auto_show_mode"));
+            }
+            if (json_object_has_member(tg, "osk_push_windows")) {
+                config->osk_push_windows = json_object_get_boolean_member(tg, "osk_push_windows");
+            }
+            if (json_object_has_member(tg, "osk_height_px")) {
+                config->osk_height_px = (gint)json_object_get_int_member(tg, "osk_height_px");
+            }
+        }
+    }
+
+    if (json_object_has_member(root, "osk") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "osk"))) {
+        JsonObject *osk = json_object_get_object_member(root, "osk");
+        if (json_object_has_member(osk, "auto_show_mode")) {
+            g_free(config->osk_auto_show_mode);
+            config->osk_auto_show_mode = g_strdup(json_object_get_string_member(osk, "auto_show_mode"));
+        }
+        if (json_object_has_member(osk, "push_windows")) {
+            config->osk_push_windows = json_object_get_boolean_member(osk, "push_windows");
+        }
+        if (json_object_has_member(osk, "height_px")) {
+            config->osk_height_px = (gint)json_object_get_int_member(osk, "height_px");
+        }
+    }
+
+    if (json_object_has_member(root, "touch_gestures") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "touch_gestures"))) {
+        JsonObject *tg = json_object_get_object_member(root, "touch_gestures");
+        if (json_object_has_member(tg, "enabled"))
+            config->touch_gestures_enabled = json_object_get_boolean_member(tg, "enabled");
+        if (json_object_has_member(tg, "dwell_ms"))
+            config->touch_dwell_ms = (gint)json_object_get_int_member(tg, "dwell_ms");
+        if (json_object_has_member(tg, "swipe_center")) {
+            g_free(config->touch_swipe_center);
+            config->touch_swipe_center = g_strdup(json_object_get_string_member(tg, "swipe_center"));
+        }
+        if (json_object_has_member(tg, "swipe_right")) {
+            g_free(config->touch_swipe_right);
+            config->touch_swipe_right = g_strdup(json_object_get_string_member(tg, "swipe_right"));
+        }
+        if (json_object_has_member(tg, "swipe_horizontal")) {
+            g_free(config->touch_swipe_horizontal);
+            config->touch_swipe_horizontal = g_strdup(json_object_get_string_member(tg, "swipe_horizontal"));
         }
     }
 
@@ -516,6 +593,25 @@ shell_config_save(ShellConfig *config, const gchar *path)
         (config->default_widget_mode == WIDGET_MODE_LABEL ? "label" : "icon"));
     json_builder_set_member_name(builder, "icon_size");
     json_builder_add_int_value(builder, config->icon_size > 0 ? config->icon_size : 24);
+    json_builder_set_member_name(builder, "touch_gestures");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "enabled");
+    json_builder_add_boolean_value(builder, config->touch_gestures_enabled);
+    json_builder_set_member_name(builder, "dwell_ms");
+    json_builder_add_int_value(builder, config->touch_dwell_ms > 0 ? config->touch_dwell_ms : 4000);
+    json_builder_set_member_name(builder, "swipe_center");
+    json_builder_add_string_value(builder, config->touch_swipe_center ? config->touch_swipe_center : "launcher");
+    json_builder_set_member_name(builder, "swipe_right");
+    json_builder_add_string_value(builder, config->touch_swipe_right ? config->touch_swipe_right : "control-center");
+    json_builder_set_member_name(builder, "swipe_horizontal");
+    json_builder_add_string_value(builder, config->touch_swipe_horizontal ? config->touch_swipe_horizontal : "column");
+    json_builder_set_member_name(builder, "osk_auto_show_mode");
+    json_builder_add_string_value(builder, config->osk_auto_show_mode ? config->osk_auto_show_mode : "tablet");
+    json_builder_set_member_name(builder, "osk_push_windows");
+    json_builder_add_boolean_value(builder, config->osk_push_windows);
+    json_builder_set_member_name(builder, "osk_height_px");
+    json_builder_add_int_value(builder, config->osk_height_px > 0 ? config->osk_height_px : 260);
+    json_builder_end_object(builder);
     json_builder_end_object(builder);
 
     /* Autohide object */
@@ -642,6 +738,10 @@ shell_config_destroy(ShellConfig *config)
         return;
 
     g_free(config->panel_layer);
+    g_free(config->touch_swipe_center);
+    g_free(config->touch_swipe_right);
+    g_free(config->touch_swipe_horizontal);
+    g_free(config->osk_auto_show_mode);
     g_free(config->accent_color);
     g_free(config->screensaver_mode);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);

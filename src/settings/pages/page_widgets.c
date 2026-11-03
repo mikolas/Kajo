@@ -38,6 +38,7 @@ static const char *ALL_WIDGET_IDS[] = {
     "bluetooth",
     "cpu-mem",
     "keyboard-layout",
+    "osk",
     "volume",
     "battery",
     "backlight",

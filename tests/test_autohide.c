@@ -137,6 +137,44 @@ test_autohide_reload_config_live(void)
     shell_config_destroy(cfg);
 }
 
+static void
+test_autohide_touch_reveal_and_force_hide(void)
+{
+    ShellConfig *cfg = shell_config_get_default();
+    cfg->autohide_enabled = TRUE;
+    cfg->autohide_hide_delay = 15;
+    cfg->touch_gestures_enabled = TRUE;
+
+    ShellAutohide *ah = shell_autohide_new(NULL, cfg);
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
+    /* Touch-friendly edge strip: -(32 - 6) = -26 */
+    g_assert_cmpint(ah->anim_target_margin, ==, -26);
+
+    /* Touch reveal schedules dwell timer while keeping pointer_inside FALSE */
+    shell_autohide_touch_reveal(ah, 20);
+    g_assert_false(ah->pointer_inside);
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_VISIBLE);
+    g_assert_cmpuint(ah->hide_timeout_id, !=, 0);
+
+    /* Outward swipe force-hides immediately */
+    shell_autohide_force_hide(ah);
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
+    g_assert_cmpuint(ah->hide_timeout_id, ==, 0);
+
+    /* Touch reveal again and let dwell timeout expire naturally */
+    shell_autohide_touch_reveal(ah, 20);
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_VISIBLE);
+
+    gint64 deadline = g_get_monotonic_time() + 500 * 1000;
+    while (ah->state != AUTOHIDE_HIDDEN && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, TRUE);
+    }
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
+
+    shell_autohide_destroy(ah);
+    shell_config_destroy(cfg);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -146,6 +184,7 @@ main(int argc, char *argv[])
     g_test_add_func("/autohide/enter-leave-cycle", test_autohide_enter_leave_cycle);
     g_test_add_func("/autohide/popover-unlock-recovery", test_autohide_popover_unlock_recovers_stuck_state);
     g_test_add_func("/autohide/reload-config-live", test_autohide_reload_config_live);
+    g_test_add_func("/autohide/touch-reveal-and-force-hide", test_autohide_touch_reveal_and_force_hide);
 
     return g_test_run();
 }

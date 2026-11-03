@@ -20,6 +20,8 @@ typedef struct _ShellSessionLock     ShellSessionLock;
 typedef struct _ShellScreensaver     ShellScreensaver;
 typedef struct _ShellIdleManager     ShellIdleManager;
 typedef struct _ShellPostureManager  ShellPostureManager;
+typedef struct _ShellOSK             ShellOSK;
+typedef struct _ShellTouchGestures   ShellTouchGestures;
 
 typedef struct _ShellApp ShellApp;
 
@@ -38,6 +40,8 @@ struct _ShellApp {
     ShellScreensaver        *screensaver;
     ShellIdleManager        *idle_manager;
     ShellPostureManager     *posture_manager;
+    ShellOSK                *osk;
+    ShellTouchGestures      *touch_gestures;
     GPtrArray               *active_widgets;
 };
 

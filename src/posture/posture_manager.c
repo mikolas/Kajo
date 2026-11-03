@@ -384,3 +384,23 @@ shell_posture_manager_destroy(ShellPostureManager *self)
     g_free(self->last_transform);
     g_free(self);
 }
+
+ShellPostureState
+shell_posture_manager_get_state(ShellPostureManager *self)
+{
+    return self ? self->state : SHELL_POSTURE_UNKNOWN;
+}
+
+gint
+shell_posture_manager_get_rotation_deg(ShellPostureManager *self)
+{
+    if (!self || !self->last_transform)
+        return 0;
+    if (g_strcmp0(self->last_transform, "90") == 0 || g_strcmp0(self->last_transform, "flipped-90") == 0)
+        return 90;
+    if (g_strcmp0(self->last_transform, "180") == 0 || g_strcmp0(self->last_transform, "flipped-180") == 0)
+        return 180;
+    if (g_strcmp0(self->last_transform, "270") == 0 || g_strcmp0(self->last_transform, "flipped-270") == 0)
+        return 270;
+    return 0;
+}

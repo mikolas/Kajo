@@ -1,6 +1,7 @@
 #include "../src/ipc/socket.h"
 #include "../src/shell.h"
 #include "../src/launcher/launcher_surface.h"
+#include "../src/osk/osk.h"
 #include <glib.h>
 #include <glib/gstdio.h>
 
@@ -11,6 +12,21 @@ static gint g_reload_thm_calls  = 0;
 static gint g_brightness_delta  = 0;
 static gint g_volume_delta      = 0;
 static gint g_mute_calls        = 0;
+
+void
+shell_osk_toggle(ShellOSK *self G_GNUC_UNUSED)
+{
+}
+
+void
+shell_osk_show(ShellOSK *self G_GNUC_UNUSED, gboolean manual_pin G_GNUC_UNUSED)
+{
+}
+
+void
+shell_osk_hide(ShellOSK *self G_GNUC_UNUSED)
+{
+}
 
 void
 shell_launcher_surface_toggle(ShellLauncherSurface *self G_GNUC_UNUSED)

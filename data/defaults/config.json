@@ -4,7 +4,17 @@
     "height": 39,
     "layer": "top",
     "widget_mode": "icon",
-    "icon_size": 24
+    "icon_size": 24,
+    "touch_gestures": {
+      "enabled": true,
+      "dwell_ms": 4000,
+      "swipe_center": "launcher",
+      "swipe_right": "control-center",
+      "swipe_horizontal": "column",
+      "osk_auto_show_mode": "tablet",
+      "osk_push_windows": true,
+      "osk_height_px": 260
+    }
   },
   "autohide": {
     "enabled": true,
@@ -41,6 +51,7 @@
       {"id": "bluetooth", "mode": "icon"},
       {"id": "cpu-mem", "mode": "icon"},
       {"id": "keyboard-layout", "mode": "label"},
+      {"id": "osk", "mode": "icon"},
       {"id": "volume", "mode": "icon"},
       {"id": "battery", "mode": "icon"},
       {"id": "privacy", "mode": "icon"},

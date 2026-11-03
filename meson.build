@@ -27,6 +27,7 @@ gtk4_wayland_dep = dependency('gtk4-wayland', required: true)
 layer_shell_dep = dependency('gtk4-layer-shell-0', 'gtk4-layer-shell', fallback: ['gtk4-layer-shell', 'gtk_layer_shell'])
 wayland_client_dep = dependency('wayland-client', required: true)
 wayland_protocols_dep = dependency('wayland-protocols', required: true)
+xkbcommon_dep = dependency('xkbcommon', required: true)
 json_glib_dep = dependency('json-glib-1.0')
 gio_dep = dependency('gio-2.0')
 gio_unix_dep = dependency('gio-unix-2.0')
@@ -48,6 +49,38 @@ ext_idle_notify_code = custom_target(
   'ext-idle-notify-v1-protocol.c',
   input: ext_idle_notify_xml,
   output: 'ext-idle-notify-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
+vkbd_xml = files('protocol/virtual-keyboard-unstable-v1.xml')
+
+vkbd_header = custom_target(
+  'virtual-keyboard-unstable-v1-client-protocol.h',
+  input: vkbd_xml,
+  output: 'virtual-keyboard-unstable-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+
+vkbd_code = custom_target(
+  'virtual-keyboard-unstable-v1-protocol.c',
+  input: vkbd_xml,
+  output: 'virtual-keyboard-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
+im_xml = files('protocol/input-method-unstable-v2.xml')
+
+im_header = custom_target(
+  'input-method-unstable-v2-client-protocol.h',
+  input: im_xml,
+  output: 'input-method-unstable-v2-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+
+im_code = custom_target(
+  'input-method-unstable-v2-protocol.c',
+  input: im_xml,
+  output: 'input-method-unstable-v2-protocol.c',
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
@@ -82,7 +115,10 @@ sources = files(
   'src/widgets/notifications.c',
   'src/widgets/control-center.c',
   'src/widgets/theme.c',
+  'src/widgets/osk.c',
   'src/osd/osd.c',
+  'src/osk/osk_xkb.c',
+  'src/osk/osk.c',
   'src/notifications/daemon.c',
   'src/launcher/launcher_surface.c',
   'src/lock/pam_auth.c',
@@ -91,6 +127,7 @@ sources = files(
   'src/lock/idle_manager.c',
   'src/hardware/hw_caps.c',
   'src/hardware/kbd_backlight.c',
+  'src/hardware/touch_gestures.c',
   'src/posture/posture_manager.c',
   'src/vendor/tinyexpr/tinyexpr.c',
   'src/ipc/socket.c',
@@ -151,12 +188,17 @@ executable(
   sources,
   ext_idle_notify_header,
   ext_idle_notify_code,
+  vkbd_header,
+  vkbd_code,
+  im_header,
+  im_code,
   shell_resources,
   dependencies: [
     layer_shell_dep,
     gtk4_dep,
     gtk4_wayland_dep,
     wayland_client_dep,
+    xkbcommon_dep,
     json_glib_dep,
     gio_dep,
     gio_unix_dep,
@@ -349,6 +391,7 @@ widget_sources = files(
   'src/widgets/notifications.c',
   'src/widgets/control-center.c',
   'src/widgets/theme.c',
+  'src/widgets/osk.c',
 )
 
 test_registry_exe = executable(
@@ -369,6 +412,22 @@ test_registry_exe = executable(
   build_by_default: false,
 )
 test('widget-registry', test_registry_exe)
+
+test_osk_xkb_exe = executable(
+  'test-osk-xkb',
+  files('tests/test_osk_xkb.c', 'src/osk/osk_xkb.c'),
+  dependencies: [gio_dep, xkbcommon_dep],
+  build_by_default: false,
+)
+test('osk-xkb', test_osk_xkb_exe)
+
+test_touch_gestures_exe = executable(
+  'test-touch-gestures',
+  files('tests/test_touch_gestures.c', 'src/hardware/touch_gestures.c'),
+  dependencies: [layer_shell_dep, gtk4_dep, gtk4_wayland_dep, wayland_client_dep, gio_dep, gio_unix_dep, m_dep],
+  build_by_default: false,
+)
+test('touch-gestures', test_touch_gestures_exe)
 
 egl_dep = dependency('egl', required: false)
 glesv2_dep = dependency('glesv2', required: false)

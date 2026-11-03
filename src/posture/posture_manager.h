@@ -19,6 +19,8 @@ typedef enum {
 ShellPostureManager *shell_posture_manager_new(ShellApp *app);
 void                 shell_posture_manager_destroy(ShellPostureManager *self);
 void                 shell_posture_manager_reload_config(ShellPostureManager *self);
+ShellPostureState    shell_posture_manager_get_state(ShellPostureManager *self);
+gint                 shell_posture_manager_get_rotation_deg(ShellPostureManager *self);
 
 #ifdef __cplusplus
 }

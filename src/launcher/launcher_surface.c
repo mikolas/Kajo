@@ -609,6 +609,24 @@ shell_launcher_window_class_init(ShellLauncherWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, ShellLauncherWindow, list_box);
 }
 
+static void
+on_launcher_swiped(GtkGestureSwipe *gesture,
+                   gdouble          vx,
+                   gdouble          vy,
+                   gpointer         user_data)
+{
+    ShellLauncherSurface *ls = (ShellLauncherSurface *)user_data;
+    if (!ls || !ls->is_visible)
+        return;
+
+    /* Fast upward or horizontal swipe dismisses the launcher in touch/tablet mode */
+    if ((vy < -450.0 && fabs(vy) > 1.4 * fabs(vx)) ||
+        (fabs(vx) > 650.0 && fabs(vx) > 2.0 * fabs(vy))) {
+        gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+        shell_launcher_surface_hide(ls);
+    }
+}
+
 ShellLauncherSurface *
 shell_launcher_surface_new(ShellCompositor *compositor)
 {
@@ -637,6 +655,11 @@ shell_launcher_surface_new(ShellCompositor *compositor)
     gtk_event_controller_set_propagation_phase(key_ctrl, GTK_PHASE_CAPTURE);
     g_signal_connect(key_ctrl, "key-pressed", G_CALLBACK(on_key_pressed), ls);
     gtk_widget_add_controller(GTK_WIDGET(ls->window), key_ctrl);
+
+    /* Touch Swipe Gesture Controller to dismiss Launcher in tablet mode */
+    GtkGesture *swipe = gtk_gesture_swipe_new();
+    g_signal_connect(swipe, "swipe", G_CALLBACK(on_launcher_swiped), ls);
+    gtk_widget_add_controller(GTK_WIDGET(ls->window), GTK_EVENT_CONTROLLER(swipe));
 
     /* Dismiss when window loses active status / click outside */
     g_signal_connect(ls->window, "notify::is-active", G_CALLBACK(on_window_is_active_changed), ls);
