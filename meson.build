@@ -33,6 +33,8 @@ gio_dep = dependency('gio-2.0')
 gio_unix_dep = dependency('gio-unix-2.0')
 pulse_dep = dependency('libpulse')
 pulse_glib_dep = dependency('libpulse-mainloop-glib')
+poppler_dep = dependency('poppler-glib')
+archive_dep = dependency('libarchive')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -161,6 +163,7 @@ blueprints = files(
   'data/ui/page_network.blp',
   'data/ui/page_bluetooth.blp',
   'data/ui/page_audio.blp',
+  'data/ui/files_window.blp',
 )
 
 compiled_blueprints = []
@@ -272,6 +275,39 @@ executable(
     pam_dep,
   ],
   install: true,
+)
+
+files_sources = files(
+  'src/files/main.c',
+  'src/files/files_window.c',
+  'src/files/files_model.c',
+  'src/files/files_ops.c',
+  'src/files/files_sidebar.c',
+  'src/files/files_quicklook.c',
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-files',
+  files_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    poppler_dep,
+    archive_dep,
+  ],
+  install: true,
+)
+
+install_data(
+  'data/org.kajo.Files.desktop',
+  install_dir: get_option('datadir') / 'applications',
 )
 
 install_data(
@@ -428,6 +464,14 @@ test_touch_gestures_exe = executable(
   build_by_default: false,
 )
 test('touch-gestures', test_touch_gestures_exe)
+
+test_files_model_exe = executable(
+  'test-files-model',
+  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_ops.c'),
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep],
+  build_by_default: false,
+)
+test('files-model', test_files_model_exe)
 
 egl_dep = dependency('egl', required: false)
 glesv2_dep = dependency('glesv2', required: false)

@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-settings`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-settings`, `kajo-files`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `json-glib-1.0`, `gio-2.0`, `libpulse`, `libpulse-mainloop-glib`, and `libpam`.
+The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -21,6 +21,17 @@ src/
 ├── compositor/
 │   ├── compositor.h                Compositor abstraction interface
 │   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
+├── files/
+│   ├── main.c                      kajo-files standalone entry point (org.kajo.Files)
+│   ├── files_window.h/c            Main window controller, history stack, breadcrumbs & shortcuts
+│   ├── files_model.h/c             KajoFileItem GObject, async GVFS enumerator, sort & filter
+│   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir & clipboard
+│   ├── files_sidebar.h/c           Places, Trash, GVolumeMonitor drives & inline GVFS/LUKS auth
+│   └── files_quicklook.h/c         Inspector drawer & Space Quick Look modal (img/media/PDF/archive/code)
+├── hardware/
+│   ├── hw_caps.h/c                 Runtime hardware capability probing (ISH hinge/accel, EC, LEDs)
+│   ├── kbd_backlight.h/c           Sysfs & HP EC (0x97 HKBL / 0x96 HKBT) keyboard backlight control
+│   └── touch_gestures.h/c          Edge layer-shell bezel swipe gesture recognizers
 ├── ipc/
 │   └── socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
 ├── launcher/
@@ -39,6 +50,11 @@ src/
 │   └── daemon.h/c                  Freedesktop notification server (org.freedesktop.Notifications)
 ├── osd/
 │   └── osd.h/c                     Volume, brightness & status OSD overlay surface
+├── osk/
+│   ├── osk.h/c                     ShellOSK 28-column proportional virtual keyboard & IMv2 monitor
+│   └── osk_xkb.h/c                 XKB keymap builder & keycode/keysym lookup
+├── posture/
+│   └── posture_manager.h/c         360° hinge angle posture state machine & auto-rotation
 ├── settings/
 │   ├── main.c                      kajo-settings standalone entry point (org.kajo.Settings)
 │   ├── settings_window.h/c         Settings container shell, category sidebar & GtkStack
@@ -53,16 +69,19 @@ src/
     ├── registry.h/c                Panel widget registry
     ├── media.c                     MPRIS2 controller & 16-band Cooley-Tukey FFT visualizer
     ├── tray.c                      StatusNotifierItem (SNI) watcher & ARGB32 pixmap decoder
-    └── *.c                         20 built-in panel widget implementations
+    └── *.c                         22 built-in panel widget implementations
 
 data/
+├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
 ├── defaults/
 │   ├── config.json                 Default panel, widget, notification & idle configuration
-│   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, lock, greeter)
+│   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, osk, lock, greeter)
 │   └── icon-map.json               Logical-to-symbolic icon mappings
 ├── greetd/
 │   ├── niri-greeter.kdl            Locked-down Niri configuration for the greetd login session
 │   └── kajo-greeter-session        Wrapper launcher script for /etc/greetd/config.toml
+├── shaders/
+│   └── *.glsl                      Bundled Niri GLSL window open/close/resize shader presets
 └── ui/
     └── *.blp                       Blueprint Markup (.blp) declarative UI templates
 
@@ -73,7 +92,11 @@ tests/
 ├── test_ipc.c                      UNIX domain socket IPC server/client dispatch tests
 ├── test_autohide.c                 Autohide state transitions, hold-open & margin calculation tests
 ├── test_registry.c                 Widget registry completeness & lifecycle tests
-└── test_greetd_ipc.c               greetd binary framing, auth roundtrip & session parser tests
+├── test_greetd_ipc.c               greetd binary framing, auth roundtrip & session parser tests
+├── test_osk_xkb.c                  XKB keymap compilation & keysym/keycode resolution tests
+├── test_touch_gestures.c           Bezel touch gesture directional threshold & trigger tests
+├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
+└── test_shaders.c                  Headless EGL/GLES2 compiler verification for Niri GLSL shaders
 ```
 
 ---
@@ -82,23 +105,24 @@ tests/
 
 ### Prerequisites
 - `gtk4` (≥ 4.12), `gtk4-layer-shell` (≥ 1.0)
-- `wayland-client`, `wayland-protocols`, `wayland-scanner`
+- `wayland-client`, `wayland-protocols`, `wayland-scanner`, `xkbcommon`
 - `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
 - `libpulse`, `libpulse-mainloop-glib`
 - `pam` (`libpam`)
+- `poppler-glib`, `libarchive`
 - `blueprint-compiler`, `meson`, `ninja`
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 7 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 11 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
 meson setup builddir
 
-# Compile all targets (kajo, kajo-settings, kajo-greeter)
+# Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 7 automated GTest suites
+# Run all 11 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -108,13 +132,17 @@ meson install -C builddir
 ### Automated Test Suites (`meson test -C builddir`)
 | Suite Name | Binary | Coverage |
 | :--- | :--- | :--- |
-| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` fields, defaults fallback. |
+| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` / `touch_gestures` fields, defaults fallback. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
 | `autohide-state` | `test-autohide` | Panel autohide states (`VISIBLE`, `HIDING`, `HIDDEN`, `REVEALING`), 2px trigger strip margins, popover/launcher hold-open, and live config reload. |
 | `ipc-socket` | `test-ipc` | `$XDG_RUNTIME_DIR/kajo.sock` command dispatch (`lock`, `screensaver`, `reload-config`, etc.). |
-| `widget-registry` | `test-registry` | Verifies all 20 registered `ShellWidgetClass` definitions have valid `.id` and `.name` fields. |
+| `widget-registry` | `test-registry` | Verifies all 22 registered `ShellWidgetClass` definitions have valid `.id` and `.name` fields. |
+| `osk-xkb` | `test-osk-xkb` | XKB keymap generation (`us`, `fi`, etc.) and keysym/keycode resolution for `ShellOSK`. |
+| `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch. |
+| `files-model` | `test-files-model` | `KajoFileItem` size/permission formatting, directory-first sorting, filtering, and async `mkdir`/`rename`/`delete` operations. |
+| `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 
 ### Running & Debugging Individual Executables
 ```bash
@@ -124,10 +152,13 @@ meson install -C builddir
 # 2. Run settings app directly on a specific page
 ./builddir/kajo-settings --page audio
 
-# 3. Run kajo-greeter in safe desktop preview mode (uses PAM verification, no logout)
+# 3. Run file manager on a path or GVFS URI
+./builddir/kajo-files ~/Downloads
+
+# 4. Run kajo-greeter in safe desktop preview mode (uses PAM verification, no logout)
 ./builddir/kajo-greeter --test --cmd niri-session
 
-# 4. Run kajo-greeter inside a nested Niri compositor window on your desktop
+# 5. Run kajo-greeter inside a nested Niri compositor window on your desktop
 KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
 ```
 
@@ -152,6 +183,9 @@ Line-delimited UTF-8 commands (`<command>\n`) sent by `kajo <flag>` or `kajo-set
 | `volume-mute` | `volume-toggle` | Toggles default audio sink mute + shows OSD. |
 | `brightness-up` | `brightness+` | Increases backlight brightness by 5% + shows OSD. |
 | `brightness-down` | `brightness-` | Decreases backlight brightness by 5% + shows OSD. |
+| `toggle-osk` | `osk-toggle` | Toggles the on-screen virtual keyboard (`ShellOSK`). |
+| `show-osk` | `osk-open` | Shows the on-screen virtual keyboard. |
+| `hide-osk` | `osk-close` | Hides the on-screen virtual keyboard. |
 
 ### B. `greetd` Socket (`$GREETD_SOCK`)
 Binary length-prefixed framing (`uint32_t` native-endian length + UTF-8 JSON payload) implemented in `src/greeter/greetd_ipc.c`:

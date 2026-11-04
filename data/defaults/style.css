@@ -1216,6 +1216,253 @@ window.osk-window .osk-key-hint {
     margin-top: 3px;
 }
 
+/* ═══════════════════════════════════════════════════════════════════ */
+/* ─── Kajo Files (window.shell-files-window) — Aero + Metro Style ─── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+window.shell-files-window .files-action-ribbon {
+    background-color: #161616;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 5px 12px;
+}
+
+window.shell-files-window .files-nav-btn {
+    min-width: 28px;
+    min-height: 26px;
+    padding: 2px 8px;
+    border: 1px solid #2b2b2b;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+}
+
+window.shell-files-window .files-nav-btn:hover,
+window.shell-files-window .files-nav-btn.active {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-files-window .files-breadcrumb-btn {
+    padding: 2px 8px;
+    min-height: 24px;
+    background-color: #1a1a1a;
+    border: 1px solid #2b2b2b;
+    color: #c8c8c8;
+    font-size: 12px;
+}
+
+window.shell-files-window .files-breadcrumb-btn:hover {
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-files-window .files-breadcrumb-btn.active {
+    background-color: alpha(@metro-accent, 0.28);
+    border-color: @metro-accent;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+window.shell-files-window .files-accent-btn {
+    background-color: @metro-accent;
+    border: 1px solid @metro-accent;
+    color: #ffffff;
+    font-weight: 700;
+    padding: 6px 14px;
+}
+
+window.shell-files-window .files-accent-btn:hover {
+    background-color: @metro-accent-hover;
+}
+
+window.shell-files-window .files-context-banner {
+    margin: 8px 12px 0px 12px;
+}
+
+/* Metro Tile Grid View */
+window.shell-files-window .files-tile-grid {
+    padding: 12px;
+    background-color: #141414;
+}
+
+window.shell-files-window .files-tile-grid flowboxchild {
+    padding: 0px;
+    margin: 0px;
+    background: transparent;
+    border: none;
+    outline: none;
+}
+
+window.shell-files-window .files-tile-card {
+    background-color: #1a1a1a;
+    border: 1px solid #2b2b2b;
+    padding: 8px;
+}
+
+window.shell-files-window .files-tile-card.files-tile-folder {
+    border-top: 2px solid @metro-accent;
+}
+
+window.shell-files-window .files-tile-card:hover {
+    background-color: #222222;
+    border-color: @metro-accent;
+}
+
+window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card {
+    background-color: alpha(@metro-accent, 0.26);
+    border: 1px solid @metro-accent;
+    box-shadow: inset 0 0 0 1px @metro-accent;
+}
+
+window.shell-files-window .files-tile-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+window.shell-files-window .files-tile-sub {
+    font-size: 10px;
+    color: #8c8c8c;
+}
+
+/* Details List View */
+window.shell-files-window .files-list-header {
+    background-color: #181818;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 6px 16px;
+}
+
+window.shell-files-window .files-col-header {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: @metro-accent;
+}
+
+window.shell-files-window .files-details-list {
+    background-color: #141414;
+    padding: 4px 8px;
+}
+
+window.shell-files-window .files-list-row {
+    background-color: #181818;
+    border: 1px solid #242424;
+    border-left: 3px solid transparent;
+    margin-bottom: 2px;
+    padding: 6px 10px;
+}
+
+window.shell-files-window .files-list-row:hover {
+    background-color: #202020;
+    border-color: #363636;
+}
+
+window.shell-files-window .files-list-row:selected {
+    background-color: alpha(@metro-accent, 0.25);
+    border-color: @metro-accent;
+    border-left: 3px solid #ffffff;
+}
+
+window.shell-files-window .files-list-row-box {
+    background: transparent;
+}
+
+window.shell-files-window .files-list-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+window.shell-files-window .files-list-meta {
+    font-size: 12px;
+    color: #9a9a9a;
+}
+
+/* Inspector Pane */
+window.shell-files-window .files-inspector-pane {
+    background-color: #141414;
+    border-left: 1px solid #2b2b2b;
+}
+
+window.shell-files-window .files-inspector-thumb {
+    background-color: #101010;
+    border: 1px solid #2b2b2b;
+    padding: 8px;
+}
+
+window.shell-files-window .files-meta-key {
+    font-size: 11px;
+    font-weight: 700;
+    color: #888888;
+}
+
+window.shell-files-window .files-meta-val {
+    font-size: 11px;
+    color: #e6e6e6;
+}
+
+/* Quick Look Modal Overlay (Space) */
+window.shell-files-window .files-quicklook-backdrop {
+    background-color: rgba(0, 0, 0, 0.74);
+}
+
+window.shell-files-window .files-quicklook-card {
+    background-color: #161616;
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
+}
+
+window.shell-files-window .files-quicklook-textview,
+window.shell-files-window .files-quicklook-textview text {
+    background-color: #101010;
+    color: #e8e8e8;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+}
+
+window.shell-files-window .files-quicklook-meta {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    color: #e0e0e0;
+}
+
+/* Sidebar Drive Capacity & Status Bar */
+window.shell-files-window .files-drive-bar trough {
+    background-color: #262626;
+    min-height: 5px;
+    border-radius: 0px;
+}
+
+window.shell-files-window .files-drive-bar block.filled {
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+window.shell-files-window .files-eject-btn {
+    padding: 1px 6px;
+    min-height: 20px;
+    font-size: 12px;
+}
+
+window.shell-files-window .files-status-bar {
+    background-color: #121212;
+    border-top: 1px solid #2b2b2b;
+    padding: 5px 12px;
+}
+
+window.shell-files-window .files-status-text {
+    font-size: 11px;
+    font-weight: 600;
+    color: #989898;
+}
+
+window.shell-files-window .files-status-error {
+    color: #ff5555;
+    font-weight: 700;
+}
+
+
 
 
 

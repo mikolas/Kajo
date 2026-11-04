@@ -1,19 +1,20 @@
 # Kajo
 
-A high-performance, lightweight Wayland desktop shell, system settings suite, session lock, and `greetd` login greeter built for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
+A high-performance, lightweight Wayland desktop shell, system settings suite, GVFS file manager, virtual keyboard, session lock, and `greetd` login greeter built for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
 
-Built in standard C17 with GTK4, `gtk4-layer-shell`, `libpulse`, `libpam`, and Blueprint Markup. Designed for OLED displays, sub-0.05% idle CPU usage, and keyboard-driven operation.
+Built in standard C17 with GTK4, `gtk4-layer-shell`, `libpulse`, `libpam`, `poppler-glib`, `libarchive`, and Blueprint Markup. Designed for OLED displays, sub-0.05% idle CPU usage, and keyboard- & touch-driven operation.
 
 ---
 
 ## 🌟 Overview of Executables
 
-The project builds and installs three integrated executables plus a `greetd` session wrapper:
+The project builds and installs four integrated executables plus a `greetd` session wrapper:
 
 | Executable | Purpose |
 | :--- | :--- |
-| **`kajo`** | Primary Wayland desktop shell daemon (status panel, 21 live widgets, multi-plugin app launcher, OSD overlays, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, 360° foldable posture & auto-rotation manager, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
-| **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC, and Kajo IPC integration. |
+| **`kajo`** | Primary Wayland desktop shell daemon (status panel, 22 live widgets, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual keyboard, bezel touch gesture recognizers, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, 360° foldable posture & auto-rotation manager, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
+| **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC (including live GLSL window shaders), and Kajo IPC integration. |
+| **`kajo-files`** | *(Alpha)* Native Aero + Metro file manager (`org.kajo.Files`) with URI-first GVFS/UDisks2 integration, inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (images, audio/video, multi-page Poppler PDFs, `libarchive` archives, and code/text). |
 | **`kajo-greeter`** | Graphical Wayland login greeter for `greetd` supporting both `niri` (`gtk4-layer-shell` multi-monitor) and `cage` (XDG fullscreen kiosk) compositors. |
 | **`kajo-greeter-session`** | Wrapper launcher script for `/etc/greetd/config.toml`. |
 
@@ -22,7 +23,10 @@ The project builds and installs three integrated executables plus a `greetd` ses
 ## ✨ Key Features
 
 ### 🖥️ Status Panel & Hardware Telemetry (`kajo`)
-- **21 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery (with multi-level capacity indicator icons), backlight & posture (`backlight`), network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), active window title, launcher button, and custom user scripts.
+- **22 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery (with multi-level capacity indicator icons), backlight & posture (`backlight`), network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), virtual keyboard toggle (`osk`), active window title, launcher button, and custom user scripts.
+- **Virtual Keyboard (`ShellOSK`) & Touchscreen Bezel Gestures**:
+  - **Windows Touch Keyboard Layout**: 28-column proportional `GtkGrid` virtual keyboard speaking Wayland `zwp_virtual_keyboard_unstable_v1` and `zwp_input_method_unstable_v2`, with dynamic XKB layout discovery (`org.freedesktop.locale1` / Niri IPC), `ABC` / `&123` pages, and automatic text-input activation in Tablet mode.
+  - **Bezel Edge Swipe Recognizers**: Configurable top, bottom, left, and right screen-edge touch gesture strips (`Launcher`, `Niri Overview`, `Virtual Keyboard`, `Notifications`, `Control Center`).
 - **360° Foldable Posture, Auto-Rotation & Backlight Control *(Experimental)***:
   > ⚠️ **Experimental Feature**: Foldable sensor posture tracking, auto-rotation, input inhibition, and Embedded Controller keyboard backlight/timeout management are currently **experimental** until fully proven and stabilized across hardware.
   - **Runtime Hardware Capability Probing**: Dynamically detects Intel ISH `hinge` (`in_angl0_raw`) and `accel_3d` IIO sensors, `/sys/class/input/input*/inhibited` attributes, and keyboard backlight controllers (`/sys/class/leds/*::kbd_backlight` and HP Embedded Controller `0x97` `HKBL` / `0x96` `HKBT`). On desktop PCs without foldable sensors or backlights, zero timers run and foldable/backlight settings stay hidden.
@@ -43,7 +47,16 @@ The project builds and installs three integrated executables plus a `greetd` ses
 - **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, and inline WPA/WPA2 password authentication.
 - **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery (`GDBusObjectManager`), live device scanning, pairing, and connection toggling.
 - **Audio & PipeWire (`audio`)**: Asynchronous non-blocking PulseAudio/PipeWire context for default output sink selection, microphone input gain/mute, and per-application stream volume sliders.
-- **Theme (`theme`), Panel (`panel`), Widgets (`widgets`), Notifications (`notifications`), Niri (`niri`), About (`about`)**: Live accent color switching (`@metro-accent`), panel edge/height/autohide configuration, interactive widget ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) reconciliation without restarting `kajo`.
+- **Theme (`theme`), Panel & Touch (`panel`), Widgets (`widgets`), Notifications (`notifications`), Niri & Shaders (`niri`), About (`about`)**: Live accent color switching (`@metro-accent`), panel edge/height/autohide & bezel touch gesture configuration, Niri GLSL window animation shader presets (`open`, `close`, `resize`), and interactive widget ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) reconciliation without restarting `kajo`.
+
+### 📁 Kajo Files (`kajo-files` — *Alpha*)
+> 🧪 **Alpha Status**: `kajo-files` is currently in **Alpha**. Core browsing, GVFS/UDisks2 mounting, file operations, and Quick Look previews are functional, while Phase 2 features (context menus, drag-and-drop, archive extraction, and extended format previews) are under active development.
+- **Aero + Metro Visual Design**: Shares `kajo-settings`'s frameless `GtkWindowHandle` chrome, `#141414` dark surfaces, `1px solid @metro-accent` borders, `Fira Code` technical badges, `🗗 FLOAT / TILE` Niri toggle, and single-view-per-window workflow (`Ctrl+N` opens a new window for Niri tiling).
+- **URI-First GIO, GVFS & UDisks2 Integration**:
+  - Asynchronous non-blocking directory enumeration (`g_file_enumerate_children_async`) and live directory monitoring (`GFileMonitor`).
+  - Supports local paths (`file://`), Recycle Bin (`trash:///` with contextual **Restore Selected** & **Empty Trash** banner), `recent:///`, `network:///`, `[ + CONNECT TO SERVER ]` (`smb://`, `sftp://`, `ftp://`, `davs://`, `mtp://`, `onedrive://`), live `GVolumeMonitor` drive capacity bars, 1-click Eject/Unmount (`⏏`), and an inline Kajo-styled `GMountOperation` banner for LUKS passphrases and SMB/SFTP credentials.
+- **macOS-Style Quick Look (`Space`) & On-Demand Inspector (`Ctrl+I`)**:
+  - Pressing **`Space`** on any selected item opens a modal preview overlay rendering high-res images (`GtkPicture`), audio/video (`GtkVideo`), multi-page PDF documents (`poppler-glib` with page navigation), archive contents (`libarchive` for `.zip`, `.tar.*`, `.7z`, `.rar`, `.deb`, `.rpm`, `.iso`), code/markdown/configs (`Fira Code`), and folder summaries—updating live when navigating with arrow keys (`←`/`→`/`↑`/`↓`).
 
 ### 🔐 Kajo Login Greeter (`kajo-greeter`)
 - **Native `greetd` IPC Client**: Speaks the `greetd` binary protocol (`$GREETD_SOCK`) with zero-copy scrubbed password serialization, `prctl(PR_SET_DUMPABLE, 0)` core-dump protection, and GTK Inspector lockout.
@@ -58,15 +71,18 @@ The project builds and installs three integrated executables plus a `greetd` ses
 Ensure the following development packages are installed (Arch Linux / CachyOS package names shown):
 - `gtk4` (≥ 4.12)
 - `gtk4-layer-shell` (≥ 1.0, includes `gtk4-session-lock`)
-- `wayland`, `wayland-protocols`
+- `wayland`, `wayland-protocols`, `libxkbcommon`
 - `json-glib`, `glib2` (`gio-2.0`, `gio-unix-2.0`)
 - `libpulse` (`libpulse`, `libpulse-mainloop-glib`)
 - `pam` (`libpam`)
+- `poppler-glib`, `libarchive` (for `kajo-files` PDF & archive Quick Look previews)
+- `gvfs`, `gvfs-smb`, `udisks2` (optional runtime services for removable drives & network shares)
 - `blueprint-compiler`, `meson`, `ninja`
 
 ```bash
-sudo pacman -S --needed gtk4 gtk4-layer-shell wayland wayland-protocols \
-    json-glib glib2 libpulse pam blueprint-compiler meson ninja
+sudo pacman -S --needed gtk4 gtk4-layer-shell wayland wayland-protocols libxkbcommon \
+    json-glib glib2 libpulse pam poppler-glib libarchive gvfs gvfs-smb udisks2 \
+    blueprint-compiler meson ninja
 ```
 
 ### 2. Build & User Installation (`~/.local`)
@@ -118,9 +134,11 @@ spawn-at-startup "kajo"
 
 // 2. Recommended Keybindings (Instant UNIX Socket IPC Client Mode)
 binds {
-    // Application Launcher & Settings
+    // Application Launcher, Settings, File Browser & Virtual Keyboard
     Mod+D             { spawn "kajo" "--toggle-launcher"; }
     Mod+S             { spawn "kajo-settings"; }
+    Mod+E             { spawn "kajo-files"; }
+    Mod+K             { spawn "kajo" "--toggle-osk"; }
 
     // Session Lock & Screen Saver
     Mod+Shift+L       { spawn "kajo" "--lock"; }
@@ -213,6 +231,9 @@ When invoked with no arguments, `kajo` starts as the Wayland desktop shell daemo
 | `--volume-mute` | `volume-mute` | Toggles default audio sink mute state and shows OSD. |
 | `--brightness-up` | `brightness-up` | Increases display backlight brightness by 5% and shows OSD. |
 | `--brightness-down` | `brightness-down` | Decreases display backlight brightness by 5% and shows OSD. |
+| `--toggle-osk` | `toggle-osk` | Toggles the on-screen virtual keyboard (`ShellOSK`). |
+| `--show-osk` | `show-osk` | Shows the on-screen virtual keyboard. |
+| `--hide-osk` | `hide-osk` | Hides the on-screen virtual keyboard. |
 
 ### 2. `kajo-settings` (System Settings Application)
 | Option / Flag | Description |
@@ -220,7 +241,13 @@ When invoked with no arguments, `kajo` starts as the Wayland desktop shell daemo
 | *(no arguments)* | Opens the settings window on the default `displays` page. |
 | `-p <PAGE>`, `--page <PAGE>` | Opens directly to a specific page: `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, or `about`. |
 
-### 3. `kajo-greeter` (`greetd` Login Greeter)
+### 3. `kajo-files` (File Manager)
+| Option / Argument | Description |
+| :--- | :--- |
+| *(no arguments)* | Opens `kajo-files` in the user's Home directory (`~`). |
+| `<PATH_OR_URI...>` | Opens one or more directories or GVFS URIs (`file://`, `trash:///`, `recent:///`, `network:///`, `smb://`, `sftp://`). |
+
+### 4. `kajo-greeter` (`greetd` Login Greeter)
 | Option / Flag | Description |
 | :--- | :--- |
 | `-c <CMD>`, `--cmd <CMD>` | Default session command (also read from `$KAJO_GREETER_CMD`). |
