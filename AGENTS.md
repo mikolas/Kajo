@@ -1,117 +1,124 @@
-# AGENTS.md — Kajo & Settings Guidelines
+# AGENTS.md — Kajo Desktop Suite Engineering & AI Agent Rules
 
-This document establishes the architecture rules, forbidden practices, design standards, and development learnings for AI coding assistants working on the **Kajo** (`kajo`) and **Kajo Settings** (`kajo-settings`) codebase.
-
----
-
-## 1. Executive Summary & Tech Stack
-
-The project delivers a modern, lightweight Wayland desktop shell and settings application built for the **Niri Wayland Compositor**.
-
-- **Languages**: Standard C17 (`-std=c17`), GTK4 (`gtk4`), GTK Layer Shell (`gtk4-layer-shell-0`), GLib/GIO (`gio-2.0`), PulseAudio/PipeWire (`libpulse`), Blueprint Markup (`blueprint-compiler`), embedded math parser (`tinyexpr`).
-- **Build System**: Meson (`meson`) & Ninja (`ninja`).
-- **System Buses**: System D-Bus (`org.freedesktop.NetworkManager`, `org.bluez`, `org.freedesktop.UPower`), MPRIS2 (`org.mpris.MediaPlayer2.*`), StatusNotifierItem (`org.kde.StatusNotifierWatcher`).
-- **Styling System**: Custom Vanilla GTK CSS (`data/defaults/style.css`), scoped to `window.shell-settings-window` and `.shell-popover`.
+This document is the authoritative engineering manual for AI coding assistants working on the **Kajo Desktop Environment** (`kajo`, `kajo-settings`, `kajo-files`, `kajo-greeter`). Follow every rule strictly to maximize development velocity and maintain zero-warning, zero-regression quality.
 
 ---
 
-## 2. Forbidden Practices (Strict Anti-Patterns)
+## 1. Agent Execution & Speed Rules (Read First)
 
-❌ **1. NO MOCK DATA IN UI**
-- **NEVER** insert static mock device lists, mock Wi-Fi SSIDs, or fake Bluetooth MAC addresses.
-- All NetworkManager Wi-Fi access points, BlueZ devices, PipeWire audio sinks/sources, UPower batteries, and Niri monitor outputs **MUST** query real live system data via D-Bus / IPC.
-
-❌ **2. NO HARDCODED D-BUS OBJECT PATHS**
-- **NEVER** hardcode fixed paths like `/org/bluez/hci0` or `/org/freedesktop/NetworkManager/Devices/2`.
-- Dynamically query system adapters and interfaces using `g_dbus_object_manager_get_objects()` or `GetDevices`.
-
-❌ **3. NO UNSTYLED APPLICATION LAUNCHES**
-- When instantiating standalone GTK applications (such as `kajo-settings`), **ALWAYS** initialize `ShellTheme` (`shell_theme_new()` & `shell_theme_apply()`) in `main.c` so `style.css` rules apply to window widgets.
-
-❌ **4. NO MONOLITHIC SOURCE FILES**
-- Do **NOT** lump multiple UI pages or unrelated subsystems into single multi-thousand-line files.
-- Keep settings page builders cleanly modularized under `src/settings/pages/page_*.c`.
-
-❌ **5. NO MEMORY OR GVARIANT LEAKS**
-- Always unref `GVariant*` objects (`g_variant_unref`), D-Bus proxies (`g_object_unref`), error structs (`g_clear_error`), and string allocations (`g_free`).
-- Always remove existing child widgets from container boxes before repopulating dynamic D-Bus lists.
-- For D-Bus byte array/iterators (such as StatusNotifierItem `IconPixmap`), always step through iterators safely and validate buffer sizes before reading.
-
-❌ **6. NO UN-SCOPED DYNAMIC CSS PROVIDERS**
-- **NEVER** pass generic element node selectors like `box { ... }` or `button { ... }` to `gtk_css_provider_load_from_string()` when registering providers via `gtk_style_context_add_provider_for_display()`.
-- Because `gdk_display_get_default()` applies CSS globally, generic node selectors will hijack every widget container across the entire application, breaking dark surfaces and forcing unwanted border-radii. Always use unique, scoped class names (e.g. `.swatch-0`, `.accent-tile-0`).
-
-❌ **7. NO UNINITIALIZED `ShellWidgetClass` `.id` MEMBERS**
-- **ALWAYS** explicitly define both `.id = "widget-id"` and `.name = "Widget Name"` in `ShellWidgetClass` struct definitions (`src/widgets/*.c`).
-- Omitting `.id` defaults the pointer to `NULL`, which crashes `shell_widget_registry_find` during `strcmp(cls->id, id)`.
-
-❌ **8. NO CLAIMING SUCCESS WITHOUT COMPILING**
-- Never declare a feature complete or fixed without running `meson compile -C builddir` and verifying 0 errors and 0 warnings.
-
-❌ **9. NO MARKDOWN FILES IN PROJECT ROOT**
-- **NEVER** create `.md` markdown files in the project root directory unless explicitly requested by the user.
-- Always create documentation, scratch files, plans, and specs inside the `scratch/` directory.
-
-❌ **10. NO UNGATED BACKGROUND TIMERS OR AUDIO MONITORING**
-- **NEVER** leave PulseAudio monitor streams capturing or high-frequency render timers (such as 30 FPS spectrum FFT visualizers or multi-core sysfs polling) active when popovers/popouts are unmapped.
-- Always start monitor streams corked (`PA_STREAM_START_CORKED`), uncork on widget `map`, and re-cork on widget `unmap` to ensure idle background CPU consumption remains below 0.05%.
-
-❌ **11. NO DOUBLE-FREE IN ICON RESOLUTION FALLBACKS**
-- In icon lookup pipelines, never free an unowned or caller-owned string before trying alternative icon names or desktop file parsing fallbacks.
+1. **NO SUBAGENTS (`invoke_subagent` FORBIDDEN)**:
+   - **NEVER** spawn subagents (`research`, `self`, etc.). Perform all `ripgrep` (`rg`) searches, file reads, and edits directly in the primary context for maximum speed and zero context loss.
+2. **RESPECT "DO NOT EDIT" / "WAIT" DIRECTIVES**:
+   - When the user says *"do not edit"*, *"what do you think?"*, or *"wait"*, perform **zero** file writes/edits. Answer or analyze concisely and wait for explicit approval.
+3. **SPECIFICATIONS (`SPEC_*.md`) & `ROADMAP.md` LIVE IN PROJECT ROOT**:
+   - Architectural specifications (`SPEC_<FEATURE>.md`), `ROADMAP.md`, `HARDWARE_FINDINGS.md`, `DEVELOPMENT.md`, and `README.md` **MUST** be created and maintained in the **project root directory** (`/home/mikolas/src/Kajo/`).
+   - Temporary one-off debug scripts or throwaway notes go in `scratch/` and must never be committed.
+4. **DO NOT TOUCH PROTECTED FUNCTIONS**:
+   - Do **NOT** modify `populate_app_index` in `src/launcher/launcher_surface.c` unless explicitly instructed by the user.
+5. **BUILD & TEST VERIFICATION GATE**:
+   - Never claim a task is complete or commit code without running:
+     ```bash
+     meson compile -C builddir && meson test -C builddir
+     ```
+   - Both commands **MUST** pass with **0 compiler errors, 0 compiler warnings**, and **100% passing GTest suites**.
 
 ---
 
-## 3. Mandatory Development Standards (What MUST be Done)
+## 2. Tech Stack & Target Binaries
 
-### A. Architectural Organization
-- **Main Settings Container**: [src/settings/settings_window.c](file:///home/mikolas/src/Kajo/src/settings/settings_window.c) serves purely as a lightweight container shell managing the sidebar list and `GtkStack`.
-- **Modular Pages**: Individual preference pages live under [src/settings/pages/](file:///home/mikolas/src/Kajo/src/settings/pages/):
-  - `page_displays.c`, `page_network.c`, `page_bluetooth.c`, `page_audio.c`, `page_theme.c`, `page_panel.c`, `page_widgets.c`, `page_notifications.c`, `page_niri.c`, `page_about.c`.
-- **Shared Helpers**: Common UI builders (`create_settings_page_card`, `create_string_dropdown`, `create_metro_toggle_tile`, `create_simple_item_row`) live in [src/settings/settings_common.c](file:///home/mikolas/src/Kajo/src/settings/settings_common.c).
-
-### B. Dynamic D-Bus Scanning & Auto-Refresh
-- Scanner buttons (`[ 🔍 REFRESH WI-FI SCAN ]`, `[ 🔍 SCAN NEARBY BLUETOOTH DEVICES ]`) must trigger real D-Bus discovery (`RequestScan`, `StartDiscovery`).
-- Scanner handlers **MUST** register a post-scan auto-refresh timeout (`g_timeout_add(1500, ...)` or similar) to automatically clear and re-populate UI list containers when scan results arrive.
-
-### C. Declarative UI Architecture (Blueprint)
-- All UI templates for popouts (`src/widgets/`) and settings pages (`src/settings/pages/`) use Blueprint Markup (`.blp`) compiled via `blueprint-compiler` to define static layouts, headers, and button bars, while using `gtk_widget_class_bind_template_child()` to append dynamic live D-Bus rows in C.
-
-### D. Popout-Gated Resource Architecture
-- All telemetry, spectrum analysis, or resource-monitoring popouts must connect to GTK `map` and `unmap` signals to enable and disable timers, monitor streams, and thread loops so background resource usage remains near zero.
+| Binary | App ID | Role & Key Libraries |
+| :--- | :--- | :--- |
+| **`kajo`** | `org.kajo.Shell` | Wayland panel, 22 widgets, 16-band FFT spectrum visualizer, notification daemon, app launcher, `ShellOSK` virtual keyboard (`zwp_virtual_keyboard_v1` + `zwp_input_method_v2`), bezel touch gestures, foldable posture manager, `ext-idle-notify-v1` screensaver, and `ext-session-lock-v1` PAM lock screen. |
+| **`kajo-settings`** | `org.kajo.Settings` | 10-page modular system settings (`src/settings/pages/page_*.c`) with live D-Bus, PipeWire, Niri IPC, and GLSL shader switching. |
+| **`kajo-files`** | `org.kajo.Files` | *(Alpha)* URI-first GIO/GVFS/UDisks2 file manager (`src/files/`) with inline LUKS/SMB auth and `Space` Quick Look (`poppler-glib`, `libarchive`, `GtkVideo`, `GtkPicture`, `GtkTextView`). |
+| **`kajo-greeter`** | `org.kajo.Greeter` | Native `greetd` Wayland login greeter (`src/greeter/`) with PAM `--test` mode and multi-monitor Niri / Cage support. |
 
 ---
 
-## 4. Design & Aesthetic Principles
+## 3. Visual Architecture ("Aero + Metro" Design System)
 
-- **Rich Modern Metro Aesthetic**: Dark mode glassmorphism, subtle card hover states, curated color palettes, accent tiles (`section-card-left`, `section-card-center`, `section-card-right`), and clean typography.
-- **Micro-Interactions**: Smooth hover states, active toggle switches, and responsive layout spacing.
-- **Clean Responsive Layouts**: Utilize GTK4 flex boxes (`GTK_ORIENTATION_VERTICAL` / `GTK_ORIENTATION_HORIZONTAL`) with explicit expansion policies (`gtk_widget_set_hexpand`, `gtk_widget_set_vexpand`).
+Every standalone Kajo application (`kajo-settings`, `kajo-files`, future `kajo-player`, etc.) **MUST** follow the unified **Aero + Metro** aesthetic rather than default Adwaita:
 
----
-
-## 5. Git Branching, Commit Discipline & Public PR Workflow
-
-❌ **1. NO DIRECT COMMITS TO `master`**
-- Direct commits or pushes to `master` are **strictly forbidden** (unless explicitly requested by the user). `master` represents public, stable releases.
-
-🌿 **2. FEATURE & BUGFIX BRANCHES ONLY**
-- All development must take place on dedicated local feature or bugfix branches (e.g., `feat/media-spectrum-analyzer`, `fix/codebase-audit`).
-
-🔒 **3. NO PREMATURE / UNREQUESTED REMOTE PUSHES**
-- **NEVER** push local feature or bugfix branches to remote (`origin`) unless explicitly requested by the user. Keep all interim development commits 100% local.
-
-🔒 **4. NO INCOMPLETE COMMITS**
-- **NEVER** commit work until the entire feature or bugfix on that branch is 100% complete, fully tested, and verified clean (`meson compile -C builddir` with 0 errors and 0 warnings).
-
-🐙 **5. PULL REQUESTS & MERGING**
-- When GitHub CLI (`gh`) is available, submit changes via Pull Requests (`gh pr create`).
-- When merging branches locally to `master` upon user request, ensure a clean fast-forward or clean merge, verify compilation, and only push when explicitly asked by the user.
+1. **Window Chrome & CSS Classes**:
+   - Undecorated window: `gtk_window_set_decorated(win, FALSE)` with CSS class `shell-settings-window` plus an app-specific class (e.g. `shell-files-window`, `shell-player-window`).
+   - Top drag bar: `GtkWindowHandle` wrapping a horizontal `GtkBox` with `.settings-header-bar`, uppercase `.settings-header-title` (`⚙ SYSTEM SETTINGS`, `📁 KAJO FILES`), `"🗗 FLOAT / TILE"` button (`niri_send_action("{\"Action\":\"ToggleWindowFloating\"}")`), and `.settings-close-btn` (`✕`, `#e81123` on hover).
+2. **Surface & Border Geometry**:
+   - **Zero Corner Radius (`0px`)** on windows, cards, popovers, inputs, and levelbars (exception: `3px` keycap radius on `window.osk-window button.osk-key`).
+   - **Dark Surfaces**: `#111111` / `#141414` / `#181818` / `#1a1a1a` backgrounds with `1px solid #2b2b2b` structural borders and `1px solid @metro-accent` window/active borders.
+   - **Typography**: `Fira Code` monospace for headers, sidebar items, technical badges (`.shell-popover-badge`), and code previews.
+3. **Standalone Theme Initialization & Live CSS Sync**:
+   - Every standalone `main.c` **MUST** initialize `ShellTheme` (`shell_theme_new()` + `shell_theme_apply()`) and `ShellIcons` (`shell_icons_init()`) on startup.
+   - Whenever `data/defaults/style.css` is edited, sync it to `~/.local/share/kajo/defaults/style.css` and `~/.config/kajo/style.css` so running processes and user overrides immediately reflect the new rules:
+     ```bash
+     cp data/defaults/style.css ~/.local/share/kajo/defaults/style.css
+     cp data/defaults/style.css ~/.config/kajo/style.css
+     ```
 
 ---
 
-## 6. Verification Checklist Before Commit
+## 4. Critical GTK4, GIO, PipeWire & Wayland Pitfalls (DO NOT REPEAT)
 
-1. Run `meson compile -C builddir` $\rightarrow$ Must compile cleanly with 0 errors and 0 warnings.
-2. Run test executable (e.g. `./builddir/kajo-settings --page network`) $\rightarrow$ Verify CSS styles load correctly without console errors.
-3. Check git diff $\rightarrow$ Ensure formatting matches project style and no temporary scratch files are staged.
+### A. GTK4 Widget & Layout Traps
+- **Vertical Alignment in Horizontal Rows (`GtkBox`)**:
+  When packing an icon (`GtkImage`), text column (`GtkBox`), and chevron/button into a horizontal row, **ALWAYS** set `gtk_widget_set_valign(..., GTK_ALIGN_CENTER)` on the parent `hbox` AND on `icon`, `vbox`, `label`, and `button`. Omitting `valign` causes single-line labels to float to the top edge of the cell next to taller icons.
+- **`GtkFlowBox` & `GtkListBox` Double-Click Activation**:
+  When `activate-on-single-click: false` is set on `GtkFlowBox` or `GtkListBox`, GTK4 natively selects on 1 click and emits `child-activated` / `row-activated` on double-click and `Enter`. **NEVER** attach a separate `GtkGestureClick` to inner tile/row boxes—it steals the click sequence and breaks activation.
+- **GTK4 CSS Background Override**:
+  GTK4's built-in theme applies `background-image` gradients to `button`, `entry`, and `row:selected`. Setting `background-color` alone in `style.css` will fail unless `background: none; background-image: none;` is also set.
+- **No Un-Scoped Dynamic `GtkCssProvider`**:
+  Never pass generic selectors (`box`, `button`, `label`) to `gtk_css_provider_load_from_string()` registered on `gdk_display_get_default()`. Always scope dynamic CSS to unique class names (`.swatch-0`, `.accent-tile-0`).
 
+### B. GIO & Async File Launching Traps
+- **Never Use `g_autoptr(GtkUriLauncher)` for Fire-and-Forget Launches**:
+  `g_autoptr(GtkUriLauncher)` unrefs and cancels the async D-Bus portal call the instant the function returns.
+  To open files/URIs in their default desktop application, use:
+  1. `g_app_info_launch_default_for_uri(uri, NULL, &err)`
+  2. Fallback: `g_app_info_get_default_for_type(content_type, FALSE)` + `g_app_info_launch()`
+  3. Fallback: `g_spawn_async()` with `xdg-open`.
+- **URI-First File Operations**:
+  Never assume `g_file_get_path(file)` is non-NULL. Virtual GVFS locations (`trash:///`, `network:///`, `recent:///`, unmounted `smb://`) have no local POSIX path; always operate on `GFile *` and check `G_FILE_ATTRIBUTE_STANDARD_TARGET_URI` when navigating virtual folders.
+
+### C. PipeWire / PulseAudio (`libpulse`) Traps
+- **Never Hardcode `2` Channels on Volume Writes**:
+  Virtual surround sinks (e.g. 7.1 `effect_input.virtual-surround-7.1-hesuvi`, `Dolby Access`) have `8` channels. Calling `pa_cvolume_set(&cv, 2, vol)` on an 8-channel sink is rejected by PipeWire/PulseAudio. Always store `sink_channels = info->channel_map.channels` from `pa_sink_info` and pass `sink_channels` to `pa_cvolume_set()`.
+- **Subscribe to `PA_SUBSCRIPTION_MASK_SERVER`**:
+  Always include `PA_SUBSCRIPTION_MASK_SERVER` alongside `SINK` and `SOURCE` so default output/input routing changes trigger `pa_context_get_server_info()` immediately.
+- **Auto-Reconnect on Server Restart**:
+  When `pa_context_get_state()` enters `PA_CONTEXT_FAILED` or `PA_CONTEXT_TERMINATED` (e.g. `systemctl --user restart pipewire-pulse`), schedule a 2-second reconnect timer (`g_timeout_add_seconds(2, ...)`), cleaning up the timer ID on widget/page destruction.
+
+### D. Wayland Layer-Shell & Resource Discipline
+- **Never Use `opacity: 0` on Autohide / Gesture Strips**:
+  GTK4 skips rendering surfaces with `opacity: 0`, which stops Wayland `wl_surface.commit` and breaks pointer/touch enter events on 2px edge trigger strips. Use `background-color: rgba(0, 0, 0, 0.01)` instead.
+- **Popout- & Map-Gated Resource Architecture**:
+  - PulseAudio monitor streams (`@DEFAULT_MONITOR@`) must start corked (`PA_STREAM_START_CORKED`), uncork on `map`, and re-cork on `unmap`.
+  - Quick Look media (`GtkVideo`) must pause its `GtkMediaStream` and call `gtk_video_set_file(video, NULL)` immediately when hidden or switched to another item.
+  - Idle background CPU usage across `kajo` must remain `< 0.05%`.
+
+### E. Security & Credential Hardening (`pam_auth`, `session_lock`, `kajo-greeter`)
+- Copy and immediately clear `GtkPasswordEntry` text before dispatching async PAM or `greetd` verification, reset `show-peek-icon`, and scrub temporary buffers with `explicit_bzero()`.
+- Never serialize plaintext passwords through `JsonBuilder` / `JsonGenerator`.
+- Always call `gtk_window_set_interactive_debugging(FALSE)` on lock and greeter windows.
+
+---
+
+## 5. Modular Codebase Standards
+
+1. **No Monolithic Files**:
+   - Settings pages live in `src/settings/pages/page_*.c`.
+   - File browser subsystems are split across `src/files/{main,files_window,files_model,files_ops,files_sidebar,files_quicklook}.c`.
+   - Panel widgets live in `src/widgets/*.c` and **MUST** define both `.id` and `.name` in their `ShellWidgetClass` struct.
+2. **No Mock Data or Hardcoded D-Bus Paths**:
+   - Every UI list must query live system state (NetworkManager, BlueZ `GDBusObjectManager`, PipeWire, UPower, `GVolumeMonitor`, Niri IPC).
+3. **Zero Memory / `GVariant` / Widget Leaks**:
+   - Use `g_autoptr` / `g_autofree` consistently, unref `GVariant`s and `GFileInfo`s, cancel in-flight `GCancellable`s in `dispose()`, and remove existing child widgets before repopulating dynamic containers.
+
+---
+
+## 6. Git Branching, Commit & PR Workflow
+
+1. **Feature / Bugfix Branches Only**:
+   - Never commit directly to `master` unless explicitly instructed. Create a descriptive branch (`feat/<name>`, `fix/<name>`).
+2. **Wait for Explicit PR / Merge Instruction**:
+   - Keep commits local until the user asks to open a PR or push.
+   - When asked to open a PR: push the branch (`git push -u origin <branch>`) and run `gh pr create`.
+   - When asked to merge: run `gh pr merge <num> --merge --delete-branch`, verify `master` is updated locally, and keep `README.md`, `DEVELOPMENT.md`, and `ROADMAP.md` synchronized with the merged state.
