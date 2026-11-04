@@ -12,88 +12,11 @@ template $KajoPlayerWindow : ApplicationWindow {
     "shell-player-window",
   ]
 
-  Box main_vbox {
-    orientation: vertical;
-    spacing: 0;
+  Overlay root_overlay {
     hexpand: true;
     vexpand: true;
 
-    /* Zone 1: Frameless Metro Header Deck */
-    WindowHandle header_handle {
-      Box header_bar {
-        orientation: horizontal;
-        spacing: 10;
-
-        styles [
-          "settings-header-bar",
-          "player-header-bar",
-        ]
-
-        Label title_label {
-          label: "🎬 KAJO PLAYER";
-          halign: start;
-          ellipsize: middle;
-          valign: center;
-
-          styles [
-            "settings-header-title",
-          ]
-        }
-
-        Label stream_badge {
-          label: "[ IDLE ]";
-          hexpand: true;
-          halign: end;
-          valign: center;
-
-          styles [
-            "shell-popover-badge",
-          ]
-        }
-
-        Button btn_open {
-          label: "📂 OPEN";
-          tooltip-text: "Open Media File (Ctrl+O)";
-          valign: center;
-
-          styles [
-            "flat",
-            "files-nav-btn",
-          ]
-        }
-
-        Button btn_queue {
-          label: "☰ QUEUE";
-          tooltip-text: "Toggle Queue Drawer (Ctrl+P)";
-          valign: center;
-
-          styles [
-            "flat",
-            "files-nav-btn",
-          ]
-        }
-
-        Button btn_float {
-          label: "🗗 FLOAT / TILE";
-          valign: center;
-
-          styles [
-            "flat",
-          ]
-        }
-
-        Button btn_close {
-          label: "✕";
-          valign: center;
-
-          styles [
-            "settings-close-btn",
-          ]
-        }
-      }
-    }
-
-    /* Zone 2: Center Video Stage + Optional Queue Drawer */
+    /* Base Layer: Video Stage + Optional Queue Drawer */
     Box body_hbox {
       orientation: horizontal;
       spacing: 0;
@@ -272,10 +195,92 @@ template $KajoPlayerWindow : ApplicationWindow {
       }
     }
 
-    /* Zone 3: Bottom Metro Transport Deck */
+    /* Overlay Zone 1: Frameless Metro Header Deck (Top) */
+    [overlay]
+    WindowHandle header_handle {
+      valign: start;
+      hexpand: true;
+
+      Box header_bar {
+        orientation: horizontal;
+        spacing: 10;
+
+        styles [
+          "settings-header-bar",
+          "player-header-bar",
+        ]
+
+        Label title_label {
+          label: "🎬 KAJO PLAYER";
+          halign: start;
+          ellipsize: middle;
+          valign: center;
+
+          styles [
+            "settings-header-title",
+          ]
+        }
+
+        Label stream_badge {
+          label: "[ IDLE ]";
+          hexpand: true;
+          halign: end;
+          valign: center;
+
+          styles [
+            "shell-popover-badge",
+          ]
+        }
+
+        Button btn_open {
+          label: "📂 OPEN";
+          tooltip-text: "Open Media File (Ctrl+O)";
+          valign: center;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+        }
+
+        Button btn_queue {
+          label: "☰ QUEUE";
+          tooltip-text: "Toggle Queue Drawer (Ctrl+P)";
+          valign: center;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+        }
+
+        Button btn_float {
+          label: "🗗 FLOAT / TILE";
+          valign: center;
+
+          styles [
+            "flat",
+          ]
+        }
+
+        Button btn_close {
+          label: "✕";
+          valign: center;
+
+          styles [
+            "settings-close-btn",
+          ]
+        }
+      }
+    }
+
+    /* Overlay Zone 2: Bottom Metro Transport Deck */
+    [overlay]
     Box transport_deck {
       orientation: vertical;
       spacing: 6;
+      valign: end;
+      hexpand: true;
 
       styles [
         "player-transport-deck",

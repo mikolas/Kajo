@@ -9,7 +9,8 @@ struct _KajoPlayerWindow {
     GtkApplicationWindow parent_instance;
 
     /* Blueprint Template Children */
-    GtkWidget *main_vbox;
+    GtkOverlay *root_overlay;
+    GtkWidget *body_hbox;
     GtkWidget *header_handle;
     GtkWidget *title_label;
     GtkWidget *stream_badge;
@@ -56,6 +57,7 @@ struct _KajoPlayerWindow {
     gboolean loop_enabled;
     gboolean queue_visible;
     gboolean is_fullscreen;
+    gboolean syncing_fullscreen;
 
     gboolean suppress_seek_signal;
     gboolean suppress_vol_signal;
@@ -71,13 +73,34 @@ static void update_stream_badge(KajoPlayerWindow *self);
 static void update_transport_ui(KajoPlayerWindow *self);
 static void sync_mpris_state(KajoPlayerWindow *self);
 
-/* --- Fullscreen Auto-Hide Chrome --- */
+/* --- Fullscreen & Bottom-Edge Auto-Hide Chrome --- */
 
 static void
-show_fullscreen_chrome(KajoPlayerWindow *self)
+update_windowed_margins(KajoPlayerWindow *self)
 {
-    gtk_widget_set_visible(self->header_handle, TRUE);
-    gtk_widget_set_visible(self->transport_deck, TRUE);
+    if (self->is_fullscreen) {
+        gtk_widget_set_margin_top(self->body_hbox, 0);
+        gtk_widget_set_margin_bottom(self->body_hbox, 0);
+        return;
+    }
+
+    int hdr_h = 0, deck_h = 0;
+    gtk_widget_measure(self->header_handle, GTK_ORIENTATION_VERTICAL, -1, NULL, &hdr_h, NULL, NULL);
+    gtk_widget_measure(self->transport_deck, GTK_ORIENTATION_VERTICAL, -1, NULL, &deck_h, NULL, NULL);
+
+    gtk_widget_set_margin_top(self->body_hbox, hdr_h > 0 ? hdr_h : 41);
+    gtk_widget_set_margin_bottom(self->body_hbox, deck_h > 0 ? deck_h : 78);
+}
+
+static void
+hide_fullscreen_chrome(KajoPlayerWindow *self)
+{
+    if (!self->is_fullscreen)
+        return;
+
+    gtk_widget_set_visible(self->header_handle, FALSE);
+    gtk_widget_set_visible(self->transport_deck, FALSE);
+    gtk_widget_set_cursor_from_name(GTK_WIDGET(self->video_overlay), "none");
 }
 
 static gboolean
@@ -86,23 +109,21 @@ on_hud_hide_timeout(gpointer user_data)
     KajoPlayerWindow *self = user_data;
     self->hud_hide_timer_id = 0;
 
-    if (self->is_fullscreen && !self->queue_visible &&
-        self->media_stream && gtk_media_stream_get_playing(self->media_stream)) {
-        gtk_widget_set_visible(self->header_handle, FALSE);
-        gtk_widget_set_visible(self->transport_deck, FALSE);
+    if (self->is_fullscreen) {
+        hide_fullscreen_chrome(self);
     }
     return G_SOURCE_REMOVE;
 }
 
 static void
-schedule_hud_hide(KajoPlayerWindow *self)
+schedule_hud_hide(KajoPlayerWindow *self, guint delay_ms)
 {
     if (self->hud_hide_timer_id > 0) {
         g_source_remove(self->hud_hide_timer_id);
         self->hud_hide_timer_id = 0;
     }
     if (self->is_fullscreen) {
-        self->hud_hide_timer_id = g_timeout_add_seconds(3, on_hud_hide_timeout, self);
+        self->hud_hide_timer_id = g_timeout_add(delay_ms, on_hud_hide_timeout, self);
     }
 }
 
@@ -113,46 +134,98 @@ on_pointer_motion(GtkEventControllerMotion *ctrl G_GNUC_UNUSED,
                   gpointer user_data)
 {
     KajoPlayerWindow *self = user_data;
-    if (fabs(x - self->last_motion_x) < 2.0 && fabs(y - self->last_motion_y) < 2.0)
+    if (!self->is_fullscreen)
+        return;
+
+    if (fabs(x - self->last_motion_x) < 1.5 && fabs(y - self->last_motion_y) < 1.5)
         return;
 
     self->last_motion_x = x;
     self->last_motion_y = y;
 
+    /* Always restore pointer cursor when moving the mouse */
+    gtk_widget_set_cursor(GTK_WIDGET(self->video_overlay), NULL);
+
+    int win_h = gtk_widget_get_height(GTK_WIDGET(self));
+    gboolean in_bottom_zone = (win_h > 0 && y >= (double)(win_h - 115));
+    gboolean in_top_zone = (y <= 52.0);
+
+    if (in_bottom_zone) {
+        gtk_widget_set_visible(self->transport_deck, TRUE);
+        gtk_widget_set_visible(self->header_handle, FALSE);
+        schedule_hud_hide(self, 2500);
+    } else if (in_top_zone) {
+        gtk_widget_set_visible(self->header_handle, TRUE);
+        gtk_widget_set_visible(self->transport_deck, FALSE);
+        schedule_hud_hide(self, 2500);
+    } else {
+        /* Pointer is over the middle of the video canvas: hide bars and start cursor hide timer */
+        gtk_widget_set_visible(self->header_handle, FALSE);
+        gtk_widget_set_visible(self->transport_deck, FALSE);
+        schedule_hud_hide(self, 1800);
+    }
+}
+
+static void
+set_fullscreen_mode(KajoPlayerWindow *self, gboolean fullscreen)
+{
+    if (self->is_fullscreen == fullscreen)
+        return;
+
+    self->is_fullscreen = fullscreen;
+
+    if (self->hud_hide_timer_id > 0) {
+        g_source_remove(self->hud_hide_timer_id);
+        self->hud_hide_timer_id = 0;
+    }
+
+    self->syncing_fullscreen = TRUE;
+    if (fullscreen) {
+        if (!gtk_window_is_fullscreen(GTK_WINDOW(self)))
+            gtk_window_fullscreen(GTK_WINDOW(self));
+    } else {
+        if (gtk_window_is_fullscreen(GTK_WINDOW(self)))
+            gtk_window_unfullscreen(GTK_WINDOW(self));
+    }
+    self->syncing_fullscreen = FALSE;
+
     if (self->is_fullscreen) {
-        show_fullscreen_chrome(self);
-        schedule_hud_hide(self);
+        gtk_widget_add_css_class(GTK_WIDGET(self), "player-fullscreen");
+        gtk_button_set_label(GTK_BUTTON(self->btn_fullscreen), "⛶ EXIT");
+        gtk_widget_add_css_class(self->btn_fullscreen, "active");
+
+        /* Expand video to 100% of window and immediately hide all chrome & queue */
+        update_windowed_margins(self);
+        gtk_widget_set_visible(self->queue_vbox, FALSE);
+        hide_fullscreen_chrome(self);
+    } else {
+        gtk_widget_remove_css_class(GTK_WIDGET(self), "player-fullscreen");
+        gtk_button_set_label(GTK_BUTTON(self->btn_fullscreen), "⛶ FULL");
+        gtk_widget_remove_css_class(self->btn_fullscreen, "active");
+
+        gtk_widget_set_cursor(GTK_WIDGET(self->video_overlay), NULL);
+        gtk_widget_set_visible(self->header_handle, TRUE);
+        gtk_widget_set_visible(self->transport_deck, TRUE);
+        gtk_widget_set_visible(self->queue_vbox, self->queue_visible);
+        update_windowed_margins(self);
     }
 }
 
 static void
 toggle_fullscreen(KajoPlayerWindow *self)
 {
-    if (gtk_window_is_fullscreen(GTK_WINDOW(self)))
-        gtk_window_unfullscreen(GTK_WINDOW(self));
-    else
-        gtk_window_fullscreen(GTK_WINDOW(self));
+    set_fullscreen_mode(self, !self->is_fullscreen);
 }
 
 static void
 on_window_fullscreened_notify(GObject *obj, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     KajoPlayerWindow *self = user_data;
-    self->is_fullscreen = gtk_window_is_fullscreen(GTK_WINDOW(obj));
+    if (self->syncing_fullscreen)
+        return;
 
-    if (self->is_fullscreen) {
-        gtk_button_set_label(GTK_BUTTON(self->btn_fullscreen), "⛶ EXIT");
-        gtk_widget_add_css_class(self->btn_fullscreen, "active");
-        schedule_hud_hide(self);
-    } else {
-        if (self->hud_hide_timer_id > 0) {
-            g_source_remove(self->hud_hide_timer_id);
-            self->hud_hide_timer_id = 0;
-        }
-        show_fullscreen_chrome(self);
-        gtk_button_set_label(GTK_BUTTON(self->btn_fullscreen), "⛶ FULL");
-        gtk_widget_remove_css_class(self->btn_fullscreen, "active");
-    }
+    gboolean compositor_fs = gtk_window_is_fullscreen(GTK_WINDOW(obj));
+    set_fullscreen_mode(self, compositor_fs);
 }
 
 /* --- Media Stream Signals & State Updates --- */
@@ -281,13 +354,6 @@ on_media_playing_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNU
     KajoPlayerWindow *self = user_data;
     update_transport_ui(self);
     sync_mpris_state(self);
-
-    if (self->is_fullscreen) {
-        if (self->media_stream && gtk_media_stream_get_playing(self->media_stream))
-            schedule_hud_hide(self);
-        else
-            show_fullscreen_chrome(self);
-    }
 }
 
 static void
@@ -438,6 +504,12 @@ seek_relative_seconds(KajoPlayerWindow *self, double delta_sec)
         target = dur;
 
     gtk_media_stream_seek(self->media_stream, target);
+
+    /* Briefly flash the seek bar when seeking in fullscreen */
+    if (self->is_fullscreen) {
+        gtk_widget_set_visible(self->transport_deck, TRUE);
+        schedule_hud_hide(self, 1500);
+    }
 }
 
 static void
@@ -495,7 +567,7 @@ static void
 toggle_queue_drawer(KajoPlayerWindow *self)
 {
     self->queue_visible = !self->queue_visible;
-    gtk_widget_set_visible(self->queue_vbox, self->queue_visible);
+    gtk_widget_set_visible(self->queue_vbox, self->queue_visible && !self->is_fullscreen);
     if (self->queue_visible)
         gtk_widget_add_css_class(self->btn_queue, "active");
     else
@@ -623,6 +695,9 @@ on_seek_scale_value_changed(GtkRange *range, gpointer user_data)
 
     g_autofree char *pos_str = kajo_player_format_time(target_us);
     gtk_label_set_text(GTK_LABEL(self->time_elapsed_lbl), pos_str);
+
+    if (self->is_fullscreen)
+        schedule_hud_hide(self, 2500);
 }
 
 static void
@@ -634,6 +709,9 @@ on_volume_scale_value_changed(GtkRange *range, gpointer user_data)
 
     double pct = gtk_range_get_value(range);
     set_volume_level(self, pct / 100.0);
+
+    if (self->is_fullscreen)
+        schedule_hud_hide(self, 2500);
 }
 
 static void
@@ -754,8 +832,8 @@ on_window_key_pressed(GtkEventControllerKey *ctrl G_GNUC_UNUSED,
         return TRUE;
 
     case GDK_KEY_Escape:
-        if (gtk_window_is_fullscreen(GTK_WINDOW(self))) {
-            gtk_window_unfullscreen(GTK_WINDOW(self));
+        if (self->is_fullscreen) {
+            set_fullscreen_mode(self, FALSE);
             return TRUE;
         }
         break;
@@ -845,7 +923,8 @@ kajo_player_window_class_init(KajoPlayerWindowClass *klass)
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/player_window.ui");
 
-    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, main_vbox);
+    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, root_overlay);
+    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, body_hbox);
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, header_handle);
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, title_label);
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, stream_badge);
@@ -911,6 +990,8 @@ kajo_player_window_init(KajoPlayerWindow *self)
     gtk_range_set_value(GTK_RANGE(self->volume_scale), 100.0);
     self->suppress_vol_signal = FALSE;
 
+    update_windowed_margins(self);
+
     /* Connect Header & Transport Buttons */
     g_signal_connect(self->btn_open, "clicked", G_CALLBACK(on_btn_open_clicked), self);
     g_signal_connect(self->btn_empty_open, "clicked", G_CALLBACK(on_btn_open_clicked), self);
@@ -932,16 +1013,16 @@ kajo_player_window_init(KajoPlayerWindow *self)
 
     g_signal_connect(self, "notify::fullscreened", G_CALLBACK(on_window_fullscreened_notify), self);
 
-    /* Double-Click on Video Canvas for Fullscreen */
+    /* Double-Click on Video Overlay for Fullscreen */
     GtkGesture *dbl_click = gtk_gesture_click_new();
     gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(dbl_click), GDK_BUTTON_PRIMARY);
     g_signal_connect(dbl_click, "pressed", G_CALLBACK(on_video_canvas_clicked), self);
-    gtk_widget_add_controller(GTK_WIDGET(self->video_picture), GTK_EVENT_CONTROLLER(dbl_click));
+    gtk_widget_add_controller(GTK_WIDGET(self->video_overlay), GTK_EVENT_CONTROLLER(dbl_click));
 
-    /* Pointer Motion on Window for Fullscreen Chrome Auto-Hide */
+    /* Pointer Motion on Root Overlay for Fullscreen Bottom-Edge Auto-Show / Auto-Hide */
     GtkEventController *motion_ctrl = gtk_event_controller_motion_new();
     g_signal_connect(motion_ctrl, "motion", G_CALLBACK(on_pointer_motion), self);
-    gtk_widget_add_controller(self->main_vbox, motion_ctrl);
+    gtk_widget_add_controller(GTK_WIDGET(self->root_overlay), motion_ctrl);
 
     /* Drag-and-Drop File Support */
     GtkDropTarget *drop_target = gtk_drop_target_new(G_TYPE_FILE, GDK_ACTION_COPY);

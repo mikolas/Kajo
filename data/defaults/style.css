@@ -1472,6 +1472,24 @@ window.shell-player-window {
     border-top: 3px solid @metro-accent;
 }
 
+window.shell-player-window.player-fullscreen {
+    background-color: #000000;
+    border: none;
+    border-top: none;
+}
+
+window.shell-player-window.player-fullscreen .player-video-stage {
+    background-color: #000000;
+}
+
+window.shell-player-window.player-fullscreen .player-header-bar {
+    background-color: rgba(18, 18, 18, 0.92);
+}
+
+window.shell-player-window.player-fullscreen .player-transport-deck {
+    background-color: rgba(18, 18, 18, 0.92);
+}
+
 window.shell-player-window .player-header-bar {
     background-color: #161616;
     border-bottom: 1px solid #2b2b2b;
