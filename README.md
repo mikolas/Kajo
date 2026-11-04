@@ -14,7 +14,7 @@ The project builds and installs four integrated executables plus a `greetd` sess
 | :--- | :--- |
 | **`kajo`** | Primary Wayland desktop shell daemon (status panel, 22 live widgets, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual keyboard, bezel touch gesture recognizers, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, 360° foldable posture & auto-rotation manager, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
 | **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC (including live GLSL window shaders), and Kajo IPC integration. |
-| **`kajo-files`** | Native Aero + Metro file manager (`org.kajo.Files`) with URI-first GVFS/UDisks2 integration, inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (images, audio/video, multi-page Poppler PDFs, `libarchive` archives, and code/text). |
+| **`kajo-files`** | *(Alpha)* Native Aero + Metro file manager (`org.kajo.Files`) with URI-first GVFS/UDisks2 integration, inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (images, audio/video, multi-page Poppler PDFs, `libarchive` archives, and code/text). |
 | **`kajo-greeter`** | Graphical Wayland login greeter for `greetd` supporting both `niri` (`gtk4-layer-shell` multi-monitor) and `cage` (XDG fullscreen kiosk) compositors. |
 | **`kajo-greeter-session`** | Wrapper launcher script for `/etc/greetd/config.toml`. |
 
@@ -49,7 +49,8 @@ The project builds and installs four integrated executables plus a `greetd` sess
 - **Audio & PipeWire (`audio`)**: Asynchronous non-blocking PulseAudio/PipeWire context for default output sink selection, microphone input gain/mute, and per-application stream volume sliders.
 - **Theme (`theme`), Panel & Touch (`panel`), Widgets (`widgets`), Notifications (`notifications`), Niri & Shaders (`niri`), About (`about`)**: Live accent color switching (`@metro-accent`), panel edge/height/autohide & bezel touch gesture configuration, Niri GLSL window animation shader presets (`open`, `close`, `resize`), and interactive widget ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) reconciliation without restarting `kajo`.
 
-### 📁 Kajo Files (`kajo-files`)
+### 📁 Kajo Files (`kajo-files` — *Alpha*)
+> 🧪 **Alpha Status**: `kajo-files` is currently in **Alpha**. Core browsing, GVFS/UDisks2 mounting, file operations, and Quick Look previews are functional, while Phase 2 features (context menus, drag-and-drop, archive extraction, and extended format previews) are under active development.
 - **Aero + Metro Visual Design**: Shares `kajo-settings`'s frameless `GtkWindowHandle` chrome, `#141414` dark surfaces, `1px solid @metro-accent` borders, `Fira Code` technical badges, `🗗 FLOAT / TILE` Niri toggle, and single-view-per-window workflow (`Ctrl+N` opens a new window for Niri tiling).
 - **URI-First GIO, GVFS & UDisks2 Integration**:
   - Asynchronous non-blocking directory enumeration (`g_file_enumerate_children_async`) and live directory monitoring (`GFileMonitor`).

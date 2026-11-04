@@ -25,7 +25,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Niri GLSL Window Shaders** | ✅ Done | [`SPEC_NIRI_SHADERS.md`](file:///home/mikolas/src/Kajo/SPEC_NIRI_SHADERS.md) — Live shader preset switcher for window open/close/resize animations |
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | [`SPEC_TOUCH_GESTURES.md`](file:///home/mikolas/src/Kajo/SPEC_TOUCH_GESTURES.md) — Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications |
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | [`SPEC_VIRTUAL_KEYBOARD.md`](file:///home/mikolas/src/Kajo/SPEC_VIRTUAL_KEYBOARD.md) — Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching |
-| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | ✅ Done | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — GVFS/UDisks2 file manager with macOS-style `Space` Quick Look (images, audio/video, Poppler PDFs, `libarchive` archives, code/text) |
+| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — Phase 1 GVFS/UDisks2 file manager with macOS-style `Space` Quick Look (images, audio/video, Poppler PDFs, `libarchive` archives, code/text) |
 
 ---
 

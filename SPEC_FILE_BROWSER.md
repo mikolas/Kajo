@@ -2,6 +2,7 @@
 
 **Target Module:** `src/files/`  
 **Target Binary:** `kajo-files` (`org.kajo.Files`)  
+**Status:** Alpha (Phase 1)  
 **Desktop Entry:** `data/org.kajo.Files.desktop` (`MimeType=inode/directory;`)  
 **Tech Stack:** C17, GTK4 (`gtk4`), GIO (`gio-2.0`, `gio-unix-2.0`), GVFS (`gvfs`, `gvfs-smb`, `gvfs-onedrive`, `gvfs-goa`), UDisks2 (`GVolumeMonitor`), Blueprint Markup (`blueprint-compiler`)
 
