@@ -1507,6 +1507,19 @@ window.shell-player-window .player-audio-card {
     padding: 36px 56px;
 }
 
+window.shell-player-window .player-stats-osd {
+    background-color: rgba(16, 16, 16, 0.90);
+    border: 1px solid @metro-accent;
+    border-left: 3px solid @metro-accent;
+    padding: 10px 14px;
+}
+
+window.shell-player-window .player-stats-text {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #e4e4e4;
+}
+
 window.shell-player-window .player-transport-deck {
     background-color: #141414;
     border-top: 1px solid #2b2b2b;

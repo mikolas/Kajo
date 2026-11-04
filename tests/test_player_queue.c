@@ -1,6 +1,7 @@
 #include <glib.h>
 #include <gio/gio.h>
 #include "../src/player/player_queue.h"
+#include "../src/player/player_mpv.h"
 
 static void
 test_format_time(void)
@@ -68,6 +69,40 @@ test_media_track_lifecycle(void)
     kajo_media_track_free(track);
 }
 
+static void
+test_mpv_track_format_label(void)
+{
+    KajoMpvTrack sub_track = {
+        .id = 2,
+        .type = KAJO_MPV_TRACK_SUB,
+        .selected = TRUE,
+        .is_default = TRUE,
+        .external = FALSE,
+        .title = (char *)"Full Dialogue",
+        .lang = (char *)"eng",
+        .codec = (char *)"ass",
+        .channels = 0,
+        .samplerate = 0,
+    };
+    g_autofree char *sub_lbl = kajo_mpv_track_format_label(&sub_track);
+    g_assert_cmpstr(sub_lbl, ==, "#2  Full Dialogue (ENG)  [ASS] • DEF");
+
+    KajoMpvTrack audio_track = {
+        .id = 1,
+        .type = KAJO_MPV_TRACK_AUDIO,
+        .selected = TRUE,
+        .is_default = FALSE,
+        .external = FALSE,
+        .title = NULL,
+        .lang = (char *)"jpn",
+        .codec = (char *)"flac",
+        .channels = 6,
+        .samplerate = 48000,
+    };
+    g_autofree char *aud_lbl = kajo_mpv_track_format_label(&audio_track);
+    g_assert_cmpstr(aud_lbl, ==, "#1  JPN  [FLAC 6ch]");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -77,6 +112,7 @@ main(int argc, char *argv[])
     g_test_add_func("/player/format_size", test_format_size);
     g_test_add_func("/player/media_detection", test_supported_media_detection);
     g_test_add_func("/player/track_lifecycle", test_media_track_lifecycle);
+    g_test_add_func("/player/mpv_track_label", test_mpv_track_format_label);
 
     return g_test_run();
 }

@@ -513,8 +513,8 @@ test('files-model', test_files_model_exe)
 
 test_player_queue_exe = executable(
   'test-player-queue',
-  files('tests/test_player_queue.c', 'src/player/player_queue.c'),
-  dependencies: [gtk4_dep, gio_dep, gio_unix_dep],
+  files('tests/test_player_queue.c', 'src/player/player_queue.c', 'src/player/player_mpv.c'),
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep, mpv_dep, egl_dep, glesv2_dep, m_dep],
   build_by_default: false,
 )
 test('player-queue', test_player_queue_exe)

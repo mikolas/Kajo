@@ -2,8 +2,8 @@ using Gtk 4.0;
 
 template $KajoPlayerWindow : ApplicationWindow {
   title: "KAJO PLAYER";
-  default-width: 980;
-  default-height: 620;
+  default-width: 1040;
+  default-height: 640;
   decorated: false;
 
   styles [
@@ -16,7 +16,7 @@ template $KajoPlayerWindow : ApplicationWindow {
     hexpand: true;
     vexpand: true;
 
-    /* Base Layer: Video Stage + Optional Queue Drawer */
+    /* Base Layer: Video Stage + Optional Queue & Chapters Drawer */
     Box body_hbox {
       orientation: horizontal;
       spacing: 0;
@@ -112,19 +112,114 @@ template $KajoPlayerWindow : ApplicationWindow {
             ]
           }
         }
+
+        /* Technical Telemetry OSD Overlay (Toggled with I / Ctrl+J / ℹ STATS) */
+        [overlay]
+        Box stats_osd_box {
+          orientation: vertical;
+          spacing: 6;
+          halign: start;
+          valign: start;
+          margin-start: 16;
+          margin-top: 16;
+          visible: false;
+          can-target: false;
+
+          styles [
+            "shell-popover-card",
+            "player-stats-osd",
+          ]
+
+          Label {
+            label: "⚡ LIBMPV STREAM TELEMETRY";
+            halign: start;
+
+            styles [
+              "heading",
+            ]
+          }
+
+          Label stats_osd_label {
+            label: "No active stream";
+            halign: start;
+            selectable: false;
+
+            styles [
+              "player-stats-text",
+            ]
+          }
+        }
       }
 
-      /* Right Toggleable Queue Drawer (230px, Hidden by Default) */
+      /* Right Toggleable Queue & Chapters Drawer (240px, Hidden by Default) */
       Box queue_vbox {
         orientation: vertical;
         spacing: 0;
-        width-request: 230;
+        width-request: 240;
         visible: false;
 
         styles [
           "files-inspector-pane",
         ]
 
+        /* Optional Chapters Section (Auto-Shown When Media Has Chapters) */
+        Box chapters_card {
+          orientation: vertical;
+          spacing: 0;
+          height-request: 180;
+          visible: false;
+          margin-start: 6;
+          margin-end: 6;
+          margin-top: 6;
+
+          styles [
+            "shell-popover-card",
+          ]
+
+          Box {
+            orientation: horizontal;
+            spacing: 6;
+
+            styles [
+              "shell-popover-header",
+            ]
+
+            Label {
+              label: "CHAPTERS";
+              halign: start;
+
+              styles [
+                "heading",
+              ]
+            }
+
+            Label chapters_count_badge {
+              label: "[ 0 ]";
+              hexpand: true;
+              halign: end;
+
+              styles [
+                "shell-popover-badge",
+              ]
+            }
+          }
+
+          ScrolledWindow {
+            vexpand: true;
+            hscrollbar-policy: never;
+            vscrollbar-policy: automatic;
+
+            ListBox chapters_listbox {
+              selection-mode: single;
+
+              styles [
+                "navigation-sidebar",
+              ]
+            }
+          }
+        }
+
+        /* Folder Queue Card */
         Box {
           orientation: vertical;
           spacing: 0;
@@ -191,7 +286,7 @@ template $KajoPlayerWindow : ApplicationWindow {
 
       Box header_bar {
         orientation: horizontal;
-        spacing: 10;
+        spacing: 8;
 
         styles [
           "settings-header-bar",
@@ -220,6 +315,17 @@ template $KajoPlayerWindow : ApplicationWindow {
           ]
         }
 
+        Button btn_stats {
+          label: "ℹ STATS";
+          tooltip-text: "Toggle Technical Stream Telemetry (I / Ctrl+J)";
+          valign: center;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+        }
+
         Button btn_open {
           label: "📂 OPEN";
           tooltip-text: "Open Media File (Ctrl+O)";
@@ -233,7 +339,7 @@ template $KajoPlayerWindow : ApplicationWindow {
 
         Button btn_queue {
           label: "☰ QUEUE";
-          tooltip-text: "Toggle Queue Drawer (Ctrl+P)";
+          tooltip-text: "Toggle Queue & Chapters Drawer (Ctrl+P)";
           valign: center;
 
           styles [
@@ -310,10 +416,10 @@ template $KajoPlayerWindow : ApplicationWindow {
         }
       }
 
-      /* Row 2: Transport Buttons & Volume / Fullscreen */
+      /* Row 2: Transport Buttons, Speed, Subtitles, Audio, Volume & Fullscreen */
       Box {
         orientation: horizontal;
-        spacing: 8;
+        spacing: 6;
         valign: center;
 
         Button btn_prev {
@@ -394,6 +500,487 @@ template $KajoPlayerWindow : ApplicationWindow {
           ]
         }
 
+        /* Playback Speed & Frame Step MenuButton */
+        MenuButton btn_speed {
+          label: "1.0×";
+          tooltip-text: "Playback Speed & Frame Step ([ / ] / . / ,)";
+          valign: center;
+          direction: up;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+
+          popover: Popover speed_popover {
+            has-arrow: false;
+
+            styles [
+              "shell-popover",
+            ]
+
+            Box {
+              orientation: vertical;
+              spacing: 8;
+              width-request: 280;
+
+              styles [
+                "shell-popover-card",
+              ]
+
+              Box {
+                orientation: horizontal;
+
+                styles [
+                  "shell-popover-header",
+                ]
+
+                Label {
+                  label: "SPEED & FRAME CONTROL";
+                  halign: start;
+
+                  styles [
+                    "heading",
+                  ]
+                }
+
+                Label speed_badge_lbl {
+                  label: "[ 1.00× ]";
+                  hexpand: true;
+                  halign: end;
+
+                  styles [
+                    "shell-popover-badge",
+                  ]
+                }
+              }
+
+              Box {
+                orientation: horizontal;
+                spacing: 4;
+                homogeneous: true;
+
+                Button btn_spd_05 {
+                  label: "0.5×";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_spd_075 {
+                  label: "0.75×";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_spd_10 {
+                  label: "1.0×";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_spd_125 {
+                  label: "1.25×";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_spd_15 {
+                  label: "1.5×";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_spd_20 {
+                  label: "2.0×";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+              }
+
+              Box {
+                orientation: horizontal;
+                spacing: 6;
+                homogeneous: true;
+
+                Button btn_frame_prev {
+                  label: "⏮ -1 FRAME (,)";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_frame_next {
+                  label: "+1 FRAME (.) ⏭";
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+              }
+
+              Button btn_ab_loop {
+                label: "🔁 CYCLE A–B LOOP POINT";
+
+                styles [
+                  "flat",
+                  "files-nav-btn",
+                ]
+              }
+            }
+          };
+        }
+
+        /* Subtitle Track, External .SRT/.ASS & Sync MenuButton */
+        MenuButton btn_subs {
+          label: "💬 SUBS";
+          tooltip-text: "Subtitles, External .SRT/.ASS & Sync (J / V / Z / X)";
+          valign: center;
+          direction: up;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+
+          popover: Popover subs_popover {
+            has-arrow: false;
+
+            styles [
+              "shell-popover",
+            ]
+
+            Box {
+              orientation: vertical;
+              spacing: 8;
+              width-request: 320;
+
+              styles [
+                "shell-popover-card",
+              ]
+
+              Box {
+                orientation: horizontal;
+
+                styles [
+                  "shell-popover-header",
+                ]
+
+                Label {
+                  label: "SUBTITLE STREAMS";
+                  halign: start;
+
+                  styles [
+                    "heading",
+                  ]
+                }
+
+                Label subs_badge_lbl {
+                  label: "[ AUTO ]";
+                  hexpand: true;
+                  halign: end;
+
+                  styles [
+                    "shell-popover-badge",
+                  ]
+                }
+              }
+
+              ScrolledWindow {
+                height-request: 140;
+                hscrollbar-policy: never;
+                vscrollbar-policy: automatic;
+
+                ListBox subs_listbox {
+                  selection-mode: single;
+
+                  styles [
+                    "navigation-sidebar",
+                  ]
+                }
+              }
+
+              Button btn_load_sub {
+                label: "📂 LOAD EXTERNAL SUBTITLE (.SRT / .ASS)";
+
+                styles [
+                  "files-accent-btn",
+                ]
+              }
+
+              /* Subtitle Timing Delay Row */
+              Box {
+                orientation: horizontal;
+                spacing: 6;
+                valign: center;
+
+                Label {
+                  label: "SYNC DELAY";
+                  halign: start;
+                  hexpand: true;
+                  valign: center;
+
+                  styles [
+                    "shell-popover-subtitle",
+                  ]
+                }
+
+                Button btn_sub_delay_dec {
+                  label: "-100ms";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Label sub_delay_lbl {
+                  label: "0 ms";
+                  width-request: 58;
+                  halign: center;
+                  valign: center;
+
+                  styles [
+                    "player-timecode",
+                  ]
+                }
+
+                Button btn_sub_delay_inc {
+                  label: "+100ms";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_sub_delay_reset {
+                  label: "RST";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+              }
+
+              /* Subtitle Font Scale Row */
+              Box {
+                orientation: horizontal;
+                spacing: 6;
+                valign: center;
+
+                Label {
+                  label: "FONT SCALE";
+                  halign: start;
+                  hexpand: true;
+                  valign: center;
+
+                  styles [
+                    "shell-popover-subtitle",
+                  ]
+                }
+
+                Button btn_sub_scale_dec {
+                  label: "-10%";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Label sub_scale_lbl {
+                  label: "100%";
+                  width-request: 58;
+                  halign: center;
+                  valign: center;
+
+                  styles [
+                    "player-timecode",
+                  ]
+                }
+
+                Button btn_sub_scale_inc {
+                  label: "+10%";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+              }
+            }
+          };
+        }
+
+        /* Multi-Language Audio Track & Sync MenuButton */
+        MenuButton btn_audio {
+          label: "🎧 AUDIO";
+          tooltip-text: "Audio Streams & Sync (#)";
+          valign: center;
+          direction: up;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+
+          popover: Popover audio_popover {
+            has-arrow: false;
+
+            styles [
+              "shell-popover",
+            ]
+
+            Box {
+              orientation: vertical;
+              spacing: 8;
+              width-request: 310;
+
+              styles [
+                "shell-popover-card",
+              ]
+
+              Box {
+                orientation: horizontal;
+
+                styles [
+                  "shell-popover-header",
+                ]
+
+                Label {
+                  label: "AUDIO STREAMS";
+                  halign: start;
+
+                  styles [
+                    "heading",
+                  ]
+                }
+
+                Label audio_badge_lbl {
+                  label: "[ #1 ]";
+                  hexpand: true;
+                  halign: end;
+
+                  styles [
+                    "shell-popover-badge",
+                  ]
+                }
+              }
+
+              ScrolledWindow {
+                height-request: 130;
+                hscrollbar-policy: never;
+                vscrollbar-policy: automatic;
+
+                ListBox audio_listbox {
+                  selection-mode: single;
+
+                  styles [
+                    "navigation-sidebar",
+                  ]
+                }
+              }
+
+              /* Audio Sync Delay Row */
+              Box {
+                orientation: horizontal;
+                spacing: 6;
+                valign: center;
+
+                Label {
+                  label: "AUDIO DELAY";
+                  halign: start;
+                  hexpand: true;
+                  valign: center;
+
+                  styles [
+                    "shell-popover-subtitle",
+                  ]
+                }
+
+                Button btn_audio_delay_dec {
+                  label: "-100ms";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Label audio_delay_lbl {
+                  label: "0 ms";
+                  width-request: 58;
+                  halign: center;
+                  valign: center;
+
+                  styles [
+                    "player-timecode",
+                  ]
+                }
+
+                Button btn_audio_delay_inc {
+                  label: "+100ms";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+
+                Button btn_audio_delay_reset {
+                  label: "RST";
+                  valign: center;
+
+                  styles [
+                    "flat",
+                    "files-nav-btn",
+                  ]
+                }
+              }
+            }
+          };
+        }
+
+        Button btn_screenshot {
+          label: "📷";
+          tooltip-text: "Save Video Frame Screenshot to ~/Pictures (S)";
+          valign: center;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+        }
+
         Button btn_mute {
           label: "🔊";
           tooltip-text: "Toggle Mute (M)";
@@ -407,7 +994,7 @@ template $KajoPlayerWindow : ApplicationWindow {
 
         Scale volume_scale {
           orientation: horizontal;
-          width-request: 96;
+          width-request: 88;
           draw-value: false;
           valign: center;
 
@@ -418,7 +1005,7 @@ template $KajoPlayerWindow : ApplicationWindow {
 
         Label volume_pct_lbl {
           label: "100%";
-          width-request: 42;
+          width-request: 40;
           halign: end;
           valign: center;
 

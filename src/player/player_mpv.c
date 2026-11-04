@@ -15,9 +15,23 @@ enum {
     PROP_EOF_REACHED,
     PROP_VIDEO_W,
     PROP_VIDEO_H,
+    PROP_FPS,
+    PROP_DROPPED_FRAMES,
     PROP_VIDEO_CODEC,
-    PROP_AUDIO_CODEC,
+    PROP_PIXFMT,
+    PROP_COLORMATRIX,
     PROP_HWDEC_CURRENT,
+    PROP_AUDIO_CODEC,
+    PROP_AUDIO_CHANNELS,
+    PROP_AUDIO_SAMPLERATE,
+    PROP_SPEED,
+    PROP_SUB_DELAY,
+    PROP_SUB_SCALE,
+    PROP_SUB_VISIBILITY,
+    PROP_AUDIO_DELAY,
+    PROP_CHAPTER,
+    PROP_TRACK_LIST,
+    PROP_CHAPTER_LIST,
 };
 
 struct _KajoPlayerMpv {
@@ -30,9 +44,14 @@ struct _KajoPlayerMpv {
 
     KajoMpvState state;
     char *video_codec_buf;
-    char *audio_codec_buf;
+    char *pixfmt_buf;
+    char *colormatrix_buf;
     char *hwdec_buf;
+    char *audio_codec_buf;
     char *error_buf;
+
+    GPtrArray *tracks;
+    GPtrArray *chapters;
 
     gboolean paused;
     gboolean loop_enabled;
@@ -41,6 +60,67 @@ struct _KajoPlayerMpv {
     gint render_scheduled;
     gboolean destroyed;
 };
+
+static void
+kajo_mpv_track_free(gpointer data)
+{
+    KajoMpvTrack *t = data;
+    if (!t)
+        return;
+    g_free(t->title);
+    g_free(t->lang);
+    g_free(t->codec);
+    g_free(t);
+}
+
+static void
+kajo_mpv_chapter_free(gpointer data)
+{
+    KajoMpvChapter *c = data;
+    if (!c)
+        return;
+    g_free(c->title);
+    g_free(c);
+}
+
+char *
+kajo_mpv_track_format_label(const KajoMpvTrack *track)
+{
+    if (!track)
+        return g_strdup("Unknown Track");
+
+    GString *s = g_string_new(NULL);
+    g_string_append_printf(s, "#%d  ", track->id);
+
+    if (track->title && track->title[0] != '\0') {
+        g_string_append(s, track->title);
+        if (track->lang && track->lang[0] != '\0') {
+            g_autofree char *lang_up = g_ascii_strup(track->lang, -1);
+            g_string_append_printf(s, " (%s)", lang_up);
+        }
+    } else if (track->lang && track->lang[0] != '\0') {
+        g_autofree char *lang_up = g_ascii_strup(track->lang, -1);
+        g_string_append_printf(s, "%s", lang_up);
+    } else {
+        g_string_append(s, track->type == KAJO_MPV_TRACK_SUB ? "Subtitle" : "Audio");
+    }
+
+    if (track->codec && track->codec[0] != '\0') {
+        g_autofree char *codec_up = g_ascii_strup(track->codec, -1);
+        if (track->type == KAJO_MPV_TRACK_AUDIO && track->channels > 0) {
+            g_string_append_printf(s, "  [%s %dch]", codec_up, track->channels);
+        } else {
+            g_string_append_printf(s, "  [%s]", codec_up);
+        }
+    }
+
+    if (track->external)
+        g_string_append(s, " • EXT");
+    else if (track->is_default)
+        g_string_append(s, " • DEF");
+
+    return g_string_free(s, FALSE);
+}
 
 static void *
 get_proc_address_mpv(void *ctx G_GNUC_UNUSED, const char *name)
@@ -55,9 +135,13 @@ notify_state(KajoPlayerMpv *self)
         return;
 
     self->state.video_codec = self->video_codec_buf;
-    self->state.audio_codec = self->audio_codec_buf;
+    self->state.pixel_format = self->pixfmt_buf;
+    self->state.colormatrix = self->colormatrix_buf;
     self->state.hwdec_current = self->hwdec_buf;
+    self->state.audio_codec = self->audio_codec_buf;
     self->state.error_message = self->error_buf;
+    self->state.tracks = self->tracks;
+    self->state.chapters = self->chapters;
     self->state.playing = self->state.has_media && !self->paused && !self->state.eof_reached;
 
     self->state_cb(&self->state, self->user_data);
@@ -183,6 +267,128 @@ on_gl_area_render(GtkGLArea *area, GdkGLContext *context G_GNUC_UNUSED, gpointer
     return TRUE;
 }
 
+/* --- Track List & Chapter List Node Parsers --- */
+
+static void
+parse_track_list_node(KajoPlayerMpv *self, const mpv_node *node)
+{
+    g_ptr_array_set_size(self->tracks, 0);
+    if (!node || node->format != MPV_FORMAT_NODE_ARRAY || !node->u.list)
+        return;
+
+    mpv_node_list *list = node->u.list;
+    for (int i = 0; i < list->num; i++) {
+        mpv_node *entry = &list->values[i];
+        if (entry->format != MPV_FORMAT_NODE_MAP || !entry->u.list)
+            continue;
+
+        mpv_node_list *map = entry->u.list;
+        const char *type_str = NULL;
+        const char *title_str = NULL;
+        const char *lang_str = NULL;
+        const char *codec_str = NULL;
+        int id = 0;
+        gboolean selected = FALSE;
+        gboolean is_default = FALSE;
+        gboolean external = FALSE;
+        int channels = 0;
+        int samplerate = 0;
+
+        for (int k = 0; k < map->num; k++) {
+            const char *key = map->keys[k];
+            mpv_node *val = &map->values[k];
+            if (!key || !val)
+                continue;
+
+            if (g_strcmp0(key, "id") == 0 && val->format == MPV_FORMAT_INT64)
+                id = (int)val->u.int64;
+            else if (g_strcmp0(key, "type") == 0 && val->format == MPV_FORMAT_STRING)
+                type_str = val->u.string;
+            else if (g_strcmp0(key, "title") == 0 && val->format == MPV_FORMAT_STRING)
+                title_str = val->u.string;
+            else if (g_strcmp0(key, "lang") == 0 && val->format == MPV_FORMAT_STRING)
+                lang_str = val->u.string;
+            else if (g_strcmp0(key, "codec") == 0 && val->format == MPV_FORMAT_STRING)
+                codec_str = val->u.string;
+            else if (g_strcmp0(key, "selected") == 0 && val->format == MPV_FORMAT_FLAG)
+                selected = val->u.flag != 0;
+            else if (g_strcmp0(key, "default") == 0 && val->format == MPV_FORMAT_FLAG)
+                is_default = val->u.flag != 0;
+            else if (g_strcmp0(key, "external") == 0 && val->format == MPV_FORMAT_FLAG)
+                external = val->u.flag != 0;
+            else if (g_strcmp0(key, "demux-channel-count") == 0 && val->format == MPV_FORMAT_INT64)
+                channels = (int)val->u.int64;
+            else if (g_strcmp0(key, "demux-samplerate") == 0 && val->format == MPV_FORMAT_INT64)
+                samplerate = (int)val->u.int64;
+        }
+
+        if (!type_str || id <= 0)
+            continue;
+
+        KajoMpvTrackType ttype;
+        if (g_strcmp0(type_str, "sub") == 0)
+            ttype = KAJO_MPV_TRACK_SUB;
+        else if (g_strcmp0(type_str, "audio") == 0)
+            ttype = KAJO_MPV_TRACK_AUDIO;
+        else
+            continue;
+
+        KajoMpvTrack *t = g_new0(KajoMpvTrack, 1);
+        t->id = id;
+        t->type = ttype;
+        t->selected = selected;
+        t->is_default = is_default;
+        t->external = external;
+        t->title = g_strdup(title_str);
+        t->lang = g_strdup(lang_str);
+        t->codec = g_strdup(codec_str);
+        t->channels = channels;
+        t->samplerate = samplerate;
+
+        g_ptr_array_add(self->tracks, t);
+    }
+}
+
+static void
+parse_chapter_list_node(KajoPlayerMpv *self, const mpv_node *node)
+{
+    g_ptr_array_set_size(self->chapters, 0);
+    if (!node || node->format != MPV_FORMAT_NODE_ARRAY || !node->u.list)
+        return;
+
+    mpv_node_list *list = node->u.list;
+    for (int i = 0; i < list->num; i++) {
+        mpv_node *entry = &list->values[i];
+        if (entry->format != MPV_FORMAT_NODE_MAP || !entry->u.list)
+            continue;
+
+        mpv_node_list *map = entry->u.list;
+        const char *title_str = NULL;
+        double time_sec = 0.0;
+
+        for (int k = 0; k < map->num; k++) {
+            const char *key = map->keys[k];
+            mpv_node *val = &map->values[k];
+            if (!key || !val)
+                continue;
+
+            if (g_strcmp0(key, "title") == 0 && val->format == MPV_FORMAT_STRING)
+                title_str = val->u.string;
+            else if (g_strcmp0(key, "time") == 0 && val->format == MPV_FORMAT_DOUBLE)
+                time_sec = val->u.double_;
+        }
+
+        KajoMpvChapter *ch = g_new0(KajoMpvChapter, 1);
+        ch->index = i;
+        ch->title = (title_str && title_str[0] != '\0')
+            ? g_strdup(title_str)
+            : g_strdup_printf("Chapter %02d", i + 1);
+        ch->time_usec = (gint64)(MAX(0.0, time_sec) * 1000000.0);
+
+        g_ptr_array_add(self->chapters, ch);
+    }
+}
+
 /* --- MPV Event Loop -> GTK Main Thread Bridge --- */
 
 static void
@@ -192,18 +398,14 @@ handle_property_change(KajoPlayerMpv *self, mpv_event_property *prop, uint64_t r
     case PROP_TIME_POS:
         if (prop->format == MPV_FORMAT_DOUBLE && prop->data) {
             double sec = *(double *)prop->data;
-            if (sec < 0.0)
-                sec = 0.0;
-            self->state.position_usec = (gint64)(sec * 1000000.0);
+            self->state.position_usec = (gint64)(MAX(0.0, sec) * 1000000.0);
         }
         break;
 
     case PROP_DURATION:
         if (prop->format == MPV_FORMAT_DOUBLE && prop->data) {
             double sec = *(double *)prop->data;
-            if (sec < 0.0)
-                sec = 0.0;
-            self->state.duration_usec = (gint64)(sec * 1000000.0);
+            self->state.duration_usec = (gint64)(MAX(0.0, sec) * 1000000.0);
         }
         break;
 
@@ -220,33 +422,47 @@ handle_property_change(KajoPlayerMpv *self, mpv_event_property *prop, uint64_t r
         break;
 
     case PROP_VIDEO_W:
-        if (prop->format == MPV_FORMAT_INT64 && prop->data) {
+        if (prop->format == MPV_FORMAT_INT64 && prop->data)
             self->state.video_width = (int)(*(int64_t *)prop->data);
-        } else if (prop->format == MPV_FORMAT_NONE) {
+        else if (prop->format == MPV_FORMAT_NONE)
             self->state.video_width = 0;
-        }
         break;
 
     case PROP_VIDEO_H:
-        if (prop->format == MPV_FORMAT_INT64 && prop->data) {
+        if (prop->format == MPV_FORMAT_INT64 && prop->data)
             self->state.video_height = (int)(*(int64_t *)prop->data);
-        } else if (prop->format == MPV_FORMAT_NONE) {
+        else if (prop->format == MPV_FORMAT_NONE)
             self->state.video_height = 0;
-        }
+        break;
+
+    case PROP_FPS:
+        if (prop->format == MPV_FORMAT_DOUBLE && prop->data)
+            self->state.fps = *(double *)prop->data;
+        else if (prop->format == MPV_FORMAT_NONE)
+            self->state.fps = 0.0;
+        break;
+
+    case PROP_DROPPED_FRAMES:
+        if (prop->format == MPV_FORMAT_INT64 && prop->data)
+            self->state.dropped_frames = *(int64_t *)prop->data;
         break;
 
     case PROP_VIDEO_CODEC:
         g_clear_pointer(&self->video_codec_buf, g_free);
-        if (prop->format == MPV_FORMAT_STRING && prop->data && *(char **)prop->data) {
+        if (prop->format == MPV_FORMAT_STRING && prop->data && *(char **)prop->data)
             self->video_codec_buf = g_strdup(*(char **)prop->data);
-        }
         break;
 
-    case PROP_AUDIO_CODEC:
-        g_clear_pointer(&self->audio_codec_buf, g_free);
-        if (prop->format == MPV_FORMAT_STRING && prop->data && *(char **)prop->data) {
-            self->audio_codec_buf = g_strdup(*(char **)prop->data);
-        }
+    case PROP_PIXFMT:
+        g_clear_pointer(&self->pixfmt_buf, g_free);
+        if (prop->format == MPV_FORMAT_STRING && prop->data && *(char **)prop->data)
+            self->pixfmt_buf = g_strdup(*(char **)prop->data);
+        break;
+
+    case PROP_COLORMATRIX:
+        g_clear_pointer(&self->colormatrix_buf, g_free);
+        if (prop->format == MPV_FORMAT_STRING && prop->data && *(char **)prop->data)
+            self->colormatrix_buf = g_strdup(*(char **)prop->data);
         break;
 
     case PROP_HWDEC_CURRENT:
@@ -256,6 +472,68 @@ handle_property_change(KajoPlayerMpv *self, mpv_event_property *prop, uint64_t r
             if (val[0] != '\0' && g_strcmp0(val, "no") != 0)
                 self->hwdec_buf = g_strdup(val);
         }
+        break;
+
+    case PROP_AUDIO_CODEC:
+        g_clear_pointer(&self->audio_codec_buf, g_free);
+        if (prop->format == MPV_FORMAT_STRING && prop->data && *(char **)prop->data)
+            self->audio_codec_buf = g_strdup(*(char **)prop->data);
+        break;
+
+    case PROP_AUDIO_CHANNELS:
+        if (prop->format == MPV_FORMAT_INT64 && prop->data)
+            self->state.audio_channels = (int)(*(int64_t *)prop->data);
+        else if (prop->format == MPV_FORMAT_NONE)
+            self->state.audio_channels = 0;
+        break;
+
+    case PROP_AUDIO_SAMPLERATE:
+        if (prop->format == MPV_FORMAT_INT64 && prop->data)
+            self->state.audio_samplerate = (int)(*(int64_t *)prop->data);
+        else if (prop->format == MPV_FORMAT_NONE)
+            self->state.audio_samplerate = 0;
+        break;
+
+    case PROP_SPEED:
+        if (prop->format == MPV_FORMAT_DOUBLE && prop->data)
+            self->state.speed = *(double *)prop->data;
+        break;
+
+    case PROP_SUB_DELAY:
+        if (prop->format == MPV_FORMAT_DOUBLE && prop->data)
+            self->state.sub_delay_sec = *(double *)prop->data;
+        break;
+
+    case PROP_SUB_SCALE:
+        if (prop->format == MPV_FORMAT_DOUBLE && prop->data)
+            self->state.sub_scale = *(double *)prop->data;
+        break;
+
+    case PROP_SUB_VISIBILITY:
+        if (prop->format == MPV_FORMAT_FLAG && prop->data)
+            self->state.sub_visible = (*(int *)prop->data) != 0;
+        break;
+
+    case PROP_AUDIO_DELAY:
+        if (prop->format == MPV_FORMAT_DOUBLE && prop->data)
+            self->state.audio_delay_sec = *(double *)prop->data;
+        break;
+
+    case PROP_CHAPTER:
+        if (prop->format == MPV_FORMAT_INT64 && prop->data)
+            self->state.current_chapter = (int)(*(int64_t *)prop->data);
+        else if (prop->format == MPV_FORMAT_NONE)
+            self->state.current_chapter = -1;
+        break;
+
+    case PROP_TRACK_LIST:
+        if (prop->format == MPV_FORMAT_NODE && prop->data)
+            parse_track_list_node(self, prop->data);
+        break;
+
+    case PROP_CHAPTER_LIST:
+        if (prop->format == MPV_FORMAT_NODE && prop->data)
+            parse_chapter_list_node(self, prop->data);
         break;
 
     default:
@@ -356,6 +634,14 @@ kajo_player_mpv_new(GtkGLArea *gl_area,
     self->gl_area = gl_area;
     self->state_cb = state_cb;
     self->user_data = user_data;
+    self->tracks = g_ptr_array_new_with_free_func(kajo_mpv_track_free);
+    self->chapters = g_ptr_array_new_with_free_func(kajo_mpv_chapter_free);
+    self->state.speed = 1.0;
+    self->state.sub_scale = 1.0;
+    self->state.sub_visible = TRUE;
+    self->state.current_chapter = -1;
+    self->state.tracks = self->tracks;
+    self->state.chapters = self->chapters;
 
     gtk_gl_area_set_auto_render(gl_area, FALSE);
 
@@ -365,6 +651,7 @@ kajo_player_mpv_new(GtkGLArea *gl_area,
         mpv_set_option_string(self->mpv, "hwdec", "auto-safe");
         mpv_set_option_string(self->mpv, "keep-open", "yes");
         mpv_set_option_string(self->mpv, "sub-auto", "fuzzy");
+        mpv_set_option_string(self->mpv, "audio-pitch-correction", "yes");
         mpv_set_option_string(self->mpv, "audio-client-name", "Kajo Player");
         mpv_set_option_string(self->mpv, "title", "Kajo Player");
 
@@ -375,9 +662,23 @@ kajo_player_mpv_new(GtkGLArea *gl_area,
             mpv_observe_property(self->mpv, PROP_EOF_REACHED, "eof-reached", MPV_FORMAT_FLAG);
             mpv_observe_property(self->mpv, PROP_VIDEO_W, "video-params/w", MPV_FORMAT_INT64);
             mpv_observe_property(self->mpv, PROP_VIDEO_H, "video-params/h", MPV_FORMAT_INT64);
+            mpv_observe_property(self->mpv, PROP_FPS, "container-fps", MPV_FORMAT_DOUBLE);
+            mpv_observe_property(self->mpv, PROP_DROPPED_FRAMES, "frame-drop-count", MPV_FORMAT_INT64);
             mpv_observe_property(self->mpv, PROP_VIDEO_CODEC, "video-format", MPV_FORMAT_STRING);
-            mpv_observe_property(self->mpv, PROP_AUDIO_CODEC, "audio-codec-name", MPV_FORMAT_STRING);
+            mpv_observe_property(self->mpv, PROP_PIXFMT, "video-params/pixelformat", MPV_FORMAT_STRING);
+            mpv_observe_property(self->mpv, PROP_COLORMATRIX, "video-params/colormatrix", MPV_FORMAT_STRING);
             mpv_observe_property(self->mpv, PROP_HWDEC_CURRENT, "hwdec-current", MPV_FORMAT_STRING);
+            mpv_observe_property(self->mpv, PROP_AUDIO_CODEC, "audio-codec-name", MPV_FORMAT_STRING);
+            mpv_observe_property(self->mpv, PROP_AUDIO_CHANNELS, "audio-params/channel-count", MPV_FORMAT_INT64);
+            mpv_observe_property(self->mpv, PROP_AUDIO_SAMPLERATE, "audio-params/samplerate", MPV_FORMAT_INT64);
+            mpv_observe_property(self->mpv, PROP_SPEED, "speed", MPV_FORMAT_DOUBLE);
+            mpv_observe_property(self->mpv, PROP_SUB_DELAY, "sub-delay", MPV_FORMAT_DOUBLE);
+            mpv_observe_property(self->mpv, PROP_SUB_SCALE, "sub-scale", MPV_FORMAT_DOUBLE);
+            mpv_observe_property(self->mpv, PROP_SUB_VISIBILITY, "sub-visibility", MPV_FORMAT_FLAG);
+            mpv_observe_property(self->mpv, PROP_AUDIO_DELAY, "audio-delay", MPV_FORMAT_DOUBLE);
+            mpv_observe_property(self->mpv, PROP_CHAPTER, "chapter", MPV_FORMAT_INT64);
+            mpv_observe_property(self->mpv, PROP_TRACK_LIST, "track-list", MPV_FORMAT_NODE);
+            mpv_observe_property(self->mpv, PROP_CHAPTER_LIST, "chapter-list", MPV_FORMAT_NODE);
 
             mpv_set_wakeup_callback(self->mpv, on_mpv_wakeup, self);
         }
@@ -417,14 +718,18 @@ kajo_player_mpv_free(KajoPlayerMpv *self)
         self->mpv = NULL;
     }
 
-    /* Flush any pending idle callbacks targeting self */
     while (g_idle_remove_by_data(self)) {
         /* removed */
     }
 
+    g_ptr_array_free(self->tracks, TRUE);
+    g_ptr_array_free(self->chapters, TRUE);
+
     g_free(self->video_codec_buf);
-    g_free(self->audio_codec_buf);
+    g_free(self->pixfmt_buf);
+    g_free(self->colormatrix_buf);
     g_free(self->hwdec_buf);
+    g_free(self->audio_codec_buf);
     g_free(self->error_buf);
     g_free(self);
 }
@@ -443,8 +748,12 @@ kajo_player_mpv_load_file(KajoPlayerMpv *self, GFile *file)
 
     g_clear_pointer(&self->error_buf, g_free);
     g_clear_pointer(&self->video_codec_buf, g_free);
-    g_clear_pointer(&self->audio_codec_buf, g_free);
+    g_clear_pointer(&self->pixfmt_buf, g_free);
+    g_clear_pointer(&self->colormatrix_buf, g_free);
     g_clear_pointer(&self->hwdec_buf, g_free);
+    g_clear_pointer(&self->audio_codec_buf, g_free);
+    g_ptr_array_set_size(self->tracks, 0);
+    g_ptr_array_set_size(self->chapters, 0);
 
     self->state.has_media = TRUE;
     self->state.eof_reached = FALSE;
@@ -452,6 +761,9 @@ kajo_player_mpv_load_file(KajoPlayerMpv *self, GFile *file)
     self->state.duration_usec = 0;
     self->state.video_width = 0;
     self->state.video_height = 0;
+    self->state.fps = 0.0;
+    self->state.dropped_frames = 0;
+    self->state.current_chapter = -1;
 
     int pause_flag = 0;
     mpv_set_property(self->mpv, "pause", MPV_FORMAT_FLAG, &pause_flag);
@@ -469,6 +781,9 @@ kajo_player_mpv_stop(KajoPlayerMpv *self)
     const char *cmd[] = { "stop", NULL };
     mpv_command_async(self->mpv, 0, cmd);
 
+    g_ptr_array_set_size(self->tracks, 0);
+    g_ptr_array_set_size(self->chapters, 0);
+
     self->state.has_media = FALSE;
     self->state.playing = FALSE;
     self->state.eof_reached = FALSE;
@@ -476,6 +791,7 @@ kajo_player_mpv_stop(KajoPlayerMpv *self)
     self->state.duration_usec = 0;
     self->state.video_width = 0;
     self->state.video_height = 0;
+    self->state.current_chapter = -1;
 }
 
 void
@@ -547,6 +863,36 @@ kajo_player_mpv_get_duration_usec(const KajoPlayerMpv *self)
 }
 
 void
+kajo_player_mpv_frame_step(KajoPlayerMpv *self, gboolean backward)
+{
+    if (!self || !self->mpv || !self->state.has_media)
+        return;
+
+    const char *cmd[] = { backward ? "frame-back-step" : "frame-step", NULL };
+    mpv_command_async(self->mpv, 0, cmd);
+}
+
+void
+kajo_player_mpv_set_chapter(KajoPlayerMpv *self, int chapter_idx)
+{
+    if (!self || !self->mpv || !self->state.has_media)
+        return;
+
+    int64_t ch = chapter_idx;
+    mpv_set_property_async(self->mpv, 0, "chapter", MPV_FORMAT_INT64, &ch);
+}
+
+void
+kajo_player_mpv_cycle_ab_loop(KajoPlayerMpv *self)
+{
+    if (!self || !self->mpv || !self->state.has_media)
+        return;
+
+    const char *cmd[] = { "ab-loop", NULL };
+    mpv_command_async(self->mpv, 0, cmd);
+}
+
+void
 kajo_player_mpv_set_volume(KajoPlayerMpv *self, double volume_0_to_1)
 {
     if (!self || !self->mpv)
@@ -574,6 +920,173 @@ kajo_player_mpv_set_loop(KajoPlayerMpv *self, gboolean loop_file)
 
     self->loop_enabled = loop_file;
     mpv_set_option_string(self->mpv, "loop-file", loop_file ? "inf" : "no");
+}
+
+void
+kajo_player_mpv_set_speed(KajoPlayerMpv *self, double speed)
+{
+    if (!self || !self->mpv)
+        return;
+
+    double clamped = CLAMP(speed, 0.1, 4.0);
+    mpv_set_property_async(self->mpv, 0, "speed", MPV_FORMAT_DOUBLE, &clamped);
+}
+
+void
+kajo_player_mpv_adjust_speed(KajoPlayerMpv *self, double delta)
+{
+    if (!self)
+        return;
+    kajo_player_mpv_set_speed(self, self->state.speed + delta);
+}
+
+void
+kajo_player_mpv_set_sid(KajoPlayerMpv *self, int sid)
+{
+    if (!self || !self->mpv)
+        return;
+
+    if (sid <= 0) {
+        mpv_set_property_string(self->mpv, "sid", "no");
+    } else {
+        g_autofree char *s = g_strdup_printf("%d", sid);
+        int vis = 1;
+        mpv_set_property_async(self->mpv, 0, "sub-visibility", MPV_FORMAT_FLAG, &vis);
+        mpv_set_property_string(self->mpv, "sid", s);
+    }
+}
+
+void
+kajo_player_mpv_cycle_sub(KajoPlayerMpv *self)
+{
+    if (!self || !self->mpv)
+        return;
+
+    const char *cmd[] = { "cycle", "sub", NULL };
+    mpv_command_async(self->mpv, 0, cmd);
+}
+
+void
+kajo_player_mpv_toggle_sub_visibility(KajoPlayerMpv *self)
+{
+    if (!self || !self->mpv)
+        return;
+
+    int vis = self->state.sub_visible ? 0 : 1;
+    mpv_set_property_async(self->mpv, 0, "sub-visibility", MPV_FORMAT_FLAG, &vis);
+}
+
+void
+kajo_player_mpv_add_subtitle_file(KajoPlayerMpv *self, const char *path)
+{
+    if (!self || !self->mpv || !path || path[0] == '\0')
+        return;
+
+    int vis = 1;
+    mpv_set_property_async(self->mpv, 0, "sub-visibility", MPV_FORMAT_FLAG, &vis);
+
+    const char *cmd[] = { "sub-add", path, "select", NULL };
+    mpv_command_async(self->mpv, 0, cmd);
+}
+
+void
+kajo_player_mpv_set_sub_delay(KajoPlayerMpv *self, double delay_sec)
+{
+    if (!self || !self->mpv)
+        return;
+
+    double d = CLAMP(delay_sec, -60.0, 60.0);
+    mpv_set_property_async(self->mpv, 0, "sub-delay", MPV_FORMAT_DOUBLE, &d);
+}
+
+void
+kajo_player_mpv_adjust_sub_delay(KajoPlayerMpv *self, double delta_sec)
+{
+    if (!self)
+        return;
+    kajo_player_mpv_set_sub_delay(self, self->state.sub_delay_sec + delta_sec);
+}
+
+void
+kajo_player_mpv_adjust_sub_scale(KajoPlayerMpv *self, double delta)
+{
+    if (!self || !self->mpv)
+        return;
+
+    double sc = CLAMP(self->state.sub_scale + delta, 0.3, 3.0);
+    mpv_set_property_async(self->mpv, 0, "sub-scale", MPV_FORMAT_DOUBLE, &sc);
+}
+
+void
+kajo_player_mpv_set_aid(KajoPlayerMpv *self, int aid)
+{
+    if (!self || !self->mpv)
+        return;
+
+    if (aid <= 0) {
+        mpv_set_property_string(self->mpv, "aid", "no");
+    } else {
+        g_autofree char *s = g_strdup_printf("%d", aid);
+        mpv_set_property_string(self->mpv, "aid", s);
+    }
+}
+
+void
+kajo_player_mpv_cycle_audio(KajoPlayerMpv *self)
+{
+    if (!self || !self->mpv)
+        return;
+
+    const char *cmd[] = { "cycle", "audio", NULL };
+    mpv_command_async(self->mpv, 0, cmd);
+}
+
+void
+kajo_player_mpv_set_audio_delay(KajoPlayerMpv *self, double delay_sec)
+{
+    if (!self || !self->mpv)
+        return;
+
+    double d = CLAMP(delay_sec, -60.0, 60.0);
+    mpv_set_property_async(self->mpv, 0, "audio-delay", MPV_FORMAT_DOUBLE, &d);
+}
+
+void
+kajo_player_mpv_adjust_audio_delay(KajoPlayerMpv *self, double delta_sec)
+{
+    if (!self)
+        return;
+    kajo_player_mpv_set_audio_delay(self, self->state.audio_delay_sec + delta_sec);
+}
+
+gboolean
+kajo_player_mpv_take_screenshot(KajoPlayerMpv *self, char **out_path)
+{
+    if (!self || !self->mpv || !self->state.has_media)
+        return FALSE;
+
+    const char *pics_dir = g_get_user_special_dir(G_USER_DIRECTORY_PICTURES);
+    if (!pics_dir)
+        pics_dir = g_get_home_dir();
+
+    g_autoptr(GDateTime) now = g_date_time_new_now_local();
+    g_autofree char *stamp = g_date_time_format(now, "%Y%m%d_%H%M%S");
+    g_autofree char *filename = g_strdup_printf("kajo_player_%s.png", stamp);
+    char *full_path = g_build_filename(pics_dir, filename, NULL);
+
+    const char *cmd[] = { "screenshot-to-file", full_path, "subtitles", NULL };
+    int rc = mpv_command_async(self->mpv, 0, cmd);
+    if (rc < 0) {
+        g_free(full_path);
+        return FALSE;
+    }
+
+    if (out_path)
+        *out_path = full_path;
+    else
+        g_free(full_path);
+
+    return TRUE;
 }
 
 const KajoMpvState *
