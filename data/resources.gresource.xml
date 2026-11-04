@@ -25,6 +25,7 @@
     <file compressed="true" alias="ui/page_bluetooth.ui">page_bluetooth.ui</file>
     <file compressed="true" alias="ui/page_audio.ui">page_audio.ui</file>
     <file compressed="true" alias="ui/files_window.ui">files_window.ui</file>
+    <file compressed="true" alias="ui/player_window.ui">player_window.ui</file>
     <file compressed="true" alias="defaults/style.css">defaults/style.css</file>
   </gresource>
 </gresources>

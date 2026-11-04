@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Kajo Player
+Comment=Wayland Media Player for the Kajo Desktop
+Exec=kajo-player %U
+Icon=multimedia-video-player
+Terminal=false
+Type=Application
+Categories=AudioVideo;Video;Player;GTK;
+MimeType=video/mp4;video/x-matroska;video/webm;video/quicktime;video/x-msvideo;video/mpeg;audio/mpeg;audio/flac;audio/ogg;audio/opus;audio/x-wav;
+StartupNotify=true
+StartupWMClass=org.kajo.Player
+Keywords=video;movie;player;media;mkv;mp4;audio;kajo;

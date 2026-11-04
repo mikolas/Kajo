@@ -26,6 +26,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | [`SPEC_TOUCH_GESTURES.md`](file:///home/mikolas/src/Kajo/SPEC_TOUCH_GESTURES.md) — Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications |
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | [`SPEC_VIRTUAL_KEYBOARD.md`](file:///home/mikolas/src/Kajo/SPEC_VIRTUAL_KEYBOARD.md) — Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching |
 | **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — Phase 1 GVFS/UDisks2 file manager with macOS-style `Space` Quick Look (images, audio/video, Poppler PDFs, `libarchive` archives, code/text) |
+| **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | [`SPEC_VIDEO_PLAYER.md`](file:///home/mikolas/src/Kajo/SPEC_VIDEO_PLAYER.md) — `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
 
 ---
 
@@ -33,28 +34,10 @@ All Kajo components and standalone applications share a unified design language:
 
 | Planned Component / Feature | Status | Target Binary / Scope |
 | :--- | :---: | :--- |
-| **Kajo Media Player** | 📋 Planned | `kajo-player` (`org.kajo.Player`) |
 | **`kajo-files` Phase 2** | 📋 Planned | `kajo-files` (Archive extraction, context menu, DnD) |
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
-
-### 3.1 [PLANNED] Kajo Media Player (`kajo-player`, `org.kajo.Player`)
-> **Status:** 📋 **Not Yet Implemented** — Future standalone application inspired by the `kajo-files` Quick Look video preview aesthetic.
-
-- **Visual Design:**
-  - Frameless `window.shell-settings-window.shell-player-window` surface with `1px solid @metro-accent` border, top `🎬 KAJO PLAYER` header bar, technical codec/resolution badge (`[ HEVC | 3840×2160 @ 60fps | 7.1 FLAC ]`), `🗗 FLOAT / TILE` button, and a 1-click **Picture-in-Picture (PiP)** floating pin button.
-- **Playback Engine:**
-  - GStreamer (`GstPlay` / `gtk4paintablesink` or `GtkMediaFile`) / `libmpv` hardware-accelerated Wayland video output supporting `.mkv`, `.mp4`, `.webm`, `.avi`, `.mov`, `.mp3`, `.flac`, `.ogg`, `.opus`, `.wav`.
-- **Transport & Controls:**
-  - Auto-hiding bottom Metro transport bar with seek timeline, elapsed/remaining timecode (`00:14:22 / 01:48:05`), play/pause, frame-step (`[` / `]`), playback speed selector (`0.5×` – `2.0×`), volume slider, and fullscreen toggle (`F` / `F11` / Double-Click).
-  - Inline track selectors for **Embedded Subtitles** (`.srt` / `.ass` / PGS + external subtitle loading) and **Multi-Language Audio Streams**.
-- **Playlist / Queue Drawer:**
-  - Compact toggleable right-hand drawer (`240px`, hidden by default) listing current folder media or queued tracks.
-- **Native Shell Integration:**
-  - Exports an **MPRIS2 D-Bus interface (`org.mpris.MediaPlayer2.kajo_player`)** so active playback automatically populates Kajo's top panel Media widget, lock-screen media controls, and 16-band FFT spectrum analyzer.
-
----
 
 ### 3.2 [PLANNED] `kajo-files` Phase 2 Enhancements
 - **1-Click Archive Extraction & Compression (`libarchive`):**

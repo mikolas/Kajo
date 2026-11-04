@@ -31,6 +31,7 @@ This document is the authoritative engineering manual for AI coding assistants w
 | **`kajo`** | `org.kajo.Shell` | Wayland panel, 22 widgets, 16-band FFT spectrum visualizer, notification daemon, app launcher, `ShellOSK` virtual keyboard (`zwp_virtual_keyboard_v1` + `zwp_input_method_v2`), bezel touch gestures, foldable posture manager, `ext-idle-notify-v1` screensaver, and `ext-session-lock-v1` PAM lock screen. |
 | **`kajo-settings`** | `org.kajo.Settings` | 10-page modular system settings (`src/settings/pages/page_*.c`) with live D-Bus, PipeWire, Niri IPC, and GLSL shader switching. |
 | **`kajo-files`** | `org.kajo.Files` | *(Alpha)* URI-first GIO/GVFS/UDisks2 file manager (`src/files/`) with inline LUKS/SMB auth and `Space` Quick Look (`poppler-glib`, `libarchive`, `GtkVideo`, `GtkPicture`, `GtkTextView`). |
+| **`kajo-player`** | `org.kajo.Player` | *(Beta)* Hardware-accelerated `libmpv` + `GtkGLArea` video/audio player (`src/player/`) with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-step, chapters, fullscreen bottom-edge overlay HUD, and MPRIS2 D-Bus provider. |
 | **`kajo-greeter`** | `org.kajo.Greeter` | Native `greetd` Wayland login greeter (`src/greeter/`) with PAM `--test` mode and multi-monitor Niri / Cage support. |
 
 ---

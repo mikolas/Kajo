@@ -35,6 +35,9 @@ pulse_dep = dependency('libpulse')
 pulse_glib_dep = dependency('libpulse-mainloop-glib')
 poppler_dep = dependency('poppler-glib')
 archive_dep = dependency('libarchive')
+mpv_dep = dependency('mpv')
+egl_dep = dependency('egl')
+glesv2_dep = dependency('glesv2')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -164,6 +167,7 @@ blueprints = files(
   'data/ui/page_bluetooth.blp',
   'data/ui/page_audio.blp',
   'data/ui/files_window.blp',
+  'data/ui/player_window.blp',
 )
 
 compiled_blueprints = []
@@ -307,6 +311,40 @@ executable(
 
 install_data(
   'data/org.kajo.Files.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
+
+player_sources = files(
+  'src/player/main.c',
+  'src/player/player_window.c',
+  'src/player/player_mpv.c',
+  'src/player/player_queue.c',
+  'src/player/player_mpris.c',
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-player',
+  player_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    mpv_dep,
+    egl_dep,
+    glesv2_dep,
+    m_dep,
+  ],
+  install: true,
+)
+
+install_data(
+  'data/org.kajo.Player.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
 
@@ -473,8 +511,14 @@ test_files_model_exe = executable(
 )
 test('files-model', test_files_model_exe)
 
-egl_dep = dependency('egl', required: false)
-glesv2_dep = dependency('glesv2', required: false)
+test_player_queue_exe = executable(
+  'test-player-queue',
+  files('tests/test_player_queue.c', 'src/player/player_queue.c', 'src/player/player_mpv.c'),
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep, mpv_dep, egl_dep, glesv2_dep, m_dep],
+  build_by_default: false,
+)
+test('player-queue', test_player_queue_exe)
+
 if egl_dep.found() and glesv2_dep.found()
   test_shaders_exe = executable(
     'test-shaders',
