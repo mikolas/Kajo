@@ -1462,6 +1462,83 @@ window.shell-files-window .files-status-error {
     font-weight: 700;
 }
 
+/* ============================================================================
+ * KAJO PLAYER (org.kajo.Player — Aero + Metro Media Deck)
+ * ============================================================================ */
+
+window.shell-player-window {
+    background-color: #0c0c0c;
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
+}
+
+window.shell-player-window .player-header-bar {
+    background-color: #161616;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 8px 12px;
+}
+
+window.shell-player-window .player-video-stage {
+    background-color: #0c0c0c;
+}
+
+window.shell-player-window .player-audio-card {
+    background-color: #141414;
+    border: 1px solid #2b2b2b;
+    border-top: 2px solid @metro-accent;
+    padding: 36px 56px;
+}
+
+window.shell-player-window .player-transport-deck {
+    background-color: #141414;
+    border-top: 1px solid #2b2b2b;
+    padding: 10px 14px 12px 14px;
+}
+
+window.shell-player-window .player-timecode {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #d6d6d6;
+}
+
+window.shell-player-window .player-play-btn {
+    min-width: 86px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+window.shell-player-window .player-seek-scale trough,
+window.shell-player-window .player-volume-scale trough {
+    background: none;
+    background-image: none;
+    background-color: #262626;
+    min-height: 6px;
+    border-radius: 0px;
+}
+
+window.shell-player-window .player-seek-scale highlight,
+window.shell-player-window .player-volume-scale highlight {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+window.shell-player-window .player-seek-scale slider,
+window.shell-player-window .player-volume-scale slider {
+    background: none;
+    background-image: none;
+    background-color: #ffffff;
+    border: 2px solid @metro-accent;
+    border-radius: 0px;
+    min-width: 10px;
+    min-height: 14px;
+    margin: -4px 0;
+}
+
+
 
 
 

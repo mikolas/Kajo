@@ -164,6 +164,7 @@ blueprints = files(
   'data/ui/page_bluetooth.blp',
   'data/ui/page_audio.blp',
   'data/ui/files_window.blp',
+  'data/ui/player_window.blp',
 )
 
 compiled_blueprints = []
@@ -307,6 +308,36 @@ executable(
 
 install_data(
   'data/org.kajo.Files.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
+
+player_sources = files(
+  'src/player/main.c',
+  'src/player/player_window.c',
+  'src/player/player_queue.c',
+  'src/player/player_mpris.c',
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-player',
+  player_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    m_dep,
+  ],
+  install: true,
+)
+
+install_data(
+  'data/org.kajo.Player.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
 
@@ -472,6 +503,14 @@ test_files_model_exe = executable(
   build_by_default: false,
 )
 test('files-model', test_files_model_exe)
+
+test_player_queue_exe = executable(
+  'test-player-queue',
+  files('tests/test_player_queue.c', 'src/player/player_queue.c'),
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep],
+  build_by_default: false,
+)
+test('player-queue', test_player_queue_exe)
 
 egl_dep = dependency('egl', required: false)
 glesv2_dep = dependency('glesv2', required: false)
