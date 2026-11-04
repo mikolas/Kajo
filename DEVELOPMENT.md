@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-settings`, `kajo-files`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-settings`, `kajo-files`, `kajo-player`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -55,6 +55,12 @@ src/
 │   └── osk_xkb.h/c                 XKB keymap builder & keycode/keysym lookup
 ├── posture/
 │   └── posture_manager.h/c         360° hinge angle posture state machine & auto-rotation
+├── player/
+│   ├── main.c                      kajo-player standalone entry point (org.kajo.Player)
+│   ├── player_window.h/c           Main window, fullscreen overlay HUD, subtitle/audio/speed popovers
+│   ├── player_mpv.h/c              libmpv + GtkGLArea OpenGL/EGL engine, track/chapter/telemetry parser
+│   ├── player_queue.h/c            Sibling folder media scanner, KajoMediaTrack & queue drawer
+│   └── player_mpris.h/c            MPRIS2 D-Bus server (org.mpris.MediaPlayer2.kajo_player)
 ├── settings/
 │   ├── main.c                      kajo-settings standalone entry point (org.kajo.Settings)
 │   ├── settings_window.h/c         Settings container shell, category sidebar & GtkStack
@@ -73,6 +79,7 @@ src/
 
 data/
 ├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
+├── org.kajo.Player.desktop         Desktop entry for kajo-player (MimeType=video/*;audio/*;)
 ├── defaults/
 │   ├── config.json                 Default panel, widget, notification & idle configuration
 │   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, osk, lock, greeter)
@@ -96,6 +103,7 @@ tests/
 ├── test_osk_xkb.c                  XKB keymap compilation & keysym/keycode resolution tests
 ├── test_touch_gestures.c           Bezel touch gesture directional threshold & trigger tests
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
+├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 └── test_shaders.c                  Headless EGL/GLES2 compiler verification for Niri GLSL shaders
 ```
 

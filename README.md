@@ -1,20 +1,21 @@
 # Kajo
 
-A high-performance, lightweight Wayland desktop shell, system settings suite, GVFS file manager, virtual keyboard, session lock, and `greetd` login greeter built for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
+A high-performance, lightweight Wayland desktop shell, system settings suite, GVFS file manager, `libmpv` video/audio player, virtual keyboard, session lock, and `greetd` login greeter built for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
 
-Built in standard C17 with GTK4, `gtk4-layer-shell`, `libpulse`, `libpam`, `poppler-glib`, `libarchive`, and Blueprint Markup. Designed for OLED displays, sub-0.05% idle CPU usage, and keyboard- & touch-driven operation.
+Built in standard C17 with GTK4, `gtk4-layer-shell`, `libmpv`, `libpulse`, `libpam`, `poppler-glib`, `libarchive`, and Blueprint Markup. Designed for OLED displays, sub-0.05% idle CPU usage, and keyboard- & touch-driven operation.
 
 ---
 
 ## 🌟 Overview of Executables
 
-The project builds and installs four integrated executables plus a `greetd` session wrapper:
+The project builds and installs five integrated executables plus a `greetd` session wrapper:
 
 | Executable | Purpose |
 | :--- | :--- |
 | **`kajo`** | Primary Wayland desktop shell daemon (status panel, 22 live widgets, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual keyboard, bezel touch gesture recognizers, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, 360° foldable posture & auto-rotation manager, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
 | **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC (including live GLSL window shaders), and Kajo IPC integration. |
 | **`kajo-files`** | *(Alpha)* Native Aero + Metro file manager (`org.kajo.Files`) with URI-first GVFS/UDisks2 integration, inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (images, audio/video, multi-page Poppler PDFs, `libarchive` archives, and code/text). |
+| **`kajo-player`** | *(Beta)* Hardware-accelerated `libmpv` + `GtkGLArea` media player (`org.kajo.Player`) with embedded/external subtitle decoding (`.srt`, `.ass`, PGS), multi-audio stream switching, sync delay & font scaling, playback speed & frame-stepping, chapters, screenshots, fullscreen bottom-edge auto-hiding controls, and MPRIS2 D-Bus integration. |
 | **`kajo-greeter`** | Graphical Wayland login greeter for `greetd` supporting both `niri` (`gtk4-layer-shell` multi-monitor) and `cage` (XDG fullscreen kiosk) compositors. |
 | **`kajo-greeter-session`** | Wrapper launcher script for `/etc/greetd/config.toml`. |
 
@@ -58,6 +59,17 @@ The project builds and installs four integrated executables plus a `greetd` sess
 - **macOS-Style Quick Look (`Space`) & On-Demand Inspector (`Ctrl+I`)**:
   - Pressing **`Space`** on any selected item opens a modal preview overlay rendering high-res images (`GtkPicture`), audio/video (`GtkVideo`), multi-page PDF documents (`poppler-glib` with page navigation), archive contents (`libarchive` for `.zip`, `.tar.*`, `.7z`, `.rar`, `.deb`, `.rpm`, `.iso`), code/markdown/configs (`Fira Code`), and folder summaries—updating live when navigating with arrow keys (`←`/`→`/`↑`/`↓`).
 
+### 🎬 Kajo Player (`kajo-player` — *Beta*)
+- **Hardware-Accelerated `libmpv` + `GtkGLArea` Engine**:
+  - Renders directly via `mpv_render_context` (OpenGL/EGL) with `hwdec=auto-safe` (VA-API / NVDEC) and live codec/resolution/decoder telemetry in the header badge (`[ HEVC•vaapi | 1920×1080 | 42.1 MB ]`) plus a toggleable technical telemetry OSD (`ℹ STATS` / `I` / `Ctrl+J`).
+- **Subtitles, Multi-Language Audio & Sync Controls**:
+  - **`💬 SUBS` Popover**: Lists all embedded `.mkv`/`.mp4` and external subtitle tracks (`.srt`, `.ass`/`.ssa`, `.vtt`, PGS) rendered via `libass`, supports loading external subtitle files (`📂 LOAD EXTERNAL SUBTITLE` or drag-and-drop), subtitle timing offset (`±100ms` / `Z` / `X`), and font scaling (`30%–300%`).
+  - **`🎧 AUDIO` Popover**: Switches multi-language audio streams (`#` / `A`) and adjusts audio sync delay (`±100ms`).
+- **Speed, Frame-Stepping, Chapters, Queue & Fullscreen**:
+  - **`1.0×` Speed & Frame Control**: Pitch-corrected playback speed (`0.5×`–`2.0×`, `[` / `]`), single-frame stepping (`,` / `.`), A–B loop (`Shift+L`), and 1-key frame screenshots (`📷` / `S` to `~/Pictures`).
+  - **Bottom-Edge Auto-Hiding Fullscreen (`F` / `F11` / Double-Click)**: Expands video to 100% of the window and hides all chrome, revealing the floating Metro transport deck when moving the pointer to the bottom edge.
+  - **Folder Queue, Chapters & MPRIS2**: Toggleable `240px` right drawer (`☰ QUEUE` / `Ctrl+P`) with container chapters and automatic sibling folder media queuing, plus native `org.mpris.MediaPlayer2.kajo_player` D-Bus export.
+
 ### 🔐 Kajo Login Greeter (`kajo-greeter`)
 - **Native `greetd` IPC Client**: Speaks the `greetd` binary protocol (`$GREETD_SOCK`) with zero-copy scrubbed password serialization, `prctl(PR_SET_DUMPABLE, 0)` core-dump protection, and GTK Inspector lockout.
 - **Automatic User & Session Discovery**: Enumerates human users via `getpwent()` and parses `/usr/share/wayland-sessions/*.desktop` & `/usr/share/xsessions/*.desktop`, remembering the last user and session.
@@ -76,12 +88,13 @@ Ensure the following development packages are installed (Arch Linux / CachyOS pa
 - `libpulse` (`libpulse`, `libpulse-mainloop-glib`)
 - `pam` (`libpam`)
 - `poppler-glib`, `libarchive` (for `kajo-files` PDF & archive Quick Look previews)
+- `mpv` (`libmpv`, for `kajo-player` video/audio/subtitle decoding)
 - `gvfs`, `gvfs-smb`, `udisks2` (optional runtime services for removable drives & network shares)
 - `blueprint-compiler`, `meson`, `ninja`
 
 ```bash
 sudo pacman -S --needed gtk4 gtk4-layer-shell wayland wayland-protocols libxkbcommon \
-    json-glib glib2 libpulse pam poppler-glib libarchive gvfs gvfs-smb udisks2 \
+    json-glib glib2 libpulse pam poppler-glib libarchive mpv gvfs gvfs-smb udisks2 \
     blueprint-compiler meson ninja
 ```
 

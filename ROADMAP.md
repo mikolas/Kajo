@@ -26,7 +26,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | [`SPEC_TOUCH_GESTURES.md`](file:///home/mikolas/src/Kajo/SPEC_TOUCH_GESTURES.md) — Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications |
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | [`SPEC_VIRTUAL_KEYBOARD.md`](file:///home/mikolas/src/Kajo/SPEC_VIRTUAL_KEYBOARD.md) — Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching |
 | **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — Phase 1 GVFS/UDisks2 file manager with macOS-style `Space` Quick Look (images, audio/video, Poppler PDFs, `libarchive` archives, code/text) |
-| **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🧪 MVP | [`SPEC_VIDEO_PLAYER.md`](file:///home/mikolas/src/Kajo/SPEC_VIDEO_PLAYER.md) — Phase 1 MVP Wayland video/audio player with Metro transport deck, fullscreen auto-hide, folder queue drawer, and MPRIS2 D-Bus integration |
+| **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | [`SPEC_VIDEO_PLAYER.md`](file:///home/mikolas/src/Kajo/SPEC_VIDEO_PLAYER.md) — `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
 
 ---
 
@@ -34,23 +34,10 @@ All Kajo components and standalone applications share a unified design language:
 
 | Planned Component / Feature | Status | Target Binary / Scope |
 | :--- | :---: | :--- |
-| **`kajo-player` Phase 2 (Subtitles, Audio Tracks, Speed, PiP)** | 📋 Planned | `kajo-player` (`org.kajo.Player`) |
 | **`kajo-files` Phase 2** | 📋 Planned | `kajo-files` (Archive extraction, context menu, DnD) |
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
-
-### 3.1 [PLANNED] `kajo-player` Phase 2 (Full Media Player Expansion)
-> **Status:** 📋 **Phase 2 Planned** — Expanding the [`SPEC_VIDEO_PLAYER.md`](file:///home/mikolas/src/Kajo/SPEC_VIDEO_PLAYER.md) MVP with advanced decoding and stream controls:
-
-- **Subtitle & Multi-Audio Stream Decoding (`libgstplay-1.0` / `libmpv`):**
-  - Inline `[ 💬 SUBS ]` and `[ 🔊 AUDIO ]` track selector popovers for embedded `.mkv` / `.mp4` streams (`.srt`, `.ass` / `.ssa`, WebVTT, PGS) plus external subtitle loading and sync offset (`Z` / `X` `±100ms`).
-- **Playback Speed, Frame-Stepping & Chapter Markers:**
-  - `[ 1.0× ]` speed selector (`0.25×` – `4.0×` with pitch correction), frame-step (`[` / `]`), A–B loop repeat, and container chapter ticks on the timeline scrubber.
-- **Picture-in-Picture (PiP) & Hardware Controls:**
-  - 1-click `[ 📌 PIP ]` compact floating mode via Niri IPC, hardware VA-API / NVDEC decode telemetry badge, and video EQ adjustments.
-
----
 
 ### 3.2 [PLANNED] `kajo-files` Phase 2 Enhancements
 - **1-Click Archive Extraction & Compression (`libarchive`):**
