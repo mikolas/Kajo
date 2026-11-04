@@ -4,7 +4,7 @@
 **Target Binary:** `kajo-player` (`org.kajo.Player`)  
 **Status:** Phase 1 MVP Specification  
 **Desktop Entry:** `data/org.kajo.Player.desktop` (`MimeType=video/*;audio/*;`)  
-**Tech Stack:** C17, GTK4 (`gtk4`), GIO (`gio-2.0`), GStreamer (`gstreamer-1.0`, `gstreamer-play-1.0` / `GtkMediaFile`), MPRIS2 D-Bus (`org.mpris.MediaPlayer2.kajo_player`), Blueprint Markup (`blueprint-compiler`)
+**Tech Stack:** C17, GTK4 (`gtk4`), GIO (`gio-2.0`), `libmpv` (`mpv/client.h`, `mpv/render_gl.h` + `GtkGLArea` / EGL / GLES2), MPRIS2 D-Bus (`org.mpris.MediaPlayer2.kajo_player`), Blueprint Markup (`blueprint-compiler`)
 
 ---
 
@@ -17,8 +17,8 @@
   - Pure dark `#0c0c0c` video canvas framed by `#141414` / `#161616` header and transport decks with `1px solid #2b2b2b` dividers.
   - `Fira Code` monospace titles, stream metadata badges (`[ video/x-matroska | 1920×1080 | 42.6 MB ]`), and precision timecodes (`00:14:22 / 01:48:05`).
 - **Two-Stage Engineering Rollout:**
-  - **Phase 1 (MVP):** Fast, rock-solid playback using GTK4's GStreamer-backed media pipeline (`GtkMediaFile` / `GtkPicture`), custom Metro transport bar, auto-populated sibling folder playlist drawer (`230px`, hidden by default), fullscreen & floating PiP mode, and native **MPRIS2 D-Bus export** so `kajo-player` integrates immediately with Kajo's panel Media widget and 16-band FFT spectrum analyzer.
-  - **Phase 2 (Full Media Engine):** Direct `GstPlay` / `libmpv` pipeline integration adding embedded & external subtitle decoding (`.srt`, `.ass`, PGS, subtitle track selector & delay), multi-language audio stream switching, chapter markers, hardware VA-API/NVDEC decode telemetry OSD (`Ctrl+J`), and playback speed control (`0.25×`–`2.0×`).
+  - **Phase 1 (MVP):** Hardware-accelerated **`libmpv` (`mpv_render_context` + `GtkGLArea`)** playback with `hwdec=auto-safe` and automatic `libass` subtitle rendering (`sub-auto=fuzzy`), custom Metro transport bar, bottom-edge auto-hiding fullscreen overlay controls, auto-populated sibling folder playlist drawer (`230px`, hidden by default), and native **MPRIS2 D-Bus export** so `kajo-player` integrates immediately with Kajo's panel Media widget and 16-band FFT spectrum analyzer.
+  - **Phase 2 (Full Media Controls):** UI controls exposing `libmpv`'s subtitle/audio track lists (`sid` / `aid` track selector popovers, external subtitle file picker, `sub-delay`), chapter markers, hardware decode telemetry OSD (`Ctrl+J`), frame-stepping, and playback speed control (`0.25×`–`2.0×`).
 
 ---
 

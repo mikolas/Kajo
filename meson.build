@@ -35,6 +35,9 @@ pulse_dep = dependency('libpulse')
 pulse_glib_dep = dependency('libpulse-mainloop-glib')
 poppler_dep = dependency('poppler-glib')
 archive_dep = dependency('libarchive')
+mpv_dep = dependency('mpv')
+egl_dep = dependency('egl')
+glesv2_dep = dependency('glesv2')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -314,6 +317,7 @@ install_data(
 player_sources = files(
   'src/player/main.c',
   'src/player/player_window.c',
+  'src/player/player_mpv.c',
   'src/player/player_queue.c',
   'src/player/player_mpris.c',
   'src/config.c',
@@ -331,6 +335,9 @@ executable(
     json_glib_dep,
     gio_dep,
     gio_unix_dep,
+    mpv_dep,
+    egl_dep,
+    glesv2_dep,
     m_dep,
   ],
   install: true,
@@ -512,8 +519,6 @@ test_player_queue_exe = executable(
 )
 test('player-queue', test_player_queue_exe)
 
-egl_dep = dependency('egl', required: false)
-glesv2_dep = dependency('glesv2', required: false)
 if egl_dep.found() and glesv2_dep.found()
   test_shaders_exe = executable(
     'test-shaders',

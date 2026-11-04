@@ -1,4 +1,5 @@
 #include "player_window.h"
+#include "player_mpv.h"
 #include "player_queue.h"
 #include "player_mpris.h"
 #include "../compositor/compositor.h"
@@ -20,9 +21,10 @@ struct _KajoPlayerWindow {
     GtkWidget *btn_close;
 
     GtkOverlay *video_overlay;
-    GtkStack *canvas_stack;
+    GtkGLArea *video_gl_area;
+    GtkWidget *empty_state_box;
     GtkWidget *btn_empty_open;
-    GtkWidget *video_picture;
+    GtkWidget *audio_state_box;
     GtkWidget *audio_title_label;
     GtkWidget *audio_meta_label;
 
@@ -47,8 +49,8 @@ struct _KajoPlayerWindow {
     GtkWidget *volume_pct_lbl;
     GtkWidget *btn_fullscreen;
 
-    /* Playback State */
-    GtkMediaStream *media_stream;
+    /* Playback Engine & Controllers */
+    KajoPlayerMpv *mpv;
     KajoPlayerQueue *queue;
     KajoPlayerMpris *mpris;
 
@@ -58,6 +60,8 @@ struct _KajoPlayerWindow {
     gboolean queue_visible;
     gboolean is_fullscreen;
     gboolean syncing_fullscreen;
+    gboolean last_eof_reached;
+    gint64 last_mpris_duration_usec;
 
     gboolean suppress_seek_signal;
     gboolean suppress_vol_signal;
@@ -228,7 +232,7 @@ on_window_fullscreened_notify(GObject *obj, GParamSpec *pspec G_GNUC_UNUSED, gpo
     set_fullscreen_mode(self, compositor_fs);
 }
 
-/* --- Media Stream Signals & State Updates --- */
+/* --- libmpv State Updates & Stream Badge --- */
 
 static void
 update_stream_badge(KajoPlayerWindow *self)
@@ -240,16 +244,30 @@ update_stream_badge(KajoPlayerWindow *self)
     }
 
     g_autofree char *size_str = kajo_player_format_size(track->size);
+    const KajoMpvState *st = kajo_player_mpv_get_state(self->mpv);
+
+    int w = st ? st->video_width : 0;
+    int h = st ? st->video_height : 0;
+    const char *vcodec = (st && st->video_codec && st->video_codec[0]) ? st->video_codec : NULL;
+    const char *hwdec = (st && st->hwdec_current && st->hwdec_current[0]) ? st->hwdec_current : NULL;
+    const char *acodec = (st && st->audio_codec && st->audio_codec[0]) ? st->audio_codec : NULL;
     const char *mime = track->content_type ? track->content_type : "media/stream";
 
-    int w = 0, h = 0;
-    if (self->media_stream && !track->is_audio_only) {
-        w = gdk_paintable_get_intrinsic_width(GDK_PAINTABLE(self->media_stream));
-        h = gdk_paintable_get_intrinsic_height(GDK_PAINTABLE(self->media_stream));
-    }
-
     if (w > 0 && h > 0) {
-        g_autofree char *badge = g_strdup_printf("[ %s | %d×%d | %s ]", mime, w, h, size_str);
+        g_autofree char *codec_tag = NULL;
+        if (vcodec && hwdec) {
+            g_autofree char *v_up = g_ascii_strup(vcodec, -1);
+            codec_tag = g_strdup_printf("%s•%s", v_up, hwdec);
+        } else if (vcodec) {
+            codec_tag = g_ascii_strup(vcodec, -1);
+        } else {
+            codec_tag = g_strdup(mime);
+        }
+        g_autofree char *badge = g_strdup_printf("[ %s | %d×%d | %s ]", codec_tag, w, h, size_str);
+        gtk_label_set_text(GTK_LABEL(self->stream_badge), badge);
+    } else if (acodec) {
+        g_autofree char *a_up = g_ascii_strup(acodec, -1);
+        g_autofree char *badge = g_strdup_printf("[ %s | %s ]", a_up, size_str);
         gtk_label_set_text(GTK_LABEL(self->stream_badge), badge);
     } else {
         g_autofree char *badge = g_strdup_printf("[ %s | %s ]", mime, size_str);
@@ -260,7 +278,8 @@ update_stream_badge(KajoPlayerWindow *self)
 static void
 update_transport_ui(KajoPlayerWindow *self)
 {
-    if (!self->media_stream) {
+    const KajoMpvState *st = kajo_player_mpv_get_state(self->mpv);
+    if (!st || !st->has_media) {
         gtk_button_set_label(GTK_BUTTON(self->btn_play_pause), "▶ PLAY");
         gtk_label_set_text(GTK_LABEL(self->time_elapsed_lbl), "00:00");
         gtk_label_set_text(GTK_LABEL(self->time_total_lbl), "00:00");
@@ -272,22 +291,18 @@ update_transport_ui(KajoPlayerWindow *self)
         return;
     }
 
-    gboolean playing = gtk_media_stream_get_playing(self->media_stream);
-    gtk_button_set_label(GTK_BUTTON(self->btn_play_pause), playing ? "⏸ PAUSE" : "▶ PLAY");
+    gtk_button_set_label(GTK_BUTTON(self->btn_play_pause), st->playing ? "⏸ PAUSE" : "▶ PLAY");
 
-    gint64 pos_us = gtk_media_stream_get_timestamp(self->media_stream);
-    gint64 dur_us = gtk_media_stream_get_duration(self->media_stream);
-
-    g_autofree char *pos_str = kajo_player_format_time(pos_us);
-    g_autofree char *dur_str = kajo_player_format_time(dur_us);
+    g_autofree char *pos_str = kajo_player_format_time(st->position_usec);
+    g_autofree char *dur_str = kajo_player_format_time(st->duration_usec);
 
     gtk_label_set_text(GTK_LABEL(self->time_elapsed_lbl), pos_str);
     gtk_label_set_text(GTK_LABEL(self->time_total_lbl), dur_str);
 
     self->suppress_seek_signal = TRUE;
-    if (dur_us > 0) {
-        double dur_sec = (double)dur_us / 1000000.0;
-        double pos_sec = (double)pos_us / 1000000.0;
+    if (st->duration_usec > 0) {
+        double dur_sec = (double)st->duration_usec / 1000000.0;
+        double pos_sec = (double)st->position_usec / 1000000.0;
         gtk_range_set_range(GTK_RANGE(self->seek_scale), 0.0, dur_sec);
         gtk_range_set_value(GTK_RANGE(self->seek_scale), CLAMP(pos_sec, 0.0, dur_sec));
     } else {
@@ -296,14 +311,13 @@ update_transport_ui(KajoPlayerWindow *self)
     }
     self->suppress_seek_signal = FALSE;
 
-    const GError *err = gtk_media_stream_get_error(self->media_stream);
-    if (err) {
-        g_autofree char *msg = g_strdup_printf("⚠ %s", err->message);
+    if (st->error_message) {
+        g_autofree char *msg = g_strdup_printf("⚠ %s", st->error_message);
         gtk_label_set_text(GTK_LABEL(self->transport_status_lbl), msg);
     } else {
         int idx = kajo_player_queue_get_current_index(self->queue);
         guint total = kajo_player_queue_get_length(self->queue);
-        const char *state_str = playing ? "PLAYING" : "PAUSED";
+        const char *state_str = st->playing ? "PLAYING" : "PAUSED";
         if (total > 1 && idx >= 0) {
             g_autofree char *status = g_strdup_printf("%s  •  TRACK %d / %u", state_str, idx + 1, total);
             gtk_label_set_text(GTK_LABEL(self->transport_status_lbl), status);
@@ -319,94 +333,41 @@ sync_mpris_state(KajoPlayerWindow *self)
     if (!self->mpris)
         return;
 
-    gboolean has_media = (self->media_stream != NULL);
-    gboolean playing = has_media && gtk_media_stream_get_playing(self->media_stream);
-    gint64 pos_us = has_media ? gtk_media_stream_get_timestamp(self->media_stream) : 0;
-    gint64 dur_us = has_media ? gtk_media_stream_get_duration(self->media_stream) : 0;
+    const KajoMpvState *st = kajo_player_mpv_get_state(self->mpv);
+    gboolean has_media = st && st->has_media;
+    gboolean playing = has_media && st->playing;
+    gint64 pos_us = has_media ? st->position_usec : 0;
+    gint64 dur_us = has_media ? st->duration_usec : 0;
+
+    if (has_media && dur_us != self->last_mpris_duration_usec) {
+        self->last_mpris_duration_usec = dur_us;
+        const KajoMediaTrack *track = kajo_player_queue_get_current(self->queue);
+        kajo_player_mpris_update_track(self->mpris, track, dur_us);
+    }
 
     kajo_player_mpris_update_state(self->mpris, has_media, playing, pos_us, dur_us, self->volume);
 }
 
 static void
-on_media_timestamp_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+on_mpv_state_changed(const KajoMpvState *state, gpointer user_data)
 {
     KajoPlayerWindow *self = user_data;
-    update_transport_ui(self);
-    sync_mpris_state(self);
-}
 
-static void
-on_media_duration_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    KajoPlayerWindow *self = user_data;
-    update_transport_ui(self);
-    update_stream_badge(self);
-
-    const KajoMediaTrack *track = kajo_player_queue_get_current(self->queue);
-    gint64 dur_us = self->media_stream ? gtk_media_stream_get_duration(self->media_stream) : 0;
-    kajo_player_mpris_update_track(self->mpris, track, dur_us);
-    sync_mpris_state(self);
-}
-
-static void
-on_media_playing_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    KajoPlayerWindow *self = user_data;
-    update_transport_ui(self);
-    sync_mpris_state(self);
-}
-
-static void
-on_media_prepared_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    KajoPlayerWindow *self = user_data;
-    update_stream_badge(self);
-    update_transport_ui(self);
-}
-
-static void
-on_paintable_invalidate_size(GdkPaintable *paintable G_GNUC_UNUSED, gpointer user_data)
-{
-    KajoPlayerWindow *self = user_data;
-    update_stream_badge(self);
-}
-
-static void
-on_media_ended_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    KajoPlayerWindow *self = user_data;
-    if (!self->media_stream)
-        return;
-
-    if (gtk_media_stream_get_ended(self->media_stream) && !self->loop_enabled) {
+    if (state && state->eof_reached && !self->last_eof_reached && !self->loop_enabled) {
+        self->last_eof_reached = TRUE;
         guint total = kajo_player_queue_get_length(self->queue);
         int idx = kajo_player_queue_get_current_index(self->queue);
         if (total > 1 && idx + 1 < (int)total) {
             kajo_player_queue_next(self->queue);
             return;
         }
+    } else if (state && !state->eof_reached) {
+        self->last_eof_reached = FALSE;
     }
+
+    update_stream_badge(self);
     update_transport_ui(self);
     sync_mpris_state(self);
-}
-
-static void
-on_media_error_notify(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    KajoPlayerWindow *self = user_data;
-    update_transport_ui(self);
-}
-
-static void
-clear_media_stream(KajoPlayerWindow *self)
-{
-    if (self->media_stream) {
-        g_signal_handlers_disconnect_by_data(self->media_stream, self);
-        gtk_media_stream_pause(self->media_stream);
-    }
-    if (self->video_picture)
-        gtk_picture_set_paintable(GTK_PICTURE(self->video_picture), NULL);
-    g_clear_object(&self->media_stream);
 }
 
 /* --- Track Selection Callback from KajoPlayerQueue --- */
@@ -419,12 +380,15 @@ on_queue_track_selected(const KajoMediaTrack *track,
 {
     KajoPlayerWindow *self = user_data;
 
-    clear_media_stream(self);
+    self->last_eof_reached = FALSE;
+    self->last_mpris_duration_usec = -1;
 
     if (!track || !track->file) {
+        kajo_player_mpv_stop(self->mpv);
         gtk_label_set_text(GTK_LABEL(self->title_label), "🎬 KAJO PLAYER");
         gtk_window_set_title(GTK_WINDOW(self), "KAJO PLAYER");
-        gtk_stack_set_visible_child_name(self->canvas_stack, "empty");
+        gtk_widget_set_visible(self->empty_state_box, TRUE);
+        gtk_widget_set_visible(self->audio_state_box, FALSE);
         update_stream_badge(self);
         update_transport_ui(self);
         kajo_player_mpris_update_track(self->mpris, NULL, 0);
@@ -439,18 +403,7 @@ on_queue_track_selected(const KajoMediaTrack *track,
     gtk_widget_set_sensitive(self->btn_prev, total > 1);
     gtk_widget_set_sensitive(self->btn_next, total > 1);
 
-    self->media_stream = gtk_media_file_new_for_file(track->file);
-    gtk_media_stream_set_loop(self->media_stream, self->loop_enabled);
-    gtk_media_stream_set_volume(self->media_stream, self->volume);
-    gtk_media_stream_set_muted(self->media_stream, self->muted);
-
-    g_signal_connect(self->media_stream, "notify::timestamp", G_CALLBACK(on_media_timestamp_notify), self);
-    g_signal_connect(self->media_stream, "notify::duration", G_CALLBACK(on_media_duration_notify), self);
-    g_signal_connect(self->media_stream, "notify::playing", G_CALLBACK(on_media_playing_notify), self);
-    g_signal_connect(self->media_stream, "notify::prepared", G_CALLBACK(on_media_prepared_notify), self);
-    g_signal_connect(self->media_stream, "notify::ended", G_CALLBACK(on_media_ended_notify), self);
-    g_signal_connect(self->media_stream, "notify::error", G_CALLBACK(on_media_error_notify), self);
-    g_signal_connect(self->media_stream, "invalidate-size", G_CALLBACK(on_paintable_invalidate_size), self);
+    gtk_widget_set_visible(self->empty_state_box, FALSE);
 
     if (track->is_audio_only) {
         gtk_label_set_text(GTK_LABEL(self->audio_title_label), track->display_name);
@@ -458,13 +411,15 @@ on_queue_track_selected(const KajoMediaTrack *track,
         g_autofree char *meta = g_strdup_printf("[ %s  •  %s ]",
             track->content_type ? track->content_type : "audio/stream", size_str);
         gtk_label_set_text(GTK_LABEL(self->audio_meta_label), meta);
-        gtk_stack_set_visible_child_name(self->canvas_stack, "audio");
+        gtk_widget_set_visible(self->audio_state_box, TRUE);
     } else {
-        gtk_picture_set_paintable(GTK_PICTURE(self->video_picture), GDK_PAINTABLE(self->media_stream));
-        gtk_stack_set_visible_child_name(self->canvas_stack, "video");
+        gtk_widget_set_visible(self->audio_state_box, FALSE);
     }
 
-    gtk_media_stream_play(self->media_stream);
+    kajo_player_mpv_set_loop(self->mpv, self->loop_enabled);
+    kajo_player_mpv_set_volume(self->mpv, self->volume);
+    kajo_player_mpv_set_muted(self->mpv, self->muted);
+    kajo_player_mpv_load_file(self->mpv, track->file);
 
     update_stream_badge(self);
     update_transport_ui(self);
@@ -477,33 +432,14 @@ on_queue_track_selected(const KajoMediaTrack *track,
 static void
 toggle_play_pause(KajoPlayerWindow *self)
 {
-    if (!self->media_stream)
-        return;
-
-    if (gtk_media_stream_get_playing(self->media_stream)) {
-        gtk_media_stream_pause(self->media_stream);
-    } else {
-        if (gtk_media_stream_get_ended(self->media_stream))
-            gtk_media_stream_seek(self->media_stream, 0);
-        gtk_media_stream_play(self->media_stream);
-    }
+    gboolean playing = kajo_player_mpv_get_playing(self->mpv);
+    kajo_player_mpv_set_playing(self->mpv, !playing);
 }
 
 static void
 seek_relative_seconds(KajoPlayerWindow *self, double delta_sec)
 {
-    if (!self->media_stream)
-        return;
-
-    gint64 pos = gtk_media_stream_get_timestamp(self->media_stream);
-    gint64 dur = gtk_media_stream_get_duration(self->media_stream);
-    gint64 target = pos + (gint64)(delta_sec * 1000000.0);
-    if (target < 0)
-        target = 0;
-    if (dur > 0 && target > dur)
-        target = dur;
-
-    gtk_media_stream_seek(self->media_stream, target);
+    kajo_player_mpv_seek_relative_sec(self->mpv, delta_sec);
 
     /* Briefly flash the seek bar when seeking in fullscreen */
     if (self->is_fullscreen) {
@@ -516,8 +452,7 @@ static void
 set_volume_level(KajoPlayerWindow *self, double vol)
 {
     self->volume = CLAMP(vol, 0.0, 1.0);
-    if (self->media_stream)
-        gtk_media_stream_set_volume(self->media_stream, self->volume);
+    kajo_player_mpv_set_volume(self->mpv, self->volume);
 
     self->suppress_vol_signal = TRUE;
     gtk_range_set_value(GTK_RANGE(self->volume_scale), self->volume * 100.0);
@@ -538,8 +473,7 @@ static void
 toggle_mute(KajoPlayerWindow *self)
 {
     self->muted = !self->muted;
-    if (self->media_stream)
-        gtk_media_stream_set_muted(self->media_stream, self->muted);
+    kajo_player_mpv_set_muted(self->mpv, self->muted);
 
     if (self->muted) {
         gtk_button_set_label(GTK_BUTTON(self->btn_mute), "🔇");
@@ -554,8 +488,7 @@ static void
 toggle_loop(KajoPlayerWindow *self)
 {
     self->loop_enabled = !self->loop_enabled;
-    if (self->media_stream)
-        gtk_media_stream_set_loop(self->media_stream, self->loop_enabled);
+    kajo_player_mpv_set_loop(self->mpv, self->loop_enabled);
 
     if (self->loop_enabled)
         gtk_widget_add_css_class(self->btn_loop, "active");
@@ -686,12 +619,12 @@ static void
 on_seek_scale_value_changed(GtkRange *range, gpointer user_data)
 {
     KajoPlayerWindow *self = user_data;
-    if (self->suppress_seek_signal || !self->media_stream)
+    if (self->suppress_seek_signal)
         return;
 
     double sec = gtk_range_get_value(range);
     gint64 target_us = (gint64)(sec * 1000000.0);
-    gtk_media_stream_seek(self->media_stream, target_us);
+    kajo_player_mpv_seek_absolute_usec(self->mpv, target_us);
 
     g_autofree char *pos_str = kajo_player_format_time(target_us);
     gtk_label_set_text(GTK_LABEL(self->time_elapsed_lbl), pos_str);
@@ -755,21 +688,17 @@ on_mpris_command(KajoMprisCommand cmd, gint64 arg_usec G_GNUC_UNUSED, gpointer u
     KajoPlayerWindow *self = user_data;
     switch (cmd) {
     case KAJO_MPRIS_CMD_PLAY:
-        if (self->media_stream && !gtk_media_stream_get_playing(self->media_stream))
-            gtk_media_stream_play(self->media_stream);
+        kajo_player_mpv_set_playing(self->mpv, TRUE);
         break;
     case KAJO_MPRIS_CMD_PAUSE:
-        if (self->media_stream && gtk_media_stream_get_playing(self->media_stream))
-            gtk_media_stream_pause(self->media_stream);
+        kajo_player_mpv_set_playing(self->mpv, FALSE);
         break;
     case KAJO_MPRIS_CMD_PLAY_PAUSE:
         toggle_play_pause(self);
         break;
     case KAJO_MPRIS_CMD_STOP:
-        if (self->media_stream) {
-            gtk_media_stream_pause(self->media_stream);
-            gtk_media_stream_seek(self->media_stream, 0);
-        }
+        kajo_player_mpv_set_playing(self->mpv, FALSE);
+        kajo_player_mpv_seek_absolute_usec(self->mpv, 0);
         break;
     case KAJO_MPRIS_CMD_NEXT:
         kajo_player_queue_next(self->queue);
@@ -903,7 +832,7 @@ kajo_player_window_dispose(GObject *object)
         self->hud_hide_timer_id = 0;
     }
 
-    clear_media_stream(self);
+    g_clear_pointer(&self->mpv, kajo_player_mpv_free);
     g_clear_pointer(&self->mpris, kajo_player_mpris_free);
     g_clear_pointer(&self->queue, kajo_player_queue_free);
 
@@ -934,9 +863,10 @@ kajo_player_window_class_init(KajoPlayerWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, btn_close);
 
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, video_overlay);
-    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, canvas_stack);
+    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, video_gl_area);
+    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, empty_state_box);
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, btn_empty_open);
-    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, video_picture);
+    gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, audio_state_box);
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, audio_title_label);
     gtk_widget_class_bind_template_child(widget_class, KajoPlayerWindow, audio_meta_label);
 
@@ -971,6 +901,9 @@ kajo_player_window_init(KajoPlayerWindow *self)
     self->muted = FALSE;
     self->loop_enabled = FALSE;
     self->queue_visible = FALSE;
+    self->last_mpris_duration_usec = -1;
+
+    self->mpv = kajo_player_mpv_new(self->video_gl_area, on_mpv_state_changed, self);
 
     self->queue = kajo_player_queue_new(
         self->queue_listbox,

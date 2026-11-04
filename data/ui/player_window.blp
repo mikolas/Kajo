@@ -27,101 +27,89 @@ template $KajoPlayerWindow : ApplicationWindow {
         hexpand: true;
         vexpand: true;
 
-        Stack canvas_stack {
+        GLArea video_gl_area {
           hexpand: true;
           vexpand: true;
-          transition-type: crossfade;
+          auto-render: false;
 
           styles [
             "player-video-stage",
           ]
+        }
 
-          StackPage {
-            name: "empty";
-            child: Box {
-              orientation: vertical;
-              spacing: 12;
-              halign: center;
-              valign: center;
+        [overlay]
+        Box empty_state_box {
+          orientation: vertical;
+          spacing: 12;
+          halign: center;
+          valign: center;
 
-              Image {
-                icon-name: "video-x-generic";
-                pixel-size: 64;
-              }
-
-              Label {
-                label: "NO MEDIA LOADED";
-
-                styles [
-                  "heading",
-                ]
-              }
-
-              Label {
-                label: "Open a video or audio file (.mkv, .mp4, .webm, .mp3, .flac) to begin playback";
-
-                styles [
-                  "shell-popover-subtitle",
-                ]
-              }
-
-              Button btn_empty_open {
-                label: "📂 OPEN MEDIA FILE (CTRL+O)";
-                halign: center;
-
-                styles [
-                  "files-accent-btn",
-                ]
-              }
-            };
+          Image {
+            icon-name: "video-x-generic";
+            pixel-size: 64;
           }
 
-          StackPage {
-            name: "video";
-            child: Picture video_picture {
-              hexpand: true;
-              vexpand: true;
-              content-fit: contain;
-            };
+          Label {
+            label: "NO MEDIA LOADED";
+
+            styles [
+              "heading",
+            ]
           }
 
-          StackPage {
-            name: "audio";
-            child: Box {
-              orientation: vertical;
-              spacing: 14;
-              halign: center;
-              valign: center;
+          Label {
+            label: "Open a video or audio file (.mkv, .mp4, .webm, .mp3, .flac) to begin playback";
 
-              styles [
-                "shell-popover-card",
-                "player-audio-card",
-              ]
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
 
-              Image {
-                icon-name: "audio-x-generic";
-                pixel-size: 72;
-              }
+          Button btn_empty_open {
+            label: "📂 OPEN MEDIA FILE (CTRL+O)";
+            halign: center;
 
-              Label audio_title_label {
-                label: "Audio Stream";
-                wrap: true;
-                max-width-chars: 42;
-                justify: center;
+            styles [
+              "files-accent-btn",
+            ]
+          }
+        }
 
-                styles [
-                  "heading",
-                ]
-              }
+        [overlay]
+        Box audio_state_box {
+          orientation: vertical;
+          spacing: 14;
+          halign: center;
+          valign: center;
+          visible: false;
 
-              Label audio_meta_label {
-                label: "AUDIO STREAM";
+          styles [
+            "shell-popover-card",
+            "player-audio-card",
+          ]
 
-                styles [
-                  "shell-popover-badge",
-                ]
-              }
-            };
+          Image {
+            icon-name: "audio-x-generic";
+            pixel-size: 72;
+          }
+
+          Label audio_title_label {
+            label: "Audio Stream";
+            wrap: true;
+            max-width-chars: 42;
+            justify: center;
+
+            styles [
+              "heading",
+            ]
+          }
+
+          Label audio_meta_label {
+            label: "AUDIO STREAM";
+
+            styles [
+              "shell-popover-badge",
+            ]
           }
         }
       }
