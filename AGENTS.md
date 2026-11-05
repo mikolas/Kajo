@@ -10,8 +10,8 @@ This document is the authoritative engineering manual for AI coding assistants w
    - **NEVER** spawn subagents (`research`, `self`, etc.). Perform all `ripgrep` (`rg`) searches, file reads, and edits directly in the primary context for maximum speed and zero context loss.
 2. **RESPECT "DO NOT EDIT" / "WAIT" DIRECTIVES**:
    - When the user says *"do not edit"*, *"what do you think?"*, or *"wait"*, perform **zero** file writes/edits. Answer or analyze concisely and wait for explicit approval.
-3. **SPECIFICATIONS (`SPEC_*.md`) & `ROADMAP.md` LIVE IN PROJECT ROOT**:
-   - Architectural specifications (`SPEC_<FEATURE>.md`), `ROADMAP.md`, `HARDWARE_FINDINGS.md`, `DEVELOPMENT.md`, and `README.md` **MUST** be created and maintained in the **project root directory** (`/home/mikolas/src/Kajo/`).
+3. **SPECIFICATIONS (`docs/SPEC_*.md`) & `ROADMAP.md`**:
+   - Active design system specifications ([`docs/SPEC_DESIGN_SYSTEM.md`](docs/SPEC_DESIGN_SYSTEM.md)) and the interactive UI style guide ([`docs/ui-gallery.html`](docs/ui-gallery.html)) live in `docs/`. `ROADMAP.md`, `HARDWARE_FINDINGS.md`, `DEVELOPMENT.md`, and `README.md` are maintained in the **project root directory** (`/home/mikolas/src/Kajo/`).
    - Temporary one-off debug scripts or throwaway notes go in `scratch/` and must never be committed.
 4. **DO NOT TOUCH PROTECTED FUNCTIONS**:
    - Do **NOT** modify `populate_app_index` in `src/launcher/launcher_surface.c` unless explicitly instructed by the user.
