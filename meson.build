@@ -565,6 +565,22 @@ test_ide_buffer_exe = executable(
 )
 test('ide-buffer', test_ide_buffer_exe)
 
+test_ide_ipc_exe = executable(
+  'test-ide-ipc',
+  files(
+    'tests/test_ide_ipc.c',
+    'src/ide/ide_lsp.c',
+    'src/ide/ide_dap.c',
+    'src/ide/ide_agent_ipc.c',
+    'src/ide/ide_buffer.c',
+    'src/ide/ide_picker.c',
+    'src/ide/ide_search.c',
+  ),
+  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
+  build_by_default: false,
+)
+test('ide-ipc', test_ide_ipc_exe)
+
 gnome.post_install(
   update_desktop_database: true,
 )
