@@ -120,7 +120,10 @@ shell_config_get_default(void)
     config->settings_transition_ms   = 150;
 
     config->accent_color             = g_strdup("#0078d4");
-    config->ui_font_size_px          = 13;
+    config->ui_font_size_px          = 14;
+    config->font_heading_size_px     = 13;
+    config->font_subtitle_size_px    = 12;
+    config->font_badge_size_px       = 11;
 
     config->screensaver_mode         = g_strdup("overlay");
     config->screensaver_timeout_sec  = 300;
@@ -446,6 +449,12 @@ shell_config_load(const gchar *path)
 
     if (json_object_has_member(root, "ui_font_size_px"))
         config->ui_font_size_px = (gint)json_object_get_int_member(root, "ui_font_size_px");
+    if (json_object_has_member(root, "font_heading_size_px"))
+        config->font_heading_size_px = (gint)json_object_get_int_member(root, "font_heading_size_px");
+    if (json_object_has_member(root, "font_subtitle_size_px"))
+        config->font_subtitle_size_px = (gint)json_object_get_int_member(root, "font_subtitle_size_px");
+    if (json_object_has_member(root, "font_badge_size_px"))
+        config->font_badge_size_px = (gint)json_object_get_int_member(root, "font_badge_size_px");
 
     /* Layout settings */
     if (json_object_has_member(root, "layout") &&
@@ -702,7 +711,16 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_string_value(builder, config->accent_color ? config->accent_color : "#0078d4");
 
     json_builder_set_member_name(builder, "ui_font_size_px");
-    json_builder_add_int_value(builder, config->ui_font_size_px > 0 ? config->ui_font_size_px : 13);
+    json_builder_add_int_value(builder, config->ui_font_size_px > 0 ? config->ui_font_size_px : 14);
+
+    json_builder_set_member_name(builder, "font_heading_size_px");
+    json_builder_add_int_value(builder, config->font_heading_size_px > 0 ? config->font_heading_size_px : 13);
+
+    json_builder_set_member_name(builder, "font_subtitle_size_px");
+    json_builder_add_int_value(builder, config->font_subtitle_size_px > 0 ? config->font_subtitle_size_px : 12);
+
+    json_builder_set_member_name(builder, "font_badge_size_px");
+    json_builder_add_int_value(builder, config->font_badge_size_px > 0 ? config->font_badge_size_px : 11);
 
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");

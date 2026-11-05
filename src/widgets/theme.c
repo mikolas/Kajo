@@ -1,5 +1,6 @@
 #include "widget.h"
 #include "../theme.h"
+#include "../config.h"
 #include <gio/gio.h>
 #include <gtk/gtk.h>
 #include <stdio.h>
@@ -43,22 +44,23 @@ typedef struct {
 
 static void apply_accent_preset(const AccentPreset *preset)
 {
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *styled_dir = g_build_filename(xdg_config, "kajo", "style.d", NULL);
-    g_mkdir_with_parents(styled_dir, 0755);
+    ShellConfig *cfg = shell_config_load(NULL);
+    gint body_px    = cfg ? cfg->ui_font_size_px : 14;
+    gint heading_px = cfg ? cfg->font_heading_size_px : 13;
+    gint sub_px     = cfg ? cfg->font_subtitle_size_px : 12;
+    gint badge_px   = cfg ? cfg->font_badge_size_px : 11;
 
-    gchar *theme_css_path = g_build_filename(styled_dir, "00-accent.css", NULL);
-    g_free(styled_dir);
+    shell_theme_write_override_css(preset->accent, preset->hover, body_px, heading_px, sub_px, badge_px);
 
-    GString *css = g_string_new("/* Auto-generated accent override by kajo */\n");
-    g_string_append_printf(css, "@define-color metro-accent %s;\n", preset->accent);
-    g_string_append_printf(css, "@define-color metro-accent-hover %s;\n", preset->hover);
+    if (cfg) {
+        g_free(cfg->accent_color);
+        cfg->accent_color = g_strdup(preset->accent);
+        g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+        shell_config_save(cfg, cfg_path);
+        shell_config_destroy(cfg);
+    }
 
-    g_file_set_contents(theme_css_path, css->str, css->len, NULL);
-    g_string_free(css, TRUE);
-
-    g_message("Applied Metro accent color '%s' -> '%s'", preset->name, theme_css_path);
-    g_free(theme_css_path);
+    g_message("Applied Metro accent color '%s' (%s)", preset->name, preset->accent);
 }
 
 static void on_accent_button_clicked(GtkButton *btn, gpointer user_data)
@@ -140,18 +142,20 @@ theme_widget_create(ShellCompositor *compositor G_GNUC_UNUSED)
     /* Populate 8 Accent Color Swatches in 2-Column Grid */
     for (size_t i = 0; i < N_ACCENTS; i++) {
         GtkWidget *card = gtk_button_new();
-        gtk_widget_add_css_class(card, "section-card");
+        gtk_widget_add_css_class(card, "widget-row-card");
         gtk_widget_set_hexpand(card, TRUE);
 
         GtkWidget *card_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_valign(card_box, GTK_ALIGN_CENTER);
 
-        /* Accent Color Circle Swatch */
+        /* Accent Color Square Swatch */
         GtkWidget *swatch = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_widget_set_size_request(swatch, 18, 18);
+        gtk_widget_set_valign(swatch, GTK_ALIGN_CENTER);
         gchar *swatch_class = g_strdup_printf("swatch-%zu", i);
         gtk_widget_add_css_class(swatch, swatch_class);
 
-        gchar *swatch_css = g_strdup_printf(".%s { background-color: %s; border-radius: 9px; }", swatch_class, ACCENTS[i].accent);
+        gchar *swatch_css = g_strdup_printf(".%s { background-color: %s; border: 1px solid rgba(255,255,255,0.25); border-radius: 0px; }", swatch_class, ACCENTS[i].accent);
         GtkCssProvider *p = gtk_css_provider_new();
         gtk_css_provider_load_from_string(p, swatch_css);
         gtk_style_context_add_provider_for_display(gdk_display_get_default(),
@@ -163,6 +167,7 @@ theme_widget_create(ShellCompositor *compositor G_GNUC_UNUSED)
         GtkWidget *name_label = gtk_label_new(ACCENTS[i].name);
         gtk_label_set_xalign(GTK_LABEL(name_label), 0.0);
         gtk_widget_set_hexpand(name_label, TRUE);
+        gtk_widget_set_valign(name_label, GTK_ALIGN_CENTER);
 
         gtk_box_append(GTK_BOX(card_box), swatch);
         gtk_box_append(GTK_BOX(card_box), name_label);

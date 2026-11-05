@@ -185,6 +185,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
             styles [
               "flat",
+              "files-nav-btn",
             ]
           }
 
@@ -223,7 +224,8 @@ template $KajoFilesWindow : ApplicationWindow {
           tooltip-text: "Create New Folder (Ctrl+Shift+N)";
 
           styles [
-            "flat",
+            "action-btn-primary",
+            "files-nav-btn",
           ]
         }
 
@@ -233,6 +235,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
           styles [
             "flat",
+            "files-nav-btn",
           ]
         }
 
@@ -242,6 +245,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
           styles [
             "flat",
+            "files-nav-btn",
           ]
         }
 
@@ -251,13 +255,14 @@ template $KajoFilesWindow : ApplicationWindow {
 
           styles [
             "flat",
+            "files-nav-btn",
           ]
 
           popover: Popover sort_popover {
             has-arrow: false;
 
             styles [
-              "shell-popover-card",
+              "shell-popover",
               "files-sort-popover",
             ]
 
@@ -402,6 +407,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
           styles [
             "flat",
+            "files-nav-btn",
           ]
         }
       }

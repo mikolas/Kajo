@@ -7,22 +7,21 @@ create_settings_page_card(const gchar *title_text, const gchar *badge_text, GtkW
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_add_css_class(card, "shell-popover-card");
-    gtk_widget_set_margin_start(card, 12);
-    gtk_widget_set_margin_end(card, 12);
-    gtk_widget_set_margin_top(card, 12);
-    gtk_widget_set_margin_bottom(card, 12);
 
     /* Zone 1: Header */
     GtkWidget *header = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_add_css_class(header, "shell-popover-header");
+    gtk_widget_set_valign(header, GTK_ALIGN_CENTER);
 
     GtkWidget *lbl_title = gtk_label_new(title_text);
     gtk_widget_add_css_class(lbl_title, "heading");
     gtk_widget_set_halign(lbl_title, GTK_ALIGN_START);
+    gtk_widget_set_valign(lbl_title, GTK_ALIGN_CENTER);
 
     GtkWidget *lbl_badge = gtk_label_new(badge_text);
     gtk_widget_add_css_class(lbl_badge, "shell-popover-badge");
     gtk_widget_set_halign(lbl_badge, GTK_ALIGN_END);
+    gtk_widget_set_valign(lbl_badge, GTK_ALIGN_CENTER);
     gtk_widget_set_hexpand(lbl_badge, TRUE);
 
     gtk_box_append(GTK_BOX(header), lbl_title);
@@ -64,16 +63,20 @@ GtkWidget *
 create_sidebar_row(const gchar *icon_name, const gchar *label_text, const gchar *subtitle_text, const gchar *page_name)
 {
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
 
     GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
     gtk_image_set_pixel_size(GTK_IMAGE(icon), 20);
+    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
 
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     gtk_widget_set_hexpand(vbox, TRUE);
+    gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
 
     GtkWidget *label = gtk_label_new(label_text);
     gtk_widget_add_css_class(label, "sidebar-label");
     gtk_widget_set_halign(label, GTK_ALIGN_START);
+    gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
 
     gtk_box_append(GTK_BOX(vbox), label);
 
@@ -81,11 +84,13 @@ create_sidebar_row(const gchar *icon_name, const gchar *label_text, const gchar 
         GtkWidget *sub = gtk_label_new(subtitle_text);
         gtk_widget_add_css_class(sub, "shell-popover-subtitle");
         gtk_widget_set_halign(sub, GTK_ALIGN_START);
+        gtk_widget_set_valign(sub, GTK_ALIGN_CENTER);
         gtk_box_append(GTK_BOX(vbox), sub);
     }
 
     GtkWidget *chevron = gtk_label_new("›");
     gtk_widget_add_css_class(chevron, "sidebar-chevron");
+    gtk_widget_set_valign(chevron, GTK_ALIGN_CENTER);
 
     gtk_box_append(GTK_BOX(row), icon);
     gtk_box_append(GTK_BOX(row), vbox);
@@ -115,8 +120,9 @@ GtkWidget *
 create_action_row(const gchar *icon_name, const gchar *title, const gchar *subtitle, GtkWidget *control)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_add_css_class(card, "section-card");
-    gtk_widget_set_size_request(card, -1, 52);
+    gtk_widget_add_css_class(card, "widget-row-card");
+    gtk_widget_set_valign(card, GTK_ALIGN_CENTER);
+    gtk_widget_set_size_request(card, -1, 48);
 
     if (icon_name && icon_name[0] != '\0') {
         GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
@@ -182,20 +188,25 @@ create_metro_toggle_tile(const gchar *icon_name, const gchar *title, const gchar
     g_signal_connect(btn, "clicked", G_CALLBACK(on_tile_clicked), NULL);
 
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
 
     GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
     gtk_image_set_pixel_size(GTK_IMAGE(icon), 20);
+    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
 
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     gtk_widget_set_hexpand(vbox, TRUE);
+    gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
 
     GtkWidget *lbl_title = gtk_label_new(title);
     gtk_widget_add_css_class(lbl_title, "tile-title");
     gtk_widget_set_halign(lbl_title, GTK_ALIGN_START);
+    gtk_widget_set_valign(lbl_title, GTK_ALIGN_CENTER);
 
     GtkWidget *lbl_sub = gtk_label_new(subtitle);
     gtk_widget_add_css_class(lbl_sub, "tile-subtitle");
     gtk_widget_set_halign(lbl_sub, GTK_ALIGN_START);
+    gtk_widget_set_valign(lbl_sub, GTK_ALIGN_CENTER);
     g_object_set_data(G_OBJECT(btn), "tile-subtitle-label", lbl_sub);
 
     gtk_box_append(GTK_BOX(vbox), lbl_title);

@@ -68,7 +68,7 @@ menubutton.shell-widget > button {
     color: @metro-fg-primary;
     padding: 0 4px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
     min-height: 32px;
 }
@@ -198,11 +198,13 @@ menubutton.shell-widget > button:active {
 /* ═══════════════════════════════════════════════ */
 
 popover,
-popover.shell-popover {
+popover.shell-popover,
+window.shell-settings-window popover {
     background: transparent;
     background-image: none;
     border: none;
     padding: 0px;
+    margin: 0px;
     box-shadow: none;
     outline: none;
 }
@@ -242,44 +244,100 @@ popover > arrow {
     min-width: 480px;
 }
 
-/* ─── 3-Zone Architecture ─── */
+/* ─── 3-Zone Architecture & Canonical Typography ─── */
 .shell-popover-header {
     padding: 10px 14px;
     border-bottom: 1px solid @metro-border;
 }
 
-.shell-popover-title {
+.shell-popover-title,
+.heading,
+.shell-popover-section-title,
+.settings-section-title {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    color: @metro-fg-primary;
+    letter-spacing: 1.5px;
+    color: @metro-accent;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
 }
 
-.shell-popover-subtitle {
-    font-size: 11px;
+.row-title {
+    font-size: 14px;
     font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: @metro-fg-secondary;
-    margin-top: 4px;
+    color: #ffffff;
+}
+
+.row-subtitle,
+.dim-label {
+    font-size: 12px;
+    color: #888888;
+}
+
+.shell-popover-subtitle {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: #9a9a9a;
+    margin-top: 2px;
     margin-bottom: 2px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.empty-state-label,
+.shell-device-placeholder {
+    font-size: 12px;
+    color: #777777;
+    padding: 12px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
 }
 
 .shell-popover-badge {
     font-size: 11px;
-    font-weight: 600;
+    font-weight: 700;
     text-transform: uppercase;
-    color: @metro-accent;
-    background-color: transparent;
-    padding: 2px 4px;
+    color: #cccccc;
+    background-color: #1e1e1e;
+    border: 1px solid #333333;
+    border-radius: 0px;
+    padding: 2px 6px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
 }
 
-.shell-popover-badge.urgent {
-    color: @metro-urgent;
+.shell-popover-badge.accent,
+.shell-popover-badge.active {
+    background-color: @metro-accent;
+    color: #ffffff;
+    border-color: #ffffff;
+}
+
+.shell-popover-badge.urgent,
+.shell-popover-badge.peak-clip {
+    background-color: @metro-urgent;
+    color: #ffffff;
+    border-color: @metro-urgent;
+}
+
+.shell-popover-badge.peak-warn {
+    background-color: #332000;
+    color: #ff8c00;
+    border-color: #ff8c00;
+}
+
+.shell-popover-badge.success {
+    background-color: #0d2818;
+    color: #3dd675;
+    border-color: #10893e;
+}
+
+.code-preview-box {
+    background-color: #111111;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid @metro-accent;
+    padding: 12px 14px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #cccccc;
 }
 
 .shell-popover-body {
@@ -293,34 +351,83 @@ popover > arrow {
 
 .shell-popover-list {
     background: transparent;
-    border: 1px solid @metro-border;
+    border: none;
+    padding: 0px;
     margin-bottom: 6px;
 }
 
+.shell-popover-list > row {
+    padding: 0px;
+    margin: 0px;
+    border: none;
+    background: transparent;
+}
+
 /* ─── Uniform Row Item Indicators ─── */
-.shell-row-item {
-    padding: 6px 8px;
+.shell-row-item,
+.shell-device-row {
+    padding: 7px 10px;
     border-radius: 0px;
-    background-color: transparent;
-    border-left: 2px solid transparent;
+    background-color: #1a1a1a;
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.shell-row-item:hover {
+.shell-row-item:hover,
+.shell-device-row:hover {
     background-color: @metro-surface-hover;
-    border-color: @metro-border;
+    border-color: @metro-accent;
 }
 
 .shell-row-item.active,
-.shell-row-item.connected {
-    border-left: 2px solid @metro-accent;
-    background-color: rgba(0, 120, 212, 0.08);
+.shell-row-item.connected,
+.shell-device-row.active,
+.shell-device-row.connected {
+    border-color: @metro-accent;
+    border-left: 3px solid #ffffff;
+    background-color: alpha(@metro-accent, 0.35);
+    color: #ffffff;
 }
 
 .shell-row-item.urgent,
 .shell-row-item.error {
-    border-left: 2px solid @metro-urgent;
-    background-color: rgba(232, 17, 35, 0.08);
+    border-left: 3px solid @metro-urgent;
+    background-color: rgba(232, 17, 35, 0.14);
+}
+
+/* ─── Control Center Quick Toggle Tiles ─── */
+button.control-center-tile {
+    background: none;
+    background-image: none;
+    background-color: #1a1a1a;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    padding: 8px 12px;
+}
+
+button.control-center-tile:hover {
+    background-color: #222222;
+    border-color: @metro-accent;
+}
+
+button.control-center-tile.active {
+    background-color: alpha(@metro-accent, 0.32);
+    border-color: @metro-accent;
+    border-left: 3px solid #ffffff;
+    color: #ffffff;
+}
+
+.tile-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.tile-subtitle {
+    font-size: 11px;
+    color: #9a9a9a;
 }
 
 /* ─── Media Artwork & Labels ─── */
@@ -330,13 +437,13 @@ popover > arrow {
 }
 
 .shell-media-title {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: @metro-fg-primary;
 }
 
 .shell-media-artist {
-    font-size: 10px;
+    font-size: 12px;
     color: @metro-fg-secondary;
 }
 
@@ -344,26 +451,42 @@ popover > arrow {
 /* ─── OSD Overlays & Notification Toasts ─── */
 /* ═══════════════════════════════════════════════ */
 
-.shell-osd-card,
-.shell-notification-card {
-    background-color: @metro-surface-bg;
+.shell-osd-card {
+    background-color: rgba(17, 17, 17, 0.96);
     color: @metro-fg-primary;
-    border: 1px solid @metro-border;
+    border: 1px solid @metro-accent;
     border-radius: 0px;
-    padding: 12px 16px;
+    padding: 12px 18px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.72);
+}
+
+.shell-notification-card {
+    background-color: rgba(20, 20, 20, 0.96);
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-left: 4px solid @metro-accent;
+    border-radius: 0px;
+    padding: 12px 14px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.72);
+}
+
+.shell-notification-card.critical,
+.shell-notification-card.urgent {
+    border-color: @metro-urgent;
+    border-left: 4px solid @metro-urgent;
 }
 
 .shell-osd-label {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: @metro-fg-primary;
     min-width: 42px;
 }
 
 /* ═══════════════════════════════════════════════ */
-/* ─── Metro Launcher Surface ─── */
+/* ─── Metro Launcher Surface & Canonical Inputs ─── */
 /* ═══════════════════════════════════════════════ */
 
 .shell-launcher-card {
@@ -375,23 +498,48 @@ popover > arrow {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
 }
 
+window.shell-settings-window entry,
+window.shell-settings-window passwordentry,
+window.shell-settings-window searchentry,
+popover entry,
+popover passwordentry,
+popover searchentry,
 .shell-launcher-input {
-    background-color: #141414;
+    background: none;
+    background-image: none;
+    background-color: #1a1a1a;
     color: @metro-fg-primary;
-    border: 1px solid @metro-border;
+    border: 1px solid #333333;
     border-radius: 0px;
-    padding: 6px 10px;
-    font-size: 13px;
+    padding: 5px 10px;
+    min-height: 30px;
+    font-size: 14px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     outline: none;
     box-shadow: none;
 }
 
+window.shell-settings-window entry > text,
+window.shell-settings-window passwordentry > text,
+window.shell-settings-window searchentry > text,
+popover entry > text,
+.shell-launcher-input > text {
+    background: transparent;
+    color: @metro-fg-primary;
+}
+
+window.shell-settings-window entry:focus,
+window.shell-settings-window entry:focus-within,
+window.shell-settings-window passwordentry:focus-within,
+window.shell-settings-window searchentry:focus-within,
+popover entry:focus,
+popover entry:focus-within,
 .shell-launcher-input:focus,
 .shell-launcher-input:focus-within {
     border-color: @metro-accent;
-    background-color: #1a1a1a;
+    background-color: #1e1e1e;
     outline: none;
+    box-shadow: none;
 }
 
 .shell-launcher-listbox {
@@ -403,35 +551,61 @@ popover > arrow {
 .shell-launcher-row {
     padding: 8px 12px;
     border-radius: 0px;
+    border-left: 3px solid transparent;
     background: transparent;
     color: @metro-fg-primary;
 }
 
 .shell-launcher-row label {
     color: @metro-fg-primary;
-    font-size: 13px;
+    font-size: 14px;
 }
 
 .shell-launcher-listbox row:selected .shell-launcher-row {
     background-color: @metro-accent;
+    border-left: 3px solid #ffffff;
 }
 
 .shell-launcher-listbox row:selected .shell-launcher-row label {
     color: #ffffff;
 }
 
-/* Buttons inside Popover & Settings Window */
+/* ═══════════════════════════════════════════════ */
+/* ─── Canonical Buttons, Switches, Checks & Sliders ─── */
+/* ═══════════════════════════════════════════════ */
+
+menubutton,
+window.shell-settings-window menubutton,
+popover menubutton,
+dropdown,
+window.shell-settings-window dropdown,
+popover dropdown,
+window.shell-lock-window dropdown {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
 popover button,
 window.shell-settings-window button {
-    background: transparent;
-    background-color: #141414;
+    background: none;
+    background-image: none;
+    background-color: #1a1a1a;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    color: @metro-fg-primary;
+    color: #dddddd;
     padding: 6px 12px;
-    font-weight: 500;
-    font-size: 11px;
+    min-height: 28px;
+    font-weight: 600;
+    font-size: 12px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: none;
+    outline: none;
 }
 
 popover button:hover,
@@ -442,36 +616,147 @@ window.shell-settings-window button:hover {
 }
 
 popover button:active,
-window.shell-settings-window button:active {
+popover button.active,
+window.shell-settings-window button:active,
+window.shell-settings-window button.active {
     background-color: @metro-accent;
     border-color: @metro-accent;
     color: #ffffff;
 }
 
+/* Primary Accent CTA Button */
+popover button.action-btn-primary,
+popover button.files-accent-btn,
+window.shell-settings-window button.action-btn-primary,
+window.shell-settings-window button.files-accent-btn {
+    background-color: @metro-accent;
+    border: 1px solid @metro-accent;
+    color: #ffffff;
+    font-weight: 700;
+    padding: 6px 14px;
+}
+
+popover button.action-btn-primary:hover,
+popover button.files-accent-btn:hover,
+window.shell-settings-window button.action-btn-primary:hover,
+window.shell-settings-window button.files-accent-btn:hover {
+    background-color: @metro-accent-hover;
+    border-color: #ffffff;
+    color: #ffffff;
+}
+
+/* Compact Toolbar / Navigation Button */
+popover button.files-nav-btn,
+popover button.player-transport-btn,
+window.shell-settings-window button.files-nav-btn,
+window.shell-settings-window button.player-transport-btn,
+window.shell-settings-window menubutton.files-nav-btn > button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px 8px;
+    border: 1px solid #2b2b2b;
+    background-color: #1a1a1a;
+    color: #e0e0e0;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+popover button.files-nav-btn:hover,
+popover button.player-transport-btn:hover,
+window.shell-settings-window button.files-nav-btn:hover,
+window.shell-settings-window button.player-transport-btn:hover,
+window.shell-settings-window menubutton.files-nav-btn > button:hover {
+    background-color: #222222;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+popover button.files-nav-btn.active,
+popover button.player-transport-btn.active,
+window.shell-settings-window button.files-nav-btn.active,
+window.shell-settings-window button.player-transport-btn.active,
+window.shell-settings-window menubutton.files-nav-btn > button:checked {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+/* Destructive / Danger Button */
 popover button.destructive-action,
-window.shell-settings-window button.destructive-action {
-    background-color: transparent;
-    border-color: @metro-urgent;
-    color: @metro-urgent;
+popover button.action-btn-danger,
+window.shell-settings-window button.destructive-action,
+window.shell-settings-window button.action-btn-danger {
+    background-color: #2a1215;
+    border: 1px solid #5c1e24;
+    color: #ff6b6b;
+    font-weight: 700;
 }
 
 popover button.destructive-action:hover,
-window.shell-settings-window button.destructive-action:hover {
+popover button.action-btn-danger:hover,
+window.shell-settings-window button.destructive-action:hover,
+window.shell-settings-window button.action-btn-danger:hover {
     background-color: @metro-urgent;
+    border-color: @metro-urgent;
     color: #ffffff;
+}
+
+/* Toggle Switches (GtkSwitch) */
+switch {
+    background: none;
+    background-image: none;
+    background-color: #262626;
+    border: 1px solid #3a3a3a;
+    border-radius: 0px;
+    min-width: 44px;
+    min-height: 22px;
+    padding: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+switch:hover {
+    border-color: @metro-accent;
+}
+
+switch:checked {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+}
+
+switch:disabled {
+    opacity: 0.45;
+}
+
+switch slider {
+    background: none;
+    background-image: none;
+    background-color: #aaaaaa;
+    border: none;
+    border-radius: 0px;
+    min-width: 16px;
+    min-height: 16px;
+    margin: 2px;
+    box-shadow: none;
+}
+
+switch:checked slider {
+    background-color: #ffffff;
 }
 
 /* Separators */
 popover separator,
 window.shell-settings-window separator {
-    margin: 8px 0;
+    margin: 6px 0;
     background-color: @metro-border;
     min-height: 1px;
 }
 
-/* Sliders (GtkScale) */
+/* Sliders (GtkScale — Canonical 14x14 Square Thumb) */
 popover scale trough,
 window.shell-settings-window scale trough {
+    background: none;
+    background-image: none;
     background-color: #262626;
     border-radius: 0px;
     min-height: 4px;
@@ -479,23 +764,29 @@ window.shell-settings-window scale trough {
 
 popover scale trough highlight,
 window.shell-settings-window scale trough highlight {
+    background: none;
+    background-image: none;
     background-color: @metro-accent;
     border-radius: 0px;
 }
 
 popover scale slider,
 window.shell-settings-window scale slider {
+    background: none;
+    background-image: none;
     background-color: #ffffff;
+    border: 2px solid @metro-accent;
     border-radius: 0px;
-    min-width: 18px;
-    min-height: 18px;
-    border: none;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -5px 0;
     box-shadow: none;
 }
 
 popover scale slider:hover,
 window.shell-settings-window scale slider:hover {
-    background-color: @metro-accent-hover;
+    background-color: @metro-accent;
+    border-color: #ffffff;
 }
 
 /* Level Bars */
@@ -506,35 +797,74 @@ window.shell-settings-window levelbar trough {
     min-height: 6px;
 }
 
-popover levelbar trough block.filled {
+popover levelbar trough block.filled,
+window.shell-settings-window levelbar trough block.filled {
     background-color: @metro-accent;
     border-radius: 0px;
 }
 
-popover levelbar trough block.empty {
+popover levelbar trough block.low,
+window.shell-settings-window levelbar trough block.low {
+    background-color: #10893e;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.high,
+window.shell-settings-window levelbar trough block.high {
+    background-color: #ff8c00;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.full,
+window.shell-settings-window levelbar trough block.full {
+    background-color: @metro-urgent;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.empty,
+window.shell-settings-window levelbar trough block.empty {
     background-color: transparent;
 }
 
 /* Radio / Check Buttons */
-popover checkbutton {
-    padding: 6px 10px;
+popover checkbutton,
+window.shell-settings-window checkbutton {
+    padding: 5px 8px;
     border-radius: 0px;
     color: @metro-fg-primary;
 }
 
-popover checkbutton:hover {
+popover checkbutton:hover,
+window.shell-settings-window checkbutton:hover {
     background-color: @metro-surface-hover;
 }
 
 popover checkbutton check,
-popover checkbutton radio {
-    background-color: #262626;
+popover checkbutton radio,
+window.shell-settings-window checkbutton check,
+window.shell-settings-window checkbutton radio {
+    background: none;
+    background-image: none;
+    background-color: #1a1a1a;
     border: 1px solid #444444;
     border-radius: 0px;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+popover checkbutton:hover check,
+popover checkbutton:hover radio,
+window.shell-settings-window checkbutton:hover check,
+window.shell-settings-window checkbutton:hover radio {
+    border-color: @metro-accent;
 }
 
 popover checkbutton:checked check,
-popover checkbutton:checked radio {
+popover checkbutton:checked radio,
+window.shell-settings-window checkbutton:checked check,
+window.shell-settings-window checkbutton:checked radio {
+    background: none;
+    background-image: none;
     background-color: @metro-accent;
     border-color: @metro-accent;
     color: #ffffff;
@@ -572,49 +902,91 @@ popover calendar .day:selected {
     background-color: @metro-surface-hover;
 }
 
-/* Metro GtkDropDown & Popover List Styling */
-dropdown,
-dropdown > button {
-    background-color: @metro-surface-bg;
+/* Metro GtkDropDown & Popover List Styling (Zero Double-Border) */
+dropdown > button,
+window.shell-settings-window dropdown > button,
+popover dropdown > button {
+    background: none;
     background-image: none;
+    background-color: #1a1a1a;
     color: @metro-fg-primary;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    padding: 4px 8px;
+    padding: 6px 10px;
+    min-height: 30px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: none;
+    outline: none;
 }
 
-dropdown > button:hover {
+dropdown > button:hover,
+window.shell-settings-window dropdown > button:hover,
+popover dropdown > button:hover {
     background-color: @metro-surface-hover;
     border-color: @metro-accent;
+    color: #ffffff;
 }
 
-dropdown popover,
-dropdown popover contents {
-    background-color: @metro-surface-bg;
+dropdown > popover,
+window.shell-settings-window dropdown > popover,
+window.shell-lock-window dropdown > popover {
+    background: transparent;
+    background-color: transparent;
     background-image: none;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+dropdown > popover > contents,
+window.shell-settings-window dropdown > popover > contents,
+window.shell-lock-window dropdown > popover > contents {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-bg;
     color: @metro-fg-primary;
     border: 1px solid @metro-accent;
     border-radius: 0px;
     padding: 2px;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    outline: none;
 }
 
-dropdown listview,
+dropdown listview {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-bg;
+    border: none;
+    padding: 0px;
+}
+
 dropdown listview row {
+    background: none;
+    background-image: none;
     background-color: @metro-surface-bg;
     color: @metro-fg-primary;
-    padding: 6px 10px;
+    padding: 7px 12px;
+    border: none;
+    border-left: 3px solid transparent;
     border-radius: 0px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 14px;
 }
 
-dropdown listview row:hover,
+dropdown listview row:hover {
+    background-color: @metro-surface-hover;
+    color: #ffffff;
+}
+
 dropdown listview row:selected {
     background-color: @metro-accent;
+    border-left: 3px solid #ffffff;
     color: #ffffff;
+    font-weight: 700;
 }
 
 /* Metro Album Art Thumbnail */
@@ -630,7 +1002,7 @@ dropdown listview row:selected {
 /* ═══════════════════════════════════════════════ */
 
 window.shell-settings-window {
-    background-color: rgba(20, 20, 20, 0.96);
+    background-color: #141414;
     color: #ffffff;
     border: 1px solid @metro-accent;
     border-radius: 0px;
@@ -638,7 +1010,6 @@ window.shell-settings-window {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
 }
 
-window.shell-settings-window box,
 window.shell-settings-window scrolledwindow,
 window.shell-settings-window viewport,
 window.shell-settings-window stack {
@@ -665,7 +1036,7 @@ window.shell-settings-window paned > separator > handle {
 }
 
 window.shell-settings-window .settings-header-bar {
-    background-color: #141414;
+    background-color: #181818;
     border-bottom: 1px solid #2b2b2b;
     padding: 6px 12px;
 }
@@ -674,7 +1045,7 @@ window.shell-settings-window .settings-header-title {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-weight: 700;
     font-size: 13px;
-    letter-spacing: 1px;
+    letter-spacing: 1.5px;
     color: #ffffff;
 }
 
@@ -698,6 +1069,11 @@ window.shell-settings-window .navigation-sidebar {
     padding: 4px;
 }
 
+popover .navigation-sidebar,
+window.shell-settings-window .files-inspector-pane .navigation-sidebar {
+    border-right: none;
+}
+
 window.shell-settings-window .navigation-sidebar listview row,
 window.shell-settings-window .navigation-sidebar row {
     background-color: transparent;
@@ -705,7 +1081,7 @@ window.shell-settings-window .navigation-sidebar row {
     padding: 8px 12px;
     color: #a0a0a0;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
     min-height: 32px;
 }
@@ -715,7 +1091,7 @@ window.shell-settings-window .sidebar-label {
     background-color: transparent;
     color: inherit;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
 }
 
@@ -745,32 +1121,28 @@ window.shell-settings-window .navigation-sidebar row:selected .sidebar-label {
 }
 
 window.shell-settings-window .shell-popover-card {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
+    background-color: transparent;
+    border: none;
     border-radius: 0px;
     box-shadow: none;
-    margin: 8px;
-}
-
-window.shell-settings-window .shell-popover-card:hover {
-    border-color: @metro-accent;
+    margin: 0px;
 }
 
 window.shell-settings-window .shell-popover-header {
-    background-color: #141414;
+    background-color: #161616;
     border-bottom: 1px solid #2b2b2b;
-    padding: 8px 12px;
+    padding: 10px 16px;
 }
 
 window.shell-settings-window .shell-popover-body {
-    padding: 12px;
-    background-color: #181818;
+    padding: 16px;
+    background-color: transparent;
 }
 
 window.shell-settings-window .shell-popover-footer {
-    background-color: #141414;
+    background-color: #161616;
     border-top: 1px solid #2b2b2b;
-    padding: 8px 12px;
+    padding: 10px 16px;
 }
 
 /* ─── Section Cards & Uniform Widget Grids ─── */
@@ -794,7 +1166,7 @@ window.shell-settings-window .navigation-sidebar row.sidebar-header-row:hover {
 
 window.shell-settings-window .sidebar-category-header {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 700;
     letter-spacing: 1px;
     color: @metro-accent;
@@ -805,63 +1177,58 @@ window.shell-settings-window .sidebar-category-header {
 }
 
 window.shell-settings-window .section-card {
-    background-color: #1a1a1a;
-    border: 1px solid #2d2d2d;
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
     border-radius: 0px;
-    padding: 8px 12px;
+    padding: 10px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .section-card:hover,
 window.shell-settings-window .section-card.active {
     border-color: @metro-accent;
-    background-color: #202020;
+    background-color: #1e1e1e;
 }
 
 window.shell-settings-window .section-card-left {
-    background-color: #1a1a1a;
-    border: 1px solid #2d2d2d;
-    border-left: 4px solid @metro-accent;
-    padding: 12px;
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid @metro-accent;
+    padding: 12px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .section-card-center {
-    background-color: #1a1a1a;
-    border: 1px solid #2d2d2d;
-    border-left: 4px solid #ff8c00;
-    padding: 12px;
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid #ff8c00;
+    padding: 12px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .section-card-right {
-    background-color: #1a1a1a;
-    border: 1px solid #2d2d2d;
-    border-left: 4px solid #107c41;
-    padding: 12px;
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid #10893e;
+    padding: 12px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .widget-row-card {
-    background-color: #222222;
-    border: 1px solid #333333;
-    padding: 6px 10px;
+    background-color: #1a1a1a;
+    border: 1px solid #262626;
+    padding: 8px 12px;
     margin-bottom: 4px;
 }
 
 window.shell-settings-window .widget-row-card:hover {
-    background-color: #2a2a2a;
-    border-color: #0078d4;
-}
-
-window.shell-settings-window .action-btn-danger:hover {
-    background-color: #e81123;
-    color: #ffffff;
+    background-color: #202020;
+    border-color: @metro-accent;
 }
 
 /* ─── Media VU Meter & LevelBar Color Coding ─── */
 .shell-popover levelbar block.low {
-    background-color: #0078d4;
+    background-color: #10893e;
     border-radius: 0px;
 }
 
@@ -906,7 +1273,7 @@ window.shell-settings-window .action-btn-danger:hover {
 }
 
 .shell-popover levelbar.vertical block.filled {
-    background-color: #00d8f0;
+    background-color: @metro-accent;
     border: none;
     margin: 0 1px;
 }
@@ -919,8 +1286,8 @@ window.shell-settings-window .action-btn-danger:hover {
 
 /* ─── Wayland Session Lock Screen (.shell-lock-window) ─── */
 window.shell-lock-window {
-    background-color: #08080c;
-    background-image: radial-gradient(circle at 50% 35%, rgba(0, 120, 212, 0.14) 0%, rgba(8, 8, 12, 0.98) 68%);
+    background-color: #101010;
+    background-image: radial-gradient(circle at 50% 35%, alpha(@metro-accent, 0.14) 0%, rgba(16, 16, 16, 0.98) 68%);
     color: #f4f4f6;
 }
 
@@ -935,21 +1302,21 @@ window.shell-lock-window .lock-date-label {
     font-size: 13px;
     font-weight: 700;
     letter-spacing: 3px;
-    color: #0078d4;
+    color: @metro-accent;
 }
 
 window.shell-lock-window .lock-card {
-    background-color: rgba(18, 18, 26, 0.94);
-    border: 1px solid rgba(255, 255, 255, 0.10);
-    border-top: 3px solid #0078d4;
+    background-color: rgba(20, 20, 20, 0.96);
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
     padding: 28px 32px;
 }
 
 window.shell-lock-window .lock-avatar-ring {
     min-width: 64px;
     min-height: 64px;
-    background-color: rgba(0, 120, 212, 0.16);
-    border: 2px solid #0078d4;
+    background-color: alpha(@metro-accent, 0.16);
+    border: 2px solid @metro-accent;
     color: #ffffff;
 }
 
@@ -964,7 +1331,7 @@ window.shell-lock-window .lock-badge-label {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 2px;
-    color: #8a8a98;
+    color: #888888;
 }
 
 window.shell-lock-window button {
@@ -979,21 +1346,21 @@ window.shell-lock-window .lock-password-entry,
 window.shell-lock-window .lock-password-entry > text {
     background: none;
     background-image: none;
-    background-color: #161620;
+    background-color: #1a1a1a;
     color: #ffffff;
     box-shadow: none;
     outline: none;
 }
 
 window.shell-lock-window .lock-password-entry {
-    border: 1px solid #323244;
+    border: 1px solid #333333;
     border-radius: 0px;
     padding: 8px 12px;
     min-height: 38px;
 }
 
 window.shell-lock-window .lock-password-entry > image {
-    color: #8a8a98;
+    color: #888888;
     background: transparent;
 }
 
@@ -1022,11 +1389,12 @@ window.shell-lock-window .lock-submit-btn {
 window.shell-lock-window .lock-submit-btn:hover {
     background-image: none;
     background-color: @metro-accent-hover;
+    border-color: #ffffff;
 }
 
 window.shell-lock-window .lock-status-label {
     font-size: 12px;
-    color: #8a8a98;
+    color: #888888;
     margin-top: 4px;
 }
 
@@ -1043,11 +1411,11 @@ window.shell-lock-window .lock-status-label.error {
 window.shell-lock-window .lock-action-btn {
     background: none;
     background-image: none;
-    background-color: #181822;
-    border: 1px solid #323244;
+    background-color: #1a1a1a;
+    border: 1px solid #2b2b2b;
     border-radius: 0px;
     box-shadow: none;
-    color: #c8c8d4;
+    color: #dddddd;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1.5px;
@@ -1063,14 +1431,14 @@ window.shell-lock-window .lock-action-btn:hover {
 
 /* ─── Metro Screen Saver Overlay (.shell-screensaver-window) ─── */
 window.shell-screensaver-window {
-    background-color: #030305;
+    background-color: #050505;
     color: #f4f4f6;
 }
 
 window.shell-screensaver-window .screensaver-floating-tile {
-    background-color: rgba(14, 14, 20, 0.90);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-left: 4px solid #0078d4;
+    background-color: rgba(18, 18, 18, 0.94);
+    border: 1px solid #2b2b2b;
+    border-left: 4px solid @metro-accent;
     padding: 20px 32px;
 }
 
@@ -1085,7 +1453,7 @@ window.shell-screensaver-window .screensaver-date-label {
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 2.5px;
-    color: #0078d4;
+    color: @metro-accent;
 }
 
 window.shell-screensaver-window .screensaver-hint-label {
@@ -1095,24 +1463,30 @@ window.shell-screensaver-window .screensaver-hint-label {
 }
 
 /* ─── Kajo Greeter Surface (.shell-greeter-window) ─── */
+window.shell-lock-window .greeter-top-bar {
+    background-color: rgba(20, 20, 20, 0.90);
+    border-bottom: 1px solid #2b2b2b;
+    padding: 8px 16px;
+}
+
 window.shell-lock-window .lock-card.auth-error {
     border-color: #e81123;
     border-top: 3px solid #e81123;
 }
 
 window.shell-lock-window .greeter-field-label {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 1.5px;
-    color: #8a8a98;
+    color: #888888;
     margin-top: 4px;
 }
 
 window.shell-lock-window .greeter-dropdown > button {
     background: none;
     background-image: none;
-    background-color: #161620;
-    border: 1px solid #323244;
+    background-color: #1a1a1a;
+    border: 1px solid #333333;
     border-radius: 0px;
     box-shadow: none;
     color: #ffffff;
@@ -1123,7 +1497,7 @@ window.shell-lock-window .greeter-dropdown > button {
 window.shell-lock-window .greeter-dropdown > button:hover,
 window.shell-lock-window .greeter-dropdown > button:focus {
     background-image: none;
-    background-color: #1e1e2c;
+    background-color: #222222;
     border-color: @metro-accent;
 }
 
@@ -1136,8 +1510,8 @@ window.shell-lock-window .greeter-poweroff-btn:hover {
 
 /* ─── Kajo Virtual Keyboard (window.osk-window) — Windows Touch Keyboard flat design ─── */
 window.osk-window {
-    background-color: #14141b;
-    border-top: 1px solid rgba(255, 255, 255, 0.10);
+    background-color: #141414;
+    border-top: 2px solid @metro-accent;
     color: #f4f4f6;
 }
 
@@ -1148,8 +1522,8 @@ window.osk-window .osk-container {
 window.osk-window button.osk-key {
     background: none;
     background-image: none;
-    background-color: #2b2b36;
-    border: none;
+    background-color: #252525;
+    border: 1px solid #2b2b2b;
     border-radius: 3px;
     box-shadow: none;
     text-shadow: none;
@@ -1161,37 +1535,49 @@ window.osk-window button.osk-key {
 }
 
 window.osk-window button.osk-key:hover {
-    background-color: #363644;
+    background-color: #323232;
+    border-color: @metro-accent;
 }
 
 window.osk-window button.osk-key:active {
     background-color: @metro-accent;
+    border-color: @metro-accent;
     color: #ffffff;
 }
 
 window.osk-window button.osk-key.osk-key-special {
-    background-color: #1f1f29;
-    border: none;
-    color: #dcdce6;
+    background-color: #1c1c1c;
+    border: 1px solid #262626;
+    color: #9e9e9e;
 }
 
 window.osk-window button.osk-key.osk-key-special:hover {
-    background-color: #2c2c3a;
+    background-color: #282828;
+    border-color: @metro-accent;
     color: #ffffff;
 }
 
 window.osk-window button.osk-key.osk-key-special:active {
     background-color: @metro-accent;
+    border-color: @metro-accent;
     color: #ffffff;
 }
 
-window.osk-window button.osk-key.osk-key-latched {
+window.osk-window button.osk-key.osk-key-latched,
+window.osk-window button.osk-key.osk-key-special.osk-key-latched,
+window.osk-window button.osk-key.osk-key-latched:hover,
+window.osk-window button.osk-key.osk-key-special.osk-key-latched:hover {
     background-color: @metro-accent;
+    border-color: #ffffff;
     color: #ffffff;
 }
 
-window.osk-window button.osk-key.osk-key-locked {
+window.osk-window button.osk-key.osk-key-locked,
+window.osk-window button.osk-key.osk-key-special.osk-key-locked,
+window.osk-window button.osk-key.osk-key-locked:hover,
+window.osk-window button.osk-key.osk-key-special.osk-key-locked:hover {
     background-color: @metro-accent;
+    border-color: #ffffff;
     box-shadow: inset 0 -3px 0 #ffffff;
     color: #ffffff;
 }
@@ -1226,22 +1612,6 @@ window.shell-files-window .files-action-ribbon {
     padding: 5px 12px;
 }
 
-window.shell-files-window .files-nav-btn {
-    min-width: 28px;
-    min-height: 26px;
-    padding: 2px 8px;
-    border: 1px solid #2b2b2b;
-    background-color: #1a1a1a;
-    color: #e0e0e0;
-}
-
-window.shell-files-window .files-nav-btn:hover,
-window.shell-files-window .files-nav-btn.active {
-    background-color: @metro-accent;
-    border-color: @metro-accent;
-    color: #ffffff;
-}
-
 window.shell-files-window .files-breadcrumb-btn {
     padding: 2px 8px;
     min-height: 24px;
@@ -1257,32 +1627,41 @@ window.shell-files-window .files-breadcrumb-btn:hover {
 }
 
 window.shell-files-window .files-breadcrumb-btn.active {
-    background-color: alpha(@metro-accent, 0.28);
+    background-color: @metro-accent;
     border-color: @metro-accent;
     color: #ffffff;
     font-weight: 700;
-}
-
-window.shell-files-window .files-accent-btn {
-    background-color: @metro-accent;
-    border: 1px solid @metro-accent;
-    color: #ffffff;
-    font-weight: 700;
-    padding: 6px 14px;
-}
-
-window.shell-files-window .files-accent-btn:hover {
-    background-color: @metro-accent-hover;
 }
 
 window.shell-files-window .files-context-banner {
     margin: 8px 12px 0px 12px;
 }
 
+window.shell-files-window .files-prompt-bar {
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid @metro-accent;
+    padding: 10px 14px;
+}
+
+window.shell-files-window .files-auth-bar {
+    background-color: #181818;
+    border: 1px solid #2b2b2b;
+    border-left: 3px solid #ff8c00;
+    padding: 12px 14px;
+}
+
+window.shell-files-window .files-trash-bar {
+    background-color: #1f1214;
+    border: 1px solid #4a1c20;
+    border-left: 3px solid @metro-urgent;
+    padding: 8px 14px;
+}
+
 /* Metro Tile Grid View */
 window.shell-files-window .files-tile-grid {
     padding: 12px;
-    background-color: #141414;
+    background-color: #101010;
 }
 
 window.shell-files-window .files-tile-grid flowboxchild {
@@ -1309,25 +1688,29 @@ window.shell-files-window .files-tile-card:hover {
 }
 
 window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card {
-    background-color: alpha(@metro-accent, 0.26);
-    border: 1px solid @metro-accent;
+    background-color: alpha(@metro-accent, 0.45);
+    border: 1px solid #ffffff;
     box-shadow: inset 0 0 0 1px @metro-accent;
 }
 
 window.shell-files-window .files-tile-title {
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
     color: #ffffff;
 }
 
 window.shell-files-window .files-tile-sub {
-    font-size: 10px;
+    font-size: 11px;
     color: #8c8c8c;
+}
+
+window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card .files-tile-sub {
+    color: #f0f0f0;
 }
 
 /* Details List View */
 window.shell-files-window .files-list-header {
-    background-color: #181818;
+    background-color: #161616;
     border-bottom: 1px solid #2b2b2b;
     padding: 4px 16px;
 }
@@ -1345,12 +1728,12 @@ window.shell-files-window button.files-col-header-btn {
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
-    color: #9a9a9a;
+    color: #888888;
 }
 
 window.shell-files-window button.files-col-header-btn:hover {
     color: #ffffff;
-    background-color: #222222;
+    background-color: #202020;
 }
 
 window.shell-files-window button.files-col-header-btn.active {
@@ -1380,7 +1763,7 @@ window.shell-files-window button.files-menu-row {
     padding: 6px 10px;
     min-height: 28px;
     color: #e4e4e4;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 600;
 }
 
@@ -1391,20 +1774,20 @@ window.shell-files-window button.files-menu-row:hover {
 }
 
 window.shell-files-window button.files-menu-row.active {
-    background-color: alpha(@metro-accent, 0.24);
+    background-color: alpha(@metro-accent, 0.35);
     border-color: @metro-accent;
-    border-left: 3px solid @metro-accent;
+    border-left: 3px solid #ffffff;
     color: #ffffff;
 }
 
 window.shell-files-window .files-ctx-shortcut {
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 600;
     color: #888888;
 }
 
 window.shell-files-window .files-details-list {
-    background-color: #141414;
+    background-color: #101010;
     padding: 4px 8px;
 }
 
@@ -1422,7 +1805,7 @@ window.shell-files-window .files-list-row:hover {
 }
 
 window.shell-files-window .files-list-row:selected {
-    background-color: alpha(@metro-accent, 0.25);
+    background-color: alpha(@metro-accent, 0.45);
     border-color: @metro-accent;
     border-left: 3px solid #ffffff;
 }
@@ -1432,7 +1815,7 @@ window.shell-files-window .files-list-row-box {
 }
 
 window.shell-files-window .files-list-name {
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 600;
     color: #ffffff;
 }
@@ -1442,8 +1825,12 @@ window.shell-files-window .files-list-meta {
     color: #9a9a9a;
 }
 
-/* Inspector Pane */
-window.shell-files-window .files-inspector-pane {
+window.shell-files-window .files-list-row:selected .files-list-meta {
+    color: #efefef;
+}
+
+/* Inspector Pane (Shared across Files & Player) */
+window.shell-settings-window .files-inspector-pane {
     background-color: #141414;
     border-left: 1px solid #2b2b2b;
 }
@@ -1455,13 +1842,13 @@ window.shell-files-window .files-inspector-thumb {
 }
 
 window.shell-files-window .files-meta-key {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
     color: #888888;
 }
 
 window.shell-files-window .files-meta-val {
-    font-size: 11px;
+    font-size: 12px;
     color: #e6e6e6;
 }
 
@@ -1471,7 +1858,7 @@ window.shell-files-window .files-quicklook-backdrop {
 }
 
 window.shell-files-window .files-quicklook-card {
-    background-color: #161616;
+    background-color: #141414;
     border: 1px solid @metro-accent;
     border-top: 3px solid @metro-accent;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
@@ -1503,20 +1890,26 @@ window.shell-files-window .files-drive-bar block.filled {
     border-radius: 0px;
 }
 
+window.shell-files-window .files-drive-bar.critical block.filled,
+window.shell-files-window .files-drive-bar block.full {
+    background-color: @metro-urgent;
+    border-radius: 0px;
+}
+
 window.shell-files-window .files-eject-btn {
     padding: 1px 6px;
     min-height: 20px;
-    font-size: 12px;
+    font-size: 11px;
 }
 
 window.shell-files-window .files-status-bar {
-    background-color: #121212;
+    background-color: #181818;
     border-top: 1px solid #2b2b2b;
     padding: 5px 12px;
 }
 
 window.shell-files-window .files-status-text {
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
     color: #989898;
 }
@@ -1531,7 +1924,7 @@ window.shell-files-window .files-status-error {
  * ============================================================================ */
 
 window.shell-player-window {
-    background-color: #0c0c0c;
+    background-color: #101010;
     border: 1px solid @metro-accent;
     border-top: 3px solid @metro-accent;
 }
@@ -1547,21 +1940,22 @@ window.shell-player-window.player-fullscreen .player-video-stage {
 }
 
 window.shell-player-window.player-fullscreen .player-header-bar {
-    background-color: rgba(18, 18, 18, 0.92);
+    background-color: rgba(18, 18, 18, 0.94);
 }
 
 window.shell-player-window.player-fullscreen .player-transport-deck {
-    background-color: rgba(18, 18, 18, 0.92);
+    background-color: rgba(18, 18, 18, 0.94);
+    border-top: 1px solid @metro-accent;
 }
 
 window.shell-player-window .player-header-bar {
-    background-color: #161616;
+    background-color: #181818;
     border-bottom: 1px solid #2b2b2b;
-    padding: 8px 12px;
+    padding: 6px 12px;
 }
 
 window.shell-player-window .player-video-stage {
-    background-color: #0c0c0c;
+    background-color: #101010;
 }
 
 window.shell-player-window .player-audio-card {
@@ -1572,7 +1966,7 @@ window.shell-player-window .player-audio-card {
 }
 
 window.shell-player-window .player-stats-osd {
-    background-color: rgba(16, 16, 16, 0.90);
+    background-color: rgba(17, 17, 17, 0.94);
     border: 1px solid @metro-accent;
     border-left: 3px solid @metro-accent;
     padding: 10px 14px;
@@ -1600,12 +1994,12 @@ window.shell-player-window .player-timecode {
 window.shell-player-window .player-play-btn {
     min-width: 86px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 800;
 }
 
-window.shell-player-window .player-seek-scale trough,
-window.shell-player-window .player-volume-scale trough {
+window.shell-settings-window .player-seek-scale trough,
+window.shell-settings-window .player-volume-scale trough {
     background: none;
     background-image: none;
     background-color: #262626;
@@ -1613,25 +2007,26 @@ window.shell-player-window .player-volume-scale trough {
     border-radius: 0px;
 }
 
-window.shell-player-window .player-seek-scale highlight,
-window.shell-player-window .player-volume-scale highlight {
+window.shell-settings-window .player-seek-scale highlight,
+window.shell-settings-window .player-volume-scale highlight {
     background: none;
     background-image: none;
     background-color: @metro-accent;
     border-radius: 0px;
 }
 
-window.shell-player-window .player-seek-scale slider,
-window.shell-player-window .player-volume-scale slider {
+window.shell-settings-window .player-seek-scale slider,
+window.shell-settings-window .player-volume-scale slider {
     background: none;
     background-image: none;
     background-color: #ffffff;
     border: 2px solid @metro-accent;
     border-radius: 0px;
-    min-width: 10px;
+    min-width: 14px;
     min-height: 14px;
     margin: -4px 0;
 }
+
 
 
 

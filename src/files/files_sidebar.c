@@ -75,7 +75,7 @@ build_auth_banner_ui(KajoFilesSidebar *self)
     if (!self->auth_revealer) return;
 
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_add_css_class(card, "section-card-left");
+    gtk_widget_add_css_class(card, "files-auth-bar");
     gtk_widget_add_css_class(card, "files-context-banner");
 
     self->auth_title_lbl = gtk_label_new("🔒 AUTHENTICATION REQUIRED");
@@ -98,7 +98,7 @@ build_auth_banner_ui(KajoFilesSidebar *self)
     g_signal_connect(self->auth_pass_entry, "activate", G_CALLBACK(on_auth_submit_clicked), self);
 
     GtkWidget *btn_mount = gtk_button_new_with_label("MOUNT / UNLOCK");
-    gtk_widget_add_css_class(btn_mount, "files-accent-btn");
+    gtk_widget_add_css_class(btn_mount, "action-btn-primary");
     g_signal_connect(btn_mount, "clicked", G_CALLBACK(on_auth_submit_clicked), self);
 
     GtkWidget *btn_cancel = gtk_button_new_with_label("CANCEL");
@@ -400,6 +400,8 @@ append_drive_row(KajoFilesSidebar *self,
                 GtkWidget *bar = gtk_level_bar_new_for_interval(0.0, 1.0);
                 gtk_level_bar_set_value(GTK_LEVEL_BAR(bar), used_frac);
                 gtk_widget_add_css_class(bar, "files-drive-bar");
+                if (used_frac >= 0.90)
+                    gtk_widget_add_css_class(bar, "critical");
                 gtk_box_append(GTK_BOX(vbox), bar);
 
                 g_autofree char *free_str = kajo_files_format_size(free_b, FALSE);

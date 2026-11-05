@@ -70,6 +70,9 @@ struct _ShellConfig {
 
     gchar          *accent_color;
     gint            ui_font_size_px;
+    gint            font_heading_size_px;
+    gint            font_subtitle_size_px;
+    gint            font_badge_size_px;
 
     gchar          *screensaver_mode;         /* "overlay", "dpms", or "disabled" */
     gint            screensaver_timeout_sec;

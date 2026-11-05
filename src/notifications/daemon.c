@@ -254,15 +254,16 @@ create_notification_toast_card(ShellNotificationDaemon *daemon, ShellNotificatio
     gtk_widget_set_hexpand(vbox, TRUE);
 
     GtkWidget *app_lbl = gtk_label_new(toast->app_name ? toast->app_name : "System");
-    gtk_widget_add_css_class(app_lbl, "shell-popover-section-title");
+    gtk_widget_add_css_class(app_lbl, "shell-popover-title");
     gtk_widget_set_halign(app_lbl, GTK_ALIGN_START);
 
     GtkWidget *summary_lbl = gtk_label_new(toast->summary ? toast->summary : "");
-    gtk_widget_add_css_class(summary_lbl, "shell-popover-header");
+    gtk_widget_add_css_class(summary_lbl, "row-title");
     gtk_widget_set_halign(summary_lbl, GTK_ALIGN_START);
     gtk_label_set_wrap(GTK_LABEL(summary_lbl), TRUE);
 
     GtkWidget *body_lbl = gtk_label_new(toast->body ? toast->body : "");
+    gtk_widget_add_css_class(body_lbl, "row-subtitle");
     gtk_widget_set_halign(body_lbl, GTK_ALIGN_START);
     gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
 
