@@ -169,6 +169,113 @@ Pressing **`Space`** on any selected item opens a centered Metro Quick Look card
 
 ---
 
+### 3.7 Sorting System Revamp (Natural Collation, Interactive Column Headers & Sort Popover)
+
+#### A. Natural Filename Collation & Tie-Breaking (`files_model.c`)
+1. **Precomputed Natural Collation Key (`g_utf8_collate_key_for_filename`)**:
+   - Each [`KajoFileItem`](file:///home/mikolas/src/Kajo/src/files/files_model.h#L21-L23) precomputes `char *collate_key = g_utf8_collate_key_for_filename(display_name, -1)` at construction time.
+   - Ensures natural numeric ordering (`Episode_2.mkv` sorts before `Episode_10.mkv`) and reduces name comparisons to a single `strcmp(a->collate_key, b->collate_key)`.
+2. **Configurable `folders_first` & Stable `A → Z` Tie-Breaking**:
+   - Signature:
+     ```c
+     int kajo_file_item_compare_full(const KajoFileItem *a,
+                                     const KajoFileItem *b,
+                                     KajoFileSortField field,
+                                     gboolean ascending,
+                                     gboolean folders_first);
+     ```
+   - When `folders_first` is `TRUE` (default), directories precede regular files regardless of `ascending`. When `FALSE` (useful when sorting by `MODIFIED` to see recently modified folders alongside files), directories and files are compared together by `mtime_sec`.
+   - When the primary sort key (`SIZE`, `MODIFIED`, `TYPE`) is equal (`cmp == 0`), the fallback tie-breaker **always sorts `A → Z`** (`strcmp(a->collate_key, b->collate_key)`) rather than inverting to `Z → A` on descending sorts.
+3. **Natural Default Direction per Sort Field**:
+   - Selecting `NAME` or `TYPE` defaults to **Ascending (`▲`, A → Z)**.
+   - Selecting `MODIFIED` or `SIZE` defaults to **Descending (`▼`, Newest First / Largest First)**.
+
+#### B. Interactive Column Header Bar in Details List View (`list_header_bar`)
+In Details List view (`Ctrl+2`), the 4 column headers (`NAME`, `SIZE`, `TYPE`, `MODIFIED`) are interactive `GtkButton`s:
+- Clicking the **currently active** column header flips `sort_ascending` (`▲` $\leftrightarrow$ `▼`).
+- Clicking a **different** column header switches `sort_field` to that column using its natural default direction (`NAME ▲`, `TYPE ▲`, `SIZE ▼`, `MODIFIED ▼`).
+- Active column header renders with `@metro-accent` text/underline and a directional glyph (`NAME ▲`, `MODIFIED ▼`).
+
+#### C. Action Ribbon Sort MenuButton Popover (`btn_sort_menu`)
+Replaces the old 8-click cycle button with a `GtkMenuButton` (`⇅ SORT: NAME ▲`) opening a Kajo Metro `GtkPopover` (works in both Grid and List views):
+
+```text
+┌──────────────────────────────┐
+│ SORT BY             [ NAME ] │
+├──────────────────────────────┤
+│ ✔  Name (Natural A–Z)        │
+│    Date Modified             │
+│    Size                      │
+│    Type / Extension          │
+├──────────────────────────────┤
+│ ORDER                        │
+│ [ ▲ ASCENDING ] [▼ DESCEND ] │
+├──────────────────────────────┤
+│ [ ☑ FOLDERS FIRST          ] │
+└──────────────────────────────┘
+```
+
+---
+
+### 3.8 Context Menu Popover & "Open With / Set Default" Architecture
+
+Instead of attaching heavyweight menus to every tile/row, `KajoFilesWindow` owns **one shared Kajo Metro `GtkPopover` (`context_popover`)** anchored dynamically via `gtk_popover_set_pointing_to()`.
+
+#### A. Trigger Mechanisms & Hit-Testing
+1. **Pointer Right-Click (`GtkGestureClick` on `GDK_BUTTON_SECONDARY` / Button 3)**:
+   - Attached to `view_stack`.
+   - Translates `(x, y)` to `grid_flowbox` (`gtk_flow_box_get_child_at_pos`) or `details_listbox` (`gtk_list_box_get_row_at_y`).
+   - If a child tile/row is hit: selects that item immediately and opens the popover in **Item Context Mode** at `(x, y)`.
+   - If empty background is hit: opens the popover in **Directory Background Mode** at `(x, y)`.
+2. **Keyboard Context Trigger (`Menu` / `Shift+F10` / `.`)**:
+   - Opens the popover in **Item Context Mode** anchored to the currently selected tile/row (or **Directory Background Mode** if no item is selected).
+
+#### B. Two-Page Popover Stack (`main` $\leftrightarrow$ `open_with`)
+
+```text
+  [Page 1: Item Context Mode ("main")]                [Page 2: Open With Sub-View ("open_with")]
+┌────────────────────────────────────────┐          ┌────────────────────────────────────────┐
+│ 🎬 sample.mkv               [ 42.1 MB ]│          │ ◀ BACK   OPEN WITH          [ video/* ]│
+├────────────────────────────────────────┤          ├────────────────────────────────────────┤
+│ ▶  Open                        [Enter] │          │ ✔ 🎬 Kajo Player (Default)             │
+│ ⚙  Open With...                      ▸ │ ───────► │   🎬 MPV Media Player                  │
+│ 👁  Quick Look                  [Space] │          │   🎬 VLC media player                  │
+│ 📦 Extract Here          (if archive)  │          ├────────────────────────────────────────┤
+│ 🗔  Open in New Window         [Ctrl+N] │          │ [ ☑ SET SELECTED AS DEFAULT FOR .MKV ] │
+├────────────────────────────────────────┤          └────────────────────────────────────────┘
+│ 📋 Copy                       [Ctrl+C] │
+│ ✂  Cut                        [Ctrl+X] │
+│ 🔗 Copy Path / URI      [Ctrl+Shift+C] │
+│ ✏  Rename...                      [F2] │
+│ 🗑  Move to Trash              [Delete] │
+│ ⚠  Delete Permanently      [Shift+Del] │
+│ ⓘ  Toggle Inspector           [Ctrl+I] │
+└────────────────────────────────────────┘
+
+  [Directory Background Mode ("main" when clicking empty space)]
+┌────────────────────────────────────────┐
+│ 📁 CURRENT FOLDER                      │
+├────────────────────────────────────────┤
+│ +  New Folder...        [Ctrl+Shift+N] │
+│ 📋 Paste Here                 [Ctrl+V] │
+│ >_ Open Terminal Here   [Ctrl+Shift+T] │
+│ 🗔  Open in New Window         [Ctrl+N] │
+│ 👁  Toggle Hidden Files        [Ctrl+H] │
+│ ↻  Reload Directory           [Ctrl+R] │
+└────────────────────────────────────────┘
+```
+
+#### C. "Open With..." & Default MIME Association (`g_app_info_*`)
+- Queries `g_app_info_get_all_for_type(content_type)` and `g_app_info_get_default_for_type(content_type, FALSE)`.
+- Clicking any application row launches the file with `g_app_info_launch()` / `g_app_info_launch_uris()`.
+- If **`☑ SET AS DEFAULT`** is toggled on (or clicked), calls `g_app_info_set_as_default_for_type(app_info, content_type, &err)` to persist the association in `~/.config/mimeapps.list`.
+
+#### D. Contextual Archive Extraction (`📦 Extract Here` via `libarchive`)
+- Shown in the Item Context Menu whenever the selected item is a local archive (`.zip`, `.tar.gz`, `.tgz`, `.tar.xz`, `.txz`, `.tar.zst`, `.tar.bz2`, `.tar`, `.7z`, `.rar`, `.iso`).
+- Runs asynchronously in a `GTask` worker thread using `archive_read_new()` + `archive_write_disk_new()` into a clean subdirectory `<archive_stem>/` inside the current directory, with path-traversal sanitization (rejecting `..` segments or absolute paths).
+
+---
+
 ## 4. Keyboard & Touch Shortcuts
 
 | Shortcut | Action |
@@ -186,7 +293,9 @@ Pressing **`Space`** on any selected item opens a centered Metro Quick Look card
 | **`Ctrl+Shift+N`** | Create New Folder in current directory |
 | **`Ctrl+Shift+T`** | Open Terminal (`kitty` / `$TERMINAL`) at current directory (or GVFS FUSE path) |
 | **`F2`** | Rename selected item |
+| **`Menu` / `Shift+F10` / `.`** | Open Context Menu Popover for selected item (or current folder) |
 | **`Ctrl+C` / `Ctrl+X` / `Ctrl+V`** | Copy / Cut / Paste files (syncs with Wayland `GdkClipboard`) |
+| **`Ctrl+Shift+C`** | Copy selected item's local POSIX path (or URI) to the Wayland clipboard |
 | **`Delete`** | Move selected items to Trash (`g_file_trash_async`) |
 | **`Shift+Delete`** | Permanently delete selected items (with inline confirmation prompt) |
 | **`F5` / `Ctrl+R`** | Reload current directory |

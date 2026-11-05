@@ -43,16 +43,26 @@ void kajo_files_op_transfer_async(GPtrArray *source_files,
                                   KajoFileOpCallback callback,
                                   gpointer user_data);
 
+void kajo_files_op_extract_archive_async(GFile *archive_file,
+                                         GFile *dest_parent_dir,
+                                         KajoFileOpCallback callback,
+                                         gpointer user_data);
+
 /* Clipboard (Internal + Wayland GdkClipboard) */
 void     kajo_files_clipboard_set(GPtrArray *files, gboolean is_cut);
 gboolean kajo_files_clipboard_has_files(void);
 void     kajo_files_clipboard_paste_async(GFile *dest_dir,
                                           KajoFileOpCallback callback,
                                           gpointer user_data);
+char    *kajo_files_copy_path_to_clipboard(KajoFileItem *item);
 
 /* Desktop Launchers */
-void kajo_files_open_item_default(KajoFileItem *item, GtkWindow *parent);
-void kajo_files_open_terminal_at(GFile *dir);
+void     kajo_files_open_item_default(KajoFileItem *item, GtkWindow *parent);
+gboolean kajo_files_open_item_with_app(KajoFileItem *item,
+                                       GAppInfo *app_info,
+                                       gboolean set_default,
+                                       GError **error);
+void     kajo_files_open_terminal_at(GFile *dir);
 
 G_END_DECLS
 

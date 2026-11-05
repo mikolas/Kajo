@@ -1,4 +1,6 @@
 #include "files_ops.h"
+#include <archive.h>
+#include <archive_entry.h>
 #include <string.h>
 
 typedef struct {
@@ -94,7 +96,168 @@ kajo_files_op_rename_async(GFile *file,
     g_file_set_display_name_async(file, new_name, G_PRIORITY_DEFAULT, NULL, on_rename_ready, d);
 }
 
-/* ─── Recursive Worker Helpers (Delete / Copy / Move / Trash) ─── */
+static GFile *resolve_unique_dest_child(GFile *dest_dir, const char *base_name);
+
+static char *
+strip_archive_stem(const char *basename)
+{
+    if (!basename || basename[0] == '\0')
+        return g_strdup("extracted");
+
+    static const char *const compound_exts[] = {
+        ".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2",
+        ".tgz", ".txz", ".tzst", ".zip", ".7z", ".rar",
+        ".tar", ".deb", ".rpm", ".iso", ".jar", ".apk", NULL
+    };
+
+    g_autofree char *lower = g_ascii_strdown(basename, -1);
+    for (int i = 0; compound_exts[i] != NULL; i++) {
+        if (g_str_has_suffix(lower, compound_exts[i])) {
+            gsize stem_len = strlen(basename) - strlen(compound_exts[i]);
+            if (stem_len > 0)
+                return g_strndup(basename, stem_len);
+        }
+    }
+
+    const char *dot = strrchr(basename, '.');
+    if (dot && dot != basename)
+        return g_strndup(basename, (gsize)(dot - basename));
+
+    return g_strdup(basename);
+}
+
+static gboolean
+is_safe_relative_archive_path(const char *pathname)
+{
+    if (!pathname || pathname[0] == '\0' || pathname[0] == '/')
+        return FALSE;
+
+    g_auto(GStrv) parts = g_strsplit(pathname, "/", -1);
+    for (int i = 0; parts && parts[i] != NULL; i++) {
+        if (g_strcmp0(parts[i], "..") == 0)
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static gboolean
+extract_archive_sync(GFile *archive_file,
+                     GFile *dest_parent_dir,
+                     GCancellable *cancellable,
+                     char **out_folder_name,
+                     guint *out_count,
+                     GError **error)
+{
+    g_autofree char *archive_path = g_file_get_path(archive_file);
+    if (!archive_path) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "Archive must be on a local or FUSE-mounted filesystem");
+        return FALSE;
+    }
+
+    g_autofree char *base = g_file_get_basename(archive_file);
+    g_autofree char *stem = strip_archive_stem(base);
+    g_autoptr(GFile) target_dir = resolve_unique_dest_child(dest_parent_dir, stem);
+    g_autofree char *target_root = g_file_get_path(target_dir);
+    if (!target_root) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "Destination directory must have a local path");
+        return FALSE;
+    }
+
+    if (g_mkdir_with_parents(target_root, 0755) != 0) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Failed to create extraction folder '%s'", target_root);
+        return FALSE;
+    }
+
+    struct archive *a = archive_read_new();
+    archive_read_support_filter_all(a);
+    archive_read_support_format_all(a);
+
+    struct archive *ext = archive_write_disk_new();
+    archive_write_disk_set_options(
+        ext,
+        ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS
+    );
+    archive_write_disk_set_standard_lookup(ext);
+
+    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive open failed: %s", archive_error_string(a));
+        archive_read_free(a);
+        archive_write_free(ext);
+        return FALSE;
+    }
+
+    guint extracted = 0;
+    struct archive_entry *entry = NULL;
+
+    while (TRUE) {
+        if (g_cancellable_set_error_if_cancelled(cancellable, error)) {
+            archive_read_free(a);
+            archive_write_free(ext);
+            return FALSE;
+        }
+
+        int r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive read error: %s", archive_error_string(a));
+            archive_read_free(a);
+            archive_write_free(ext);
+            return FALSE;
+        }
+
+        const char *rel_path = archive_entry_pathname(entry);
+        if (!is_safe_relative_archive_path(rel_path))
+            continue;
+
+        g_autofree char *full_dest = g_build_filename(target_root, rel_path, NULL);
+        archive_entry_set_pathname(entry, full_dest);
+
+        r = archive_write_header(ext, entry);
+        if (r >= ARCHIVE_WARN && archive_entry_size(entry) > 0) {
+            const void *buff = NULL;
+            size_t size = 0;
+            la_int64_t offset = 0;
+            while (TRUE) {
+                int dr = archive_read_data_block(a, &buff, &size, &offset);
+                if (dr == ARCHIVE_EOF)
+                    break;
+                if (dr < ARCHIVE_OK) {
+                    g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                                "Archive data error: %s", archive_error_string(a));
+                    archive_read_free(a);
+                    archive_write_free(ext);
+                    return FALSE;
+                }
+                if (archive_write_data_block(ext, buff, size, offset) < ARCHIVE_WARN) {
+                    g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                                "Archive write error: %s", archive_error_string(ext));
+                    archive_read_free(a);
+                    archive_write_free(ext);
+                    return FALSE;
+                }
+            }
+        }
+        archive_write_finish_entry(ext);
+        extracted++;
+    }
+
+    archive_read_close(a);
+    archive_read_free(a);
+    archive_write_close(ext);
+    archive_write_free(ext);
+
+    if (out_folder_name)
+        *out_folder_name = g_file_get_basename(target_dir);
+    if (out_count)
+        *out_count = extracted;
+    return TRUE;
+}
 
 static gboolean
 delete_file_recursive_sync(GFile *file, GCancellable *cancellable, GError **error)
@@ -232,6 +395,7 @@ typedef enum {
     BATCH_OP_EMPTY_TRASH,
     BATCH_OP_RESTORE_TRASH,
     BATCH_OP_TRANSFER,
+    BATCH_OP_EXTRACT_ARCHIVE,
 } BatchOpKind;
 
 typedef struct {
@@ -381,6 +545,22 @@ batch_op_worker(GTask *task,
             g_free
         );
         return;
+
+    case BATCH_OP_EXTRACT_ARCHIVE: {
+        GFile *archive_file = g_ptr_array_index(ctx->files, 0);
+        g_autofree char *folder_name = NULL;
+        guint extracted = 0;
+        if (!extract_archive_sync(archive_file, ctx->dest_dir, cancellable, &folder_name, &extracted, &error)) {
+            g_task_return_error(task, error);
+            return;
+        }
+        g_task_return_pointer(
+            task,
+            g_strdup_printf("Extracted %u entries into '%s/'", extracted, folder_name ? folder_name : "folder"),
+            g_free
+        );
+        return;
+    }
     }
 }
 
@@ -511,6 +691,28 @@ kajo_files_op_transfer_async(GPtrArray *source_files,
     g_task_run_in_thread(task, batch_op_worker);
 }
 
+void
+kajo_files_op_extract_archive_async(GFile *archive_file,
+                                    GFile *dest_parent_dir,
+                                    KajoFileOpCallback callback,
+                                    gpointer user_data)
+{
+    g_return_if_fail(G_IS_FILE(archive_file));
+    g_return_if_fail(G_IS_FILE(dest_parent_dir));
+
+    BatchOpContext *ctx = g_new0(BatchOpContext, 1);
+    ctx->kind = BATCH_OP_EXTRACT_ARCHIVE;
+    ctx->files = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(ctx->files, g_object_ref(archive_file));
+    ctx->dest_dir = g_object_ref(dest_parent_dir);
+    ctx->callback = callback;
+    ctx->user_data = user_data;
+
+    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_task_set_task_data(task, ctx, NULL);
+    g_task_run_in_thread(task, batch_op_worker);
+}
+
 /* ─── Clipboard (Internal + Wayland GdkClipboard) ─── */
 
 static GPtrArray *g_clip_files = NULL;
@@ -573,7 +775,67 @@ kajo_files_clipboard_paste_async(GFile *dest_dir,
     }
 }
 
+char *
+kajo_files_copy_path_to_clipboard(KajoFileItem *item)
+{
+    if (!item) return NULL;
+
+    GFile *file = kajo_file_item_get_file(item);
+    g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
+    const char *text = local_path ? local_path : kajo_file_item_get_uri(item);
+    if (!text) return NULL;
+
+    GdkDisplay *display = gdk_display_get_default();
+    if (display) {
+        GdkClipboard *clipboard = gdk_display_get_clipboard(display);
+        gdk_clipboard_set_text(clipboard, text);
+    }
+
+    return g_strdup(text);
+}
+
 /* ─── Desktop App & Terminal Launchers ─── */
+
+gboolean
+kajo_files_open_item_with_app(KajoFileItem *item,
+                              GAppInfo *app_info,
+                              gboolean set_default,
+                              GError **error)
+{
+    g_return_val_if_fail(KAJO_IS_FILE_ITEM(item), FALSE);
+    g_return_val_if_fail(G_IS_APP_INFO(app_info), FALSE);
+
+    const char *ctype = kajo_file_item_get_content_type(item);
+    if (set_default && ctype && ctype[0] != '\0') {
+        g_app_info_set_as_default_for_type(app_info, ctype, NULL);
+    }
+
+    GFile *file = kajo_file_item_get_file(item);
+    const char *target_uri = kajo_file_item_get_target_uri(item);
+    if (target_uri && target_uri[0] != '\0') {
+        GList *uris = g_list_append(NULL, (gpointer)target_uri);
+        gboolean ok = g_app_info_launch_uris(app_info, uris, NULL, error);
+        g_list_free(uris);
+        return ok;
+    }
+
+    if (file) {
+        GList *files = g_list_append(NULL, file);
+        gboolean ok = g_app_info_launch(app_info, files, NULL, error);
+        g_list_free(files);
+        return ok;
+    }
+
+    const char *uri = kajo_file_item_get_uri(item);
+    if (uri) {
+        GList *uris = g_list_append(NULL, (gpointer)uri);
+        gboolean ok = g_app_info_launch_uris(app_info, uris, NULL, error);
+        g_list_free(uris);
+        return ok;
+    }
+
+    return FALSE;
+}
 
 void
 kajo_files_open_item_default(KajoFileItem *item, GtkWindow *parent G_GNUC_UNUSED)

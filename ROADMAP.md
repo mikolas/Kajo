@@ -25,7 +25,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Niri GLSL Window Shaders** | ✅ Done | [`SPEC_NIRI_SHADERS.md`](file:///home/mikolas/src/Kajo/SPEC_NIRI_SHADERS.md) — Live shader preset switcher for window open/close/resize animations |
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | [`SPEC_TOUCH_GESTURES.md`](file:///home/mikolas/src/Kajo/SPEC_TOUCH_GESTURES.md) — Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications |
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | [`SPEC_VIRTUAL_KEYBOARD.md`](file:///home/mikolas/src/Kajo/SPEC_VIRTUAL_KEYBOARD.md) — Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching |
-| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — Phase 1 GVFS/UDisks2 file manager with macOS-style `Space` Quick Look (images, audio/video, Poppler PDFs, `libarchive` archives, code/text) |
+| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
 | **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | [`SPEC_VIDEO_PLAYER.md`](file:///home/mikolas/src/Kajo/SPEC_VIDEO_PLAYER.md) — `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
 
 ---
@@ -39,11 +39,9 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
 
-### 3.2 [PLANNED] `kajo-files` Phase 2 Enhancements
-- **1-Click Archive Extraction & Compression (`libarchive`):**
-  - Contextual `[ 📦 EXTRACT HERE ]` and `[ 📦 COMPRESS SELECTED ]` actions in `kajo-files` for `.zip`, `.tar.gz`, `.tar.xz`, `.tar.zst`, and `.7z`.
-- **Right-Click Context Popover Menu:**
-  - Kajo-styled context menu on tiles/rows (`Open`, `Open With...`, `Quick Look`, `Copy`, `Cut`, `Rename`, `Extract`, `Move to Trash`, `Properties`).
+### 3.2 [PLANNED] `kajo-files` Future Enhancements
+- **Archive Compression (`libarchive`):**
+  - Contextual `[ 📦 COMPRESS SELECTED ]` action in `kajo-files` for creating `.zip` and `.tar.zst` archives.
 - **Drag-and-Drop (`GtkDragSource` / `GtkDropTarget`):**
   - Drag files between `kajo-files` windows or drop onto external Wayland applications.
 - **Additional Quick Look Renderers:**

@@ -79,6 +79,38 @@ test_sorting_and_filtering(void)
     g_assert_true(kajo_files_is_text_or_code("text/markdown", "SPEC.md"));
     g_assert_true(kajo_files_is_text_or_code("application/octet-stream", "meson.build"));
     g_assert_false(kajo_files_is_text_or_code("image/png", "photo.png"));
+
+    /* Archive detector */
+    g_assert_true(kajo_files_is_archive("application/zip", "release.zip"));
+    g_assert_true(kajo_files_is_archive("application/octet-stream", "source.tar.zst"));
+    g_assert_false(kajo_files_is_archive("video/x-matroska", "movie.mkv"));
+
+    /* Default sort direction per field */
+    g_assert_true(kajo_file_sort_field_default_ascending(KAJO_SORT_NAME));
+    g_assert_true(kajo_file_sort_field_default_ascending(KAJO_SORT_TYPE));
+    g_assert_false(kajo_file_sort_field_default_ascending(KAJO_SORT_SIZE));
+    g_assert_false(kajo_file_sort_field_default_ascending(KAJO_SORT_MODIFIED));
+
+    /* Natural filename collation (Episode_2 < Episode_10 < Episode_100) */
+    g_autoptr(KajoFileItem) ep2 = kajo_file_item_new_manual(
+        NULL, "Episode_2.mkv", "Episode_2.mkv", "video/x-matroska", 1024, 100, 0644, FALSE, FALSE
+    );
+    g_autoptr(KajoFileItem) ep10 = kajo_file_item_new_manual(
+        NULL, "Episode_10.mkv", "Episode_10.mkv", "video/x-matroska", 1024, 100, 0644, FALSE, FALSE
+    );
+    g_autoptr(KajoFileItem) ep100 = kajo_file_item_new_manual(
+        NULL, "Episode_100.mkv", "Episode_100.mkv", "video/x-matroska", 1024, 100, 0644, FALSE, FALSE
+    );
+    g_assert_cmpint(kajo_file_item_compare_full(ep2, ep10, KAJO_SORT_NAME, TRUE, TRUE), <, 0);
+    g_assert_cmpint(kajo_file_item_compare_full(ep10, ep100, KAJO_SORT_NAME, TRUE, TRUE), <, 0);
+    g_assert_cmpint(kajo_file_item_compare_full(ep2, ep10, KAJO_SORT_NAME, FALSE, TRUE), >, 0);
+
+    /* Tie-breaking on descending size/mtime sort remains natural A->Z */
+    g_assert_cmpint(kajo_file_item_compare_full(ep2, ep10, KAJO_SORT_SIZE, FALSE, TRUE), <, 0);
+
+    /* Folders First toggle: when FALSE, folders and files interleave by field */
+    g_assert_cmpint(kajo_file_item_compare_full(file_a, dir_b, KAJO_SORT_NAME, TRUE, FALSE), <, 0);
+    g_assert_cmpint(kajo_file_item_compare_full(file_a, dir_b, KAJO_SORT_NAME, TRUE, TRUE), >, 0);
 }
 
 typedef struct {

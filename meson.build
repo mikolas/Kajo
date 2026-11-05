@@ -288,6 +288,7 @@ files_sources = files(
   'src/files/files_ops.c',
   'src/files/files_sidebar.c',
   'src/files/files_quicklook.c',
+  'src/player/player_mpv.c',
   'src/config.c',
   'src/theme.c',
   'src/icons.c',
@@ -305,6 +306,10 @@ executable(
     gio_unix_dep,
     poppler_dep,
     archive_dep,
+    mpv_dep,
+    egl_dep,
+    glesv2_dep,
+    m_dep,
   ],
   install: true,
 )
@@ -506,7 +511,7 @@ test('touch-gestures', test_touch_gestures_exe)
 test_files_model_exe = executable(
   'test-files-model',
   files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_ops.c'),
-  dependencies: [gtk4_dep, gio_dep, gio_unix_dep],
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep, archive_dep],
   build_by_default: false,
 )
 test('files-model', test_files_model_exe)

@@ -688,6 +688,10 @@ kajo_player_mpv_new(GtkGLArea *gl_area,
     g_signal_connect(gl_area, "unrealize", G_CALLBACK(on_gl_area_unrealize), self);
     g_signal_connect(gl_area, "render", G_CALLBACK(on_gl_area_render), self);
 
+    if (gtk_widget_get_realized(GTK_WIDGET(gl_area))) {
+        on_gl_area_realize(GTK_WIDGET(gl_area), self);
+    }
+
     return self;
 }
 
@@ -745,6 +749,12 @@ kajo_player_mpv_load_file(KajoPlayerMpv *self, GFile *file)
     const char *target = path ? path : uri;
     if (!target)
         return;
+
+    if (!self->mpv_gl && self->gl_area) {
+        if (!gtk_widget_get_realized(GTK_WIDGET(self->gl_area)))
+            gtk_widget_realize(GTK_WIDGET(self->gl_area));
+        on_gl_area_realize(GTK_WIDGET(self->gl_area), self);
+    }
 
     g_clear_pointer(&self->error_buf, g_free);
     g_clear_pointer(&self->video_codec_buf, g_free);

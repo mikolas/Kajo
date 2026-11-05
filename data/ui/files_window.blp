@@ -245,13 +245,155 @@ template $KajoFilesWindow : ApplicationWindow {
           ]
         }
 
-        Button btn_sort {
+        MenuButton btn_sort {
           label: "⇅ SORT: NAME ▲";
-          tooltip-text: "Cycle Sort Order (Name / Size / Modified / Type)";
+          tooltip-text: "Sort Field, Direction & Folders First";
 
           styles [
             "flat",
           ]
+
+          popover: Popover sort_popover {
+            has-arrow: false;
+
+            styles [
+              "shell-popover-card",
+              "files-sort-popover",
+            ]
+
+            Box {
+              orientation: vertical;
+              spacing: 0;
+              width-request: 260;
+
+              Box {
+                orientation: horizontal;
+                spacing: 8;
+
+                styles [
+                  "shell-popover-header",
+                ]
+
+                Label {
+                  label: "⇅ SORT DIRECTORY";
+                  halign: start;
+                  hexpand: true;
+
+                  styles [
+                    "heading",
+                  ]
+                }
+              }
+
+              Box {
+                orientation: vertical;
+                spacing: 4;
+
+                styles [
+                  "shell-popover-body",
+                ]
+
+                Label {
+                  label: "SORT BY FIELD";
+                  halign: start;
+
+                  styles [
+                    "shell-popover-subtitle",
+                  ]
+                }
+
+                Button btn_sort_field_name {
+                  label: "✓  Name (Natural A–Z)";
+                  halign: fill;
+
+                  styles [
+                    "flat",
+                    "files-menu-row",
+                    "active",
+                  ]
+                }
+
+                Button btn_sort_field_modified {
+                  label: "   Date Modified";
+                  halign: fill;
+
+                  styles [
+                    "flat",
+                    "files-menu-row",
+                  ]
+                }
+
+                Button btn_sort_field_size {
+                  label: "   Size";
+                  halign: fill;
+
+                  styles [
+                    "flat",
+                    "files-menu-row",
+                  ]
+                }
+
+                Button btn_sort_field_type {
+                  label: "   Type / Extension";
+                  halign: fill;
+
+                  styles [
+                    "flat",
+                    "files-menu-row",
+                  ]
+                }
+
+                Separator {
+                  orientation: horizontal;
+                }
+
+                Label {
+                  label: "ORDER & GROUPING";
+                  halign: start;
+
+                  styles [
+                    "shell-popover-subtitle",
+                  ]
+                }
+
+                Box {
+                  orientation: horizontal;
+                  spacing: 4;
+                  homogeneous: true;
+
+                  Button btn_sort_asc {
+                    label: "▲ ASCENDING";
+
+                    styles [
+                      "flat",
+                      "files-menu-row",
+                      "active",
+                    ]
+                  }
+
+                  Button btn_sort_desc {
+                    label: "▼ DESCENDING";
+
+                    styles [
+                      "flat",
+                      "files-menu-row",
+                    ]
+                  }
+                }
+
+                Button btn_sort_folders_first {
+                  label: "☑  Folders First";
+                  halign: fill;
+
+                  styles [
+                    "flat",
+                    "files-menu-row",
+                    "active",
+                  ]
+                }
+              }
+            }
+          };
         }
 
         Button btn_terminal {
@@ -372,43 +514,48 @@ template $KajoFilesWindow : ApplicationWindow {
                     "files-list-header",
                   ]
 
-                  Label {
-                    label: "NAME";
+                  Button col_btn_name {
+                    label: "NAME ▲";
                     hexpand: true;
                     halign: start;
 
                     styles [
-                      "files-col-header",
+                      "flat",
+                      "files-col-header-btn",
+                      "active",
                     ]
                   }
 
-                  Label {
+                  Button col_btn_size {
                     label: "SIZE";
                     width-request: 100;
                     halign: end;
 
                     styles [
-                      "files-col-header",
+                      "flat",
+                      "files-col-header-btn",
                     ]
                   }
 
-                  Label {
+                  Button col_btn_type {
                     label: "TYPE";
                     width-request: 160;
                     halign: start;
 
                     styles [
-                      "files-col-header",
+                      "flat",
+                      "files-col-header-btn",
                     ]
                   }
 
-                  Label {
+                  Button col_btn_modified {
                     label: "MODIFIED";
                     width-request: 140;
                     halign: end;
 
                     styles [
-                      "files-col-header",
+                      "flat",
+                      "files-col-header-btn",
                     ]
                   }
                 }
