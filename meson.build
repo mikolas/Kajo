@@ -383,6 +383,12 @@ install_subdir(
   strip_directory: true,
 )
 
+install_subdir(
+  'data/ide',
+  install_dir: get_option('datadir') / 'kajo' / 'ide',
+  strip_directory: true,
+)
+
 install_data(
   'data/icons/kajo.svg',
   'data/icons/kajo-symbolic.svg',
@@ -542,6 +548,14 @@ test_ide_fsm_exe = executable(
   build_by_default: false,
 )
 test('ide-fsm', test_ide_fsm_exe)
+
+test_ide_buffer_exe = executable(
+  'test-ide-buffer',
+  files('tests/test_ide_buffer.c', 'src/ide/ide_buffer.c'),
+  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep],
+  build_by_default: false,
+)
+test('ide-buffer', test_ide_buffer_exe)
 
 gnome.post_install(
   update_desktop_database: true,
