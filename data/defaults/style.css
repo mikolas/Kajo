@@ -1658,18 +1658,24 @@ window.shell-files-window .files-trash-bar {
     padding: 8px 14px;
 }
 
-/* Metro Tile Grid View */
+/* Metro Tile Grid View (Virtualized GtkGridView) */
 window.shell-files-window .files-tile-grid {
     padding: 12px;
+    background: none;
+    background-image: none;
     background-color: #101010;
 }
 
+window.shell-files-window .files-tile-grid > child,
 window.shell-files-window .files-tile-grid flowboxchild {
-    padding: 0px;
+    padding: 4px;
     margin: 0px;
     background: transparent;
+    background-color: transparent;
+    background-image: none;
     border: none;
     outline: none;
+    box-shadow: none;
 }
 
 window.shell-files-window .files-tile-card {
@@ -1687,6 +1693,7 @@ window.shell-files-window .files-tile-card:hover {
     border-color: @metro-accent;
 }
 
+window.shell-files-window .files-tile-grid > child:selected .files-tile-card,
 window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card {
     background-color: alpha(@metro-accent, 0.45);
     border: 1px solid #ffffff;
@@ -1704,6 +1711,7 @@ window.shell-files-window .files-tile-sub {
     color: #8c8c8c;
 }
 
+window.shell-files-window .files-tile-grid > child:selected .files-tile-card .files-tile-sub,
 window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card .files-tile-sub {
     color: #f0f0f0;
 }
@@ -1787,15 +1795,27 @@ window.shell-files-window .files-ctx-shortcut {
 }
 
 window.shell-files-window .files-details-list {
+    background: none;
+    background-image: none;
     background-color: #101010;
     padding: 4px 8px;
+}
+
+window.shell-files-window .files-details-list > row {
+    padding: 0px;
+    margin: 0px 0px 2px 0px;
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    outline: none;
+    box-shadow: none;
 }
 
 window.shell-files-window .files-list-row {
     background-color: #181818;
     border: 1px solid #242424;
     border-left: 3px solid transparent;
-    margin-bottom: 2px;
     padding: 6px 10px;
 }
 
@@ -1804,14 +1824,11 @@ window.shell-files-window .files-list-row:hover {
     border-color: #363636;
 }
 
+window.shell-files-window .files-details-list > row:selected .files-list-row,
 window.shell-files-window .files-list-row:selected {
     background-color: alpha(@metro-accent, 0.45);
     border-color: @metro-accent;
     border-left: 3px solid #ffffff;
-}
-
-window.shell-files-window .files-list-row-box {
-    background: transparent;
 }
 
 window.shell-files-window .files-list-name {
@@ -1825,6 +1842,7 @@ window.shell-files-window .files-list-meta {
     color: #9a9a9a;
 }
 
+window.shell-files-window .files-details-list > row:selected .files-list-meta,
 window.shell-files-window .files-list-row:selected .files-list-meta {
     color: #efefef;
 }

@@ -487,15 +487,11 @@ template $KajoFilesWindow : ApplicationWindow {
                 hscrollbar-policy: never;
                 vscrollbar-policy: automatic;
 
-                FlowBox grid_flowbox {
-                  valign: start;
-                  max-children-per-line: 12;
-                  min-children-per-line: 2;
-                  row-spacing: 8;
-                  column-spacing: 8;
-                  homogeneous: true;
-                  selection-mode: single;
-                  activate-on-single-click: false;
+                GridView grid_view {
+                  max-columns: 12;
+                  min-columns: 2;
+                  single-click-activate: false;
+                  enable-rubberband: false;
 
                   styles [
                     "files-tile-grid",
@@ -572,9 +568,9 @@ template $KajoFilesWindow : ApplicationWindow {
                   hscrollbar-policy: never;
                   vscrollbar-policy: automatic;
 
-                  ListBox details_listbox {
-                    selection-mode: single;
-                    activate-on-single-click: false;
+                  ListView details_listview {
+                    single-click-activate: false;
+                    enable-rubberband: false;
 
                     styles [
                       "files-details-list",

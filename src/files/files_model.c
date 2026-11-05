@@ -10,6 +10,8 @@ struct _KajoFileItem {
     char *target_uri;
     char *name;
     char *display_name;
+    char *name_folded;
+    char *display_folded;
     char *collate_key;
     char *content_type;
     char *type_description;
@@ -43,6 +45,8 @@ kajo_file_item_finalize(GObject *object)
     g_clear_pointer(&self->target_uri, g_free);
     g_clear_pointer(&self->name, g_free);
     g_clear_pointer(&self->display_name, g_free);
+    g_clear_pointer(&self->name_folded, g_free);
+    g_clear_pointer(&self->display_folded, g_free);
     g_clear_pointer(&self->collate_key, g_free);
     g_clear_pointer(&self->content_type, g_free);
     g_clear_pointer(&self->type_description, g_free);
@@ -125,10 +129,11 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
 
     self->name = g_strdup(name);
     self->display_name = g_strdup(disp);
-    {
-        g_autofree char *folded = g_utf8_casefold(self->display_name, -1);
-        self->collate_key = g_utf8_collate_key_for_filename(folded ? folded : self->display_name, -1);
-    }
+    self->name_folded = g_utf8_casefold(self->name, -1);
+    self->display_folded = g_utf8_casefold(self->display_name, -1);
+    self->collate_key = g_utf8_collate_key_for_filename(
+        self->display_folded ? self->display_folded : self->display_name, -1
+    );
     self->file = g_file_get_child(parent_dir, name);
     self->uri = g_file_get_uri(self->file);
 
@@ -142,27 +147,30 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
     self->is_hidden = g_file_info_get_is_hidden(info) || (name[0] == '.');
     self->is_symlink = g_file_info_get_is_symlink(info);
 
-    const char *ctype = g_file_info_get_content_type(info);
-    if (!ctype)
-        ctype = g_file_info_get_attribute_string(info, G_FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE);
+    const char *ctype = g_file_info_get_attribute_string(info, G_FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE);
+    if (!ctype && g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE))
+        ctype = g_file_info_get_content_type(info);
     if (!ctype)
         ctype = self->is_dir ? "inode/directory" : "application/octet-stream";
 
     self->content_type = g_strdup(ctype);
-    self->type_description = resolve_type_description(self->content_type, self->is_dir, self->is_mountable);
+    self->type_description = NULL; /* Lazily resolved on demand */
 
-    GIcon *icon = g_file_info_get_icon(info);
-    if (icon)
-        self->gicon = g_object_ref(icon);
+    if (g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_ICON)) {
+        GIcon *icon = g_file_info_get_icon(info);
+        if (icon)
+            self->gicon = g_object_ref(icon);
+    }
     self->icon_name = resolve_fallback_icon_name(self->content_type, self->is_dir, self->is_mountable);
 
     self->size = (guint64)g_file_info_get_size(info);
 
-    g_autoptr(GDateTime) dt = g_file_info_get_modification_date_time(info);
-    if (dt)
-        self->mtime_sec = g_date_time_to_unix(dt);
-    else
-        self->mtime_sec = 0;
+    if (g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_TIME_MODIFIED)) {
+        self->mtime_sec = (gint64)g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
+    } else {
+        g_autoptr(GDateTime) dt = g_file_info_get_modification_date_time(info);
+        self->mtime_sec = dt ? g_date_time_to_unix(dt) : 0;
+    }
 
     if (g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_UNIX_MODE))
         self->unix_mode = g_file_info_get_attribute_uint32(info, G_FILE_ATTRIBUTE_UNIX_MODE);
@@ -210,10 +218,11 @@ kajo_file_item_new_manual(GFile *file,
 
     self->name = g_strdup(name ? name : "item");
     self->display_name = g_strdup(display_name ? display_name : self->name);
-    {
-        g_autofree char *folded = g_utf8_casefold(self->display_name, -1);
-        self->collate_key = g_utf8_collate_key_for_filename(folded ? folded : self->display_name, -1);
-    }
+    self->name_folded = g_utf8_casefold(self->name, -1);
+    self->display_folded = g_utf8_casefold(self->display_name, -1);
+    self->collate_key = g_utf8_collate_key_for_filename(
+        self->display_folded ? self->display_folded : self->display_name, -1
+    );
     self->content_type = g_strdup(content_type ? content_type : (is_dir ? "inode/directory" : "application/octet-stream"));
     self->type_description = resolve_type_description(self->content_type, is_dir, FALSE);
     self->icon_name = resolve_fallback_icon_name(self->content_type, is_dir, FALSE);
@@ -232,7 +241,18 @@ const char *kajo_file_item_get_target_uri(const KajoFileItem *self) { return sel
 const char *kajo_file_item_get_name(const KajoFileItem *self) { return self ? self->name : ""; }
 const char *kajo_file_item_get_display_name(const KajoFileItem *self) { return self ? self->display_name : ""; }
 const char *kajo_file_item_get_content_type(const KajoFileItem *self) { return self ? self->content_type : ""; }
-const char *kajo_file_item_get_type_description(const KajoFileItem *self) { return self ? self->type_description : ""; }
+const char *
+kajo_file_item_get_type_description(const KajoFileItem *self)
+{
+    if (!self) return "";
+    if (!self->type_description) {
+        KajoFileItem *mutable_self = (KajoFileItem *)self;
+        mutable_self->type_description = resolve_type_description(
+            self->content_type, self->is_dir, self->is_mountable
+        );
+    }
+    return self->type_description ? self->type_description : "";
+}
 const char *kajo_file_item_get_icon_name(const KajoFileItem *self) { return self ? self->icon_name : "text-x-generic"; }
 GIcon      *kajo_file_item_get_gicon(const KajoFileItem *self) { return self ? self->gicon : NULL; }
 guint64     kajo_file_item_get_size(const KajoFileItem *self) { return self ? self->size : 0; }
@@ -401,8 +421,8 @@ kajo_file_item_compare_full(const KajoFileItem *a,
         else if (a->mtime_sec > b->mtime_sec) cmp = 1;
         break;
     case KAJO_SORT_TYPE:
-        cmp = g_ascii_strcasecmp(a->type_description ? a->type_description : "",
-                                 b->type_description ? b->type_description : "");
+        cmp = g_ascii_strcasecmp(kajo_file_item_get_type_description(a),
+                                 kajo_file_item_get_type_description(b));
         break;
     case KAJO_SORT_NAME:
     default:
@@ -438,26 +458,25 @@ kajo_file_item_matches_filter(const KajoFileItem *item,
     if (!search_query || search_query[0] == '\0')
         return TRUE;
 
-    g_autofree char *q_lower = g_utf8_strdown(search_query, -1);
-    g_autofree char *d_lower = g_utf8_strdown(item->display_name ? item->display_name : "", -1);
-    if (strstr(d_lower, q_lower) != NULL)
+    g_autofree char *q_folded = g_utf8_casefold(search_query, -1);
+    const char *q = q_folded ? q_folded : search_query;
+
+    if (item->display_folded && strstr(item->display_folded, q) != NULL)
+        return TRUE;
+    if (item->name_folded && strstr(item->name_folded, q) != NULL)
         return TRUE;
 
-    g_autofree char *n_lower = g_utf8_strdown(item->name ? item->name : "", -1);
-    return (strstr(n_lower, q_lower) != NULL);
+    return FALSE;
 }
 
-/* ─── Async Non-Blocking Directory Enumeration ─── */
+/* ─── Async Worker-Thread Directory Enumeration ─── */
 
 #define KAJO_ENUM_ATTRIBUTES \
     G_FILE_ATTRIBUTE_STANDARD_NAME "," \
     G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME "," \
     G_FILE_ATTRIBUTE_STANDARD_TYPE "," \
     G_FILE_ATTRIBUTE_STANDARD_SIZE "," \
-    G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE "," \
     G_FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE "," \
-    G_FILE_ATTRIBUTE_STANDARD_ICON "," \
-    G_FILE_ATTRIBUTE_STANDARD_SYMBOLIC_ICON "," \
     G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN "," \
     G_FILE_ATTRIBUTE_STANDARD_IS_SYMLINK "," \
     G_FILE_ATTRIBUTE_STANDARD_SYMLINK_TARGET "," \
@@ -470,103 +489,87 @@ kajo_file_item_matches_filter(const KajoFileItem *item,
 
 typedef struct {
     GFile *dir;
-    GFileEnumerator *enumerator;
-    GCancellable *cancellable;
-    GPtrArray *items;
     KajoDirEnumCallback callback;
     gpointer user_data;
-} EnumContext;
+} EnumTaskData;
 
 static void
-enum_context_free(EnumContext *ctx)
+enum_task_data_free(EnumTaskData *d)
 {
-    if (!ctx) return;
-    g_clear_object(&ctx->dir);
-    g_clear_object(&ctx->enumerator);
-    g_clear_object(&ctx->cancellable);
-    if (ctx->items)
-        g_ptr_array_unref(ctx->items);
-    g_free(ctx);
-}
-
-static void on_next_files_ready(GObject *source, GAsyncResult *res, gpointer user_data);
-
-static void
-on_enumerator_closed(GObject *source, GAsyncResult *res, gpointer user_data G_GNUC_UNUSED)
-{
-    g_file_enumerator_close_finish(G_FILE_ENUMERATOR(source), res, NULL);
+    if (!d) return;
+    g_clear_object(&d->dir);
+    g_free(d);
 }
 
 static void
-on_next_files_ready(GObject *source, GAsyncResult *res, gpointer user_data)
+enumerate_thread_cb(GTask *task,
+                    gpointer source_object G_GNUC_UNUSED,
+                    gpointer task_data,
+                    GCancellable *cancellable)
 {
-    EnumContext *ctx = user_data;
+    EnumTaskData *d = task_data;
     GError *error = NULL;
-    GList *files = g_file_enumerator_next_files_finish(G_FILE_ENUMERATOR(source), res, &error);
 
-    if (error) {
-        g_file_enumerator_close_async(ctx->enumerator, G_PRIORITY_DEFAULT, NULL, on_enumerator_closed, NULL);
-        if (ctx->callback)
-            ctx->callback(NULL, error, ctx->user_data);
-        g_clear_error(&error);
-        enum_context_free(ctx);
+    g_autoptr(GFileEnumerator) enumerator = g_file_enumerate_children(
+        d->dir,
+        KAJO_ENUM_ATTRIBUTES,
+        G_FILE_QUERY_INFO_NONE,
+        cancellable,
+        &error
+    );
+
+    if (!enumerator) {
+        g_task_return_error(task, error);
         return;
     }
 
-    if (!files) {
-        /* Enumeration finished */
-        g_file_enumerator_close_async(ctx->enumerator, G_PRIORITY_DEFAULT, NULL, on_enumerator_closed, NULL);
-        GPtrArray *result = g_steal_pointer(&ctx->items);
-        if (ctx->callback)
-            ctx->callback(result, NULL, ctx->user_data);
-        else if (result)
-            g_ptr_array_unref(result);
-        enum_context_free(ctx);
-        return;
-    }
+    GPtrArray *items = g_ptr_array_new_with_free_func(g_object_unref);
 
-    for (GList *l = files; l != NULL; l = l->next) {
-        GFileInfo *info = G_FILE_INFO(l->data);
-        KajoFileItem *item = kajo_file_item_new_from_info(ctx->dir, info);
+    while (!g_cancellable_set_error_if_cancelled(cancellable, &error)) {
+        GFileInfo *info = g_file_enumerator_next_file(enumerator, cancellable, &error);
+        if (error) {
+            g_ptr_array_unref(items);
+            g_file_enumerator_close(enumerator, NULL, NULL);
+            g_task_return_error(task, error);
+            return;
+        }
+        if (!info)
+            break;
+
+        KajoFileItem *item = kajo_file_item_new_from_info(d->dir, info);
         if (item)
-            g_ptr_array_add(ctx->items, item);
+            g_ptr_array_add(items, item);
         g_object_unref(info);
     }
-    g_list_free(files);
 
-    g_file_enumerator_next_files_async(
-        ctx->enumerator,
-        128,
-        G_PRIORITY_DEFAULT,
-        ctx->cancellable,
-        on_next_files_ready,
-        ctx
-    );
-}
+    g_file_enumerator_close(enumerator, NULL, NULL);
 
-static void
-on_enumerate_children_ready(GObject *source, GAsyncResult *res, gpointer user_data)
-{
-    EnumContext *ctx = user_data;
-    GError *error = NULL;
-    ctx->enumerator = g_file_enumerate_children_finish(G_FILE(source), res, &error);
-
-    if (!ctx->enumerator) {
-        if (ctx->callback)
-            ctx->callback(NULL, error, ctx->user_data);
-        g_clear_error(&error);
-        enum_context_free(ctx);
+    if (error) {
+        g_ptr_array_unref(items);
+        g_task_return_error(task, error);
         return;
     }
 
-    g_file_enumerator_next_files_async(
-        ctx->enumerator,
-        128,
-        G_PRIORITY_DEFAULT,
-        ctx->cancellable,
-        on_next_files_ready,
-        ctx
-    );
+    g_task_return_pointer(task, items, (GDestroyNotify)g_ptr_array_unref);
+}
+
+static void
+on_enumerate_task_completed(GObject *source G_GNUC_UNUSED,
+                            GAsyncResult *res,
+                            gpointer user_data)
+{
+    EnumTaskData *d = user_data;
+    GError *error = NULL;
+    GPtrArray *items = g_task_propagate_pointer(G_TASK(res), &error);
+
+    if (d->callback) {
+        d->callback(items, error, d->user_data);
+    } else if (items) {
+        g_ptr_array_unref(items);
+    }
+
+    g_clear_error(&error);
+    enum_task_data_free(d);
 }
 
 void
@@ -577,21 +580,12 @@ kajo_files_enumerate_async(GFile *dir,
 {
     g_return_if_fail(G_IS_FILE(dir));
 
-    EnumContext *ctx = g_new0(EnumContext, 1);
-    ctx->dir = g_object_ref(dir);
-    if (cancellable)
-        ctx->cancellable = g_object_ref(cancellable);
-    ctx->items = g_ptr_array_new_with_free_func(g_object_unref);
-    ctx->callback = callback;
-    ctx->user_data = user_data;
+    EnumTaskData *d = g_new0(EnumTaskData, 1);
+    d->dir = g_object_ref(dir);
+    d->callback = callback;
+    d->user_data = user_data;
 
-    g_file_enumerate_children_async(
-        dir,
-        KAJO_ENUM_ATTRIBUTES,
-        G_FILE_QUERY_INFO_NONE,
-        G_PRIORITY_DEFAULT,
-        cancellable,
-        on_enumerate_children_ready,
-        ctx
-    );
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_enumerate_task_completed, d);
+    g_task_set_task_data(task, d, NULL);
+    g_task_run_in_thread(task, enumerate_thread_cb);
 }
