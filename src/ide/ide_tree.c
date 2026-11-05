@@ -31,6 +31,8 @@ struct _IdeTree {
   GPtrArray        *entries;
   gint              selected_idx;
   gboolean          prompt_is_dir;
+  gboolean          has_pending_scroll;
+  double            pending_scroll_val;
 };
 
 static void
@@ -212,7 +214,34 @@ ide_tree_collect_dir_recursive(IdeTree    *tree,
 }
 
 static void
-ide_tree_select_index(IdeTree *tree, gint idx)
+ide_tree_ensure_row_visible(IdeTree *tree, GtkListBoxRow *row)
+{
+  if (!tree || !tree->scrolled || !row) return;
+  GtkAdjustment *vadj =
+      gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(tree->scrolled));
+  if (!vadj) return;
+
+  graphene_point_t pt = GRAPHENE_POINT_INIT(0, 0);
+  if (!gtk_widget_compute_point(
+          GTK_WIDGET(row), tree->list_box, &GRAPHENE_POINT_INIT(0, 0), &pt)) {
+    return;
+  }
+  int row_h = gtk_widget_get_height(GTK_WIDGET(row));
+  if (row_h <= 0) row_h = 24;
+
+  double cur = gtk_adjustment_get_value(vadj);
+  double page = gtk_adjustment_get_page_size(vadj);
+  if (page <= 0) return;
+
+  if (pt.y < cur) {
+    gtk_adjustment_set_value(vadj, pt.y);
+  } else if (pt.y + row_h > cur + page) {
+    gtk_adjustment_set_value(vadj, pt.y + row_h - page);
+  }
+}
+
+static void
+ide_tree_select_index_internal(IdeTree *tree, gint idx, gboolean scroll_into_view)
 {
   if (tree->entries->len == 0) {
     tree->selected_idx = -1;
@@ -220,10 +249,34 @@ ide_tree_select_index(IdeTree *tree, gint idx)
   }
   idx = CLAMP(idx, 0, (gint)tree->entries->len - 1);
   tree->selected_idx = idx;
-  GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(tree->list_box), idx);
+  GtkListBoxRow *row =
+      gtk_list_box_get_row_at_index(GTK_LIST_BOX(tree->list_box), idx);
   if (row != NULL) {
     gtk_list_box_select_row(GTK_LIST_BOX(tree->list_box), row);
-    gtk_widget_grab_focus(GTK_WIDGET(row));
+    if (scroll_into_view) {
+      ide_tree_ensure_row_visible(tree, row);
+    }
+  }
+}
+
+static void
+ide_tree_select_index(IdeTree *tree, gint idx)
+{
+  ide_tree_select_index_internal(tree, idx, TRUE);
+}
+
+static void
+on_tree_row_selected(GtkListBox    *box,
+                     GtkListBoxRow *row,
+                     gpointer       user_data)
+{
+  (void)box;
+  IdeTree *tree = user_data;
+  if (row != NULL) {
+    gint idx = gtk_list_box_row_get_index(row);
+    if (idx >= 0 && (guint)idx < tree->entries->len) {
+      tree->selected_idx = idx;
+    }
   }
 }
 
@@ -232,6 +285,7 @@ on_tree_row_activated(GtkListBox    *box,
                       GtkListBoxRow *row,
                       gpointer       user_data)
 {
+  (void)box;
   IdeTree *tree = user_data;
   if (row == NULL) {
     return;
@@ -244,10 +298,41 @@ on_tree_row_activated(GtkListBox    *box,
   ide_tree_toggle_or_open(tree);
 }
 
+static const char *
+get_symbolic_icon_for_entry(const IdeTreeEntry *e, gboolean expanded)
+{
+  if (e->is_dir) {
+    return expanded ? "folder-open-symbolic" : "folder-symbolic";
+  }
+  if (g_str_has_suffix(e->name, ".c") || g_str_has_suffix(e->name, ".h") ||
+      g_str_has_suffix(e->name, ".cpp") || g_str_has_suffix(e->name, ".rs") ||
+      g_str_has_suffix(e->name, ".py") || g_str_has_suffix(e->name, ".go") ||
+      g_str_has_suffix(e->name, ".sh")) {
+    return "text-x-script-symbolic";
+  }
+  if (g_str_has_suffix(e->name, ".md")) {
+    return "accessories-text-editor-symbolic";
+  }
+  return "text-x-generic-symbolic";
+}
+
 void
 ide_tree_refresh(IdeTree *tree)
 {
   g_return_if_fail(tree != NULL);
+
+  /* Preserve current scroll offset and selected path across refresh */
+  GtkAdjustment *vadj =
+      tree->scrolled
+          ? gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(tree->scrolled))
+          : NULL;
+  double saved_scroll = vadj ? gtk_adjustment_get_value(vadj) : 0.0;
+
+  g_autofree char *saved_path = NULL;
+  if (tree->selected_idx >= 0 && (guint)tree->selected_idx < tree->entries->len) {
+    const IdeTreeEntry *sel = g_ptr_array_index(tree->entries, tree->selected_idx);
+    saved_path = g_strdup(sel->abs_path);
+  }
 
   GtkWidget *child = gtk_widget_get_first_child(tree->list_box);
   while (child != NULL) {
@@ -264,8 +349,13 @@ ide_tree_refresh(IdeTree *tree)
   ide_tree_update_git_status(tree);
   ide_tree_collect_dir_recursive(tree, tree->workspace_root, 0);
 
+  gint restored_idx = tree->selected_idx;
+
   for (guint i = 0; i < tree->entries->len; i++) {
     const IdeTreeEntry *e = g_ptr_array_index(tree->entries, i);
+    if (saved_path && g_strcmp0(e->abs_path, saved_path) == 0) {
+      restored_idx = (gint)i;
+    }
 
     GtkWidget *row = gtk_list_box_row_new();
     gtk_widget_add_css_class(row, "ide-tree-row");
@@ -274,22 +364,24 @@ ide_tree_refresh(IdeTree *tree)
     gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
     gtk_widget_set_margin_start(hbox, (int)(8 + e->depth * 14));
     gtk_widget_set_margin_end(hbox, 8);
-    gtk_widget_set_margin_top(hbox, 3);
-    gtk_widget_set_margin_bottom(hbox, 3);
+    gtk_widget_set_margin_top(hbox, 2);
+    gtk_widget_set_margin_bottom(hbox, 2);
 
-    const char *icon_txt = "📄";
-    if (e->is_dir) {
-      gboolean expanded = g_hash_table_contains(tree->expanded_dirs, e->abs_path);
-      icon_txt = expanded ? "▾ 📁" : "▸ 📁";
-    } else if (g_str_has_suffix(e->name, ".md")) {
-      icon_txt = "📖";
-    } else if (g_str_has_suffix(e->name, ".h") || g_str_has_suffix(e->name, ".hpp")) {
-      icon_txt = "🅷";
-    }
+    gboolean expanded =
+        e->is_dir && g_hash_table_contains(tree->expanded_dirs, e->abs_path);
 
-    GtkWidget *icon_lbl = gtk_label_new(icon_txt);
-    gtk_widget_set_valign(icon_lbl, GTK_ALIGN_CENTER);
-    gtk_box_append(GTK_BOX(hbox), icon_lbl);
+    GtkWidget *arrow_lbl =
+        gtk_label_new(e->is_dir ? (expanded ? "▾" : "▸") : " ");
+    gtk_widget_add_css_class(arrow_lbl, "ide-tree-arrow");
+    gtk_widget_set_valign(arrow_lbl, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(hbox), arrow_lbl);
+
+    GtkWidget *icon_img =
+        gtk_image_new_from_icon_name(get_symbolic_icon_for_entry(e, expanded));
+    gtk_image_set_pixel_size(GTK_IMAGE(icon_img), 14);
+    gtk_widget_add_css_class(icon_img, "ide-tree-icon");
+    gtk_widget_set_valign(icon_img, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(hbox), icon_img);
 
     GtkWidget *name_lbl = gtk_label_new(e->name);
     gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
@@ -320,7 +412,26 @@ ide_tree_refresh(IdeTree *tree)
   }
 
   if (tree->entries->len > 0) {
-    ide_tree_select_index(tree, MAX(0, tree->selected_idx));
+    ide_tree_select_index_internal(tree, MAX(0, restored_idx), FALSE);
+  }
+  if (vadj != NULL && saved_scroll > 0.0) {
+    tree->has_pending_scroll = TRUE;
+    tree->pending_scroll_val = saved_scroll;
+    gtk_adjustment_set_value(vadj, saved_scroll);
+  }
+}
+
+static void
+on_tree_vadj_changed(GtkAdjustment *vadj, gpointer user_data)
+{
+  IdeTree *tree = user_data;
+  if (!tree || !tree->has_pending_scroll) return;
+  double upper = gtk_adjustment_get_upper(vadj);
+  double page = gtk_adjustment_get_page_size(vadj);
+  if (upper > page && upper > 10.0) {
+    double target = CLAMP(tree->pending_scroll_val, 0.0, MAX(0.0, upper - page));
+    tree->has_pending_scroll = FALSE;
+    gtk_adjustment_set_value(vadj, target);
   }
 }
 
@@ -337,24 +448,20 @@ ide_tree_new(const char       *workspace_root,
   tree->selected_idx = 0;
 
   tree->root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  gtk_widget_add_css_class(tree->root_box, "navigation-sidebar");
   gtk_widget_add_css_class(tree->root_box, "ide-tree-sidebar");
-  gtk_widget_set_size_request(tree->root_box, 240, -1);
+  gtk_widget_set_size_request(tree->root_box, 180, -1);
 
   /* Header strip */
   GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
   gtk_widget_add_css_class(hdr, "ide-tree-header");
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
-  gtk_widget_set_margin_start(hdr, 10);
-  gtk_widget_set_margin_end(hdr, 10);
-  gtk_widget_set_margin_top(hdr, 6);
-  gtk_widget_set_margin_bottom(hdr, 6);
 
   tree->header_title = gtk_label_new("PROJECT TREE");
   gtk_label_set_xalign(GTK_LABEL(tree->header_title), 0.0f);
+  gtk_label_set_ellipsize(GTK_LABEL(tree->header_title), PANGO_ELLIPSIZE_END);
   gtk_widget_set_hexpand(tree->header_title, TRUE);
   gtk_widget_set_valign(tree->header_title, GTK_ALIGN_CENTER);
-  gtk_widget_add_css_class(tree->header_title, "sidebar-category-header");
+  gtk_widget_add_css_class(tree->header_title, "ide-tree-header-title");
   gtk_box_append(GTK_BOX(hdr), tree->header_title);
 
   GtkWidget *hint = gtk_label_new("[a/A/d/r]");
@@ -388,16 +495,27 @@ ide_tree_new(const char       *workspace_root,
   /* Scrollable Tree ListBox */
   tree->scrolled = gtk_scrolled_window_new();
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tree->scrolled),
-                                 GTK_POLICY_AUTOMATIC,
+                                 GTK_POLICY_NEVER,
                                  GTK_POLICY_AUTOMATIC);
   gtk_widget_set_vexpand(tree->scrolled, TRUE);
 
   tree->list_box = gtk_list_box_new();
+  gtk_widget_add_css_class(tree->list_box, "ide-tree-listbox");
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(tree->list_box), GTK_SELECTION_SINGLE);
   gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(tree->list_box), FALSE);
+  g_signal_connect(tree->list_box, "row-selected", G_CALLBACK(on_tree_row_selected), tree);
   g_signal_connect(tree->list_box, "row-activated", G_CALLBACK(on_tree_row_activated), tree);
 
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(tree->scrolled), tree->list_box);
+  GtkWidget *vp = gtk_scrolled_window_get_child(GTK_SCROLLED_WINDOW(tree->scrolled));
+  if (GTK_IS_VIEWPORT(vp)) {
+    gtk_viewport_set_scroll_to_focus(GTK_VIEWPORT(vp), FALSE);
+  }
+  GtkAdjustment *vadj =
+      gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(tree->scrolled));
+  if (vadj != NULL) {
+    g_signal_connect(vadj, "changed", G_CALLBACK(on_tree_vadj_changed), tree);
+  }
   gtk_box_append(GTK_BOX(tree->root_box), tree->scrolled);
 
   ide_tree_set_workspace_root(tree, workspace_root);

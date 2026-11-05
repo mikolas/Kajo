@@ -43,7 +43,10 @@ struct _KajoIdeWindow {
   GtkWidget       *agent_hdr_badge;
   GtkWidget       *tab_ribbon_box;
 
-  /* Main Editor Stage */
+  /* Main Editor Stage & Resizable GtkPaned Splitters */
+  GtkWidget       *vertical_paned;
+  GtkWidget       *tree_paned;
+  GtkWidget       *editor_md_paned;
   GtkWidget       *tree_container;
   GtkWidget       *source_scroll;
   GtkWidget       *source_view;
@@ -588,13 +591,44 @@ static void dispatch_ide_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_DRAWER_CLOSE:
       gtk_revealer_set_reveal_child(GTK_REVEALER(self->drawer_revealer), FALSE);
       break;
+    case IDE_ACTION_RESIZE_TREE_GROW:
+      if (self->tree_paned) {
+        int pos = gtk_paned_get_position(GTK_PANED(self->tree_paned));
+        gtk_paned_set_position(GTK_PANED(self->tree_paned), CLAMP(pos + 24, 150, 520));
+      }
+      break;
+    case IDE_ACTION_RESIZE_TREE_SHRINK:
+      if (self->tree_paned) {
+        int pos = gtk_paned_get_position(GTK_PANED(self->tree_paned));
+        gtk_paned_set_position(GTK_PANED(self->tree_paned), CLAMP(pos - 24, 150, 520));
+      }
+      break;
+    case IDE_ACTION_RESIZE_DRAWER_GROW:
+      if (self->vertical_paned) {
+        int pos = gtk_paned_get_position(GTK_PANED(self->vertical_paned));
+        gtk_paned_set_position(GTK_PANED(self->vertical_paned), MAX(200, pos - 30));
+      }
+      break;
+    case IDE_ACTION_RESIZE_DRAWER_SHRINK:
+      if (self->vertical_paned) {
+        int pos = gtk_paned_get_position(GTK_PANED(self->vertical_paned));
+        gtk_paned_set_position(GTK_PANED(self->vertical_paned), pos + 30);
+      }
+      break;
 
     /* Graphical Markdown & Cairo Vector Mermaid */
-    case IDE_ACTION_TOGGLE_MARKDOWN_PREVIEW:
-      gtk_widget_set_visible(self->md_split_container,
-                             !gtk_widget_get_visible(self->md_split_container));
+    case IDE_ACTION_TOGGLE_MARKDOWN_PREVIEW: {
+      gboolean next_vis = !gtk_widget_get_visible(self->md_split_container);
+      gtk_widget_set_visible(self->md_split_container, next_vis);
+      gtk_widget_set_visible(self->source_map, !next_vis);
+      if (next_vis && self->editor_md_paned) {
+        int avail_w = gtk_widget_get_width(self->editor_md_paned);
+        if (avail_w <= 200) avail_w = 1040;
+        gtk_paned_set_position(GTK_PANED(self->editor_md_paned), avail_w / 2);
+      }
       sync_markdown_views(self);
       break;
+    }
     case IDE_ACTION_TOGGLE_MERMAID_MODE:
       show_drawer_page(self, "markdown");
       sync_markdown_views(self);
@@ -916,6 +950,13 @@ static char *translate_gdk_key_to_fsm(guint keyval, GdkModifierType state) {
     return g_strdup_printf("alt+%c", (char)('1' + (keyval - GDK_KEY_1)));
 
   if (ctrl) {
+    switch (keyval) {
+      case GDK_KEY_Left:  return g_strdup("ctrl+left");
+      case GDK_KEY_Right: return g_strdup("ctrl+right");
+      case GDK_KEY_Up:    return g_strdup("ctrl+up");
+      case GDK_KEY_Down:  return g_strdup("ctrl+down");
+      default: break;
+    }
     gunichar uc = gdk_keyval_to_unicode(gdk_keyval_to_lower(keyval));
     if (uc >= 'a' && uc <= 'z')
       return g_strdup_printf("ctrl+%c", (char)uc);
@@ -1131,6 +1172,17 @@ static void kajo_ide_window_class_init(KajoIdeWindowClass *klass) {
   object_class->dispose = kajo_ide_window_dispose;
 }
 
+static void on_editor_vadj_changed(GtkAdjustment *vadj, gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  if (!self || !gtk_widget_get_visible(self->md_split_container)) return;
+  double upper = gtk_adjustment_get_upper(vadj);
+  double page = gtk_adjustment_get_page_size(vadj);
+  if (upper > page) {
+    double frac = gtk_adjustment_get_value(vadj) / (upper - page);
+    ide_markdown_view_sync_scroll(self->md_split_view, frac);
+  }
+}
+
 static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_window_set_title(GTK_WINDOW(self), "Kajo IDE");
   gtk_window_set_default_size(GTK_WINDOW(self), 1320, 840);
@@ -1154,7 +1206,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_add_css_class(hdr_box, "settings-header-bar");
   gtk_widget_set_valign(hdr_box, GTK_ALIGN_CENTER);
 
-  GtkWidget *title_lbl = gtk_label_new("⌨ KAJO IDE");
+  GtkWidget *title_lbl = gtk_label_new("KAJO IDE");
   gtk_widget_add_css_class(title_lbl, "settings-header-title");
   gtk_widget_set_valign(title_lbl, GTK_ALIGN_CENTER);
 
@@ -1171,23 +1223,28 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   GtkWidget *hdr_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(hdr_spacer, TRUE);
 
-  GtkWidget *btn_tree = gtk_button_new_with_label("🌲 TREE (SPC e)");
+  GtkWidget *btn_tree = gtk_button_new_with_label("TREE (SPC e)");
+  gtk_widget_add_css_class(btn_tree, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_tree, GTK_ALIGN_CENTER);
   g_signal_connect(btn_tree, "clicked", G_CALLBACK(on_hdr_tree_clicked), self);
 
-  GtkWidget *btn_find = gtk_button_new_with_label("🔍 FIND (SPC f)");
+  GtkWidget *btn_find = gtk_button_new_with_label("FIND (SPC f)");
+  gtk_widget_add_css_class(btn_find, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_find, GTK_ALIGN_CENTER);
   g_signal_connect(btn_find, "clicked", G_CALLBACK(on_hdr_find_clicked), self);
 
-  GtkWidget *btn_md = gtk_button_new_with_label("📖 MD GUI (SPC m p)");
+  GtkWidget *btn_md = gtk_button_new_with_label("MD GUI (SPC m p)");
+  gtk_widget_add_css_class(btn_md, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_md, GTK_ALIGN_CENTER);
   g_signal_connect(btn_md, "clicked", G_CALLBACK(on_hdr_md_clicked), self);
 
-  GtkWidget *btn_build = gtk_button_new_with_label("⚙ BUILD");
+  GtkWidget *btn_build = gtk_button_new_with_label("BUILD");
+  gtk_widget_add_css_class(btn_build, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_build, GTK_ALIGN_CENTER);
   g_signal_connect(btn_build, "clicked", G_CALLBACK(on_hdr_build_clicked), self);
 
-  GtkWidget *btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
+  GtkWidget *btn_float = gtk_button_new_with_label("FLOAT / TILE");
+  gtk_widget_add_css_class(btn_float, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_float, GTK_ALIGN_CENTER);
   g_signal_connect(btn_float, "clicked", G_CALLBACK(on_hdr_float_clicked), self);
 
@@ -1215,21 +1272,32 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_valign(self->tab_ribbon_box, GTK_ALIGN_CENTER);
   gtk_box_append(GTK_BOX(root_vbox), self->tab_ribbon_box);
 
-  /* 3. Main Workspace Overlay & Split */
+  /* 3. Main Workspace Overlay & Resizable GtkPaned Splitters */
   GtkWidget *stage_overlay = gtk_overlay_new();
   gtk_widget_set_hexpand(stage_overlay, TRUE);
   gtk_widget_set_vexpand(stage_overlay, TRUE);
 
-  GtkWidget *workspace_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_widget_set_hexpand(workspace_hbox, TRUE);
-  gtk_widget_set_vexpand(workspace_hbox, TRUE);
+  self->tree_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_add_css_class(self->tree_paned, "ide-paned");
+  gtk_widget_set_hexpand(self->tree_paned, TRUE);
+  gtk_widget_set_vexpand(self->tree_paned, TRUE);
+  gtk_paned_set_wide_handle(GTK_PANED(self->tree_paned), TRUE);
 
   /* Left File Tree Sidebar */
   self->tree = ide_tree_new(self->workspace_root, on_tree_open_file, self);
   self->tree_container = ide_tree_get_widget(self->tree);
-  gtk_box_append(GTK_BOX(workspace_hbox), self->tree_container);
+  gtk_paned_set_start_child(GTK_PANED(self->tree_paned), self->tree_container);
+  gtk_paned_set_resize_start_child(GTK_PANED(self->tree_paned), FALSE);
+  gtk_paned_set_shrink_start_child(GTK_PANED(self->tree_paned), FALSE);
+  gtk_paned_set_position(GTK_PANED(self->tree_paned), 230);
 
-  /* Center GtkSourceView + 6-Column Cairo Gutter + GtkSourceMap Minimap */
+  /* Right of Tree: Horizontal GtkPaned between Code Editor and Markdown Split */
+  self->editor_md_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_add_css_class(self->editor_md_paned, "ide-paned");
+  gtk_widget_set_hexpand(self->editor_md_paned, TRUE);
+  gtk_widget_set_vexpand(self->editor_md_paned, TRUE);
+  gtk_paned_set_wide_handle(GTK_PANED(self->editor_md_paned), TRUE);
+
   GtkWidget *editor_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(editor_hbox, TRUE);
   gtk_widget_set_vexpand(editor_hbox, TRUE);
@@ -1238,9 +1306,18 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_hexpand(self->source_scroll, TRUE);
   gtk_widget_set_vexpand(self->source_scroll, TRUE);
 
+  GtkAdjustment *ed_vadj =
+      gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(self->source_scroll));
+  if (ed_vadj) {
+    g_signal_connect(ed_vadj, "value-changed", G_CALLBACK(on_editor_vadj_changed), self);
+  }
+
   self->source_view = gtk_source_view_new();
   gtk_widget_add_css_class(self->source_view, "ide-source-view");
   gtk_text_view_set_monospace(GTK_TEXT_VIEW(self->source_view), TRUE);
+  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(self->source_view), 8);
+  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(self->source_view), 8);
+  gtk_text_view_set_top_margin(GTK_TEXT_VIEW(self->source_view), 6);
   gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(self->source_view), TRUE);
   gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(self->source_view), 2);
   gtk_source_view_set_insert_spaces_instead_of_tabs(
@@ -1258,21 +1335,32 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(editor_hbox), self->source_scroll);
 
   self->source_map = gtk_source_map_new();
+  gtk_widget_add_css_class(self->source_map, "ide-minimap");
   gtk_source_map_set_view(GTK_SOURCE_MAP(self->source_map),
                           GTK_SOURCE_VIEW(self->source_view));
-  gtk_widget_set_size_request(self->source_map, 84, -1);
+  gtk_widget_set_size_request(self->source_map, 72, -1);
   gtk_box_append(GTK_BOX(editor_hbox), self->source_map);
 
   /* Side-by-Side Graphical Markdown & Vector Mermaid Split (Space m p) */
   self->md_split_view = ide_markdown_view_new(
       on_markdown_node_jump, on_markdown_checklist_edit, self);
   self->md_split_container = ide_markdown_view_get_widget(self->md_split_view);
-  gtk_widget_set_size_request(self->md_split_container, 460, -1);
+  gtk_widget_set_size_request(self->md_split_container, 280, -1);
   gtk_widget_set_visible(self->md_split_container, FALSE);
-  gtk_box_append(GTK_BOX(editor_hbox), self->md_split_container);
 
-  gtk_box_append(GTK_BOX(workspace_hbox), editor_hbox);
-  gtk_overlay_set_child(GTK_OVERLAY(stage_overlay), workspace_hbox);
+  gtk_paned_set_start_child(GTK_PANED(self->editor_md_paned), editor_hbox);
+  gtk_paned_set_end_child(GTK_PANED(self->editor_md_paned), self->md_split_container);
+  gtk_paned_set_resize_start_child(GTK_PANED(self->editor_md_paned), TRUE);
+  gtk_paned_set_shrink_start_child(GTK_PANED(self->editor_md_paned), FALSE);
+  gtk_paned_set_resize_end_child(GTK_PANED(self->editor_md_paned), TRUE);
+  gtk_paned_set_shrink_end_child(GTK_PANED(self->editor_md_paned), FALSE);
+  gtk_paned_set_position(GTK_PANED(self->editor_md_paned), 540);
+
+  gtk_paned_set_end_child(GTK_PANED(self->tree_paned), self->editor_md_paned);
+  gtk_paned_set_resize_end_child(GTK_PANED(self->tree_paned), TRUE);
+  gtk_paned_set_shrink_end_child(GTK_PANED(self->tree_paned), FALSE);
+
+  gtk_overlay_set_child(GTK_OVERLAY(stage_overlay), self->tree_paned);
 
   /* Centered Fuzzy Picker Overlay */
   self->picker = ide_picker_new(
@@ -1314,9 +1402,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(self->toast_banner), self->toast_label);
   gtk_overlay_add_overlay(GTK_OVERLAY(stage_overlay), self->toast_banner);
 
-  gtk_box_append(GTK_BOX(root_vbox), stage_overlay);
-
-  /* 4. Contextual Bottom Drawer (Search/Build, DAP, Agent Transactions, Markdown) */
+  /* 4. Contextual Bottom Drawer inside Resizable Vertical GtkPaned */
   self->drawer_revealer = gtk_revealer_new();
   gtk_revealer_set_transition_type(GTK_REVEALER(self->drawer_revealer),
                                    GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
@@ -1346,7 +1432,20 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
                       "markdown");
 
   gtk_revealer_set_child(GTK_REVEALER(self->drawer_revealer), self->drawer_stack);
-  gtk_box_append(GTK_BOX(root_vbox), self->drawer_revealer);
+
+  self->vertical_paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+  gtk_widget_add_css_class(self->vertical_paned, "ide-paned");
+  gtk_widget_set_hexpand(self->vertical_paned, TRUE);
+  gtk_widget_set_vexpand(self->vertical_paned, TRUE);
+  gtk_paned_set_wide_handle(GTK_PANED(self->vertical_paned), TRUE);
+  gtk_paned_set_start_child(GTK_PANED(self->vertical_paned), stage_overlay);
+  gtk_paned_set_end_child(GTK_PANED(self->vertical_paned), self->drawer_revealer);
+  gtk_paned_set_resize_start_child(GTK_PANED(self->vertical_paned), TRUE);
+  gtk_paned_set_shrink_start_child(GTK_PANED(self->vertical_paned), FALSE);
+  gtk_paned_set_resize_end_child(GTK_PANED(self->vertical_paned), FALSE);
+  gtk_paned_set_shrink_end_child(GTK_PANED(self->vertical_paned), FALSE);
+
+  gtk_box_append(GTK_BOX(root_vbox), self->vertical_paned);
 
   /* 5. Inline Search Bar (/ query) */
   self->inline_search_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);

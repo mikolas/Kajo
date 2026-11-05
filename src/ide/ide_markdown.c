@@ -617,7 +617,8 @@ static GtkWidget *build_mermaid_card_widget(IdeMarkdownView *md,
   GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(spacer, TRUE);
 
-  GtkWidget *btn_zout = gtk_button_new_with_label("🔍-");
+  GtkWidget *btn_zout = gtk_button_new_with_label(" - ");
+  gtk_widget_add_css_class(btn_zout, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_zout, GTK_ALIGN_CENTER);
   g_signal_connect(btn_zout, "clicked", G_CALLBACK(on_zoom_out_clicked), st);
 
@@ -625,15 +626,18 @@ static GtkWidget *build_mermaid_card_widget(IdeMarkdownView *md,
   gtk_widget_add_css_class(st->zoom_label, "shell-popover-badge");
   gtk_widget_set_valign(st->zoom_label, GTK_ALIGN_CENTER);
 
-  GtkWidget *btn_zin = gtk_button_new_with_label("🔍+");
+  GtkWidget *btn_zin = gtk_button_new_with_label(" + ");
+  gtk_widget_add_css_class(btn_zin, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_zin, GTK_ALIGN_CENTER);
   g_signal_connect(btn_zin, "clicked", G_CALLBACK(on_zoom_in_clicked), st);
 
-  GtkWidget *btn_fit = gtk_button_new_with_label("⛶ 1:1");
+  GtkWidget *btn_fit = gtk_button_new_with_label("1:1");
+  gtk_widget_add_css_class(btn_fit, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_fit, GTK_ALIGN_CENTER);
   g_signal_connect(btn_fit, "clicked", G_CALLBACK(on_zoom_reset_clicked), st);
 
-  GtkWidget *btn_svg = gtk_button_new_with_label("⬇ SVG");
+  GtkWidget *btn_svg = gtk_button_new_with_label("EXPORT SVG");
+  gtk_widget_add_css_class(btn_svg, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_svg, GTK_ALIGN_CENTER);
   g_signal_connect(btn_svg, "clicked", G_CALLBACK(on_export_svg_clicked), st);
 
@@ -664,8 +668,60 @@ static GtkWidget *build_mermaid_card_widget(IdeMarkdownView *md,
                    st);
   gtk_widget_add_controller(st->drawing_area, GTK_EVENT_CONTROLLER(click));
 
-  gtk_box_append(GTK_BOX(card), st->drawing_area);
+  GtkWidget *canvas_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(canvas_scroll),
+                                 GTK_POLICY_AUTOMATIC,
+                                 GTK_POLICY_NEVER);
+  gtk_scrolled_window_set_propagate_natural_width(
+      GTK_SCROLLED_WINDOW(canvas_scroll), FALSE);
+  gtk_scrolled_window_set_propagate_natural_height(
+      GTK_SCROLLED_WINDOW(canvas_scroll), TRUE);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(canvas_scroll),
+                                st->drawing_area);
+
+  gtk_box_append(GTK_BOX(card), canvas_scroll);
   return card;
+}
+
+static char *format_inline_markdown_to_pango(const char *raw) {
+  if (!raw) return g_strdup("");
+  GString *out = g_string_new("");
+  const char *p = raw;
+
+  while (*p) {
+    /* Inline `code` */
+    if (*p == '`') {
+      const char *end = strchr(p + 1, '`');
+      if (end && end > p + 1) {
+        g_autofree char *inner = g_strndup(p + 1, end - (p + 1));
+        g_autofree char *esc = g_markup_escape_text(inner, -1);
+        g_string_append_printf(
+            out,
+            "<span font_family=\"Fira Code\" background=\"#1f1f1f\" foreground=\"#7dd3fc\"> %s </span>",
+            esc);
+        p = end + 1;
+        continue;
+      }
+    }
+    /* Inline **bold** */
+    if (p[0] == '*' && p[1] == '*') {
+      const char *end = strstr(p + 2, "**");
+      if (end && end > p + 2) {
+        g_autofree char *inner = g_strndup(p + 2, end - (p + 2));
+        g_autofree char *esc = g_markup_escape_text(inner, -1);
+        g_string_append_printf(out, "<b>%s</b>", esc);
+        p = end + 2;
+        continue;
+      }
+    }
+    /* Escape XML special chars */
+    if (*p == '&') g_string_append(out, "&amp;");
+    else if (*p == '<') g_string_append(out, "&lt;");
+    else if (*p == '>') g_string_append(out, "&gt;");
+    else g_string_append_c(out, *p);
+    p++;
+  }
+  return g_string_free(out, FALSE);
 }
 
 static void on_copy_code_clicked(GtkButton *btn, gpointer user_data) {
@@ -679,6 +735,7 @@ static void on_copy_code_clicked(GtkButton *btn, gpointer user_data) {
 static GtkWidget *build_code_block_widget(const char *lang_id, const char *code) {
   GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_widget_add_css_class(card, "ide-mermaid-card");
+  gtk_widget_set_hexpand(card, TRUE);
 
   GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_add_css_class(hdr, "ide-mermaid-toolbar");
@@ -693,7 +750,8 @@ static GtkWidget *build_code_block_widget(const char *lang_id, const char *code)
   GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(spacer, TRUE);
 
-  GtkWidget *copy_btn = gtk_button_new_with_label("📋 COPY CODE");
+  GtkWidget *copy_btn = gtk_button_new_with_label("COPY CODE");
+  gtk_widget_add_css_class(copy_btn, "ide-toolbar-btn");
   gtk_widget_set_valign(copy_btn, GTK_ALIGN_CENTER);
   char *dup_code = g_strdup(code ? code : "");
   g_object_set_data_full(G_OBJECT(copy_btn), "code-str", dup_code, g_free);
@@ -723,9 +781,20 @@ static GtkWidget *build_code_block_widget(const char *lang_id, const char *code)
   gtk_text_view_set_top_margin(GTK_TEXT_VIEW(sview), 8);
   gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(sview), 8);
   gtk_text_view_set_left_margin(GTK_TEXT_VIEW(sview), 10);
+  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(sview), 10);
   gtk_widget_add_css_class(sview, "ide-source-view");
 
-  gtk_box_append(GTK_BOX(card), sview);
+  GtkWidget *code_scroll = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(code_scroll),
+                                 GTK_POLICY_AUTOMATIC,
+                                 GTK_POLICY_NEVER);
+  gtk_scrolled_window_set_propagate_natural_width(
+      GTK_SCROLLED_WINDOW(code_scroll), FALSE);
+  gtk_scrolled_window_set_propagate_natural_height(
+      GTK_SCROLLED_WINDOW(code_scroll), TRUE);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(code_scroll), sview);
+
+  gtk_box_append(GTK_BOX(card), code_scroll);
   return card;
 }
 
@@ -783,26 +852,35 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
 
     /* 2. Headings (#, ##, ###) */
     if (g_str_has_prefix(line, "# ")) {
-      GtkWidget *lbl = gtk_label_new(line + 2);
+      GtkWidget *lbl = gtk_label_new(NULL);
+      g_autofree char *mk = format_inline_markdown_to_pango(line + 2);
+      gtk_label_set_markup(GTK_LABEL(lbl), mk);
       gtk_widget_add_css_class(lbl, "ide-md-h1");
-      gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+      gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
       gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
+      gtk_label_set_wrap_mode(GTK_LABEL(lbl), PANGO_WRAP_WORD_CHAR);
       gtk_box_append(GTK_BOX(md->doc_box), lbl);
       continue;
     }
     if (g_str_has_prefix(line, "## ")) {
-      GtkWidget *lbl = gtk_label_new(line + 3);
+      GtkWidget *lbl = gtk_label_new(NULL);
+      g_autofree char *mk = format_inline_markdown_to_pango(line + 3);
+      gtk_label_set_markup(GTK_LABEL(lbl), mk);
       gtk_widget_add_css_class(lbl, "ide-md-h2");
-      gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+      gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
       gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
+      gtk_label_set_wrap_mode(GTK_LABEL(lbl), PANGO_WRAP_WORD_CHAR);
       gtk_box_append(GTK_BOX(md->doc_box), lbl);
       continue;
     }
     if (g_str_has_prefix(line, "### ")) {
-      GtkWidget *lbl = gtk_label_new(line + 4);
+      GtkWidget *lbl = gtk_label_new(NULL);
+      g_autofree char *mk = format_inline_markdown_to_pango(line + 4);
+      gtk_label_set_markup(GTK_LABEL(lbl), mk);
       gtk_widget_add_css_class(lbl, "ide-md-h3");
-      gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+      gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
       gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
+      gtk_label_set_wrap_mode(GTK_LABEL(lbl), PANGO_WRAP_WORD_CHAR);
       gtk_box_append(GTK_BOX(md->doc_box), lbl);
       continue;
     }
@@ -826,18 +904,29 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
       gtk_widget_add_css_class(box, "ide-md-alert");
       gtk_widget_add_css_class(box, alert_cls);
 
-      GtkWidget *lbl = gtk_label_new(quote->str);
-      gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+      GtkWidget *lbl = gtk_label_new(NULL);
+      g_autofree char *mk = format_inline_markdown_to_pango(quote->str);
+      gtk_label_set_markup(GTK_LABEL(lbl), mk);
+      gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
       gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
+      gtk_label_set_wrap_mode(GTK_LABEL(lbl), PANGO_WRAP_WORD_CHAR);
       gtk_box_append(GTK_BOX(box), lbl);
       gtk_box_append(GTK_BOX(md->doc_box), box);
       g_string_free(quote, TRUE);
       continue;
     }
 
-    /* 4. Interactive Checklists (- [ ] / - [x]) */
+    /* 4. Interactive Checklists (- [ ] / - [x]) & Horizontal Rules (---) */
     const char *trimmed = line;
     while (*trimmed == ' ' || *trimmed == '\t') trimmed++;
+    if (g_strcmp0(trimmed, "---") == 0 || g_strcmp0(trimmed, "***") == 0 ||
+        g_strcmp0(trimmed, "___") == 0) {
+      GtkWidget *sep = gtk_separator_new(GTK_ORIENTATION_HORIZONTAL);
+      gtk_widget_add_css_class(sep, "ide-md-hr");
+      gtk_box_append(GTK_BOX(md->doc_box), sep);
+      continue;
+    }
+
     if (g_str_has_prefix(trimmed, "- [ ] ") ||
         g_str_has_prefix(trimmed, "- [x] ") ||
         g_str_has_prefix(trimmed, "- [X] ")) {
@@ -872,8 +961,11 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
           int col_idx = 0;
           for (guint c = 1; cells[c] != NULL && cells[c + 1] != NULL; c++) {
             g_autofree char *cell_txt = g_strstrip(g_strdup(cells[c]));
-            GtkWidget *clbl = gtk_label_new(cell_txt);
-            gtk_widget_set_halign(clbl, GTK_ALIGN_START);
+            GtkWidget *clbl = gtk_label_new(NULL);
+            g_autofree char *mk = format_inline_markdown_to_pango(cell_txt);
+            gtk_label_set_markup(GTK_LABEL(clbl), mk);
+            gtk_label_set_xalign(GTK_LABEL(clbl), 0.0f);
+            gtk_label_set_wrap(GTK_LABEL(clbl), TRUE);
             if (row_idx == 0) gtk_widget_add_css_class(clbl, "shell-popover-badge");
             gtk_grid_attach(GTK_GRID(grid), clbl, col_idx++, row_idx, 1, 1);
           }
@@ -885,11 +977,14 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
       continue;
     }
 
-    /* 6. Regular Paragraph Line */
+    /* 6. Regular Paragraph / Bullet Line */
     if (*trimmed != '\0') {
-      GtkWidget *p = gtk_label_new(line);
-      gtk_widget_set_halign(p, GTK_ALIGN_START);
+      GtkWidget *p = gtk_label_new(NULL);
+      g_autofree char *mk = format_inline_markdown_to_pango(line);
+      gtk_label_set_markup(GTK_LABEL(p), mk);
+      gtk_label_set_xalign(GTK_LABEL(p), 0.0f);
       gtk_label_set_wrap(GTK_LABEL(p), TRUE);
+      gtk_label_set_wrap_mode(GTK_LABEL(p), PANGO_WRAP_WORD_CHAR);
       gtk_label_set_selectable(GTK_LABEL(p), TRUE);
       gtk_box_append(GTK_BOX(md->doc_box), p);
     }
@@ -930,7 +1025,7 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
 
   GtkWidget *title =
-      gtk_label_new("📖 GRAPHICAL MARKDOWN & VECTOR MERMAID PREVIEW");
+      gtk_label_new("GRAPHICAL MARKDOWN & VECTOR MERMAID PREVIEW");
   gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
 
   GtkWidget *badge = gtk_label_new("CAIRO + PANGO GUI");
@@ -942,6 +1037,9 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_box_append(GTK_BOX(md->root_box), hdr);
 
   md->scroll_win = gtk_scrolled_window_new();
+  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(md->scroll_win),
+                                 GTK_POLICY_NEVER,
+                                 GTK_POLICY_AUTOMATIC);
   gtk_widget_set_hexpand(md->scroll_win, TRUE);
   gtk_widget_set_vexpand(md->scroll_win, TRUE);
 

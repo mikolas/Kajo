@@ -1,6 +1,7 @@
 #include "ide_gutter.h"
 
 #include <math.h>
+#include <pango/pangocairo.h>
 
 struct _KajoIdeGutterRenderer {
   GtkSourceGutterRenderer      parent_instance;
@@ -22,9 +23,11 @@ kajo_ide_gutter_renderer_measure(GtkWidget      *widget,
                                  int            *minimum_baseline,
                                  int            *natural_baseline)
 {
+  (void)widget;
+  (void)for_size;
   if (orientation == GTK_ORIENTATION_HORIZONTAL) {
-    *minimum = 36;
-    *natural = 36;
+    *minimum = 62;
+    *natural = 62;
   } else {
     *minimum = 0;
     *natural = 0;
@@ -40,9 +43,6 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
                                        guint                    line)
 {
   KajoIdeGutterRenderer *self = KAJO_IDE_GUTTER_RENDERER(renderer);
-  if (self->ide_buf == NULL) {
-    return;
-  }
 
   double y = 0.0;
   double h = 0.0;
@@ -56,23 +56,29 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
   }
 
   guint line_1based = line + 1;
-  gboolean has_bp = ide_buffer_has_breakpoint(self->ide_buf, line_1based);
-  const IdeDiagnostic *diag = ide_buffer_get_line_diagnostic(self->ide_buf, line_1based);
-  guint pc_line = ide_buffer_get_dap_pc_line(self->ide_buf);
-  IdeDiffState diff_state = ide_buffer_get_line_diff(self->ide_buf, line_1based);
+  gboolean is_cursor_line = gtk_source_gutter_lines_is_cursor(lines, line);
+  gboolean has_bp = self->ide_buf ? ide_buffer_has_breakpoint(self->ide_buf, line_1based) : FALSE;
+  const IdeDiagnostic *diag = self->ide_buf ? ide_buffer_get_line_diagnostic(self->ide_buf, line_1based) : NULL;
+  guint pc_line = self->ide_buf ? ide_buffer_get_dap_pc_line(self->ide_buf) : 0;
+  IdeDiffState diff_state = self->ide_buf ? ide_buffer_get_line_diff(self->ide_buf, line_1based) : IDE_DIFF_NONE;
 
-  if (!has_bp && diag == NULL && pc_line != line_1based && diff_state == IDE_DIFF_NONE) {
-    return;
-  }
-
-  graphene_rect_t bounds = GRAPHENE_RECT_INIT(0.0f, (float)y, 36.0f, (float)h);
+  graphene_rect_t bounds = GRAPHENE_RECT_INIT(0.0f, (float)y, 62.0f, (float)h);
   cairo_t *cr = gtk_snapshot_append_cairo(snapshot, &bounds);
   double cy = y + h * 0.5;
 
-  /* 1. DAP Breakpoint circle (● #e81123) at x = 6 */
+  /* Background cell tint */
+  if (is_cursor_line) {
+    cairo_set_source_rgb(cr, 0.11, 0.11, 0.11); /* #1c1c1c */
+  } else {
+    cairo_set_source_rgb(cr, 0.078, 0.078, 0.078); /* #141414 */
+  }
+  cairo_rectangle(cr, 0.0, y, 62.0, h);
+  cairo_fill(cr);
+
+  /* 1. DAP Breakpoint circle (● #e81123) at x = 7 */
   if (has_bp) {
     cairo_set_source_rgb(cr, 0.910, 0.067, 0.137); /* #e81123 */
-    cairo_arc(cr, 6.0, cy, 4.0, 0.0, 2.0 * G_PI);
+    cairo_arc(cr, 7.0, cy, 4.0, 0.0, 2.0 * G_PI);
     cairo_fill(cr);
   }
 
@@ -100,17 +106,37 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
     }
   }
 
-  /* 3. DAP Execution PC arrow (▶ #ffd700) at x = 26 */
-  if (pc_line == line_1based) {
+  /* 3. DAP Execution PC arrow (▶ #ffd700) at x = 24 */
+  if (pc_line == line_1based && pc_line > 0) {
     cairo_set_source_rgb(cr, 1.0, 0.843, 0.0); /* #ffd700 */
-    cairo_move_to(cr, 23.0, cy - 4.5);
-    cairo_line_to(cr, 29.5, cy);
-    cairo_line_to(cr, 23.0, cy + 4.5);
+    cairo_move_to(cr, 21.0, cy - 4.5);
+    cairo_line_to(cr, 27.5, cy);
+    cairo_line_to(cr, 21.0, cy + 4.5);
     cairo_close_path(cr);
     cairo_fill(cr);
   }
 
-  /* 4. Git / Agent Diff vertical bar at x = 32..35 */
+  /* 4. Right-aligned Line Number at x = 26..53 */
+  char num_buf[16];
+  g_snprintf(num_buf, sizeof(num_buf), "%u", line_1based);
+  PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(self), num_buf);
+  PangoFontDescription *fdesc =
+      pango_font_description_from_string(is_cursor_line ? "Fira Code Bold 9" : "Fira Code 9");
+  pango_layout_set_font_description(layout, fdesc);
+  int tw = 0, th = 0;
+  pango_layout_get_pixel_size(layout, &tw, &th);
+
+  if (is_cursor_line) {
+    cairo_set_source_rgb(cr, 0.95, 0.95, 0.95);
+  } else {
+    cairo_set_source_rgb(cr, 0.38, 0.38, 0.38);
+  }
+  cairo_move_to(cr, 53.0 - tw, y + (h - th) * 0.5);
+  pango_cairo_show_layout(cr, layout);
+  pango_font_description_free(fdesc);
+  g_object_unref(layout);
+
+  /* 5. Git / Agent Diff vertical bar at x = 57..60 */
   if (diff_state != IDE_DIFF_NONE) {
     switch (diff_state) {
       case IDE_DIFF_ADDED:
@@ -127,9 +153,14 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
         cairo_set_source_rgb(cr, 0.706, 0.0, 0.620); /* #b4009e */
         break;
     }
-    cairo_rectangle(cr, 32.0, y + 1.0, 3.0, MAX(2.0, h - 2.0));
+    cairo_rectangle(cr, 57.0, y + 1.0, 3.0, MAX(2.0, h - 2.0));
     cairo_fill(cr);
   }
+
+  /* Subtle right separator line */
+  cairo_set_source_rgb(cr, 0.16, 0.16, 0.16);
+  cairo_rectangle(cr, 61.0, y, 1.0, h);
+  cairo_fill(cr);
 
   cairo_destroy(cr);
 }
