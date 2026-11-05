@@ -35,10 +35,20 @@ All Kajo components and standalone applications share a unified design language:
 
 | Planned Component / Feature | Status | Target Binary / Scope |
 | :--- | :---: | :--- |
-| **`kajo-files` Phase 2** | 📋 Planned | `kajo-files` (Archive extraction, context menu, DnD) |
+| **Kajo IDE (`kajo-ide`, `org.kajo.IDE`)** | 📝 Specified | [`docs/SPEC_IDE.md`](docs/SPEC_IDE.md) — Selection-first modal GTK4 + `GtkSourceView 5` IDE with 100% `koodieditori` parity |
+| **`kajo-files` Phase 2** | 📋 Planned | `kajo-files` (Archive compression, DnD) |
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
+
+### 3.1 [SPECIFIED] Kajo IDE (`kajo-ide`, `org.kajo.IDE`)
+- **Specification:** [`docs/SPEC_IDE.md`](docs/SPEC_IDE.md)
+- Native Wayland GTK4 + `GtkSourceView 5` lightweight polyglot IDE in the Kajo "Aero + Metro" design system with **100% feature and keybinding parity with `koodieditori` (`koodi`)**:
+  - **Phase 1:** Core Editor, Selection-First Modal FSM (`NORMAL`, `SELECT`, `INSERT`, `MATCH`, `LEADER`), Nordic-First text objects (`m i/a b/a/p/q/f/c`, `ö`/`ä` stepping), collapsible File Tree (`Space e`), Floating Fuzzy Picker (`Space f f` / `f g` / `b b`) with live code preview, Interactive Command Palette (`?`), Search & Replace with diff preview (`Space s r` / `s p`), and Build Quickfix Drawer (`Space o`).
+  - **Phase 2:** Built-in JSON-RPC 2.0 LSP client (`clangd`, `gopls`, `pyright`, `rust-analyzer`, etc.) with pixel-anchored Autocomplete (`Ctrl+Space`) & Hover (`K`), plus native DAP Debugger client & 3-pane Inspector Drawer (`Space d v`).
+  - **Phase 3:** Autonomous AI Agent Coexistence (`GFileMonitor` hot-reload, `Space d s` multi-file Agent Transaction Review, `Space d a` / `d r` atomic accept/revert), `koodi-cli`-compatible Unix Domain Socket IPC, and Live Markdown + Native Cairo Vector Mermaid Preview (`Space m p`).
+
+---
 
 ### 3.2 [PLANNED] `kajo-files` Future Enhancements
 - **Archive Compression (`libarchive`):**
