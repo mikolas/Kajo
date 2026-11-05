@@ -1329,14 +1329,78 @@ window.shell-files-window .files-tile-sub {
 window.shell-files-window .files-list-header {
     background-color: #181818;
     border-bottom: 1px solid #2b2b2b;
-    padding: 6px 16px;
+    padding: 4px 16px;
 }
 
-window.shell-files-window .files-col-header {
+window.shell-files-window .files-col-header,
+window.shell-files-window button.files-col-header-btn {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    padding: 3px 6px;
+    min-height: 22px;
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 1px;
+    color: #9a9a9a;
+}
+
+window.shell-files-window button.files-col-header-btn:hover {
+    color: #ffffff;
+    background-color: #222222;
+}
+
+window.shell-files-window button.files-col-header-btn.active {
     color: @metro-accent;
+    border-bottom-color: @metro-accent;
+}
+
+/* Sort & Context Menu Popovers */
+window.shell-files-window popover.files-sort-popover > contents,
+window.shell-files-window popover.files-context-popover > contents {
+    background: none;
+    background-image: none;
+    background-color: #141414;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 0px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.72);
+}
+
+window.shell-files-window button.files-menu-row {
+    background: none;
+    background-image: none;
+    background-color: #1a1a1a;
+    border: 1px solid #262626;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    padding: 6px 10px;
+    min-height: 28px;
+    color: #e4e4e4;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+window.shell-files-window button.files-menu-row:hover {
+    background-color: #242424;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-files-window button.files-menu-row.active {
+    background-color: alpha(@metro-accent, 0.24);
+    border-color: @metro-accent;
+    border-left: 3px solid @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-files-window .files-ctx-shortcut {
+    font-size: 10px;
+    font-weight: 600;
+    color: #888888;
 }
 
 window.shell-files-window .files-details-list {

@@ -30,7 +30,7 @@ This document is the authoritative engineering manual for AI coding assistants w
 | :--- | :--- | :--- |
 | **`kajo`** | `org.kajo.Shell` | Wayland panel, 22 widgets, 16-band FFT spectrum visualizer, notification daemon, app launcher, `ShellOSK` virtual keyboard (`zwp_virtual_keyboard_v1` + `zwp_input_method_v2`), bezel touch gestures, foldable posture manager, `ext-idle-notify-v1` screensaver, and `ext-session-lock-v1` PAM lock screen. |
 | **`kajo-settings`** | `org.kajo.Settings` | 10-page modular system settings (`src/settings/pages/page_*.c`) with live D-Bus, PipeWire, Niri IPC, and GLSL shader switching. |
-| **`kajo-files`** | `org.kajo.Files` | *(Alpha)* URI-first GIO/GVFS/UDisks2 file manager (`src/files/`) with inline LUKS/SMB auth and `Space` Quick Look (`poppler-glib`, `libarchive`, `GtkVideo`, `GtkPicture`, `GtkTextView`). |
+| **`kajo-files`** | `org.kajo.Files` | *(Alpha)* URI-first GIO/GVFS/UDisks2 file manager (`src/files/`) with natural filename collation, interactive column/popover sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), inline LUKS/SMB auth, and `Space` Quick Look (`poppler-glib`, `libarchive`, `KajoPlayerMpv` / `libmpv`, `GtkPicture`, `GtkTextView`). |
 | **`kajo-player`** | `org.kajo.Player` | *(Beta)* Hardware-accelerated `libmpv` + `GtkGLArea` video/audio player (`src/player/`) with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-step, chapters, fullscreen bottom-edge overlay HUD, and MPRIS2 D-Bus provider. |
 | **`kajo-greeter`** | `org.kajo.Greeter` | Native `greetd` Wayland login greeter (`src/greeter/`) with PAM `--test` mode and multi-monitor Niri / Cage support. |
 
@@ -92,7 +92,7 @@ Every standalone Kajo application (`kajo-settings`, `kajo-files`, future `kajo-p
   GTK4 skips rendering surfaces with `opacity: 0`, which stops Wayland `wl_surface.commit` and breaks pointer/touch enter events on 2px edge trigger strips. Use `background-color: rgba(0, 0, 0, 0.01)` instead.
 - **Popout- & Map-Gated Resource Architecture**:
   - PulseAudio monitor streams (`@DEFAULT_MONITOR@`) must start corked (`PA_STREAM_START_CORKED`), uncork on `map`, and re-cork on `unmap`.
-  - Quick Look media (`GtkVideo`) must pause its `GtkMediaStream` and call `gtk_video_set_file(video, NULL)` immediately when hidden or switched to another item.
+  - Quick Look media in `kajo-files` MUST use `KajoPlayerMpv` (`libmpv` + `GtkGLArea`) rather than GTK4's `GtkVideo` (`GtkGstMediaFile` / `libgstplay-1.0`), which leaks corked PipeWire `Playback Stream` clients (`pw-top`) and crashes inside the `GstPlay` background thread when rapidly switching files. Call `kajo_player_mpv_stop()` when Quick Look is hidden or switched to a non-media item.
   - Idle background CPU usage across `kajo` must remain `< 0.05%`.
 
 ### E. Security & Credential Hardening (`pam_auth`, `session_lock`, `kajo-greeter`)

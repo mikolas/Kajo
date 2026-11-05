@@ -10,6 +10,7 @@ struct _KajoFileItem {
     char *target_uri;
     char *name;
     char *display_name;
+    char *collate_key;
     char *content_type;
     char *type_description;
     char *icon_name;
@@ -42,6 +43,7 @@ kajo_file_item_finalize(GObject *object)
     g_clear_pointer(&self->target_uri, g_free);
     g_clear_pointer(&self->name, g_free);
     g_clear_pointer(&self->display_name, g_free);
+    g_clear_pointer(&self->collate_key, g_free);
     g_clear_pointer(&self->content_type, g_free);
     g_clear_pointer(&self->type_description, g_free);
     g_clear_pointer(&self->icon_name, g_free);
@@ -123,6 +125,10 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
 
     self->name = g_strdup(name);
     self->display_name = g_strdup(disp);
+    {
+        g_autofree char *folded = g_utf8_casefold(self->display_name, -1);
+        self->collate_key = g_utf8_collate_key_for_filename(folded ? folded : self->display_name, -1);
+    }
     self->file = g_file_get_child(parent_dir, name);
     self->uri = g_file_get_uri(self->file);
 
@@ -204,6 +210,10 @@ kajo_file_item_new_manual(GFile *file,
 
     self->name = g_strdup(name ? name : "item");
     self->display_name = g_strdup(display_name ? display_name : self->name);
+    {
+        g_autofree char *folded = g_utf8_casefold(self->display_name, -1);
+        self->collate_key = g_utf8_collate_key_for_filename(folded ? folded : self->display_name, -1);
+    }
     self->content_type = g_strdup(content_type ? content_type : (is_dir ? "inode/directory" : "application/octet-stream"));
     self->type_description = resolve_type_description(self->content_type, is_dir, FALSE);
     self->icon_name = resolve_fallback_icon_name(self->content_type, is_dir, FALSE);
@@ -311,18 +321,73 @@ kajo_files_is_text_or_code(const char *content_type, const char *filename)
     return FALSE;
 }
 
+gboolean
+kajo_files_is_archive(const char *content_type, const char *filename)
+{
+    if (content_type) {
+        if (strstr(content_type, "zip") ||
+            strstr(content_type, "tar") ||
+            strstr(content_type, "7z") ||
+            strstr(content_type, "rar") ||
+            strstr(content_type, "compressed") ||
+            strstr(content_type, "archive") ||
+            strstr(content_type, "x-iso9660-image")) {
+            return TRUE;
+        }
+    }
+    if (filename) {
+        static const char *const exts[] = {
+            ".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz",
+            ".tar.bz2", ".tbz2", ".tar.zst", ".tzst", ".7z", ".rar",
+            ".iso", ".cpio", ".deb", ".rpm", NULL
+        };
+        for (int i = 0; exts[i] != NULL; i++) {
+            if (g_str_has_suffix(filename, exts[i]))
+                return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+gboolean
+kajo_file_sort_field_default_ascending(KajoFileSortField field)
+{
+    switch (field) {
+    case KAJO_SORT_SIZE:
+    case KAJO_SORT_MODIFIED:
+        return FALSE; /* Largest / Newest first by default */
+    case KAJO_SORT_NAME:
+    case KAJO_SORT_TYPE:
+    default:
+        return TRUE;  /* A -> Z first by default */
+    }
+}
+
+static int
+compare_natural_names(const KajoFileItem *a, const KajoFileItem *b)
+{
+    const char *ka = a->collate_key ? a->collate_key : "";
+    const char *kb = b->collate_key ? b->collate_key : "";
+    int cmp = strcmp(ka, kb);
+    if (cmp == 0) {
+        cmp = strcmp(a->display_name ? a->display_name : "",
+                     b->display_name ? b->display_name : "");
+    }
+    return cmp;
+}
+
 int
-kajo_file_item_compare(const KajoFileItem *a,
-                       const KajoFileItem *b,
-                       KajoFileSortField field,
-                       gboolean ascending)
+kajo_file_item_compare_full(const KajoFileItem *a,
+                            const KajoFileItem *b,
+                            KajoFileSortField field,
+                            gboolean ascending,
+                            gboolean folders_first)
 {
     if (!a && !b) return 0;
     if (!a) return -1;
     if (!b) return 1;
 
-    /* Folders always come before regular files */
-    if (a->is_dir != b->is_dir)
+    if (folders_first && a->is_dir != b->is_dir)
         return a->is_dir ? -1 : 1;
 
     int cmp = 0;
@@ -341,15 +406,24 @@ kajo_file_item_compare(const KajoFileItem *a,
         break;
     case KAJO_SORT_NAME:
     default:
-        break;
+        cmp = compare_natural_names(a, b);
+        return ascending ? cmp : -cmp;
     }
 
-    if (cmp == 0) {
-        cmp = g_utf8_collate(a->display_name ? a->display_name : "",
-                             b->display_name ? b->display_name : "");
-    }
+    if (cmp != 0)
+        return ascending ? cmp : -cmp;
 
-    return ascending ? cmp : -cmp;
+    /* Tie-breaker always remains natural A -> Z regardless of ascending/descending */
+    return compare_natural_names(a, b);
+}
+
+int
+kajo_file_item_compare(const KajoFileItem *a,
+                       const KajoFileItem *b,
+                       KajoFileSortField field,
+                       gboolean ascending)
+{
+    return kajo_file_item_compare_full(a, b, field, ascending, TRUE);
 }
 
 gboolean

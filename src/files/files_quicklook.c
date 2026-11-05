@@ -1,4 +1,5 @@
 #include "files_quicklook.h"
+#include "../player/player_mpv.h"
 #include <poppler.h>
 #include <archive.h>
 #include <archive_entry.h>
@@ -50,7 +51,12 @@ struct _KajoQuickLook {
     GtkWidget *ql_pdf_page_lbl;
     GtkWidget *ql_pdf_prev_btn;
     GtkWidget *ql_pdf_next_btn;
-    GtkWidget *ql_video;
+    KajoPlayerMpv *ql_mpv;
+    GtkWidget *ql_gl_area;
+    GtkWidget *ql_media_play_btn;
+    GtkWidget *ql_media_seek_scale;
+    GtkWidget *ql_media_time_lbl;
+    gboolean ql_updating_seek;
     GtkWidget *ql_text_view;
     GtkTextBuffer *ql_text_buf;
     GtkWidget *ql_folder_summary_lbl;
@@ -63,11 +69,65 @@ struct _KajoQuickLook {
 static void
 stop_media_playback(KajoQuickLook *self)
 {
-    if (self && self->ql_video && GTK_IS_VIDEO(self->ql_video)) {
-        GtkMediaStream *ms = gtk_video_get_media_stream(GTK_VIDEO(self->ql_video));
-        if (ms)
-            gtk_media_stream_pause(ms);
-        gtk_video_set_file(GTK_VIDEO(self->ql_video), NULL);
+    if (self && self->ql_mpv)
+        kajo_player_mpv_stop(self->ql_mpv);
+}
+
+static char *
+format_ql_media_time(gint64 usec)
+{
+    if (usec < 0) usec = 0;
+    gint64 total_sec = usec / 1000000;
+    gint64 mins = total_sec / 60;
+    gint64 secs = total_sec % 60;
+    return g_strdup_printf("%02" G_GINT64_FORMAT ":%02" G_GINT64_FORMAT, mins, secs);
+}
+
+static void
+on_ql_mpv_state_changed(const KajoMpvState *st, gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    if (!self || !st) return;
+
+    if (self->ql_media_play_btn)
+        gtk_button_set_label(GTK_BUTTON(self->ql_media_play_btn), st->playing ? "⏸" : "▶");
+
+    if (self->ql_media_seek_scale) {
+        self->ql_updating_seek = TRUE;
+        double frac = (st->duration_usec > 0)
+            ? CLAMP((double)st->position_usec / (double)st->duration_usec, 0.0, 1.0)
+            : 0.0;
+        gtk_range_set_value(GTK_RANGE(self->ql_media_seek_scale), frac);
+        self->ql_updating_seek = FALSE;
+    }
+
+    if (self->ql_media_time_lbl) {
+        g_autofree char *pos_s = format_ql_media_time(st->position_usec);
+        g_autofree char *dur_s = format_ql_media_time(st->duration_usec);
+        g_autofree char *lbl = g_strdup_printf("%s / %s", pos_s, dur_s);
+        gtk_label_set_text(GTK_LABEL(self->ql_media_time_lbl), lbl);
+    }
+}
+
+static void
+on_ql_media_play_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    if (!self || !self->ql_mpv) return;
+    kajo_player_mpv_set_playing(self->ql_mpv, !kajo_player_mpv_get_playing(self->ql_mpv));
+}
+
+static void
+on_ql_media_seek_value_changed(GtkRange *range, gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    if (!self || !self->ql_mpv || self->ql_updating_seek)
+        return;
+
+    gint64 dur = kajo_player_mpv_get_duration_usec(self->ql_mpv);
+    if (dur > 0) {
+        double frac = CLAMP(gtk_range_get_value(range), 0.0, 1.0);
+        kajo_player_mpv_seek_absolute_usec(self->ql_mpv, (gint64)(frac * (double)dur));
     }
 }
 
@@ -165,32 +225,7 @@ on_pdf_next_page_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     }
 }
 
-/* ─── Archive Detection & Inspection (libarchive) ─── */
-
-static gboolean
-is_archive_item(const char *content_type, const char *filename)
-{
-    if (content_type) {
-        if (strstr(content_type, "zip") || strstr(content_type, "tar") ||
-            strstr(content_type, "compressed") || strstr(content_type, "7z") ||
-            strstr(content_type, "rar") || strstr(content_type, "archive") ||
-            strstr(content_type, "zstd") || strstr(content_type, "xz") ||
-            strstr(content_type, "gzip") || strstr(content_type, "bzip"))
-            return TRUE;
-    }
-    if (filename) {
-        static const char *const exts[] = {
-            ".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz",
-            ".tar.zst", ".tzst", ".tar.bz2", ".7z", ".rar",
-            ".deb", ".rpm", ".iso", ".jar", ".apk", NULL
-        };
-        for (int i = 0; exts[i] != NULL; i++) {
-            if (g_str_has_suffix(filename, exts[i]))
-                return TRUE;
-        }
-    }
-    return FALSE;
-}
+/* ─── Archive Inspection (libarchive) ─── */
 
 static gboolean
 populate_archive_preview(KajoQuickLook *self, GFile *file)
@@ -556,14 +591,42 @@ build_quicklook_overlay_ui(KajoQuickLook *self)
     gtk_box_append(GTK_BOX(pdf_page), pdf_bar);
     gtk_stack_add_named(GTK_STACK(self->ql_stack), pdf_page, "pdf");
 
-    /* Page C: Audio / Video Preview (GtkVideo) */
+    /* Page C: Audio / Video Preview (libmpv + GtkGLArea) */
     GtkWidget *media_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_add_css_class(media_page, "shell-popover-body");
-    self->ql_video = gtk_video_new();
-    gtk_video_set_autoplay(GTK_VIDEO(self->ql_video), TRUE);
-    gtk_widget_set_hexpand(self->ql_video, TRUE);
-    gtk_widget_set_vexpand(self->ql_video, TRUE);
-    gtk_box_append(GTK_BOX(media_page), self->ql_video);
+
+    self->ql_gl_area = gtk_gl_area_new();
+    gtk_widget_set_hexpand(self->ql_gl_area, TRUE);
+    gtk_widget_set_vexpand(self->ql_gl_area, TRUE);
+    gtk_box_append(GTK_BOX(media_page), self->ql_gl_area);
+
+    GtkWidget *media_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(media_bar, "shell-popover-header");
+    gtk_widget_set_valign(media_bar, GTK_ALIGN_CENTER);
+
+    self->ql_media_play_btn = gtk_button_new_with_label("⏸");
+    gtk_widget_add_css_class(self->ql_media_play_btn, "flat");
+    gtk_widget_add_css_class(self->ql_media_play_btn, "files-nav-btn");
+    gtk_widget_set_valign(self->ql_media_play_btn, GTK_ALIGN_CENTER);
+    g_signal_connect(self->ql_media_play_btn, "clicked", G_CALLBACK(on_ql_media_play_clicked), self);
+
+    self->ql_media_seek_scale = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 0.0, 1.0, 0.005);
+    gtk_scale_set_draw_value(GTK_SCALE(self->ql_media_seek_scale), FALSE);
+    gtk_widget_set_hexpand(self->ql_media_seek_scale, TRUE);
+    gtk_widget_set_valign(self->ql_media_seek_scale, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(self->ql_media_seek_scale, "player-seek-scale");
+    g_signal_connect(self->ql_media_seek_scale, "value-changed", G_CALLBACK(on_ql_media_seek_value_changed), self);
+
+    self->ql_media_time_lbl = gtk_label_new("00:00 / 00:00");
+    gtk_widget_add_css_class(self->ql_media_time_lbl, "shell-popover-badge");
+    gtk_widget_set_valign(self->ql_media_time_lbl, GTK_ALIGN_CENTER);
+
+    gtk_box_append(GTK_BOX(media_bar), self->ql_media_play_btn);
+    gtk_box_append(GTK_BOX(media_bar), self->ql_media_seek_scale);
+    gtk_box_append(GTK_BOX(media_bar), self->ql_media_time_lbl);
+    gtk_box_append(GTK_BOX(media_page), media_bar);
+
+    self->ql_mpv = kajo_player_mpv_new(GTK_GL_AREA(self->ql_gl_area), on_ql_mpv_state_changed, self);
     gtk_stack_add_named(GTK_STACK(self->ql_stack), media_page, "media");
 
     /* Page D: Text / Code Preview */
@@ -770,21 +833,26 @@ populate_quicklook_modal(KajoQuickLook *self)
 {
     if (!self || !self->current_item) return;
 
-    stop_media_playback(self);
-    g_clear_object(&self->pdf_doc);
-
-    if (self->preview_cancel) {
-        g_cancellable_cancel(self->preview_cancel);
-        g_clear_object(&self->preview_cancel);
-    }
-    self->preview_cancel = g_cancellable_new();
-
     KajoFileItem *item = self->current_item;
     GFile *file = kajo_file_item_get_file(item);
     const char *name = kajo_file_item_get_name(item);
     const char *disp = kajo_file_item_get_display_name(item);
     const char *ctype = kajo_file_item_get_content_type(item);
     gboolean is_dir = kajo_file_item_is_dir(item);
+    gboolean is_media = (!is_dir && ctype &&
+                         (g_str_has_prefix(ctype, "video/") || g_str_has_prefix(ctype, "audio/")));
+
+    if (!is_media)
+        stop_media_playback(self);
+    g_clear_object(&self->pdf_doc);
+    if (!ctype || !g_str_has_prefix(ctype, "image/"))
+        gtk_picture_set_file(GTK_PICTURE(self->ql_picture), NULL);
+
+    if (self->preview_cancel) {
+        g_cancellable_cancel(self->preview_cancel);
+        g_clear_object(&self->preview_cancel);
+    }
+    self->preview_cancel = g_cancellable_new();
 
     g_autofree char *hdr_title = g_strdup_printf("QUICK LOOK // %s", disp);
     gtk_label_set_text(GTK_LABEL(self->ql_title_lbl), hdr_title);
@@ -841,15 +909,15 @@ populate_quicklook_modal(KajoQuickLook *self)
         return;
     }
 
-    /* 4. Audio & Video Preview (GtkVideo) */
-    if (ctype && (g_str_has_prefix(ctype, "video/") || g_str_has_prefix(ctype, "audio/"))) {
+    /* 4. Audio & Video Preview (libmpv + GtkGLArea) */
+    if (is_media) {
         gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "media");
-        gtk_video_set_file(GTK_VIDEO(self->ql_video), file);
+        kajo_player_mpv_load_file(self->ql_mpv, file);
         return;
     }
 
     /* 5. Archive Preview (libarchive) */
-    if (is_archive_item(ctype, name) && populate_archive_preview(self, file)) {
+    if (kajo_files_is_archive(ctype, name) && populate_archive_preview(self, file)) {
         return;
     }
 
@@ -1063,6 +1131,7 @@ kajo_quicklook_free(KajoQuickLook *self)
         g_clear_object(&self->preview_cancel);
     }
     stop_media_playback(self);
+    g_clear_pointer(&self->ql_mpv, kajo_player_mpv_free);
     g_clear_object(&self->pdf_doc);
     g_clear_object(&self->current_item);
     g_clear_object(&self->current_dir);

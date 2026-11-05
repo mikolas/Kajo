@@ -58,11 +58,20 @@ char    *kajo_files_format_size(guint64 bytes, gboolean is_dir);
 char    *kajo_files_format_permissions(guint32 mode, gboolean is_dir, gboolean is_symlink);
 char    *kajo_files_format_mtime(gint64 mtime_sec);
 gboolean kajo_files_is_text_or_code(const char *content_type, const char *filename);
+gboolean kajo_files_is_archive(const char *content_type, const char *filename);
 
 int      kajo_file_item_compare(const KajoFileItem *a,
                                 const KajoFileItem *b,
                                 KajoFileSortField field,
                                 gboolean ascending);
+
+int      kajo_file_item_compare_full(const KajoFileItem *a,
+                                     const KajoFileItem *b,
+                                     KajoFileSortField field,
+                                     gboolean ascending,
+                                     gboolean folders_first);
+
+gboolean kajo_file_sort_field_default_ascending(KajoFileSortField field);
 
 gboolean kajo_file_item_matches_filter(const KajoFileItem *item,
                                        gboolean show_hidden,
