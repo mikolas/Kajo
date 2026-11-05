@@ -333,6 +333,7 @@ ide_picker_rebuild_list(IdePicker *picker)
     const IdePickerItem *it = g_ptr_array_index(picker->filtered_items, i);
 
     GtkWidget *row = gtk_list_box_row_new();
+    gtk_widget_set_focusable(row, FALSE);
     gtk_widget_add_css_class(row, "widget-row-card");
 
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -470,6 +471,7 @@ ide_picker_new(const char         *workspace_root,
 
   /* Search Input */
   picker->search_entry = gtk_entry_new();
+  gtk_widget_set_focusable(picker->search_entry, FALSE);
   gtk_entry_set_placeholder_text(GTK_ENTRY(picker->search_entry),
                                  "Type to filter (↑/↓ or Ctrl+P/N, Enter to confirm, Esc to cancel)...");
   gtk_widget_add_css_class(picker->search_entry, "shell-launcher-input");
@@ -489,6 +491,7 @@ ide_picker_new(const char         *workspace_root,
                                  GTK_POLICY_NEVER,
                                  GTK_POLICY_AUTOMATIC);
   picker->list_box = gtk_list_box_new();
+  gtk_widget_set_focusable(picker->list_box, FALSE);
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(picker->list_box), GTK_SELECTION_SINGLE);
   gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(picker->list_box), FALSE);
   g_signal_connect(picker->list_box, "row-activated", G_CALLBACK(on_picker_row_activated), picker);
@@ -507,6 +510,7 @@ ide_picker_new(const char         *workspace_root,
     gtk_source_buffer_set_style_scheme(picker->preview_buf, scheme);
   }
   picker->preview_view = gtk_source_view_new_with_buffer(picker->preview_buf);
+  gtk_widget_set_focusable(picker->preview_view, FALSE);
   gtk_text_view_set_editable(GTK_TEXT_VIEW(picker->preview_view), FALSE);
   gtk_text_view_set_monospace(GTK_TEXT_VIEW(picker->preview_view), TRUE);
   gtk_source_view_set_show_line_numbers(GTK_SOURCE_VIEW(picker->preview_view), TRUE);

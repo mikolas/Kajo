@@ -358,6 +358,7 @@ ide_tree_refresh(IdeTree *tree)
     }
 
     GtkWidget *row = gtk_list_box_row_new();
+    gtk_widget_set_focusable(row, FALSE);
     gtk_widget_add_css_class(row, "ide-tree-row");
 
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
@@ -486,6 +487,7 @@ ide_tree_new(const char       *workspace_root,
   gtk_box_append(GTK_BOX(pbox), tree->prompt_label);
 
   tree->prompt_entry = gtk_entry_new();
+  gtk_widget_set_focusable(tree->prompt_entry, FALSE);
   gtk_widget_add_css_class(tree->prompt_entry, "shell-launcher-input");
   gtk_box_append(GTK_BOX(pbox), tree->prompt_entry);
 
@@ -500,6 +502,7 @@ ide_tree_new(const char       *workspace_root,
   gtk_widget_set_vexpand(tree->scrolled, TRUE);
 
   tree->list_box = gtk_list_box_new();
+  gtk_widget_set_focusable(tree->list_box, FALSE);
   gtk_widget_add_css_class(tree->list_box, "ide-tree-listbox");
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(tree->list_box), GTK_SELECTION_SINGLE);
   gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(tree->list_box), FALSE);

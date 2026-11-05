@@ -323,6 +323,7 @@ ide_search_drawer_new(const char       *workspace_root,
   GtkWidget *bscroll = gtk_scrolled_window_new();
   gtk_widget_set_vexpand(bscroll, TRUE);
   drawer->build_list_box = gtk_list_box_new();
+  gtk_widget_set_focusable(drawer->build_list_box, FALSE);
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(drawer->build_list_box), GTK_SELECTION_SINGLE);
   gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(drawer->build_list_box), FALSE);
   g_signal_connect(drawer->build_list_box, "row-activated", G_CALLBACK(on_build_row_activated), drawer);
@@ -373,6 +374,7 @@ ide_search_drawer_new(const char       *workspace_root,
   gtk_box_append(GTK_BOX(inputs_row), flbl);
 
   drawer->find_entry = gtk_entry_new();
+  gtk_widget_set_focusable(drawer->find_entry, FALSE);
   gtk_widget_set_hexpand(drawer->find_entry, TRUE);
   gtk_widget_add_css_class(drawer->find_entry, "shell-launcher-input");
   gtk_box_append(GTK_BOX(inputs_row), drawer->find_entry);
@@ -382,6 +384,7 @@ ide_search_drawer_new(const char       *workspace_root,
   gtk_box_append(GTK_BOX(inputs_row), rlbl);
 
   drawer->replace_entry = gtk_entry_new();
+  gtk_widget_set_focusable(drawer->replace_entry, FALSE);
   gtk_widget_set_hexpand(drawer->replace_entry, TRUE);
   gtk_widget_add_css_class(drawer->replace_entry, "shell-launcher-input");
   gtk_box_append(GTK_BOX(inputs_row), drawer->replace_entry);
@@ -392,6 +395,7 @@ ide_search_drawer_new(const char       *workspace_root,
   gtk_widget_set_vexpand(dscroll, TRUE);
   drawer->diff_buf = gtk_text_buffer_new(NULL);
   drawer->diff_view = gtk_text_view_new_with_buffer(drawer->diff_buf);
+  gtk_widget_set_focusable(drawer->diff_view, FALSE);
   gtk_text_view_set_editable(GTK_TEXT_VIEW(drawer->diff_view), FALSE);
   gtk_text_view_set_monospace(GTK_TEXT_VIEW(drawer->diff_view), TRUE);
   gtk_widget_add_css_class(drawer->diff_view, "code-preview-box");

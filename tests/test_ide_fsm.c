@@ -186,6 +186,73 @@ test_fsm_custom_remaps(void)
   ide_fsm_free(fsm);
 }
 
+static void
+test_fsm_standard_shortcuts_and_chords(void)
+{
+  IdeFsm *fsm = ide_fsm_new();
+
+  /* Verify CSS class names match style.css */
+  g_assert_cmpstr(ide_state_get_css_class(IDE_STATE_NORMAL), ==, "mode-normal");
+  g_assert_cmpstr(ide_state_get_css_class(IDE_STATE_INSERT), ==, "mode-insert");
+  g_assert_cmpstr(ide_state_get_css_class(IDE_STATE_SELECT), ==, "mode-select");
+  g_assert_cmpstr(ide_state_get_css_class(IDE_STATE_LEADER), ==, "mode-leader");
+  g_assert_cmpstr(ide_state_get_css_class(IDE_STATE_SEARCH), ==, "mode-search");
+
+  /* Ctrl+z / Ctrl+y / Ctrl+r / Ctrl+s in NORMAL mode */
+  IdeAction act = ide_fsm_handle_key(fsm, "ctrl+z");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_UNDO);
+  act = ide_fsm_handle_key(fsm, "ctrl+y");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_REDO);
+  act = ide_fsm_handle_key(fsm, "ctrl+r");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_REDO);
+  act = ide_fsm_handle_key(fsm, "ctrl+s");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_SAVE);
+
+  /* Lowercase "space" + "space" -> Fuzzy File Picker */
+  ide_fsm_handle_key(fsm, "space");
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_LEADER);
+  act = ide_fsm_handle_key(fsm, "space");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_PICKER_OPEN_FILES);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_PICKER);
+  ide_fsm_handle_key(fsm, "esc");
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+
+  /* Space m p -> Toggle Markdown Preview and stay in NORMAL mode */
+  ide_fsm_handle_key(fsm, "space");
+  ide_fsm_handle_key(fsm, "m");
+  act = ide_fsm_handle_key(fsm, "p");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_TOGGLE_MARKDOWN_PREVIEW);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+
+  /* g chords: gg, gh, gl, gd */
+  ide_fsm_handle_key(fsm, "g");
+  g_assert_cmpstr(ide_fsm_get_pending_chord(fsm), ==, "g");
+  act = ide_fsm_handle_key(fsm, "g");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_MOVE_BUFFER_START);
+
+  ide_fsm_handle_key(fsm, "g");
+  act = ide_fsm_handle_key(fsm, "l");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_MOVE_LINE_END);
+
+  /* 'o' and 'O' open line and enter INSERT mode */
+  act = ide_fsm_handle_key(fsm, "o");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_INSERT_NEWLINE);
+  g_assert_cmpstr(act.str, ==, "below");
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_INSERT);
+
+  /* Ctrl+z in INSERT mode undoes without inserting 'z' */
+  act = ide_fsm_handle_key(fsm, "ctrl+z");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_UNDO);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_INSERT);
+
+  /* Lowercase "pgdn" works in NORMAL mode */
+  ide_fsm_handle_key(fsm, "esc");
+  act = ide_fsm_handle_key(fsm, "pgdn");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_PAGE_DOWN);
+
+  ide_fsm_free(fsm);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -196,6 +263,7 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/fsm/nordic-text-objects-and-stepping", test_fsm_nordic_text_objects_and_stepping);
   g_test_add_func("/ide/fsm/leader-chords-and-timeout", test_fsm_leader_chords_and_timeout);
   g_test_add_func("/ide/fsm/custom-remaps", test_fsm_custom_remaps);
+  g_test_add_func("/ide/fsm/standard-shortcuts-and-chords", test_fsm_standard_shortcuts_and_chords);
 
   return g_test_run();
 }

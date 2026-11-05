@@ -20,11 +20,33 @@ struct _IdeFsm {
 
 static const char *const kValidLeaderChords[] = {
   "ff", "fg", "fs", "fa", "bb", "bd", "bD", "e",  "o",  "a",  "k",  "?",  "h",
-  "mp", "mt", "md", "mf", "ne", "pe", "nd", "pd", "nh", "ph", "ns", "ps", "ds",
-  "da", "dr", "db", "dd", "dc", "dn", "di", "do", "dp", "dq", "dv", "ca", "cr",
-  "gd", "gi", "gc", "ch", "sr", "sp", "sf", "s/", "w>", "w<", "w+", "w-", "ww",
-  "wh", "wl", "wj", "wk", NULL
+  "/",  "mp", "mt", "md", "mf", "ne", "pe", "nd", "pd", "nh", "ph", "ns", "ps",
+  "ds", "da", "dr", "db", "dd", "dc", "dn", "di", "do", "dp", "dq", "dv", "ca",
+  "cr", "gd", "gi", "gc", "ch", "sr", "sp", "sf", "s/", "ws", "w>", "w<", "w+",
+  "w-", "ww", "wh", "wl", "wj", "wk", NULL
 };
+
+static gboolean
+is_space_key(const char *key)
+{
+  return (g_strcmp0(key, "Space") == 0 ||
+          g_strcmp0(key, "space") == 0 ||
+          g_strcmp0(key, " ") == 0);
+}
+
+static gboolean
+is_pgup_key(const char *key)
+{
+  return (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0);
+}
+
+static gboolean
+is_pgdown_key(const char *key)
+{
+  return (g_strcmp0(key, "pgdown") == 0 ||
+          g_strcmp0(key, "pgdn") == 0 ||
+          g_strcmp0(key, "pagedown") == 0);
+}
 
 static IdeAction
 ide_action_make(IdeActionType type)
@@ -179,15 +201,18 @@ ide_state_get_css_class(IdeState state)
 {
   switch (state) {
     case IDE_STATE_SELECT:
-      return "ide-mode-select";
+      return "mode-select";
     case IDE_STATE_INSERT:
-      return "ide-mode-insert";
+      return "mode-insert";
     case IDE_STATE_MATCH_PENDING:
-      return "ide-mode-match";
+    case IDE_STATE_SEARCH:
+    case IDE_STATE_PICKER:
+    case IDE_STATE_HELP:
+      return "mode-search";
     case IDE_STATE_LEADER:
-      return "ide-mode-leader";
+      return "mode-leader";
     default:
-      return "ide-mode-normal";
+      return "mode-normal";
   }
 }
 
@@ -195,11 +220,17 @@ const char *
 ide_fsm_get_pending_chord(const IdeFsm *fsm)
 {
   g_return_val_if_fail(fsm != NULL, "");
-  if (fsm->state == IDE_STATE_LEADER) {
-    return fsm->leader_buf;
-  }
   if (fsm->state == IDE_STATE_MATCH_PENDING) {
     return fsm->match_buf;
+  }
+  if (fsm->state == IDE_STATE_LEADER || fsm->leader_buf[0] != '\0') {
+    return fsm->leader_buf;
+  }
+  if ((fsm->state == IDE_STATE_NORMAL ||
+       fsm->state == IDE_STATE_SELECT ||
+       fsm->state == IDE_STATE_TREE) &&
+      g_strcmp0(fsm->last_char, "g") == 0) {
+    return "g";
   }
   return "";
 }
@@ -470,17 +501,50 @@ ide_fsm_lookup_remap(IdeFsm *fsm, IdeState state, const char *key, IdeActionType
 static IdeAction
 handle_normal(IdeFsm *fsm, const char *key)
 {
+  /* Two-key 'g' navigation chords (gg, gh, gl, gd) */
+  if (g_strcmp0(fsm->last_char, "g") == 0) {
+    if (g_strcmp0(key, "g") == 0) {
+      return ide_action_make(IDE_ACTION_MOVE_BUFFER_START);
+    }
+    if (g_strcmp0(key, "h") == 0) {
+      return ide_action_make(IDE_ACTION_MOVE_LINE_START);
+    }
+    if (g_strcmp0(key, "l") == 0) {
+      return ide_action_make(IDE_ACTION_MOVE_LINE_END);
+    }
+    if (g_strcmp0(key, "d") == 0) {
+      return ide_action_make(IDE_ACTION_LSP_DEFINITION);
+    }
+  }
+
+  /* Mode transitions */
   if (g_strcmp0(key, "i") == 0) {
     fsm->state = IDE_STATE_INSERT;
     return ide_action_make(IDE_ACTION_NONE);
+  }
+  if (g_strcmp0(key, "I") == 0) {
+    fsm->state = IDE_STATE_INSERT;
+    return ide_action_make(IDE_ACTION_MOVE_LINE_START);
   }
   if (g_strcmp0(key, "a") == 0) {
     fsm->state = IDE_STATE_INSERT;
     return ide_action_make(IDE_ACTION_MOVE_RIGHT);
   }
+  if (g_strcmp0(key, "A") == 0) {
+    fsm->state = IDE_STATE_INSERT;
+    return ide_action_make(IDE_ACTION_MOVE_LINE_END);
+  }
   if (g_strcmp0(key, "o") == 0) {
     fsm->state = IDE_STATE_INSERT;
-    return ide_action_make(IDE_ACTION_INSERT_NEWLINE);
+    return ide_action_make_str(IDE_ACTION_INSERT_NEWLINE, "below");
+  }
+  if (g_strcmp0(key, "O") == 0) {
+    fsm->state = IDE_STATE_INSERT;
+    return ide_action_make_str(IDE_ACTION_INSERT_NEWLINE, "above");
+  }
+  if (g_strcmp0(key, "c") == 0) {
+    fsm->state = IDE_STATE_INSERT;
+    return ide_action_make(IDE_ACTION_CHANGE_SELECTION);
   }
   if (g_strcmp0(key, "w") == 0) {
     fsm->state = IDE_STATE_SELECT;
@@ -498,6 +562,22 @@ handle_normal(IdeFsm *fsm, const char *key)
     fsm->state = IDE_STATE_SELECT;
     return ide_action_make(IDE_ACTION_NONE);
   }
+  if (g_strcmp0(key, "shift+left") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "left");
+  }
+  if (g_strcmp0(key, "shift+right") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "right");
+  }
+  if (g_strcmp0(key, "shift+up") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "up");
+  }
+  if (g_strcmp0(key, "shift+down") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "down");
+  }
   if (g_strcmp0(key, "/") == 0) {
     fsm->state = IDE_STATE_SEARCH;
     return ide_action_make(IDE_ACTION_SEARCH_OPEN);
@@ -508,7 +588,8 @@ handle_normal(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "N") == 0) {
     return ide_action_make(IDE_ACTION_SEARCH_PREV);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
+    fsm->previous_state = IDE_STATE_NORMAL;
     fsm->state = IDE_STATE_LEADER;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_NONE);
@@ -532,12 +613,12 @@ handle_normal(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "k") == 0 || g_strcmp0(key, "up") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_UP);
   }
-  if (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0 ||
-      g_strcmp0(key, "ctrl+b") == 0 || g_strcmp0(key, "ctrl+u") == 0) {
+  if (is_pgup_key(key) || g_strcmp0(key, "ctrl+b") == 0 ||
+      g_strcmp0(key, "ctrl+u") == 0) {
     return ide_action_make(IDE_ACTION_PAGE_UP);
   }
-  if (g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0 ||
-      g_strcmp0(key, "ctrl+f") == 0 || g_strcmp0(key, "ctrl+d") == 0) {
+  if (is_pgdown_key(key) || g_strcmp0(key, "ctrl+f") == 0 ||
+      g_strcmp0(key, "ctrl+d") == 0) {
     return ide_action_make(IDE_ACTION_PAGE_DOWN);
   }
   if (g_strcmp0(key, "home") == 0 || g_strcmp0(key, "0") == 0) {
@@ -559,24 +640,35 @@ handle_normal(IdeFsm *fsm, const char *key)
     return ide_action_make(IDE_ACTION_MOVE_WORD_BACKWARD);
   }
 
-  /* Mutations */
-  if (g_strcmp0(key, "d") == 0) {
+  /* Mutations & Standard Shortcuts */
+  if (g_strcmp0(key, "d") == 0 || g_strcmp0(key, "delete") == 0 ||
+      g_strcmp0(key, "ctrl+x") == 0) {
     return ide_action_make(IDE_ACTION_DELETE_CHAR);
   }
-  if (g_strcmp0(key, "y") == 0) {
+  if (g_strcmp0(key, "backspace") == 0) {
+    return ide_action_make(IDE_ACTION_MOVE_LEFT);
+  }
+  if (g_strcmp0(key, "y") == 0 || g_strcmp0(key, "ctrl+c") == 0) {
     return ide_action_make(IDE_ACTION_YANK);
   }
-  if (g_strcmp0(key, "p") == 0) {
+  if (g_strcmp0(key, "p") == 0 || g_strcmp0(key, "ctrl+v") == 0) {
     return ide_action_make(IDE_ACTION_PASTE_AFTER);
   }
   if (g_strcmp0(key, "P") == 0) {
     return ide_action_make(IDE_ACTION_PASTE_BEFORE);
   }
-  if (g_strcmp0(key, "u") == 0) {
+  if (g_strcmp0(key, "u") == 0 || g_strcmp0(key, "ctrl+z") == 0) {
     return ide_action_make(IDE_ACTION_UNDO);
   }
-  if (g_strcmp0(key, "U") == 0) {
+  if (g_strcmp0(key, "U") == 0 || g_strcmp0(key, "ctrl+y") == 0 ||
+      g_strcmp0(key, "ctrl+r") == 0 || g_strcmp0(key, "ctrl+shift+z") == 0) {
     return ide_action_make(IDE_ACTION_REDO);
+  }
+  if (g_strcmp0(key, ">") == 0) {
+    return ide_action_make(IDE_ACTION_INDENT);
+  }
+  if (g_strcmp0(key, "<") == 0) {
+    return ide_action_make(IDE_ACTION_OUTDENT);
   }
 
   /* Buffer Tabs */
@@ -670,11 +762,33 @@ handle_insert(IdeFsm *fsm, const char *key, gint64 now_usec)
   if (g_strcmp0(key, "tab") == 0) {
     return ide_action_make(IDE_ACTION_INSERT_TAB);
   }
+  if (g_strcmp0(key, "shift+tab") == 0 || g_strcmp0(key, "btab") == 0) {
+    return ide_action_make(IDE_ACTION_OUTDENT);
+  }
   if (g_strcmp0(key, "ctrl+space") == 0 || g_strcmp0(key, "ctrl+@") == 0) {
     return ide_action_make(IDE_ACTION_LSP_COMPLETE);
   }
   if (g_strcmp0(key, "ctrl+s") == 0) {
     return ide_action_make(IDE_ACTION_SAVE);
+  }
+  if (g_strcmp0(key, "ctrl+z") == 0) {
+    return ide_action_make(IDE_ACTION_UNDO);
+  }
+  if (g_strcmp0(key, "ctrl+y") == 0 || g_strcmp0(key, "ctrl+r") == 0 ||
+      g_strcmp0(key, "ctrl+shift+z") == 0) {
+    return ide_action_make(IDE_ACTION_REDO);
+  }
+  if (g_strcmp0(key, "ctrl+c") == 0) {
+    return ide_action_make(IDE_ACTION_YANK);
+  }
+  if (g_strcmp0(key, "ctrl+v") == 0) {
+    return ide_action_make(IDE_ACTION_PASTE_AFTER);
+  }
+  if (g_strcmp0(key, "ctrl+x") == 0) {
+    return ide_action_make(IDE_ACTION_DELETE_SELECTION);
+  }
+  if (g_strcmp0(key, "ctrl+w") == 0) {
+    return ide_action_make(IDE_ACTION_PANE_CYCLE);
   }
   if (g_strcmp0(key, "backspace") == 0) {
     return ide_action_make(IDE_ACTION_BACKSPACE);
@@ -694,10 +808,26 @@ handle_insert(IdeFsm *fsm, const char *key, gint64 now_usec)
   if (g_strcmp0(key, "down") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_DOWN);
   }
-  if (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0) {
+  if (g_strcmp0(key, "shift+left") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "left");
+  }
+  if (g_strcmp0(key, "shift+right") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "right");
+  }
+  if (g_strcmp0(key, "shift+up") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "up");
+  }
+  if (g_strcmp0(key, "shift+down") == 0) {
+    fsm->state = IDE_STATE_SELECT;
+    return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "down");
+  }
+  if (is_pgup_key(key)) {
     return ide_action_make(IDE_ACTION_PAGE_UP);
   }
-  if (g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0) {
+  if (is_pgdown_key(key)) {
     return ide_action_make(IDE_ACTION_PAGE_DOWN);
   }
   if (g_strcmp0(key, "home") == 0) {
@@ -718,8 +848,14 @@ handle_insert(IdeFsm *fsm, const char *key, gint64 now_usec)
   if (g_strcmp0(key, "ctrl+left") == 0 || g_strcmp0(key, "alt+left") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_WORD_BACKWARD);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
     return ide_action_make_str(IDE_ACTION_INSERT_CHAR, " ");
+  }
+
+  /* Alt+1 .. Alt+9 direct tab switching */
+  if (g_str_has_prefix(key, "alt+") && strlen(key) == 5 &&
+      key[4] >= '1' && key[4] <= '9') {
+    return ide_action_make_int(IDE_ACTION_TAB_SWITCH, key[4] - '0');
   }
 
   if (is_printable_single_glyph(key)) {
@@ -731,66 +867,111 @@ handle_insert(IdeFsm *fsm, const char *key, gint64 now_usec)
 static IdeAction
 handle_select(IdeFsm *fsm, const char *key)
 {
-  if (g_strcmp0(key, "esc") == 0) {
+  /* Two-key 'g' chords in SELECT mode extend selection to target */
+  if (g_strcmp0(fsm->last_char, "g") == 0) {
+    if (g_strcmp0(key, "g") == 0) {
+      return ide_action_make(IDE_ACTION_MOVE_BUFFER_START);
+    }
+    if (g_strcmp0(key, "h") == 0) {
+      return ide_action_make(IDE_ACTION_MOVE_LINE_START);
+    }
+    if (g_strcmp0(key, "l") == 0) {
+      return ide_action_make(IDE_ACTION_MOVE_LINE_END);
+    }
+  }
+
+  if (g_strcmp0(key, "esc") == 0 || g_strcmp0(key, "v") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     return ide_action_make(IDE_ACTION_COLLAPSE_SELECTION);
   }
-  if (g_strcmp0(key, "d") == 0) {
+  if (is_space_key(key)) {
+    fsm->previous_state = IDE_STATE_SELECT;
+    fsm->state = IDE_STATE_LEADER;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_NONE);
+  }
+  if (g_strcmp0(key, "m") == 0) {
+    fsm->state = IDE_STATE_MATCH_PENDING;
+    fsm->match_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_NONE);
+  }
+  if (g_strcmp0(key, "d") == 0 || g_strcmp0(key, "delete") == 0 ||
+      g_strcmp0(key, "backspace") == 0 || g_strcmp0(key, "ctrl+x") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     return ide_action_make(IDE_ACTION_DELETE_SELECTION);
   }
-  if (g_strcmp0(key, "c") == 0) {
+  if (g_strcmp0(key, "c") == 0 || g_strcmp0(key, "i") == 0) {
     fsm->state = IDE_STATE_INSERT;
     return ide_action_make(IDE_ACTION_CHANGE_SELECTION);
   }
-  if (g_strcmp0(key, "y") == 0) {
+  if (g_strcmp0(key, "y") == 0 || g_strcmp0(key, "ctrl+c") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     return ide_action_make(IDE_ACTION_YANK);
   }
-  if (g_strcmp0(key, ">") == 0) {
+  if (g_strcmp0(key, "p") == 0 || g_strcmp0(key, "ctrl+v") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    return ide_action_make(IDE_ACTION_PASTE_AFTER);
+  }
+  if (g_strcmp0(key, "u") == 0 || g_strcmp0(key, "ctrl+z") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    return ide_action_make(IDE_ACTION_UNDO);
+  }
+  if (g_strcmp0(key, "U") == 0 || g_strcmp0(key, "ctrl+y") == 0 ||
+      g_strcmp0(key, "ctrl+r") == 0 || g_strcmp0(key, "ctrl+shift+z") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    return ide_action_make(IDE_ACTION_REDO);
+  }
+  if (g_strcmp0(key, "ctrl+s") == 0) {
+    return ide_action_make(IDE_ACTION_SAVE);
+  }
+  if (g_strcmp0(key, ">") == 0 || g_strcmp0(key, "tab") == 0) {
     return ide_action_make(IDE_ACTION_INDENT);
   }
-  if (g_strcmp0(key, "<") == 0) {
+  if (g_strcmp0(key, "<") == 0 || g_strcmp0(key, "shift+tab") == 0) {
     return ide_action_make(IDE_ACTION_OUTDENT);
   }
   if (g_strcmp0(key, "!") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     return ide_action_make(IDE_ACTION_PIPE_SELECTION);
   }
-  if (g_strcmp0(key, "h") == 0 || g_strcmp0(key, "left") == 0) {
+  if (g_strcmp0(key, "h") == 0 || g_strcmp0(key, "left") == 0 ||
+      g_strcmp0(key, "shift+left") == 0) {
     return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "left");
   }
-  if (g_strcmp0(key, "l") == 0 || g_strcmp0(key, "right") == 0) {
+  if (g_strcmp0(key, "l") == 0 || g_strcmp0(key, "right") == 0 ||
+      g_strcmp0(key, "shift+right") == 0) {
     return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "right");
   }
-  if (g_strcmp0(key, "j") == 0 || g_strcmp0(key, "down") == 0) {
+  if (g_strcmp0(key, "j") == 0 || g_strcmp0(key, "down") == 0 ||
+      g_strcmp0(key, "shift+down") == 0) {
     return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "down");
   }
-  if (g_strcmp0(key, "k") == 0 || g_strcmp0(key, "up") == 0) {
+  if (g_strcmp0(key, "k") == 0 || g_strcmp0(key, "up") == 0 ||
+      g_strcmp0(key, "shift+up") == 0) {
     return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "up");
   }
-  if (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0) {
+  if (is_pgup_key(key) || g_strcmp0(key, "ctrl+u") == 0) {
     return ide_action_make(IDE_ACTION_PAGE_UP);
   }
-  if (g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0) {
+  if (is_pgdown_key(key) || g_strcmp0(key, "ctrl+d") == 0) {
     return ide_action_make(IDE_ACTION_PAGE_DOWN);
   }
-  if (g_strcmp0(key, "home") == 0) {
+  if (g_strcmp0(key, "home") == 0 || g_strcmp0(key, "0") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_LINE_START);
   }
-  if (g_strcmp0(key, "end") == 0) {
+  if (g_strcmp0(key, "end") == 0 || g_strcmp0(key, "$") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_LINE_END);
   }
   if (g_strcmp0(key, "ctrl+home") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_BUFFER_START);
   }
-  if (g_strcmp0(key, "ctrl+end") == 0) {
+  if (g_strcmp0(key, "ctrl+end") == 0 || g_strcmp0(key, "G") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_BUFFER_END);
   }
-  if (g_strcmp0(key, "w") == 0) {
+  if (g_strcmp0(key, "w") == 0 || g_strcmp0(key, "ctrl+right") == 0) {
     return ide_action_make(IDE_ACTION_SELECT_WORD);
   }
-  if (g_strcmp0(key, "b") == 0) {
+  if (g_strcmp0(key, "b") == 0 || g_strcmp0(key, "ctrl+left") == 0) {
     return ide_action_make(IDE_ACTION_SELECT_WORD_BACKWARD);
   }
   if (g_strcmp0(key, "x") == 0) {
@@ -845,6 +1026,13 @@ handle_leader(IdeFsm *fsm, const char *key)
     return ide_action_make(IDE_ACTION_NONE);
   }
 
+  /* Space + Space opens Fuzzy File Picker directly */
+  if (fsm->leader_buf[0] == '\0' && is_space_key(key)) {
+    fsm->state = IDE_STATE_PICKER;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_PICKER_OPEN_FILES);
+  }
+
   gsize cur_len = strlen(fsm->leader_buf);
   gsize key_len = strlen(key);
   if (cur_len + key_len >= sizeof(fsm->leader_buf)) {
@@ -862,7 +1050,7 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_PICKER_OPEN_FILES);
   }
-  if (g_strcmp0(b, "fg") == 0) {
+  if (g_strcmp0(b, "fg") == 0 || g_strcmp0(b, "/") == 0) {
     fsm->state = IDE_STATE_PICKER;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_PICKER_OPEN_GREP);
@@ -882,7 +1070,7 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_BUFFER_FORCE_CLOSE);
   }
-  if (g_strcmp0(b, "fs") == 0) {
+  if (g_strcmp0(b, "fs") == 0 || g_strcmp0(b, "ws") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_SAVE);
@@ -910,7 +1098,7 @@ handle_leader(IdeFsm *fsm, const char *key)
     return ide_action_make(IDE_ACTION_HELP_TOGGLE);
   }
   if (g_strcmp0(b, "mp") == 0) {
-    fsm->state = IDE_STATE_DRAWER;
+    fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_TOGGLE_MARKDOWN_PREVIEW);
   }
@@ -1186,16 +1374,16 @@ handle_drawer(IdeFsm *fsm, const char *key)
     if (g_strcmp0(key, "alt+y") == 0 || g_strcmp0(key, "ctrl+y") == 0) {
       return ide_action_make(IDE_ACTION_REPLACE_APPLY_CURRENT);
     }
-    if (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0) {
+    if (is_pgup_key(key)) {
       return ide_action_make(IDE_ACTION_PAGE_UP);
     }
-    if (g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0) {
+    if (is_pgdown_key(key)) {
       return ide_action_make(IDE_ACTION_PAGE_DOWN);
     }
     if (g_strcmp0(key, "backspace") == 0) {
       return ide_action_make(IDE_ACTION_BACKSPACE);
     }
-    if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+    if (is_space_key(key)) {
       return ide_action_make_str(IDE_ACTION_INSERT_CHAR, " ");
     }
     if (is_printable_single_glyph(key)) {
@@ -1223,11 +1411,11 @@ handle_drawer(IdeFsm *fsm, const char *key)
     return ide_action_make(IDE_ACTION_MOVE_UP);
   }
   if (g_strcmp0(key, "d") == 0 || g_strcmp0(key, "ctrl+d") == 0 ||
-      g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0) {
+      is_pgdown_key(key)) {
     return ide_action_make(IDE_ACTION_PAGE_DOWN);
   }
   if (g_strcmp0(key, "u") == 0 || g_strcmp0(key, "ctrl+u") == 0 ||
-      g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0) {
+      is_pgup_key(key)) {
     return ide_action_make(IDE_ACTION_PAGE_UP);
   }
   if (g_strcmp0(key, "G") == 0 || g_strcmp0(key, "ctrl+end") == 0) {
@@ -1257,7 +1445,8 @@ handle_drawer(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "ctrl+w") == 0) {
     return ide_action_make(IDE_ACTION_PANE_CYCLE);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
+    fsm->previous_state = IDE_STATE_DRAWER;
     fsm->state = IDE_STATE_LEADER;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_NONE);
@@ -1280,7 +1469,7 @@ handle_tree(IdeFsm *fsm, const char *key)
     if (g_strcmp0(key, "backspace") == 0) {
       return ide_action_make(IDE_ACTION_BACKSPACE);
     }
-    if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+    if (is_space_key(key)) {
       return ide_action_make_str(IDE_ACTION_INSERT_CHAR, " ");
     }
     if (is_printable_single_glyph(key)) {
@@ -1305,12 +1494,10 @@ handle_tree(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "h") == 0 || g_strcmp0(key, "left") == 0) {
     return ide_action_make(IDE_ACTION_TREE_COLLAPSE_OR_PARENT);
   }
-  if (g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0 ||
-      g_strcmp0(key, "ctrl+d") == 0) {
+  if (is_pgdown_key(key) || g_strcmp0(key, "ctrl+d") == 0) {
     return ide_action_make(IDE_ACTION_TREE_PAGE_DOWN);
   }
-  if (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0 ||
-      g_strcmp0(key, "ctrl+u") == 0) {
+  if (is_pgup_key(key) || g_strcmp0(key, "ctrl+u") == 0) {
     return ide_action_make(IDE_ACTION_TREE_PAGE_UP);
   }
   if (g_strcmp0(key, "home") == 0) {
@@ -1340,7 +1527,7 @@ handle_tree(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "ctrl+w") == 0) {
     return ide_action_make(IDE_ACTION_PANE_CYCLE);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
     fsm->previous_state = IDE_STATE_TREE;
     fsm->state = IDE_STATE_LEADER;
     fsm->leader_buf[0] = '\0';
@@ -1360,16 +1547,24 @@ handle_picker(IdeFsm *fsm, const char *key)
     fsm->state = IDE_STATE_NORMAL;
     return ide_action_make(IDE_ACTION_PICKER_SELECT);
   }
-  if (g_strcmp0(key, "down") == 0 || g_strcmp0(key, "ctrl+n") == 0) {
+  if (g_strcmp0(key, "down") == 0 || g_strcmp0(key, "ctrl+n") == 0 ||
+      g_strcmp0(key, "tab") == 0 || g_strcmp0(key, "ctrl+j") == 0) {
     return ide_action_make(IDE_ACTION_PICKER_NEXT);
   }
-  if (g_strcmp0(key, "up") == 0 || g_strcmp0(key, "ctrl+p") == 0) {
+  if (g_strcmp0(key, "up") == 0 || g_strcmp0(key, "ctrl+p") == 0 ||
+      g_strcmp0(key, "shift+tab") == 0 || g_strcmp0(key, "ctrl+k") == 0) {
     return ide_action_make(IDE_ACTION_PICKER_PREV);
+  }
+  if (is_pgdown_key(key) || g_strcmp0(key, "ctrl+d") == 0) {
+    return ide_action_make(IDE_ACTION_HELP_PAGE_DOWN);
+  }
+  if (is_pgup_key(key) || g_strcmp0(key, "ctrl+u") == 0) {
+    return ide_action_make(IDE_ACTION_HELP_PAGE_UP);
   }
   if (g_strcmp0(key, "backspace") == 0) {
     return ide_action_make(IDE_ACTION_PICKER_BACKSPACE);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
     return ide_action_make_str(IDE_ACTION_PICKER_INPUT, " ");
   }
   if (is_printable_single_glyph(key)) {
@@ -1396,18 +1591,16 @@ handle_help(IdeFsm *fsm, const char *key)
       g_strcmp0(key, "shift+tab") == 0 || g_strcmp0(key, "btab") == 0) {
     return ide_action_make(IDE_ACTION_HELP_PREV);
   }
-  if (g_strcmp0(key, "pgdown") == 0 || g_strcmp0(key, "pagedown") == 0 ||
-      g_strcmp0(key, "ctrl+d") == 0) {
+  if (is_pgdown_key(key) || g_strcmp0(key, "ctrl+d") == 0) {
     return ide_action_make(IDE_ACTION_HELP_PAGE_DOWN);
   }
-  if (g_strcmp0(key, "pgup") == 0 || g_strcmp0(key, "pageup") == 0 ||
-      g_strcmp0(key, "ctrl+u") == 0) {
+  if (is_pgup_key(key) || g_strcmp0(key, "ctrl+u") == 0) {
     return ide_action_make(IDE_ACTION_HELP_PAGE_UP);
   }
   if (g_strcmp0(key, "backspace") == 0) {
     return ide_action_make(IDE_ACTION_HELP_BACKSPACE);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
     return ide_action_make_str(IDE_ACTION_HELP_INPUT, " ");
   }
   if (is_printable_single_glyph(key)) {
@@ -1421,7 +1614,7 @@ handle_diff_review(IdeFsm *fsm, const char *key)
 {
   if (g_strcmp0(key, "esc") == 0 || g_strcmp0(key, "q") == 0) {
     fsm->state = IDE_STATE_NORMAL;
-    return ide_action_make(IDE_ACTION_NONE);
+    return ide_action_make(IDE_ACTION_DRAWER_CLOSE);
   }
   if (g_strcmp0(key, "j") == 0 || g_strcmp0(key, "down") == 0) {
     return ide_action_make(IDE_ACTION_MOVE_DOWN);
@@ -1474,6 +1667,10 @@ handle_completion(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "ctrl+space") == 0 || g_strcmp0(key, "ctrl+@") == 0) {
     return ide_action_make(IDE_ACTION_NONE);
   }
+  if (is_space_key(key)) {
+    fsm->state = IDE_STATE_INSERT;
+    return ide_action_make_str(IDE_ACTION_INSERT_CHAR, " ");
+  }
   if (is_printable_single_glyph(key)) {
     return ide_action_make_str(IDE_ACTION_INSERT_CHAR, key);
   }
@@ -1518,6 +1715,9 @@ handle_rename(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "backspace") == 0) {
     return ide_action_make(IDE_ACTION_BACKSPACE);
   }
+  if (is_space_key(key)) {
+    return ide_action_make_str(IDE_ACTION_INSERT_CHAR, " ");
+  }
   if (is_printable_single_glyph(key)) {
     return ide_action_make_str(IDE_ACTION_INSERT_CHAR, key);
   }
@@ -1538,7 +1738,7 @@ handle_search(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "backspace") == 0) {
     return ide_action_make(IDE_ACTION_SEARCH_BACKSPACE);
   }
-  if (g_strcmp0(key, "Space") == 0 || g_strcmp0(key, " ") == 0) {
+  if (is_space_key(key)) {
     return ide_action_make_str(IDE_ACTION_SEARCH_INPUT, " ");
   }
   if (is_printable_single_glyph(key)) {
@@ -1654,7 +1854,13 @@ ide_fsm_handle_key_at(IdeFsm *fsm, const char *key, gint64 now_usec)
 
 done:
   fsm->last_input_usec = now_usec;
-  g_strlcpy(fsm->last_char, key, sizeof(fsm->last_char));
+  if (g_strcmp0(key, "g") == 0 &&
+      (result.type == IDE_ACTION_MOVE_BUFFER_START ||
+       result.type == IDE_ACTION_TREE_TOP)) {
+    fsm->last_char[0] = '\0';
+  } else {
+    g_strlcpy(fsm->last_char, key, sizeof(fsm->last_char));
+  }
   return result;
 }
 

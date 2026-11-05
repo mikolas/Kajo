@@ -817,7 +817,14 @@ void
 ide_buffer_set_text(IdeBuffer *buf, const char *text)
 {
   g_return_if_fail(buf != NULL && buf->source_buf != NULL);
-  gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buf->source_buf), text ? text : "", -1);
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(buf->source_buf);
+  GtkTextIter start, end;
+  gtk_text_buffer_begin_user_action(tbuf);
+  gtk_text_buffer_get_bounds(tbuf, &start, &end);
+  gtk_text_buffer_delete(tbuf, &start, &end);
+  gtk_text_buffer_get_start_iter(tbuf, &start);
+  gtk_text_buffer_insert(tbuf, &start, text ? text : "", -1);
+  gtk_text_buffer_end_user_action(tbuf);
   ide_buffer_recompute_diffs(buf);
 }
 
