@@ -208,26 +208,39 @@ The Ephemeral Bottom Drawer is a single shared `GtkRevealer` container hosting a
 +------------------------------------+-----------------------------------------------------------------------------+
 ```
 
-#### Drawer Mode 4: Live Markdown & Native Cairo Vector Mermaid Preview (`Space m p`)
-- Renders Markdown headings, tables, task checklists (`Space m t`), code blocks, and **fenced `mermaid` diagrams** (`flowchart TD/LR`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`) using a **native Cairo vector graph layout engine** (`GtkDrawingArea`) with clickable nodes that jump the editor cursor to the corresponding definition line. Both `[ VECTOR GRAPH ]` and `[ ASCII BOX ]` (`Space m d`) modes are supported.
+#### Drawer / Split Mode 4: Full Graphical Markdown & Cairo Vector Mermaid Renderer (`Space m p` / `Space m d`)
+- Because `kajo-ide` runs natively on Wayland/GTK4, Markdown and Mermaid previews **never** degrade to terminal ASCII art. Instead, `src/ide/ide_markdown.c` builds a **full GUI document tree** (`GtkBox` + `GtkGrid` + `GtkPicture` + embedded `GtkSourceView` + Cairo `GtkDrawingArea`) that can dock either in the **Bottom Drawer** or as a **Side-by-Side Split Pane (`Space m d`)** with synchronized smooth pixel scrolling.
+- The same graphical Markdown engine also powers **LSP Hover (`K`)** documentation cards.
+- **Native Graphical Elements:**
+  1. **Proportional Typography & Headings (`.ide-md-h1`..`.ide-md-h6`):** Scaled `Inter`/`Cantarell` body copy (`14px`, `1.6` line-height) paired with `Fira Code` inline code pills (`.ide-md-code-inline`, `#1e1e1e` bg, `1px solid #333333`) and crisp `1px solid #2b2b2b` bottom rules under `H1`/`H2`.
+  2. **GitHub-Flavored Callout Alert Cards (`.ide-md-alert`):** `> [!NOTE]` (`#0078d4`), `> [!TIP]` (`#10893e`), `> [!IMPORTANT]` (`#b4009e`), `> [!WARNING]` (`#ff8c00`), and `> [!CAUTION]` (`#e81123`) render as Metro section cards with a `4px` semantic left border, semantic icon + uppercase badge, and `#161616` surface fill.
+  3. **Interactive GUI Task Checklists (`GtkCheckButton`):** `- [ ]` and `- [x]` items render as live GTK4 checkboxes (`Space m t` or mouse click); toggling a checkbox in the preview directly updates `[ ]` ↔ `[x]` on the corresponding line in the editor buffer.
+  4. **Syntax-Highlighted Code Blocks with `[ 📋 COPY ]` Header (`.ide-md-codeblock`):** Fenced code blocks embed a read-only `GtkSourceView` using `kajo-metro-dark.xml` topped by a `#181818` header strip showing the language badge (`[ C99 ]`, `[ RUST ]`) and a one-click Wayland clipboard copy button.
+  5. **Native Graphical Tables (`.ide-md-table`):** Rendered via `GtkGrid` with `#181818` uppercase headers, `1px solid #2b2b2b` cell borders, and alternating `#121212` / `#151515` row fills.
+  6. **High-DPI Inline Images (`GtkPicture`):** Relative and workspace `.png`, `.jpg`, `.webp`, and `.svg` images render inline with a dimension/caption footer.
+  7. **Anti-Aliased Cairo / Pango Vector Mermaid Canvas (`.ide-mermaid-canvas`):**
+     - Fenced ```` ```mermaid ```` blocks (`flowchart TD/LR`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `xychart-beta`) render as crisp anti-aliased vector graphics via Cairo & Pango with Cubic Bézier edges, arrowheads, and Metro-styled node cards.
+     - Includes an interactive diagram toolbar (`[ 🔍− ] [ 100% ] [ 🔍+ ] [ ⛶ FIT ] [ 💾 EXPORT SVG ] [ 📷 EXPORT PNG ]`) and **Node-to-Source Click Navigation** (clicking any node or transition jumps the editor cursor directly to its definition line).
 
 ```text
 +------------------------------------------------------------------------------------------------------------------+
-| 📖 MARKDOWN & MERMAID PREVIEW (Space m p)             [ Mode: Cairo Vector (Space m d) ] [ Sync Scroll: ON ]     |
+| 📖 GRAPHICAL MARKDOWN & CAIRO MERMAID PREVIEW (Space m p)   [ Layout: Split Right (Space m d) ] [ Sync Scroll ]  |
 +------------------------------------------------------------------------------------------------------------------+
-| ## 3.1 Modal FSM State Machine                                                                                   |
+|  3.1 Modal FSM State Machine                                                                                     |
+|  ══════════════════════════════════════════════════════════════════════════════════════════════════════════════  |
+|  ┃ ℹ NOTE (GitHub Alert Card — 4px #0078d4 left accent border)                                                   |
+|  ┃ Movements in NORMAL mode immediately highlight the target text object in SELECT mode before mutation.         |
 |                                                                                                                  |
-|   +------------------+       i / a / o        +------------------+                                               |
-|   |      NORMAL      | ---------------------> |      INSERT      |                                               |
-|   |  (@metro-accent) | <--------------------- |    (#10893e)     |                                               |
-|   +------------------+       Esc / j k        +------------------+                                               |
-|        |        ^                                                                                                |
-|  w/b/x |        | d / c / y / Esc                                                                                |
-|        v        |                                                                                                |
-|   +------------------+       m i/a <obj>      +------------------+                                               |
-|   |      SELECT      | <--------------------- |      MATCH       |                                               |
-|   |    (#ff8c00)     |                        |    (#b4009e)     |                                               |
-|   +------------------+                        +------------------+                                               |
+|  +------------------------------------------------------------------------------------------------------------+  |
+|  | MERMAID VECTOR DIAGRAM (Cairo + Pango Anti-Aliased Canvas)      [🔍-] [100%] [🔍+] [⛶ FIT] [💾 SVG] [📷 PNG] |  |
+|  |------------------------------------------------------------------------------------------------------------|  |
+|  |     ┏━━━━━━━━━━━━━━━━━━┓         i / a / o          ┏━━━━━━━━━━━━━━━━━━┓                                   |  |
+|  |     ┃      NORMAL      ┃ ─────────────────────────▶ ┃      INSERT      ┃   (Click any vector node to jump  |  |
+|  |     ┃  (@metro-accent) ┃ ◀───────────────────────── ┃    (#10893e)     ┃    cursor to source line in .md)  |  |
+|  |     ┗━━━━━━━━━━━━━━━━━━┛         Esc / j k          ┗━━━━━━━━━━━━━━━━━━┛                                   |  |
+|  +------------------------------------------------------------------------------------------------------------+  |
+|                                                                                                                  |
+|  ☑ [x] Interactive GtkCheckButton synced with line 48     ☐ [ ] Click to toggle `[ ]` -> `[x]` in source buffer  |
 +------------------------------------------------------------------------------------------------------------------+
 ```
 
@@ -354,9 +367,9 @@ Zero `AltGr` required—all delimiter and AST structural selections use `m` + `i
 | **AI Agent Review** | `Space d s` | `AGENT_REVIEW_OPEN` | Open Agent Batch Transaction Review in Bottom Drawer |
 | | `Space d a` | `AGENT_ACCEPT_ALL` | Accept all pending agent modifications and clear snapshot |
 | | `Space d r` | `AGENT_REVERT_ALL` | Atomically revert all files in the batch to pre-agent snapshot |
-| **Markdown/Mermaid** | `Space m p` | `TOGGLE_MARKDOWN_PREVIEW` | Toggle live Markdown & Cairo Mermaid preview in Bottom Drawer |
+| **Markdown/Mermaid** | `Space m p` | `TOGGLE_MARKDOWN_PREVIEW` | Toggle full GUI Markdown & Cairo Vector Mermaid preview |
 | | `Space m t` | `TOGGLE_CHECKLIST` | Toggle `- [ ]` / `- [x]` Markdown task item on current line |
-| | `Space m d` | `TOGGLE_MERMAID_MODE` | Toggle Mermaid rendering between Cairo Vector and ASCII Box |
+| | `Space m d` | `TOGGLE_MERMAID_MODE` | Toggle Markdown/Mermaid preview between Side-by-Side Split and Bottom Drawer |
 | | `Space m f` | `TOGGLE_MARKDOWN_FOLD` | Toggle code/heading fold at cursor |
 | **Help & Palette** | `Space ?` / `Space h` | `HELP_TOGGLE` | Open Interactive Help Cheatsheet & Command Palette |
 
@@ -381,7 +394,7 @@ Following [`AGENTS.md` Section 5 (Modular Codebase Standards)](file:///home/miko
 | `src/ide/ide_lsp.[ch]` | Async JSON-RPC 2.0 client over `GSubprocess` (`Content-Length` framing + `json-glib`) supporting polyglot language servers (`clangd`, `gopls`, `pyright`, `rust-analyzer`, `bash-language-server`, `vscode-json-language-server`, `yaml-language-server`, `taplo`, `mesonlsp`) and compiler error regex fallback. |
 | `src/ide/ide_dap.[ch]` | Async Debug Adapter Protocol (DAP) client over `GSubprocess` / TCP (`gdb -i=dap`, `lldb-dap`, `dlv dap`) + Bottom Drawer 3-pane Inspector (Stack, Scopes/Variables, REPL). |
 | `src/ide/ide_agent_ipc.[ch]` | Unix Domain Socket IPC server (`GSocketService` on `$XDG_RUNTIME_DIR/koodi/koodi-default.sock` and `$XDG_RUNTIME_DIR/kajo/ide.sock`) implementing the `koodi-cli` JSON RPC methods (`open`, `diff`, `reload`, `notify`, `status-badge`, `action`) + pre-edit file snapshot store for `Space d s` / `Space d a` / `Space d r`. |
-| `src/ide/ide_markdown.[ch]` | Markdown preview + native Cairo vector Mermaid diagram layout & renderer (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`) with source-line click navigation. |
+| `src/ide/ide_markdown.[ch]` | Full GUI Markdown document renderer (headings, GitHub alert callout cards, interactive `GtkCheckButton` checklists, `GtkSourceView` code blocks with copy button, `GtkGrid` tables, `GtkPicture` images) + native Cairo/Pango vector Mermaid diagram engine (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `xychart-beta`) with SVG/PNG export and source-line click navigation. |
 
 ---
 
@@ -449,8 +462,8 @@ Responses return `{"success": true, "message": "..."}` or `{"success": false, "e
    - `Space d s` multi-file unified diff review drawer, `ö`/`ä` hunk stepping, `Space d a` (Accept All), and `Space d r` (Atomic Revert All).
 2. **`koodi-cli` Unix Socket Server:**
    - `GSocketService` listener supporting `open`, `diff`, `reload`, `notify`, `status-badge`, and `action`.
-3. **Markdown Preview & Native Cairo Vector Mermaid Renderer (`src/ide/ide_markdown.[ch]`):**
-   - `Space m p` live Markdown drawer, `Space m t` checklist toggle, and native Cairo vector diagram layout (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`) with clickable node-to-source jumping and `Space m d` Vector/ASCII toggle.
+3. **Full Graphical Markdown & Native Cairo Vector Mermaid Engine (`src/ide/ide_markdown.[ch]`):**
+   - `Space m p` live GUI Markdown preview (Bottom Drawer or `Space m d` Side-by-Side Split), GitHub callout alert cards, interactive `GtkCheckButton` task toggling (`Space m t`), embedded syntax-highlighted code blocks, `GtkGrid` tables, inline images, and anti-aliased Cairo/Pango vector Mermaid diagrams with zoom/pan, SVG/PNG export, and clickable node-to-source jumping (shared with LSP Hover `K` cards).
 
 ---
 
