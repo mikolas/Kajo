@@ -59,6 +59,6 @@
   <style name="def:error"                   foreground="#ffffff" background="metro_urgent" bold="true"/>
   <style name="def:warning"                 foreground="#000000" background="metro_warning"/>
   <style name="def:note"                    foreground="#000000" background="metro_telemetry" bold="true"/>
-  <style name="def:heading"                 foreground="metro_accent" bold="true"/>
+  <style name="def:heading"                 foreground="syn_keyword" bold="true"/>
   <style name="def:link-text"               foreground="metro_telemetry" underline="single"/>
 </style-scheme>

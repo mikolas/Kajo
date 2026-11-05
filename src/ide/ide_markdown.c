@@ -13,6 +13,7 @@ struct _IdeMarkdownView {
   GtkWidget              *root_box;
   GtkWidget              *scroll_win;
   GtkWidget              *doc_box;
+  GtkWidget              *task_badge;
   char                   *current_markdown;
   gboolean                updating_checklists;
 };
@@ -606,8 +607,8 @@ static GtkWidget *build_mermaid_card_widget(IdeMarkdownView *md,
   gtk_widget_add_css_class(hdr, "ide-mermaid-toolbar");
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
 
-  GtkWidget *title = gtk_label_new("MERMAID VECTOR DIAGRAM");
-  gtk_widget_add_css_class(title, "shell-popover-badge");
+  GtkWidget *title = gtk_label_new("❖ MERMAID VECTOR DIAGRAM");
+  gtk_widget_add_css_class(title, "ide-tree-header-title");
   gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
 
   GtkWidget *kind_lbl = gtk_label_new(st->graph->kind_badge);
@@ -617,26 +618,31 @@ static GtkWidget *build_mermaid_card_widget(IdeMarkdownView *md,
   GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(spacer, TRUE);
 
-  GtkWidget *btn_zout = gtk_button_new_with_label(" - ");
+  GtkWidget *btn_zout = gtk_button_new_with_label("🔍 −");
+  gtk_widget_set_focusable(btn_zout, FALSE);
   gtk_widget_add_css_class(btn_zout, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_zout, GTK_ALIGN_CENTER);
   g_signal_connect(btn_zout, "clicked", G_CALLBACK(on_zoom_out_clicked), st);
 
   st->zoom_label = gtk_label_new("100%");
   gtk_widget_add_css_class(st->zoom_label, "shell-popover-badge");
+  gtk_widget_add_css_class(st->zoom_label, "accent");
   gtk_widget_set_valign(st->zoom_label, GTK_ALIGN_CENTER);
 
-  GtkWidget *btn_zin = gtk_button_new_with_label(" + ");
+  GtkWidget *btn_zin = gtk_button_new_with_label("🔍 +");
+  gtk_widget_set_focusable(btn_zin, FALSE);
   gtk_widget_add_css_class(btn_zin, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_zin, GTK_ALIGN_CENTER);
   g_signal_connect(btn_zin, "clicked", G_CALLBACK(on_zoom_in_clicked), st);
 
-  GtkWidget *btn_fit = gtk_button_new_with_label("1:1");
+  GtkWidget *btn_fit = gtk_button_new_with_label("⛶ FIT");
+  gtk_widget_set_focusable(btn_fit, FALSE);
   gtk_widget_add_css_class(btn_fit, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_fit, GTK_ALIGN_CENTER);
   g_signal_connect(btn_fit, "clicked", G_CALLBACK(on_zoom_reset_clicked), st);
 
-  GtkWidget *btn_svg = gtk_button_new_with_label("EXPORT SVG");
+  GtkWidget *btn_svg = gtk_button_new_with_label("💾 EXPORT SVG");
+  gtk_widget_set_focusable(btn_svg, FALSE);
   gtk_widget_add_css_class(btn_svg, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_svg, GTK_ALIGN_CENTER);
   g_signal_connect(btn_svg, "clicked", G_CALLBACK(on_export_svg_clicked), st);
@@ -750,7 +756,8 @@ static GtkWidget *build_code_block_widget(const char *lang_id, const char *code)
   GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(spacer, TRUE);
 
-  GtkWidget *copy_btn = gtk_button_new_with_label("COPY CODE");
+  GtkWidget *copy_btn = gtk_button_new_with_label("📋 COPY CODE");
+  gtk_widget_set_focusable(copy_btn, FALSE);
   gtk_widget_add_css_class(copy_btn, "ide-toolbar-btn");
   gtk_widget_set_valign(copy_btn, GTK_ALIGN_CENTER);
   char *dup_code = g_strdup(code ? code : "");
@@ -824,6 +831,8 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
 
   g_auto(GStrv) lines = g_strsplit(md->current_markdown, "\n", -1);
   guint n_lines = g_strv_length(lines);
+  guint tasks_done = 0;
+  guint tasks_total = 0;
 
   for (guint i = 0; i < n_lines; i++) {
     const char *line = lines[i];
@@ -931,7 +940,10 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
         g_str_has_prefix(trimmed, "- [x] ") ||
         g_str_has_prefix(trimmed, "- [X] ")) {
       gboolean checked = (trimmed[3] == 'x' || trimmed[3] == 'X');
+      tasks_total++;
+      if (checked) tasks_done++;
       GtkWidget *chk = gtk_check_button_new_with_label(trimmed + 6);
+      gtk_widget_set_focusable(chk, FALSE);
       md->updating_checklists = TRUE;
       gtk_check_button_set_active(GTK_CHECK_BUTTON(chk), checked);
       md->updating_checklists = FALSE;
@@ -989,6 +1001,16 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
       gtk_box_append(GTK_BOX(md->doc_box), p);
     }
   }
+
+  if (md->task_badge) {
+    if (tasks_total > 0) {
+      g_autofree char *tstr = g_strdup_printf("✓ %u / %u TASKS DONE", tasks_done, tasks_total);
+      gtk_label_set_text(GTK_LABEL(md->task_badge), tstr);
+      gtk_widget_set_visible(md->task_badge, TRUE);
+    } else {
+      gtk_widget_set_visible(md->task_badge, FALSE);
+    }
+  }
 }
 
 void ide_markdown_view_sync_scroll(IdeMarkdownView *md, double scroll_fraction) {
@@ -1025,14 +1047,29 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
 
   GtkWidget *title =
-      gtk_label_new("GRAPHICAL MARKDOWN & VECTOR MERMAID PREVIEW");
+      gtk_label_new("📖 GRAPHICAL MARKDOWN & VECTOR MERMAID PREVIEW");
   gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
+  gtk_widget_set_hexpand(title, TRUE);
+  gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
+
+  md->task_badge = gtk_label_new("✓ 0 / 0 TASKS DONE");
+  gtk_widget_add_css_class(md->task_badge, "shell-popover-badge");
+  gtk_widget_add_css_class(md->task_badge, "success");
+  gtk_widget_set_valign(md->task_badge, GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(md->task_badge, FALSE);
+
+  GtkWidget *sync_badge = gtk_label_new("SYNC SCROLL: ON");
+  gtk_widget_add_css_class(sync_badge, "shell-popover-badge");
+  gtk_widget_set_valign(sync_badge, GTK_ALIGN_CENTER);
 
   GtkWidget *badge = gtk_label_new("CAIRO + PANGO GUI");
   gtk_widget_add_css_class(badge, "shell-popover-badge");
+  gtk_widget_add_css_class(badge, "accent");
   gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
 
   gtk_box_append(GTK_BOX(hdr), title);
+  gtk_box_append(GTK_BOX(hdr), md->task_badge);
+  gtk_box_append(GTK_BOX(hdr), sync_badge);
   gtk_box_append(GTK_BOX(hdr), badge);
   gtk_box_append(GTK_BOX(md->root_box), hdr);
 

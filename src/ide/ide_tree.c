@@ -316,6 +316,84 @@ get_symbolic_icon_for_entry(const IdeTreeEntry *e, gboolean expanded)
   return "text-x-generic-symbolic";
 }
 
+static const char *
+get_icon_color_class_for_entry(const IdeTreeEntry *e, gboolean expanded)
+{
+  if (e->is_dir) {
+    return expanded ? "ide-tree-icon-folder-open" : "ide-tree-icon-folder";
+  }
+  if (g_str_has_suffix(e->name, ".c") || g_str_has_suffix(e->name, ".cpp") ||
+      g_str_has_suffix(e->name, ".cc") || g_str_has_suffix(e->name, ".rs") ||
+      g_str_has_suffix(e->name, ".go") || g_str_has_suffix(e->name, ".py")) {
+    return "ide-tree-icon-code";
+  }
+  if (g_str_has_suffix(e->name, ".h") || g_str_has_suffix(e->name, ".hpp")) {
+    return "ide-tree-icon-header";
+  }
+  if (g_str_has_suffix(e->name, ".md") || g_str_has_suffix(e->name, ".txt")) {
+    return "ide-tree-icon-markdown";
+  }
+  if (g_strcmp0(e->name, "meson.build") == 0 || g_str_has_suffix(e->name, ".json") ||
+      g_str_has_suffix(e->name, ".toml") || g_str_has_suffix(e->name, ".xml") ||
+      g_str_has_suffix(e->name, ".css") || g_str_has_suffix(e->name, ".blp")) {
+    return "ide-tree-icon-config";
+  }
+  if (g_str_has_prefix(e->name, ".git")) {
+    return "ide-tree-icon-git";
+  }
+  return "ide-tree-icon";
+}
+
+char *
+ide_tree_format_git_summary(IdeTree *tree)
+{
+  if (!tree || !tree->workspace_root) {
+    return g_strdup("⎇ workspace");
+  }
+
+  const char *argv[] = {
+    "git", "-C", tree->workspace_root, "rev-parse", "--abbrev-ref", "HEAD", NULL
+  };
+  g_autofree char *branch_out = NULL;
+  gint exit_status = 0;
+  const char *branch = "main";
+  if (g_spawn_sync(NULL,
+                   (char **)argv,
+                   NULL,
+                   G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
+                   NULL,
+                   NULL,
+                   &branch_out,
+                   NULL,
+                   &exit_status,
+                   NULL) &&
+      exit_status == 0 && branch_out != NULL) {
+    g_strstrip(branch_out);
+    if (branch_out[0] != '\0') {
+      branch = branch_out;
+    }
+  }
+
+  guint mod_cnt = 0, add_cnt = 0, unt_cnt = 0;
+  if (tree->git_status_map != NULL) {
+    GHashTableIter iter;
+    gpointer k, v;
+    g_hash_table_iter_init(&iter, tree->git_status_map);
+    while (g_hash_table_iter_next(&iter, &k, &v)) {
+      const char *st = v;
+      if (!st) continue;
+      if (st[0] == 'M') mod_cnt++;
+      else if (st[0] == 'A') add_cnt++;
+      else if (st[0] == 'U') unt_cnt++;
+    }
+  }
+
+  if (mod_cnt == 0 && add_cnt == 0 && unt_cnt == 0) {
+    return g_strdup_printf("⎇ %s • CLEAN", branch);
+  }
+  return g_strdup_printf("⎇ %s • M:%u A:%u U:%u", branch, mod_cnt, add_cnt, unt_cnt);
+}
+
 void
 ide_tree_refresh(IdeTree *tree)
 {
@@ -381,6 +459,7 @@ ide_tree_refresh(IdeTree *tree)
         gtk_image_new_from_icon_name(get_symbolic_icon_for_entry(e, expanded));
     gtk_image_set_pixel_size(GTK_IMAGE(icon_img), 14);
     gtk_widget_add_css_class(icon_img, "ide-tree-icon");
+    gtk_widget_add_css_class(icon_img, get_icon_color_class_for_entry(e, expanded));
     gtk_widget_set_valign(icon_img, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(hbox), icon_img);
 
@@ -390,12 +469,23 @@ ide_tree_refresh(IdeTree *tree)
     gtk_widget_set_hexpand(name_lbl, TRUE);
     gtk_widget_set_valign(name_lbl, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(name_lbl, "ide-tree-name");
+    if (e->is_dir) {
+      gtk_widget_add_css_class(name_lbl, "ide-tree-name-dir");
+    } else if (e->git_status[0] == 'M') {
+      gtk_widget_add_css_class(name_lbl, "ide-tree-name-modified");
+    } else if (e->git_status[0] == 'A') {
+      gtk_widget_add_css_class(name_lbl, "ide-tree-name-added");
+    } else if (e->git_status[0] == 'U') {
+      gtk_widget_add_css_class(name_lbl, "ide-tree-name-untracked");
+    } else if (e->git_status[0] == 'D') {
+      gtk_widget_add_css_class(name_lbl, "ide-tree-name-deleted");
+    }
     gtk_box_append(GTK_BOX(hbox), name_lbl);
 
     if (e->git_status[0] != '\0') {
       GtkWidget *badge = gtk_label_new(e->git_status);
       gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
-      gtk_widget_add_css_class(badge, "shell-popover-badge");
+      gtk_widget_add_css_class(badge, "ide-git-badge");
       if (e->git_status[0] == 'M') {
         gtk_widget_add_css_class(badge, "ide-git-modified");
       } else if (e->git_status[0] == 'A') {
@@ -465,9 +555,9 @@ ide_tree_new(const char       *workspace_root,
   gtk_widget_add_css_class(tree->header_title, "ide-tree-header-title");
   gtk_box_append(GTK_BOX(hdr), tree->header_title);
 
-  GtkWidget *hint = gtk_label_new("[a/A/d/r]");
+  GtkWidget *hint = gtk_label_new("[a/A/r/d]");
   gtk_widget_set_valign(hint, GTK_ALIGN_CENTER);
-  gtk_widget_add_css_class(hint, "shell-popover-badge");
+  gtk_widget_add_css_class(hint, "ide-tree-header-hint");
   gtk_box_append(GTK_BOX(hdr), hint);
   gtk_box_append(GTK_BOX(tree->root_box), hdr);
 

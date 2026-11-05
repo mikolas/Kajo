@@ -33,6 +33,8 @@ ensure_settings_page(SettingsApp *app_ctx, const gchar *page_name)
         page = build_page_notifications();
     else if (g_strcmp0(page_name, "niri") == 0)
         page = build_page_niri();
+    else if (g_strcmp0(page_name, "ide") == 0)
+        page = build_page_ide();
     else if (g_strcmp0(page_name, "about") == 0)
         page = build_page_about();
 
@@ -369,6 +371,9 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
 
     /* Domain 3: DESKTOP & WORKSPACE */
     add_sidebar_category(GTK_LIST_BOX(app_ctx->sidebar_list), "DESKTOP & WORKSPACE");
+    GtkWidget *r_ide  = create_sidebar_row_with_keywords(
+        "accessories-text-editor-symbolic", "Kajo IDE & Code", "Color Schemes, Editor Font, Gutter", "ide",
+        "ide editor code syntax color scheme theme font size monospace tab indent minimap gutter kajo-ide");
     GtkWidget *r_niri = create_sidebar_row_with_keywords(
         "view-grid-symbolic", "Niri Compositor", "Layer Rules, Shaders & Gaps", "niri",
         "niri compositor rules layout gaps blur xray window floating tiling kdl shader shaders glsl animation open close resize transition");
@@ -376,6 +381,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
         "fl-power-symbolic", "About System", "Hardware Specs, OS Version", "about",
         "about system hardware specs cpu memory ram kernel version os linux desktop");
 
+    gtk_list_box_append(GTK_LIST_BOX(app_ctx->sidebar_list), r_ide);
     gtk_list_box_append(GTK_LIST_BOX(app_ctx->sidebar_list), r_niri);
     gtk_list_box_append(GTK_LIST_BOX(app_ctx->sidebar_list), r_abt);
 

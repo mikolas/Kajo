@@ -20,6 +20,7 @@ void        ide_tree_free(IdeTree *tree);
 GtkWidget  *ide_tree_get_widget(IdeTree *tree);
 void        ide_tree_set_workspace_root(IdeTree *tree, const char *workspace_root);
 void        ide_tree_refresh(IdeTree *tree);
+char       *ide_tree_format_git_summary(IdeTree *tree);
 
 void        ide_tree_move_up(IdeTree *tree);
 void        ide_tree_move_down(IdeTree *tree);

@@ -71,10 +71,10 @@ dap_populate_rows(IdeDapView *dap, IdeBuffer *buf)
                                         ide_buffer_get_title(buf),
                                         dap->current_pc_line);
   GtkWidget *r0 = gtk_list_box_row_new();
-  gtk_widget_add_css_class(r0, "widget-row-card");
+  gtk_widget_add_css_class(r0, "ide-tree-row");
   GtkWidget *l0 = gtk_label_new(f0);
   gtk_label_set_xalign(GTK_LABEL(l0), 0.0f);
-  gtk_widget_add_css_class(l0, "row-title");
+  gtk_widget_add_css_class(l0, "ide-tree-name");
   gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(r0), l0);
   gtk_list_box_append(GTK_LIST_BOX(dap->stack_list_box), r0);
   gtk_list_box_select_row(GTK_LIST_BOX(dap->stack_list_box), GTK_LIST_BOX_ROW(r0));
@@ -82,21 +82,31 @@ dap_populate_rows(IdeDapView *dap, IdeBuffer *buf)
   g_autoptr(GArray) bps = ide_buffer_get_breakpoints(buf);
   g_autofree char *v0 = g_strdup_printf("active_breakpoints = %u", bps ? bps->len : 0u);
   GtkWidget *vr0 = gtk_list_box_row_new();
-  gtk_widget_add_css_class(vr0, "widget-row-card");
+  gtk_widget_add_css_class(vr0, "ide-tree-row");
   GtkWidget *vl0 = gtk_label_new(v0);
   gtk_label_set_xalign(GTK_LABEL(vl0), 0.0f);
-  gtk_widget_add_css_class(vl0, "row-subtitle");
+  gtk_widget_add_css_class(vl0, "ide-tree-name");
   gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(vr0), vl0);
   gtk_list_box_append(GTK_LIST_BOX(dap->locals_list_box), vr0);
 
   g_autofree char *v1 = g_strdup_printf("pc_line = %u", dap->current_pc_line);
   GtkWidget *vr1 = gtk_list_box_row_new();
-  gtk_widget_add_css_class(vr1, "widget-row-card");
+  gtk_widget_add_css_class(vr1, "ide-tree-row");
   GtkWidget *vl1 = gtk_label_new(v1);
   gtk_label_set_xalign(GTK_LABEL(vl1), 0.0f);
-  gtk_widget_add_css_class(vl1, "row-subtitle");
+  gtk_widget_add_css_class(vl1, "ide-tree-name");
   gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(vr1), vl1);
   gtk_list_box_append(GTK_LIST_BOX(dap->locals_list_box), vr1);
+}
+
+static void
+on_dap_btn_clicked(GtkButton *btn, gpointer user_data)
+{
+  IdeDapView *dap = user_data;
+  const char *cmd = g_object_get_data(G_OBJECT(btn), "dap-cmd");
+  if (dap && dap->action_cb && cmd) {
+    dap->action_cb(cmd, dap->cb_data);
+  }
 }
 
 static void
@@ -120,28 +130,48 @@ ide_dap_view_new(IdeDapActionCb action_cb, gpointer user_data)
   dap->cb_data = user_data;
 
   dap->root_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-  gtk_widget_set_size_request(dap->root_box, -1, 210);
+  gtk_widget_set_size_request(dap->root_box, -1, 185);
 
-  GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-  gtk_widget_add_css_class(hdr, "settings-header-bar");
+  GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_add_css_class(hdr, "ide-drawer-header");
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
 
-  GtkWidget *title = gtk_label_new("🐞 DAP DEBUGGER INSPECTOR (Space d v) — [F5: Continue | F10: Over | F11: Into | F12: Out]");
-  gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
-  gtk_widget_set_hexpand(title, TRUE);
-  gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
-  gtk_widget_add_css_class(title, "settings-header-title");
-  gtk_box_append(GTK_BOX(hdr), title);
+  dap->adapter_badge = gtk_label_new("gdb -i=dap");
+  gtk_widget_set_valign(dap->adapter_badge, GTK_ALIGN_CENTER);
+  gtk_widget_add_css_class(dap->adapter_badge, "shell-popover-badge");
+  gtk_box_append(GTK_BOX(hdr), dap->adapter_badge);
 
   dap->status_badge = gtk_label_new("IDLE");
   gtk_widget_set_valign(dap->status_badge, GTK_ALIGN_CENTER);
   gtk_widget_add_css_class(dap->status_badge, "shell-popover-badge");
   gtk_box_append(GTK_BOX(hdr), dap->status_badge);
 
-  dap->adapter_badge = gtk_label_new("gdb -i=dap");
-  gtk_widget_set_valign(dap->adapter_badge, GTK_ALIGN_CENTER);
-  gtk_widget_add_css_class(dap->adapter_badge, "shell-popover-badge");
-  gtk_box_append(GTK_BOX(hdr), dap->adapter_badge);
+  GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_set_hexpand(spacer, TRUE);
+  gtk_box_append(GTK_BOX(hdr), spacer);
+
+  struct {
+    const char *label;
+    const char *cmd;
+    const char *css;
+  } btns[] = {
+    { "▶ CONTINUE (F5)",  "continue",  "action-btn-primary" },
+    { "↷ STEP OVER (F10)", "step-over", "ide-toolbar-btn" },
+    { "↓ STEP INTO (F11)", "step-into", "ide-toolbar-btn" },
+    { "↑ STEP OUT (F12)",  "step-out",  "ide-toolbar-btn" },
+    { "■ STOP (Shift+F5)", "stop",      "ide-btn-reject" }
+  };
+
+  for (size_t i = 0; i < G_N_ELEMENTS(btns); i++) {
+    GtkWidget *b = gtk_button_new_with_label(btns[i].label);
+    gtk_widget_set_focusable(b, FALSE);
+    gtk_widget_set_valign(b, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(b, "ide-toolbar-btn");
+    gtk_widget_add_css_class(b, btns[i].css);
+    g_object_set_data(G_OBJECT(b), "dap-cmd", (gpointer)btns[i].cmd);
+    g_signal_connect(b, "clicked", G_CALLBACK(on_dap_btn_clicked), dap);
+    gtk_box_append(GTK_BOX(hdr), b);
+  }
   gtk_box_append(GTK_BOX(dap->root_box), hdr);
 
   /* 3-Column Horizontal Split: Call Stack | Locals & Scopes | Debug Console & REPL */
@@ -155,13 +185,15 @@ ide_dap_view_new(IdeDapActionCb action_cb, gpointer user_data)
   /* Col 1: Call Stack */
   GtkWidget *c1 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   gtk_widget_set_hexpand(c1, TRUE);
-  GtkWidget *c1_lbl = gtk_label_new("CALL STACK");
+  GtkWidget *c1_lbl = gtk_label_new("CALL STACK (THREADS)");
   gtk_label_set_xalign(GTK_LABEL(c1_lbl), 0.0f);
-  gtk_widget_add_css_class(c1_lbl, "sidebar-category-header");
+  gtk_widget_add_css_class(c1_lbl, "ide-tree-header-title");
   gtk_box_append(GTK_BOX(c1), c1_lbl);
   GtkWidget *s1 = gtk_scrolled_window_new();
   gtk_widget_set_vexpand(s1, TRUE);
   dap->stack_list_box = gtk_list_box_new();
+  gtk_widget_set_focusable(dap->stack_list_box, FALSE);
+  gtk_widget_add_css_class(dap->stack_list_box, "ide-tree-listbox");
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(s1), dap->stack_list_box);
   gtk_box_append(GTK_BOX(c1), s1);
   gtk_box_append(GTK_BOX(cols), c1);
@@ -169,13 +201,15 @@ ide_dap_view_new(IdeDapActionCb action_cb, gpointer user_data)
   /* Col 2: Locals & Scopes */
   GtkWidget *c2 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   gtk_widget_set_hexpand(c2, TRUE);
-  GtkWidget *c2_lbl = gtk_label_new("LOCALS & SCOPES");
+  GtkWidget *c2_lbl = gtk_label_new("LOCALS & WATCHES");
   gtk_label_set_xalign(GTK_LABEL(c2_lbl), 0.0f);
-  gtk_widget_add_css_class(c2_lbl, "sidebar-category-header");
+  gtk_widget_add_css_class(c2_lbl, "ide-tree-header-title");
   gtk_box_append(GTK_BOX(c2), c2_lbl);
   GtkWidget *s2 = gtk_scrolled_window_new();
   gtk_widget_set_vexpand(s2, TRUE);
   dap->locals_list_box = gtk_list_box_new();
+  gtk_widget_set_focusable(dap->locals_list_box, FALSE);
+  gtk_widget_add_css_class(dap->locals_list_box, "ide-tree-listbox");
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(s2), dap->locals_list_box);
   gtk_box_append(GTK_BOX(c2), s2);
   gtk_box_append(GTK_BOX(cols), c2);
@@ -183,18 +217,19 @@ ide_dap_view_new(IdeDapActionCb action_cb, gpointer user_data)
   /* Col 3: Debug Output & REPL */
   GtkWidget *c3 = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
   gtk_widget_set_hexpand(c3, TRUE);
-  GtkWidget *c3_lbl = gtk_label_new("DEBUG CONSOLE & REPL");
+  GtkWidget *c3_lbl = gtk_label_new("GDB / LLDB CONSOLE");
   gtk_label_set_xalign(GTK_LABEL(c3_lbl), 0.0f);
-  gtk_widget_add_css_class(c3_lbl, "sidebar-category-header");
+  gtk_widget_add_css_class(c3_lbl, "ide-tree-header-title");
   gtk_box_append(GTK_BOX(c3), c3_lbl);
 
   GtkWidget *s3 = gtk_scrolled_window_new();
   gtk_widget_set_vexpand(s3, TRUE);
   dap->console_buf = gtk_text_buffer_new(NULL);
   dap->console_view = gtk_text_view_new_with_buffer(dap->console_buf);
+  gtk_widget_set_focusable(dap->console_view, FALSE);
   gtk_text_view_set_editable(GTK_TEXT_VIEW(dap->console_view), FALSE);
   gtk_text_view_set_monospace(GTK_TEXT_VIEW(dap->console_view), TRUE);
-  gtk_widget_add_css_class(dap->console_view, "code-preview-box");
+  gtk_widget_add_css_class(dap->console_view, "ide-source-view");
   gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(s3), dap->console_view);
   gtk_box_append(GTK_BOX(c3), s3);
 

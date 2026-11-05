@@ -72,6 +72,7 @@ const char      *ide_buffer_get_file_path(const IdeBuffer *buf);
 const char      *ide_buffer_get_title(const IdeBuffer *buf);
 char            *ide_buffer_get_text(IdeBuffer *buf);
 void             ide_buffer_set_text(IdeBuffer *buf, const char *text);
+void             ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id);
 
 gboolean      ide_buffer_load_from_disk(IdeBuffer *buf, GError **error);
 gboolean      ide_buffer_save(IdeBuffer *buf, GError **error);

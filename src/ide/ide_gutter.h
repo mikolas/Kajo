@@ -25,6 +25,10 @@ void                     kajo_ide_gutter_renderer_set_breakpoint_callback(
                              KajoIdeGutterRenderer       *self,
                              IdeGutterBreakpointToggledCb cb,
                              gpointer                     user_data);
+void                     kajo_ide_gutter_renderer_set_font(
+                             KajoIdeGutterRenderer *self,
+                             const char            *font_family,
+                             int                    font_size_px);
 
 G_END_DECLS
 

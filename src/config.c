@@ -138,6 +138,14 @@ shell_config_get_default(void)
     config->kbd_backlight_level       = 2;
     config->kbd_backlight_timeout_sec = 0;
 
+    config->ide_color_scheme           = g_strdup("kajo-metro-dark");
+    config->ide_font_family            = g_strdup("Fira Code");
+    config->ide_font_size_px           = 13;
+    config->ide_tab_width              = 2;
+    config->ide_show_minimap           = TRUE;
+    config->ide_show_line_numbers      = TRUE;
+    config->ide_highlight_current_line = TRUE;
+
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
     config->layout_right          = g_ptr_array_new_full(0, free_widget_config);
@@ -456,6 +464,35 @@ shell_config_load(const gchar *path)
     if (json_object_has_member(root, "font_badge_size_px"))
         config->font_badge_size_px = (gint)json_object_get_int_member(root, "font_badge_size_px");
 
+    /* Kajo IDE settings */
+    if (json_object_has_member(root, "ide") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "ide"))) {
+        JsonObject *ide_obj = json_object_get_object_member(root, "ide");
+        if (json_object_has_member(ide_obj, "color_scheme")) {
+            g_free(config->ide_color_scheme);
+            config->ide_color_scheme = g_strdup(json_object_get_string_member(ide_obj, "color_scheme"));
+        }
+        if (json_object_has_member(ide_obj, "font_family")) {
+            g_free(config->ide_font_family);
+            config->ide_font_family = g_strdup(json_object_get_string_member(ide_obj, "font_family"));
+        }
+        if (json_object_has_member(ide_obj, "font_size_px")) {
+            config->ide_font_size_px = CLAMP((gint)json_object_get_int_member(ide_obj, "font_size_px"), 9, 28);
+        }
+        if (json_object_has_member(ide_obj, "tab_width")) {
+            config->ide_tab_width = CLAMP((gint)json_object_get_int_member(ide_obj, "tab_width"), 2, 8);
+        }
+        if (json_object_has_member(ide_obj, "show_minimap")) {
+            config->ide_show_minimap = json_object_get_boolean_member(ide_obj, "show_minimap");
+        }
+        if (json_object_has_member(ide_obj, "show_line_numbers")) {
+            config->ide_show_line_numbers = json_object_get_boolean_member(ide_obj, "show_line_numbers");
+        }
+        if (json_object_has_member(ide_obj, "highlight_current_line")) {
+            config->ide_highlight_current_line = json_object_get_boolean_member(ide_obj, "highlight_current_line");
+        }
+    }
+
     /* Layout settings */
     if (json_object_has_member(root, "layout") &&
         JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "layout"))) {
@@ -722,6 +759,25 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_set_member_name(builder, "font_badge_size_px");
     json_builder_add_int_value(builder, config->font_badge_size_px > 0 ? config->font_badge_size_px : 11);
 
+    /* Kajo IDE settings object */
+    json_builder_set_member_name(builder, "ide");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "color_scheme");
+    json_builder_add_string_value(builder, config->ide_color_scheme ? config->ide_color_scheme : "kajo-metro-dark");
+    json_builder_set_member_name(builder, "font_family");
+    json_builder_add_string_value(builder, config->ide_font_family ? config->ide_font_family : "Fira Code");
+    json_builder_set_member_name(builder, "font_size_px");
+    json_builder_add_int_value(builder, config->ide_font_size_px > 0 ? CLAMP(config->ide_font_size_px, 9, 28) : 13);
+    json_builder_set_member_name(builder, "tab_width");
+    json_builder_add_int_value(builder, config->ide_tab_width > 0 ? CLAMP(config->ide_tab_width, 2, 8) : 2);
+    json_builder_set_member_name(builder, "show_minimap");
+    json_builder_add_boolean_value(builder, config->ide_show_minimap);
+    json_builder_set_member_name(builder, "show_line_numbers");
+    json_builder_add_boolean_value(builder, config->ide_show_line_numbers);
+    json_builder_set_member_name(builder, "highlight_current_line");
+    json_builder_add_boolean_value(builder, config->ide_highlight_current_line);
+    json_builder_end_object(builder);
+
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");
     json_builder_begin_object(builder);
@@ -762,6 +818,8 @@ shell_config_destroy(ShellConfig *config)
     g_free(config->osk_auto_show_mode);
     g_free(config->accent_color);
     g_free(config->screensaver_mode);
+    g_free(config->ide_color_scheme);
+    g_free(config->ide_font_family);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
     if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
     if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);

@@ -2055,6 +2055,31 @@ window.shell-ide-window {
     border-top: 3px solid @metro-accent;
 }
 
+window.shell-ide-window .ide-header-breadcrumb {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: #999999;
+}
+
+.shell-popover-badge.accent {
+    border-color: @metro-accent;
+    color: @metro-accent;
+    background-color: alpha(@metro-accent, 0.14);
+}
+
+.shell-popover-badge.urgent {
+    border-color: @metro-urgent;
+    color: #ff6b6b;
+    background-color: rgba(232, 17, 35, 0.16);
+}
+
+.shell-popover-badge.success {
+    border-color: #10893e;
+    color: #73c991;
+    background-color: rgba(16, 137, 62, 0.16);
+}
+
 window.shell-ide-window button.ide-toolbar-btn {
     background: none;
     background-image: none;
@@ -2088,59 +2113,122 @@ window.shell-ide-window .ide-paned > separator:active {
     background-color: @metro-accent;
 }
 
+/* Multi-Buffer Tab Ribbon */
 window.shell-ide-window .ide-tab-ribbon {
-    background-color: #161616;
+    background-color: #141414;
     border-bottom: 1px solid #2b2b2b;
-    padding: 0px 8px;
-    min-height: 28px;
+    padding: 0px;
+    min-height: 32px;
 }
 
-window.shell-ide-window button.ide-tab-item {
+window.shell-ide-window .ide-tab-pill {
+    background-color: #141414;
+    border-right: 1px solid #2b2b2b;
+    border-top: 2px solid transparent;
+    padding: 0px 6px 0px 0px;
+    min-height: 32px;
+}
+
+window.shell-ide-window .ide-tab-pill:hover {
+    background-color: #1a1a1a;
+}
+
+window.shell-ide-window .ide-tab-pill.active {
+    background-color: #101010;
+    border-top: 2px solid @metro-accent;
+}
+
+window.shell-ide-window button.ide-tab-main-btn {
     background: none;
     background-image: none;
-    background-color: #161616;
+    background-color: transparent;
     border: none;
-    border-right: 1px solid #242424;
-    border-bottom: 2px solid transparent;
     border-radius: 0px;
-    padding: 3px 12px;
-    min-height: 24px;
+    padding: 4px 8px 4px 12px;
+    min-height: 28px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 600;
-    color: #8c8c8c;
+    color: #999999;
 }
 
-window.shell-ide-window button.ide-tab-item:hover {
-    background-color: #1d1d1d;
-    color: #e4e4e4;
-}
-
-window.shell-ide-window button.ide-tab-item.active {
-    background-color: #101010;
-    border-bottom: 2px solid @metro-accent;
+window.shell-ide-window .ide-tab-pill.active button.ide-tab-main-btn,
+window.shell-ide-window .ide-tab-pill.active .ide-tab-title {
     color: #ffffff;
     font-weight: 700;
 }
 
-window.shell-ide-window .ide-tree-sidebar {
+window.shell-ide-window .ide-tab-idx {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #666666;
+}
+
+window.shell-ide-window .ide-tab-mod {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 800;
+    color: @metro-accent;
+}
+
+window.shell-ide-window .ide-tab-agent {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 800;
+    color: #00d8f0;
+}
+
+window.shell-ide-window button.ide-tab-close {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-radius: 0px;
+    padding: 0px 5px;
+    min-height: 18px;
+    min-width: 18px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #666666;
+}
+
+window.shell-ide-window button.ide-tab-close:hover {
+    background-color: #e81123;
+    color: #ffffff;
+}
+
+/* File Explorer Sidebar & Git Status Colors */
+window.shell-ide-window .ide-tree-sidebar,
+window.shell-ide-window .ide-tree-sidebar scrolledwindow,
+window.shell-ide-window .ide-tree-sidebar viewport {
+    background: none;
+    background-image: none;
     background-color: #141414;
-    border-right: none;
+    border: none;
     padding: 0px;
 }
 
 window.shell-ide-window .ide-tree-header {
-    background-color: #181818;
-    border-bottom: 1px solid #2b2b2b;
-    padding: 5px 10px;
+    background-color: #1a1a1a;
+    border-bottom: 1px solid #222222;
+    padding: 6px 12px;
 }
 
 window.shell-ide-window .ide-tree-header-title {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.8px;
-    color: @metro-accent;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: #999999;
+    margin: 0px;
+}
+
+window.shell-ide-window .ide-tree-header-hint {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 600;
+    color: #888888;
     margin: 0px;
 }
 
@@ -2149,7 +2237,7 @@ window.shell-ide-window listbox.ide-tree-listbox {
     background-image: none;
     background-color: #141414;
     border: none;
-    padding: 2px 0px;
+    padding: 4px 0px;
 }
 
 window.shell-ide-window listbox.ide-tree-listbox > row,
@@ -2158,14 +2246,14 @@ window.shell-ide-window .ide-tree-row {
     background-image: none;
     background-color: transparent;
     border: none;
-    border-left: 2px solid transparent;
+    border-left: 3px solid transparent;
     border-radius: 0px;
-    padding: 2px 4px;
+    padding: 3px 8px;
     margin: 0px;
-    min-height: 24px;
+    min-height: 26px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 12px;
-    color: #d8d8d8;
+    color: #f2f2f2;
     outline: none;
     box-shadow: none;
 }
@@ -2181,9 +2269,10 @@ window.shell-ide-window .ide-tree-row:selected,
 window.shell-ide-window .ide-tree-sidebar > row:selected {
     background: none;
     background-image: none;
-    background-color: alpha(@metro-accent, 0.45);
-    border-left: 2px solid #ffffff;
+    background-color: alpha(@metro-accent, 0.25);
+    border-left: 3px solid @metro-accent;
     color: #ffffff;
+    font-weight: 700;
 }
 
 window.shell-ide-window .ide-tree-arrow {
@@ -2197,9 +2286,84 @@ window.shell-ide-window .ide-tree-icon {
     color: #98a2b3;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox > row:selected .ide-tree-icon,
+window.shell-ide-window .ide-tree-icon-folder {
+    color: #e8a838;
+}
+
+window.shell-ide-window .ide-tree-icon-folder-open {
+    color: @metro-accent;
+}
+
+window.shell-ide-window .ide-tree-icon-code {
+    color: #569cd6;
+}
+
+window.shell-ide-window .ide-tree-icon-header {
+    color: #c586c0;
+}
+
+window.shell-ide-window .ide-tree-icon-markdown {
+    color: #00d8f0;
+}
+
+window.shell-ide-window .ide-tree-icon-config {
+    color: #dcdcaa;
+}
+
+window.shell-ide-window .ide-tree-icon-git {
+    color: #f14c28;
+}
+
+window.shell-ide-window .ide-tree-name-modified {
+    color: #ff8080;
+    font-weight: 600;
+}
+
+window.shell-ide-window .ide-tree-name-added {
+    color: #73c991;
+    font-weight: 600;
+}
+
+window.shell-ide-window .ide-tree-name-untracked {
+    color: #75beff;
+}
+
+window.shell-ide-window .ide-tree-name-deleted {
+    color: #e81123;
+    text-decoration: line-through;
+}
+
 window.shell-ide-window listbox.ide-tree-listbox > row:selected .ide-tree-arrow {
     color: #ffffff;
+}
+
+window.shell-ide-window .ide-git-badge {
+    border: 1px solid currentColor;
+    padding: 0px 5px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 800;
+    background-color: transparent;
+}
+
+window.shell-ide-window .ide-git-modified {
+    color: #ff8c00;
+    border-color: #ff8c00;
+}
+
+window.shell-ide-window .ide-git-added {
+    color: #10893e;
+    border-color: #10893e;
+}
+
+window.shell-ide-window .ide-git-untracked {
+    color: #00d8f0;
+    border-color: #00d8f0;
+}
+
+window.shell-ide-window .ide-git-deleted {
+    color: #e81123;
+    border-color: #e81123;
 }
 
 window.shell-ide-window .ide-minimap {
@@ -2213,39 +2377,58 @@ window.shell-ide-window separator.ide-md-hr {
     margin: 6px 0px;
 }
 
-window.shell-ide-window .ide-git-modified {
-    color: #f59e0b;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-weight: 800;
-}
-
-window.shell-ide-window .ide-git-added {
-    color: #10b981;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-weight: 800;
-}
-
-window.shell-ide-window .ide-git-untracked {
-    color: #888888;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-}
-
 window.shell-ide-window .ide-source-view,
 window.shell-ide-window .ide-source-view text {
-    background-color: #101010;
-    color: #e8e8e8;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 13px;
 }
 
 window.shell-ide-window .ide-gutter {
-    background-color: #141414;
+    background-color: #121212;
     border-right: 1px solid #262626;
+}
+
+/* Ephemeral Bottom Drawer Shell & Switcher Tabs */
+window.shell-ide-window .ide-drawer-shell {
+    background-color: #141414;
+    border-top: 2px solid @metro-accent;
+}
+
+window.shell-ide-window .ide-drawer-tab-strip {
+    background-color: #181818;
+    border-bottom: 1px solid #2b2b2b;
+    padding: 0px 8px;
+    min-height: 30px;
+}
+
+window.shell-ide-window button.ide-drawer-tab {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    padding: 4px 12px;
+    min-height: 28px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #999999;
+}
+
+window.shell-ide-window button.ide-drawer-tab:hover {
+    background-color: #202020;
+    color: #ffffff;
+}
+
+window.shell-ide-window button.ide-drawer-tab.active {
+    background-color: #141414;
+    border-bottom: 2px solid @metro-accent;
+    color: #ffffff;
 }
 
 window.shell-ide-window .ide-drawer-panel {
     background-color: #141414;
-    border-top: 1px solid @metro-accent;
 }
 
 window.shell-ide-window .ide-drawer-header {
@@ -2277,55 +2460,65 @@ window.shell-ide-window .ide-chord-hud {
     box-shadow: 0 10px 28px rgba(0, 0, 0, 0.78);
 }
 
+/* Bottom Modal Status Bar */
 window.shell-ide-window .ide-status-bar {
-    background-color: #161616;
+    background-color: #141414;
     border-top: 1px solid #2b2b2b;
-    padding: 0px 10px;
-    min-height: 24px;
+    padding: 0px 12px 0px 0px;
+    min-height: 26px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
 }
 
-window.shell-ide-window .ide-mode-pill {
-    padding: 2px 10px;
+window.shell-ide-window .ide-status-file,
+window.shell-ide-window .ide-status-cursor {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10.5px;
+    font-size: 11px;
+    color: #b0b0b0;
+}
+
+window.shell-ide-window .ide-mode-pill {
+    padding: 0px 12px;
+    min-height: 26px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
     font-weight: 800;
-    letter-spacing: 0.8px;
+    letter-spacing: 1px;
     color: #ffffff;
 }
 
 window.shell-ide-window .ide-mode-pill.mode-normal {
     background-color: @metro-accent;
+    color: #ffffff;
 }
 
 window.shell-ide-window .ide-mode-pill.mode-insert {
-    background-color: #10b981;
-    color: #081c14;
+    background-color: #10893e;
+    color: #ffffff;
 }
 
 window.shell-ide-window .ide-mode-pill.mode-select {
-    background-color: #f59e0b;
-    color: #1f1300;
+    background-color: #ff8c00;
+    color: #000000;
 }
 
 window.shell-ide-window .ide-mode-pill.mode-search {
-    background-color: #a855f7;
+    background-color: #b4009e;
     color: #ffffff;
 }
 
 window.shell-ide-window .ide-mode-pill.mode-leader {
-    background-color: #ec4899;
-    color: #ffffff;
+    background-color: #00d8f0;
+    color: #000000;
 }
 
 window.shell-ide-window button.ide-btn-accept {
     background: none;
     background-image: none;
     background-color: #0d3324;
-    border: 1px solid #10b981;
+    border: 1px solid #10893e;
     border-radius: 0px;
-    color: #10b981;
+    color: #73c991;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
     font-weight: 700;
@@ -2333,8 +2526,8 @@ window.shell-ide-window button.ide-btn-accept {
 }
 
 window.shell-ide-window button.ide-btn-accept:hover {
-    background-color: #10b981;
-    color: #081c14;
+    background-color: #10893e;
+    color: #ffffff;
 }
 
 window.shell-ide-window button.ide-btn-reject {
@@ -2396,18 +2589,18 @@ window.shell-ide-window .ide-md-alert.ide-md-alert-note {
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-tip {
-    border-left-color: #10b981;
-    background-color: rgba(16, 185, 129, 0.08);
+    border-left-color: #10893e;
+    background-color: rgba(16, 137, 62, 0.08);
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-important {
-    border-left-color: #a855f7;
-    background-color: rgba(168, 85, 247, 0.08);
+    border-left-color: #b4009e;
+    background-color: rgba(180, 0, 158, 0.08);
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-warning {
-    border-left-color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.08);
+    border-left-color: #ff8c00;
+    background-color: rgba(255, 140, 0, 0.08);
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-caution {

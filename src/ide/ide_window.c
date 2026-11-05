@@ -1,5 +1,7 @@
 #include "ide_window.h"
 #include "../compositor/compositor.h"
+#include "../config.h"
+#include "../theme.h"
 #include "ide_agent_ipc.h"
 #include "ide_buffer.h"
 #include "ide_dap.h"
@@ -39,6 +41,10 @@ struct _KajoIdeWindow {
   IdeMarkdownView *md_drawer_view;
 
   /* Top Chrome & Tab Ribbon */
+  GtkWidget       *btn_hdr_tree;
+  GtkWidget       *btn_hdr_map;
+  GtkWidget       *btn_hdr_md;
+  GtkWidget       *hdr_breadcrumb;
   GtkWidget       *ws_badge;
   GtkWidget       *agent_hdr_badge;
   GtkWidget       *tab_ribbon_box;
@@ -64,14 +70,26 @@ struct _KajoIdeWindow {
   /* Bottom Contextual Drawer */
   GtkWidget       *drawer_revealer;
   GtkWidget       *drawer_stack;
+  GtkWidget       *drawer_tab_agent;
+  GtkWidget       *drawer_tab_dap;
+  GtkWidget       *drawer_tab_search;
+  GtkWidget       *drawer_tab_md;
 
   /* Bottom Status Bar */
   GtkWidget       *mode_pill;
   GtkWidget       *chord_badge;
   GtkWidget       *file_status_label;
+  GtkWidget       *agent_status_badge;
   GtkWidget       *diag_status_label;
   GtkWidget       *lsp_status_badge;
   GtkWidget       *cursor_pos_label;
+
+  /* Live Settings & Config Hot-Reload */
+  GFileMonitor    *config_monitor;
+  char            *active_scheme_id;
+  char            *active_font_family;
+  int              active_font_size_px;
+  gboolean         config_minimap_enabled;
 
   /* In-buffer search bar */
   GtkWidget       *inline_search_bar;
@@ -158,6 +176,112 @@ static void sync_markdown_views(KajoIdeWindow *self) {
   if (drawer_vis) ide_markdown_view_render(self->md_drawer_view, text);
 }
 
+static char *format_breadcrumb_for_path(const char *workspace_root,
+                                        const char *file_path,
+                                        const char *fallback_title) {
+  if (!file_path || !*file_path)
+    return g_strdup(fallback_title ? fallback_title : "[No Name]");
+
+  const char *rel = file_path;
+  if (workspace_root && *workspace_root &&
+      g_str_has_prefix(file_path, workspace_root)) {
+    rel = file_path + strlen(workspace_root);
+    while (*rel == '/') rel++;
+  }
+  if (!*rel) return g_path_get_basename(file_path);
+
+  g_auto(GStrv) parts = g_strsplit(rel, "/", -1);
+  return g_strjoinv(" ▸ ", parts);
+}
+
+static void apply_ide_config(KajoIdeWindow *self) {
+  if (!self) return;
+  ShellConfig *cfg = shell_config_load(NULL);
+  if (!cfg) return;
+
+  shell_theme_sync_from_config(cfg);
+
+  g_free(self->active_scheme_id);
+  self->active_scheme_id = g_strdup(
+      (cfg->ide_color_scheme && *cfg->ide_color_scheme)
+          ? cfg->ide_color_scheme
+          : "kajo-metro-dark");
+
+  g_free(self->active_font_family);
+  self->active_font_family = g_strdup(
+      (cfg->ide_font_family && *cfg->ide_font_family)
+          ? cfg->ide_font_family
+          : "Fira Code");
+
+  self->active_font_size_px = CLAMP(cfg->ide_font_size_px, 10, 24);
+  self->config_minimap_enabled = cfg->ide_show_minimap;
+
+  if (self->source_view) {
+    gtk_source_view_set_tab_width(
+        GTK_SOURCE_VIEW(self->source_view),
+        (guint)CLAMP(cfg->ide_tab_width, 2, 8));
+    gtk_source_view_set_highlight_current_line(
+        GTK_SOURCE_VIEW(self->source_view), cfg->ide_highlight_current_line);
+  }
+
+  if (self->gutter_renderer) {
+    int gutter_pt = MAX(8, (self->active_font_size_px - 2) * 3 / 4);
+    kajo_ide_gutter_renderer_set_font(
+        self->gutter_renderer, self->active_font_family, gutter_pt);
+    gtk_widget_set_visible(GTK_WIDGET(self->gutter_renderer),
+                           cfg->ide_show_line_numbers);
+  }
+
+  if (self->source_map && self->md_split_container &&
+      !gtk_widget_get_visible(self->md_split_container)) {
+    gtk_widget_set_visible(self->source_map, self->config_minimap_enabled);
+  }
+
+  if (self->buffers) {
+    for (guint i = 0; i < self->buffers->len; i++) {
+      IdeBuffer *b = g_ptr_array_index(self->buffers, i);
+      ide_buffer_set_style_scheme(b, self->active_scheme_id);
+    }
+  }
+
+  if (self->source_view) gtk_widget_queue_draw(self->source_view);
+  shell_config_destroy(cfg);
+}
+
+static void zoom_editor_font(KajoIdeWindow *self, int delta_or_zero) {
+  if (!self) return;
+  ShellConfig *cfg = shell_config_load(NULL);
+  if (!cfg) return;
+  if (delta_or_zero == 0) {
+    cfg->ide_font_size_px = 13;
+  } else {
+    cfg->ide_font_size_px = CLAMP(cfg->ide_font_size_px + delta_or_zero, 10, 24);
+  }
+  int new_px = cfg->ide_font_size_px;
+  shell_config_save(cfg, NULL);
+  shell_theme_sync_from_config(cfg);
+  shell_config_destroy(cfg);
+
+  apply_ide_config(self);
+  g_autofree char *msg = g_strdup_printf("🔍 Editor Font: %dpx", new_px);
+  show_toast(self, msg);
+}
+
+static void on_config_file_changed(GFileMonitor      *monitor,
+                                   GFile             *file,
+                                   GFile             *other_file,
+                                   GFileMonitorEvent  event_type,
+                                   gpointer           user_data) {
+  (void)monitor;
+  (void)file;
+  (void)other_file;
+  if (event_type == G_FILE_MONITOR_EVENT_CHANGED ||
+      event_type == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
+      event_type == G_FILE_MONITOR_EVENT_CREATED) {
+    apply_ide_config(KAJO_IDE_WINDOW(user_data));
+  }
+}
+
 static void update_status_bar_and_hud(KajoIdeWindow *self) {
   if (!self || !self->mode_pill) return;
 
@@ -171,13 +295,41 @@ static void update_status_bar_and_hud(KajoIdeWindow *self) {
     gtk_widget_remove_css_class(self->mode_pill, mode_classes[i]);
   gtk_widget_add_css_class(self->mode_pill, ide_state_get_css_class(st));
 
+  /* Sync Header Toggle Button Active States */
+  if (self->btn_hdr_tree && self->tree_container) {
+    if (gtk_widget_get_visible(self->tree_container))
+      gtk_widget_add_css_class(self->btn_hdr_tree, "active");
+    else
+      gtk_widget_remove_css_class(self->btn_hdr_tree, "active");
+  }
+  if (self->btn_hdr_map && self->source_map) {
+    if (gtk_widget_get_visible(self->source_map))
+      gtk_widget_add_css_class(self->btn_hdr_map, "active");
+    else
+      gtk_widget_remove_css_class(self->btn_hdr_map, "active");
+  }
+  if (self->btn_hdr_md && self->md_split_container) {
+    if (gtk_widget_get_visible(self->md_split_container))
+      gtk_widget_add_css_class(self->btn_hdr_md, "active");
+    else
+      gtk_widget_remove_css_class(self->btn_hdr_md, "active");
+  }
+
+  /* Update Git Branch & Status Summary Badge in Header */
+  if (self->ws_badge && self->tree) {
+    g_autofree char *git_sum = ide_tree_format_git_summary(self->tree);
+    gtk_label_set_text(GTK_LABEL(self->ws_badge), git_sum);
+  }
+
   const char *chord = ide_fsm_get_pending_chord(self->fsm);
   if (st == IDE_STATE_LEADER) {
     g_autofree char *badge =
-        (chord && *chord) ? g_strdup_printf("SPC %s", chord) : g_strdup("SPC");
+        (chord && *chord)
+            ? g_strdup_printf("Space → %s _", chord)
+            : g_strdup("Space → _");
     gtk_label_set_text(GTK_LABEL(self->chord_badge), badge);
     gtk_widget_set_visible(self->chord_badge, TRUE);
-    g_autofree char *hud_hdr = g_strdup_printf("LEADER CHORD: %s", badge);
+    g_autofree char *hud_hdr = g_strdup_printf("LEADER CHORD (%s)", badge);
     gtk_label_set_text(GTK_LABEL(self->chord_hud_title), hud_hdr);
     if (self->chord_hud_grid) {
       if (g_strcmp0(chord, "m") == 0) {
@@ -213,7 +365,7 @@ static void update_status_bar_and_hud(KajoIdeWindow *self) {
     gtk_widget_set_visible(self->chord_hud_box, TRUE);
   } else if (st == IDE_STATE_MATCH_PENDING) {
     g_autofree char *badge =
-        (chord && *chord) ? g_strdup_printf("m%s", chord) : g_strdup("m");
+        (chord && *chord) ? g_strdup_printf("m → %s _", chord) : g_strdup("m → _");
     gtk_label_set_text(GTK_LABEL(self->chord_badge), badge);
     gtk_widget_set_visible(self->chord_badge, TRUE);
     gtk_label_set_text(GTK_LABEL(self->chord_hud_title), "TEXT OBJECT MATCH (m)");
@@ -225,9 +377,10 @@ static void update_status_bar_and_hud(KajoIdeWindow *self) {
     }
     gtk_widget_set_visible(self->chord_hud_box, TRUE);
   } else if (chord && *chord) {
-    gtk_label_set_text(GTK_LABEL(self->chord_badge), chord);
+    g_autofree char *badge = g_strdup_printf("%s → _", chord);
+    gtk_label_set_text(GTK_LABEL(self->chord_badge), badge);
     gtk_widget_set_visible(self->chord_badge, TRUE);
-    g_autofree char *hud_hdr = g_strdup_printf("PENDING CHORD: %s", chord);
+    g_autofree char *hud_hdr = g_strdup_printf("PENDING CHORD (%s)", chord);
     gtk_label_set_text(GTK_LABEL(self->chord_hud_title), hud_hdr);
     if (self->chord_hud_grid) {
       gtk_label_set_text(
@@ -249,10 +402,17 @@ static void update_status_bar_and_hud(KajoIdeWindow *self) {
 
   IdeBuffer *buf = get_active_buffer(self);
   if (buf) {
+    g_autofree char *crumb = format_breadcrumb_for_path(
+        self->workspace_root,
+        ide_buffer_get_file_path(buf),
+        ide_buffer_get_title(buf));
+    if (self->hdr_breadcrumb)
+      gtk_label_set_text(GTK_LABEL(self->hdr_breadcrumb), crumb);
+
     g_autofree char *f_lbl = g_strdup_printf(
         "%s%s",
         ide_buffer_get_title(buf),
-        ide_buffer_get_modified(buf) ? " ●" : "");
+        ide_buffer_get_modified(buf) ? " [+]" : "");
     gtk_label_set_text(GTK_LABEL(self->file_status_label), f_lbl);
 
     const GPtrArray *diags = ide_buffer_get_diagnostics(buf);
@@ -264,17 +424,23 @@ static void update_status_bar_and_hud(KajoIdeWindow *self) {
         else if (d->severity == IDE_DIAG_WARNING) warns++;
       }
     }
-    g_autofree char *d_lbl = g_strdup_printf("✕ %u  ⚠ %u", errs, warns);
+    g_autofree char *d_lbl = g_strdup_printf("✖ %u  ⚠ %u", errs, warns);
     gtk_label_set_text(GTK_LABEL(self->diag_status_label), d_lbl);
+    if (errs > 0)
+      gtk_widget_add_css_class(self->diag_status_label, "urgent");
+    else
+      gtk_widget_remove_css_class(self->diag_status_label, "urgent");
 
     guint line = 1, col = 1;
     get_cursor_line_col_1based(self, &line, &col);
-    g_autofree char *pos_lbl = g_strdup_printf("LN %u, COL %u", line, col);
+    g_autofree char *pos_lbl =
+        g_strdup_printf("UTF-8 • LF • Ln %u, Col %u", line, col);
     gtk_label_set_text(GTK_LABEL(self->cursor_pos_label), pos_lbl);
   }
 }
 
 static void on_tab_btn_clicked(GtkButton *btn, gpointer user_data);
+static void on_tab_close_btn_clicked(GtkButton *btn, gpointer user_data);
 
 static void on_buffer_mark_set(GtkTextBuffer     *tbuf,
                                const GtkTextIter *location,
@@ -297,26 +463,77 @@ static void rebuild_tab_ribbon(KajoIdeWindow *self) {
 
   for (guint i = 0; i < self->buffers->len; i++) {
     IdeBuffer *b = g_ptr_array_index(self->buffers, i);
-    g_autofree char *lbl = g_strdup_printf(
-        "%u  %s%s",
-        i + 1,
-        ide_buffer_get_title(b),
-        ide_buffer_get_modified(b) ? " ●" : "");
-    GtkWidget *btn = gtk_button_new_with_label(lbl);
-    gtk_widget_set_focusable(btn, FALSE);
-    gtk_widget_add_css_class(btn, "ide-tab-item");
+    const char *title = ide_buffer_get_title(b);
+    gboolean is_md = g_str_has_suffix(title, ".md") ||
+                     g_str_has_suffix(title, ".markdown");
+
+    GtkWidget *pill = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(pill, "ide-tab-pill");
     if (i == self->active_buf_idx)
-      gtk_widget_add_css_class(btn, "active");
-    gtk_widget_set_valign(btn, GTK_ALIGN_CENTER);
+      gtk_widget_add_css_class(pill, "active");
+    gtk_widget_set_valign(pill, GTK_ALIGN_FILL);
+
+    GtkWidget *btn = gtk_button_new();
+    gtk_widget_set_focusable(btn, FALSE);
+    gtk_widget_add_css_class(btn, "ide-tab-main-btn");
+    gtk_widget_set_valign(btn, GTK_ALIGN_FILL);
+
+    GtkWidget *inner = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_valign(inner, GTK_ALIGN_CENTER);
+
+    g_autofree char *idx_txt = g_strdup_printf("[%u]", i + 1);
+    GtkWidget *idx_lbl = gtk_label_new(idx_txt);
+    gtk_widget_add_css_class(idx_lbl, "ide-tab-idx");
+    gtk_widget_set_valign(idx_lbl, GTK_ALIGN_CENTER);
+
+    GtkWidget *icon_lbl = gtk_label_new(is_md ? "📖" : "📄");
+    gtk_widget_add_css_class(icon_lbl, "ide-tab-icon");
+    gtk_widget_set_valign(icon_lbl, GTK_ALIGN_CENTER);
+
+    GtkWidget *name_lbl = gtk_label_new(title);
+    gtk_widget_add_css_class(name_lbl, "ide-tab-title");
+    gtk_widget_set_valign(name_lbl, GTK_ALIGN_CENTER);
+
+    gtk_box_append(GTK_BOX(inner), idx_lbl);
+    gtk_box_append(GTK_BOX(inner), icon_lbl);
+    gtk_box_append(GTK_BOX(inner), name_lbl);
+
+    if (ide_buffer_get_agent_snapshot(b) != NULL) {
+      GtkWidget *ag_lbl = gtk_label_new("⚡");
+      gtk_widget_add_css_class(ag_lbl, "ide-tab-agent");
+      gtk_widget_set_valign(ag_lbl, GTK_ALIGN_CENTER);
+      gtk_box_append(GTK_BOX(inner), ag_lbl);
+    } else if (ide_buffer_get_modified(b)) {
+      GtkWidget *mod_lbl = gtk_label_new("[+]");
+      gtk_widget_add_css_class(mod_lbl, "ide-tab-mod");
+      gtk_widget_set_valign(mod_lbl, GTK_ALIGN_CENTER);
+      gtk_box_append(GTK_BOX(inner), mod_lbl);
+    }
+
+    gtk_button_set_child(GTK_BUTTON(btn), inner);
     g_object_set_data(G_OBJECT(btn), "tab-index", GUINT_TO_POINTER(i));
     g_signal_connect(btn, "clicked", G_CALLBACK(on_tab_btn_clicked), self);
-    gtk_box_append(GTK_BOX(self->tab_ribbon_box), btn);
+
+    GtkWidget *close_btn = gtk_button_new_with_label("×");
+    gtk_widget_set_focusable(close_btn, FALSE);
+    gtk_widget_add_css_class(close_btn, "ide-tab-close");
+    gtk_widget_set_valign(close_btn, GTK_ALIGN_CENTER);
+    g_object_set_data(G_OBJECT(close_btn), "tab-index", GUINT_TO_POINTER(i));
+    g_signal_connect(
+        close_btn, "clicked", G_CALLBACK(on_tab_close_btn_clicked), self);
+
+    gtk_box_append(GTK_BOX(pill), btn);
+    gtk_box_append(GTK_BOX(pill), close_btn);
+    gtk_box_append(GTK_BOX(self->tab_ribbon_box), pill);
   }
 }
 
 static void bind_active_buffer_to_view(KajoIdeWindow *self) {
   IdeBuffer *buf = get_active_buffer(self);
   if (!buf) return;
+
+  if (self->active_scheme_id && *self->active_scheme_id)
+    ide_buffer_set_style_scheme(buf, self->active_scheme_id);
 
   GtkSourceBuffer *sbuf = ide_buffer_get_source_buffer(buf);
   g_signal_handlers_disconnect_by_func(
@@ -342,6 +559,33 @@ static void on_tab_btn_clicked(GtkButton *btn, gpointer user_data) {
   if (idx < self->buffers->len) {
     record_jumplist_Here(self);
     self->active_buf_idx = idx;
+    bind_active_buffer_to_view(self);
+  }
+}
+
+static void on_tab_close_btn_clicked(GtkButton *btn, gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "tab-index"));
+  if (self->buffers->len <= 1) {
+    IdeBuffer *only = g_ptr_array_index(self->buffers, 0);
+    if (ide_buffer_get_file_path(only) != NULL ||
+        ide_buffer_get_modified(only)) {
+      IdeBuffer *fresh = ide_buffer_new(NULL);
+      if (self->active_scheme_id)
+        ide_buffer_set_style_scheme(fresh, self->active_scheme_id);
+      g_ptr_array_remove_index(self->buffers, 0);
+      g_ptr_array_add(self->buffers, fresh);
+      self->active_buf_idx = 0;
+      bind_active_buffer_to_view(self);
+    }
+    return;
+  }
+  if (idx < self->buffers->len) {
+    g_ptr_array_remove_index(self->buffers, idx);
+    if (self->active_buf_idx >= self->buffers->len)
+      self->active_buf_idx = self->buffers->len - 1;
+    else if (idx < self->active_buf_idx && self->active_buf_idx > 0)
+      self->active_buf_idx--;
     bind_active_buffer_to_view(self);
   }
 }
@@ -437,8 +681,7 @@ void kajo_ide_window_open_files(KajoIdeWindow *self,
       self->workspace_root = g_strdup(path);
       ide_tree_set_workspace_root(self->tree, path);
       ide_search_drawer_set_workspace_root(self->search_drawer, path);
-      g_autofree char *base = g_path_get_basename(path);
-      gtk_label_set_text(GTK_LABEL(self->ws_badge), base);
+      update_status_bar_and_hud(self);
     } else {
       kajo_ide_window_open_path(self, path, 1, 1);
     }
@@ -446,8 +689,26 @@ void kajo_ide_window_open_files(KajoIdeWindow *self,
 }
 
 static void show_drawer_page(KajoIdeWindow *self, const char *page_name) {
+  if (!self || !page_name) return;
   gtk_stack_set_visible_child_name(GTK_STACK(self->drawer_stack), page_name);
   gtk_revealer_set_reveal_child(GTK_REVEALER(self->drawer_revealer), TRUE);
+
+  struct {
+    GtkWidget  *btn;
+    const char *name;
+  } tabs[] = {
+    { self->drawer_tab_agent,  "agent"    },
+    { self->drawer_tab_dap,    "dap"      },
+    { self->drawer_tab_search, "search"   },
+    { self->drawer_tab_md,     "markdown" },
+  };
+  for (guint i = 0; i < G_N_ELEMENTS(tabs); i++) {
+    if (!tabs[i].btn) continue;
+    if (g_strcmp0(page_name, tabs[i].name) == 0)
+      gtk_widget_add_css_class(tabs[i].btn, "active");
+    else
+      gtk_widget_remove_css_class(tabs[i].btn, "active");
+  }
 }
 
 static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
@@ -1432,6 +1693,23 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
   (void)keycode;
   KajoIdeWindow *self = user_data;
 
+  /* Live Editor Font Zoom (Ctrl++ / Ctrl+=, Ctrl+-, Ctrl+0) */
+  if ((state & GDK_CONTROL_MASK) != 0) {
+    if (keyval == GDK_KEY_plus || keyval == GDK_KEY_equal ||
+        keyval == GDK_KEY_KP_Add) {
+      zoom_editor_font(self, +1);
+      return TRUE;
+    }
+    if (keyval == GDK_KEY_minus || keyval == GDK_KEY_KP_Subtract) {
+      zoom_editor_font(self, -1);
+      return TRUE;
+    }
+    if (keyval == GDK_KEY_0 || keyval == GDK_KEY_KP_0) {
+      zoom_editor_font(self, 0);
+      return TRUE;
+    }
+  }
+
   g_autofree char *key_str = translate_gdk_key_to_fsm(keyval, state);
   if (!key_str) return FALSE;
 
@@ -1489,6 +1767,7 @@ static void on_agent_reload_cb(const char *path,
       ide_buffer_load_from_disk(b, NULL);
     }
   }
+  rebuild_tab_ribbon(self);
   sync_markdown_views(self);
   gtk_widget_queue_draw(self->source_view);
 }
@@ -1501,15 +1780,43 @@ static void on_agent_status_cb(const char *badge_text,
   if (badge_text && *badge_text) {
     gtk_label_set_text(GTK_LABEL(self->agent_hdr_badge), badge_text);
     gtk_widget_set_visible(self->agent_hdr_badge, TRUE);
+    if (self->agent_status_badge) {
+      gtk_label_set_text(GTK_LABEL(self->agent_status_badge), badge_text);
+      gtk_widget_set_visible(self->agent_status_badge, TRUE);
+    }
   } else if (pending_tx_count > 0) {
     g_autofree char *txt =
-        g_strdup_printf("🤖 %u AGENT EDITS (Space d s)", pending_tx_count);
+        g_strdup_printf("🤖 AGENT: %u HUNKS", pending_tx_count);
     gtk_label_set_text(GTK_LABEL(self->agent_hdr_badge), txt);
     gtk_widget_set_visible(self->agent_hdr_badge, TRUE);
+    if (self->agent_status_badge) {
+      gtk_label_set_text(GTK_LABEL(self->agent_status_badge), txt);
+      gtk_widget_set_visible(self->agent_status_badge, TRUE);
+    }
   } else {
     gtk_widget_set_visible(self->agent_hdr_badge, FALSE);
+    if (self->agent_status_badge)
+      gtk_widget_set_visible(self->agent_status_badge, FALSE);
   }
   if (toast_msg && *toast_msg) show_toast(self, toast_msg);
+}
+
+static void on_dap_action_cb(const char *action, gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  if (!self || !action) return;
+  IdeAction act = { .type = IDE_ACTION_NONE };
+  if (g_strcmp0(action, "continue") == 0)
+    act.type = IDE_ACTION_DAP_CONTINUE;
+  else if (g_strcmp0(action, "step_over") == 0)
+    act.type = IDE_ACTION_DAP_STEP_OVER;
+  else if (g_strcmp0(action, "step_into") == 0)
+    act.type = IDE_ACTION_DAP_STEP_INTO;
+  else if (g_strcmp0(action, "step_out") == 0)
+    act.type = IDE_ACTION_DAP_STEP_OUT;
+  else if (g_strcmp0(action, "stop") == 0)
+    act.type = IDE_ACTION_DAP_STOP;
+  if (act.type != IDE_ACTION_NONE)
+    dispatch_ide_action(self, &act);
 }
 
 static void on_markdown_node_jump(guint line_1based, gpointer user_data) {
@@ -1526,11 +1833,21 @@ static void on_markdown_checklist_edit(const char *new_full_text,
   rebuild_tab_ribbon(self);
 }
 
-/* Header Bar Button Callbacks */
+/* Header Bar & Drawer Switcher Callbacks */
 static void on_hdr_tree_clicked(GtkButton *b, gpointer d) {
   (void)b;
   IdeAction act = { .type = IDE_ACTION_TOGGLE_FILE_TREE };
   dispatch_ide_action(KAJO_IDE_WINDOW(d), &act);
+}
+
+static void on_hdr_map_clicked(GtkButton *b, gpointer d) {
+  (void)b;
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(d);
+  if (!self || !self->source_map) return;
+  gboolean next = !gtk_widget_get_visible(self->source_map);
+  self->config_minimap_enabled = next;
+  gtk_widget_set_visible(self->source_map, next);
+  update_status_bar_and_hud(self);
 }
 
 static void on_hdr_find_clicked(GtkButton *b, gpointer d) {
@@ -1565,8 +1882,30 @@ static void on_hdr_close_clicked(GtkButton *b, gpointer d) {
   gtk_window_close(GTK_WINDOW(d));
 }
 
+static void on_drawer_tab_clicked(GtkButton *b, gpointer d) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(d);
+  const char *page = g_object_get_data(G_OBJECT(b), "drawer-page");
+  if (!page) return;
+  show_drawer_page(self, page);
+  if (g_strcmp0(page, "markdown") == 0)
+    sync_markdown_views(self);
+}
+
+static void on_drawer_close_clicked(GtkButton *b, gpointer d) {
+  (void)b;
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(d);
+  gtk_revealer_set_reveal_child(GTK_REVEALER(self->drawer_revealer), FALSE);
+  gtk_widget_grab_focus(self->source_view);
+}
+
 static void kajo_ide_window_dispose(GObject *object) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(object);
+  if (self->config_monitor) {
+    g_file_monitor_cancel(self->config_monitor);
+    g_clear_object(&self->config_monitor);
+  }
+  g_clear_pointer(&self->active_scheme_id, g_free);
+  g_clear_pointer(&self->active_font_family, g_free);
   g_clear_pointer(&self->fsm, ide_fsm_free);
   g_clear_pointer(&self->tree, ide_tree_free);
   g_clear_pointer(&self->picker, ide_picker_free);
@@ -1666,58 +2005,92 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   self->jumplist = g_ptr_array_new_with_free_func(jump_entry_free);
   self->jumplist_idx = -1;
   self->search_query = g_string_new("");
+  self->config_minimap_enabled = TRUE;
 
   GtkWidget *root_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
   gtk_window_set_child(GTK_WINDOW(self), root_vbox);
 
-  /* 1. Aero + Metro Window Chrome Drag Header */
+  /* 1. Aero + Metro Window Chrome Drag Header (3-Zone Layout) */
   GtkWidget *win_handle = gtk_window_handle_new();
-  GtkWidget *hdr_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  GtkWidget *hdr_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_add_css_class(hdr_box, "settings-header-bar");
   gtk_widget_set_valign(hdr_box, GTK_ALIGN_CENTER);
 
-  GtkWidget *title_lbl = gtk_label_new("KAJO IDE");
+  /* Left Zone: Title + View Toggles */
+  GtkWidget *title_lbl = gtk_label_new("⌨ KAJO IDE");
   gtk_widget_add_css_class(title_lbl, "settings-header-title");
   gtk_widget_set_valign(title_lbl, GTK_ALIGN_CENTER);
 
-  g_autofree char *ws_base = g_path_get_basename(self->workspace_root);
-  self->ws_badge = gtk_label_new(ws_base);
+  GtkWidget *nav_cluster = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_set_valign(nav_cluster, GTK_ALIGN_CENTER);
+
+  self->btn_hdr_tree = gtk_button_new_with_label("🌲 TREE");
+  gtk_widget_set_focusable(self->btn_hdr_tree, FALSE);
+  gtk_widget_add_css_class(self->btn_hdr_tree, "files-nav-btn");
+  gtk_widget_add_css_class(self->btn_hdr_tree, "active");
+  gtk_widget_set_valign(self->btn_hdr_tree, GTK_ALIGN_CENTER);
+  g_signal_connect(
+      self->btn_hdr_tree, "clicked", G_CALLBACK(on_hdr_tree_clicked), self);
+
+  self->btn_hdr_map = gtk_button_new_with_label("🗺 MAP");
+  gtk_widget_set_focusable(self->btn_hdr_map, FALSE);
+  gtk_widget_add_css_class(self->btn_hdr_map, "files-nav-btn");
+  gtk_widget_add_css_class(self->btn_hdr_map, "active");
+  gtk_widget_set_valign(self->btn_hdr_map, GTK_ALIGN_CENTER);
+  g_signal_connect(
+      self->btn_hdr_map, "clicked", G_CALLBACK(on_hdr_map_clicked), self);
+
+  self->btn_hdr_md = gtk_button_new_with_label("📖 MD");
+  gtk_widget_set_focusable(self->btn_hdr_md, FALSE);
+  gtk_widget_add_css_class(self->btn_hdr_md, "files-nav-btn");
+  gtk_widget_set_valign(self->btn_hdr_md, GTK_ALIGN_CENTER);
+  g_signal_connect(
+      self->btn_hdr_md, "clicked", G_CALLBACK(on_hdr_md_clicked), self);
+
+  GtkWidget *btn_find = gtk_button_new_with_label("🔍 FIND");
+  gtk_widget_set_focusable(btn_find, FALSE);
+  gtk_widget_add_css_class(btn_find, "files-nav-btn");
+  gtk_widget_set_valign(btn_find, GTK_ALIGN_CENTER);
+  g_signal_connect(btn_find, "clicked", G_CALLBACK(on_hdr_find_clicked), self);
+
+  gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_tree);
+  gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_map);
+  gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_md);
+  gtk_box_append(GTK_BOX(nav_cluster), btn_find);
+
+  /* Center Zone: Active File Breadcrumb + Git Branch & Status Summary Badge */
+  GtkWidget *hdr_center = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_set_hexpand(hdr_center, TRUE);
+  gtk_widget_set_halign(hdr_center, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(hdr_center, GTK_ALIGN_CENTER);
+
+  self->hdr_breadcrumb = gtk_label_new("[No Name]");
+  gtk_widget_add_css_class(self->hdr_breadcrumb, "ide-header-breadcrumb");
+  gtk_widget_set_valign(self->hdr_breadcrumb, GTK_ALIGN_CENTER);
+
+  self->ws_badge = gtk_label_new("⎇ main");
   gtk_widget_add_css_class(self->ws_badge, "shell-popover-badge");
+  gtk_widget_add_css_class(self->ws_badge, "accent");
   gtk_widget_set_valign(self->ws_badge, GTK_ALIGN_CENTER);
 
   self->agent_hdr_badge = gtk_label_new("");
   gtk_widget_add_css_class(self->agent_hdr_badge, "shell-popover-badge");
+  gtk_widget_add_css_class(self->agent_hdr_badge, "accent");
   gtk_widget_set_valign(self->agent_hdr_badge, GTK_ALIGN_CENTER);
   gtk_widget_set_visible(self->agent_hdr_badge, FALSE);
 
-  GtkWidget *hdr_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-  gtk_widget_set_hexpand(hdr_spacer, TRUE);
+  gtk_box_append(GTK_BOX(hdr_center), self->hdr_breadcrumb);
+  gtk_box_append(GTK_BOX(hdr_center), self->ws_badge);
+  gtk_box_append(GTK_BOX(hdr_center), self->agent_hdr_badge);
 
-  GtkWidget *btn_tree = gtk_button_new_with_label("TREE (SPC e)");
-  gtk_widget_set_focusable(btn_tree, FALSE);
-  gtk_widget_add_css_class(btn_tree, "ide-toolbar-btn");
-  gtk_widget_set_valign(btn_tree, GTK_ALIGN_CENTER);
-  g_signal_connect(btn_tree, "clicked", G_CALLBACK(on_hdr_tree_clicked), self);
-
-  GtkWidget *btn_find = gtk_button_new_with_label("FIND (SPC f)");
-  gtk_widget_set_focusable(btn_find, FALSE);
-  gtk_widget_add_css_class(btn_find, "ide-toolbar-btn");
-  gtk_widget_set_valign(btn_find, GTK_ALIGN_CENTER);
-  g_signal_connect(btn_find, "clicked", G_CALLBACK(on_hdr_find_clicked), self);
-
-  GtkWidget *btn_md = gtk_button_new_with_label("MD GUI (SPC m p)");
-  gtk_widget_set_focusable(btn_md, FALSE);
-  gtk_widget_add_css_class(btn_md, "ide-toolbar-btn");
-  gtk_widget_set_valign(btn_md, GTK_ALIGN_CENTER);
-  g_signal_connect(btn_md, "clicked", G_CALLBACK(on_hdr_md_clicked), self);
-
-  GtkWidget *btn_build = gtk_button_new_with_label("BUILD");
+  /* Right Zone: Primary Build Action + Window Controls */
+  GtkWidget *btn_build = gtk_button_new_with_label("▶ BUILD");
   gtk_widget_set_focusable(btn_build, FALSE);
-  gtk_widget_add_css_class(btn_build, "ide-toolbar-btn");
+  gtk_widget_add_css_class(btn_build, "action-btn-primary");
   gtk_widget_set_valign(btn_build, GTK_ALIGN_CENTER);
   g_signal_connect(btn_build, "clicked", G_CALLBACK(on_hdr_build_clicked), self);
 
-  GtkWidget *btn_float = gtk_button_new_with_label("FLOAT / TILE");
+  GtkWidget *btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
   gtk_widget_set_focusable(btn_float, FALSE);
   gtk_widget_add_css_class(btn_float, "ide-toolbar-btn");
   gtk_widget_set_valign(btn_float, GTK_ALIGN_CENTER);
@@ -1730,12 +2103,8 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   g_signal_connect(btn_close, "clicked", G_CALLBACK(on_hdr_close_clicked), self);
 
   gtk_box_append(GTK_BOX(hdr_box), title_lbl);
-  gtk_box_append(GTK_BOX(hdr_box), self->ws_badge);
-  gtk_box_append(GTK_BOX(hdr_box), self->agent_hdr_badge);
-  gtk_box_append(GTK_BOX(hdr_box), hdr_spacer);
-  gtk_box_append(GTK_BOX(hdr_box), btn_tree);
-  gtk_box_append(GTK_BOX(hdr_box), btn_find);
-  gtk_box_append(GTK_BOX(hdr_box), btn_md);
+  gtk_box_append(GTK_BOX(hdr_box), nav_cluster);
+  gtk_box_append(GTK_BOX(hdr_box), hdr_center);
   gtk_box_append(GTK_BOX(hdr_box), btn_build);
   gtk_box_append(GTK_BOX(hdr_box), btn_float);
   gtk_box_append(GTK_BOX(hdr_box), btn_close);
@@ -1743,9 +2112,9 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(root_vbox), win_handle);
 
   /* 2. Multi-Buffer Tab Ribbon */
-  self->tab_ribbon_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+  self->tab_ribbon_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_add_css_class(self->tab_ribbon_box, "ide-tab-ribbon");
-  gtk_widget_set_valign(self->tab_ribbon_box, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(self->tab_ribbon_box, GTK_ALIGN_FILL);
   gtk_box_append(GTK_BOX(root_vbox), self->tab_ribbon_box);
 
   /* 3. Main Workspace Overlay & Resizable GtkPaned Splitters */
@@ -1765,7 +2134,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_paned_set_start_child(GTK_PANED(self->tree_paned), self->tree_container);
   gtk_paned_set_resize_start_child(GTK_PANED(self->tree_paned), FALSE);
   gtk_paned_set_shrink_start_child(GTK_PANED(self->tree_paned), FALSE);
-  gtk_paned_set_position(GTK_PANED(self->tree_paned), 230);
+  gtk_paned_set_position(GTK_PANED(self->tree_paned), 240);
 
   /* Right of Tree: Horizontal GtkPaned between Code Editor and Markdown Split */
   self->editor_md_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
@@ -1791,8 +2160,8 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   self->source_view = gtk_source_view_new();
   gtk_widget_add_css_class(self->source_view, "ide-source-view");
   gtk_text_view_set_monospace(GTK_TEXT_VIEW(self->source_view), TRUE);
-  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(self->source_view), 8);
-  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(self->source_view), 8);
+  gtk_text_view_set_left_margin(GTK_TEXT_VIEW(self->source_view), 10);
+  gtk_text_view_set_right_margin(GTK_TEXT_VIEW(self->source_view), 10);
   gtk_text_view_set_top_margin(GTK_TEXT_VIEW(self->source_view), 6);
   gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(self->source_view), TRUE);
   gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(self->source_view), 2);
@@ -1823,7 +2192,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_add_css_class(self->source_map, "ide-minimap");
   gtk_source_map_set_view(GTK_SOURCE_MAP(self->source_map),
                           GTK_SOURCE_VIEW(self->source_view));
-  gtk_widget_set_size_request(self->source_map, 72, -1);
+  gtk_widget_set_size_request(self->source_map, 84, -1);
   gtk_box_append(GTK_BOX(editor_hbox), self->source_map);
 
   /* Side-by-Side Graphical Markdown & Vector Mermaid Split (Space m p) */
@@ -1894,10 +2263,67 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
                                    GTK_REVEALER_TRANSITION_TYPE_SLIDE_UP);
   gtk_revealer_set_reveal_child(GTK_REVEALER(self->drawer_revealer), FALSE);
 
+  GtkWidget *drawer_outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(drawer_outer, "ide-drawer-shell");
+
+  /* Unified Drawer Tab Switcher Bar */
+  GtkWidget *drawer_tab_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(drawer_tab_bar, "ide-drawer-tab-strip");
+  gtk_widget_set_valign(drawer_tab_bar, GTK_ALIGN_CENTER);
+
+  self->drawer_tab_agent = gtk_button_new_with_label("🤖 AGENT DIFF (Space d s)");
+  gtk_widget_set_focusable(self->drawer_tab_agent, FALSE);
+  gtk_widget_add_css_class(self->drawer_tab_agent, "ide-drawer-tab");
+  gtk_widget_set_valign(self->drawer_tab_agent, GTK_ALIGN_CENTER);
+  g_object_set_data(G_OBJECT(self->drawer_tab_agent), "drawer-page", (gpointer)"agent");
+  g_signal_connect(
+      self->drawer_tab_agent, "clicked", G_CALLBACK(on_drawer_tab_clicked), self);
+
+  self->drawer_tab_dap = gtk_button_new_with_label("🐞 DAP DEBUGGER (Space d v)");
+  gtk_widget_set_focusable(self->drawer_tab_dap, FALSE);
+  gtk_widget_add_css_class(self->drawer_tab_dap, "ide-drawer-tab");
+  gtk_widget_set_valign(self->drawer_tab_dap, GTK_ALIGN_CENTER);
+  g_object_set_data(G_OBJECT(self->drawer_tab_dap), "drawer-page", (gpointer)"dap");
+  g_signal_connect(
+      self->drawer_tab_dap, "clicked", G_CALLBACK(on_drawer_tab_clicked), self);
+
+  self->drawer_tab_search = gtk_button_new_with_label("🔎 SEARCH / BUILD (Space s r)");
+  gtk_widget_set_focusable(self->drawer_tab_search, FALSE);
+  gtk_widget_add_css_class(self->drawer_tab_search, "ide-drawer-tab");
+  gtk_widget_add_css_class(self->drawer_tab_search, "active");
+  gtk_widget_set_valign(self->drawer_tab_search, GTK_ALIGN_CENTER);
+  g_object_set_data(G_OBJECT(self->drawer_tab_search), "drawer-page", (gpointer)"search");
+  g_signal_connect(
+      self->drawer_tab_search, "clicked", G_CALLBACK(on_drawer_tab_clicked), self);
+
+  self->drawer_tab_md = gtk_button_new_with_label("❖ MERMAID / MD (Space m m)");
+  gtk_widget_set_focusable(self->drawer_tab_md, FALSE);
+  gtk_widget_add_css_class(self->drawer_tab_md, "ide-drawer-tab");
+  gtk_widget_set_valign(self->drawer_tab_md, GTK_ALIGN_CENTER);
+  g_object_set_data(G_OBJECT(self->drawer_tab_md), "drawer-page", (gpointer)"markdown");
+  g_signal_connect(
+      self->drawer_tab_md, "clicked", G_CALLBACK(on_drawer_tab_clicked), self);
+
+  GtkWidget *dr_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_set_hexpand(dr_spacer, TRUE);
+
+  GtkWidget *dr_close = gtk_button_new_with_label("✕ CLOSE (Esc)");
+  gtk_widget_set_focusable(dr_close, FALSE);
+  gtk_widget_add_css_class(dr_close, "ide-toolbar-btn");
+  gtk_widget_set_valign(dr_close, GTK_ALIGN_CENTER);
+  g_signal_connect(dr_close, "clicked", G_CALLBACK(on_drawer_close_clicked), self);
+
+  gtk_box_append(GTK_BOX(drawer_tab_bar), self->drawer_tab_agent);
+  gtk_box_append(GTK_BOX(drawer_tab_bar), self->drawer_tab_dap);
+  gtk_box_append(GTK_BOX(drawer_tab_bar), self->drawer_tab_search);
+  gtk_box_append(GTK_BOX(drawer_tab_bar), self->drawer_tab_md);
+  gtk_box_append(GTK_BOX(drawer_tab_bar), dr_spacer);
+  gtk_box_append(GTK_BOX(drawer_tab_bar), dr_close);
+
   self->drawer_stack = gtk_stack_new();
   self->search_drawer = ide_search_drawer_new(
       self->workspace_root, on_picker_open_file, NULL, self);
-  self->dap = ide_dap_view_new(NULL, self);
+  self->dap = ide_dap_view_new(on_dap_action_cb, self);
   self->agent_ipc = ide_agent_ipc_new(
       on_picker_open_file, on_agent_reload_cb, on_agent_status_cb, self);
   ide_agent_ipc_start_default(self->agent_ipc);
@@ -1917,7 +2343,9 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
                       ide_markdown_view_get_widget(self->md_drawer_view),
                       "markdown");
 
-  gtk_revealer_set_child(GTK_REVEALER(self->drawer_revealer), self->drawer_stack);
+  gtk_box_append(GTK_BOX(drawer_outer), drawer_tab_bar);
+  gtk_box_append(GTK_BOX(drawer_outer), self->drawer_stack);
+  gtk_revealer_set_child(GTK_REVEALER(self->drawer_revealer), drawer_outer);
 
   self->vertical_paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
   gtk_widget_add_css_class(self->vertical_paned, "ide-paned");
@@ -1941,15 +2369,15 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(self->inline_search_bar), self->inline_search_entry);
   gtk_box_append(GTK_BOX(root_vbox), self->inline_search_bar);
 
-  /* 6. Bottom Status Bar */
+  /* 6. Bottom Status Bar (Flush Mode Pill on Far Left) */
   GtkWidget *status_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_add_css_class(status_bar, "ide-status-bar");
-  gtk_widget_set_valign(status_bar, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(status_bar, GTK_ALIGN_FILL);
 
   self->mode_pill = gtk_label_new("NORMAL");
   gtk_widget_add_css_class(self->mode_pill, "ide-mode-pill");
   gtk_widget_add_css_class(self->mode_pill, "mode-normal");
-  gtk_widget_set_valign(self->mode_pill, GTK_ALIGN_CENTER);
+  gtk_widget_set_valign(self->mode_pill, GTK_ALIGN_FILL);
 
   self->chord_badge = gtk_label_new("");
   gtk_widget_add_css_class(self->chord_badge, "shell-popover-badge");
@@ -1957,29 +2385,37 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_visible(self->chord_badge, FALSE);
 
   self->file_status_label = gtk_label_new("[No Name]");
+  gtk_widget_add_css_class(self->file_status_label, "ide-status-file");
   gtk_widget_set_valign(self->file_status_label, GTK_ALIGN_CENTER);
-
-  self->diag_status_label = gtk_label_new("✕ 0  ⚠ 0");
-  gtk_widget_add_css_class(self->diag_status_label, "shell-popover-badge");
-  gtk_widget_set_valign(self->diag_status_label, GTK_ALIGN_CENTER);
 
   GtkWidget *st_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(st_spacer, TRUE);
+
+  self->agent_status_badge = gtk_label_new("");
+  gtk_widget_add_css_class(self->agent_status_badge, "shell-popover-badge");
+  gtk_widget_add_css_class(self->agent_status_badge, "accent");
+  gtk_widget_set_valign(self->agent_status_badge, GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(self->agent_status_badge, FALSE);
 
   self->lsp_status_badge = gtk_label_new("LSP: READY");
   gtk_widget_add_css_class(self->lsp_status_badge, "shell-popover-badge");
   gtk_widget_set_valign(self->lsp_status_badge, GTK_ALIGN_CENTER);
 
-  self->cursor_pos_label = gtk_label_new("LN 1, COL 1");
-  gtk_widget_add_css_class(self->cursor_pos_label, "shell-popover-badge");
+  self->diag_status_label = gtk_label_new("✖ 0  ⚠ 0");
+  gtk_widget_add_css_class(self->diag_status_label, "shell-popover-badge");
+  gtk_widget_set_valign(self->diag_status_label, GTK_ALIGN_CENTER);
+
+  self->cursor_pos_label = gtk_label_new("UTF-8 • LF • Ln 1, Col 1");
+  gtk_widget_add_css_class(self->cursor_pos_label, "ide-status-cursor");
   gtk_widget_set_valign(self->cursor_pos_label, GTK_ALIGN_CENTER);
 
   gtk_box_append(GTK_BOX(status_bar), self->mode_pill);
   gtk_box_append(GTK_BOX(status_bar), self->chord_badge);
   gtk_box_append(GTK_BOX(status_bar), self->file_status_label);
-  gtk_box_append(GTK_BOX(status_bar), self->diag_status_label);
   gtk_box_append(GTK_BOX(status_bar), st_spacer);
+  gtk_box_append(GTK_BOX(status_bar), self->agent_status_badge);
   gtk_box_append(GTK_BOX(status_bar), self->lsp_status_badge);
+  gtk_box_append(GTK_BOX(status_bar), self->diag_status_label);
   gtk_box_append(GTK_BOX(status_bar), self->cursor_pos_label);
   gtk_box_append(GTK_BOX(root_vbox), status_bar);
 
@@ -1991,6 +2427,21 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   IdeBuffer *init_buf = ide_buffer_new(NULL);
   g_ptr_array_add(self->buffers, init_buf);
   self->active_buf_idx = 0;
+
+  /* Apply IDE Config & Start Live GFileMonitor on ~/.config/kajo/config.json */
+  apply_ide_config(self);
+  g_autofree char *cfg_path =
+      g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+  g_autoptr(GFile) cfg_file = g_file_new_for_path(cfg_path);
+  self->config_monitor =
+      g_file_monitor_file(cfg_file, G_FILE_MONITOR_NONE, NULL, NULL);
+  if (self->config_monitor) {
+    g_signal_connect(self->config_monitor,
+                     "changed",
+                     G_CALLBACK(on_config_file_changed),
+                     self);
+  }
+
   bind_active_buffer_to_view(self);
 
   /* Capture-phase Modal FSM Key Controller */
@@ -2011,8 +2462,7 @@ KajoIdeWindow *kajo_ide_window_new(GtkApplication *app,
     win->workspace_root = g_strdup(workspace_dir);
     ide_tree_set_workspace_root(win->tree, workspace_dir);
     ide_search_drawer_set_workspace_root(win->search_drawer, workspace_dir);
-    g_autofree char *base = g_path_get_basename(workspace_dir);
-    gtk_label_set_text(GTK_LABEL(win->ws_badge), base);
+    update_status_bar_and_hud(win);
   }
   return win;
 }

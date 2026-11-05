@@ -231,6 +231,7 @@ settings_sources = files(
   'src/settings/pages/page_audio.c',
   'src/settings/pages/page_notifications.c',
   'src/settings/pages/page_theme.c',
+  'src/settings/pages/page_ide.c',
   'src/settings/pages/page_about.c',
   'src/config.c',
   'src/theme.c',

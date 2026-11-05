@@ -648,10 +648,10 @@ ide_save_file_atomic(const char  *path,
                                  error);
 }
 
-static void
-ide_buffer_apply_style_and_language(IdeBuffer *buf)
+void
+ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id)
 {
-  if (buf->source_buf == NULL) {
+  if (buf == NULL || buf->source_buf == NULL) {
     return;
   }
 
@@ -664,9 +664,13 @@ ide_buffer_apply_style_and_language(IdeBuffer *buf)
     gtk_source_style_scheme_manager_append_search_path(sm, user_ide_dir);
   }
 
-  GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, "kajo-metro-dark");
+  const char *wanted = (scheme_id && scheme_id[0] != '\0') ? scheme_id : "kajo-metro-dark";
+  GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, wanted);
   if (scheme == NULL) {
-    scheme = gtk_source_style_scheme_manager_get_scheme(sm, "oblivion");
+    scheme = gtk_source_style_scheme_manager_get_scheme(sm, "kajo-metro-dark");
+  }
+  if (scheme == NULL) {
+    scheme = gtk_source_style_scheme_manager_get_scheme(sm, "Adwaita-dark");
   }
   if (scheme == NULL) {
     scheme = gtk_source_style_scheme_manager_get_scheme(sm, "classic-dark");
@@ -674,6 +678,16 @@ ide_buffer_apply_style_and_language(IdeBuffer *buf)
   if (scheme != NULL) {
     gtk_source_buffer_set_style_scheme(buf->source_buf, scheme);
   }
+}
+
+static void
+ide_buffer_apply_style_and_language(IdeBuffer *buf)
+{
+  if (buf->source_buf == NULL) {
+    return;
+  }
+
+  ide_buffer_set_style_scheme(buf, "kajo-metro-dark");
 
   if (buf->file_path != NULL) {
     GtkSourceLanguageManager *lm = gtk_source_language_manager_get_default();

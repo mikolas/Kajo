@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<style-scheme id="kajo-monokai-metro" name="Monokai Metro" version="1.0">
+  <author>Kajo Desktop Suite</author>
+  <description>Monokai Pro Token Palette on Sharp Metro Dark Surface for kajo-ide</description>
+
+  <color name="canvas_bg"       value="#121212"/>
+  <color name="gutter_bg"       value="#141414"/>
+  <color name="current_line"    value="#1b1b1b"/>
+  <color name="selection_bg"    value="#3b3646"/>
+  <color name="border_gray"     value="#2b2b2b"/>
+  <color name="fg_primary"      value="#fcfcfa"/>
+  <color name="fg_muted"        value="#727072"/>
+  <color name="metro_accent"    value="#ff6188"/>
+  <color name="metro_warning"   value="#fc9867"/>
+  <color name="metro_urgent"    value="#e81123"/>
+
+  <color name="syn_keyword"     value="#ff6188"/>
+  <color name="syn_control"     value="#ff6188"/>
+  <color name="syn_function"    value="#a9dc76"/>
+  <color name="syn_type"        value="#78dce8"/>
+  <color name="syn_string"      value="#ffd866"/>
+  <color name="syn_number"      value="#ab9df2"/>
+  <color name="syn_comment"     value="#727072"/>
+
+  <style name="text"                        foreground="fg_primary" background="canvas_bg"/>
+  <style name="selection"                   foreground="#ffffff"    background="selection_bg"/>
+  <style name="cursor"                      foreground="#ffd866"/>
+  <style name="current-line"                background="current_line"/>
+  <style name="current-line-number"         foreground="metro_accent" background="current_line" bold="true"/>
+  <style name="line-numbers"                foreground="fg_muted"   background="gutter_bg"/>
+  <style name="right-margin"                foreground="border_gray" background="gutter_bg"/>
+  <style name="bracket-match"               foreground="#121212"    background="#ffd866" bold="true"/>
+  <style name="bracket-mismatch"            foreground="#ffffff"    background="metro_urgent" bold="true"/>
+  <style name="search-match"                foreground="#121212"    background="metro_warning" bold="true"/>
+
+  <style name="def:comment"                 foreground="syn_comment" italic="true"/>
+  <style name="def:shebang"                 foreground="syn_comment" bold="true"/>
+  <style name="def:doc-comment-element"     foreground="#939293" italic="true"/>
+  <style name="def:constant"                foreground="syn_number"/>
+  <style name="def:number"                  foreground="syn_number"/>
+  <style name="def:floating-point"          foreground="syn_number"/>
+  <style name="def:boolean"                 foreground="syn_number" bold="true"/>
+  <style name="def:string"                  foreground="syn_string"/>
+  <style name="def:character"               foreground="syn_string"/>
+  <style name="def:special-char"            foreground="#fc9867"/>
+  <style name="def:identifier"              foreground="fg_primary"/>
+  <style name="def:function"                foreground="syn_function"/>
+  <style name="def:builtin"                 foreground="syn_type"/>
+  <style name="def:statement"               foreground="syn_control" bold="true"/>
+  <style name="def:keyword"                 foreground="syn_keyword" bold="true"/>
+  <style name="def:operator"                foreground="#ff6188"/>
+  <style name="def:type"                    foreground="syn_type" italic="true"/>
+  <style name="def:preprocessor"            foreground="syn_number"/>
+  <style name="def:error"                   foreground="#ffffff" background="metro_urgent" bold="true"/>
+  <style name="def:warning"                 foreground="#121212" background="metro_warning"/>
+  <style name="def:note"                    foreground="#121212" background="#78dce8" bold="true"/>
+  <style name="def:heading"                 foreground="#ffd866" bold="true"/>
+  <style name="def:link-text"               foreground="#78dce8" underline="single"/>
+</style-scheme>
