@@ -139,7 +139,7 @@ sudo systemd-tmpfiles --create /etc/tmpfiles.d/kajo-ec.conf
 sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
 ```
 
-See [`HARDWARE_FINDINGS.md`](HARDWARE_FINDINGS.md) and [`SPEC_FOLDABLE_SENSORS.md`](SPEC_FOLDABLE_SENSORS.md) for full hardware register maps (`0x97` `HKBL` brightness, `0x96` `HKBT` timeout), Intel ISH firmware extraction instructions, and IIO sensor details.
+See [`HARDWARE_FINDINGS.md`](HARDWARE_FINDINGS.md) for full hardware register maps (`0x97` `HKBL` brightness, `0x96` `HKBT` timeout), Intel ISH firmware extraction instructions, and IIO sensor details.
 
 ---
 

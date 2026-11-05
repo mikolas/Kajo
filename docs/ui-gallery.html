@@ -1,0 +1,3215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAJO DESIGN SYSTEM — "Aero + Metro" Interactive UI Gallery & Style Guide</title>
+  <style>
+    /* ==========================================================================
+       1. KAJO "AERO + METRO" DESIGN TOKENS & RESET
+       ========================================================================== */
+    :root {
+      --metro-accent: #0078d4;
+      --metro-accent-hover: #1084df;
+      --metro-accent-rgb: 0, 120, 212;
+
+      --metro-urgent: #e81123;
+      --metro-warning: #ff8c00;
+      --metro-success: #10893e;
+      --metro-telemetry: #00d8f0;
+
+      --surface-tier-0: #101010; /* Canvas / Scrolled viewport */
+      --surface-tier-1: #141414; /* Window base / Popover / Sidebar */
+      --surface-tier-2: #161616; /* Action ribbon / Group box */
+      --surface-tier-3: #181818; /* Section card / Header bar */
+      --surface-tier-4: #1a1a1a; /* Interactive control / Tile / Button */
+      --surface-hover:  #222222; /* Control hover surface */
+      --surface-active: #282828; /* Pressed / active neutral surface */
+
+      --border-subtle:  #222222;
+      --border-struct:  #2b2b2b;
+      --border-input:   #333333;
+      --border-strong:  #383838;
+
+      --text-primary:   #ffffff;
+      --text-secondary: #dddddd;
+      --text-muted:     #888888;
+      --text-disabled:  #666666;
+
+      --font-mono: "Fira Code", "JetBrains Mono", "Cascadia Code", monospace;
+      --font-sans: "Inter", "Cantarell", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      border-radius: 0px; /* Strict Zero Corner Radius across Kajo */
+      margin: 0;
+      padding: 0;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background-color: #0b0b0b;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+
+    body {
+      background-color: #0b0b0b;
+      color: var(--text-primary);
+      min-height: 100vh;
+      padding-bottom: 96px;
+    }
+
+    /* Custom Scrollbars matching GTK4 Kajo style.css */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+      background: var(--surface-tier-1);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #383838;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--metro-accent);
+    }
+
+    /* ==========================================================================
+       2. GALLERY INSPECTOR TOP BAR (STICKY)
+       ========================================================================== */
+    .gallery-topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background-color: rgba(17, 17, 17, 0.96);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--metro-accent);
+      box-shadow: 0 6px 24px rgba(0, 0, 0, 0.75);
+    }
+
+    .gallery-topbar-main {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .gallery-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .gallery-brand-logo {
+      width: 28px;
+      height: 28px;
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-weight: 800;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #ffffff;
+    }
+
+    .gallery-brand-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.4px;
+      text-transform: uppercase;
+      color: #ffffff;
+    }
+
+    .gallery-brand-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      letter-spacing: 0.6px;
+    }
+
+    /* Live Metro Accent Switcher */
+    .accent-switcher {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--surface-tier-3);
+      border: 1px solid var(--border-struct);
+      padding: 5px 10px;
+    }
+
+    .accent-switcher-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-right: 4px;
+    }
+
+    .accent-swatch {
+      width: 20px;
+      height: 20px;
+      border: 1px solid #383838;
+      cursor: pointer;
+      transition: transform 80ms linear, border-color 80ms linear;
+      position: relative;
+    }
+
+    .accent-swatch:hover {
+      transform: scale(1.12);
+      border-color: #ffffff;
+    }
+
+    .accent-swatch.active {
+      border: 2px solid #ffffff;
+      box-shadow: 0 0 0 1px #000000 inset;
+    }
+
+    .accent-custom-input {
+      width: 24px;
+      height: 20px;
+      border: 1px solid #383838;
+      background: none;
+      cursor: pointer;
+      padding: 0;
+    }
+
+    .accent-hex-readout {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--metro-accent);
+      background-color: #111111;
+      border: 1px solid var(--border-struct);
+      padding: 2px 7px;
+      margin-left: 4px;
+    }
+
+    /* Section Jump Nav */
+    .gallery-nav {
+      background-color: var(--surface-tier-2);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .gallery-nav-inner {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+    }
+
+    .gallery-nav-link {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: #aaaaaa;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-right: 1px solid var(--border-subtle);
+      white-space: nowrap;
+      transition: background-color 100ms linear, color 100ms linear;
+    }
+
+    .gallery-nav-link:first-child {
+      border-left: 1px solid var(--border-subtle);
+    }
+
+    .gallery-nav-link:hover {
+      background-color: var(--surface-hover);
+      color: #ffffff;
+    }
+
+    .gallery-nav-link span {
+      color: var(--metro-accent);
+      margin-right: 5px;
+    }
+
+    /* ==========================================================================
+       3. GALLERY PAGE LAYOUT & SPECIMEN CONTAINERS
+       ========================================================================== */
+    .gallery-container {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 28px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .gallery-section {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--border-struct);
+      scroll-margin-top: 96px;
+    }
+
+    .gallery-section-header {
+      background-color: var(--surface-tier-3);
+      border-bottom: 1px solid var(--border-struct);
+      border-left: 4px solid var(--metro-accent);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .gallery-section-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .gallery-section-num {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      font-size: 11px;
+      padding: 2px 7px;
+      font-weight: 800;
+    }
+
+    .gallery-section-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .gallery-section-body {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      gap: 22px;
+    }
+
+    .specimen-grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+      gap: 20px;
+    }
+
+    .specimen-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 18px;
+    }
+
+    .specimen-box {
+      background-color: var(--surface-tier-0);
+      border: 1px solid var(--border-struct);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .specimen-box-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .specimen-box-title {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: #cccccc;
+    }
+
+    .specimen-note {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Click-to-copy GTK4 CSS class badge */
+    .gtk-class-tag {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--metro-telemetry);
+      background-color: #14191c;
+      border: 1px solid #233842;
+      padding: 2px 6px;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 80ms linear, border-color 80ms linear, color 80ms linear;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .gtk-class-tag:hover {
+      background-color: var(--metro-accent);
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    .gtk-class-tag::before {
+      content: "GTK4";
+      font-size: 8px;
+      font-weight: 800;
+      color: #888888;
+      background-color: #0d0d0d;
+      padding: 1px 3px;
+    }
+
+    .gtk-class-tag:hover::before {
+      color: #ffffff;
+      background-color: rgba(0, 0, 0, 0.35);
+    }
+
+    .tag-cluster {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    /* ==========================================================================
+       4. SECTION 01: COLOR PALETTE & SURFACE ELEVATION
+       ========================================================================== */
+    .swatch-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+      gap: 12px;
+    }
+
+    .color-card {
+      border: 1px solid var(--border-struct);
+      background-color: var(--surface-tier-3);
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+      transition: border-color 80ms linear;
+    }
+
+    .color-card:hover {
+      border-color: var(--metro-accent);
+    }
+
+    .color-card-preview {
+      height: 58px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border-struct);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .color-card-meta {
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .color-card-name {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+
+    .color-card-role {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    /* ==========================================================================
+       5. SECTION 02: TYPOGRAPHY & TECHNICAL BADGES
+       ========================================================================== */
+    .typo-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .typo-table th,
+    .typo-table td {
+      border: 1px solid var(--border-subtle);
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .typo-table th {
+      background-color: var(--surface-tier-3);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .typo-table tr:hover td {
+      background-color: #151515;
+    }
+
+    /* Canonical Kajo Typography Classes */
+    .settings-header-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      text-transform: uppercase;
+    }
+
+    .shell-popover-title,
+    .heading {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: var(--metro-accent);
+      text-transform: uppercase;
+    }
+
+    .sidebar-category-header {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      color: #777777;
+      text-transform: uppercase;
+    }
+
+    .row-title {
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+    }
+
+    .row-subtitle,
+    .dim-label {
+      font-family: var(--font-sans);
+      font-size: 11px;
+      color: #888888;
+    }
+
+    .shell-popover-subtitle {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #9a9a9a;
+    }
+
+    .empty-state-label {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #777777;
+    }
+
+    .shell-popover-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      background-color: #1e1e1e;
+      color: #cccccc;
+      border: 1px solid #333333;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .shell-popover-badge.accent {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border-color: #ffffff;
+    }
+
+    .shell-popover-badge.urgent,
+    .shell-popover-badge.peak-clip {
+      background-color: var(--metro-urgent);
+      color: #ffffff;
+      border-color: var(--metro-urgent);
+    }
+
+    .shell-popover-badge.peak-warn {
+      background-color: #332000;
+      color: var(--metro-warning);
+      border-color: var(--metro-warning);
+    }
+
+    .shell-popover-badge.success {
+      background-color: #0d2818;
+      color: #3dd675;
+      border-color: var(--metro-success);
+    }
+
+    .files-ctx-shortcut {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #777777;
+    }
+
+    .code-preview-box {
+      background-color: #111111;
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent);
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #cccccc;
+      overflow-x: auto;
+      white-space: pre;
+      line-height: 1.5;
+    }
+
+    /* ==========================================================================
+       6. SECTION 03 & 04: CANONICAL KAJO BUTTONS & CHROME
+       ========================================================================== */
+    .kajo-btn {
+      background: none;
+      background-image: none;
+      background-color: var(--surface-tier-4);
+      color: #dddddd;
+      border: 1px solid var(--border-struct);
+      padding: 6px 12px;
+      min-height: 30px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: background-color 80ms linear, border-color 80ms linear, color 80ms linear;
+      user-select: none;
+    }
+
+    .kajo-btn:hover:not(:disabled) {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .kajo-btn:active:not(:disabled) {
+      background-color: var(--metro-accent);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .kajo-btn:disabled {
+      background-color: #141414;
+      color: var(--text-disabled);
+      border-color: var(--border-subtle);
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    /* Primary Accent Button (.action-btn-primary / .files-accent-btn) */
+    .kajo-btn.action-btn-primary,
+    .kajo-btn.files-accent-btn {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border: 1px solid var(--metro-accent);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+
+    .kajo-btn.action-btn-primary:hover:not(:disabled),
+    .kajo-btn.files-accent-btn:hover:not(:disabled) {
+      background-color: var(--metro-accent-hover);
+      border-color: #ffffff;
+    }
+
+    /* Compact Toolbar / Icon Button (.files-nav-btn / .player-transport-btn) */
+    .kajo-btn.files-nav-btn,
+    .kajo-btn.player-transport-btn {
+      padding: 3px 8px;
+      min-height: 26px;
+      min-width: 26px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Active / Toggled State (.active) */
+    .kajo-btn.active {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border-color: var(--metro-accent);
+    }
+
+    /* Destructive / Danger Button (.action-btn-danger / .destructive-action) */
+    .kajo-btn.action-btn-danger {
+      background-color: #2a1215;
+      color: #ff6b6b;
+      border: 1px solid #5c1e24;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .kajo-btn.action-btn-danger:hover:not(:disabled) {
+      background-color: var(--metro-urgent);
+      color: #ffffff;
+      border-color: var(--metro-urgent);
+    }
+
+    /* Close Window Button (.settings-close-btn) */
+    .kajo-btn.settings-close-btn {
+      padding: 2px 9px;
+      min-height: 26px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .kajo-btn.settings-close-btn:hover {
+      background-color: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    /* Segmented Control Group */
+    .segmented-group {
+      display: inline-flex;
+    }
+
+    .segmented-group .kajo-btn {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    .segmented-group .kajo-btn + .kajo-btn {
+      margin-left: -1px;
+    }
+
+    .segmented-group .kajo-btn.active {
+      z-index: 2;
+      border-color: #ffffff;
+    }
+
+    /* ==========================================================================
+       7. SECTION 03: FRAMELESS WINDOW CHROME, RIBBON & SIDEBAR SPECIMEN
+       ========================================================================== */
+    .mock-kajo-window {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.75);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .settings-header-bar {
+      background-color: var(--surface-tier-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 7px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .header-left,
+    .header-center,
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .header-center {
+      flex: 1;
+      min-width: 220px;
+    }
+
+    .files-breadcrumb-box {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      background-color: #121212;
+      border: 1px solid var(--border-struct);
+      padding: 2px;
+      flex: 1;
+    }
+
+    .files-breadcrumb-btn {
+      background-color: var(--surface-tier-4);
+      color: #cccccc;
+      border: 1px solid transparent;
+      padding: 3px 8px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .files-breadcrumb-btn:hover {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .files-breadcrumb-btn.current {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      font-weight: 700;
+    }
+
+    .files-breadcrumb-sep {
+      color: #666666;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 0 2px;
+    }
+
+    .files-action-ribbon {
+      background-color: var(--surface-tier-2);
+      border-bottom: 1px solid var(--border-subtle);
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .mock-window-body {
+      display: grid;
+      grid-template-columns: 245px 1fr;
+      min-height: 290px;
+    }
+
+    @media (max-width: 780px) {
+      .mock-window-body {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .navigation-sidebar {
+      background-color: var(--surface-tier-1);
+      border-right: 1px solid var(--border-struct);
+      padding: 8px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .sidebar-cat-pad {
+      padding: 10px 14px 4px 14px;
+    }
+
+    .sidebar-row {
+      padding: 8px 12px;
+      margin: 1px 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #bbbbbb;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      transition: background-color 80ms linear, color 80ms linear;
+    }
+
+    .sidebar-row:hover {
+      background-color: #1f1f1f;
+      color: #ffffff;
+    }
+
+    .sidebar-row.selected {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      font-weight: 700;
+      border-left: 3px solid #ffffff;
+    }
+
+    .sidebar-drive-box {
+      padding: 8px 12px;
+      margin: 2px 6px;
+      background-color: #171717;
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .files-status-bar {
+      background-color: var(--surface-tier-3);
+      border-top: 1px solid var(--border-struct);
+      padding: 5px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #999999;
+    }
+
+    /* ==========================================================================
+       8. SECTION 05: FORM CONTROLS, INPUTS, SWITCHES, SLIDERS & METERS
+       ========================================================================== */
+    .kajo-entry {
+      background: none;
+      background-image: none;
+      background-color: var(--surface-tier-4);
+      color: #ffffff;
+      border: 1px solid var(--border-input);
+      padding: 6px 10px;
+      min-height: 30px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      outline: none;
+      width: 100%;
+      transition: border-color 80ms linear, background-color 80ms linear;
+    }
+
+    .kajo-entry::placeholder {
+      color: #666666;
+    }
+
+    .kajo-entry:focus {
+      border-color: var(--metro-accent);
+      background-color: #1e1e1e;
+    }
+
+    .entry-with-btn {
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+    }
+
+    .entry-with-btn .kajo-entry {
+      border-right: none;
+    }
+
+    /* Custom Metro Toggle Switch */
+    .kajo-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .kajo-switch input {
+      display: none;
+    }
+
+    .kajo-switch-track {
+      width: 44px;
+      height: 22px;
+      background-color: #262626;
+      border: 1px solid #3a3a3a;
+      position: relative;
+      transition: background-color 100ms linear, border-color 100ms linear;
+    }
+
+    .kajo-switch-thumb {
+      width: 16px;
+      height: 16px;
+      background-color: #aaaaaa;
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      transition: transform 100ms linear, background-color 100ms linear;
+    }
+
+    .kajo-switch input:checked + .kajo-switch-track {
+      background-color: var(--metro-accent);
+      border-color: var(--metro-accent);
+    }
+
+    .kajo-switch input:checked + .kajo-switch-track .kajo-switch-thumb {
+      transform: translateX(22px);
+      background-color: #ffffff;
+    }
+
+    .kajo-switch.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    /* Custom Metro CheckButton & RadioButton */
+    .kajo-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      user-select: none;
+      font-size: 12px;
+      color: #dddddd;
+    }
+
+    .kajo-check input {
+      display: none;
+    }
+
+    .kajo-check-indicator {
+      width: 16px;
+      height: 16px;
+      background-color: var(--surface-tier-4);
+      border: 1px solid #444444;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      color: transparent;
+      transition: background-color 80ms linear, border-color 80ms linear, color 80ms linear;
+    }
+
+    .kajo-check:hover .kajo-check-indicator {
+      border-color: var(--metro-accent);
+    }
+
+    .kajo-check input:checked + .kajo-check-indicator {
+      background-color: var(--metro-accent);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    /* Custom Dropdown (GtkDropDown) */
+    .kajo-dropdown {
+      position: relative;
+      width: 100%;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .kajo-dropdown-btn {
+      width: 100%;
+      background-color: var(--surface-tier-4);
+      color: #ffffff;
+      border: 1px solid var(--border-struct);
+      padding: 6px 10px;
+      min-height: 30px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .kajo-dropdown-btn:hover {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+    }
+
+    .kajo-dropdown-menu {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--metro-accent);
+      margin-top: 4px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .kajo-dropdown-item {
+      padding: 7px 10px;
+      color: #cccccc;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-left: 3px solid transparent;
+    }
+
+    .kajo-dropdown-item:hover {
+      background-color: var(--surface-hover);
+      color: #ffffff;
+    }
+
+    .kajo-dropdown-item.selected {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      font-weight: 700;
+      border-left-color: #ffffff;
+    }
+
+    /* Sliders (GtkScale) */
+    .kajo-scale-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+
+    .kajo-scale {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(
+        to right,
+        var(--metro-accent) 0%,
+        var(--metro-accent) var(--val, 68%),
+        #2b2b2b var(--val, 68%),
+        #2b2b2b 100%
+      );
+      outline: none;
+      cursor: pointer;
+    }
+
+    .kajo-scale::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background-color: #ffffff;
+      border: 2px solid var(--metro-accent);
+      cursor: pointer;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+
+    .kajo-scale::-webkit-slider-thumb:hover {
+      background-color: var(--metro-accent);
+      border-color: #ffffff;
+    }
+
+    .kajo-scale.player-seek-scale {
+      height: 6px;
+    }
+
+    /* LevelBars & VU Meters */
+    .kajo-levelbar-trough {
+      width: 100%;
+      height: 6px;
+      background-color: #262626;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .kajo-levelbar-fill {
+      height: 100%;
+      background-color: var(--metro-accent);
+    }
+
+    .kajo-levelbar-fill.low {
+      background-color: var(--metro-success);
+    }
+
+    .kajo-levelbar-fill.high {
+      background-color: var(--metro-warning);
+    }
+
+    .kajo-levelbar-fill.full {
+      background-color: var(--metro-urgent);
+    }
+
+    /* 16-Band Vertical FFT Spectrum Visualizer */
+    .fft-visualizer {
+      height: 76px;
+      background-color: #111111;
+      border: 1px solid var(--border-struct);
+      padding: 10px 12px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 4px;
+    }
+
+    .fft-bar-trough {
+      flex: 1;
+      height: 100%;
+      background-color: #1e1e1e;
+      display: flex;
+      align-items: flex-end;
+    }
+
+    .fft-bar-fill {
+      width: 100%;
+      background-color: var(--metro-accent);
+      transition: height 140ms ease;
+    }
+
+    .fft-bar-fill.warn {
+      background-color: var(--metro-warning);
+    }
+
+    .fft-bar-fill.clip {
+      background-color: var(--metro-urgent);
+    }
+
+    /* ==========================================================================
+       9. SECTION 06: SECTION CARDS, CONTROL ROWS & INLINE REVEAL BANNERS
+       ========================================================================== */
+    .section-card {
+      background-color: var(--surface-tier-3);
+      border: 1px solid var(--border-struct);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .section-card-left {
+      border-left: 3px solid #0078d4;
+    }
+
+    .section-card-center {
+      border-left: 3px solid #ff8c00;
+    }
+
+    .section-card-right {
+      border-left: 3px solid #10893e;
+    }
+
+    /* Canonical Control Row (.widget-row-card) — Strict GTK_ALIGN_CENTER */
+    .widget-row-card {
+      background-color: var(--surface-tier-4);
+      border: 1px solid #262626;
+      padding: 10px 14px;
+      display: flex;
+      align-items: center; /* GTK_ALIGN_CENTER mandate */
+      justify-content: space-between;
+      gap: 14px;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+
+    .widget-row-card:hover {
+      background-color: #202020;
+      border-color: #383838;
+    }
+
+    .widget-row-left {
+      display: flex;
+      align-items: center; /* GTK_ALIGN_CENTER */
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .widget-row-icon {
+      width: 28px;
+      height: 28px;
+      background-color: #141414;
+      border: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+
+    .widget-row-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+    }
+
+    .widget-row-right {
+      display: flex;
+      align-items: center; /* GTK_ALIGN_CENTER */
+      gap: 10px;
+      flex-shrink: 0;
+    }
+
+    /* Inline Contextual Reveal Banners */
+    .files-prompt-bar {
+      background-color: var(--surface-tier-3);
+      border-top: 1px solid var(--border-struct);
+      border-bottom: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .files-auth-bar {
+      background-color: var(--surface-tier-3);
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-warning);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .files-trash-bar {
+      background-color: #1f1214;
+      border: 1px solid #4a1c20;
+      border-left: 3px solid var(--metro-urgent);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    /* ==========================================================================
+       10. SECTION 07: POPOVERS & HIT-TESTED CONTEXT MENUS (3-ZONE)
+       ========================================================================== */
+    .kajo-popover {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.72);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .shell-popover-header {
+      background-color: var(--surface-tier-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .shell-popover-body {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .shell-popover-footer {
+      background-color: #111111;
+      border-top: 1px solid var(--border-subtle);
+      padding: 8px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .shell-row-item,
+    .files-menu-row {
+      background-color: var(--surface-tier-4);
+      border: 1px solid transparent;
+      border-left: 3px solid transparent;
+      padding: 7px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #dddddd;
+      font-size: 12px;
+      cursor: pointer;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+
+    .shell-row-item:hover,
+    .files-menu-row:hover {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .shell-row-item.active,
+    .files-menu-row.active {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      font-weight: 700;
+      border-left: 3px solid #ffffff;
+    }
+
+    /* Context Menu Rows (.files-ctx-item) */
+    .files-ctx-item {
+      background-color: transparent;
+      border: 1px solid transparent;
+      padding: 6px 10px;
+      min-height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      color: #dddddd;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .files-ctx-item:hover {
+      background-color: var(--metro-accent);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .files-ctx-item:hover .files-ctx-shortcut {
+      color: #ffffff;
+    }
+
+    .files-ctx-item.files-ctx-danger {
+      color: #ff6b6b;
+    }
+
+    .files-ctx-item.files-ctx-danger:hover {
+      background-color: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    .ctx-separator {
+      height: 1px;
+      background-color: #262626;
+      margin: 4px 0;
+    }
+
+    /* ==========================================================================
+       11. SECTION 08: SORTABLE DETAILS TABLES & METRO TILE GRIDS
+       ========================================================================== */
+    .files-list-header {
+      background-color: var(--surface-tier-2);
+      border: 1px solid var(--border-struct);
+      border-bottom: none;
+      display: grid;
+      grid-template-columns: 1fr 100px 130px 150px;
+    }
+
+    .files-col-header-btn {
+      background: none;
+      border: none;
+      border-right: 1px solid var(--border-subtle);
+      border-bottom: 2px solid transparent;
+      padding: 7px 12px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #888888;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background-color 80ms linear, color 80ms linear;
+    }
+
+    .files-col-header-btn:last-child {
+      border-right: none;
+    }
+
+    .files-col-header-btn:hover {
+      background-color: #202020;
+      color: #ffffff;
+    }
+
+    .files-col-header-btn.active {
+      color: var(--metro-accent);
+      border-bottom: 2px solid var(--metro-accent);
+      background-color: #1a1a1a;
+    }
+
+    .files-list-table {
+      border: 1px solid var(--border-struct);
+      background-color: var(--surface-tier-0);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .files-list-row {
+      display: grid;
+      grid-template-columns: 1fr 100px 130px 150px;
+      align-items: center;
+      padding: 7px 12px;
+      border-bottom: 1px solid #1a1a1a;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      transition: background-color 80ms linear;
+    }
+
+    .files-list-row:hover {
+      background-color: #1c1c1c;
+    }
+
+    .files-list-row.selected {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border-left: 3px solid #ffffff;
+    }
+
+    .files-list-row.selected .files-list-meta {
+      color: #efefef;
+    }
+
+    .files-list-name-cell {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+    }
+
+    .files-list-meta {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #888888;
+    }
+
+    /* Metro Tile Grid (.files-tile-card) */
+    .metro-tile-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+
+    .files-tile-card {
+      background-color: var(--surface-tier-4);
+      border: 1px solid #262626;
+      padding: 12px 10px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+
+    .files-tile-card:hover {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+    }
+
+    .files-tile-card.files-tile-folder {
+      border-top: 2px solid var(--metro-accent);
+    }
+
+    .files-tile-card.selected {
+      background-color: var(--metro-accent);
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    .files-tile-card.selected .files-tile-meta {
+      color: #f0f0f0;
+    }
+
+    .files-tile-icon {
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+    }
+
+    .files-tile-thumb {
+      width: 48px;
+      height: 48px;
+      border: 1px solid #383838;
+      background: linear-gradient(135deg, #0078d4 0%, #00d8f0 50%, #141414 100%);
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding: 2px 4px;
+      font-family: var(--font-mono);
+      font-size: 8px;
+      font-weight: 800;
+      color: #ffffff;
+    }
+
+    .files-tile-name {
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    .files-tile-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #777777;
+    }
+
+    /* ==========================================================================
+       12. SECTION 09: OVERLAYS, MEDIA HUDS, TOASTS, LOCK & OSK
+       ========================================================================== */
+    /* Fullscreen Media Transport Deck (.player-transport-deck) */
+    .player-transport-deck {
+      background-color: rgba(17, 17, 17, 0.94);
+      border-top: 1px solid var(--metro-accent);
+      border-left: 1px solid var(--border-struct);
+      border-right: 1px solid var(--border-struct);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 12px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .player-time-label {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: #cccccc;
+      white-space: nowrap;
+    }
+
+    /* Quick Look Modal (.files-quicklook-card) */
+    .files-quicklook-card {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 12px 36px rgba(0, 0, 0, 0.85);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .quicklook-viewport {
+      height: 170px;
+      background: radial-gradient(circle at 35% 40%, #1c3144 0%, #0d131a 65%, #080808 100%);
+      border-bottom: 1px solid var(--border-struct);
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Layer-Shell OSD Pill (.shell-osd-card) */
+    .shell-osd-card {
+      background-color: rgba(17, 17, 17, 0.96);
+      border: 1px solid var(--metro-accent);
+      padding: 14px 20px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      max-width: 340px;
+    }
+
+    /* Desktop Notification Toast (.shell-notification-card) */
+    .shell-notification-card {
+      background-color: rgba(20, 20, 20, 0.96);
+      border: 1px solid var(--metro-accent);
+      border-left: 4px solid var(--metro-accent);
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .shell-notification-card.critical {
+      border-color: var(--metro-urgent);
+      border-left: 4px solid var(--metro-urgent);
+    }
+
+    /* Session Lock / Greeter Card (.lock-card) */
+    .lock-card {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--metro-accent);
+      padding: 24px 28px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      max-width: 380px;
+    }
+
+    .lock-clock {
+      font-family: var(--font-mono);
+      font-size: 38px;
+      font-weight: 700;
+      color: #ffffff;
+      line-height: 1.05;
+    }
+
+    .lock-date {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: var(--metro-accent);
+      text-transform: uppercase;
+    }
+
+    /* Virtual Keyboard Keycaps (.osk-key — sole 3px radius exception) */
+    .osk-row {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+      background-color: #141414;
+      border: 1px solid var(--border-struct);
+      padding: 10px;
+    }
+
+    .osk-key {
+      background-color: #252525;
+      color: #f0f0f0;
+      border: 1px solid #181818;
+      border-radius: 3px; /* Sole explicit 3px ergonomic keycap exception */
+      padding: 8px 12px;
+      min-width: 38px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-align: center;
+      user-select: none;
+    }
+
+    .osk-key:hover {
+      background-color: #323232;
+    }
+
+    .osk-key:active {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .osk-key.osk-key-special {
+      background-color: #1c1c1c;
+      color: #9e9e9e;
+      font-size: 11px;
+    }
+
+    .osk-key.osk-key-locked {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border-color: #ffffff;
+    }
+
+    /* ==========================================================================
+       13. FLOATING CLIPBOARD TOAST NOTIFICATION
+       ========================================================================== */
+    .copy-toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 2000;
+      background-color: #141414;
+      border: 1px solid var(--metro-accent);
+      border-left: 4px solid var(--metro-accent);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.85);
+      padding: 10px 16px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transform: translateY(120%);
+      opacity: 0;
+      transition: transform 140ms ease, opacity 140ms ease;
+      pointer-events: none;
+    }
+
+    .copy-toast.visible {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ========================================================================
+       STICKY GALLERY INSPECTOR HEADER & LIVE ACCENT SWITCHER
+       ======================================================================== -->
+  <header class="gallery-topbar">
+    <div class="gallery-topbar-main">
+      <div class="gallery-brand">
+        <div class="gallery-brand-logo">K</div>
+        <div>
+          <div class="gallery-brand-title">KAJO "AERO + METRO" UI DESIGN SYSTEM</div>
+          <div class="gallery-brand-sub">CANONICAL GTK4 STYLE GUIDE • CLICK ANY [GTK4] TAG TO COPY SELECTOR • ZERO CORNER RADIUS (0PX)</div>
+        </div>
+      </div>
+
+      <div class="accent-switcher">
+        <span class="accent-switcher-label">LIVE @metro-accent:</span>
+        <button class="accent-swatch active" style="background:#0078d4" data-color="#0078d4" data-hover="#1084df" title="Cobalt Blue (#0078d4 — Default)"></button>
+        <button class="accent-swatch" style="background:#ff8c00" data-color="#ff8c00" data-hover="#ffa024" title="Amber Gold (#ff8c00)"></button>
+        <button class="accent-swatch" style="background:#e81123" data-color="#e81123" data-hover="#f52838" title="Crimson Red (#e81123)"></button>
+        <button class="accent-swatch" style="background:#10893e" data-color="#10893e" data-hover="#15a14a" title="Emerald Green (#10893e)"></button>
+        <button class="accent-swatch" style="background:#881798" data-color="#881798" data-hover="#a120b3" title="Metro Purple (#881798)"></button>
+        <button class="accent-swatch" style="background:#00b7c3" data-color="#00b7c3" data-hover="#12cdd9" title="Telemetry Cyan (#00b7c3)"></button>
+        <button class="accent-swatch" style="background:#e3008c" data-color="#e3008c" data-hover="#f51aa0" title="Metro Magenta (#e3008c)"></button>
+        <button class="accent-swatch" style="background:#498205" data-color="#498205" data-hover="#5a9e08" title="Metro Lime (#498205)"></button>
+        <input type="color" id="customAccentPicker" class="accent-custom-input" value="#0078d4" title="Pick Custom Hex Accent" />
+        <span id="accentHexReadout" class="accent-hex-readout">#0078D4</span>
+      </div>
+    </div>
+
+    <nav class="gallery-nav">
+      <div class="gallery-nav-inner">
+        <a class="gallery-nav-link" href="#sec-colors"><span>01</span>COLORS &amp; SURFACES</a>
+        <a class="gallery-nav-link" href="#sec-typography"><span>02</span>TYPOGRAPHY &amp; BADGES</a>
+        <a class="gallery-nav-link" href="#sec-chrome"><span>03</span>WINDOW CHROME &amp; NAV</a>
+        <a class="gallery-nav-link" href="#sec-buttons"><span>04</span>BUTTONS &amp; TOOLBARS</a>
+        <a class="gallery-nav-link" href="#sec-forms"><span>05</span>INPUTS, SLIDERS &amp; METERS</a>
+        <a class="gallery-nav-link" href="#sec-cards"><span>06</span>CARDS, ROWS &amp; BANNERS</a>
+        <a class="gallery-nav-link" href="#sec-popovers"><span>07</span>POPOVERS &amp; CONTEXT MENUS</a>
+        <a class="gallery-nav-link" href="#sec-tables"><span>08</span>TABLES &amp; METRO TILES</a>
+        <a class="gallery-nav-link" href="#sec-overlays"><span>09</span>OVERLAYS, HUDS &amp; OSK</a>
+      </div>
+    </nav>
+  </header>
+
+  <main class="gallery-container">
+
+    <!-- ======================================================================
+         SECTION 01: COLOR PALETTE & 5-TIER SURFACE ELEVATION
+         ====================================================================== -->
+    <section id="sec-colors" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">01</span>
+          COLOR PALETTE &amp; 5-TIER SURFACE ELEVATION TOKENS
+        </div>
+        <div class="gallery-section-desc">
+          Dark graphite depth hierarchy without heavy drop-shadow blur. Click any card to copy its hex token.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">5-TIER DARK GRAPHITE SURFACE HIERARCHY</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy="background-color: #101010;">Tier 0: #101010</span>
+              <span class="gtk-class-tag" data-copy="background-color: #141414;">Tier 1: #141414</span>
+              <span class="gtk-class-tag" data-copy="background-color: #181818;">Tier 3: #181818</span>
+              <span class="gtk-class-tag" data-copy="background-color: #1a1a1a;">Tier 4: #1a1a1a</span>
+            </div>
+          </div>
+
+          <div class="swatch-grid">
+            <div class="color-card" data-copy="#101010">
+              <div class="color-card-preview" style="background:#101010; color:#ffffff;">
+                <span>TIER 0</span><span>#101010</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Deep Canvas / Viewport</div>
+                <div class="color-card-role">Scrolled list/grid background, video canvas</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#141414">
+              <div class="color-card-preview" style="background:#141414; color:#ffffff;">
+                <span>TIER 1</span><span>#141414</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Window &amp; Popover Base</div>
+                <div class="color-card-role">Primary window, sidebar, popover body</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#161616">
+              <div class="color-card-preview" style="background:#161616; color:#ffffff;">
+                <span>TIER 2</span><span>#161616</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Action Ribbon &amp; Table Header</div>
+                <div class="color-card-role">Secondary toolbar, column header strip</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#181818">
+              <div class="color-card-preview" style="background:#181818; color:#ffffff;">
+                <span>TIER 3</span><span>#181818</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Section Card &amp; Titlebar</div>
+                <div class="color-card-role">.section-card, .settings-header-bar</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#1a1a1a">
+              <div class="color-card-preview" style="background:#1a1a1a; color:#ffffff;">
+                <span>TIER 4</span><span>#1a1a1a</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Interactive Control &amp; Tile</div>
+                <div class="color-card-role">Buttons, entries, .widget-row-card, tiles</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#222222">
+              <div class="color-card-preview" style="background:#222222; color:#ffffff;">
+                <span>HOVER</span><span>#222222</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Elevated Hover Surface</div>
+                <div class="color-card-role">Row/button hover background + accent border</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#2b2b2b">
+              <div class="color-card-preview" style="background:#2b2b2b; color:#ffffff;">
+                <span>BORDER</span><span>#2b2b2b</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Structural Hairline Border</div>
+                <div class="color-card-role">1px solid card, button, and pane divider</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">SEMANTIC &amp; TELEMETRY ACCENT TOKENS</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy="@metro-accent">@metro-accent</span>
+              <span class="gtk-class-tag" data-copy="@metro-accent-hover">@metro-accent-hover</span>
+              <span class="gtk-class-tag" data-copy="@metro-urgent">@metro-urgent</span>
+            </div>
+          </div>
+
+          <div class="swatch-grid">
+            <div class="color-card" data-copy="@metro-accent">
+              <div class="color-card-preview" style="background:var(--metro-accent); color:#ffffff;">
+                <span>@metro-accent</span><span>DYNAMIC</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Primary Metro Accent</div>
+                <div class="color-card-role">Window border, selected row, active toggle</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#e81123">
+              <div class="color-card-preview" style="background:#e81123; color:#ffffff;">
+                <span>@metro-urgent</span><span>#E81123</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Crimson Urgent / Danger</div>
+                <div class="color-card-role">Close button hover, delete, clip > 0dB, >90% disk</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#ff8c00">
+              <div class="color-card-preview" style="background:#ff8c00; color:#111111;">
+                <span>WARNING</span><span>#FF8C00</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Amber Warning / Auth</div>
+                <div class="color-card-role">LUKS/SMB auth prompt, thermal &amp; audio peak warn</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#10893e">
+              <div class="color-card-preview" style="background:#10893e; color:#ffffff;">
+                <span>SUCCESS</span><span>#10893E</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Emerald Healthy / Connected</div>
+                <div class="color-card-role">Nominal VU meter, active VPN/Link indicator</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="#00d8f0">
+              <div class="color-card-preview" style="background:#00d8f0; color:#111111;">
+                <span>TELEMETRY</span><span>#00D8F0</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Cyan Hardware Readout</div>
+                <div class="color-card-role">High-contrast technical readout &amp; badge accent</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 02: TYPOGRAPHY, HIERARCHY & TECHNICAL BADGES
+         ====================================================================== -->
+    <section id="sec-typography" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">02</span>
+          TYPOGRAPHY, HIERARCHY &amp; TECHNICAL TELEMETRY BADGES
+        </div>
+        <div class="gallery-section-desc">
+          Fira Code monospace for headers, paths, shortcuts, and badges; Sans-Serif for body copy and filenames.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">TYPOGRAPHIC SCALE &amp; CANONICAL GTK4 CLASSES</span>
+          </div>
+
+          <table class="typo-table">
+            <thead>
+              <tr>
+                <th>LIVE SPECIMEN</th>
+                <th>FONT / WEIGHT / SIZE</th>
+                <th>LETTER SPACING</th>
+                <th>CANONICAL GTK4 CLASS</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><span class="settings-header-title">⚙ SYSTEM SETTINGS • 📁 KAJO FILES</span></td>
+                <td class="files-list-meta">Fira Code • 700 Bold • 12px</td>
+                <td class="files-list-meta">1.5px UPPERCASE</td>
+                <td><span class="gtk-class-tag" data-copy=".settings-header-title">.settings-header-title</span></td>
+              </tr>
+              <tr>
+                <td><span class="shell-popover-title">AUDIO OUTPUT ROUTING &amp; DSP</span></td>
+                <td class="files-list-meta">Fira Code • 700 Bold • 11px</td>
+                <td class="files-list-meta">1.5px UPPERCASE</td>
+                <td>
+                  <span class="gtk-class-tag" data-copy=".shell-popover-title">.shell-popover-title</span>
+                  <span class="gtk-class-tag" data-copy=".heading">.heading</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="sidebar-category-header">DRIVES &amp; REMOVABLE MOUNTS</span></td>
+                <td class="files-list-meta">Fira Code • 700 Bold • 10px</td>
+                <td class="files-list-meta">1.2px UPPERCASE</td>
+                <td><span class="gtk-class-tag" data-copy=".sidebar-category-header">.sidebar-category-header</span></td>
+              </tr>
+              <tr>
+                <td><span class="row-title">Enable Hardware Acceleration (VAAPI / Vulkan)</span></td>
+                <td class="files-list-meta">Sans-Serif • 600 SemiBold • 13px</td>
+                <td class="files-list-meta">0px Normal</td>
+                <td>
+                  <span class="gtk-class-tag" data-copy=".row-title">.row-title</span>
+                  <span class="gtk-class-tag" data-copy=".files-list-name">.files-list-name</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="row-subtitle">Zero-copy DMA-BUF rendering via libmpv and GtkGLArea</span></td>
+                <td class="files-list-meta">Sans-Serif • 400 Regular • 11px</td>
+                <td class="files-list-meta">0px (#888888)</td>
+                <td>
+                  <span class="gtk-class-tag" data-copy=".row-subtitle">.row-subtitle</span>
+                  <span class="gtk-class-tag" data-copy=".dim-label">.dim-label</span>
+                </td>
+              </tr>
+              <tr>
+                <td><span class="shell-popover-subtitle">48.0 kHz • 32-bit Float • 8ch Virtual Surround</span></td>
+                <td class="files-list-meta">Fira Code • 400 Regular • 11px</td>
+                <td class="files-list-meta">0px (#9a9a9a)</td>
+                <td><span class="gtk-class-tag" data-copy=".shell-popover-subtitle">.shell-popover-subtitle</span></td>
+              </tr>
+              <tr>
+                <td><span class="empty-state-label">[ NO ACTIVE BLUETOOTH PERIPHERALS DETECTED ]</span></td>
+                <td class="files-list-meta">Fira Code • 400 Regular • 12px</td>
+                <td class="files-list-meta">0px (#777777)</td>
+                <td><span class="gtk-class-tag" data-copy=".empty-state-label">.empty-state-label</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="specimen-grid-2">
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">TECHNICAL TELEMETRY &amp; SHORTCUT BADGES</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".shell-popover-badge">.shell-popover-badge</span>
+                <span class="gtk-class-tag" data-copy=".files-ctx-shortcut">.files-ctx-shortcut</span>
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding: 6px 0;">
+              <span class="shell-popover-badge">PIPEWIRE 1.2.6</span>
+              <span class="shell-popover-badge accent">DEFAULT</span>
+              <span class="shell-popover-badge success">LINK UP • 2.5GbE</span>
+              <span class="shell-popover-badge peak-warn">-3.2 dBFS WARN</span>
+              <span class="shell-popover-badge urgent">CLIP 0.0 dBFS</span>
+              <span class="shell-popover-badge">Ctrl+Shift+N</span>
+            </div>
+            <div class="specimen-note">
+              Use <code>.shell-popover-badge</code> for technical metadata tags, codec/sample-rate indicators, and default app markers.
+            </div>
+          </div>
+
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">MONOSPACE CODE / SHADER PREVIEW BLOCK</span>
+              <span class="gtk-class-tag" data-copy=".code-preview-box">.code-preview-box</span>
+            </div>
+            <div class="code-preview-box">vec4 open_shader(vec3 coords) {
+    // Kajo Niri GLSL Window Open Shader (Metro Slice)
+    return sample_current_texture(coords.xy) * niri_alpha;
+}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 03: WINDOW CHROME, ACTION RIBBONS, BREADCRUMBS & SIDEBARS
+         ====================================================================== -->
+    <section id="sec-chrome" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">03</span>
+          FRAMELESS WINDOW CHROME, ACTION RIBBONS, BREADCRUMBS &amp; SIDEBARS
+        </div>
+        <div class="gallery-section-desc">
+          Undecorated GTK4 window with 1px solid @metro-accent border, GtkWindowHandle top drag bar, and 250px sidebar.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">INTERACTIVE WINDOW CHROME SPECIMEN (TRY CLICKING BREADCRUMB ✎, VIEW MODES &amp; SIDEBAR)</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy="window.shell-settings-window">window.shell-settings-window</span>
+              <span class="gtk-class-tag" data-copy=".settings-header-bar">.settings-header-bar</span>
+              <span class="gtk-class-tag" data-copy=".files-action-ribbon">.files-action-ribbon</span>
+              <span class="gtk-class-tag" data-copy=".navigation-sidebar">.navigation-sidebar</span>
+              <span class="gtk-class-tag" data-copy=".files-status-bar">.files-status-bar</span>
+            </div>
+          </div>
+
+          <div class="mock-kajo-window">
+            <!-- Top Drag Titlebar (.settings-header-bar) -->
+            <div class="settings-header-bar">
+              <div class="header-left">
+                <span class="settings-header-title" style="margin-right:8px;">📁 KAJO FILES</span>
+                <button class="kajo-btn files-nav-btn" title="Back (Alt+Left)">←</button>
+                <button class="kajo-btn files-nav-btn" title="Forward (Alt+Right)" disabled>→</button>
+                <button class="kajo-btn files-nav-btn" title="Parent Directory (Alt+Up)">↑</button>
+                <button class="kajo-btn files-nav-btn" title="Reload (Ctrl+R)">↻</button>
+              </div>
+
+              <div class="header-center">
+                <!-- Interactive Breadcrumb / URI Entry Stack -->
+                <div id="breadcrumbView" class="files-breadcrumb-box">
+                  <button class="files-breadcrumb-btn">⌂ HOME</button>
+                  <span class="files-breadcrumb-sep">▸</span>
+                  <button class="files-breadcrumb-btn">src</button>
+                  <span class="files-breadcrumb-sep">▸</span>
+                  <button class="files-breadcrumb-btn current">Kajo</button>
+                </div>
+                <input id="uriEntryView" type="text" class="kajo-entry" value="file:///home/mikolas/src/Kajo" style="display:none; height:26px; min-height:26px;" />
+                <button id="toggleUriBtn" class="kajo-btn files-nav-btn" title="Toggle Raw URI Entry (Ctrl+L)">✎</button>
+              </div>
+
+              <div class="header-right">
+                <input type="text" class="kajo-entry" placeholder="Filter (Ctrl+F)..." style="width:155px; height:26px; min-height:26px;" />
+                <div class="segmented-group" id="chromeViewGroup">
+                  <button class="kajo-btn files-nav-btn active" title="Grid View (Ctrl+1)">⊞</button>
+                  <button class="kajo-btn files-nav-btn" title="Details List View (Ctrl+2)">☰</button>
+                  <button class="kajo-btn files-nav-btn" title="Quick Look Preview (Space)">ⓘ</button>
+                </div>
+                <button class="kajo-btn files-nav-btn" title="Toggle Niri Floating / Tiling">🗗 FLOAT / TILE</button>
+                <button class="kajo-btn settings-close-btn" title="Close Window">✕</button>
+              </div>
+            </div>
+
+            <!-- Secondary Action Ribbon (.files-action-ribbon) -->
+            <div class="files-action-ribbon">
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button class="kajo-btn files-accent-btn files-nav-btn">+ NEW FOLDER</button>
+                <button class="kajo-btn files-nav-btn">⇅ SORT: Name ▲</button>
+                <button class="kajo-btn files-nav-btn">📋 PASTE</button>
+              </div>
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span class="shell-popover-badge">GIO / GVFS</span>
+                <span class="files-list-meta">14 items (2 hidden)</span>
+              </div>
+            </div>
+
+            <!-- Main Split Body: 250px Navigation Sidebar + Content Viewport -->
+            <div class="mock-window-body">
+              <aside class="navigation-sidebar" id="demoSidebar">
+                <div class="sidebar-cat-pad"><span class="sidebar-category-header">FAVORITES</span></div>
+                <div class="sidebar-row selected"><span>⌂  Home</span><span class="files-ctx-shortcut">Alt+H</span></div>
+                <div class="sidebar-row"><span>🖥  Desktop</span></div>
+                <div class="sidebar-row"><span>📄  Documents</span></div>
+                <div class="sidebar-row"><span>⬇  Downloads</span></div>
+                <div class="sidebar-row"><span>🗑  Trash</span><span class="shell-popover-badge">3</span></div>
+
+                <div class="sidebar-cat-pad" style="margin-top:6px;"><span class="sidebar-category-header">DRIVES &amp; MOUNTS</span></div>
+                <div class="sidebar-drive-box">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:#ffffff;">💾 NVMe Root (ext4)</span>
+                    <span class="files-list-meta">412 / 1000 GB</span>
+                  </div>
+                  <div class="kajo-levelbar-trough">
+                    <div class="kajo-levelbar-fill" style="width:41.2%;"></div>
+                  </div>
+                </div>
+                <div class="sidebar-drive-box">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:#ffffff;">🔒 Backup_LUKS</span>
+                    <button class="kajo-btn files-nav-btn" style="padding:1px 6px; min-height:20px; font-size:10px;" title="Unmount / Lock">⏏</button>
+                  </div>
+                  <div class="kajo-levelbar-trough">
+                    <div class="kajo-levelbar-fill full" style="width:93%;"></div>
+                  </div>
+                </div>
+              </aside>
+
+              <div style="background-color:var(--surface-tier-0); padding:16px; display:flex; flex-direction:column; justify-content:space-between;">
+                <div class="metro-tile-grid">
+                  <div class="files-tile-card files-tile-folder selected">
+                    <div class="files-tile-icon">📁</div>
+                    <div class="files-tile-name">src</div>
+                    <div class="files-tile-meta">Folder</div>
+                  </div>
+                  <div class="files-tile-card files-tile-folder">
+                    <div class="files-tile-icon">📁</div>
+                    <div class="files-tile-name">data</div>
+                    <div class="files-tile-meta">Folder</div>
+                  </div>
+                  <div class="files-tile-card">
+                    <div class="files-tile-icon">📄</div>
+                    <div class="files-tile-name">SPEC_DESIGN_SYSTEM.md</div>
+                    <div class="files-tile-meta">24.8 KB</div>
+                  </div>
+                  <div class="files-tile-card">
+                    <div class="files-tile-thumb">PNG</div>
+                    <div class="files-tile-name">wallpaper_metro.png</div>
+                    <div class="files-tile-meta">3.4 MB</div>
+                  </div>
+                </div>
+                <div class="specimen-note" style="margin-top:12px;">
+                  Selected sidebar items and list rows always render a crisp <code>3px solid #ffffff</code> left indicator bar against <code>@metro-accent</code>.
+                </div>
+              </div>
+            </div>
+
+            <!-- Bottom Status Bar (.files-status-bar) -->
+            <div class="files-status-bar">
+              <span>1 item selected: "src" (Directory)</span>
+              <span>Free space: 588.4 GB (NVMe Root)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 04: BUTTONS, SEGMENTED CONTROLS & ICON TOOLBARS
+         ====================================================================== -->
+    <section id="sec-buttons" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">04</span>
+          BUTTONS, SEGMENTED CONTROLS &amp; ICON TOOLBARS
+        </div>
+        <div class="gallery-section-desc">
+          All Kajo buttons enforce background: none; background-image: none; border-radius: 0px; and 1px solid #2b2b2b.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-grid-2">
+          <!-- Button Hierarchy -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">PRIMARY, SECONDARY &amp; DANGER BUTTON HIERARCHY</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy="button">button</span>
+                <span class="gtk-class-tag" data-copy=".action-btn-primary">.action-btn-primary</span>
+                <span class="gtk-class-tag" data-copy=".files-accent-btn">.files-accent-btn</span>
+                <span class="gtk-class-tag" data-copy=".action-btn-danger">.action-btn-danger</span>
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <button class="kajo-btn action-btn-primary">✔ APPLY CHANGES</button>
+              <button class="kajo-btn">STANDARD ACTION</button>
+              <button class="kajo-btn active">ACTIVE / TOGGLED</button>
+              <button class="kajo-btn action-btn-danger">🗑 DELETE / EMPTY TRASH</button>
+              <button class="kajo-btn" disabled>DISABLED</button>
+            </div>
+
+            <div class="specimen-note">
+              Primary CTA buttons use <code>.action-btn-primary</code> (or <code>.files-accent-btn</code>), filled with <code>@metro-accent</code> and bold <code>Fira Code</code> label text.
+            </div>
+          </div>
+
+          <!-- Compact Toolbar & Segmented Controls -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">COMPACT TOOLBAR BUTTONS &amp; SEGMENTED SWITCHERS</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-nav-btn">.files-nav-btn</span>
+                <span class="gtk-class-tag" data-copy=".player-transport-btn">.player-transport-btn</span>
+                <span class="gtk-class-tag" data-copy=".settings-close-btn">.settings-close-btn</span>
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:4px;">
+                <button class="kajo-btn files-nav-btn" title="Previous">⏮</button>
+                <button class="kajo-btn files-nav-btn" title="Step Back">⏪</button>
+                <button class="kajo-btn files-accent-btn files-nav-btn" title="Play / Pause">▶ PLAY</button>
+                <button class="kajo-btn files-nav-btn" title="Step Forward">⏩</button>
+                <button class="kajo-btn files-nav-btn" title="Next">⏭</button>
+              </div>
+
+              <div class="segmented-group" id="demoSegmentedMode">
+                <button class="kajo-btn files-nav-btn">ICON-ONLY</button>
+                <button class="kajo-btn files-nav-btn">TEXT-ONLY</button>
+                <button class="kajo-btn files-nav-btn active">FULL</button>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button class="kajo-btn files-nav-btn">🗗 FLOAT / TILE</button>
+                <button class="kajo-btn settings-close-btn">✕</button>
+              </div>
+            </div>
+
+            <div class="specimen-note">
+              Click the <code>ICON-ONLY | TEXT-ONLY | FULL</code> segmented group above to test active selection state switching.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 05: FORM CONTROLS, INPUTS, TOGGLES, DROPDOWNS, SLIDERS & METERS
+         ====================================================================== -->
+    <section id="sec-forms" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">05</span>
+          FORM CONTROLS, INPUTS, TOGGLES, DROPDOWNS, SLIDERS &amp; TELEMETRY METERS
+        </div>
+        <div class="gallery-section-desc">
+          Interactive inputs, square 0px toggles, dropdown popups, 14x14 square-thumb sliders, VU meters, and 16-band FFT.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-grid-3">
+          <!-- Text, Search & Password Inputs -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">TEXT, URI, SEARCH &amp; PASSWORD ENTRIES</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy="entry">entry</span>
+                <span class="gtk-class-tag" data-copy=".shell-launcher-input">.shell-launcher-input</span>
+                <span class="gtk-class-tag" data-copy=".lock-password-entry">.lock-password-entry</span>
+              </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              <div>
+                <div class="sidebar-category-header" style="margin-bottom:4px;">URI / PATH ENTRY</div>
+                <input type="text" class="kajo-entry" value="smb://nas.local/media/uhd_demos" />
+              </div>
+
+              <div>
+                <div class="sidebar-category-header" style="margin-bottom:4px;">LAUNCHER / FILTER SEARCH ENTRY</div>
+                <div class="entry-with-btn">
+                  <input type="text" class="kajo-entry" placeholder="> Type to search apps, files, or =math..." />
+                  <button class="kajo-btn files-nav-btn">✕</button>
+                </div>
+              </div>
+
+              <div>
+                <div class="sidebar-category-header" style="margin-bottom:4px;">PAM / LUKS PASSWORD ENTRY (CLICK 👁)</div>
+                <div class="entry-with-btn">
+                  <input id="demoPasswordInput" type="password" class="kajo-entry" value="kajo-metro-secret-2026" />
+                  <button id="togglePassBtn" class="kajo-btn files-nav-btn" title="Toggle Password Visibility">👁</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Toggle Switches, Checkboxes & Dropdowns -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">SWITCHES, CHECKBUTTONS &amp; DROPDOWN</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy="switch">switch</span>
+                <span class="gtk-class-tag" data-copy="checkbutton">checkbutton</span>
+                <span class="gtk-class-tag" data-copy="dropdown">dropdown</span>
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <label class="kajo-switch">
+                <input type="checkbox" checked />
+                <span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span>
+                <span style="font-size:12px; font-weight:600;">Enabled</span>
+              </label>
+
+              <label class="kajo-switch">
+                <input type="checkbox" />
+                <span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span>
+                <span style="font-size:12px; color:#aaaaaa;">Muted</span>
+              </label>
+
+              <label class="kajo-switch disabled">
+                <input type="checkbox" disabled />
+                <span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span>
+                <span style="font-size:12px;">Locked</span>
+              </label>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding-top:4px;">
+              <label class="kajo-check">
+                <input type="checkbox" checked />
+                <span class="kajo-check-indicator">✔</span>
+                <span>Folders First</span>
+              </label>
+              <label class="kajo-check">
+                <input type="checkbox" checked />
+                <span class="kajo-check-indicator">✔</span>
+                <span>Show Hidden</span>
+              </label>
+              <label class="kajo-check">
+                <input type="checkbox" />
+                <span class="kajo-check-indicator">✔</span>
+                <span>Set Default</span>
+              </label>
+            </div>
+
+            <div>
+              <div class="sidebar-category-header" style="margin-bottom:4px;">OPEN GTKDROPDOWN SPECIMEN</div>
+              <div class="kajo-dropdown">
+                <button class="kajo-dropdown-btn" id="demoDropdownBtn">
+                  <span id="demoDropdownLabel">GLSL: Metro Slice (Default)</span>
+                  <span>▾</span>
+                </button>
+                <div class="kajo-dropdown-menu" id="demoDropdownMenu">
+                  <div class="kajo-dropdown-item selected"><span>GLSL: Metro Slice (Default)</span><span>✔</span></div>
+                  <div class="kajo-dropdown-item"><span>GLSL: CRT Phosphor Scanline</span><span></span></div>
+                  <div class="kajo-dropdown-item"><span>GLSL: Chromatic Glitch Reveal</span><span></span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Sliders, LevelBars, VU Meter & 16-Band FFT -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">SLIDERS, LEVELBARS, VU METER &amp; 16-BAND FFT</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy="scale">scale</span>
+                <span class="gtk-class-tag" data-copy=".player-seek-scale">.player-seek-scale</span>
+                <span class="gtk-class-tag" data-copy="levelbar">levelbar</span>
+              </div>
+            </div>
+
+            <!-- Interactive Scale Slider -->
+            <div>
+              <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span class="sidebar-category-header">MASTER OUTPUT VOLUME (GTKSCALE)</span>
+                <span id="volScaleReadout" class="shell-popover-badge">74%</span>
+              </div>
+              <div class="kajo-scale-wrap">
+                <input id="volScaleInput" type="range" min="0" max="100" value="74" class="kajo-scale" style="--val:74%;" />
+              </div>
+            </div>
+
+            <!-- 3-Zone Audio Peak VU Meter -->
+            <div>
+              <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                <span class="sidebar-category-header">3-ZONE AUDIO PEAK VU METER (.low / .high / .full)</span>
+                <span class="shell-popover-badge peak-warn">-1.8 dBFS</span>
+              </div>
+              <div class="kajo-levelbar-trough" style="height:8px; gap:1px;">
+                <div class="kajo-levelbar-fill low" style="width:65%;"></div>
+                <div class="kajo-levelbar-fill high" style="width:20%;"></div>
+                <div class="kajo-levelbar-fill full" style="width:7%;"></div>
+              </div>
+            </div>
+
+            <!-- 16-Band Vertical FFT Spectrum Visualizer -->
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span class="sidebar-category-header">16-BAND PIPEWIRE FFT SPECTRUM</span>
+                <button id="toggleFftBtn" class="kajo-btn files-nav-btn" style="min-height:20px; padding:1px 6px; font-size:10px;">❚❚ PAUSE FFT</button>
+              </div>
+              <div class="fft-visualizer" id="fftVisualizer">
+                <!-- Populated & animated by JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 06: SECTION CARDS, CONTROL ROWS & INLINE REVEAL BANNERS
+         ====================================================================== -->
+    <section id="sec-cards" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">06</span>
+          SECTION CARDS, SETTINGS CONTROL ROWS &amp; INLINE REVEAL BANNERS
+        </div>
+        <div class="gallery-section-desc">
+          Strict GTK_ALIGN_CENTER row geometry and modal-free inline contextual banners for kajo-settings and kajo-files.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <!-- 3-Column Coloured Left-Stripe Cards -->
+        <div class="specimen-grid-3">
+          <div class="section-card section-card-left">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="shell-popover-title">LEFT PANEL ZONE (COBALT)</span>
+              <span class="gtk-class-tag" data-copy=".section-card-left">.section-card-left</span>
+            </div>
+            <div class="row-subtitle">3px solid #0078d4 left stripe for primary navigation &amp; launcher widgets.</div>
+          </div>
+
+          <div class="section-card section-card-center">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="shell-popover-title" style="color:#ff8c00;">CENTER PANEL ZONE (AMBER)</span>
+              <span class="gtk-class-tag" data-copy=".section-card-center">.section-card-center</span>
+            </div>
+            <div class="row-subtitle">3px solid #ff8c00 left stripe for active window title, clock, and media transport.</div>
+          </div>
+
+          <div class="section-card section-card-right">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span class="shell-popover-title" style="color:#10893e;">RIGHT PANEL ZONE (EMERALD)</span>
+              <span class="gtk-class-tag" data-copy=".section-card-right">.section-card-right</span>
+            </div>
+            <div class="row-subtitle">3px solid #10893e left stripe for system telemetry, audio, network, and power.</div>
+          </div>
+        </div>
+
+        <!-- Canonical Settings Control Row Cards (.widget-row-card) -->
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">CANONICAL CONTROL ROW CARDS (STRICT GTK_ALIGN_CENTER VERTICAL ALIGNMENT)</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy=".section-card">.section-card</span>
+              <span class="gtk-class-tag" data-copy=".widget-row-card">.widget-row-card</span>
+              <span class="gtk-class-tag" data-copy=".row-title">.row-title</span>
+              <span class="gtk-class-tag" data-copy=".row-subtitle">.row-subtitle</span>
+            </div>
+          </div>
+
+          <div class="section-card">
+            <div class="widget-row-card">
+              <div class="widget-row-left">
+                <div class="widget-row-icon">🔊</div>
+                <div class="widget-row-text">
+                  <div class="row-title">7.1 Virtual Surround HeSuVi Convolution</div>
+                  <div class="row-subtitle">Route 8-channel sink through PipeWire filter-chain convolver without channel truncation</div>
+                </div>
+              </div>
+              <div class="widget-row-right">
+                <span class="shell-popover-badge">8 CHANNELS</span>
+                <label class="kajo-switch">
+                  <input type="checkbox" checked />
+                  <span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span>
+                </label>
+              </div>
+            </div>
+
+            <div class="widget-row-card">
+              <div class="widget-row-left">
+                <div class="widget-row-icon">🖥</div>
+                <div class="widget-row-text">
+                  <div class="row-title">OLED Fold Posture Auto-Rotation &amp; Half-Blanking</div>
+                  <div class="row-subtitle">Automatically disable bottom display half when hinge angle &lt; 135° and keyboard is docked</div>
+                </div>
+              </div>
+              <div class="widget-row-right">
+                <span class="shell-popover-badge accent">LAPTOP_HALF</span>
+                <button class="kajo-btn files-nav-btn">CALIBRATE SENSORS</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inline Contextual Reveal Banners -->
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">INLINE CONTEXTUAL REVEAL BANNERS (NO BLOCKING FLOATING DIALOGS)</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy=".files-prompt-bar">.files-prompt-bar</span>
+              <span class="gtk-class-tag" data-copy=".files-auth-bar">.files-auth-bar</span>
+              <span class="gtk-class-tag" data-copy=".files-trash-bar">.files-trash-bar</span>
+            </div>
+          </div>
+
+          <!-- 1. Inline Action Prompt Banner -->
+          <div class="files-prompt-bar">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent);">NEW FOLDER NAME:</span>
+            <input type="text" class="kajo-entry" value="Kajo_Screenshots_2026" style="max-width:320px; height:28px; min-height:28px;" />
+            <div style="display:flex; gap:6px;">
+              <button class="kajo-btn files-accent-btn files-nav-btn">CREATE</button>
+              <button class="kajo-btn files-nav-btn">CANCEL</button>
+            </div>
+          </div>
+
+          <!-- 2. Inline LUKS / SMB Authentication Banner -->
+          <div class="files-auth-bar">
+            <div style="display:flex; align-items:center; justify-content:space-between;">
+              <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-warning);">🔒 AUTHENTICATION REQUIRED — smb://nas.local/engineering</span>
+              <span class="shell-popover-badge peak-warn">GVFS / GMountOperation</span>
+            </div>
+            <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap:8px; align-items:center;">
+              <input type="text" class="kajo-entry" placeholder="Domain (WORKGROUP)" value="KAJO-CORP" style="height:28px; min-height:28px;" />
+              <input type="text" class="kajo-entry" placeholder="Username" value="mikolas" style="height:28px; min-height:28px;" />
+              <input type="password" class="kajo-entry" placeholder="Password / Passphrase" value="••••••••••••" style="height:28px; min-height:28px;" />
+              <div style="display:flex; gap:6px; justify-content:flex-end;">
+                <button class="kajo-btn files-accent-btn files-nav-btn">UNLOCK / MOUNT</button>
+                <button class="kajo-btn files-nav-btn">CANCEL</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Inline Trash / Danger Banner -->
+          <div class="files-trash-bar">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:#ff8080;">🗑 TRASH BIN (trash:///) — Items here can be restored or permanently deleted.</span>
+            <button class="kajo-btn action-btn-danger files-nav-btn">EMPTY TRASH</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 07: POPOVERS, CONTEXT MENUS & DIALOGS (3-ZONE ARCHITECTURE)
+         ====================================================================== -->
+    <section id="sec-popovers" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">07</span>
+          POPOVERS, HIT-TESTED CONTEXT MENUS &amp; SORT POPOVERS (3-ZONE ARCHITECTURE)
+        </div>
+        <div class="gallery-section-desc">
+          Every Kajo popover features a 1px solid @metro-accent border and a structured Header / Body / Footer layout.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-grid-3">
+          <!-- 1. Canonical 3-Zone Shell Widget Popover -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">3-ZONE SHELL WIDGET POPOVER</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".shell-popover-header">.shell-popover-header</span>
+                <span class="gtk-class-tag" data-copy=".shell-popover-body">.shell-popover-body</span>
+                <span class="gtk-class-tag" data-copy=".shell-popover-footer">.shell-popover-footer</span>
+              </div>
+            </div>
+
+            <div class="kajo-popover">
+              <div class="shell-popover-header">
+                <div>
+                  <div class="shell-popover-title">AUDIO OUTPUT ROUTING</div>
+                  <div class="shell-popover-subtitle">PipeWire Pulse • 48.0 kHz</div>
+                </div>
+                <span class="shell-popover-badge accent">74%</span>
+              </div>
+
+              <div class="shell-popover-body">
+                <div class="shell-row-item active">
+                  <span>🎧 HeSuVi 7.1 Virtual Surround</span>
+                  <span class="shell-popover-badge">8CH</span>
+                </div>
+                <div class="shell-row-item">
+                  <span>🔊 Built-in Stereo Speakers</span>
+                  <span class="shell-popover-badge">2CH</span>
+                </div>
+                <div class="shell-row-item">
+                  <span>📺 HDMI / DisplayPort Audio</span>
+                  <span class="shell-popover-badge">2CH</span>
+                </div>
+              </div>
+
+              <div class="shell-popover-footer">
+                <span class="files-list-meta">Stream: @DEFAULT_MONITOR@</span>
+                <button class="kajo-btn files-nav-btn">⚙ AUDIO SETTINGS</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Hit-Tested Context Menu Popover (Item Mode + Open With Sub-View Toggle) -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">HIT-TESTED CONTEXT MENU (CLICK "OPEN WITH ▸")</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-context-popover">.files-context-popover</span>
+                <span class="gtk-class-tag" data-copy=".files-ctx-item">.files-ctx-item</span>
+                <span class="gtk-class-tag" data-copy=".files-ctx-danger">.files-ctx-danger</span>
+              </div>
+            </div>
+
+            <!-- Main Item Context Menu View -->
+            <div id="ctxMainView" class="kajo-popover">
+              <div class="shell-popover-header">
+                <span class="shell-popover-title">demo_reel_4k.mkv</span>
+                <span class="shell-popover-badge">video/x-matroska</span>
+              </div>
+              <div class="shell-popover-body" style="padding:6px; gap:2px;">
+                <div class="files-ctx-item"><span>▶ Open</span><span class="files-ctx-shortcut">Enter</span></div>
+                <div class="files-ctx-item" id="openWithTrigger" style="color:var(--metro-telemetry); font-weight:600;">
+                  <span>↗ Open With / Set Default...</span><span class="files-ctx-shortcut">▸</span>
+                </div>
+                <div class="files-ctx-item"><span>👁 Quick Look Preview</span><span class="files-ctx-shortcut">Space</span></div>
+                <div class="ctx-separator"></div>
+                <div class="files-ctx-item"><span>✂ Cut</span><span class="files-ctx-shortcut">Ctrl+X</span></div>
+                <div class="files-ctx-item"><span>📋 Copy</span><span class="files-ctx-shortcut">Ctrl+C</span></div>
+                <div class="files-ctx-item"><span>🔗 Copy File Path</span><span class="files-ctx-shortcut">Ctrl+Shift+C</span></div>
+                <div class="ctx-separator"></div>
+                <div class="files-ctx-item"><span>✎ Rename...</span><span class="files-ctx-shortcut">F2</span></div>
+                <div class="files-ctx-item files-ctx-danger"><span>🗑 Move to Trash</span><span class="files-ctx-shortcut">Del</span></div>
+              </div>
+            </div>
+
+            <!-- "Open With / Set Default" Sub-View -->
+            <div id="ctxOpenWithView" class="kajo-popover" style="display:none;">
+              <div class="shell-popover-header">
+                <button id="ctxBackBtn" class="kajo-btn files-nav-btn" style="min-height:22px; padding:1px 7px;">← BACK</button>
+                <span class="shell-popover-title">OPEN WITH</span>
+              </div>
+              <div class="shell-popover-body" style="gap:6px;">
+                <div class="files-menu-row active">
+                  <span>▶ Kajo Player</span>
+                  <span class="shell-popover-badge accent">DEFAULT</span>
+                </div>
+                <div class="files-menu-row">
+                  <span>🎬 mpv Media Player</span>
+                  <span class="files-ctx-shortcut">org.mpv.Mpv</span>
+                </div>
+                <div class="files-menu-row">
+                  <span>🎞 VLC Media Player</span>
+                  <span class="files-ctx-shortcut">org.videolan.VLC</span>
+                </div>
+                <div class="ctx-separator"></div>
+                <label class="kajo-check" style="padding:2px 4px;">
+                  <input type="checkbox" checked />
+                  <span class="kajo-check-indicator">✔</span>
+                  <span style="font-size:11px;">Set as default application for video/x-matroska</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. Sort & Filter Popover (.files-sort-popover) -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">SORT &amp; COLLATION POPOVER</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-sort-popover">.files-sort-popover</span>
+                <span class="gtk-class-tag" data-copy=".files-menu-row">.files-menu-row</span>
+              </div>
+            </div>
+
+            <div class="kajo-popover">
+              <div class="shell-popover-header">
+                <span class="shell-popover-title">SORT BY</span>
+                <span class="shell-popover-badge">NATURAL UTF-8</span>
+              </div>
+              <div class="shell-popover-body" style="gap:4px;">
+                <div class="files-menu-row active"><span>Name (A–Z, Natural Numeric)</span><span>✔</span></div>
+                <div class="files-menu-row"><span>Date Modified</span><span></span></div>
+                <div class="files-menu-row"><span>Size</span><span></span></div>
+                <div class="files-menu-row"><span>Type (MIME)</span><span></span></div>
+
+                <div class="sidebar-category-header" style="margin-top:6px;">DIRECTION</div>
+                <div class="files-menu-row active"><span>▲ Ascending</span><span>✔</span></div>
+                <div class="files-menu-row"><span>▼ Descending</span><span></span></div>
+
+                <div class="ctx-separator"></div>
+                <label class="kajo-check" style="padding:2px 4px;">
+                  <input type="checkbox" checked />
+                  <span class="kajo-check-indicator">✔</span>
+                  <span>Folders First</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 08: SORTABLE DETAILS TABLES & METRO TILE GRIDS
+         ====================================================================== -->
+    <section id="sec-tables" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">08</span>
+          INTERACTIVE SORTABLE DETAILS TABLES &amp; METRO TILE GRIDS
+        </div>
+        <div class="gallery-section-desc">
+          Click any column header (NAME, SIZE, TYPE, MODIFIED) below to test live natural sorting and active column indicators.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">CLICKABLE DETAILS TABLE HEADER &amp; ROWS (TRY CLICKING COLUMN HEADERS OR ROWS)</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy=".files-list-header">.files-list-header</span>
+              <span class="gtk-class-tag" data-copy=".files-col-header-btn">.files-col-header-btn</span>
+              <span class="gtk-class-tag" data-copy=".files-list-row">.files-list-row</span>
+            </div>
+          </div>
+
+          <div>
+            <div class="files-list-header" id="sortableTableHeader">
+              <button class="files-col-header-btn active" data-col="name">
+                <span>NAME</span><span class="sort-arrow">▲</span>
+              </button>
+              <button class="files-col-header-btn" data-col="size">
+                <span>SIZE</span><span class="sort-arrow"></span>
+              </button>
+              <button class="files-col-header-btn" data-col="type">
+                <span>TYPE</span><span class="sort-arrow"></span>
+              </button>
+              <button class="files-col-header-btn" data-col="mtime">
+                <span>MODIFIED</span><span class="sort-arrow"></span>
+              </button>
+            </div>
+
+            <div class="files-list-table" id="sortableTableBody">
+              <!-- Populated & sorted dynamically via JS -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 09: OVERLAYS, MEDIA HUDS, TOASTS, LOCK & VIRTUAL KEYBOARD
+         ====================================================================== -->
+    <section id="sec-overlays" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">09</span>
+          OVERLAYS, FULLSCREEN MEDIA HUD, QUICK LOOK, OSD, TOASTS, LOCK &amp; OSK
+        </div>
+        <div class="gallery-section-desc">
+          Layer-shell notifications, OSD pills, libmpv Quick Look card, kajo-player transport deck, PAM lock card, and OSK keycaps.
+        </div>
+      </div>
+
+      <div class="gallery-section-body">
+        <!-- Fullscreen Floating Media Transport Deck (kajo-player) -->
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">FULLSCREEN FLOATING MEDIA TRANSPORT DECK (KAJO-PLAYER)</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy=".player-transport-deck">.player-transport-deck</span>
+              <span class="gtk-class-tag" data-copy=".player-seek-scale">.player-seek-scale</span>
+              <span class="gtk-class-tag" data-copy=".player-stream-btn">.player-stream-btn</span>
+            </div>
+          </div>
+
+          <div class="player-transport-deck">
+            <div style="display:flex; align-items:center; gap:12px;">
+              <span class="player-time-label">00:18:42</span>
+              <input type="range" min="0" max="100" value="42" class="kajo-scale player-seek-scale" style="--val:42%;" />
+              <span class="player-time-label">00:44:15</span>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <div style="display:flex; align-items:center; gap:5px;">
+                <button class="kajo-btn player-transport-btn" title="Previous Chapter">⏮</button>
+                <button class="kajo-btn player-transport-btn" title="Seek -10s">⏪</button>
+                <button class="kajo-btn player-transport-btn" title="Step Frame Back (,)">◀❚</button>
+                <button class="kajo-btn action-btn-primary player-transport-btn" style="padding:3px 14px;" title="Play / Pause (Space)">❚❚ PAUSE</button>
+                <button class="kajo-btn player-transport-btn" title="Step Frame Forward (.)">❚▶</button>
+                <button class="kajo-btn player-transport-btn" title="Seek +10s">⏩</button>
+                <button class="kajo-btn player-transport-btn" title="Next Chapter">⏭</button>
+              </div>
+
+              <div style="display:flex; align-items:center; gap:8px; width:165px;">
+                <span>🔊</span>
+                <input type="range" min="0" max="100" value="85" class="kajo-scale" style="--val:85%;" />
+              </div>
+
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <button class="kajo-btn files-nav-btn">SUB: ENG (ASS) ▾</button>
+                <button class="kajo-btn files-nav-btn">AUD: FLAC 7.1 ▾</button>
+                <button class="kajo-btn files-nav-btn">1.0x ▾</button>
+                <button class="kajo-btn files-nav-btn" title="Save Screenshot (s)">📷</button>
+                <button class="kajo-btn files-nav-btn active" title="Toggle Telemetry OSD (i)">ⓘ OSD</button>
+                <button class="kajo-btn files-nav-btn" title="Fullscreen (f)">⛶</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="specimen-grid-2">
+          <!-- Spacebar Quick Look Modal Card -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">SPACEBAR QUICK LOOK MODAL PREVIEW (KAJOPLAYERMPV)</span>
+              <span class="gtk-class-tag" data-copy=".files-quicklook-card">.files-quicklook-card</span>
+            </div>
+
+            <div class="files-quicklook-card">
+              <div class="shell-popover-header">
+                <span class="shell-popover-title">🎬 bbb_sunflower_2160p_60fps.mp4</span>
+                <button class="kajo-btn settings-close-btn">✕</button>
+              </div>
+              <div class="quicklook-viewport">
+                <div style="text-align:center;">
+                  <div style="font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--metro-telemetry);">[ KajoPlayerMpv • GtkGLArea Zero-Copy Viewport ]</div>
+                  <div class="files-list-meta">HEVC 10-bit • 3840×2160 @ 60.00 fps • hwdec=vaapi</div>
+                </div>
+              </div>
+              <div style="padding:10px 14px; background:#141414; border-bottom:1px solid var(--border-struct); display:flex; align-items:center; gap:10px;">
+                <button class="kajo-btn files-accent-btn files-nav-btn">❚❚</button>
+                <input type="range" min="0" max="100" value="28" class="kajo-scale" style="--val:28%;" />
+                <span class="player-time-label">01:12 / 04:15</span>
+              </div>
+              <div class="shell-popover-footer">
+                <span class="files-list-meta">Size: 348.2 MB • Modified: Today 18:40</span>
+                <button class="kajo-btn action-btn-primary files-nav-btn">↗ OPEN IN KAJO PLAYER</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- OSD Pill, Notification Toast & Session Lock Card -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">LAYER-SHELL OSD PILL, TOASTS &amp; LOCK CARD</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".shell-osd-card">.shell-osd-card</span>
+                <span class="gtk-class-tag" data-copy=".shell-notification-card">.shell-notification-card</span>
+                <span class="gtk-class-tag" data-copy=".lock-card">.lock-card</span>
+              </div>
+            </div>
+
+            <!-- OSD Pill -->
+            <div class="shell-osd-card">
+              <span style="font-size:18px;">🔆</span>
+              <div style="flex:1; display:flex; flex-direction:column; gap:5px;">
+                <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:11px; font-weight:700;">
+                  <span>DISPLAY BACKLIGHT</span><span>80%</span>
+                </div>
+                <div class="kajo-levelbar-trough">
+                  <div class="kajo-levelbar-fill" style="width:80%;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Standard & Critical Notification Toasts -->
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+              <div class="shell-notification-card">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span class="shell-popover-title">ARCHIVE EXTRACTED</span>
+                  <span class="files-list-meta">now</span>
+                </div>
+                <div class="row-subtitle" style="color:#cccccc;">Extracted 42 files to ~/Downloads/release_v2</div>
+              </div>
+
+              <div class="shell-notification-card critical">
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                  <span class="shell-popover-title" style="color:var(--metro-urgent);">THERMAL THROTTLE</span>
+                  <span class="shell-popover-badge urgent">96°C</span>
+                </div>
+                <div class="row-subtitle" style="color:#cccccc;">Package temperature critical on CPU0</div>
+              </div>
+            </div>
+
+            <!-- Compact Lock / Greeter Card Preview -->
+            <div class="lock-card">
+              <div>
+                <div class="lock-clock">19:42</div>
+                <div class="lock-date">THURSDAY, NOVEMBER 5 • KAJO SESSION LOCK</div>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-family:var(--font-mono); font-size:12px; font-weight:700;">👤 mikolas (wheel)</span>
+                <span class="shell-popover-badge">PAM AUTH</span>
+              </div>
+              <div style="display:flex; gap:6px;">
+                <input type="password" class="kajo-entry" value="••••••••••" />
+                <button class="kajo-btn action-btn-primary">UNLOCK →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Virtual Keyboard (ShellOSK) Keycap Row -->
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">VIRTUAL KEYBOARD (SHELLOSK) KEYCAPS — SOLE 3PX BORDER-RADIUS ERGONOMIC EXCEPTION</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy="window.osk-window button.osk-key">button.osk-key</span>
+              <span class="gtk-class-tag" data-copy=".osk-key-special">.osk-key-special</span>
+              <span class="gtk-class-tag" data-copy=".osk-key-locked">.osk-key-locked</span>
+            </div>
+          </div>
+
+          <div class="osk-row">
+            <button class="osk-key osk-key-special">ESC</button>
+            <button class="osk-key osk-key-locked">⇧ SHIFT (LOCKED)</button>
+            <button class="osk-key">Q</button>
+            <button class="osk-key">W</button>
+            <button class="osk-key">E</button>
+            <button class="osk-key">R</button>
+            <button class="osk-key">T</button>
+            <button class="osk-key">Y</button>
+            <button class="osk-key" style="flex:1; min-width:140px;">SPACE (KAJO OSK)</button>
+            <button class="osk-key osk-key-special">⌫ BKSP</button>
+            <button class="osk-key osk-key-special">⏎ ENTER</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Floating Clipboard Notification Toast -->
+  <div id="copyToast" class="copy-toast">
+    <span class="shell-popover-badge accent">COPIED</span>
+    <span id="copyToastText">.action-btn-primary</span>
+  </div>
+
+  <!-- ========================================================================
+       INTERACTIVE GALLERY JAVASCRIPT
+       ======================================================================== -->
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const swatches = document.querySelectorAll('.accent-swatch');
+      const customPicker = document.getElementById('customAccentPicker');
+      const hexReadout = document.getElementById('accentHexReadout');
+      const copyToast = document.getElementById('copyToast');
+      const copyToastText = document.getElementById('copyToastText');
+      let toastTimer = null;
+
+      function showToast(msg) {
+        copyToastText.textContent = msg;
+        copyToast.classList.add('visible');
+        if (toastTimer) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => copyToast.classList.remove('visible'), 2200);
+      }
+
+      function setAccentColor(hex, hoverHex) {
+        root.style.setProperty('--metro-accent', hex);
+        root.style.setProperty('--metro-accent-hover', hoverHex || hex);
+        hexReadout.textContent = hex.toUpperCase();
+        customPicker.value = hex;
+      }
+
+      swatches.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          swatches.forEach((s) => s.classList.remove('active'));
+          btn.classList.add('active');
+          setAccentColor(btn.dataset.color, btn.dataset.hover);
+          showToast('@metro-accent set to ' + btn.dataset.color.toUpperCase());
+        });
+      });
+
+      customPicker.addEventListener('input', (e) => {
+        swatches.forEach((s) => s.classList.remove('active'));
+        setAccentColor(e.target.value, e.target.value);
+      });
+
+      // Click-to-copy for GTK4 class badges and color cards
+      document.querySelectorAll('[data-copy]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const text = el.getAttribute('data-copy');
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(() => {});
+          }
+          showToast('Copied "' + text + '" to clipboard');
+        });
+      });
+
+      // Interactive Breadcrumb <-> Raw URI Entry toggle
+      const toggleUriBtn = document.getElementById('toggleUriBtn');
+      const breadcrumbView = document.getElementById('breadcrumbView');
+      const uriEntryView = document.getElementById('uriEntryView');
+      let uriMode = false;
+      toggleUriBtn.addEventListener('click', () => {
+        uriMode = !uriMode;
+        breadcrumbView.style.display = uriMode ? 'none' : 'flex';
+        uriEntryView.style.display = uriMode ? 'block' : 'none';
+        toggleUriBtn.classList.toggle('active', uriMode);
+        if (uriMode) uriEntryView.focus();
+      });
+
+      // Interactive Segmented Groups & Sidebar Selection
+      function bindExclusiveActivation(containerSelector, itemSelector, activeClass) {
+        const container = document.querySelector(containerSelector);
+        if (!container) return;
+        const items = container.querySelectorAll(itemSelector);
+        items.forEach((item) => {
+          item.addEventListener('click', () => {
+            items.forEach((i) => i.classList.remove(activeClass));
+            item.classList.add(activeClass);
+          });
+        });
+      }
+
+      bindExclusiveActivation('#chromeViewGroup', '.kajo-btn', 'active');
+      bindExclusiveActivation('#demoSegmentedMode', '.kajo-btn', 'active');
+      bindExclusiveActivation('#demoSidebar', '.sidebar-row', 'selected');
+
+      // Interactive Password Peek Button
+      const passInput = document.getElementById('demoPasswordInput');
+      const togglePassBtn = document.getElementById('togglePassBtn');
+      togglePassBtn.addEventListener('click', () => {
+        const isPass = passInput.type === 'password';
+        passInput.type = isPass ? 'text' : 'password';
+        togglePassBtn.classList.toggle('active', isPass);
+      });
+
+      // Interactive Dropdown selection
+      const dropdownLabel = document.getElementById('demoDropdownLabel');
+      const dropdownItems = document.querySelectorAll('#demoDropdownMenu .kajo-dropdown-item');
+      dropdownItems.forEach((item) => {
+        item.addEventListener('click', () => {
+          dropdownItems.forEach((i) => {
+            i.classList.remove('selected');
+            i.lastElementChild.textContent = '';
+          });
+          item.classList.add('selected');
+          item.lastElementChild.textContent = '✔';
+          dropdownLabel.textContent = item.firstElementChild.textContent;
+        });
+      });
+
+      // Interactive Sliders
+      document.querySelectorAll('.kajo-scale').forEach((scale) => {
+        scale.addEventListener('input', () => {
+          const pct = ((scale.value - scale.min) / (scale.max - scale.min)) * 100;
+          scale.style.setProperty('--val', pct + '%');
+          if (scale.id === 'volScaleInput') {
+            document.getElementById('volScaleReadout').textContent = scale.value + '%';
+          }
+        });
+      });
+
+      // 16-Band Vertical FFT Spectrum Visualizer
+      const fftContainer = document.getElementById('fftVisualizer');
+      const toggleFftBtn = document.getElementById('toggleFftBtn');
+      const fftBars = [];
+      const baseHeights = [28, 46, 72, 85, 64, 94, 78, 60, 88, 96, 70, 54, 42, 62, 35, 22];
+
+      for (let i = 0; i < 16; i++) {
+        const trough = document.createElement('div');
+        trough.className = 'fft-bar-trough';
+        const fill = document.createElement('div');
+        fill.className = 'fft-bar-fill';
+        fill.style.height = baseHeights[i] + '%';
+        trough.appendChild(fill);
+        fftContainer.appendChild(trough);
+        fftBars.push(fill);
+      }
+
+      let fftRunning = true;
+      function updateFft() {
+        if (!fftRunning) return;
+        fftBars.forEach((bar, idx) => {
+          const jitter = Math.floor(Math.random() * 34) - 17;
+          const h = Math.max(10, Math.min(100, baseHeights[idx] + jitter));
+          bar.style.height = h + '%';
+          bar.classList.remove('warn', 'clip');
+          if (h >= 92) bar.classList.add('clip');
+          else if (h >= 80) bar.classList.add('warn');
+        });
+      }
+      setInterval(updateFft, 180);
+
+      toggleFftBtn.addEventListener('click', () => {
+        fftRunning = !fftRunning;
+        toggleFftBtn.textContent = fftRunning ? '❚❚ PAUSE FFT' : '▶ RESUME FFT';
+        toggleFftBtn.classList.toggle('active', !fftRunning);
+      });
+
+      // Context Menu: Switch between Item Context Mode and "Open With / Set Default" Sub-View
+      const ctxMainView = document.getElementById('ctxMainView');
+      const ctxOpenWithView = document.getElementById('ctxOpenWithView');
+      document.getElementById('openWithTrigger').addEventListener('click', () => {
+        ctxMainView.style.display = 'none';
+        ctxOpenWithView.style.display = 'flex';
+      });
+      document.getElementById('ctxBackBtn').addEventListener('click', () => {
+        ctxOpenWithView.style.display = 'none';
+        ctxMainView.style.display = 'flex';
+      });
+
+      // Interactive Sortable Details Table
+      const sampleRows = [
+        { name: 'src', icon: '📁', isDir: true, size: 0, sizeStr: '—', type: 'inode/directory', mtime: 1762364400, mtimeStr: '2026-11-05 19:40' },
+        { name: 'data', icon: '📁', isDir: true, size: 0, sizeStr: '—', type: 'inode/directory', mtime: 1762360800, mtimeStr: '2026-11-05 18:40' },
+        { name: 'track_2_intro.flac', icon: '🎵', isDir: false, size: 18450000, sizeStr: '18.4 MB', type: 'audio/flac', mtime: 1762280000, mtimeStr: '2026-11-04 20:13' },
+        { name: 'track_10_finale.flac', icon: '🎵', isDir: false, size: 42100000, sizeStr: '42.1 MB', type: 'audio/flac', mtime: 1762350000, mtimeStr: '2026-11-05 15:40' },
+        { name: 'SPEC_DESIGN_SYSTEM.md', icon: '📄', isDir: false, size: 24800, sizeStr: '24.8 KB', type: 'text/markdown', mtime: 1762365900, mtimeStr: '2026-11-05 19:25' },
+        { name: 'kajo_release_v1.tar.zst', icon: '📦', isDir: false, size: 128400000, sizeStr: '128.4 MB', type: 'application/zstd', mtime: 1762190000, mtimeStr: '2026-11-03 19:13' }
+      ];
+
+      let currentSortCol = 'name';
+      let currentSortAsc = true;
+      let selectedRowName = 'SPEC_DESIGN_SYSTEM.md';
+      const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+      const tableBody = document.getElementById('sortableTableBody');
+      const colButtons = document.querySelectorAll('#sortableTableHeader .files-col-header-btn');
+
+      function renderTable() {
+        const sorted = [...sampleRows].sort((a, b) => {
+          // Folders First
+          if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
+          let cmp = 0;
+          if (currentSortCol === 'name') cmp = collator.compare(a.name, b.name);
+          else if (currentSortCol === 'size') cmp = a.size - b.size;
+          else if (currentSortCol === 'type') cmp = collator.compare(a.type, b.type);
+          else if (currentSortCol === 'mtime') cmp = a.mtime - b.mtime;
+          if (cmp === 0) cmp = collator.compare(a.name, b.name);
+          return currentSortAsc ? cmp : -cmp;
+        });
+
+        tableBody.innerHTML = '';
+        sorted.forEach((row) => {
+          const tr = document.createElement('div');
+          tr.className = 'files-list-row' + (row.name === selectedRowName ? ' selected' : '');
+          tr.innerHTML =
+            '<div class="files-list-name-cell"><span>' + row.icon + '</span><span>' + row.name + '</span></div>' +
+            '<div class="files-list-meta">' + row.sizeStr + '</div>' +
+            '<div class="files-list-meta">' + row.type + '</div>' +
+            '<div class="files-list-meta">' + row.mtimeStr + '</div>';
+          tr.addEventListener('click', () => {
+            selectedRowName = row.name;
+            renderTable();
+          });
+          tableBody.appendChild(tr);
+        });
+      }
+
+      colButtons.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const col = btn.dataset.col;
+          if (currentSortCol === col) {
+            currentSortAsc = !currentSortAsc;
+          } else {
+            currentSortCol = col;
+            currentSortAsc = col === 'name' || col === 'type';
+          }
+          colButtons.forEach((b) => {
+            b.classList.remove('active');
+            b.querySelector('.sort-arrow').textContent = '';
+          });
+          btn.classList.add('active');
+          btn.querySelector('.sort-arrow').textContent = currentSortAsc ? '▲' : '▼';
+          renderTable();
+        });
+      });
+
+      renderTable();
+    })();
+  </script>
+</body>
+</html>

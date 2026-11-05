@@ -21,12 +21,13 @@ All Kajo components and standalone applications share a unified design language:
 | **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 20+ widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, App Launcher, Session Lock & Screensaver |
 | **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 10 modular settings pages (Displays, Network, Bluetooth, Audio, Theme, Panel & Touch, Widgets, Notifications, Niri Shaders, About) |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
-| **Foldable & 2-in-1 Posture Manager** | ✅ Done | [`SPEC_FOLDABLE_SENSORS.md`](file:///home/mikolas/src/Kajo/SPEC_FOLDABLE_SENSORS.md) — Hinge angle, tablet mode, IIO accelerometer auto-rotation |
-| **Niri GLSL Window Shaders** | ✅ Done | [`SPEC_NIRI_SHADERS.md`](file:///home/mikolas/src/Kajo/SPEC_NIRI_SHADERS.md) — Live shader preset switcher for window open/close/resize animations |
-| **Touchscreen Bezel Swipe Gestures** | ✅ Done | [`SPEC_TOUCH_GESTURES.md`](file:///home/mikolas/src/Kajo/SPEC_TOUCH_GESTURES.md) — Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications |
-| **Virtual Keyboard (`ShellOSK`)** | ✅ Done | [`SPEC_VIRTUAL_KEYBOARD.md`](file:///home/mikolas/src/Kajo/SPEC_VIRTUAL_KEYBOARD.md) — Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching |
-| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | [`SPEC_FILE_BROWSER.md`](file:///home/mikolas/src/Kajo/SPEC_FILE_BROWSER.md) — GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
-| **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | [`SPEC_VIDEO_PLAYER.md`](file:///home/mikolas/src/Kajo/SPEC_VIDEO_PLAYER.md) — `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
+| **Foldable & 2-in-1 Posture Manager** | ✅ Done | Hinge angle, tablet mode, IIO accelerometer auto-rotation (`src/fold/fold_manager.c`) |
+| **Niri GLSL Window Shaders** | ✅ Done | Live shader preset switcher for window open/close/resize animations (`src/settings/pages/page_shaders.c`) |
+| **Touchscreen Bezel Swipe Gestures** | ✅ Done | Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications (`src/touch/touch_gestures.c`) |
+| **Virtual Keyboard (`ShellOSK`)** | ✅ Done | Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching (`src/osk/osk_window.c`) |
+| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
+| **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
+| **Kajo "Aero + Metro" UI Design System** | ✅ Done | [`docs/SPEC_DESIGN_SYSTEM.md`](docs/SPEC_DESIGN_SYSTEM.md) & [`docs/ui-gallery.html`](docs/ui-gallery.html) — Canonical GTK4 CSS style guide and interactive web component gallery |
 
 ---
 
