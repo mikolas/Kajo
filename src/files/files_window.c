@@ -4,6 +4,7 @@
 #include "files_sidebar.h"
 #include "files_quicklook.h"
 #include "../compositor/compositor.h"
+#include <gio/gdesktopappinfo.h>
 #include <string.h>
 
 typedef enum {
@@ -1811,6 +1812,32 @@ on_ctx_open_with_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 
     g_autoptr(GAppInfo) default_app = ctype ? g_app_info_get_default_for_type(ctype, FALSE) : NULL;
     GList *apps = ctype ? g_app_info_get_all_for_type(ctype) : NULL;
+
+    /* Always offer Kajo Player at the top of Open With for any video or audio media */
+    if (ctype && (g_str_has_prefix(ctype, "video/") ||
+                  g_str_has_prefix(ctype, "audio/") ||
+                  g_strcmp0(ctype, "application/ogg") == 0)) {
+        GDesktopAppInfo *kajo_player_dt = g_desktop_app_info_new("org.kajo.Player.desktop");
+        if (!kajo_player_dt && g_file_test("/usr/local/share/applications/org.kajo.Player.desktop", G_FILE_TEST_EXISTS)) {
+            kajo_player_dt = g_desktop_app_info_new_from_filename("/usr/local/share/applications/org.kajo.Player.desktop");
+        }
+        if (kajo_player_dt) {
+            GAppInfo *kp_info = G_APP_INFO(kajo_player_dt);
+            gboolean already_listed = FALSE;
+            for (GList *l = apps; l != NULL; l = l->next) {
+                GAppInfo *cand = G_APP_INFO(l->data);
+                if (g_app_info_equal(cand, kp_info) ||
+                    g_strcmp0(g_app_info_get_id(cand), "org.kajo.Player.desktop") == 0) {
+                    already_listed = TRUE;
+                    break;
+                }
+            }
+            if (!already_listed)
+                apps = g_list_prepend(apps, kp_info);
+            else
+                g_object_unref(kp_info);
+        }
+    }
 
     if (!apps) {
         GtkWidget *empty = gtk_label_new("No registered applications found for this MIME type");
