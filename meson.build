@@ -38,6 +38,7 @@ archive_dep = dependency('libarchive')
 mpv_dep = dependency('mpv')
 egl_dep = dependency('egl')
 glesv2_dep = dependency('glesv2')
+gtksourceview_dep = dependency('gtksourceview-5')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -533,6 +534,14 @@ if egl_dep.found() and glesv2_dep.found()
   )
   test('niri-shaders', test_shaders_exe)
 endif
+
+test_ide_fsm_exe = executable(
+  'test-ide-fsm',
+  files('tests/test_ide_fsm.c', 'src/ide/ide_fsm.c'),
+  dependencies: [gio_dep],
+  build_by_default: false,
+)
+test('ide-fsm', test_ide_fsm_exe)
 
 gnome.post_install(
   update_desktop_database: true,
