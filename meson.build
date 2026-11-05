@@ -534,3 +534,7 @@ if egl_dep.found() and glesv2_dep.found()
   test('niri-shaders', test_shaders_exe)
 endif
 
+gnome.post_install(
+  update_desktop_database: true,
+)
+
