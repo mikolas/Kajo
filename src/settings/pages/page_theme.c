@@ -31,6 +31,13 @@ typedef struct _SettingsPageTheme {
     GtkWidget *grid_swatches;
     GtkWidget *scale_font;
     GtkWidget *lbl_font_val;
+    GtkWidget *scale_font_heading;
+    GtkWidget *lbl_font_heading_val;
+    GtkWidget *scale_font_sub;
+    GtkWidget *lbl_font_sub_val;
+    GtkWidget *scale_font_badge;
+    GtkWidget *lbl_font_badge_val;
+    GtkWidget *btn_reset_fonts;
     GtkWidget *btn_css;
 
     GtkWidget *swatch_buttons[N_ACCENTS];
@@ -52,34 +59,29 @@ write_theme_override_and_config(SettingsPageTheme *self)
 
     guint idx = self->current_preset_idx < N_ACCENTS ? self->current_preset_idx : 0;
     const AccentPreset *preset = &ACCENTS[idx];
-    int font_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_font));
-    if (font_px < 11 || font_px > 20) font_px = 13;
+    int body_px    = (int)gtk_range_get_value(GTK_RANGE(self->scale_font));
+    int heading_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_font_heading));
+    int sub_px     = (int)gtk_range_get_value(GTK_RANGE(self->scale_font_sub));
+    int badge_px   = (int)gtk_range_get_value(GTK_RANGE(self->scale_font_badge));
+
+    if (body_px < 11 || body_px > 20)       body_px = 14;
+    if (heading_px < 10 || heading_px > 18) heading_px = 13;
+    if (sub_px < 10 || sub_px > 18)         sub_px = 12;
+    if (badge_px < 9 || badge_px > 16)      badge_px = 11;
+
+    shell_theme_write_override_css(preset->accent, preset->hover, body_px, heading_px, sub_px, badge_px);
 
     const gchar *xdg_config = g_get_user_config_dir();
-    g_autofree gchar *styled_dir = g_build_filename(xdg_config, "kajo", "style.d", NULL);
-    g_mkdir_with_parents(styled_dir, 0755);
-
-    g_autofree gchar *theme_css_path = g_build_filename(styled_dir, "00-accent.css", NULL);
-
-    GString *css = g_string_new("/* Auto-generated accent override by kajo */\n");
-    g_string_append_printf(css, "@define-color metro-accent %s;\n", preset->accent);
-    g_string_append_printf(css, "@define-color metro-accent-hover %s;\n", preset->hover);
-    g_string_append_printf(css,
-        "window.shell-settings-window, window.shell-panel, .shell-popover {\n"
-        "    font-size: %dpx;\n"
-        "}\n",
-        font_px);
-
-    g_file_set_contents(theme_css_path, css->str, css->len, NULL);
-    g_string_free(css, TRUE);
-
     ShellConfig *config = shell_config_load(NULL);
     if (!config)
         config = shell_config_get_default();
     if (config) {
         g_free(config->accent_color);
-        config->accent_color = g_strdup(preset->accent);
-        config->ui_font_size_px = font_px;
+        config->accent_color          = g_strdup(preset->accent);
+        config->ui_font_size_px       = body_px;
+        config->font_heading_size_px  = heading_px;
+        config->font_subtitle_size_px = sub_px;
+        config->font_badge_size_px    = badge_px;
 
         g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
         shell_config_save(config, cfg_path);
@@ -89,8 +91,8 @@ write_theme_override_and_config(SettingsPageTheme *self)
     settings_reload_global_theme();
     settings_send_ipc_command("reload-theme");
 
-    g_message("Applied Metro accent '%s' (%s, %dpx) -> '%s'",
-              preset->name, preset->accent, font_px, theme_css_path);
+    g_message("Applied Metro accent '%s' (%s, body=%dpx heading=%dpx sub=%dpx badge=%dpx)",
+              preset->name, preset->accent, body_px, heading_px, sub_px, badge_px);
 }
 
 static void
@@ -179,18 +181,53 @@ settings_page_theme_class_init(SettingsPageThemeClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, grid_swatches);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, scale_font);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, lbl_font_val);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, scale_font_heading);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, lbl_font_heading_val);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, scale_font_sub);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, lbl_font_sub_val);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, scale_font_badge);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, lbl_font_badge_val);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, btn_reset_fonts);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageTheme, btn_css);
 }
 
 static void
-on_scale_font_changed(GtkRange *range, gpointer user_data)
+update_font_badge_labels(SettingsPageTheme *self)
+{
+    if (!self) return;
+    g_autofree gchar *b_str = g_strdup_printf("%dpx", (int)gtk_range_get_value(GTK_RANGE(self->scale_font)));
+    g_autofree gchar *h_str = g_strdup_printf("%dpx", (int)gtk_range_get_value(GTK_RANGE(self->scale_font_heading)));
+    g_autofree gchar *s_str = g_strdup_printf("%dpx", (int)gtk_range_get_value(GTK_RANGE(self->scale_font_sub)));
+    g_autofree gchar *m_str = g_strdup_printf("%dpx", (int)gtk_range_get_value(GTK_RANGE(self->scale_font_badge)));
+
+    gtk_label_set_text(GTK_LABEL(self->lbl_font_val), b_str);
+    gtk_label_set_text(GTK_LABEL(self->lbl_font_heading_val), h_str);
+    gtk_label_set_text(GTK_LABEL(self->lbl_font_sub_val), s_str);
+    gtk_label_set_text(GTK_LABEL(self->lbl_font_badge_val), m_str);
+}
+
+static void
+on_scale_font_changed(GtkRange *range G_GNUC_UNUSED, gpointer user_data)
 {
     SettingsPageTheme *self = (SettingsPageTheme *)user_data;
-    g_autofree gchar *str = g_strdup_printf("%dpx Fira Code", (int)gtk_range_get_value(range));
-    gtk_label_set_text(GTK_LABEL(self->lbl_font_val), str);
+    update_font_badge_labels(self);
     if (!self->syncing_ui) {
         write_theme_override_and_config(self);
     }
+}
+
+static void
+on_reset_fonts_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageTheme *self = (SettingsPageTheme *)user_data;
+    self->syncing_ui = TRUE;
+    gtk_range_set_value(GTK_RANGE(self->scale_font), 14);
+    gtk_range_set_value(GTK_RANGE(self->scale_font_heading), 13);
+    gtk_range_set_value(GTK_RANGE(self->scale_font_sub), 12);
+    gtk_range_set_value(GTK_RANGE(self->scale_font_badge), 11);
+    self->syncing_ui = FALSE;
+    update_font_badge_labels(self);
+    write_theme_override_and_config(self);
 }
 
 static void
@@ -244,20 +281,22 @@ build_page_theme(void)
     /* Populate 8 Accent Color Swatches in 2-Column Grid */
     for (size_t i = 0; i < N_ACCENTS; i++) {
         GtkWidget *card = gtk_button_new();
-        gtk_widget_add_css_class(card, "section-card");
+        gtk_widget_add_css_class(card, "widget-row-card");
         gtk_widget_set_hexpand(card, TRUE);
         g_object_set_data(G_OBJECT(card), "preset-index", GUINT_TO_POINTER((guint)i));
         page->swatch_buttons[i] = card;
 
         GtkWidget *card_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_valign(card_box, GTK_ALIGN_CENTER);
 
-        /* Accent Color Circle Swatch */
+        /* Accent Color Square Swatch */
         GtkWidget *swatch = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
         gtk_widget_set_size_request(swatch, 18, 18);
+        gtk_widget_set_valign(swatch, GTK_ALIGN_CENTER);
         gchar *swatch_class = g_strdup_printf("settings-swatch-%zu", i);
         gtk_widget_add_css_class(swatch, swatch_class);
 
-        gchar *swatch_css = g_strdup_printf(".%s { background-color: %s; border-radius: 9px; }", swatch_class, ACCENTS[i].accent);
+        gchar *swatch_css = g_strdup_printf(".%s { background-color: %s; border: 1px solid rgba(255,255,255,0.25); border-radius: 0px; }", swatch_class, ACCENTS[i].accent);
         GtkCssProvider *p = gtk_css_provider_new();
         gtk_css_provider_load_from_string(p, swatch_css);
         gtk_style_context_add_provider_for_display(gdk_display_get_default(),
@@ -269,6 +308,7 @@ build_page_theme(void)
         GtkWidget *name_label = gtk_label_new(ACCENTS[i].name);
         gtk_label_set_xalign(GTK_LABEL(name_label), 0.0);
         gtk_widget_set_hexpand(name_label, TRUE);
+        gtk_widget_set_valign(name_label, GTK_ALIGN_CENTER);
 
         gtk_box_append(GTK_BOX(card_box), swatch);
         gtk_box_append(GTK_BOX(card_box), name_label);
@@ -281,12 +321,24 @@ build_page_theme(void)
         gtk_grid_attach(GTK_GRID(page->grid_swatches), card, col, row, 1, 1);
     }
 
-    int init_font = (config && config->ui_font_size_px >= 11 && config->ui_font_size_px <= 20)
+    int init_body = (config && config->ui_font_size_px >= 11 && config->ui_font_size_px <= 20)
                         ? config->ui_font_size_px
+                        : 14;
+    int init_head = (config && config->font_heading_size_px >= 10 && config->font_heading_size_px <= 18)
+                        ? config->font_heading_size_px
                         : 13;
-    gtk_range_set_value(GTK_RANGE(page->scale_font), init_font);
-    g_autofree gchar *font_str = g_strdup_printf("%dpx Fira Code", init_font);
-    gtk_label_set_text(GTK_LABEL(page->lbl_font_val), font_str);
+    int init_sub  = (config && config->font_subtitle_size_px >= 10 && config->font_subtitle_size_px <= 18)
+                        ? config->font_subtitle_size_px
+                        : 12;
+    int init_bdg  = (config && config->font_badge_size_px >= 9 && config->font_badge_size_px <= 16)
+                        ? config->font_badge_size_px
+                        : 11;
+
+    gtk_range_set_value(GTK_RANGE(page->scale_font), init_body);
+    gtk_range_set_value(GTK_RANGE(page->scale_font_heading), init_head);
+    gtk_range_set_value(GTK_RANGE(page->scale_font_sub), init_sub);
+    gtk_range_set_value(GTK_RANGE(page->scale_font_badge), init_bdg);
+    update_font_badge_labels(page);
 
     select_accent_preset(page, initial_idx, FALSE);
     page->syncing_ui = FALSE;
@@ -295,6 +347,10 @@ build_page_theme(void)
 
     g_signal_connect(page->combo_palette, "notify::selected", G_CALLBACK(on_combo_palette_changed), page);
     g_signal_connect(page->scale_font, "value-changed", G_CALLBACK(on_scale_font_changed), page);
+    g_signal_connect(page->scale_font_heading, "value-changed", G_CALLBACK(on_scale_font_changed), page);
+    g_signal_connect(page->scale_font_sub, "value-changed", G_CALLBACK(on_scale_font_changed), page);
+    g_signal_connect(page->scale_font_badge, "value-changed", G_CALLBACK(on_scale_font_changed), page);
+    g_signal_connect(page->btn_reset_fonts, "clicked", G_CALLBACK(on_reset_fonts_clicked), page);
     g_signal_connect(page->btn_css, "clicked", G_CALLBACK(on_reload_css_clicked), page);
 
     return create_settings_page_card("THEME & ACCENTS", "[ METRO UI ]", GTK_WIDGET(page), NULL);

@@ -397,10 +397,6 @@ build_inspector_ui(KajoQuickLook *self)
 
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_add_css_class(card, "shell-popover-card");
-    gtk_widget_set_margin_start(card, 6);
-    gtk_widget_set_margin_end(card, 6);
-    gtk_widget_set_margin_top(card, 6);
-    gtk_widget_set_margin_bottom(card, 6);
     gtk_widget_set_vexpand(card, TRUE);
 
     /* Header */

@@ -41,14 +41,50 @@ template $SettingsPageTheme : Box {
       column-spacing: 8;
       row-spacing: 8;
     }
+  }
 
-    /* Font Size Scale Slider Row */
+  /* Card 2: Typography Category Sizes */
+  Box {
+    orientation: vertical;
+    spacing: 12;
+
+    styles [
+      "section-card-center",
+    ]
+
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+
+      Label {
+        label: "TYPOGRAPHY CATEGORY SIZES (FIRA CODE)";
+        hexpand: true;
+        halign: start;
+
+        styles [
+          "heading",
+        ]
+      }
+
+      Button btn_reset_fonts {
+        label: "↺ RESET DEFAULTS";
+
+        styles [
+          "flat",
+          "files-nav-btn",
+        ]
+      }
+    }
+
+    /* 1. Primary Body, Controls & Row Titles */
     Box {
       orientation: horizontal;
       spacing: 12;
 
       Label {
-        label: "UI Monospace Typography Size:";
+        label: "Primary Body, Controls & Row Titles:";
+        width-request: 260;
+        xalign: 0;
       }
 
       Scale scale_font {
@@ -57,22 +93,127 @@ template $SettingsPageTheme : Box {
 
         adjustment: Adjustment {
           lower: 11;
-          upper: 15;
+          upper: 20;
           step-increment: 1;
         };
       }
 
       Label lbl_font_val {
-        label: "13px Fira Code";
+        label: "14px";
+        width-request: 56;
+        xalign: 1;
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* 2. Section & Window Headers */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Section & Window Headers:";
+        width-request: 260;
+        xalign: 0;
+      }
+
+      Scale scale_font_heading {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 10;
+          upper: 18;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_font_heading_val {
+        label: "13px";
+        width-request: 56;
+        xalign: 1;
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* 3. Subtitles, Buttons & Metadata */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Subtitles, Buttons & Metadata:";
+        width-request: 260;
+        xalign: 0;
+      }
+
+      Scale scale_font_sub {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 10;
+          upper: 18;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_font_sub_val {
+        label: "12px";
+        width-request: 56;
+        xalign: 1;
+
+        styles [
+          "shell-popover-badge",
+        ]
+      }
+    }
+
+    /* 4. Technical Badges & Shortcuts */
+    Box {
+      orientation: horizontal;
+      spacing: 12;
+
+      Label {
+        label: "Technical Badges & Shortcuts:";
+        width-request: 260;
+        xalign: 0;
+      }
+
+      Scale scale_font_badge {
+        orientation: horizontal;
+        hexpand: true;
+
+        adjustment: Adjustment {
+          lower: 9;
+          upper: 16;
+          step-increment: 1;
+        };
+      }
+
+      Label lbl_font_badge_val {
+        label: "11px";
+        width-request: 56;
+        xalign: 1;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
     /* Apply Button */
     Button btn_css {
-      label: "[ LIVE RELOAD GTK CSS ]";
+      label: "[ APPLY & LIVE RELOAD GTK CSS ]";
 
       styles [
-        "flat",
+        "action-btn-primary",
       ]
     }
   }

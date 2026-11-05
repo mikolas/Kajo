@@ -250,7 +250,7 @@ static void
 build_connect_banner(KajoFilesWindow *self)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_add_css_class(card, "section-card-left");
+    gtk_widget_add_css_class(card, "files-prompt-bar");
     gtk_widget_add_css_class(card, "files-context-banner");
 
     GtkWidget *lbl = gtk_label_new("🌐 CONNECT TO SERVER (smb://, sftp://, ftp://, davs://, mtp://, onedrive://)");
@@ -265,7 +265,7 @@ build_connect_banner(KajoFilesWindow *self)
     g_signal_connect(self->connect_entry, "activate", G_CALLBACK(on_connect_submit_clicked), self);
 
     GtkWidget *btn_ok = gtk_button_new_with_label("CONNECT");
-    gtk_widget_add_css_class(btn_ok, "files-accent-btn");
+    gtk_widget_add_css_class(btn_ok, "action-btn-primary");
     g_signal_connect(btn_ok, "clicked", G_CALLBACK(on_connect_submit_clicked), self);
 
     GtkWidget *btn_cancel = gtk_button_new_with_label("CANCEL");
@@ -302,7 +302,7 @@ static void
 build_trash_banner(KajoFilesWindow *self)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
-    gtk_widget_add_css_class(card, "section-card-center");
+    gtk_widget_add_css_class(card, "files-trash-bar");
     gtk_widget_add_css_class(card, "files-context-banner");
 
     self->trash_summary_lbl = gtk_label_new("🗑 TRASH // RECYCLE BIN");
@@ -359,7 +359,7 @@ static void
 build_prompt_banner(KajoFilesWindow *self)
 {
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_add_css_class(card, "section-card-left");
+    gtk_widget_add_css_class(card, "files-prompt-bar");
     gtk_widget_add_css_class(card, "files-context-banner");
 
     self->prompt_title_lbl = gtk_label_new("ACTION:");
@@ -370,7 +370,7 @@ build_prompt_banner(KajoFilesWindow *self)
     g_signal_connect(self->prompt_entry, "activate", G_CALLBACK(on_prompt_submit_clicked), self);
 
     self->prompt_submit_btn = gtk_button_new_with_label("CONFIRM");
-    gtk_widget_add_css_class(self->prompt_submit_btn, "files-accent-btn");
+    gtk_widget_add_css_class(self->prompt_submit_btn, "action-btn-primary");
     g_signal_connect(self->prompt_submit_btn, "clicked", G_CALLBACK(on_prompt_submit_clicked), self);
 
     GtkWidget *btn_cancel = gtk_button_new_with_label("CANCEL");
@@ -1745,7 +1745,7 @@ build_context_menu_popover(KajoFilesWindow *self)
     self->context_popover = gtk_popover_new();
     gtk_popover_set_has_arrow(GTK_POPOVER(self->context_popover), FALSE);
     gtk_popover_set_autohide(GTK_POPOVER(self->context_popover), TRUE);
-    gtk_widget_add_css_class(self->context_popover, "shell-popover-card");
+    gtk_widget_add_css_class(self->context_popover, "shell-popover");
     gtk_widget_add_css_class(self->context_popover, "files-context-popover");
     gtk_widget_set_parent(self->context_popover, GTK_WIDGET(self->view_stack));
 

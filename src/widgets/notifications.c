@@ -102,8 +102,8 @@ rebuild_notification_list(NotificationsWidget *nw)
     }
 
     if (!history || history->len == 0) {
-        GtkWidget *empty_lbl = gtk_label_new("No new notifications");
-        gtk_widget_add_css_class(empty_lbl, "shell-popover-section-title");
+        GtkWidget *empty_lbl = gtk_label_new("[ NO NEW NOTIFICATIONS ]");
+        gtk_widget_add_css_class(empty_lbl, "empty-state-label");
         gtk_widget_set_margin_top(empty_lbl, 20);
         gtk_widget_set_margin_bottom(empty_lbl, 20);
         gtk_box_append(GTK_BOX(nw->list_vbox), empty_lbl);
@@ -114,7 +114,7 @@ rebuild_notification_list(NotificationsWidget *nw)
         const ShellNotificationItem *item = g_ptr_array_index(history, i);
 
         GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-        gtk_widget_add_css_class(card, "shell-osd-card");
+        gtk_widget_add_css_class(card, "shell-notification-card");
         gtk_widget_set_margin_bottom(card, 4);
 
         GtkGesture *click = gtk_gesture_click_new();
@@ -135,11 +135,11 @@ rebuild_notification_list(NotificationsWidget *nw)
         /* Header row: App Name + Timestamp */
         GtkWidget *hdr_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
         GtkWidget *app_lbl = gtk_label_new(item->app_name ? item->app_name : "System");
-        gtk_widget_add_css_class(app_lbl, "shell-popover-section-title");
+        gtk_widget_add_css_class(app_lbl, "shell-popover-title");
         gtk_widget_set_halign(app_lbl, GTK_ALIGN_START);
 
         GtkWidget *time_lbl = gtk_label_new(item->timestamp ? item->timestamp : "");
-        gtk_widget_add_css_class(time_lbl, "shell-popover-header");
+        gtk_widget_add_css_class(time_lbl, "shell-popover-subtitle");
         gtk_widget_set_halign(time_lbl, GTK_ALIGN_END);
         gtk_widget_set_hexpand(time_lbl, TRUE);
 
@@ -148,12 +148,13 @@ rebuild_notification_list(NotificationsWidget *nw)
 
         /* Summary */
         GtkWidget *sum_lbl = gtk_label_new(item->summary ? item->summary : "");
-        gtk_widget_add_css_class(sum_lbl, "shell-popover-title");
+        gtk_widget_add_css_class(sum_lbl, "row-title");
         gtk_widget_set_halign(sum_lbl, GTK_ALIGN_START);
         gtk_label_set_wrap(GTK_LABEL(sum_lbl), TRUE);
 
         /* Body */
         GtkWidget *body_lbl = gtk_label_new(item->body ? item->body : "");
+        gtk_widget_add_css_class(body_lbl, "row-subtitle");
         gtk_widget_set_halign(body_lbl, GTK_ALIGN_START);
         gtk_label_set_wrap(GTK_LABEL(body_lbl), TRUE);
 
@@ -165,7 +166,7 @@ rebuild_notification_list(NotificationsWidget *nw)
 
         /* Dismiss button X */
         GtkWidget *del_btn = gtk_button_new_with_label("✕");
-        gtk_widget_add_css_class(del_btn, "flat");
+        gtk_widget_add_css_class(del_btn, "settings-close-btn");
         g_object_set_data(G_OBJECT(del_btn), "notification-id", GUINT_TO_POINTER(item->id));
         g_signal_connect(del_btn, "clicked", G_CALLBACK(on_remove_item_clicked), nw);
 

@@ -44,19 +44,16 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 
 ---
 
-## 3. Typography & Badge Classes
+## 3. Typography & Configurable Font Category Sizes
 
-| Class / Selector | Font Size / Weight | Case & Spacing | Usage |
+Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → Theme` (`config.json` & `~/.config/kajo/style.d/00-accent.css` via `shell_theme_write_override_css()`):
+
+| Category Key (`config.json`) | Default (`px`) | Range (`px`) | Target Classes & Selectors |
 | :--- | :--- | :--- | :--- |
-| `.settings-header-title` | `13px`, `700` | `UPPERCASE`, `1px` | Top window drag-bar title (`⚙ SYSTEM SETTINGS`, `📁 KAJO FILES`) |
-| `.shell-popover-title`, `.heading` | `12px–13px`, `700` | `UPPERCASE`, `1px` | Card, popover, and section header titles |
-| `.sidebar-category-header` | `11px`, `700` | `UPPERCASE`, `1px`, `@metro-accent` | Sidebar section divider (`PLACES`, `DEVICES & DRIVES`) |
-| `.row-title`, `.files-list-name` | `13px`, `600` | Normal, `#ffffff` | Primary item title inside a list row or settings card |
-| `.row-subtitle`, `.files-list-meta` | `11px–12px`, `400` | Normal, `#9a9a9a` | Secondary description or file size/date metadata |
-| `.shell-popover-subtitle` | `11px`, `600` | `UPPERCASE`, `0.5px`, `#a0a0a0` | Section sub-labels and status subtitles |
-| `.shell-popover-badge` | `11px`, `600` | `UPPERCASE`, `@metro-accent` | Technical bracketed telemetry (`[ PDF | 1.4 MB ]`) |
-| `.files-ctx-shortcut` | `10px`, `600` | Normal, `#888888` | Right-aligned shortcut hint in menus (`Ctrl+Shift+C`) |
-| `.empty-state-label` | `13px`, `700` | `UPPERCASE`, `1.5px`, `#666666` | Centered empty view placeholder (`DIRECTORY IS EMPTY`) |
+| `ui_font_size_px` (**Primary Body & Row Titles**) | `14px` | `11–20px` | `.row-title`, `.sidebar-label`, `.navigation-sidebar row`, `.files-list-name`, `.files-tile-title`, `.tile-title`, `entry`, `passwordentry`, `searchentry`, `.shell-launcher-input`, `dropdown > button`, `dropdown listview row`, `button.files-menu-row`, `.shell-launcher-row label`, `.shell-widget`, `.shell-osd-label` |
+| `font_heading_size_px` (**Section & Window Headers**) | `13px` | `10–18px` | `.settings-header-title`, `.shell-popover-title`, `.heading`, `.shell-popover-section-title`, `.settings-section-title`, `.sidebar-category-header` |
+| `font_subtitle_size_px` (**Subtitles, Buttons & Metadata**) | `12px` | `10–18px` | `.row-subtitle`, `.dim-label`, `.shell-popover-subtitle`, `.empty-state-label`, `.shell-device-placeholder`, `popover button`, `window.shell-settings-window button`, `button.files-nav-btn`, `button.player-transport-btn`, `.files-breadcrumb-btn`, `.files-list-meta`, `.files-meta-key`, `.files-meta-val`, `.files-status-text`, `.files-quicklook-textview`, `checkbutton` |
+| `font_badge_size_px` (**Technical Badges & Micro Labels**) | `11px` | `9–16px` | `.shell-popover-badge`, `.files-ctx-shortcut`, `button.files-col-header-btn`, `.tile-subtitle`, `.files-tile-sub`, `.player-timecode`, `.player-stats-text`, `.code-preview-box`, `.process-row`, `.greeter-field-label` |
 
 ---
 

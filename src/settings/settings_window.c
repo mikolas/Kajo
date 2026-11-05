@@ -280,16 +280,13 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
 
     app_ctx->back_button = gtk_button_new_with_label("‹ Back");
     gtk_widget_add_css_class(app_ctx->back_button, "flat");
+    gtk_widget_add_css_class(app_ctx->back_button, "files-nav-btn");
     gtk_widget_set_visible(app_ctx->back_button, FALSE);
     g_signal_connect(app_ctx->back_button, "clicked", G_CALLBACK(on_back_button_clicked), app_ctx);
 
     GtkWidget *title_lbl = gtk_label_new("⚙ SYSTEM SETTINGS");
     gtk_widget_add_css_class(title_lbl, "settings-header-title");
     gtk_widget_set_halign(title_lbl, GTK_ALIGN_START);
-
-    GtkWidget *btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
-    gtk_widget_add_css_class(btn_float, "flat");
-    g_signal_connect(btn_float, "clicked", G_CALLBACK(on_toggle_float_clicked), NULL);
 
     app_ctx->search_entry = gtk_search_entry_new();
     gtk_widget_add_css_class(app_ctx->search_entry, "shell-launcher-input");
@@ -298,14 +295,19 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     gtk_widget_set_halign(app_ctx->search_entry, GTK_ALIGN_END);
     g_signal_connect(app_ctx->search_entry, "search-changed", G_CALLBACK(on_search_changed), app_ctx);
 
+    GtkWidget *btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
+    gtk_widget_add_css_class(btn_float, "flat");
+    gtk_widget_add_css_class(btn_float, "files-nav-btn");
+    g_signal_connect(btn_float, "clicked", G_CALLBACK(on_toggle_float_clicked), NULL);
+
     GtkWidget *btn_close = gtk_button_new_with_label("✕");
     gtk_widget_add_css_class(btn_close, "settings-close-btn");
     g_signal_connect(btn_close, "clicked", G_CALLBACK(on_close_btn_clicked), app_ctx->window);
 
     gtk_box_append(GTK_BOX(header_bar), app_ctx->back_button);
     gtk_box_append(GTK_BOX(header_bar), title_lbl);
-    gtk_box_append(GTK_BOX(header_bar), btn_float);
     gtk_box_append(GTK_BOX(header_bar), app_ctx->search_entry);
+    gtk_box_append(GTK_BOX(header_bar), btn_float);
     gtk_box_append(GTK_BOX(header_bar), btn_close);
 
     gtk_window_handle_set_child(GTK_WINDOW_HANDLE(window_handle), header_bar);

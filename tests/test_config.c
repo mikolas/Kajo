@@ -99,7 +99,10 @@ test_config_save_and_load_roundtrip(void)
 
     g_free(orig->accent_color);
     orig->accent_color = g_strdup("#ff8c00");
-    orig->ui_font_size_px = 14;
+    orig->ui_font_size_px = 15;
+    orig->font_heading_size_px = 14;
+    orig->font_subtitle_size_px = 13;
+    orig->font_badge_size_px = 12;
 
     ShellWidgetConfig *wc_left = g_new0(ShellWidgetConfig, 1);
     wc_left->id = g_strdup("launcher");
@@ -162,7 +165,10 @@ test_config_save_and_load_roundtrip(void)
     g_assert_cmpint(loaded->kbd_backlight_timeout_sec, ==, 30);
 
     g_assert_cmpstr(loaded->accent_color, ==, "#ff8c00");
-    g_assert_cmpint(loaded->ui_font_size_px, ==, 14);
+    g_assert_cmpint(loaded->ui_font_size_px, ==, 15);
+    g_assert_cmpint(loaded->font_heading_size_px, ==, 14);
+    g_assert_cmpint(loaded->font_subtitle_size_px, ==, 13);
+    g_assert_cmpint(loaded->font_badge_size_px, ==, 12);
 
     g_assert_cmpuint(loaded->layout_left->len, ==, 1);
     ShellWidgetConfig *l0 = g_ptr_array_index(loaded->layout_left, 0);

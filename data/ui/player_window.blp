@@ -8,7 +8,6 @@ template $KajoPlayerWindow : ApplicationWindow {
 
   styles [
     "shell-settings-window",
-    "shell-files-window",
     "shell-player-window",
   ]
 
@@ -168,9 +167,6 @@ template $KajoPlayerWindow : ApplicationWindow {
           spacing: 0;
           height-request: 180;
           visible: false;
-          margin-start: 6;
-          margin-end: 6;
-          margin-top: 6;
 
           styles [
             "shell-popover-card",
@@ -224,10 +220,6 @@ template $KajoPlayerWindow : ApplicationWindow {
           orientation: vertical;
           spacing: 0;
           vexpand: true;
-          margin-start: 6;
-          margin-end: 6;
-          margin-top: 6;
-          margin-bottom: 6;
 
           styles [
             "shell-popover-card",
@@ -354,6 +346,7 @@ template $KajoPlayerWindow : ApplicationWindow {
 
           styles [
             "flat",
+            "files-nav-btn",
           ]
         }
 
@@ -523,10 +516,7 @@ template $KajoPlayerWindow : ApplicationWindow {
               orientation: vertical;
               spacing: 8;
               width-request: 280;
-
-              styles [
-                "shell-popover-card",
-              ]
+              margin-bottom: 10;
 
               Box {
                 orientation: horizontal;
@@ -674,10 +664,7 @@ template $KajoPlayerWindow : ApplicationWindow {
               orientation: vertical;
               spacing: 8;
               width-request: 320;
-
-              styles [
-                "shell-popover-card",
-              ]
+              margin-bottom: 10;
 
               Box {
                 orientation: horizontal;
@@ -862,10 +849,7 @@ template $KajoPlayerWindow : ApplicationWindow {
               orientation: vertical;
               spacing: 8;
               width-request: 310;
-
-              styles [
-                "shell-popover-card",
-              ]
+              margin-bottom: 10;
 
               Box {
                 orientation: horizontal;
