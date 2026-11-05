@@ -551,8 +551,16 @@ test('ide-fsm', test_ide_fsm_exe)
 
 test_ide_buffer_exe = executable(
   'test-ide-buffer',
-  files('tests/test_ide_buffer.c', 'src/ide/ide_buffer.c'),
-  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep],
+  files(
+    'tests/test_ide_buffer.c',
+    'src/ide/ide_buffer.c',
+    'src/ide/ide_gutter.c',
+    'src/ide/ide_tree.c',
+    'src/ide/ide_picker.c',
+    'src/ide/ide_search.c',
+    'src/ide/ide_fsm.c',
+  ),
+  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, m_dep],
   build_by_default: false,
 )
 test('ide-buffer', test_ide_buffer_exe)

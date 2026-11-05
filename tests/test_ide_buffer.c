@@ -1,4 +1,7 @@
 #include "../src/ide/ide_buffer.h"
+#include "../src/ide/ide_picker.h"
+#include "../src/ide/ide_search.h"
+#include "../src/ide/ide_tree.h"
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -142,6 +145,53 @@ test_alternate_path_and_atomic_buffer(void)
   g_rmdir(tmp_dir);
 }
 
+static void
+test_git_porcelain_fuzzy_and_search_parsers(void)
+{
+  /* 1. Git porcelain parser */
+  const char *porcelain =
+      " M src/ide/ide_window.c\n"
+      "A  src/ide/ide_fsm.c\n"
+      "?? src/ide/ide_markdown.c\n"
+      " D old_file.c\n";
+  GHashTable *git_map = ide_tree_parse_git_porcelain(porcelain);
+  g_assert_cmpstr(g_hash_table_lookup(git_map, "src/ide/ide_window.c"), ==, "M");
+  g_assert_cmpstr(g_hash_table_lookup(git_map, "src/ide/ide_fsm.c"), ==, "A");
+  g_assert_cmpstr(g_hash_table_lookup(git_map, "src/ide/ide_markdown.c"), ==, "U");
+  g_assert_cmpstr(g_hash_table_lookup(git_map, "old_file.c"), ==, "D");
+  g_hash_table_destroy(git_map);
+
+  /* 2. Subsequence fuzzy scorer */
+  gint s_exact = ide_fuzzy_score("ide_win", "src/ide/ide_window.c");
+  gint s_sparse = ide_fuzzy_score("ide_win", "src/index_de_winter.c");
+  gint s_none = ide_fuzzy_score("zzz", "src/ide/ide_window.c");
+  g_assert_cmpint(s_exact, >, s_sparse);
+  g_assert_cmpint(s_sparse, >, 0);
+  g_assert_cmpint(s_none, ==, 0);
+
+  /* 3. Search & Replace engine (whole-word + regex) */
+  guint matches = 0;
+  g_autofree char *rep = ide_replace_text_all("foo foobar foo",
+                                              "foo",
+                                              "bar",
+                                              TRUE,
+                                              TRUE, /* whole_word */
+                                              FALSE,
+                                              &matches);
+  g_assert_cmpuint(matches, ==, 2);
+  g_assert_cmpstr(rep, ==, "bar foobar bar");
+
+  /* 4. Compiler error regex parser */
+  IdeBuildIssue *iss = ide_parse_compiler_error_line("/home/mikolas/src/Kajo",
+                                                     "../src/ide/ide_window.c:141:5: error: undeclared identifier 'x'");
+  g_assert_nonnull(iss);
+  g_assert_cmpuint(iss->line_1based, ==, 141);
+  g_assert_cmpuint(iss->col_1based, ==, 5);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  g_assert_cmpstr(iss->message, ==, "undeclared identifier 'x'");
+  ide_build_issue_free(iss);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -151,6 +201,7 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/nordic-structural-text-objects", test_nordic_structural_text_objects);
   g_test_add_func("/ide/buffer/line-diffs-and-unified-diff", test_line_diffs_and_unified_diff);
   g_test_add_func("/ide/buffer/alternate-path-and-atomic-buffer", test_alternate_path_and_atomic_buffer);
+  g_test_add_func("/ide/buffer/git-porcelain-fuzzy-and-search", test_git_porcelain_fuzzy_and_search_parsers);
 
   return g_test_run();
 }
