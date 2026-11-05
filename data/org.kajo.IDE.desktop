@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Kajo IDE
+GenericName=Modal Code Editor & IDE
+Comment=Aero + Metro selection-first modal code editor with LSP, DAP, Agent IPC, and GUI Markdown/Mermaid
+Exec=kajo-ide %F
+Icon=utilities-terminal-symbolic
+Terminal=false
+Type=Application
+Categories=Development;IDE;TextEditor;GTK;
+StartupNotify=true
+StartupWMClass=org.kajo.IDE
+MimeType=text/plain;text/markdown;text/x-markdown;text/x-csrc;text/x-chdr;text/x-c++src;text/x-c++hdr;text/x-python;text/rust;text/x-go;text/x-shellscript;application/json;application/x-yaml;text/x-meson;text/x-makefile;text/html;text/css;application/javascript;

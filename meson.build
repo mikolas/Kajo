@@ -354,6 +354,45 @@ install_data(
   install_dir: get_option('datadir') / 'applications',
 )
 
+ide_sources = files(
+  'src/ide/main.c',
+  'src/ide/ide_window.c',
+  'src/ide/ide_fsm.c',
+  'src/ide/ide_buffer.c',
+  'src/ide/ide_gutter.c',
+  'src/ide/ide_tree.c',
+  'src/ide/ide_picker.c',
+  'src/ide/ide_search.c',
+  'src/ide/ide_lsp.c',
+  'src/ide/ide_dap.c',
+  'src/ide/ide_agent_ipc.c',
+  'src/ide/ide_markdown.c',
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-ide',
+  ide_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    gtksourceview_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    m_dep,
+  ],
+  install: true,
+)
+
+install_data(
+  'data/org.kajo.IDE.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
+
 install_data(
   'data/greetd/kajo-greeter-session',
   install_dir: get_option('bindir'),
