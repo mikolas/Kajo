@@ -572,6 +572,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_lsp.c',
     'src/ide/ide_dap.c',
     'src/ide/ide_agent_ipc.c',
+    'src/ide/ide_markdown.c',
     'src/ide/ide_buffer.c',
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',

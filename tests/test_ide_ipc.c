@@ -1,6 +1,7 @@
 #include "../src/ide/ide_agent_ipc.h"
 #include "../src/ide/ide_dap.h"
 #include "../src/ide/ide_lsp.h"
+#include "../src/ide/ide_markdown.h"
 #include <gio/gunixsocketaddress.h>
 #include <glib.h>
 #include <string.h>
@@ -158,6 +159,59 @@ static void test_agent_unix_socket_server(void) {
   rmdir(tmp_dir);
 }
 
+static void test_mermaid_vector_parser_and_markdown_checklist(void) {
+  const char *mermaid_src =
+      "flowchart LR\n"
+      "  A[\"Key Press\"] -->|FSM| B[\"Modal Engine\"]\n"
+      "  B -.->|JSON-RPC| C[\"LSP Server\"]\n";
+
+  IdeMermaidGraph *g = ide_mermaid_parse_graph(mermaid_src, 10);
+  g_assert_nonnull(g);
+  g_assert_cmpint(g->kind, ==, IDE_MERMAID_FLOWCHART_LR);
+  g_assert_cmpuint(g->nodes->len, ==, 3);
+  g_assert_cmpuint(g->edges->len, ==, 2);
+
+  IdeMermaidNode *n0 = g_ptr_array_index(g->nodes, 0);
+  IdeMermaidNode *n1 = g_ptr_array_index(g->nodes, 1);
+  IdeMermaidNode *n2 = g_ptr_array_index(g->nodes, 2);
+
+  g_assert_cmpstr(n0->id, ==, "A");
+  g_assert_cmpstr(n0->label, ==, "Key Press");
+  g_assert_cmpuint(n0->source_line_1based, ==, 11);
+
+  /* Layered layout ranks: A (0) -> B (1) -> C (2) */
+  g_assert_cmpint(n0->rank, ==, 0);
+  g_assert_cmpint(n1->rank, ==, 1);
+  g_assert_cmpint(n2->rank, ==, 2);
+  g_assert_cmpfloat(n1->x, >, n0->x);
+  g_assert_cmpfloat(n2->x, >, n1->x);
+
+  /* Hit-test node B center at 100% zoom */
+  const IdeMermaidNode *hit = ide_mermaid_hit_test_node(
+      g, 1.0, n1->x + n1->width * 0.5, n1->y + n1->height * 0.5);
+  g_assert_nonnull(hit);
+  g_assert_cmpstr(hit->id, ==, "B");
+
+  /* Export vector SVG via Cairo SVG surface */
+  g_autofree char *tmp_dir = g_dir_make_tmp("kajo_mermaid_XXXXXX", NULL);
+  g_autofree char *svg_path = g_build_filename(tmp_dir, "diagram.svg", NULL);
+  g_assert_true(ide_mermaid_export_svg(g, svg_path));
+  g_autofree char *svg_data = NULL;
+  g_assert_true(g_file_get_contents(svg_path, &svg_data, NULL, NULL));
+  g_assert_nonnull(strstr(svg_data, "<svg"));
+
+  unlink(svg_path);
+  rmdir(tmp_dir);
+  ide_mermaid_graph_free(g);
+
+  /* Bi-directional checklist toggle */
+  const char *md_doc = "# Tasks\n- [ ] Write parser\n- [x] Ship UI\n";
+  g_autofree char *toggled1 = ide_markdown_toggle_checklist_line(md_doc, 2);
+  g_assert_nonnull(strstr(toggled1, "- [x] Write parser"));
+  g_autofree char *toggled2 = ide_markdown_toggle_checklist_line(toggled1, 3);
+  g_assert_nonnull(strstr(toggled2, "- [ ] Ship UI"));
+}
+
 int main(int argc, char **argv) {
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/ide/ipc/jsonrpc-framing",
@@ -168,5 +222,7 @@ int main(int argc, char **argv) {
                   test_agent_ipc_transactions_and_rollback);
   g_test_add_func("/ide/ipc/agent-unix-socket",
                   test_agent_unix_socket_server);
+  g_test_add_func("/ide/markdown/mermaid-vector-and-checklist",
+                  test_mermaid_vector_parser_and_markdown_checklist);
   return g_test_run();
 }
