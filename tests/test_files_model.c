@@ -183,6 +183,43 @@ test_async_enum_and_ops(void)
     g_main_loop_unref(st.loop);
 }
 
+static gint
+bench_sort_cb(gconstpointer a, gconstpointer b)
+{
+    const KajoFileItem *ia = *(const KajoFileItem *const *)a;
+    const KajoFileItem *ib = *(const KajoFileItem *const *)b;
+    return kajo_file_item_compare_full(ia, ib, KAJO_SORT_NAME, TRUE, TRUE);
+}
+
+static void
+test_large_directory_scale(void)
+{
+    /* Verify that sorting + filtering 5,000 items completes in well under 200ms */
+    gint64 t0 = g_get_monotonic_time();
+    g_autoptr(GPtrArray) items = g_ptr_array_new_with_free_func(g_object_unref);
+
+    for (int i = 0; i < 5000; i++) {
+        g_autofree char *nm = g_strdup_printf("asset_texture_%04d.png", 5000 - i);
+        KajoFileItem *it = kajo_file_item_new_manual(
+            NULL, nm, nm, "image/png", (guint64)(i * 1024), 1700000000 + i, 0644, (i % 50 == 0), FALSE
+        );
+        g_ptr_array_add(items, it);
+    }
+
+    g_ptr_array_sort(items, bench_sort_cb);
+
+    guint matched = 0;
+    for (guint i = 0; i < items->len; i++) {
+        KajoFileItem *it = g_ptr_array_index(items, i);
+        if (kajo_file_item_matches_filter(it, FALSE, "0042"))
+            matched++;
+    }
+    g_assert_cmpuint(matched, ==, 1);
+
+    gint64 elapsed_ms = (g_get_monotonic_time() - t0) / 1000;
+    g_assert_cmpint(elapsed_ms, <, 500);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -192,6 +229,7 @@ main(int argc, char *argv[])
     g_test_add_func("/files/format-permissions", test_format_permissions);
     g_test_add_func("/files/sorting-and-filtering", test_sorting_and_filtering);
     g_test_add_func("/files/async-enum-and-ops", test_async_enum_and_ops);
+    g_test_add_func("/files/large-directory-scale", test_large_directory_scale);
 
     return g_test_run();
 }

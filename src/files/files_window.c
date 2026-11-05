@@ -57,12 +57,12 @@ struct _KajoFilesWindow {
     GtkWidget *prompt_banner_revealer;
 
     GtkStack *view_stack;
-    GtkFlowBox *grid_flowbox;
+    GtkGridView *grid_view;
     GtkWidget *col_btn_name;
     GtkWidget *col_btn_size;
     GtkWidget *col_btn_type;
     GtkWidget *col_btn_modified;
-    GtkListBox *details_listbox;
+    GtkListView *details_listview;
     GtkWidget *empty_label;
     GtkWidget *inspector_vbox;
 
@@ -110,6 +110,9 @@ struct _KajoFilesWindow {
 
     GPtrArray *all_items;      /* KajoFileItem* */
     GPtrArray *visible_items;  /* KajoFileItem* (filtered & sorted) */
+    GListStore *visible_store; /* Recycling view model backing GridView & ListView */
+    GtkSingleSelection *selection_model;
+    gboolean suppress_selection_sync;
     KajoFileItem *selected_item;
 
     GPtrArray *history;        /* char* URIs */
@@ -509,110 +512,252 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
     g_ptr_array_unref(chain);
 }
 
-/* ─── View Builders: Metro Tile Grid & Details List ─── */
+/* ─── Virtualized Recycling View Factories: Metro Tile Grid & Details List ─── */
 
-static GtkWidget *
-create_grid_tile_widget(KajoFilesWindow *self G_GNUC_UNUSED, KajoFileItem *item)
+typedef struct {
+    GtkWidget *card;
+    GtkWidget *icon;
+    GtkWidget *name_lbl;
+    GtkWidget *sub_lbl;
+    GCancellable *thumb_cancel;
+} GridTileWidgets;
+
+static void
+grid_tile_widgets_free(gpointer data)
 {
-    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    gtk_widget_add_css_class(card, "files-tile-card");
-    if (kajo_file_item_is_dir(item))
-        gtk_widget_add_css_class(card, "files-tile-folder");
+    GridTileWidgets *w = data;
+    if (!w) return;
+    if (w->thumb_cancel) {
+        g_cancellable_cancel(w->thumb_cancel);
+        g_clear_object(&w->thumb_cancel);
+    }
+    g_free(w);
+}
 
-    gtk_widget_set_size_request(card, 136, 114);
+static void
+thumb_load_thread_cb(GTask *task,
+                     gpointer source_object,
+                     gpointer task_data G_GNUC_UNUSED,
+                     GCancellable *cancellable)
+{
+    GFile *file = G_FILE(source_object);
+    GError *error = NULL;
+    GdkTexture *tex = gdk_texture_new_from_file(file, &error);
+    if (!tex) {
+        g_task_return_error(task, error);
+        return;
+    }
+    if (g_cancellable_set_error_if_cancelled(cancellable, &error)) {
+        g_object_unref(tex);
+        g_task_return_error(task, error);
+        return;
+    }
+    g_task_return_pointer(task, tex, g_object_unref);
+}
+
+static void
+on_thumb_load_ready(GObject *source G_GNUC_UNUSED,
+                    GAsyncResult *res,
+                    gpointer user_data)
+{
+    GridTileWidgets *w = user_data;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GdkTexture) tex = g_task_propagate_pointer(G_TASK(res), &error);
+    if (!tex || g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        return;
+
+    if (w && w->icon && GTK_IS_IMAGE(w->icon)) {
+        gtk_image_set_from_paintable(GTK_IMAGE(w->icon), GDK_PAINTABLE(tex));
+        gtk_image_set_pixel_size(GTK_IMAGE(w->icon), 48);
+    }
+}
+
+static void
+on_grid_item_setup(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
+                   GtkListItem *list_item,
+                   gpointer user_data G_GNUC_UNUSED)
+{
+    GridTileWidgets *w = g_new0(GridTileWidgets, 1);
+
+    w->card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_add_css_class(w->card, "files-tile-card");
+    gtk_widget_set_size_request(w->card, 136, 114);
+
+    w->icon = gtk_image_new_from_icon_name("text-x-generic");
+    gtk_image_set_pixel_size(GTK_IMAGE(w->icon), 42);
+    gtk_widget_set_halign(w->icon, GTK_ALIGN_CENTER);
+    gtk_widget_set_margin_top(w->icon, 8);
+    gtk_box_append(GTK_BOX(w->card), w->icon);
+
+    w->name_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(w->name_lbl, "files-tile-title");
+    gtk_label_set_ellipsize(GTK_LABEL(w->name_lbl), PANGO_ELLIPSIZE_MIDDLE);
+    gtk_label_set_max_width_chars(GTK_LABEL(w->name_lbl), 16);
+    gtk_widget_set_halign(w->name_lbl, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(w->card), w->name_lbl);
+
+    w->sub_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(w->sub_lbl, "files-tile-sub");
+    gtk_widget_set_halign(w->sub_lbl, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(w->card), w->sub_lbl);
+
+    g_object_set_data_full(G_OBJECT(list_item), "tile-widgets", w, grid_tile_widgets_free);
+    gtk_list_item_set_child(list_item, w->card);
+}
+
+static void
+on_grid_item_bind(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
+                  GtkListItem *list_item,
+                  gpointer user_data G_GNUC_UNUSED)
+{
+    GridTileWidgets *w = g_object_get_data(G_OBJECT(list_item), "tile-widgets");
+    KajoFileItem *item = gtk_list_item_get_item(list_item);
+    if (!w || !item) return;
+
+    if (w->thumb_cancel) {
+        g_cancellable_cancel(w->thumb_cancel);
+        g_clear_object(&w->thumb_cancel);
+    }
+
+    if (kajo_file_item_is_dir(item))
+        gtk_widget_add_css_class(w->card, "files-tile-folder");
+    else
+        gtk_widget_remove_css_class(w->card, "files-tile-folder");
+
+    gtk_image_set_from_icon_name(GTK_IMAGE(w->icon), kajo_file_item_get_icon_name(item));
+    gtk_image_set_pixel_size(GTK_IMAGE(w->icon), 42);
+
+    gtk_label_set_text(GTK_LABEL(w->name_lbl), kajo_file_item_get_display_name(item));
+
+    g_autofree char *sz_str = kajo_files_format_size(
+        kajo_file_item_get_size(item),
+        kajo_file_item_is_dir(item)
+    );
+    gtk_label_set_text(GTK_LABEL(w->sub_lbl), sz_str);
+
+    g_object_set_data_full(G_OBJECT(w->card), "file-item", g_object_ref(item), g_object_unref);
 
     const char *ctype = kajo_file_item_get_content_type(item);
     GFile *file = kajo_file_item_get_file(item);
-    gboolean is_local_img = (ctype && g_str_has_prefix(ctype, "image/") &&
-                             g_file_is_native(file) &&
-                             kajo_file_item_get_size(item) <= (15ULL * 1024ULL * 1024ULL));
-
-    if (is_local_img) {
-        GtkWidget *pic = gtk_picture_new_for_file(file);
-        gtk_picture_set_content_fit(GTK_PICTURE(pic), GTK_CONTENT_FIT_COVER);
-        gtk_widget_set_size_request(pic, 48, 48);
-        gtk_widget_set_halign(pic, GTK_ALIGN_CENTER);
-        gtk_widget_set_margin_top(pic, 6);
-        gtk_box_append(GTK_BOX(card), pic);
-    } else {
-        GtkWidget *icon = gtk_image_new_from_icon_name(kajo_file_item_get_icon_name(item));
-        gtk_image_set_pixel_size(GTK_IMAGE(icon), 42);
-        gtk_widget_set_halign(icon, GTK_ALIGN_CENTER);
-        gtk_widget_set_margin_top(icon, 8);
-        gtk_box_append(GTK_BOX(card), icon);
+    guint64 sz = kajo_file_item_get_size(item);
+    if (ctype && g_str_has_prefix(ctype, "image/") &&
+        file && g_file_is_native(file) &&
+        sz > 0 && sz <= (2ULL * 1024ULL * 1024ULL)) {
+        w->thumb_cancel = g_cancellable_new();
+        g_autoptr(GTask) task = g_task_new(file, w->thumb_cancel, on_thumb_load_ready, w);
+        g_task_run_in_thread(task, thumb_load_thread_cb);
     }
-
-    GtkWidget *name_lbl = gtk_label_new(kajo_file_item_get_display_name(item));
-    gtk_widget_add_css_class(name_lbl, "files-tile-title");
-    gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_MIDDLE);
-    gtk_label_set_max_width_chars(GTK_LABEL(name_lbl), 16);
-    gtk_widget_set_halign(name_lbl, GTK_ALIGN_CENTER);
-    gtk_box_append(GTK_BOX(card), name_lbl);
-
-    g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), kajo_file_item_is_dir(item));
-    GtkWidget *sub_lbl = gtk_label_new(sz_str);
-    gtk_widget_add_css_class(sub_lbl, "files-tile-sub");
-    gtk_widget_set_halign(sub_lbl, GTK_ALIGN_CENTER);
-    gtk_box_append(GTK_BOX(card), sub_lbl);
-
-    GtkWidget *fb_child = gtk_flow_box_child_new();
-    gtk_flow_box_child_set_child(GTK_FLOW_BOX_CHILD(fb_child), card);
-    g_object_set_data_full(G_OBJECT(fb_child), "file-item", g_object_ref(item), g_object_unref);
-
-    return fb_child;
 }
 
-static GtkWidget *
-create_list_row_widget(KajoFilesWindow *self G_GNUC_UNUSED, KajoFileItem *item)
+static void
+on_grid_item_unbind(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
+                    GtkListItem *list_item,
+                    gpointer user_data G_GNUC_UNUSED)
 {
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_add_css_class(hbox, "files-list-row-box");
-    gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
+    GridTileWidgets *w = g_object_get_data(G_OBJECT(list_item), "tile-widgets");
+    if (!w) return;
 
-    GtkWidget *icon = gtk_image_new_from_icon_name(kajo_file_item_get_icon_name(item));
-    gtk_image_set_pixel_size(GTK_IMAGE(icon), 20);
-    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
+    if (w->thumb_cancel) {
+        g_cancellable_cancel(w->thumb_cancel);
+        g_clear_object(&w->thumb_cancel);
+    }
+    g_object_set_data(G_OBJECT(w->card), "file-item", NULL);
+}
 
-    GtkWidget *name_lbl = gtk_label_new(kajo_file_item_get_display_name(item));
-    gtk_widget_add_css_class(name_lbl, "files-list-name");
-    gtk_widget_set_hexpand(name_lbl, TRUE);
-    gtk_widget_set_halign(name_lbl, GTK_ALIGN_START);
-    gtk_widget_set_valign(name_lbl, GTK_ALIGN_CENTER);
-    gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
+typedef struct {
+    GtkWidget *hbox;
+    GtkWidget *icon;
+    GtkWidget *name_lbl;
+    GtkWidget *sz_lbl;
+    GtkWidget *type_lbl;
+    GtkWidget *mtime_lbl;
+} ListRowWidgets;
 
-    g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), kajo_file_item_is_dir(item));
-    GtkWidget *sz_lbl = gtk_label_new(sz_str);
-    gtk_widget_add_css_class(sz_lbl, "files-list-meta");
-    gtk_widget_set_size_request(sz_lbl, 100, -1);
-    gtk_widget_set_halign(sz_lbl, GTK_ALIGN_END);
-    gtk_widget_set_valign(sz_lbl, GTK_ALIGN_CENTER);
+static void
+on_list_item_setup(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
+                   GtkListItem *list_item,
+                   gpointer user_data G_GNUC_UNUSED)
+{
+    ListRowWidgets *w = g_new0(ListRowWidgets, 1);
 
-    GtkWidget *type_lbl = gtk_label_new(kajo_file_item_get_type_description(item));
-    gtk_widget_add_css_class(type_lbl, "files-list-meta");
-    gtk_widget_set_size_request(type_lbl, 160, -1);
-    gtk_widget_set_halign(type_lbl, GTK_ALIGN_START);
-    gtk_widget_set_valign(type_lbl, GTK_ALIGN_CENTER);
-    gtk_label_set_ellipsize(GTK_LABEL(type_lbl), PANGO_ELLIPSIZE_END);
+    w->hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_add_css_class(w->hbox, "files-list-row");
+    gtk_widget_add_css_class(w->hbox, "files-list-row-box");
+    gtk_widget_set_valign(w->hbox, GTK_ALIGN_CENTER);
+
+    w->icon = gtk_image_new_from_icon_name("text-x-generic");
+    gtk_image_set_pixel_size(GTK_IMAGE(w->icon), 20);
+    gtk_widget_set_valign(w->icon, GTK_ALIGN_CENTER);
+
+    w->name_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(w->name_lbl, "files-list-name");
+    gtk_widget_set_hexpand(w->name_lbl, TRUE);
+    gtk_widget_set_halign(w->name_lbl, GTK_ALIGN_START);
+    gtk_widget_set_valign(w->name_lbl, GTK_ALIGN_CENTER);
+    gtk_label_set_ellipsize(GTK_LABEL(w->name_lbl), PANGO_ELLIPSIZE_END);
+
+    w->sz_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(w->sz_lbl, "files-list-meta");
+    gtk_widget_set_size_request(w->sz_lbl, 100, -1);
+    gtk_widget_set_halign(w->sz_lbl, GTK_ALIGN_END);
+    gtk_widget_set_valign(w->sz_lbl, GTK_ALIGN_CENTER);
+
+    w->type_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(w->type_lbl, "files-list-meta");
+    gtk_widget_set_size_request(w->type_lbl, 160, -1);
+    gtk_widget_set_halign(w->type_lbl, GTK_ALIGN_START);
+    gtk_widget_set_valign(w->type_lbl, GTK_ALIGN_CENTER);
+    gtk_label_set_ellipsize(GTK_LABEL(w->type_lbl), PANGO_ELLIPSIZE_END);
+
+    w->mtime_lbl = gtk_label_new("");
+    gtk_widget_add_css_class(w->mtime_lbl, "files-list-meta");
+    gtk_widget_set_size_request(w->mtime_lbl, 140, -1);
+    gtk_widget_set_halign(w->mtime_lbl, GTK_ALIGN_END);
+    gtk_widget_set_valign(w->mtime_lbl, GTK_ALIGN_CENTER);
+
+    gtk_box_append(GTK_BOX(w->hbox), w->icon);
+    gtk_box_append(GTK_BOX(w->hbox), w->name_lbl);
+    gtk_box_append(GTK_BOX(w->hbox), w->sz_lbl);
+    gtk_box_append(GTK_BOX(w->hbox), w->type_lbl);
+    gtk_box_append(GTK_BOX(w->hbox), w->mtime_lbl);
+
+    g_object_set_data_full(G_OBJECT(list_item), "row-widgets", w, g_free);
+    gtk_list_item_set_child(list_item, w->hbox);
+}
+
+static void
+on_list_item_bind(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
+                  GtkListItem *list_item,
+                  gpointer user_data G_GNUC_UNUSED)
+{
+    ListRowWidgets *w = g_object_get_data(G_OBJECT(list_item), "row-widgets");
+    KajoFileItem *item = gtk_list_item_get_item(list_item);
+    if (!w || !item) return;
+
+    gtk_image_set_from_icon_name(GTK_IMAGE(w->icon), kajo_file_item_get_icon_name(item));
+    gtk_label_set_text(GTK_LABEL(w->name_lbl), kajo_file_item_get_display_name(item));
+
+    g_autofree char *sz_str = kajo_files_format_size(
+        kajo_file_item_get_size(item),
+        kajo_file_item_is_dir(item)
+    );
+    gtk_label_set_text(GTK_LABEL(w->sz_lbl), sz_str);
+    gtk_label_set_text(GTK_LABEL(w->type_lbl), kajo_file_item_get_type_description(item));
 
     g_autofree char *mtime_str = kajo_files_format_mtime(kajo_file_item_get_mtime(item));
-    GtkWidget *mtime_lbl = gtk_label_new(mtime_str);
-    gtk_widget_add_css_class(mtime_lbl, "files-list-meta");
-    gtk_widget_set_size_request(mtime_lbl, 140, -1);
-    gtk_widget_set_halign(mtime_lbl, GTK_ALIGN_END);
-    gtk_widget_set_valign(mtime_lbl, GTK_ALIGN_CENTER);
+    gtk_label_set_text(GTK_LABEL(w->mtime_lbl), mtime_str);
 
-    gtk_box_append(GTK_BOX(hbox), icon);
-    gtk_box_append(GTK_BOX(hbox), name_lbl);
-    gtk_box_append(GTK_BOX(hbox), sz_lbl);
-    gtk_box_append(GTK_BOX(hbox), type_lbl);
-    gtk_box_append(GTK_BOX(hbox), mtime_lbl);
+    g_object_set_data_full(G_OBJECT(w->hbox), "file-item", g_object_ref(item), g_object_unref);
+}
 
-    GtkWidget *row = gtk_list_box_row_new();
-    gtk_widget_add_css_class(row, "files-list-row");
-    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
-    g_object_set_data_full(G_OBJECT(row), "file-item", g_object_ref(item), g_object_unref);
-
-    return row;
+static void
+on_list_item_unbind(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
+                    GtkListItem *list_item,
+                    gpointer user_data G_GNUC_UNUSED)
+{
+    ListRowWidgets *w = g_object_get_data(G_OBJECT(list_item), "row-widgets");
+    if (!w) return;
+    g_object_set_data(G_OBJECT(w->hbox), "file-item", NULL);
 }
 
 typedef struct {
@@ -656,14 +801,18 @@ rebuild_filtered_view(KajoFilesWindow *self)
     SortCtx sctx = { self->sort_field, self->sort_ascending, self->sort_folders_first };
     g_ptr_array_sort_with_data(self->visible_items, ptr_array_sort_cb, &sctx);
 
-    /* Clear Grid & List containers */
-    GtkWidget *child;
-    while ((child = gtk_widget_get_first_child(GTK_WIDGET(self->grid_flowbox))) != NULL) {
-        gtk_flow_box_remove(self->grid_flowbox, child);
+    self->suppress_selection_sync = TRUE;
+    if (self->visible_store) {
+        guint old_n = g_list_model_get_n_items(G_LIST_MODEL(self->visible_store));
+        g_list_store_splice(
+            self->visible_store,
+            0,
+            old_n,
+            self->visible_items->pdata,
+            self->visible_items->len
+        );
     }
-    while ((child = gtk_widget_get_first_child(GTK_WIDGET(self->details_listbox))) != NULL) {
-        gtk_list_box_remove(self->details_listbox, child);
-    }
+    self->suppress_selection_sync = FALSE;
 
     if (self->visible_items->len == 0) {
         gtk_stack_set_visible_child_name(self->view_stack, "empty");
@@ -674,12 +823,13 @@ rebuild_filtered_view(KajoFilesWindow *self)
     }
 
     int restore_idx = 0;
-    for (guint i = 0; i < self->visible_items->len; i++) {
-        KajoFileItem *it = g_ptr_array_index(self->visible_items, i);
-        if (prev_selected && it == prev_selected)
-            restore_idx = (int)i;
-        gtk_flow_box_append(self->grid_flowbox, create_grid_tile_widget(self, it));
-        gtk_list_box_append(self->details_listbox, create_list_row_widget(self, it));
+    if (prev_selected) {
+        for (guint i = 0; i < self->visible_items->len; i++) {
+            if (g_ptr_array_index(self->visible_items, i) == prev_selected) {
+                restore_idx = (int)i;
+                break;
+            }
+        }
     }
 
     gtk_stack_set_visible_child_name(
@@ -695,7 +845,14 @@ rebuild_filtered_view(KajoFilesWindow *self)
 static int
 get_selected_item_index(KajoFilesWindow *self)
 {
-    if (!self || !self->selected_item || !self->visible_items)
+    if (!self || !self->visible_items || self->visible_items->len == 0)
+        return -1;
+    if (self->selection_model) {
+        guint pos = gtk_single_selection_get_selected(self->selection_model);
+        if (pos != GTK_INVALID_LIST_POSITION && pos < self->visible_items->len)
+            return (int)pos;
+    }
+    if (!self->selected_item)
         return -1;
     for (guint i = 0; i < self->visible_items->len; i++) {
         KajoFileItem *it = g_ptr_array_index(self->visible_items, i);
@@ -715,53 +872,28 @@ set_selected_item_by_index(KajoFilesWindow *self, int idx)
     KajoFileItem *item = g_ptr_array_index(self->visible_items, (guint)idx);
     g_set_object(&self->selected_item, item);
 
-    GtkFlowBoxChild *fb_child = gtk_flow_box_get_child_at_index(self->grid_flowbox, idx);
-    if (fb_child)
-        gtk_flow_box_select_child(self->grid_flowbox, fb_child);
-
-    GtkListBoxRow *lb_row = gtk_list_box_get_row_at_index(self->details_listbox, idx);
-    if (lb_row)
-        gtk_list_box_select_row(self->details_listbox, lb_row);
+    if (self->selection_model) {
+        self->suppress_selection_sync = TRUE;
+        gtk_single_selection_set_selected(self->selection_model, (guint)idx);
+        self->suppress_selection_sync = FALSE;
+    }
 
     kajo_quicklook_set_item(self->quicklook, item, self->current_dir);
     update_status_and_capacity_bar(self);
 }
 
 static void
-on_grid_selected_children_changed(GtkFlowBox *box, gpointer user_data)
+on_selection_model_changed(GtkSingleSelection *sel,
+                           GParamSpec *pspec G_GNUC_UNUSED,
+                           gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
-    GList *sel = gtk_flow_box_get_selected_children(box);
-    if (!sel) return;
+    if (!self || self->suppress_selection_sync)
+        return;
 
-    GtkFlowBoxChild *child = GTK_FLOW_BOX_CHILD(sel->data);
-    g_list_free(sel);
-
-    KajoFileItem *item = g_object_get_data(G_OBJECT(child), "file-item");
+    KajoFileItem *item = gtk_single_selection_get_selected_item(sel);
     if (item && item != self->selected_item) {
         g_set_object(&self->selected_item, item);
-        int idx = gtk_flow_box_child_get_index(child);
-        GtkListBoxRow *lb_row = gtk_list_box_get_row_at_index(self->details_listbox, idx);
-        if (lb_row)
-            gtk_list_box_select_row(self->details_listbox, lb_row);
-        kajo_quicklook_set_item(self->quicklook, item, self->current_dir);
-        update_status_and_capacity_bar(self);
-    }
-}
-
-static void
-on_list_row_selected(GtkListBox *box G_GNUC_UNUSED, GtkListBoxRow *row, gpointer user_data)
-{
-    KajoFilesWindow *self = user_data;
-    if (!row) return;
-
-    KajoFileItem *item = g_object_get_data(G_OBJECT(row), "file-item");
-    if (item && item != self->selected_item) {
-        g_set_object(&self->selected_item, item);
-        int idx = gtk_list_box_row_get_index(row);
-        GtkFlowBoxChild *fb_child = gtk_flow_box_get_child_at_index(self->grid_flowbox, idx);
-        if (fb_child)
-            gtk_flow_box_select_child(self->grid_flowbox, fb_child);
         kajo_quicklook_set_item(self->quicklook, item, self->current_dir);
         update_status_and_capacity_bar(self);
     }
@@ -791,19 +923,15 @@ activate_file_item(KajoFilesWindow *self, KajoFileItem *item)
 }
 
 static void
-on_grid_child_activated(GtkFlowBox *box G_GNUC_UNUSED, GtkFlowBoxChild *child, gpointer user_data)
+on_view_item_activated(GtkWidget *view G_GNUC_UNUSED,
+                       guint position,
+                       gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
-    KajoFileItem *item = g_object_get_data(G_OBJECT(child), "file-item");
-    if (item)
-        activate_file_item(self, item);
-}
+    if (!self || !self->visible_items || position >= self->visible_items->len)
+        return;
 
-static void
-on_list_row_activated(GtkListBox *box G_GNUC_UNUSED, GtkListBoxRow *row, gpointer user_data)
-{
-    KajoFilesWindow *self = user_data;
-    KajoFileItem *item = g_object_get_data(G_OBJECT(row), "file-item");
+    KajoFileItem *item = g_ptr_array_index(self->visible_items, position);
     if (item)
         activate_file_item(self, item);
 }
@@ -1977,19 +2105,6 @@ open_context_menu_for_selection(KajoFilesWindow *self)
     int x = gtk_widget_get_width(GTK_WIDGET(self->view_stack)) / 2;
     int y = gtk_widget_get_height(GTK_WIDGET(self->view_stack)) / 3;
 
-    int idx = get_selected_item_index(self);
-    if (idx >= 0) {
-        GtkWidget *target_widget = (self->view_mode == KAJO_VIEW_GRID)
-            ? GTK_WIDGET(gtk_flow_box_get_child_at_index(self->grid_flowbox, idx))
-            : GTK_WIDGET(gtk_list_box_get_row_at_index(self->details_listbox, idx));
-        graphene_rect_t bounds;
-        if (target_widget &&
-            gtk_widget_compute_bounds(target_widget, GTK_WIDGET(self->view_stack), &bounds)) {
-            x = (int)(bounds.origin.x + bounds.size.width * 0.5f);
-            y = (int)(bounds.origin.y + bounds.size.height * 0.5f);
-        }
-    }
-
     open_context_menu_at(self, self->selected_item, x, y);
 }
 
@@ -2014,23 +2129,20 @@ on_view_stack_right_click(GtkGestureClick *gesture G_GNUC_UNUSED,
             return;
         }
 
-        GtkWidget *fb_anc = GTK_IS_FLOW_BOX_CHILD(picked)
-            ? picked
-            : gtk_widget_get_ancestor(picked, GTK_TYPE_FLOW_BOX_CHILD);
-        if (fb_anc) {
-            int idx = gtk_flow_box_child_get_index(GTK_FLOW_BOX_CHILD(fb_anc));
-            if (idx >= 0)
-                set_selected_item_by_index(self, idx);
-            hit_item = g_object_get_data(G_OBJECT(fb_anc), "file-item");
-        } else {
-            GtkWidget *lb_anc = GTK_IS_LIST_BOX_ROW(picked)
-                ? picked
-                : gtk_widget_get_ancestor(picked, GTK_TYPE_LIST_BOX_ROW);
-            if (lb_anc) {
-                int idx = gtk_list_box_row_get_index(GTK_LIST_BOX_ROW(lb_anc));
-                if (idx >= 0)
-                    set_selected_item_by_index(self, idx);
-                hit_item = g_object_get_data(G_OBJECT(lb_anc), "file-item");
+        for (GtkWidget *w = picked; w && w != GTK_WIDGET(self->view_stack); w = gtk_widget_get_parent(w)) {
+            KajoFileItem *cand = g_object_get_data(G_OBJECT(w), "file-item");
+            if (cand) {
+                hit_item = cand;
+                break;
+            }
+        }
+
+        if (hit_item && self->visible_items) {
+            for (guint i = 0; i < self->visible_items->len; i++) {
+                if (g_ptr_array_index(self->visible_items, i) == hit_item) {
+                    set_selected_item_by_index(self, (int)i);
+                    break;
+                }
             }
         }
     }
@@ -2304,6 +2416,8 @@ kajo_files_window_dispose(GObject *object)
     g_clear_pointer(&self->quicklook, kajo_quicklook_free);
     g_clear_object(&self->current_dir);
     g_clear_object(&self->selected_item);
+    g_clear_object(&self->selection_model);
+    g_clear_object(&self->visible_store);
 
     if (self->all_items) {
         g_ptr_array_unref(self->all_items);
@@ -2371,12 +2485,12 @@ kajo_files_window_class_init(KajoFilesWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, prompt_banner_revealer);
 
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, view_stack);
-    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, grid_flowbox);
+    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, grid_view);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, col_btn_name);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, col_btn_size);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, col_btn_type);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, col_btn_modified);
-    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, details_listbox);
+    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, details_listview);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, empty_label);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, inspector_vbox);
 
@@ -2398,6 +2512,29 @@ kajo_files_window_init(KajoFilesWindow *self)
     self->sort_folders_first = TRUE;
     self->show_hidden = FALSE;
     self->inspector_visible = FALSE;
+
+    /* Set up virtualized GListStore + GtkSingleSelection + Factories */
+    self->visible_store = g_list_store_new(KAJO_TYPE_FILE_ITEM);
+    self->selection_model = gtk_single_selection_new(G_LIST_MODEL(g_object_ref(self->visible_store)));
+    gtk_single_selection_set_autoselect(self->selection_model, TRUE);
+    gtk_single_selection_set_can_unselect(self->selection_model, FALSE);
+    g_signal_connect(self->selection_model, "notify::selected", G_CALLBACK(on_selection_model_changed), self);
+
+    GtkListItemFactory *grid_factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(grid_factory, "setup", G_CALLBACK(on_grid_item_setup), self);
+    g_signal_connect(grid_factory, "bind", G_CALLBACK(on_grid_item_bind), self);
+    g_signal_connect(grid_factory, "unbind", G_CALLBACK(on_grid_item_unbind), self);
+    gtk_grid_view_set_model(self->grid_view, GTK_SELECTION_MODEL(self->selection_model));
+    gtk_grid_view_set_factory(self->grid_view, grid_factory);
+    g_object_unref(grid_factory);
+
+    GtkListItemFactory *list_factory = gtk_signal_list_item_factory_new();
+    g_signal_connect(list_factory, "setup", G_CALLBACK(on_list_item_setup), self);
+    g_signal_connect(list_factory, "bind", G_CALLBACK(on_list_item_bind), self);
+    g_signal_connect(list_factory, "unbind", G_CALLBACK(on_list_item_unbind), self);
+    gtk_list_view_set_model(self->details_listview, GTK_SELECTION_MODEL(self->selection_model));
+    gtk_list_view_set_factory(self->details_listview, list_factory);
+    g_object_unref(list_factory);
 
     gtk_widget_add_css_class(self->btn_view_grid, "active");
 
@@ -2457,10 +2594,8 @@ kajo_files_window_init(KajoFilesWindow *self)
     g_signal_connect(self->col_btn_type, "clicked", G_CALLBACK(on_col_btn_type_clicked), self);
     g_signal_connect(self->col_btn_modified, "clicked", G_CALLBACK(on_col_btn_modified_clicked), self);
 
-    g_signal_connect(self->grid_flowbox, "selected-children-changed", G_CALLBACK(on_grid_selected_children_changed), self);
-    g_signal_connect(self->grid_flowbox, "child-activated", G_CALLBACK(on_grid_child_activated), self);
-    g_signal_connect(self->details_listbox, "row-selected", G_CALLBACK(on_list_row_selected), self);
-    g_signal_connect(self->details_listbox, "row-activated", G_CALLBACK(on_list_row_activated), self);
+    g_signal_connect(self->grid_view, "activate", G_CALLBACK(on_view_item_activated), self);
+    g_signal_connect(self->details_listview, "activate", G_CALLBACK(on_view_item_activated), self);
 
     /* Secondary Click (Right-Click) Controller for Context Menu */
     GtkGesture *right_click = gtk_gesture_click_new();
