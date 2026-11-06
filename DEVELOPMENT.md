@@ -141,7 +141,7 @@ tests/
 - `blueprint-compiler`, `meson`, `ninja`
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 15 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 16 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -150,7 +150,7 @@ meson setup builddir
 # Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 15 automated GTest suites
+# Run all 16 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -175,6 +175,7 @@ meson install -C builddir
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
+| `niri-ipc` | `test-niri` | Mock-Niri socket: exact JSON of `ToggleWindowFloating` / `LoadConfigFile` actions (regression for the dead FLOAT / TILE button), rejection logging, and EventStream parsing (workspaces, windows, focus, keyboard layouts). |
 
 ### Sanitizer Run (ASan + UBSan)
 Run the whole suite under AddressSanitizer and UndefinedBehaviorSanitizer in a throwaway build directory (does not touch `builddir/`):

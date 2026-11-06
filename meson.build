@@ -603,6 +603,14 @@ if egl_dep.found() and glesv2_dep.found()
   test('niri-shaders', test_shaders_exe)
 endif
 
+test_niri_exe = executable(
+  'test-niri',
+  files('tests/test_niri.c', 'src/compositor/niri.c'),
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('niri-ipc', test_niri_exe)
+
 test_ide_fsm_exe = executable(
   'test-ide-fsm',
   files('tests/test_ide_fsm.c', 'src/ide/ide_fsm.c'),

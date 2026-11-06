@@ -191,70 +191,68 @@ Strategy: table-drive `config.c` load / save; move UI-building functions to Blue
 
 Each phase is its own branch / PR off `master` (this branch carries the plan only). Every phase must pass `meson compile -C builddir && meson test -C builddir` with 0 warnings, and — once Phase 0 lands — the sanitizer run.
 
-### Done on this branch
-- [x] §1.7 Niri action JSON (float toggle, config reload) + error logging
-- [x] §1.8 Stop emitting forced-floating rule for `org.kajo.Settings`
+> **Status (this branch / PR #25):** all phases were worked on one branch with one commit per phase instead of separate PRs. `[x]` = done, verified with `meson compile` (0 warnings), `meson test` (16/16) and `scripts/asan-test.sh` (16/16, clean). `[ ]` = deferred, with the reason.
 
 ### Phase 0 — Safety net
-- [ ] Add a documented sanitizer workflow: `meson setup /tmp/kajo-asan -Db_sanitize=address,undefined` + `meson test` (document in `DEVELOPMENT.md`; optional `scripts/asan-test.sh`).
-- [ ] Add a `.clang-format` matching the dominant style (decide 2 vs 4 space).
+- [x] Sanitizer workflow: `scripts/asan-test.sh` (+ `DEVELOPMENT.md` section).
+- [x] `.clang-format` for new code (4-space; existing files are not bulk-reformatted).
 
-### Phase 1 — Memory & lifetime bugs (`fix/lifetime-bugs`)
-- [ ] §1.1 `scheme_id` aliasing in `ide_buffer_set_style_scheme()`; confirm `ide-buffer` passes under ASan.
-- [ ] §1.2 weak refs + window-owned cancellable for file ops, sidebar mount ops, player file dialogs, `dbus_helpers` async calls; cancel in `dispose()`.
-- [ ] §1.5 apply `interval_sec` changes in `custom_script_widget_configure()`.
+### Phase 1 — Memory & lifetime bugs
+- [x] §1.1 `scheme_id` aliasing in `ide_buffer_set_style_scheme()`; `ide-buffer` now passes under ASan.
+- [x] §1.2 file ops: `GWeakRef` instead of a raw window pointer. Sidebar mount/eject/unmount/enclosing-mount and the mount-operation `ask-password` handler: `alive` cancellable token. Player file dialogs: ref held for the dialog's lifetime. (`dbus_helpers` async callers already pass `GWeakRef`s — no change needed.)
+- [x] §1.5 `custom_script_widget_configure()` now restarts the timer when `interval_sec` changes.
+- [x] §1.5 `privacy.c`: no change — already skipped when no V4L2 device exists (finding corrected in §1.5).
 
-### Phase 2 — Main-thread blocking (`fix/async-subprocess`)
-- [ ] §1.3 async + timeout read in `ide_agent_ipc.c`; `umask(077)` around bind.
-- [ ] §1.4 `GSubprocess` helper in `src/ide/` for build, grep, `git status`, `rg`; wire cancellation; stream build output into the drawer.
-- [ ] §1.4 convert the sync D-Bus calls in `dbus_helpers.c`, `page_network.c`, `media.c` to async (or move to a worker thread where the API is synchronous by contract).
-- [ ] §1.5 `privacy.c`: gate or offload the `/proc` scan.
+### Phase 2 — Main-thread blocking
+- [x] §1.3 agent socket: async read with a 2 s timeout per connection, `umask(077)` around bind, alive-token for in-flight connections. Regression test added (`ide-ipc`: round-trip + stalled client keeps the loop ticking).
+- [x] §1.4 build runner → `GSubprocess` + async completion, cancellable, superseded builds cancelled.
+- [x] §1.4 picker live grep → async, cancels the previous query, keeps old results visible until the new ones arrive.
+- [ ] §1.4 remaining synchronous subprocesses: `ide_tree` (`git status`/`rev-parse`), `ide_search` (`rg -l`), `ide_lsp` (`rg` on hover/definition). These are short-lived and their callers (and tests) rely on synchronous results; converting them needs a small async result API. **Deferred.**
+- [ ] §1.4 synchronous D-Bus calls (`dbus_helpers.c`, `page_network.c`, `media.c`, …, ~25 sites). They are part of synchronous helper APIs used by many callers; converting needs an API redesign. **Deferred.**
 
-### Phase 3 — Truth in documentation (`docs/align-with-code`)
-- [ ] §2.1 / §2.2 Reword README, ROADMAP, `docs/kajo_ide_manual.md`, DEVELOPMENT.md to describe the *actual* LSP-lite / debugger UI state, and mark real LSP / DAP as planned. (Alternative: implement them — separate, larger feature branches.)
-- [ ] §2.3 `ide.toml` → `config.json` everywhere (README, AGENTS.md, docs).
-- [ ] §2.4 Settle on one app-ID spelling (code or docs) and update the other, including `.desktop` / `StartupWMClass`.
-- [ ] §2.5 / §2.6 / §2.9 Fix DEVELOPMENT.md file map and test table; fix ROADMAP paths.
-- [ ] §2.7 Refresh `PKGBUILD` (version, deps, URL).
-- [ ] §2.8 Reconcile reconnect interval (rule or code).
-- [ ] §2.10 Add `.desktop` entries for `kajo-settings` and `kajo-greeter`.
+### Phase 3 — Truth in documentation
+- [x] §2.1 / §2.2 README, ROADMAP, AGENTS, DEVELOPMENT, `docs/kajo_ide_manual.md`, `.desktop` comment now describe the real LSP-lite / debugger-UI state; real LSP, DAP and key remapping added to the ROADMAP as planned. Bound-but-unhandled chords marked *(planned)* in the manual.
+- [x] §2.3 `ide.toml` → `config.json` (`ide` object) everywhere; manual §12 rewritten.
+- [x] §2.4 App IDs: docs aligned to the code (`org.kajo.IDE`, `org.kajo.shell`, `org.kajo.greeter`).
+- [x] §2.5 / §2.6 / §2.9 DEVELOPMENT.md test table (16 suites) and ROADMAP paths fixed; `ide_mermaid.c` now exists (Phase 5).
+- [x] §2.7 `PKGBUILD` refreshed (URL, dependencies, optdepends).
+- [x] §2.8 PulseAudio reconnect is now 2 s (`SHELL_PA_RECONNECT_MS`), matching AGENTS.md.
+- [x] §2.10 `org.kajo.Settings.desktop` added and installed. No entry for `kajo-greeter` on purpose: it is started by greetd, not from a launcher.
 
-### Phase 4 — Shared modules (`refactor/dedupe-core`)
-Order by risk / payoff:
-1. [ ] Accent presets → `theme.{h,c}`
-2. [ ] `shell_ipc_send_command()` reuse in settings
-3. [ ] `src/main.c` flag table
-4. [ ] `kajo_app_init_theme()`
-5. [ ] Poppler rasterizer helper
-6. [ ] `pa_client` module (volume, control-center, media, page_audio)
-7. [ ] GVariant read helpers
-8. [ ] Auth-surface helper (greeter + lock; security-sensitive — review carefully)
-9. [ ] Meson `static_library` for core and widgets; drop `KAJO_SOURCE_DIR` runtime paths in favor of install `datadir`
+### Phase 4 — Shared modules
+- [x] Accent presets → `theme.{h,c}` (`shell_accent_presets`).
+- [x] Shell socket client → `src/ipc/ipc_client.{h,c}` (used by the `kajo` CLI and `kajo-settings`).
+- [x] `src/main.c` CLI flags → table-driven.
+- [x] `kajo_app_init_theme()` / `kajo_app_shutdown_theme()` (`src/app_init.{h,c}`) for files/player/ide/settings.
+- [x] Poppler rasterizer → `src/common/pdf_render.{h,c}`.
+- [x] PulseAudio connection → `src/audio/pa_conn.{h,c}` (volume, control-center, media, settings audio page).
+- [x] `niri.c` `emit_*_callbacks` → one macro.
+- [x] Meson: `kajo-core` static library (config, theme, icons, niri, app_init) instead of 5 recompiles; IDE scheme search paths use user dir, install prefix (`KAJO_DATA_DIR`), XDG system dirs, then the source tree as a dev fallback only.
+- [ ] GVariant property-read helpers (~60 sites). **Deferred** — mechanical but wide; best done together with the D-Bus async work.
+- [ ] Greeter/lock auth-surface helper. **Deferred** — security-sensitive; needs its own reviewed change.
+- [ ] Format-size helpers (files vs player differ in semantics) and the second Niri connect path in `greeter/main.c`. **Deferred** — low value.
 
-### Phase 5 — File splits (`refactor/split-large-files`)
-Behavior-preserving moves only; one file per commit so history stays reviewable.
-1. [ ] `ide_markdown.c` → `ide_mermaid.c` (+ embed cards)
-2. [ ] `files_window.c` → ctxmenu / grid / banners / keys
-3. [ ] `ide_window.c` → actions / header / config
-4. [ ] `ide_buffer.c` → syntax / textobjects / diff
-5. [ ] `ide_fsm.c`, `player_window.c`, `widgets/media.c`
-6. [ ] `emoji_dataset.h` → data file / GResource
-7. [ ] Break up functions > 300 lines (§5) as part of each split
+### Phase 5 — File splits (behaviour-preserving)
+- [x] `ide_markdown.c` → `ide_mermaid.{h,c}` (2585 → 2123 lines; Mermaid engine 470).
+- [x] `ide_buffer.c` → `ide_syntax.c` (semantic highlighter; 1952 → 1186).
+- [x] `files_window.c` → `files_window_ctxmenu.c` + `files_window_keys.c` + `files_window_private.h` (2651 → 1654).
+- [x] `ide_window.c` → `ide_actions.c` + `ide_window_private.h` (2539 → 1517).
+- [ ] `ide_fsm.c`, `player_window.c`, `widgets/media.c`, banners/grid factories of `files_window.c`, `emoji_dataset.h`, and breaking up functions > 300 lines (`dispatch_ide_action` is still ~560 lines, now in `ide_actions.c`). **Deferred.**
 
-> Reminder (AGENTS §1.4): do **not** modify `populate_app_index` in `src/launcher/launcher_surface.c` unless explicitly instructed.
+### Phase 6 — Visual token cleanup
+- [x] `@define-color` tokens for surface 0/2/3/4, warning, success, telemetry and `metro-urgent-text`; 167 literal hex uses in `style.css` replaced by tokens; CSS parses with 0 errors.
+- [x] The three danger-red variants collapsed to `@metro-urgent` (fills) + `@metro-urgent-text` (text).
+- [x] Hard-coded `#0078d4` in the Markdown note border → `@metro-accent`.
+- [x] `Inter` / `Cantarell` → Fira Code.
+- [x] `style.css` synced to `~/.local/share/kajo/defaults/` and `~/.config/kajo/`; `docs/design_system.md` token table updated.
+- [ ] Remaining one-off grays (`#202020`, `#1c1c1c`, `#151515`, …) are left as literals — folding them would change pixels and needs a visual review. `docs/ui-gallery.html` not regenerated.
 
-### Phase 6 — Visual token cleanup (`style/palette-tokens`)
-- [ ] Define `@define-color` tokens for surfaces 0–4, success / warning / telemetry, and a single danger red.
-- [ ] Collapse near-duplicate grays and the three danger-red variants onto tokens.
-- [ ] Replace `#0078d4` at `style.css:2616` with `@metro-accent`.
-- [ ] Replace `Inter` / `Cantarell` at `style.css:2714` with Fira Code (or document the exception in `docs/design_system.md`).
-- [ ] After editing `style.css`, sync to `~/.local/share/kajo/defaults/` and `~/.config/kajo/` (AGENTS §3.3) and update `docs/design_system.md` / `docs/ui-gallery.html`.
-
-### Phase 7 — Tests (`test/coverage`)
-- [ ] `niri.c` event-parser tests (workspaces, window focus, keyboard layout JSON).
-- [ ] Regression test for §1.1 (already covered once the sanitizer run is routine) and for file-op callbacks after window destruction (§1.2).
-- [ ] Tests for the shared modules added in Phase 4.
-- [ ] Decide on LSP / DAP: if implemented later, add integration tests against a mock server.
+### Phase 7 — Tests
+- [x] `niri-ipc` suite (`tests/test_niri.c`, mock Niri socket): exact JSON of `ToggleWindowFloating` / `LoadConfigFile`, rejection logging, EventStream parsing. Verified to fail against the old `"ToggleWindowFloating"` string.
+- [x] Agent-socket round-trip and stalled-client test (`ide-ipc`).
+- [x] §1.1 regression is covered by `ide-buffer` run under `scripts/asan-test.sh`.
+- [ ] Test for file-op callbacks after window destruction (needs a display / GTK window harness). **Deferred.**
+- [ ] LSP / DAP integration tests — N/A until a real client exists.
 
 ### Out of scope / separate decisions
 - Implementing a real LSP / DAP client (large feature work; Phase 3 only aligns the docs).
