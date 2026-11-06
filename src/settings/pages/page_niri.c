@@ -2,12 +2,14 @@
 #include "../settings_pages.h"
 #include <string.h>
 
-#define N_NIRI_NAMESPACES 3
+#define N_NIRI_NAMESPACES 5
 
 static const char *NIRI_NS_IDS[N_NIRI_NAMESPACES] = {
     "kajo",
     "kajo-launcher",
-    "kajo-notification"
+    "kajo-notification",
+    "kajo-osk",
+    "kajo-osd"
 };
 
 typedef struct {
@@ -647,11 +649,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     /* 1. Write 40-layer-rules.kdl (included by master config.kdl) */
     g_autofree gchar *layer_path = g_build_filename(dir, "40-layer-rules.kdl", NULL);
     GString *layer_kdl = g_string_new(
-        "// Layer Surface Rules (Managed by kajo-settings)\n"
-        "layer-rule {\n"
-        "    match namespace=\"^quickshell$\"\n"
-        "    place-within-backdrop true\n"
-        "}\n");
+        "// Layer Surface Rules (Managed by kajo-settings)\n");
 
     for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
         char op_buf[32];
@@ -690,6 +688,11 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     char active_op_buf[32];
     g_ascii_formatd(active_op_buf, sizeof(active_op_buf), "%.2f", self->ns_opacity[active_idx] / 100.0);
 
+    ShellConfig *cfg = shell_config_load(NULL);
+    const char *accent_hex = (cfg && cfg->accent_color && cfg->accent_color[0] != '\0')
+                                 ? cfg->accent_color
+                                 : "#0078d4";
+
     g_autofree gchar *kdl_content = g_strdup_printf(
         "// Managed by kajo-settings — DO NOT EDIT DIRECTLY\n\n"
         "layer-rule {\n"
@@ -704,7 +707,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         "    gaps %d\n"
         "    focus-ring {\n"
         "        width 2\n"
-        "        active-color \"#0078d4\"\n"
+        "        active-color \"%s\"\n"
         "    }\n"
         "}\n\n"
         "%s\n"
@@ -716,7 +719,11 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         active_op_buf,
         self->ns_xray[active_idx] ? "true" : "false",
         self->gap_px,
+        accent_hex,
         anim_block_str);
+
+    if (cfg)
+        shell_config_destroy(cfg);
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
     g_message("Saved modular Niri layer-rules and shaders to %s, 30-layout-animations.kdl, and %s",
@@ -852,6 +859,8 @@ build_page_niri(void)
         "kajo (Panel & Popovers)",
         "kajo-launcher (App Launcher)",
         "kajo-notification (Toasts)",
+        "kajo-osk (Virtual Keyboard)",
+        "kajo-osd (Volume / Brightness HUD)",
         NULL
     };
     GtkStringList *slist_ns = gtk_string_list_new(ns_items);
