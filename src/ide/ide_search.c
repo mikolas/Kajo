@@ -324,6 +324,7 @@ ide_search_drawer_new(const char       *workspace_root,
   gtk_widget_set_vexpand(bscroll, TRUE);
   drawer->build_list_box = gtk_list_box_new();
   gtk_widget_set_focusable(drawer->build_list_box, FALSE);
+  gtk_widget_add_css_class(drawer->build_list_box, "ide-tree-listbox");
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(drawer->build_list_box), GTK_SELECTION_SINGLE);
   gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(drawer->build_list_box), FALSE);
   g_signal_connect(drawer->build_list_box, "row-activated", G_CALLBACK(on_build_row_activated), drawer);

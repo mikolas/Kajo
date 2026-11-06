@@ -477,6 +477,7 @@ ide_lsp_manager_request_completion(IdeLspManager *lsp,
   gtk_widget_set_size_request(card, 340, -1);
 
   lsp->comp_list_box = gtk_list_box_new();
+  gtk_widget_add_css_class(lsp->comp_list_box, "ide-tree-listbox");
   gtk_list_box_set_selection_mode(GTK_LIST_BOX(lsp->comp_list_box), GTK_SELECTION_SINGLE);
 
   guint max_vis = MIN(lsp->comp_items->len, 8u);

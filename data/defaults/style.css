@@ -2232,7 +2232,8 @@ window.shell-ide-window .ide-tree-header-hint {
     margin: 0px;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox {
+window.shell-ide-window list,
+window.shell-ide-window .ide-tree-listbox {
     background: none;
     background-image: none;
     background-color: #141414;
@@ -2240,7 +2241,8 @@ window.shell-ide-window listbox.ide-tree-listbox {
     padding: 4px 0px;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox > row,
+window.shell-ide-window list > row,
+window.shell-ide-window .ide-tree-listbox > row,
 window.shell-ide-window .ide-tree-row {
     background: none;
     background-image: none;
@@ -2258,13 +2260,15 @@ window.shell-ide-window .ide-tree-row {
     box-shadow: none;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox > row:hover,
+window.shell-ide-window list > row:hover,
+window.shell-ide-window .ide-tree-listbox > row:hover,
 window.shell-ide-window .ide-tree-row:hover {
     background-color: #1e1e1e;
     color: #ffffff;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox > row:selected,
+window.shell-ide-window list > row:selected,
+window.shell-ide-window .ide-tree-listbox > row:selected,
 window.shell-ide-window .ide-tree-row:selected,
 window.shell-ide-window .ide-tree-sidebar > row:selected {
     background: none;
@@ -2333,7 +2337,7 @@ window.shell-ide-window .ide-tree-name-deleted {
     text-decoration: line-through;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox > row:selected .ide-tree-arrow {
+window.shell-ide-window .ide-tree-listbox > row:selected .ide-tree-arrow {
     color: #ffffff;
 }
 
@@ -2663,7 +2667,7 @@ window.shell-ide-window .ide-help-chord {
     border-radius: 0px;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox row:selected .ide-help-chord {
+window.shell-ide-window .ide-tree-listbox row:selected .ide-help-chord {
     background-color: #111111;
     border-color: #00d8f0;
     color: #50e6ff;
@@ -2676,7 +2680,7 @@ window.shell-ide-window .ide-help-title {
     font-weight: 700;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox row:selected .ide-help-title {
+window.shell-ide-window .ide-tree-listbox row:selected .ide-help-title {
     color: #ffffff;
 }
 
@@ -2686,7 +2690,7 @@ window.shell-ide-window .ide-help-desc {
     font-size: 11.5px;
 }
 
-window.shell-ide-window listbox.ide-tree-listbox row:selected .ide-help-desc {
+window.shell-ide-window .ide-tree-listbox row:selected .ide-help-desc {
     color: #e0e0e0;
 }
 
