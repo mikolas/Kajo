@@ -82,8 +82,12 @@ typedef struct {
     GtkWidget      *sw_minimap;
     GtkWidget      *sw_gutter;
     GtkWidget      *sw_cur_line;
+    GtkWidget      *btn_save;
+    GtkWidget      *btn_revert;
+    GtkWidget      *lbl_state;
     guint           current_scheme_idx;
     gboolean        syncing_ui;
+    gboolean        dirty;      /* edited but not yet written to config.json */
 } IdeSettingsState;
 
 static void
@@ -138,8 +142,37 @@ update_code_preview_markup(IdeSettingsState *st)
     gtk_label_set_markup(GTK_LABEL(st->preview_label), markup);
 }
 
+/* Reflects the saved/unsaved state in the footer. Edits only change the live
+ * preview; nothing is written to config.json until SAVE & APPLY is pressed. */
 static void
-save_ide_settings(IdeSettingsState *st)
+ide_settings_set_dirty(IdeSettingsState *st, gboolean dirty)
+{
+    if (!st) return;
+    st->dirty = dirty;
+    if (!st->lbl_state) return;
+
+    gtk_label_set_text(GTK_LABEL(st->lbl_state),
+                       dirty ? "● UNSAVED CHANGES — PREVIEW ONLY" : "✓ ALL CHANGES SAVED");
+    gtk_widget_remove_css_class(st->lbl_state, dirty ? "success" : "accent");
+    gtk_widget_add_css_class(st->lbl_state, dirty ? "accent" : "success");
+    gtk_widget_set_sensitive(st->btn_save, dirty);
+    gtk_widget_set_sensitive(st->btn_revert, dirty);
+    gtk_button_set_label(GTK_BUTTON(st->btn_save), "[ ✓ SAVE & APPLY ]");
+}
+
+/* Called by every editable control: refresh the preview and flag unsaved edits. */
+static void
+ide_settings_mark_changed(IdeSettingsState *st)
+{
+    if (!st || st->syncing_ui) return;
+    update_code_preview_markup(st);
+    ide_settings_set_dirty(st, TRUE);
+}
+
+/* Writes the current control values to config.json and reloads every running
+ * Kajo process. Only called from the SAVE & APPLY button. */
+static void
+persist_ide_settings(IdeSettingsState *st)
 {
     if (!st || st->syncing_ui) return;
 
@@ -173,6 +206,9 @@ save_ide_settings(IdeSettingsState *st)
 
     settings_reload_global_theme();
     update_code_preview_markup(st);
+    ide_settings_set_dirty(st, FALSE);
+    if (st->btn_save)
+        gtk_button_set_label(GTK_BUTTON(st->btn_save), "[ ✓ SAVED & APPLIED ]");
 }
 
 static void
@@ -190,7 +226,7 @@ select_ide_scheme(IdeSettingsState *st, guint idx, gboolean persist)
     }
     update_code_preview_markup(st);
     if (persist) {
-        save_ide_settings(st);
+        ide_settings_mark_changed(st);
     }
 }
 
@@ -209,21 +245,21 @@ on_ide_font_size_changed(GtkRange *range, gpointer user_data)
     int px = (int)gtk_range_get_value(range);
     g_autofree char *txt = g_strdup_printf("%dpx", px);
     gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), txt);
-    save_ide_settings(st);
+    ide_settings_mark_changed(st);
 }
 
 static void
 on_ide_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     IdeSettingsState *st = user_data;
-    save_ide_settings(st);
+    ide_settings_mark_changed(st);
 }
 
 static void
 on_ide_switch_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     IdeSettingsState *st = user_data;
-    save_ide_settings(st);
+    ide_settings_mark_changed(st);
 }
 
 static void
@@ -236,7 +272,58 @@ on_reset_ide_font_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_tab_width), 0);
     gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), "13px");
     st->syncing_ui = FALSE;
-    save_ide_settings(st);
+    ide_settings_mark_changed(st); /* previews the defaults; saved only via SAVE & APPLY */
+}
+
+static void
+on_save_ide_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    persist_ide_settings(user_data);
+}
+
+/* Re-reads config.json into the controls, discarding unsaved edits. */
+static void
+on_revert_ide_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    IdeSettingsState *st = user_data;
+    ShellConfig *cfg = shell_config_load(NULL);
+
+    st->syncing_ui = TRUE;
+    guint scheme_idx = 0;
+    guint font_idx = 0;
+    guint tab_idx = 0;
+    int px = 13;
+    gboolean minimap = TRUE, gutter = TRUE, cur_line = TRUE;
+    if (cfg) {
+        for (guint i = 0; i < N_IDE_SCHEMES; i++)
+            if (cfg->ide_color_scheme && g_ascii_strcasecmp(cfg->ide_color_scheme, IDE_SCHEMES[i].id) == 0)
+                scheme_idx = i;
+        for (guint i = 0; IDE_FONT_FAMILIES[i] != NULL; i++)
+            if (cfg->ide_font_family && g_ascii_strcasecmp(cfg->ide_font_family, IDE_FONT_FAMILIES[i]) == 0) {
+                font_idx = i;
+                break;
+            }
+        if (cfg->ide_tab_width == 4) tab_idx = 1;
+        else if (cfg->ide_tab_width == 8) tab_idx = 2;
+        if (cfg->ide_font_size_px >= 9 && cfg->ide_font_size_px <= 28) px = cfg->ide_font_size_px;
+        minimap = cfg->ide_show_minimap;
+        gutter = cfg->ide_show_line_numbers;
+        cur_line = cfg->ide_highlight_current_line;
+        shell_config_destroy(cfg);
+    }
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_font), font_idx);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_tab_width), tab_idx);
+    gtk_range_set_value(GTK_RANGE(st->scale_font_size), px);
+    g_autofree char *px_txt = g_strdup_printf("%dpx", px);
+    gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), px_txt);
+    gtk_switch_set_active(GTK_SWITCH(st->sw_minimap), minimap);
+    gtk_switch_set_active(GTK_SWITCH(st->sw_gutter), gutter);
+    gtk_switch_set_active(GTK_SWITCH(st->sw_cur_line), cur_line);
+    select_ide_scheme(st, scheme_idx, FALSE);
+    st->syncing_ui = FALSE;
+
+    update_code_preview_markup(st);
+    ide_settings_set_dirty(st, FALSE);
 }
 
 GtkWidget *
@@ -432,7 +519,33 @@ build_page_ide(void)
                                      "Subtle surface tint on the current editor cursor line",
                                      st->sw_cur_line));
 
+    /* Footer: unsaved/saved state + explicit REVERT / SAVE & APPLY */
+    GtkWidget *footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_hexpand(footer, TRUE);
+    gtk_widget_set_valign(footer, GTK_ALIGN_CENTER);
+
+    st->lbl_state = gtk_label_new("");
+    gtk_widget_add_css_class(st->lbl_state, "shell-popover-badge");
+    gtk_widget_set_hexpand(st->lbl_state, TRUE);
+    gtk_widget_set_halign(st->lbl_state, GTK_ALIGN_START);
+    gtk_widget_set_valign(st->lbl_state, GTK_ALIGN_CENTER);
+
+    st->btn_revert = gtk_button_new_with_label("[ ↺ REVERT ]");
+    gtk_widget_add_css_class(st->btn_revert, "files-nav-btn");
+    gtk_widget_set_valign(st->btn_revert, GTK_ALIGN_CENTER);
+    g_signal_connect(st->btn_revert, "clicked", G_CALLBACK(on_revert_ide_clicked), st);
+
+    st->btn_save = gtk_button_new_with_label("[ ✓ SAVE & APPLY ]");
+    gtk_widget_add_css_class(st->btn_save, "action-btn-primary");
+    gtk_widget_set_valign(st->btn_save, GTK_ALIGN_CENTER);
+    g_signal_connect(st->btn_save, "clicked", G_CALLBACK(on_save_ide_clicked), st);
+
+    gtk_box_append(GTK_BOX(footer), st->lbl_state);
+    gtk_box_append(GTK_BOX(footer), st->btn_revert);
+    gtk_box_append(GTK_BOX(footer), st->btn_save);
+
     select_ide_scheme(st, init_scheme_idx, FALSE);
+    ide_settings_set_dirty(st, FALSE);
     st->syncing_ui = FALSE;
 
     if (config) shell_config_destroy(config);
@@ -444,5 +557,5 @@ build_page_ide(void)
     g_signal_connect(st->sw_gutter, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
     g_signal_connect(st->sw_cur_line, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
 
-    return create_settings_page_card("KAJO IDE & EDITOR", "[ ORG.KAJO.IDE ]", root, NULL);
+    return create_settings_page_card("KAJO IDE & EDITOR", "[ ORG.KAJO.IDE ]", root, footer);
 }

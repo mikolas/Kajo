@@ -356,7 +356,7 @@ Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/page
   5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
 - **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, etc.), font size (`8pt`–`28pt`), tab width (`2`, `4`, `8`), spaces vs. tabs, line number style (`Absolute`, `Relative`, `None`), current line highlight, right margin guide, word wrap, and minimap visibility.
 
-All changes written to `~/.config/kajo/config.json` are hot-reloaded instantaneously across all running `kajo-ide` windows via `GFileMonitor`.
+Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/config.json` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `GFileMonitor`.
 
 ### 12.2 Live On-the-Fly Editor Font Zoom
 Adjust editor font size at any time directly inside `kajo-ide`:
