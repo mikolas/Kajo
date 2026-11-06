@@ -254,6 +254,18 @@ Each phase is its own branch / PR off `master` (this branch carries the plan onl
 - [ ] Test for file-op callbacks after window destruction (needs a display / GTK window harness). **Deferred.**
 - [ ] LSP / DAP integration tests — N/A until a real client exists.
 
+### Phase 8 — Settings UI conformance (kajo-settings vs `docs/ui-gallery.html`)
+Review method: every page was rendered headlessly (cage + grim, isolated config) and compared with the gallery; README claims were checked against the UI. Rule applied: if a feature is complete and contradicts the README, keep it and fix the README; if the README claims something that is not built, build it or drop the claim.
+
+- [x] New component **toggle card** (`.toggle-card`, `GtkToggleButton`, 4 px left indicator bar lit with the accent) added to the gallery, `docs/design_system.md` and `style.css`; the panel Control Center quick tiles share it. Rule of thumb documented: switch row = plain preference, toggle card = feature with status/unsupported/sub-settings, segmented group = 2–4 short exclusive choices.
+- [x] VRR and Autohide → toggle cards. On/off dropdowns → switches (touch swipes, Niri XRay, HP keylight wake). A/B and 3-option dropdowns → segmented groups (panel edge, OSK push, tab width, keyboard backlight level/timeout, widget display mode ICON-ONLY | TEXT-ONLY | FULL).
+- [x] Removed dead/duplicate controls: Panel Blur and Outer Margins tiles (not backed by any config or code), Panel Edge tile (duplicated the control above), placeholder HDR tile.
+- [x] Dropdown double surface fixed (the settings page-stack background leaked into every dropdown). Slider rows: aligned label column per page and one readout style (`.shell-popover-badge`). `flat` removed from settings buttons; primary actions use one wording (`[ ✓ SAVE & APPLY … ]`), secondary actions have no brackets. Widgets headers lose their emoji dots. IDE page no longer overflows (`create_action_row` labels wrap).
+- [x] Missing functionality built: **Wi-Fi inline passphrase banner** (real AP security detection, saved-profile reconnect, `AddAndActivateConnection` for new WPA/WPA2/WPA3-Personal and open networks; compiled and rendered, **not tested against a real access point**), **output/input mute switches** (synced with external changes), **IDE word wrap, margin guide, spaces-vs-tabs** (config fields + editor + round-trip test).
+- [x] README/manual wording fixed where the function lives elsewhere (per-app volume in the panel popover, DND/clear-history in the panel widgets, posture controls on Displays).
+- [ ] Relative line numbers, custom accent hex picker, DND switch on the Notifications page: moved to the ROADMAP as planned (decisions taken: panel widget stays the DND control).
+- [ ] Untested by hand: clicking through the new controls and the Control Center restyle (needs a live session); Wi-Fi connect against a real network.
+
 ### Out of scope / separate decisions
 - Implementing a real LSP / DAP client (large feature work; Phase 3 only aligns the docs).
 - Replacing the widget ↔ `ShellApp` coupling with a service / event interface (§1.5, design discussion first).
