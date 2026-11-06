@@ -327,6 +327,7 @@ ide_picker_update_preview(IdePicker *picker)
       gtk_source_language_manager_guess_language(lm, it->abs_path, NULL);
   gtk_source_buffer_set_language(picker->preview_buf, lang);
   gtk_text_buffer_set_text(GTK_TEXT_BUFFER(picker->preview_buf), txt, -1);
+  ide_highlight_source_buffer(picker->preview_buf, it->abs_path, "kajo-metro-dark");
 
   GtkTextIter line_iter;
   guint target_line = (it->line_1based > 0) ? (it->line_1based - 1) : 0;

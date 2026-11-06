@@ -1,4 +1,5 @@
 #include "ide_markdown.h"
+#include "ide_buffer.h"
 #include <cairo-svg.h>
 #include <gtksourceview/gtksource.h>
 #include <math.h>
@@ -781,6 +782,7 @@ static GtkWidget *build_code_block_widget(const char *lang_id, const char *code)
   if (scheme) gtk_source_buffer_set_style_scheme(sbuf, scheme);
 
   gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sbuf), code ? code : "", -1);
+  ide_highlight_source_buffer(sbuf, lang_id, "kajo-metro-dark");
   GtkWidget *sview = gtk_source_view_new_with_buffer(sbuf);
   g_object_unref(sbuf);
   gtk_text_view_set_editable(GTK_TEXT_VIEW(sview), FALSE);

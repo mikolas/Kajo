@@ -192,6 +192,58 @@ test_git_porcelain_fuzzy_and_search_parsers(void)
   ide_build_issue_free(iss);
 }
 
+static gboolean
+iter_has_tag_named(GtkTextBuffer *tbuf, gint char_offset, const char *tag_name)
+{
+  GtkTextTagTable *table = gtk_text_buffer_get_tag_table(tbuf);
+  GtkTextTag *tag = gtk_text_tag_table_lookup(table, tag_name);
+  if (tag == NULL) {
+    return FALSE;
+  }
+  GtkTextIter it;
+  gtk_text_buffer_get_iter_at_offset(tbuf, &it, char_offset);
+  return gtk_text_iter_has_tag(&it, tag);
+}
+
+static void
+test_semantic_token_highlighter(void)
+{
+  IdeBuffer *buf = ide_buffer_new("sample.c");
+  const char *code =
+      "static gboolean\n"
+      "ide_window_dispatch(KajoIdeWindow *self)\n"
+      "{\n"
+      "  if (self->state == IDE_ACTION_SAVE) return TRUE; /* ok */\n"
+      "}\n";
+  ide_buffer_set_text(buf, code);
+
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+  /* "static" at offset 0 -> ide-syn-kw */
+  g_assert_true(iter_has_tag_named(tbuf, 1, "ide-syn-kw"));
+  /* "gboolean" at offset 7 -> ide-syn-type */
+  g_assert_true(iter_has_tag_named(tbuf, 8, "ide-syn-type"));
+  /* "ide_window_dispatch" at offset 16 -> ide-syn-fn */
+  g_assert_true(iter_has_tag_named(tbuf, 18, "ide-syn-fn"));
+  /* "KajoIdeWindow" at offset 36 -> ide-syn-type */
+  g_assert_true(iter_has_tag_named(tbuf, 38, "ide-syn-type"));
+  /* "self" at offset 51 -> ide-syn-var */
+  g_assert_true(iter_has_tag_named(tbuf, 52, "ide-syn-var"));
+  /* "if" on line 4 -> ide-syn-ctrl */
+  const char *if_pos = strstr(code, "if (");
+  g_assert_nonnull(if_pos);
+  g_assert_true(iter_has_tag_named(tbuf, (gint)(if_pos - code), "ide-syn-ctrl"));
+  /* "IDE_ACTION_SAVE" -> ide-syn-mac */
+  const char *mac_pos = strstr(code, "IDE_ACTION_SAVE");
+  g_assert_nonnull(mac_pos);
+  g_assert_true(iter_has_tag_named(tbuf, (gint)(mac_pos - code + 2), "ide-syn-mac"));
+  /* Block comment -> ide-syn-cmt */
+  const char *cmt_pos = strstr(code, "/* ok */");
+  g_assert_nonnull(cmt_pos);
+  g_assert_true(iter_has_tag_named(tbuf, (gint)(cmt_pos - code + 2), "ide-syn-cmt"));
+
+  ide_buffer_free(buf);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -202,6 +254,7 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/line-diffs-and-unified-diff", test_line_diffs_and_unified_diff);
   g_test_add_func("/ide/buffer/alternate-path-and-atomic-buffer", test_alternate_path_and_atomic_buffer);
   g_test_add_func("/ide/buffer/git-porcelain-fuzzy-and-search", test_git_porcelain_fuzzy_and_search_parsers);
+  g_test_add_func("/ide/buffer/semantic-token-highlighter", test_semantic_token_highlighter);
 
   return g_test_run();
 }
