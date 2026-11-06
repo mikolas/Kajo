@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/kajo-banner.svg" alt="KAJO // Personal Native Application Suite &amp; Wayland Environment" width="100%">
+</p>
+
 # Kajo — Personal Native Application Suite & Wayland Environment
 
 **Kajo** is a self-contained suite of lightweight, native C17 / GTK4 applications and Wayland session components built around a single, uncompromising visual and ergonomic vision for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
