@@ -64,7 +64,7 @@ When launched with a file path, `kajo-ide` automatically detects the enclosing G
   - `📖 MD` (`Space m p`) — Toggle the 50/50 side-by-side Graphical Markdown & Mermaid Preview pane.
   - `🔍 FIND` (`Space f f`) — Open the Fuzzy File Finder modal.
   - `❓ HELP` (`?` / `F1` / `Space h`) — Open the full-width Interactive Help Viewer & Command Palette.
-- **Center Cluster:** Active workspace-relative file breadcrumb (`src/ide/ide_window.c`), live Git branch & dirty counter badge (`⎇ feat/kajo-ide ●3 +1`), and active AI Agent modification indicator (`🤖 AGENT MODIFIED`).
+- **Center Cluster:** Active workspace-relative file breadcrumb (`src/ide/ide_window.c`) — deep paths (Java packages) are shortened to `repo ▸ … ▸ parent ▸ dir ▸ file` and ellipsized so the right-zone **BUILD** / **FLOAT / TILE** / close controls stay on screen; the full path is on hover — plus the live Git branch & dirty counter badge (`⎇ feat/kajo-ide ●3 +1`) and the AI Agent modification indicator (`🤖 AGENT MODIFIED`).
 - **Right Cluster:** `🔨 BUILD` quick-trigger (`meson compile -C builddir`), Niri `🗗 FLOAT / TILE` window toggle, and `✕` close button.
 
 ### 3.2 Six-Column Cairo Editor Gutter (`68px`)
@@ -283,7 +283,7 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 
 ### Workflows (server running)
 - **Diagnostics:** errors / warnings / hints from the server appear in the gutter pill, the status-bar counters and the hover card; `ä` / `ö` (or `]d` / `[d`) step through them. Edits are sent to the server after a short debounce (full-document sync) and saving sends `didSave`.
-- **Hover (`K`, `Space k`):** signature and documentation (markdown flattened to text) plus any diagnostic on the line. `Esc` / `q` dismisses.
+- **Hover (`K`, `Space k`):** signature and documentation (markdown flattened to text) plus any diagnostic on the line. `Esc` / `q` dismisses; moving the cursor, scrolling the symbol out of view, clicking elsewhere or leaving the editor also dismisses it, and the popover stays pinned to the cursor as you scroll.
 - **Completion (`Ctrl+Space`, or automatically after a server trigger character such as `.`):** ranked, scrollable list with kind badges and documentation. The list follows your typing, `Up`/`Down`/`Ctrl+n`/`Ctrl+p` select, `Tab`/`Enter` insert. The server's `textEdit` and `additionalTextEdits` are honored, so auto-imports (Go, Java) are added with the completion.
 - **Go to Definition (`g d` / `Space g d`) and Implementation (`Space g i`):** jumps (and records the jumplist). Definitions inside libraries (`jdt://`) are reported instead of opened.
 - **Rename (`Space c r`):** prompt anchored at the cursor (type the new name, `Enter` applies, `Esc` cancels). The server's `WorkspaceEdit` is applied to open buffers (undoable) and to files that are not open (atomic write); a toast reports the edit/file count.

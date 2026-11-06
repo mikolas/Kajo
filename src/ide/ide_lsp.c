@@ -342,6 +342,8 @@ struct _IdeLspManager {
   /* popover (hover / completion) */
   char                *active_server_name;
   GtkWidget           *active_popover;
+  GtkWidget           *active_anchor;   /* source view the popover points into */
+  IdeBuffer           *active_buf;      /* buffer whose cursor it tracks */
   GtkWidget           *comp_list_box;
   GtkWidget           *comp_scroller;
   GtkWidget           *comp_doc_label;
@@ -1256,6 +1258,8 @@ ide_lsp_manager_cancel_popover(IdeLspManager *lsp)
     gtk_popover_popdown(GTK_POPOVER(lsp->active_popover));
     gtk_widget_unparent(lsp->active_popover);
     lsp->active_popover = NULL;
+    lsp->active_anchor = NULL;
+    lsp->active_buf = NULL;
     lsp->comp_list_box = NULL;
     lsp->comp_scroller = NULL;
     lsp->comp_doc_label = NULL;
@@ -1269,6 +1273,37 @@ ide_lsp_manager_cancel_popover(IdeLspManager *lsp)
   set_ui_state(lsp, IDE_LSP_UI_CLOSED);
 }
 
+gboolean
+ide_lsp_manager_popover_visible(IdeLspManager *lsp)
+{
+  return lsp != NULL && lsp->active_popover != NULL;
+}
+
+/* Keeps an open popover pinned to the cursor as the view scrolls; if the cursor
+ * (and its anchor rectangle) left the visible area, dismiss it rather than let
+ * it float over unrelated code. */
+void
+ide_lsp_manager_reposition_popover(IdeLspManager *lsp, GtkWidget *anchor_view)
+{
+  g_return_if_fail(lsp != NULL);
+  if (lsp->active_popover == NULL || lsp->active_anchor == NULL || lsp->active_buf == NULL) {
+    return;
+  }
+  if (anchor_view != NULL && anchor_view != lsp->active_anchor) {
+    return;
+  }
+  GtkWidget *view = lsp->active_anchor;
+  int h = gtk_widget_get_height(view);
+  int w = gtk_widget_get_width(view);
+  GdkRectangle rect = compute_cursor_rect(view, lsp->active_buf);
+  /* compute_cursor_rect returns widget-window pixels; off-screen => dismiss. */
+  if (rect.y + rect.height < 0 || rect.y > h || rect.x > w) {
+    ide_lsp_manager_cancel_popover(lsp);
+    return;
+  }
+  gtk_popover_set_pointing_to(GTK_POPOVER(lsp->active_popover), &rect);
+}
+
 static GtkWidget *
 new_popover_for(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf)
 {
@@ -1279,6 +1314,8 @@ new_popover_for(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf)
   GdkRectangle rect = compute_cursor_rect(anchor_view, buf);
   gtk_popover_set_pointing_to(GTK_POPOVER(pop), &rect);
   lsp->active_popover = pop;
+  lsp->active_anchor = anchor_view;
+  lsp->active_buf = buf;
   return pop;
 }
 

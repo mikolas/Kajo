@@ -95,6 +95,14 @@ static char *format_breadcrumb_for_path(const char *workspace_root,
   if (!*rel) return g_path_get_basename(file_path);
 
   g_auto(GStrv) parts = g_strsplit(rel, "/", -1);
+  guint n = g_strv_length(parts);
+  /* Deep paths (Java packages: net/mikolas/…/core/analysis/extractor) would
+   * otherwise push the right-zone controls off-screen. Keep the first segment
+   * (repo/module) and the last three (…parent ▸ dir ▸ file); elide the middle. */
+  if (n > 5) {
+    return g_strdup_printf("%s ▸ … ▸ %s ▸ %s ▸ %s",
+                           parts[0], parts[n - 3], parts[n - 2], parts[n - 1]);
+  }
   return g_strjoinv(" ▸ ", parts);
 }
 
@@ -325,8 +333,12 @@ void ide_window_update_status_bar_and_hud(KajoIdeWindow *self) {
         self->workspace_root,
         ide_buffer_get_file_path(buf),
         ide_buffer_get_title(buf));
-    if (self->hdr_breadcrumb)
+    if (self->hdr_breadcrumb) {
       gtk_label_set_text(GTK_LABEL(self->hdr_breadcrumb), crumb);
+      /* Full path on hover, since deep paths are shortened in the bar. */
+      const char *fp = ide_buffer_get_file_path(buf);
+      gtk_widget_set_tooltip_text(self->hdr_breadcrumb, fp ? fp : crumb);
+    }
 
     g_autofree char *f_lbl = g_strdup_printf(
         "%s%s",
@@ -370,6 +382,11 @@ static void on_buffer_mark_set(GtkTextBuffer     *tbuf,
   if (!self || !tbuf) return;
   if (mark == gtk_text_buffer_get_insert(tbuf) ||
       mark == gtk_text_buffer_get_selection_bound(tbuf)) {
+    /* A hover card is tied to the symbol it was requested for; moving the
+     * cursor away dismisses it. Completion/rename/code-action survive because
+     * their own edits move the cursor. */
+    if (self->lsp && ide_fsm_get_state(self->fsm) == IDE_STATE_HOVER)
+      ide_lsp_manager_cancel_popover(self->lsp);
     ide_window_update_status_bar_and_hud(self);
   }
 }
@@ -835,6 +852,11 @@ static void on_lsp_status_changed(const char *server_name,
                       server_name ? server_name : "none",
                       active ? " ●" : "");
   gtk_label_set_text(GTK_LABEL(self->lsp_status_badge), lbl);
+  /* Gallery: ready server = green success badge; otherwise the muted pill. */
+  if (active)
+    gtk_widget_add_css_class(self->lsp_status_badge, "success");
+  else
+    gtk_widget_remove_css_class(self->lsp_status_badge, "success");
 }
 
 static void on_agent_reload_cb(const char *path,
@@ -1076,7 +1098,12 @@ static void kajo_ide_window_class_init(KajoIdeWindowClass *klass) {
 
 static void on_editor_vadj_changed(GtkAdjustment *vadj, gpointer user_data) {
   KajoIdeWindow *self = user_data;
-  if (!self || !gtk_widget_get_visible(self->md_split_container)) return;
+  if (!self) return;
+  /* Keep any open LSP popover pinned to the cursor (or dismiss it when the
+   * cursor scrolls out of view) so it never floats over unrelated code. */
+  if (self->lsp && ide_lsp_manager_popover_visible(self->lsp))
+    ide_lsp_manager_reposition_popover(self->lsp, self->source_view);
+  if (!gtk_widget_get_visible(self->md_split_container)) return;
   double upper = gtk_adjustment_get_upper(vadj);
   double page = gtk_adjustment_get_page_size(vadj);
   if (upper > page) {
@@ -1271,6 +1298,19 @@ static void on_source_view_motion_leave(GtkEventControllerMotion *ctrl, gpointer
   }
 }
 
+static void on_source_view_focus_leave(GtkEventControllerFocus *ctrl, gpointer user_data) {
+  (void)ctrl;
+  KajoIdeWindow *self = user_data;
+  if (self->hover_dwell_id != 0) {
+    g_source_remove(self->hover_dwell_id);
+    self->hover_dwell_id = 0;
+  }
+  /* Leaving the editor (another pane, another window) dismisses hover/completion
+   * popovers so they never linger detached from the cursor. */
+  if (self->lsp && ide_lsp_manager_popover_visible(self->lsp))
+    ide_lsp_manager_cancel_popover(self->lsp);
+}
+
 static void on_source_view_pressed(GtkGestureClick *gesture,
                                    int              n_press,
                                    double           x,
@@ -1283,6 +1323,10 @@ static void on_source_view_pressed(GtkGestureClick *gesture,
   KajoIdeWindow *self = user_data;
   if (!self) return;
   gtk_widget_grab_focus(self->source_view);
+  /* A click elsewhere dismisses a sticky hover/completion popover. */
+  if (self->lsp && ide_lsp_manager_popover_visible(self->lsp) &&
+      ide_fsm_get_state(self->fsm) != IDE_STATE_RENAME)
+    ide_lsp_manager_cancel_popover(self->lsp);
   IdeState st = ide_fsm_get_state(self->fsm);
   if (st == IDE_STATE_TREE || st == IDE_STATE_DRAWER ||
       st == IDE_STATE_LEADER || st == IDE_STATE_MATCH_PENDING) {
@@ -1392,12 +1436,18 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   /* Center Zone: Active File Breadcrumb + Git Branch & Status Summary Badge */
   GtkWidget *hdr_center = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_set_hexpand(hdr_center, TRUE);
-  gtk_widget_set_halign(hdr_center, GTK_ALIGN_CENTER);
+  gtk_widget_set_halign(hdr_center, GTK_ALIGN_FILL);
   gtk_widget_set_valign(hdr_center, GTK_ALIGN_CENTER);
 
   self->hdr_breadcrumb = gtk_label_new("[No Name]");
   gtk_widget_add_css_class(self->hdr_breadcrumb, "ide-header-breadcrumb");
   gtk_widget_set_valign(self->hdr_breadcrumb, GTK_ALIGN_CENTER);
+  /* Shrink and ellipsize from the start so the filename tail stays visible and
+   * the right-zone BUILD / FLOAT / close controls are never pushed off-screen. */
+  gtk_label_set_ellipsize(GTK_LABEL(self->hdr_breadcrumb), PANGO_ELLIPSIZE_START);
+  gtk_label_set_xalign(GTK_LABEL(self->hdr_breadcrumb), 0.0f);
+  gtk_widget_set_hexpand(self->hdr_breadcrumb, TRUE);
+  gtk_widget_set_halign(self->hdr_breadcrumb, GTK_ALIGN_FILL);
 
   self->ws_badge = gtk_label_new("⎇ main");
   gtk_widget_add_css_class(self->ws_badge, "shell-popover-badge");
@@ -1527,6 +1577,11 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   g_signal_connect(ed_motion, "motion", G_CALLBACK(on_source_view_motion), self);
   g_signal_connect(ed_motion, "leave", G_CALLBACK(on_source_view_motion_leave), self);
   gtk_widget_add_controller(self->source_view, ed_motion);
+
+  /* Dismiss any sticky popover when the editor loses focus. */
+  GtkEventController *ed_focus = gtk_event_controller_focus_new();
+  g_signal_connect(ed_focus, "leave", G_CALLBACK(on_source_view_focus_leave), self);
+  gtk_widget_add_controller(self->source_view, ed_focus);
 
   GtkSourceGutter *left_gutter = gtk_source_view_get_gutter(
       GTK_SOURCE_VIEW(self->source_view), GTK_TEXT_WINDOW_LEFT);
@@ -1725,7 +1780,8 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(self->inline_search_bar), self->inline_search_entry);
   gtk_box_append(GTK_BOX(root_vbox), self->inline_search_bar);
 
-  /* 6. Bottom Status Bar (Flush Mode Pill on Far Left) */
+  /* 6. Bottom Status Bar — gallery 3-zone layout: mode+file (left),
+   * chord (center), agent/LSP/diagnostics/position (right). */
   GtkWidget *status_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
   gtk_widget_add_css_class(status_bar, "ide-status-bar");
   gtk_widget_set_valign(status_bar, GTK_ALIGN_FILL);
@@ -1735,25 +1791,29 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_add_css_class(self->mode_pill, "mode-normal");
   gtk_widget_set_valign(self->mode_pill, GTK_ALIGN_FILL);
 
-  self->chord_badge = gtk_label_new("");
-  gtk_widget_add_css_class(self->chord_badge, "shell-popover-badge");
-  gtk_widget_set_valign(self->chord_badge, GTK_ALIGN_CENTER);
-  gtk_widget_set_visible(self->chord_badge, FALSE);
-
   self->file_status_label = gtk_label_new("[No Name]");
   gtk_widget_add_css_class(self->file_status_label, "ide-status-file");
   gtk_widget_set_valign(self->file_status_label, GTK_ALIGN_CENTER);
 
+  /* Center: pending leader/match chord (hidden otherwise). */
+  self->chord_badge = gtk_label_new("");
+  gtk_widget_add_css_class(self->chord_badge, "ide-status-chord");
+  gtk_widget_set_valign(self->chord_badge, GTK_ALIGN_CENTER);
+  gtk_widget_set_hexpand(self->chord_badge, TRUE);
+  gtk_widget_set_halign(self->chord_badge, GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(self->chord_badge, FALSE);
+
+  /* A spacer keeps the right cluster flush-right even when the chord is hidden. */
   GtkWidget *st_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(st_spacer, TRUE);
 
   self->agent_status_badge = gtk_label_new("");
   gtk_widget_add_css_class(self->agent_status_badge, "shell-popover-badge");
-  gtk_widget_add_css_class(self->agent_status_badge, "accent");
+  gtk_widget_add_css_class(self->agent_status_badge, "agent");
   gtk_widget_set_valign(self->agent_status_badge, GTK_ALIGN_CENTER);
   gtk_widget_set_visible(self->agent_status_badge, FALSE);
 
-  self->lsp_status_badge = gtk_label_new("LSP: READY");
+  self->lsp_status_badge = gtk_label_new("LSP: native");
   gtk_widget_add_css_class(self->lsp_status_badge, "shell-popover-badge");
   gtk_widget_set_valign(self->lsp_status_badge, GTK_ALIGN_CENTER);
 
@@ -1766,8 +1826,8 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_valign(self->cursor_pos_label, GTK_ALIGN_CENTER);
 
   gtk_box_append(GTK_BOX(status_bar), self->mode_pill);
-  gtk_box_append(GTK_BOX(status_bar), self->chord_badge);
   gtk_box_append(GTK_BOX(status_bar), self->file_status_label);
+  gtk_box_append(GTK_BOX(status_bar), self->chord_badge);
   gtk_box_append(GTK_BOX(status_bar), st_spacer);
   gtk_box_append(GTK_BOX(status_bar), self->agent_status_badge);
   gtk_box_append(GTK_BOX(status_bar), self->lsp_status_badge);

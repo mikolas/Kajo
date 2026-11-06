@@ -163,6 +163,11 @@ gboolean       ide_lsp_manager_completion_active(IdeLspManager *lsp);
 void           ide_lsp_manager_request_format(IdeLspManager *lsp, IdeBuffer *buf);
 
 void           ide_lsp_manager_cancel_popover(IdeLspManager *lsp);
+/* Re-anchors the open popover to the current cursor, or dismisses it when the
+ * cursor scrolled out of view. Call on buffer scroll / cursor movement. */
+void           ide_lsp_manager_reposition_popover(IdeLspManager *lsp, GtkWidget *anchor_view);
+/* TRUE while any hover / completion / code-action / rename popover is shown. */
+gboolean       ide_lsp_manager_popover_visible(IdeLspManager *lsp);
 void           ide_lsp_manager_select_next(IdeLspManager *lsp);
 void           ide_lsp_manager_select_prev(IdeLspManager *lsp);
 void           ide_lsp_manager_confirm_selection(IdeLspManager *lsp, IdeBuffer *buf);
