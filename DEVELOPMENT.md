@@ -172,6 +172,16 @@ meson install -C builddir
 | `files-model` | `test-files-model` | `KajoFileItem` size/permission formatting, directory-first sorting, filtering, and async `mkdir`/`rename`/`delete` operations. |
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 
+### Sanitizer Run (ASan + UBSan)
+Run the whole suite under AddressSanitizer and UndefinedBehaviorSanitizer in a throwaway build directory (does not touch `builddir/`):
+
+```bash
+scripts/asan-test.sh            # builds in /tmp/kajo-asan and runs meson test
+ASAN_OPTIONS=detect_leaks=1 scripts/asan-test.sh   # also report leaks (expect fontconfig/pango cache noise)
+```
+
+Run this before merging any change that touches object lifetimes, async callbacks, or string ownership. Code style for new code is described in `.clang-format` (existing files are not reformatted in bulk).
+
 ### Running & Debugging Individual Executables
 ```bash
 # 1. Run main desktop shell

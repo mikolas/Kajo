@@ -1475,8 +1475,12 @@ ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id)
   }
 
   const char *wanted = (scheme_id && scheme_id[0] != '\0') ? scheme_id : "kajo-metro-dark";
+  /* `scheme_id` may alias buf->scheme_id (ide_buffer_apply_style_and_language
+   * passes it back in), so duplicate before freeing the old value. */
+  char *new_id = g_strdup(wanted);
   g_free(buf->scheme_id);
-  buf->scheme_id = g_strdup(wanted);
+  buf->scheme_id = new_id;
+  wanted = buf->scheme_id;
 
   GtkSourceStyleScheme *scheme = gtk_source_style_scheme_manager_get_scheme(sm, wanted);
   if (scheme == NULL) {

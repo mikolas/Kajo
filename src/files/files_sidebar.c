@@ -11,6 +11,7 @@ struct _KajoFilesSidebar {
     GtkWidget *auth_pass_entry;
 
     GVolumeMonitor *vol_monitor;
+    GCancellable *alive; /* cancelled in _free(); async callbacks check it before touching self */
     GMountOperation *active_mount_op;
     GFile *pending_nav_file;
 
@@ -28,6 +29,40 @@ emit_status(KajoFilesSidebar *self, const char *msg, gboolean is_err)
 {
     if (self && self->status_cb && msg)
         self->status_cb(msg, is_err, self->user_data);
+}
+
+/* ─── Lifetime token ───
+ * The sidebar is a plain struct that is freed with its window, while GIO mount
+ * operations complete later. Callbacks therefore receive a SidebarCtx holding a
+ * ref on the sidebar's `alive` cancellable instead of a raw sidebar pointer. */
+
+typedef struct {
+    KajoFilesSidebar *self;
+    GCancellable *alive;
+} SidebarCtx;
+
+static SidebarCtx *
+sidebar_ctx_new(KajoFilesSidebar *self)
+{
+    SidebarCtx *ctx = g_new0(SidebarCtx, 1);
+    ctx->self = self;
+    ctx->alive = g_object_ref(self->alive);
+    return ctx;
+}
+
+/* Returns the sidebar, or NULL if it has been freed since the op started. */
+static KajoFilesSidebar *
+sidebar_ctx_get(SidebarCtx *ctx)
+{
+    return g_cancellable_is_cancelled(ctx->alive) ? NULL : ctx->self;
+}
+
+static void
+sidebar_ctx_free(gpointer data, GClosure *closure G_GNUC_UNUSED)
+{
+    SidebarCtx *ctx = data;
+    g_object_unref(ctx->alive);
+    g_free(ctx);
 }
 
 /* ─── Inline GVFS / LUKS Authentication Banner ─── */
@@ -123,7 +158,11 @@ on_mount_op_ask_password(GMountOperation *op,
                          GAskPasswordFlags flags,
                          gpointer user_data)
 {
-    KajoFilesSidebar *self = user_data;
+    KajoFilesSidebar *self = sidebar_ctx_get(user_data);
+    if (!self) {
+        g_mount_operation_reply(op, G_MOUNT_OPERATION_ABORTED);
+        return;
+    }
     g_set_object(&self->active_mount_op, op);
 
     g_autofree char *title = g_strdup_printf("🔒 %s", message ? message : "AUTHENTICATION / PASSPHRASE REQUIRED");
@@ -149,7 +188,8 @@ static GMountOperation *
 create_kajo_mount_operation(KajoFilesSidebar *self)
 {
     GMountOperation *op = g_mount_operation_new();
-    g_signal_connect(op, "ask-password", G_CALLBACK(on_mount_op_ask_password), self);
+    g_signal_connect_data(op, "ask-password", G_CALLBACK(on_mount_op_ask_password),
+                          sidebar_ctx_new(self), sidebar_ctx_free, 0);
     return op;
 }
 
@@ -158,11 +198,18 @@ create_kajo_mount_operation(KajoFilesSidebar *self)
 static void
 on_volume_mount_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 {
-    KajoFilesSidebar *self = user_data;
+    SidebarCtx *ctx = user_data;
     GVolume *vol = G_VOLUME(source);
     GError *error = NULL;
+    gboolean ok = g_volume_mount_finish(vol, res, &error);
+    KajoFilesSidebar *self = sidebar_ctx_get(ctx);
+    sidebar_ctx_free(ctx, NULL);
+    if (!self) {
+        g_clear_error(&error);
+        return;
+    }
 
-    if (!g_volume_mount_finish(vol, res, &error)) {
+    if (!ok) {
         if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_FAILED_HANDLED))
             emit_status(self, error ? error->message : "Mount failed", TRUE);
         g_clear_error(&error);
@@ -183,11 +230,18 @@ on_volume_mount_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 static void
 on_enclosing_mount_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 {
-    KajoFilesSidebar *self = user_data;
+    SidebarCtx *ctx = user_data;
     GFile *file = G_FILE(source);
     GError *error = NULL;
+    gboolean ok = g_file_mount_enclosing_volume_finish(file, res, &error);
+    KajoFilesSidebar *self = sidebar_ctx_get(ctx);
+    sidebar_ctx_free(ctx, NULL);
+    if (!self) {
+        g_clear_error(&error);
+        return;
+    }
 
-    if (!g_file_mount_enclosing_volume_finish(file, res, &error)) {
+    if (!ok) {
         if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_ALREADY_MOUNTED) &&
             !g_error_matches(error, G_IO_ERROR, G_IO_ERROR_FAILED_HANDLED)) {
             emit_status(self, error ? error->message : "Failed to connect to remote share", TRUE);
@@ -213,18 +267,25 @@ kajo_files_sidebar_mount_uri(KajoFilesSidebar *self, GFile *target_file)
         target_file,
         G_MOUNT_MOUNT_NONE,
         op,
-        NULL,
+        self->alive,
         on_enclosing_mount_ready,
-        self
+        sidebar_ctx_new(self)
     );
 }
 
 static void
 on_mount_eject_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 {
-    KajoFilesSidebar *self = user_data;
+    SidebarCtx *ctx = user_data;
     GError *error = NULL;
-    if (!g_mount_eject_with_operation_finish(G_MOUNT(source), res, &error)) {
+    gboolean ok = g_mount_eject_with_operation_finish(G_MOUNT(source), res, &error);
+    KajoFilesSidebar *self = sidebar_ctx_get(ctx);
+    sidebar_ctx_free(ctx, NULL);
+    if (!self) {
+        g_clear_error(&error);
+        return;
+    }
+    if (!ok) {
         emit_status(self, error ? error->message : "Failed to eject device", TRUE);
         g_clear_error(&error);
     } else {
@@ -236,9 +297,16 @@ on_mount_eject_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 static void
 on_mount_unmount_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 {
-    KajoFilesSidebar *self = user_data;
+    SidebarCtx *ctx = user_data;
     GError *error = NULL;
-    if (!g_mount_unmount_with_operation_finish(G_MOUNT(source), res, &error)) {
+    gboolean ok = g_mount_unmount_with_operation_finish(G_MOUNT(source), res, &error);
+    KajoFilesSidebar *self = sidebar_ctx_get(ctx);
+    sidebar_ctx_free(ctx, NULL);
+    if (!self) {
+        g_clear_error(&error);
+        return;
+    }
+    if (!ok) {
         emit_status(self, error ? error->message : "Failed to unmount volume", TRUE);
         g_clear_error(&error);
     } else {
@@ -256,9 +324,9 @@ on_eject_btn_clicked(GtkButton *btn, gpointer user_data)
 
     g_autoptr(GMountOperation) op = create_kajo_mount_operation(self);
     if (g_mount_can_eject(mount)) {
-        g_mount_eject_with_operation(mount, G_MOUNT_UNMOUNT_NONE, op, NULL, on_mount_eject_ready, self);
+        g_mount_eject_with_operation(mount, G_MOUNT_UNMOUNT_NONE, op, self->alive, on_mount_eject_ready, sidebar_ctx_new(self));
     } else {
-        g_mount_unmount_with_operation(mount, G_MOUNT_UNMOUNT_NONE, op, NULL, on_mount_unmount_ready, self);
+        g_mount_unmount_with_operation(mount, G_MOUNT_UNMOUNT_NONE, op, self->alive, on_mount_unmount_ready, sidebar_ctx_new(self));
     }
 }
 
@@ -602,7 +670,7 @@ on_sidebar_row_selected(GtkListBox *box G_GNUC_UNUSED, GtkListBoxRow *row, gpoin
     if (G_IS_VOLUME(vol)) {
         emit_status(self, "Mounting volume...", FALSE);
         g_autoptr(GMountOperation) op = create_kajo_mount_operation(self);
-        g_volume_mount(vol, G_MOUNT_MOUNT_NONE, op, NULL, on_volume_mount_ready, self);
+        g_volume_mount(vol, G_MOUNT_MOUNT_NONE, op, self->alive, on_volume_mount_ready, sidebar_ctx_new(self));
         return;
     }
 
@@ -630,6 +698,7 @@ kajo_files_sidebar_new(GtkListBox *list_box,
                        gpointer user_data)
 {
     KajoFilesSidebar *self = g_new0(KajoFilesSidebar, 1);
+    self->alive = g_cancellable_new();
     self->list_box = list_box;
     self->auth_revealer = auth_banner_revealer;
     self->nav_cb = nav_cb;
@@ -659,6 +728,8 @@ void
 kajo_files_sidebar_free(KajoFilesSidebar *self)
 {
     if (!self) return;
+    g_cancellable_cancel(self->alive);
+    g_clear_object(&self->alive);
     if (self->vol_monitor) {
         g_signal_handlers_disconnect_by_data(self->vol_monitor, self);
         g_clear_object(&self->vol_monitor);

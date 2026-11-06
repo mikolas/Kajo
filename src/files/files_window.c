@@ -213,11 +213,25 @@ update_status_and_capacity_bar(KajoFilesWindow *self)
     gtk_widget_set_visible(self->fs_usage_bar, FALSE);
 }
 
+/* File-operation callbacks run after a worker thread finishes, possibly after
+ * the window was closed. They receive a heap GWeakRef (never a raw window
+ * pointer) so a destroyed window is detected instead of dereferenced. */
+static gpointer
+op_weak_new(KajoFilesWindow *self)
+{
+    GWeakRef *ref = g_new0(GWeakRef, 1);
+    g_weak_ref_init(ref, self);
+    return ref;
+}
+
 static void
 on_file_op_completed(gboolean success, const char *message, GError *error, gpointer user_data)
 {
-    KajoFilesWindow *self = user_data;
-    if (!KAJO_IS_FILES_WINDOW(self)) return;
+    GWeakRef *ref = user_data;
+    KajoFilesWindow *self = g_weak_ref_get(ref);
+    g_weak_ref_clear(ref);
+    g_free(ref);
+    if (!self) return;
 
     if (!success) {
         set_status_message(self, error ? error->message : "Operation failed", TRUE);
@@ -228,6 +242,7 @@ on_file_op_completed(gboolean success, const char *message, GError *error, gpoin
     reload_current_directory(self);
     if (self->sidebar)
         kajo_files_sidebar_refresh(self->sidebar);
+    g_object_unref(self);
 }
 
 /* ─── Contextual Banners (Connect Server / Trash / Inline Prompts) ─── */
@@ -292,14 +307,14 @@ on_trash_restore_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         set_status_message(self, "Select an item in Trash to restore", TRUE);
         return;
     }
-    kajo_files_op_restore_from_trash_async(self->selected_item, on_file_op_completed, self);
+    kajo_files_op_restore_from_trash_async(self->selected_item, on_file_op_completed, op_weak_new(self));
 }
 
 static void
 on_trash_empty_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
-    kajo_files_op_empty_trash_async(on_file_op_completed, self);
+    kajo_files_op_empty_trash_async(on_file_op_completed, op_weak_new(self));
 }
 
 static void
@@ -341,13 +356,13 @@ on_prompt_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     const char *text = gtk_editable_get_text(GTK_EDITABLE(self->prompt_entry));
 
     if (kind == PROMPT_MKDIR && self->current_dir) {
-        kajo_files_op_mkdir_async(self->current_dir, text, on_file_op_completed, self);
+        kajo_files_op_mkdir_async(self->current_dir, text, on_file_op_completed, op_weak_new(self));
     } else if (kind == PROMPT_RENAME && self->selected_item) {
-        kajo_files_op_rename_async(kajo_file_item_get_file(self->selected_item), text, on_file_op_completed, self);
+        kajo_files_op_rename_async(kajo_file_item_get_file(self->selected_item), text, on_file_op_completed, op_weak_new(self));
     } else if (kind == PROMPT_DELETE_PERM && self->selected_item) {
         g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
         g_ptr_array_add(arr, g_object_ref(self->selected_item));
-        kajo_files_op_delete_permanent_async(arr, on_file_op_completed, self);
+        kajo_files_op_delete_permanent_async(arr, on_file_op_completed, op_weak_new(self));
     }
 }
 
@@ -1224,7 +1239,7 @@ on_btn_paste_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
     if (self->current_dir)
-        kajo_files_clipboard_paste_async(self->current_dir, on_file_op_completed, self);
+        kajo_files_clipboard_paste_async(self->current_dir, on_file_op_completed, op_weak_new(self));
 }
 
 static void
@@ -1470,7 +1485,7 @@ trash_selected_item(KajoFilesWindow *self)
 
     g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
     g_ptr_array_add(arr, g_object_ref(self->selected_item));
-    kajo_files_op_trash_async(arr, on_file_op_completed, self);
+    kajo_files_op_trash_async(arr, on_file_op_completed, op_weak_new(self));
 }
 
 static void
@@ -1577,7 +1592,7 @@ on_ctx_extract_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 
     GFile *archive_file = kajo_file_item_get_file(self->selected_item);
     set_status_message(self, "Extracting archive...", FALSE);
-    kajo_files_op_extract_archive_async(archive_file, self->current_dir, on_file_op_completed, self);
+    kajo_files_op_extract_archive_async(archive_file, self->current_dir, on_file_op_completed, op_weak_new(self));
 }
 
 static void
@@ -2376,7 +2391,7 @@ on_window_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
         }
         if (ctrl && !shift && (keyval == GDK_KEY_v || keyval == GDK_KEY_V)) {
             if (self->current_dir) {
-                kajo_files_clipboard_paste_async(self->current_dir, on_file_op_completed, self);
+                kajo_files_clipboard_paste_async(self->current_dir, on_file_op_completed, op_weak_new(self));
                 return TRUE;
             }
         }

@@ -59,7 +59,7 @@ This document records the findings of a full read-only audit and a prioritized p
 
 ### 1.5 Minor issues
 - `src/widgets/custom-script.c`: a changed `interval_sec` is never applied to the running timer (`configure()` is called on reused widgets; the timer is only created in `enable()`).
-- `src/widgets/privacy.c:80–120`: walks `/proc/*/fd` every 3 s on the main thread unconditionally (~6 ms here, stops at first match). Conflicts with the idle-CPU discipline; poll only while a relevant PipeWire/V4L2 node exists, or move off-thread.
+- `src/widgets/privacy.c:80–120`: walks `/proc/*/fd` every 3 s on the main thread (~6 ms here, stops at first match). It is already skipped when no `/sys/class/video4linux` device exists, so it only runs on machines with a camera. Left as is (low cost); revisit if idle-CPU measurements flag it.
 - `src/player/player_mpv.c`: global `setlocale(LC_NUMERIC, "C")` can affect number formatting in `kajo-files` (reuses this module for Quick Look).
 - `src/ide/ide_buffer.c`: full-buffer re-tokenize on every `changed` and full-text `ide_compute_line_diffs()` — O(n) per keystroke. Fine for small files, degrades on large ones; debounce / limit to the edited range.
 - `src/widgets/*`: panel widgets reach into `ShellApp` internals (`widget->app->idle_manager`, `->notifications`); `shell.c` dispatches volume / mute by comparing `klass->id` strings.
