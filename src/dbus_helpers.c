@@ -399,6 +399,202 @@ shell_dbus_nm_get_wireless_enabled(void)
     return enabled;
 }
 
+/* NM_802_11_AP_SEC_KEY_MGMT_* bits from NetworkManager's 802.11 AP security flags */
+#define NM_AP_KEY_MGMT_PSK    0x100u
+#define NM_AP_KEY_MGMT_8021X  0x200u
+#define NM_AP_KEY_MGMT_SAE    0x400u
+
+static ShellApSecurity
+nm_ap_security_from_flags(guint32 flags, guint32 wpa_flags, guint32 rsn_flags)
+{
+    guint32 any = wpa_flags | rsn_flags;
+    if (any & NM_AP_KEY_MGMT_8021X)
+        return SHELL_AP_SEC_UNSUPPORTED;
+    if (any & NM_AP_KEY_MGMT_PSK)
+        return SHELL_AP_SEC_PSK;
+    if (any & NM_AP_KEY_MGMT_SAE)
+        return SHELL_AP_SEC_SAE;
+    if (flags & 0x1u) /* privacy bit with no WPA/RSN: WEP */
+        return SHELL_AP_SEC_UNSUPPORTED;
+    return SHELL_AP_SEC_OPEN;
+}
+
+/* Returns the object path of the first Wi-Fi device (DeviceType 2), or NULL. */
+static gchar *
+nm_find_wifi_device_path(GDBusConnection *bus)
+{
+    g_autoptr(GVariant) res = g_dbus_connection_call_sync(
+        bus, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager",
+        "org.freedesktop.NetworkManager", "GetDevices", NULL, G_VARIANT_TYPE("(ao)"),
+        G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
+    if (!res)
+        return NULL;
+
+    g_autoptr(GVariant) arr = g_variant_get_child_value(res, 0);
+    GVariantIter iter;
+    g_variant_iter_init(&iter, arr);
+    const gchar *dev_path = NULL;
+    while (g_variant_iter_loop(&iter, "&o", &dev_path)) {
+        g_autoptr(GVariant) type = g_dbus_connection_call_sync(
+            bus, "org.freedesktop.NetworkManager", dev_path,
+            "org.freedesktop.DBus.Properties", "Get",
+            g_variant_new("(ss)", "org.freedesktop.NetworkManager.Device", "DeviceType"),
+            G_VARIANT_TYPE("(v)"), G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
+        if (!type)
+            continue;
+        g_autoptr(GVariant) inner = NULL;
+        g_variant_get(type, "(v)", &inner);
+        if (inner && g_variant_get_uint32(inner) == 2)
+            return g_strdup(dev_path);
+    }
+    return NULL;
+}
+
+/* Object path of a saved Wi-Fi profile whose SSID equals `ssid`, or NULL. */
+static gchar *
+nm_find_saved_connection_path(GDBusConnection *bus, const char *ssid)
+{
+    g_autoptr(GVariant) res = g_dbus_connection_call_sync(
+        bus, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager/Settings",
+        "org.freedesktop.NetworkManager.Settings", "ListConnections", NULL,
+        G_VARIANT_TYPE("(ao)"), G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
+    if (!res)
+        return NULL;
+
+    g_autoptr(GVariant) arr = g_variant_get_child_value(res, 0);
+    GVariantIter iter;
+    g_variant_iter_init(&iter, arr);
+    const gchar *conn_path = NULL;
+    gsize want_len = strlen(ssid);
+    while (g_variant_iter_loop(&iter, "&o", &conn_path)) {
+        g_autoptr(GVariant) settings = g_dbus_connection_call_sync(
+            bus, "org.freedesktop.NetworkManager", conn_path,
+            "org.freedesktop.NetworkManager.Settings.Connection", "GetSettings", NULL,
+            G_VARIANT_TYPE("(a{sa{sv}})"), G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
+        if (!settings)
+            continue;
+        g_autoptr(GVariant) dict = g_variant_get_child_value(settings, 0);
+        g_autoptr(GVariant) wifi = g_variant_lookup_value(dict, "802-11-wireless", G_VARIANT_TYPE("a{sv}"));
+        if (!wifi)
+            continue;
+        g_autoptr(GVariant) ssid_var = g_variant_lookup_value(wifi, "ssid", G_VARIANT_TYPE("ay"));
+        if (!ssid_var)
+            continue;
+        gsize n = 0;
+        const guint8 *bytes = g_variant_get_fixed_array(ssid_var, &n, sizeof(guint8));
+        if (n == want_len && memcmp(bytes, ssid, n) == 0)
+            return g_strdup(conn_path);
+    }
+    return NULL;
+}
+
+gboolean
+shell_dbus_nm_has_saved_connection(const char *ssid)
+{
+    if (!ssid || !ssid[0])
+        return FALSE;
+    g_autoptr(GDBusConnection) bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, NULL);
+    if (!bus)
+        return FALSE;
+    g_autofree gchar *path = nm_find_saved_connection_path(bus, ssid);
+    return path != NULL;
+}
+
+typedef struct {
+    ShellNmConnectDone done;
+    gpointer user_data;
+} NmConnectCtx;
+
+static void
+on_nm_activate_done(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+    NmConnectCtx *ctx = user_data;
+    g_autoptr(GError) err = NULL;
+    GVariant *ret = g_dbus_connection_call_finish(G_DBUS_CONNECTION(source), res, &err);
+    if (ret)
+        g_variant_unref(ret);
+    if (ctx->done)
+        ctx->done(err ? err->message : NULL, ctx->user_data);
+    g_free(ctx);
+}
+
+void
+shell_dbus_nm_connect_ap_async(const char *ap_path,
+                               const char *ssid,
+                               ShellApSecurity security,
+                               const char *passphrase,
+                               ShellNmConnectDone done,
+                               gpointer user_data)
+{
+    NmConnectCtx *ctx = g_new0(NmConnectCtx, 1);
+    ctx->done = done;
+    ctx->user_data = user_data;
+
+    g_autoptr(GDBusConnection) bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, NULL);
+    g_autofree gchar *dev_path = bus ? nm_find_wifi_device_path(bus) : NULL;
+    if (!bus || !dev_path || !ap_path || !ssid) {
+        if (done)
+            done("No Wi-Fi device available", user_data);
+        g_free(ctx);
+        return;
+    }
+
+    g_autofree gchar *saved = nm_find_saved_connection_path(bus, ssid);
+    if (saved) {
+        g_dbus_connection_call(
+            bus, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager",
+            "org.freedesktop.NetworkManager", "ActivateConnection",
+            g_variant_new("(ooo)", saved, dev_path, ap_path), G_VARIANT_TYPE("(o)"),
+            G_DBUS_CALL_FLAGS_NONE, 30000, NULL, on_nm_activate_done, ctx);
+        return;
+    }
+
+    if (security == SHELL_AP_SEC_UNSUPPORTED) {
+        if (done)
+            done("This network type (WEP / 802.1X) needs a profile created in NetworkManager", user_data);
+        g_free(ctx);
+        return;
+    }
+    if ((security == SHELL_AP_SEC_PSK || security == SHELL_AP_SEC_SAE) &&
+        (!passphrase || strlen(passphrase) < 8)) {
+        if (done)
+            done("Passphrase must be at least 8 characters", user_data);
+        g_free(ctx);
+        return;
+    }
+
+    /* New profile: { connection, 802-11-wireless[, 802-11-wireless-security] } */
+    GVariantBuilder settings;
+    g_variant_builder_init(&settings, G_VARIANT_TYPE("a{sa{sv}}"));
+
+    GVariantBuilder conn_sec;
+    g_variant_builder_init(&conn_sec, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&conn_sec, "{sv}", "type", g_variant_new_string("802-11-wireless"));
+    g_variant_builder_add(&conn_sec, "{sv}", "id", g_variant_new_string(ssid));
+    g_variant_builder_add(&settings, "{sa{sv}}", "connection", &conn_sec);
+
+    GVariantBuilder wifi_sec;
+    g_variant_builder_init(&wifi_sec, G_VARIANT_TYPE("a{sv}"));
+    g_variant_builder_add(&wifi_sec, "{sv}", "ssid",
+                          g_variant_new_fixed_array(G_VARIANT_TYPE_BYTE, ssid, strlen(ssid), 1));
+    g_variant_builder_add(&settings, "{sa{sv}}", "802-11-wireless", &wifi_sec);
+
+    if (security == SHELL_AP_SEC_PSK || security == SHELL_AP_SEC_SAE) {
+        GVariantBuilder sec;
+        g_variant_builder_init(&sec, G_VARIANT_TYPE("a{sv}"));
+        g_variant_builder_add(&sec, "{sv}", "key-mgmt",
+                              g_variant_new_string(security == SHELL_AP_SEC_SAE ? "sae" : "wpa-psk"));
+        g_variant_builder_add(&sec, "{sv}", "psk", g_variant_new_string(passphrase));
+        g_variant_builder_add(&settings, "{sa{sv}}", "802-11-wireless-security", &sec);
+    }
+
+    g_dbus_connection_call(
+        bus, "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager",
+        "org.freedesktop.NetworkManager", "AddAndActivateConnection",
+        g_variant_new("(a{sa{sv}}oo)", &settings, dev_path, ap_path), G_VARIANT_TYPE("(oo)"),
+        G_DBUS_CALL_FLAGS_NONE, 30000, NULL, on_nm_activate_done, ctx);
+}
+
 GPtrArray *
 shell_dbus_nm_get_access_points(void)
 {
@@ -461,6 +657,15 @@ shell_dbus_nm_get_access_points(void)
                                 if (ap_proxy) {
                                     GVariant *ssid_var = g_dbus_proxy_get_cached_property(ap_proxy, "Ssid");
                                     GVariant *strength_var = g_dbus_proxy_get_cached_property(ap_proxy, "Strength");
+                                    GVariant *flags_var = g_dbus_proxy_get_cached_property(ap_proxy, "Flags");
+                                    GVariant *wpa_var = g_dbus_proxy_get_cached_property(ap_proxy, "WpaFlags");
+                                    GVariant *rsn_var = g_dbus_proxy_get_cached_property(ap_proxy, "RsnFlags");
+                                    guint32 ap_flags = flags_var ? g_variant_get_uint32(flags_var) : 0;
+                                    guint32 wpa_flags = wpa_var ? g_variant_get_uint32(wpa_var) : 0;
+                                    guint32 rsn_flags = rsn_var ? g_variant_get_uint32(rsn_var) : 0;
+                                    if (flags_var) g_variant_unref(flags_var);
+                                    if (wpa_var) g_variant_unref(wpa_var);
+                                    if (rsn_var) g_variant_unref(rsn_var);
 
                                     if (ssid_var) {
                                         gsize n_elms = 0;
@@ -473,6 +678,7 @@ shell_dbus_nm_get_access_points(void)
                                                 ap->path = g_strdup(ap_path);
                                                 ap->strength = strength_var ? g_variant_get_byte(strength_var) : 0;
                                                 ap->active = (active_ap_path && g_strcmp0(ap_path, active_ap_path) == 0);
+                                                ap->security = nm_ap_security_from_flags(ap_flags, wpa_flags, rsn_flags);
                                                 g_ptr_array_add(arr, ap);
                                             } else {
                                                 g_free(ssid_str);

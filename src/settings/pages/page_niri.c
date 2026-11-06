@@ -68,7 +68,7 @@ typedef struct _SettingsPageNiri {
     GtkWidget *lbl_op_val;
     GtkWidget *scale_gap;
     GtkWidget *lbl_gap_val;
-    GtkWidget *combo_xray;
+    GtkWidget *sw_xray;
 
     GtkWidget *combo_shader_open;
     GtkWidget *scale_open_dur;
@@ -152,7 +152,7 @@ settings_page_niri_class_init(SettingsPageNiriClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, lbl_op_val);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, scale_gap);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, lbl_gap_val);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_xray);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, sw_xray);
 
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_shader_open);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, scale_open_dur);
@@ -522,7 +522,7 @@ on_combo_ns_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpoi
     gtk_range_set_value(GTK_RANGE(self->scale_op), self->ns_opacity[idx]);
     g_autofree gchar *str = g_strdup_printf("%d%%", self->ns_opacity[idx]);
     gtk_label_set_text(GTK_LABEL(self->lbl_op_val), str);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_xray), self->ns_xray[idx] ? 1 : 0);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_xray), self->ns_xray[idx]);
     self->syncing_ui = FALSE;
 }
 
@@ -542,14 +542,14 @@ on_scale_op_changed(GtkRange *range, gpointer user_data)
 }
 
 static void
-on_combo_xray_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+on_sw_xray_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     SettingsPageNiri *self = (SettingsPageNiri *)user_data;
     if (self->syncing_ui) return;
 
     guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
     if (idx < N_NIRI_NAMESPACES)
-        self->ns_xray[idx] = (gtk_drop_down_get_selected(dropdown) == 1);
+        self->ns_xray[idx] = gtk_switch_get_active(GTK_SWITCH(self->sw_xray));
 }
 
 static void
@@ -629,7 +629,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     if (active_idx >= N_NIRI_NAMESPACES) active_idx = 0;
 
     self->ns_opacity[active_idx] = (int)gtk_range_get_value(GTK_RANGE(self->scale_op));
-    self->ns_xray[active_idx]    = (gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_xray)) == 1);
+    self->ns_xray[active_idx]    = gtk_switch_get_active(GTK_SWITCH(self->sw_xray));
     self->gap_px                 = (int)gtk_range_get_value(GTK_RANGE(self->scale_gap));
 
     self->open_preset_idx   = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_shader_open));
@@ -863,15 +863,6 @@ build_page_niri(void)
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ns), G_LIST_MODEL(slist_ns));
     g_object_unref(slist_ns);
 
-    const char *xray_items[] = {
-        "Disabled (Default Solid Blur)",
-        "Enabled (Pass-through Wallpaper)",
-        NULL
-    };
-    GtkStringList *slist_xray = gtk_string_list_new(xray_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_xray), G_LIST_MODEL(slist_xray));
-    g_object_unref(slist_xray);
-
     /* Populate Shader Preset Dropdowns */
     GtkStringList *slist_open = gtk_string_list_new(NULL);
     for (guint i = 0; i < N_OPEN_PRESETS; i++)
@@ -906,7 +897,7 @@ build_page_niri(void)
     gtk_range_set_value(GTK_RANGE(page->scale_op), page->ns_opacity[0]);
     g_autofree gchar *op_str = g_strdup_printf("%d%%", page->ns_opacity[0]);
     gtk_label_set_text(GTK_LABEL(page->lbl_op_val), op_str);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_xray), page->ns_xray[0] ? 1 : 0);
+    gtk_switch_set_active(GTK_SWITCH(page->sw_xray), page->ns_xray[0]);
 
     gtk_range_set_value(GTK_RANGE(page->scale_gap), page->gap_px);
     g_autofree gchar *gap_str = g_strdup_printf("%dpx", page->gap_px);
@@ -931,7 +922,7 @@ build_page_niri(void)
     /* Connect signals */
     g_signal_connect(page->combo_ns, "notify::selected", G_CALLBACK(on_combo_ns_changed), page);
     g_signal_connect(page->scale_op, "value-changed", G_CALLBACK(on_scale_op_changed), page);
-    g_signal_connect(page->combo_xray, "notify::selected", G_CALLBACK(on_combo_xray_changed), page);
+    g_signal_connect(page->sw_xray, "notify::active", G_CALLBACK(on_sw_xray_changed), page);
     g_signal_connect(page->scale_gap, "value-changed", G_CALLBACK(on_scale_gap_changed), page->lbl_gap_val);
 
     g_signal_connect(page->combo_shader_open, "notify::selected", G_CALLBACK(on_combo_shader_open_changed), page);

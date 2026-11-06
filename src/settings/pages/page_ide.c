@@ -64,12 +64,7 @@ static const char *const IDE_FONT_FAMILIES[] = {
     NULL
 };
 
-static const char *const IDE_TAB_LABELS[] = {
-    "2 Spaces (Kajo / GTK Standard)",
-    "4 Spaces",
-    "8 Spaces (Linux Kernel Style)",
-    NULL
-};
+static const char *const IDE_TAB_LABELS[] = { "2", "4", "8", NULL };
 
 typedef struct {
     GtkWidget      *scheme_buttons[N_IDE_SCHEMES];
@@ -78,7 +73,10 @@ typedef struct {
     GtkWidget      *combo_font;
     GtkWidget      *scale_font_size;
     GtkWidget      *lbl_font_size_val;
-    GtkWidget      *combo_tab_width;
+    GtkWidget      *seg_tab_width;   /* segmented: 2 | 4 | 8 */
+    GtkWidget      *sw_word_wrap;
+    GtkWidget      *sw_margin_guide;
+    GtkWidget      *sw_spaces;
     GtkWidget      *sw_minimap;
     GtkWidget      *sw_gutter;
     GtkWidget      *sw_cur_line;
@@ -180,7 +178,7 @@ persist_ide_settings(IdeSettingsState *st)
     guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(st->combo_font));
     const char *font_fam = (f_idx < 6 && IDE_FONT_FAMILIES[f_idx]) ? IDE_FONT_FAMILIES[f_idx] : "Fira Code";
     int font_px = CLAMP((int)gtk_range_get_value(GTK_RANGE(st->scale_font_size)), 9, 28);
-    guint t_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(st->combo_tab_width));
+    guint t_idx = segmented_group_get_selected(st->seg_tab_width);
     int tab_w = (t_idx == 1) ? 4 : ((t_idx == 2) ? 8 : 2);
 
     ShellConfig *config = shell_config_load(NULL);
@@ -196,6 +194,9 @@ persist_ide_settings(IdeSettingsState *st)
         config->ide_show_minimap = gtk_switch_get_active(GTK_SWITCH(st->sw_minimap));
         config->ide_show_line_numbers = gtk_switch_get_active(GTK_SWITCH(st->sw_gutter));
         config->ide_highlight_current_line = gtk_switch_get_active(GTK_SWITCH(st->sw_cur_line));
+        config->ide_word_wrap = gtk_switch_get_active(GTK_SWITCH(st->sw_word_wrap));
+        config->ide_show_margin_guide = gtk_switch_get_active(GTK_SWITCH(st->sw_margin_guide));
+        config->ide_insert_spaces = gtk_switch_get_active(GTK_SWITCH(st->sw_spaces));
 
         shell_theme_sync_from_config(config);
 
@@ -256,6 +257,12 @@ on_ide_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNU
 }
 
 static void
+on_ide_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint selected G_GNUC_UNUSED, gpointer user_data)
+{
+    ide_settings_mark_changed(user_data);
+}
+
+static void
 on_ide_switch_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
     IdeSettingsState *st = user_data;
@@ -269,7 +276,7 @@ on_reset_ide_font_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     st->syncing_ui = TRUE;
     gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_font), 0);
     gtk_range_set_value(GTK_RANGE(st->scale_font_size), 13);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_tab_width), 0);
+    segmented_group_set_selected(st->seg_tab_width, 0);
     gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), "13px");
     st->syncing_ui = FALSE;
     ide_settings_mark_changed(st); /* previews the defaults; saved only via SAVE & APPLY */
@@ -294,6 +301,7 @@ on_revert_ide_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     guint tab_idx = 0;
     int px = 13;
     gboolean minimap = TRUE, gutter = TRUE, cur_line = TRUE;
+    gboolean wrap = FALSE, margin = FALSE, spaces = TRUE;
     if (cfg) {
         for (guint i = 0; i < N_IDE_SCHEMES; i++)
             if (cfg->ide_color_scheme && g_ascii_strcasecmp(cfg->ide_color_scheme, IDE_SCHEMES[i].id) == 0)
@@ -309,16 +317,22 @@ on_revert_ide_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         minimap = cfg->ide_show_minimap;
         gutter = cfg->ide_show_line_numbers;
         cur_line = cfg->ide_highlight_current_line;
+        wrap = cfg->ide_word_wrap;
+        margin = cfg->ide_show_margin_guide;
+        spaces = cfg->ide_insert_spaces;
         shell_config_destroy(cfg);
     }
     gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_font), font_idx);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_tab_width), tab_idx);
+    segmented_group_set_selected(st->seg_tab_width, tab_idx);
     gtk_range_set_value(GTK_RANGE(st->scale_font_size), px);
     g_autofree char *px_txt = g_strdup_printf("%dpx", px);
     gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), px_txt);
     gtk_switch_set_active(GTK_SWITCH(st->sw_minimap), minimap);
     gtk_switch_set_active(GTK_SWITCH(st->sw_gutter), gutter);
     gtk_switch_set_active(GTK_SWITCH(st->sw_cur_line), cur_line);
+    gtk_switch_set_active(GTK_SWITCH(st->sw_word_wrap), wrap);
+    gtk_switch_set_active(GTK_SWITCH(st->sw_margin_guide), margin);
+    gtk_switch_set_active(GTK_SWITCH(st->sw_spaces), spaces);
     select_ide_scheme(st, scheme_idx, FALSE);
     st->syncing_ui = FALSE;
 
@@ -473,18 +487,41 @@ build_page_ide(void)
                                      "Live zoom also available in kajo-ide via Ctrl++ / Ctrl+- / Ctrl+0",
                                      size_box));
 
-    st->combo_tab_width = create_string_dropdown(IDE_TAB_LABELS);
     guint init_tab_idx = 0;
     if (config) {
         if (config->ide_tab_width == 4) init_tab_idx = 1;
         else if (config->ide_tab_width == 8) init_tab_idx = 2;
     }
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_tab_width), init_tab_idx);
+    st->seg_tab_width = create_segmented_group(IDE_TAB_LABELS, init_tab_idx);
     gtk_box_append(GTK_BOX(root),
                    create_action_row("format-indent-more-symbolic",
-                                     "Indentation & Tab Width",
-                                     "Spaces inserted per Tab stop in GtkSourceView",
-                                     st->combo_tab_width));
+                                     "Tab Width",
+                                     "Columns per Tab stop in GtkSourceView",
+                                     st->seg_tab_width));
+
+    st->sw_spaces = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(st->sw_spaces), config ? config->ide_insert_spaces : TRUE);
+    gtk_box_append(GTK_BOX(root),
+                   create_action_row("format-indent-less-symbolic",
+                                     "Insert Spaces Instead of Tabs",
+                                     "Tab key inserts spaces; off inserts a literal tab character",
+                                     st->sw_spaces));
+
+    st->sw_word_wrap = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(st->sw_word_wrap), config ? config->ide_word_wrap : FALSE);
+    gtk_box_append(GTK_BOX(root),
+                   create_action_row("format-justify-fill-symbolic",
+                                     "Word Wrap",
+                                     "Soft-wrap long lines at the editor edge",
+                                     st->sw_word_wrap));
+
+    st->sw_margin_guide = gtk_switch_new();
+    gtk_switch_set_active(GTK_SWITCH(st->sw_margin_guide), config ? config->ide_show_margin_guide : FALSE);
+    gtk_box_append(GTK_BOX(root),
+                   create_action_row("view-column-symbolic",
+                                     "Margin Guide at Column 100",
+                                     "Thin vertical line marking the 100-column limit",
+                                     st->sw_margin_guide));
 
     /* ─── SECTION 3: WORKSPACE CHROME & GUTTER ─── */
     GtkWidget *lbl_sec3 = gtk_label_new("WORKSPACE CHROME & GUTTER");
@@ -552,7 +589,10 @@ build_page_ide(void)
 
     g_signal_connect(st->combo_font, "notify::selected", G_CALLBACK(on_ide_dropdown_changed), st);
     g_signal_connect(st->scale_font_size, "value-changed", G_CALLBACK(on_ide_font_size_changed), st);
-    g_signal_connect(st->combo_tab_width, "notify::selected", G_CALLBACK(on_ide_dropdown_changed), st);
+    segmented_group_connect(st->seg_tab_width, on_ide_segment_changed, st);
+    g_signal_connect(st->sw_spaces, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
+    g_signal_connect(st->sw_word_wrap, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
+    g_signal_connect(st->sw_margin_guide, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
     g_signal_connect(st->sw_minimap, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
     g_signal_connect(st->sw_gutter, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
     g_signal_connect(st->sw_cur_line, "notify::active", G_CALLBACK(on_ide_switch_changed), st);

@@ -117,6 +117,15 @@ Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → 
   - `trough`: `#262626`, `min-height: 6px`, `0px` radius.
   - `block.filled`: `@metro-accent` (or 3-zone VU colors: `.low` `#0078d4`, `.high` `#ff8c00`, `.full` `#e81123`).
 
+#### Switch row vs Toggle card vs Segmented group (choose by what is being set)
+| Control | Use for | Notes |
+| :--- | :--- | :--- |
+| **Switch row** (`kajo-switch` / `GtkSwitch` in a `.widget-row-card`) | A plain on/off preference whose title and subtitle say everything: mute, word wrap, lock on suspend, Wi-Fi power. | `create_action_row(icon, title, subtitle, GtkSwitch)`. |
+| **Toggle card** (`.toggle-card`, a `GtkToggleButton`) | A *feature* with a status line (VRR, Autohide), a possible *unsupported* state, or its own sub-settings. | `create_toggle_card()`. State is `:checked`. A 4px left indicator bar lights with `@metro-accent` when on (dim `@metro-border` when off); the body only gets `alpha(@metro-accent, 0.12)` so title/subtitle keep contrast. Disabled: 45% opacity, bar dim, subtitle states the reason. The panel Control Center quick tiles share this component. |
+| **Segmented group** (`.segmented-group` of `GtkToggleButton`s) | 2–4 short, mutually exclusive choices (Top/Bottom, ICON-ONLY/TEXT-ONLY/FULL, 2/4/8). | `create_segmented_group()`. Longer lists stay `GtkDropDown`. |
+
+Never fake an on/off setting with a dropdown, and never ship a toggle that is not backed by real state.
+
 ### 4.4 Cards, Rows, Tables & Context Menus
 - **Section Cards (`.section-card`, `.section-card-left`, `.section-card-center`, `.section-card-right`):**
   - `#1a1a1a` background, `1px solid #2d2d2d`, optional `4px` left accent border (`@metro-accent`, `#ff8c00`, or `#107c41`).

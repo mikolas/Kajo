@@ -408,27 +408,63 @@ popover > arrow {
     background-color: rgba(232, 17, 35, 0.14);
 }
 
-/* ─── Control Center Quick Toggle Tiles ─── */
-button.control-center-tile {
+/* ─── Toggle Cards (.toggle-card; also the Control Center quick tiles) ─── */
+/* A feature toggle with a status line. State is shown by a 4px left indicator
+ * bar (same language as .shell-notification-card): dim when off, lit with
+ * @metro-accent when on. The card body only gets a faint tint so the title and
+ * subtitle keep their contrast. Use GtkToggleButton (:checked); the panel's
+ * Control Center tiles drive the equivalent .active class. */
+button.toggle-card,
+button.control-center-tile,
+popover button.toggle-card,
+popover button.control-center-tile,
+window.shell-settings-window button.toggle-card {
     background: none;
     background-image: none;
     background-color: @metro-surface-4;
     border: 1px solid @metro-border;
-    border-left: 3px solid transparent;
+    border-left: 4px solid @metro-border;
     border-radius: 0px;
     padding: 8px 12px;
+    color: #ffffff;
+    box-shadow: none;
+    outline: none;
 }
 
-button.control-center-tile:hover {
+button.toggle-card:hover,
+button.control-center-tile:hover,
+popover button.toggle-card:hover,
+popover button.control-center-tile:hover,
+window.shell-settings-window button.toggle-card:hover {
     background-color: @metro-surface-hover;
     border-color: @metro-accent;
+    border-left-color: @metro-accent;
 }
 
-button.control-center-tile.active {
-    background-color: alpha(@metro-accent, 0.32);
-    border-color: @metro-accent;
-    border-left: 3px solid #ffffff;
+button.toggle-card:checked,
+button.control-center-tile.active,
+popover button.toggle-card:checked,
+popover button.control-center-tile.active,
+window.shell-settings-window button.toggle-card:checked {
+    background-color: alpha(@metro-accent, 0.12);
+    border-color: @metro-border;
+    border-left: 4px solid @metro-accent;
     color: #ffffff;
+}
+
+button.toggle-card:checked:hover,
+button.control-center-tile.active:hover,
+popover button.toggle-card:checked:hover,
+window.shell-settings-window button.toggle-card:checked:hover {
+    background-color: alpha(@metro-accent, 0.2);
+    border-color: @metro-accent;
+}
+
+button.toggle-card:disabled,
+popover button.toggle-card:disabled,
+window.shell-settings-window button.toggle-card:disabled {
+    opacity: 0.45;
+    border-left-color: @metro-border;
 }
 
 .tile-title {
@@ -690,6 +726,33 @@ window.shell-settings-window button.player-transport-btn.active,
 window.shell-settings-window menubutton.files-nav-btn > button:checked {
     background-color: @metro-accent;
     border-color: @metro-accent;
+    color: #ffffff;
+}
+
+/* Segmented Control Group (gallery §04): joined GtkToggleButtons, one active */
+.segmented-group {
+    background: none;
+}
+
+popover .segmented-group button,
+window.shell-settings-window .segmented-group button {
+    min-width: 0;
+    min-height: 26px;
+    padding: 2px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 0px;
+}
+
+popover .segmented-group button + button,
+window.shell-settings-window .segmented-group button + button {
+    margin-left: -1px;
+}
+
+popover .segmented-group button:checked,
+window.shell-settings-window .segmented-group button:checked {
+    background-color: @metro-accent;
+    border-color: #ffffff;
     color: #ffffff;
 }
 
@@ -1027,6 +1090,15 @@ window.shell-settings-window viewport,
 window.shell-settings-window stack {
     background-color: @metro-surface-bg;
     color: #ffffff;
+}
+
+/* The page-stack background above must not leak into a dropdown button's own
+ * label stack (it drew a second, darker box inside every dropdown). */
+window.shell-settings-window dropdown stack,
+window.shell-settings-window button stack,
+popover dropdown stack {
+    background: none;
+    background-color: transparent;
 }
 
 window.shell-settings-window paned > separator {
@@ -1661,6 +1733,14 @@ window.shell-files-window .files-auth-bar {
     border: 1px solid @metro-border;
     border-left: 3px solid @metro-warning;
     padding: 12px 14px;
+}
+
+/* Inline passphrase / status banner in kajo-settings (same pattern as .files-auth-bar) */
+window.shell-settings-window .settings-auth-bar {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-warning;
+    padding: 10px 14px;
 }
 
 window.shell-files-window .files-trash-bar {

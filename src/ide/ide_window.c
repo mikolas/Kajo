@@ -126,6 +126,14 @@ void ide_window_apply_config(KajoIdeWindow *self) {
         (guint)CLAMP(cfg->ide_tab_width, 2, 8));
     gtk_source_view_set_highlight_current_line(
         GTK_SOURCE_VIEW(self->source_view), cfg->ide_highlight_current_line);
+    gtk_text_view_set_wrap_mode(
+        GTK_TEXT_VIEW(self->source_view),
+        cfg->ide_word_wrap ? GTK_WRAP_WORD_CHAR : GTK_WRAP_NONE);
+    gtk_source_view_set_show_right_margin(
+        GTK_SOURCE_VIEW(self->source_view), cfg->ide_show_margin_guide);
+    gtk_source_view_set_right_margin_position(GTK_SOURCE_VIEW(self->source_view), 100);
+    gtk_source_view_set_insert_spaces_instead_of_tabs(
+        GTK_SOURCE_VIEW(self->source_view), cfg->ide_insert_spaces);
   }
 
   if (self->gutter_renderer) {

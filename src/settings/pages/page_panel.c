@@ -36,25 +36,20 @@ static const char *OSK_MODE_LABELS[] = {
     NULL
 };
 
-static const char *OSK_PUSH_LABELS[] = {
-    "Push Tiled Windows Up (Exclusive Zone)",
-    "Float Over Windows",
-    NULL
-};
-
 /* ─── Declarative GtkBox Template Subclass ─── */
 
 typedef struct _SettingsPagePanel {
     GtkBox parent_instance;
 
-    GtkWidget *combo_pos;
+    GtkWidget *slot_pos;
+    GtkWidget *seg_pos;        /* segmented: Top | Bottom */
     GtkWidget *toggle_grid;
     GtkWidget *scale_height;
     GtkWidget *lbl_height_val;
     GtkWidget *scale_rev;
     GtkWidget *lbl_rev_val;
 
-    GtkWidget *combo_touch_enabled;
+    GtkWidget *sw_touch_enabled;
     GtkWidget *combo_swipe_center;
     GtkWidget *combo_swipe_right;
     GtkWidget *combo_swipe_horiz;
@@ -62,7 +57,8 @@ typedef struct _SettingsPagePanel {
     GtkWidget *lbl_touch_dwell_val;
 
     GtkWidget *combo_osk_mode;
-    GtkWidget *combo_osk_push;
+    GtkWidget *slot_osk_push;
+    GtkWidget *seg_osk_push;   /* segmented: Push windows | Float over */
     GtkWidget *scale_osk_height;
     GtkWidget *lbl_osk_height_val;
 
@@ -75,8 +71,6 @@ typedef struct _SettingsPagePanelClass {
 
 G_DEFINE_TYPE(SettingsPagePanel, settings_page_panel, GTK_TYPE_BOX)
 
-static void on_combo_pos_changed(GtkDropDown *dropdown, GParamSpec *pspec, gpointer user_data);
-
 static void
 settings_page_panel_init(SettingsPagePanel *self)
 {
@@ -86,12 +80,6 @@ settings_page_panel_init(SettingsPagePanel *self)
 static void
 settings_page_panel_dispose(GObject *object)
 {
-    SettingsPagePanel *self = (SettingsPagePanel *)object;
-    if (self->combo_pos) {
-        g_signal_handlers_disconnect_matched(
-            self->combo_pos, G_SIGNAL_MATCH_FUNC, 0, 0, NULL,
-            G_CALLBACK(on_combo_pos_changed), NULL);
-    }
     gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_panel_get_type());
     G_OBJECT_CLASS(settings_page_panel_parent_class)->dispose(object);
 }
@@ -107,14 +95,14 @@ settings_page_panel_class_init(SettingsPagePanelClass *klass)
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/page_panel.ui");
 
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_pos);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, slot_pos);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, toggle_grid);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_height);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_height_val);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_rev);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_rev_val);
 
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_touch_enabled);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, sw_touch_enabled);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_center);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_right);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_horiz);
@@ -122,7 +110,7 @@ settings_page_panel_class_init(SettingsPagePanelClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_touch_dwell_val);
 
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_osk_mode);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_osk_push);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, slot_osk_push);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_osk_height);
     gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_osk_height_val);
 
@@ -157,67 +145,10 @@ on_scale_touch_dwell_changed(GtkRange *range, gpointer user_data)
 }
 
 static void
-on_combo_pos_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+on_autohide_card_toggled(GtkToggleButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
-    GtkWidget *tile_edge = GTK_WIDGET(user_data);
-    guint selected = gtk_drop_down_get_selected(dropdown);
-    gboolean is_bottom = (selected == 1);
-
-    if (is_bottom) {
-        gtk_widget_add_css_class(tile_edge, "active");
-    } else {
-        gtk_widget_remove_css_class(tile_edge, "active");
-    }
-
-    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(tile_edge), "tile-subtitle-label");
-    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
-        gtk_label_set_text(GTK_LABEL(lbl_sub), is_bottom ? "Bottom Position" : "Top Position");
-    }
-}
-
-static void
-on_tile_edge_clicked(GtkButton *btn, gpointer user_data)
-{
-    GtkDropDown *combo_pos = GTK_DROP_DOWN(user_data);
-    gboolean is_bottom = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
-    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
-        gtk_label_set_text(GTK_LABEL(lbl_sub), is_bottom ? "Bottom Position" : "Top Position");
-    }
-    guint target = is_bottom ? 1 : 0;
-    if (gtk_drop_down_get_selected(combo_pos) != target) {
-        gtk_drop_down_set_selected(combo_pos, target);
-    }
-}
-
-static void
-on_tile_hide_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
-    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
-        gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Enabled" : "Disabled");
-    }
-}
-
-static void
-on_tile_shadow_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
-    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
-        gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Active (rgba 82%)" : "Solid Surface");
-    }
-}
-
-static void
-on_tile_margin_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(btn), "tile-subtitle-label");
-    if (lbl_sub && GTK_IS_LABEL(lbl_sub)) {
-        gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "8px Floating" : "0px Full Width");
-    }
+    toggle_card_set_subtitle(GTK_WIDGET(btn),
+                             gtk_toggle_button_get_active(btn) ? "Enabled" : "Disabled");
 }
 
 static guint
@@ -241,8 +172,8 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data)
 
     GtkWidget *tile_hide = g_object_get_data(G_OBJECT(btn), "tile_hide");
 
-    if (page->combo_pos)
-        config->panel_position = (gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_pos)) == 1)
+    if (page->seg_pos)
+        config->panel_position = (segmented_group_get_selected(page->seg_pos) == 1)
                                  ? PANEL_POSITION_BOTTOM
                                  : PANEL_POSITION_TOP;
     if (page->scale_height)
@@ -252,10 +183,10 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data)
         config->autohide_reveal_duration = (int)gtk_range_get_value(GTK_RANGE(page->scale_rev));
     }
     if (tile_hide)
-        config->autohide_enabled = gtk_widget_has_css_class(tile_hide, "active");
+        config->autohide_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(tile_hide));
 
-    if (page->combo_touch_enabled)
-        config->touch_gestures_enabled = (gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_touch_enabled)) == 0);
+    if (page->sw_touch_enabled)
+        config->touch_gestures_enabled = gtk_switch_get_active(GTK_SWITCH(page->sw_touch_enabled));
 
     if (page->combo_swipe_center) {
         guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_swipe_center));
@@ -288,8 +219,8 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data)
         config->osk_auto_show_mode = g_strdup(OSK_MODE_IDS[idx]);
     }
 
-    if (page->combo_osk_push)
-        config->osk_push_windows = (gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_osk_push)) == 0);
+    if (page->seg_osk_push)
+        config->osk_push_windows = (segmented_group_get_selected(page->seg_osk_push) == 0);
 
     if (page->scale_osk_height)
         config->osk_height_px = (int)gtk_range_get_value(GTK_RANGE(page->scale_osk_height));
@@ -317,28 +248,19 @@ build_page_panel(void)
     ShellConfig *config = shell_config_load(NULL);
     if (!config) config = shell_config_get_default();
 
-    const char *pos_items[] = { "Top Edge (Default)", "Bottom Edge", NULL };
-    GtkStringList *slist = gtk_string_list_new(pos_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_pos), G_LIST_MODEL(slist));
-    g_object_unref(slist);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_pos), config->panel_position == PANEL_POSITION_BOTTOM ? 1 : 0);
+    static const char *const pos_items[] = { "TOP EDGE", "BOTTOM EDGE", NULL };
+    page->seg_pos = create_segmented_group(pos_items, config->panel_position == PANEL_POSITION_BOTTOM ? 1 : 0);
+    gtk_box_append(GTK_BOX(page->slot_pos), page->seg_pos);
 
-    /* Quick Toggle Tiles Grid */
-    GtkWidget *tile_edge = create_metro_toggle_tile("tb-adjustments-horizontal-symbolic", "Panel Edge", config->panel_position == PANEL_POSITION_BOTTOM ? "Bottom Position" : "Top Position", config->panel_position == PANEL_POSITION_BOTTOM);
-    GtkWidget *tile_hide = create_metro_toggle_tile("view-reveal-symbolic", "Autohide", config->autohide_enabled ? "Enabled" : "Disabled", config->autohide_enabled);
-    GtkWidget *tile_shadow = create_metro_toggle_tile("layer-visible-symbolic", "Panel Blur", "Active (rgba 82%)", TRUE);
-    GtkWidget *tile_margin = create_metro_toggle_tile("zoom-fit-best-symbolic", "Outer Margins", "0px Full Width", FALSE);
-
-    g_signal_connect(page->combo_pos, "notify::selected", G_CALLBACK(on_combo_pos_changed), tile_edge);
-    g_signal_connect_after(tile_edge, "clicked", G_CALLBACK(on_tile_edge_clicked), page->combo_pos);
-    g_signal_connect_after(tile_hide, "clicked", G_CALLBACK(on_tile_hide_clicked), NULL);
-    g_signal_connect_after(tile_shadow, "clicked", G_CALLBACK(on_tile_shadow_clicked), NULL);
-    g_signal_connect_after(tile_margin, "clicked", G_CALLBACK(on_tile_margin_clicked), NULL);
-
-    gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_edge, 0, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_hide, 1, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_shadow, 0, 1, 1, 1);
-    gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_margin, 1, 1, 1, 1);
+    /* Autohide is a feature with its own sub-settings (reveal delay below), so
+     * it is a toggle card. The former Panel Edge, Panel Blur and Outer Margins
+     * tiles were removed: Edge duplicated the control above, Blur/Margins were
+     * not backed by any config or panel code. */
+    GtkWidget *tile_hide = create_toggle_card("view-reveal-symbolic", "Autohide",
+                                              config->autohide_enabled ? "Enabled" : "Disabled",
+                                              config->autohide_enabled);
+    g_signal_connect(tile_hide, "toggled", G_CALLBACK(on_autohide_card_toggled), NULL);
+    gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_hide, 0, 0, 1, 1);
 
     gtk_range_set_value(GTK_RANGE(page->scale_height), config->panel_height > 0 ? config->panel_height : 32);
     gchar *h_str = g_strdup_printf("%dpx", config->panel_height > 0 ? config->panel_height : 32);
@@ -355,11 +277,7 @@ build_page_panel(void)
     g_signal_connect(page->scale_rev, "value-changed", G_CALLBACK(on_scale_rev_changed), page->lbl_rev_val);
 
     /* Touch & Swipe Gesture Controls */
-    const char *touch_en_items[] = { "Enabled (Default)", "Disabled", NULL };
-    GtkStringList *en_list = gtk_string_list_new(touch_en_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_touch_enabled), G_LIST_MODEL(en_list));
-    g_object_unref(en_list);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_touch_enabled), config->touch_gestures_enabled ? 0 : 1);
+    gtk_switch_set_active(GTK_SWITCH(page->sw_touch_enabled), config->touch_gestures_enabled);
 
     GtkStringList *center_list = gtk_string_list_new(SWIPE_CENTER_LABELS);
     gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_swipe_center), G_LIST_MODEL(center_list));
@@ -394,10 +312,9 @@ build_page_panel(void)
     gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_osk_mode),
                                find_id_index(OSK_MODE_IDS, G_N_ELEMENTS(OSK_MODE_IDS), config->osk_auto_show_mode));
 
-    GtkStringList *osk_push_list = gtk_string_list_new(OSK_PUSH_LABELS);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_osk_push), G_LIST_MODEL(osk_push_list));
-    g_object_unref(osk_push_list);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_osk_push), config->osk_push_windows ? 0 : 1);
+    static const char *const osk_push_items[] = { "PUSH WINDOWS UP", "FLOAT OVER WINDOWS", NULL };
+    page->seg_osk_push = create_segmented_group(osk_push_items, config->osk_push_windows ? 0 : 1);
+    gtk_box_append(GTK_BOX(page->slot_osk_push), page->seg_osk_push);
 
     gint osk_h = config->osk_height_px >= 180 ? config->osk_height_px : 260;
     gtk_range_set_value(GTK_RANGE(page->scale_osk_height), osk_h);

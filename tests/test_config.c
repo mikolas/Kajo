@@ -49,6 +49,9 @@ test_config_defaults(void)
     g_assert_true(cfg->ide_show_minimap);
     g_assert_true(cfg->ide_show_line_numbers);
     g_assert_true(cfg->ide_highlight_current_line);
+    g_assert_false(cfg->ide_word_wrap);
+    g_assert_false(cfg->ide_show_margin_guide);
+    g_assert_true(cfg->ide_insert_spaces);
 
     g_assert_nonnull(cfg->layout_left);
     g_assert_nonnull(cfg->layout_center);
@@ -122,6 +125,9 @@ test_config_save_and_load_roundtrip(void)
     orig->ide_show_minimap = FALSE;
     orig->ide_show_line_numbers = TRUE;
     orig->ide_highlight_current_line = FALSE;
+    orig->ide_word_wrap = TRUE;
+    orig->ide_show_margin_guide = TRUE;
+    orig->ide_insert_spaces = FALSE;
 
     ShellWidgetConfig *wc_left = g_new0(ShellWidgetConfig, 1);
     wc_left->id = g_strdup("launcher");
@@ -196,6 +202,9 @@ test_config_save_and_load_roundtrip(void)
     g_assert_false(loaded->ide_show_minimap);
     g_assert_true(loaded->ide_show_line_numbers);
     g_assert_false(loaded->ide_highlight_current_line);
+    g_assert_true(loaded->ide_word_wrap);
+    g_assert_true(loaded->ide_show_margin_guide);
+    g_assert_false(loaded->ide_insert_spaces);
 
     g_assert_cmpuint(loaded->layout_left->len, ==, 1);
     ShellWidgetConfig *l0 = g_ptr_array_index(loaded->layout_left, 0);

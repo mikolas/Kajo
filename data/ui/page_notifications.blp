@@ -19,6 +19,9 @@ template $SettingsPageNotifications : Box {
 
       Label {
         label: "Toast Display Timeout:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_tout {
@@ -34,6 +37,13 @@ template $SettingsPageNotifications : Box {
 
       Label lbl_tout_val {
         label: "8000ms (8s)";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
@@ -44,6 +54,9 @@ template $SettingsPageNotifications : Box {
 
       Label {
         label: "Toast Click Action:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_click {
@@ -58,6 +71,9 @@ template $SettingsPageNotifications : Box {
 
       Label {
         label: "Max History Items Retained:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_hist {
@@ -73,12 +89,19 @@ template $SettingsPageNotifications : Box {
 
       Label lbl_hist_val {
         label: "50 items";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
     /* Apply Button */
     Button btn_save {
-      label: "[ SAVE NOTIFICATION PREFERENCES ]";
+      label: "[ ✓ SAVE & APPLY ]";
 
       styles [
         "action-btn-primary",

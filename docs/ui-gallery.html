@@ -955,6 +955,17 @@
       cursor: not-allowed;
     }
 
+
+    /* Toggle Card: feature toggle with a status line and a 4px left indicator bar.
+       Off = dim bar, on = bar lit with the accent (same language as the toast's left border). */
+    .kajo-toggle-card { display: flex; align-items: center; gap: 10px; text-align: left; width: 100%; background-color: var(--surface-tier-4); color: #ffffff; border: 1px solid #2b2b2b; border-left: 4px solid #2b2b2b; padding: 8px 12px; font-family: var(--font-mono); cursor: pointer; transition: background-color 80ms linear, border-color 80ms linear; }
+    .kajo-toggle-card:hover { background-color: #222222; border-color: var(--metro-accent); border-left-color: var(--metro-accent); }
+    .kajo-toggle-card.on { background-color: rgba(0, 120, 212, 0.12); border-left-color: var(--metro-accent); }
+    .kajo-toggle-card.on:hover { background-color: rgba(0, 120, 212, 0.2); }
+    .kajo-toggle-card:disabled { opacity: 0.45; cursor: not-allowed; border-left-color: #2b2b2b; }
+    .kajo-toggle-card .tile-title { font-size: 13px; font-weight: 700; color: #ffffff; }
+    .kajo-toggle-card .tile-subtitle { font-size: 11px; color: #9a9a9a; }
+
     /* Custom Metro CheckButton & RadioButton */
     .kajo-check {
       display: inline-flex;
@@ -3024,6 +3035,35 @@
             </div>
           </div>
         </div>
+          <!-- Toggle Cards: feature toggles with status; switches stay for plain preferences -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">TOGGLE CARDS (FEATURE TOGGLE WITH STATUS) vs SWITCH ROWS</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".toggle-card">.toggle-card</span>
+                <span class="gtk-class-tag" data-copy="GtkToggleButton">GtkToggleButton</span>
+                <span class="gtk-class-tag" data-copy="switch">switch</span>
+              </div>
+            </div>
+            <div class="specimen-grid-3">
+              <button class="kajo-toggle-card on" onclick="this.classList.toggle('on'); this.querySelector('.tile-subtitle').textContent = this.classList.contains('on') ? 'Adaptive Sync Active' : 'Adaptive Sync Disabled';">
+                <span class="widget-row-icon">🖥</span>
+                <span><div class="tile-title">Variable Refresh Rate (VRR)</div><div class="tile-subtitle">Adaptive Sync Active</div></span>
+              </button>
+              <button class="kajo-toggle-card" onclick="this.classList.toggle('on'); this.querySelector('.tile-subtitle').textContent = this.classList.contains('on') ? 'Enabled' : 'Disabled';">
+                <span class="widget-row-icon">👁</span>
+                <span><div class="tile-title">Autohide</div><div class="tile-subtitle">Disabled</div></span>
+              </button>
+              <button class="kajo-toggle-card" disabled>
+                <span class="widget-row-icon">🖥</span>
+                <span><div class="tile-title">Feature Unavailable</div><div class="tile-subtitle">Unsupported by this output</div></span>
+              </button>
+            </div>
+            <div class="specimen-note">
+              <strong>When to use which.</strong> A <code>.toggle-card</code> (a <code>GtkToggleButton</code>, state via <code>:checked</code>) is for a <em>feature</em> that has a status line, can be unsupported, or heads its own sub-settings (VRR, Autohide, the Control Center quick tiles). The left indicator bar lights with <code>@metro-accent</code> when on and the body only gets a faint tint so text keeps its contrast. A <code>kajo-switch</code> in a <code>.widget-row-card</code> is for a plain preference whose title and subtitle say everything (mute, word wrap, lock on suspend). Use a <code>segmented-group</code> for 2–4 short mutually exclusive choices; keep dropdowns for longer lists.
+            </div>
+          </div>
+
 
         <!-- Inline Contextual Reveal Banners -->
         <div class="specimen-box">

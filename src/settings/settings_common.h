@@ -26,7 +26,16 @@ GtkWidget *create_sidebar_row(const gchar *icon_name, const gchar *label_text, c
 GtkWidget *create_sidebar_row_with_keywords(const gchar *icon_name, const gchar *label_text, const gchar *subtitle_text, const gchar *page_name, const gchar *keywords);
 GtkWidget *create_action_row(const gchar *icon_name, const gchar *title, const gchar *subtitle, GtkWidget *control);
 GtkWidget *create_string_dropdown(const char *const items[]);
-GtkWidget *create_metro_toggle_tile(const gchar *icon_name, const gchar *title, const gchar *subtitle, gboolean active);
+/* Toggle card: GtkToggleButton with status line + lit left indicator (see settings_common.c) */
+GtkWidget *create_toggle_card(const gchar *icon_name, const gchar *title, const gchar *subtitle, gboolean active);
+void       toggle_card_set_subtitle(GtkWidget *card, const gchar *subtitle);
+
+/* Segmented group: short exclusive choices as joined toggle buttons */
+typedef void (*SegmentedChangedFunc)(GtkWidget *group, guint selected, gpointer user_data);
+GtkWidget *create_segmented_group(const char *const labels[], guint selected);
+void       segmented_group_connect(GtkWidget *group, SegmentedChangedFunc cb, gpointer user_data);
+guint      segmented_group_get_selected(GtkWidget *group);
+void       segmented_group_set_selected(GtkWidget *group, guint idx);
 GtkWidget *create_simple_item_row(const char *icon_name, const char *title, const char *subtitle, GtkWidget *action_btn);
 GtkWidget *create_action_button(const char *label, const char *payload_key, const char *payload_val, GCallback callback, gpointer user_data);
 GtkWidget *create_empty_state_label(const char *message);

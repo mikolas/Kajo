@@ -92,14 +92,14 @@ The repository builds and installs **six integrated native executables** (plus a
 ### ⚙️ Kajo Settings (`kajo-settings`)
 11 modular configuration pages (`src/settings/pages/page_*.c`) with zero mock data and live D-Bus / IPC synchronization:
 1. **Displays & Idle Security (`displays`)**: Live Niri output resolution, refresh rate, fractional scale, orientation, VRR, plus Screen Saver & Session Lock timeouts.
-2. **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, and inline WPA/WPA2 authentication.
+2. **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, real per-network security detection, and an inline passphrase banner for new WPA/WPA2/WPA3-Personal networks (saved profiles reconnect directly; WEP/802.1X networks need a profile created elsewhere).
 3. **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery, device scanning, pairing, and connection toggling.
-4. **Audio & PipeWire (`audio`)**: Multi-channel (`2.0`–`7.1`) PulseAudio/PipeWire output sink routing, input gain/mute, and per-app stream sliders with auto-reconnect.
+4. **Audio & PipeWire (`audio`)**: Multi-channel (`2.0`–`7.1`) PulseAudio/PipeWire output sink routing, input gain, output/input mute switches, and auto-reconnect. Per-app stream sliders live in the panel volume popover.
 5. **Theme & Accent (`theme`)**: Live Metro accent color palette (`@metro-accent`) hot-reloaded across all running Kajo apps.
-6. **Panel & Touch (`panel`)**: Panel edge, height, OLED smart autohide, bezel touch swipe gestures, and convertible posture controls.
+6. **Panel & Touch (`panel`)**: Panel edge (segmented Top/Bottom), height, OLED smart autohide (toggle card), bezel touch swipe gestures and on-screen-keyboard behaviour. Convertible posture and keyboard-backlight controls live on the Displays page.
 7. **Widgets (`widgets`)**: Interactive ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) for left/center/right panel zones.
-8. **Notifications (`notifications`)**: Toast timeout, Do-Not-Disturb, and history management.
-9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width, line number style, margin guide, word wrap, and minimap toggle—hot-reloaded via `~/.config/kajo/config.json`.
+8. **Notifications (`notifications`)**: Toast timeout, click action and history size. Do-Not-Disturb and clear-history are in the panel DND widget, Control Center and notification popover.
+9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width (segmented), spaces-vs-tabs, word wrap, margin guide, minimap, gutter and current-line highlight (relative line numbers are planned)—saved with an explicit SAVE & APPLY and hot-reloaded via `~/.config/kajo/config.json`.
 10. **Niri & Shaders (`niri`)**: Live Niri layout settings and GLSL window animation shader presets (`open`, `close`, `resize`).
 11. **About (`about`)**: System & suite telemetry overview.
 

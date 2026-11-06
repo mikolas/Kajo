@@ -12,6 +12,8 @@ typedef struct _SettingsPageAudio {
 
     GtkWidget *combo_sink;
     GtkWidget *scale_vol;
+    GtkWidget *sw_out_mute;
+    GtkWidget *sw_in_mute;
     GtkWidget *lbl_vol_val;
     GtkWidget *combo_source;
     GtkWidget *scale_mic;
@@ -92,6 +94,7 @@ audio_sink_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_sink_info *info, int 
         guint32 pct = audio_cvolume_to_percent(&info->volume);
         self->updating_ui = TRUE;
         gtk_range_set_value(GTK_RANGE(self->scale_vol), (double)pct);
+        gtk_switch_set_active(GTK_SWITCH(self->sw_out_mute), info->mute != 0);
         gchar *str = g_strdup_printf("%u%%", pct);
         gtk_label_set_text(GTK_LABEL(self->lbl_vol_val), str);
         g_free(str);
@@ -112,6 +115,7 @@ audio_source_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source_info *info, 
         guint32 pct = audio_cvolume_to_percent(&info->volume);
         self->updating_ui = TRUE;
         gtk_range_set_value(GTK_RANGE(self->scale_mic), (double)pct);
+        gtk_switch_set_active(GTK_SWITCH(self->sw_in_mute), info->mute != 0);
         gchar *str = g_strdup_printf("%u%%", pct);
         gtk_label_set_text(GTK_LABEL(self->lbl_mic_val), str);
         g_free(str);
@@ -414,6 +418,26 @@ on_audio_vol_changed(GtkRange *range, gpointer user_data)
 }
 
 static void
+on_audio_out_mute_changed(GObject *obj, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageAudio *self = user_data;
+    if (self->updating_ui || !self->pa.ctx || !self->default_sink_name) return;
+    if (pa_context_get_state(self->pa.ctx) != PA_CONTEXT_READY) return;
+    unref_pa_op(pa_context_set_sink_mute_by_name(self->pa.ctx, self->default_sink_name,
+                                                 gtk_switch_get_active(GTK_SWITCH(obj)), NULL, NULL));
+}
+
+static void
+on_audio_in_mute_changed(GObject *obj, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageAudio *self = user_data;
+    if (self->updating_ui || !self->pa.ctx || !self->default_source_name) return;
+    if (pa_context_get_state(self->pa.ctx) != PA_CONTEXT_READY) return;
+    unref_pa_op(pa_context_set_source_mute_by_name(self->pa.ctx, self->default_source_name,
+                                                   gtk_switch_get_active(GTK_SWITCH(obj)), NULL, NULL));
+}
+
+static void
 on_audio_mic_changed(GtkRange *range, gpointer user_data)
 {
     SettingsPageAudio *self = user_data;
@@ -537,6 +561,8 @@ settings_page_audio_class_init(SettingsPageAudioClass *klass)
 
     gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, combo_sink);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, scale_vol);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, sw_out_mute);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, sw_in_mute);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, lbl_vol_val);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, combo_source);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageAudio, scale_mic);
@@ -550,6 +576,8 @@ build_page_audio(void)
 
     g_signal_connect(page->scale_vol, "value-changed", G_CALLBACK(on_audio_vol_changed), page);
     g_signal_connect(page->scale_mic, "value-changed", G_CALLBACK(on_audio_mic_changed), page);
+    g_signal_connect(page->sw_out_mute, "notify::active", G_CALLBACK(on_audio_out_mute_changed), page);
+    g_signal_connect(page->sw_in_mute, "notify::active", G_CALLBACK(on_audio_in_mute_changed), page);
     g_signal_connect(page->combo_sink, "notify::selected", G_CALLBACK(on_sink_selected), page);
     g_signal_connect(page->combo_source, "notify::selected", G_CALLBACK(on_source_selected), page);
 

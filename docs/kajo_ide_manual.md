@@ -354,7 +354,7 @@ Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/page
   3. **`kajo-nord-frost`** — Arctic Nord Frost dark palette (`#14171d`).
   4. **`kajo-amber-crt`** — Retro monochrome amber phosphor CRT terminal palette (`#0c0900`).
   5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
-- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, etc.), font size (`8pt`–`28pt`), tab width (`2`, `4`, `8`), spaces vs. tabs, line number style (`Absolute`, `Relative`, `None`), current line highlight, right margin guide, word wrap, and minimap visibility.
+- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter and minimap visibility. *(Relative line numbers are planned.)*
 
 Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/config.json` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `GFileMonitor`.
 

@@ -281,7 +281,6 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     gtk_widget_add_css_class(header_bar, "settings-header-bar");
 
     app_ctx->back_button = gtk_button_new_with_label("‹ Back");
-    gtk_widget_add_css_class(app_ctx->back_button, "flat");
     gtk_widget_add_css_class(app_ctx->back_button, "files-nav-btn");
     gtk_widget_set_visible(app_ctx->back_button, FALSE);
     g_signal_connect(app_ctx->back_button, "clicked", G_CALLBACK(on_back_button_clicked), app_ctx);
@@ -298,7 +297,6 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     g_signal_connect(app_ctx->search_entry, "search-changed", G_CALLBACK(on_search_changed), app_ctx);
 
     GtkWidget *btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
-    gtk_widget_add_css_class(btn_float, "flat");
     gtk_widget_add_css_class(btn_float, "files-nav-btn");
     g_signal_connect(btn_float, "clicked", G_CALLBACK(on_toggle_float_clicked), NULL);
 

@@ -97,6 +97,9 @@ struct _ShellConfig {
     gboolean        ide_show_minimap;
     gboolean        ide_show_line_numbers;
     gboolean        ide_highlight_current_line;
+    gboolean        ide_word_wrap;             /* soft-wrap long lines, default off */
+    gboolean        ide_show_margin_guide;     /* vertical guide at column 100, default off */
+    gboolean        ide_insert_spaces;         /* Tab inserts spaces (default) instead of \t */
 
     GPtrArray      *layout_left;   /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_center; /* Array of ShellWidgetConfig* */
