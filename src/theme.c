@@ -1,5 +1,16 @@
 #include "theme.h"
 
+const ShellAccentPreset shell_accent_presets[SHELL_N_ACCENT_PRESETS] = {
+    { "cobalt-blue",  "Cobalt Blue",         "#0078d4", "#1084d8" },
+    { "purple",       "Windows Purple",      "#6b69d6", "#7a78e0" },
+    { "catppuccin",   "Catppuccin Lavender", "#cba6f7", "#ddb6f2" },
+    { "nord-ice",     "Nord Frost Ice",      "#88c0d0", "#99d1e1" },
+    { "emerald",      "Emerald Green",       "#107c41", "#138c4a" },
+    { "crimson",      "Metro Crimson",       "#d13438", "#e04347" },
+    { "amber",        "Amber Gold",          "#c19c00", "#d4ab00" },
+    { "cyan",         "Cyberpunk Cyan",      "#008272", "#009684" },
+};
+
 static void
 theme_reload_css(ShellTheme *theme)
 {
@@ -382,6 +393,26 @@ shell_theme_write_override_css(const gchar *accent_hex,
     write_override_css_full(accent_hex, hover_hex, body_px, heading_px, subtitle_px, badge_px, ide_font, ide_px);
     if (cfg)
         shell_config_destroy(cfg);
+}
+
+gchar *
+shell_ide_font_stack(const gchar *family)
+{
+    static const gchar *const fallbacks[] = { "Fira Code", "FiraCode Nerd Font", "monospace", NULL };
+
+    GString *stack = g_string_new(NULL);
+    const gchar *first = (family && family[0] != '\0') ? family : NULL;
+    if (first)
+        g_string_append(stack, first);
+
+    for (gsize i = 0; fallbacks[i]; i++) {
+        if (first && g_ascii_strcasecmp(first, fallbacks[i]) == 0)
+            continue; /* already the first entry */
+        if (stack->len > 0)
+            g_string_append(stack, ", ");
+        g_string_append(stack, fallbacks[i]);
+    }
+    return g_string_free(stack, FALSE);
 }
 
 void

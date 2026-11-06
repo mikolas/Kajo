@@ -19,6 +19,9 @@ template $SettingsPageTheme : Box {
 
       Label {
         label: "Metro System Accent Color:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_palette {
@@ -70,7 +73,6 @@ template $SettingsPageTheme : Box {
         label: "↺ RESET DEFAULTS";
 
         styles [
-          "flat",
           "files-nav-btn",
         ]
       }
@@ -83,8 +85,9 @@ template $SettingsPageTheme : Box {
 
       Label {
         label: "Primary Body, Controls & Row Titles:";
-        width-request: 260;
+        width-chars: 37;
         xalign: 0;
+        valign: center;
       }
 
       Scale scale_font {
@@ -100,8 +103,9 @@ template $SettingsPageTheme : Box {
 
       Label lbl_font_val {
         label: "14px";
-        width-request: 56;
+        width-request: 64;
         xalign: 1;
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -116,8 +120,9 @@ template $SettingsPageTheme : Box {
 
       Label {
         label: "Section & Window Headers:";
-        width-request: 260;
+        width-chars: 37;
         xalign: 0;
+        valign: center;
       }
 
       Scale scale_font_heading {
@@ -133,8 +138,9 @@ template $SettingsPageTheme : Box {
 
       Label lbl_font_heading_val {
         label: "13px";
-        width-request: 56;
+        width-request: 64;
         xalign: 1;
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -149,8 +155,9 @@ template $SettingsPageTheme : Box {
 
       Label {
         label: "Subtitles, Buttons & Metadata:";
-        width-request: 260;
+        width-chars: 37;
         xalign: 0;
+        valign: center;
       }
 
       Scale scale_font_sub {
@@ -166,8 +173,9 @@ template $SettingsPageTheme : Box {
 
       Label lbl_font_sub_val {
         label: "12px";
-        width-request: 56;
+        width-request: 64;
         xalign: 1;
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -182,8 +190,9 @@ template $SettingsPageTheme : Box {
 
       Label {
         label: "Technical Badges & Shortcuts:";
-        width-request: 260;
+        width-chars: 37;
         xalign: 0;
+        valign: center;
       }
 
       Scale scale_font_badge {
@@ -199,8 +208,9 @@ template $SettingsPageTheme : Box {
 
       Label lbl_font_badge_val {
         label: "11px";
-        width-request: 56;
+        width-request: 64;
         xalign: 1;
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -210,7 +220,7 @@ template $SettingsPageTheme : Box {
 
     /* Apply Button */
     Button btn_css {
-      label: "[ APPLY & LIVE RELOAD GTK CSS ]";
+      label: "[ ✓ SAVE & APPLY ]";
 
       styles [
         "action-btn-primary",

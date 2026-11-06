@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Kajo Settings
+GenericName=System Settings
+Comment=Aero + Metro system and suite settings: displays, network, audio, theme, panel, Niri
+Exec=kajo-settings
+Icon=kajo-settings
+Terminal=false
+Type=Application
+Categories=Settings;DesktopSettings;GTK;
+StartupNotify=true
+StartupWMClass=org.kajo.Settings

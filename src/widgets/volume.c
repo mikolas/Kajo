@@ -5,6 +5,7 @@
 #include <pulse/glib-mainloop.h>
 
 #include "widget.h"
+#include "../audio/pa_conn.h"
 #include "../osd/osd.h"
 #include "../shell.h"
 
@@ -28,8 +29,7 @@ typedef struct {
     gboolean updating_dropdown;
     GtkWidget *apps_box;        /* container for per-app sliders */
     GtkWidget *input_label;     /* source name */
-    pa_glib_mainloop *pa_ml;
-    pa_context *pa_ctx;
+    ShellPaConn pa;
     gchar *default_sink_name;
     gchar *default_source_name;
     guint8 sink_channels;
@@ -37,7 +37,6 @@ typedef struct {
     gboolean muted;
     gboolean initialized;
     guint sink_query_seq;
-    guint reconnect_timer_id;
 } VolumeWidget;
 
 typedef struct {
@@ -50,7 +49,6 @@ static void volume_query_sinks(VolumeWidget *vol);
 static void volume_query_sink_inputs(VolumeWidget *vol);
 static void volume_query_default_source(VolumeWidget *vol);
 static void volume_sync_dropdown_selection(VolumeWidget *vol);
-static void volume_connect_pa_context(VolumeWidget *vol);
 static void volume_master_scale_changed(GtkRange *range, gpointer userdata);
 static void on_device_dropdown_selected(GObject *gobject, GParamSpec *pspec, gpointer userdata);
 
@@ -197,11 +195,11 @@ static void volume_server_info_cb(pa_context *ctx, const pa_server_info *info,
 
 static void volume_query_default_sink(VolumeWidget *vol)
 {
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY)
         return;
 
-    unref_pa_op(pa_context_get_server_info(vol->pa_ctx, volume_server_info_cb, vol));
+    unref_pa_op(pa_context_get_server_info(vol->pa.ctx, volume_server_info_cb, vol));
 }
 
 /* ─── Output device list (sinks enumeration) ─── */
@@ -225,18 +223,18 @@ static void volume_sync_dropdown_selection(VolumeWidget *vol)
 static void on_device_dropdown_selected(GObject *gobject, GParamSpec *pspec G_GNUC_UNUSED, gpointer userdata)
 {
     VolumeWidget *vol = userdata;
-    if (vol->updating_dropdown || !vol->pa_ctx || !vol->sink_names)
+    if (vol->updating_dropdown || !vol->pa.ctx || !vol->sink_names)
         return;
 
     guint selected = gtk_drop_down_get_selected(GTK_DROP_DOWN(gobject));
     if (selected < vol->sink_names->len) {
         const char *sink_name = g_ptr_array_index(vol->sink_names, selected);
-        if (sink_name && pa_context_get_state(vol->pa_ctx) == PA_CONTEXT_READY) {
+        if (sink_name && pa_context_get_state(vol->pa.ctx) == PA_CONTEXT_READY) {
             if (g_strcmp0(sink_name, vol->default_sink_name) != 0) {
                 g_free(vol->default_sink_name);
                 vol->default_sink_name = g_strdup(sink_name);
-                unref_pa_op(pa_context_set_default_sink(vol->pa_ctx, sink_name, NULL, NULL));
-                unref_pa_op(pa_context_get_sink_info_by_name(vol->pa_ctx, vol->default_sink_name,
+                unref_pa_op(pa_context_set_default_sink(vol->pa.ctx, sink_name, NULL, NULL));
+                unref_pa_op(pa_context_get_sink_info_by_name(vol->pa.ctx, vol->default_sink_name,
                                                              volume_sink_info_cb, vol));
             }
         }
@@ -312,8 +310,8 @@ static void volume_clear_container(GtkWidget *container, VolumeWidget *vol)
 
 static void volume_query_sinks(VolumeWidget *vol)
 {
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY)
         return;
 
     vol->sink_query_seq++;
@@ -338,7 +336,7 @@ static void volume_query_sinks(VolumeWidget *vol)
     if (vol->pending_tags)
         g_ptr_array_add(vol->pending_tags, tag);
 
-    pa_operation *op = pa_context_get_sink_info_list(vol->pa_ctx, volume_sink_list_cb, tag);
+    pa_operation *op = pa_context_get_sink_info_list(vol->pa.ctx, volume_sink_list_cb, tag);
     if (!op) {
         vol->updating_dropdown = FALSE;
         if (vol->pending_tags)
@@ -358,14 +356,14 @@ static void volume_app_scale_changed(GtkRange *range, gpointer userdata)
     guint32 idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(range), "sink-input-index"));
     guint32 channels = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(range), "channels"));
 
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY)
         return;
 
     guint32 percent = (guint32)gtk_range_get_value(range);
     pa_cvolume cv = volume_make_cvolume(percent, channels > 0 ? (int)channels : 2);
 
-    unref_pa_op(pa_context_set_sink_input_volume(vol->pa_ctx, idx, &cv, NULL, NULL));
+    unref_pa_op(pa_context_set_sink_input_volume(vol->pa.ctx, idx, &cv, NULL, NULL));
 }
 
 static void volume_sink_input_list_cb(pa_context *ctx G_GNUC_UNUSED,
@@ -410,12 +408,12 @@ static void volume_sink_input_list_cb(pa_context *ctx G_GNUC_UNUSED,
 
 static void volume_query_sink_inputs(VolumeWidget *vol)
 {
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY)
         return;
 
     volume_clear_container(vol->apps_box, vol);
-    unref_pa_op(pa_context_get_sink_input_info_list(vol->pa_ctx,
+    unref_pa_op(pa_context_get_sink_input_info_list(vol->pa.ctx,
                                                     volume_sink_input_list_cb, vol));
 }
 
@@ -445,12 +443,12 @@ static void volume_source_info_cb(pa_context *ctx G_GNUC_UNUSED, const pa_source
 
 static void volume_query_default_source(VolumeWidget *vol)
 {
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY ||
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY ||
         !vol->default_source_name)
         return;
 
-    unref_pa_op(pa_context_get_source_info_by_name(vol->pa_ctx, vol->default_source_name,
+    unref_pa_op(pa_context_get_source_info_by_name(vol->pa.ctx, vol->default_source_name,
                                                    volume_source_info_cb, vol));
 }
 
@@ -484,36 +482,21 @@ static void volume_subscription_cb(pa_context *ctx G_GNUC_UNUSED,
 
 /* ─── PA context state callback & auto-reconnect ─── */
 
-static gboolean volume_pa_reconnect_cb(gpointer userdata)
+
+
+/* Shared reconnect/teardown lives in ShellPaConn (src/audio/pa_conn.c). */
+static void volume_pa_drop_cb(gpointer userdata)
 {
     VolumeWidget *vol = userdata;
-    if (!vol)
-        return G_SOURCE_REMOVE;
-
-    vol->reconnect_timer_id = 0;
-    volume_connect_pa_context(vol);
-    return G_SOURCE_REMOVE;
+    vol->initialized = FALSE;
 }
 
-static void volume_schedule_reconnect(VolumeWidget *vol)
-{
-    if (!vol || !vol->pa_ml || vol->reconnect_timer_id != 0)
-        return;
-
-    vol->reconnect_timer_id = g_timeout_add(1000, volume_pa_reconnect_cb, vol);
-}
-
-static void volume_context_state_cb(pa_context *ctx, void *userdata)
+static void volume_context_state_cb(pa_context *ctx, pa_context_state_t state, gpointer userdata)
 {
     VolumeWidget *vol = userdata;
-    pa_context_state_t state = pa_context_get_state(ctx);
 
     switch (state) {
     case PA_CONTEXT_READY:
-        if (vol->reconnect_timer_id != 0) {
-            g_source_remove(vol->reconnect_timer_id);
-            vol->reconnect_timer_id = 0;
-        }
         pa_context_set_subscribe_callback(ctx, volume_subscription_cb, vol);
         unref_pa_op(pa_context_subscribe(ctx,
             PA_SUBSCRIPTION_MASK_SINK |
@@ -532,49 +515,25 @@ static void volume_context_state_cb(pa_context *ctx, void *userdata)
         gtk_label_set_text(GTK_LABEL(vol->label), "--");
         gtk_image_set_from_icon_name(GTK_IMAGE(vol->icon),
                                      "audio-volume-muted-symbolic");
-        volume_schedule_reconnect(vol);
         break;
     default:
         break;
     }
 }
 
-static void volume_connect_pa_context(VolumeWidget *vol)
-{
-    if (!vol || !vol->pa_ml)
-        return;
-
-    if (vol->pa_ctx) {
-        pa_context_set_state_callback(vol->pa_ctx, NULL, NULL);
-        pa_context_set_subscribe_callback(vol->pa_ctx, NULL, NULL);
-        pa_context_disconnect(vol->pa_ctx);
-        pa_context_unref(vol->pa_ctx);
-        vol->pa_ctx = NULL;
-    }
-
-    vol->initialized = FALSE;
-    pa_mainloop_api *api = pa_glib_mainloop_get_api(vol->pa_ml);
-    vol->pa_ctx = pa_context_new(api, "shell-volume-widget");
-    if (vol->pa_ctx) {
-        pa_context_set_state_callback(vol->pa_ctx, volume_context_state_cb, vol);
-        if (pa_context_connect(vol->pa_ctx, NULL, PA_CONTEXT_NOFAIL, NULL) < 0) {
-            volume_schedule_reconnect(vol);
-        }
-    }
-}
 
 /* ─── UI interaction handlers ─── */
 
 static void volume_set_volume_absolute(VolumeWidget *vol, guint32 percent)
 {
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY)
         return;
 
     const char *sink = vol->default_sink_name ? vol->default_sink_name : "@DEFAULT_SINK@";
     int channels = vol->sink_channels > 0 ? (int)vol->sink_channels : 2;
     pa_cvolume cv = volume_make_cvolume(percent, channels);
-    unref_pa_op(pa_context_set_sink_volume_by_name(vol->pa_ctx, sink,
+    unref_pa_op(pa_context_set_sink_volume_by_name(vol->pa.ctx, sink,
                                                    &cv, NULL, NULL));
 }
 
@@ -611,12 +570,12 @@ static void volume_mute_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer userdata)
 {
     VolumeWidget *vol = userdata;
 
-    if (!vol->pa_ctx ||
-        pa_context_get_state(vol->pa_ctx) != PA_CONTEXT_READY)
+    if (!vol->pa.ctx ||
+        pa_context_get_state(vol->pa.ctx) != PA_CONTEXT_READY)
         return;
 
     const char *sink = vol->default_sink_name ? vol->default_sink_name : "@DEFAULT_SINK@";
-    unref_pa_op(pa_context_set_sink_mute_by_name(vol->pa_ctx, sink,
+    unref_pa_op(pa_context_set_sink_mute_by_name(vol->pa.ctx, sink,
                                                  !vol->muted, NULL, NULL));
 }
 
@@ -773,10 +732,8 @@ static ShellWidget *volume_create(ShellCompositor *compositor)
     gtk_widget_add_controller(vol->button, scroll);
 
     /* Connect to PulseAudio */
-    vol->pa_ml = pa_glib_mainloop_new(NULL);
-    if (vol->pa_ml) {
-        volume_connect_pa_context(vol);
-    }
+    shell_pa_conn_open(&vol->pa, "shell-volume-widget", volume_context_state_cb,
+                       volume_pa_drop_cb, vol);
 
     return (ShellWidget *)vol;
 }
@@ -786,11 +743,6 @@ static void volume_destroy(ShellWidget *widget)
     VolumeWidget *vol = (VolumeWidget *)widget;
 
     vol->sink_query_seq++;
-
-    if (vol->reconnect_timer_id != 0) {
-        g_source_remove(vol->reconnect_timer_id);
-        vol->reconnect_timer_id = 0;
-    }
 
     if (vol->popover)
         g_signal_handlers_disconnect_by_data(vol->popover, vol);
@@ -810,18 +762,7 @@ static void volume_destroy(ShellWidget *widget)
         vol->sink_names = NULL;
     }
 
-    if (vol->pa_ctx) {
-        pa_context_set_state_callback(vol->pa_ctx, NULL, NULL);
-        pa_context_set_subscribe_callback(vol->pa_ctx, NULL, NULL);
-        pa_context_disconnect(vol->pa_ctx);
-        pa_context_unref(vol->pa_ctx);
-        vol->pa_ctx = NULL;
-    }
-
-    if (vol->pa_ml) {
-        pa_glib_mainloop_free(vol->pa_ml);
-        vol->pa_ml = NULL;
-    }
+    shell_pa_conn_close(&vol->pa);
 
     if (vol->pending_tags) {
         g_ptr_array_free(vol->pending_tags, TRUE);

@@ -47,6 +47,8 @@ on_script_right_clicked(GtkGestureClick *gesture G_GNUC_UNUSED,
     }
 }
 
+static gboolean on_cs_timer_tick(gpointer user_data);
+
 void
 custom_script_widget_configure(ShellWidget *widget, const ShellWidgetConfig *wc)
 {
@@ -54,8 +56,14 @@ custom_script_widget_configure(ShellWidget *widget, const ShellWidgetConfig *wc)
     if (!cs || !wc)
         return;
 
-    if (wc->interval_sec > 0)
+    if (wc->interval_sec > 0 && wc->interval_sec != cs->interval_sec) {
         cs->interval_sec = wc->interval_sec;
+        /* A running timer keeps its old period: restart it with the new one. */
+        if (cs->timer_id != 0) {
+            g_source_remove(cs->timer_id);
+            cs->timer_id = g_timeout_add_seconds((guint)cs->interval_sec, on_cs_timer_tick, cs);
+        }
+    }
 
     if (wc->exec_cmd) {
         g_free(cs->exec_cmd);

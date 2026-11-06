@@ -12,6 +12,8 @@ struct _IdeSearchDrawer {
   GtkWidget        *build_box;
   GtkWidget        *build_list_box;
   GtkWidget        *build_badge;
+  GCancellable     *build_cancel; /* cancels the in-flight build; also the drawer-alive token */
+  GSubprocess      *build_proc;
 
   GtkWidget        *replace_box;
   GtkWidget        *replace_title;
@@ -413,6 +415,14 @@ ide_search_drawer_free(IdeSearchDrawer *drawer)
   if (drawer == NULL) {
     return;
   }
+  if (drawer->build_cancel != NULL) {
+    g_cancellable_cancel(drawer->build_cancel);
+  }
+  if (drawer->build_proc != NULL) {
+    g_subprocess_force_exit(drawer->build_proc);
+  }
+  g_clear_object(&drawer->build_proc);
+  g_clear_object(&drawer->build_cancel);
   g_free(drawer->workspace_root);
   g_clear_pointer(&drawer->build_issues, g_ptr_array_unref);
   g_clear_object(&drawer->diff_buf);
@@ -495,6 +505,54 @@ ide_search_drawer_append_output_line(IdeSearchDrawer *drawer, const char *line)
   gtk_list_box_append(GTK_LIST_BOX(drawer->build_list_box), row);
 }
 
+static void
+on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+  IdeSearchDrawer *drawer = user_data;
+  g_autofree char *out_str = NULL;
+  g_autofree char *err_str = NULL;
+  g_autoptr(GError) err = NULL;
+  gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), res,
+                                                     &out_str, &err_str, &err);
+  /* Cancelled means the drawer was freed or a newer build replaced this one:
+   * never touch `drawer` in that case. */
+  if (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    return;
+  }
+
+  gint wait_status = ok ? g_subprocess_get_exit_status(G_SUBPROCESS(source)) : -1;
+  g_clear_object(&drawer->build_proc);
+  g_clear_object(&drawer->build_cancel);
+
+  g_autofree char *merged = g_strconcat(out_str ? out_str : "", "\n", err_str ? err_str : "", NULL);
+  g_auto(GStrv) lines = g_strsplit(merged, "\n", 200);
+  guint err_count = 0;
+  for (gsize i = 0; lines[i] != NULL; i++) {
+    if (lines[i][0] != '\0') {
+      ide_search_drawer_append_output_line(drawer, lines[i]);
+    }
+  }
+  for (guint i = 0; i < drawer->build_issues->len; i++) {
+    const IdeBuildIssue *iss = g_ptr_array_index(drawer->build_issues, i);
+    if (iss->file_path != NULL && iss->severity == IDE_DIAG_ERROR) {
+      err_count++;
+    }
+  }
+
+  g_autofree char *btxt = (wait_status == 0)
+                              ? g_strdup("✓ BUILD OK")
+                              : g_strdup_printf("✖ %u ERRORS", err_count);
+  gtk_label_set_text(GTK_LABEL(drawer->build_badge), btxt);
+
+  if (drawer->build_issues->len > 0) {
+    drawer->selected_issue_idx = 0;
+    GtkListBoxRow *r0 = gtk_list_box_get_row_at_index(GTK_LIST_BOX(drawer->build_list_box), 0);
+    if (r0 != NULL) {
+      gtk_list_box_select_row(GTK_LIST_BOX(drawer->build_list_box), r0);
+    }
+  }
+}
+
 void
 ide_search_drawer_run_build(IdeSearchDrawer *drawer)
 {
@@ -524,49 +582,35 @@ ide_search_drawer_run_build(IdeSearchDrawer *drawer)
     cmd = "go build ./...";
   }
 
-  const char *argv[] = { "sh", "-c", cmd, NULL };
-  g_autofree char *out_str = NULL;
-  g_autofree char *err_str = NULL;
-  gint wait_status = 0;
-
-  g_spawn_sync(root,
-               (char **)argv,
-               NULL,
-               G_SPAWN_SEARCH_PATH,
-               NULL,
-               NULL,
-               &out_str,
-               &err_str,
-               &wait_status,
-               NULL);
-
-  g_autofree char *merged = g_strconcat(out_str ? out_str : "", "\n", err_str ? err_str : "", NULL);
-  g_auto(GStrv) lines = g_strsplit(merged, "\n", 200);
-  guint err_count = 0;
-  for (gsize i = 0; lines[i] != NULL; i++) {
-    if (lines[i][0] != '\0') {
-      ide_search_drawer_append_output_line(drawer, lines[i]);
-    }
+  /* Run the build without blocking the GTK main loop: a long `meson compile`
+   * or `cargo check` previously froze the whole IDE until it finished. */
+  if (drawer->build_cancel != NULL) {
+    g_cancellable_cancel(drawer->build_cancel);
   }
-  for (guint i = 0; i < drawer->build_issues->len; i++) {
-    const IdeBuildIssue *iss = g_ptr_array_index(drawer->build_issues, i);
-    if (iss->file_path != NULL && iss->severity == IDE_DIAG_ERROR) {
-      err_count++;
-    }
+  if (drawer->build_proc != NULL) {
+    g_subprocess_force_exit(drawer->build_proc);
+  }
+  g_clear_object(&drawer->build_proc);
+  g_clear_object(&drawer->build_cancel);
+
+  g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
+      G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE);
+  g_subprocess_launcher_set_cwd(launcher, root);
+  g_autoptr(GError) err = NULL;
+  drawer->build_proc = g_subprocess_launcher_spawn(launcher, &err, "sh", "-c", cmd, NULL);
+  if (drawer->build_proc == NULL) {
+    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "✖ BUILD FAILED TO START");
+    ide_search_drawer_append_output_line(drawer, err != NULL ? err->message : "spawn failed");
+    return;
   }
 
-  g_autofree char *btxt = (wait_status == 0)
-                              ? g_strdup("✓ BUILD OK")
-                              : g_strdup_printf("✖ %u ERRORS", err_count);
-  gtk_label_set_text(GTK_LABEL(drawer->build_badge), btxt);
-
-  if (drawer->build_issues->len > 0) {
-    drawer->selected_issue_idx = 0;
-    GtkListBoxRow *r0 = gtk_list_box_get_row_at_index(GTK_LIST_BOX(drawer->build_list_box), 0);
-    if (r0 != NULL) {
-      gtk_list_box_select_row(GTK_LIST_BOX(drawer->build_list_box), r0);
-    }
-  }
+  gtk_label_set_text(GTK_LABEL(drawer->build_badge), "⟳ BUILDING…");
+  drawer->build_cancel = g_cancellable_new();
+  g_subprocess_communicate_utf8_async(drawer->build_proc,
+                                      NULL,
+                                      drawer->build_cancel,
+                                      on_build_finished,
+                                      drawer);
 }
 
 void

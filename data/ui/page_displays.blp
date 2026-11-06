@@ -29,6 +29,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Resolution & Refresh Rate:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_res {
@@ -43,6 +46,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Display Orientation:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_orient {
@@ -57,6 +63,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Display Fractional Scale:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_scale {
@@ -72,7 +81,7 @@ template $SettingsPageDisplays : Box {
 
     /* Apply Button */
     Button btn_apply {
-      label: "[ APPLY DISPLAY SETTINGS ]";
+      label: "[ ✓ SAVE & APPLY DISPLAY ]";
 
       styles [
         "action-btn-primary",
@@ -112,13 +121,20 @@ template $SettingsPageDisplays : Box {
       orientation: horizontal;
       spacing: 12;
 
-      Label {
+      Label lbl_kbd_level {
         label: "Keyboard Backlight Brightness:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
         halign: start;
         hexpand: true;
       }
 
-      DropDown combo_kbd_level {}
+      /* A GtkSwitch (HP EC wake-on-start) or a segmented Off/Low/High group is
+         placed here at runtime, depending on the backlight backend. */
+      Box slot_kbd_level {
+        valign: center;
+      }
     }
 
     Box row_kbd_timeout {
@@ -127,15 +143,20 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Keyboard Backlight Auto-Off Timeout:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
         halign: start;
         hexpand: true;
       }
 
-      DropDown combo_kbd_timeout {}
+      Box slot_kbd_timeout {
+        valign: center;
+      }
     }
 
     Button btn_apply_kbd {
-      label: "[ SAVE & APPLY KEYBOARD BACKLIGHT ]";
+      label: "[ ✓ SAVE & APPLY KEYBOARD BACKLIGHT ]";
 
       styles [
         "action-btn-primary",
@@ -259,7 +280,7 @@ template $SettingsPageDisplays : Box {
     }
 
     Button btn_apply_posture {
-      label: "[ SAVE & APPLY 360° POSTURE SETTINGS ]";
+      label: "[ ✓ SAVE & APPLY 360° POSTURE ]";
 
       styles [
         "action-btn-primary",
@@ -301,6 +322,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Screen Saver Mode:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
         halign: start;
         hexpand: true;
       }
@@ -315,6 +339,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Screen Saver Timeout:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
         halign: start;
         hexpand: true;
       }
@@ -329,6 +356,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Monitor Power-Off (DPMS) Timeout:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
         halign: start;
         hexpand: true;
       }
@@ -343,6 +373,9 @@ template $SettingsPageDisplays : Box {
 
       Label {
         label: "Automatic Session Lock Timeout:";
+        width-chars: 37;
+        xalign: 0;
+        valign: center;
         halign: start;
         hexpand: true;
       }
@@ -387,24 +420,24 @@ template $SettingsPageDisplays : Box {
       homogeneous: true;
 
       Button btn_preview_ss {
-        label: "[ 🖥 PREVIEW SCREEN SAVER ]";
+        label: "🖥 PREVIEW SCREEN SAVER";
 
         styles [
-          "flat",
+          "files-nav-btn",
         ]
       }
 
       Button btn_lock_now {
-        label: "[ 🔒 LOCK SCREEN NOW ]";
+        label: "🔒 LOCK SCREEN NOW";
 
         styles [
-          "flat",
+          "files-nav-btn",
         ]
       }
     }
 
     Button btn_apply_idle {
-      label: "[ SAVE SCREEN SAVER & LOCK SETTINGS ]";
+      label: "[ ✓ SAVE & APPLY SCREEN SAVER & LOCK ]";
 
       styles [
         "action-btn-primary",

@@ -15,6 +15,7 @@ add_project_arguments(
   '-Wextra',
   '-Wno-unused-parameter',
   '-DKAJO_SOURCE_DIR="' + meson.current_source_dir() + '"',
+  '-DKAJO_DATA_DIR="' + (get_option('prefix') / get_option('datadir') / 'kajo') + '"',
   language: 'c',
 )
 
@@ -94,11 +95,9 @@ sources = files(
   'src/main.c',
   'src/shell.c',
   'src/panel.c',
-  'src/config.c',
-  'src/theme.c',
-  'src/icons.c',
   'src/autohide.c',
   'src/dbus_helpers.c',
+  'src/audio/pa_conn.c',
   'src/widgets/registry.c',
   'src/widgets/clock.c',
   'src/widgets/volume.c',
@@ -137,6 +136,7 @@ sources = files(
   'src/posture/posture_manager.c',
   'src/vendor/tinyexpr/tinyexpr.c',
   'src/ipc/socket.c',
+  'src/ipc/ipc_client.c',
   'src/compositor/niri.c',
 )
 
@@ -191,6 +191,19 @@ shell_resources = gnome.compile_resources(
   dependencies: compiled_blueprints,
 )
 
+# Sources shared by every executable are compiled once instead of once per binary.
+kajo_core = static_library(
+  'kajo-core',
+  files(
+    'src/config.c',
+    'src/theme.c',
+    'src/icons.c',
+    'src/compositor/niri.c',
+    'src/app_init.c',
+  ),
+  dependencies: [gtk4_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
+)
+
 executable(
   'kajo',
   sources,
@@ -215,6 +228,7 @@ executable(
     pam_dep,
     m_dep,
   ],
+  link_with: kajo_core,
   install: true,
 )
 
@@ -229,17 +243,15 @@ settings_sources = files(
   'src/settings/pages/page_network.c',
   'src/settings/pages/page_bluetooth.c',
   'src/settings/pages/page_audio.c',
+  'src/audio/pa_conn.c',
   'src/settings/pages/page_notifications.c',
   'src/settings/pages/page_theme.c',
   'src/settings/pages/page_ide.c',
   'src/settings/pages/page_about.c',
-  'src/config.c',
-  'src/theme.c',
-  'src/icons.c',
   'src/dbus_helpers.c',
   'src/hardware/hw_caps.c',
   'src/hardware/kbd_backlight.c',
-  'src/compositor/niri.c',
+  'src/ipc/ipc_client.c',
 )
 
 executable(
@@ -255,6 +267,7 @@ executable(
     pulse_dep,
     pulse_glib_dep,
   ],
+  link_with: kajo_core,
   install: true,
 )
 
@@ -263,8 +276,6 @@ greeter_sources = files(
   'src/greeter/greetd_ipc.c',
   'src/greeter/greeter_users.c',
   'src/lock/pam_auth.c',
-  'src/config.c',
-  'src/theme.c',
   'src/icons.c',
 )
 
@@ -280,20 +291,21 @@ executable(
     gio_unix_dep,
     pam_dep,
   ],
+  link_with: kajo_core,
   install: true,
 )
 
 files_sources = files(
   'src/files/main.c',
   'src/files/files_window.c',
+  'src/files/files_window_ctxmenu.c',
+  'src/files/files_window_keys.c',
   'src/files/files_model.c',
   'src/files/files_ops.c',
   'src/files/files_sidebar.c',
   'src/files/files_quicklook.c',
+  'src/common/pdf_render.c',
   'src/player/player_mpv.c',
-  'src/config.c',
-  'src/theme.c',
-  'src/icons.c',
   'src/compositor/niri.c',
 )
 
@@ -313,11 +325,13 @@ executable(
     glesv2_dep,
     m_dep,
   ],
+  link_with: kajo_core,
   install: true,
 )
 
 install_data(
   'data/org.kajo.Files.desktop',
+  'data/org.kajo.Settings.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
 
@@ -327,9 +341,6 @@ player_sources = files(
   'src/player/player_mpv.c',
   'src/player/player_queue.c',
   'src/player/player_mpris.c',
-  'src/config.c',
-  'src/theme.c',
-  'src/icons.c',
   'src/compositor/niri.c',
 )
 
@@ -347,6 +358,7 @@ executable(
     glesv2_dep,
     m_dep,
   ],
+  link_with: kajo_core,
   install: true,
 )
 
@@ -358,8 +370,10 @@ install_data(
 ide_sources = files(
   'src/ide/main.c',
   'src/ide/ide_window.c',
+  'src/ide/ide_actions.c',
   'src/ide/ide_fsm.c',
   'src/ide/ide_buffer.c',
+  'src/ide/ide_syntax.c',
   'src/ide/ide_gutter.c',
   'src/ide/ide_tree.c',
   'src/ide/ide_picker.c',
@@ -368,9 +382,8 @@ ide_sources = files(
   'src/ide/ide_dap.c',
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
-  'src/config.c',
-  'src/theme.c',
-  'src/icons.c',
+  'src/ide/ide_mermaid.c',
+  'src/common/pdf_render.c',
   'src/compositor/niri.c',
 )
 
@@ -388,6 +401,7 @@ executable(
     archive_dep,
     m_dep,
   ],
+  link_with: kajo_core,
   install: true,
 )
 
@@ -472,7 +486,7 @@ test('idle-manager', test_idle_exe)
 
 test_ipc_exe = executable(
   'test-ipc',
-  files('tests/test_ipc.c', 'src/ipc/socket.c'),
+  files('tests/test_ipc.c', 'src/ipc/socket.c', 'src/ipc/ipc_client.c'),
   dependencies: [gtk4_dep, gio_dep, gio_unix_dep],
   build_by_default: false,
 )
@@ -495,6 +509,7 @@ test_greetd_exe = executable(
 test('greetd-ipc', test_greetd_exe)
 
 widget_sources = files(
+  'src/audio/pa_conn.c',
   'src/config.c',
   'src/theme.c',
   'src/icons.c',
@@ -588,6 +603,14 @@ if egl_dep.found() and glesv2_dep.found()
   test('niri-shaders', test_shaders_exe)
 endif
 
+test_niri_exe = executable(
+  'test-niri',
+  files('tests/test_niri.c', 'src/compositor/niri.c'),
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('niri-ipc', test_niri_exe)
+
 test_ide_fsm_exe = executable(
   'test-ide-fsm',
   files('tests/test_ide_fsm.c', 'src/ide/ide_fsm.c'),
@@ -601,6 +624,7 @@ test_ide_buffer_exe = executable(
   files(
     'tests/test_ide_buffer.c',
     'src/ide/ide_buffer.c',
+    'src/ide/ide_syntax.c',
     'src/ide/ide_gutter.c',
     'src/ide/ide_tree.c',
     'src/ide/ide_picker.c',
@@ -620,7 +644,10 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_dap.c',
     'src/ide/ide_agent_ipc.c',
     'src/ide/ide_markdown.c',
+    'src/ide/ide_mermaid.c',
+    'src/common/pdf_render.c',
     'src/ide/ide_buffer.c',
+    'src/ide/ide_syntax.c',
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',
   ),

@@ -15,7 +15,8 @@ typedef struct _SettingsPageWidgets {
     GtkWidget *lbl_right;
     GtkWidget *combo_add_widget;
     GtkWidget *combo_add_section;
-    GtkWidget *combo_add_mode;
+    GtkWidget *slot_add_mode;
+    GtkWidget *seg_add_mode;
     GtkWidget *btn_add;
     GtkWidget *btn_apply;
 } SettingsPageWidgets;
@@ -84,7 +85,7 @@ settings_page_widgets_class_init(SettingsPageWidgetsClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, lbl_right);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, combo_add_widget);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, combo_add_section);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, combo_add_mode);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, slot_add_mode);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, btn_add);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, btn_apply);
 }
@@ -109,15 +110,15 @@ update_section_counts(SettingsPageWidgets *self)
     if (!self) return;
 
     guint left_count = count_card_widgets(self->card_left);
-    g_autofree gchar *left_title = g_strdup_printf("🔵 1. LEFT PANEL SECTION (%u Active Widgets)", left_count);
+    g_autofree gchar *left_title = g_strdup_printf("1. LEFT PANEL SECTION (%u Active Widgets)", left_count);
     gtk_label_set_text(GTK_LABEL(self->lbl_left), left_title);
 
     guint center_count = count_card_widgets(self->card_center);
-    g_autofree gchar *center_title = g_strdup_printf("🟠 2. CENTER PANEL SECTION (%u Active Widgets)", center_count);
+    g_autofree gchar *center_title = g_strdup_printf("2. CENTER PANEL SECTION (%u Active Widgets)", center_count);
     gtk_label_set_text(GTK_LABEL(self->lbl_center), center_title);
 
     guint right_count = count_card_widgets(self->card_right);
-    g_autofree gchar *right_title = g_strdup_printf("🟢 3. RIGHT PANEL SECTION (%u Active Widgets)", right_count);
+    g_autofree gchar *right_title = g_strdup_printf("3. RIGHT PANEL SECTION (%u Active Widgets)", right_count);
     gtk_label_set_text(GTK_LABEL(self->lbl_right), right_title);
 }
 
@@ -205,6 +206,25 @@ widget_id_to_icon(const char *id)
     return "view-grid-symbolic";
 }
 
+/* Segment order follows the gallery specimen: ICON-ONLY | TEXT-ONLY | FULL */
+static const char *const WIDGET_MODE_LABELS[] = { "ICON-ONLY", "TEXT-ONLY", "FULL", NULL };
+
+static guint
+widget_mode_to_segment(ShellWidgetMode mode)
+{
+    if (mode == WIDGET_MODE_LABEL) return 1;
+    if (mode == WIDGET_MODE_FULL) return 2;
+    return 0;
+}
+
+static ShellWidgetMode
+segment_to_widget_mode(guint seg)
+{
+    if (seg == 1) return WIDGET_MODE_LABEL;
+    if (seg == 2) return WIDGET_MODE_FULL;
+    return WIDGET_MODE_ICON;
+}
+
 static GtkWidget *
 create_widget_item_row(SettingsPageWidgets *self, const char *icon_name, const char *title, ShellWidgetMode mode)
 {
@@ -231,36 +251,32 @@ create_widget_item_row(SettingsPageWidgets *self, const char *icon_name, const c
     gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
     gtk_box_append(GTK_BOX(row), lbl);
 
-    /* Col 4: Display Mode Dropdown (Fixed 160px) */
-    const char *mode_items[] = { "Full (Icon+Text)", "Icon Only", "Text Only", NULL };
-    GtkWidget *combo_mode = create_string_dropdown(mode_items);
-    guint selected_idx = (mode == WIDGET_MODE_ICON) ? 1 : ((mode == WIDGET_MODE_LABEL) ? 2 : 0);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(combo_mode), selected_idx);
-    gtk_widget_set_size_request(combo_mode, 160, -1);
-    gtk_box_append(GTK_BOX(row), combo_mode);
-    g_object_set_data(G_OBJECT(row), "combo-mode", combo_mode);
+    /* Col 4: Display mode as the gallery's segmented ICON-ONLY | TEXT-ONLY | FULL group */
+    GtkWidget *seg_mode = create_segmented_group(WIDGET_MODE_LABELS, widget_mode_to_segment(mode));
+    gtk_box_append(GTK_BOX(row), seg_mode);
+    g_object_set_data(G_OBJECT(row), "combo-mode", seg_mode);
 
     /* Col 5: Action Button Bar (Fixed 150px) */
     GtkWidget *btn_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_set_size_request(btn_bar, 150, -1);
 
     GtkWidget *btn_up = gtk_button_new_from_icon_name("go-up-symbolic");
-    gtk_widget_add_css_class(btn_up, "flat");
+    gtk_widget_add_css_class(btn_up, "files-nav-btn");
     gtk_widget_set_tooltip_text(btn_up, "Move Widget Up");
     g_signal_connect(btn_up, "clicked", G_CALLBACK(on_widget_up_clicked), row);
 
     GtkWidget *btn_down = gtk_button_new_from_icon_name("go-down-symbolic");
-    gtk_widget_add_css_class(btn_down, "flat");
+    gtk_widget_add_css_class(btn_down, "files-nav-btn");
     gtk_widget_set_tooltip_text(btn_down, "Move Widget Down");
     g_signal_connect(btn_down, "clicked", G_CALLBACK(on_widget_down_clicked), row);
 
     GtkWidget *btn_move = gtk_button_new_from_icon_name("object-flip-horizontal-symbolic");
-    gtk_widget_add_css_class(btn_move, "flat");
+    gtk_widget_add_css_class(btn_move, "files-nav-btn");
     gtk_widget_set_tooltip_text(btn_move, "Transfer to Next Section (Left/Center/Right)");
     g_signal_connect(btn_move, "clicked", G_CALLBACK(on_widget_move_clicked), row);
 
     GtkWidget *btn_rem = gtk_button_new_from_icon_name("user-trash-symbolic");
-    gtk_widget_add_css_class(btn_rem, "flat");
+    gtk_widget_add_css_class(btn_rem, "files-nav-btn");
     gtk_widget_add_css_class(btn_rem, "action-btn-danger");
     gtk_widget_set_tooltip_text(btn_rem, "Remove Widget from Panel");
     g_signal_connect(btn_rem, "clicked", G_CALLBACK(on_widget_remove_clicked), row);
@@ -290,10 +306,7 @@ on_add_widget_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     if (section_idx == 0) target_card = self->card_left;
     else if (section_idx == 1) target_card = self->card_center;
 
-    guint mode_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_add_mode));
-    ShellWidgetMode mode = WIDGET_MODE_ICON;
-    if (mode_idx == 0) mode = WIDGET_MODE_FULL;
-    else if (mode_idx == 2) mode = WIDGET_MODE_LABEL;
+    ShellWidgetMode mode = segment_to_widget_mode(segmented_group_get_selected(self->seg_add_mode));
 
     GtkWidget *row = create_widget_item_row(self, widget_id_to_icon(widget_id), widget_id, mode);
     gtk_box_append(GTK_BOX(target_card), row);
@@ -312,12 +325,8 @@ collect_card_widget_configs(GtkWidget *card, GPtrArray *old_arr)
 
         GtkWidget *combo_mode = g_object_get_data(G_OBJECT(child), "combo-mode");
         ShellWidgetMode mode = WIDGET_MODE_ICON;
-        if (combo_mode && GTK_IS_DROP_DOWN(combo_mode)) {
-            guint sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(combo_mode));
-            if (sel == 0) mode = WIDGET_MODE_FULL;
-            else if (sel == 2) mode = WIDGET_MODE_LABEL;
-            else mode = WIDGET_MODE_ICON;
-        }
+        if (combo_mode)
+            mode = segment_to_widget_mode(segmented_group_get_selected(combo_mode));
 
         ShellWidgetConfig *wc = g_new0(ShellWidgetConfig, 1);
         wc->id = g_strdup(id);
@@ -446,11 +455,8 @@ build_page_widgets(void)
     g_object_unref(section_model);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_add_section), 2);
 
-    const char *mode_items[] = { "Full (Icon+Text)", "Icon Only", "Text Only", NULL };
-    GtkStringList *mode_model = gtk_string_list_new(mode_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_add_mode), G_LIST_MODEL(mode_model));
-    g_object_unref(mode_model);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_add_mode), 1);
+    page->seg_add_mode = create_segmented_group(WIDGET_MODE_LABELS, 0);
+    gtk_box_append(GTK_BOX(page->slot_add_mode), page->seg_add_mode);
 
     g_signal_connect(page->btn_add, "clicked", G_CALLBACK(on_add_widget_clicked), page);
     g_signal_connect(page->btn_apply, "clicked", G_CALLBACK(on_apply_widget_layout_clicked), page);

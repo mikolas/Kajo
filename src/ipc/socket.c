@@ -1,4 +1,5 @@
 #include "socket.h"
+#include "ipc_client.h"
 #include "../shell.h"
 #include "../launcher/launcher_surface.h"
 #include "../osk/osk.h"
@@ -324,41 +325,7 @@ on_incoming_connection(GSocketService *service G_GNUC_UNUSED,
 gboolean
 shell_ipc_send_command(const gchar *command)
 {
-    gchar *path = get_ipc_socket_path();
-    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
-        g_free(path);
-        return FALSE;
-    }
-
-    GError *error = NULL;
-    GSocket *socket = g_socket_new(G_SOCKET_FAMILY_UNIX, G_SOCKET_TYPE_STREAM, G_SOCKET_PROTOCOL_DEFAULT, &error);
-    if (!socket) {
-        if (error) g_clear_error(&error);
-        g_free(path);
-        return FALSE;
-    }
-
-    GSocketAddress *address = g_unix_socket_address_new(path);
-    if (g_socket_connect(socket, address, NULL, NULL)) {
-        GSocketConnection *conn = g_socket_connection_factory_create_connection(socket);
-        GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
-
-        gchar *msg = g_strconcat(command, "\n", NULL);
-        g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
-        g_free(msg);
-
-        g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
-        g_object_unref(conn);
-        g_object_unref(address);
-        g_object_unref(socket);
-        g_free(path);
-        return TRUE;
-    }
-
-    g_object_unref(address);
-    g_object_unref(socket);
-    g_free(path);
-    return FALSE;
+    return shell_ipc_client_send(command);
 }
 
 ShellIPCSocket *

@@ -4,6 +4,7 @@
 #include "../config.h"
 #include "../theme.h"
 #include "../icons.h"
+#include "../app_init.h"
 #include "../hardware/hw_caps.h"
 
 static char *target_page = NULL;
@@ -18,12 +19,8 @@ static void
 on_app_activate(GtkApplication *app, gpointer user_data G_GNUC_UNUSED)
 {
     if (!g_settings_theme) {
-        ShellConfig *config = shell_config_load(NULL);
-        g_settings_theme = shell_theme_new(config ? config->css_path : NULL);
-        shell_theme_apply(g_settings_theme, gdk_display_get_default());
+        g_settings_theme = kajo_app_init_theme();
         settings_set_global_theme(g_settings_theme);
-        shell_icons_init(config ? config->icon_map_path : NULL);
-        if (config) shell_config_destroy(config);
     }
 
     GtkWidget *win = desktop_settings_window_new_with_page(app, target_page);
@@ -34,11 +31,8 @@ static void
 on_app_shutdown(GtkApplication *app G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
     settings_set_global_theme(NULL);
-    if (g_settings_theme) {
-        shell_theme_destroy(g_settings_theme);
-        g_settings_theme = NULL;
-    }
-    shell_icons_cleanup();
+    kajo_app_shutdown_theme(g_settings_theme);
+    g_settings_theme = NULL;
     shell_hw_caps_cleanup();
     g_clear_pointer(&target_page, g_free);
 }

@@ -1,4 +1,5 @@
 #include "files_quicklook.h"
+#include "../common/pdf_render.h"
 #include "../player/player_mpv.h"
 #include <poppler.h>
 #include <archive.h>
@@ -131,67 +132,13 @@ on_ql_media_seek_value_changed(GtkRange *range, gpointer user_data)
     }
 }
 
-/* ─── Poppler PDF Page -> GdkTexture Renderer ─── */
-
-static GdkTexture *
-render_pdf_page_to_texture(PopplerDocument *doc, int page_index, int target_height)
-{
-    if (!doc || page_index < 0 || page_index >= poppler_document_get_n_pages(doc))
-        return NULL;
-
-    PopplerPage *page = poppler_document_get_page(doc, page_index);
-    if (!page) return NULL;
-
-    double pw = 0.0, ph = 0.0;
-    poppler_page_get_size(page, &pw, &ph);
-    if (pw <= 1.0 || ph <= 1.0) {
-        g_object_unref(page);
-        return NULL;
-    }
-
-    double scale = (double)target_height / ph;
-    scale = CLAMP(scale, 0.5, 2.5);
-    int w = MAX(1, (int)(pw * scale));
-    int h = MAX(1, (int)(ph * scale));
-
-    cairo_surface_t *surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, w, h);
-    cairo_t *cr = cairo_create(surface);
-
-    /* Crisp white paper background */
-    cairo_set_source_rgb(cr, 1.0, 1.0, 1.0);
-    cairo_paint(cr);
-
-    cairo_scale(cr, scale, scale);
-    poppler_page_render(page, cr);
-
-    cairo_destroy(cr);
-    cairo_surface_flush(surface);
-
-    int stride = cairo_image_surface_get_stride(surface);
-    const unsigned char *data = cairo_image_surface_get_data(surface);
-    GBytes *bytes = g_bytes_new(data, (gsize)stride * (gsize)h);
-
-#if G_BYTE_ORDER == G_LITTLE_ENDIAN
-    GdkMemoryFormat fmt = GDK_MEMORY_B8G8R8A8_PREMULTIPLIED;
-#else
-    GdkMemoryFormat fmt = GDK_MEMORY_A8R8G8B8_PREMULTIPLIED;
-#endif
-
-    GdkTexture *tex = gdk_memory_texture_new(w, h, fmt, bytes, (gsize)stride);
-
-    g_bytes_unref(bytes);
-    cairo_surface_destroy(surface);
-    g_object_unref(page);
-
-    return tex;
-}
 
 static void
 update_pdf_quicklook_page(KajoQuickLook *self)
 {
     if (!self || !self->pdf_doc) return;
 
-    g_autoptr(GdkTexture) tex = render_pdf_page_to_texture(self->pdf_doc, self->pdf_page_idx, 720);
+    g_autoptr(GdkTexture) tex = kajo_pdf_render_page_texture(self->pdf_doc, self->pdf_page_idx, 720);
     if (tex)
         gtk_picture_set_paintable(GTK_PICTURE(self->ql_pdf_picture), GDK_PAINTABLE(tex));
 
@@ -1015,7 +962,7 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     } else if ((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
                (name && g_str_has_suffix(name, ".pdf"))) {
         g_autoptr(PopplerDocument) doc = poppler_document_new_from_gfile(file, NULL, NULL, NULL);
-        g_autoptr(GdkTexture) tex = doc ? render_pdf_page_to_texture(doc, 0, 160) : NULL;
+        g_autoptr(GdkTexture) tex = doc ? kajo_pdf_render_page_texture(doc, 0, 160) : NULL;
         if (tex) {
             gtk_picture_set_paintable(GTK_PICTURE(self->insp_picture), GDK_PAINTABLE(tex));
             gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");

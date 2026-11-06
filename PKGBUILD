@@ -3,16 +3,24 @@ pkgname=kajo-git
 _pkgname=kajo
 pkgver=0.4.0.r0.g01611da
 pkgrel=1
-pkgdesc="High-performance Wayland desktop shell for Niri compositor"
+pkgdesc="Kajo: native GTK4 Wayland shell and app suite (IDE, files, player, settings, greeter) for the Niri compositor"
 arch=('x86_64' 'x86_64_v3')
-url="https://github.com/mikolas/desktop"
+url="https://github.com/mikolas/Kajo"
 license=('MIT')
 depends=(
     'gtk4'
     'gtk4-layer-shell'
+    'gtksourceview5'
     'json-glib'
-    'libpulse'
     'glib2'
+    'libpulse'
+    'libxkbcommon'
+    'wayland'
+    'pam'
+    'poppler-glib'
+    'libarchive'
+    'mpv'
+    'libglvnd'
 )
 makedepends=(
     'git'
@@ -20,6 +28,16 @@ makedepends=(
     'ninja'
     'pkgconf'
     'blueprint-compiler'
+    'wayland-protocols'
+)
+optdepends=(
+    'ripgrep: kajo-ide search, live grep, hover and go-to-definition'
+    'git: kajo-ide file tree status'
+    'gvfs: kajo-files network/trash locations'
+    'gvfs-smb: kajo-files SMB shares'
+    'udisks2: kajo-files drive mounting'
+    'greetd: login manager for kajo-greeter'
+    'niri: the Wayland compositor Kajo targets'
 )
 provides=("${_pkgname}")
 conflicts=("${_pkgname}")

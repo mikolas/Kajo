@@ -1,7 +1,7 @@
 # Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
-**Applies To:** `kajo` (`org.kajo.Shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.Greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
+**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
 **Interactive Reference:** [`docs/ui-gallery.html`](file:///home/mikolas/src/Kajo/docs/ui-gallery.html)  
 **Master Stylesheet:** [`data/defaults/style.css`](file:///home/mikolas/src/Kajo/data/defaults/style.css)
 
@@ -26,6 +26,26 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 
 | GTK4 `@define-color` Token | CSS Variable (`ui-gallery.html`) | Default Value | Role |
 | :--- | :--- | :--- | :--- |
+| `@metro-surface-0` | `--surface-0-canvas` | `#101010` | Recessed media/thumbnail well, code viewer canvas |
+| `@metro-surface-bg` | `--surface-1-base` | `#141414` | Primary window, popover, header, and sidebar background |
+| `@metro-surface-2` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
+| `@metro-surface-3` | `--surface-3-card` | `#181818` | Popover body, list row, and table column header surface |
+| `@metro-surface-4` | `--surface-4-control` | `#1a1a1a` | Interactive button, tile card, and section card surface |
+| `@metro-surface-hover` | `--surface-5-hover` | `#222222` | Hovered button, row, or card surface |
+| `@metro-border` | `--metro-border` | `#2b2b2b` | Structural `1px` divider and inactive control border |
+| `@metro-accent` | `--metro-accent` | `#0078d4` | Primary active accent (overridden live from `00-accent.css`) |
+| `@metro-accent-hover` | `--metro-accent-hover` | `#1084d8` | Hovered primary accent fill |
+| `@metro-fg-primary` | `--metro-fg-primary` | `#ffffff` | Primary text and active icon foreground |
+| `@metro-fg-secondary` | `--metro-fg-secondary` | `#a0a0a0` | Secondary subtitles, metadata, and inactive icons |
+| `@metro-urgent` | `--metro-urgent` | `#e81123` | Destructive fills/borders, critical battery, window close hover |
+| `@metro-urgent-text` | `--metro-urgent-text` | `#ff6b6b` | Error / danger **text** on dark surfaces (readable red) |
+| `@metro-warning` | `--metro-warning` | `#ff8c00` | Warning banners, VU meter high zone, center accent stripe |
+| `@metro-success` | `--metro-success` | `#10893e` | Connected/mounted indicators, right accent stripe |
+| `@metro-telemetry` | `--metro-telemetry` | `#00d8f0` | FFT spectrum bars, PAM verifying state, live OSD metrics |
+
+Use the tokens in `style.css`; do not add new raw hex literals for these roles. Remaining one-off grays (diff tints, syntax colors, the `#202020`/`#1c1c1c` family) are intentionally literal for now and should be folded into this ladder when touched.
+
+--- | :--- | :--- | :--- |
 | *(literal)* `#101010` | `--surface-0-canvas` | `#101010` | Recessed media/thumbnail well, code viewer canvas |
 | `@metro-surface-bg` | `--surface-1-base` | `#141414` | Primary window, popover, header, and sidebar background |
 | *(literal)* `#161616` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
@@ -96,6 +116,15 @@ Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → 
 - **Level Bars (`levelbar`, `.files-drive-bar`):**
   - `trough`: `#262626`, `min-height: 6px`, `0px` radius.
   - `block.filled`: `@metro-accent` (or 3-zone VU colors: `.low` `#0078d4`, `.high` `#ff8c00`, `.full` `#e81123`).
+
+#### Switch row vs Toggle card vs Segmented group (choose by what is being set)
+| Control | Use for | Notes |
+| :--- | :--- | :--- |
+| **Switch row** (`kajo-switch` / `GtkSwitch` in a `.widget-row-card`) | A plain on/off preference whose title and subtitle say everything: mute, word wrap, lock on suspend, Wi-Fi power. | `create_action_row(icon, title, subtitle, GtkSwitch)`. |
+| **Toggle card** (`.toggle-card`, a `GtkToggleButton`) | A *feature* with a status line (VRR, Autohide), a possible *unsupported* state, or its own sub-settings. | `create_toggle_card()`. State is `:checked`. A 4px left indicator bar lights with `@metro-accent` when on (dim `@metro-border` when off); the body only gets `alpha(@metro-accent, 0.12)` so title/subtitle keep contrast. Disabled: 45% opacity, bar dim, subtitle states the reason. The panel Control Center quick tiles share this component. |
+| **Segmented group** (`.segmented-group` of `GtkToggleButton`s) | 2–4 short, mutually exclusive choices (Top/Bottom, ICON-ONLY/TEXT-ONLY/FULL, 2/4/8). | `create_segmented_group()`. Longer lists stay `GtkDropDown`. |
+
+Never fake an on/off setting with a dropdown, and never ship a toggle that is not backed by real state.
 
 ### 4.4 Cards, Rows, Tables & Context Menus
 - **Section Cards (`.section-card`, `.section-card-left`, `.section-card-center`, `.section-card-right`):**

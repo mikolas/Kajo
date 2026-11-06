@@ -1,4 +1,5 @@
 #include "settings_common.h"
+#include "../ipc/ipc_client.h"
 #include <gio/gunixsocketaddress.h>
 #include <string.h>
 
@@ -138,12 +139,18 @@ create_action_row(const gchar *icon_name, const gchar *title, const gchar *subti
     GtkWidget *lbl_title = gtk_label_new(title);
     gtk_widget_add_css_class(lbl_title, "row-title");
     gtk_widget_set_halign(lbl_title, GTK_ALIGN_START);
+    gtk_label_set_xalign(GTK_LABEL(lbl_title), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(lbl_title), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(lbl_title), PANGO_WRAP_WORD_CHAR);
     gtk_box_append(GTK_BOX(vbox), lbl_title);
 
     if (subtitle && subtitle[0] != '\0') {
         GtkWidget *lbl_sub = gtk_label_new(subtitle);
         gtk_widget_add_css_class(lbl_sub, "shell-popover-subtitle");
         gtk_widget_set_halign(lbl_sub, GTK_ALIGN_START);
+        gtk_label_set_xalign(GTK_LABEL(lbl_sub), 0.0f);
+        gtk_label_set_wrap(GTK_LABEL(lbl_sub), TRUE);
+        gtk_label_set_wrap_mode(GTK_LABEL(lbl_sub), PANGO_WRAP_WORD_CHAR);
         gtk_box_append(GTK_BOX(vbox), lbl_sub);
     }
 
@@ -166,26 +173,19 @@ create_string_dropdown(const char *const items[])
     return dropdown;
 }
 
-static void
-on_tile_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    if (gtk_widget_has_css_class(GTK_WIDGET(btn), "active")) {
-        gtk_widget_remove_css_class(GTK_WIDGET(btn), "active");
-    } else {
-        gtk_widget_add_css_class(GTK_WIDGET(btn), "active");
-    }
-}
-
+/* ─── Toggle Card (gallery: "Toggle Cards") ───
+ * A feature toggle with a status line and a 4px left indicator bar that lights
+ * up while active (see .toggle-card in style.css). It is a real GtkToggleButton:
+ * read the state with gtk_toggle_button_get_active(), react with "toggled", and
+ * change the status text with toggle_card_set_subtitle(). Use a plain GtkSwitch
+ * row (create_action_row) for simple preferences with no status to show. */
 GtkWidget *
-create_metro_toggle_tile(const gchar *icon_name, const gchar *title, const gchar *subtitle, gboolean active)
+create_toggle_card(const gchar *icon_name, const gchar *title, const gchar *subtitle, gboolean active)
 {
-    GtkWidget *btn = gtk_button_new();
-    gtk_widget_add_css_class(btn, "control-center-tile");
-    if (active) {
-        gtk_widget_add_css_class(btn, "active");
-    }
+    GtkWidget *btn = gtk_toggle_button_new();
+    gtk_widget_add_css_class(btn, "toggle-card");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), active);
     gtk_widget_set_hexpand(btn, TRUE);
-    g_signal_connect(btn, "clicked", G_CALLBACK(on_tile_clicked), NULL);
 
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
@@ -202,21 +202,118 @@ create_metro_toggle_tile(const gchar *icon_name, const gchar *title, const gchar
     gtk_widget_add_css_class(lbl_title, "tile-title");
     gtk_widget_set_halign(lbl_title, GTK_ALIGN_START);
     gtk_widget_set_valign(lbl_title, GTK_ALIGN_CENTER);
+    gtk_label_set_xalign(GTK_LABEL(lbl_title), 0.0f);
 
     GtkWidget *lbl_sub = gtk_label_new(subtitle);
     gtk_widget_add_css_class(lbl_sub, "tile-subtitle");
     gtk_widget_set_halign(lbl_sub, GTK_ALIGN_START);
     gtk_widget_set_valign(lbl_sub, GTK_ALIGN_CENTER);
+    gtk_label_set_xalign(GTK_LABEL(lbl_sub), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(lbl_sub), TRUE);
+    gtk_label_set_wrap_mode(GTK_LABEL(lbl_sub), PANGO_WRAP_WORD_CHAR);
     g_object_set_data(G_OBJECT(btn), "tile-subtitle-label", lbl_sub);
 
     gtk_box_append(GTK_BOX(vbox), lbl_title);
     gtk_box_append(GTK_BOX(vbox), lbl_sub);
-
     gtk_box_append(GTK_BOX(hbox), icon);
     gtk_box_append(GTK_BOX(hbox), vbox);
     gtk_button_set_child(GTK_BUTTON(btn), hbox);
 
     return btn;
+}
+
+void
+toggle_card_set_subtitle(GtkWidget *card, const gchar *subtitle)
+{
+    GtkWidget *lbl = card ? g_object_get_data(G_OBJECT(card), "tile-subtitle-label") : NULL;
+    if (lbl && GTK_IS_LABEL(lbl))
+        gtk_label_set_text(GTK_LABEL(lbl), subtitle ? subtitle : "");
+}
+
+/* ─── Segmented Group (gallery §04) ───
+ * 2-4 mutually exclusive choices as joined toggle buttons, replacing dropdowns
+ * for short A/B/C choices. Selection is exclusive via a GtkToggleButton group. */
+
+typedef struct {
+    SegmentedChangedFunc cb;
+    gpointer             user_data;
+    guint                selected;
+    gboolean             syncing;
+} SegmentedState;
+
+static void
+on_segment_toggled(GtkToggleButton *btn, gpointer user_data)
+{
+    GtkWidget *group = GTK_WIDGET(user_data);
+    SegmentedState *st = g_object_get_data(G_OBJECT(group), "segmented-state");
+    if (!st || !gtk_toggle_button_get_active(btn))
+        return;
+
+    guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "segment-index"));
+    if (idx == st->selected)
+        return;
+    st->selected = idx;
+    if (!st->syncing && st->cb)
+        st->cb(group, idx, st->user_data);
+}
+
+GtkWidget *
+create_segmented_group(const char *const labels[], guint selected)
+{
+    GtkWidget *group = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_add_css_class(group, "segmented-group");
+    gtk_widget_set_valign(group, GTK_ALIGN_CENTER);
+    gtk_widget_set_halign(group, GTK_ALIGN_END);
+
+    SegmentedState *st = g_new0(SegmentedState, 1);
+    st->selected = selected;
+    g_object_set_data_full(G_OBJECT(group), "segmented-state", st, g_free);
+
+    GtkWidget *first = NULL;
+    for (guint i = 0; labels && labels[i]; i++) {
+        GtkWidget *btn = gtk_toggle_button_new_with_label(labels[i]);
+        gtk_widget_add_css_class(btn, "files-nav-btn");
+        gtk_widget_set_focus_on_click(btn, FALSE);
+        g_object_set_data(G_OBJECT(btn), "segment-index", GUINT_TO_POINTER(i));
+        if (first)
+            gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(btn), GTK_TOGGLE_BUTTON(first));
+        else
+            first = btn;
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), i == selected);
+        g_signal_connect(btn, "toggled", G_CALLBACK(on_segment_toggled), group);
+        gtk_box_append(GTK_BOX(group), btn);
+    }
+    return group;
+}
+
+void
+segmented_group_connect(GtkWidget *group, SegmentedChangedFunc cb, gpointer user_data)
+{
+    SegmentedState *st = g_object_get_data(G_OBJECT(group), "segmented-state");
+    if (!st) return;
+    st->cb = cb;
+    st->user_data = user_data;
+}
+
+guint
+segmented_group_get_selected(GtkWidget *group)
+{
+    SegmentedState *st = g_object_get_data(G_OBJECT(group), "segmented-state");
+    return st ? st->selected : 0;
+}
+
+void
+segmented_group_set_selected(GtkWidget *group, guint idx)
+{
+    SegmentedState *st = g_object_get_data(G_OBJECT(group), "segmented-state");
+    if (!st) return;
+    st->syncing = TRUE; /* programmatic change: do not call the user callback */
+    for (GtkWidget *c = gtk_widget_get_first_child(group); c; c = gtk_widget_get_next_sibling(c)) {
+        if (GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(c), "segment-index")) == idx)
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(c), TRUE);
+    }
+    st->selected = idx;
+    st->syncing = FALSE;
 }
 
 GtkWidget *
@@ -229,7 +326,7 @@ GtkWidget *
 create_action_button(const char *label, const char *payload_key, const char *payload_val, GCallback callback, gpointer user_data)
 {
     GtkWidget *btn = gtk_button_new_with_label(label);
-    gtk_widget_add_css_class(btn, "flat");
+    gtk_widget_add_css_class(btn, "files-nav-btn");
 
     if (payload_key && payload_val) {
         g_object_set_data_full(G_OBJECT(btn), payload_key, g_strdup(payload_val), g_free);
@@ -276,46 +373,7 @@ format_mac_address_from_bluez_path(const char *path)
 gboolean
 settings_send_ipc_command(const gchar *command)
 {
-    if (!command) return FALSE;
-    const gchar *runtime_dir = g_getenv("XDG_RUNTIME_DIR");
-    if (!runtime_dir) runtime_dir = "/tmp";
-    gchar *path = g_build_filename(runtime_dir, "kajo.sock", NULL);
-
-    if (!g_file_test(path, G_FILE_TEST_EXISTS)) {
-        g_free(path);
-        return FALSE;
-    }
-
-    GError *error = NULL;
-    GSocket *socket = g_socket_new(G_SOCKET_FAMILY_UNIX, G_SOCKET_TYPE_STREAM, G_SOCKET_PROTOCOL_DEFAULT, &error);
-    if (!socket) {
-        if (error) g_clear_error(&error);
-        g_free(path);
-        return FALSE;
-    }
-
-    GSocketAddress *address = g_unix_socket_address_new(path);
-    if (g_socket_connect(socket, address, NULL, NULL)) {
-        GSocketConnection *conn = g_socket_connection_factory_create_connection(socket);
-        GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
-
-        gchar *msg = g_strconcat(command, "\n", NULL);
-        g_output_stream_write_all(out, msg, strlen(msg), NULL, NULL, NULL);
-        g_free(msg);
-
-        g_io_stream_close(G_IO_STREAM(conn), NULL, NULL);
-        g_object_unref(conn);
-        g_object_unref(address);
-        g_object_unref(socket);
-        g_free(path);
-        return TRUE;
-    }
-
-    if (error) g_clear_error(&error);
-    g_object_unref(address);
-    g_object_unref(socket);
-    g_free(path);
-    return FALSE;
+    return shell_ipc_client_send(command);
 }
 
 static ShellTheme *g_shared_settings_theme = NULL;

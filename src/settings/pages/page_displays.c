@@ -18,12 +18,11 @@ run_niri_output_cmd(const char *out_name, const char *action, const char *arg)
 }
 
 static void
-on_vrr_tile_clicked(GtkButton *btn, gpointer user_data)
+on_vrr_card_toggled(GtkToggleButton *btn, gpointer user_data G_GNUC_UNUSED)
 {
-    GtkWidget *lbl_sub = GTK_WIDGET(user_data);
-    if (!lbl_sub) return;
-    gboolean active = gtk_widget_has_css_class(GTK_WIDGET(btn), "active");
-    gtk_label_set_text(GTK_LABEL(lbl_sub), active ? "Adaptive Sync Active" : "Adaptive Sync Disabled");
+    toggle_card_set_subtitle(GTK_WIDGET(btn),
+                             gtk_toggle_button_get_active(btn) ? "Adaptive Sync Active"
+                                                               : "Adaptive Sync Disabled");
 }
 
 static void
@@ -66,7 +65,7 @@ on_apply_displays_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
         else if (sel == 4) sc = 2.00;
     }
 
-    gboolean vrr = tile_vrr ? gtk_widget_has_css_class(tile_vrr, "active") : FALSE;
+    gboolean vrr = tile_vrr ? gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(tile_vrr)) : FALSE;
 
     gchar scale_buf[32];
     g_ascii_formatd(scale_buf, sizeof(scale_buf), "%.2f", sc);
@@ -99,7 +98,7 @@ on_apply_displays_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
     run_niri_output_cmd(out_name, "scale", scale_buf);
     run_niri_output_cmd(out_name, "transform", orient);
     run_niri_output_cmd(out_name, "vrr", vrr ? "on" : "off");
-    niri_send_action("{\"Action\":\"ReloadConfig\"}");
+    niri_reload_config();
 
     if (lbl_mon_hdr) {
         gchar *hdr_text = g_strdup_printf("Monitor %s — %s (%s, Scale %.0f%%)",
@@ -137,9 +136,12 @@ typedef struct _SettingsPageDisplays {
 
     /* Keyboard Backlight & Timeout Card */
     GtkWidget *card_kbd_backlight;
-    GtkWidget *combo_kbd_level;
+    GtkWidget *lbl_kbd_level;
+    GtkWidget *slot_kbd_level;
+    GtkWidget *kbd_level_ctl;   /* GtkSwitch (HP EC) or segmented group */
     GtkWidget *row_kbd_timeout;
-    GtkWidget *combo_kbd_timeout;
+    GtkWidget *slot_kbd_timeout;
+    GtkWidget *kbd_timeout_ctl; /* segmented group */
     GtkWidget *btn_apply_kbd;
 
     /* 360° Foldable Posture Card */
@@ -267,7 +269,12 @@ on_apply_kbd_clicked(GtkButton *btn, gpointer user_data)
         cfg = shell_config_get_default();
 
     const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    gint sel = (gint)gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_kbd_level));
+    /* HP EC: a switch (on -> sel 0 "wake keylights"); otherwise segmented Off/Low/High. */
+    gint sel = 0;
+    if (caps && caps->kbd_bl_backend == KBD_BL_HP_EC)
+        sel = gtk_switch_get_active(GTK_SWITCH(page->kbd_level_ctl)) ? 0 : 1;
+    else if (page->kbd_level_ctl)
+        sel = (gint)segmented_group_get_selected(page->kbd_level_ctl);
 
     if (caps && caps->kbd_bl_backend == KBD_BL_HP_EC) {
         /* On HP EC: sel == 0 -> Wake/Enable Keylights, sel == 1 -> Leave Off on Boot */
@@ -282,7 +289,7 @@ on_apply_kbd_clicked(GtkButton *btn, gpointer user_data)
     }
 
     if (shell_kbd_backlight_has_timeout()) {
-        guint t_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_kbd_timeout));
+        guint t_sel = page->kbd_timeout_ctl ? segmented_group_get_selected(page->kbd_timeout_ctl) : 0;
         if (t_sel < G_N_ELEMENTS(kbd_timeout_values)) {
             cfg->kbd_backlight_timeout_sec = kbd_timeout_values[t_sel];
             shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
@@ -385,9 +392,10 @@ settings_page_displays_class_init(SettingsPageDisplaysClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_idle);
 
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, card_kbd_backlight);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_kbd_level);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, lbl_kbd_level);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, slot_kbd_level);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_kbd_timeout);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_kbd_timeout);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, slot_kbd_timeout);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_kbd);
 
     gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, card_posture);
@@ -586,25 +594,21 @@ build_page_displays(void)
     else if (current_scale >= 1.15) scale_sel = 1;
     gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_scale), scale_sel);
 
-    GtkWidget *tile_vrr = create_metro_toggle_tile(
+    /* VRR is a capability with a status line, so it is a toggle card. The
+     * placeholder HDR card was removed: it was permanently disabled and nothing
+     * backed it. */
+    GtkWidget *tile_vrr = create_toggle_card(
         "display-symbolic",
         "Variable Refresh Rate (VRR)",
-        vrr_avail ? (vrr_active ? "Adaptive Sync Active" : "Adaptive Sync Disabled") : "Unsupported",
+        vrr_avail ? (vrr_active ? "Adaptive Sync Active" : "Adaptive Sync Disabled")
+                  : "Unsupported by this output",
         vrr_active);
-    if (!vrr_avail) {
+    if (!vrr_avail)
         gtk_widget_set_sensitive(tile_vrr, FALSE);
-    } else {
-        GtkWidget *lbl_sub = g_object_get_data(G_OBJECT(tile_vrr), "tile-subtitle-label");
-        if (lbl_sub) {
-            g_signal_connect_after(tile_vrr, "clicked", G_CALLBACK(on_vrr_tile_clicked), lbl_sub);
-        }
-    }
-
-    GtkWidget *tile_hdr = create_metro_toggle_tile("weather-clear-symbolic", "High Dynamic Range (HDR)", "SDR Display Panel", FALSE);
-    gtk_widget_set_sensitive(tile_hdr, FALSE);
+    else
+        g_signal_connect(tile_vrr, "toggled", G_CALLBACK(on_vrr_card_toggled), NULL);
 
     gtk_grid_attach(GTK_GRID(page->grid_features), tile_vrr, 0, 0, 1, 1);
-    gtk_grid_attach(GTK_GRID(page->grid_features), tile_hdr, 1, 0, 1, 1);
 
     g_object_set_data(G_OBJECT(page->btn_apply), "combo_res", page->combo_res);
     g_object_set_data(G_OBJECT(page->btn_apply), "combo_orient", page->combo_orient);
@@ -702,52 +706,33 @@ build_page_displays(void)
         gtk_widget_set_visible(page->card_kbd_backlight, TRUE);
 
         if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
-            const char *hp_kbd_items[] = {
-                "Wake / Enable Keylights (F4 cycles Low / High)",
-                "Do Not Auto-Wake Keylights on Startup",
-                NULL
-            };
-            GtkStringList *slist_kbd_lvl = gtk_string_list_new(hp_kbd_items);
-            gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_kbd_level), G_LIST_MODEL(slist_kbd_lvl));
-            g_object_unref(slist_kbd_lvl);
-
+            /* Two-state choice -> a switch, not a dropdown. */
+            gtk_label_set_text(GTK_LABEL(page->lbl_kbd_level),
+                               "Wake keylights on startup (F4 cycles Low / High):");
+            page->kbd_level_ctl = gtk_switch_new();
+            gtk_widget_set_valign(page->kbd_level_ctl, GTK_ALIGN_CENTER);
             gint saved_lvl = cfg ? cfg->kbd_backlight_level : 2;
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_kbd_level), (saved_lvl > 0) ? 0 : 1);
+            gtk_switch_set_active(GTK_SWITCH(page->kbd_level_ctl), saved_lvl > 0);
+            gtk_box_append(GTK_BOX(page->slot_kbd_level), page->kbd_level_ctl);
         } else {
-            const char *kbd_level_items[] = {
-                "Off (0%)",
-                "Low (50%)",
-                "High (100%)",
-                NULL
-            };
-            GtkStringList *slist_kbd_lvl = gtk_string_list_new(kbd_level_items);
-            gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_kbd_level), G_LIST_MODEL(slist_kbd_lvl));
-            g_object_unref(slist_kbd_lvl);
-
+            static const char *const kbd_level_items[] = { "Off", "Low", "High", NULL };
             gint live_lvl = shell_kbd_backlight_get_level();
             if (live_lvl < 0)
                 live_lvl = cfg ? cfg->kbd_backlight_level : 2;
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_kbd_level), (guint)CLAMP(live_lvl, 0, 2));
+            page->kbd_level_ctl = create_segmented_group(kbd_level_items, (guint)CLAMP(live_lvl, 0, 2));
+            gtk_box_append(GTK_BOX(page->slot_kbd_level), page->kbd_level_ctl);
         }
 
         gtk_widget_set_visible(page->row_kbd_timeout, caps->has_kbd_timeout);
         if (caps->has_kbd_timeout) {
-            const char *kbd_timeout_items[] = {
-                "Always On (Never Timeout)",
-                "30 Seconds",
-                "3 Minutes",
-                NULL
-            };
-            GtkStringList *slist_kbd_t = gtk_string_list_new(kbd_timeout_items);
-            gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_kbd_timeout), G_LIST_MODEL(slist_kbd_t));
-            g_object_unref(slist_kbd_t);
-
+            static const char *const kbd_timeout_items[] = { "Always On", "30 Seconds", "3 Minutes", NULL };
             gint live_t = shell_kbd_backlight_get_timeout_sec();
             if (live_t < 0)
                 live_t = cfg ? cfg->kbd_backlight_timeout_sec : 0;
-            gtk_drop_down_set_selected(
-                GTK_DROP_DOWN(page->combo_kbd_timeout),
+            page->kbd_timeout_ctl = create_segmented_group(
+                kbd_timeout_items,
                 timeout_sec_to_index(live_t, kbd_timeout_values, G_N_ELEMENTS(kbd_timeout_values), 0));
+            gtk_box_append(GTK_BOX(page->slot_kbd_timeout), page->kbd_timeout_ctl);
         }
 
         g_signal_connect(page->btn_apply_kbd, "clicked", G_CALLBACK(on_apply_kbd_clicked), page);

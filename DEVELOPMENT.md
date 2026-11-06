@@ -15,15 +15,23 @@ src/
 ├── panel.h/c                       Panel layer-shell surface & 2px Wayland autohide trigger strip
 ├── autohide.h/c                    Autohide reveal/hide state machine & live config reload
 ├── config.h/c                      JSON configuration parser & serializer (3-tier path resolution)
-├── theme.h/c                       GTK CSS theme engine, override loader & GFileMonitor hot-reload
+├── theme.h/c                       GTK CSS theme engine, override loader, GFileMonitor hot-reload, accent presets & shell_ide_font_stack()
+├── app_init.h/c                    Standalone-app boot: kajo_app_init_theme() / kajo_app_shutdown_theme()
 ├── icons.h/c                       Icon resolution (Fluent UI SVGs + desktop/theme fallback)
 ├── dbus_helpers.h/c                Shared GDBus helpers (NetworkManager, BlueZ, UPower)
+├── audio/
+│   └── pa_conn.h/c                 Shared PulseAudio/PipeWire connection + 2s auto-reconnect (volume, control-center, media, settings audio)
+├── common/
+│   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
 ├── compositor/
 │   ├── compositor.h                Compositor abstraction interface
 │   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
 ├── files/
 │   ├── main.c                      kajo-files standalone entry point (org.kajo.Files)
 │   ├── files_window.h/c            Main window controller, history stack, breadcrumbs & shortcuts
+│   ├── files_window_private.h      Window struct + helpers shared by the files_window_* modules (internal)
+│   ├── files_window_ctxmenu.c      Context menu popover + Open With sub-view
+│   ├── files_window_keys.c         Keyboard shortcut controller (Space Quick Look, navigation, clipboard)
 │   ├── files_model.h/c             KajoFileItem GObject, async GVFS enumerator, sort & filter
 │   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir & clipboard
 │   ├── files_sidebar.h/c           Places, Trash, GVolumeMonitor drives & inline GVFS/LUKS auth
@@ -33,21 +41,25 @@ src/
 │   ├── kbd_backlight.h/c           Sysfs & HP EC (0x97 HKBL / 0x96 HKBT) keyboard backlight control
 │   └── touch_gestures.h/c          Edge layer-shell bezel swipe gesture recognizers
 ├── ide/
-│   ├── main.c                      kajo-ide standalone entry point (org.kajo.Ide)
+│   ├── main.c                      kajo-ide standalone entry point (org.kajo.IDE)
 │   ├── ide_window.h/c              Main IDE window, 3-zone header, tab ribbon, status bar & chord HUD
+│   ├── ide_window_private.h        Window struct + helpers shared with ide_actions.c (internal)
+│   ├── ide_actions.c               Action dispatcher + buffer motion/edit execution
 │   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
-│   ├── ide_buffer.h/c              IdeBuffer, 11-token semantic highlighter, Git diff & Agent snapshots
+│   ├── ide_buffer.h/c              IdeBuffer, text objects, Git diff & Agent snapshots, scheme search paths
+│   ├── ide_syntax.c                11-token semantic highlighter (ide_highlight_source_buffer)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
 │   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 85-command Help Palette
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
-│   ├── ide_lsp.h/c                 Async JSON-RPC 2.0 LSP 3.17 client (clangd, gopls, rust-analyzer, pyright)
-│   ├── ide_dap.h/c                 Async DAP debugger client (gdb, lldb-dap, dlv) & 3-pane inspector
+│   ├── ide_lsp.h/c                 JSON-RPC framing helpers + ripgrep-backed hover/completion/definition/rename (real LSP client planned)
+│   ├── ide_dap.h/c                 Debugger UI scaffold: transport buttons & 3-pane inspector (no adapter connected yet)
 │   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
 │   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
 │   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
 ├── ipc/
-│   └── socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
+│   ├── socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
+│   └── ipc_client.h/c              shell_ipc_client_send(): one-line client used by the `kajo` CLI and kajo-settings
 ├── launcher/
 │   ├── launcher_surface.h/c        App launcher overlay surface & prefix plugin router
 │   └── emoji_dataset.h             Embedded dataset with 1,914 emoji entries
@@ -94,7 +106,7 @@ src/
 data/
 ├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
 ├── org.kajo.Player.desktop         Desktop entry for kajo-player (MimeType=video/*;audio/*;)
-├── org.kajo.Ide.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
+├── org.kajo.IDE.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
@@ -123,7 +135,8 @@ tests/
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
 ├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
-├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing & Agent IPC protocol tests
+├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, socket round-trip & stalled-client tests
+├── test_niri.c                     Mock-Niri socket: action JSON shape, rejection logging, EventStream parsing
 └── test_shaders.c                  Headless EGL/GLES2 compiler verification for Niri GLSL shaders
 ```
 
@@ -141,7 +154,7 @@ tests/
 - `blueprint-compiler`, `meson`, `ninja`
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 11 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 16 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -150,7 +163,7 @@ meson setup builddir
 # Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 11 automated GTest suites
+# Run all 16 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -171,6 +184,21 @@ meson install -C builddir
 | `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch. |
 | `files-model` | `test-files-model` | `KajoFileItem` size/permission formatting, directory-first sorting, filtering, and async `mkdir`/`rename`/`delete` operations. |
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
+| `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
+| `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
+| `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
+| `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
+| `niri-ipc` | `test-niri` | Mock-Niri socket: exact JSON of `ToggleWindowFloating` / `LoadConfigFile` actions (regression for the dead FLOAT / TILE button), rejection logging, and EventStream parsing (workspaces, windows, focus, keyboard layouts). |
+
+### Sanitizer Run (ASan + UBSan)
+Run the whole suite under AddressSanitizer and UndefinedBehaviorSanitizer in a throwaway build directory (does not touch `builddir/`):
+
+```bash
+scripts/asan-test.sh            # builds in /tmp/kajo-asan and runs meson test
+ASAN_OPTIONS=detect_leaks=1 scripts/asan-test.sh   # also report leaks (expect fontconfig/pango cache noise)
+```
+
+Run this before merging any change that touches object lifetimes, async callbacks, or string ownership. Code style for new code is described in `.clang-format` (existing files are not reformatted in bulk).
 
 ### Running & Debugging Individual Executables
 ```bash
@@ -253,3 +281,90 @@ Binary length-prefixed framing (`uint32_t` native-endian length + UTF-8 JSON pay
    - Never pass passwords through `JsonBuilder` / `JsonGenerator` (which allocate unscrubbed heap copies).
    - Always disable GTK interactive debugging (`gtk_window_set_interactive_debugging(FALSE)`) on lock and greeter surfaces, and set `prctl(PR_SET_DUMPABLE, 0)` in `kajo-greeter`.
 4. **Autohide Wayland Surface Visibility**: Never set `opacity: 0` on `#panel-container.autohide-hidden` in `style.css` (GTK4 skips rendering nodes with `opacity: 0`, which prevents Wayland surface buffer commits and breaks pointer enter events on the 2px trigger strip).
+
+---
+
+## 6. Visual Inspection & UI Debugging
+
+Compiling and unit tests do not catch layout, CSS or contrast bugs. Every UI change must be **rendered and compared with `docs/ui-gallery.html`** before it is called done.
+
+### 6.1 Headless screenshots (`scripts/ui-shot.sh`)
+Renders a Kajo app in a nested `cage` compositor on wlroots' headless backend (its own Wayland socket, 1280×720 output) and captures it with `grim`. Needs `cage` and `grim`; nothing appears on your desktop.
+
+```bash
+meson compile -C builddir
+scripts/ui-shot.sh -o /tmp/ide.png builddir/kajo-settings --page ide      # one settings page
+scripts/ui-shot.sh -o /tmp/files.png builddir/kajo-files ~/Downloads
+scripts/ui-shot.sh -d 6 -o /tmp/p.png builddir/kajo-player some.mkv       # -d: seconds to wait
+```
+
+The script is isolated on purpose: private `XDG_RUNTIME_DIR`, `NIRI_SOCKET`/`WAYLAND_DISPLAY`/`DISPLAY` unset (Niri actions and `kajo` IPC can never reach your real session), throwaway **copies** of `~/.config/kajo` and `~/.local/share/kajo`, and the working tree's `style.css` copied over the CSS so you see your changes (`-k` keeps your installed CSS). It refuses to run the `kajo` shell. The D-Bus buses are your real ones, so pages read live state (Wi-Fi list, paired devices) but nothing is clicked. Do not wrap it in `dbus-run-session` (it activates your installed services and leaves FUSE mounts behind).
+
+Limits: the output is fixed at 1280×720 and there is no input, so only the top of long/scrolling pages is visible and dialogs/popovers that need a click cannot be opened. For those, review the Blueprint/C code and test in a real session. Log lines such as `Gtk-CRITICAL` are echoed after the capture; treat any as a bug.
+
+### 6.2 How to analyze a screenshot
+Open the PNG (image viewer, or an AI agent reading the file) and crop/zoom for detail: `python3 -c "from PIL import Image; Image.open('/tmp/x.png').crop((420,150,1260,310)).resize((1680,320)).save('/tmp/crop.png')"`. Check, against the gallery:
+
+| Check | What a deviation looks like |
+| :--- | :--- |
+| **Control type** | A tile/button/dropdown standing in for a switch, toggle card or segmented group (see §6.3) |
+| **Geometry** | Rounded corners (only the OSK keycap may have 3px), double borders, a dropdown with an inner darker box |
+| **Alignment** | Slider/dropdown columns starting at different x per row; labels floating above neighbours; readouts in different styles |
+| **Overflow** | Right-hand content clipped at the viewport edge (also test at the default 960×640 window) |
+| **Contrast/state** | Subtitle text unreadable on an accent fill; no visible difference between on/off/disabled |
+| **Tokens** | Colours that don't match `@metro-*` roles; `Inter`/proportional text where Fira Code is required |
+| **Fonts** | Preview text in a proportional font: the requested family is not installed and the code used a bare family name instead of `shell_ide_font_stack()` |
+
+`fc-match "Fira Code"` shows what a family really resolves to. Validate CSS without a display:
+`python3 -c "import gi;gi.require_version('Gtk','4.0');from gi.repository import Gtk;p=Gtk.CssProvider();p.connect('parsing-error',lambda *a:print(a[2].message));p.load_from_path('data/defaults/style.css')"` (no output = 0 errors).
+
+On a real session, `GTK_DEBUG=interactive kajo-settings` opens the GTK inspector to read computed CSS nodes and `G_MESSAGES_DEBUG=all` shows GLib debug output.
+
+### 6.3 UI controls: which one, and how
+Specimens: `docs/ui-gallery.html` §04–§06. Rules: `docs/design_system.md` §4.3. Pick by what is being set:
+
+| Control | Use for | Create it with |
+| :--- | :--- | :--- |
+| **Switch row** | Plain on/off preference whose title/subtitle say everything (mute, word wrap, lock on suspend) | `create_action_row(icon, title, subtitle, gtk_switch_new())` |
+| **Toggle card** | A feature with a status line, an *unsupported* state or its own sub-settings (VRR, Autohide) | `create_toggle_card(icon, title, subtitle, active)`; read `gtk_toggle_button_get_active()`, react to `"toggled"`, update text with `toggle_card_set_subtitle()` |
+| **Segmented group** | 2–4 short mutually exclusive choices (Top/Bottom, ICON-ONLY/TEXT-ONLY/FULL, 2/4/8) | `create_segmented_group(labels, selected)`; `segmented_group_connect/get_selected/set_selected` |
+| **Dropdown** | Longer lists (timeouts, shaders, devices) | `create_string_dropdown(items)` or `DropDown` in Blueprint |
+
+The **toggle card** (`.toggle-card`, shared with the panel's Control Center quick tiles) shows state with a 4px left indicator bar: dim `@metro-border` when off, lit `@metro-accent` when on, with only a faint tint on the body so text keeps its contrast; disabled = 45% opacity with the reason in the subtitle. Example:
+
+```c
+GtkWidget *vrr = create_toggle_card("display-symbolic", "Variable Refresh Rate (VRR)",
+                                    available ? "Adaptive Sync Disabled" : "Unsupported by this output", active);
+gtk_widget_set_sensitive(vrr, available);
+g_signal_connect(vrr, "toggled", G_CALLBACK(on_vrr_toggled), NULL);   /* update the subtitle in the handler */
+```
+
+Adding a new component = implement the helper, add CSS in `data/defaults/style.css` (using tokens), add a specimen with usage notes to `docs/ui-gallery.html`, add the rule to `docs/design_system.md`, render it with `scripts/ui-shot.sh`, then sync the CSS (AGENTS.md §3).
+
+---
+
+## 7. Code Analysis for Bad Practices
+
+Layered, cheapest first. Treat tool output as leads and confirm each finding by reading the code.
+
+| Tool | Command | Finds | Notes |
+| :--- | :--- | :--- | :--- |
+| Normal build | `meson compile -C builddir` | Compiler errors/warnings (`-Wall -Wextra`) | Must be 0 warnings |
+| ASan + UBSan | `scripts/asan-test.sh` | Use-after-free, overflows, UB (found the `scheme_id` UAF) | Leak reports from fontconfig/pango caches are noise; `ASAN_OPTIONS=detect_leaks=1` to see them |
+| Extra warnings | `scripts/audit.sh warnings` | `-Wshadow -Wformat=2 -Wnull-dereference -Wduplicated-cond -Wlogical-op -Wcast-qual -Wstrict-prototypes` | `-Wcast-qual` on sort comparators is benign |
+| Static analyzer | `scripts/audit.sh tidy` | clang-analyzer: null derefs, dead stores, stream misuse (found `if (x) {…}` followed by an unconditional `x->…`) | False positives: `g_autofree` (reported as leak), flag-enum casts, `sizeof(*ptr)` in `g_new0` |
+| Function/file size | `scripts/audit.sh sizes` | Split candidates (> ~150-line functions, > ~1500-line files) | Heuristic parser |
+| Duplication | `scripts/audit.sh dups` | Copy-pasted 8-line windows grouped by file pair | Whole re-implemented subsystems are not exact clones: grep for `pa_context_connect`, `kajo.sock`, `poppler_page_render` too |
+| UI-thread blocking | `scripts/audit.sh blocking` | `g_spawn_sync`, `*_call_sync`, `g_bus_get_sync` | Each hit is a potential freeze; prefer `GSubprocess`/async D-Bus |
+| Callback lifetimes | `scripts/audit.sh lifetimes` | Async calls with a NULL cancellable and a raw user_data | Hits that pass a `GWeakRef`/ctx struct are fine |
+| Colour drift | `scripts/audit.sh colors` | Raw hex literals that should be `@metro-*` tokens | |
+
+Manual techniques that paid off:
+- **Probe external protocols with a harmless equivalent.** To learn whether `{"Action":"X"}` is valid, send an action with the same shape but no visible effect (e.g. `ToggleWindowUrgent` on a bogus id) with a short Python socket script and read the `{"Ok"|"Err"}` reply. Never send an action that changes the live session.
+- **Mutation-check new tests.** Re-introduce the bug in a scratch copy (e.g. the old `"ToggleWindowFloating"` string) and confirm the test fails; a regression test that cannot fail is worthless.
+- **Check what a family/format really resolves to** (`fc-match`, `file`, a Pango font map load) instead of assuming the name works.
+- **Compare claims with code.** `rg` the README/manual feature claims against `src/` (e.g. spawn of a language server, a config key) before trusting documentation.
+- **Audit ownership by pattern.** `rg "g_free\(.*\);\s*\n.*= g_strdup\("` style aliasing, `->pa_ctx` style raw pointers captured by callbacks, `static` helpers copied into several files.
+- `meson test -C builddir --print-errorlogs` for failures; `G_DEBUG=fatal-warnings` makes any GLib/GTK warning abort a test under a debugger.
+
+Recommended loop for a risky change: `audit.sh` leads → fix → `meson compile && meson test` → `scripts/asan-test.sh` → `scripts/ui-shot.sh` (for UI) → docs/gallery updated in the same commit.

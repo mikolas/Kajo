@@ -79,8 +79,77 @@ template $SettingsPageNetwork : Box {
         label: "🔍 REFRESH SCAN";
 
         styles [
-          "flat",
+          "files-nav-btn",
         ]
+      }
+    }
+
+    /* Inline passphrase / status banner (gallery: .files-auth-bar pattern) */
+    Revealer auth_revealer {
+      reveal-child: false;
+      transition-type: slide_down;
+
+      Box {
+        orientation: vertical;
+        spacing: 8;
+
+        styles [
+          "settings-auth-bar",
+        ]
+
+        Label auth_title {
+          label: "PASSPHRASE REQUIRED";
+          halign: start;
+          xalign: 0;
+          wrap: true;
+
+          styles [
+            "shell-popover-badge",
+            "accent",
+          ]
+        }
+
+        Label auth_status {
+          label: "";
+          halign: start;
+          xalign: 0;
+          wrap: true;
+          visible: false;
+
+          styles [
+            "row-subtitle",
+          ]
+        }
+
+        Box auth_row {
+          orientation: horizontal;
+          spacing: 8;
+
+          PasswordEntry auth_entry {
+            hexpand: true;
+            show-peek-icon: true;
+            placeholder-text: "Wi-Fi passphrase";
+          }
+
+          Button btn_auth_connect {
+            label: "CONNECT";
+            valign: center;
+
+            styles [
+              "action-btn-primary",
+              "files-nav-btn",
+            ]
+          }
+
+          Button btn_auth_cancel {
+            label: "CANCEL";
+            valign: center;
+
+            styles [
+              "files-nav-btn",
+            ]
+          }
+        }
       }
     }
 

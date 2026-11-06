@@ -18,6 +18,9 @@ typedef struct {
 
 struct _IdePicker {
   char               *workspace_root;
+  GCancellable       *grep_cancel;     /* in-flight live grep; cancelled in _free() */
+  GSubprocess        *grep_proc;
+  char               *grep_done_query; /* query whose results are in all_items */
   IdePickerMode       mode;
   IdePickerOpenFileCb open_file_cb;
   IdePickerCommandCb  command_cb;
@@ -389,33 +392,17 @@ ide_picker_select_index(IdePicker *picker, gint idx)
   ide_picker_update_preview(picker);
 }
 
+static void ide_picker_rebuild_list(IdePicker *picker);
+
+typedef struct {
+  IdePicker *picker;
+  char      *query;
+} GrepJob;
+
 static void
-ide_picker_run_live_grep(IdePicker *picker, const char *query)
+ide_picker_apply_grep_output(IdePicker *picker, const char *stdout_buf)
 {
   g_ptr_array_set_size(picker->all_items, 0);
-  if (query == NULL || strlen(query) < 2 || picker->workspace_root == NULL) {
-    return;
-  }
-
-  const char *argv[] = {
-    "rg", "--vimgrep", "--no-heading", "--smart-case", "--max-count=80",
-    "--glob=!.git", "--glob=!builddir", "--", query, picker->workspace_root, NULL
-  };
-  g_autofree char *stdout_buf = NULL;
-  if (!g_spawn_sync(NULL,
-                    (char **)argv,
-                    NULL,
-                    G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
-                    NULL,
-                    NULL,
-                    &stdout_buf,
-                    NULL,
-                    NULL,
-                    NULL) ||
-      stdout_buf == NULL) {
-    return;
-  }
-
   gsize root_len = strlen(picker->workspace_root);
   g_auto(GStrv) lines = g_strsplit(stdout_buf, "\n", 120);
   for (gsize i = 0; lines[i] != NULL && picker->all_items->len < 100; i++) {
@@ -447,6 +434,91 @@ ide_picker_run_live_grep(IdePicker *picker, const char *query)
     it->score = 200 - (gint)i;
     g_ptr_array_add(picker->all_items, it);
   }
+}
+
+static void
+on_live_grep_finished(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+  GrepJob *job = user_data;
+  g_autofree char *stdout_buf = NULL;
+  g_autoptr(GError) err = NULL;
+  gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), res,
+                                                     &stdout_buf, NULL, &err);
+  /* Cancelled => picker freed or superseded by a newer query: don't touch it. */
+  if (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    g_free(job->query);
+    g_free(job);
+    return;
+  }
+
+  IdePicker *picker = job->picker;
+  g_clear_object(&picker->grep_proc);
+  g_clear_object(&picker->grep_cancel);
+
+  if (picker->mode == IDE_PICKER_GREP) {
+    if (ok && stdout_buf != NULL) {
+      ide_picker_apply_grep_output(picker, stdout_buf);
+    } else {
+      g_ptr_array_set_size(picker->all_items, 0);
+    }
+    g_free(picker->grep_done_query);
+    picker->grep_done_query = job->query; /* ownership moves to the picker */
+    job->query = NULL;
+    ide_picker_rebuild_list(picker);
+  }
+  g_free(job->query);
+  g_free(job);
+}
+
+/* Starts an asynchronous ripgrep for `query`. Results arrive in
+ * on_live_grep_finished(); until then the previous results stay visible, so
+ * typing never blocks the UI on a slow search. */
+static void
+ide_picker_run_live_grep(IdePicker *picker, const char *query)
+{
+  if (query == NULL || strlen(query) < 2 || picker->workspace_root == NULL) {
+    if (picker->grep_cancel != NULL) {
+      g_cancellable_cancel(picker->grep_cancel);
+    }
+    if (picker->grep_proc != NULL) {
+      g_subprocess_force_exit(picker->grep_proc);
+    }
+    g_clear_object(&picker->grep_proc);
+    g_clear_object(&picker->grep_cancel);
+    g_clear_pointer(&picker->grep_done_query, g_free);
+    g_ptr_array_set_size(picker->all_items, 0);
+    return;
+  }
+  if (g_strcmp0(query, picker->grep_done_query) == 0) {
+    return; /* results for this query are already loaded */
+  }
+
+  if (picker->grep_cancel != NULL) {
+    g_cancellable_cancel(picker->grep_cancel);
+  }
+  if (picker->grep_proc != NULL) {
+    g_subprocess_force_exit(picker->grep_proc);
+  }
+  g_clear_object(&picker->grep_proc);
+  g_clear_object(&picker->grep_cancel);
+
+  const char *argv[] = {
+    "rg", "--vimgrep", "--no-heading", "--smart-case", "--max-count=80",
+    "--glob=!.git", "--glob=!builddir", "--", query, picker->workspace_root, NULL
+  };
+  g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
+      G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+  picker->grep_proc = g_subprocess_launcher_spawnv(launcher, argv, NULL);
+  if (picker->grep_proc == NULL) {
+    return; /* rg not installed */
+  }
+
+  GrepJob *job = g_new0(GrepJob, 1);
+  job->picker = picker;
+  job->query = g_strdup(query);
+  picker->grep_cancel = g_cancellable_new();
+  g_subprocess_communicate_utf8_async(picker->grep_proc, NULL, picker->grep_cancel,
+                                      on_live_grep_finished, job);
 }
 
 static void
@@ -953,6 +1025,15 @@ ide_picker_free(IdePicker *picker)
   if (picker == NULL) {
     return;
   }
+  if (picker->grep_cancel != NULL) {
+    g_cancellable_cancel(picker->grep_cancel);
+  }
+  if (picker->grep_proc != NULL) {
+    g_subprocess_force_exit(picker->grep_proc);
+  }
+  g_clear_object(&picker->grep_proc);
+  g_clear_object(&picker->grep_cancel);
+  g_free(picker->grep_done_query);
   g_free(picker->workspace_root);
   g_free(picker->active_category);
   g_clear_pointer(&picker->filtered_items, g_ptr_array_unref);
@@ -1049,6 +1130,7 @@ ide_picker_open_grep(IdePicker *picker, const char *workspace_root)
   gtk_editable_set_text(GTK_EDITABLE(picker->search_entry), "");
 
   g_ptr_array_set_size(picker->all_items, 0);
+  g_clear_pointer(&picker->grep_done_query, g_free);
   gtk_widget_set_visible(picker->backdrop_box, TRUE);
   ide_picker_rebuild_list(picker);
 }

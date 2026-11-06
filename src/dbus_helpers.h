@@ -16,14 +16,42 @@ typedef struct {
 
 void shell_bluetooth_device_free(ShellBluetoothDevice *dev);
 
+/* Security class of a Wi-Fi access point, derived from NetworkManager's
+ * Flags / WpaFlags / RsnFlags. */
+typedef enum {
+    SHELL_AP_SEC_OPEN = 0,
+    SHELL_AP_SEC_PSK,          /* WPA/WPA2-Personal (also WPA2/WPA3 transitional) */
+    SHELL_AP_SEC_SAE,          /* WPA3-Personal only */
+    SHELL_AP_SEC_UNSUPPORTED   /* WEP or 802.1X enterprise: needs a profile made elsewhere */
+} ShellApSecurity;
+
 typedef struct {
     char *ssid;
     char *path;
     guint8 strength;
     gboolean active;
+    ShellApSecurity security;
 } ShellAccessPoint;
 
 void shell_access_point_free(ShellAccessPoint *ap);
+
+/* Result callback for shell_dbus_nm_connect_ap_async(). `error_message` is NULL on success. */
+typedef void (*ShellNmConnectDone)(const char *error_message, gpointer user_data);
+
+/* TRUE if NetworkManager already has a saved Wi-Fi profile for `ssid`. */
+gboolean shell_dbus_nm_has_saved_connection(const char *ssid);
+
+/* Connects to an access point: activates the saved profile for `ssid` when one
+ * exists, otherwise creates one (open network, or WPA-PSK/SAE with
+ * `passphrase`) via AddAndActivateConnection. The final D-Bus call is
+ * asynchronous; `done` is always invoked exactly once (possibly synchronously
+ * with an error). */
+void shell_dbus_nm_connect_ap_async(const char *ap_path,
+                                    const char *ssid,
+                                    ShellApSecurity security,
+                                    const char *passphrase,
+                                    ShellNmConnectDone done,
+                                    gpointer user_data);
 
 /* Set a property synchronously on system or session D-Bus */
 gboolean shell_dbus_set_property_sync(GBusType bus_type,

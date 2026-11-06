@@ -29,6 +29,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Target Layer Namespace:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_ns {
@@ -43,6 +46,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Surface Layer Opacity:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_op {
@@ -58,6 +64,13 @@ template $SettingsPageNiri : Box {
 
       Label lbl_op_val {
         label: "85%";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
@@ -68,6 +81,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Workspace Window Gaps:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_gap {
@@ -83,6 +99,13 @@ template $SettingsPageNiri : Box {
 
       Label lbl_gap_val {
         label: "12px";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
@@ -92,11 +115,16 @@ template $SettingsPageNiri : Box {
       spacing: 12;
 
       Label {
-        label: "Background Blur XRay Mode:";
+        label: "Blur XRay (show wallpaper through blur):";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
+        hexpand: true;
+        halign: start;
       }
 
-      DropDown combo_xray {
-        hexpand: true;
+      Switch sw_xray {
+        valign: center;
       }
     }
   }
@@ -126,6 +154,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Window Open Shader:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_shader_open {
@@ -140,6 +171,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Open Duration & Curve:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_open_dur {
@@ -155,6 +189,13 @@ template $SettingsPageNiri : Box {
 
       Label lbl_open_dur_val {
         label: "150ms";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
 
       DropDown combo_open_curve {
@@ -168,6 +209,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Window Close Shader:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_shader_close {
@@ -182,6 +226,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Close Duration & Curve:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_close_dur {
@@ -197,6 +244,13 @@ template $SettingsPageNiri : Box {
 
       Label lbl_close_dur_val {
         label: "150ms";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
 
       DropDown combo_close_curve {
@@ -210,6 +264,9 @@ template $SettingsPageNiri : Box {
 
       Label {
         label: "Window Resize Shader:";
+        width-chars: 41;
+        xalign: 0;
+        valign: center;
       }
 
       DropDown combo_shader_resize {
@@ -223,7 +280,7 @@ template $SettingsPageNiri : Box {
       spacing: 12;
 
       Button btn_apply {
-        label: "[ SAVE & RELOAD NIRI CONFIG ]";
+        label: "[ ✓ SAVE & APPLY ]";
         hexpand: true;
 
         styles [
@@ -232,10 +289,10 @@ template $SettingsPageNiri : Box {
       }
 
       Button btn_test_shader {
-        label: "[ ▶ TEST TRANSITION ]";
+        label: "▶ TEST TRANSITION";
 
         styles [
-          "flat",
+          "files-nav-btn",
         ]
       }
     }

@@ -1,8 +1,8 @@
 # Kajo IDE (`kajo-ide`) — User & Architecture Manual
 
-**Binary:** `kajo-ide` (`org.kajo.Ide`)  
+**Binary:** `kajo-ide` (`org.kajo.IDE`)  
 **Design System:** Kajo Aero + Metro (`0px` sharp geometry, high-contrast `#111111`–`#1a1a1a` dark surfaces, `Fira Code` monospace typography)  
-**Settings Integration:** `kajo-settings` $\rightarrow$ **Kajo IDE & Code** (`~/.config/kajo/ide.toml`)
+**Settings Integration:** `kajo-settings` $\rightarrow$ **Kajo IDE & Code** (`~/.config/kajo/config.json`)
 
 ---
 
@@ -12,7 +12,7 @@
 
 1. **Selection-First Modal Editing** — A deterministic 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) where motions highlight selections first and actions (`d`, `c`, `y`, `s`) operate on the active selection.
 2. **Nordic Keyboard Ergonomics** — First-class bindings for Finnish/Swedish keyboards (`ä` / `ö` diagnostic & hunk stepping, `m i/a` structural text objects that avoid Dead-Key / AltGr finger gymnastics, and `jk` fast-exit from `INSERT` mode) alongside standard desktop shortcuts (`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C/X/V/A`, `F1`, `F5`–`F12`).
-3. **Zero-Config Language Server (LSP 3.17) & Debugger (DAP)** — Asynchronous JSON-RPC 2.0 clients for `clangd`, `gopls`, `rust-analyzer`, and `pyright`, plus native Debug Adapter Protocol support for `gdb -i=dap`, `lldb-dap`, and `dlv dap`.
+3. **Code Intelligence & Debugger UI** — ripgrep-backed hover, completion, go-to-definition and rename today; a real stdio LSP 3.17 client (`clangd`, `gopls`, `rust-analyzer`, `pyright`) and DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) are planned (see §8, §9 and `ROADMAP.md`).
 4. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg` export.
 5. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers.
 
@@ -191,10 +191,10 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 | `Space q` | Window | Close buffer / Quit IDE (`:q`) |
 | `Space e` | Explorer | Focus or toggle the **Project File Explorer** sidebar |
 | `Space h` / `?` / `F1` | Help | Open the **Interactive Help Viewer & Command Palette** |
-| `Space c a` | LSP | Trigger **LSP Code Actions** (`quickfix` / refactor) |
-| `Space c r` | LSP | Trigger **LSP Rename Symbol** across workspace |
-| `Space c f` | LSP | Format current buffer via LSP (`clang-format` / `gofmt` / `rustfmt`) |
-| `Space g c` | LSP | Inspect **LSP Incoming / Outgoing Call Hierarchy** |
+| `Space c a` | LSP | *(planned)* Trigger **LSP Code Actions** (`quickfix` / refactor) — chord is bound, no handler yet |
+| `Space c r` | LSP | Rename symbol (whole-word replace in the current buffer) |
+| `Space c f` | LSP | *(planned)* Format current buffer via LSP (`clang-format` / `gofmt` / `rustfmt`) |
+| `Space g c` | LSP | *(planned)* Inspect **LSP Incoming / Outgoing Call Hierarchy** — chord is bound, no handler yet |
 | `Space x x` | Diagnostics | Open **Workspace Diagnostics Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
 | `Space s R` | Search | Open **Project-Wide Search & Replace** in bottom drawer |
@@ -252,28 +252,31 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 
 ---
 
-## 8. LSP 3.17 Code Intelligence
+## 8. Code Intelligence (ripgrep-backed; LSP client planned)
 
-`kajo-ide` automatically spawns the matching language server over asynchronous `GSubprocess` stdio pipes based on buffer filetype (`src/ide/ide_lsp.c`):
+> **Status:** `kajo-ide` does **not** yet spawn language servers. `src/ide/ide_lsp.c` detects the matching server per filetype and shows an availability badge in the status bar, and contains the JSON-RPC 2.0 framing helpers a future client will use. The features below are implemented with `ripgrep` and the open buffer.
 
-| Language(s) | File Extensions | Language Server Binary |
+| Language(s) | File Extensions | Server detected (badge only) |
 | :--- | :--- | :--- |
-| **C / C++ / ObjC** | `.c`, `.h`, `.cpp`, `.hpp`, `.cc` | `clangd --background-index` |
+| **C / C++** | `.c`, `.h`, `.cpp`, `.hpp`, `.cc` | `clangd` |
 | **Go** | `.go` | `gopls` |
 | **Rust** | `.rs` | `rust-analyzer` |
-| **Python** | `.py` | `pyright-langserver --stdio` (fallback: `pylsp`) |
+| **Python** | `.py` | `pyright-langserver` |
 
-### Key LSP Workflows
-- **Hover Documentation (`K`):** Opens a floating documentation popover with formatted type signatures and docstrings at the cursor.
-- **Autocompletion (`Ctrl+Space` or automatic in `INSERT` mode):** Displays ranked `textDocument/completion` items (`Function`, `Method`, `Variable`, `Struct`, `Snippet`) with `Tab` / `Enter` insertion.
-- **Go to Definition (`g d`) & References (`g r`):** Jumps directly to the symbol definition (recording the location in the `Ctrl+o` / `Ctrl+i` jumplist) or populates the bottom Diagnostics/References drawer.
-- **Code Actions (`Space c a`) & Rename (`Space c r`):** Applies workspace-wide `WorkspaceEdit` patches across open buffers and disk files.
+### Implemented Workflows
+- **Hover (`K`):** popover with the symbol, a one-line declaration found via `ripgrep` in the workspace, and any compiler diagnostic on the line.
+- **Completion (`Ctrl+Space`):** ranked identifiers from the current buffer (fuzzy + prefix), inserted with `Tab` / `Enter`.
+- **Go to Definition (`g d`):** `ripgrep` search for the declaration pattern; the location is recorded in the `Ctrl+o` / `Ctrl+i` jumplist.
+- **Rename (`Space c r`):** whole-word replace across the current buffer.
+
+### Not Yet Implemented (planned)
+Code actions, call hierarchy, references, workspace-wide rename, LSP diagnostics (the diagnostics shown come from the build runner), and formatting via a language server.
 
 ---
 
-## 9. Interactive DAP Debugger (`F5`–`F12`)
+## 9. Debugger UI (`F5`–`F12`) — adapter integration planned
 
-The built-in Debug Adapter Protocol client (`src/ide/ide_dap.c`) connects to native debug adapters (`gdb -i=dap`, `lldb-dap`, `dlv dap`):
+> **Status:** `src/ide/ide_dap.c` provides the debugger UI scaffold: breakpoint toggling, the transport buttons, the execution-line gutter marker and the three panes. **No debug adapter is spawned yet**; the stack and locals panes show placeholder rows derived from the breakpoints, and the REPL echoes input. Connecting `gdb -i=dap`, `lldb-dap` and `dlv dap` is on the roadmap.
 
 | Key / Chord | Transport Button | Action |
 | :--- | :--- | :--- |
@@ -351,37 +354,32 @@ Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/page
   3. **`kajo-nord-frost`** — Arctic Nord Frost dark palette (`#14171d`).
   4. **`kajo-amber-crt`** — Retro monochrome amber phosphor CRT terminal palette (`#0c0900`).
   5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
-- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, etc.), font size (`8pt`–`28pt`), tab width (`2`, `4`, `8`), spaces vs. tabs, line number style (`Absolute`, `Relative`, `None`), current line highlight, right margin guide, word wrap, and minimap visibility.
+- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter and minimap visibility. *(Relative line numbers are planned.)*
 
-All changes written to `~/.config/kajo/ide.toml` are hot-reloaded instantaneously across all running `kajo-ide` windows via `GFileMonitor`.
+Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/config.json` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `GFileMonitor`.
 
 ### 12.2 Live On-the-Fly Editor Font Zoom
 Adjust editor font size at any time directly inside `kajo-ide`:
-- **`Ctrl + +` / `Ctrl + =`** — Increase editor font size (`+1pt`) and persist to `~/.config/kajo/ide.toml`.
-- **`Ctrl + -`** — Decrease editor font size (`-1pt`) and persist to `~/.config/kajo/ide.toml`.
+- **`Ctrl + +` / `Ctrl + =`** — Increase editor font size (`+1pt`) and persist to `~/.config/kajo/config.json`.
+- **`Ctrl + -`** — Decrease editor font size (`-1pt`) and persist to `~/.config/kajo/config.json`.
 - **`Ctrl + 0`** — Reset editor font size to the default `13pt`.
 
-### 12.3 Custom Key Remapping (`~/.config/kajo/ide.toml`)
-You can override or add custom key bindings per mode in `~/.config/kajo/ide.toml`:
+### 12.3 Configuration File & Key Remapping
+IDE settings live in the `ide` object of `~/.config/kajo/config.json` and are edited from `kajo-settings` → **Kajo IDE & Code**:
 
-```toml
-[editor]
-scheme = "kajo-metro-dark"
-font_family = "Fira Code"
-font_size = 13
-tab_width = 2
-insert_spaces = true
-line_numbers = "relative"
-highlight_current_line = true
-show_right_margin = true
-right_margin_col = 100
-word_wrap = false
-show_minimap = true
-
-[keys.normal]
-"C-p" = "picker_files"
-"F2" = "lsp_rename"
-
-[keys.leader]
-"g g" = "picker_grep"
+```json
+{
+  "ide": {
+    "color_scheme": "kajo-metro-dark",
+    "font_family": "Fira Code",
+    "font_size_px": 13,
+    "tab_width": 2,
+    "show_minimap": true,
+    "show_line_numbers": true,
+    "highlight_current_line": true
+  }
+}
 ```
+
+Custom per-mode key remapping (`[keys.*]`) is **not implemented yet**: the finite state machine has a remap table (`ide_fsm_set_remap`), but nothing loads user bindings into it. Tracked in `ROADMAP.md`.
+

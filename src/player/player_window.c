@@ -926,6 +926,7 @@ on_file_dialog_opened(GObject *source_object, GAsyncResult *res, gpointer user_d
     if (file) {
         kajo_player_window_open_file(self, file);
     }
+    g_object_unref(self); /* ref taken in open_file_chooser() */
 }
 
 static void
@@ -943,7 +944,7 @@ open_file_chooser(KajoPlayerWindow *self)
     g_list_store_append(filters, filter);
     gtk_file_dialog_set_filters(dialog, G_LIST_MODEL(filters));
 
-    gtk_file_dialog_open(dialog, GTK_WINDOW(self), NULL, on_file_dialog_opened, self);
+    gtk_file_dialog_open(dialog, GTK_WINDOW(self), NULL, on_file_dialog_opened, g_object_ref(self));
 }
 
 static void
@@ -962,6 +963,7 @@ on_sub_file_dialog_opened(GObject *source_object, GAsyncResult *res, gpointer us
             show_status_toast(self, msg);
         }
     }
+    g_object_unref(self); /* ref taken in open_subtitle_chooser() */
 }
 
 static void
@@ -986,7 +988,7 @@ open_subtitle_chooser(KajoPlayerWindow *self)
     g_list_store_append(filters, filter);
     gtk_file_dialog_set_filters(dialog, G_LIST_MODEL(filters));
 
-    gtk_file_dialog_open(dialog, GTK_WINDOW(self), NULL, on_sub_file_dialog_opened, self);
+    gtk_file_dialog_open(dialog, GTK_WINDOW(self), NULL, on_sub_file_dialog_opened, g_object_ref(self));
 }
 
 /* --- Button & Scale Signal Handlers --- */
@@ -1012,7 +1014,7 @@ on_btn_queue_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 static void
 on_btn_float_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    niri_send_action("{\"Action\":\"ToggleWindowFloating\"}");
+    niri_toggle_window_floating();
 }
 
 static void

@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "../settings_common.h"
 #include "../settings_pages.h"
 #include "../../dbus_helpers.h"
@@ -12,6 +13,18 @@ typedef struct _SettingsPageNetwork {
     GtkWidget *card_act;
     GtkWidget *btn_scan;
     GtkWidget *list_scan;
+
+    /* Inline passphrase / status banner */
+    GtkWidget *auth_revealer;
+    GtkWidget *auth_title;
+    GtkWidget *auth_status;
+    GtkWidget *auth_row;
+    GtkWidget *auth_entry;
+    GtkWidget *btn_auth_connect;
+    GtkWidget *btn_auth_cancel;
+    gchar     *auth_ap_path;
+    gchar     *auth_ssid;
+    ShellApSecurity auth_security;
 
     guint refresh_timer_id;
 } SettingsPageNetwork;
@@ -36,70 +49,117 @@ on_net_wifi_switch_toggled(GtkSwitch *sw G_GNUC_UNUSED, gboolean state, gpointer
 }
 
 static void
+net_auth_show(SettingsPageNetwork *self, const char *title, const char *status, gboolean with_entry)
+{
+    gtk_label_set_text(GTK_LABEL(self->auth_title), title);
+    gtk_label_set_text(GTK_LABEL(self->auth_status), status ? status : "");
+    gtk_widget_set_visible(self->auth_status, status && status[0]);
+    gtk_widget_set_visible(self->auth_entry, with_entry);
+    gtk_widget_set_visible(self->btn_auth_connect, with_entry);
+    gtk_button_set_label(GTK_BUTTON(self->btn_auth_cancel), with_entry ? "CANCEL" : "CLOSE");
+    gtk_revealer_set_reveal_child(GTK_REVEALER(self->auth_revealer), TRUE);
+    if (with_entry)
+        gtk_widget_grab_focus(self->auth_entry);
+}
+
+static void
+net_auth_hide(SettingsPageNetwork *self)
+{
+    gtk_revealer_set_reveal_child(GTK_REVEALER(self->auth_revealer), FALSE);
+    /* Never leave a typed passphrase in the entry (AGENTS.md credential rules). */
+    gtk_editable_set_text(GTK_EDITABLE(self->auth_entry), "");
+    gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(self->auth_entry), FALSE);
+    gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(self->auth_entry), TRUE);
+}
+
+/* The connect call can complete after the page is gone: hold a weak ref. */
+static void
+on_net_connect_done(const char *error_message, gpointer user_data)
+{
+    GWeakRef *ref = user_data;
+    SettingsPageNetwork *self = g_weak_ref_get(ref);
+    g_weak_ref_clear(ref);
+    g_free(ref);
+    if (!self)
+        return;
+
+    if (error_message) {
+        gboolean needs_pass = self->auth_security == SHELL_AP_SEC_PSK || self->auth_security == SHELL_AP_SEC_SAE;
+        g_autofree gchar *title = g_strdup_printf("COULD NOT CONNECT TO %s", self->auth_ssid ? self->auth_ssid : "NETWORK");
+        net_auth_show(self, title, error_message, needs_pass && gtk_widget_get_visible(self->auth_entry));
+    } else {
+        net_auth_hide(self);
+    }
+    schedule_net_refresh(self);
+    g_object_unref(self);
+}
+
+static void
+net_start_connect(SettingsPageNetwork *self, const char *passphrase)
+{
+    GWeakRef *ref = g_new0(GWeakRef, 1);
+    g_weak_ref_init(ref, self);
+    shell_dbus_nm_connect_ap_async(self->auth_ap_path, self->auth_ssid, self->auth_security,
+                                   passphrase, on_net_connect_done, ref);
+}
+
+static void
 on_net_ap_connect_clicked(GtkButton *btn, gpointer user_data)
 {
     SettingsPageNetwork *self = user_data;
     const char *ap_path = g_object_get_data(G_OBJECT(btn), "ap-path");
-    if (!ap_path) return;
+    const char *ssid = g_object_get_data(G_OBJECT(btn), "ap-ssid");
+    ShellApSecurity sec = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "ap-security"));
+    if (!ap_path || !ssid) return;
 
-    GError *error = NULL;
-    GDBusConnection *bus = g_bus_get_sync(G_BUS_TYPE_SYSTEM, NULL, &error);
-    if (!bus) {
-        if (error) g_clear_error(&error);
+    g_free(self->auth_ap_path);
+    g_free(self->auth_ssid);
+    self->auth_ap_path = g_strdup(ap_path);
+    self->auth_ssid = g_strdup(ssid);
+    self->auth_security = sec;
+
+    gboolean needs_passphrase = (sec == SHELL_AP_SEC_PSK || sec == SHELL_AP_SEC_SAE) &&
+                                !shell_dbus_nm_has_saved_connection(ssid);
+    if (needs_passphrase) {
+        g_autofree gchar *title = g_strdup_printf("🔒 PASSPHRASE REQUIRED — %s", ssid);
+        net_auth_show(self, title, NULL, TRUE);
         return;
     }
 
-    GDBusProxy *nm_proxy = g_dbus_proxy_new_sync(
-        bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
-        "org.freedesktop.NetworkManager", "/org/freedesktop/NetworkManager",
-        "org.freedesktop.NetworkManager", NULL, &error);
+    /* Saved profile or open network: connect straight away. */
+    net_start_connect(self, NULL);
+}
 
-    if (nm_proxy) {
-        gchar *wifi_dev_path = NULL;
-        GVariant *res = g_dbus_proxy_call_sync(
-            nm_proxy, "GetDevices", NULL, G_DBUS_CALL_FLAGS_NONE, 3000, NULL, NULL);
-
-        if (res) {
-            GVariant *dev_arr = g_variant_get_child_value(res, 0);
-            GVariantIter iter;
-            g_variant_iter_init(&iter, dev_arr);
-            const gchar *dev_path = NULL;
-
-            while (g_variant_iter_loop(&iter, "&o", &dev_path)) {
-                GDBusProxy *dev_proxy = g_dbus_proxy_new_sync(
-                    bus, G_DBUS_PROXY_FLAGS_NONE, NULL,
-                    "org.freedesktop.NetworkManager", dev_path,
-                    "org.freedesktop.NetworkManager.Device", NULL, NULL);
-                if (dev_proxy) {
-                    GVariant *type_var = g_dbus_proxy_get_cached_property(dev_proxy, "DeviceType");
-                    guint type_val = type_var ? g_variant_get_uint32(type_var) : 0;
-                    if (type_var) g_variant_unref(type_var);
-                    if (type_val == 2) {
-                        wifi_dev_path = g_strdup(dev_path);
-                        g_object_unref(dev_proxy);
-                        break;
-                    }
-                    g_object_unref(dev_proxy);
-                }
-            }
-            g_variant_unref(dev_arr);
-            g_variant_unref(res);
-        }
-
-        if (wifi_dev_path) {
-            g_dbus_proxy_call(
-                nm_proxy, "ActivateConnection",
-                g_variant_new("(ooo)", "/", wifi_dev_path, ap_path),
-                G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
-            g_free(wifi_dev_path);
-        }
-
-        g_object_unref(nm_proxy);
+static void
+on_net_auth_submit(GtkWidget *w G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNetwork *self = user_data;
+    const char *text = gtk_editable_get_text(GTK_EDITABLE(self->auth_entry));
+    if (!text || text[0] == '\0') {
+        gtk_label_set_text(GTK_LABEL(self->auth_status), "Enter the network passphrase");
+        gtk_widget_set_visible(self->auth_status, TRUE);
+        return;
     }
-    if (error) g_clear_error(&error);
-    g_object_unref(bus);
 
-    schedule_net_refresh(self);
+    /* Copy, clear the widget immediately, then scrub our copy after the call. */
+    gsize len = strlen(text);
+    gchar *pass = g_strdup(text);
+    gtk_editable_set_text(GTK_EDITABLE(self->auth_entry), "");
+    gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(self->auth_entry), FALSE);
+    gtk_password_entry_set_show_peek_icon(GTK_PASSWORD_ENTRY(self->auth_entry), TRUE);
+
+    gtk_label_set_text(GTK_LABEL(self->auth_status), "Connecting…");
+    gtk_widget_set_visible(self->auth_status, TRUE);
+    net_start_connect(self, pass);
+
+    explicit_bzero(pass, len);
+    g_free(pass);
+}
+
+static void
+on_net_auth_cancel(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    net_auth_hide(user_data);
 }
 
 static gboolean
@@ -311,10 +371,20 @@ populate_real_network_data(SettingsPageNetwork *self)
             if (!ap->ssid || strlen(ap->ssid) == 0) continue;
 
             ap_count++;
-            const char *sec_str = ap->active ? "Connected | Encrypted (WPA/WPA2/WPA3)" : "Encrypted (WPA/WPA2/WPA3)";
+            const char *kind = "Open";
+            switch (ap->security) {
+            case SHELL_AP_SEC_PSK: kind = "WPA/WPA2 Personal"; break;
+            case SHELL_AP_SEC_SAE: kind = "WPA3 Personal"; break;
+            case SHELL_AP_SEC_UNSUPPORTED: kind = "WEP / Enterprise (needs a profile)"; break;
+            default: break;
+            }
+            g_autofree gchar *sec_owned = g_strdup_printf("%s%s", ap->active ? "Connected | " : "", kind);
+            const char *sec_str = sec_owned;
             GtkWidget *btn_conn = create_action_button(
                 ap->active ? "Connected" : "Connect", "ap-path", ap->path,
                 G_CALLBACK(on_net_ap_connect_clicked), self);
+            g_object_set_data_full(G_OBJECT(btn_conn), "ap-ssid", g_strdup(ap->ssid), g_free);
+            g_object_set_data(G_OBJECT(btn_conn), "ap-security", GUINT_TO_POINTER((guint)ap->security));
             if (ap->active) {
                 gtk_widget_set_sensitive(btn_conn, FALSE);
             }
@@ -345,6 +415,8 @@ settings_page_network_dispose(GObject *object)
         g_source_remove(self->refresh_timer_id);
         self->refresh_timer_id = 0;
     }
+    g_clear_pointer(&self->auth_ap_path, g_free);
+    g_clear_pointer(&self->auth_ssid, g_free);
     gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_network_get_type());
     G_OBJECT_CLASS(settings_page_network_parent_class)->dispose(object);
 }
@@ -370,6 +442,13 @@ settings_page_network_class_init(SettingsPageNetworkClass *klass)
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, card_act);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, btn_scan);
     gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, list_scan);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, auth_revealer);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, auth_title);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, auth_status);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, auth_row);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, auth_entry);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, btn_auth_connect);
+    gtk_widget_class_bind_template_child(widget_class, SettingsPageNetwork, btn_auth_cancel);
 }
 
 GtkWidget *
@@ -381,6 +460,9 @@ build_page_network(void)
     g_signal_connect(page->sw_wifi, "state-set", G_CALLBACK(on_net_wifi_switch_toggled), page);
 
     g_signal_connect(page->btn_scan, "clicked", G_CALLBACK(on_net_scan_clicked), page);
+    g_signal_connect(page->btn_auth_connect, "clicked", G_CALLBACK(on_net_auth_submit), page);
+    g_signal_connect(page->auth_entry, "activate", G_CALLBACK(on_net_auth_submit), page);
+    g_signal_connect(page->btn_auth_cancel, "clicked", G_CALLBACK(on_net_auth_cancel), page);
 
     return create_settings_page_card("NETWORKMANAGER WI-FI & ETHERNET", "[ LIVE D-BUS ]", GTK_WIDGET(page), NULL);
 }

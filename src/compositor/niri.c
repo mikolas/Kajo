@@ -69,41 +69,22 @@ keyboard_layouts_clear(CompositorKeyboardLayouts *kl)
     kl->current_idx = 0;
 }
 
-static void
-emit_workspaces_callbacks(ShellCompositor *compositor)
-{
-    for (guint i = 0; i < compositor->workspaces_callbacks->len; i++) {
-        CallbackEntry *entry = &g_array_index(compositor->workspaces_callbacks, CallbackEntry, i);
-        ((CompositorWorkspacesCallback)entry->callback)(compositor, entry->userdata);
+/* Invokes every registered callback of one kind. CallbackEntry stores the
+ * function pointer as a generic pointer; each kind has its own typedef. */
+#define DEFINE_EMIT_CALLBACKS(fn_name, array_field, cb_type)                              \
+    static void                                                                           \
+    fn_name(ShellCompositor *compositor)                                                  \
+    {                                                                                     \
+        for (guint i = 0; i < compositor->array_field->len; i++) {                        \
+            CallbackEntry *entry = &g_array_index(compositor->array_field, CallbackEntry, i); \
+            ((cb_type)entry->callback)(compositor, entry->userdata);                      \
+        }                                                                                 \
     }
-}
 
-static void
-emit_window_focus_callbacks(ShellCompositor *compositor)
-{
-    for (guint i = 0; i < compositor->window_focus_callbacks->len; i++) {
-        CallbackEntry *entry = &g_array_index(compositor->window_focus_callbacks, CallbackEntry, i);
-        ((CompositorWindowFocusCallback)entry->callback)(compositor, entry->userdata);
-    }
-}
-
-static void
-emit_keyboard_layout_callbacks(ShellCompositor *compositor)
-{
-    for (guint i = 0; i < compositor->keyboard_layout_callbacks->len; i++) {
-        CallbackEntry *entry = &g_array_index(compositor->keyboard_layout_callbacks, CallbackEntry, i);
-        ((CompositorKeyboardLayoutCallback)entry->callback)(compositor, entry->userdata);
-    }
-}
-
-static void
-emit_windows_changed_callbacks(ShellCompositor *compositor)
-{
-    for (guint i = 0; i < compositor->windows_changed_callbacks->len; i++) {
-        CallbackEntry *entry = &g_array_index(compositor->windows_changed_callbacks, CallbackEntry, i);
-        ((CompositorWindowsChangedCallback)entry->callback)(compositor, entry->userdata);
-    }
-}
+DEFINE_EMIT_CALLBACKS(emit_workspaces_callbacks, workspaces_callbacks, CompositorWorkspacesCallback)
+DEFINE_EMIT_CALLBACKS(emit_window_focus_callbacks, window_focus_callbacks, CompositorWindowFocusCallback)
+DEFINE_EMIT_CALLBACKS(emit_keyboard_layout_callbacks, keyboard_layout_callbacks, CompositorKeyboardLayoutCallback)
+DEFINE_EMIT_CALLBACKS(emit_windows_changed_callbacks, windows_changed_callbacks, CompositorWindowsChangedCallback)
 
 /* --- Event parsing --- */
 
@@ -616,7 +597,29 @@ niri_send_action(const gchar *json_str)
     if (!json_str)
         return;
     gchar *resp = niri_send_ipc_request(json_str);
+    /* Niri replies {"Ok":...} or {"Err":"..."}; surface rejections instead of
+     * silently dropping them (e.g. malformed action JSON). */
+    if (resp && g_str_has_prefix(resp, "{\"Err\"")) {
+        g_warning("niri: action rejected: %s (request: %s)", resp, json_str);
+    }
     g_free(resp);
+}
+
+void
+niri_toggle_window_floating(void)
+{
+    /* ToggleWindowFloating is a struct variant ({ id: Option<u64> }); the bare
+     * string form "ToggleWindowFloating" is rejected by Niri. Without an id it
+     * acts on the focused window. */
+    niri_send_action("{\"Action\":{\"ToggleWindowFloating\":{}}}");
+}
+
+void
+niri_reload_config(void)
+{
+    /* Niri has no "ReloadConfig" action; LoadConfigFile with a null path
+     * reloads the active config file. */
+    niri_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
 }
 
 gchar *

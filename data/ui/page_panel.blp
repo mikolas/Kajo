@@ -19,14 +19,20 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Panel Edge Position:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
+        hexpand: true;
+        halign: start;
       }
 
-      DropDown combo_pos {
-        hexpand: true;
+      /* Segmented Top | Bottom group is placed here at runtime. */
+      Box slot_pos {
+        valign: center;
       }
     }
 
-    /* Quick Toggles Grid */
+    /* Feature toggle card (Autohide) */
     Grid toggle_grid {
       column-spacing: 8;
       row-spacing: 8;
@@ -39,6 +45,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Panel Thickness:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_height {
@@ -54,6 +63,13 @@ template $SettingsPagePanel : Box {
 
       Label lbl_height_val {
         label: "32px";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
@@ -64,6 +80,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Autohide Reveal Delay:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
       }
 
       Scale scale_rev {
@@ -79,6 +98,13 @@ template $SettingsPagePanel : Box {
 
       Label lbl_rev_val {
         label: "150ms";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
   }
@@ -108,11 +134,15 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Panel Touch & Edge Swipes:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
+        hexpand: true;
       }
 
-      DropDown combo_touch_enabled {
-        hexpand: true;
+      Switch sw_touch_enabled {
+        valign: center;
       }
     }
 
@@ -123,6 +153,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Center / Left Inward Swipe:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
@@ -138,6 +171,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Right Zone Inward Swipe:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
@@ -153,6 +189,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Horizontal Panel Swipe:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
@@ -168,6 +207,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Autohide Touch Dwell Time:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
@@ -184,6 +226,13 @@ template $SettingsPagePanel : Box {
 
       Label lbl_touch_dwell_val {
         label: "4000ms";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
@@ -203,6 +252,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Auto-Show Virtual Keyboard:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
@@ -217,11 +269,17 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Window Layout Behavior:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
-      DropDown combo_osk_push {
+      /* Segmented "Push windows | Float over" group is placed here at runtime. */
+      Box slot_osk_push {
+        valign: center;
         hexpand: true;
+        halign: end;
       }
     }
 
@@ -231,6 +289,9 @@ template $SettingsPagePanel : Box {
 
       Label {
         label: "Virtual Keyboard Height:";
+        width-chars: 28;
+        xalign: 0;
+        valign: center;
         halign: start;
       }
 
@@ -247,12 +308,19 @@ template $SettingsPagePanel : Box {
 
       Label lbl_osk_height_val {
         label: "260px";
+        width-request: 64;
+        xalign: 1;
+        valign: center;
+
+        styles [
+          "shell-popover-badge",
+        ]
       }
     }
 
     /* Action Row */
     Button btn_apply {
-      label: "[ APPLY PANEL & TOUCH SETTINGS ]";
+      label: "[ ✓ SAVE & APPLY ]";
 
       styles [
         "action-btn-primary",

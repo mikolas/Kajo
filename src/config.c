@@ -145,6 +145,9 @@ shell_config_get_default(void)
     config->ide_show_minimap           = TRUE;
     config->ide_show_line_numbers      = TRUE;
     config->ide_highlight_current_line = TRUE;
+    config->ide_word_wrap              = FALSE;
+    config->ide_show_margin_guide      = FALSE;
+    config->ide_insert_spaces          = TRUE;
 
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
@@ -491,6 +494,15 @@ shell_config_load(const gchar *path)
         if (json_object_has_member(ide_obj, "highlight_current_line")) {
             config->ide_highlight_current_line = json_object_get_boolean_member(ide_obj, "highlight_current_line");
         }
+        if (json_object_has_member(ide_obj, "word_wrap")) {
+            config->ide_word_wrap = json_object_get_boolean_member(ide_obj, "word_wrap");
+        }
+        if (json_object_has_member(ide_obj, "show_margin_guide")) {
+            config->ide_show_margin_guide = json_object_get_boolean_member(ide_obj, "show_margin_guide");
+        }
+        if (json_object_has_member(ide_obj, "insert_spaces")) {
+            config->ide_insert_spaces = json_object_get_boolean_member(ide_obj, "insert_spaces");
+        }
     }
 
     /* Layout settings */
@@ -776,6 +788,12 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_boolean_value(builder, config->ide_show_line_numbers);
     json_builder_set_member_name(builder, "highlight_current_line");
     json_builder_add_boolean_value(builder, config->ide_highlight_current_line);
+    json_builder_set_member_name(builder, "word_wrap");
+    json_builder_add_boolean_value(builder, config->ide_word_wrap);
+    json_builder_set_member_name(builder, "show_margin_guide");
+    json_builder_add_boolean_value(builder, config->ide_show_margin_guide);
+    json_builder_set_member_name(builder, "insert_spaces");
+    json_builder_add_boolean_value(builder, config->ide_insert_spaces);
     json_builder_end_object(builder);
 
     /* Layout settings serialization */

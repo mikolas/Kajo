@@ -159,6 +159,96 @@ static void test_agent_unix_socket_server(void) {
   rmdir(tmp_dir);
 }
 
+/* ── Socket behaviour: real round-trip + stalled client must not block the loop ── */
+
+typedef struct {
+  const char *sock_path;
+  const char *request;     /* NULL => connect and send nothing (stalled client) */
+  char       *response;    /* what the server sent back (may be empty) */
+  gint64      elapsed_ms;
+  gint        done;        /* atomic */
+} ClientJob;
+
+static gpointer client_thread(gpointer data) {
+  ClientJob *job = data;
+  gint64 t0 = g_get_monotonic_time();
+  g_autoptr(GSocketClient) client = g_socket_client_new();
+  g_autoptr(GSocketAddress) addr = g_unix_socket_address_new(job->sock_path);
+  g_autoptr(GSocketConnection) conn =
+      g_socket_client_connect(client, G_SOCKET_CONNECTABLE(addr), NULL, NULL);
+  if (conn) {
+    GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(conn));
+    if (job->request)
+      g_output_stream_write_all(out, job->request, strlen(job->request), NULL, NULL, NULL);
+    g_autoptr(GDataInputStream) in =
+        g_data_input_stream_new(g_io_stream_get_input_stream(G_IO_STREAM(conn)));
+    gsize len = 0;
+    job->response = g_data_input_stream_read_line(in, &len, NULL, NULL);
+  }
+  job->elapsed_ms = (g_get_monotonic_time() - t0) / 1000;
+  g_atomic_int_set(&job->done, 1);
+  return NULL;
+}
+
+typedef struct { guint ticks; gint *done; gboolean timed_out; GMainLoop *loop; } PumpCtx;
+
+static gboolean pump_tick(gpointer data) {
+  PumpCtx *p = data;
+  p->ticks++;
+  if (g_atomic_int_get(p->done)) {
+    g_main_loop_quit(p->loop);
+    return G_SOURCE_REMOVE;
+  }
+  if (p->ticks > 80) { /* 8 s safety net */
+    p->timed_out = TRUE;
+    g_main_loop_quit(p->loop);
+    return G_SOURCE_REMOVE;
+  }
+  return G_SOURCE_CONTINUE;
+}
+
+static guint run_client_against(IdeAgentIpc *ipc, ClientJob *job) {
+  (void)ipc;
+  PumpCtx p = { 0, &job->done, FALSE, g_main_loop_new(NULL, FALSE) };
+  GThread *th = g_thread_new("test-client", client_thread, job);
+  g_timeout_add(100, pump_tick, &p);
+  g_main_loop_run(p.loop);
+  g_thread_join(th);
+  g_main_loop_unref(p.loop);
+  g_assert_false(p.timed_out);
+  return p.ticks;
+}
+
+static void test_agent_socket_roundtrip_and_stalled_client(void) {
+  TestAgentCtx ctx = {0};
+  IdeAgentIpc *ipc = ide_agent_ipc_new(on_test_open, NULL, on_test_status, &ctx);
+  g_autofree char *tmp_dir = g_dir_make_tmp("kajo_sock2_XXXXXX", NULL);
+  g_autofree char *sock_path = g_build_filename(tmp_dir, "ide.sock", NULL);
+  g_autoptr(GError) err = NULL;
+  g_assert_true(ide_agent_ipc_start_on_path(ipc, sock_path, &err));
+  g_assert_no_error(err);
+
+  /* 1. A well-formed request is answered. */
+  ClientJob ok = { sock_path, "{\"type\":\"status-badge\",\"text\":\"AGENT\"}\n", NULL, 0, 0 };
+  run_client_against(ipc, &ok);
+  g_assert_nonnull(ok.response);
+  g_assert_nonnull(strstr(ok.response, "\"ok\":true"));
+  g_free(ok.response);
+
+  /* 2. A client that connects and never sends a newline must not freeze the
+   * main loop (it keeps ticking) and is dropped after the read timeout. */
+  ClientJob stalled = { sock_path, NULL, NULL, 0, 0 };
+  guint ticks = run_client_against(ipc, &stalled);
+  g_assert_cmpuint(ticks, >=, 15);           /* loop kept running for ~2 s */
+  g_assert_cmpint(stalled.elapsed_ms, >=, 1500);
+  g_assert_cmpint(stalled.elapsed_ms, <, 6000);
+  g_assert_null(stalled.response);           /* connection closed, no reply */
+
+  ide_agent_ipc_free(ipc);
+  unlink(sock_path);
+  rmdir(tmp_dir);
+}
+
 static void test_mermaid_vector_parser_and_markdown_checklist(void) {
   const char *mermaid_src =
       "flowchart LR\n"
@@ -319,6 +409,8 @@ int main(int argc, char **argv) {
                   test_agent_ipc_transactions_and_rollback);
   g_test_add_func("/ide/ipc/agent-unix-socket",
                   test_agent_unix_socket_server);
+  g_test_add_func("/ide/ipc/agent-socket-roundtrip-and-stalled-client",
+                  test_agent_socket_roundtrip_and_stalled_client);
   g_test_add_func("/ide/markdown/mermaid-vector-and-checklist",
                   test_mermaid_vector_parser_and_markdown_checklist);
   g_test_add_func("/ide/markdown/rich-embeds-and-inline-pango",

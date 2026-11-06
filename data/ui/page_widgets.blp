@@ -14,7 +14,7 @@ template $SettingsPageWidgets : Box {
     ]
 
     Label lbl_left {
-      label: "🔵 1. LEFT PANEL SECTION";
+      label: "1. LEFT PANEL SECTION";
       halign: start;
 
       styles [
@@ -33,7 +33,7 @@ template $SettingsPageWidgets : Box {
     ]
 
     Label lbl_center {
-      label: "🟠 2. CENTER PANEL SECTION";
+      label: "2. CENTER PANEL SECTION";
       halign: start;
 
       styles [
@@ -52,7 +52,7 @@ template $SettingsPageWidgets : Box {
     ]
 
     Label lbl_right {
-      label: "🟢 3. RIGHT PANEL SECTION";
+      label: "3. RIGHT PANEL SECTION";
       halign: start;
 
       styles [
@@ -76,20 +76,24 @@ template $SettingsPageWidgets : Box {
 
     DropDown combo_add_section {}
 
-    DropDown combo_add_mode {}
+    /* ICON-ONLY | TEXT-ONLY | FULL segmented group is placed here at runtime. */
+    Box slot_add_mode {
+      valign: center;
+    }
 
     Button btn_add {
-      label: "[ + ADD WIDGET ]";
+      label: "+ ADD WIDGET";
+      valign: center;
 
       styles [
-        "flat",
+        "files-nav-btn",
       ]
     }
   }
 
   /* Action Button */
   Button btn_apply {
-    label: "[ APPLY PANEL WIDGET LAYOUT ]";
+    label: "[ ✓ SAVE & APPLY ]";
 
     styles [
       "action-btn-primary",

@@ -1,0 +1,16 @@
+# Kajo C style (GLib/GTK flavoured). Existing files are NOT reformatted in bulk;
+# apply to new or substantially rewritten code only:  clang-format -i <file>
+Language: Cpp
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 100
+BreakBeforeBraces: Linux
+AlwaysBreakAfterReturnType: AllDefinitions
+PointerAlignment: Right
+AllowShortFunctionsOnASingleLine: None
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+SortIncludes: false
+SpaceBeforeParens: ControlStatements

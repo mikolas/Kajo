@@ -529,15 +529,15 @@ static GtkWidget *battery_get_widget(ShellWidget *widget)
 static void battery_enable(ShellWidget *widget)
 {
     BatteryWidget *batt = (BatteryWidget *)widget;
-    if (batt) {
-        if (batt->panel_image) {
-            gtk_image_set_pixel_size(GTK_IMAGE(batt->panel_image), shell_widget_get_icon_size(widget));
-        }
-        shell_widget_apply_mode_visibility(widget->mode, batt->panel_image, batt->panel_label);
-        if (!batt->cancellable || g_cancellable_is_cancelled(batt->cancellable)) {
-            if (batt->cancellable) g_object_unref(batt->cancellable);
-            batt->cancellable = g_cancellable_new();
-        }
+    if (!batt)
+        return;
+    if (batt->panel_image) {
+        gtk_image_set_pixel_size(GTK_IMAGE(batt->panel_image), shell_widget_get_icon_size(widget));
+    }
+    shell_widget_apply_mode_visibility(widget->mode, batt->panel_image, batt->panel_label);
+    if (!batt->cancellable || g_cancellable_is_cancelled(batt->cancellable)) {
+        if (batt->cancellable) g_object_unref(batt->cancellable);
+        batt->cancellable = g_cancellable_new();
     }
 
     if (!batt->upower_proxy) {

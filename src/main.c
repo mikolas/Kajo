@@ -48,6 +48,29 @@ on_signal_quit(gpointer user_data)
 
 #include "ipc/socket.h"
 
+typedef struct {
+    const char *command;    /* IPC command sent to the shell (also accepted as a bare word) */
+    const char *long_flag;
+    const char *short_flag; /* may be NULL */
+} CliCommand;
+
+static const CliCommand kCliCommands[] = {
+    { "launcher-toggle",  "--toggle-launcher",  "-t" },
+    { "brightness-up",    "--brightness-up",    NULL },
+    { "brightness-down",  "--brightness-down",  NULL },
+    { "volume-up",        "--volume-up",        NULL },
+    { "volume-down",      "--volume-down",      NULL },
+    { "volume-mute",      "--volume-mute",      NULL },
+    { "lock",             "--lock",             NULL },
+    { "screensaver",      "--screensaver",      NULL },
+    { "reload-config",    "--reload-config",    NULL },
+    { "reload-theme",     "--reload-theme",     NULL },
+    { "toggle-osk",       "--toggle-osk",       NULL },
+    { "show-osk",         "--show-osk",         NULL },
+    { "hide-osk",         "--hide-osk",         NULL },
+};
+
+
 int
 main(int argc, char *argv[])
 {
@@ -55,113 +78,18 @@ main(int argc, char *argv[])
     /* Allow portal settings and /proc/self/root inspection when running with setcap capabilities */
     prctl(PR_SET_DUMPABLE, 1);
 #endif
-    if (argc > 1) {
-        for (int i = 1; i < argc; i++) {
-            if (g_strcmp0(argv[i], "--toggle-launcher") == 0 ||
-                g_strcmp0(argv[i], "-t") == 0 ||
-                g_strcmp0(argv[i], "launcher-toggle") == 0) {
-                if (shell_ipc_send_command("launcher-toggle")) {
+    /* CLI client mode: `kajo --lock`, `kajo volume-up`, ... forward one command
+     * to the running shell over its socket and exit. */
+    for (int i = 1; i < argc; i++) {
+        for (gsize c = 0; c < G_N_ELEMENTS(kCliCommands); c++) {
+            const CliCommand *cmd = &kCliCommands[c];
+            if (g_strcmp0(argv[i], cmd->long_flag) == 0 ||
+                g_strcmp0(argv[i], cmd->command) == 0 ||
+                (cmd->short_flag && g_strcmp0(argv[i], cmd->short_flag) == 0)) {
+                if (shell_ipc_send_command(cmd->command))
                     return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--brightness-up") == 0 ||
-                       g_strcmp0(argv[i], "brightness-up") == 0) {
-                if (shell_ipc_send_command("brightness-up")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--brightness-down") == 0 ||
-                       g_strcmp0(argv[i], "brightness-down") == 0) {
-                if (shell_ipc_send_command("brightness-down")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--volume-up") == 0 ||
-                       g_strcmp0(argv[i], "volume-up") == 0) {
-                if (shell_ipc_send_command("volume-up")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--volume-down") == 0 ||
-                       g_strcmp0(argv[i], "volume-down") == 0) {
-                if (shell_ipc_send_command("volume-down")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--volume-mute") == 0 ||
-                       g_strcmp0(argv[i], "volume-mute") == 0) {
-                if (shell_ipc_send_command("volume-mute")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--lock") == 0 ||
-                       g_strcmp0(argv[i], "lock") == 0) {
-                if (shell_ipc_send_command("lock")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--screensaver") == 0 ||
-                       g_strcmp0(argv[i], "screensaver") == 0) {
-                if (shell_ipc_send_command("screensaver")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--reload-config") == 0 ||
-                       g_strcmp0(argv[i], "reload-config") == 0) {
-                if (shell_ipc_send_command("reload-config")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--reload-theme") == 0 ||
-                       g_strcmp0(argv[i], "reload-theme") == 0) {
-                if (shell_ipc_send_command("reload-theme")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--toggle-osk") == 0 ||
-                       g_strcmp0(argv[i], "toggle-osk") == 0) {
-                if (shell_ipc_send_command("toggle-osk")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--show-osk") == 0 ||
-                       g_strcmp0(argv[i], "show-osk") == 0) {
-                if (shell_ipc_send_command("show-osk")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
-            } else if (g_strcmp0(argv[i], "--hide-osk") == 0 ||
-                       g_strcmp0(argv[i], "hide-osk") == 0) {
-                if (shell_ipc_send_command("hide-osk")) {
-                    return 0;
-                } else {
-                    g_printerr("kajo is not running.\n");
-                    return 1;
-                }
+                g_printerr("kajo is not running.\n");
+                return 1;
             }
         }
     }

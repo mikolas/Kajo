@@ -72,6 +72,9 @@ const char      *ide_buffer_get_file_path(const IdeBuffer *buf);
 const char      *ide_buffer_get_title(const IdeBuffer *buf);
 char            *ide_buffer_get_text(IdeBuffer *buf);
 void             ide_buffer_set_text(IdeBuffer *buf, const char *text);
+/* Registers the GtkSourceView scheme search paths (user dir, install prefix, XDG
+ * system dirs, dev source tree). Idempotent. */
+void             ide_buffer_register_scheme_paths(void);
 void             ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id);
 void             ide_highlight_source_buffer(GtkSourceBuffer *sbuf,
                                              const char      *file_path,
