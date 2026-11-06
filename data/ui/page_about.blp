@@ -6,18 +6,48 @@ template $SettingsPageAbout : Box {
 
   Box card_box {
     orientation: vertical;
+    spacing: 10;
 
     styles [
       "section-card-left",
     ]
 
-    Label title_label {
-      label: "Kajo & Control Center v0.1.0";
-      halign: start;
+    Box brand_hdr_box {
+      orientation: horizontal;
+      spacing: 14;
+      valign: center;
 
-      styles [
-        "heading",
-      ]
+      Image brand_logo_img {
+        icon-name: "kajo";
+        pixel-size: 56;
+        valign: center;
+      }
+
+      Box brand_title_vbox {
+        orientation: vertical;
+        spacing: 2;
+        valign: center;
+
+        Label title_label {
+          label: "KAJO // OS — NATIVE WORKSPACE SUITE";
+          halign: start;
+          valign: center;
+
+          styles [
+            "heading",
+          ]
+        }
+
+        Label subtitle_label {
+          label: "Aero + Metro Personal Application Suite • C11 / GTK4 / Wayland";
+          halign: start;
+          valign: center;
+
+          styles [
+            "row-subtitle",
+          ]
+        }
+      }
     }
 
     Label kernel_label {

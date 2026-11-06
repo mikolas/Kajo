@@ -432,6 +432,11 @@ install_subdir(
 install_data(
   'data/icons/kajo.svg',
   'data/icons/kajo-symbolic.svg',
+  'data/icons/kajo-ide.svg',
+  'data/icons/kajo-files.svg',
+  'data/icons/kajo-player.svg',
+  'data/icons/kajo-settings.svg',
+  'data/icons/kajo-greeter.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
 )
 
