@@ -1,7 +1,7 @@
 [Desktop Entry]
 Name=Kajo IDE
 GenericName=Modal Code Editor & IDE
-Comment=Aero + Metro selection-first modal code editor with LSP, DAP, Agent IPC, and GUI Markdown/Mermaid
+Comment=Aero + Metro selection-first modal code editor with Agent IPC and GUI Markdown/Mermaid
 Exec=kajo-ide %F
 Icon=kajo-ide
 Terminal=false

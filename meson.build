@@ -318,6 +318,7 @@ executable(
 
 install_data(
   'data/org.kajo.Files.desktop',
+  'data/org.kajo.Settings.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
 

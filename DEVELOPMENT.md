@@ -33,7 +33,7 @@ src/
 │   ├── kbd_backlight.h/c           Sysfs & HP EC (0x97 HKBL / 0x96 HKBT) keyboard backlight control
 │   └── touch_gestures.h/c          Edge layer-shell bezel swipe gesture recognizers
 ├── ide/
-│   ├── main.c                      kajo-ide standalone entry point (org.kajo.Ide)
+│   ├── main.c                      kajo-ide standalone entry point (org.kajo.IDE)
 │   ├── ide_window.h/c              Main IDE window, 3-zone header, tab ribbon, status bar & chord HUD
 │   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
 │   ├── ide_buffer.h/c              IdeBuffer, 11-token semantic highlighter, Git diff & Agent snapshots
@@ -41,8 +41,8 @@ src/
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
 │   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 85-command Help Palette
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
-│   ├── ide_lsp.h/c                 Async JSON-RPC 2.0 LSP 3.17 client (clangd, gopls, rust-analyzer, pyright)
-│   ├── ide_dap.h/c                 Async DAP debugger client (gdb, lldb-dap, dlv) & 3-pane inspector
+│   ├── ide_lsp.h/c                 JSON-RPC framing helpers + ripgrep-backed hover/completion/definition/rename (real LSP client planned)
+│   ├── ide_dap.h/c                 Debugger UI scaffold: transport buttons & 3-pane inspector (no adapter connected yet)
 │   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
 │   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
 │   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
@@ -94,7 +94,7 @@ src/
 data/
 ├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
 ├── org.kajo.Player.desktop         Desktop entry for kajo-player (MimeType=video/*;audio/*;)
-├── org.kajo.Ide.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
+├── org.kajo.IDE.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
@@ -141,7 +141,7 @@ tests/
 - `blueprint-compiler`, `meson`, `ninja`
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 11 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 15 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -150,7 +150,7 @@ meson setup builddir
 # Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 11 automated GTest suites
+# Run all 15 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -171,6 +171,10 @@ meson install -C builddir
 | `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch. |
 | `files-model` | `test-files-model` | `KajoFileItem` size/permission formatting, directory-first sorting, filtering, and async `mkdir`/`rename`/`delete` operations. |
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
+| `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
+| `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
+| `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
+| `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
 
 ### Sanitizer Run (ASan + UBSan)
 Run the whole suite under AddressSanitizer and UndefinedBehaviorSanitizer in a throwaway build directory (does not touch `builddir/`):

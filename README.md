@@ -29,12 +29,12 @@ The repository builds and installs **six integrated native executables** (plus a
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
-| **`kajo-ide`** | `org.kajo.Ide` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, async LSP 3.17 (`clangd`, `gopls`, `rust-analyzer`, `pyright`), interactive DAP debugger (`F5`–`F12`), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
+| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, ripgrep-backed code intelligence (hover, completion, go-to-definition, rename — a full LSP client is [planned](ROADMAP.md)), debugger UI scaffold (`F5`–`F12`, breakpoints and panes; no debug adapter is connected yet), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with natural filename collation, interactive column/popover sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` media, Poppler PDF, `libarchive`, code). |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, embedded/external subtitle selector (`.srt`, `.ass`, PGS), multi-audio stream switching, sync offset, playback speed & frame-stepping, chapters, sibling folder queue, auto-hiding fullscreen HUD, and MPRIS2 D-Bus integration. |
-| **`kajo-settings`** | `org.kajo.Settings` | **11-Page Modular System & Suite Control Deck** managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes, Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code** (`ide.toml` schemes/fonts), Niri GLSL Shaders, and hardware telemetry. |
-| **`kajo`** | `org.kajo.Shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 live widgets), 16-band FFT audio visualizer, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual touch keyboard, bezel touch gestures, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` OLED screen saver, 360° foldable posture manager, and `ext-session-lock-v1` PAM lock screen. |
-| **`kajo-greeter`** | `org.kajo.Greeter` | **Wayland Login Greeter for `greetd`** supporting multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage`, and desktop `--test` preview mode with PAM verification. |
+| **`kajo-settings`** | `org.kajo.Settings` | **11-Page Modular System & Suite Control Deck** managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes, Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code** (`config.json` `ide` schemes/fonts), Niri GLSL Shaders, and hardware telemetry. |
+| **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 live widgets), 16-band FFT audio visualizer, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual touch keyboard, bezel touch gestures, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` OLED screen saver, 360° foldable posture manager, and `ext-session-lock-v1` PAM lock screen. |
+| **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage`, and desktop `--test` preview mode with PAM verification. |
 
 ---
 
@@ -48,9 +48,10 @@ The repository builds and installs **six integrated native executables** (plus a
   - First-class Nordic layout bindings: `ä` / `ö` to step through LSP diagnostics, `Alt+ä` / `Alt+ö` for Git diff hunks, and Dead-Key-free `m i/a` structural text objects (`m i f` function, `m i c` class/struct, `m i b` block, `m i a` argument, `m i q` quote, `m m` bracket jump).
 - **6-Column Hardware-Accelerated Cairo Gutter (`68px`)**:
   - Renders DAP breakpoints & instruction pointer (`●`/`▶`), LSP diagnostic severity pills (`●`/`▲`/`◆`), Git diff status bars (`HEAD`), AI Agent modification bars, `Fira Code` absolute/relative line numbers, and AST fold chevrons (`z a`).
-- **Zero-Config LSP 3.17 & Interactive DAP Debugger**:
-  - Automatic stdio JSON-RPC 2.0 language server lifecycle for `clangd`, `gopls`, `rust-analyzer`, and `pyright` (hover `K`, completion `Ctrl+Space`, jump to definition `g d`, references `g r`, code actions `Space c a`, rename `Space c r`, call hierarchy `Space g c`).
-  - Built-in DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) with `F9` breakpoints, `F5`/`F10`/`F11`/`F12`/`Shift+F5` transport controls, and a 3-pane bottom drawer (Call Stack, Local Scopes, Interactive REPL).
+- **Code Intelligence & Debugger UI** *(partial — see [`ROADMAP.md`](ROADMAP.md))*:
+  - Today: workspace-aware hover (`K`), buffer-identifier completion (`Ctrl+Space`), go-to-definition (`g d`) and project-wide rename (`Space c r`) backed by `ripgrep` plus the buffer contents; server-availability badge for `clangd`, `gopls`, `rust-analyzer`, `pyright`; build runner with clickable compiler diagnostics.
+  - Debugger UI: `F9` breakpoints, `F5`/`F10`/`F11`/`F12`/`Shift+F5` transport buttons and the 3-pane bottom drawer exist, but no debug adapter (`gdb -i=dap`, `lldb-dap`, `dlv dap`) is spawned yet, so the stack and locals are placeholders.
+  - Planned: a real stdio JSON-RPC 2.0 LSP 3.17 client and DAP client (the framing helpers are already in `ide_lsp.c`).
 - **Graphical Markdown & Native Cairo Vector Mermaid Diagrams**:
   - Live-synchronized 50/50 side-by-side split (`Space m p` / `📖 MD`) rendering interactive `- [ ]` task checkboxes (clicking mutates the source buffer), GitHub callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), tables, and code blocks.
   - Pure C11 Cairo/Pango layout and vector renderer for Mermaid `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, and `pie` blocks—complete with interactive zoom/pan (`25%`–`400%`) and 1-click `.svg` vector export.
@@ -98,7 +99,7 @@ The repository builds and installs **six integrated native executables** (plus a
 6. **Panel & Touch (`panel`)**: Panel edge, height, OLED smart autohide, bezel touch swipe gestures, and convertible posture controls.
 7. **Widgets (`widgets`)**: Interactive ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) for left/center/right panel zones.
 8. **Notifications (`notifications`)**: Toast timeout, Do-Not-Disturb, and history management.
-9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width, line number style, margin guide, word wrap, and minimap toggle—hot-reloaded via `~/.config/kajo/ide.toml`.
+9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width, line number style, margin guide, word wrap, and minimap toggle—hot-reloaded via `~/.config/kajo/config.json`.
 10. **Niri & Shaders (`niri`)**: Live Niri layout settings and GLSL window animation shader presets (`open`, `close`, `resize`).
 11. **About (`about`)**: System & suite telemetry overview.
 
@@ -210,7 +211,7 @@ binds {
 | Path | Managed By | Purpose |
 | :--- | :--- | :--- |
 | **`~/.config/kajo/config.json`** | `kajo-settings` / User | Panel layout, widget modes, notification timeouts, `idle` security settings, convertible `posture` rules, and `keyboard_backlight` preferences. |
-| **`~/.config/kajo/ide.toml`** | `kajo-settings` (`ide`) / `kajo-ide` | Editor syntax color scheme (`kajo-metro-dark`, etc.), font family & size (`Ctrl++`/`Ctrl+-` zoom), tab width, line number mode, minimap visibility, and custom `[keys.*]` remappings. |
+| **`~/.config/kajo/config.json` (`ide` object)** | `kajo-settings` (`ide`) / `kajo-ide` | Editor syntax color scheme (`kajo-metro-dark`, etc.), font family & size (`Ctrl++`/`Ctrl+-` zoom), tab width, line number mode, minimap visibility, . |
 | **`~/.config/kajo/theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) hot-reloaded across all Kajo processes. |
 | **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and Niri layout/GLSL shader settings. |
 | **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins. |
