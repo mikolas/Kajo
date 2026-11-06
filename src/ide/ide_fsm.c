@@ -1576,7 +1576,8 @@ handle_picker(IdeFsm *fsm, const char *key)
 static IdeAction
 handle_help(IdeFsm *fsm, const char *key)
 {
-  if (g_strcmp0(key, "esc") == 0 || g_strcmp0(key, "q") == 0 || g_strcmp0(key, "?") == 0) {
+  if (g_strcmp0(key, "esc") == 0 || g_strcmp0(key, "q") == 0 ||
+      g_strcmp0(key, "?") == 0 || g_strcmp0(key, "f1") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     return ide_action_make(IDE_ACTION_HELP_CANCEL);
   }

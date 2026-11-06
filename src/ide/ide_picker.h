@@ -31,8 +31,10 @@ IdePicker *ide_picker_new(const char         *workspace_root,
                           gpointer            user_data);
 void       ide_picker_free(IdePicker *picker);
 
-GtkWidget *ide_picker_get_widget(IdePicker *picker);
-gboolean   ide_picker_is_visible(const IdePicker *picker);
+GtkWidget    *ide_picker_get_widget(IdePicker *picker);
+gboolean      ide_picker_is_visible(const IdePicker *picker);
+IdePickerMode ide_picker_get_mode(const IdePicker *picker);
+gboolean      ide_picker_has_query(const IdePicker *picker);
 
 void       ide_picker_open_files(IdePicker *picker, const char *workspace_root);
 void       ide_picker_open_buffers(IdePicker *picker, GPtrArray *open_buffers);

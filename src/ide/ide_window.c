@@ -44,6 +44,7 @@ struct _KajoIdeWindow {
   GtkWidget       *btn_hdr_tree;
   GtkWidget       *btn_hdr_map;
   GtkWidget       *btn_hdr_md;
+  GtkWidget       *btn_hdr_help;
   GtkWidget       *hdr_breadcrumb;
   GtkWidget       *ws_badge;
   GtkWidget       *agent_hdr_badge;
@@ -313,6 +314,13 @@ static void update_status_bar_and_hud(KajoIdeWindow *self) {
       gtk_widget_add_css_class(self->btn_hdr_md, "active");
     else
       gtk_widget_remove_css_class(self->btn_hdr_md, "active");
+  }
+  if (self->btn_hdr_help && self->picker) {
+    if (ide_picker_is_visible(self->picker) &&
+        ide_picker_get_mode(self->picker) == IDE_PICKER_HELP)
+      gtk_widget_add_css_class(self->btn_hdr_help, "active");
+    else
+      gtk_widget_remove_css_class(self->btn_hdr_help, "active");
   }
 
   /* Update Git Branch & Status Summary Badge in Header */
@@ -1207,8 +1215,18 @@ static void dispatch_ide_action(KajoIdeWindow *self, const IdeAction *act) {
       ide_picker_open_grep(self->picker, self->workspace_root);
       break;
     case IDE_ACTION_HELP_OPEN:
-    case IDE_ACTION_HELP_TOGGLE:
+      ide_fsm_set_state(self->fsm, IDE_STATE_HELP);
       ide_picker_open_help(self->picker);
+      break;
+    case IDE_ACTION_HELP_TOGGLE:
+      if (ide_picker_is_visible(self->picker) &&
+          ide_picker_get_mode(self->picker) == IDE_PICKER_HELP) {
+        ide_picker_close(self->picker);
+        ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
+      } else {
+        ide_fsm_set_state(self->fsm, IDE_STATE_HELP);
+        ide_picker_open_help(self->picker);
+      }
       break;
     case IDE_ACTION_PICKER_NEXT:
     case IDE_ACTION_HELP_NEXT:
@@ -1710,6 +1728,25 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
     }
   }
 
+  /* F1 toggles Help Viewer & Command Palette from any mode */
+  if (keyval == GDK_KEY_F1 &&
+      (state & (GDK_CONTROL_MASK | GDK_ALT_MASK | GDK_SHIFT_MASK)) == 0) {
+    IdeAction act = { .type = IDE_ACTION_HELP_TOGGLE };
+    dispatch_ide_action(self, &act);
+    return TRUE;
+  }
+
+  /* In HELP mode, 'q' only closes Help when the search query is empty;
+   * if the user has already typed a filter query, 'q' appends to the filter. */
+  if (ide_fsm_get_state(self->fsm) == IDE_STATE_HELP &&
+      ide_picker_has_query(self->picker) &&
+      (keyval == GDK_KEY_q || keyval == GDK_KEY_Q) &&
+      (state & (GDK_CONTROL_MASK | GDK_ALT_MASK)) == 0) {
+    ide_picker_append_input(self->picker, keyval == GDK_KEY_Q ? "Q" : "q");
+    update_status_bar_and_hud(self);
+    return TRUE;
+  }
+
   g_autofree char *key_str = translate_gdk_key_to_fsm(keyval, state);
   if (!key_str) return FALSE;
 
@@ -1738,7 +1775,19 @@ static void on_picker_open_file(const char *abs_path,
 
 static void on_picker_command(IdeActionType action, gpointer user_data) {
   KajoIdeWindow *self = user_data;
-  ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
+  if (action == IDE_ACTION_PICKER_OPEN_FILES ||
+      action == IDE_ACTION_PICKER_OPEN_BUFFERS ||
+      action == IDE_ACTION_PICKER_OPEN_GREP) {
+    ide_fsm_set_state(self->fsm, IDE_STATE_PICKER);
+  } else if (action == IDE_ACTION_SEARCH_OPEN) {
+    ide_fsm_set_state(self->fsm, IDE_STATE_SEARCH);
+  } else if (action == IDE_ACTION_REPLACE_OPEN ||
+             action == IDE_ACTION_PROJECT_REPLACE_OPEN) {
+    ide_fsm_set_state(self->fsm, IDE_STATE_DRAWER);
+    ide_fsm_set_drawer_editable(self->fsm, TRUE);
+  } else {
+    ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
+  }
   IdeAction act = { .type = action };
   dispatch_ide_action(self, &act);
 }
@@ -1861,6 +1910,12 @@ static void on_hdr_find_clicked(GtkButton *b, gpointer d) {
 static void on_hdr_md_clicked(GtkButton *b, gpointer d) {
   (void)b;
   IdeAction act = { .type = IDE_ACTION_TOGGLE_MARKDOWN_PREVIEW };
+  dispatch_ide_action(KAJO_IDE_WINDOW(d), &act);
+}
+
+static void on_hdr_help_clicked(GtkButton *b, gpointer d) {
+  (void)b;
+  IdeAction act = { .type = IDE_ACTION_HELP_TOGGLE };
   dispatch_ide_action(KAJO_IDE_WINDOW(d), &act);
 }
 
@@ -2053,10 +2108,18 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_valign(btn_find, GTK_ALIGN_CENTER);
   g_signal_connect(btn_find, "clicked", G_CALLBACK(on_hdr_find_clicked), self);
 
+  self->btn_hdr_help = gtk_button_new_with_label("❓ HELP");
+  gtk_widget_set_focusable(self->btn_hdr_help, FALSE);
+  gtk_widget_add_css_class(self->btn_hdr_help, "files-nav-btn");
+  gtk_widget_set_valign(self->btn_hdr_help, GTK_ALIGN_CENTER);
+  g_signal_connect(
+      self->btn_hdr_help, "clicked", G_CALLBACK(on_hdr_help_clicked), self);
+
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_tree);
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_map);
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_md);
   gtk_box_append(GTK_BOX(nav_cluster), btn_find);
+  gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_help);
 
   /* Center Zone: Active File Breadcrumb + Git Branch & Status Summary Badge */
   GtkWidget *hdr_center = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
