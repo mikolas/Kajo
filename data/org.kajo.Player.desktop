@@ -2,7 +2,7 @@
 Name=Kajo Player
 Comment=Wayland Media Player for the Kajo Desktop
 Exec=kajo-player %U
-Icon=multimedia-video-player
+Icon=kajo-player
 Terminal=false
 Type=Application
 Categories=AudioVideo;Video;Audio;Player;GTK;

@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KAJO // Brand Identity &amp; Vector Logo Exploration</title>
+<style>
+  :root {
+    --surface-0: #0a0a0a;
+    --surface-1: #111111;
+    --surface-2: #161616;
+    --surface-3: #1e1e1e;
+    --border-dim: #262626;
+    --border-mid: #333333;
+    --fg-bright: #ffffff;
+    --fg-primary: #e6e6e6;
+    --fg-muted: #888888;
+    --fg-dim: #555555;
+    --metro-accent: #0078d4;
+    --metro-hover: #1084d8;
+    --aero-cyan: #00d8f0;
+    --aero-ice: #70e8ff;
+    --metro-teal: #4ec9b0;
+    --metro-amber: #ff8c00;
+    --metro-red: #e81123;
+    --metro-purple: #c586c0;
+    --grid-overlay: rgba(0, 216, 240, 0.0);
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    border-radius: 0px !important;
+  }
+
+  body {
+    background-color: var(--surface-0);
+    color: var(--fg-primary);
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 0;
+  }
+
+  /* Top Sticky HUD Bar */
+  .hud-header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(17, 17, 17, 0.92);
+    backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--metro-accent);
+    padding: 14px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .hud-title-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .hud-title {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--fg-bright);
+  }
+
+  .hud-badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-mid);
+    color: var(--aero-cyan);
+    font-weight: 600;
+  }
+
+  .hud-controls {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .swatch-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .swatch-label {
+    font-size: 11px;
+    color: var(--fg-muted);
+    margin-right: 4px;
+    text-transform: uppercase;
+  }
+
+  .swatch-btn {
+    width: 22px;
+    height: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+    transition: transform 0.1s ease, border-color 0.1s ease;
+  }
+
+  .swatch-btn:hover,
+  .swatch-btn.active {
+    border: 2px solid #ffffff;
+    transform: scale(1.1);
+  }
+
+  .toggle-btn {
+    background: var(--surface-2);
+    color: var(--fg-primary);
+    border: 1px solid var(--border-mid);
+    padding: 4px 12px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+  }
+
+  .toggle-btn.active {
+    background: var(--metro-accent);
+    border-color: var(--aero-cyan);
+    color: #ffffff;
+  }
+
+  .container {
+    max-width: 1440px;
+    margin: 0 auto;
+    padding: 28px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  /* Section Headers */
+  .section-hdr {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-dim);
+    padding-bottom: 8px;
+    margin-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    color: var(--metro-accent);
+    text-transform: uppercase;
+  }
+
+  .section-sub {
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+
+  /* Brand DNA Strip */
+  .dna-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+
+  .dna-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border-dim);
+    border-left: 3px solid var(--metro-accent);
+    padding: 16px;
+  }
+
+  .dna-card h3 {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: var(--fg-bright);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+  }
+
+  .dna-card p {
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+
+  /* Concept Comparison Grid */
+  .concept-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
+    gap: 20px;
+  }
+
+  .concept-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border-dim);
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.15s ease;
+  }
+
+  .concept-card:hover {
+    border-color: var(--metro-accent);
+  }
+
+  .concept-card.recommended {
+    border-color: var(--metro-accent);
+  }
+
+  .concept-hdr {
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border-dim);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .concept-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--fg-bright);
+    letter-spacing: 0.8px;
+  }
+
+  .concept-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    background: var(--surface-3);
+    border: 1px solid var(--border-mid);
+    color: var(--fg-muted);
+  }
+
+  .concept-tag.rec {
+    background: var(--metro-accent);
+    border-color: var(--aero-cyan);
+    color: #ffffff;
+  }
+
+  .concept-stage {
+    padding: 24px;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 24px;
+    align-items: center;
+    background:
+      linear-gradient(to right, rgba(255,255,255,0.015) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(255,255,255,0.015) 1px, transparent 1px);
+    background-size: 16px 16px;
+    background-color: #0c0c0c;
+  }
+
+  .hero-svg-wrap {
+    width: 200px;
+    height: 200px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Optional Construction Grid Overlay */
+  body.show-grid .hero-svg-wrap::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(to right, rgba(0, 216, 240, 0.18) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 216, 240, 0.18) 1px, transparent 1px),
+      linear-gradient(45deg, transparent 49.5%, rgba(0, 216, 240, 0.25) 49.8%, rgba(0, 216, 240, 0.25) 50.2%, transparent 50.5%);
+    background-size: 25px 25px, 25px 25px, 100% 100%;
+    border: 1px dashed rgba(0, 216, 240, 0.45);
+    pointer-events: none;
+  }
+
+  .scale-column {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .scale-row {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: var(--surface-1);
+    border: 1px solid var(--border-dim);
+    padding: 10px 14px;
+  }
+
+  .scale-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .scale-lbl {
+    font-size: 10px;
+    color: var(--fg-dim);
+  }
+
+  /* Simulated Panel Bar Preview */
+  .panel-sim {
+    background: #111111;
+    border: 1px solid var(--border-mid);
+    border-bottom: 1px solid var(--metro-accent);
+    height: 34px;
+    padding: 0 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 11px;
+  }
+
+  .panel-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-ws {
+    padding: 2px 6px;
+    background: var(--metro-accent);
+    color: #fff;
+    font-weight: 700;
+  }
+
+  .panel-ws.inactive {
+    background: #1a1a1a;
+    color: #777;
+  }
+
+  .concept-desc {
+    padding: 14px 16px;
+    border-top: 1px solid var(--border-dim);
+    font-size: 12px;
+    color: var(--fg-muted);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .concept-desc strong {
+    color: var(--fg-primary);
+  }
+
+  /* Suite Family Grid */
+  .suite-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+  }
+
+  .suite-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border-dim);
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+  }
+
+  .suite-card:hover {
+    border-color: var(--metro-accent);
+  }
+
+  .suite-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--fg-bright);
+    letter-spacing: 0.8px;
+  }
+
+  .suite-app-id {
+    font-size: 10px;
+    color: var(--aero-cyan);
+    background: var(--surface-2);
+    border: 1px solid var(--border-dim);
+    padding: 1px 6px;
+  }
+
+  .suite-role {
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+
+  /* Wordmark Lockup Banner */
+  .lockup-banner {
+    background: var(--surface-1);
+    border: 1px solid var(--border-dim);
+    padding: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 24px;
+  }
+
+  .lockup-left {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .wordmark-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .wordmark-main {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: 6px;
+    color: var(--fg-bright);
+    line-height: 1.0;
+  }
+
+  .wordmark-main span {
+    color: var(--aero-cyan);
+  }
+
+  .wordmark-sub {
+    font-size: 11px;
+    letter-spacing: 2.5px;
+    color: var(--fg-muted);
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<header class="hud-header">
+  <div class="hud-title-group">
+    <span class="hud-title">✦ KAJO // BRAND &amp; LOGO GALLERY</span>
+    <span class="hud-badge">[ AERO + METRO • 0PX VECTOR SPEC ]</span>
+  </div>
+  <div class="hud-controls">
+    <div class="swatch-group">
+      <span class="swatch-label">Live Accent:</span>
+      <button class="swatch-btn active" style="background:#0078d4" title="Cobalt Blue (#0078d4)" onclick="setAccent('#0078d4','#00d8f0',this)"></button>
+      <button class="swatch-btn" style="background:#6b69d6" title="Windows Purple (#6b69d6)" onclick="setAccent('#6b69d6','#b4a0ff',this)"></button>
+      <button class="swatch-btn" style="background:#cba6f7" title="Catppuccin Lavender (#cba6f7)" onclick="setAccent('#cba6f7','#f5c2e7',this)"></button>
+      <button class="swatch-btn" style="background:#88c0d0" title="Nord Frost Ice (#88c0d0)" onclick="setAccent('#88c0d0','#8fbcbb',this)"></button>
+      <button class="swatch-btn" style="background:#107c41" title="Emerald Green (#107c41)" onclick="setAccent('#107c41','#4ec9b0',this)"></button>
+      <button class="swatch-btn" style="background:#d13438" title="Metro Crimson (#d13438)" onclick="setAccent('#d13438','#ff8c00',this)"></button>
+      <button class="swatch-btn" style="background:#c19c00" title="Amber Gold (#c19c00)" onclick="setAccent('#c19c00','#ffe66d',this)"></button>
+      <button class="swatch-btn" style="background:#008272" title="Cyberpunk Cyan (#008272)" onclick="setAccent('#008272','#00d8f0',this)"></button>
+    </div>
+    <button class="toggle-btn" id="gridBtn" onclick="toggleGrid()">[ SHOW CONSTRUCTION GRID ]</button>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- SECTION 1: BRAND DNA -->
+  <section>
+    <div class="section-hdr">
+      <span class="section-title">01 // Etymology &amp; Brand Architecture</span>
+      <span class="section-sub">Finnish "kajo" = glimmer, dawn horizon light, refracted ray in darkness</span>
+    </div>
+    <div class="dna-grid">
+      <div class="dna-card">
+        <h3>1. The Metaphor ("Valonkajo")</h3>
+        <p>A razor-sharp sliver of refracted cyan/blue light cutting through pitch-black obsidian glass. Never soft, never pastel, never rounded.</p>
+      </div>
+      <div class="dna-card">
+        <h3>2. Zero-Radius Discipline (0px)</h3>
+        <p>The current <code>data/icons/kajo.svg</code> uses an iOS squircle (<code>rx="112"</code>). A true Kajo emblem must use a strict <code>0px</code> square or precision 45° chamfered chassis.</p>
+      </div>
+      <div class="dna-card">
+        <h3>3. Dual-Scale Legibility</h3>
+        <p>Must read unmistakably at both <strong>512×512</strong> (full Aero specular gradients) and <strong>16×16</strong> monochrome symbolic (panel launcher button &amp; HUD).</p>
+      </div>
+      <div class="dna-card">
+        <h3>4. Modular Suite Coherence</h3>
+        <p>Establishes a shared structural chassis for <code>kajo</code>, <code>kajo-ide</code>, <code>kajo-files</code>, <code>kajo-player</code>, <code>kajo-settings</code>, and <code>kajo-greeter</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- SECTION 2: 6 VECTOR LOGO CONCEPTS (5 NEW + CURRENT LEGACY COMPARISON) -->
+  <section>
+    <div class="section-hdr">
+      <span class="section-title">02 // Master Logo Concepts (Live Vector Comparison)</span>
+      <span class="section-sub">Click any accent swatch in the top bar to test dynamic recoloring across all concepts</span>
+    </div>
+
+    <div class="concept-grid">
+
+      <!-- CONCEPT A: THE REFRACTED PRISM K -->
+      <div class="concept-card recommended">
+        <div class="concept-hdr">
+          <span class="concept-name">CONCEPT A // THE REFRACTED PRISM "K"</span>
+          <span class="concept-tag rec">[ RECOMMENDED FLAGSHIP ]</span>
+        </div>
+        <div class="concept-stage">
+          <div class="hero-svg-wrap">
+            <svg viewBox="0 0 256 256" width="192" height="192">
+              <defs>
+                <linearGradient id="ca-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#181818"/>
+                  <stop offset="100%" stop-color="#0a0a0a"/>
+                </linearGradient>
+                <linearGradient id="ca-beam" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <stop offset="0%" class="grad-accent" stop-color="#0078d4"/>
+                  <stop offset="100%" class="grad-cyan" stop-color="#00d8f0"/>
+                </linearGradient>
+                <linearGradient id="ca-lower" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" class="grad-cyan" stop-color="#00d8f0"/>
+                  <stop offset="100%" class="grad-accent" stop-color="#0078d4"/>
+                </linearGradient>
+              </defs>
+              <!-- 0px Obsidian Outer Chassis -->
+              <rect x="8" y="8" width="240" height="240" fill="url(#ca-bg)" stroke="#2b2b2b" stroke-width="2"/>
+              <!-- Top-Left Aero Specular Edge Catch -->
+              <path d="M 8 88 L 8 8 L 128 8" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="3"/>
+              <!-- Subtle Inner Grid Hairlines -->
+              <line x1="8" y1="128" x2="248" y2="128" stroke="#1f1f1f" stroke-width="1"/>
+              <line x1="92" y1="8" x2="92" y2="248" stroke="#1f1f1f" stroke-width="1"/>
+
+              <!-- Left Monolith Pillar (Crisp Structural White/Silver) -->
+              <polygon points="56,48 88,48 88,208 56,208" fill="#f0f0f0"/>
+              <!-- Precision Cyan Horizon Slit in Pillar -->
+              <rect x="56" y="124" width="32" height="8" class="fill-cyan" fill="#00d8f0"/>
+
+              <!-- Upper 45° Refracted Light Blade -->
+              <polygon points="100,124 176,48 212,48 124,136" fill="url(#ca-beam)"/>
+              <!-- Lower 45° Refracted Light Blade (Separated by 8px geometric gap) -->
+              <polygon points="132,140 212,208 172,208 100,144" fill="url(#ca-lower)"/>
+              <!-- Specular Core Spark -->
+              <polygon points="100,124 124,136 100,136" fill="#ffffff"/>
+            </svg>
+          </div>
+
+          <div class="scale-column">
+            <div class="scale-row">
+              <div class="scale-item">
+                <svg viewBox="0 0 256 256" width="48" height="48">
+                  <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#0078d4" class="stroke-accent" stroke-width="6"/>
+                  <polygon points="56,48 88,48 88,208 56,208" fill="#f0f0f0"/>
+                  <rect x="56" y="124" width="32" height="8" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="100,124 176,48 212,48 124,136" fill="url(#ca-beam)"/>
+                  <polygon points="132,140 212,208 172,208 100,144" fill="url(#ca-lower)"/>
+                </svg>
+                <span class="scale-lbl">48px Tile</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="24" height="24">
+                  <polygon points="2,1 5,1 5,15 2,15" fill="#e6e6e6"/>
+                  <polygon points="6.5,8 12.5,1 15,1 8.5,9" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="9,9.8 15,15 12,15 6.5,10" class="fill-accent" fill="#0078d4"/>
+                </svg>
+                <span class="scale-lbl">24px Color</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                  <polygon points="2,1 5,1 5,15 2,15" fill="#e6e6e6"/>
+                  <polygon points="6.5,8 12.5,1 15,1 8.5,9" fill="#e6e6e6"/>
+                  <polygon points="9,9.8 15,15 12,15 6.5,10" fill="#e6e6e6"/>
+                </svg>
+                <span class="scale-lbl">16px Symbolic</span>
+              </div>
+            </div>
+
+            <div class="panel-sim">
+              <div class="panel-left">
+                <svg viewBox="0 0 16 16" width="14" height="14">
+                  <polygon points="2,1 5,1 5,15 2,15" fill="#ffffff"/>
+                  <polygon points="6.5,8 12.5,1 15,1 8.5,9" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="9,9.8 15,15 12,15 6.5,10" class="fill-accent" fill="#0078d4"/>
+                </svg>
+                <span class="panel-ws">1</span>
+                <span class="panel-ws inactive">2</span>
+                <span class="panel-ws inactive">3</span>
+              </div>
+              <span style="color:var(--aero-cyan)">[ 17:24 • CPU 2% ]</span>
+            </div>
+          </div>
+        </div>
+        <div class="concept-desc">
+          <div><strong>Visual Logic:</strong> A solid white structural pillar (Metro architecture) struck at its horizon line by a cyan slit that refracts into two 45° Aero light blades separated by an 8px air gap.</div>
+          <div><strong>Strengths:</strong> Unmistakable as a "K", directly visualizes <em>valonkajo</em> (refracted light edge), and scales down to 3 crisp polygons at 16×16 without any blurry paths.</div>
+        </div>
+      </div>
+
+      <!-- CONCEPT B: HORIZON APERTURE / METRO QUADRANTS -->
+      <div class="concept-card">
+        <div class="concept-hdr">
+          <span class="concept-name">CONCEPT B // THE HORIZON APERTURE ("AAMUNKAJO")</span>
+          <span class="concept-tag">[ METRO TILE + LIGHT SLIT ]</span>
+        </div>
+        <div class="concept-stage">
+          <div class="hero-svg-wrap">
+            <svg viewBox="0 0 256 256" width="192" height="192">
+              <rect x="8" y="8" width="240" height="240" fill="#0e0e0e" stroke="#2b2b2b" stroke-width="2"/>
+              <!-- Left Vertical Tile -->
+              <rect x="36" y="36" width="56" height="184" fill="#1c1c1c" stroke="#333333" stroke-width="2"/>
+              <line x1="92" y1="36" x2="92" y2="220" class="stroke-cyan" stroke="#00d8f0" stroke-width="3"/>
+
+              <!-- Upper Right Prism Tile -->
+              <polygon points="104,36 220,36 220,118 104,118" fill="#161616" stroke="#2b2b2b" stroke-width="2"/>
+              <polygon points="104,118 220,36 220,64 134,118" fill="url(#ca-beam)"/>
+
+              <!-- Horizon Glow Bar -->
+              <rect x="36" y="125" width="184" height="6" class="fill-cyan" fill="#00d8f0"/>
+
+              <!-- Lower Right Prism Tile -->
+              <polygon points="104,138 220,138 220,220 104,220" fill="#161616" stroke="#2b2b2b" stroke-width="2"/>
+              <polygon points="134,138 220,192 220,220 104,138" fill="url(#ca-lower)"/>
+            </svg>
+          </div>
+
+          <div class="scale-column">
+            <div class="scale-row">
+              <div class="scale-item">
+                <svg viewBox="0 0 256 256" width="48" height="48">
+                  <rect x="8" y="8" width="240" height="240" fill="#0e0e0e" class="stroke-accent" stroke="#0078d4" stroke-width="6"/>
+                  <rect x="36" y="36" width="56" height="184" fill="#262626"/>
+                  <rect x="36" y="122" width="184" height="12" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="104,118 220,36 220,76 140,118" fill="url(#ca-beam)"/>
+                  <polygon points="140,138 220,180 220,220 104,138" fill="url(#ca-lower)"/>
+                </svg>
+                <span class="scale-lbl">48px Tile</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="24" height="24">
+                  <rect x="1" y="1" width="4" height="14" fill="#e6e6e6"/>
+                  <rect x="1" y="7.2" width="14" height="1.6" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="6.5,6.5 15,1 15,4 9.5,6.5" class="fill-accent" fill="#0078d4"/>
+                  <polygon points="9.5,9.5 15,12 15,15 6.5,9.5" class="fill-accent" fill="#0078d4"/>
+                </svg>
+                <span class="scale-lbl">24px Color</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                  <rect x="1" y="1" width="4" height="14" fill="#e6e6e6"/>
+                  <rect x="1" y="7.2" width="14" height="1.6" fill="#e6e6e6"/>
+                  <polygon points="6.5,6.5 15,1 15,4 9.5,6.5" fill="#e6e6e6"/>
+                  <polygon points="9.5,9.5 15,12 15,15 6.5,9.5" fill="#e6e6e6"/>
+                </svg>
+                <span class="scale-lbl">16px Symbolic</span>
+              </div>
+            </div>
+
+            <div class="panel-sim">
+              <div class="panel-left">
+                <svg viewBox="0 0 16 16" width="14" height="14">
+                  <rect x="1" y="1" width="4" height="14" fill="#ffffff"/>
+                  <rect x="1" y="7.2" width="14" height="1.6" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="6.5,6.5 15,1 15,4 9.5,6.5" class="fill-accent" fill="#0078d4"/>
+                  <polygon points="9.5,9.5 15,12 15,15 6.5,9.5" class="fill-accent" fill="#0078d4"/>
+                </svg>
+                <span class="panel-ws">1</span>
+                <span class="panel-ws inactive">2</span>
+                <span class="panel-ws inactive">3</span>
+              </div>
+              <span style="color:var(--aero-cyan)">[ 17:24 • CPU 2% ]</span>
+            </div>
+          </div>
+        </div>
+        <div class="concept-desc">
+          <div><strong>Visual Logic:</strong> A 3-tile Niri/Metro window layout split horizontally by a glowing cyan horizon bar (<em>aamunkajo</em> = dawn horizon) with diagonal light rays forming a geometric K.</div>
+          <div><strong>Strengths:</strong> Directly represents tiling window management + horizon light.</div>
+        </div>
+      </div>
+
+      <!-- CONCEPT C: TELEMETRY BRACKET [ K ] -->
+      <div class="concept-card">
+        <div class="concept-hdr">
+          <span class="concept-name">CONCEPT C // TELEMETRY RETICLE "[ │&lt; ]"</span>
+          <span class="concept-tag">[ HUD + MODAL CURSOR ]</span>
+        </div>
+        <div class="concept-stage">
+          <div class="hero-svg-wrap">
+            <svg viewBox="0 0 256 256" width="192" height="192">
+              <rect x="8" y="8" width="240" height="240" fill="#101010" stroke="#2b2b2b" stroke-width="2"/>
+              <!-- 4 Corner HUD Reticle Brackets -->
+              <path d="M 24 56 L 24 24 L 56 24" fill="none" class="stroke-cyan" stroke="#00d8f0" stroke-width="4"/>
+              <path d="M 200 24 L 232 24 L 232 56" fill="none" stroke="#444444" stroke-width="3"/>
+              <path d="M 24 200 L 24 232 L 56 232" fill="none" stroke="#444444" stroke-width="3"/>
+              <path d="M 200 232 L 232 232 L 232 200" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="4"/>
+
+              <!-- Modal Block Cursor Spine -->
+              <rect x="64" y="56" width="34" height="144" class="fill-accent" fill="#0078d4"/>
+              <rect x="64" y="56" width="34" height="28" class="fill-cyan" fill="#00d8f0"/>
+
+              <!-- Sharp Chevron K Arms -->
+              <polygon points="110,128 174,56 202,56 138,128 202,200 174,200" fill="#f0f0f0"/>
+              <!-- Cyan Vertex Core -->
+              <polygon points="110,128 138,112 138,144" class="fill-cyan" fill="#00d8f0"/>
+            </svg>
+          </div>
+
+          <div class="scale-column">
+            <div class="scale-row">
+              <div class="scale-item">
+                <svg viewBox="0 0 256 256" width="48" height="48">
+                  <rect x="8" y="8" width="240" height="240" fill="#101010" stroke="#2b2b2b" stroke-width="6"/>
+                  <rect x="56" y="48" width="38" height="160" class="fill-accent" fill="#0078d4"/>
+                  <rect x="56" y="48" width="38" height="34" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="106,128 176,48 208,48 138,128 208,208 176,208" fill="#ffffff"/>
+                </svg>
+                <span class="scale-lbl">48px Tile</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="24" height="24">
+                  <rect x="2" y="1" width="3" height="14" class="fill-accent" fill="#0078d4"/>
+                  <rect x="2" y="1" width="3" height="3" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="6.5,8 12,1 14.5,1 9,8 14.5,15 12,15" fill="#ffffff"/>
+                </svg>
+                <span class="scale-lbl">24px Color</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                  <rect x="2" y="1" width="3" height="14" fill="#e6e6e6"/>
+                  <polygon points="6.5,8 12,1 14.5,1 9,8 14.5,15 12,15" fill="#e6e6e6"/>
+                </svg>
+                <span class="scale-lbl">16px Symbolic</span>
+              </div>
+            </div>
+
+            <div class="panel-sim">
+              <div class="panel-left">
+                <svg viewBox="0 0 16 16" width="14" height="14">
+                  <rect x="2" y="1" width="3" height="14" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="6.5,8 12,1 14.5,1 9,8 14.5,15 12,15" fill="#ffffff"/>
+                </svg>
+                <span class="panel-ws">1</span>
+                <span class="panel-ws inactive">2</span>
+                <span class="panel-ws inactive">3</span>
+              </div>
+              <span style="color:var(--aero-cyan)">[ 17:24 • CPU 2% ]</span>
+            </div>
+          </div>
+        </div>
+        <div class="concept-desc">
+          <div><strong>Visual Logic:</strong> Combines Kajo IDE's modal block cursor (<code>█</code>) with a reversed terminal chevron (<code>&lt;</code>) inside HUD corner brackets (<code>[ ]</code>) to form a high-contrast technical K.</div>
+          <div><strong>Strengths:</strong> Maximum developer/terminal tool identity; the simplest 2-shape silhouette at 16×16.</div>
+        </div>
+      </div>
+
+      <!-- CONCEPT D: LASER-SLICED MONOLITH -->
+      <div class="concept-card">
+        <div class="concept-hdr">
+          <span class="concept-name">CONCEPT D // LASER-SLICED OBSIDIAN MONOLITH</span>
+          <span class="concept-tag">[ BRUTALIST GEOMETRY ]</span>
+        </div>
+        <div class="concept-stage">
+          <div class="hero-svg-wrap">
+            <svg viewBox="0 0 256 256" width="192" height="192">
+              <rect x="8" y="8" width="240" height="240" fill="#0c0c0c" stroke="#2b2b2b" stroke-width="2"/>
+              <!-- Solid Square Block Cut by Refracted Beams -->
+              <!-- Left Slab -->
+              <polygon points="48,48 96,48 96,208 48,208" fill="#e6e6e6"/>
+              <!-- Top-Center Wedge -->
+              <polygon points="108,48 184,48 108,124" fill="#2a2a2a"/>
+              <!-- Right Refracted Prism Wing (Upper) -->
+              <polygon points="198,48 208,48 208,116 124,132 114,132" fill="url(#ca-beam)"/>
+              <!-- Right Refracted Prism Wing (Lower) -->
+              <polygon points="114,140 132,140 208,196 208,208 156,208 108,160" fill="url(#ca-lower)"/>
+              <!-- Glowing Laser Cut Line -->
+              <line x1="100" y1="136" x2="216" y2="36" class="stroke-cyan" stroke="#00d8f0" stroke-width="4"/>
+            </svg>
+          </div>
+
+          <div class="scale-column">
+            <div class="scale-row">
+              <div class="scale-item">
+                <svg viewBox="0 0 256 256" width="48" height="48">
+                  <rect x="8" y="8" width="240" height="240" fill="#0c0c0c" class="stroke-accent" stroke="#0078d4" stroke-width="6"/>
+                  <polygon points="48,48 96,48 96,208 48,208" fill="#e6e6e6"/>
+                  <polygon points="108,48 184,48 108,124" fill="#333333"/>
+                  <polygon points="198,48 208,48 208,116 114,132" fill="url(#ca-beam)"/>
+                  <polygon points="114,140 208,196 208,208 156,208 108,160" fill="url(#ca-lower)"/>
+                </svg>
+                <span class="scale-lbl">48px Tile</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="24" height="24">
+                  <polygon points="2,1 5.5,1 5.5,15 2,15" fill="#e6e6e6"/>
+                  <polygon points="7,1 13,1 7,7" fill="#555555"/>
+                  <polygon points="7,8.5 15,2 15,7.5" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="7,9.5 15,15 10,15 7,12" class="fill-accent" fill="#0078d4"/>
+                </svg>
+                <span class="scale-lbl">24px Color</span>
+              </div>
+              <div class="scale-item">
+                <svg viewBox="0 0 16 16" width="16" height="16">
+                  <polygon points="2,1 5.5,1 5.5,15 2,15" fill="#e6e6e6"/>
+                  <polygon points="7,8.5 15,2 15,7.5" fill="#e6e6e6"/>
+                  <polygon points="7,9.5 15,15 10,15 7,12" fill="#e6e6e6"/>
+                </svg>
+                <span class="scale-lbl">16px Symbolic</span>
+              </div>
+            </div>
+
+            <div class="panel-sim">
+              <div class="panel-left">
+                <svg viewBox="0 0 16 16" width="14" height="14">
+                  <polygon points="2,1 5.5,1 5.5,15 2,15" fill="#ffffff"/>
+                  <polygon points="7,8.5 15,2 15,7.5" class="fill-cyan" fill="#00d8f0"/>
+                  <polygon points="7,9.5 15,15 10,15 7,12" class="fill-accent" fill="#0078d4"/>
+                </svg>
+                <span class="panel-ws">1</span>
+                <span class="panel-ws inactive">2</span>
+                <span class="panel-ws inactive">3</span>
+              </div>
+              <span style="color:var(--aero-cyan)">[ 17:24 • CPU 2% ]</span>
+            </div>
+          </div>
+        </div>
+        <div class="concept-desc">
+          <div><strong>Visual Logic:</strong> A solid square monolith sliced along 45° and 15° optical planes, revealing a glowing cyan laser seam inside the dark stone.</div>
+          <div><strong>Strengths:</strong> Heavy architectural presence; feels like a hardware or game-engine studio badge.</div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- SECTION 3: WORDMARK & GREETER / ABOUT LOCKUP -->
+  <section>
+    <div class="section-hdr">
+      <span class="section-title">03 // Master Lockup (Greeter, About Page &amp; Documentation Header)</span>
+      <span class="section-sub">Concept A paired with Fira Code Bold tracked typography and bracketed telemetry</span>
+    </div>
+
+    <div class="lockup-banner">
+      <div class="lockup-left">
+        <svg viewBox="0 0 256 256" width="76" height="76">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="6"/>
+          <polygon points="56,48 88,48 88,208 56,208" fill="#f0f0f0"/>
+          <rect x="56" y="124" width="32" height="8" class="fill-cyan" fill="#00d8f0"/>
+          <polygon points="100,124 176,48 212,48 124,136" fill="url(#ca-beam)"/>
+          <polygon points="132,140 212,208 172,208 100,144" fill="url(#ca-lower)"/>
+          <polygon points="100,124 124,136 100,136" fill="#ffffff"/>
+        </svg>
+        <div class="wordmark-text">
+          <div class="wordmark-main">KAJO<span>//</span>OS</div>
+          <div class="wordmark-sub">AERO + METRO NATIVE WORKSPACE SUITE • C11 / GTK4 / WAYLAND</div>
+        </div>
+      </div>
+      <div class="hud-badge">[ BORDER-RADIUS: 0PX // 1PX STRUCTURAL GRID ]</div>
+    </div>
+  </section>
+
+  <!-- SECTION 4: UNIFIED 6-APP SUITE ICON SYSTEM -->
+  <section>
+    <div class="section-hdr">
+      <span class="section-title">04 // Unified 6-Binary Suite Icon System</span>
+      <span class="section-sub">Shared 0px obsidian chassis + top-left Aero light catch + geometric inner glyph</span>
+    </div>
+
+    <div class="suite-grid">
+
+      <!-- 1. kajo (Shell) -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="5"/>
+          <polygon points="56,48 88,48 88,208 56,208" fill="#f0f0f0"/>
+          <rect x="56" y="124" width="32" height="8" class="fill-cyan" fill="#00d8f0"/>
+          <polygon points="100,124 176,48 212,48 124,136" fill="url(#ca-beam)"/>
+          <polygon points="132,140 212,208 172,208 100,144" fill="url(#ca-lower)"/>
+        </svg>
+        <div class="suite-title">KAJO SHELL</div>
+        <div class="suite-app-id">org.kajo.Shell</div>
+        <div class="suite-role">Panel, 22 Widgets, Launcher &amp; Lock</div>
+      </div>
+
+      <!-- 2. kajo-ide -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-cyan" stroke="#00d8f0" stroke-width="5"/>
+          <!-- Top Editor Tab Strip -->
+          <rect x="36" y="40" width="184" height="24" fill="#1c1c1c"/>
+          <rect x="36" y="40" width="72" height="24" class="fill-accent" fill="#0078d4"/>
+          <!-- Chevron Prompt > and Block Cursor -->
+          <polygon points="56,96 112,136 56,176 56,154 84,136 56,118" class="fill-cyan" fill="#00d8f0"/>
+          <rect x="128" y="100" width="36" height="72" fill="#dcdcaa"/>
+          <rect x="176" y="160" width="28" height="12" class="fill-accent" fill="#0078d4"/>
+        </svg>
+        <div class="suite-title">KAJO IDE</div>
+        <div class="suite-app-id">org.kajo.Ide</div>
+        <div class="suite-role">Modal C11 / LSP / DAP Code Editor</div>
+      </div>
+
+      <!-- 3. kajo-files -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="5"/>
+          <!-- Sharp 0px Metro Folder Backplate -->
+          <polygon points="40,56 108,56 124,76 216,76 216,200 40,200" fill="#1e1e1e" stroke="#383838" stroke-width="3"/>
+          <!-- Refracted Cyan Horizon Slit -->
+          <rect x="40" y="96" width="176" height="8" class="fill-cyan" fill="#00d8f0"/>
+          <!-- Front Geometric Plate -->
+          <rect x="40" y="104" width="176" height="96" fill="url(#ca-beam)" opacity="0.88"/>
+          <rect x="56" y="124" width="56" height="10" fill="#ffffff"/>
+        </svg>
+        <div class="suite-title">KAJO FILES</div>
+        <div class="suite-app-id">org.kajo.Files</div>
+        <div class="suite-role">GIO / GVFS File Manager &amp; Quick Look</div>
+      </div>
+
+      <!-- 4. kajo-player -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" stroke="#c586c0" stroke-width="5"/>
+          <!-- Sharp Play Prism -->
+          <polygon points="60,56 172,128 60,200" fill="url(#ca-beam)"/>
+          <!-- 3 Vertical FFT Telemetry Bars -->
+          <rect x="184" y="112" width="10" height="88" class="fill-cyan" fill="#00d8f0"/>
+          <rect x="200" y="76" width="10" height="124" fill="#c586c0"/>
+          <rect x="168" y="148" width="10" height="52" fill="#ffffff"/>
+        </svg>
+        <div class="suite-title">KAJO PLAYER</div>
+        <div class="suite-app-id">org.kajo.Player</div>
+        <div class="suite-role">Hardware libmpv + GtkGLArea Media</div>
+      </div>
+
+      <!-- 5. kajo-settings -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="5"/>
+          <!-- 3 Precision Metro Slider Tracks -->
+          <rect x="48" y="68" width="160" height="12" fill="#262626"/>
+          <rect x="48" y="68" width="104" height="12" class="fill-accent" fill="#0078d4"/>
+          <rect x="144" y="56" width="20" height="36" fill="#ffffff"/>
+
+          <rect x="48" y="122" width="160" height="12" fill="#262626"/>
+          <rect x="48" y="122" width="60" height="12" class="fill-cyan" fill="#00d8f0"/>
+          <rect x="100" y="110" width="20" height="36" fill="#ffffff"/>
+
+          <rect x="48" y="176" width="160" height="12" fill="#262626"/>
+          <rect x="48" y="176" width="132" height="12" class="fill-accent" fill="#0078d4"/>
+          <rect x="172" y="164" width="20" height="36" fill="#ffffff"/>
+        </svg>
+        <div class="suite-title">KAJO SETTINGS</div>
+        <div class="suite-app-id">org.kajo.Settings</div>
+        <div class="suite-role">11-Page System, Audio, Niri &amp; Theme</div>
+      </div>
+
+      <!-- 6. kajo-greeter -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" stroke="#4ec9b0" stroke-width="5"/>
+          <!-- Square Security Shackle + Keyhole Slit -->
+          <rect x="84" y="48" width="88" height="64" fill="none" stroke="#e6e6e6" stroke-width="14"/>
+          <rect x="56" y="104" width="144" height="104" fill="#1c1c1c" class="stroke-accent" stroke="#0078d4" stroke-width="4"/>
+          <rect x="120" y="132" width="16" height="48" class="fill-cyan" fill="#00d8f0"/>
+        </svg>
+        <div class="suite-title">KAJO GREETER</div>
+        <div class="suite-app-id">org.kajo.Greeter</div>
+        <div class="suite-role">Wayland Login &amp; Session Lock</div>
+      </div>
+
+    </div>
+  </section>
+
+</main>
+
+<script>
+  function setAccent(accentHex, cyanHex, btn) {
+    document.documentElement.style.setProperty('--metro-accent', accentHex);
+    document.documentElement.style.setProperty('--aero-cyan', cyanHex);
+
+    document.querySelectorAll('.swatch-btn').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+
+    document.querySelectorAll('.grad-accent').forEach(el => el.setAttribute('stop-color', accentHex));
+    document.querySelectorAll('.grad-cyan').forEach(el => el.setAttribute('stop-color', cyanHex));
+    document.querySelectorAll('.fill-accent').forEach(el => el.setAttribute('fill', accentHex));
+    document.querySelectorAll('.fill-cyan').forEach(el => el.setAttribute('fill', cyanHex));
+    document.querySelectorAll('.stroke-accent').forEach(el => el.setAttribute('stroke', accentHex));
+    document.querySelectorAll('.stroke-cyan').forEach(el => el.setAttribute('stroke', cyanHex));
+  }
+
+  function toggleGrid() {
+    document.body.classList.toggle('show-grid');
+    const btn = document.getElementById('gridBtn');
+    btn.classList.toggle('active');
+    btn.textContent = document.body.classList.contains('show-grid')
+      ? '[ HIDE CONSTRUCTION GRID ]'
+      : '[ SHOW CONSTRUCTION GRID ]';
+  }
+</script>
+</body>
+</html>

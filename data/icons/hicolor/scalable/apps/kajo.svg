@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="kajo-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#181818"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="kajo-beam" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0078d4"/>
+      <stop offset="100%" stop-color="#00d8f0"/>
+    </linearGradient>
+    <linearGradient id="kajo-lower" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00d8f0"/>
+      <stop offset="100%" stop-color="#0078d4"/>
+    </linearGradient>
+  </defs>
+  <!-- 0px Obsidian Outer Chassis -->
+  <rect x="8" y="8" width="240" height="240" fill="url(#kajo-bg)" stroke="#2b2b2b" stroke-width="4"/>
+  <!-- Top-Left Aero Specular Edge Catch -->
+  <path d="M 8 96 L 8 8 L 128 8" fill="none" stroke="#0078d4" stroke-width="6"/>
+  <!-- Inner Structural Grid Hairlines -->
+  <line x1="8" y1="128" x2="248" y2="128" stroke="#1f1f1f" stroke-width="2"/>
+  <line x1="92" y1="8" x2="92" y2="248" stroke="#1f1f1f" stroke-width="2"/>
+  <!-- Left Monolith Pillar -->
+  <polygon points="56,48 88,48 88,208 56,208" fill="#f0f0f0"/>
+  <!-- Precision Cyan Horizon Slit -->
+  <rect x="56" y="124" width="32" height="8" fill="#00d8f0"/>
+  <!-- Upper 45° Refracted Light Blade -->
+  <polygon points="100,124 176,48 212,48 124,136" fill="url(#kajo-beam)"/>
+  <!-- Lower 45° Refracted Light Blade -->
+  <polygon points="132,140 212,208 172,208 100,144" fill="url(#kajo-lower)"/>
+  <!-- Specular Core Spark -->
+  <polygon points="100,124 124,136 100,136" fill="#ffffff"/>
+</svg>

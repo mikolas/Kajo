@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
+  <defs>
+    <linearGradient id="files-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#181818"/>
+      <stop offset="100%" stop-color="#0a0a0a"/>
+    </linearGradient>
+    <linearGradient id="files-beam" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0078d4"/>
+      <stop offset="100%" stop-color="#00d8f0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" fill="url(#files-bg)" stroke="#2b2b2b" stroke-width="4"/>
+  <path d="M 8 96 L 8 8 L 128 8" fill="none" stroke="#0078d4" stroke-width="6"/>
+  <!-- Sharp 0px Metro Folder Backplate -->
+  <polygon points="40,56 108,56 124,76 216,76 216,200 40,200" fill="#1e1e1e" stroke="#383838" stroke-width="3"/>
+  <!-- Refracted Cyan Horizon Slit -->
+  <rect x="40" y="96" width="176" height="8" fill="#00d8f0"/>
+  <!-- Front Geometric Plate -->
+  <rect x="40" y="104" width="176" height="96" fill="url(#files-beam)" opacity="0.9"/>
+  <rect x="56" y="124" width="56" height="10" fill="#ffffff"/>
+</svg>

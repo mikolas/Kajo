@@ -129,6 +129,22 @@ shell_icons_resolve_app_id(const gchar *app_id)
 
     /* 2. Try lowercased desktop file parsing (e.g. "Code" -> "code.desktop") */
     gchar *lower = g_ascii_strdown(app_id, -1);
+
+    /* Fast-path for Kajo Suite reverse-DNS app IDs (org.kajo.Ide -> kajo-ide) */
+    if (g_str_has_prefix(lower, "org.kajo.")) {
+        const char *sub = lower + 9;
+        if (g_strcmp0(sub, "shell") == 0) {
+            res = try_resolve_name(theme, "kajo", buf, sizeof(buf));
+        } else {
+            g_autofree gchar *kajo_icon = g_strdup_printf("kajo-%s", sub);
+            res = try_resolve_name(theme, kajo_icon, buf, sizeof(buf));
+        }
+        if (res) {
+            g_free(lower);
+            return res;
+        }
+    }
+
     res = try_desktop_file_icon(theme, lower, buf, sizeof(buf));
     if (res) {
         g_free(lower);
