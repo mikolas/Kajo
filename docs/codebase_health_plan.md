@@ -288,3 +288,9 @@ Review method: every page was rendered headlessly (cage + grim, isolated config)
 | P2 | Deduplicate PA client, accent presets, poppler, IPC client, auth surface | 4 |
 | P2 | Split oversized files and functions | 5 |
 | P3 | Palette tokens, font exception, tests, packaging | 6–7 |
+
+---
+
+## 10. Open Issue: Monitors Not Powering Off After DPMS Timeout
+
+Reported, **root cause not confirmed**. Verified: config values, idle-notification setup in `src/lock/idle_manager.c`, `PowerOffMonitors {}` action JSON (matches niri-ipc), niri delivers idle events (probe client), no logind idle inhibitors. Leading hypothesis: niri re-activates monitors on *any* pointer/touch/tablet event, so a noisy input device wakes the panel immediately after power-off. Next step: temporary logging in `on_dpms_idled` / `on_dpms_resumed`, a 5-minute DPMS test, and `libinput debug-events` while the screen is off.
