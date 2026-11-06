@@ -510,6 +510,18 @@ test_text_objects_c_rust_js_lua(void)
 }
 
 /* Every bundled highlight query must compile against the installed grammar. */
+/* Unification: C, Java and Go are now query-driven like the other languages. */
+static void
+test_c_java_go_are_query_driven(void)
+{
+  IdeTsLang langs[] = { IDE_TS_LANG_C, IDE_TS_LANG_JAVA, IDE_TS_LANG_GO };
+  for (gsize i = 0; i < G_N_ELEMENTS(langs); i++) {
+    if (ide_ts_lang_available(langs[i])) {
+      g_assert_nonnull(ide_ts_query_source(langs[i]));
+    }
+  }
+}
+
 static void
 test_queries_compile(void)
 {
@@ -529,6 +541,7 @@ main(int argc, char **argv)
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/ide-ts/lang-detection", test_lang_detection);
   g_test_add_func("/ide-ts/queries-compile", test_queries_compile);
+  g_test_add_func("/ide-ts/c-java-go-query-driven", test_c_java_go_are_query_driven);
   if (ide_ts_lang_available(IDE_TS_LANG_JAVA)) {
     g_test_add_func("/ide-ts/objects-java", test_text_objects_java);
   }

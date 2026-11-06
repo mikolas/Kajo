@@ -214,6 +214,16 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 
 ---
 
+
+### 5.5 Right-Click Code Menu & Mouse Navigation
+
+Kajo is keyboard-first, but it is a native GTK4 window, not a terminal, so the mouse works too:
+
+- **Right-click in the editor** opens a code menu merged with the usual cut/copy/paste: **Go to Definition** (`g d`), **Go to Implementation** (`Space g i`), **Show Documentation** (`K`), **Rename Symbol…** (`Space c r`), **Code Actions…** (`Space c a`), **Format Buffer** (`Space c f`) and **Toggle Breakpoint** (`F9`). The cursor is placed where you clicked first (a click inside a selection keeps it), and items that need a running language server (implementation, code actions, format) are disabled until one is ready. Every item dispatches the same action as its key, so behavior never diverges.
+- **Ctrl+click** a symbol jumps straight to its definition.
+- **Hover-dwell:** resting the pointer over a symbol for ~0.6 s shows the documentation popover (only with a ready language server, in `NORMAL`/`SELECT`); moving the pointer cancels it. Dismiss with `Esc` / `q`.
+
+
 ## 6. Project File Explorer & Git Status (`Space e`)
 
 The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll-stable tree view of your workspace with live `git status --porcelain=v1 -b` integration:
@@ -249,8 +259,8 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Navigation:** `↑` / `↓`, `Tab` / `Shift+Tab`, `Ctrl+n` / `Ctrl+p`, or mouse click to select; `Enter` or double-click to open the file at the exact line/column.
 
 ### 7.2 Interactive Help Viewer & Command Palette (`?`, `F1`, `Space h`, or `❓ HELP`)
-- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **85 commands** across 11 categories.
-- **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
+- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **101 commands** across 12 categories.
+- **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `TASKS`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
 - **Instant Fuzzy Filter:** Type any key chord, command name, or description keyword to filter rows in real time.
 - **Executable Command Palette:** Pressing `Enter` or double-clicking any row immediately executes that command in the editor.
 - **Dismissing:** Press `Esc`, `F1`, click `✕ ESC`, or press `q` when the search query is empty (typing `q` when a filter query is already active appends `q` to the search string so you can search for `"quote"` or `"quickfix"`).

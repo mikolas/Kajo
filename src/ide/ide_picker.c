@@ -178,6 +178,9 @@ static const struct {
   { "MOUSE", "Gutter Breakpoint", "Click column 1 in the left gutter to toggle a breakpoint", "Left Click Gutter", IDE_ACTION_NONE },
   { "MOUSE", "Splitter Drag", "Drag vertical or horizontal paned dividers to resize panes", "Drag Divider", IDE_ACTION_NONE },
   { "MOUSE", "Mermaid Pan & Zoom", "Use toolbar buttons (🔍-/100%/🔍+/⛶ FIT/💾 SVG) on diagrams", "Diagram Toolbar", IDE_ACTION_NONE },
+  { "MOUSE", "Code Menu", "Right-click in the editor for Go to Definition, Rename, Code Actions, Format, Breakpoint", "Right Click", IDE_ACTION_NONE },
+  { "MOUSE", "Jump to Definition", "Ctrl+click a symbol to go to its definition", "Ctrl+Click", IDE_ACTION_NONE },
+  { "MOUSE", "Hover Docs", "Rest the pointer on a symbol to show documentation (LSP)", "Pointer Dwell", IDE_ACTION_NONE },
   { NULL, NULL, NULL, NULL, IDE_ACTION_NONE }
 };
 

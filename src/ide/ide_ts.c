@@ -464,16 +464,6 @@ type_in(const char *type, const char *const *names)
 }
 
 static gboolean
-is_field_of(TSNode parent, const char *field, TSNode child)
-{
-  if (ts_node_is_null(parent)) {
-    return FALSE;
-  }
-  TSNode f = ts_node_child_by_field_name(parent, field, (uint32_t)strlen(field));
-  return !ts_node_is_null(f) && ts_node_eq(f, child);
-}
-
-static gboolean
 is_upper_snake(const char *s, gsize len)
 {
   if (len < 2 || !(s[0] >= 'A' && s[0] <= 'Z')) {
@@ -596,150 +586,26 @@ is_c_builtin_type_word(const char *txt, gsize len)
 }
 
 static IdeTsToken
-classify_identifier_c(TSNode n, const char *type, const char *txt, gsize len)
+classify_identifier_fallback(IdeTsLang lang, const char *txt, gsize len)
 {
-  if (is_c_scope_macro(txt, len)) {
+  /* Contextual roles (method vs field, declaration names, calls, enum members,
+   * annotations, scoped names) come from the per-language highlight query in
+   * ide_ts_queries.c. Only the convention-based guesses live here. */
+  if (lang == IDE_TS_LANG_C && is_c_scope_macro(txt, len)) {
     return IDE_TS_TOKEN_KEYWORD;
   }
-  if (is_c_builtin_type_word(txt, len)) {
+  if (lang == IDE_TS_LANG_C && is_c_builtin_type_word(txt, len)) {
     return IDE_TS_TOKEN_TYPE;
-  }
-  TSNode parent = ts_node_parent(n);
-  const char *ptype = ts_node_is_null(parent) ? "" : ts_node_type(parent);
-
-  if (type_is(type, "field_identifier")) {
-    if (type_is(ptype, "field_expression")) {
-      TSNode gp = ts_node_parent(parent);
-      if (!ts_node_is_null(gp) && type_is(ts_node_type(gp), "call_expression") &&
-          is_field_of(gp, "function", parent)) {
-        return IDE_TS_TOKEN_FUNCTION;
-      }
-    }
-    return IDE_TS_TOKEN_VARIABLE;
-  }
-  if (type_is(type, "statement_identifier")) {
-    return IDE_TS_TOKEN_VARIABLE;
-  }
-
-  /* plain identifier */
-  if (type_is(ptype, "function_declarator") && is_field_of(parent, "declarator", n)) {
-    return IDE_TS_TOKEN_FUNCTION;
-  }
-  if (type_is(ptype, "call_expression") && is_field_of(parent, "function", n)) {
-    return IDE_TS_TOKEN_FUNCTION;
-  }
-  if ((type_is(ptype, "preproc_def") || type_is(ptype, "preproc_function_def")) &&
-      is_field_of(parent, "name", n)) {
-    return IDE_TS_TOKEN_MACRO;
-  }
-  if (type_is(ptype, "enumerator") && is_field_of(parent, "name", n)) {
-    return IDE_TS_TOKEN_MACRO;
   }
   if (is_upper_snake(txt, len)) {
     return IDE_TS_TOKEN_MACRO;
   }
-  return IDE_TS_TOKEN_VARIABLE;
-}
-
-static IdeTsToken
-classify_identifier_java(TSNode n, const char *txt, gsize len)
-{
-  TSNode parent = ts_node_parent(n);
-  const char *ptype = ts_node_is_null(parent) ? "" : ts_node_type(parent);
-
-  static const char *const kTypeDecls[] = {
-    "class_declaration", "interface_declaration", "enum_declaration",
-    "record_declaration", "annotation_type_declaration", NULL
-  };
-
-  if ((type_is(ptype, "method_declaration") || type_is(ptype, "constructor_declaration")) &&
-      is_field_of(parent, "name", n)) {
-    return IDE_TS_TOKEN_FUNCTION;
-  }
-  if (type_is(ptype, "method_invocation")) {
-    if (is_field_of(parent, "name", n)) {
-      return IDE_TS_TOKEN_FUNCTION;
-    }
-    if (is_field_of(parent, "object", n)) {
-      return is_pascal(txt, len) || is_upper_snake(txt, len) ? IDE_TS_TOKEN_TYPE
-                                                              : IDE_TS_TOKEN_VARIABLE;
-    }
-  }
-  if (type_in(ptype, kTypeDecls) && is_field_of(parent, "name", n)) {
-    return IDE_TS_TOKEN_TYPE;
-  }
-  if (type_is(ptype, "enum_constant") && is_field_of(parent, "name", n)) {
-    return IDE_TS_TOKEN_MACRO;
-  }
-  if (type_is(ptype, "annotation") || type_is(ptype, "marker_annotation")) {
-    if (is_field_of(parent, "name", n)) {
-      return IDE_TS_TOKEN_MACRO;
-    }
-  }
-  if (type_is(ptype, "scoped_identifier") || type_is(ptype, "scoped_type_identifier")) {
-    TSNode gp = ts_node_parent(parent);
-    while (!ts_node_is_null(gp) && (type_is(ts_node_type(gp), "scoped_identifier") ||
-                                    type_is(ts_node_type(gp), "scoped_type_identifier"))) {
-      gp = ts_node_parent(gp);
-    }
-    if (!ts_node_is_null(gp) && (type_is(ts_node_type(gp), "annotation") ||
-                                 type_is(ts_node_type(gp), "marker_annotation"))) {
-      return IDE_TS_TOKEN_MACRO;
-    }
-    return is_pascal(txt, len) ? IDE_TS_TOKEN_TYPE : IDE_TS_TOKEN_VARIABLE;
-  }
-  if (type_is(ptype, "field_access") && is_field_of(parent, "field", n)) {
-    return is_upper_snake(txt, len) ? IDE_TS_TOKEN_MACRO : IDE_TS_TOKEN_VARIABLE;
-  }
-  if (is_upper_snake(txt, len)) {
-    return IDE_TS_TOKEN_MACRO;
-  }
-  if (is_pascal(txt, len)) {
+  if (lang == IDE_TS_LANG_JAVA && is_pascal(txt, len)) {
     return IDE_TS_TOKEN_TYPE; /* Math, System, Collections in expression position */
   }
   return IDE_TS_TOKEN_VARIABLE;
 }
 
-static IdeTsToken
-classify_identifier_go(TSNode n, const char *type, const char *txt, gsize len)
-{
-  TSNode parent = ts_node_parent(n);
-  const char *ptype = ts_node_is_null(parent) ? "" : ts_node_type(parent);
-
-  if (type_is(type, "field_identifier")) {
-    if (type_is(ptype, "selector_expression")) {
-      TSNode gp = ts_node_parent(parent);
-      if (!ts_node_is_null(gp) && type_is(ts_node_type(gp), "call_expression") &&
-          is_field_of(gp, "function", parent)) {
-        return IDE_TS_TOKEN_FUNCTION;
-      }
-    }
-    if (type_is(ptype, "method_elem") || type_is(ptype, "method_spec") ||
-        type_is(ptype, "method_declaration")) {
-      return IDE_TS_TOKEN_FUNCTION;
-    }
-    return IDE_TS_TOKEN_VARIABLE;
-  }
-  if (type_is(type, "package_identifier") || type_is(type, "label_name") ||
-      type_is(type, "blank_identifier")) {
-    return IDE_TS_TOKEN_VARIABLE;
-  }
-
-  /* plain identifier */
-  if (type_is(ptype, "function_declaration") && is_field_of(parent, "name", n)) {
-    return IDE_TS_TOKEN_FUNCTION;
-  }
-  if (type_is(ptype, "call_expression") && is_field_of(parent, "function", n)) {
-    return IDE_TS_TOKEN_FUNCTION;
-  }
-  if (type_is(ptype, "const_spec")) {
-    return IDE_TS_TOKEN_MACRO;
-  }
-  if (is_upper_snake(txt, len)) {
-    return IDE_TS_TOKEN_MACRO;
-  }
-  return IDE_TS_TOKEN_VARIABLE;
-}
 
 /* The C grammar keeps a #define body opaque (preproc_arg). Tokenize it with a
  * tiny scanner so macro bodies are not left uncolored. */
@@ -918,19 +784,7 @@ visit_node(const WalkCtx *ctx, TSNode n)
                           type_is(type, "package_identifier") ||
                           type_is(type, "label_name") || type_is(type, "blank_identifier");
       if (is_ident) {
-        switch (ctx->doc->lang) {
-          case IDE_TS_LANG_C:
-            tok = classify_identifier_c(n, type, txt, len);
-            break;
-          case IDE_TS_LANG_JAVA:
-            tok = classify_identifier_java(n, txt, len);
-            break;
-          case IDE_TS_LANG_GO:
-            tok = classify_identifier_go(n, type, txt, len);
-            break;
-          default:
-            break;
-        }
+        tok = classify_identifier_fallback(ctx->doc->lang, txt, len);
       }
       if (tok != IDE_TS_TOKEN_NONE) {
         EMIT(tok);

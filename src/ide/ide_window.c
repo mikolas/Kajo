@@ -1033,6 +1033,10 @@ static void on_drawer_close_clicked(GtkButton *b, gpointer d) {
 
 static void kajo_ide_window_dispose(GObject *object) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(object);
+  if (self->hover_dwell_id != 0) {
+    g_source_remove(self->hover_dwell_id);
+    self->hover_dwell_id = 0;
+  }
   if (self->config_monitor) {
     g_file_monitor_cancel(self->config_monitor);
     g_clear_object(&self->config_monitor);
@@ -1078,6 +1082,192 @@ static void on_editor_vadj_changed(GtkAdjustment *vadj, gpointer user_data) {
   if (upper > page) {
     double frac = gtk_adjustment_get_value(vadj) / (upper - page);
     ide_markdown_view_sync_scroll(self->md_split_view, frac);
+  }
+}
+
+/* Places the cursor at a source-view pixel coordinate; returns FALSE when the
+ * point is past the text (empty area). */
+static gboolean place_cursor_at_view_xy(KajoIdeWindow *self, double x, double y) {
+  GtkTextView *tv = GTK_TEXT_VIEW(self->source_view);
+  int bx = 0, by = 0;
+  gtk_text_view_window_to_buffer_coords(tv, GTK_TEXT_WINDOW_WIDGET, (int)x, (int)y, &bx, &by);
+  GtkTextIter it;
+  gtk_text_view_get_iter_at_location(tv, &it, bx, by);
+  GtkTextBuffer *buf = gtk_text_view_get_buffer(tv);
+  /* keep an existing selection if the click landed inside it */
+  GtkTextIter sel_a, sel_b;
+  if (gtk_text_buffer_get_selection_bounds(buf, &sel_a, &sel_b) &&
+      gtk_text_iter_in_range(&it, &sel_a, &sel_b)) {
+    return TRUE;
+  }
+  gtk_text_buffer_place_cursor(buf, &it);
+  return TRUE;
+}
+
+static void code_menu_dispatch(GSimpleAction *action, GVariant *p, gpointer user_data) {
+  (void)p;
+  KajoIdeWindow *self = user_data;
+  const char *name = g_action_get_name(G_ACTION(action));
+  static const struct { const char *name; IdeActionType act; } map[] = {
+    { "definition", IDE_ACTION_LSP_DEFINITION },
+    { "implementation", IDE_ACTION_LSP_IMPLEMENTATION },
+    { "hover", IDE_ACTION_LSP_HOVER },
+    { "rename", IDE_ACTION_LSP_RENAME },
+    { "codeaction", IDE_ACTION_LSP_CODE_ACTION },
+    { "format", IDE_ACTION_LSP_FORMAT },
+    { "breakpoint", IDE_ACTION_DAP_TOGGLE_BREAKPOINT },
+  };
+  for (gsize i = 0; i < G_N_ELEMENTS(map); i++) {
+    if (g_strcmp0(name, map[i].name) == 0) {
+      IdeAction a = { .type = map[i].act };
+      ide_window_dispatch_action(self, &a);
+      return;
+    }
+  }
+}
+
+/* Builds the right-click code menu once; action enable-state is refreshed per
+ * popup from the LSP manager so nothing is offered that can't run. */
+static void ensure_code_menu(KajoIdeWindow *self) {
+  if (self->code_menu_built) return;
+
+  GSimpleActionGroup *group = g_simple_action_group_new();
+  const char *acts[] = { "definition", "implementation", "hover", "rename",
+                         "codeaction", "format", "breakpoint" };
+  for (gsize i = 0; i < G_N_ELEMENTS(acts); i++) {
+    GSimpleAction *a = g_simple_action_new(acts[i], NULL);
+    g_signal_connect(a, "activate", G_CALLBACK(code_menu_dispatch), self);
+    g_action_map_add_action(G_ACTION_MAP(group), G_ACTION(a));
+    g_object_unref(a);
+  }
+  gtk_widget_insert_action_group(self->source_view, "code", G_ACTION_GROUP(group));
+  self->code_actions = G_ACTION_GROUP(group);
+  g_object_unref(group);
+
+  GMenu *nav = g_menu_new();
+  g_menu_append(nav, "Go to Definition\t g d", "code.definition");
+  g_menu_append(nav, "Go to Implementation\t Space g i", "code.implementation");
+  g_menu_append(nav, "Show Documentation\t K", "code.hover");
+  GMenu *edit = g_menu_new();
+  g_menu_append(edit, "Rename Symbol…\t Space c r", "code.rename");
+  g_menu_append(edit, "Code Actions…\t Space c a", "code.codeaction");
+  g_menu_append(edit, "Format Buffer\t Space c f", "code.format");
+  GMenu *dbg = g_menu_new();
+  g_menu_append(dbg, "Toggle Breakpoint\t F9", "code.breakpoint");
+
+  GMenu *root = g_menu_new();
+  g_menu_append_section(root, NULL, G_MENU_MODEL(nav));
+  g_menu_append_section(root, NULL, G_MENU_MODEL(edit));
+  g_menu_append_section(root, NULL, G_MENU_MODEL(dbg));
+  g_object_unref(nav);
+  g_object_unref(edit);
+  g_object_unref(dbg);
+
+  /* GTK merges this into the view's built-in cut/copy/paste menu. */
+  gtk_text_view_set_extra_menu(GTK_TEXT_VIEW(self->source_view), G_MENU_MODEL(root));
+  g_object_unref(root); /* the view holds its own reference */
+  self->code_menu_built = TRUE;
+}
+
+static void refresh_code_menu_state(KajoIdeWindow *self) {
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  GActionGroup *group = self->code_actions;
+  if (group == NULL) return;
+  gboolean ready = self->lsp && buf && ide_lsp_manager_is_ready(self->lsp, buf);
+  /* definition/hover have ripgrep fallbacks, so stay enabled; the rest need a
+   * ready server to do anything useful. */
+  const char *server_only[] = { "implementation", "codeaction", "format", NULL };
+  for (gsize i = 0; server_only[i] != NULL; i++) {
+    GAction *a = g_action_map_lookup_action(G_ACTION_MAP(group), server_only[i]);
+    if (a) g_simple_action_set_enabled(G_SIMPLE_ACTION(a), ready);
+  }
+}
+
+/* Ctrl+click: jump to the definition of the symbol under the pointer. */
+static void on_source_view_ctrl_click(GtkGestureClick *gesture, int n_press, double x, double y,
+                                      gpointer user_data) {
+  (void)n_press;
+  KajoIdeWindow *self = user_data;
+  GdkModifierType mods =
+      gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+  if (!(mods & GDK_CONTROL_MASK)) return;
+  gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+  gtk_widget_grab_focus(self->source_view);
+  place_cursor_at_view_xy(self, x, y);
+  ide_window_update_status_bar_and_hud(self);
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  if (buf) {
+    guint l = 1, c = 1;
+    ide_window_get_cursor_line_col(self, &l, &c);
+    ide_lsp_manager_request_definition(self->lsp, buf, l, c);
+  }
+}
+
+/* Secondary (right) click: place the cursor first so menu actions act there,
+ * and refresh which items are enabled. GTK then shows the extra menu. */
+static void on_source_view_secondary(GtkGestureClick *gesture, int n_press, double x, double y,
+                                      gpointer user_data) {
+  (void)n_press;
+  KajoIdeWindow *self = user_data;
+  gtk_widget_grab_focus(self->source_view);
+  place_cursor_at_view_xy(self, x, y);
+  if (ide_fsm_get_state(self->fsm) == IDE_STATE_SELECT) {
+    /* keep SELECT if a selection remains; otherwise normalize */
+    IdeBuffer *b = ide_window_get_active_buffer(self);
+    GtkTextBuffer *tb = b ? GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(b)) : NULL;
+    if (tb && !gtk_text_buffer_get_has_selection(tb))
+      ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
+  }
+  refresh_code_menu_state(self);
+  ide_window_update_status_bar_and_hud(self);
+  (void)gesture;
+}
+
+/* Hover-dwell documentation: after the pointer rests, request hover at that
+ * spot. Any motion cancels the pending timer. */
+static gboolean on_hover_dwell_elapsed(gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  self->hover_dwell_id = 0;
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  /* only when idle in NORMAL/SELECT and a server is ready; never over a popup */
+  IdeState st = ide_fsm_get_state(self->fsm);
+  if (!buf || !self->lsp || !ide_lsp_manager_is_ready(self->lsp, buf) ||
+      (st != IDE_STATE_NORMAL && st != IDE_STATE_SELECT)) {
+    return G_SOURCE_REMOVE;
+  }
+  GtkTextView *tv = GTK_TEXT_VIEW(self->source_view);
+  int bx = 0, by = 0;
+  gtk_text_view_window_to_buffer_coords(tv, GTK_TEXT_WINDOW_WIDGET,
+                                        (int)self->hover_x, (int)self->hover_y, &bx, &by);
+  GtkTextIter it;
+  gtk_text_view_get_iter_at_location(tv, &it, bx, by);
+  guint line1 = (guint)gtk_text_iter_get_line(&it) + 1;
+  g_autofree char *line = NULL;
+  GtkTextIter ls = it, le = it;
+  gtk_text_iter_set_line_offset(&ls, 0);
+  if (!gtk_text_iter_ends_line(&le)) gtk_text_iter_forward_to_line_end(&le);
+  line = gtk_text_buffer_get_text(gtk_text_view_get_buffer(tv), &ls, &le, FALSE);
+  guint col1 = ide_utf8_byte_to_utf16_col(line, (gsize)gtk_text_iter_get_line_index(&it)) + 1;
+  ide_lsp_manager_request_hover(self->lsp, self->source_view, buf, line1, col1);
+  return G_SOURCE_REMOVE;
+}
+
+static void on_source_view_motion(GtkEventControllerMotion *ctrl, double x, double y,
+                                   gpointer user_data) {
+  (void)ctrl;
+  KajoIdeWindow *self = user_data;
+  self->hover_x = x;
+  self->hover_y = y;
+  if (self->hover_dwell_id != 0) g_source_remove(self->hover_dwell_id);
+  self->hover_dwell_id = g_timeout_add(600, on_hover_dwell_elapsed, self);
+}
+
+static void on_source_view_motion_leave(GtkEventControllerMotion *ctrl, gpointer user_data) {
+  (void)ctrl;
+  KajoIdeWindow *self = user_data;
+  if (self->hover_dwell_id != 0) {
+    g_source_remove(self->hover_dwell_id);
+    self->hover_dwell_id = 0;
   }
 }
 
@@ -1316,6 +1506,27 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   g_signal_connect(
       ed_click, "released", G_CALLBACK(on_source_view_released), self);
   gtk_widget_add_controller(self->source_view, GTK_EVENT_CONTROLLER(ed_click));
+
+  /* Right-click code menu (go to definition, rename, …). */
+  ensure_code_menu(self);
+  GtkGesture *ed_ctx = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(ed_ctx), GDK_BUTTON_SECONDARY);
+  g_signal_connect(ed_ctx, "pressed", G_CALLBACK(on_source_view_secondary), self);
+  gtk_widget_add_controller(self->source_view, GTK_EVENT_CONTROLLER(ed_ctx));
+
+  /* Ctrl+click jumps to definition (capture phase, before the primary click
+   * handler moves into SELECT mode). */
+  GtkGesture *ed_ctrl = gtk_gesture_click_new();
+  gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(ed_ctrl), GDK_BUTTON_PRIMARY);
+  gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(ed_ctrl), GTK_PHASE_CAPTURE);
+  g_signal_connect(ed_ctrl, "pressed", G_CALLBACK(on_source_view_ctrl_click), self);
+  gtk_widget_add_controller(self->source_view, GTK_EVENT_CONTROLLER(ed_ctrl));
+
+  /* Hover-dwell documentation. */
+  GtkEventController *ed_motion = gtk_event_controller_motion_new();
+  g_signal_connect(ed_motion, "motion", G_CALLBACK(on_source_view_motion), self);
+  g_signal_connect(ed_motion, "leave", G_CALLBACK(on_source_view_motion_leave), self);
+  gtk_widget_add_controller(self->source_view, ed_motion);
 
   GtkSourceGutter *left_gutter = gtk_source_view_get_gutter(
       GTK_SOURCE_VIEW(self->source_view), GTK_TEXT_WINDOW_LEFT);

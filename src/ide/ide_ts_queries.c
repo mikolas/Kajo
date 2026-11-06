@@ -13,6 +13,49 @@
 
 #include <string.h>
 
+/* C, Java and Go: the base pass (ide_ts.c) already colors comments, strings,
+ * numbers, keywords, operators, primitive types, annotations and the
+ * convention fallbacks (UPPER_SNAKE -> constant; for Java PascalCase -> type).
+ * These queries add only the context-sensitive roles. */
+
+static const char kQueryC[] =
+  "(call_expression function: (identifier) @function)\n"
+  "(call_expression function: (field_expression field: (field_identifier) @function))\n"
+  "(function_declarator declarator: (identifier) @function)\n"
+  "(preproc_def name: (identifier) @constant)\n"
+  "(preproc_function_def name: (identifier) @constant)\n"
+  "(enumerator name: (identifier) @constant)\n";
+
+static const char kQueryJava[] =
+  "(field_access field: (identifier) @variable)\n"
+  "((field_access field: (identifier) @constant) (#match? @constant \"^[A-Z][A-Z0-9_]+$\"))\n"
+  "(method_declaration name: (identifier) @function)\n"
+  "(constructor_declaration name: (identifier) @function)\n"
+  "(method_invocation name: (identifier) @function)\n"
+  "((method_invocation object: (identifier) @type) (#match? @type \"^[A-Z]\"))\n"
+  "(class_declaration name: (identifier) @type)\n"
+  "(interface_declaration name: (identifier) @type)\n"
+  "(enum_declaration name: (identifier) @type)\n"
+  "(record_declaration name: (identifier) @type)\n"
+  "(annotation_type_declaration name: (identifier) @type)\n"
+  "(enum_constant name: (identifier) @constant)\n"
+  "(annotation name: (identifier) @constant)\n"
+  "(marker_annotation name: (identifier) @constant)\n"
+  "(scoped_identifier name: (identifier) @variable)\n"
+  "((scoped_identifier name: (identifier) @type) (#match? @type \"^[A-Z][a-z]\"))\n"
+  "(annotation name: (scoped_identifier name: (identifier) @constant))\n"
+  "(marker_annotation name: (scoped_identifier name: (identifier) @constant))\n";
+
+static const char kQueryGo[] =
+  "(field_declaration name: (field_identifier) @variable)\n"
+  "(selector_expression field: (field_identifier) @variable)\n"
+  "(call_expression function: (selector_expression field: (field_identifier) @function))\n"
+  "(call_expression function: (identifier) @function)\n"
+  "(function_declaration name: (identifier) @function)\n"
+  "(method_declaration name: (field_identifier) @function)\n"
+  "(method_elem name: (field_identifier) @function)\n"
+  "(const_spec name: (identifier) @constant)\n";
+
 static const char kQueryRust[] =
   "(identifier) @variable\n"
   "(field_identifier) @variable\n"
@@ -222,6 +265,9 @@ const char *
 ide_ts_query_source(IdeTsLang lang)
 {
   switch (lang) {
+    case IDE_TS_LANG_C:          return kQueryC;
+    case IDE_TS_LANG_JAVA:       return kQueryJava;
+    case IDE_TS_LANG_GO:         return kQueryGo;
     case IDE_TS_LANG_RUST:       return kQueryRust;
     case IDE_TS_LANG_CPP:        return kQueryCpp;
     case IDE_TS_LANG_BASH:       return kQueryBash;

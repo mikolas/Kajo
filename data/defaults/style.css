@@ -238,6 +238,23 @@ popover contents:focus {
     border-color: @metro-accent;
 }
 
+/* Right-click code menu (go to definition, rename, …) in kajo-ide and any
+ * GtkTextView context menu: match the zero-radius Aero+Metro popover look. */
+popover.menu modelbutton {
+    border-radius: 0px;
+    padding: 4px 10px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+popover.menu modelbutton:hover {
+    background-color: @metro-accent;
+    color: #ffffff;
+}
+popover.menu separator {
+    background-color: #2b2b2b;
+    min-height: 1px;
+    margin: 2px 0;
+}
+
 popover > arrow {
     background-color: @metro-surface-bg;
     border: 1px solid @metro-accent;

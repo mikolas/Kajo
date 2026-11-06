@@ -94,6 +94,13 @@ struct _KajoIdeWindow {
   GtkWidget       *lsp_status_badge;
   GtkWidget       *cursor_pos_label;
 
+  /* Right-click code menu and hover-dwell */
+  gboolean         code_menu_built;
+  GActionGroup    *code_actions;
+  guint            hover_dwell_id;
+  double           hover_x;
+  double           hover_y;
+
   /* Live Settings & Config Hot-Reload */
   GFileMonitor    *config_monitor;
   char            *active_scheme_id;
