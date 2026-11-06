@@ -10,6 +10,17 @@ extern "C" {
 
 typedef struct _ShellTheme ShellTheme;
 
+/* Accent palette shared by the panel theme picker and kajo-settings. */
+typedef struct {
+    const char *id;
+    const char *name;
+    const char *accent;
+    const char *hover;
+} ShellAccentPreset;
+
+#define SHELL_N_ACCENT_PRESETS 8
+extern const ShellAccentPreset shell_accent_presets[SHELL_N_ACCENT_PRESETS];
+
 struct _ShellTheme {
     GtkCssProvider *provider;
     GFileMonitor   *monitor;

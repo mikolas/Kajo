@@ -1459,20 +1459,46 @@ on_source_buffer_text_changed(GtkTextBuffer *tbuf, gpointer user_data)
 }
 
 void
+ide_buffer_register_scheme_paths(void)
+{
+  static gboolean registered = FALSE;
+  if (registered) {
+    return;
+  }
+  registered = TRUE;
+
+  GtkSourceStyleSchemeManager *sm = gtk_source_style_scheme_manager_get_default();
+
+  /* 1. Per-user schemes (~/.local/share/kajo/ide). */
+  g_autofree char *user_dir = g_build_filename(g_get_user_data_dir(), "kajo", "ide", NULL);
+  gtk_source_style_scheme_manager_append_search_path(sm, user_dir);
+
+  /* 2. The install prefix this binary was built for, then any XDG system dir. */
+#ifdef KAJO_DATA_DIR
+  g_autofree char *prefix_dir = g_build_filename(KAJO_DATA_DIR, "ide", NULL);
+  gtk_source_style_scheme_manager_append_search_path(sm, prefix_dir);
+#endif
+  const char *const *sys_dirs = g_get_system_data_dirs();
+  for (gsize i = 0; sys_dirs != NULL && sys_dirs[i] != NULL; i++) {
+    g_autofree char *dir = g_build_filename(sys_dirs[i], "kajo", "ide", NULL);
+    gtk_source_style_scheme_manager_append_search_path(sm, dir);
+  }
+
+  /* 3. Development fallback: the source tree the binary was compiled from. */
+#ifdef KAJO_SOURCE_DIR
+  gtk_source_style_scheme_manager_append_search_path(sm, KAJO_SOURCE_DIR "/data/ide");
+#endif
+}
+
+void
 ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id)
 {
   if (buf == NULL || buf->source_buf == NULL) {
     return;
   }
 
+  ide_buffer_register_scheme_paths();
   GtkSourceStyleSchemeManager *sm = gtk_source_style_scheme_manager_get_default();
-  static gboolean search_path_added = FALSE;
-  if (!search_path_added) {
-    search_path_added = TRUE;
-    gtk_source_style_scheme_manager_append_search_path(sm, KAJO_SOURCE_DIR "/data/ide");
-    g_autofree char *user_ide_dir = g_build_filename(g_get_user_data_dir(), "kajo", "ide", NULL);
-    gtk_source_style_scheme_manager_append_search_path(sm, user_ide_dir);
-  }
 
   const char *wanted = (scheme_id && scheme_id[0] != '\0') ? scheme_id : "kajo-metro-dark";
   /* `scheme_id` may alias buf->scheme_id (ide_buffer_apply_style_and_language

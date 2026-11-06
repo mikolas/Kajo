@@ -3,6 +3,7 @@
 #include "../config.h"
 #include "../theme.h"
 #include "../icons.h"
+#include "../app_init.h"
 
 static ShellTheme *g_player_theme = NULL;
 
@@ -10,12 +11,7 @@ static void
 ensure_theme_loaded(void)
 {
     if (!g_player_theme) {
-        ShellConfig *config = shell_config_load(NULL);
-        g_player_theme = shell_theme_new(config ? config->css_path : NULL);
-        shell_theme_apply(g_player_theme, gdk_display_get_default());
-        shell_icons_init(config ? config->icon_map_path : NULL);
-        if (config)
-            shell_config_destroy(config);
+        g_player_theme = kajo_app_init_theme();
     }
 }
 
@@ -43,11 +39,8 @@ on_app_open(GtkApplication *app,
 static void
 on_app_shutdown(GtkApplication *app G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    if (g_player_theme) {
-        shell_theme_destroy(g_player_theme);
-        g_player_theme = NULL;
-    }
-    shell_icons_cleanup();
+    kajo_app_shutdown_theme(g_player_theme);
+    g_player_theme = NULL;
 }
 
 int

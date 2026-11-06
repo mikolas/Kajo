@@ -9,25 +9,9 @@
 
 extern const ShellWidgetClass theme_widget_class;
 
-typedef struct {
-    const char *id;
-    const char *name;
-    const char *accent;
-    const char *hover;
-} AccentPreset;
-
-static const AccentPreset ACCENTS[] = {
-    { "cobalt-blue",  "Cobalt Blue",        "#0078d4", "#1084d8" },
-    { "purple",       "Windows Purple",     "#6b69d6", "#7a78e0" },
-    { "catppuccin",   "Catppuccin Lavender", "#cba6f7", "#ddb6f2" },
-    { "nord-ice",     "Nord Frost Ice",     "#88c0d0", "#99d1e1" },
-    { "emerald",      "Emerald Green",      "#107c41", "#138c4a" },
-    { "crimson",      "Metro Crimson",      "#d13438", "#e04347" },
-    { "amber",        "Amber Gold",         "#c19c00", "#d4ab00" },
-    { "cyan",         "Cyberpunk Cyan",     "#008272", "#009684" }
-};
-
-#define N_ACCENTS (sizeof(ACCENTS) / sizeof(ACCENTS[0]))
+#define ACCENTS shell_accent_presets
+#define N_ACCENTS SHELL_N_ACCENT_PRESETS
+typedef ShellAccentPreset AccentPreset;
 
 typedef struct {
     ShellWidget base;

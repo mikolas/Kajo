@@ -1,5 +1,16 @@
 #include "theme.h"
 
+const ShellAccentPreset shell_accent_presets[SHELL_N_ACCENT_PRESETS] = {
+    { "cobalt-blue",  "Cobalt Blue",         "#0078d4", "#1084d8" },
+    { "purple",       "Windows Purple",      "#6b69d6", "#7a78e0" },
+    { "catppuccin",   "Catppuccin Lavender", "#cba6f7", "#ddb6f2" },
+    { "nord-ice",     "Nord Frost Ice",      "#88c0d0", "#99d1e1" },
+    { "emerald",      "Emerald Green",       "#107c41", "#138c4a" },
+    { "crimson",      "Metro Crimson",       "#d13438", "#e04347" },
+    { "amber",        "Amber Gold",          "#c19c00", "#d4ab00" },
+    { "cyan",         "Cyberpunk Cyan",      "#008272", "#009684" },
+};
+
 static void
 theme_reload_css(ShellTheme *theme)
 {

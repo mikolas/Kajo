@@ -1,6 +1,8 @@
 #include "../config.h"
 #include "../icons.h"
+#include "../app_init.h"
 #include "../theme.h"
+#include "ide_buffer.h"
 #include "ide_window.h"
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
@@ -11,21 +13,8 @@ static void ensure_theme_and_schemes_loaded(void) {
   if (!g_ide_theme) {
     gtk_source_init();
 
-    GtkSourceStyleSchemeManager *sm =
-        gtk_source_style_scheme_manager_get_default();
-#ifdef KAJO_SOURCE_DIR
-    gtk_source_style_scheme_manager_append_search_path(
-        sm, KAJO_SOURCE_DIR "/data/ide");
-#endif
-    g_autofree char *user_ide_dir =
-        g_build_filename(g_get_user_data_dir(), "kajo", "ide", NULL);
-    gtk_source_style_scheme_manager_append_search_path(sm, user_ide_dir);
-
-    ShellConfig *config = shell_config_load(NULL);
-    g_ide_theme = shell_theme_new(config ? config->css_path : NULL);
-    shell_theme_apply(g_ide_theme, gdk_display_get_default());
-    shell_icons_init(config ? config->icon_map_path : NULL);
-    if (config) shell_config_destroy(config);
+    ide_buffer_register_scheme_paths();
+    g_ide_theme = kajo_app_init_theme();
   }
 }
 
@@ -49,11 +38,8 @@ static void on_app_open(GtkApplication *app,
 
 static void on_app_shutdown(GtkApplication *app G_GNUC_UNUSED,
                             gpointer        user_data G_GNUC_UNUSED) {
-  if (g_ide_theme) {
-    shell_theme_destroy(g_ide_theme);
-    g_ide_theme = NULL;
-  }
-  shell_icons_cleanup();
+  kajo_app_shutdown_theme(g_ide_theme);
+  g_ide_theme = NULL;
 }
 
 int main(int argc, char *argv[]) {
