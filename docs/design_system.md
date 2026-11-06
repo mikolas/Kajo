@@ -1,4 +1,4 @@
-# SPEC_DESIGN_SYSTEM.md — Kajo "Aero + Metro" Unified UI Design System & Style Guide
+# Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
 **Applies To:** `kajo` (`org.kajo.Shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.Greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  

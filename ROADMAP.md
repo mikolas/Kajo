@@ -19,7 +19,7 @@ All Kajo components and standalone applications share a unified design language:
 | Component / Binary | Status | Specification / Notes |
 | :--- | :---: | :--- |
 | **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 20+ widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, App Launcher, Session Lock & Screensaver |
-| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 10 modular settings pages (Displays, Network, Bluetooth, Audio, Theme, Panel & Touch, Widgets, Notifications, Niri Shaders, About) |
+| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 11 modular settings pages (Displays, Network, Bluetooth, Audio, Theme, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Niri Shaders, About) |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
 | **Foldable & 2-in-1 Posture Manager** | ✅ Done | Hinge angle, tablet mode, IIO accelerometer auto-rotation (`src/fold/fold_manager.c`) |
 | **Niri GLSL Window Shaders** | ✅ Done | Live shader preset switcher for window open/close/resize animations (`src/settings/pages/page_shaders.c`) |
@@ -27,7 +27,8 @@ All Kajo components and standalone applications share a unified design language:
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching (`src/osk/osk_window.c`) |
 | **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
 | **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
-| **Kajo "Aero + Metro" UI Design System** | ✅ Done | [`docs/SPEC_DESIGN_SYSTEM.md`](docs/SPEC_DESIGN_SYSTEM.md) & [`docs/ui-gallery.html`](docs/ui-gallery.html) — Canonical GTK4 CSS style guide and interactive web component gallery |
+| **Kajo IDE (`kajo-ide`, `org.kajo.Ide`)** | ✅ Done | [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) — Selection-first modal GTK4 + `GtkSourceView-5` IDE with Nordic text objects (`m i/a`), 6-column Cairo gutter, LSP 3.17, DAP debugger, GUI Markdown + Cairo vector Mermaid, 85-command Help Palette, and AI Agent JSON-RPC 2.0 IPC |
+| **Kajo "Aero + Metro" UI Design System** | ✅ Done | [`docs/design_system.md`](docs/design_system.md) & [`docs/ui-gallery.html`](docs/ui-gallery.html) — Canonical GTK4 CSS style guide and interactive web component gallery |
 
 ---
 
@@ -35,22 +36,12 @@ All Kajo components and standalone applications share a unified design language:
 
 | Planned Component / Feature | Status | Target Binary / Scope |
 | :--- | :---: | :--- |
-| **Kajo IDE (`kajo-ide`, `org.kajo.IDE`)** | 📝 Specified | [`docs/SPEC_IDE.md`](docs/SPEC_IDE.md) — Selection-first modal GTK4 + `GtkSourceView 5` IDE with 100% `koodieditori` parity |
 | **`kajo-files` Phase 2** | 📋 Planned | `kajo-files` (Archive compression, DnD) |
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
 
-### 3.1 [SPECIFIED] Kajo IDE (`kajo-ide`, `org.kajo.IDE`)
-- **Specification:** [`docs/SPEC_IDE.md`](docs/SPEC_IDE.md)
-- Native Wayland GTK4 + `GtkSourceView 5` lightweight polyglot IDE in the Kajo "Aero + Metro" design system with **100% feature and keybinding parity with `koodieditori` (`koodi`)**:
-  - **Phase 1:** Core Editor, Selection-First Modal FSM (`NORMAL`, `SELECT`, `INSERT`, `MATCH`, `LEADER`), Nordic-First text objects (`m i/a b/a/p/q/f/c`, `ö`/`ä` stepping), collapsible File Tree (`Space e`), Floating Fuzzy Picker (`Space f f` / `f g` / `b b`) with live code preview, Interactive Command Palette (`?`), Search & Replace with diff preview (`Space s r` / `s p`), and Build Quickfix Drawer (`Space o`).
-  - **Phase 2:** Built-in JSON-RPC 2.0 LSP client (`clangd`, `gopls`, `pyright`, `rust-analyzer`, etc.) with pixel-anchored Autocomplete (`Ctrl+Space`) & Hover (`K`), plus native DAP Debugger client & 3-pane Inspector Drawer (`Space d v`).
-  - **Phase 3:** Autonomous AI Agent Coexistence (`GFileMonitor` hot-reload, `Space d s` multi-file Agent Transaction Review, `Space d a` / `d r` atomic accept/revert), `koodi-cli`-compatible Unix Domain Socket IPC, and Live Markdown + Native Cairo Vector Mermaid Preview (`Space m p`).
-
----
-
-### 3.2 [PLANNED] `kajo-files` Future Enhancements
+### 3.1 [PLANNED] `kajo-files` Future Enhancements
 - **Archive Compression (`libarchive`):**
   - Contextual `[ 📦 COMPRESS SELECTED ]` action in `kajo-files` for creating `.zip` and `.tar.zst` archives.
 - **Drag-and-Drop (`GtkDragSource` / `GtkDropTarget`):**

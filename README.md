@@ -8,7 +8,7 @@
 
 Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. **Its purpose is not to be a generic, catch-all replacement for mainstream Linux desktop environments or mass-market applications.** Instead, Kajo is a **purpose-built, cohesive suite of tools engineered specifically for a personal workflow, Nordic keyboard ergonomics, and hardware setup**:
 
-1. **A Unified "Aero + Metro" Design Language** ([`docs/SPEC_DESIGN_SYSTEM.md`](docs/SPEC_DESIGN_SYSTEM.md) • [`docs/ui-gallery.html`](docs/ui-gallery.html))
+1. **A Unified "Aero + Metro" Design Language** ([`docs/design_system.md`](docs/design_system.md) • [`docs/ui-gallery.html`](docs/ui-gallery.html))
    - Rejects bloated, rounded toolkit defaults in favor of **strict `0px` sharp corner geometry**, OLED-native dark charcoal surfaces (`#111111`–`#1a1a1a`), `1px solid #2b2b2b` structural hairlines, live `@metro-accent` window framing, and high-density `Fira Code` monospace telemetry badges.
    - Every standalone application in the suite shares the exact same custom frameless window chrome, Niri tiling/floating IPC (`🗗 FLOAT / TILE`), and instant live CSS/accent hot-reload.
 2. **Pure Native C17 Performance, Zero Runtime Bloat**
@@ -37,7 +37,7 @@ The repository builds and installs **six integrated native executables** (plus a
 ## ✨ Suite Components in Detail
 
 ### ⌨️ Kajo IDE (`kajo-ide`)
-> 📖 **Full Manual & Spec**: See [`docs/MANUAL_KAJO_IDE.md`](docs/MANUAL_KAJO_IDE.md) and [`docs/SPEC_IDE.md`](docs/SPEC_IDE.md) for the complete architecture & keybinding guide.
+> 📖 **Full Manual**: See [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) for the complete architecture, workflow & keybinding guide.
 
 - **Selection-First Modal Editing & Nordic Ergonomics**:
   - 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) with color-coded status pills, bottom-right `Space` Leader chord HUD, and fast `jk` escape from `INSERT` mode.
@@ -61,7 +61,6 @@ The repository builds and installs **six integrated native executables** (plus a
 ---
 
 ### 📁 Kajo Files (`kajo-files`)
-> 📖 **Full Spec**: See [`docs/SPEC_FILES.md`](docs/SPEC_FILES.md).
 
 - **Natural Filename Collation & Interactive Column/Popover Sorting**:
   - Precomputed `g_utf8_collate_key_for_filename()` keys sort numbered files naturally (`Episode_2.mkv` before `Episode_10.mkv`) with clickable Details List column headers (`NAME`, `SIZE`, `TYPE`, `MODIFIED`) and a **`☑ Folders First`** toggle.
@@ -75,7 +74,6 @@ The repository builds and installs **six integrated native executables** (plus a
 ---
 
 ### 🎬 Kajo Player (`kajo-player`)
-> 📖 **Full Spec**: See [`docs/SPEC_PLAYER.md`](docs/SPEC_PLAYER.md).
 
 - **Hardware-Accelerated `libmpv` + `GtkGLArea` Engine**:
   - Renders via `mpv_render_context` (OpenGL/EGL) with `hwdec=auto-safe` (VA-API / NVDEC), live header codec/resolution telemetry (`[ HEVC•vaapi | 1920×1080 | 42.1 MB ]`), and a toggleable technical stats overlay (`ℹ STATS` / `I` / `Ctrl+J`).
@@ -117,16 +115,14 @@ The repository builds and installs **six integrated native executables** (plus a
 
 ---
 
-## 📚 Documentation & Specifications Index
+## 📚 Documentation Index
 
 | Document | Contents |
 | :--- | :--- |
-| **[`docs/SPEC_DESIGN_SYSTEM.md`](docs/SPEC_DESIGN_SYSTEM.md)** | Authoritative **Aero + Metro** visual design specification (color tokens, `0px` geometry, typography, component anatomy). |
+| **[`docs/design_system.md`](docs/design_system.md)** | Authoritative **Aero + Metro** visual design specification (color tokens, `0px` geometry, typography, component anatomy). |
 | **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
-| **[`docs/MANUAL_KAJO_IDE.md`](docs/MANUAL_KAJO_IDE.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
-| **[`docs/SPEC_IDE.md`](docs/SPEC_IDE.md)** | Technical engineering specification and wireframes for **`kajo-ide`**. |
-| **[`docs/SPEC_FILES.md`](docs/SPEC_FILES.md)** | Technical specification for **`kajo-files`** (GIO/GVFS, Quick Look, natural collation). |
-| **[`docs/SPEC_PLAYER.md`](docs/SPEC_PLAYER.md)** | Technical specification for **`kajo-player`** (`libmpv` + `GtkGLArea` render pipeline, OSD, MPRIS2). |
+| **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
+| **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
 | **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
 | **[`HARDWARE_FINDINGS.md`](HARDWARE_FINDINGS.md)** | Convertible 2-in-1 sensor (`Intel ISH`), input inhibition, and Embedded Controller (`ec_sys`) register documentation. |

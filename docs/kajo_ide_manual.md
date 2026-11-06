@@ -28,7 +28,7 @@ kajo-ide
 kajo-ide ~/src/Kajo
 
 # Open one or more files directly
-kajo-ide src/ide/ide_window.c docs/SPEC_IDE.md
+kajo-ide src/ide/ide_window.c docs/kajo_ide_manual.md
 ```
 
 When launched with a file path, `kajo-ide` automatically detects the enclosing Git repository root (or parent directory) to populate the **Project File Explorer** and **Git Status** badges.
@@ -41,7 +41,7 @@ When launched with a file path, `kajo-ide` automatically detects the enclosing G
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ ⌨ KAJO IDE  [🌲 TREE][🗺 MAP][📖 MD][🔍 FIND][❓ HELP]   src/ide/ide_window.c [⎇ main ●2]  [🗗][✕] │
 ├────────────────────────┬─────────────────────────────────────────────────────────────────────────┤
-│ EXPLORER     [a][A][r] │ [ ● ide_window.c × ] [ ide_fsm.c × ] [ MANUAL_KAJO_IDE.md × ]           │
+│ EXPLORER     [a][A][r] │ [ ● ide_window.c × ] [ ide_fsm.c × ] [ kajo_ide_manual.md × ]           │
 │ ▾ 📁 src               ├────────┬───────────────────────────────────────────────────────┬────────┤
 │   ▾ 📁 ide             │ ●▎ 42  │ static void update_status_bar(KajoIdeWindow *self) {  │ ▒▒▒▒▒▒ │
 │     📄 ide_fsm.c     M │  │ 43  │   IdeState st = ide_fsm_get_state(self->fsm);         │ ▒▒▒▒▒▒ │
