@@ -298,6 +298,8 @@ executable(
 files_sources = files(
   'src/files/main.c',
   'src/files/files_window.c',
+  'src/files/files_window_ctxmenu.c',
+  'src/files/files_window_keys.c',
   'src/files/files_model.c',
   'src/files/files_ops.c',
   'src/files/files_sidebar.c',
@@ -370,6 +372,7 @@ ide_sources = files(
   'src/ide/ide_window.c',
   'src/ide/ide_fsm.c',
   'src/ide/ide_buffer.c',
+  'src/ide/ide_syntax.c',
   'src/ide/ide_gutter.c',
   'src/ide/ide_tree.c',
   'src/ide/ide_picker.c',
@@ -378,6 +381,7 @@ ide_sources = files(
   'src/ide/ide_dap.c',
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
+  'src/ide/ide_mermaid.c',
   'src/common/pdf_render.c',
   'src/compositor/niri.c',
 )
@@ -611,6 +615,7 @@ test_ide_buffer_exe = executable(
   files(
     'tests/test_ide_buffer.c',
     'src/ide/ide_buffer.c',
+    'src/ide/ide_syntax.c',
     'src/ide/ide_gutter.c',
     'src/ide/ide_tree.c',
     'src/ide/ide_picker.c',
@@ -630,8 +635,10 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_dap.c',
     'src/ide/ide_agent_ipc.c',
     'src/ide/ide_markdown.c',
+    'src/ide/ide_mermaid.c',
     'src/common/pdf_render.c',
     'src/ide/ide_buffer.c',
+    'src/ide/ide_syntax.c',
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',
   ),
