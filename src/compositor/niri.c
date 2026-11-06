@@ -616,7 +616,29 @@ niri_send_action(const gchar *json_str)
     if (!json_str)
         return;
     gchar *resp = niri_send_ipc_request(json_str);
+    /* Niri replies {"Ok":...} or {"Err":"..."}; surface rejections instead of
+     * silently dropping them (e.g. malformed action JSON). */
+    if (resp && g_str_has_prefix(resp, "{\"Err\"")) {
+        g_warning("niri: action rejected: %s (request: %s)", resp, json_str);
+    }
     g_free(resp);
+}
+
+void
+niri_toggle_window_floating(void)
+{
+    /* ToggleWindowFloating is a struct variant ({ id: Option<u64> }); the bare
+     * string form "ToggleWindowFloating" is rejected by Niri. Without an id it
+     * acts on the focused window. */
+    niri_send_action("{\"Action\":{\"ToggleWindowFloating\":{}}}");
+}
+
+void
+niri_reload_config(void)
+{
+    /* Niri has no "ReloadConfig" action; LoadConfigFile with a null path
+     * reloads the active config file. */
+    niri_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
 }
 
 gchar *

@@ -710,11 +710,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         "        active-color \"%s\"\n"
         "    }\n"
         "}\n\n"
-        "%s\n"
-        "window-rule {\n"
-        "    match app-id=\"org.kajo.Settings\"\n"
-        "    open-floating true\n"
-        "}\n",
+        "%s\n",
         NIRI_NS_IDS[active_idx],
         active_op_buf,
         self->ns_xray[active_idx] ? "true" : "false",
@@ -729,7 +725,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     g_message("Saved modular Niri layer-rules and shaders to %s, 30-layout-animations.kdl, and %s",
               layer_path, kajo_path);
 
-    niri_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
+    niri_reload_config();
 }
 
 static void

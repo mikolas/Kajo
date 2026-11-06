@@ -1935,7 +1935,7 @@ static void on_hdr_build_clicked(GtkButton *b, gpointer d) {
 static void on_hdr_float_clicked(GtkButton *b, gpointer d) {
   (void)b;
   (void)d;
-  niri_send_action("{\"Action\":{\"ToggleWindowFloating\":{}}}");
+  niri_toggle_window_floating();
 }
 
 static void on_hdr_close_clicked(GtkButton *b, gpointer d) {

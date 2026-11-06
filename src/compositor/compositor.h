@@ -74,6 +74,8 @@ void shell_compositor_close_window(ShellCompositor *compositor, guint64 window_i
 void shell_compositor_switch_workspace(ShellCompositor *compositor, guint64 workspace_id);
 void shell_compositor_switch_keyboard_layout_idx(ShellCompositor *compositor, guint8 idx);
 void niri_send_action(const char *json_action);
+void niri_toggle_window_floating(void);
+void niri_reload_config(void);
 gchar *niri_send_ipc_request(const char *json_req);
 
 #ifdef __cplusplus

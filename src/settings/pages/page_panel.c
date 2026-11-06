@@ -307,7 +307,7 @@ on_apply_panel_clicked(GtkButton *btn, gpointer user_data)
     g_free(dir);
     g_free(path);
 
-    niri_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
+    niri_reload_config();
 }
 
 GtkWidget *

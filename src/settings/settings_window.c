@@ -216,7 +216,7 @@ on_search_changed(GtkSearchEntry *entry, gpointer user_data)
 static void
 on_toggle_float_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
-    niri_send_action("{\"Action\":\"ToggleWindowFloating\"}");
+    niri_toggle_window_floating();
 }
 
 static void

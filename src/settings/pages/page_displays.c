@@ -99,7 +99,7 @@ on_apply_displays_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
     run_niri_output_cmd(out_name, "scale", scale_buf);
     run_niri_output_cmd(out_name, "transform", orient);
     run_niri_output_cmd(out_name, "vrr", vrr ? "on" : "off");
-    niri_send_action("{\"Action\":\"ReloadConfig\"}");
+    niri_reload_config();
 
     if (lbl_mon_hdr) {
         gchar *hdr_text = g_strdup_printf("Monitor %s — %s (%s, Scale %.0f%%)",

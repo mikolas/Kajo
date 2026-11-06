@@ -64,6 +64,17 @@ This document records the findings of a full read-only audit and a prioritized p
 - `src/ide/ide_buffer.c`: full-buffer re-tokenize on every `changed` and full-text `ide_compute_line_diffs()` — O(n) per keystroke. Fine for small files, degrades on large ones; debounce / limit to the edited range.
 - `src/widgets/*`: panel widgets reach into `ShellApp` internals (`widget->app->idle_manager`, `->notifications`); `shell.c` dispatches volume / mute by comparing `klass->id` strings.
 
+### 1.7 Niri action JSON rejected — FLOAT / TILE dead in settings, files, player — FIXED
+- `kajo-settings`, `kajo-files` and `kajo-player` sent `{"Action":"ToggleWindowFloating"}`. `ToggleWindowFloating` is a struct variant (`{ id: Option<u64> }`), so Niri answers `{"Err":"error parsing request"}`; only `kajo-ide` used the valid object form. `niri_send_action()` discarded the reply, so the failure was silent.
+- `page_displays.c` sent `{"Action":"ReloadConfig"}`, which is not a Niri action at all (same silent failure).
+- **Fix:** shared `niri_toggle_window_floating()` / `niri_reload_config()` in `compositor/niri.c`; all four apps and the three settings pages that reload config use them; `niri_send_action()` now logs a `g_warning` on any `{"Err":...}` reply.
+
+### 1.8 Settings emitted a forced-floating window rule — FIXED
+- `page_niri.c` (`save_and_reload_niri_config`) appended `window-rule { match app-id="org.kajo.Settings"; open-floating true }` to the generated `~/.config/niri/config.d/00-kajo.kdl` on every save (present since the initial commit).
+- It only became visible when a config reorganisation started including `00-kajo.kdl`. The duplicate in `50-window-rules.kdl` is not emitted by this repo (hand/tool-managed).
+- **Fix:** the generated file no longer contains the rule, so `kajo-settings` opens tiled by default.
+- **Existing installs:** `00-kajo.kdl` keeps the old rule until the next save on the Niri settings page; remove any rule in `50-window-rules.kdl` manually.
+
 ### 1.6 Verified clean (no action)
 - mpv wakeup / render callbacks cleared before `mpv_terminate_destroy`; pending idles removed.
 - GTask workers clone inputs; no shared mutable globals across threads (`g_clip_files` is main-thread only).
@@ -179,6 +190,10 @@ Strategy: table-drive `config.c` load / save; move UI-building functions to Blue
 ## 8. Fix Plan
 
 Each phase is its own branch / PR off `master` (this branch carries the plan only). Every phase must pass `meson compile -C builddir && meson test -C builddir` with 0 warnings, and — once Phase 0 lands — the sanitizer run.
+
+### Done on this branch
+- [x] §1.7 Niri action JSON (float toggle, config reload) + error logging
+- [x] §1.8 Stop emitting forced-floating rule for `org.kajo.Settings`
 
 ### Phase 0 — Safety net
 - [ ] Add a documented sanitizer workflow: `meson setup /tmp/kajo-asan -Db_sanitize=address,undefined` + `meson test` (document in `DEVELOPMENT.md`; optional `scripts/asan-test.sh`).
