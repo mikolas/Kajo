@@ -173,12 +173,16 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
           gtk_text_buffer_get_text(tbuf, &start_it, &ins, TRUE);
       cur_byte = strlen(prefix);
       gboolean inside = (act->arg1[0] == 'i');
-      if (ide_find_text_object(full,
-                               cur_byte,
-                               inside,
-                               act->arg2[0],
-                               &s_byte,
-                               &e_byte)) {
+      /* Syntax-tree objects first (f/c/b/a); text heuristics as fallback. */
+      const IdeTsDoc *ts_doc = ide_highlight_get_ts_doc(ide_buffer_get_source_buffer(buf));
+      gboolean found = ts_doc != NULL &&
+                       strchr("fcba", act->arg2[0]) != NULL &&
+                       ide_ts_doc_find_object(ts_doc, cur_byte, inside, act->arg2[0],
+                                              &s_byte, &e_byte);
+      if (!found) {
+        found = ide_find_text_object(full, cur_byte, inside, act->arg2[0], &s_byte, &e_byte);
+      }
+      if (found) {
         glong s_char = g_utf8_pointer_to_offset(full, full + s_byte);
         glong e_char = g_utf8_pointer_to_offset(full, full + e_byte);
         GtkTextIter sit, eit;

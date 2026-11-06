@@ -226,6 +226,8 @@ gboolean ide_ts_doc_update(IdeTsDoc *doc, const char *text, gsize len, gsize *ds
 void ide_ts_doc_walk(const IdeTsDoc *doc, gsize from, gsize to, IdeTsTokenFunc cb, gpointer ud)
 { (void)doc; (void)from; (void)to; (void)cb; (void)ud; }
 gboolean ide_ts_doc_has_error(const IdeTsDoc *doc) { (void)doc; return FALSE; }
+gboolean ide_ts_doc_find_object(const IdeTsDoc *doc, gsize c, gboolean in, char t, gsize *s, gsize *e)
+{ (void)doc; (void)c; (void)in; (void)t; (void)s; (void)e; return FALSE; }
 gboolean ide_ts_query_check(IdeTsLang lang, guint32 *error_offset)
 { (void)lang; if (error_offset) *error_offset = 0; return TRUE; }
 
@@ -1267,6 +1269,223 @@ run_query_pass(const WalkCtx *ctx, const QueryData *qd)
     const CaptureSpan *sp = &g_array_index(spans, CaptureSpan, i);
     paint_span(ctx, sp->start, sp->end, (IdeTsToken)sp->token);
   }
+}
+
+/* ─── Text objects ─── */
+
+static gboolean
+node_in_list(TSNode n, const char *const *list)
+{
+  return type_in(ts_node_type(n), list);
+}
+
+static gboolean
+node_is_braced(const IdeTsDoc *doc, TSNode n)
+{
+  gsize s = ts_node_start_byte(n);
+  gsize e = ts_node_end_byte(n);
+  if (e <= s + 1 || doc->text[s] != '{' || doc->text[e - 1] != '}') {
+    return FALSE;
+  }
+  const char *t = ts_node_type(n);
+  return strstr(t, "string") == NULL && strstr(t, "comment") == NULL &&
+         strstr(t, "template") == NULL && strstr(t, "interpol") == NULL;
+}
+
+/* Finds the `{ ... }` body of a declaration: the `body` field, or the first
+ * braced descendant (Go: type_declaration -> type_spec -> struct_type -> list). */
+static gboolean
+find_brace_body(const IdeTsDoc *doc, TSNode n, int depth, TSNode *out)
+{
+  TSNode body = ts_node_child_by_field_name(n, "body", 4);
+  if (!ts_node_is_null(body)) {
+    if (node_is_braced(doc, body)) {
+      *out = body;
+      return TRUE;
+    }
+    if (depth < 3 && find_brace_body(doc, body, depth + 1, out)) {
+      return TRUE;
+    }
+    *out = body; /* expression body (arrow function, Lua block, Python-like) */
+    return TRUE;
+  }
+  if (depth >= 4) {
+    return FALSE;
+  }
+  uint32_t cnt = ts_node_named_child_count(n);
+  for (uint32_t i = 0; i < cnt; i++) {
+    TSNode c = ts_node_named_child(n, i);
+    if (node_is_braced(doc, c)) {
+      *out = c;
+      return TRUE;
+    }
+    if (find_brace_body(doc, c, depth + 1, out)) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+static void
+inside_of_braces(const IdeTsDoc *doc, TSNode n, gsize *s, gsize *e)
+{
+  gsize bs = ts_node_start_byte(n);
+  gsize be = ts_node_end_byte(n);
+  if (node_is_braced(doc, n)) {
+    bs++;
+    be--;
+    gsize p = bs;
+    while (p < be && (doc->text[p] == ' ' || doc->text[p] == '\t')) {
+      p++;
+    }
+    /* multi-line body: keep the first line's indentation, drop the line break;
+     * single-line body: trim the padding spaces. */
+    bs = (p < be && doc->text[p] == '\n') ? p + 1 : p;
+    while (be > bs && (doc->text[be - 1] == ' ' || doc->text[be - 1] == '\t')) {
+      be--;
+    }
+    if (be > bs && doc->text[be - 1] == '\n') {
+      be--;
+    }
+  }
+  *s = bs;
+  *e = be;
+}
+
+static const char *const kFunctionKinds[] = {
+  "function_definition", "function_declaration", "function_item", "method_declaration",
+  "method_definition", "constructor_declaration", "lambda_expression", "arrow_function",
+  "function_expression", "generator_function_declaration", "generator_function",
+  "func_literal", "function", "abstract_method_signature", NULL
+};
+
+static const char *const kClassKinds[] = {
+  "class_declaration", "class_specifier", "struct_specifier", "union_specifier",
+  "enum_specifier", "interface_declaration", "enum_declaration", "record_declaration",
+  "annotation_type_declaration", "type_declaration", "struct_item", "enum_item",
+  "trait_item", "impl_item", "union_item", "class", "abstract_class_declaration",
+  "namespace_definition", "module", "internal_module", "object_type", NULL
+};
+
+static const char *const kListKinds[] = {
+  "arguments", "argument_list", "parameter_list", "parameters", "formal_parameters",
+  "type_arguments", "type_parameters", "array", "array_initializer", "array_expression",
+  "initializer_list", "list", "tuple_expression", "table_constructor", "literal_value",
+  "type_parameter_list", "template_argument_list", "template_parameter_list",
+  "enumerator_list", "inferred_parameters", "expression_list", NULL
+};
+
+gboolean
+ide_ts_doc_find_object(const IdeTsDoc *doc,
+                       gsize           cursor_byte,
+                       gboolean        inside,
+                       char            target,
+                       gsize          *out_start,
+                       gsize          *out_end)
+{
+  g_return_val_if_fail(out_start != NULL && out_end != NULL, FALSE);
+  if (doc == NULL || doc->tree == NULL || doc->text == NULL) {
+    return FALSE;
+  }
+  cursor_byte = MIN(cursor_byte, doc->len);
+
+  TSNode root = ts_tree_root_node(doc->tree);
+  TSNode leaf = ts_node_descendant_for_byte_range(root, (uint32_t)cursor_byte, (uint32_t)cursor_byte);
+  if (ts_node_is_null(leaf)) {
+    return FALSE;
+  }
+
+  for (TSNode n = leaf; !ts_node_is_null(n); n = ts_node_parent(n)) {
+    gsize ns = ts_node_start_byte(n);
+    gsize ne = ts_node_end_byte(n);
+
+    if (target == 'f' || target == 'c') {
+      gboolean match = (target == 'f') ? node_in_list(n, kFunctionKinds) : node_in_list(n, kClassKinds);
+      if (!match) {
+        continue;
+      }
+      TSNode body;
+      if (!find_brace_body(doc, n, 0, &body)) {
+        continue; /* e.g. `struct foo *p` or a prototype without a body */
+      }
+      if (!inside) {
+        *out_start = ns;
+        *out_end = ne;
+        return TRUE;
+      }
+      inside_of_braces(doc, body, out_start, out_end);
+      return TRUE;
+    }
+
+    if (target == 'b') {
+      if (!node_is_braced(doc, n)) {
+        continue;
+      }
+      if (!inside) {
+        *out_start = ns;
+        *out_end = ne;
+      } else {
+        inside_of_braces(doc, n, out_start, out_end);
+      }
+      return TRUE;
+    }
+
+    if (target == 'a') {
+      if (!node_in_list(n, kListKinds)) {
+        continue;
+      }
+      uint32_t cnt = ts_node_named_child_count(n);
+      TSNode pick;
+      gboolean found = FALSE;
+      for (uint32_t i = 0; i < cnt; i++) {
+        TSNode c = ts_node_named_child(n, i);
+        if (strstr(ts_node_type(c), "comment") != NULL) {
+          continue;
+        }
+        gsize cs = ts_node_start_byte(c);
+        gsize ce = ts_node_end_byte(c);
+        if (cursor_byte <= ce && (cursor_byte >= cs || !found)) {
+          pick = c;
+          found = TRUE;
+          if (cursor_byte >= cs) {
+            break; /* containing element */
+          }
+          break;   /* cursor in the gap before this element */
+        }
+      }
+      if (!found) {
+        continue;
+      }
+      gsize s = ts_node_start_byte(pick);
+      gsize e = ts_node_end_byte(pick);
+      if (!inside) {
+        /* take one adjacent comma (and the whitespace after it) */
+        gsize k = e;
+        while (k < ne && (doc->text[k] == ' ' || doc->text[k] == '\t')) {
+          k++;
+        }
+        if (k < ne && doc->text[k] == ',') {
+          e = k + 1;
+          while (e < ne && (doc->text[e] == ' ' || doc->text[e] == '\t')) {
+            e++;
+          }
+        } else {
+          gsize b = s;
+          while (b > ns && (doc->text[b - 1] == ' ' || doc->text[b - 1] == '\t')) {
+            b--;
+          }
+          if (b > ns && doc->text[b - 1] == ',') {
+            s = b - 1;
+          }
+        }
+      }
+      *out_start = s;
+      *out_end = e;
+      return TRUE;
+    }
+    return FALSE;
+  }
+  return FALSE;
 }
 
 /* ─── Walk ─── */

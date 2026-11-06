@@ -4,6 +4,7 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <gtksourceview/gtksource.h>
+#include "ide_ts.h"
 
 G_BEGIN_DECLS
 
@@ -76,6 +77,7 @@ void             ide_buffer_set_text(IdeBuffer *buf, const char *text);
  * system dirs, dev source tree). Idempotent. */
 void             ide_buffer_register_scheme_paths(void);
 void             ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id);
+const IdeTsDoc *ide_highlight_get_ts_doc(GtkSourceBuffer *sbuf);
 void             ide_highlight_source_buffer(GtkSourceBuffer *sbuf,
                                              const char      *file_path,
                                              const char      *scheme_id);

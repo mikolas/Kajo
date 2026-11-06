@@ -90,6 +90,19 @@ void        ide_ts_doc_walk(const IdeTsDoc *doc,
                             IdeTsTokenFunc  cb,
                             gpointer        user_data);
 
+/* Syntax-tree text objects for `m i/a`: target 'f' function, 'c' class / struct /
+ * interface / enum, 'b' brace block, 'a' argument / parameter / list element.
+ * Selects the innermost enclosing object around `cursor_byte`; `inside` excludes
+ * braces and signatures (body only; for 'a', the element without its comma).
+ * Returns FALSE when nothing encloses the cursor, so callers can fall back to
+ * the text-based objects. */
+gboolean    ide_ts_doc_find_object(const IdeTsDoc *doc,
+                                   gsize           cursor_byte,
+                                   gboolean        inside,
+                                   char            target,
+                                   gsize          *out_start,
+                                   gsize          *out_end);
+
 /* True when the tree contains syntax errors (diagnostic for tests / UI). */
 gboolean    ide_ts_doc_has_error(const IdeTsDoc *doc);
 

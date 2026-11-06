@@ -425,6 +425,81 @@ test_extended_detection(void)
   }
 }
 
+
+/* Source with a '@' marking the cursor; returns the selected text or "<none>". */
+static char *
+select_object(IdeTsLang lang, const char *marked, gboolean inside, char target)
+{
+  const char *at = strchr(marked, '@');
+  g_assert_nonnull(at);
+  g_autofree char *src = g_strdup_printf("%.*s%s", (int)(at - marked), marked, at + 1);
+  gsize cursor = (gsize)(at - marked);
+
+  IdeTsDoc *doc = ide_ts_doc_new(lang);
+  g_assert_nonnull(doc);
+  gsize ds, de, s = 0, e = 0;
+  g_assert_true(ide_ts_doc_update(doc, src, strlen(src), &ds, &de));
+  char *out = ide_ts_doc_find_object(doc, cursor, inside, target, &s, &e)
+                  ? g_strndup(src + s, e - s)
+                  : g_strdup("<none>");
+  ide_ts_doc_free(doc);
+  return out;
+}
+
+#define ASSERT_OBJ(lang, src, inside, target, want) \
+  do { \
+    g_autofree char *got_ = select_object((lang), (src), (inside), (target)); \
+    g_assert_cmpstr(got_, ==, (want)); \
+  } while (0)
+
+static void
+test_text_objects_java(void)
+{
+  IdeTsLang J = IDE_TS_LANG_JAVA;
+  ASSERT_OBJ(J, "class A {\n  int f(int a, String b) { return a@ + 1; }\n}\n", TRUE, 'f', "return a + 1;");
+  ASSERT_OBJ(J, "class A {\n  int f(int a, String b) { return a@ + 1; }\n}\n", FALSE, 'f',
+             "int f(int a, String b) { return a + 1; }");
+  ASSERT_OBJ(J, "class A {\n  int f(int a, String b) { return a@ + 1; }\n}\n", TRUE, 'c',
+             "  int f(int a, String b) { return a + 1; }");
+  ASSERT_OBJ(J, "class A {\n  int f(int a, String b) { return a@ + 1; }\n}\n", FALSE, 'c',
+             "class A {\n  int f(int a, String b) { return a + 1; }\n}");
+  ASSERT_OBJ(J, "class A { void g() { if (x) { call(1,@ 2); } } }\n", TRUE, 'b', "call(1, 2);");
+  ASSERT_OBJ(J, "class A { void g() { if (x) { call(1,@ 2); } } }\n", FALSE, 'b', "{ call(1, 2); }");
+  ASSERT_OBJ(J, "class A { void g() { if (x) { call(1, @2); } } }\n", TRUE, 'a', "2");
+  ASSERT_OBJ(J, "class A { void g() { call(@1, 2); } }\n", FALSE, 'a', "1, ");
+  ASSERT_OBJ(J, "class A { void g(int a, String @b) {} }\n", FALSE, 'a', ", String b");
+  ASSERT_OBJ(J, "int @x;\n", TRUE, 'f', "<none>");
+}
+
+static void
+test_text_objects_go(void)
+{
+  IdeTsLang G = IDE_TS_LANG_GO;
+  ASSERT_OBJ(G, "package m\nfunc f(a int) int {\n\treturn a@ + 1\n}\n", TRUE, 'f', "\treturn a + 1");
+  ASSERT_OBJ(G, "package m\nfunc f(a int) int {\n\treturn a@ + 1\n}\n", FALSE, 'f',
+             "func f(a int) int {\n\treturn a + 1\n}");
+  ASSERT_OBJ(G, "package m\ntype S struct {\n\tName@ string\n}\n", TRUE, 'c', "\tName string");
+  ASSERT_OBJ(G, "package m\ntype S struct {\n\tName@ string\n}\n", FALSE, 'c',
+             "type S struct {\n\tName string\n}");
+  ASSERT_OBJ(G, "package m\nfunc f() { g(1, @2, 3) }\n", TRUE, 'a', "2");
+  ASSERT_OBJ(G, "package m\nfunc f() { x := func() int { return@ 1 }; _ = x }\n", TRUE, 'f', "return 1");
+}
+
+static void
+test_text_objects_c_rust_js_lua(void)
+{
+  ASSERT_OBJ(IDE_TS_LANG_C, "static int add(int a, int b) { return a +@ b; }\n", TRUE, 'f', "return a + b;");
+  ASSERT_OBJ(IDE_TS_LANG_C, "struct P { int x;@ int y; };\n", TRUE, 'c', "int x; int y;");
+  /* a struct reference without a body is not a class object */
+  ASSERT_OBJ(IDE_TS_LANG_C, "void f(struct P *@p) { }\n", TRUE, 'c', "<none>");
+  ASSERT_OBJ(IDE_TS_LANG_RUST, "fn main() { let x = foo(1,@ 2); }\n", TRUE, 'f', "let x = foo(1, 2);");
+  ASSERT_OBJ(IDE_TS_LANG_RUST, "struct S { a: i32 }\nimpl S { fn get(&self) -> i32 { self.a@ } }\n", TRUE, 'c',
+             "fn get(&self) -> i32 { self.a }");
+  ASSERT_OBJ(IDE_TS_LANG_JAVASCRIPT, "const g = (x) => x *@ 2;\n", TRUE, 'f', "x * 2");
+  ASSERT_OBJ(IDE_TS_LANG_JAVASCRIPT, "class A { m(a, b) { return a@; } }\n", FALSE, 'f', "m(a, b) { return a; }");
+  ASSERT_OBJ(IDE_TS_LANG_LUA, "function f(a)\n  return a@ + 1\nend\n", TRUE, 'f', "return a + 1");
+}
+
 /* Every bundled highlight query must compile against the installed grammar. */
 static void
 test_queries_compile(void)
@@ -445,6 +520,16 @@ main(int argc, char **argv)
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/ide-ts/lang-detection", test_lang_detection);
   g_test_add_func("/ide-ts/queries-compile", test_queries_compile);
+  if (ide_ts_lang_available(IDE_TS_LANG_JAVA)) {
+    g_test_add_func("/ide-ts/objects-java", test_text_objects_java);
+  }
+  if (ide_ts_lang_available(IDE_TS_LANG_GO)) {
+    g_test_add_func("/ide-ts/objects-go", test_text_objects_go);
+  }
+  if (ide_ts_lang_available(IDE_TS_LANG_C) && ide_ts_lang_available(IDE_TS_LANG_RUST) &&
+      ide_ts_lang_available(IDE_TS_LANG_JAVASCRIPT) && ide_ts_lang_available(IDE_TS_LANG_LUA)) {
+    g_test_add_func("/ide-ts/objects-misc", test_text_objects_c_rust_js_lua);
+  }
   g_test_add_func("/ide-ts/detection-extended", test_extended_detection);
   g_test_add_func("/ide-ts/query-languages", test_query_languages);
   g_test_add_func("/ide-ts/incremental-all", test_incremental_all_languages);

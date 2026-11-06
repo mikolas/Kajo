@@ -786,6 +786,13 @@ apply_ts_token(gsize start, gsize end, IdeTsToken token, gpointer user_data)
   }
 }
 
+const IdeTsDoc *
+ide_highlight_get_ts_doc(GtkSourceBuffer *sbuf)
+{
+  IdeTsState *st = sbuf != NULL ? g_object_get_data(G_OBJECT(sbuf), "ide-ts-state") : NULL;
+  return st != NULL ? st->doc : NULL;
+}
+
 /* Parses (incrementally) and re-tags only the dirty region. Returns FALSE when
  * the language has no usable grammar so the caller can use the lexer. */
 static gboolean

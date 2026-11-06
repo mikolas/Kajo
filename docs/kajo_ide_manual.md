@@ -166,6 +166,9 @@ Designed for zero-Dead-Key navigation on Nordic layouts (with `[` / `]` brackets
 
 Pressing `m` enters `MATCH` mode (`#ff8c00` pill), allowing structural selection without awkward `AltGr` brace chords:
 
+> **Syntax-tree objects.** For every tree-sitter language (see §1) `f`, `c`, `b` and `a` select the innermost enclosing function, class/struct/interface/enum, brace block, or argument / parameter / list element using the parsed syntax tree (`i` = body without braces or signature, or the element without its comma; `a` = whole construct, or the element with one adjacent comma). Other languages, and positions the tree cannot resolve, fall back to the text-based heuristics.
+
+
 | Chord | Target Structure | Scope |
 | :--- | :--- | :--- |
 | `m m` | Matching Bracket `()` / `[]` / `{}` | Jump cursor to matching delimiter |
