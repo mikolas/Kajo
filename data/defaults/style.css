@@ -13,6 +13,18 @@
 @define-color metro-fg-secondary  #a0a0a0;
 @define-color metro-urgent        #e81123;  /* Metro Crimson */
 
+/* Surface elevation ladder (docs/design_system.md §2) */
+@define-color metro-surface-0     #101010;  /* recessed canvas: code viewer, media well */
+@define-color metro-surface-2     #161616;  /* secondary ribbon / sub-toolbar */
+@define-color metro-surface-3     #181818;  /* popover body, list row, table header */
+@define-color metro-surface-4     #1a1a1a;  /* interactive button, tile / section card */
+
+/* Semantic status colors */
+@define-color metro-warning       #ff8c00;
+@define-color metro-success       #10893e;
+@define-color metro-telemetry     #00d8f0;
+@define-color metro-urgent-text   #ff6b6b;  /* error / danger TEXT on dark surfaces (readable red) */
+
 /* ═══════════════════════════════════════════════ */
 /* ─── Global Font Reset (Fira Code) ─── */
 /* ═══════════════════════════════════════════════ */
@@ -320,19 +332,19 @@ popover > arrow {
 
 .shell-popover-badge.peak-warn {
     background-color: #332000;
-    color: #ff8c00;
-    border-color: #ff8c00;
+    color: @metro-warning;
+    border-color: @metro-warning;
 }
 
 .shell-popover-badge.success {
     background-color: #0d2818;
     color: #3dd675;
-    border-color: #10893e;
+    border-color: @metro-success;
 }
 
 .code-preview-box {
     background-color: #111111;
-    border: 1px solid #2b2b2b;
+    border: 1px solid @metro-border;
     border-left: 3px solid @metro-accent;
     padding: 12px 14px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
@@ -368,7 +380,7 @@ popover > arrow {
 .shell-device-row {
     padding: 7px 10px;
     border-radius: 0px;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid transparent;
     border-left: 3px solid transparent;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
@@ -400,15 +412,15 @@ popover > arrow {
 button.control-center-tile {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
     border-left: 3px solid transparent;
     border-radius: 0px;
     padding: 8px 12px;
 }
 
 button.control-center-tile:hover {
-    background-color: #222222;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
 }
 
@@ -507,7 +519,7 @@ popover searchentry,
 .shell-launcher-input {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     color: @metro-fg-primary;
     border: 1px solid #333333;
     border-radius: 0px;
@@ -595,7 +607,7 @@ popover button,
 window.shell-settings-window button {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid @metro-border;
     border-radius: 0px;
     color: #dddddd;
@@ -654,8 +666,8 @@ window.shell-settings-window menubutton.files-nav-btn > button {
     min-width: 28px;
     min-height: 28px;
     padding: 2px 8px;
-    border: 1px solid #2b2b2b;
-    background-color: #1a1a1a;
+    border: 1px solid @metro-border;
+    background-color: @metro-surface-4;
     color: #e0e0e0;
     font-size: 12px;
     font-weight: 600;
@@ -666,7 +678,7 @@ popover button.player-transport-btn:hover,
 window.shell-settings-window button.files-nav-btn:hover,
 window.shell-settings-window button.player-transport-btn:hover,
 window.shell-settings-window menubutton.files-nav-btn > button:hover {
-    background-color: #222222;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
     color: #ffffff;
 }
@@ -688,7 +700,7 @@ window.shell-settings-window button.destructive-action,
 window.shell-settings-window button.action-btn-danger {
     background-color: #2a1215;
     border: 1px solid #5c1e24;
-    color: #ff6b6b;
+    color: @metro-urgent-text;
     font-weight: 700;
 }
 
@@ -805,13 +817,13 @@ window.shell-settings-window levelbar trough block.filled {
 
 popover levelbar trough block.low,
 window.shell-settings-window levelbar trough block.low {
-    background-color: #10893e;
+    background-color: @metro-success;
     border-radius: 0px;
 }
 
 popover levelbar trough block.high,
 window.shell-settings-window levelbar trough block.high {
-    background-color: #ff8c00;
+    background-color: @metro-warning;
     border-radius: 0px;
 }
 
@@ -845,7 +857,7 @@ window.shell-settings-window checkbutton check,
 window.shell-settings-window checkbutton radio {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid #444444;
     border-radius: 0px;
     min-width: 16px;
@@ -908,7 +920,7 @@ window.shell-settings-window dropdown > button,
 popover dropdown > button {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     color: @metro-fg-primary;
     border: 1px solid @metro-border;
     border-radius: 0px;
@@ -1002,7 +1014,7 @@ dropdown listview row:selected {
 /* ═══════════════════════════════════════════════ */
 
 window.shell-settings-window {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     color: #ffffff;
     border: 1px solid @metro-accent;
     border-radius: 0px;
@@ -1013,12 +1025,12 @@ window.shell-settings-window {
 window.shell-settings-window scrolledwindow,
 window.shell-settings-window viewport,
 window.shell-settings-window stack {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     color: #ffffff;
 }
 
 window.shell-settings-window paned > separator {
-    background-color: #2b2b2b;
+    background-color: @metro-border;
     min-width: 1px;
     margin: 0;
     padding: 0;
@@ -1036,8 +1048,8 @@ window.shell-settings-window paned > separator > handle {
 }
 
 window.shell-settings-window .settings-header-bar {
-    background-color: #181818;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
     padding: 6px 12px;
 }
 
@@ -1059,13 +1071,13 @@ window.shell-settings-window .settings-close-btn {
 }
 
 window.shell-settings-window .settings-close-btn:hover {
-    background-color: #e81123;
+    background-color: @metro-urgent;
     color: #ffffff;
 }
 
 window.shell-settings-window .navigation-sidebar {
-    background-color: #141414;
-    border-right: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-right: 1px solid @metro-border;
     padding: 4px;
 }
 
@@ -1096,7 +1108,7 @@ window.shell-settings-window .sidebar-label {
 }
 
 window.shell-settings-window .navigation-sidebar row:hover {
-    background-color: #222222;
+    background-color: @metro-surface-hover;
     color: #ffffff;
 }
 
@@ -1129,8 +1141,8 @@ window.shell-settings-window .shell-popover-card {
 }
 
 window.shell-settings-window .shell-popover-header {
-    background-color: #161616;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
     padding: 10px 16px;
 }
 
@@ -1140,15 +1152,15 @@ window.shell-settings-window .shell-popover-body {
 }
 
 window.shell-settings-window .shell-popover-footer {
-    background-color: #161616;
-    border-top: 1px solid #2b2b2b;
+    background-color: @metro-surface-2;
+    border-top: 1px solid @metro-border;
     padding: 10px 16px;
 }
 
 /* ─── Section Cards & Uniform Widget Grids ─── */
 window.shell-settings-window .settings-sidebar-vbox {
-    background-color: #141414;
-    border-right: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-right: 1px solid @metro-border;
 }
 
 window.shell-settings-window .sidebar-header-row,
@@ -1177,8 +1189,8 @@ window.shell-settings-window .sidebar-category-header {
 }
 
 window.shell-settings-window .section-card {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
     border-radius: 0px;
     padding: 10px 14px;
     margin-bottom: 8px;
@@ -1191,31 +1203,31 @@ window.shell-settings-window .section-card.active {
 }
 
 window.shell-settings-window .section-card-left {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
     border-left: 3px solid @metro-accent;
     padding: 12px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .section-card-center {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
-    border-left: 3px solid #ff8c00;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-warning;
     padding: 12px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .section-card-right {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
-    border-left: 3px solid #10893e;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-success;
     padding: 12px 14px;
     margin-bottom: 8px;
 }
 
 window.shell-settings-window .widget-row-card {
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid #262626;
     padding: 8px 12px;
     margin-bottom: 4px;
@@ -1228,17 +1240,17 @@ window.shell-settings-window .widget-row-card:hover {
 
 /* ─── Media VU Meter & LevelBar Color Coding ─── */
 .shell-popover levelbar block.low {
-    background-color: #10893e;
+    background-color: @metro-success;
     border-radius: 0px;
 }
 
 .shell-popover levelbar block.high {
-    background-color: #ff8c00;
+    background-color: @metro-warning;
     border-radius: 0px;
 }
 
 .shell-popover levelbar block.full {
-    background-color: #e81123;
+    background-color: @metro-urgent;
     border-radius: 0px;
 }
 
@@ -1250,17 +1262,17 @@ window.shell-settings-window .widget-row-card:hover {
 }
 
 .peak-warn {
-    color: #ff8c00;
+    color: @metro-warning;
     font-weight: 600;
 }
 
 .peak-clip {
-    color: #e81123;
+    color: @metro-urgent;
     font-weight: 700;
 }
 
 .shell-media-art-hero {
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid #2d2d2d;
     border-radius: 0px;
     min-width: 128px;
@@ -1286,7 +1298,7 @@ window.shell-settings-window .widget-row-card:hover {
 
 /* ─── Wayland Session Lock Screen (.shell-lock-window) ─── */
 window.shell-lock-window {
-    background-color: #101010;
+    background-color: @metro-surface-0;
     background-image: radial-gradient(circle at 50% 35%, alpha(@metro-accent, 0.14) 0%, rgba(16, 16, 16, 0.98) 68%);
     color: #f4f4f6;
 }
@@ -1346,7 +1358,7 @@ window.shell-lock-window .lock-password-entry,
 window.shell-lock-window .lock-password-entry > text {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     color: #ffffff;
     box-shadow: none;
     outline: none;
@@ -1399,20 +1411,20 @@ window.shell-lock-window .lock-status-label {
 }
 
 window.shell-lock-window .lock-status-label.verifying {
-    color: #00d8f0;
+    color: @metro-telemetry;
     font-weight: 600;
 }
 
 window.shell-lock-window .lock-status-label.error {
-    color: #ff5555;
+    color: @metro-urgent-text;
     font-weight: 700;
 }
 
 window.shell-lock-window .lock-action-btn {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
     border-radius: 0px;
     box-shadow: none;
     color: #dddddd;
@@ -1437,7 +1449,7 @@ window.shell-screensaver-window {
 
 window.shell-screensaver-window .screensaver-floating-tile {
     background-color: rgba(18, 18, 18, 0.94);
-    border: 1px solid #2b2b2b;
+    border: 1px solid @metro-border;
     border-left: 4px solid @metro-accent;
     padding: 20px 32px;
 }
@@ -1465,13 +1477,13 @@ window.shell-screensaver-window .screensaver-hint-label {
 /* ─── Kajo Greeter Surface (.shell-greeter-window) ─── */
 window.shell-lock-window .greeter-top-bar {
     background-color: rgba(20, 20, 20, 0.90);
-    border-bottom: 1px solid #2b2b2b;
+    border-bottom: 1px solid @metro-border;
     padding: 8px 16px;
 }
 
 window.shell-lock-window .lock-card.auth-error {
-    border-color: #e81123;
-    border-top: 3px solid #e81123;
+    border-color: @metro-urgent;
+    border-top: 3px solid @metro-urgent;
 }
 
 window.shell-lock-window .greeter-field-label {
@@ -1485,7 +1497,7 @@ window.shell-lock-window .greeter-field-label {
 window.shell-lock-window .greeter-dropdown > button {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid #333333;
     border-radius: 0px;
     box-shadow: none;
@@ -1497,20 +1509,20 @@ window.shell-lock-window .greeter-dropdown > button {
 window.shell-lock-window .greeter-dropdown > button:hover,
 window.shell-lock-window .greeter-dropdown > button:focus {
     background-image: none;
-    background-color: #222222;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
 }
 
 window.shell-lock-window .greeter-poweroff-btn:hover {
     background-image: none;
-    background-color: #e81123;
-    border-color: #e81123;
+    background-color: @metro-urgent;
+    border-color: @metro-urgent;
     color: #ffffff;
 }
 
 /* ─── Kajo Virtual Keyboard (window.osk-window) — Windows Touch Keyboard flat design ─── */
 window.osk-window {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border-top: 2px solid @metro-accent;
     color: #f4f4f6;
 }
@@ -1523,7 +1535,7 @@ window.osk-window button.osk-key {
     background: none;
     background-image: none;
     background-color: #252525;
-    border: 1px solid #2b2b2b;
+    border: 1px solid @metro-border;
     border-radius: 3px;
     box-shadow: none;
     text-shadow: none;
@@ -1607,16 +1619,16 @@ window.osk-window .osk-key-hint {
 /* ═══════════════════════════════════════════════════════════════════ */
 
 window.shell-files-window .files-action-ribbon {
-    background-color: #161616;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
     padding: 5px 12px;
 }
 
 window.shell-files-window .files-breadcrumb-btn {
     padding: 2px 8px;
     min-height: 24px;
-    background-color: #1a1a1a;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
     color: #c8c8c8;
     font-size: 12px;
 }
@@ -1638,16 +1650,16 @@ window.shell-files-window .files-context-banner {
 }
 
 window.shell-files-window .files-prompt-bar {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
     border-left: 3px solid @metro-accent;
     padding: 10px 14px;
 }
 
 window.shell-files-window .files-auth-bar {
-    background-color: #181818;
-    border: 1px solid #2b2b2b;
-    border-left: 3px solid #ff8c00;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-warning;
     padding: 12px 14px;
 }
 
@@ -1663,7 +1675,7 @@ window.shell-files-window .files-tile-grid {
     padding: 12px;
     background: none;
     background-image: none;
-    background-color: #101010;
+    background-color: @metro-surface-0;
 }
 
 window.shell-files-window .files-tile-grid > child,
@@ -1679,8 +1691,8 @@ window.shell-files-window .files-tile-grid flowboxchild {
 }
 
 window.shell-files-window .files-tile-card {
-    background-color: #1a1a1a;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
     padding: 8px;
 }
 
@@ -1689,7 +1701,7 @@ window.shell-files-window .files-tile-card.files-tile-folder {
 }
 
 window.shell-files-window .files-tile-card:hover {
-    background-color: #222222;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
 }
 
@@ -1718,8 +1730,8 @@ window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-car
 
 /* Details List View */
 window.shell-files-window .files-list-header {
-    background-color: #161616;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
     padding: 4px 16px;
 }
 
@@ -1754,7 +1766,7 @@ window.shell-files-window popover.files-sort-popover > contents,
 window.shell-files-window popover.files-context-popover > contents {
     background: none;
     background-image: none;
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border: 1px solid @metro-accent;
     border-radius: 0px;
     padding: 0px;
@@ -1764,7 +1776,7 @@ window.shell-files-window popover.files-context-popover > contents {
 window.shell-files-window button.files-menu-row {
     background: none;
     background-image: none;
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
     border: 1px solid #262626;
     border-left: 3px solid transparent;
     border-radius: 0px;
@@ -1797,7 +1809,7 @@ window.shell-files-window .files-ctx-shortcut {
 window.shell-files-window .files-details-list {
     background: none;
     background-image: none;
-    background-color: #101010;
+    background-color: @metro-surface-0;
     padding: 4px 8px;
 }
 
@@ -1813,7 +1825,7 @@ window.shell-files-window .files-details-list > row {
 }
 
 window.shell-files-window .files-list-row {
-    background-color: #181818;
+    background-color: @metro-surface-3;
     border: 1px solid #242424;
     border-left: 3px solid transparent;
     padding: 6px 10px;
@@ -1849,13 +1861,13 @@ window.shell-files-window .files-list-row:selected .files-list-meta {
 
 /* Inspector Pane (Shared across Files & Player) */
 window.shell-settings-window .files-inspector-pane {
-    background-color: #141414;
-    border-left: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-left: 1px solid @metro-border;
 }
 
 window.shell-files-window .files-inspector-thumb {
-    background-color: #101010;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border;
     padding: 8px;
 }
 
@@ -1876,7 +1888,7 @@ window.shell-files-window .files-quicklook-backdrop {
 }
 
 window.shell-files-window .files-quicklook-card {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border: 1px solid @metro-accent;
     border-top: 3px solid @metro-accent;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
@@ -1884,7 +1896,7 @@ window.shell-files-window .files-quicklook-card {
 
 window.shell-files-window .files-quicklook-textview,
 window.shell-files-window .files-quicklook-textview text {
-    background-color: #101010;
+    background-color: @metro-surface-0;
     color: #e8e8e8;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 12px;
@@ -1921,8 +1933,8 @@ window.shell-files-window .files-eject-btn {
 }
 
 window.shell-files-window .files-status-bar {
-    background-color: #181818;
-    border-top: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-top: 1px solid @metro-border;
     padding: 5px 12px;
 }
 
@@ -1933,7 +1945,7 @@ window.shell-files-window .files-status-text {
 }
 
 window.shell-files-window .files-status-error {
-    color: #ff5555;
+    color: @metro-urgent-text;
     font-weight: 700;
 }
 
@@ -1942,7 +1954,7 @@ window.shell-files-window .files-status-error {
  * ============================================================================ */
 
 window.shell-player-window {
-    background-color: #101010;
+    background-color: @metro-surface-0;
     border: 1px solid @metro-accent;
     border-top: 3px solid @metro-accent;
 }
@@ -1967,18 +1979,18 @@ window.shell-player-window.player-fullscreen .player-transport-deck {
 }
 
 window.shell-player-window .player-header-bar {
-    background-color: #181818;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
     padding: 6px 12px;
 }
 
 window.shell-player-window .player-video-stage {
-    background-color: #101010;
+    background-color: @metro-surface-0;
 }
 
 window.shell-player-window .player-audio-card {
-    background-color: #141414;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border: 1px solid @metro-border;
     border-top: 2px solid @metro-accent;
     padding: 36px 56px;
 }
@@ -1997,8 +2009,8 @@ window.shell-player-window .player-stats-text {
 }
 
 window.shell-player-window .player-transport-deck {
-    background-color: #141414;
-    border-top: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-top: 1px solid @metro-border;
     padding: 10px 14px 12px 14px;
 }
 
@@ -2050,7 +2062,7 @@ window.shell-settings-window .player-volume-scale slider {
  * ============================================================================ */
 
 window.shell-ide-window {
-    background-color: #101010;
+    background-color: @metro-surface-0;
     border: 1px solid @metro-accent;
     border-top: 3px solid @metro-accent;
 }
@@ -2070,12 +2082,12 @@ window.shell-ide-window .ide-header-breadcrumb {
 
 .shell-popover-badge.urgent {
     border-color: @metro-urgent;
-    color: #ff6b6b;
+    color: @metro-urgent-text;
     background-color: rgba(232, 17, 35, 0.16);
 }
 
 .shell-popover-badge.success {
-    border-color: #10893e;
+    border-color: @metro-success;
     color: #73c991;
     background-color: rgba(16, 137, 62, 0.16);
 }
@@ -2115,26 +2127,26 @@ window.shell-ide-window .ide-paned > separator:active {
 
 /* Multi-Buffer Tab Ribbon */
 window.shell-ide-window .ide-tab-ribbon {
-    background-color: #141414;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-bottom: 1px solid @metro-border;
     padding: 0px;
     min-height: 32px;
 }
 
 window.shell-ide-window .ide-tab-pill {
-    background-color: #141414;
-    border-right: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-right: 1px solid @metro-border;
     border-top: 2px solid transparent;
     padding: 0px 6px 0px 0px;
     min-height: 32px;
 }
 
 window.shell-ide-window .ide-tab-pill:hover {
-    background-color: #1a1a1a;
+    background-color: @metro-surface-4;
 }
 
 window.shell-ide-window .ide-tab-pill.active {
-    background-color: #101010;
+    background-color: @metro-surface-0;
     border-top: 2px solid @metro-accent;
 }
 
@@ -2175,7 +2187,7 @@ window.shell-ide-window .ide-tab-agent {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
     font-weight: 800;
-    color: #00d8f0;
+    color: @metro-telemetry;
 }
 
 window.shell-ide-window button.ide-tab-close {
@@ -2194,7 +2206,7 @@ window.shell-ide-window button.ide-tab-close {
 }
 
 window.shell-ide-window button.ide-tab-close:hover {
-    background-color: #e81123;
+    background-color: @metro-urgent;
     color: #ffffff;
 }
 
@@ -2204,14 +2216,14 @@ window.shell-ide-window .ide-tree-sidebar scrolledwindow,
 window.shell-ide-window .ide-tree-sidebar viewport {
     background: none;
     background-image: none;
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border: none;
     padding: 0px;
 }
 
 window.shell-ide-window .ide-tree-header {
-    background-color: #1a1a1a;
-    border-bottom: 1px solid #222222;
+    background-color: @metro-surface-4;
+    border-bottom: 1px solid @metro-surface-hover;
     padding: 6px 12px;
 }
 
@@ -2236,7 +2248,7 @@ window.shell-ide-window list,
 window.shell-ide-window .ide-tree-listbox {
     background: none;
     background-image: none;
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border: none;
     padding: 4px 0px;
 }
@@ -2307,7 +2319,7 @@ window.shell-ide-window .ide-tree-icon-header {
 }
 
 window.shell-ide-window .ide-tree-icon-markdown {
-    color: #00d8f0;
+    color: @metro-telemetry;
 }
 
 window.shell-ide-window .ide-tree-icon-config {
@@ -2333,7 +2345,7 @@ window.shell-ide-window .ide-tree-name-untracked {
 }
 
 window.shell-ide-window .ide-tree-name-deleted {
-    color: #e81123;
+    color: @metro-urgent;
     text-decoration: line-through;
 }
 
@@ -2351,32 +2363,32 @@ window.shell-ide-window .ide-git-badge {
 }
 
 window.shell-ide-window .ide-git-modified {
-    color: #ff8c00;
-    border-color: #ff8c00;
+    color: @metro-warning;
+    border-color: @metro-warning;
 }
 
 window.shell-ide-window .ide-git-added {
-    color: #10893e;
-    border-color: #10893e;
+    color: @metro-success;
+    border-color: @metro-success;
 }
 
 window.shell-ide-window .ide-git-untracked {
-    color: #00d8f0;
-    border-color: #00d8f0;
+    color: @metro-telemetry;
+    border-color: @metro-telemetry;
 }
 
 window.shell-ide-window .ide-git-deleted {
-    color: #e81123;
-    border-color: #e81123;
+    color: @metro-urgent;
+    border-color: @metro-urgent;
 }
 
 window.shell-ide-window .ide-minimap {
     background-color: #121212;
-    border-left: 1px solid #222222;
+    border-left: 1px solid @metro-surface-hover;
 }
 
 window.shell-ide-window separator.ide-md-hr {
-    background-color: #2b2b2b;
+    background-color: @metro-border;
     min-height: 1px;
     margin: 6px 0px;
 }
@@ -2394,13 +2406,13 @@ window.shell-ide-window .ide-gutter {
 
 /* Ephemeral Bottom Drawer Shell & Switcher Tabs */
 window.shell-ide-window .ide-drawer-shell {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border-top: 2px solid @metro-accent;
 }
 
 window.shell-ide-window .ide-drawer-tab-strip {
-    background-color: #181818;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
     padding: 0px 8px;
     min-height: 30px;
 }
@@ -2426,18 +2438,18 @@ window.shell-ide-window button.ide-drawer-tab:hover {
 }
 
 window.shell-ide-window button.ide-drawer-tab.active {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border-bottom: 2px solid @metro-accent;
     color: #ffffff;
 }
 
 window.shell-ide-window .ide-drawer-panel {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
 }
 
 window.shell-ide-window .ide-drawer-header {
-    background-color: #181818;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
     padding: 4px 10px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10.5px;
@@ -2447,7 +2459,7 @@ window.shell-ide-window .ide-drawer-header {
 }
 
 window.shell-ide-window .ide-picker-card {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border: 1px solid @metro-accent;
     border-top: 3px solid @metro-accent;
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
@@ -2466,8 +2478,8 @@ window.shell-ide-window .ide-chord-hud {
 
 /* Bottom Modal Status Bar */
 window.shell-ide-window .ide-status-bar {
-    background-color: #141414;
-    border-top: 1px solid #2b2b2b;
+    background-color: @metro-surface-bg;
+    border-top: 1px solid @metro-border;
     padding: 0px 12px 0px 0px;
     min-height: 26px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
@@ -2497,12 +2509,12 @@ window.shell-ide-window .ide-mode-pill.mode-normal {
 }
 
 window.shell-ide-window .ide-mode-pill.mode-insert {
-    background-color: #10893e;
+    background-color: @metro-success;
     color: #ffffff;
 }
 
 window.shell-ide-window .ide-mode-pill.mode-select {
-    background-color: #ff8c00;
+    background-color: @metro-warning;
     color: #000000;
 }
 
@@ -2512,7 +2524,7 @@ window.shell-ide-window .ide-mode-pill.mode-search {
 }
 
 window.shell-ide-window .ide-mode-pill.mode-leader {
-    background-color: #00d8f0;
+    background-color: @metro-telemetry;
     color: #000000;
 }
 
@@ -2520,7 +2532,7 @@ window.shell-ide-window button.ide-btn-accept {
     background: none;
     background-image: none;
     background-color: #0d3324;
-    border: 1px solid #10893e;
+    border: 1px solid @metro-success;
     border-radius: 0px;
     color: #73c991;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
@@ -2530,7 +2542,7 @@ window.shell-ide-window button.ide-btn-accept {
 }
 
 window.shell-ide-window button.ide-btn-accept:hover {
-    background-color: #10893e;
+    background-color: @metro-success;
     color: #ffffff;
 }
 
@@ -2540,7 +2552,7 @@ window.shell-ide-window button.ide-btn-reject {
     background-color: #381014;
     border: 1px solid @metro-urgent;
     border-radius: 0px;
-    color: #ff6b6b;
+    color: @metro-urgent-text;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
     font-weight: 700;
@@ -2555,14 +2567,14 @@ window.shell-ide-window button.ide-btn-reject:hover {
 /* Graphical Markdown & Cairo Vector Mermaid Canvas */
 window.shell-ide-window .ide-markdown-pane {
     background-color: #121212;
-    border-left: 1px solid #2b2b2b;
+    border-left: 1px solid @metro-border;
 }
 
 window.shell-ide-window .ide-md-h1 {
     font-size: 20px;
     font-weight: 800;
     color: #ffffff;
-    border-bottom: 1px solid #2b2b2b;
+    border-bottom: 1px solid @metro-border;
     padding-bottom: 6px;
 }
 
@@ -2570,7 +2582,7 @@ window.shell-ide-window .ide-md-h2 {
     font-size: 15px;
     font-weight: 700;
     color: #f0f0f0;
-    border-bottom: 1px solid #222222;
+    border-bottom: 1px solid @metro-surface-hover;
     padding-bottom: 4px;
 }
 
@@ -2606,19 +2618,19 @@ window.shell-ide-window .ide-md-figure-card {
 }
 
 window.shell-ide-window .ide-md-alert {
-    background-color: #161616;
+    background-color: @metro-surface-2;
     border: 1px solid #262626;
     border-left: 3px solid @metro-accent;
     padding: 10px 14px;
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-note {
-    border-left-color: #0078d4;
+    border-left-color: @metro-accent;
     background-color: rgba(0, 120, 212, 0.08);
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-tip {
-    border-left-color: #10893e;
+    border-left-color: @metro-success;
     background-color: rgba(16, 137, 62, 0.08);
 }
 
@@ -2628,36 +2640,36 @@ window.shell-ide-window .ide-md-alert.ide-md-alert-important {
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-warning {
-    border-left-color: #ff8c00;
+    border-left-color: @metro-warning;
     background-color: rgba(255, 140, 0, 0.08);
 }
 
 window.shell-ide-window .ide-md-alert.ide-md-alert-caution {
-    border-left-color: #e81123;
+    border-left-color: @metro-urgent;
     background-color: rgba(232, 17, 35, 0.08);
 }
 
 window.shell-ide-window .ide-mermaid-card {
-    background-color: #101010;
-    border: 1px solid #2b2b2b;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border;
     border-top: 2px solid @metro-accent;
 }
 
 window.shell-ide-window .ide-mermaid-toolbar {
-    background-color: #181818;
+    background-color: @metro-surface-3;
     border-bottom: 1px solid #262626;
     padding: 4px 10px;
 }
 
 window.shell-ide-window .ide-md-table {
     background-color: #151515;
-    border: 1px solid #2b2b2b;
+    border: 1px solid @metro-border;
     padding: 8px 12px;
 }
 
 /* Fuzzy Picker, Ripgrep & Interactive Help / Command Palette Modal */
 window.shell-ide-window .ide-picker-modal {
-    background-color: #141414;
+    background-color: @metro-surface-bg;
     border: 1px solid @metro-accent;
     border-radius: 0px;
     box-shadow: 0px 18px 48px rgba(0, 0, 0, 0.85);
@@ -2665,14 +2677,14 @@ window.shell-ide-window .ide-picker-modal {
 
 window.shell-ide-window .ide-picker-search-strip {
     background-color: #1c1c1c;
-    border: 1px solid #2b2b2b;
+    border: 1px solid @metro-border;
     border-left: 3px solid @metro-accent;
     border-radius: 0px;
 }
 
 window.shell-ide-window .ide-help-col-header {
-    background-color: #181818;
-    border-bottom: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
 }
 
 window.shell-ide-window .ide-picker-row {
@@ -2683,8 +2695,8 @@ window.shell-ide-window .ide-picker-row {
 window.shell-ide-window .ide-help-chord {
     background-color: #1c1c1c;
     border: 1px solid #383838;
-    border-left: 2px solid #00d8f0;
-    color: #00d8f0;
+    border-left: 2px solid @metro-telemetry;
+    color: @metro-telemetry;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
     font-weight: 800;
@@ -2694,7 +2706,7 @@ window.shell-ide-window .ide-help-chord {
 
 window.shell-ide-window .ide-tree-listbox row:selected .ide-help-chord {
     background-color: #111111;
-    border-color: #00d8f0;
+    border-color: @metro-telemetry;
     color: #50e6ff;
 }
 
@@ -2711,7 +2723,7 @@ window.shell-ide-window .ide-tree-listbox row:selected .ide-help-title {
 
 window.shell-ide-window .ide-help-desc {
     color: #a8a8a8;
-    font-family: "Inter", "Cantarell", sans-serif;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11.5px;
 }
 
@@ -2721,15 +2733,15 @@ window.shell-ide-window .ide-tree-listbox row:selected .ide-help-desc {
 
 window.shell-ide-window .ide-picker-preview,
 window.shell-ide-window .ide-picker-preview text {
-    background-color: #101010;
+    background-color: @metro-surface-0;
     color: #d4d4d4;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 12px;
 }
 
 window.shell-ide-window .ide-picker-footer {
-    background-color: #181818;
-    border-top: 1px solid #2b2b2b;
+    background-color: @metro-surface-3;
+    border-top: 1px solid @metro-border;
     padding: 6px 14px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10.5px;

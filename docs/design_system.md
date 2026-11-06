@@ -26,6 +26,26 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 
 | GTK4 `@define-color` Token | CSS Variable (`ui-gallery.html`) | Default Value | Role |
 | :--- | :--- | :--- | :--- |
+| `@metro-surface-0` | `--surface-0-canvas` | `#101010` | Recessed media/thumbnail well, code viewer canvas |
+| `@metro-surface-bg` | `--surface-1-base` | `#141414` | Primary window, popover, header, and sidebar background |
+| `@metro-surface-2` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
+| `@metro-surface-3` | `--surface-3-card` | `#181818` | Popover body, list row, and table column header surface |
+| `@metro-surface-4` | `--surface-4-control` | `#1a1a1a` | Interactive button, tile card, and section card surface |
+| `@metro-surface-hover` | `--surface-5-hover` | `#222222` | Hovered button, row, or card surface |
+| `@metro-border` | `--metro-border` | `#2b2b2b` | Structural `1px` divider and inactive control border |
+| `@metro-accent` | `--metro-accent` | `#0078d4` | Primary active accent (overridden live from `00-accent.css`) |
+| `@metro-accent-hover` | `--metro-accent-hover` | `#1084d8` | Hovered primary accent fill |
+| `@metro-fg-primary` | `--metro-fg-primary` | `#ffffff` | Primary text and active icon foreground |
+| `@metro-fg-secondary` | `--metro-fg-secondary` | `#a0a0a0` | Secondary subtitles, metadata, and inactive icons |
+| `@metro-urgent` | `--metro-urgent` | `#e81123` | Destructive fills/borders, critical battery, window close hover |
+| `@metro-urgent-text` | `--metro-urgent-text` | `#ff6b6b` | Error / danger **text** on dark surfaces (readable red) |
+| `@metro-warning` | `--metro-warning` | `#ff8c00` | Warning banners, VU meter high zone, center accent stripe |
+| `@metro-success` | `--metro-success` | `#10893e` | Connected/mounted indicators, right accent stripe |
+| `@metro-telemetry` | `--metro-telemetry` | `#00d8f0` | FFT spectrum bars, PAM verifying state, live OSD metrics |
+
+Use the tokens in `style.css`; do not add new raw hex literals for these roles. Remaining one-off grays (diff tints, syntax colors, the `#202020`/`#1c1c1c` family) are intentionally literal for now and should be folded into this ladder when touched.
+
+--- | :--- | :--- | :--- |
 | *(literal)* `#101010` | `--surface-0-canvas` | `#101010` | Recessed media/thumbnail well, code viewer canvas |
 | `@metro-surface-bg` | `--surface-1-base` | `#141414` | Primary window, popover, header, and sidebar background |
 | *(literal)* `#161616` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
