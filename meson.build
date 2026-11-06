@@ -367,6 +367,33 @@ install_data(
   install_dir: get_option('datadir') / 'applications',
 )
 
+# Tree-sitter syntax engine (optional: each grammar degrades to the heuristic
+# lexer when its library is missing). Grammars without headers/.pc files
+# (go) are declared by hand in ide_ts.c and located with find_library().
+ts_core_dep = dependency('tree-sitter', required: false)
+ts_defs = []
+ts_link_deps = [ts_core_dep]
+if ts_core_dep.found()
+  ts_defs += '-DHAVE_TREE_SITTER=1'
+  foreach lang : ['c', 'java', 'go']
+    lib = cc.find_library('tree-sitter-' + lang, required: false)
+    if lib.found()
+      ts_defs += '-DHAVE_TS_' + lang.to_upper() + '=1'
+      ts_link_deps += lib
+    endif
+  endforeach
+endif
+ide_ts_lib = static_library(
+  'kajo-ide-ts',
+  files('src/ide/ide_ts.c'),
+  dependencies: [gio_dep] + ts_link_deps,
+  c_args: ts_defs,
+)
+ide_ts_dep = declare_dependency(
+  link_with: ide_ts_lib,
+  dependencies: ts_link_deps,
+)
+
 ide_sources = files(
   'src/ide/main.c',
   'src/ide/ide_window.c',
@@ -400,6 +427,7 @@ executable(
     poppler_dep,
     archive_dep,
     m_dep,
+    ide_ts_dep,
   ],
   link_with: kajo_core,
   install: true,
@@ -631,10 +659,18 @@ test_ide_buffer_exe = executable(
     'src/ide/ide_search.c',
     'src/ide/ide_fsm.c',
   ),
-  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, m_dep],
+  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, m_dep, ide_ts_dep],
   build_by_default: false,
 )
 test('ide-buffer', test_ide_buffer_exe)
+
+test_ide_ts_exe = executable(
+  'test-ide-ts',
+  files('tests/test_ide_ts.c'),
+  dependencies: [gio_dep, ide_ts_dep],
+  build_by_default: false,
+)
+test('ide-ts', test_ide_ts_exe)
 
 test_ide_ipc_exe = executable(
   'test-ide-ipc',
@@ -651,7 +687,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',
   ),
-  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, poppler_dep, archive_dep, m_dep],
+  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, poppler_dep, archive_dep, m_dep, ide_ts_dep],
   build_by_default: false,
 )
 test('ide-ipc', test_ide_ipc_exe)

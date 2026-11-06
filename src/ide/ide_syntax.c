@@ -2,6 +2,7 @@
  * palettes, Markdown/code-fence aware). Split out of ide_buffer.c; the public
  * entry point is ide_highlight_source_buffer() declared in ide_buffer.h. */
 #include "ide_buffer.h"
+#include "ide_ts.h"
 
 #include <ctype.h>
 #include <string.h>
@@ -206,9 +207,9 @@ ensure_syn_tag(GtkTextBuffer *tbuf,
 }
 
 static void
-init_and_clear_syn_tags(GtkTextBuffer  *tbuf,
-                        const char     *scheme_id,
-                        IdeSynTags     *out)
+init_syn_tags(GtkTextBuffer  *tbuf,
+              const char     *scheme_id,
+              IdeSynTags     *out)
 {
   const IdeSchemePalette *pal = lookup_scheme_palette(scheme_id);
   GtkTextTagTable *table = gtk_text_buffer_get_tag_table(tbuf);
@@ -224,20 +225,19 @@ init_and_clear_syn_tags(GtkTextBuffer  *tbuf,
   out->num  = ensure_syn_tag(tbuf, table, "ide-syn-num",  pal->number,      FALSE, FALSE);
   out->cmt  = ensure_syn_tag(tbuf, table, "ide-syn-cmt",  pal->comment,     FALSE, TRUE);
   out->op   = ensure_syn_tag(tbuf, table, "ide-syn-op",   pal->operator_fg, FALSE, FALSE);
+}
 
-  GtkTextIter start, end;
-  gtk_text_buffer_get_bounds(tbuf, &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->kw,   &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->ctrl, &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->fn,   &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->type, &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->mac,  &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->var,  &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->str,  &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->esc,  &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->num,  &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->cmt,  &start, &end);
-  gtk_text_buffer_remove_tag(tbuf, out->op,   &start, &end);
+static void
+clear_syn_tags(GtkTextBuffer *tbuf,
+               const IdeSynTags *t,
+               const GtkTextIter *start,
+               const GtkTextIter *end)
+{
+  GtkTextTag *all[] = { t->kw, t->ctrl, t->fn, t->type, t->mac, t->var,
+                        t->str, t->esc, t->num, t->cmt, t->op };
+  for (gsize i = 0; i < G_N_ELEMENTS(all); i++) {
+    gtk_text_buffer_remove_tag(tbuf, all[i], start, end);
+  }
 }
 
 static gboolean
@@ -743,6 +743,115 @@ highlight_markdown_document(IdeTagCursor     *tc,
   }
 }
 
+/* ─── Tree-sitter path ─── */
+
+typedef struct {
+  IdeTsDoc *doc;
+} IdeTsState;
+
+static void
+ide_ts_state_free(gpointer data)
+{
+  IdeTsState *st = data;
+  if (st != NULL) {
+    ide_ts_doc_free(st->doc);
+    g_free(st);
+  }
+}
+
+typedef struct {
+  IdeTagCursor     *tc;
+  const IdeSynTags *tags;
+  const char       *text;
+} IdeTsApply;
+
+static void
+apply_ts_token(gsize start, gsize end, IdeTsToken token, gpointer user_data)
+{
+  IdeTsApply *ap = user_data;
+  const IdeSynTags *t = ap->tags;
+  switch (token) {
+    case IDE_TS_TOKEN_KEYWORD:    apply_tag_at_bytes(ap->tc, t->kw, start, end); break;
+    case IDE_TS_TOKEN_CONTROL:    apply_tag_at_bytes(ap->tc, t->ctrl, start, end); break;
+    case IDE_TS_TOKEN_FUNCTION:   apply_tag_at_bytes(ap->tc, t->fn, start, end); break;
+    case IDE_TS_TOKEN_TYPE:       apply_tag_at_bytes(ap->tc, t->type, start, end); break;
+    case IDE_TS_TOKEN_MACRO:      apply_tag_at_bytes(ap->tc, t->mac, start, end); break;
+    case IDE_TS_TOKEN_VARIABLE:   apply_tag_at_bytes(ap->tc, t->var, start, end); break;
+    case IDE_TS_TOKEN_STRING:     highlight_string_span(ap->tc, t, ap->text, start, end); break;
+    case IDE_TS_TOKEN_STRING_RAW: apply_tag_at_bytes(ap->tc, t->str, start, end); break;
+    case IDE_TS_TOKEN_NUMBER:     apply_tag_at_bytes(ap->tc, t->num, start, end); break;
+    case IDE_TS_TOKEN_COMMENT:    apply_tag_at_bytes(ap->tc, t->cmt, start, end); break;
+    case IDE_TS_TOKEN_OPERATOR:   apply_tag_at_bytes(ap->tc, t->op, start, end); break;
+    default: break;
+  }
+}
+
+/* Parses (incrementally) and re-tags only the dirty region. Returns FALSE when
+ * the language has no usable grammar so the caller can use the lexer. */
+static gboolean
+highlight_with_treesitter(GtkSourceBuffer  *sbuf,
+                          IdeTsLang         lang,
+                          const IdeSynTags *tags,
+                          const char       *text,
+                          gsize             len)
+{
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(sbuf);
+  IdeTsState *st = g_object_get_data(G_OBJECT(sbuf), "ide-ts-state");
+
+  if (st != NULL && ide_ts_doc_get_lang(st->doc) != lang) {
+    g_object_set_data(G_OBJECT(sbuf), "ide-ts-state", NULL);
+    st = NULL;
+  }
+  gboolean fresh = (st == NULL);
+  if (fresh) {
+    IdeTsDoc *doc = ide_ts_doc_new(lang);
+    if (doc == NULL) {
+      return FALSE;
+    }
+    st = g_new0(IdeTsState, 1);
+    st->doc = doc;
+    g_object_set_data_full(G_OBJECT(sbuf), "ide-ts-state", st, ide_ts_state_free);
+  }
+
+  gsize ds = 0, de = 0;
+  if (!ide_ts_doc_update(st->doc, text, len, &ds, &de)) {
+    g_object_set_data(G_OBJECT(sbuf), "ide-ts-state", NULL);
+    return FALSE;
+  }
+  if (fresh) {
+    ds = 0;
+    de = len;
+  }
+  if (de <= ds) {
+    return TRUE; /* unchanged */
+  }
+
+  /* Widen to whole lines so partially covered tokens are re-tagged cleanly. */
+  while (ds > 0 && text[ds - 1] != '\n') {
+    ds--;
+  }
+  while (de < len && text[de] != '\n') {
+    de++;
+  }
+
+  GtkTextIter it_start, it_end;
+  gtk_text_buffer_get_iter_at_offset(tbuf, &it_start,
+                                     (gint)g_utf8_pointer_to_offset(text, text + ds));
+  gtk_text_buffer_get_iter_at_offset(tbuf, &it_end,
+                                     (gint)g_utf8_pointer_to_offset(text, text + de));
+  clear_syn_tags(tbuf, tags, &it_start, &it_end);
+
+  IdeTagCursor tc;
+  tc.tbuf = tbuf;
+  tc.base = text;
+  tc.cur_byte = 0;
+  gtk_text_buffer_get_start_iter(tbuf, &tc.cur_iter);
+
+  IdeTsApply ap = { &tc, tags, text };
+  ide_ts_doc_walk(st->doc, ds, de, apply_ts_token, &ap);
+  return TRUE;
+}
+
 void
 ide_highlight_source_buffer(GtkSourceBuffer *sbuf,
                             const char      *file_path,
@@ -759,15 +868,25 @@ ide_highlight_source_buffer(GtkSourceBuffer *sbuf,
 
   GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(sbuf);
   IdeSynTags tags;
-  init_and_clear_syn_tags(tbuf, scheme_id, &tags);
+  init_syn_tags(tbuf, scheme_id, &tags);
 
   GtkTextIter start, end;
   gtk_text_buffer_get_bounds(tbuf, &start, &end);
   g_autofree char *text = gtk_text_buffer_get_text(tbuf, &start, &end, FALSE);
   if (text == NULL || text[0] == '\0') {
+    clear_syn_tags(tbuf, &tags, &start, &end);
+    g_object_set_data(G_OBJECT(sbuf), "ide-ts-state", NULL);
     return;
   }
   gsize len = strlen(text);
+
+  IdeTsLang ts_lang = ide_ts_lang_for_path(file_path);
+  if (ts_lang != IDE_TS_LANG_NONE &&
+      highlight_with_treesitter(sbuf, ts_lang, &tags, text, len)) {
+    return;
+  }
+  g_object_set_data(G_OBJECT(sbuf), "ide-ts-state", NULL);
+  clear_syn_tags(tbuf, &tags, &start, &end);
 
   IdeTagCursor tc;
   tc.tbuf = tbuf;

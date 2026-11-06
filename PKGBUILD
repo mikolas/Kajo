@@ -20,6 +20,10 @@ depends=(
     'poppler-glib'
     'libarchive'
     'mpv'
+    'tree-sitter'
+    'tree-sitter-c'
+    'tree-sitter-java'
+    'tree-sitter-go'
     'libglvnd'
 )
 makedepends=(

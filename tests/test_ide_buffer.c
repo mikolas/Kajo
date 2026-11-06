@@ -244,6 +244,78 @@ test_semantic_token_highlighter(void)
   ide_buffer_free(buf);
 }
 
+static char *
+tag_signature(GtkTextBuffer *tbuf)
+{
+  GString *sig = g_string_new(NULL);
+  gint n = gtk_text_buffer_get_char_count(tbuf);
+  for (gint i = 0; i < n; i++) {
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_offset(tbuf, &it, i);
+    GSList *tags = gtk_text_iter_get_tags(&it);
+    GPtrArray *names = g_ptr_array_new();
+    for (GSList *l = tags; l; l = l->next) {
+      gchar *nm = NULL;
+      g_object_get(l->data, "name", &nm, NULL);
+      if (nm != NULL && g_str_has_prefix(nm, "ide-syn-")) {
+        g_ptr_array_add(names, nm);
+      } else {
+        g_free(nm);
+      }
+    }
+    g_ptr_array_sort(names, (GCompareFunc)g_strcmp0);
+    for (guint k = 0; k < names->len; k++) {
+      g_string_append(sig, g_ptr_array_index(names, k));
+      g_string_append_c(sig, ',');
+    }
+    g_string_append_c(sig, ';');
+    g_ptr_array_set_free_func(names, g_free);
+    g_ptr_array_free(names, TRUE);
+    g_slist_free(tags);
+  }
+  return g_string_free(sig, FALSE);
+}
+
+/* Incremental tree-sitter re-highlighting after a sequence of edits must leave
+ * exactly the tags a from-scratch highlight produces. */
+static void
+test_treesitter_incremental_tags_match_fresh(void)
+{
+  const char *files[] = { "A.java", "m.go", "x.c" };
+  const char *inits[] = {
+    "class A {\n  int f() { return 1; }\n}\n",
+    "package m\nfunc f() int { return 1 }\n",
+    "int f(void) { return 1; }\n",
+  };
+  for (guint i = 0; i < G_N_ELEMENTS(files); i++) {
+    IdeBuffer *buf = ide_buffer_new(files[i]);
+    ide_buffer_set_text(buf, inits[i]);
+    GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+
+    /* insert a comment opener mid-file, then close it, then delete a chunk */
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_offset(tbuf, &it, 8);
+    gtk_text_buffer_insert(tbuf, &it, "/* ", -1);
+    gtk_text_buffer_get_iter_at_offset(tbuf, &it, 14);
+    gtk_text_buffer_insert(tbuf, &it, " */", -1);
+    GtkTextIter a, b;
+    gtk_text_buffer_get_iter_at_offset(tbuf, &a, 2);
+    gtk_text_buffer_get_iter_at_offset(tbuf, &b, 5);
+    gtk_text_buffer_delete(tbuf, &a, &b);
+
+    g_autofree char *incremental = tag_signature(tbuf);
+
+    g_autofree char *final_text = ide_buffer_get_text(buf);
+    IdeBuffer *fresh = ide_buffer_new(files[i]);
+    ide_buffer_set_text(fresh, final_text);
+    g_autofree char *expected = tag_signature(GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(fresh)));
+
+    g_assert_cmpstr(incremental, ==, expected);
+    ide_buffer_free(fresh);
+    ide_buffer_free(buf);
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -255,6 +327,7 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/alternate-path-and-atomic-buffer", test_alternate_path_and_atomic_buffer);
   g_test_add_func("/ide/buffer/git-porcelain-fuzzy-and-search", test_git_porcelain_fuzzy_and_search_parsers);
   g_test_add_func("/ide/buffer/semantic-token-highlighter", test_semantic_token_highlighter);
+  g_test_add_func("/ide/buffer/treesitter-incremental-tags", test_treesitter_incremental_tags_match_fresh);
 
   return g_test_run();
 }
