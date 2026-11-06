@@ -141,10 +141,6 @@ static const IdeTsLangInfo kLangs[] = {
 static IdeTsGrammarFn
 grammar_fn_for(IdeTsLang lang)
 {
-#ifndef HAVE_TREE_SITTER
-  (void)lang;
-  return NULL;
-#else
   switch (lang) {
     case IDE_TS_LANG_C:          return kGrammar_C;
     case IDE_TS_LANG_JAVA:       return kGrammar_JAVA;
@@ -163,7 +159,6 @@ grammar_fn_for(IdeTsLang lang)
     case IDE_TS_LANG_LUA:        return kGrammar_LUA;
     default:                     return NULL;
   }
-#endif
 }
 
 static const IdeTsLangInfo *
@@ -180,12 +175,7 @@ lang_info(IdeTsLang lang)
 gboolean
 ide_ts_lang_available(IdeTsLang lang)
 {
-#ifdef HAVE_TREE_SITTER
   return lang_info(lang) != NULL && grammar_fn_for(lang) != NULL;
-#else
-  (void)lang;
-  return FALSE;
-#endif
 }
 
 const char *
