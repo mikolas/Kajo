@@ -43,6 +43,13 @@ void        shell_theme_write_override_css(const gchar *accent_hex,
                                            gint         badge_px);
 void        shell_theme_sync_from_config(const ShellConfig *config);
 
+/* Pango font-family list for the kajo-ide editor font: the user's choice first,
+ * then the same fallbacks the generated CSS uses ("Fira Code", "FiraCode Nerd
+ * Font", monospace). Anything that draws editor text outside CSS (settings
+ * preview, Cairo gutter) must use this so it renders the same face as the
+ * editor even when the chosen family is not installed. Caller frees. */
+gchar      *shell_ide_font_stack(const gchar *family);
+
 #ifdef __cplusplus
 }
 #endif

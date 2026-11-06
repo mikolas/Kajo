@@ -130,8 +130,8 @@ void ide_window_apply_config(KajoIdeWindow *self) {
 
   if (self->gutter_renderer) {
     int gutter_pt = MAX(8, (self->active_font_size_px - 2) * 3 / 4);
-    kajo_ide_gutter_renderer_set_font(
-        self->gutter_renderer, self->active_font_family, gutter_pt);
+    g_autofree char *font_stack = shell_ide_font_stack(self->active_font_family);
+    kajo_ide_gutter_renderer_set_font(self->gutter_renderer, font_stack, gutter_pt);
     gtk_widget_set_visible(GTK_WIDGET(self->gutter_renderer),
                            cfg->ide_show_line_numbers);
   }

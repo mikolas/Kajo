@@ -115,6 +115,10 @@ update_code_preview_markup(IdeSettingsState *st)
     int font_px = (int)gtk_range_get_value(GTK_RANGE(st->scale_font_size));
     if (font_px < 9 || font_px > 28) font_px = 13;
 
+    /* Same family stack as the editor CSS, so a missing font falls back to the
+     * same face (Fira Code / FiraCode Nerd Font / monospace) instead of the
+     * proportional UI font. */
+    g_autofree char *font_stack = shell_ide_font_stack(font_fam);
     g_autofree char *markup = g_strdup_printf(
         "<span font_family=\"%s\" size=\"%d\">"
         "<span foreground=\"#6a9955\" style=\"italic\">/* Live Scheme &amp; Font Preview (%s • %dpx) */</span>\n"
@@ -127,7 +131,7 @@ update_code_preview_markup(IdeSettingsState *st)
         /* The IDE sizes its editor in CSS px, but Pango's `size` is in points
          * (1/1024 pt): 1 px = 0.75 pt at GTK's 96 dpi. Without this conversion
          * the preview rendered ~33% larger than the real editor. */
-        font_fam, (font_px * 3 * PANGO_SCALE) / 4,
+        font_stack, (font_px * 3 * PANGO_SCALE) / 4,
         s->name, font_px,
         s->kw_hex, s->fn_hex, s->fn_hex, s->str_hex, s->id, s->kw_hex, s->kw_hex);
 

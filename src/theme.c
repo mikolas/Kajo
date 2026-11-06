@@ -395,6 +395,26 @@ shell_theme_write_override_css(const gchar *accent_hex,
         shell_config_destroy(cfg);
 }
 
+gchar *
+shell_ide_font_stack(const gchar *family)
+{
+    static const gchar *const fallbacks[] = { "Fira Code", "FiraCode Nerd Font", "monospace", NULL };
+
+    GString *stack = g_string_new(NULL);
+    const gchar *first = (family && family[0] != '\0') ? family : NULL;
+    if (first)
+        g_string_append(stack, first);
+
+    for (gsize i = 0; fallbacks[i]; i++) {
+        if (first && g_ascii_strcasecmp(first, fallbacks[i]) == 0)
+            continue; /* already the first entry */
+        if (stack->len > 0)
+            g_string_append(stack, ", ");
+        g_string_append(stack, fallbacks[i]);
+    }
+    return g_string_free(stack, FALSE);
+}
+
 void
 shell_theme_sync_from_config(const ShellConfig *config)
 {
