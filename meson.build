@@ -370,6 +370,7 @@ install_data(
 ide_sources = files(
   'src/ide/main.c',
   'src/ide/ide_window.c',
+  'src/ide/ide_actions.c',
   'src/ide/ide_fsm.c',
   'src/ide/ide_buffer.c',
   'src/ide/ide_syntax.c',
