@@ -93,8 +93,7 @@ test_java_tokens(void)
 
   ASSERT_HAS(log, "kw:package");
   ASSERT_HAS(log, "kw:import");
-  ASSERT_HAS(log, "mac:@\n");
-  ASSERT_HAS(log, "mac:Override");
+  ASSERT_HAS(log, "mac:@Override");
   ASSERT_HAS(log, "kw:public");
   ASSERT_HAS(log, "kw:sealed");
   ASSERT_HAS(log, "kw:implements");
@@ -270,11 +269,185 @@ test_error_tolerance(void)
   ide_ts_doc_free(doc);
 }
 
+
+typedef struct {
+  IdeTsLang   lang;
+  const char *source;
+  const char *expect[24]; /* NULL-terminated "token:text" needles */
+} LangCase;
+
+static const LangCase kLangCases[] = {
+  { IDE_TS_LANG_RUST,
+    "use std::collections::HashMap;\n"
+    "#[derive(Debug)]\n"
+    "pub struct Item<'a> { name: &'a str }\n"
+    "const MAX_N: usize = 10;\n"
+    "fn main() {\n"
+    "    let mut m: HashMap<String, i32> = HashMap::new();\n"
+    "    m.insert(\"s\\n\".to_string(), 2.5);\n"
+    "    println!(\"{}\", m);\n"
+    "    match x { 1 => return, _ => loop { break; } }\n"
+    "}\n",
+    { "kw:use", "type:HashMap", "mac:#[derive(Debug)]", "type:Item", "mac:MAX_N", "type:usize",
+      "fn:main", "kw:mut", "fn:new", "fn:insert", "fn:to_string", "mac:println", "ctrl:match",
+      "ctrl:loop", "num:2.5", "str:\"s\\n\"", NULL } },
+  { IDE_TS_LANG_CPP,
+    "#include <vector>\n"
+    "namespace app { template <typename T> class Box : public Base {\n"
+    "  Box(int v) : v_(v) {} virtual ~Box() override; T get() const;\n"
+    "}; }\n"
+    "enum class Color { Red };\n"
+    "auto f(std::string s) -> bool { auto x = new Box<int>(1); x->get(); s.size();\n"
+    "  ns::fn(); this->v_ = nullptr; throw std::runtime_error(\"e\"); return true; }\n"
+    "R\"raw(text)raw\";\n",
+    { "kw:namespace", "kw:template", "type:Box", "fn:~Box", "kw:override", "fn:get", "mac:Red",
+      "kw:auto", "kw:new", "fn:size", "kw:this", "mac:nullptr", "ctrl:throw", "fn:runtime_error",
+      "raw:R\"raw(text)raw\"", "str:<vector>", NULL } },
+  { IDE_TS_LANG_BASH,
+    "#!/bin/bash\n"
+    "NAME=\"x y\"; export PATH=$HOME/bin:$PATH\n"
+    "f() { if [ -f \"$a\" ]; then echo \"ok ${a}\" >&2; fi; }\n"
+    "for i in 1 2; do ls -l | grep 'x'; done\n"
+    "cat <<EOT\nhere $x\nEOT\n",
+    { "cmt:#!/bin/bash", "var:NAME", "kw:export", "var:HOME", "fn:f", "ctrl:if", "ctrl:then",
+      "fn:echo", "ctrl:fi", "ctrl:for", "ctrl:do", "ctrl:done", "fn:ls", "fn:grep", "str:'x'",
+      "mac:EOT", "op:|", NULL } },
+  { IDE_TS_LANG_JAVASCRIPT,
+    "const o = { key: 1, m() {} };\n"
+    "class A extends B { static #p = 1; get x() { return this.#p; } }\n"
+    "o.method(1); new Foo(); fn();\n"
+    "const g = (x) => x * `t${x}`, MAX_N = /re+/g;\n"
+    "const el = <Button onClick={() => go()}>hi</Button>;\n",
+    { "kw:const", "fn:m", "kw:class", "type:A", "type:B", "kw:extends", "kw:this", "fn:method",
+      "kw:new", "type:Foo", "fn:fn", "fn:g", "mac:MAX_N", "op:=>", "type:Button", "var:onClick",
+      "fn:go", NULL } },
+  { IDE_TS_LANG_TYPESCRIPT,
+    "import { a } from \"mod\";\n"
+    "export interface Foo<T> extends Bar { x: number; m(y: string): void }\n"
+    "type U = string | null;\n"
+    "enum E { A = 1 }\n"
+    "@Component({})\n"
+    "export class Svc<T> extends Base implements I {\n"
+    "  private readonly n: number = 0x10;\n"
+    "  constructor(public name: string) { super(); }\n"
+    "  async run(a: T): Promise<void> { const r = await fetch(a); this.n++; return undefined; }\n"
+    "}\n",
+    { "kw:import", "str:\"mod\"", "kw:interface", "type:Foo", "type:number", "fn:m", "type:U",
+      "type:E", "mac:A", "mac:@Component({})", "kw:implements", "kw:private", "kw:readonly",
+      "num:0x10", "fn:constructor", "fn:run", "type:Promise", "ctrl:await", "fn:fetch",
+      "mac:undefined", NULL } },
+  { IDE_TS_LANG_TSX,
+    "const App = (p: Props) => <Card title=\"t\">{p.name}</Card>;\n",
+    { "kw:const", "type:Props", "type:Card", "var:title", "str:\"t\"", NULL } },
+  { IDE_TS_LANG_LUA,
+    "local M = {}\n"
+    "-- c\n"
+    "function M.f(a) local s = \"x\" .. [[raw]]; if a == nil then return #s end end\n"
+    "function M:m() self.x = 0x10 end\n"
+    "print(M.f(1))\n",
+    { "kw:local", "cmt:-- c", "kw:function", "fn:f", "fn:m", "kw:self", "str:\"x\"", "str:[[raw]]",
+      "ctrl:if", "mac:nil", "ctrl:then", "kw:end", "num:0x10", "fn:print", NULL } },
+  { IDE_TS_LANG_JSON,
+    "{\"name\": \"x\\n\", \"n\": [1, -2.5e3, true, null], \"o\": {\"k\": false}}\n",
+    { "var:\"name\"", "str:\"x\\n\"", "num:1", "num:-2.5e3", "mac:true", "mac:null", "mac:false",
+      "var:\"k\"", NULL } },
+  { IDE_TS_LANG_TOML,
+    "# c\ntitle = \"x\"\n[server.main]\nport = 8080\npi = 3.14\non = true\n"
+    "when = 1979-05-27T07:32:00Z\n[[bins]]\nname = 'lit'\n",
+    { "cmt:# c", "var:title", "str:\"x\"", "type:server", "type:main", "var:port", "num:8080",
+      "num:3.14", "mac:true", "num:1979-05-27T07:32:00Z", "type:bins", "str:'lit'", NULL } },
+  { IDE_TS_LANG_YAML,
+    "# c\nname: x\nlist:\n  - 1\n  - true\n  - null\nanchor: &a value\nref: *a\n"
+    "\"quoted\": 'single'\n",
+    { "cmt:# c", "var:name", "var:list", "num:1", "mac:true", "mac:null", "mac:&a", "mac:*a",
+      "str:\"quoted\"", "str:'single'", NULL } },
+  { IDE_TS_LANG_CSS,
+    "/* c */\n@media (min-width: 600px) { .a > #b:hover, h1 { color: #ff00aa; margin: 0 10px;\n"
+    "font: \"Fira Code\"; width: calc(100% - 4px) !important; } }\n",
+    { "cmt:/* c */", "kw:@media", "var:min-width", "type:a", "mac:b", "fn:hover", "type:h1",
+      "var:color", "num:#ff00aa", "num:10px", "str:\"Fira Code\"", "fn:calc", "kw:!important", NULL } },
+  { IDE_TS_LANG_HTML,
+    "<!DOCTYPE html>\n<!-- c -->\n<div class=\"a\" id=b><p>Hello &amp; <b>x</b></p><br/></div>\n",
+    { "kw:DOCTYPE html", "cmt:<!-- c -->", "type:div", "var:class", "str:\"a\"", "var:id", "str:b",
+      "type:p", "mac:&amp;", "type:br", NULL } },
+};
+
+static void
+test_query_languages(void)
+{
+  for (gsize i = 0; i < G_N_ELEMENTS(kLangCases); i++) {
+    const LangCase *c = &kLangCases[i];
+    if (!ide_ts_lang_available(c->lang)) {
+      continue;
+    }
+    g_autofree char *log = tokens_of(c->lang, c->source);
+    for (gsize k = 0; c->expect[k] != NULL; k++) {
+      if (strstr(log, c->expect[k]) == NULL) {
+        g_error("[%s] missing token '%s' in:\n%s", ide_ts_lang_name(c->lang), c->expect[k], log);
+      }
+    }
+  }
+}
+
+/* Appending a line and inserting a blank line must re-parse to exactly the
+ * tokens of a fresh parse, for every language. */
+static void
+test_incremental_all_languages(void)
+{
+  for (gsize i = 0; i < G_N_ELEMENTS(kLangCases); i++) {
+    const LangCase *c = &kLangCases[i];
+    if (!ide_ts_lang_available(c->lang)) {
+      continue;
+    }
+    const char *nl = strchr(c->source, '\n');
+    g_assert_nonnull(nl);
+    g_autofree char *edited = g_strdup_printf("%.*s\n\n%s\n", (int)(nl - c->source), c->source, nl + 1);
+    check_incremental(c->lang, c->source, edited);
+  }
+}
+
+/* Detection by path, base name and bare language id. */
+static void
+test_extended_detection(void)
+{
+  struct { const char *path; IdeTsLang lang; } cases[] = {
+    { "/x/a.cpp", IDE_TS_LANG_CPP }, { "b.hpp", IDE_TS_LANG_CPP }, { "c++", IDE_TS_LANG_CPP },
+    { "lib.rs", IDE_TS_LANG_RUST }, { "run.sh", IDE_TS_LANG_BASH }, { "/p/PKGBUILD", IDE_TS_LANG_BASH },
+    { ".zshrc", IDE_TS_LANG_BASH }, { "a.js", IDE_TS_LANG_JAVASCRIPT }, { "a.jsx", IDE_TS_LANG_JAVASCRIPT },
+    { "a.ts", IDE_TS_LANG_TYPESCRIPT }, { "a.tsx", IDE_TS_LANG_TSX }, { "a.json", IDE_TS_LANG_JSON },
+    { "Cargo.toml", IDE_TS_LANG_TOML }, { "a.yml", IDE_TS_LANG_YAML }, { "a.css", IDE_TS_LANG_CSS },
+    { "index.html", IDE_TS_LANG_HTML }, { "init.lua", IDE_TS_LANG_LUA }, { "yaml", IDE_TS_LANG_YAML },
+    { "README.md", IDE_TS_LANG_NONE }, { "notes.txt", IDE_TS_LANG_NONE }, { "Makefile", IDE_TS_LANG_NONE },
+  };
+  for (gsize i = 0; i < G_N_ELEMENTS(cases); i++) {
+    IdeTsLang want = ide_ts_lang_available(cases[i].lang) ? cases[i].lang : IDE_TS_LANG_NONE;
+    g_assert_cmpint(ide_ts_lang_for_path(cases[i].path), ==, want);
+  }
+}
+
+/* Every bundled highlight query must compile against the installed grammar. */
+static void
+test_queries_compile(void)
+{
+  for (int l = IDE_TS_LANG_C; l < IDE_TS_LANG_COUNT; l++) {
+    guint32 off = 0;
+    if (!ide_ts_query_check((IdeTsLang)l, &off)) {
+      const char *src = ide_ts_query_source((IdeTsLang)l);
+      g_error("query for %s invalid at byte %u: ...%.60s", ide_ts_lang_name((IdeTsLang)l), off,
+              src != NULL && off < strlen(src) ? src + off : "");
+    }
+  }
+}
+
 int
 main(int argc, char **argv)
 {
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/ide-ts/lang-detection", test_lang_detection);
+  g_test_add_func("/ide-ts/queries-compile", test_queries_compile);
+  g_test_add_func("/ide-ts/detection-extended", test_extended_detection);
+  g_test_add_func("/ide-ts/query-languages", test_query_languages);
+  g_test_add_func("/ide-ts/incremental-all", test_incremental_all_languages);
 
   if (ide_ts_lang_available(IDE_TS_LANG_JAVA)) {
     g_test_add_func("/ide-ts/java", test_java_tokens);

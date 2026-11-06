@@ -18,6 +18,19 @@ typedef enum {
   IDE_TS_LANG_C,
   IDE_TS_LANG_JAVA,
   IDE_TS_LANG_GO,
+  IDE_TS_LANG_CPP,
+  IDE_TS_LANG_RUST,
+  IDE_TS_LANG_BASH,
+  IDE_TS_LANG_JAVASCRIPT,
+  IDE_TS_LANG_TYPESCRIPT,
+  IDE_TS_LANG_TSX,
+  IDE_TS_LANG_JSON,
+  IDE_TS_LANG_TOML,
+  IDE_TS_LANG_YAML,
+  IDE_TS_LANG_CSS,
+  IDE_TS_LANG_HTML,
+  IDE_TS_LANG_LUA,
+  IDE_TS_LANG_COUNT
 } IdeTsLang;
 
 typedef enum {
@@ -38,6 +51,17 @@ typedef enum {
 typedef struct _IdeTsDoc IdeTsDoc;
 
 typedef void (*IdeTsTokenFunc)(gsize start_byte, gsize end_byte, IdeTsToken token, gpointer user_data);
+
+/* Query-driven languages carry their highlight rules as tree-sitter queries
+ * (ide_ts_queries.c). Returns the query source, or NULL for languages that use
+ * the hand-written classifier (C, Java, Go). */
+const char *ide_ts_query_source(IdeTsLang lang);
+
+/* Compiles the highlight query of `lang`; returns TRUE when the language has no
+ * query or it compiled cleanly. On failure *error_offset receives the byte
+ * offset into the query source. Used by tests to keep the bundled queries
+ * valid against the installed grammars. */
+gboolean    ide_ts_query_check(IdeTsLang lang, guint32 *error_offset);
 
 /* Maps a file path (or a bare language id such as "go") to a language that is
  * compiled in. Returns IDE_TS_LANG_NONE when unsupported or unavailable. */

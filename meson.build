@@ -375,7 +375,7 @@ ts_defs = []
 ts_link_deps = [ts_core_dep]
 if ts_core_dep.found()
   ts_defs += '-DHAVE_TREE_SITTER=1'
-  foreach lang : ['c', 'java', 'go']
+  foreach lang : ['c', 'java', 'go', 'cpp', 'rust', 'bash', 'javascript', 'typescript', 'tsx', 'json', 'toml', 'yaml', 'css', 'html', 'lua']
     lib = cc.find_library('tree-sitter-' + lang, required: false)
     if lib.found()
       ts_defs += '-DHAVE_TS_' + lang.to_upper() + '=1'
@@ -385,7 +385,7 @@ if ts_core_dep.found()
 endif
 ide_ts_lib = static_library(
   'kajo-ide-ts',
-  files('src/ide/ide_ts.c'),
+  files('src/ide/ide_ts.c', 'src/ide/ide_ts_queries.c'),
   dependencies: [gio_dep] + ts_link_deps,
   c_args: ts_defs,
 )

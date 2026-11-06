@@ -143,6 +143,17 @@ sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-pro
     udisks2 blueprint-compiler meson ninja
 ```
 
+**Tree-sitter syntax engine** for `kajo-ide` (incremental parsing, AST-based highlighting). The runtime comes from the official repositories; the grammars are split between the official/CachyOS repositories and the AUR (use `paru` or `yay`):
+```bash
+# official / CachyOS repositories
+sudo pacman -S --needed tree-sitter tree-sitter-c tree-sitter-bash tree-sitter-javascript \
+    tree-sitter-lua tree-sitter-rust
+# AUR
+paru -S --needed tree-sitter-cpp tree-sitter-css tree-sitter-go tree-sitter-html \
+    tree-sitter-java tree-sitter-json tree-sitter-toml tree-sitter-typescript tree-sitter-yaml
+```
+Every grammar is optional at build time: `meson setup` links the ones it finds (`tree-sitter-<lang>`; `tree-sitter-typescript` provides TypeScript and TSX) and `kajo-ide` falls back to its built-in heuristic lexer for any language whose grammar is missing. Install all of them for full highlighting of C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, JSON, TOML, YAML, CSS and HTML.
+
 Optional runtime tools for **`kajo-ide`** language intelligence, search, and debugging:
 ```bash
 sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve

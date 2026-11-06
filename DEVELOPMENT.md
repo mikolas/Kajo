@@ -48,7 +48,8 @@ src/
 │   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
 │   ├── ide_buffer.h/c              IdeBuffer, text objects, Git diff & Agent snapshots, scheme search paths
 │   ├── ide_syntax.c                11-token semantic highlighter (ide_highlight_source_buffer); tree-sitter path + heuristic lexer fallback
-│   ├── ide_ts.c / ide_ts.h         Tree-sitter engine (C, Java, Go): incremental parse, AST token classification (no GTK)
+│   ├── ide_ts.c / ide_ts.h         Tree-sitter engine: incremental parse, AST classification (C/Java/Go) + query layer (no GTK)
+│   ├── ide_ts_queries.c            Highlight queries for C++, Rust, Bash, JS/TS/TSX, Lua, JSON, TOML, YAML, CSS, HTML
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
 │   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 85-command Help Palette
@@ -135,7 +136,7 @@ tests/
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
-├── test_ide_ts.c                   Tree-sitter engine: Java/Go/C token classification, incremental == fresh parse
+├── test_ide_ts.c                   Tree-sitter engine: token classification for all 15 languages, query validity against the installed grammars, detection, incremental == fresh parse
 ├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
 ├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, socket round-trip & stalled-client tests
 ├── test_niri.c                     Mock-Niri socket: action JSON shape, rejection logging, EventStream parsing
@@ -154,9 +155,14 @@ tests/
 - `pam` (`libpam`)
 - `poppler-glib`, `libarchive`
 - `blueprint-compiler`, `meson`, `ninja`
+- Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
+  - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
+  - AUR: `tree-sitter-cpp`, `tree-sitter-css`, `tree-sitter-go`, `tree-sitter-html`, `tree-sitter-java`, `tree-sitter-json`, `tree-sitter-toml`, `tree-sitter-typescript` (also provides TSX), `tree-sitter-yaml`
+  - `meson.build` probes `tree-sitter` via pkg-config and each `libtree-sitter-<lang>` via `find_library()` (several grammars ship no header or `.pc` file, so their entry points are declared in `src/ide/ide_ts.c`). A missing grammar only disables that language's tree-sitter path.
+  - Highlight rules for the query-driven languages live in `src/ide/ide_ts_queries.c`; the `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 16 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 17 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -165,7 +171,7 @@ meson setup builddir
 # Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 16 automated GTest suites
+# Run all 17 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
