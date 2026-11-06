@@ -475,6 +475,16 @@ static void test_lsp_server_registry(void) {
   g_assert_cmpstr(ide_lsp_language_id_for_file("/w/A.java"), ==, "java");
   g_assert_cmpstr(ide_lsp_language_id_for_file("/w/a.tsx"), ==, "typescriptreact");
   g_assert_cmpstr(ide_lsp_language_id_for_file("/w/readme.txt"), ==, "plaintext");
+  {
+    /* .h is C unless C++ sources sit next to it */
+    g_autofree char *hd = g_dir_make_tmp("kajo-hdr-XXXXXX", NULL);
+    g_autofree char *h = g_build_filename(hd, "a.h", NULL);
+    g_file_set_contents(h, "", -1, NULL);
+    g_assert_cmpstr(ide_lsp_language_id_for_file(h), ==, "c");
+    g_autofree char *cc = g_build_filename(hd, "a.cpp", NULL);
+    g_file_set_contents(cc, "", -1, NULL);
+    g_assert_cmpstr(ide_lsp_language_id_for_file(h), ==, "cpp");
+  }
   g_assert_null(ide_lsp_server_spec_for_file("/w/readme.txt"));
 
   /* project root = nearest ancestor with a marker, bounded by the workspace */

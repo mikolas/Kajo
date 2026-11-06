@@ -265,7 +265,7 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 | :--- | :--- | :--- | :--- |
 | **Go** | `.go` | `gopls` | `go.mod` root; formats with `gofmt` rules |
 | **Java** | `.java` | `jdtls` | per-project data dir `~/.cache/kajo/jdtls/<hash>`; started with the **newest installed JDK** (`JAVA_HOME`, `~/.sdkman`, `/usr/lib/jvm`), override with `KAJO_JDTLS_JAVA=/path/to/bin/java` |
-| **C / C++** | `.c .h .cpp .hpp .cc` | `clangd` | uses `builddir/` / `build/` `compile_commands.json` automatically |
+| **C / C++** | `.c .h .cpp .hpp .cc` | `clangd` | uses `builddir/` / `build/` `compile_commands.json` automatically; a `.h` is sent as C++ when C++ sources sit next to it |
 | **Rust** | `.rs` | `rust-analyzer` | `Cargo.toml` root |
 | **Python** | `.py` | `pyright-langserver` | |
 | **TypeScript / JavaScript** | `.ts .tsx .js .jsx` | `typescript-language-server` | |
@@ -296,9 +296,9 @@ Call hierarchy (`Space g c` shows a notice), references list, signature help, se
 | :--- | :--- | :--- | :--- | :--- |
 | **Maven** (`pom.xml`, `./mvnw` if present) | `mvn -B -ntp compile` | `mvn -B -ntp test` | compile, then `java -cp target/classes <package.Class of the active file>` | `clean` |
 | **Gradle** (`build.gradle[.kts]`, `./gradlew` if present) | `gradle --console=plain classes` | `test` | compile, then `java -cp build/classes/java/main <package.Class>` | `clean` |
-| **Meson** (`meson.build`) | `meson setup` if needed + `meson compile -C builddir` | + `meson test --print-errorlogs` | — | `--clean` |
-| **CMake** (`CMakeLists.txt`) | configure into `build/` (exports `compile_commands.json`) + `cmake --build build` | + `ctest --output-on-failure` | — | `--target clean` |
-| **Cargo** / **Go** / **Make** | `cargo build` / `go build ./...` / `make` | `cargo test` / `go test ./...` / `make test` | `cargo run` / `go run <package of the active file>` / `make run` | `clean` |
+| **Meson** (`meson.build`) | `meson setup` if needed + `meson compile -C builddir` | + `meson test --print-errorlogs` | build, then run the executable that owns the active file (from `meson-info/intro-targets.json`) | `--clean` |
+| **CMake** (`CMakeLists.txt`) | configure into `build/` (`Debug`, exports `compile_commands.json` for clangd) + `cmake --build build` | + `ctest --output-on-failure` | build, then run the newest executable under `build/` (the first run only builds and says so) | `--target clean` |
+| **Cargo** / **Go** / **Make** | `cargo build` / `go build ./...` / `make` | `cargo test` / `go test ./...` / `make test` | `cargo run` / `go run <package of the active file>` / `make` then `./<same-named binary>` (else `make run`) | `clean` |
 | *no build file, `.java` file* | `javac -d $TMP/kajo-java-out File.java` | — | `java File.java` | — |
 
 For Java the language server and the build see the same project root, so a Maven/Gradle project that `jdtls` imported compiles with the exact same module layout. Run tasks have no stdin; interactive programs are not supported yet.

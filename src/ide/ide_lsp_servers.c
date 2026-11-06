@@ -94,11 +94,33 @@ ide_lsp_server_spec_for_file(const char *file_path)
   return r != NULL ? r->spec : NULL;
 }
 
+/* A header is C++ when C++ sources live beside it (`.h` is ambiguous). */
+static gboolean
+dir_has_cxx_sources(const char *file_path)
+{
+  g_autofree char *dir = g_path_get_dirname(file_path);
+  g_autoptr(GDir) d = g_dir_open(dir, 0, NULL);
+  const char *name;
+  while (d != NULL && (name = g_dir_read_name(d)) != NULL) {
+    if (g_str_has_suffix(name, ".cpp") || g_str_has_suffix(name, ".cc") || g_str_has_suffix(name, ".cxx") ||
+        g_str_has_suffix(name, ".hpp") || g_str_has_suffix(name, ".hh")) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 const char *
 ide_lsp_language_id_for_file(const char *file_path)
 {
   const FileRule *r = rule_for(file_path);
-  return r != NULL ? r->language_id : "plaintext";
+  if (r == NULL) {
+    return "plaintext";
+  }
+  if (g_str_has_suffix(file_path, ".h") && dir_has_cxx_sources(file_path)) {
+    return "cpp";
+  }
+  return r->language_id;
 }
 
 char *

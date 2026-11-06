@@ -1,4 +1,5 @@
 #include "ide_tasks.h"
+#include "ide_native_exe.h"
 
 #include <string.h>
 
@@ -190,17 +191,33 @@ ide_task_resolve(const char *workspace_root, const char *active_file, IdeTaskKin
         case IDE_TASK_BUILD: return task_new("Meson", what[kind], dir, g_strdup_printf("%s && meson compile -C %s", setup, bd));
         case IDE_TASK_TEST:  return task_new("Meson", what[kind], dir, g_strdup_printf("%s && meson compile -C %s && meson test -C %s --print-errorlogs", setup, bd, bd));
         case IDE_TASK_CLEAN: return task_new("Meson", what[kind], dir, g_strdup_printf("meson compile -C %s --clean", bd));
-        case IDE_TASK_RUN:   return NULL;
+        case IDE_TASK_RUN: {
+          g_autofree char *exe = ide_find_native_executable(dir, active_file);
+          if (exe == NULL) {
+            return task_new("Meson", "build (no executable built yet; run again)", dir,
+                            g_strdup_printf("%s && meson compile -C %s", setup, bd));
+          }
+          g_autofree char *q = g_shell_quote(exe);
+          return task_new("Meson", what[kind], dir, g_strdup_printf("%s && meson compile -C %s && %s", setup, bd, q));
+        }
       }
       break;
     }
     case SYS_CMAKE: {
-      g_autofree char *cfg = g_strdup("[ -f build/CMakeCache.txt ] || cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
+      g_autofree char *cfg = g_strdup("[ -f build/CMakeCache.txt ] || cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_EXPORT_COMPILE_COMMANDS=ON");
       switch (kind) {
         case IDE_TASK_BUILD: return task_new("CMake", what[kind], dir, g_strdup_printf("%s && cmake --build build", cfg));
         case IDE_TASK_TEST:  return task_new("CMake", what[kind], dir, g_strdup_printf("%s && cmake --build build && ctest --test-dir build --output-on-failure", cfg));
         case IDE_TASK_CLEAN: return task_new("CMake", what[kind], dir, g_strdup("cmake --build build --target clean"));
-        case IDE_TASK_RUN:   return NULL;
+        case IDE_TASK_RUN: {
+          g_autofree char *exe = ide_find_native_executable(dir, active_file);
+          if (exe == NULL) {
+            return task_new("CMake", "build (no executable built yet; run again)", dir,
+                            g_strdup_printf("%s && cmake --build build", cfg));
+          }
+          g_autofree char *q = g_shell_quote(exe);
+          return task_new("CMake", what[kind], dir, g_strdup_printf("%s && cmake --build build && %s", cfg, q));
+        }
       }
       break;
     }
@@ -234,7 +251,14 @@ ide_task_resolve(const char *workspace_root, const char *active_file, IdeTaskKin
       switch (kind) {
         case IDE_TASK_BUILD: return task_new("Make", what[kind], dir, g_strdup("make"));
         case IDE_TASK_TEST:  return task_new("Make", what[kind], dir, g_strdup("make test"));
-        case IDE_TASK_RUN:   return task_new("Make", what[kind], dir, g_strdup("make run"));
+        case IDE_TASK_RUN: {
+          g_autofree char *exe = ide_find_native_executable(dir, active_file);
+          if (exe == NULL) {
+            return task_new("Make", what[kind], dir, g_strdup("make run"));
+          }
+          g_autofree char *q = g_shell_quote(exe);
+          return task_new("Make", what[kind], dir, g_strdup_printf("make && %s", q));
+        }
         case IDE_TASK_CLEAN: return task_new("Make", what[kind], dir, g_strdup("make clean"));
       }
       break;

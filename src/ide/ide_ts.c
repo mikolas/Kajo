@@ -563,9 +563,47 @@ classify_anonymous(IdeTsLang lang, const char *type, TSNode parent_node)
   return IDE_TS_TOKEN_NONE;
 }
 
+/* GLib scope-guard macros (g_autoptr(T) x, g_autofree char *p) are invisible to
+ * the C grammar, which then mis-parses the declaration. Color them as the
+ * declaration keywords they act as, and rescue builtin type names that the
+ * recovery turned into identifiers. */
+static gboolean
+is_c_scope_macro(const char *txt, gsize len)
+{
+  static const char *const kMacros[] = {
+    "g_autoptr", "g_autofree", "g_auto", "g_autolist", "g_autoslist", "g_autoqueue", NULL
+  };
+  for (gsize i = 0; kMacros[i] != NULL; i++) {
+    if (strlen(kMacros[i]) == len && strncmp(kMacros[i], txt, len) == 0) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
+static gboolean
+is_c_builtin_type_word(const char *txt, gsize len)
+{
+  static const char *const kTypes[] = {
+    "char", "int", "long", "short", "float", "double", "void", "unsigned", "signed", "bool", NULL
+  };
+  for (gsize i = 0; kTypes[i] != NULL; i++) {
+    if (strlen(kTypes[i]) == len && strncmp(kTypes[i], txt, len) == 0) {
+      return TRUE;
+    }
+  }
+  return FALSE;
+}
+
 static IdeTsToken
 classify_identifier_c(TSNode n, const char *type, const char *txt, gsize len)
 {
+  if (is_c_scope_macro(txt, len)) {
+    return IDE_TS_TOKEN_KEYWORD;
+  }
+  if (is_c_builtin_type_word(txt, len)) {
+    return IDE_TS_TOKEN_TYPE;
+  }
   TSNode parent = ts_node_parent(n);
   const char *ptype = ts_node_is_null(parent) ? "" : ts_node_type(parent);
 
@@ -859,7 +897,8 @@ visit_node(const WalkCtx *ctx, TSNode n)
       "boolean_type", "void_type", "predefined_type", NULL
     };
     if (type_in(type, kTypes)) {
-      EMIT(IDE_TS_TOKEN_TYPE);
+      EMIT(ctx->doc->lang == IDE_TS_LANG_C && is_c_scope_macro(txt, len) ? IDE_TS_TOKEN_KEYWORD
+                                                                          : IDE_TS_TOKEN_TYPE);
       return TRUE;
     }
 

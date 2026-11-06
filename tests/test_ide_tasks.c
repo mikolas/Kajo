@@ -83,7 +83,19 @@ test_native_and_go_projects(void)
   g_assert_cmpstr(t->system, ==, "Meson");
   g_assert_nonnull(strstr(t->command, "meson test -C builddir"));
   ide_task_free(t);
-  g_assert_null(ide_task_resolve(ws, c, IDE_TASK_RUN)); /* no generic run for Meson */
+  /* nothing built yet: RUN degrades to a build with a hint */
+  IdeTask *r0 = ide_task_resolve(ws, c, IDE_TASK_RUN);
+  g_assert_nonnull(r0);
+  g_assert_nonnull(strstr(r0->label, "no executable built yet"));
+  ide_task_free(r0);
+  /* with a built executable (ELF) next to the source, RUN builds then runs it */
+  touch(ws, "builddir/app", "\x7f" "ELF....");
+  g_autofree char *app = g_build_filename(ws, "builddir/app", NULL);
+  g_chmod(app, 0755);
+  IdeTask *r1 = ide_task_resolve(ws, c, IDE_TASK_RUN);
+  g_assert_nonnull(strstr(r1->command, "meson compile -C builddir && "));
+  g_assert_nonnull(strstr(r1->command, "builddir/app"));
+  ide_task_free(r1);
 
   g_autofree char *cm = make_ws();
   touch(cm, "CMakeLists.txt", "project(x)\n");

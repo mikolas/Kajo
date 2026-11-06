@@ -492,6 +492,15 @@ test_text_objects_c_rust_js_lua(void)
   ASSERT_OBJ(IDE_TS_LANG_C, "struct P { int x;@ int y; };\n", TRUE, 'c', "int x; int y;");
   /* a struct reference without a body is not a class object */
   ASSERT_OBJ(IDE_TS_LANG_C, "void f(struct P *@p) { }\n", TRUE, 'c', "<none>");
+  if (ide_ts_lang_available(IDE_TS_LANG_CPP)) {
+    IdeTsLang X = IDE_TS_LANG_CPP;
+    ASSERT_OBJ(X, "namespace n { class A { void f() { int x = 1@; } }; }\n", TRUE, 'f', "int x = 1;");
+    ASSERT_OBJ(X, "namespace n { class A { int v; void f() {} }; }\n@", FALSE, 'c', "<none>");
+    ASSERT_OBJ(X, "namespace n { class A { int v@; void f() {} }; }\n", TRUE, 'c', "int v; void f() {}");
+    ASSERT_OBJ(X, "namespace n { class A { int v@; void f() {} }; }\n", FALSE, 'c', "class A { int v; void f() {} }");
+    ASSERT_OBJ(X, "template <class T> T add(T a, T b@) { return a + b; }\n", FALSE, 'a', ", T b");
+    ASSERT_OBJ(X, "auto l = [](int a) { return a@ * 2; };\n", TRUE, 'f', "return a * 2;");
+  }
   ASSERT_OBJ(IDE_TS_LANG_RUST, "fn main() { let x = foo(1,@ 2); }\n", TRUE, 'f', "let x = foo(1, 2);");
   ASSERT_OBJ(IDE_TS_LANG_RUST, "struct S { a: i32 }\nimpl S { fn get(&self) -> i32 { self.a@ } }\n", TRUE, 'c',
              "fn get(&self) -> i32 { self.a }");
