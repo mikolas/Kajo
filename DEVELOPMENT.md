@@ -56,6 +56,10 @@ src/
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
 │   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)
+│   ├── ide_dap.h/c                 Debugger view: session state machine, call stack / locals / console panes
+│   ├── ide_dap_client.h/c          GTK-free async DAP client (adapter process or any GIO stream pair)
+│   ├── ide_dap_launch.h/c          Adapter + debuggee discovery (.kajo/debug.json, Meson introspection, Cargo, Delve)
+│   ├── ide_jsonrpc.h/c             Content-Length framing shared by the LSP and DAP clients
 │   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make) -> build/test/run/clean commands (no GTK)
 │   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)
 │   ├── ide_dap.h/c                 Debugger UI scaffold: transport buttons & 3-pane inspector (no adapter connected yet)
@@ -139,6 +143,8 @@ tests/
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
+├── test_dap_client.c               DAP client against tests/mock_dap_adapter.py + launch resolution
+├── mock_dap_adapter.py             Scripted debug adapter used by the DAP tests
 ├── test_ide_tasks.c                Task resolution per build system, nested projects, Java main-class, shell quoting
 ├── test_lsp_client.c               LSP client against tests/mock_lsp_server.py (handshake queueing, errors, cancel, server death)
 ├── mock_lsp_server.py              Scripted language server used by the LSP tests
@@ -200,6 +206,7 @@ meson install -C builddir
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
+| `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, stop, stack, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
 | `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition) and unit-tests text edits, snippets and the server registry. |
 | `ide-ts` | `test-ide-ts` | Tree-sitter token classification for Java, Go and C, language detection, incremental re-parse equals a fresh parse, error tolerance. |

@@ -12,6 +12,7 @@
 
 #include <gio/gio.h>
 #include <json-glib/json-glib.h>
+#include "ide_jsonrpc.h"
 
 G_BEGIN_DECLS
 
@@ -47,12 +48,6 @@ typedef JsonNode *(*IdeLspServerRequestCb)(IdeLspClient *client,
 typedef void (*IdeLspStateCb)(IdeLspClient     *client,
                               IdeLspClientState state,
                               gpointer          user_data);
-
-/* Pure framing helpers (also used by tests). */
-char *ide_jsonrpc_frame_message(const char *json_body);
-char *ide_jsonrpc_extract_body(const char *stream_buf,
-                               gsize       stream_len,
-                               gsize      *out_consumed_bytes);
 
 /* `argv` is NULL-terminated and copied. `root_path` becomes the workspace
  * folder / rootUri. `init_options` (optional, ownership transferred) is sent as

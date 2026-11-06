@@ -1,6 +1,7 @@
 #include "../src/ide/ide_agent_ipc.h"
 #include "../src/ide/ide_dap.h"
 #include "../src/ide/ide_lsp.h"
+#include "../src/ide/ide_dap_launch.h"
 #include "../src/ide/ide_markdown.h"
 #include <gio/gunixsocketaddress.h>
 #include <glib.h>

@@ -13,7 +13,7 @@
 1. **Tree-sitter Syntax Highlighting** — C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, JSON, TOML, YAML, CSS and HTML are parsed with Tree-sitter (incremental re-parse on every edit; only the changed region is re-tagged) and mapped onto the 11 semantic token classes of the active color scheme. Annotations, generics, records, methods vs. fields, constructors and calls are classified from the syntax tree rather than guessed. Other languages (Python, Makefile, meson.build, …) use the heuristic lexer. Grammars are optional build dependencies (see the README); a missing grammar degrades that language to the lexer.
 2. **Selection-First Modal Editing** — A deterministic 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) where motions highlight selections first and actions (`d`, `c`, `y`, `s`) operate on the active selection.
 3. **Nordic Keyboard Ergonomics** — First-class bindings for Finnish/Swedish keyboards (`ä` / `ö` diagnostic & hunk stepping, `m i/a` structural text objects that avoid Dead-Key / AltGr finger gymnastics, and `jk` fast-exit from `INSERT` mode) alongside standard desktop shortcuts (`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C/X/V/A`, `F1`, `F5`–`F12`).
-4. **Code Intelligence & Debugger UI** — a real asynchronous stdio LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, …) provides diagnostics, hover, completion, definition/implementation, rename, code actions and formatting (§8); the DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) is planned (§9, `ROADMAP.md`).
+4. **Code Intelligence & Debugger UI** — a real asynchronous stdio LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, …) provides diagnostics, hover, completion, definition/implementation, rename, code actions and formatting (§8); a real DAP client drives `gdb -i=dap`, `lldb-dap` and Delve (§9); Java debugging is planned (`ROADMAP.md`).
 5. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg` export.
 6. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers.
 
@@ -305,9 +305,23 @@ For Java the language server and the build see the same project root, so a Maven
 
 ---
 
-## 9. Debugger UI (`F5`–`F12`) — adapter integration planned
+## 9. Debugger (`F5`–`F12`, Debug Adapter Protocol)
 
-> **Status:** `src/ide/ide_dap.c` provides the debugger UI scaffold: breakpoint toggling, the transport buttons, the execution-line gutter marker and the three panes. **No debug adapter is spawned yet**; the stack and locals panes show placeholder rows derived from the breakpoints, and the REPL echoes input. Connecting `gdb -i=dap`, `lldb-dap` and `dlv dap` is on the roadmap.
+`kajo-ide` is a real DAP client (`src/ide/ide_dap_client.c`). `F5` / `Space d c` starts a session for the active file: it picks an adapter, launches the debuggee, sends the breakpoints of **all open buffers** and shows the stopped frame in the editor.
+
+| Language | Adapter | Debuggee discovery |
+| :--- | :--- | :--- |
+| **C / C++ / Rust** | `gdb -i=dap` (GDB 14+), else `lldb-dap` | Meson `meson-info/intro-targets.json` (the executable whose sources contain the file or its directory), Cargo `target/debug/<crate>`, `<file>` → `./<file basename>`, else the newest ELF in `builddir/`, `build/`, `bin/` |
+| **Go** | `dlv dap` (Delve; `go install github.com/go-delve/delve/cmd/dlv@latest`) | the package of the active file (`_test.go` runs in test mode) |
+| **Java** | needs the *java-debug* bundle for `jdtls` — see below | |
+
+Override discovery with `<workspace>/.kajo/debug.json`:
+
+```json
+{ "adapter": "gdb", "program": "builddir/kajo-ide", "args": ["--demo"], "cwd": "." }
+```
+
+Without any breakpoint, C/C++/Rust programs stop at the start of `main` so you can step. Build first (`Space r b`); there is no automatic build step before launching.
 
 | Key / Chord | Transport Button | Action |
 | :--- | :--- | :--- |
@@ -318,12 +332,12 @@ For Java the language server and the build see the same project root, so a Maven
 | **`F12`** | `↑ Step Out` | Step out of the current stack frame (`stepOut`) |
 | **`Shift+F5`** | `⏹ Stop` | Terminate the active debuggee session |
 
-When paused at a breakpoint or signal:
-1. The editor jumps to the active stack frame and highlights the execution line with an amber `▶` gutter indicator.
+When paused at a breakpoint, step or signal:
+1. The editor opens the active frame's file and highlights the execution line with an amber `▶` gutter indicator.
 2. The **`🐞 DEBUGGER (DAP)`** bottom drawer opens automatically with three synchronized panes:
-   - **Call Stack:** Click any stack frame to inspect its source location and local variables.
-   - **Local Scopes:** Inspect local variables, registers, and struct fields.
-   - **Debug Console / REPL:** Type expressions in the bottom entry box and press `Enter` to evaluate them via DAP `evaluate`.
+   - **Call Stack:** click a frame to jump to its source and load that frame's locals.
+   - **Locals:** the adapter's locals scope (`name : type = value`).
+   - **Debug Console / REPL:** adapter and program output; type an expression (for gdb: a GDB command or expression) and press `Enter` to run DAP `evaluate` in the selected frame (only while paused). Toggling a breakpoint (`F9`) during a session updates the adapter immediately.
 
 ---
 

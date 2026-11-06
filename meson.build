@@ -408,8 +408,11 @@ ide_sources = files(
   'src/ide/ide_tasks.c',
   'src/ide/ide_lsp.c',
   'src/ide/ide_lsp_client.c',
+  'src/ide/ide_jsonrpc.c',
   'src/ide/ide_lsp_servers.c',
   'src/ide/ide_dap.c',
+  'src/ide/ide_dap_client.c',
+  'src/ide/ide_dap_launch.c',
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
   'src/ide/ide_mermaid.c',
@@ -668,6 +671,14 @@ test_ide_buffer_exe = executable(
 )
 test('ide-buffer', test_ide_buffer_exe)
 
+test_dap_client_exe = executable(
+  'test-dap-client',
+  files('tests/test_dap_client.c', 'src/ide/ide_dap_client.c', 'src/ide/ide_dap_launch.c', 'src/ide/ide_jsonrpc.c'),
+  dependencies: [gio_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('dap-client', test_dap_client_exe, timeout: 60)
+
 test_ide_tasks_exe = executable(
   'test-ide-tasks',
   files('tests/test_ide_tasks.c', 'src/ide/ide_tasks.c'),
@@ -686,7 +697,7 @@ test('ide-ts', test_ide_ts_exe)
 
 test_lsp_client_exe = executable(
   'test-lsp-client',
-  files('tests/test_lsp_client.c', 'src/ide/ide_lsp_client.c'),
+  files('tests/test_lsp_client.c', 'src/ide/ide_lsp_client.c', 'src/ide/ide_jsonrpc.c'),
   dependencies: [gio_dep, json_glib_dep],
   build_by_default: false,
 )
@@ -698,8 +709,12 @@ test_ide_ipc_exe = executable(
     'tests/test_ide_ipc.c',
     'src/ide/ide_lsp.c',
     'src/ide/ide_lsp_client.c',
+    'src/ide/ide_jsonrpc.c',
     'src/ide/ide_lsp_servers.c',
     'src/ide/ide_dap.c',
+    'src/ide/ide_dap_client.c',
+    'src/ide/ide_dap_launch.c',
+    'src/ide/ide_jsonrpc.c',
     'src/ide/ide_agent_ipc.c',
     'src/ide/ide_markdown.c',
     'src/ide/ide_mermaid.c',

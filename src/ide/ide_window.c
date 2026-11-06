@@ -884,17 +884,51 @@ static void on_agent_status_cb(const char *badge_text,
   if (toast_msg && *toast_msg) ide_window_show_toast(self, toast_msg);
 }
 
+/* Open buffers' breakpoints for the debug adapter (setBreakpoints). */
+static GPtrArray *on_dap_breakpoints(gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  GPtrArray *sets = g_ptr_array_new_with_free_func(ide_dap_breakpoint_set_free);
+  for (guint i = 0; i < self->buffers->len; i++) {
+    IdeBuffer *b = g_ptr_array_index(self->buffers, i);
+    const char *path = ide_buffer_get_file_path(b);
+    if (!path) continue;
+    GArray *lines = ide_buffer_get_breakpoints(b);
+    if (!lines) continue;
+    IdeDapBreakpointSet *bs = g_new0(IdeDapBreakpointSet, 1);
+    bs->path = g_strdup(path);
+    bs->lines = lines;
+    g_ptr_array_add(sets, bs);
+  }
+  return sets;
+}
+
+/* Execution marker: show the stopped frame, clear the marker everywhere else. */
+static void on_dap_frame(const char *path, guint line_1based, gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  for (guint i = 0; i < self->buffers->len; i++)
+    ide_buffer_set_dap_pc_line(g_ptr_array_index(self->buffers, i), 0);
+  if (path) {
+    kajo_ide_window_open_path(self, path, line_1based, 1);
+    for (guint i = 0; i < self->buffers->len; i++) {
+      IdeBuffer *b = g_ptr_array_index(self->buffers, i);
+      const char *bp = ide_buffer_get_file_path(b);
+      if (bp && g_strcmp0(bp, path) == 0) ide_buffer_set_dap_pc_line(b, line_1based);
+    }
+  }
+  if (self->source_view) gtk_widget_queue_draw(self->source_view);
+}
+
 static void on_dap_action_cb(const char *action, gpointer user_data) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
   if (!self || !action) return;
   IdeAction act = { .type = IDE_ACTION_NONE };
   if (g_strcmp0(action, "continue") == 0)
     act.type = IDE_ACTION_DAP_CONTINUE;
-  else if (g_strcmp0(action, "step_over") == 0)
+  else if (g_strcmp0(action, "step_over") == 0 || g_strcmp0(action, "step-over") == 0)
     act.type = IDE_ACTION_DAP_STEP_OVER;
-  else if (g_strcmp0(action, "step_into") == 0)
+  else if (g_strcmp0(action, "step_into") == 0 || g_strcmp0(action, "step-into") == 0)
     act.type = IDE_ACTION_DAP_STEP_INTO;
-  else if (g_strcmp0(action, "step_out") == 0)
+  else if (g_strcmp0(action, "step_out") == 0 || g_strcmp0(action, "step-out") == 0)
     act.type = IDE_ACTION_DAP_STEP_OUT;
   else if (g_strcmp0(action, "stop") == 0)
     act.type = IDE_ACTION_DAP_STOP;
@@ -1425,6 +1459,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   self->search_drawer = ide_search_drawer_new(
       self->workspace_root, on_picker_open_file, NULL, self);
   self->dap = ide_dap_view_new(on_dap_action_cb, self);
+  ide_dap_view_set_context(self->dap, self->workspace_root, on_dap_breakpoints, on_dap_frame, NULL, self);
   self->agent_ipc = ide_agent_ipc_new(
       on_picker_open_file, on_agent_reload_cb, on_agent_status_cb, self);
   ide_agent_ipc_start_default(self->agent_ipc);

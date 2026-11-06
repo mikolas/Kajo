@@ -923,6 +923,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_DAP_TOGGLE_BREAKPOINT:
       if (buf) {
         ide_buffer_toggle_breakpoint(buf, cur_line);
+        ide_dap_view_breakpoints_changed(self->dap);
         gtk_widget_queue_draw(self->source_view);
       }
       break;
