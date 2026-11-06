@@ -334,11 +334,11 @@ External AI coding assistants can pair-program directly with a running `kajo-ide
 ### 12.1 `kajo-settings` $\rightarrow$ **Kajo IDE & Code**
 Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/pages/page_ide.c`) to configure:
 - **Syntax Color Scheme** (with 5 bundled `GtkSourceView-5` schemes in `data/ide/*.xml`):
-  1. **`kajo-metro-dark`** *(Default)* — Signature `#111111` charcoal background with `#0078d4` / `#00d8f0` cyan-blue accents.
-  2. **`kajo-tokyo-night`** — Deep indigo night palette (`#1a1b26`) with soft pastel syntax tokens.
-  3. **`kajo-catppuccin-mocha`** — Warm dark pastel theme (`#1e1e2e`) for extended coding sessions.
-  4. **`kajo-gruvbox-dark`** — High-contrast retro earth tones (`#1d2021`).
-  5. **`kajo-solarized-light`** — Daylight warm parchment (`#fdf6e3`) for bright environments.
+  1. **`kajo-metro-dark`** *(Default)* — Signature `#101010` charcoal background with `#569cd6` / `#c586c0` / `#dcdcaa` / `#4ec9b0` / `#9cdcfe` tokens.
+  2. **`kajo-oled-pitch`** — True `#050505` OLED pitch-black high-contrast neon palette.
+  3. **`kajo-nord-frost`** — Arctic Nord Frost dark palette (`#14171d`).
+  4. **`kajo-amber-crt`** — Retro monochrome amber phosphor CRT terminal palette (`#0c0900`).
+  5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
 - **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, etc.), font size (`8pt`–`28pt`), tab width (`2`, `4`, `8`), spaces vs. tabs, line number style (`Absolute`, `Relative`, `None`), current line highlight, right margin guide, word wrap, and minimap visibility.
 
 All changes written to `~/.config/kajo/ide.toml` are hot-reloaded instantaneously across all running `kajo-ide` windows via `GFileMonitor`.

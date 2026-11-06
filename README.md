@@ -56,7 +56,7 @@ The repository builds and installs **six integrated native executables** (plus a
 - **AI Agent JSON-RPC 2.0 IPC & Atomic Batch Diff Review**:
   - Exposes `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock` (`$KAJO_IDE_SOCKET`) so external AI agents can query buffers/diagnostics and apply edits while recording pre-agent snapshots for instant developer review (`Space d s`), accept-all (`Space d a`), or atomic revert (`Space d r`).
 - **5 Bundled Syntax Schemes & Live Font Zoom**:
-  - Ships with `kajo-metro-dark`, `kajo-tokyo-night`, `kajo-catppuccin-mocha`, `kajo-gruvbox-dark`, and `kajo-solarized-light` (`data/ide/*.xml`), plus live `Ctrl++` / `Ctrl+-` / `Ctrl+0` font zoom and hot-reload via `kajo-settings`.
+  - Ships with `kajo-metro-dark`, `kajo-oled-pitch`, `kajo-nord-frost`, `kajo-amber-crt`, and `kajo-monokai-metro` (`data/ide/*.xml`), plus live `Ctrl++` / `Ctrl+-` / `Ctrl+0` font zoom and hot-reload via `kajo-settings`.
 
 ---
 
