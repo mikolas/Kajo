@@ -957,7 +957,10 @@ static void on_hdr_build_clicked(GtkButton *b, gpointer d) {
   (void)b;
   KajoIdeWindow *self = KAJO_IDE_WINDOW(d);
   ide_window_show_drawer_page(self, "search");
-  ide_search_drawer_run_build(self->search_drawer);
+  {
+    IdeBuffer *abuf = ide_window_get_active_buffer(self);
+    ide_search_drawer_run_task(self->search_drawer, 0, abuf ? ide_buffer_get_file_path(abuf) : NULL);
+  }
 }
 
 static void on_hdr_float_clicked(GtkButton *b, gpointer d) {

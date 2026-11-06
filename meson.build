@@ -405,6 +405,7 @@ ide_sources = files(
   'src/ide/ide_tree.c',
   'src/ide/ide_picker.c',
   'src/ide/ide_search.c',
+  'src/ide/ide_tasks.c',
   'src/ide/ide_lsp.c',
   'src/ide/ide_lsp_client.c',
   'src/ide/ide_lsp_servers.c',
@@ -659,12 +660,21 @@ test_ide_buffer_exe = executable(
     'src/ide/ide_tree.c',
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',
+    'src/ide/ide_tasks.c',
     'src/ide/ide_fsm.c',
   ),
   dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, m_dep, ide_ts_dep],
   build_by_default: false,
 )
 test('ide-buffer', test_ide_buffer_exe)
+
+test_ide_tasks_exe = executable(
+  'test-ide-tasks',
+  files('tests/test_ide_tasks.c', 'src/ide/ide_tasks.c'),
+  dependencies: [gio_dep],
+  build_by_default: false,
+)
+test('ide-tasks', test_ide_tasks_exe)
 
 test_ide_ts_exe = executable(
   'test-ide-ts',
@@ -698,6 +708,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_syntax.c',
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',
+    'src/ide/ide_tasks.c',
   ),
   dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, poppler_dep, archive_dep, m_dep, ide_ts_dep],
   build_by_default: false,

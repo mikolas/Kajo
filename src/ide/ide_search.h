@@ -49,6 +49,9 @@ void             ide_search_drawer_set_workspace_root(IdeSearchDrawer *drawer,
 
 void             ide_search_drawer_show_build_output(IdeSearchDrawer *drawer);
 void             ide_search_drawer_run_build(IdeSearchDrawer *drawer);
+/* kind: IdeTaskKind (build / test / run / clean) of `ide_tasks.h`; active_file
+ * selects the project and, for run, the main class / package. */
+void             ide_search_drawer_run_task(IdeSearchDrawer *drawer, int kind, const char *active_file);
 void             ide_search_drawer_append_output_line(IdeSearchDrawer *drawer,
                                                       const char      *line);
 

@@ -1,4 +1,5 @@
 #include "ide_search.h"
+#include "ide_tasks.h"
 
 #include <string.h>
 
@@ -35,6 +36,8 @@ struct _IdeSearchDrawer {
 
   GPtrArray        *build_issues;
   gint              selected_issue_idx;
+  char             *task_label;  /* BUILD / TEST / RUN / CLEAN of the last task */
+  char             *parse_root;  /* cwd of the last task: base for relative paths */
 };
 
 void
@@ -113,6 +116,31 @@ ide_parse_compiler_error_line(const char *workspace_root,
 {
   if (raw_line == NULL || raw_line[0] == '\0') {
     return NULL;
+  }
+
+  /* Maven + javac: "[ERROR] /abs/App.java:[15,25] incompatible types: ..." */
+  static GRegex *s_mvn = NULL;
+  if (s_mvn == NULL) {
+    s_mvn = g_regex_new("^\\[(ERROR|WARNING|INFO)\\]\\s+(\\S.*?\\.java):\\[(\\d+),(\\d+)\\]\\s*(.*)$",
+                        G_REGEX_OPTIMIZE, 0, NULL);
+  }
+  g_autoptr(GMatchInfo) mvn_mi = NULL;
+  if (s_mvn != NULL && g_regex_match(s_mvn, raw_line, 0, &mvn_mi)) {
+    g_autofree char *sev = g_match_info_fetch(mvn_mi, 1);
+    g_autofree char *file = g_match_info_fetch(mvn_mi, 2);
+    g_autofree char *ln = g_match_info_fetch(mvn_mi, 3);
+    g_autofree char *col = g_match_info_fetch(mvn_mi, 4);
+    g_autofree char *msg = g_match_info_fetch(mvn_mi, 5);
+    IdeBuildIssue *iss = g_new0(IdeBuildIssue, 1);
+    iss->file_path = (g_path_is_absolute(file) || workspace_root == NULL)
+                         ? g_canonicalize_filename(file, NULL)
+                         : g_canonicalize_filename(file, workspace_root);
+    iss->line_1based = (guint)MAX(1, g_ascii_strtoll(ln, NULL, 10));
+    iss->col_1based = (guint)MAX(1, g_ascii_strtoll(col, NULL, 10));
+    iss->severity = g_strcmp0(sev, "ERROR") == 0 ? IDE_DIAG_ERROR
+                    : g_strcmp0(sev, "WARNING") == 0 ? IDE_DIAG_WARNING : IDE_DIAG_INFO;
+    iss->message = g_strdup(msg[0] ? msg : raw_line);
+    return iss;
   }
 
   /* Match GCC / Clang / Rust / Go format: "path/to/file.c:142:5: error: msg" */
@@ -424,6 +452,8 @@ ide_search_drawer_free(IdeSearchDrawer *drawer)
   g_clear_object(&drawer->build_proc);
   g_clear_object(&drawer->build_cancel);
   g_free(drawer->workspace_root);
+  g_free(drawer->task_label);
+  g_free(drawer->parse_root);
   g_clear_pointer(&drawer->build_issues, g_ptr_array_unref);
   g_clear_object(&drawer->diff_buf);
   g_free(drawer);
@@ -459,7 +489,8 @@ ide_search_drawer_append_output_line(IdeSearchDrawer *drawer, const char *line)
     return;
   }
 
-  IdeBuildIssue *iss = ide_parse_compiler_error_line(drawer->workspace_root, line);
+  IdeBuildIssue *iss = ide_parse_compiler_error_line(
+      drawer->parse_root ? drawer->parse_root : drawer->workspace_root, line);
   GtkWidget *row = gtk_list_box_row_new();
   gtk_widget_add_css_class(row, "widget-row-card");
 
@@ -525,11 +556,25 @@ on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
   g_clear_object(&drawer->build_cancel);
 
   g_autofree char *merged = g_strconcat(out_str ? out_str : "", "\n", err_str ? err_str : "", NULL);
-  g_auto(GStrv) lines = g_strsplit(merged, "\n", 200);
+  /* Keep every diagnostic line but only the tail of plain output: Maven and
+   * Gradle print hundreds of lines before the errors that matter. */
+  g_auto(GStrv) lines = g_strsplit(merged, "\n", -1);
+  gsize n_lines = g_strv_length(lines);
+  gsize tail_from = n_lines > 400 ? n_lines - 400 : 0;
   guint err_count = 0;
   for (gsize i = 0; lines[i] != NULL; i++) {
-    if (lines[i][0] != '\0') {
+    if (lines[i][0] == '\0') {
+      continue;
+    }
+    if (i >= tail_from) {
       ide_search_drawer_append_output_line(drawer, lines[i]);
+    } else {
+      IdeBuildIssue *early = ide_parse_compiler_error_line(
+          drawer->parse_root ? drawer->parse_root : drawer->workspace_root, lines[i]);
+      if (early != NULL) {
+        ide_build_issue_free(early);
+        ide_search_drawer_append_output_line(drawer, lines[i]);
+      }
     }
   }
   for (guint i = 0; i < drawer->build_issues->len; i++) {
@@ -540,8 +585,9 @@ on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
   }
 
   g_autofree char *btxt = (wait_status == 0)
-                              ? g_strdup("✓ BUILD OK")
-                              : g_strdup_printf("✖ %u ERRORS", err_count);
+                              ? g_strdup_printf("✓ %s OK", drawer->task_label ? drawer->task_label : "BUILD")
+                              : (err_count > 0 ? g_strdup_printf("✖ %u ERRORS", err_count)
+                                               : g_strdup_printf("✖ FAILED (exit %d)", wait_status));
   gtk_label_set_text(GTK_LABEL(drawer->build_badge), btxt);
 
   if (drawer->build_issues->len > 0) {
@@ -554,7 +600,7 @@ on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
 }
 
 void
-ide_search_drawer_run_build(IdeSearchDrawer *drawer)
+ide_search_drawer_run_task(IdeSearchDrawer *drawer, int kind, const char *active_file)
 {
   g_return_if_fail(drawer != NULL);
   ide_search_drawer_show_build_output(drawer);
@@ -567,23 +613,18 @@ ide_search_drawer_run_build(IdeSearchDrawer *drawer)
   }
   g_ptr_array_set_size(drawer->build_issues, 0);
 
-  /* Auto-detect build system in workspace_root */
   const char *root = drawer->workspace_root ? drawer->workspace_root : ".";
-  g_autofree char *meson_f = g_build_filename(root, "meson.build", NULL);
-  g_autofree char *cargo_f = g_build_filename(root, "Cargo.toml", NULL);
-  g_autofree char *gomod_f = g_build_filename(root, "go.mod", NULL);
-
-  const char *cmd = "make";
-  if (g_file_test(meson_f, G_FILE_TEST_EXISTS)) {
-    cmd = "meson compile -C builddir";
-  } else if (g_file_test(cargo_f, G_FILE_TEST_EXISTS)) {
-    cmd = "cargo check";
-  } else if (g_file_test(gomod_f, G_FILE_TEST_EXISTS)) {
-    cmd = "go build ./...";
+  IdeTask *task = ide_task_resolve(root, active_file, (IdeTaskKind)kind);
+  if (task == NULL) {
+    static const char *const kNames[] = { "build", "test", "run", "clean" };
+    g_autofree char *msg = g_strdup_printf("No %s task for this project", kNames[CLAMP(kind, 0, 3)]);
+    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "ℹ NO TASK");
+    ide_search_drawer_append_output_line(drawer, msg);
+    return;
   }
 
-  /* Run the build without blocking the GTK main loop: a long `meson compile`
-   * or `cargo check` previously froze the whole IDE until it finished. */
+  /* Run without blocking the GTK main loop: a long `mvn test` or
+   * `cargo check` must not freeze the IDE. */
   if (drawer->build_cancel != NULL) {
     g_cancellable_cancel(drawer->build_cancel);
   }
@@ -595,22 +636,36 @@ ide_search_drawer_run_build(IdeSearchDrawer *drawer)
 
   g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
       G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE);
-  g_subprocess_launcher_set_cwd(launcher, root);
+  g_subprocess_launcher_set_cwd(launcher, task->cwd);
+  g_free(drawer->task_label);
+  static const char *const kBadge[] = { "BUILD", "TEST", "RUN", "CLEAN" };
+  drawer->task_label = g_strdup(kBadge[CLAMP(kind, 0, 3)]);
+  /* paths in compiler output are relative to the task's working directory */
+  g_free(drawer->parse_root);
+  drawer->parse_root = g_strdup(task->cwd);
+
   g_autoptr(GError) err = NULL;
-  drawer->build_proc = g_subprocess_launcher_spawn(launcher, &err, "sh", "-c", cmd, NULL);
+  drawer->build_proc = g_subprocess_launcher_spawn(launcher, &err, "sh", "-c", task->command, NULL);
   if (drawer->build_proc == NULL) {
-    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "✖ BUILD FAILED TO START");
+    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "✖ FAILED TO START");
     ide_search_drawer_append_output_line(drawer, err != NULL ? err->message : "spawn failed");
+    ide_task_free(task);
     return;
   }
 
-  gtk_label_set_text(GTK_LABEL(drawer->build_badge), "⟳ BUILDING…");
+  g_autofree char *badge = g_strdup_printf("⟳ %s…", task->label);
+  gtk_label_set_text(GTK_LABEL(drawer->build_badge), badge);
+  ide_search_drawer_append_output_line(drawer, task->command);
+  ide_task_free(task);
   drawer->build_cancel = g_cancellable_new();
-  g_subprocess_communicate_utf8_async(drawer->build_proc,
-                                      NULL,
-                                      drawer->build_cancel,
-                                      on_build_finished,
-                                      drawer);
+  g_subprocess_communicate_utf8_async(drawer->build_proc, NULL, drawer->build_cancel,
+                                      on_build_finished, drawer);
+}
+
+void
+ide_search_drawer_run_build(IdeSearchDrawer *drawer)
+{
+  ide_search_drawer_run_task(drawer, IDE_TASK_BUILD, NULL);
 }
 
 void

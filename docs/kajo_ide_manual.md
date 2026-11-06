@@ -198,6 +198,7 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 | `Space c a` | LSP | Code actions (quick fix / refactor) at the cursor or selection |
 | `Space c r` | LSP | Rename symbol across the workspace via the language server |
 | `Space c f` | LSP | Format current buffer via the language server |
+| `Space r b` / `r t` / `r r` / `r c` | Tasks | **Build** / **Test** / **Run** / **Clean** the project that owns the active file (output and clickable errors in the bottom *SEARCH / BUILD* drawer; modified buffers are saved first) |
 | `Space g c` | LSP | *(planned)* Call hierarchy — chord is bound, shows a notice |
 | `Space x x` | Diagnostics | Open **Workspace Diagnostics Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
@@ -284,6 +285,23 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 
 ### Limits / not yet implemented
 Call hierarchy (`Space g c` shows a notice), references list, signature help, semantic tokens (highlighting stays tree-sitter based), incremental text sync (full-document sync is used), and the DAP client (§9).
+
+---
+
+## 8b. Project Tasks (Build / Test / Run / Clean)
+
+`Space r b|t|r|c` (also the **▶ BUILD** header button and the command palette *TASKS* category) resolve the build system from the **active file**: the nearest ancestor directory that holds a build file, never above the workspace. Commands run asynchronously with `sh -c` in that directory and their output lands in the bottom drawer; compiler diagnostics (`gcc`/`clang`, `javac`, Maven `[ERROR] File.java:[line,col]`, Gradle, `go`, `rustc`) become clickable rows that jump to the location.
+
+| Build system (marker) | Build | Test | Run | Clean |
+| :--- | :--- | :--- | :--- | :--- |
+| **Maven** (`pom.xml`, `./mvnw` if present) | `mvn -B -ntp compile` | `mvn -B -ntp test` | compile, then `java -cp target/classes <package.Class of the active file>` | `clean` |
+| **Gradle** (`build.gradle[.kts]`, `./gradlew` if present) | `gradle --console=plain classes` | `test` | compile, then `java -cp build/classes/java/main <package.Class>` | `clean` |
+| **Meson** (`meson.build`) | `meson setup` if needed + `meson compile -C builddir` | + `meson test --print-errorlogs` | — | `--clean` |
+| **CMake** (`CMakeLists.txt`) | configure into `build/` (exports `compile_commands.json`) + `cmake --build build` | + `ctest --output-on-failure` | — | `--target clean` |
+| **Cargo** / **Go** / **Make** | `cargo build` / `go build ./...` / `make` | `cargo test` / `go test ./...` / `make test` | `cargo run` / `go run <package of the active file>` / `make run` | `clean` |
+| *no build file, `.java` file* | `javac -d $TMP/kajo-java-out File.java` | — | `java File.java` | — |
+
+For Java the language server and the build see the same project root, so a Maven/Gradle project that `jdtls` imported compiles with the exact same module layout. Run tasks have no stdin; interactive programs are not supported yet.
 
 ---
 

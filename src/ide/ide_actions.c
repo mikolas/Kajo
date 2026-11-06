@@ -728,6 +728,23 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_LSP_RENAME:
       if (buf) ide_lsp_manager_rename_begin(self->lsp, self->source_view, buf);
       break;
+    case IDE_ACTION_TASK_BUILD:
+    case IDE_ACTION_TASK_TEST:
+    case IDE_ACTION_TASK_RUN:
+    case IDE_ACTION_TASK_CLEAN: {
+      int kind = act->type == IDE_ACTION_TASK_BUILD ? 0
+                 : act->type == IDE_ACTION_TASK_TEST ? 1
+                 : act->type == IDE_ACTION_TASK_RUN ? 2 : 3;
+      /* save modified buffers first so the build sees the editor's state */
+      for (guint i = 0; i < self->buffers->len; i++) {
+        IdeBuffer *b = g_ptr_array_index(self->buffers, i);
+        if (ide_buffer_get_file_path(b) && ide_buffer_get_modified(b)) ide_buffer_save(b, NULL);
+      }
+      ide_window_show_drawer_page(self, "search");
+      ide_search_drawer_run_task(self->search_drawer, kind,
+                                 buf ? ide_buffer_get_file_path(buf) : NULL);
+      break;
+    }
     case IDE_ACTION_LSP_FORMAT:
       if (buf) ide_lsp_manager_request_format(self->lsp, buf);
       break;

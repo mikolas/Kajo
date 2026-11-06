@@ -37,7 +37,6 @@ All Kajo components and standalone applications share a unified design language:
 | Planned Component / Feature | Status | Target Binary / Scope |
 | :--- | :---: | :--- |
 | **Kajo IDE: LSP references / signature help / call hierarchy** | 📋 Planned | `kajo-ide` (the client is in place; these need list/popover UIs) |
-| **Kajo IDE: Maven / Gradle tasks** | 📋 Planned | `kajo-ide` (detect `pom.xml` / `build.gradle`, run goals from the palette) |
 | **Kajo IDE: real DAP client** | 📋 Planned | `kajo-ide` (spawn `gdb -i=dap` / `lldb-dap` / `dlv dap`, live stack and locals) |
 | **Kajo IDE: relative line numbers** | 📋 Planned | `kajo-ide` (gutter option; documented before it was built) |
 | **kajo-settings: custom accent hex picker** | 📋 Planned | `kajo-settings` Theme page (the UI gallery shows a hex picker; only the 8 presets exist today) |

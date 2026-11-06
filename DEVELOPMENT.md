@@ -56,6 +56,7 @@ src/
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
 │   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)
+│   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make) -> build/test/run/clean commands (no GTK)
 │   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)
 │   ├── ide_dap.h/c                 Debugger UI scaffold: transport buttons & 3-pane inspector (no adapter connected yet)
 │   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
@@ -138,6 +139,7 @@ tests/
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
+├── test_ide_tasks.c                Task resolution per build system, nested projects, Java main-class, shell quoting
 ├── test_lsp_client.c               LSP client against tests/mock_lsp_server.py (handshake queueing, errors, cancel, server death)
 ├── mock_lsp_server.py              Scripted language server used by the LSP tests
 ├── test_ide_ts.c                   Tree-sitter engine: token classification for all 15 languages, query validity against the installed grammars, detection, incremental == fresh parse
@@ -166,7 +168,7 @@ tests/
   - Highlight rules for the query-driven languages live in `src/ide/ide_ts_queries.c`; the `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 17 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 20 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -175,7 +177,7 @@ meson setup builddir
 # Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 17 automated GTest suites
+# Run all 20 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -198,6 +200,7 @@ meson install -C builddir
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
+| `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
 | `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition) and unit-tests text edits, snippets and the server registry. |
 | `ide-ts` | `test-ide-ts` | Tree-sitter token classification for Java, Go and C, language detection, incremental re-parse equals a fresh parse, error tolerance. |
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |

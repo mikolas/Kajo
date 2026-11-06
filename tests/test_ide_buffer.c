@@ -190,6 +190,32 @@ test_git_porcelain_fuzzy_and_search_parsers(void)
   g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
   g_assert_cmpstr(iss->message, ==, "undeclared identifier 'x'");
   ide_build_issue_free(iss);
+
+  /* Maven / javac bracket format and plain javac / Gradle format */
+  iss = ide_parse_compiler_error_line("/tmp/mvnp",
+      "[ERROR] /tmp/mvnp/src/main/java/demo/App.java:[5,17] incompatible types: java.lang.String cannot be converted to int");
+  g_assert_nonnull(iss);
+  g_assert_cmpstr(iss->file_path, ==, "/tmp/mvnp/src/main/java/demo/App.java");
+  g_assert_cmpuint(iss->line_1based, ==, 5);
+  g_assert_cmpuint(iss->col_1based, ==, 17);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  g_assert_true(g_str_has_prefix(iss->message, "incompatible types"));
+  ide_build_issue_free(iss);
+
+  iss = ide_parse_compiler_error_line("/tmp/mvnp", "[WARNING] /tmp/mvnp/src/A.java:[3,1] deprecated API");
+  g_assert_nonnull(iss);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_WARNING);
+  ide_build_issue_free(iss);
+
+  iss = ide_parse_compiler_error_line("/w", "/w/src/main/java/App.java:12: error: ';' expected");
+  g_assert_nonnull(iss);
+  g_assert_cmpuint(iss->line_1based, ==, 12);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  ide_build_issue_free(iss);
+
+  /* non-diagnostic Maven lines are not issues */
+  g_assert_null(ide_parse_compiler_error_line("/w", "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin"));
+  g_assert_null(ide_parse_compiler_error_line("/w", "[INFO] BUILD FAILURE"));
 }
 
 static gboolean
