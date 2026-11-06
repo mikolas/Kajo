@@ -1,6 +1,6 @@
 # AGENTS.md — Kajo Desktop Suite Engineering & AI Agent Rules
 
-This document is the authoritative engineering manual for AI coding assistants working on the **Kajo Desktop Environment** (`kajo`, `kajo-settings`, `kajo-files`, `kajo-greeter`). Follow every rule strictly to maximize development velocity and maintain zero-warning, zero-regression quality.
+This document is the authoritative engineering manual for AI coding assistants working on the **Kajo Application Suite & Desktop Environment** (`kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-settings`, `kajo-greeter`). Follow every rule strictly to maximize development velocity and maintain zero-warning, zero-regression quality.
 
 ---
 
@@ -10,8 +10,8 @@ This document is the authoritative engineering manual for AI coding assistants w
    - **NEVER** spawn subagents (`research`, `self`, etc.). Perform all `ripgrep` (`rg`) searches, file reads, and edits directly in the primary context for maximum speed and zero context loss.
 2. **RESPECT "DO NOT EDIT" / "WAIT" DIRECTIVES**:
    - When the user says *"do not edit"*, *"what do you think?"*, or *"wait"*, perform **zero** file writes/edits. Answer or analyze concisely and wait for explicit approval.
-3. **SPECIFICATIONS (`docs/SPEC_*.md`) & `ROADMAP.md`**:
-   - Active design system specifications ([`docs/SPEC_DESIGN_SYSTEM.md`](docs/SPEC_DESIGN_SYSTEM.md)) and the interactive UI style guide ([`docs/ui-gallery.html`](docs/ui-gallery.html)) live in `docs/`. `ROADMAP.md`, `HARDWARE_FINDINGS.md`, `DEVELOPMENT.md`, and `README.md` are maintained in the **project root directory** (`/home/mikolas/src/Kajo/`).
+3. **DOCUMENTATION (`docs/`) & `ROADMAP.md`**:
+   - Active design system documentation ([`docs/design_system.md`](docs/design_system.md)), manuals ([`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md), [`docs/script_widgets.md`](docs/script_widgets.md)), and the interactive UI style gallery ([`docs/ui-gallery.html`](docs/ui-gallery.html)) live in `docs/`. `ROADMAP.md`, `HARDWARE_FINDINGS.md`, `DEVELOPMENT.md`, and `README.md` are maintained in the **project root directory** (`/home/mikolas/src/Kajo/`).
    - Temporary one-off debug scripts or throwaway notes go in `scratch/` and must never be committed.
 4. **DO NOT TOUCH PROTECTED FUNCTIONS**:
    - Do **NOT** modify `populate_app_index` in `src/launcher/launcher_surface.c` unless explicitly instructed by the user.
@@ -29,7 +29,8 @@ This document is the authoritative engineering manual for AI coding assistants w
 | Binary | App ID | Role & Key Libraries |
 | :--- | :--- | :--- |
 | **`kajo`** | `org.kajo.Shell` | Wayland panel, 22 widgets, 16-band FFT spectrum visualizer, notification daemon, app launcher, `ShellOSK` virtual keyboard (`zwp_virtual_keyboard_v1` + `zwp_input_method_v2`), bezel touch gestures, foldable posture manager, `ext-idle-notify-v1` screensaver, and `ext-session-lock-v1` PAM lock screen. |
-| **`kajo-settings`** | `org.kajo.Settings` | 10-page modular system settings (`src/settings/pages/page_*.c`) with live D-Bus, PipeWire, Niri IPC, and GLSL shader switching. |
+| **`kajo-ide`** | `org.kajo.Ide` | Selection-first modal GTK4 + `GtkSourceView-5` IDE (`src/ide/`) with Nordic text objects (`m i/a`), 6-column Cairo gutter, async LSP 3.17 (`clangd`, `gopls`, `rust-analyzer`, `pyright`), DAP debugger (`F5`–`F12`), GUI Markdown + native Cairo vector Mermaid renderer, 85-command Help Palette, and AI Agent JSON-RPC 2.0 IPC socket. |
+| **`kajo-settings`** | `org.kajo.Settings` | 11-page modular system & suite settings (`src/settings/pages/page_*.c`) with live D-Bus, PipeWire, `ide.toml`, Niri IPC, and GLSL shader switching. |
 | **`kajo-files`** | `org.kajo.Files` | *(Alpha)* URI-first GIO/GVFS/UDisks2 file manager (`src/files/`) with natural filename collation, interactive column/popover sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), inline LUKS/SMB auth, and `Space` Quick Look (`poppler-glib`, `libarchive`, `KajoPlayerMpv` / `libmpv`, `GtkPicture`, `GtkTextView`). |
 | **`kajo-player`** | `org.kajo.Player` | *(Beta)* Hardware-accelerated `libmpv` + `GtkGLArea` video/audio player (`src/player/`) with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-step, chapters, fullscreen bottom-edge overlay HUD, and MPRIS2 D-Bus provider. |
 | **`kajo-greeter`** | `org.kajo.Greeter` | Native `greetd` Wayland login greeter (`src/greeter/`) with PAM `--test` mode and multi-monitor Niri / Cage support. |

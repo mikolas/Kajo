@@ -14,6 +14,7 @@ GtkWidget *build_page_bluetooth(void);
 GtkWidget *build_page_audio(void);
 GtkWidget *build_page_notifications(void);
 GtkWidget *build_page_theme(void);
+GtkWidget *build_page_ide(void);
 GtkWidget *build_page_about(void);
 
 G_END_DECLS

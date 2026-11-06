@@ -2,6 +2,7 @@
 #define SHELL_THEME_H
 
 #include <gtk/gtk.h>
+#include "config.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -29,6 +30,7 @@ void        shell_theme_write_override_css(const gchar *accent_hex,
                                            gint         heading_px,
                                            gint         subtitle_px,
                                            gint         badge_px);
+void        shell_theme_sync_from_config(const ShellConfig *config);
 
 #ifdef __cplusplus
 }

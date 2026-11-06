@@ -1,7 +1,7 @@
-# SPEC_DESIGN_SYSTEM.md — Kajo "Aero + Metro" Unified UI Design System & Style Guide
+# Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
-**Applies To:** `kajo` (`org.kajo.Shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-greeter` (`org.kajo.Greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
+**Applies To:** `kajo` (`org.kajo.Shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.Greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
 **Interactive Reference:** [`docs/ui-gallery.html`](file:///home/mikolas/src/Kajo/docs/ui-gallery.html)  
 **Master Stylesheet:** [`data/defaults/style.css`](file:///home/mikolas/src/Kajo/data/defaults/style.css)
 
@@ -109,3 +109,43 @@ Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → 
   - `#181818` header bar with clickable `11px` uppercase column buttons (`NAME ▲`, `SIZE`, `TYPE`, `MODIFIED`). Active sort column has `color: @metro-accent; border-bottom: 2px solid @metro-accent;`.
 - **Metro Tile Grid Cards (`.files-tile-card`, `.files-tile-folder`):**
   - `136×114px` tile in `#1a1a1a` with `1px solid #2b2b2b`; folders carry `border-top: 2px solid @metro-accent`. Selected tile uses `alpha(@metro-accent, 0.26)` and `1px solid @metro-accent`.
+
+### 4.5 File Explorer (`kajo-files`) Places Sidebar, Volumes & Inline Prompts
+- **Places & Volumes Sidebar (`.files-sidebar`, `230px` width):**
+  - Grouped by uppercase `.sidebar-category-header` (`PLACES`, `DEVICES & DRIVES`, `NETWORK`).
+  - **Mounted Volume Rows (`.files-drive-row`):** Two-line row showing volume icon, label, free/total GB readout, a `6px` `.files-drive-bar` capacity `levelbar` (`#10893e` normal, `#ff8c00` >75%, `#e81123` >90%), and a compact `⏏` eject/unmount button (`.files-eject-btn`).
+- **Hybrid Breadcrumb / Raw URI Bar (`.files-breadcrumb-bar`):**
+  - Segment buttons (`.files-breadcrumb-btn`) separated by `▸` chevrons; clicking `✎` (`Ctrl+L`) switches inline to a full-width monospace URI entry (`file:///`, `smb://`, `trash:///`, `sftp://`).
+- **Contextual Inline Reveal Bars (`GtkRevealer`):**
+  - **New Folder / Rename Bar (`.files-prompt-bar`):** `#181818` surface with `border-left: 3px solid @metro-accent`, inline `GtkEntry`, and `[ CREATE ]` / `[ CANCEL ]` buttons.
+  - **LUKS / SMB Authentication Bar (`.files-auth-bar`):** `#181818` surface with `border-left: 3px solid #ff8c00`, passphrase `GtkPasswordEntry` (or username/domain/password fields for `smb://`), and `[ 🔓 UNLOCK ]` action.
+  - **Trash Action Banner (`.files-trash-bar`):** `#1f1214` surface with `1px solid #4a1c20` and `border-left: 3px solid #e81123`, offering `[ ↺ RESTORE ALL ]` and destructive `[ 🗑 EMPTY TRASH ]`.
+
+### 4.6 Kajo IDE (`kajo-ide`) Code Canvas, Tree Explorer, Diff & Debugger Components
+- **Buffer Tab Ribbon (`.ide-tab-ribbon`, `.ide-tab-pill`):**
+  - `#161616` strip with `1px solid #2b2b2b` bottom border. Each `.ide-tab-pill` displays `[1..9]` index, file icon, filename, state badge (`●` dirty in `@metro-accent`, `⚡` reloaded in `#00d8f0`, `⚠` collision in `#e81123`), and `×` close button. Active tab uses `#101010` background and `border-top: 2px solid @metro-accent`.
+- **Hierarchical Project File Tree (`.ide-tree-sidebar`, `.ide-tree-row`):**
+  - Compact `26px`-tall tree rows with `1px solid #242424` vertical indentation guides, folder chevrons (`▾`/`▸`), file-type icon, filename (colored `#ff8c00` if modified, `#e81123` if containing LSP errors), and right-aligned Git status pill (`.ide-git-badge`: `M` `#ff8c00`, `A` `#10893e`, `U` `#00d8f0`, `D` `#e81123`).
+- **Code Canvas, 6-Column Cairo Gutter & Minimap (`.ide-editor-canvas`, `.ide-gutter`, `.ide-minimap`):**
+  - `#101010` canvas with `#171717` current-line highlight, `alpha(@metro-accent, 0.32)` selection fill (or `rgba(255, 140, 0, 0.28)` in `SELECT` mode), and end-of-line inline diagnostic pills (`.ide-inline-diag-pill`).
+  - `56px` left gutter (`#121212`, `border-right: 1px solid #222222`) rendering 6 columns: Breakpoint (`●` `#e81123`), Diagnostic (`✖`/`⚠`/`ℹ`), DAP PC (`▶` `#ffd700`), Line Number, Git/Agent Diff Bar (`+` `#10893e`, `~` `#0078d4`, `_` `#e81123`, Agent `#b4009e`), and Fold Chevron (`▾`/`▸`).
+- **Modal Status Bar & Mode Pills (`.ide-status-bar`, `.ide-mode-pill`):**
+  - `26px` bottom bar with bold uppercase `.ide-mode-pill`: `NORMAL` (`@metro-accent`), `SELECT` (`#ff8c00`), `INSERT` (`#10893e`), `MATCH` (`#b4009e`), `LEADER` (`#00d8f0`), `TREE`/`DRAWER`/`PICKER` (`#0078d4`).
+- **Pixel-Anchored LSP Completion & Hover Popovers (`.ide-lsp-popover`):**
+  - Framed by `1px solid @metro-accent` at cursor `(x, y)` coordinates. Completion rows include a `18×18px` `.ide-symbol-badge` (`ƒ` Function `#dcdcaa`, `S` Struct `#4ec9b0`, `v` Variable `#569cd6`, `k` Keyword `#c586c0`, `m` Macro `#00d8f0`), symbol label, and right-aligned type signature.
+- **Unified & Word-Level Diff Hunk Cards (`.ide-diff-card`):**
+  - Used in Search & Replace (`Space s r` / `s p`) and Agent Transaction Review (`Space d s`). Hunk header strip (`@@ -140,6 +140,8 @@`) in `#181818` with `[ ✓ ACCEPT HUNK ]` / `[ ✕ REVERT HUNK ]` buttons; deleted lines use `rgba(232, 17, 35, 0.16)` with `#ff8080` text (`rgba(232, 17, 35, 0.42)` on changed tokens) and added lines use `rgba(16, 137, 62, 0.18)` with `#85e89d` text (`rgba(16, 137, 62, 0.45)` on changed tokens).
+- **DAP Debugger 3-Pane Inspector (`.ide-dap-inspector`):**
+  - Horizontal 3-column layout in the bottom drawer: Call Stack list (active frame highlighted with `▶` `#ffd700`), expandable Scopes/Locals variable tree, and interactive Debug Console / REPL entry.
+
+### 4.7 Full Graphical Markdown & Cairo Vector Mermaid Components (`.ide-md-document`)
+- **Document Typography & Inline Code:**
+  - Rendered as native GTK4 widgets (never terminal ASCII art). Headings `.ide-md-h1` (`22px` bold, `1px solid #2b2b2b` bottom border), `.ide-md-h2` (`18px`), `.ide-md-h3` (`15px`), proportional body text (`14px`, `#dddddd`), and `.ide-md-code-inline` (`Fira Code` `12px`, `#00d8f0` on `#1e1e1e`, `1px solid #333333`, `padding: 1px 5px`).
+- **GitHub-Flavored Callout Alert Cards (`.ide-md-alert`):**
+  - `#161616` card with `1px solid #2b2b2b` and `4px` semantic left border: `.note` (`#0078d4`, `ℹ NOTE`), `.tip` (`#10893e`, `💡 TIP`), `.important` (`#b4009e`, `⚑ IMPORTANT`), `.warning` (`#ff8c00`, `⚠ WARNING`), `.caution` (`#e81123`, `🛑 CAUTION`).
+- **Fenced Code Blocks with Copy Header (`.ide-md-codeblock`):**
+  - `#101010` syntax-highlighted `GtkSourceView` framed by `1px solid #2b2b2b`, topped by a `#181818` `.ide-md-codeblock-header` displaying the language badge (`[ C99 ]`) and `[ 📋 COPY ]` button.
+- **Graphical Tables (`.ide-md-table`) & Interactive Task Checklists (`.ide-md-task-row`):**
+  - `GtkGrid` table with `#181818` uppercase header cells and `1px solid #2b2b2b` borders; task list items use live `GtkCheckButton` widgets synced bi-directionally with `- [ ]` / `- [x]` in the source buffer.
+- **Cairo Vector Mermaid Diagram Card (`.ide-mermaid-card`, `.ide-mermaid-canvas`):**
+  - Anti-aliased vector graph canvas (`#101010` background, `1px solid #2b2b2b`) with a top `.ide-mermaid-toolbar` (`[ 🔍− ] [ 100% ] [ 🔍+ ] [ ⛶ FIT ] [ 💾 EXPORT SVG ] [ 📷 EXPORT PNG ]`). Nodes render as crisp Metro boxes (`#181818` fill, `1.5px` `@metro-accent` or semantic stroke) connected by Cubic Bézier vector paths; clicking any node jumps the editor cursor to its source line.

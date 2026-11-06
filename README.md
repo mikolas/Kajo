@@ -1,111 +1,150 @@
-# Kajo
+# Kajo — Personal Native Application Suite & Wayland Environment
 
-A high-performance, lightweight Wayland desktop shell, system settings suite, GVFS file manager, `libmpv` video/audio player, virtual keyboard, session lock, and `greetd` login greeter built for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
-
-Built in standard C17 with GTK4, `gtk4-layer-shell`, `libmpv`, `libpulse`, `libpam`, `poppler-glib`, `libarchive`, and Blueprint Markup. Designed for OLED displays, sub-0.05% idle CPU usage, and keyboard- & touch-driven operation.
+**Kajo** is a self-contained suite of lightweight, native C17 / GTK4 applications and Wayland session components built around a single, uncompromising visual and ergonomic vision for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
 
 ---
 
-## 🌟 Overview of Executables
+## 🎯 Purpose & Philosophy
 
-The project builds and installs five integrated executables plus a `greetd` session wrapper:
+Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. **Its purpose is not to be a generic, catch-all replacement for mainstream Linux desktop environments or mass-market applications.** Instead, Kajo is a **purpose-built, cohesive suite of tools engineered specifically for a personal workflow, Nordic keyboard ergonomics, and hardware setup**:
 
-| Executable | Purpose |
-| :--- | :--- |
-| **`kajo`** | Primary Wayland desktop shell daemon (status panel, 22 live widgets, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual keyboard, bezel touch gesture recognizers, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` idle manager, Metro screen saver, 360° foldable posture & auto-rotation manager, and `ext-session-lock-v1` PAM lock screen) + instant CLI IPC client. |
-| **`kajo-settings`** | Standalone 10-page Metro system settings application with live D-Bus, PipeWire/PulseAudio, Niri IPC (including live GLSL window shaders), and Kajo IPC integration. |
-| **`kajo-files`** | *(Alpha)* Native Aero + Metro file manager (`org.kajo.Files`) with URI-first GVFS/UDisks2 integration, natural filename collation & interactive column/popover sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` + `GtkGLArea` media, multi-page Poppler PDFs, `libarchive` archives, and code/text). |
-| **`kajo-player`** | *(Beta)* Hardware-accelerated `libmpv` + `GtkGLArea` media player (`org.kajo.Player`) with embedded/external subtitle decoding (`.srt`, `.ass`, PGS), multi-audio stream switching, sync delay & font scaling, playback speed & frame-stepping, chapters, screenshots, fullscreen bottom-edge auto-hiding controls, and MPRIS2 D-Bus integration. |
-| **`kajo-greeter`** | Graphical Wayland login greeter for `greetd` supporting both `niri` (`gtk4-layer-shell` multi-monitor) and `cage` (XDG fullscreen kiosk) compositors. |
-| **`kajo-greeter-session`** | Wrapper launcher script for `/etc/greetd/config.toml`. |
+1. **A Unified "Aero + Metro" Design Language** ([`docs/design_system.md`](docs/design_system.md) • [`docs/ui-gallery.html`](docs/ui-gallery.html))
+   - Rejects bloated, rounded toolkit defaults in favor of **strict `0px` sharp corner geometry**, OLED-native dark charcoal surfaces (`#111111`–`#1a1a1a`), `1px solid #2b2b2b` structural hairlines, live `@metro-accent` window framing, and high-density `Fira Code` monospace telemetry badges.
+   - Every standalone application in the suite shares the exact same custom frameless window chrome, Niri tiling/floating IPC (`🗗 FLOAT / TILE`), and instant live CSS/accent hot-reload.
+2. **Pure Native C17 Performance, Zero Runtime Bloat**
+   - Built directly on `C17`, `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libmpv`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron, CEF, or web-view wrappers.
+   - Strict map- and popout-gated resource discipline keeps background CPU usage below `0.05%`.
+3. **Tailored to Personal Workflows**
+   - Whether writing C/Go/Rust/Python in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, or managing Niri GLSL shaders and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
 
 ---
 
-## ✨ Key Features
+## 🧩 The Kajo Application Suite
 
-### 🖥️ Status Panel & Hardware Telemetry (`kajo`)
-- **22 Built-in Panel Widgets**: Workspaces, clock & calendar, volume mixer, control center, battery (with multi-level capacity indicator icons), backlight & posture (`backlight`), network/Wi-Fi, bluetooth, media player, CPU/memory/disk/network telemetry, theme picker, keyboard layout, StatusNotifierItem system tray, notification history, power menu, privacy indicator, Do-Not-Disturb (DND), idle inhibitor ("Keep Awake"), virtual keyboard toggle (`osk`), active window title, launcher button, and custom user scripts.
-- **Virtual Keyboard (`ShellOSK`) & Touchscreen Bezel Gestures**:
-  - **Windows Touch Keyboard Layout**: 28-column proportional `GtkGrid` virtual keyboard speaking Wayland `zwp_virtual_keyboard_unstable_v1` and `zwp_input_method_unstable_v2`, with dynamic XKB layout discovery (`org.freedesktop.locale1` / Niri IPC), `ABC` / `&123` pages, and automatic text-input activation in Tablet mode.
-  - **Bezel Edge Swipe Recognizers**: Configurable top, bottom, left, and right screen-edge touch gesture strips (`Launcher`, `Niri Overview`, `Virtual Keyboard`, `Notifications`, `Control Center`).
-- **360° Foldable Posture, Auto-Rotation & Backlight Control *(Experimental)***:
-  > ⚠️ **Experimental Feature**: Foldable sensor posture tracking, auto-rotation, input inhibition, and Embedded Controller keyboard backlight/timeout management are currently **experimental** until fully proven and stabilized across hardware.
-  - **Runtime Hardware Capability Probing**: Dynamically detects Intel ISH `hinge` (`in_angl0_raw`) and `accel_3d` IIO sensors, `/sys/class/input/input*/inhibited` attributes, and keyboard backlight controllers (`/sys/class/leds/*::kbd_backlight` and HP Embedded Controller `0x97` `HKBL` / `0x96` `HKBT`). On desktop PCs without foldable sensors or backlights, zero timers run and foldable/backlight settings stay hidden.
-  - **Hysteresis Posture State Machine**: Automatically transitions to Tablet/Tent mode at `>= 180°` and returns to Laptop mode at `<= 168°`.
-  - **Posture-Gated Screen Auto-Rotation**: Claims `net.hadess.SensorProxy` (with direct IIO `accel_3d` fallback) in Tablet/Tent mode to rotate the built-in display via Niri IPC (`normal`, `90`, `180`, `270`), and locks orientation to `0°` in Laptop mode.
-  - **Input Device Inhibition**: Optionally inhibits the built-in keyboard & touchpad in Tablet mode and the finger touchscreen in Laptop mode (while keeping active stylus pen input enabled).
-  - **Keyboard Backlight & Auto-Off Timeout**: Controls keyboard illumination (`Wake / Turn On` on HP EC or `Off`/`Low`/`High` on standard sysfs LEDs) and hardware auto-off timeout (`Always On`, `30 Seconds`, `3 Minutes`), restoring your saved setting on boot.
-- **16-Band Live FFT Spectrum Visualizer**: Dynamic MPRIS2 player discovery, album art hero view, and a 30 FPS 16-band Cooley-Tukey FFT spectrum analyzer capturing directly from `@DEFAULT_MONITOR@` (corked automatically when the popover closes for 0.0% background CPU usage).
-- **OLED Smart Autohide**: Smooth cubic-bezier slide animations with a 2px transparent Wayland edge trigger strip, popover/launcher hold-open guards, and live config reload.
+The repository builds and installs **six integrated native executables** (plus a `greetd` session wrapper):
 
-### 🔒 Native Session Lock, Screen Saver & Idle Manager (`kajo`)
-- **Wayland Session Lock (`ext-session-lock-v1`)**: Multi-monitor lock screen via `gtk4-session-lock` with asynchronous non-blocking PAM authentication (`libpam`), `systemd-logind` `Lock`/`Unlock`/`PrepareForSleep` integration, and scrubbed credential memory (`explicit_bzero`).
-- **Metro Screen Saver**: Fullscreen layer-shell overlay with 3 visual modes (`clock`, `tiles`, `blank`) and OLED burn-in drift protection, plus automatic Niri DPMS monitor power-off.
-- **Wayland Idle & Sleep Manager (`ext-idle-notify-v1`)**: Configurable inactivity timeouts for screen saver, monitor DPMS power-off, and automatic session lock, synchronized with the panel and Control Center **Keep Awake** (`systemd-logind` idle inhibitor FD).
+| Executable | App ID | Role in the Suite |
+| :--- | :--- | :--- |
+| **`kajo-ide`** | `org.kajo.Ide` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, async LSP 3.17 (`clangd`, `gopls`, `rust-analyzer`, `pyright`), interactive DAP debugger (`F5`–`F12`), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
+| **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with natural filename collation, interactive column/popover sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` media, Poppler PDF, `libarchive`, code). |
+| **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, embedded/external subtitle selector (`.srt`, `.ass`, PGS), multi-audio stream switching, sync offset, playback speed & frame-stepping, chapters, sibling folder queue, auto-hiding fullscreen HUD, and MPRIS2 D-Bus integration. |
+| **`kajo-settings`** | `org.kajo.Settings` | **11-Page Modular System & Suite Control Deck** managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes, Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code** (`ide.toml` schemes/fonts), Niri GLSL Shaders, and hardware telemetry. |
+| **`kajo`** | `org.kajo.Shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 live widgets), 16-band FFT audio visualizer, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual touch keyboard, bezel touch gestures, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` OLED screen saver, 360° foldable posture manager, and `ext-session-lock-v1` PAM lock screen. |
+| **`kajo-greeter`** | `org.kajo.Greeter` | **Wayland Login Greeter for `greetd`** supporting multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage`, and desktop `--test` preview mode with PAM verification. |
 
-### ⚙️ Kajo Settings Application (`kajo-settings`)
-- **Displays & Idle Security (`displays`)**: Queries live monitor modes, refresh rates, fractional scale, orientation, and VRR from `niri msg -j outputs`, applies changes immediately via Niri IPC, persists to `~/.config/niri/config.kdl`, and configures Screen Saver & Session Lock timeouts.
-- **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, and inline WPA/WPA2 password authentication.
-- **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery (`GDBusObjectManager`), live device scanning, pairing, and connection toggling.
-- **Audio & PipeWire (`audio`)**: Asynchronous non-blocking PulseAudio/PipeWire context for default output sink selection, microphone input gain/mute, and per-application stream volume sliders.
-- **Theme (`theme`), Panel & Touch (`panel`), Widgets (`widgets`), Notifications (`notifications`), Niri & Shaders (`niri`), About (`about`)**: Live accent color switching (`@metro-accent`), panel edge/height/autohide & bezel touch gesture configuration, Niri GLSL window animation shader presets (`open`, `close`, `resize`), and interactive widget ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) reconciliation without restarting `kajo`.
+---
 
-### 📁 Kajo Files (`kajo-files` — *Alpha*)
-> 🧪 **Alpha Status**: `kajo-files` is currently in **Alpha**. Core browsing, GVFS/UDisks2 mounting, natural sorting, hit-tested context menus (`Open With / Set Default`, `libarchive` `Extract Here`), file operations, and `libmpv`-powered Quick Look previews are functional, while drag-and-drop and extended format previews are under active development.
-- **Aero + Metro Visual Design**: Shares `kajo-settings`'s frameless `GtkWindowHandle` chrome, `#141414` dark surfaces, `1px solid @metro-accent` borders, `Fira Code` technical badges, `🗗 FLOAT / TILE` Niri toggle, and single-view-per-window workflow (`Ctrl+N` opens a new window for Niri tiling).
-- **Natural Filename Collation, Sort Popover & Clickable Column Headers**:
-  - Precomputed `g_utf8_collate_key_for_filename()` keys sort numbered files naturally (`Episode_2.mkv` before `Episode_10.mkv`) with consistent `A → Z` tie-breaking.
-  - Action Ribbon **`⇅ SORT`** popover and interactive Details List column headers (`NAME`, `SIZE`, `TYPE`, `MODIFIED`) with smart default directions (`Size` and `Modified` default to `▼` largest/newest first) and a **`☑ Folders First`** toggle.
+## ✨ Suite Components in Detail
+
+### ⌨️ Kajo IDE (`kajo-ide`)
+> 📖 **Full Manual**: See [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) for the complete architecture, workflow & keybinding guide.
+
+- **Selection-First Modal Editing & Nordic Ergonomics**:
+  - 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) with color-coded status pills, bottom-right `Space` Leader chord HUD, and fast `jk` escape from `INSERT` mode.
+  - First-class Nordic layout bindings: `ä` / `ö` to step through LSP diagnostics, `Alt+ä` / `Alt+ö` for Git diff hunks, and Dead-Key-free `m i/a` structural text objects (`m i f` function, `m i c` class/struct, `m i b` block, `m i a` argument, `m i q` quote, `m m` bracket jump).
+- **6-Column Hardware-Accelerated Cairo Gutter (`68px`)**:
+  - Renders DAP breakpoints & instruction pointer (`●`/`▶`), LSP diagnostic severity pills (`●`/`▲`/`◆`), Git diff status bars (`HEAD`), AI Agent modification bars, `Fira Code` absolute/relative line numbers, and AST fold chevrons (`z a`).
+- **Zero-Config LSP 3.17 & Interactive DAP Debugger**:
+  - Automatic stdio JSON-RPC 2.0 language server lifecycle for `clangd`, `gopls`, `rust-analyzer`, and `pyright` (hover `K`, completion `Ctrl+Space`, jump to definition `g d`, references `g r`, code actions `Space c a`, rename `Space c r`, call hierarchy `Space g c`).
+  - Built-in DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) with `F9` breakpoints, `F5`/`F10`/`F11`/`F12`/`Shift+F5` transport controls, and a 3-pane bottom drawer (Call Stack, Local Scopes, Interactive REPL).
+- **Graphical Markdown & Native Cairo Vector Mermaid Diagrams**:
+  - Live-synchronized 50/50 side-by-side split (`Space m p` / `📖 MD`) rendering interactive `- [ ]` task checkboxes (clicking mutates the source buffer), GitHub callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), tables, and code blocks.
+  - Pure C11 Cairo/Pango layout and vector renderer for Mermaid `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, and `pie` blocks—complete with interactive zoom/pan (`25%`–`400%`) and 1-click `.svg` vector export.
+- **Fuzzy Finder, Live Ripgrep & 85-Command Interactive Help Palette**:
+  - `Space f f` (Files), `Space b b` (Buffers), and `Space f g` (async `rg --vimgrep` project search) with a live syntax-highlighted preview pane.
+  - `?` / `F1` / `Space h` opens the full-width 4-column **Help & Command Palette** with interactive category filter pills (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`).
+- **AI Agent JSON-RPC 2.0 IPC & Atomic Batch Diff Review**:
+  - Exposes `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock` (`$KAJO_IDE_SOCKET`) so external AI agents can query buffers/diagnostics and apply edits while recording pre-agent snapshots for instant developer review (`Space d s`), accept-all (`Space d a`), or atomic revert (`Space d r`).
+- **5 Bundled Syntax Schemes & Live Font Zoom**:
+  - Ships with `kajo-metro-dark`, `kajo-tokyo-night`, `kajo-catppuccin-mocha`, `kajo-gruvbox-dark`, and `kajo-solarized-light` (`data/ide/*.xml`), plus live `Ctrl++` / `Ctrl+-` / `Ctrl+0` font zoom and hot-reload via `kajo-settings`.
+
+---
+
+### 📁 Kajo Files (`kajo-files`)
+
+- **Natural Filename Collation & Interactive Column/Popover Sorting**:
+  - Precomputed `g_utf8_collate_key_for_filename()` keys sort numbered files naturally (`Episode_2.mkv` before `Episode_10.mkv`) with clickable Details List column headers (`NAME`, `SIZE`, `TYPE`, `MODIFIED`) and a **`☑ Folders First`** toggle.
 - **Hit-Tested Context Menu (`Right-Click` / `Menu` / `Shift+F10` / `.`)**:
-  - **Item Context Mode**: `▶ Open`, `⚙ Open With... ▸` (enumerating MIME-registered apps via `g_app_info_get_all_for_type()` with a **`☑ Set as Default`** toggle), `👁 Quick Look`, contextual **`📦 Extract Here`** (asynchronous `libarchive` extraction into `<stem>/`), `>_ Open Terminal Here`, `🗔 Open in New Window`, `📋 Copy`, `✂ Cut`, `🔗 Copy Path / URI` (`Ctrl+Shift+C`), `✏ Rename...`, `🗑 Move to Trash`, and `⚠ Delete Permanently`.
-  - **Directory Background Mode**: `+ New Folder...`, `📋 Paste Here`, `>_ Open Terminal Here`, `🗔 Open in New Window`, `👁 Toggle Hidden Files`, and `↻ Reload Directory`.
+  - Item & background modes supporting `▶ Open`, `⚙ Open With... ▸` (with **`☑ Set as Default`**), `👁 Quick Look`, asynchronous `libarchive` **`📦 Extract Here`**, `>_ Open Terminal Here`, `🗔 Open in New Window`, `📋 Copy/Cut/Paste`, `🔗 Copy Path / URI` (`Ctrl+Shift+C`), `✏ Rename`, `🗑 Move to Trash`, and `⚠ Delete Permanently`.
 - **URI-First GIO, GVFS & UDisks2 Integration**:
-  - Asynchronous non-blocking directory enumeration (`g_file_enumerate_children_async`) and live directory monitoring (`GFileMonitor`).
-  - Supports local paths (`file://`), Recycle Bin (`trash:///` with contextual **Restore Selected** & **Empty Trash** banner), `recent:///`, `network:///`, `[ + CONNECT TO SERVER ]` (`smb://`, `sftp://`, `ftp://`, `davs://`, `mtp://`, `onedrive://`), live `GVolumeMonitor` drive capacity bars, 1-click Eject/Unmount (`⏏`), and an inline Kajo-styled `GMountOperation` banner for LUKS passphrases and SMB/SFTP credentials.
-- **macOS-Style Quick Look (`Space`) & On-Demand Inspector (`Ctrl+I`)**:
-  - Pressing **`Space`** on any selected item opens a modal preview overlay rendering high-res images (`GtkPicture`), hardware-accelerated audio/video (`KajoPlayerMpv` / `libmpv` + `GtkGLArea`), multi-page PDF documents (`poppler-glib` with page navigation), archive contents (`libarchive` for `.zip`, `.tar.*`, `.7z`, `.rar`, `.deb`, `.rpm`, `.iso`), code/markdown/configs (`Fira Code`), and folder summaries—updating live when navigating with arrow keys (`←`/`→`/`↑`/`↓`).
+  - Non-blocking async enumeration for local paths, `trash:///` (with **Restore** & **Empty Trash** bar), `recent:///`, `network:///`, `[ + CONNECT TO SERVER ]` (`smb://`, `sftp://`, `davs://`, `mtp://`), live drive capacity bars, 1-click Eject (`⏏`), and an inline Kajo-styled `GMountOperation` auth bar for LUKS/SMB credentials.
+- **macOS-Style `Space` Quick Look & Inspector (`Ctrl+I`)**:
+  - Instant modal preview for high-res images (`GtkPicture`), hardware-accelerated video/audio (`KajoPlayerMpv` / `libmpv` + `GtkGLArea`), multi-page PDFs (`poppler-glib`), archives (`libarchive`), and source code (`Fira Code`).
 
-### 🎬 Kajo Player (`kajo-player` — *Beta*)
+---
+
+### 🎬 Kajo Player (`kajo-player`)
+
 - **Hardware-Accelerated `libmpv` + `GtkGLArea` Engine**:
-  - Renders directly via `mpv_render_context` (OpenGL/EGL) with `hwdec=auto-safe` (VA-API / NVDEC) and live codec/resolution/decoder telemetry in the header badge (`[ HEVC•vaapi | 1920×1080 | 42.1 MB ]`) plus a toggleable technical telemetry OSD (`ℹ STATS` / `I` / `Ctrl+J`).
+  - Renders via `mpv_render_context` (OpenGL/EGL) with `hwdec=auto-safe` (VA-API / NVDEC), live header codec/resolution telemetry (`[ HEVC•vaapi | 1920×1080 | 42.1 MB ]`), and a toggleable technical stats overlay (`ℹ STATS` / `I` / `Ctrl+J`).
 - **Subtitles, Multi-Language Audio & Sync Controls**:
-  - **`💬 SUBS` Popover**: Lists all embedded `.mkv`/`.mp4` and external subtitle tracks (`.srt`, `.ass`/`.ssa`, `.vtt`, PGS) rendered via `libass`, supports loading external subtitle files (`📂 LOAD EXTERNAL SUBTITLE` or drag-and-drop), subtitle timing offset (`±100ms` / `Z` / `X`), and font scaling (`30%–300%`).
-  - **`🎧 AUDIO` Popover**: Switches multi-language audio streams (`#` / `A`) and adjusts audio sync delay (`±100ms`).
-- **Speed, Frame-Stepping, Chapters, Queue & Fullscreen**:
-  - **`1.0×` Speed & Frame Control**: Pitch-corrected playback speed (`0.5×`–`2.0×`, `[` / `]`), single-frame stepping (`,` / `.`), A–B loop (`Shift+L`), and 1-key frame screenshots (`📷` / `S` to `~/Pictures`).
-  - **Bottom-Edge Auto-Hiding Fullscreen (`F` / `F11` / Double-Click)**: Expands video to 100% of the window and hides all chrome, revealing the floating Metro transport deck when moving the pointer to the bottom edge.
-  - **Folder Queue, Chapters & MPRIS2**: Toggleable `240px` right drawer (`☰ QUEUE` / `Ctrl+P`) with container chapters and automatic sibling folder media queuing, plus native `org.mpris.MediaPlayer2.kajo_player` D-Bus export.
+  - **`💬 SUBS` & `🎧 AUDIO` Popovers**: Switch embedded or external subtitle tracks (`.srt`, `.ass`/`.ssa`, `.vtt`, PGS), load external subtitle files, adjust A/V & subtitle timing offset (`±100ms` / `Z` / `X`), and scale subtitle fonts (`30%–300%`).
+- **Transport, Frame-Stepping, Queue & Auto-Hiding Fullscreen**:
+  - Pitch-corrected playback speed (`0.5×`–`2.0×`, `[` / `]`), single-frame stepping (`,` / `.`), A–B loop (`Shift+L`), 1-key frame screenshots (`📷` / `S`), `240px` chapters/folder queue drawer (`☰ QUEUE` / `Ctrl+P`), bottom-edge auto-hiding fullscreen HUD (`F` / `F11`), and MPRIS2 D-Bus export.
+
+---
+
+### ⚙️ Kajo Settings (`kajo-settings`)
+11 modular configuration pages (`src/settings/pages/page_*.c`) with zero mock data and live D-Bus / IPC synchronization:
+1. **Displays & Idle Security (`displays`)**: Live Niri output resolution, refresh rate, fractional scale, orientation, VRR, plus Screen Saver & Session Lock timeouts.
+2. **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, and inline WPA/WPA2 authentication.
+3. **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery, device scanning, pairing, and connection toggling.
+4. **Audio & PipeWire (`audio`)**: Multi-channel (`2.0`–`7.1`) PulseAudio/PipeWire output sink routing, input gain/mute, and per-app stream sliders with auto-reconnect.
+5. **Theme & Accent (`theme`)**: Live Metro accent color palette (`@metro-accent`) hot-reloaded across all running Kajo apps.
+6. **Panel & Touch (`panel`)**: Panel edge, height, OLED smart autohide, bezel touch swipe gestures, and convertible posture controls.
+7. **Widgets (`widgets`)**: Interactive ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) for left/center/right panel zones.
+8. **Notifications (`notifications`)**: Toast timeout, Do-Not-Disturb, and history management.
+9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width, line number style, margin guide, word wrap, and minimap toggle—hot-reloaded via `~/.config/kajo/ide.toml`.
+10. **Niri & Shaders (`niri`)**: Live Niri layout settings and GLSL window animation shader presets (`open`, `close`, `resize`).
+11. **About (`about`)**: System & suite telemetry overview.
+
+---
+
+### 🖥️ Kajo Desktop Shell, Lock Screen & Hardware Daemon (`kajo`)
+- **22 Live Panel Widgets & 16-Band FFT Visualizer**: Workspaces, clock/calendar, volume mixer, control center, battery, backlight & posture, Wi-Fi, Bluetooth, media player (with 30 FPS 16-band Cooley-Tukey FFT spectrum analyzer corked automatically when hidden), CPU/RAM/disk/network telemetry, theme picker, keyboard layout, SNI system tray, notifications, power menu, privacy indicator, DND, Keep Awake idle inhibitor, `ShellOSK` toggle, window title, launcher, and custom scripts.
+- **Multi-Plugin Application Launcher (`Mod+D`)**: App search, `:emoji` picker (1,914 entries), `=calculator` (TinyExpr), `>shell` runner, and `w:window` Niri switcher.
+- **Virtual Touch Keyboard (`ShellOSK`) & Bezel Edge Gestures**: 28-column proportional keyboard speaking `zwp_virtual_keyboard_unstable_v1` and `zwp_input_method_unstable_v2` with dynamic XKB layout discovery, paired with configurable screen-edge swipe recognizers.
+- **Wayland Session Lock (`ext-session-lock-v1`), Metro Screen Saver & Idle Manager (`ext-idle-notify-v1`)**: Multi-monitor PAM lock screen with `explicit_bzero` credential scrubbing, `systemd-logind` sleep lock hooks, and 3-mode OLED burn-in-safe screen saver (`clock`, `tiles`, `blank`).
+- **360° Foldable Posture, Auto-Rotation & EC Backlight *(Experimental)***: Runtime hardware probing for Intel ISH `hinge`/`accel_3d` IIO sensors, `/sys/class/input/input*/inhibited`, and HP Embedded Controller keyboard backlight registers (`0x97` `HKBL` / `0x96` `HKBT`).
+
+---
 
 ### 🔐 Kajo Login Greeter (`kajo-greeter`)
-- **Native `greetd` IPC Client**: Speaks the `greetd` binary protocol (`$GREETD_SOCK`) with zero-copy scrubbed password serialization, `prctl(PR_SET_DUMPABLE, 0)` core-dump protection, and GTK Inspector lockout.
-- **Automatic User & Session Discovery**: Enumerates human users via `getpwent()` and parses `/usr/share/wayland-sessions/*.desktop` & `/usr/share/xsessions/*.desktop`, remembering the last user and session.
-- **Dual Compositor & Desktop Preview Support**: Runs natively on multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage` (`--fullscreen`), or inside your active desktop session (`kajo-greeter --test`) for instant previewing without logging out.
+- Speaks the `greetd` binary IPC protocol (`$GREETD_SOCK`) with scrubbed credential memory and `prctl(PR_SET_DUMPABLE, 0)` hardening.
+- Runs natively on multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage` (`--fullscreen`), or inside an active desktop session (`kajo-greeter --test`) for instant previewing.
+
+---
+
+## 📚 Documentation Index
+
+| Document | Contents |
+| :--- | :--- |
+| **[`docs/design_system.md`](docs/design_system.md)** | Authoritative **Aero + Metro** visual design specification (color tokens, `0px` geometry, typography, component anatomy). |
+| **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
+| **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
+| **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
+| **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
+| **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
+| **[`HARDWARE_FINDINGS.md`](HARDWARE_FINDINGS.md)** | Convertible 2-in-1 sensor (`Intel ISH`), input inhibition, and Embedded Controller (`ec_sys`) register documentation. |
 
 ---
 
 ## 🛠️ Building and Installing
 
-### 1. System Dependencies
-Ensure the following development packages are installed (Arch Linux / CachyOS package names shown):
-- `gtk4` (≥ 4.12)
-- `gtk4-layer-shell` (≥ 1.0, includes `gtk4-session-lock`)
-- `wayland`, `wayland-protocols`, `libxkbcommon`
-- `json-glib`, `glib2` (`gio-2.0`, `gio-unix-2.0`)
-- `libpulse` (`libpulse`, `libpulse-mainloop-glib`)
-- `pam` (`libpam`)
-- `poppler-glib`, `libarchive` (for `kajo-files` PDF & archive Quick Look previews)
-- `mpv` (`libmpv`, for `kajo-player` video/audio/subtitle decoding)
-- `gvfs`, `gvfs-smb`, `udisks2` (optional runtime services for removable drives & network shares)
-- `blueprint-compiler`, `meson`, `ninja`
-
+### 1. System Dependencies (Arch Linux / CachyOS)
 ```bash
-sudo pacman -S --needed gtk4 gtk4-layer-shell wayland wayland-protocols libxkbcommon \
-    json-glib glib2 libpulse pam poppler-glib libarchive mpv gvfs gvfs-smb udisks2 \
-    blueprint-compiler meson ninja
+sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-protocols \
+    libxkbcommon json-glib glib2 libpulse pam poppler-glib libarchive mpv gvfs gvfs-smb \
+    udisks2 blueprint-compiler meson ninja
 ```
 
-### 2. Build & User Installation (`~/.local`)
-By default, `meson.build` configures `prefix=~/.local`, installing binaries to `~/.local/bin` and default data/icons to `~/.local/share/kajo/`:
+Optional runtime tools for **`kajo-ide`** language intelligence, search, and debugging:
+```bash
+sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
+```
+
+### 2. Build, Verify & Install (`~/.local`)
+By default, `meson.build` configures `prefix=~/.local`, installing all six binaries to `~/.local/bin` and theme/syntax assets to `~/.local/share/kajo/`:
 
 ```bash
 meson setup builddir
@@ -114,49 +153,22 @@ meson test -C builddir
 meson install -C builddir
 ```
 
-Ensure `~/.local/bin` is in your `$PATH`.
-
-### 3. Do You Need to Copy Config or Theme Files Manually?
-**No.** You do **not** need to copy `data/defaults/config.json` or `data/defaults/style.css` into `~/.config/kajo/`.
-
-Kajo uses an automatic 3-tier asset resolution chain:
-1. **User Overrides (`~/.config/kajo/`)**: Created automatically when you click **Apply / Save** in `kajo-settings` (`~/.config/kajo/config.json` and `~/.config/kajo/theme-override.css`).
-2. **Installed System/User Share (`~/.local/share/kajo/defaults/` & `/usr/local/share/kajo/defaults/`)**: Installed automatically by `meson install -C builddir`.
-3. **Source Tree Fallback (`data/defaults/`)**: Used automatically when running binaries directly from `./builddir/`.
-
-### 4. Laptop / 2-in-1 Convertible Permissions (`udev` & `ec_sys` — *Experimental*)
-> ⚠️ **Experimental**: Hardware posture & Embedded Controller support is currently experimental while undergoing stabilization.
-
-On 2-in-1 convertibles and laptops with Embedded Controller keyboard backlight/timeout control (such as the HP OmniBook X Flip 14), install the bundled `udev`, `modules-load.d`, `modprobe.d`, and `tmpfiles.d` rules from [`data/udev/`](data/udev/) so `kajo` and `kajo-settings` can manage `/sys/class/input/input*/inhibited` and `/sys/kernel/debug/ec/ec0/io` without root prompts:
-
-```bash
-sudo cp data/udev/90-kajo-hardware.rules /etc/udev/rules.d/
-sudo cp data/udev/kajo-ec-modules.conf /etc/modules-load.d/kajo-ec.conf
-sudo cp data/udev/kajo-ec-modprobe.conf /etc/modprobe.d/kajo-ec.conf
-sudo cp data/udev/kajo-ec-tmpfiles.conf /etc/tmpfiles.d/kajo-ec.conf
-sudo modprobe -r ec_sys 2>/dev/null; sudo modprobe ec_sys write_support=1
-sudo systemd-tmpfiles --create /etc/tmpfiles.d/kajo-ec.conf
-sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=input
-```
-
-See [`HARDWARE_FINDINGS.md`](HARDWARE_FINDINGS.md) for full hardware register maps (`0x97` `HKBL` brightness, `0x96` `HKBT` timeout), Intel ISH firmware extraction instructions, and IIO sensor details.
-
 ---
 
-## 🖥️ Configuring Kajo for Niri
-
-Add the following to your `~/.config/niri/config.kdl`:
+## 🖥️ Recommended Niri Configuration (`~/.config/niri/config.kdl`)
 
 ```kdl
 // 1. Launch Kajo shell daemon at session startup
 spawn-at-startup "kajo"
 
-// 2. Recommended Keybindings (Instant UNIX Socket IPC Client Mode)
+// 2. Kajo Suite Keybindings
 binds {
-    // Application Launcher, Settings, File Browser & Virtual Keyboard
+    // Kajo Application Suite
     Mod+D             { spawn "kajo" "--toggle-launcher"; }
-    Mod+S             { spawn "kajo-settings"; }
+    Mod+C             { spawn "kajo-ide"; }
     Mod+E             { spawn "kajo-files"; }
+    Mod+M             { spawn "kajo-player"; }
+    Mod+S             { spawn "kajo-settings"; }
     Mod+K             { spawn "kajo" "--toggle-osk"; }
 
     // Session Lock & Screen Saver
@@ -176,117 +188,16 @@ binds {
 
 ---
 
-## 🔐 Installing & Testing `kajo-greeter` for `greetd`
+## 💻 Command-Line Interface (CLI) Summary
 
-### Testing Without Logging Out (Two Safe Desktop Modes)
-
-Before enabling `kajo-greeter` in `/etc/greetd/config.toml`, you can test it directly inside your running desktop session:
-
-1. **Stage 1 — Instant Window Preview (`--test`)**:
-   Opens `kajo-greeter` in a regular `1280x800` window on your desktop and verifies your password against PAM (`libpam`) without starting a new session:
-   ```bash
-   ./builddir/kajo-greeter --test --cmd niri-session
-   ```
-   *(Press `Ctrl+Esc` at any time to close the preview window.)*
-
-2. **Stage 2 — Nested `niri` Compositor Test**:
-   Runs a nested windowed `niri` compositor using the locked-down greeter config:
-   ```bash
-   KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
-   ```
-
-### System-Wide Installation for `greetd`
-
-Because the `greetd` daemon runs as the unprivileged system user `greeter` (which cannot access `/home/<user>/.local/`), use the bundled installer script [data/greetd/install-greeter.sh](data/greetd/install-greeter.sh) to copy `kajo-greeter`, `kajo-greeter-session`, `niri-greeter.kdl`, and the default theme/icons to `/usr/local` and `/etc/greetd`:
-
-```bash
-# Install files to /usr/local & /etc/greetd
-./data/greetd/install-greeter.sh
-
-# Or install AND automatically activate in /etc/greetd/config.toml (backs up config.toml.bak)
-./data/greetd/install-greeter.sh --enable
-
-# To revert /etc/greetd/config.toml back to your previous greeter at any time:
-./data/greetd/install-greeter.sh --restore
-```
-
-If configuring `/etc/greetd/config.toml` manually:
-
-**Option A — Using `niri` (Recommended: Multi-Monitor + Native HiDPI)**:
-```toml
-[terminal]
-vt = 1
-
-[default_session]
-command = "kajo-greeter-session --cmd niri-session"
-user = "greeter"
-```
-
-**Option B — Using `cage` (Single-Monitor Kiosk Compositor)**:
-```toml
-[terminal]
-vt = 1
-
-[default_session]
-command = "cage -s -- kajo-greeter --cmd niri-session"
-user = "greeter"
-```
-
----
-
-## 💻 Command-Line Interface (CLI) Reference
-
-### 1. `kajo` (Desktop Shell Daemon & IPC Client)
-When invoked with no arguments, `kajo` starts as the Wayland desktop shell daemon. When invoked with an argument, it sends an IPC command to `$XDG_RUNTIME_DIR/kajo.sock`:
-
-| Option / Argument | Aliases | Description |
+| Binary | Invocation | Description |
 | :--- | :--- | :--- |
-| *(no arguments)* | — | Starts the Kajo Wayland desktop shell daemon. |
-| `--toggle-launcher` | `-t`, `launcher-toggle` | Toggles the application launcher overlay. |
-| `--lock` | `lock` | Immediately activates the `ext-session-lock-v1` PAM lock screen. |
-| `--screensaver` | `screensaver` | Immediately starts the fullscreen Metro screen saver overlay. |
-| `--volume-up` | `volume-up` | Increases default audio sink volume by 5% and shows OSD. |
-| `--volume-down` | `volume-down` | Decreases default audio sink volume by 5% and shows OSD. |
-| `--volume-mute` | `volume-mute` | Toggles default audio sink mute state and shows OSD. |
-| `--brightness-up` | `brightness-up` | Increases display backlight brightness by 5% and shows OSD. |
-| `--brightness-down` | `brightness-down` | Decreases display backlight brightness by 5% and shows OSD. |
-| `--toggle-osk` | `toggle-osk` | Toggles the on-screen virtual keyboard (`ShellOSK`). |
-| `--show-osk` | `show-osk` | Shows the on-screen virtual keyboard. |
-| `--hide-osk` | `hide-osk` | Hides the on-screen virtual keyboard. |
-
-### 2. `kajo-settings` (System Settings Application)
-| Option / Flag | Description |
-| :--- | :--- |
-| *(no arguments)* | Opens the settings window on the default `displays` page. |
-| `-p <PAGE>`, `--page <PAGE>` | Opens directly to a specific page: `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, or `about`. |
-
-### 3. `kajo-files` (File Manager)
-| Option / Argument | Description |
-| :--- | :--- |
-| *(no arguments)* | Opens `kajo-files` in the user's Home directory (`~`). |
-| `<PATH_OR_URI...>` | Opens one or more directories or GVFS URIs (`file://`, `trash:///`, `recent:///`, `network:///`, `smb://`, `sftp://`). |
-
-### 4. `kajo-greeter` (`greetd` Login Greeter)
-| Option / Flag | Description |
-| :--- | :--- |
-| `-c <CMD>`, `--cmd <CMD>` | Default session command (also read from `$KAJO_GREETER_CMD`). |
-| `-u <USER>`, `--user <USER>` | Pre-selected username (also read from `$KAJO_GREETER_USER`). |
-| `-f`, `--fullscreen` | Force standard XDG fullscreen window mode (used automatically under `cage`). |
-| `-t`, `--test` | Desktop preview mode (`1280x800` window using PAM verification; automatically disabled if `$GREETD_SOCK` is set). |
-
----
-
-## ⌨️ Launcher Search Prefix Modes
-
-When the launcher is open (`Mod+D` or `kajo --toggle-launcher`):
-
-| Prefix | Plugin Mode | Example | Action on `Enter` |
-| :--- | :--- | :--- | :--- |
-| *(None)* | **App Search** | `firefox`, `term` | Launches matching `.desktop` application. |
-| `:` | **Emoji Picker** | `:fire`, `:rocket` | Copies selected emoji (from 1,914 entries) to clipboard. |
-| `=` | **Calculator** | `= (24 * 60) + 120` | Evaluates math expression via TinyExpr and copies result. |
-| `>` | **Shell Command** | `> htop` | Runs command in terminal or spawns directly. |
-| `w:` / `W:` | **Window Switcher** | `w:code` | Focuses matching open Niri window. |
+| **`kajo-ide`** | `kajo-ide [DIR \| FILES...]` | Opens a project workspace directory or specific source files in Kajo IDE. |
+| **`kajo-files`** | `kajo-files [PATH_OR_URI...]` | Opens local folders or GVFS URIs (`trash:///`, `recent:///`, `smb://`, `sftp://`). |
+| **`kajo-player`** | `kajo-player [FILE_OR_URI...]` | Opens video/audio media files in Kajo Player with sibling folder queue discovery. |
+| **`kajo-settings`** | `kajo-settings [-p <PAGE>]` | Opens System Settings (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `niri`, `about`). |
+| **`kajo`** | `kajo [--toggle-launcher \| --lock \| --screensaver \| --toggle-osk \| --volume-up \| ...]` | Starts the Wayland shell daemon (no args) or dispatches an instant command over `$XDG_RUNTIME_DIR/kajo.sock`. |
+| **`kajo-greeter`** | `kajo-greeter [--test] [--fullscreen] [--cmd <SESSION>]` | Runs the `greetd` login greeter (use `--test` to preview safely in a `1280×800` desktop window). |
 
 ---
 
@@ -294,10 +205,11 @@ When the launcher is open (`Mod+D` or `kajo --toggle-launcher`):
 
 | Path | Managed By | Purpose |
 | :--- | :--- | :--- |
-| **`~/.config/kajo/config.json`** | `kajo-settings` / User | Panel edge, height, autohide settings, widget layout (`left`, `center`, `right`), widget modes, notification timeout, `idle` security settings (`screensaver_mode`, `screensaver_timeout_sec`, `dpms_timeout_sec`, `lock_timeout_sec`, `lock_on_suspend`), `posture` (`auto_rotate`, `disable_kbd_in_tablet`, `disable_touch_in_laptop`), and `keyboard_backlight` (`level`, `timeout_sec`). |
-| **`~/.config/kajo/theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) and user CSS overrides, hot-reloaded via IPC. |
-| **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and Niri layout/focus-ring settings. |
-| **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins (falls back to `~/.cache/kajo/greeter-state.json` in `--test` mode). |
+| **`~/.config/kajo/config.json`** | `kajo-settings` / User | Panel layout, widget modes, notification timeouts, `idle` security settings, convertible `posture` rules, and `keyboard_backlight` preferences. |
+| **`~/.config/kajo/ide.toml`** | `kajo-settings` (`ide`) / `kajo-ide` | Editor syntax color scheme (`kajo-metro-dark`, etc.), font family & size (`Ctrl++`/`Ctrl+-` zoom), tab width, line number mode, minimap visibility, and custom `[keys.*]` remappings. |
+| **`~/.config/kajo/theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) hot-reloaded across all Kajo processes. |
+| **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and Niri layout/GLSL shader settings. |
+| **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins. |
 
 ---
 

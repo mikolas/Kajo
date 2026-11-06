@@ -38,6 +38,7 @@ archive_dep = dependency('libarchive')
 mpv_dep = dependency('mpv')
 egl_dep = dependency('egl')
 glesv2_dep = dependency('glesv2')
+gtksourceview_dep = dependency('gtksourceview-5')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -230,6 +231,7 @@ settings_sources = files(
   'src/settings/pages/page_audio.c',
   'src/settings/pages/page_notifications.c',
   'src/settings/pages/page_theme.c',
+  'src/settings/pages/page_ide.c',
   'src/settings/pages/page_about.c',
   'src/config.c',
   'src/theme.c',
@@ -353,6 +355,45 @@ install_data(
   install_dir: get_option('datadir') / 'applications',
 )
 
+ide_sources = files(
+  'src/ide/main.c',
+  'src/ide/ide_window.c',
+  'src/ide/ide_fsm.c',
+  'src/ide/ide_buffer.c',
+  'src/ide/ide_gutter.c',
+  'src/ide/ide_tree.c',
+  'src/ide/ide_picker.c',
+  'src/ide/ide_search.c',
+  'src/ide/ide_lsp.c',
+  'src/ide/ide_dap.c',
+  'src/ide/ide_agent_ipc.c',
+  'src/ide/ide_markdown.c',
+  'src/config.c',
+  'src/theme.c',
+  'src/icons.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-ide',
+  ide_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    gtksourceview_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    m_dep,
+  ],
+  install: true,
+)
+
+install_data(
+  'data/org.kajo.IDE.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
+
 install_data(
   'data/greetd/kajo-greeter-session',
   install_dir: get_option('bindir'),
@@ -379,6 +420,12 @@ install_subdir(
 install_subdir(
   'data/shaders',
   install_dir: get_option('datadir') / 'kajo' / 'shaders',
+  strip_directory: true,
+)
+
+install_subdir(
+  'data/ide',
+  install_dir: get_option('datadir') / 'kajo' / 'ide',
   strip_directory: true,
 )
 
@@ -533,6 +580,47 @@ if egl_dep.found() and glesv2_dep.found()
   )
   test('niri-shaders', test_shaders_exe)
 endif
+
+test_ide_fsm_exe = executable(
+  'test-ide-fsm',
+  files('tests/test_ide_fsm.c', 'src/ide/ide_fsm.c'),
+  dependencies: [gio_dep],
+  build_by_default: false,
+)
+test('ide-fsm', test_ide_fsm_exe)
+
+test_ide_buffer_exe = executable(
+  'test-ide-buffer',
+  files(
+    'tests/test_ide_buffer.c',
+    'src/ide/ide_buffer.c',
+    'src/ide/ide_gutter.c',
+    'src/ide/ide_tree.c',
+    'src/ide/ide_picker.c',
+    'src/ide/ide_search.c',
+    'src/ide/ide_fsm.c',
+  ),
+  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, m_dep],
+  build_by_default: false,
+)
+test('ide-buffer', test_ide_buffer_exe)
+
+test_ide_ipc_exe = executable(
+  'test-ide-ipc',
+  files(
+    'tests/test_ide_ipc.c',
+    'src/ide/ide_lsp.c',
+    'src/ide/ide_dap.c',
+    'src/ide/ide_agent_ipc.c',
+    'src/ide/ide_markdown.c',
+    'src/ide/ide_buffer.c',
+    'src/ide/ide_picker.c',
+    'src/ide/ide_search.c',
+  ),
+  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
+  build_by_default: false,
+)
+test('ide-ipc', test_ide_ipc_exe)
 
 gnome.post_install(
   update_desktop_database: true,

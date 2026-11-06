@@ -89,6 +89,15 @@ struct _ShellConfig {
     gint            kbd_backlight_level;       /* 0 = Off, 1 = Low, 2 = High */
     gint            kbd_backlight_timeout_sec; /* 0 = Always On, 30 = 30s, 180 = 3m */
 
+    /* Kajo IDE (org.kajo.IDE) Typography, Color Scheme & Chrome */
+    gchar          *ide_color_scheme;          /* "kajo-metro-dark", "kajo-oled-pitch", etc. */
+    gchar          *ide_font_family;           /* "Fira Code", "JetBrains Mono", etc. */
+    gint            ide_font_size_px;          /* 10..24, default 13 */
+    gint            ide_tab_width;             /* 2, 4, or 8, default 2 */
+    gboolean        ide_show_minimap;
+    gboolean        ide_show_line_numbers;
+    gboolean        ide_highlight_current_line;
+
     GPtrArray      *layout_left;   /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_center; /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_right;  /* Array of ShellWidgetConfig* */

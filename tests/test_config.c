@@ -41,6 +41,15 @@ test_config_defaults(void)
     g_assert_cmpint(cfg->kbd_backlight_level, ==, 2);
     g_assert_cmpint(cfg->kbd_backlight_timeout_sec, ==, 0);
 
+    /* Kajo IDE & Code Editor defaults */
+    g_assert_cmpstr(cfg->ide_color_scheme, ==, "kajo-metro-dark");
+    g_assert_cmpstr(cfg->ide_font_family, ==, "Fira Code");
+    g_assert_cmpint(cfg->ide_font_size_px, ==, 13);
+    g_assert_cmpint(cfg->ide_tab_width, ==, 2);
+    g_assert_true(cfg->ide_show_minimap);
+    g_assert_true(cfg->ide_show_line_numbers);
+    g_assert_true(cfg->ide_highlight_current_line);
+
     g_assert_nonnull(cfg->layout_left);
     g_assert_nonnull(cfg->layout_center);
     g_assert_nonnull(cfg->layout_right);
@@ -103,6 +112,16 @@ test_config_save_and_load_roundtrip(void)
     orig->font_heading_size_px = 14;
     orig->font_subtitle_size_px = 13;
     orig->font_badge_size_px = 12;
+
+    g_free(orig->ide_color_scheme);
+    orig->ide_color_scheme = g_strdup("kajo-monokai-metro");
+    g_free(orig->ide_font_family);
+    orig->ide_font_family = g_strdup("JetBrains Mono");
+    orig->ide_font_size_px = 16;
+    orig->ide_tab_width = 4;
+    orig->ide_show_minimap = FALSE;
+    orig->ide_show_line_numbers = TRUE;
+    orig->ide_highlight_current_line = FALSE;
 
     ShellWidgetConfig *wc_left = g_new0(ShellWidgetConfig, 1);
     wc_left->id = g_strdup("launcher");
@@ -169,6 +188,14 @@ test_config_save_and_load_roundtrip(void)
     g_assert_cmpint(loaded->font_heading_size_px, ==, 14);
     g_assert_cmpint(loaded->font_subtitle_size_px, ==, 13);
     g_assert_cmpint(loaded->font_badge_size_px, ==, 12);
+
+    g_assert_cmpstr(loaded->ide_color_scheme, ==, "kajo-monokai-metro");
+    g_assert_cmpstr(loaded->ide_font_family, ==, "JetBrains Mono");
+    g_assert_cmpint(loaded->ide_font_size_px, ==, 16);
+    g_assert_cmpint(loaded->ide_tab_width, ==, 4);
+    g_assert_false(loaded->ide_show_minimap);
+    g_assert_true(loaded->ide_show_line_numbers);
+    g_assert_false(loaded->ide_highlight_current_line);
 
     g_assert_cmpuint(loaded->layout_left->len, ==, 1);
     ShellWidgetConfig *l0 = g_ptr_array_index(loaded->layout_left, 0);
