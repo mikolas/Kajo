@@ -406,6 +406,8 @@ ide_sources = files(
   'src/ide/ide_picker.c',
   'src/ide/ide_search.c',
   'src/ide/ide_lsp.c',
+  'src/ide/ide_lsp_client.c',
+  'src/ide/ide_lsp_servers.c',
   'src/ide/ide_dap.c',
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
@@ -672,11 +674,21 @@ test_ide_ts_exe = executable(
 )
 test('ide-ts', test_ide_ts_exe)
 
+test_lsp_client_exe = executable(
+  'test-lsp-client',
+  files('tests/test_lsp_client.c', 'src/ide/ide_lsp_client.c'),
+  dependencies: [gio_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('lsp-client', test_lsp_client_exe, timeout: 60)
+
 test_ide_ipc_exe = executable(
   'test-ide-ipc',
   files(
     'tests/test_ide_ipc.c',
     'src/ide/ide_lsp.c',
+    'src/ide/ide_lsp_client.c',
+    'src/ide/ide_lsp_servers.c',
     'src/ide/ide_dap.c',
     'src/ide/ide_agent_ipc.c',
     'src/ide/ide_markdown.c',

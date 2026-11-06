@@ -24,6 +24,8 @@ struct _IdeBuffer {
   guint                     dap_pc_line;
   IdeDiffState             *line_diffs;
   gsize                     line_diffs_len;
+  IdeBufferDestroyNotify    destroy_notify;
+  gpointer                  destroy_notify_data;
 };
 
 void
@@ -826,10 +828,23 @@ ide_buffer_new(const char *file_path)
 }
 
 void
+ide_buffer_set_destroy_notify(IdeBuffer *buf, IdeBufferDestroyNotify notify, gpointer user_data)
+{
+  g_return_if_fail(buf != NULL);
+  buf->destroy_notify = notify;
+  buf->destroy_notify_data = user_data;
+}
+
+void
 ide_buffer_free(IdeBuffer *buf)
 {
   if (buf == NULL) {
     return;
+  }
+  if (buf->destroy_notify != NULL) {
+    IdeBufferDestroyNotify notify = buf->destroy_notify;
+    buf->destroy_notify = NULL;
+    notify(buf, buf->destroy_notify_data);
   }
   if (buf->monitor != NULL) {
     if (buf->monitor_handler_id != 0) {

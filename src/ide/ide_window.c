@@ -784,6 +784,48 @@ static void on_picker_command(IdeActionType action, gpointer user_data) {
   ide_window_dispatch_action(self, &act);
 }
 
+static void on_lsp_diagnostics(IdeBuffer *buf, gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  (void)buf;
+  if (self->source_view) gtk_widget_queue_draw(self->source_view);
+  ide_window_update_status_bar_and_hud(self);
+}
+
+static void on_lsp_message(const char *message, gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  ide_window_show_toast(self, message);
+}
+
+/* Popover visibility drives the modal state so Esc / q / Enter reach the right
+ * handler, and the editor returns to NORMAL / INSERT when the popover closes. */
+static void on_lsp_ui_state(IdeLspUiState state, gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  IdeState cur = ide_fsm_get_state(self->fsm);
+  switch (state) {
+    case IDE_LSP_UI_HOVER:
+      ide_fsm_set_state(self->fsm, IDE_STATE_HOVER);
+      break;
+    case IDE_LSP_UI_COMPLETION:
+      ide_fsm_set_state(self->fsm, IDE_STATE_COMPLETION);
+      break;
+    case IDE_LSP_UI_CODE_ACTION:
+      ide_fsm_set_state(self->fsm, IDE_STATE_CODE_ACTION);
+      break;
+    case IDE_LSP_UI_RENAME:
+      ide_fsm_set_state(self->fsm, IDE_STATE_RENAME);
+      break;
+    case IDE_LSP_UI_CLOSED:
+      if (cur == IDE_STATE_COMPLETION) {
+        ide_fsm_set_state(self->fsm, IDE_STATE_INSERT);
+      } else if (cur == IDE_STATE_HOVER || cur == IDE_STATE_CODE_ACTION ||
+                 cur == IDE_STATE_RENAME) {
+        ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
+      }
+      break;
+  }
+  ide_window_update_status_bar_and_hud(self);
+}
+
 static void on_lsp_status_changed(const char *server_name,
                                   gboolean    active,
                                   gpointer    user_data) {
@@ -1479,6 +1521,8 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   /* LSP Manager */
   self->lsp = ide_lsp_manager_new(
       self->workspace_root, on_picker_open_file, on_lsp_status_changed, self);
+  ide_lsp_manager_set_callbacks(
+      self->lsp, on_lsp_diagnostics, on_lsp_message, on_lsp_ui_state, self);
 
   /* Initial empty buffer */
   IdeBuffer *init_buf = ide_buffer_new(NULL);

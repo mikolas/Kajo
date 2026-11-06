@@ -13,7 +13,7 @@
 1. **Tree-sitter Syntax Highlighting** — C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, JSON, TOML, YAML, CSS and HTML are parsed with Tree-sitter (incremental re-parse on every edit; only the changed region is re-tagged) and mapped onto the 11 semantic token classes of the active color scheme. Annotations, generics, records, methods vs. fields, constructors and calls are classified from the syntax tree rather than guessed. Other languages (Python, Makefile, meson.build, …) use the heuristic lexer. Grammars are optional build dependencies (see the README); a missing grammar degrades that language to the lexer.
 2. **Selection-First Modal Editing** — A deterministic 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) where motions highlight selections first and actions (`d`, `c`, `y`, `s`) operate on the active selection.
 3. **Nordic Keyboard Ergonomics** — First-class bindings for Finnish/Swedish keyboards (`ä` / `ö` diagnostic & hunk stepping, `m i/a` structural text objects that avoid Dead-Key / AltGr finger gymnastics, and `jk` fast-exit from `INSERT` mode) alongside standard desktop shortcuts (`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C/X/V/A`, `F1`, `F5`–`F12`).
-4. **Code Intelligence & Debugger UI** — ripgrep-backed hover, completion, go-to-definition and rename today; a real stdio LSP 3.17 client (`clangd`, `gopls`, `rust-analyzer`, `pyright`) and DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) are planned (see §8, §9 and `ROADMAP.md`).
+4. **Code Intelligence & Debugger UI** — a real asynchronous stdio LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, …) provides diagnostics, hover, completion, definition/implementation, rename, code actions and formatting (§8); the DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) is planned (§9, `ROADMAP.md`).
 5. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg` export.
 6. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers.
 
@@ -195,10 +195,10 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 | `Space q` | Window | Close buffer / Quit IDE (`:q`) |
 | `Space e` | Explorer | Focus or toggle the **Project File Explorer** sidebar |
 | `Space h` / `?` / `F1` | Help | Open the **Interactive Help Viewer & Command Palette** |
-| `Space c a` | LSP | *(planned)* Trigger **LSP Code Actions** (`quickfix` / refactor) — chord is bound, no handler yet |
-| `Space c r` | LSP | Rename symbol (whole-word replace in the current buffer) |
-| `Space c f` | LSP | *(planned)* Format current buffer via LSP (`clang-format` / `gofmt` / `rustfmt`) |
-| `Space g c` | LSP | *(planned)* Inspect **LSP Incoming / Outgoing Call Hierarchy** — chord is bound, no handler yet |
+| `Space c a` | LSP | Code actions (quick fix / refactor) at the cursor or selection |
+| `Space c r` | LSP | Rename symbol across the workspace via the language server |
+| `Space c f` | LSP | Format current buffer via the language server |
+| `Space g c` | LSP | *(planned)* Call hierarchy — chord is bound, shows a notice |
 | `Space x x` | Diagnostics | Open **Workspace Diagnostics Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
 | `Space s R` | Search | Open **Project-Wide Search & Replace** in bottom drawer |
@@ -256,25 +256,34 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 
 ---
 
-## 8. Code Intelligence (ripgrep-backed; LSP client planned)
+## 8. Code Intelligence (Language Server Protocol)
 
-> **Status:** `kajo-ide` does **not** yet spawn language servers. `src/ide/ide_lsp.c` detects the matching server per filetype and shows an availability badge in the status bar, and contains the JSON-RPC 2.0 framing helpers a future client will use. The features below are implemented with `ripgrep` and the open buffer.
+`kajo-ide` runs real language servers over stdio. One server process is started lazily per **(server, project root)** when a matching file is opened; the root is the nearest ancestor holding a marker file (`go.mod`/`go.work`, `pom.xml`/`build.gradle*`, `compile_commands.json`, `Cargo.toml`, `tsconfig.json`, …) and never climbs above the workspace. Everything is asynchronous — a slow server (a JVM-based `jdtls` indexing a large project) never blocks the editor. The status bar shows `LSP: <server> ●` once the server finished initialization and `LSP: <server> (not installed)` when the binary is missing; without a server the editor falls back to the `ripgrep`/buffer behaviour described below.
 
-| Language(s) | File Extensions | Server detected (badge only) |
-| :--- | :--- | :--- |
-| **C / C++** | `.c`, `.h`, `.cpp`, `.hpp`, `.cc` | `clangd` |
-| **Go** | `.go` | `gopls` |
-| **Rust** | `.rs` | `rust-analyzer` |
-| **Python** | `.py` | `pyright-langserver` |
+| Language(s) | Extensions | Server (binary) | Notes |
+| :--- | :--- | :--- | :--- |
+| **Go** | `.go` | `gopls` | `go.mod` root; formats with `gofmt` rules |
+| **Java** | `.java` | `jdtls` | per-project data dir `~/.cache/kajo/jdtls/<hash>`; started with the **newest installed JDK** (`JAVA_HOME`, `~/.sdkman`, `/usr/lib/jvm`), override with `KAJO_JDTLS_JAVA=/path/to/bin/java` |
+| **C / C++** | `.c .h .cpp .hpp .cc` | `clangd` | uses `builddir/` / `build/` `compile_commands.json` automatically |
+| **Rust** | `.rs` | `rust-analyzer` | `Cargo.toml` root |
+| **Python** | `.py` | `pyright-langserver` | |
+| **TypeScript / JavaScript** | `.ts .tsx .js .jsx` | `typescript-language-server` | |
+| **Shell / JSON / YAML / TOML / Lua / Meson** | `.sh .json .yaml .toml .lua meson.build` | `bash-language-server`, `vscode-json-language-server`, `yaml-language-server`, `taplo`, `lua-language-server`, `mesonlsp` | |
 
-### Implemented Workflows
-- **Hover (`K`):** popover with the symbol, a one-line declaration found via `ripgrep` in the workspace, and any compiler diagnostic on the line.
-- **Completion (`Ctrl+Space`):** ranked identifiers from the current buffer (fuzzy + prefix), inserted with `Tab` / `Enter`.
-- **Go to Definition (`g d`):** `ripgrep` search for the declaration pattern; the location is recorded in the `Ctrl+o` / `Ctrl+i` jumplist.
-- **Rename (`Space c r`):** whole-word replace across the current buffer.
+### Workflows (server running)
+- **Diagnostics:** errors / warnings / hints from the server appear in the gutter pill, the status-bar counters and the hover card; `ä` / `ö` (or `]d` / `[d`) step through them. Edits are sent to the server after a short debounce (full-document sync) and saving sends `didSave`.
+- **Hover (`K`, `Space k`):** signature and documentation (markdown flattened to text) plus any diagnostic on the line. `Esc` / `q` dismisses.
+- **Completion (`Ctrl+Space`, or automatically after a server trigger character such as `.`):** ranked, scrollable list with kind badges and documentation. The list follows your typing, `Up`/`Down`/`Ctrl+n`/`Ctrl+p` select, `Tab`/`Enter` insert. The server's `textEdit` and `additionalTextEdits` are honored, so auto-imports (Go, Java) are added with the completion.
+- **Go to Definition (`g d` / `Space g d`) and Implementation (`Space g i`):** jumps (and records the jumplist). Definitions inside libraries (`jdt://`) are reported instead of opened.
+- **Rename (`Space c r`):** prompt anchored at the cursor (type the new name, `Enter` applies, `Esc` cancels). The server's `WorkspaceEdit` is applied to open buffers (undoable) and to files that are not open (atomic write); a toast reports the edit/file count.
+- **Code Actions (`Space c a`):** quick fixes and refactorings for the cursor or selection (organize imports, extract, fix) in a popover list; `Enter` runs the action (resolving it first when the server asks for that).
+- **Format (`Space c f`, command palette *LSP › Format Buffer*):** `textDocument/formatting` applied as minimal edits.
 
-### Not Yet Implemented (planned)
-Code actions, call hierarchy, references, workspace-wide rename, LSP diagnostics (the diagnostics shown come from the build runner), and formatting via a language server.
+### Fallbacks (no server for the file type, or server not installed)
+- Hover: one-line declaration via `ripgrep`. Completion: ranked identifiers from the buffer. Definition: `ripgrep` declaration search. Rename: whole-word replace in the current buffer.
+
+### Limits / not yet implemented
+Call hierarchy (`Space g c` shows a notice), references list, signature help, semantic tokens (highlighting stays tree-sitter based), incremental text sync (full-document sync is used), and the DAP client (§9).
 
 ---
 

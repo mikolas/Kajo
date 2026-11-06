@@ -136,6 +136,7 @@ static const struct {
   { "LSP", "Autocomplete", "Trigger pixel-anchored LSP completion popover at cursor", "Ctrl+Space", IDE_ACTION_LSP_COMPLETE },
   { "LSP", "Code Actions", "Open LSP quickfix and refactoring action menu", "Space c a", IDE_ACTION_LSP_CODE_ACTION },
   { "LSP", "Rename Symbol", "Rename identifier across workspace via LSP", "Space c r", IDE_ACTION_LSP_RENAME },
+  { "LSP", "Format Buffer", "Format the whole buffer with the language server (gofmt, clang-format, jdt, rustfmt)", "Space c f", IDE_ACTION_LSP_FORMAT },
   { "LSP", "Next Diagnostic", "Jump to next LSP error or warning in buffer", "Space n d / ] d", IDE_ACTION_NEXT_DIAGNOSTIC },
   { "LSP", "Prev Diagnostic", "Jump to previous LSP error or warning in buffer", "Space p d / [ d", IDE_ACTION_PREV_DIAGNOSTIC },
   { "LSP", "Nordic Quick Step", "Step forward / backward across diagnostics or tabs", "ä / ö", IDE_ACTION_STEP_FORWARD },

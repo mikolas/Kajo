@@ -366,6 +366,21 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
   guint cur_line = 1, cur_col = 1;
   ide_window_get_cursor_line_col(self, &cur_line, &cur_col);
 
+  /* The LSP rename prompt owns text input while it is open. */
+  if (ide_lsp_manager_rename_active(self->lsp)) {
+    if (act->type == IDE_ACTION_INSERT_CHAR) {
+      ide_lsp_manager_rename_input(self->lsp, act->str);
+      ide_window_update_status_bar_and_hud(self);
+      return;
+    }
+    if (act->type == IDE_ACTION_BACKSPACE) {
+      ide_lsp_manager_rename_backspace(self->lsp);
+      ide_window_update_status_bar_and_hud(self);
+      return;
+    }
+  }
+  gboolean completion_was_open = ide_lsp_manager_completion_active(self->lsp);
+
   /* Route text input & navigation when inside editable Tree prompt or Drawer */
   if (cur_st == IDE_STATE_TREE && ide_fsm_get_tree_editable(self->fsm)) {
     if (act->type == IDE_ACTION_INSERT_CHAR) {
@@ -701,6 +716,21 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       if (buf)
         ide_lsp_manager_request_definition(self->lsp, buf, cur_line, cur_col);
       break;
+    case IDE_ACTION_LSP_IMPLEMENTATION:
+      if (buf) ide_lsp_manager_request_implementation(self->lsp, buf);
+      break;
+    case IDE_ACTION_LSP_CALL_HIERARCHY:
+      ide_window_show_toast(self, "Call hierarchy is not available yet");
+      break;
+    case IDE_ACTION_LSP_CODE_ACTION:
+      if (buf) ide_lsp_manager_request_code_actions(self->lsp, self->source_view, buf);
+      break;
+    case IDE_ACTION_LSP_RENAME:
+      if (buf) ide_lsp_manager_rename_begin(self->lsp, self->source_view, buf);
+      break;
+    case IDE_ACTION_LSP_FORMAT:
+      if (buf) ide_lsp_manager_request_format(self->lsp, buf);
+      break;
     case IDE_ACTION_LSP_CANCEL:
       ide_lsp_manager_cancel_popover(self->lsp);
       break;
@@ -711,7 +741,11 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       ide_lsp_manager_select_prev(self->lsp);
       break;
     case IDE_ACTION_LSP_SELECT_CONFIRM:
-      if (buf) ide_lsp_manager_confirm_selection(self->lsp, buf);
+      if (ide_lsp_manager_rename_active(self->lsp)) {
+        if (buf) ide_lsp_manager_rename_confirm(self->lsp, buf);
+      } else if (buf) {
+        ide_lsp_manager_confirm_selection(self->lsp, buf);
+      }
       break;
     case IDE_ACTION_NEXT_DIAGNOSTIC:
     case IDE_ACTION_PREV_DIAGNOSTIC:
@@ -918,6 +952,15 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     default:
       execute_buffer_motion_or_edit(self, act);
       break;
+  }
+
+  /* Completion follows typing: refresh while open, auto-trigger on '.', '::' ... */
+  if (buf != NULL && (act->type == IDE_ACTION_INSERT_CHAR || act->type == IDE_ACTION_BACKSPACE)) {
+    if (completion_was_open) {
+      ide_lsp_manager_request_completion(self->lsp, self->source_view, buf, 0, 0);
+    } else if (act->type == IDE_ACTION_INSERT_CHAR) {
+      ide_lsp_manager_maybe_trigger_completion(self->lsp, self->source_view, buf, act->str);
+    }
   }
 
   ide_window_update_status_bar_and_hud(self);

@@ -22,7 +22,7 @@ static const char *const kValidLeaderChords[] = {
   "ff", "fg", "fs", "fa", "bb", "bd", "bD", "e",  "o",  "a",  "k",  "?",  "h",
   "/",  "mp", "mt", "md", "mf", "ne", "pe", "nd", "pd", "nh", "ph", "ns", "ps",
   "ds", "da", "dr", "db", "dd", "dc", "dn", "di", "do", "dp", "dq", "dv", "ca",
-  "cr", "gd", "gi", "gc", "ch", "sr", "sp", "sf", "s/", "ws", "w>", "w<", "w+",
+  "cr", "cf", "gd", "gi", "gc", "ch", "sr", "sp", "sf", "s/", "ws", "w>", "w<", "w+",
   "w-", "ww", "wh", "wl", "wj", "wk", NULL
 };
 
@@ -371,6 +371,8 @@ ide_action_type_from_name(const char *name)
     { "call_hierarchy", IDE_ACTION_LSP_CALL_HIERARCHY },
     { "lsp_code_action", IDE_ACTION_LSP_CODE_ACTION },
     { "code_action", IDE_ACTION_LSP_CODE_ACTION },
+    { "lsp_format", IDE_ACTION_LSP_FORMAT },
+    { "format", IDE_ACTION_LSP_FORMAT },
     { "lsp_rename", IDE_ACTION_LSP_RENAME },
     { "rename", IDE_ACTION_LSP_RENAME },
     { "lsp_hover", IDE_ACTION_LSP_HOVER },
@@ -1226,6 +1228,11 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_LSP_CODE_ACTION);
+  }
+  if (g_strcmp0(b, "cf") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_LSP_FORMAT);
   }
   if (g_strcmp0(b, "cr") == 0) {
     fsm->state = IDE_STATE_NORMAL;

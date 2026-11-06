@@ -34,6 +34,8 @@ typedef struct {
 
 typedef struct _IdeBuffer IdeBuffer;
 
+typedef void (*IdeBufferDestroyNotify)(IdeBuffer *buf, gpointer user_data);
+
 typedef void (*IdeBufferExternalChangeCb)(IdeBuffer *buf,
                                           gboolean   reloaded_cleanly,
                                           gpointer   user_data);
@@ -72,6 +74,8 @@ GtkSourceBuffer *ide_buffer_get_source_buffer(IdeBuffer *buf);
 const char      *ide_buffer_get_file_path(const IdeBuffer *buf);
 const char      *ide_buffer_get_title(const IdeBuffer *buf);
 char            *ide_buffer_get_text(IdeBuffer *buf);
+/* Called once from ide_buffer_free() before the buffer is torn down. */
+void             ide_buffer_set_destroy_notify(IdeBuffer *buf, IdeBufferDestroyNotify notify, gpointer user_data);
 void             ide_buffer_set_text(IdeBuffer *buf, const char *text);
 /* Registers the GtkSourceView scheme search paths (user dir, install prefix, XDG
  * system dirs, dev source tree). Idempotent. */
