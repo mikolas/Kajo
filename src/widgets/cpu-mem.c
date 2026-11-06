@@ -811,12 +811,12 @@ static GtkWidget *cpu_mem_get_widget(ShellWidget *widget)
 static void cpu_mem_enable(ShellWidget *widget)
 {
     CpuMemWidget *cm = (CpuMemWidget *)widget;
-    if (cm) {
-        if (cm->icon_img) {
-            gtk_image_set_pixel_size(GTK_IMAGE(cm->icon_img), shell_widget_get_icon_size(widget));
-        }
-        shell_widget_apply_mode_visibility(widget->mode, cm->icon_img, cm->panel_label);
+    if (!cm)
+        return;
+    if (cm->icon_img) {
+        gtk_image_set_pixel_size(GTK_IMAGE(cm->icon_img), shell_widget_get_icon_size(widget));
     }
+    shell_widget_apply_mode_visibility(widget->mode, cm->icon_img, cm->panel_label);
     if (cm->timer_id == 0) {
         cpu_mem_update(cm);
         cm->timer_id = g_timeout_add_seconds(CPU_MEM_INTERVAL_SECONDS, cpu_mem_tick, cm);

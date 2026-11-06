@@ -266,6 +266,11 @@ Review method: every page was rendered headlessly (cage + grim, isolated config)
 - [ ] Relative line numbers, custom accent hex picker, DND switch on the Notifications page: moved to the ROADMAP as planned (decisions taken: panel widget stays the DND control).
 - [ ] Untested by hand: clicking through the new controls and the Control Center restyle (needs a live session); Wi-Fi connect against a real network.
 
+### Phase 9 — Tooling & guidance
+- [x] `scripts/ui-shot.sh` (isolated headless render + screenshot), `scripts/audit.sh` (warnings, tidy, sizes, dups, blocking, lifetimes, colors); documented in `DEVELOPMENT.md` §6–§7 together with the screenshot-analysis checklist and UI-control usage guidance. `AGENTS.md` gained live-session-safety and visual-verification rules, the control-selection rule and a concise Dos & Don'ts section.
+- [x] `audit.sh tidy` triage: two real latent null dereferences fixed (`cpu_mem_enable`, `battery_enable` null-checked the widget and then dereferenced it unconditionally). The remaining findings were reviewed as false positives or low value (`g_autofree` modelled as a leak in `ide_mermaid.c`, flag-enum casts in pulse code, `sizeof` in `g_new0`, kind-dependent fields in `files_ops.c`).
+- [x] Lesson recorded: a visual-inspection helper must not use `dbus-run-session` (it activates installed user services inside the private bus and leaves FUSE mounts); the first version did and was fixed before landing.
+
 ### Out of scope / separate decisions
 - Implementing a real LSP / DAP client (large feature work; Phase 3 only aligns the docs).
 - Replacing the widget ↔ `ShellApp` coupling with a service / event interface (§1.5, design discussion first).
