@@ -59,6 +59,7 @@ src/
 │   ├── ide_dap.h/c                 Debugger view: session state machine, call stack / locals / console panes
 │   ├── ide_dap_client.h/c          GTK-free async DAP client (adapter process or any GIO stream pair)
 │   ├── ide_dap_launch.h/c          Adapter + debuggee discovery (.kajo/debug.json, Meson introspection, Cargo, Delve)
+│   ├── ide_dap_java.h/c            Java debug preparation: jdtls executeCommand chain (main class, classpath, JDK, debug port) + TCP connect
 │   ├── ide_jsonrpc.h/c             Content-Length framing shared by the LSP and DAP clients
 │   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make) -> build/test/run/clean commands (no GTK)
 │   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)

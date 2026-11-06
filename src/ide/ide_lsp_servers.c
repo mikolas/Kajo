@@ -1,5 +1,6 @@
 #include "ide_lsp_servers.h"
 
+#include <json-glib/json-glib.h>
 #include <string.h>
 
 static const char *const kNoArgs[] = { NULL };
@@ -128,6 +129,61 @@ ide_lsp_find_root(const IdeLspServerSpec *spec, const char *file_path, const cha
     dir = g_steal_pointer(&parent);
   }
   return g_strdup(workspace_root ? workspace_root : ".");
+}
+
+/* Microsoft's java-debug bundle (a jdtls plugin that serves DAP). Looked up in
+ * $KAJO_JAVA_DEBUG_JAR, ~/.local/share/kajo/java-debug and a Mason install. */
+char *
+ide_lsp_find_java_debug_jar(void)
+{
+  const char *forced = g_getenv("KAJO_JAVA_DEBUG_JAR");
+  if (forced != NULL && forced[0] != '\0') {
+    return g_file_test(forced, G_FILE_TEST_EXISTS) ? g_strdup(forced) : NULL;
+  }
+  g_autofree char *kajo_dir = g_build_filename(g_get_user_data_dir(), "kajo", "java-debug", NULL);
+  g_autofree char *mason = g_build_filename(g_get_user_data_dir(), "nvim", "mason", "packages",
+                                            "java-debug-adapter", "extension", "server", NULL);
+  const char *dirs[] = { kajo_dir, mason, NULL };
+  for (gsize i = 0; dirs[i] != NULL; i++) {
+    g_autoptr(GDir) d = g_dir_open(dirs[i], 0, NULL);
+    const char *name;
+    char *best = NULL;
+    while (d != NULL && (name = g_dir_read_name(d)) != NULL) {
+      if (g_str_has_prefix(name, "com.microsoft.java.debug.plugin") && g_str_has_suffix(name, ".jar")) {
+        char *p = g_build_filename(dirs[i], name, NULL);
+        if (best == NULL || g_strcmp0(p, best) > 0) {
+          g_free(best);
+          best = p;
+        } else {
+          g_free(p);
+        }
+      }
+    }
+    if (best != NULL) {
+      return best;
+    }
+  }
+  return NULL;
+}
+
+JsonNode *
+ide_lsp_server_init_options(const IdeLspServerSpec *spec)
+{
+  if (spec == NULL || g_strcmp0(spec->server_id, "jdtls") != 0) {
+    return NULL;
+  }
+  g_autofree char *jar = ide_lsp_find_java_debug_jar();
+  if (jar == NULL) {
+    return NULL;
+  }
+  g_autoptr(JsonBuilder) b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "bundles");
+  json_builder_begin_array(b);
+  json_builder_add_string_value(b, jar);
+  json_builder_end_array(b);
+  json_builder_end_object(b);
+  return json_builder_get_root(b);
 }
 
 /* Major version of the JDK rooted at `home` (from its `release` file), or 0. */

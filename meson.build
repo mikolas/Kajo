@@ -413,6 +413,7 @@ ide_sources = files(
   'src/ide/ide_dap.c',
   'src/ide/ide_dap_client.c',
   'src/ide/ide_dap_launch.c',
+  'src/ide/ide_dap_java.c',
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
   'src/ide/ide_mermaid.c',
@@ -673,7 +674,7 @@ test('ide-buffer', test_ide_buffer_exe)
 
 test_dap_client_exe = executable(
   'test-dap-client',
-  files('tests/test_dap_client.c', 'src/ide/ide_dap_client.c', 'src/ide/ide_dap_launch.c', 'src/ide/ide_jsonrpc.c'),
+  files('tests/test_dap_client.c', 'src/ide/ide_dap_client.c', 'src/ide/ide_dap_launch.c', 'src/ide/ide_dap_java.c', 'src/ide/ide_lsp_servers.c', 'src/ide/ide_jsonrpc.c'),
   dependencies: [gio_dep, json_glib_dep],
   build_by_default: false,
 )
@@ -714,6 +715,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_dap.c',
     'src/ide/ide_dap_client.c',
     'src/ide/ide_dap_launch.c',
+    'src/ide/ide_dap_java.c',
     'src/ide/ide_jsonrpc.c',
     'src/ide/ide_agent_ipc.c',
     'src/ide/ide_markdown.c',

@@ -1,6 +1,7 @@
 #include "ide_dap.h"
 #include "ide_dap_client.h"
 #include "ide_dap_launch.h"
+#include "ide_dap_java.h"
 
 #include <string.h>
 
@@ -68,6 +69,9 @@ struct _IdeDapView {
   GPtrArray    *frames;       /* DapFrame* */
   guint         generation;   /* invalidates responses of a previous session */
   gboolean      seen_initialized; /* adapter banner output precedes this */
+  IdeDapJavaExecFn java_exec;
+  gpointer      java_exec_data;
+  gpointer      java_host_cache;   /* JavaHost of the last Java session */
 };
 
 static void
@@ -536,6 +540,139 @@ teardown_client(IdeDapView *dap)
   }
 }
 
+/* initialize -> (response) launch; the `initialized` event then drives the
+ * breakpoint / configurationDone exchange (see on_dap_event_dispatch). */
+static void
+begin_handshake(IdeDapView *dap, const char *adapter_id, JsonNode *launch_arguments, const char *request)
+{
+  StartCtx *s = g_new0(StartCtx, 1);
+  s->dap = dap;
+  s->generation = dap->generation;
+  s->launch_args = launch_arguments ? json_node_ref(launch_arguments) : json_node_new(JSON_NODE_OBJECT);
+  s->request = g_strdup(request ? request : "launch");
+
+  g_autoptr(JsonBuilder) b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "clientID");
+  json_builder_add_string_value(b, "kajo-ide");
+  json_builder_set_member_name(b, "clientName");
+  json_builder_add_string_value(b, "Kajo IDE");
+  json_builder_set_member_name(b, "adapterID");
+  json_builder_add_string_value(b, adapter_id);
+  json_builder_set_member_name(b, "linesStartAt1");
+  json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "columnsStartAt1");
+  json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "pathFormat");
+  json_builder_add_string_value(b, "path");
+  json_builder_set_member_name(b, "supportsRunInTerminalRequest");
+  json_builder_add_boolean_value(b, FALSE);
+  json_builder_end_object(b);
+  ide_dap_client_request(dap->client, "initialize", json_builder_get_root(b), on_initialize_response, s);
+}
+
+typedef struct {
+  IdeDapView *dap;
+  guint       generation;
+  char       *file;
+} JavaStart;
+
+typedef struct {
+  IdeDapView *dap;
+  char       *file;
+} JavaHost;
+
+static void
+java_host_free(gpointer p)
+{
+  JavaHost *h = p;
+  if (h != NULL) {
+    g_free(h->file);
+    g_free(h);
+  }
+}
+
+static gboolean
+java_host_exec(const char *command, JsonNode *arguments, IdeJavaExecCb cb, gpointer cb_data, gpointer host)
+{
+  JavaHost *h = host;
+  if (h->dap->java_exec == NULL) {
+    json_node_unref(arguments);
+    return FALSE;
+  }
+  return h->dap->java_exec(h->file, command, arguments, cb, cb_data, h->dap->java_exec_data);
+}
+
+static void
+on_java_ready(GIOStream *conn, JsonNode *launch_args, const char *error, gpointer user_data)
+{
+  JavaStart *js = user_data;
+  IdeDapView *dap = js->dap;
+  gboolean current = js->generation == dap->generation && dap->state == DAP_STARTING;
+  g_free(js->file);
+  g_free(js);
+
+  if (error != NULL || !current) {
+    if (conn != NULL) {
+      g_object_unref(conn);
+    }
+    if (launch_args != NULL) {
+      json_node_unref(launch_args);
+    }
+    if (current) {
+      g_autofree char *m = g_strdup_printf("[dap] Cannot start Java debugging: %s", error);
+      end_session(dap, m);
+      dap_set_status(dap, "NOT STARTED");
+    }
+    return;
+  }
+
+  dap->client = ide_dap_client_new_streams(g_io_stream_get_input_stream(conn), g_io_stream_get_output_stream(conn));
+  g_object_unref(conn); /* the client's streams keep the connection alive */
+  ide_dap_client_set_callbacks(dap->client, on_dap_event_dispatch, on_dap_adapter_exit, dap);
+  GError *err = NULL;
+  if (!ide_dap_client_start(dap->client, &err)) {
+    g_autofree char *m = g_strdup_printf("[dap] Cannot start Java debugging: %s", err ? err->message : "?");
+    g_clear_error(&err);
+    ide_dap_client_free(dap->client);
+    dap->client = NULL;
+    json_node_unref(launch_args);
+    end_session(dap, m);
+    return;
+  }
+  dap->seen_initialized = TRUE; /* no banner on a socket adapter */
+  begin_handshake(dap, "java", launch_args, "launch");
+  json_node_unref(launch_args);
+}
+
+static void
+start_java_session(IdeDapView *dap, const char *active_file)
+{
+  dap->generation++;
+  dap->seen_initialized = FALSE;
+  set_state(dap, DAP_STARTING);
+  dap_set_status(dap, "STARTING (jdtls)");
+
+  JavaStart *js = g_new0(JavaStart, 1);
+  js->dap = dap;
+  js->generation = dap->generation;
+  js->file = g_strdup(active_file);
+  JavaHost *host = g_new0(JavaHost, 1); /* lives as long as the process: tiny, freed with the view */
+  host->dap = dap;
+  host->file = g_strdup(active_file);
+  java_host_free(dap->java_host_cache);
+  dap->java_host_cache = host;
+  ide_java_debug_prepare(active_file, dap->workspace_root, java_host_exec, host, on_java_ready, js);
+}
+
+void
+ide_dap_view_set_java_exec(IdeDapView *dap, IdeDapJavaExecFn fn, gpointer user_data)
+{
+  g_return_if_fail(dap != NULL);
+  dap->java_exec = fn;
+  dap->java_exec_data = user_data;
+}
+
 void
 ide_dap_view_set_context(IdeDapView *dap, const char *workspace_root, IdeDapBreakpointsFn breakpoints_fn,
                          IdeDapFrameCb frame_cb, IdeDapStateCb state_cb, gpointer user_data)
@@ -583,6 +720,12 @@ ide_dap_view_start_session(IdeDapView *dap, IdeBuffer *active_buf)
   g_autofree char *startm = g_strdup_printf("[dap] %s → %s", launch->adapter_label, launch->program ? launch->program : "?");
   dap_append_console(dap, startm);
 
+  if (launch->java) {
+    start_java_session(dap, active);
+    ide_dap_launch_free(launch);
+    return;
+  }
+
   dap->client = ide_dap_client_new_process((const char *const *)launch->adapter_argv, launch->cwd);
   ide_dap_client_set_callbacks(dap->client, on_dap_event_dispatch, on_dap_adapter_exit, dap);
   GError *error = NULL;
@@ -602,30 +745,7 @@ ide_dap_view_start_session(IdeDapView *dap, IdeBuffer *active_buf)
   set_state(dap, DAP_STARTING);
   dap_set_status(dap, "STARTING");
 
-  StartCtx *s = g_new0(StartCtx, 1);
-  s->dap = dap;
-  s->generation = dap->generation;
-  s->launch_args = launch->arguments ? json_node_ref(launch->arguments) : json_node_new(JSON_NODE_OBJECT);
-  s->request = g_strdup(launch->request ? launch->request : "launch");
-
-  g_autoptr(JsonBuilder) b = json_builder_new();
-  json_builder_begin_object(b);
-  json_builder_set_member_name(b, "clientID");
-  json_builder_add_string_value(b, "kajo-ide");
-  json_builder_set_member_name(b, "clientName");
-  json_builder_add_string_value(b, "Kajo IDE");
-  json_builder_set_member_name(b, "adapterID");
-  json_builder_add_string_value(b, launch->adapter_label);
-  json_builder_set_member_name(b, "linesStartAt1");
-  json_builder_add_boolean_value(b, TRUE);
-  json_builder_set_member_name(b, "columnsStartAt1");
-  json_builder_add_boolean_value(b, TRUE);
-  json_builder_set_member_name(b, "pathFormat");
-  json_builder_add_string_value(b, "path");
-  json_builder_set_member_name(b, "supportsRunInTerminalRequest");
-  json_builder_add_boolean_value(b, FALSE);
-  json_builder_end_object(b);
-  ide_dap_client_request(dap->client, "initialize", json_builder_get_root(b), on_initialize_response, s);
+  begin_handshake(dap, launch->adapter_label, launch->arguments, launch->request);
   ide_dap_launch_free(launch);
 }
 
@@ -915,6 +1035,7 @@ ide_dap_view_free(IdeDapView *dap)
     return;
   }
   teardown_client(dap);
+  java_host_free(dap->java_host_cache);
   g_clear_pointer(&dap->frames, g_ptr_array_unref);
   g_clear_object(&dap->console_buf);
   g_free(dap->workspace_root);

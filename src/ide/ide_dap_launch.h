@@ -17,6 +17,7 @@ typedef struct {
   char      *program;         /* debuggee executable / package, for display */
   char      *cwd;
   char      *error;           /* non-NULL: user-facing reason nothing can be launched */
+  gboolean   java;            /* debug through jdtls (see ide_dap_java.h); no adapter process */
   gboolean   wants_stop_at_main; /* caller sets stopAtBeginningOfMainSubprogram when no breakpoints */
 } IdeDapLaunch;
 

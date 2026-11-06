@@ -1,5 +1,6 @@
 #include "../src/ide/ide_dap_client.h"
 #include "../src/ide/ide_dap_launch.h"
+#include "../src/ide/ide_dap_java.h"
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -238,6 +239,166 @@ test_missing_adapter(void)
   g_ptr_array_unref(p.events);
 }
 
+
+/* ─── Java debug preparation against scripted jdtls answers + a TCP mock adapter ─── */
+
+typedef struct {
+  GPtrArray *commands;   /* char* commands in order */
+  guint16    port;
+  const char *fail_command;   /* answer this command with an error */
+  const char *fail_message;
+  gboolean   no_main;
+  gboolean   done;
+  char      *error;
+  JsonNode  *launch;
+  GIOStream *conn;
+} JavaProbe;
+
+static JsonNode *
+J(const char *s)
+{
+  return json_from_string(s, NULL);
+}
+
+static gboolean
+fake_exec(const char *command, JsonNode *args, IdeJavaExecCb cb, gpointer cb_data, gpointer host)
+{
+  JavaProbe *jp = host;
+  g_ptr_array_add(jp->commands, g_strdup(command));
+  if (args != NULL) {
+    json_node_unref(args);
+  }
+  if (jp->fail_command != NULL && g_strcmp0(command, jp->fail_command) == 0) {
+    cb(NULL, jp->fail_message, cb_data);
+    return TRUE;
+  }
+  g_autoptr(JsonNode) res = NULL;
+  if (g_strcmp0(command, "vscode.java.resolveMainClass") == 0) {
+    res = jp->no_main ? J("[]")
+                      : J("[{\"mainClass\":\"demo.Other\",\"projectName\":\"demo\",\"filePath\":\"/ws/src/Other.java\"},"
+                          "{\"mainClass\":\"demo.App\",\"projectName\":\"demo\",\"filePath\":\"/ws/src/App.java\"}]");
+  } else if (g_strcmp0(command, "vscode.java.resolveClasspath") == 0) {
+    res = J("[[],[\"/ws/target/classes\",\"/m2/lib.jar\"]]");
+  } else if (g_strcmp0(command, "vscode.java.resolveJavaExecutable") == 0) {
+    res = J("\"/usr/lib/jvm/x/bin/java\"");
+  } else if (g_strcmp0(command, "vscode.java.startDebugSession") == 0) {
+    g_autofree char *num = g_strdup_printf("%u", jp->port);
+    res = J(num);
+  }
+  cb(res, NULL, cb_data);
+  return TRUE;
+}
+
+static void
+java_ready(GIOStream *conn, JsonNode *launch, const char *error, gpointer ud)
+{
+  JavaProbe *jp = ud;
+  jp->done = TRUE;
+  jp->conn = conn;
+  jp->launch = launch;
+  jp->error = g_strdup(error);
+}
+
+static guint16
+free_port(void)
+{
+  GSocket *s = g_socket_new(G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_STREAM, G_SOCKET_PROTOCOL_DEFAULT, NULL);
+  g_autoptr(GInetAddress) lo = g_inet_address_new_loopback(G_SOCKET_FAMILY_IPV4);
+  g_autoptr(GSocketAddress) sa = g_inet_socket_address_new(lo, 0);
+  g_socket_bind(s, sa, TRUE, NULL);
+  g_autoptr(GSocketAddress) bound = g_socket_get_local_address(s, NULL);
+  guint16 port = g_inet_socket_address_get_port(G_INET_SOCKET_ADDRESS(bound));
+  g_object_unref(s);
+  return port;
+}
+
+static void
+test_java_prepare_and_tcp_session(void)
+{
+  JavaProbe jp = { .commands = g_ptr_array_new_with_free_func(g_free), .port = free_port() };
+
+  /* TCP DAP server standing in for java-debug's server */
+  g_autofree char *script = g_build_filename(KAJO_SOURCE_DIR, "tests", "mock_dap_adapter.py", NULL);
+  g_autofree char *port_s = g_strdup_printf("%u", jp.port);
+  g_autoptr(GSubprocess) srv = g_subprocess_new(G_SUBPROCESS_FLAGS_STDERR_SILENCE, NULL, "python3", script, "--listen", port_s, NULL);
+  g_usleep(400 * 1000);
+
+  ide_java_debug_prepare("/ws/src/App.java", "/ws", fake_exec, &jp, java_ready, &jp);
+  SPIN_UNTIL(jp.done);
+  g_assert_null(jp.error);
+  g_assert_nonnull(jp.conn);
+
+  const char *want[] = { "vscode.java.resolveMainClass", "vscode.java.resolveClasspath",
+                         "vscode.java.resolveJavaExecutable", "vscode.java.startDebugSession" };
+  g_assert_cmpuint(jp.commands->len, ==, G_N_ELEMENTS(want));
+  for (guint i = 0; i < G_N_ELEMENTS(want); i++) {
+    g_assert_cmpstr(g_ptr_array_index(jp.commands, i), ==, want[i]);
+  }
+
+  JsonObject *la = json_node_get_object(jp.launch);
+  g_assert_cmpstr(json_object_get_string_member(la, "mainClass"), ==, "demo.App");
+  g_assert_cmpstr(json_object_get_string_member(la, "projectName"), ==, "demo");
+  g_assert_cmpstr(json_object_get_string_member(la, "javaExec"), ==, "/usr/lib/jvm/x/bin/java");
+  g_assert_cmpuint(json_array_get_length(json_object_get_array_member(la, "classPaths")), ==, 2);
+  g_assert_cmpstr(json_object_get_string_member(la, "cwd"), ==, "/ws");
+
+  /* the returned connection speaks DAP */
+  Probe p = { .events = g_ptr_array_new_with_free_func(g_free) };
+  IdeDapClient *c = ide_dap_client_new_streams(g_io_stream_get_input_stream(jp.conn),
+                                               g_io_stream_get_output_stream(jp.conn));
+  ide_dap_client_set_callbacks(c, on_event, on_exit_cb, &p);
+  g_assert_true(ide_dap_client_start(c, NULL));
+  REQUEST_WAIT(c, "initialize", obj1("adapterID", "java", 0), &p);
+  g_assert_true(p.ok);
+  REQUEST_WAIT(c, "launch", json_node_copy(jp.launch), &p);
+  g_assert_true(p.ok);
+  SPIN_UNTIL(has_event(&p, "initialized"));
+  REQUEST_WAIT(c, "disconnect", NULL, &p);
+  g_assert_true(ide_dap_client_wait_exit(c, 5000));
+
+  ide_dap_client_free(c);
+  g_object_unref(jp.conn);
+  json_node_unref(jp.launch);
+  g_free(jp.error);
+  g_subprocess_force_exit(srv);
+  g_ptr_array_unref(jp.commands);
+  g_ptr_array_unref(p.events);
+  g_free(p.msg);
+  g_free(p.text);
+}
+
+static void
+test_java_prepare_errors(void)
+{
+  /* no main method in the file */
+  JavaProbe a = { .commands = g_ptr_array_new_with_free_func(g_free), .no_main = TRUE };
+  ide_java_debug_prepare("/ws/src/App.java", "/ws", fake_exec, &a, java_ready, &a);
+  SPIN_UNTIL(a.done);
+  g_assert_nonnull(a.error);
+  g_assert_nonnull(strstr(a.error, "No runnable main method"));
+  g_assert_null(a.conn);
+  g_free(a.error);
+  g_ptr_array_unref(a.commands);
+
+  /* bundle missing: jdtls rejects the command -> actionable message */
+  JavaProbe b = { .commands = g_ptr_array_new_with_free_func(g_free),
+                  .fail_command = "vscode.java.resolveMainClass",
+                  .fail_message = "No delegateCommandHandler for vscode.java.resolveMainClass" };
+  ide_java_debug_prepare("/ws/src/App.java", "/ws", fake_exec, &b, java_ready, &b);
+  SPIN_UNTIL(b.done);
+  g_assert_nonnull(strstr(b.error, "install-java-debug.sh"));
+  g_free(b.error);
+  g_ptr_array_unref(b.commands);
+
+  /* debug server port closed */
+  JavaProbe c = { .commands = g_ptr_array_new_with_free_func(g_free), .port = free_port() };
+  ide_java_debug_prepare("/ws/src/App.java", "/ws", fake_exec, &c, java_ready, &c);
+  SPIN_UNTIL(c.done);
+  g_assert_nonnull(strstr(c.error, "cannot connect"));
+  g_free(c.error);
+  g_ptr_array_unref(c.commands);
+}
+
 /* ─── launch resolution ─── */
 
 static void
@@ -314,10 +475,21 @@ test_launch_java_go_messages(void)
   g_autofree char *ws = g_dir_make_tmp("kajo-dap-j-XXXXXX", NULL);
   touch(ws, "A.java", "class A {}\n");
   g_autofree char *j = g_build_filename(ws, "A.java", NULL);
+  g_setenv("KAJO_JAVA_DEBUG_JAR", "/nonexistent/java-debug.jar", TRUE);
   IdeDapLaunch *jl = ide_dap_launch_resolve(ws, j, TRUE);
   g_assert_nonnull(jl->error);
-  g_assert_nonnull(strstr(jl->error, "java-debug"));
+  g_assert_nonnull(strstr(jl->error, "install-java-debug.sh"));
   ide_dap_launch_free(jl);
+
+  g_autofree char *jar = g_build_filename(ws, "debug.jar", NULL);
+  g_file_set_contents(jar, "x", -1, NULL);
+  g_setenv("KAJO_JAVA_DEBUG_JAR", jar, TRUE);
+  IdeDapLaunch *ok = ide_dap_launch_resolve(ws, j, TRUE);
+  g_assert_null(ok->error);
+  g_assert_true(ok->java);
+  g_assert_cmpstr(ok->adapter_label, ==, "java-debug (jdtls)");
+  ide_dap_launch_free(ok);
+  g_unsetenv("KAJO_JAVA_DEBUG_JAR");
 
   g_assert_cmpstr(ide_dap_detect_adapter_for_file("x.go"), ==, "dlv dap");
   g_assert_cmpstr(ide_dap_detect_adapter_for_file("x.c"), ==, "gdb -i=dap");
@@ -331,6 +503,8 @@ main(int argc, char **argv)
   g_test_add_func("/ide/dap-client/launch-failure", test_launch_failure_reported);
   g_test_add_func("/ide/dap-client/adapter-dies", test_pending_failed_when_adapter_dies);
   g_test_add_func("/ide/dap-client/missing-adapter", test_missing_adapter);
+  g_test_add_func("/ide/dap-java/prepare-and-tcp-session", test_java_prepare_and_tcp_session);
+  g_test_add_func("/ide/dap-java/errors", test_java_prepare_errors);
   g_test_add_func("/ide/dap-launch/config-and-meson", test_launch_from_config_and_meson);
   g_test_add_func("/ide/dap-launch/java-and-detection", test_launch_java_go_messages);
   return g_test_run();

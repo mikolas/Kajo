@@ -918,6 +918,13 @@ static void on_dap_frame(const char *path, guint line_1based, gpointer user_data
   if (self->source_view) gtk_widget_queue_draw(self->source_view);
 }
 
+/* The Java debugger drives jdtls through workspace/executeCommand. */
+static gboolean on_dap_java_exec(const char *file_path, const char *command, JsonNode *arguments,
+                                 IdeJavaExecCb cb, gpointer cb_data, gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  return ide_lsp_manager_execute_command(self->lsp, file_path, command, arguments, cb, cb_data);
+}
+
 static void on_dap_action_cb(const char *action, gpointer user_data) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
   if (!self || !action) return;
@@ -1460,6 +1467,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
       self->workspace_root, on_picker_open_file, NULL, self);
   self->dap = ide_dap_view_new(on_dap_action_cb, self);
   ide_dap_view_set_context(self->dap, self->workspace_root, on_dap_breakpoints, on_dap_frame, NULL, self);
+  ide_dap_view_set_java_exec(self->dap, on_dap_java_exec, self);
   self->agent_ipc = ide_agent_ipc_new(
       on_picker_open_file, on_agent_reload_cb, on_agent_status_cb, self);
   ide_agent_ipc_start_default(self->agent_ipc);

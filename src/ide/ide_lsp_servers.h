@@ -5,6 +5,7 @@
  * find its project root and how to launch it. */
 
 #include <glib.h>
+#include <json-glib/json-glib.h>
 
 G_BEGIN_DECLS
 
@@ -27,6 +28,13 @@ const char *ide_lsp_language_id_for_file(const char *file_path);
 char *ide_lsp_find_root(const IdeLspServerSpec *spec,
                         const char             *file_path,
                         const char             *workspace_root);
+
+/* Path of the java-debug jdtls bundle, or NULL when not installed. */
+char *ide_lsp_find_java_debug_jar(void);
+
+/* initializationOptions for the server (jdtls: {"bundles":[java-debug jar]}),
+ * or NULL. */
+JsonNode *ide_lsp_server_init_options(const IdeLspServerSpec *spec);
 
 /* JDK used to run jdtls: KAJO_JDTLS_JAVA, else the newest JDK found in JAVA_HOME,
  * ~/.sdkman and /usr/lib/jvm. NULL when none is found (jdtls then uses PATH). */

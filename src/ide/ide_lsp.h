@@ -97,6 +97,19 @@ void           ide_lsp_manager_notify_change(IdeLspManager *lsp, IdeBuffer *buf)
 void           ide_lsp_manager_notify_save(IdeLspManager *lsp, IdeBuffer *buf);
 void           ide_lsp_manager_notify_close(IdeLspManager *lsp, IdeBuffer *buf);
 
+/* workspace/executeCommand on the server attached to `file_path` (used by the Java
+ * debugger to talk to jdtls). `arguments` is a JSON array (ownership transferred,
+ * may be NULL). `result` is borrowed during the callback; on failure it is NULL
+ * and `error` is set. Returns FALSE (callback not invoked) when no ready server
+ * handles the file. */
+typedef void (*IdeLspCommandCb)(JsonNode *result, const char *error, gpointer user_data);
+gboolean       ide_lsp_manager_execute_command(IdeLspManager *lsp,
+                                               const char    *file_path,
+                                               const char    *command,
+                                               JsonNode      *arguments,
+                                               IdeLspCommandCb cb,
+                                               gpointer       user_data);
+
 /* TRUE when a language server is attached to `buf` (starting or ready). */
 gboolean       ide_lsp_manager_has_server(IdeLspManager *lsp, IdeBuffer *buf);
 /* TRUE when the server for `buf` finished initialization. */

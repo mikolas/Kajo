@@ -289,6 +289,7 @@ typedef enum {
   CTX_DEFINITION,
   CTX_RENAME,
   CTX_FORMAT,
+  CTX_COMMAND,
 } CtxKind;
 
 typedef struct {
@@ -300,6 +301,8 @@ typedef struct {
   char          *prefix;     /* completion: text typed before the request */
   char          *new_name;
   guint          tab_size;
+  IdeLspCommandCb command_cb;
+  gpointer        command_data;
 } RequestCtx;
 
 struct _DocState {
@@ -814,7 +817,8 @@ get_client(IdeLspManager *mgr, const IdeLspServerSpec *spec, const char *root)
     return NULL;
   }
 
-  IdeLspClient *client = ide_lsp_client_new(spec->server_id, (const char *const *)argv, root, NULL);
+  IdeLspClient *client = ide_lsp_client_new(spec->server_id, (const char *const *)argv, root,
+                                            ide_lsp_server_init_options(spec));
   ide_lsp_client_set_callbacks(client, on_client_notification, on_server_request, on_client_state, mgr);
 
   guint restarts = ce != NULL ? ce->restarts + 1 : 0;
@@ -2577,4 +2581,64 @@ ide_lsp_manager_maybe_trigger_completion(IdeLspManager *lsp, GtkWidget *anchor_v
     }
   }
   return FALSE;
+}
+
+/* ─── workspace/executeCommand ─── */
+
+static void
+on_command_response(IdeLspClient *client, JsonNode *result, const char *error_message, gpointer user_data)
+{
+  (void)client;
+  RequestCtx *ctx = user_data;
+  IdeLspCommandCb cb = ctx->command_cb;
+  gpointer ud = ctx->command_data;
+  gboolean quiet = ctx->mgr->shutting_down;
+  ctx_done(ctx);
+  if (cb != NULL && !quiet) {
+    cb(error_message == NULL ? result : NULL, error_message, ud);
+  }
+}
+
+gboolean
+ide_lsp_manager_execute_command(IdeLspManager *lsp, const char *file_path, const char *command,
+                                JsonNode *arguments, IdeLspCommandCb cb, gpointer user_data)
+{
+  g_return_val_if_fail(lsp != NULL && command != NULL, FALSE);
+  g_autoptr(JsonNode) owned = arguments;
+
+  DocState *doc = NULL;
+  GHashTableIter it;
+  gpointer k, v;
+  g_hash_table_iter_init(&it, lsp->docs);
+  while (g_hash_table_iter_next(&it, &k, &v)) {
+    DocState *d = v;
+    if (d->path != NULL && g_strcmp0(d->path, file_path) == 0) {
+      doc = d;
+      break;
+    }
+  }
+  if (doc == NULL || doc->client == NULL ||
+      ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_STOPPED) {
+    return FALSE;
+  }
+
+  g_autoptr(JsonBuilder) b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "command");
+  json_builder_add_string_value(b, command);
+  json_builder_set_member_name(b, "arguments");
+  if (owned != NULL) {
+    json_builder_add_value(b, json_node_copy(owned));
+  } else {
+    json_builder_begin_array(b);
+    json_builder_end_array(b);
+  }
+  json_builder_end_object(b);
+
+  RequestCtx *ctx = ctx_new(lsp, CTX_COMMAND, doc->uri);
+  ctx->command_cb = cb;
+  ctx->command_data = user_data;
+  ide_lsp_client_request(doc->client, "workspace/executeCommand", json_builder_get_root(b),
+                         on_command_response, ctx);
+  return TRUE;
 }

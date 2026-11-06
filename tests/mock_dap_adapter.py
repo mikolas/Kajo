@@ -6,8 +6,11 @@ line 1 when none was set). Each `next` / `stepIn` advances the line by one, the
 first `continue` runs on to a second stop, the next one terminates the debuggee.
 """
 import json
+import socket
 import sys
 
+inp = sys.stdin.buffer
+outp = sys.stdout.buffer
 breakpoints = {}   # path -> [lines]
 state = {"line": 1, "path": "/tmp/mock.c", "stops": 0}
 
@@ -15,7 +18,7 @@ state = {"line": 1, "path": "/tmp/mock.c", "stops": 0}
 def read_message():
     headers = {}
     while True:
-        line = sys.stdin.buffer.readline()
+        line = inp.readline()
         if not line:
             return None
         line = line.decode().strip()
@@ -23,7 +26,7 @@ def read_message():
             break
         k, _, v = line.partition(":")
         headers[k.lower()] = v.strip()
-    body = sys.stdin.buffer.read(int(headers.get("content-length", "0")))
+    body = inp.read(int(headers.get("content-length", "0")))
     return json.loads(body)
 
 
@@ -35,8 +38,8 @@ def send(obj):
     seq += 1
     obj["seq"] = seq
     data = json.dumps(obj).encode()
-    sys.stdout.buffer.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
-    sys.stdout.buffer.flush()
+    outp.write(b"Content-Length: %d\r\n\r\n" % len(data) + data)
+    outp.flush()
 
 
 def respond(req, body=None, success=True, message=None):
@@ -144,4 +147,14 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) >= 3 and sys.argv[1] == "--listen":
+        # TCP mode (like the Java debug server): serve one connection on 127.0.0.1
+        srv = socket.socket()
+        srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        srv.bind(("127.0.0.1", int(sys.argv[2])))
+        srv.listen(1)
+        srv.settimeout(15)
+        conn, _ = srv.accept()
+        inp = conn.makefile("rb")
+        outp = conn.makefile("wb")
     main()

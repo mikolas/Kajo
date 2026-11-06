@@ -2,6 +2,7 @@
 #define KAJO_IDE_DAP_H
 
 #include "ide_buffer.h"
+#include "ide_dap_java.h"
 #include <gtk/gtk.h>
 
 G_BEGIN_DECLS
@@ -22,6 +23,15 @@ void ide_dap_breakpoint_set_free(gpointer data);
  * that has a path; the view takes ownership of the array. */
 typedef GPtrArray *(*IdeDapBreakpointsFn)(gpointer user_data);
 
+/* Runs a jdtls `workspace/executeCommand` for the Java debugger on the language
+ * server attached to `file_path` (arguments ownership transferred). */
+typedef gboolean (*IdeDapJavaExecFn)(const char   *file_path,
+                                     const char   *command,
+                                     JsonNode     *arguments,
+                                     IdeJavaExecCb cb,
+                                     gpointer      cb_data,
+                                     gpointer      user_data);
+
 /* The debuggee stopped in (or the user selected) a frame. path == NULL clears
  * the execution marker. */
 typedef void (*IdeDapFrameCb)(const char *path, guint line_1based, gpointer user_data);
@@ -40,6 +50,8 @@ void        ide_dap_view_set_context(IdeDapView         *dap,
                                      IdeDapFrameCb       frame_cb,
                                      IdeDapStateCb       state_cb,
                                      gpointer            user_data);
+void        ide_dap_view_set_java_exec(IdeDapView *dap, IdeDapJavaExecFn fn, gpointer user_data);
+
 /* A breakpoint was toggled: re-send them to a live session. */
 void        ide_dap_view_breakpoints_changed(IdeDapView *dap);
 

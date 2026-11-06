@@ -1,4 +1,5 @@
 #include "ide_dap_launch.h"
+#include "ide_lsp_servers.h"
 
 #include <glib/gstdio.h>
 #include <string.h>
@@ -346,7 +347,14 @@ ide_dap_launch_resolve(const char *workspace_root, const char *active_file, gboo
   }
 
   if (active_file != NULL && g_str_has_suffix(active_file, ".java")) {
-    l->error = g_strdup("Java debugging needs the java-debug bundle for jdtls (see docs: Java debugging)");
+    g_autofree char *jar = ide_lsp_find_java_debug_jar();
+    if (jar == NULL) {
+      l->error = g_strdup("Java debugging needs the java-debug bundle for jdtls: run scripts/install-java-debug.sh, then restart the IDE");
+      return l;
+    }
+    l->java = TRUE;
+    l->adapter_label = g_strdup("java-debug (jdtls)");
+    l->program = g_strdup(active_file);
     return l;
   }
 
