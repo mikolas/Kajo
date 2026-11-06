@@ -13,6 +13,7 @@ struct _IdeAgentIpc {
   gpointer         user_data;
 
   GSocketService  *service;
+  GCancellable    *alive;        /* cancelled in _free(); in-flight connections check it */
   GPtrArray       *socket_paths; /* char* */
   GPtrArray       *tx_items;     /* IdeAgentTxItem* */
   char            *active_badge;
@@ -341,6 +342,57 @@ char *ide_agent_ipc_dispatch_json(IdeAgentIpc *ipc, const char *json_request) {
                          type);
 }
 
+/* Per-connection state. Requests are read asynchronously with a short
+ * timeout so a client that connects and never sends a newline cannot block
+ * the GTK main loop (the handler used to do a blocking read_line). */
+#define IDE_AGENT_READ_TIMEOUT_MS 2000
+
+typedef struct {
+  IdeAgentIpc       *ipc;
+  GCancellable      *alive;      /* ref on ipc->alive: if cancelled, ipc is gone */
+  GSocketConnection *conn;
+  GDataInputStream  *in;
+  GCancellable      *read_cancel;
+  guint              timeout_id;
+} AgentConn;
+
+static void agent_conn_free(AgentConn *c) {
+  if (c->timeout_id) g_source_remove(c->timeout_id);
+  g_clear_object(&c->in);
+  g_clear_object(&c->conn);
+  g_clear_object(&c->read_cancel);
+  g_clear_object(&c->alive);
+  g_free(c);
+}
+
+static gboolean on_agent_conn_timeout(gpointer user_data) {
+  AgentConn *c = user_data;
+  c->timeout_id = 0;
+  g_cancellable_cancel(c->read_cancel);
+  return G_SOURCE_REMOVE;
+}
+
+static void on_agent_line_read(GObject      *source,
+                               GAsyncResult *res,
+                               gpointer      user_data) {
+  AgentConn *c = user_data;
+  g_autoptr(GError) err = NULL;
+  gsize len = 0;
+  g_autofree char *line = g_data_input_stream_read_line_finish(
+      G_DATA_INPUT_STREAM(source), res, &len, &err);
+
+  if (line && !g_cancellable_is_cancelled(c->alive)) {
+    g_autofree char *resp = ide_agent_ipc_dispatch_json(c->ipc, line);
+    if (resp) {
+      GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(c->conn));
+      g_output_stream_write_all(out, resp, strlen(resp), NULL, NULL, NULL);
+      g_output_stream_flush(out, NULL, NULL);
+    }
+  }
+  g_io_stream_close(G_IO_STREAM(c->conn), NULL, NULL);
+  agent_conn_free(c);
+}
+
 static gboolean on_incoming_connection(GSocketService    *service,
                                        GSocketConnection *connection,
                                        GObject           *source_object,
@@ -349,20 +401,15 @@ static gboolean on_incoming_connection(GSocketService    *service,
   (void)source_object;
   IdeAgentIpc *ipc = user_data;
 
-  GInputStream *in = g_io_stream_get_input_stream(G_IO_STREAM(connection));
-  GOutputStream *out = g_io_stream_get_output_stream(G_IO_STREAM(connection));
-
-  g_autoptr(GDataInputStream) data_in = g_data_input_stream_new(in);
-  gsize len = 0;
-  g_autofree char *line =
-      g_data_input_stream_read_line(data_in, &len, NULL, NULL);
-  if (line) {
-    g_autofree char *resp = ide_agent_ipc_dispatch_json(ipc, line);
-    if (resp) {
-      g_output_stream_write_all(out, resp, strlen(resp), NULL, NULL, NULL);
-      g_output_stream_flush(out, NULL, NULL);
-    }
-  }
+  AgentConn *c = g_new0(AgentConn, 1);
+  c->ipc = ipc;
+  c->alive = g_object_ref(ipc->alive);
+  c->conn = g_object_ref(connection);
+  c->in = g_data_input_stream_new(g_io_stream_get_input_stream(G_IO_STREAM(connection)));
+  c->read_cancel = g_cancellable_new();
+  c->timeout_id = g_timeout_add(IDE_AGENT_READ_TIMEOUT_MS, on_agent_conn_timeout, c);
+  g_data_input_stream_read_line_async(
+      c->in, G_PRIORITY_DEFAULT, c->read_cancel, on_agent_line_read, c);
   return TRUE;
 }
 
@@ -384,13 +431,17 @@ gboolean ide_agent_ipc_start_on_path(IdeAgentIpc *ipc,
   }
 
   g_autoptr(GSocketAddress) addr = g_unix_socket_address_new(socket_path);
-  if (!g_socket_listener_add_address(G_SOCKET_LISTENER(ipc->service),
-                                     addr,
-                                     G_SOCKET_TYPE_STREAM,
-                                     G_SOCKET_PROTOCOL_DEFAULT,
-                                     NULL,
-                                     NULL,
-                                     error)) {
+  /* Create the socket 0600 from the start (no window between bind and chmod). */
+  mode_t old_umask = umask(077);
+  gboolean bound = g_socket_listener_add_address(G_SOCKET_LISTENER(ipc->service),
+                                                 addr,
+                                                 G_SOCKET_TYPE_STREAM,
+                                                 G_SOCKET_PROTOCOL_DEFAULT,
+                                                 NULL,
+                                                 NULL,
+                                                 error);
+  umask(old_umask);
+  if (!bound) {
     return FALSE;
   }
 
@@ -512,6 +563,7 @@ IdeAgentIpc *ide_agent_ipc_new(IdeAgentOpenCb   open_cb,
   ipc->reload_cb = reload_cb;
   ipc->status_cb = status_cb;
   ipc->user_data = user_data;
+  ipc->alive = g_cancellable_new();
   ipc->socket_paths = g_ptr_array_new_with_free_func(g_free);
   ipc->tx_items = g_ptr_array_new_with_free_func(tx_item_free);
   return ipc;
@@ -519,6 +571,10 @@ IdeAgentIpc *ide_agent_ipc_new(IdeAgentOpenCb   open_cb,
 
 void ide_agent_ipc_free(IdeAgentIpc *ipc) {
   if (!ipc) return;
+  if (ipc->alive) {
+    g_cancellable_cancel(ipc->alive);
+    g_clear_object(&ipc->alive);
+  }
   if (ipc->service) {
     g_socket_service_stop(ipc->service);
     g_socket_listener_close(G_SOCKET_LISTENER(ipc->service));
