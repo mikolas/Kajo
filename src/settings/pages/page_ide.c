@@ -124,7 +124,10 @@ update_code_preview_markup(IdeSettingsState *st)
         "  <span foreground=\"%s\">ide_status_notify</span>(self, <span foreground=\"%s\">\"SCHEME: %s\"</span>);\n"
         "  <span foreground=\"%s\" weight=\"bold\">return</span> <span foreground=\"%s\" weight=\"bold\">TRUE</span>;\n"
         "}</span>",
-        font_fam, font_px * PANGO_SCALE,
+        /* The IDE sizes its editor in CSS px, but Pango's `size` is in points
+         * (1/1024 pt): 1 px = 0.75 pt at GTK's 96 dpi. Without this conversion
+         * the preview rendered ~33% larger than the real editor. */
+        font_fam, (font_px * 3 * PANGO_SCALE) / 4,
         s->name, font_px,
         s->kw_hex, s->fn_hex, s->fn_hex, s->str_hex, s->id, s->kw_hex, s->kw_hex);
 
