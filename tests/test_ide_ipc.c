@@ -212,6 +212,103 @@ static void test_mermaid_vector_parser_and_markdown_checklist(void) {
   g_assert_nonnull(strstr(toggled2, "- [ ] Ship UI"));
 }
 
+static void test_markdown_rich_embeds_and_inline_pango(void) {
+  /* 1. Markdown ![alt](src "title") extraction */
+  char *alt = NULL, *src = NULL, *link_url = NULL;
+  g_assert_true(ide_markdown_extract_embed(
+      "![Kajo Banner](docs/kajo-banner.svg \"Refracted Prism\")",
+      &alt,
+      &src,
+      &link_url));
+  g_assert_cmpstr(alt, ==, "Kajo Banner");
+  g_assert_cmpstr(src, ==, "docs/kajo-banner.svg");
+  g_assert_null(link_url);
+  g_clear_pointer(&alt, g_free);
+  g_clear_pointer(&src, g_free);
+  g_clear_pointer(&link_url, g_free);
+
+  /* 2. Linked image badge [![alt](src)](href) extraction */
+  g_assert_true(ide_markdown_extract_embed(
+      "[![Build Status](assets/badge.svg)](https://example.org)",
+      &alt,
+      &src,
+      &link_url));
+  g_assert_cmpstr(alt, ==, "Build Status");
+  g_assert_cmpstr(src, ==, "assets/badge.svg");
+  g_assert_cmpstr(link_url, ==, "https://example.org");
+  g_clear_pointer(&alt, g_free);
+  g_clear_pointer(&src, g_free);
+  g_clear_pointer(&link_url, g_free);
+
+  /* 3. HTML <img src="..." alt="..."> extraction (including indented lines) */
+  g_assert_true(ide_markdown_extract_embed(
+      "  <img src=\"docs/kajo-banner.svg\" alt=\"Kajo Desktop Banner\" width=\"100%\">",
+      &alt,
+      &src,
+      &link_url));
+  g_assert_cmpstr(alt, ==, "Kajo Desktop Banner");
+  g_assert_cmpstr(src, ==, "docs/kajo-banner.svg");
+  g_assert_null(link_url);
+  g_clear_pointer(&alt, g_free);
+  g_clear_pointer(&src, g_free);
+  g_clear_pointer(&link_url, g_free);
+
+  /* 4. Asset classification */
+  g_assert_cmpint(ide_markdown_classify_asset("docs/kajo-banner.svg"),
+                  ==,
+                  IDE_MD_EMBED_IMAGE);
+  g_assert_cmpint(ide_markdown_classify_asset("manual.pdf"),
+                  ==,
+                  IDE_MD_EMBED_PDF);
+  g_assert_cmpint(ide_markdown_classify_asset("release.tar.gz"),
+                  ==,
+                  IDE_MD_EMBED_ARCHIVE);
+  g_assert_cmpint(ide_markdown_classify_asset("demo.mp4"),
+                  ==,
+                  IDE_MD_EMBED_MEDIA);
+  g_assert_cmpint(ide_markdown_classify_asset("theme.flac"),
+                  ==,
+                  IDE_MD_EMBED_MEDIA);
+  g_assert_cmpint(ide_markdown_classify_asset("src/main.c"),
+                  ==,
+                  IDE_MD_EMBED_DOCUMENT);
+
+  /* 5. Relative path & file:// URI resolution with #L42 line anchor */
+  g_autofree char *tmp_ws = g_dir_make_tmp("kajo_md_ws_XXXXXX", NULL);
+  g_autofree char *docs_dir = g_build_filename(tmp_ws, "docs", NULL);
+  g_mkdir_with_parents(docs_dir, 0755);
+  g_autofree char *banner_file =
+      g_build_filename(docs_dir, "kajo-banner.svg", NULL);
+  g_file_set_contents(banner_file, "<svg></svg>", -1, NULL);
+
+  guint line_1based = 0;
+  g_autofree char *resolved1 = ide_markdown_resolve_asset_path(
+      "docs/kajo-banner.svg", tmp_ws, tmp_ws, &line_1based);
+  g_assert_cmpstr(resolved1, ==, banner_file);
+  g_assert_cmpuint(line_1based, ==, 0);
+
+  g_autofree char *uri_with_line =
+      g_strdup_printf("file://%s#L128", banner_file);
+  g_autofree char *resolved2 = ide_markdown_resolve_asset_path(
+      uri_with_line, docs_dir, tmp_ws, &line_1based);
+  g_assert_cmpstr(resolved2, ==, banner_file);
+  g_assert_cmpuint(line_1based, ==, 128);
+
+  unlink(banner_file);
+  rmdir(docs_dir);
+  rmdir(tmp_ws);
+
+  /* 6. Inline Pango markup formatting */
+  g_autofree char *pango = ide_markdown_format_inline_pango(
+      "Use **bold**, *italic*, ~~strike~~, `code`, <kbd>Ctrl+P</kbd>, and [Kajo](https://kajo.org).");
+  g_assert_nonnull(strstr(pango, "<b>bold</b>"));
+  g_assert_nonnull(strstr(pango, "<i>italic</i>"));
+  g_assert_nonnull(strstr(pango, "<s>strike</s>"));
+  g_assert_nonnull(strstr(pango, " code "));
+  g_assert_nonnull(strstr(pango, "Ctrl+P"));
+  g_assert_nonnull(strstr(pango, "<a href=\"https://kajo.org\">"));
+}
+
 int main(int argc, char **argv) {
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/ide/ipc/jsonrpc-framing",
@@ -224,5 +321,7 @@ int main(int argc, char **argv) {
                   test_agent_unix_socket_server);
   g_test_add_func("/ide/markdown/mermaid-vector-and-checklist",
                   test_mermaid_vector_parser_and_markdown_checklist);
+  g_test_add_func("/ide/markdown/rich-embeds-and-inline-pango",
+                  test_markdown_rich_embeds_and_inline_pango);
   return g_test_run();
 }

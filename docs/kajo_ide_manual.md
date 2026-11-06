@@ -293,21 +293,33 @@ When paused at a breakpoint or signal:
 
 ---
 
-## 10. Graphical Markdown & Native Cairo Vector Mermaid
+## 10. Graphical Markdown, Embedded Media/Assets & Native Cairo Vector Mermaid
 
-Unlike terminal editors that rely on ASCII approximations, `kajo-ide` includes a full graphical Markdown renderer (`src/ide/ide_markdown.c`) and a pure C11 Cairo/Pango vector diagram engine (`src/ide/ide_mermaid.c`):
+Unlike terminal editors that rely on ASCII approximations, `kajo-ide` includes a full-blown visual Markdown, HTML & Embedded Asset preview engine (`src/ide/ide_markdown.c`):
 
-- **Side-by-Side Split (`Space m p` or `📖 MD` header button):** Opens a live-synchronized 50/50 split beside the editor. Scrolling the source buffer proportionally scrolls the rendered document.
-- **Supported Markdown Elements:**
-  - Styled headings (`H1`–`H6`) with underline rules and Pango typography.
-  - Interactive `- [ ]` / `- [x]` task list checkboxes — clicking a checkbox in the GUI preview mutates the underlying Markdown source line in real time (and adds an undo step).
-  - GitHub-Flavored Callout Alerts (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`) with semantic color-coded left borders.
-  - Structured tables (`GtkGrid`) and syntax-highlighted fenced code cards.
+![Kajo Brand Banner](kajo-banner.svg "Kajo Desktop — Refracted Prism K")
+
+- **Side-by-Side Split (`Space m p` or `📖 MD` header button) & Bottom Drawer (`Space m m`):** Opens a live-synchronized graphical preview beside or below the editor. Scrolling the source buffer proportionally scrolls the rendered document.
+- **Inline & Block Images (`![alt](src "title")`, `[![alt](src)](url)`, HTML `<img src="...">`, and ` ```svg ` blocks):**
+  - Renders vector `.svg` and raster `.png` / `.jpg` / `.webp` / `.gif` / `.bmp` / `.ico` figures directly via `GdkTexture` + `GtkPicture` with automatic aspect-ratio scaling (`FIT` mode) and interactive **`🔍 −` / `100%` / `🔍 +` / `⛶ FIT` / `↗ OPEN`** figure toolbars.
+  - Resolves paths relative to the current Markdown document's directory, the IDE workspace root, `file://` URIs, or `~/.gemini/antigravity-cli/brain/` artifact directories.
+  - Also renders inline `32×32` image thumbnails inside Markdown `GtkGrid` pipe tables (`| ![icon](...) | ... |`) and extracts inline `![alt](src)` figures inside paragraphs and list items.
+- **Multi-Type Embedded Asset Cards:**
+  - **Embedded PDF Documents (`![Spec](doc.pdf)`):** Renders multi-page PDF documents inline via `poppler-glib` (`PopplerDocument` $\rightarrow$ Cairo $\rightarrow$ `GdkTexture`) with **`◀ PREV`**, **`PAGE 1 / N`**, **`NEXT ▶`**, and **`↗ OPEN PDF`** controls.
+  - **Embedded Archives (`![Release](pkg.tar.gz)` / `.zip` / `.tar.zst`):** Inspects archive contents inline via `libarchive`, displaying total file count, uncompressed size, and a formatted manifest table.
+  - **Embedded Audio / Video / Source Files (`![Clip](demo.mp4)`, `![Code](src/main.c)`):** Displays interactive launch cards with **`▶ PLAY IN KAJO PLAYER`** or **`📂 OPEN IN IDE`** actions.
+- **Interactive Slide Carousels (` ````carousel `) & Collapsible `<details>` Blocks:**
+  - Fenced ` ````carousel ` blocks split on `<!-- slide -->` render as interactive multi-slide decks with **`◀ PREV` / `SLIDE 1 / N` / `NEXT ▶`** navigation, recursively rendering inner Markdown, code blocks, images, and diagrams on each slide.
+  - HTML `<details><summary>Title</summary>...</details>` blocks render as collapsible `GtkExpander` cards.
+- **Complete Typography, Links & Interactive Task Lists:**
+  - Styled headings (`# H1` through `###### H6`), hanging-indent nested unordered (`•` / `◦` / `▪`) and numbered (`1.`) lists, and `GtkGrid` pipe tables.
+  - Recursive inline Pango formatting: `***bold italic***`, `**bold**`, `*italic*`, `~~strikethrough~~`, `` `Fira Code` `` spans, `<kbd>Key</kbd>` badges, `<mark>highlights</mark>`, and clickable links (`[Label](path#L42)` jumps directly to the file and line in `kajo-ide`; `#heading` jumps to the section in the active buffer; `https://...` opens in the browser).
+  - Interactive `- [ ]` / `- [x]` task list checkboxes — clicking a checkbox in the GUI preview mutates the underlying Markdown source line in real time, and updates the header **`✓ X / Y TASKS DONE`** badge.
+  - GitHub-Flavored Callout Alerts (`> [!NOTE]`, `> [!TIP]`, `> [!IMPORTANT]`, `> [!WARNING]`, `> [!CAUTION]`) with semantic badges and color-coded left borders.
 - **Native Cairo Vector Mermaid Diagrams (` ```mermaid `):**
   - Renders **Flowcharts (`flowchart TD/LR`, `graph TD/LR`)**, **Sequence Diagrams (`sequenceDiagram`)**, **State Diagrams (`stateDiagram-v2`)**, **Class Diagrams (`classDiagram`)**, **Entity-Relationship Diagrams (`erDiagram`)**, and **Pie Charts (`pie`)** using crisp vector primitives, Bezier edges, and Metro accent palettes.
-  - Every diagram card includes an interactive toolbar:
-    - **`🔍+` / `🔍-` / `1:1`** — Zoom in/out (`25%` to `400%`) or reset to `100%`, plus `Ctrl + MouseWheel` zoom and middle-click/drag canvas panning.
-    - **`💾 SVG`** — Export the diagram directly to a standalone vector `.svg` file via `cairo_svg_surface_create()`.
+  - Clicking any Mermaid node in the preview jumps the source editor directly to the line where that node is defined.
+  - Every diagram card includes an interactive toolbar with **`🔍 −` / `100%` / `🔍 +`** zoom (`25%` to `400%`), **`💾 SVG`** (`cairo_svg_surface_create()`), and **`🖼 PNG`** export.
 
 ---
 

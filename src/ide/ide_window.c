@@ -172,6 +172,12 @@ static void sync_markdown_views(KajoIdeWindow *self) {
                 "markdown") == 0;
   if (!split_vis && !drawer_vis) return;
 
+  const char *doc_path = ide_buffer_get_file_path(buf);
+  ide_markdown_view_set_context(
+      self->md_split_view, doc_path, self->workspace_root);
+  ide_markdown_view_set_context(
+      self->md_drawer_view, doc_path, self->workspace_root);
+
   g_autofree char *text = ide_buffer_get_text(buf);
   if (split_vis) ide_markdown_view_render(self->md_split_view, text);
   if (drawer_vis) ide_markdown_view_render(self->md_drawer_view, text);
@@ -2261,6 +2267,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   /* Side-by-Side Graphical Markdown & Vector Mermaid Split (Space m p) */
   self->md_split_view = ide_markdown_view_new(
       on_markdown_node_jump, on_markdown_checklist_edit, self);
+  ide_markdown_view_set_open_file_cb(self->md_split_view, on_picker_open_file);
   self->md_split_container = ide_markdown_view_get_widget(self->md_split_view);
   gtk_widget_set_size_request(self->md_split_container, 280, -1);
   gtk_widget_set_visible(self->md_split_container, FALSE);
@@ -2392,6 +2399,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   ide_agent_ipc_start_default(self->agent_ipc);
   self->md_drawer_view = ide_markdown_view_new(
       on_markdown_node_jump, on_markdown_checklist_edit, self);
+  ide_markdown_view_set_open_file_cb(self->md_drawer_view, on_picker_open_file);
 
   gtk_stack_add_named(GTK_STACK(self->drawer_stack),
                       ide_search_drawer_get_widget(self->search_drawer),
