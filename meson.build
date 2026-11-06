@@ -384,6 +384,8 @@ executable(
     json_glib_dep,
     gio_dep,
     gio_unix_dep,
+    poppler_dep,
+    archive_dep,
     m_dep,
   ],
   install: true,
@@ -622,7 +624,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_picker.c',
     'src/ide/ide_search.c',
   ),
-  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
+  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, poppler_dep, archive_dep, m_dep],
   build_by_default: false,
 )
 test('ide-ipc', test_ide_ipc_exe)
