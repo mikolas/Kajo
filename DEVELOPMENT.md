@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-settings`, `kajo-files`, `kajo-player`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -32,6 +32,20 @@ src/
 │   ├── hw_caps.h/c                 Runtime hardware capability probing (ISH hinge/accel, EC, LEDs)
 │   ├── kbd_backlight.h/c           Sysfs & HP EC (0x97 HKBL / 0x96 HKBT) keyboard backlight control
 │   └── touch_gestures.h/c          Edge layer-shell bezel swipe gesture recognizers
+├── ide/
+│   ├── main.c                      kajo-ide standalone entry point (org.kajo.Ide)
+│   ├── ide_window.h/c              Main IDE window, 3-zone header, tab ribbon, status bar & chord HUD
+│   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
+│   ├── ide_buffer.h/c              IdeBuffer, 11-token semantic highlighter, Git diff & Agent snapshots
+│   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
+│   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
+│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 85-command Help Palette
+│   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
+│   ├── ide_lsp.h/c                 Async JSON-RPC 2.0 LSP 3.17 client (clangd, gopls, rust-analyzer, pyright)
+│   ├── ide_dap.h/c                 Async DAP debugger client (gdb, lldb-dap, dlv) & 3-pane inspector
+│   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
+│   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
+│   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
 ├── ipc/
 │   └── socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
 ├── launcher/
@@ -66,8 +80,8 @@ src/
 │   ├── settings_window.h/c         Settings container shell, category sidebar & GtkStack
 │   ├── settings_common.h/c         Shared Metro card, tile, dropdown & IPC helpers
 │   └── pages/
-│       └── page_*.c                10 modular preference pages (displays, network, bluetooth,
-│                                   audio, theme, panel, widgets, notifications, niri, about)
+│       └── page_*.c                11 modular preference pages (displays, network, bluetooth,
+│                                   audio, theme, panel, widgets, notifications, ide, niri, about)
 ├── vendor/
 │   └── tinyexpr/                   TinyExpr recursive-descent math expression evaluator
 └── widgets/
@@ -80,9 +94,12 @@ src/
 data/
 ├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
 ├── org.kajo.Player.desktop         Desktop entry for kajo-player (MimeType=video/*;audio/*;)
+├── org.kajo.Ide.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
+├── ide/
+│   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
-│   ├── config.json                 Default panel, widget, notification & idle configuration
-│   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, osk, lock, greeter)
+│   ├── config.json                 Default panel, widget, notification, IDE & idle configuration
+│   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, ide, osk, lock, greeter)
 │   └── icon-map.json               Logical-to-symbolic icon mappings
 ├── greetd/
 │   ├── niri-greeter.kdl            Locked-down Niri configuration for the greetd login session
@@ -104,6 +121,9 @@ tests/
 ├── test_touch_gestures.c           Bezel touch gesture directional threshold & trigger tests
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
+├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
+├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
+├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing & Agent IPC protocol tests
 └── test_shaders.c                  Headless EGL/GLES2 compiler verification for Niri GLSL shaders
 ```
 
