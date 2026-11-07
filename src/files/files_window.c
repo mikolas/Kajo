@@ -354,6 +354,369 @@ files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind)
 /* ─── Interactive Breadcrumb Bar ─── */
 
 static void
+sync_breadcrumb_scroll_to_end(KajoFilesWindow *self)
+{
+    if (!self || !self->breadcrumb_scroll || !self->pending_breadcrumb_scroll_end)
+        return;
+
+    GtkAdjustment *hadj = gtk_scrolled_window_get_hadjustment(self->breadcrumb_scroll);
+    if (!hadj)
+        return;
+
+    double upper = gtk_adjustment_get_upper(hadj);
+    double page = gtk_adjustment_get_page_size(hadj);
+    if (page > 0.0 && upper > page) {
+        double target = upper - page;
+        if (fabs(gtk_adjustment_get_value(hadj) - target) > 0.5) {
+            gtk_adjustment_set_value(hadj, target);
+        }
+    }
+}
+
+static gboolean
+on_breadcrumb_scroll_idle(gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    self->breadcrumb_scroll_idle_id = 0;
+    sync_breadcrumb_scroll_to_end(self);
+    return G_SOURCE_REMOVE;
+}
+
+static void
+schedule_breadcrumb_scroll_to_end(KajoFilesWindow *self)
+{
+    if (!self || !self->pending_breadcrumb_scroll_end)
+        return;
+    if (self->breadcrumb_scroll_idle_id == 0) {
+        self->breadcrumb_scroll_idle_id = g_idle_add(on_breadcrumb_scroll_idle, self);
+    }
+}
+
+static void
+on_breadcrumb_hadj_changed(GtkAdjustment *hadj G_GNUC_UNUSED, gpointer user_data)
+{
+    schedule_breadcrumb_scroll_to_end(KAJO_FILES_WINDOW(user_data));
+}
+
+static void
+on_breadcrumb_hadj_notify(GtkAdjustment *hadj G_GNUC_UNUSED,
+                          GParamSpec *pspec G_GNUC_UNUSED,
+                          gpointer user_data)
+{
+    schedule_breadcrumb_scroll_to_end(KAJO_FILES_WINDOW(user_data));
+}
+
+static gboolean
+on_breadcrumb_wheel_scroll(GtkEventControllerScroll *ctrl G_GNUC_UNUSED,
+                           double dx,
+                           double dy,
+                           gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    if (!self || !self->breadcrumb_scroll)
+        return FALSE;
+
+    GtkAdjustment *hadj = gtk_scrolled_window_get_hadjustment(self->breadcrumb_scroll);
+    if (!hadj)
+        return FALSE;
+
+    double delta = (fabs(dx) > fabs(dy)) ? dx : dy;
+    if (fabs(delta) < 1e-4)
+        return FALSE;
+
+    self->pending_breadcrumb_scroll_end = FALSE;
+    double val = gtk_adjustment_get_value(hadj);
+    double upper = gtk_adjustment_get_upper(hadj);
+    double page = gtk_adjustment_get_page_size(hadj);
+    double max_val = MAX(0.0, upper - page);
+
+    gtk_adjustment_set_value(hadj, CLAMP(val + delta * 48.0, 0.0, max_val));
+    return TRUE;
+}
+
+static void
+on_bc_pop_subdir_clicked(GtkButton *btn, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    const char *uri = g_object_get_data(G_OBJECT(btn), "target-uri");
+    if (self->breadcrumb_popover)
+        gtk_popover_popdown(GTK_POPOVER(self->breadcrumb_popover));
+    if (uri)
+        kajo_files_window_navigate_uri(self, uri);
+}
+
+static void
+on_bc_pop_newwin_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    if (self->breadcrumb_popover)
+        gtk_popover_popdown(GTK_POPOVER(self->breadcrumb_popover));
+    if (!self->bc_pop_target_uri)
+        return;
+
+    GtkApplication *app = gtk_window_get_application(GTK_WINDOW(self));
+    GtkWidget *win = kajo_files_window_new(app, self->bc_pop_target_uri);
+    gtk_window_present(GTK_WINDOW(win));
+}
+
+static void
+on_bc_pop_copypath_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    if (self->breadcrumb_popover)
+        gtk_popover_popdown(GTK_POPOVER(self->breadcrumb_popover));
+    if (!self->bc_pop_target_uri)
+        return;
+
+    g_autoptr(GFile) f = g_file_new_for_uri(self->bc_pop_target_uri);
+    g_autofree char *local_path = f ? g_file_get_path(f) : NULL;
+    const char *text = local_path ? local_path : self->bc_pop_target_uri;
+
+    GdkDisplay *display = gdk_display_get_default();
+    if (display) {
+        GdkClipboard *clipboard = gdk_display_get_clipboard(display);
+        gdk_clipboard_set_text(clipboard, text);
+    }
+    g_autofree char *msg = g_strdup_printf("Copied path: %s", text);
+    files_window_set_status_message(self, msg, FALSE);
+}
+
+static gint
+compare_bc_dir_items(gconstpointer a, gconstpointer b)
+{
+    const KajoFileItem *ia = *(const KajoFileItem *const *)a;
+    const KajoFileItem *ib = *(const KajoFileItem *const *)b;
+    return kajo_file_item_compare_full(ia, ib, KAJO_SORT_NAME, TRUE, TRUE);
+}
+
+static void
+on_breadcrumb_subdirs_ready(GPtrArray *items, GError *error, gpointer user_data)
+{
+    GWeakRef *wr = user_data;
+    g_autoptr(KajoFilesWindow) self = g_weak_ref_get(wr);
+    g_weak_ref_clear(wr);
+    g_free(wr);
+
+    if (!self || !self->bc_pop_list_box) {
+        if (items) g_ptr_array_unref(items);
+        return;
+    }
+
+    if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        if (items) g_ptr_array_unref(items);
+        return;
+    }
+
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(self->bc_pop_list_box)) != NULL) {
+        gtk_box_remove(GTK_BOX(self->bc_pop_list_box), child);
+    }
+
+    g_autoptr(GPtrArray) subdirs = g_ptr_array_new_with_free_func(g_object_unref);
+    if (items) {
+        for (guint i = 0; i < items->len; i++) {
+            KajoFileItem *it = g_ptr_array_index(items, i);
+            if (!kajo_file_item_is_dir(it))
+                continue;
+            if (!self->show_hidden && kajo_file_item_is_hidden(it))
+                continue;
+            g_ptr_array_add(subdirs, g_object_ref(it));
+        }
+        g_ptr_array_unref(items);
+    }
+
+    g_ptr_array_sort(subdirs, compare_bc_dir_items);
+
+    if (subdirs->len == 0) {
+        GtkWidget *empty_lbl = gtk_label_new(error ? error->message : "No subdirectories");
+        gtk_widget_add_css_class(empty_lbl, "shell-popover-subtitle");
+        gtk_widget_set_halign(empty_lbl, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(empty_lbl, 8);
+        gtk_widget_set_margin_top(empty_lbl, 4);
+        gtk_widget_set_margin_bottom(empty_lbl, 4);
+        gtk_box_append(GTK_BOX(self->bc_pop_list_box), empty_lbl);
+        return;
+    }
+
+    guint limit = MIN(subdirs->len, 50U);
+    for (guint i = 0; i < limit; i++) {
+        KajoFileItem *it = g_ptr_array_index(subdirs, i);
+        GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
+
+        GtkWidget *ic = gtk_image_new_from_icon_name("folder");
+        gtk_image_set_pixel_size(GTK_IMAGE(ic), 16);
+        gtk_widget_set_valign(ic, GTK_ALIGN_CENTER);
+
+        GtkWidget *lbl = gtk_label_new(kajo_file_item_get_display_name(it));
+        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+        gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+        gtk_widget_set_hexpand(lbl, TRUE);
+        gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_MIDDLE);
+
+        GtkWidget *chev = gtk_label_new("›");
+        gtk_widget_add_css_class(chev, "sidebar-chevron");
+        gtk_widget_set_valign(chev, GTK_ALIGN_CENTER);
+
+        gtk_box_append(GTK_BOX(hbox), ic);
+        gtk_box_append(GTK_BOX(hbox), lbl);
+        gtk_box_append(GTK_BOX(hbox), chev);
+
+        GtkWidget *row_btn = gtk_button_new();
+        gtk_widget_add_css_class(row_btn, "flat");
+        gtk_widget_add_css_class(row_btn, "files-menu-row");
+        gtk_button_set_child(GTK_BUTTON(row_btn), hbox);
+        g_object_set_data_full(G_OBJECT(row_btn), "target-uri", g_strdup(kajo_file_item_get_uri(it)), g_free);
+        g_signal_connect(row_btn, "clicked", G_CALLBACK(on_bc_pop_subdir_clicked), self);
+        gtk_box_append(GTK_BOX(self->bc_pop_list_box), row_btn);
+    }
+}
+
+static void
+build_breadcrumb_popover(KajoFilesWindow *self)
+{
+    self->breadcrumb_popover = gtk_popover_new();
+    gtk_popover_set_has_arrow(GTK_POPOVER(self->breadcrumb_popover), FALSE);
+    gtk_widget_add_css_class(self->breadcrumb_popover, "shell-popover");
+    gtk_widget_add_css_class(self->breadcrumb_popover, "files-context-popover");
+    gtk_widget_set_parent(self->breadcrumb_popover, GTK_WIDGET(self->location_stack));
+
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_size_request(vbox, 260, -1);
+
+    GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_add_css_class(hdr, "shell-popover-header");
+    gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
+
+    GtkWidget *hdr_icon = gtk_image_new_from_icon_name("folder");
+    gtk_image_set_pixel_size(GTK_IMAGE(hdr_icon), 16);
+    gtk_widget_set_valign(hdr_icon, GTK_ALIGN_CENTER);
+
+    self->bc_pop_hdr_lbl = gtk_label_new("FOLDER");
+    gtk_widget_add_css_class(self->bc_pop_hdr_lbl, "heading");
+    gtk_widget_set_hexpand(self->bc_pop_hdr_lbl, TRUE);
+    gtk_widget_set_halign(self->bc_pop_hdr_lbl, GTK_ALIGN_START);
+    gtk_widget_set_valign(self->bc_pop_hdr_lbl, GTK_ALIGN_CENTER);
+    gtk_label_set_ellipsize(GTK_LABEL(self->bc_pop_hdr_lbl), PANGO_ELLIPSIZE_MIDDLE);
+
+    GtkWidget *badge = gtk_label_new("SUBFOLDERS");
+    gtk_widget_add_css_class(badge, "shell-popover-badge");
+    gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+
+    gtk_box_append(GTK_BOX(hdr), hdr_icon);
+    gtk_box_append(GTK_BOX(hdr), self->bc_pop_hdr_lbl);
+    gtk_box_append(GTK_BOX(hdr), badge);
+    gtk_box_append(GTK_BOX(vbox), hdr);
+
+    GtkWidget *body = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_widget_add_css_class(body, "shell-popover-body");
+
+    GtkWidget *scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroll), 220);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroll), TRUE);
+
+    self->bc_pop_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), self->bc_pop_list_box);
+    gtk_box_append(GTK_BOX(body), scroll);
+
+    gtk_box_append(GTK_BOX(body), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
+
+    GtkWidget *btn_newwin = gtk_button_new_with_label("🗔  Open in New Window");
+    gtk_widget_add_css_class(btn_newwin, "flat");
+    gtk_widget_add_css_class(btn_newwin, "files-menu-row");
+    g_signal_connect(btn_newwin, "clicked", G_CALLBACK(on_bc_pop_newwin_clicked), self);
+    gtk_box_append(GTK_BOX(body), btn_newwin);
+
+    GtkWidget *btn_copypath = gtk_button_new_with_label("🔗  Copy Path / URI");
+    gtk_widget_add_css_class(btn_copypath, "flat");
+    gtk_widget_add_css_class(btn_copypath, "files-menu-row");
+    g_signal_connect(btn_copypath, "clicked", G_CALLBACK(on_bc_pop_copypath_clicked), self);
+    gtk_box_append(GTK_BOX(body), btn_copypath);
+
+    gtk_box_append(GTK_BOX(vbox), body);
+    gtk_popover_set_child(GTK_POPOVER(self->breadcrumb_popover), vbox);
+}
+
+static void
+open_breadcrumb_popover_for_segment(KajoFilesWindow *self,
+                                    GtkWidget *btn,
+                                    const char *uri,
+                                    const char *label)
+{
+    if (!self || !self->breadcrumb_popover || !uri)
+        return;
+
+    g_free(self->bc_pop_target_uri);
+    self->bc_pop_target_uri = g_strdup(uri);
+    gtk_label_set_text(GTK_LABEL(self->bc_pop_hdr_lbl), label ? label : "FOLDER");
+
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(self->bc_pop_list_box)) != NULL) {
+        gtk_box_remove(GTK_BOX(self->bc_pop_list_box), child);
+    }
+
+    GtkWidget *loading = gtk_label_new("Scanning subfolders...");
+    gtk_widget_add_css_class(loading, "shell-popover-subtitle");
+    gtk_widget_set_halign(loading, GTK_ALIGN_START);
+    gtk_widget_set_margin_start(loading, 8);
+    gtk_box_append(GTK_BOX(self->bc_pop_list_box), loading);
+
+    if (self->bc_pop_cancel) {
+        g_cancellable_cancel(self->bc_pop_cancel);
+        g_clear_object(&self->bc_pop_cancel);
+    }
+    self->bc_pop_cancel = g_cancellable_new();
+
+    g_autoptr(GFile) dir = g_file_new_for_uri(uri);
+    kajo_files_enumerate_async(dir, self->bc_pop_cancel, on_breadcrumb_subdirs_ready, files_window_op_weak_new(self));
+
+    graphene_point_t pt = { 0, 0 };
+    if (gtk_widget_compute_point(btn, GTK_WIDGET(self->location_stack), &GRAPHENE_POINT_INIT(0, 0), &pt)) {
+        GdkRectangle rect = {
+            (int)pt.x,
+            (int)pt.y,
+            MAX(1, gtk_widget_get_width(btn)),
+            MAX(1, gtk_widget_get_height(btn))
+        };
+        gtk_popover_set_pointing_to(GTK_POPOVER(self->breadcrumb_popover), &rect);
+    }
+    gtk_popover_popup(GTK_POPOVER(self->breadcrumb_popover));
+}
+
+static void
+on_breadcrumb_btn_pressed(GtkGestureClick *gesture,
+                          int n_press,
+                          double x G_GNUC_UNUSED,
+                          double y G_GNUC_UNUSED,
+                          gpointer user_data)
+{
+    if (n_press != 1)
+        return;
+
+    KajoFilesWindow *self = user_data;
+    GtkWidget *btn = gtk_event_controller_get_widget(GTK_EVENT_CONTROLLER(gesture));
+    const char *uri = btn ? g_object_get_data(G_OBJECT(btn), "segment-uri") : NULL;
+    const char *lbl = btn ? g_object_get_data(G_OBJECT(btn), "segment-label") : NULL;
+    if (!uri)
+        return;
+
+    guint button = gtk_gesture_single_get_current_button(GTK_GESTURE_SINGLE(gesture));
+    GdkModifierType mods = gtk_event_controller_get_current_event_state(GTK_EVENT_CONTROLLER(gesture));
+
+    if (button == GDK_BUTTON_MIDDLE ||
+        (button == GDK_BUTTON_PRIMARY && (mods & GDK_CONTROL_MASK) != 0)) {
+        gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+        GtkApplication *app = gtk_window_get_application(GTK_WINDOW(self));
+        GtkWidget *win = kajo_files_window_new(app, uri);
+        gtk_window_present(GTK_WINDOW(win));
+    } else if (button == GDK_BUTTON_SECONDARY) {
+        gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
+        open_breadcrumb_popover_for_segment(self, btn, uri, lbl);
+    }
+}
+
+static void
 on_breadcrumb_segment_clicked(GtkButton *btn, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
@@ -381,7 +744,7 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
     g_autofree char *badge = g_strdup_printf("LOCATION: %s", local_path ? local_path : (uri ? uri : ""));
     gtk_label_set_text(GTK_LABEL(self->current_uri_badge), badge);
 
-    /* Walk GFile parents up to root */
+    /* Walk GFile parents all the way up to root so '/' and '/home' remain 1 click away */
     GPtrArray *chain = g_ptr_array_new_with_free_func(g_object_unref);
     GFile *cursor = g_object_ref(self->current_dir);
     const char *home_dir = g_get_home_dir();
@@ -389,8 +752,6 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
 
     while (cursor != NULL) {
         g_ptr_array_insert(chain, 0, cursor);
-        if (home_file && g_file_equal(cursor, home_file))
-            break;
         GFile *parent = g_file_get_parent(cursor);
         cursor = parent;
     }
@@ -401,7 +762,10 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
         g_autofree char *seg_Label = NULL;
 
         if (home_file && g_file_equal(seg, home_file)) {
-            seg_Label = g_strdup("⌂ HOME");
+            g_autofree char *hbase = g_file_get_basename(seg);
+            seg_Label = (hbase && hbase[0] != '\0')
+                ? g_strdup_printf("⌂ %s", hbase)
+                : g_strdup("⌂ HOME");
         } else {
             g_autofree char *base = g_file_get_basename(seg);
             if (!base || g_strcmp0(base, "/") == 0 || base[0] == '\0') {
@@ -413,7 +777,7 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
                 else if (g_strcmp0(scheme, "recent") == 0)
                     seg_Label = g_strdup("🕒 RECENT");
                 else if (g_strcmp0(scheme, "file") == 0)
-                    seg_Label = g_strdup("/ ROOT");
+                    seg_Label = g_strdup("/");
                 else
                     seg_Label = g_strdup(seg_uri);
             } else {
@@ -433,12 +797,28 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
         if (i + 1 == chain->len)
             gtk_widget_add_css_class(btn, "active");
 
+        g_autofree char *seg_path = g_file_get_path(seg);
+        gtk_widget_set_tooltip_text(
+            btn,
+            seg_path ? seg_path : seg_uri
+        );
+
         g_object_set_data_full(G_OBJECT(btn), "segment-uri", g_strdup(seg_uri), g_free);
+        g_object_set_data_full(G_OBJECT(btn), "segment-label", g_strdup(seg_Label), g_free);
         g_signal_connect(btn, "clicked", G_CALLBACK(on_breadcrumb_segment_clicked), self);
+
+        GtkGesture *click_gest = gtk_gesture_click_new();
+        gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_gest), 0);
+        g_signal_connect(click_gest, "pressed", G_CALLBACK(on_breadcrumb_btn_pressed), self);
+        gtk_widget_add_controller(btn, GTK_EVENT_CONTROLLER(click_gest));
+
         gtk_box_append(GTK_BOX(self->breadcrumb_box), btn);
     }
 
     g_ptr_array_unref(chain);
+
+    self->pending_breadcrumb_scroll_end = TRUE;
+    schedule_breadcrumb_scroll_to_end(self);
 }
 
 /* ─── Virtualized Recycling View Factories: Metro Tile Grid & Details List ─── */
@@ -1485,6 +1865,10 @@ kajo_files_window_dispose(GObject *object)
         g_source_remove(self->monitor_debounce_id);
         self->monitor_debounce_id = 0;
     }
+    if (self->breadcrumb_scroll_idle_id > 0) {
+        g_source_remove(self->breadcrumb_scroll_idle_id);
+        self->breadcrumb_scroll_idle_id = 0;
+    }
     if (self->enum_cancel) {
         g_cancellable_cancel(self->enum_cancel);
         g_clear_object(&self->enum_cancel);
@@ -1493,11 +1877,17 @@ kajo_files_window_dispose(GObject *object)
         g_cancellable_cancel(self->ops_cancel);
         g_clear_object(&self->ops_cancel);
     }
+    if (self->bc_pop_cancel) {
+        g_cancellable_cancel(self->bc_pop_cancel);
+        g_clear_object(&self->bc_pop_cancel);
+    }
     if (self->dir_monitor) {
         g_file_monitor_cancel(self->dir_monitor);
         g_clear_object(&self->dir_monitor);
     }
 
+    g_clear_pointer(&self->bc_pop_target_uri, g_free);
+    g_clear_pointer(&self->breadcrumb_popover, gtk_widget_unparent);
     g_clear_pointer(&self->context_popover, gtk_widget_unparent);
     g_clear_pointer(&self->sidebar, kajo_files_sidebar_free);
     g_clear_pointer(&self->quicklook, kajo_quicklook_free);
@@ -1539,6 +1929,7 @@ kajo_files_window_class_init(KajoFilesWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_up);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_reload);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, location_stack);
+    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, breadcrumb_scroll);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, breadcrumb_box);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_edit_uri);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, uri_entry);
@@ -1638,8 +2029,21 @@ kajo_files_window_init(KajoFilesWindow *self)
     build_connect_banner(self);
     build_trash_banner(self);
     build_prompt_banner(self);
+    build_breadcrumb_popover(self);
     files_window_build_context_menu_popover(self);
     sync_sort_ui(self);
+
+    if (self->breadcrumb_scroll) {
+        GtkAdjustment *hadj = gtk_scrolled_window_get_hadjustment(self->breadcrumb_scroll);
+        if (hadj) {
+            g_signal_connect(hadj, "changed", G_CALLBACK(on_breadcrumb_hadj_changed), self);
+            g_signal_connect(hadj, "notify::upper", G_CALLBACK(on_breadcrumb_hadj_notify), self);
+            g_signal_connect(hadj, "notify::page-size", G_CALLBACK(on_breadcrumb_hadj_notify), self);
+        }
+        GtkEventController *bc_scroll_ctrl = gtk_event_controller_scroll_new(GTK_EVENT_CONTROLLER_SCROLL_BOTH_AXES);
+        g_signal_connect(bc_scroll_ctrl, "scroll", G_CALLBACK(on_breadcrumb_wheel_scroll), self);
+        gtk_widget_add_controller(GTK_WIDGET(self->breadcrumb_scroll), bc_scroll_ctrl);
+    }
 
     self->quicklook = kajo_quicklook_new(
         self->root_overlay,

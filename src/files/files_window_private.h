@@ -11,6 +11,7 @@
 #include "files_quicklook.h"
 #include "../compositor/compositor.h"
 #include <gio/gdesktopappinfo.h>
+#include <math.h>
 #include <string.h>
 
 G_BEGIN_DECLS
@@ -33,6 +34,7 @@ struct _KajoFilesWindow {
     GtkWidget *btn_up;
     GtkWidget *btn_reload;
     GtkStack *location_stack;
+    GtkScrolledWindow *breadcrumb_scroll;
     GtkWidget *breadcrumb_box;
     GtkWidget *btn_edit_uri;
     GtkWidget *uri_entry;
@@ -106,6 +108,15 @@ struct _KajoFilesWindow {
     GtkWidget *ctx_ow_list_box;
     GtkWidget *ctx_ow_default_btn;
     gboolean open_with_set_default;
+
+    /* Breadcrumb Subfolder Jump Popover */
+    GtkWidget *breadcrumb_popover;
+    GtkWidget *bc_pop_hdr_lbl;
+    GtkWidget *bc_pop_list_box;
+    GCancellable *bc_pop_cancel;
+    char *bc_pop_target_uri;
+    gboolean pending_breadcrumb_scroll_end;
+    guint breadcrumb_scroll_idle_id;
 
     /* Subsystems */
     KajoFilesSidebar *sidebar;

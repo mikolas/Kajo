@@ -104,9 +104,9 @@ template $KajoFilesWindow : ApplicationWindow {
                 orientation: horizontal;
                 spacing: 4;
 
-                ScrolledWindow {
+                ScrolledWindow breadcrumb_scroll {
                   hexpand: true;
-                  hscrollbar-policy: automatic;
+                  hscrollbar-policy: external;
                   vscrollbar-policy: never;
 
                   Box breadcrumb_box {
