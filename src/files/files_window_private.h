@@ -200,6 +200,9 @@ void     on_connect_cancel_clicked(GtkButton *btn, gpointer user_data);
 int        files_window_get_selected_item_index(KajoFilesWindow *self);
 GPtrArray *files_window_get_selected_items(KajoFilesWindow *self);
 void       files_window_select_all(KajoFilesWindow *self);
+/* Mounts a disk image via UDisks2 and navigates into it; `fallback_to_archive` (ISO only) browses
+ * it as archive:// when mounting is not possible. */
+void       files_window_open_disk_image(KajoFilesWindow *self, GFile *image, gboolean fallback_to_archive);
 void       files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode);
 
 /* Defined in files_window_keys.c */

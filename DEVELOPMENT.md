@@ -34,6 +34,7 @@ src/
 │   ├── files_window_keys.c         Keyboard shortcut controller (Space Quick Look, navigation, clipboard)
 │   ├── files_model.h/c             KajoFileItem GObject, async GVFS enumerator, sort & filter
 │   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir & clipboard
+│   ├── files_diskimage.h/c         UDisks2 loop-mount of ISO / raw disk images (LoopSetup -> Mount -> autoclear)
 │   ├── files_sidebar.h/c           Places, Trash, GVolumeMonitor drives & inline GVFS/LUKS auth
 │   └── files_quicklook.h/c         Inspector drawer & Space Quick Look modal (img/media/PDF/archive/code)
 ├── hardware/

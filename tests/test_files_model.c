@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include "../src/files/files_model.h"
 #include "../src/files/files_ops.h"
+#include "../src/files/files_diskimage.h"
 
 static void
 test_format_size(void)
@@ -1092,6 +1093,104 @@ test_archive_root_copy_and_odd_archive_names(void)
     g_ptr_array_unref(del);
 }
 
+/* ─── Disk image classification and UDisks2 reply helpers ─── */
+
+static void
+test_disk_image_classification(void)
+{
+    g_assert_true(kajo_files_is_disk_image("application/x-iso9660-image", "anything.bin"));
+    g_assert_true(kajo_files_is_disk_image("application/x-cd-image", "x"));
+    /* shared-mime-info >= 2.2 type (what GIO reports for ISOs today), upper-case extension */
+    g_assert_true(kajo_files_is_disk_image("application/vnd.efi.iso", "AmigaDeveloperCDV2.1.ISO"));
+    g_assert_true(kajo_files_is_disk_image("application/x-raw-disk-image", "disk.img"));
+    g_assert_true(kajo_files_is_disk_image("application/octet-stream", "SYSTEM.ISO"));
+    g_assert_true(kajo_files_is_disk_image(NULL, "disk.img"));
+    /* a known, different type wins over the extension: camera RAW photos, plain text, zip */
+    g_assert_false(kajo_files_is_disk_image("image/x-panasonic-raw", "photo.raw"));
+    g_assert_false(kajo_files_is_disk_image("text/plain", "notes.iso"));
+    g_assert_false(kajo_files_is_disk_image("application/zip", "bundle.iso"));
+    /* Apple images cannot be loop-mounted by UDisks2 */
+    g_assert_false(kajo_files_is_disk_image("application/x-apple-diskimage", "installer.dmg"));
+    g_assert_false(kajo_files_is_disk_image("application/octet-stream", "data.bin"));
+    g_assert_false(kajo_files_is_disk_image(NULL, NULL));
+}
+
+static GVariant *
+parse_managed(const char *text)
+{
+    g_autoptr(GError) err = NULL;
+    GVariant *v = g_variant_parse(G_VARIANT_TYPE("a{oa{sa{sv}}}"), text, NULL, NULL, &err);
+    g_assert_no_error(err);
+    g_assert_nonnull(v);
+    return g_variant_ref_sink(v);
+}
+
+static void
+test_diskimage_reply_helpers(void)
+{
+    const char *base = "/org/freedesktop/UDisks2/block_devices/";
+    g_autofree char *loop0 = g_strconcat(base, "loop0", NULL);
+    g_autofree char *loop1 = g_strconcat(base, "loop1", NULL);
+    g_autofree char *loop0p1 = g_strconcat(base, "loop0p1", NULL);
+    g_autofree char *loop0p2 = g_strconcat(base, "loop0p2", NULL);
+    g_autofree char *loop0p3 = g_strconcat(base, "loop0p3", NULL);
+    g_autofree char *loop1p1 = g_strconcat(base, "loop1p1", NULL);
+
+    /* loop0: partitioned image (p2 has a filesystem, p1 is mounted, p3 has none); loop1: other user's */
+    g_autoptr(GVariant) managed = parse_managed(
+        "{ objectpath '/org/freedesktop/UDisks2/block_devices/loop0': {"
+        "    'org.freedesktop.UDisks2.Loop': {'BackingFile': <b'/home/u/disk.img'>, 'SetupByUID': <uint32 1000>},"
+        "    'org.freedesktop.UDisks2.PartitionTable': {'Type': <'dos'>} },"
+        "  objectpath '/org/freedesktop/UDisks2/block_devices/loop0p2': {"
+        "    'org.freedesktop.UDisks2.Partition': {'Table': <objectpath '/org/freedesktop/UDisks2/block_devices/loop0'>, 'Number': <uint32 2>},"
+        "    'org.freedesktop.UDisks2.Filesystem': {'MountPoints': <@aay []>} },"
+        "  objectpath '/org/freedesktop/UDisks2/block_devices/loop0p1': {"
+        "    'org.freedesktop.UDisks2.Partition': {'Table': <objectpath '/org/freedesktop/UDisks2/block_devices/loop0'>, 'Number': <uint32 1>},"
+        "    'org.freedesktop.UDisks2.Filesystem': {'MountPoints': <[b'/run/media/u/BOOT']>} },"
+        "  objectpath '/org/freedesktop/UDisks2/block_devices/loop0p3': {"
+        "    'org.freedesktop.UDisks2.Partition': {'Table': <objectpath '/org/freedesktop/UDisks2/block_devices/loop0'>, 'Number': <uint32 3>} },"
+        "  objectpath '/org/freedesktop/UDisks2/block_devices/loop1': {"
+        "    'org.freedesktop.UDisks2.Loop': {'BackingFile': <b'/home/u/other.iso'>, 'SetupByUID': <uint32 0>} },"
+        "  objectpath '/org/freedesktop/UDisks2/block_devices/loop1p1': {"
+        "    'org.freedesktop.UDisks2.Partition': {'Table': <objectpath '/org/freedesktop/UDisks2/block_devices/loop1'>, 'Number': <uint32 1>},"
+        "    'org.freedesktop.UDisks2.Filesystem': {'MountPoints': <@aay []>} } }");
+
+    /* loop lookup: exact backing file AND the caller's uid */
+    g_autofree char *found = kajo_diskimage_find_loop(managed, "/home/u/disk.img", 1000);
+    g_assert_cmpstr(found, ==, loop0);
+    g_assert_null(kajo_diskimage_find_loop(managed, "/home/u/disk.img", 1001));
+    g_assert_null(kajo_diskimage_find_loop(managed, "/home/u/disk.im", 1000));
+    g_assert_null(kajo_diskimage_find_loop(managed, "/home/u/other.iso", 1000));
+
+    /* filesystem lookup: lowest-numbered partition with a filesystem, never another table's */
+    g_autofree char *fs = kajo_diskimage_find_filesystem(managed, loop0);
+    g_assert_cmpstr(fs, ==, loop0p1);
+    g_autofree char *fs1 = kajo_diskimage_find_filesystem(managed, loop1);
+    g_assert_cmpstr(fs1, ==, loop1p1);
+    g_assert_null(kajo_diskimage_find_filesystem(managed, "/org/freedesktop/UDisks2/block_devices/loop9"));
+
+    /* mount points */
+    g_autofree char *mp = kajo_diskimage_first_mount_point(managed, loop0p1);
+    g_assert_cmpstr(mp, ==, "/run/media/u/BOOT");
+    g_assert_null(kajo_diskimage_first_mount_point(managed, loop0p2));   /* not mounted */
+    g_assert_null(kajo_diskimage_first_mount_point(managed, loop0p3));
+
+    /* a filesystem directly on the loop device wins over its (absent) partitions */
+    g_autoptr(GVariant) plain = parse_managed(
+        "{ objectpath '/org/freedesktop/UDisks2/block_devices/loop4': {"
+        "    'org.freedesktop.UDisks2.Loop': {'BackingFile': <b'/tmp/x.iso'>, 'SetupByUID': <uint32 1000>},"
+        "    'org.freedesktop.UDisks2.Filesystem': {'MountPoints': <[b'/run/media/u/CD\\303\\244']>} } }");
+    g_autofree char *plain_fs = kajo_diskimage_find_filesystem(plain, "/org/freedesktop/UDisks2/block_devices/loop4");
+    g_assert_cmpstr(plain_fs, ==, "/org/freedesktop/UDisks2/block_devices/loop4");
+    g_autofree char *plain_mp = kajo_diskimage_first_mount_point(plain, plain_fs);
+    g_assert_cmpstr(plain_mp, ==, "/run/media/u/CDä");
+
+    /* NULL-safety */
+    g_assert_null(kajo_diskimage_find_loop(NULL, "/x", 0));
+    g_assert_null(kajo_diskimage_find_filesystem(managed, NULL));
+    g_assert_null(kajo_diskimage_first_mount_point(NULL, "/x"));
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1114,6 +1213,8 @@ main(int argc, char *argv[])
     g_test_add_func("/files/archive-extraction-hardening", test_archive_extraction_hardening);
     g_test_add_func("/files/archive-listing-and-preview-safety", test_archive_listing_and_preview_safety);
     g_test_add_func("/files/archive-root-copy-and-odd-names", test_archive_root_copy_and_odd_archive_names);
+    g_test_add_func("/files/disk-image-classification", test_disk_image_classification);
+    g_test_add_func("/files/disk-image-udisks-reply-helpers", test_diskimage_reply_helpers);
     g_test_add_func("/files/archive-virtual-folders-and-ops", test_archive_virtual_folders_and_ops);
 
     return g_test_run();

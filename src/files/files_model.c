@@ -371,6 +371,28 @@ kajo_files_is_archive(const char *content_type, const char *filename)
     return FALSE;
 }
 
+gboolean
+kajo_files_is_disk_image(const char *content_type, const char *filename)
+{
+    if (content_type &&
+        (g_strcmp0(content_type, "application/vnd.efi.iso") == 0 ||
+         g_strcmp0(content_type, "application/x-iso9660-image") == 0 ||
+         g_strcmp0(content_type, "application/x-cd-image") == 0 ||
+         g_strcmp0(content_type, "application/x-raw-disk-image") == 0)) {
+        return TRUE;
+    }
+    /* Extensions only count when the type is unknown: ".raw" is also a camera RAW photo format
+     * and must keep opening in an image viewer. (.dmg is deliberately not included: UDisks2
+     * cannot loop-mount Apple disk images.) */
+    gboolean generic = !content_type || content_type[0] == '\0' ||
+                       g_strcmp0(content_type, "application/octet-stream") == 0;
+    if (!generic || !filename)
+        return FALSE;
+    g_autofree char *lower = g_ascii_strdown(filename, -1);
+    return g_str_has_suffix(lower, ".iso") || g_str_has_suffix(lower, ".img") ||
+           g_str_has_suffix(lower, ".raw");
+}
+
 static gboolean
 path_has_dotdot_segment(const char *path)
 {

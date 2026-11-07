@@ -296,6 +296,31 @@ on_ctx_open_with_app_clicked(GtkButton *btn, gpointer user_data)
     }
 }
 
+/* Built-in "Open With" choices for disk images (the plain Open action mounts them). They do not
+ * take part in "Set as Default for this type". */
+
+static void
+on_ow_mount_image_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    close_context_menu(self);
+    if (self->selected_item)
+        files_window_open_disk_image(self, kajo_file_item_get_file(self->selected_item), FALSE);
+}
+
+static void
+on_ow_browse_archive_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    close_context_menu(self);
+    if (!self->selected_item)
+        return;
+    g_autofree char *local_path = g_file_get_path(kajo_file_item_get_file(self->selected_item));
+    g_autofree char *arch_uri = local_path ? kajo_files_build_archive_uri(local_path, "") : NULL;
+    if (arch_uri)
+        kajo_files_window_navigate_uri(self, arch_uri);
+}
+
 static void
 on_ctx_ow_default_toggle_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
@@ -331,6 +356,19 @@ on_ctx_open_with_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     GtkWidget *child;
     while ((child = gtk_widget_get_first_child(self->ctx_ow_list_box)) != NULL) {
         gtk_box_remove(GTK_BOX(self->ctx_ow_list_box), child);
+    }
+
+    const char *item_name = kajo_file_item_get_name(self->selected_item);
+    g_autofree char *item_local = g_file_get_path(kajo_file_item_get_file(self->selected_item));
+    if (item_local && kajo_files_is_disk_image(ctype, item_name)) {
+        gtk_box_append(GTK_BOX(self->ctx_ow_list_box), create_ctx_action_button(
+            "💿  Mount Disk Image", "", FALSE, G_CALLBACK(on_ow_mount_image_clicked), self));
+        if (kajo_files_is_archive(ctype, item_name)) {
+            gtk_box_append(GTK_BOX(self->ctx_ow_list_box), create_ctx_action_button(
+                "📦  Browse as Archive", "", FALSE, G_CALLBACK(on_ow_browse_archive_clicked), self));
+            gtk_box_append(GTK_BOX(self->ctx_ow_list_box), create_ctx_action_button(
+                "📦  Extract ISO Contents", "", FALSE, G_CALLBACK(on_ctx_extract_clicked), self));
+        }
     }
 
     g_autoptr(GAppInfo) default_app = ctype ? g_app_info_get_default_for_type(ctype, FALSE) : NULL;

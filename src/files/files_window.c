@@ -1,4 +1,5 @@
 #include "files_window_private.h"
+#include "files_diskimage.h"
 #include "../config.h"
 #include <glib/gstdio.h>
 #include <errno.h>
@@ -1553,6 +1554,69 @@ on_selection_model_changed(GtkSelectionModel *sel,
 
 typedef struct {
     GWeakRef ref;
+    char    *image_path;
+    gboolean fallback_to_archive;
+} DiskImageCtx;
+
+static void
+on_disk_image_mounted(const char *mount_path, GError *error, gpointer user_data)
+{
+    DiskImageCtx *dctx = user_data;
+    KajoFilesWindow *self = g_weak_ref_get(&dctx->ref);
+    g_autofree char *image_path = g_steal_pointer(&dctx->image_path);
+    gboolean fallback = dctx->fallback_to_archive;
+    g_weak_ref_clear(&dctx->ref);
+    g_free(dctx);
+    if (!self)
+        return;
+
+    if (self->active_ops_count > 0)
+        self->active_ops_count--;
+    if (self->btn_cancel_op && self->active_ops_count == 0)
+        gtk_widget_set_visible(self->btn_cancel_op, FALSE);
+
+    if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        files_window_set_status_message(self, "Disk image mount cancelled", FALSE);
+    } else if (mount_path) {
+        g_autoptr(GFile) mount_dir = g_file_new_for_path(mount_path);
+        g_autofree char *uri = g_file_get_uri(mount_dir);
+        files_window_set_status_message(self, "Disk image mounted (eject it in the sidebar when done)", FALSE);
+        if (self->sidebar)
+            kajo_files_sidebar_refresh(self->sidebar);
+        if (uri)
+            kajo_files_window_navigate_uri(self, uri);
+    } else {
+        g_autofree char *arch_uri = fallback ? kajo_files_build_archive_uri(image_path, "") : NULL;
+        if (arch_uri) {
+            g_autofree char *msg = g_strdup_printf("Could not mount (%s) - browsing as archive instead",
+                                                   error ? error->message : "unknown error");
+            kajo_files_window_navigate_uri(self, arch_uri);
+            files_window_set_status_message(self, msg, TRUE);
+        } else {
+            g_autofree char *msg = g_strdup_printf("Could not mount disk image: %s",
+                                                   error ? error->message : "unknown error");
+            files_window_set_status_message(self, msg, TRUE);
+        }
+    }
+    g_object_unref(self);
+}
+
+void
+files_window_open_disk_image(KajoFilesWindow *self, GFile *image, gboolean fallback_to_archive)
+{
+    g_autofree char *path = image ? g_file_get_path(image) : NULL;
+    if (!self || !path)
+        return;
+    files_window_begin_op(self, "Mounting disk image...");
+    DiskImageCtx *dctx = g_new0(DiskImageCtx, 1);
+    g_weak_ref_init(&dctx->ref, self);
+    dctx->image_path = g_steal_pointer(&path);
+    dctx->fallback_to_archive = fallback_to_archive;
+    kajo_files_diskimage_mount_async(image, self->ops_cancel, on_disk_image_mounted, dctx);
+}
+
+typedef struct {
+    GWeakRef ref;
     char    *outer_dir_uri; /* archive:// folder the activated entry was listed in */
 } ArchiveOpenCtx;
 
@@ -1655,6 +1719,12 @@ files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item)
     g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
     const char *ctype = kajo_file_item_get_content_type(item);
     const char *name = kajo_file_item_get_name(item);
+    /* Open on a disk image mounts it (ISO: browse as archive if that is not possible).
+     * "Open With" offers the other choices. */
+    if (local_path && kajo_files_is_disk_image(ctype, name)) {
+        files_window_open_disk_image(self, file, kajo_files_is_archive(ctype, name));
+        return;
+    }
     if (local_path && kajo_files_is_archive(ctype, name)) {
         g_autofree char *arch_uri = kajo_files_build_archive_uri(local_path, "");
         if (arch_uri) {
