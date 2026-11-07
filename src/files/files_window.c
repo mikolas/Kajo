@@ -1719,18 +1719,18 @@ files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item)
     g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
     const char *ctype = kajo_file_item_get_content_type(item);
     const char *name = kajo_file_item_get_name(item);
-    /* Open on a disk image mounts it (ISO: browse as archive if that is not possible).
-     * "Open With" offers the other choices. */
-    if (local_path && kajo_files_is_disk_image(ctype, name)) {
-        files_window_open_disk_image(self, file, kajo_files_is_archive(ctype, name));
-        return;
-    }
+    /* Open browses archives, ISOs included, as archive:// (no privileges needed). Disk images
+     * libarchive cannot read (.img/.raw) are mounted; "Open With" offers mounting an ISO. */
     if (local_path && kajo_files_is_archive(ctype, name)) {
         g_autofree char *arch_uri = kajo_files_build_archive_uri(local_path, "");
         if (arch_uri) {
             kajo_files_window_navigate_uri(self, arch_uri);
             return;
         }
+    }
+    if (local_path && kajo_files_is_disk_image(ctype, name)) {
+        files_window_open_disk_image(self, file, FALSE);
+        return;
     }
 
     kajo_files_open_item_default(item, GTK_WINDOW(self));
