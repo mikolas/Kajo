@@ -62,6 +62,22 @@ void kajo_files_op_extract_archive_async(GFile *archive_file,
                                          KajoFileOpCallback callback,
                                          gpointer user_data);
 
+void kajo_files_op_compress_async(GPtrArray *source_files,
+                                  GFile *dest_parent_dir,
+                                  const char *archive_filename,
+                                  GCancellable *cancellable,
+                                  KajoFileOpCallback callback,
+                                  gpointer user_data);
+
+typedef void (*KajoArchiveEntryExtractCallback)(GFile *temp_file,
+                                                GError *error,
+                                                gpointer user_data);
+
+void kajo_files_op_extract_entry_to_temp_async(const char *archive_uri,
+                                               GCancellable *cancellable,
+                                               KajoArchiveEntryExtractCallback callback,
+                                               gpointer user_data);
+
 /* Clipboard (Wayland GdkClipboard) */
 void     kajo_files_clipboard_set(GPtrArray *files, gboolean is_cut);
 gboolean kajo_files_clipboard_has_files(void);

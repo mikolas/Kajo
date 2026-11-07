@@ -136,7 +136,10 @@ update_status_and_capacity_bar(KajoFilesWindow *self)
         }
     }
 
-    gtk_label_set_text(GTK_LABEL(self->status_right_label), "GVFS VIRTUAL FS");
+    gtk_label_set_text(
+        GTK_LABEL(self->status_right_label),
+        files_window_is_read_only_archive(self) ? "READ-ONLY ARCHIVE" : "GVFS VIRTUAL FS"
+    );
     gtk_widget_set_visible(self->fs_usage_bar, FALSE);
 }
 
@@ -326,6 +329,95 @@ build_trash_banner(KajoFilesWindow *self)
     gtk_revealer_set_child(GTK_REVEALER(self->trash_banner_revealer), card);
 }
 
+gboolean
+files_window_is_read_only_archive(const KajoFilesWindow *self)
+{
+    if (!self || !self->current_dir)
+        return FALSE;
+    g_autofree char *uri = g_file_get_uri(self->current_dir);
+    return kajo_files_parse_archive_uri(uri, NULL, NULL);
+}
+
+static void
+on_archive_extract_all_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    if (!self || !self->current_dir)
+        return;
+
+    g_autofree char *uri = g_file_get_uri(self->current_dir);
+    g_autofree char *arch_path = NULL;
+    if (!uri || !kajo_files_parse_archive_uri(uri, &arch_path, NULL))
+        return;
+
+    g_autoptr(GFile) arch_file = g_file_new_for_path(arch_path);
+    g_autoptr(GFile) host_parent = arch_file ? g_file_get_parent(arch_file) : NULL;
+    if (!arch_file || !host_parent)
+        return;
+
+    files_window_begin_op(self, "Extracting archive...");
+    kajo_files_op_extract_archive_async(
+        arch_file,
+        host_parent,
+        self->ops_cancel,
+        files_window_on_file_op_completed,
+        files_window_op_weak_new(self)
+    );
+}
+
+static void
+on_archive_exit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoFilesWindow *self = user_data;
+    if (!self || !self->current_dir)
+        return;
+
+    g_autofree char *uri = g_file_get_uri(self->current_dir);
+    g_autofree char *arch_path = NULL;
+    if (!uri || !kajo_files_parse_archive_uri(uri, &arch_path, NULL))
+        return;
+
+    g_autoptr(GFile) arch_file = g_file_new_for_path(arch_path);
+    g_autoptr(GFile) host_parent = arch_file ? g_file_get_parent(arch_file) : NULL;
+    if (host_parent) {
+        g_autofree char *parent_uri = g_file_get_uri(host_parent);
+        if (parent_uri)
+            kajo_files_window_navigate_uri(self, parent_uri);
+    }
+}
+
+static void
+build_archive_banner(KajoFilesWindow *self)
+{
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
+    gtk_widget_add_css_class(card, "files-prompt-bar");
+    gtk_widget_add_css_class(card, "files-context-banner");
+    gtk_widget_set_valign(card, GTK_ALIGN_CENTER);
+
+    self->archive_summary_lbl = gtk_label_new("📦 ARCHIVE VIEW (READ-ONLY)");
+    gtk_widget_add_css_class(self->archive_summary_lbl, "heading");
+    gtk_widget_set_hexpand(self->archive_summary_lbl, TRUE);
+    gtk_label_set_xalign(GTK_LABEL(self->archive_summary_lbl), 0.0f);
+    gtk_widget_set_valign(self->archive_summary_lbl, GTK_ALIGN_CENTER);
+    gtk_label_set_ellipsize(GTK_LABEL(self->archive_summary_lbl), PANGO_ELLIPSIZE_END);
+
+    GtkWidget *btn_extract_all = gtk_button_new_with_label("📦 EXTRACT ALL");
+    gtk_widget_add_css_class(btn_extract_all, "action-btn-primary");
+    gtk_widget_set_valign(btn_extract_all, GTK_ALIGN_CENTER);
+    g_signal_connect(btn_extract_all, "clicked", G_CALLBACK(on_archive_extract_all_clicked), self);
+
+    GtkWidget *btn_exit = gtk_button_new_with_label("↩ EXIT");
+    gtk_widget_add_css_class(btn_exit, "flat");
+    gtk_widget_set_valign(btn_exit, GTK_ALIGN_CENTER);
+    g_signal_connect(btn_exit, "clicked", G_CALLBACK(on_archive_exit_clicked), self);
+
+    gtk_box_append(GTK_BOX(card), self->archive_summary_lbl);
+    gtk_box_append(GTK_BOX(card), btn_extract_all);
+    gtk_box_append(GTK_BOX(card), btn_exit);
+
+    gtk_revealer_set_child(GTK_REVEALER(self->archive_banner_revealer), card);
+}
+
 static void
 on_prompt_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
@@ -350,6 +442,12 @@ on_prompt_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         if (sel_items && sel_items->len > 0) {
             files_window_begin_op(self, "Deleting permanently...");
             kajo_files_op_delete_permanent_async(sel_items, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
+        }
+    } else if (kind == PROMPT_COMPRESS && self->current_dir) {
+        g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+        if (sel_items && sel_items->len > 0) {
+            files_window_begin_op(self, "Compressing to archive...");
+            kajo_files_op_compress_async(sel_items, self->current_dir, text, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
         }
     }
 }
@@ -396,6 +494,13 @@ void
 files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind)
 {
     if (!self) return;
+    if (files_window_is_read_only_archive(self) &&
+        (kind == PROMPT_MKDIR || kind == PROMPT_NEW_FILE ||
+         kind == PROMPT_RENAME || kind == PROMPT_DELETE_PERM ||
+         kind == PROMPT_COMPRESS)) {
+        files_window_set_status_message(self, "Archive view is read-only", TRUE);
+        return;
+    }
     self->active_prompt = kind;
 
     if (kind == PROMPT_MKDIR) {
@@ -449,6 +554,39 @@ files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind)
         gtk_widget_set_visible(self->prompt_entry, FALSE);
         gtk_button_set_label(GTK_BUTTON(self->prompt_submit_btn), "DELETE PERMANENTLY");
         gtk_revealer_set_reveal_child(GTK_REVEALER(self->prompt_banner_revealer), TRUE);
+    } else if (kind == PROMPT_COMPRESS) {
+        g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+        if (!sel_items || sel_items->len == 0) {
+            self->active_prompt = PROMPT_NONE;
+            files_window_set_status_message(self, "Select one or more items to compress", TRUE);
+            return;
+        }
+
+        g_autofree char *stem = NULL;
+        if (sel_items->len == 1) {
+            KajoFileItem *first = g_ptr_array_index(sel_items, 0);
+            const char *nm = kajo_file_item_get_display_name(first);
+            const char *dot = (!kajo_file_item_is_dir(first) && nm) ? strrchr(nm, '.') : NULL;
+            if (dot && dot != nm)
+                stem = g_strndup(nm, (gsize)(dot - nm));
+            else if (nm && nm[0] != '\0')
+                stem = g_strdup(nm);
+        } else if (self->current_dir) {
+            stem = g_file_get_basename(self->current_dir);
+        }
+        if (!stem || stem[0] == '\0' || g_strcmp0(stem, "/") == 0) {
+            g_free(stem);
+            stem = g_strdup("archive");
+        }
+
+        g_autofree char *default_arch = g_strdup_printf("%s.zip", stem);
+        gtk_label_set_text(GTK_LABEL(self->prompt_title_lbl), "📦 COMPRESS TO ARCHIVE (.zip, .tar.zst, .tar.gz, .tar.xz):");
+        gtk_widget_set_visible(self->prompt_entry, TRUE);
+        gtk_editable_set_text(GTK_EDITABLE(self->prompt_entry), default_arch);
+        gtk_button_set_label(GTK_BUTTON(self->prompt_submit_btn), "COMPRESS");
+        gtk_revealer_set_reveal_child(GTK_REVEALER(self->prompt_banner_revealer), TRUE);
+        gtk_widget_grab_focus(self->prompt_entry);
+        gtk_editable_select_region(GTK_EDITABLE(self->prompt_entry), 0, (int)g_utf8_strlen(stem, -1));
     }
 }
 
@@ -857,10 +995,22 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
 
     g_autofree char *uri = g_file_get_uri(self->current_dir);
     g_autofree char *local_path = g_file_get_path(self->current_dir);
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
 
-    gtk_editable_set_text(GTK_EDITABLE(self->uri_entry), local_path ? local_path : (uri ? uri : ""));
-
-    g_autofree char *badge = g_strdup_printf("LOCATION: %s", local_path ? local_path : (uri ? uri : ""));
+    g_autofree char *badge = NULL;
+    if (uri && kajo_files_parse_archive_uri(uri, &arch_path, &inner_path)) {
+        g_autofree char *canon_uri = kajo_files_build_archive_uri(arch_path, inner_path);
+        gtk_editable_set_text(GTK_EDITABLE(self->uri_entry), canon_uri ? canon_uri : uri);
+        g_autofree char *arch_base = g_path_get_basename(arch_path);
+        if (inner_path && inner_path[0] != '\0')
+            badge = g_strdup_printf("ARCHIVE: %s!/%s", arch_base ? arch_base : arch_path, inner_path);
+        else
+            badge = g_strdup_printf("ARCHIVE: %s!/", arch_base ? arch_base : arch_path);
+    } else {
+        gtk_editable_set_text(GTK_EDITABLE(self->uri_entry), local_path ? local_path : (uri ? uri : ""));
+        badge = g_strdup_printf("LOCATION: %s", local_path ? local_path : (uri ? uri : ""));
+    }
     gtk_label_set_text(GTK_LABEL(self->current_uri_badge), badge);
 
     /* Build full path chain from root to current_dir so '/' and '/home' remain 1 click away */
@@ -1371,6 +1521,60 @@ on_selection_model_changed(GtkSelectionModel *sel,
     update_status_and_capacity_bar(self);
 }
 
+static void
+on_archive_entry_open_ready(GFile *temp_file, GError *error, gpointer user_data)
+{
+    GWeakRef *ref = user_data;
+    KajoFilesWindow *self = g_weak_ref_get(ref);
+    g_weak_ref_clear(ref);
+    g_free(ref);
+    if (!self)
+        return;
+
+    if (self->active_ops_count > 0)
+        self->active_ops_count--;
+    if (self->btn_cancel_op && self->active_ops_count == 0)
+        gtk_widget_set_visible(self->btn_cancel_op, FALSE);
+
+    if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        files_window_set_status_message(self, "Archive entry extraction cancelled", FALSE);
+        g_object_unref(self);
+        return;
+    }
+
+    if (!temp_file) {
+        files_window_set_status_message(self, error ? error->message : "Failed to extract archive entry", TRUE);
+        g_object_unref(self);
+        return;
+    }
+
+    g_autofree char *temp_path = g_file_get_path(temp_file);
+    g_autofree char *base = g_file_get_basename(temp_file);
+    g_autofree char *guessed_ct = base ? g_content_type_guess(base, NULL, 0, NULL) : NULL;
+    const char *ctype = (guessed_ct && guessed_ct[0] != '\0') ? guessed_ct : "application/octet-stream";
+
+    if (temp_path && kajo_files_is_archive(ctype, base)) {
+        g_autofree char *nested_arch_uri = kajo_files_build_archive_uri(temp_path, "");
+        if (nested_arch_uri) {
+            kajo_files_window_navigate_uri(self, nested_arch_uri);
+            g_object_unref(self);
+            return;
+        }
+    }
+
+    g_autoptr(KajoFileItem) temp_item = kajo_file_item_new_manual(
+        temp_file,
+        base ? base : "entry",
+        base ? base : "entry",
+        ctype,
+        0, 0, 0644,
+        FALSE, FALSE
+    );
+    kajo_files_open_item_default(temp_item, GTK_WINDOW(self));
+    files_window_set_status_message(self, "Opened extracted archive entry", FALSE);
+    g_object_unref(self);
+}
+
 void
 files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item)
 {
@@ -1386,12 +1590,39 @@ files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item)
     }
 
     const char *target_uri = kajo_file_item_get_target_uri(item);
+    const char *item_uri = kajo_file_item_get_uri(item);
     if (kajo_file_item_is_dir(item) || kajo_file_item_is_mountable(item)) {
-        const char *dest = target_uri ? target_uri : kajo_file_item_get_uri(item);
+        const char *dest = target_uri ? target_uri : item_uri;
         kajo_files_window_navigate_uri(self, dest);
-    } else {
-        kajo_files_open_item_default(item, GTK_WINDOW(self));
+        return;
     }
+
+    /* If activating a file entry inside archive://, extract on-demand to temp and open */
+    if (item_uri && kajo_files_parse_archive_uri(item_uri, NULL, NULL)) {
+        files_window_begin_op(self, "Extracting archive entry...");
+        kajo_files_op_extract_entry_to_temp_async(
+            item_uri,
+            self->ops_cancel,
+            on_archive_entry_open_ready,
+            files_window_op_weak_new(self)
+        );
+        return;
+    }
+
+    /* If activating a supported archive file on a local/FUSE path, browse inside archive:// */
+    GFile *file = kajo_file_item_get_file(item);
+    g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
+    const char *ctype = kajo_file_item_get_content_type(item);
+    const char *name = kajo_file_item_get_name(item);
+    if (local_path && kajo_files_is_archive(ctype, name)) {
+        g_autofree char *arch_uri = kajo_files_build_archive_uri(local_path, "");
+        if (arch_uri) {
+            kajo_files_window_navigate_uri(self, arch_uri);
+            return;
+        }
+    }
+
+    kajo_files_open_item_default(item, GTK_WINDOW(self));
 }
 
 static void
@@ -1467,11 +1698,25 @@ on_directory_enumerated(GPtrArray *items, GError *error, gpointer user_data)
 
     if (self->current_dir) {
         g_autofree char *scheme = g_file_get_uri_scheme(self->current_dir);
+        g_autofree char *dir_uri = g_file_get_uri(self->current_dir);
+        g_autofree char *arch_path = NULL;
+        g_autofree char *inner_path = NULL;
         gboolean is_trash = (g_strcmp0(scheme, "trash") == 0);
+        gboolean is_archive = (dir_uri && kajo_files_parse_archive_uri(dir_uri, &arch_path, &inner_path));
+
         gtk_revealer_set_reveal_child(GTK_REVEALER(self->trash_banner_revealer), is_trash);
         if (is_trash) {
             g_autofree char *t_lbl = g_strdup_printf("🗑 TRASH // %u ITEM(S)", self->all_items->len);
             gtk_label_set_text(GTK_LABEL(self->trash_summary_lbl), t_lbl);
+        }
+
+        gtk_revealer_set_reveal_child(GTK_REVEALER(self->archive_banner_revealer), is_archive);
+        if (is_archive) {
+            g_autofree char *arch_base = g_path_get_basename(arch_path);
+            g_autofree char *a_lbl = (inner_path && inner_path[0] != '\0')
+                ? g_strdup_printf("📦 ARCHIVE VIEW (READ-ONLY) — %s / %s", arch_base ? arch_base : arch_path, inner_path)
+                : g_strdup_printf("📦 ARCHIVE VIEW (READ-ONLY) — %s", arch_base ? arch_base : arch_path);
+            gtk_label_set_text(GTK_LABEL(self->archive_summary_lbl), a_lbl);
         }
     }
 
@@ -1495,17 +1740,22 @@ files_window_reload_directory(KajoFilesWindow *self)
         g_clear_object(&self->dir_monitor);
     }
 
-    self->dir_monitor = g_file_monitor_directory(
-        self->current_dir,
-        G_FILE_MONITOR_WATCH_MOVES,
-        NULL,
-        NULL
-    );
-    if (self->dir_monitor) {
-        g_signal_connect(self->dir_monitor, "changed", G_CALLBACK(on_dir_monitor_changed), self);
+    gboolean is_archive = files_window_is_read_only_archive(self);
+    if (!is_archive) {
+        self->dir_monitor = g_file_monitor_directory(
+            self->current_dir,
+            G_FILE_MONITOR_WATCH_MOVES,
+            NULL,
+            NULL
+        );
+        if (self->dir_monitor) {
+            g_signal_connect(self->dir_monitor, "changed", G_CALLBACK(on_dir_monitor_changed), self);
+        }
     }
 
-    gtk_widget_set_sensitive(self->btn_paste, kajo_files_clipboard_has_files());
+    gtk_widget_set_sensitive(self->btn_new_folder, !is_archive);
+    gtk_widget_set_sensitive(self->btn_new_file, !is_archive);
+    gtk_widget_set_sensitive(self->btn_paste, !is_archive && kajo_files_clipboard_has_files());
     kajo_files_enumerate_async(self->current_dir, self->enum_cancel, on_directory_enumerated, self);
 }
 
@@ -1551,8 +1801,8 @@ kajo_files_window_navigate_uri(KajoFilesWindow *self, const char *uri_or_path)
     gtk_widget_set_sensitive(self->btn_back, self->history_pos > 0);
     gtk_widget_set_sensitive(self->btn_forward, self->history_pos + 1 < (int)self->history->len);
 
-    g_autoptr(GFile) parent = g_file_get_parent(target);
-    gtk_widget_set_sensitive(self->btn_up, parent != NULL);
+    g_autofree char *parent_uri = kajo_files_get_parent_uri(target);
+    gtk_widget_set_sensitive(self->btn_up, parent_uri != NULL);
 
     gtk_stack_set_visible_child_name(self->location_stack, "breadcrumbs");
     rebuild_breadcrumbs(self);
@@ -1596,10 +1846,9 @@ on_btn_up_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
     if (!self->current_dir) return;
-    g_autoptr(GFile) parent = g_file_get_parent(self->current_dir);
-    if (parent) {
-        g_autofree char *uri = g_file_get_uri(parent);
-        kajo_files_window_navigate_uri(self, uri);
+    g_autofree char *parent_uri = kajo_files_get_parent_uri(self->current_dir);
+    if (parent_uri) {
+        kajo_files_window_navigate_uri(self, parent_uri);
     }
 }
 
@@ -1715,6 +1964,10 @@ void
 on_btn_paste_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
+    if (files_window_is_read_only_archive(self)) {
+        files_window_set_status_message(self, "Archive view is read-only", TRUE);
+        return;
+    }
     if (self->current_dir) {
         files_window_begin_op(self, "Pasting clipboard items...");
         kajo_files_clipboard_paste_async(self->current_dir, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
@@ -1958,6 +2211,10 @@ void
 files_window_trash_selected_item(KajoFilesWindow *self)
 {
     if (!self) return;
+    if (files_window_is_read_only_archive(self)) {
+        files_window_set_status_message(self, "Archive view is read-only", TRUE);
+        return;
+    }
 
     g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
     if (!sel_items || sel_items->len == 0)
@@ -2166,6 +2423,7 @@ kajo_files_window_class_init(KajoFilesWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, auth_banner_revealer);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, connect_banner_revealer);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, trash_banner_revealer);
+    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, archive_banner_revealer);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, prompt_banner_revealer);
 
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, view_stack);
@@ -2233,6 +2491,7 @@ kajo_files_window_init(KajoFilesWindow *self)
 
     build_connect_banner(self);
     build_trash_banner(self);
+    build_archive_banner(self);
     build_prompt_banner(self);
     build_breadcrumb_popover(self);
     files_window_build_context_menu_popover(self);

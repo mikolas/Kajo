@@ -438,6 +438,229 @@ test_clipboard_parsing_and_exec_toggle(void)
     g_rmdir(tmp_dir);
 }
 
+typedef struct {
+    GMainLoop *loop;
+    GFile *temp_file;
+    GError *error;
+} TempExtractTestState;
+
+static void
+on_test_temp_extract_done(GFile *temp_file, GError *error, gpointer user_data)
+{
+    TempExtractTestState *st = user_data;
+    if (error)
+        st->error = g_error_copy(error);
+    if (temp_file)
+        st->temp_file = g_object_ref(temp_file);
+    g_main_loop_quit(st->loop);
+}
+
+static KajoFileItem *
+find_item_by_name(GPtrArray *items, const char *name)
+{
+    if (!items || !name) return NULL;
+    for (guint i = 0; i < items->len; i++) {
+        KajoFileItem *it = g_ptr_array_index(items, i);
+        if (g_strcmp0(kajo_file_item_get_name(it), name) == 0)
+            return it;
+    }
+    return NULL;
+}
+
+static void
+test_archive_virtual_folders_and_ops(void)
+{
+    /* 1. URI building, parsing, and traversal rejection */
+    g_autofree char *built_root = kajo_files_build_archive_uri("/tmp/my archive.zip", NULL);
+    g_assert_cmpstr(built_root, ==, "archive:///tmp/my%20archive.zip!/");
+
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
+    g_assert_true(kajo_files_parse_archive_uri(built_root, &arch_path, &inner_path));
+    g_assert_cmpstr(arch_path, ==, "/tmp/my archive.zip");
+    g_assert_cmpstr(inner_path, ==, "");
+    g_clear_pointer(&arch_path, g_free);
+    g_clear_pointer(&inner_path, g_free);
+
+    g_autofree char *built_sub = kajo_files_build_archive_uri("/tmp/my archive.zip", "/src/core/main.c/");
+    g_assert_cmpstr(built_sub, ==, "archive:///tmp/my%20archive.zip!/src/core/main.c");
+    g_assert_true(kajo_files_parse_archive_uri(built_sub, &arch_path, &inner_path));
+    g_assert_cmpstr(arch_path, ==, "/tmp/my archive.zip");
+    g_assert_cmpstr(inner_path, ==, "src/core/main.c");
+    g_clear_pointer(&arch_path, g_free);
+    g_clear_pointer(&inner_path, g_free);
+
+    g_assert_false(kajo_files_parse_archive_uri("archive:///tmp/foo.zip!/../etc/passwd", NULL, NULL));
+    g_assert_false(kajo_files_parse_archive_uri("file:///tmp/foo.zip", NULL, NULL));
+
+    /* 2. Parent URI navigation inside and out of archive:// */
+    g_autoptr(GFile) f_deep = g_file_new_for_uri("archive:///tmp/dir/bundle.zip!/src/sub");
+    g_autofree char *p1 = kajo_files_get_parent_uri(f_deep);
+    g_assert_cmpstr(p1, ==, "archive:///tmp/dir/bundle.zip!/src");
+
+    g_autoptr(GFile) f_one = g_file_new_for_uri(p1);
+    g_autofree char *p2 = kajo_files_get_parent_uri(f_one);
+    g_assert_cmpstr(p2, ==, "archive:///tmp/dir/bundle.zip!/");
+
+    g_autoptr(GFile) f_root = g_file_new_for_uri(p2);
+    g_autofree char *p3 = kajo_files_get_parent_uri(f_root);
+    g_assert_cmpstr(p3, ==, "file:///tmp/dir");
+
+    /* 3. Breadcrumb chain for archive:///tmp/dir/bundle.zip!/src/core */
+    g_autoptr(GFile) bc_file = g_file_new_for_uri("archive:///tmp/dir/bundle.zip!/src/core");
+    g_autoptr(GPtrArray) bc_chain = kajo_files_build_breadcrumb_chain(bc_file);
+    g_assert_nonnull(bc_chain);
+    g_assert_cmpuint(bc_chain->len, ==, 6);
+    const KajoBreadcrumbSegment *seg_arch = g_ptr_array_index(bc_chain, 3);
+    g_assert_cmpstr(seg_arch->label, ==, "📦 bundle.zip");
+    g_assert_cmpstr(seg_arch->uri, ==, "archive:///tmp/dir/bundle.zip!/");
+    const KajoBreadcrumbSegment *seg_src = g_ptr_array_index(bc_chain, 4);
+    g_assert_cmpstr(seg_src->label, ==, "src");
+    g_assert_cmpstr(seg_src->uri, ==, "archive:///tmp/dir/bundle.zip!/src");
+    const KajoBreadcrumbSegment *seg_core = g_ptr_array_index(bc_chain, 5);
+    g_assert_cmpstr(seg_core->label, ==, "core");
+    g_assert_cmpstr(seg_core->uri, ==, "archive:///tmp/dir/bundle.zip!/src/core");
+
+    /* 4. Create sample workspace and compress to .zip, .tar.gz, and .tar.zst */
+    g_autoptr(GError) err = NULL;
+    g_autofree char *tmp_path = g_dir_make_tmp("kajo-archive-test-XXXXXX", &err);
+    g_assert_no_error(err);
+    g_autoptr(GFile) tmp_dir = g_file_new_for_path(tmp_path);
+
+    g_autofree char *src_root = g_build_filename(tmp_path, "src_tree", NULL);
+    g_autofree char *nested_dir = g_build_filename(src_root, "nested", NULL);
+    g_autofree char *deep_dir = g_build_filename(nested_dir, "deep", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(deep_dir, 0755), ==, 0);
+
+    g_autofree char *alpha_path = g_build_filename(src_root, "alpha.txt", NULL);
+    g_autofree char *beta_path = g_build_filename(nested_dir, "beta.txt", NULL);
+    g_autofree char *gamma_path = g_build_filename(deep_dir, "gamma.c", NULL);
+    g_assert_true(g_file_set_contents(alpha_path, "Alpha payload\n", -1, &err));
+    g_assert_true(g_file_set_contents(beta_path, "Beta payload\n", -1, &err));
+    g_assert_true(g_file_set_contents(gamma_path, "int main(void) { return 0; }\n", -1, &err));
+
+    AsyncTestState st = { 0 };
+    st.loop = g_main_loop_new(NULL, FALSE);
+
+    /* Compress multi-item selection (alpha.txt + nested/) into multi.zip and multi.tar.gz */
+    g_autoptr(GPtrArray) multi_sources = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(multi_sources, g_file_new_for_path(alpha_path));
+    g_ptr_array_add(multi_sources, g_file_new_for_path(nested_dir));
+
+    kajo_files_op_compress_async(multi_sources, tmp_dir, "multi.zip", NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+
+    kajo_files_op_compress_async(multi_sources, tmp_dir, "multi.tar.gz", NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+
+    /* Compress single-root directory (nested/) into single.tar.zst */
+    g_autoptr(GPtrArray) single_sources = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(single_sources, g_file_new_for_path(nested_dir));
+    kajo_files_op_compress_async(single_sources, tmp_dir, "single.tar.zst", NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+
+    /* 5. Enumerate archive://<tmp>/multi.zip!/ and nested subfolders */
+    g_autofree char *multi_zip_path = g_build_filename(tmp_path, "multi.zip", NULL);
+    g_autofree char *uri_zip_root = kajo_files_build_archive_uri(multi_zip_path, "");
+    g_autoptr(GFile) gf_zip_root = g_file_new_for_uri(uri_zip_root);
+
+    kajo_files_enumerate_async(gf_zip_root, NULL, on_test_enum_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_nonnull(st.items);
+    g_assert_cmpuint(st.items->len, ==, 2);
+    KajoFileItem *it_alpha = find_item_by_name(st.items, "alpha.txt");
+    KajoFileItem *it_nested = find_item_by_name(st.items, "nested");
+    g_assert_nonnull(it_alpha);
+    g_assert_false(kajo_file_item_is_dir(it_alpha));
+    g_assert_nonnull(it_nested);
+    g_assert_true(kajo_file_item_is_dir(it_nested));
+    g_ptr_array_unref(st.items);
+    st.items = NULL;
+
+    /* Enumerate archive://<tmp>/multi.zip!/nested */
+    g_autofree char *uri_zip_nested = kajo_files_build_archive_uri(multi_zip_path, "nested");
+    g_autoptr(GFile) gf_zip_nested = g_file_new_for_uri(uri_zip_nested);
+    kajo_files_enumerate_async(gf_zip_nested, NULL, on_test_enum_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_nonnull(st.items);
+    g_assert_cmpuint(st.items->len, ==, 2);
+    KajoFileItem *it_beta = find_item_by_name(st.items, "beta.txt");
+    KajoFileItem *it_deep = find_item_by_name(st.items, "deep");
+    g_assert_nonnull(it_beta);
+    g_assert_false(kajo_file_item_is_dir(it_beta));
+    g_assert_nonnull(it_deep);
+    g_assert_true(kajo_file_item_is_dir(it_deep));
+    g_autofree char *beta_archive_uri = g_strdup(kajo_file_item_get_uri(it_beta));
+    g_ptr_array_unref(st.items);
+    st.items = NULL;
+
+    /* 6. Extract single entry to temp for Quick Look / Open */
+    TempExtractTestState tst = { 0 };
+    tst.loop = st.loop;
+    kajo_files_op_extract_entry_to_temp_async(beta_archive_uri, NULL, on_test_temp_extract_done, &tst);
+    g_main_loop_run(st.loop);
+    g_assert_no_error(tst.error);
+    g_assert_nonnull(tst.temp_file);
+    g_autofree char *temp_beta_path = g_file_get_path(tst.temp_file);
+    g_autofree char *temp_beta_contents = NULL;
+    g_assert_true(g_file_get_contents(temp_beta_path, &temp_beta_contents, NULL, &err));
+    g_assert_cmpstr(temp_beta_contents, ==, "Beta payload\n");
+    g_clear_object(&tst.temp_file);
+
+    /* 7. Copy/Paste from archive:// URI into a normal folder via kajo_files_op_transfer_async */
+    g_autofree char *paste_dir_path = g_build_filename(tmp_path, "paste_out", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(paste_dir_path, 0755), ==, 0);
+    g_autoptr(GFile) paste_dir = g_file_new_for_path(paste_dir_path);
+    g_autoptr(GPtrArray) copy_from_arch = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(copy_from_arch, g_object_ref(gf_zip_nested));
+
+    kajo_files_op_transfer_async(copy_from_arch, paste_dir, FALSE, NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+    g_autofree char *pasted_gamma = g_build_filename(paste_dir_path, "nested", "deep", "gamma.c", NULL);
+    g_assert_true(g_file_test(pasted_gamma, G_FILE_TEST_IS_REGULAR));
+
+    /* 8. Smart Extraction: multi-root tarbomb wraps in <stem>/, single-root extracts directly without double nesting */
+    g_autofree char *ext_multi_dir_path = g_build_filename(tmp_path, "ext_multi", NULL);
+    g_autofree char *ext_single_dir_path = g_build_filename(tmp_path, "ext_single", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(ext_multi_dir_path, 0755), ==, 0);
+    g_assert_cmpint(g_mkdir_with_parents(ext_single_dir_path, 0755), ==, 0);
+    g_autoptr(GFile) ext_multi_dir = g_file_new_for_path(ext_multi_dir_path);
+    g_autoptr(GFile) ext_single_dir = g_file_new_for_path(ext_single_dir_path);
+
+    g_autoptr(GFile) multi_targz_file = g_file_get_child(tmp_dir, "multi.tar.gz");
+    kajo_files_op_extract_archive_async(multi_targz_file, ext_multi_dir, NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+    /* Wrapped inside ext_multi/multi/ */
+    g_autofree char *wrapped_alpha = g_build_filename(ext_multi_dir_path, "multi", "alpha.txt", NULL);
+    g_autofree char *wrapped_gamma = g_build_filename(ext_multi_dir_path, "multi", "nested", "deep", "gamma.c", NULL);
+    g_assert_true(g_file_test(wrapped_alpha, G_FILE_TEST_IS_REGULAR));
+    g_assert_true(g_file_test(wrapped_gamma, G_FILE_TEST_IS_REGULAR));
+
+    g_autoptr(GFile) single_tarzst_file = g_file_get_child(tmp_dir, "single.tar.zst");
+    kajo_files_op_extract_archive_async(single_tarzst_file, ext_single_dir, NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+    /* Extracted directly to ext_single/nested/ without ext_single/single/nested/ double-nesting */
+    g_autofree char *direct_beta = g_build_filename(ext_single_dir_path, "nested", "beta.txt", NULL);
+    g_autofree char *double_nested = g_build_filename(ext_single_dir_path, "single", "nested", "beta.txt", NULL);
+    g_assert_true(g_file_test(direct_beta, G_FILE_TEST_IS_REGULAR));
+    g_assert_false(g_file_test(double_nested, G_FILE_TEST_EXISTS));
+
+    /* Cleanup tmp_dir */
+    g_autoptr(GPtrArray) del_arr = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(del_arr, g_object_ref(tmp_dir));
+    kajo_files_op_delete_permanent_async(del_arr, NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+
+    g_main_loop_unref(st.loop);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -452,6 +675,7 @@ main(int argc, char *argv[])
     g_test_add_func("/files/clipboard-and-exec-toggle", test_clipboard_parsing_and_exec_toggle);
     g_test_add_func("/files/clipboard-cap-no-truncation", test_clipboard_buffer_cap_never_truncates);
     g_test_add_func("/files/rebuild-selection-policy", test_rebuild_selection_policy);
+    g_test_add_func("/files/archive-virtual-folders-and-ops", test_archive_virtual_folders_and_ops);
 
     return g_test_run();
 }

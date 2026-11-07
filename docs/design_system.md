@@ -144,15 +144,16 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Grouped by uppercase `.sidebar-category-header` (`PLACES`, `DEVICES & DRIVES`, `NETWORK`).
   - **Mounted Volume Rows (`.files-drive-row`):** Two-line row showing volume icon, label, free/total GB readout, a `6px` `.files-drive-bar` capacity `levelbar` (`#10893e` normal, `#ff8c00` >75%, `#e81123` >90%), and a compact `⏏` eject/unmount button (`.files-eject-btn`).
 - **Hybrid Breadcrumb / Raw URI Bar (`.files-breadcrumb-bar`):**
-  - Full root-to-leaf segment buttons (`.files-breadcrumb-btn`, with `⌂ <user>` badge on `$HOME`) separated by `▸` chevrons, auto-scrolled flush-right after layout so the leaf directory and immediate parents are always visible.
+  - Full root-to-leaf segment buttons (`.files-breadcrumb-btn`, with `⌂ <user>` badge on `$HOME` and `📦 <archive>` on `archive://` roots) separated by `▸` chevrons, auto-scrolled flush-right after layout so the leaf directory and immediate parents are always visible.
   - Mouse wheel scrolls the breadcrumb bar horizontally (`48px` per tick); `Ctrl+Click` or middle-click opens any ancestor segment in a new window; right-clicking any segment opens the **Breadcrumb Subfolder Jump Popover** (`SUBFOLDERS` badge, up to 50 sorted child directories with `… and N more subfolder(s)` overflow note, `🗔 Open in New Window`, and `🔗 Copy Path / URI`).
-  - Clicking `✎` (`Ctrl+L`) switches inline to a full-width monospace URI entry (`file:///`, `smb://`, `trash:///`, `sftp://`).
+  - Clicking `✎` (`Ctrl+L`) switches inline to a full-width monospace URI entry (`file:///`, `archive:///`, `smb://`, `trash:///`, `sftp://`).
 - **Multi-Selection, Inspector & Operation Cancellation (`kajo-files`):**
   - Rubber-band and `Ctrl`/`Shift` multi-selection (`GtkMultiSelection`) preserves the full selected URI set across live directory refreshes.
-  - Right-clicking when `> 1` items are selected opens the **Batch Context Menu** (`N ITEMS SELECTED` title, `BATCH` badge) exposing only true batch actions (`Copy`, `Cut`, `Copy Path / URI`, `Restore from Trash`, `Move to Trash`, `Delete Permanently`).
+  - Right-clicking when `> 1` items are selected opens the **Batch Context Menu** (`N ITEMS SELECTED` title, `BATCH` badge) exposing only true batch actions (`Compress to Archive...`, `Copy`, `Cut`, `Copy Path / URI`, `Restore from Trash`, `Move to Trash`, `Delete Permanently`).
   - The right-hand Inspector pane (`.files-inspector-pane`) includes a **`☑ EXECUTABLE (+X)`** toggle button (`chmod +x/-x`) for local regular files, while the bottom `.files-status-bar` reveals a danger **`[ ✕ CANCEL ]`** button (`Esc`) whenever an async file operation is in flight.
 - **Contextual Inline Reveal Bars (`GtkRevealer`):**
-  - **New Folder / New File / Rename / Delete Confirm Bar (`.files-prompt-bar`):** `#181818` surface with `border-left: 3px solid @metro-accent`, inline `GtkEntry`, and `[ CREATE ]` / `[ RENAME ]` / `[ DELETE PERMANENTLY ]` / `[ CANCEL ]` buttons.
+  - **New Folder / New File / Rename / Compress / Delete Confirm Bar (`.files-prompt-bar`):** `#181818` surface with `border-left: 3px solid @metro-accent`, inline `GtkEntry`, and `[ CREATE ]` / `[ RENAME ]` / `[ COMPRESS ]` / `[ DELETE PERMANENTLY ]` / `[ CANCEL ]` buttons.
+  - **Virtual Read-Only Archive Banner (`.files-prompt-bar`):** Shown when browsing inside `archive://<path>!/<subpath>`, displaying `📦 ARCHIVE VIEW (READ-ONLY) — <archive>!/<subpath>  •  N ITEM(S)` alongside `[ 📦 EXTRACT ALL ]` and `[ ↩ EXIT ]` buttons.
   - **LUKS / SMB Authentication Bar (`.files-auth-bar`):** `#181818` surface with `border-left: 3px solid #ff8c00`, passphrase `GtkPasswordEntry` (or username/domain/password fields for `smb://`), and `[ 🔓 UNLOCK ]` action.
   - **Trash Action Banner (`.files-trash-bar`):** `#1f1214` surface with `1px solid #4a1c20` and `border-left: 3px solid #e81123`, offering `[ ↺ RESTORE ALL ]` and destructive `[ 🗑 EMPTY TRASH ]`.
 

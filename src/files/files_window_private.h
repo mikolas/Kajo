@@ -22,6 +22,7 @@ typedef enum {
     PROMPT_NEW_FILE,
     PROMPT_RENAME,
     PROMPT_DELETE_PERM,
+    PROMPT_COMPRESS,
 } InlinePromptKind;
 
 struct _KajoFilesWindow {
@@ -67,6 +68,7 @@ struct _KajoFilesWindow {
     GtkWidget *auth_banner_revealer;
     GtkWidget *connect_banner_revealer;
     GtkWidget *trash_banner_revealer;
+    GtkWidget *archive_banner_revealer;
     GtkWidget *prompt_banner_revealer;
 
     GtkStack *view_stack;
@@ -87,6 +89,7 @@ struct _KajoFilesWindow {
     /* Inline Banner Sub-Widgets */
     GtkWidget *connect_entry;
     GtkWidget *trash_summary_lbl;
+    GtkWidget *archive_summary_lbl;
     GtkWidget *prompt_title_lbl;
     GtkWidget *prompt_entry;
     GtkWidget *prompt_submit_btn;
@@ -104,11 +107,16 @@ struct _KajoFilesWindow {
     GtkWidget *ctx_btn_open_with;
     GtkWidget *ctx_btn_quicklook;
     GtkWidget *ctx_btn_extract;
+    GtkWidget *ctx_btn_compress;
     GtkWidget *ctx_btn_item_terminal;
     GtkWidget *ctx_btn_item_newwin;
     GtkWidget *ctx_btn_restore_trash;
+    GtkWidget *ctx_btn_cut;
     GtkWidget *ctx_btn_rename;
     GtkWidget *ctx_btn_move_trash;
+    GtkWidget *ctx_btn_delete_perm;
+    GtkWidget *ctx_btn_bg_mkdir;
+    GtkWidget *ctx_btn_bg_new_file;
     GtkWidget *ctx_btn_bg_paste;
     GtkWidget *ctx_ow_mime_lbl;
     GtkWidget *ctx_ow_list_box;
@@ -166,6 +174,7 @@ void files_window_reload_directory(KajoFilesWindow *self);
 void files_window_rebuild_filtered_view(KajoFilesWindow *self);
 
 /* Helpers shared across the window modules (defined in files_window.c unless noted). */
+gboolean files_window_is_read_only_archive(const KajoFilesWindow *self);
 void     files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item);
 void     files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx);
 void     files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind);

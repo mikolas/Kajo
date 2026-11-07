@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE
 #include "files_ops.h"
 #include <archive.h>
 #include <archive_entry.h>
@@ -188,6 +189,167 @@ is_safe_relative_archive_path(const char *pathname)
     return TRUE;
 }
 
+static char *
+normalize_safe_archive_entry_path(const char *raw_path)
+{
+    if (!raw_path || raw_path[0] == '\0')
+        return NULL;
+
+    /* Reject absolute paths or .. segments */
+    const char *p = raw_path;
+    while (p[0] == '.' && p[1] == '/')
+        p += 2;
+    if (p[0] == '/' || p[0] == '\0' || g_strcmp0(p, ".") == 0)
+        return NULL;
+
+    g_auto(GStrv) parts = g_strsplit(p, "/", -1);
+    GString *out = g_string_new("");
+    for (int i = 0; parts && parts[i] != NULL; i++) {
+        const char *seg = parts[i];
+        if (seg[0] == '\0' || g_strcmp0(seg, ".") == 0)
+            continue;
+        if (g_strcmp0(seg, "..") == 0) {
+            g_string_free(out, TRUE);
+            return NULL;
+        }
+        if (out->len > 0)
+            g_string_append_c(out, '/');
+        g_string_append(out, seg);
+    }
+
+    if (out->len == 0) {
+        g_string_free(out, TRUE);
+        return NULL;
+    }
+    return g_string_free(out, FALSE);
+}
+
+static gboolean
+scan_archive_top_level(const char *archive_path,
+                       GCancellable *cancellable,
+                       guint *out_n_top,
+                       char **out_single_top,
+                       GError **error)
+{
+    if (out_n_top) *out_n_top = 0;
+    if (out_single_top) *out_single_top = NULL;
+
+    struct archive *a = archive_read_new();
+    archive_read_support_filter_all(a);
+    archive_read_support_format_all(a);
+
+    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive open failed: %s", archive_error_string(a));
+        archive_read_free(a);
+        return FALSE;
+    }
+
+    g_autoptr(GHashTable) top_names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    g_autofree char *first_top = NULL;
+    struct archive_entry *entry = NULL;
+
+    while (TRUE) {
+        if (g_cancellable_set_error_if_cancelled(cancellable, error)) {
+            archive_read_free(a);
+            return FALSE;
+        }
+        int r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive read error: %s", archive_error_string(a));
+            archive_read_free(a);
+            return FALSE;
+        }
+
+        const char *raw_path = archive_entry_pathname_utf8(entry);
+        if (!raw_path || raw_path[0] == '\0')
+            raw_path = archive_entry_pathname(entry);
+
+        g_autofree char *norm = normalize_safe_archive_entry_path(raw_path);
+        if (norm) {
+            const char *slash = strchr(norm, '/');
+            char *top_seg = slash ? g_strndup(norm, (gsize)(slash - norm)) : g_strdup(norm);
+            if (!g_hash_table_contains(top_names, top_seg)) {
+                if (!first_top)
+                    first_top = g_strdup(top_seg);
+                g_hash_table_add(top_names, top_seg);
+            } else {
+                g_free(top_seg);
+            }
+        }
+        archive_read_data_skip(a);
+    }
+
+    archive_read_close(a);
+    archive_read_free(a);
+
+    guint n_top = g_hash_table_size(top_names);
+    if (out_n_top)
+        *out_n_top = n_top;
+    if (out_single_top && n_top == 1 && first_top)
+        *out_single_top = g_steal_pointer(&first_top);
+    return TRUE;
+}
+
+static gboolean
+write_current_archive_entry_to_disk(struct archive *a,
+                                    struct archive *ext,
+                                    struct archive_entry *entry,
+                                    const char *full_dest,
+                                    GCancellable *cancellable,
+                                    GError **error)
+{
+    g_autofree char *parent_dir = g_path_get_dirname(full_dest);
+    if (parent_dir && parent_dir[0] != '\0' && g_strcmp0(parent_dir, ".") != 0)
+        g_mkdir_with_parents(parent_dir, 0755);
+
+    archive_entry_set_pathname(entry, full_dest);
+
+    const char *hardlink = archive_entry_hardlink(entry);
+    if (hardlink && !is_safe_relative_archive_path(hardlink))
+        archive_entry_set_hardlink(entry, NULL);
+
+    int r = archive_write_header(ext, entry);
+    if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive header write error: %s", archive_error_string(ext));
+        return FALSE;
+    }
+
+    if (archive_entry_size(entry) > 0) {
+        const void *buff = NULL;
+        size_t size = 0;
+        la_int64_t offset = 0;
+        while (TRUE) {
+            if (g_cancellable_set_error_if_cancelled(cancellable, error))
+                return FALSE;
+            int dr = archive_read_data_block(a, &buff, &size, &offset);
+            if (dr == ARCHIVE_EOF)
+                break;
+            if (dr < ARCHIVE_OK && dr != ARCHIVE_WARN) {
+                g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                            "Archive data error: %s", archive_error_string(a));
+                return FALSE;
+            }
+            if (archive_write_data_block(ext, buff, size, offset) < ARCHIVE_WARN) {
+                g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                            "Archive write error: %s", archive_error_string(ext));
+                return FALSE;
+            }
+        }
+    }
+
+    if (archive_write_finish_entry(ext) < ARCHIVE_WARN) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive finish entry error: %s", archive_error_string(ext));
+        return FALSE;
+    }
+    return TRUE;
+}
+
 static gboolean
 extract_archive_sync(GFile *archive_file,
                      GFile *dest_parent_dir,
@@ -198,24 +360,58 @@ extract_archive_sync(GFile *archive_file,
 {
     g_autofree char *archive_path = g_file_get_path(archive_file);
     if (!archive_path) {
-        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
-                            "Archive must be on a local or FUSE-mounted filesystem");
-        return FALSE;
+        g_autofree char *uri = g_file_get_uri(archive_file);
+        if (!uri || !kajo_files_parse_archive_uri(uri, &archive_path, NULL)) {
+            g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                                "Archive must be on a local or FUSE-mounted filesystem");
+            return FALSE;
+        }
     }
 
-    g_autofree char *base = g_file_get_basename(archive_file);
-    g_autofree char *stem = strip_archive_stem(base);
-    g_autoptr(GFile) target_dir = resolve_unique_dest_child(dest_parent_dir, stem);
-    g_autofree char *target_root = g_file_get_path(target_dir);
-    if (!target_root) {
+    g_autoptr(GFile) effective_parent = NULL;
+    if (dest_parent_dir) {
+        g_autofree char *dp_path = g_file_get_path(dest_parent_dir);
+        if (dp_path)
+            effective_parent = g_object_ref(dest_parent_dir);
+    }
+    if (!effective_parent) {
+        g_autoptr(GFile) host_arch = g_file_new_for_path(archive_path);
+        effective_parent = g_file_get_parent(host_arch);
+    }
+    if (!effective_parent) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                             "Destination directory must have a local path");
         return FALSE;
     }
 
-    if (g_mkdir_with_parents(target_root, 0755) != 0) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                    "Failed to create extraction folder '%s'", target_root);
+    guint n_top = 0;
+    g_autofree char *single_top = NULL;
+    if (!scan_archive_top_level(archive_path, cancellable, &n_top, &single_top, error))
+        return FALSE;
+
+    g_autoptr(GFile) target_item = NULL;
+    g_autofree char *target_root = NULL;
+    gsize single_top_len = 0;
+
+    if (n_top == 1 && single_top && single_top[0] != '\0') {
+        target_item = resolve_unique_dest_child(effective_parent, single_top);
+        target_root = g_file_get_path(target_item);
+        single_top_len = strlen(single_top);
+    } else {
+        g_autofree char *base = g_path_get_basename(archive_path);
+        g_autofree char *stem = strip_archive_stem(base);
+        target_item = resolve_unique_dest_child(effective_parent, stem);
+        target_root = g_file_get_path(target_item);
+        if (target_root && g_mkdir_with_parents(target_root, 0755) != 0) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Failed to create extraction folder '%s'", target_root);
+            return FALSE;
+        }
+    }
+
+    if (!target_root) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "Destination directory must have a local path");
         return FALSE;
     }
 
@@ -259,39 +455,31 @@ extract_archive_sync(GFile *archive_file,
             return FALSE;
         }
 
-        const char *rel_path = archive_entry_pathname(entry);
-        if (!is_safe_relative_archive_path(rel_path))
+        const char *raw_path = archive_entry_pathname_utf8(entry);
+        if (!raw_path || raw_path[0] == '\0')
+            raw_path = archive_entry_pathname(entry);
+
+        g_autofree char *norm = normalize_safe_archive_entry_path(raw_path);
+        if (!norm) {
+            archive_read_data_skip(a);
             continue;
-
-        g_autofree char *full_dest = g_build_filename(target_root, rel_path, NULL);
-        archive_entry_set_pathname(entry, full_dest);
-
-        r = archive_write_header(ext, entry);
-        if (r >= ARCHIVE_WARN && archive_entry_size(entry) > 0) {
-            const void *buff = NULL;
-            size_t size = 0;
-            la_int64_t offset = 0;
-            while (TRUE) {
-                int dr = archive_read_data_block(a, &buff, &size, &offset);
-                if (dr == ARCHIVE_EOF)
-                    break;
-                if (dr < ARCHIVE_OK) {
-                    g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                                "Archive data error: %s", archive_error_string(a));
-                    archive_read_free(a);
-                    archive_write_free(ext);
-                    return FALSE;
-                }
-                if (archive_write_data_block(ext, buff, size, offset) < ARCHIVE_WARN) {
-                    g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                                "Archive write error: %s", archive_error_string(ext));
-                    archive_read_free(a);
-                    archive_write_free(ext);
-                    return FALSE;
-                }
-            }
         }
-        archive_write_finish_entry(ext);
+
+        g_autofree char *full_dest = NULL;
+        if (single_top_len > 0 && strncmp(norm, single_top, single_top_len) == 0) {
+            if (norm[single_top_len] == '\0')
+                full_dest = g_strdup(target_root);
+            else if (norm[single_top_len] == '/')
+                full_dest = g_build_filename(target_root, norm + single_top_len + 1, NULL);
+        }
+        if (!full_dest)
+            full_dest = g_build_filename(target_root, norm, NULL);
+
+        if (!write_current_archive_entry_to_disk(a, ext, entry, full_dest, cancellable, error)) {
+            archive_read_free(a);
+            archive_write_free(ext);
+            return FALSE;
+        }
         extracted++;
     }
 
@@ -301,9 +489,119 @@ extract_archive_sync(GFile *archive_file,
     archive_write_free(ext);
 
     if (out_folder_name)
-        *out_folder_name = g_file_get_basename(target_dir);
+        *out_folder_name = g_file_get_basename(target_item);
     if (out_count)
         *out_count = extracted;
+    return TRUE;
+}
+
+static gboolean
+extract_archive_subpath_sync(const char *archive_path,
+                             const char *inner_path,
+                             GFile *dest_target,
+                             GCancellable *cancellable,
+                             GError **error)
+{
+    g_autofree char *dest_path = g_file_get_path(dest_target);
+    if (!dest_path) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "Destination must be a local filesystem path");
+        return FALSE;
+    }
+
+    if (!inner_path || inner_path[0] == '\0') {
+        g_autoptr(GFile) arch_file = g_file_new_for_path(archive_path);
+        g_autoptr(GFile) parent = g_file_get_parent(dest_target);
+        return extract_archive_sync(arch_file, parent, cancellable, NULL, NULL, error);
+    }
+
+    struct archive *a = archive_read_new();
+    archive_read_support_filter_all(a);
+    archive_read_support_format_all(a);
+
+    struct archive *ext = archive_write_disk_new();
+    archive_write_disk_set_options(
+        ext,
+        ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS
+    );
+    archive_write_disk_set_standard_lookup(ext);
+
+    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive open failed: %s", archive_error_string(a));
+        archive_read_free(a);
+        archive_write_free(ext);
+        return FALSE;
+    }
+
+    gsize inner_len = strlen(inner_path);
+    guint extracted = 0;
+    struct archive_entry *entry = NULL;
+
+    while (TRUE) {
+        if (g_cancellable_set_error_if_cancelled(cancellable, error)) {
+            archive_read_free(a);
+            archive_write_free(ext);
+            return FALSE;
+        }
+
+        int r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive read error: %s", archive_error_string(a));
+            archive_read_free(a);
+            archive_write_free(ext);
+            return FALSE;
+        }
+
+        const char *raw_path = archive_entry_pathname_utf8(entry);
+        if (!raw_path || raw_path[0] == '\0')
+            raw_path = archive_entry_pathname(entry);
+
+        g_autofree char *norm = normalize_safe_archive_entry_path(raw_path);
+        if (!norm) {
+            archive_read_data_skip(a);
+            continue;
+        }
+
+        gboolean exact_match = (strcmp(norm, inner_path) == 0);
+        gboolean prefix_match = (!exact_match &&
+                                 strncmp(norm, inner_path, inner_len) == 0 &&
+                                 norm[inner_len] == '/');
+        if (!exact_match && !prefix_match) {
+            archive_read_data_skip(a);
+            continue;
+        }
+
+        mode_t ftype = archive_entry_filetype(entry);
+        gboolean is_dir = (ftype == AE_IFDIR) || (raw_path && g_str_has_suffix(raw_path, "/"));
+        g_autofree char *full_dest = exact_match
+            ? g_strdup(dest_path)
+            : g_build_filename(dest_path, norm + inner_len + 1, NULL);
+
+        if (!write_current_archive_entry_to_disk(a, ext, entry, full_dest, cancellable, error)) {
+            archive_read_free(a);
+            archive_write_free(ext);
+            return FALSE;
+        }
+
+        extracted++;
+        if (exact_match && !is_dir)
+            break;
+    }
+
+    archive_read_close(a);
+    archive_read_free(a);
+    archive_write_close(ext);
+    archive_write_free(ext);
+
+    if (extracted == 0) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
+                    "Archive entry '%s' not found", inner_path);
+        return FALSE;
+    }
     return TRUE;
 }
 
@@ -414,14 +712,31 @@ resolve_unique_dest_child(GFile *dest_dir, const char *base_name)
 
     g_object_unref(candidate);
 
-    const char *dot = strrchr(base_name, '.');
+    static const char *const compound_exts[] = {
+        ".tar.gz", ".tar.xz", ".tar.zst", ".tar.bz2", NULL
+    };
+    g_autofree char *lower = g_ascii_strdown(base_name, -1);
     g_autofree char *stem = NULL;
     const char *ext = "";
-    if (dot && dot != base_name) {
-        stem = g_strndup(base_name, (gsize)(dot - base_name));
-        ext = dot;
-    } else {
-        stem = g_strdup(base_name);
+
+    for (int i = 0; compound_exts[i] != NULL; i++) {
+        gsize clen = strlen(compound_exts[i]);
+        gsize blen = strlen(base_name);
+        if (blen > clen && g_str_has_suffix(lower, compound_exts[i])) {
+            stem = g_strndup(base_name, blen - clen);
+            ext = base_name + (blen - clen);
+            break;
+        }
+    }
+
+    if (!stem) {
+        const char *dot = strrchr(base_name, '.');
+        if (dot && dot != base_name) {
+            stem = g_strndup(base_name, (gsize)(dot - base_name));
+            ext = dot;
+        } else {
+            stem = g_strdup(base_name);
+        }
     }
 
     for (int i = 1; i < 1000; i++) {
@@ -437,6 +752,275 @@ resolve_unique_dest_child(GFile *dest_dir, const char *base_name)
     return g_file_get_child(dest_dir, base_name);
 }
 
+static gboolean
+configure_archive_writer_format(struct archive *a,
+                                const char *filename,
+                                GError **error)
+{
+    g_autofree char *lower = g_ascii_strdown(filename ? filename : ".zip", -1);
+    int r = ARCHIVE_OK;
+
+    if (g_str_has_suffix(lower, ".tar.zst") || g_str_has_suffix(lower, ".tzst")) {
+        r = archive_write_set_format_pax_restricted(a);
+        if (r == ARCHIVE_OK)
+            r = archive_write_add_filter_zstd(a);
+    } else if (g_str_has_suffix(lower, ".tar.gz") || g_str_has_suffix(lower, ".tgz")) {
+        r = archive_write_set_format_pax_restricted(a);
+        if (r == ARCHIVE_OK)
+            r = archive_write_add_filter_gzip(a);
+    } else if (g_str_has_suffix(lower, ".tar.xz") || g_str_has_suffix(lower, ".txz")) {
+        r = archive_write_set_format_pax_restricted(a);
+        if (r == ARCHIVE_OK)
+            r = archive_write_add_filter_xz(a);
+    } else if (g_str_has_suffix(lower, ".tar.bz2") || g_str_has_suffix(lower, ".tbz2")) {
+        r = archive_write_set_format_pax_restricted(a);
+        if (r == ARCHIVE_OK)
+            r = archive_write_add_filter_bzip2(a);
+    } else if (g_str_has_suffix(lower, ".tar")) {
+        r = archive_write_set_format_pax_restricted(a);
+    } else {
+        r = archive_write_set_format_zip(a);
+    }
+
+    if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive format setup failed: %s", archive_error_string(a));
+        return FALSE;
+    }
+    return TRUE;
+}
+
+static char *
+ensure_supported_archive_extension(const char *raw_name)
+{
+    if (!raw_name || raw_name[0] == '\0')
+        return g_strdup("archive.zip");
+
+    g_autofree char *base = g_path_get_basename(raw_name);
+    g_autofree char *lower = g_ascii_strdown(base, -1);
+    static const char *const valid_exts[] = {
+        ".zip", ".tar.zst", ".tzst", ".tar.gz", ".tgz",
+        ".tar.xz", ".txz", ".tar.bz2", ".tbz2", ".tar", NULL
+    };
+    for (int i = 0; valid_exts[i] != NULL; i++) {
+        if (g_str_has_suffix(lower, valid_exts[i]) && strlen(base) > strlen(valid_exts[i]))
+            return g_strdup(base);
+    }
+    return g_strdup_printf("%s.zip", base);
+}
+
+static gboolean
+compress_add_file_recursive(struct archive *a,
+                            GFile *src_file,
+                            const char *rel_path,
+                            const char *skip_abs_path,
+                            GCancellable *cancellable,
+                            guint *inout_count,
+                            GError **error)
+{
+    if (g_cancellable_set_error_if_cancelled(cancellable, error))
+        return FALSE;
+
+    g_autofree char *local_path = g_file_get_path(src_file);
+    if (!local_path) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "Compression requires local filesystem items");
+        return FALSE;
+    }
+
+    if (skip_abs_path && g_strcmp0(local_path, skip_abs_path) == 0)
+        return TRUE;
+
+    GStatBuf st;
+    if (g_lstat(local_path, &st) != 0) {
+        int errsv = errno;
+        g_set_error(error, G_IO_ERROR, g_io_error_from_errno(errsv),
+                    "Unable to stat '%s': %s", rel_path, g_strerror(errsv));
+        return FALSE;
+    }
+
+    struct archive_entry *entry = archive_entry_new();
+    archive_entry_set_mtime(entry, st.st_mtime, 0);
+
+    if (S_ISDIR(st.st_mode)) {
+        g_autofree char *dir_rel = g_str_has_suffix(rel_path, "/")
+            ? g_strdup(rel_path)
+            : g_strdup_printf("%s/", rel_path);
+        archive_entry_set_pathname(entry, dir_rel);
+        archive_entry_set_filetype(entry, AE_IFDIR);
+        archive_entry_set_perm(entry, (st.st_mode & 07777) ? (st.st_mode & 07777) : 0755);
+        archive_entry_set_size(entry, 0);
+
+        if (archive_write_header(a, entry) < ARCHIVE_WARN) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive header write failed: %s", archive_error_string(a));
+            archive_entry_free(entry);
+            return FALSE;
+        }
+        archive_entry_free(entry);
+        (*inout_count)++;
+
+        g_autoptr(GFileEnumerator) enumerator = g_file_enumerate_children(
+            src_file,
+            G_FILE_ATTRIBUTE_STANDARD_NAME,
+            G_FILE_QUERY_INFO_NOFOLLOW_SYMLINKS,
+            cancellable,
+            error
+        );
+        if (!enumerator)
+            return FALSE;
+
+        while (TRUE) {
+            GFileInfo *child_info = NULL;
+            GFile *child_file = NULL;
+            if (!g_file_enumerator_iterate(enumerator, &child_info, &child_file, cancellable, error))
+                return FALSE;
+            if (!child_info)
+                break;
+            const char *child_name = g_file_info_get_name(child_info);
+            if (!child_name || child_name[0] == '\0')
+                continue;
+            g_autofree char *child_rel = g_strdup_printf("%s/%s", rel_path, child_name);
+            if (!compress_add_file_recursive(a, child_file, child_rel, skip_abs_path, cancellable, inout_count, error))
+                return FALSE;
+        }
+        return TRUE;
+    }
+
+    if (S_ISLNK(st.st_mode)) {
+        g_autofree char *link_target = g_file_read_link(local_path, error);
+        if (!link_target) {
+            archive_entry_free(entry);
+            return FALSE;
+        }
+        archive_entry_set_pathname(entry, rel_path);
+        archive_entry_set_filetype(entry, AE_IFLNK);
+        archive_entry_set_perm(entry, 0777);
+        archive_entry_set_size(entry, 0);
+        archive_entry_set_symlink(entry, link_target);
+
+        if (archive_write_header(a, entry) < ARCHIVE_WARN) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive symlink write failed: %s", archive_error_string(a));
+            archive_entry_free(entry);
+            return FALSE;
+        }
+        archive_entry_free(entry);
+        (*inout_count)++;
+        return TRUE;
+    }
+
+    if (!S_ISREG(st.st_mode)) {
+        archive_entry_free(entry);
+        return TRUE;
+    }
+
+    archive_entry_set_pathname(entry, rel_path);
+    archive_entry_set_filetype(entry, AE_IFREG);
+    archive_entry_set_perm(entry, (st.st_mode & 07777) ? (st.st_mode & 07777) : 0644);
+    archive_entry_set_size(entry, st.st_size);
+
+    if (archive_write_header(a, entry) < ARCHIVE_WARN) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive header write failed: %s", archive_error_string(a));
+        archive_entry_free(entry);
+        return FALSE;
+    }
+    archive_entry_free(entry);
+
+    g_autoptr(GFileInputStream) in = g_file_read(src_file, cancellable, error);
+    if (!in)
+        return FALSE;
+
+    guint8 buf[65536];
+    while (TRUE) {
+        gssize n_read = g_input_stream_read(G_INPUT_STREAM(in), buf, sizeof(buf), cancellable, error);
+        if (n_read < 0)
+            return FALSE;
+        if (n_read == 0)
+            break;
+        la_ssize_t written = archive_write_data(a, buf, (size_t)n_read);
+        if (written < 0 || (gssize)written != n_read) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive data write failed: %s", archive_error_string(a));
+            return FALSE;
+        }
+    }
+
+    (*inout_count)++;
+    return TRUE;
+}
+
+static gboolean
+compress_archive_sync(GPtrArray *source_files,
+                      GFile *dest_parent_dir,
+                      const char *archive_filename,
+                      GCancellable *cancellable,
+                      char **out_created_name,
+                      guint *out_count,
+                      GError **error)
+{
+    if (!source_files || source_files->len == 0) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                            "No source files selected for compression");
+        return FALSE;
+    }
+
+    g_autofree char *norm_name = ensure_supported_archive_extension(archive_filename);
+    g_autoptr(GFile) out_file = resolve_unique_dest_child(dest_parent_dir, norm_name);
+    g_autofree char *out_path = g_file_get_path(out_file);
+    if (!out_path) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                            "Destination directory must have a local path");
+        return FALSE;
+    }
+
+    struct archive *a = archive_write_new();
+    if (!configure_archive_writer_format(a, norm_name, error)) {
+        archive_write_free(a);
+        return FALSE;
+    }
+
+    if (archive_write_open_filename(a, out_path) != ARCHIVE_OK) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Failed to create archive '%s': %s", norm_name, archive_error_string(a));
+        archive_write_free(a);
+        return FALSE;
+    }
+
+    guint written_count = 0;
+    gboolean ok = TRUE;
+
+    for (guint i = 0; i < source_files->len; i++) {
+        GFile *src = g_ptr_array_index(source_files, i);
+        g_autofree char *base = g_file_get_basename(src);
+        if (!base || base[0] == '\0')
+            continue;
+        if (!compress_add_file_recursive(a, src, base, out_path, cancellable, &written_count, error)) {
+            ok = FALSE;
+            break;
+        }
+    }
+
+    if (archive_write_close(a) != ARCHIVE_OK && ok) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Failed to finalize archive: %s", archive_error_string(a));
+        ok = FALSE;
+    }
+    archive_write_free(a);
+
+    if (!ok) {
+        g_unlink(out_path);
+        return FALSE;
+    }
+
+    if (out_created_name)
+        *out_created_name = g_file_get_basename(out_file);
+    if (out_count)
+        *out_count = written_count;
+    return TRUE;
+}
+
 typedef enum {
     BATCH_OP_TRASH,
     BATCH_OP_DELETE_PERM,
@@ -444,13 +1028,15 @@ typedef enum {
     BATCH_OP_RESTORE_TRASH,
     BATCH_OP_TRANSFER,
     BATCH_OP_EXTRACT_ARCHIVE,
+    BATCH_OP_COMPRESS,
 } BatchOpKind;
 
 typedef struct {
     BatchOpKind kind;
     GPtrArray *files;          /* GFile* array */
     GPtrArray *restore_paths;  /* char* array for batch restore */
-    GFile *dest_dir;           /* for transfer */
+    GFile *dest_dir;           /* for transfer / extract / compress */
+    char *archive_name;        /* for BATCH_OP_COMPRESS */
     gboolean is_move;
     KajoFileOpCallback callback;
     gpointer user_data;
@@ -465,6 +1051,7 @@ batch_op_context_free(BatchOpContext *ctx)
     if (ctx->restore_paths)
         g_ptr_array_unref(ctx->restore_paths);
     g_clear_object(&ctx->dest_dir);
+    g_free(ctx->archive_name);
     g_free(ctx);
 }
 
@@ -571,6 +1158,32 @@ batch_op_worker(GTask *task,
     case BATCH_OP_TRANSFER:
         for (guint i = 0; i < count; i++) {
             GFile *src = g_ptr_array_index(ctx->files, i);
+            g_autofree char *src_uri = g_file_get_uri(src);
+            g_autofree char *arch_path = NULL;
+            g_autofree char *inner_path = NULL;
+
+            if (src_uri && kajo_files_parse_archive_uri(src_uri, &arch_path, &inner_path)) {
+                if (ctx->is_move) {
+                    g_task_return_new_error(
+                        task, G_IO_ERROR, G_IO_ERROR_READ_ONLY,
+                        "Archive folders are read-only; cannot move items out of an archive"
+                    );
+                    return;
+                }
+                g_autofree char *arch_base = (inner_path && inner_path[0] != '\0')
+                    ? g_path_get_basename(inner_path)
+                    : strip_archive_stem(arch_path);
+                g_autoptr(GFile) dst = resolve_unique_dest_child(
+                    ctx->dest_dir,
+                    (arch_base && arch_base[0] != '\0') ? arch_base : "extracted"
+                );
+                if (!extract_archive_subpath_sync(arch_path, inner_path, dst, cancellable, &error)) {
+                    g_task_return_error(task, error);
+                    return;
+                }
+                continue;
+            }
+
             g_autofree char *base = g_file_get_basename(src);
             if (!base) base = g_strdup("item");
 
@@ -627,7 +1240,22 @@ batch_op_worker(GTask *task,
         }
         g_task_return_pointer(
             task,
-            g_strdup_printf("Extracted %u entries into '%s/'", extracted, folder_name ? folder_name : "folder"),
+            g_strdup_printf("Extracted %u entries into '%s'", extracted, folder_name ? folder_name : "folder"),
+            g_free
+        );
+        return;
+    }
+
+    case BATCH_OP_COMPRESS: {
+        g_autofree char *created_name = NULL;
+        guint compressed_count = 0;
+        if (!compress_archive_sync(ctx->files, ctx->dest_dir, ctx->archive_name, cancellable, &created_name, &compressed_count, &error)) {
+            g_task_return_error(task, error);
+            return;
+        }
+        g_task_return_pointer(
+            task,
+            g_strdup_printf("Compressed %u item(s) into '%s'", compressed_count, created_name ? created_name : "archive"),
             g_free
         );
         return;
@@ -797,19 +1425,155 @@ kajo_files_op_extract_archive_async(GFile *archive_file,
                                     gpointer user_data)
 {
     g_return_if_fail(G_IS_FILE(archive_file));
-    g_return_if_fail(G_IS_FILE(dest_parent_dir));
 
     BatchOpContext *ctx = g_new0(BatchOpContext, 1);
     ctx->kind = BATCH_OP_EXTRACT_ARCHIVE;
     ctx->files = g_ptr_array_new_with_free_func(g_object_unref);
     g_ptr_array_add(ctx->files, g_object_ref(archive_file));
-    ctx->dest_dir = g_object_ref(dest_parent_dir);
+    if (dest_parent_dir)
+        ctx->dest_dir = g_object_ref(dest_parent_dir);
     ctx->callback = callback;
     ctx->user_data = user_data;
 
     g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
+}
+
+void
+kajo_files_op_compress_async(GPtrArray *source_files,
+                             GFile *dest_parent_dir,
+                             const char *archive_filename,
+                             GCancellable *cancellable,
+                             KajoFileOpCallback callback,
+                             gpointer user_data)
+{
+    g_return_if_fail(G_IS_FILE(dest_parent_dir));
+
+    BatchOpContext *ctx = g_new0(BatchOpContext, 1);
+    ctx->kind = BATCH_OP_COMPRESS;
+    ctx->files = clone_gfile_array(source_files);
+    ctx->dest_dir = g_object_ref(dest_parent_dir);
+    ctx->archive_name = g_strdup((archive_filename && archive_filename[0] != '\0') ? archive_filename : "archive.zip");
+    ctx->callback = callback;
+    ctx->user_data = user_data;
+
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
+    g_task_set_task_data(task, ctx, NULL);
+    g_task_run_in_thread(task, batch_op_worker);
+}
+
+typedef struct {
+    char *archive_uri;
+    KajoArchiveEntryExtractCallback callback;
+    gpointer user_data;
+} TempExtractCtx;
+
+static void
+temp_extract_ctx_free(TempExtractCtx *tctx)
+{
+    if (!tctx) return;
+    g_free(tctx->archive_uri);
+    g_free(tctx);
+}
+
+static void
+extract_entry_to_temp_worker(GTask *task,
+                             gpointer source_object G_GNUC_UNUSED,
+                             gpointer task_data,
+                             GCancellable *cancellable)
+{
+    TempExtractCtx *tctx = task_data;
+    GError *error = NULL;
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
+
+    if (!kajo_files_parse_archive_uri(tctx->archive_uri, &arch_path, &inner_path) ||
+        !inner_path || inner_path[0] == '\0') {
+        g_task_return_new_error(
+            task, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+            "Invalid archive entry URI"
+        );
+        return;
+    }
+
+    GStatBuf st;
+    gint64 mtime = 0;
+    gint64 sz = 0;
+    if (g_stat(arch_path, &st) == 0) {
+        mtime = (gint64)st.st_mtime;
+        sz = (gint64)st.st_size;
+    }
+
+    g_autofree char *hash_input = g_strdup_printf(
+        "%s:%" G_GINT64_FORMAT ":%" G_GINT64_FORMAT ":%s",
+        arch_path, mtime, sz, inner_path
+    );
+    g_autofree char *sha = g_compute_checksum_for_string(G_CHECKSUM_SHA256, hash_input, -1);
+    g_autofree char *cache_dir = g_build_filename(
+        g_get_user_cache_dir(), "kajo", "archive-preview", sha, NULL
+    );
+
+    if (g_mkdir_with_parents(cache_dir, 0700) != 0) {
+        g_task_return_new_error(
+            task, G_IO_ERROR, G_IO_ERROR_FAILED,
+            "Failed to create temporary preview cache directory"
+        );
+        return;
+    }
+
+    g_autofree char *base = g_path_get_basename(inner_path);
+    g_autofree char *dest_file_path = g_build_filename(
+        cache_dir, (base && base[0] != '\0') ? base : "entry", NULL
+    );
+    g_autoptr(GFile) dest_file = g_file_new_for_path(dest_file_path);
+
+    if (!g_file_test(dest_file_path, G_FILE_TEST_IS_REGULAR)) {
+        if (!extract_archive_subpath_sync(arch_path, inner_path, dest_file, cancellable, &error)) {
+            g_unlink(dest_file_path);
+            g_task_return_error(task, error);
+            return;
+        }
+    }
+
+    if (g_cancellable_set_error_if_cancelled(cancellable, &error)) {
+        g_task_return_error(task, error);
+        return;
+    }
+
+    g_task_return_pointer(task, g_steal_pointer(&dest_file), g_object_unref);
+}
+
+static void
+on_extract_entry_to_temp_done(GObject *source G_GNUC_UNUSED,
+                              GAsyncResult *res,
+                              gpointer user_data)
+{
+    TempExtractCtx *tctx = user_data;
+    GError *error = NULL;
+    g_autoptr(GFile) temp_file = g_task_propagate_pointer(G_TASK(res), &error);
+
+    if (tctx->callback)
+        tctx->callback(temp_file, error, tctx->user_data);
+
+    g_clear_error(&error);
+    temp_extract_ctx_free(tctx);
+}
+
+void
+kajo_files_op_extract_entry_to_temp_async(const char *archive_uri,
+                                          GCancellable *cancellable,
+                                          KajoArchiveEntryExtractCallback callback,
+                                          gpointer user_data)
+{
+    TempExtractCtx *tctx = g_new0(TempExtractCtx, 1);
+    tctx->archive_uri = g_strdup(archive_uri ? archive_uri : "");
+    tctx->callback = callback;
+    tctx->user_data = user_data;
+
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_extract_entry_to_temp_done, tctx);
+    g_task_set_task_data(task, tctx, NULL);
+    g_task_run_in_thread(task, extract_entry_to_temp_worker);
 }
 
 /* ─── Clipboard (Wayland GdkClipboard) ─── */
@@ -1294,6 +2058,13 @@ kajo_files_open_terminal_at(GFile *dir)
 {
     if (!dir) return;
     g_autofree char *path = g_file_get_path(dir);
+    if (!path) {
+        g_autofree char *uri = g_file_get_uri(dir);
+        g_autofree char *arch_path = NULL;
+        if (uri && kajo_files_parse_archive_uri(uri, &arch_path, NULL)) {
+            path = g_path_get_dirname(arch_path);
+        }
+    }
     if (!path)
         path = g_strdup(g_get_home_dir());
 

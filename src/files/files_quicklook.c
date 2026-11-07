@@ -1,4 +1,5 @@
 #include "files_quicklook.h"
+#include "files_ops.h"
 #include "../common/pdf_render.h"
 #include "../player/player_mpv.h"
 #include <poppler.h>
@@ -885,49 +886,57 @@ on_folder_preview_enum_ready(GPtrArray *items, GError *error, gpointer user_data
 }
 
 static void
-populate_quicklook_modal(KajoQuickLook *self)
+populate_quicklook_info_card(KajoQuickLook *self, KajoFileItem *item)
 {
-    if (!self || !self->current_item) return;
-
-    KajoFileItem *item = self->current_item;
-    GFile *file = kajo_file_item_get_file(item);
-    const char *name = kajo_file_item_get_name(item);
     const char *disp = kajo_file_item_get_display_name(item);
+    const char *ctype = kajo_file_item_get_content_type(item);
+    gboolean is_dir = kajo_file_item_is_dir(item);
+    g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), is_dir);
+    g_autofree char *mtime_str = kajo_files_format_mtime(kajo_file_item_get_mtime(item));
+
+    gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "info");
+    gtk_image_set_from_icon_name(GTK_IMAGE(self->ql_info_icon), kajo_file_item_get_icon_name(item));
+
+    g_autofree char *perms = kajo_files_format_permissions(
+        kajo_file_item_get_unix_mode(item),
+        is_dir,
+        kajo_file_item_is_symlink(item)
+    );
+    const char *orig_path = kajo_file_item_get_trash_orig_path(item);
+    const char *sym_target = kajo_file_item_get_symlink_target(item);
+
+    g_autofree char *details = g_strdup_printf(
+        "NAME:         %s\n"
+        "TYPE:         %s (%s)\n"
+        "EXACT SIZE:   %" G_GUINT64_FORMAT " bytes (%s)\n"
+        "MODIFIED:     %s\n"
+        "PERMISSIONS:  %s\n"
+        "URI:          %s%s%s%s%s",
+        disp,
+        kajo_file_item_get_type_description(item),
+        ctype,
+        kajo_file_item_get_size(item),
+        sz_str,
+        mtime_str,
+        perms,
+        kajo_file_item_get_uri(item),
+        sym_target ? "\nSYMLINK TO:   " : "",
+        sym_target ? sym_target : "",
+        orig_path ? "\nTRASH ORIGIN: " : "",
+        orig_path ? orig_path : ""
+    );
+    gtk_label_set_text(GTK_LABEL(self->ql_info_details_lbl), details);
+}
+
+static void
+populate_quicklook_modal_file(KajoQuickLook *self, KajoFileItem *item, GFile *file)
+{
+    const char *name = kajo_file_item_get_name(item);
     const char *ctype = kajo_file_item_get_content_type(item);
     gboolean is_dir = kajo_file_item_is_dir(item);
     gboolean is_media = (!is_dir && ctype &&
                          (g_str_has_prefix(ctype, "video/") || g_str_has_prefix(ctype, "audio/")));
-
-    if (!is_media)
-        stop_media_playback(self);
-    g_clear_object(&self->pdf_doc);
-    if (!ctype || !g_str_has_prefix(ctype, "image/"))
-        gtk_picture_set_file(GTK_PICTURE(self->ql_picture), NULL);
-
-    if (self->preview_cancel) {
-        g_cancellable_cancel(self->preview_cancel);
-        g_clear_object(&self->preview_cancel);
-    }
-    self->preview_cancel = g_cancellable_new();
-
-    g_autofree char *hdr_title = g_strdup_printf("QUICK LOOK // %s", disp);
-    gtk_label_set_text(GTK_LABEL(self->ql_title_lbl), hdr_title);
-
     g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), is_dir);
-    g_autofree char *badge = g_strdup_printf("[ %s | %s ]", ctype, sz_str);
-    gtk_label_set_text(GTK_LABEL(self->ql_badge_lbl), badge);
-
-    g_autofree char *mtime_str = kajo_files_format_mtime(kajo_file_item_get_mtime(item));
-    g_autofree char *ftr_mtime = g_strdup_printf("MODIFIED: %s", mtime_str);
-    gtk_label_set_text(GTK_LABEL(self->ql_footer_mtime_lbl), ftr_mtime);
-
-    /* 1. Directory Preview */
-    if (is_dir) {
-        gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "folder");
-        gtk_label_set_text(GTK_LABEL(self->ql_folder_summary_lbl), "Scanning folder...");
-        kajo_files_enumerate_async(file, self->preview_cancel, on_folder_preview_enum_ready, self);
-        return;
-    }
 
     /* 2. PDF Document Preview (Poppler) */
     if ((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
@@ -986,38 +995,85 @@ populate_quicklook_modal(KajoQuickLook *self)
     }
 
     /* 7. Fallback: Rich Metadata Card */
-    gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "info");
-    gtk_image_set_from_icon_name(GTK_IMAGE(self->ql_info_icon), kajo_file_item_get_icon_name(item));
+    populate_quicklook_info_card(self, item);
+}
 
-    g_autofree char *perms = kajo_files_format_permissions(
-        kajo_file_item_get_unix_mode(item),
-        is_dir,
-        kajo_file_item_is_symlink(item)
-    );
-    const char *orig_path = kajo_file_item_get_trash_orig_path(item);
-    const char *sym_target = kajo_file_item_get_symlink_target(item);
+static void
+on_ql_archive_temp_ready(GFile *temp_file, GError *error, gpointer user_data)
+{
+    if (error && g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        return;
 
-    g_autofree char *details = g_strdup_printf(
-        "NAME:         %s\n"
-        "TYPE:         %s (%s)\n"
-        "EXACT SIZE:   %" G_GUINT64_FORMAT " bytes (%s)\n"
-        "MODIFIED:     %s\n"
-        "PERMISSIONS:  %s\n"
-        "URI:          %s%s%s%s%s",
-        disp,
-        kajo_file_item_get_type_description(item),
-        ctype,
-        kajo_file_item_get_size(item),
-        sz_str,
-        mtime_str,
-        perms,
-        kajo_file_item_get_uri(item),
-        sym_target ? "\nSYMLINK TO:   " : "",
-        sym_target ? sym_target : "",
-        orig_path ? "\nTRASH ORIGIN: " : "",
-        orig_path ? orig_path : ""
-    );
-    gtk_label_set_text(GTK_LABEL(self->ql_info_details_lbl), details);
+    KajoQuickLook *self = user_data;
+    if (!self || !self->current_item)
+        return;
+
+    if (temp_file && !error) {
+        populate_quicklook_modal_file(self, self->current_item, temp_file);
+    } else {
+        populate_quicklook_info_card(self, self->current_item);
+    }
+}
+
+static void
+populate_quicklook_modal(KajoQuickLook *self)
+{
+    if (!self || !self->current_item) return;
+
+    KajoFileItem *item = self->current_item;
+    GFile *file = kajo_file_item_get_file(item);
+    const char *disp = kajo_file_item_get_display_name(item);
+    const char *ctype = kajo_file_item_get_content_type(item);
+    gboolean is_dir = kajo_file_item_is_dir(item);
+    gboolean is_media = (!is_dir && ctype &&
+                         (g_str_has_prefix(ctype, "video/") || g_str_has_prefix(ctype, "audio/")));
+
+    if (!is_media)
+        stop_media_playback(self);
+    g_clear_object(&self->pdf_doc);
+    if (!ctype || !g_str_has_prefix(ctype, "image/"))
+        gtk_picture_set_file(GTK_PICTURE(self->ql_picture), NULL);
+
+    if (self->preview_cancel) {
+        g_cancellable_cancel(self->preview_cancel);
+        g_clear_object(&self->preview_cancel);
+    }
+    self->preview_cancel = g_cancellable_new();
+
+    g_autofree char *hdr_title = g_strdup_printf("QUICK LOOK // %s", disp);
+    gtk_label_set_text(GTK_LABEL(self->ql_title_lbl), hdr_title);
+
+    g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), is_dir);
+    g_autofree char *badge = g_strdup_printf("[ %s | %s ]", ctype, sz_str);
+    gtk_label_set_text(GTK_LABEL(self->ql_badge_lbl), badge);
+
+    g_autofree char *mtime_str = kajo_files_format_mtime(kajo_file_item_get_mtime(item));
+    g_autofree char *ftr_mtime = g_strdup_printf("MODIFIED: %s", mtime_str);
+    gtk_label_set_text(GTK_LABEL(self->ql_footer_mtime_lbl), ftr_mtime);
+
+    /* 1. Directory Preview */
+    if (is_dir) {
+        gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "folder");
+        gtk_label_set_text(GTK_LABEL(self->ql_folder_summary_lbl), "Scanning folder...");
+        kajo_files_enumerate_async(file, self->preview_cancel, on_folder_preview_enum_ready, self);
+        return;
+    }
+
+    /* 1b. File inside archive:// -> extract to temp cache before previewing */
+    const char *item_uri = kajo_file_item_get_uri(item);
+    if (item_uri && kajo_files_parse_archive_uri(item_uri, NULL, NULL)) {
+        gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "text");
+        gtk_text_buffer_set_text(self->ql_text_buf, "Extracting entry for preview...", -1);
+        kajo_files_op_extract_entry_to_temp_async(
+            item_uri,
+            self->preview_cancel,
+            on_ql_archive_temp_ready,
+            self
+        );
+        return;
+    }
+
+    populate_quicklook_modal_file(self, item, file);
 }
 
 /* ─── Public API ─── */
@@ -1078,20 +1134,32 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     g_set_object(&self->current_item, item);
     g_set_object(&self->current_dir, current_dir);
 
+    g_autofree char *cur_uri = current_dir ? g_file_get_uri(current_dir) : NULL;
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
+    gboolean in_archive = cur_uri && kajo_files_parse_archive_uri(cur_uri, &arch_path, &inner_path);
+
     if (!item) {
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
-        gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), "folder");
-        gtk_label_set_text(GTK_LABEL(self->insp_type_badge), "DIRECTORY");
+        gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), in_archive ? "package-x-generic" : "folder");
+        gtk_label_set_text(GTK_LABEL(self->insp_type_badge), in_archive ? "ARCHIVE" : "DIRECTORY");
 
         if (current_dir) {
-            g_autofree char *base = g_file_get_basename(current_dir);
-            g_autofree char *uri = g_file_get_uri(current_dir);
-            gtk_label_set_text(GTK_LABEL(self->insp_title_lbl), base ? base : uri);
-            gtk_label_set_text(GTK_LABEL(self->insp_size_lbl), "[ CURRENT VIEW ]");
+            g_autofree char *base = NULL;
+            if (in_archive) {
+                if (inner_path && inner_path[0] != '\0')
+                    base = g_path_get_basename(inner_path);
+                else if (arch_path)
+                    base = g_path_get_basename(arch_path);
+            } else {
+                base = g_file_get_basename(current_dir);
+            }
+            gtk_label_set_text(GTK_LABEL(self->insp_title_lbl), base ? base : cur_uri);
+            gtk_label_set_text(GTK_LABEL(self->insp_size_lbl), in_archive ? "[ ARCHIVE (READ-ONLY) ]" : "[ CURRENT VIEW ]");
             gtk_label_set_text(GTK_LABEL(self->insp_mtime_lbl), "--");
-            gtk_label_set_text(GTK_LABEL(self->insp_perms_lbl), "drwxr-xr-x");
+            gtk_label_set_text(GTK_LABEL(self->insp_perms_lbl), in_archive ? "dr-xr-xr-x" : "drwxr-xr-x");
             gtk_label_set_text(GTK_LABEL(self->insp_mime_lbl), "inode/directory");
-            gtk_label_set_text(GTK_LABEL(self->insp_extra_lbl), uri ? uri : "--");
+            gtk_label_set_text(GTK_LABEL(self->insp_extra_lbl), cur_uri ? cur_uri : "--");
         } else {
             gtk_label_set_text(GTK_LABEL(self->insp_title_lbl), "No Item Selected");
             gtk_label_set_text(GTK_LABEL(self->insp_size_lbl), "--");
@@ -1111,8 +1179,8 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
 
     gtk_widget_set_sensitive(self->insp_btn_quicklook, TRUE);
     gtk_widget_set_sensitive(self->insp_btn_open, TRUE);
-    gtk_widget_set_sensitive(self->insp_btn_rename, TRUE);
-    gtk_widget_set_sensitive(self->insp_btn_trash, TRUE);
+    gtk_widget_set_sensitive(self->insp_btn_rename, !in_archive);
+    gtk_widget_set_sensitive(self->insp_btn_trash, !in_archive);
 
     const char *ctype = kajo_file_item_get_content_type(item);
     const char *name = kajo_file_item_get_name(item);
@@ -1120,7 +1188,7 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     gboolean is_dir = kajo_file_item_is_dir(item);
     g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
 
-    if (!is_dir && local_path != NULL) {
+    if (!is_dir && local_path != NULL && !in_archive) {
         gboolean is_exec = (kajo_file_item_get_unix_mode(item) & 0111U) != 0;
         gtk_button_set_label(
             GTK_BUTTON(self->insp_btn_exec),
@@ -1135,11 +1203,11 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
         gtk_widget_set_visible(self->insp_btn_exec, FALSE);
     }
 
-    if (ctype && g_str_has_prefix(ctype, "image/")) {
+    if (ctype && g_str_has_prefix(ctype, "image/") && local_path != NULL) {
         gtk_picture_set_file(GTK_PICTURE(self->insp_picture), file);
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");
-    } else if ((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
-               (name && g_str_has_suffix(name, ".pdf"))) {
+    } else if (((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
+                (name && g_str_has_suffix(name, ".pdf"))) && local_path != NULL) {
         gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
         if (file) {

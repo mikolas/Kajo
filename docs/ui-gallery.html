@@ -3135,6 +3135,25 @@
             <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:#ff8080;">🗑 TRASH BIN (trash:///) — Items here can be restored or permanently deleted.</span>
             <button class="kajo-btn action-btn-danger files-nav-btn">EMPTY TRASH</button>
           </div>
+
+          <!-- 4. Virtual Read-Only Archive Banner (archive://) -->
+          <div class="files-prompt-bar">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent); flex:1;">📦 ARCHIVE VIEW (READ-ONLY) — release.tar.zst!/src  •  12 ITEM(S)</span>
+            <div style="display:flex; gap:6px;">
+              <button class="kajo-btn files-accent-btn files-nav-btn">📦 EXTRACT ALL</button>
+              <button class="kajo-btn files-nav-btn">↩ EXIT</button>
+            </div>
+          </div>
+
+          <!-- 5. Compress to Archive Inline Prompt (PROMPT_COMPRESS) -->
+          <div class="files-prompt-bar">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent);">COMPRESS TO (.zip / .tar.zst / .tar.gz / .tar.xz):</span>
+            <input type="text" class="kajo-entry" value="kajo-release.tar.zst" style="max-width:260px; height:28px; min-height:28px;" />
+            <div style="display:flex; gap:6px;">
+              <button class="kajo-btn files-accent-btn files-nav-btn">COMPRESS</button>
+              <button class="kajo-btn files-nav-btn">CANCEL</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -3220,6 +3239,7 @@
                   <span>↗ Open With / Set Default...</span><span class="files-ctx-shortcut">▸</span>
                 </div>
                 <div class="files-ctx-item"><span>👁 Quick Look Preview</span><span class="files-ctx-shortcut">Space</span></div>
+                <div class="files-ctx-item"><span>📦 Compress to Archive...</span><span class="files-ctx-shortcut">Ctrl+Shift+A</span></div>
                 <div class="ctx-separator"></div>
                 <div class="files-ctx-item"><span>✂ Cut</span><span class="files-ctx-shortcut">Ctrl+X</span></div>
                 <div class="files-ctx-item"><span>📋 Copy</span><span class="files-ctx-shortcut">Ctrl+C</span></div>
@@ -3341,6 +3361,8 @@
                 <span class="shell-popover-badge">BATCH</span>
               </div>
               <div class="shell-popover-body" style="padding:6px; gap:2px;">
+                <div class="files-ctx-item"><span>📦 Compress to Archive...</span><span class="files-ctx-shortcut">Ctrl+Shift+A</span></div>
+                <div class="ctx-separator"></div>
                 <div class="files-ctx-item"><span>📋 Copy</span><span class="files-ctx-shortcut">Ctrl+C</span></div>
                 <div class="files-ctx-item"><span>✂ Cut</span><span class="files-ctx-shortcut">Ctrl+X</span></div>
                 <div class="files-ctx-item"><span>🔗 Copy Path / URI</span><span class="files-ctx-shortcut">Ctrl+Shift+C</span></div>

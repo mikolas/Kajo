@@ -123,6 +123,10 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
         files_window_show_inline_prompt(self, PROMPT_MKDIR);
         return TRUE;
     }
+    if (ctrl && shift && !alt && (keyval == GDK_KEY_a || keyval == GDK_KEY_A)) {
+        files_window_show_inline_prompt(self, PROMPT_COMPRESS);
+        return TRUE;
+    }
     if (ctrl && shift && (keyval == GDK_KEY_t || keyval == GDK_KEY_T)) {
         if (self->current_dir) kajo_files_open_terminal_at(self->current_dir);
         return TRUE;
@@ -193,13 +197,17 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
             g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
             if (sel_items && sel_items->len > 0) {
                 kajo_files_clipboard_set(sel_items, FALSE);
-                gtk_widget_set_sensitive(self->btn_paste, TRUE);
+                gtk_widget_set_sensitive(self->btn_paste, !files_window_is_read_only_archive(self));
                 g_autofree char *msg = g_strdup_printf("Copied %u item(s) to clipboard", sel_items->len);
                 files_window_set_status_message(self, msg, FALSE);
                 return TRUE;
             }
         }
         if (ctrl && !shift && !alt && (keyval == GDK_KEY_x || keyval == GDK_KEY_X)) {
+            if (files_window_is_read_only_archive(self)) {
+                files_window_set_status_message(self, "Archive view is read-only", TRUE);
+                return TRUE;
+            }
             g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
             if (sel_items && sel_items->len > 0) {
                 kajo_files_clipboard_set(sel_items, TRUE);

@@ -1,4 +1,6 @@
 #include "files_model.h"
+#include <archive.h>
+#include <archive_entry.h>
 #include <string.h>
 #include <sys/stat.h>
 
@@ -369,6 +371,138 @@ kajo_files_is_archive(const char *content_type, const char *filename)
     return FALSE;
 }
 
+static gboolean
+path_has_dotdot_segment(const char *path)
+{
+    if (!path)
+        return TRUE;
+    g_auto(GStrv) parts = g_strsplit(path, "/", -1);
+    for (int i = 0; parts && parts[i] != NULL; i++) {
+        if (g_strcmp0(parts[i], "..") == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static char *
+normalize_archive_rel_path(const char *raw)
+{
+    if (!raw)
+        return g_strdup("");
+
+    g_auto(GStrv) parts = g_strsplit(raw, "/", -1);
+    GString *out = g_string_new("");
+
+    for (int i = 0; parts && parts[i] != NULL; i++) {
+        const char *seg = parts[i];
+        if (seg[0] == '\0' || g_strcmp0(seg, ".") == 0)
+            continue;
+        if (g_strcmp0(seg, "..") == 0) {
+            g_string_free(out, TRUE);
+            return NULL;
+        }
+        if (out->len > 0)
+            g_string_append_c(out, '/');
+        g_string_append(out, seg);
+    }
+
+    return g_string_free(out, FALSE);
+}
+
+gboolean
+kajo_files_parse_archive_uri(const char *uri,
+                             char **out_archive_path,
+                             char **out_inner_path)
+{
+    if (out_archive_path) *out_archive_path = NULL;
+    if (out_inner_path) *out_inner_path = NULL;
+
+    if (!uri || !g_str_has_prefix(uri, "archive:///"))
+        return FALSE;
+
+    const char *body = uri + strlen("archive://"); /* starts at first '/' */
+    const char *bang = strstr(body, "!/");
+    const char *raw_inner = NULL;
+    if (bang) {
+        raw_inner = bang + 2;
+    } else {
+        gsize body_len = strlen(body);
+        if (body_len > 1 && body[body_len - 1] == '!') {
+            bang = body + body_len - 1;
+            raw_inner = body + body_len;
+        }
+    }
+    if (!bang || bang == body)
+        return FALSE;
+
+    g_autofree char *arch_path = g_uri_unescape_segment(body, bang, "/");
+    if (!arch_path || arch_path[0] != '/' || arch_path[1] == '\0' ||
+        path_has_dotdot_segment(arch_path)) {
+        return FALSE;
+    }
+
+    g_autofree char *unesc_inner = g_uri_unescape_string(raw_inner, "/");
+    if (!unesc_inner)
+        return FALSE;
+
+    g_autofree char *norm_inner = normalize_archive_rel_path(unesc_inner);
+    if (!norm_inner)
+        return FALSE;
+
+    if (out_archive_path)
+        *out_archive_path = g_steal_pointer(&arch_path);
+    if (out_inner_path)
+        *out_inner_path = g_steal_pointer(&norm_inner);
+    return TRUE;
+}
+
+char *
+kajo_files_build_archive_uri(const char *archive_path,
+                             const char *inner_path)
+{
+    if (!archive_path || archive_path[0] != '/' || path_has_dotdot_segment(archive_path))
+        return NULL;
+
+    g_autofree char *norm_inner = normalize_archive_rel_path(inner_path ? inner_path : "");
+    if (!norm_inner)
+        return NULL;
+
+    g_autofree char *esc_arch = g_uri_escape_string(archive_path, "/", TRUE);
+    if (norm_inner[0] == '\0')
+        return g_strdup_printf("archive://%s!/", esc_arch);
+
+    g_autofree char *esc_inner = g_uri_escape_string(norm_inner, "/", TRUE);
+    return g_strdup_printf("archive://%s!/%s", esc_arch, esc_inner);
+}
+
+char *
+kajo_files_get_parent_uri(GFile *dir)
+{
+    if (!dir)
+        return NULL;
+
+    g_autofree char *uri = g_file_get_uri(dir);
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
+
+    if (uri && kajo_files_parse_archive_uri(uri, &arch_path, &inner_path)) {
+        if (inner_path && inner_path[0] != '\0') {
+            const char *slash = strrchr(inner_path, '/');
+            if (slash) {
+                g_autofree char *parent_inner = g_strndup(inner_path, (gsize)(slash - inner_path));
+                return kajo_files_build_archive_uri(arch_path, parent_inner);
+            }
+            return kajo_files_build_archive_uri(arch_path, "");
+        }
+        g_autoptr(GFile) host_file = g_file_new_for_path(arch_path);
+        g_autoptr(GFile) host_parent = host_file ? g_file_get_parent(host_file) : NULL;
+        return host_parent ? g_file_get_uri(host_parent) : NULL;
+    }
+
+    g_autoptr(GFile) parent = g_file_get_parent(dir);
+    return parent ? g_file_get_uri(parent) : NULL;
+}
+
 gboolean
 kajo_file_sort_field_default_ascending(KajoFileSortField field)
 {
@@ -516,12 +650,11 @@ kajo_breadcrumb_segment_free(gpointer data)
     g_free(seg);
 }
 
-GPtrArray *
-kajo_files_build_breadcrumb_chain(GFile *dir)
+static void
+append_host_breadcrumb_segments(GPtrArray *result, GFile *dir)
 {
-    GPtrArray *result = g_ptr_array_new_with_free_func(kajo_breadcrumb_segment_free);
-    if (!dir)
-        return result;
+    if (!result || !dir)
+        return;
 
     g_autoptr(GPtrArray) chain = g_ptr_array_new_with_free_func(g_object_unref);
     GFile *cursor = g_object_ref(dir);
@@ -569,7 +702,53 @@ kajo_files_build_breadcrumb_chain(GFile *dir)
         out_seg->tooltip = g_strdup(seg_path ? seg_path : (seg_uri ? seg_uri : ""));
         g_ptr_array_add(result, out_seg);
     }
+}
 
+GPtrArray *
+kajo_files_build_breadcrumb_chain(GFile *dir)
+{
+    GPtrArray *result = g_ptr_array_new_with_free_func(kajo_breadcrumb_segment_free);
+    if (!dir)
+        return result;
+
+    g_autofree char *dir_uri = g_file_get_uri(dir);
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
+
+    if (dir_uri && kajo_files_parse_archive_uri(dir_uri, &arch_path, &inner_path)) {
+        g_autoptr(GFile) arch_file = g_file_new_for_path(arch_path);
+        g_autoptr(GFile) host_parent = arch_file ? g_file_get_parent(arch_file) : NULL;
+        if (host_parent)
+            append_host_breadcrumb_segments(result, host_parent);
+
+        g_autofree char *arch_base = g_path_get_basename(arch_path);
+        KajoBreadcrumbSegment *arch_seg = g_new0(KajoBreadcrumbSegment, 1);
+        arch_seg->uri = kajo_files_build_archive_uri(arch_path, "");
+        arch_seg->label = g_strdup_printf("📦 %s", arch_base ? arch_base : "archive");
+        arch_seg->tooltip = g_strdup(arch_path);
+        g_ptr_array_add(result, arch_seg);
+
+        if (inner_path && inner_path[0] != '\0') {
+            g_auto(GStrv) parts = g_strsplit(inner_path, "/", -1);
+            g_autoptr(GString) accum = g_string_new("");
+            for (int i = 0; parts && parts[i] != NULL; i++) {
+                if (parts[i][0] == '\0')
+                    continue;
+                if (accum->len > 0)
+                    g_string_append_c(accum, '/');
+                g_string_append(accum, parts[i]);
+
+                KajoBreadcrumbSegment *sub_seg = g_new0(KajoBreadcrumbSegment, 1);
+                sub_seg->uri = kajo_files_build_archive_uri(arch_path, accum->str);
+                sub_seg->label = g_strdup(parts[i]);
+                sub_seg->tooltip = g_strdup_printf("%s!/%s", arch_path, accum->str);
+                g_ptr_array_add(result, sub_seg);
+            }
+        }
+        return result;
+    }
+
+    append_host_breadcrumb_segments(result, dir);
     return result;
 }
 
@@ -645,6 +824,172 @@ enum_task_data_free(EnumTaskData *d)
     g_free(d);
 }
 
+static GPtrArray *
+enumerate_archive_dir_sync(const char *archive_path,
+                           const char *inner_path,
+                           GCancellable *cancellable,
+                           GError **error)
+{
+    struct stat st;
+    gint64 archive_mtime = 0;
+    if (stat(archive_path, &st) == 0)
+        archive_mtime = (gint64)st.st_mtime;
+
+    struct archive *a = archive_read_new();
+    archive_read_support_filter_all(a);
+    archive_read_support_format_all(a);
+
+    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
+        const char *err_s = archive_error_string(a);
+        g_set_error_literal(
+            error, G_IO_ERROR, G_IO_ERROR_FAILED,
+            err_s ? err_s : "Unable to open archive"
+        );
+        archive_read_free(a);
+        return NULL;
+    }
+
+    GPtrArray *items = g_ptr_array_new_with_free_func(g_object_unref);
+    g_autoptr(GHashTable) items_by_name = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    gsize inner_len = inner_path ? strlen(inner_path) : 0;
+
+    struct archive_entry *entry = NULL;
+    int r;
+    while (!g_cancellable_set_error_if_cancelled(cancellable, error)) {
+        r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r != ARCHIVE_OK && r != ARCHIVE_WARN) {
+            const char *err_s = archive_error_string(a);
+            g_set_error_literal(
+                error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                err_s ? err_s : "Archive header read error"
+            );
+            archive_read_free(a);
+            g_ptr_array_unref(items);
+            return NULL;
+        }
+
+        const char *raw_path = archive_entry_pathname_utf8(entry);
+        if (!raw_path || raw_path[0] == '\0')
+            raw_path = archive_entry_pathname(entry);
+
+        g_autofree char *norm = raw_path ? normalize_archive_rel_path(raw_path) : NULL;
+        if (!norm || norm[0] == '\0') {
+            archive_read_data_skip(a);
+            continue;
+        }
+
+        const char *rel = norm;
+        if (inner_len > 0) {
+            if (strncmp(norm, inner_path, inner_len) != 0 || norm[inner_len] != '/') {
+                archive_read_data_skip(a);
+                continue;
+            }
+            rel = norm + inner_len + 1;
+            if (rel[0] == '\0') {
+                archive_read_data_skip(a);
+                continue;
+            }
+        }
+
+        const char *slash = strchr(rel, '/');
+        gint64 mtime = archive_entry_mtime_is_set(entry)
+            ? (gint64)archive_entry_mtime(entry)
+            : archive_mtime;
+
+        if (slash != NULL) {
+            /* Nested entry: synthesize immediate child directory if not yet present */
+            g_autofree char *dir_name = g_strndup(rel, (gsize)(slash - rel));
+            if (dir_name[0] != '\0' && !g_hash_table_contains(items_by_name, dir_name)) {
+                g_autofree char *disp = g_utf8_make_valid(dir_name, -1);
+                g_autofree char *child_inner = (inner_len > 0)
+                    ? g_strdup_printf("%s/%s", inner_path, dir_name)
+                    : g_strdup(dir_name);
+                g_autofree char *child_uri = kajo_files_build_archive_uri(archive_path, child_inner);
+                g_autoptr(GFile) child_file = g_file_new_for_uri(child_uri ? child_uri : "archive:///!/");
+
+                KajoFileItem *dir_item = kajo_file_item_new_manual(
+                    child_file,
+                    dir_name,
+                    disp,
+                    "inode/directory",
+                    0,
+                    mtime,
+                    0755,
+                    TRUE,
+                    dir_name[0] == '.'
+                );
+                g_hash_table_insert(items_by_name, g_strdup(dir_name), dir_item);
+                g_ptr_array_add(items, dir_item);
+            }
+        } else {
+            /* Direct child of inner_path */
+            mode_t ftype = archive_entry_filetype(entry);
+            gboolean is_dir = (ftype == AE_IFDIR) || (raw_path && g_str_has_suffix(raw_path, "/"));
+            KajoFileItem *existing = g_hash_table_lookup(items_by_name, rel);
+
+            if (existing) {
+                if (is_dir && existing->is_dir && archive_entry_mtime_is_set(entry)) {
+                    existing->mtime_sec = mtime;
+                }
+            } else {
+                g_autofree char *disp = g_utf8_make_valid(rel, -1);
+                g_autofree char *child_inner = (inner_len > 0)
+                    ? g_strdup_printf("%s/%s", inner_path, rel)
+                    : g_strdup(rel);
+                g_autofree char *child_uri = kajo_files_build_archive_uri(archive_path, child_inner);
+                g_autoptr(GFile) child_file = g_file_new_for_uri(child_uri ? child_uri : "archive:///!/");
+
+                g_autofree char *guessed_ct = NULL;
+                const char *ctype = "inode/directory";
+                if (!is_dir) {
+                    guessed_ct = g_content_type_guess(rel, NULL, 0, NULL);
+                    ctype = (guessed_ct && guessed_ct[0] != '\0') ? guessed_ct : "application/octet-stream";
+                }
+
+                la_int64_t raw_sz = archive_entry_size(entry);
+                guint64 sz = is_dir ? 0 : (guint64)MAX(0, raw_sz);
+                guint32 mode = (guint32)(archive_entry_perm(entry) & 07777);
+                if (mode == 0)
+                    mode = is_dir ? 0755 : 0644;
+
+                KajoFileItem *child_item = kajo_file_item_new_manual(
+                    child_file,
+                    rel,
+                    disp,
+                    ctype,
+                    sz,
+                    mtime,
+                    mode,
+                    is_dir,
+                    rel[0] == '.'
+                );
+                if (ftype == AE_IFLNK) {
+                    const char *sym = archive_entry_symlink(entry);
+                    child_item->is_symlink = TRUE;
+                    if (sym && sym[0] != '\0')
+                        child_item->symlink_target = g_strdup(sym);
+                }
+
+                g_hash_table_insert(items_by_name, g_strdup(rel), child_item);
+                g_ptr_array_add(items, child_item);
+            }
+        }
+
+        archive_read_data_skip(a);
+    }
+
+    archive_read_free(a);
+
+    if (*error) {
+        g_ptr_array_unref(items);
+        return NULL;
+    }
+
+    return items;
+}
+
 static void
 enumerate_thread_cb(GTask *task,
                     gpointer source_object G_GNUC_UNUSED,
@@ -653,6 +998,19 @@ enumerate_thread_cb(GTask *task,
 {
     EnumTaskData *d = task_data;
     GError *error = NULL;
+
+    g_autofree char *dir_uri = d->dir ? g_file_get_uri(d->dir) : NULL;
+    g_autofree char *arch_path = NULL;
+    g_autofree char *inner_path = NULL;
+    if (dir_uri && kajo_files_parse_archive_uri(dir_uri, &arch_path, &inner_path)) {
+        GPtrArray *arch_items = enumerate_archive_dir_sync(arch_path, inner_path, cancellable, &error);
+        if (!arch_items) {
+            g_task_return_error(task, error);
+            return;
+        }
+        g_task_return_pointer(task, arch_items, (GDestroyNotify)g_ptr_array_unref);
+        return;
+    }
 
     g_autoptr(GFileEnumerator) enumerator = g_file_enumerate_children(
         d->dir,

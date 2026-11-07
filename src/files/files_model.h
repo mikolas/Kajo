@@ -59,6 +59,12 @@ char    *kajo_files_format_permissions(guint32 mode, gboolean is_dir, gboolean i
 char    *kajo_files_format_mtime(gint64 mtime_sec);
 gboolean kajo_files_is_text_or_code(const char *content_type, const char *filename);
 gboolean kajo_files_is_archive(const char *content_type, const char *filename);
+gboolean kajo_files_parse_archive_uri(const char *uri,
+                                      char **out_archive_path,
+                                      char **out_inner_path);
+char    *kajo_files_build_archive_uri(const char *archive_path,
+                                      const char *inner_path);
+char    *kajo_files_get_parent_uri(GFile *dir);
 
 int      kajo_file_item_compare(const KajoFileItem *a,
                                 const KajoFileItem *b,

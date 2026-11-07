@@ -132,7 +132,7 @@ template $KajoFilesWindow : ApplicationWindow {
               name: "entry";
               child: Entry uri_entry {
                 hexpand: true;
-                placeholder-text: "Enter path or URI (file://, smb://, sftp://, trash:///)...";
+                placeholder-text: "Enter path or URI (file://, archive://, smb://, sftp://, trash:///)...";
 
                 styles [
                   "shell-launcher-input",
@@ -211,7 +211,7 @@ template $KajoFilesWindow : ApplicationWindow {
         Label current_uri_badge {
           label: "PATH: ~";
           hexpand: true;
-          halign: start;
+          xalign: 0;
           ellipsize: middle;
 
           styles [
@@ -477,7 +477,13 @@ template $KajoFilesWindow : ApplicationWindow {
             reveal-child: false;
           }
 
-          /* Banner 4: Inline Prompt Bar (New Folder / Rename / Delete Confirm) */
+          /* Banner 4: Contextual Read-Only Archive Bar (archive://) */
+          Revealer archive_banner_revealer {
+            transition-type: slide_down;
+            reveal-child: false;
+          }
+
+          /* Banner 5: Inline Prompt Bar (New Folder / Rename / Compress / Delete Confirm) */
           Revealer prompt_banner_revealer {
             transition-type: slide_down;
             reveal-child: false;
