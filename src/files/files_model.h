@@ -59,6 +59,10 @@ char    *kajo_files_format_permissions(guint32 mode, gboolean is_dir, gboolean i
 char    *kajo_files_format_mtime(gint64 mtime_sec);
 gboolean kajo_files_is_text_or_code(const char *content_type, const char *filename);
 gboolean kajo_files_is_archive(const char *content_type, const char *filename);
+/* Shared archive-entry path normalizer: relative result, NULL if it contains "..", "" if empty. */
+char    *kajo_files_normalize_archive_path(const char *raw);
+/* TRUE for paths below $XDG_CACHE_HOME/kajo/archive-preview (extracted nested archives). */
+gboolean kajo_files_is_preview_cache_path(const char *path);
 gboolean kajo_files_parse_archive_uri(const char *uri,
                                       char **out_archive_path,
                                       char **out_inner_path);

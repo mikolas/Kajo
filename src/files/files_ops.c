@@ -6,6 +6,9 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <utime.h>
 
 typedef struct {
     KajoFileOpCallback callback;
@@ -175,53 +178,100 @@ strip_archive_stem(const char *basename)
     return g_strdup(basename);
 }
 
-static gboolean
-is_safe_relative_archive_path(const char *pathname)
+/* Stem of the *basename* of a path ("/x/pack.tar.gz" -> "pack"); never contains '/'. */
+static char *
+strip_archive_stem_dup(const char *path)
 {
-    if (!pathname || pathname[0] == '\0' || pathname[0] == '/')
-        return FALSE;
-
-    g_auto(GStrv) parts = g_strsplit(pathname, "/", -1);
-    for (int i = 0; parts && parts[i] != NULL; i++) {
-        if (g_strcmp0(parts[i], "..") == 0)
-            return FALSE;
-    }
-    return TRUE;
+    g_autofree char *base = g_path_get_basename(path ? path : "");
+    return strip_archive_stem(base);
 }
 
-static char *
-normalize_safe_archive_entry_path(const char *raw_path)
+/* ─── Archive extraction engine ───
+ *
+ * One engine serves "extract all", copy-out of archive entries and the Quick Look/Open
+ * preview extraction. Paths go through kajo_files_normalize_archive_path() (shared with the
+ * virtual-folder listing), destinations are resolved to real paths first (libarchive's
+ * SECURE_SYMLINKS refuses any path that merely *passes through* a symlink), permissions are
+ * sanitized, and a single bad entry is skipped and reported instead of aborting the rest. */
+
+static gboolean delete_file_recursive_sync(GFile *file, GCancellable *cancellable, GError **error);
+
+/* Resolves symlinks in every existing ancestor of `path`; the tail that does not exist yet is
+ * appended unchanged. */
+char *
+kajo_files_resolve_real_path(const char *path)
 {
-    if (!raw_path || raw_path[0] == '\0')
+    if (!path || path[0] != '/')
         return NULL;
 
-    /* Reject absolute paths or .. segments */
-    const char *p = raw_path;
-    while (p[0] == '.' && p[1] == '/')
-        p += 2;
-    if (p[0] == '/' || p[0] == '\0' || g_strcmp0(p, ".") == 0)
-        return NULL;
-
-    g_auto(GStrv) parts = g_strsplit(p, "/", -1);
-    GString *out = g_string_new("");
-    for (int i = 0; parts && parts[i] != NULL; i++) {
-        const char *seg = parts[i];
-        if (seg[0] == '\0' || g_strcmp0(seg, ".") == 0)
-            continue;
-        if (g_strcmp0(seg, "..") == 0) {
-            g_string_free(out, TRUE);
-            return NULL;
+    g_autofree char *dir = g_strdup(path);
+    GString *tail = g_string_new(NULL);
+    while (TRUE) {
+        char *rp = realpath(dir, NULL);
+        if (rp) {
+            char *out = tail->len > 0 ? g_build_filename(rp, tail->str, NULL) : g_strdup(rp);
+            free(rp);
+            g_string_free(tail, TRUE);
+            return out;
         }
-        if (out->len > 0)
-            g_string_append_c(out, '/');
-        g_string_append(out, seg);
+        if (g_strcmp0(dir, "/") == 0)
+            break;
+        g_autofree char *base = g_path_get_basename(dir);
+        if (tail->len > 0)
+            g_string_prepend_c(tail, '/');
+        g_string_prepend(tail, base);
+        g_autofree char *parent = g_path_get_dirname(dir);
+        g_free(dir);
+        dir = g_steal_pointer(&parent);
     }
+    g_string_free(tail, TRUE);
+    return g_strdup(path);
+}
 
-    if (out->len == 0) {
-        g_string_free(out, TRUE);
+typedef struct {
+    guint  extracted;
+    guint  skipped;
+    char  *first_skip_reason;
+} ExtractStats;
+
+static void
+extract_stats_skip(ExtractStats *st, const char *reason)
+{
+    st->skipped++;
+    if (!st->first_skip_reason && reason)
+        st->first_skip_reason = g_strdup(reason);
+}
+
+typedef struct {
+    gboolean regular_only;  /* previews: refuse links, devices and directories */
+    gboolean strip_exec;    /* previews: never leave an executable behind */
+} ExtractOpts;
+
+/* Maps a normalized entry path to its destination, or NULL when the entry is not selected. */
+typedef char *(*ArchiveMapFn)(const char *norm, gpointer data);
+
+static struct archive *
+open_archive_reader(const char *archive_path, GError **error)
+{
+    struct archive *a = archive_read_new();
+    archive_read_support_filter_all(a);
+    archive_read_support_format_all(a);
+    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
+        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                    "Archive open failed: %s", archive_error_string(a));
+        archive_read_free(a);
         return NULL;
     }
-    return g_string_free(out, FALSE);
+    return a;
+}
+
+static const char *
+entry_raw_path(struct archive_entry *entry)
+{
+    const char *raw = archive_entry_pathname_utf8(entry);
+    if (!raw || raw[0] == '\0')
+        raw = archive_entry_pathname(entry);
+    return raw;
 }
 
 static gboolean
@@ -234,16 +284,9 @@ scan_archive_top_level(const char *archive_path,
     if (out_n_top) *out_n_top = 0;
     if (out_single_top) *out_single_top = NULL;
 
-    struct archive *a = archive_read_new();
-    archive_read_support_filter_all(a);
-    archive_read_support_format_all(a);
-
-    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                    "Archive open failed: %s", archive_error_string(a));
-        archive_read_free(a);
+    struct archive *a = open_archive_reader(archive_path, error);
+    if (!a)
         return FALSE;
-    }
 
     g_autoptr(GHashTable) top_names = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
     g_autofree char *first_top = NULL;
@@ -264,12 +307,9 @@ scan_archive_top_level(const char *archive_path,
             return FALSE;
         }
 
-        const char *raw_path = archive_entry_pathname_utf8(entry);
-        if (!raw_path || raw_path[0] == '\0')
-            raw_path = archive_entry_pathname(entry);
-
-        g_autofree char *norm = normalize_safe_archive_entry_path(raw_path);
-        if (norm) {
+        const char *raw_path = entry_raw_path(entry);
+        g_autofree char *norm = raw_path ? kajo_files_normalize_archive_path(raw_path) : NULL;
+        if (norm && norm[0] != '\0') {
             const char *slash = strchr(norm, '/');
             char *top_seg = slash ? g_strndup(norm, (gsize)(slash - norm)) : g_strdup(norm);
             if (!g_hash_table_contains(top_names, top_seg)) {
@@ -294,50 +334,69 @@ scan_archive_top_level(const char *archive_path,
     return TRUE;
 }
 
-static gboolean
-write_current_archive_entry_to_disk(struct archive *a,
-                                    struct archive *ext,
-                                    struct archive_entry *entry,
-                                    const char *full_dest,
-                                    GCancellable *cancellable,
-                                    GError **error)
+/* Writes the current entry. Returns 1 = written, 0 = entry skipped (reason recorded),
+ * -1 = fatal (cancelled / data error; *error set). */
+static int
+write_current_archive_entry(struct archive *a,
+                            struct archive *ext,
+                            struct archive_entry *entry,
+                            const char *full_dest,
+                            const char *full_hardlink,
+                            const ExtractOpts *opts,
+                            ExtractStats *stats,
+                            GCancellable *cancellable,
+                            GError **error)
 {
+    mode_t ftype = archive_entry_filetype(entry);
+    if (opts->regular_only && (ftype != AE_IFREG || full_hardlink != NULL)) {
+        extract_stats_skip(stats, "links, folders and special files are not extracted for preview");
+        archive_read_data_skip(a);
+        return 0;
+    }
+
     g_autofree char *parent_dir = g_path_get_dirname(full_dest);
     if (parent_dir && parent_dir[0] != '\0' && g_strcmp0(parent_dir, ".") != 0)
         g_mkdir_with_parents(parent_dir, 0755);
 
     archive_entry_set_pathname(entry, full_dest);
+    if (full_hardlink != NULL)
+        archive_entry_set_hardlink(entry, full_hardlink);
 
-    const char *hardlink = archive_entry_hardlink(entry);
-    if (hardlink && !is_safe_relative_archive_path(hardlink))
-        archive_entry_set_hardlink(entry, NULL);
+    /* Never trust archive modes: drop group/other write and setuid/setgid/sticky; keep owner
+     * rwx (directories must stay writable for the entries below them). */
+    mode_t perm = archive_entry_perm(entry) & 0777 & ~(mode_t)0022;
+    if (ftype == AE_IFDIR)
+        perm |= 0700;
+    else if (opts->strip_exec)
+        perm = (perm & ~(mode_t)0111) | 0600;
+    archive_entry_set_perm(entry, perm);
 
     int r = archive_write_header(ext, entry);
-    if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                    "Archive header write error: %s", archive_error_string(ext));
-        return FALSE;
+    if (r < ARCHIVE_WARN) {
+        extract_stats_skip(stats, archive_error_string(ext));
+        archive_read_data_skip(a);
+        return 0;
     }
 
-    if (archive_entry_size(entry) > 0) {
+    if (archive_entry_size(entry) > 0 && ftype == AE_IFREG) {
         const void *buff = NULL;
         size_t size = 0;
         la_int64_t offset = 0;
         while (TRUE) {
             if (g_cancellable_set_error_if_cancelled(cancellable, error))
-                return FALSE;
+                return -1;
             int dr = archive_read_data_block(a, &buff, &size, &offset);
             if (dr == ARCHIVE_EOF)
                 break;
             if (dr < ARCHIVE_OK && dr != ARCHIVE_WARN) {
                 g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
                             "Archive data error: %s", archive_error_string(a));
-                return FALSE;
+                return -1;
             }
             if (archive_write_data_block(ext, buff, size, offset) < ARCHIVE_WARN) {
                 g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
                             "Archive write error: %s", archive_error_string(ext));
-                return FALSE;
+                return -1;
             }
         }
     }
@@ -345,9 +404,137 @@ write_current_archive_entry_to_disk(struct archive *a,
     if (archive_write_finish_entry(ext) < ARCHIVE_WARN) {
         g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
                     "Archive finish entry error: %s", archive_error_string(ext));
-        return FALSE;
+        return -1;
     }
-    return TRUE;
+    return 1;
+}
+
+/* Core loop: extracts every entry selected by `map`. `stop_after_first_file` ends the scan
+ * after the first non-directory entry (single-file extraction). */
+static gboolean
+extract_selected_entries(const char *archive_path,
+                         ArchiveMapFn map,
+                         gpointer map_data,
+                         const ExtractOpts *opts,
+                         gboolean stop_after_first_file,
+                         GCancellable *cancellable,
+                         ExtractStats *stats,
+                         GError **error)
+{
+    struct archive *a = open_archive_reader(archive_path, error);
+    if (!a)
+        return FALSE;
+
+    struct archive *ext = archive_write_disk_new();
+    archive_write_disk_set_options(
+        ext,
+        ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM |
+        ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS);
+    archive_write_disk_set_standard_lookup(ext);
+
+    struct archive_entry *entry = NULL;
+    gboolean ok = TRUE;
+
+    while (TRUE) {
+        if (g_cancellable_set_error_if_cancelled(cancellable, error)) {
+            ok = FALSE;
+            break;
+        }
+        int r = archive_read_next_header(a, &entry);
+        if (r == ARCHIVE_EOF)
+            break;
+        if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
+                        "Archive read error: %s", archive_error_string(a));
+            ok = FALSE;
+            break;
+        }
+
+        const char *raw_path = entry_raw_path(entry);
+        g_autofree char *norm = raw_path ? kajo_files_normalize_archive_path(raw_path) : NULL;
+        if (!norm) { /* contains ".." */
+            extract_stats_skip(stats, "entry path escapes the archive (..)");
+            archive_read_data_skip(a);
+            continue;
+        }
+        if (norm[0] == '\0') {
+            archive_read_data_skip(a);
+            continue;
+        }
+
+        g_autofree char *full_dest = map(norm, map_data);
+        if (!full_dest) { /* not selected */
+            archive_read_data_skip(a);
+            continue;
+        }
+
+        /* Hardlink targets are archive-relative: map them like entry paths, or skip the link. */
+        g_autofree char *full_hardlink = NULL;
+        const char *hl = archive_entry_hardlink_utf8(entry);
+        if (!hl || hl[0] == '\0')
+            hl = archive_entry_hardlink(entry);
+        if (hl && hl[0] != '\0') {
+            g_autofree char *hl_norm = kajo_files_normalize_archive_path(hl);
+            if (hl_norm && hl_norm[0] != '\0')
+                full_hardlink = map(hl_norm, map_data);
+            if (!full_hardlink) {
+                extract_stats_skip(stats, "hard link target is outside the extracted entries");
+                archive_read_data_skip(a);
+                continue;
+            }
+        }
+
+        mode_t ftype = archive_entry_filetype(entry);
+        int w = write_current_archive_entry(a, ext, entry, full_dest, full_hardlink,
+                                            opts, stats, cancellable, error);
+        if (w < 0) {
+            ok = FALSE;
+            break;
+        }
+        if (w > 0) {
+            stats->extracted++;
+            if (stop_after_first_file && ftype != AE_IFDIR)
+                break;
+        }
+    }
+
+    archive_read_close(a);
+    archive_read_free(a);
+    archive_write_close(ext);
+    archive_write_free(ext);
+    return ok;
+}
+
+/* ── "Extract all": a single top-level entry goes directly into the parent, otherwise into a
+ *    folder named after the archive ── */
+
+typedef struct {
+    const char *target_root;
+    const char *single_top;   /* NULL when the archive has several top-level entries */
+    gsize       single_top_len;
+} FullExtractMap;
+
+static char *
+full_extract_map(const char *norm, gpointer data)
+{
+    const FullExtractMap *m = data;
+    if (m->single_top) {
+        if (strcmp(norm, m->single_top) == 0)
+            return g_strdup(m->target_root);
+        if (strncmp(norm, m->single_top, m->single_top_len) == 0 && norm[m->single_top_len] == '/')
+            return g_build_filename(m->target_root, norm + m->single_top_len + 1, NULL);
+    }
+    return g_build_filename(m->target_root, norm, NULL);
+}
+
+static void
+remove_partial_tree(const char *path)
+{
+    if (!path)
+        return;
+    g_autoptr(GFile) f = g_file_new_for_path(path);
+    if (g_file_query_exists(f, NULL))
+        delete_file_recursive_sync(f, NULL, NULL);
 }
 
 static gboolean
@@ -356,6 +543,8 @@ extract_archive_sync(GFile *archive_file,
                      GCancellable *cancellable,
                      char **out_folder_name,
                      guint *out_count,
+                     guint *out_skipped,
+                     char **out_skip_reason,
                      GError **error)
 {
     g_autofree char *archive_path = g_file_get_path(archive_file);
@@ -389,121 +578,88 @@ extract_archive_sync(GFile *archive_file,
     if (!scan_archive_top_level(archive_path, cancellable, &n_top, &single_top, error))
         return FALSE;
 
-    g_autoptr(GFile) target_item = NULL;
-    g_autofree char *target_root = NULL;
-    gsize single_top_len = 0;
-
-    if (n_top == 1 && single_top && single_top[0] != '\0') {
-        target_item = resolve_unique_dest_child(effective_parent, single_top);
-        target_root = g_file_get_path(target_item);
-        single_top_len = strlen(single_top);
-    } else {
-        g_autofree char *base = g_path_get_basename(archive_path);
-        g_autofree char *stem = strip_archive_stem(base);
-        target_item = resolve_unique_dest_child(effective_parent, stem);
-        target_root = g_file_get_path(target_item);
-        if (target_root && g_mkdir_with_parents(target_root, 0755) != 0) {
-            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                        "Failed to create extraction folder '%s'", target_root);
-            return FALSE;
-        }
-    }
-
-    if (!target_root) {
+    gboolean single = (n_top == 1 && single_top && single_top[0] != '\0');
+    g_autofree char *name_src = single ? g_strdup(single_top)
+                                       : strip_archive_stem_dup(archive_path);
+    g_autoptr(GFile) target_item = resolve_unique_dest_child(effective_parent, name_src);
+    g_autofree char *target_local = target_item ? g_file_get_path(target_item) : NULL;
+    if (!target_local) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                             "Destination directory must have a local path");
         return FALSE;
     }
+    /* libarchive refuses to write "through" a symlinked ancestor: use the real path. */
+    g_autofree char *target_root = kajo_files_resolve_real_path(target_local);
 
-    struct archive *a = archive_read_new();
-    archive_read_support_filter_all(a);
-    archive_read_support_format_all(a);
-
-    struct archive *ext = archive_write_disk_new();
-    archive_write_disk_set_options(
-        ext,
-        ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS
-    );
-    archive_write_disk_set_standard_lookup(ext);
-
-    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
+    if (!single && g_mkdir_with_parents(target_root, 0755) != 0) {
         g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                    "Archive open failed: %s", archive_error_string(a));
-        archive_read_free(a);
-        archive_write_free(ext);
+                    "Failed to create extraction folder '%s'", target_root);
         return FALSE;
     }
 
-    guint extracted = 0;
-    struct archive_entry *entry = NULL;
+    FullExtractMap map = {
+        .target_root = target_root,
+        .single_top = single ? single_top : NULL,
+        .single_top_len = single ? strlen(single_top) : 0,
+    };
+    ExtractOpts opts = { .regular_only = FALSE, .strip_exec = FALSE };
+    ExtractStats stats = { 0 };
 
-    while (TRUE) {
-        if (g_cancellable_set_error_if_cancelled(cancellable, error)) {
-            archive_read_free(a);
-            archive_write_free(ext);
-            return FALSE;
-        }
-
-        int r = archive_read_next_header(a, &entry);
-        if (r == ARCHIVE_EOF)
-            break;
-        if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
+    gboolean ok = extract_selected_entries(archive_path, full_extract_map, &map, &opts, FALSE,
+                                           cancellable, &stats, error);
+    if (!ok || (stats.extracted == 0 && stats.skipped > 0)) {
+        /* Never leave a half-extracted folder that this call created. */
+        remove_partial_tree(target_root);
+        if (ok) {
             g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                        "Archive read error: %s", archive_error_string(a));
-            archive_read_free(a);
-            archive_write_free(ext);
-            return FALSE;
+                        "Nothing could be extracted (%u entries skipped: %s)",
+                        stats.skipped, stats.first_skip_reason ? stats.first_skip_reason : "unknown");
         }
-
-        const char *raw_path = archive_entry_pathname_utf8(entry);
-        if (!raw_path || raw_path[0] == '\0')
-            raw_path = archive_entry_pathname(entry);
-
-        g_autofree char *norm = normalize_safe_archive_entry_path(raw_path);
-        if (!norm) {
-            archive_read_data_skip(a);
-            continue;
-        }
-
-        g_autofree char *full_dest = NULL;
-        if (single_top_len > 0 && strncmp(norm, single_top, single_top_len) == 0) {
-            if (norm[single_top_len] == '\0')
-                full_dest = g_strdup(target_root);
-            else if (norm[single_top_len] == '/')
-                full_dest = g_build_filename(target_root, norm + single_top_len + 1, NULL);
-        }
-        if (!full_dest)
-            full_dest = g_build_filename(target_root, norm, NULL);
-
-        if (!write_current_archive_entry_to_disk(a, ext, entry, full_dest, cancellable, error)) {
-            archive_read_free(a);
-            archive_write_free(ext);
-            return FALSE;
-        }
-        extracted++;
+        g_free(stats.first_skip_reason);
+        return FALSE;
     }
-
-    archive_read_close(a);
-    archive_read_free(a);
-    archive_write_close(ext);
-    archive_write_free(ext);
 
     if (out_folder_name)
         *out_folder_name = g_file_get_basename(target_item);
     if (out_count)
-        *out_count = extracted;
+        *out_count = stats.extracted;
+    if (out_skipped)
+        *out_skipped = stats.skipped;
+    if (out_skip_reason)
+        *out_skip_reason = g_steal_pointer(&stats.first_skip_reason);
+    g_free(stats.first_skip_reason);
     return TRUE;
+}
+
+/* ── Extract one entry or a subtree to an explicit destination ── */
+
+typedef struct {
+    const char *inner_path;
+    gsize       inner_len;
+    const char *dest_path;
+} SubpathMap;
+
+static char *
+subpath_map(const char *norm, gpointer data)
+{
+    const SubpathMap *m = data;
+    if (strcmp(norm, m->inner_path) == 0)
+        return g_strdup(m->dest_path);
+    if (strncmp(norm, m->inner_path, m->inner_len) == 0 && norm[m->inner_len] == '/')
+        return g_build_filename(m->dest_path, norm + m->inner_len + 1, NULL);
+    return NULL;
 }
 
 static gboolean
 extract_archive_subpath_sync(const char *archive_path,
                              const char *inner_path,
                              GFile *dest_target,
+                             const ExtractOpts *opts,
                              GCancellable *cancellable,
                              GError **error)
 {
-    g_autofree char *dest_path = g_file_get_path(dest_target);
-    if (!dest_path) {
+    g_autofree char *dest_local = g_file_get_path(dest_target);
+    if (!dest_local) {
         g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
                             "Destination must be a local filesystem path");
         return FALSE;
@@ -512,97 +668,32 @@ extract_archive_subpath_sync(const char *archive_path,
     if (!inner_path || inner_path[0] == '\0') {
         g_autoptr(GFile) arch_file = g_file_new_for_path(archive_path);
         g_autoptr(GFile) parent = g_file_get_parent(dest_target);
-        return extract_archive_sync(arch_file, parent, cancellable, NULL, NULL, error);
+        return extract_archive_sync(arch_file, parent, cancellable, NULL, NULL, NULL, NULL, error);
     }
 
-    struct archive *a = archive_read_new();
-    archive_read_support_filter_all(a);
-    archive_read_support_format_all(a);
+    g_autofree char *dest_path = kajo_files_resolve_real_path(dest_local);
+    gboolean existed = g_file_test(dest_path, G_FILE_TEST_EXISTS);
 
-    struct archive *ext = archive_write_disk_new();
-    archive_write_disk_set_options(
-        ext,
-        ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM | ARCHIVE_EXTRACT_SECURE_NODOTDOT | ARCHIVE_EXTRACT_SECURE_SYMLINKS
-    );
-    archive_write_disk_set_standard_lookup(ext);
+    SubpathMap map = { .inner_path = inner_path, .inner_len = strlen(inner_path), .dest_path = dest_path };
+    ExtractStats stats = { 0 };
+    gboolean ok = extract_selected_entries(archive_path, subpath_map, &map, opts,
+                                           opts->regular_only, cancellable, &stats, error);
 
-    if (archive_read_open_filename(a, archive_path, 32768) != ARCHIVE_OK) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                    "Archive open failed: %s", archive_error_string(a));
-        archive_read_free(a);
-        archive_write_free(ext);
-        return FALSE;
+    if (ok && stats.extracted == 0) {
+        if (stats.skipped > 0) {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED,
+                        "Entry '%s' was not extracted: %s", inner_path,
+                        stats.first_skip_reason ? stats.first_skip_reason : "skipped");
+        } else {
+            g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
+                        "Archive entry '%s' not found", inner_path);
+        }
+        ok = FALSE;
     }
-
-    gsize inner_len = strlen(inner_path);
-    guint extracted = 0;
-    struct archive_entry *entry = NULL;
-
-    while (TRUE) {
-        if (g_cancellable_set_error_if_cancelled(cancellable, error)) {
-            archive_read_free(a);
-            archive_write_free(ext);
-            return FALSE;
-        }
-
-        int r = archive_read_next_header(a, &entry);
-        if (r == ARCHIVE_EOF)
-            break;
-        if (r < ARCHIVE_OK && r != ARCHIVE_WARN) {
-            g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                        "Archive read error: %s", archive_error_string(a));
-            archive_read_free(a);
-            archive_write_free(ext);
-            return FALSE;
-        }
-
-        const char *raw_path = archive_entry_pathname_utf8(entry);
-        if (!raw_path || raw_path[0] == '\0')
-            raw_path = archive_entry_pathname(entry);
-
-        g_autofree char *norm = normalize_safe_archive_entry_path(raw_path);
-        if (!norm) {
-            archive_read_data_skip(a);
-            continue;
-        }
-
-        gboolean exact_match = (strcmp(norm, inner_path) == 0);
-        gboolean prefix_match = (!exact_match &&
-                                 strncmp(norm, inner_path, inner_len) == 0 &&
-                                 norm[inner_len] == '/');
-        if (!exact_match && !prefix_match) {
-            archive_read_data_skip(a);
-            continue;
-        }
-
-        mode_t ftype = archive_entry_filetype(entry);
-        gboolean is_dir = (ftype == AE_IFDIR) || (raw_path && g_str_has_suffix(raw_path, "/"));
-        g_autofree char *full_dest = exact_match
-            ? g_strdup(dest_path)
-            : g_build_filename(dest_path, norm + inner_len + 1, NULL);
-
-        if (!write_current_archive_entry_to_disk(a, ext, entry, full_dest, cancellable, error)) {
-            archive_read_free(a);
-            archive_write_free(ext);
-            return FALSE;
-        }
-
-        extracted++;
-        if (exact_match && !is_dir)
-            break;
-    }
-
-    archive_read_close(a);
-    archive_read_free(a);
-    archive_write_close(ext);
-    archive_write_free(ext);
-
-    if (extracted == 0) {
-        g_set_error(error, G_IO_ERROR, G_IO_ERROR_NOT_FOUND,
-                    "Archive entry '%s' not found", inner_path);
-        return FALSE;
-    }
-    return TRUE;
+    if (!ok && !existed)
+        remove_partial_tree(dest_path);
+    g_free(stats.first_skip_reason);
+    return ok;
 }
 
 static gboolean
@@ -704,8 +795,17 @@ copy_file_recursive_sync(GFile *src, GFile *dst, GCancellable *cancellable, GErr
 }
 
 static GFile *
-resolve_unique_dest_child(GFile *dest_dir, const char *base_name)
+resolve_unique_dest_child(GFile *dest_dir, const char *requested_name)
 {
+    /* g_file_get_child() rejects absolute names (and returns NULL): reduce whatever we were
+     * given to a plain component first. */
+    g_autofree char *safe_name = g_path_get_basename(requested_name ? requested_name : "");
+    if (safe_name[0] == '\0' || g_strcmp0(safe_name, "/") == 0 ||
+        g_strcmp0(safe_name, ".") == 0 || g_strcmp0(safe_name, "..") == 0) {
+        g_free(safe_name);
+        safe_name = g_strdup("item");
+    }
+    const char *base_name = safe_name;
     GFile *candidate = g_file_get_child(dest_dir, base_name);
     if (!g_file_query_exists(candidate, NULL))
         return candidate;
@@ -797,6 +897,11 @@ ensure_supported_archive_extension(const char *raw_name)
         return g_strdup("archive.zip");
 
     g_autofree char *base = g_path_get_basename(raw_name);
+    if (base[0] == '\0' || g_strcmp0(base, "/") == 0 || g_strcmp0(base, ".") == 0 ||
+        g_strcmp0(base, "..") == 0) {
+        g_free(base);
+        base = g_strdup("archive");
+    }
     g_autofree char *lower = g_ascii_strdown(base, -1);
     static const char *const valid_exts[] = {
         ".zip", ".tar.zst", ".tzst", ".tar.gz", ".tgz",
@@ -1172,12 +1277,16 @@ batch_op_worker(GTask *task,
                 }
                 g_autofree char *arch_base = (inner_path && inner_path[0] != '\0')
                     ? g_path_get_basename(inner_path)
-                    : strip_archive_stem(arch_path);
+                    : strip_archive_stem_dup(arch_path);
                 g_autoptr(GFile) dst = resolve_unique_dest_child(
                     ctx->dest_dir,
                     (arch_base && arch_base[0] != '\0') ? arch_base : "extracted"
                 );
-                if (!extract_archive_subpath_sync(arch_path, inner_path, dst, cancellable, &error)) {
+                const ExtractOpts copy_opts = { .regular_only = FALSE, .strip_exec = FALSE };
+                if (!dst || !extract_archive_subpath_sync(arch_path, inner_path, dst, &copy_opts, cancellable, &error)) {
+                    if (!error)
+                        g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT,
+                                            "Invalid destination name");
                     g_task_return_error(task, error);
                     return;
                 }
@@ -1234,15 +1343,20 @@ batch_op_worker(GTask *task,
         GFile *archive_file = g_ptr_array_index(ctx->files, 0);
         g_autofree char *folder_name = NULL;
         guint extracted = 0;
-        if (!extract_archive_sync(archive_file, ctx->dest_dir, cancellable, &folder_name, &extracted, &error)) {
+        guint skipped = 0;
+        g_autofree char *skip_reason = NULL;
+        if (!extract_archive_sync(archive_file, ctx->dest_dir, cancellable, &folder_name, &extracted,
+                                  &skipped, &skip_reason, &error)) {
             g_task_return_error(task, error);
             return;
         }
-        g_task_return_pointer(
-            task,
-            g_strdup_printf("Extracted %u entries into '%s'", extracted, folder_name ? folder_name : "folder"),
-            g_free
-        );
+        g_autofree char *done_msg = (skipped > 0)
+            ? g_strdup_printf("Extracted %u entries into '%s' - %u skipped (%s)", extracted,
+                              folder_name ? folder_name : "folder", skipped,
+                              skip_reason ? skip_reason : "unsafe or unsupported entry")
+            : g_strdup_printf("Extracted %u entries into '%s'", extracted,
+                              folder_name ? folder_name : "folder");
+        g_task_return_pointer(task, g_steal_pointer(&done_msg), g_free);
         return;
     }
 
@@ -1477,6 +1591,36 @@ temp_extract_ctx_free(TempExtractCtx *tctx)
     g_free(tctx);
 }
 
+#define PREVIEW_CACHE_MAX_AGE_SEC (7 * 24 * 3600)
+
+/* Removes top-level cache entries (directories/files, never following symlinks) whose mtime is
+ * older than `max_age_sec`. Only direct children of `root` are considered. */
+void
+kajo_files_prune_cache_dir(const char *root, gint64 max_age_sec)
+{
+    if (!root || root[0] == '\0')
+        return;
+    g_autoptr(GDir) dir = g_dir_open(root, 0, NULL);
+    if (!dir)
+        return;
+    gint64 now = g_get_real_time() / G_USEC_PER_SEC;
+    const char *name;
+    while ((name = g_dir_read_name(dir)) != NULL) {
+        g_autofree char *child = g_build_filename(root, name, NULL);
+        GStatBuf st;
+        if (g_lstat(child, &st) != 0)
+            continue;
+        if (now - (gint64)st.st_mtime <= max_age_sec)
+            continue;
+        if (S_ISLNK(st.st_mode) || S_ISREG(st.st_mode)) {
+            g_unlink(child);
+        } else if (S_ISDIR(st.st_mode)) {
+            g_autoptr(GFile) f = g_file_new_for_path(child);
+            delete_file_recursive_sync(f, NULL, NULL);
+        }
+    }
+}
+
 static void
 extract_entry_to_temp_worker(GTask *task,
                              gpointer source_object G_GNUC_UNUSED,
@@ -1505,14 +1649,19 @@ extract_entry_to_temp_worker(GTask *task,
         sz = (gint64)st.st_size;
     }
 
+    g_autofree char *cache_root = g_build_filename(g_get_user_cache_dir(), "kajo", "archive-preview", NULL);
+    static gsize pruned_once = 0;
+    if (g_once_init_enter(&pruned_once)) {
+        kajo_files_prune_cache_dir(cache_root, PREVIEW_CACHE_MAX_AGE_SEC);
+        g_once_init_leave(&pruned_once, 1);
+    }
+
     g_autofree char *hash_input = g_strdup_printf(
         "%s:%" G_GINT64_FORMAT ":%" G_GINT64_FORMAT ":%s",
         arch_path, mtime, sz, inner_path
     );
     g_autofree char *sha = g_compute_checksum_for_string(G_CHECKSUM_SHA256, hash_input, -1);
-    g_autofree char *cache_dir = g_build_filename(
-        g_get_user_cache_dir(), "kajo", "archive-preview", sha, NULL
-    );
+    g_autofree char *cache_dir = g_build_filename(cache_root, sha, NULL);
 
     if (g_mkdir_with_parents(cache_dir, 0700) != 0) {
         g_task_return_new_error(
@@ -1528,10 +1677,27 @@ extract_entry_to_temp_worker(GTask *task,
     );
     g_autoptr(GFile) dest_file = g_file_new_for_path(dest_file_path);
 
-    if (!g_file_test(dest_file_path, G_FILE_TEST_IS_REGULAR)) {
-        if (!extract_archive_subpath_sync(arch_path, inner_path, dest_file, cancellable, &error)) {
-            g_unlink(dest_file_path);
+    GStatBuf cached;
+    if (g_lstat(dest_file_path, &cached) == 0 && S_ISREG(cached.st_mode)) {
+        g_utime(cache_dir, NULL); /* keep recently used entries out of the age-based prune */
+    } else {
+        /* Extract to a private temp name, then rename: a killed process or a concurrent
+         * extraction of the same entry can never leave a truncated file that later looks cached. */
+        g_autofree char *part_path = g_strdup_printf("%s.part-%d-%08x", dest_file_path,
+                                                     (int)getpid(), g_random_int());
+        g_autoptr(GFile) part_file = g_file_new_for_path(part_path);
+        /* Previews never keep links, special files or executable bits. */
+        const ExtractOpts opts = { .regular_only = TRUE, .strip_exec = TRUE };
+        if (!extract_archive_subpath_sync(arch_path, inner_path, part_file, &opts, cancellable, &error)) {
+            g_unlink(part_path);
             g_task_return_error(task, error);
+            return;
+        }
+        if (g_rename(part_path, dest_file_path) != 0) {
+            int errsv = errno;
+            g_unlink(part_path);
+            g_task_return_new_error(task, G_IO_ERROR, g_io_error_from_errno(errsv),
+                                    "Failed to finalize preview file: %s", g_strerror(errsv));
             return;
         }
     }

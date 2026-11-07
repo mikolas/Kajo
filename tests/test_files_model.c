@@ -1,6 +1,14 @@
+#define _DEFAULT_SOURCE
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <gio/gio.h>
+#include <archive.h>
+#include <archive_entry.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+#include <utime.h>
+#include <stdlib.h>
 #include "../src/files/files_model.h"
 #include "../src/files/files_ops.h"
 
@@ -661,9 +669,434 @@ test_archive_virtual_folders_and_ops(void)
     g_main_loop_unref(st.loop);
 }
 
+/* ─── Archive hardening tests (string handling, extraction safety, preview extraction) ─── */
+
+typedef struct {
+    const char *path;      /* raw bytes, deliberately not normalized */
+    int         type;      /* AE_IFREG / AE_IFDIR / AE_IFLNK */
+    const char *data;
+    unsigned    perm;
+    const char *symlink;
+    const char *hardlink;
+} TarSpec;
+
+static void
+write_test_tar(const char *file, const TarSpec *specs, gsize n)
+{
+    struct archive *w = archive_write_new();
+    archive_write_set_format_gnutar(w);
+    g_assert_cmpint(archive_write_open_filename(w, file), ==, ARCHIVE_OK);
+    for (gsize i = 0; i < n; i++) {
+        struct archive_entry *e = archive_entry_new();
+        archive_entry_set_pathname(e, specs[i].path);
+        archive_entry_set_filetype(e, (mode_t)specs[i].type);
+        archive_entry_set_perm(e, specs[i].perm ? specs[i].perm : 0644);
+        archive_entry_set_mtime(e, 1700000000, 0);
+        gsize len = specs[i].data ? strlen(specs[i].data) : 0;
+        archive_entry_set_size(e, specs[i].type == AE_IFREG ? (la_int64_t)len : 0);
+        if (specs[i].symlink)
+            archive_entry_set_symlink(e, specs[i].symlink);
+        if (specs[i].hardlink) {
+            archive_entry_set_hardlink(e, specs[i].hardlink);
+            archive_entry_set_size(e, 0);
+        }
+        g_assert_cmpint(archive_write_header(w, e), >=, ARCHIVE_WARN);
+        if (len > 0 && specs[i].type == AE_IFREG && !specs[i].hardlink)
+            archive_write_data(w, specs[i].data, len);
+        archive_entry_free(e);
+    }
+    archive_write_close(w);
+    archive_write_free(w);
+}
+
+typedef struct {
+    GMainLoop *loop;
+    gboolean   ok;
+    char      *msg;
+    GError    *err;
+} MsgState;
+
+static void
+on_msg_done(gboolean success, const char *message, GError *error, gpointer user_data)
+{
+    MsgState *st = user_data;
+    st->ok = success;
+    g_free(st->msg);
+    st->msg = message ? g_strdup(message) : NULL;
+    g_clear_error(&st->err);
+    if (error)
+        st->err = g_error_copy(error);
+    g_main_loop_quit(st->loop);
+}
+
+static void
+msg_state_clear(MsgState *st)
+{
+    g_free(st->msg);
+    st->msg = NULL;
+    g_clear_error(&st->err);
+}
+
+static void
+test_archive_uri_roundtrip_table(void)
+{
+    /* Every awkward inner name must survive build -> GIO normalization -> parse byte for byte. */
+    const char *names[] = {
+        "plain.txt", "a b", "100%", "50%2F", "a#b", "q?x", "p+q", "a&b;c", "it's",
+        "(x)[y]", "back\\slash", "new\nline", "é日本", "a:b", "a@b", "a=b", "wow!", "dir!",
+        "\xff\xfe.bin", NULL
+    };
+    for (int i = 0; names[i]; i++) {
+        g_autofree char *u = kajo_files_build_archive_uri("/tmp/pack.zip", names[i]);
+        g_assert_nonnull(u);
+        g_autoptr(GFile) f = g_file_new_for_uri(u);
+        g_autofree char *norm_uri = g_file_get_uri(f);
+        g_autofree char *ap = NULL;
+        g_autofree char *ip = NULL;
+        g_assert_true(kajo_files_parse_archive_uri(norm_uri, &ap, &ip));
+        g_assert_cmpstr(ap, ==, "/tmp/pack.zip");
+        g_assert_cmpstr(ip, ==, names[i]);
+    }
+
+    /* Hostile URIs: encoded NUL, encoded slash, parent segments */
+    g_assert_false(kajo_files_parse_archive_uri("archive:///tmp/a%00b.zip!/x", NULL, NULL));
+    g_assert_false(kajo_files_parse_archive_uri("archive:///tmp/a.zip!/a%2Fb", NULL, NULL));
+    g_assert_false(kajo_files_parse_archive_uri("archive:///tmp/a.zip!/x/../../y", NULL, NULL));
+    g_assert_false(kajo_files_parse_archive_uri("archive:///tmp/../etc/a.zip!/x", NULL, NULL));
+
+    /* A directory whose name ends in '!' puts an earlier "!/" in front of the real delimiter
+     * once GIO has decoded %21: the parser must pick the split that names an existing file. */
+    g_autofree char *tmp = g_dir_make_tmp("kajo-bang-XXXXXX", NULL);
+    g_assert_nonnull(tmp);
+    g_autofree char *bang_dir = g_build_filename(tmp, "wow!", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(bang_dir, 0755), ==, 0);
+    g_autofree char *pack = g_build_filename(bang_dir, "pack.zip", NULL);
+    g_assert_true(g_file_set_contents(pack, "x", -1, NULL));
+
+    g_autofree char *u = kajo_files_build_archive_uri(pack, "in/ner.txt");
+    g_autoptr(GFile) f = g_file_new_for_uri(u);
+    g_autofree char *norm_uri = g_file_get_uri(f);
+    g_assert_nonnull(strstr(norm_uri, "wow!/pack.zip!/in/ner.txt"));
+    g_autofree char *ap = NULL;
+    g_autofree char *ip = NULL;
+    g_assert_true(kajo_files_parse_archive_uri(norm_uri, &ap, &ip));
+    g_assert_cmpstr(ap, ==, pack);
+    g_assert_cmpstr(ip, ==, "in/ner.txt");
+
+    g_unlink(pack);
+    g_rmdir(bang_dir);
+    g_rmdir(tmp);
+}
+
+static void
+test_archive_path_normalizer(void)
+{
+    g_autofree char *a = kajo_files_normalize_archive_path("/abs/x.txt");
+    g_assert_cmpstr(a, ==, "abs/x.txt");
+    g_autofree char *b = kajo_files_normalize_archive_path("./a//b/./c/");
+    g_assert_cmpstr(b, ==, "a/b/c");
+    g_autofree char *c = kajo_files_normalize_archive_path("./");
+    g_assert_cmpstr(c, ==, "");
+    g_assert_null(kajo_files_normalize_archive_path("a/../b"));
+    g_assert_null(kajo_files_normalize_archive_path(".."));
+    g_autofree char *d = kajo_files_normalize_archive_path("..foo/.bar");
+    g_assert_cmpstr(d, ==, "..foo/.bar");
+}
+
+static void
+test_real_path_and_prune(void)
+{
+    g_autofree char *tmp = g_dir_make_tmp("kajo-real-XXXXXX", NULL);
+    g_autofree char *real = g_build_filename(tmp, "real", NULL);
+    g_autofree char *link = g_build_filename(tmp, "link", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(real, 0755), ==, 0);
+    g_assert_cmpint(symlink("real", link), ==, 0);
+
+    g_autofree char *via_link = g_build_filename(link, "out", "new", NULL);
+    g_autofree char *resolved = kajo_files_resolve_real_path(via_link);
+    g_autofree char *want_prefix = realpath(tmp, NULL);
+    g_autofree char *want = g_build_filename(want_prefix, "real", "out", "new", NULL);
+    g_assert_cmpstr(resolved, ==, want);
+    g_assert_null(kajo_files_resolve_real_path("relative/path"));
+
+    /* prune: old child dirs go, fresh ones stay, symlinks are never followed */
+    g_autofree char *root = g_build_filename(tmp, "cache", NULL);
+    g_autofree char *old_dir = g_build_filename(root, "old", NULL);
+    g_autofree char *new_dir = g_build_filename(root, "new", NULL);
+    g_autofree char *victim = g_build_filename(tmp, "victim.txt", NULL);
+    g_autofree char *old_link = g_build_filename(root, "oldlink", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(old_dir, 0755), ==, 0);
+    g_assert_cmpint(g_mkdir_with_parents(new_dir, 0755), ==, 0);
+    g_autofree char *old_file = g_build_filename(old_dir, "f.txt", NULL);
+    g_assert_true(g_file_set_contents(old_file, "x", -1, NULL));
+    g_assert_true(g_file_set_contents(victim, "keep", -1, NULL));
+    g_assert_cmpint(symlink(victim, old_link), ==, 0);
+    struct utimbuf ut = { time(NULL) - 10 * 24 * 3600, time(NULL) - 10 * 24 * 3600 };
+    g_assert_cmpint(utime(old_dir, &ut), ==, 0);
+
+    kajo_files_prune_cache_dir(root, 7 * 24 * 3600);
+    g_assert_false(g_file_test(old_dir, G_FILE_TEST_EXISTS));
+    g_assert_true(g_file_test(new_dir, G_FILE_TEST_IS_DIR));
+    g_assert_true(g_file_test(victim, G_FILE_TEST_EXISTS)); /* the link target survives */
+
+    g_unlink(old_link);
+    g_unlink(victim);
+    g_rmdir(new_dir);
+    g_rmdir(root);
+    g_unlink(link);
+    g_rmdir(real);
+    g_rmdir(tmp);
+}
+
+static void
+test_archive_extraction_hardening(void)
+{
+    g_autofree char *tmp = g_dir_make_tmp("kajo-hard-XXXXXX", NULL);
+    g_autofree char *real = g_build_filename(tmp, "real", NULL);
+    g_autofree char *link = g_build_filename(tmp, "link", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(real, 0755), ==, 0);
+    g_assert_cmpint(symlink("real", link), ==, 0);
+
+    g_autofree char *tar = g_build_filename(tmp, "pkg.tar", NULL);
+    const TarSpec specs[] = {
+        { "pkg/", AE_IFDIR, NULL, 0777, NULL, NULL },
+        { "pkg/a.txt", AE_IFREG, "abc", 0777, NULL, NULL },
+        { "pkg/hl", AE_IFREG, NULL, 0644, NULL, "pkg/a.txt" },
+        { "pkg/ln", AE_IFLNK, NULL, 0777, "a.txt", NULL },
+        { "/pkg/abs.txt", AE_IFREG, "absolute", 0644, NULL, NULL },
+        { "pkg/../evil.txt", AE_IFREG, "evil", 0644, NULL, NULL },
+        { "pkg/sub/deep.txt", AE_IFREG, "deep", 0644, NULL, NULL },
+        { "pkg/orphan", AE_IFREG, NULL, 0644, NULL, "elsewhere/missing" },
+    };
+    write_test_tar(tar, specs, G_N_ELEMENTS(specs));
+
+    /* Destination reached through a symlinked parent (like a symlinked /home or ~/Downloads). */
+    g_autofree char *dest_via_link = g_build_filename(link, "out", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(dest_via_link, 0755), ==, 0);
+    g_autoptr(GFile) arch = g_file_new_for_path(tar);
+    g_autoptr(GFile) dest = g_file_new_for_path(dest_via_link);
+
+    MsgState st = { .loop = g_main_loop_new(NULL, FALSE) };
+    kajo_files_op_extract_archive_async(arch, dest, NULL, on_msg_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_no_error(st.err);
+    g_assert_true(st.ok);
+    /* two entries could not be extracted: the ".." one and the hardlink to an unknown target */
+    g_assert_nonnull(strstr(st.msg, "2 skipped"));
+
+    g_autofree char *out = g_build_filename(real, "out", "pkg", NULL);
+    g_autofree char *a_txt = g_build_filename(out, "a.txt", NULL);
+    g_autofree char *hl = g_build_filename(out, "hl", NULL);
+    g_autofree char *ln = g_build_filename(out, "ln", NULL);
+    g_autofree char *abs_txt = g_build_filename(out, "abs.txt", NULL);
+    g_autofree char *deep = g_build_filename(out, "sub", "deep.txt", NULL);
+    g_autofree char *evil_in = g_build_filename(real, "out", "evil.txt", NULL);
+    g_autofree char *evil_up = g_build_filename(real, "evil.txt", NULL);
+    g_autofree char *orphan = g_build_filename(out, "orphan", NULL);
+
+    g_autofree char *content = NULL;
+    g_assert_true(g_file_get_contents(a_txt, &content, NULL, NULL));
+    g_assert_cmpstr(content, ==, "abc");
+    g_free(content);
+    content = NULL;
+    g_assert_true(g_file_get_contents(hl, &content, NULL, NULL));   /* hardlink resolved inside the target */
+    g_assert_cmpstr(content, ==, "abc");
+    g_assert_true(g_file_test(ln, G_FILE_TEST_IS_SYMLINK));
+    g_assert_true(g_file_test(abs_txt, G_FILE_TEST_IS_REGULAR));    /* absolute name stays inside */
+    g_assert_true(g_file_test(deep, G_FILE_TEST_IS_REGULAR));
+    g_assert_false(g_file_test(evil_in, G_FILE_TEST_EXISTS));
+    g_assert_false(g_file_test(evil_up, G_FILE_TEST_EXISTS));
+    g_assert_false(g_file_test(orphan, G_FILE_TEST_EXISTS));        /* not turned into an empty file */
+
+    /* archive modes are sanitized: 0777 in the archive must not become world/group writable */
+    GStatBuf sb;
+    g_assert_cmpint(g_stat(a_txt, &sb), ==, 0);
+    g_assert_cmpuint(sb.st_mode & 0022, ==, 0);
+    g_assert_cmpuint(sb.st_mode & 0700, ==, 0700);
+
+    msg_state_clear(&st);
+
+    /* An archive where nothing can be extracted fails and leaves no folder behind. */
+    g_autofree char *bad_tar = g_build_filename(tmp, "bad.tar", NULL);
+    const TarSpec bad[] = { { "../x.txt", AE_IFREG, "x", 0644, NULL, NULL } };
+    write_test_tar(bad_tar, bad, 1);
+    g_autoptr(GFile) bad_arch = g_file_new_for_path(bad_tar);
+    g_autoptr(GFile) tmp_dir_file = g_file_new_for_path(tmp);
+    kajo_files_op_extract_archive_async(bad_arch, tmp_dir_file, NULL, on_msg_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_false(st.ok);
+    g_assert_nonnull(st.err);
+    g_autofree char *bad_dir = g_build_filename(tmp, "bad", NULL);
+    g_assert_false(g_file_test(bad_dir, G_FILE_TEST_EXISTS));
+    msg_state_clear(&st);
+
+    g_main_loop_unref(st.loop);
+
+    g_autoptr(GFile) cleanup = g_file_new_for_path(tmp);
+    GPtrArray *del = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(del, g_object_ref(cleanup));
+    AsyncTestState ast = { .loop = g_main_loop_new(NULL, FALSE) };
+    kajo_files_op_delete_permanent_async(del, NULL, on_test_op_done, &ast);
+    g_main_loop_run(ast.loop);
+    g_main_loop_unref(ast.loop);
+    g_ptr_array_unref(del);
+}
+
+static void
+test_archive_listing_and_preview_safety(void)
+{
+    g_autofree char *tmp = g_dir_make_tmp("kajo-prev-XXXXXX", NULL);
+    g_autofree char *tar = g_build_filename(tmp, "mix.tar", NULL);
+    const TarSpec specs[] = {
+        { "a", AE_IFREG, "i am a file named a", 0644, NULL, NULL },
+        { "a/b.txt", AE_IFREG, "inside", 0644, NULL, NULL },
+        { "run.sh", AE_IFREG, "#!/bin/sh\necho hi\n", 0755, NULL, NULL },
+        { "link", AE_IFLNK, NULL, 0777, "/etc/hostname", NULL },
+        { "\xff\xfe.txt", AE_IFREG, "bytes", 0644, NULL, NULL },
+        { "/abs/x.txt", AE_IFREG, "abs", 0644, NULL, NULL },
+    };
+    write_test_tar(tar, specs, G_N_ELEMENTS(specs));
+
+    g_autofree char *root_uri = kajo_files_build_archive_uri(tar, "");
+    g_autoptr(GFile) root = g_file_new_for_uri(root_uri);
+    AsyncTestState st = { .loop = g_main_loop_new(NULL, FALSE) };
+    kajo_files_enumerate_async(root, NULL, on_test_enum_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_nonnull(st.items);
+
+    /* "a" as a file and "a/b.txt" as a path: a single directory entry named "a" */
+    guint a_count = 0;
+    for (guint i = 0; i < st.items->len; i++) {
+        KajoFileItem *it = g_ptr_array_index(st.items, i);
+        if (g_strcmp0(kajo_file_item_get_name(it), "a") == 0) {
+            a_count++;
+            g_assert_true(kajo_file_item_is_dir(it));
+        }
+        g_assert_true(g_utf8_validate(kajo_file_item_get_display_name(it), -1, NULL));
+        const char *sym = kajo_file_item_get_symlink_target(it);
+        if (sym)
+            g_assert_true(g_utf8_validate(sym, -1, NULL));
+    }
+    g_assert_cmpuint(a_count, ==, 1);
+    KajoFileItem *abs_dir = find_item_by_name(st.items, "abs"); /* absolute names are listed... */
+    g_assert_nonnull(abs_dir);
+    KajoFileItem *odd = NULL;
+    for (guint i = 0; i < st.items->len; i++) {
+        KajoFileItem *it = g_ptr_array_index(st.items, i);
+        if (g_str_has_suffix(kajo_file_item_get_name(it), ".txt") &&
+            !g_utf8_validate(kajo_file_item_get_name(it), -1, NULL))
+            odd = it;
+    }
+    g_assert_nonnull(odd); /* the non-UTF-8 name is preserved raw, only the display name is repaired */
+
+    /* ...and extractable, because listing and extraction share one normalizer */
+    TempExtractTestState ts = { .loop = g_main_loop_new(NULL, FALSE) };
+    g_autofree char *abs_uri = kajo_files_build_archive_uri(tar, "abs/x.txt");
+    kajo_files_op_extract_entry_to_temp_async(abs_uri, NULL, on_test_temp_extract_done, &ts);
+    g_main_loop_run(ts.loop);
+    g_assert_no_error(ts.error);
+    g_assert_nonnull(ts.temp_file);
+    g_autofree char *abs_tmp_path = g_file_get_path(ts.temp_file);
+    g_autofree char *abs_content = NULL;
+    g_assert_true(g_file_get_contents(abs_tmp_path, &abs_content, NULL, NULL));
+    g_assert_cmpstr(abs_content, ==, "abs");
+    g_clear_object(&ts.temp_file);
+
+    /* byte-exact round trip for the non-UTF-8 entry */
+    g_autofree char *odd_uri = g_strdup(kajo_file_item_get_uri(odd));
+    kajo_files_op_extract_entry_to_temp_async(odd_uri, NULL, on_test_temp_extract_done, &ts);
+    g_main_loop_run(ts.loop);
+    g_assert_no_error(ts.error);
+    g_assert_nonnull(ts.temp_file);
+    g_clear_object(&ts.temp_file);
+
+    /* previews never keep executable bits */
+    g_autofree char *sh_uri = kajo_files_build_archive_uri(tar, "run.sh");
+    kajo_files_op_extract_entry_to_temp_async(sh_uri, NULL, on_test_temp_extract_done, &ts);
+    g_main_loop_run(ts.loop);
+    g_assert_no_error(ts.error);
+    g_autofree char *sh_path = g_file_get_path(ts.temp_file);
+    GStatBuf sb;
+    g_assert_cmpint(g_stat(sh_path, &sb), ==, 0);
+    g_assert_cmpuint(sb.st_mode & 0111, ==, 0);
+    g_assert_cmpuint(sb.st_mode & 0600, ==, 0600);
+    g_clear_object(&ts.temp_file);
+
+    /* previews refuse symlink entries instead of following them */
+    g_autofree char *ln_uri = kajo_files_build_archive_uri(tar, "link");
+    kajo_files_op_extract_entry_to_temp_async(ln_uri, NULL, on_test_temp_extract_done, &ts);
+    g_main_loop_run(ts.loop);
+    g_assert_nonnull(ts.error);
+    g_assert_null(ts.temp_file);
+    g_clear_error(&ts.error);
+
+    g_main_loop_unref(ts.loop);
+    g_ptr_array_unref(st.items);
+    g_main_loop_unref(st.loop);
+
+    g_unlink(tar);
+    g_rmdir(tmp);
+}
+
+static void
+test_archive_root_copy_and_odd_archive_names(void)
+{
+    g_autofree char *tmp = g_dir_make_tmp("kajo-root-XXXXXX", NULL);
+    g_autofree char *tar = g_build_filename(tmp, "multi.tar", NULL);
+    const TarSpec specs[] = {
+        { "one.txt", AE_IFREG, "1", 0644, NULL, NULL },
+        { "two.txt", AE_IFREG, "2", 0644, NULL, NULL },
+    };
+    write_test_tar(tar, specs, G_N_ELEMENTS(specs));
+
+    /* Copying the archive root used to feed a full path to the name helper. */
+    g_autofree char *dest_path = g_build_filename(tmp, "dest", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(dest_path, 0755), ==, 0);
+    g_autoptr(GFile) dest = g_file_new_for_path(dest_path);
+    g_autofree char *root_uri = kajo_files_build_archive_uri(tar, "");
+    g_autoptr(GFile) root = g_file_new_for_uri(root_uri);
+    g_autoptr(GPtrArray) src = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(src, g_object_ref(root));
+
+    MsgState st = { .loop = g_main_loop_new(NULL, FALSE) };
+    kajo_files_op_transfer_async(src, dest, FALSE, NULL, on_msg_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_no_error(st.err);
+    g_assert_true(st.ok);
+    g_autofree char *copied = g_build_filename(dest_path, "multi", "one.txt", NULL);
+    g_assert_true(g_file_test(copied, G_FILE_TEST_IS_REGULAR));
+    msg_state_clear(&st);
+
+    /* Archive names that are not a plain component never escape or crash. */
+    g_autofree char *src_file_path = g_build_filename(tmp, "payload.txt", NULL);
+    g_assert_true(g_file_set_contents(src_file_path, "payload", -1, NULL));
+    g_autoptr(GFile) src_file = g_file_new_for_path(src_file_path);
+    g_autoptr(GPtrArray) comp_src = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(comp_src, g_object_ref(src_file));
+    kajo_files_op_compress_async(comp_src, dest, "/", NULL, on_msg_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_no_error(st.err);
+    g_assert_true(st.ok);
+    g_autofree char *made = g_build_filename(dest_path, "archive.zip", NULL);
+    g_assert_true(g_file_test(made, G_FILE_TEST_IS_REGULAR));
+    msg_state_clear(&st);
+    g_main_loop_unref(st.loop);
+
+    g_autoptr(GFile) cleanup = g_file_new_for_path(tmp);
+    GPtrArray *del = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(del, g_object_ref(cleanup));
+    AsyncTestState ast = { .loop = g_main_loop_new(NULL, FALSE) };
+    kajo_files_op_delete_permanent_async(del, NULL, on_test_op_done, &ast);
+    g_main_loop_run(ast.loop);
+    g_main_loop_unref(ast.loop);
+    g_ptr_array_unref(del);
+}
+
 int
 main(int argc, char *argv[])
 {
+    g_autofree char *cache_tmp = g_dir_make_tmp("kajo-test-cache-XXXXXX", NULL);
+    g_setenv("XDG_CACHE_HOME", cache_tmp, TRUE);
     g_test_init(&argc, &argv, NULL);
 
     g_test_add_func("/files/format-size", test_format_size);
@@ -675,6 +1108,12 @@ main(int argc, char *argv[])
     g_test_add_func("/files/clipboard-and-exec-toggle", test_clipboard_parsing_and_exec_toggle);
     g_test_add_func("/files/clipboard-cap-no-truncation", test_clipboard_buffer_cap_never_truncates);
     g_test_add_func("/files/rebuild-selection-policy", test_rebuild_selection_policy);
+    g_test_add_func("/files/archive-uri-roundtrip-table", test_archive_uri_roundtrip_table);
+    g_test_add_func("/files/archive-path-normalizer", test_archive_path_normalizer);
+    g_test_add_func("/files/real-path-and-prune", test_real_path_and_prune);
+    g_test_add_func("/files/archive-extraction-hardening", test_archive_extraction_hardening);
+    g_test_add_func("/files/archive-listing-and-preview-safety", test_archive_listing_and_preview_safety);
+    g_test_add_func("/files/archive-root-copy-and-odd-names", test_archive_root_copy_and_odd_archive_names);
     g_test_add_func("/files/archive-virtual-folders-and-ops", test_archive_virtual_folders_and_ops);
 
     return g_test_run();

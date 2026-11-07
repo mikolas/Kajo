@@ -149,6 +149,7 @@ struct _KajoFilesWindow {
     GListStore *visible_store; /* Recycling view model backing GridView & ListView */
     GtkMultiSelection *selection_model;
     gboolean suppress_selection_sync;
+    GHashTable *nested_archive_origin; /* preview-cache archive path -> outer archive:// folder URI */
     gboolean autoselect_pending; /* select first entry on the next rebuild (new folder) */
     KajoFileItem *selected_item;
 

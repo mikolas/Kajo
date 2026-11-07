@@ -338,6 +338,27 @@ files_window_is_read_only_archive(const KajoFilesWindow *self)
     return kajo_files_parse_archive_uri(uri, NULL, NULL);
 }
 
+/* A nested archive was extracted into the preview cache; walk the recorded origins back to the
+ * archive that really lives in the user's file system and return its parent folder. */
+static GFile *
+files_window_real_host_parent(KajoFilesWindow *self, const char *arch_path)
+{
+    g_autofree char *cur = g_strdup(arch_path);
+    for (int depth = 0; depth < 16 && cur; depth++) {
+        const char *origin_uri = self->nested_archive_origin
+            ? g_hash_table_lookup(self->nested_archive_origin, cur) : NULL;
+        if (!origin_uri)
+            break;
+        g_autofree char *outer_arch = NULL;
+        if (!kajo_files_parse_archive_uri(origin_uri, &outer_arch, NULL))
+            break;
+        g_free(cur);
+        cur = g_steal_pointer(&outer_arch);
+    }
+    g_autoptr(GFile) f = cur ? g_file_new_for_path(cur) : NULL;
+    return f ? g_file_get_parent(f) : NULL;
+}
+
 static void
 on_archive_extract_all_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
@@ -351,7 +372,7 @@ on_archive_extract_all_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         return;
 
     g_autoptr(GFile) arch_file = g_file_new_for_path(arch_path);
-    g_autoptr(GFile) host_parent = arch_file ? g_file_get_parent(arch_file) : NULL;
+    g_autoptr(GFile) host_parent = files_window_real_host_parent(self, arch_path);
     if (!arch_file || !host_parent)
         return;
 
@@ -376,6 +397,15 @@ on_archive_exit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     g_autofree char *arch_path = NULL;
     if (!uri || !kajo_files_parse_archive_uri(uri, &arch_path, NULL))
         return;
+
+    /* Exit from a nested archive returns to the folder of the outer archive it was opened from. */
+    const char *origin_uri = self->nested_archive_origin
+        ? g_hash_table_lookup(self->nested_archive_origin, arch_path) : NULL;
+    if (origin_uri) {
+        g_autofree char *origin_copy = g_strdup(origin_uri);
+        kajo_files_window_navigate_uri(self, origin_copy);
+        return;
+    }
 
     g_autoptr(GFile) arch_file = g_file_new_for_path(arch_path);
     g_autoptr(GFile) host_parent = arch_file ? g_file_get_parent(arch_file) : NULL;
@@ -1521,13 +1551,19 @@ on_selection_model_changed(GtkSelectionModel *sel,
     update_status_and_capacity_bar(self);
 }
 
+typedef struct {
+    GWeakRef ref;
+    char    *outer_dir_uri; /* archive:// folder the activated entry was listed in */
+} ArchiveOpenCtx;
+
 static void
 on_archive_entry_open_ready(GFile *temp_file, GError *error, gpointer user_data)
 {
-    GWeakRef *ref = user_data;
-    KajoFilesWindow *self = g_weak_ref_get(ref);
-    g_weak_ref_clear(ref);
-    g_free(ref);
+    ArchiveOpenCtx *octx = user_data;
+    KajoFilesWindow *self = g_weak_ref_get(&octx->ref);
+    g_autofree char *outer_dir_uri = g_steal_pointer(&octx->outer_dir_uri);
+    g_weak_ref_clear(&octx->ref);
+    g_free(octx);
     if (!self)
         return;
 
@@ -1556,6 +1592,8 @@ on_archive_entry_open_ready(GFile *temp_file, GError *error, gpointer user_data)
     if (temp_path && kajo_files_is_archive(ctype, base)) {
         g_autofree char *nested_arch_uri = kajo_files_build_archive_uri(temp_path, "");
         if (nested_arch_uri) {
+            if (self->nested_archive_origin && outer_dir_uri)
+                g_hash_table_insert(self->nested_archive_origin, g_strdup(temp_path), g_strdup(outer_dir_uri));
             kajo_files_window_navigate_uri(self, nested_arch_uri);
             g_object_unref(self);
             return;
@@ -1600,11 +1638,14 @@ files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item)
     /* If activating a file entry inside archive://, extract on-demand to temp and open */
     if (item_uri && kajo_files_parse_archive_uri(item_uri, NULL, NULL)) {
         files_window_begin_op(self, "Extracting archive entry...");
+        ArchiveOpenCtx *octx = g_new0(ArchiveOpenCtx, 1);
+        g_weak_ref_init(&octx->ref, self);
+        octx->outer_dir_uri = self->current_dir ? g_file_get_uri(self->current_dir) : NULL;
         kajo_files_op_extract_entry_to_temp_async(
             item_uri,
             self->ops_cancel,
             on_archive_entry_open_ready,
-            files_window_op_weak_new(self)
+            octx
         );
         return;
     }
@@ -2349,6 +2390,7 @@ kajo_files_window_dispose(GObject *object)
     }
 
     g_clear_pointer(&self->bc_pop_target_uri, g_free);
+    g_clear_pointer(&self->nested_archive_origin, g_hash_table_destroy);
     g_clear_pointer(&self->breadcrumb_popover, gtk_widget_unparent);
     g_clear_pointer(&self->context_popover, gtk_widget_unparent);
     g_clear_pointer(&self->sidebar, kajo_files_sidebar_free);
@@ -2448,6 +2490,7 @@ kajo_files_window_init(KajoFilesWindow *self)
     gtk_widget_init_template(GTK_WIDGET(self));
 
     self->history = g_ptr_array_new_with_free_func(g_free);
+    self->nested_archive_origin = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
     self->history_pos = -1;
     self->ops_cancel = g_cancellable_new();
     self->view_mode = KAJO_VIEW_GRID;
