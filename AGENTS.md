@@ -89,6 +89,8 @@ Every standalone Kajo application (`kajo-settings`, `kajo-files`, future `kajo-p
   1. `g_app_info_launch_default_for_uri(uri, NULL, &err)`
   2. Fallback: `g_app_info_get_default_for_type(content_type, FALSE)` + `g_app_info_launch()`
   3. Fallback: `g_spawn_async()` with `xdg-open`.
+- **D-Bus Calls That Create System State (UDisks2 `LoopSetup`, `Mount`, `Loop.Delete`)**:
+  Always pass a reply callback: `g_dbus_connection_call(..., NULL /*callback*/, ...)` is sent as `NO_REPLY_EXPECTED`, and udisksd silently ignored such a polkit-checked `Loop.Delete` (leaking `/dev/loopN`). Never cancel these calls in flight (GIO drops the reply naming the new device/mount); honour cancellation after they return and clean up what was created.
 - **URI-First File Operations**:
   Never assume `g_file_get_path(file)` is non-NULL. Virtual GVFS locations (`trash:///`, `network:///`, `recent:///`, unmounted `smb://`) have no local POSIX path; always operate on `GFile *` and check `G_FILE_ATTRIBUTE_STANDARD_TARGET_URI` when navigating virtual folders.
 

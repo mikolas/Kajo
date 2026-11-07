@@ -151,9 +151,11 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Rubber-band and `Ctrl`/`Shift` multi-selection (`GtkMultiSelection`) preserves the full selected URI set across live directory refreshes.
   - Right-clicking when `> 1` items are selected opens the **Batch Context Menu** (`N ITEMS SELECTED` title, `BATCH` badge) exposing only true batch actions (`Compress to Archive...`, `Copy`, `Cut`, `Copy Path / URI`, `Restore from Trash`, `Move to Trash`, `Delete Permanently`).
   - The right-hand Inspector pane (`.files-inspector-pane`) includes a **`☑ EXECUTABLE (+X)`** toggle button (`chmod +x/-x`) for local regular files, while the bottom `.files-status-bar` reveals a danger **`[ ✕ CANCEL ]`** button (`Esc`) whenever an async file operation is in flight.
+- **Open With Built-in Rows (`.files-menu-row`):**
+  - For disk images (`.iso`, `.img`, `.raw`) the Open With sub-view starts with **`💿 Mount Disk Image`** (UDisks2 loop-mount, then navigates into the mount) above the application list. It is not an application, so "Set as Default" does not apply to it. Plain **Open** browses an ISO as `archive://` and mounts `.img` / `.raw`.
 - **Contextual Inline Reveal Bars (`GtkRevealer`):**
   - **New Folder / New File / Rename / Compress / Delete Confirm Bar (`.files-prompt-bar`):** `#181818` surface with `border-left: 3px solid @metro-accent`, inline `GtkEntry`, and `[ CREATE ]` / `[ RENAME ]` / `[ COMPRESS ]` / `[ DELETE PERMANENTLY ]` / `[ CANCEL ]` buttons.
-  - **Virtual Read-Only Archive Banner (`.files-prompt-bar`):** Shown when browsing inside `archive://<path>!/<subpath>`, displaying `📦 ARCHIVE VIEW (READ-ONLY) — <archive>!/<subpath>  •  N ITEM(S)` alongside `[ 📦 EXTRACT ALL ]` and `[ ↩ EXIT ]` buttons.
+  - **Virtual Read-Only Archive Banner (`.files-prompt-bar`):** Shown when browsing inside `archive://<path>!/<subpath>`, displaying `📦 ARCHIVE VIEW (READ-ONLY) — <archive> / <subpath>` alongside `[ 📦 EXTRACT ALL ]` and `[ ↩ EXIT ]` buttons.
   - **LUKS / SMB Authentication Bar (`.files-auth-bar`):** `#181818` surface with `border-left: 3px solid #ff8c00`, passphrase `GtkPasswordEntry` (or username/domain/password fields for `smb://`), and `[ 🔓 UNLOCK ]` action.
   - **Trash Action Banner (`.files-trash-bar`):** `#1f1214` surface with `1px solid #4a1c20` and `border-left: 3px solid #e81123`, offering `[ ↺ RESTORE ALL ]` and destructive `[ 🗑 EMPTY TRASH ]`.
 

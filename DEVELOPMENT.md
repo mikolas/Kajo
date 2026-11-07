@@ -32,8 +32,8 @@ src/
 │   ├── files_window_private.h      Window struct + helpers shared by the files_window_* modules (internal)
 │   ├── files_window_ctxmenu.c      Context menu popover + Open With sub-view
 │   ├── files_window_keys.c         Keyboard shortcut controller (Space Quick Look, navigation, clipboard)
-│   ├── files_model.h/c             KajoFileItem GObject, async GVFS enumerator, sort & filter
-│   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir & clipboard
+│   ├── files_model.h/c             KajoFileItem GObject, async GVFS + archive:// enumerator, sort & filter, breadcrumb chain
+│   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir, archive extract/compress & clipboard
 │   ├── files_diskimage.h/c         UDisks2 loop-mount of ISO / raw disk images (LoopSetup -> Mount -> autoclear)
 │   ├── files_sidebar.h/c           Places, Trash, GVolumeMonitor drives & inline GVFS/LUKS auth
 │   └── files_quicklook.h/c         Inspector drawer & Space Quick Look modal (img/media/PDF/archive/code)
@@ -195,7 +195,7 @@ meson install -C builddir
 ### Automated Test Suites (`meson test -C builddir`)
 | Suite Name | Binary | Coverage |
 | :--- | :--- | :--- |
-| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` / `touch_gestures` fields, defaults fallback. |
+| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` / `touch_gestures` / flat `files_*` fields, unknown-key preservation, defaults fallback. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
@@ -204,7 +204,7 @@ meson install -C builddir
 | `widget-registry` | `test-registry` | Verifies all 22 registered `ShellWidgetClass` definitions have valid `.id` and `.name` fields. |
 | `osk-xkb` | `test-osk-xkb` | XKB keymap generation (`us`, `fi`, etc.) and keysym/keycode resolution for `ShellOSK`. |
 | `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch. |
-| `files-model` | `test-files-model` | `KajoFileItem` size/permission formatting, directory-first sorting, filtering, and async `mkdir`/`rename`/`delete` operations. |
+| `files-model` | `test-files-model` | `KajoFileItem` formatting, sorting and filtering, async file operations (non-clobbering move, cancellation), breadcrumb chain and selection restore, clipboard parsing and 4 MB cap, executable toggle, `archive://` URI round-trip and path normalizer, archive listing/extraction/compression hardening (symlinked destination, hardlinks, `..`/absolute entries, modes, preview cache), disk-image classification and UDisks2 reply helpers. |
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |

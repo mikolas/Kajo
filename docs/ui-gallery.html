@@ -3138,7 +3138,7 @@
 
           <!-- 4. Virtual Read-Only Archive Banner (archive://) -->
           <div class="files-prompt-bar">
-            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent); flex:1;">📦 ARCHIVE VIEW (READ-ONLY) — release.tar.zst!/src  •  12 ITEM(S)</span>
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent); flex:1;">📦 ARCHIVE VIEW (READ-ONLY) — release.tar.zst / src</span>
             <div style="display:flex; gap:6px;">
               <button class="kajo-btn files-accent-btn files-nav-btn">📦 EXTRACT ALL</button>
               <button class="kajo-btn files-nav-btn">↩ EXIT</button>
@@ -3236,7 +3236,7 @@
               <div class="shell-popover-body" style="padding:6px; gap:2px;">
                 <div class="files-ctx-item"><span>▶ Open</span><span class="files-ctx-shortcut">Enter</span></div>
                 <div class="files-ctx-item" id="openWithTrigger" style="color:var(--metro-telemetry); font-weight:600;">
-                  <span>↗ Open With / Set Default...</span><span class="files-ctx-shortcut">▸</span>
+                  <span>⚙ Open With...</span><span class="files-ctx-shortcut">▸</span>
                 </div>
                 <div class="files-ctx-item"><span>👁 Quick Look Preview</span><span class="files-ctx-shortcut">Space</span></div>
                 <div class="files-ctx-item"><span>📦 Compress to Archive...</span><span class="files-ctx-shortcut">Ctrl+Shift+A</span></div>
@@ -3277,6 +3277,27 @@
                 </label>
               </div>
             </div>
+          </div>
+
+          <!-- 2b. Open With for a disk image: built-in Mount row above the applications -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">OPEN WITH — DISK IMAGE (.iso / .img / .raw)</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-menu-row">.files-menu-row</span>
+              </div>
+            </div>
+            <div class="kajo-popover" style="max-width:320px;">
+              <div class="shell-popover-header">
+                <button class="kajo-btn files-nav-btn" style="min-height:22px; padding:1px 7px;">← BACK</button>
+                <span class="shell-popover-title">OPEN WITH</span>
+              </div>
+              <div class="shell-popover-body" style="gap:6px;">
+                <div class="files-menu-row"><span>💿 Mount Disk Image</span></div>
+                <div class="files-menu-row"><span>🗜 Archive Manager</span><span class="files-ctx-shortcut">org.gnome.FileRoller</span></div>
+              </div>
+            </div>
+            <p style="font-size:11px; color:#999; margin-top:8px;">Use: shown only for disk images. "Mount Disk Image" loop-mounts read-only through UDisks2 and opens the mounted folder; it ignores "Set as Default". Plain Open browses an ISO as <code>archive://</code> (no password) and mounts <code>.img</code> / <code>.raw</code>. Extracting an ISO uses the regular "Extract Here".</p>
           </div>
 
           <!-- 3. Sort & Filter Popover (.files-sort-popover) -->

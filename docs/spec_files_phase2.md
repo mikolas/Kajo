@@ -112,6 +112,7 @@ To fix both tarbombs and `foo/foo/` double-nesting:
 Add `kajo_files_is_disk_image(const char *content_type, const char *filename)` in `src/files/files_model.c`:
 - Matches MIME types `application/x-iso9660-image`, `application/x-cd-image`, `application/x-raw-disk-image`, `application/x-apple-diskimage` and extensions `.iso`, `.img`, `.raw`.
 - Regular archives (`.zip`, `.tar.*`, `.7z`, `.rar`, `.cpio`, `.deb`, `.rpm`) remain classified by `kajo_files_is_archive()`.
+- *As implemented:* also matches `application/vnd.efi.iso` (the name current shared-mime-info gives ISOs); the extensions only count when the type is unknown or `application/octet-stream` (so camera RAW `.raw` photos stay images); `application/x-apple-diskimage` / `.dmg` are **not** included because UDisks2 cannot loop-mount them. Extension matching is case-insensitive.
 
 ### 3.2 UDisks2 `LoopSetup` + Mount Flow
 When the user double-clicks or selects `"💿 Mount Disk Image"` on a disk image:
