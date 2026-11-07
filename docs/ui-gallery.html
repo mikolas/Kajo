@@ -1991,6 +1991,13 @@
     .ide-mode-pill.match  { background-color: #b4009e; }
     .ide-mode-pill.leader { background-color: var(--metro-telemetry); color: #000000; }
 
+    /* Right-click code menu (popover.menu in kajo-ide) */
+    .ide-code-menu { background:#141414; border:1px solid var(--metro-accent); width:260px; font-family:'Fira Code',monospace; font-size:12px; padding:2px 0; }
+    .ide-code-menu .item { display:flex; justify-content:space-between; padding:4px 10px; color:#e0e0e0; }
+    .ide-code-menu .item:hover { background:var(--metro-accent); color:#fff; }
+    .ide-code-menu .item.disabled { color:#666; }
+    .ide-code-menu .item kbd { color:#999; font-size:11px; }
+    .ide-code-menu hr { border:0; border-top:1px solid #2b2b2b; margin:2px 0; }
     /* LSP Autocomplete & Rich Hover Popovers (.ide-lsp-popover) */
     .ide-lsp-popover {
       background-color: var(--surface-tier-1);
@@ -3833,6 +3840,20 @@
                   </div>
                   <div>}</div>
                 </div>
+
+                <!-- Right-click code menu specimen: server-only items are greyed until the language server is ready. Use for code actions on the symbol under the pointer; do not add non-code commands (those belong in the Help Palette). -->
+                <div style="margin:6px 0 4px 190px;"><div class="ide-code-menu">
+                  <div class="item"><span>Go to Definition</span><kbd>F12 / Ctrl+Click</kbd></div>
+                  <div class="item"><span>Go to Implementation</span><kbd>Space g i</kbd></div>
+                  <div class="item"><span>Find References</span><kbd>Space g r</kbd></div>
+                  <div class="item"><span>Show Hover Docs</span><kbd>K</kbd></div>
+                  <hr>
+                  <div class="item"><span>Rename Symbol…</span><kbd>Space c r</kbd></div>
+                  <div class="item"><span>Code Actions…</span><kbd>Space c a</kbd></div>
+                  <div class="item disabled"><span>Format Document</span><kbd>Space c f</kbd></div>
+                  <hr>
+                  <div class="item"><span>Cut / Copy / Paste</span><kbd></kbd></div>
+                </div></div>
 
                 <!-- Pixel-Anchored LSP Completion & Rich GUI Hover Popover Overlay -->
                 <div style="margin:6px 0 4px 190px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start;">

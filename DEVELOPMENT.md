@@ -48,11 +48,11 @@ src/
 │   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
 │   ├── ide_buffer.h/c              IdeBuffer, text objects, Git diff & Agent snapshots, scheme search paths
 │   ├── ide_syntax.c                11-token highlighter (ide_highlight_source_buffer): drives the tree-sitter engine, heuristic lexer fallback
-│   ├── ide_ts.c / ide_ts.h         Tree-sitter engine: incremental parse, AST classification (C/Java/Go) + query layer (no GTK)
-│   ├── ide_ts_queries.c            Highlight queries for C++, Rust, Bash, JS/TS/TSX, Lua, JSON, TOML, YAML, CSS, HTML
+│   ├── ide_ts.c / ide_ts.h         Tree-sitter engine: incremental parse, base token pass + per-language query layer (no GTK)
+│   ├── ide_ts_queries.c            Highlight queries for all 15 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, JSON, TOML, YAML, CSS, HTML)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
-│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 85-command Help Palette
+│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 101-command Help Palette
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
 │   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)
@@ -63,7 +63,7 @@ src/
 │   ├── ide_jsonrpc.h/c             Content-Length framing shared by the LSP and DAP clients
 │   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make) -> build/test/run/clean commands (no GTK)
 │   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)
-│   ├── ide_dap.h/c                 Debugger UI scaffold: transport buttons & 3-pane inspector (no adapter connected yet)
+│   ├── ide_native_exe.h/c          Native executable discovery for run/debug (Meson/CMake/Make build trees)
 │   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
 │   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
 │   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
