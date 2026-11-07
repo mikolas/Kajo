@@ -273,7 +273,7 @@ test_error_tolerance(void)
 typedef struct {
   IdeTsLang   lang;
   const char *source;
-  const char *expect[24]; /* NULL-terminated "token:text" needles */
+  const char *expect[32]; /* NULL-terminated "token:text" needles */
 } LangCase;
 
 static const LangCase kLangCases[] = {
@@ -370,6 +370,28 @@ static const LangCase kLangCases[] = {
     "<!DOCTYPE html>\n<!-- c -->\n<div class=\"a\" id=b><p>Hello &amp; <b>x</b></p><br/></div>\n",
     { "kw:DOCTYPE html", "cmt:<!-- c -->", "type:div", "var:class", "str:\"a\"", "var:id", "str:b",
       "type:p", "mac:&amp;", "type:br", NULL } },
+  { IDE_TS_LANG_M68K,
+    "; Amiga Copper & Blitter test\n"
+    "  opt o-,a-\n"
+    "  include \"hardware_equates.i\"\n"
+    "CUSTOM = $dff000\n"
+    "DMACON equ $096\n"
+    "WAIT_BLIT macro\n"
+    "  btst #6, 2(a6)\n"
+    "  endm\n"
+    "  section code_c, code, chip\n"
+    "main:\n"
+    "  lea CUSTOM, a6\n"
+    "  move.w #%1000001000000000, DMACON(a6)\n"
+    "  WAIT_BLIT\n"
+    ".loop:\n"
+    "  dbf d7, .loop\n"
+    "  rts\n",
+    { "cmt:; Amiga Copper & Blitter test", "kw:opt", "mac:o-", "mac:a-", "kw:include",
+      "str:\"hardware_equates.i\"", "mac:CUSTOM", "num:$dff000", "mac:DMACON", "kw:equ",
+      "num:$096", "fn:WAIT_BLIT", "ctrl:macro", "kw:btst", "type:a6", "ctrl:endm",
+      "kw:section", "type:code", "type:chip", "fn:main", "kw:lea", "kw:move", "type:w",
+      "num:%1000001000000000", "ctrl:dbf", "type:d7", "ctrl:rts", NULL } },
 };
 
 static void
@@ -417,6 +439,8 @@ test_extended_detection(void)
     { "a.ts", IDE_TS_LANG_TYPESCRIPT }, { "a.tsx", IDE_TS_LANG_TSX }, { "a.json", IDE_TS_LANG_JSON },
     { "Cargo.toml", IDE_TS_LANG_TOML }, { "a.yml", IDE_TS_LANG_YAML }, { "a.css", IDE_TS_LANG_CSS },
     { "index.html", IDE_TS_LANG_HTML }, { "init.lua", IDE_TS_LANG_LUA }, { "yaml", IDE_TS_LANG_YAML },
+    { "disasm/main.asm", IDE_TS_LANG_M68K }, { "src/SetSystem.s", IDE_TS_LANG_M68K },
+    { "src/equates.i", IDE_TS_LANG_M68K }, { "m68k", IDE_TS_LANG_M68K }, { "vasm", IDE_TS_LANG_M68K },
     { "README.md", IDE_TS_LANG_NONE }, { "notes.txt", IDE_TS_LANG_NONE }, { "Makefile", IDE_TS_LANG_NONE },
   };
   for (gsize i = 0; i < G_N_ELEMENTS(cases); i++) {
@@ -507,6 +531,11 @@ test_text_objects_c_rust_js_lua(void)
   ASSERT_OBJ(IDE_TS_LANG_JAVASCRIPT, "const g = (x) => x *@ 2;\n", TRUE, 'f', "x * 2");
   ASSERT_OBJ(IDE_TS_LANG_JAVASCRIPT, "class A { m(a, b) { return a@; } }\n", FALSE, 'f', "m(a, b) { return a; }");
   ASSERT_OBJ(IDE_TS_LANG_LUA, "function f(a)\n  return a@ + 1\nend\n", TRUE, 'f', "return a + 1");
+  if (ide_ts_lang_available(IDE_TS_LANG_M68K)) {
+    ASSERT_OBJ(IDE_TS_LANG_M68K, "MY_MAC macro\n  move.l d0,@ d1\n  endm\n", TRUE, 'f', "  move.l d0, d1");
+    ASSERT_OBJ(IDE_TS_LANG_M68K, "  move.l @d0, (a0)+\n", TRUE, 'a', "d0");
+    ASSERT_OBJ(IDE_TS_LANG_M68K, "  move.l d0, @(a0)+\n", TRUE, 'a', "(a0)+");
+  }
 }
 
 /* Every bundled highlight query must compile against the installed grammar. */

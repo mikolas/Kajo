@@ -166,7 +166,7 @@ Every standalone Kajo application (`kajo-settings`, `kajo-files`, future `kajo-p
 - DO use `scripts/audit.sh` (`sizes`, `dups`, `blocking`, `lifetimes`, `colors`, `warnings`, `tidy`) before large refactors and `scripts/ui-shot.sh` for visual review. Treat analyzer output as leads: confirm each finding before "fixing" it (`g_autofree` and flag-enum casts are known false positives).
 
 **kajo-ide (tree-sitter, LSP, DAP, popovers)**
-- DO add or change highlighting only in `src/ide/ide_ts_queries.c` (all 15 languages); the `ide-ts` test compiles every query against the installed grammars. DON'T reintroduce per-language hand classifiers.
+- DO add or change highlighting only in `src/ide/ide_ts_queries.c` (all 16 languages); the `ide-ts` test compiles every query against the installed grammars. DON'T reintroduce per-language hand classifiers.
 - DO keep `ide_lsp_client`, `ide_dap_client`, `ide_jsonrpc`, `ide_tasks` GTK-free and covered by the mock servers in `tests/`; UI glue lives in `ide_lsp.c`, `ide_dap.c`, `ide_window.c`.
 - DO dismiss and re-anchor LSP popovers on scroll, focus loss and Escape (their autohide stays FALSE so completion/rename can take typing); DON'T leave a popover on a fixed rectangle.
 - DO route every new IDE UI element through `docs/ui-gallery.html` (specimen + usage note) and `docs/design_system.md`, and register new commands in the Help Palette.

@@ -93,6 +93,11 @@ DECLARE_GRAMMAR(LUA, lua)
 #else
 MISSING_GRAMMAR(LUA)
 #endif
+#ifdef HAVE_TS_M68K
+DECLARE_GRAMMAR(M68K, m68k)
+#else
+MISSING_GRAMMAR(M68K)
+#endif
 
 typedef struct {
   IdeTsLang       lang;
@@ -136,6 +141,9 @@ static const IdeTsLangInfo kLangs[] = {
     { ".html", ".htm", ".xhtml", NULL }, { "html", "htm", NULL }, { NULL } },
   { IDE_TS_LANG_LUA, "lua", TRUE,
     { ".lua", NULL }, { "lua", NULL }, { NULL } },
+  { IDE_TS_LANG_M68K, "m68k", TRUE,
+    { ".s", ".S", ".asm", ".ASM", ".i", ".I", NULL },
+    { "m68k", "68k", "asm", "vasm", "vasmmot", NULL }, { NULL } },
 };
 
 static IdeTsGrammarFn
@@ -157,6 +165,7 @@ grammar_fn_for(IdeTsLang lang)
     case IDE_TS_LANG_CSS:        return kGrammar_CSS;
     case IDE_TS_LANG_HTML:       return kGrammar_HTML;
     case IDE_TS_LANG_LUA:        return kGrammar_LUA;
+    case IDE_TS_LANG_M68K:       return kGrammar_M68K;
     default:                     return NULL;
   }
 }
@@ -1249,7 +1258,8 @@ static const char *const kFunctionKinds[] = {
   "function_definition", "function_declaration", "function_item", "method_declaration",
   "method_definition", "constructor_declaration", "lambda_expression", "arrow_function",
   "function_expression", "generator_function_declaration", "generator_function",
-  "func_literal", "function", "abstract_method_signature", NULL
+  "func_literal", "function", "abstract_method_signature",
+  "macro_definition", "repeat", NULL
 };
 
 static const char *const kClassKinds[] = {
@@ -1265,7 +1275,8 @@ static const char *const kListKinds[] = {
   "type_arguments", "type_parameters", "array", "array_initializer", "array_expression",
   "initializer_list", "list", "tuple_expression", "table_constructor", "literal_value",
   "type_parameter_list", "template_argument_list", "template_parameter_list",
-  "enumerator_list", "inferred_parameters", "expression_list", NULL
+  "enumerator_list", "inferred_parameters", "expression_list",
+  "operand_list", "option_list", "symbol_list", NULL
 };
 
 gboolean

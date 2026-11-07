@@ -381,7 +381,10 @@ get_symbolic_icon_for_entry(const IdeTreeEntry *e, gboolean expanded)
   if (g_str_has_suffix(e->name, ".c") || g_str_has_suffix(e->name, ".h") ||
       g_str_has_suffix(e->name, ".cpp") || g_str_has_suffix(e->name, ".rs") ||
       g_str_has_suffix(e->name, ".py") || g_str_has_suffix(e->name, ".go") ||
-      g_str_has_suffix(e->name, ".sh")) {
+      g_str_has_suffix(e->name, ".sh") || g_str_has_suffix(e->name, ".s") ||
+      g_str_has_suffix(e->name, ".S") || g_str_has_suffix(e->name, ".asm") ||
+      g_str_has_suffix(e->name, ".ASM") || g_str_has_suffix(e->name, ".i") ||
+      g_str_has_suffix(e->name, ".I")) {
     return "text-x-script-symbolic";
   }
   if (g_str_has_suffix(e->name, ".md")) {
@@ -398,10 +401,13 @@ get_icon_color_class_for_entry(const IdeTreeEntry *e, gboolean expanded)
   }
   if (g_str_has_suffix(e->name, ".c") || g_str_has_suffix(e->name, ".cpp") ||
       g_str_has_suffix(e->name, ".cc") || g_str_has_suffix(e->name, ".rs") ||
-      g_str_has_suffix(e->name, ".go") || g_str_has_suffix(e->name, ".py")) {
+      g_str_has_suffix(e->name, ".go") || g_str_has_suffix(e->name, ".py") ||
+      g_str_has_suffix(e->name, ".s") || g_str_has_suffix(e->name, ".S") ||
+      g_str_has_suffix(e->name, ".asm") || g_str_has_suffix(e->name, ".ASM")) {
     return "ide-tree-icon-code";
   }
-  if (g_str_has_suffix(e->name, ".h") || g_str_has_suffix(e->name, ".hpp")) {
+  if (g_str_has_suffix(e->name, ".h") || g_str_has_suffix(e->name, ".hpp") ||
+      g_str_has_suffix(e->name, ".i") || g_str_has_suffix(e->name, ".I")) {
     return "ide-tree-icon-header";
   }
   if (g_str_has_suffix(e->name, ".md") || g_str_has_suffix(e->name, ".txt")) {

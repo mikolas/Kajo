@@ -30,6 +30,7 @@ typedef enum {
   IDE_TS_LANG_CSS,
   IDE_TS_LANG_HTML,
   IDE_TS_LANG_LUA,
+  IDE_TS_LANG_M68K,
   IDE_TS_LANG_COUNT
 } IdeTsLang;
 

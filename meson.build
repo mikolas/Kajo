@@ -375,7 +375,7 @@ ts_defs = []
 ts_link_deps = [ts_core_dep]
 if ts_core_dep.found()
   ts_defs += '-DHAVE_TREE_SITTER=1'
-  foreach lang : ['c', 'java', 'go', 'cpp', 'rust', 'bash', 'javascript', 'typescript', 'tsx', 'json', 'toml', 'yaml', 'css', 'html', 'lua']
+  foreach lang : ['c', 'java', 'go', 'cpp', 'rust', 'bash', 'javascript', 'typescript', 'tsx', 'json', 'toml', 'yaml', 'css', 'html', 'lua', 'm68k']
     lib = cc.find_library('tree-sitter-' + lang, required: false)
     if lib.found()
       ts_defs += '-DHAVE_TS_' + lang.to_upper() + '=1'

@@ -261,6 +261,32 @@ static const char kQueryLua[] =
   "(string) @string\n"
   "(hash_bang_line) @comment\n";
 
+static const char kQueryM68k[] =
+  "(symbol) @variable\n"
+  "((symbol) @constant (#match? @constant \"^[A-Z][A-Z0-9_]+$\"))\n"
+  "(label name: (symbol) @function)\n"
+  "(external_label name: (symbol) @function)\n"
+  "(macro_definition name: (symbol) @function)\n"
+  "(macro_call name: (symbol) @function)\n"
+  "(symbol_definition name: (symbol) @constant)\n"
+  "(symbol_assignment name: (symbol) @constant)\n"
+  "(offset_definition name: (symbol) @constant)\n"
+  "(register_definition name: (symbol) @constant)\n"
+  "(register_list_definition name: (symbol) @constant)\n"
+  "(instruction_mnemonic) @keyword\n"
+  "((instruction_mnemonic) @keyword.control\n"
+  "  (#match? @keyword.control \"^[jJ]?([bB](ra|sr|hi|ls|cc|hs|cs|lo|ne|eq|vc|vs|pl|mi|ge|lt|gt|le)|[dD][bB][a-zA-Z]+|[jJ](mp|sr)|[rR](ts|te|tr|td|tm)|[tT]rap[a-zA-Z]*|[sS]top|[iI]llegal|[nN]op|[B](RA|SR|HI|LS|CC|HS|CS|LO|NE|EQ|VC|VS|PL|MI|GE|LT|GT|LE)|[J](MP|SR)|[R](TS|TE|TR|TD|TM)|[T]RAP[A-Z]*|[S]TOP|[I]LLEGAL|[N]OP)$\"))\n"
+  "(directive_mnemonic) @keyword\n"
+  "(control_mnemonic) @keyword.control\n"
+  "[ (data_register) (address_register) (float_register) (named_register) (register_number) ] @type\n"
+  "[ (size) (section_type) (memory_type) ] @type\n"
+  "[ (reptn) (carg) (narg) (macro_arg) (option) (pc) ] @constant\n"
+  "(interpolated) @variable\n"
+  "[ (path) (string_literal) ] @string\n"
+  "[ (decimal_literal) (hexadecimal_literal) (octal_literal) (binary_literal) ] @number\n"
+  "(comment) @comment\n"
+  "[ (operator) \"=\" \"#\" \":\" \"::\" ] @operator\n";
+
 const char *
 ide_ts_query_source(IdeTsLang lang)
 {
@@ -280,6 +306,7 @@ ide_ts_query_source(IdeTsLang lang)
     case IDE_TS_LANG_CSS:        return kQueryCss;
     case IDE_TS_LANG_HTML:       return kQueryHtml;
     case IDE_TS_LANG_LUA:        return kQueryLua;
+    case IDE_TS_LANG_M68K:       return kQueryM68k;
     default:                     return NULL;
   }
 }

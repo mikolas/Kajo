@@ -152,9 +152,10 @@ sudo pacman -S --needed tree-sitter tree-sitter-c tree-sitter-bash tree-sitter-j
     tree-sitter-lua tree-sitter-rust
 # AUR
 paru -S --needed tree-sitter-cpp tree-sitter-css tree-sitter-go tree-sitter-html \
-    tree-sitter-java tree-sitter-json tree-sitter-toml tree-sitter-typescript tree-sitter-yaml
+    tree-sitter-java tree-sitter-json tree-sitter-toml tree-sitter-typescript tree-sitter-yaml \
+    tree-sitter-m68k
 ```
-Every grammar is optional at build time: `meson setup` links the ones it finds (`tree-sitter-<lang>`; `tree-sitter-typescript` provides TypeScript and TSX) and `kajo-ide` falls back to its built-in heuristic lexer for any language whose grammar is missing. Install all of them for full highlighting of C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, JSON, TOML, YAML, CSS and HTML.
+Every grammar is optional at build time: `meson setup` links the ones it finds (`tree-sitter-<lang>`; `tree-sitter-typescript` provides TypeScript and TSX) and `kajo-ide` falls back to its built-in heuristic lexer for any language whose grammar is missing. Install all of them for full highlighting of C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, Motorola 68000 (`tree-sitter-m68k`), JSON, TOML, YAML, CSS and HTML.
 
 Optional runtime tools for **`kajo-ide`** language intelligence, search, and debugging:
 ```bash

@@ -39,6 +39,7 @@ depends=(
     'tree-sitter-toml'
     'tree-sitter-typescript'
     'tree-sitter-yaml'
+    'tree-sitter-m68k'
     'libglvnd'
 )
 makedepends=(
