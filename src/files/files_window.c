@@ -1,6 +1,46 @@
 #include "files_window_private.h"
+#include "../config.h"
 
 G_DEFINE_TYPE(KajoFilesWindow, kajo_files_window, GTK_TYPE_APPLICATION_WINDOW)
+
+static void
+files_window_save_prefs(KajoFilesWindow *self)
+{
+    if (!self) return;
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg) return;
+
+    g_free(cfg->files_view_mode);
+    cfg->files_view_mode = g_strdup(kajo_file_view_mode_to_string(self->view_mode));
+
+    g_free(cfg->files_sort_field);
+    cfg->files_sort_field = g_strdup(kajo_file_sort_field_to_string(self->sort_field));
+
+    cfg->files_sort_ascending = self->sort_ascending;
+    cfg->files_sort_folders_first = self->sort_folders_first;
+    cfg->files_show_hidden = self->show_hidden;
+    cfg->files_show_inspector = self->inspector_visible;
+
+    shell_config_save(cfg, NULL);
+    shell_config_destroy(cfg);
+}
+
+static void
+files_window_load_prefs(KajoFilesWindow *self)
+{
+    if (!self) return;
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg) return;
+
+    self->view_mode = kajo_file_view_mode_from_string(cfg->files_view_mode);
+    self->sort_field = kajo_file_sort_field_from_string(cfg->files_sort_field);
+    self->sort_ascending = cfg->files_sort_ascending;
+    self->sort_folders_first = cfg->files_sort_folders_first;
+    self->show_hidden = cfg->files_show_hidden;
+    self->inspector_visible = cfg->files_show_inspector;
+
+    shell_config_destroy(cfg);
+}
 
 void files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx);
 void files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item);
@@ -1049,6 +1089,7 @@ on_search_changed(GtkSearchEntry *entry G_GNUC_UNUSED, gpointer user_data)
 void
 files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode)
 {
+    gboolean changed = (self->view_mode != mode);
     self->view_mode = mode;
     if (mode == KAJO_VIEW_GRID) {
         gtk_widget_add_css_class(self->btn_view_grid, "active");
@@ -1063,6 +1104,8 @@ files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode)
             (mode == KAJO_VIEW_GRID) ? "grid" : "list"
         );
     }
+    if (changed)
+        files_window_save_prefs(self);
 }
 
 static void
@@ -1087,6 +1130,7 @@ on_btn_inspector_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         gtk_widget_add_css_class(self->btn_inspector, "active");
     else
         gtk_widget_remove_css_class(self->btn_inspector, "active");
+    files_window_save_prefs(self);
 }
 
 static void
@@ -1124,6 +1168,7 @@ on_btn_hidden_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         gtk_widget_add_css_class(self->btn_hidden, "active");
     else
         gtk_widget_remove_css_class(self->btn_hidden, "active");
+    files_window_save_prefs(self);
     files_window_rebuild_filtered_view(self);
 }
 
@@ -1222,6 +1267,7 @@ select_or_toggle_sort_field(KajoFilesWindow *self, KajoFileSortField field, gboo
         gtk_popover_popdown(self->sort_popover);
 
     sync_sort_ui(self);
+    files_window_save_prefs(self);
     files_window_rebuild_filtered_view(self);
 }
 
@@ -1255,6 +1301,7 @@ on_sort_asc_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     KajoFilesWindow *self = user_data;
     self->sort_ascending = TRUE;
     sync_sort_ui(self);
+    files_window_save_prefs(self);
     files_window_rebuild_filtered_view(self);
 }
 
@@ -1264,6 +1311,7 @@ on_sort_desc_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     KajoFilesWindow *self = user_data;
     self->sort_ascending = FALSE;
     sync_sort_ui(self);
+    files_window_save_prefs(self);
     files_window_rebuild_filtered_view(self);
 }
 
@@ -1273,6 +1321,7 @@ on_sort_folders_first_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     KajoFilesWindow *self = user_data;
     self->sort_folders_first = !self->sort_folders_first;
     sync_sort_ui(self);
+    files_window_save_prefs(self);
     files_window_rebuild_filtered_view(self);
 }
 
@@ -1551,6 +1600,7 @@ kajo_files_window_init(KajoFilesWindow *self)
     self->sort_folders_first = TRUE;
     self->show_hidden = FALSE;
     self->inspector_visible = FALSE;
+    files_window_load_prefs(self);
 
     /* Set up virtualized GListStore + GtkSingleSelection + Factories */
     self->visible_store = g_list_store_new(KAJO_TYPE_FILE_ITEM);
@@ -1575,7 +1625,15 @@ kajo_files_window_init(KajoFilesWindow *self)
     gtk_list_view_set_factory(self->details_listview, list_factory);
     g_object_unref(list_factory);
 
-    gtk_widget_add_css_class(self->btn_view_grid, "active");
+    files_window_set_widget_active_class(self->btn_view_grid, self->view_mode == KAJO_VIEW_GRID);
+    files_window_set_widget_active_class(self->btn_view_list, self->view_mode == KAJO_VIEW_LIST);
+    files_window_set_widget_active_class(self->btn_hidden, self->show_hidden);
+    files_window_set_widget_active_class(self->btn_inspector, self->inspector_visible);
+    gtk_widget_set_visible(self->inspector_vbox, self->inspector_visible && !self->is_narrow);
+    gtk_stack_set_visible_child_name(
+        self->view_stack,
+        (self->view_mode == KAJO_VIEW_GRID) ? "grid" : "list"
+    );
 
     build_connect_banner(self);
     build_trash_banner(self);

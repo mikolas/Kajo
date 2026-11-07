@@ -72,6 +72,10 @@ int      kajo_file_item_compare_full(const KajoFileItem *a,
                                      gboolean folders_first);
 
 gboolean kajo_file_sort_field_default_ascending(KajoFileSortField field);
+const char       *kajo_file_sort_field_to_string(KajoFileSortField field);
+KajoFileSortField kajo_file_sort_field_from_string(const char *str);
+const char       *kajo_file_view_mode_to_string(KajoFileViewMode mode);
+KajoFileViewMode  kajo_file_view_mode_from_string(const char *str);
 
 gboolean kajo_file_item_matches_filter(const KajoFileItem *item,
                                        gboolean show_hidden,

@@ -383,6 +383,42 @@ kajo_file_sort_field_default_ascending(KajoFileSortField field)
     }
 }
 
+const char *
+kajo_file_sort_field_to_string(KajoFileSortField field)
+{
+    switch (field) {
+    case KAJO_SORT_SIZE:     return "size";
+    case KAJO_SORT_MODIFIED: return "modified";
+    case KAJO_SORT_TYPE:     return "type";
+    case KAJO_SORT_NAME:
+    default:                 return "name";
+    }
+}
+
+KajoFileSortField
+kajo_file_sort_field_from_string(const char *str)
+{
+    if (!str) return KAJO_SORT_NAME;
+    if (g_ascii_strcasecmp(str, "size") == 0)     return KAJO_SORT_SIZE;
+    if (g_ascii_strcasecmp(str, "modified") == 0) return KAJO_SORT_MODIFIED;
+    if (g_ascii_strcasecmp(str, "type") == 0)     return KAJO_SORT_TYPE;
+    return KAJO_SORT_NAME;
+}
+
+const char *
+kajo_file_view_mode_to_string(KajoFileViewMode mode)
+{
+    return (mode == KAJO_VIEW_LIST) ? "list" : "grid";
+}
+
+KajoFileViewMode
+kajo_file_view_mode_from_string(const char *str)
+{
+    if (str && g_ascii_strcasecmp(str, "list") == 0)
+        return KAJO_VIEW_LIST;
+    return KAJO_VIEW_GRID;
+}
+
 static int
 compare_natural_names(const KajoFileItem *a, const KajoFileItem *b)
 {

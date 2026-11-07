@@ -111,6 +111,22 @@ test_sorting_and_filtering(void)
     /* Folders First toggle: when FALSE, folders and files interleave by field */
     g_assert_cmpint(kajo_file_item_compare_full(file_a, dir_b, KAJO_SORT_NAME, TRUE, FALSE), <, 0);
     g_assert_cmpint(kajo_file_item_compare_full(file_a, dir_b, KAJO_SORT_NAME, TRUE, TRUE), >, 0);
+
+    /* Sort field & view mode string serialization roundtrip */
+    g_assert_cmpstr(kajo_file_sort_field_to_string(KAJO_SORT_NAME), ==, "name");
+    g_assert_cmpstr(kajo_file_sort_field_to_string(KAJO_SORT_SIZE), ==, "size");
+    g_assert_cmpstr(kajo_file_sort_field_to_string(KAJO_SORT_MODIFIED), ==, "modified");
+    g_assert_cmpstr(kajo_file_sort_field_to_string(KAJO_SORT_TYPE), ==, "type");
+    g_assert_cmpint(kajo_file_sort_field_from_string("size"), ==, KAJO_SORT_SIZE);
+    g_assert_cmpint(kajo_file_sort_field_from_string("modified"), ==, KAJO_SORT_MODIFIED);
+    g_assert_cmpint(kajo_file_sort_field_from_string("type"), ==, KAJO_SORT_TYPE);
+    g_assert_cmpint(kajo_file_sort_field_from_string("unknown"), ==, KAJO_SORT_NAME);
+
+    g_assert_cmpstr(kajo_file_view_mode_to_string(KAJO_VIEW_GRID), ==, "grid");
+    g_assert_cmpstr(kajo_file_view_mode_to_string(KAJO_VIEW_LIST), ==, "list");
+    g_assert_cmpint(kajo_file_view_mode_from_string("list"), ==, KAJO_VIEW_LIST);
+    g_assert_cmpint(kajo_file_view_mode_from_string("grid"), ==, KAJO_VIEW_GRID);
+    g_assert_cmpint(kajo_file_view_mode_from_string(NULL), ==, KAJO_VIEW_GRID);
 }
 
 typedef struct {

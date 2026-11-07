@@ -149,6 +149,13 @@ shell_config_get_default(void)
     config->ide_show_margin_guide      = FALSE;
     config->ide_insert_spaces          = TRUE;
 
+    config->files_view_mode            = g_strdup("grid");
+    config->files_sort_field           = g_strdup("name");
+    config->files_sort_ascending       = TRUE;
+    config->files_sort_folders_first   = TRUE;
+    config->files_show_hidden          = FALSE;
+    config->files_show_inspector       = FALSE;
+
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
     config->layout_right          = g_ptr_array_new_full(0, free_widget_config);
@@ -505,6 +512,52 @@ shell_config_load(const gchar *path)
         }
     }
 
+    /* Kajo Files settings (nested object or flat keys) */
+    if (json_object_has_member(root, "files") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "files"))) {
+        JsonObject *files_obj = json_object_get_object_member(root, "files");
+        if (json_object_has_member(files_obj, "view_mode")) {
+            g_free(config->files_view_mode);
+            config->files_view_mode = g_strdup(json_object_get_string_member(files_obj, "view_mode"));
+        }
+        if (json_object_has_member(files_obj, "sort_field")) {
+            g_free(config->files_sort_field);
+            config->files_sort_field = g_strdup(json_object_get_string_member(files_obj, "sort_field"));
+        }
+        if (json_object_has_member(files_obj, "sort_ascending")) {
+            config->files_sort_ascending = json_object_get_boolean_member(files_obj, "sort_ascending");
+        }
+        if (json_object_has_member(files_obj, "sort_folders_first")) {
+            config->files_sort_folders_first = json_object_get_boolean_member(files_obj, "sort_folders_first");
+        }
+        if (json_object_has_member(files_obj, "show_hidden")) {
+            config->files_show_hidden = json_object_get_boolean_member(files_obj, "show_hidden");
+        }
+        if (json_object_has_member(files_obj, "show_inspector")) {
+            config->files_show_inspector = json_object_get_boolean_member(files_obj, "show_inspector");
+        }
+    }
+    if (json_object_has_member(root, "files_view_mode")) {
+        g_free(config->files_view_mode);
+        config->files_view_mode = g_strdup(json_object_get_string_member(root, "files_view_mode"));
+    }
+    if (json_object_has_member(root, "files_sort_field")) {
+        g_free(config->files_sort_field);
+        config->files_sort_field = g_strdup(json_object_get_string_member(root, "files_sort_field"));
+    }
+    if (json_object_has_member(root, "files_sort_ascending")) {
+        config->files_sort_ascending = json_object_get_boolean_member(root, "files_sort_ascending");
+    }
+    if (json_object_has_member(root, "files_sort_folders_first")) {
+        config->files_sort_folders_first = json_object_get_boolean_member(root, "files_sort_folders_first");
+    }
+    if (json_object_has_member(root, "files_show_hidden")) {
+        config->files_show_hidden = json_object_get_boolean_member(root, "files_show_hidden");
+    }
+    if (json_object_has_member(root, "files_show_inspector")) {
+        config->files_show_inspector = json_object_get_boolean_member(root, "files_show_inspector");
+    }
+
     /* Layout settings */
     if (json_object_has_member(root, "layout") &&
         JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "layout"))) {
@@ -626,7 +679,13 @@ serialize_widget_array(JsonBuilder *builder, const gchar *member_name, GPtrArray
 gboolean
 shell_config_save(ShellConfig *config, const gchar *path)
 {
-    if (!config || !path) return FALSE;
+    if (!config) return FALSE;
+
+    g_autofree gchar *default_user_path = NULL;
+    if (!path || path[0] == '\0') {
+        default_user_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+        path = default_user_path;
+    }
 
     g_autofree gchar *dir = g_path_get_dirname(path);
     if (dir && *dir) {
@@ -796,6 +855,23 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_boolean_value(builder, config->ide_insert_spaces);
     json_builder_end_object(builder);
 
+    /* Kajo Files settings object */
+    json_builder_set_member_name(builder, "files");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "view_mode");
+    json_builder_add_string_value(builder, config->files_view_mode ? config->files_view_mode : "grid");
+    json_builder_set_member_name(builder, "sort_field");
+    json_builder_add_string_value(builder, config->files_sort_field ? config->files_sort_field : "name");
+    json_builder_set_member_name(builder, "sort_ascending");
+    json_builder_add_boolean_value(builder, config->files_sort_ascending);
+    json_builder_set_member_name(builder, "sort_folders_first");
+    json_builder_add_boolean_value(builder, config->files_sort_folders_first);
+    json_builder_set_member_name(builder, "show_hidden");
+    json_builder_add_boolean_value(builder, config->files_show_hidden);
+    json_builder_set_member_name(builder, "show_inspector");
+    json_builder_add_boolean_value(builder, config->files_show_inspector);
+    json_builder_end_object(builder);
+
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");
     json_builder_begin_object(builder);
@@ -838,6 +914,8 @@ shell_config_destroy(ShellConfig *config)
     g_free(config->screensaver_mode);
     g_free(config->ide_color_scheme);
     g_free(config->ide_font_family);
+    g_free(config->files_view_mode);
+    g_free(config->files_sort_field);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
     if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
     if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);
