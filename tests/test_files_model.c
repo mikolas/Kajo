@@ -1102,6 +1102,8 @@ test_disk_image_classification(void)
     g_assert_true(kajo_files_is_disk_image("application/x-cd-image", "x"));
     /* shared-mime-info >= 2.2 type (what GIO reports for ISOs today), upper-case extension */
     g_assert_true(kajo_files_is_disk_image("application/vnd.efi.iso", "AmigaDeveloperCDV2.1.ISO"));
+    g_assert_true(kajo_files_is_archive("application/vnd.efi.iso", "AmigaDeveloperCDV2.1.ISO"));
+    g_assert_true(kajo_files_is_archive(NULL, "BACKUP.TAR.GZ"));
     g_assert_true(kajo_files_is_disk_image("application/x-raw-disk-image", "disk.img"));
     g_assert_true(kajo_files_is_disk_image("application/octet-stream", "SYSTEM.ISO"));
     g_assert_true(kajo_files_is_disk_image(NULL, "disk.img"));

@@ -353,18 +353,20 @@ kajo_files_is_archive(const char *content_type, const char *filename)
             strstr(content_type, "rar") ||
             strstr(content_type, "compressed") ||
             strstr(content_type, "archive") ||
-            strstr(content_type, "x-iso9660-image")) {
+            strstr(content_type, "x-iso9660-image") ||
+            g_strcmp0(content_type, "application/vnd.efi.iso") == 0) {
             return TRUE;
         }
     }
     if (filename) {
+        g_autofree char *lower = g_ascii_strdown(filename, -1);
         static const char *const exts[] = {
             ".zip", ".tar", ".tar.gz", ".tgz", ".tar.xz", ".txz",
             ".tar.bz2", ".tbz2", ".tar.zst", ".tzst", ".7z", ".rar",
             ".iso", ".cpio", ".deb", ".rpm", NULL
         };
         for (int i = 0; exts[i] != NULL; i++) {
-            if (g_str_has_suffix(filename, exts[i]))
+            if (g_str_has_suffix(lower, exts[i]))
                 return TRUE;
         }
     }
