@@ -14,11 +14,13 @@ typedef void (*KajoFileOpCallback)(gboolean success,
 
 void kajo_files_op_mkdir_async(GFile *parent_dir,
                                const char *folder_name,
+                               GCancellable *cancellable,
                                KajoFileOpCallback callback,
                                gpointer user_data);
 
 void kajo_files_op_rename_async(GFile *file,
                                 const char *new_name,
+                                GCancellable *cancellable,
                                 KajoFileOpCallback callback,
                                 gpointer user_data);
 

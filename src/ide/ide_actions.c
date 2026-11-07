@@ -173,12 +173,16 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
           gtk_text_buffer_get_text(tbuf, &start_it, &ins, TRUE);
       cur_byte = strlen(prefix);
       gboolean inside = (act->arg1[0] == 'i');
-      if (ide_find_text_object(full,
-                               cur_byte,
-                               inside,
-                               act->arg2[0],
-                               &s_byte,
-                               &e_byte)) {
+      /* Syntax-tree objects first (f/c/b/a); text heuristics as fallback. */
+      const IdeTsDoc *ts_doc = ide_highlight_get_ts_doc(ide_buffer_get_source_buffer(buf));
+      gboolean found = ts_doc != NULL &&
+                       strchr("fcba", act->arg2[0]) != NULL &&
+                       ide_ts_doc_find_object(ts_doc, cur_byte, inside, act->arg2[0],
+                                              &s_byte, &e_byte);
+      if (!found) {
+        found = ide_find_text_object(full, cur_byte, inside, act->arg2[0], &s_byte, &e_byte);
+      }
+      if (found) {
         glong s_char = g_utf8_pointer_to_offset(full, full + s_byte);
         glong e_char = g_utf8_pointer_to_offset(full, full + e_byte);
         GtkTextIter sit, eit;
@@ -218,15 +222,27 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
       goto post_edit;
     }
     case IDE_ACTION_INSERT_TAB: {
+      guint tab_w = CLAMP(
+          gtk_source_view_get_tab_width(GTK_SOURCE_VIEW(self->source_view)), 1, 8);
+      gboolean use_spaces = gtk_source_view_get_insert_spaces_instead_of_tabs(
+          GTK_SOURCE_VIEW(self->source_view));
+      g_autofree char *tab_str =
+          use_spaces ? g_strnfill(tab_w, ' ') : g_strdup("\t");
       gtk_text_buffer_begin_user_action(tbuf);
       if (gtk_text_buffer_get_selection_bounds(tbuf, &ins, &bound))
         gtk_text_buffer_delete(tbuf, &ins, &bound);
-      gtk_text_buffer_insert_at_cursor(tbuf, "  ", 2);
+      gtk_text_buffer_insert_at_cursor(tbuf, tab_str, -1);
       gtk_text_buffer_end_user_action(tbuf);
       goto post_edit;
     }
     case IDE_ACTION_INDENT:
     case IDE_ACTION_OUTDENT: {
+      guint tab_w = CLAMP(
+          gtk_source_view_get_tab_width(GTK_SOURCE_VIEW(self->source_view)), 1, 8);
+      gboolean use_spaces = gtk_source_view_get_insert_spaces_instead_of_tabs(
+          GTK_SOURCE_VIEW(self->source_view));
+      g_autofree char *indent_str =
+          use_spaces ? g_strnfill(tab_w, ' ') : g_strdup("\t");
       GtkTextIter s_it, e_it;
       if (!gtk_text_buffer_get_selection_bounds(tbuf, &s_it, &e_it)) {
         s_it = ins;
@@ -241,9 +257,9 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
         GtkTextIter lit;
         gtk_text_buffer_get_iter_at_line_offset(tbuf, &lit, l, 0);
         if (act->type == IDE_ACTION_INDENT) {
-          gtk_text_buffer_insert(tbuf, &lit, "  ", 2);
+          gtk_text_buffer_insert(tbuf, &lit, indent_str, -1);
         } else {
-          for (int k = 0; k < 2; k++) {
+          for (guint k = 0; k < tab_w; k++) {
             gunichar ch = gtk_text_iter_get_char(&lit);
             if (ch == ' ' || ch == '\t') {
               GtkTextIter next = lit;
@@ -301,9 +317,37 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
     case IDE_ACTION_PASTE_AFTER:
     case IDE_ACTION_PASTE_BEFORE: {
       gtk_text_buffer_begin_user_action(tbuf);
-      if (gtk_text_buffer_get_selection_bounds(tbuf, &ins, &bound))
+      gboolean had_sel = gtk_text_buffer_get_selection_bounds(tbuf, &ins, &bound);
+      if (had_sel)
         gtk_text_buffer_delete(tbuf, &ins, &bound);
       if (self->yank_register && *self->yank_register) {
+        if (!had_sel) {
+          gboolean linewise = g_str_has_suffix(self->yank_register, "\n");
+          if (act->type == IDE_ACTION_PASTE_AFTER) {
+            if (linewise) {
+              if (!gtk_text_iter_ends_line(&ins))
+                gtk_text_iter_forward_to_line_end(&ins);
+              if (gtk_text_iter_forward_line(&ins)) {
+                gtk_text_buffer_place_cursor(tbuf, &ins);
+                gtk_text_buffer_insert_at_cursor(tbuf, self->yank_register, -1);
+              } else {
+                gtk_text_buffer_place_cursor(tbuf, &ins);
+                gtk_text_buffer_insert_at_cursor(tbuf, "\n", 1);
+                gsize ylen = strlen(self->yank_register);
+                gtk_text_buffer_insert_at_cursor(
+                    tbuf, self->yank_register, (int)(ylen - 1));
+              }
+              gtk_text_buffer_end_user_action(tbuf);
+              goto post_edit;
+            } else if (!gtk_text_iter_ends_line(&ins)) {
+              gtk_text_iter_forward_cursor_position(&ins);
+              gtk_text_buffer_place_cursor(tbuf, &ins);
+            }
+          } else if (linewise) {
+            gtk_text_iter_set_line_offset(&ins, 0);
+            gtk_text_buffer_place_cursor(tbuf, &ins);
+          }
+        }
         gtk_text_buffer_insert_at_cursor(tbuf, self->yank_register, -1);
       } else {
         GdkClipboard *cb = gdk_display_get_clipboard(gdk_display_get_default());
@@ -362,6 +406,21 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
   guint cur_line = 1, cur_col = 1;
   ide_window_get_cursor_line_col(self, &cur_line, &cur_col);
 
+  /* The LSP rename prompt owns text input while it is open. */
+  if (ide_lsp_manager_rename_active(self->lsp)) {
+    if (act->type == IDE_ACTION_INSERT_CHAR) {
+      ide_lsp_manager_rename_input(self->lsp, act->str);
+      ide_window_update_status_bar_and_hud(self);
+      return;
+    }
+    if (act->type == IDE_ACTION_BACKSPACE) {
+      ide_lsp_manager_rename_backspace(self->lsp);
+      ide_window_update_status_bar_and_hud(self);
+      return;
+    }
+  }
+  gboolean completion_was_open = ide_lsp_manager_completion_active(self->lsp);
+
   /* Route text input & navigation when inside editable Tree prompt or Drawer */
   if (cur_st == IDE_STATE_TREE && ide_fsm_get_tree_editable(self->fsm)) {
     if (act->type == IDE_ACTION_INSERT_CHAR) {
@@ -414,7 +473,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       gtk_widget_set_visible(self->tree_container, TRUE);
       break;
     case IDE_ACTION_PANE_FOCUS_BUFFER:
-      if (ide_fsm_get_tree_editable(self->fsm)) {
+      if (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree))) {
         ide_tree_prompt_cancel(self->tree);
         ide_fsm_set_tree_editable(self->fsm, FALSE);
       }
@@ -425,6 +484,10 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       break;
     case IDE_ACTION_PANE_CYCLE:
       if (cur_st == IDE_STATE_TREE) {
+        if (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree))) {
+          ide_tree_prompt_cancel(self->tree);
+          ide_fsm_set_tree_editable(self->fsm, FALSE);
+        }
         if (gtk_revealer_get_reveal_child(GTK_REVEALER(self->drawer_revealer)))
           ide_fsm_set_state(self->fsm, IDE_STATE_DRAWER);
         else
@@ -449,6 +512,21 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_DRAWER_CLOSE:
       gtk_revealer_set_reveal_child(GTK_REVEALER(self->drawer_revealer), FALSE);
       gtk_widget_grab_focus(self->source_view);
+      break;
+    case IDE_ACTION_DRAWER_MAXIMIZE:
+      if (self->vertical_paned) {
+        if (!self->drawer_maximized) {
+          self->saved_drawer_pos =
+              gtk_paned_get_position(GTK_PANED(self->vertical_paned));
+          gtk_paned_set_position(GTK_PANED(self->vertical_paned), 120);
+          self->drawer_maximized = TRUE;
+        } else {
+          gtk_paned_set_position(
+              GTK_PANED(self->vertical_paned),
+              self->saved_drawer_pos > 120 ? self->saved_drawer_pos : 480);
+          self->drawer_maximized = FALSE;
+        }
+      }
       break;
     case IDE_ACTION_DRAWER_JUMP:
       ide_search_drawer_jump_selected(self->search_drawer);
@@ -599,9 +677,15 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       ide_tree_refresh(self->tree);
       break;
     case IDE_ACTION_TREE_CREATE_FILE:
+      gtk_widget_set_visible(self->tree_container, TRUE);
+      ide_fsm_set_state(self->fsm, IDE_STATE_TREE);
+      ide_fsm_set_tree_editable(self->fsm, TRUE);
       ide_tree_prompt_create_file(self->tree);
       break;
     case IDE_ACTION_TREE_CREATE_DIR:
+      gtk_widget_set_visible(self->tree_container, TRUE);
+      ide_fsm_set_state(self->fsm, IDE_STATE_TREE);
+      ide_fsm_set_tree_editable(self->fsm, TRUE);
       ide_tree_prompt_create_dir(self->tree);
       break;
     case IDE_ACTION_TREE_DELETE:
@@ -697,7 +781,47 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       if (buf)
         ide_lsp_manager_request_definition(self->lsp, buf, cur_line, cur_col);
       break;
+    case IDE_ACTION_LSP_IMPLEMENTATION:
+      if (buf) ide_lsp_manager_request_implementation(self->lsp, buf);
+      break;
+    case IDE_ACTION_LSP_CODE_ACTION:
+      if (buf) ide_lsp_manager_request_code_actions(self->lsp, self->source_view, buf);
+      break;
+    case IDE_ACTION_LSP_RENAME:
+      if (buf) ide_lsp_manager_rename_begin(self->lsp, self->source_view, buf);
+      break;
+    case IDE_ACTION_TASK_BUILD:
+    case IDE_ACTION_TASK_TEST:
+    case IDE_ACTION_TASK_RUN:
+    case IDE_ACTION_TASK_CLEAN: {
+      int kind = act->type == IDE_ACTION_TASK_BUILD ? 0
+                 : act->type == IDE_ACTION_TASK_TEST ? 1
+                 : act->type == IDE_ACTION_TASK_RUN ? 2 : 3;
+      /* save modified buffers first so the build sees the editor's state */
+      for (guint i = 0; i < self->buffers->len; i++) {
+        IdeBuffer *b = g_ptr_array_index(self->buffers, i);
+        if (ide_buffer_get_file_path(b) && ide_buffer_get_modified(b)) ide_buffer_save(b, NULL);
+      }
+      ide_window_show_drawer_page(self, "search");
+      ide_search_drawer_run_task(self->search_drawer, kind,
+                                 buf ? ide_buffer_get_file_path(buf) : NULL);
+      break;
+    }
+    case IDE_ACTION_LSP_FORMAT:
+      if (buf) {
+        guint tab_w = CLAMP(
+            gtk_source_view_get_tab_width(GTK_SOURCE_VIEW(self->source_view)), 1, 8);
+        gboolean use_spaces = gtk_source_view_get_insert_spaces_instead_of_tabs(
+            GTK_SOURCE_VIEW(self->source_view));
+        ide_lsp_manager_request_format_with_options(
+            self->lsp, buf, (int)tab_w, use_spaces);
+      }
+      break;
     case IDE_ACTION_LSP_CANCEL:
+      if (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree))) {
+        ide_tree_prompt_cancel(self->tree);
+        ide_fsm_set_tree_editable(self->fsm, FALSE);
+      }
       ide_lsp_manager_cancel_popover(self->lsp);
       break;
     case IDE_ACTION_LSP_SELECT_NEXT:
@@ -707,7 +831,23 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       ide_lsp_manager_select_prev(self->lsp);
       break;
     case IDE_ACTION_LSP_SELECT_CONFIRM:
-      if (buf) ide_lsp_manager_confirm_selection(self->lsp, buf);
+      if (cur_st == IDE_STATE_TREE &&
+          (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree)))) {
+        if (!ide_tree_prompt_confirm(self->tree)) {
+          ide_window_show_toast(self, "Tree create cancelled (invalid path or file already exists)");
+        }
+        ide_fsm_set_tree_editable(self->fsm, FALSE);
+      } else if (ide_lsp_manager_rename_active(self->lsp)) {
+        if (buf) ide_lsp_manager_rename_confirm(self->lsp, buf);
+      } else if (buf) {
+        if (act->int_val > 0) {
+          if (!ide_lsp_manager_select_index(self->lsp, act->int_val - 1)) {
+            ide_fsm_set_state(self->fsm, IDE_STATE_CODE_ACTION);
+            break;
+          }
+        }
+        ide_lsp_manager_confirm_selection(self->lsp, buf);
+      }
       break;
     case IDE_ACTION_NEXT_DIAGNOSTIC:
     case IDE_ACTION_PREV_DIAGNOSTIC:
@@ -854,8 +994,67 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_REPLACE_TOGGLE_REGEX:
       ide_search_drawer_toggle_regex(self->search_drawer);
       break;
+    case IDE_ACTION_REPLACE_APPLY_CURRENT:
+      ide_search_drawer_apply_current(self->search_drawer, buf);
+      break;
     case IDE_ACTION_REPLACE_APPLY_ALL:
       ide_search_drawer_apply_all(self->search_drawer, self->buffers);
+      break;
+    case IDE_ACTION_NEXT_HUNK:
+    case IDE_ACTION_PREV_HUNK:
+      if (buf) {
+        GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+        guint total = (guint)MAX(1, gtk_text_buffer_get_line_count(tbuf));
+        guint target_line = 0;
+        if (act->type == IDE_ACTION_NEXT_HUNK) {
+          guint l = cur_line;
+          while (l <= total && ide_buffer_get_line_diff(buf, l) != IDE_DIFF_NONE)
+            l++;
+          for (; l <= total; l++) {
+            if (ide_buffer_get_line_diff(buf, l) != IDE_DIFF_NONE) {
+              target_line = l;
+              break;
+            }
+          }
+          if (target_line == 0) {
+            for (l = 1; l <= total; l++) {
+              if (ide_buffer_get_line_diff(buf, l) != IDE_DIFF_NONE) {
+                target_line = l;
+                break;
+              }
+            }
+          }
+        } else {
+          int l = (int)cur_line;
+          while (l >= 1 && ide_buffer_get_line_diff(buf, (guint)l) != IDE_DIFF_NONE)
+            l--;
+          for (; l >= 1; l--) {
+            if (ide_buffer_get_line_diff(buf, (guint)l) != IDE_DIFF_NONE) {
+              while (l > 1 &&
+                     ide_buffer_get_line_diff(buf, (guint)(l - 1)) != IDE_DIFF_NONE)
+                l--;
+              target_line = (guint)l;
+              break;
+            }
+          }
+          if (target_line == 0) {
+            for (l = (int)total; l >= 1; l--) {
+              if (ide_buffer_get_line_diff(buf, (guint)l) != IDE_DIFF_NONE) {
+                while (l > 1 &&
+                       ide_buffer_get_line_diff(buf, (guint)(l - 1)) != IDE_DIFF_NONE)
+                  l--;
+                target_line = (guint)l;
+                break;
+              }
+            }
+          }
+        }
+        if (target_line > 0) {
+          ide_window_move_cursor_to_line_col(self, target_line, 1);
+        } else {
+          ide_window_show_toast(self, "No diff hunks in buffer");
+        }
+      }
       break;
     case IDE_ACTION_NEXT_ERROR:
       ide_search_drawer_step_error(self->search_drawer, 1);
@@ -868,6 +1067,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_DAP_TOGGLE_BREAKPOINT:
       if (buf) {
         ide_buffer_toggle_breakpoint(buf, cur_line);
+        ide_dap_view_breakpoints_changed(self->dap);
         gtk_widget_queue_draw(self->source_view);
       }
       break;
@@ -881,6 +1081,10 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       break;
     case IDE_ACTION_DAP_CONTINUE:
       ide_dap_view_continue(self->dap, buf);
+      gtk_widget_queue_draw(self->source_view);
+      break;
+    case IDE_ACTION_DAP_PAUSE:
+      ide_dap_view_pause(self->dap);
       gtk_widget_queue_draw(self->source_view);
       break;
     case IDE_ACTION_DAP_STEP_OVER:
@@ -914,6 +1118,15 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     default:
       execute_buffer_motion_or_edit(self, act);
       break;
+  }
+
+  /* Completion follows typing: refresh while open, auto-trigger on '.', '::' ... */
+  if (buf != NULL && (act->type == IDE_ACTION_INSERT_CHAR || act->type == IDE_ACTION_BACKSPACE)) {
+    if (completion_was_open) {
+      ide_lsp_manager_request_completion(self->lsp, self->source_view, buf, 0, 0);
+    } else if (act->type == IDE_ACTION_INSERT_CHAR) {
+      ide_lsp_manager_maybe_trigger_completion(self->lsp, self->source_view, buf, act->str);
+    }
   }
 
   ide_window_update_status_bar_and_hud(self);

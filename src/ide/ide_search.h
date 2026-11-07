@@ -49,6 +49,9 @@ void             ide_search_drawer_set_workspace_root(IdeSearchDrawer *drawer,
 
 void             ide_search_drawer_show_build_output(IdeSearchDrawer *drawer);
 void             ide_search_drawer_run_build(IdeSearchDrawer *drawer);
+/* kind: IdeTaskKind (build / test / run / clean) of `ide_tasks.h`; active_file
+ * selects the project and, for run, the main class / package. */
+void             ide_search_drawer_run_task(IdeSearchDrawer *drawer, int kind, const char *active_file);
 void             ide_search_drawer_append_output_line(IdeSearchDrawer *drawer,
                                                       const char      *line);
 
@@ -69,6 +72,7 @@ void             ide_search_drawer_toggle_regex(IdeSearchDrawer *drawer);
 void             ide_search_drawer_append_char(IdeSearchDrawer *drawer, const char *ch);
 void             ide_search_drawer_backspace(IdeSearchDrawer *drawer);
 guint            ide_search_drawer_apply_all(IdeSearchDrawer *drawer, GPtrArray *open_buffers);
+gboolean         ide_search_drawer_apply_current(IdeSearchDrawer *drawer, IdeBuffer *active_buf);
 
 G_END_DECLS
 

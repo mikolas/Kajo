@@ -101,6 +101,10 @@ files_window_on_file_op_completed(gboolean success, const char *message, GError 
     g_weak_ref_clear(ref);
     g_free(ref);
     if (!self) return;
+    if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        g_object_unref(self);
+        return;
+    }
 
     if (!success) {
         files_window_set_status_message(self, error ? error->message : "Operation failed", TRUE);
@@ -225,9 +229,9 @@ on_prompt_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     const char *text = gtk_editable_get_text(GTK_EDITABLE(self->prompt_entry));
 
     if (kind == PROMPT_MKDIR && self->current_dir) {
-        kajo_files_op_mkdir_async(self->current_dir, text, files_window_on_file_op_completed, files_window_op_weak_new(self));
+        kajo_files_op_mkdir_async(self->current_dir, text, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
     } else if (kind == PROMPT_RENAME && self->selected_item) {
-        kajo_files_op_rename_async(kajo_file_item_get_file(self->selected_item), text, files_window_on_file_op_completed, files_window_op_weak_new(self));
+        kajo_files_op_rename_async(kajo_file_item_get_file(self->selected_item), text, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
     } else if (kind == PROMPT_DELETE_PERM && self->selected_item) {
         g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
         g_ptr_array_add(arr, g_object_ref(self->selected_item));
@@ -1436,6 +1440,10 @@ kajo_files_window_dispose(GObject *object)
         g_cancellable_cancel(self->enum_cancel);
         g_clear_object(&self->enum_cancel);
     }
+    if (self->ops_cancel) {
+        g_cancellable_cancel(self->ops_cancel);
+        g_clear_object(&self->ops_cancel);
+    }
     if (self->dir_monitor) {
         g_file_monitor_cancel(self->dir_monitor);
         g_clear_object(&self->dir_monitor);
@@ -1536,6 +1544,7 @@ kajo_files_window_init(KajoFilesWindow *self)
 
     self->history = g_ptr_array_new_with_free_func(g_free);
     self->history_pos = -1;
+    self->ops_cancel = g_cancellable_new();
     self->view_mode = KAJO_VIEW_GRID;
     self->sort_field = KAJO_SORT_NAME;
     self->sort_ascending = TRUE;

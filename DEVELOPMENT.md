@@ -47,13 +47,23 @@ src/
 │   ├── ide_actions.c               Action dispatcher + buffer motion/edit execution
 │   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
 │   ├── ide_buffer.h/c              IdeBuffer, text objects, Git diff & Agent snapshots, scheme search paths
-│   ├── ide_syntax.c                11-token semantic highlighter (ide_highlight_source_buffer)
+│   ├── ide_syntax.c                11-token highlighter (ide_highlight_source_buffer): drives the tree-sitter engine, heuristic lexer fallback
+│   ├── ide_ts.c / ide_ts.h         Tree-sitter engine: incremental parse, base token pass + per-language query layer (no GTK)
+│   ├── ide_ts_queries.c            Highlight queries for all 15 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, JSON, TOML, YAML, CSS, HTML)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
-│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 85-command Help Palette
+│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 102-command Help Palette
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
-│   ├── ide_lsp.h/c                 JSON-RPC framing helpers + ripgrep-backed hover/completion/definition/rename (real LSP client planned)
-│   ├── ide_dap.h/c                 Debugger UI scaffold: transport buttons & 3-pane inspector (no adapter connected yet)
+│   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
+│   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)
+│   ├── ide_dap.h/c                 Debugger view: session state machine, call stack / locals / console panes
+│   ├── ide_dap_client.h/c          GTK-free async DAP client (adapter process or any GIO stream pair)
+│   ├── ide_dap_launch.h/c          Adapter + debuggee discovery (.kajo/debug.json, Meson introspection, Cargo, Delve)
+│   ├── ide_dap_java.h/c            Java debug preparation: jdtls executeCommand chain (main class, classpath, JDK, debug port) + TCP connect
+│   ├── ide_jsonrpc.h/c             Content-Length framing shared by the LSP and DAP clients
+│   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make) -> build/test/run/clean commands (no GTK)
+│   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)
+│   ├── ide_native_exe.h/c          Native executable discovery for run/debug (Meson/CMake/Make build trees)
 │   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
 │   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
 │   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
@@ -134,6 +144,12 @@ tests/
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
+├── test_dap_client.c               DAP client against tests/mock_dap_adapter.py + launch resolution
+├── mock_dap_adapter.py             Scripted debug adapter used by the DAP tests
+├── test_ide_tasks.c                Task resolution per build system, nested projects, Java main-class, shell quoting
+├── test_lsp_client.c               LSP client against tests/mock_lsp_server.py (handshake queueing, errors, cancel, server death)
+├── mock_lsp_server.py              Scripted language server used by the LSP tests
+├── test_ide_ts.c                   Tree-sitter engine: token classification for all 15 languages, query validity against the installed grammars, detection, incremental == fresh parse
 ├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
 ├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, socket round-trip & stalled-client tests
 ├── test_niri.c                     Mock-Niri socket: action JSON shape, rejection logging, EventStream parsing
@@ -152,9 +168,14 @@ tests/
 - `pam` (`libpam`)
 - `poppler-glib`, `libarchive`
 - `blueprint-compiler`, `meson`, `ninja`
+- Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
+  - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
+  - AUR: `tree-sitter-cpp`, `tree-sitter-css`, `tree-sitter-go`, `tree-sitter-html`, `tree-sitter-java`, `tree-sitter-json`, `tree-sitter-toml`, `tree-sitter-typescript` (also provides TSX), `tree-sitter-yaml`
+  - `meson.build` probes `tree-sitter` via pkg-config and each `libtree-sitter-<lang>` via `find_library()` (several grammars ship no header or `.pc` file, so their entry points are declared in `src/ide/ide_ts.c`). A missing grammar only disables that language's tree-sitter path.
+  - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 16 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 20 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -163,7 +184,7 @@ meson setup builddir
 # Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
 meson compile -C builddir
 
-# Run all 16 automated GTest suites
+# Run all 20 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -186,6 +207,10 @@ meson install -C builddir
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
+| `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, stop, stack, evaluate, errors, adapter death) and debuggee/adapter discovery. |
+| `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
+| `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition) and unit-tests text edits, snippets and the server registry. |
+| `ide-ts` | `test-ide-ts` | Tree-sitter token classification for Java, Go and C, language detection, incremental re-parse equals a fresh parse, error tolerance. |
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
 | `niri-ipc` | `test-niri` | Mock-Niri socket: exact JSON of `ToggleWindowFloating` / `LoadConfigFile` actions (regression for the dead FLOAT / TILE button), rejection logging, and EventStream parsing (workspaces, windows, focus, keyboard layouts). |

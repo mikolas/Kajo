@@ -20,6 +20,26 @@ depends=(
     'poppler-glib'
     'libarchive'
     'mpv'
+    # kajo-ide tree-sitter engine. The first six are in the official/CachyOS
+    # repositories, the rest are AUR packages (install with an AUR helper).
+    # Each grammar is optional at build time; a missing one only disables
+    # tree-sitter highlighting for that language.
+    'tree-sitter'
+    'tree-sitter-c'
+    'tree-sitter-bash'
+    'tree-sitter-javascript'
+    'tree-sitter-lua'
+    'tree-sitter-rust'
+    'tree-sitter-cpp'
+    'tree-sitter-css'
+    'tree-sitter-go'
+    'tree-sitter-html'
+    'tree-sitter-java'
+    'tree-sitter-json'
+    'tree-sitter-toml'
+    'tree-sitter-typescript'
+    'tree-sitter-yaml'
+    'tree-sitter-m68k'
     'libglvnd'
 )
 makedepends=(
@@ -33,6 +53,7 @@ makedepends=(
 optdepends=(
     'ripgrep: kajo-ide search, live grep, hover and go-to-definition'
     'git: kajo-ide file tree status'
+    'm68k-lsp-server: kajo-ide Motorola 68000 language server (vasmm68k_mot from vasm is needed for its build task)'
     'gvfs: kajo-files network/trash locations'
     'gvfs-smb: kajo-files SMB shares'
     'udisks2: kajo-files drive mounting'

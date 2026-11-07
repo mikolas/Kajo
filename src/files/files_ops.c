@@ -36,6 +36,7 @@ on_mkdir_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 void
 kajo_files_op_mkdir_async(GFile *parent_dir,
                           const char *folder_name,
+                          GCancellable *cancellable,
                           KajoFileOpCallback callback,
                           gpointer user_data)
 {
@@ -54,7 +55,7 @@ kajo_files_op_mkdir_async(GFile *parent_dir,
     d->user_data = user_data;
     d->success_msg = g_strdup_printf("Created folder '%s'", folder_name);
 
-    g_file_make_directory_async(child, G_PRIORITY_DEFAULT, NULL, on_mkdir_ready, d);
+    g_file_make_directory_async(child, G_PRIORITY_DEFAULT, cancellable, on_mkdir_ready, d);
 }
 
 /* ─── Rename File / Folder ─── */
@@ -76,6 +77,7 @@ on_rename_ready(GObject *source, GAsyncResult *res, gpointer user_data)
 void
 kajo_files_op_rename_async(GFile *file,
                            const char *new_name,
+                           GCancellable *cancellable,
                            KajoFileOpCallback callback,
                            gpointer user_data)
 {
@@ -93,7 +95,7 @@ kajo_files_op_rename_async(GFile *file,
     d->user_data = user_data;
     d->success_msg = g_strdup_printf("Renamed to '%s'", new_name);
 
-    g_file_set_display_name_async(file, new_name, G_PRIORITY_DEFAULT, NULL, on_rename_ready, d);
+    g_file_set_display_name_async(file, new_name, G_PRIORITY_DEFAULT, cancellable, on_rename_ready, d);
 }
 
 static GFile *resolve_unique_dest_child(GFile *dest_dir, const char *base_name);
@@ -486,6 +488,10 @@ batch_op_worker(GTask *task,
     }
 
     case BATCH_OP_RESTORE_TRASH: {
+        if (!ctx->files || ctx->files->len == 0) {
+            g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No trash item specified");
+            return;
+        }
         GFile *trash_file = g_ptr_array_index(ctx->files, 0);
         g_autoptr(GFile) target = g_file_new_for_path(ctx->restore_path);
         g_autoptr(GFile) parent = g_file_get_parent(target);
@@ -547,6 +553,10 @@ batch_op_worker(GTask *task,
         return;
 
     case BATCH_OP_EXTRACT_ARCHIVE: {
+        if (!ctx->files || ctx->files->len == 0) {
+            g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No archive specified");
+            return;
+        }
         GFile *archive_file = g_ptr_array_index(ctx->files, 0);
         g_autofree char *folder_name = NULL;
         guint extracted = 0;

@@ -10,11 +10,12 @@
 
 **Kajo IDE (`kajo-ide`)** is the native GTK4 / `GtkSourceView-5` modal code editor and integrated development environment for the Kajo Desktop Suite. Designed as the graphical evolution of `koodieditori`, it combines:
 
-1. **Selection-First Modal Editing** — A deterministic 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) where motions highlight selections first and actions (`d`, `c`, `y`, `s`) operate on the active selection.
-2. **Nordic Keyboard Ergonomics** — First-class bindings for Finnish/Swedish keyboards (`ä` / `ö` diagnostic & hunk stepping, `m i/a` structural text objects that avoid Dead-Key / AltGr finger gymnastics, and `jk` fast-exit from `INSERT` mode) alongside standard desktop shortcuts (`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C/X/V/A`, `F1`, `F5`–`F12`).
-3. **Code Intelligence & Debugger UI** — ripgrep-backed hover, completion, go-to-definition and rename today; a real stdio LSP 3.17 client (`clangd`, `gopls`, `rust-analyzer`, `pyright`) and DAP client (`gdb -i=dap`, `lldb-dap`, `dlv dap`) are planned (see §8, §9 and `ROADMAP.md`).
-4. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg` export.
-5. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers.
+1. **Tree-sitter Syntax Highlighting** — C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, Motorola 68000 (`m68k`: `.s`, `.S`, `.asm`, `.i`), JSON, TOML, YAML, CSS and HTML are parsed with Tree-sitter (incremental re-parse on every edit; only the changed region is re-tagged) and mapped onto the 11 semantic token classes of the active color scheme. Annotations, generics, records, methods vs. fields, constructors and calls are classified from the syntax tree rather than guessed. Other languages (Python, Makefile, meson.build, …) use the heuristic lexer. Grammars are optional build dependencies (see the README); a missing grammar degrades that language to the lexer.
+2. **Selection-First Modal Editing** — A deterministic 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) where motions highlight selections first and actions (`d`, `c`, `y`, `s`) operate on the active selection.
+3. **Nordic Keyboard Ergonomics** — First-class bindings for Finnish/Swedish keyboards (`ä` / `ö` diagnostic & hunk stepping, `m i/a` structural text objects that avoid Dead-Key / AltGr finger gymnastics, and `jk` fast-exit from `INSERT` mode) alongside standard desktop shortcuts (`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C/X/V/A`, `F1`, `F5`–`F12`).
+4. **Code Intelligence & Debugger UI** — a real asynchronous stdio LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, …) provides diagnostics, hover, completion, definition/implementation, rename, code actions and formatting (§8); a real DAP client drives `gdb -i=dap`, `lldb-dap`, Delve and — through `jdtls` — Java (§9).
+5. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg` export.
+6. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers.
 
 ---
 
@@ -63,7 +64,7 @@ When launched with a file path, `kajo-ide` automatically detects the enclosing G
   - `📖 MD` (`Space m p`) — Toggle the 50/50 side-by-side Graphical Markdown & Mermaid Preview pane.
   - `🔍 FIND` (`Space f f`) — Open the Fuzzy File Finder modal.
   - `❓ HELP` (`?` / `F1` / `Space h`) — Open the full-width Interactive Help Viewer & Command Palette.
-- **Center Cluster:** Active workspace-relative file breadcrumb (`src/ide/ide_window.c`), live Git branch & dirty counter badge (`⎇ feat/kajo-ide ●3 +1`), and active AI Agent modification indicator (`🤖 AGENT MODIFIED`).
+- **Center Cluster:** Active workspace-relative file breadcrumb (`src/ide/ide_window.c`) — deep paths (Java packages) are shortened to `repo ▸ … ▸ parent ▸ dir ▸ file` and ellipsized so the right-zone **BUILD** / **FLOAT / TILE** / close controls stay on screen; the full path is on hover — plus the live Git branch & dirty counter badge (`⎇ feat/kajo-ide ●3 +1`) and the AI Agent modification indicator (`🤖 AGENT MODIFIED`).
 - **Right Cluster:** `🔨 BUILD` quick-trigger (`meson compile -C builddir`), Niri `🗗 FLOAT / TILE` window toggle, and `✕` close button.
 
 ### 3.2 Six-Column Cairo Editor Gutter (`68px`)
@@ -165,6 +166,9 @@ Designed for zero-Dead-Key navigation on Nordic layouts (with `[` / `]` brackets
 
 Pressing `m` enters `MATCH` mode (`#ff8c00` pill), allowing structural selection without awkward `AltGr` brace chords:
 
+> **Syntax-tree objects.** For every tree-sitter language (see §1) `f`, `c`, `b` and `a` select the innermost enclosing function, class/struct/interface/enum, brace block, or argument / parameter / list element using the parsed syntax tree (`i` = body without braces or signature, or the element without its comma; `a` = whole construct, or the element with one adjacent comma). Other languages, and positions the tree cannot resolve, fall back to the text-based heuristics.
+
+
 | Chord | Target Structure | Scope |
 | :--- | :--- | :--- |
 | `m m` | Matching Bracket `()` / `[]` / `{}` | Jump cursor to matching delimiter |
@@ -184,30 +188,45 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 
 | Chord | Category | Action |
 | :--- | :--- | :--- |
-| `Space f f` | Files | Open **Fuzzy File Finder** across workspace |
-| `Space f g` | Search | Open **Live Ripgrep (`rg`)** project-wide text search |
-| `Space b b` | Buffers | Open **Active Buffer Switcher** |
-| `Space w` | Files | Save active buffer to disk (`:w`) |
-| `Space q` | Window | Close buffer / Quit IDE (`:q`) |
+| `Space f f` / `Space Space` | Files | Open **Fuzzy File Finder** across workspace |
+| `Space /` / `Space f g` | Search | Open **Live Ripgrep (`rg`)** project-wide text search |
+| `/` / `Space s f` / `Space s /` | Search | Start incremental **In-Buffer Search** |
+| `Space b b` / `Space ,` | Buffers | Open **Active Buffer Switcher** |
+| `Space w s` / `Space f s` | Files | Save active buffer to disk (`Ctrl+S`) |
+| `Space w a` | Files | Save all modified buffers to disk |
+| `Space q` / `Space b d` | Buffers | Close active buffer |
+| `Space Q` / `Space w q` | Buffers | Force close active buffer (discarding unsaved changes) |
 | `Space e` | Explorer | Focus or toggle the **Project File Explorer** sidebar |
-| `Space h` / `?` / `F1` | Help | Open the **Interactive Help Viewer & Command Palette** |
-| `Space c a` | LSP | *(planned)* Trigger **LSP Code Actions** (`quickfix` / refactor) — chord is bound, no handler yet |
-| `Space c r` | LSP | Rename symbol (whole-word replace in the current buffer) |
-| `Space c f` | LSP | *(planned)* Format current buffer via LSP (`clang-format` / `gofmt` / `rustfmt`) |
-| `Space g c` | LSP | *(planned)* Inspect **LSP Incoming / Outgoing Call Hierarchy** — chord is bound, no handler yet |
-| `Space x x` | Diagnostics | Open **Workspace Diagnostics Drawer** |
+| `Space ?` / `?` / `F1` | Help | Open the **Interactive Help Viewer & Command Palette** |
+| `Space c a` | LSP | Code actions (quick fix / refactor) at the cursor or selection (`1`–`9` or `Enter`) |
+| `Space c r` | LSP | Rename symbol across the workspace via the language server |
+| `Space c f` | LSP | Format current buffer via the language server |
+| `Space r b` / `r t` / `r r` / `r c` | Tasks | **Build** / **Test** / **Run** / **Clean** the project that owns the active file (output and clickable errors in the bottom *SEARCH / BUILD* drawer; modified buffers are saved first) |
+| `Space o` | Layout | Toggle bottom **Search / Build / DAP / Agent Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
-| `Space s R` | Search | Open **Project-Wide Search & Replace** in bottom drawer |
+| `Space s p` | Search | Open **Project-Wide Search & Replace** in bottom drawer. Files not open in a buffer are rewritten on disk (not undoable): the first apply only arms and reports the file count, a second apply confirms; editing any field disarms. UTF-8 text files up to 2 MB only; regex mode scans every non-ignored file because ripgrep's regex dialect differs from the editor's |
+| `Space n h` / `Space p h` | Navigation | Jump to **Next / Previous Diff Hunk** in active buffer |
 | `Space m p` | Markdown | Toggle **Side-by-Side Graphical Markdown & Mermaid Split** |
-| `Space m m` | Markdown | Toggle **Bottom-Docked Markdown Preview Drawer** |
+| `Space m m` / `Space m d` | Markdown | Toggle **Bottom-Docked Markdown Preview Drawer** |
 | `Space m t` | Markdown | Toggle `- [ ]` / `- [x]` **Markdown Task Checkbox** on current line |
 | `Space d b` | Debugger | Toggle **DAP Breakpoint** on current line (same as `F9`) |
-| `Space d c` | Debugger | Start or Continue **DAP Debugger Session** (same as `F5`) |
+| `Space d d` / `Space d c` | Debugger | Start or Continue **DAP Debugger Session** (same as `F5`) |
+| `Space d p` | Debugger | **Pause** active DAP debuggee execution |
 | `Space d s` | AI Agent | Open **Agent Diff Review** for AI-modified buffers |
 | `Space d a` | AI Agent | **Accept All** pending AI agent edits in current buffer |
 | `Space d r` | AI Agent | **Revert All** pending AI agent edits in current buffer to pre-agent snapshot |
 
 ---
+
+
+### 5.5 Right-Click Code Menu & Mouse Navigation
+
+Kajo is keyboard-first, but it is a native GTK4 window, not a terminal, so the mouse works too:
+
+- **Right-click in the editor** opens a code menu merged with the usual cut/copy/paste: **Go to Definition** (`g d`), **Go to Implementation** (`Space g i`), **Show Documentation** (`K`), **Rename Symbol…** (`Space c r`), **Code Actions…** (`Space c a`), **Format Buffer** (`Space c f`) and **Toggle Breakpoint** (`F9`). The cursor is placed where you clicked first (a click inside a selection keeps it), and items that need a running language server (implementation, code actions, format) are disabled until one is ready. Every item dispatches the same action as its key, so behavior never diverges.
+- **Ctrl+click** a symbol jumps straight to its definition.
+- **Hover docs are explicit only:** the pointer never opens a popup by resting. Use `K` or the right-click menu; dismiss with `Esc` / `q`.
+
 
 ## 6. Project File Explorer & Git Status (`Space e`)
 
@@ -244,39 +263,84 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Navigation:** `↑` / `↓`, `Tab` / `Shift+Tab`, `Ctrl+n` / `Ctrl+p`, or mouse click to select; `Enter` or double-click to open the file at the exact line/column.
 
 ### 7.2 Interactive Help Viewer & Command Palette (`?`, `F1`, `Space h`, or `❓ HELP`)
-- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **85 commands** across 11 categories.
-- **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
+- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **102 commands** across 12 categories.
+- **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `TASKS`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
 - **Instant Fuzzy Filter:** Type any key chord, command name, or description keyword to filter rows in real time.
 - **Executable Command Palette:** Pressing `Enter` or double-clicking any row immediately executes that command in the editor.
 - **Dismissing:** Press `Esc`, `F1`, click `✕ ESC`, or press `q` when the search query is empty (typing `q` when a filter query is already active appends `q` to the search string so you can search for `"quote"` or `"quickfix"`).
 
 ---
 
-## 8. Code Intelligence (ripgrep-backed; LSP client planned)
+## 8. Code Intelligence (Language Server Protocol)
 
-> **Status:** `kajo-ide` does **not** yet spawn language servers. `src/ide/ide_lsp.c` detects the matching server per filetype and shows an availability badge in the status bar, and contains the JSON-RPC 2.0 framing helpers a future client will use. The features below are implemented with `ripgrep` and the open buffer.
+`kajo-ide` runs real language servers over stdio. One server process is started lazily per **(server, project root)** when a matching file is opened; the root is the nearest ancestor holding a marker file (`go.mod`/`go.work`, `pom.xml`/`build.gradle*`, `compile_commands.json`, `Cargo.toml`, `tsconfig.json`, …) and never climbs above the workspace. Everything is asynchronous — a slow server (a JVM-based `jdtls` indexing a large project) never blocks the editor. The status bar shows `LSP: <server> ●` once the server finished initialization and `LSP: <server> (not installed)` when the binary is missing; without a server the editor falls back to the `ripgrep`/buffer behaviour described below.
 
-| Language(s) | File Extensions | Server detected (badge only) |
-| :--- | :--- | :--- |
-| **C / C++** | `.c`, `.h`, `.cpp`, `.hpp`, `.cc` | `clangd` |
-| **Go** | `.go` | `gopls` |
-| **Rust** | `.rs` | `rust-analyzer` |
-| **Python** | `.py` | `pyright-langserver` |
+| Language(s) | Extensions | Server (binary) | Notes |
+| :--- | :--- | :--- | :--- |
+| **Go** | `.go` | `gopls` | `go.mod` root; formats with `gofmt` rules |
+| **Java** | `.java` | `jdtls` | per-project data dir `~/.cache/kajo/jdtls/<hash>`; started with the **newest installed JDK** (`JAVA_HOME`, `~/.sdkman`, `/usr/lib/jvm`), override with `KAJO_JDTLS_JAVA=/path/to/bin/java` |
+| **C / C++** | `.c .h .cpp .hpp .cc` | `clangd` | uses `builddir/` / `build/` `compile_commands.json` automatically; a `.h` is sent as C++ when C++ sources sit next to it |
+| **Rust** | `.rs` | `rust-analyzer` | `Cargo.toml` root |
+| **Python** | `.py` | `pyright-langserver` | |
+| **TypeScript / JavaScript** | `.ts .tsx .js .jsx` | `typescript-language-server` | |
+| **Motorola 68000** | `.s .S .asm .ASM .i .I` | `m68k-lsp-server` | `.m68krc.json` / `.m68k-format.json` / `Makefile` root; uses `vasmm68k_mot` diagnostics and `m68k-formatter`. **Opt-in per project (interim):** these extensions are also GNU/NASM assembly (and `.i` other formats), so the language server, language id and `rg` fallbacks apply only when an ancestor directory contains `.m68krc.json` or `.m68k-format.json`, or `KAJO_M68K_ASM=1` is set. Tree-sitter highlighting and the vasm build task are still keyed on the extension (task: only if `vasmm68k_mot` is on `PATH`) — to be replaced by a proper per-project language setting |
+| **Shell / JSON / YAML / TOML / Lua / Meson** | `.sh .json .yaml .toml .lua meson.build` | `bash-language-server`, `vscode-json-language-server`, `yaml-language-server`, `taplo`, `lua-language-server`, `mesonlsp` | |
 
-### Implemented Workflows
-- **Hover (`K`):** popover with the symbol, a one-line declaration found via `ripgrep` in the workspace, and any compiler diagnostic on the line.
-- **Completion (`Ctrl+Space`):** ranked identifiers from the current buffer (fuzzy + prefix), inserted with `Tab` / `Enter`.
-- **Go to Definition (`g d`):** `ripgrep` search for the declaration pattern; the location is recorded in the `Ctrl+o` / `Ctrl+i` jumplist.
-- **Rename (`Space c r`):** whole-word replace across the current buffer.
+### Workflows (server running)
+- **Diagnostics:** errors / warnings / hints from the server appear in the gutter pill, the status-bar counters and the hover card; `ä` / `ö` (or `]d` / `[d`) step through them. Edits are sent to the server after a short debounce (full-document sync) and saving sends `didSave`.
+- **Hover (`K`, `Space k`):** signature and documentation (markdown flattened to text) plus any diagnostic on the line. `Esc` / `q` dismisses; moving the cursor, scrolling the symbol out of view, clicking elsewhere or leaving the editor also dismisses it, and the popover stays pinned to the cursor as you scroll.
+- **Completion (`Ctrl+Space`, or automatically after a server trigger character such as `.`):** ranked, scrollable list with kind badges and documentation. The list follows your typing, `Up`/`Down`/`Ctrl+n`/`Ctrl+p` select, `Tab`/`Enter` insert. The server's `textEdit` and `additionalTextEdits` are honored, so auto-imports (Go, Java) are added with the completion.
+- **Go to Definition (`g d` / `Space g d`) and Implementation (`Space g i`):** jumps (and records the jumplist). Definitions inside libraries (`jdt://`) are reported instead of opened.
+- **Rename (`Space c r`):** prompt anchored at the cursor (type the new name, `Enter` applies, `Esc` cancels). The server's `WorkspaceEdit` is applied to open buffers (undoable) and to files that are not open (atomic write); a toast reports the edit/file count.
+- **Code Actions (`Space c a`):** quick fixes and refactorings for the cursor or selection (organize imports, extract, fix) in a popover list; `Enter` runs the action (resolving it first when the server asks for that).
+- **Format (`Space c f`, command palette *LSP › Format Buffer*):** `textDocument/formatting` applied as minimal edits.
 
-### Not Yet Implemented (planned)
-Code actions, call hierarchy, references, workspace-wide rename, LSP diagnostics (the diagnostics shown come from the build runner), and formatting via a language server.
+### Fallbacks (no server for the file type, or server not installed)
+All fallback results are visibly badged in the UI and status bar (`[RG FALLBACK — NO LSP]`, `rg fallback`, `buffer fallback`):
+- Hover: asynchronous one-line declaration lookup via `ripgrep`. Completion: ranked identifiers from the buffer. Definition: asynchronous `ripgrep` declaration search. Rename: whole-word replace in the current buffer.
+
+### Limits / not yet implemented
+Call hierarchy, references list, signature help, semantic tokens (highlighting stays tree-sitter based), and incremental text sync (full-document sync is used).
 
 ---
 
-## 9. Debugger UI (`F5`–`F12`) — adapter integration planned
+## 8b. Project Tasks (Build / Test / Run / Clean)
 
-> **Status:** `src/ide/ide_dap.c` provides the debugger UI scaffold: breakpoint toggling, the transport buttons, the execution-line gutter marker and the three panes. **No debug adapter is spawned yet**; the stack and locals panes show placeholder rows derived from the breakpoints, and the REPL echoes input. Connecting `gdb -i=dap`, `lldb-dap` and `dlv dap` is on the roadmap.
+`Space r b|t|r|c` (also the **▶ BUILD** header button and the command palette *TASKS* category) resolve the build system from the **active file**: the nearest ancestor directory that holds a build file, never above the workspace. Commands run asynchronously with `sh -c` in that directory and their output lands in the bottom drawer; compiler diagnostics (`gcc`/`clang`, `javac`, Maven `[ERROR] File.java:[line,col]`, Gradle, `go`, `rustc`) become clickable rows that jump to the location.
+
+| Build system (marker) | Build | Test | Run | Clean |
+| :--- | :--- | :--- | :--- | :--- |
+| **Maven** (`pom.xml`, `./mvnw` if present) | `mvn -B -ntp compile` | `mvn -B -ntp test` | compile, then `java -cp target/classes <package.Class of the active file>` | `clean` |
+| **Gradle** (`build.gradle[.kts]`, `./gradlew` if present) | `gradle --console=plain classes` | `test` | compile, then `java -cp build/classes/java/main <package.Class>` | `clean` |
+| **Meson** (`meson.build`) | `meson setup` if needed + `meson compile -C builddir` | + `meson test --print-errorlogs` | build, then run the executable that owns the active file (from `meson-info/intro-targets.json`) | `--clean` |
+| **CMake** (`CMakeLists.txt`) | configure into `build/` (`Debug`, exports `compile_commands.json` for clangd) + `cmake --build build` | + `ctest --output-on-failure` | build, then run the newest executable under `build/` (the first run only builds and says so) | `--target clean` |
+| **Cargo** / **Go** / **Make** | `cargo build` / `go build ./...` / `make` | `cargo test` / `go test ./...` / `make test` | `cargo run` / `go run <package of the active file>` / `make` then `./<same-named binary>` (else `make run`) | `clean` |
+| *no build file, `.java` file* | `javac -d ~/.cache/kajo/java-out File.java` | — | `java File.java` | — |
+| *no build file, `.s` / `.S` / `.asm` file* | `vasmm68k_mot -Fhunkexe -kick1hunks -nosym -no-opt -o ~/.cache/kajo/m68k-out.hunk File.s` — **Amiga (Motorola 68000) only**, offered only when `vasmm68k_mot` is on `PATH`; other assembly dialects get no build task. vasm diagnostics (`error 2001 in line N of "file": …`) are clickable | — | — | — |
+
+For Java the language server and the build see the same project root, so a Maven/Gradle project that `jdtls` imported compiles with the exact same module layout. Run tasks have no stdin; interactive programs are not supported yet.
+
+---
+
+## 9. Debugger (`F5`–`F12`, Debug Adapter Protocol)
+
+`kajo-ide` is a real DAP client (`src/ide/ide_dap_client.c`). `F5` / `Space d c` starts a session for the active file: it picks an adapter, launches the debuggee, sends the breakpoints of **all open buffers** and shows the stopped frame in the editor.
+
+| Language | Adapter | Debuggee discovery |
+| :--- | :--- | :--- |
+| **C / C++ / Rust** | `gdb -i=dap` (GDB 14+), else `lldb-dap` | Meson `meson-info/intro-targets.json` (the executable whose sources contain the file or its directory), Cargo `target/debug/<crate>`, `<file>` → `./<file basename>`, else the newest ELF in `builddir/`, `build/`, `bin/` |
+| **Go** | `dlv dap` (Delve; `go install github.com/go-delve/delve/cmd/dlv@latest`) | the package of the active file (`_test.go` runs in test mode) |
+| **Java** | Microsoft *java-debug* bundle loaded into `jdtls` (DAP over a local TCP port) | `jdtls` resolves the main class of the active file, the project classpath and the JDK; no separate build step (jdtls compiles incrementally) |
+
+**Java setup (once):** run `scripts/install-java-debug.sh` — it downloads `com.microsoft.java.debug.plugin` from Maven Central into `~/.local/share/kajo/java-debug/` after verifying its SHA-1 (`KAJO_JAVA_DEBUG_JAR` overrides the location; a Mason `java-debug-adapter` install is picked up too) — and restart the IDE, because `jdtls` loads the bundle at startup (`initializationOptions.bundles`). The active file must contain a `main` method; breakpoints in any open `.java` file of the project are honored.
+
+Override discovery with `<workspace>/.kajo/debug.json`:
+
+```json
+{ "adapter": "gdb", "program": "builddir/kajo-ide", "args": ["--demo"], "cwd": "." }
+```
+
+Without any breakpoint, C/C++/Rust programs stop at the start of `main` so you can step. Build first (`Space r b`); there is no automatic build step before launching.
 
 | Key / Chord | Transport Button | Action |
 | :--- | :--- | :--- |
@@ -287,12 +351,12 @@ Code actions, call hierarchy, references, workspace-wide rename, LSP diagnostics
 | **`F12`** | `↑ Step Out` | Step out of the current stack frame (`stepOut`) |
 | **`Shift+F5`** | `⏹ Stop` | Terminate the active debuggee session |
 
-When paused at a breakpoint or signal:
-1. The editor jumps to the active stack frame and highlights the execution line with an amber `▶` gutter indicator.
+When paused at a breakpoint, step or signal:
+1. The editor opens the active frame's file and highlights the execution line with an amber `▶` gutter indicator.
 2. The **`🐞 DEBUGGER (DAP)`** bottom drawer opens automatically with three synchronized panes:
-   - **Call Stack:** Click any stack frame to inspect its source location and local variables.
-   - **Local Scopes:** Inspect local variables, registers, and struct fields.
-   - **Debug Console / REPL:** Type expressions in the bottom entry box and press `Enter` to evaluate them via DAP `evaluate`.
+   - **Call Stack:** click a frame to jump to its source and load that frame's locals.
+   - **Locals:** the adapter's locals scope (`name : type = value`).
+   - **Debug Console / REPL:** adapter and program output; type an expression (for gdb: a GDB command or expression) and press `Enter` to run DAP `evaluate` in the selected frame (only while paused). Toggling a breakpoint (`F9`) during a session updates the adapter immediately.
 
 ---
 

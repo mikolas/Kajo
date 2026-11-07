@@ -29,7 +29,7 @@ The repository builds and installs **six integrated native executables** (plus a
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
-| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, ripgrep-backed code intelligence (hover, completion, go-to-definition, rename — a full LSP client is [planned](ROADMAP.md)), debugger UI scaffold (`F5`–`F12`, breakpoints and panes; no debug adapter is connected yet), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
+| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, a real asynchronous LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, … — diagnostics, hover, completion with auto-imports, go-to-definition/implementation, workspace-wide rename, code actions, formatting; `ripgrep`/buffer fallbacks without a server), project tasks (`Space r b/t/r/c` for Maven, Gradle, Meson, CMake, Cargo, Go, Make with clickable `javac`/`gcc`/`go` errors), DAP debugger (`gdb -i=dap`, `lldb-dap`, `dlv dap`: breakpoints, stepping, call stack, locals, REPL), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with natural filename collation, interactive column/popover sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` media, Poppler PDF, `libarchive`, code). |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, embedded/external subtitle selector (`.srt`, `.ass`, PGS), multi-audio stream switching, sync offset, playback speed & frame-stepping, chapters, sibling folder queue, auto-hiding fullscreen HUD, and MPRIS2 D-Bus integration. |
 | **`kajo-settings`** | `org.kajo.Settings` | **11-Page Modular System & Suite Control Deck** managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes, Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code** (`config.json` `ide` schemes/fonts), Niri GLSL Shaders, and hardware telemetry. |
@@ -46,16 +46,18 @@ The repository builds and installs **six integrated native executables** (plus a
 - **Selection-First Modal Editing & Nordic Ergonomics**:
   - 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) with color-coded status pills, bottom-right `Space` Leader chord HUD, and fast `jk` escape from `INSERT` mode.
   - First-class Nordic layout bindings: `ä` / `ö` to step through LSP diagnostics, `Alt+ä` / `Alt+ö` for Git diff hunks, and Dead-Key-free `m i/a` structural text objects (`m i f` function, `m i c` class/struct, `m i b` block, `m i a` argument, `m i q` quote, `m m` bracket jump).
+- **Mouse Code Navigation**:
+  - Right-click opens a code menu (go to definition/implementation, references, hover docs, rename, code actions, format); `Ctrl+Click` jumps to the definition. The header breadcrumb shortens long project paths.
 - **6-Column Hardware-Accelerated Cairo Gutter (`68px`)**:
   - Renders DAP breakpoints & instruction pointer (`●`/`▶`), LSP diagnostic severity pills (`●`/`▲`/`◆`), Git diff status bars (`HEAD`), AI Agent modification bars, `Fira Code` absolute/relative line numbers, and AST fold chevrons (`z a`).
-- **Code Intelligence & Debugger UI** *(partial — see [`ROADMAP.md`](ROADMAP.md))*:
+- **Code Intelligence & Debugger** *(a few LSP features are still planned — see [`ROADMAP.md`](ROADMAP.md))*:
   - Today: workspace-aware hover (`K`), buffer-identifier completion (`Ctrl+Space`), go-to-definition (`g d`) and project-wide rename (`Space c r`) backed by `ripgrep` plus the buffer contents; server-availability badge for `clangd`, `gopls`, `rust-analyzer`, `pyright`; build runner with clickable compiler diagnostics.
-  - Debugger UI: `F9` breakpoints, `F5`/`F10`/`F11`/`F12`/`Shift+F5` transport buttons and the 3-pane bottom drawer exist, but no debug adapter (`gdb -i=dap`, `lldb-dap`, `dlv dap`) is spawned yet, so the stack and locals are placeholders.
-  - Planned: a real stdio JSON-RPC 2.0 LSP 3.17 client and DAP client (the framing helpers are already in `ide_lsp.c`).
+  - Debugger: a real DAP client drives `gdb -i=dap` (C/C++/Rust), `lldb-dap` and Delve (`dlv dap`, Go): `F9` breakpoints, `F5`/`F10`/`F11`/`F12`/`Shift+F5`, live call stack, locals, program output and an expression REPL in the bottom drawer. Java is debugged through `jdtls` with the java-debug bundle (`scripts/install-java-debug.sh`).
+  - Language servers: a stdio JSON-RPC 2.0 LSP client runs one server per project root (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, `pyright`, `typescript-language-server`, `bash-language-server`, `vscode-json-language-server`, `yaml-language-server`, `taplo`, `lua-language-server`, `mesonlsp`) and feeds diagnostics into the gutter and status bar. `jdtls` is launched with the newest installed JDK (override with `KAJO_JDTLS_JAVA`). 
 - **Graphical Markdown & Native Cairo Vector Mermaid Diagrams**:
   - Live-synchronized 50/50 side-by-side split (`Space m p` / `📖 MD`) rendering interactive `- [ ]` task checkboxes (clicking mutates the source buffer), GitHub callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), tables, and code blocks.
   - Pure C11 Cairo/Pango layout and vector renderer for Mermaid `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, and `pie` blocks—complete with interactive zoom/pan (`25%`–`400%`) and 1-click `.svg` vector export.
-- **Fuzzy Finder, Live Ripgrep & 85-Command Interactive Help Palette**:
+- **Fuzzy Finder, Live Ripgrep & 102-Command Interactive Help Palette**:
   - `Space f f` (Files), `Space b b` (Buffers), and `Space f g` (async `rg --vimgrep` project search) with a live syntax-highlighted preview pane.
   - `?` / `F1` / `Space h` opens the full-width 4-column **Help & Command Palette** with interactive category filter pills (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`).
 - **AI Agent JSON-RPC 2.0 IPC & Atomic Batch Diff Review**:
@@ -143,10 +145,23 @@ sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-pro
     udisks2 blueprint-compiler meson ninja
 ```
 
+**Tree-sitter syntax engine** for `kajo-ide` (incremental parsing, AST-based highlighting). The runtime comes from the official repositories; the grammars are split between the official/CachyOS repositories and the AUR (use `paru` or `yay`):
+```bash
+# official / CachyOS repositories
+sudo pacman -S --needed tree-sitter tree-sitter-c tree-sitter-bash tree-sitter-javascript \
+    tree-sitter-lua tree-sitter-rust
+# AUR
+paru -S --needed tree-sitter-cpp tree-sitter-css tree-sitter-go tree-sitter-html \
+    tree-sitter-java tree-sitter-json tree-sitter-toml tree-sitter-typescript tree-sitter-yaml \
+    tree-sitter-m68k
+```
+Every grammar is optional at build time: `meson setup` links the ones it finds (`tree-sitter-<lang>`; `tree-sitter-typescript` provides TypeScript and TSX) and `kajo-ide` falls back to its built-in heuristic lexer for any language whose grammar is missing. Install all of them for full highlighting of C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, Motorola 68000 (`tree-sitter-m68k`), JSON, TOML, YAML, CSS and HTML.
+
 Optional runtime tools for **`kajo-ide`** language intelligence, search, and debugging:
 ```bash
 sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
 ```
+For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server` (language server) and `vasmm68k_mot` from the [vasm](http://sun.hasenbraten.de/vasm/) distribution (build task and diagnostics) must be on `PATH`; both are optional.
 
 ### 2. Build, Verify & Install (`~/.local`)
 By default, `meson.build` configures `prefix=~/.local`, installing all six binaries to `~/.local/bin` and theme/syntax assets to `~/.local/share/kajo/`:

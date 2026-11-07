@@ -52,13 +52,7 @@ struct _IdePicker {
   gboolean            updating_selection;
 };
 
-static const struct {
-  const char   *category;
-  const char   *title;
-  const char   *description;
-  const char   *chord;
-  IdeActionType action;
-} kHelpCommands[] = {
+static const IdeHelpCommandSpec kHelpCommands[] = {
   /* 1. Navigation & Viewport */
   { "NAVIGATION", "Move Left", "Move cursor left 1 column", "h / Left", IDE_ACTION_MOVE_LEFT },
   { "NAVIGATION", "Move Right", "Move cursor right 1 column", "l / Right", IDE_ACTION_MOVE_RIGHT },
@@ -95,7 +89,7 @@ static const struct {
   { "SELECT & EDIT", "Indent / Outdent", "Indent or outdent selected lines by 1 tab stop", "> / <", IDE_ACTION_INDENT },
 
   /* 3. Nordic Semantic Text Objects */
-  { "OBJECTS", "Function Object", "Select inside / around C/Go/Rust/Python function body", "m i f / m a f", IDE_ACTION_NONE },
+  { "OBJECTS", "Function Object", "Select inside / around brace-delimited function body { ... }", "m i f / m a f", IDE_ACTION_NONE },
   { "OBJECTS", "Class / Struct", "Select inside / around struct, class, or TOML table", "m i c / m a c", IDE_ACTION_NONE },
   { "OBJECTS", "Block Object {}", "Select inside / around curly brace block { ... }", "m i b / m a b", IDE_ACTION_NONE },
   { "OBJECTS", "Array Object []", "Select inside / around bracket array [ ... ]", "m i a / m a a", IDE_ACTION_NONE },
@@ -106,17 +100,19 @@ static const struct {
   /* 4. Space Leader Catalog */
   { "LEADER", "Fuzzy Find Files", "Open workspace file picker with syntax preview", "Space Space / Space f f", IDE_ACTION_PICKER_OPEN_FILES },
   { "LEADER", "Live Ripgrep", "Real-time workspace regex search via ripgrep", "Space / / Space f g", IDE_ACTION_PICKER_OPEN_GREP },
-  { "LEADER", "Switch Buffers", "Fuzzy filter across currently open editor buffers", "Space b / Space b b", IDE_ACTION_PICKER_OPEN_BUFFERS },
-  { "LEADER", "Save Buffer", "Atomically save active buffer to disk", "Space w / Space f s / Ctrl+S", IDE_ACTION_SAVE },
+  { "LEADER", "Switch Buffers", "Fuzzy filter across currently open editor buffers", "Space b b / Space ,", IDE_ACTION_PICKER_OPEN_BUFFERS },
+  { "LEADER", "Save Buffer", "Atomically save active buffer to disk", "Space w s / Space f s / Ctrl+S", IDE_ACTION_SAVE },
   { "LEADER", "Save All Buffers", "Atomically save all modified open buffers", "Space w a / Space f a", IDE_ACTION_SAVE_ALL },
   { "LEADER", "Close Buffer", "Close active buffer tab", "Space q / Space b d", IDE_ACTION_BUFFER_CLOSE },
-  { "LEADER", "Force Close Buffer", "Force close active buffer without saving", "Space Q / Space b D", IDE_ACTION_BUFFER_FORCE_CLOSE },
+  { "LEADER", "Force Close Buffer", "Force close active buffer without saving", "Space Q / Space b D / Space w q", IDE_ACTION_BUFFER_FORCE_CLOSE },
   { "LEADER", "Alternate File", "Switch between .c source, .h header, and unit test", "Space a", IDE_ACTION_ALTERNATE_FILE },
   { "LEADER", "In-Buffer Search", "Start incremental case-insensitive search in buffer", "/ / Space s f", IDE_ACTION_SEARCH_OPEN },
   { "LEADER", "Next / Prev Match", "Jump to next or previous in-buffer search match", "n / N", IDE_ACTION_SEARCH_NEXT },
   { "LEADER", "Replace in Buffer", "Open Search & Replace drawer for active buffer", "Space s r", IDE_ACTION_REPLACE_OPEN },
   { "LEADER", "Replace in Project", "Open project-wide Search & Replace with diff preview", "Space s p", IDE_ACTION_PROJECT_REPLACE_OPEN },
   { "LEADER", "Clear Highlights", "Clear active search match highlights", "Space c h", IDE_ACTION_SEARCH_CLEAR_HIGHLIGHT },
+  { "LEADER", "Next Diff Hunk", "Jump to next modified diff hunk in buffer", "Space n h", IDE_ACTION_NEXT_HUNK },
+  { "LEADER", "Prev Diff Hunk", "Jump to previous modified diff hunk in buffer", "Space p h", IDE_ACTION_PREV_HUNK },
   { "LEADER", "Help & Palette", "Toggle this Help & Keyboard Reference modal", "? / F1 / Space h", IDE_ACTION_HELP_TOGGLE },
 
   /* 5. File Tree Explorer */
@@ -131,11 +127,15 @@ static const struct {
   /* 6. LSP 3.17 Code Intelligence */
   { "LSP", "Go to Definition", "Jump to symbol definition via clangd / gopls / rust-analyzer", "g d / Space g d", IDE_ACTION_LSP_DEFINITION },
   { "LSP", "Go to Implementation", "Jump to interface or trait implementation", "Space g i", IDE_ACTION_LSP_IMPLEMENTATION },
-  { "LSP", "Call Hierarchy", "Inspect incoming and outgoing callers in bottom drawer", "Space g c", IDE_ACTION_LSP_CALL_HIERARCHY },
   { "LSP", "Hover Documentation", "Show pixel-anchored signature and doc comment popover", "K / Space k", IDE_ACTION_LSP_HOVER },
   { "LSP", "Autocomplete", "Trigger pixel-anchored LSP completion popover at cursor", "Ctrl+Space", IDE_ACTION_LSP_COMPLETE },
   { "LSP", "Code Actions", "Open LSP quickfix and refactoring action menu", "Space c a", IDE_ACTION_LSP_CODE_ACTION },
   { "LSP", "Rename Symbol", "Rename identifier across workspace via LSP", "Space c r", IDE_ACTION_LSP_RENAME },
+  { "TASKS", "Build Project", "Build with Maven / Gradle / Meson / CMake / Cargo / Go / Make (detected from the file)", "Space r b", IDE_ACTION_TASK_BUILD },
+  { "TASKS", "Run Tests", "Run the project's test suite (mvn test, gradle test, meson test, ctest, cargo test, go test)", "Space r t", IDE_ACTION_TASK_TEST },
+  { "TASKS", "Run Current File / Project", "Run the main class (Java), package (Go) or crate (Rust); output in the build drawer", "Space r r", IDE_ACTION_TASK_RUN },
+  { "TASKS", "Clean Project", "Clean build outputs", "Space r c", IDE_ACTION_TASK_CLEAN },
+  { "LSP", "Format Buffer", "Format the whole buffer with the language server (gofmt, clang-format, jdt, rustfmt)", "Space c f", IDE_ACTION_LSP_FORMAT },
   { "LSP", "Next Diagnostic", "Jump to next LSP error or warning in buffer", "Space n d / ] d", IDE_ACTION_NEXT_DIAGNOSTIC },
   { "LSP", "Prev Diagnostic", "Jump to previous LSP error or warning in buffer", "Space p d / [ d", IDE_ACTION_PREV_DIAGNOSTIC },
   { "LSP", "Nordic Quick Step", "Step forward / backward across diagnostics or tabs", "ä / ö", IDE_ACTION_STEP_FORWARD },
@@ -147,6 +147,7 @@ static const struct {
   { "DEBUGGER", "Step Over Line", "Execute current line without stepping into calls", "F10 / Space d n", IDE_ACTION_DAP_STEP_OVER },
   { "DEBUGGER", "Step Into Function", "Step into function call on current line", "F11 / Space d i", IDE_ACTION_DAP_STEP_INTO },
   { "DEBUGGER", "Step Out of Function", "Finish current function and pause at caller", "F12 / Shift+F11 / Space d o", IDE_ACTION_DAP_STEP_OUT },
+  { "DEBUGGER", "Pause Execution", "Pause running debuggee process", "Space d p", IDE_ACTION_DAP_PAUSE },
   { "DEBUGGER", "Stop Debugger", "Terminate active DAP debug session", "Shift+F5 / Space d q", IDE_ACTION_DAP_STOP },
   { "DEBUGGER", "DAP Inspector Drawer", "Open 3-pane Call Stack, Scopes & REPL drawer", "Space d v", IDE_ACTION_DAP_TOGGLE_VIEW },
 
@@ -173,6 +174,8 @@ static const struct {
   { "MOUSE", "Gutter Breakpoint", "Click column 1 in the left gutter to toggle a breakpoint", "Left Click Gutter", IDE_ACTION_NONE },
   { "MOUSE", "Splitter Drag", "Drag vertical or horizontal paned dividers to resize panes", "Drag Divider", IDE_ACTION_NONE },
   { "MOUSE", "Mermaid Pan & Zoom", "Use toolbar buttons (🔍-/100%/🔍+/⛶ FIT/💾 SVG) on diagrams", "Diagram Toolbar", IDE_ACTION_NONE },
+  { "MOUSE", "Code Menu", "Right-click in the editor for Go to Definition, Rename, Code Actions, Format, Breakpoint", "Right Click", IDE_ACTION_NONE },
+  { "MOUSE", "Jump to Definition", "Ctrl+click a symbol to go to its definition", "Ctrl+Click", IDE_ACTION_NONE },
   { NULL, NULL, NULL, NULL, IDE_ACTION_NONE }
 };
 
@@ -191,6 +194,12 @@ static const char *const kHelpCategories[] = {
   "MOUSE",
   NULL
 };
+
+const IdeHelpCommandSpec *
+ide_picker_get_help_commands(void)
+{
+  return kHelpCommands;
+}
 
 static void
 ide_picker_item_free(gpointer data)
@@ -395,8 +404,9 @@ ide_picker_select_index(IdePicker *picker, gint idx)
 static void ide_picker_rebuild_list(IdePicker *picker);
 
 typedef struct {
-  IdePicker *picker;
-  char      *query;
+  IdePicker    *picker;
+  char         *query;
+  GCancellable *cancellable;
 } GrepJob;
 
 static void
@@ -445,13 +455,16 @@ on_live_grep_finished(GObject *source, GAsyncResult *res, gpointer user_data)
   gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), res,
                                                      &stdout_buf, NULL, &err);
   /* Cancelled => picker freed or superseded by a newer query: don't touch it. */
-  if (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+  if (g_cancellable_is_cancelled(job->cancellable) ||
+      (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED))) {
+    g_clear_object(&job->cancellable);
     g_free(job->query);
     g_free(job);
     return;
   }
 
   IdePicker *picker = job->picker;
+  g_clear_object(&job->cancellable);
   g_clear_object(&picker->grep_proc);
   g_clear_object(&picker->grep_cancel);
 
@@ -517,6 +530,7 @@ ide_picker_run_live_grep(IdePicker *picker, const char *query)
   job->picker = picker;
   job->query = g_strdup(query);
   picker->grep_cancel = g_cancellable_new();
+  job->cancellable = g_object_ref(picker->grep_cancel);
   g_subprocess_communicate_utf8_async(picker->grep_proc, NULL, picker->grep_cancel,
                                       on_live_grep_finished, job);
 }
@@ -615,6 +629,13 @@ ide_picker_rebuild_list(IdePicker *picker)
       gtk_widget_set_valign(desc_lbl, GTK_ALIGN_CENTER);
       gtk_widget_add_css_class(desc_lbl, "ide-help-desc");
       gtk_box_append(GTK_BOX(hbox), desc_lbl);
+
+      if (it->cmd_action == IDE_ACTION_NONE) {
+        GtkWidget *ref_badge = gtk_label_new("REF ONLY");
+        gtk_widget_set_valign(ref_badge, GTK_ALIGN_CENTER);
+        gtk_widget_add_css_class(ref_badge, "shell-popover-badge");
+        gtk_box_append(GTK_BOX(hbox), ref_badge);
+      }
 
       gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
     } else {
@@ -1042,6 +1063,15 @@ ide_picker_free(IdePicker *picker)
   g_free(picker);
 }
 
+void
+ide_picker_set_workspace_root(IdePicker *picker, const char *workspace_root)
+{
+  g_return_if_fail(picker != NULL);
+  char *dup = g_strdup(workspace_root ? workspace_root : ".");
+  g_free(picker->workspace_root);
+  picker->workspace_root = dup;
+}
+
 GtkWidget *
 ide_picker_get_widget(IdePicker *picker)
 {
@@ -1076,8 +1106,7 @@ ide_picker_open_files(IdePicker *picker, const char *workspace_root)
 {
   g_return_if_fail(picker != NULL);
   if (workspace_root != NULL) {
-    g_free(picker->workspace_root);
-    picker->workspace_root = g_strdup(workspace_root);
+    ide_picker_set_workspace_root(picker, workspace_root);
   }
   configure_picker_layout_for_mode(picker, IDE_PICKER_FILES);
   gtk_label_set_text(
@@ -1121,8 +1150,7 @@ ide_picker_open_grep(IdePicker *picker, const char *workspace_root)
 {
   g_return_if_fail(picker != NULL);
   if (workspace_root != NULL) {
-    g_free(picker->workspace_root);
-    picker->workspace_root = g_strdup(workspace_root);
+    ide_picker_set_workspace_root(picker, workspace_root);
   }
   configure_picker_layout_for_mode(picker, IDE_PICKER_GREP);
   gtk_label_set_text(

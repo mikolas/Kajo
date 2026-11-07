@@ -158,12 +158,75 @@ test_fsm_leader_chords_and_timeout(void)
   g_assert_cmpint(act.type, ==, IDE_ACTION_DRAWER_CLOSE);
   g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
 
-  /* Leader timeout (> 2.0s) resets stale LEADER back to NORMAL before handling key */
+  /* Leader timeout (> 2.0s) resets stale LEADER back to NORMAL and swallows the
+   * expired key so keys like 'a', 'i', 'c', or 'j' never trigger NORMAL actions
+   * or accidentally enter INSERT mode. */
   ide_fsm_handle_key_at(fsm, "Space", t0 + 500000);
   g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_LEADER);
   act = ide_fsm_handle_key_at(fsm, "j", t0 + 3000000); /* +2.5s elapsed */
-  g_assert_cmpint(act.type, ==, IDE_ACTION_MOVE_DOWN);
+  g_assert_cmpint(act.type, ==, IDE_ACTION_NONE);
   g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+
+  /* Specifically test Space -> c -> >2.0s pause -> 'a' (must stay NORMAL, not INSERT) */
+  ide_fsm_handle_key_at(fsm, "Space", t0 + 4000000);
+  ide_fsm_handle_key_at(fsm, "c", t0 + 4100000);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_LEADER);
+  g_assert_cmpstr(ide_fsm_get_pending_chord(fsm), ==, "c");
+  act = ide_fsm_handle_key_at(fsm, "a", t0 + 6500000); /* +2.4s elapsed */
+  g_assert_cmpint(act.type, ==, IDE_ACTION_NONE);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+
+  /* Explicit timer expiration via ide_fsm_expire_leader() */
+  ide_fsm_handle_key_at(fsm, "Space", t0 + 7000000);
+  ide_fsm_handle_key_at(fsm, "w", t0 + 7050000);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_LEADER);
+  g_assert_true(ide_fsm_expire_leader(fsm));
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+  g_assert_cmpstr(ide_fsm_get_pending_chord(fsm), ==, "");
+  g_assert_false(ide_fsm_expire_leader(fsm));
+
+  /* Verify stray 'S' after Space is NOT treated as a prefix for "Space" */
+  ide_fsm_set_state(fsm, IDE_STATE_NORMAL);
+  ide_fsm_handle_key(fsm, "Space");
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_LEADER);
+  act = ide_fsm_handle_key(fsm, "S");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_NONE);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+
+  /* Verify Which-Key HUD text accuracy */
+  const char *g_hud = ide_fsm_get_chord_hud_text(IDE_STATE_NORMAL, "g");
+  g_assert_nonnull(strstr(g_hud, "g g"));
+  g_assert_nonnull(strstr(g_hud, "g d"));
+  g_assert_null(strstr(g_hud, "g e"));
+  g_assert_null(strstr(g_hud, "g n"));
+  g_assert_null(strstr(g_hud, "g p"));
+  const char *n_hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, "n");
+  g_assert_nonnull(strstr(n_hud, "Next Search Match"));
+  g_assert_null(strstr(n_hud, "Next Buffer"));
+  const char *s_hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, "s");
+  g_assert_nonnull(strstr(s_hud, "Buffer Search"));
+  g_assert_null(strstr(s_hud, "Find Files"));
+
+  /* Verify every chord in kValidLeaderChords dispatches a non-NONE action */
+  const char *const *chords = ide_fsm_get_valid_leader_chords();
+  g_assert_nonnull(chords);
+  gsize n_chords = 0;
+  for (gsize i = 0; chords[i] != NULL; i++) {
+    n_chords++;
+    ide_fsm_set_state(fsm, IDE_STATE_NORMAL);
+    ide_fsm_handle_key(fsm, "Space");
+    const char *c = chords[i];
+    if (g_strcmp0(c, " ") == 0) {
+      act = ide_fsm_handle_key(fsm, "Space");
+    } else {
+      for (gsize k = 0; c[k] != '\0'; k++) {
+        char kstr[2] = { c[k], '\0' };
+        act = ide_fsm_handle_key(fsm, kstr);
+      }
+    }
+    g_assert_cmpint(act.type, !=, IDE_ACTION_NONE);
+  }
+  g_assert_cmpuint(n_chords, >, 30);
 
   ide_fsm_free(fsm);
 }
@@ -249,6 +312,32 @@ test_fsm_standard_shortcuts_and_chords(void)
   ide_fsm_handle_key(fsm, "esc");
   act = ide_fsm_handle_key(fsm, "pgdn");
   g_assert_cmpint(act.type, ==, IDE_ACTION_PAGE_DOWN);
+
+  /* Tree 'a' and 'A' enable tree_editable so prompt receives text input */
+  ide_fsm_set_state(fsm, IDE_STATE_TREE);
+  g_assert_false(ide_fsm_get_tree_editable(fsm));
+  act = ide_fsm_handle_key(fsm, "a");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_TREE_CREATE_FILE);
+  g_assert_true(ide_fsm_get_tree_editable(fsm));
+  act = ide_fsm_handle_key(fsm, "x");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_INSERT_CHAR);
+  g_assert_cmpstr(act.str, ==, "x");
+  ide_fsm_set_tree_editable(fsm, FALSE);
+
+  /* Code Action numeric shortcut '1'..'9' passes 1-based index in int_val */
+  ide_fsm_set_state(fsm, IDE_STATE_CODE_ACTION);
+  act = ide_fsm_handle_key(fsm, "3");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_SELECT_CONFIRM);
+  g_assert_cmpint(act.int_val, ==, 3);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
+
+  /* Completion triggered from NORMAL mode restores NORMAL on Esc */
+  ide_fsm_set_state(fsm, IDE_STATE_NORMAL);
+  ide_fsm_set_state(fsm, IDE_STATE_COMPLETION);
+  g_assert_cmpint(ide_fsm_get_previous_state(fsm), ==, IDE_STATE_NORMAL);
+  act = ide_fsm_handle_key(fsm, "esc");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CANCEL);
+  g_assert_cmpint(ide_fsm_get_state(fsm), ==, IDE_STATE_NORMAL);
 
   ide_fsm_free(fsm);
 }

@@ -114,6 +114,7 @@ struct _KajoFilesWindow {
     /* State */
     GFile *current_dir;
     GCancellable *enum_cancel;
+    GCancellable *ops_cancel;
     GFileMonitor *dir_monitor;
     guint monitor_debounce_id;
 

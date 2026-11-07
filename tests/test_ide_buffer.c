@@ -1,4 +1,5 @@
 #include "../src/ide/ide_buffer.h"
+#include "../src/ide/ide_fsm.h"
 #include "../src/ide/ide_picker.h"
 #include "../src/ide/ide_search.h"
 #include "../src/ide/ide_tree.h"
@@ -190,6 +191,54 @@ test_git_porcelain_fuzzy_and_search_parsers(void)
   g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
   g_assert_cmpstr(iss->message, ==, "undeclared identifier 'x'");
   ide_build_issue_free(iss);
+
+  /* Maven / javac bracket format and plain javac / Gradle format */
+  iss = ide_parse_compiler_error_line("/tmp/mvnp",
+      "[ERROR] /tmp/mvnp/src/main/java/demo/App.java:[5,17] incompatible types: java.lang.String cannot be converted to int");
+  g_assert_nonnull(iss);
+  g_assert_cmpstr(iss->file_path, ==, "/tmp/mvnp/src/main/java/demo/App.java");
+  g_assert_cmpuint(iss->line_1based, ==, 5);
+  g_assert_cmpuint(iss->col_1based, ==, 17);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  g_assert_true(g_str_has_prefix(iss->message, "incompatible types"));
+  ide_build_issue_free(iss);
+
+  iss = ide_parse_compiler_error_line("/tmp/mvnp", "[WARNING] /tmp/mvnp/src/A.java:[3,1] deprecated API");
+  g_assert_nonnull(iss);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_WARNING);
+  ide_build_issue_free(iss);
+
+  iss = ide_parse_compiler_error_line("/w", "/w/src/main/java/App.java:12: error: ';' expected");
+  g_assert_nonnull(iss);
+  g_assert_cmpuint(iss->line_1based, ==, 12);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  ide_build_issue_free(iss);
+
+  /* non-diagnostic Maven lines are not issues */
+  g_assert_null(ide_parse_compiler_error_line("/w", "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin"));
+  g_assert_null(ide_parse_compiler_error_line("/w", "[INFO] BUILD FAILURE"));
+
+  /* 5. IdeTree file creation, overwrite protection & path traversal guard */
+  g_autofree char *tmp_ws = g_dir_make_tmp("kajo_tree_test_XXXXXX", NULL);
+  g_assert_nonnull(tmp_ws);
+  g_autofree char *created_target = NULL;
+  g_assert_true(ide_tree_create_entry_at(tmp_ws, tmp_ws, "hello.txt", FALSE, &created_target));
+  g_assert_nonnull(created_target);
+  g_assert_true(g_file_test(created_target, G_FILE_TEST_EXISTS));
+  g_assert_true(g_file_set_contents(created_target, "keep_me", -1, NULL));
+
+  /* Attempting to create an already-existing file must fail and preserve content */
+  g_assert_false(ide_tree_create_entry_at(tmp_ws, tmp_ws, "hello.txt", FALSE, NULL));
+  g_autofree char *kept = NULL;
+  g_assert_true(g_file_get_contents(created_target, &kept, NULL, NULL));
+  g_assert_cmpstr(kept, ==, "keep_me");
+
+  /* Attempting path traversal (..) outside workspace root must fail */
+  g_assert_false(ide_tree_create_entry_at(tmp_ws, tmp_ws, "../escaped_kajo_test.txt", FALSE, NULL));
+  g_assert_false(ide_tree_create_entry_at(tmp_ws, tmp_ws, "/tmp/abs_kajo_test.txt", FALSE, NULL));
+
+  g_unlink(created_target);
+  g_rmdir(tmp_ws);
 }
 
 static gboolean
@@ -244,6 +293,325 @@ test_semantic_token_highlighter(void)
   ide_buffer_free(buf);
 }
 
+static void
+test_help_palette_leader_chords_crosscheck(void)
+{
+  const IdeHelpCommandSpec *cmds = ide_picker_get_help_commands();
+  g_assert_nonnull(cmds);
+
+  const char *const *valid_chords = ide_fsm_get_valid_leader_chords();
+  g_assert_nonnull(valid_chords);
+
+  IdeFsm *fsm = ide_fsm_new();
+  gsize n_cmds = 0;
+
+  for (gsize i = 0; cmds[i].chord != NULL; i++) {
+    n_cmds++;
+    g_assert_nonnull(cmds[i].title);
+    g_assert_nonnull(cmds[i].category);
+    g_assert_nonnull(cmds[i].description);
+
+    /* Split chord alternatives on " / " and verify every "Space ..." chord
+     * exists in kValidLeaderChords and dispatches to a real action. */
+    g_auto(GStrv) alts = g_strsplit(cmds[i].chord, " / ", -1);
+    for (guint a = 0; alts[a] != NULL; a++) {
+      const char *alt = g_strstrip(alts[a]);
+      if (!g_str_has_prefix(alt, "Space ")) continue;
+      const char *rest = alt + 6;
+      GString *compact = g_string_new("");
+      if (g_strcmp0(rest, "Space") == 0) {
+        g_string_assign(compact, " ");
+      } else {
+        for (const char *p = rest; *p; p++) {
+          if (*p != ' ') g_string_append_c(compact, *p);
+        }
+      }
+
+      gboolean found = FALSE;
+      for (gsize v = 0; valid_chords[v] != NULL; v++) {
+        if (g_strcmp0(valid_chords[v], compact->str) == 0) {
+          found = TRUE;
+          break;
+        }
+      }
+      if (!found) {
+        g_test_message("Help Palette chord '%s' (compact '%s') in '%s' not in kValidLeaderChords",
+                       alt, compact->str, cmds[i].title);
+      }
+      g_assert_true(found);
+
+      /* Also verify IdeFsm dispatches it to the expected action */
+      ide_fsm_set_state(fsm, IDE_STATE_NORMAL);
+      ide_fsm_handle_key(fsm, "Space");
+      IdeAction act = { .type = IDE_ACTION_NONE };
+      if (g_strcmp0(compact->str, " ") == 0) {
+        act = ide_fsm_handle_key(fsm, "Space");
+      } else {
+        for (gsize k = 0; compact->str[k] != '\0'; k++) {
+          char kstr[2] = { compact->str[k], '\0' };
+          act = ide_fsm_handle_key(fsm, kstr);
+        }
+      }
+      g_assert_cmpint(act.type, ==, cmds[i].action);
+      g_string_free(compact, TRUE);
+    }
+  }
+  g_assert_cmpuint(n_cmds, >=, 95);
+
+  ide_fsm_free(fsm);
+}
+
+/* ---- Tree prompt: Enter/Esc must reach the visible prompt ------------------ */
+static void
+test_tree_prompt_confirm_cancel_routing(void)
+{
+  IdeFsm *fsm = ide_fsm_new();
+  ide_fsm_set_state(fsm, IDE_STATE_TREE);
+
+  IdeAction act = ide_fsm_handle_key(fsm, "a");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_TREE_CREATE_FILE);
+  g_assert_true(ide_fsm_get_tree_editable(fsm));
+  act = ide_fsm_handle_key(fsm, "x");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_INSERT_CHAR);
+
+  /* Enter: the FSM clears its own flag while emitting CONFIRM. The dispatcher must
+   * still route to the tree because the prompt is visible (this was the regression). */
+  act = ide_fsm_handle_key(fsm, "enter");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_SELECT_CONFIRM);
+  g_assert_false(ide_fsm_get_tree_editable(fsm));
+  g_assert_true(ide_fsm_tree_prompt_active(fsm, TRUE));
+  g_assert_false(ide_fsm_tree_prompt_active(fsm, FALSE));
+
+  /* Same for Esc */
+  ide_fsm_set_state(fsm, IDE_STATE_TREE);
+  ide_fsm_handle_key(fsm, "A");
+  g_assert_true(ide_fsm_tree_prompt_active(fsm, FALSE));
+  act = ide_fsm_handle_key(fsm, "esc");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CANCEL);
+  g_assert_true(ide_fsm_tree_prompt_active(fsm, TRUE));
+  ide_fsm_free(fsm);
+}
+
+/* ---- Which-key HUD must match the chord table in both directions ------------ */
+static gboolean
+chord_is_valid(const char *chord)
+{
+  const char *const *valid = ide_fsm_get_valid_leader_chords();
+  for (gsize i = 0; valid[i] != NULL; i++) {
+    if (g_strcmp0(valid[i], chord) == 0) return TRUE;
+  }
+  return FALSE;
+}
+
+static gboolean
+hud_has_pair(const char *hud, char first, char second)
+{
+  g_autofree char *needle = g_strdup_printf("%c %c ", first, second);
+  const char *p = hud;
+  while ((p = strstr(p, needle)) != NULL) {
+    gboolean boundary = (p == hud) || !g_ascii_isalpha(p[-1]);
+    gboolean tail_ok = p[3] == ' ' || p[3] == '\0' || p[3] == '\n' || p[3] == '/';
+    if (boundary && tail_ok) return TRUE;
+    p++;
+  }
+  return FALSE;
+}
+
+static void
+test_which_key_hud_matches_chord_table(void)
+{
+  const char *const *valid = ide_fsm_get_valid_leader_chords();
+  const char *root = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, "");
+  g_assert_nonnull(root);
+
+  /* Forward: every two-key chord is listed under its first key's HUD. */
+  for (gsize i = 0; valid[i] != NULL; i++) {
+    const char *c = valid[i];
+    if (strlen(c) == 2) {
+      char pending[2] = { c[0], '\0' };
+      const char *hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, pending);
+      if (!hud_has_pair(hud, c[0], c[1])) {
+        g_test_message("HUD for '%s' does not list chord '%s'", pending, c);
+      }
+      g_assert_true(hud_has_pair(hud, c[0], c[1]));
+      /* and the root HUD names the group key */
+      g_autofree char *tok = g_strdup_printf("%c ", c[0]);
+      g_assert_nonnull(strstr(root, tok));
+    } else if (strlen(c) == 1 && c[0] != ' ') {
+      g_autofree char *tok = g_strdup_printf("%c ", c[0]);
+      if (strstr(root, tok) == NULL) {
+        g_test_message("Root HUD does not mention single-key chord '%s'", c);
+      }
+      g_assert_nonnull(strstr(root, tok));
+    }
+  }
+
+  /* Backward: every "x y" pair a group HUD advertises is a real chord. */
+  const char groups[] = "bcdfgmnprsw";
+  for (const char *g = groups; *g; g++) {
+    char pending[2] = { *g, '\0' };
+    const char *hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, pending);
+    g_assert_nonnull(hud);
+    g_assert_true(hud[0] != '\0');
+    for (const char *p = hud; *p; p++) {
+      if (*p == *g && (p == hud || !g_ascii_isalpha(p[-1])) && p[1] == ' ' &&
+          p[2] != '\0' && p[2] != ' ' && p[3] == ' ' &&
+          !(p[2] == '/' && p[4] != ' ')) { /* "d / d c" is an alternation separator, "s /  x" is the chord */
+        char chord[3] = { *g, p[2], '\0' };
+        if (!chord_is_valid(chord)) {
+          g_test_message("HUD for '%s' advertises non-existent chord '%s'", pending, chord);
+        }
+        g_assert_true(chord_is_valid(chord));
+      }
+    }
+  }
+}
+
+/* ---- Documented palette size must match the table -------------------------- */
+static void
+test_documented_palette_count(void)
+{
+  const char *root = g_getenv("KAJO_SOURCE_ROOT");
+  if (root == NULL) {
+    g_test_skip("KAJO_SOURCE_ROOT not set");
+    return;
+  }
+  const IdeHelpCommandSpec *cmds = ide_picker_get_help_commands();
+  guint n = 0;
+  while (cmds[n].chord != NULL) n++;
+
+  const char *files[] = { "README.md", "DEVELOPMENT.md", "docs/kajo_ide_manual.md" };
+  g_autofree char *want_a = g_strdup_printf("%u-Command", n);
+  g_autofree char *want_b = g_strdup_printf("%u-command", n);
+  g_autofree char *want_c = g_strdup_printf("%u commands", n);
+  for (guint i = 0; i < G_N_ELEMENTS(files); i++) {
+    g_autofree char *path = g_build_filename(root, files[i], NULL);
+    g_autofree char *text = NULL;
+    g_assert_true(g_file_get_contents(path, &text, NULL, NULL));
+    if (strstr(text, want_a) == NULL && strstr(text, want_b) == NULL && strstr(text, want_c) == NULL) {
+      g_test_message("%s does not state the real palette size (%u commands)", files[i], n);
+    }
+    g_assert_true(strstr(text, want_a) != NULL || strstr(text, want_b) != NULL ||
+                  strstr(text, want_c) != NULL);
+  }
+}
+
+/* ---- Atomic save keeps the file mode (project replace rewrites files) ------- */
+static void
+test_atomic_save_preserves_mode(void)
+{
+  g_autofree char *dir = g_dir_make_tmp("kajo_mode_test_XXXXXX", NULL);
+  g_assert_nonnull(dir);
+  g_autofree char *path = g_build_filename(dir, "run.sh", NULL);
+  g_assert_true(g_file_set_contents(path, "old\n", -1, NULL));
+  g_assert_cmpint(g_chmod(path, 0750), ==, 0);
+
+  g_assert_true(ide_save_file_atomic(path, "new\n", -1, NULL));
+
+  GStatBuf st;
+  g_assert_cmpint(g_stat(path, &st), ==, 0);
+  g_assert_cmpuint(st.st_mode & 0777, ==, 0750);
+  g_autofree char *got = NULL;
+  g_assert_true(g_file_get_contents(path, &got, NULL, NULL));
+  g_assert_cmpstr(got, ==, "new\n");
+
+  g_unlink(path);
+  g_rmdir(dir);
+}
+
+static void
+test_vasm_diagnostics_are_clickable(void)
+{
+  IdeBuildIssue *iss = ide_parse_compiler_error_line(
+      "/w", "error 2001 in line 14 of \"src/main.s\": instruction not supported on selected architecture");
+  g_assert_nonnull(iss);
+  g_assert_cmpstr(iss->file_path, ==, "/w/src/main.s");
+  g_assert_cmpuint(iss->line_1based, ==, 14);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  g_assert_true(g_str_has_prefix(iss->message, "[2001] instruction not supported"));
+  ide_build_issue_free(iss);
+
+  iss = ide_parse_compiler_error_line("/w", "warning 62 in line 3 of \"/abs/x.asm\": something odd");
+  g_assert_nonnull(iss);
+  g_assert_cmpstr(iss->file_path, ==, "/abs/x.asm");
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_WARNING);
+  ide_build_issue_free(iss);
+
+  g_assert_null(ide_parse_compiler_error_line("/w", "error in the middle of nowhere"));
+}
+
+static char *
+tag_signature(GtkTextBuffer *tbuf)
+{
+  GString *sig = g_string_new(NULL);
+  gint n = gtk_text_buffer_get_char_count(tbuf);
+  for (gint i = 0; i < n; i++) {
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_offset(tbuf, &it, i);
+    GSList *tags = gtk_text_iter_get_tags(&it);
+    GPtrArray *names = g_ptr_array_new();
+    for (GSList *l = tags; l; l = l->next) {
+      gchar *nm = NULL;
+      g_object_get(l->data, "name", &nm, NULL);
+      if (nm != NULL && g_str_has_prefix(nm, "ide-syn-")) {
+        g_ptr_array_add(names, nm);
+      } else {
+        g_free(nm);
+      }
+    }
+    g_ptr_array_sort(names, (GCompareFunc)g_strcmp0);
+    for (guint k = 0; k < names->len; k++) {
+      g_string_append(sig, g_ptr_array_index(names, k));
+      g_string_append_c(sig, ',');
+    }
+    g_string_append_c(sig, ';');
+    g_ptr_array_set_free_func(names, g_free);
+    g_ptr_array_free(names, TRUE);
+    g_slist_free(tags);
+  }
+  return g_string_free(sig, FALSE);
+}
+
+/* Incremental tree-sitter re-highlighting after a sequence of edits must leave
+ * exactly the tags a from-scratch highlight produces. */
+static void
+test_treesitter_incremental_tags_match_fresh(void)
+{
+  const char *files[] = { "A.java", "m.go", "x.c" };
+  const char *inits[] = {
+    "class A {\n  int f() { return 1; }\n}\n",
+    "package m\nfunc f() int { return 1 }\n",
+    "int f(void) { return 1; }\n",
+  };
+  for (guint i = 0; i < G_N_ELEMENTS(files); i++) {
+    IdeBuffer *buf = ide_buffer_new(files[i]);
+    ide_buffer_set_text(buf, inits[i]);
+    GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+
+    /* insert a comment opener mid-file, then close it, then delete a chunk */
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_offset(tbuf, &it, 8);
+    gtk_text_buffer_insert(tbuf, &it, "/* ", -1);
+    gtk_text_buffer_get_iter_at_offset(tbuf, &it, 14);
+    gtk_text_buffer_insert(tbuf, &it, " */", -1);
+    GtkTextIter a, b;
+    gtk_text_buffer_get_iter_at_offset(tbuf, &a, 2);
+    gtk_text_buffer_get_iter_at_offset(tbuf, &b, 5);
+    gtk_text_buffer_delete(tbuf, &a, &b);
+
+    g_autofree char *incremental = tag_signature(tbuf);
+
+    g_autofree char *final_text = ide_buffer_get_text(buf);
+    IdeBuffer *fresh = ide_buffer_new(files[i]);
+    ide_buffer_set_text(fresh, final_text);
+    g_autofree char *expected = tag_signature(GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(fresh)));
+
+    g_assert_cmpstr(incremental, ==, expected);
+    ide_buffer_free(fresh);
+    ide_buffer_free(buf);
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -255,6 +623,13 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/alternate-path-and-atomic-buffer", test_alternate_path_and_atomic_buffer);
   g_test_add_func("/ide/buffer/git-porcelain-fuzzy-and-search", test_git_porcelain_fuzzy_and_search_parsers);
   g_test_add_func("/ide/buffer/semantic-token-highlighter", test_semantic_token_highlighter);
+  g_test_add_func("/ide/buffer/treesitter-incremental-tags", test_treesitter_incremental_tags_match_fresh);
+  g_test_add_func("/ide/buffer/help-palette-leader-crosscheck", test_help_palette_leader_chords_crosscheck);
+  g_test_add_func("/ide/buffer/tree-prompt-routing", test_tree_prompt_confirm_cancel_routing);
+  g_test_add_func("/ide/buffer/which-key-hud-table", test_which_key_hud_matches_chord_table);
+  g_test_add_func("/ide/buffer/documented-palette-count", test_documented_palette_count);
+  g_test_add_func("/ide/buffer/atomic-save-mode", test_atomic_save_preserves_mode);
+  g_test_add_func("/ide/buffer/vasm-diagnostics", test_vasm_diagnostics_are_clickable);
 
   return g_test_run();
 }

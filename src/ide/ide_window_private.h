@@ -94,6 +94,10 @@ struct _KajoIdeWindow {
   GtkWidget       *lsp_status_badge;
   GtkWidget       *cursor_pos_label;
 
+  /* Right-click code menu */
+  gboolean         code_menu_built;
+  GActionGroup    *code_actions;
+
   /* Live Settings & Config Hot-Reload */
   GFileMonitor    *config_monitor;
   char            *active_scheme_id;
@@ -110,6 +114,11 @@ struct _KajoIdeWindow {
   /* Cross-file Jumplist */
   GPtrArray       *jumplist; /* IdeJumpEntry* */
   int              jumplist_idx;
+
+  /* Leader timeout & Drawer state */
+  guint            leader_timer_id;
+  gboolean         drawer_maximized;
+  int              saved_drawer_pos;
 };
 
 

@@ -27,7 +27,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching (`src/osk/osk.c`) |
 | **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
 | **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
-| **Kajo IDE (`kajo-ide`, `org.kajo.IDE`)** | 🧪 Beta | [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) — Selection-first modal GTK4 + `GtkSourceView-5` IDE with Nordic text objects (`m i/a`), 6-column Cairo gutter, ripgrep-backed code intelligence, debugger UI scaffold, GUI Markdown + Cairo vector Mermaid, 85-command Help Palette, and AI Agent JSON-RPC 2.0 IPC |
+| **Kajo IDE (`kajo-ide`, `org.kajo.IDE`)** | 🧪 Beta | [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) — Selection-first modal GTK4 + `GtkSourceView-5` IDE with Nordic text objects (`m i/a`), 6-column Cairo gutter, tree-sitter highlighting and text objects (15 languages), a real async LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`), DAP debugger (gdb / lldb-dap / dlv / Java via jdtls), project tasks, GUI Markdown + Cairo vector Mermaid, 101-command Help Palette, and AI Agent JSON-RPC 2.0 IPC |
 | **Kajo "Aero + Metro" UI Design System** | ✅ Done | [`docs/design_system.md`](docs/design_system.md) & [`docs/ui-gallery.html`](docs/ui-gallery.html) — Canonical GTK4 CSS style guide and interactive web component gallery |
 
 ---
@@ -36,8 +36,8 @@ All Kajo components and standalone applications share a unified design language:
 
 | Planned Component / Feature | Status | Target Binary / Scope |
 | :--- | :---: | :--- |
-| **Kajo IDE: real LSP 3.17 client** | 📋 Planned | `kajo-ide` (spawn `clangd` / `gopls` / `rust-analyzer` / `pyright` over stdio, `textDocument/*`) |
-| **Kajo IDE: real DAP client** | 📋 Planned | `kajo-ide` (spawn `gdb -i=dap` / `lldb-dap` / `dlv dap`, live stack and locals) |
+| **Kajo IDE: LSP references / signature help / call hierarchy** | 📋 Planned | `kajo-ide` (the client is in place; these need list/popover UIs) |
+| **Kajo IDE: DAP variable expansion / watches / conditional breakpoints** | 📋 Planned | `kajo-ide` |
 | **Kajo IDE: relative line numbers** | 📋 Planned | `kajo-ide` (gutter option; documented before it was built) |
 | **kajo-settings: custom accent hex picker** | 📋 Planned | `kajo-settings` Theme page (the UI gallery shows a hex picker; only the 8 presets exist today) |
 | **Kajo IDE: user key remapping** | 📋 Planned | `kajo-ide` (FSM remap table exists in `ide_fsm.c`; config loading is not wired) |

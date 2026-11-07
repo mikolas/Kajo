@@ -4,6 +4,7 @@
 #include <gio/gio.h>
 #include <glib.h>
 #include <gtksourceview/gtksource.h>
+#include "ide_ts.h"
 
 G_BEGIN_DECLS
 
@@ -32,6 +33,8 @@ typedef struct {
 } IdeDiagnostic;
 
 typedef struct _IdeBuffer IdeBuffer;
+
+typedef void (*IdeBufferDestroyNotify)(IdeBuffer *buf, gpointer user_data);
 
 typedef void (*IdeBufferExternalChangeCb)(IdeBuffer *buf,
                                           gboolean   reloaded_cleanly,
@@ -71,11 +74,14 @@ GtkSourceBuffer *ide_buffer_get_source_buffer(IdeBuffer *buf);
 const char      *ide_buffer_get_file_path(const IdeBuffer *buf);
 const char      *ide_buffer_get_title(const IdeBuffer *buf);
 char            *ide_buffer_get_text(IdeBuffer *buf);
+/* Called once from ide_buffer_free() before the buffer is torn down. */
+void             ide_buffer_set_destroy_notify(IdeBuffer *buf, IdeBufferDestroyNotify notify, gpointer user_data);
 void             ide_buffer_set_text(IdeBuffer *buf, const char *text);
 /* Registers the GtkSourceView scheme search paths (user dir, install prefix, XDG
  * system dirs, dev source tree). Idempotent. */
 void             ide_buffer_register_scheme_paths(void);
 void             ide_buffer_set_style_scheme(IdeBuffer *buf, const char *scheme_id);
+const IdeTsDoc *ide_highlight_get_ts_doc(GtkSourceBuffer *sbuf);
 void             ide_highlight_source_buffer(GtkSourceBuffer *sbuf,
                                              const char      *file_path,
                                              const char      *scheme_id);

@@ -22,6 +22,16 @@ typedef void (*IdePickerOpenFileCb)(const char *abs_path,
 
 typedef void (*IdePickerCommandCb)(IdeActionType action, gpointer user_data);
 
+typedef struct {
+  const char   *category;
+  const char   *title;
+  const char   *description;
+  const char   *chord;
+  IdeActionType action;
+} IdeHelpCommandSpec;
+
+const IdeHelpCommandSpec *ide_picker_get_help_commands(void);
+
 /* Pure testable subsequence fuzzy scorer (>0 on match, 0 on mismatch) */
 gint       ide_fuzzy_score(const char *query, const char *candidate);
 
@@ -30,6 +40,8 @@ IdePicker *ide_picker_new(const char         *workspace_root,
                           IdePickerCommandCb  command_cb,
                           gpointer            user_data);
 void       ide_picker_free(IdePicker *picker);
+void       ide_picker_set_workspace_root(IdePicker  *picker,
+                                         const char *workspace_root);
 
 GtkWidget    *ide_picker_get_widget(IdePicker *picker);
 gboolean      ide_picker_is_visible(const IdePicker *picker);

@@ -160,6 +160,10 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - `56px` left gutter (`#121212`, `border-right: 1px solid #222222`) rendering 6 columns: Breakpoint (`●` `#e81123`), Diagnostic (`✖`/`⚠`/`ℹ`), DAP PC (`▶` `#ffd700`), Line Number, Git/Agent Diff Bar (`+` `#10893e`, `~` `#0078d4`, `_` `#e81123`, Agent `#b4009e`), and Fold Chevron (`▾`/`▸`).
 - **Modal Status Bar & Mode Pills (`.ide-status-bar`, `.ide-mode-pill`):**
   - `26px` bottom bar with bold uppercase `.ide-mode-pill`: `NORMAL` (`@metro-accent`), `SELECT` (`#ff8c00`), `INSERT` (`#10893e`), `MATCH` (`#b4009e`), `LEADER` (`#00d8f0`), `TREE`/`DRAWER`/`PICKER` (`#0078d4`).
+  - Three zones like the gallery: left (mode pill, file, hot-reload), center `.ide-status-chord` (pending leader/match chord, `@metro-warning`), right (`.shell-popover-badge.agent` magenta AGENT badge, LSP badge that gains `.success` once the server is ready, diagnostics `.urgent`, encoding/position).
+- **Right-Click Code Menu (`popover.menu modelbutton`):**
+  - GTK `extra menu` on the editor: `0px` radius, Fira Code, `@metro-accent` hover fill, `#2b2b2b` separators. Holds only code actions (definition, implementation, references, hover, rename, code actions, format); server-only rows are disabled until the language server is ready. Specimen: `.ide-code-menu` in `docs/ui-gallery.html`.
+  - The path breadcrumb shortens to `repo ▸ … ▸ parent ▸ dir ▸ file` beyond 5 segments and ellipsizes at the start; the full path is the tooltip.
 - **Pixel-Anchored LSP Completion & Hover Popovers (`.ide-lsp-popover`):**
   - Framed by `1px solid @metro-accent` at cursor `(x, y)` coordinates. Completion rows include a `18×18px` `.ide-symbol-badge` (`ƒ` Function `#dcdcaa`, `S` Struct `#4ec9b0`, `v` Variable `#569cd6`, `k` Keyword `#c586c0`, `m` Macro `#00d8f0`), symbol label, and right-aligned type signature.
 - **Unified & Word-Level Diff Hunk Cards (`.ide-diff-card`):**

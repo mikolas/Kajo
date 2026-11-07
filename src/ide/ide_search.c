@@ -1,6 +1,10 @@
 #include "ide_search.h"
+#include "ide_tasks.h"
 
 #include <string.h>
+
+/* Files larger than this (or not valid UTF-8) are never previewed or rewritten. */
+#define IDE_PROJECT_REPLACE_MAX_BYTES (2u * 1024u * 1024u)
 
 struct _IdeSearchDrawer {
   char             *workspace_root;
@@ -31,10 +35,16 @@ struct _IdeSearchDrawer {
   gboolean          case_sensitive;
   gboolean          whole_word;
   gboolean          use_regex;
+  gboolean          confirm_armed; /* project apply pressed once; second press writes disk files */
   guint             active_field; /* 0 = find, 1 = replace */
+  GCancellable     *replace_cancel;
+  GSubprocess      *replace_proc;
+  GPtrArray        *matched_files;
 
   GPtrArray        *build_issues;
   gint              selected_issue_idx;
+  char             *task_label;  /* BUILD / TEST / RUN / CLEAN of the last task */
+  char             *parse_root;  /* cwd of the last task: base for relative paths */
 };
 
 void
@@ -115,6 +125,57 @@ ide_parse_compiler_error_line(const char *workspace_root,
     return NULL;
   }
 
+  /* Maven + javac: "[ERROR] /abs/App.java:[15,25] incompatible types: ..." */
+  static GRegex *s_mvn = NULL;
+  if (s_mvn == NULL) {
+    s_mvn = g_regex_new("^\\[(ERROR|WARNING|INFO)\\]\\s+(\\S.*?\\.java):\\[(\\d+),(\\d+)\\]\\s*(.*)$",
+                        G_REGEX_OPTIMIZE, 0, NULL);
+  }
+  g_autoptr(GMatchInfo) mvn_mi = NULL;
+  if (s_mvn != NULL && g_regex_match(s_mvn, raw_line, 0, &mvn_mi)) {
+    g_autofree char *sev = g_match_info_fetch(mvn_mi, 1);
+    g_autofree char *file = g_match_info_fetch(mvn_mi, 2);
+    g_autofree char *ln = g_match_info_fetch(mvn_mi, 3);
+    g_autofree char *col = g_match_info_fetch(mvn_mi, 4);
+    g_autofree char *msg = g_match_info_fetch(mvn_mi, 5);
+    IdeBuildIssue *iss = g_new0(IdeBuildIssue, 1);
+    iss->file_path = (g_path_is_absolute(file) || workspace_root == NULL)
+                         ? g_canonicalize_filename(file, NULL)
+                         : g_canonicalize_filename(file, workspace_root);
+    iss->line_1based = (guint)MAX(1, g_ascii_strtoll(ln, NULL, 10));
+    iss->col_1based = (guint)MAX(1, g_ascii_strtoll(col, NULL, 10));
+    iss->severity = g_strcmp0(sev, "ERROR") == 0 ? IDE_DIAG_ERROR
+                    : g_strcmp0(sev, "WARNING") == 0 ? IDE_DIAG_WARNING : IDE_DIAG_INFO;
+    iss->message = g_strdup(msg[0] ? msg : raw_line);
+    return iss;
+  }
+
+  /* vasm: error 2001 in line 3 of "main.s": instruction not supported ... */
+  static GRegex *s_vasm = NULL;
+  if (s_vasm == NULL) {
+    s_vasm = g_regex_new("^\\s*(fatal error|error|warning|message)\\s+(\\d+)\\s+in line\\s+(\\d+)\\s+of\\s+\"([^\"]+)\":\\s*(.*)$",
+                         G_REGEX_OPTIMIZE | G_REGEX_CASELESS, 0, NULL);
+  }
+  g_autoptr(GMatchInfo) vasm_mi = NULL;
+  if (s_vasm != NULL && g_regex_match(s_vasm, raw_line, 0, &vasm_mi)) {
+    g_autofree char *sev = g_match_info_fetch(vasm_mi, 1);
+    g_autofree char *code = g_match_info_fetch(vasm_mi, 2);
+    g_autofree char *ln = g_match_info_fetch(vasm_mi, 3);
+    g_autofree char *file = g_match_info_fetch(vasm_mi, 4);
+    g_autofree char *msg = g_match_info_fetch(vasm_mi, 5);
+    IdeBuildIssue *iss = g_new0(IdeBuildIssue, 1);
+    iss->file_path = (g_path_is_absolute(file) || workspace_root == NULL)
+                         ? g_canonicalize_filename(file, NULL)
+                         : g_canonicalize_filename(file, workspace_root);
+    iss->line_1based = (guint)MAX(1, g_ascii_strtoll(ln, NULL, 10));
+    iss->col_1based = 1;
+    iss->severity = g_ascii_strncasecmp(sev, "warning", 7) == 0 ? IDE_DIAG_WARNING
+                    : g_ascii_strncasecmp(sev, "message", 7) == 0 ? IDE_DIAG_INFO
+                                                                  : IDE_DIAG_ERROR;
+    iss->message = g_strdup_printf("[%s] %s", code, msg);
+    return iss;
+  }
+
   /* Match GCC / Clang / Rust / Go format: "path/to/file.c:142:5: error: msg" */
   static GRegex *s_rx = NULL;
   if (s_rx == NULL) {
@@ -169,9 +230,123 @@ ide_parse_compiler_error_line(const char *workspace_root,
   return iss;
 }
 
+typedef struct {
+  IdeSearchDrawer *drawer;
+  GCancellable    *cancellable;
+} SearchAsyncCtx;
+
+static SearchAsyncCtx *
+search_async_ctx_new(IdeSearchDrawer *drawer, GCancellable *cancellable)
+{
+  SearchAsyncCtx *ctx = g_new0(SearchAsyncCtx, 1);
+  ctx->drawer = drawer;
+  ctx->cancellable = g_object_ref(cancellable);
+  return ctx;
+}
+
+static void
+search_async_ctx_free(SearchAsyncCtx *ctx)
+{
+  if (ctx == NULL) {
+    return;
+  }
+  g_clear_object(&ctx->cancellable);
+  g_free(ctx);
+}
+
+static void
+on_project_replace_rg_finished(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+  SearchAsyncCtx *ctx = user_data;
+  g_autofree char *stdout_buf = NULL;
+  g_autoptr(GError) err = NULL;
+  gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), res,
+                                                     &stdout_buf, NULL, &err);
+  if (g_cancellable_is_cancelled(ctx->cancellable) ||
+      (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED))) {
+    search_async_ctx_free(ctx);
+    return;
+  }
+  IdeSearchDrawer *drawer = ctx->drawer;
+  search_async_ctx_free(ctx);
+
+  g_clear_object(&drawer->replace_proc);
+  g_clear_object(&drawer->replace_cancel);
+
+  const char *find_str = gtk_editable_get_text(GTK_EDITABLE(drawer->find_entry));
+  const char *rep_str = gtk_editable_get_text(GTK_EDITABLE(drawer->replace_entry));
+  g_ptr_array_set_size(drawer->matched_files, 0);
+
+  if (find_str == NULL || find_str[0] == '\0') {
+    return;
+  }
+
+  guint total_matches = 0;
+  guint total_files = 0;
+  GString *combined = g_string_new(NULL);
+
+  if (stdout_buf != NULL) {
+    g_auto(GStrv) files = g_strsplit(stdout_buf, "\n", -1);
+    for (gsize i = 0; files[i] != NULL; i++) {
+      if (files[i][0] == '\0') {
+        continue;
+      }
+      g_autofree char *orig = NULL;
+      gsize orig_len = 0;
+      if (!g_file_get_contents(files[i], &orig, &orig_len, NULL) ||
+          orig_len > IDE_PROJECT_REPLACE_MAX_BYTES ||
+          !g_utf8_validate(orig, (gssize)orig_len, NULL)) {
+        continue; /* too large or not UTF-8 text: never rewritten */
+      }
+      guint file_matches = 0;
+      g_autofree char *after = ide_replace_text_all(orig,
+                                                    find_str,
+                                                    rep_str,
+                                                    drawer->case_sensitive,
+                                                    drawer->whole_word,
+                                                    drawer->use_regex,
+                                                    &file_matches);
+      if (file_matches > 0) {
+        total_matches += file_matches;
+        total_files++;
+        g_ptr_array_add(drawer->matched_files, g_strdup(files[i]));
+        if (total_files <= 20) {
+          g_autofree char *base = g_path_get_basename(files[i]);
+          g_autofree char *udiff = ide_format_unified_diff(base, orig, after);
+          g_string_append(combined, udiff);
+          g_string_append_c(combined, '\n');
+        }
+      }
+    }
+    if (total_files > 20) {
+      g_string_append_printf(combined,
+                             "... (+%u more matched files not shown in preview; Apply All updates all %u files)\n",
+                             total_files - 20, total_files);
+    }
+  }
+
+  g_autofree char *m_txt = g_strdup_printf("%u matches / %u files", total_matches, total_files);
+  gtk_label_set_text(GTK_LABEL(drawer->badge_matches), m_txt);
+  gtk_text_buffer_set_text(drawer->diff_buf,
+                           combined->len > 0 ? combined->str : "[No project matches]",
+                           -1);
+  g_string_free(combined, TRUE);
+}
+
 static void
 ide_search_drawer_refresh_replace_preview(IdeSearchDrawer *drawer)
 {
+  if (drawer->replace_cancel != NULL) {
+    g_cancellable_cancel(drawer->replace_cancel);
+  }
+  if (drawer->replace_proc != NULL) {
+    g_subprocess_force_exit(drawer->replace_proc);
+  }
+  g_clear_object(&drawer->replace_proc);
+  g_clear_object(&drawer->replace_cancel);
+  g_ptr_array_set_size(drawer->matched_files, 0);
+  drawer->confirm_armed = FALSE;
+
   gtk_label_set_text(GTK_LABEL(drawer->badge_case),
                      drawer->case_sensitive ? "Aa Alt+C: ON" : "Aa Alt+C: OFF");
   gtk_label_set_text(GTK_LABEL(drawer->badge_word),
@@ -214,63 +389,43 @@ ide_search_drawer_refresh_replace_preview(IdeSearchDrawer *drawer)
     return;
   }
 
-  /* Project-wide preview using ripgrep -l */
-  const char *argv[] = {
-    "rg", "-l", drawer->case_sensitive ? "-s" : "-i",
-    "--glob=!.git", "--glob=!builddir", "--", find_str,
-    drawer->workspace_root ? drawer->workspace_root : ".", NULL
-  };
-  g_autofree char *stdout_buf = NULL;
-  g_spawn_sync(NULL,
-               (char **)argv,
-               NULL,
-               G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
-               NULL,
-               NULL,
-               &stdout_buf,
-               NULL,
-               NULL,
-               NULL);
-
-  guint total_matches = 0;
-  guint total_files = 0;
-  GString *combined = g_string_new(NULL);
-
-  if (stdout_buf != NULL) {
-    g_auto(GStrv) files = g_strsplit(stdout_buf, "\n", 40);
-    for (gsize i = 0; files[i] != NULL && total_files < 20; i++) {
-      if (files[i][0] == '\0') {
-        continue;
-      }
-      g_autofree char *orig = NULL;
-      if (!g_file_get_contents(files[i], &orig, NULL, NULL)) {
-        continue;
-      }
-      guint file_matches = 0;
-      g_autofree char *after = ide_replace_text_all(orig,
-                                                    find_str,
-                                                    rep_str,
-                                                    drawer->case_sensitive,
-                                                    drawer->whole_word,
-                                                    drawer->use_regex,
-                                                    &file_matches);
-      if (file_matches > 0) {
-        total_matches += file_matches;
-        total_files++;
-        g_autofree char *base = g_path_get_basename(files[i]);
-        g_autofree char *udiff = ide_format_unified_diff(base, orig, after);
-        g_string_append(combined, udiff);
-        g_string_append_c(combined, '\n');
-      }
-    }
+  /* Project-wide preview using async ripgrep -l */
+  g_autoptr(GPtrArray) argv = g_ptr_array_new();
+  g_ptr_array_add(argv, (gpointer)"rg");
+  /* ripgrep is only a candidate prefilter; ide_replace_text_all() decides the real
+   * matches. Literal mode narrows with -F (a superset of the word-bounded matches, so
+   * no -w). Regex mode must not hand the pattern to ripgrep (Rust regex syntax differs
+   * from GRegex/PCRE), so every non-ignored file is a candidate. */
+  if (drawer->use_regex) {
+    g_ptr_array_add(argv, (gpointer)"--files");
+  } else {
+    g_ptr_array_add(argv, (gpointer)"-l");
+    g_ptr_array_add(argv, (gpointer)(drawer->case_sensitive ? "-s" : "-i"));
+    g_ptr_array_add(argv, (gpointer)"-F");
   }
+  g_ptr_array_add(argv, (gpointer)"--glob=!.git");
+  g_ptr_array_add(argv, (gpointer)"--glob=!builddir");
+  g_ptr_array_add(argv, (gpointer)"--");
+  if (!drawer->use_regex) {
+    g_ptr_array_add(argv, (gpointer)find_str);
+  }
+  g_ptr_array_add(argv, (gpointer)(drawer->workspace_root ? drawer->workspace_root : "."));
+  g_ptr_array_add(argv, NULL);
 
-  g_autofree char *m_txt = g_strdup_printf("%u matches / %u files", total_matches, total_files);
-  gtk_label_set_text(GTK_LABEL(drawer->badge_matches), m_txt);
-  gtk_text_buffer_set_text(drawer->diff_buf,
-                           combined->len > 0 ? combined->str : "[No project matches]",
-                           -1);
-  g_string_free(combined, TRUE);
+  g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
+      G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+  drawer->replace_proc = g_subprocess_launcher_spawnv(
+      launcher, (const char *const *)argv->pdata, NULL);
+  if (drawer->replace_proc == NULL) {
+    gtk_label_set_text(GTK_LABEL(drawer->badge_matches), "rg unavailable");
+    return;
+  }
+  gtk_label_set_text(GTK_LABEL(drawer->badge_matches), "Searching…");
+  drawer->replace_cancel = g_cancellable_new();
+  g_subprocess_communicate_utf8_async(
+      drawer->replace_proc, NULL, drawer->replace_cancel,
+      on_project_replace_rg_finished,
+      search_async_ctx_new(drawer, drawer->replace_cancel));
 }
 
 static void
@@ -298,6 +453,7 @@ ide_search_drawer_new(const char       *workspace_root,
   drawer->status_cb = status_cb;
   drawer->cb_data = user_data;
   drawer->build_issues = g_ptr_array_new_with_free_func(ide_build_issue_free);
+  drawer->matched_files = g_ptr_array_new_with_free_func(g_free);
   drawer->selected_issue_idx = -1;
 
   drawer->stack = gtk_stack_new();
@@ -421,9 +577,20 @@ ide_search_drawer_free(IdeSearchDrawer *drawer)
   if (drawer->build_proc != NULL) {
     g_subprocess_force_exit(drawer->build_proc);
   }
+  if (drawer->replace_cancel != NULL) {
+    g_cancellable_cancel(drawer->replace_cancel);
+  }
+  if (drawer->replace_proc != NULL) {
+    g_subprocess_force_exit(drawer->replace_proc);
+  }
+  g_clear_object(&drawer->replace_proc);
+  g_clear_object(&drawer->replace_cancel);
+  g_clear_pointer(&drawer->matched_files, g_ptr_array_unref);
   g_clear_object(&drawer->build_proc);
   g_clear_object(&drawer->build_cancel);
   g_free(drawer->workspace_root);
+  g_free(drawer->task_label);
+  g_free(drawer->parse_root);
   g_clear_pointer(&drawer->build_issues, g_ptr_array_unref);
   g_clear_object(&drawer->diff_buf);
   g_free(drawer);
@@ -440,8 +607,9 @@ void
 ide_search_drawer_set_workspace_root(IdeSearchDrawer *drawer, const char *workspace_root)
 {
   g_return_if_fail(drawer != NULL);
+  char *dup = g_strdup(workspace_root ? workspace_root : ".");
   g_free(drawer->workspace_root);
-  drawer->workspace_root = g_strdup(workspace_root ? workspace_root : ".");
+  drawer->workspace_root = dup;
 }
 
 void
@@ -459,7 +627,8 @@ ide_search_drawer_append_output_line(IdeSearchDrawer *drawer, const char *line)
     return;
   }
 
-  IdeBuildIssue *iss = ide_parse_compiler_error_line(drawer->workspace_root, line);
+  IdeBuildIssue *iss = ide_parse_compiler_error_line(
+      drawer->parse_root ? drawer->parse_root : drawer->workspace_root, line);
   GtkWidget *row = gtk_list_box_row_new();
   gtk_widget_add_css_class(row, "widget-row-card");
 
@@ -508,7 +677,7 @@ ide_search_drawer_append_output_line(IdeSearchDrawer *drawer, const char *line)
 static void
 on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
 {
-  IdeSearchDrawer *drawer = user_data;
+  SearchAsyncCtx *ctx = user_data;
   g_autofree char *out_str = NULL;
   g_autofree char *err_str = NULL;
   g_autoptr(GError) err = NULL;
@@ -516,20 +685,38 @@ on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
                                                      &out_str, &err_str, &err);
   /* Cancelled means the drawer was freed or a newer build replaced this one:
    * never touch `drawer` in that case. */
-  if (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+  if (g_cancellable_is_cancelled(ctx->cancellable) ||
+      (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED))) {
+    search_async_ctx_free(ctx);
     return;
   }
+  IdeSearchDrawer *drawer = ctx->drawer;
+  search_async_ctx_free(ctx);
 
   gint wait_status = ok ? g_subprocess_get_exit_status(G_SUBPROCESS(source)) : -1;
   g_clear_object(&drawer->build_proc);
   g_clear_object(&drawer->build_cancel);
 
   g_autofree char *merged = g_strconcat(out_str ? out_str : "", "\n", err_str ? err_str : "", NULL);
-  g_auto(GStrv) lines = g_strsplit(merged, "\n", 200);
+  /* Keep every diagnostic line but only the tail of plain output: Maven and
+   * Gradle print hundreds of lines before the errors that matter. */
+  g_auto(GStrv) lines = g_strsplit(merged, "\n", -1);
+  gsize n_lines = g_strv_length(lines);
+  gsize tail_from = n_lines > 400 ? n_lines - 400 : 0;
   guint err_count = 0;
   for (gsize i = 0; lines[i] != NULL; i++) {
-    if (lines[i][0] != '\0') {
+    if (lines[i][0] == '\0') {
+      continue;
+    }
+    if (i >= tail_from) {
       ide_search_drawer_append_output_line(drawer, lines[i]);
+    } else {
+      IdeBuildIssue *early = ide_parse_compiler_error_line(
+          drawer->parse_root ? drawer->parse_root : drawer->workspace_root, lines[i]);
+      if (early != NULL) {
+        ide_build_issue_free(early);
+        ide_search_drawer_append_output_line(drawer, lines[i]);
+      }
     }
   }
   for (guint i = 0; i < drawer->build_issues->len; i++) {
@@ -540,8 +727,9 @@ on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
   }
 
   g_autofree char *btxt = (wait_status == 0)
-                              ? g_strdup("✓ BUILD OK")
-                              : g_strdup_printf("✖ %u ERRORS", err_count);
+                              ? g_strdup_printf("✓ %s OK", drawer->task_label ? drawer->task_label : "BUILD")
+                              : (err_count > 0 ? g_strdup_printf("✖ %u ERRORS", err_count)
+                                               : g_strdup_printf("✖ FAILED (exit %d)", wait_status));
   gtk_label_set_text(GTK_LABEL(drawer->build_badge), btxt);
 
   if (drawer->build_issues->len > 0) {
@@ -554,7 +742,7 @@ on_build_finished(GObject *source, GAsyncResult *res, gpointer user_data)
 }
 
 void
-ide_search_drawer_run_build(IdeSearchDrawer *drawer)
+ide_search_drawer_run_task(IdeSearchDrawer *drawer, int kind, const char *active_file)
 {
   g_return_if_fail(drawer != NULL);
   ide_search_drawer_show_build_output(drawer);
@@ -567,23 +755,18 @@ ide_search_drawer_run_build(IdeSearchDrawer *drawer)
   }
   g_ptr_array_set_size(drawer->build_issues, 0);
 
-  /* Auto-detect build system in workspace_root */
   const char *root = drawer->workspace_root ? drawer->workspace_root : ".";
-  g_autofree char *meson_f = g_build_filename(root, "meson.build", NULL);
-  g_autofree char *cargo_f = g_build_filename(root, "Cargo.toml", NULL);
-  g_autofree char *gomod_f = g_build_filename(root, "go.mod", NULL);
-
-  const char *cmd = "make";
-  if (g_file_test(meson_f, G_FILE_TEST_EXISTS)) {
-    cmd = "meson compile -C builddir";
-  } else if (g_file_test(cargo_f, G_FILE_TEST_EXISTS)) {
-    cmd = "cargo check";
-  } else if (g_file_test(gomod_f, G_FILE_TEST_EXISTS)) {
-    cmd = "go build ./...";
+  IdeTask *task = ide_task_resolve(root, active_file, (IdeTaskKind)kind);
+  if (task == NULL) {
+    static const char *const kNames[] = { "build", "test", "run", "clean" };
+    g_autofree char *msg = g_strdup_printf("No %s task for this project", kNames[CLAMP(kind, 0, 3)]);
+    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "ℹ NO TASK");
+    ide_search_drawer_append_output_line(drawer, msg);
+    return;
   }
 
-  /* Run the build without blocking the GTK main loop: a long `meson compile`
-   * or `cargo check` previously froze the whole IDE until it finished. */
+  /* Run without blocking the GTK main loop: a long `mvn test` or
+   * `cargo check` must not freeze the IDE. */
   if (drawer->build_cancel != NULL) {
     g_cancellable_cancel(drawer->build_cancel);
   }
@@ -595,22 +778,38 @@ ide_search_drawer_run_build(IdeSearchDrawer *drawer)
 
   g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
       G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_PIPE);
-  g_subprocess_launcher_set_cwd(launcher, root);
+  g_subprocess_launcher_set_cwd(launcher, task->cwd);
+  g_free(drawer->task_label);
+  static const char *const kBadge[] = { "BUILD", "TEST", "RUN", "CLEAN" };
+  drawer->task_label = g_strdup(kBadge[CLAMP(kind, 0, 3)]);
+  /* paths in compiler output are relative to the task's working directory */
+  g_free(drawer->parse_root);
+  drawer->parse_root = g_strdup(task->cwd);
+
   g_autoptr(GError) err = NULL;
-  drawer->build_proc = g_subprocess_launcher_spawn(launcher, &err, "sh", "-c", cmd, NULL);
+  drawer->build_proc = g_subprocess_launcher_spawn(launcher, &err, "sh", "-c", task->command, NULL);
   if (drawer->build_proc == NULL) {
-    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "✖ BUILD FAILED TO START");
+    gtk_label_set_text(GTK_LABEL(drawer->build_badge), "✖ FAILED TO START");
     ide_search_drawer_append_output_line(drawer, err != NULL ? err->message : "spawn failed");
+    ide_task_free(task);
     return;
   }
 
-  gtk_label_set_text(GTK_LABEL(drawer->build_badge), "⟳ BUILDING…");
+  g_autofree char *badge = g_strdup_printf("⟳ %s…", task->label);
+  gtk_label_set_text(GTK_LABEL(drawer->build_badge), badge);
+  ide_search_drawer_append_output_line(drawer, task->command);
+  ide_task_free(task);
   drawer->build_cancel = g_cancellable_new();
-  g_subprocess_communicate_utf8_async(drawer->build_proc,
-                                      NULL,
-                                      drawer->build_cancel,
-                                      on_build_finished,
-                                      drawer);
+  g_subprocess_communicate_utf8_async(
+      drawer->build_proc, NULL, drawer->build_cancel,
+      on_build_finished,
+      search_async_ctx_new(drawer, drawer->build_cancel));
+}
+
+void
+ide_search_drawer_run_build(IdeSearchDrawer *drawer)
+{
+  ide_search_drawer_run_task(drawer, IDE_TASK_BUILD, NULL);
 }
 
 void
@@ -803,10 +1002,51 @@ ide_search_drawer_apply_all(IdeSearchDrawer *drawer, GPtrArray *open_buffers)
     return total_replaced;
   }
 
-  /* Project-wide atomic replacement */
+  /* Project-wide atomic replacement across open buffers and matched disk files */
+  if (drawer->replace_proc != NULL) {
+    if (drawer->status_cb != NULL) {
+      drawer->status_cb("Project search still in progress — wait for preview before applying",
+                        drawer->cb_data);
+    }
+    return 0;
+  }
+
+  g_autoptr(GHashTable) seen_paths = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+  if (open_buffers != NULL) {
+    for (guint i = 0; i < open_buffers->len; i++) {
+      const char *bp = ide_buffer_get_file_path(g_ptr_array_index(open_buffers, i));
+      if (bp != NULL) {
+        g_hash_table_add(seen_paths, g_canonicalize_filename(bp, NULL));
+      }
+    }
+  }
+
+  /* Disk-only files are rewritten without undo: require a second, explicit press. */
+  guint disk_only = 0;
+  for (guint i = 0; i < drawer->matched_files->len; i++) {
+    g_autofree char *canon = g_canonicalize_filename(g_ptr_array_index(drawer->matched_files, i), NULL);
+    if (!g_hash_table_contains(seen_paths, canon)) {
+      disk_only++;
+    }
+  }
+  if (disk_only > 0 && !drawer->confirm_armed) {
+    drawer->confirm_armed = TRUE;
+    g_autofree char *msg = g_strdup_printf(
+        "%u file%s on disk will be rewritten and this cannot be undone - press apply again to confirm "
+        "(any edit to the fields cancels)",
+        disk_only, disk_only == 1 ? "" : "s");
+    if (drawer->status_cb != NULL) {
+      drawer->status_cb(msg, drawer->cb_data);
+    }
+    return 0;
+  }
+  drawer->confirm_armed = FALSE;
+
   if (open_buffers != NULL) {
     for (guint i = 0; i < open_buffers->len; i++) {
       IdeBuffer *b = g_ptr_array_index(open_buffers, i);
+      const char *bp = ide_buffer_get_file_path(b);
+      gboolean was_modified = ide_buffer_get_modified(b);
       g_autofree char *orig = ide_buffer_get_text(b);
       guint cnt = 0;
       g_autofree char *after = ide_replace_text_all(orig,
@@ -818,11 +1058,90 @@ ide_search_drawer_apply_all(IdeSearchDrawer *drawer, GPtrArray *open_buffers)
                                                     &cnt);
       if (cnt > 0) {
         ide_buffer_set_text(b, after);
-        ide_buffer_save(b, NULL);
+        if (!was_modified && bp != NULL) {
+          ide_buffer_save(b, NULL);
+        }
         total_replaced += cnt;
       }
     }
   }
+  for (guint i = 0; i < drawer->matched_files->len; i++) {
+    const char *fpath = g_ptr_array_index(drawer->matched_files, i);
+    g_autofree char *canon = g_canonicalize_filename(fpath, NULL);
+    if (g_hash_table_contains(seen_paths, canon)) {
+      continue;
+    }
+    g_autofree char *orig = NULL;
+    gsize orig_len = 0;
+    if (!g_file_get_contents(fpath, &orig, &orig_len, NULL) ||
+        orig_len > IDE_PROJECT_REPLACE_MAX_BYTES ||
+        !g_utf8_validate(orig, (gssize)orig_len, NULL)) {
+      continue;
+    }
+    guint cnt = 0;
+    g_autofree char *after = ide_replace_text_all(orig,
+                                                  find_str,
+                                                  rep_str,
+                                                  drawer->case_sensitive,
+                                                  drawer->whole_word,
+                                                  drawer->use_regex,
+                                                  &cnt);
+    if (cnt > 0 && ide_save_file_atomic(fpath, after, -1, NULL)) {
+      total_replaced += cnt;
+    }
+  }
   ide_search_drawer_refresh_replace_preview(drawer);
   return total_replaced;
+}
+
+gboolean
+ide_search_drawer_apply_current(IdeSearchDrawer *drawer, IdeBuffer *active_buf)
+{
+  g_return_val_if_fail(drawer != NULL, FALSE);
+  IdeBuffer *buf = drawer->target_buf ? drawer->target_buf : active_buf;
+  if (buf == NULL) {
+    return FALSE;
+  }
+  const char *find_str = gtk_editable_get_text(GTK_EDITABLE(drawer->find_entry));
+  const char *rep_str = gtk_editable_get_text(GTK_EDITABLE(drawer->replace_entry));
+  if (find_str == NULL || find_str[0] == '\0') {
+    return FALSE;
+  }
+  if (rep_str == NULL) {
+    rep_str = "";
+  }
+
+  g_autofree char *escaped = drawer->use_regex ? g_strdup(find_str) : g_regex_escape_string(find_str, -1);
+  g_autofree char *pattern = drawer->whole_word ? g_strdup_printf("\\b(?:%s)\\b", escaped) : g_strdup(escaped);
+  GRegexCompileFlags cflags = G_REGEX_MULTILINE;
+  if (!drawer->case_sensitive) {
+    cflags |= G_REGEX_CASELESS;
+  }
+  g_autoptr(GRegex) rx = g_regex_new(pattern, cflags, 0, NULL);
+  if (rx == NULL) {
+    return FALSE;
+  }
+
+  g_autofree char *orig = ide_buffer_get_text(buf);
+  g_autoptr(GMatchInfo) mi = NULL;
+  if (!g_regex_match(rx, orig, 0, &mi) || !g_match_info_matches(mi)) {
+    return FALSE;
+  }
+  gint start_pos = 0, end_pos = 0;
+  if (!g_match_info_fetch_pos(mi, 0, &start_pos, &end_pos) || start_pos < 0 || end_pos < start_pos) {
+    return FALSE;
+  }
+  g_autofree char *expanded = drawer->use_regex
+                                  ? g_match_info_expand_references(mi, rep_str, NULL)
+                                  : g_strdup(rep_str);
+  if (expanded == NULL) {
+    expanded = g_strdup(rep_str);
+  }
+  GString *updated = g_string_new_len(orig, start_pos);
+  g_string_append(updated, expanded);
+  g_string_append(updated, orig + end_pos);
+  ide_buffer_set_text(buf, updated->str);
+  g_string_free(updated, TRUE);
+  ide_search_drawer_refresh_replace_preview(drawer);
+  return TRUE;
 }

@@ -19,11 +19,12 @@ struct _IdeFsm {
 };
 
 static const char *const kValidLeaderChords[] = {
-  "ff", "fg", "fs", "fa", "bb", "bd", "bD", "e",  "o",  "a",  "k",  "?",  "h",
-  "/",  "mp", "mt", "md", "mf", "ne", "pe", "nd", "pd", "nh", "ph", "ns", "ps",
-  "ds", "da", "dr", "db", "dd", "dc", "dn", "di", "do", "dp", "dq", "dv", "ca",
-  "cr", "gd", "gi", "gc", "ch", "sr", "sp", "sf", "s/", "ws", "w>", "w<", "w+",
-  "w-", "ww", "wh", "wl", "wj", "wk", NULL
+  " ",  ",",  "ff", "fg", "fs", "fa", "bb", "bd", "bD", "e",  "o",  "a",  "k",  "?",  "h",
+  "/",  "q",  "Q",  "mp", "mt", "md", "mm", "ne", "pe", "nd", "pd", "nh", "ph",
+  "ns", "ps", "ds", "da", "dr", "db", "dd", "dc", "dn", "di", "do", "dp", "dq",
+  "dv", "ca", "cr", "cf", "ch", "rb", "rt", "rr", "rc", "gd", "gi", "sr", "sp",
+  "sf", "s/", "ws", "wa", "wq", "w>", "w<", "w+", "w-", "ww", "wh", "wl", "wj",
+  "wk", NULL
 };
 
 static gboolean
@@ -80,6 +81,7 @@ ide_fsm_clear_buffers(IdeFsm *fsm)
 {
   fsm->leader_buf[0] = '\0';
   fsm->match_buf[0] = '\0';
+  fsm->last_char[0] = '\0';
 }
 
 static gboolean
@@ -142,11 +144,20 @@ ide_fsm_get_state(const IdeFsm *fsm)
   return fsm->state;
 }
 
+IdeState
+ide_fsm_get_previous_state(const IdeFsm *fsm)
+{
+  g_return_val_if_fail(fsm != NULL, IDE_STATE_NORMAL);
+  return fsm->previous_state;
+}
+
 void
 ide_fsm_set_state(IdeFsm *fsm, IdeState state)
 {
   g_return_if_fail(fsm != NULL);
-  fsm->previous_state = fsm->state;
+  if (fsm->state != state) {
+    fsm->previous_state = fsm->state;
+  }
   fsm->state = state;
   if (state != IDE_STATE_DRAWER) {
     fsm->drawer_editable = FALSE;
@@ -231,6 +242,106 @@ ide_fsm_get_pending_chord(const IdeFsm *fsm)
        fsm->state == IDE_STATE_TREE) &&
       g_strcmp0(fsm->last_char, "g") == 0) {
     return "g";
+  }
+  return "";
+}
+
+guint
+ide_fsm_get_leader_timeout_ms(const IdeFsm *fsm)
+{
+  g_return_val_if_fail(fsm != NULL, 2000);
+  return (guint)(fsm->leader_timeout_usec / 1000);
+}
+
+gboolean
+ide_fsm_expire_leader(IdeFsm *fsm)
+{
+  g_return_val_if_fail(fsm != NULL, FALSE);
+  if (fsm->state != IDE_STATE_LEADER) {
+    return FALSE;
+  }
+  fsm->state = IDE_STATE_NORMAL;
+  ide_fsm_clear_buffers(fsm);
+  return TRUE;
+}
+
+gboolean
+ide_fsm_tree_prompt_active(const IdeFsm *fsm, gboolean prompt_visible)
+{
+  g_return_val_if_fail(fsm != NULL, FALSE);
+  return fsm->tree_editable || prompt_visible;
+}
+
+const char *const *
+ide_fsm_get_valid_leader_chords(void)
+{
+  return kValidLeaderChords;
+}
+
+const char *
+ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
+{
+  const char *chord = pending_chord ? pending_chord : "";
+  if (state == IDE_STATE_LEADER) {
+    if (g_strcmp0(chord, "b") == 0) {
+      return "b b  Switch Buffers       b d  Close Buffer       b D  Force Close";
+    }
+    if (g_strcmp0(chord, "c") == 0) {
+      return "c a  LSP Code Action      c r  LSP Rename         c f  LSP Format\n"
+             "c h  Clear Search";
+    }
+    if (g_strcmp0(chord, "d") == 0) {
+      return "d s  Review Agent Diffs   d a  Accept All         d r  Revert All\n"
+             "d b  Toggle Breakpoint    d d / d c  Start/Cont   d p  Pause\n"
+             "d n  Step Over            d i  Step Into          d o  Step Out\n"
+             "d q  Stop Session         d v  DAP Drawer";
+    }
+    if (g_strcmp0(chord, "f") == 0) {
+      return "f f  Find Files           f g  Live Grep          f s  Save Buffer\n"
+             "f a  Save All";
+    }
+    if (g_strcmp0(chord, "g") == 0) {
+      return "g d  Go to Definition     g i  Go to Implementation";
+    }
+    if (g_strcmp0(chord, "m") == 0) {
+      return "m p  Toggle Markdown GUI  m m / m d  Mermaid Drawer\n"
+             "m t  Toggle Checklist";
+    }
+    if (g_strcmp0(chord, "n") == 0) {
+      return "n e  Next Build Error     n d  Next Diagnostic    n h  Next Diff Hunk\n"
+             "n s  Next Search Match";
+    }
+    if (g_strcmp0(chord, "p") == 0) {
+      return "p e  Prev Build Error     p d  Prev Diagnostic    p h  Prev Diff Hunk\n"
+             "p s  Prev Search Match";
+    }
+    if (g_strcmp0(chord, "r") == 0) {
+      return "r b  Build Project        r t  Run Tests          r r  Run Binary\n"
+             "r c  Clean Build";
+    }
+    if (g_strcmp0(chord, "s") == 0) {
+      return "s f / s /  Buffer Search  s r  Buffer Replace     s p  Project Replace";
+    }
+    if (g_strcmp0(chord, "w") == 0) {
+      return "w s  Save Buffer          w a  Save All           w q  Force Close\n"
+             "w w  Cycle Pane           w h  Focus Tree         w l  Focus Editor\n"
+             "w j  Focus Drawer         w k  Focus Editor       w >  Grow Tree\n"
+             "w <  Shrink Tree          w +  Grow Drawer        w -  Shrink Drawer";
+    }
+    return "f / SPC  Find Files      b / ,  Buffers     /  Live Grep\n"
+           "e        File Tree       a      Alt File    w  Window / Save\n"
+           "m        Markdown/Merm   s      Search/Rep  d  Agent / Debug\n"
+           "c        Code / Format   r      Run / Build q / Q  Close Buffer\n"
+           "g        Goto            n / p  Next/Prev   o  Drawer    ? / h  Help\n"
+           "k        Hover Docs";
+  }
+  if (state == IDE_STATE_MATCH_PENDING) {
+    return "i + ( [ { \" ' w f c b a   Select Inside Delimiter / Word / AST\n"
+           "a + ( [ { \" ' w f c b a   Select Around Delimiter / Word / AST";
+  }
+  if (g_strcmp0(chord, "g") == 0) {
+    return "g g  Buffer Start     g h  Line Start     g l  Line End\n"
+           "g d  Go to Definition";
   }
   return "";
 }
@@ -329,7 +440,6 @@ ide_action_type_from_name(const char *name)
     { "paste_before", IDE_ACTION_PASTE_BEFORE },
     { "undo", IDE_ACTION_UNDO },
     { "redo", IDE_ACTION_REDO },
-    { "pipe_selection", IDE_ACTION_PIPE_SELECTION },
     { "tab_next", IDE_ACTION_TAB_NEXT },
     { "next_tab", IDE_ACTION_TAB_NEXT },
     { "buffer_next", IDE_ACTION_TAB_NEXT },
@@ -367,10 +477,17 @@ ide_action_type_from_name(const char *name)
     { "definition", IDE_ACTION_LSP_DEFINITION },
     { "lsp_implementation", IDE_ACTION_LSP_IMPLEMENTATION },
     { "implementation", IDE_ACTION_LSP_IMPLEMENTATION },
-    { "lsp_call_hierarchy", IDE_ACTION_LSP_CALL_HIERARCHY },
-    { "call_hierarchy", IDE_ACTION_LSP_CALL_HIERARCHY },
     { "lsp_code_action", IDE_ACTION_LSP_CODE_ACTION },
     { "code_action", IDE_ACTION_LSP_CODE_ACTION },
+    { "task_build", IDE_ACTION_TASK_BUILD },
+    { "build", IDE_ACTION_TASK_BUILD },
+    { "task_test", IDE_ACTION_TASK_TEST },
+    { "test", IDE_ACTION_TASK_TEST },
+    { "task_run", IDE_ACTION_TASK_RUN },
+    { "run", IDE_ACTION_TASK_RUN },
+    { "task_clean", IDE_ACTION_TASK_CLEAN },
+    { "lsp_format", IDE_ACTION_LSP_FORMAT },
+    { "format", IDE_ACTION_LSP_FORMAT },
     { "lsp_rename", IDE_ACTION_LSP_RENAME },
     { "rename", IDE_ACTION_LSP_RENAME },
     { "lsp_hover", IDE_ACTION_LSP_HOVER },
@@ -382,7 +499,6 @@ ide_action_type_from_name(const char *name)
     { "jumplist_forward", IDE_ACTION_JUMPLIST_FORWARD },
     { "toggle_checklist", IDE_ACTION_TOGGLE_CHECKLIST },
     { "toggle_mermaid_mode", IDE_ACTION_TOGGLE_MERMAID_MODE },
-    { "toggle_markdown_fold", IDE_ACTION_TOGGLE_MARKDOWN_FOLD },
     { "picker_open_files", IDE_ACTION_PICKER_OPEN_FILES },
     { "open_files", IDE_ACTION_PICKER_OPEN_FILES },
     { "picker_open_grep", IDE_ACTION_PICKER_OPEN_GREP },
@@ -930,10 +1046,6 @@ handle_select(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "<") == 0 || g_strcmp0(key, "shift+tab") == 0) {
     return ide_action_make(IDE_ACTION_OUTDENT);
   }
-  if (g_strcmp0(key, "!") == 0) {
-    fsm->state = IDE_STATE_NORMAL;
-    return ide_action_make(IDE_ACTION_PIPE_SELECTION);
-  }
   if (g_strcmp0(key, "h") == 0 || g_strcmp0(key, "left") == 0 ||
       g_strcmp0(key, "shift+left") == 0) {
     return ide_action_make_str(IDE_ACTION_EXTEND_SELECTION, "left");
@@ -1055,17 +1167,17 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_PICKER_OPEN_GREP);
   }
-  if (g_strcmp0(b, "bb") == 0) {
+  if (g_strcmp0(b, "bb") == 0 || g_strcmp0(b, ",") == 0) {
     fsm->state = IDE_STATE_PICKER;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_PICKER_OPEN_BUFFERS);
   }
-  if (g_strcmp0(b, "bd") == 0) {
+  if (g_strcmp0(b, "bd") == 0 || g_strcmp0(b, "q") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_BUFFER_CLOSE);
   }
-  if (g_strcmp0(b, "bD") == 0) {
+  if (g_strcmp0(b, "bD") == 0 || g_strcmp0(b, "Q") == 0 || g_strcmp0(b, "wq") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_BUFFER_FORCE_CLOSE);
@@ -1075,7 +1187,7 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_SAVE);
   }
-  if (g_strcmp0(b, "fa") == 0) {
+  if (g_strcmp0(b, "fa") == 0 || g_strcmp0(b, "wa") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_SAVE_ALL);
@@ -1107,15 +1219,10 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_TOGGLE_CHECKLIST);
   }
-  if (g_strcmp0(b, "md") == 0) {
+  if (g_strcmp0(b, "md") == 0 || g_strcmp0(b, "mm") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_TOGGLE_MERMAID_MODE);
-  }
-  if (g_strcmp0(b, "mf") == 0) {
-    fsm->state = IDE_STATE_NORMAL;
-    fsm->leader_buf[0] = '\0';
-    return ide_action_make(IDE_ACTION_TOGGLE_MARKDOWN_FOLD);
   }
 
   /* Tooling */
@@ -1227,6 +1334,20 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_LSP_CODE_ACTION);
   }
+  if (g_strcmp0(b, "rb") == 0 || g_strcmp0(b, "rt") == 0 || g_strcmp0(b, "rr") == 0 ||
+      g_strcmp0(b, "rc") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(b[1] == 'b' ? IDE_ACTION_TASK_BUILD
+                           : b[1] == 't' ? IDE_ACTION_TASK_TEST
+                           : b[1] == 'r' ? IDE_ACTION_TASK_RUN
+                                         : IDE_ACTION_TASK_CLEAN);
+  }
+  if (g_strcmp0(b, "cf") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_LSP_FORMAT);
+  }
   if (g_strcmp0(b, "cr") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
@@ -1241,11 +1362,6 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_LSP_IMPLEMENTATION);
-  }
-  if (g_strcmp0(b, "gc") == 0) {
-    fsm->state = IDE_STATE_NORMAL;
-    fsm->leader_buf[0] = '\0';
-    return ide_action_make(IDE_ACTION_LSP_CALL_HIERARCHY);
   }
   if (g_strcmp0(b, "k") == 0) {
     fsm->state = IDE_STATE_NORMAL;
@@ -1516,9 +1632,11 @@ handle_tree(IdeFsm *fsm, const char *key)
     return ide_action_make(IDE_ACTION_TREE_REFRESH);
   }
   if (g_strcmp0(key, "a") == 0) {
+    fsm->tree_editable = TRUE;
     return ide_action_make(IDE_ACTION_TREE_CREATE_FILE);
   }
   if (g_strcmp0(key, "A") == 0) {
+    fsm->tree_editable = TRUE;
     return ide_action_make(IDE_ACTION_TREE_CREATE_DIR);
   }
   if (g_strcmp0(key, "d") == 0) {
@@ -1649,11 +1767,11 @@ static IdeAction
 handle_completion(IdeFsm *fsm, const char *key)
 {
   if (g_strcmp0(key, "esc") == 0) {
-    fsm->state = IDE_STATE_INSERT;
+    fsm->state = (fsm->previous_state == IDE_STATE_NORMAL) ? IDE_STATE_NORMAL : IDE_STATE_INSERT;
     return ide_action_make(IDE_ACTION_LSP_CANCEL);
   }
   if (g_strcmp0(key, "enter") == 0 || g_strcmp0(key, "tab") == 0) {
-    fsm->state = IDE_STATE_INSERT;
+    fsm->state = (fsm->previous_state == IDE_STATE_NORMAL) ? IDE_STATE_NORMAL : IDE_STATE_INSERT;
     return ide_action_make(IDE_ACTION_LSP_SELECT_CONFIRM);
   }
   if (g_strcmp0(key, "down") == 0 || g_strcmp0(key, "ctrl+n") == 0) {
@@ -1697,7 +1815,7 @@ handle_code_action(IdeFsm *fsm, const char *key)
   }
   if (strlen(key) == 1 && key[0] >= '1' && key[0] <= '9') {
     fsm->state = IDE_STATE_NORMAL;
-    return ide_action_make_int(IDE_ACTION_LSP_SELECT_CONFIRM, key[0] - '1');
+    return ide_action_make_int(IDE_ACTION_LSP_SELECT_CONFIRM, (key[0] - '1') + 1);
   }
   return ide_action_make(IDE_ACTION_NONE);
 }
@@ -1756,14 +1874,16 @@ ide_fsm_handle_key_at(IdeFsm *fsm, const char *key, gint64 now_usec)
     return ide_action_make(IDE_ACTION_NONE);
   }
 
-  /* Check 2-second leader timeout */
+  /* Check 2-second leader timeout: expire state and swallow expired key */
   if (fsm->state == IDE_STATE_LEADER && fsm->last_input_usec > 0 &&
       (now_usec - fsm->last_input_usec) > fsm->leader_timeout_usec) {
-    fsm->state = IDE_STATE_NORMAL;
-    ide_fsm_clear_buffers(fsm);
+    ide_fsm_expire_leader(fsm);
+    fsm->last_input_usec = now_usec;
+    return ide_action_make(IDE_ACTION_NONE);
   }
 
-  IdeAction result = ide_action_make(IDE_ACTION_NONE);
+  IdeState pre_state = fsm->state;
+  IdeAction result;
   gboolean in_editable_prompt =
       (fsm->state == IDE_STATE_DRAWER && fsm->drawer_editable) ||
       (fsm->state == IDE_STATE_TREE && fsm->tree_editable);
@@ -1855,9 +1975,13 @@ ide_fsm_handle_key_at(IdeFsm *fsm, const char *key, gint64 now_usec)
 
 done:
   fsm->last_input_usec = now_usec;
-  if (g_strcmp0(key, "g") == 0 &&
-      (result.type == IDE_ACTION_MOVE_BUFFER_START ||
-       result.type == IDE_ACTION_TREE_TOP)) {
+  if (pre_state == IDE_STATE_LEADER ||
+      pre_state == IDE_STATE_MATCH_PENDING ||
+      fsm->state == IDE_STATE_LEADER ||
+      fsm->state == IDE_STATE_MATCH_PENDING ||
+      (g_strcmp0(key, "g") == 0 &&
+       (result.type == IDE_ACTION_MOVE_BUFFER_START ||
+        result.type == IDE_ACTION_TREE_TOP))) {
     fsm->last_char[0] = '\0';
   } else {
     g_strlcpy(fsm->last_char, key, sizeof(fsm->last_char));

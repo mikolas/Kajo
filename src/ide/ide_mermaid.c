@@ -302,9 +302,11 @@ void ide_mermaid_render_cairo(const IdeMermaidGraph *graph,
   cairo_paint(cr);
 
   cairo_set_source_rgb(cr, 0.13, 0.13, 0.13); /* #212121 dots */
-  for (double gx = 16.0; gx < width; gx += 20.0) {
-    for (double gy = 16.0; gy < height; gy += 20.0) {
-      cairo_rectangle(cr, gx, gy, 1.5, 1.5);
+  int iwidth = (int)width;
+  int iheight = (int)height;
+  for (int gx = 16; gx < iwidth; gx += 20) {
+    for (int gy = 16; gy < iheight; gy += 20) {
+      cairo_rectangle(cr, (double)gx, (double)gy, 1.5, 1.5);
     }
   }
   cairo_fill(cr);

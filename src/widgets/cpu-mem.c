@@ -237,8 +237,10 @@ static void cpu_mem_update_network(CpuMemWidget *cm)
     char line[256];
     guint64 total_rx = 0, total_tx = 0;
 
-    if (fgets(line, sizeof(line), fp)) {}
-    if (fgets(line, sizeof(line), fp)) {}
+    if (!fgets(line, sizeof(line), fp) || !fgets(line, sizeof(line), fp)) {
+        fclose(fp);
+        return;
+    }
 
     while (fgets(line, sizeof(line), fp)) {
         gchar *colon = strchr(line, ':');

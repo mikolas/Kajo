@@ -64,7 +64,6 @@ typedef enum {
   IDE_ACTION_PASTE_BEFORE,
   IDE_ACTION_UNDO,
   IDE_ACTION_REDO,
-  IDE_ACTION_PIPE_SELECTION,
 
   /* Buffers & Tabs */
   IDE_ACTION_TAB_NEXT,
@@ -102,9 +101,13 @@ typedef enum {
   IDE_ACTION_ALTERNATE_FILE,
   IDE_ACTION_LSP_DEFINITION,
   IDE_ACTION_LSP_IMPLEMENTATION,
-  IDE_ACTION_LSP_CALL_HIERARCHY,
   IDE_ACTION_LSP_CODE_ACTION,
   IDE_ACTION_LSP_RENAME,
+  IDE_ACTION_LSP_FORMAT,
+  IDE_ACTION_TASK_BUILD,
+  IDE_ACTION_TASK_TEST,
+  IDE_ACTION_TASK_RUN,
+  IDE_ACTION_TASK_CLEAN,
   IDE_ACTION_LSP_HOVER,
   IDE_ACTION_LSP_COMPLETE,
   IDE_ACTION_LSP_CANCEL,
@@ -119,7 +122,6 @@ typedef enum {
   /* Markdown & Mermaid */
   IDE_ACTION_TOGGLE_CHECKLIST,
   IDE_ACTION_TOGGLE_MERMAID_MODE,
-  IDE_ACTION_TOGGLE_MARKDOWN_FOLD,
 
   /* Picker / Fuzzy Finder */
   IDE_ACTION_PICKER_OPEN_FILES,
@@ -215,11 +217,20 @@ IdeFsm       *ide_fsm_new(void);
 void          ide_fsm_free(IdeFsm *fsm);
 
 IdeState      ide_fsm_get_state(const IdeFsm *fsm);
+IdeState      ide_fsm_get_previous_state(const IdeFsm *fsm);
 void          ide_fsm_set_state(IdeFsm *fsm, IdeState state);
 const char   *ide_state_to_string(IdeState state);
 const char   *ide_state_get_css_class(IdeState state);
 
 const char   *ide_fsm_get_pending_chord(const IdeFsm *fsm);
+const char   *ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord);
+guint         ide_fsm_get_leader_timeout_ms(const IdeFsm *fsm);
+gboolean      ide_fsm_expire_leader(IdeFsm *fsm);
+/* TRUE while the tree's new-file/folder prompt owns confirm/cancel actions.
+ * The FSM clears its own editable flag when it emits Enter/Esc, so the
+ * visible prompt must be consulted as well; this is the single place that rule lives. */
+gboolean      ide_fsm_tree_prompt_active(const IdeFsm *fsm, gboolean prompt_visible);
+const char *const *ide_fsm_get_valid_leader_chords(void);
 
 gboolean      ide_fsm_get_drawer_editable(const IdeFsm *fsm);
 void          ide_fsm_set_drawer_editable(IdeFsm *fsm, gboolean editable);

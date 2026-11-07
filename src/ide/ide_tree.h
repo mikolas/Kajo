@@ -34,7 +34,13 @@ void        ide_tree_collapse_or_parent(IdeTree *tree);
 void        ide_tree_prompt_create_file(IdeTree *tree);
 void        ide_tree_prompt_create_dir(IdeTree *tree);
 void        ide_tree_prompt_cancel(IdeTree *tree);
+gboolean    ide_tree_prompt_is_visible(IdeTree *tree);
 gboolean    ide_tree_prompt_confirm(IdeTree *tree);
+gboolean    ide_tree_create_entry_at(const char  *workspace_root,
+                                     const char  *parent_dir,
+                                     const char  *name,
+                                     gboolean     is_dir,
+                                     char       **out_target);
 void        ide_tree_prompt_append_char(IdeTree *tree, const char *ch);
 void        ide_tree_prompt_backspace(IdeTree *tree);
 void        ide_tree_delete_selected(IdeTree *tree);

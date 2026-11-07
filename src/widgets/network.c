@@ -244,21 +244,20 @@ update_network_ui(NetworkWidget *net)
         if (fp) {
             char line[256];
             guint64 total_rx = 0, total_tx = 0;
-            if (fgets(line, sizeof(line), fp)) {}
-            if (fgets(line, sizeof(line), fp)) {}
+            if (fgets(line, sizeof(line), fp) && fgets(line, sizeof(line), fp)) {
+                while (fgets(line, sizeof(line), fp)) {
+                    gchar *colon = strchr(line, ':');
+                    if (!colon) continue;
+                    *colon = '\0';
+                    gchar *iface = g_strstrip(line);
+                    if (g_strcmp0(iface, "lo") == 0) continue;
 
-            while (fgets(line, sizeof(line), fp)) {
-                gchar *colon = strchr(line, ':');
-                if (!colon) continue;
-                *colon = '\0';
-                gchar *iface = g_strstrip(line);
-                if (g_strcmp0(iface, "lo") == 0) continue;
-
-                guint64 rx = 0, tx = 0, dummy = 0;
-                if (sscanf(colon + 1, "%lu %lu %lu %lu %lu %lu %lu %lu %lu",
-                           &rx, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &tx) >= 9) {
-                    total_rx += rx;
-                    total_tx += tx;
+                    guint64 rx = 0, tx = 0, dummy = 0;
+                    if (sscanf(colon + 1, "%lu %lu %lu %lu %lu %lu %lu %lu %lu",
+                               &rx, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &dummy, &tx) >= 9) {
+                        total_rx += rx;
+                        total_tx += tx;
+                    }
                 }
             }
             fclose(fp);

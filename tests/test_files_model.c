@@ -149,7 +149,7 @@ test_async_enum_and_ops(void)
     st.loop = g_main_loop_new(NULL, FALSE);
 
     /* 1. Create folder via kajo_files_op_mkdir_async */
-    kajo_files_op_mkdir_async(tmp_dir, "subdir", on_test_op_done, &st);
+    kajo_files_op_mkdir_async(tmp_dir, "subdir", NULL, on_test_op_done, &st);
     g_main_loop_run(st.loop);
     g_assert_true(st.op_ok);
 
@@ -168,7 +168,7 @@ test_async_enum_and_ops(void)
 
     /* 4. Rename hello.txt -> renamed.txt */
     g_autoptr(GFile) hello_file = g_file_new_for_path(hello_path);
-    kajo_files_op_rename_async(hello_file, "renamed.txt", on_test_op_done, &st);
+    kajo_files_op_rename_async(hello_file, "renamed.txt", NULL, on_test_op_done, &st);
     g_main_loop_run(st.loop);
     g_assert_true(st.op_ok);
 
