@@ -1055,10 +1055,6 @@ static void on_drawer_close_clicked(GtkButton *b, gpointer d) {
 
 static void kajo_ide_window_dispose(GObject *object) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(object);
-  if (self->hover_dwell_id != 0) {
-    g_source_remove(self->hover_dwell_id);
-    self->hover_dwell_id = 0;
-  }
   if (self->config_monitor) {
     g_file_monitor_cancel(self->config_monitor);
     g_clear_object(&self->config_monitor);
@@ -1250,61 +1246,9 @@ static void on_source_view_secondary(GtkGestureClick *gesture, int n_press, doub
   (void)gesture;
 }
 
-/* Hover-dwell documentation: after the pointer rests, request hover at that
- * spot. Any motion cancels the pending timer. */
-static gboolean on_hover_dwell_elapsed(gpointer user_data) {
-  KajoIdeWindow *self = user_data;
-  self->hover_dwell_id = 0;
-  IdeBuffer *buf = ide_window_get_active_buffer(self);
-  /* only when idle in NORMAL/SELECT and a server is ready; never over a popup */
-  IdeState st = ide_fsm_get_state(self->fsm);
-  if (!buf || !self->lsp || !ide_lsp_manager_is_ready(self->lsp, buf) ||
-      (st != IDE_STATE_NORMAL && st != IDE_STATE_SELECT)) {
-    return G_SOURCE_REMOVE;
-  }
-  GtkTextView *tv = GTK_TEXT_VIEW(self->source_view);
-  int bx = 0, by = 0;
-  gtk_text_view_window_to_buffer_coords(tv, GTK_TEXT_WINDOW_WIDGET,
-                                        (int)self->hover_x, (int)self->hover_y, &bx, &by);
-  GtkTextIter it;
-  gtk_text_view_get_iter_at_location(tv, &it, bx, by);
-  guint line1 = (guint)gtk_text_iter_get_line(&it) + 1;
-  g_autofree char *line = NULL;
-  GtkTextIter ls = it, le = it;
-  gtk_text_iter_set_line_offset(&ls, 0);
-  if (!gtk_text_iter_ends_line(&le)) gtk_text_iter_forward_to_line_end(&le);
-  line = gtk_text_buffer_get_text(gtk_text_view_get_buffer(tv), &ls, &le, FALSE);
-  guint col1 = ide_utf8_byte_to_utf16_col(line, (gsize)gtk_text_iter_get_line_index(&it)) + 1;
-  ide_lsp_manager_request_hover(self->lsp, self->source_view, buf, line1, col1);
-  return G_SOURCE_REMOVE;
-}
-
-static void on_source_view_motion(GtkEventControllerMotion *ctrl, double x, double y,
-                                   gpointer user_data) {
-  (void)ctrl;
-  KajoIdeWindow *self = user_data;
-  self->hover_x = x;
-  self->hover_y = y;
-  if (self->hover_dwell_id != 0) g_source_remove(self->hover_dwell_id);
-  self->hover_dwell_id = g_timeout_add(600, on_hover_dwell_elapsed, self);
-}
-
-static void on_source_view_motion_leave(GtkEventControllerMotion *ctrl, gpointer user_data) {
-  (void)ctrl;
-  KajoIdeWindow *self = user_data;
-  if (self->hover_dwell_id != 0) {
-    g_source_remove(self->hover_dwell_id);
-    self->hover_dwell_id = 0;
-  }
-}
-
 static void on_source_view_focus_leave(GtkEventControllerFocus *ctrl, gpointer user_data) {
   (void)ctrl;
   KajoIdeWindow *self = user_data;
-  if (self->hover_dwell_id != 0) {
-    g_source_remove(self->hover_dwell_id);
-    self->hover_dwell_id = 0;
-  }
   /* Leaving the editor (another pane, another window) dismisses hover/completion
    * popovers so they never linger detached from the cursor. */
   if (self->lsp && ide_lsp_manager_popover_visible(self->lsp))
@@ -1571,12 +1515,6 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(ed_ctrl), GTK_PHASE_CAPTURE);
   g_signal_connect(ed_ctrl, "pressed", G_CALLBACK(on_source_view_ctrl_click), self);
   gtk_widget_add_controller(self->source_view, GTK_EVENT_CONTROLLER(ed_ctrl));
-
-  /* Hover-dwell documentation. */
-  GtkEventController *ed_motion = gtk_event_controller_motion_new();
-  g_signal_connect(ed_motion, "motion", G_CALLBACK(on_source_view_motion), self);
-  g_signal_connect(ed_motion, "leave", G_CALLBACK(on_source_view_motion_leave), self);
-  gtk_widget_add_controller(self->source_view, ed_motion);
 
   /* Dismiss any sticky popover when the editor loses focus. */
   GtkEventController *ed_focus = gtk_event_controller_focus_new();

@@ -47,7 +47,7 @@ The repository builds and installs **six integrated native executables** (plus a
   - 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) with color-coded status pills, bottom-right `Space` Leader chord HUD, and fast `jk` escape from `INSERT` mode.
   - First-class Nordic layout bindings: `ä` / `ö` to step through LSP diagnostics, `Alt+ä` / `Alt+ö` for Git diff hunks, and Dead-Key-free `m i/a` structural text objects (`m i f` function, `m i c` class/struct, `m i b` block, `m i a` argument, `m i q` quote, `m m` bracket jump).
 - **Mouse Code Navigation**:
-  - Right-click opens a code menu (go to definition/implementation, references, hover docs, rename, code actions, format); `Ctrl+Click` jumps to the definition; resting the pointer on a symbol shows hover docs after a short dwell. The header breadcrumb shortens long project paths.
+  - Right-click opens a code menu (go to definition/implementation, references, hover docs, rename, code actions, format); `Ctrl+Click` jumps to the definition. The header breadcrumb shortens long project paths.
 - **6-Column Hardware-Accelerated Cairo Gutter (`68px`)**:
   - Renders DAP breakpoints & instruction pointer (`●`/`▶`), LSP diagnostic severity pills (`●`/`▲`/`◆`), Git diff status bars (`HEAD`), AI Agent modification bars, `Fira Code` absolute/relative line numbers, and AST fold chevrons (`z a`).
 - **Code Intelligence & Debugger** *(a few LSP features are still planned — see [`ROADMAP.md`](ROADMAP.md))*:
@@ -57,7 +57,7 @@ The repository builds and installs **six integrated native executables** (plus a
 - **Graphical Markdown & Native Cairo Vector Mermaid Diagrams**:
   - Live-synchronized 50/50 side-by-side split (`Space m p` / `📖 MD`) rendering interactive `- [ ]` task checkboxes (clicking mutates the source buffer), GitHub callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), tables, and code blocks.
   - Pure C11 Cairo/Pango layout and vector renderer for Mermaid `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, and `pie` blocks—complete with interactive zoom/pan (`25%`–`400%`) and 1-click `.svg` vector export.
-- **Fuzzy Finder, Live Ripgrep & 101-Command Interactive Help Palette**:
+- **Fuzzy Finder, Live Ripgrep & 100-Command Interactive Help Palette**:
   - `Space f f` (Files), `Space b b` (Buffers), and `Space f g` (async `rg --vimgrep` project search) with a live syntax-highlighted preview pane.
   - `?` / `F1` / `Space h` opens the full-width 4-column **Help & Command Palette** with interactive category filter pills (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`).
 - **AI Agent JSON-RPC 2.0 IPC & Atomic Batch Diff Review**:

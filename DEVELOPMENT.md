@@ -52,7 +52,7 @@ src/
 │   ├── ide_ts_queries.c            Highlight queries for all 15 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, JSON, TOML, YAML, CSS, HTML)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
-│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 101-command Help Palette
+│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 100-command Help Palette
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
 │   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)

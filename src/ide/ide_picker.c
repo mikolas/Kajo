@@ -180,7 +180,6 @@ static const struct {
   { "MOUSE", "Mermaid Pan & Zoom", "Use toolbar buttons (🔍-/100%/🔍+/⛶ FIT/💾 SVG) on diagrams", "Diagram Toolbar", IDE_ACTION_NONE },
   { "MOUSE", "Code Menu", "Right-click in the editor for Go to Definition, Rename, Code Actions, Format, Breakpoint", "Right Click", IDE_ACTION_NONE },
   { "MOUSE", "Jump to Definition", "Ctrl+click a symbol to go to its definition", "Ctrl+Click", IDE_ACTION_NONE },
-  { "MOUSE", "Hover Docs", "Rest the pointer on a symbol to show documentation (LSP)", "Pointer Dwell", IDE_ACTION_NONE },
   { NULL, NULL, NULL, NULL, IDE_ACTION_NONE }
 };
 
