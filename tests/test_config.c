@@ -321,6 +321,30 @@ test_config_legacy_flat_keys_and_invalid_files(void)
     g_assert_true(g_file_get_contents(extra_path, &extra_saved, NULL, NULL));
     g_assert_nonnull(strstr(extra_saved, "\"custom_user_key\""));
     g_assert_nonnull(strstr(extra_saved, "\"keep_me\""));
+
+    /* Optional keys the writer owns can be cleared; the obsolete nested "files" object is dropped */
+    const char *opt_json = "{\n"
+                           "  \"css_path\": \"/tmp/old.css\",\n"
+                           "  \"icon_map_path\": \"/tmp/old-icons.json\",\n"
+                           "  \"files\": { \"view_mode\": \"list\" },\n"
+                           "  \"custom_user_key\": \"keep_me\"\n"
+                           "}\n";
+    g_assert_true(g_file_set_contents(extra_path, opt_json, -1, NULL));
+    ShellConfig *opt_cfg = shell_config_load(extra_path);
+    g_assert_nonnull(opt_cfg);
+    g_assert_cmpstr(opt_cfg->css_path, ==, "/tmp/old.css");
+    g_free(opt_cfg->css_path);
+    opt_cfg->css_path = NULL;
+    g_free(opt_cfg->icon_map_path);
+    opt_cfg->icon_map_path = NULL;
+    g_assert_true(shell_config_save(opt_cfg, extra_path));
+    shell_config_destroy(opt_cfg);
+    g_autofree gchar *opt_saved = NULL;
+    g_assert_true(g_file_get_contents(extra_path, &opt_saved, NULL, NULL));
+    g_assert_null(strstr(opt_saved, "css_path"));
+    g_assert_null(strstr(opt_saved, "icon_map_path"));
+    g_assert_null(strstr(opt_saved, "\"files\""));
+    g_assert_nonnull(strstr(opt_saved, "custom_user_key"));
     g_unlink(extra_path);
 
     g_unlink(legacy_path);

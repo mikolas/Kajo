@@ -895,6 +895,14 @@ shell_config_save(ShellConfig *config, const gchar *path)
                 g_autoptr(GList) members = json_object_get_members(old_obj);
                 for (GList *l = members; l != NULL; l = l->next) {
                     const char *member_name = l->data;
+                    /* Keys this writer owns but only emits when set (css_path, icon_map_path)
+                     * must be able to disappear, and the pre-flat nested "files" object is
+                     * obsolete: never resurrect them from the old file. */
+                    if (g_strcmp0(member_name, "css_path") == 0 ||
+                        g_strcmp0(member_name, "icon_map_path") == 0 ||
+                        g_strcmp0(member_name, "files") == 0) {
+                        continue;
+                    }
                     if (!json_object_has_member(new_obj, member_name)) {
                         JsonNode *val_node = json_object_get_member(old_obj, member_name);
                         if (val_node)
