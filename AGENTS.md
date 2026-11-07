@@ -170,3 +170,43 @@ Every standalone Kajo application (`kajo-settings`, `kajo-files`, future `kajo-p
 - DO keep `ide_lsp_client`, `ide_dap_client`, `ide_jsonrpc`, `ide_tasks` GTK-free and covered by the mock servers in `tests/`; UI glue lives in `ide_lsp.c`, `ide_dap.c`, `ide_window.c`.
 - DO dismiss and re-anchor LSP popovers on scroll, focus loss and Escape (their autohide stays FALSE so completion/rename can take typing); DON'T leave a popover on a fixed rectangle.
 - DO route every new IDE UI element through `docs/ui-gallery.html` (specimen + usage note) and `docs/design_system.md`, and register new commands in the Help Palette.
+
+---
+
+## 8. Honesty, Completeness & Verification Rules (Apply to Every Component)
+
+These rules apply to the whole suite (shell, widgets, launcher, lock/greeter, settings, files, player, IDE, scripts, docs), not to any one app. They exist because earlier work shipped things that *looked* finished but were not. Examples, from different areas: UI hints and palette entries that advertised actions which did not exist; a timeout checked only on the next input event so stale state ran as a different command; features that only showed a notice, or a "real" backend that was a stub/scaffold while docs implied otherwise; two parallel mechanisms for the same job with the wrong one active; and unrequested ambient behavior. Trust is the product.
+
+**1. No fake functionality, no placeholders presented as features**
+- DON'T add a menu row, button, hint, shortcut, setting, doc bullet or ROADMAP "done" item for behavior that is not implemented end to end. A stub is either not added, or labelled `(planned)` / `(not implemented)` in the UI **and** docs, and disabled.
+- DON'T ship a handler that only shows a toast/notice and call the feature supported.
+- DON'T use mock data, hardcoded results or silent fallbacks that mask a missing backend. A fallback must be visibly identified as one (UI and docs).
+- Every user-visible claim (README, manuals, gallery, help text, settings labels) must be traceable to code you read in this session. If you cannot point to the function, do not write the claim.
+
+**2. One source of truth; no parallel mechanisms**
+- Before adding a mechanism, search for an existing one doing the same job. If two exist, say so and unify or remove one; never leave both active "for now".
+- Derive hints, labels, help text and docs from the data they describe (tables, registries, config schemas), or add a test that fails when they drift apart.
+
+**3. Stateful and time-based code: model every transition**
+- A timeout needs a real timer that changes state **and** refreshes the UI; never evaluate expiry lazily on the next event.
+- On expired/invalid input, swallow it. Never re-dispatch it into another state where it means something different.
+- For any state machine, async flow, popover/dialog lifecycle or reconnect logic, enumerate entry, exit, timeout, cancellation, focus/pointer interruption and error paths, and test the "wait, then input" and "interrupted midway" cases, not only the happy path.
+
+**4. Do what was asked; no ambient behavior**
+- DON'T add automatic, unrequested behavior (auto-popups, auto-open panels, focus stealing, background activity). Information and actions appear only through an explicit user action. Extras are opt-in, default off, or asked about first.
+- When the user rejects a behavior, remove it fully (code, hints, docs, gallery, tests) and report what was removed.
+
+**5. Verification is not "it compiled"**
+- A passing build proves only what the tests cover. In the final report state: what you ran, what you observed, and what you did **not** verify (not run interactively, mock-only, optional dependency absent, fallback path untested).
+- Exercise the real thing when cheap (real services, tools, files, hardware paths) rather than only mocks; say so when only mocks were used.
+- Don't write "works", "fully supported", "complete" or "parity" without evidence. Use precise wording ("X and Y verified against the real service; Z not implemented").
+- When claiming parity with a reference implementation, compare feature by feature and list the gaps.
+
+**6. Reporting discipline**
+- Final reports list: done, partial, stubbed, untested, and any decision the user did not ask for. Gaps come first.
+- When you find an earlier mistake (yours or inherited), say so immediately with root cause and fix or flag it. Never paper over it.
+- On "do not edit" / RCA requests, deliver analysis with file:line evidence and wait.
+
+**7. Docs and tests must be able to fail**
+- Prefer tests that cross-check tables (registry vs UI hints vs docs) over prose that silently drifts.
+- Counts in docs ("N commands", "N suites", "N languages") are verified by command when written and updated in the same commit as the change.
