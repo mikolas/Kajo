@@ -123,7 +123,7 @@ When the user double-clicks or selects `"💿 Mount Disk Image"` on a disk image
    - Call `org.freedesktop.UDisks2.Filesystem.Mount` (`options: {}`) on `loop_obj_path` (or if `loop_obj_path` is a partitioned table `org.freedesktop.UDisks2.PartitionTable`, find its first partition object with `org.freedesktop.UDisks2.Filesystem` and mount it).
    - Receive `mount_path` (e.g. `/run/media/$USER/<label>`), refresh `KajoFilesSidebar`, and navigate `KajoFilesWindow` to `file://<mount_path>`.
 4. **Sidebar Unmount / Eject:** Because `autoclear: true` was set at loop setup time, clicking the existing `⏏` button in `KajoFilesSidebar` unmounts the filesystem and UDisks2 automatically deletes the loop device.
-5. **Entry points (as implemented):** **Open** (double-click / `Enter`) on an `.iso` browses it as `archive://<iso_path>!/`, which needs no privileges. Mounting an ISO is under **Open With → `💿 Mount Disk Image`**, next to `📦 Extract ISO Contents`. `.img` / `.raw` cannot be browsed by libarchive, so **Open** mounts them.
+5. **Entry points (as implemented):** **Open** (double-click / `Enter`) on an `.iso` browses it as `archive://<iso_path>!/`, which needs no privileges. Mounting an ISO is under **Open With → `💿 Mount Disk Image`**; extracting it uses the regular `📦 Extract Here`. `.img` / `.raw` cannot be browsed by libarchive, so **Open** mounts them.
 6. **Autoclear (as implemented):** `autoclear` is *not* passed to `LoopSetup`; it is set with `Loop.SetAutoclear(true)` after a successful mount, so a loop device whose mount fails can still be deleted explicitly instead of lingering. A loop device this user already set up for the same file is reused.
 
 ---

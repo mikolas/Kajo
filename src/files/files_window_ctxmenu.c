@@ -350,10 +350,6 @@ on_ctx_open_with_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     if (item_local && kajo_files_is_disk_image(ctype, item_name)) {
         gtk_box_append(GTK_BOX(self->ctx_ow_list_box), create_ctx_action_button(
             "💿  Mount Disk Image", "", FALSE, G_CALLBACK(on_ow_mount_image_clicked), self));
-        if (kajo_files_is_archive(ctype, item_name)) {
-            gtk_box_append(GTK_BOX(self->ctx_ow_list_box), create_ctx_action_button(
-                "📦  Extract ISO Contents", "", FALSE, G_CALLBACK(on_ctx_extract_clicked), self));
-        }
     }
 
     g_autoptr(GAppInfo) default_app = ctype ? g_app_info_get_default_for_type(ctype, FALSE) : NULL;

@@ -193,6 +193,23 @@ on_autoclear_done(GObject *src, GAsyncResult *res, gpointer user_data)
     succeed(task, g_object_get_data(G_OBJECT(task), "mount-path"));
 }
 
+/* Every success path ends here: a loop device we created must get autoclear, however its
+ * filesystem got mounted (our Mount call, an AlreadyMounted race, an automounter). */
+static void
+finish_mounted(GTask *task, const char *mount_path)
+{
+    MountOp *op = g_task_get_task_data(task);
+    if (!op->created_loop) {
+        succeed(task, mount_path);
+        return;
+    }
+    op->created_loop = FALSE; /* ownership passes to the kernel's autoclear */
+    g_object_set_data_full(G_OBJECT(task), "mount-path", g_strdup(mount_path), g_free);
+    g_dbus_connection_call(op->bus, UDISKS_NAME, op->loop_path, IFACE_LOOP, "SetAutoclear",
+                           g_variant_new_parsed("(true, @a{sv} {})"), NULL,
+                           G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_autoclear_done, task);
+}
+
 static void
 on_mounted(GObject *src, GAsyncResult *res, gpointer user_data)
 {
@@ -215,16 +232,7 @@ on_mounted(GObject *src, GAsyncResult *res, gpointer user_data)
 
     const char *mp = NULL;
     g_variant_get(ret, "(&s)", &mp);
-    g_object_set_data_full(G_OBJECT(task), "mount-path", g_strdup(mp), g_free);
-
-    if (op->created_loop) {
-        /* now that the filesystem holds the device, let it vanish again on unmount */
-        g_dbus_connection_call(op->bus, UDISKS_NAME, op->loop_path, IFACE_LOOP, "SetAutoclear",
-                               g_variant_new_parsed("(true, @a{sv} {})"), NULL,
-                               G_DBUS_CALL_FLAGS_NONE, -1, NULL, on_autoclear_done, task);
-        return;
-    }
-    succeed(task, mp);
+    finish_mounted(task, mp);
 }
 
 static gboolean
@@ -316,7 +324,7 @@ on_listed(GObject *src, GAsyncResult *res, gpointer user_data)
     if (fs_path) {
         g_autofree char *mp = kajo_diskimage_first_mount_point(managed, fs_path);
         if (mp) {
-            succeed(task, mp);
+            finish_mounted(task, mp);
             return;
         }
         g_dbus_connection_call(op->bus, UDISKS_NAME, fs_path, IFACE_FS, "Mount",
