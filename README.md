@@ -57,7 +57,7 @@ The repository builds and installs **six integrated native executables** (plus a
 - **Graphical Markdown & Native Cairo Vector Mermaid Diagrams**:
   - Live-synchronized 50/50 side-by-side split (`Space m p` / `📖 MD`) rendering interactive `- [ ]` task checkboxes (clicking mutates the source buffer), GitHub callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), tables, and code blocks.
   - Pure C11 Cairo/Pango layout and vector renderer for Mermaid `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, and `pie` blocks—complete with interactive zoom/pan (`25%`–`400%`) and 1-click `.svg` vector export.
-- **Fuzzy Finder, Live Ripgrep & 100-Command Interactive Help Palette**:
+- **Fuzzy Finder, Live Ripgrep & 102-Command Interactive Help Palette**:
   - `Space f f` (Files), `Space b b` (Buffers), and `Space f g` (async `rg --vimgrep` project search) with a live syntax-highlighted preview pane.
   - `?` / `F1` / `Space h` opens the full-width 4-column **Help & Command Palette** with interactive category filter pills (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`).
 - **AI Agent JSON-RPC 2.0 IPC & Atomic Batch Diff Review**:

@@ -467,6 +467,58 @@ test_which_key_hud_matches_chord_table(void)
   }
 }
 
+/* ---- Documented palette size must match the table -------------------------- */
+static void
+test_documented_palette_count(void)
+{
+  const char *root = g_getenv("KAJO_SOURCE_ROOT");
+  if (root == NULL) {
+    g_test_skip("KAJO_SOURCE_ROOT not set");
+    return;
+  }
+  const IdeHelpCommandSpec *cmds = ide_picker_get_help_commands();
+  guint n = 0;
+  while (cmds[n].chord != NULL) n++;
+
+  const char *files[] = { "README.md", "DEVELOPMENT.md", "docs/kajo_ide_manual.md" };
+  g_autofree char *want_a = g_strdup_printf("%u-Command", n);
+  g_autofree char *want_b = g_strdup_printf("%u-command", n);
+  g_autofree char *want_c = g_strdup_printf("%u commands", n);
+  for (guint i = 0; i < G_N_ELEMENTS(files); i++) {
+    g_autofree char *path = g_build_filename(root, files[i], NULL);
+    g_autofree char *text = NULL;
+    g_assert_true(g_file_get_contents(path, &text, NULL, NULL));
+    if (strstr(text, want_a) == NULL && strstr(text, want_b) == NULL && strstr(text, want_c) == NULL) {
+      g_test_message("%s does not state the real palette size (%u commands)", files[i], n);
+    }
+    g_assert_true(strstr(text, want_a) != NULL || strstr(text, want_b) != NULL ||
+                  strstr(text, want_c) != NULL);
+  }
+}
+
+/* ---- Atomic save keeps the file mode (project replace rewrites files) ------- */
+static void
+test_atomic_save_preserves_mode(void)
+{
+  g_autofree char *dir = g_dir_make_tmp("kajo_mode_test_XXXXXX", NULL);
+  g_assert_nonnull(dir);
+  g_autofree char *path = g_build_filename(dir, "run.sh", NULL);
+  g_assert_true(g_file_set_contents(path, "old\n", -1, NULL));
+  g_assert_cmpint(g_chmod(path, 0750), ==, 0);
+
+  g_assert_true(ide_save_file_atomic(path, "new\n", -1, NULL));
+
+  GStatBuf st;
+  g_assert_cmpint(g_stat(path, &st), ==, 0);
+  g_assert_cmpuint(st.st_mode & 0777, ==, 0750);
+  g_autofree char *got = NULL;
+  g_assert_true(g_file_get_contents(path, &got, NULL, NULL));
+  g_assert_cmpstr(got, ==, "new\n");
+
+  g_unlink(path);
+  g_rmdir(dir);
+}
+
 static void
 test_vasm_diagnostics_are_clickable(void)
 {
@@ -575,6 +627,8 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/help-palette-leader-crosscheck", test_help_palette_leader_chords_crosscheck);
   g_test_add_func("/ide/buffer/tree-prompt-routing", test_tree_prompt_confirm_cancel_routing);
   g_test_add_func("/ide/buffer/which-key-hud-table", test_which_key_hud_matches_chord_table);
+  g_test_add_func("/ide/buffer/documented-palette-count", test_documented_palette_count);
+  g_test_add_func("/ide/buffer/atomic-save-mode", test_atomic_save_preserves_mode);
   g_test_add_func("/ide/buffer/vasm-diagnostics", test_vasm_diagnostics_are_clickable);
 
   return g_test_run();

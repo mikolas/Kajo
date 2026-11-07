@@ -672,7 +672,8 @@ test_ide_buffer_exe = executable(
   dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, json_glib_dep, m_dep, ide_ts_dep],
   build_by_default: false,
 )
-test('ide-buffer', test_ide_buffer_exe)
+test('ide-buffer', test_ide_buffer_exe,
+  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
 
 test_dap_client_exe = executable(
   'test-dap-client',
