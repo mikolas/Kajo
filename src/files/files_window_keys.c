@@ -29,7 +29,7 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
     gboolean alt = (state & GDK_ALT_MASK) != 0;
     gboolean ql_open = kajo_quicklook_is_visible(self->quicklook);
 
-    /* 1. Escape closes Quick Look, inline banners, or URI entry */
+    /* 1. Escape closes Quick Look, inline banners, URI entry, or cancels active file ops */
     if (keyval == GDK_KEY_Escape) {
         if (ql_open) {
             kajo_quicklook_hide(self->quicklook);
@@ -45,6 +45,10 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
         }
         if (g_strcmp0(gtk_stack_get_visible_child_name(self->location_stack), "entry") == 0) {
             gtk_stack_set_visible_child_name(self->location_stack, "breadcrumbs");
+            return TRUE;
+        }
+        if (self->active_ops_count > 0) {
+            files_window_cancel_active_ops(self);
             return TRUE;
         }
     }
@@ -76,42 +80,46 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
     }
 
     /* 3. Global Ctrl / Alt / Function Shortcuts */
-    if (ctrl && !shift && (keyval == GDK_KEY_l || keyval == GDK_KEY_L)) {
+    if (ctrl && !shift && !alt && (keyval == GDK_KEY_l || keyval == GDK_KEY_L)) {
         on_btn_edit_uri_clicked(NULL, self);
         return TRUE;
     }
-    if (ctrl && !shift && (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
+    if (ctrl && !shift && !alt && (keyval == GDK_KEY_f || keyval == GDK_KEY_F)) {
         gtk_widget_grab_focus(self->search_entry);
         return TRUE;
     }
-    if (ctrl && !shift && (keyval == GDK_KEY_h || keyval == GDK_KEY_H)) {
+    if (ctrl && !shift && !alt && (keyval == GDK_KEY_h || keyval == GDK_KEY_H)) {
         on_btn_hidden_clicked(NULL, self);
         return TRUE;
     }
-    if (ctrl && !shift && (keyval == GDK_KEY_i || keyval == GDK_KEY_I)) {
+    if (ctrl && !shift && !alt && (keyval == GDK_KEY_i || keyval == GDK_KEY_I)) {
         on_btn_inspector_clicked(NULL, self);
         return TRUE;
     }
-    if (ctrl && !shift && keyval == GDK_KEY_1) {
+    if (ctrl && !shift && !alt && keyval == GDK_KEY_1) {
         files_window_set_view_mode(self, KAJO_VIEW_GRID);
         return TRUE;
     }
-    if (ctrl && !shift && keyval == GDK_KEY_2) {
+    if (ctrl && !shift && !alt && keyval == GDK_KEY_2) {
         files_window_set_view_mode(self, KAJO_VIEW_LIST);
         return TRUE;
     }
-    if (ctrl && !shift && (keyval == GDK_KEY_r || keyval == GDK_KEY_R)) {
+    if (ctrl && !shift && !alt && (keyval == GDK_KEY_r || keyval == GDK_KEY_R)) {
         files_window_reload_directory(self);
         return TRUE;
     }
-    if (ctrl && !shift && (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
+    if (ctrl && alt && !shift && (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
+        files_window_show_inline_prompt(self, PROMPT_NEW_FILE);
+        return TRUE;
+    }
+    if (ctrl && !shift && !alt && (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
         GtkApplication *app = gtk_window_get_application(GTK_WINDOW(self));
         g_autofree char *uri = self->current_dir ? g_file_get_uri(self->current_dir) : NULL;
         GtkWidget *new_win = kajo_files_window_new(app, uri);
         gtk_window_present(GTK_WINDOW(new_win));
         return TRUE;
     }
-    if (ctrl && shift && (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
+    if (ctrl && shift && !alt && (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
         files_window_show_inline_prompt(self, PROMPT_MKDIR);
         return TRUE;
     }
@@ -177,29 +185,33 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
                 files_window_trash_selected_item(self);
             return TRUE;
         }
-        if (ctrl && !shift && (keyval == GDK_KEY_c || keyval == GDK_KEY_C)) {
-            if (self->selected_item) {
-                g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
-                g_ptr_array_add(arr, g_object_ref(self->selected_item));
-                kajo_files_clipboard_set(arr, FALSE);
+        if (ctrl && !shift && !alt && (keyval == GDK_KEY_a || keyval == GDK_KEY_A)) {
+            files_window_select_all(self);
+            return TRUE;
+        }
+        if (ctrl && !shift && !alt && (keyval == GDK_KEY_c || keyval == GDK_KEY_C)) {
+            g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+            if (sel_items && sel_items->len > 0) {
+                kajo_files_clipboard_set(sel_items, FALSE);
                 gtk_widget_set_sensitive(self->btn_paste, TRUE);
-                files_window_set_status_message(self, "Copied 1 item to clipboard", FALSE);
+                g_autofree char *msg = g_strdup_printf("Copied %u item(s) to clipboard", sel_items->len);
+                files_window_set_status_message(self, msg, FALSE);
                 return TRUE;
             }
         }
-        if (ctrl && !shift && (keyval == GDK_KEY_x || keyval == GDK_KEY_X)) {
-            if (self->selected_item) {
-                g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
-                g_ptr_array_add(arr, g_object_ref(self->selected_item));
-                kajo_files_clipboard_set(arr, TRUE);
+        if (ctrl && !shift && !alt && (keyval == GDK_KEY_x || keyval == GDK_KEY_X)) {
+            g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+            if (sel_items && sel_items->len > 0) {
+                kajo_files_clipboard_set(sel_items, TRUE);
                 gtk_widget_set_sensitive(self->btn_paste, TRUE);
-                files_window_set_status_message(self, "Cut 1 item to clipboard", FALSE);
+                g_autofree char *msg = g_strdup_printf("Cut %u item(s) to clipboard", sel_items->len);
+                files_window_set_status_message(self, msg, FALSE);
                 return TRUE;
             }
         }
-        if (ctrl && !shift && (keyval == GDK_KEY_v || keyval == GDK_KEY_V)) {
+        if (ctrl && !shift && !alt && (keyval == GDK_KEY_v || keyval == GDK_KEY_V)) {
             if (self->current_dir) {
-                kajo_files_clipboard_paste_async(self->current_dir, files_window_on_file_op_completed, files_window_op_weak_new(self));
+                on_btn_paste_clicked(NULL, self);
                 return TRUE;
             }
         }

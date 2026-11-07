@@ -104,9 +104,9 @@ template $KajoFilesWindow : ApplicationWindow {
                 orientation: horizontal;
                 spacing: 4;
 
-                ScrolledWindow {
+                ScrolledWindow breadcrumb_scroll {
                   hexpand: true;
-                  hscrollbar-policy: automatic;
+                  hscrollbar-policy: external;
                   vscrollbar-policy: never;
 
                   Box breadcrumb_box {
@@ -225,6 +225,16 @@ template $KajoFilesWindow : ApplicationWindow {
 
           styles [
             "action-btn-primary",
+            "files-nav-btn",
+          ]
+        }
+
+        Button btn_new_file {
+          label: "+ NEW FILE";
+          tooltip-text: "Create New Empty File (Ctrl+Alt+N)";
+
+          styles [
+            "flat",
             "files-nav-btn",
           ]
         }
@@ -491,7 +501,7 @@ template $KajoFilesWindow : ApplicationWindow {
                   max-columns: 12;
                   min-columns: 2;
                   single-click-activate: false;
-                  enable-rubberband: false;
+                  enable-rubberband: true;
 
                   styles [
                     "files-tile-grid",
@@ -570,7 +580,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
                   ListView details_listview {
                     single-click-activate: false;
-                    enable-rubberband: false;
+                    enable-rubberband: true;
 
                     styles [
                       "files-details-list",
@@ -630,6 +640,19 @@ template $KajoFilesWindow : ApplicationWindow {
 
           styles [
             "files-status-text",
+          ]
+        }
+
+        Button btn_cancel_op {
+          label: "✕ CANCEL";
+          tooltip-text: "Cancel Active File Operation (Esc)";
+          visible: false;
+          valign: center;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+            "action-btn-danger",
           ]
         }
 

@@ -19,6 +19,7 @@ struct _KajoQuickLook {
     KajoFileItem *current_item;
     GFile *current_dir;
     GCancellable *preview_cancel;
+    GCancellable *insp_thumb_cancel;
 
     /* Active PDF Document for Multi-Page Quick Look */
     PopplerDocument *pdf_doc;
@@ -38,6 +39,7 @@ struct _KajoQuickLook {
     GtkWidget *insp_extra_lbl;
     GtkWidget *insp_btn_quicklook;
     GtkWidget *insp_btn_open;
+    GtkWidget *insp_btn_exec;
     GtkWidget *insp_btn_rename;
     GtkWidget *insp_btn_trash;
 
@@ -172,62 +174,85 @@ on_pdf_next_page_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     }
 }
 
-/* ─── Archive Inspection (libarchive) ─── */
+/* ─── Archive Inspection (libarchive, Async GTask) ─── */
 
-static gboolean
-populate_archive_preview(KajoQuickLook *self, GFile *file)
+typedef struct {
+    char *pathname;
+    guint64 size;
+    gboolean is_dir;
+} ArchivePreviewEntry;
+
+static void
+archive_preview_entry_free(gpointer data)
 {
+    ArchivePreviewEntry *e = data;
+    if (!e) return;
+    g_free(e->pathname);
+    g_free(e);
+}
+
+typedef struct {
+    GPtrArray *entries; /* ArchivePreviewEntry* (up to 60) */
+    guint total_entries;
+    guint64 total_uncompressed;
+} ArchivePreviewData;
+
+static void
+archive_preview_data_free(gpointer data)
+{
+    ArchivePreviewData *d = data;
+    if (!d) return;
+    if (d->entries)
+        g_ptr_array_unref(d->entries);
+    g_free(d);
+}
+
+static void
+archive_preview_thread_cb(GTask *task,
+                          gpointer source_object,
+                          gpointer task_data G_GNUC_UNUSED,
+                          GCancellable *cancellable)
+{
+    GFile *file = G_FILE(source_object);
     g_autofree char *local_path = g_file_get_path(file);
-    if (!local_path) return FALSE;
+    if (!local_path) {
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_NOT_SUPPORTED, "Archive requires local path");
+        return;
+    }
 
     struct archive *a = archive_read_new();
     archive_read_support_filter_all(a);
     archive_read_support_format_all(a);
 
     if (archive_read_open_filename(a, local_path, 16384) != ARCHIVE_OK) {
+        const char *err_s = archive_error_string(a);
+        GError *err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED, err_s ? err_s : "Unable to open archive");
         archive_read_free(a);
-        return FALSE;
+        g_task_return_error(task, err);
+        return;
     }
 
-    GtkWidget *child;
-    while ((child = gtk_widget_get_first_child(self->ql_folder_list)) != NULL) {
-        gtk_box_remove(GTK_BOX(self->ql_folder_list), child);
-    }
+    ArchivePreviewData *res = g_new0(ArchivePreviewData, 1);
+    res->entries = g_ptr_array_new_with_free_func(archive_preview_entry_free);
 
-    guint total_entries = 0;
-    guint64 total_uncompressed = 0;
     struct archive_entry *entry = NULL;
-
-    while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+    while (!g_cancellable_is_cancelled(cancellable) &&
+           archive_read_next_header(a, &entry) == ARCHIVE_OK) {
         const char *pathname = archive_entry_pathname(entry);
         la_int64_t sz = archive_entry_size(entry);
         mode_t ftype = archive_entry_filetype(entry);
         gboolean is_dir = (ftype == AE_IFDIR) || (pathname && g_str_has_suffix(pathname, "/"));
 
-        total_entries++;
+        res->total_entries++;
         if (sz > 0)
-            total_uncompressed += (guint64)sz;
+            res->total_uncompressed += (guint64)sz;
 
-        if (total_entries <= 60 && pathname) {
-            GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-            gtk_widget_add_css_class(row, "widget-row-card");
-
-            GtkWidget *ic = gtk_image_new_from_icon_name(is_dir ? "folder" : "text-x-generic");
-            gtk_image_set_pixel_size(GTK_IMAGE(ic), 16);
-
-            GtkWidget *nm = gtk_label_new(pathname);
-            gtk_widget_set_halign(nm, GTK_ALIGN_START);
-            gtk_widget_set_hexpand(nm, TRUE);
-            gtk_label_set_ellipsize(GTK_LABEL(nm), PANGO_ELLIPSIZE_MIDDLE);
-
-            g_autofree char *sz_str = kajo_files_format_size((guint64)MAX(0, sz), is_dir);
-            GtkWidget *sz_lbl = gtk_label_new(sz_str);
-            gtk_widget_add_css_class(sz_lbl, "shell-popover-subtitle");
-
-            gtk_box_append(GTK_BOX(row), ic);
-            gtk_box_append(GTK_BOX(row), nm);
-            gtk_box_append(GTK_BOX(row), sz_lbl);
-            gtk_box_append(GTK_BOX(self->ql_folder_list), row);
+        if (res->total_entries <= 60 && pathname) {
+            ArchivePreviewEntry *ae = g_new0(ArchivePreviewEntry, 1);
+            ae->pathname = g_strdup(pathname);
+            ae->size = (guint64)MAX(0, sz);
+            ae->is_dir = is_dir;
+            g_ptr_array_add(res->entries, ae);
         }
 
         archive_read_data_skip(a);
@@ -235,13 +260,87 @@ populate_archive_preview(KajoQuickLook *self, GFile *file)
 
     archive_read_free(a);
 
-    g_autofree char *uncomp_str = kajo_files_format_size(total_uncompressed, FALSE);
+    GError *cancel_err = NULL;
+    if (g_cancellable_set_error_if_cancelled(cancellable, &cancel_err)) {
+        archive_preview_data_free(res);
+        g_task_return_error(task, cancel_err);
+        return;
+    }
+
+    g_task_return_pointer(task, res, archive_preview_data_free);
+}
+
+static void
+on_archive_preview_ready(GObject *source G_GNUC_UNUSED,
+                         GAsyncResult *res,
+                         gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    g_autoptr(GError) error = NULL;
+    ArchivePreviewData *data = g_task_propagate_pointer(G_TASK(res), &error);
+    if (!data) {
+        if (!g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED) && self && self->ql_folder_summary_lbl) {
+            gtk_label_set_text(GTK_LABEL(self->ql_folder_summary_lbl), error ? error->message : "Failed to inspect archive");
+        }
+        return;
+    }
+
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(self->ql_folder_list)) != NULL) {
+        gtk_box_remove(GTK_BOX(self->ql_folder_list), child);
+    }
+
+    for (guint i = 0; i < data->entries->len; i++) {
+        ArchivePreviewEntry *ae = g_ptr_array_index(data->entries, i);
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        gtk_widget_add_css_class(row, "widget-row-card");
+        gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
+
+        GtkWidget *ic = gtk_image_new_from_icon_name(ae->is_dir ? "folder" : "text-x-generic");
+        gtk_image_set_pixel_size(GTK_IMAGE(ic), 16);
+        gtk_widget_set_valign(ic, GTK_ALIGN_CENTER);
+
+        GtkWidget *nm = gtk_label_new(ae->pathname);
+        gtk_widget_set_halign(nm, GTK_ALIGN_START);
+        gtk_widget_set_valign(nm, GTK_ALIGN_CENTER);
+        gtk_widget_set_hexpand(nm, TRUE);
+        gtk_label_set_ellipsize(GTK_LABEL(nm), PANGO_ELLIPSIZE_MIDDLE);
+
+        g_autofree char *sz_str = kajo_files_format_size(ae->size, ae->is_dir);
+        GtkWidget *sz_lbl = gtk_label_new(sz_str);
+        gtk_widget_add_css_class(sz_lbl, "shell-popover-subtitle");
+        gtk_widget_set_valign(sz_lbl, GTK_ALIGN_CENTER);
+
+        gtk_box_append(GTK_BOX(row), ic);
+        gtk_box_append(GTK_BOX(row), nm);
+        gtk_box_append(GTK_BOX(row), sz_lbl);
+        gtk_box_append(GTK_BOX(self->ql_folder_list), row);
+    }
+
+    g_autofree char *uncomp_str = kajo_files_format_size(data->total_uncompressed, FALSE);
     g_autofree char *sum = g_strdup_printf(
         "ARCHIVE CONTENTS: %u ENTRIES (UNCOMPRESSED: %s)",
-        total_entries, uncomp_str
+        data->total_entries, uncomp_str
     );
     gtk_label_set_text(GTK_LABEL(self->ql_folder_summary_lbl), sum);
+    archive_preview_data_free(data);
+}
+
+static gboolean
+populate_archive_preview(KajoQuickLook *self, GFile *file)
+{
+    g_autofree char *local_path = g_file_get_path(file);
+    if (!local_path) return FALSE;
+
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(self->ql_folder_list)) != NULL) {
+        gtk_box_remove(GTK_BOX(self->ql_folder_list), child);
+    }
+    gtk_label_set_text(GTK_LABEL(self->ql_folder_summary_lbl), "Scanning archive...");
     gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "folder");
+
+    g_autoptr(GTask) task = g_task_new(file, self->preview_cancel, on_archive_preview_ready, self);
+    g_task_run_in_thread(task, archive_preview_thread_cb);
     return TRUE;
 }
 
@@ -286,6 +385,14 @@ on_btn_trash_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     KajoQuickLook *self = user_data;
     if (self->current_item && self->action_cb)
         self->action_cb(KAJO_QL_ACTION_TRASH, self->current_item, self->user_data);
+}
+
+static void
+on_btn_exec_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    if (self->current_item && self->action_cb)
+        self->action_cb(KAJO_QL_ACTION_TOGGLE_EXEC, self->current_item, self->user_data);
 }
 
 static void
@@ -417,6 +524,11 @@ build_inspector_ui(KajoQuickLook *self)
     gtk_widget_add_css_class(self->insp_btn_open, "flat");
     g_signal_connect(self->insp_btn_open, "clicked", G_CALLBACK(on_btn_open_clicked), self);
 
+    self->insp_btn_exec = gtk_button_new_with_label("☐ EXECUTABLE (+X)");
+    gtk_widget_add_css_class(self->insp_btn_exec, "flat");
+    gtk_widget_set_visible(self->insp_btn_exec, FALSE);
+    g_signal_connect(self->insp_btn_exec, "clicked", G_CALLBACK(on_btn_exec_clicked), self);
+
     GtkWidget *btn_term = gtk_button_new_with_label(">_ OPEN TERMINAL");
     gtk_widget_add_css_class(btn_term, "flat");
     g_signal_connect(btn_term, "clicked", G_CALLBACK(on_btn_terminal_clicked), self);
@@ -432,6 +544,7 @@ build_inspector_ui(KajoQuickLook *self)
 
     gtk_box_append(GTK_BOX(actions_vbox), self->insp_btn_quicklook);
     gtk_box_append(GTK_BOX(actions_vbox), self->insp_btn_open);
+    gtk_box_append(GTK_BOX(actions_vbox), self->insp_btn_exec);
     gtk_box_append(GTK_BOX(actions_vbox), btn_term);
     gtk_box_append(GTK_BOX(actions_vbox), self->insp_btn_rename);
     gtk_box_append(GTK_BOX(actions_vbox), self->insp_btn_trash);
@@ -909,10 +1022,58 @@ populate_quicklook_modal(KajoQuickLook *self)
 
 /* ─── Public API ─── */
 
+static void
+insp_pdf_thumb_thread_cb(GTask *task,
+                         gpointer source_object,
+                         gpointer task_data G_GNUC_UNUSED,
+                         GCancellable *cancellable)
+{
+    GFile *file = G_FILE(source_object);
+    GError *err = NULL;
+    g_autoptr(PopplerDocument) doc = poppler_document_new_from_gfile(file, NULL, cancellable, &err);
+    if (!doc) {
+        g_task_return_error(task, err ? err : g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED, "PDF open failed"));
+        return;
+    }
+    GdkTexture *tex = kajo_pdf_render_page_texture(doc, 0, 160);
+    if (!tex) {
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_FAILED, "PDF page render failed");
+        return;
+    }
+    if (g_cancellable_set_error_if_cancelled(cancellable, &err)) {
+        g_object_unref(tex);
+        g_task_return_error(task, err);
+        return;
+    }
+    g_task_return_pointer(task, tex, g_object_unref);
+}
+
+static void
+on_insp_pdf_thumb_ready(GObject *source G_GNUC_UNUSED,
+                        GAsyncResult *res,
+                        gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GdkTexture) tex = g_task_propagate_pointer(G_TASK(res), &error);
+    if (!tex || g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        return;
+
+    if (self && self->insp_picture && self->insp_preview_stack) {
+        gtk_picture_set_paintable(GTK_PICTURE(self->insp_picture), GDK_PAINTABLE(tex));
+        gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");
+    }
+}
+
 void
 kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_dir)
 {
     g_return_if_fail(self != NULL);
+
+    if (self->insp_thumb_cancel) {
+        g_cancellable_cancel(self->insp_thumb_cancel);
+        g_clear_object(&self->insp_thumb_cancel);
+    }
 
     g_set_object(&self->current_item, item);
     g_set_object(&self->current_dir, current_dir);
@@ -942,6 +1103,7 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
 
         gtk_widget_set_sensitive(self->insp_btn_quicklook, FALSE);
         gtk_widget_set_sensitive(self->insp_btn_open, FALSE);
+        gtk_widget_set_visible(self->insp_btn_exec, FALSE);
         gtk_widget_set_sensitive(self->insp_btn_rename, FALSE);
         gtk_widget_set_sensitive(self->insp_btn_trash, FALSE);
         return;
@@ -955,20 +1117,35 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     const char *ctype = kajo_file_item_get_content_type(item);
     const char *name = kajo_file_item_get_name(item);
     GFile *file = kajo_file_item_get_file(item);
+    gboolean is_dir = kajo_file_item_is_dir(item);
+    g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
+
+    if (!is_dir && local_path != NULL) {
+        gboolean is_exec = (kajo_file_item_get_unix_mode(item) & 0111U) != 0;
+        gtk_button_set_label(
+            GTK_BUTTON(self->insp_btn_exec),
+            is_exec ? "☑ EXECUTABLE (+X)" : "☐ EXECUTABLE (+X)"
+        );
+        if (is_exec)
+            gtk_widget_add_css_class(self->insp_btn_exec, "active");
+        else
+            gtk_widget_remove_css_class(self->insp_btn_exec, "active");
+        gtk_widget_set_visible(self->insp_btn_exec, TRUE);
+    } else {
+        gtk_widget_set_visible(self->insp_btn_exec, FALSE);
+    }
 
     if (ctype && g_str_has_prefix(ctype, "image/")) {
         gtk_picture_set_file(GTK_PICTURE(self->insp_picture), file);
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");
     } else if ((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
                (name && g_str_has_suffix(name, ".pdf"))) {
-        g_autoptr(PopplerDocument) doc = poppler_document_new_from_gfile(file, NULL, NULL, NULL);
-        g_autoptr(GdkTexture) tex = doc ? kajo_pdf_render_page_texture(doc, 0, 160) : NULL;
-        if (tex) {
-            gtk_picture_set_paintable(GTK_PICTURE(self->insp_picture), GDK_PAINTABLE(tex));
-            gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");
-        } else {
-            gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
-            gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
+        gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
+        gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
+        if (file) {
+            self->insp_thumb_cancel = g_cancellable_new();
+            g_autoptr(GTask) task = g_task_new(file, self->insp_thumb_cancel, on_insp_pdf_thumb_ready, self);
+            g_task_run_in_thread(task, insp_pdf_thumb_thread_cb);
         }
     } else {
         gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
@@ -1072,6 +1249,10 @@ kajo_quicklook_free(KajoQuickLook *self)
     if (self->preview_cancel) {
         g_cancellable_cancel(self->preview_cancel);
         g_clear_object(&self->preview_cancel);
+    }
+    if (self->insp_thumb_cancel) {
+        g_cancellable_cancel(self->insp_thumb_cancel);
+        g_clear_object(&self->insp_thumb_cancel);
     }
     stop_media_playback(self);
     g_clear_pointer(&self->ql_mpv, kajo_player_mpv_free);

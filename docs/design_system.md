@@ -85,7 +85,7 @@ Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → 
   - Left: App icon + `.settings-header-title` (plus optional compact nav buttons `.files-nav-btn`).
   - Center: Location breadcrumb bar (`.files-breadcrumb-btn`) or status badge (`.shell-popover-badge`).
   - Right: View/drawer toggles, `"🗗 FLOAT / TILE"` button, and `.settings-close-btn` (`✕`, `#e81123` on `:hover`).
-- **Secondary Action Ribbon (`.files-action-ribbon`):** `#161616` background, `border-bottom: 1px solid #2b2b2b`, `padding: 5px 12px`, housing context actions (`+ NEW FOLDER`, `📋 PASTE`, `⇅ SORT`).
+- **Secondary Action Ribbon (`.files-action-ribbon`):** `#161616` background, `border-bottom: 1px solid #2b2b2b`, `padding: 5px 12px`, housing context actions (`+ NEW FOLDER`, `+ NEW FILE`, `📋 PASTE`, `👁 HIDDEN`, `⇅ SORT`, `>_ TERMINAL`).
 - **Navigation Sidebar (`.navigation-sidebar`):** `250px` width, `#141414` background, `border-right: 1px solid #2b2b2b`. Selected row uses `background-color: alpha(@metro-accent, 0.80); border-left: 3px solid #ffffff; color: #ffffff;`.
 
 ### 4.2 Buttons
@@ -144,9 +144,15 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Grouped by uppercase `.sidebar-category-header` (`PLACES`, `DEVICES & DRIVES`, `NETWORK`).
   - **Mounted Volume Rows (`.files-drive-row`):** Two-line row showing volume icon, label, free/total GB readout, a `6px` `.files-drive-bar` capacity `levelbar` (`#10893e` normal, `#ff8c00` >75%, `#e81123` >90%), and a compact `⏏` eject/unmount button (`.files-eject-btn`).
 - **Hybrid Breadcrumb / Raw URI Bar (`.files-breadcrumb-bar`):**
-  - Segment buttons (`.files-breadcrumb-btn`) separated by `▸` chevrons; clicking `✎` (`Ctrl+L`) switches inline to a full-width monospace URI entry (`file:///`, `smb://`, `trash:///`, `sftp://`).
+  - Full root-to-leaf segment buttons (`.files-breadcrumb-btn`, with `⌂ <user>` badge on `$HOME`) separated by `▸` chevrons, auto-scrolled flush-right after layout so the leaf directory and immediate parents are always visible.
+  - Mouse wheel scrolls the breadcrumb bar horizontally (`48px` per tick); `Ctrl+Click` or middle-click opens any ancestor segment in a new window; right-clicking any segment opens the **Breadcrumb Subfolder Jump Popover** (`SUBFOLDERS` badge, up to 50 sorted child directories with `… and N more subfolder(s)` overflow note, `🗔 Open in New Window`, and `🔗 Copy Path / URI`).
+  - Clicking `✎` (`Ctrl+L`) switches inline to a full-width monospace URI entry (`file:///`, `smb://`, `trash:///`, `sftp://`).
+- **Multi-Selection, Inspector & Operation Cancellation (`kajo-files`):**
+  - Rubber-band and `Ctrl`/`Shift` multi-selection (`GtkMultiSelection`) preserves the full selected URI set across live directory refreshes.
+  - Right-clicking when `> 1` items are selected opens the **Batch Context Menu** (`N ITEMS SELECTED` title, `BATCH` badge) exposing only true batch actions (`Copy`, `Cut`, `Copy Path / URI`, `Restore from Trash`, `Move to Trash`, `Delete Permanently`).
+  - The right-hand Inspector pane (`.files-inspector-pane`) includes a **`☑ EXECUTABLE (+X)`** toggle button (`chmod +x/-x`) for local regular files, while the bottom `.files-status-bar` reveals a danger **`[ ✕ CANCEL ]`** button (`Esc`) whenever an async file operation is in flight.
 - **Contextual Inline Reveal Bars (`GtkRevealer`):**
-  - **New Folder / Rename Bar (`.files-prompt-bar`):** `#181818` surface with `border-left: 3px solid @metro-accent`, inline `GtkEntry`, and `[ CREATE ]` / `[ CANCEL ]` buttons.
+  - **New Folder / New File / Rename / Delete Confirm Bar (`.files-prompt-bar`):** `#181818` surface with `border-left: 3px solid @metro-accent`, inline `GtkEntry`, and `[ CREATE ]` / `[ RENAME ]` / `[ DELETE PERMANENTLY ]` / `[ CANCEL ]` buttons.
   - **LUKS / SMB Authentication Bar (`.files-auth-bar`):** `#181818` surface with `border-left: 3px solid #ff8c00`, passphrase `GtkPasswordEntry` (or username/domain/password fields for `smb://`), and `[ 🔓 UNLOCK ]` action.
   - **Trash Action Banner (`.files-trash-bar`):** `#1f1214` surface with `1px solid #4a1c20` and `border-left: 3px solid #e81123`, offering `[ ↺ RESTORE ALL ]` and destructive `[ 🗑 EMPTY TRASH ]`.
 

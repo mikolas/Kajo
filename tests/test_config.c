@@ -53,6 +53,14 @@ test_config_defaults(void)
     g_assert_false(cfg->ide_show_margin_guide);
     g_assert_true(cfg->ide_insert_spaces);
 
+    /* Kajo Files defaults */
+    g_assert_cmpstr(cfg->files_view_mode, ==, "grid");
+    g_assert_cmpstr(cfg->files_sort_field, ==, "name");
+    g_assert_true(cfg->files_sort_ascending);
+    g_assert_true(cfg->files_sort_folders_first);
+    g_assert_false(cfg->files_show_hidden);
+    g_assert_false(cfg->files_show_inspector);
+
     g_assert_nonnull(cfg->layout_left);
     g_assert_nonnull(cfg->layout_center);
     g_assert_nonnull(cfg->layout_right);
@@ -128,6 +136,15 @@ test_config_save_and_load_roundtrip(void)
     orig->ide_word_wrap = TRUE;
     orig->ide_show_margin_guide = TRUE;
     orig->ide_insert_spaces = FALSE;
+
+    g_free(orig->files_view_mode);
+    orig->files_view_mode = g_strdup("list");
+    g_free(orig->files_sort_field);
+    orig->files_sort_field = g_strdup("modified");
+    orig->files_sort_ascending = FALSE;
+    orig->files_sort_folders_first = FALSE;
+    orig->files_show_hidden = TRUE;
+    orig->files_show_inspector = TRUE;
 
     ShellWidgetConfig *wc_left = g_new0(ShellWidgetConfig, 1);
     wc_left->id = g_strdup("launcher");
@@ -206,6 +223,23 @@ test_config_save_and_load_roundtrip(void)
     g_assert_true(loaded->ide_show_margin_guide);
     g_assert_false(loaded->ide_insert_spaces);
 
+    g_assert_cmpstr(loaded->files_view_mode, ==, "list");
+    g_assert_cmpstr(loaded->files_sort_field, ==, "modified");
+    g_assert_false(loaded->files_sort_ascending);
+    g_assert_false(loaded->files_sort_folders_first);
+    g_assert_true(loaded->files_show_hidden);
+    g_assert_true(loaded->files_show_inspector);
+
+    /* Verify flat keys are written directly in config.json per spec §4.1 */
+    g_autofree gchar *saved_raw = NULL;
+    g_assert_true(g_file_get_contents(cfg_path, &saved_raw, NULL, NULL));
+    g_assert_nonnull(strstr(saved_raw, "\"files_view_mode\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_sort_field\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_sort_ascending\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_sort_folders_first\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_show_hidden\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_show_inspector\""));
+
     g_assert_cmpuint(loaded->layout_left->len, ==, 1);
     ShellWidgetConfig *l0 = g_ptr_array_index(loaded->layout_left, 0);
     g_assert_cmpstr(l0->id, ==, "launcher");
@@ -266,6 +300,52 @@ test_config_legacy_flat_keys_and_invalid_files(void)
     g_assert_nonnull(missing);
     g_assert_cmpint(missing->screensaver_timeout_sec, ==, 300);
     shell_config_destroy(missing);
+
+    /* Unknown top-level JSON keys are preserved across shell_config_save(),
+     * and wrong types on files_* keys are safely ignored without criticals */
+    g_autofree gchar *extra_path = g_build_filename(tmpdir, "extra.json", NULL);
+    const char *extra_json = "{\n"
+                             "  \"custom_user_key\": \"keep_me\",\n"
+                             "  \"files_view_mode\": 12345,\n"
+                             "  \"files_sort_ascending\": \"not-a-bool\"\n"
+                             "}\n";
+    g_assert_true(g_file_set_contents(extra_path, extra_json, -1, NULL));
+    ShellConfig *extra_cfg = shell_config_load(extra_path);
+    g_assert_nonnull(extra_cfg);
+    g_assert_cmpstr(extra_cfg->files_view_mode, ==, "grid");
+    g_assert_true(extra_cfg->files_sort_ascending);
+    g_assert_true(shell_config_save(extra_cfg, extra_path));
+    shell_config_destroy(extra_cfg);
+
+    g_autofree gchar *extra_saved = NULL;
+    g_assert_true(g_file_get_contents(extra_path, &extra_saved, NULL, NULL));
+    g_assert_nonnull(strstr(extra_saved, "\"custom_user_key\""));
+    g_assert_nonnull(strstr(extra_saved, "\"keep_me\""));
+
+    /* Optional keys the writer owns can be cleared; the obsolete nested "files" object is dropped */
+    const char *opt_json = "{\n"
+                           "  \"css_path\": \"/tmp/old.css\",\n"
+                           "  \"icon_map_path\": \"/tmp/old-icons.json\",\n"
+                           "  \"files\": { \"view_mode\": \"list\" },\n"
+                           "  \"custom_user_key\": \"keep_me\"\n"
+                           "}\n";
+    g_assert_true(g_file_set_contents(extra_path, opt_json, -1, NULL));
+    ShellConfig *opt_cfg = shell_config_load(extra_path);
+    g_assert_nonnull(opt_cfg);
+    g_assert_cmpstr(opt_cfg->css_path, ==, "/tmp/old.css");
+    g_free(opt_cfg->css_path);
+    opt_cfg->css_path = NULL;
+    g_free(opt_cfg->icon_map_path);
+    opt_cfg->icon_map_path = NULL;
+    g_assert_true(shell_config_save(opt_cfg, extra_path));
+    shell_config_destroy(opt_cfg);
+    g_autofree gchar *opt_saved = NULL;
+    g_assert_true(g_file_get_contents(extra_path, &opt_saved, NULL, NULL));
+    g_assert_null(strstr(opt_saved, "css_path"));
+    g_assert_null(strstr(opt_saved, "icon_map_path"));
+    g_assert_null(strstr(opt_saved, "\"files\""));
+    g_assert_nonnull(strstr(opt_saved, "custom_user_key"));
+    g_unlink(extra_path);
 
     g_unlink(legacy_path);
     g_unlink(corrupt_path);
