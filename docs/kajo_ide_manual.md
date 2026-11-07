@@ -204,7 +204,7 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 | `Space r b` / `r t` / `r r` / `r c` | Tasks | **Build** / **Test** / **Run** / **Clean** the project that owns the active file (output and clickable errors in the bottom *SEARCH / BUILD* drawer; modified buffers are saved first) |
 | `Space o` | Layout | Toggle bottom **Search / Build / DAP / Agent Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
-| `Space s p` | Search | Open **Project-Wide Search & Replace** in bottom drawer |
+| `Space s p` | Search | Open **Project-Wide Search & Replace** in bottom drawer. Files not open in a buffer are rewritten on disk (not undoable): the first apply only arms and reports the file count, a second apply confirms; editing any field disarms. UTF-8 text files up to 2 MB only; regex mode scans every non-ignored file because ripgrep's regex dialect differs from the editor's |
 | `Space n h` / `Space p h` | Navigation | Jump to **Next / Previous Diff Hunk** in active buffer |
 | `Space m p` | Markdown | Toggle **Side-by-Side Graphical Markdown & Mermaid Split** |
 | `Space m m` / `Space m d` | Markdown | Toggle **Bottom-Docked Markdown Preview Drawer** |

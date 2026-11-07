@@ -3,6 +3,9 @@
 
 #include <string.h>
 
+/* Files larger than this (or not valid UTF-8) are never previewed or rewritten. */
+#define IDE_PROJECT_REPLACE_MAX_BYTES (2u * 1024u * 1024u)
+
 struct _IdeSearchDrawer {
   char             *workspace_root;
   IdeSearchJumpCb   jump_cb;
@@ -32,6 +35,7 @@ struct _IdeSearchDrawer {
   gboolean          case_sensitive;
   gboolean          whole_word;
   gboolean          use_regex;
+  gboolean          confirm_armed; /* project apply pressed once; second press writes disk files */
   guint             active_field; /* 0 = find, 1 = replace */
   GCancellable     *replace_cancel;
   GSubprocess      *replace_proc;
@@ -262,8 +266,11 @@ on_project_replace_rg_finished(GObject *source, GAsyncResult *res, gpointer user
         continue;
       }
       g_autofree char *orig = NULL;
-      if (!g_file_get_contents(files[i], &orig, NULL, NULL)) {
-        continue;
+      gsize orig_len = 0;
+      if (!g_file_get_contents(files[i], &orig, &orig_len, NULL) ||
+          orig_len > IDE_PROJECT_REPLACE_MAX_BYTES ||
+          !g_utf8_validate(orig, (gssize)orig_len, NULL)) {
+        continue; /* too large or not UTF-8 text: never rewritten */
       }
       guint file_matches = 0;
       g_autofree char *after = ide_replace_text_all(orig,
@@ -312,6 +319,7 @@ ide_search_drawer_refresh_replace_preview(IdeSearchDrawer *drawer)
   g_clear_object(&drawer->replace_proc);
   g_clear_object(&drawer->replace_cancel);
   g_ptr_array_set_size(drawer->matched_files, 0);
+  drawer->confirm_armed = FALSE;
 
   gtk_label_set_text(GTK_LABEL(drawer->badge_case),
                      drawer->case_sensitive ? "Aa Alt+C: ON" : "Aa Alt+C: OFF");
@@ -358,18 +366,23 @@ ide_search_drawer_refresh_replace_preview(IdeSearchDrawer *drawer)
   /* Project-wide preview using async ripgrep -l */
   g_autoptr(GPtrArray) argv = g_ptr_array_new();
   g_ptr_array_add(argv, (gpointer)"rg");
-  g_ptr_array_add(argv, (gpointer)"-l");
-  g_ptr_array_add(argv, (gpointer)(drawer->case_sensitive ? "-s" : "-i"));
-  if (!drawer->use_regex) {
+  /* ripgrep is only a candidate prefilter; ide_replace_text_all() decides the real
+   * matches. Literal mode narrows with -F (a superset of the word-bounded matches, so
+   * no -w). Regex mode must not hand the pattern to ripgrep (Rust regex syntax differs
+   * from GRegex/PCRE), so every non-ignored file is a candidate. */
+  if (drawer->use_regex) {
+    g_ptr_array_add(argv, (gpointer)"--files");
+  } else {
+    g_ptr_array_add(argv, (gpointer)"-l");
+    g_ptr_array_add(argv, (gpointer)(drawer->case_sensitive ? "-s" : "-i"));
     g_ptr_array_add(argv, (gpointer)"-F");
-  }
-  if (drawer->whole_word) {
-    g_ptr_array_add(argv, (gpointer)"-w");
   }
   g_ptr_array_add(argv, (gpointer)"--glob=!.git");
   g_ptr_array_add(argv, (gpointer)"--glob=!builddir");
   g_ptr_array_add(argv, (gpointer)"--");
-  g_ptr_array_add(argv, (gpointer)find_str);
+  if (!drawer->use_regex) {
+    g_ptr_array_add(argv, (gpointer)find_str);
+  }
   g_ptr_array_add(argv, (gpointer)(drawer->workspace_root ? drawer->workspace_root : "."));
   g_ptr_array_add(argv, NULL);
 
@@ -975,11 +988,38 @@ ide_search_drawer_apply_all(IdeSearchDrawer *drawer, GPtrArray *open_buffers)
   g_autoptr(GHashTable) seen_paths = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
   if (open_buffers != NULL) {
     for (guint i = 0; i < open_buffers->len; i++) {
-      IdeBuffer *b = g_ptr_array_index(open_buffers, i);
-      const char *bp = ide_buffer_get_file_path(b);
+      const char *bp = ide_buffer_get_file_path(g_ptr_array_index(open_buffers, i));
       if (bp != NULL) {
         g_hash_table_add(seen_paths, g_canonicalize_filename(bp, NULL));
       }
+    }
+  }
+
+  /* Disk-only files are rewritten without undo: require a second, explicit press. */
+  guint disk_only = 0;
+  for (guint i = 0; i < drawer->matched_files->len; i++) {
+    g_autofree char *canon = g_canonicalize_filename(g_ptr_array_index(drawer->matched_files, i), NULL);
+    if (!g_hash_table_contains(seen_paths, canon)) {
+      disk_only++;
+    }
+  }
+  if (disk_only > 0 && !drawer->confirm_armed) {
+    drawer->confirm_armed = TRUE;
+    g_autofree char *msg = g_strdup_printf(
+        "%u file%s on disk will be rewritten and this cannot be undone - press apply again to confirm "
+        "(any edit to the fields cancels)",
+        disk_only, disk_only == 1 ? "" : "s");
+    if (drawer->status_cb != NULL) {
+      drawer->status_cb(msg, drawer->cb_data);
+    }
+    return 0;
+  }
+  drawer->confirm_armed = FALSE;
+
+  if (open_buffers != NULL) {
+    for (guint i = 0; i < open_buffers->len; i++) {
+      IdeBuffer *b = g_ptr_array_index(open_buffers, i);
+      const char *bp = ide_buffer_get_file_path(b);
       gboolean was_modified = ide_buffer_get_modified(b);
       g_autofree char *orig = ide_buffer_get_text(b);
       guint cnt = 0;
@@ -1006,7 +1046,10 @@ ide_search_drawer_apply_all(IdeSearchDrawer *drawer, GPtrArray *open_buffers)
       continue;
     }
     g_autofree char *orig = NULL;
-    if (!g_file_get_contents(fpath, &orig, NULL, NULL)) {
+    gsize orig_len = 0;
+    if (!g_file_get_contents(fpath, &orig, &orig_len, NULL) ||
+        orig_len > IDE_PROJECT_REPLACE_MAX_BYTES ||
+        !g_utf8_validate(orig, (gssize)orig_len, NULL)) {
       continue;
     }
     guint cnt = 0;
