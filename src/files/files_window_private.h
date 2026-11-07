@@ -80,6 +80,7 @@ struct _KajoFilesWindow {
     GtkWidget *inspector_vbox;
 
     GtkWidget *status_left_label;
+    GtkWidget *btn_cancel_op;
     GtkWidget *status_right_label;
     GtkWidget *fs_usage_bar;
 
@@ -99,11 +100,14 @@ struct _KajoFilesWindow {
     GtkWidget *ctx_hdr_badge_lbl;
     GtkWidget *ctx_item_box;
     GtkWidget *ctx_bg_box;
+    GtkWidget *ctx_btn_open;
     GtkWidget *ctx_btn_open_with;
+    GtkWidget *ctx_btn_quicklook;
     GtkWidget *ctx_btn_extract;
     GtkWidget *ctx_btn_item_terminal;
     GtkWidget *ctx_btn_item_newwin;
     GtkWidget *ctx_btn_restore_trash;
+    GtkWidget *ctx_btn_rename;
     GtkWidget *ctx_btn_move_trash;
     GtkWidget *ctx_btn_bg_paste;
     GtkWidget *ctx_ow_mime_lbl;
@@ -128,6 +132,7 @@ struct _KajoFilesWindow {
     GFile *current_dir;
     GCancellable *enum_cancel;
     GCancellable *ops_cancel;
+    guint active_ops_count;
     GFileMonitor *dir_monitor;
     guint monitor_debounce_id;
 
@@ -165,6 +170,8 @@ void     files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx)
 void     files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind);
 void     files_window_trash_selected_item(KajoFilesWindow *self);
 void     files_window_set_widget_active_class(GtkWidget *w, gboolean active);
+void     files_window_begin_op(KajoFilesWindow *self, const char *status_msg);
+void     files_window_cancel_active_ops(KajoFilesWindow *self);
 gpointer files_window_op_weak_new(KajoFilesWindow *self);
 void     files_window_on_file_op_completed(gboolean success, const char *message, GError *error, gpointer user_data);
 void     on_trash_restore_clicked(GtkButton *btn, gpointer user_data);

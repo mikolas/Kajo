@@ -230,6 +230,16 @@ test_config_save_and_load_roundtrip(void)
     g_assert_true(loaded->files_show_hidden);
     g_assert_true(loaded->files_show_inspector);
 
+    /* Verify flat keys are written directly in config.json per spec §4.1 */
+    g_autofree gchar *saved_raw = NULL;
+    g_assert_true(g_file_get_contents(cfg_path, &saved_raw, NULL, NULL));
+    g_assert_nonnull(strstr(saved_raw, "\"files_view_mode\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_sort_field\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_sort_ascending\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_sort_folders_first\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_show_hidden\""));
+    g_assert_nonnull(strstr(saved_raw, "\"files_show_inspector\""));
+
     g_assert_cmpuint(loaded->layout_left->len, ==, 1);
     ShellWidgetConfig *l0 = g_ptr_array_index(loaded->layout_left, 0);
     g_assert_cmpstr(l0->id, ==, "launcher");
@@ -290,6 +300,28 @@ test_config_legacy_flat_keys_and_invalid_files(void)
     g_assert_nonnull(missing);
     g_assert_cmpint(missing->screensaver_timeout_sec, ==, 300);
     shell_config_destroy(missing);
+
+    /* Unknown top-level JSON keys are preserved across shell_config_save(),
+     * and wrong types on files_* keys are safely ignored without criticals */
+    g_autofree gchar *extra_path = g_build_filename(tmpdir, "extra.json", NULL);
+    const char *extra_json = "{\n"
+                             "  \"custom_user_key\": \"keep_me\",\n"
+                             "  \"files_view_mode\": 12345,\n"
+                             "  \"files_sort_ascending\": \"not-a-bool\"\n"
+                             "}\n";
+    g_assert_true(g_file_set_contents(extra_path, extra_json, -1, NULL));
+    ShellConfig *extra_cfg = shell_config_load(extra_path);
+    g_assert_nonnull(extra_cfg);
+    g_assert_cmpstr(extra_cfg->files_view_mode, ==, "grid");
+    g_assert_true(extra_cfg->files_sort_ascending);
+    g_assert_true(shell_config_save(extra_cfg, extra_path));
+    shell_config_destroy(extra_cfg);
+
+    g_autofree gchar *extra_saved = NULL;
+    g_assert_true(g_file_get_contents(extra_path, &extra_saved, NULL, NULL));
+    g_assert_nonnull(strstr(extra_saved, "\"custom_user_key\""));
+    g_assert_nonnull(strstr(extra_saved, "\"keep_me\""));
+    g_unlink(extra_path);
 
     g_unlink(legacy_path);
     g_unlink(corrupt_path);

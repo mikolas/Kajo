@@ -140,6 +140,39 @@ update_status_and_capacity_bar(KajoFilesWindow *self)
     gtk_widget_set_visible(self->fs_usage_bar, FALSE);
 }
 
+void
+files_window_begin_op(KajoFilesWindow *self, const char *status_msg)
+{
+    if (!self) return;
+    self->active_ops_count++;
+    if (self->btn_cancel_op)
+        gtk_widget_set_visible(self->btn_cancel_op, TRUE);
+    if (status_msg)
+        files_window_set_status_message(self, status_msg, FALSE);
+}
+
+void
+files_window_cancel_active_ops(KajoFilesWindow *self)
+{
+    if (!self) return;
+    if (self->ops_cancel) {
+        g_cancellable_cancel(self->ops_cancel);
+        g_clear_object(&self->ops_cancel);
+    }
+    self->ops_cancel = g_cancellable_new();
+    self->active_ops_count = 0;
+    if (self->btn_cancel_op)
+        gtk_widget_set_visible(self->btn_cancel_op, FALSE);
+    files_window_set_status_message(self, "Operation cancelled", FALSE);
+    files_window_reload_directory(self);
+}
+
+static void
+on_btn_cancel_op_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    files_window_cancel_active_ops(KAJO_FILES_WINDOW(user_data));
+}
+
 /* File-operation callbacks run after a worker thread finishes, possibly after
  * the window was closed. They receive a heap GWeakRef (never a raw window
  * pointer) so a destroyed window is detected instead of dereferenced. */
@@ -159,6 +192,12 @@ files_window_on_file_op_completed(gboolean success, const char *message, GError 
     g_weak_ref_clear(ref);
     g_free(ref);
     if (!self) return;
+
+    if (self->active_ops_count > 0)
+        self->active_ops_count--;
+    if (self->btn_cancel_op && self->active_ops_count == 0)
+        gtk_widget_set_visible(self->btn_cancel_op, FALSE);
+
     if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
         g_object_unref(self);
         return;
@@ -239,16 +278,15 @@ on_trash_restore_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         files_window_set_status_message(self, "Select an item in Trash to restore", TRUE);
         return;
     }
-    for (guint i = 0; i < sel_items->len; i++) {
-        KajoFileItem *it = g_ptr_array_index(sel_items, i);
-        kajo_files_op_restore_from_trash_async(it, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
-    }
+    files_window_begin_op(self, "Restoring from Trash...");
+    kajo_files_op_restore_from_trash_async(sel_items, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
 }
 
 static void
 on_trash_empty_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
+    files_window_begin_op(self, "Emptying Trash...");
     kajo_files_op_empty_trash_async(self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
 }
 
@@ -291,14 +329,18 @@ on_prompt_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     const char *text = gtk_editable_get_text(GTK_EDITABLE(self->prompt_entry));
 
     if (kind == PROMPT_MKDIR && self->current_dir) {
+        files_window_begin_op(self, "Creating folder...");
         kajo_files_op_mkdir_async(self->current_dir, text, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
     } else if (kind == PROMPT_NEW_FILE && self->current_dir) {
+        files_window_begin_op(self, "Creating file...");
         kajo_files_op_create_file_async(self->current_dir, text, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
     } else if (kind == PROMPT_RENAME && self->selected_item) {
+        files_window_begin_op(self, "Renaming...");
         kajo_files_op_rename_async(kajo_file_item_get_file(self->selected_item), text, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
     } else if (kind == PROMPT_DELETE_PERM) {
         g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
         if (sel_items && sel_items->len > 0) {
+            files_window_begin_op(self, "Deleting permanently...");
             kajo_files_op_delete_permanent_async(sel_items, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
         }
     }
@@ -365,6 +407,12 @@ files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind)
         gtk_widget_grab_focus(self->prompt_entry);
         gtk_editable_select_region(GTK_EDITABLE(self->prompt_entry), 0, 8);
     } else if (kind == PROMPT_RENAME && self->selected_item) {
+        g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+        if (sel_items && sel_items->len > 1) {
+            self->active_prompt = PROMPT_NONE;
+            files_window_set_status_message(self, "Select a single item to rename", TRUE);
+            return;
+        }
         gtk_label_set_text(GTK_LABEL(self->prompt_title_lbl), "✏ RENAME TO:");
         gtk_widget_set_visible(self->prompt_entry, TRUE);
         gtk_editable_set_text(GTK_EDITABLE(self->prompt_entry), kajo_file_item_get_display_name(self->selected_item));
@@ -404,17 +452,24 @@ sync_breadcrumb_scroll_to_end(KajoFilesWindow *self)
     if (!self || !self->breadcrumb_scroll || !self->pending_breadcrumb_scroll_end)
         return;
 
+    GtkWidget *last_child = self->breadcrumb_box ? gtk_widget_get_last_child(self->breadcrumb_box) : NULL;
+    if (!last_child || gtk_widget_get_width(last_child) <= 0)
+        return;
+
     GtkAdjustment *hadj = gtk_scrolled_window_get_hadjustment(self->breadcrumb_scroll);
     if (!hadj)
         return;
 
     double upper = gtk_adjustment_get_upper(hadj);
     double page = gtk_adjustment_get_page_size(hadj);
-    if (page > 0.0 && upper > page) {
-        double target = upper - page;
-        if (fabs(gtk_adjustment_get_value(hadj) - target) > 0.5) {
-            gtk_adjustment_set_value(hadj, target);
+    if (page > 0.0) {
+        if (upper > page) {
+            double target = upper - page;
+            if (fabs(gtk_adjustment_get_value(hadj) - target) > 0.5) {
+                gtk_adjustment_set_value(hadj, target);
+            }
         }
+        self->pending_breadcrumb_scroll_end = FALSE;
     }
 }
 
@@ -615,6 +670,17 @@ on_breadcrumb_subdirs_ready(GPtrArray *items, GError *error, gpointer user_data)
         g_signal_connect(row_btn, "clicked", G_CALLBACK(on_bc_pop_subdir_clicked), self);
         gtk_box_append(GTK_BOX(self->bc_pop_list_box), row_btn);
     }
+
+    if (subdirs->len > limit) {
+        g_autofree char *more_txt = g_strdup_printf("… and %u more subfolder(s)", subdirs->len - limit);
+        GtkWidget *more_lbl = gtk_label_new(more_txt);
+        gtk_widget_add_css_class(more_lbl, "shell-popover-subtitle");
+        gtk_widget_set_halign(more_lbl, GTK_ALIGN_START);
+        gtk_widget_set_margin_start(more_lbl, 8);
+        gtk_widget_set_margin_top(more_lbl, 4);
+        gtk_widget_set_margin_bottom(more_lbl, 2);
+        gtk_box_append(GTK_BOX(self->bc_pop_list_box), more_lbl);
+    }
 }
 
 static void
@@ -789,46 +855,11 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
     g_autofree char *badge = g_strdup_printf("LOCATION: %s", local_path ? local_path : (uri ? uri : ""));
     gtk_label_set_text(GTK_LABEL(self->current_uri_badge), badge);
 
-    /* Walk GFile parents all the way up to root so '/' and '/home' remain 1 click away */
-    GPtrArray *chain = g_ptr_array_new_with_free_func(g_object_unref);
-    GFile *cursor = g_object_ref(self->current_dir);
-    const char *home_dir = g_get_home_dir();
-    g_autoptr(GFile) home_file = home_dir ? g_file_new_for_path(home_dir) : NULL;
-
-    while (cursor != NULL) {
-        g_ptr_array_insert(chain, 0, cursor);
-        GFile *parent = g_file_get_parent(cursor);
-        cursor = parent;
-    }
+    /* Build full path chain from root to current_dir so '/' and '/home' remain 1 click away */
+    g_autoptr(GPtrArray) chain = kajo_files_build_breadcrumb_chain(self->current_dir);
 
     for (guint i = 0; i < chain->len; i++) {
-        GFile *seg = g_ptr_array_index(chain, i);
-        g_autofree char *seg_uri = g_file_get_uri(seg);
-        g_autofree char *seg_Label = NULL;
-
-        if (home_file && g_file_equal(seg, home_file)) {
-            g_autofree char *hbase = g_file_get_basename(seg);
-            seg_Label = (hbase && hbase[0] != '\0')
-                ? g_strdup_printf("⌂ %s", hbase)
-                : g_strdup("⌂ HOME");
-        } else {
-            g_autofree char *base = g_file_get_basename(seg);
-            if (!base || g_strcmp0(base, "/") == 0 || base[0] == '\0') {
-                g_autofree char *scheme = g_file_get_uri_scheme(seg);
-                if (g_strcmp0(scheme, "trash") == 0)
-                    seg_Label = g_strdup("🗑 TRASH");
-                else if (g_strcmp0(scheme, "network") == 0)
-                    seg_Label = g_strdup("🌐 NETWORK");
-                else if (g_strcmp0(scheme, "recent") == 0)
-                    seg_Label = g_strdup("🕒 RECENT");
-                else if (g_strcmp0(scheme, "file") == 0)
-                    seg_Label = g_strdup("/");
-                else
-                    seg_Label = g_strdup(seg_uri);
-            } else {
-                seg_Label = g_steal_pointer(&base);
-            }
-        }
+        const KajoBreadcrumbSegment *seg = g_ptr_array_index(chain, i);
 
         if (i > 0) {
             GtkWidget *sep = gtk_label_new("▸");
@@ -836,31 +867,26 @@ rebuild_breadcrumbs(KajoFilesWindow *self)
             gtk_box_append(GTK_BOX(self->breadcrumb_box), sep);
         }
 
-        GtkWidget *btn = gtk_button_new_with_label(seg_Label);
+        GtkWidget *btn = gtk_button_new_with_label(seg->label);
         gtk_widget_add_css_class(btn, "flat");
         gtk_widget_add_css_class(btn, "files-breadcrumb-btn");
         if (i + 1 == chain->len)
             gtk_widget_add_css_class(btn, "active");
 
-        g_autofree char *seg_path = g_file_get_path(seg);
-        gtk_widget_set_tooltip_text(
-            btn,
-            seg_path ? seg_path : seg_uri
-        );
+        gtk_widget_set_tooltip_text(btn, seg->tooltip);
 
-        g_object_set_data_full(G_OBJECT(btn), "segment-uri", g_strdup(seg_uri), g_free);
-        g_object_set_data_full(G_OBJECT(btn), "segment-label", g_strdup(seg_Label), g_free);
+        g_object_set_data_full(G_OBJECT(btn), "segment-uri", g_strdup(seg->uri), g_free);
+        g_object_set_data_full(G_OBJECT(btn), "segment-label", g_strdup(seg->label), g_free);
         g_signal_connect(btn, "clicked", G_CALLBACK(on_breadcrumb_segment_clicked), self);
 
         GtkGesture *click_gest = gtk_gesture_click_new();
+        gtk_event_controller_set_propagation_phase(GTK_EVENT_CONTROLLER(click_gest), GTK_PHASE_CAPTURE);
         gtk_gesture_single_set_button(GTK_GESTURE_SINGLE(click_gest), 0);
         g_signal_connect(click_gest, "pressed", G_CALLBACK(on_breadcrumb_btn_pressed), self);
         gtk_widget_add_controller(btn, GTK_EVENT_CONTROLLER(click_gest));
 
         gtk_box_append(GTK_BOX(self->breadcrumb_box), btn);
     }
-
-    g_ptr_array_unref(chain);
 
     self->pending_breadcrumb_scroll_end = TRUE;
     schedule_breadcrumb_scroll_to_end(self);
@@ -1134,7 +1160,16 @@ files_window_rebuild_filtered_view(KajoFilesWindow *self)
 {
     if (!self) return;
 
-    g_autoptr(KajoFileItem) prev_selected = self->selected_item ? g_object_ref(self->selected_item) : NULL;
+    g_autoptr(GPtrArray) prev_uris = g_ptr_array_new_with_free_func(g_free);
+    g_autoptr(GPtrArray) prev_sel_items = files_window_get_selected_items(self);
+    if (prev_sel_items) {
+        for (guint i = 0; i < prev_sel_items->len; i++) {
+            KajoFileItem *it = g_ptr_array_index(prev_sel_items, i);
+            const char *u = it ? kajo_file_item_get_uri(it) : NULL;
+            if (u)
+                g_ptr_array_add(prev_uris, g_strdup(u));
+        }
+    }
 
     if (self->visible_items)
         g_ptr_array_set_size(self->visible_items, 0);
@@ -1176,22 +1211,29 @@ files_window_rebuild_filtered_view(KajoFilesWindow *self)
         return;
     }
 
-    int restore_idx = 0;
-    if (prev_selected) {
-        for (guint i = 0; i < self->visible_items->len; i++) {
-            if (g_ptr_array_index(self->visible_items, i) == prev_selected) {
-                restore_idx = (int)i;
-                break;
-            }
-        }
-    }
-
     gtk_stack_set_visible_child_name(
         self->view_stack,
         (self->view_mode == KAJO_VIEW_GRID) ? "grid" : "list"
     );
 
-    files_window_set_selected_item_by_index(self, restore_idx);
+    g_autoptr(GtkBitset) matched_bitset = kajo_files_match_selection_uris(self->visible_items, prev_uris);
+    if (matched_bitset && !gtk_bitset_is_empty(matched_bitset)) {
+        guint first_idx = gtk_bitset_get_minimum(matched_bitset);
+        KajoFileItem *primary = g_ptr_array_index(self->visible_items, first_idx);
+        g_set_object(&self->selected_item, primary);
+
+        if (self->selection_model) {
+            g_autoptr(GtkBitset) mask = gtk_bitset_new_range(0, self->visible_items->len);
+            self->suppress_selection_sync = TRUE;
+            gtk_selection_model_set_selection(GTK_SELECTION_MODEL(self->selection_model), matched_bitset, mask);
+            self->suppress_selection_sync = FALSE;
+        }
+
+        kajo_quicklook_set_item(self->quicklook, primary, self->current_dir);
+        update_status_and_capacity_bar(self);
+    } else {
+        files_window_set_selected_item_by_index(self, 0);
+    }
 }
 
 /* ─── Selection & Activation ─── */
@@ -1280,8 +1322,8 @@ files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx)
 
 static void
 on_selection_model_changed(GtkSelectionModel *sel,
-                           guint position,
-                           guint n_items,
+                           guint position G_GNUC_UNUSED,
+                           guint n_items G_GNUC_UNUSED,
                            gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
@@ -1292,18 +1334,9 @@ on_selection_model_changed(GtkSelectionModel *sel,
     KajoFileItem *item = NULL;
 
     if (bitset && !gtk_bitset_is_empty(bitset)) {
-        guint end = MIN(position + n_items, self->visible_items->len);
-        for (guint i = position; i < end; i++) {
-            if (gtk_bitset_contains(bitset, i)) {
-                item = g_ptr_array_index(self->visible_items, i);
-                break;
-            }
-        }
-        if (!item) {
-            guint min_pos = gtk_bitset_get_minimum(bitset);
-            if (min_pos != GTK_INVALID_LIST_POSITION && min_pos < self->visible_items->len)
-                item = g_ptr_array_index(self->visible_items, min_pos);
-        }
+        guint min_pos = gtk_bitset_get_minimum(bitset);
+        if (min_pos != GTK_INVALID_LIST_POSITION && min_pos < self->visible_items->len)
+            item = g_ptr_array_index(self->visible_items, min_pos);
     }
 
     if (item != self->selected_item) {
@@ -1466,6 +1499,16 @@ kajo_files_window_navigate_uri(KajoFilesWindow *self, const char *uri_or_path)
         target = g_file_new_for_path(expanded);
     } else {
         target = g_file_new_for_commandline_arg(uri_or_path);
+    }
+
+    gboolean dir_changed = (!self->current_dir || !g_file_equal(self->current_dir, target));
+    if (dir_changed) {
+        g_clear_object(&self->selected_item);
+        if (self->selection_model) {
+            self->suppress_selection_sync = TRUE;
+            gtk_selection_model_unselect_all(GTK_SELECTION_MODEL(self->selection_model));
+            self->suppress_selection_sync = FALSE;
+        }
     }
 
     g_set_object(&self->current_dir, target);
@@ -1646,8 +1689,10 @@ void
 on_btn_paste_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
-    if (self->current_dir)
+    if (self->current_dir) {
+        files_window_begin_op(self, "Pasting clipboard items...");
         kajo_files_clipboard_paste_async(self->current_dir, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
+    }
 }
 
 void
@@ -1900,6 +1945,7 @@ files_window_trash_selected_item(KajoFilesWindow *self)
         }
     }
 
+    files_window_begin_op(self, "Moving to Trash...");
     kajo_files_op_trash_async(sel_items, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
 }
 
@@ -1925,15 +1971,9 @@ on_quicklook_action(KajoQuickLookAction action, KajoFileItem *item, gpointer use
             break;
         GFile *f = kajo_file_item_get_file(item);
         g_autofree char *local_path = f ? g_file_get_path(f) : NULL;
-        if (!local_path) {
-            files_window_set_status_message(self, "Executable toggle requires a local POSIX file", TRUE);
-            break;
-        }
-        guint32 old_mode = kajo_file_item_get_unix_mode(item) & 07777U;
-        if (old_mode == 0)
-            old_mode = 0644U;
-        guint32 new_mode = (old_mode & 0111U) ? (old_mode & ~0111U) : (old_mode | 0111U);
-        if (g_chmod(local_path, (int)new_mode) == 0) {
+        guint32 new_mode = 0;
+        g_autoptr(GError) err = NULL;
+        if (kajo_files_toggle_executable(local_path, &new_mode, &err)) {
             g_autofree char *msg = g_strdup_printf(
                 "Updated permissions on '%s' (%04o)",
                 kajo_file_item_get_display_name(item),
@@ -1942,8 +1982,7 @@ on_quicklook_action(KajoQuickLookAction action, KajoFileItem *item, gpointer use
             files_window_set_status_message(self, msg, FALSE);
             files_window_reload_directory(self);
         } else {
-            g_autofree char *err_msg = g_strdup_printf("chmod failed: %s", g_strerror(errno));
-            files_window_set_status_message(self, err_msg, TRUE);
+            files_window_set_status_message(self, err ? err->message : "Failed to toggle executable bit", TRUE);
         }
         break;
     }
@@ -2114,6 +2153,7 @@ kajo_files_window_class_init(KajoFilesWindowClass *klass)
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, inspector_vbox);
 
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, status_left_label);
+    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_cancel_op);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, status_right_label);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, fs_usage_bar);
 }
@@ -2220,6 +2260,7 @@ kajo_files_window_init(KajoFilesWindow *self)
     g_signal_connect(self->btn_paste, "clicked", G_CALLBACK(on_btn_paste_clicked), self);
     g_signal_connect(self->btn_hidden, "clicked", G_CALLBACK(on_btn_hidden_clicked), self);
     g_signal_connect(self->btn_terminal, "clicked", G_CALLBACK(on_btn_terminal_clicked), self);
+    g_signal_connect(self->btn_cancel_op, "clicked", G_CALLBACK(on_btn_cancel_op_clicked), self);
 
     /* Sort Popover & Column Header Signals */
     g_signal_connect(self->btn_sort_field_name, "clicked", G_CALLBACK(on_sort_field_name_clicked), self);

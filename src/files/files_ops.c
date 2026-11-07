@@ -1,6 +1,9 @@
 #include "files_ops.h"
 #include <archive.h>
 #include <archive_entry.h>
+#include <glib/gstdio.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <string.h>
 
 typedef struct {
@@ -445,9 +448,9 @@ typedef enum {
 
 typedef struct {
     BatchOpKind kind;
-    GPtrArray *files;     /* GFile* array */
-    GFile *dest_dir;      /* for transfer / restore */
-    char *restore_path;   /* for restore */
+    GPtrArray *files;          /* GFile* array */
+    GPtrArray *restore_paths;  /* char* array for batch restore */
+    GFile *dest_dir;           /* for transfer */
     gboolean is_move;
     KajoFileOpCallback callback;
     gpointer user_data;
@@ -459,8 +462,9 @@ batch_op_context_free(BatchOpContext *ctx)
     if (!ctx) return;
     if (ctx->files)
         g_ptr_array_unref(ctx->files);
+    if (ctx->restore_paths)
+        g_ptr_array_unref(ctx->restore_paths);
     g_clear_object(&ctx->dest_dir);
-    g_free(ctx->restore_path);
     g_free(ctx);
 }
 
@@ -531,23 +535,36 @@ batch_op_worker(GTask *task,
     }
 
     case BATCH_OP_RESTORE_TRASH: {
-        if (!ctx->files || ctx->files->len == 0) {
-            g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No trash item specified");
+        if (!ctx->files || !ctx->restore_paths || ctx->files->len == 0 ||
+            ctx->files->len != ctx->restore_paths->len) {
+            g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No trash items specified");
             return;
         }
-        GFile *trash_file = g_ptr_array_index(ctx->files, 0);
-        g_autoptr(GFile) target = g_file_new_for_path(ctx->restore_path);
-        g_autoptr(GFile) parent = g_file_get_parent(target);
-        if (parent) {
-            g_autofree char *parent_path = g_file_get_path(parent);
-            if (parent_path)
-                g_mkdir_with_parents(parent_path, 0755);
+        for (guint i = 0; i < ctx->files->len; i++) {
+            GFile *trash_file = g_ptr_array_index(ctx->files, i);
+            const char *restore_path = g_ptr_array_index(ctx->restore_paths, i);
+            g_autoptr(GFile) orig_target = g_file_new_for_path(restore_path);
+            g_autoptr(GFile) parent = g_file_get_parent(orig_target);
+            g_autofree char *base = g_file_get_basename(orig_target);
+            if (parent) {
+                g_autofree char *parent_path = g_file_get_path(parent);
+                if (parent_path)
+                    g_mkdir_with_parents(parent_path, 0755);
+            }
+            g_autoptr(GFile) target = (parent && base)
+                ? resolve_unique_dest_child(parent, base)
+                : g_object_ref(orig_target);
+            if (!g_file_move(trash_file, target, G_FILE_COPY_NOFOLLOW_SYMLINKS, cancellable, NULL, NULL, &error)) {
+                g_task_return_error(task, error);
+                return;
+            }
         }
-        if (!g_file_move(trash_file, target, G_FILE_COPY_OVERWRITE, cancellable, NULL, NULL, &error)) {
-            g_task_return_error(task, error);
-            return;
+        if (ctx->files->len == 1) {
+            const char *first_path = g_ptr_array_index(ctx->restore_paths, 0);
+            g_task_return_pointer(task, g_strdup_printf("Restored to %s", first_path), g_free);
+        } else {
+            g_task_return_pointer(task, g_strdup_printf("Restored %u items from Trash", ctx->files->len), g_free);
         }
-        g_task_return_pointer(task, g_strdup_printf("Restored to %s", ctx->restore_path), g_free);
         return;
     }
 
@@ -699,14 +716,37 @@ kajo_files_op_empty_trash_async(GCancellable *cancellable,
 }
 
 void
-kajo_files_op_restore_from_trash_async(KajoFileItem *item,
+kajo_files_op_restore_from_trash_async(GPtrArray *items,
                                        GCancellable *cancellable,
                                        KajoFileOpCallback callback,
                                        gpointer user_data)
 {
-    g_return_if_fail(KAJO_IS_FILE_ITEM(item));
-    const char *orig_path = kajo_file_item_get_trash_orig_path(item);
-    if (!orig_path || orig_path[0] == '\0') {
+    if (!items || items->len == 0) {
+        if (callback) {
+            g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "No trash items selected");
+            callback(FALSE, NULL, err, user_data);
+        }
+        return;
+    }
+
+    GPtrArray *files = g_ptr_array_new_with_free_func(g_object_unref);
+    GPtrArray *paths = g_ptr_array_new_with_free_func(g_free);
+
+    for (guint i = 0; i < items->len; i++) {
+        gpointer p = g_ptr_array_index(items, i);
+        if (!KAJO_IS_FILE_ITEM(p)) continue;
+        KajoFileItem *it = KAJO_FILE_ITEM(p);
+        const char *orig_path = kajo_file_item_get_trash_orig_path(it);
+        GFile *f = kajo_file_item_get_file(it);
+        if (orig_path && orig_path[0] != '\0' && f) {
+            g_ptr_array_add(files, g_object_ref(f));
+            g_ptr_array_add(paths, g_strdup(orig_path));
+        }
+    }
+
+    if (files->len == 0) {
+        g_ptr_array_unref(files);
+        g_ptr_array_unref(paths);
         if (callback) {
             g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "Original path metadata unavailable in Trash");
             callback(FALSE, NULL, err, user_data);
@@ -716,9 +756,8 @@ kajo_files_op_restore_from_trash_async(KajoFileItem *item,
 
     BatchOpContext *ctx = g_new0(BatchOpContext, 1);
     ctx->kind = BATCH_OP_RESTORE_TRASH;
-    ctx->files = g_ptr_array_new_with_free_func(g_object_unref);
-    g_ptr_array_add(ctx->files, g_object_ref(kajo_file_item_get_file(item)));
-    ctx->restore_path = g_strdup(orig_path);
+    ctx->files = files;
+    ctx->restore_paths = paths;
     ctx->callback = callback;
     ctx->user_data = user_data;
 
@@ -773,37 +812,107 @@ kajo_files_op_extract_archive_async(GFile *archive_file,
     g_task_run_in_thread(task, batch_op_worker);
 }
 
-/* ─── Clipboard (Internal + Wayland GdkClipboard) ─── */
+/* ─── Clipboard (Wayland GdkClipboard) ─── */
 
-static GPtrArray *g_clip_files = NULL;
-static gboolean g_clip_is_cut = FALSE;
+#define CLIPBOARD_READ_CHUNK_BYTES (64 * 1024)
+#define CLIPBOARD_MAX_TOTAL_BYTES  (4 * 1024 * 1024)
+
+/* Used only in headless tests where gdk_display_get_default() == NULL */
+static char *g_headless_clip_payload = NULL;
+
+static gboolean
+is_supported_clipboard_uri_scheme(const char *scheme)
+{
+    if (!scheme || scheme[0] == '\0')
+        return FALSE;
+    static const char *const allowed[] = {
+        "file", "trash", "archive", "smb", "sftp", "ftp",
+        "dav", "davs", "mtp", "afc", "gphoto2", NULL
+    };
+    for (int i = 0; allowed[i] != NULL; i++) {
+        if (g_ascii_strcasecmp(scheme, allowed[i]) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+gboolean
+kajo_files_parse_clipboard_data(const char *mime_type,
+                                const char *raw_data,
+                                gsize raw_len,
+                                GPtrArray **out_files,
+                                gboolean *out_is_cut)
+{
+    if (out_files) *out_files = NULL;
+    if (out_is_cut) *out_is_cut = FALSE;
+    if (!raw_data || raw_len == 0)
+        return FALSE;
+
+    g_autofree char *text = g_strndup(raw_data, raw_len);
+    g_auto(GStrv) lines = g_strsplit_set(text, "\r\n", -1);
+
+    gboolean is_cut = FALSE;
+    gboolean is_gnome_mime = (mime_type && g_strcmp0(mime_type, "x-special/gnome-copied-files") == 0);
+    gboolean seen_header = FALSE;
+    g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_object_unref);
+
+    for (int i = 0; lines && lines[i] != NULL; i++) {
+        char *line = g_strstrip(lines[i]);
+        if (line[0] == '\0' || line[0] == '#')
+            continue;
+
+        if (!seen_header && (g_strcmp0(line, "cut") == 0 || g_strcmp0(line, "copy") == 0)) {
+            is_cut = (g_strcmp0(line, "cut") == 0);
+            seen_header = TRUE;
+            continue;
+        }
+        seen_header = TRUE;
+
+        if (strstr(line, "://") != NULL) {
+            g_autofree char *scheme = g_uri_parse_scheme(line);
+            if (!is_supported_clipboard_uri_scheme(scheme))
+                continue;
+            g_ptr_array_add(files, g_file_new_for_uri(line));
+        } else if (line[0] == '/' && is_gnome_mime) {
+            g_ptr_array_add(files, g_file_new_for_path(line));
+        }
+    }
+
+    if (files->len == 0)
+        return FALSE;
+
+    if (out_files)
+        *out_files = g_steal_pointer(&files);
+    if (out_is_cut)
+        *out_is_cut = is_cut;
+    return TRUE;
+}
 
 void
 kajo_files_clipboard_set(GPtrArray *files, gboolean is_cut)
 {
-    if (g_clip_files) {
-        g_ptr_array_unref(g_clip_files);
-        g_clip_files = NULL;
+    g_clear_pointer(&g_headless_clip_payload, g_free);
+
+    g_autoptr(GPtrArray) gfiles = clone_gfile_array(files);
+    if (!gfiles || gfiles->len == 0)
+        return;
+
+    GString *uri_list = g_string_new(NULL);
+    GString *gnome_list = g_string_new(is_cut ? "cut\n" : "copy\n");
+    for (guint i = 0; i < gfiles->len; i++) {
+        GFile *f = g_ptr_array_index(gfiles, i);
+        g_autofree char *uri = g_file_get_uri(f);
+        if (uri) {
+            g_string_append(uri_list, uri);
+            g_string_append(uri_list, "\r\n");
+            g_string_append(gnome_list, uri);
+            g_string_append(gnome_list, "\n");
+        }
     }
 
-    g_clip_files = clone_gfile_array(files);
-    g_clip_is_cut = is_cut;
-
     GdkDisplay *display = gdk_display_get_default();
-    if (display && g_clip_files && g_clip_files->len > 0) {
+    if (display) {
         GdkClipboard *clipboard = gdk_display_get_clipboard(display);
-        GString *uri_list = g_string_new(NULL);
-        GString *gnome_list = g_string_new(is_cut ? "cut\n" : "copy\n");
-        for (guint i = 0; i < g_clip_files->len; i++) {
-            GFile *f = g_ptr_array_index(g_clip_files, i);
-            g_autofree char *uri = g_file_get_uri(f);
-            if (uri) {
-                g_string_append(uri_list, uri);
-                g_string_append(uri_list, "\r\n");
-                g_string_append(gnome_list, uri);
-                g_string_append(gnome_list, "\n");
-            }
-        }
         g_autoptr(GBytes) uri_bytes = g_string_free_to_bytes(uri_list);
         g_autoptr(GBytes) gnome_bytes = g_string_free_to_bytes(gnome_list);
         GdkContentProvider *providers[2] = {
@@ -812,15 +921,15 @@ kajo_files_clipboard_set(GPtrArray *files, gboolean is_cut)
         };
         g_autoptr(GdkContentProvider) union_prov = gdk_content_provider_new_union(providers, 2);
         gdk_clipboard_set_content(clipboard, union_prov);
+    } else {
+        g_string_free(uri_list, TRUE);
+        g_headless_clip_payload = g_string_free(gnome_list, FALSE);
     }
 }
 
 gboolean
 kajo_files_clipboard_has_files(void)
 {
-    if (g_clip_files != NULL && g_clip_files->len > 0)
-        return TRUE;
-
     GdkDisplay *display = gdk_display_get_default();
     if (display) {
         GdkClipboard *clipboard = gdk_display_get_clipboard(display);
@@ -830,8 +939,9 @@ kajo_files_clipboard_has_files(void)
              gdk_content_formats_contain_mime_type(formats, "text/uri-list"))) {
             return TRUE;
         }
+        return FALSE;
     }
-    return FALSE;
+    return (g_headless_clip_payload != NULL && g_headless_clip_payload[0] != '\0');
 }
 
 typedef struct {
@@ -840,6 +950,7 @@ typedef struct {
     KajoFileOpCallback callback;
     gpointer user_data;
     GInputStream *stream;
+    GByteArray *buf;
     char *mime_used;
 } ClipboardPasteCtx;
 
@@ -850,19 +961,21 @@ clipboard_paste_ctx_free(ClipboardPasteCtx *pctx)
     g_clear_object(&pctx->dest_dir);
     g_clear_object(&pctx->cancellable);
     g_clear_object(&pctx->stream);
+    if (pctx->buf)
+        g_byte_array_unref(pctx->buf);
     g_free(pctx->mime_used);
     g_free(pctx);
 }
 
 static void
-on_clipboard_bytes_read(GObject *source, GAsyncResult *res, gpointer user_data)
+on_clipboard_chunk_read(GObject *source, GAsyncResult *res, gpointer user_data)
 {
     ClipboardPasteCtx *pctx = user_data;
     GError *error = NULL;
-    g_autoptr(GBytes) bytes = g_input_stream_read_bytes_finish(G_INPUT_STREAM(source), res, &error);
-    g_input_stream_close(G_INPUT_STREAM(source), NULL, NULL);
+    g_autoptr(GBytes) chunk = g_input_stream_read_bytes_finish(G_INPUT_STREAM(source), res, &error);
 
-    if (!bytes) {
+    if (!chunk) {
+        g_input_stream_close(G_INPUT_STREAM(source), NULL, NULL);
         if (pctx->callback)
             pctx->callback(FALSE, NULL, error, pctx->user_data);
         g_clear_error(&error);
@@ -870,36 +983,51 @@ on_clipboard_bytes_read(GObject *source, GAsyncResult *res, gpointer user_data)
         return;
     }
 
-    gsize len = 0;
-    const char *raw = g_bytes_get_data(bytes, &len);
-    g_autofree char *text = raw ? g_strndup(raw, len) : g_strdup("");
-    g_auto(GStrv) lines = g_strsplit_set(text, "\r\n", -1);
-
-    gboolean is_move = FALSE;
-    g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_object_unref);
-
-    for (int i = 0; lines && lines[i] != NULL; i++) {
-        char *line = g_strstrip(lines[i]);
-        if (line[0] == '\0' || line[0] == '#')
-            continue;
-        if (i == 0 && (g_strcmp0(line, "cut") == 0 || g_strcmp0(line, "copy") == 0)) {
-            is_move = (g_strcmp0(line, "cut") == 0);
-            continue;
-        }
-        if (strstr(line, "://") != NULL) {
-            g_ptr_array_add(files, g_file_new_for_uri(line));
-        } else if (line[0] == '/') {
-            g_ptr_array_add(files, g_file_new_for_path(line));
-        }
+    gsize chunk_len = 0;
+    const guint8 *chunk_data = g_bytes_get_data(chunk, &chunk_len);
+    if (chunk_len > 0 && pctx->buf->len + chunk_len <= CLIPBOARD_MAX_TOTAL_BYTES) {
+        g_byte_array_append(pctx->buf, chunk_data, (guint)chunk_len);
+        /* Continue reading until EOF (chunk_len == 0) */
+        g_input_stream_read_bytes_async(
+            pctx->stream,
+            CLIPBOARD_READ_CHUNK_BYTES,
+            G_PRIORITY_DEFAULT,
+            pctx->cancellable,
+            on_clipboard_chunk_read,
+            pctx
+        );
+        return;
     }
 
-    if (files->len == 0) {
+    g_input_stream_close(G_INPUT_STREAM(source), NULL, NULL);
+
+    gboolean is_move = FALSE;
+    g_autoptr(GPtrArray) files = NULL;
+    if (!kajo_files_parse_clipboard_data(
+            pctx->mime_used,
+            (const char *)pctx->buf->data,
+            pctx->buf->len,
+            &files,
+            &is_move)) {
         if (pctx->callback) {
-            g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "No file URIs found in clipboard");
+            g_autoptr(GError) err = g_error_new_literal(
+                G_IO_ERROR,
+                G_IO_ERROR_NOT_FOUND,
+                "No valid file URIs found in clipboard"
+            );
             pctx->callback(FALSE, NULL, err, pctx->user_data);
         }
         clipboard_paste_ctx_free(pctx);
         return;
+    }
+
+    /* When pasting a Cut operation, clear the clipboard so a second Ctrl+V cannot re-move stale paths */
+    if (is_move) {
+        GdkDisplay *display = gdk_display_get_default();
+        if (display) {
+            GdkClipboard *clipboard = gdk_display_get_clipboard(display);
+            gdk_clipboard_set_content(clipboard, NULL);
+        }
     }
 
     kajo_files_op_transfer_async(files, pctx->dest_dir, is_move, pctx->cancellable, pctx->callback, pctx->user_data);
@@ -922,13 +1050,14 @@ on_clipboard_stream_ready(GObject *source, GAsyncResult *res, gpointer user_data
     }
 
     pctx->stream = stream;
+    pctx->buf = g_byte_array_new();
     pctx->mime_used = g_strdup(out_mime);
     g_input_stream_read_bytes_async(
         stream,
-        256 * 1024,
+        CLIPBOARD_READ_CHUNK_BYTES,
         G_PRIORITY_DEFAULT,
         pctx->cancellable,
-        on_clipboard_bytes_read,
+        on_clipboard_chunk_read,
         pctx
     );
 }
@@ -941,17 +1070,6 @@ kajo_files_clipboard_paste_async(GFile *dest_dir,
 {
     GdkDisplay *display = gdk_display_get_default();
     GdkClipboard *clipboard = display ? gdk_display_get_clipboard(display) : NULL;
-
-    if (g_clip_files && g_clip_files->len > 0 && (!clipboard || gdk_clipboard_is_local(clipboard))) {
-        gboolean is_move = g_clip_is_cut;
-        kajo_files_op_transfer_async(g_clip_files, dest_dir, is_move, cancellable, callback, user_data);
-        if (is_move) {
-            g_ptr_array_unref(g_clip_files);
-            g_clip_files = NULL;
-            g_clip_is_cut = FALSE;
-        }
-        return;
-    }
 
     if (clipboard) {
         static const char *mimes[] = {
@@ -971,6 +1089,20 @@ kajo_files_clipboard_paste_async(GFile *dest_dir,
             gdk_clipboard_read_async(clipboard, mimes, G_PRIORITY_DEFAULT, cancellable, on_clipboard_stream_ready, pctx);
             return;
         }
+    } else if (g_headless_clip_payload != NULL) {
+        gboolean is_move = FALSE;
+        g_autoptr(GPtrArray) files = NULL;
+        if (kajo_files_parse_clipboard_data(
+                "x-special/gnome-copied-files",
+                g_headless_clip_payload,
+                strlen(g_headless_clip_payload),
+                &files,
+                &is_move)) {
+            if (is_move)
+                g_clear_pointer(&g_headless_clip_payload, g_free);
+            kajo_files_op_transfer_async(files, dest_dir, is_move, cancellable, callback, user_data);
+            return;
+        }
     }
 
     if (callback) {
@@ -980,22 +1112,84 @@ kajo_files_clipboard_paste_async(GFile *dest_dir,
 }
 
 char *
-kajo_files_copy_path_to_clipboard(KajoFileItem *item)
+kajo_files_copy_items_paths_to_clipboard(GPtrArray *items)
 {
-    if (!item) return NULL;
+    if (!items || items->len == 0)
+        return NULL;
 
-    GFile *file = kajo_file_item_get_file(item);
-    g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
-    const char *text = local_path ? local_path : kajo_file_item_get_uri(item);
-    if (!text) return NULL;
+    GString *str = g_string_new(NULL);
+    for (guint i = 0; i < items->len; i++) {
+        KajoFileItem *item = g_ptr_array_index(items, i);
+        if (!KAJO_IS_FILE_ITEM(item)) continue;
+        GFile *file = kajo_file_item_get_file(item);
+        g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
+        const char *text = local_path ? local_path : kajo_file_item_get_uri(item);
+        if (!text) continue;
+        if (str->len > 0)
+            g_string_append_c(str, '\n');
+        g_string_append(str, text);
+    }
+
+    if (str->len == 0) {
+        g_string_free(str, TRUE);
+        return NULL;
+    }
+
+    g_clear_pointer(&g_headless_clip_payload, g_free);
 
     GdkDisplay *display = gdk_display_get_default();
     if (display) {
         GdkClipboard *clipboard = gdk_display_get_clipboard(display);
-        gdk_clipboard_set_text(clipboard, text);
+        gdk_clipboard_set_text(clipboard, str->str);
     }
 
-    return g_strdup(text);
+    return g_string_free(str, FALSE);
+}
+
+char *
+kajo_files_copy_path_to_clipboard(KajoFileItem *item)
+{
+    if (!item) return NULL;
+    g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(arr, g_object_ref(item));
+    return kajo_files_copy_items_paths_to_clipboard(arr);
+}
+
+gboolean
+kajo_files_toggle_executable(const char *local_path,
+                             guint32 *out_new_mode,
+                             GError **error)
+{
+    if (out_new_mode) *out_new_mode = 0;
+    if (!local_path || local_path[0] == '\0') {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "Executable toggle requires a local POSIX file");
+        return FALSE;
+    }
+
+    GStatBuf st;
+    if (g_stat(local_path, &st) != 0) {
+        int errsv = errno;
+        g_set_error(error, G_IO_ERROR, g_io_error_from_errno(errsv), "stat failed: %s", g_strerror(errsv));
+        return FALSE;
+    }
+
+    if (!S_ISREG(st.st_mode)) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_NOT_REGULAR_FILE, "Executable toggle is only supported on regular files");
+        return FALSE;
+    }
+
+    guint32 old_mode = (guint32)(st.st_mode & 07777U);
+    guint32 new_mode = (old_mode & 0111U) ? (old_mode & ~0111U) : (old_mode | 0111U);
+
+    if (g_chmod(local_path, (int)new_mode) != 0) {
+        int errsv = errno;
+        g_set_error(error, G_IO_ERROR, g_io_error_from_errno(errsv), "chmod failed: %s", g_strerror(errsv));
+        return FALSE;
+    }
+
+    if (out_new_mode)
+        *out_new_mode = new_mode;
+    return TRUE;
 }
 
 /* ─── Desktop App & Terminal Launchers ─── */

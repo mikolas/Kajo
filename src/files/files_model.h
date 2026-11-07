@@ -81,6 +81,17 @@ gboolean kajo_file_item_matches_filter(const KajoFileItem *item,
                                        gboolean show_hidden,
                                        const char *search_query);
 
+typedef struct {
+    char *uri;
+    char *label;
+    char *tooltip;
+} KajoBreadcrumbSegment;
+
+void       kajo_breadcrumb_segment_free(gpointer data);
+GPtrArray *kajo_files_build_breadcrumb_chain(GFile *dir);
+GtkBitset *kajo_files_match_selection_uris(GPtrArray *visible_items,
+                                           GPtrArray *selected_uris);
+
 /* Async Non-Blocking Directory Enumeration (Local + GVFS) */
 typedef void (*KajoDirEnumCallback)(GPtrArray *items, GError *error, gpointer user_data);
 

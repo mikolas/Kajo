@@ -505,6 +505,102 @@ kajo_file_item_matches_filter(const KajoFileItem *item,
     return FALSE;
 }
 
+void
+kajo_breadcrumb_segment_free(gpointer data)
+{
+    KajoBreadcrumbSegment *seg = data;
+    if (!seg) return;
+    g_free(seg->uri);
+    g_free(seg->label);
+    g_free(seg->tooltip);
+    g_free(seg);
+}
+
+GPtrArray *
+kajo_files_build_breadcrumb_chain(GFile *dir)
+{
+    GPtrArray *result = g_ptr_array_new_with_free_func(kajo_breadcrumb_segment_free);
+    if (!dir)
+        return result;
+
+    g_autoptr(GPtrArray) chain = g_ptr_array_new_with_free_func(g_object_unref);
+    GFile *cursor = g_object_ref(dir);
+    const char *home_dir = g_get_home_dir();
+    g_autoptr(GFile) home_file = home_dir ? g_file_new_for_path(home_dir) : NULL;
+
+    while (cursor != NULL) {
+        g_ptr_array_insert(chain, 0, cursor);
+        cursor = g_file_get_parent(cursor);
+    }
+
+    for (guint i = 0; i < chain->len; i++) {
+        GFile *seg = g_ptr_array_index(chain, i);
+        g_autofree char *seg_uri = g_file_get_uri(seg);
+        g_autofree char *seg_path = g_file_get_path(seg);
+        char *seg_label = NULL;
+
+        if (home_file && g_file_equal(seg, home_file)) {
+            g_autofree char *hbase = g_file_get_basename(seg);
+            seg_label = (hbase && hbase[0] != '\0')
+                ? g_strdup_printf("⌂ %s", hbase)
+                : g_strdup("⌂ HOME");
+        } else {
+            g_autofree char *base = g_file_get_basename(seg);
+            if (!base || g_strcmp0(base, "/") == 0 || base[0] == '\0') {
+                g_autofree char *scheme = g_file_get_uri_scheme(seg);
+                if (g_strcmp0(scheme, "trash") == 0)
+                    seg_label = g_strdup("🗑 TRASH");
+                else if (g_strcmp0(scheme, "network") == 0)
+                    seg_label = g_strdup("🌐 NETWORK");
+                else if (g_strcmp0(scheme, "recent") == 0)
+                    seg_label = g_strdup("🕒 RECENT");
+                else if (g_strcmp0(scheme, "file") == 0)
+                    seg_label = g_strdup("/");
+                else
+                    seg_label = g_strdup(seg_uri ? seg_uri : "/");
+            } else {
+                seg_label = g_steal_pointer(&base);
+            }
+        }
+
+        KajoBreadcrumbSegment *out_seg = g_new0(KajoBreadcrumbSegment, 1);
+        out_seg->uri = g_strdup(seg_uri ? seg_uri : "");
+        out_seg->label = seg_label;
+        out_seg->tooltip = g_strdup(seg_path ? seg_path : (seg_uri ? seg_uri : ""));
+        g_ptr_array_add(result, out_seg);
+    }
+
+    return result;
+}
+
+GtkBitset *
+kajo_files_match_selection_uris(GPtrArray *visible_items, GPtrArray *selected_uris)
+{
+    GtkBitset *bitset = gtk_bitset_new_empty();
+    if (!visible_items || !selected_uris || visible_items->len == 0 || selected_uris->len == 0)
+        return bitset;
+
+    g_autoptr(GHashTable) uri_set = g_hash_table_new(g_str_hash, g_str_equal);
+    for (guint i = 0; i < selected_uris->len; i++) {
+        const char *u = g_ptr_array_index(selected_uris, i);
+        if (u && u[0] != '\0')
+            g_hash_table_add(uri_set, (gpointer)u);
+    }
+
+    for (guint i = 0; i < visible_items->len; i++) {
+        KajoFileItem *it = g_ptr_array_index(visible_items, i);
+        if (!it) continue;
+        const char *u = kajo_file_item_get_uri(it);
+        if (!u || u[0] == '\0')
+            u = kajo_file_item_get_name(it);
+        if (u && g_hash_table_contains(uri_set, u)) {
+            gtk_bitset_add(bitset, i);
+        }
+    }
+
+    return bitset;
+}
+
 /* ─── Async Worker-Thread Directory Enumeration ─── */
 
 #define KAJO_ENUM_ATTRIBUTES \

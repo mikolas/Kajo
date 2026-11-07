@@ -643,6 +643,19 @@ template $KajoFilesWindow : ApplicationWindow {
           ]
         }
 
+        Button btn_cancel_op {
+          label: "✕ CANCEL";
+          tooltip-text: "Cancel Active File Operation (Esc)";
+          visible: false;
+          valign: center;
+
+          styles [
+            "flat",
+            "files-nav-btn",
+            "action-btn-danger",
+          ]
+        }
+
         Label status_right_label {
           label: "";
           halign: end;

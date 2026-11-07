@@ -72,7 +72,7 @@ on_ctx_extract_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
         return;
 
     GFile *archive_file = kajo_file_item_get_file(self->selected_item);
-    files_window_set_status_message(self, "Extracting archive...", FALSE);
+    files_window_begin_op(self, "Extracting archive...");
     kajo_files_op_extract_archive_async(archive_file, self->current_dir, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
 }
 
@@ -143,11 +143,18 @@ on_ctx_cut_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 void
 files_window_copy_selected_item_path(KajoFilesWindow *self)
 {
-    if (!self || !self->selected_item) return;
-    g_autofree char *copied = kajo_files_copy_path_to_clipboard(self->selected_item);
+    if (!self) return;
+    g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+    if (!sel_items || sel_items->len == 0) return;
+    g_autofree char *copied = kajo_files_copy_items_paths_to_clipboard(sel_items);
     if (copied) {
-        g_autofree char *msg = g_strdup_printf("Copied path: %s", copied);
-        files_window_set_status_message(self, msg, FALSE);
+        if (sel_items->len > 1) {
+            g_autofree char *msg = g_strdup_printf("Copied %u paths to clipboard", sel_items->len);
+            files_window_set_status_message(self, msg, FALSE);
+        } else {
+            g_autofree char *msg = g_strdup_printf("Copied path: %s", copied);
+            files_window_set_status_message(self, msg, FALSE);
+        }
     }
 }
 
@@ -445,15 +452,17 @@ files_window_build_context_menu_popover(KajoFilesWindow *self)
     self->ctx_item_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
     gtk_widget_add_css_class(self->ctx_item_box, "shell-popover-body");
 
-    gtk_box_append(GTK_BOX(self->ctx_item_box),
-        create_ctx_action_button("▶  Open", "Enter", FALSE, G_CALLBACK(on_ctx_open_clicked), self));
+    self->ctx_btn_open = create_ctx_action_button(
+        "▶  Open", "Enter", FALSE, G_CALLBACK(on_ctx_open_clicked), self);
+    gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_open);
 
     self->ctx_btn_open_with = create_ctx_action_button(
         "⚙  Open With...", "▸", FALSE, G_CALLBACK(on_ctx_open_with_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_open_with);
 
-    gtk_box_append(GTK_BOX(self->ctx_item_box),
-        create_ctx_action_button("👁  Quick Look", "Space", FALSE, G_CALLBACK(on_ctx_quicklook_clicked), self));
+    self->ctx_btn_quicklook = create_ctx_action_button(
+        "👁  Quick Look", "Space", FALSE, G_CALLBACK(on_ctx_quicklook_clicked), self);
+    gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_quicklook);
 
     self->ctx_btn_extract = create_ctx_action_button(
         "📦  Extract Here", "", FALSE, G_CALLBACK(on_ctx_extract_clicked), self);
@@ -482,8 +491,9 @@ files_window_build_context_menu_popover(KajoFilesWindow *self)
 
     gtk_box_append(GTK_BOX(self->ctx_item_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
-    gtk_box_append(GTK_BOX(self->ctx_item_box),
-        create_ctx_action_button("✏  Rename...", "F2", FALSE, G_CALLBACK(on_ctx_rename_clicked), self));
+    self->ctx_btn_rename = create_ctx_action_button(
+        "✏  Rename...", "F2", FALSE, G_CALLBACK(on_ctx_rename_clicked), self);
+    gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_rename);
 
     self->ctx_btn_move_trash = create_ctx_action_button(
         "🗑  Move to Trash", "Del", FALSE, G_CALLBACK(on_ctx_move_trash_clicked), self);
@@ -617,11 +627,14 @@ open_context_menu_at(KajoFilesWindow *self, KajoFileItem *item, int x, int y)
         gtk_widget_set_visible(self->ctx_item_box, TRUE);
         gtk_widget_set_visible(self->ctx_bg_box, FALSE);
 
+        gtk_widget_set_visible(self->ctx_btn_open, !multi);
         gtk_widget_set_visible(self->ctx_btn_open_with, !multi && !is_dir);
+        gtk_widget_set_visible(self->ctx_btn_quicklook, !multi);
         gtk_widget_set_visible(self->ctx_btn_extract, !multi && !is_dir && kajo_files_is_archive(ctype, name));
         gtk_widget_set_visible(self->ctx_btn_item_terminal, !multi && is_dir);
         gtk_widget_set_visible(self->ctx_btn_item_newwin, !multi && is_dir);
         gtk_widget_set_visible(self->ctx_btn_restore_trash, is_trash);
+        gtk_widget_set_visible(self->ctx_btn_rename, !multi);
         gtk_widget_set_visible(self->ctx_btn_move_trash, !is_trash);
     } else {
         g_autofree char *base = self->current_dir ? g_file_get_basename(self->current_dir) : NULL;
