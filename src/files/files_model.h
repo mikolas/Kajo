@@ -59,6 +59,18 @@ char    *kajo_files_format_permissions(guint32 mode, gboolean is_dir, gboolean i
 char    *kajo_files_format_mtime(gint64 mtime_sec);
 gboolean kajo_files_is_text_or_code(const char *content_type, const char *filename);
 gboolean kajo_files_is_archive(const char *content_type, const char *filename);
+/* ISO / raw disk images that UDisks2 can loop-mount (.iso/.img/.raw, see files_diskimage.h). */
+gboolean kajo_files_is_disk_image(const char *content_type, const char *filename);
+/* Shared archive-entry path normalizer: relative result, NULL if it contains "..", "" if empty. */
+char    *kajo_files_normalize_archive_path(const char *raw);
+/* TRUE for paths below $XDG_CACHE_HOME/kajo/archive-preview (extracted nested archives). */
+gboolean kajo_files_is_preview_cache_path(const char *path);
+gboolean kajo_files_parse_archive_uri(const char *uri,
+                                      char **out_archive_path,
+                                      char **out_inner_path);
+char    *kajo_files_build_archive_uri(const char *archive_path,
+                                      const char *inner_path);
+char    *kajo_files_get_parent_uri(GFile *dir);
 
 int      kajo_file_item_compare(const KajoFileItem *a,
                                 const KajoFileItem *b,
@@ -72,10 +84,35 @@ int      kajo_file_item_compare_full(const KajoFileItem *a,
                                      gboolean folders_first);
 
 gboolean kajo_file_sort_field_default_ascending(KajoFileSortField field);
+const char       *kajo_file_sort_field_to_string(KajoFileSortField field);
+KajoFileSortField kajo_file_sort_field_from_string(const char *str);
+const char       *kajo_file_view_mode_to_string(KajoFileViewMode mode);
+KajoFileViewMode  kajo_file_view_mode_from_string(const char *str);
 
 gboolean kajo_file_item_matches_filter(const KajoFileItem *item,
                                        gboolean show_hidden,
                                        const char *search_query);
+
+typedef struct {
+    char *uri;
+    char *label;
+    char *tooltip;
+} KajoBreadcrumbSegment;
+
+void       kajo_breadcrumb_segment_free(gpointer data);
+GPtrArray *kajo_files_build_breadcrumb_chain(GFile *dir);
+typedef enum {
+    KAJO_REBUILD_SEL_RESTORE = 0,   /* previously selected items still exist: re-select them */
+    KAJO_REBUILD_SEL_FIRST,         /* new folder or active search: select the first entry */
+    KAJO_REBUILD_SEL_CLEAR          /* anything else: leave the selection cleared */
+} KajoRebuildSelectionAction;
+
+KajoRebuildSelectionAction kajo_files_rebuild_selection_action(gboolean has_matches,
+                                                              gboolean autoselect_pending,
+                                                              gboolean search_active);
+
+GtkBitset *kajo_files_match_selection_uris(GPtrArray *visible_items,
+                                           GPtrArray *selected_uris);
 
 /* Async Non-Blocking Directory Enumeration (Local + GVFS) */
 typedef void (*KajoDirEnumCallback)(GPtrArray *items, GError *error, gpointer user_data);

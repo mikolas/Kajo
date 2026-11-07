@@ -149,6 +149,13 @@ shell_config_get_default(void)
     config->ide_show_margin_guide      = FALSE;
     config->ide_insert_spaces          = TRUE;
 
+    config->files_view_mode            = g_strdup("grid");
+    config->files_sort_field           = g_strdup("name");
+    config->files_sort_ascending       = TRUE;
+    config->files_sort_folders_first   = TRUE;
+    config->files_show_hidden          = FALSE;
+    config->files_show_inspector       = FALSE;
+
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
     config->layout_right          = g_ptr_array_new_full(0, free_widget_config);
@@ -505,6 +512,46 @@ shell_config_load(const gchar *path)
         }
     }
 
+    /* Kajo Files preferences (flat keys per spec §4.1, with value-type checks) */
+    if (json_object_has_member(root, "files_view_mode")) {
+        JsonNode *n = json_object_get_member(root, "files_view_mode");
+        if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+            g_free(config->files_view_mode);
+            config->files_view_mode = g_strdup(json_node_get_string(n));
+        }
+    }
+    if (json_object_has_member(root, "files_sort_field")) {
+        JsonNode *n = json_object_get_member(root, "files_sort_field");
+        if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+            g_free(config->files_sort_field);
+            config->files_sort_field = g_strdup(json_node_get_string(n));
+        }
+    }
+    if (json_object_has_member(root, "files_sort_ascending")) {
+        JsonNode *n = json_object_get_member(root, "files_sort_ascending");
+        if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
+            config->files_sort_ascending = json_node_get_boolean(n);
+        }
+    }
+    if (json_object_has_member(root, "files_sort_folders_first")) {
+        JsonNode *n = json_object_get_member(root, "files_sort_folders_first");
+        if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
+            config->files_sort_folders_first = json_node_get_boolean(n);
+        }
+    }
+    if (json_object_has_member(root, "files_show_hidden")) {
+        JsonNode *n = json_object_get_member(root, "files_show_hidden");
+        if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
+            config->files_show_hidden = json_node_get_boolean(n);
+        }
+    }
+    if (json_object_has_member(root, "files_show_inspector")) {
+        JsonNode *n = json_object_get_member(root, "files_show_inspector");
+        if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
+            config->files_show_inspector = json_node_get_boolean(n);
+        }
+    }
+
     /* Layout settings */
     if (json_object_has_member(root, "layout") &&
         JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "layout"))) {
@@ -626,7 +673,13 @@ serialize_widget_array(JsonBuilder *builder, const gchar *member_name, GPtrArray
 gboolean
 shell_config_save(ShellConfig *config, const gchar *path)
 {
-    if (!config || !path) return FALSE;
+    if (!config) return FALSE;
+
+    g_autofree gchar *default_user_path = NULL;
+    if (!path || path[0] == '\0') {
+        default_user_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+        path = default_user_path;
+    }
 
     g_autofree gchar *dir = g_path_get_dirname(path);
     if (dir && *dir) {
@@ -796,6 +849,20 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_boolean_value(builder, config->ide_insert_spaces);
     json_builder_end_object(builder);
 
+    /* Kajo Files preferences (flat keys per spec §4.1) */
+    json_builder_set_member_name(builder, "files_view_mode");
+    json_builder_add_string_value(builder, config->files_view_mode ? config->files_view_mode : "grid");
+    json_builder_set_member_name(builder, "files_sort_field");
+    json_builder_add_string_value(builder, config->files_sort_field ? config->files_sort_field : "name");
+    json_builder_set_member_name(builder, "files_sort_ascending");
+    json_builder_add_boolean_value(builder, config->files_sort_ascending);
+    json_builder_set_member_name(builder, "files_sort_folders_first");
+    json_builder_add_boolean_value(builder, config->files_sort_folders_first);
+    json_builder_set_member_name(builder, "files_show_hidden");
+    json_builder_add_boolean_value(builder, config->files_show_hidden);
+    json_builder_set_member_name(builder, "files_show_inspector");
+    json_builder_add_boolean_value(builder, config->files_show_inspector);
+
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");
     json_builder_begin_object(builder);
@@ -815,12 +882,46 @@ shell_config_save(ShellConfig *config, const gchar *path)
 
     json_builder_end_object(builder);
 
-    g_autoptr(JsonGenerator) gen = json_generator_new();
     g_autoptr(JsonNode) root = json_builder_get_root(builder);
+
+    /* Preserve any unknown top-level JSON keys from an existing file on disk */
+    if (root && JSON_NODE_HOLDS_OBJECT(root) && g_file_test(path, G_FILE_TEST_EXISTS)) {
+        g_autoptr(JsonParser) existing_parser = json_parser_new();
+        if (json_parser_load_from_file(existing_parser, path, NULL)) {
+            JsonNode *existing_root = json_parser_get_root(existing_parser);
+            if (existing_root && JSON_NODE_HOLDS_OBJECT(existing_root)) {
+                JsonObject *new_obj = json_node_get_object(root);
+                JsonObject *old_obj = json_node_get_object(existing_root);
+                g_autoptr(GList) members = json_object_get_members(old_obj);
+                for (GList *l = members; l != NULL; l = l->next) {
+                    const char *member_name = l->data;
+                    /* Keys this writer owns but only emits when set (css_path, icon_map_path)
+                     * must be able to disappear, and the pre-flat nested "files" object is
+                     * obsolete: never resurrect them from the old file. */
+                    if (g_strcmp0(member_name, "css_path") == 0 ||
+                        g_strcmp0(member_name, "icon_map_path") == 0 ||
+                        g_strcmp0(member_name, "files") == 0) {
+                        continue;
+                    }
+                    if (!json_object_has_member(new_obj, member_name)) {
+                        JsonNode *val_node = json_object_get_member(old_obj, member_name);
+                        if (val_node)
+                            json_object_set_member(new_obj, member_name, json_node_copy(val_node));
+                    }
+                }
+            }
+        }
+    }
+
+    g_autoptr(JsonGenerator) gen = json_generator_new();
     json_generator_set_root(gen, root);
     json_generator_set_pretty(gen, TRUE);
 
-    return json_generator_to_file(gen, path, NULL);
+    g_autofree gchar *json_data = json_generator_to_data(gen, NULL);
+    if (!json_data)
+        return FALSE;
+
+    return g_file_set_contents(path, json_data, -1, NULL);
 }
 
 void
@@ -838,6 +939,8 @@ shell_config_destroy(ShellConfig *config)
     g_free(config->screensaver_mode);
     g_free(config->ide_color_scheme);
     g_free(config->ide_font_family);
+    g_free(config->files_view_mode);
+    g_free(config->files_sort_field);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
     if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
     if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);

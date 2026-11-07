@@ -2603,13 +2603,17 @@
               <div class="header-center">
                 <!-- Interactive Breadcrumb / URI Entry Stack -->
                 <div id="breadcrumbView" class="files-breadcrumb-box">
-                  <button class="files-breadcrumb-btn">⌂ HOME</button>
+                  <button class="files-breadcrumb-btn" title="/">/</button>
                   <span class="files-breadcrumb-sep">▸</span>
-                  <button class="files-breadcrumb-btn">src</button>
+                  <button class="files-breadcrumb-btn" title="/home">home</button>
                   <span class="files-breadcrumb-sep">▸</span>
-                  <button class="files-breadcrumb-btn current">Kajo</button>
+                  <button class="files-breadcrumb-btn" title="/home/mikolas">⌂ mikolas</button>
+                  <span class="files-breadcrumb-sep">▸</span>
+                  <button class="files-breadcrumb-btn" title="/home/mikolas/src">src</button>
+                  <span class="files-breadcrumb-sep">▸</span>
+                  <button class="files-breadcrumb-btn current" title="/home/mikolas/src/Kajo">Kajo</button>
                 </div>
-                <input id="uriEntryView" type="text" class="kajo-entry" value="file:///home/mikolas/src/Kajo" style="display:none; height:26px; min-height:26px;" />
+                <input id="uriEntryView" type="text" class="kajo-entry" value="/home/mikolas/src/Kajo" style="display:none; height:26px; min-height:26px;" />
                 <button id="toggleUriBtn" class="kajo-btn files-nav-btn" title="Toggle Raw URI Entry (Ctrl+L)">✎</button>
               </div>
 
@@ -2627,14 +2631,17 @@
 
             <!-- Secondary Action Ribbon (.files-action-ribbon) -->
             <div class="files-action-ribbon">
-              <div style="display:flex; align-items:center; gap:6px;">
-                <button class="kajo-btn files-accent-btn files-nav-btn">+ NEW FOLDER</button>
-                <button class="kajo-btn files-nav-btn">⇅ SORT: Name ▲</button>
-                <button class="kajo-btn files-nav-btn">📋 PASTE</button>
+              <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                <button class="kajo-btn files-accent-btn files-nav-btn" title="Create New Folder (Ctrl+Shift+N)">+ NEW FOLDER</button>
+                <button class="kajo-btn files-nav-btn" title="Create New Empty File (Ctrl+Alt+N)">+ NEW FILE</button>
+                <button class="kajo-btn files-nav-btn" title="Paste Clipboard Files (Ctrl+V)">📋 PASTE</button>
+                <button class="kajo-btn files-nav-btn" title="Toggle Dotfiles (Ctrl+H)">👁 HIDDEN</button>
+                <button class="kajo-btn files-nav-btn">⇅ SORT: NAME ▲</button>
+                <button class="kajo-btn files-nav-btn" title="Open Terminal Here (Ctrl+Shift+T)">&gt;_ TERMINAL</button>
               </div>
               <div style="display:flex; align-items:center; gap:8px;">
                 <span class="shell-popover-badge">GIO / GVFS</span>
-                <span class="files-list-meta">14 items (2 hidden)</span>
+                <span class="files-list-meta">LOCATION: /home/mikolas/src/Kajo</span>
               </div>
             </div>
 
@@ -2686,22 +2693,35 @@
                     <div class="files-tile-name">SPEC_DESIGN_SYSTEM.md</div>
                     <div class="files-tile-meta">24.8 KB</div>
                   </div>
-                  <div class="files-tile-card">
-                    <div class="files-tile-thumb">PNG</div>
-                    <div class="files-tile-name">wallpaper_metro.png</div>
-                    <div class="files-tile-meta">3.4 MB</div>
+                  <div class="files-tile-card selected">
+                    <div class="files-tile-icon">📄</div>
+                    <div class="files-tile-name">ui-shot.sh</div>
+                    <div class="files-tile-meta">4.2 KB</div>
+                  </div>
+                </div>
+                <div style="margin-top:12px; padding:10px; background:#141414; border:1px solid var(--border-struct); display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="shell-popover-badge">INSPECTOR (Ctrl+I)</span>
+                    <span class="files-list-meta">PERMS: -rwxr-xr-x (0755)</span>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <button class="kajo-btn files-nav-btn active" title="Toggle POSIX Executable Bit (chmod +x/-x)">☑ EXECUTABLE (+X)</button>
+                    <button class="kajo-btn files-nav-btn">✏ RENAME (F2)</button>
                   </div>
                 </div>
                 <div class="specimen-note" style="margin-top:12px;">
-                  Selected sidebar items and list rows always render a crisp <code>3px solid #ffffff</code> left indicator bar against <code>@metro-accent</code>.
+                  Selected sidebar items and list rows always render a crisp <code>3px solid #ffffff</code> left indicator bar against <code>@metro-accent</code>. Rubber-band multi-selection is preserved by URI across live directory refreshes.
                 </div>
               </div>
             </div>
 
             <!-- Bottom Status Bar (.files-status-bar) -->
             <div class="files-status-bar">
-              <span>1 item selected: "src" (Directory)</span>
-              <span>Free space: 588.4 GB (NVMe Root)</span>
+              <div style="display:flex; align-items:center; gap:10px;">
+                <span>4 ITEMS (2 FOLDERS, 2 FILES)  |  SELECTED: 2 ITEMS (4.2 KB)</span>
+                <button class="kajo-btn files-nav-btn action-btn-danger" style="min-height:20px; padding:1px 7px; font-size:10px;" title="Cancel Active File Operation (Esc)">✕ CANCEL</button>
+              </div>
+              <span>FREE: 588.4 GB / 1.00 TB</span>
             </div>
           </div>
         </div>
@@ -3115,6 +3135,25 @@
             <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:#ff8080;">🗑 TRASH BIN (trash:///) — Items here can be restored or permanently deleted.</span>
             <button class="kajo-btn action-btn-danger files-nav-btn">EMPTY TRASH</button>
           </div>
+
+          <!-- 4. Virtual Read-Only Archive Banner (archive://) -->
+          <div class="files-prompt-bar">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent); flex:1;">📦 ARCHIVE VIEW (READ-ONLY) — release.tar.zst / src</span>
+            <div style="display:flex; gap:6px;">
+              <button class="kajo-btn files-accent-btn files-nav-btn">📦 EXTRACT ALL</button>
+              <button class="kajo-btn files-nav-btn">↩ EXIT</button>
+            </div>
+          </div>
+
+          <!-- 5. Compress to Archive Inline Prompt (PROMPT_COMPRESS) -->
+          <div class="files-prompt-bar">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:700; color:var(--metro-accent);">COMPRESS TO (.zip / .tar.zst / .tar.gz / .tar.xz):</span>
+            <input type="text" class="kajo-entry" value="kajo-release.tar.zst" style="max-width:260px; height:28px; min-height:28px;" />
+            <div style="display:flex; gap:6px;">
+              <button class="kajo-btn files-accent-btn files-nav-btn">COMPRESS</button>
+              <button class="kajo-btn files-nav-btn">CANCEL</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -3197,9 +3236,10 @@
               <div class="shell-popover-body" style="padding:6px; gap:2px;">
                 <div class="files-ctx-item"><span>▶ Open</span><span class="files-ctx-shortcut">Enter</span></div>
                 <div class="files-ctx-item" id="openWithTrigger" style="color:var(--metro-telemetry); font-weight:600;">
-                  <span>↗ Open With / Set Default...</span><span class="files-ctx-shortcut">▸</span>
+                  <span>⚙ Open With...</span><span class="files-ctx-shortcut">▸</span>
                 </div>
                 <div class="files-ctx-item"><span>👁 Quick Look Preview</span><span class="files-ctx-shortcut">Space</span></div>
+                <div class="files-ctx-item"><span>📦 Compress to Archive...</span><span class="files-ctx-shortcut">Ctrl+Shift+A</span></div>
                 <div class="ctx-separator"></div>
                 <div class="files-ctx-item"><span>✂ Cut</span><span class="files-ctx-shortcut">Ctrl+X</span></div>
                 <div class="files-ctx-item"><span>📋 Copy</span><span class="files-ctx-shortcut">Ctrl+C</span></div>
@@ -3239,6 +3279,27 @@
             </div>
           </div>
 
+          <!-- 2b. Open With for a disk image: built-in Mount row above the applications -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">OPEN WITH — DISK IMAGE (.iso / .img / .raw)</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-menu-row">.files-menu-row</span>
+              </div>
+            </div>
+            <div class="kajo-popover" style="max-width:320px;">
+              <div class="shell-popover-header">
+                <button class="kajo-btn files-nav-btn" style="min-height:22px; padding:1px 7px;">← BACK</button>
+                <span class="shell-popover-title">OPEN WITH</span>
+              </div>
+              <div class="shell-popover-body" style="gap:6px;">
+                <div class="files-menu-row"><span>💿 Mount Disk Image</span></div>
+                <div class="files-menu-row"><span>🗜 Archive Manager</span><span class="files-ctx-shortcut">org.gnome.FileRoller</span></div>
+              </div>
+            </div>
+            <p style="font-size:11px; color:#999; margin-top:8px;">Use: shown only for disk images. "Mount Disk Image" loop-mounts read-only through UDisks2 and opens the mounted folder; it ignores "Set as Default". Plain Open browses an ISO as <code>archive://</code> (no password) and mounts <code>.img</code> / <code>.raw</code>. Extracting an ISO uses the regular "Extract Here".</p>
+          </div>
+
           <!-- 3. Sort & Filter Popover (.files-sort-popover) -->
           <div class="specimen-box">
             <div class="specimen-box-header">
@@ -3270,6 +3331,67 @@
                   <span class="kajo-check-indicator">✔</span>
                   <span>Folders First</span>
                 </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="specimen-grid-2" style="margin-top:16px;">
+          <!-- 4. Breadcrumb Subfolder Jump Popover (Right-Click Any Path Segment) -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">BREADCRUMB SUBFOLDER JUMP POPOVER (RIGHT-CLICK SEGMENT)</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-breadcrumb-btn">.files-breadcrumb-btn</span>
+                <span class="gtk-class-tag" data-copy=".files-context-popover">.files-context-popover</span>
+              </div>
+            </div>
+
+            <div class="kajo-popover">
+              <div class="shell-popover-header">
+                <span class="shell-popover-title">📁 src</span>
+                <span class="shell-popover-badge">SUBFOLDERS</span>
+              </div>
+              <div class="shell-popover-body" style="gap:3px;">
+                <div class="files-menu-row"><span>📁 audio</span><span class="files-ctx-shortcut">›</span></div>
+                <div class="files-menu-row"><span>📁 compositor</span><span class="files-ctx-shortcut">›</span></div>
+                <div class="files-menu-row active"><span>📁 files</span><span class="files-ctx-shortcut">›</span></div>
+                <div class="files-menu-row"><span>📁 ide</span><span class="files-ctx-shortcut">›</span></div>
+                <div class="files-menu-row"><span>📁 player</span><span class="files-ctx-shortcut">›</span></div>
+                <div class="shell-popover-subtitle" style="padding:2px 6px;">… and 6 more subfolder(s)</div>
+                <div class="ctx-separator"></div>
+                <div class="files-menu-row"><span>🗔  Open in New Window</span><span class="files-ctx-shortcut">Ctrl+Click</span></div>
+                <div class="files-menu-row"><span>🔗  Copy Path / URI</span><span class="files-ctx-shortcut"></span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 5. Multi-Selection Batch Context Menu Popover -->
+          <div class="specimen-box">
+            <div class="specimen-box-header">
+              <span class="specimen-box-title">MULTI-SELECTION BATCH CONTEXT MENU (N &gt; 1 SELECTED)</span>
+              <div class="tag-cluster">
+                <span class="gtk-class-tag" data-copy=".files-context-popover">.files-context-popover</span>
+                <span class="gtk-class-tag" data-copy=".shell-popover-badge">.shell-popover-badge</span>
+              </div>
+            </div>
+
+            <div class="kajo-popover">
+              <div class="shell-popover-header">
+                <span class="shell-popover-title">3 ITEMS SELECTED</span>
+                <span class="shell-popover-badge">BATCH</span>
+              </div>
+              <div class="shell-popover-body" style="padding:6px; gap:2px;">
+                <div class="files-ctx-item"><span>📦 Compress to Archive...</span><span class="files-ctx-shortcut">Ctrl+Shift+A</span></div>
+                <div class="ctx-separator"></div>
+                <div class="files-ctx-item"><span>📋 Copy</span><span class="files-ctx-shortcut">Ctrl+C</span></div>
+                <div class="files-ctx-item"><span>✂ Cut</span><span class="files-ctx-shortcut">Ctrl+X</span></div>
+                <div class="files-ctx-item"><span>🔗 Copy Path / URI</span><span class="files-ctx-shortcut">Ctrl+Shift+C</span></div>
+                <div class="ctx-separator"></div>
+                <div class="files-ctx-item"><span>🗑 Move to Trash</span><span class="files-ctx-shortcut">Del</span></div>
+                <div class="files-ctx-item files-ctx-danger"><span>⚠ Delete Permanently</span><span class="files-ctx-shortcut">Shift+Del</span></div>
+                <div class="ctx-separator"></div>
+                <div class="files-ctx-item"><span>ⓘ Toggle Inspector</span><span class="files-ctx-shortcut">Ctrl+I</span></div>
               </div>
             </div>
           </div>

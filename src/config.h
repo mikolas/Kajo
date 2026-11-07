@@ -101,6 +101,14 @@ struct _ShellConfig {
     gboolean        ide_show_margin_guide;     /* vertical guide at column 100, default off */
     gboolean        ide_insert_spaces;         /* Tab inserts spaces (default) instead of \t */
 
+    /* Kajo Files (org.kajo.Files) View, Sort & Chrome Preferences */
+    gchar          *files_view_mode;           /* "grid" or "list", default "grid" */
+    gchar          *files_sort_field;          /* "name", "size", "modified", "type", default "name" */
+    gboolean        files_sort_ascending;      /* default TRUE */
+    gboolean        files_sort_folders_first;  /* default TRUE */
+    gboolean        files_show_hidden;         /* default FALSE */
+    gboolean        files_show_inspector;      /* default FALSE */
+
     GPtrArray      *layout_left;   /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_center; /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_right;  /* Array of ShellWidgetConfig* */

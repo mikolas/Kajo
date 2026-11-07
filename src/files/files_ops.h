@@ -18,6 +18,12 @@ void kajo_files_op_mkdir_async(GFile *parent_dir,
                                KajoFileOpCallback callback,
                                gpointer user_data);
 
+void kajo_files_op_create_file_async(GFile *parent_dir,
+                                     const char *file_name,
+                                     GCancellable *cancellable,
+                                     KajoFileOpCallback callback,
+                                     gpointer user_data);
+
 void kajo_files_op_rename_async(GFile *file,
                                 const char *new_name,
                                 GCancellable *cancellable,
@@ -25,38 +31,78 @@ void kajo_files_op_rename_async(GFile *file,
                                 gpointer user_data);
 
 void kajo_files_op_trash_async(GPtrArray *files,
+                               GCancellable *cancellable,
                                KajoFileOpCallback callback,
                                gpointer user_data);
 
-void kajo_files_op_restore_from_trash_async(KajoFileItem *item,
+void kajo_files_op_restore_from_trash_async(GPtrArray *items,
+                                            GCancellable *cancellable,
                                             KajoFileOpCallback callback,
                                             gpointer user_data);
 
-void kajo_files_op_empty_trash_async(KajoFileOpCallback callback,
+void kajo_files_op_empty_trash_async(GCancellable *cancellable,
+                                     KajoFileOpCallback callback,
                                      gpointer user_data);
 
 void kajo_files_op_delete_permanent_async(GPtrArray *files,
+                                          GCancellable *cancellable,
                                           KajoFileOpCallback callback,
                                           gpointer user_data);
 
 void kajo_files_op_transfer_async(GPtrArray *source_files,
                                   GFile *dest_dir,
                                   gboolean is_move,
+                                  GCancellable *cancellable,
                                   KajoFileOpCallback callback,
                                   gpointer user_data);
 
 void kajo_files_op_extract_archive_async(GFile *archive_file,
                                          GFile *dest_parent_dir,
+                                         GCancellable *cancellable,
                                          KajoFileOpCallback callback,
                                          gpointer user_data);
 
-/* Clipboard (Internal + Wayland GdkClipboard) */
+void kajo_files_op_compress_async(GPtrArray *source_files,
+                                  GFile *dest_parent_dir,
+                                  const char *archive_filename,
+                                  GCancellable *cancellable,
+                                  KajoFileOpCallback callback,
+                                  gpointer user_data);
+
+typedef void (*KajoArchiveEntryExtractCallback)(GFile *temp_file,
+                                                GError *error,
+                                                gpointer user_data);
+
+void kajo_files_op_extract_entry_to_temp_async(const char *archive_uri,
+                                               GCancellable *cancellable,
+                                               KajoArchiveEntryExtractCallback callback,
+                                               gpointer user_data);
+
+/* Clipboard (Wayland GdkClipboard) */
 void     kajo_files_clipboard_set(GPtrArray *files, gboolean is_cut);
 gboolean kajo_files_clipboard_has_files(void);
+gboolean kajo_files_parse_clipboard_data(const char *mime_type,
+                                         const char *raw_data,
+                                         gsize raw_len,
+                                         GPtrArray **out_files,
+                                         gboolean *out_is_cut);
 void     kajo_files_clipboard_paste_async(GFile *dest_dir,
+                                          GCancellable *cancellable,
                                           KajoFileOpCallback callback,
                                           gpointer user_data);
 char    *kajo_files_copy_path_to_clipboard(KajoFileItem *item);
+char    *kajo_files_copy_items_paths_to_clipboard(GPtrArray *items);
+/* Appends a clipboard chunk; FALSE (buffer untouched) when it would exceed the 4 MB cap. */
+/* Resolves symlinks in every existing ancestor of an absolute path (tail may not exist yet). */
+char *kajo_files_resolve_real_path(const char *path);
+
+/* Deletes direct children of `root` whose mtime is older than `max_age_sec` (never follows symlinks). */
+void kajo_files_prune_cache_dir(const char *root, gint64 max_age_sec);
+
+gboolean kajo_files_clipboard_buffer_append(GByteArray *buf, const guint8 *data, gsize len);
+gboolean kajo_files_toggle_executable(const char *local_path,
+                                      guint32 *out_new_mode,
+                                      GError **error);
 
 /* Desktop Launchers */
 void     kajo_files_open_item_default(KajoFileItem *item, GtkWindow *parent);

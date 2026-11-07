@@ -11,6 +11,7 @@
 #include "files_quicklook.h"
 #include "../compositor/compositor.h"
 #include <gio/gdesktopappinfo.h>
+#include <math.h>
 #include <string.h>
 
 G_BEGIN_DECLS
@@ -18,8 +19,10 @@ G_BEGIN_DECLS
 typedef enum {
     PROMPT_NONE = 0,
     PROMPT_MKDIR,
+    PROMPT_NEW_FILE,
     PROMPT_RENAME,
     PROMPT_DELETE_PERM,
+    PROMPT_COMPRESS,
 } InlinePromptKind;
 
 struct _KajoFilesWindow {
@@ -33,6 +36,7 @@ struct _KajoFilesWindow {
     GtkWidget *btn_up;
     GtkWidget *btn_reload;
     GtkStack *location_stack;
+    GtkScrolledWindow *breadcrumb_scroll;
     GtkWidget *breadcrumb_box;
     GtkWidget *btn_edit_uri;
     GtkWidget *uri_entry;
@@ -45,6 +49,7 @@ struct _KajoFilesWindow {
 
     GtkWidget *current_uri_badge;
     GtkWidget *btn_new_folder;
+    GtkWidget *btn_new_file;
     GtkWidget *btn_paste;
     GtkWidget *btn_hidden;
     GtkWidget *btn_sort;
@@ -63,6 +68,7 @@ struct _KajoFilesWindow {
     GtkWidget *auth_banner_revealer;
     GtkWidget *connect_banner_revealer;
     GtkWidget *trash_banner_revealer;
+    GtkWidget *archive_banner_revealer;
     GtkWidget *prompt_banner_revealer;
 
     GtkStack *view_stack;
@@ -76,12 +82,14 @@ struct _KajoFilesWindow {
     GtkWidget *inspector_vbox;
 
     GtkWidget *status_left_label;
+    GtkWidget *btn_cancel_op;
     GtkWidget *status_right_label;
     GtkWidget *fs_usage_bar;
 
     /* Inline Banner Sub-Widgets */
     GtkWidget *connect_entry;
     GtkWidget *trash_summary_lbl;
+    GtkWidget *archive_summary_lbl;
     GtkWidget *prompt_title_lbl;
     GtkWidget *prompt_entry;
     GtkWidget *prompt_submit_btn;
@@ -95,17 +103,34 @@ struct _KajoFilesWindow {
     GtkWidget *ctx_hdr_badge_lbl;
     GtkWidget *ctx_item_box;
     GtkWidget *ctx_bg_box;
+    GtkWidget *ctx_btn_open;
     GtkWidget *ctx_btn_open_with;
+    GtkWidget *ctx_btn_quicklook;
     GtkWidget *ctx_btn_extract;
+    GtkWidget *ctx_btn_compress;
     GtkWidget *ctx_btn_item_terminal;
     GtkWidget *ctx_btn_item_newwin;
     GtkWidget *ctx_btn_restore_trash;
+    GtkWidget *ctx_btn_cut;
+    GtkWidget *ctx_btn_rename;
     GtkWidget *ctx_btn_move_trash;
+    GtkWidget *ctx_btn_delete_perm;
+    GtkWidget *ctx_btn_bg_mkdir;
+    GtkWidget *ctx_btn_bg_new_file;
     GtkWidget *ctx_btn_bg_paste;
     GtkWidget *ctx_ow_mime_lbl;
     GtkWidget *ctx_ow_list_box;
     GtkWidget *ctx_ow_default_btn;
     gboolean open_with_set_default;
+
+    /* Breadcrumb Subfolder Jump Popover */
+    GtkWidget *breadcrumb_popover;
+    GtkWidget *bc_pop_hdr_lbl;
+    GtkWidget *bc_pop_list_box;
+    GCancellable *bc_pop_cancel;
+    char *bc_pop_target_uri;
+    gboolean pending_breadcrumb_scroll_end;
+    guint breadcrumb_scroll_idle_id;
 
     /* Subsystems */
     KajoFilesSidebar *sidebar;
@@ -115,14 +140,17 @@ struct _KajoFilesWindow {
     GFile *current_dir;
     GCancellable *enum_cancel;
     GCancellable *ops_cancel;
+    guint active_ops_count;
     GFileMonitor *dir_monitor;
     guint monitor_debounce_id;
 
     GPtrArray *all_items;      /* KajoFileItem* */
     GPtrArray *visible_items;  /* KajoFileItem* (filtered & sorted) */
     GListStore *visible_store; /* Recycling view model backing GridView & ListView */
-    GtkSingleSelection *selection_model;
+    GtkMultiSelection *selection_model;
     gboolean suppress_selection_sync;
+    GHashTable *nested_archive_origin; /* preview-cache archive path -> outer archive:// folder URI */
+    gboolean autoselect_pending; /* select first entry on the next rebuild (new folder) */
     KajoFileItem *selected_item;
 
     GPtrArray *history;        /* char* URIs */
@@ -147,11 +175,14 @@ void files_window_reload_directory(KajoFilesWindow *self);
 void files_window_rebuild_filtered_view(KajoFilesWindow *self);
 
 /* Helpers shared across the window modules (defined in files_window.c unless noted). */
+gboolean files_window_is_read_only_archive(const KajoFilesWindow *self);
 void     files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item);
 void     files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx);
 void     files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind);
 void     files_window_trash_selected_item(KajoFilesWindow *self);
 void     files_window_set_widget_active_class(GtkWidget *w, gboolean active);
+void     files_window_begin_op(KajoFilesWindow *self, const char *status_msg);
+void     files_window_cancel_active_ops(KajoFilesWindow *self);
 gpointer files_window_op_weak_new(KajoFilesWindow *self);
 void     files_window_on_file_op_completed(gboolean success, const char *message, GError *error, gpointer user_data);
 void     on_trash_restore_clicked(GtkButton *btn, gpointer user_data);
@@ -166,8 +197,13 @@ void     on_btn_up_clicked(GtkButton *btn, gpointer user_data);
 void     on_btn_edit_uri_clicked(GtkButton *btn, gpointer user_data);
 void     on_prompt_cancel_clicked(GtkButton *btn, gpointer user_data);
 void     on_connect_cancel_clicked(GtkButton *btn, gpointer user_data);
-int      files_window_get_selected_item_index(KajoFilesWindow *self);
-void     files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode);
+int        files_window_get_selected_item_index(KajoFilesWindow *self);
+GPtrArray *files_window_get_selected_items(KajoFilesWindow *self);
+void       files_window_select_all(KajoFilesWindow *self);
+/* Mounts a disk image via UDisks2 and navigates into it; `fallback_to_archive` (ISO only) browses
+ * it as archive:// when mounting is not possible. */
+void       files_window_open_disk_image(KajoFilesWindow *self, GFile *image, gboolean fallback_to_archive);
+void       files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode);
 
 /* Defined in files_window_keys.c */
 gboolean files_window_on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode,
