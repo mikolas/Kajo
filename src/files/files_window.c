@@ -145,8 +145,10 @@ files_window_begin_op(KajoFilesWindow *self, const char *status_msg)
 {
     if (!self) return;
     self->active_ops_count++;
-    if (self->btn_cancel_op)
+    if (self->btn_cancel_op) {
         gtk_widget_set_visible(self->btn_cancel_op, TRUE);
+        gtk_widget_set_sensitive(self->btn_cancel_op, TRUE);
+    }
     if (status_msg)
         files_window_set_status_message(self, status_msg, FALSE);
 }
@@ -160,11 +162,12 @@ files_window_cancel_active_ops(KajoFilesWindow *self)
         g_clear_object(&self->ops_cancel);
     }
     self->ops_cancel = g_cancellable_new();
-    self->active_ops_count = 0;
+    /* The counter is NOT reset: every cancelled operation still reports back (with
+     * G_IO_ERROR_CANCELLED) and decrements it then, so a newly started operation can
+     * never be miscounted by a late completion of a cancelled one. */
     if (self->btn_cancel_op)
-        gtk_widget_set_visible(self->btn_cancel_op, FALSE);
-    files_window_set_status_message(self, "Operation cancelled", FALSE);
-    files_window_reload_directory(self);
+        gtk_widget_set_sensitive(self->btn_cancel_op, FALSE);
+    files_window_set_status_message(self, "Cancelling…", FALSE);
 }
 
 static void
@@ -199,6 +202,11 @@ files_window_on_file_op_completed(gboolean success, const char *message, GError 
         gtk_widget_set_visible(self->btn_cancel_op, FALSE);
 
     if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+        files_window_set_status_message(
+            self, "Operation cancelled - items already processed stay changed", FALSE);
+        files_window_reload_directory(self);
+        if (self->sidebar)
+            kajo_files_sidebar_refresh(self->sidebar);
         g_object_unref(self);
         return;
     }
@@ -1217,7 +1225,11 @@ files_window_rebuild_filtered_view(KajoFilesWindow *self)
     );
 
     g_autoptr(GtkBitset) matched_bitset = kajo_files_match_selection_uris(self->visible_items, prev_uris);
-    if (matched_bitset && !gtk_bitset_is_empty(matched_bitset)) {
+    KajoRebuildSelectionAction sel_action = kajo_files_rebuild_selection_action(
+        matched_bitset && !gtk_bitset_is_empty(matched_bitset),
+        self->autoselect_pending,
+        query && query[0] != '\0');
+    if (sel_action == KAJO_REBUILD_SEL_RESTORE) {
         guint first_idx = gtk_bitset_get_minimum(matched_bitset);
         KajoFileItem *primary = g_ptr_array_index(self->visible_items, first_idx);
         g_set_object(&self->selected_item, primary);
@@ -1231,8 +1243,21 @@ files_window_rebuild_filtered_view(KajoFilesWindow *self)
 
         kajo_quicklook_set_item(self->quicklook, primary, self->current_dir);
         update_status_and_capacity_bar(self);
-    } else {
+    } else if (sel_action == KAJO_REBUILD_SEL_FIRST) {
+        /* Opening a folder, or filtering with the search box: land on the first entry.
+         * Any other refresh (file monitor, sort, hidden toggle, operation reload) must
+         * not resurrect a selection the user cleared. */
+        self->autoselect_pending = FALSE;
         files_window_set_selected_item_by_index(self, 0);
+    } else {
+        g_clear_object(&self->selected_item);
+        if (self->selection_model) {
+            self->suppress_selection_sync = TRUE;
+            gtk_selection_model_unselect_all(GTK_SELECTION_MODEL(self->selection_model));
+            self->suppress_selection_sync = FALSE;
+        }
+        kajo_quicklook_set_item(self->quicklook, NULL, self->current_dir);
+        update_status_and_capacity_bar(self);
     }
 }
 
@@ -1503,6 +1528,7 @@ kajo_files_window_navigate_uri(KajoFilesWindow *self, const char *uri_or_path)
 
     gboolean dir_changed = (!self->current_dir || !g_file_equal(self->current_dir, target));
     if (dir_changed) {
+        self->autoselect_pending = TRUE; /* fresh folder: select the first entry once it loads */
         g_clear_object(&self->selected_item);
         if (self->selection_model) {
             self->suppress_selection_sync = TRUE;

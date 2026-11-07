@@ -76,6 +76,8 @@ void     kajo_files_clipboard_paste_async(GFile *dest_dir,
                                           gpointer user_data);
 char    *kajo_files_copy_path_to_clipboard(KajoFileItem *item);
 char    *kajo_files_copy_items_paths_to_clipboard(GPtrArray *items);
+/* Appends a clipboard chunk; FALSE (buffer untouched) when it would exceed the 4 MB cap. */
+gboolean kajo_files_clipboard_buffer_append(GByteArray *buf, const guint8 *data, gsize len);
 gboolean kajo_files_toggle_executable(const char *local_path,
                                       guint32 *out_new_mode,
                                       GError **error);

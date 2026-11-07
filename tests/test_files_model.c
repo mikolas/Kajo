@@ -341,6 +341,37 @@ test_breadcrumb_chain_and_selection_restore(void)
 }
 
 static void
+test_clipboard_buffer_cap_never_truncates(void)
+{
+    g_autoptr(GByteArray) buf = g_byte_array_new();
+    guint8 chunk[64 * 1024];
+    memset(chunk, 'a', sizeof(chunk));
+
+    /* 4 MB fits exactly (64 chunks of 64 KB), one more byte must be refused untouched */
+    for (int i = 0; i < 64; i++)
+        g_assert_true(kajo_files_clipboard_buffer_append(buf, chunk, sizeof(chunk)));
+    g_assert_cmpuint(buf->len, ==, 4u * 1024u * 1024u);
+    g_assert_false(kajo_files_clipboard_buffer_append(buf, chunk, 1));
+    g_assert_cmpuint(buf->len, ==, 4u * 1024u * 1024u);
+
+    /* empty chunk = EOF marker, always accepted */
+    g_assert_true(kajo_files_clipboard_buffer_append(buf, chunk, 0));
+}
+
+static void
+test_rebuild_selection_policy(void)
+{
+    /* previously selected items still present: always restore */
+    g_assert_cmpint(kajo_files_rebuild_selection_action(TRUE, FALSE, FALSE), ==, KAJO_REBUILD_SEL_RESTORE);
+    g_assert_cmpint(kajo_files_rebuild_selection_action(TRUE, TRUE, TRUE), ==, KAJO_REBUILD_SEL_RESTORE);
+    /* new folder or active search: land on the first entry */
+    g_assert_cmpint(kajo_files_rebuild_selection_action(FALSE, TRUE, FALSE), ==, KAJO_REBUILD_SEL_FIRST);
+    g_assert_cmpint(kajo_files_rebuild_selection_action(FALSE, FALSE, TRUE), ==, KAJO_REBUILD_SEL_FIRST);
+    /* monitor event / sort / hidden toggle / op reload with a cleared selection: stay cleared */
+    g_assert_cmpint(kajo_files_rebuild_selection_action(FALSE, FALSE, FALSE), ==, KAJO_REBUILD_SEL_CLEAR);
+}
+
+static void
 test_clipboard_parsing_and_exec_toggle(void)
 {
     /* 1. x-special/gnome-copied-files with 'cut' */
@@ -419,6 +450,8 @@ main(int argc, char *argv[])
     g_test_add_func("/files/large-directory-scale", test_large_directory_scale);
     g_test_add_func("/files/breadcrumb-and-selection-restore", test_breadcrumb_chain_and_selection_restore);
     g_test_add_func("/files/clipboard-and-exec-toggle", test_clipboard_parsing_and_exec_toggle);
+    g_test_add_func("/files/clipboard-cap-no-truncation", test_clipboard_buffer_cap_never_truncates);
+    g_test_add_func("/files/rebuild-selection-policy", test_rebuild_selection_policy);
 
     return g_test_run();
 }

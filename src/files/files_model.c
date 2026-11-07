@@ -573,6 +573,18 @@ kajo_files_build_breadcrumb_chain(GFile *dir)
     return result;
 }
 
+KajoRebuildSelectionAction
+kajo_files_rebuild_selection_action(gboolean has_matches,
+                                    gboolean autoselect_pending,
+                                    gboolean search_active)
+{
+    if (has_matches)
+        return KAJO_REBUILD_SEL_RESTORE;
+    if (autoselect_pending || search_active)
+        return KAJO_REBUILD_SEL_FIRST;
+    return KAJO_REBUILD_SEL_CLEAR;
+}
+
 GtkBitset *
 kajo_files_match_selection_uris(GPtrArray *visible_items, GPtrArray *selected_uris)
 {

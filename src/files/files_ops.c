@@ -837,6 +837,18 @@ is_supported_clipboard_uri_scheme(const char *scheme)
 }
 
 gboolean
+kajo_files_clipboard_buffer_append(GByteArray *buf, const guint8 *data, gsize len)
+{
+    g_return_val_if_fail(buf != NULL, FALSE);
+    if (len == 0)
+        return TRUE;
+    if (!data || buf->len + len > CLIPBOARD_MAX_TOTAL_BYTES)
+        return FALSE; /* never keep a partial buffer: a cut-off last URI could name another file */
+    g_byte_array_append(buf, data, (guint)len);
+    return TRUE;
+}
+
+gboolean
 kajo_files_parse_clipboard_data(const char *mime_type,
                                 const char *raw_data,
                                 gsize raw_len,
@@ -985,8 +997,18 @@ on_clipboard_chunk_read(GObject *source, GAsyncResult *res, gpointer user_data)
 
     gsize chunk_len = 0;
     const guint8 *chunk_data = g_bytes_get_data(chunk, &chunk_len);
-    if (chunk_len > 0 && pctx->buf->len + chunk_len <= CLIPBOARD_MAX_TOTAL_BYTES) {
-        g_byte_array_append(pctx->buf, chunk_data, (guint)chunk_len);
+    if (chunk_len > 0 && !kajo_files_clipboard_buffer_append(pctx->buf, chunk_data, chunk_len)) {
+        g_input_stream_close(G_INPUT_STREAM(source), NULL, NULL);
+        if (pctx->callback) {
+            g_autoptr(GError) err = g_error_new_literal(
+                G_IO_ERROR, G_IO_ERROR_MESSAGE_TOO_LARGE,
+                "Clipboard file list is too large to paste (over 4 MB)");
+            pctx->callback(FALSE, NULL, err, pctx->user_data);
+        }
+        clipboard_paste_ctx_free(pctx);
+        return;
+    }
+    if (chunk_len > 0) {
         /* Continue reading until EOF (chunk_len == 0) */
         g_input_stream_read_bytes_async(
             pctx->stream,

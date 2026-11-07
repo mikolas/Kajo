@@ -89,6 +89,16 @@ typedef struct {
 
 void       kajo_breadcrumb_segment_free(gpointer data);
 GPtrArray *kajo_files_build_breadcrumb_chain(GFile *dir);
+typedef enum {
+    KAJO_REBUILD_SEL_RESTORE = 0,   /* previously selected items still exist: re-select them */
+    KAJO_REBUILD_SEL_FIRST,         /* new folder or active search: select the first entry */
+    KAJO_REBUILD_SEL_CLEAR          /* anything else: leave the selection cleared */
+} KajoRebuildSelectionAction;
+
+KajoRebuildSelectionAction kajo_files_rebuild_selection_action(gboolean has_matches,
+                                                              gboolean autoselect_pending,
+                                                              gboolean search_active);
+
 GtkBitset *kajo_files_match_selection_uris(GPtrArray *visible_items,
                                            GPtrArray *selected_uris);
 
