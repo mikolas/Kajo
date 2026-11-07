@@ -121,6 +121,16 @@ task_new(const char *system, const char *what, const char *cwd, char *command)
   return t;
 }
 
+/* Per-user scratch path ($XDG_CACHE_HOME/kajo/<name>); never a predictable name in the
+ * shared, world-writable temp directory (symlink clobbering, cross-user collisions). */
+static char *
+task_scratch_path(const char *name)
+{
+  g_autofree char *dir = g_build_filename(g_get_user_cache_dir(), "kajo", NULL);
+  g_mkdir_with_parents(dir, 0700);
+  return g_build_filename(dir, name, NULL);
+}
+
 void
 ide_task_free(IdeTask *t)
 {
@@ -269,7 +279,7 @@ ide_task_resolve(const char *workspace_root, const char *active_file, IdeTaskKin
   /* No build system: a lone .java file can still be compiled / run directly. */
   if (active_file != NULL && g_str_has_suffix(active_file, ".java")) {
     g_autofree char *q = g_shell_quote(active_file);
-    g_autofree char *out = g_build_filename(g_get_tmp_dir(), "kajo-java-out", NULL);
+    g_autofree char *out = task_scratch_path("java-out");
     g_autofree char *qo = g_shell_quote(out);
     g_autofree char *cwd = g_path_get_dirname(active_file);
     switch (kind) {
@@ -277,6 +287,24 @@ ide_task_resolve(const char *workspace_root, const char *active_file, IdeTaskKin
       case IDE_TASK_RUN:   return task_new("Java", what[kind], cwd, g_strdup_printf("java %s", q));
       default:             return NULL;
     }
+  }
+  /* Motorola 68000 (Amiga) assembly. Only offered when the vasm assembler is installed:
+   * .s/.S/.asm are also GNU/NASM sources for other CPUs, and silently running an m68k
+   * assembler on those would just produce confusing errors. The output is an Amiga hunk
+   * executable, written to the per-user cache. */
+  if (active_file != NULL && kind == IDE_TASK_BUILD &&
+      (g_str_has_suffix(active_file, ".s") || g_str_has_suffix(active_file, ".S") ||
+       g_str_has_suffix(active_file, ".asm") || g_str_has_suffix(active_file, ".ASM"))) {
+    g_autofree char *vasm = g_find_program_in_path("vasmm68k_mot");
+    if (vasm == NULL) {
+      return NULL;
+    }
+    g_autofree char *q = g_shell_quote(active_file);
+    g_autofree char *out = task_scratch_path("m68k-out.hunk");
+    g_autofree char *qo = g_shell_quote(out);
+    g_autofree char *cwd = g_path_get_dirname(active_file);
+    return task_new("vasm", what[kind], cwd,
+                    g_strdup_printf("vasmm68k_mot -Fhunkexe -kick1hunks -nosym -no-opt -o %s %s", qo, q));
   }
   return NULL;
 }

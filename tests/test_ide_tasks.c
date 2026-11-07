@@ -161,6 +161,38 @@ test_quoting_of_unusual_paths(void)
   ide_task_free(r);
 }
 
+static void
+test_m68k_build_requires_vasm_and_uses_cache_dir(void)
+{
+  g_autofree char *ws = make_ws();
+  touch(ws, "main.asm", "main:\n  rts\n");
+  g_autofree char *file = g_build_filename(ws, "main.asm", NULL);
+
+  /* No assembler on PATH: no task is offered (x86/ARM .asm projects are not hijacked). */
+  g_autofree char *old_path = g_strdup(g_getenv("PATH"));
+  g_setenv("PATH", ws, TRUE);
+  g_assert_null(ide_task_resolve(ws, file, IDE_TASK_BUILD));
+
+  /* With vasm installed the task is offered, builds only, and avoids the shared temp dir. */
+  g_autofree char *fake = g_build_filename(ws, "vasmm68k_mot", NULL);
+  g_assert_true(g_file_set_contents(fake, "#!/bin/sh\nexit 0\n", -1, NULL));
+  g_assert_cmpint(g_chmod(fake, 0755), ==, 0);
+  IdeTask *t = ide_task_resolve(ws, file, IDE_TASK_BUILD);
+  g_assert_nonnull(t);
+  g_assert_nonnull(strstr(t->command, "vasmm68k_mot"));
+  g_assert_nonnull(strstr(t->command, g_get_user_cache_dir()));
+  g_assert_null(strstr(t->command, "kajo-m68k.o"));
+  g_assert_nonnull(strstr(t->command, "/kajo/m68k-out.hunk"));
+  ide_task_free(t);
+  g_assert_null(ide_task_resolve(ws, file, IDE_TASK_RUN));
+  g_assert_null(ide_task_resolve(ws, file, IDE_TASK_CLEAN));
+
+  g_setenv("PATH", old_path != NULL ? old_path : "/usr/bin:/bin", TRUE);
+  g_unlink(fake);
+  g_unlink(file);
+  g_rmdir(ws);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -170,5 +202,6 @@ main(int argc, char **argv)
   g_test_add_func("/ide/tasks/native-and-go", test_native_and_go_projects);
   g_test_add_func("/ide/tasks/single-java-and-none", test_single_java_file_and_none);
   g_test_add_func("/ide/tasks/quoting", test_quoting_of_unusual_paths);
+  g_test_add_func("/ide/tasks/m68k-vasm-gated", test_m68k_build_requires_vasm_and_uses_cache_dir);
   return g_test_run();
 }

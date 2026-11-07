@@ -467,6 +467,27 @@ test_which_key_hud_matches_chord_table(void)
   }
 }
 
+static void
+test_vasm_diagnostics_are_clickable(void)
+{
+  IdeBuildIssue *iss = ide_parse_compiler_error_line(
+      "/w", "error 2001 in line 14 of \"src/main.s\": instruction not supported on selected architecture");
+  g_assert_nonnull(iss);
+  g_assert_cmpstr(iss->file_path, ==, "/w/src/main.s");
+  g_assert_cmpuint(iss->line_1based, ==, 14);
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_ERROR);
+  g_assert_true(g_str_has_prefix(iss->message, "[2001] instruction not supported"));
+  ide_build_issue_free(iss);
+
+  iss = ide_parse_compiler_error_line("/w", "warning 62 in line 3 of \"/abs/x.asm\": something odd");
+  g_assert_nonnull(iss);
+  g_assert_cmpstr(iss->file_path, ==, "/abs/x.asm");
+  g_assert_cmpint(iss->severity, ==, IDE_DIAG_WARNING);
+  ide_build_issue_free(iss);
+
+  g_assert_null(ide_parse_compiler_error_line("/w", "error in the middle of nowhere"));
+}
+
 static char *
 tag_signature(GtkTextBuffer *tbuf)
 {
@@ -554,6 +575,7 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/help-palette-leader-crosscheck", test_help_palette_leader_chords_crosscheck);
   g_test_add_func("/ide/buffer/tree-prompt-routing", test_tree_prompt_confirm_cancel_routing);
   g_test_add_func("/ide/buffer/which-key-hud-table", test_which_key_hud_matches_chord_table);
+  g_test_add_func("/ide/buffer/vasm-diagnostics", test_vasm_diagnostics_are_clickable);
 
   return g_test_run();
 }

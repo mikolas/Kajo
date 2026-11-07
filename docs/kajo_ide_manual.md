@@ -315,7 +315,8 @@ Call hierarchy, references list, signature help, semantic tokens (highlighting s
 | **Meson** (`meson.build`) | `meson setup` if needed + `meson compile -C builddir` | + `meson test --print-errorlogs` | build, then run the executable that owns the active file (from `meson-info/intro-targets.json`) | `--clean` |
 | **CMake** (`CMakeLists.txt`) | configure into `build/` (`Debug`, exports `compile_commands.json` for clangd) + `cmake --build build` | + `ctest --output-on-failure` | build, then run the newest executable under `build/` (the first run only builds and says so) | `--target clean` |
 | **Cargo** / **Go** / **Make** | `cargo build` / `go build ./...` / `make` | `cargo test` / `go test ./...` / `make test` | `cargo run` / `go run <package of the active file>` / `make` then `./<same-named binary>` (else `make run`) | `clean` |
-| *no build file, `.java` file* | `javac -d $TMP/kajo-java-out File.java` | — | `java File.java` | — |
+| *no build file, `.java` file* | `javac -d ~/.cache/kajo/java-out File.java` | — | `java File.java` | — |
+| *no build file, `.s` / `.S` / `.asm` file* | `vasmm68k_mot -Fhunkexe -kick1hunks -nosym -no-opt -o ~/.cache/kajo/m68k-out.hunk File.s` — **Amiga (Motorola 68000) only**, offered only when `vasmm68k_mot` is on `PATH`; other assembly dialects get no build task. vasm diagnostics (`error 2001 in line N of "file": …`) are clickable | — | — | — |
 
 For Java the language server and the build see the same project root, so a Maven/Gradle project that `jdtls` imported compiles with the exact same module layout. Run tasks have no stdin; interactive programs are not supported yet.
 

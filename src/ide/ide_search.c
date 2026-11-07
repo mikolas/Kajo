@@ -150,6 +150,32 @@ ide_parse_compiler_error_line(const char *workspace_root,
     return iss;
   }
 
+  /* vasm: error 2001 in line 3 of "main.s": instruction not supported ... */
+  static GRegex *s_vasm = NULL;
+  if (s_vasm == NULL) {
+    s_vasm = g_regex_new("^\\s*(fatal error|error|warning|message)\\s+(\\d+)\\s+in line\\s+(\\d+)\\s+of\\s+\"([^\"]+)\":\\s*(.*)$",
+                         G_REGEX_OPTIMIZE | G_REGEX_CASELESS, 0, NULL);
+  }
+  g_autoptr(GMatchInfo) vasm_mi = NULL;
+  if (s_vasm != NULL && g_regex_match(s_vasm, raw_line, 0, &vasm_mi)) {
+    g_autofree char *sev = g_match_info_fetch(vasm_mi, 1);
+    g_autofree char *code = g_match_info_fetch(vasm_mi, 2);
+    g_autofree char *ln = g_match_info_fetch(vasm_mi, 3);
+    g_autofree char *file = g_match_info_fetch(vasm_mi, 4);
+    g_autofree char *msg = g_match_info_fetch(vasm_mi, 5);
+    IdeBuildIssue *iss = g_new0(IdeBuildIssue, 1);
+    iss->file_path = (g_path_is_absolute(file) || workspace_root == NULL)
+                         ? g_canonicalize_filename(file, NULL)
+                         : g_canonicalize_filename(file, workspace_root);
+    iss->line_1based = (guint)MAX(1, g_ascii_strtoll(ln, NULL, 10));
+    iss->col_1based = 1;
+    iss->severity = g_ascii_strncasecmp(sev, "warning", 7) == 0 ? IDE_DIAG_WARNING
+                    : g_ascii_strncasecmp(sev, "message", 7) == 0 ? IDE_DIAG_INFO
+                                                                  : IDE_DIAG_ERROR;
+    iss->message = g_strdup_printf("[%s] %s", code, msg);
+    return iss;
+  }
+
   /* Match GCC / Clang / Rust / Go format: "path/to/file.c:142:5: error: msg" */
   static GRegex *s_rx = NULL;
   if (s_rx == NULL) {
