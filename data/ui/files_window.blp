@@ -229,6 +229,16 @@ template $KajoFilesWindow : ApplicationWindow {
           ]
         }
 
+        Button btn_new_file {
+          label: "+ NEW FILE";
+          tooltip-text: "Create New Empty File (Ctrl+Alt+N)";
+
+          styles [
+            "flat",
+            "files-nav-btn",
+          ]
+        }
+
         Button btn_paste {
           label: "📋 PASTE";
           tooltip-text: "Paste Clipboard Files (Ctrl+V)";
@@ -491,7 +501,7 @@ template $KajoFilesWindow : ApplicationWindow {
                   max-columns: 12;
                   min-columns: 2;
                   single-click-activate: false;
-                  enable-rubberband: false;
+                  enable-rubberband: true;
 
                   styles [
                     "files-tile-grid",
@@ -570,7 +580,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
                   ListView details_listview {
                     single-click-activate: false;
-                    enable-rubberband: false;
+                    enable-rubberband: true;
 
                     styles [
                       "files-details-list",

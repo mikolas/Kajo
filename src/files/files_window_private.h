@@ -19,6 +19,7 @@ G_BEGIN_DECLS
 typedef enum {
     PROMPT_NONE = 0,
     PROMPT_MKDIR,
+    PROMPT_NEW_FILE,
     PROMPT_RENAME,
     PROMPT_DELETE_PERM,
 } InlinePromptKind;
@@ -47,6 +48,7 @@ struct _KajoFilesWindow {
 
     GtkWidget *current_uri_badge;
     GtkWidget *btn_new_folder;
+    GtkWidget *btn_new_file;
     GtkWidget *btn_paste;
     GtkWidget *btn_hidden;
     GtkWidget *btn_sort;
@@ -132,7 +134,7 @@ struct _KajoFilesWindow {
     GPtrArray *all_items;      /* KajoFileItem* */
     GPtrArray *visible_items;  /* KajoFileItem* (filtered & sorted) */
     GListStore *visible_store; /* Recycling view model backing GridView & ListView */
-    GtkSingleSelection *selection_model;
+    GtkMultiSelection *selection_model;
     gboolean suppress_selection_sync;
     KajoFileItem *selected_item;
 
@@ -177,8 +179,10 @@ void     on_btn_up_clicked(GtkButton *btn, gpointer user_data);
 void     on_btn_edit_uri_clicked(GtkButton *btn, gpointer user_data);
 void     on_prompt_cancel_clicked(GtkButton *btn, gpointer user_data);
 void     on_connect_cancel_clicked(GtkButton *btn, gpointer user_data);
-int      files_window_get_selected_item_index(KajoFilesWindow *self);
-void     files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode);
+int        files_window_get_selected_item_index(KajoFilesWindow *self);
+GPtrArray *files_window_get_selected_items(KajoFilesWindow *self);
+void       files_window_select_all(KajoFilesWindow *self);
+void       files_window_set_view_mode(KajoFilesWindow *self, KajoFileViewMode mode);
 
 /* Defined in files_window_keys.c */
 gboolean files_window_on_key_pressed(GtkEventControllerKey *controller, guint keyval, guint keycode,

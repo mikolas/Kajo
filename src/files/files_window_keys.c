@@ -115,6 +115,10 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
         files_window_show_inline_prompt(self, PROMPT_MKDIR);
         return TRUE;
     }
+    if (ctrl && alt && !shift && (keyval == GDK_KEY_n || keyval == GDK_KEY_N)) {
+        files_window_show_inline_prompt(self, PROMPT_NEW_FILE);
+        return TRUE;
+    }
     if (ctrl && shift && (keyval == GDK_KEY_t || keyval == GDK_KEY_T)) {
         if (self->current_dir) kajo_files_open_terminal_at(self->current_dir);
         return TRUE;
@@ -177,29 +181,33 @@ files_window_on_key_pressed(GtkEventControllerKey *controller G_GNUC_UNUSED,
                 files_window_trash_selected_item(self);
             return TRUE;
         }
+        if (ctrl && !shift && !alt && (keyval == GDK_KEY_a || keyval == GDK_KEY_A)) {
+            files_window_select_all(self);
+            return TRUE;
+        }
         if (ctrl && !shift && (keyval == GDK_KEY_c || keyval == GDK_KEY_C)) {
-            if (self->selected_item) {
-                g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
-                g_ptr_array_add(arr, g_object_ref(self->selected_item));
-                kajo_files_clipboard_set(arr, FALSE);
+            g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+            if (sel_items && sel_items->len > 0) {
+                kajo_files_clipboard_set(sel_items, FALSE);
                 gtk_widget_set_sensitive(self->btn_paste, TRUE);
-                files_window_set_status_message(self, "Copied 1 item to clipboard", FALSE);
+                g_autofree char *msg = g_strdup_printf("Copied %u item(s) to clipboard", sel_items->len);
+                files_window_set_status_message(self, msg, FALSE);
                 return TRUE;
             }
         }
         if (ctrl && !shift && (keyval == GDK_KEY_x || keyval == GDK_KEY_X)) {
-            if (self->selected_item) {
-                g_autoptr(GPtrArray) arr = g_ptr_array_new_with_free_func(g_object_unref);
-                g_ptr_array_add(arr, g_object_ref(self->selected_item));
-                kajo_files_clipboard_set(arr, TRUE);
+            g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
+            if (sel_items && sel_items->len > 0) {
+                kajo_files_clipboard_set(sel_items, TRUE);
                 gtk_widget_set_sensitive(self->btn_paste, TRUE);
-                files_window_set_status_message(self, "Cut 1 item to clipboard", FALSE);
+                g_autofree char *msg = g_strdup_printf("Cut %u item(s) to clipboard", sel_items->len);
+                files_window_set_status_message(self, msg, FALSE);
                 return TRUE;
             }
         }
         if (ctrl && !shift && (keyval == GDK_KEY_v || keyval == GDK_KEY_V)) {
             if (self->current_dir) {
-                kajo_files_clipboard_paste_async(self->current_dir, files_window_on_file_op_completed, files_window_op_weak_new(self));
+                kajo_files_clipboard_paste_async(self->current_dir, self->ops_cancel, files_window_on_file_op_completed, files_window_op_weak_new(self));
                 return TRUE;
             }
         }

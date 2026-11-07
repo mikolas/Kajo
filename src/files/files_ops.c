@@ -58,6 +58,49 @@ kajo_files_op_mkdir_async(GFile *parent_dir,
     g_file_make_directory_async(child, G_PRIORITY_DEFAULT, cancellable, on_mkdir_ready, d);
 }
 
+/* ─── Create Empty File ─── */
+
+static void
+on_create_file_ready(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+    SimpleOpData *d = user_data;
+    GError *error = NULL;
+    g_autoptr(GFileOutputStream) stream = g_file_create_finish(G_FILE(source), res, &error);
+    if (stream)
+        g_output_stream_close(G_OUTPUT_STREAM(stream), NULL, NULL);
+
+    if (d->callback)
+        d->callback(stream != NULL, stream ? d->success_msg : NULL, error, d->user_data);
+
+    g_clear_error(&error);
+    simple_op_data_free(d);
+}
+
+void
+kajo_files_op_create_file_async(GFile *parent_dir,
+                                const char *file_name,
+                                GCancellable *cancellable,
+                                KajoFileOpCallback callback,
+                                gpointer user_data)
+{
+    g_return_if_fail(G_IS_FILE(parent_dir));
+    if (!file_name || file_name[0] == '\0') {
+        if (callback) {
+            g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "File name cannot be empty");
+            callback(FALSE, NULL, err, user_data);
+        }
+        return;
+    }
+
+    g_autoptr(GFile) child = g_file_get_child(parent_dir, file_name);
+    SimpleOpData *d = g_new0(SimpleOpData, 1);
+    d->callback = callback;
+    d->user_data = user_data;
+    d->success_msg = g_strdup_printf("Created file '%s'", file_name);
+
+    g_file_create_async(child, G_FILE_CREATE_NONE, G_PRIORITY_DEFAULT, cancellable, on_create_file_ready, d);
+}
+
 /* ─── Rename File / Folder ─── */
 
 static void
@@ -516,11 +559,12 @@ batch_op_worker(GTask *task,
 
             g_autoptr(GFile) dst = NULL;
             if (ctx->is_move) {
-                dst = g_file_get_child(ctx->dest_dir, base);
-                if (g_file_equal(src, dst))
+                g_autoptr(GFile) exact_dst = g_file_get_child(ctx->dest_dir, base);
+                if (g_file_equal(src, exact_dst))
                     continue;
+                dst = resolve_unique_dest_child(ctx->dest_dir, base);
                 GError *move_err = NULL;
-                if (!g_file_move(src, dst, G_FILE_COPY_OVERWRITE | G_FILE_COPY_NOFOLLOW_SYMLINKS,
+                if (!g_file_move(src, dst, G_FILE_COPY_NOFOLLOW_SYMLINKS,
                                  cancellable, NULL, NULL, &move_err)) {
                     if (g_error_matches(move_err, G_IO_ERROR, G_IO_ERROR_WOULD_RECURSE)) {
                         g_clear_error(&move_err);
@@ -607,6 +651,7 @@ clone_gfile_array(GPtrArray *files)
 
 void
 kajo_files_op_trash_async(GPtrArray *files,
+                          GCancellable *cancellable,
                           KajoFileOpCallback callback,
                           gpointer user_data)
 {
@@ -616,13 +661,14 @@ kajo_files_op_trash_async(GPtrArray *files,
     ctx->callback = callback;
     ctx->user_data = user_data;
 
-    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
 }
 
 void
 kajo_files_op_delete_permanent_async(GPtrArray *files,
+                                     GCancellable *cancellable,
                                      KajoFileOpCallback callback,
                                      gpointer user_data)
 {
@@ -632,13 +678,14 @@ kajo_files_op_delete_permanent_async(GPtrArray *files,
     ctx->callback = callback;
     ctx->user_data = user_data;
 
-    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
 }
 
 void
-kajo_files_op_empty_trash_async(KajoFileOpCallback callback,
+kajo_files_op_empty_trash_async(GCancellable *cancellable,
+                                KajoFileOpCallback callback,
                                 gpointer user_data)
 {
     BatchOpContext *ctx = g_new0(BatchOpContext, 1);
@@ -646,13 +693,14 @@ kajo_files_op_empty_trash_async(KajoFileOpCallback callback,
     ctx->callback = callback;
     ctx->user_data = user_data;
 
-    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
 }
 
 void
 kajo_files_op_restore_from_trash_async(KajoFileItem *item,
+                                       GCancellable *cancellable,
                                        KajoFileOpCallback callback,
                                        gpointer user_data)
 {
@@ -674,7 +722,7 @@ kajo_files_op_restore_from_trash_async(KajoFileItem *item,
     ctx->callback = callback;
     ctx->user_data = user_data;
 
-    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
 }
@@ -683,6 +731,7 @@ void
 kajo_files_op_transfer_async(GPtrArray *source_files,
                              GFile *dest_dir,
                              gboolean is_move,
+                             GCancellable *cancellable,
                              KajoFileOpCallback callback,
                              gpointer user_data)
 {
@@ -696,7 +745,7 @@ kajo_files_op_transfer_async(GPtrArray *source_files,
     ctx->callback = callback;
     ctx->user_data = user_data;
 
-    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
 }
@@ -704,6 +753,7 @@ kajo_files_op_transfer_async(GPtrArray *source_files,
 void
 kajo_files_op_extract_archive_async(GFile *archive_file,
                                     GFile *dest_parent_dir,
+                                    GCancellable *cancellable,
                                     KajoFileOpCallback callback,
                                     gpointer user_data)
 {
@@ -718,7 +768,7 @@ kajo_files_op_extract_archive_async(GFile *archive_file,
     ctx->callback = callback;
     ctx->user_data = user_data;
 
-    g_autoptr(GTask) task = g_task_new(NULL, NULL, on_batch_task_done, ctx);
+    g_autoptr(GTask) task = g_task_new(NULL, cancellable, on_batch_task_done, ctx);
     g_task_set_task_data(task, ctx, NULL);
     g_task_run_in_thread(task, batch_op_worker);
 }
@@ -743,45 +793,189 @@ kajo_files_clipboard_set(GPtrArray *files, gboolean is_cut)
     if (display && g_clip_files && g_clip_files->len > 0) {
         GdkClipboard *clipboard = gdk_display_get_clipboard(display);
         GString *uri_list = g_string_new(NULL);
+        GString *gnome_list = g_string_new(is_cut ? "cut\n" : "copy\n");
         for (guint i = 0; i < g_clip_files->len; i++) {
             GFile *f = g_ptr_array_index(g_clip_files, i);
             g_autofree char *uri = g_file_get_uri(f);
             if (uri) {
                 g_string_append(uri_list, uri);
                 g_string_append(uri_list, "\r\n");
+                g_string_append(gnome_list, uri);
+                g_string_append(gnome_list, "\n");
             }
         }
-        g_autoptr(GBytes) bytes = g_string_free_to_bytes(uri_list);
-        g_autoptr(GdkContentProvider) provider = gdk_content_provider_new_for_bytes("text/uri-list", bytes);
-        gdk_clipboard_set_content(clipboard, provider);
+        g_autoptr(GBytes) uri_bytes = g_string_free_to_bytes(uri_list);
+        g_autoptr(GBytes) gnome_bytes = g_string_free_to_bytes(gnome_list);
+        GdkContentProvider *providers[2] = {
+            gdk_content_provider_new_for_bytes("x-special/gnome-copied-files", gnome_bytes),
+            gdk_content_provider_new_for_bytes("text/uri-list", uri_bytes),
+        };
+        g_autoptr(GdkContentProvider) union_prov = gdk_content_provider_new_union(providers, 2);
+        gdk_clipboard_set_content(clipboard, union_prov);
     }
 }
 
 gboolean
 kajo_files_clipboard_has_files(void)
 {
-    return (g_clip_files != NULL && g_clip_files->len > 0);
+    if (g_clip_files != NULL && g_clip_files->len > 0)
+        return TRUE;
+
+    GdkDisplay *display = gdk_display_get_default();
+    if (display) {
+        GdkClipboard *clipboard = gdk_display_get_clipboard(display);
+        GdkContentFormats *formats = gdk_clipboard_get_formats(clipboard);
+        if (formats &&
+            (gdk_content_formats_contain_mime_type(formats, "x-special/gnome-copied-files") ||
+             gdk_content_formats_contain_mime_type(formats, "text/uri-list"))) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+typedef struct {
+    GFile *dest_dir;
+    GCancellable *cancellable;
+    KajoFileOpCallback callback;
+    gpointer user_data;
+    GInputStream *stream;
+    char *mime_used;
+} ClipboardPasteCtx;
+
+static void
+clipboard_paste_ctx_free(ClipboardPasteCtx *pctx)
+{
+    if (!pctx) return;
+    g_clear_object(&pctx->dest_dir);
+    g_clear_object(&pctx->cancellable);
+    g_clear_object(&pctx->stream);
+    g_free(pctx->mime_used);
+    g_free(pctx);
+}
+
+static void
+on_clipboard_bytes_read(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+    ClipboardPasteCtx *pctx = user_data;
+    GError *error = NULL;
+    g_autoptr(GBytes) bytes = g_input_stream_read_bytes_finish(G_INPUT_STREAM(source), res, &error);
+    g_input_stream_close(G_INPUT_STREAM(source), NULL, NULL);
+
+    if (!bytes) {
+        if (pctx->callback)
+            pctx->callback(FALSE, NULL, error, pctx->user_data);
+        g_clear_error(&error);
+        clipboard_paste_ctx_free(pctx);
+        return;
+    }
+
+    gsize len = 0;
+    const char *raw = g_bytes_get_data(bytes, &len);
+    g_autofree char *text = raw ? g_strndup(raw, len) : g_strdup("");
+    g_auto(GStrv) lines = g_strsplit_set(text, "\r\n", -1);
+
+    gboolean is_move = FALSE;
+    g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_object_unref);
+
+    for (int i = 0; lines && lines[i] != NULL; i++) {
+        char *line = g_strstrip(lines[i]);
+        if (line[0] == '\0' || line[0] == '#')
+            continue;
+        if (i == 0 && (g_strcmp0(line, "cut") == 0 || g_strcmp0(line, "copy") == 0)) {
+            is_move = (g_strcmp0(line, "cut") == 0);
+            continue;
+        }
+        if (strstr(line, "://") != NULL) {
+            g_ptr_array_add(files, g_file_new_for_uri(line));
+        } else if (line[0] == '/') {
+            g_ptr_array_add(files, g_file_new_for_path(line));
+        }
+    }
+
+    if (files->len == 0) {
+        if (pctx->callback) {
+            g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "No file URIs found in clipboard");
+            pctx->callback(FALSE, NULL, err, pctx->user_data);
+        }
+        clipboard_paste_ctx_free(pctx);
+        return;
+    }
+
+    kajo_files_op_transfer_async(files, pctx->dest_dir, is_move, pctx->cancellable, pctx->callback, pctx->user_data);
+    clipboard_paste_ctx_free(pctx);
+}
+
+static void
+on_clipboard_stream_ready(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+    ClipboardPasteCtx *pctx = user_data;
+    GError *error = NULL;
+    const char *out_mime = NULL;
+    GInputStream *stream = gdk_clipboard_read_finish(GDK_CLIPBOARD(source), res, &out_mime, &error);
+    if (!stream) {
+        if (pctx->callback)
+            pctx->callback(FALSE, NULL, error, pctx->user_data);
+        g_clear_error(&error);
+        clipboard_paste_ctx_free(pctx);
+        return;
+    }
+
+    pctx->stream = stream;
+    pctx->mime_used = g_strdup(out_mime);
+    g_input_stream_read_bytes_async(
+        stream,
+        256 * 1024,
+        G_PRIORITY_DEFAULT,
+        pctx->cancellable,
+        on_clipboard_bytes_read,
+        pctx
+    );
 }
 
 void
 kajo_files_clipboard_paste_async(GFile *dest_dir,
+                                 GCancellable *cancellable,
                                  KajoFileOpCallback callback,
                                  gpointer user_data)
 {
-    if (!g_clip_files || g_clip_files->len == 0) {
-        if (callback) {
-            g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "Clipboard is empty");
-            callback(FALSE, NULL, err, user_data);
+    GdkDisplay *display = gdk_display_get_default();
+    GdkClipboard *clipboard = display ? gdk_display_get_clipboard(display) : NULL;
+
+    if (g_clip_files && g_clip_files->len > 0 && (!clipboard || gdk_clipboard_is_local(clipboard))) {
+        gboolean is_move = g_clip_is_cut;
+        kajo_files_op_transfer_async(g_clip_files, dest_dir, is_move, cancellable, callback, user_data);
+        if (is_move) {
+            g_ptr_array_unref(g_clip_files);
+            g_clip_files = NULL;
+            g_clip_is_cut = FALSE;
         }
         return;
     }
 
-    gboolean is_move = g_clip_is_cut;
-    kajo_files_op_transfer_async(g_clip_files, dest_dir, is_move, callback, user_data);
-    if (is_move) {
-        g_ptr_array_unref(g_clip_files);
-        g_clip_files = NULL;
-        g_clip_is_cut = FALSE;
+    if (clipboard) {
+        static const char *mimes[] = {
+            "x-special/gnome-copied-files",
+            "text/uri-list",
+            NULL
+        };
+        GdkContentFormats *formats = gdk_clipboard_get_formats(clipboard);
+        if (formats &&
+            (gdk_content_formats_contain_mime_type(formats, mimes[0]) ||
+             gdk_content_formats_contain_mime_type(formats, mimes[1]))) {
+            ClipboardPasteCtx *pctx = g_new0(ClipboardPasteCtx, 1);
+            pctx->dest_dir = g_object_ref(dest_dir);
+            if (cancellable) pctx->cancellable = g_object_ref(cancellable);
+            pctx->callback = callback;
+            pctx->user_data = user_data;
+            gdk_clipboard_read_async(clipboard, mimes, G_PRIORITY_DEFAULT, cancellable, on_clipboard_stream_ready, pctx);
+            return;
+        }
+    }
+
+    if (callback) {
+        g_autoptr(GError) err = g_error_new_literal(G_IO_ERROR, G_IO_ERROR_NOT_FOUND, "Clipboard is empty");
+        callback(FALSE, NULL, err, user_data);
     }
 }
 

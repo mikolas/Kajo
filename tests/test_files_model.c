@@ -188,10 +188,35 @@ test_async_enum_and_ops(void)
     g_main_loop_run(st.loop);
     g_assert_true(st.op_ok);
 
-    /* 5. Clean up tmp_dir recursively via kajo_files_op_delete_permanent_async */
+    /* 5. Create empty file via kajo_files_op_create_file_async */
+    kajo_files_op_create_file_async(tmp_dir, "created_empty.txt", NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+    g_autoptr(GFile) created_file = g_file_get_child(tmp_dir, "created_empty.txt");
+    g_assert_true(g_file_query_exists(created_file, NULL));
+
+    /* 6. Verify non-clobbering move: moving a file into a directory that already has a file of the same name */
+    g_autoptr(GFile) subdir_file = g_file_get_child(tmp_dir, "subdir");
+    g_autofree char *sub_collision_path = g_build_filename(tmp_path, "subdir", "created_empty.txt", NULL);
+    g_assert_true(g_file_set_contents(sub_collision_path, "Existing content\n", -1, &err));
+    g_assert_no_error(err);
+
+    g_autoptr(GPtrArray) move_arr = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(move_arr, g_object_ref(created_file));
+    kajo_files_op_transfer_async(move_arr, subdir_file, TRUE, NULL, on_test_op_done, &st);
+    g_main_loop_run(st.loop);
+    g_assert_true(st.op_ok);
+
+    /* Both the original in subdir and the renamed moved file must exist */
+    g_autoptr(GFile) sub_orig = g_file_new_for_path(sub_collision_path);
+    g_autoptr(GFile) sub_moved = g_file_get_child(subdir_file, "created_empty (copy).txt");
+    g_assert_true(g_file_query_exists(sub_orig, NULL));
+    g_assert_true(g_file_query_exists(sub_moved, NULL));
+
+    /* 7. Clean up tmp_dir recursively via kajo_files_op_delete_permanent_async */
     g_autoptr(GPtrArray) del_arr = g_ptr_array_new_with_free_func(g_object_unref);
     g_ptr_array_add(del_arr, g_object_ref(tmp_dir));
-    kajo_files_op_delete_permanent_async(del_arr, on_test_op_done, &st);
+    kajo_files_op_delete_permanent_async(del_arr, NULL, on_test_op_done, &st);
     g_main_loop_run(st.loop);
     g_assert_true(st.op_ok);
     g_assert_false(g_file_query_exists(tmp_dir, NULL));
