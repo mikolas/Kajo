@@ -188,26 +188,30 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 
 | Chord | Category | Action |
 | :--- | :--- | :--- |
-| `Space f f` | Files | Open **Fuzzy File Finder** across workspace |
-| `Space f g` | Search | Open **Live Ripgrep (`rg`)** project-wide text search |
-| `Space b b` | Buffers | Open **Active Buffer Switcher** |
-| `Space w` | Files | Save active buffer to disk (`:w`) |
-| `Space q` | Window | Close buffer / Quit IDE (`:q`) |
+| `Space f f` / `Space Space` | Files | Open **Fuzzy File Finder** across workspace |
+| `Space /` / `Space f g` | Search | Open **Live Ripgrep (`rg`)** project-wide text search |
+| `/` / `Space s f` / `Space s /` | Search | Start incremental **In-Buffer Search** |
+| `Space b b` / `Space ,` | Buffers | Open **Active Buffer Switcher** |
+| `Space w s` / `Space f s` | Files | Save active buffer to disk (`Ctrl+S`) |
+| `Space w a` | Files | Save all modified buffers to disk |
+| `Space q` / `Space b d` | Buffers | Close active buffer |
+| `Space Q` / `Space w q` | Buffers | Force close active buffer (discarding unsaved changes) |
 | `Space e` | Explorer | Focus or toggle the **Project File Explorer** sidebar |
-| `Space h` / `?` / `F1` | Help | Open the **Interactive Help Viewer & Command Palette** |
-| `Space c a` | LSP | Code actions (quick fix / refactor) at the cursor or selection |
+| `Space ?` / `?` / `F1` | Help | Open the **Interactive Help Viewer & Command Palette** |
+| `Space c a` | LSP | Code actions (quick fix / refactor) at the cursor or selection (`1`–`9` or `Enter`) |
 | `Space c r` | LSP | Rename symbol across the workspace via the language server |
 | `Space c f` | LSP | Format current buffer via the language server |
 | `Space r b` / `r t` / `r r` / `r c` | Tasks | **Build** / **Test** / **Run** / **Clean** the project that owns the active file (output and clickable errors in the bottom *SEARCH / BUILD* drawer; modified buffers are saved first) |
-| `Space g c` | LSP | *(planned)* Call hierarchy — chord is bound, shows a notice |
-| `Space x x` | Diagnostics | Open **Workspace Diagnostics Drawer** |
+| `Space o` | Layout | Toggle bottom **Search / Build / DAP / Agent Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
-| `Space s R` | Search | Open **Project-Wide Search & Replace** in bottom drawer |
+| `Space s p` | Search | Open **Project-Wide Search & Replace** in bottom drawer |
+| `Space n h` / `Space p h` | Navigation | Jump to **Next / Previous Diff Hunk** in active buffer |
 | `Space m p` | Markdown | Toggle **Side-by-Side Graphical Markdown & Mermaid Split** |
-| `Space m m` | Markdown | Toggle **Bottom-Docked Markdown Preview Drawer** |
+| `Space m m` / `Space m d` | Markdown | Toggle **Bottom-Docked Markdown Preview Drawer** |
 | `Space m t` | Markdown | Toggle `- [ ]` / `- [x]` **Markdown Task Checkbox** on current line |
 | `Space d b` | Debugger | Toggle **DAP Breakpoint** on current line (same as `F9`) |
-| `Space d c` | Debugger | Start or Continue **DAP Debugger Session** (same as `F5`) |
+| `Space d d` / `Space d c` | Debugger | Start or Continue **DAP Debugger Session** (same as `F5`) |
+| `Space d p` | Debugger | **Pause** active DAP debuggee execution |
 | `Space d s` | AI Agent | Open **Agent Diff Review** for AI-modified buffers |
 | `Space d a` | AI Agent | **Accept All** pending AI agent edits in current buffer |
 | `Space d r` | AI Agent | **Revert All** pending AI agent edits in current buffer to pre-agent snapshot |
@@ -291,10 +295,11 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Format (`Space c f`, command palette *LSP › Format Buffer*):** `textDocument/formatting` applied as minimal edits.
 
 ### Fallbacks (no server for the file type, or server not installed)
-- Hover: one-line declaration via `ripgrep`. Completion: ranked identifiers from the buffer. Definition: `ripgrep` declaration search. Rename: whole-word replace in the current buffer.
+All fallback results are visibly badged in the UI and status bar (`[RG FALLBACK — NO LSP]`, `rg fallback`, `buffer fallback`):
+- Hover: asynchronous one-line declaration lookup via `ripgrep`. Completion: ranked identifiers from the buffer. Definition: asynchronous `ripgrep` declaration search. Rename: whole-word replace in the current buffer.
 
 ### Limits / not yet implemented
-Call hierarchy (`Space g c` shows a notice), references list, signature help, semantic tokens (highlighting stays tree-sitter based), incremental text sync (full-document sync is used), and the DAP client (§9).
+Call hierarchy, references list, signature help, semantic tokens (highlighting stays tree-sitter based), and incremental text sync (full-document sync is used).
 
 ---
 
