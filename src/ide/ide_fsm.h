@@ -226,6 +226,10 @@ const char   *ide_fsm_get_pending_chord(const IdeFsm *fsm);
 const char   *ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord);
 guint         ide_fsm_get_leader_timeout_ms(const IdeFsm *fsm);
 gboolean      ide_fsm_expire_leader(IdeFsm *fsm);
+/* TRUE while the tree's new-file/folder prompt owns confirm/cancel actions.
+ * The FSM clears its own editable flag when it emits Enter/Esc, so the
+ * visible prompt must be consulted as well; this is the single place that rule lives. */
+gboolean      ide_fsm_tree_prompt_active(const IdeFsm *fsm, gboolean prompt_visible);
 const char *const *ide_fsm_get_valid_leader_chords(void);
 
 gboolean      ide_fsm_get_drawer_editable(const IdeFsm *fsm);

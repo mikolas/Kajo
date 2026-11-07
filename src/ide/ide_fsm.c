@@ -265,6 +265,13 @@ ide_fsm_expire_leader(IdeFsm *fsm)
   return TRUE;
 }
 
+gboolean
+ide_fsm_tree_prompt_active(const IdeFsm *fsm, gboolean prompt_visible)
+{
+  g_return_val_if_fail(fsm != NULL, FALSE);
+  return fsm->tree_editable || prompt_visible;
+}
+
 const char *const *
 ide_fsm_get_valid_leader_chords(void)
 {
@@ -318,14 +325,15 @@ ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
     if (g_strcmp0(chord, "w") == 0) {
       return "w s  Save Buffer          w a  Save All           w q  Force Close\n"
              "w w  Cycle Pane           w h  Focus Tree         w l  Focus Editor\n"
-             "w j  Focus Drawer         w k  Focus Editor       w > / <  Resize Tree\n"
-             "w + / -  Resize Drawer";
+             "w j  Focus Drawer         w k  Focus Editor       w >  Grow Tree\n"
+             "w <  Shrink Tree          w +  Grow Drawer        w -  Shrink Drawer";
     }
     return "f / SPC  Find Files      b / ,  Buffers     /  Live Grep\n"
            "e        File Tree       a      Alt File    w  Window / Save\n"
            "m        Markdown/Merm   s      Search/Rep  d  Agent / Debug\n"
            "c        Code / Format   r      Run / Build q / Q  Close Buffer\n"
-           "g        Goto            n / p  Next/Prev   o  Drawer    ? / h  Help";
+           "g        Goto            n / p  Next/Prev   o  Drawer    ? / h  Help\n"
+           "k        Hover Docs";
   }
   if (state == IDE_STATE_MATCH_PENDING) {
     return "i + ( [ { \" ' w f c b a   Select Inside Delimiter / Word / AST\n"

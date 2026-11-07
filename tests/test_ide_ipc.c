@@ -659,6 +659,11 @@ static void test_lsp_manager_without_server(void) {
   ide_lsp_manager_request_format(lsp, buf);
   g_assert_nonnull(probe.last_msg);
   g_assert_nonnull(strstr(probe.last_msg, "No language server"));
+  /* Out-of-range selection (e.g. digit 5 with two code actions) must be rejected,
+   * never clamped onto a different item. */
+  g_assert_false(ide_lsp_manager_select_index(lsp, 0));
+  g_assert_false(ide_lsp_manager_select_index(lsp, 4));
+  g_assert_false(ide_lsp_manager_select_index(lsp, -1));
   /* buffers freed before the manager must not leave dangling notifications */
   ide_buffer_free(buf);
   ide_lsp_manager_free(lsp);

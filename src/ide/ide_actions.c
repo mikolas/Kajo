@@ -473,7 +473,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       gtk_widget_set_visible(self->tree_container, TRUE);
       break;
     case IDE_ACTION_PANE_FOCUS_BUFFER:
-      if (ide_tree_prompt_is_visible(self->tree) || ide_fsm_get_tree_editable(self->fsm)) {
+      if (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree))) {
         ide_tree_prompt_cancel(self->tree);
         ide_fsm_set_tree_editable(self->fsm, FALSE);
       }
@@ -484,7 +484,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       break;
     case IDE_ACTION_PANE_CYCLE:
       if (cur_st == IDE_STATE_TREE) {
-        if (ide_tree_prompt_is_visible(self->tree) || ide_fsm_get_tree_editable(self->fsm)) {
+        if (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree))) {
           ide_tree_prompt_cancel(self->tree);
           ide_fsm_set_tree_editable(self->fsm, FALSE);
         }
@@ -818,7 +818,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       }
       break;
     case IDE_ACTION_LSP_CANCEL:
-      if (ide_tree_prompt_is_visible(self->tree) || ide_fsm_get_tree_editable(self->fsm)) {
+      if (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree))) {
         ide_tree_prompt_cancel(self->tree);
         ide_fsm_set_tree_editable(self->fsm, FALSE);
       }
@@ -832,7 +832,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       break;
     case IDE_ACTION_LSP_SELECT_CONFIRM:
       if (cur_st == IDE_STATE_TREE &&
-          (ide_tree_prompt_is_visible(self->tree) || ide_fsm_get_tree_editable(self->fsm))) {
+          (ide_fsm_tree_prompt_active(self->fsm, ide_tree_prompt_is_visible(self->tree)))) {
         if (!ide_tree_prompt_confirm(self->tree)) {
           ide_window_show_toast(self, "Tree create cancelled (invalid path or file already exists)");
         }

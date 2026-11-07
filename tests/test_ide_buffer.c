@@ -361,6 +361,112 @@ test_help_palette_leader_chords_crosscheck(void)
   ide_fsm_free(fsm);
 }
 
+/* ---- Tree prompt: Enter/Esc must reach the visible prompt ------------------ */
+static void
+test_tree_prompt_confirm_cancel_routing(void)
+{
+  IdeFsm *fsm = ide_fsm_new();
+  ide_fsm_set_state(fsm, IDE_STATE_TREE);
+
+  IdeAction act = ide_fsm_handle_key(fsm, "a");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_TREE_CREATE_FILE);
+  g_assert_true(ide_fsm_get_tree_editable(fsm));
+  act = ide_fsm_handle_key(fsm, "x");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_INSERT_CHAR);
+
+  /* Enter: the FSM clears its own flag while emitting CONFIRM. The dispatcher must
+   * still route to the tree because the prompt is visible (this was the regression). */
+  act = ide_fsm_handle_key(fsm, "enter");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_SELECT_CONFIRM);
+  g_assert_false(ide_fsm_get_tree_editable(fsm));
+  g_assert_true(ide_fsm_tree_prompt_active(fsm, TRUE));
+  g_assert_false(ide_fsm_tree_prompt_active(fsm, FALSE));
+
+  /* Same for Esc */
+  ide_fsm_set_state(fsm, IDE_STATE_TREE);
+  ide_fsm_handle_key(fsm, "A");
+  g_assert_true(ide_fsm_tree_prompt_active(fsm, FALSE));
+  act = ide_fsm_handle_key(fsm, "esc");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CANCEL);
+  g_assert_true(ide_fsm_tree_prompt_active(fsm, TRUE));
+  ide_fsm_free(fsm);
+}
+
+/* ---- Which-key HUD must match the chord table in both directions ------------ */
+static gboolean
+chord_is_valid(const char *chord)
+{
+  const char *const *valid = ide_fsm_get_valid_leader_chords();
+  for (gsize i = 0; valid[i] != NULL; i++) {
+    if (g_strcmp0(valid[i], chord) == 0) return TRUE;
+  }
+  return FALSE;
+}
+
+static gboolean
+hud_has_pair(const char *hud, char first, char second)
+{
+  g_autofree char *needle = g_strdup_printf("%c %c ", first, second);
+  const char *p = hud;
+  while ((p = strstr(p, needle)) != NULL) {
+    gboolean boundary = (p == hud) || !g_ascii_isalpha(p[-1]);
+    gboolean tail_ok = p[3] == ' ' || p[3] == '\0' || p[3] == '\n' || p[3] == '/';
+    if (boundary && tail_ok) return TRUE;
+    p++;
+  }
+  return FALSE;
+}
+
+static void
+test_which_key_hud_matches_chord_table(void)
+{
+  const char *const *valid = ide_fsm_get_valid_leader_chords();
+  const char *root = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, "");
+  g_assert_nonnull(root);
+
+  /* Forward: every two-key chord is listed under its first key's HUD. */
+  for (gsize i = 0; valid[i] != NULL; i++) {
+    const char *c = valid[i];
+    if (strlen(c) == 2) {
+      char pending[2] = { c[0], '\0' };
+      const char *hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, pending);
+      if (!hud_has_pair(hud, c[0], c[1])) {
+        g_test_message("HUD for '%s' does not list chord '%s'", pending, c);
+      }
+      g_assert_true(hud_has_pair(hud, c[0], c[1]));
+      /* and the root HUD names the group key */
+      g_autofree char *tok = g_strdup_printf("%c ", c[0]);
+      g_assert_nonnull(strstr(root, tok));
+    } else if (strlen(c) == 1 && c[0] != ' ') {
+      g_autofree char *tok = g_strdup_printf("%c ", c[0]);
+      if (strstr(root, tok) == NULL) {
+        g_test_message("Root HUD does not mention single-key chord '%s'", c);
+      }
+      g_assert_nonnull(strstr(root, tok));
+    }
+  }
+
+  /* Backward: every "x y" pair a group HUD advertises is a real chord. */
+  const char groups[] = "bcdfgmnprsw";
+  for (const char *g = groups; *g; g++) {
+    char pending[2] = { *g, '\0' };
+    const char *hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, pending);
+    g_assert_nonnull(hud);
+    g_assert_true(hud[0] != '\0');
+    for (const char *p = hud; *p; p++) {
+      if (*p == *g && (p == hud || !g_ascii_isalpha(p[-1])) && p[1] == ' ' &&
+          p[2] != '\0' && p[2] != ' ' && p[3] == ' ' &&
+          !(p[2] == '/' && p[4] != ' ')) { /* "d / d c" is an alternation separator, "s /  x" is the chord */
+        char chord[3] = { *g, p[2], '\0' };
+        if (!chord_is_valid(chord)) {
+          g_test_message("HUD for '%s' advertises non-existent chord '%s'", pending, chord);
+        }
+        g_assert_true(chord_is_valid(chord));
+      }
+    }
+  }
+}
+
 static char *
 tag_signature(GtkTextBuffer *tbuf)
 {
@@ -446,6 +552,8 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/semantic-token-highlighter", test_semantic_token_highlighter);
   g_test_add_func("/ide/buffer/treesitter-incremental-tags", test_treesitter_incremental_tags_match_fresh);
   g_test_add_func("/ide/buffer/help-palette-leader-crosscheck", test_help_palette_leader_chords_crosscheck);
+  g_test_add_func("/ide/buffer/tree-prompt-routing", test_tree_prompt_confirm_cancel_routing);
+  g_test_add_func("/ide/buffer/which-key-hud-table", test_which_key_hud_matches_chord_table);
 
   return g_test_run();
 }
