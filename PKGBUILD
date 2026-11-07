@@ -53,6 +53,7 @@ makedepends=(
 optdepends=(
     'ripgrep: kajo-ide search, live grep, hover and go-to-definition'
     'git: kajo-ide file tree status'
+    'm68k-lsp-server: kajo-ide Motorola 68000 language server (vasmm68k_mot from vasm is needed for its build task)'
     'gvfs: kajo-files network/trash locations'
     'gvfs-smb: kajo-files SMB shares'
     'udisks2: kajo-files drive mounting'

@@ -161,6 +161,7 @@ Optional runtime tools for **`kajo-ide`** language intelligence, search, and deb
 ```bash
 sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
 ```
+For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server` (language server) and `vasmm68k_mot` from the [vasm](http://sun.hasenbraten.de/vasm/) distribution (build task and diagnostics) must be on `PATH`; both are optional.
 
 ### 2. Build, Verify & Install (`~/.local`)
 By default, `meson.build` configures `prefix=~/.local`, installing all six binaries to `~/.local/bin` and theme/syntax assets to `~/.local/share/kajo/`:

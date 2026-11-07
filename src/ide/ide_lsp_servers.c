@@ -19,6 +19,7 @@ static const char *const kRustMarkers[] = { "Cargo.toml", NULL };
 static const char *const kPyMarkers[] = { "pyproject.toml", "setup.py", "setup.cfg", "requirements.txt", NULL };
 static const char *const kJsMarkers[] = { "tsconfig.json", "jsconfig.json", "package.json", NULL };
 static const char *const kMesonMarkers[] = { "meson.build", NULL };
+static const char *const kM68kMarkers[] = { ".m68krc.json", ".m68k-format.json", "Makefile", NULL };
 static const char *const kNoMarkers[] = { NULL };
 
 static const IdeLspServerSpec kGopls = { "gopls", "gopls", kNoArgs, kGoMarkers };
@@ -33,6 +34,7 @@ static const IdeLspServerSpec kYamlLs = { "yaml-ls", "yaml-language-server", kSt
 static const IdeLspServerSpec kTaplo = { "taplo", "taplo", kTaploArgs, kNoMarkers };
 static const IdeLspServerSpec kLuaLs = { "lua-ls", "lua-language-server", kNoArgs, kNoMarkers };
 static const IdeLspServerSpec kMesonLs = { "mesonlsp", "mesonlsp", kMesonArgs, kMesonMarkers };
+static const IdeLspServerSpec kM68kLs = { "m68k-lsp", "m68k-lsp-server", kStdioArg, kM68kMarkers };
 /* Test hook: KAJO_LSP_MOCK_CMD names a command line serving *.kajo-mock files. */
 static const IdeLspServerSpec kMock = { "mock", "mock", kNoArgs, kNoMarkers };
 
@@ -66,9 +68,43 @@ static const FileRule kRules[] = {
   { ".yml", "yaml", &kYamlLs },
   { ".toml", "toml", &kTaplo },
   { ".lua", "lua", &kLuaLs },
+  { ".s", "m68k", &kM68kLs },
+  { ".S", "m68k", &kM68kLs },
+  { ".asm", "m68k", &kM68kLs },
+  { ".ASM", "m68k", &kM68kLs },
+  { ".i", "m68k", &kM68kLs },
+  { ".I", "m68k", &kM68kLs },
   { "meson.build", "meson", &kMesonLs },
   { ".kajo-mock", "mock", &kMock },
 };
+
+/* `.s` / `.S` / `.asm` / `.i` are shared with GNU, NASM and other tools, so the m68k rules
+ * only apply inside a project that opts in: an ancestor directory holding `.m68krc.json` or
+ * `.m68k-format.json`, or KAJO_M68K_ASM=1. INTERIM: a proper per-project language setting
+ * should replace this marker probe. */
+static gboolean
+is_m68k_project_file(const char *file_path)
+{
+  const char *force = g_getenv("KAJO_M68K_ASM");
+  if (force != NULL && g_strcmp0(force, "1") == 0) {
+    return TRUE;
+  }
+  g_autofree char *dir = g_path_get_dirname(file_path);
+  while (dir != NULL && dir[0] != '\0') {
+    g_autofree char *a = g_build_filename(dir, ".m68krc.json", NULL);
+    g_autofree char *b = g_build_filename(dir, ".m68k-format.json", NULL);
+    if (g_file_test(a, G_FILE_TEST_IS_REGULAR) || g_file_test(b, G_FILE_TEST_IS_REGULAR)) {
+      return TRUE;
+    }
+    g_autofree char *parent = g_path_get_dirname(dir);
+    if (g_strcmp0(parent, dir) == 0) {
+      break;
+    }
+    g_free(dir);
+    dir = g_steal_pointer(&parent);
+  }
+  return FALSE;
+}
 
 static const FileRule *
 rule_for(const char *file_path)
@@ -79,6 +115,9 @@ rule_for(const char *file_path)
   for (gsize i = 0; i < G_N_ELEMENTS(kRules); i++) {
     if (g_str_has_suffix(file_path, kRules[i].suffix)) {
       if (kRules[i].spec == &kMock && g_getenv("KAJO_LSP_MOCK_CMD") == NULL) {
+        continue;
+      }
+      if (kRules[i].spec == &kM68kLs && !is_m68k_project_file(file_path)) {
         continue;
       }
       return &kRules[i];
@@ -121,6 +160,30 @@ ide_lsp_language_id_for_file(const char *file_path)
     return "cpp";
   }
   return r->language_id;
+}
+
+char *
+ide_lsp_fallback_pattern(const char *file_path, const char *symbol, gboolean definition)
+{
+  g_autofree char *sym = g_regex_escape_string(symbol != NULL ? symbol : "", -1);
+  if (g_strcmp0(ide_lsp_language_id_for_file(file_path), "m68k") == 0) {
+    /* label ("name:" / "name::"), assignment ("name = x") or directive ("name equ x") */
+    return g_strdup_printf("^\\s*%s(?::{1,2}|\\s*=|\\s+(?:equ|fequ|macro|set|reg|equr)\\b)", sym);
+  }
+  if (definition) {
+    return g_strdup_printf("(?:^|\\s)(?:func\\s+|def\\s+|struct\\s+|#define\\s+)?%s\\s*[\\(\\{=]", sym);
+  }
+  return g_strdup_printf("\\b%s\\s*[\\(;\\{]", sym);
+}
+
+const char *const *
+ide_lsp_fallback_globs(const char *file_path)
+{
+  static const char *const kNone[] = { NULL };
+  static const char *const kM68k[] = {
+    "--glob=*.s", "--glob=*.S", "--glob=*.asm", "--glob=*.ASM", "--glob=*.i", "--glob=*.I", NULL
+  };
+  return g_strcmp0(ide_lsp_language_id_for_file(file_path), "m68k") == 0 ? kM68k : kNone;
 }
 
 char *

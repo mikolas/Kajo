@@ -283,6 +283,7 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 | **Rust** | `.rs` | `rust-analyzer` | `Cargo.toml` root |
 | **Python** | `.py` | `pyright-langserver` | |
 | **TypeScript / JavaScript** | `.ts .tsx .js .jsx` | `typescript-language-server` | |
+| **Motorola 68000** | `.s .S .asm .ASM .i .I` | `m68k-lsp-server` | `.m68krc.json` / `.m68k-format.json` / `Makefile` root; uses `vasmm68k_mot` diagnostics and `m68k-formatter`. **Opt-in per project (interim):** these extensions are also GNU/NASM assembly (and `.i` other formats), so the language server, language id and `rg` fallbacks apply only when an ancestor directory contains `.m68krc.json` or `.m68k-format.json`, or `KAJO_M68K_ASM=1` is set. Tree-sitter highlighting and the vasm build task are still keyed on the extension (task: only if `vasmm68k_mot` is on `PATH`) — to be replaced by a proper per-project language setting |
 | **Shell / JSON / YAML / TOML / Lua / Meson** | `.sh .json .yaml .toml .lua meson.build` | `bash-language-server`, `vscode-json-language-server`, `yaml-language-server`, `taplo`, `lua-language-server`, `mesonlsp` | |
 
 ### Workflows (server running)

@@ -1525,12 +1525,23 @@ legacy_hover(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf, guint l
 {
   g_autofree char *symbol = extract_word_at_cursor(buf, NULL);
   if (symbol != NULL && symbol[0] != '\0' && lsp->workspace_root != NULL) {
-    g_autofree char *pat = g_strdup_printf("\\b%s\\s*[\\(;\\{]", symbol);
-    const char *argv[] = {
-      "rg", "--no-heading", "--line-number", "--max-count=1",
-      "--glob=!.git", "--glob=!builddir", "--",
-      pat, lsp->workspace_root, NULL
-    };
+    const char *src_path = ide_buffer_get_file_path(buf);
+    g_autofree char *pat = ide_lsp_fallback_pattern(src_path, symbol, FALSE);
+    g_autoptr(GPtrArray) av = g_ptr_array_new();
+    for (const char *const *a = (const char *const[]){ "rg", "--no-heading", "--line-number",
+                                                       "--max-count=1", "--glob=!.git",
+                                                       "--glob=!builddir", NULL };
+         *a != NULL; a++) {
+      g_ptr_array_add(av, (gpointer)*a);
+    }
+    for (const char *const *g = ide_lsp_fallback_globs(src_path); *g != NULL; g++) {
+      g_ptr_array_add(av, (gpointer)*g);
+    }
+    g_ptr_array_add(av, (gpointer)"--");
+    g_ptr_array_add(av, pat);
+    g_ptr_array_add(av, lsp->workspace_root);
+    g_ptr_array_add(av, NULL);
+    const char *const *argv = (const char *const *)av->pdata;
     if (lsp->rg_cancellable != NULL) {
       g_cancellable_cancel(lsp->rg_cancellable);
       g_clear_object(&lsp->rg_cancellable);
@@ -2111,13 +2122,23 @@ legacy_definition(IdeLspManager *lsp, IdeBuffer *buf)
     return;
   }
 
-  g_autofree char *pat = g_strdup_printf("(?:^|\\s)(?:func\\s+|def\\s+|struct\\s+|#define\\s+)?%s\\s*[\\(\\{=]",
-                                         symbol);
-  const char *argv[] = {
-    "rg", "--vimgrep", "--no-heading", "--max-count=1",
-    "--glob=!.git", "--glob=!builddir", "--", pat,
-    lsp->workspace_root ? lsp->workspace_root : ".", NULL
-  };
+  const char *src_path = ide_buffer_get_file_path(buf);
+  g_autofree char *pat = ide_lsp_fallback_pattern(src_path, symbol, TRUE);
+  g_autoptr(GPtrArray) av = g_ptr_array_new();
+  for (const char *const *a = (const char *const[]){ "rg", "--vimgrep", "--no-heading",
+                                                     "--max-count=1", "--glob=!.git",
+                                                     "--glob=!builddir", NULL };
+       *a != NULL; a++) {
+    g_ptr_array_add(av, (gpointer)*a);
+  }
+  for (const char *const *g = ide_lsp_fallback_globs(src_path); *g != NULL; g++) {
+    g_ptr_array_add(av, (gpointer)*g);
+  }
+  g_ptr_array_add(av, (gpointer)"--");
+  g_ptr_array_add(av, pat);
+  g_ptr_array_add(av, (gpointer)(lsp->workspace_root ? lsp->workspace_root : "."));
+  g_ptr_array_add(av, NULL);
+  const char *const *argv = (const char *const *)av->pdata;
   if (lsp->rg_cancellable != NULL) {
     g_cancellable_cancel(lsp->rg_cancellable);
     g_clear_object(&lsp->rg_cancellable);

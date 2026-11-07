@@ -700,7 +700,7 @@ test('ide-ts', test_ide_ts_exe)
 
 test_lsp_client_exe = executable(
   'test-lsp-client',
-  files('tests/test_lsp_client.c', 'src/ide/ide_lsp_client.c', 'src/ide/ide_jsonrpc.c'),
+  files('tests/test_lsp_client.c', 'src/ide/ide_lsp_client.c', 'src/ide/ide_lsp_servers.c', 'src/ide/ide_jsonrpc.c'),
   dependencies: [gio_dep, json_glib_dep],
   build_by_default: false,
 )
