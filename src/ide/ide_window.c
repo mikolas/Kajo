@@ -202,10 +202,22 @@ static void on_config_file_changed(GFileMonitor      *monitor,
   }
 }
 
+static gboolean on_leader_timeout_cb(gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  self->leader_timer_id = 0;
+  if (self->fsm && ide_fsm_expire_leader(self->fsm)) {
+    ide_window_update_status_bar_and_hud(self);
+  }
+  return G_SOURCE_REMOVE;
+}
+
 void ide_window_update_status_bar_and_hud(KajoIdeWindow *self) {
   if (!self || !self->mode_pill) return;
 
   IdeState st = ide_fsm_get_state(self->fsm);
+  if (st != IDE_STATE_LEADER) {
+    g_clear_handle_id(&self->leader_timer_id, g_source_remove);
+  }
   gtk_label_set_text(GTK_LABEL(self->mode_pill), ide_state_to_string(st));
 
   const char *mode_classes[] = {
@@ -259,35 +271,8 @@ void ide_window_update_status_bar_and_hud(KajoIdeWindow *self) {
     g_autofree char *hud_hdr = g_strdup_printf("LEADER CHORD (%s)", badge);
     gtk_label_set_text(GTK_LABEL(self->chord_hud_title), hud_hdr);
     if (self->chord_hud_grid) {
-      if (g_strcmp0(chord, "m") == 0) {
-        gtk_label_set_text(
-            GTK_LABEL(self->chord_hud_grid),
-            "m p  Toggle Markdown GUI Split      m m  Mermaid Vector Drawer");
-      } else if (g_strcmp0(chord, "s") == 0) {
-        gtk_label_set_text(
-            GTK_LABEL(self->chord_hud_grid),
-            "s r  Buffer Search & Replace        s p  Project-Wide Replace");
-      } else if (g_strcmp0(chord, "d") == 0) {
-        gtk_label_set_text(
-            GTK_LABEL(self->chord_hud_grid),
-            "d s  Review Agent Diffs   d a  Accept All     d r  Revert All\n"
-            "d b  Toggle Breakpoint    d c  Start/Cont     d v  DAP Drawer");
-      } else if (g_strcmp0(chord, "c") == 0) {
-        gtk_label_set_text(
-            GTK_LABEL(self->chord_hud_grid),
-            "c a  LSP Code Action      c r  LSP Rename     c h  Clear Search");
-      } else if (g_strcmp0(chord, "w") == 0) {
-        gtk_label_set_text(
-            GTK_LABEL(self->chord_hud_grid),
-            "w s  Save Buffer          w a  Save All       w q  Force Close");
-      } else {
-        gtk_label_set_text(
-            GTK_LABEL(self->chord_hud_grid),
-            "f / SPC  Find Files      b  Buffers         /  Live Grep\n"
-            "e        File Tree       a  Alternate C/H   w  Save File\n"
-            "m p      Markdown GUI    s  Search/Replace  d  Agent / Debug\n"
-            "c        Code Actions    o  Build Output    q  Close Buffer");
-      }
+      gtk_label_set_text(GTK_LABEL(self->chord_hud_grid),
+                         ide_fsm_get_chord_hud_text(st, chord));
     }
     gtk_widget_set_visible(self->chord_hud_box, TRUE);
   } else if (st == IDE_STATE_MATCH_PENDING) {
@@ -297,10 +282,8 @@ void ide_window_update_status_bar_and_hud(KajoIdeWindow *self) {
     gtk_widget_set_visible(self->chord_badge, TRUE);
     gtk_label_set_text(GTK_LABEL(self->chord_hud_title), "TEXT OBJECT MATCH (m)");
     if (self->chord_hud_grid) {
-      gtk_label_set_text(
-          GTK_LABEL(self->chord_hud_grid),
-          "i + ( [ { \" ' w   Select Inside Delimiter / Word\n"
-          "a + ( [ { \" ' w   Select Around Delimiter / Word");
+      gtk_label_set_text(GTK_LABEL(self->chord_hud_grid),
+                         ide_fsm_get_chord_hud_text(st, chord));
     }
     gtk_widget_set_visible(self->chord_hud_box, TRUE);
   } else if (chord && *chord) {
@@ -310,10 +293,8 @@ void ide_window_update_status_bar_and_hud(KajoIdeWindow *self) {
     g_autofree char *hud_hdr = g_strdup_printf("PENDING CHORD (%s)", chord);
     gtk_label_set_text(GTK_LABEL(self->chord_hud_title), hud_hdr);
     if (self->chord_hud_grid) {
-      gtk_label_set_text(
-          GTK_LABEL(self->chord_hud_grid),
-          "g g  Buffer Start     g h  Line Start\n"
-          "g l  Line End         g d  Go to Definition");
+      gtk_label_set_text(GTK_LABEL(self->chord_hud_grid),
+                         ide_fsm_get_chord_hud_text(st, chord));
     }
     gtk_widget_set_visible(self->chord_hud_box, TRUE);
   } else {
@@ -605,6 +586,28 @@ void kajo_ide_window_open_path(KajoIdeWindow *self,
   ide_window_move_cursor_to_line_col(self, line_1based, col_1based);
 }
 
+static GPtrArray *on_dap_breakpoints(gpointer user_data);
+static void on_dap_frame(const char *path, guint line_1based, gpointer user_data);
+
+static void ide_window_set_workspace_root(KajoIdeWindow *self,
+                                          const char    *path) {
+  if (!self || !path || !*path) return;
+  char *copy = g_strdup(path);
+  g_free(self->workspace_root);
+  self->workspace_root = copy;
+  if (self->tree) ide_tree_set_workspace_root(self->tree, self->workspace_root);
+  if (self->search_drawer)
+    ide_search_drawer_set_workspace_root(self->search_drawer, self->workspace_root);
+  if (self->lsp)
+    ide_lsp_manager_set_workspace_root(self->lsp, self->workspace_root);
+  if (self->picker)
+    ide_picker_set_workspace_root(self->picker, self->workspace_root);
+  if (self->dap)
+    ide_dap_view_set_context(self->dap, self->workspace_root,
+                             on_dap_breakpoints, on_dap_frame, NULL, self);
+  ide_window_update_status_bar_and_hud(self);
+}
+
 void kajo_ide_window_open_files(KajoIdeWindow *self,
                                 GFile        **files,
                                 int            n_files) {
@@ -613,11 +616,7 @@ void kajo_ide_window_open_files(KajoIdeWindow *self,
     g_autofree char *path = g_file_get_path(files[i]);
     if (!path) continue;
     if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
-      g_free(self->workspace_root);
-      self->workspace_root = g_strdup(path);
-      ide_tree_set_workspace_root(self->tree, path);
-      ide_search_drawer_set_workspace_root(self->search_drawer, path);
-      ide_window_update_status_bar_and_hud(self);
+      ide_window_set_workspace_root(self, path);
     } else {
       kajo_ide_window_open_path(self, path, 1, 1);
     }
@@ -745,6 +744,20 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
     return TRUE;
   }
 
+  /* Allow the DAP REPL GtkEntry to receive direct text input & Enter activation */
+  GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(self));
+  GtkWidget *repl_entry = self->dap ? ide_dap_view_get_repl_entry(self->dap) : NULL;
+  if (focus && repl_entry &&
+      (focus == repl_entry || gtk_widget_is_ancestor(focus, repl_entry))) {
+    if (keyval == GDK_KEY_Escape) {
+      ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
+      gtk_widget_grab_focus(self->source_view);
+      ide_window_update_status_bar_and_hud(self);
+      return TRUE;
+    }
+    return FALSE;
+  }
+
   /* In HELP mode, 'q' only closes Help when the search query is empty;
    * if the user has already typed a filter query, 'q' appends to the filter. */
   if (ide_fsm_get_state(self->fsm) == IDE_STATE_HELP &&
@@ -760,6 +773,11 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
   if (!key_str) return FALSE;
 
   IdeAction act = ide_fsm_handle_key(self->fsm, key_str);
+  g_clear_handle_id(&self->leader_timer_id, g_source_remove);
+  if (ide_fsm_get_state(self->fsm) == IDE_STATE_LEADER) {
+    self->leader_timer_id = g_timeout_add(
+        ide_fsm_get_leader_timeout_ms(self->fsm), on_leader_timeout_cb, self);
+  }
   ide_window_dispatch_action(self, &act);
   return TRUE;
 }
@@ -794,6 +812,25 @@ static void on_picker_command(IdeActionType action, gpointer user_data) {
              action == IDE_ACTION_PROJECT_REPLACE_OPEN) {
     ide_fsm_set_state(self->fsm, IDE_STATE_DRAWER);
     ide_fsm_set_drawer_editable(self->fsm, TRUE);
+  } else if (action == IDE_ACTION_DAP_TOGGLE_VIEW ||
+             action == IDE_ACTION_AGENT_REVIEW_OPEN) {
+    ide_fsm_set_state(self->fsm, IDE_STATE_DRAWER);
+    ide_fsm_set_drawer_editable(self->fsm, FALSE);
+  } else if (action == IDE_ACTION_TOGGLE_DRAWER) {
+    gboolean open = gtk_revealer_get_reveal_child(GTK_REVEALER(self->drawer_revealer));
+    ide_fsm_set_state(self->fsm, open ? IDE_STATE_NORMAL : IDE_STATE_DRAWER);
+  } else if (action == IDE_ACTION_TOGGLE_FILE_TREE) {
+    gboolean vis = gtk_widget_get_visible(self->tree_container);
+    ide_fsm_set_state(self->fsm, vis ? IDE_STATE_NORMAL : IDE_STATE_TREE);
+  } else if (action == IDE_ACTION_PANE_FOCUS_TREE) {
+    ide_fsm_set_state(self->fsm, IDE_STATE_TREE);
+  } else if (action == IDE_ACTION_PANE_FOCUS_DRAWER) {
+    ide_fsm_set_state(self->fsm, IDE_STATE_DRAWER);
+  } else if (action == IDE_ACTION_TREE_CREATE_FILE ||
+             action == IDE_ACTION_TREE_CREATE_DIR) {
+    gtk_widget_set_visible(self->tree_container, TRUE);
+    ide_fsm_set_state(self->fsm, IDE_STATE_TREE);
+    ide_fsm_set_tree_editable(self->fsm, TRUE);
   } else {
     ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
   }
@@ -833,7 +870,9 @@ static void on_lsp_ui_state(IdeLspUiState state, gpointer user_data) {
       break;
     case IDE_LSP_UI_CLOSED:
       if (cur == IDE_STATE_COMPLETION) {
-        ide_fsm_set_state(self->fsm, IDE_STATE_INSERT);
+        IdeState prev = ide_fsm_get_previous_state(self->fsm);
+        ide_fsm_set_state(self->fsm,
+                          (prev == IDE_STATE_NORMAL) ? IDE_STATE_NORMAL : IDE_STATE_INSERT);
       } else if (cur == IDE_STATE_HOVER || cur == IDE_STATE_CODE_ACTION ||
                  cur == IDE_STATE_RENAME) {
         ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
@@ -953,6 +992,8 @@ static void on_dap_action_cb(const char *action, gpointer user_data) {
   IdeAction act = { .type = IDE_ACTION_NONE };
   if (g_strcmp0(action, "continue") == 0)
     act.type = IDE_ACTION_DAP_CONTINUE;
+  else if (g_strcmp0(action, "pause") == 0)
+    act.type = IDE_ACTION_DAP_PAUSE;
   else if (g_strcmp0(action, "step_over") == 0 || g_strcmp0(action, "step-over") == 0)
     act.type = IDE_ACTION_DAP_STEP_OVER;
   else if (g_strcmp0(action, "step_into") == 0 || g_strcmp0(action, "step-into") == 0)
@@ -982,8 +1023,11 @@ static void on_markdown_checklist_edit(const char *new_full_text,
 /* Header Bar & Drawer Switcher Callbacks */
 static void on_hdr_tree_clicked(GtkButton *b, gpointer d) {
   (void)b;
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(d);
+  gboolean vis = gtk_widget_get_visible(self->tree_container);
+  ide_fsm_set_state(self->fsm, vis ? IDE_STATE_NORMAL : IDE_STATE_TREE);
   IdeAction act = { .type = IDE_ACTION_TOGGLE_FILE_TREE };
-  ide_window_dispatch_action(KAJO_IDE_WINDOW(d), &act);
+  ide_window_dispatch_action(self, &act);
 }
 
 static void on_hdr_map_clicked(GtkButton *b, gpointer d) {
@@ -1050,11 +1094,15 @@ static void on_drawer_close_clicked(GtkButton *b, gpointer d) {
   (void)b;
   KajoIdeWindow *self = KAJO_IDE_WINDOW(d);
   gtk_revealer_set_reveal_child(GTK_REVEALER(self->drawer_revealer), FALSE);
+  if (ide_fsm_get_state(self->fsm) == IDE_STATE_DRAWER)
+    ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
   gtk_widget_grab_focus(self->source_view);
+  ide_window_update_status_bar_and_hud(self);
 }
 
 static void kajo_ide_window_dispose(GObject *object) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(object);
+  g_clear_handle_id(&self->leader_timer_id, g_source_remove);
   if (self->config_monitor) {
     g_file_monitor_cancel(self->config_monitor);
     g_clear_object(&self->config_monitor);
@@ -1814,11 +1862,7 @@ KajoIdeWindow *kajo_ide_window_new(GtkApplication *app,
       g_object_new(KAJO_TYPE_IDE_WINDOW, "application", app, NULL);
   if (workspace_dir && *workspace_dir &&
       g_file_test(workspace_dir, G_FILE_TEST_IS_DIR)) {
-    g_free(win->workspace_root);
-    win->workspace_root = g_strdup(workspace_dir);
-    ide_tree_set_workspace_root(win->tree, workspace_dir);
-    ide_search_drawer_set_workspace_root(win->search_drawer, workspace_dir);
-    ide_window_update_status_bar_and_hud(win);
+    ide_window_set_workspace_root(win, workspace_dir);
   }
   return win;
 }

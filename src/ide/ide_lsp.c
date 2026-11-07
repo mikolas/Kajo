@@ -298,6 +298,9 @@ typedef struct {
   char          *uri;
   guint          token;
   GtkWidget     *anchor;     /* weak: cleared when the widget is destroyed */
+  IdeBuffer     *buf;
+  guint          line_1based;
+  guint          col_1based;
   char          *prefix;     /* completion: text typed before the request */
   char          *new_name;
   guint          tab_size;
@@ -361,6 +364,7 @@ struct _IdeLspManager {
   IdeLspClient        *inflight_client;
   guint                inflight_id;
   RequestCtx          *inflight_ctx;
+  GCancellable        *rg_cancellable;
 };
 
 static void
@@ -882,6 +886,19 @@ ide_lsp_manager_new(const char *workspace_root, IdeLspJumpCb jump_cb, IdeLspStat
 }
 
 void
+ide_lsp_manager_set_workspace_root(IdeLspManager *lsp, const char *workspace_root)
+{
+  g_return_if_fail(lsp != NULL);
+  char *dup = g_strdup(workspace_root ? workspace_root : ".");
+  if (lsp->rg_cancellable != NULL) {
+    g_cancellable_cancel(lsp->rg_cancellable);
+    g_clear_object(&lsp->rg_cancellable);
+  }
+  g_free(lsp->workspace_root);
+  lsp->workspace_root = dup;
+}
+
+void
 ide_lsp_manager_set_callbacks(IdeLspManager *lsp, IdeLspDiagnosticsCb diagnostics_cb,
                               IdeLspMessageCb message_cb, IdeLspUiStateCb ui_state_cb,
                               gpointer user_data)
@@ -938,6 +955,10 @@ ide_lsp_manager_free(IdeLspManager *lsp)
   g_hash_table_destroy(lsp->docs_by_uri);
   g_hash_table_destroy(lsp->docs);
   g_hash_table_destroy(lsp->missing);
+  if (lsp->rg_cancellable != NULL) {
+    g_cancellable_cancel(lsp->rg_cancellable);
+    g_clear_object(&lsp->rg_cancellable);
+  }
   g_free(lsp->workspace_root);
   g_free(lsp->active_server_name);
   g_free(lsp->comp_prefix);
@@ -1253,6 +1274,10 @@ ide_lsp_manager_cancel_popover(IdeLspManager *lsp)
 {
   g_return_if_fail(lsp != NULL);
   cancel_inflight(lsp);
+  if (lsp->rg_cancellable != NULL) {
+    g_cancellable_cancel(lsp->rg_cancellable);
+    g_clear_object(&lsp->rg_cancellable);
+  }
   lsp->popover_token++;
   if (lsp->active_popover != NULL) {
     gtk_popover_popdown(GTK_POPOVER(lsp->active_popover));
@@ -1400,7 +1425,8 @@ split_hover_markdown(const char *md, char **code_out, char **doc_out)
 
 static void
 show_hover_card(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf, guint line_1based,
-                guint col_1based, const char *title, const char *code, const char *doc_text)
+                guint col_1based, const char *title, const char *code, const char *doc_text,
+                gboolean is_fallback)
 {
   ide_lsp_manager_cancel_popover(lsp);
   GtkWidget *pop = new_popover_for(lsp, anchor_view, buf);
@@ -1409,9 +1435,10 @@ show_hover_card(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf, guin
   gtk_widget_add_css_class(card, "shell-popover-card");
   gtk_widget_set_size_request(card, 380, -1);
 
-  g_autofree char *hdr_txt = g_strdup_printf("ƒ  %s  (Ln %u, Col %u)",
+  g_autofree char *hdr_txt = g_strdup_printf("ƒ  %s  (Ln %u, Col %u)%s",
                                              (title && title[0]) ? title : "<cursor>",
-                                             line_1based, col_1based);
+                                             line_1based, col_1based,
+                                             is_fallback ? "  [RG FALLBACK — NO LSP]" : "");
   GtkWidget *hdr = gtk_label_new(hdr_txt);
   gtk_label_set_xalign(GTK_LABEL(hdr), 0.0f);
   gtk_widget_add_css_class(hdr, "shell-popover-title");
@@ -1458,26 +1485,74 @@ show_hover_card(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf, guin
 /* ─── Hover ─── */
 
 static void
+on_legacy_hover_done(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+  GSubprocess *proc = G_SUBPROCESS(source);
+  RequestCtx *ctx = user_data;
+  IdeLspManager *mgr = ctx->mgr;
+  g_autofree char *out = NULL;
+  g_autoptr(GError) err = NULL;
+  g_subprocess_communicate_utf8_finish(proc, res, &out, NULL, &err);
+
+  if (mgr->shutting_down || g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    ctx_done(ctx);
+    return;
+  }
+  GtkWidget *anchor = ctx->anchor;
+  IdeBuffer *buf = ctx->buf;
+  guint line_1based = ctx->line_1based;
+  guint col_1based = ctx->col_1based;
+  g_autofree char *symbol = g_strdup(ctx->prefix);
+  gboolean current = (ctx->token == mgr->popover_token) &&
+                     (g_hash_table_contains(mgr->docs, buf));
+  ctx_done(ctx);
+  if (!current || anchor == NULL || buf == NULL) {
+    return;
+  }
+  g_autofree char *decl_line = NULL;
+  if (out != NULL && out[0] != '\0') {
+    decl_line = g_strstrip(g_strdup(out));
+  }
+  const char *fallback_note = (decl_line != NULL && decl_line[0] != '\0')
+                                  ? NULL
+                                  : "No language server active (rg fallback found no declaration).";
+  show_hover_card(mgr, anchor, buf, line_1based, col_1based, symbol, decl_line, fallback_note, TRUE);
+}
+
+static void
 legacy_hover(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf, guint line_1based,
              guint col_1based)
 {
   g_autofree char *symbol = extract_word_at_cursor(buf, NULL);
-  g_autofree char *decl_line = NULL;
   if (symbol != NULL && symbol[0] != '\0' && lsp->workspace_root != NULL) {
     g_autofree char *pat = g_strdup_printf("\\b%s\\s*[\\(;\\{]", symbol);
     const char *argv[] = {
       "rg", "--no-heading", "--line-number", "--max-count=1",
-      "--glob=*.h", "--glob=*.c", "--glob=*.go", "--",
+      "--glob=!.git", "--glob=!builddir", "--",
       pat, lsp->workspace_root, NULL
     };
-    g_autofree char *out = NULL;
-    if (g_spawn_sync(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
-                     NULL, NULL, &out, NULL, NULL, NULL) &&
-        out != NULL && out[0] != '\0') {
-      decl_line = g_strstrip(g_strdup(out));
+    if (lsp->rg_cancellable != NULL) {
+      g_cancellable_cancel(lsp->rg_cancellable);
+      g_clear_object(&lsp->rg_cancellable);
+    }
+    lsp->rg_cancellable = g_cancellable_new();
+    g_autoptr(GError) err = NULL;
+    g_autoptr(GSubprocess) proc = g_subprocess_newv(
+        argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, &err);
+    if (proc != NULL) {
+      RequestCtx *ctx = ctx_new(lsp, CTX_HOVER, NULL);
+      ctx->token = lsp->popover_token;
+      ctx->buf = buf;
+      ctx->line_1based = line_1based;
+      ctx->col_1based = col_1based;
+      ctx->prefix = g_strdup(symbol);
+      ctx_set_anchor(ctx, anchor_view);
+      g_subprocess_communicate_utf8_async(proc, NULL, lsp->rg_cancellable, on_legacy_hover_done, ctx);
+      return;
     }
   }
-  show_hover_card(lsp, anchor_view, buf, line_1based, col_1based, symbol, decl_line, NULL);
+  show_hover_card(lsp, anchor_view, buf, line_1based, col_1based, symbol, NULL,
+                  "No language server active.", TRUE);
 }
 
 static void
@@ -1516,7 +1591,7 @@ on_hover_response(IdeLspClient *client, JsonNode *result, const char *error_mess
     g_free(text);
     text = g_strdup(error_message != NULL ? error_message : "No information available at the cursor.");
   }
-  show_hover_card(mgr, anchor, doc->buf, line0 + 1, col1, symbol, code, text);
+  show_hover_card(mgr, anchor, doc->buf, line0 + 1, col1, symbol, code, text, FALSE);
 }
 
 void
@@ -1598,8 +1673,8 @@ collect_buffer_identifiers(IdeLspManager *lsp, IdeBuffer *buf, const char *prefi
     IdeCompletionItem *item = g_new0(IdeCompletionItem, 1);
     item->label = g_strdup(ident);
     item->insert_text = g_strdup(ident);
-    item->detail = (*p == '(') ? g_strdup("function") : g_strdup("identifier");
-    item->documentation = g_strdup_printf("Workspace / buffer symbol '%s'", ident);
+    item->detail = (*p == '(') ? g_strdup("function (buffer fallback)") : g_strdup("identifier (buffer fallback)");
+    item->documentation = g_strdup_printf("Buffer symbol fallback (no LSP): '%s'", ident);
     g_strlcpy(item->kind_badge, (*p == '(') ? "ƒ" : "v", sizeof(item->kind_badge));
     g_ptr_array_add(lsp->comp_items, item);
   }
@@ -1936,6 +2011,18 @@ ide_lsp_manager_select_prev(IdeLspManager *lsp)
   update_comp_selection_ui(lsp);
 }
 
+gboolean
+ide_lsp_manager_select_index(IdeLspManager *lsp, int idx)
+{
+  g_return_val_if_fail(lsp != NULL, FALSE);
+  if (lsp->comp_items == NULL || idx < 0 || (guint)idx >= lsp->comp_items->len) {
+    return FALSE;
+  }
+  lsp->selected_comp_idx = idx;
+  update_comp_selection_ui(lsp);
+  return TRUE;
+}
+
 static void run_code_action(IdeLspManager *lsp, IdeBuffer *buf, guint index);
 
 void
@@ -1988,6 +2075,35 @@ ide_lsp_manager_confirm_selection(IdeLspManager *lsp, IdeBuffer *buf)
 /* ─── Definition ─── */
 
 static void
+on_legacy_definition_done(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+  GSubprocess *proc = G_SUBPROCESS(source);
+  RequestCtx *ctx = user_data;
+  IdeLspManager *mgr = ctx->mgr;
+  g_autofree char *out = NULL;
+  g_autoptr(GError) err = NULL;
+  g_subprocess_communicate_utf8_finish(proc, res, &out, NULL, &err);
+
+  if (mgr->shutting_down || g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    ctx_done(ctx);
+    return;
+  }
+  ctx_done(ctx);
+
+  if (out != NULL && out[0] != '\0') {
+    g_auto(GStrv) parts = g_strsplit(out, ":", 4);
+    if (g_strv_length(parts) >= 3 && mgr->jump_cb != NULL) {
+      guint ln = (guint)MAX(1, g_ascii_strtoll(parts[1], NULL, 10));
+      guint cl = (guint)MAX(1, g_ascii_strtoll(parts[2], NULL, 10));
+      report_message(mgr, "Jumped via rg fallback (no language server)");
+      mgr->jump_cb(parts[0], ln, cl, mgr->cb_data);
+      return;
+    }
+  }
+  report_message(mgr, "No definition found (rg fallback — no language server)");
+}
+
+static void
 legacy_definition(IdeLspManager *lsp, IdeBuffer *buf)
 {
   g_autofree char *symbol = extract_word_at_cursor(buf, NULL);
@@ -2002,16 +2118,17 @@ legacy_definition(IdeLspManager *lsp, IdeBuffer *buf)
     "--glob=!.git", "--glob=!builddir", "--", pat,
     lsp->workspace_root ? lsp->workspace_root : ".", NULL
   };
-  g_autofree char *out = NULL;
-  if (g_spawn_sync(NULL, (char **)argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
-                   NULL, NULL, &out, NULL, NULL, NULL) &&
-      out != NULL && out[0] != '\0') {
-    g_auto(GStrv) parts = g_strsplit(out, ":", 4);
-    if (g_strv_length(parts) >= 3) {
-      guint ln = (guint)MAX(1, g_ascii_strtoll(parts[1], NULL, 10));
-      guint cl = (guint)MAX(1, g_ascii_strtoll(parts[2], NULL, 10));
-      lsp->jump_cb(parts[0], ln, cl, lsp->cb_data);
-    }
+  if (lsp->rg_cancellable != NULL) {
+    g_cancellable_cancel(lsp->rg_cancellable);
+    g_clear_object(&lsp->rg_cancellable);
+  }
+  lsp->rg_cancellable = g_cancellable_new();
+  g_autoptr(GError) err = NULL;
+  g_autoptr(GSubprocess) proc = g_subprocess_newv(
+      argv, G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE, &err);
+  if (proc != NULL) {
+    RequestCtx *ctx = ctx_new(lsp, CTX_DEFINITION, NULL);
+    g_subprocess_communicate_utf8_async(proc, NULL, lsp->rg_cancellable, on_legacy_definition_done, ctx);
   }
 }
 
@@ -2131,7 +2248,7 @@ ide_lsp_manager_request_implementation(IdeLspManager *lsp, IdeBuffer *buf)
 /* ─── Rename ─── */
 
 static void
-legacy_rename(IdeBuffer *buf, const char *new_name)
+legacy_rename(IdeLspManager *lsp, IdeBuffer *buf, const char *new_name)
 {
   g_autofree char *old_sym = extract_word_at_cursor(buf, NULL);
   if (old_sym == NULL || old_sym[0] == '\0') {
@@ -2142,6 +2259,8 @@ legacy_rename(IdeBuffer *buf, const char *new_name)
   g_autofree char *replaced = ide_replace_text_all(orig, old_sym, new_name, TRUE, TRUE, FALSE, &cnt);
   if (cnt > 0) {
     ide_buffer_set_text(buf, replaced);
+    report_message(lsp, "Renamed '%s' to '%s': %u buffer edit%s (buffer fallback — no LSP)",
+                   old_sym, new_name, cnt, cnt == 1 ? "" : "s");
   }
 }
 
@@ -2198,7 +2317,7 @@ ide_lsp_manager_request_rename(IdeLspManager *lsp, IdeBuffer *buf, guint line_1b
     ide_lsp_client_request(doc->client, "textDocument/rename", params, on_rename_response, ctx);
     return;
   }
-  legacy_rename(buf, new_name);
+  legacy_rename(lsp, buf, new_name);
 }
 
 /* ─── Formatting ─── */
@@ -2233,7 +2352,10 @@ on_format_response(IdeLspClient *client, JsonNode *result, const char *error_mes
 }
 
 void
-ide_lsp_manager_request_format(IdeLspManager *lsp, IdeBuffer *buf)
+ide_lsp_manager_request_format_with_options(IdeLspManager *lsp,
+                                            IdeBuffer     *buf,
+                                            guint          tab_size,
+                                            gboolean       insert_spaces)
 {
   g_return_if_fail(lsp != NULL);
   if (buf == NULL) {
@@ -2248,16 +2370,27 @@ ide_lsp_manager_request_format(IdeLspManager *lsp, IdeBuffer *buf)
   }
   doc_send_change_now(doc);
 
+  guint effective_tab = (tab_size > 0) ? tab_size : 4;
+  gboolean effective_spaces = (tab_size > 0)
+                                  ? insert_spaces
+                                  : (g_strcmp0(doc->language_id, "go") != 0);
+
   g_autoptr(JsonNode) base = text_document_params(doc->uri);
   JsonNode *params = json_node_copy(base);
   JsonObject *po = json_node_get_object(params);
   JsonObject *opts = json_object_new();
-  json_object_set_int_member(opts, "tabSize", 4);
-  json_object_set_boolean_member(opts, "insertSpaces", g_strcmp0(doc->language_id, "go") != 0);
+  json_object_set_int_member(opts, "tabSize", (gint64)effective_tab);
+  json_object_set_boolean_member(opts, "insertSpaces", effective_spaces);
   json_object_set_object_member(po, "options", opts);
 
   RequestCtx *ctx = ctx_new(lsp, CTX_FORMAT, doc->uri);
   ide_lsp_client_request(doc->client, "textDocument/formatting", params, on_format_response, ctx);
+}
+
+void
+ide_lsp_manager_request_format(IdeLspManager *lsp, IdeBuffer *buf)
+{
+  ide_lsp_manager_request_format_with_options(lsp, buf, 0, TRUE);
 }
 
 /* ─── Code actions ─── */
@@ -2386,8 +2519,12 @@ on_code_actions_response(IdeLspClient *client, JsonNode *result, const char *err
       it->label = g_strdup(json_str(o, "title"));
       it->detail = g_strdup(json_str(o, "kind"));
       it->insert_text = g_strdup(it->label);
-      g_strlcpy(it->kind_badge, json_object_get_boolean_member_with_default(o, "isPreferred", FALSE) ? "★" : "⚡",
-                sizeof(it->kind_badge));
+      if (mgr->comp_items->len < 9) {
+        g_snprintf(it->kind_badge, sizeof(it->kind_badge), "%u", mgr->comp_items->len + 1);
+      } else {
+        g_strlcpy(it->kind_badge, json_object_get_boolean_member_with_default(o, "isPreferred", FALSE) ? "★" : "⚡",
+                  sizeof(it->kind_badge));
+      }
       g_ptr_array_add(mgr->comp_items, it);
       g_ptr_array_add(mgr->code_actions, json_node_copy(json_array_get_element(arr, i)));
     }

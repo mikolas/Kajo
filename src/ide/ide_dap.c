@@ -72,6 +72,7 @@ struct _IdeDapView {
   IdeDapJavaExecFn java_exec;
   gpointer      java_exec_data;
   gpointer      java_host_cache;   /* JavaHost of the last Java session */
+  GCancellable *java_cancel;
 };
 
 static void
@@ -532,6 +533,10 @@ static void
 teardown_client(IdeDapView *dap)
 {
   dap->generation++;
+  if (dap->java_cancel != NULL) {
+    g_cancellable_cancel(dap->java_cancel);
+    g_clear_object(&dap->java_cancel);
+  }
   if (dap->client != NULL) {
     IdeDapClient *old = dap->client;
     dap->client = NULL;
@@ -662,7 +667,13 @@ start_java_session(IdeDapView *dap, const char *active_file)
   host->file = g_strdup(active_file);
   java_host_free(dap->java_host_cache);
   dap->java_host_cache = host;
-  ide_java_debug_prepare(active_file, dap->workspace_root, java_host_exec, host, on_java_ready, js);
+  if (dap->java_cancel != NULL) {
+    g_cancellable_cancel(dap->java_cancel);
+    g_clear_object(&dap->java_cancel);
+  }
+  dap->java_cancel = g_cancellable_new();
+  ide_java_debug_prepare_cancellable(active_file, dap->workspace_root, dap->java_cancel,
+                                     java_host_exec, host, on_java_ready, js);
 }
 
 void
@@ -678,8 +689,9 @@ ide_dap_view_set_context(IdeDapView *dap, const char *workspace_root, IdeDapBrea
                          IdeDapFrameCb frame_cb, IdeDapStateCb state_cb, gpointer user_data)
 {
   g_return_if_fail(dap != NULL);
+  char *dup = g_strdup(workspace_root);
   g_free(dap->workspace_root);
-  dap->workspace_root = g_strdup(workspace_root);
+  dap->workspace_root = dup;
   dap->breakpoints_fn = breakpoints_fn;
   dap->frame_cb = frame_cb;
   dap->state_cb = state_cb;
@@ -938,6 +950,7 @@ ide_dap_view_new(IdeDapActionCb action_cb, gpointer user_data)
     const char *css;
   } btns[] = {
     { "▶ CONTINUE (F5)",  "continue",  "action-btn-primary" },
+    { "⏸ PAUSE",          "pause",     "ide-toolbar-btn" },
     { "↷ STEP OVER (F10)", "step-over", "ide-toolbar-btn" },
     { "↓ STEP INTO (F11)", "step-into", "ide-toolbar-btn" },
     { "↑ STEP OUT (F12)",  "step-out",  "ide-toolbar-btn" },
@@ -1047,5 +1060,12 @@ ide_dap_view_get_widget(IdeDapView *dap)
 {
   g_return_val_if_fail(dap != NULL, NULL);
   return dap->root_box;
+}
+
+GtkWidget *
+ide_dap_view_get_repl_entry(IdeDapView *dap)
+{
+  g_return_val_if_fail(dap != NULL, NULL);
+  return dap->repl_entry;
 }
 

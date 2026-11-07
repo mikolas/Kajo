@@ -86,6 +86,8 @@ IdeLspManager *ide_lsp_manager_new(const char    *workspace_root,
                                    IdeLspStatusCb status_cb,
                                    gpointer       user_data);
 void           ide_lsp_manager_free(IdeLspManager *lsp);
+void           ide_lsp_manager_set_workspace_root(IdeLspManager *lsp,
+                                                  const char    *workspace_root);
 void           ide_lsp_manager_set_callbacks(IdeLspManager      *lsp,
                                              IdeLspDiagnosticsCb diagnostics_cb,
                                              IdeLspMessageCb     message_cb,
@@ -161,6 +163,10 @@ gboolean       ide_lsp_manager_completion_active(IdeLspManager *lsp);
 
 /* textDocument/formatting; no-op (with a message) when unsupported. */
 void           ide_lsp_manager_request_format(IdeLspManager *lsp, IdeBuffer *buf);
+void           ide_lsp_manager_request_format_with_options(IdeLspManager *lsp,
+                                                           IdeBuffer     *buf,
+                                                           guint          tab_size,
+                                                           gboolean       insert_spaces);
 
 void           ide_lsp_manager_cancel_popover(IdeLspManager *lsp);
 /* Re-anchors the open popover to the current cursor, or dismisses it when the
@@ -170,6 +176,7 @@ void           ide_lsp_manager_reposition_popover(IdeLspManager *lsp, GtkWidget 
 gboolean       ide_lsp_manager_popover_visible(IdeLspManager *lsp);
 void           ide_lsp_manager_select_next(IdeLspManager *lsp);
 void           ide_lsp_manager_select_prev(IdeLspManager *lsp);
+gboolean       ide_lsp_manager_select_index(IdeLspManager *lsp, int idx);
 void           ide_lsp_manager_confirm_selection(IdeLspManager *lsp, IdeBuffer *buf);
 
 void           ide_completion_item_free(gpointer data);

@@ -10,7 +10,7 @@ const char *
 ide_dap_detect_adapter_for_file(const char *file_path)
 {
   if (file_path == NULL || file_path[0] == '\0') {
-    return "gdb -i=dap";
+    return "none";
   }
   if (g_str_has_suffix(file_path, ".go")) {
     return "dlv dap";
@@ -18,10 +18,16 @@ ide_dap_detect_adapter_for_file(const char *file_path)
   if (g_str_has_suffix(file_path, ".java")) {
     return "java-debug (jdtls)";
   }
-  if (g_str_has_suffix(file_path, ".py")) {
-    return "python3 -m debugpy.adapter";
+  if (g_str_has_suffix(file_path, ".c") ||
+      g_str_has_suffix(file_path, ".cc") ||
+      g_str_has_suffix(file_path, ".cpp") ||
+      g_str_has_suffix(file_path, ".cxx") ||
+      g_str_has_suffix(file_path, ".h") ||
+      g_str_has_suffix(file_path, ".hpp") ||
+      g_str_has_suffix(file_path, ".rs")) {
+    return "gdb -i=dap";
   }
-  return "gdb -i=dap";
+  return "none";
 }
 
 void

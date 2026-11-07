@@ -1,4 +1,5 @@
 #include "../src/ide/ide_buffer.h"
+#include "../src/ide/ide_fsm.h"
 #include "../src/ide/ide_picker.h"
 #include "../src/ide/ide_search.h"
 #include "../src/ide/ide_tree.h"
@@ -216,6 +217,28 @@ test_git_porcelain_fuzzy_and_search_parsers(void)
   /* non-diagnostic Maven lines are not issues */
   g_assert_null(ide_parse_compiler_error_line("/w", "[ERROR] Failed to execute goal org.apache.maven.plugins:maven-compiler-plugin"));
   g_assert_null(ide_parse_compiler_error_line("/w", "[INFO] BUILD FAILURE"));
+
+  /* 5. IdeTree file creation, overwrite protection & path traversal guard */
+  g_autofree char *tmp_ws = g_dir_make_tmp("kajo_tree_test_XXXXXX", NULL);
+  g_assert_nonnull(tmp_ws);
+  g_autofree char *created_target = NULL;
+  g_assert_true(ide_tree_create_entry_at(tmp_ws, tmp_ws, "hello.txt", FALSE, &created_target));
+  g_assert_nonnull(created_target);
+  g_assert_true(g_file_test(created_target, G_FILE_TEST_EXISTS));
+  g_assert_true(g_file_set_contents(created_target, "keep_me", -1, NULL));
+
+  /* Attempting to create an already-existing file must fail and preserve content */
+  g_assert_false(ide_tree_create_entry_at(tmp_ws, tmp_ws, "hello.txt", FALSE, NULL));
+  g_autofree char *kept = NULL;
+  g_assert_true(g_file_get_contents(created_target, &kept, NULL, NULL));
+  g_assert_cmpstr(kept, ==, "keep_me");
+
+  /* Attempting path traversal (..) outside workspace root must fail */
+  g_assert_false(ide_tree_create_entry_at(tmp_ws, tmp_ws, "../escaped_kajo_test.txt", FALSE, NULL));
+  g_assert_false(ide_tree_create_entry_at(tmp_ws, tmp_ws, "/tmp/abs_kajo_test.txt", FALSE, NULL));
+
+  g_unlink(created_target);
+  g_rmdir(tmp_ws);
 }
 
 static gboolean
@@ -268,6 +291,74 @@ test_semantic_token_highlighter(void)
   g_assert_true(iter_has_tag_named(tbuf, (gint)(cmt_pos - code + 2), "ide-syn-cmt"));
 
   ide_buffer_free(buf);
+}
+
+static void
+test_help_palette_leader_chords_crosscheck(void)
+{
+  const IdeHelpCommandSpec *cmds = ide_picker_get_help_commands();
+  g_assert_nonnull(cmds);
+
+  const char *const *valid_chords = ide_fsm_get_valid_leader_chords();
+  g_assert_nonnull(valid_chords);
+
+  IdeFsm *fsm = ide_fsm_new();
+  gsize n_cmds = 0;
+
+  for (gsize i = 0; cmds[i].chord != NULL; i++) {
+    n_cmds++;
+    g_assert_nonnull(cmds[i].title);
+    g_assert_nonnull(cmds[i].category);
+    g_assert_nonnull(cmds[i].description);
+
+    /* Split chord alternatives on " / " and verify every "Space ..." chord
+     * exists in kValidLeaderChords and dispatches to a real action. */
+    g_auto(GStrv) alts = g_strsplit(cmds[i].chord, " / ", -1);
+    for (guint a = 0; alts[a] != NULL; a++) {
+      const char *alt = g_strstrip(alts[a]);
+      if (!g_str_has_prefix(alt, "Space ")) continue;
+      const char *rest = alt + 6;
+      GString *compact = g_string_new("");
+      if (g_strcmp0(rest, "Space") == 0) {
+        g_string_assign(compact, " ");
+      } else {
+        for (const char *p = rest; *p; p++) {
+          if (*p != ' ') g_string_append_c(compact, *p);
+        }
+      }
+
+      gboolean found = FALSE;
+      for (gsize v = 0; valid_chords[v] != NULL; v++) {
+        if (g_strcmp0(valid_chords[v], compact->str) == 0) {
+          found = TRUE;
+          break;
+        }
+      }
+      if (!found) {
+        g_test_message("Help Palette chord '%s' (compact '%s') in '%s' not in kValidLeaderChords",
+                       alt, compact->str, cmds[i].title);
+      }
+      g_assert_true(found);
+
+      /* Also verify IdeFsm dispatches it to the expected action */
+      ide_fsm_set_state(fsm, IDE_STATE_NORMAL);
+      ide_fsm_handle_key(fsm, "Space");
+      IdeAction act = { .type = IDE_ACTION_NONE };
+      if (g_strcmp0(compact->str, " ") == 0) {
+        act = ide_fsm_handle_key(fsm, "Space");
+      } else {
+        for (gsize k = 0; compact->str[k] != '\0'; k++) {
+          char kstr[2] = { compact->str[k], '\0' };
+          act = ide_fsm_handle_key(fsm, kstr);
+        }
+      }
+      g_assert_cmpint(act.type, ==, cmds[i].action);
+      g_string_free(compact, TRUE);
+    }
+  }
+  g_assert_cmpuint(n_cmds, >=, 95);
+
+  ide_fsm_free(fsm);
 }
 
 static char *
@@ -354,6 +445,7 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/git-porcelain-fuzzy-and-search", test_git_porcelain_fuzzy_and_search_parsers);
   g_test_add_func("/ide/buffer/semantic-token-highlighter", test_semantic_token_highlighter);
   g_test_add_func("/ide/buffer/treesitter-incremental-tags", test_treesitter_incremental_tags_match_fresh);
+  g_test_add_func("/ide/buffer/help-palette-leader-crosscheck", test_help_palette_leader_chords_crosscheck);
 
   return g_test_run();
 }

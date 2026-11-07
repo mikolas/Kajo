@@ -5,6 +5,7 @@
 typedef struct {
   char               *file_path;
   char               *workspace_root;
+  GCancellable       *cancellable;
   IdeJavaExecFn       exec;
   gpointer            host;
   IdeJavaDebugReadyCb ready_cb;
@@ -22,6 +23,7 @@ prep_free(Prep *p)
 {
   g_free(p->file_path);
   g_free(p->workspace_root);
+  g_clear_object(&p->cancellable);
   g_free(p->main_class);
   g_free(p->project_name);
   if (p->module_paths) json_node_unref(p->module_paths);
@@ -152,7 +154,7 @@ on_start_session(JsonNode *result, const char *error, gpointer user_data)
   }
   GSocketClient *client = g_socket_client_new();
   g_socket_client_set_timeout(client, 10);
-  g_socket_client_connect_to_host_async(client, "127.0.0.1", (guint16)port, NULL, on_connected, p);
+  g_socket_client_connect_to_host_async(client, "127.0.0.1", (guint16)port, p->cancellable, on_connected, p);
 }
 
 static void
@@ -223,13 +225,16 @@ on_main_classes(JsonNode *result, const char *error, gpointer user_data)
 }
 
 void
-ide_java_debug_prepare(const char *file_path, const char *workspace_root, IdeJavaExecFn exec,
-                       gpointer host_data, IdeJavaDebugReadyCb ready_cb, gpointer user_data)
+ide_java_debug_prepare_cancellable(const char *file_path, const char *workspace_root,
+                                   GCancellable *cancellable, IdeJavaExecFn exec,
+                                   gpointer host_data, IdeJavaDebugReadyCb ready_cb,
+                                   gpointer user_data)
 {
   g_return_if_fail(exec != NULL && ready_cb != NULL);
   Prep *p = g_new0(Prep, 1);
   p->file_path = g_strdup(file_path);
   p->workspace_root = g_strdup(workspace_root ? workspace_root : ".");
+  p->cancellable = cancellable ? g_object_ref(cancellable) : NULL;
   p->exec = exec;
   p->host = host_data;
   p->ready_cb = ready_cb;
@@ -239,4 +244,11 @@ ide_java_debug_prepare(const char *file_path, const char *workspace_root, IdeJav
   if (!exec("vscode.java.resolveMainClass", string_array_node(root_uri ? root_uri : ""), on_main_classes, p, host_data)) {
     fail(p, "No ready Java language server for this file (is jdtls installed and initialized?)");
   }
+}
+
+void
+ide_java_debug_prepare(const char *file_path, const char *workspace_root, IdeJavaExecFn exec,
+                       gpointer host_data, IdeJavaDebugReadyCb ready_cb, gpointer user_data)
+{
+  ide_java_debug_prepare_cancellable(file_path, workspace_root, NULL, exec, host_data, ready_cb, user_data);
 }

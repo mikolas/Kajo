@@ -41,6 +41,14 @@ void ide_java_debug_prepare(const char          *file_path,
                             IdeJavaDebugReadyCb  ready_cb,
                             gpointer             user_data);
 
+void ide_java_debug_prepare_cancellable(const char          *file_path,
+                                        const char          *workspace_root,
+                                        GCancellable        *cancellable,
+                                        IdeJavaExecFn        exec,
+                                        gpointer             host_data,
+                                        IdeJavaDebugReadyCb  ready_cb,
+                                        gpointer             user_data);
+
 G_END_DECLS
 
 #endif

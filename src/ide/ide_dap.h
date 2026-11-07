@@ -43,6 +43,7 @@ IdeDapView *ide_dap_view_new(IdeDapActionCb action_cb, gpointer user_data);
 void        ide_dap_view_free(IdeDapView *dap);
 
 GtkWidget  *ide_dap_view_get_widget(IdeDapView *dap);
+GtkWidget  *ide_dap_view_get_repl_entry(IdeDapView *dap);
 
 void        ide_dap_view_set_context(IdeDapView         *dap,
                                      const char         *workspace_root,

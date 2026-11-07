@@ -56,9 +56,10 @@ static void test_lsp_and_dap_detection(void) {
   g_assert_cmpstr(srv_id, ==, "pyright");
 
   g_assert_cmpstr(ide_dap_detect_adapter_for_file("/src/main.c"), ==, "gdb -i=dap");
-  g_assert_cmpstr(ide_dap_detect_adapter_for_file("/src/main.py"),
+  g_assert_cmpstr(ide_dap_detect_adapter_for_file("/src/Main.java"),
                   ==,
-                  "python3 -m debugpy.adapter");
+                  "java-debug (jdtls)");
+  g_assert_cmpstr(ide_dap_detect_adapter_for_file("/src/main.py"), ==, "none");
   g_assert_cmpstr(ide_dap_detect_adapter_for_file("/src/main.go"), ==, "dlv dap");
 }
 

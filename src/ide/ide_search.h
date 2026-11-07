@@ -72,6 +72,7 @@ void             ide_search_drawer_toggle_regex(IdeSearchDrawer *drawer);
 void             ide_search_drawer_append_char(IdeSearchDrawer *drawer, const char *ch);
 void             ide_search_drawer_backspace(IdeSearchDrawer *drawer);
 guint            ide_search_drawer_apply_all(IdeSearchDrawer *drawer, GPtrArray *open_buffers);
+gboolean         ide_search_drawer_apply_current(IdeSearchDrawer *drawer, IdeBuffer *active_buf);
 
 G_END_DECLS
 

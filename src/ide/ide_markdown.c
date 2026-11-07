@@ -1741,7 +1741,7 @@ static void render_markdown_into_box(IdeMarkdownView *md,
       while (trimmed[h_level] == '#') h_level++;
       if (h_level >= 1 && h_level <= 6 && trimmed[h_level] == ' ') {
         const char *h_text = trimmed + h_level + 1;
-        const char *h_cls = "ide-md-h3";
+        const char *h_cls;
         if (h_level == 1) h_cls = "ide-md-h1";
         else if (h_level == 2) h_cls = "ide-md-h2";
         else if (h_level == 3) h_cls = "ide-md-h3";
@@ -1988,8 +1988,9 @@ static void render_markdown_into_box(IdeMarkdownView *md,
 void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
   if (!md || !md->doc_box) return;
 
+  char *new_md = g_strdup(markdown_text ? markdown_text : "");
   g_free(md->current_markdown);
-  md->current_markdown = g_strdup(markdown_text ? markdown_text : "");
+  md->current_markdown = new_md;
 
   GtkWidget *child;
   while ((child = gtk_widget_get_first_child(md->doc_box)) != NULL)
@@ -2039,15 +2040,19 @@ void ide_markdown_view_set_context(IdeMarkdownView *md,
                                    const char      *doc_file_path,
                                    const char      *workspace_root) {
   if (!md) return;
+  char *new_path = doc_file_path ? g_strdup(doc_file_path) : NULL;
+  char *new_dir = (doc_file_path && *doc_file_path)
+                      ? g_path_get_dirname(doc_file_path)
+                      : NULL;
+  char *new_root = workspace_root ? g_strdup(workspace_root) : NULL;
+
   g_free(md->doc_file_path);
   g_free(md->doc_dir);
   g_free(md->workspace_root);
 
-  md->doc_file_path = doc_file_path ? g_strdup(doc_file_path) : NULL;
-  md->doc_dir = (doc_file_path && *doc_file_path)
-                    ? g_path_get_dirname(doc_file_path)
-                    : NULL;
-  md->workspace_root = workspace_root ? g_strdup(workspace_root) : NULL;
+  md->doc_file_path = new_path;
+  md->doc_dir = new_dir;
+  md->workspace_root = new_root;
 }
 
 IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,

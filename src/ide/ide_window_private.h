@@ -114,6 +114,11 @@ struct _KajoIdeWindow {
   /* Cross-file Jumplist */
   GPtrArray       *jumplist; /* IdeJumpEntry* */
   int              jumplist_idx;
+
+  /* Leader timeout & Drawer state */
+  guint            leader_timer_id;
+  gboolean         drawer_maximized;
+  int              saved_drawer_pos;
 };
 
 

@@ -28,6 +28,9 @@ struct _IdeTree {
 
   GHashTable       *expanded_dirs;
   GHashTable       *git_status_map;
+  char             *git_branch;
+  GCancellable     *git_cancel;
+  GSubprocess      *git_proc;
   GPtrArray        *entries;
   gint              selected_idx;
   gboolean          prompt_is_dir;
@@ -100,34 +103,105 @@ ide_tree_parse_git_porcelain(const char *porcelain_text)
   return map;
 }
 
+static void ide_tree_rebuild_rows(IdeTree *tree);
+
+typedef struct {
+  IdeTree      *tree;
+  GCancellable *cancellable;
+} TreeGitCtx;
+
+static void
+on_git_status_finished(GObject *source, GAsyncResult *res, gpointer user_data)
+{
+  TreeGitCtx *ctx = user_data;
+  g_autofree char *stdout_buf = NULL;
+  g_autoptr(GError) err = NULL;
+  gboolean ok = g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), res,
+                                                     &stdout_buf, NULL, &err);
+  if (g_cancellable_is_cancelled(ctx->cancellable) ||
+      (!ok && err != NULL && g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED))) {
+    g_clear_object(&ctx->cancellable);
+    g_free(ctx);
+    return;
+  }
+  IdeTree *tree = ctx->tree;
+  g_clear_object(&ctx->cancellable);
+  g_free(ctx);
+
+  gint exit_status = ok ? g_subprocess_get_exit_status(G_SUBPROCESS(source)) : -1;
+  g_clear_object(&tree->git_proc);
+  g_clear_object(&tree->git_cancel);
+
+  if (exit_status == 0 && stdout_buf != NULL) {
+    g_clear_pointer(&tree->git_status_map, g_hash_table_destroy);
+    tree->git_status_map = ide_tree_parse_git_porcelain(stdout_buf);
+    ide_tree_rebuild_rows(tree);
+  }
+}
+
 static void
 ide_tree_update_git_status(IdeTree *tree)
 {
-  g_clear_pointer(&tree->git_status_map, g_hash_table_destroy);
-  if (tree->workspace_root == NULL) {
+  if (tree->git_status_map == NULL) {
     tree->git_status_map = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  }
+  if (tree->git_cancel != NULL) {
+    g_cancellable_cancel(tree->git_cancel);
+  }
+  if (tree->git_proc != NULL) {
+    g_subprocess_force_exit(tree->git_proc);
+  }
+  g_clear_object(&tree->git_proc);
+  g_clear_object(&tree->git_cancel);
+  g_clear_pointer(&tree->git_branch, g_free);
+
+  if (tree->workspace_root == NULL) {
     return;
+  }
+
+  /* Read .git/HEAD (supporting both standard .git dirs and worktree gitfiles) */
+  g_autofree char *dot_git = g_build_filename(tree->workspace_root, ".git", NULL);
+  g_autofree char *head_path = NULL;
+  if (g_file_test(dot_git, G_FILE_TEST_IS_DIR)) {
+    head_path = g_build_filename(dot_git, "HEAD", NULL);
+  } else if (g_file_test(dot_git, G_FILE_TEST_IS_REGULAR)) {
+    g_autofree char *gitfile = NULL;
+    if (g_file_get_contents(dot_git, &gitfile, NULL, NULL) && gitfile != NULL) {
+      g_strstrip(gitfile);
+      if (g_str_has_prefix(gitfile, "gitdir:")) {
+        const char *gdir = gitfile + strlen("gitdir:");
+        while (*gdir == ' ') gdir++;
+        g_autofree char *resolved_gdir = g_canonicalize_filename(gdir, tree->workspace_root);
+        head_path = g_build_filename(resolved_gdir, "HEAD", NULL);
+      }
+    }
+  }
+  if (head_path != NULL) {
+    g_autofree char *head_contents = NULL;
+    if (g_file_get_contents(head_path, &head_contents, NULL, NULL) && head_contents != NULL) {
+      g_strstrip(head_contents);
+      const char *prefix = "ref: refs/heads/";
+      if (g_str_has_prefix(head_contents, prefix)) {
+        tree->git_branch = g_strdup(head_contents + strlen(prefix));
+      } else if (strlen(head_contents) >= 7) {
+        tree->git_branch = g_strndup(head_contents, 7);
+      }
+    }
   }
 
   const char *argv[] = {
     "git", "-C", tree->workspace_root, "status", "--porcelain=v1", "-uall", NULL
   };
-  g_autofree char *stdout_buf = NULL;
-  gint exit_status = 0;
-  if (g_spawn_sync(NULL,
-                   (char **)argv,
-                   NULL,
-                   G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
-                   NULL,
-                   NULL,
-                   &stdout_buf,
-                   NULL,
-                   &exit_status,
-                   NULL) &&
-      exit_status == 0 && stdout_buf != NULL) {
-    tree->git_status_map = ide_tree_parse_git_porcelain(stdout_buf);
-  } else {
-    tree->git_status_map = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  g_autoptr(GSubprocessLauncher) launcher = g_subprocess_launcher_new(
+      G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+  tree->git_proc = g_subprocess_launcher_spawnv(launcher, argv, NULL);
+  if (tree->git_proc != NULL) {
+    tree->git_cancel = g_cancellable_new();
+    TreeGitCtx *ctx = g_new0(TreeGitCtx, 1);
+    ctx->tree = tree;
+    ctx->cancellable = g_object_ref(tree->git_cancel);
+    g_subprocess_communicate_utf8_async(tree->git_proc, NULL, tree->git_cancel,
+                                        on_git_status_finished, ctx);
   }
 }
 
@@ -348,31 +422,15 @@ char *
 ide_tree_format_git_summary(IdeTree *tree)
 {
   if (!tree || !tree->workspace_root) {
-    return g_strdup("⎇ workspace");
+    return g_strdup("📁 workspace");
   }
 
-  const char *argv[] = {
-    "git", "-C", tree->workspace_root, "rev-parse", "--abbrev-ref", "HEAD", NULL
-  };
-  g_autofree char *branch_out = NULL;
-  gint exit_status = 0;
-  const char *branch = "main";
-  if (g_spawn_sync(NULL,
-                   (char **)argv,
-                   NULL,
-                   G_SPAWN_SEARCH_PATH | G_SPAWN_STDERR_TO_DEV_NULL,
-                   NULL,
-                   NULL,
-                   &branch_out,
-                   NULL,
-                   &exit_status,
-                   NULL) &&
-      exit_status == 0 && branch_out != NULL) {
-    g_strstrip(branch_out);
-    if (branch_out[0] != '\0') {
-      branch = branch_out;
-    }
+  if (tree->git_branch == NULL || tree->git_branch[0] == '\0') {
+    g_autofree char *base = g_path_get_basename(tree->workspace_root);
+    return g_strdup_printf("📁 %s", base);
   }
+
+  const char *branch = tree->git_branch;
 
   guint mod_cnt = 0, add_cnt = 0, unt_cnt = 0;
   if (tree->git_status_map != NULL) {
@@ -394,8 +452,8 @@ ide_tree_format_git_summary(IdeTree *tree)
   return g_strdup_printf("⎇ %s • M:%u A:%u U:%u", branch, mod_cnt, add_cnt, unt_cnt);
 }
 
-void
-ide_tree_refresh(IdeTree *tree)
+static void
+ide_tree_rebuild_rows(IdeTree *tree)
 {
   g_return_if_fail(tree != NULL);
 
@@ -424,7 +482,9 @@ ide_tree_refresh(IdeTree *tree)
     return;
   }
 
-  ide_tree_update_git_status(tree);
+  if (tree->git_status_map == NULL) {
+    tree->git_status_map = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, g_free);
+  }
   ide_tree_collect_dir_recursive(tree, tree->workspace_root, 0);
 
   gint restored_idx = tree->selected_idx;
@@ -510,6 +570,14 @@ ide_tree_refresh(IdeTree *tree)
     tree->pending_scroll_val = saved_scroll;
     gtk_adjustment_set_value(vadj, saved_scroll);
   }
+}
+
+void
+ide_tree_refresh(IdeTree *tree)
+{
+  g_return_if_fail(tree != NULL);
+  ide_tree_rebuild_rows(tree);
+  ide_tree_update_git_status(tree);
 }
 
 static void
@@ -621,6 +689,15 @@ ide_tree_free(IdeTree *tree)
   if (tree == NULL) {
     return;
   }
+  if (tree->git_cancel != NULL) {
+    g_cancellable_cancel(tree->git_cancel);
+  }
+  if (tree->git_proc != NULL) {
+    g_subprocess_force_exit(tree->git_proc);
+  }
+  g_clear_object(&tree->git_proc);
+  g_clear_object(&tree->git_cancel);
+  g_free(tree->git_branch);
   g_free(tree->workspace_root);
   g_clear_pointer(&tree->expanded_dirs, g_hash_table_destroy);
   g_clear_pointer(&tree->git_status_map, g_hash_table_destroy);
@@ -639,8 +716,9 @@ void
 ide_tree_set_workspace_root(IdeTree *tree, const char *workspace_root)
 {
   g_return_if_fail(tree != NULL);
+  char *dup = g_strdup(workspace_root ? workspace_root : ".");
   g_free(tree->workspace_root);
-  tree->workspace_root = g_strdup(workspace_root ? workspace_root : ".");
+  tree->workspace_root = dup;
 
   g_autofree char *base = g_path_get_basename(tree->workspace_root);
   g_autofree char *upper = g_ascii_strup(base, -1);
@@ -766,6 +844,15 @@ ide_tree_prompt_cancel(IdeTree *tree)
   gtk_revealer_set_reveal_child(GTK_REVEALER(tree->prompt_revealer), FALSE);
 }
 
+gboolean
+ide_tree_prompt_is_visible(IdeTree *tree)
+{
+  if (tree == NULL || tree->prompt_revealer == NULL) {
+    return FALSE;
+  }
+  return gtk_revealer_get_reveal_child(GTK_REVEALER(tree->prompt_revealer));
+}
+
 static char *
 ide_tree_get_selected_dir(IdeTree *tree)
 {
@@ -780,33 +867,63 @@ ide_tree_get_selected_dir(IdeTree *tree)
 }
 
 gboolean
-ide_tree_prompt_confirm(IdeTree *tree)
+ide_tree_create_entry_at(const char  *workspace_root,
+                         const char  *parent_dir,
+                         const char  *name,
+                         gboolean     is_dir,
+                         char       **out_target)
 {
-  g_return_val_if_fail(tree != NULL, FALSE);
-  const char *name = gtk_editable_get_text(GTK_EDITABLE(tree->prompt_entry));
-  if (name == NULL || name[0] == '\0') {
-    ide_tree_prompt_cancel(tree);
+  if (out_target != NULL) {
+    *out_target = NULL;
+  }
+  if (name == NULL || name[0] == '\0' || g_path_is_absolute(name)) {
     return FALSE;
   }
 
-  g_autofree char *parent_dir = ide_tree_get_selected_dir(tree);
-  g_autofree char *target = g_build_filename(parent_dir, name, NULL);
-  gboolean ok = FALSE;
+  const char *ws = (workspace_root != NULL && workspace_root[0] != '\0') ? workspace_root : ".";
+  const char *pdir = (parent_dir != NULL && parent_dir[0] != '\0') ? parent_dir : ws;
+  g_autofree char *canon_root = g_canonicalize_filename(ws, NULL);
+  g_autofree char *target = g_canonicalize_filename(name, pdir);
+  gsize root_len = strlen(canon_root);
+  if (!g_str_has_prefix(target, canon_root) ||
+      (target[root_len] != '/' && target[root_len] != '\0')) {
+    return FALSE;
+  }
 
-  if (tree->prompt_is_dir) {
+  gboolean ok = FALSE;
+  if (is_dir) {
     ok = (g_mkdir_with_parents(target, 0755) == 0);
-  } else {
+  } else if (!g_file_test(target, G_FILE_TEST_EXISTS)) {
     g_autofree char *dir_of_target = g_path_get_dirname(target);
     g_mkdir_with_parents(dir_of_target, 0755);
     ok = g_file_set_contents(target, "", 0, NULL);
   }
+  if (ok && out_target != NULL) {
+    *out_target = g_steal_pointer(&target);
+  }
+  return ok;
+}
+
+gboolean
+ide_tree_prompt_confirm(IdeTree *tree)
+{
+  g_return_val_if_fail(tree != NULL, FALSE);
+  const char *name = gtk_editable_get_text(GTK_EDITABLE(tree->prompt_entry));
+  g_autofree char *parent_dir = ide_tree_get_selected_dir(tree);
+  g_autofree char *target = NULL;
+  gboolean ok = ide_tree_create_entry_at(tree->workspace_root,
+                                         parent_dir,
+                                         name,
+                                         tree->prompt_is_dir,
+                                         &target);
 
   gtk_revealer_set_reveal_child(GTK_REVEALER(tree->prompt_revealer), FALSE);
-  g_hash_table_add(tree->expanded_dirs, g_strdup(parent_dir));
-  ide_tree_refresh(tree);
-
-  if (ok && !tree->prompt_is_dir && tree->open_cb != NULL) {
-    tree->open_cb(target, tree->open_cb_data);
+  if (ok) {
+    g_hash_table_add(tree->expanded_dirs, g_strdup(parent_dir));
+    ide_tree_refresh(tree);
+    if (!tree->prompt_is_dir && tree->open_cb != NULL && target != NULL) {
+      tree->open_cb(target, tree->open_cb_data);
+    }
   }
   return ok;
 }

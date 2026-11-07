@@ -163,7 +163,7 @@ static void battery_update(BatteryWidget *batt)
     if (v_ttf) { time_to_full = g_variant_get_int64(v_ttf); g_variant_unref(v_ttf); }
     if (v_rate) { energy_rate = g_variant_get_double(v_rate); g_variant_unref(v_rate); }
 
-    const gchar *icon_name = "tb-battery-4-symbolic";
+    const gchar *icon_name;
     if (state == UPOWER_STATE_CHARGING) {
         icon_name = "tb-battery-charging-symbolic";
     } else if (percentage <= 10.0) {
