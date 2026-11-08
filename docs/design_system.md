@@ -1,7 +1,7 @@
 # Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
-**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
+**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
 **Interactive Reference:** [`docs/ui-gallery.html`](file:///home/mikolas/src/Kajo/docs/ui-gallery.html)  
 **Master Stylesheet:** [`data/defaults/style.css`](file:///home/mikolas/src/Kajo/data/defaults/style.css)
 
@@ -191,3 +191,22 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - `GtkGrid` table with `#181818` uppercase header cells and `1px solid #2b2b2b` borders; task list items use live `GtkCheckButton` widgets synced bi-directionally with `- [ ]` / `- [x]` in the source buffer.
 - **Cairo Vector Mermaid Diagram Card (`.ide-mermaid-card`, `.ide-mermaid-canvas`):**
   - Anti-aliased vector graph canvas (`#101010` background, `1px solid #2b2b2b`) with a top `.ide-mermaid-toolbar` (`[ 🔍− ] [ 100% ] [ 🔍+ ] [ ⛶ FIT ] [ 💾 EXPORT SVG ] [ 📷 EXPORT PNG ]`). Nodes render as crisp Metro boxes (`#181818` fill, `1.5px` `@metro-accent` or semantic stroke) connected by Cubic Bézier vector paths; clicking any node jumps the editor cursor to its source line.
+
+### 4.8 Retro Amiga, C64 SID & Tracker Music Player (`kajo-mod`) Components
+- **LCD Telemetry Readout Deck (`.mod-telemetry-deck`, `.mod-counter-strip`):**
+  - `#141414` card framed by `1px solid #2b2b2b` and `border-left: 3px solid @metro-accent`.
+  - Top row displays `.mod-track-title` (`14px` bold `Fira Code`, `#ffffff`), `.mod-track-sub` (`12px`, `#a0a0a0` composer/filename), and right-aligned engine/hardware badges (`.shell-popover-badge.accent` `[ UADE 68K ]` / `[ RESIDFP 6581 ]` / `[ LIBGME ]` / `[ OPENMPT ]`, format badge `[ TFMX-PRO ]`, and filter state `[ LED: ON ]`).
+  - Bottom `.mod-counter-strip` (`#101010` recessed well, `1px solid #242424`, `padding: 4px 10px`, `11px` `Fira Code`) renders fixed-width hex/decimal playback counters: `SUB 01/09 │ ORD 04/1A │ PAT 02 │ ROW 2A/3F │ SPD 06 │ BPM 125 │ CH 04 │ 01:14 / 03:20`.
+- **Transport & First-Class Subsong Bar (`.mod-transport-bar`, `.mod-subsong-box`):**
+  - Combines standard transport buttons (`.player-transport-btn`, `.action-btn-primary`) with a dedicated subsong stepper (`[ ◀ SUB ]`, `.mod-subsong-readout` `SUB 01 / 09`, `[ SUB ▶ ]`), loop-mode `.segmented-group` (`ADVANCE` / `LOOP` / `FADE`), `.player-seek-scale`, and volume slider.
+- **Paula / C64 SID & Resampler DSP Strip (`.mod-dsp-strip`):**
+  - `#161616` control ribbon with `1px solid #2b2b2b` housing:
+    - **Interpolation / Paula Resampler (`.segmented-group`):** `A500` / `A1200` / `NEAREST` / `LINEAR` / `SINC`.
+    - **Amiga 3.3 kHz LED Filter (`.segmented-group`):** `AUTO` / `ON` / `OFF`.
+    - **C64 SID Chip Model (`.segmented-group`):** `AUTO` / `6581` / `8580`.
+    - **Stereo Separation (`scale`, `0%..100%`)** and **Speed (`scale`, `50%..200%` + `[1:1]` reset)**. Controls unsupported by the active backend (e.g. tempo factor on `libuade` 68k routines or SID model on non-SID tracks) are set insensitive (`opacity: 0.45`) with an explanatory tooltip.
+- **Four-Mode Deck Views (`.mod-scope-canvas`, `.mod-pattern-canvas`, `.mod-info-pane`, `.mod-playlist-pane`):**
+  - Switched via a 4-way `.segmented-group` (`📈 SCOPE & FFT` [default], `🎼 PATTERN ROLL`, `📋 SAMPLES & INFO`, `📂 PLAYLIST`).
+  - **Channel / Voice Header Strip (`.mod-channel-header`, `.mod-channel-pill`):** Per-channel box (`#181818`, `1px solid #2b2b2b`) displaying channel label (`CH 01` / `SID V1`), mini horizontal VU meter, and compact `[M]` (Mute, `@metro-urgent` when active) and `[S]` (Solo, `@metro-warning` when active) toggle buttons.
+  - **Pattern Roll (`.mod-pattern-canvas`, `.mod-pattern-row`):** `#101010` `Fira Code` grid with centered playhead row (`.mod-pattern-row.active`: `alpha(@metro-accent, 0.22)` background, `border-left: 2px solid @metro-accent`) and semantic cell colors: Note (`#ffffff` bold), Instrument (`@metro-accent`), Volume (`@metro-success`), and Effect (`@metro-warning`).
+  - **Samples, Instruments & STIL / Message Inspector (`.mod-info-pane`, `.mod-sample-row`):** Fixed-pitch `Fira Code` table preserving 22–32 character Amiga/tracker sample ASCII art alongside loop points, volume, and scrollable Song Message / HVSC STIL commentary (`#101010` well).

@@ -2197,6 +2197,216 @@
     }
 
     /* ==========================================================================
+       13B. RETRO AMIGA, C64 SID & TRACKER MUSIC DECK (kajo-mod)
+       ========================================================================== */
+    .mod-telemetry-deck {
+      background-color: var(--surface-tier-1);
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent);
+      padding: 10px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mod-track-title {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 800;
+      color: #ffffff;
+      letter-spacing: 0.4px;
+    }
+
+    .mod-track-sub {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .mod-counter-strip {
+      background-color: var(--surface-tier-0);
+      border: 1px solid #242424;
+      padding: 5px 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #d8d8d8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .mod-counter-kv {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .mod-counter-kv .k {
+      color: #777777;
+      font-weight: 700;
+    }
+
+    .mod-counter-kv .v {
+      color: var(--metro-telemetry);
+      font-weight: 700;
+    }
+
+    .mod-transport-bar {
+      background-color: var(--surface-tier-2);
+      border: 1px solid var(--border-struct);
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mod-subsong-box {
+      display: inline-flex;
+      align-items: center;
+      background-color: var(--surface-tier-0);
+      border: 1px solid var(--border-struct);
+    }
+
+    .mod-subsong-readout {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--metro-telemetry);
+      padding: 0 10px;
+      letter-spacing: 0.5px;
+    }
+
+    .mod-dsp-strip {
+      background-color: var(--surface-tier-2);
+      border: 1px solid var(--border-struct);
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .mod-dsp-group {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .mod-dsp-group.disabled {
+      opacity: 0.42;
+      pointer-events: none;
+    }
+
+    .mod-dsp-label {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .mod-channel-header {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      padding: 6px 10px;
+      background-color: var(--surface-tier-2);
+      border-bottom: 1px solid var(--border-struct);
+    }
+
+    .mod-channel-pill {
+      background-color: var(--surface-tier-3);
+      border: 1px solid var(--border-struct);
+      padding: 4px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+
+    .mod-channel-pill.muted {
+      opacity: 0.48;
+      border-color: #3a1d20;
+    }
+
+    .mod-ch-btn {
+      background-color: #141414;
+      border: 1px solid var(--border-struct);
+      color: #a0a0a0;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      cursor: pointer;
+    }
+
+    .mod-ch-btn.mute-on {
+      background-color: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    .mod-ch-btn.solo-on {
+      background-color: var(--metro-warning);
+      border-color: var(--metro-warning);
+      color: #101010;
+    }
+
+    .mod-scope-canvas {
+      background-color: var(--surface-tier-0);
+      border: 1px solid var(--border-struct);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mod-pattern-canvas {
+      background-color: var(--surface-tier-0);
+      border: 1px solid var(--border-struct);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .mod-pattern-row {
+      display: grid;
+      grid-template-columns: 44px repeat(4, 1fr);
+      padding: 2px 10px;
+      line-height: 20px;
+      border-left: 2px solid transparent;
+      color: #777777;
+    }
+
+    .mod-pattern-row.active {
+      background-color: color-mix(in srgb, var(--metro-accent) 22%, #101010);
+      border-left: 2px solid var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .mod-cell-note { color: #ffffff; font-weight: 700; }
+    .mod-cell-inst { color: var(--metro-accent); }
+    .mod-cell-vol  { color: var(--metro-success); }
+    .mod-cell-fx   { color: var(--metro-warning); }
+
+    .mod-sample-row {
+      display: grid;
+      grid-template-columns: 44px 1.6fr 90px 110px 70px;
+      padding: 4px 12px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      border-bottom: 1px solid #1e1e1e;
+      background-color: #121212;
+      color: #d8d8d8;
+    }
+
+    .mod-sample-row:hover {
+      background-color: #1c1c1c;
+    }
+
+    /* ==========================================================================
        14. FLOATING CLIPBOARD TOAST NOTIFICATION
        ========================================================================== */
     .copy-toast {
@@ -2271,6 +2481,7 @@
         <a class="gallery-nav-link" href="#sec-file-explorer"><span>10</span>FILE EXPLORER</a>
         <a class="gallery-nav-link" href="#sec-ide-workspace"><span>11</span>KAJO IDE WORKSPACE</a>
         <a class="gallery-nav-link" href="#sec-ide-drawers"><span>12</span>IDE DRAWERS &amp; GUI MARKDOWN</a>
+        <a class="gallery-nav-link" href="#sec-mod-player"><span>13</span>RETRO MUSIC DECK</a>
       </div>
     </nav>
   </header>
@@ -4312,6 +4523,353 @@
       </div>
     </section>
 
+    <!-- ======================================================================
+         SECTION 13: RETRO AMIGA, C64 SID & TRACKER MUSIC DECK (kajo-mod)
+         ====================================================================== -->
+    <section id="sec-mod-player" class="gallery-section">
+      <div class="gallery-section-header">
+        <div class="gallery-section-title">
+          <span class="gallery-section-num">13</span>
+          RETRO AMIGA, C64 SID &amp; TRACKER MUSIC DECK (kajo-mod)
+        </div>
+        <div class="gallery-section-desc">
+          XMPlay-style multi-backend deck: 1. Amiga 68k + Paula (libuade) &rarr; 2. C64 SID (libsidplayfp / reSIDfp) &rarr; 3. Chiptune (libgme) &rarr; 4. Non-Amiga Trackers (libopenmpt / libxmp).
+        </div>
+      </div>
+
+      <div class="gallery-section-body" style="display:flex; flex-direction:column; gap:18px;">
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+              <span class="specimen-box-title">INTERACTIVE DECK SPECIMEN — SWITCH ENGINE PRESET OR DECK VIEW</span>
+              <span class="gtk-class-tag" data-copy=".mod-telemetry-deck">.mod-telemetry-deck</span>
+              <span class="gtk-class-tag" data-copy=".mod-dsp-strip">.mod-dsp-strip</span>
+              <span class="gtk-class-tag" data-copy=".mod-pattern-canvas">.mod-pattern-canvas</span>
+            </div>
+            <div class="tag-cluster" id="modEnginePresetGroup">
+              <button class="kajo-btn files-nav-btn active" data-engine="uade">🦋 1. AMIGA UADE (TFMX)</button>
+              <button class="kajo-btn files-nav-btn" data-engine="sid">🕹 2. C64 SID (reSIDfp 6581)</button>
+              <button class="kajo-btn files-nav-btn" data-engine="gme">🎮 3. CHIPTUNE (SNES SPC)</button>
+              <button class="kajo-btn files-nav-btn" data-engine="openmpt">🎹 4. TRACKER (FALLBACK XM)</button>
+            </div>
+          </div>
+
+          <div class="kajo-window" style="max-width:920px; margin:0 auto; width:100%;">
+            <!-- Window Header Bar -->
+            <div class="settings-header-bar">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span>🎹</span>
+                <span class="settings-header-title">KAJO MOD</span>
+                <span id="modHeaderEngineBadge" class="shell-popover-badge accent">UADE 68K • PAULA BLEP</span>
+              </div>
+              <div style="display:flex; align-items:center; gap:6px;">
+                <button class="kajo-btn files-nav-btn" data-copy="niri_toggle_window_floating()">🗗 FLOAT / TILE</button>
+                <button class="kajo-btn settings-close-btn" title="Close (Ctrl+Q)">✕</button>
+              </div>
+            </div>
+
+            <!-- Window Body -->
+            <div style="padding:12px; display:flex; flex-direction:column; gap:10px; background:var(--surface-tier-1);">
+
+              <!-- 1. LCD Telemetry Readout Deck -->
+              <div class="mod-telemetry-deck">
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
+                  <div>
+                    <div id="modTelemetryTitle" class="mod-track-title">TURRICAN II — THE FINAL FIGHT (TITLE THEME)</div>
+                    <div id="modTelemetrySub" class="mod-track-sub">Chris Hülsbeck • mdat.turrican2 + smpl.turrican2 (bundle: turrican2.lha)</div>
+                  </div>
+                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <span id="modBadgeEngine" class="shell-popover-badge accent">UADE 3.05</span>
+                    <span id="modBadgeFormat" class="shell-popover-badge">TFMX-PRO (7V)</span>
+                    <span id="modBadgeChip" class="shell-popover-badge success">LED: ON (A500)</span>
+                    <span class="shell-popover-badge">48.0 KHZ</span>
+                  </div>
+                </div>
+
+                <div class="mod-counter-strip">
+                  <span class="mod-counter-kv"><span class="k">SUB</span><span id="modCntSub" class="v">01/09</span></span>
+                  <span style="color:#333;">│</span>
+                  <span class="mod-counter-kv"><span class="k">ORD</span><span id="modCntOrd" class="v">04/1A</span></span>
+                  <span style="color:#333;">│</span>
+                  <span class="mod-counter-kv"><span class="k">PAT</span><span id="modCntPat" class="v">02</span></span>
+                  <span style="color:#333;">│</span>
+                  <span class="mod-counter-kv"><span class="k">ROW</span><span id="modCntRow" class="v">2A/3F</span></span>
+                  <span style="color:#333;">│</span>
+                  <span class="mod-counter-kv"><span class="k">SPD/BPM</span><span id="modCntBpm" class="v">06 / 125</span></span>
+                  <span style="color:#333;">│</span>
+                  <span class="mod-counter-kv"><span class="k">VOICES</span><span id="modCntCh" class="v">04 PAULA</span></span>
+                  <span style="color:#333;">│</span>
+                  <span class="mod-counter-kv"><span class="k">TIME</span><span id="modCntTime" class="v">01:14 / 03:20</span></span>
+                </div>
+              </div>
+
+              <!-- 2. Transport & First-Class Subsong Stepper Bar -->
+              <div class="mod-transport-bar">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+                  <div style="display:flex; align-items:center; gap:5px;">
+                    <button class="kajo-btn player-transport-btn" title="Previous Track (P)">⏮</button>
+                    <button id="modPlayPauseBtn" class="kajo-btn action-btn-primary player-transport-btn" style="padding:3px 12px;" title="Play / Pause (Space)">❚❚ PAUSE</button>
+                    <button class="kajo-btn player-transport-btn" title="Stop (S)">⏹</button>
+                    <button class="kajo-btn player-transport-btn" title="Next Track (N)">⏭</button>
+
+                    <div class="mod-subsong-box" style="margin-left:6px;">
+                      <button id="modSubPrevBtn" class="kajo-btn player-transport-btn" style="border:none; border-right:1px solid var(--border-struct);" title="Previous Subsong ([)">◀ SUB</button>
+                      <span id="modSubReadout" class="mod-subsong-readout">SUB 01 / 09</span>
+                      <button id="modSubNextBtn" class="kajo-btn player-transport-btn" style="border:none; border-left:1px solid var(--border-struct);" title="Next Subsong (])">SUB ▶</button>
+                    </div>
+                  </div>
+
+                  <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                    <div class="mod-dsp-group">
+                      <span class="mod-dsp-label">LOOP:</span>
+                      <div class="segmented-group" id="modLoopGroup">
+                        <button class="kajo-btn">ADVANCE</button>
+                        <button class="kajo-btn">LOOP</button>
+                        <button class="kajo-btn active">FADE</button>
+                      </div>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:6px; min-width:140px;">
+                      <span class="mod-dsp-label">🔊</span>
+                      <input type="range" min="0" max="100" value="80" class="kajo-scale" style="--val:80%; width:90px;" />
+                      <span class="player-time-label">80%</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="display:flex; align-items:center; gap:10px;">
+                  <span class="player-time-label">01:14</span>
+                  <input type="range" min="0" max="100" value="37" class="kajo-scale player-seek-scale" style="--val:37%; flex:1;" />
+                  <span class="player-time-label">03:20</span>
+                </div>
+              </div>
+
+              <!-- 3. Paula / C64 SID & Resampler DSP Strip -->
+              <div class="mod-dsp-strip">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                  <div class="mod-dsp-group" id="modFilterGroupWrap">
+                    <span class="mod-dsp-label">RESAMPLER:</span>
+                    <div class="segmented-group" id="modInterpGroup">
+                      <button class="kajo-btn active">A500</button>
+                      <button class="kajo-btn">A1200</button>
+                      <button class="kajo-btn">NEAREST</button>
+                      <button class="kajo-btn">LINEAR</button>
+                      <button class="kajo-btn">SINC</button>
+                    </div>
+                  </div>
+
+                  <div class="mod-dsp-group" id="modLedGroupWrap">
+                    <span class="mod-dsp-label">PAULA LED:</span>
+                    <div class="segmented-group" id="modLedGroup">
+                      <button class="kajo-btn active">AUTO</button>
+                      <button class="kajo-btn">ON</button>
+                      <button class="kajo-btn">OFF</button>
+                    </div>
+                  </div>
+
+                  <div class="mod-dsp-group disabled" id="modSidGroupWrap" title="Active when playing Commodore 64 PSID/RSID tunes">
+                    <span class="mod-dsp-label">C64 SID:</span>
+                    <div class="segmented-group" id="modSidGroup">
+                      <button class="kajo-btn active">AUTO</button>
+                      <button class="kajo-btn">6581</button>
+                      <button class="kajo-btn">8580</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+                  <div class="mod-dsp-group" style="flex:1; min-width:240px;">
+                    <span class="mod-dsp-label">STEREO SEP:</span>
+                    <input id="modSepSlider" type="range" min="0" max="100" value="50" class="kajo-scale" style="--val:50%; flex:1;" />
+                    <span id="modSepReadout" class="player-time-label" style="min-width:95px;">50% (HEADPHONE)</span>
+                  </div>
+
+                  <div class="mod-dsp-group disabled" id="modSpeedGroupWrap" style="flex:1; min-width:220px;" title="Fixed 68000 CIA/VBI timer rate in UADE">
+                    <span class="mod-dsp-label">SPEED:</span>
+                    <input id="modSpeedSlider" type="range" min="50" max="200" value="100" class="kajo-scale" style="--val:33.3%; flex:1;" />
+                    <span id="modSpeedReadout" class="player-time-label">100%</span>
+                    <button class="kajo-btn files-nav-btn" style="padding:1px 6px; font-size:10px;">1:1</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 4. Deck View Switcher -->
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
+                <div class="segmented-group" id="modDeckViewGroup">
+                  <button class="kajo-btn active" data-modview="scope">📈 SCOPE &amp; FFT (F1)</button>
+                  <button class="kajo-btn" data-modview="pattern">🎼 PATTERN ROLL (F2)</button>
+                  <button class="kajo-btn" data-modview="info">📋 SAMPLES &amp; INFO (F3)</button>
+                  <button class="kajo-btn" data-modview="playlist">📂 PLAYLIST (4) (F4)</button>
+                </div>
+                <span class="files-list-meta">CLICK [M] / [S] ON VOICE HEADERS TO MUTE OR SOLO CHANNELS</span>
+              </div>
+
+              <!-- Shared Per-Channel / Voice Header Strip -->
+              <div class="mod-scope-canvas">
+                <div class="mod-channel-header" id="modChannelStrip">
+                  <div class="mod-channel-pill" data-ch="1">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="ch-name" style="color:#fff; font-weight:700;">CH 01 (L)</span>
+                      <div style="display:flex; gap:3px;">
+                        <button class="mod-ch-btn btn-mute" title="Mute Channel 1 (1)">M</button>
+                        <button class="mod-ch-btn btn-solo" title="Solo Channel 1 (Shift+1)">S</button>
+                      </div>
+                    </div>
+                    <div class="kajo-levelbar" style="height:4px;"><div class="kajo-levelbar-fill" style="width:78%;"></div></div>
+                  </div>
+                  <div class="mod-channel-pill" data-ch="2">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="ch-name" style="color:#fff; font-weight:700;">CH 02 (R)</span>
+                      <div style="display:flex; gap:3px;">
+                        <button class="mod-ch-btn btn-mute" title="Mute Channel 2 (2)">M</button>
+                        <button class="mod-ch-btn btn-solo" title="Solo Channel 2 (Shift+2)">S</button>
+                      </div>
+                    </div>
+                    <div class="kajo-levelbar" style="height:4px;"><div class="kajo-levelbar-fill" style="width:62%;"></div></div>
+                  </div>
+                  <div class="mod-channel-pill" data-ch="3">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="ch-name" style="color:#fff; font-weight:700;">CH 03 (R)</span>
+                      <div style="display:flex; gap:3px;">
+                        <button class="mod-ch-btn btn-mute" title="Mute Channel 3 (3)">M</button>
+                        <button class="mod-ch-btn btn-solo" title="Solo Channel 3 (Shift+3)">S</button>
+                      </div>
+                    </div>
+                    <div class="kajo-levelbar" style="height:4px;"><div class="kajo-levelbar-fill" style="width:88%; background:var(--metro-warning);"></div></div>
+                  </div>
+                  <div class="mod-channel-pill" data-ch="4">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="ch-name" style="color:#fff; font-weight:700;">CH 04 (L)</span>
+                      <div style="display:flex; gap:3px;">
+                        <button class="mod-ch-btn btn-mute" title="Mute Channel 4 (4)">M</button>
+                        <button class="mod-ch-btn btn-solo" title="Solo Channel 4 (Shift+4)">S</button>
+                      </div>
+                    </div>
+                    <div class="kajo-levelbar" style="height:4px;"><div class="kajo-levelbar-fill" style="width:54%;"></div></div>
+                  </div>
+                </div>
+
+                <!-- Deck View 1: Stereo Oscilloscope & 16-Band Spectrum (Default) -->
+                <div id="modViewScope" style="padding:12px; display:grid; grid-template-columns: 1.2fr 1fr; gap:12px; align-items:center; min-height:150px;">
+                  <div style="background:#0c0c0c; border:1px solid #222; padding:8px; position:relative;">
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:#888; margin-bottom:4px;">
+                      <span>DUAL-TRACE PAULA / SID OSCILLOSCOPE</span>
+                      <span><span style="color:var(--metro-accent);">■ L (CH 1,4)</span> &nbsp; <span style="color:var(--metro-telemetry);">■ R (CH 2,3)</span></span>
+                    </div>
+                    <svg viewBox="0 0 360 90" style="width:100%; height:90px; display:block;">
+                      <line x1="0" y1="45" x2="360" y2="45" stroke="#222" stroke-dasharray="3,3" />
+                      <polyline fill="none" stroke="var(--metro-accent)" stroke-width="2"
+                        points="0,45 15,18 30,68 45,12 60,76 75,28 90,60 105,15 120,74 135,22 150,65 165,14 180,78 195,30 210,58 225,18 240,72 255,26 270,64 285,16 300,74 315,24 330,62 345,20 360,45" />
+                      <polyline fill="none" stroke="var(--metro-telemetry)" stroke-width="1.6" stroke-opacity="0.85"
+                        points="0,45 15,62 30,24 45,70 60,20 75,66 90,32 105,68 120,22 135,60 150,28 165,72 180,18 195,64 210,30 225,68 240,22 255,58 270,26 285,70 300,20 315,62 330,28 345,66 360,45" />
+                    </svg>
+                  </div>
+
+                  <div style="background:#0c0c0c; border:1px solid #222; padding:8px;">
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:#888; margin-bottom:6px;">
+                      <span>16-BAND LOGARITHMIC FFT SPECTRUM</span>
+                      <span style="color:var(--metro-telemetry);">60 FPS MAP-GATED</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns:repeat(16, 1fr); gap:3px; height:84px; align-items:end;">
+                      <div style="height:68%; background:var(--metro-accent);"></div>
+                      <div style="height:84%; background:var(--metro-warning);"></div>
+                      <div style="height:92%; background:var(--metro-urgent);"></div>
+                      <div style="height:76%; background:var(--metro-accent);"></div>
+                      <div style="height:64%; background:var(--metro-accent);"></div>
+                      <div style="height:82%; background:var(--metro-warning);"></div>
+                      <div style="height:70%; background:var(--metro-accent);"></div>
+                      <div style="height:58%; background:var(--metro-accent);"></div>
+                      <div style="height:74%; background:var(--metro-accent);"></div>
+                      <div style="height:88%; background:var(--metro-warning);"></div>
+                      <div style="height:62%; background:var(--metro-accent);"></div>
+                      <div style="height:50%; background:var(--metro-accent);"></div>
+                      <div style="height:44%; background:var(--metro-telemetry);"></div>
+                      <div style="height:36%; background:var(--metro-telemetry);"></div>
+                      <div style="height:24%; background:var(--metro-telemetry);"></div>
+                      <div style="height:16%; background:var(--metro-telemetry);"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Deck View 2: Live Tracker Pattern Roll -->
+                <div id="modViewPattern" class="mod-pattern-canvas" style="display:none; border:none;">
+                  <div class="mod-pattern-row"><span>27</span><span><span class="mod-cell-note">C-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">G-4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span></div>
+                  <div class="mod-pattern-row"><span>28</span><span>--- .. .. ...</span><span><span class="mod-cell-note">D#4</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">v40</span> <span class="mod-cell-fx">C20</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">A-3</span> <span class="mod-cell-inst">04</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span></div>
+                  <div class="mod-pattern-row"><span>29</span><span><span class="mod-cell-note">D-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">308</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">A-4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span></div>
+                  <div class="mod-pattern-row active"><span>▶2A◀</span><span><span class="mod-cell-note">E-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">v64</span> <span class="mod-cell-fx">A01</span></span><span><span class="mod-cell-note">B-3</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">v48</span> <span class="mod-cell-fx">E93</span></span><span><span class="mod-cell-note">G-4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">v32</span> <span class="mod-cell-fx">304</span></span><span><span class="mod-cell-note">C-4</span> <span class="mod-cell-inst">04</span> <span class="mod-cell-vol">v64</span> <span class="mod-cell-fx">F06</span></span></div>
+                  <div class="mod-pattern-row"><span>2B</span><span>--- .. .. ...</span><span><span class="mod-cell-note">F-4</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span><span>--- .. .. ...</span></div>
+                  <div class="mod-pattern-row"><span>2C</span><span><span class="mod-cell-note">G-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">A#4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span><span class="mod-cell-note">E-4</span> <span class="mod-cell-inst">04</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span></div>
+                  <div class="mod-pattern-row"><span>2D</span><span>--- .. .. ...</span><span><span class="mod-cell-note">C-4</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">v32</span> <span class="mod-cell-fx">A0F</span></span><span>--- .. .. ...</span><span>--- .. .. ...</span></div>
+                </div>
+
+                <!-- Deck View 3: Samples, Instruments & Song Message / STIL Inspector -->
+                <div id="modViewInfo" style="display:none; padding:10px; flex-direction:column; gap:8px;">
+                  <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <span class="mod-dsp-label">XMPLAY-STYLE SAMPLE TEXT, INSTRUMENT &amp; HVSC STIL INSPECTOR (FIRA CODE)</span>
+                    <span class="shell-popover-badge">31 SAMPLES • README.NFO + STIL</span>
+                  </div>
+                  <div style="display:grid; grid-template-columns: 1.25fr 1fr; gap:10px;">
+                    <div style="border:1px solid var(--border-struct);">
+                      <div class="mod-sample-row" style="background:#181818; font-weight:700; color:#fff;">
+                        <span>#</span><span>SAMPLE / ASCII MESSAGE</span><span>LENGTH</span><span>LOOP</span><span>VOL</span>
+                      </div>
+                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">01</span><span style="color:#fff;">Lead_Synth_Paula_A500</span><span>14,280 B</span><span>0400..37C8</span><span>64</span></div>
+                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">02</span><span style="color:#fff;">--------------------</span><span>0 B</span><span>—</span><span>00</span></div>
+                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">03</span><span style="color:var(--metro-telemetry);">Composed by Huelsbeck</span><span>8,192 B</span><span>0000..2000</span><span>64</span></div>
+                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">04</span><span style="color:var(--metro-telemetry);">Greets to Factor 5!!</span><span>6,420 B</span><span>—</span><span>58</span></div>
+                    </div>
+                    <div style="background:#0e0e0e; border:1px solid var(--border-struct); padding:8px 10px; font-family:var(--font-mono); font-size:11px; color:#cccccc; line-height:1.5;">
+                      <div style="color:var(--metro-warning); font-weight:700; margin-bottom:4px;">[ SONG MESSAGE / HVSC STIL / ARCHIVE .NFO ]</div>
+                      <div>Artist: Chris Hülsbeck (1991 Rainbow Arts)</div>
+                      <div>Format: TFMX-Pro 7-Voice (mdat.turrican2 + smpl.turrican2)</div>
+                      <div>STIL: Subsong #1 is the iconic 4:30 titleloader theme; Subsongs #2–#9 cover Level 1-1 trapdoor &amp; jingles.</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Deck View 4: Playlist & Archive Queue -->
+                <div id="modViewPlaylist" style="display:none; flex-direction:column;">
+                  <div style="padding:6px 10px; background:#161616; border-bottom:1px solid var(--border-struct); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                    <div style="display:flex; gap:6px;">
+                      <button class="kajo-btn files-nav-btn">+ ADD FILES</button>
+                      <button class="kajo-btn files-nav-btn">📁 ADD FOLDER</button>
+                      <button class="kajo-btn files-nav-btn">📦 OPEN ARCHIVE (.LHA / .ZIP)</button>
+                      <button class="kajo-btn action-btn-danger files-nav-btn">🗑 CLEAR</button>
+                    </div>
+                    <input type="text" class="kajo-entry" placeholder="Filter playlist (title, format, prefix)..." style="width:220px; padding:3px 8px; font-size:11px;" />
+                  </div>
+                  <div class="files-list-row selected" style="grid-template-columns: 1fr auto auto auto;">
+                    <div class="files-list-name-cell"><span style="color:var(--metro-accent);">▶</span><span>mdat.turrican2 — Turrican II (Title Theme)</span></div>
+                    <span class="shell-popover-badge accent">UADE • TFMX</span>
+                    <span class="shell-popover-badge">9 SUB</span>
+                    <span class="files-list-meta">03:20</span>
+                  </div>
+                  <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
+                    <div class="files-list-name-cell"><span>🕹</span><span>Commando.sid — Rob Hubbard (1985 Elite)</span></div>
+                    <span class="shell-popover-badge">SID • 6581 PAL</span>
+                    <span class="shell-popover-badge">3 SUB</span>
+                    <span class="files-list-meta">04:12</span>
+                  </div>
+                  <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
+                    <div class="files-list-name-cell"><span>🦋</span><span>mod.space_debris — Captain / Future Crew</span></div>
+                    <span class="shell-popover-badge accent">UADE • PTK</span>
+                    <span class="shell-popover-badge">1 SUB</span>
+                    <span class="files-list-meta">04:58</span>
+                  </div>
+                  <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
+                    <div class="files-list-name-cell"><span>🎮</span><span>dkc2_stickerbush_symphony.spc — David Wise</span></div>
+                    <span class="shell-popover-badge">GME • SPC700</span>
+                    <span class="shell-popover-badge">1 SUB</span>
+                    <span class="files-list-meta">02:30</span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Floating Clipboard Notification Toast -->
@@ -4656,6 +5214,147 @@
           Object.keys(drawerViews).forEach((k) => {
             drawerViews[k].style.display = k === btn.dataset.drawer ? 'block' : 'none';
           });
+        });
+      });
+
+      // Section 13: kajo-mod Interactive Segmented Controls, Engine Presets, Deck Views & Channel Mute/Solo
+      bindExclusiveActivation('#modLoopGroup', '.kajo-btn', 'active');
+      bindExclusiveActivation('#modInterpGroup', '.kajo-btn', 'active');
+      bindExclusiveActivation('#modLedGroup', '.kajo-btn', 'active');
+      bindExclusiveActivation('#modSidGroup', '.kajo-btn', 'active');
+
+      const modDeckBtns = document.querySelectorAll('#modDeckViewGroup .kajo-btn');
+      const modViews = {
+        scope: document.getElementById('modViewScope'),
+        pattern: document.getElementById('modViewPattern'),
+        info: document.getElementById('modViewInfo'),
+        playlist: document.getElementById('modViewPlaylist')
+      };
+      modDeckBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          modDeckBtns.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          Object.keys(modViews).forEach((k) => {
+            if (k === 'scope') modViews[k].style.display = btn.dataset.modview === k ? 'grid' : 'none';
+            else modViews[k].style.display = btn.dataset.modview === k ? 'flex' : 'none';
+          });
+        });
+      });
+
+      let modSubCur = 1;
+      let modSubMax = 9;
+      const modSubReadout = document.getElementById('modSubReadout');
+      const modCntSub = document.getElementById('modCntSub');
+      function updateModSubReadout() {
+        const s = String(modSubCur).padStart(2, '0') + '/' + String(modSubMax).padStart(2, '0');
+        modCntSub.textContent = s;
+        modSubReadout.textContent = 'SUB ' + String(modSubCur).padStart(2, '0') + ' / ' + String(modSubMax).padStart(2, '0');
+      }
+      document.getElementById('modSubPrevBtn').addEventListener('click', () => {
+        if (modSubCur > 1) modSubCur--;
+        updateModSubReadout();
+      });
+      document.getElementById('modSubNextBtn').addEventListener('click', () => {
+        if (modSubCur < modSubMax) modSubCur++;
+        updateModSubReadout();
+      });
+
+      const modSepSlider = document.getElementById('modSepSlider');
+      const modSepReadout = document.getElementById('modSepReadout');
+      modSepSlider.addEventListener('input', () => {
+        const v = Number(modSepSlider.value);
+        const tag = v === 0 ? ' (MONO)' : v <= 60 ? ' (HEADPHONE)' : ' (AMIGA L/R)';
+        modSepReadout.textContent = v + '%' + tag;
+      });
+
+      const modSpeedSlider = document.getElementById('modSpeedSlider');
+      const modSpeedReadout = document.getElementById('modSpeedReadout');
+      modSpeedSlider.addEventListener('input', () => {
+        modSpeedReadout.textContent = modSpeedSlider.value + '%';
+      });
+
+      // Channel Mute / Solo buttons
+      document.querySelectorAll('#modChannelStrip .mod-channel-pill').forEach((pill) => {
+        const muteBtn = pill.querySelector('.btn-mute');
+        const soloBtn = pill.querySelector('.btn-solo');
+        muteBtn.addEventListener('click', () => {
+          const on = muteBtn.classList.toggle('mute-on');
+          pill.classList.toggle('muted', on);
+        });
+        soloBtn.addEventListener('click', () => {
+          soloBtn.classList.toggle('solo-on');
+        });
+      });
+
+      // Engine Preset Switcher
+      const enginePresets = {
+        uade: {
+          headerBadge: 'UADE 68K • PAULA BLEP',
+          title: 'TURRICAN II — THE FINAL FIGHT (TITLE THEME)',
+          sub: 'Chris Hülsbeck • mdat.turrican2 + smpl.turrican2 (bundle: turrican2.lha)',
+          engine: 'UADE 3.05',
+          format: 'TFMX-PRO (7V)',
+          chip: 'LED: ON (A500)',
+          subMax: 9, ord: '—', pat: '—', row: '—', bpm: '50 HZ PAL', ch: '04 PAULA',
+          filterOn: true, ledOn: true, sidOn: false, speedOn: false
+        },
+        sid: {
+          headerBadge: 'LIBSIDPLAYFP • RESIDFP 6581',
+          title: 'COMMANDO — HIGH SCORE & LOADER THEME',
+          sub: 'Rob Hubbard (1985 Elite Systems) • /MUSICIANS/H/Hubbard_Rob/Commando.sid',
+          engine: 'RESIDFP 3.1',
+          format: 'PSID V2 (PAL)',
+          chip: 'MOS 6581 R4AR',
+          subMax: 3, ord: '—', pat: '—', row: '—', bpm: '50 HZ CIA', ch: '03 SID VOICES',
+          filterOn: true, ledOn: false, sidOn: true, speedOn: false
+        },
+        gme: {
+          headerBadge: 'LIBGME • SNES SPC700 DSP',
+          title: 'STICKERBUSH SYMPHONY (BRAMBLE BLAST)',
+          sub: 'David Wise (1995 Rare / Nintendo) • dkc2_stickerbush_symphony.spc',
+          engine: 'LIBGME 0.6.5',
+          format: 'SNES SPC700',
+          chip: 'S-DSP 8-VOICE',
+          subMax: 1, ord: '—', pat: '—', row: '—', bpm: '100% TEMPO', ch: '08 S-DSP',
+          filterOn: false, ledOn: false, sidOn: false, speedOn: true
+        },
+        openmpt: {
+          headerBadge: 'LIBOPENMPT • TRACKER FALLBACK',
+          title: 'SECOND REALITY (MAIN PART)',
+          sub: 'Purple Motion / Future Crew (1993) • 2nd_pm.s3m',
+          engine: 'OPENMPT 0.8',
+          format: 'SCREAMTRACKER 3',
+          chip: 'SINC 8-TAP',
+          subMax: 1, ord: '08/2A', pat: '14', row: '2A/3F', bpm: '06 / 125', ch: '08 PCM',
+          filterOn: true, ledOn: true, sidOn: false, speedOn: true
+        }
+      };
+
+      const presetBtns = document.querySelectorAll('#modEnginePresetGroup .kajo-btn');
+      presetBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          presetBtns.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const p = enginePresets[btn.dataset.engine];
+          if (!p) return;
+          document.getElementById('modHeaderEngineBadge').textContent = p.headerBadge;
+          document.getElementById('modTelemetryTitle').textContent = p.title;
+          document.getElementById('modTelemetrySub').textContent = p.sub;
+          document.getElementById('modBadgeEngine').textContent = p.engine;
+          document.getElementById('modBadgeFormat').textContent = p.format;
+          document.getElementById('modBadgeChip').textContent = p.chip;
+          modSubCur = 1;
+          modSubMax = p.subMax;
+          updateModSubReadout();
+          document.getElementById('modCntOrd').textContent = p.ord;
+          document.getElementById('modCntPat').textContent = p.pat;
+          document.getElementById('modCntRow').textContent = p.row;
+          document.getElementById('modCntBpm').textContent = p.bpm;
+          document.getElementById('modCntCh').textContent = p.ch;
+          document.getElementById('modFilterGroupWrap').classList.toggle('disabled', !p.filterOn);
+          document.getElementById('modLedGroupWrap').classList.toggle('disabled', !p.ledOn);
+          document.getElementById('modSidGroupWrap').classList.toggle('disabled', !p.sidOn);
+          document.getElementById('modSpeedGroupWrap').classList.toggle('disabled', !p.speedOn);
         });
       });
     })();
