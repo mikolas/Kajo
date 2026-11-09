@@ -135,72 +135,85 @@
     AERO + METRO PERSONAL APPLICATION SUITE &amp; WAYLAND ENVIRONMENT
   </text>
 
-  <!-- 5. Bottom 6-Binary Suite Telemetry Strip (x=408..1144, y=272..340) -->
+  <!-- 5. Bottom 7-Binary Suite Telemetry Strip (x=408..1144, y=272..340) -->
   <g transform="translate(408, 272)" font-family="'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace">
 
     <!-- 01: kajo (Shell) -->
     <g transform="translate(0, 0)">
-      <rect x="0" y="0" width="114" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="48" y2="0" stroke="#0078d4" stroke-width="3"/>
-      <polygon points="14,16 19,16 19,36 14,36" fill="#ffffff"/>
-      <polygon points="21,25 30,16 35,16 25,27" fill="#00d8f0"/>
-      <polygon points="26,28 35,36 29,36 21,29" fill="#0078d4"/>
-      <text x="44" y="25" fill="#666666" font-size="10" font-weight="700">01//</text>
-      <text x="14" y="54" fill="#f0f0f0" font-size="11" font-weight="700" letter-spacing="0.8">KAJO SHELL</text>
+      <rect x="0" y="0" width="99" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#0078d4" stroke-width="3"/>
+      <polygon points="12,16 17,16 17,36 12,36" fill="#ffffff"/>
+      <polygon points="19,25 28,16 33,16 23,27" fill="#00d8f0"/>
+      <polygon points="24,28 33,36 27,36 19,29" fill="#0078d4"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">01//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">KAJO SHELL</text>
     </g>
 
     <!-- 02: kajo-ide -->
-    <g transform="translate(124, 0)">
-      <rect x="0" y="0" width="114" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="48" y2="0" stroke="#00d8f0" stroke-width="3"/>
-      <polygon points="14,17 24,25 14,33 14,29 19,25 14,21" fill="#00d8f0"/>
-      <rect x="27" y="17" width="8" height="17" fill="#dcdcaa"/>
-      <text x="44" y="25" fill="#666666" font-size="10" font-weight="700">02//</text>
-      <text x="14" y="54" fill="#f0f0f0" font-size="11" font-weight="700" letter-spacing="0.8">KAJO IDE</text>
+    <g transform="translate(106, 0)">
+      <rect x="0" y="0" width="99" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#00d8f0" stroke-width="3"/>
+      <polygon points="12,17 22,25 12,33 12,29 17,25 12,21" fill="#00d8f0"/>
+      <rect x="25" y="17" width="8" height="17" fill="#dcdcaa"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">02//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">KAJO IDE</text>
     </g>
 
     <!-- 03: kajo-files -->
-    <g transform="translate(248, 0)">
-      <rect x="0" y="0" width="114" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="48" y2="0" stroke="#0078d4" stroke-width="3"/>
-      <polygon points="14,16 23,16 26,20 36,20 36,35 14,35" fill="#0078d4"/>
-      <rect x="14" y="22" width="22" height="3" fill="#00d8f0"/>
-      <text x="44" y="25" fill="#666666" font-size="10" font-weight="700">03//</text>
-      <text x="14" y="54" fill="#f0f0f0" font-size="11" font-weight="700" letter-spacing="0.8">KAJO FILES</text>
+    <g transform="translate(212, 0)">
+      <rect x="0" y="0" width="99" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#0078d4" stroke-width="3"/>
+      <polygon points="12,16 21,16 24,20 34,20 34,35 12,35" fill="#0078d4"/>
+      <rect x="12" y="22" width="22" height="3" fill="#00d8f0"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">03//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">KAJO FILES</text>
     </g>
 
     <!-- 04: kajo-player -->
-    <g transform="translate(372, 0)">
-      <rect x="0" y="0" width="114" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="48" y2="0" stroke="#c586c0" stroke-width="3"/>
-      <polygon points="14,16 28,25 14,35" fill="#00d8f0"/>
-      <rect x="31" y="21" width="3" height="14" fill="#c586c0"/>
-      <rect x="36" y="16" width="3" height="19" fill="#0078d4"/>
-      <text x="44" y="25" fill="#666666" font-size="10" font-weight="700">04//</text>
-      <text x="14" y="54" fill="#f0f0f0" font-size="11" font-weight="700" letter-spacing="0.8">KAJO PLAYER</text>
+    <g transform="translate(318, 0)">
+      <rect x="0" y="0" width="99" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#c586c0" stroke-width="3"/>
+      <polygon points="12,16 26,25 12,35" fill="#00d8f0"/>
+      <rect x="29" y="21" width="3" height="14" fill="#c586c0"/>
+      <rect x="34" y="16" width="3" height="19" fill="#0078d4"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">04//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">KAJO PLAYER</text>
     </g>
 
-    <!-- 05: kajo-settings -->
-    <g transform="translate(496, 0)">
-      <rect x="0" y="0" width="114" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="48" y2="0" stroke="#0078d4" stroke-width="3"/>
-      <rect x="14" y="18" width="22" height="3" fill="#0078d4"/>
-      <rect x="28" y="15" width="4" height="9" fill="#ffffff"/>
-      <rect x="14" y="29" width="22" height="3" fill="#00d8f0"/>
-      <rect x="19" y="26" width="4" height="9" fill="#ffffff"/>
-      <text x="44" y="25" fill="#666666" font-size="10" font-weight="700">05//</text>
-      <text x="14" y="54" fill="#f0f0f0" font-size="11" font-weight="700" letter-spacing="0.8">SETTINGS</text>
+    <!-- 05: kajo-mod -->
+    <g transform="translate(424, 0)">
+      <rect x="0" y="0" width="99" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#ff8c00" stroke-width="3"/>
+      <polyline points="12,21 17,21 17,15 24,15 24,23 30,23 30,17 36,17" fill="none" stroke="#00d8f0" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"/>
+      <rect x="12" y="27" width="5" height="9" fill="#0078d4"/>
+      <rect x="19" y="25" width="5" height="11" fill="#ff8c00"/>
+      <rect x="26" y="29" width="5" height="7" fill="#0078d4"/>
+      <rect x="33" y="26" width="5" height="10" fill="#00d8f0"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">05//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">KAJO MOD</text>
     </g>
 
-    <!-- 06: kajo-greeter -->
-    <g transform="translate(620, 0)">
-      <rect x="0" y="0" width="116" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="48" y2="0" stroke="#4ec9b0" stroke-width="3"/>
-      <rect x="19" y="15" width="12" height="8" fill="none" stroke="#e6e6e6" stroke-width="2.5"/>
-      <rect x="15" y="23" width="20" height="13" fill="#0078d4"/>
-      <rect x="23" y="26" width="4" height="7" fill="#00d8f0"/>
-      <text x="44" y="25" fill="#666666" font-size="10" font-weight="700">06//</text>
-      <text x="14" y="54" fill="#f0f0f0" font-size="11" font-weight="700" letter-spacing="0.8">GREETER</text>
+    <!-- 06: kajo-settings -->
+    <g transform="translate(530, 0)">
+      <rect x="0" y="0" width="99" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#0078d4" stroke-width="3"/>
+      <rect x="12" y="18" width="22" height="3" fill="#0078d4"/>
+      <rect x="26" y="15" width="4" height="9" fill="#ffffff"/>
+      <rect x="12" y="29" width="22" height="3" fill="#00d8f0"/>
+      <rect x="17" y="26" width="4" height="9" fill="#ffffff"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">06//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">SETTINGS</text>
+    </g>
+
+    <!-- 07: kajo-greeter -->
+    <g transform="translate(636, 0)">
+      <rect x="0" y="0" width="100" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="44" y2="0" stroke="#4ec9b0" stroke-width="3"/>
+      <rect x="17" y="15" width="12" height="8" fill="none" stroke="#e6e6e6" stroke-width="2.5"/>
+      <rect x="13" y="23" width="20" height="13" fill="#0078d4"/>
+      <rect x="21" y="26" width="4" height="7" fill="#00d8f0"/>
+      <text x="42" y="25" fill="#666666" font-size="10" font-weight="700">07//</text>
+      <text x="12" y="54" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.6">GREETER</text>
     </g>
 
   </g>

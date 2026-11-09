@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>kajo-mod — Niri Column Reflow & Full-Height Tiled UI Mockup</title>
+  <style>
+    :root {
+      --metro-bg: #111111;
+      --metro-surface-0: #0a0a0a;
+      --metro-surface-1: #101010;
+      --metro-surface-2: #141414;
+      --metro-surface-3: #181818;
+      --metro-surface-4: #1e1e1e;
+      --metro-border: #2b2b2b;
+      --metro-border-subtle: #242424;
+      --metro-text: #ffffff;
+      --metro-subtext: #a0a0a0;
+      --metro-dim: #777777;
+      --metro-accent: #0078d4;
+      --metro-accent-rgb: 0, 120, 212;
+      --metro-telemetry: #00d8f0;
+      --metro-success: #10893e;
+      --metro-warning: #ffb900;
+      --metro-urgent: #e81123;
+      --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+      --font-sans: 'Inter', 'Cantarell', 'Segoe UI', sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      border-radius: 0px !important;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #070707;
+      color: var(--metro-text);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      user-select: none;
+    }
+
+    /* ── Top Niri Compositor Simulator Bar (32px) ── */
+    .niri-sim-bar {
+      height: 32px;
+      background-color: #0e0e0e;
+      border-bottom: 1px solid var(--metro-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--metro-subtext);
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .niri-sim-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .niri-sim-label {
+      color: var(--metro-dim);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 10px;
+    }
+    .sim-btn {
+      background: #181818;
+      color: #bbbbbb;
+      border: 1px solid #2b2b2b;
+      padding: 2px 7px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .sim-btn:hover {
+      background: #222222;
+      color: #ffffff;
+    }
+    .sim-btn.active {
+      background: var(--metro-accent);
+      color: #ffffff;
+      border-color: var(--metro-accent);
+    }
+    .sim-readout {
+      color: var(--metro-telemetry);
+      font-weight: 700;
+      font-size: 10px;
+      padding: 2px 6px;
+      background: #121212;
+      border: 1px solid #262626;
+      min-width: 165px;
+      text-align: center;
+    }
+    .sim-swatch {
+      width: 14px;
+      height: 14px;
+      border: 1px solid #444;
+      cursor: pointer;
+    }
+    .sim-swatch.active {
+      border: 2px solid #ffffff;
+    }
+
+    /* ── Simulated Niri Workspace Area (100vh - 32px, with 6px Niri gaps) ── */
+    .niri-workspace {
+      width: 100%;
+      height: calc(100vh - 32px);
+      padding: 6px; /* Niri layout { gaps 6 } from 00-kajo.kdl */
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(var(--metro-accent-rgb), 0.05), transparent 45%),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 40px),
+        #070707;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── The kajo-mod Window Container (clip-to-geometry true, strict min-width <= 480px) ── */
+    .shell-mod-window {
+      width: 814px; /* Default Niri proportion 0.5 on 2880x1800@1.75x (1646px logical) */
+      height: 100%;
+      min-width: 480px;
+      max-width: 100%;
+      background-color: var(--metro-bg);
+      border: 1px solid var(--metro-accent);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden; /* Matches Niri clip-to-geometry true */
+      box-shadow: 0 10px 32px rgba(0, 0, 0, 0.75);
+      position: relative;
+    }
+    .shell-mod-window.stacked-half-height {
+      height: 500px;
+      align-self: center;
+    }
+
+    /* Right-edge interactive column resize handle for testing smooth reflow */
+    .column-resize-grip {
+      width: 6px;
+      height: 100%;
+      background: transparent;
+      cursor: ew-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .column-resize-grip::after {
+      content: '⋮';
+      color: #444;
+      font-size: 14px;
+      font-family: var(--font-mono);
+    }
+    .column-resize-grip:hover {
+      background: rgba(var(--metro-accent-rgb), 0.25);
+    }
+    .column-resize-grip:hover::after {
+      color: #fff;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       ZONE 1: Window Chrome Header Bar (vexpand: FALSE, fixed 36px)
+       ═══════════════════════════════════════════════════════════════════════ */
+    .settings-header-bar {
+      height: 36px;
+      min-height: 36px;
+      background-color: var(--metro-surface-2);
+      border-bottom: 1px solid var(--metro-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 6px 0 10px;
+      flex-shrink: 0;
+      gap: 8px;
+    }
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .settings-header-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      color: var(--metro-text);
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .kajo-btn {
+      background: #1e1e1e;
+      color: #dcdcdc;
+      border: 1px solid var(--metro-border);
+      padding: 3px 7px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .kajo-btn:hover {
+      background: #282828;
+      color: #ffffff;
+      border-color: #3d3d3d;
+    }
+    .kajo-btn.primary,
+    .kajo-btn.active {
+      background: var(--metro-accent);
+      color: #ffffff;
+      border-color: var(--metro-accent);
+    }
+    .settings-close-btn {
+      width: 26px;
+      height: 24px;
+      background: transparent;
+      color: #cccccc;
+      border: 1px solid transparent;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      cursor: pointer;
+    }
+    .settings-close-btn:hover {
+      background: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    .shell-popover-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 5px;
+      background-color: #1f1f1f;
+      color: #cccccc;
+      border: 1px solid #333333;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .shell-popover-badge.accent {
+      background-color: rgba(var(--metro-accent-rgb), 0.2);
+      color: var(--metro-telemetry);
+      border-color: var(--metro-accent);
+    }
+    .shell-popover-badge.success {
+      background-color: rgba(16, 137, 62, 0.2);
+      color: #39d353;
+      border-color: var(--metro-success);
+    }
+    .shell-popover-badge.warning {
+      background-color: rgba(255, 185, 0, 0.16);
+      color: var(--metro-warning);
+      border-color: var(--metro-warning);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       ZONES 2–4: Fixed-Height Top Decks (NEVER wrap, NEVER change height)
+       ═══════════════════════════════════════════════════════════════════════ */
+    .mod-top-fixed-zones {
+      padding: 6px 8px 0 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      flex-shrink: 0;
+    }
+
+    /* Zone 2: LCD Telemetry Readout Deck (fixed 66px height) */
+    .mod-telemetry-deck {
+      background-color: var(--metro-surface-2);
+      border: 1px solid var(--metro-border);
+      border-left: 3px solid var(--metro-accent);
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .mod-telemetry-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .mod-title-col {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+    .mod-track-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--metro-text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mod-track-sub {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--metro-subtext);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mod-badge-row {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    /* 6-Column Homogeneous Telemetry Grid: never wraps or changes height at 480px..1920px */
+    .mod-counter-strip {
+      background-color: var(--metro-surface-1);
+      border: 1px solid var(--metro-border-subtle);
+      padding: 3px 6px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      display: grid;
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 4px;
+    }
+    .mod-counter-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      border-right: 1px solid #1f1f1f;
+      padding-right: 4px;
+    }
+    .mod-counter-item:last-child {
+      border-right: none;
+      justify-content: flex-end;
+      padding-right: 0;
+    }
+    .mod-counter-item .lbl {
+      color: var(--metro-dim);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .mod-counter-item .val {
+      color: var(--metro-text);
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mod-counter-item .val.accent {
+      color: var(--metro-telemetry);
+    }
+
+    /* Zone 3: 2-Row Deterministic Transport & Subsong Deck (min-width ~440px, never wraps) */
+    .mod-transport-deck {
+      background-color: var(--metro-surface-2);
+      border: 1px solid var(--metro-border);
+      padding: 5px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .mod-transport-row-top,
+    .mod-transport-row-bot {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .mod-seek-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex: 1 1 auto;
+      min-width: 120px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      color: var(--metro-subtext);
+    }
+    .mod-subsong-box {
+      display: flex;
+      align-items: center;
+      background-color: var(--metro-surface-1);
+      border: 1px solid var(--metro-border);
+      flex-shrink: 0;
+    }
+    .mod-subsong-box .kajo-btn {
+      border: none;
+      background: transparent;
+      padding: 2px 6px;
+    }
+    .mod-subsong-box .kajo-btn:hover {
+      background: #252525;
+    }
+    .mod-subsong-readout {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--metro-telemetry);
+      padding: 2px 7px;
+      border-left: 1px solid var(--metro-border);
+      border-right: 1px solid var(--metro-border);
+      white-space: nowrap;
+    }
+    .mod-btn-cluster {
+      display: flex;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .mod-vol-wrap {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      margin-left: auto;
+      flex-shrink: 0;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      color: var(--metro-subtext);
+    }
+
+    input[type="range"].metro-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 5px;
+      background: #262626;
+      border: 1px solid #333333;
+      outline: none;
+      cursor: pointer;
+    }
+    input[type="range"].metro-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 9px;
+      height: 13px;
+      background: var(--metro-accent);
+      border: 1px solid #ffffff;
+      cursor: pointer;
+    }
+
+    .segmented-group {
+      display: inline-flex;
+      border: 1px solid var(--metro-border);
+      background: var(--metro-surface-1);
+      flex-shrink: 0;
+    }
+    .segmented-group .kajo-btn {
+      border: none;
+      border-right: 1px solid var(--metro-border);
+      background: transparent;
+      padding: 2px 6px;
+      font-size: 10px;
+    }
+    .segmented-group .kajo-btn:last-child {
+      border-right: none;
+    }
+    .segmented-group .kajo-btn.active {
+      background: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    /* Zone 4: 2-Row Deterministic Hardware & DSP Matrix (never wraps, fixed height) */
+    .mod-dsp-strip {
+      background-color: var(--metro-surface-3);
+      border: 1px solid var(--metro-border);
+      padding: 4px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .mod-dsp-row-1 {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+    .mod-dsp-row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding-top: 3px;
+      border-top: 1px solid #222222;
+      min-width: 0;
+    }
+    .mod-dsp-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+    .mod-dsp-group.disabled {
+      opacity: 0.38;
+      pointer-events: none;
+    }
+    .mod-dsp-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--metro-subtext);
+      text-transform: uppercase;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* Zone 5: Bounded-Height Scope, 16-Band FFT & Voice Header Deck (vexpand: FALSE) */
+    .mod-scope-deck {
+      background-color: var(--metro-surface-1);
+      border: 1px solid var(--metro-border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+    }
+    .mod-channel-header {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 3px;
+      padding: 4px 6px;
+      background-color: var(--metro-surface-2);
+      border-bottom: 1px solid var(--metro-border);
+    }
+    .mod-channel-pill {
+      background-color: var(--metro-surface-3);
+      border: 1px solid var(--metro-border);
+      padding: 2px 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      min-width: 0;
+    }
+    .mod-channel-pill.muted {
+      opacity: 0.42;
+      background-color: #121212;
+    }
+    .mod-channel-name {
+      font-weight: 700;
+      color: #dddddd;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+    .mod-channel-vu {
+      flex: 1 1 24px;
+      height: 5px;
+      background: #0d0d0d;
+      border: 1px solid #262626;
+      overflow: hidden;
+      min-width: 16px;
+    }
+    .mod-channel-vu-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--metro-success) 0%, var(--metro-accent) 75%, var(--metro-warning) 100%);
+    }
+    .mod-ms-btns {
+      display: flex;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .mod-ms-btn {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 700;
+      padding: 0px 3px;
+      background: #222222;
+      color: #999999;
+      border: 1px solid #333333;
+      cursor: pointer;
+    }
+    .mod-ms-btn.mute-on {
+      background: var(--metro-urgent);
+      color: #ffffff;
+      border-color: var(--metro-urgent);
+    }
+    .mod-ms-btn.solo-on {
+      background: var(--metro-warning);
+      color: #111111;
+      border-color: var(--metro-warning);
+    }
+
+    .mod-scope-grid {
+      height: 88px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      padding: 5px 6px;
+      min-width: 0;
+    }
+    .mod-vis-card {
+      background-color: #0c0c0c;
+      border: 1px solid #222222;
+      padding: 4px 6px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .mod-vis-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--metro-subtext);
+      z-index: 1;
+      gap: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .mod-fft-bars {
+      display: grid;
+      grid-template-columns: repeat(16, 1fr);
+      gap: 2px;
+      align-items: end;
+      height: 56px;
+      padding-top: 2px;
+    }
+    .mod-fft-bar {
+      background: linear-gradient(180deg, var(--metro-telemetry) 0%, var(--metro-accent) 45%, var(--metro-success) 100%);
+      border-top: 2px solid #ffffff;
+      min-height: 3px;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       ZONE 6: Vertical GtkPaned Expanding Region (vexpand: TRUE, min-height: 0)
+       Absorbs 100% of remaining full-height Niri column space
+       ═══════════════════════════════════════════════════════════════════════ */
+    .mod-expanding-paned {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 5px 8px 6px 8px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Upper Expanding Pane (Pane 6A: Module, Samples/Voices & STIL/.NFO Inspector) */
+    .mod-upper-pane {
+      flex: 1.15 1 0;
+      min-height: 110px;
+      background-color: var(--metro-surface-1);
+      border: 1px solid var(--metro-border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .mod-pane-toolbar {
+      height: 28px;
+      min-height: 28px;
+      background-color: var(--metro-surface-2);
+      border-bottom: 1px solid var(--metro-border);
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .mod-pane-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--metro-subtext);
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Controlled Reflow Inspector Grid:
+       - Wide Column (>= 760px, Niri 1/2 0.5 & 2/3 0.667): 2-column side-by-side split
+       - Narrow Column (< 760px, Niri 1/3 0.333): 1-column full-width switched view (zero clipping!) */
+    .mod-inspector-body {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      overflow: hidden;
+    }
+    .shell-mod-window.narrow-column .mod-inspector-body {
+      grid-template-columns: 1fr;
+    }
+    .shell-mod-window.narrow-column .mod-inspector-col.hidden-narrow {
+      display: none;
+    }
+
+    /* In wide mode (>= 760px), both panes are visible side-by-side; the switcher highlights active focus or shows "SPLIT VIEW (2-COL)" badge */
+    .mod-narrow-switcher {
+      display: none;
+    }
+    .shell-mod-window.narrow-column .mod-narrow-switcher {
+      display: inline-flex;
+    }
+    .mod-wide-indicator {
+      display: inline-flex;
+    }
+    .shell-mod-window.narrow-column .mod-wide-indicator {
+      display: none;
+    }
+
+    .mod-inspector-col {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      overflow: hidden;
+      border-right: 1px solid var(--metro-border);
+    }
+    .mod-inspector-col:last-child {
+      border-right: none;
+    }
+    .mod-subcol-hdr {
+      height: 22px;
+      min-height: 22px;
+      padding: 0 8px;
+      background-color: #141414;
+      border-bottom: 1px solid #222222;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--metro-subtext);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .mod-scroll-well {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
+    .mod-sample-row {
+      display: grid;
+      grid-template-columns: 24px minmax(0, 1fr) 54px 58px 34px;
+      padding: 2px 8px;
+      border-bottom: 1px solid #171717;
+      color: #cccccc;
+      align-items: center;
+      gap: 4px;
+    }
+    .mod-sample-row.header {
+      background-color: #151515;
+      color: #777777;
+      font-size: 10px;
+      font-weight: 700;
+      position: sticky;
+      top: 0;
+      border-bottom: 1px solid #252525;
+    }
+    .mod-sample-row .ascii {
+      color: #ffffff;
+      white-space: pre;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mod-stil-box {
+      padding: 8px 10px;
+      color: #cccccc;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 11px;
+    }
+
+    /* GtkPaned Horizontal Splitter Bar */
+    .mod-paned-handle {
+      height: 7px;
+      background-color: #141414;
+      border-left: 1px solid var(--metro-border);
+      border-right: 1px solid var(--metro-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: ns-resize;
+      flex-shrink: 0;
+    }
+    .mod-paned-handle::after {
+      content: '⋯⋯⋯';
+      color: #555555;
+      font-size: 10px;
+      letter-spacing: 2px;
+    }
+    .mod-paned-handle:hover {
+      background-color: rgba(var(--metro-accent-rgb), 0.25);
+    }
+    .mod-paned-handle:hover::after {
+      color: var(--metro-telemetry);
+    }
+
+    /* Lower Expanding Pane (Pane 6B: Always-Docked Playlist & Archive Queue) */
+    .mod-lower-pane {
+      flex: 1 1 0;
+      min-height: 100px;
+      background-color: var(--metro-surface-1);
+      border: 1px solid var(--metro-border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .mod-filter-input {
+      background: #101010;
+      border: 1px solid var(--metro-border);
+      color: #ffffff;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      padding: 2px 6px;
+      width: 130px;
+      min-width: 70px;
+      outline: none;
+    }
+    .mod-filter-input:focus {
+      border-color: var(--metro-accent);
+    }
+
+    .mod-pl-row {
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr) 74px 48px 46px;
+      padding: 4px 8px;
+      border-bottom: 1px solid #181818;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: #cccccc;
+      cursor: pointer;
+    }
+    .shell-mod-window.narrow-column .mod-pl-row {
+      grid-template-columns: 24px minmax(0, 1fr) 70px 44px;
+    }
+    .shell-mod-window.narrow-column .mod-pl-row .pl-sub {
+      display: none;
+    }
+    .mod-pl-row:hover {
+      background-color: #181818;
+    }
+    .mod-pl-row.active {
+      background-color: rgba(var(--metro-accent-rgb), 0.18);
+      border-left: 3px solid var(--metro-accent);
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .mod-pl-row .pl-title {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       ZONE 7: Bottom Status Bar (vexpand: FALSE, fixed 24px)
+       ═══════════════════════════════════════════════════════════════════════ */
+    .mod-status-bar {
+      height: 24px;
+      min-height: 24px;
+      background-color: var(--metro-surface-2);
+      border-top: 1px solid var(--metro-border);
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--metro-subtext);
+      flex-shrink: 0;
+      gap: 8px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .mod-status-left,
+    .mod-status-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      background-color: var(--metro-success);
+      display: inline-block;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Top Niri Column & Engine Priority Simulator Bar ── -->
+  <div class="niri-sim-bar">
+    <div class="niri-sim-group" id="niriGeomGroup">
+      <span class="niri-sim-label">Niri Mod+R Presets:</span>
+      <button class="sim-btn" data-width="540" data-mode="tiled" title="Niri preset-column-widths: proportion 0.33333 on 2880x1800@1.75x (~540px logical)">1/3 Col (0.333 • 540px)</button>
+      <button class="sim-btn active" data-width="814" data-mode="tiled" title="Niri default-column-width: proportion 0.5 on 2880x1800@1.75x (~814px logical)">1/2 Col (0.500 • 814px Default)</button>
+      <button class="sim-btn" data-width="1088" data-mode="tiled" title="Niri preset-column-widths: proportion 0.66667 on 2880x1800@1.75x (~1088px logical)">2/3 Col (0.667 • 1088px)</button>
+      <button class="sim-btn" data-width="1634" data-mode="tiled" title="Niri maximize-column (proportion 1.0)">Full Col (1.000)</button>
+      <button class="sim-btn" data-width="814" data-mode="stacked" title="Two windows stacked vertically inside one 1/2 Niri column">Stacked 1/2 Height</button>
+    </div>
+
+    <div class="sim-readout" id="niriSizeReadout">COL: 814px • 2-COL SPLIT (&ge;760px)</div>
+
+    <div class="niri-sim-group" id="enginePresetGroup">
+      <span class="niri-sim-label">Engine Prio:</span>
+      <button class="sim-btn active" data-engine="uade">1. Amiga (UADE)</button>
+      <button class="sim-btn" data-engine="sid">2. C64 SID (reSIDfp)</button>
+      <button class="sim-btn" data-engine="gme">3. Chiptune (GME)</button>
+      <button class="sim-btn" data-engine="openmpt">4. Tracker (OpenMPT)</button>
+    </div>
+
+    <div class="niri-sim-group" id="accentGroup">
+      <span class="sim-swatch active" data-color="#0078d4" data-rgb="0, 120, 212" style="background:#0078d4;"></span>
+      <span class="sim-swatch" data-color="#b4009e" data-rgb="180, 0, 158" style="background:#b4009e;"></span>
+      <span class="sim-swatch" data-color="#10893e" data-rgb="16, 137, 62" style="background:#10893e;"></span>
+      <span class="sim-swatch" data-color="#e81123" data-rgb="232, 17, 35" style="background:#e81123;"></span>
+    </div>
+  </div>
+
+  <!-- ── Simulated Niri Workspace (100vh - 32px, 6px gaps) ── -->
+  <div class="niri-workspace">
+    <div class="shell-mod-window" id="modWindow">
+
+      <!-- ZONE 1: Window Header Bar (Fixed 36px) -->
+      <div class="settings-header-bar">
+        <div class="header-left">
+          <span class="settings-header-title">🎹 KAJO MOD</span>
+          <span class="shell-popover-badge accent" id="hdrEngineBadge">UADE 68K • PAULA BLEP</span>
+        </div>
+        <div class="header-actions">
+          <button class="kajo-btn" id="btnFloatToggle" title="niri_toggle_window_floating()">🗗 FLOAT / TILE</button>
+          <button class="settings-close-btn" title="Close">✕</button>
+        </div>
+      </div>
+
+      <!-- ZONES 2–5: Fixed-Height Top Decks (Never wrap, never jump height across 480px..1920px) -->
+      <div class="mod-top-fixed-zones">
+
+        <!-- ZONE 2: LCD Telemetry Readout Deck -->
+        <div class="mod-telemetry-deck">
+          <div class="mod-telemetry-top">
+            <div class="mod-title-col">
+              <div class="mod-track-title" id="tlTitle">TURRICAN II — THE FINAL FIGHT (TITLE THEME)</div>
+              <div class="mod-track-sub" id="tlSub">Chris Hülsbeck (1991 Rainbow Arts / Factor 5) • turrican2.lha ▸ mdat.turrican2 + smpl.turrican2</div>
+            </div>
+            <div class="mod-badge-row">
+              <span class="shell-popover-badge accent" id="bdgEngine">UADE 3.05</span>
+              <span class="shell-popover-badge" id="bdgFormat">TFMX-PRO 7V</span>
+              <span class="shell-popover-badge success" id="bdgChip">LED: ON (A500)</span>
+            </div>
+          </div>
+
+          <!-- 6-Column Homogeneous Counter Strip (Tabular Monospace, Zero Wrapping) -->
+          <div class="mod-counter-strip">
+            <div class="mod-counter-item"><span class="lbl">SUB</span><span class="val accent" id="cntSub">01/09</span></div>
+            <div class="mod-counter-item"><span class="lbl">VOICES</span><span class="val" id="cntCh">04 PAULA</span></div>
+            <div class="mod-counter-item"><span class="lbl">TIMING</span><span class="val" id="cntBpm">50Hz PAL</span></div>
+            <div class="mod-counter-item"><span class="lbl">CLOCK</span><span class="val" id="cntPos">68000 VBI</span></div>
+            <div class="mod-counter-item"><span class="lbl">OUT</span><span class="val">48.0kHz</span></div>
+            <div class="mod-counter-item"><span class="lbl">TIME</span><span class="val accent" id="cntTime">01:14/03:20</span></div>
+          </div>
+        </div>
+
+        <!-- ZONE 3: 2-Row Deterministic Transport & Subsong Deck (Min-Width ~440px, Zero Overflow at 1/3 Col) -->
+        <div class="mod-transport-deck">
+          <!-- Row 3A: Full-Throw Seek Scrubber + First-Class Subsong Stepper -->
+          <div class="mod-transport-row-top">
+            <div class="mod-seek-wrap">
+              <span>01:14</span>
+              <input type="range" class="metro-slider" min="0" max="200" value="74" style="flex:1;" />
+              <span>03:20</span>
+            </div>
+            <div class="mod-subsong-box" title="Step Subsongs (Alt+Left / Alt+Right)">
+              <button class="kajo-btn" id="subPrevBtn">◀ SUB</button>
+              <span class="mod-subsong-readout" id="subReadout">SUB 01 / 09</span>
+              <button class="kajo-btn" id="subNextBtn">SUB ▶</button>
+            </div>
+          </div>
+
+          <!-- Row 3B: Transport Cluster + Loop Mode + Volume -->
+          <div class="mod-transport-row-bot">
+            <div class="mod-btn-cluster">
+              <button class="kajo-btn" title="Previous Track">⏮</button>
+              <button class="kajo-btn primary" title="Play / Pause (Space)">▶ PLAY</button>
+              <button class="kajo-btn" title="Pause">⏸</button>
+              <button class="kajo-btn" title="Stop">⏹</button>
+              <button class="kajo-btn" title="Next Track">⏭</button>
+            </div>
+
+            <div class="segmented-group" id="loopGroup" title="Subsong / Track End Action">
+              <button class="kajo-btn active">ADVANCE</button>
+              <button class="kajo-btn">LOOP</button>
+              <button class="kajo-btn">FADE</button>
+            </div>
+
+            <div class="mod-vol-wrap">
+              <span>🔊</span>
+              <input type="range" class="metro-slider" id="volSlider" min="0" max="100" value="85" style="width:68px;" />
+              <span id="volReadout" style="width:28px;text-align:right;">85%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ZONE 4: 2-Row Deterministic Hardware & DSP Matrix (Zero Flex-Wrap Jumping) -->
+        <div class="mod-dsp-strip">
+          <!-- DSP Row 1: Chip & Filter Mode Segmented Selectors (~480px min-width) -->
+          <div class="mod-dsp-row-1">
+            <div class="mod-dsp-group" id="grpFilter">
+              <span class="mod-dsp-label">FILTER:</span>
+              <div class="segmented-group" id="interpGroup">
+                <button class="kajo-btn active">A500</button>
+                <button class="kajo-btn">A1200</button>
+                <button class="kajo-btn">NEAR</button>
+                <button class="kajo-btn">LIN</button>
+                <button class="kajo-btn">SINC</button>
+              </div>
+            </div>
+
+            <div class="mod-dsp-group" id="grpLed">
+              <span class="mod-dsp-label">LED:</span>
+              <div class="segmented-group" id="ledGroup">
+                <button class="kajo-btn">AUTO</button>
+                <button class="kajo-btn active">ON</button>
+                <button class="kajo-btn">OFF</button>
+              </div>
+            </div>
+
+            <div class="mod-dsp-group disabled" id="grpSid" title="Active only on C64 SID tracks (libsidplayfp)">
+              <span class="mod-dsp-label">SID:</span>
+              <div class="segmented-group" id="sidGroup">
+                <button class="kajo-btn">AUTO</button>
+                <button class="kajo-btn active">6581</button>
+                <button class="kajo-btn">8580</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- DSP Row 2: 2-Column Equal Grid for Stereo Separation & Tempo/Clock -->
+          <div class="mod-dsp-row-2">
+            <div class="mod-dsp-group" id="grpSep">
+              <span class="mod-dsp-label">STEREO SEP:</span>
+              <input type="range" class="metro-slider" id="sepSlider" min="0" max="100" value="65" style="flex:1;min-width:50px;" />
+              <span id="sepReadout" style="font-family:var(--font-mono);font-size:10px;color:var(--metro-telemetry);width:84px;text-align:right;">65% (AMIGA)</span>
+            </div>
+
+            <div class="mod-dsp-group disabled" id="grpSpeed" title="Tempo scaling disabled on cycle-accurate 68k UADE routines">
+              <span class="mod-dsp-label">TEMPO:</span>
+              <input type="range" class="metro-slider" id="speedSlider" min="50" max="200" value="100" style="flex:1;min-width:50px;" />
+              <span id="speedReadout" style="font-family:var(--font-mono);font-size:10px;color:var(--metro-text);width:32px;text-align:right;">100%</span>
+              <button class="kajo-btn" style="padding:1px 4px;font-size:9px;">1:1</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ZONE 5: Bounded-Height Scope, 16-Band FFT & Hardware Voice Strip (vexpand: FALSE) -->
+        <div class="mod-scope-deck">
+          <div class="mod-channel-header" id="channelHeader">
+            <div class="mod-channel-pill">
+              <span class="mod-channel-name" id="chName1">PAULA 1L</span>
+              <div class="mod-channel-vu"><div class="mod-channel-vu-fill" style="width:78%;"></div></div>
+              <div class="mod-ms-btns"><button class="mod-ms-btn btn-mute">M</button><button class="mod-ms-btn btn-solo">S</button></div>
+            </div>
+            <div class="mod-channel-pill">
+              <span class="mod-channel-name" id="chName2">PAULA 2R</span>
+              <div class="mod-channel-vu"><div class="mod-channel-vu-fill" style="width:62%;"></div></div>
+              <div class="mod-ms-btns"><button class="mod-ms-btn btn-mute">M</button><button class="mod-ms-btn btn-solo">S</button></div>
+            </div>
+            <div class="mod-channel-pill">
+              <span class="mod-channel-name" id="chName3">PAULA 3R</span>
+              <div class="mod-channel-vu"><div class="mod-channel-vu-fill" style="width:86%;"></div></div>
+              <div class="mod-ms-btns"><button class="mod-ms-btn btn-mute">M</button><button class="mod-ms-btn btn-solo">S</button></div>
+            </div>
+            <div class="mod-channel-pill">
+              <span class="mod-channel-name" id="chName4">PAULA 4L</span>
+              <div class="mod-channel-vu"><div class="mod-channel-vu-fill" style="width:48%;"></div></div>
+              <div class="mod-ms-btns"><button class="mod-ms-btn btn-mute">M</button><button class="mod-ms-btn btn-solo">S</button></div>
+            </div>
+          </div>
+
+          <div class="mod-scope-grid">
+            <div class="mod-vis-card">
+              <div class="mod-vis-header">
+                <span>STEREO OSCILLOSCOPE (L / R)</span>
+                <span style="color:var(--metro-telemetry);">512 SMP • 60 FPS</span>
+              </div>
+              <svg viewBox="0 0 400 58" preserveAspectRatio="none" style="width:100%;height:56px;">
+                <line x1="0" y1="29" x2="400" y2="29" stroke="#1e1e1e" stroke-width="1" stroke-dasharray="3,3" />
+                <polyline fill="none" stroke="var(--metro-accent)" stroke-width="1.8"
+                  points="0,29 14,10 28,46 42,14 56,44 70,8 84,50 98,20 112,38 126,11 140,47 154,16 168,42 182,9 196,49 210,22 224,36 238,13 252,45 266,18 280,40 294,10 308,48 322,20 336,38 350,14 364,44 378,22 400,29" />
+                <polyline fill="none" stroke="var(--metro-telemetry)" stroke-width="1.3" stroke-opacity="0.82"
+                  points="0,29 14,42 28,15 42,40 56,18 70,45 84,13 98,35 112,23 126,43 140,15 154,39 168,19 182,45 196,13 210,34 224,24 238,41 252,17 266,37 280,21 294,44 308,14 322,35 336,23 350,41 364,17 378,34 400,29" />
+              </svg>
+            </div>
+
+            <div class="mod-vis-card">
+              <div class="mod-vis-header">
+                <span>16-BAND LOG FFT SPECTRUM</span>
+                <span style="color:var(--metro-success);">PEAK HOLD • −60..0 dB</span>
+              </div>
+              <div class="mod-fft-bars">
+                <div class="mod-fft-bar" style="height:82%;"></div>
+                <div class="mod-fft-bar" style="height:92%;"></div>
+                <div class="mod-fft-bar" style="height:74%;"></div>
+                <div class="mod-fft-bar" style="height:62%;"></div>
+                <div class="mod-fft-bar" style="height:79%;"></div>
+                <div class="mod-fft-bar" style="height:88%;"></div>
+                <div class="mod-fft-bar" style="height:66%;"></div>
+                <div class="mod-fft-bar" style="height:54%;"></div>
+                <div class="mod-fft-bar" style="height:71%;"></div>
+                <div class="mod-fft-bar" style="height:60%;"></div>
+                <div class="mod-fft-bar" style="height:46%;"></div>
+                <div class="mod-fft-bar" style="height:52%;"></div>
+                <div class="mod-fft-bar" style="height:38%;"></div>
+                <div class="mod-fft-bar" style="height:30%;"></div>
+                <div class="mod-fft-bar" style="height:22%;"></div>
+                <div class="mod-fft-bar" style="height:15%;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ZONE 6: Vertical GtkPaned Expanding Region (Absorbs 100% of remaining Niri height) -->
+      <div class="mod-expanding-paned" id="panedContainer">
+
+        <!-- PANE 6A: Module, Samples/Voices & STIL/.NFO Inspector
+             Controlled Reflow:
+             - Wide (>= 760px, Niri 1/2 & 2/3 col): 2-column side-by-side split
+             - Narrow (< 760px, Niri 1/3 col): 1-column switched view (zero clipping) -->
+        <div class="mod-upper-pane" id="upperPane">
+          <div class="mod-pane-toolbar">
+            <span class="mod-pane-title">📋 MODULE, HARDWARE &amp; ARCHIVE INSPECTOR</span>
+
+            <!-- Shown automatically in Wide Column mode (>= 760px) -->
+            <span class="shell-popover-badge mod-wide-indicator">2-COL SPLIT VIEW (&ge;760px)</span>
+
+            <!-- Shown automatically in Narrow 1/3 Column mode (< 760px) -->
+            <div class="segmented-group mod-narrow-switcher" id="narrowInspectorTabs">
+              <button class="kajo-btn active" data-col="samples">SAMPLES / VOICES</button>
+              <button class="kajo-btn" data-col="stil">STIL / .NFO / MSG</button>
+            </div>
+          </div>
+
+          <div class="mod-inspector-body">
+            <!-- Left Sub-Column: Samples / Instruments / Chip Voices & Subsong Table -->
+            <div class="mod-inspector-col" id="colSamples">
+              <div class="mod-subcol-hdr">
+                <span id="sampleHdrLeft">SAMPLES / INSTRUMENTS (31 SLOTS)</span>
+                <span style="color:var(--metro-telemetry);" id="sampleHdrRight">PAULA 8-BIT PCM</span>
+              </div>
+              <div class="mod-scroll-well" id="sampleTableWell">
+                <div class="mod-sample-row header">
+                  <span>#</span><span>NAME / ASCII LINER NOTES</span><span>LEN</span><span>LOOP</span><span>VOL</span>
+                </div>
+                <div class="mod-sample-row"><span style="color:#777;">01</span><span class="ascii">--- TURRICAN II ---   </span><span>14280</span><span style="color:var(--metro-success);">0000..14280</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">02</span><span class="ascii">BY CHRIS HUELSBECK    </span><span>08420</span><span style="color:var(--metro-success);">0210..08420</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">03</span><span class="ascii">======================</span><span>04112</span><span style="color:#666;">NONE</span><span>52</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">04</span><span class="ascii">TFMX 7-VOICE SYNTH LD </span><span>12800</span><span style="color:var(--metro-success);">0400..12800</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">05</span><span class="ascii">ORCHESTRA HIT (FAIRLT)</span><span>18640</span><span style="color:#666;">NONE</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">06</span><span class="ascii">ANALOG BASS SEQ #1    </span><span>03240</span><span style="color:var(--metro-success);">0000..03240</span><span>60</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">07</span><span class="ascii">SNARE GATED REVERB    </span><span>06820</span><span style="color:#666;">NONE</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">08</span><span class="ascii">KICK DRUM PUNCH       </span><span>04100</span><span style="color:#666;">NONE</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">09</span><span class="ascii">HIHAT CLOSED 909      </span><span>01840</span><span style="color:#666;">NONE</span><span>48</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">0A</span><span class="ascii">HIHAT OPEN METALLIC   </span><span>05120</span><span style="color:#666;">NONE</span><span>48</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">0B</span><span class="ascii">PPG WAVE CHOIR PAD    </span><span>22400</span><span style="color:var(--metro-success);">2000..22400</span><span>56</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">0C</span><span class="ascii">BRASS ENSEMBLE STAB   </span><span>09420</span><span style="color:var(--metro-success);">1200..09420</span><span>62</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">0D</span><span class="ascii">ARP SOLINA STRINGS    </span><span>16384</span><span style="color:var(--metro-success);">0800..16384</span><span>54</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">0E</span><span class="ascii">TIMPANI ROLL LOW      </span><span>11200</span><span style="color:#666;">NONE</span><span>64</span></div>
+                <div class="mod-sample-row"><span style="color:#777;">0F</span><span class="ascii">FACTOR 5 / RAINBOW 91 </span><span>07640</span><span style="color:#666;">NONE</span><span>64</span></div>
+              </div>
+            </div>
+
+            <!-- Right Sub-Column: HVSC STIL / Song Message / Archive .NFO / Eagleplayer Notes -->
+            <div class="mod-inspector-col hidden-narrow" id="colStil">
+              <div class="mod-subcol-hdr">
+                <span id="stilHdrLeft">ARCHIVE .NFO / HVSC STIL / SONG MESSAGE</span>
+                <span style="color:var(--metro-warning);" id="stilHdrRight">turrican2.lha</span>
+              </div>
+              <div class="mod-scroll-well">
+                <div class="mod-stil-box" id="stilContent">[UADE EAGLEPLAYER TELEMETRY]
+Player:     TFMX-Pro (Chris Hülsbeck 1990-1994)
+Companion:  mdat.turrican2 (18,432 B) + smpl.turrican2 (124,908 B)
+Subsongs:   9 (Default: 01 • Title Theme — The Final Fight)
+Hardware:   Amiga 500 PAL (7.09379 MHz 68000 • Paula 3.3 kHz LED ON)
+
+[ARCHIVE README / FILE_ID.DIZ]
+Turrican II: The Final Fight — Original Amiga Game Rip
+Composed & programmed by Chris Hülsbeck (Factor 5 / Rainbow Arts, 1991).
+Subsong 01: Title Theme (7-Voice TFMX Mixer)
+Subsong 02: Loader / Intro Sequence
+Subsong 03: Level 1-1 — Desert Rocks</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Draggable GtkPaned Splitter -->
+        <div class="mod-paned-handle" id="panedSplitter" title="Drag to resize Inspector vs Playlist Queue"></div>
+
+        <!-- PANE 6B: Always-Docked Playlist & Archive Queue -->
+        <div class="mod-lower-pane" id="lowerPane">
+          <div class="mod-pane-toolbar">
+            <span class="mod-pane-title">📂 PLAYLIST &amp; ARCHIVE QUEUE (8 TRACKS)</span>
+            <div style="display:flex;align-items:center;gap:4px;">
+              <button class="kajo-btn">+ ADD</button>
+              <button class="kajo-btn">+ DIR</button>
+              <button class="kajo-btn">− REM</button>
+              <button class="kajo-btn">CLR</button>
+              <input type="text" class="mod-filter-input" placeholder="🔍 Filter..." />
+            </div>
+          </div>
+
+          <div class="mod-scroll-well" id="plQueueWell">
+            <div class="mod-pl-row active" data-engine="uade">
+              <span style="color:var(--metro-telemetry);">▶01</span>
+              <span class="pl-title">Turrican II — The Final Fight (turrican2.lha ▸ mdat.turrican2)</span>
+              <span class="shell-popover-badge accent" style="text-align:center;">UADE 68K</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">9 SUB</span>
+              <span style="text-align:right;">03:20</span>
+            </div>
+            <div class="mod-pl-row" data-engine="sid">
+              <span style="color:#666;">02</span>
+              <span class="pl-title">Rob Hubbard — Commando High Score (/MUSICIANS/H/Hubbard_Rob/Commando.sid)</span>
+              <span class="shell-popover-badge warning" style="text-align:center;">RESIDFP</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">3 SUB</span>
+              <span style="text-align:right;">04:12</span>
+            </div>
+            <div class="mod-pl-row" data-engine="uade">
+              <span style="color:#666;">03</span>
+              <span class="pl-title">Jochen Hippel — Wings of Death Title (hip7.wings_of_death)</span>
+              <span class="shell-popover-badge accent" style="text-align:center;">UADE 68K</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">6 SUB</span>
+              <span style="text-align:right;">02:55</span>
+            </div>
+            <div class="mod-pl-row" data-engine="sid">
+              <span style="color:#666;">04</span>
+              <span class="pl-title">Martin Galway — Arkanoid Loader (MOS 6581 R4AR Filter Curve)</span>
+              <span class="shell-popover-badge warning" style="text-align:center;">RESIDFP</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">1 SUB</span>
+              <span style="text-align:right;">03:58</span>
+            </div>
+            <div class="mod-pl-row" data-engine="uade">
+              <span style="color:#666;">05</span>
+              <span class="pl-title">Pink / Abyss — Stormlord (ahx.stormlord)</span>
+              <span class="shell-popover-badge accent" style="text-align:center;">UADE 68K</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">1 SUB</span>
+              <span style="text-align:right;">02:18</span>
+            </div>
+            <div class="mod-pl-row" data-engine="gme">
+              <span style="color:#666;">06</span>
+              <span class="pl-title">David Wise — Stickerbush Symphony (dkc2_bramble.spc)</span>
+              <span class="shell-popover-badge success" style="text-align:center;">LIBGME</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">1 SUB</span>
+              <span style="text-align:right;">02:45</span>
+            </div>
+            <div class="mod-pl-row" data-engine="openmpt">
+              <span style="color:#666;">07</span>
+              <span class="pl-title">Purple Motion / Future Crew — Second Reality (2nd_pm.s3m)</span>
+              <span class="shell-popover-badge" style="text-align:center;">OPENMPT</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">1 SUB</span>
+              <span style="text-align:right;">04:38</span>
+            </div>
+            <div class="mod-pl-row" data-engine="openmpt">
+              <span style="color:#666;">08</span>
+              <span class="pl-title">Lizardking —lk_doskpop.xm (FastTracker II 16-Channel)</span>
+              <span class="shell-popover-badge" style="text-align:center;">OPENMPT</span>
+              <span class="pl-sub" style="color:var(--metro-subtext);text-align:right;">1 SUB</span>
+              <span style="text-align:right;">03:44</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ZONE 7: Bottom Status Bar (Fixed 24px) -->
+      <div class="mod-status-bar">
+        <div class="mod-status-left">
+          <span class="status-dot"></span>
+          <span>PIPEWIRE 48.0kHz / FLOAT32LE</span>
+          <span>│</span>
+          <span id="statusEngineText">PRIO 1: UADE 3.05 (68000 + PAULA BLEP)</span>
+        </div>
+        <div class="mod-status-right">
+          <span>SPACE:PLAY  ALT+◀/▶:SUB  M/S:VOICE</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Interactive Right-Edge Column Resize Grip -->
+    <div class="column-resize-grip" id="colResizeGrip" title="Drag left/right to test smooth Niri column reflow (480px..1634px)"></div>
+  </div>
+
+  <script>
+    (function () {
+      const modWindow = document.getElementById('modWindow');
+      const readout = document.getElementById('niriSizeReadout');
+
+      // Responsive breakpoint matching SettingsApp (760px)
+      function applyResponsiveReflow(widthPx) {
+        const isNarrow = widthPx < 760;
+        modWindow.classList.toggle('narrow-column', isNarrow);
+        readout.textContent =
+          'COL: ' + Math.round(widthPx) + 'px • ' +
+          (isNarrow ? '1-COL TABBED (<760px)' : '2-COL SPLIT (≥760px)');
+      }
+
+      // Niri Mod+R Column Preset Simulator
+      const geomBtns = document.querySelectorAll('#niriGeomGroup .sim-btn');
+      geomBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          geomBtns.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const w = Number(btn.dataset.width);
+          modWindow.style.width = w + 'px';
+          modWindow.classList.toggle('stacked-half-height', btn.dataset.mode === 'stacked');
+          applyResponsiveReflow(w);
+        });
+      });
+
+      // Interactive Right-Edge Column Drag Resizer
+      const colGrip = document.getElementById('colResizeGrip');
+      let colDragging = false;
+      colGrip.addEventListener('mousedown', (e) => {
+        colDragging = true;
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!colDragging) return;
+        const rect = modWindow.getBoundingClientRect();
+        // Centered in workspace, so dragging right edge changes width symmetrically or directly
+        const newW = Math.max(480, Math.min(window.innerWidth - 24, (e.clientX - rect.left)));
+        modWindow.style.width = newW + 'px';
+        applyResponsiveReflow(newW);
+      });
+      window.addEventListener('mouseup', () => { colDragging = false; });
+
+      // Narrow Column (<760px) Inspector Tab Switcher
+      const narrowTabs = document.querySelectorAll('#narrowInspectorTabs .kajo-btn');
+      const colSamples = document.getElementById('colSamples');
+      const colStil = document.getElementById('colStil');
+      narrowTabs.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          narrowTabs.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const showSamples = btn.dataset.col === 'samples';
+          colSamples.classList.toggle('hidden-narrow', !showSamples);
+          colStil.classList.toggle('hidden-narrow', showSamples);
+        });
+      });
+
+      // Exclusive Segmented Groups
+      function bindSegmented(sel) {
+        const btns = document.querySelectorAll(sel + ' .kajo-btn');
+        btns.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            btns.forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+          });
+        });
+      }
+      bindSegmented('#loopGroup');
+      bindSegmented('#interpGroup');
+      bindSegmented('#ledGroup');
+      bindSegmented('#sidGroup');
+
+      // Channel Mute / Solo
+      document.querySelectorAll('#channelHeader .mod-channel-pill').forEach((pill) => {
+        const m = pill.querySelector('.btn-mute');
+        const s = pill.querySelector('.btn-solo');
+        m.addEventListener('click', () => {
+          const on = m.classList.toggle('mute-on');
+          pill.classList.toggle('muted', on);
+        });
+        s.addEventListener('click', () => s.classList.toggle('solo-on'));
+      });
+
+      // Subsong Stepper
+      let subCur = 1, subMax = 9;
+      function updateSub() {
+        const a = String(subCur).padStart(2, '0');
+        const b = String(subMax).padStart(2, '0');
+        document.getElementById('cntSub').textContent = a + '/' + b;
+        document.getElementById('subReadout').textContent = 'SUB ' + a + ' / ' + b;
+      }
+      document.getElementById('subPrevBtn').addEventListener('click', () => { if (subCur > 1) { subCur--; updateSub(); } });
+      document.getElementById('subNextBtn').addEventListener('click', () => { if (subCur < subMax) { subCur++; updateSub(); } });
+
+      // Sliders
+      const volSlider = document.getElementById('volSlider');
+      volSlider.addEventListener('input', () => {
+        document.getElementById('volReadout').textContent = volSlider.value + '%';
+      });
+      const sepSlider = document.getElementById('sepSlider');
+      sepSlider.addEventListener('input', () => {
+        const v = Number(sepSlider.value);
+        document.getElementById('sepReadout').textContent = v + '% ' + (v === 0 ? '(MONO)' : v <= 65 ? '(AMIGA)' : '(WIDE)');
+      });
+      const speedSlider = document.getElementById('speedSlider');
+      speedSlider.addEventListener('input', () => {
+        document.getElementById('speedReadout').textContent = speedSlider.value + '%';
+      });
+
+      // Vertical GtkPaned Splitter
+      const splitter = document.getElementById('panedSplitter');
+      const container = document.getElementById('panedContainer');
+      const upperPane = document.getElementById('upperPane');
+      const lowerPane = document.getElementById('lowerPane');
+      let panedDragging = false;
+      splitter.addEventListener('mousedown', (e) => { panedDragging = true; e.preventDefault(); });
+      window.addEventListener('mousemove', (e) => {
+        if (!panedDragging) return;
+        const rect = container.getBoundingClientRect();
+        const relY = Math.max(110, Math.min(rect.height - 110, e.clientY - rect.top));
+        const ratio = relY / (rect.height - 7);
+        upperPane.style.flex = ratio + ' 1 0';
+        lowerPane.style.flex = (1 - ratio) + ' 1 0';
+      });
+      window.addEventListener('mouseup', () => { panedDragging = false; });
+
+      // Accent Swatches
+      document.querySelectorAll('#accentGroup .sim-swatch').forEach((sw) => {
+        sw.addEventListener('click', () => {
+          document.querySelectorAll('#accentGroup .sim-swatch').forEach((s) => s.classList.remove('active'));
+          sw.classList.add('active');
+          document.documentElement.style.setProperty('--metro-accent', sw.dataset.color);
+          document.documentElement.style.setProperty('--metro-accent-rgb', sw.dataset.rgb);
+        });
+      });
+
+      // Engine Priority Presets
+      const presets = {
+        uade: {
+          hdr: 'UADE 68K • PAULA BLEP',
+          title: 'TURRICAN II — THE FINAL FIGHT (TITLE THEME)',
+          sub: 'Chris Hülsbeck (1991 Rainbow Arts / Factor 5) • turrican2.lha ▸ mdat.turrican2 + smpl.turrican2',
+          engine: 'UADE 3.05', format: 'TFMX-PRO 7V', chip: 'LED: ON (A500)',
+          subMax: 9, ch: '04 PAULA', bpm: '50Hz PAL', pos: '68000 VBI', time: '01:14/03:20',
+          chNames: ['PAULA 1L', 'PAULA 2R', 'PAULA 3R', 'PAULA 4L'],
+          filterOn: true, ledOn: true, sidOn: false, speedOn: false,
+          sampleLeft: 'SAMPLES / INSTRUMENTS (31 SLOTS)', sampleRight: 'PAULA 8-BIT PCM',
+          stilRight: 'turrican2.lha',
+          status: 'PRIO 1: UADE 3.05 (68000 + PAULA BLEP)',
+          stil: `[UADE EAGLEPLAYER TELEMETRY]
+Player:     TFMX-Pro (Chris Hülsbeck 1990-1994)
+Companion:  mdat.turrican2 (18,432 B) + smpl.turrican2 (124,908 B)
+Subsongs:   9 (Default: 01 • Title Theme — The Final Fight)
+Hardware:   Amiga 500 PAL (7.09379 MHz 68000 • Paula 3.3 kHz LED ON)
+
+[ARCHIVE README / FILE_ID.DIZ]
+Turrican II: The Final Fight — Original Amiga Game Rip
+Composed & programmed by Chris Hülsbeck (Factor 5 / Rainbow Arts, 1991).`
+        },
+        sid: {
+          hdr: 'LIBSIDPLAYFP • RESIDFP 6581',
+          title: 'COMMANDO — HIGH SCORE & LOADER THEME',
+          sub: 'Rob Hubbard (1985 Elite Systems) • /MUSICIANS/H/Hubbard_Rob/Commando.sid',
+          engine: 'RESIDFP 3.1', format: 'PSID V2 PAL', chip: 'MOS 6581 R4AR',
+          subMax: 3, ch: '03 SID V1-3', bpm: '50Hz CIA1', pos: '$1000/$1003', time: '00:52/04:12',
+          chNames: ['SID V1 SAW', 'SID V2 PUL', 'SID V3 NOI', 'SID FLT LP'],
+          filterOn: true, ledOn: false, sidOn: true, speedOn: false,
+          sampleLeft: 'C64 SID HARDWARE & SUBSONG TABLE', sampleRight: 'MOS 6581 @ $D400',
+          stilRight: 'HVSC STIL v81',
+          status: 'PRIO 2: LIBSIDPLAYFP 3.1.2 (RESIDFP TRANSISTOR FILTER)',
+          stil: `[HVSC STIL — /MUSICIANS/H/Hubbard_Rob/Commando.sid]
+NAME:   Commando
+AUTHOR: Rob Hubbard (1985 Elite Systems)
+SID:    MOS 6581 R4AR ($D400, PAL 985248 Hz, Load $1000, Init $1000, Play $1003)
+
+COMMENT (Rob Hubbard):
+"We went into the offices at Elite at about 10pm and I finished it at about 8am the next morning. The main tune was based on the arcade original by Tamayo Kawamoto, with an improvised synth solo in the second half."`
+        },
+        gme: {
+          hdr: 'LIBGME • SNES SPC700 DSP',
+          title: 'STICKERBUSH SYMPHONY (BRAMBLE BLAST)',
+          sub: 'David Wise (1995 Rare / Nintendo) • dkc2_bramble.spc',
+          engine: 'LIBGME 0.6.5', format: 'SNES SPC700', chip: 'S-DSP 8-VOICE',
+          subMax: 1, ch: '08 S-DSP', bpm: '100% TEMPO', pos: 'BRR ADPCM', time: '01:08/02:45',
+          chNames: ['DSP V1-2', 'DSP V3-4', 'DSP V5-6', 'DSP V7-8'],
+          filterOn: false, ledOn: false, sidOn: false, speedOn: true,
+          sampleLeft: 'SPC700 S-DSP BRR DIRECTORY', sampleRight: '64 KB ARAM',
+          stilRight: 'ID666 TAGS',
+          status: 'PRIO 3: LIBGME 0.6.5 (SNES SPC700 / S-DSP)',
+          stil: `[SPC700 ID666 METADATA]
+Game:     Donkey Kong Country 2: Diddy's Kong Quest
+Title:    Stickerbush Symphony (Bramble Blast)
+Artist:   David Wise (Rare, 1995)
+Dumper:   SnesAmp / ZSNES SPC State
+Hardware: Sony SPC700 + 8-Voice Gaussian BRR S-DSP + FIR Echo`
+        },
+        openmpt: {
+          hdr: 'LIBOPENMPT • TRACKER FALLBACK',
+          title: 'SECOND REALITY (MAIN PART)',
+          sub: 'Purple Motion / Future Crew (1993) • 2nd_pm.s3m',
+          engine: 'OPENMPT 0.8', format: 'S3M (ST3.01)', chip: 'SINC 8-TAP',
+          subMax: 1, ch: '08 PCM CH', bpm: 'SPD 06/125', pos: 'ORD 08/2A', time: '02:10/04:38',
+          chNames: ['CH 01-02', 'CH 03-04', 'CH 05-06', 'CH 07-08'],
+          filterOn: true, ledOn: false, sidOn: false, speedOn: true,
+          sampleLeft: 'SAMPLES / INSTRUMENTS (31 SLOTS)', sampleRight: 'S3M 8-BIT PCM',
+          stilRight: 'SONG MESSAGE',
+          status: 'PRIO 4: LIBOPENMPT 0.8.10 (PC TRACKER FALLBACK)',
+          stil: `[MODULE SONG MESSAGE — 2nd_pm.s3m]
+Second Reality (Main Part) by Purple Motion / Future Crew
+Released at Assembly '93 (1st Place PC Demo Competition).
+8-Channel ScreamTracker 3.01 module.`
+        }
+      };
+
+      function selectEngine(key) {
+        const p = presets[key];
+        if (!p) return;
+        document.querySelectorAll('#enginePresetGroup .sim-btn').forEach((b) => {
+          b.classList.toggle('active', b.dataset.engine === key);
+        });
+        document.getElementById('hdrEngineBadge').textContent = p.hdr;
+        document.getElementById('tlTitle').textContent = p.title;
+        document.getElementById('tlSub').textContent = p.sub;
+        document.getElementById('bdgEngine').textContent = p.engine;
+        document.getElementById('bdgFormat').textContent = p.format;
+        document.getElementById('bdgChip').textContent = p.chip;
+        subCur = 1; subMax = p.subMax; updateSub();
+        document.getElementById('cntCh').textContent = p.ch;
+        document.getElementById('cntBpm').textContent = p.bpm;
+        document.getElementById('cntPos').textContent = p.pos;
+        document.getElementById('cntTime').textContent = p.time;
+        for (let i = 0; i < 4; i++) {
+          document.getElementById('chName' + (i + 1)).textContent = p.chNames[i];
+        }
+        document.getElementById('grpFilter').classList.toggle('disabled', !p.filterOn);
+        document.getElementById('grpLed').classList.toggle('disabled', !p.ledOn);
+        document.getElementById('grpSid').classList.toggle('disabled', !p.sidOn);
+        document.getElementById('grpSpeed').classList.toggle('disabled', !p.speedOn);
+        document.getElementById('sampleHdrLeft').textContent = p.sampleLeft;
+        document.getElementById('sampleHdrRight').textContent = p.sampleRight;
+        document.getElementById('stilHdrRight').textContent = p.stilRight;
+        document.getElementById('stilContent').textContent = p.stil;
+        document.getElementById('statusEngineText').textContent = p.status;
+      }
+
+      document.querySelectorAll('#enginePresetGroup .sim-btn').forEach((btn) => {
+        btn.addEventListener('click', () => selectEngine(btn.dataset.engine));
+      });
+      document.querySelectorAll('#plQueueWell .mod-pl-row').forEach((row) => {
+        row.addEventListener('click', () => {
+          document.querySelectorAll('#plQueueWell .mod-pl-row').forEach((r) => r.classList.remove('active'));
+          row.classList.add('active');
+          selectEngine(row.dataset.engine);
+        });
+      });
+
+      applyResponsiveReflow(814);
+    })();
+  </script>
+</body>
+</html>
