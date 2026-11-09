@@ -193,20 +193,26 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Anti-aliased vector graph canvas (`#101010` background, `1px solid #2b2b2b`) with a top `.ide-mermaid-toolbar` (`[ 🔍− ] [ 100% ] [ 🔍+ ] [ ⛶ FIT ] [ 💾 EXPORT SVG ] [ 📷 EXPORT PNG ]`). Nodes render as crisp Metro boxes (`#181818` fill, `1.5px` `@metro-accent` or semantic stroke) connected by Cubic Bézier vector paths; clicking any node jumps the editor cursor to its source line.
 
 ### 4.8 Retro Amiga, C64 SID & Tracker Music Player (`kajo-mod`) Components
+- **Niri Column Geometry & Controlled Reflow Rules (`0.33333` / `0.5` / `0.66667`):**
+  - In Niri (`default-column-width { proportion 0.5; }`, `preset-column-widths { 0.33333; 0.5; 0.66667; }`, `gaps 6`, `clip-to-geometry true`), column widths on `2880×1800 @ 1.75x` (`1646×1028` logical) are **`~540px`** (`1/3`), **`~814px`** (`1/2` default), and **`~1088px`** (`2/3`).
+  - Every top fixed-height zone (`Zones 1–5`) is engineered with a **minimum width $\le 480\text{px}$** and **zero `flex-wrap` height changes** so cycling `Mod+R` across `1/3`, `1/2`, and `2/3` columns never clips the right edge and never shifts vertical widget positions.
 - **LCD Telemetry Readout Deck (`.mod-telemetry-deck`, `.mod-counter-strip`):**
   - `#141414` card framed by `1px solid #2b2b2b` and `border-left: 3px solid @metro-accent`.
-  - Top row displays `.mod-track-title` (`14px` bold `Fira Code`, `#ffffff`), `.mod-track-sub` (`12px`, `#a0a0a0` composer/filename), and right-aligned engine/hardware badges (`.shell-popover-badge.accent` `[ UADE 68K ]` / `[ RESIDFP 6581 ]` / `[ LIBGME ]` / `[ OPENMPT ]`, format badge `[ TFMX-PRO ]`, and filter state `[ LED: ON ]`).
-  - Bottom `.mod-counter-strip` (`#101010` recessed well, `1px solid #242424`, `padding: 4px 10px`, `11px` `Fira Code`) renders fixed-width hex/decimal playback counters: `SUB 01/09 │ ORD 04/1A │ PAT 02 │ ROW 2A/3F │ SPD 06 │ BPM 125 │ CH 04 │ 01:14 / 03:20`.
-- **Transport & First-Class Subsong Bar (`.mod-transport-bar`, `.mod-subsong-box`):**
-  - Combines standard transport buttons (`.player-transport-btn`, `.action-btn-primary`) with a dedicated subsong stepper (`[ ◀ SUB ]`, `.mod-subsong-readout` `SUB 01 / 09`, `[ SUB ▶ ]`), loop-mode `.segmented-group` (`ADVANCE` / `LOOP` / `FADE`), `.player-seek-scale`, and volume slider.
-- **Paula / C64 SID & Resampler DSP Strip (`.mod-dsp-strip`):**
-  - `#161616` control ribbon with `1px solid #2b2b2b` housing:
-    - **Interpolation / Paula Resampler (`.segmented-group`):** `A500` / `A1200` / `NEAREST` / `LINEAR` / `SINC`.
-    - **Amiga 3.3 kHz LED Filter (`.segmented-group`):** `AUTO` / `ON` / `OFF`.
-    - **C64 SID Chip Model (`.segmented-group`):** `AUTO` / `6581` / `8580`.
-    - **Stereo Separation (`scale`, `0%..100%`)** and **Speed (`scale`, `50%..200%` + `[1:1]` reset)**. Controls unsupported by the active backend (e.g. tempo factor on `libuade` 68k routines or SID model on non-SID tracks) are set insensitive (`opacity: 0.45`) with an explanatory tooltip.
-- **Four-Mode Deck Views (`.mod-scope-canvas`, `.mod-pattern-canvas`, `.mod-info-pane`, `.mod-playlist-pane`):**
-  - Switched via a 4-way `.segmented-group` (`📈 SCOPE & FFT` [default], `🎼 PATTERN ROLL`, `📋 SAMPLES & INFO`, `📂 PLAYLIST`).
-  - **Channel / Voice Header Strip (`.mod-channel-header`, `.mod-channel-pill`):** Per-channel box (`#181818`, `1px solid #2b2b2b`) displaying channel label (`CH 01` / `SID V1`), mini horizontal VU meter, and compact `[M]` (Mute, `@metro-urgent` when active) and `[S]` (Solo, `@metro-warning` when active) toggle buttons.
-  - **Pattern Roll (`.mod-pattern-canvas`, `.mod-pattern-row`):** `#101010` `Fira Code` grid with centered playhead row (`.mod-pattern-row.active`: `alpha(@metro-accent, 0.22)` background, `border-left: 2px solid @metro-accent`) and semantic cell colors: Note (`#ffffff` bold), Instrument (`@metro-accent`), Volume (`@metro-success`), and Effect (`@metro-warning`).
-  - **Samples, Instruments & STIL / Message Inspector (`.mod-info-pane`, `.mod-sample-row`):** Fixed-pitch `Fira Code` table preserving 22–32 character Amiga/tracker sample ASCII art alongside loop points, volume, and scrollable Song Message / HVSC STIL commentary (`#101010` well).
+  - Top row displays `.mod-track-title` and `.mod-track-sub` with `PANGO_ELLIPSIZE_END` (`min-width: 0`) alongside fixed right-aligned engine/hardware badges (`.shell-popover-badge.accent` `[ UADE 3.05 ]` / `[ RESIDFP 3.1 ]` / `[ LIBGME ]` / `[ OPENMPT ]`, format badge `[ TFMX-PRO 7V ]`, and filter state `[ LED: ON ]`).
+  - Bottom `.mod-counter-strip` (`#101010` recessed well, `1px solid #242424`) uses a **6-column homogeneous grid (`column-homogeneous: TRUE`)** with tabular numerals (`SUB │ VOICES │ TIMING │ CLOCK │ OUT │ TIME`) so counters divide column width evenly from `480px` to `1920px` without wrapping.
+- **2-Row Deterministic Transport & Subsong Deck (`.mod-transport-deck`, `.mod-subsong-box`):**
+  - Split into two fixed sub-rows (`min-width ~440px`) so controls never overflow in a `540px` `1/3` Niri column:
+    - **Row 1:** Full-width seek slider (`hexpand: TRUE`) + first-class subsong stepper (`[ ◀ SUB ]`, `.mod-subsong-readout` `SUB 01 / 09`, `[ SUB ▶ ]`).
+    - **Row 2:** Transport buttons (`⏮`, `▶ PLAY`, `⏸`, `⏹`, `⏭`), loop-mode `.segmented-group` (`ADVANCE` / `LOOP` / `FADE`), and volume slider.
+- **2-Row Deterministic Hardware & DSP Matrix (`.mod-dsp-strip`):**
+  - `#181818` control deck with `1px solid #2b2b2b` organized into two fixed rows (never `flex-wrap`):
+    - **Row 1 (`~480px` min-width):** `FILTER` (`A500` / `A1200` / `NEAR` / `LIN` / `SINC`), `LED` (`AUTO` / `ON` / `OFF`), and `SID` (`AUTO` / `6581` / `8580`).
+    - **Row 2 (`1fr 1fr` equal grid):** `STEREO SEP` (`0%..100%`) and `TEMPO` (`50%..200%` + `[1:1]`). Controls unsupported by the active backend are set insensitive (`opacity: 0.38`).
+- **Full-Height Niri Tiled Layout & `< 760px` Inspector Reflow (`.mod-scope-deck`, `.mod-paned`, `.mod-info-pane`, `.mod-playlist-pane`):**
+  - **Zone 5 (`vexpand: FALSE`, fixed `118px` height):** Per-Channel / Voice `[M]/[S]` Header Strip (`.mod-channel-header`, `4-col` homogeneous grid) + `1fr 1fr` Stereo Oscilloscope & 16-Band FFT Spectrum cards (`88px`).
+  - **Zone 6 (`vexpand: TRUE`, vertical `GtkPaned` absorbing 100% of remaining column height):**
+    - **Upper Expanding Pane (`.mod-info-pane` — Module, Samples/Voices & STIL/.NFO Inspector):** Uses controlled responsive reflow at the **`760px` width breakpoint** (`GdkSurface` `notify::width`, matching `SettingsApp`):
+      - **Wide Column ($\ge 760\text{px}$ — Niri `1/2` `0.5` and `2/3` `0.667` columns):** Displays the scrollable **Samples / Instruments / Hardware Voices Table** (`Fira Code`, preserving 22–32 char Amiga ASCII liner notes) and the scrollable **HVSC STIL / Archive `.NFO` / Song Message** well **side-by-side in a `1.2fr 1fr` split**.
+      - **Narrow Column ($< 760\text{px}$ — Niri `1/3` `0.333` column at `~540px`):** Automatically collapses to a **1-column full-width view** with a compact `[ SAMPLES / VOICES │ STIL / .NFO / MSG ]` `.segmented-group` in the pane header so 32-char ASCII sample tables are never clipped.
+    - **Lower Expanding Pane (`.mod-playlist-pane` — Always-Docked Playlist & Archive Queue):** Toolbar (`[+ ADD]`, `[+ DIR]`, `[− REM]`, `[CLR]`, filter entry) + scrollable track queue where the track title column (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END`) absorbs horizontal resize smoothly.
+  - **Zone 7 (`vexpand: FALSE`, `24px`):** Bottom Status Bar (`.mod-status-bar`).

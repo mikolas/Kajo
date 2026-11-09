@@ -1,10 +1,11 @@
 project(
   'kajo',
-  'c',
+  ['c', 'cpp'],
   version: '0.1.0',
   meson_version: '>= 0.60.0',
   default_options: [
     'c_std=c17',
+    'cpp_std=c++17',
     'warning_level=0',
     'prefix=~/.local',
   ],
@@ -16,7 +17,7 @@ add_project_arguments(
   '-Wno-unused-parameter',
   '-DKAJO_SOURCE_DIR="' + meson.current_source_dir() + '"',
   '-DKAJO_DATA_DIR="' + (get_option('prefix') / get_option('datadir') / 'kajo') + '"',
-  language: 'c',
+  language: ['c', 'cpp'],
 )
 
 cc = meson.get_compiler('c')
@@ -40,6 +41,13 @@ mpv_dep = dependency('mpv')
 egl_dep = dependency('egl')
 glesv2_dep = dependency('glesv2')
 gtksourceview_dep = dependency('gtksourceview-5')
+uade_dep = dependency('libuade')
+bencode_dep = cc.find_library('bencodetools', required: true)
+sidplayfp_dep = dependency('libsidplayfp')
+stilview_dep = dependency('libstilview')
+gme_dep = dependency('libgme')
+openmpt_dep = dependency('libopenmpt')
+xmp_dep = dependency('libxmp')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -365,7 +373,52 @@ executable(
 
 install_data(
   'data/org.kajo.Player.desktop',
+  'data/org.kajo.Mod.desktop',
   install_dir: get_option('datadir') / 'applications',
+)
+
+mod_engine_sources = files(
+  'src/mod/mod_archive.c',
+  'src/mod/mod_engine.c',
+  'src/mod/mod_backend_uade.c',
+  'src/mod/mod_backend_sid.cpp',
+  'src/mod/mod_backend_gme.c',
+  'src/mod/mod_backend_openmpt.c',
+  'src/mod/mod_audio.c',
+  'src/mod/mod_playlist.c',
+)
+
+mod_engine_deps = [
+  gio_dep,
+  gio_unix_dep,
+  archive_dep,
+  pulse_dep,
+  uade_dep,
+  bencode_dep,
+  sidplayfp_dep,
+  stilview_dep,
+  gme_dep,
+  openmpt_dep,
+  xmp_dep,
+  m_dep,
+]
+
+mod_sources = files(
+  'src/mod/main.c',
+  'src/mod/mod_window.c',
+  'src/mod/mod_vis.c',
+) + mod_engine_sources
+
+executable(
+  'kajo-mod',
+  mod_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    json_glib_dep,
+  ] + mod_engine_deps,
+  link_with: kajo_core,
+  install: true,
 )
 
 # Tree-sitter syntax engine (optional: each grammar degrades to the heuristic
@@ -488,6 +541,7 @@ install_data(
   'data/icons/kajo-ide.svg',
   'data/icons/kajo-files.svg',
   'data/icons/kajo-player.svg',
+  'data/icons/kajo-mod.svg',
   'data/icons/kajo-settings.svg',
   'data/icons/kajo-greeter.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
@@ -736,6 +790,14 @@ test_ide_ipc_exe = executable(
   build_by_default: false,
 )
 test('ide-ipc', test_ide_ipc_exe)
+
+test_mod_router_exe = executable(
+  'test-mod-router',
+  files('tests/test_mod_router.c') + mod_engine_sources,
+  dependencies: mod_engine_deps,
+  build_by_default: false,
+)
+test('mod-router', test_mod_router_exe)
 
 gnome.post_install(
   update_desktop_database: true,

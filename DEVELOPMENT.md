@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -98,6 +98,18 @@ src/
 │   ├── player_mpv.h/c              libmpv + GtkGLArea OpenGL/EGL engine, track/chapter/telemetry parser
 │   ├── player_queue.h/c            Sibling folder media scanner, KajoMediaTrack & queue drawer
 │   └── player_mpris.h/c            MPRIS2 D-Bus server (org.mpris.MediaPlayer2.kajo_player)
+├── mod/
+│   ├── main.c                      kajo-mod standalone entry point (org.kajo.Mod)
+│   ├── mod_window.h/c              Main window, telemetry deck, DSP strip, 4-voice header, inspector & Niri column reflow
+│   ├── mod_vis.h/c                 Cairo 512-sample stereo oscilloscope & 16-band logarithmic FFT spectrum with peak hold
+│   ├── mod_engine.h/c              KajoModEngine VTable, strict 5-tier format router & ProTracker sample header parser
+│   ├── mod_backend_uade.c          Priority 1: libuade Amiga 68000 + Paula BLEP/LED filter & eagleplayer engine
+│   ├── mod_backend_sid.cpp         Priority 2: libsidplayfp + reSIDfp 6581/8580 C++20 engine, $D400 telemetry & HVSC parser
+│   ├── mod_backend_gme.c           Priority 3: libgme 8/16-bit console chiptune engine (SPC, NSF, VGM, GBS, AY, SAP, HES)
+│   ├── mod_backend_openmpt.c       Priority 4 & 5: libopenmpt + libxmp PC/extended tracker engines (XM, S3M, IT, MPTM, MED)
+│   ├── mod_archive.h/c             libarchive multi-file (.lha/.zip/.7z) extractor, companion filter & CP437 .nfo decoder
+│   ├── mod_playlist.h/c            KajoModPlaylist queue manager & recursive directory/archive scanner
+│   └── mod_audio.h/c               libpulse 48 kHz S16LE synthesis worker thread, 512-pt Radix-2 FFT, stereo crossfeed & fade
 ├── settings/
 │   ├── main.c                      kajo-settings standalone entry point (org.kajo.Settings)
 │   ├── settings_window.h/c         Settings container shell, category sidebar & GtkStack
@@ -117,6 +129,7 @@ src/
 data/
 ├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
 ├── org.kajo.Player.desktop         Desktop entry for kajo-player (MimeType=video/*;audio/*;)
+├── org.kajo.Mod.desktop            Desktop entry for kajo-mod (MimeType=audio/x-mod;audio/prs.sid;...)
 ├── org.kajo.IDE.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
@@ -153,6 +166,7 @@ tests/
 ├── test_ide_ts.c                   Tree-sitter engine: token classification for all 15 languages, query validity against the installed grammars, detection, incremental == fresh parse
 ├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
 ├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, socket round-trip & stalled-client tests
+├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
 ├── test_niri.c                     Mock-Niri socket: action JSON shape, rejection logging, EventStream parsing
 └── test_shaders.c                  Headless EGL/GLES2 compiler verification for Niri GLSL shaders
 ```
@@ -167,25 +181,26 @@ tests/
 - `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
 - `libpulse`, `libpulse-mainloop-glib`
 - `pam` (`libpam`)
-- `poppler-glib`, `libarchive`
+- `poppler-glib`, `libarchive`, `mpv` (`libmpv`)
+- `uade` (`libuade`), `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
 - `blueprint-compiler`, `meson`, `ninja`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
   - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
-  - AUR: `tree-sitter-cpp`, `tree-sitter-css`, `tree-sitter-go`, `tree-sitter-html`, `tree-sitter-java`, `tree-sitter-json`, `tree-sitter-toml`, `tree-sitter-typescript` (also provides TSX), `tree-sitter-yaml`
+  - AUR: `tree-sitter-cpp`, `tree-sitter-css`, `tree-sitter-go`, `tree-sitter-html`, `tree-sitter-java`, `tree-sitter-json`, `tree-sitter-toml`, `tree-sitter-typescript` (also provides TSX), `tree-sitter-yaml`, `tree-sitter-m68k`
   - `meson.build` probes `tree-sitter` via pkg-config and each `libtree-sitter-<lang>` via `find_library()` (several grammars ship no header or `.pc` file, so their entry points are declared in `src/ide/ide_ts.c`). A missing grammar only disables that language's tree-sitter path.
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 20 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 21 automated GTest suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
 meson setup builddir
 
-# Compile all targets (kajo, kajo-settings, kajo-files, kajo-greeter)
+# Compile all targets (kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 20 automated GTest suites
+# Run all 21 automated GTest suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -207,6 +222,7 @@ meson install -C builddir
 | `files-model` | `test-files-model` | `KajoFileItem` formatting, sorting and filtering, async file operations (non-clobbering move, cancellation), breadcrumb chain and selection restore, clipboard parsing and 4 MB cap, executable toggle, `archive://` URI round-trip and path normalizer, archive listing/extraction/compression hardening (symlinked destination, hardlinks, `..`/absolute entries, modes, preview cache), disk-image classification and UDisks2 reply helpers. |
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
+| `mod-router` | `test-mod-router` | `kajo-mod` 5-tier format router (`UADE` vs `libsidplayfp` vs `libgme` vs `libopenmpt` vs `libxmp`), Amiga companion (`smpl.*`, `.ins`) & `.nfo` filtering, ProTracker sample header parsing, `libarchive` bundle extraction, and live non-zero PCM synthesis. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
 | `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, stop, stack, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |

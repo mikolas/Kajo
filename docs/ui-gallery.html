@@ -4541,21 +4541,29 @@
         <div class="specimen-box">
           <div class="specimen-box-header">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-              <span class="specimen-box-title">INTERACTIVE DECK SPECIMEN — SWITCH ENGINE PRESET OR DECK VIEW</span>
+              <span class="specimen-box-title">NIRI COLUMN REFLOW &amp; FULL-HEIGHT TILED SPECIMEN (ZERO-JUMP TOP ZONES + VERTICAL GTKPANED INSPECTOR &amp; PLAYLIST)</span>
               <span class="gtk-class-tag" data-copy=".mod-telemetry-deck">.mod-telemetry-deck</span>
               <span class="gtk-class-tag" data-copy=".mod-dsp-strip">.mod-dsp-strip</span>
-              <span class="gtk-class-tag" data-copy=".mod-pattern-canvas">.mod-pattern-canvas</span>
+              <span class="gtk-class-tag" data-copy=".mod-scope-canvas">.mod-scope-canvas</span>
+              <a href="kajo-mod-mockup.html" target="_blank" class="kajo-btn action-btn-primary files-nav-btn" style="text-decoration:none;">↗ OPEN 100VH FULL-HEIGHT NIRI MOCKUP</a>
             </div>
-            <div class="tag-cluster" id="modEnginePresetGroup">
-              <button class="kajo-btn files-nav-btn active" data-engine="uade">🦋 1. AMIGA UADE (TFMX)</button>
-              <button class="kajo-btn files-nav-btn" data-engine="sid">🕹 2. C64 SID (reSIDfp 6581)</button>
-              <button class="kajo-btn files-nav-btn" data-engine="gme">🎮 3. CHIPTUNE (SNES SPC)</button>
-              <button class="kajo-btn files-nav-btn" data-engine="openmpt">🎹 4. TRACKER (FALLBACK XM)</button>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <div class="tag-cluster" id="modColWidthGroup">
+                <button class="kajo-btn files-nav-btn" data-colw="540">1/3 COL (0.333 • 540PX)</button>
+                <button class="kajo-btn files-nav-btn active" data-colw="814">1/2 COL (0.500 • 814PX DEFAULT)</button>
+                <button class="kajo-btn files-nav-btn" data-colw="960">2/3 COL (0.667 • 960PX)</button>
+              </div>
+              <div class="tag-cluster" id="modEnginePresetGroup">
+                <button class="kajo-btn files-nav-btn active" data-engine="uade">🦋 1. AMIGA UADE (TFMX)</button>
+                <button class="kajo-btn files-nav-btn" data-engine="sid">🕹 2. C64 SID (reSIDfp 6581)</button>
+                <button class="kajo-btn files-nav-btn" data-engine="gme">🎮 3. CHIPTUNE (SNES SPC)</button>
+                <button class="kajo-btn files-nav-btn" data-engine="openmpt">🎹 4. TRACKER (FALLBACK XM)</button>
+              </div>
             </div>
           </div>
 
-          <div class="kajo-window" style="max-width:920px; margin:0 auto; width:100%;">
-            <!-- Window Header Bar -->
+          <div id="modGalleryWindow" class="kajo-window" style="max-width:814px; margin:0 auto; width:100%;">
+            <!-- Window Header Bar (vexpand: FALSE) -->
             <div class="settings-header-bar">
               <div style="display:flex; align-items:center; gap:8px;">
                 <span>🎹</span>
@@ -4563,15 +4571,16 @@
                 <span id="modHeaderEngineBadge" class="shell-popover-badge accent">UADE 68K • PAULA BLEP</span>
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
+                <button class="kajo-btn files-nav-btn">+ OPEN</button>
                 <button class="kajo-btn files-nav-btn" data-copy="niri_toggle_window_floating()">🗗 FLOAT / TILE</button>
                 <button class="kajo-btn settings-close-btn" title="Close (Ctrl+Q)">✕</button>
               </div>
             </div>
 
             <!-- Window Body -->
-            <div style="padding:12px; display:flex; flex-direction:column; gap:10px; background:var(--surface-tier-1);">
+            <div style="padding:10px; display:flex; flex-direction:column; gap:8px; background:var(--surface-tier-1);">
 
-              <!-- 1. LCD Telemetry Readout Deck -->
+              <!-- ZONE 1: LCD Telemetry Readout Deck (vexpand: FALSE) -->
               <div class="mod-telemetry-deck">
                 <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap;">
                   <div>
@@ -4589,13 +4598,13 @@
                 <div class="mod-counter-strip">
                   <span class="mod-counter-kv"><span class="k">SUB</span><span id="modCntSub" class="v">01/09</span></span>
                   <span style="color:#333;">│</span>
-                  <span class="mod-counter-kv"><span class="k">ORD</span><span id="modCntOrd" class="v">04/1A</span></span>
+                  <span class="mod-counter-kv"><span class="k">ORD</span><span id="modCntOrd" class="v">—</span></span>
                   <span style="color:#333;">│</span>
-                  <span class="mod-counter-kv"><span class="k">PAT</span><span id="modCntPat" class="v">02</span></span>
+                  <span class="mod-counter-kv"><span class="k">PAT</span><span id="modCntPat" class="v">—</span></span>
                   <span style="color:#333;">│</span>
-                  <span class="mod-counter-kv"><span class="k">ROW</span><span id="modCntRow" class="v">2A/3F</span></span>
+                  <span class="mod-counter-kv"><span class="k">ROW</span><span id="modCntRow" class="v">—</span></span>
                   <span style="color:#333;">│</span>
-                  <span class="mod-counter-kv"><span class="k">SPD/BPM</span><span id="modCntBpm" class="v">06 / 125</span></span>
+                  <span class="mod-counter-kv"><span class="k">SPD/BPM</span><span id="modCntBpm" class="v">50 HZ PAL</span></span>
                   <span style="color:#333;">│</span>
                   <span class="mod-counter-kv"><span class="k">VOICES</span><span id="modCntCh" class="v">04 PAULA</span></span>
                   <span style="color:#333;">│</span>
@@ -4603,7 +4612,7 @@
                 </div>
               </div>
 
-              <!-- 2. Transport & First-Class Subsong Stepper Bar -->
+              <!-- ZONE 2: Transport & First-Class Subsong Stepper Bar (vexpand: FALSE) -->
               <div class="mod-transport-bar">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
                   <div style="display:flex; align-items:center; gap:5px;">
@@ -4643,7 +4652,7 @@
                 </div>
               </div>
 
-              <!-- 3. Paula / C64 SID & Resampler DSP Strip -->
+              <!-- ZONE 3: Paula / C64 SID & Resampler DSP Strip (vexpand: FALSE) -->
               <div class="mod-dsp-strip">
                 <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
                   <div class="mod-dsp-group" id="modFilterGroupWrap">
@@ -4692,18 +4701,7 @@
                 </div>
               </div>
 
-              <!-- 4. Deck View Switcher -->
-              <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;">
-                <div class="segmented-group" id="modDeckViewGroup">
-                  <button class="kajo-btn active" data-modview="scope">📈 SCOPE &amp; FFT (F1)</button>
-                  <button class="kajo-btn" data-modview="pattern">🎼 PATTERN ROLL (F2)</button>
-                  <button class="kajo-btn" data-modview="info">📋 SAMPLES &amp; INFO (F3)</button>
-                  <button class="kajo-btn" data-modview="playlist">📂 PLAYLIST (4) (F4)</button>
-                </div>
-                <span class="files-list-meta">CLICK [M] / [S] ON VOICE HEADERS TO MUTE OR SOLO CHANNELS</span>
-              </div>
-
-              <!-- Shared Per-Channel / Voice Header Strip -->
+              <!-- ZONE 4: Always-Visible Bounded-Height Scope, 16-Band FFT & Voice Mute/Solo Deck (vexpand: FALSE) -->
               <div class="mod-scope-canvas">
                 <div class="mod-channel-header" id="modChannelStrip">
                   <div class="mod-channel-pill" data-ch="1">
@@ -4748,28 +4746,27 @@
                   </div>
                 </div>
 
-                <!-- Deck View 1: Stereo Oscilloscope & 16-Band Spectrum (Default) -->
-                <div id="modViewScope" style="padding:12px; display:grid; grid-template-columns: 1.2fr 1fr; gap:12px; align-items:center; min-height:150px;">
-                  <div style="background:#0c0c0c; border:1px solid #222; padding:8px; position:relative;">
-                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:#888; margin-bottom:4px;">
-                      <span>DUAL-TRACE PAULA / SID OSCILLOSCOPE</span>
+                <div style="padding:8px; display:grid; grid-template-columns: 1.2fr 1fr; gap:10px; align-items:center;">
+                  <div style="background:#0c0c0c; border:1px solid #222; padding:6px 8px;">
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:9.5px; color:#888; margin-bottom:2px;">
+                      <span>DUAL-TRACE PAULA / SID OSCILLOSCOPE (FIXED ASPECT)</span>
                       <span><span style="color:var(--metro-accent);">■ L (CH 1,4)</span> &nbsp; <span style="color:var(--metro-telemetry);">■ R (CH 2,3)</span></span>
                     </div>
-                    <svg viewBox="0 0 360 90" style="width:100%; height:90px; display:block;">
-                      <line x1="0" y1="45" x2="360" y2="45" stroke="#222" stroke-dasharray="3,3" />
+                    <svg viewBox="0 0 360 66" style="width:100%; height:66px; display:block;">
+                      <line x1="0" y1="33" x2="360" y2="33" stroke="#222" stroke-dasharray="3,3" />
                       <polyline fill="none" stroke="var(--metro-accent)" stroke-width="2"
-                        points="0,45 15,18 30,68 45,12 60,76 75,28 90,60 105,15 120,74 135,22 150,65 165,14 180,78 195,30 210,58 225,18 240,72 255,26 270,64 285,16 300,74 315,24 330,62 345,20 360,45" />
-                      <polyline fill="none" stroke="var(--metro-telemetry)" stroke-width="1.6" stroke-opacity="0.85"
-                        points="0,45 15,62 30,24 45,70 60,20 75,66 90,32 105,68 120,22 135,60 150,28 165,72 180,18 195,64 210,30 225,68 240,22 255,58 270,26 285,70 300,20 315,62 330,28 345,66 360,45" />
+                        points="0,33 15,12 30,52 45,8 60,56 75,20 90,46 105,10 120,54 135,16 150,48 165,10 180,58 195,22 210,44 225,12 240,54 255,18 270,48 285,12 300,54 315,18 330,46 345,14 360,33" />
+                      <polyline fill="none" stroke="var(--metro-telemetry)" stroke-width="1.5" stroke-opacity="0.85"
+                        points="0,33 15,48 30,18 45,52 60,14 75,50 90,22 105,50 120,16 135,46 150,20 165,54 180,14 195,48 210,22 225,50 240,16 255,44 270,18 285,52 300,14 315,46 330,20 345,50 360,33" />
                     </svg>
                   </div>
 
-                  <div style="background:#0c0c0c; border:1px solid #222; padding:8px;">
-                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:10px; color:#888; margin-bottom:6px;">
+                  <div style="background:#0c0c0c; border:1px solid #222; padding:6px 8px;">
+                    <div style="display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:9.5px; color:#888; margin-bottom:4px;">
                       <span>16-BAND LOGARITHMIC FFT SPECTRUM</span>
                       <span style="color:var(--metro-telemetry);">60 FPS MAP-GATED</span>
                     </div>
-                    <div style="display:grid; grid-template-columns:repeat(16, 1fr); gap:3px; height:84px; align-items:end;">
+                    <div style="display:grid; grid-template-columns:repeat(16, 1fr); gap:3px; height:62px; align-items:end;">
                       <div style="height:68%; background:var(--metro-accent);"></div>
                       <div style="height:84%; background:var(--metro-warning);"></div>
                       <div style="height:92%; background:var(--metro-urgent);"></div>
@@ -4789,78 +4786,78 @@
                     </div>
                   </div>
                 </div>
+              </div>
 
-                <!-- Deck View 2: Live Tracker Pattern Roll -->
-                <div id="modViewPattern" class="mod-pattern-canvas" style="display:none; border:none;">
-                  <div class="mod-pattern-row"><span>27</span><span><span class="mod-cell-note">C-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">G-4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span></div>
-                  <div class="mod-pattern-row"><span>28</span><span>--- .. .. ...</span><span><span class="mod-cell-note">D#4</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">v40</span> <span class="mod-cell-fx">C20</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">A-3</span> <span class="mod-cell-inst">04</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span></div>
-                  <div class="mod-pattern-row"><span>29</span><span><span class="mod-cell-note">D-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">308</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">A-4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span></div>
-                  <div class="mod-pattern-row active"><span>▶2A◀</span><span><span class="mod-cell-note">E-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">v64</span> <span class="mod-cell-fx">A01</span></span><span><span class="mod-cell-note">B-3</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">v48</span> <span class="mod-cell-fx">E93</span></span><span><span class="mod-cell-note">G-4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">v32</span> <span class="mod-cell-fx">304</span></span><span><span class="mod-cell-note">C-4</span> <span class="mod-cell-inst">04</span> <span class="mod-cell-vol">v64</span> <span class="mod-cell-fx">F06</span></span></div>
-                  <div class="mod-pattern-row"><span>2B</span><span>--- .. .. ...</span><span><span class="mod-cell-note">F-4</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span><span>--- .. .. ...</span></div>
-                  <div class="mod-pattern-row"><span>2C</span><span><span class="mod-cell-note">G-5</span> <span class="mod-cell-inst">01</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span>--- .. .. ...</span><span><span class="mod-cell-note">A#4</span> <span class="mod-cell-inst">03</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span><span><span class="mod-cell-note">E-4</span> <span class="mod-cell-inst">04</span> <span class="mod-cell-vol">..</span> <span class="mod-cell-fx">...</span></span></div>
-                  <div class="mod-pattern-row"><span>2D</span><span>--- .. .. ...</span><span><span class="mod-cell-note">C-4</span> <span class="mod-cell-inst">02</span> <span class="mod-cell-vol">v32</span> <span class="mod-cell-fx">A0F</span></span><span>--- .. .. ...</span><span>--- .. .. ...</span></div>
-                </div>
-
-                <!-- Deck View 3: Samples, Instruments & Song Message / STIL Inspector -->
-                <div id="modViewInfo" style="display:none; padding:10px; flex-direction:column; gap:8px;">
-                  <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <span class="mod-dsp-label">XMPLAY-STYLE SAMPLE TEXT, INSTRUMENT &amp; HVSC STIL INSPECTOR (FIRA CODE)</span>
-                    <span class="shell-popover-badge">31 SAMPLES • README.NFO + STIL</span>
+                <!-- ZONE 5A: Upper Expanding Pane (vexpand: TRUE) — Controlled Niri Column Reflow Inspector -->
+              <div class="mod-scope-canvas">
+                <div style="padding:5px 10px; background:#161616; border-bottom:1px solid var(--border-struct); display:flex; align-items:center; justify-content:space-between; gap:8px;">
+                  <div style="display:flex; align-items:center; gap:8px;">
+                    <span class="mod-dsp-label" style="color:#fff;">📋 MODULE, HARDWARE &amp; ARCHIVE INSPECTOR</span>
+                    <span id="modGalleryColBadge" class="shell-popover-badge accent">2-COL SPLIT (&ge;760PX)</span>
                   </div>
-                  <div style="display:grid; grid-template-columns: 1.25fr 1fr; gap:10px;">
-                    <div style="border:1px solid var(--border-struct);">
-                      <div class="mod-sample-row" style="background:#181818; font-weight:700; color:#fff;">
-                        <span>#</span><span>SAMPLE / ASCII MESSAGE</span><span>LENGTH</span><span>LOOP</span><span>VOL</span>
-                      </div>
-                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">01</span><span style="color:#fff;">Lead_Synth_Paula_A500</span><span>14,280 B</span><span>0400..37C8</span><span>64</span></div>
-                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">02</span><span style="color:#fff;">--------------------</span><span>0 B</span><span>—</span><span>00</span></div>
-                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">03</span><span style="color:var(--metro-telemetry);">Composed by Huelsbeck</span><span>8,192 B</span><span>0000..2000</span><span>64</span></div>
-                      <div class="mod-sample-row"><span style="color:var(--metro-accent);">04</span><span style="color:var(--metro-telemetry);">Greets to Factor 5!!</span><span>6,420 B</span><span>—</span><span>58</span></div>
-                    </div>
-                    <div style="background:#0e0e0e; border:1px solid var(--border-struct); padding:8px 10px; font-family:var(--font-mono); font-size:11px; color:#cccccc; line-height:1.5;">
-                      <div style="color:var(--metro-warning); font-weight:700; margin-bottom:4px;">[ SONG MESSAGE / HVSC STIL / ARCHIVE .NFO ]</div>
-                      <div>Artist: Chris Hülsbeck (1991 Rainbow Arts)</div>
-                      <div>Format: TFMX-Pro 7-Voice (mdat.turrican2 + smpl.turrican2)</div>
-                      <div>STIL: Subsong #1 is the iconic 4:30 titleloader theme; Subsongs #2–#9 cover Level 1-1 trapdoor &amp; jingles.</div>
-                    </div>
+                  <div class="segmented-group" id="modDeckViewGroup" style="display:none;">
+                    <button class="kajo-btn active" data-modview="samples">SAMPLES / VOICES</button>
+                    <button class="kajo-btn" data-modview="stil">STIL / .NFO / MSG</button>
                   </div>
                 </div>
 
-                <!-- Deck View 4: Playlist & Archive Queue -->
-                <div id="modViewPlaylist" style="display:none; flex-direction:column;">
-                  <div style="padding:6px 10px; background:#161616; border-bottom:1px solid var(--border-struct); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
-                    <div style="display:flex; gap:6px;">
-                      <button class="kajo-btn files-nav-btn">+ ADD FILES</button>
-                      <button class="kajo-btn files-nav-btn">📁 ADD FOLDER</button>
-                      <button class="kajo-btn files-nav-btn">📦 OPEN ARCHIVE (.LHA / .ZIP)</button>
-                      <button class="kajo-btn action-btn-danger files-nav-btn">🗑 CLEAR</button>
+                <!-- Controlled Reflow Grid: 2-Column Split >=760px (Niri 1/2 & 2/3 col), 1-Column Tabbed <760px (Niri 1/3 col) -->
+                <div id="modViewInfo" style="display:grid; grid-template-columns: 1.25fr 1fr;">
+                  <div id="modColSamples" style="border-right:1px solid var(--border-struct);">
+                    <div class="mod-sample-row" style="background:#181818; font-weight:700; color:#fff;">
+                      <span>#</span><span>SAMPLE / ASCII MESSAGE</span><span>LENGTH</span><span>LOOP</span><span>VOL</span>
                     </div>
-                    <input type="text" class="kajo-entry" placeholder="Filter playlist (title, format, prefix)..." style="width:220px; padding:3px 8px; font-size:11px;" />
+                    <div class="mod-sample-row"><span style="color:var(--metro-accent);">01</span><span style="color:#fff;">Lead_Synth_Paula_A500</span><span>14,280 B</span><span>0400..37C8</span><span>64</span></div>
+                    <div class="mod-sample-row"><span style="color:var(--metro-accent);">02</span><span style="color:#fff;">--------------------</span><span>0 B</span><span>—</span><span>00</span></div>
+                    <div class="mod-sample-row"><span style="color:var(--metro-accent);">03</span><span style="color:var(--metro-telemetry);">Composed by Huelsbeck</span><span>8,192 B</span><span>0000..2000</span><span>64</span></div>
+                    <div class="mod-sample-row"><span style="color:var(--metro-accent);">04</span><span style="color:var(--metro-telemetry);">Greets to Factor 5!!</span><span>6,420 B</span><span>—</span><span>58</span></div>
+                    <div class="mod-sample-row"><span style="color:var(--metro-accent);">05</span><span style="color:#fff;">Bass_Arp_Pulse_01</span><span>3,200 B</span><span>0000..0C80</span><span>64</span></div>
                   </div>
-                  <div class="files-list-row selected" style="grid-template-columns: 1fr auto auto auto;">
-                    <div class="files-list-name-cell"><span style="color:var(--metro-accent);">▶</span><span>mdat.turrican2 — Turrican II (Title Theme)</span></div>
-                    <span class="shell-popover-badge accent">UADE • TFMX</span>
-                    <span class="shell-popover-badge">9 SUB</span>
-                    <span class="files-list-meta">03:20</span>
+                  <div id="modColStil" style="background:#0d0d0d; padding:8px 10px; font-family:var(--font-mono); font-size:11px; color:#cccccc; line-height:1.5;">
+                    <div style="color:var(--metro-warning); font-weight:700; margin-bottom:4px;">[ SONG MESSAGE / HVSC STIL / ARCHIVE .NFO ]</div>
+                    <div>Artist: Chris Hülsbeck (1991 Rainbow Arts)</div>
+                    <div>Format: TFMX-Pro 7-Voice (mdat.turrican2 + smpl.turrican2)</div>
+                    <div>STIL: Subsong #1 is the iconic titleloader theme; Subsongs #2–#9 cover Level 1-1 trapdoor &amp; jingles.</div>
                   </div>
-                  <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
-                    <div class="files-list-name-cell"><span>🕹</span><span>Commando.sid — Rob Hubbard (1985 Elite)</span></div>
-                    <span class="shell-popover-badge">SID • 6581 PAL</span>
-                    <span class="shell-popover-badge">3 SUB</span>
-                    <span class="files-list-meta">04:12</span>
+                </div>
+              </div>
+
+              <!-- ZONE 5B: Lower Expanding Pane (vexpand: TRUE) — Always-Docked Playlist & Archive Queue -->
+              <div class="mod-scope-canvas">
+                <div style="padding:5px 10px; background:#161616; border-bottom:1px solid var(--border-struct); display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap;">
+                  <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+                    <span class="mod-dsp-label" style="color:#fff;">📂 DOCKED PLAYLIST QUEUE (VEXPAND: TRUE)</span>
+                    <span class="shell-popover-badge accent">4 TRACKS • 14 SUBSONGS</span>
+                    <button class="kajo-btn files-nav-btn">+ ADD FILES</button>
+                    <button class="kajo-btn files-nav-btn">📁 FOLDER</button>
+                    <button class="kajo-btn files-nav-btn">📦 ARCHIVE (.LHA / .ZIP)</button>
+                    <button class="kajo-btn action-btn-danger files-nav-btn">🗑 CLEAR</button>
                   </div>
-                  <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
-                    <div class="files-list-name-cell"><span>🦋</span><span>mod.space_debris — Captain / Future Crew</span></div>
-                    <span class="shell-popover-badge accent">UADE • PTK</span>
-                    <span class="shell-popover-badge">1 SUB</span>
-                    <span class="files-list-meta">04:58</span>
-                  </div>
-                  <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
-                    <div class="files-list-name-cell"><span>🎮</span><span>dkc2_stickerbush_symphony.spc — David Wise</span></div>
-                    <span class="shell-popover-badge">GME • SPC700</span>
-                    <span class="shell-popover-badge">1 SUB</span>
-                    <span class="files-list-meta">02:30</span>
-                  </div>
+                  <input type="text" class="kajo-entry" placeholder="Filter queue (title, format, prefix)..." style="width:210px; padding:3px 8px; font-size:11px;" />
+                </div>
+                <div class="files-list-row selected" style="grid-template-columns: 1fr auto auto auto;">
+                  <div class="files-list-name-cell"><span style="color:var(--metro-accent);">▶</span><span>mdat.turrican2 — Turrican II: The Final Fight (Title)</span></div>
+                  <span class="shell-popover-badge accent">UADE • TFMX</span>
+                  <span class="shell-popover-badge">9 SUB</span>
+                  <span class="files-list-meta">03:20</span>
+                </div>
+                <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
+                  <div class="files-list-name-cell"><span>🕹</span><span>Commando.sid — Rob Hubbard (1985 Elite Systems)</span></div>
+                  <span class="shell-popover-badge">SID • 6581 PAL</span>
+                  <span class="shell-popover-badge">3 SUB</span>
+                  <span class="files-list-meta">04:12</span>
+                </div>
+                <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
+                  <div class="files-list-name-cell"><span>🦋</span><span>mod.space_debris — Captain / Future Crew</span></div>
+                  <span class="shell-popover-badge accent">UADE • PTK</span>
+                  <span class="shell-popover-badge">1 SUB</span>
+                  <span class="files-list-meta">04:58</span>
+                </div>
+                <div class="files-list-row" style="grid-template-columns: 1fr auto auto auto;">
+                  <div class="files-list-name-cell"><span>🎮</span><span>dkc2_stickerbush_symphony.spc — David Wise</span></div>
+                  <span class="shell-popover-badge">GME • SPC700</span>
+                  <span class="shell-popover-badge">1 SUB</span>
+                  <span class="files-list-meta">02:30</span>
                 </div>
               </div>
 
@@ -5223,21 +5220,52 @@
       bindExclusiveActivation('#modLedGroup', '.kajo-btn', 'active');
       bindExclusiveActivation('#modSidGroup', '.kajo-btn', 'active');
 
+      const modGalleryWindow = document.getElementById('modGalleryWindow');
+      const modViewInfo = document.getElementById('modViewInfo');
+      const modColSamples = document.getElementById('modColSamples');
+      const modColStil = document.getElementById('modColStil');
+      const modGalleryColBadge = document.getElementById('modGalleryColBadge');
+      const modDeckViewGroup = document.getElementById('modDeckViewGroup');
       const modDeckBtns = document.querySelectorAll('#modDeckViewGroup .kajo-btn');
-      const modViews = {
-        scope: document.getElementById('modViewScope'),
-        pattern: document.getElementById('modViewPattern'),
-        info: document.getElementById('modViewInfo'),
-        playlist: document.getElementById('modViewPlaylist')
-      };
+      let activeNarrowTab = 'samples';
+
+      function updateGalleryModReflow(colW) {
+        const narrow = colW < 760;
+        if (modGalleryWindow) modGalleryWindow.style.maxWidth = colW + 'px';
+        if (modGalleryColBadge) {
+          modGalleryColBadge.textContent = narrow ? '1-COL TABBED (<760PX)' : '2-COL SPLIT (≥760PX)';
+        }
+        if (modDeckViewGroup) {
+          modDeckViewGroup.style.display = narrow ? 'inline-flex' : 'none';
+        }
+        if (modViewInfo) {
+          modViewInfo.style.gridTemplateColumns = narrow ? '1fr' : '1.25fr 1fr';
+        }
+        if (modColSamples && modColStil) {
+          if (!narrow) {
+            modColSamples.style.display = 'block';
+            modColStil.style.display = 'block';
+          } else {
+            modColSamples.style.display = activeNarrowTab === 'samples' ? 'block' : 'none';
+            modColStil.style.display = activeNarrowTab === 'stil' ? 'block' : 'none';
+          }
+        }
+      }
+
+      document.querySelectorAll('#modColWidthGroup .kajo-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('#modColWidthGroup .kajo-btn').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          updateGalleryModReflow(Number(btn.dataset.colw));
+        });
+      });
+
       modDeckBtns.forEach((btn) => {
         btn.addEventListener('click', () => {
           modDeckBtns.forEach((b) => b.classList.remove('active'));
           btn.classList.add('active');
-          Object.keys(modViews).forEach((k) => {
-            if (k === 'scope') modViews[k].style.display = btn.dataset.modview === k ? 'grid' : 'none';
-            else modViews[k].style.display = btn.dataset.modview === k ? 'flex' : 'none';
-          });
+          activeNarrowTab = btn.dataset.modview;
+          updateGalleryModReflow(540);
         });
       });
 

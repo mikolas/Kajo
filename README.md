@@ -15,23 +15,24 @@ Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. *
 1. **A Unified "Aero + Metro" Design Language** ([`docs/design_system.md`](docs/design_system.md) • [`docs/ui-gallery.html`](docs/ui-gallery.html))
    - Rejects bloated, rounded toolkit defaults in favor of **strict `0px` sharp corner geometry**, OLED-native dark charcoal surfaces (`#111111`–`#1a1a1a`), `1px solid #2b2b2b` structural hairlines, live `@metro-accent` window framing, and high-density `Fira Code` monospace telemetry badges.
    - Every standalone application in the suite shares the exact same custom frameless window chrome, Niri tiling/floating IPC (`🗗 FLOAT / TILE`), and instant live CSS/accent hot-reload.
-2. **Pure Native C17 Performance, Zero Runtime Bloat**
-   - Built directly on `C17`, `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libmpv`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron, CEF, or web-view wrappers.
+2. **Pure Native C17/C++20 Performance, Zero Runtime Bloat**
+   - Built directly on `C17` (`C++20` for `libsidplayfp`), `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron, CEF, or web-view wrappers.
    - Strict map- and popout-gated resource discipline keeps background CPU usage below `0.05%`.
 3. **Tailored to Personal Workflows**
-   - Whether writing C/Go/Rust/Python in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, or managing Niri GLSL shaders and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
+   - Whether writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or managing Niri GLSL shaders and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
 
 ---
 
 ## 🧩 The Kajo Application Suite
 
-The repository builds and installs **six integrated native executables** (plus a `greetd` session wrapper):
+The repository builds and installs **seven integrated native executables** (plus a `greetd` session wrapper):
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
 | **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, a real asynchronous LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, … — diagnostics, hover, completion with auto-imports, go-to-definition/implementation, workspace-wide rename, code actions, formatting; `ripgrep`/buffer fallbacks without a server), project tasks (`Space r b/t/r/c` for Maven, Gradle, Meson, CMake, Cargo, Go, Make with clickable `javac`/`gcc`/`go` errors), DAP debugger (`gdb -i=dap`, `lldb-dap`, `dlv dap`: breakpoints, stepping, call stack, locals, REPL), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual read-only `archive://` browsing (ISOs included), UDisks2 disk-image mounting (`Open With → Mount Disk Image`), smart `libarchive` extraction & compression (`Ctrl+Shift+A`), persistent view/sort/inspector state (`config.json`), full root-to-leaf auto-scrolling breadcrumbs with right-click subfolder jump popovers, rubber-band multi-selection (`GtkMultiSelection`) with batch operations & Wayland clipboard (`Ctrl+C/X/V`), natural filename collation, hit-tested context menu (`Open With / Set Default`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` media, Poppler PDF, `libarchive`, code). |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, embedded/external subtitle selector (`.srt`, `.ass`, PGS), multi-audio stream switching, sync offset, playback speed & frame-stepping, chapters, sibling folder queue, auto-hiding fullscreen HUD, and MPRIS2 D-Bus integration. |
+| **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Music Player** (`libuade` $\rightarrow$ `libsidplayfp`/`reSIDfp` $\rightarrow$ `libgme` $\rightarrow$ `libopenmpt` $\rightarrow$ `libxmp`) with subsong navigation, Amiga Paula A500/A1200 & LED filter control, MOS 6581/8580 SID selector, stereo crossfeed, live `$D400` SID register & sample/instrument inspector, HVSC `Songlengths.md5` / `STIL.txt` lookup, `.lha`/`.zip` multi-file companion extraction, and 60 FPS stereo oscilloscope + 16-band log FFT spectrum. |
 | **`kajo-settings`** | `org.kajo.Settings` | **11-Page Modular System & Suite Control Deck** managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes, Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code** (`config.json` `ide` schemes/fonts), Niri GLSL Shaders, and hardware telemetry. |
 | **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 live widgets), 16-band FFT audio visualizer, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual touch keyboard, bezel touch gestures, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` OLED screen saver, 360° foldable posture manager, and `ext-session-lock-v1` PAM lock screen. |
 | **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage`, and desktop `--test` preview mode with PAM verification. |
@@ -104,6 +105,23 @@ The repository builds and installs **six integrated native executables** (plus a
 
 ---
 
+### 🎹 Kajo Mod (`kajo-mod`)
+> 📖 **Full Specification**: See [`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md) for the complete architecture, priority routing, and Niri column reflow design.
+
+- **Strict 5-Tier Engine Priority Router**:
+  1. **Priority 1 — Amiga 68000 & Paula Hardware Emulation (`libuade`)**: Executes genuine M68000 player binaries + cycle-exact Paula BLEP synthesis for 150+ native Amiga formats (ProTracker `.mod` / `mod.*`, TFMX `mdat.*`+`smpl.*`, AHX/THX, OctaMED `MMD0–3`, Oktalyzer, Future Composer, Jochen Hippel, SidMon `.sid`, SoundMon, JamCracker, Custom Eagleplayers).
+  2. **Priority 2 — Commodore 64 SID (`libsidplayfp` / `reSIDfp` + HVSC)**: Cycle-exact 6510 CPU + transistor-level non-linear MOS 6581 / CSG 8580 filter emulation for `PSID` / `RSID` `.sid` files, with live `$D400–$D418` hardware register decoding (`FREQ`, `PW`, `ADSR`, waveform, filter cutoff/resonance) and automatic HVSC `Songlengths.md5` & `STIL.txt` lookup (`$KAJO_HVSC_DIR` or `~/Music/C64Music`).
+  3. **Priority 3 — 8/16-Bit Console Chiptunes (`libgme`)**: Native chip emulation for `AY`, `GBS`, `GYM`, `HES`, `KSS`, `NSF`/`NSFE`, `SAP`, `SPC`, and `VGM`/`VGZ`.
+  4. **Priority 4 — PC & Multi-Channel Trackers (`libopenmpt`)**: High-accuracy synthesis for `XM`, `S3M`, `IT`, `MPTM`, `STM`, `ULT`, `FAR`, `MTM`, `PTM`, `J2B`, `UMX`, and `>8`-channel PC `.mod` files.
+  5. **Priority 5 — Extended Tracker Fallback (`libxmp`)**: Secondary tracker engine with full sample table extraction, subsong switching, and live frame telemetry.
+- **Hardware DSP Strip, Voice Header & 60 FPS Scope/FFT**:
+  - Live `FLT:` (`A500`, `A1200`, `NEAR`, `LIN`, `SINC`) filter/resampler selector, Amiga `LED:` (`AUTO`, `ON`, `OFF`) 3.3 kHz low-pass override, `SID:` (`AUTO`, `6581`, `8580`) chip selector, Amiga stereo crossfeed (`SEP: 0%–100%`), tempo scaling (`50%–200%`), end-of-song `ADVANCE` / `LOOP` / 4-second `FADE`, and 4-voice Mute/Solo pills above a Cairo stereo oscilloscope and 16-band logarithmic FFT spectrum analyzer.
+- **Multi-File Archive Extraction (`libarchive`) & Responsive Niri Column Reflow**:
+  - Transparently extracts `.lha`, `.lzh`, `.lzx`, `.zip`, `.7z`, and `.tar.*` bundles so multi-file Amiga formats (`mdat.*` + `smpl.*`) find their companion sample files automatically while displaying bundled `.nfo` / `.diz` / `README` scene notes (with CP437 / ISO-8859-1 -> UTF-8 conversion) alongside sample/instrument tables.
+  - Controlled responsive reflow between Niri's `0.333` (`<760px`) and `0.50` (`≥760px`) column widths without horizontal clipping.
+
+---
+
 ### ⚙️ Kajo Settings (`kajo-settings`)
 11 modular configuration pages (`src/settings/pages/page_*.c`) with zero mock data and live D-Bus / IPC synchronization:
 1. **Displays & Idle Security (`displays`)**: Live Niri output resolution, refresh rate, fractional scale, orientation, VRR, plus Screen Saver & Session Lock timeouts.
@@ -142,6 +160,7 @@ The repository builds and installs **six integrated native executables** (plus a
 | **[`docs/design_system.md`](docs/design_system.md)** | Authoritative **Aero + Metro** visual design specification (color tokens, `0px` geometry, typography, component anatomy). |
 | **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
 | **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
+| **[`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)** | Architecture specification for **`kajo-mod`** (5-tier audio priority router, DSP pipeline, Niri column reflow). |
 | **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
 | **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
@@ -154,8 +173,9 @@ The repository builds and installs **six integrated native executables** (plus a
 ### 1. System Dependencies (Arch Linux / CachyOS)
 ```bash
 sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-protocols \
-    libxkbcommon json-glib glib2 libpulse pam poppler-glib libarchive mpv gvfs gvfs-smb \
-    udisks2 blueprint-compiler meson ninja
+    libxkbcommon json-glib glib2 libpulse pam poppler-glib libarchive mpv \
+    libsidplayfp libgme libopenmpt libxmp gvfs gvfs-smb udisks2 blueprint-compiler meson ninja
+paru -S --needed uade
 ```
 
 **Tree-sitter syntax engine** for `kajo-ide` (incremental parsing, AST-based highlighting). The runtime comes from the official repositories; the grammars are split between the official/CachyOS repositories and the AUR (use `paru` or `yay`):
@@ -177,7 +197,7 @@ sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
 For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server` (language server) and `vasmm68k_mot` from the [vasm](http://sun.hasenbraten.de/vasm/) distribution (build task and diagnostics) must be on `PATH`; both are optional.
 
 ### 2. Build, Verify & Install (`~/.local`)
-By default, `meson.build` configures `prefix=~/.local`, installing all six binaries to `~/.local/bin` and theme/syntax assets to `~/.local/share/kajo/`:
+By default, `meson.build` configures `prefix=~/.local`, installing all seven binaries to `~/.local/bin` and theme/syntax/icon assets to `~/.local/share/kajo/`:
 
 ```bash
 meson setup builddir
@@ -201,6 +221,7 @@ binds {
     Mod+C             { spawn "kajo-ide"; }
     Mod+E             { spawn "kajo-files"; }
     Mod+M             { spawn "kajo-player"; }
+    Mod+Shift+M       { spawn "kajo-mod"; }
     Mod+S             { spawn "kajo-settings"; }
     Mod+K             { spawn "kajo" "--toggle-osk"; }
 
@@ -228,6 +249,7 @@ binds {
 | **`kajo-ide`** | `kajo-ide [DIR \| FILES...]` | Opens a project workspace directory or specific source files in Kajo IDE. |
 | **`kajo-files`** | `kajo-files [PATH_OR_URI...]` | Opens local folders or GVFS URIs (`trash:///`, `recent:///`, `smb://`, `sftp://`). |
 | **`kajo-player`** | `kajo-player [FILE_OR_URI...]` | Opens video/audio media files in Kajo Player with sibling folder queue discovery. |
+| **`kajo-mod`** | `kajo-mod [FILES \| ARCHIVES \| DIRS...]` | Opens Amiga, C64 SID, chiptune, or tracker modules, `.lha`/`.zip` archives, or folders in Kajo Mod. |
 | **`kajo-settings`** | `kajo-settings [-p <PAGE>]` | Opens System Settings (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `niri`, `about`). |
 | **`kajo`** | `kajo [--toggle-launcher \| --lock \| --screensaver \| --toggle-osk \| --volume-up \| ...]` | Starts the Wayland shell daemon (no args) or dispatches an instant command over `$XDG_RUNTIME_DIR/kajo.sock`. |
 | **`kajo-greeter`** | `kajo-greeter [--test] [--fullscreen] [--cmd <SESSION>]` | Runs the `greetd` login greeter (use `--test` to preview safely in a `1280×800` desktop window). |

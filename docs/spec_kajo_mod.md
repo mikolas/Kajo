@@ -203,78 +203,84 @@ Amiga music collections (Modland, ExoticA, HVSC, AMP) distribute modules inside 
 - Undecorated window (`gtk_window_set_decorated(win, FALSE)`) with CSS classes `shell-settings-window` and `shell-mod-window`, default size `860 × 620`.
 - `0px` corner radius across all cards, buttons, level bars, and tables.
 
-### 6.1 Layout Wireframe
+### 6.1 Niri Column Proportions & Controlled Reflow Architecture
+
+In Kajo's Niri configuration (`30-layout-animations.kdl`, `00-kajo.kdl`, `50-window-rules.kdl`), windows are tiled in scrolling columns with `default-column-width { proportion 0.5; }`, `preset-column-widths { proportion 0.33333; proportion 0.5; proportion 0.66667; }`, `gaps 6`, and `clip-to-geometry true`:
+- On the reference `2880×1800 @ 1.75x` display (`1646×1028` logical px), Niri column widths are **`~540px` (`1/3`)**, **`~814px` (`1/2` default)**, **`~1088px` (`2/3`)**, and **`~1634px` (`1.0` full)**.
+- Because `clip-to-geometry true` clips any GTK4 widget row whose natural/minimum width exceeds the active column width, and because `flex-wrap` on control bars causes vertical height jumps when cycling `Mod+R`, `kajo-mod` enforces two strict layout invariants:
+  1. **Zero-Jump, Zero-Clip Top Decks (`Zones 1–5`, `vexpand: FALSE`, `min-width <= 480px`):**
+     - **Zone 1 (`36px`):** Window Header Bar (`.settings-header-bar`, `🎹 KAJO MOD`, active engine badge, `🗗 FLOAT / TILE`, `✕`).
+     - **Zone 2 (`66px`):** LCD Telemetry Readout Deck (`.mod-telemetry-deck` with `PANGO_ELLIPSIZE_END` on title/subtitle + 6-column homogeneous `.mod-counter-strip` grid `SUB │ VOICES │ TIMING │ CLOCK │ OUT │ TIME`).
+     - **Zone 3 (`58px`):** 2-Row Deterministic Transport & Subsong Deck (`.mod-transport-deck` — Row 1: full-throw seek bar + `[ ◀ SUB ] SUB 01 / 09 [ SUB ▶ ]`; Row 2: transport buttons + `ADVANCE/LOOP/FADE` + volume).
+     - **Zone 4 (`52px`):** 2-Row Deterministic Hardware & DSP Matrix (`.mod-dsp-strip` — Row 1: `FILTER`, `LED`, `SID` segmented selectors; Row 2: `1fr 1fr` equal grid for `STEREO SEP` and `TEMPO`).
+     - **Zone 5 (`118px`, bounded height):** 4-column homogeneous Voice `[M]/[S]` Header Strip (`.mod-channel-header`) + `1fr 1fr` Dual-Trace Oscilloscope & 16-Band FFT Spectrum Deck (`.mod-scope-deck`).
+  2. **Controlled `< 760px` Reflow in the Expanding `GtkPaned` Region (`Zone 6`, `vexpand: TRUE`):**
+     - Note: A tracker pattern roll is intentionally omitted because `libuade` (68000 machine code), `libsidplayfp` (6510 + SID), and `libgme` do not expose tracker pattern tables, and multi-channel pattern grids clip horizontally in narrow Niri columns.
+     - **Pane 6A — Upper Expanding Deck (`📋 MODULE, HARDWARE & ARCHIVE INSPECTOR`):**
+       - **Wide Column ($\ge 760\text{px}$ — Niri `1/2` `0.5` and `2/3` `0.667` columns):** Displays the scrollable **Samples / Instruments / Hardware Voices Table** (`Fira Code`, preserving 22–32 char Amiga ASCII liner notes) and the scrollable **HVSC STIL / Archive `.NFO` / Song Message** well **side-by-side in a `1.2fr 1fr` split**.
+       - **Narrow Column ($< 760\text{px}$ — Niri `1/3` `0.333` column at `~540px`):** Automatically switches to a **1-column full-width view** with a `[ SAMPLES / VOICES │ STIL / .NFO / MSG ]` `.segmented-group` in the pane header so 32-character ASCII sample tables are never clipped.
+     - **Pane 6B — Lower Expanding Deck (`📂 PLAYLIST & ARCHIVE QUEUE`):**
+       - Always-docked `GtkScrolledWindow` queue table where the track title column (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END`) smoothly absorbs column width changes.
+  3. **Zone 7 (`24px`, `vexpand: FALSE`):** Bottom Status Bar (`.mod-status-bar`).
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│ 🎹 KAJO MOD                                                 [ 🗗 FLOAT / TILE ]  [ ✕ ] │
+│ 🎹 KAJO MOD  [UADE 68K • PAULA BLEP]                        [ 🗗 FLOAT / TILE ]  [ ✕ ] │ (Zone 1: Fixed 36px)
 ├────────────────────────────────────────────────────────────────────────────────────────┤
 │ ┌─ LCD TELEMETRY DECK (#141414, 1px solid #2b2b2b, 3px left @metro-accent bar) ──────┐ │
-│ │ TURRICAN II - THE FINAL FIGHT (TITLE)                    [ UADE 68K ] [ TFMX-PRO ] │ │
-│ │ Chris Huelsbeck • mdat.turrican2                         [ LED: ON  ] [ 48.0 kHz ] │ │
-│ │ SUB 01/09 │ ORD 04/1A │ PAT 02 │ ROW 2A/3F │ SPD 06 │ BPM 125 │ CH 07 │ 01:14/03:20│ │
+│ │ TURRICAN II — THE FINAL FIGHT (TITLE THEME)     [UADE 3.05] [TFMX-PRO] [LED: ON]   │ │
+│ │ SUB 01/09 │ VOICES 04 PAULA │ TIMING 50Hz PAL │ CLOCK 68k VBI │ 48.0kHz │ 01:14    │ │ (Zone 2: Fixed 66px)
 │ └────────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                        │
-│ ┌─ TRANSPORT & SUBSONG BAR ──────────────────────────────────────────────────────────┐ │
-│ │ [ ⏮ ] [ ▶ / ⏸ ] [ ⏹ ] [ ⏭ ]   [ ◀ SUB ] SUB 01 / 09 [ SUB ▶ ]   ───●────── 01:14 │ │
-│ │ Loop: [ ADVANCE │ LOOP │ FADE ]                        🔊 ━━━━━━●━━ 80%            │ │
+│ ┌─ 2-ROW DETERMINISTIC TRANSPORT & SUBSONG DECK (Min-Width ~440px, Zero Overflow) ───┐ │
+│ │ 01:14 ━━━━━━━━●━━━━━━━━━━━━━━━━━━━━━━━━━━━ 03:20       [ ◀ SUB ] SUB 01 / 09 [SUB ▶]│ │ (Zone 3: Fixed 58px)
+│ │ [⏮] [▶ PLAY] [⏸] [⏹] [⏭]   LOOP: [ADVANCE│LOOP│FADE]                 🔊 ━━━━●━ 85% │ │
 │ └────────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                        │
-│ ┌─ PAULA / SID & RESAMPLER DSP STRIP ────────────────────────────────────────────────┐ │
-│ │ Filter: [ A500 │ A1200 │ NEAREST │ LINEAR │ SINC ]   LED: [ AUTO │ ON │ OFF ]      │ │
-│ │ SID: [ AUTO │ 6581 │ 8580 ]   Sep: ━━━●━━━ 50%       Speed: ━━━●━━━ 100% [1:1]     │ │
+│ ┌─ 2-ROW DETERMINISTIC HARDWARE & DSP MATRIX (Zero Flex-Wrap Height Jumping) ────────┐ │
+│ │ FILTER:[A500│A1200│NEAR│LIN│SINC]   LED:[AUTO│ON│OFF]   SID:[AUTO│6581│8580]       │ │ (Zone 4: Fixed 52px)
+│ │ STEREO SEP: ━━━━●━━━ 65% (AMIGA)    │    TEMPO: ━━━━●━━━ 100% [1:1]                │ │
 │ └────────────────────────────────────────────────────────────────────────────────────┘ │
-│                                                                                        │
-│ View: [ 🎼 PATTERN ROLL │ 📈 SCOPE & FFT │ 📋 SAMPLES & INFO │ 📂 PLAYLIST (12) ]     │
-│ ┌────────────────────────────────────────────────────────────────────────────────────┐ │
-│ │ [CH 01 M S] [CH 02 M S] [CH 03 M S] [CH 04 M S]                                    │ │
-│ │ ────────────────────────────────────────────────────────────────────────────────── │ │
-│ │ 28 │ C-5 01 .. ... │ --- .. .. ... │ G-4 03 .. ... │ --- .. .. ...                 │ │
-│ │ 29 │ --- .. .. ... │ D#4 02 40 C20 │ --- .. .. ... │ A-3 04 .. ...                 │ │
-│ │▶2A◀│ E-5 01 64 A01 │ --- .. .. ... │ G-4 03 32 304 │ C-4 04 64 F06  (Active Row)   │ │
-│ │ 2B │ --- .. .. ... │ F-4 02 .. ... │ --- .. .. ... │ --- .. .. ...                 │ │
-│ │ 2C │ G-5 01 .. ... │ --- .. .. ... │ A#4 03 .. ... │ E-4 04 .. ...                 │ │
+│ ┌─ BOUNDED SCOPE & 16-BAND FFT DECK (vexpand: FALSE, 118px fixed height) ────────────┐ │
+│ │ [PAULA 1L ▬▬ [M][S]] [PAULA 2R ▬▬ [M][S]] [PAULA 3R ▬▬ [M][S]] [PAULA 4L ▬▬ [M][S]]│ │ (Zone 5: Fixed 118px)
+│ │ ┌─ STEREO OSCILLOSCOPE (88px) ───────────┐ ┌─ 16-BAND LOG FFT SPECTRUM (88px) ───┐ │ │
+│ │ │  ~~~╱╲~~~╱╲~~~ (L @metro-accent)       │ │  ▄▄ ██ ▆▆ ▃▃ ▅▅ ▇▇ ▄▄ ▂▂ ...        │ │ │
+│ │ └────────────────────────────────────────┘ └─────────────────────────────────────┘ │ │
 │ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│ ┌─ PANE 6A: MODULE, HARDWARE & ARCHIVE INSPECTOR (2-Col >=760px / 1-Col <760px) ─────┐ │ (Zone 6A: Expands)
+│ │ 📋 MODULE, HARDWARE & ARCHIVE INSPECTOR                   [2-COL SPLIT VIEW ≥760px]│ │
+│ │ ┌─ SAMPLES / INSTRUMENTS (31 SLOTS) ─────┐ ┌─ ARCHIVE .NFO / HVSC STIL / MESSAGE ┐ │ │
+│ │ │ 01 │ --- TURRICAN II ---    │ 14280    │ │ [UADE EAGLEPLAYER TELEMETRY]        │ │ │
+│ │ │ 02 │ BY CHRIS HUELSBECK     │ 08420    │ │ Player: TFMX-Pro (Chris Hülsbeck)   │ │ │
+│ │ │ 03 │ =======================│ 04112    │ │ Companion: mdat + smpl.turrican2    │ │ │
+│ │ │ .. │ (Fills vertical space) │ .....    │ │ (In 1/3 col <760px, switches 1-col) │ │ │
+│ │ └────────────────────────────────────────┘ └─────────────────────────────────────┘ │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+│ ═══════════════════════════ [ ⋯ GtkPaned Drag Handle ⋯ ] ═════════════════════════════ │
+│ ┌─ PANE 6B: DOCKED PLAYLIST & ARCHIVE QUEUE (vexpand: TRUE) ─────────────────────────┐ │ (Zone 6B: Expands)
+│ │ 📂 PLAYLIST & ARCHIVE QUEUE (8 TRACKS)       [+ ADD] [+ DIR] [− REM] [CLR] [🔍...] │ │
+│ │ ▶01 │ Turrican II — The Final Fight (mdat.turrican2)  │ UADE 68K │ 9 SUB │ 03:20   │ │
+│ │  02 │ Rob Hubbard — Commando High Score (.sid)        │ RESIDFP  │ 3 SUB │ 04:12   │ │
+│ │  03 │ David Wise — Stickerbush Symphony (.spc)        │ LIBGME   │ 1 SUB │ 02:45   │ │
+│ │  04 │ Purple Motion — Second Reality (2nd_pm.s3m)     │ OPENMPT  │ 1 SUB │ 04:38   │ │
+│ └────────────────────────────────────────────────────────────────────────────────────┘ │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ ● PIPEWIRE 48.0kHz / FLOAT32LE │ PRIO 1: UADE 3.05        SPACE:PLAY ALT+◀/▶:SUB M/S   │ (Zone 7: Fixed 24px)
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 The Four Deck Views
-
-1. **`🎼 PATTERN ROLL` (`mod_vis.c`):**
-   - Renders the current tracker pattern in `Fira Code` monospace using `shell_ide_font_stack()`.
-   - Center row is pinned as the active playhead with a full-width `@metro-accent` tinted band (`rgba(accent, 0.18)`) and `2px` left marker.
-   - Cell tokens are color-coded using `@metro-*` semantic colors:
-     - **Notes (`C-5`, `F#4`, `===`):** `#ffffff` bold
-     - **Instrument (`01..1F`):** `@metro-accent`
-     - **Volume column (`v40`):** `@metro-success` (`#10893e`)
-     - **Effect & Parameter (`C20`, `E93`, `F06`):** `@metro-warning` (`#ffb900`)
-   - Top channel header strip provides per-channel VU bar + clickable `[M]` (Mute) and `[S]` (Solo) buttons.
-   - When playing a `libuade` or `libgme` track without pattern tables, displays a clean **68000 / Chiptune Voice & Subsong Dashboard** with per-voice mute toggles (`libgme`) and live stereo waveform trace.
-2. **`📈 SCOPE & FFT` (`mod_vis.c`):**
-   - Top half: Dual-channel L/R stereo phosphor-style oscilloscope (`@metro-accent` Left, `@metro-telemetry` Right).
-   - Bottom half: 16-band logarithmic FFT spectrum analyzer with peak-hold ticks + per-channel VU meters.
-3. **`📋 SAMPLES & INFO` (`mod_window.c`):**
-   - Sub-segmented switcher: `[ SAMPLES (31) │ INSTRUMENTS │ SONG MESSAGE ]`.
-   - **Samples Table:** `Fira Code` list showing `#Hex`, `Sample Name` (22–32 chars, preserving ASCII art alignment), `Length`, `Loop Start / End`, and `Volume`.
-   - **Song Message / Archive Info:** Scrollable `Fira Code` readout displaying the module's internal song comment (`openmpt_module_get_metadata("message")` / `xmp_module_info.comment` / `gme_info_t.comment`) plus any `.diz` / `.nfo` / `.txt` file bundled inside a loaded `.lha` / `.zip` archive.
-4. **`📂 PLAYLIST` (`mod_window.c`):**
-   - Toolbar: `[ + ADD FILES ]`, `[ 📁 ADD FOLDER ]`, `[ 📦 OPEN ARCHIVE (.LHA/.ZIP) ]`, `[ 🗑 CLEAR ]`, and filter search entry.
-   - Double-clicking any row loads and starts that track; subsongs within the active track can be stepped with `[ ◀ SUB ]` / `[ SUB ▶ ]` or `Alt+Left` / `Alt+Right`.
-
-### 6.3 Keyboard Shortcuts
+### 6.2 Keyboard Shortcuts
 
 | Shortcut | Action |
 | :--- | :--- |
 | `Space` | Play / Pause |
 | `S` | Stop |
-| `Left` / `Right` | Seek `-5s` / `+5s` (or previous/next Order in tracker modules) |
+| `Left` / `Right` | Seek `-5s` / `+5s` |
 | `Alt+Left` / `Alt+Right` or `[` / `]` | Previous / Next Subsong |
 | `Ctrl+Left` / `Ctrl+Right` or `P` / `N` | Previous / Next Track in Playlist |
-| `1` .. `8` | Toggle Mute on Channel `1..8` (`Shift+1..8` = Solo Channel `1..8`) |
-| `0` | Unmute All Channels |
+| `1` .. `8` | Toggle Mute on Voice/Channel `1..8` (`Shift+1..8` = Solo Voice `1..8`) |
+| `0` | Unmute All Voices/Channels |
 | `F` | Cycle Amiga LED Filter (`AUTO` $\rightarrow$ `ON` $\rightarrow$ `OFF`) |
-| `I` | Cycle Interpolation Mode (`A500` $\rightarrow$ `A1200` $\rightarrow$ `NEAREST` $\rightarrow$ `LINEAR` $\rightarrow$ `SINC`) |
-| `F1` / `F2` / `F3` / `F4` | Switch Deck View (`Pattern` / `Scope & FFT` / `Samples & Info` / `Playlist`) |
+| `I` | Cycle Resampler Mode (`A500` $\rightarrow$ `A1200` $\rightarrow$ `NEAR` $\rightarrow$ `LIN` $\rightarrow$ `SINC`) |
+| `Tab` | Toggle `SAMPLES / VOICES` $\leftrightarrow$ `STIL / .NFO` when in Narrow `1/3` Column Mode (`< 760px`) |
 | `Ctrl+O` | Open Module / Archive File Dialog |
 | `Ctrl+Q` | Quit `kajo-mod` |
 

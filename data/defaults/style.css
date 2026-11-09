@@ -2865,4 +2865,361 @@ window.shell-ide-window .ide-picker-footer {
     color: #888888;
 }
 
+/* ============================================================================
+ * KAJO MOD (org.kajo.Mod — Retro Amiga, C64 SID, Chiptune & Tracker Player)
+ * ============================================================================ */
+
+window.shell-mod-window {
+    background-color: #111111;
+    border: 1px solid @metro-accent;
+}
+
+window.shell-mod-window .mod-telemetry-deck {
+    background-color: #141414;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-accent;
+    padding: 6px 8px;
+}
+
+window.shell-mod-window .mod-track-title {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+window.shell-mod-window .mod-track-sub {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #a0a0a0;
+}
+
+window.shell-mod-window .mod-counter-strip {
+    background-color: #101010;
+    border: 1px solid #242424;
+    padding: 3px 6px;
+}
+
+window.shell-mod-window .mod-counter-cell {
+    border-right: 1px solid #1f1f1f;
+    padding-right: 4px;
+}
+
+window.shell-mod-window .mod-counter-cell.last {
+    border-right: none;
+    padding-right: 0;
+}
+
+window.shell-mod-window .mod-counter-lbl {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #777777;
+}
+
+window.shell-mod-window .mod-counter-val {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+window.shell-mod-window .mod-counter-val.accent {
+    color: @metro-telemetry;
+}
+
+window.shell-mod-window .mod-transport-deck {
+    background-color: #141414;
+    border: 1px solid @metro-border;
+    padding: 5px 8px;
+}
+
+window.shell-mod-window .mod-subsong-box {
+    background-color: #101010;
+    border: 1px solid @metro-border;
+}
+
+window.shell-mod-window .mod-subsong-box button {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-radius: 0px;
+    padding: 2px 6px;
+    min-height: 20px;
+    min-width: 0;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #dcdcdc;
+}
+
+window.shell-mod-window .mod-subsong-box button:hover {
+    background-color: #252525;
+    color: #ffffff;
+}
+
+window.shell-mod-window .mod-subsong-readout {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-telemetry;
+    padding: 2px 7px;
+    border-left: 1px solid @metro-border;
+    border-right: 1px solid @metro-border;
+}
+
+window.shell-mod-window .mod-dsp-strip {
+    background-color: #181818;
+    border: 1px solid @metro-border;
+    padding: 4px 5px;
+}
+
+window.shell-mod-window .mod-dsp-group:disabled {
+    opacity: 0.35;
+}
+
+window.shell-mod-window .segmented-group button,
+window.shell-mod-window button.files-nav-btn {
+    padding: 2px 5px;
+    min-height: 20px;
+    min-width: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+window.shell-mod-window .mod-dsp-strip .segmented-group button {
+    padding: 1px 3px;
+    min-height: 18px;
+    font-size: 9px;
+}
+
+window.shell-mod-window scale trough {
+    min-width: 32px;
+}
+
+window.shell-mod-window entry {
+    min-height: 22px;
+    padding: 1px 6px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+}
+
+window.shell-mod-window .mod-channel-pill levelbar trough {
+    background: none;
+    background-image: none;
+    background-color: #0d0d0d;
+    border: 1px solid #262626;
+    min-height: 5px;
+    padding: 0;
+}
+
+window.shell-mod-window .mod-channel-pill levelbar block.filled,
+window.shell-mod-window .mod-channel-pill levelbar block.low,
+window.shell-mod-window .mod-channel-pill levelbar block.high,
+window.shell-mod-window .mod-channel-pill levelbar block.full {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border: none;
+    min-height: 5px;
+}
+
+window.shell-mod-window .mod-dsp-row-2 {
+    border-top: 1px solid #222222;
+    padding-top: 3px;
+}
+
+window.shell-mod-window .mod-dsp-label {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #a0a0a0;
+}
+
+window.shell-mod-window .mod-scope-deck {
+    background-color: #101010;
+    border: 1px solid @metro-border;
+}
+
+window.shell-mod-window .mod-channel-header {
+    background-color: #141414;
+    border-bottom: 1px solid @metro-border;
+    padding: 4px 6px;
+}
+
+window.shell-mod-window .mod-channel-pill {
+    background-color: #181818;
+    border: 1px solid @metro-border;
+    padding: 2px 5px;
+}
+
+window.shell-mod-window .mod-channel-pill.muted {
+    opacity: 0.42;
+    background-color: #121212;
+}
+
+window.shell-mod-window .mod-channel-name {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #dddddd;
+}
+
+window.shell-mod-window button.mod-ms-btn {
+    background: none;
+    background-image: none;
+    background-color: #222222;
+    color: #999999;
+    border: 1px solid #333333;
+    border-radius: 0px;
+    padding: 0px 4px;
+    min-height: 16px;
+    min-width: 16px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 9px;
+    font-weight: 700;
+}
+
+window.shell-mod-window button.mod-ms-btn:hover {
+    background-color: #2e2e2e;
+    color: #ffffff;
+}
+
+window.shell-mod-window button.mod-ms-btn.mute-on {
+    background-color: @metro-urgent;
+    color: #ffffff;
+    border-color: @metro-urgent;
+}
+
+window.shell-mod-window button.mod-ms-btn.solo-on {
+    background-color: @metro-warning;
+    color: #111111;
+    border-color: @metro-warning;
+}
+
+window.shell-mod-window .mod-vis-card {
+    background-color: #0c0c0c;
+    border: 1px solid #222222;
+}
+
+window.shell-mod-window .mod-pane-card {
+    background-color: #101010;
+    border: 1px solid @metro-border;
+}
+
+window.shell-mod-window .mod-pane-toolbar {
+    background-color: #141414;
+    border-bottom: 1px solid @metro-border;
+    padding: 3px 8px;
+    min-height: 28px;
+}
+
+window.shell-mod-window .mod-pane-title {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #a0a0a0;
+}
+
+window.shell-mod-window .mod-subcol-hdr {
+    background-color: #141414;
+    border-bottom: 1px solid #222222;
+    padding: 2px 8px;
+    min-height: 22px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #a0a0a0;
+}
+
+window.shell-mod-window .mod-inspector-left {
+    border-right: 1px solid @metro-border;
+}
+
+window.shell-mod-window .mod-sample-header {
+    background-color: #151515;
+    border-bottom: 1px solid #252525;
+    padding: 2px 8px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: #777777;
+}
+
+window.shell-mod-window .mod-sample-row {
+    border-bottom: 1px solid #171717;
+    padding: 2px 8px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #cccccc;
+}
+
+window.shell-mod-window .mod-stil-view,
+window.shell-mod-window .mod-stil-view text {
+    background-color: #0e0e0e;
+    color: #cccccc;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+}
+
+window.shell-mod-window .mod-pl-listbox {
+    background-color: #101010;
+}
+
+window.shell-mod-window .mod-pl-listbox row {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border-bottom: 1px solid #181818;
+    border-left: 3px solid transparent;
+    padding: 4px 8px;
+}
+
+window.shell-mod-window .mod-pl-listbox row:hover {
+    background-color: #181818;
+}
+
+window.shell-mod-window .mod-pl-listbox row:selected {
+    background: none;
+    background-image: none;
+    background-color: alpha(@metro-accent, 0.18);
+    border-left: 3px solid @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-mod-window .mod-pl-text {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #cccccc;
+}
+
+window.shell-mod-window .mod-pl-listbox row:selected .mod-pl-text {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+window.shell-mod-window .mod-status-bar {
+    background-color: #141414;
+    border-top: 1px solid @metro-border;
+    padding: 2px 10px;
+    min-height: 24px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    color: #a0a0a0;
+}
+
+window.shell-mod-window paned > separator {
+    background-color: #141414;
+    border-top: 1px solid #242424;
+    border-bottom: 1px solid #242424;
+    min-height: 6px;
+}
+
+window.shell-mod-window paned > separator:hover {
+    background-color: alpha(@metro-accent, 0.35);
+}
+
+
 

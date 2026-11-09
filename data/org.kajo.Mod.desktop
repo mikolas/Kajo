@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Kajo Mod
+Comment=Retro Amiga, C64 SID, Chiptune & Tracker Music Player for the Kajo Desktop
+Exec=kajo-mod %U
+Icon=kajo-mod
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;GTK;
+MimeType=audio/x-mod;audio/x-xm;audio/x-s3m;audio/x-it;audio/prs.sid;
+StartupNotify=true
+StartupWMClass=org.kajo.Mod
+Keywords=amiga;uade;mod;sid;c64;chiptune;tracker;xm;s3m;it;tfmx;ahx;kajo;
