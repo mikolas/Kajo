@@ -2,8 +2,8 @@
 #include "../settings_pages.h"
 #include <string.h>
 
-static const char *SWIPE_CENTER_IDS[] = { "launcher", "overview", "osk", "none" };
-static const char *SWIPE_CENTER_LABELS[] = {
+static const char *const SWIPE_CENTER_IDS[] = { "launcher", "overview", "osk", "none" };
+static const char *const SWIPE_CENTER_LABELS[] = {
     "Open App Launcher (Default)",
     "Toggle Niri Overview",
     "Toggle Virtual Keyboard",
@@ -11,8 +11,8 @@ static const char *SWIPE_CENTER_LABELS[] = {
     NULL
 };
 
-static const char *SWIPE_RIGHT_IDS[] = { "control-center", "notifications", "osk", "none" };
-static const char *SWIPE_RIGHT_LABELS[] = {
+static const char *const SWIPE_RIGHT_IDS[] = { "control-center", "notifications", "osk", "none" };
+static const char *const SWIPE_RIGHT_LABELS[] = {
     "Open Control Center (Default)",
     "Open Notifications Center",
     "Toggle Virtual Keyboard",
@@ -20,49 +20,44 @@ static const char *SWIPE_RIGHT_LABELS[] = {
     NULL
 };
 
-static const char *SWIPE_HORIZ_IDS[] = { "column", "workspace", "none" };
-static const char *SWIPE_HORIZ_LABELS[] = {
-    "Switch Window Column Left / Right (Default)",
+static const char *const SWIPE_HORIZ_IDS[] = { "column", "workspace", "none" };
+static const char *const SWIPE_HORIZ_LABELS[] = {
+    "Switch Window Column Left / Right",
     "Switch Workspace Up / Down",
     "Disabled",
     NULL
 };
 
-static const char *OSK_MODE_IDS[] = { "tablet", "always", "manual" };
-static const char *OSK_MODE_LABELS[] = {
-    "In Tablet Mode Only (Default)",
-    "Always When Text Input Focused",
-    "Manual Toggle Only",
-    NULL
-};
-
-/* ─── Declarative GtkBox Template Subclass ─── */
+static const char *const OSK_MODE_IDS[] = { "tablet", "always", "manual" };
+static const char *const OSK_MODE_SHORT[] = { "TABLET", "ALWAYS", "MANUAL" };
 
 typedef struct _SettingsPagePanel {
     GtkBox parent_instance;
 
-    GtkWidget *slot_pos;
-    GtkWidget *seg_pos;        /* segmented: Top | Bottom */
-    GtkWidget *toggle_grid;
-    GtkWidget *scale_height;
-    GtkWidget *lbl_height_val;
+    GtkWidget *card_geom;
+    GtkWidget *seg_pos;
+    GtkWidget *tile_hide;
+    GtkWidget *row_rev;
     GtkWidget *scale_rev;
-    GtkWidget *lbl_rev_val;
+    GtkWidget *scale_height;
 
+    GtkWidget *card_touch;
     GtkWidget *sw_touch_enabled;
+    GtkWidget *row_swipe_center;
     GtkWidget *combo_swipe_center;
+    GtkWidget *row_swipe_right;
     GtkWidget *combo_swipe_right;
+    GtkWidget *row_swipe_horiz;
     GtkWidget *combo_swipe_horiz;
+    GtkWidget *row_touch_dwell;
     GtkWidget *scale_touch_dwell;
-    GtkWidget *lbl_touch_dwell_val;
 
-    GtkWidget *combo_osk_mode;
-    GtkWidget *slot_osk_push;
-    GtkWidget *seg_osk_push;   /* segmented: Push windows | Float over */
+    GtkWidget *card_osk;
+    GtkWidget *seg_osk_mode;
+    GtkWidget *seg_osk_push;
     GtkWidget *scale_osk_height;
-    GtkWidget *lbl_osk_height_val;
 
-    GtkWidget *btn_apply;
+    gboolean   syncing_ui;
 } SettingsPagePanel;
 
 typedef struct _SettingsPagePanelClass {
@@ -70,86 +65,6 @@ typedef struct _SettingsPagePanelClass {
 } SettingsPagePanelClass;
 
 G_DEFINE_TYPE(SettingsPagePanel, settings_page_panel, GTK_TYPE_BOX)
-
-static void
-settings_page_panel_init(SettingsPagePanel *self)
-{
-    gtk_widget_init_template(GTK_WIDGET(self));
-}
-
-static void
-settings_page_panel_dispose(GObject *object)
-{
-    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_panel_get_type());
-    G_OBJECT_CLASS(settings_page_panel_parent_class)->dispose(object);
-}
-
-static void
-settings_page_panel_class_init(SettingsPagePanelClass *klass)
-{
-    GObjectClass *object_class = G_OBJECT_CLASS(klass);
-    GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
-
-    object_class->dispose = settings_page_panel_dispose;
-
-    gtk_widget_class_set_template_from_resource(
-        widget_class, "/org/kajo/shell/ui/page_panel.ui");
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, slot_pos);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, toggle_grid);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_height);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_height_val);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_rev);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_rev_val);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, sw_touch_enabled);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_center);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_right);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_swipe_horiz);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_touch_dwell);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_touch_dwell_val);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, combo_osk_mode);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, slot_osk_push);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, scale_osk_height);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, lbl_osk_height_val);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPagePanel, btn_apply);
-}
-
-static void
-on_scale_height_changed(GtkRange *range, gpointer user_data)
-{
-    GtkLabel *lbl = GTK_LABEL(user_data);
-    gchar *str = g_strdup_printf("%dpx", (int)gtk_range_get_value(range));
-    gtk_label_set_text(lbl, str);
-    g_free(str);
-}
-
-static void
-on_scale_rev_changed(GtkRange *range, gpointer user_data)
-{
-    GtkLabel *lbl = GTK_LABEL(user_data);
-    gchar *str = g_strdup_printf("%dms", (int)gtk_range_get_value(range));
-    gtk_label_set_text(lbl, str);
-    g_free(str);
-}
-
-static void
-on_scale_touch_dwell_changed(GtkRange *range, gpointer user_data)
-{
-    GtkLabel *lbl = GTK_LABEL(user_data);
-    gchar *str = g_strdup_printf("%dms", (int)gtk_range_get_value(range));
-    gtk_label_set_text(lbl, str);
-    g_free(str);
-}
-
-static void
-on_autohide_card_toggled(GtkToggleButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    toggle_card_set_subtitle(GTK_WIDGET(btn),
-                             gtk_toggle_button_get_active(btn) ? "Enabled" : "Disabled");
-}
 
 static guint
 find_id_index(const char *const *ids, guint n_ids, const char *val)
@@ -164,171 +79,386 @@ find_id_index(const char *const *ids, guint n_ids, const char *val)
 }
 
 static void
-on_apply_panel_clicked(GtkButton *btn, gpointer user_data)
+sync_panel_Dependent_sensitivity(SettingsPagePanel *self)
 {
-    SettingsPagePanel *page = (SettingsPagePanel *)user_data;
+    if (!self)
+        return;
+
+    gboolean hide_on = self->tile_hide &&
+                       gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_hide));
+    if (self->tile_hide) {
+        toggle_card_set_subtitle(
+            self->tile_hide,
+            hide_on ? "Enabled — 2px screen-edge reveal strip" : "Disabled — panel stays docked");
+    }
+    if (self->row_rev)
+        gtk_widget_set_sensitive(self->row_rev, hide_on);
+
+    gboolean touch_on = self->sw_touch_enabled &&
+                        gtk_switch_get_active(GTK_SWITCH(self->sw_touch_enabled));
+    if (self->row_swipe_center) gtk_widget_set_sensitive(self->row_swipe_center, touch_on);
+    if (self->row_swipe_right)  gtk_widget_set_sensitive(self->row_swipe_right, touch_on);
+    if (self->row_swipe_horiz)  gtk_widget_set_sensitive(self->row_swipe_horiz, touch_on);
+    if (self->row_touch_dwell)  gtk_widget_set_sensitive(self->row_touch_dwell, touch_on);
+}
+
+static void
+update_panel_badges_and_telemetry(SettingsPagePanel *self)
+{
+    if (!self)
+        return;
+
+    gboolean is_btm = (segmented_group_get_selected(self->seg_pos) == 1);
+    const gchar *edge_str = is_btm ? "BOTTOM" : "TOP";
+    int h_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_height));
+    gboolean hide_on = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_hide));
+    gboolean touch_on = gtk_switch_get_active(GTK_SWITCH(self->sw_touch_enabled));
+    guint osk_idx = segmented_group_get_selected(self->seg_osk_mode);
+    if (osk_idx >= G_N_ELEMENTS(OSK_MODE_SHORT))
+        osk_idx = 0;
+    int osk_h = (int)gtk_range_get_value(GTK_RANGE(self->scale_osk_height));
+
+    g_autofree gchar *geom_badge = g_strdup_printf("%s • %dPX", edge_str, h_px);
+    section_card_set_badge(self->card_geom, geom_badge, "accent");
+    section_card_set_badge(self->card_touch, touch_on ? "ENABLED" : "DISABLED", touch_on ? "accent" : NULL);
+
+    g_autofree gchar *osk_badge = g_strdup_printf("%dPX", osk_h);
+    section_card_set_badge(self->card_osk, osk_badge, NULL);
+
+    g_autofree gchar *c0 = g_strdup_printf("%s (%dPX)", edge_str, h_px);
+    g_autofree gchar *c3 = g_strdup_printf("%s (%dPX)", OSK_MODE_SHORT[osk_idx], osk_h);
+
+    settings_page_set_counter(GTK_WIDGET(self), 0, "EDGE", c0, "accent");
+    settings_page_set_counter(GTK_WIDGET(self), 1, "AUTOHIDE", hide_on ? "ENABLED" : "DISABLED", NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 2, "SWIPES", touch_on ? "ENABLED" : "DISABLED", NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 3, "OSK", c3, NULL);
+    settings_page_set_nav_badge(GTK_WIDGET(self), "panel", is_btm ? "BTM" : "TOP", NULL);
+}
+
+static void
+load_panel_ui_from_config(SettingsPagePanel *self)
+{
+    if (!self)
+        return;
+
     ShellConfig *config = shell_config_load(NULL);
-    if (!config) config = shell_config_get_default();
+    if (!config)
+        config = shell_config_get_default();
 
-    GtkWidget *tile_hide = g_object_get_data(G_OBJECT(btn), "tile_hide");
+    self->syncing_ui = TRUE;
 
-    if (page->seg_pos)
-        config->panel_position = (segmented_group_get_selected(page->seg_pos) == 1)
-                                 ? PANEL_POSITION_BOTTOM
-                                 : PANEL_POSITION_TOP;
-    if (page->scale_height)
-        config->panel_height = (int)gtk_range_get_value(GTK_RANGE(page->scale_height));
-    if (page->scale_rev) {
-        config->autohide_reveal_delay = (int)gtk_range_get_value(GTK_RANGE(page->scale_rev));
-        config->autohide_reveal_duration = (int)gtk_range_get_value(GTK_RANGE(page->scale_rev));
-    }
-    if (tile_hide)
-        config->autohide_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(tile_hide));
+    segmented_group_set_selected(self->seg_pos, config->panel_position == PANEL_POSITION_BOTTOM ? 1 : 0);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tile_hide), config->autohide_enabled);
+    gtk_range_set_value(GTK_RANGE(self->scale_height), config->panel_height > 0 ? config->panel_height : 32);
+    gtk_range_set_value(GTK_RANGE(self->scale_rev),
+                        config->autohide_reveal_delay > 0 ? config->autohide_reveal_delay : 150);
 
-    if (page->sw_touch_enabled)
-        config->touch_gestures_enabled = gtk_switch_get_active(GTK_SWITCH(page->sw_touch_enabled));
+    gtk_switch_set_active(GTK_SWITCH(self->sw_touch_enabled), config->touch_gestures_enabled);
+    gtk_drop_down_set_selected(
+        GTK_DROP_DOWN(self->combo_swipe_center),
+        find_id_index(SWIPE_CENTER_IDS, G_N_ELEMENTS(SWIPE_CENTER_IDS), config->touch_swipe_center));
+    gtk_drop_down_set_selected(
+        GTK_DROP_DOWN(self->combo_swipe_right),
+        find_id_index(SWIPE_RIGHT_IDS, G_N_ELEMENTS(SWIPE_RIGHT_IDS), config->touch_swipe_right));
+    gtk_drop_down_set_selected(
+        GTK_DROP_DOWN(self->combo_swipe_horiz),
+        find_id_index(SWIPE_HORIZ_IDS, G_N_ELEMENTS(SWIPE_HORIZ_IDS), config->touch_swipe_horizontal));
+    gtk_range_set_value(GTK_RANGE(self->scale_touch_dwell),
+                        config->touch_dwell_ms > 0 ? config->touch_dwell_ms : 4000);
 
-    if (page->combo_swipe_center) {
-        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_swipe_center));
-        if (idx >= G_N_ELEMENTS(SWIPE_CENTER_IDS)) idx = 0;
-        g_free(config->touch_swipe_center);
-        config->touch_swipe_center = g_strdup(SWIPE_CENTER_IDS[idx]);
-    }
+    segmented_group_set_selected(
+        self->seg_osk_mode,
+        find_id_index(OSK_MODE_IDS, G_N_ELEMENTS(OSK_MODE_IDS), config->osk_auto_show_mode));
+    segmented_group_set_selected(self->seg_osk_push, config->osk_push_windows ? 0 : 1);
+    gtk_range_set_value(GTK_RANGE(self->scale_osk_height),
+                        config->osk_height_px >= 180 ? config->osk_height_px : 260);
 
-    if (page->combo_swipe_right) {
-        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_swipe_right));
-        if (idx >= G_N_ELEMENTS(SWIPE_RIGHT_IDS)) idx = 0;
-        g_free(config->touch_swipe_right);
-        config->touch_swipe_right = g_strdup(SWIPE_RIGHT_IDS[idx]);
-    }
+    self->syncing_ui = FALSE;
+    shell_config_destroy(config);
 
-    if (page->combo_swipe_horiz) {
-        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_swipe_horiz));
-        if (idx >= G_N_ELEMENTS(SWIPE_HORIZ_IDS)) idx = 0;
-        g_free(config->touch_swipe_horizontal);
-        config->touch_swipe_horizontal = g_strdup(SWIPE_HORIZ_IDS[idx]);
-    }
+    sync_panel_Dependent_sensitivity(self);
+    update_panel_badges_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
 
-    if (page->scale_touch_dwell)
-        config->touch_dwell_ms = (int)gtk_range_get_value(GTK_RANGE(page->scale_touch_dwell));
+static void
+mark_panel_changed(SettingsPagePanel *self)
+{
+    if (!self || self->syncing_ui)
+        return;
+    sync_panel_Dependent_sensitivity(self);
+    update_panel_badges_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
 
-    if (page->combo_osk_mode) {
-        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_osk_mode));
-        if (idx >= G_N_ELEMENTS(OSK_MODE_IDS)) idx = 0;
-        g_free(config->osk_auto_show_mode);
-        config->osk_auto_show_mode = g_strdup(OSK_MODE_IDS[idx]);
-    }
+static void
+on_panel_seg_changed(GtkWidget *group G_GNUC_UNUSED, guint selected G_GNUC_UNUSED, gpointer user_data)
+{
+    mark_panel_changed((SettingsPagePanel *)user_data);
+}
 
-    if (page->seg_osk_push)
-        config->osk_push_windows = (segmented_group_get_selected(page->seg_osk_push) == 0);
+static void
+on_panel_toggle_changed(GtkToggleButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    mark_panel_changed((SettingsPagePanel *)user_data);
+}
 
-    if (page->scale_osk_height)
-        config->osk_height_px = (int)gtk_range_get_value(GTK_RANGE(page->scale_osk_height));
+static void
+on_panel_switch_or_combo_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    mark_panel_changed((SettingsPagePanel *)user_data);
+}
 
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *dir = g_build_filename(xdg_config, "kajo", NULL);
+static void
+on_panel_range_changed(GtkRange *range G_GNUC_UNUSED, gpointer user_data)
+{
+    mark_panel_changed((SettingsPagePanel *)user_data);
+}
+
+static void
+action_toggle_osk(gpointer user_data G_GNUC_UNUSED)
+{
+    settings_send_ipc_command("toggle-osk");
+}
+
+static void
+action_revert_panel(gpointer user_data)
+{
+    load_panel_ui_from_config((SettingsPagePanel *)user_data);
+}
+
+static void
+action_save_panel(gpointer user_data)
+{
+    SettingsPagePanel *self = (SettingsPagePanel *)user_data;
+    if (!self)
+        return;
+
+    ShellConfig *config = shell_config_load(NULL);
+    if (!config)
+        config = shell_config_get_default();
+
+    config->panel_position = (segmented_group_get_selected(self->seg_pos) == 1)
+        ? PANEL_POSITION_BOTTOM
+        : PANEL_POSITION_TOP;
+    config->autohide_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_hide));
+    config->panel_height = (int)gtk_range_get_value(GTK_RANGE(self->scale_height));
+    config->autohide_reveal_delay = (int)gtk_range_get_value(GTK_RANGE(self->scale_rev));
+    config->autohide_reveal_duration = config->autohide_reveal_delay;
+
+    config->touch_gestures_enabled = gtk_switch_get_active(GTK_SWITCH(self->sw_touch_enabled));
+
+    guint c_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_swipe_center));
+    if (c_idx >= G_N_ELEMENTS(SWIPE_CENTER_IDS)) c_idx = 0;
+    g_free(config->touch_swipe_center);
+    config->touch_swipe_center = g_strdup(SWIPE_CENTER_IDS[c_idx]);
+
+    guint r_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_swipe_right));
+    if (r_idx >= G_N_ELEMENTS(SWIPE_RIGHT_IDS)) r_idx = 0;
+    g_free(config->touch_swipe_right);
+    config->touch_swipe_right = g_strdup(SWIPE_RIGHT_IDS[r_idx]);
+
+    guint h_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_swipe_horiz));
+    if (h_idx >= G_N_ELEMENTS(SWIPE_HORIZ_IDS)) h_idx = 0;
+    g_free(config->touch_swipe_horizontal);
+    config->touch_swipe_horizontal = g_strdup(SWIPE_HORIZ_IDS[h_idx]);
+
+    config->touch_dwell_ms = (int)gtk_range_get_value(GTK_RANGE(self->scale_touch_dwell));
+
+    guint osk_idx = segmented_group_get_selected(self->seg_osk_mode);
+    if (osk_idx >= G_N_ELEMENTS(OSK_MODE_IDS)) osk_idx = 0;
+    g_free(config->osk_auto_show_mode);
+    config->osk_auto_show_mode = g_strdup(OSK_MODE_IDS[osk_idx]);
+
+    config->osk_push_windows = (segmented_group_get_selected(self->seg_osk_push) == 0);
+    config->osk_height_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_osk_height));
+
+    g_autofree gchar *dir = g_build_filename(g_get_user_config_dir(), "kajo", NULL);
     g_mkdir_with_parents(dir, 0755);
-    gchar *path = g_build_filename(dir, "config.json", NULL);
+    g_autofree gchar *path = g_build_filename(dir, "config.json", NULL);
 
     if (shell_config_save(config, path)) {
-        g_message("Saved panel and touch gesture configuration to %s", path);
         settings_send_ipc_command("reload-config");
     }
     shell_config_destroy(config);
-    g_free(dir);
-    g_free(path);
 
     niri_reload_config();
+    update_panel_badges_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
+
+static void
+on_panel_page_mapped(GtkWidget *widget, gpointer user_data G_GNUC_UNUSED)
+{
+    update_panel_badges_and_telemetry((SettingsPagePanel *)widget);
+}
+
+static void
+settings_page_panel_init(SettingsPagePanel *self)
+{
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(self), GTK_ORIENTATION_VERTICAL);
+    gtk_box_set_spacing(GTK_BOX(self), 10);
+    gtk_widget_add_css_class(GTK_WIDGET(self), "settings-bento-canvas");
+    gtk_widget_set_hexpand(GTK_WIDGET(self), TRUE);
+    g_object_set_data(G_OBJECT(self), "is-bento-canvas", GINT_TO_POINTER(1));
+}
+
+static void
+settings_page_panel_class_init(SettingsPagePanelClass *klass G_GNUC_UNUSED)
+{
 }
 
 GtkWidget *
 build_page_panel(void)
 {
-    SettingsPagePanel *page = g_object_new(settings_page_panel_get_type(), NULL);
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config) config = shell_config_get_default();
+    SettingsPagePanel *self = g_object_new(settings_page_panel_get_type(), NULL);
+
+    /* ─── Card 1: Layer-Shell Panel Geometry & Autohide ─── */
+    self->card_geom = create_section_card(
+        SETTINGS_CARD_LEFT,
+        "1. LAYER-SHELL PANEL GEOMETRY & AUTOHIDE",
+        "TOP • 32PX",
+        "accent",
+        NULL);
 
     static const char *const pos_items[] = { "TOP EDGE", "BOTTOM EDGE", NULL };
-    page->seg_pos = create_segmented_group(pos_items, config->panel_position == PANEL_POSITION_BOTTOM ? 1 : 0);
-    gtk_box_append(GTK_BOX(page->slot_pos), page->seg_pos);
+    self->seg_pos = create_segmented_group(pos_items, 0);
+    gtk_box_append(GTK_BOX(self->card_geom), create_boxed_row(
+        "▬",
+        "Panel Screen Edge Position",
+        "gtk4-layer-shell anchor edge",
+        self->seg_pos));
 
-    /* Autohide is a feature with its own sub-settings (reveal delay below), so
-     * it is a toggle card. The former Panel Edge, Panel Blur and Outer Margins
-     * tiles were removed: Edge duplicated the control above, Blur/Margins were
-     * not backed by any config or panel code. */
-    GtkWidget *tile_hide = create_toggle_card("view-reveal-symbolic", "Autohide",
-                                              config->autohide_enabled ? "Enabled" : "Disabled",
-                                              config->autohide_enabled);
-    g_signal_connect(tile_hide, "toggled", G_CALLBACK(on_autohide_card_toggled), NULL);
-    gtk_grid_attach(GTK_GRID(page->toggle_grid), tile_hide, 0, 0, 1, 1);
+    self->tile_hide = create_toggle_card(
+        "👁",
+        "Autohide",
+        "Disabled — panel stays docked",
+        FALSE);
+    gtk_box_append(GTK_BOX(self->card_geom), self->tile_hide);
 
-    gtk_range_set_value(GTK_RANGE(page->scale_height), config->panel_height > 0 ? config->panel_height : 32);
-    gchar *h_str = g_strdup_printf("%dpx", config->panel_height > 0 ? config->panel_height : 32);
-    gtk_label_set_text(GTK_LABEL(page->lbl_height_val), h_str);
-    g_free(h_str);
+    GtkWidget *w_rev = create_scale_with_badge(50, 500, 25, 150, "%.0fms", &self->scale_rev, NULL);
+    self->row_rev = create_boxed_row(
+        "⏱",
+        "Autohide Reveal Delay",
+        "Edge hover dwell before panel slides in",
+        w_rev);
+    gtk_box_append(GTK_BOX(self->card_geom), self->row_rev);
 
-    g_signal_connect(page->scale_height, "value-changed", G_CALLBACK(on_scale_height_changed), page->lbl_height_val);
+    GtkWidget *w_height = create_scale_with_badge(24, 56, 1, 32, "%.0fpx", &self->scale_height, NULL);
+    gtk_box_append(GTK_BOX(self->card_geom), create_boxed_row(
+        "↕",
+        "Panel Bar Thickness",
+        "24px compact .. 56px touch-friendly",
+        w_height));
 
-    gtk_range_set_value(GTK_RANGE(page->scale_rev), config->autohide_reveal_delay > 0 ? config->autohide_reveal_delay : 150);
-    gchar *r_str = g_strdup_printf("%dms", config->autohide_reveal_delay > 0 ? config->autohide_reveal_delay : 150);
-    gtk_label_set_text(GTK_LABEL(page->lbl_rev_val), r_str);
-    g_free(r_str);
+    /* ─── Card 2: Touchscreen Bezel & Swipe Gestures ─── */
+    self->card_touch = create_section_card(
+        SETTINGS_CARD_CENTER,
+        "2. TOUCHSCREEN BEZEL & SWIPE GESTURES",
+        "ENABLED",
+        "accent",
+        NULL);
 
-    g_signal_connect(page->scale_rev, "value-changed", G_CALLBACK(on_scale_rev_changed), page->lbl_rev_val);
+    self->sw_touch_enabled = gtk_switch_new();
+    gtk_box_append(GTK_BOX(self->card_touch), create_boxed_row(
+        "👆",
+        "Enable Panel Touch & Edge Swipes",
+        "Bezel swipe recognition on touch displays",
+        self->sw_touch_enabled));
 
-    /* Touch & Swipe Gesture Controls */
-    gtk_switch_set_active(GTK_SWITCH(page->sw_touch_enabled), config->touch_gestures_enabled);
+    self->combo_swipe_center = create_string_dropdown(SWIPE_CENTER_LABELS);
+    self->row_swipe_center = create_boxed_row(
+        "↓",
+        "Center / Left Inward Swipe",
+        "Downward bezel pull action",
+        self->combo_swipe_center);
+    gtk_box_append(GTK_BOX(self->card_touch), self->row_swipe_center);
 
-    GtkStringList *center_list = gtk_string_list_new(SWIPE_CENTER_LABELS);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_swipe_center), G_LIST_MODEL(center_list));
-    g_object_unref(center_list);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_swipe_center),
-                               find_id_index(SWIPE_CENTER_IDS, G_N_ELEMENTS(SWIPE_CENTER_IDS), config->touch_swipe_center));
+    self->combo_swipe_right = create_string_dropdown(SWIPE_RIGHT_LABELS);
+    self->row_swipe_right = create_boxed_row(
+        "↘",
+        "Right Zone Inward Swipe",
+        "Right-corner bezel pull action",
+        self->combo_swipe_right);
+    gtk_box_append(GTK_BOX(self->card_touch), self->row_swipe_right);
 
-    GtkStringList *right_list = gtk_string_list_new(SWIPE_RIGHT_LABELS);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_swipe_right), G_LIST_MODEL(right_list));
-    g_object_unref(right_list);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_swipe_right),
-                               find_id_index(SWIPE_RIGHT_IDS, G_N_ELEMENTS(SWIPE_RIGHT_IDS), config->touch_swipe_right));
+    self->combo_swipe_horiz = create_string_dropdown(SWIPE_HORIZ_LABELS);
+    self->row_swipe_horiz = create_boxed_row(
+        "↔",
+        "Horizontal Panel Swipe",
+        "Horizontal drag along panel bar",
+        self->combo_swipe_horiz);
+    gtk_box_append(GTK_BOX(self->card_touch), self->row_swipe_horiz);
 
-    GtkStringList *horiz_list = gtk_string_list_new(SWIPE_HORIZ_LABELS);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_swipe_horiz), G_LIST_MODEL(horiz_list));
-    g_object_unref(horiz_list);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_swipe_horiz),
-                               find_id_index(SWIPE_HORIZ_IDS, G_N_ELEMENTS(SWIPE_HORIZ_IDS), config->touch_swipe_horizontal));
+    GtkWidget *w_dwell = create_scale_with_badge(1000, 8000, 500, 4000, "%.0fms", &self->scale_touch_dwell, NULL);
+    self->row_touch_dwell = create_boxed_row(
+        "⏳",
+        "Autohide Touch Dwell Time",
+        "Keep autohidden panel visible after touch",
+        w_dwell);
+    gtk_box_append(GTK_BOX(self->card_touch), self->row_touch_dwell);
 
-    gint dwell_ms = config->touch_dwell_ms > 0 ? config->touch_dwell_ms : 4000;
-    gtk_range_set_value(GTK_RANGE(page->scale_touch_dwell), dwell_ms);
-    gchar *dwell_str = g_strdup_printf("%dms", dwell_ms);
-    gtk_label_set_text(GTK_LABEL(page->lbl_touch_dwell_val), dwell_str);
-    g_free(dwell_str);
+    settings_bento_add_pair(GTK_WIDGET(self), self->card_geom, self->card_touch);
 
-    g_signal_connect(page->scale_touch_dwell, "value-changed",
-                     G_CALLBACK(on_scale_touch_dwell_changed), page->lbl_touch_dwell_val);
+    /* ─── Card 3: Virtual Keyboard (ShellOSK) ─── */
+    self->card_osk = create_section_card(
+        SETTINGS_CARD_RIGHT,
+        "3. VIRTUAL KEYBOARD (SHELLOSK • zwp_input_method_v2)",
+        "260PX",
+        NULL,
+        NULL);
 
-    GtkStringList *osk_mode_list = gtk_string_list_new(OSK_MODE_LABELS);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_osk_mode), G_LIST_MODEL(osk_mode_list));
-    g_object_unref(osk_mode_list);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_osk_mode),
-                               find_id_index(OSK_MODE_IDS, G_N_ELEMENTS(OSK_MODE_IDS), config->osk_auto_show_mode));
+    static const char *const osk_mode_items[] = { "TABLET ONLY", "ALWAYS", "MANUAL", NULL };
+    self->seg_osk_mode = create_segmented_group(osk_mode_items, 0);
+    gtk_box_append(GTK_BOX(self->card_osk), create_boxed_row(
+        "⌨",
+        "Auto-Show Virtual Keyboard",
+        "When a Wayland text-input-v3 surface gains focus",
+        self->seg_osk_mode));
 
-    static const char *const osk_push_items[] = { "PUSH WINDOWS UP", "FLOAT OVER WINDOWS", NULL };
-    page->seg_osk_push = create_segmented_group(osk_push_items, config->osk_push_windows ? 0 : 1);
-    gtk_box_append(GTK_BOX(page->slot_osk_push), page->seg_osk_push);
+    static const char *const osk_push_items[] = { "PUSH WINDOWS", "FLOAT OVER", NULL };
+    self->seg_osk_push = create_segmented_group(osk_push_items, 0);
+    gtk_box_append(GTK_BOX(self->card_osk), create_boxed_row(
+        "🗔",
+        "Window Layout Behavior",
+        "Exclusive layer-shell zone vs floating overlay",
+        self->seg_osk_push));
 
-    gint osk_h = config->osk_height_px >= 180 ? config->osk_height_px : 260;
-    gtk_range_set_value(GTK_RANGE(page->scale_osk_height), osk_h);
-    gchar *osk_h_str = g_strdup_printf("%dpx", osk_h);
-    gtk_label_set_text(GTK_LABEL(page->lbl_osk_height_val), osk_h_str);
-    g_free(osk_h_str);
+    GtkWidget *w_osk_h = create_scale_with_badge(180, 420, 10, 260, "%.0fpx", &self->scale_osk_height, NULL);
+    gtk_box_append(GTK_BOX(self->card_osk), create_boxed_row(
+        "↕",
+        "Virtual Keyboard Height",
+        "180px compact .. 420px tall layout",
+        w_osk_h));
 
-    g_signal_connect(page->scale_osk_height, "value-changed",
-                     G_CALLBACK(on_scale_height_changed), page->lbl_osk_height_val);
+    settings_bento_add_full(GTK_WIDGET(self), self->card_osk);
 
-    shell_config_destroy(config);
+    /* Load saved config and wire signals */
+    load_panel_ui_from_config(self);
 
-    g_object_set_data(G_OBJECT(page->btn_apply), "tile_hide", tile_hide);
-    g_signal_connect(page->btn_apply, "clicked", G_CALLBACK(on_apply_panel_clicked), page);
+    segmented_group_connect(self->seg_pos, on_panel_seg_changed, self);
+    g_signal_connect(self->tile_hide, "toggled", G_CALLBACK(on_panel_toggle_changed), self);
+    g_signal_connect(self->scale_rev, "value-changed", G_CALLBACK(on_panel_range_changed), self);
+    g_signal_connect(self->scale_height, "value-changed", G_CALLBACK(on_panel_range_changed), self);
 
-    return create_settings_page_card("PANEL GEOMETRY & TOUCH GESTURES", "[ LIVE GEOMETRY & TOUCH ]", GTK_WIDGET(page), NULL);
+    g_signal_connect(self->sw_touch_enabled, "notify::active", G_CALLBACK(on_panel_switch_or_combo_changed), self);
+    g_signal_connect(self->combo_swipe_center, "notify::selected", G_CALLBACK(on_panel_switch_or_combo_changed), self);
+    g_signal_connect(self->combo_swipe_right, "notify::selected", G_CALLBACK(on_panel_switch_or_combo_changed), self);
+    g_signal_connect(self->combo_swipe_horiz, "notify::selected", G_CALLBACK(on_panel_switch_or_combo_changed), self);
+    g_signal_connect(self->scale_touch_dwell, "value-changed", G_CALLBACK(on_panel_range_changed), self);
+
+    segmented_group_connect(self->seg_osk_mode, on_panel_seg_changed, self);
+    segmented_group_connect(self->seg_osk_push, on_panel_seg_changed, self);
+    g_signal_connect(self->scale_osk_height, "value-changed", G_CALLBACK(on_panel_range_changed), self);
+    g_signal_connect(self, "map", G_CALLBACK(on_panel_page_mapped), NULL);
+
+    settings_page_bind_actions(
+        GTK_WIDGET(self),
+        "⌨ TOGGLE OSK",
+        action_toggle_osk,
+        action_revert_panel,
+        action_save_panel,
+        self);
+
+    return GTK_WIDGET(self);
 }

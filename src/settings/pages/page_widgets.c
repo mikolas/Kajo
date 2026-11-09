@@ -2,23 +2,74 @@
 #include "../settings_pages.h"
 #include <string.h>
 
-/* ─── Declarative GtkBox Template Subclass ─── */
+typedef struct {
+    const char *id;
+    const char *dropdown_label;
+    const char *icon_name;
+} WidgetCatalogEntry;
+
+static const WidgetCatalogEntry WIDGET_CATALOG[] = {
+    { "launcher",        "launcher — App Launcher",            "system-search-symbolic" },
+    { "workspaces",      "workspaces — Niri Workspaces",       "view-grid-symbolic" },
+    { "window",          "window — Focused Window Title",      "window-new-symbolic" },
+    { "clock",           "clock — Clock & Calendar",           "preferences-system-time-symbolic" },
+    { "media",           "media — MPRIS2 + 16-Band FFT",       "media-playback-start-symbolic" },
+    { "tray",            "tray — StatusNotifierItem Tray",     "folder-symbolic" },
+    { "notifications",   "notifications — Notification Bell",  "preferences-system-notifications-symbolic" },
+    { "dnd",             "dnd — Do Not Disturb Toggle",        "notifications-disabled-symbolic" },
+    { "network",         "network — NetworkManager Wi-Fi",     "network-wireless-symbolic" },
+    { "bluetooth",       "bluetooth — BlueZ Peripherals",      "bluetooth-active-symbolic" },
+    { "volume",          "volume — PipeWire Audio Volume",     "audio-volume-high-symbolic" },
+    { "backlight",       "backlight — Display Brightness",     "display-brightness-symbolic" },
+    { "battery",         "battery — UPower Battery Status",    "battery-good-symbolic" },
+    { "cpu-mem",         "cpu-mem — CPU & RAM Telemetry",      "utilities-system-monitor-symbolic" },
+    { "keyboard-layout", "keyboard-layout — XKB Layout",       "input-keyboard-symbolic" },
+    { "osk",             "osk — Virtual Keyboard Toggle",      "input-keyboard-symbolic" },
+    { "privacy",         "privacy — Mic / Cam Privacy",        "security-high-symbolic" },
+    { "idle-inhibitor",  "idle-inhibitor — Keep Awake",        "weather-clear-symbolic" },
+    { "theme",           "theme — Accent Quick Picker",        "preferences-desktop-appearance-symbolic" },
+    { "custom-script",   "custom-script — JSON Script Poll",   "utilities-terminal-symbolic" },
+    { "control-center",  "control-center — Quick Tiles",       "emblem-system-symbolic" },
+    { "power",           "power — Session Power Menu",         "system-shutdown-symbolic" },
+};
+#define N_WIDGET_CATALOG G_N_ELEMENTS(WIDGET_CATALOG)
+
+static const char *const WIDGET_MODE_LABELS[] = { "ICON", "TEXT", "FULL", NULL };
+
+typedef struct {
+    gint   interval_sec;
+    gchar *exec_cmd;
+    gchar *click_left_cmd;
+    gchar *click_right_cmd;
+} WidgetRowExtras;
+
+static void
+widget_row_extras_free(gpointer data)
+{
+    WidgetRowExtras *ex = data;
+    if (!ex)
+        return;
+    g_free(ex->exec_cmd);
+    g_free(ex->click_left_cmd);
+    g_free(ex->click_right_cmd);
+    g_free(ex);
+}
 
 typedef struct _SettingsPageWidgets {
     GtkBox parent_instance;
 
-    GtkWidget *card_left;
-    GtkWidget *lbl_left;
-    GtkWidget *card_center;
-    GtkWidget *lbl_center;
-    GtkWidget *card_right;
-    GtkWidget *lbl_right;
     GtkWidget *combo_add_widget;
-    GtkWidget *combo_add_section;
-    GtkWidget *slot_add_mode;
+    GtkWidget *seg_add_section;
     GtkWidget *seg_add_mode;
-    GtkWidget *btn_add;
-    GtkWidget *btn_apply;
+
+    GtkWidget *card_left;
+    GtkWidget *list_left;
+    GtkWidget *card_center;
+    GtkWidget *list_center;
+    GtkWidget *card_right;
+    GtkWidget *list_right;
+
+    gboolean   syncing_ui;
 } SettingsPageWidgets;
 
 typedef struct _SettingsPageWidgetsClass {
@@ -27,193 +78,21 @@ typedef struct _SettingsPageWidgetsClass {
 
 G_DEFINE_TYPE(SettingsPageWidgets, settings_page_widgets, GTK_TYPE_BOX)
 
-static const char *ALL_WIDGET_IDS[] = {
-    "launcher",
-    "workspaces",
-    "window",
-    "clock",
-    "tray",
-    "notifications",
-    "media",
-    "network",
-    "bluetooth",
-    "cpu-mem",
-    "keyboard-layout",
-    "osk",
-    "volume",
-    "battery",
-    "backlight",
-    "privacy",
-    "theme",
-    "custom-script",
-    "idle-inhibitor",
-    "dnd",
-    "control-center",
-    "power",
-    NULL
-};
-
-static void
-settings_page_widgets_dispose(GObject *object)
-{
-    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_widgets_get_type());
-    G_OBJECT_CLASS(settings_page_widgets_parent_class)->dispose(object);
-}
-
-static void
-settings_page_widgets_init(SettingsPageWidgets *self)
-{
-    gtk_widget_init_template(GTK_WIDGET(self));
-}
-
-static void
-settings_page_widgets_class_init(SettingsPageWidgetsClass *klass)
-{
-    GObjectClass *object_class = G_OBJECT_CLASS(klass);
-    GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
-
-    object_class->dispose = settings_page_widgets_dispose;
-
-    gtk_widget_class_set_template_from_resource(
-        widget_class, "/org/kajo/shell/ui/page_widgets.ui");
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, card_left);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, lbl_left);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, card_center);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, lbl_center);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, card_right);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, lbl_right);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, combo_add_widget);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, combo_add_section);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, slot_add_mode);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, btn_add);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageWidgets, btn_apply);
-}
-
-static guint
-count_card_widgets(GtkWidget *card)
-{
-    guint count = 0;
-    for (GtkWidget *child = gtk_widget_get_first_child(card);
-         child != NULL;
-         child = gtk_widget_get_next_sibling(child)) {
-        if (g_object_get_data(G_OBJECT(child), "widget-id") != NULL) {
-            count++;
-        }
-    }
-    return count;
-}
-
-static void
-update_section_counts(SettingsPageWidgets *self)
-{
-    if (!self) return;
-
-    guint left_count = count_card_widgets(self->card_left);
-    g_autofree gchar *left_title = g_strdup_printf("1. LEFT PANEL SECTION (%u Active Widgets)", left_count);
-    gtk_label_set_text(GTK_LABEL(self->lbl_left), left_title);
-
-    guint center_count = count_card_widgets(self->card_center);
-    g_autofree gchar *center_title = g_strdup_printf("2. CENTER PANEL SECTION (%u Active Widgets)", center_count);
-    gtk_label_set_text(GTK_LABEL(self->lbl_center), center_title);
-
-    guint right_count = count_card_widgets(self->card_right);
-    g_autofree gchar *right_title = g_strdup_printf("3. RIGHT PANEL SECTION (%u Active Widgets)", right_count);
-    gtk_label_set_text(GTK_LABEL(self->lbl_right), right_title);
-}
-
-static void
-on_widget_up_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    GtkWidget *row = GTK_WIDGET(user_data);
-    GtkWidget *parent = gtk_widget_get_parent(row);
-    if (!parent || !GTK_IS_BOX(parent)) return;
-
-    GtkWidget *prev = gtk_widget_get_prev_sibling(row);
-    if (prev && g_object_get_data(G_OBJECT(prev), "widget-id") != NULL) {
-        GtkWidget *prev_prev = gtk_widget_get_prev_sibling(prev);
-        gtk_box_reorder_child_after(GTK_BOX(parent), row, prev_prev);
-    }
-}
-
-static void
-on_widget_down_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    GtkWidget *row = GTK_WIDGET(user_data);
-    GtkWidget *parent = gtk_widget_get_parent(row);
-    if (!parent || !GTK_IS_BOX(parent)) return;
-
-    GtkWidget *next = gtk_widget_get_next_sibling(row);
-    if (next) {
-        gtk_box_reorder_child_after(GTK_BOX(parent), row, next);
-    }
-}
-
-static void
-on_widget_move_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    GtkWidget *row = GTK_WIDGET(user_data);
-    GtkWidget *parent = gtk_widget_get_parent(row);
-    if (!parent || !GTK_IS_BOX(parent)) return;
-
-    SettingsPageWidgets *self = g_object_get_data(G_OBJECT(row), "page-widgets");
-    GtkWidget *next_card = g_object_get_data(G_OBJECT(parent), "next-card");
-    if (next_card && GTK_IS_BOX(next_card)) {
-        g_object_ref(row);
-        gtk_box_remove(GTK_BOX(parent), row);
-        gtk_box_append(GTK_BOX(next_card), row);
-        g_object_unref(row);
-        update_section_counts(self);
-    }
-}
-
-static void
-on_widget_remove_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    GtkWidget *row = GTK_WIDGET(user_data);
-    GtkWidget *parent = gtk_widget_get_parent(row);
-    if (!parent || !GTK_IS_BOX(parent)) return;
-
-    SettingsPageWidgets *self = g_object_get_data(G_OBJECT(row), "page-widgets");
-    gtk_box_remove(GTK_BOX(parent), row);
-    update_section_counts(self);
-}
-
 static const char *
 widget_id_to_icon(const char *id)
 {
-    if (g_strcmp0(id, "launcher") == 0) return "system-search-symbolic";
-    if (g_strcmp0(id, "window") == 0) return "window-new-symbolic";
-    if (g_strcmp0(id, "workspaces") == 0) return "view-grid-symbolic";
-    if (g_strcmp0(id, "clock") == 0) return "preferences-system-time-symbolic";
-    if (g_strcmp0(id, "volume") == 0) return "audio-volume-high-symbolic";
-    if (g_strcmp0(id, "network") == 0) return "network-wireless-symbolic";
-    if (g_strcmp0(id, "battery") == 0) return "battery-good-symbolic";
-    if (g_strcmp0(id, "backlight") == 0) return "display-brightness-symbolic";
-    if (g_strcmp0(id, "notifications") == 0) return "notifications-disabled-symbolic";
-    if (g_strcmp0(id, "control-center") == 0) return "emblem-system-symbolic";
-    if (g_strcmp0(id, "bluetooth") == 0) return "bluetooth-active-symbolic";
-    if (g_strcmp0(id, "media") == 0) return "media-playback-start-symbolic";
-    if (g_strcmp0(id, "dnd") == 0) return "notifications-disabled-symbolic";
-    if (g_strcmp0(id, "tray") == 0) return "folder-symbolic";
-    if (g_strcmp0(id, "cpu-mem") == 0) return "utilities-system-monitor-symbolic";
-    if (g_strcmp0(id, "power") == 0) return "system-shutdown-symbolic";
-    if (g_strcmp0(id, "privacy") == 0) return "security-high-symbolic";
-    if (g_strcmp0(id, "idle-inhibitor") == 0) return "weather-clear-symbolic";
-    if (g_strcmp0(id, "keyboard-layout") == 0) return "input-keyboard-symbolic";
-    if (g_strcmp0(id, "theme") == 0) return "preferences-desktop-appearance-symbolic";
-    if (g_strcmp0(id, "custom-script") == 0) return "utilities-terminal-symbolic";
+    for (size_t i = 0; i < N_WIDGET_CATALOG; i++) {
+        if (g_strcmp0(WIDGET_CATALOG[i].id, id) == 0)
+            return WIDGET_CATALOG[i].icon_name;
+    }
     return "view-grid-symbolic";
 }
-
-/* Segment order follows the gallery specimen: ICON-ONLY | TEXT-ONLY | FULL */
-static const char *const WIDGET_MODE_LABELS[] = { "ICON-ONLY", "TEXT-ONLY", "FULL", NULL };
 
 static guint
 widget_mode_to_segment(ShellWidgetMode mode)
 {
     if (mode == WIDGET_MODE_LABEL) return 1;
-    if (mode == WIDGET_MODE_FULL) return 2;
+    if (mode == WIDGET_MODE_FULL)  return 2;
     return 0;
 }
 
@@ -225,58 +104,222 @@ segment_to_widget_mode(guint seg)
     return WIDGET_MODE_ICON;
 }
 
-static GtkWidget *
-create_widget_item_row(SettingsPageWidgets *self, const char *icon_name, const char *title, ShellWidgetMode mode)
+static guint
+count_box_widgets(GtkWidget *list_box)
 {
-    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    guint count = 0;
+    if (!list_box)
+        return 0;
+    for (GtkWidget *c = gtk_widget_get_first_child(list_box);
+         c != NULL;
+         c = gtk_widget_get_next_sibling(c)) {
+        if (g_object_get_data(G_OBJECT(c), "widget-id") != NULL)
+            count++;
+    }
+    return count;
+}
+
+static void
+clear_box_children(GtkWidget *box)
+{
+    if (!box)
+        return;
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(box)) != NULL) {
+        gtk_box_remove(GTK_BOX(box), child);
+    }
+}
+
+static void
+update_widgets_counts_and_telemetry(SettingsPageWidgets *self)
+{
+    if (!self)
+        return;
+
+    guint nl = count_box_widgets(self->list_left);
+    guint nc = count_box_widgets(self->list_center);
+    guint nr = count_box_widgets(self->list_right);
+    guint total = nl + nc + nr;
+
+    g_autofree gchar *bl = g_strdup_printf("%u ACTIVE", nl);
+    g_autofree gchar *bc = g_strdup_printf("%u ACTIVE", nc);
+    g_autofree gchar *br = g_strdup_printf("%u ACTIVE", nr);
+    section_card_set_badge(self->card_left, bl, "accent");
+    section_card_set_badge(self->card_center, bc, NULL);
+    section_card_set_badge(self->card_right, br, NULL);
+
+    g_autofree gchar *c0 = g_strdup_printf("%u WIDGETS", nl);
+    g_autofree gchar *c1 = g_strdup_printf("%u WIDGETS", nc);
+    g_autofree gchar *c2 = g_strdup_printf("%u WIDGETS", nr);
+    g_autofree gchar *c3 = g_strdup_printf("%u ACTIVE", total);
+    g_autofree gchar *nav = g_strdup_printf("%u", total);
+
+    settings_page_set_counter(GTK_WIDGET(self), 0, "LEFT", c0, "accent");
+    settings_page_set_counter(GTK_WIDGET(self), 1, "CENTER", c1, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 2, "RIGHT", c2, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 3, "TOTAL", c3, NULL);
+    settings_page_set_nav_badge(GTK_WIDGET(self), "widgets", nav, NULL);
+}
+
+static void
+on_row_mode_changed(GtkWidget *group G_GNUC_UNUSED, guint selected G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_widget_up_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    GtkWidget *row = GTK_WIDGET(user_data);
+    GtkWidget *parent = gtk_widget_get_parent(row);
+    if (!parent || !GTK_IS_BOX(parent))
+        return;
+
+    SettingsPageWidgets *self = g_object_get_data(G_OBJECT(row), "page-widgets");
+    GtkWidget *prev = gtk_widget_get_prev_sibling(row);
+    if (prev && g_object_get_data(G_OBJECT(prev), "widget-id") != NULL) {
+        GtkWidget *prev_prev = gtk_widget_get_prev_sibling(prev);
+        gtk_box_reorder_child_after(GTK_BOX(parent), row, prev_prev);
+        if (self)
+            settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+    }
+}
+
+static void
+on_widget_down_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    GtkWidget *row = GTK_WIDGET(user_data);
+    GtkWidget *parent = gtk_widget_get_parent(row);
+    if (!parent || !GTK_IS_BOX(parent))
+        return;
+
+    SettingsPageWidgets *self = g_object_get_data(G_OBJECT(row), "page-widgets");
+    GtkWidget *next = gtk_widget_get_next_sibling(row);
+    if (next && g_object_get_data(G_OBJECT(next), "widget-id") != NULL) {
+        gtk_box_reorder_child_after(GTK_BOX(parent), row, next);
+        if (self)
+            settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+    }
+}
+
+static void
+on_widget_move_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    GtkWidget *row = GTK_WIDGET(user_data);
+    GtkWidget *parent = gtk_widget_get_parent(row);
+    if (!parent || !GTK_IS_BOX(parent))
+        return;
+
+    SettingsPageWidgets *self = g_object_get_data(G_OBJECT(row), "page-widgets");
+    GtkWidget *next_list = g_object_get_data(G_OBJECT(parent), "next-list");
+    if (next_list && GTK_IS_BOX(next_list)) {
+        g_object_ref(row);
+        gtk_box_remove(GTK_BOX(parent), row);
+        gtk_box_append(GTK_BOX(next_list), row);
+        g_object_unref(row);
+        if (self) {
+            update_widgets_counts_and_telemetry(self);
+            settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+        }
+    }
+}
+
+static void
+on_widget_remove_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    GtkWidget *row = GTK_WIDGET(user_data);
+    GtkWidget *parent = gtk_widget_get_parent(row);
+    if (!parent || !GTK_IS_BOX(parent))
+        return;
+
+    SettingsPageWidgets *self = g_object_get_data(G_OBJECT(row), "page-widgets");
+    gtk_box_remove(GTK_BOX(parent), row);
+    if (self) {
+        update_widgets_counts_and_telemetry(self);
+        settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+    }
+}
+
+static GtkWidget *
+create_widget_item_row(SettingsPageWidgets     *self,
+                       const char              *id,
+                       ShellWidgetMode          mode,
+                       const ShellWidgetConfig *src_wc)
+{
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 5);
     gtk_widget_add_css_class(row, "widget-row-card");
-    g_object_set_data_full(G_OBJECT(row), "widget-id", g_strdup(title), g_free);
+    gtk_widget_add_css_class(row, "widget-item-row");
+    gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(row, TRUE);
+    g_object_set_data_full(G_OBJECT(row), "widget-id", g_strdup(id), g_free);
     g_object_set_data(G_OBJECT(row), "page-widgets", self);
 
-    /* Col 1: Drag Handle (24px) */
+    if (src_wc && (src_wc->interval_sec != 0 || src_wc->exec_cmd ||
+                   src_wc->click_left_cmd || src_wc->click_right_cmd)) {
+        WidgetRowExtras *ex = g_new0(WidgetRowExtras, 1);
+        ex->interval_sec   = src_wc->interval_sec;
+        ex->exec_cmd       = g_strdup(src_wc->exec_cmd);
+        ex->click_left_cmd = g_strdup(src_wc->click_left_cmd);
+        ex->click_right_cmd = g_strdup(src_wc->click_right_cmd);
+        g_object_set_data_full(G_OBJECT(row), "widget-extras", ex, widget_row_extras_free);
+    }
+
     GtkWidget *drag_handle = gtk_label_new("☰");
-    gtk_widget_set_size_request(drag_handle, 24, -1);
     gtk_widget_add_css_class(drag_handle, "dim-label");
+    gtk_widget_set_hexpand(drag_handle, FALSE);
+    gtk_widget_set_valign(drag_handle, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(row), drag_handle);
 
-    /* Col 2: Icon (24px) */
-    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
-    gtk_image_set_pixel_size(GTK_IMAGE(icon), 18);
-    gtk_widget_set_size_request(icon, 24, -1);
+    GtkWidget *icon = gtk_image_new_from_icon_name(widget_id_to_icon(id));
+    gtk_image_set_pixel_size(GTK_IMAGE(icon), 14);
+    gtk_widget_set_hexpand(icon, FALSE);
+    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(row), icon);
 
-    /* Col 3: Title (Flex / hexpand) */
-    GtkWidget *lbl = gtk_label_new(title);
+    GtkWidget *lbl = gtk_label_new(id);
+    gtk_widget_add_css_class(lbl, "row-title");
     gtk_widget_set_hexpand(lbl, TRUE);
-    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
+    gtk_widget_set_halign(lbl, GTK_ALIGN_FILL);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
+    gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
+    gtk_label_set_width_chars(GTK_LABEL(lbl), 3);
+    gtk_widget_set_tooltip_text(lbl, id);
     gtk_box_append(GTK_BOX(row), lbl);
 
-    /* Col 4: Display mode as the gallery's segmented ICON-ONLY | TEXT-ONLY | FULL group */
     GtkWidget *seg_mode = create_segmented_group(WIDGET_MODE_LABELS, widget_mode_to_segment(mode));
+    segmented_group_connect(seg_mode, on_row_mode_changed, self);
     gtk_box_append(GTK_BOX(row), seg_mode);
-    g_object_set_data(G_OBJECT(row), "combo-mode", seg_mode);
+    g_object_set_data(G_OBJECT(row), "seg-mode", seg_mode);
 
-    /* Col 5: Action Button Bar (Fixed 150px) */
-    GtkWidget *btn_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_widget_set_size_request(btn_bar, 150, -1);
+    GtkWidget *btn_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+    gtk_widget_set_hexpand(btn_bar, FALSE);
+    gtk_widget_set_valign(btn_bar, GTK_ALIGN_CENTER);
 
-    GtkWidget *btn_up = gtk_button_new_from_icon_name("go-up-symbolic");
+    GtkWidget *btn_up = gtk_button_new_with_label("↑");
     gtk_widget_add_css_class(btn_up, "files-nav-btn");
+    gtk_widget_add_css_class(btn_up, "widget-item-btn");
     gtk_widget_set_tooltip_text(btn_up, "Move Widget Up");
     g_signal_connect(btn_up, "clicked", G_CALLBACK(on_widget_up_clicked), row);
 
-    GtkWidget *btn_down = gtk_button_new_from_icon_name("go-down-symbolic");
+    GtkWidget *btn_down = gtk_button_new_with_label("↓");
     gtk_widget_add_css_class(btn_down, "files-nav-btn");
+    gtk_widget_add_css_class(btn_down, "widget-item-btn");
     gtk_widget_set_tooltip_text(btn_down, "Move Widget Down");
     g_signal_connect(btn_down, "clicked", G_CALLBACK(on_widget_down_clicked), row);
 
-    GtkWidget *btn_move = gtk_button_new_from_icon_name("object-flip-horizontal-symbolic");
+    GtkWidget *btn_move = gtk_button_new_with_label("⇄");
     gtk_widget_add_css_class(btn_move, "files-nav-btn");
-    gtk_widget_set_tooltip_text(btn_move, "Transfer to Next Section (Left/Center/Right)");
+    gtk_widget_add_css_class(btn_move, "widget-item-btn");
+    gtk_widget_set_tooltip_text(btn_move, "Transfer to Next Section (Left → Center → Right)");
     g_signal_connect(btn_move, "clicked", G_CALLBACK(on_widget_move_clicked), row);
 
-    GtkWidget *btn_rem = gtk_button_new_from_icon_name("user-trash-symbolic");
+    GtkWidget *btn_rem = gtk_button_new_with_label("✕");
     gtk_widget_add_css_class(btn_rem, "files-nav-btn");
+    gtk_widget_add_css_class(btn_rem, "widget-item-btn");
     gtk_widget_add_css_class(btn_rem, "action-btn-danger");
     gtk_widget_set_tooltip_text(btn_rem, "Remove Widget from Panel");
     g_signal_connect(btn_rem, "clicked", G_CALLBACK(on_widget_remove_clicked), row);
@@ -285,64 +328,96 @@ create_widget_item_row(SettingsPageWidgets *self, const char *icon_name, const c
     gtk_box_append(GTK_BOX(btn_bar), btn_down);
     gtk_box_append(GTK_BOX(btn_bar), btn_move);
     gtk_box_append(GTK_BOX(btn_bar), btn_rem);
-
     gtk_box_append(GTK_BOX(row), btn_bar);
 
     return row;
 }
 
 static void
+populate_section_list(SettingsPageWidgets *self, GtkWidget *list_box, GPtrArray *arr)
+{
+    clear_box_children(list_box);
+    if (!arr)
+        return;
+    for (guint i = 0; i < arr->len; i++) {
+        ShellWidgetConfig *wc = g_ptr_array_index(arr, i);
+        if (!wc || !wc->id)
+            continue;
+        GtkWidget *row = create_widget_item_row(self, wc->id, wc->mode, wc);
+        gtk_box_append(GTK_BOX(list_box), row);
+    }
+}
+
+static void
+load_widgets_from_shell_config(SettingsPageWidgets *self, ShellConfig *config, gboolean mark_dirty)
+{
+    if (!self || !config)
+        return;
+
+    self->syncing_ui = TRUE;
+    populate_section_list(self, self->list_left, config->layout_left);
+    populate_section_list(self, self->list_center, config->layout_center);
+    populate_section_list(self, self->list_right, config->layout_right);
+    self->syncing_ui = FALSE;
+
+    update_widgets_counts_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), mark_dirty);
+}
+
+static void
 on_add_widget_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
+    if (!self)
+        return;
 
-    guint widget_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_add_widget));
-    guint n_widgets = G_N_ELEMENTS(ALL_WIDGET_IDS) - 1;
-    if (widget_idx >= n_widgets) widget_idx = 0;
-    const char *widget_id = ALL_WIDGET_IDS[widget_idx];
+    guint w_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_add_widget));
+    if (w_idx >= N_WIDGET_CATALOG)
+        w_idx = 0;
+    const char *widget_id = WIDGET_CATALOG[w_idx].id;
 
-    guint section_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_add_section));
-    GtkWidget *target_card = self->card_right;
-    if (section_idx == 0) target_card = self->card_left;
-    else if (section_idx == 1) target_card = self->card_center;
+    guint sec_idx = segmented_group_get_selected(self->seg_add_section);
+    GtkWidget *target_list = self->list_right;
+    if (sec_idx == 0)      target_list = self->list_left;
+    else if (sec_idx == 1) target_list = self->list_center;
 
     ShellWidgetMode mode = segment_to_widget_mode(segmented_group_get_selected(self->seg_add_mode));
 
-    GtkWidget *row = create_widget_item_row(self, widget_id_to_icon(widget_id), widget_id, mode);
-    gtk_box_append(GTK_BOX(target_card), row);
-    update_section_counts(self);
+    GtkWidget *row = create_widget_item_row(self, widget_id, mode, NULL);
+    gtk_box_append(GTK_BOX(target_list), row);
+    update_widgets_counts_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
 }
 
 static GPtrArray *
-collect_card_widget_configs(GtkWidget *card, GPtrArray *old_arr)
+collect_list_widget_configs(GtkWidget *list_box)
 {
     GPtrArray *arr = g_ptr_array_new_full(0, (GDestroyNotify)shell_widget_config_free);
-    for (GtkWidget *child = gtk_widget_get_first_child(card);
+    if (!list_box)
+        return arr;
+
+    for (GtkWidget *child = gtk_widget_get_first_child(list_box);
          child != NULL;
          child = gtk_widget_get_next_sibling(child)) {
         const char *id = g_object_get_data(G_OBJECT(child), "widget-id");
-        if (!id) continue;
+        if (!id)
+            continue;
 
-        GtkWidget *combo_mode = g_object_get_data(G_OBJECT(child), "combo-mode");
-        ShellWidgetMode mode = WIDGET_MODE_ICON;
-        if (combo_mode)
-            mode = segment_to_widget_mode(segmented_group_get_selected(combo_mode));
+        GtkWidget *seg_mode = g_object_get_data(G_OBJECT(child), "seg-mode");
+        ShellWidgetMode mode = seg_mode
+            ? segment_to_widget_mode(segmented_group_get_selected(seg_mode))
+            : WIDGET_MODE_ICON;
 
         ShellWidgetConfig *wc = g_new0(ShellWidgetConfig, 1);
         wc->id = g_strdup(id);
         wc->mode = mode;
 
-        if (old_arr) {
-            for (guint i = 0; i < old_arr->len; i++) {
-                ShellWidgetConfig *old_wc = g_ptr_array_index(old_arr, i);
-                if (old_wc && g_strcmp0(old_wc->id, id) == 0) {
-                    wc->interval_sec = old_wc->interval_sec;
-                    wc->exec_cmd = g_strdup(old_wc->exec_cmd);
-                    wc->click_left_cmd = g_strdup(old_wc->click_left_cmd);
-                    wc->click_right_cmd = g_strdup(old_wc->click_right_cmd);
-                    break;
-                }
-            }
+        WidgetRowExtras *ex = g_object_get_data(G_OBJECT(child), "widget-extras");
+        if (ex) {
+            wc->interval_sec    = ex->interval_sec;
+            wc->exec_cmd        = g_strdup(ex->exec_cmd);
+            wc->click_left_cmd  = g_strdup(ex->click_left_cmd);
+            wc->click_right_cmd = g_strdup(ex->click_right_cmd);
         }
 
         g_ptr_array_add(arr, wc);
@@ -351,115 +426,181 @@ collect_card_widget_configs(GtkWidget *card, GPtrArray *old_arr)
 }
 
 static void
-on_apply_widget_layout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+action_default_widgets_layout(gpointer user_data)
 {
     SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
+    if (!self)
+        return;
+    ShellConfig *def_cfg = shell_config_get_default();
+    load_widgets_from_shell_config(self, def_cfg, TRUE);
+    shell_config_destroy(def_cfg);
+}
+
+static void
+action_revert_widgets(gpointer user_data)
+{
+    SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
+    if (!self)
+        return;
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg)
+        cfg = shell_config_get_default();
+    load_widgets_from_shell_config(self, cfg, FALSE);
+    shell_config_destroy(cfg);
+}
+
+static void
+action_save_widgets(gpointer user_data)
+{
+    SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
+    if (!self)
+        return;
+
     ShellConfig *config = shell_config_load(NULL);
     if (!config)
         config = shell_config_get_default();
 
-    GPtrArray *new_left = collect_card_widget_configs(self->card_left, config->layout_left);
-    GPtrArray *new_center = collect_card_widget_configs(self->card_center, config->layout_center);
-    GPtrArray *new_right = collect_card_widget_configs(self->card_right, config->layout_right);
+    GPtrArray *new_left   = collect_list_widget_configs(self->list_left);
+    GPtrArray *new_center = collect_list_widget_configs(self->list_center);
+    GPtrArray *new_right  = collect_list_widget_configs(self->list_right);
 
-    if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
+    if (config->layout_left)   g_ptr_array_free(config->layout_left, TRUE);
     if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
-    if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);
+    if (config->layout_right)  g_ptr_array_free(config->layout_right, TRUE);
 
-    config->layout_left = new_left;
+    config->layout_left   = new_left;
     config->layout_center = new_center;
-    config->layout_right = new_right;
+    config->layout_right  = new_right;
 
-    g_autofree gchar *path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+    g_autofree gchar *dir = g_build_filename(g_get_user_config_dir(), "kajo", NULL);
+    g_mkdir_with_parents(dir, 0755);
+    g_autofree gchar *path = g_build_filename(dir, "config.json", NULL);
+
     if (shell_config_save(config, path)) {
-        g_message("Saved panel widget layout configuration to %s", path);
         settings_send_ipc_command("reload-config");
-    } else {
-        g_warning("Failed to save panel widget layout configuration to %s", path);
     }
-
     shell_config_destroy(config);
+
+    update_widgets_counts_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
+
+static void
+on_widgets_page_mapped(GtkWidget *widget, gpointer user_data G_GNUC_UNUSED)
+{
+    update_widgets_counts_and_telemetry((SettingsPageWidgets *)widget);
+}
+
+static void
+settings_page_widgets_init(SettingsPageWidgets *self)
+{
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(self), GTK_ORIENTATION_VERTICAL);
+    gtk_box_set_spacing(GTK_BOX(self), 10);
+    gtk_widget_add_css_class(GTK_WIDGET(self), "settings-bento-canvas");
+    gtk_widget_set_hexpand(GTK_WIDGET(self), TRUE);
+    g_object_set_data(G_OBJECT(self), "is-bento-canvas", GINT_TO_POINTER(1));
+}
+
+static void
+settings_page_widgets_class_init(SettingsPageWidgetsClass *klass G_GNUC_UNUSED)
+{
 }
 
 GtkWidget *
 build_page_widgets(void)
 {
-    SettingsPageWidgets *page = g_object_new(settings_page_widgets_get_type(), NULL);
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
+    SettingsPageWidgets *self = g_object_new(settings_page_widgets_get_type(), NULL);
 
-    /* 1. LEFT PANEL SECTION */
-    if (config->layout_left && config->layout_left->len > 0) {
-        for (guint i = 0; i < config->layout_left->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_left, i);
-            GtkWidget *row = create_widget_item_row(page, widget_id_to_icon(wc->id), wc->id, wc->mode);
-            gtk_box_append(GTK_BOX(page->card_left), row);
-        }
-    } else {
-        GtkWidget *w1 = create_widget_item_row(page, "system-search-symbolic", "launcher", WIDGET_MODE_ICON);
-        GtkWidget *w2 = create_widget_item_row(page, "window-new-symbolic", "window", WIDGET_MODE_ICON);
-        GtkWidget *w3 = create_widget_item_row(page, "view-grid-symbolic", "workspaces", WIDGET_MODE_ICON);
-        gtk_box_append(GTK_BOX(page->card_left), w1);
-        gtk_box_append(GTK_BOX(page->card_left), w2);
-        gtk_box_append(GTK_BOX(page->card_left), w3);
-    }
+    /* ─── Top Full-Width Card: Add Panel Widget Catalog ─── */
+    GtkWidget *card_add = create_section_card(
+        SETTINGS_CARD_LEFT,
+        "ADD PANEL WIDGET TO SECTION (22 REGISTERED SHELLWIDGET CLASSES)",
+        "22 MODULES",
+        "accent",
+        NULL);
 
-    /* 2. CENTER PANEL SECTION */
-    if (config->layout_center && config->layout_center->len > 0) {
-        for (guint i = 0; i < config->layout_center->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_center, i);
-            GtkWidget *row = create_widget_item_row(page, widget_id_to_icon(wc->id), wc->id, wc->mode);
-            gtk_box_append(GTK_BOX(page->card_center), row);
-        }
-    } else {
-        GtkWidget *w4 = create_widget_item_row(page, "preferences-system-time-symbolic", "clock", WIDGET_MODE_ICON);
-        gtk_box_append(GTK_BOX(page->card_center), w4);
-    }
+    const char *catalog_labels[N_WIDGET_CATALOG + 1];
+    for (size_t i = 0; i < N_WIDGET_CATALOG; i++)
+        catalog_labels[i] = WIDGET_CATALOG[i].dropdown_label;
+    catalog_labels[N_WIDGET_CATALOG] = NULL;
 
-    /* 3. RIGHT PANEL SECTION */
-    if (config->layout_right && config->layout_right->len > 0) {
-        for (guint i = 0; i < config->layout_right->len; i++) {
-            ShellWidgetConfig *wc = g_ptr_array_index(config->layout_right, i);
-            GtkWidget *row = create_widget_item_row(page, widget_id_to_icon(wc->id), wc->id, wc->mode);
-            gtk_box_append(GTK_BOX(page->card_right), row);
-        }
-    } else {
-        GtkWidget *w5 = create_widget_item_row(page, "audio-volume-high-symbolic", "volume", WIDGET_MODE_ICON);
-        GtkWidget *w6 = create_widget_item_row(page, "network-wireless-symbolic", "network", WIDGET_MODE_ICON);
-        GtkWidget *w7 = create_widget_item_row(page, "battery-good-symbolic", "battery", WIDGET_MODE_ICON);
-        GtkWidget *w8 = create_widget_item_row(page, "notifications-disabled-symbolic", "notifications", WIDGET_MODE_ICON);
-        GtkWidget *w9 = create_widget_item_row(page, "emblem-system-symbolic", "control-center", WIDGET_MODE_ICON);
-        gtk_box_append(GTK_BOX(page->card_right), w5);
-        gtk_box_append(GTK_BOX(page->card_right), w6);
-        gtk_box_append(GTK_BOX(page->card_right), w7);
-        gtk_box_append(GTK_BOX(page->card_right), w8);
-        gtk_box_append(GTK_BOX(page->card_right), w9);
-    }
+    self->combo_add_widget = create_string_dropdown(catalog_labels);
+    GtkWidget *add_mod_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_valign(add_mod_box, GTK_ALIGN_CENTER);
 
-    g_object_set_data(G_OBJECT(page->card_left), "next-card", page->card_center);
-    g_object_set_data(G_OBJECT(page->card_center), "next-card", page->card_right);
-    g_object_set_data(G_OBJECT(page->card_right), "next-card", page->card_left);
+    GtkWidget *btn_add = gtk_button_new_with_label("+ ADD");
+    gtk_widget_add_css_class(btn_add, "files-nav-btn");
+    gtk_widget_add_css_class(btn_add, "action-btn-primary");
+    gtk_widget_set_valign(btn_add, GTK_ALIGN_CENTER);
+    g_signal_connect(btn_add, "clicked", G_CALLBACK(on_add_widget_clicked), self);
 
-    update_section_counts(page);
-    shell_config_destroy(config);
+    gtk_box_append(GTK_BOX(add_mod_box), self->combo_add_widget);
+    gtk_box_append(GTK_BOX(add_mod_box), btn_add);
 
-    /* Populate Add Widget bar dropdowns */
-    GtkStringList *widget_model = gtk_string_list_new(ALL_WIDGET_IDS);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_add_widget), G_LIST_MODEL(widget_model));
-    g_object_unref(widget_model);
+    gtk_box_append(GTK_BOX(card_add), create_boxed_row(
+        "🧩",
+        "Widget Module",
+        "Select from 22 built-in ShellWidget classes",
+        add_mod_box));
 
-    const char *section_items[] = { "Left Section", "Center Section", "Right Section", NULL };
-    GtkStringList *section_model = gtk_string_list_new(section_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_add_section), G_LIST_MODEL(section_model));
-    g_object_unref(section_model);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_add_section), 2);
+    static const char *const sec_items[] = { "LEFT", "CENTER", "RIGHT", NULL };
+    self->seg_add_section = create_segmented_group(sec_items, 2);
+    self->seg_add_mode = create_segmented_group(WIDGET_MODE_LABELS, 0);
 
-    page->seg_add_mode = create_segmented_group(WIDGET_MODE_LABELS, 0);
-    gtk_box_append(GTK_BOX(page->slot_add_mode), page->seg_add_mode);
+    GtkWidget *add_target_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_valign(add_target_box, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(add_target_box), self->seg_add_section);
+    gtk_box_append(GTK_BOX(add_target_box), self->seg_add_mode);
 
-    g_signal_connect(page->btn_add, "clicked", G_CALLBACK(on_add_widget_clicked), page);
-    g_signal_connect(page->btn_apply, "clicked", G_CALLBACK(on_apply_widget_layout_clicked), page);
+    gtk_box_append(GTK_BOX(card_add), create_boxed_row(
+        "📍",
+        "Target Section & Mode",
+        "Panel zone and initial display mode (Icon / Text / Full)",
+        add_target_box));
 
-    return create_settings_page_card("PANEL WIDGET LAYOUT & APPEARANCES", "[ ACTIVE WIDGET LAYOUT ]", GTK_WIDGET(page), NULL);
+    settings_bento_add_full(GTK_WIDGET(self), card_add);
+
+    /* ─── Active Section Cards (1. Left + 2. Center Bento Pair, 3. Right Full) ─── */
+    self->card_left = create_section_card(
+        SETTINGS_CARD_LEFT, "1. LEFT PANEL SECTION", "0 ACTIVE", "accent", NULL);
+    self->list_left = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_hexpand(self->list_left, TRUE);
+    gtk_box_append(GTK_BOX(self->card_left), self->list_left);
+
+    self->card_center = create_section_card(
+        SETTINGS_CARD_CENTER, "2. CENTER PANEL SECTION", "0 ACTIVE", NULL, NULL);
+    self->list_center = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_hexpand(self->list_center, TRUE);
+    gtk_box_append(GTK_BOX(self->card_center), self->list_center);
+
+    self->card_right = create_section_card(
+        SETTINGS_CARD_RIGHT, "3. RIGHT PANEL SECTION", "0 ACTIVE", NULL, NULL);
+    self->list_right = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_hexpand(self->list_right, TRUE);
+    gtk_box_append(GTK_BOX(self->card_right), self->list_right);
+
+    g_object_set_data(G_OBJECT(self->list_left), "next-list", self->list_center);
+    g_object_set_data(G_OBJECT(self->list_center), "next-list", self->list_right);
+    g_object_set_data(G_OBJECT(self->list_right), "next-list", self->list_left);
+
+    settings_bento_add_pair(GTK_WIDGET(self), self->card_left, self->card_center);
+    settings_bento_add_full(GTK_WIDGET(self), self->card_right);
+
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg)
+        cfg = shell_config_get_default();
+    load_widgets_from_shell_config(self, cfg, FALSE);
+    shell_config_destroy(cfg);
+
+    g_signal_connect(self, "map", G_CALLBACK(on_widgets_page_mapped), NULL);
+
+    settings_page_bind_actions(
+        GTK_WIDGET(self),
+        "↺ DEFAULT LAYOUT",
+        action_default_widgets_layout,
+        action_revert_widgets,
+        action_save_widgets,
+        self);
+
+    return GTK_WIDGET(self);
 }

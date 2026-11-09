@@ -94,6 +94,8 @@ shell_app_activate(ShellApp *self)
     shell_notification_daemon_set_app(self->notifications, self);
     shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
     shell_notification_daemon_set_max_history(self->notifications, self->config->max_notification_history);
+    shell_notification_daemon_set_click_action(self->notifications, self->config->toast_click_action);
+    shell_notification_daemon_set_dnd(self->notifications, self->config->dnd_enabled);
 
     /* Create widget registry and compositor */
     self->registry       = shell_widget_registry_new();
@@ -425,6 +427,8 @@ shell_app_reload_config(ShellApp *self)
     if (self->notifications) {
         shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
         shell_notification_daemon_set_max_history(self->notifications, self->config->max_notification_history);
+        shell_notification_daemon_set_click_action(self->notifications, self->config->toast_click_action);
+        shell_notification_daemon_set_dnd(self->notifications, self->config->dnd_enabled);
     }
 
     if (self->idle_manager) {

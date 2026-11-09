@@ -19,7 +19,7 @@ All Kajo components and standalone applications share a unified design language:
 | Component / Binary | Status | Specification / Notes |
 | :--- | :---: | :--- |
 | **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 20+ widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, App Launcher, Session Lock & Screensaver |
-| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 11 modular settings pages (Displays, Network, Bluetooth, Audio, Theme, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Niri Shaders, About) |
+| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 12 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Custom `#RRGGBB` Hex Picker, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Niri Shaders, About) with responsive 3-tier Niri column reflow |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
 | **Foldable & 2-in-1 Posture Manager** | ✅ Done | Hinge angle, tablet mode, IIO accelerometer auto-rotation (`src/posture/posture_manager.c`) |
 | **Niri GLSL Window Shaders** | ✅ Done | Live shader preset switcher for window open/close/resize animations (`src/settings/pages/page_niri.c`) |
@@ -40,7 +40,6 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo IDE: LSP references / signature help / call hierarchy** | 📋 Planned | `kajo-ide` (the client is in place; these need list/popover UIs) |
 | **Kajo IDE: DAP variable expansion / watches / conditional breakpoints** | 📋 Planned | `kajo-ide` |
 | **Kajo IDE: relative line numbers** | 📋 Planned | `kajo-ide` (gutter option; documented before it was built) |
-| **kajo-settings: custom accent hex picker** | 📋 Planned | `kajo-settings` Theme page (the UI gallery shows a hex picker; only the 8 presets exist today) |
 | **Kajo IDE: user key remapping** | 📋 Planned | `kajo-ide` (FSM remap table exists in `ide_fsm.c`; config loading is not wired) |
 | **`kajo-files` Phase 2** | ✅ Done | [`docs/spec_files_phase2.md`](docs/spec_files_phase2.md) — Virtual read-only archive folders (`archive://`), smart extraction, archive compression, UDisks2 ISO/disk image loop-mounting, global view/sort persistence, breadcrumb auto-scroll & sibling jump popover, and multi-selection |
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |

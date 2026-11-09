@@ -62,7 +62,7 @@ populate_gme_metadata(KajoGmePriv            *priv,
     } else if (info && info->intro_length + info->loop_length > 0) {
         priv->duration_sec = (double)(info->intro_length + info->loop_length * 2) / 1000.0;
     } else {
-        priv->duration_sec = 150.0;
+        priv->duration_sec = kajo_mod_get_fallback_duration_sec();
     }
 
     int n_voices = gme_voice_count(priv->emu);

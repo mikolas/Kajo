@@ -154,6 +154,14 @@ void kajo_mod_metadata_clear(KajoModMetadata *meta);
 void kajo_mod_metadata_copy(KajoModMetadata *dst, const KajoModMetadata *src);
 void kajo_mod_dsp_config_init(KajoModDspConfig *dsp);
 
+/* Thread-safe global runtime preferences synced from ~/.config/kajo/config.json */
+void     kajo_mod_set_runtime_prefs(double       fallback_duration_sec,
+                                    const gchar *hvsc_path,
+                                    gboolean     auto_extract_archives);
+double   kajo_mod_get_fallback_duration_sec(void);
+gchar   *kajo_mod_dup_hvsc_path(void);
+gboolean kajo_mod_get_auto_extract_archives(void);
+
 /* Strict Priority Format Router (1. UADE -> 2. libsidplayfp -> 3. libgme -> 4. libopenmpt -> 5. libxmp) */
 gboolean          kajo_mod_is_c64_sid_magic(const guint8 *hdr, gsize len);
 gboolean          kajo_mod_is_amiga_mod_magic(const guint8 *hdr, gsize len, const gchar *basename, guint *out_channels);

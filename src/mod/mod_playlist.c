@@ -200,7 +200,8 @@ kajo_mod_playlist_add_path(KajoModPlaylist *pl,
             if (g_file_test(child, G_FILE_TEST_IS_DIR)) {
                 total_added += kajo_mod_playlist_add_path(pl, child, NULL);
             } else if (kajo_mod_path_is_archive(child)) {
-                total_added += kajo_mod_playlist_add_path(pl, child, NULL);
+                if (kajo_mod_get_auto_extract_archives())
+                    total_added += kajo_mod_playlist_add_path(pl, child, NULL);
             } else {
                 total_added += add_single_file(pl, child, NULL, dir_nfo_name, dir_nfo_text);
             }
@@ -209,6 +210,7 @@ kajo_mod_playlist_add_path(KajoModPlaylist *pl,
     }
 
     if (kajo_mod_path_is_archive(path)) {
+        if (!kajo_mod_get_auto_extract_archives()) return 0;
         KajoModArchive *arch = kajo_mod_archive_extract(path, error);
         if (!arch) return 0;
 

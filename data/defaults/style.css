@@ -3221,5 +3221,402 @@ window.shell-mod-window paned > separator:hover {
     background-color: alpha(@metro-accent, 0.35);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * Kajo System & Suite Settings (org.kajo.Settings — window.shell-settings-app)
+ * Isolated from other .shell-settings-window apps (Files, IDE, Player, Mod).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+window.shell-settings-app .settings-header-bar {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 4px 8px;
+    min-height: 36px;
+}
+
+window.shell-settings-app .settings-header-title {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: #ffffff;
+}
+
+window.shell-settings-app searchentry.settings-header-search,
+window.shell-settings-app searchentry.settings-header-search > text {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-1;
+    color: #f0f0f0;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+    border-radius: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-settings-app searchentry.settings-header-search {
+    border: 1px solid #333333;
+    min-height: 26px;
+    padding: 1px 8px;
+}
+
+window.shell-settings-app searchentry.settings-header-search:focus-within {
+    border-color: @metro-accent;
+    background-color: @metro-surface-3;
+}
+
+/* Left Navigation Sidebar & 46px Compact Icon Rail */
+window.shell-settings-app .settings-sidebar-vbox {
+    background-color: @metro-surface-bg;
+    border-right: 1px solid @metro-border;
+}
+
+window.shell-settings-app .navigation-sidebar {
+    background-color: @metro-surface-bg;
+    border-right: none;
+    padding: 4px;
+}
+
+window.shell-settings-app .sidebar-category-header {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: @metro-accent;
+    margin-top: 10px;
+    margin-bottom: 3px;
+    margin-left: 8px;
+    margin-right: 6px;
+}
+
+window.shell-settings-app .navigation-sidebar row {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    padding: 5px 8px;
+    min-height: 30px;
+    margin-bottom: 1px;
+    color: #a8a8a8;
+}
+
+window.shell-settings-app .navigation-sidebar row:hover {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-hover;
+    color: #ffffff;
+}
+
+window.shell-settings-app .navigation-sidebar row:selected {
+    background: none;
+    background-image: none;
+    background-color: alpha(@metro-accent, 0.80);
+    border-left: 3px solid #ffffff;
+    color: #ffffff;
+    font-weight: 700;
+}
+
+window.shell-settings-app .navigation-sidebar row.sidebar-header-row,
+window.shell-settings-app .navigation-sidebar row.sidebar-header-row:hover {
+    background: none;
+    background-color: transparent;
+    border-left: none;
+    padding: 0px;
+    min-height: 18px;
+}
+
+window.shell-settings-app .sidebar-nav-icon {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    min-width: 18px;
+    color: inherit;
+}
+
+window.shell-settings-app .sidebar-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: inherit;
+}
+
+window.shell-settings-app .navigation-sidebar row:selected .sidebar-label {
+    font-weight: 700;
+    color: #ffffff;
+}
+
+window.shell-settings-app .sidebar-nav-badge {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    color: #b0b0b0;
+    border-radius: 0px;
+}
+
+window.shell-settings-app .sidebar-nav-badge.accent {
+    border-color: @metro-accent;
+    color: #ffffff;
+    background-color: alpha(@metro-accent, 0.28);
+}
+
+window.shell-settings-app .sidebar-nav-badge.peak-warn {
+    border-color: @metro-warning;
+    color: @metro-warning;
+    background-color: alpha(@metro-warning, 0.18);
+}
+
+window.shell-settings-app .sidebar-nav-badge.success {
+    border-color: @metro-success;
+    color: @metro-success;
+    background-color: alpha(@metro-success, 0.18);
+}
+
+window.shell-settings-app .navigation-sidebar row:selected .shell-popover-badge,
+window.shell-settings-app .navigation-sidebar row:selected .sidebar-nav-badge {
+    border-color: #ffffff;
+    color: #ffffff;
+    background-color: rgba(0, 0, 0, 0.35);
+}
+
+window.shell-settings-app.compact-rail .navigation-sidebar {
+    padding: 4px 2px;
+}
+
+window.shell-settings-app.compact-rail .navigation-sidebar row {
+    padding: 7px 0px;
+    min-height: 34px;
+}
+
+/* Zone 2: Pinned Page Header & 4-Cell Live Telemetry Strip */
+window.shell-settings-app .settings-page-deck {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    border-left: 3px solid @metro-accent;
+    padding: 8px 12px;
+}
+
+window.shell-settings-app .settings-page-deck .shell-popover-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #ffffff;
+}
+
+window.shell-settings-app .settings-page-deck .shell-popover-subtitle {
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+window.shell-settings-app .settings-counter-strip {
+    background-color: @metro-surface-0;
+    border: 1px solid #252525;
+    margin-top: 6px;
+}
+
+window.shell-settings-app .settings-counter-cell {
+    background-color: @metro-surface-0;
+    border-right: 1px solid #1f1f1f;
+    border-bottom: 1px solid #1f1f1f;
+    padding: 4px 8px;
+}
+
+window.shell-settings-app .settings-counter-key {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: #787878;
+}
+
+window.shell-settings-app .settings-counter-val {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #ffffff;
+}
+
+window.shell-settings-app .settings-counter-val.accent {
+    color: @metro-telemetry;
+}
+
+window.shell-settings-app .settings-counter-val.warn {
+    color: @metro-warning;
+}
+
+window.shell-settings-app .settings-counter-val.success {
+    color: @metro-success;
+}
+
+/* Zone 3: Scrollable Responsive Bento Canvas & Cards */
+window.shell-settings-app .settings-bento-canvas {
+    padding: 12px;
+    background-color: @metro-surface-bg;
+}
+
+window.shell-settings-app .section-card,
+window.shell-settings-app .section-card:hover,
+window.shell-settings-app .section-card-left,
+window.shell-settings-app .section-card-left:hover,
+window.shell-settings-app .section-card-center,
+window.shell-settings-app .section-card-center:hover,
+window.shell-settings-app .section-card-right,
+window.shell-settings-app .section-card-right:hover {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 12px 14px;
+    margin-bottom: 0px;
+}
+
+window.shell-settings-app .section-card-left,
+window.shell-settings-app .section-card-left:hover {
+    border-left: 3px solid @metro-accent;
+}
+
+window.shell-settings-app .section-card-center,
+window.shell-settings-app .section-card-center:hover {
+    border-left: 3px solid @metro-warning;
+}
+
+window.shell-settings-app .section-card-right,
+window.shell-settings-app .section-card-right:hover {
+    border-left: 3px solid @metro-success;
+}
+
+window.shell-settings-app .card-header-row {
+    border-bottom: 1px solid #222222;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+}
+
+window.shell-settings-app .card-header-row .heading {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    color: #d8d8d8;
+}
+
+window.shell-settings-app .widget-row-card,
+window.shell-settings-app button.widget-row-card {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid #262626;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    padding: 8px 12px;
+    margin-bottom: 0px;
+    min-height: 38px;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-settings-app .widget-row-card:hover,
+window.shell-settings-app button.widget-row-card:hover {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+}
+
+window.shell-settings-app .widget-row-card.active,
+window.shell-settings-app button.widget-row-card.active {
+    background: none;
+    background-image: none;
+    background-color: alpha(@metro-accent, 0.25);
+    border-color: @metro-accent;
+    border-left: 3px solid #ffffff;
+}
+
+window.shell-settings-app .widget-row-card.widget-item-row {
+    padding: 6px 10px;
+    min-height: 34px;
+}
+
+window.shell-settings-app .widget-row-card.widget-item-row .segmented-group button {
+    padding: 2px 6px;
+    min-height: 24px;
+    font-size: 10px;
+}
+
+window.shell-settings-app button.widget-item-btn {
+    padding: 2px 5px;
+    min-height: 24px;
+    min-width: 0px;
+    font-size: 11px;
+}
+
+window.shell-settings-app .widget-row-icon {
+    min-width: 28px;
+    min-height: 28px;
+    background-color: @metro-surface-1;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    color: #cccccc;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+window.shell-settings-app .row-title {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+    font-weight: 600;
+    color: #f0f0f0;
+}
+
+window.shell-settings-app .row-subtitle {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+window.shell-settings-app dropdown > button {
+    font-size: 11px;
+    font-weight: 600;
+    min-height: 26px;
+    padding: 3px 8px;
+}
+
+window.shell-settings-app .segmented-group button {
+    min-height: 26px;
+    padding: 2px 7px;
+    font-size: 11px;
+}
+
+window.shell-settings-app.narrow-col .segmented-group button {
+    padding: 2px 6px;
+    font-size: 10px;
+}
+
+window.shell-settings-app .sidebar-row .shell-popover-badge {
+    font-size: 9px;
+    padding: 1px 5px;
+}
+
+window.shell-settings-app .net-auth-banner,
+window.shell-settings-app .settings-auth-bar {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-warning;
+    padding: 10px 14px;
+}
+
+window.shell-settings-app paned > separator {
+    min-width: 1px;
+    background-color: @metro-border;
+}
+
+/* Zone 4: Pinned Action Footer Bar */
+window.shell-settings-app .settings-footer-bar {
+    background-color: @metro-surface-2;
+    border-top: 1px solid @metro-border;
+    padding: 6px 12px;
+    min-height: 40px;
+}
+
+
 
 

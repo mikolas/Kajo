@@ -7,11 +7,13 @@
 #include "../app_init.h"
 #include "../hardware/hw_caps.h"
 
-static char *target_page = NULL;
+static char *target_page   = NULL;
+static int   opt_col_width = 0;
 static ShellTheme *g_settings_theme = NULL;
 
 static GOptionEntry entries[] = {
-    { "page", 'p', 0, G_OPTION_ARG_STRING, &target_page, "Target page to open (network, bluetooth, audio, etc.)", "PAGE" },
+    { "page", 'p', 0, G_OPTION_ARG_STRING, &target_page, "Target page to open (displays, network, bluetooth, audio, etc.)", "PAGE" },
+    { "column-width", 'w', 0, G_OPTION_ARG_INT, &opt_col_width, "Simulated Niri column width in px (>= 480)", "PX" },
     { NULL }
 };
 
@@ -24,6 +26,8 @@ on_app_activate(GtkApplication *app, gpointer user_data G_GNUC_UNUSED)
     }
 
     GtkWidget *win = desktop_settings_window_new_with_page(app, target_page);
+    if (opt_col_width >= 480)
+        desktop_settings_window_set_simulated_column_width(win, opt_col_width);
     gtk_window_present(GTK_WINDOW(win));
 }
 

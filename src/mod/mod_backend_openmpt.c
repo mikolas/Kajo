@@ -240,7 +240,7 @@ openmpt_open_impl(KajoModEngine          *eng,
     priv->n_channels   = MAX(1, openmpt_module_get_num_channels(mod));
     priv->n_orders     = MAX(1, openmpt_module_get_num_orders(mod));
     priv->duration_sec = openmpt_module_get_duration_seconds(mod);
-    if (priv->duration_sec <= 0.5) priv->duration_sec = 180.0;
+    if (priv->duration_sec <= 0.5) priv->duration_sec = kajo_mod_get_fallback_duration_sec();
 
     apply_openmpt_dsp_internal(priv, dsp);
     eng->priv = priv;
@@ -300,7 +300,7 @@ openmpt_set_subsong_impl(KajoModEngine *eng, int subsong_1based, KajoModMetadata
     if (!openmpt_module_select_subsong(priv->mod, sel - 1)) return FALSE;
     priv->subsong_cur  = sel;
     priv->duration_sec = openmpt_module_get_duration_seconds(priv->mod);
-    if (priv->duration_sec <= 0.5) priv->duration_sec = 180.0;
+    if (priv->duration_sec <= 0.5) priv->duration_sec = kajo_mod_get_fallback_duration_sec();
 
     if (meta) {
         meta->subsong_cur  = sel;
@@ -447,7 +447,7 @@ xmp_open_impl(KajoModEngine          *eng,
     priv->subsong_max  = n_seqs;
     priv->duration_sec = (minfo.seq_data && minfo.seq_data[sel - 1].duration > 0)
                          ? (double)minfo.seq_data[sel - 1].duration / 1000.0
-                         : 180.0;
+                         : kajo_mod_get_fallback_duration_sec();
 
     apply_xmp_dsp_internal(priv, dsp);
     eng->priv = priv;

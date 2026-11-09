@@ -58,10 +58,14 @@ build_uade_config(const KajoModDspConfig *dsp)
 
     uade_config_set_option(uc, UC_FREQUENCY, "48000");
 
+    int sub_tmo = (int)CLAMP(kajo_mod_get_fallback_duration_sec(), 60.0, 600.0);
     if (!dsp || dsp->end_action != KAJO_MOD_END_LOOP) {
+        g_autofree gchar *tmo_str = g_strdup_printf("%d", sub_tmo);
         uade_config_set_option(uc, UC_ONE_SUBSONG, NULL);
+        uade_config_set_option(uc, UC_SUBSONG_TIMEOUT_VALUE, tmo_str);
     } else {
         uade_config_set_option(uc, UC_NO_EP_END, NULL);
+        uade_config_set_option(uc, UC_DISABLE_TIMEOUTS, NULL);
     }
 
     if (dsp) {
@@ -175,7 +179,9 @@ populate_uade_samples_and_meta(KajoUadePriv               *priv,
     meta->subsong_def = CLAMP(priv->subsong_def - priv->subsong_min + 1, 1, total_subs);
     meta->subsong_cur = cur_rel;
 
-    meta->duration_sec = (info && info->duration > 0.5) ? info->duration : 180.0;
+    meta->duration_sec = (info && info->duration > 0.5)
+        ? info->duration
+        : kajo_mod_get_fallback_duration_sec();
 
     g_free(meta->cnt_voices); meta->cnt_voices = g_strdup_printf("%02u PAULA", mod_ch);
     g_free(meta->cnt_timing); meta->cnt_timing = g_strdup("50Hz PAL");

@@ -60,6 +60,8 @@ struct _ShellConfig {
 
     gint            toast_timeout_ms;
     gint            max_notification_history;
+    gchar          *toast_click_action;        /* "focus" or "dismiss", default "focus" */
+    gboolean        dnd_enabled;               /* suppress toast popups, default FALSE */
 
     gint            launcher_width;
     gint            launcher_max_height;
@@ -108,6 +110,16 @@ struct _ShellConfig {
     gboolean        files_sort_folders_first;  /* default TRUE */
     gboolean        files_show_hidden;         /* default FALSE */
     gboolean        files_show_inspector;      /* default FALSE */
+
+    /* Kajo Mod (org.kajo.Mod) Retro Amiga, C64 SID & Tracker Engine Defaults */
+    gchar          *mod_filter_mode;           /* "a500", "a1200", "near", "sinc", default "a500" */
+    gchar          *mod_led_mode;              /* "auto", "on", "off", default "auto" */
+    gchar          *mod_sid_model;             /* "auto", "6581", "8580", default "auto" */
+    gint            mod_stereo_sep_pct;        /* 0..100, default 70 */
+    gchar          *mod_end_action;            /* "next-sub", "loop", "next-mod", default "next-sub" */
+    gchar          *mod_hvsc_path;             /* optional HVSC root override, default "" */
+    gint            mod_uade_timeout_sec;      /* 60..600, default 180 */
+    gboolean        mod_auto_extract_archives; /* default TRUE */
 
     GPtrArray      *layout_left;   /* Array of ShellWidgetConfig* */
     GPtrArray      *layout_center; /* Array of ShellWidgetConfig* */
