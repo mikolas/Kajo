@@ -14,16 +14,6 @@
     <file compressed="true" alias="ui/cpu_mem_popover.ui">cpu_mem_popover.ui</file>
     <file compressed="true" alias="ui/osd_window.ui">osd_window.ui</file>
     <file compressed="true" alias="ui/launcher_window.ui">launcher_window.ui</file>
-    <file compressed="true" alias="ui/page_about.ui">page_about.ui</file>
-    <file compressed="true" alias="ui/page_panel.ui">page_panel.ui</file>
-    <file compressed="true" alias="ui/page_widgets.ui">page_widgets.ui</file>
-    <file compressed="true" alias="ui/page_niri.ui">page_niri.ui</file>
-    <file compressed="true" alias="ui/page_theme.ui">page_theme.ui</file>
-    <file compressed="true" alias="ui/page_notifications.ui">page_notifications.ui</file>
-    <file compressed="true" alias="ui/page_displays.ui">page_displays.ui</file>
-    <file compressed="true" alias="ui/page_network.ui">page_network.ui</file>
-    <file compressed="true" alias="ui/page_bluetooth.ui">page_bluetooth.ui</file>
-    <file compressed="true" alias="ui/page_audio.ui">page_audio.ui</file>
     <file compressed="true" alias="ui/files_window.ui">files_window.ui</file>
     <file compressed="true" alias="ui/player_window.ui">player_window.ui</file>
     <file compressed="true" alias="defaults/style.css">defaults/style.css</file>

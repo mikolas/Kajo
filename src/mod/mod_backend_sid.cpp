@@ -71,6 +71,11 @@ struct KajoSidPriv {
 static gchar *
 find_hvsc_root(const gchar *sid_path)
 {
+    g_autofree gchar *cfg_hvsc = kajo_mod_dup_hvsc_path();
+    if (cfg_hvsc && *cfg_hvsc && g_file_test(cfg_hvsc, G_FILE_TEST_IS_DIR)) {
+        return g_steal_pointer(&cfg_hvsc);
+    }
+
     const gchar *env_hvsc = g_getenv("HVSC_BASE");
     if (env_hvsc && g_file_test(env_hvsc, G_FILE_TEST_IS_DIR)) {
         return g_strdup(env_hvsc);
@@ -419,7 +424,7 @@ sid_open_impl(KajoModEngine          *eng,
 
     g_autofree gchar *hvsc_root = find_hvsc_root(path);
     double hvsc_dur = lookup_hvsc_duration_sec(hvsc_root, tune);
-    priv->duration_sec = (hvsc_dur > 1.0) ? hvsc_dur : 180.0;
+    priv->duration_sec = (hvsc_dur > 1.0) ? hvsc_dur : kajo_mod_get_fallback_duration_sec();
 
     if (!priv->engine.load(tune)) {
         g_set_error(error, G_IO_ERROR, G_IO_ERROR_FAILED,
@@ -557,7 +562,7 @@ sid_set_subsong_impl(KajoModEngine *eng, int subsong_1based, KajoModMetadata *me
 
     g_autofree gchar *hvsc_root = find_hvsc_root(priv->file_path);
     double hvsc_dur = lookup_hvsc_duration_sec(hvsc_root, priv->tune);
-    if (hvsc_dur > 1.0) priv->duration_sec = hvsc_dur;
+    priv->duration_sec = (hvsc_dur > 1.0) ? hvsc_dur : kajo_mod_get_fallback_duration_sec();
 
     if (meta) {
         populate_sid_metadata(priv, priv->tune->getInfo(), &eng->dsp, meta);

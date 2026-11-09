@@ -4,12 +4,21 @@
 
 #define N_NIRI_NAMESPACES 5
 
-static const char *NIRI_NS_IDS[N_NIRI_NAMESPACES] = {
+static const char *const NIRI_NS_IDS[N_NIRI_NAMESPACES] = {
     "kajo",
     "kajo-launcher",
     "kajo-notification",
     "kajo-osk",
     "kajo-osd"
+};
+
+static const char *const NIRI_NS_LABELS[] = {
+    "kajo (Panel & Popovers)",
+    "kajo-launcher (App Launcher)",
+    "kajo-notification (Toasts)",
+    "kajo-osk (Virtual Keyboard)",
+    "kajo-osd (Volume / Brightness HUD)",
+    NULL
 };
 
 typedef struct {
@@ -19,7 +28,7 @@ typedef struct {
     guint       rec_curve_idx;
 } ShaderPreset;
 
-static const char *CURVE_NAMES[] = {
+static const char *const CURVE_NAMES[] = {
     "ease-out-expo",
     "ease-out-cubic",
     "ease-out-quad",
@@ -29,24 +38,24 @@ static const char *CURVE_NAMES[] = {
 #define N_CURVES 4
 
 static const ShaderPreset OPEN_PRESETS[] = {
-    { "default",          "Default (Scale & Fade)",          150, 0 }, /* ease-out-expo */
-    { "metro-flip",       "Metro Turnstile (3D Flip)",       250, 1 }, /* ease-out-cubic */
-    { "expanding-circle", "Iris Circle Reveal",              250, 2 }, /* ease-out-quad */
-    { "crt-on",           "CRT Power-On (Scanline Beam)",    300, 1 }, /* ease-out-cubic */
-    { "pixelate-in",      "Pixelate Materialize",            250, 2 }, /* ease-out-quad */
-    { "glitch-in",        "Cyberpunk RGB Glitch",            250, 3 }, /* linear */
-    { "curtain-open",     "Vertical Split Curtain",          220, 0 }, /* ease-out-expo */
+    { "default",          "Default (Scale & Fade)",          150, 0 },
+    { "metro-flip",       "Metro Turnstile (3D Flip)",       250, 1 },
+    { "expanding-circle", "Iris Circle Reveal",              250, 2 },
+    { "crt-on",           "CRT Power-On (Scanline Beam)",    300, 1 },
+    { "pixelate-in",      "Pixelate Materialize",            250, 2 },
+    { "glitch-in",        "Cyberpunk RGB Glitch",            250, 3 },
+    { "curtain-open",     "Vertical Split Curtain",          220, 0 },
 };
 #define N_OPEN_PRESETS G_N_ELEMENTS(OPEN_PRESETS)
 
 static const ShaderPreset CLOSE_PRESETS[] = {
-    { "default",          "Default (Scale & Fade)",          200, 2 }, /* ease-out-quad */
-    { "fall-and-rotate",  "Gravity Fall & Rotate",           350, 3 }, /* linear */
-    { "crt-off",          "CRT TV Turn-Off",                 360, 3 }, /* linear */
-    { "ash-dissolve",     "Ash / Particle Dissolve",         420, 3 }, /* linear */
-    { "vortex-implode",   "Black Hole Vortex",               380, 3 }, /* linear */
-    { "pixelate-out",     "Pixelate Dematerialize",          350, 3 }, /* linear */
-    { "slice-shatter",    "Horizontal Slice Shred",          350, 3 }, /* linear */
+    { "default",          "Default (Scale & Fade)",          200, 2 },
+    { "fall-and-rotate",  "Gravity Fall & Rotate",           350, 3 },
+    { "crt-off",          "CRT TV Turn-Off",                 360, 3 },
+    { "ash-dissolve",     "Ash / Particle Dissolve",         420, 3 },
+    { "vortex-implode",   "Black Hole Vortex",               380, 3 },
+    { "pixelate-out",     "Pixelate Dematerialize",          350, 3 },
+    { "slice-shatter",    "Horizontal Slice Shred",          350, 3 },
 };
 #define N_CLOSE_PRESETS G_N_ELEMENTS(CLOSE_PRESETS)
 
@@ -58,32 +67,25 @@ static const ShaderPreset RESIZE_PRESETS[] = {
 };
 #define N_RESIZE_PRESETS G_N_ELEMENTS(RESIZE_PRESETS)
 
-/* ─── Declarative GtkBox Template Subclass ─── */
-
 typedef struct _SettingsPageNiri {
     GtkBox parent_instance;
 
     GtkWidget *combo_ns;
     GtkWidget *scale_op;
-    GtkWidget *lbl_op_val;
     GtkWidget *scale_gap;
-    GtkWidget *lbl_gap_val;
     GtkWidget *sw_xray;
 
+    GtkWidget *row_open_shader;
     GtkWidget *combo_shader_open;
     GtkWidget *scale_open_dur;
-    GtkWidget *lbl_open_dur_val;
     GtkWidget *combo_open_curve;
 
+    GtkWidget *row_close_shader;
     GtkWidget *combo_shader_close;
     GtkWidget *scale_close_dur;
-    GtkWidget *lbl_close_dur_val;
     GtkWidget *combo_close_curve;
 
     GtkWidget *combo_shader_resize;
-
-    GtkWidget *btn_apply;
-    GtkWidget *btn_test_shader;
 
     int      ns_opacity[N_NIRI_NAMESPACES];
     gboolean ns_xray[N_NIRI_NAMESPACES];
@@ -99,6 +101,7 @@ typedef struct _SettingsPageNiri {
 
     guint    resize_preset_idx;
 
+    guint    preview_spawn_timer_id;
     gboolean syncing_ui;
 } SettingsPageNiri;
 
@@ -108,69 +111,7 @@ typedef struct _SettingsPageNiriClass {
 
 G_DEFINE_TYPE(SettingsPageNiri, settings_page_niri, GTK_TYPE_BOX)
 
-static void
-settings_page_niri_dispose(GObject *object)
-{
-    SettingsPageNiri *self = (SettingsPageNiri *)object;
-    self->syncing_ui = TRUE;
-    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_niri_get_type());
-    G_OBJECT_CLASS(settings_page_niri_parent_class)->dispose(object);
-}
-
-static void
-settings_page_niri_init(SettingsPageNiri *self)
-{
-    for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
-        self->ns_opacity[i] = 85;
-        self->ns_xray[i] = FALSE;
-    }
-    self->gap_px            = 12;
-    self->open_preset_idx   = 0;
-    self->open_duration_ms  = 150;
-    self->open_curve_idx    = 0;
-    self->close_preset_idx  = 0;
-    self->close_duration_ms = 150;
-    self->close_curve_idx   = 2;
-    self->resize_preset_idx = 0;
-
-    gtk_widget_init_template(GTK_WIDGET(self));
-}
-
-static void
-settings_page_niri_class_init(SettingsPageNiriClass *klass)
-{
-    GObjectClass *object_class = G_OBJECT_CLASS(klass);
-    GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
-
-    object_class->dispose = settings_page_niri_dispose;
-
-    gtk_widget_class_set_template_from_resource(
-        widget_class, "/org/kajo/shell/ui/page_niri.ui");
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_ns);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, scale_op);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, lbl_op_val);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, scale_gap);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, lbl_gap_val);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, sw_xray);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_shader_open);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, scale_open_dur);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, lbl_open_dur_val);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_open_curve);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_shader_close);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, scale_close_dur);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, lbl_close_dur_val);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_close_curve);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, combo_shader_resize);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, btn_apply);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageNiri, btn_test_shader);
-}
-
-/* ─── 3-Tier Shader File Source Loader ─── */
+/* ─── 5-Tier Shader File Source Loader ─── */
 
 static gchar *
 load_shader_source(const char *category, const char *preset_id)
@@ -229,7 +170,6 @@ find_matching_kdl_brace(const char *open_brace)
             continue;
         }
 
-        /* Skip single-line comments // ... */
         if (*p == '/' && p[1] == '/') {
             while (*p && *p != '\n')
                 p++;
@@ -322,8 +262,27 @@ parse_anim_subblock(const char         *anim_block,
 }
 
 static void
+reset_niri_defaults_in_memory(SettingsPageNiri *self)
+{
+    for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
+        self->ns_opacity[i] = 85;
+        self->ns_xray[i]    = FALSE;
+    }
+    self->gap_px            = 12;
+    self->open_preset_idx   = 0;
+    self->open_duration_ms  = 150;
+    self->open_curve_idx    = 0;
+    self->close_preset_idx  = 0;
+    self->close_duration_ms = 200;
+    self->close_curve_idx   = 2;
+    self->resize_preset_idx = 0;
+}
+
+static void
 load_existing_niri_config(SettingsPageNiri *self)
 {
+    reset_niri_defaults_in_memory(self);
+
     const gchar *cfg_dir = g_get_user_config_dir();
 
     /* 1. Read 40-layer-rules.kdl */
@@ -334,7 +293,8 @@ load_existing_niri_config(SettingsPageNiri *self)
         for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
             g_autofree gchar *needle = g_strdup_printf("namespace=\"%s\"", NIRI_NS_IDS[i]);
             const char *pos = strstr(layer_contents, needle);
-            if (!pos) continue;
+            if (!pos)
+                continue;
 
             const char *block_end = strstr(pos, "\n}");
             const char *op_pos = strstr(pos, "opacity ");
@@ -497,136 +457,91 @@ save_animations_to_30_kdl(const gchar *dir, const gchar *anim_block_str)
             }
         }
 
-        /* No animations {} block found in existing file: append it */
         g_autofree gchar *appended = g_strdup_printf("%s\n%s", existing, anim_block_str);
         g_file_set_contents(anim_path, appended, -1, NULL);
         return;
     }
 
-    /* File does not exist yet: write standalone 30-layout-animations.kdl */
     g_file_set_contents(anim_path, anim_block_str, -1, NULL);
 }
 
-/* ─── UI Signal Handlers ─── */
+/* ─── UI Sync & Telemetry ─── */
 
 static void
-on_combo_ns_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+update_niri_subtitles_and_telemetry(SettingsPageNiri *self)
 {
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    if (self->syncing_ui) return;
+    if (!self)
+        return;
 
-    guint idx = gtk_drop_down_get_selected(dropdown);
-    if (idx >= N_NIRI_NAMESPACES) idx = 0;
+    guint ns_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
+    if (ns_idx >= N_NIRI_NAMESPACES)
+        ns_idx = 0;
 
-    self->syncing_ui = TRUE;
-    gtk_range_set_value(GTK_RANGE(self->scale_op), self->ns_opacity[idx]);
-    g_autofree gchar *str = g_strdup_printf("%d%%", self->ns_opacity[idx]);
-    gtk_label_set_text(GTK_LABEL(self->lbl_op_val), str);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_xray), self->ns_xray[idx]);
-    self->syncing_ui = FALSE;
-}
+    guint open_crv = self->open_curve_idx < N_CURVES ? self->open_curve_idx : 0;
+    guint close_crv = self->close_curve_idx < N_CURVES ? self->close_curve_idx : 2;
+    guint open_idx = self->open_preset_idx < N_OPEN_PRESETS ? self->open_preset_idx : 0;
+    guint close_idx = self->close_preset_idx < N_CLOSE_PRESETS ? self->close_preset_idx : 0;
+    guint resize_idx = self->resize_preset_idx < N_RESIZE_PRESETS ? self->resize_preset_idx : 0;
 
-static void
-on_scale_op_changed(GtkRange *range, gpointer user_data)
-{
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    int val = (int)gtk_range_get_value(range);
-    g_autofree gchar *str = g_strdup_printf("%d%%", val);
-    gtk_label_set_text(GTK_LABEL(self->lbl_op_val), str);
-
-    if (!self->syncing_ui) {
-        guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
-        if (idx < N_NIRI_NAMESPACES)
-            self->ns_opacity[idx] = val;
+    if (self->row_open_shader) {
+        g_autofree gchar *sub = g_strdup_printf("%dms • %s", self->open_duration_ms, CURVE_NAMES[open_crv]);
+        boxed_row_set_subtitle(self->row_open_shader, sub);
     }
+    if (self->row_close_shader) {
+        g_autofree gchar *sub = g_strdup_printf("%dms • %s", self->close_duration_ms, CURVE_NAMES[close_crv]);
+        boxed_row_set_subtitle(self->row_close_shader, sub);
+    }
+
+    g_autofree gchar *c0 = g_strdup_printf("%s (%d%%)", NIRI_NS_IDS[ns_idx], self->ns_opacity[ns_idx]);
+    g_autofree gchar *c1 = g_strdup_printf("%dPX", self->gap_px);
+    g_autofree gchar *c2 = g_ascii_strup(OPEN_PRESETS[open_idx].id, -1);
+    g_autofree gchar *c3 = g_ascii_strup(CLOSE_PRESETS[close_idx].id, -1);
+
+    settings_page_set_counter(GTK_WIDGET(self), 0, "NAMESPACE", c0, "accent");
+    settings_page_set_counter(GTK_WIDGET(self), 1, "GAPS", c1, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 2, "OPEN", c2, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 3, "CLOSE", c3, NULL);
+
+    gboolean has_glsl = (open_idx > 0 || close_idx > 0 || resize_idx > 0);
+    settings_page_set_nav_badge(
+        GTK_WIDGET(self), "niri", has_glsl ? "GLSL" : "KDL", has_glsl ? "accent" : NULL);
 }
 
 static void
-on_sw_xray_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+sync_niri_widgets_from_state(SettingsPageNiri *self)
 {
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    if (self->syncing_ui) return;
+    if (!self)
+        return;
 
-    guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
-    if (idx < N_NIRI_NAMESPACES)
-        self->ns_xray[idx] = gtk_switch_get_active(GTK_SWITCH(self->sw_xray));
-}
+    guint ns_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
+    if (ns_idx >= N_NIRI_NAMESPACES)
+        ns_idx = 0;
 
-static void
-on_scale_gap_changed(GtkRange *range, gpointer user_data)
-{
-    GtkLabel *lbl = GTK_LABEL(user_data);
-    g_autofree gchar *str = g_strdup_printf("%dpx", (int)gtk_range_get_value(range));
-    gtk_label_set_text(lbl, str);
-}
-
-static void
-on_scale_open_dur_changed(GtkRange *range, gpointer user_data)
-{
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    int val = (int)gtk_range_get_value(range);
-    self->open_duration_ms = val;
-    g_autofree gchar *str = g_strdup_printf("%dms", val);
-    gtk_label_set_text(GTK_LABEL(self->lbl_open_dur_val), str);
-}
-
-static void
-on_scale_close_dur_changed(GtkRange *range, gpointer user_data)
-{
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    int val = (int)gtk_range_get_value(range);
-    self->close_duration_ms = val;
-    g_autofree gchar *str = g_strdup_printf("%dms", val);
-    gtk_label_set_text(GTK_LABEL(self->lbl_close_dur_val), str);
-}
-
-static void
-on_combo_shader_open_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    if (self->syncing_ui) return;
-
-    guint idx = gtk_drop_down_get_selected(dropdown);
-    if (idx >= N_OPEN_PRESETS) idx = 0;
-    self->open_preset_idx = idx;
-
-    /* Apply preset's recommended duration and curve */
     self->syncing_ui = TRUE;
-    self->open_duration_ms = OPEN_PRESETS[idx].rec_duration_ms;
-    self->open_curve_idx   = OPEN_PRESETS[idx].rec_curve_idx;
+    gtk_range_set_value(GTK_RANGE(self->scale_op), self->ns_opacity[ns_idx]);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_xray), self->ns_xray[ns_idx]);
+    gtk_range_set_value(GTK_RANGE(self->scale_gap), self->gap_px);
+
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_shader_open), self->open_preset_idx);
     gtk_range_set_value(GTK_RANGE(self->scale_open_dur), self->open_duration_ms);
-    g_autofree gchar *dur_str = g_strdup_printf("%dms", self->open_duration_ms);
-    gtk_label_set_text(GTK_LABEL(self->lbl_open_dur_val), dur_str);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_open_curve), self->open_curve_idx);
-    self->syncing_ui = FALSE;
-}
 
-static void
-on_combo_shader_close_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    if (self->syncing_ui) return;
-
-    guint idx = gtk_drop_down_get_selected(dropdown);
-    if (idx >= N_CLOSE_PRESETS) idx = 0;
-    self->close_preset_idx = idx;
-
-    /* Apply preset's recommended duration and curve */
-    self->syncing_ui = TRUE;
-    self->close_duration_ms = CLOSE_PRESETS[idx].rec_duration_ms;
-    self->close_curve_idx   = CLOSE_PRESETS[idx].rec_curve_idx;
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_shader_close), self->close_preset_idx);
     gtk_range_set_value(GTK_RANGE(self->scale_close_dur), self->close_duration_ms);
-    g_autofree gchar *dur_str = g_strdup_printf("%dms", self->close_duration_ms);
-    gtk_label_set_text(GTK_LABEL(self->lbl_close_dur_val), dur_str);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_close_curve), self->close_curve_idx);
+
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_shader_resize), self->resize_preset_idx);
     self->syncing_ui = FALSE;
+
+    update_niri_subtitles_and_telemetry(self);
 }
 
 static void
 save_and_reload_niri_config(SettingsPageNiri *self)
 {
     guint active_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
-    if (active_idx >= N_NIRI_NAMESPACES) active_idx = 0;
+    if (active_idx >= N_NIRI_NAMESPACES)
+        active_idx = 0;
 
     self->ns_opacity[active_idx] = (int)gtk_range_get_value(GTK_RANGE(self->scale_op));
     self->ns_xray[active_idx]    = gtk_switch_get_active(GTK_SWITCH(self->sw_xray));
@@ -646,7 +561,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     g_autofree gchar *dir = g_build_filename(xdg_config, "niri", "config.d", NULL);
     g_mkdir_with_parents(dir, 0755);
 
-    /* 1. Write 40-layer-rules.kdl (included by master config.kdl) */
+    /* 1. Write 40-layer-rules.kdl */
     g_autofree gchar *layer_path = g_build_filename(dir, "40-layer-rules.kdl", NULL);
     GString *layer_kdl = g_string_new(
         "// Layer Surface Rules (Managed by kajo-settings)\n");
@@ -679,19 +594,19 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     g_file_set_contents(layer_path, layer_kdl->str, layer_kdl->len, NULL);
     g_string_free(layer_kdl, TRUE);
 
-    /* 2. Update 30-layout-animations.kdl with custom-shader blocks */
+    /* 2. Update 30-layout-animations.kdl */
     g_autofree gchar *anim_block_str = build_animations_kdl_block(self);
     save_animations_to_30_kdl(dir, anim_block_str);
 
-    /* 3. Also write 00-kajo.kdl with valid dot-decimal formatting */
+    /* 3. Write 00-kajo.kdl */
     g_autofree gchar *kajo_path = g_build_filename(dir, "00-kajo.kdl", NULL);
     char active_op_buf[32];
     g_ascii_formatd(active_op_buf, sizeof(active_op_buf), "%.2f", self->ns_opacity[active_idx] / 100.0);
 
     ShellConfig *cfg = shell_config_load(NULL);
     const char *accent_hex = (cfg && cfg->accent_color && cfg->accent_color[0] != '\0')
-                                 ? cfg->accent_color
-                                 : "#0078d4";
+        ? cfg->accent_color
+        : "#0078d4";
 
     g_autofree gchar *kdl_content = g_strdup_printf(
         "// Managed by kajo-settings — DO NOT EDIT DIRECTLY\n\n"
@@ -722,17 +637,184 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         shell_config_destroy(cfg);
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
-    g_message("Saved modular Niri layer-rules and shaders to %s, 30-layout-animations.kdl, and %s",
-              layer_path, kajo_path);
-
     niri_reload_config();
+
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
+
+/* ─── UI Signal Handlers ─── */
+
+static void
+on_combo_ns_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx >= N_NIRI_NAMESPACES)
+        idx = 0;
+
+    self->syncing_ui = TRUE;
+    gtk_range_set_value(GTK_RANGE(self->scale_op), self->ns_opacity[idx]);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_xray), self->ns_xray[idx]);
+    self->syncing_ui = FALSE;
+
+    update_niri_subtitles_and_telemetry(self);
 }
 
 static void
-on_reload_niri_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_scale_op_changed(GtkRange *range, gpointer user_data)
 {
     SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    save_and_reload_niri_config(self);
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
+    if (idx < N_NIRI_NAMESPACES)
+        self->ns_opacity[idx] = (int)gtk_range_get_value(range);
+
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_sw_xray_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ns));
+    if (idx < N_NIRI_NAMESPACES)
+        self->ns_xray[idx] = gtk_switch_get_active(GTK_SWITCH(self->sw_xray));
+
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_gap_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    self->gap_px = (int)gtk_range_get_value(range);
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_shader_open_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx >= N_OPEN_PRESETS)
+        idx = 0;
+    self->open_preset_idx  = idx;
+    self->open_duration_ms = OPEN_PRESETS[idx].rec_duration_ms;
+    self->open_curve_idx   = OPEN_PRESETS[idx].rec_curve_idx;
+
+    self->syncing_ui = TRUE;
+    gtk_range_set_value(GTK_RANGE(self->scale_open_dur), self->open_duration_ms);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_open_curve), self->open_curve_idx);
+    self->syncing_ui = FALSE;
+
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_open_dur_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    self->open_duration_ms = (int)gtk_range_get_value(range);
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_open_curve_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx < N_CURVES)
+        self->open_curve_idx = idx;
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_shader_close_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx >= N_CLOSE_PRESETS)
+        idx = 0;
+    self->close_preset_idx  = idx;
+    self->close_duration_ms = CLOSE_PRESETS[idx].rec_duration_ms;
+    self->close_curve_idx   = CLOSE_PRESETS[idx].rec_curve_idx;
+
+    self->syncing_ui = TRUE;
+    gtk_range_set_value(GTK_RANGE(self->scale_close_dur), self->close_duration_ms);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_close_curve), self->close_curve_idx);
+    self->syncing_ui = FALSE;
+
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_close_dur_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    self->close_duration_ms = (int)gtk_range_get_value(range);
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_close_curve_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx < N_CURVES)
+        self->close_curve_idx = idx;
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_shader_resize_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx < N_RESIZE_PRESETS)
+        self->resize_preset_idx = idx;
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
 }
 
 /* ─── Live Transition Preview Window (Open -> Resize -> Close) ─── */
@@ -747,7 +829,8 @@ static void
 on_preview_window_destroy(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     PreviewWindowCtx *ctx = (PreviewWindowCtx *)user_data;
-    if (!ctx) return;
+    if (!ctx)
+        return;
     if (ctx->resize_timer_id > 0)
         g_source_remove(ctx->resize_timer_id);
     if (ctx->close_timer_id > 0)
@@ -782,8 +865,7 @@ static gboolean
 spawn_shader_preview_window(gpointer user_data)
 {
     SettingsPageNiri *self = (SettingsPageNiri *)user_data;
-    if (!GTK_IS_WIDGET(self))
-        return G_SOURCE_REMOVE;
+    self->preview_spawn_timer_id = 0;
 
     GtkWidget *win = gtk_window_new();
     gtk_window_set_title(GTK_WINDOW(win), "KAJO SHADER PREVIEW");
@@ -831,108 +913,217 @@ spawn_shader_preview_window(gpointer user_data)
 }
 
 static void
-on_test_shader_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+action_test_niri_transition(gpointer user_data)
 {
     SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self)
+        return;
+
     save_and_reload_niri_config(self);
 
-    /* Wait 120ms for Niri to hot-reload the updated shaders before presenting preview */
-    g_timeout_add_full(G_PRIORITY_DEFAULT, 120,
-                       spawn_shader_preview_window,
-                       g_object_ref(self),
-                       g_object_unref);
+    g_clear_handle_id(&self->preview_spawn_timer_id, g_source_remove);
+    self->preview_spawn_timer_id = g_timeout_add(120, spawn_shader_preview_window, self);
 }
 
-/* ─── Page Builder ─── */
+static void
+action_revert_niri(gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self)
+        return;
+    load_existing_niri_config(self);
+    sync_niri_widgets_from_state(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
+
+static void
+action_save_niri(gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self)
+        return;
+    save_and_reload_niri_config(self);
+}
+
+static void
+on_niri_page_mapped(GtkWidget *widget, gpointer user_data G_GNUC_UNUSED)
+{
+    update_niri_subtitles_and_telemetry((SettingsPageNiri *)widget);
+}
+
+static void
+settings_page_niri_dispose(GObject *object)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)object;
+    self->syncing_ui = TRUE;
+    g_clear_handle_id(&self->preview_spawn_timer_id, g_source_remove);
+    G_OBJECT_CLASS(settings_page_niri_parent_class)->dispose(object);
+}
+
+static void
+settings_page_niri_init(SettingsPageNiri *self)
+{
+    reset_niri_defaults_in_memory(self);
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(self), GTK_ORIENTATION_VERTICAL);
+    gtk_box_set_spacing(GTK_BOX(self), 10);
+    gtk_widget_add_css_class(GTK_WIDGET(self), "settings-bento-canvas");
+    gtk_widget_set_hexpand(GTK_WIDGET(self), TRUE);
+    g_object_set_data(G_OBJECT(self), "is-bento-canvas", GINT_TO_POINTER(1));
+}
+
+static void
+settings_page_niri_class_init(SettingsPageNiriClass *klass)
+{
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
+    object_class->dispose = settings_page_niri_dispose;
+}
 
 GtkWidget *
 build_page_niri(void)
 {
-    SettingsPageNiri *page = g_object_new(settings_page_niri_get_type(), NULL);
-    load_existing_niri_config(page);
+    SettingsPageNiri *self = g_object_new(settings_page_niri_get_type(), NULL);
+    load_existing_niri_config(self);
 
-    const char *ns_items[] = {
-        "kajo (Panel & Popovers)",
-        "kajo-launcher (App Launcher)",
-        "kajo-notification (Toasts)",
-        "kajo-osk (Virtual Keyboard)",
-        "kajo-osd (Volume / Brightness HUD)",
-        NULL
-    };
-    GtkStringList *slist_ns = gtk_string_list_new(ns_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ns), G_LIST_MODEL(slist_ns));
-    g_object_unref(slist_ns);
+    /* ─── Card 1: Layer Surface Rules & Workspace Gaps ─── */
+    GtkWidget *card_layer = create_section_card(
+        SETTINGS_CARD_LEFT,
+        "1. LAYER SURFACE RULES & WORKSPACE GAPS",
+        "40-layer-rules.kdl",
+        "accent",
+        NULL);
 
-    /* Populate Shader Preset Dropdowns */
-    GtkStringList *slist_open = gtk_string_list_new(NULL);
+    self->combo_ns = create_string_dropdown(NIRI_NS_LABELS);
+    gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
+        "🗔",
+        "Target Layer Namespace",
+        "Wayland layer-shell surface namespace",
+        self->combo_ns));
+
+    GtkWidget *w_op = create_scale_with_badge(20, 100, 1, 85, "%.0f%%", &self->scale_op, NULL);
+    gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
+        "◐",
+        "Surface Layer Opacity",
+        "Compositor opacity rule for selected namespace",
+        w_op));
+
+    GtkWidget *w_gap = create_scale_with_badge(0, 32, 1, 12, "%.0fpx", &self->scale_gap, NULL);
+    gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
+        "⊞",
+        "Workspace Window Gaps",
+        "Niri layout { gaps N } in pixels",
+        w_gap));
+
+    self->sw_xray = gtk_switch_new();
+    gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
+        "✨",
+        "Blur XRay (Wallpaper Through Blur)",
+        "Sample desktop backdrop behind translucent surfaces",
+        self->sw_xray));
+
+    /* ─── Card 2: Window Transition Shaders (GLSL) ─── */
+    GtkWidget *card_shaders = create_section_card(
+        SETTINGS_CARD_CENTER,
+        "2. WINDOW TRANSITION SHADERS (GLSL)",
+        "30-layout-animations.kdl",
+        "peak-warn",
+        NULL);
+
+    const char *open_labels[N_OPEN_PRESETS + 1];
     for (guint i = 0; i < N_OPEN_PRESETS; i++)
-        gtk_string_list_append(slist_open, OPEN_PRESETS[i].label);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_shader_open), G_LIST_MODEL(slist_open));
-    g_object_unref(slist_open);
+        open_labels[i] = OPEN_PRESETS[i].label;
+    open_labels[N_OPEN_PRESETS] = NULL;
 
-    GtkStringList *slist_close = gtk_string_list_new(NULL);
+    self->combo_shader_open = create_string_dropdown(open_labels);
+    self->row_open_shader = create_boxed_row(
+        "✦",
+        "Window Open Shader Preset",
+        "150ms • ease-out-expo",
+        self->combo_shader_open);
+    gtk_box_append(GTK_BOX(card_shaders), self->row_open_shader);
+
+    GtkWidget *w_open_dur = create_scale_with_badge(
+        50, 800, 10, 150, "%.0fms", &self->scale_open_dur, NULL);
+    gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
+        NULL,
+        "Open Duration",
+        "Animation duration in milliseconds",
+        w_open_dur));
+
+    self->combo_open_curve = create_string_dropdown(CURVE_NAMES);
+    gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
+        NULL,
+        "Open Easing Curve",
+        "Niri interpolation curve",
+        self->combo_open_curve));
+
+    const char *close_labels[N_CLOSE_PRESETS + 1];
     for (guint i = 0; i < N_CLOSE_PRESETS; i++)
-        gtk_string_list_append(slist_close, CLOSE_PRESETS[i].label);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_shader_close), G_LIST_MODEL(slist_close));
-    g_object_unref(slist_close);
+        close_labels[i] = CLOSE_PRESETS[i].label;
+    close_labels[N_CLOSE_PRESETS] = NULL;
 
-    GtkStringList *slist_resize = gtk_string_list_new(NULL);
+    self->combo_shader_close = create_string_dropdown(close_labels);
+    self->row_close_shader = create_boxed_row(
+        "✦",
+        "Window Close Shader Preset",
+        "200ms • ease-out-quad",
+        self->combo_shader_close);
+    gtk_box_append(GTK_BOX(card_shaders), self->row_close_shader);
+
+    GtkWidget *w_close_dur = create_scale_with_badge(
+        50, 800, 10, 200, "%.0fms", &self->scale_close_dur, NULL);
+    gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
+        NULL,
+        "Close Duration",
+        "Animation duration in milliseconds",
+        w_close_dur));
+
+    self->combo_close_curve = create_string_dropdown(CURVE_NAMES);
+    gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
+        NULL,
+        "Close Easing Curve",
+        "Niri interpolation curve",
+        self->combo_close_curve));
+
+    const char *resize_labels[N_RESIZE_PRESETS + 1];
     for (guint i = 0; i < N_RESIZE_PRESETS; i++)
-        gtk_string_list_append(slist_resize, RESIZE_PRESETS[i].label);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_shader_resize), G_LIST_MODEL(slist_resize));
-    g_object_unref(slist_resize);
+        resize_labels[i] = RESIZE_PRESETS[i].label;
+    resize_labels[N_RESIZE_PRESETS] = NULL;
 
-    /* Populate Curve Dropdowns */
-    GtkStringList *slist_open_crv = gtk_string_list_new(CURVE_NAMES);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_open_curve), G_LIST_MODEL(slist_open_crv));
-    g_object_unref(slist_open_crv);
+    self->combo_shader_resize = create_string_dropdown(resize_labels);
+    gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
+        "↔",
+        "Window Resize Shader Preset",
+        "Column width transition morph",
+        self->combo_shader_resize));
 
-    GtkStringList *slist_close_crv = gtk_string_list_new(CURVE_NAMES);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_close_curve), G_LIST_MODEL(slist_close_crv));
-    g_object_unref(slist_close_crv);
+    settings_bento_add_pair(GTK_WIDGET(self), card_layer, card_shaders);
 
-    /* Sync initial UI state */
-    page->syncing_ui = TRUE;
+    sync_niri_widgets_from_state(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
 
-    gtk_range_set_value(GTK_RANGE(page->scale_op), page->ns_opacity[0]);
-    g_autofree gchar *op_str = g_strdup_printf("%d%%", page->ns_opacity[0]);
-    gtk_label_set_text(GTK_LABEL(page->lbl_op_val), op_str);
-    gtk_switch_set_active(GTK_SWITCH(page->sw_xray), page->ns_xray[0]);
+    g_signal_connect(self->combo_ns, "notify::selected", G_CALLBACK(on_combo_ns_changed), self);
+    g_signal_connect(self->scale_op, "value-changed", G_CALLBACK(on_scale_op_changed), self);
+    g_signal_connect(self->scale_gap, "value-changed", G_CALLBACK(on_scale_gap_changed), self);
+    g_signal_connect(self->sw_xray, "notify::active", G_CALLBACK(on_sw_xray_changed), self);
 
-    gtk_range_set_value(GTK_RANGE(page->scale_gap), page->gap_px);
-    g_autofree gchar *gap_str = g_strdup_printf("%dpx", page->gap_px);
-    gtk_label_set_text(GTK_LABEL(page->lbl_gap_val), gap_str);
+    g_signal_connect(self->combo_shader_open, "notify::selected", G_CALLBACK(on_combo_shader_open_changed), self);
+    g_signal_connect(self->scale_open_dur, "value-changed", G_CALLBACK(on_scale_open_dur_changed), self);
+    g_signal_connect(self->combo_open_curve, "notify::selected", G_CALLBACK(on_combo_open_curve_changed), self);
 
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_shader_open), page->open_preset_idx);
-    gtk_range_set_value(GTK_RANGE(page->scale_open_dur), page->open_duration_ms);
-    g_autofree gchar *open_dur_str = g_strdup_printf("%dms", page->open_duration_ms);
-    gtk_label_set_text(GTK_LABEL(page->lbl_open_dur_val), open_dur_str);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_open_curve), page->open_curve_idx);
+    g_signal_connect(self->combo_shader_close, "notify::selected", G_CALLBACK(on_combo_shader_close_changed), self);
+    g_signal_connect(self->scale_close_dur, "value-changed", G_CALLBACK(on_scale_close_dur_changed), self);
+    g_signal_connect(self->combo_close_curve, "notify::selected", G_CALLBACK(on_combo_close_curve_changed), self);
 
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_shader_close), page->close_preset_idx);
-    gtk_range_set_value(GTK_RANGE(page->scale_close_dur), page->close_duration_ms);
-    g_autofree gchar *close_dur_str = g_strdup_printf("%dms", page->close_duration_ms);
-    gtk_label_set_text(GTK_LABEL(page->lbl_close_dur_val), close_dur_str);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_close_curve), page->close_curve_idx);
+    g_signal_connect(self->combo_shader_resize, "notify::selected", G_CALLBACK(on_combo_shader_resize_changed), self);
+    g_signal_connect(self, "map", G_CALLBACK(on_niri_page_mapped), NULL);
 
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_shader_resize), page->resize_preset_idx);
+    settings_page_bind_actions(
+        GTK_WIDGET(self),
+        "▶ TEST TRANSITION",
+        action_test_niri_transition,
+        action_revert_niri,
+        action_save_niri,
+        self);
 
-    page->syncing_ui = FALSE;
-
-    /* Connect signals */
-    g_signal_connect(page->combo_ns, "notify::selected", G_CALLBACK(on_combo_ns_changed), page);
-    g_signal_connect(page->scale_op, "value-changed", G_CALLBACK(on_scale_op_changed), page);
-    g_signal_connect(page->sw_xray, "notify::active", G_CALLBACK(on_sw_xray_changed), page);
-    g_signal_connect(page->scale_gap, "value-changed", G_CALLBACK(on_scale_gap_changed), page->lbl_gap_val);
-
-    g_signal_connect(page->combo_shader_open, "notify::selected", G_CALLBACK(on_combo_shader_open_changed), page);
-    g_signal_connect(page->scale_open_dur, "value-changed", G_CALLBACK(on_scale_open_dur_changed), page);
-
-    g_signal_connect(page->combo_shader_close, "notify::selected", G_CALLBACK(on_combo_shader_close_changed), page);
-    g_signal_connect(page->scale_close_dur, "value-changed", G_CALLBACK(on_scale_close_dur_changed), page);
-
-    g_signal_connect(page->btn_apply, "clicked", G_CALLBACK(on_reload_niri_clicked), page);
-    g_signal_connect(page->btn_test_shader, "clicked", G_CALLBACK(on_test_shader_clicked), page);
-
-    return create_settings_page_card("NIRI COMPOSITOR RULES & SHADERS", "[ KDL + GLSL ]", GTK_WIDGET(page), NULL);
+    return GTK_WIDGET(self);
 }

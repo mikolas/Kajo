@@ -26,6 +26,8 @@ test_config_defaults(void)
     g_assert_cmpint(cfg->osk_height_px, ==, 260);
     g_assert_cmpint(cfg->toast_timeout_ms, ==, 8000);
     g_assert_cmpint(cfg->max_notification_history, ==, 50);
+    g_assert_cmpstr(cfg->toast_click_action, ==, "focus");
+    g_assert_false(cfg->dnd_enabled);
 
     /* Idle & Screen Lock defaults */
     g_assert_cmpstr(cfg->screensaver_mode, ==, "overlay");
@@ -60,6 +62,16 @@ test_config_defaults(void)
     g_assert_true(cfg->files_sort_folders_first);
     g_assert_false(cfg->files_show_hidden);
     g_assert_false(cfg->files_show_inspector);
+
+    /* Kajo Mod defaults */
+    g_assert_cmpstr(cfg->mod_filter_mode, ==, "a500");
+    g_assert_cmpstr(cfg->mod_led_mode, ==, "auto");
+    g_assert_cmpstr(cfg->mod_sid_model, ==, "auto");
+    g_assert_cmpint(cfg->mod_stereo_sep_pct, ==, 70);
+    g_assert_cmpstr(cfg->mod_end_action, ==, "next-sub");
+    g_assert_cmpstr(cfg->mod_hvsc_path, ==, "");
+    g_assert_cmpint(cfg->mod_uade_timeout_sec, ==, 180);
+    g_assert_true(cfg->mod_auto_extract_archives);
 
     g_assert_nonnull(cfg->layout_left);
     g_assert_nonnull(cfg->layout_center);
@@ -103,6 +115,9 @@ test_config_save_and_load_roundtrip(void)
 
     orig->toast_timeout_ms = 5000;
     orig->max_notification_history = 100;
+    g_free(orig->toast_click_action);
+    orig->toast_click_action = g_strdup("dismiss");
+    orig->dnd_enabled = TRUE;
 
     g_free(orig->screensaver_mode);
     orig->screensaver_mode = g_strdup("dpms");
@@ -145,6 +160,20 @@ test_config_save_and_load_roundtrip(void)
     orig->files_sort_folders_first = FALSE;
     orig->files_show_hidden = TRUE;
     orig->files_show_inspector = TRUE;
+
+    g_free(orig->mod_filter_mode);
+    orig->mod_filter_mode = g_strdup("sinc");
+    g_free(orig->mod_led_mode);
+    orig->mod_led_mode = g_strdup("on");
+    g_free(orig->mod_sid_model);
+    orig->mod_sid_model = g_strdup("8580");
+    orig->mod_stereo_sep_pct = 55;
+    g_free(orig->mod_end_action);
+    orig->mod_end_action = g_strdup("loop");
+    g_free(orig->mod_hvsc_path);
+    orig->mod_hvsc_path = g_strdup("/opt/HVSC");
+    orig->mod_uade_timeout_sec = 240;
+    orig->mod_auto_extract_archives = FALSE;
 
     ShellWidgetConfig *wc_left = g_new0(ShellWidgetConfig, 1);
     wc_left->id = g_strdup("launcher");
@@ -193,6 +222,8 @@ test_config_save_and_load_roundtrip(void)
 
     g_assert_cmpint(loaded->toast_timeout_ms, ==, 5000);
     g_assert_cmpint(loaded->max_notification_history, ==, 100);
+    g_assert_cmpstr(loaded->toast_click_action, ==, "dismiss");
+    g_assert_true(loaded->dnd_enabled);
 
     g_assert_cmpstr(loaded->screensaver_mode, ==, "dpms");
     g_assert_cmpint(loaded->screensaver_timeout_sec, ==, 60);
@@ -229,6 +260,15 @@ test_config_save_and_load_roundtrip(void)
     g_assert_false(loaded->files_sort_folders_first);
     g_assert_true(loaded->files_show_hidden);
     g_assert_true(loaded->files_show_inspector);
+
+    g_assert_cmpstr(loaded->mod_filter_mode, ==, "sinc");
+    g_assert_cmpstr(loaded->mod_led_mode, ==, "on");
+    g_assert_cmpstr(loaded->mod_sid_model, ==, "8580");
+    g_assert_cmpint(loaded->mod_stereo_sep_pct, ==, 55);
+    g_assert_cmpstr(loaded->mod_end_action, ==, "loop");
+    g_assert_cmpstr(loaded->mod_hvsc_path, ==, "/opt/HVSC");
+    g_assert_cmpint(loaded->mod_uade_timeout_sec, ==, 240);
+    g_assert_false(loaded->mod_auto_extract_archives);
 
     /* Verify flat keys are written directly in config.json per spec §4.1 */
     g_autofree gchar *saved_raw = NULL;

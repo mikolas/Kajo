@@ -25,7 +25,19 @@
   },
   "notifications": {
     "toast_timeout_ms": 8000,
-    "max_notification_history": 50
+    "max_notification_history": 50,
+    "toast_click_action": "focus",
+    "dnd_enabled": false
+  },
+  "mod": {
+    "filter_mode": "a500",
+    "led_mode": "auto",
+    "sid_model": "auto",
+    "stereo_sep_pct": 70,
+    "end_action": "next-sub",
+    "hvsc_path": "",
+    "uade_timeout_sec": 180,
+    "auto_extract_archives": true
   },
   "idle": {
     "screensaver_mode": "overlay",

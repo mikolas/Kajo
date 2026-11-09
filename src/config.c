@@ -111,12 +111,14 @@ shell_config_get_default(void)
 
     config->toast_timeout_ms         = 8000;
     config->max_notification_history = 50;
+    config->toast_click_action       = g_strdup("focus");
+    config->dnd_enabled              = FALSE;
 
     config->launcher_width           = 640;
     config->launcher_max_height      = 320;
 
-    config->settings_width           = 960;
-    config->settings_height          = 640;
+    config->settings_width           = 814;
+    config->settings_height          = 680;
     config->settings_transition_ms   = 150;
 
     config->accent_color             = g_strdup("#0078d4");
@@ -155,6 +157,15 @@ shell_config_get_default(void)
     config->files_sort_folders_first   = TRUE;
     config->files_show_hidden          = FALSE;
     config->files_show_inspector       = FALSE;
+
+    config->mod_filter_mode            = g_strdup("a500");
+    config->mod_led_mode               = g_strdup("auto");
+    config->mod_sid_model              = g_strdup("auto");
+    config->mod_stereo_sep_pct         = 70;
+    config->mod_end_action             = g_strdup("next-sub");
+    config->mod_hvsc_path              = g_strdup("");
+    config->mod_uade_timeout_sec       = 180;
+    config->mod_auto_extract_archives  = TRUE;
 
     config->layout_left           = g_ptr_array_new_full(0, free_widget_config);
     config->layout_center         = g_ptr_array_new_full(0, free_widget_config);
@@ -442,6 +453,21 @@ shell_config_load(const gchar *path)
                 config->toast_timeout_ms = (gint)json_object_get_int_member(notif_obj, "toast_timeout_ms");
             if (json_object_has_member(notif_obj, "max_notification_history"))
                 config->max_notification_history = (gint)json_object_get_int_member(notif_obj, "max_notification_history");
+            if (json_object_has_member(notif_obj, "toast_click_action")) {
+                JsonNode *n = json_object_get_member(notif_obj, "toast_click_action");
+                if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+                    const gchar *act = json_node_get_string(n);
+                    g_free(config->toast_click_action);
+                    config->toast_click_action = g_strdup(
+                        (g_strcmp0(act, "dismiss") == 0) ? "dismiss" : "focus");
+                }
+            }
+            if (json_object_has_member(notif_obj, "dnd_enabled")) {
+                JsonNode *n = json_object_get_member(notif_obj, "dnd_enabled");
+                if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
+                    config->dnd_enabled = json_node_get_boolean(n);
+                }
+            }
         }
     }
 
@@ -549,6 +575,65 @@ shell_config_load(const gchar *path)
         JsonNode *n = json_object_get_member(root, "files_show_inspector");
         if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
             config->files_show_inspector = json_node_get_boolean(n);
+        }
+    }
+
+    /* Kajo Mod settings */
+    if (json_object_has_member(root, "mod") &&
+        JSON_NODE_HOLDS_OBJECT(json_object_get_member(root, "mod"))) {
+        JsonObject *mod_obj = json_object_get_object_member(root, "mod");
+        if (json_object_has_member(mod_obj, "filter_mode")) {
+            JsonNode *n = json_object_get_member(mod_obj, "filter_mode");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+                g_free(config->mod_filter_mode);
+                config->mod_filter_mode = g_strdup(json_node_get_string(n));
+            }
+        }
+        if (json_object_has_member(mod_obj, "led_mode")) {
+            JsonNode *n = json_object_get_member(mod_obj, "led_mode");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+                g_free(config->mod_led_mode);
+                config->mod_led_mode = g_strdup(json_node_get_string(n));
+            }
+        }
+        if (json_object_has_member(mod_obj, "sid_model")) {
+            JsonNode *n = json_object_get_member(mod_obj, "sid_model");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+                g_free(config->mod_sid_model);
+                config->mod_sid_model = g_strdup(json_node_get_string(n));
+            }
+        }
+        if (json_object_has_member(mod_obj, "stereo_sep_pct")) {
+            JsonNode *n = json_object_get_member(mod_obj, "stereo_sep_pct");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_INT64) {
+                config->mod_stereo_sep_pct = CLAMP((gint)json_node_get_int(n), 0, 100);
+            }
+        }
+        if (json_object_has_member(mod_obj, "end_action")) {
+            JsonNode *n = json_object_get_member(mod_obj, "end_action");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+                g_free(config->mod_end_action);
+                config->mod_end_action = g_strdup(json_node_get_string(n));
+            }
+        }
+        if (json_object_has_member(mod_obj, "hvsc_path")) {
+            JsonNode *n = json_object_get_member(mod_obj, "hvsc_path");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_STRING) {
+                g_free(config->mod_hvsc_path);
+                config->mod_hvsc_path = g_strdup(json_node_get_string(n));
+            }
+        }
+        if (json_object_has_member(mod_obj, "uade_timeout_sec")) {
+            JsonNode *n = json_object_get_member(mod_obj, "uade_timeout_sec");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_INT64) {
+                config->mod_uade_timeout_sec = CLAMP((gint)json_node_get_int(n), 60, 600);
+            }
+        }
+        if (json_object_has_member(mod_obj, "auto_extract_archives")) {
+            JsonNode *n = json_object_get_member(mod_obj, "auto_extract_archives");
+            if (JSON_NODE_HOLDS_VALUE(n) && json_node_get_value_type(n) == G_TYPE_BOOLEAN) {
+                config->mod_auto_extract_archives = json_node_get_boolean(n);
+            }
         }
     }
 
@@ -745,6 +830,12 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_int_value(builder, config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
     json_builder_set_member_name(builder, "max_notification_history");
     json_builder_add_int_value(builder, config->max_notification_history > 0 ? config->max_notification_history : 50);
+    json_builder_set_member_name(builder, "toast_click_action");
+    json_builder_add_string_value(builder,
+        (config->toast_click_action && g_strcmp0(config->toast_click_action, "dismiss") == 0)
+            ? "dismiss" : "focus");
+    json_builder_set_member_name(builder, "dnd_enabled");
+    json_builder_add_boolean_value(builder, config->dnd_enabled);
     json_builder_end_object(builder);
 
     /* Idle & Screen Lock object */
@@ -801,10 +892,10 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_int_value(builder, config->launcher_max_height > 0 ? config->launcher_max_height : 320);
 
     json_builder_set_member_name(builder, "settings_width");
-    json_builder_add_int_value(builder, config->settings_width > 0 ? config->settings_width : 960);
+    json_builder_add_int_value(builder, config->settings_width > 0 ? config->settings_width : 814);
 
     json_builder_set_member_name(builder, "settings_height");
-    json_builder_add_int_value(builder, config->settings_height > 0 ? config->settings_height : 640);
+    json_builder_add_int_value(builder, config->settings_height > 0 ? config->settings_height : 680);
 
     json_builder_set_member_name(builder, "settings_transition_ms");
     json_builder_add_int_value(builder, config->settings_transition_ms > 0 ? config->settings_transition_ms : 150);
@@ -862,6 +953,27 @@ shell_config_save(ShellConfig *config, const gchar *path)
     json_builder_add_boolean_value(builder, config->files_show_hidden);
     json_builder_set_member_name(builder, "files_show_inspector");
     json_builder_add_boolean_value(builder, config->files_show_inspector);
+
+    /* Kajo Mod settings object */
+    json_builder_set_member_name(builder, "mod");
+    json_builder_begin_object(builder);
+    json_builder_set_member_name(builder, "filter_mode");
+    json_builder_add_string_value(builder, config->mod_filter_mode ? config->mod_filter_mode : "a500");
+    json_builder_set_member_name(builder, "led_mode");
+    json_builder_add_string_value(builder, config->mod_led_mode ? config->mod_led_mode : "auto");
+    json_builder_set_member_name(builder, "sid_model");
+    json_builder_add_string_value(builder, config->mod_sid_model ? config->mod_sid_model : "auto");
+    json_builder_set_member_name(builder, "stereo_sep_pct");
+    json_builder_add_int_value(builder, CLAMP(config->mod_stereo_sep_pct, 0, 100));
+    json_builder_set_member_name(builder, "end_action");
+    json_builder_add_string_value(builder, config->mod_end_action ? config->mod_end_action : "next-sub");
+    json_builder_set_member_name(builder, "hvsc_path");
+    json_builder_add_string_value(builder, config->mod_hvsc_path ? config->mod_hvsc_path : "");
+    json_builder_set_member_name(builder, "uade_timeout_sec");
+    json_builder_add_int_value(builder, config->mod_uade_timeout_sec > 0 ? CLAMP(config->mod_uade_timeout_sec, 60, 600) : 180);
+    json_builder_set_member_name(builder, "auto_extract_archives");
+    json_builder_add_boolean_value(builder, config->mod_auto_extract_archives);
+    json_builder_end_object(builder);
 
     /* Layout settings serialization */
     json_builder_set_member_name(builder, "layout");
@@ -935,12 +1047,18 @@ shell_config_destroy(ShellConfig *config)
     g_free(config->touch_swipe_right);
     g_free(config->touch_swipe_horizontal);
     g_free(config->osk_auto_show_mode);
+    g_free(config->toast_click_action);
     g_free(config->accent_color);
     g_free(config->screensaver_mode);
     g_free(config->ide_color_scheme);
     g_free(config->ide_font_family);
     g_free(config->files_view_mode);
     g_free(config->files_sort_field);
+    g_free(config->mod_filter_mode);
+    g_free(config->mod_led_mode);
+    g_free(config->mod_sid_model);
+    g_free(config->mod_end_action);
+    g_free(config->mod_hvsc_path);
     if (config->layout_left) g_ptr_array_free(config->layout_left, TRUE);
     if (config->layout_center) g_ptr_array_free(config->layout_center, TRUE);
     if (config->layout_right) g_ptr_array_free(config->layout_right, TRUE);

@@ -2,6 +2,7 @@
 #include "mod_engine.h"
 #include "mod_audio.h"
 #include "mod_playlist.h"
+#include "../config.h"
 #include "../compositor/compositor.h"
 #include <string.h>
 
@@ -49,13 +50,16 @@ struct _KajoModWindow {
     gboolean   playing;
 
     /* DSP Strip */
-    GtkWidget *grp_filter;
-    GtkWidget *grp_led;
-    GtkWidget *grp_sid;
-    GtkWidget *grp_tempo;
-    GtkWidget *lbl_sep_readout;
-    GtkWidget *lbl_tempo_readout;
-    GtkWidget *scale_tempo;
+    GtkWidget    *loop_seg;
+    GtkWidget    *grp_filter;
+    GtkWidget    *grp_led;
+    GtkWidget    *grp_sid;
+    GtkWidget    *grp_tempo;
+    GtkWidget    *scale_sep;
+    GtkWidget    *lbl_sep_readout;
+    GtkWidget    *lbl_tempo_readout;
+    GtkWidget    *scale_tempo;
+    GFileMonitor *cfg_monitor;
 
     /* Voice Header & Scope/FFT */
     GtkWidget *ch_grid;
@@ -124,6 +128,124 @@ weak_ref_free(GWeakRef *wr)
     if (!wr) return;
     g_weak_ref_clear(wr);
     g_free(wr);
+}
+
+static void
+weak_ref_closure_free(gpointer data, GClosure *closure G_GNUC_UNUSED)
+{
+    weak_ref_free((GWeakRef *)data);
+}
+
+static void
+set_seg_box_active_index(GtkWidget *seg_box, int active_idx)
+{
+    if (!seg_box) return;
+    int idx = 0;
+    for (GtkWidget *c = gtk_widget_get_first_child(seg_box);
+         c != NULL;
+         c = gtk_widget_get_next_sibling(c)) {
+        if (!GTK_IS_BUTTON(c))
+            continue;
+        if (idx == active_idx)
+            gtk_widget_add_css_class(c, "active");
+        else
+            gtk_widget_remove_css_class(c, "active");
+        idx++;
+    }
+}
+
+static void
+set_dsp_grp_active_index(GtkWidget *dsp_grp, int active_idx)
+{
+    if (!dsp_grp) return;
+    GtkWidget *first = gtk_widget_get_first_child(dsp_grp);
+    GtkWidget *seg_box = first ? gtk_widget_get_next_sibling(first) : NULL;
+    set_seg_box_active_index(seg_box, active_idx);
+}
+
+static void
+apply_shell_config_to_mod(KajoModWindow *self, gboolean sync_controls)
+{
+    if (!self) return;
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg) return;
+
+    kajo_mod_set_runtime_prefs(
+        (double)CLAMP(cfg->mod_uade_timeout_sec, 60, 600),
+        cfg->mod_hvsc_path,
+        cfg->mod_auto_extract_archives);
+
+    if (cfg->mod_filter_mode) {
+        if (g_ascii_strcasecmp(cfg->mod_filter_mode, "a1200") == 0)
+            self->dsp.filter_mode = KAJO_MOD_FILTER_A1200;
+        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "near") == 0)
+            self->dsp.filter_mode = KAJO_MOD_FILTER_NEAR;
+        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "linear") == 0 ||
+                 g_ascii_strcasecmp(cfg->mod_filter_mode, "lin") == 0)
+            self->dsp.filter_mode = KAJO_MOD_FILTER_LINEAR;
+        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "sinc") == 0)
+            self->dsp.filter_mode = KAJO_MOD_FILTER_SINC;
+        else
+            self->dsp.filter_mode = KAJO_MOD_FILTER_A500;
+    }
+
+    if (cfg->mod_led_mode) {
+        if (g_ascii_strcasecmp(cfg->mod_led_mode, "on") == 0)
+            self->dsp.led_mode = KAJO_MOD_LED_ON;
+        else if (g_ascii_strcasecmp(cfg->mod_led_mode, "off") == 0)
+            self->dsp.led_mode = KAJO_MOD_LED_OFF;
+        else
+            self->dsp.led_mode = KAJO_MOD_LED_AUTO;
+    }
+
+    if (cfg->mod_sid_model) {
+        if (g_ascii_strcasecmp(cfg->mod_sid_model, "6581") == 0)
+            self->dsp.sid_model = KAJO_MOD_SID_6581;
+        else if (g_ascii_strcasecmp(cfg->mod_sid_model, "8580") == 0)
+            self->dsp.sid_model = KAJO_MOD_SID_8580;
+        else
+            self->dsp.sid_model = KAJO_MOD_SID_AUTO;
+    }
+
+    if (cfg->mod_end_action) {
+        if (g_ascii_strcasecmp(cfg->mod_end_action, "loop") == 0)
+            self->dsp.end_action = KAJO_MOD_END_LOOP;
+        else if (g_ascii_strcasecmp(cfg->mod_end_action, "next-mod") == 0)
+            self->dsp.end_action = KAJO_MOD_END_NEXT_MOD;
+        else
+            self->dsp.end_action = KAJO_MOD_END_NEXT_SUB;
+    }
+
+    self->dsp.stereo_sep_pct = (double)CLAMP(cfg->mod_stereo_sep_pct, 0, 100);
+    shell_config_destroy(cfg);
+
+    if (sync_controls) {
+        set_seg_box_active_index(self->loop_seg, (int)self->dsp.end_action);
+        set_dsp_grp_active_index(self->grp_filter, (int)self->dsp.filter_mode);
+        set_dsp_grp_active_index(self->grp_led, (int)self->dsp.led_mode);
+        set_dsp_grp_active_index(self->grp_sid, (int)self->dsp.sid_model);
+        if (self->scale_sep)
+            gtk_range_set_value(GTK_RANGE(self->scale_sep), self->dsp.stereo_sep_pct);
+        if (self->audio)
+            kajo_mod_audio_apply_dsp(self->audio, &self->dsp);
+    }
+}
+
+static void
+on_mod_config_file_changed(GFileMonitor      *monitor G_GNUC_UNUSED,
+                           GFile             *file G_GNUC_UNUSED,
+                           GFile             *other_file G_GNUC_UNUSED,
+                           GFileMonitorEvent  event_type,
+                           gpointer           user_data)
+{
+    if (event_type != G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT &&
+        event_type != G_FILE_MONITOR_EVENT_CREATED) {
+        return;
+    }
+    GWeakRef *wr = (GWeakRef *)user_data;
+    g_autoptr(KajoModWindow) self = g_weak_ref_get(wr);
+    if (!self) return;
+    apply_shell_config_to_mod(self, TRUE);
 }
 
 static void activate_playlist_index(KajoModWindow *self, int idx);
@@ -1054,7 +1176,8 @@ append_telemetry_and_transport(KajoModWindow *self, GtkWidget *top_vbox)
     gtk_box_append(GTK_BOX(btn_cluster), create_nav_button("⏭", G_CALLBACK(on_next_track_clicked), self));
 
     static const char *const k_loop_labels[] = { "ADVANCE", "LOOP", "FADE" };
-    GtkWidget *loop_seg = build_segmented_group(self, 0, k_loop_labels, 3, 0);
+    GtkWidget *loop_seg = build_segmented_group(self, 0, k_loop_labels, 3, (int)self->dsp.end_action);
+    self->loop_seg = loop_seg;
     GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_hexpand(spacer, TRUE);
 
@@ -1096,9 +1219,9 @@ build_top_fixed_zones(KajoModWindow *self)
     static const char *const k_flt_labels[] = { "A500", "A1200", "NEAR", "LIN", "SINC" };
     static const char *const k_led_labels[] = { "AUTO", "ON", "OFF" };
     static const char *const k_sid_labels[] = { "AUTO", "6581", "8580" };
-    self->grp_filter = create_dsp_seg_group(self, "FLT:", 1, k_flt_labels, 5, 0);
-    self->grp_led    = create_dsp_seg_group(self, "LED:", 2, k_led_labels, 3, 0);
-    self->grp_sid    = create_dsp_seg_group(self, "SID:", 3, k_sid_labels, 3, 0);
+    self->grp_filter = create_dsp_seg_group(self, "FLT:", 1, k_flt_labels, 5, (int)self->dsp.filter_mode);
+    self->grp_led    = create_dsp_seg_group(self, "LED:", 2, k_led_labels, 3, (int)self->dsp.led_mode);
+    self->grp_sid    = create_dsp_seg_group(self, "SID:", 3, k_sid_labels, 3, (int)self->dsp.sid_model);
     gtk_box_append(GTK_BOX(dsp_row1), self->grp_filter);
     gtk_box_append(GTK_BOX(dsp_row1), self->grp_led);
     gtk_box_append(GTK_BOX(dsp_row1), self->grp_sid);
@@ -1112,10 +1235,14 @@ build_top_fixed_zones(KajoModWindow *self)
     gtk_widget_add_css_class(box_sep, "mod-dsp-group");
     GtkWidget *lbl_sep = gtk_label_new("SEP:");
     gtk_widget_add_css_class(lbl_sep, "mod-dsp-label");
-    GtkWidget *scale_sep = create_scale_widget(0.0, 100.0, 65.0, "player-volume-scale", 40,
+    int init_sep = CLAMP((int)self->dsp.stereo_sep_pct, 0, 100);
+    GtkWidget *scale_sep = create_scale_widget(0.0, 100.0, (double)init_sep, "player-volume-scale", 40,
                                                G_CALLBACK(on_sep_changed), self);
+    self->scale_sep = scale_sep;
     gtk_widget_set_hexpand(scale_sep, TRUE);
-    self->lbl_sep_readout = gtk_label_new("65% (AMIGA)");
+    const char *sep_tag = (init_sep == 0) ? "(MONO)" : (init_sep <= 70 ? "(AMIGA)" : "(WIDE)");
+    g_autofree gchar *init_sep_txt = g_strdup_printf("%d%% %s", init_sep, sep_tag);
+    self->lbl_sep_readout = gtk_label_new(init_sep_txt);
     gtk_widget_add_css_class(self->lbl_sep_readout, "mod-counter-val");
     gtk_widget_add_css_class(self->lbl_sep_readout, "accent");
     gtk_box_append(GTK_BOX(box_sep), lbl_sep);
@@ -1384,6 +1511,10 @@ kajo_mod_window_dispose(GObject *object)
         g_source_remove(self->tick_id);
         self->tick_id = 0;
     }
+    if (self->cfg_monitor) {
+        g_file_monitor_cancel(self->cfg_monitor);
+        g_clear_object(&self->cfg_monitor);
+    }
     g_clear_pointer(&self->audio, kajo_mod_audio_free);
     g_clear_pointer(&self->playlist, kajo_mod_playlist_free);
     G_OBJECT_CLASS(kajo_mod_window_parent_class)->dispose(object);
@@ -1393,6 +1524,7 @@ static void
 kajo_mod_window_init(KajoModWindow *self)
 {
     kajo_mod_dsp_config_init(&self->dsp);
+    apply_shell_config_to_mod(self, FALSE);
     self->audio           = kajo_mod_audio_new();
     self->playlist        = kajo_mod_playlist_new();
     self->active_pl_index = -1;
@@ -1400,6 +1532,15 @@ kajo_mod_window_init(KajoModWindow *self)
     self->sub_max         = 0;
     self->playing         = FALSE;
     self->sim_col_width   = 0;
+
+    g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+    g_autoptr(GFile) cfg_file = g_file_new_for_path(cfg_path);
+    self->cfg_monitor = g_file_monitor_file(cfg_file, G_FILE_MONITOR_NONE, NULL, NULL);
+    if (self->cfg_monitor) {
+        g_signal_connect_data(self->cfg_monitor, "changed",
+                              G_CALLBACK(on_mod_config_file_changed),
+                              weak_ref_new(self), weak_ref_closure_free, 0);
+    }
 
     gtk_window_set_decorated(GTK_WINDOW(self), FALSE);
     gtk_window_set_title(GTK_WINDOW(self), "Kajo Mod");

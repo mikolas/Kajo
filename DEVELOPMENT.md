@@ -112,11 +112,11 @@ src/
 │   └── mod_audio.h/c               libpulse 48 kHz S16LE synthesis worker thread, 512-pt Radix-2 FFT, stereo crossfeed & fade
 ├── settings/
 │   ├── main.c                      kajo-settings standalone entry point (org.kajo.Settings)
-│   ├── settings_window.h/c         Settings container shell, category sidebar & GtkStack
-│   ├── settings_common.h/c         Shared Metro card, tile, dropdown & IPC helpers
+│   ├── settings_window.h/c         Responsive 3-tier Niri column shell, icon-rail/sidebar & GtkStack
+│   ├── settings_common.h/c         Shared Metro card, bento grid, tile, dropdown & IPC helpers
 │   └── pages/
-│       └── page_*.c                11 modular preference pages (displays, network, bluetooth,
-│                                   audio, theme, panel, widgets, notifications, ide, niri, about)
+│       └── page_*.c                12 modular preference pages (displays, network, bluetooth,
+│                                   audio, theme, panel, widgets, notifications, ide, mod, niri, about)
 ├── vendor/
 │   └── tinyexpr/                   TinyExpr recursive-descent math expression evaluator
 └── widgets/

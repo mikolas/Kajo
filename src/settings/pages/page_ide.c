@@ -6,6 +6,7 @@
 typedef struct {
     const char *id;
     const char *name;
+    const char *short_badge;
     const char *subtitle;
     const char *bg_hex;
     const char *kw_hex;
@@ -17,42 +18,49 @@ static const IdeSchemePreset IDE_SCHEMES[] = {
     {
         "kajo-metro-dark",
         "Kajo Metro Dark",
+        "METRO DARK",
         "#101010 • Aero+Metro High-Contrast Default",
         "#101010", "#569cd6", "#dcdcaa", "#ce9178"
     },
     {
         "kajo-oled-pitch",
         "OLED Pitch Black",
+        "OLED PITCH",
         "#050505 • Zero-Black Neon Telemetry Tokens",
         "#050505", "#00d8f0", "#ffe66d", "#ff9e64"
     },
     {
         "kajo-monokai-metro",
         "Monokai Metro",
+        "MONOKAI",
         "#121212 • Warm Monokai Pro Token Palette",
         "#121212", "#ff6188", "#a9dc76", "#ffd866"
     },
     {
         "kajo-nord-frost",
         "Nord Frost",
+        "NORD FROST",
         "#14171d • Arctic Slate & Ice Blue Syntax",
         "#14171d", "#81a1c1", "#88c0d0", "#a3be8c"
     },
     {
         "kajo-amber-crt",
         "Amber Phosphor CRT",
+        "AMBER CRT",
         "#0c0900 • Retro Monochrome Gold Terminal",
         "#0c0900", "#ffd700", "#ffe066", "#ff8000"
     },
     {
         "Adwaita-dark",
         "System Adwaita Dark",
+        "ADWAITA",
         "#1e1e1e • Standard GtkSourceView 5 Dark",
         "#1e1e1e", "#78aeed", "#f9f06b", "#8ff0a4"
     }
 };
 
-#define N_IDE_SCHEMES (sizeof(IDE_SCHEMES) / sizeof(IDE_SCHEMES[0]))
+#define N_IDE_SCHEMES      (sizeof(IDE_SCHEMES) / sizeof(IDE_SCHEMES[0]))
+#define N_PREVIEW_LINES    5
 
 static const char *const IDE_FONT_FAMILIES[] = {
     "Fira Code",
@@ -66,120 +74,310 @@ static const char *const IDE_FONT_FAMILIES[] = {
 
 static const char *const IDE_TAB_LABELS[] = { "2", "4", "8", NULL };
 
-typedef struct {
+typedef struct _SettingsPageIde {
+    GtkBox parent_instance;
+
     GtkWidget      *scheme_buttons[N_IDE_SCHEMES];
     GtkCssProvider *scheme_providers[N_IDE_SCHEMES];
-    GtkWidget      *preview_label;
+    GtkCssProvider *preview_bg_provider;
+    GtkWidget      *preview_box;
+    GtkWidget      *preview_lines[N_PREVIEW_LINES];
+
     GtkWidget      *combo_font;
     GtkWidget      *scale_font_size;
-    GtkWidget      *lbl_font_size_val;
     GtkWidget      *seg_tab_width;   /* segmented: 2 | 4 | 8 */
+    GtkWidget      *sw_spaces;
     GtkWidget      *sw_word_wrap;
     GtkWidget      *sw_margin_guide;
-    GtkWidget      *sw_spaces;
     GtkWidget      *sw_minimap;
     GtkWidget      *sw_gutter;
     GtkWidget      *sw_cur_line;
-    GtkWidget      *btn_save;
-    GtkWidget      *btn_revert;
-    GtkWidget      *lbl_state;
+
     guint           current_scheme_idx;
+    guint           saved_scheme_idx;
+    guint           saved_font_idx;
+    int             saved_font_px;
+    guint           saved_tab_idx;
+    gboolean        saved_spaces;
+    gboolean        saved_wrap;
+    gboolean        saved_margin;
+    gboolean        saved_minimap;
+    gboolean        saved_gutter;
+    gboolean        saved_cur_line;
+
     gboolean        syncing_ui;
-    gboolean        dirty;      /* edited but not yet written to config.json */
-} IdeSettingsState;
+} SettingsPageIde;
+
+typedef struct _SettingsPageIdeClass {
+    GtkBoxClass parent_class;
+} SettingsPageIdeClass;
+
+G_DEFINE_TYPE(SettingsPageIde, settings_page_ide, GTK_TYPE_BOX)
 
 static void
-ide_settings_state_free(gpointer data)
+update_code_preview_markup(SettingsPageIde *self)
 {
-    IdeSettingsState *st = data;
-    if (!st) return;
-    GdkDisplay *display = gdk_display_get_default();
-    for (size_t i = 0; i < N_IDE_SCHEMES; i++) {
-        if (st->scheme_providers[i]) {
-            if (display) {
-                gtk_style_context_remove_provider_for_display(
-                    display, GTK_STYLE_PROVIDER(st->scheme_providers[i]));
-            }
-            g_clear_object(&st->scheme_providers[i]);
-        }
-    }
-    g_free(st);
-}
+    if (!self || !self->preview_lines[0])
+        return;
 
-static void
-update_code_preview_markup(IdeSettingsState *st)
-{
-    if (!st || !st->preview_label) return;
-    guint idx = st->current_scheme_idx < N_IDE_SCHEMES ? st->current_scheme_idx : 0;
+    guint idx = self->current_scheme_idx < N_IDE_SCHEMES ? self->current_scheme_idx : 0;
     const IdeSchemePreset *s = &IDE_SCHEMES[idx];
-    guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(st->combo_font));
+    guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_font));
     const char *font_fam = (f_idx < 6 && IDE_FONT_FAMILIES[f_idx]) ? IDE_FONT_FAMILIES[f_idx] : "Fira Code";
-    int font_px = (int)gtk_range_get_value(GTK_RANGE(st->scale_font_size));
-    if (font_px < 9 || font_px > 28) font_px = 13;
+    int font_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_font_size));
+    if (font_px < 9 || font_px > 28)
+        font_px = 13;
+
+    if (self->preview_bg_provider) {
+        g_autofree gchar *bg_css = g_strdup_printf(
+            "window.shell-settings-app .ide-live-preview-box { background-color: %s; border-left-color: %s; }",
+            s->bg_hex, s->kw_hex);
+        gtk_css_provider_load_from_string(self->preview_bg_provider, bg_css);
+    }
 
     /* Same family stack as the editor CSS, so a missing font falls back to the
      * same face (Fira Code / FiraCode Nerd Font / monospace) instead of the
      * proportional UI font. */
     g_autofree char *font_stack = shell_ide_font_stack(font_fam);
-    g_autofree char *markup = g_strdup_printf(
+    /* The IDE sizes its editor in CSS px, but Pango's `size` is in points
+     * (1/1024 pt): 1 px = 0.75 pt at GTK's 96 dpi. Without this conversion
+     * the preview rendered ~33% larger than the real editor. */
+    int pango_sz = (font_px * 3 * PANGO_SCALE) / 4;
+
+    g_autofree char *l0 = g_strdup_printf(
+        "<span font_family=\"%s\" size=\"%d\" foreground=\"#6a9955\" style=\"italic\">"
+        "/* Live Preview (%s • %dpx) */</span>",
+        font_stack, pango_sz, s->name, font_px);
+    g_autofree char *l1 = g_strdup_printf(
         "<span font_family=\"%s\" size=\"%d\">"
-        "<span foreground=\"#6a9955\" style=\"italic\">/* Live Scheme &amp; Font Preview (%s • %dpx) */</span>\n"
         "<span foreground=\"%s\" weight=\"bold\">static gboolean</span> "
-        "<span foreground=\"%s\">kajo_ide_activate</span>(<span foreground=\"#4ec9b0\">KajoIdeWindow</span> *self)\n"
-        "{\n"
-        "  <span foreground=\"%s\">ide_status_notify</span>(self, <span foreground=\"%s\">\"SCHEME: %s\"</span>);\n"
-        "  <span foreground=\"%s\" weight=\"bold\">return</span> <span foreground=\"%s\" weight=\"bold\">TRUE</span>;\n"
-        "}</span>",
-        /* The IDE sizes its editor in CSS px, but Pango's `size` is in points
-         * (1/1024 pt): 1 px = 0.75 pt at GTK's 96 dpi. Without this conversion
-         * the preview rendered ~33% larger than the real editor. */
-        font_stack, (font_px * 3 * PANGO_SCALE) / 4,
-        s->name, font_px,
-        s->kw_hex, s->fn_hex, s->fn_hex, s->str_hex, s->id, s->kw_hex, s->kw_hex);
+        "<span foreground=\"%s\">kajo_ide_activate</span>(<span foreground=\"#4ec9b0\">KajoIdeWindow</span> *self) {"
+        "</span>",
+        font_stack, pango_sz, s->kw_hex, s->fn_hex);
+    g_autofree char *l2 = g_strdup_printf(
+        "<span font_family=\"%s\" size=\"%d\">"
+        "  <span foreground=\"%s\">ide_status_notify</span>(self, <span foreground=\"%s\">\"SCHEME: %s\"</span>);"
+        "</span>",
+        font_stack, pango_sz, s->fn_hex, s->str_hex, s->id);
+    g_autofree char *l3 = g_strdup_printf(
+        "<span font_family=\"%s\" size=\"%d\">"
+        "  <span foreground=\"%s\" weight=\"bold\">return</span> "
+        "<span foreground=\"%s\" weight=\"bold\">TRUE</span>;"
+        "</span>",
+        font_stack, pango_sz, s->kw_hex, s->kw_hex);
+    g_autofree char *l4 = g_strdup_printf(
+        "<span font_family=\"%s\" size=\"%d\">}</span>",
+        font_stack, pango_sz);
 
-    gtk_label_set_markup(GTK_LABEL(st->preview_label), markup);
+    gtk_label_set_markup(GTK_LABEL(self->preview_lines[0]), l0);
+    gtk_label_set_markup(GTK_LABEL(self->preview_lines[1]), l1);
+    gtk_label_set_markup(GTK_LABEL(self->preview_lines[2]), l2);
+    gtk_label_set_markup(GTK_LABEL(self->preview_lines[3]), l3);
+    gtk_label_set_markup(GTK_LABEL(self->preview_lines[4]), l4);
 }
 
-/* Reflects the saved/unsaved state in the footer. Edits only change the live
- * preview; nothing is written to config.json until SAVE & APPLY is pressed. */
-static void
-ide_settings_set_dirty(IdeSettingsState *st, gboolean dirty)
+static gboolean
+compute_ide_dirty(SettingsPageIde *self)
 {
-    if (!st) return;
-    st->dirty = dirty;
-    if (!st->lbl_state) return;
+    guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_font));
+    int font_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_font_size));
+    guint t_idx = segmented_group_get_selected(self->seg_tab_width);
 
-    gtk_label_set_text(GTK_LABEL(st->lbl_state),
-                       dirty ? "● UNSAVED CHANGES — PREVIEW ONLY" : "✓ ALL CHANGES SAVED");
-    gtk_widget_remove_css_class(st->lbl_state, dirty ? "success" : "accent");
-    gtk_widget_add_css_class(st->lbl_state, dirty ? "accent" : "success");
-    gtk_widget_set_sensitive(st->btn_save, dirty);
-    gtk_widget_set_sensitive(st->btn_revert, dirty);
-    gtk_button_set_label(GTK_BUTTON(st->btn_save), "[ ✓ SAVE & APPLY ]");
+    if (self->current_scheme_idx != self->saved_scheme_idx) return TRUE;
+    if (f_idx != self->saved_font_idx) return TRUE;
+    if (font_px != self->saved_font_px) return TRUE;
+    if (t_idx != self->saved_tab_idx) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_spaces)) != self->saved_spaces) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap)) != self->saved_wrap) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide)) != self->saved_margin) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_minimap)) != self->saved_minimap) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_gutter)) != self->saved_gutter) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line)) != self->saved_cur_line) return TRUE;
+    return FALSE;
 }
 
-/* Called by every editable control: refresh the preview and flag unsaved edits. */
 static void
-ide_settings_mark_changed(IdeSettingsState *st)
+update_ide_telemetry_and_dirty(SettingsPageIde *self)
 {
-    if (!st || st->syncing_ui) return;
-    update_code_preview_markup(st);
-    ide_settings_set_dirty(st, TRUE);
+    if (!self)
+        return;
+
+    guint s_idx = self->current_scheme_idx < N_IDE_SCHEMES ? self->current_scheme_idx : 0;
+    guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_font));
+    const char *font_fam = (f_idx < 6 && IDE_FONT_FAMILIES[f_idx]) ? IDE_FONT_FAMILIES[f_idx] : "Fira Code";
+    int font_px = CLAMP((int)gtk_range_get_value(GTK_RANGE(self->scale_font_size)), 9, 28);
+    guint t_idx = segmented_group_get_selected(self->seg_tab_width);
+    int tab_w = (t_idx == 1) ? 4 : ((t_idx == 2) ? 8 : 2);
+    gboolean spaces = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
+    gboolean gutter = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+
+    g_autofree gchar *up_font = g_ascii_strup(font_fam, -1);
+    g_autofree gchar *c2 = g_strdup_printf("%s %dPX", up_font, font_px);
+    g_autofree gchar *c3 = g_strdup_printf("%d %s", tab_w, spaces ? "SPACES" : "TABS");
+
+    settings_page_set_counter(GTK_WIDGET(self), 0, "SCHEME", IDE_SCHEMES[s_idx].short_badge, "accent");
+    settings_page_set_counter(GTK_WIDGET(self), 1, "FONT", c2, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 2, "TAB WIDTH", c3, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 3, "GUTTER",
+                              gutter ? "6-COL CAIRO" : "HIDDEN",
+                              gutter ? "success" : NULL);
+
+    settings_page_set_nav_badge(GTK_WIDGET(self), "ide", "DARK", NULL);
+
+    /* Reflects the saved/unsaved state in the footer. Edits only change the live
+     * preview; nothing is written to config.json until SAVE & APPLY is pressed. */
+    settings_page_set_dirty(GTK_WIDGET(self), compute_ide_dirty(self));
+}
+
+static void
+select_ide_scheme(SettingsPageIde *self, guint idx, gboolean mark_changed)
+{
+    if (!self || idx >= N_IDE_SCHEMES)
+        return;
+    self->current_scheme_idx = idx;
+    for (size_t i = 0; i < N_IDE_SCHEMES; i++) {
+        if (!self->scheme_buttons[i])
+            continue;
+        if (i == idx)
+            gtk_widget_add_css_class(self->scheme_buttons[i], "active");
+        else
+            gtk_widget_remove_css_class(self->scheme_buttons[i], "active");
+    }
+    update_code_preview_markup(self);
+    if (mark_changed && !self->syncing_ui)
+        update_ide_telemetry_and_dirty(self);
+}
+
+static void
+on_scheme_card_clicked(GtkButton *btn, gpointer user_data)
+{
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "scheme-index"));
+    select_ide_scheme(self, idx, TRUE);
+}
+
+static void
+on_ide_control_changed(SettingsPageIde *self)
+{
+    if (!self || self->syncing_ui)
+        return;
+    update_code_preview_markup(self);
+    update_ide_telemetry_and_dirty(self);
+}
+
+static void
+on_ide_font_size_changed(GtkRange *range G_GNUC_UNUSED, gpointer user_data)
+{
+    on_ide_control_changed((SettingsPageIde *)user_data);
+}
+
+static void
+on_ide_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    on_ide_control_changed((SettingsPageIde *)user_data);
+}
+
+static void
+on_ide_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint selected G_GNUC_UNUSED, gpointer user_data)
+{
+    on_ide_control_changed((SettingsPageIde *)user_data);
+}
+
+static void
+on_ide_switch_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    on_ide_control_changed((SettingsPageIde *)user_data);
+}
+
+static void
+action_reset_ide_defaults(gpointer user_data)
+{
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    if (!self)
+        return;
+
+    self->syncing_ui = TRUE;
+    select_ide_scheme(self, 0, FALSE);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_font), 0);
+    gtk_range_set_value(GTK_RANGE(self->scale_font_size), 13.0);
+    segmented_group_set_selected(self->seg_tab_width, 0);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_spaces), TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_word_wrap), FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), TRUE);
+    self->syncing_ui = FALSE;
+
+    update_code_preview_markup(self);
+    update_ide_telemetry_and_dirty(self);
+}
+
+static void
+on_card_reset_typo_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    if (!self)
+        return;
+
+    self->syncing_ui = TRUE;
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_font), 0);
+    gtk_range_set_value(GTK_RANGE(self->scale_font_size), 13.0);
+    segmented_group_set_selected(self->seg_tab_width, 0);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_spaces), TRUE);
+    self->syncing_ui = FALSE;
+
+    update_code_preview_markup(self);
+    update_ide_telemetry_and_dirty(self);
+}
+
+/* Re-applies the saved config snapshot into the controls, discarding unsaved edits. */
+static void
+action_revert_ide(gpointer user_data)
+{
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    if (!self)
+        return;
+
+    self->syncing_ui = TRUE;
+    select_ide_scheme(self, self->saved_scheme_idx, FALSE);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_font), self->saved_font_idx);
+    gtk_range_set_value(GTK_RANGE(self->scale_font_size), self->saved_font_px);
+    segmented_group_set_selected(self->seg_tab_width, self->saved_tab_idx);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_spaces), self->saved_spaces);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_word_wrap), self->saved_wrap);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), self->saved_margin);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), self->saved_minimap);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), self->saved_gutter);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), self->saved_cur_line);
+    self->syncing_ui = FALSE;
+
+    update_code_preview_markup(self);
+    update_ide_telemetry_and_dirty(self);
 }
 
 /* Writes the current control values to config.json and reloads every running
  * Kajo process. Only called from the SAVE & APPLY button. */
 static void
-persist_ide_settings(IdeSettingsState *st)
+action_save_ide(gpointer user_data)
 {
-    if (!st || st->syncing_ui) return;
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    if (!self || self->syncing_ui)
+        return;
 
-    guint s_idx = st->current_scheme_idx < N_IDE_SCHEMES ? st->current_scheme_idx : 0;
-    guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(st->combo_font));
+    guint s_idx = self->current_scheme_idx < N_IDE_SCHEMES ? self->current_scheme_idx : 0;
+    guint f_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_font));
     const char *font_fam = (f_idx < 6 && IDE_FONT_FAMILIES[f_idx]) ? IDE_FONT_FAMILIES[f_idx] : "Fira Code";
-    int font_px = CLAMP((int)gtk_range_get_value(GTK_RANGE(st->scale_font_size)), 9, 28);
-    guint t_idx = segmented_group_get_selected(st->seg_tab_width);
+    int font_px = CLAMP((int)gtk_range_get_value(GTK_RANGE(self->scale_font_size)), 9, 28);
+    guint t_idx = segmented_group_get_selected(self->seg_tab_width);
     int tab_w = (t_idx == 1) ? 4 : ((t_idx == 2) ? 8 : 2);
+
+    gboolean spaces   = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
+    gboolean wrap     = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
+    gboolean margin   = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
+    gboolean minimap  = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
+    gboolean gutter   = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    gboolean cur_line = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
 
     ShellConfig *config = shell_config_load(NULL);
     if (!config)
@@ -191,12 +389,12 @@ persist_ide_settings(IdeSettingsState *st)
         config->ide_font_family = g_strdup(font_fam);
         config->ide_font_size_px = font_px;
         config->ide_tab_width = tab_w;
-        config->ide_show_minimap = gtk_switch_get_active(GTK_SWITCH(st->sw_minimap));
-        config->ide_show_line_numbers = gtk_switch_get_active(GTK_SWITCH(st->sw_gutter));
-        config->ide_highlight_current_line = gtk_switch_get_active(GTK_SWITCH(st->sw_cur_line));
-        config->ide_word_wrap = gtk_switch_get_active(GTK_SWITCH(st->sw_word_wrap));
-        config->ide_show_margin_guide = gtk_switch_get_active(GTK_SWITCH(st->sw_margin_guide));
-        config->ide_insert_spaces = gtk_switch_get_active(GTK_SWITCH(st->sw_spaces));
+        config->ide_show_minimap = minimap;
+        config->ide_show_line_numbers = gutter;
+        config->ide_highlight_current_line = cur_line;
+        config->ide_word_wrap = wrap;
+        config->ide_show_margin_guide = margin;
+        config->ide_insert_spaces = spaces;
 
         shell_theme_sync_from_config(config);
 
@@ -205,182 +403,122 @@ persist_ide_settings(IdeSettingsState *st)
         shell_config_destroy(config);
     }
 
+    self->saved_scheme_idx = s_idx;
+    self->saved_font_idx   = f_idx;
+    self->saved_font_px    = font_px;
+    self->saved_tab_idx    = t_idx;
+    self->saved_spaces     = spaces;
+    self->saved_wrap       = wrap;
+    self->saved_margin     = margin;
+    self->saved_minimap    = minimap;
+    self->saved_gutter     = gutter;
+    self->saved_cur_line   = cur_line;
+
     settings_reload_global_theme();
-    update_code_preview_markup(st);
-    ide_settings_set_dirty(st, FALSE);
-    if (st->btn_save)
-        gtk_button_set_label(GTK_BUTTON(st->btn_save), "[ ✓ SAVED & APPLIED ]");
+    settings_send_ipc_command("reload-config");
+    update_code_preview_markup(self);
+    update_ide_telemetry_and_dirty(self);
 }
 
 static void
-select_ide_scheme(IdeSettingsState *st, guint idx, gboolean persist)
+on_ide_page_mapped(GtkWidget *widget, gpointer user_data G_GNUC_UNUSED)
 {
-    if (!st || idx >= N_IDE_SCHEMES) return;
-    st->current_scheme_idx = idx;
+    update_ide_telemetry_and_dirty((SettingsPageIde *)widget);
+}
+
+static void
+settings_page_ide_dispose(GObject *object)
+{
+    SettingsPageIde *self = (SettingsPageIde *)object;
+    GdkDisplay *display = gdk_display_get_default();
+
     for (size_t i = 0; i < N_IDE_SCHEMES; i++) {
-        if (!st->scheme_buttons[i]) continue;
-        if (i == idx) {
-            gtk_widget_add_css_class(st->scheme_buttons[i], "active");
-        } else {
-            gtk_widget_remove_css_class(st->scheme_buttons[i], "active");
+        if (self->scheme_providers[i]) {
+            if (display) {
+                gtk_style_context_remove_provider_for_display(
+                    display, GTK_STYLE_PROVIDER(self->scheme_providers[i]));
+            }
+            g_clear_object(&self->scheme_providers[i]);
         }
     }
-    update_code_preview_markup(st);
-    if (persist) {
-        ide_settings_mark_changed(st);
+    if (self->preview_bg_provider) {
+        if (display) {
+            gtk_style_context_remove_provider_for_display(
+                display, GTK_STYLE_PROVIDER(self->preview_bg_provider));
+        }
+        g_clear_object(&self->preview_bg_provider);
     }
+
+    G_OBJECT_CLASS(settings_page_ide_parent_class)->dispose(object);
 }
 
 static void
-on_scheme_card_clicked(GtkButton *btn, gpointer user_data)
+settings_page_ide_init(SettingsPageIde *self)
 {
-    IdeSettingsState *st = user_data;
-    guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "scheme-index"));
-    select_ide_scheme(st, idx, TRUE);
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(self), GTK_ORIENTATION_VERTICAL);
+    gtk_box_set_spacing(GTK_BOX(self), 10);
+    gtk_widget_add_css_class(GTK_WIDGET(self), "settings-bento-canvas");
+    gtk_widget_set_hexpand(GTK_WIDGET(self), TRUE);
+    g_object_set_data(G_OBJECT(self), "is-bento-canvas", GINT_TO_POINTER(1));
 }
 
 static void
-on_ide_font_size_changed(GtkRange *range, gpointer user_data)
+settings_page_ide_class_init(SettingsPageIdeClass *klass)
 {
-    IdeSettingsState *st = user_data;
-    int px = (int)gtk_range_get_value(range);
-    g_autofree char *txt = g_strdup_printf("%dpx", px);
-    gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), txt);
-    ide_settings_mark_changed(st);
-}
-
-static void
-on_ide_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    IdeSettingsState *st = user_data;
-    ide_settings_mark_changed(st);
-}
-
-static void
-on_ide_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint selected G_GNUC_UNUSED, gpointer user_data)
-{
-    ide_settings_mark_changed(user_data);
-}
-
-static void
-on_ide_switch_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
-{
-    IdeSettingsState *st = user_data;
-    ide_settings_mark_changed(st);
-}
-
-static void
-on_reset_ide_font_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    IdeSettingsState *st = user_data;
-    st->syncing_ui = TRUE;
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_font), 0);
-    gtk_range_set_value(GTK_RANGE(st->scale_font_size), 13);
-    segmented_group_set_selected(st->seg_tab_width, 0);
-    gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), "13px");
-    st->syncing_ui = FALSE;
-    ide_settings_mark_changed(st); /* previews the defaults; saved only via SAVE & APPLY */
-}
-
-static void
-on_save_ide_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    persist_ide_settings(user_data);
-}
-
-/* Re-reads config.json into the controls, discarding unsaved edits. */
-static void
-on_revert_ide_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    IdeSettingsState *st = user_data;
-    ShellConfig *cfg = shell_config_load(NULL);
-
-    st->syncing_ui = TRUE;
-    guint scheme_idx = 0;
-    guint font_idx = 0;
-    guint tab_idx = 0;
-    int px = 13;
-    gboolean minimap = TRUE, gutter = TRUE, cur_line = TRUE;
-    gboolean wrap = FALSE, margin = FALSE, spaces = TRUE;
-    if (cfg) {
-        for (guint i = 0; i < N_IDE_SCHEMES; i++)
-            if (cfg->ide_color_scheme && g_ascii_strcasecmp(cfg->ide_color_scheme, IDE_SCHEMES[i].id) == 0)
-                scheme_idx = i;
-        for (guint i = 0; IDE_FONT_FAMILIES[i] != NULL; i++)
-            if (cfg->ide_font_family && g_ascii_strcasecmp(cfg->ide_font_family, IDE_FONT_FAMILIES[i]) == 0) {
-                font_idx = i;
-                break;
-            }
-        if (cfg->ide_tab_width == 4) tab_idx = 1;
-        else if (cfg->ide_tab_width == 8) tab_idx = 2;
-        if (cfg->ide_font_size_px >= 9 && cfg->ide_font_size_px <= 28) px = cfg->ide_font_size_px;
-        minimap = cfg->ide_show_minimap;
-        gutter = cfg->ide_show_line_numbers;
-        cur_line = cfg->ide_highlight_current_line;
-        wrap = cfg->ide_word_wrap;
-        margin = cfg->ide_show_margin_guide;
-        spaces = cfg->ide_insert_spaces;
-        shell_config_destroy(cfg);
-    }
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_font), font_idx);
-    segmented_group_set_selected(st->seg_tab_width, tab_idx);
-    gtk_range_set_value(GTK_RANGE(st->scale_font_size), px);
-    g_autofree char *px_txt = g_strdup_printf("%dpx", px);
-    gtk_label_set_text(GTK_LABEL(st->lbl_font_size_val), px_txt);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_minimap), minimap);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_gutter), gutter);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_cur_line), cur_line);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_word_wrap), wrap);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_margin_guide), margin);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_spaces), spaces);
-    select_ide_scheme(st, scheme_idx, FALSE);
-    st->syncing_ui = FALSE;
-
-    update_code_preview_markup(st);
-    ide_settings_set_dirty(st, FALSE);
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
+    object_class->dispose = settings_page_ide_dispose;
 }
 
 GtkWidget *
 build_page_ide(void)
 {
-    IdeSettingsState *st = g_new0(IdeSettingsState, 1);
-    st->syncing_ui = TRUE;
+    SettingsPageIde *self = g_object_new(settings_page_ide_get_type(), NULL);
+    self->syncing_ui = TRUE;
 
     ShellConfig *config = shell_config_load(NULL);
-    GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 14);
-    g_object_set_data_full(G_OBJECT(root), "ide-settings-state", st, ide_settings_state_free);
+    if (!config)
+        config = shell_config_get_default();
 
-    /* ─── SECTION 1: SYNTAX COLOR SCHEMES ─── */
-    GtkWidget *lbl_sec1 = gtk_label_new("SYNTAX COLOR SCHEME (GTKSOURCEVIEW 5)");
-    gtk_label_set_xalign(GTK_LABEL(lbl_sec1), 0.0f);
-    gtk_widget_add_css_class(lbl_sec1, "settings-section-title");
-    gtk_box_append(GTK_BOX(root), lbl_sec1);
+    GdkDisplay *display = gdk_display_get_default();
+
+    /* ─── Card 1: Editor Color Scheme (6 Presets) & Live Syntax Preview ─── */
+    GtkWidget *card_schemes = create_section_card(
+        SETTINGS_CARD_LEFT,
+        "1. EDITOR COLOR SCHEME",
+        "6 PRESETS",
+        "accent",
+        NULL);
 
     GtkWidget *grid = gtk_grid_new();
     gtk_grid_set_column_spacing(GTK_GRID(grid), 8);
     gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
     gtk_grid_set_column_homogeneous(GTK_GRID(grid), TRUE);
+    gtk_widget_set_hexpand(grid, TRUE);
 
     guint init_scheme_idx = 0;
-    const char *cfg_scheme = (config && config->ide_color_scheme) ? config->ide_color_scheme : "kajo-metro-dark";
+    const char *cfg_scheme = (config && config->ide_color_scheme)
+        ? config->ide_color_scheme
+        : "kajo-metro-dark";
 
     for (size_t i = 0; i < N_IDE_SCHEMES; i++) {
-        if (g_ascii_strcasecmp(cfg_scheme, IDE_SCHEMES[i].id) == 0) {
+        if (g_ascii_strcasecmp(cfg_scheme, IDE_SCHEMES[i].id) == 0)
             init_scheme_idx = (guint)i;
-        }
 
         GtkWidget *card = gtk_button_new();
         gtk_widget_add_css_class(card, "widget-row-card");
         gtk_widget_set_hexpand(card, TRUE);
+        gtk_widget_set_valign(card, GTK_ALIGN_CENTER);
+        gtk_widget_set_tooltip_text(card, IDE_SCHEMES[i].subtitle);
         g_object_set_data(G_OBJECT(card), "scheme-index", GUINT_TO_POINTER((guint)i));
-        st->scheme_buttons[i] = card;
+        self->scheme_buttons[i] = card;
 
-        GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+        GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
 
-        /* 4-band mini syntax swatch */
+        /* 3-band mini syntax swatch */
         GtkWidget *swatch = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-        gtk_widget_set_size_request(swatch, 34, 22);
+        gtk_widget_set_size_request(swatch, 24, 16);
+        gtk_widget_set_hexpand(swatch, FALSE);
         gtk_widget_set_valign(swatch, GTK_ALIGN_CENTER);
         g_autofree char *sw_cls = g_strdup_printf("ide-scheme-swatch-%zu", i);
         gtk_widget_add_css_class(swatch, sw_cls);
@@ -395,48 +533,70 @@ build_page_ide(void)
 
         GtkCssProvider *p = gtk_css_provider_new();
         gtk_css_provider_load_from_string(p, sw_css);
-        gtk_style_context_add_provider_for_display(
-            gdk_display_get_default(), GTK_STYLE_PROVIDER(p), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
-        st->scheme_providers[i] = p;
-
-        GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-        gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
-        gtk_widget_set_hexpand(vbox, TRUE);
+        if (display) {
+            gtk_style_context_add_provider_for_display(
+                display, GTK_STYLE_PROVIDER(p), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+        }
+        self->scheme_providers[i] = p;
 
         GtkWidget *name_lbl = gtk_label_new(IDE_SCHEMES[i].name);
-        gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
         gtk_widget_add_css_class(name_lbl, "row-title");
-
-        GtkWidget *sub_lbl = gtk_label_new(IDE_SCHEMES[i].subtitle);
-        gtk_label_set_xalign(GTK_LABEL(sub_lbl), 0.0f);
-        gtk_label_set_ellipsize(GTK_LABEL(sub_lbl), PANGO_ELLIPSIZE_END);
-        gtk_widget_add_css_class(sub_lbl, "row-subtitle");
-
-        gtk_box_append(GTK_BOX(vbox), name_lbl);
-        gtk_box_append(GTK_BOX(vbox), sub_lbl);
+        gtk_widget_set_hexpand(name_lbl, TRUE);
+        gtk_widget_set_halign(name_lbl, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(name_lbl, GTK_ALIGN_CENTER);
+        gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
+        gtk_label_set_width_chars(GTK_LABEL(name_lbl), 4);
 
         gtk_box_append(GTK_BOX(hbox), swatch);
-        gtk_box_append(GTK_BOX(hbox), vbox);
+        gtk_box_append(GTK_BOX(hbox), name_lbl);
         gtk_button_set_child(GTK_BUTTON(card), hbox);
 
-        g_signal_connect(card, "clicked", G_CALLBACK(on_scheme_card_clicked), st);
+        g_signal_connect(card, "clicked", G_CALLBACK(on_scheme_card_clicked), self);
         gtk_grid_attach(GTK_GRID(grid), card, (int)(i % 2), (int)(i / 2), 1, 1);
     }
-    gtk_box_append(GTK_BOX(root), grid);
+    gtk_box_append(GTK_BOX(card_schemes), grid);
 
-    /* Live Syntax & Font Preview Box */
-    st->preview_label = gtk_label_new(NULL);
-    gtk_label_set_xalign(GTK_LABEL(st->preview_label), 0.0f);
-    gtk_widget_add_css_class(st->preview_label, "code-preview-box");
-    gtk_box_append(GTK_BOX(root), st->preview_label);
+    /* Canonical .code-preview-box with 5 ellipsized Pango lines */
+    self->preview_bg_provider = gtk_css_provider_new();
+    if (display) {
+        gtk_style_context_add_provider_for_display(
+            display,
+            GTK_STYLE_PROVIDER(self->preview_bg_provider),
+            GTK_STYLE_PROVIDER_PRIORITY_USER);
+    }
 
-    /* ─── SECTION 2: EDITOR TYPOGRAPHY & INDENTATION ─── */
-    GtkWidget *lbl_sec2 = gtk_label_new("EDITOR TYPOGRAPHY & INDENTATION");
-    gtk_label_set_xalign(GTK_LABEL(lbl_sec2), 0.0f);
-    gtk_widget_add_css_class(lbl_sec2, "settings-section-title");
-    gtk_box_append(GTK_BOX(root), lbl_sec2);
+    self->preview_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_add_css_class(self->preview_box, "code-preview-box");
+    gtk_widget_add_css_class(self->preview_box, "ide-live-preview-box");
+    gtk_widget_set_hexpand(self->preview_box, TRUE);
 
-    st->combo_font = create_string_dropdown(IDE_FONT_FAMILIES);
+    for (size_t i = 0; i < N_PREVIEW_LINES; i++) {
+        GtkWidget *ln = gtk_label_new(NULL);
+        gtk_widget_set_hexpand(ln, TRUE);
+        gtk_widget_set_halign(ln, GTK_ALIGN_FILL);
+        gtk_label_set_xalign(GTK_LABEL(ln), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(ln), PANGO_ELLIPSIZE_END);
+        gtk_label_set_width_chars(GTK_LABEL(ln), 4);
+        self->preview_lines[i] = ln;
+        gtk_box_append(GTK_BOX(self->preview_box), ln);
+    }
+    gtk_box_append(GTK_BOX(card_schemes), self->preview_box);
+
+    /* ─── Card 2: Editor Typography & Indentation ─── */
+    GtkWidget *btn_card_reset = gtk_button_new_with_label("↺ DEFAULTS");
+    gtk_widget_add_css_class(btn_card_reset, "files-nav-btn");
+    gtk_widget_set_valign(btn_card_reset, GTK_ALIGN_CENTER);
+    g_signal_connect(btn_card_reset, "clicked", G_CALLBACK(on_card_reset_typo_clicked), self);
+
+    GtkWidget *card_typo = create_section_card(
+        SETTINGS_CARD_CENTER,
+        "2. TYPOGRAPHY & INDENTATION",
+        NULL,
+        NULL,
+        btn_card_reset);
+
+    self->combo_font = create_string_dropdown(IDE_FONT_FAMILIES);
     guint init_font_idx = 0;
     if (config && config->ide_font_family) {
         for (guint i = 0; IDE_FONT_FAMILIES[i] != NULL; i++) {
@@ -446,156 +606,138 @@ build_page_ide(void)
             }
         }
     }
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(st->combo_font), init_font_idx);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("preferences-desktop-font-symbolic",
-                                     "Monospace Font Family",
-                                     "Primary code canvas, gutter & tree font in kajo-ide",
-                                     st->combo_font));
-
-    /* Font size slider card */
-    GtkWidget *size_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-    gtk_widget_set_valign(size_box, GTK_ALIGN_CENTER);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_font), init_font_idx);
+    gtk_box_append(GTK_BOX(card_typo), create_boxed_row(
+        "🔤",
+        "Editor Monospace Font",
+        "Falls back via shell_ide_font_stack() in kajo-ide",
+        self->combo_font));
 
     int init_px = (config && config->ide_font_size_px >= 9 && config->ide_font_size_px <= 28)
-                      ? config->ide_font_size_px
-                      : 13;
-    st->scale_font_size = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, 10.0, 24.0, 1.0);
-    gtk_scale_set_draw_value(GTK_SCALE(st->scale_font_size), FALSE);
-    gtk_widget_set_size_request(st->scale_font_size, 180, -1);
-    gtk_widget_set_valign(st->scale_font_size, GTK_ALIGN_CENTER);
-    gtk_range_set_value(GTK_RANGE(st->scale_font_size), init_px);
-
-    g_autofree char *init_px_str = g_strdup_printf("%dpx", init_px);
-    st->lbl_font_size_val = gtk_label_new(init_px_str);
-    gtk_widget_add_css_class(st->lbl_font_size_val, "shell-popover-badge");
-    gtk_widget_add_css_class(st->lbl_font_size_val, "accent");
-    gtk_widget_set_valign(st->lbl_font_size_val, GTK_ALIGN_CENTER);
-
-    GtkWidget *btn_reset = gtk_button_new_with_label("RESET (13PX)");
-    gtk_widget_add_css_class(btn_reset, "files-nav-btn");
-    gtk_widget_set_valign(btn_reset, GTK_ALIGN_CENTER);
-    g_signal_connect(btn_reset, "clicked", G_CALLBACK(on_reset_ide_font_clicked), st);
-
-    gtk_box_append(GTK_BOX(size_box), st->scale_font_size);
-    gtk_box_append(GTK_BOX(size_box), st->lbl_font_size_val);
-    gtk_box_append(GTK_BOX(size_box), btn_reset);
-
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("zoom-in-symbolic",
-                                     "Editor Font Size",
-                                     "Live zoom also available in kajo-ide via Ctrl++ / Ctrl+- / Ctrl+0",
-                                     size_box));
+        ? config->ide_font_size_px
+        : 13;
+    GtkWidget *size_wrap = create_scale_with_badge(
+        10.0, 24.0, 1.0, (double)init_px, "%.0fPX", &self->scale_font_size, NULL);
+    gtk_box_append(GTK_BOX(card_typo), create_boxed_row(
+        "🔍",
+        "Editor Font Size",
+        "Live zoom also available via Ctrl++ / Ctrl+- / Ctrl+0",
+        size_wrap));
 
     guint init_tab_idx = 0;
     if (config) {
         if (config->ide_tab_width == 4) init_tab_idx = 1;
         else if (config->ide_tab_width == 8) init_tab_idx = 2;
     }
-    st->seg_tab_width = create_segmented_group(IDE_TAB_LABELS, init_tab_idx);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("format-indent-more-symbolic",
-                                     "Tab Width",
-                                     "Columns per Tab stop in GtkSourceView",
-                                     st->seg_tab_width));
+    self->seg_tab_width = create_segmented_group(IDE_TAB_LABELS, init_tab_idx);
+    gtk_box_append(GTK_BOX(card_typo), create_boxed_row(
+        "⇥",
+        "Tab Stop Width",
+        "Indentation width in columns (GtkSourceView)",
+        self->seg_tab_width));
 
-    st->sw_spaces = gtk_switch_new();
-    gtk_switch_set_active(GTK_SWITCH(st->sw_spaces), config ? config->ide_insert_spaces : TRUE);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("format-indent-less-symbolic",
-                                     "Insert Spaces Instead of Tabs",
-                                     "Tab key inserts spaces; off inserts a literal tab character",
-                                     st->sw_spaces));
+    self->sw_spaces = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_spaces, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_spaces), config ? config->ide_insert_spaces : TRUE);
+    gtk_box_append(GTK_BOX(card_typo), create_boxed_row(
+        "␣",
+        "Insert Spaces Instead of Tabs",
+        "Tab key inserts spaces; off inserts literal \\t",
+        self->sw_spaces));
 
-    st->sw_word_wrap = gtk_switch_new();
-    gtk_switch_set_active(GTK_SWITCH(st->sw_word_wrap), config ? config->ide_word_wrap : FALSE);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("format-justify-fill-symbolic",
-                                     "Word Wrap",
-                                     "Soft-wrap long lines at the editor edge",
-                                     st->sw_word_wrap));
+    settings_bento_add_pair(GTK_WIDGET(self), card_schemes, card_typo);
 
-    st->sw_margin_guide = gtk_switch_new();
-    gtk_switch_set_active(GTK_SWITCH(st->sw_margin_guide), config ? config->ide_show_margin_guide : FALSE);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("view-column-symbolic",
-                                     "Margin Guide at Column 100",
-                                     "Thin vertical line marking the 100-column limit",
-                                     st->sw_margin_guide));
+    /* ─── Card 3: Workspace Chrome & 6-Column Cairo Gutter ─── */
+    GtkWidget *card_chrome = create_section_card(
+        SETTINGS_CARD_RIGHT,
+        "3. WORKSPACE CHROME & 6-COLUMN CAIRO GUTTER",
+        "CAIRO + MAP",
+        "success",
+        NULL);
 
-    /* ─── SECTION 3: WORKSPACE CHROME & GUTTER ─── */
-    GtkWidget *lbl_sec3 = gtk_label_new("WORKSPACE CHROME & GUTTER");
-    gtk_label_set_xalign(GTK_LABEL(lbl_sec3), 0.0f);
-    gtk_widget_add_css_class(lbl_sec3, "settings-section-title");
-    gtk_box_append(GTK_BOX(root), lbl_sec3);
+    self->sw_gutter = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_gutter, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), config ? config->ide_show_line_numbers : TRUE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "☰",
+        "Show 6-Column Cairo Gutter",
+        "Breakpoints • LSP Diagnostics • DAP PC • Line • Git Diff • Fold",
+        self->sw_gutter));
 
-    st->sw_minimap = gtk_switch_new();
-    gtk_widget_set_valign(st->sw_minimap, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_minimap), config ? config->ide_show_minimap : TRUE);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("view-grid-symbolic",
-                                     "Show Code Overview Minimap",
-                                     "Right-docked GtkSourceMap overview strip (toggleable via 🗺 MAP)",
-                                     st->sw_minimap));
+    self->sw_minimap = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_minimap, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), config ? config->ide_show_minimap : TRUE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "🗺",
+        "Show Code Overview Minimap",
+        "Right-docked GtkSourceMap overview strip (toggleable via MAP)",
+        self->sw_minimap));
 
-    st->sw_gutter = gtk_switch_new();
-    gtk_widget_set_valign(st->sw_gutter, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_gutter), config ? config->ide_show_line_numbers : TRUE);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("view-list-symbolic",
-                                     "Show 6-Column Cairo Gutter",
-                                     "Breakpoints, LSP diagnostics, DAP PC arrow, line numbers, Git diff & fold",
-                                     st->sw_gutter));
+    self->sw_cur_line = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_cur_line, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), config ? config->ide_highlight_current_line : TRUE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "▬",
+        "Highlight Active Cursor Line",
+        "Subtle surface tint on the current editor cursor line",
+        self->sw_cur_line));
 
-    st->sw_cur_line = gtk_switch_new();
-    gtk_widget_set_valign(st->sw_cur_line, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(st->sw_cur_line), config ? config->ide_highlight_current_line : TRUE);
-    gtk_box_append(GTK_BOX(root),
-                   create_action_row("format-text-underline-symbolic",
-                                     "Highlight Active Cursor Line",
-                                     "Subtle surface tint on the current editor cursor line",
-                                     st->sw_cur_line));
+    self->sw_word_wrap = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_word_wrap, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_word_wrap), config ? config->ide_word_wrap : FALSE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "↩",
+        "Word Wrap Long Lines",
+        "Soft-wrap lines exceeding the editor viewport edge",
+        self->sw_word_wrap));
 
-    /* Footer: unsaved/saved state + explicit REVERT / SAVE & APPLY */
-    GtkWidget *footer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    gtk_widget_set_hexpand(footer, TRUE);
-    gtk_widget_set_valign(footer, GTK_ALIGN_CENTER);
+    self->sw_margin_guide = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_margin_guide, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), config ? config->ide_show_margin_guide : FALSE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "│",
+        "Margin Guide at Column 100",
+        "Thin vertical guide marking the 100-column boundary",
+        self->sw_margin_guide));
 
-    st->lbl_state = gtk_label_new("");
-    gtk_widget_add_css_class(st->lbl_state, "shell-popover-badge");
-    gtk_widget_set_hexpand(st->lbl_state, TRUE);
-    gtk_widget_set_halign(st->lbl_state, GTK_ALIGN_START);
-    gtk_widget_set_valign(st->lbl_state, GTK_ALIGN_CENTER);
+    settings_bento_add_full(GTK_WIDGET(self), card_chrome);
 
-    st->btn_revert = gtk_button_new_with_label("[ ↺ REVERT ]");
-    gtk_widget_add_css_class(st->btn_revert, "files-nav-btn");
-    gtk_widget_set_valign(st->btn_revert, GTK_ALIGN_CENTER);
-    g_signal_connect(st->btn_revert, "clicked", G_CALLBACK(on_revert_ide_clicked), st);
+    self->saved_scheme_idx = init_scheme_idx;
+    self->saved_font_idx   = init_font_idx;
+    self->saved_font_px    = init_px;
+    self->saved_tab_idx    = init_tab_idx;
+    self->saved_spaces     = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
+    self->saved_wrap       = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
+    self->saved_margin     = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
+    self->saved_minimap    = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
+    self->saved_gutter     = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    self->saved_cur_line   = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
 
-    st->btn_save = gtk_button_new_with_label("[ ✓ SAVE & APPLY ]");
-    gtk_widget_add_css_class(st->btn_save, "action-btn-primary");
-    gtk_widget_set_valign(st->btn_save, GTK_ALIGN_CENTER);
-    g_signal_connect(st->btn_save, "clicked", G_CALLBACK(on_save_ide_clicked), st);
+    select_ide_scheme(self, init_scheme_idx, FALSE);
+    self->syncing_ui = FALSE;
 
-    gtk_box_append(GTK_BOX(footer), st->lbl_state);
-    gtk_box_append(GTK_BOX(footer), st->btn_revert);
-    gtk_box_append(GTK_BOX(footer), st->btn_save);
+    if (config)
+        shell_config_destroy(config);
 
-    select_ide_scheme(st, init_scheme_idx, FALSE);
-    ide_settings_set_dirty(st, FALSE);
-    st->syncing_ui = FALSE;
+    g_signal_connect(self->combo_font, "notify::selected", G_CALLBACK(on_ide_dropdown_changed), self);
+    g_signal_connect(self->scale_font_size, "value-changed", G_CALLBACK(on_ide_font_size_changed), self);
+    segmented_group_connect(self->seg_tab_width, on_ide_segment_changed, self);
+    g_signal_connect(self->sw_spaces, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_word_wrap, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_margin_guide, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_minimap, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_gutter, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_cur_line, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self, "map", G_CALLBACK(on_ide_page_mapped), NULL);
 
-    if (config) shell_config_destroy(config);
+    settings_page_bind_actions(
+        GTK_WIDGET(self),
+        "↺ RESET IDE DEFAULTS",
+        action_reset_ide_defaults,
+        action_revert_ide,
+        action_save_ide,
+        self);
 
-    g_signal_connect(st->combo_font, "notify::selected", G_CALLBACK(on_ide_dropdown_changed), st);
-    g_signal_connect(st->scale_font_size, "value-changed", G_CALLBACK(on_ide_font_size_changed), st);
-    segmented_group_connect(st->seg_tab_width, on_ide_segment_changed, st);
-    g_signal_connect(st->sw_spaces, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
-    g_signal_connect(st->sw_word_wrap, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
-    g_signal_connect(st->sw_margin_guide, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
-    g_signal_connect(st->sw_minimap, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
-    g_signal_connect(st->sw_gutter, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
-    g_signal_connect(st->sw_cur_line, "notify::active", G_CALLBACK(on_ide_switch_changed), st);
-
-    return create_settings_page_card("KAJO IDE & EDITOR", "[ ORG.KAJO.IDE ]", root, footer);
+    update_ide_telemetry_and_dirty(self);
+    return GTK_WIDGET(self);
 }

@@ -3,157 +3,60 @@
 #include "../../hardware/hw_caps.h"
 #include "../../hardware/kbd_backlight.h"
 #include <fcntl.h>
-#include <gio/gunixsocketaddress.h>
 #include <json-glib/json-glib.h>
+#include <math.h>
 #include <string.h>
 #include <unistd.h>
 
-static void
-run_niri_output_cmd(const char *out_name, const char *action, const char *arg)
-{
-    if (!out_name || !action || !arg) return;
-    const gchar *argv[] = { "niri", "msg", "output", out_name, action, arg, NULL };
-    g_spawn_sync(NULL, (gchar **)argv, NULL, G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
-                 NULL, NULL, NULL, NULL, NULL, NULL);
-}
-
-static void
-on_vrr_card_toggled(GtkToggleButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    toggle_card_set_subtitle(GTK_WIDGET(btn),
-                             gtk_toggle_button_get_active(btn) ? "Adaptive Sync Active"
-                                                               : "Adaptive Sync Disabled");
-}
-
-static void
-on_apply_displays_clicked(GtkButton *btn, gpointer user_data G_GNUC_UNUSED)
-{
-    GtkDropDown *combo_res = g_object_get_data(G_OBJECT(btn), "combo_res");
-    GtkDropDown *combo_orient = g_object_get_data(G_OBJECT(btn), "combo_orient");
-    GtkDropDown *combo_scale = g_object_get_data(G_OBJECT(btn), "combo_scale");
-    GtkWidget *tile_vrr = g_object_get_data(G_OBJECT(btn), "tile_vrr");
-    GtkWidget *lbl_mon_hdr = g_object_get_data(G_OBJECT(btn), "lbl_mon_hdr");
-    const char *out_name = g_object_get_data(G_OBJECT(btn), "output_name");
-    const char *make_model = g_object_get_data(G_OBJECT(btn), "make_model");
-    GPtrArray *raw_modes = g_object_get_data(G_OBJECT(btn), "raw_modes");
-
-    if (!out_name || out_name[0] == '\0') out_name = "eDP-1";
-
-    const char *res = "auto";
-    if (combo_res && raw_modes) {
-        guint sel = gtk_drop_down_get_selected(combo_res);
-        if (sel < raw_modes->len) {
-            res = g_ptr_array_index(raw_modes, sel);
-        }
-    }
-
-    const char *orient = "normal";
-    if (combo_orient) {
-        guint sel = gtk_drop_down_get_selected(combo_orient);
-        if (sel == 1) orient = "90";
-        else if (sel == 2) orient = "180";
-        else if (sel == 3) orient = "270";
-    }
-
-    double sc = 1.00;
-    if (combo_scale) {
-        guint sel = gtk_drop_down_get_selected(combo_scale);
-        if (sel == 0) sc = 1.00;
-        else if (sel == 1) sc = 1.25;
-        else if (sel == 2) sc = 1.50;
-        else if (sel == 3) sc = 1.75;
-        else if (sel == 4) sc = 2.00;
-    }
-
-    gboolean vrr = tile_vrr ? gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(tile_vrr)) : FALSE;
-
-    gchar scale_buf[32];
-    g_ascii_formatd(scale_buf, sizeof(scale_buf), "%.2f", sc);
-
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *dir = g_build_filename(xdg_config, "niri", "config.d", NULL);
-    g_mkdir_with_parents(dir, 0755);
-    gchar *path = g_build_filename(dir, "10-outputs.kdl", NULL);
-
-    gchar *kdl_content = g_strdup_printf(
-        "// Managed by kajo-settings — DO NOT EDIT DIRECTLY\n\n"
-        "output \"%s\" {\n"
-        "    mode \"%s\"\n"
-        "    scale %s\n"
-        "    transform \"%s\"\n"
-        "    position x=0 y=0\n"
-        "%s"
-        "}\n",
-        out_name, res, scale_buf, orient,
-        vrr ? "    variable-refresh-rate\n" : "");
-
-    g_file_set_contents(path, kdl_content, -1, NULL);
-    g_message("Saved modular Niri outputs configuration for '%s' to %s", out_name, path);
-    g_free(kdl_content);
-    g_free(dir);
-    g_free(path);
-
-    /* Apply live to Niri compositor via IPC */
-    run_niri_output_cmd(out_name, "mode", res);
-    run_niri_output_cmd(out_name, "scale", scale_buf);
-    run_niri_output_cmd(out_name, "transform", orient);
-    run_niri_output_cmd(out_name, "vrr", vrr ? "on" : "off");
-    niri_reload_config();
-
-    if (lbl_mon_hdr) {
-        gchar *hdr_text = g_strdup_printf("Monitor %s — %s (%s, Scale %.0f%%)",
-                                          out_name,
-                                          make_model ? make_model : "Display",
-                                          res,
-                                          sc * 100.0);
-        gtk_label_set_text(GTK_LABEL(lbl_mon_hdr), hdr_text);
-        g_free(hdr_text);
-    }
-}
-
-/* ─── Declarative GtkBox Template Subclass ─── */
+typedef struct {
+    gint64 width;
+    gint64 height;
+    double refresh_hz;
+} DisplayModeGeom;
 
 typedef struct _SettingsPageDisplays {
     GtkBox parent_instance;
 
-    GtkWidget *lbl_mon_hdr;
+    /* Card 1: Monitor Output & Scaling */
+    GtkWidget *card_mon;
+    GtkWidget *lbl_mon_heading;
+    GtkWidget *row_res;
     GtkWidget *combo_res;
-    GtkWidget *combo_orient;
-    GtkWidget *combo_scale;
-    GtkWidget *grid_features;
-    GtkWidget *btn_apply;
+    GtkWidget *seg_orient;
+    GtkWidget *row_scale;
+    GtkWidget *seg_scale;
+    GtkWidget *tile_vrr;
 
+    gchar     *out_name;
+    gchar     *make_model;
     GPtrArray *raw_modes;
+    GArray    *mode_geoms;
+    gboolean   vrr_avail;
+    gboolean   saved_vrr_active;
+    guint      saved_mode_idx;
+    guint      saved_orient_idx;
+    guint      saved_scale_idx;
 
-    GtkWidget *combo_ss_mode;
+    /* Card 2: Idle Screensaver, DPMS & Session Lock */
+    GtkWidget *seg_ss_mode;
+    GtkWidget *row_ss_timeout;
     GtkWidget *combo_ss_timeout;
     GtkWidget *combo_dpms_timeout;
     GtkWidget *combo_lock_timeout;
     GtkWidget *sw_lock_suspend;
-    GtkWidget *btn_preview_ss;
-    GtkWidget *btn_lock_now;
-    GtkWidget *btn_apply_idle;
 
-    /* Keyboard Backlight & Timeout Card */
-    GtkWidget *card_kbd_backlight;
-    GtkWidget *lbl_kbd_level;
-    GtkWidget *slot_kbd_level;
-    GtkWidget *kbd_level_ctl;   /* GtkSwitch (HP EC) or segmented group */
-    GtkWidget *row_kbd_timeout;
-    GtkWidget *slot_kbd_timeout;
-    GtkWidget *kbd_timeout_ctl; /* segmented group */
-    GtkWidget *btn_apply_kbd;
+    /* Card 3: Keyboard Backlight & Timeout (hardware-gated) */
+    GtkWidget *card_kbd;
+    GtkWidget *kbd_level_ctl;
+    GtkWidget *kbd_timeout_ctl;
 
-    /* 360° Foldable Posture Card */
+    /* Card 4: 360° Foldable Posture & IIO Sensors (hardware-gated) */
     GtkWidget *card_posture;
-    GtkWidget *lbl_sensor_status;
-    GtkWidget *row_posture_autorotate;
     GtkWidget *sw_posture_autorotate;
-    GtkWidget *row_posture_disable_kbd;
     GtkWidget *sw_posture_disable_kbd;
-    GtkWidget *row_posture_disable_touch;
     GtkWidget *sw_posture_disable_touch;
-    GtkWidget *btn_apply_posture;
+
+    gboolean   syncing_ui;
 } SettingsPageDisplays;
 
 typedef struct _SettingsPageDisplaysClass {
@@ -162,9 +65,11 @@ typedef struct _SettingsPageDisplaysClass {
 
 G_DEFINE_TYPE(SettingsPageDisplays, settings_page_displays, GTK_TYPE_BOX)
 
-static const gint ss_timeout_values[]   = {  60, 300, 600,  900, 1800, 0 };
-static const gint dpms_timeout_values[] = { 300, 600, 900, 1800,    0 };
-static const gint lock_timeout_values[] = { 300, 600, 900, 1800,    0 };
+static const gint   k_ss_timeout_vals[]   = {  60, 300, 600,  900, 1800, 0 };
+static const gint   k_dpms_timeout_vals[] = { 300, 600, 900, 1800,    0 };
+static const gint   k_lock_timeout_vals[] = { 300, 600, 900, 1800,    0 };
+static const gint   k_kbd_timeout_vals[]  = {   0,  30, 180 };
+static const double k_scale_vals[]        = { 1.00, 1.25, 1.50, 1.75, 2.00 };
 
 static guint
 timeout_sec_to_index(gint sec, const gint *values, guint count, guint fallback_idx)
@@ -177,66 +82,24 @@ timeout_sec_to_index(gint sec, const gint *values, guint count, guint fallback_i
 }
 
 static void
-on_preview_screensaver_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_niri_subproc_done(GObject *source, GAsyncResult *res, gpointer user_data G_GNUC_UNUSED)
 {
-    settings_send_ipc_command("screensaver");
+    g_subprocess_wait_finish(G_SUBPROCESS(source), res, NULL);
 }
 
 static void
-on_lock_now_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+run_niri_output_cmd_async(const char *out_name, const char *action, const char *arg)
 {
-    settings_send_ipc_command("lock");
-}
-
-static void
-on_apply_idle_clicked(GtkButton *btn, gpointer user_data)
-{
-    SettingsPageDisplays *page = user_data;
-    if (!page)
+    if (!out_name || !action || !arg)
         return;
-
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
-
-    /* Mode */
-    guint mode_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_ss_mode));
-    g_free(cfg->screensaver_mode);
-    if (mode_sel == 1)
-        cfg->screensaver_mode = g_strdup("dpms");
-    else if (mode_sel == 2)
-        cfg->screensaver_mode = g_strdup("disabled");
-    else
-        cfg->screensaver_mode = g_strdup("overlay");
-
-    /* Timeouts */
-    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_ss_timeout));
-    if (ss_sel < G_N_ELEMENTS(ss_timeout_values))
-        cfg->screensaver_timeout_sec = ss_timeout_values[ss_sel];
-
-    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_dpms_timeout));
-    if (dpms_sel < G_N_ELEMENTS(dpms_timeout_values))
-        cfg->dpms_timeout_sec = dpms_timeout_values[dpms_sel];
-
-    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(page->combo_lock_timeout));
-    if (lock_sel < G_N_ELEMENTS(lock_timeout_values))
-        cfg->lock_timeout_sec = lock_timeout_values[lock_sel];
-
-    cfg->lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(page->sw_lock_suspend));
-
-    const gchar *xdg_config = g_get_user_config_dir();
-    g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
-    shell_config_save(cfg, cfg_path);
-    shell_config_destroy(cfg);
-
-    settings_send_ipc_command("reload-config");
-
-    if (btn) {
-        gtk_button_set_label(btn, "[ ✓ SAVED & APPLIED TO SHELL ]");
-    }
+    const gchar *argv[] = { "niri", "msg", "output", out_name, action, arg, NULL };
+    g_autoptr(GSubprocess) proc = g_subprocess_newv(
+        argv,
+        G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
+        NULL);
+    if (proc)
+        g_subprocess_wait_async(proc, NULL, on_niri_subproc_done, NULL);
 }
-
-static const gint kbd_timeout_values[] = { 0, 30, 180 };
 
 static void
 write_inhibit_paths_direct(GPtrArray *paths, gboolean inhibit)
@@ -258,175 +121,146 @@ write_inhibit_paths_direct(GPtrArray *paths, gboolean inhibit)
 }
 
 static void
-on_apply_kbd_clicked(GtkButton *btn, gpointer user_data)
+update_displays_dynamic_subtitles_and_telemetry(SettingsPageDisplays *self)
 {
-    SettingsPageDisplays *page = user_data;
-    if (!page)
+    if (!self)
         return;
 
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
+    guint mode_sel = self->combo_res ? gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_res)) : 0;
+    guint sc_sel   = self->seg_scale ? segmented_group_get_selected(self->seg_scale) : 0;
+    double sc      = (sc_sel < G_N_ELEMENTS(k_scale_vals)) ? k_scale_vals[sc_sel] : 1.0;
+
+    gint64 w = 0, h = 0;
+    double rr = 0.0;
+    if (self->mode_geoms && mode_sel < self->mode_geoms->len) {
+        DisplayModeGeom g = g_array_index(self->mode_geoms, DisplayModeGeom, mode_sel);
+        w = g.width;
+        h = g.height;
+        rr = g.refresh_hz;
+    }
+
+    if (self->row_scale) {
+        gchar sc_buf[16];
+        g_ascii_formatd(sc_buf, sizeof(sc_buf), "%.2f", sc);
+        if (w > 0 && h > 0) {
+            int lw = (int)llround((double)w / sc);
+            int lh = (int)llround((double)h / sc);
+            g_autofree gchar *sub = g_strdup_printf(
+                "%.0f%% (%s) yields %d×%d logical workspace",
+                sc * 100.0, sc_buf, lw, lh);
+            boxed_row_set_subtitle(self->row_scale, sub);
+        } else {
+            g_autofree gchar *sub = g_strdup_printf(
+                "%.0f%% (%sx) Wayland fractional output scale",
+                sc * 100.0, sc_buf);
+            boxed_row_set_subtitle(self->row_scale, sub);
+        }
+    }
+
+    const gchar *out = (self->out_name && self->out_name[0]) ? self->out_name : "eDP-1";
+    settings_page_set_counter(GTK_WIDGET(self), 0, "OUTPUT", out, "accent");
+    settings_page_set_nav_badge(GTK_WIDGET(self), "displays", out, NULL);
+
+    if (w > 0 && h > 0) {
+        g_autofree gchar *m_val = g_strdup_printf("%" G_GINT64_FORMAT "×%" G_GINT64_FORMAT "@%.0f", w, h, rr);
+        settings_page_set_counter(GTK_WIDGET(self), 1, "MODE", m_val, NULL);
+    } else {
+        settings_page_set_counter(GTK_WIDGET(self), 1, "MODE", "AUTO / NATIVE", NULL);
+    }
+
+    gchar sc_txt[24];
+    g_ascii_formatd(sc_txt, sizeof(sc_txt), "%.2f", sc);
+    g_autofree gchar *s_val = g_strdup_printf("%.0f%% (%s)", sc * 100.0, sc_txt);
+    settings_page_set_counter(GTK_WIDGET(self), 2, "SCALE", s_val, NULL);
 
     const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    /* HP EC: a switch (on -> sel 0 "wake keylights"); otherwise segmented Off/Low/High. */
-    gint sel = 0;
-    if (caps && caps->kbd_bl_backend == KBD_BL_HP_EC)
-        sel = gtk_switch_get_active(GTK_SWITCH(page->kbd_level_ctl)) ? 0 : 1;
-    else if (page->kbd_level_ctl)
-        sel = (gint)segmented_group_get_selected(page->kbd_level_ctl);
-
-    if (caps && caps->kbd_bl_backend == KBD_BL_HP_EC) {
-        /* On HP EC: sel == 0 -> Wake/Enable Keylights, sel == 1 -> Leave Off on Boot */
-        cfg->kbd_backlight_level = (sel == 0) ? 2 : 0;
-        if (sel == 0 && shell_kbd_backlight_get_level() <= 0) {
-            shell_kbd_backlight_set_level(2);
+    gdouble hinge_deg = 0.0;
+    if (caps && shell_hw_caps_read_hinge_angle_deg(caps, &hinge_deg)) {
+        const gchar *pm = (hinge_deg >= 180.0) ? "TABLET" : "LAPTOP";
+        g_autofree gchar *p_val = g_strdup_printf("%s (%.0f°)", pm, hinge_deg);
+        settings_page_set_counter(GTK_WIDGET(self), 3, "POSTURE", p_val, "success");
+        if (self->card_posture) {
+            g_autofree gchar *b_val = g_strdup_printf("%s • %.0f°", pm, hinge_deg);
+            section_card_set_badge(self->card_posture, b_val, "success");
         }
     } else {
-        gint level = CLAMP(sel, 0, 2);
-        cfg->kbd_backlight_level = level;
-        shell_kbd_backlight_set_level(level);
-    }
-
-    if (shell_kbd_backlight_has_timeout()) {
-        guint t_sel = page->kbd_timeout_ctl ? segmented_group_get_selected(page->kbd_timeout_ctl) : 0;
-        if (t_sel < G_N_ELEMENTS(kbd_timeout_values)) {
-            cfg->kbd_backlight_timeout_sec = kbd_timeout_values[t_sel];
-            shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
-        }
-    }
-
-    const gchar *xdg_config = g_get_user_config_dir();
-    g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
-    shell_config_save(cfg, cfg_path);
-    shell_config_destroy(cfg);
-
-    settings_send_ipc_command("reload-config");
-
-    if (btn) {
-        gtk_button_set_label(btn, "[ ✓ KEYBOARD BACKLIGHT APPLIED ]");
+        guint ss_mode = self->seg_ss_mode ? segmented_group_get_selected(self->seg_ss_mode) : 0;
+        const gchar *m_lbl = (ss_mode == 1) ? "DPMS" : (ss_mode == 2 ? "OFF" : "OVERLAY");
+        settings_page_set_counter(GTK_WIDGET(self), 3, "IDLE", m_lbl, NULL);
     }
 }
 
 static void
-on_apply_posture_clicked(GtkButton *btn, gpointer user_data)
+mark_displays_changed(SettingsPageDisplays *self)
 {
-    SettingsPageDisplays *page = user_data;
-    if (!page)
+    if (!self || self->syncing_ui)
         return;
-
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
-
-    cfg->posture_auto_rotate = gtk_switch_get_active(GTK_SWITCH(page->sw_posture_autorotate));
-    cfg->posture_disable_kbd_in_tablet = gtk_switch_get_active(GTK_SWITCH(page->sw_posture_disable_kbd));
-    cfg->posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(page->sw_posture_disable_touch));
-
-    /* Apply input inhibition immediately for current posture */
-    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    if (caps) {
-        gdouble deg = 0.0;
-        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
-        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
-        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
-        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && cfg->posture_disable_touch_in_laptop);
-    }
-
-    const gchar *xdg_config = g_get_user_config_dir();
-    g_autofree gchar *cfg_path = g_build_filename(xdg_config, "kajo", "config.json", NULL);
-    shell_config_save(cfg, cfg_path);
-    shell_config_destroy(cfg);
-
-    settings_send_ipc_command("reload-config");
-
-    if (btn) {
-        gtk_button_set_label(btn, "[ ✓ 360° POSTURE SETTINGS APPLIED ]");
-    }
+    update_displays_dynamic_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
 }
 
 static void
-settings_page_displays_dispose(GObject *object)
+on_any_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
-    SettingsPageDisplays *self = (SettingsPageDisplays *)object;
-    if (self->raw_modes) {
-        g_ptr_array_free(self->raw_modes, TRUE);
-        self->raw_modes = NULL;
-    }
-    gtk_widget_dispose_template(GTK_WIDGET(object), settings_page_displays_get_type());
-    G_OBJECT_CLASS(settings_page_displays_parent_class)->dispose(object);
+    mark_displays_changed(user_data);
 }
 
 static void
-settings_page_displays_init(SettingsPageDisplays *self)
+on_any_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint idx G_GNUC_UNUSED, gpointer user_data)
 {
-    gtk_widget_init_template(GTK_WIDGET(self));
-    self->raw_modes = g_ptr_array_new_with_free_func(g_free);
+    mark_displays_changed(user_data);
 }
 
 static void
-settings_page_displays_class_init(SettingsPageDisplaysClass *klass)
+on_any_switch_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
 {
-    GObjectClass *object_class = G_OBJECT_CLASS(klass);
-    GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
-
-    object_class->dispose = settings_page_displays_dispose;
-
-    gtk_widget_class_set_template_from_resource(
-        widget_class, "/org/kajo/shell/ui/page_displays.ui");
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, lbl_mon_hdr);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_res);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_orient);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_scale);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, grid_features);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_ss_mode);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_ss_timeout);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_dpms_timeout);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, combo_lock_timeout);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_lock_suspend);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_preview_ss);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_lock_now);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_idle);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, card_kbd_backlight);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, lbl_kbd_level);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, slot_kbd_level);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_kbd_timeout);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, slot_kbd_timeout);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_kbd);
-
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, card_posture);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, lbl_sensor_status);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_posture_autorotate);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_posture_autorotate);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_posture_disable_kbd);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_posture_disable_kbd);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, row_posture_disable_touch);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, sw_posture_disable_touch);
-    gtk_widget_class_bind_template_child(widget_class, SettingsPageDisplays, btn_apply_posture);
+    mark_displays_changed(user_data);
 }
 
-GtkWidget *
-build_page_displays(void)
+static void
+on_vrr_toggled(GtkToggleButton *btn, gpointer user_data)
 {
-    SettingsPageDisplays *page = g_object_new(settings_page_displays_get_type(), NULL);
+    SettingsPageDisplays *self = user_data;
+    toggle_card_set_subtitle(
+        GTK_WIDGET(btn),
+        gtk_toggle_button_get_active(btn) ? "Adaptive Sync Active" : "Adaptive Sync Disabled");
+    mark_displays_changed(self);
+}
 
-    gchar *name_str = g_strdup("eDP-1");
-    gchar *make_model_str = g_strdup("Built-in Display");
-    gchar *mode_str = g_strdup("Auto / Native Mode");
-    gchar *scale_str = g_strdup("Scale 100% (1.00x)");
-    gboolean vrr_avail = FALSE;
+static void
+on_lock_now_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+{
+    settings_send_ipc_command("lock");
+}
+
+static void
+on_displays_preview_ss(gpointer user_data G_GNUC_UNUSED)
+{
+    settings_send_ipc_command("screensaver");
+}
+
+static void
+load_niri_and_config_state(SettingsPageDisplays *self)
+{
+    if (!self)
+        return;
+    self->syncing_ui = TRUE;
+
+    g_free(self->out_name);
+    g_free(self->make_model);
+    self->out_name   = g_strdup("eDP-1");
+    self->make_model = g_strdup("Built-in Display");
+    self->vrr_avail  = FALSE;
     gboolean vrr_active = FALSE;
     guint active_mode_idx = 0;
     double current_scale = 1.0;
-    gchar *current_transform = g_strdup("Normal");
+    g_autofree gchar *current_transform = g_strdup("Normal");
 
+    g_ptr_array_set_size(self->raw_modes, 0);
+    g_array_set_size(self->mode_geoms, 0);
     GtkStringList *slist_res = gtk_string_list_new(NULL);
 
-    gchar *ipc_resp = niri_send_ipc_request("\"Outputs\"");
+    g_autofree gchar *ipc_resp = niri_send_ipc_request("\"Outputs\"");
     if (ipc_resp) {
         g_autoptr(JsonParser) parser = json_parser_new();
         if (json_parser_load_from_data(parser, ipc_resp, -1, NULL)) {
@@ -441,9 +275,8 @@ build_page_displays(void)
                         JsonObject *ok_obj = json_node_get_object(ok_node);
                         if (ok_obj && json_object_has_member(ok_obj, "Outputs")) {
                             JsonNode *out_node = json_object_get_member(ok_obj, "Outputs");
-                            if (out_node && JSON_NODE_HOLDS_OBJECT(out_node)) {
+                            if (out_node && JSON_NODE_HOLDS_OBJECT(out_node))
                                 outputs_obj = json_node_get_object(out_node);
-                            }
                         }
                     }
                 } else {
@@ -458,39 +291,34 @@ build_page_displays(void)
                         if (out_node && JSON_NODE_HOLDS_OBJECT(out_node)) {
                             JsonObject *out_info = json_node_get_object(out_node);
 
-                            g_free(name_str);
-                            name_str = g_strdup(out_name);
+                            g_free(self->out_name);
+                            self->out_name = g_strdup(out_name);
 
-                            const gchar *m_make = json_object_has_member(out_info, "make") ? json_object_get_string_member(out_info, "make") : "";
+                            const gchar *m_make  = json_object_has_member(out_info, "make") ? json_object_get_string_member(out_info, "make") : "";
                             const gchar *m_model = json_object_has_member(out_info, "model") ? json_object_get_string_member(out_info, "model") : "";
-                            g_free(make_model_str);
-                            make_model_str = g_strdup_printf("%s %s", m_make, m_model);
-
-                            if (json_object_has_member(out_info, "vrr_supported")) {
-                                vrr_avail = json_object_get_boolean_member(out_info, "vrr_supported");
+                            g_free(self->make_model);
+                            self->make_model = g_strstrip(g_strdup_printf("%s %s", m_make, m_model));
+                            if (self->make_model[0] == '\0') {
+                                g_free(self->make_model);
+                                self->make_model = g_strdup("Display Output");
                             }
-                            if (json_object_has_member(out_info, "vrr_enabled")) {
+
+                            if (json_object_has_member(out_info, "vrr_supported"))
+                                self->vrr_avail = json_object_get_boolean_member(out_info, "vrr_supported");
+                            if (json_object_has_member(out_info, "vrr_enabled"))
                                 vrr_active = json_object_get_boolean_member(out_info, "vrr_enabled");
-                            }
-
                             if (json_object_has_member(out_info, "current_mode")) {
                                 JsonNode *cm_node = json_object_get_member(out_info, "current_mode");
-                                if (JSON_NODE_HOLDS_VALUE(cm_node)) {
+                                if (cm_node && JSON_NODE_HOLDS_VALUE(cm_node))
                                     active_mode_idx = (guint)json_object_get_int_member(out_info, "current_mode");
-                                }
                             }
 
                             if (json_object_has_member(out_info, "logical")) {
                                 JsonNode *log_node = json_object_get_member(out_info, "logical");
                                 if (log_node && JSON_NODE_HOLDS_OBJECT(log_node)) {
                                     JsonObject *log_obj = json_node_get_object(log_node);
-                                    if (json_object_has_member(log_obj, "scale")) {
+                                    if (json_object_has_member(log_obj, "scale"))
                                         current_scale = json_object_get_double_member(log_obj, "scale");
-                                        gchar sc_buf[16];
-                                        g_ascii_formatd(sc_buf, sizeof(sc_buf), "%.2f", current_scale);
-                                        g_free(scale_str);
-                                        scale_str = g_strdup_printf("Scale %.0f%% (%sx)", current_scale * 100.0, sc_buf);
-                                    }
                                     if (json_object_has_member(log_obj, "transform")) {
                                         g_free(current_transform);
                                         current_transform = g_strdup(json_object_get_string_member(log_obj, "transform"));
@@ -503,7 +331,6 @@ build_page_displays(void)
                                 if (modes_node && JSON_NODE_HOLDS_ARRAY(modes_node)) {
                                     JsonArray *modes_arr = json_node_get_array(modes_node);
                                     guint n_modes = json_array_get_length(modes_arr);
-
                                     for (guint i = 0; i < n_modes; i++) {
                                         JsonObject *m = json_array_get_object_element(modes_arr, i);
                                         gint64 w = json_object_has_member(m, "width") ? json_object_get_int_member(m, "width") : 0;
@@ -513,21 +340,18 @@ build_page_displays(void)
 
                                         gchar rr_raw_buf[32];
                                         g_ascii_formatd(rr_raw_buf, sizeof(rr_raw_buf), "%.3f", rr);
-                                        gchar *raw_mode = g_strdup_printf("%" G_GINT64_FORMAT "x%" G_GINT64_FORMAT "@%s", w, h, rr_raw_buf);
-                                        g_ptr_array_add(page->raw_modes, raw_mode);
+                                        g_ptr_array_add(self->raw_modes,
+                                                        g_strdup_printf("%" G_GINT64_FORMAT "x%" G_GINT64_FORMAT "@%s", w, h, rr_raw_buf));
+
+                                        DisplayModeGeom geom = { w, h, rr };
+                                        g_array_append_val(self->mode_geoms, geom);
 
                                         gchar rr_disp_buf[32];
                                         g_ascii_formatd(rr_disp_buf, sizeof(rr_disp_buf), "%.2f", rr);
-                                        gchar *disp_mode = g_strdup_printf("%" G_GINT64_FORMAT "x%" G_GINT64_FORMAT " @ %sHz%s",
-                                                                           w, h, rr_disp_buf, pref ? " (Preferred)" : "");
+                                        g_autofree gchar *disp_mode = g_strdup_printf(
+                                            "%" G_GINT64_FORMAT "×%" G_GINT64_FORMAT " @ %sHz%s",
+                                            w, h, rr_disp_buf, pref ? " (Preferred)" : "");
                                         gtk_string_list_append(slist_res, disp_mode);
-
-                                        if (i == active_mode_idx) {
-                                            g_free(mode_str);
-                                            mode_str = g_strdup_printf("%" G_GINT64_FORMAT "x%" G_GINT64_FORMAT " @ %sHz", w, h, rr_disp_buf);
-                                        }
-
-                                        g_free(disp_mode);
                                     }
                                 }
                             }
@@ -537,240 +361,445 @@ build_page_displays(void)
                 }
             }
         }
-        g_free(ipc_resp);
     }
 
-    if (page->raw_modes->len == 0) {
+    if (self->raw_modes->len == 0) {
         gtk_string_list_append(slist_res, "Automatic / Native Preferred Mode");
-        g_ptr_array_add(page->raw_modes, g_strdup("auto"));
+        g_ptr_array_add(self->raw_modes, g_strdup("auto"));
+        DisplayModeGeom geom = { 0, 0, 60.0 };
+        g_array_append_val(self->mode_geoms, geom);
     }
 
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_res), G_LIST_MODEL(slist_res));
+    gtk_drop_down_set_model(GTK_DROP_DOWN(self->combo_res), G_LIST_MODEL(slist_res));
     g_object_unref(slist_res);
-    if (active_mode_idx < page->raw_modes->len) {
-        gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_res), active_mode_idx);
+    if (active_mode_idx >= self->raw_modes->len)
+        active_mode_idx = 0;
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_res), active_mode_idx);
+
+    if (self->lbl_mon_heading) {
+        g_autofree gchar *h_txt = g_strdup_printf("1. MONITOR OUTPUT & SCALING (%s)", self->out_name);
+        gtk_label_set_text(GTK_LABEL(self->lbl_mon_heading), h_txt);
     }
-
-    gchar *hdr_text = g_strdup_printf("Monitor %s — %s (%s, %s)", name_str, make_model_str, mode_str, scale_str);
-    gtk_label_set_text(GTK_LABEL(page->lbl_mon_hdr), hdr_text);
-    g_free(hdr_text);
-    g_free(mode_str);
-    g_free(scale_str);
-
-    const char *orient_items[] = {
-        "Normal (0° Horizontal)",
-        "Portrait Left (90° Counter-Clockwise)",
-        "Inverted (180° Upside Down)",
-        "Portrait Right (270° Clockwise)",
-        NULL
-    };
-    GtkStringList *slist_orient = gtk_string_list_new(orient_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_orient), G_LIST_MODEL(slist_orient));
-    g_object_unref(slist_orient);
+    if (self->row_res) {
+        g_autofree gchar *sub = g_strdup_printf("%s • %s Primary Output", self->make_model, self->out_name);
+        boxed_row_set_subtitle(self->row_res, sub);
+    }
 
     guint orient_sel = 0;
     if (g_ascii_strcasecmp(current_transform, "90") == 0) orient_sel = 1;
     else if (g_ascii_strcasecmp(current_transform, "180") == 0) orient_sel = 2;
     else if (g_ascii_strcasecmp(current_transform, "270") == 0) orient_sel = 3;
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_orient), orient_sel);
-    g_free(current_transform);
-
-    const char *scale_items[] = {
-        "100% (1.00x Native Unscaled)",
-        "125% (1.25x)",
-        "150% (1.50x)",
-        "175% (1.75x)",
-        "200% (2.00x HiDPI)",
-        NULL
-    };
-    GtkStringList *slist_scale = gtk_string_list_new(scale_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_scale), G_LIST_MODEL(slist_scale));
-    g_object_unref(slist_scale);
+    segmented_group_set_selected(self->seg_orient, orient_sel);
 
     guint scale_sel = 0;
     if (current_scale >= 1.9) scale_sel = 4;
     else if (current_scale >= 1.65) scale_sel = 3;
     else if (current_scale >= 1.4) scale_sel = 2;
     else if (current_scale >= 1.15) scale_sel = 1;
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_scale), scale_sel);
+    segmented_group_set_selected(self->seg_scale, scale_sel);
 
-    /* VRR is a capability with a status line, so it is a toggle card. The
-     * placeholder HDR card was removed: it was permanently disabled and nothing
-     * backed it. */
-    GtkWidget *tile_vrr = create_toggle_card(
-        "display-symbolic",
-        "Variable Refresh Rate (VRR)",
-        vrr_avail ? (vrr_active ? "Adaptive Sync Active" : "Adaptive Sync Disabled")
-                  : "Unsupported by this output",
-        vrr_active);
-    if (!vrr_avail)
-        gtk_widget_set_sensitive(tile_vrr, FALSE);
-    else
-        g_signal_connect(tile_vrr, "toggled", G_CALLBACK(on_vrr_card_toggled), NULL);
+    gtk_widget_set_sensitive(self->tile_vrr, self->vrr_avail);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tile_vrr), self->vrr_avail && vrr_active);
+    toggle_card_set_subtitle(
+        self->tile_vrr,
+        self->vrr_avail
+            ? (vrr_active ? "Adaptive Sync Active" : "Adaptive Sync Disabled")
+            : "Unsupported by this output");
 
-    gtk_grid_attach(GTK_GRID(page->grid_features), tile_vrr, 0, 0, 1, 1);
+    self->saved_mode_idx   = active_mode_idx;
+    self->saved_orient_idx = orient_sel;
+    self->saved_scale_idx  = scale_sel;
+    self->saved_vrr_active = self->vrr_avail && vrr_active;
 
-    g_object_set_data(G_OBJECT(page->btn_apply), "combo_res", page->combo_res);
-    g_object_set_data(G_OBJECT(page->btn_apply), "combo_orient", page->combo_orient);
-    g_object_set_data(G_OBJECT(page->btn_apply), "combo_scale", page->combo_scale);
-    g_object_set_data(G_OBJECT(page->btn_apply), "tile_vrr", tile_vrr);
-    g_object_set_data(G_OBJECT(page->btn_apply), "lbl_mon_hdr", page->lbl_mon_hdr);
-    g_object_set_data(G_OBJECT(page->btn_apply), "raw_modes", page->raw_modes);
-    g_object_set_data_full(G_OBJECT(page->btn_apply), "output_name", name_str, g_free);
-    g_object_set_data_full(G_OBJECT(page->btn_apply), "make_model", make_model_str, g_free);
-
-    g_signal_connect(page->btn_apply, "clicked", G_CALLBACK(on_apply_displays_clicked), NULL);
-
-    /* Populate Screen Saver & Session Lock controls from current config */
+    /* Populate Idle / Screensaver / Backlight / Posture from ShellConfig */
     ShellConfig *cfg = shell_config_load(NULL);
 
-    const char *ss_mode_items[] = {
-        "Metro Clock Overlay",
-        "Turn Off Monitors (DPMS)",
-        "Disabled",
-        NULL
-    };
-    GtkStringList *slist_ss_mode = gtk_string_list_new(ss_mode_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ss_mode), G_LIST_MODEL(slist_ss_mode));
-    g_object_unref(slist_ss_mode);
+    guint ss_mode_idx = 0;
     if (cfg && cfg->screensaver_mode) {
-        if (g_strcmp0(cfg->screensaver_mode, "dpms") == 0)
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 1);
-        else if (g_strcmp0(cfg->screensaver_mode, "disabled") == 0)
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 2);
-        else
-            gtk_drop_down_set_selected(GTK_DROP_DOWN(page->combo_ss_mode), 0);
+        if (g_strcmp0(cfg->screensaver_mode, "dpms") == 0) ss_mode_idx = 1;
+        else if (g_strcmp0(cfg->screensaver_mode, "disabled") == 0) ss_mode_idx = 2;
     }
+    segmented_group_set_selected(self->seg_ss_mode, ss_mode_idx);
 
-    const char *ss_timeout_items[] = {
-        "1 Minute",
-        "5 Minutes (Default)",
-        "10 Minutes",
-        "15 Minutes",
-        "30 Minutes",
-        "Never (Disabled)",
-        NULL
-    };
-    GtkStringList *slist_ss_timeout = gtk_string_list_new(ss_timeout_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_ss_timeout), G_LIST_MODEL(slist_ss_timeout));
-    g_object_unref(slist_ss_timeout);
     gtk_drop_down_set_selected(
-        GTK_DROP_DOWN(page->combo_ss_timeout),
+        GTK_DROP_DOWN(self->combo_ss_timeout),
         timeout_sec_to_index(cfg ? cfg->screensaver_timeout_sec : 300,
-                             ss_timeout_values,
-                             G_N_ELEMENTS(ss_timeout_values),
-                             1));
-
-    const char *dpms_timeout_items[] = {
-        "5 Minutes",
-        "10 Minutes (Default)",
-        "15 Minutes",
-        "30 Minutes",
-        "Never (Disabled)",
-        NULL
-    };
-    GtkStringList *slist_dpms_timeout = gtk_string_list_new(dpms_timeout_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_dpms_timeout), G_LIST_MODEL(slist_dpms_timeout));
-    g_object_unref(slist_dpms_timeout);
+                             k_ss_timeout_vals, G_N_ELEMENTS(k_ss_timeout_vals), 1));
     gtk_drop_down_set_selected(
-        GTK_DROP_DOWN(page->combo_dpms_timeout),
+        GTK_DROP_DOWN(self->combo_dpms_timeout),
         timeout_sec_to_index(cfg ? cfg->dpms_timeout_sec : 600,
-                             dpms_timeout_values,
-                             G_N_ELEMENTS(dpms_timeout_values),
-                             1));
-
-    const char *lock_timeout_items[] = {
-        "5 Minutes",
-        "10 Minutes",
-        "15 Minutes (Default)",
-        "30 Minutes",
-        "Never (Disabled)",
-        NULL
-    };
-    GtkStringList *slist_lock_timeout = gtk_string_list_new(lock_timeout_items);
-    gtk_drop_down_set_model(GTK_DROP_DOWN(page->combo_lock_timeout), G_LIST_MODEL(slist_lock_timeout));
-    g_object_unref(slist_lock_timeout);
+                             k_dpms_timeout_vals, G_N_ELEMENTS(k_dpms_timeout_vals), 1));
     gtk_drop_down_set_selected(
-        GTK_DROP_DOWN(page->combo_lock_timeout),
+        GTK_DROP_DOWN(self->combo_lock_timeout),
         timeout_sec_to_index(cfg ? cfg->lock_timeout_sec : 900,
-                             lock_timeout_values,
-                             G_N_ELEMENTS(lock_timeout_values),
-                             2));
+                             k_lock_timeout_vals, G_N_ELEMENTS(k_lock_timeout_vals), 2));
+    gtk_switch_set_active(GTK_SWITCH(self->sw_lock_suspend), cfg ? cfg->lock_on_suspend : TRUE);
 
-    gtk_switch_set_active(GTK_SWITCH(page->sw_lock_suspend),
-                          cfg ? cfg->lock_on_suspend : TRUE);
-
-    /* Hardware-gated Keyboard Backlight & Timeout Card */
     const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    if (caps && caps->kbd_bl_backend != KBD_BL_NONE) {
-        gtk_widget_set_visible(page->card_kbd_backlight, TRUE);
-
+    if (caps && caps->kbd_bl_backend != KBD_BL_NONE && self->kbd_level_ctl) {
         if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
-            /* Two-state choice -> a switch, not a dropdown. */
-            gtk_label_set_text(GTK_LABEL(page->lbl_kbd_level),
-                               "Wake keylights on startup (F4 cycles Low / High):");
-            page->kbd_level_ctl = gtk_switch_new();
-            gtk_widget_set_valign(page->kbd_level_ctl, GTK_ALIGN_CENTER);
             gint saved_lvl = cfg ? cfg->kbd_backlight_level : 2;
-            gtk_switch_set_active(GTK_SWITCH(page->kbd_level_ctl), saved_lvl > 0);
-            gtk_box_append(GTK_BOX(page->slot_kbd_level), page->kbd_level_ctl);
+            gtk_switch_set_active(GTK_SWITCH(self->kbd_level_ctl), saved_lvl > 0);
         } else {
-            static const char *const kbd_level_items[] = { "Off", "Low", "High", NULL };
             gint live_lvl = shell_kbd_backlight_get_level();
             if (live_lvl < 0)
                 live_lvl = cfg ? cfg->kbd_backlight_level : 2;
-            page->kbd_level_ctl = create_segmented_group(kbd_level_items, (guint)CLAMP(live_lvl, 0, 2));
-            gtk_box_append(GTK_BOX(page->slot_kbd_level), page->kbd_level_ctl);
+            segmented_group_set_selected(self->kbd_level_ctl, (guint)CLAMP(live_lvl, 0, 2));
         }
-
-        gtk_widget_set_visible(page->row_kbd_timeout, caps->has_kbd_timeout);
-        if (caps->has_kbd_timeout) {
-            static const char *const kbd_timeout_items[] = { "Always On", "30 Seconds", "3 Minutes", NULL };
+        if (caps->has_kbd_timeout && self->kbd_timeout_ctl) {
             gint live_t = shell_kbd_backlight_get_timeout_sec();
             if (live_t < 0)
                 live_t = cfg ? cfg->kbd_backlight_timeout_sec : 0;
-            page->kbd_timeout_ctl = create_segmented_group(
-                kbd_timeout_items,
-                timeout_sec_to_index(live_t, kbd_timeout_values, G_N_ELEMENTS(kbd_timeout_values), 0));
-            gtk_box_append(GTK_BOX(page->slot_kbd_timeout), page->kbd_timeout_ctl);
+            segmented_group_set_selected(
+                self->kbd_timeout_ctl,
+                timeout_sec_to_index(live_t, k_kbd_timeout_vals, G_N_ELEMENTS(k_kbd_timeout_vals), 0));
         }
-
-        g_signal_connect(page->btn_apply_kbd, "clicked", G_CALLBACK(on_apply_kbd_clicked), page);
     }
 
-    /* Hardware-gated 360° Foldable Posture Card */
     if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
-        gtk_widget_set_visible(page->card_posture, TRUE);
-
-        gdouble hinge_deg = 0.0;
-        if (shell_hw_caps_read_hinge_angle_deg(caps, &hinge_deg)) {
-            const gchar *p_mode = (hinge_deg >= 180.0) ? "Tablet / Tent Mode" : "Laptop Mode";
-            g_autofree gchar *status_txt = g_strdup_printf(
-                "Intel ISH Hinge Sensor Active (Current Angle: %.0f° — %s)",
-                hinge_deg, p_mode);
-            gtk_label_set_text(GTK_LABEL(page->lbl_sensor_status), status_txt);
-        }
-
-        gtk_widget_set_visible(page->row_posture_autorotate, caps->has_accel_sensor);
-        gtk_widget_set_visible(page->row_posture_disable_kbd, caps->has_internal_kbd || caps->has_touchpad);
-        gtk_widget_set_visible(page->row_posture_disable_touch, caps->has_touchscreen);
-
-        gtk_switch_set_active(GTK_SWITCH(page->sw_posture_autorotate),
-                              cfg ? cfg->posture_auto_rotate : TRUE);
-        gtk_switch_set_active(GTK_SWITCH(page->sw_posture_disable_kbd),
-                              cfg ? cfg->posture_disable_kbd_in_tablet : TRUE);
-        gtk_switch_set_active(GTK_SWITCH(page->sw_posture_disable_touch),
-                              cfg ? cfg->posture_disable_touch_in_laptop : FALSE);
-
-        g_signal_connect(page->btn_apply_posture, "clicked", G_CALLBACK(on_apply_posture_clicked), page);
+        if (self->sw_posture_autorotate)
+            gtk_switch_set_active(GTK_SWITCH(self->sw_posture_autorotate), cfg ? cfg->posture_auto_rotate : TRUE);
+        if (self->sw_posture_disable_kbd)
+            gtk_switch_set_active(GTK_SWITCH(self->sw_posture_disable_kbd), cfg ? cfg->posture_disable_kbd_in_tablet : TRUE);
+        if (self->sw_posture_disable_touch)
+            gtk_switch_set_active(GTK_SWITCH(self->sw_posture_disable_touch), cfg ? cfg->posture_disable_touch_in_laptop : FALSE);
     }
 
     if (cfg)
         shell_config_destroy(cfg);
 
-    g_signal_connect(page->btn_preview_ss, "clicked", G_CALLBACK(on_preview_screensaver_clicked), page);
-    g_signal_connect(page->btn_lock_now, "clicked", G_CALLBACK(on_lock_now_clicked), page);
-    g_signal_connect(page->btn_apply_idle, "clicked", G_CALLBACK(on_apply_idle_clicked), page);
+    self->syncing_ui = FALSE;
+    update_displays_dynamic_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
 
-    return create_settings_page_card("DISPLAY OUTPUTS & RESOLUTION", "[ NIRI IPC ACTIVE ]", GTK_WIDGET(page), NULL);
+static void
+on_displays_revert(gpointer user_data)
+{
+    load_niri_and_config_state(user_data);
+}
+
+static void
+on_displays_save(gpointer user_data)
+{
+    SettingsPageDisplays *self = user_data;
+    if (!self)
+        return;
+
+    /* 1. Save 10-outputs.kdl & apply via Niri IPC */
+    const gchar *out_name = (self->out_name && self->out_name[0]) ? self->out_name : "eDP-1";
+    guint mode_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_res));
+    const gchar *res = (mode_sel < self->raw_modes->len)
+        ? g_ptr_array_index(self->raw_modes, mode_sel)
+        : "auto";
+
+    guint orient_sel = segmented_group_get_selected(self->seg_orient);
+    static const char *const k_orients[] = { "normal", "90", "180", "270" };
+    const gchar *orient = (orient_sel < G_N_ELEMENTS(k_orients)) ? k_orients[orient_sel] : "normal";
+
+    guint scale_sel = segmented_group_get_selected(self->seg_scale);
+    double sc = (scale_sel < G_N_ELEMENTS(k_scale_vals)) ? k_scale_vals[scale_sel] : 1.00;
+    gboolean vrr = self->vrr_avail && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_vrr));
+
+    gchar scale_buf[32];
+    g_ascii_formatd(scale_buf, sizeof(scale_buf), "%.2f", sc);
+
+    g_autofree gchar *niri_dir = g_build_filename(g_get_user_config_dir(), "niri", "config.d", NULL);
+    g_mkdir_with_parents(niri_dir, 0755);
+    g_autofree gchar *kdl_path = g_build_filename(niri_dir, "10-outputs.kdl", NULL);
+
+    g_autofree gchar *kdl_content = g_strdup_printf(
+        "// Managed by kajo-settings — DO NOT EDIT DIRECTLY\n\n"
+        "output \"%s\" {\n"
+        "    mode \"%s\"\n"
+        "    scale %s\n"
+        "    transform \"%s\"\n"
+        "    position x=0 y=0\n"
+        "%s"
+        "}\n",
+        out_name, res, scale_buf, orient,
+        vrr ? "    variable-refresh-rate\n" : "");
+    g_file_set_contents(kdl_path, kdl_content, -1, NULL);
+
+    run_niri_output_cmd_async(out_name, "mode", res);
+    run_niri_output_cmd_async(out_name, "scale", scale_buf);
+    run_niri_output_cmd_async(out_name, "transform", orient);
+    run_niri_output_cmd_async(out_name, "vrr", vrr ? "on" : "off");
+    niri_reload_config();
+
+    /* 2. Save Idle / Backlight / Posture settings to ~/.config/kajo/config.json */
+    ShellConfig *cfg = shell_config_load(NULL);
+    if (!cfg)
+        cfg = shell_config_get_default();
+
+    guint ss_mode = segmented_group_get_selected(self->seg_ss_mode);
+    g_free(cfg->screensaver_mode);
+    cfg->screensaver_mode = g_strdup(ss_mode == 1 ? "dpms" : (ss_mode == 2 ? "disabled" : "overlay"));
+
+    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ss_timeout));
+    if (ss_sel < G_N_ELEMENTS(k_ss_timeout_vals))
+        cfg->screensaver_timeout_sec = k_ss_timeout_vals[ss_sel];
+
+    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_dpms_timeout));
+    if (dpms_sel < G_N_ELEMENTS(k_dpms_timeout_vals))
+        cfg->dpms_timeout_sec = k_dpms_timeout_vals[dpms_sel];
+
+    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_lock_timeout));
+    if (lock_sel < G_N_ELEMENTS(k_lock_timeout_vals))
+        cfg->lock_timeout_sec = k_lock_timeout_vals[lock_sel];
+
+    cfg->lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(self->sw_lock_suspend));
+
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    if (caps && caps->kbd_bl_backend != KBD_BL_NONE && self->kbd_level_ctl) {
+        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
+            gboolean wake_on = gtk_switch_get_active(GTK_SWITCH(self->kbd_level_ctl));
+            cfg->kbd_backlight_level = wake_on ? 2 : 0;
+            if (wake_on && shell_kbd_backlight_get_level() <= 0)
+                shell_kbd_backlight_set_level(2);
+        } else {
+            gint level = CLAMP((gint)segmented_group_get_selected(self->kbd_level_ctl), 0, 2);
+            cfg->kbd_backlight_level = level;
+            shell_kbd_backlight_set_level(level);
+        }
+        if (shell_kbd_backlight_has_timeout() && self->kbd_timeout_ctl) {
+            guint t_sel = segmented_group_get_selected(self->kbd_timeout_ctl);
+            if (t_sel < G_N_ELEMENTS(k_kbd_timeout_vals)) {
+                cfg->kbd_backlight_timeout_sec = k_kbd_timeout_vals[t_sel];
+                shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
+            }
+        }
+    }
+
+    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
+        cfg->posture_auto_rotate            = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_autorotate));
+        cfg->posture_disable_kbd_in_tablet  = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_kbd));
+        cfg->posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_touch));
+
+        gdouble deg = 0.0;
+        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
+        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && cfg->posture_disable_touch_in_laptop);
+    }
+
+    g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
+    shell_config_save(cfg, cfg_path);
+    shell_config_destroy(cfg);
+
+    settings_send_ipc_command("reload-config");
+    update_displays_dynamic_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), FALSE);
+}
+
+static void
+settings_page_displays_dispose(GObject *object)
+{
+    SettingsPageDisplays *self = (SettingsPageDisplays *)object;
+    g_clear_pointer(&self->out_name, g_free);
+    g_clear_pointer(&self->make_model, g_free);
+    if (self->raw_modes) {
+        g_ptr_array_free(self->raw_modes, TRUE);
+        self->raw_modes = NULL;
+    }
+    if (self->mode_geoms) {
+        g_array_free(self->mode_geoms, TRUE);
+        self->mode_geoms = NULL;
+    }
+    G_OBJECT_CLASS(settings_page_displays_parent_class)->dispose(object);
+}
+
+static void
+settings_page_displays_init(SettingsPageDisplays *self)
+{
+    gtk_orientable_set_orientation(GTK_ORIENTABLE(self), GTK_ORIENTATION_VERTICAL);
+    gtk_box_set_spacing(GTK_BOX(self), 10);
+    gtk_widget_add_css_class(GTK_WIDGET(self), "settings-bento-canvas");
+    gtk_widget_set_hexpand(GTK_WIDGET(self), TRUE);
+    g_object_set_data(G_OBJECT(self), "is-bento-canvas", GINT_TO_POINTER(1));
+
+    self->raw_modes  = g_ptr_array_new_with_free_func(g_free);
+    self->mode_geoms = g_array_new(FALSE, TRUE, sizeof(DisplayModeGeom));
+}
+
+static void
+settings_page_displays_class_init(SettingsPageDisplaysClass *klass)
+{
+    GObjectClass *object_class = G_OBJECT_CLASS(klass);
+    object_class->dispose = settings_page_displays_dispose;
+}
+
+GtkWidget *
+build_page_displays(void)
+{
+    SettingsPageDisplays *self = g_object_new(settings_page_displays_get_type(), NULL);
+    self->syncing_ui = TRUE;
+
+    /* ─── Card 1: Monitor Output & Scaling ─── */
+    self->card_mon = create_section_card(
+        SETTINGS_CARD_LEFT, "1. MONITOR OUTPUT & SCALING", "10-outputs.kdl", "accent", NULL);
+    GtkWidget *hdr_row = gtk_widget_get_first_child(self->card_mon);
+    self->lbl_mon_heading = hdr_row ? gtk_widget_get_first_child(hdr_row) : NULL;
+
+    self->combo_res = gtk_drop_down_new(NULL, NULL);
+    settings_make_dropdown_shrinkable(self->combo_res);
+    g_signal_connect(self->combo_res, "notify::selected", G_CALLBACK(on_any_dropdown_changed), self);
+    self->row_res = create_boxed_row("🖥", "Resolution & Refresh Rate", "Built-in Display", self->combo_res);
+    gtk_box_append(GTK_BOX(self->card_mon), self->row_res);
+
+    static const char *const orient_labels[] = { "0°", "90°", "180°", "270°", NULL };
+    self->seg_orient = create_segmented_group(orient_labels, 0);
+    segmented_group_connect(self->seg_orient, on_any_segment_changed, self);
+    gtk_box_append(GTK_BOX(self->card_mon),
+                   create_boxed_row("🔄", "Display Transform Orientation",
+                                    "Wayland output rotation applied via Niri IPC",
+                                    self->seg_orient));
+
+    static const char *const scale_labels[] = { "100%", "125%", "150%", "175%", "200%", NULL };
+    self->seg_scale = create_segmented_group(scale_labels, 0);
+    segmented_group_connect(self->seg_scale, on_any_segment_changed, self);
+    self->row_scale = create_boxed_row("🔍", "Fractional UI Scale",
+                                       "100% (1.00x) logical workspace",
+                                       self->seg_scale);
+    gtk_box_append(GTK_BOX(self->card_mon), self->row_scale);
+
+    self->tile_vrr = create_toggle_card("🖥", "Variable Refresh Rate (VRR)", "Unsupported by this output", FALSE);
+    g_signal_connect(self->tile_vrr, "toggled", G_CALLBACK(on_vrr_toggled), self);
+    gtk_box_append(GTK_BOX(self->card_mon), self->tile_vrr);
+
+    /* ─── Card 2: Idle Screensaver, DPMS & Session Lock ─── */
+    GtkWidget *btn_lock_now = create_action_button("🔒 LOCK NOW", NULL, NULL, G_CALLBACK(on_lock_now_clicked), self);
+    gtk_widget_add_css_class(btn_lock_now, "files-nav-btn");
+    GtkWidget *card_idle = create_section_card(
+        SETTINGS_CARD_CENTER, "2. IDLE SCREENSAVER, DPMS & SESSION LOCK",
+        NULL, NULL, btn_lock_now);
+
+    static const char *const ss_mode_labels[] = { "OVERLAY", "DPMS", "OFF", NULL };
+    self->seg_ss_mode = create_segmented_group(ss_mode_labels, 0);
+    segmented_group_connect(self->seg_ss_mode, on_any_segment_changed, self);
+    gtk_box_append(GTK_BOX(card_idle),
+                   create_boxed_row("🌙", "Idle Screensaver Mode",
+                                    "OLED black clock overlay vs immediate DPMS off",
+                                    self->seg_ss_mode));
+
+    static const char *const ss_timeout_items[] = {
+        "1 Minute", "5 Minutes", "10 Minutes", "15 Minutes", "30 Minutes", "Never", NULL
+    };
+    self->combo_ss_timeout = create_string_dropdown(ss_timeout_items);
+    g_signal_connect(self->combo_ss_timeout, "notify::selected", G_CALLBACK(on_any_dropdown_changed), self);
+    self->row_ss_timeout = create_boxed_row("⏱", "Screensaver Idle Timeout",
+                                            "Show clock overlay after user inactivity",
+                                            self->combo_ss_timeout);
+    gtk_box_append(GTK_BOX(card_idle), self->row_ss_timeout);
+
+    static const char *const dpms_timeout_items[] = {
+        "5 Minutes", "10 Minutes", "15 Minutes", "30 Minutes", "Never", NULL
+    };
+    self->combo_dpms_timeout = create_string_dropdown(dpms_timeout_items);
+    g_signal_connect(self->combo_dpms_timeout, "notify::selected", G_CALLBACK(on_any_dropdown_changed), self);
+    gtk_box_append(GTK_BOX(card_idle),
+                   create_boxed_row("🖥", "Display DPMS Power-Off",
+                                    "Turn off display panel power when idle",
+                                    self->combo_dpms_timeout));
+
+    static const char *const lock_timeout_items[] = {
+        "5 Minutes", "10 Minutes", "15 Minutes", "30 Minutes", "Never", NULL
+    };
+    self->combo_lock_timeout = create_string_dropdown(lock_timeout_items);
+    g_signal_connect(self->combo_lock_timeout, "notify::selected", G_CALLBACK(on_any_dropdown_changed), self);
+    gtk_box_append(GTK_BOX(card_idle),
+                   create_boxed_row("🔒", "Automatic PAM Session Lock",
+                                    "ext-session-lock-v1 hardware surface lock",
+                                    self->combo_lock_timeout));
+
+    self->sw_lock_suspend = gtk_switch_new();
+    g_signal_connect(self->sw_lock_suspend, "notify::active", G_CALLBACK(on_any_switch_changed), self);
+    gtk_box_append(GTK_BOX(card_idle),
+                   create_boxed_row("💤", "Lock Session Before System Suspend",
+                                    "Acquire logind sleep delay inhibitor before S3/s2idle",
+                                    self->sw_lock_suspend));
+
+    settings_bento_add_pair(GTK_WIDGET(self), self->card_mon, card_idle);
+
+    /* ─── Card 3 (Hardware-Gated): Keyboard Backlight & Timeout ─── */
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    self->card_kbd = create_section_card(
+        SETTINGS_CARD_RIGHT, "3. KEYBOARD BACKLIGHT & TIMEOUT", "SYSFS LEDS", NULL, NULL);
+
+    if (caps && caps->kbd_bl_backend != KBD_BL_NONE) {
+        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
+            self->kbd_level_ctl = gtk_switch_new();
+            g_signal_connect(self->kbd_level_ctl, "notify::active", G_CALLBACK(on_any_switch_changed), self);
+            gtk_box_append(GTK_BOX(self->card_kbd),
+                           create_boxed_row("⌨", "Wake Keylights on Startup",
+                                            "Hardware EC keylight enable (F4 cycles Low / High)",
+                                            self->kbd_level_ctl));
+        } else {
+            static const char *const kbd_lvl_labels[] = { "OFF", "LOW", "HIGH", NULL };
+            self->kbd_level_ctl = create_segmented_group(kbd_lvl_labels, 2);
+            segmented_group_connect(self->kbd_level_ctl, on_any_segment_changed, self);
+            gtk_box_append(GTK_BOX(self->card_kbd),
+                           create_boxed_row("⌨", "Keyboard Backlight Illumination",
+                                            "Hardware EC / sysfs LED brightness level",
+                                            self->kbd_level_ctl));
+        }
+
+        if (caps->has_kbd_timeout) {
+            static const char *const kbd_to_labels[] = { "NEVER", "30S", "3M", NULL };
+            self->kbd_timeout_ctl = create_segmented_group(kbd_to_labels, 0);
+            segmented_group_connect(self->kbd_timeout_ctl, on_any_segment_changed, self);
+            gtk_box_append(GTK_BOX(self->card_kbd),
+                           create_boxed_row("⏳", "Backlight Auto-Off Timeout",
+                                            "Turn off keylights when typing stops",
+                                            self->kbd_timeout_ctl));
+        }
+    } else {
+        gtk_widget_set_visible(self->card_kbd, FALSE);
+    }
+
+    /* ─── Card 4 (Hardware-Gated): 360° Foldable Posture & IIO Sensors ─── */
+    self->card_posture = create_section_card(
+        SETTINGS_CARD_LEFT, "4. 360° FOLDABLE POSTURE & IIO SENSORS", "IIO ACTIVE", "success", NULL);
+
+    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
+        self->sw_posture_autorotate = gtk_switch_new();
+        g_signal_connect(self->sw_posture_autorotate, "notify::active", G_CALLBACK(on_any_switch_changed), self);
+        GtkWidget *r_rot = create_boxed_row("📐", "Auto-Rotate in Tablet / Tent Mode",
+                                            "Use IIO accelerometer when hinge >= 180°",
+                                            self->sw_posture_autorotate);
+        gtk_widget_set_visible(r_rot, caps->has_accel_sensor);
+        gtk_box_append(GTK_BOX(self->card_posture), r_rot);
+
+        self->sw_posture_disable_kbd = gtk_switch_new();
+        g_signal_connect(self->sw_posture_disable_kbd, "notify::active", G_CALLBACK(on_any_switch_changed), self);
+        GtkWidget *r_kbd = create_boxed_row("🚫", "Inhibit Keyboard & Touchpad in Tablet Mode",
+                                            "Suppress accidental rear key presses when folded",
+                                            self->sw_posture_disable_kbd);
+        gtk_widget_set_visible(r_kbd, caps->has_internal_kbd || caps->has_touchpad);
+        gtk_box_append(GTK_BOX(self->card_posture), r_kbd);
+
+        self->sw_posture_disable_touch = gtk_switch_new();
+        g_signal_connect(self->sw_posture_disable_touch, "notify::active", G_CALLBACK(on_any_switch_changed), self);
+        GtkWidget *r_tch = create_boxed_row("👆", "Disable Touchscreen in Laptop Mode",
+                                            "Prevent palm/screen taps while hinge < 180°",
+                                            self->sw_posture_disable_touch);
+        gtk_widget_set_visible(r_tch, caps->has_touchscreen);
+        gtk_box_append(GTK_BOX(self->card_posture), r_tch);
+    } else {
+        gtk_widget_set_visible(self->card_posture, FALSE);
+    }
+
+    if (gtk_widget_get_visible(self->card_kbd) || gtk_widget_get_visible(self->card_posture))
+        settings_bento_add_pair(GTK_WIDGET(self), self->card_kbd, self->card_posture);
+
+    settings_page_bind_actions(
+        GTK_WIDGET(self),
+        "▶ PREVIEW SCREENSAVER",
+        on_displays_preview_ss,
+        on_displays_revert,
+        on_displays_save,
+        self);
+
+    load_niri_and_config_state(self);
+    return GTK_WIDGET(self);
 }

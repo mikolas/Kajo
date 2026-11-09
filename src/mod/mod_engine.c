@@ -4,6 +4,57 @@
 #include <string.h>
 #include <stdio.h>
 
+static GMutex   s_prefs_mutex;
+static double   s_fallback_duration_sec = 180.0;
+static gchar   *s_hvsc_path             = NULL;
+static gboolean s_auto_extract_archives = TRUE;
+
+void
+kajo_mod_set_runtime_prefs(double       fallback_duration_sec,
+                           const gchar *hvsc_path,
+                           gboolean     auto_extract_archives)
+{
+    g_mutex_lock(&s_prefs_mutex);
+    s_fallback_duration_sec = CLAMP(fallback_duration_sec, 60.0, 600.0);
+    gchar *new_hvsc = (hvsc_path && hvsc_path[0] != '\0') ? g_strdup(hvsc_path) : NULL;
+    if (new_hvsc) {
+        g_strstrip(new_hvsc);
+        if (new_hvsc[0] == '\0')
+            g_clear_pointer(&new_hvsc, g_free);
+    }
+    g_free(s_hvsc_path);
+    s_hvsc_path = new_hvsc;
+    s_auto_extract_archives = auto_extract_archives ? TRUE : FALSE;
+    g_mutex_unlock(&s_prefs_mutex);
+}
+
+double
+kajo_mod_get_fallback_duration_sec(void)
+{
+    g_mutex_lock(&s_prefs_mutex);
+    double v = s_fallback_duration_sec;
+    g_mutex_unlock(&s_prefs_mutex);
+    return v;
+}
+
+gchar *
+kajo_mod_dup_hvsc_path(void)
+{
+    g_mutex_lock(&s_prefs_mutex);
+    gchar *dup = s_hvsc_path ? g_strdup(s_hvsc_path) : NULL;
+    g_mutex_unlock(&s_prefs_mutex);
+    return dup;
+}
+
+gboolean
+kajo_mod_get_auto_extract_archives(void)
+{
+    g_mutex_lock(&s_prefs_mutex);
+    gboolean v = s_auto_extract_archives;
+    g_mutex_unlock(&s_prefs_mutex);
+    return v;
+}
+
 void
 kajo_mod_dsp_config_init(KajoModDspConfig *dsp)
 {
@@ -13,7 +64,7 @@ kajo_mod_dsp_config_init(KajoModDspConfig *dsp)
     dsp->led_mode       = KAJO_MOD_LED_AUTO;
     dsp->sid_model      = KAJO_MOD_SID_AUTO;
     dsp->end_action     = KAJO_MOD_END_NEXT_SUB;
-    dsp->stereo_sep_pct = 65.0;
+    dsp->stereo_sep_pct = 70.0;
     dsp->tempo_pct      = 100.0;
 }
 

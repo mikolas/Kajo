@@ -36,6 +36,7 @@ struct _ShellNotificationDaemon {
     guint32 next_id;
     gint toast_timeout_ms;
     gint max_history;
+    gboolean focus_on_click;
     gboolean dnd_enabled;
     gpointer app_ptr;               /* ShellApp pointer */
     GPtrArray *toasts;
@@ -206,17 +207,21 @@ on_toast_card_released(GtkGestureClick *gesture G_GNUC_UNUSED, gint n_press G_GN
         gtk_widget_set_visible(toast->toast_window, FALSE);
     }
 
-    /* 1. Emit Freedesktop ActionInvoked D-Bus signal so Teams, Chrome, Firefox, Telegram handle app routing */
-    shell_notification_daemon_emit_action_invoked(daemon, toast->id, "default");
-    shell_notification_daemon_emit_notification_closed(daemon, toast->id, 2 /* user dismissed */);
+    if (daemon->focus_on_click) {
+        /* 1. Emit Freedesktop ActionInvoked D-Bus signal so Teams, Chrome, Firefox, Telegram handle app routing */
+        shell_notification_daemon_emit_action_invoked(daemon, toast->id, "default");
+        shell_notification_daemon_emit_notification_closed(daemon, toast->id, 2 /* user dismissed */);
 
-    /* 2. Compositor window focus */
-    if (daemon->app_ptr) {
-        ShellApp *app = (ShellApp *)daemon->app_ptr;
-        ShellCompositor *compositor = shell_app_get_compositor(app);
-        if (compositor) {
-            shell_compositor_focus_app(compositor, toast->app_name, toast->desktop_entry, toast->app_icon);
+        /* 2. Compositor window focus */
+        if (daemon->app_ptr) {
+            ShellApp *app = (ShellApp *)daemon->app_ptr;
+            ShellCompositor *compositor = shell_app_get_compositor(app);
+            if (compositor) {
+                shell_compositor_focus_app(compositor, toast->app_name, toast->desktop_entry, toast->app_icon);
+            }
         }
+    } else {
+        shell_notification_daemon_emit_notification_closed(daemon, toast->id, 2 /* user dismissed */);
     }
 
     g_idle_add(on_toast_idle_free, toast);
@@ -321,10 +326,13 @@ handle_notifications_method_call(GDBusConnection *connection,
         const gchar *key;
         GVariant *val;
         gchar *desktop_entry = NULL;
+        guint8 urgency = 1; /* 0 = low, 1 = normal, 2 = critical */
         while (g_variant_iter_next(hints_iter, "{&sv}", &key, &val)) {
             if (g_strcmp0(key, "desktop-entry") == 0 && g_variant_is_of_type(val, G_VARIANT_TYPE_STRING)) {
                 if (desktop_entry) g_free(desktop_entry);
                 desktop_entry = g_variant_dup_string(val, NULL);
+            } else if (g_strcmp0(key, "urgency") == 0 && g_variant_is_of_type(val, G_VARIANT_TYPE_BYTE)) {
+                urgency = g_variant_get_byte(val);
             }
             g_variant_unref(val);
         }
@@ -345,7 +353,7 @@ handle_notifications_method_call(GDBusConnection *connection,
             shell_notification_daemon_remove_item(daemon, replaces_id);
         }
 
-        if (!daemon->dnd_enabled) {
+        if (!daemon->dnd_enabled || urgency == 2) {
             ShellNotificationToast *toast = g_new0(ShellNotificationToast, 1);
             toast->id = id;
             toast->app_name = g_strdup(app_name);
@@ -443,6 +451,7 @@ shell_notification_daemon_new(void)
     daemon->next_id = 1;
     daemon->toast_timeout_ms = 8000;
     daemon->max_history = 50;
+    daemon->focus_on_click = TRUE;
     daemon->dnd_enabled = FALSE;
     daemon->toasts = g_ptr_array_new();
     daemon->history = g_ptr_array_new_with_free_func((GDestroyNotify)notification_item_free);
@@ -572,6 +581,13 @@ shell_notification_daemon_set_max_history(ShellNotificationDaemon *daemon, gint 
         trim_history(daemon);
         emit_history_changed(daemon);
     }
+}
+
+void
+shell_notification_daemon_set_click_action(ShellNotificationDaemon *daemon, const gchar *action)
+{
+    if (!daemon) return;
+    daemon->focus_on_click = (g_strcmp0(action, "dismiss") != 0);
 }
 
 void

@@ -32,6 +32,7 @@ void                     shell_notification_daemon_on_history_changed(ShellNotif
 void                     shell_notification_daemon_remove_callbacks(ShellNotificationDaemon *daemon, gpointer user_data);
 void                     shell_notification_daemon_set_toast_timeout(ShellNotificationDaemon *daemon, gint timeout_ms);
 void                     shell_notification_daemon_set_max_history(ShellNotificationDaemon *daemon, gint max_history);
+void                     shell_notification_daemon_set_click_action(ShellNotificationDaemon *daemon, const gchar *action);
 void                     shell_notification_daemon_set_dnd(ShellNotificationDaemon *daemon, gboolean dnd);
 gboolean                 shell_notification_daemon_get_dnd(ShellNotificationDaemon *daemon);
 void                     shell_notification_daemon_set_app(ShellNotificationDaemon *daemon, gpointer app_ptr);

@@ -33,7 +33,7 @@ The repository builds and installs **seven integrated native executables** (plus
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual read-only `archive://` browsing (ISOs included), UDisks2 disk-image mounting (`Open With → Mount Disk Image`), smart `libarchive` extraction & compression (`Ctrl+Shift+A`), persistent view/sort/inspector state (`config.json`), full root-to-leaf auto-scrolling breadcrumbs with right-click subfolder jump popovers, rubber-band multi-selection (`GtkMultiSelection`) with batch operations & Wayland clipboard (`Ctrl+C/X/V`), natural filename collation, hit-tested context menu (`Open With / Set Default`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` media, Poppler PDF, `libarchive`, code). |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, embedded/external subtitle selector (`.srt`, `.ass`, PGS), multi-audio stream switching, sync offset, playback speed & frame-stepping, chapters, sibling folder queue, auto-hiding fullscreen HUD, and MPRIS2 D-Bus integration. |
 | **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Music Player** (`libuade` $\rightarrow$ `libsidplayfp`/`reSIDfp` $\rightarrow$ `libgme` $\rightarrow$ `libopenmpt` $\rightarrow$ `libxmp`) with subsong navigation, Amiga Paula A500/A1200 & LED filter control, MOS 6581/8580 SID selector, stereo crossfeed, live `$D400` SID register & sample/instrument inspector, HVSC `Songlengths.md5` / `STIL.txt` lookup, `.lha`/`.zip` multi-file companion extraction, and 60 FPS stereo oscilloscope + 16-band log FFT spectrum. |
-| **`kajo-settings`** | `org.kajo.Settings` | **11-Page Modular System & Suite Control Deck** managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes, Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code** (`config.json` `ide` schemes/fonts), Niri GLSL Shaders, and hardware telemetry. |
+| **`kajo-settings`** | `org.kajo.Settings` | **12-Page Modular System & Suite Control Deck** with 3-tier responsive Niri column reflow managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes (`#RRGGBB` custom hex & font scale), Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code**, **Kajo Mod & DSP**, Niri GLSL Shaders, and hardware telemetry. |
 | **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 live widgets), 16-band FFT audio visualizer, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual touch keyboard, bezel touch gestures, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` OLED screen saver, 360° foldable posture manager, and `ext-session-lock-v1` PAM lock screen. |
 | **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage`, and desktop `--test` preview mode with PAM verification. |
 
@@ -123,18 +123,19 @@ The repository builds and installs **seven integrated native executables** (plus
 ---
 
 ### ⚙️ Kajo Settings (`kajo-settings`)
-11 modular configuration pages (`src/settings/pages/page_*.c`) with zero mock data and live D-Bus / IPC synchronization:
-1. **Displays & Idle Security (`displays`)**: Live Niri output resolution, refresh rate, fractional scale, orientation, VRR, plus Screen Saver & Session Lock timeouts.
-2. **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, connection switching, real per-network security detection, and an inline passphrase banner for new WPA/WPA2/WPA3-Personal networks (saved profiles reconnect directly; WEP/802.1X networks need a profile created elsewhere).
+12 modular configuration pages (`src/settings/pages/page_*.c`) with responsive narrow-to-wide Niri column reflow (`0.25` / `0.333` / `0.50+`), zero mock data, and live D-Bus / IPC synchronization:
+1. **Displays & Idle Security (`displays`)**: Interactive monitor arrangement, live Niri output resolution, refresh rate, fractional scale, orientation, VRR, convertible posture & keyboard backlight, plus Screen Saver & Session Lock timeouts.
+2. **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, active connection hero card, real per-network security detection, and an inline passphrase banner for WPA/WPA2/WPA3-Personal networks.
 3. **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery, device scanning, pairing, and connection toggling.
-4. **Audio & PipeWire (`audio`)**: Multi-channel (`2.0`–`7.1`) PulseAudio/PipeWire output sink routing, input gain, output/input mute switches, and auto-reconnect. Per-app stream sliders live in the panel volume popover.
-5. **Theme & Accent (`theme`)**: Live Metro accent color palette (`@metro-accent`) hot-reloaded across all running Kajo apps.
-6. **Panel & Touch (`panel`)**: Panel edge (segmented Top/Bottom), height, OLED smart autohide (toggle card), bezel touch swipe gestures and on-screen-keyboard behaviour. Convertible posture and keyboard-backlight controls live on the Displays page.
-7. **Widgets (`widgets`)**: Interactive ordering (`▲`/`▼`) and display mode (`icon-only`, `text-only`, `full`) for left/center/right panel zones.
-8. **Notifications (`notifications`)**: Toast timeout, click action and history size. Do-Not-Disturb and clear-history are in the panel DND widget, Control Center and notification popover.
-9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width (segmented), spaces-vs-tabs, word wrap, margin guide, minimap, gutter and current-line highlight (relative line numbers are planned)—saved with an explicit SAVE & APPLY and hot-reloaded via `~/.config/kajo/config.json`.
-10. **Niri & Shaders (`niri`)**: Live Niri layout settings and GLSL window animation shader presets (`open`, `close`, `resize`).
-11. **About (`about`)**: System & suite telemetry overview.
+4. **Audio & PipeWire (`audio`)**: Multi-channel (`2.0`–`7.1`) PulseAudio/PipeWire output sink routing, input gain, output/input mute switches, per-application stream mixer, and auto-reconnect.
+5. **Theme & Accent (`theme`)**: Live Metro accent color palette (`@metro-accent`) with 8 presets, custom `#RRGGBB` hex picker, and UI typography scaling hot-reloaded across all running Kajo apps.
+6. **Panel & Touch (`panel`)**: Panel edge (segmented Top/Bottom), height, padding, widget icon size, OLED smart autohide (toggle card), bezel touch swipe gestures, and on-screen-keyboard behaviour.
+7. **Widgets (`widgets`)**: Interactive ordering (`▲`/`▼`), removal (`✕`), add-to-zone bar, and segmented display mode (`ICON`, `TEXT`, `FULL`) for left/center/right panel zones, plus custom script widget management.
+8. **Notifications (`notifications`)**: Live Do-Not-Disturb toggle card, toast timeout, click action, history size, test notification trigger, and clear-history action.
+9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width (segmented), spaces-vs-tabs, word wrap, margin guide, minimap, gutter, and current-line highlight—saved with an explicit SAVE & APPLY and hot-reloaded via `~/.config/kajo/config.json`.
+10. **Kajo Mod & DSP (`mod`)**: Default Amiga Paula model (`A500`/`A1200`) & resampler, LED low-pass filter, C64 SID chip model (`AUTO`/`6581`/`8580`), HVSC directory path, stereo separation, end-of-song action, and subsong timeout—live-reloaded across running `kajo-mod` instances via `GFileMonitor`.
+11. **Niri & Shaders (`niri`)**: Live Niri layout settings (`gaps`, `focus-ring`, `preset-column-widths`) and GLSL window animation shader presets (`open`, `close`, `resize`).
+12. **About (`about`)**: Responsive 2-column hardware, kernel, Niri/Wayland, and Kajo suite binary inventory with 1-click system report copy.
 
 ---
 
@@ -250,7 +251,7 @@ binds {
 | **`kajo-files`** | `kajo-files [PATH_OR_URI...]` | Opens local folders or GVFS URIs (`trash:///`, `recent:///`, `smb://`, `sftp://`). |
 | **`kajo-player`** | `kajo-player [FILE_OR_URI...]` | Opens video/audio media files in Kajo Player with sibling folder queue discovery. |
 | **`kajo-mod`** | `kajo-mod [FILES \| ARCHIVES \| DIRS...]` | Opens Amiga, C64 SID, chiptune, or tracker modules, `.lha`/`.zip` archives, or folders in Kajo Mod. |
-| **`kajo-settings`** | `kajo-settings [-p <PAGE>]` | Opens System Settings (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `niri`, `about`). |
+| **`kajo-settings`** | `kajo-settings [-p <PAGE>]` | Opens System Settings (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `niri`, `about`). |
 | **`kajo`** | `kajo [--toggle-launcher \| --lock \| --screensaver \| --toggle-osk \| --volume-up \| ...]` | Starts the Wayland shell daemon (no args) or dispatches an instant command over `$XDG_RUNTIME_DIR/kajo.sock`. |
 | **`kajo-greeter`** | `kajo-greeter [--test] [--fullscreen] [--cmd <SESSION>]` | Runs the `greetd` login greeter (use `--test` to preview safely in a `1280×800` desktop window). |
 

@@ -320,6 +320,27 @@ test_archive_companion_and_nfo_extraction(void)
     g_assert_cmpint(added, ==, 1);
     g_assert_cmpuint(pl->items->len, ==, 1);
 
+    /* Verify runtime preference auto_extract_archives = FALSE skips archives */
+    kajo_mod_set_runtime_prefs(240.0, "  /tmp/hvsc-custom  ", FALSE);
+    g_assert_cmpfloat_with_epsilon(kajo_mod_get_fallback_duration_sec(), 240.0, 0.01);
+    g_autofree gchar *dup_hvsc = kajo_mod_dup_hvsc_path();
+    g_assert_cmpstr(dup_hvsc, ==, "/tmp/hvsc-custom");
+    g_assert_false(kajo_mod_get_auto_extract_archives());
+
+    g_autoptr(KajoModPlaylist) pl_no_ext = kajo_mod_playlist_new();
+    int added_disabled = kajo_mod_playlist_add_path(pl_no_ext, arch_path, &err);
+    g_assert_no_error(err);
+    g_assert_cmpint(added_disabled, ==, 0);
+    g_assert_cmpuint(pl_no_ext->items->len, ==, 0);
+
+    /* Clamping & empty-path clearing */
+    kajo_mod_set_runtime_prefs(9999.0, "   ", TRUE);
+    g_assert_cmpfloat_with_epsilon(kajo_mod_get_fallback_duration_sec(), 600.0, 0.01);
+    g_assert_null(kajo_mod_dup_hvsc_path());
+    g_assert_true(kajo_mod_get_auto_extract_archives());
+
+    kajo_mod_set_runtime_prefs(180.0, NULL, TRUE);
+
     g_unlink(arch_path);
     g_rmdir(tmp_dir);
     g_free(tmp_dir);

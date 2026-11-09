@@ -1,0 +1,2875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>kajo-settings — Niri Column Reflow & Full-Height Tiled UI Mockup</title>
+  <style>
+    /* ==========================================================================
+       1. KAJO "AERO + METRO" DESIGN TOKENS (Matching docs/ui-gallery.html & style.css)
+       ========================================================================== */
+    :root {
+      --metro-accent: #0078d4;
+      --metro-accent-hover: #1084df;
+      --metro-accent-rgb: 0, 120, 212;
+
+      --metro-urgent: #e81123;
+      --metro-urgent-text: #ff6b6b;
+      --metro-warning: #ff8c00;
+      --metro-success: #10893e;
+      --metro-telemetry: #00d8f0;
+
+      --surface-tier-0: #101010; /* Recessed canvas / code viewer / counter well */
+      --surface-tier-1: #141414; /* Window base / Popover / Sidebar (@metro-surface-bg) */
+      --surface-tier-2: #161616; /* Secondary ribbon / Sub-toolbar (@metro-surface-2) */
+      --surface-tier-3: #181818; /* Header bar / Section card / Auth bar (@metro-surface-3) */
+      --surface-tier-4: #1a1a1a; /* Control row / Button / Input / Dropdown (@metro-surface-4) */
+      --surface-hover:  #222222; /* Control hover surface (@metro-surface-hover) */
+      --surface-active: #282828;
+
+      --border-subtle:  #222222;
+      --border-struct:  #2b2b2b; /* @metro-border */
+      --border-input:   #333333;
+      --border-strong:  #383838;
+
+      --text-primary:   #ffffff; /* @metro-fg-primary */
+      --text-secondary: #a0a0a0; /* @metro-fg-secondary */
+      --text-muted:     #888888;
+      --text-disabled:  #666666;
+
+      --font-mono: "Fira Code", "FiraCode Nerd Font", "JetBrains Mono", monospace;
+      --font-sans: "Inter", "Cantarell", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      border-radius: 0px !important;
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-mono); /* Global Fira Code reset matching style.css:32-34 */
+    }
+
+    html, body {
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #070707;
+      color: var(--text-primary);
+      font-size: 13px;
+      user-select: none;
+    }
+
+    /* Custom Scrollbars matching style.css & ui-gallery.html */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+      background: var(--surface-tier-1);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #383838;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--metro-accent);
+    }
+
+    /* ── Top Niri Compositor Simulator Bar (32px) ── */
+    .niri-sim-bar {
+      height: 32px;
+      background-color: #0e0e0e;
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 12px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      gap: 10px;
+      flex-shrink: 0;
+    }
+    .niri-sim-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .niri-sim-label {
+      color: var(--text-muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-size: 10px;
+    }
+    .sim-btn {
+      background: var(--surface-tier-3);
+      color: #bbbbbb;
+      border: 1px solid var(--border-struct);
+      padding: 2px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .sim-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .sim-btn.active {
+      background: var(--metro-accent);
+      color: #ffffff;
+      border-color: #ffffff;
+    }
+    .sim-readout {
+      color: var(--metro-telemetry);
+      font-weight: 700;
+      font-size: 10px;
+      padding: 2px 8px;
+      background: #121212;
+      border: 1px solid #262626;
+      min-width: 245px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .sim-swatch {
+      width: 14px;
+      height: 14px;
+      border: 1px solid #444;
+      cursor: pointer;
+    }
+    .sim-swatch.active {
+      border: 2px solid #ffffff;
+    }
+
+    /* ── Simulated Niri Workspace Area (100vh - 32px, with 6px Niri gaps) ── */
+    .niri-workspace {
+      width: 100%;
+      height: calc(100vh - 32px);
+      padding: 6px;
+      display: flex;
+      justify-content: center;
+      align-items: stretch;
+      background:
+        radial-gradient(circle at 20% 20%, rgba(var(--metro-accent-rgb), 0.05), transparent 45%),
+        repeating-linear-gradient(90deg, rgba(255,255,255,0.012) 0px, rgba(255,255,255,0.012) 1px, transparent 1px, transparent 40px),
+        #070707;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ── window.shell-settings-window (style.css:1096-1103) ── */
+    .shell-settings-window {
+      width: 814px; /* Default Niri proportion 0.5 on 2880x1800@1.75x (1646px logical) */
+      height: 100%;
+      min-width: 480px;
+      max-width: 100%;
+      background-color: var(--surface-tier-1);
+      color: var(--text-primary);
+      border: 1px solid var(--metro-accent);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+      position: relative;
+    }
+    .shell-settings-window.stacked-half-height {
+      height: 520px;
+      align-self: center;
+    }
+
+    /* Right-edge interactive column resize handle */
+    .column-resize-grip {
+      width: 6px;
+      height: 100%;
+      background: transparent;
+      cursor: ew-resize;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .column-resize-grip::after {
+      content: '⋮';
+      color: #444;
+      font-size: 14px;
+    }
+    .column-resize-grip:hover {
+      background: rgba(var(--metro-accent-rgb), 0.25);
+    }
+    .column-resize-grip:hover::after {
+      color: #fff;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       CANONICAL TYPOGRAPHY, BADGES & BUTTONS (ui-gallery.html & style.css)
+       ═══════════════════════════════════════════════════════════════════════ */
+    .settings-header-title {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: #ffffff;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .shell-popover-title,
+    .heading,
+    .settings-section-title {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 1.5px;
+      color: var(--metro-accent);
+      text-transform: uppercase;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Center & Right Section Card Header Accent Colors (ui-gallery.html:3216, 3224) */
+    .section-card-center .heading,
+    .section-card-center .shell-popover-title {
+      color: var(--metro-warning);
+    }
+    .section-card-right .heading,
+    .section-card-right .shell-popover-title {
+      color: var(--metro-success);
+    }
+
+    .row-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .row-subtitle,
+    .dim-label {
+      font-size: 11px;
+      color: #888888;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .shell-popover-subtitle {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #9a9a9a;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    /* Canonical Badges (ui-gallery.html:529-564, style.css:324-360) */
+    .shell-popover-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 6px;
+      background-color: #1e1e1e;
+      color: #cccccc;
+      border: 1px solid #333333;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-variant-numeric: tabular-nums;
+    }
+    .shell-popover-badge.accent,
+    .shell-popover-badge.active {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border-color: #ffffff;
+    }
+    .shell-popover-badge.urgent,
+    .shell-popover-badge.peak-clip {
+      background-color: var(--metro-urgent);
+      color: #ffffff;
+      border-color: var(--metro-urgent);
+    }
+    .shell-popover-badge.peak-warn {
+      background-color: #332000;
+      color: var(--metro-warning);
+      border-color: var(--metro-warning);
+    }
+    .shell-popover-badge.success {
+      background-color: #0d2818;
+      color: #3dd675;
+      border-color: var(--metro-success);
+    }
+
+    /* Canonical Buttons (ui-gallery.html:588-693, style.css:659-794) */
+    .kajo-btn {
+      background: none;
+      background-image: none;
+      background-color: var(--surface-tier-4);
+      color: #dddddd;
+      border: 1px solid var(--border-struct);
+      padding: 5px 10px;
+      min-height: 28px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      white-space: nowrap;
+      flex-shrink: 0;
+      transition: background-color 80ms linear, border-color 80ms linear, color 80ms linear;
+    }
+    .kajo-btn:hover:not(:disabled) {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .kajo-btn:active:not(:disabled),
+    .kajo-btn.active {
+      background-color: var(--metro-accent);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .kajo-btn:disabled {
+      background-color: #141414;
+      color: var(--text-disabled);
+      border-color: var(--border-subtle);
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    /* Primary Accent CTA Button (.action-btn-primary / .files-accent-btn) */
+    .kajo-btn.action-btn-primary,
+    .kajo-btn.files-accent-btn {
+      background-color: var(--metro-accent);
+      color: #ffffff;
+      border: 1px solid var(--metro-accent);
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+    .kajo-btn.action-btn-primary:hover:not(:disabled),
+    .kajo-btn.files-accent-btn:hover:not(:disabled) {
+      background-color: var(--metro-accent-hover);
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    /* Compact Toolbar / Row Action Button (.files-nav-btn) */
+    .kajo-btn.files-nav-btn {
+      padding: 2px 8px;
+      min-height: 26px;
+      min-width: 26px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    /* Destructive / Danger Button (.action-btn-danger, style.css:777-794) */
+    .kajo-btn.action-btn-danger {
+      background-color: #2a1215;
+      color: var(--metro-urgent-text);
+      border: 1px solid #5c1e24;
+      font-weight: 700;
+    }
+    .kajo-btn.action-btn-danger:hover:not(:disabled) {
+      background-color: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    /* Close Window Button (.settings-close-btn, style.css:1153-1165) */
+    .kajo-btn.settings-close-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      padding: 2px 8px;
+      min-height: 24px;
+      min-width: 26px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .kajo-btn.settings-close-btn:hover {
+      background-color: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    /* Segmented Control Group (ui-gallery.html:696-713, style.css:750-774) */
+    .segmented-group {
+      display: inline-flex;
+      flex-shrink: 0;
+    }
+    .segmented-group .kajo-btn {
+      min-width: 0;
+      min-height: 26px;
+      padding: 2px 9px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .segmented-group .kajo-btn + .kajo-btn {
+      margin-left: -1px;
+    }
+    .segmented-group .kajo-btn.active {
+      z-index: 2;
+      background-color: var(--metro-accent);
+      border-color: #ffffff;
+      color: #ffffff;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       ZONE 1: Window Chrome Header Bar (.settings-header-bar, style.css:1139)
+       ═══════════════════════════════════════════════════════════════════════ */
+    .settings-header-bar {
+      background-color: var(--surface-tier-3); /* #181818 per style.css:1140 & ui-gallery.html:728 */
+      border-bottom: 1px solid var(--border-struct);
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      gap: 10px;
+    }
+    .header-left,
+    .header-center,
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .header-left {
+      min-width: 0;
+    }
+    .header-center {
+      flex: 1 1 auto;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    /* Canonical Inputs (.kajo-entry & .entry-with-btn, ui-gallery.html:877-910, style.css:566-608) */
+    .kajo-entry {
+      background: none;
+      background-image: none;
+      background-color: var(--surface-tier-4);
+      color: var(--text-primary);
+      border: 1px solid var(--border-input);
+      padding: 4px 10px;
+      min-height: 28px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      outline: none;
+      min-width: 0;
+      transition: border-color 80ms linear, background-color 80ms linear;
+    }
+    .kajo-entry::placeholder {
+      color: #666666;
+    }
+    .kajo-entry:focus {
+      border-color: var(--metro-accent);
+      background-color: #1e1e1e;
+    }
+    .entry-with-btn {
+      display: flex;
+      align-items: stretch;
+      width: 100%;
+    }
+    .entry-with-btn .kajo-entry {
+      border-right: none;
+      flex: 1 1 auto;
+    }
+
+    .settings-search-input {
+      width: 220px;
+      max-width: 100%;
+      min-width: 110px;
+      min-height: 26px;
+      padding: 2px 8px;
+      font-size: 11px;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       MAIN WORKSPACE SPLIT: Adaptive Sidebar Rail + Right Page Viewport
+       ═══════════════════════════════════════════════════════════════════════ */
+    .settings-main-split {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Navigation Sidebar (.navigation-sidebar, style.css:1167-1278 & ui-gallery.html:812-850) */
+    .navigation-sidebar {
+      width: 204px;
+      background-color: var(--surface-tier-1);
+      border-right: 1px solid var(--border-struct);
+      padding: 6px 4px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex-shrink: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      transition: width 80ms linear;
+    }
+
+    .sidebar-category-header {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: var(--metro-accent); /* style.css:1273 */
+      text-transform: uppercase;
+      padding: 8px 8px 3px 8px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sidebar-category-header:first-child {
+      padding-top: 2px;
+    }
+
+    .sidebar-row {
+      padding: 7px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--text-secondary); /* #a0a0a0 per style.css:1183 */
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 500;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      min-width: 0;
+      transition: background-color 80ms linear, color 80ms linear;
+    }
+    .sidebar-row:hover {
+      background-color: var(--surface-hover);
+      color: #ffffff;
+    }
+    .sidebar-row.selected {
+      background-color: rgba(var(--metro-accent-rgb), 0.80); /* style.css:1207 */
+      border-left: 3px solid #ffffff;
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .sidebar-row-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .sidebar-nav-icon {
+      width: 18px;
+      text-align: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .sidebar-label {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+    }
+
+    /* Narrow Column (< 720px, Niri 1/3 540px): 46px Icon Rail Mode */
+    .shell-settings-window.narrow-column:not(.rail-force-expanded) .navigation-sidebar {
+      width: 46px;
+    }
+    .shell-settings-window.narrow-column:not(.rail-force-expanded) .sidebar-category-header,
+    .shell-settings-window.narrow-column:not(.rail-force-expanded) .sidebar-label,
+    .shell-settings-window.narrow-column:not(.rail-force-expanded) .sidebar-row .shell-popover-badge {
+      display: none;
+    }
+    .shell-settings-window.narrow-column:not(.rail-force-expanded) .sidebar-row {
+      justify-content: center;
+      padding: 8px 0;
+    }
+    .shell-settings-window.narrow-column:not(.rail-force-expanded) .sidebar-row-left {
+      justify-content: center;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════
+       RIGHT PAGE VIEWPORT: Zone 2 (Header Deck) + Zone 3 (Canvas) + Zone 4 (Footer)
+       ═══════════════════════════════════════════════════════════════════════ */
+    .settings-page-viewport {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--surface-tier-1);
+      overflow: hidden;
+    }
+
+    /* ZONE 2: Pinned Page Header & Telemetry Deck (.shell-popover-header pattern, style.css:1232) */
+    .shell-popover-header.settings-page-deck {
+      background-color: var(--surface-tier-2); /* #161616 per style.css:1233 */
+      border-bottom: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent);
+      padding: 8px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .settings-deck-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      min-width: 0;
+    }
+    .settings-deck-titles {
+      min-width: 0;
+      flex: 1 1 auto;
+      overflow: hidden;
+    }
+    .settings-deck-badges {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    /* 4-Column Homogeneous Telemetry Counter Strip (never wraps at 480px..1920px) */
+    .settings-counter-strip {
+      background-color: var(--surface-tier-0);
+      border: 1px solid var(--border-subtle);
+      padding: 3px 8px;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .settings-counter-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      border-right: 1px solid #1f1f1f;
+      padding-right: 4px;
+    }
+    .settings-counter-item:last-child {
+      border-right: none;
+      padding-right: 0;
+    }
+    .settings-counter-item .k {
+      color: var(--text-muted);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .settings-counter-item .v {
+      color: var(--text-primary);
+      font-weight: 700;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .settings-counter-item .v.accent {
+      color: var(--metro-telemetry);
+    }
+
+    /* ZONE 3: Scrollable Page Content Canvas (vexpand: TRUE) */
+    .settings-scroll-canvas {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background-color: var(--surface-tier-1);
+    }
+
+    /* Responsive Bento Card Grid:
+       - < 960px window width (Niri 1/3 540px & 1/2 814px): 1-column stack
+       - >= 960px window width (Niri 2/3 1088px & Full 1634px): 2-column balanced grid */
+    .settings-card-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 10px;
+      align-content: start;
+      flex: 1 1 auto;
+    }
+    .shell-settings-window.wide-column .settings-card-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .section-card.span-full {
+      grid-column: 1 / -1;
+    }
+    .section-card.vexpand-card {
+      display: flex;
+      flex-direction: column;
+      flex: 1 1 auto;
+    }
+
+    /* Canonical Section Cards (.section-card-left / -center / -right, ui-gallery.html:1174-1193, style.css:1280-1316) */
+    .section-card {
+      background-color: var(--surface-tier-3); /* #181818 */
+      border: 1px solid var(--border-struct);  /* #2b2b2b */
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-width: 0;
+    }
+    .section-card-left {
+      border-left: 3px solid var(--metro-accent);
+    }
+    .section-card-center {
+      border-left: 3px solid var(--metro-warning);
+    }
+    .section-card-right {
+      border-left: 3px solid var(--metro-success);
+    }
+
+    .card-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+      min-width: 0;
+    }
+
+    /* Canonical Control Row (.widget-row-card, ui-gallery.html:1196-1243, style.css:1318-1328) */
+    .widget-row-card {
+      background-color: var(--surface-tier-4); /* #1a1a1a (elevated over #181818 .section-card) */
+      border: 1px solid #262626;
+      border-left: 3px solid transparent;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center; /* Strict GTK_ALIGN_CENTER mandate */
+      justify-content: space-between;
+      gap: 12px;
+      min-width: 0;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+    .widget-row-card:hover {
+      background-color: #202020;
+      border-color: var(--metro-accent);
+    }
+    .widget-row-card.active {
+      background-color: rgba(var(--metro-accent-rgb), 0.25);
+      border-color: var(--metro-accent);
+      border-left: 3px solid #ffffff;
+    }
+    .widget-row-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .widget-row-icon {
+      width: 28px;
+      height: 28px;
+      background-color: #141414;
+      border: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .widget-row-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 2px;
+      min-width: 0;
+      flex: 1 1 auto;
+    }
+    .widget-row-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    /* Canonical Sliders (.kajo-scale, ui-gallery.html:1068-1105, style.css:848-882) */
+    .kajo-scale-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 195px;
+      flex-shrink: 0;
+    }
+    .shell-settings-window.narrow-column .kajo-scale-wrap {
+      width: 150px;
+    }
+    .kajo-scale {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: linear-gradient(
+        to right,
+        var(--metro-accent) 0%,
+        var(--metro-accent) var(--val, 65%),
+        #262626 var(--val, 65%),
+        #262626 100%
+      );
+      outline: none;
+      cursor: pointer;
+    }
+    .kajo-scale::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background-color: #ffffff;
+      border: 2px solid var(--metro-accent);
+      cursor: pointer;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+    .kajo-scale::-webkit-slider-thumb:hover {
+      background-color: var(--metro-accent);
+      border-color: #ffffff;
+    }
+
+    /* Canonical Switch (.kajo-switch, ui-gallery.html:912-956, style.css:797-837) */
+    .kajo-switch {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .kajo-switch input {
+      display: none;
+    }
+    .kajo-switch-track {
+      width: 44px;
+      height: 22px;
+      background-color: #262626;
+      border: 1px solid #3a3a3a;
+      position: relative;
+      transition: background-color 100ms linear, border-color 100ms linear;
+    }
+    .kajo-switch:hover .kajo-switch-track {
+      border-color: var(--metro-accent);
+    }
+    .kajo-switch-thumb {
+      width: 16px;
+      height: 16px;
+      background-color: #aaaaaa;
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      transition: transform 100ms linear, background-color 100ms linear;
+    }
+    .kajo-switch input:checked + .kajo-switch-track {
+      background-color: var(--metro-accent);
+      border-color: var(--metro-accent);
+    }
+    .kajo-switch input:checked + .kajo-switch-track .kajo-switch-thumb {
+      transform: translateX(22px);
+      background-color: #ffffff;
+    }
+
+    /* Canonical Toggle Card (.kajo-toggle-card / button.toggle-card, ui-gallery.html:961-967, style.css:434-496) */
+    .kajo-toggle-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      text-align: left;
+      width: 100%;
+      background-color: var(--surface-tier-4);
+      color: #ffffff;
+      border: 1px solid var(--border-struct);
+      border-left: 4px solid var(--border-struct);
+      padding: 8px 12px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+    .kajo-toggle-card:hover {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+      border-left-color: var(--metro-accent);
+    }
+    .kajo-toggle-card.on {
+      background-color: rgba(var(--metro-accent-rgb), 0.12);
+      border-color: var(--border-struct);
+      border-left: 4px solid var(--metro-accent);
+    }
+    .kajo-toggle-card.on:hover {
+      background-color: rgba(var(--metro-accent-rgb), 0.20);
+      border-color: var(--metro-accent);
+    }
+    .kajo-toggle-card-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+    .kajo-toggle-card .tile-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #ffffff;
+    }
+    .kajo-toggle-card .tile-subtitle {
+      font-size: 11px;
+      color: #9a9a9a;
+      margin-top: 2px;
+    }
+
+    /* Canonical Dropdown (dropdown > button, ui-gallery.html:1017-1035, style.css:998-1022) */
+    select.kajo-dropdown-btn {
+      background-color: var(--surface-tier-4);
+      color: #ffffff;
+      border: 1px solid var(--border-struct);
+      padding: 5px 10px;
+      min-height: 28px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 500;
+      outline: none;
+      cursor: pointer;
+      max-width: 220px;
+      transition: background-color 80ms linear, border-color 80ms linear;
+    }
+    select.kajo-dropdown-btn:hover,
+    select.kajo-dropdown-btn:focus {
+      background-color: var(--surface-hover);
+      border-color: var(--metro-accent);
+    }
+
+    /* Inline Contextual Passphrase Banner (.settings-auth-bar / .files-auth-bar, style.css:1756-1761) */
+    .settings-auth-bar {
+      background-color: var(--surface-tier-3); /* #181818 */
+      border: 1px solid var(--border-struct);  /* #2b2b2b */
+      border-left: 3px solid var(--metro-warning);
+      padding: 10px 14px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .settings-auth-bar.revealed {
+      display: flex;
+    }
+
+    /* Swatch & Scheme Grids (page_theme & page_ide) */
+    .swatch-grid-8 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px;
+    }
+    .swatch-square {
+      width: 18px;
+      height: 18px;
+      border: 1px solid rgba(255, 255, 255, 0.28);
+      flex-shrink: 0;
+    }
+
+    /* Canonical Code Preview Box (.code-preview-box, ui-gallery.html:572-583, style.css:362-370) */
+    .code-preview-box {
+      background-color: #111111;
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent);
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #cccccc;
+      overflow-x: auto;
+      white-space: pre;
+      line-height: 1.5;
+    }
+
+    /* ZONE 4: Docked Action & Persistence Footer Bar (.shell-popover-footer / .files-status-bar, style.css:1243) */
+    .shell-popover-footer.settings-footer-bar {
+      background-color: var(--surface-tier-2); /* #161616 per style.css:1244 */
+      border-top: 1px solid var(--border-struct);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      gap: 8px;
+    }
+    .footer-status-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .footer-actions-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .settings-page-pane {
+      display: none;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1 1 auto;
+    }
+    .settings-page-pane.active {
+      display: flex;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TOP NIRI COMPOSITOR SIMULATOR BAR (Column Widths, Heights & Accents)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="niri-sim-bar">
+    <div class="niri-sim-group" id="niriGeomGroup">
+      <span class="niri-sim-label">NIRI COL (MOD+R):</span>
+      <button class="sim-btn" data-width="540" data-mode="full" title="Niri 0.33333 Column (540px on 2880×1800@1.75x)">1/3 (540px)</button>
+      <button class="sim-btn active" data-width="814" data-mode="full" title="Niri 0.50 Default Column (814px on 2880×1800@1.75x)">1/2 (814px DEFAULT)</button>
+      <button class="sim-btn" data-width="1088" data-mode="full" title="Niri 0.66667 Column (1088px — 2-Col Bento Grid)">2/3 (1088px)</button>
+      <button class="sim-btn" data-width="1634" data-mode="full" title="Niri 1.00 Maximized Column (1634px)">FULL (1634px)</button>
+      <button class="sim-btn" data-width="814" data-mode="stacked" title="2 Windows Vertically Stacked in 1 Niri Column (520px height)">STACKED (814×520px)</button>
+    </div>
+
+    <div class="sim-readout" id="niriSizeReadout">COL: 814px • 204px RAIL + 1-COL CARDS</div>
+
+    <div class="niri-sim-group" id="accentGroup">
+      <span class="niri-sim-label">ACCENT:</span>
+      <div class="sim-swatch active" style="background:#0078d4;" data-color="#0078d4" data-rgb="0, 120, 212" data-name="Cobalt Blue"></div>
+      <div class="sim-swatch" style="background:#b4009e;" data-color="#b4009e" data-rgb="180, 0, 158" data-name="Cyberpunk Magenta"></div>
+      <div class="sim-swatch" style="background:#10893e;" data-color="#10893e" data-rgb="16, 137, 62" data-name="Emerald Green"></div>
+      <div class="sim-swatch" style="background:#ff8c00;" data-color="#ff8c00" data-rgb="255, 140, 0" data-name="Amber Gold"></div>
+      <div class="sim-swatch" style="background:#e81123;" data-color="#e81123" data-rgb="232, 17, 35" data-name="Crimson Red"></div>
+      <div class="sim-swatch" style="background:#00b7c3;" data-color="#00b7c3" data-rgb="0, 183, 195" data-name="Teal Cyan"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       NIRI TILED WORKSPACE VIEWPORT (100vh - 32px)
+       ═══════════════════════════════════════════════════════════════════════ -->
+  <div class="niri-workspace">
+    <div class="shell-settings-window" id="settingsWindow">
+
+      <!-- ZONE 1: Frameless Window Chrome Header Bar (.settings-header-bar) -->
+      <div class="settings-header-bar">
+        <div class="header-left">
+          <button class="kajo-btn files-nav-btn" id="btnToggleRail" title="Toggle Compact Icon Rail vs Full Category Sidebar">☰</button>
+          <span class="settings-header-title">⚙ SYSTEM SETTINGS</span>
+          <span class="shell-popover-badge accent" id="hdrPageBadge">11 / 12 • KAJO MOD</span>
+        </div>
+
+        <div class="header-center">
+          <input type="text" class="kajo-entry settings-search-input" id="settingsSearchInput" placeholder="🔍 Filter settings (Ctrl+F)..." />
+        </div>
+
+        <div class="header-right">
+          <button class="kajo-btn files-nav-btn" title="niri_toggle_window_floating()">🗗 FLOAT / TILE</button>
+          <button class="kajo-btn settings-close-btn" title="Close Window (Ctrl+Q)">✕</button>
+        </div>
+      </div>
+
+      <!-- MAIN SPLIT: Left Adaptive Navigation Sidebar + Right Page Viewport -->
+      <div class="settings-main-split">
+
+        <!-- Left Navigation Sidebar (.navigation-sidebar) -->
+        <nav class="navigation-sidebar" id="navSidebar">
+          <div class="sidebar-category-header">HARDWARE &amp; SYSTEM</div>
+          <div class="sidebar-row" data-page="displays" title="Displays, Idle & Foldable Posture">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🖥</span>
+              <span class="sidebar-label">Displays &amp; Posture</span>
+            </div>
+            <span class="shell-popover-badge">eDP-1</span>
+          </div>
+          <div class="sidebar-row" data-page="network" title="Network & Wi-Fi (NetworkManager)">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🌐</span>
+              <span class="sidebar-label">Network &amp; Wi-Fi</span>
+            </div>
+            <span class="shell-popover-badge success">WPA3</span>
+          </div>
+          <div class="sidebar-row" data-page="bluetooth" title="Bluetooth Adapter & Devices (BlueZ 5)">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">ᛒ</span>
+              <span class="sidebar-label">Bluetooth</span>
+            </div>
+            <span class="shell-popover-badge">ON</span>
+          </div>
+          <div class="sidebar-row" data-page="audio" title="Audio Routing & PipeWire">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🔊</span>
+              <span class="sidebar-label">Audio &amp; PipeWire</span>
+            </div>
+            <span class="shell-popover-badge">65%</span>
+          </div>
+
+          <div class="sidebar-category-header">SHELL &amp; COMPOSITOR</div>
+          <div class="sidebar-row" data-page="theme" title="Metro Accent Palette & Typography">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🎨</span>
+              <span class="sidebar-label">Theme &amp; Fonts</span>
+            </div>
+            <span class="shell-popover-badge accent" id="navMetaTheme">COBALT</span>
+          </div>
+          <div class="sidebar-row" data-page="panel" title="Panel Geometry, Touch Gestures & Virtual Keyboard">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">▬</span>
+              <span class="sidebar-label">Panel, Touch &amp; OSK</span>
+            </div>
+            <span class="shell-popover-badge">TOP</span>
+          </div>
+          <div class="sidebar-row" data-page="widgets" title="Panel Bar Widgets (Left / Center / Right)">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🧩</span>
+              <span class="sidebar-label">Panel Widgets</span>
+            </div>
+            <span class="shell-popover-badge">14</span>
+          </div>
+          <div class="sidebar-row" data-page="notifications" title="Notification Daemon & Toast Popups">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🔔</span>
+              <span class="sidebar-label">Notifications</span>
+            </div>
+            <span class="shell-popover-badge">8S</span>
+          </div>
+          <div class="sidebar-row" data-page="niri" title="Niri Layer Surface Rules & GLSL Transition Shaders">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">❖</span>
+              <span class="sidebar-label">Niri &amp; Shaders</span>
+            </div>
+            <span class="shell-popover-badge">GLSL</span>
+          </div>
+
+          <div class="sidebar-category-header">KAJO SUITE APPS</div>
+          <div class="sidebar-row" data-page="ide" title="Kajo IDE Modal Code Editor, Gutter & Color Schemes">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🮖</span>
+              <span class="sidebar-label">Kajo IDE</span>
+            </div>
+            <span class="shell-popover-badge">DARK</span>
+          </div>
+          <div class="sidebar-row selected" data-page="mod" title="Kajo Mod — Amiga UADE, C64 SID, Chiptune & Tracker Defaults">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">🎹</span>
+              <span class="sidebar-label">Kajo Mod</span>
+            </div>
+            <span class="shell-popover-badge accent">UADE</span>
+          </div>
+
+          <div class="sidebar-category-header">SYSTEM INFO</div>
+          <div class="sidebar-row" data-page="about" title="About Kajo // OS & Suite Inventory">
+            <div class="sidebar-row-left">
+              <span class="sidebar-nav-icon">ℹ</span>
+              <span class="sidebar-label">About Kajo // OS</span>
+            </div>
+            <span class="shell-popover-badge">v0.4</span>
+          </div>
+        </nav>
+
+        <!-- Right Page Viewport -->
+        <div class="settings-page-viewport">
+
+          <!-- ZONE 2: Pinned Page Header & Telemetry Deck (.shell-popover-header) -->
+          <div class="shell-popover-header settings-page-deck">
+            <div class="settings-deck-top">
+              <div class="settings-deck-titles">
+                <div class="shell-popover-title" id="deckTitle">KAJO MOD — RETRO AMIGA, C64 SID &amp; TRACKER ENGINE</div>
+                <div class="shell-popover-subtitle" id="deckSub">Persistent global defaults in ~/.config/kajo/config.json • Live IPC broadcast to org.kajo.Mod</div>
+              </div>
+              <div class="settings-deck-badges">
+                <span class="shell-popover-badge accent" id="deckBadge1">LIBUADE + RESIDFP</span>
+                <span class="shell-popover-badge success" id="deckBadge2">CONFIG.JSON</span>
+              </div>
+            </div>
+
+            <div class="settings-counter-strip">
+              <div class="settings-counter-item"><span class="k" id="cntK1">PRIO 1</span><span class="v accent" id="cntV1">UADE 3.05 (68K)</span></div>
+              <div class="settings-counter-item"><span class="k" id="cntK2">PRIO 2</span><span class="v" id="cntV2">RESIDFP 6581/8580</span></div>
+              <div class="settings-counter-item"><span class="k" id="cntK3">PAULA</span><span class="v" id="cntV3">A500 + LED AUTO</span></div>
+              <div class="settings-counter-item"><span class="k" id="cntK4">HVSC</span><span class="v" id="cntV4">STIL + MD5 READY</span></div>
+            </div>
+          </div>
+
+          <!-- ZONE 3: Scrollable Page Content Canvas (vexpand: TRUE) -->
+          <div class="settings-scroll-canvas" id="pageScrollCanvas">
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 11 (ACTIVE BY DEFAULT FOR REVIEW): KAJO MOD (page_mod)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane active" data-pane="mod">
+              <div class="settings-card-grid">
+
+                <!-- Card 1: Amiga Paula (libuade) & Tracker (libopenmpt) DSP Defaults -->
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. AMIGA PAULA (LIBUADE) &amp; TRACKER DSP DEFAULTS</span>
+                    <span class="shell-popover-badge accent">PAULA 8364</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎛</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default Paula / Resampling Filter</div>
+                        <div class="row-subtitle">Startup analog RC model (UADE) and sinc/linear interpolator (libopenmpt)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">A500</button>
+                        <button class="kajo-btn">A1200</button>
+                        <button class="kajo-btn">NEAR</button>
+                        <button class="kajo-btn">LIN</button>
+                        <button class="kajo-btn">SINC</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">💡</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Amiga Power LED Low-Pass Filter (3.3 kHz)</div>
+                        <div class="row-subtitle">AUTO follows Eagleplayer/module $BFE001 bit 1; ON forces RC low-pass</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">AUTO</button>
+                        <button class="kajo-btn">ON</button>
+                        <button class="kajo-btn">OFF</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎧</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default Stereo Channel Separation</div>
+                        <div class="row-subtitle">0% = Mono, 70% = Classic Amiga L/R crossfeed, 100% = Hard pan</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="0" max="100" value="70" style="--val:70%;" data-badge="lblModSep" data-suffix="% (AMIGA)" />
+                        <span class="shell-popover-badge accent" id="lblModSep">70% (AMIGA)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔁</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default Track &amp; Subsong End Action</div>
+                        <div class="row-subtitle">Behavior when a subsong or module reaches its end or loop boundary</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">ADVANCE</button>
+                        <button class="kajo-btn">LOOP</button>
+                        <button class="kajo-btn">FADE</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Card 2: C64 SID (libsidplayfp / reSIDfp) & Timing Defaults -->
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. C64 SID (RESIDFP) &amp; PLAYBACK TIMING</span>
+                    <span class="shell-popover-badge peak-warn">MOS 6581 / 8580</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🕹</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default MOS SID Chip Model</div>
+                        <div class="row-subtitle">AUTO uses PSID/RSID v2+ flags; 6581 R4AR warm curve vs 8580 crisp</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">AUTO</button>
+                        <button class="kajo-btn">6581</button>
+                        <button class="kajo-btn">8580</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⏱</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default C64 CIA / VBI Clock Standard</div>
+                        <div class="row-subtitle">PAL (985,248 Hz / 50 Hz) vs NTSC (1,022,727 Hz / 60 Hz)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">AUTO</button>
+                        <button class="kajo-btn">PAL 50HZ</button>
+                        <button class="kajo-btn">NTSC 60HZ</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⌛</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Endless Chiptune Fallback Duration</div>
+                        <div class="row-subtitle">Default length when HVSC Songlengths.md or ID666 tag is absent</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="60" max="600" step="15" value="180" style="--val:22%;" data-badge="lblModDur" data-suffix="s (03:00)" />
+                        <span class="shell-popover-badge" id="lblModDur">180s (03:00)</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔇</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">UADE Silence / Stall Auto-Advance Timeout</div>
+                        <div class="row-subtitle">Advance to next subsong/track after N seconds of silent Paula DMA</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="2" max="20" step="1" value="5" style="--val:17%;" data-badge="lblModSil" data-suffix="s" />
+                        <span class="shell-popover-badge" id="lblModSil">5s</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Card 3: HVSC Root Directory & 4-Tier Engine Priority Matrix -->
+                <div class="section-card section-card-right span-full vexpand-card">
+                  <div class="card-header-row">
+                    <span class="heading">3. HVSC (C64MUSIC) DATABASE PATH &amp; 4-TIER ENGINE ROUTING MATRIX</span>
+                    <span class="shell-popover-badge success">4 BACKENDS ACTIVE</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">📚</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">High Voltage SID Collection (HVSC) Root Directory</div>
+                        <div class="row-subtitle">Auto-resolves DOCUMENTS/STIL.txt liner notes &amp; DOCUMENTS/Songlengths.md MD5 timings</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right" style="flex: 0 1 340px;">
+                      <div class="entry-with-btn">
+                        <input type="text" class="kajo-entry" value="/home/mikolas/Music/C64Music" />
+                        <button class="kajo-btn files-nav-btn">📂 BROWSE</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card active">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">1</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Priority 1 — Amiga 68000 CPU + Paula BLEP Emulator (libuade 3.05)</div>
+                        <div class="row-subtitle">Handles 4-ch Amiga .mod, TFMX (mdat/smpl), AHX/HVL, Jochen Hippel, OctaMED, Oktalyzer &amp; 200+ Eagleplayers</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge accent">UADE CORE</span>
+                      <span class="shell-popover-badge success">READY</span>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">2</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Priority 2 — C64 Cycle-Exact MOS 6581 / 8580 Transistor Filter (libsidplayfp + reSIDfp)</div>
+                        <div class="row-subtitle">Handles PSID / RSID v1–v4 (.sid, .psid, .rsid, .mus) with CIA/VBI multi-subsong stepping</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge peak-warn">RESIDFP 3.1</span>
+                      <span class="shell-popover-badge success">READY</span>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">3</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Priority 3 — Console Chiptune &amp; FM/PSG Emulators (libgme 0.6.5)</div>
+                        <div class="row-subtitle">Handles SNES SPC700 (.spc), Mega Drive/Master System (.vgm/.vgz), NES (.nsf/.nsfe), Game Boy (.gbs), ZX/CPC (.ay)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge">LIBGME</span>
+                      <span class="shell-popover-badge success">READY</span>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">4</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Priority 4 — PC Multi-Channel Tracker Fallback (libopenmpt 0.8)</div>
+                        <div class="row-subtitle">Handles FastTracker II (.xm), ScreamTracker 3 (.s3m), Impulse Tracker (.it), OpenMPT (.mptm) &amp; 6–64ch PC .mod</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge">OPENMPT</span>
+                      <span class="shell-popover-badge success">READY</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 01: DISPLAYS, IDLE & FOLDABLE POSTURE (page_displays)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="displays">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. MONITOR OUTPUT &amp; SCALING (eDP-1)</span>
+                    <span class="shell-popover-badge accent">10-outputs.kdl</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🖥</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Resolution &amp; Refresh Rate</div>
+                        <div class="row-subtitle">BOE 0x0B2E OLED Panel • eDP-1 Primary Output</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>2880x1800@120.000 (Preferred)</option>
+                        <option>2880x1800@60.000</option>
+                        <option>1920x1200@120.000</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔄</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Display Transform Orientation</div>
+                        <div class="row-subtitle">Wayland output rotation applied via Niri IPC</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">0°</button>
+                        <button class="kajo-btn">90°</button>
+                        <button class="kajo-btn">180°</button>
+                        <button class="kajo-btn">270°</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔍</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Fractional UI Scale</div>
+                        <div class="row-subtitle">175% (1.75) yields 1646×1028 logical workspace</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn">100%</button>
+                        <button class="kajo-btn">125%</button>
+                        <button class="kajo-btn">150%</button>
+                        <button class="kajo-btn active">175%</button>
+                        <button class="kajo-btn">200%</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Canonical Toggle Card (.kajo-toggle-card with .widget-row-icon, ui-gallery.html:3287) -->
+                  <button class="kajo-toggle-card on" type="button">
+                    <div class="kajo-toggle-card-left">
+                      <span class="widget-row-icon">🖥</span>
+                      <span>
+                        <div class="tile-title">Variable Refresh Rate (VRR)</div>
+                        <div class="tile-subtitle">Adaptive Sync Active</div>
+                      </span>
+                    </div>
+                    <span class="shell-popover-badge accent">VRR</span>
+                  </button>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. IDLE SCREENSAVER, DPMS &amp; SESSION LOCK</span>
+                    <span class="shell-popover-badge">ext-idle-notify-v1</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🌙</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Idle Screensaver Mode</div>
+                        <div class="row-subtitle">OLED black clock overlay vs immediate DPMS off</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">OVERLAY</button>
+                        <button class="kajo-btn">DPMS</button>
+                        <button class="kajo-btn">OFF</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⏱</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Screensaver &amp; DPMS Timeouts</div>
+                        <div class="row-subtitle">Overlay after 5m • Display power-off after 10m</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option>1 Min / 5 Min</option>
+                        <option selected>5 Min / 10 Min</option>
+                        <option>10 Min / 15 Min</option>
+                        <option>Never</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔒</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Automatic PAM Session Lock Timeout</div>
+                        <div class="row-subtitle">ext-session-lock-v1 hardware surface lock</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option>5 Minutes</option>
+                        <option selected>10 Minutes</option>
+                        <option>15 Minutes</option>
+                        <option>Never</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">💤</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Lock Session Before System Suspend</div>
+                        <div class="row-subtitle">Acquire logind sleep delay inhibitor before S3/s2idle</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-right">
+                  <div class="card-header-row">
+                    <span class="heading">3. KEYBOARD BACKLIGHT &amp; TIMEOUT</span>
+                    <span class="shell-popover-badge">SYSFS LEDS</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⌨</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Keyboard Backlight Illumination</div>
+                        <div class="row-subtitle">Hardware EC / sysfs LED brightness level</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn">OFF</button>
+                        <button class="kajo-btn">LOW</button>
+                        <button class="kajo-btn active">HIGH</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⏳</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Backlight Auto-Off Timeout</div>
+                        <div class="row-subtitle">Turn off keylights when typing stops</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn">NEVER</button>
+                        <button class="kajo-btn active">30S</button>
+                        <button class="kajo-btn">3M</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">4. 360° FOLDABLE POSTURE &amp; IIO SENSORS</span>
+                    <span class="shell-popover-badge success">LAPTOP • 128°</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">📐</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Auto-Rotate in Tablet / Tent Mode</div>
+                        <div class="row-subtitle">Use IIO accelerometer when hinge &ge; 180°</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🚫</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Inhibit Keyboard &amp; Touchpad in Tablet Mode</div>
+                        <div class="row-subtitle">Suppress accidental rear key presses when folded</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 02: NETWORK & WI-FI (page_network)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="network">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left span-full">
+                  <div class="card-header-row">
+                    <span class="heading">1. WIRELESS RADIO &amp; ACTIVE INTERFACE (wlan0)</span>
+                    <span class="shell-popover-badge success">CONNECTED</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">📡</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Wi-Fi Wireless Networking Radio</div>
+                        <div class="row-subtitle">org.freedesktop.NetworkManager WirelessEnabled</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card active">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🌐</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">KAJO-LAB-5G (Connected • WPA3-SAE)</div>
+                        <div class="row-subtitle">Interface: wlan0 • IPv4: 192.168.1.42/24 • Signal: 88% (5 GHz)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge success">88%</span>
+                      <button class="kajo-btn files-nav-btn">DISCONNECT</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-right span-full vexpand-card">
+                  <div class="card-header-row">
+                    <span class="heading">2. AVAILABLE WI-FI ACCESS POINTS (CLICK SECURED AP TO PREVIEW INLINE AUTH)</span>
+                    <button class="kajo-btn files-nav-btn">🔍 REFRESH SCAN</button>
+                  </div>
+
+                  <!-- Canonical .settings-auth-bar (style.css:1756-1761) -->
+                  <div class="settings-auth-bar" id="netAuthBanner">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span class="shell-popover-badge accent" id="netAuthTitle">🔒 PASSPHRASE REQUIRED — CORP-GUEST-6E</span>
+                      <span class="row-subtitle">WPA2/WPA3 PSK • scrubbed via explicit_bzero()</span>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                      <input type="password" class="kajo-entry" placeholder="Wi-Fi passphrase" style="flex:1;" />
+                      <button class="kajo-btn action-btn-primary files-nav-btn">CONNECT</button>
+                      <button class="kajo-btn files-nav-btn" id="btnCancelNetAuth">CANCEL</button>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card" data-ap="CORP-GUEST-6E" style="cursor:pointer;">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔒</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">CORP-GUEST-6E</div>
+                        <div class="row-subtitle">Secured (WPA3-SAE) • Signal: 76% • 6 GHz</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge">76%</span>
+                      <button class="kajo-btn files-nav-btn">CONNECT</button>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card" data-ap="STUDIO-NAS-WIFI" style="cursor:pointer;">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔒</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">STUDIO-NAS-WIFI</div>
+                        <div class="row-subtitle">Secured (WPA2-PSK) • Signal: 64% • 5 GHz</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge">64%</span>
+                      <button class="kajo-btn files-nav-btn">CONNECT</button>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔓</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Helsinki-City-Open</div>
+                        <div class="row-subtitle">Open Network • Signal: 41% • 2.4 GHz</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <span class="shell-popover-badge">41%</span>
+                      <button class="kajo-btn files-nav-btn">CONNECT</button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 03: BLUETOOTH (page_bluetooth)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="bluetooth">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. BLUEZ 5 ADAPTER &amp; PAIRED DEVICES</span>
+                    <span class="shell-popover-badge accent">hci0 • ON</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">ᛒ</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Bluetooth Radio Power</div>
+                        <div class="row-subtitle">org.bluez.Adapter1 Powered state</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card active">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎧</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Sony WH-1000XM5</div>
+                        <div class="row-subtitle">Connected (LDAC 990 kbps) • 88:C9:E8:41:12:09</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <button class="kajo-btn files-nav-btn">DISCONNECT</button>
+                      <button class="kajo-btn action-btn-danger files-nav-btn">FORGET</button>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⌨</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Keychron K2 Pro Mechanical</div>
+                        <div class="row-subtitle">Paired (Offline) • DC:2C:26:10:8A:44</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <button class="kajo-btn files-nav-btn">CONNECT</button>
+                      <button class="kajo-btn action-btn-danger files-nav-btn">FORGET</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-right vexpand-card">
+                  <div class="card-header-row">
+                    <span class="heading">2. NEARBY DISCOVERABLE DEVICES</span>
+                    <button class="kajo-btn files-nav-btn">🔍 SCAN NEARBY</button>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🖱</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Logitech MX Master 3S</div>
+                        <div class="row-subtitle">Discovered Nearby BLE Mouse • F4:73:35:90:1B:CC</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <button class="kajo-btn action-btn-primary files-nav-btn">PAIR DEVICE</button>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎮</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">8BitDo Ultimate 2.4G / BT Controller</div>
+                        <div class="row-subtitle">Discovered Gamepad • E4:17:D8:3A:09:11</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <button class="kajo-btn action-btn-primary files-nav-btn">PAIR DEVICE</button>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 04: AUDIO & PIPEWIRE (page_audio)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="audio">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. OUTPUT SOUND DEVICES &amp; ROUTING</span>
+                    <span class="shell-popover-badge accent">8 CHANNELS</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔊</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default Output Sink</div>
+                        <div class="row-subtitle">Preserves sink_channels on surround sinks</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>HeSuVi 7.1 Virtual Surround (8ch)</option>
+                        <option>Sony WH-1000XM5 LDAC (2ch)</option>
+                        <option>Built-in HD Audio Speaker (2ch)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎚</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Master Output Volume</div>
+                        <div class="row-subtitle">pa_cvolume_set(&amp;cv, sink_channels, vol)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="0" max="150" value="65" style="--val:43%;" data-badge="lblAudOut" data-suffix="%" />
+                        <span class="shell-popover-badge accent" id="lblAudOut">65%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔇</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Mute Master Output</div>
+                        <div class="row-subtitle">Toggle sink mute without altering channel balance</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. INPUT MICROPHONE &amp; CAPTURE</span>
+                    <span class="shell-popover-badge">2 CHANNELS</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎙</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Default Input Source</div>
+                        <div class="row-subtitle">Monitor sources filtered automatically</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>Digital Microphone Array (2ch)</option>
+                        <option>Headset Boom Mic (1ch)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🎚</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Microphone Gain Level</div>
+                        <div class="row-subtitle">pa_context_set_source_volume_by_name</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="0" max="150" value="80" style="--val:53%;" data-badge="lblAudMic" data-suffix="%" />
+                        <span class="shell-popover-badge" id="lblAudMic">80%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔇</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Mute Microphone Input</div>
+                        <div class="row-subtitle">Hardware privacy indicator synced on panel</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 05: THEME & FONTS (page_theme)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="theme">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. METRO ACCENT COLOR PALETTE (8 PRESETS)</span>
+                    <span class="shell-popover-badge accent">00-accent.css</span>
+                  </div>
+
+                  <div class="swatch-grid-8" id="themeSwatchGrid">
+                    <div class="widget-row-card active" data-color="#0078d4" data-rgb="0, 120, 212" data-name="COBALT" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#0078d4;"></span><span class="row-title">Cobalt Blue (#0078d4)</span></div></div>
+                    <div class="widget-row-card" data-color="#b4009e" data-rgb="180, 0, 158" data-name="MAGENTA" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#b4009e;"></span><span class="row-title">Cyberpunk (#b4009e)</span></div></div>
+                    <div class="widget-row-card" data-color="#10893e" data-rgb="16, 137, 62" data-name="EMERALD" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#10893e;"></span><span class="row-title">Emerald (#10893e)</span></div></div>
+                    <div class="widget-row-card" data-color="#ff8c00" data-rgb="255, 140, 0" data-name="AMBER" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#ff8c00;"></span><span class="row-title">Amber Gold (#ff8c00)</span></div></div>
+                    <div class="widget-row-card" data-color="#e81123" data-rgb="232, 17, 35" data-name="CRIMSON" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#e81123;"></span><span class="row-title">Crimson Red (#e81123)</span></div></div>
+                    <div class="widget-row-card" data-color="#00b7c3" data-rgb="0, 183, 195" data-name="TEAL" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#00b7c3;"></span><span class="row-title">Teal Cyan (#00b7c3)</span></div></div>
+                    <div class="widget-row-card" data-color="#744da9" data-rgb="116, 77, 169" data-name="VIOLET" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#744da9;"></span><span class="row-title">Violet (#744da9)</span></div></div>
+                    <div class="widget-row-card" data-color="#68768a" data-rgb="104, 118, 138" data-name="SLATE" style="cursor:pointer;"><div class="widget-row-left"><span class="swatch-square" style="background:#68768a;"></span><span class="row-title">Slate Steel (#68768a)</span></div></div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. TYPOGRAPHY CATEGORY SIZES (FIRA CODE)</span>
+                    <button class="kajo-btn files-nav-btn">↺ RESET DEFAULTS</button>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Primary Body, Controls &amp; Row Titles</div>
+                        <div class="row-subtitle">ui_font_size_px (11–20px, default 14px)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="11" max="20" value="14" style="--val:33%;" data-badge="lblFontBody" data-suffix="px" />
+                        <span class="shell-popover-badge" id="lblFontBody">14px</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Section &amp; Window Headers</div>
+                        <div class="row-subtitle">font_heading_size_px (10–18px, default 13px)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="10" max="18" value="13" style="--val:38%;" data-badge="lblFontHdr" data-suffix="px" />
+                        <span class="shell-popover-badge" id="lblFontHdr">13px</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Subtitles, Buttons &amp; Metadata</div>
+                        <div class="row-subtitle">font_subtitle_size_px (10–18px, default 12px)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="10" max="18" value="12" style="--val:25%;" data-badge="lblFontSub" data-suffix="px" />
+                        <span class="shell-popover-badge" id="lblFontSub">12px</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Technical Badges &amp; Micro Labels</div>
+                        <div class="row-subtitle">font_badge_size_px (9–16px, default 11px)</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="9" max="16" value="11" style="--val:29%;" data-badge="lblFontBdg" data-suffix="px" />
+                        <span class="shell-popover-badge" id="lblFontBdg">11px</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 06: PANEL, TOUCH & OSK (page_panel)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="panel">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. LAYER-SHELL PANEL GEOMETRY &amp; AUTOHIDE</span>
+                    <span class="shell-popover-badge accent">TOP • 32PX</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">▬</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Panel Screen Edge Position</div>
+                        <div class="row-subtitle">gtk4-layer-shell anchor edge</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">TOP EDGE</button>
+                        <button class="kajo-btn">BOTTOM EDGE</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Canonical Toggle Card (.kajo-toggle-card with .widget-row-icon) -->
+                  <button class="kajo-toggle-card" type="button">
+                    <div class="kajo-toggle-card-left">
+                      <span class="widget-row-icon">👁</span>
+                      <span>
+                        <div class="tile-title">Autohide</div>
+                        <div class="tile-subtitle">Disabled</div>
+                      </span>
+                    </div>
+                    <span class="shell-popover-badge">2PX TRIGGER</span>
+                  </button>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Panel Bar Thickness</div>
+                        <div class="row-subtitle">24px compact .. 56px touch-friendly</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="24" max="56" value="32" style="--val:25%;" data-badge="lblPnlH" data-suffix="px" />
+                        <span class="shell-popover-badge" id="lblPnlH">32px</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. TOUCHSCREEN BEZEL &amp; SWIPE GESTURES</span>
+                    <span class="shell-popover-badge">TOUCH</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Enable Panel Touch &amp; Edge Swipes</div>
+                        <div class="row-subtitle">Bezel swipe recognition on touch displays</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Center / Left Inward Swipe</div>
+                        <div class="row-subtitle">Downward bezel pull action</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>Open App Launcher</option>
+                        <option>Toggle Niri Overview</option>
+                        <option>Toggle Virtual Keyboard</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Right Zone Inward Swipe</div>
+                        <div class="row-subtitle">Right-corner bezel pull action</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>Open Control Center</option>
+                        <option>Open Notifications</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-right span-full">
+                  <div class="card-header-row">
+                    <span class="heading">3. VIRTUAL KEYBOARD (SHELLOSK • zwp_input_method_v2)</span>
+                    <span class="shell-popover-badge">260PX</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">⌨</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Auto-Show Virtual Keyboard</div>
+                        <div class="row-subtitle">When a Wayland text-input-v3 surface gains focus</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">TABLET ONLY</button>
+                        <button class="kajo-btn">ALWAYS</button>
+                        <button class="kajo-btn">MANUAL</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🗔</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Window Layout Behavior</div>
+                        <div class="row-subtitle">Exclusive layer-shell zone vs floating overlay</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group">
+                        <button class="kajo-btn active">PUSH WINDOWS</button>
+                        <button class="kajo-btn">FLOAT OVER</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 07: PANEL WIDGETS (page_widgets — zero-clip compact rows)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="widgets">
+              <div class="section-card section-card-left span-full">
+                <div class="card-header-row">
+                  <span class="heading">ADD PANEL WIDGET TO SECTION (22 REGISTERED SHELLWIDGET CLASSES)</span>
+                  <div style="display:flex; gap:6px; align-items:center;">
+                    <select class="kajo-dropdown-btn"><option>cpu-mem (Telemetry)</option><option>media (MPRIS2 + 16-Band FFT)</option><option>custom-script</option></select>
+                    <div class="segmented-group"><button class="kajo-btn">LEFT</button><button class="kajo-btn">CENTER</button><button class="kajo-btn active">RIGHT</button></div>
+                    <button class="kajo-btn action-btn-primary files-nav-btn">+ ADD</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-card-grid">
+                <div class="section-card section-card-left">
+                  <div class="card-header-row"><span class="heading">1. LEFT PANEL SECTION (3 ACTIVE)</span></div>
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><span class="dim-label">☰</span><span class="row-title">launcher</span></div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group"><button class="kajo-btn active">ICON</button><button class="kajo-btn">TEXT</button><button class="kajo-btn">FULL</button></div>
+                      <button class="kajo-btn files-nav-btn">↑</button><button class="kajo-btn files-nav-btn">↓</button><button class="kajo-btn files-nav-btn">⇄</button><button class="kajo-btn action-btn-danger files-nav-btn">✕</button>
+                    </div>
+                  </div>
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><span class="dim-label">☰</span><span class="row-title">workspaces</span></div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group"><button class="kajo-btn">ICON</button><button class="kajo-btn">TEXT</button><button class="kajo-btn active">FULL</button></div>
+                      <button class="kajo-btn files-nav-btn">↑</button><button class="kajo-btn files-nav-btn">↓</button><button class="kajo-btn files-nav-btn">⇄</button><button class="kajo-btn action-btn-danger files-nav-btn">✕</button>
+                    </div>
+                  </div>
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><span class="dim-label">☰</span><span class="row-title">window</span></div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group"><button class="kajo-btn">ICON</button><button class="kajo-btn">TEXT</button><button class="kajo-btn active">FULL</button></div>
+                      <button class="kajo-btn files-nav-btn">↑</button><button class="kajo-btn files-nav-btn">↓</button><button class="kajo-btn files-nav-btn">⇄</button><button class="kajo-btn action-btn-danger files-nav-btn">✕</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row"><span class="heading">2. CENTER PANEL SECTION (2 ACTIVE)</span></div>
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><span class="dim-label">☰</span><span class="row-title">clock</span></div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group"><button class="kajo-btn">ICON</button><button class="kajo-btn">TEXT</button><button class="kajo-btn active">FULL</button></div>
+                      <button class="kajo-btn files-nav-btn">↑</button><button class="kajo-btn files-nav-btn">↓</button><button class="kajo-btn files-nav-btn">⇄</button><button class="kajo-btn action-btn-danger files-nav-btn">✕</button>
+                    </div>
+                  </div>
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><span class="dim-label">☰</span><span class="row-title">media</span></div>
+                    <div class="widget-row-right">
+                      <div class="segmented-group"><button class="kajo-btn">ICON</button><button class="kajo-btn">TEXT</button><button class="kajo-btn active">FULL</button></div>
+                      <button class="kajo-btn files-nav-btn">↑</button><button class="kajo-btn files-nav-btn">↓</button><button class="kajo-btn files-nav-btn">⇄</button><button class="kajo-btn action-btn-danger files-nav-btn">✕</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 08: NOTIFICATIONS (page_notifications)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="notifications">
+              <div class="settings-card-grid">
+                <div class="section-card section-card-left span-full">
+                  <div class="card-header-row">
+                    <span class="heading">NOTIFICATION TOASTS &amp; OS DAEMON (org.freedesktop.Notifications)</span>
+                    <span class="shell-popover-badge accent">8000MS • 50 MAX</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🔔</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Toast Display Timeout</div>
+                        <div class="row-subtitle">Auto-dismiss duration for normal urgency popups</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="3000" max="30000" step="1000" value="8000" style="--val:19%;" data-badge="lblNotifTout" data-suffix="ms" />
+                        <span class="shell-popover-badge" id="lblNotifTout">8000ms</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🖱</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Toast Click Action</div>
+                        <div class="row-subtitle">Behavior when clicking a notification toast banner</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>Focus Source App Window in Niri</option>
+                        <option>Dismiss Notification Only</option>
+                        <option>Do Nothing</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-icon">🗂</div>
+                      <div class="widget-row-text">
+                        <div class="row-title">Maximum History Items Retained</div>
+                        <div class="row-subtitle">Ring buffer capacity in Notification Center popover</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="20" max="200" step="10" value="50" style="--val:17%;" data-badge="lblNotifHist" data-suffix=" items" />
+                        <span class="shell-popover-badge" id="lblNotifHist">50 items</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 09: NIRI & GLSL SHADERS (page_niri)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="niri">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. LAYER SURFACE RULES &amp; WORKSPACE GAPS</span>
+                    <span class="shell-popover-badge accent">10-layer-rules.kdl</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Target Layer Namespace</div>
+                        <div class="row-subtitle">Wayland layer-shell surface namespace</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>kajo (Panel Bar)</option>
+                        <option>kajo-launcher</option>
+                        <option>kajo-notification</option>
+                        <option>kajo-osk</option>
+                        <option>kajo-osd</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Surface Layer Opacity</div>
+                        <div class="row-subtitle">Compositor opacity rule for selected namespace</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="20" max="100" value="85" style="--val:81%;" data-badge="lblNiriOp" data-suffix="%" />
+                        <span class="shell-popover-badge" id="lblNiriOp">85%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Workspace Window Gaps</div>
+                        <div class="row-subtitle">Niri layout { gaps N } in pixels</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <div class="kajo-scale-wrap">
+                        <input type="range" class="kajo-scale" min="0" max="32" value="6" style="--val:19%;" data-badge="lblNiriGap" data-suffix="px" />
+                        <span class="shell-popover-badge" id="lblNiriGap">6px</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Blur XRay (Wallpaper Through Blur)</div>
+                        <div class="row-subtitle">Sample desktop backdrop behind translucent surfaces</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <label class="kajo-switch"><input type="checkbox" /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. WINDOW TRANSITION SHADERS (GLSL)</span>
+                    <span class="shell-popover-badge peak-warn">20-animations.kdl</span>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Window Open Shader Preset</div>
+                        <div class="row-subtitle">250ms • ease-out-cubic</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option>Default (Scale &amp; Fade)</option>
+                        <option selected>Metro Turnstile (3D Flip)</option>
+                        <option>CRT Power-On (Scanline Beam)</option>
+                        <option>Cyberpunk RGB Glitch</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Window Close Shader Preset</div>
+                        <div class="row-subtitle">360ms • linear</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option>Default (Scale &amp; Fade)</option>
+                        <option selected>CRT TV Turn-Off</option>
+                        <option>Ash / Particle Dissolve</option>
+                        <option>Black Hole Vortex</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left">
+                      <div class="widget-row-text">
+                        <div class="row-title">Window Resize Shader Preset</div>
+                        <div class="row-subtitle">Column width transition morph</div>
+                      </div>
+                    </div>
+                    <div class="widget-row-right">
+                      <select class="kajo-dropdown-btn">
+                        <option selected>Default (Crossfade &amp; Crop)</option>
+                        <option>Elastic Stretch</option>
+                        <option>Pixelate Morph</option>
+                        <option>Chromatic Glitch Resize</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 10: KAJO IDE (page_ide)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="ide">
+              <div class="settings-card-grid">
+
+                <div class="section-card section-card-left">
+                  <div class="card-header-row">
+                    <span class="heading">1. EDITOR COLOR SCHEME (6 PRESETS)</span>
+                    <span class="shell-popover-badge accent">GtkSourceView 5</span>
+                  </div>
+
+                  <div class="swatch-grid-8">
+                    <div class="widget-row-card active"><div class="widget-row-left"><span class="swatch-square" style="background:#101010;border-color:#569cd6;"></span><span class="row-title">Kajo Metro Dark</span></div></div>
+                    <div class="widget-row-card"><div class="widget-row-left"><span class="swatch-square" style="background:#050505;border-color:#00d8f0;"></span><span class="row-title">OLED Pitch Black</span></div></div>
+                    <div class="widget-row-card"><div class="widget-row-left"><span class="swatch-square" style="background:#121212;border-color:#ff6188;"></span><span class="row-title">Monokai Metro</span></div></div>
+                    <div class="widget-row-card"><div class="widget-row-left"><span class="swatch-square" style="background:#14171d;border-color:#88c0d0;"></span><span class="row-title">Nord Frost</span></div></div>
+                    <div class="widget-row-card"><div class="widget-row-left"><span class="swatch-square" style="background:#0c0900;border-color:#ffd700;"></span><span class="row-title">Amber CRT</span></div></div>
+                    <div class="widget-row-card"><div class="widget-row-left"><span class="swatch-square" style="background:#1e1e1e;border-color:#78aeed;"></span><span class="row-title">Adwaita Dark</span></div></div>
+                  </div>
+
+                  <!-- Canonical .code-preview-box (ui-gallery.html:572-583, style.css:362-370) -->
+                  <div class="code-preview-box"><span style="color:#6a9955;font-style:italic;">/* Live Scheme &amp; Font Preview (Kajo Metro Dark • 13px) */</span>
+<span style="color:#569cd6;font-weight:700;">static gboolean</span> <span style="color:#dcdcaa;">kajo_ide_activate</span>(<span style="color:#4ec9b0;">KajoIdeWindow</span> *self) {
+  <span style="color:#dcdcaa;">ide_status_notify</span>(self, <span style="color:#ce9178;">"SCHEME: kajo-metro-dark"</span>);
+  <span style="color:#569cd6;font-weight:700;">return</span> <span style="color:#569cd6;font-weight:700;">TRUE</span>;
+}</div>
+                </div>
+
+                <div class="section-card section-card-center">
+                  <div class="card-header-row">
+                    <span class="heading">2. TYPOGRAPHY, INDENTATION &amp; 6-COL GUTTER</span>
+                    <button class="kajo-btn files-nav-btn">↺ DEFAULTS</button>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><div class="widget-row-text"><div class="row-title">Editor Monospace Font</div><div class="row-subtitle">Falls back via shell_ide_font_stack()</div></div></div>
+                    <div class="widget-row-right"><select class="kajo-dropdown-btn"><option selected>Fira Code</option><option>JetBrains Mono</option><option>Iosevka</option></select></div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><div class="widget-row-text"><div class="row-title">Tab Stop Width &amp; Spaces</div><div class="row-subtitle">Indentation width in columns</div></div></div>
+                    <div class="widget-row-right"><div class="segmented-group"><button class="kajo-btn">2</button><button class="kajo-btn active">4</button><button class="kajo-btn">8</button></div></div>
+                  </div>
+
+                  <div class="widget-row-card">
+                    <div class="widget-row-left"><div class="widget-row-text"><div class="row-title">Show 6-Column Cairo Gutter &amp; Minimap</div><div class="row-subtitle">BP • Diag • DAP PC • Line • Git Diff • Fold</div></div></div>
+                    <div class="widget-row-right"><label class="kajo-switch"><input type="checkbox" checked /><span class="kajo-switch-track"><span class="kajo-switch-thumb"></span></span></label></div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- ═════════════════════════════════════════════════════════════
+                 PAGE 12: ABOUT KAJO // OS (page_about)
+                 ═════════════════════════════════════════════════════════════ -->
+            <div class="settings-page-pane" data-pane="about">
+              <div class="settings-card-grid">
+                <div class="section-card section-card-left span-full">
+                  <div class="card-header-row">
+                    <span class="heading">KAJO // OS — AERO + METRO NATIVE WAYLAND SUITE</span>
+                    <span class="shell-popover-badge accent">C11 • GTK4 • NIRI</span>
+                  </div>
+                  <div class="widget-row-card"><div class="widget-row-left"><div class="widget-row-icon">🐧</div><div class="widget-row-text"><div class="row-title">Kernel &amp; Architecture</div><div class="row-subtitle">Linux 6.12-arch1-1 (x86_64) • Wayland Niri Compositor</div></div></div><span class="shell-popover-badge">UNAME</span></div>
+                  <div class="widget-row-card"><div class="widget-row-left"><div class="widget-row-icon">⚙</div><div class="widget-row-text"><div class="row-title">Suite Applications (7 Binaries)</div><div class="row-subtitle">kajo • kajo-settings • kajo-files • kajo-player • kajo-mod • kajo-ide • kajo-greeter</div></div></div><span class="shell-popover-badge success">ACTIVE</span></div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ZONE 4: Docked Action & Persistence Footer Bar (.shell-popover-footer) -->
+          <div class="shell-popover-footer settings-footer-bar">
+            <div class="footer-status-left">
+              <span class="shell-popover-badge success" id="footerStateBadge">✓ ALL CHANGES SAVED</span>
+              <span class="row-subtitle" id="footerStatusText">~/.config/kajo/config.json • Live IPC ready</span>
+            </div>
+            <div class="footer-actions-right">
+              <button class="kajo-btn files-nav-btn" id="btnSecondaryAction">↺ RESET DSP DEFAULTS</button>
+              <button class="kajo-btn files-nav-btn" id="btnRevert" disabled>↺ REVERT</button>
+              <button class="kajo-btn action-btn-primary files-nav-btn" id="btnSaveApply">[ ✓ SAVE &amp; APPLY ]</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Interactive Right-Edge Column Resize Grip -->
+    <div class="column-resize-grip" id="colResizeGrip" title="Drag left/right to test smooth Niri column reflow (480px..1634px)"></div>
+  </div>
+
+  <script>
+    (function () {
+      const win = document.getElementById('settingsWindow');
+      const readout = document.getElementById('niriSizeReadout');
+
+      function applyResponsiveReflow(widthPx) {
+        const isNarrow = widthPx < 720;
+        const isWide = widthPx >= 960;
+        win.classList.toggle('narrow-column', isNarrow);
+        win.classList.toggle('wide-column', isWide);
+
+        let modeLabel = '204px RAIL + 1-COL CARDS';
+        if (isNarrow) modeLabel = '46px ICON RAIL + 1-COL (<720px)';
+        else if (isWide) modeLabel = '204px RAIL + 2-COL BENTO (≥960px)';
+
+        readout.textContent = 'COL: ' + Math.round(widthPx) + 'px • ' + modeLabel;
+      }
+
+      // Niri Mod+R Column Preset Simulator
+      const geomBtns = document.querySelectorAll('#niriGeomGroup .sim-btn');
+      geomBtns.forEach((btn) => {
+        btn.addEventListener('click', () => {
+          geomBtns.forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const w = Number(btn.dataset.width);
+          win.style.width = w + 'px';
+          win.classList.toggle('stacked-half-height', btn.dataset.mode === 'stacked');
+          applyResponsiveReflow(w);
+        });
+      });
+
+      // Manual Rail Expand Toggle in Header
+      document.getElementById('btnToggleRail').addEventListener('click', () => {
+        if (win.classList.contains('narrow-column')) {
+          win.classList.toggle('rail-force-expanded');
+        } else {
+          win.classList.toggle('narrow-column');
+        }
+      });
+
+      // Interactive Right-Edge Column Drag Resizer
+      const colGrip = document.getElementById('colResizeGrip');
+      let colDragging = false;
+      colGrip.addEventListener('mousedown', (e) => { colDragging = true; e.preventDefault(); });
+      window.addEventListener('mousemove', (e) => {
+        if (!colDragging) return;
+        const rect = win.getBoundingClientRect();
+        const newW = Math.max(480, Math.min(window.innerWidth - 24, (e.clientX - rect.left)));
+        win.style.width = newW + 'px';
+        applyResponsiveReflow(newW);
+      });
+      window.addEventListener('mouseup', () => { colDragging = false; });
+
+      // Page Metadata Table for Zone 2 Telemetry Deck & Zone 4 Footer
+      const pageMeta = {
+        displays: {
+          badge: '01 / 12 • DISPLAYS',
+          title: 'DISPLAYS, IDLE SCREENSAVER & 360° FOLDABLE POSTURE',
+          sub: 'Niri IPC output management (10-outputs.kdl), ext-idle-notify-v1 & IIO hinge sensors',
+          b1: 'NIRI IPC', b2: '10-OUTPUTS.KDL',
+          c1: ['OUTPUT', 'eDP-1 (OLED)'], c2: ['MODE', '2880×1800@120'], c3: ['SCALE', '175% (1.75)'], c4: ['POSTURE', 'LAPTOP (128°)'],
+          secBtn: '▶ PREVIEW SCREENSAVER'
+        },
+        network: {
+          badge: '02 / 12 • NETWORK',
+          title: 'NETWORKMANAGER WI-FI & ACTIVE INTERFACES',
+          sub: 'Live D-Bus org.freedesktop.NetworkManager access point scanning & inline WPA3 auth',
+          b1: 'LIVE D-BUS', b2: 'WPA3-SAE',
+          c1: ['BACKEND', 'NetworkManager'], c2: ['RADIO', 'WI-FI 6E ON'], c3: ['SSID', 'KAJO-LAB-5G'], c4: ['IPV4', '192.168.1.42/24'],
+          secBtn: '🔍 REFRESH WI-FI SCAN'
+        },
+        bluetooth: {
+          badge: '03 / 12 • BLUETOOTH',
+          title: 'BLUEZ 5 BLUETOOTH ADAPTER & PERIPHERALS',
+          sub: 'Live GDBusObjectManager org.bluez adapter power, pairing & audio profiles',
+          b1: 'LIVE D-BUS', b2: 'BLUEZ 5.79',
+          c1: ['ADAPTER', 'hci0 (ACTIVE)'], c2: ['POWER', 'ENABLED'], c3: ['PAIRED', '2 DEVICES'], c4: ['CONNECTED', 'WH-1000XM5'],
+          secBtn: '🔍 SCAN NEARBY'
+        },
+        audio: {
+          badge: '04 / 12 • AUDIO',
+          title: 'PIPEWIRE / PULSEAUDIO ROUTING & CHANNEL MAPS',
+          sub: 'Multi-channel sink preservation (sink_channels), default routing & auto-reconnect',
+          b1: 'PIPEWIRE 1.2', b2: '8CH SURROUND',
+          c1: ['SERVER', 'PipeWire-Pulse'], c2: ['SINK', '8CH HESUVI'], c3: ['OUT VOL', '65% (ACTIVE)'], c4: ['MIC GAIN', '80% (2CH)'],
+          secBtn: '🔊 TEST SOUND'
+        },
+        theme: {
+          badge: '05 / 12 • THEME',
+          title: 'AERO + METRO ACCENT PALETTE & TYPOGRAPHY',
+          sub: 'Live CSS token generation (~/.config/kajo/style.d/00-accent.css) & 4 font categories',
+          b1: '00-ACCENT.CSS', b2: 'FIRA CODE',
+          c1: ['ACCENT', '#0078D4 COBALT'], c2: ['BODY', '14PX'], c3: ['HEADING', '13PX'], c4: ['BADGES', '11PX'],
+          secBtn: '↺ RESET FONTS'
+        },
+        panel: {
+          badge: '06 / 12 • PANEL & OSK',
+          title: 'WAYLAND PANEL, TOUCH GESTURES & VIRTUAL KEYBOARD',
+          sub: 'Layer-shell anchor geometry, bezel swipe gestures & zwp_input_method_v2 ShellOSK',
+          b1: 'LAYER-SHELL', b2: 'SHELLOSK',
+          c1: ['EDGE', 'TOP (32PX)'], c2: ['AUTOHIDE', 'DISABLED'], c3: ['SWIPES', 'ENABLED'], c4: ['OSK', 'TABLET (260PX)'],
+          secBtn: '⌨ TOGGLE OSK'
+        },
+        widgets: {
+          badge: '07 / 12 • WIDGETS',
+          title: 'PANEL BAR WIDGET SECTIONS (LEFT / CENTER / RIGHT)',
+          sub: 'Configure and reorder the 22 built-in ShellWidget modules across panel zones',
+          b1: '22 MODULES', b2: 'CONFIG.JSON',
+          c1: ['LEFT', '3 WIDGETS'], c2: ['CENTER', '2 WIDGETS'], c3: ['RIGHT', '9 WIDGETS'], c4: ['TOTAL', '14 ACTIVE'],
+          secBtn: '↺ DEFAULT LAYOUT'
+        },
+        notifications: {
+          badge: '08 / 12 • NOTIFICATIONS',
+          title: 'NOTIFICATION TOASTS & FREEDESKTOP DAEMON',
+          sub: 'Toast timeout, Niri source-window focus activation & Notification Center ring buffer',
+          b1: 'DBUS DAEMON', b2: 'CONFIG.JSON',
+          c1: ['DAEMON', 'ACTIVE'], c2: ['TIMEOUT', '8000MS (8S)'], c3: ['HISTORY', '50 ITEMS'], c4: ['CLICK', 'FOCUS WINDOW'],
+          secBtn: '🔔 TEST TOAST'
+        },
+        niri: {
+          badge: '09 / 12 • NIRI & SHADERS',
+          title: 'NIRI COMPOSITOR LAYER RULES & GLSL SHADERS',
+          sub: 'Per-namespace opacity/blur rules (10-layer-rules.kdl) & GLSL window animations (20-animations.kdl)',
+          b1: 'GLSL 330', b2: 'NIRI KDL',
+          c1: ['NAMESPACE', 'kajo (85%)'], c2: ['GAPS', '6PX'], c3: ['OPEN', 'METRO-FLIP'], c4: ['CLOSE', 'CRT-OFF'],
+          secBtn: '▶ TEST TRANSITION'
+        },
+        ide: {
+          badge: '10 / 12 • KAJO IDE',
+          title: 'KAJO IDE — MODAL CODE EDITOR & CAIRO GUTTER',
+          sub: 'GtkSourceView-5 color schemes, Tree-sitter queries, 6-column gutter & live preview',
+          b1: 'ORG.KAJO.IDE', b2: 'TREE-SITTER',
+          c1: ['SCHEME', 'METRO DARK'], c2: ['FONT', 'FIRA CODE 13PX'], c3: ['TAB WIDTH', '4 SPACES'], c4: ['GUTTER', '6-COL CAIRO'],
+          secBtn: '↺ RESET IDE DEFAULTS'
+        },
+        mod: {
+          badge: '11 / 12 • KAJO MOD',
+          title: 'KAJO MOD — RETRO AMIGA, C64 SID & TRACKER ENGINE',
+          sub: 'Persistent global defaults in ~/.config/kajo/config.json • Live IPC broadcast to org.kajo.Mod',
+          b1: 'LIBUADE + RESIDFP', b2: 'CONFIG.JSON',
+          c1: ['PRIO 1', 'UADE 3.05 (68K)'], c2: ['PRIO 2', 'RESIDFP 6581/8580'], c3: ['PAULA', 'A500 + LED AUTO'], c4: ['HVSC', 'STIL + MD5 READY'],
+          secBtn: '↺ RESET DSP DEFAULTS'
+        },
+        about: {
+          badge: '12 / 12 • ABOUT',
+          title: 'ABOUT KAJO // OS & DESKTOP SUITE INVENTORY',
+          sub: 'System kernel, CPU, memory & native C11 / GTK4 / Wayland application suite',
+          b1: 'KAJO // OS 0.4', b2: 'GTK 4.16',
+          c1: ['KERNEL', 'LINUX 6.12'], c2: ['TOOLKIT', 'GTK4 + LAYER'], c3: ['AUDIO', 'PIPEWIRE 1.2'], c4: ['APPS', '7 BINARIES'],
+          secBtn: '📋 COPY SYSTEM INFO'
+        }
+      };
+
+      function switchPage(key) {
+        const m = pageMeta[key];
+        if (!m) return;
+        document.querySelectorAll('#navSidebar .sidebar-row').forEach((r) => {
+          r.classList.toggle('selected', r.dataset.page === key);
+        });
+        document.querySelectorAll('.settings-page-pane').forEach((p) => {
+          p.classList.toggle('active', p.dataset.pane === key);
+        });
+        document.getElementById('hdrPageBadge').textContent = m.badge;
+        document.getElementById('deckTitle').textContent = m.title;
+        document.getElementById('deckSub').textContent = m.sub;
+        document.getElementById('deckBadge1').textContent = m.b1;
+        document.getElementById('deckBadge2').textContent = m.b2;
+        document.getElementById('cntK1').textContent = m.c1[0];
+        document.getElementById('cntV1').textContent = m.c1[1];
+        document.getElementById('cntK2').textContent = m.c2[0];
+        document.getElementById('cntV2').textContent = m.c2[1];
+        document.getElementById('cntK3').textContent = m.c3[0];
+        document.getElementById('cntV3').textContent = m.c3[1];
+        document.getElementById('cntK4').textContent = m.c4[0];
+        document.getElementById('cntV4').textContent = m.c4[1];
+        document.getElementById('btnSecondaryAction').textContent = m.secBtn;
+      }
+
+      document.querySelectorAll('#navSidebar .sidebar-row').forEach((row) => {
+        row.addEventListener('click', () => switchPage(row.dataset.page));
+      });
+
+      // Dirty State Tracking in Footer (matches page_ide.c lbl_state badge pattern)
+      const footerBadge = document.getElementById('footerStateBadge');
+      const footerStatusText = document.getElementById('footerStatusText');
+      const btnRevert = document.getElementById('btnRevert');
+      const btnSaveApply = document.getElementById('btnSaveApply');
+
+      function markDirty(dirty) {
+        footerBadge.classList.toggle('success', !dirty);
+        footerBadge.classList.toggle('accent', dirty);
+        footerBadge.textContent = dirty
+          ? '● UNSAVED CHANGES — PREVIEW ONLY'
+          : '✓ ALL CHANGES SAVED';
+        footerStatusText.textContent = dirty
+          ? 'Click SAVE & APPLY to write ~/.config/kajo/config.json'
+          : '~/.config/kajo/config.json • Live IPC ready';
+        btnRevert.disabled = !dirty;
+        btnSaveApply.textContent = dirty ? '[ ✓ SAVE & APPLY ]' : '[ ✓ SAVED & APPLIED ]';
+      }
+
+      btnSaveApply.addEventListener('click', () => markDirty(false));
+      btnRevert.addEventListener('click', () => markDirty(false));
+
+      // Interactive Segmented Groups, Toggle Cards, Sliders & Switches
+      document.querySelectorAll('.segmented-group').forEach((grp) => {
+        const btns = grp.querySelectorAll('.kajo-btn');
+        btns.forEach((btn) => {
+          btn.addEventListener('click', () => {
+            btns.forEach((b) => b.classList.remove('active'));
+            btn.classList.add('active');
+            markDirty(true);
+          });
+        });
+      });
+
+      document.querySelectorAll('.kajo-toggle-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          const on = card.classList.toggle('on');
+          const sub = card.querySelector('.tile-subtitle');
+          if (sub) sub.textContent = on ? 'Enabled / Active' : 'Disabled';
+          markDirty(true);
+        });
+      });
+
+      function updateScaleGradient(sl) {
+        const min = Number(sl.min || 0);
+        const max = Number(sl.max || 100);
+        const val = Number(sl.value || 0);
+        const pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+        sl.style.setProperty('--val', pct.toFixed(1) + '%');
+      }
+
+      document.querySelectorAll('input.kajo-scale').forEach((sl) => {
+        updateScaleGradient(sl);
+        sl.addEventListener('input', () => {
+          updateScaleGradient(sl);
+          const bdg = document.getElementById(sl.dataset.badge);
+          if (bdg) bdg.textContent = sl.value + (sl.dataset.suffix || '');
+          markDirty(true);
+        });
+      });
+
+      document.querySelectorAll('.kajo-switch input, select.kajo-dropdown-btn, input.kajo-entry').forEach((el) => {
+        el.addEventListener('change', () => markDirty(true));
+      });
+
+      // Inline Wi-Fi Passphrase Revealer
+      document.querySelectorAll('[data-ap]').forEach((row) => {
+        row.addEventListener('click', () => {
+          document.getElementById('netAuthTitle').textContent = '🔒 PASSPHRASE REQUIRED — ' + row.dataset.ap;
+          document.getElementById('netAuthBanner').classList.add('revealed');
+        });
+      });
+      document.getElementById('btnCancelNetAuth').addEventListener('click', () => {
+        document.getElementById('netAuthBanner').classList.remove('revealed');
+      });
+
+      // Live Accent Swatch Sync (Top Bar + Theme Page)
+      function applyAccent(color, rgb, shortName) {
+        document.documentElement.style.setProperty('--metro-accent', color);
+        document.documentElement.style.setProperty('--metro-accent-rgb', rgb);
+        if (shortName) document.getElementById('navMetaTheme').textContent = shortName;
+      }
+
+      document.querySelectorAll('#accentGroup .sim-swatch').forEach((sw) => {
+        sw.addEventListener('click', () => {
+          document.querySelectorAll('#accentGroup .sim-swatch').forEach((s) => s.classList.remove('active'));
+          sw.classList.add('active');
+          applyAccent(sw.dataset.color, sw.dataset.rgb);
+        });
+      });
+
+      document.querySelectorAll('#themeSwatchGrid .widget-row-card').forEach((card) => {
+        card.addEventListener('click', () => {
+          document.querySelectorAll('#themeSwatchGrid .widget-row-card').forEach((c) => c.classList.remove('active'));
+          card.classList.add('active');
+          applyAccent(card.dataset.color, card.dataset.rgb, card.dataset.name);
+          markDirty(true);
+        });
+      });
+
+      // Search Filter Input (Ctrl+F)
+      const searchInput = document.getElementById('settingsSearchInput');
+      searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim().toLowerCase();
+        document.querySelectorAll('#navSidebar .sidebar-row').forEach((row) => {
+          const match = !q || row.textContent.toLowerCase().includes(q) || (row.title && row.title.toLowerCase().includes(q));
+          row.style.display = match ? '' : 'none';
+        });
+      });
+
+      applyResponsiveReflow(814);
+    })();
+  </script>
+</body>
+</html>
