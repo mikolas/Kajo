@@ -216,3 +216,16 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
       - **Narrow Column ($< 760\text{px}$ — Niri `1/3` `0.333` column at `~540px`):** Automatically collapses to a **1-column full-width view** with a compact `[ SAMPLES / VOICES │ STIL / .NFO / MSG ]` `.segmented-group` in the pane header so 32-char ASCII sample tables are never clipped.
     - **Lower Expanding Pane (`.mod-playlist-pane` — Always-Docked Playlist & Archive Queue):** Toolbar (`[+ ADD]`, `[+ DIR]`, `[− REM]`, `[CLR]`, filter entry) + scrollable track queue where the track title column (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END`) absorbs horizontal resize smoothly.
   - **Zone 7 (`vexpand: FALSE`, `24px`):** Bottom Status Bar (`.mod-status-bar`).
+
+### 4.9 System & Suite Settings (`kajo-settings`) Scalable Niri Column Architecture
+- **Interactive Reference:** [`docs/kajo-settings-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-settings-mockup.html)
+- **3-Tier Niri Column Reflow (`540px` / `814px` / `1088px` / `1634px`, strict `min-width <= 480px`):**
+  - **Narrow Column ($< 720\text{px}$ — Niri `1/3` `0.33333` column at `~540px`):** Left navigation compacts to a **`46px` Icon Rail** (`.navigation-sidebar`, toggleable via `[☰]` in `.settings-header-bar`) so all **12 pages** remain 1-click accessible without a mobile "Back" drill-down, leaving `~494px` for the 1-column card canvas.
+  - **Default Column ($720\text{..}959\text{px}$ — Niri `1/2` `0.50` column at `~814px`):** Displays the **`196px` Category Sidebar** (`HARDWARE & SYSTEM`, `SHELL & COMPOSITOR`, `KAJO SUITE APPS`, `SYSTEM INFO` with right-aligned live telemetry micro-badges) + 1-column card stack.
+  - **Wide Column ($\ge 960\text{px}$ — Niri `2/3` `0.66667` at `~1088px` & `1.0` at `~1634px`):** Displays the `196px` Category Sidebar + **2-column balanced Bento Card Grid** (`.settings-card-grid`, with `.span-full` for full-width matrices/lists).
+- **4-Zone Full-Height Vertical Architecture (`100vh`):**
+  1. **Zone 1 (`vexpand: FALSE`, `36px`):** Window Chrome Header Bar (`.settings-header-bar`) with `[☰]` rail toggle, `⚙ SYSTEM SETTINGS`, page index badge (`[ 11 / 12 • KAJO MOD ]`), live search filter (`Ctrl+F`), `[🗗 FLOAT / TILE]`, and `[✕]`.
+  2. **Zone 2 (`vexpand: FALSE`, `58px`):** Pinned **Page Telemetry & Hardware Status Deck** (`.settings-page-deck`, `.settings-counter-strip`) displaying the page title, config/D-Bus subtitle, backend badges, and a **4-column homogeneous telemetry strip** that never wraps across `480px..1920px`.
+  3. **Zone 3 (`vexpand: TRUE`):** Scrollable **Page Content Canvas** (`.settings-scroll-canvas`) where every setting row uses `.widget-row-card` (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END` on `.row-title` / `.row-subtitle`, zero hardcoded `width-chars` traps) and dynamic list/matrix cards set `vexpand: TRUE` to absorb Niri's full-height column.
+  4. **Zone 4 (`vexpand: FALSE`, `36px`):** Docked **Action & Persistence Footer Bar** (`.settings-footer-bar`) pinned at the bottom of the viewport with live dirty/saved status indicator, page secondary action, `[ ↺ REVERT ]`, and `[ ✓ SAVE & APPLY ]`.
+- **12 Modular Pages:** `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, `ide`, **`mod` (`Kajo Mod`)**, and `about`.
