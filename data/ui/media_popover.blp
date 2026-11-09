@@ -144,9 +144,11 @@ template $ShellMediaPopover : Popover {
           Box {
             orientation: horizontal;
             spacing: 4;
+            valign: center;
 
             Label {
               label: "L";
+              valign: center;
 
               styles [
                 "dim-label",
@@ -155,6 +157,7 @@ template $ShellMediaPopover : Popover {
 
             LevelBar meter_l {
               hexpand: true;
+              valign: center;
               min-value: 0.0;
               max-value: 1.0;
               value: 0.0;
@@ -164,6 +167,7 @@ template $ShellMediaPopover : Popover {
               label: "0%";
               width-chars: 4;
               xalign: 1.0;
+              valign: center;
 
               styles [
                 "dim-label",
@@ -175,9 +179,11 @@ template $ShellMediaPopover : Popover {
           Box {
             orientation: horizontal;
             spacing: 4;
+            valign: center;
 
             Label {
               label: "R";
+              valign: center;
 
               styles [
                 "dim-label",
@@ -186,6 +192,7 @@ template $ShellMediaPopover : Popover {
 
             LevelBar meter_r {
               hexpand: true;
+              valign: center;
               min-value: 0.0;
               max-value: 1.0;
               value: 0.0;
@@ -195,6 +202,7 @@ template $ShellMediaPopover : Popover {
               label: "0%";
               width-chars: 4;
               xalign: 1.0;
+              valign: center;
 
               styles [
                 "dim-label",
@@ -208,20 +216,24 @@ template $ShellMediaPopover : Popover {
           orientation: horizontal;
           spacing: 6;
           halign: start;
+          valign: center;
 
           Button prev_btn {
             label: "PREV";
             has-frame: false;
+            valign: center;
           }
 
           Button play_btn {
             label: "PLAY";
             has-frame: false;
+            valign: center;
           }
 
           Button next_btn {
             label: "NEXT";
             has-frame: false;
+            valign: center;
           }
         }
       }

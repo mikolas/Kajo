@@ -12,15 +12,19 @@
 #define LOGIND_MANAGER_IF  "org.freedesktop.login1.Manager"
 
 typedef struct {
-    ShellWidget  base;
-    GtkWidget   *button;
-    GtkWidget   *popover;
-    GtkWidget   *main_box;
-    GtkWidget   *confirm_box;
-    GtkWidget   *uptime_label;
-    GDBusProxy  *logind_proxy;
+    ShellWidget   base;
+    GtkWidget    *button;
+    GtkWidget    *icon_img;
+    GtkWidget    *label;
+    GtkWidget    *popover;
+    GtkWidget    *main_box;
+    GtkWidget    *confirm_box;
+    GtkWidget    *confirm_label;
+    GtkWidget    *uptime_label;
+    GtkWidget    *settings_btn;
+    GDBusProxy   *logind_proxy;
     GCancellable *cancellable;
-    const gchar *pending_action; /* "PowerOff" or "Reboot" */
+    const gchar  *pending_action; /* "PowerOff" or "Reboot" */
 } PowerWidget;
 
 /* --- Uptime --- */
@@ -29,14 +33,14 @@ static void power_update_uptime(PowerWidget *pw)
 {
     FILE *fp = fopen("/proc/uptime", "r");
     if (!fp) {
-        gtk_label_set_text(GTK_LABEL(pw->uptime_label), "Uptime: unknown");
+        gtk_label_set_text(GTK_LABEL(pw->uptime_label), "[ UP -- ]");
         return;
     }
 
     double uptime_secs = 0;
     if (fscanf(fp, "%lf", &uptime_secs) != 1) {
         fclose(fp);
-        gtk_label_set_text(GTK_LABEL(pw->uptime_label), "Uptime: unknown");
+        gtk_label_set_text(GTK_LABEL(pw->uptime_label), "[ UP -- ]");
         return;
     }
     fclose(fp);
@@ -48,11 +52,11 @@ static void power_update_uptime(PowerWidget *pw)
 
     gchar *text;
     if (days > 0)
-        text = g_strdup_printf("Uptime: %dd %dh %dm", days, hours, mins);
+        text = g_strdup_printf("[ UP %dD %dH ]", days, hours);
     else if (hours > 0)
-        text = g_strdup_printf("Uptime: %dh %dm", hours, mins);
+        text = g_strdup_printf("[ UP %dH %dM ]", hours, mins);
     else
-        text = g_strdup_printf("Uptime: %dm", mins);
+        text = g_strdup_printf("[ UP %dM ]", mins);
 
     gtk_label_set_text(GTK_LABEL(pw->uptime_label), text);
     g_free(text);
@@ -95,6 +99,12 @@ static void on_confirm_cancel(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 static void power_show_confirm(PowerWidget *pw, const gchar *action)
 {
     pw->pending_action = action;
+    if (pw->confirm_label) {
+        gtk_label_set_text(GTK_LABEL(pw->confirm_label),
+                           g_strcmp0(action, "Reboot") == 0
+                               ? "Confirm system reboot?"
+                               : "Confirm system power off?");
+    }
     gtk_widget_set_visible(pw->main_box, FALSE);
     gtk_widget_set_visible(pw->confirm_box, TRUE);
 }
@@ -166,6 +176,12 @@ static void on_popover_show(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
     power_show_main((PowerWidget *)user_data);
 }
 
+static void on_power_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    PowerWidget *pw = user_data;
+    shell_spawn_settings("displays", pw ? pw->popover : NULL);
+}
+
 /* --- Helper: create icon+label button --- */
 
 static GtkWidget *power_make_button(const gchar *icon_name, const gchar *label_text,
@@ -173,8 +189,13 @@ static GtkWidget *power_make_button(const gchar *icon_name, const gchar *label_t
 {
     GtkWidget *btn = gtk_button_new();
     GtkWidget *content_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(content_box, GTK_ALIGN_CENTER);
     GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
+    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
     GtkWidget *label = gtk_label_new(label_text);
+    gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+    gtk_widget_set_hexpand(label, TRUE);
+    gtk_widget_set_valign(label, GTK_ALIGN_CENTER);
 
     gtk_box_append(GTK_BOX(content_box), icon);
     gtk_box_append(GTK_BOX(content_box), label);
@@ -218,23 +239,27 @@ static ShellWidget *power_create(ShellCompositor *compositor G_GNUC_UNUSED)
 {
     PowerWidget *pw = g_new0(PowerWidget, 1);
 
-    /* Menu button with shutdown icon */
+    pw->icon_img = gtk_image_new_from_icon_name("tb-power-symbolic");
+    pw->label = gtk_label_new("Power");
+    GtkWidget *hbox = shell_widget_pack_bar_box(pw->icon_img, pw->label);
+
+    /* Menu button with shutdown icon + optional label */
     pw->button = gtk_menu_button_new();
     gtk_menu_button_set_has_frame(GTK_MENU_BUTTON(pw->button), FALSE);
-    gtk_menu_button_set_icon_name(GTK_MENU_BUTTON(pw->button), "tb-power-symbolic");
+    gtk_menu_button_set_child(GTK_MENU_BUTTON(pw->button), hbox);
     gtk_widget_add_css_class(pw->button, "flat");
     gtk_widget_add_css_class(pw->button, "shell-widget");
     gtk_widget_add_css_class(pw->button, "shell-widget-power");
 
-    /* Popover wrapper box (holds both main_box and confirm_box) */
-    GtkWidget *wrapper = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_margin_start(wrapper, 12);
-    gtk_widget_set_margin_end(wrapper, 12);
-    gtk_widget_set_margin_top(wrapper, 12);
-    gtk_widget_set_margin_bottom(wrapper, 12);
+    /* 3-Zone Popover */
+    GtkWidget *body = NULL;
+    GtkWidget *footer = NULL;
+    pw->popover = GTK_WIDGET(shell_widget_create_popover_shell(
+        "popover-compact", "SESSION & POWER", "[ UP -- ]",
+        &pw->uptime_label, &body, &footer));
 
-    /* Main content */
-    pw->main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    /* Zone 2: Main session/power actions */
+    pw->main_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
 
     GtkWidget *btn_lock = power_make_button("fl-lock-symbolic", "Lock Screen",
                                              G_CALLBACK(on_lock_clicked), pw);
@@ -242,54 +267,59 @@ static ShellWidget *power_create(ShellCompositor *compositor G_GNUC_UNUSED)
                                                 G_CALLBACK(on_suspend_clicked), pw);
     GtkWidget *btn_hibernate = power_make_button("fl-sleep-symbolic", "Hibernate",
                                                   G_CALLBACK(on_hibernate_clicked), pw);
-    GtkWidget *btn_reboot = power_make_button("fl-restart-symbolic", "Reboot",
-                                               G_CALLBACK(on_reboot_clicked), pw);
-    GtkWidget *btn_poweroff = power_make_button("fl-power-symbolic", "Power Off",
-                                                 G_CALLBACK(on_poweroff_clicked), pw);
     GtkWidget *btn_logout = power_make_button("fl-logout-symbolic", "Log Out",
                                                G_CALLBACK(on_logout_clicked), pw);
+    GtkWidget *btn_reboot = power_make_button("fl-restart-symbolic", "Reboot...",
+                                               G_CALLBACK(on_reboot_clicked), pw);
+    GtkWidget *btn_poweroff = power_make_button("fl-power-symbolic", "Power Off...",
+                                                 G_CALLBACK(on_poweroff_clicked), pw);
+    gtk_widget_add_css_class(btn_reboot, "destructive-action");
+    gtk_widget_add_css_class(btn_poweroff, "destructive-action");
 
     gtk_box_append(GTK_BOX(pw->main_box), btn_lock);
     gtk_box_append(GTK_BOX(pw->main_box), btn_suspend);
     gtk_box_append(GTK_BOX(pw->main_box), btn_hibernate);
+    gtk_box_append(GTK_BOX(pw->main_box), btn_logout);
+    gtk_box_append(GTK_BOX(pw->main_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
     gtk_box_append(GTK_BOX(pw->main_box), btn_reboot);
     gtk_box_append(GTK_BOX(pw->main_box), btn_poweroff);
-    gtk_box_append(GTK_BOX(pw->main_box), btn_logout);
-
-    gtk_box_append(GTK_BOX(pw->main_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
-
-    pw->uptime_label = gtk_label_new("Uptime: --");
-    gtk_label_set_xalign(GTK_LABEL(pw->uptime_label), 0.0);
-    gtk_box_append(GTK_BOX(pw->main_box), pw->uptime_label);
 
     /* Confirmation content */
-    pw->confirm_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    pw->confirm_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
 
-    GtkWidget *confirm_label = gtk_label_new("Are you sure?");
-    gtk_widget_add_css_class(confirm_label, "heading");
-    gtk_box_append(GTK_BOX(pw->confirm_box), confirm_label);
+    pw->confirm_label = gtk_label_new("Confirm system power off?");
+    gtk_label_set_xalign(GTK_LABEL(pw->confirm_label), 0.0f);
+    gtk_widget_add_css_class(pw->confirm_label, "row-title");
+    gtk_box_append(GTK_BOX(pw->confirm_box), pw->confirm_label);
 
     GtkWidget *btn_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
-    GtkWidget *btn_yes = gtk_button_new_with_label("Yes");
-    GtkWidget *btn_cancel = gtk_button_new_with_label("Cancel");
+    gtk_widget_set_valign(btn_row, GTK_ALIGN_CENTER);
+    GtkWidget *btn_cancel = gtk_button_new_with_label("CANCEL");
+    gtk_widget_set_hexpand(btn_cancel, TRUE);
+    GtkWidget *btn_yes = gtk_button_new_with_label("CONFIRM");
+    gtk_widget_set_hexpand(btn_yes, TRUE);
     gtk_widget_add_css_class(btn_yes, "destructive-action");
 
     g_signal_connect(btn_yes, "clicked", G_CALLBACK(on_confirm_yes), pw);
     g_signal_connect(btn_cancel, "clicked", G_CALLBACK(on_confirm_cancel), pw);
 
-    gtk_box_append(GTK_BOX(btn_row), btn_yes);
     gtk_box_append(GTK_BOX(btn_row), btn_cancel);
+    gtk_box_append(GTK_BOX(btn_row), btn_yes);
     gtk_box_append(GTK_BOX(pw->confirm_box), btn_row);
 
     gtk_widget_set_visible(pw->confirm_box, FALSE);
 
-    gtk_box_append(GTK_BOX(wrapper), pw->main_box);
-    gtk_box_append(GTK_BOX(wrapper), pw->confirm_box);
+    gtk_box_append(GTK_BOX(body), pw->main_box);
+    gtk_box_append(GTK_BOX(body), pw->confirm_box);
 
-    /* Popover */
-    pw->popover = gtk_popover_new();
-    gtk_widget_add_css_class(pw->popover, "shell-popover");
-    gtk_popover_set_child(GTK_POPOVER(pw->popover), wrapper);
+    /* Zone 3: Idle & Display Settings shortcut */
+    pw->settings_btn = gtk_button_new_with_label("IDLE & LOCK SETTINGS");
+    gtk_widget_set_hexpand(pw->settings_btn, TRUE);
+    gtk_widget_set_halign(pw->settings_btn, GTK_ALIGN_END);
+    gtk_widget_set_valign(pw->settings_btn, GTK_ALIGN_CENTER);
+    g_signal_connect(pw->settings_btn, "clicked", G_CALLBACK(on_power_settings_clicked), pw);
+    gtk_box_append(GTK_BOX(footer), pw->settings_btn);
+
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(pw->button), pw->popover);
 
     g_signal_connect(pw->popover, "show", G_CALLBACK(on_popover_show), pw);
@@ -302,6 +332,8 @@ static void power_destroy(ShellWidget *widget)
     PowerWidget *pw = (PowerWidget *)widget;
     if (!pw)
         return;
+    if (pw->settings_btn)
+        g_signal_handlers_disconnect_by_data(pw->settings_btn, pw);
     if (pw->main_box) {
         for (GtkWidget *child = gtk_widget_get_first_child(pw->main_box);
              child != NULL;
@@ -341,6 +373,10 @@ static GtkWidget *power_get_widget(ShellWidget *widget)
 static void power_enable(ShellWidget *widget)
 {
     PowerWidget *pw = (PowerWidget *)widget;
+
+    if (pw->icon_img)
+        gtk_image_set_pixel_size(GTK_IMAGE(pw->icon_img), shell_widget_get_icon_size(widget));
+    shell_widget_apply_mode_visibility(widget->mode, pw->icon_img, pw->label);
 
     if (!pw->logind_proxy && !pw->cancellable) {
         pw->cancellable = g_cancellable_new();

@@ -153,17 +153,20 @@ add_tray_item(TrayWidget *tray, const gchar *service)
     /* Build UI Button */
     item->button = gtk_button_new();
     gtk_button_set_has_frame(GTK_BUTTON(item->button), FALSE);
-    gtk_widget_add_css_class(item->button, "shell-widget");
+    gtk_widget_set_valign(item->button, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(item->button, "tray-item-button");
 
+    gint icon_sz = MIN(18, shell_widget_get_icon_size((ShellWidget *)tray));
     item->icon_img = gtk_image_new_from_icon_name("application-x-executable-symbolic");
-    gtk_image_set_pixel_size(GTK_IMAGE(item->icon_img), 16);
+    gtk_image_set_pixel_size(GTK_IMAGE(item->icon_img), icon_sz);
+    gtk_widget_set_valign(item->icon_img, GTK_ALIGN_CENTER);
     gtk_button_set_child(GTK_BUTTON(item->button), item->icon_img);
 
     g_signal_connect(item->button, "clicked", G_CALLBACK(on_tray_item_clicked), item);
 
     gtk_box_append(GTK_BOX(tray->box), item->button);
     g_ptr_array_add(tray->items, item);
+    gtk_widget_set_visible(tray->box, TRUE);
 
     TrayPair *pair = g_new0(TrayPair, 1);
     pair->tray = tray;
@@ -234,6 +237,7 @@ remove_tray_item(TrayWidget *tray, const gchar *service)
             g_free(it->menu_path);
             g_free(it);
             g_ptr_array_remove_index(tray->items, i);
+            gtk_widget_set_visible(tray->box, tray->items->len > 0);
             break;
         }
     }
@@ -497,8 +501,10 @@ tray_widget_create(ShellCompositor *compositor)
     tray->items = g_ptr_array_new();
 
     tray->box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_valign(tray->box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(tray->box, "shell-widget");
     gtk_widget_add_css_class(tray->box, "shell-widget-tray");
+    gtk_widget_set_visible(tray->box, FALSE);
 
     /* Register D-Bus StatusNotifierWatcher service */
     tray->watcher_owner_id = g_bus_own_name(

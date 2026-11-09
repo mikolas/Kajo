@@ -536,20 +536,25 @@ static void cpu_mem_update(CpuMemWidget *cm)
     for (gint i = 0; i < num_cores && i < MAX_CORES; i++) {
         if (!cm->core_items[i].box) {
             GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+            gtk_widget_set_valign(box, GTK_ALIGN_CENTER);
 
             gchar *name_str = g_strdup_printf("C%02d", i + 1);
             GtkWidget *name_lbl = gtk_label_new(name_str);
             g_free(name_str);
-            gtk_widget_add_css_class(name_lbl, "monospace");
-            gtk_widget_set_size_request(name_lbl, 32, -1);
+            gtk_widget_add_css_class(name_lbl, "row-subtitle");
+            gtk_widget_set_size_request(name_lbl, 30, -1);
+            gtk_widget_set_valign(name_lbl, GTK_ALIGN_CENTER);
             gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0);
 
             GtkWidget *bar = gtk_level_bar_new_for_interval(0.0, 1.0);
-            gtk_widget_set_size_request(bar, 90, 6);
+            gtk_widget_set_hexpand(bar, TRUE);
+            gtk_widget_set_size_request(bar, 80, 6);
+            gtk_widget_set_valign(bar, GTK_ALIGN_CENTER);
 
             GtkWidget *pct_lbl = gtk_label_new("0%");
-            gtk_widget_add_css_class(pct_lbl, "monospace");
+            gtk_widget_add_css_class(pct_lbl, "row-subtitle");
             gtk_widget_set_size_request(pct_lbl, 36, -1);
+            gtk_widget_set_valign(pct_lbl, GTK_ALIGN_CENTER);
             gtk_label_set_xalign(GTK_LABEL(pct_lbl), 1.0);
 
             gtk_box_append(GTK_BOX(box), name_lbl);
@@ -618,7 +623,7 @@ static void cpu_mem_update(CpuMemWidget *cm)
 
         GtkWidget *lbl = gtk_label_new(row);
         gtk_label_set_xalign(GTK_LABEL(lbl), 0.0);
-        gtk_widget_add_css_class(lbl, "monospace");
+        gtk_widget_add_css_class(lbl, "process-row");
         gtk_box_append(GTK_BOX(cm->top_procs_box), lbl);
         g_free(row);
     }
@@ -754,11 +759,9 @@ static ShellWidget *cpu_mem_create(ShellCompositor *compositor G_GNUC_UNUSED)
     CpuMemWidget *cm = g_new0(CpuMemWidget, 1);
 
     /* Panel button child hbox */
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     cm->icon_img = gtk_image_new_from_icon_name("fl-cpu-symbolic");
     cm->panel_label = gtk_label_new("CPU --% MEM --%");
-    gtk_box_append(GTK_BOX(hbox), cm->icon_img);
-    gtk_box_append(GTK_BOX(hbox), cm->panel_label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(cm->icon_img, cm->panel_label);
 
     /* Menu button */
     cm->button = gtk_menu_button_new();

@@ -70,6 +70,12 @@ update_dnd_ui(DndWidget *dnd)
 
     gtk_image_set_from_icon_name(GTK_IMAGE(dnd->icon_img), icon_name);
     gtk_label_set_text(GTK_LABEL(dnd->label), dnd->is_dnd ? "DND On" : "DND Off");
+    if (dnd->button) {
+        if (dnd->is_dnd)
+            gtk_widget_add_css_class(dnd->button, "active");
+        else
+            gtk_widget_remove_css_class(dnd->button, "active");
+    }
     shell_widget_apply_mode_visibility(dnd->base.mode, dnd->icon_img, dnd->label);
 
     if (dnd->dnd_switch != NULL) {
@@ -125,11 +131,14 @@ build_dnd_popover(DndWidget *dnd)
     gtk_widget_add_css_class(body_box, "shell-popover-body");
 
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
     GtkWidget *row_label = gtk_label_new("Mute Notifications");
     gtk_widget_set_hexpand(row_label, TRUE);
+    gtk_widget_set_valign(row_label, GTK_ALIGN_CENTER);
     gtk_label_set_xalign(GTK_LABEL(row_label), 0.0f);
 
     dnd->dnd_switch = gtk_switch_new();
+    gtk_widget_set_valign(dnd->dnd_switch, GTK_ALIGN_CENTER);
     g_signal_connect(dnd->dnd_switch, "state-set",
                      G_CALLBACK(on_dnd_switch_toggled), dnd);
 
@@ -140,11 +149,13 @@ build_dnd_popover(DndWidget *dnd)
 
     /* ─── Zone 3: Footer (Actions) ─── */
     GtkWidget *footer_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(footer_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(footer_box, "shell-popover-footer");
 
     GtkWidget *settings_btn = gtk_button_new_with_label("NOTIFICATION SETTINGS");
     gtk_button_set_has_frame(GTK_BUTTON(settings_btn), FALSE);
     gtk_widget_set_halign(settings_btn, GTK_ALIGN_END);
+    gtk_widget_set_valign(settings_btn, GTK_ALIGN_CENTER);
     gtk_widget_set_hexpand(settings_btn, TRUE);
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_dnd_settings_clicked), dnd);
     dnd->settings_btn = settings_btn;
@@ -171,13 +182,10 @@ dnd_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(dnd->button, "shell-widget");
     gtk_widget_add_css_class(dnd->button, "shell-widget-dnd");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    dnd->icon_img = gtk_image_new_from_icon_name("fl-bell-symbolic");
+    dnd->icon_img = gtk_image_new_from_icon_name("tb-bell-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(dnd->icon_img), shell_widget_get_icon_size((ShellWidget *)dnd));
     dnd->label = gtk_label_new("DND");
-
-    gtk_box_append(GTK_BOX(hbox), dnd->icon_img);
-    gtk_box_append(GTK_BOX(hbox), dnd->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(dnd->icon_img, dnd->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(dnd->button), hbox);
 
     /* Build Popover */

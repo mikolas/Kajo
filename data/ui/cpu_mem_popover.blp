@@ -9,13 +9,14 @@ template $ShellCpuMemPopover : Popover {
     orientation: vertical;
 
     styles [
-      "popover-compact",
+      "popover-medium",
     ]
 
     /* Zone 1: Header (Title + Dual Badges) */
     Box {
       orientation: horizontal;
       spacing: 6;
+      valign: center;
 
       styles [
         "shell-popover-header",
@@ -25,6 +26,7 @@ template $ShellCpuMemPopover : Popover {
         label: "SYSTEM TELEMETRY";
         xalign: 0;
         hexpand: true;
+        valign: center;
 
         styles [
           "shell-popover-title",
@@ -33,6 +35,7 @@ template $ShellCpuMemPopover : Popover {
 
       Label power_badge {
         label: "[ -- W ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -41,6 +44,7 @@ template $ShellCpuMemPopover : Popover {
 
       Label status_badge {
         label: "[ LIVE ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -49,153 +53,181 @@ template $ShellCpuMemPopover : Popover {
     }
 
     /* Zone 2: Body */
-    Box {
-      orientation: vertical;
-      spacing: 8;
+    ScrolledWindow {
+      hscrollbar-policy: never;
+      vscrollbar-policy: automatic;
+      max-content-height: 440;
+      propagate-natural-height: true;
 
-      styles [
-        "shell-popover-body",
-      ]
-
-      /* Section 1: CPU Load */
       Box {
-        orientation: horizontal;
+        orientation: vertical;
+        spacing: 8;
 
-        Label {
-          label: "CPU LOAD";
+        styles [
+          "shell-popover-body",
+        ]
+
+        /* Section 1: CPU Load */
+        Box {
+          orientation: horizontal;
+          valign: center;
+
+          Label {
+            label: "CPU LOAD";
+            xalign: 0;
+            hexpand: true;
+            valign: center;
+
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
+
+          Label cpu_power_sublabel {
+            label: "Power: -- W";
+            xalign: 1;
+            valign: center;
+
+            styles [
+              "shell-popover-subtitle",
+            ]
+          }
+        }
+
+        Label cpu_overall_label {
+          label: "CPU: --% (-- Cores)";
           xalign: 0;
-          hexpand: true;
+        }
+
+        Grid cores_grid {
+          column-spacing: 12;
+          row-spacing: 4;
+          column-homogeneous: true;
+        }
+
+        Separator {
+          orientation: horizontal;
+        }
+
+        /* Section 2: Memory Usage */
+        Label {
+          label: "MEMORY USAGE";
+          xalign: 0;
 
           styles [
             "shell-popover-subtitle",
           ]
         }
 
-        Label cpu_power_sublabel {
-          label: "Power: -- W";
-          xalign: 1;
+        Label mem_label {
+          label: "Memory: -- / -- GB (--%)";
+          xalign: 0;
+        }
+
+        LevelBar mem_bar {
+          min-value: 0;
+          max-value: 1;
+        }
+
+        Separator {
+          orientation: horizontal;
+        }
+
+        /* Section 3: Storage Usage */
+        Label {
+          label: "STORAGE USAGE";
+          xalign: 0;
 
           styles [
             "shell-popover-subtitle",
           ]
         }
-      }
 
-      Label cpu_overall_label {
-        label: "CPU: --% (-- Cores)";
-        xalign: 0;
-      }
+        Box disks_box {
+          orientation: vertical;
+          spacing: 4;
+        }
 
-      Grid cores_grid {
-        column-spacing: 12;
-        row-spacing: 4;
-      }
+        Separator {
+          orientation: horizontal;
+        }
 
-      Separator {
-        orientation: horizontal;
-      }
+        /* Section 4: Network Throughput */
+        Label {
+          label: "NETWORK THROUGHPUT";
+          xalign: 0;
 
-      /* Section 2: Memory Usage */
-      Label {
-        label: "MEMORY USAGE";
-        xalign: 0;
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
 
-        styles [
-          "shell-popover-subtitle",
-        ]
-      }
+        Label net_label {
+          label: "Network: ⬇ 0.0 KB/s  ⬆ 0.0 KB/s";
+          xalign: 0;
+        }
 
-      Label mem_label {
-        label: "Memory: -- / -- GB (--%)";
-        xalign: 0;
-      }
+        Separator {
+          orientation: horizontal;
+        }
 
-      LevelBar mem_bar {
-        min-value: 0;
-        max-value: 1;
-      }
+        /* Section 5: Top Processes */
+        Label {
+          label: "TOP PROCESSES";
+          xalign: 0;
 
-      Separator {
-        orientation: horizontal;
-      }
+          styles [
+            "shell-popover-subtitle",
+          ]
+        }
 
-      /* Section 3: Storage Usage */
-      Label {
-        label: "STORAGE USAGE";
-        xalign: 0;
-
-        styles [
-          "shell-popover-subtitle",
-        ]
-      }
-
-      Box disks_box {
-        orientation: vertical;
-        spacing: 4;
-      }
-
-      Separator {
-        orientation: horizontal;
-      }
-
-      /* Section 4: Network Throughput */
-      Label {
-        label: "NETWORK THROUGHPUT";
-        xalign: 0;
-
-        styles [
-          "shell-popover-subtitle",
-        ]
-      }
-
-      Label net_label {
-        label: "Network: ⬇ 0.0 KB/s  ⬆ 0.0 KB/s";
-        xalign: 0;
-      }
-
-      Separator {
-        orientation: horizontal;
-      }
-
-      /* Section 4: Top Processes */
-      Label {
-        label: "TOP PROCESSES";
-        xalign: 0;
-
-        styles [
-          "shell-popover-subtitle",
-        ]
-      }
-
-      Box top_procs_box {
-        orientation: vertical;
-        spacing: 2;
+        Box top_procs_box {
+          orientation: vertical;
+          spacing: 2;
+        }
       }
     }
 
     /* Zone 3: Footer (Hardware Stats) */
     Box {
       orientation: horizontal;
+      spacing: 12;
+      valign: center;
 
       styles [
         "shell-popover-footer",
       ]
 
       Label temp_label {
-        label: "Temperature: -- °C";
+        label: "Temp: -- °C";
         xalign: 0;
+        valign: center;
         hexpand: true;
+
+        styles [
+          "row-subtitle",
+        ]
       }
 
       Label fan_label {
         label: "Fan: -- RPM";
         xalign: 0.5;
+        valign: center;
         hexpand: true;
+
+        styles [
+          "row-subtitle",
+        ]
       }
 
       Label power_label {
-        label: "Power Draw: -- W";
+        label: "Power: -- W";
         xalign: 1;
+        valign: center;
+
+        styles [
+          "row-subtitle",
+        ]
       }
     }
   }

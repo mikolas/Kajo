@@ -39,13 +39,10 @@ osk_widget_create(ShellCompositor *compositor G_GNUC_UNUSED)
     gtk_widget_add_css_class(ow->button, "shell-widget");
     gtk_widget_add_css_class(ow->button, "shell-widget-osk");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     ow->icon_img = gtk_image_new_from_icon_name("input-keyboard-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(ow->icon_img), shell_widget_get_icon_size((ShellWidget *)ow));
     ow->label = gtk_label_new("Keyboard");
-
-    gtk_box_append(GTK_BOX(hbox), ow->icon_img);
-    gtk_box_append(GTK_BOX(hbox), ow->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(ow->icon_img, ow->label);
     gtk_button_set_child(GTK_BUTTON(ow->button), hbox);
 
     g_signal_connect(ow->button, "clicked", G_CALLBACK(on_osk_btn_clicked), ow);

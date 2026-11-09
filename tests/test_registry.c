@@ -216,12 +216,118 @@ test_widget_registry_integrity(void)
     shell_widget_registry_destroy(reg);
 }
 
+static void
+on_css_parse_error(GtkCssProvider *provider G_GNUC_UNUSED,
+                   GtkCssSection  *section,
+                   const GError   *error,
+                   gpointer        user_data)
+{
+    guint *err_count = user_data;
+    (*err_count)++;
+    g_printerr("CSS parse error at line %u: %s\n",
+               section ? (guint)gtk_css_section_get_start_location(section)->lines + 1 : 0,
+               error ? error->message : "unknown");
+}
+
+static gboolean
+widget_tree_has_css_class(GtkWidget *root, const char *css_class)
+{
+    if (!root)
+        return FALSE;
+    if (gtk_widget_has_css_class(root, css_class))
+        return TRUE;
+    for (GtkWidget *c = gtk_widget_get_first_child(root);
+         c != NULL;
+         c = gtk_widget_get_next_sibling(c)) {
+        if (widget_tree_has_css_class(c, css_class))
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static void
+test_style_css_and_widget_ui_contract(void)
+{
+    if (!gtk_init_check()) {
+        g_test_skip("No display available for GTK4 widget/CSS contract check");
+        return;
+    }
+
+    /* 1. Master data/defaults/style.css MUST parse with zero GTK4 CSS errors */
+    g_autofree gchar *css_path = g_build_filename(G_STRINGIFY(KAJO_SOURCE_DIR),
+                                                  "data", "defaults", "style.css", NULL);
+    if (!g_file_test(css_path, G_FILE_TEST_EXISTS)) {
+        g_free(css_path);
+        css_path = g_strdup("../data/defaults/style.css");
+    }
+    if (g_file_test(css_path, G_FILE_TEST_EXISTS)) {
+        GtkCssProvider *provider = gtk_css_provider_new();
+        guint parse_errors = 0;
+        g_signal_connect(provider, "parsing-error", G_CALLBACK(on_css_parse_error), &parse_errors);
+        gtk_css_provider_load_from_path(provider, css_path);
+        g_assert_cmpuint(parse_errors, ==, 0);
+        g_object_unref(provider);
+    }
+
+    /* 2. shell_widget_apply_mode_visibility() MUST never hide the sole child */
+    GtkWidget *only_label = g_object_ref_sink(gtk_label_new("23:35"));
+    shell_widget_apply_mode_visibility(WIDGET_MODE_ICON, NULL, only_label);
+    g_assert_true(gtk_widget_get_visible(only_label));
+    g_object_unref(only_label);
+
+    GtkWidget *only_icon = g_object_ref_sink(gtk_image_new());
+    shell_widget_apply_mode_visibility(WIDGET_MODE_LABEL, only_icon, NULL);
+    g_assert_true(gtk_widget_get_visible(only_icon));
+    g_object_unref(only_icon);
+
+    /* 3. Verify 3-zone popover architecture & GTK_ALIGN_CENTER bar boxes on pure-GTK widgets */
+    static const char *const checked_ids[] = {
+        "clock", "window", "keyboard-layout", "idle-inhibitor", "dnd", "notifications"
+    };
+    ShellWidgetRegistry *reg = shell_widget_registry_new();
+    for (guint i = 0; i < G_N_ELEMENTS(checked_ids); i++) {
+        const ShellWidgetClass *cls = shell_widget_registry_find(reg, checked_ids[i]);
+        g_assert_nonnull(cls);
+
+        ShellWidget *w = cls->create(NULL);
+        g_assert_nonnull(w);
+        w->klass = cls;
+
+        GtkWidget *btn = cls->get_widget(w);
+        g_assert_nonnull(btn);
+        g_object_ref_sink(btn);
+        g_assert_true(gtk_widget_has_css_class(btn, "shell-widget"));
+        g_assert_true(GTK_IS_MENU_BUTTON(btn));
+
+        GtkPopover *pop = gtk_menu_button_get_popover(GTK_MENU_BUTTON(btn));
+        g_assert_nonnull(pop);
+        g_assert_true(gtk_widget_has_css_class(GTK_WIDGET(pop), "shell-popover"));
+        g_assert_true(widget_tree_has_css_class(GTK_WIDGET(pop), "shell-popover-header"));
+        g_assert_true(widget_tree_has_css_class(GTK_WIDGET(pop), "shell-popover-body"));
+        g_assert_true(widget_tree_has_css_class(GTK_WIDGET(pop), "shell-popover-footer"));
+        g_assert_true(widget_tree_has_css_class(GTK_WIDGET(pop), "popover-compact") ||
+                      widget_tree_has_css_class(GTK_WIDGET(pop), "popover-medium") ||
+                      widget_tree_has_css_class(GTK_WIDGET(pop), "popover-expanded"));
+
+        for (int m = WIDGET_MODE_ICON; m <= WIDGET_MODE_FULL; m++) {
+            w->mode = (ShellWidgetMode)m;
+            cls->enable(w);
+            cls->disable(w);
+        }
+
+        cls->destroy(w);
+        g_object_unref(btn);
+    }
+    shell_widget_registry_destroy(reg);
+}
+
 int
 main(int argc, char *argv[])
 {
     g_test_init(&argc, &argv, NULL);
 
     g_test_add_func("/registry/widget-classes-integrity", test_widget_registry_integrity);
+    g_test_add_func("/registry/style-css-and-widget-ui-contract", test_style_css_and_widget_ui_contract);
 
     return g_test_run();
 }

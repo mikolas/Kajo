@@ -15,6 +15,7 @@ template $ShellPrivacyPopover : Popover {
     /* Zone 1: Header (Title + Badge) */
     Box {
       orientation: horizontal;
+      valign: center;
 
       styles [
         "shell-popover-header",
@@ -24,6 +25,7 @@ template $ShellPrivacyPopover : Popover {
         label: "PRIVACY INDICATORS";
         xalign: 0;
         hexpand: true;
+        valign: center;
 
         styles [
           "shell-popover-title",
@@ -31,7 +33,8 @@ template $ShellPrivacyPopover : Popover {
       }
 
       Label status_badge {
-        label: "[ ACTIVE ]";
+        label: "[ CLEAR ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -52,12 +55,39 @@ template $ShellPrivacyPopover : Popover {
       Label mic_status_label {
         label: "Microphone: Inactive";
         xalign: 0;
+
+        styles [
+          "row-title",
+        ]
       }
 
       /* Cam Status */
       Label cam_status_label {
         label: "Camera: Inactive";
         xalign: 0;
+
+        styles [
+          "row-title",
+        ]
+      }
+    }
+
+    /* Zone 3: Footer */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+      valign: center;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button settings_btn {
+        label: "AUDIO & INPUT SETTINGS";
+        has-frame: false;
+        halign: end;
+        valign: center;
+        hexpand: true;
       }
     }
   }

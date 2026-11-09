@@ -15,6 +15,7 @@ template $ShellVolumePopover : Popover {
     /* Zone 1: Header (Title + Status Badge) */
     Box {
       orientation: horizontal;
+      valign: center;
 
       styles [
         "shell-popover-header",
@@ -24,6 +25,7 @@ template $ShellVolumePopover : Popover {
         label: "VOLUME";
         xalign: 0;
         hexpand: true;
+        valign: center;
 
         styles [
           "shell-popover-title",
@@ -32,6 +34,7 @@ template $ShellVolumePopover : Popover {
 
       Label input_label {
         label: "[ -- ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -51,15 +54,18 @@ template $ShellVolumePopover : Popover {
       Box {
         orientation: horizontal;
         spacing: 8;
+        valign: center;
 
         Image {
           icon-name: "audio-volume-high-symbolic";
+          valign: center;
         }
 
         Scale master_scale {
           orientation: horizontal;
           draw-value: false;
           hexpand: true;
+          valign: center;
 
           adjustment: Adjustment {
             lower: 0;
@@ -92,6 +98,7 @@ template $ShellVolumePopover : Popover {
     Box {
       orientation: horizontal;
       spacing: 8;
+      valign: center;
 
       styles [
         "shell-popover-footer",
@@ -100,12 +107,14 @@ template $ShellVolumePopover : Popover {
       Button mute_button {
         label: "MUTE SINK";
         has-frame: false;
+        valign: center;
       }
 
       Button settings_btn {
         label: "SETTINGS";
         has-frame: false;
         halign: end;
+        valign: center;
         hexpand: true;
       }
     }

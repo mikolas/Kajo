@@ -15,6 +15,7 @@ template $ShellNetworkPopover : Popover {
     /* Zone 1: Header (Title + Status Badge) */
     Box {
       orientation: horizontal;
+      valign: center;
 
       styles [
         "shell-popover-header",
@@ -24,6 +25,7 @@ template $ShellNetworkPopover : Popover {
         label: "NETWORK";
         xalign: 0;
         hexpand: true;
+        valign: center;
 
         styles [
           "shell-popover-title",
@@ -31,7 +33,8 @@ template $ShellNetworkPopover : Popover {
       }
 
       Label status_badge {
-        label: "[ CONNECTED ]";
+        label: "[ OFFLINE ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -51,14 +54,18 @@ template $ShellNetworkPopover : Popover {
       Box {
         orientation: horizontal;
         spacing: 8;
+        valign: center;
 
         Label {
           label: "Wi-Fi Adapter";
           hexpand: true;
+          valign: center;
           xalign: 0;
         }
 
-        Switch wifi_switch {}
+        Switch wifi_switch {
+          valign: center;
+        }
       }
 
       Label {
@@ -90,6 +97,7 @@ template $ShellNetworkPopover : Popover {
     Box {
       orientation: horizontal;
       spacing: 8;
+      valign: center;
 
       styles [
         "shell-popover-footer",
@@ -99,6 +107,7 @@ template $ShellNetworkPopover : Popover {
         label: "NET SETTINGS";
         has-frame: false;
         halign: end;
+        valign: center;
         hexpand: true;
       }
     }

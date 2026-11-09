@@ -17,8 +17,10 @@ typedef struct {
     GtkWidget *label;
     GtkWidget *popover;
 
+    GtkWidget *status_badge;
     GtkWidget *mic_status_label;
     GtkWidget *cam_status_label;
+    GtkWidget *settings_btn;
 
     guint poll_timer_id;
     gboolean mic_active;
@@ -26,6 +28,13 @@ typedef struct {
 } PrivacyWidget;
 
 static void update_privacy_ui(PrivacyWidget *priv);
+
+static void
+on_privacy_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    PrivacyWidget *priv = user_data;
+    shell_spawn_settings("audio", priv ? priv->popover : NULL);
+}
 
 static gboolean
 check_alsa_mic_active(void)
@@ -143,23 +152,40 @@ static void
 update_privacy_ui(PrivacyWidget *priv)
 {
     if (!priv->mic_active && !priv->cam_active) {
+        gtk_widget_remove_css_class(priv->button, "active");
         gtk_widget_set_visible(priv->button, FALSE);
+        if (priv->status_badge) {
+            gtk_widget_remove_css_class(priv->status_badge, "peak-warn");
+            gtk_label_set_text(GTK_LABEL(priv->status_badge), "[ CLEAR ]");
+        }
         return;
     }
 
     gtk_widget_set_visible(priv->button, TRUE);
-    const gchar *icon_name = "privacy-mic-symbolic";
+    gtk_widget_add_css_class(priv->button, "active");
+
+    const gchar *icon_name = (priv->cam_active && !priv->mic_active)
+        ? "privacy-camera-symbolic"
+        : "privacy-mic-symbolic";
     gtk_image_set_from_icon_name(GTK_IMAGE(priv->icon_img), icon_name);
 
+    const gchar *badge_str = "[ ACTIVE ]";
     if (priv->mic_active && priv->cam_active) {
         gtk_label_set_text(GTK_LABEL(priv->label), "Mic + Cam");
+        badge_str = "[ MIC+CAM ]";
     } else if (priv->mic_active) {
         gtk_label_set_text(GTK_LABEL(priv->label), "Mic Active");
+        badge_str = "[ MIC ]";
     } else {
         gtk_label_set_text(GTK_LABEL(priv->label), "Cam Active");
+        badge_str = "[ CAM ]";
     }
     shell_widget_apply_mode_visibility(priv->base.mode, priv->icon_img, priv->label);
 
+    if (priv->status_badge != NULL) {
+        gtk_label_set_text(GTK_LABEL(priv->status_badge), badge_str);
+        gtk_widget_add_css_class(priv->status_badge, "peak-warn");
+    }
     if (priv->mic_status_label != NULL) {
         gtk_label_set_text(GTK_LABEL(priv->mic_status_label),
                            priv->mic_active ? "Microphone: In Use" : "Microphone: Inactive");
@@ -175,8 +201,10 @@ update_privacy_ui(PrivacyWidget *priv)
 typedef struct _ShellPrivacyPopover {
     GtkPopover parent_instance;
 
+    GtkWidget *status_badge;
     GtkWidget *mic_status_label;
     GtkWidget *cam_status_label;
+    GtkWidget *settings_btn;
 } ShellPrivacyPopover;
 
 typedef struct _ShellPrivacyPopoverClass {
@@ -207,8 +235,10 @@ shell_privacy_popover_class_init(ShellPrivacyPopoverClass *klass)
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/privacy_popover.ui");
 
+    gtk_widget_class_bind_template_child(widget_class, ShellPrivacyPopover, status_badge);
     gtk_widget_class_bind_template_child(widget_class, ShellPrivacyPopover, mic_status_label);
     gtk_widget_class_bind_template_child(widget_class, ShellPrivacyPopover, cam_status_label);
+    gtk_widget_class_bind_template_child(widget_class, ShellPrivacyPopover, settings_btn);
 }
 
 static GtkWidget *
@@ -216,8 +246,11 @@ build_privacy_popover(PrivacyWidget *priv)
 {
     ShellPrivacyPopover *popover = g_object_new(shell_privacy_popover_get_type(), NULL);
 
+    priv->status_badge = popover->status_badge;
     priv->mic_status_label = popover->mic_status_label;
     priv->cam_status_label = popover->cam_status_label;
+    priv->settings_btn = popover->settings_btn;
+    g_signal_connect(popover->settings_btn, "clicked", G_CALLBACK(on_privacy_settings_clicked), priv);
 
     return GTK_WIDGET(popover);
 }
@@ -237,12 +270,9 @@ privacy_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(priv->button, "shell-widget");
     gtk_widget_add_css_class(priv->button, "shell-widget-privacy");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    priv->icon_img = gtk_image_new_from_icon_name("fl-privacy-symbolic");
+    priv->icon_img = gtk_image_new_from_icon_name("privacy-mic-symbolic");
     priv->label = gtk_label_new("Privacy");
-
-    gtk_box_append(GTK_BOX(hbox), priv->icon_img);
-    gtk_box_append(GTK_BOX(hbox), priv->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(priv->icon_img, priv->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(priv->button), hbox);
 
     /* Build Popover */
@@ -260,6 +290,9 @@ privacy_widget_destroy(ShellWidget *widget)
     PrivacyWidget *priv = (PrivacyWidget *)widget;
     if (priv == NULL)
         return;
+
+    if (priv->settings_btn)
+        g_signal_handlers_disconnect_by_data(priv->settings_btn, priv);
     if (priv->poll_timer_id != 0) {
         g_source_remove(priv->poll_timer_id);
         priv->poll_timer_id = 0;

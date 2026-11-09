@@ -182,12 +182,9 @@ custom_script_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(cs->button, "shell-widget");
     gtk_widget_add_css_class(cs->button, "shell-widget-custom");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     cs->icon_img = gtk_image_new_from_icon_name("fl-terminal-symbolic");
     cs->label = gtk_label_new("Script");
-
-    gtk_box_append(GTK_BOX(hbox), cs->icon_img);
-    gtk_box_append(GTK_BOX(hbox), cs->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(cs->icon_img, cs->label);
     gtk_button_set_child(GTK_BUTTON(cs->button), hbox);
 
     g_signal_connect(cs->button, "clicked", G_CALLBACK(on_script_btn_clicked), cs);

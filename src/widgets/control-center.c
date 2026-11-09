@@ -36,13 +36,19 @@ typedef struct {
     GtkWidget     *icon_img;
     GtkWidget     *label;
 
-    /* Sliders */
+    /* Header & Sliders */
+    GtkWidget     *status_badge;
     GtkWidget     *vol_scale;
+    GtkWidget     *bright_row;
     GtkWidget     *bright_scale;
     GtkWidget     *vol_val_lbl;
     GtkWidget     *bright_val_lbl;
+    GtkWidget     *btn_power;
     gboolean       updating_vol;
     gboolean       updating_bright;
+    gboolean       updating_tiles;
+    gboolean       power_confirm_armed;
+    guint          power_confirm_timer_id;
 
     /* Quick Toggles (2x2 Grid) */
     GtkWidget     *wifi_btn;
@@ -227,11 +233,11 @@ cc_update_profile_radios(ControlCenterWidget *cc)
 
     cc->updating_profile = TRUE;
     if (g_strcmp0(profile, "power-saver") == 0)
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(cc->prof_saver), TRUE);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->prof_saver), TRUE);
     else if (g_strcmp0(profile, "balanced") == 0)
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(cc->prof_balanced), TRUE);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->prof_balanced), TRUE);
     else if (g_strcmp0(profile, "performance") == 0)
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(cc->prof_perf), TRUE);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->prof_perf), TRUE);
     cc->updating_profile = FALSE;
 
     g_variant_unref(v);
@@ -250,22 +256,22 @@ cc_set_profile(ControlCenterWidget *cc, const gchar *profile)
                       G_DBUS_CALL_FLAGS_NONE, -1, NULL, NULL, NULL);
 }
 
-static void on_prof_saver_toggled(GtkCheckButton *btn, gpointer user_data)
+static void on_prof_saver_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (gtk_check_button_get_active(btn)) cc_set_profile(cc, "power-saver");
+    if (gtk_toggle_button_get_active(btn)) cc_set_profile(cc, "power-saver");
 }
 
-static void on_prof_balanced_toggled(GtkCheckButton *btn, gpointer user_data)
+static void on_prof_balanced_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (gtk_check_button_get_active(btn)) cc_set_profile(cc, "balanced");
+    if (gtk_toggle_button_get_active(btn)) cc_set_profile(cc, "balanced");
 }
 
-static void on_prof_perf_toggled(GtkCheckButton *btn, gpointer user_data)
+static void on_prof_perf_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (gtk_check_button_get_active(btn)) cc_set_profile(cc, "performance");
+    if (gtk_toggle_button_get_active(btn)) cc_set_profile(cc, "performance");
 }
 
 /* ─── Callbacks ─── */
@@ -312,18 +318,36 @@ set_wifi_enabled(gboolean state)
 }
 
 static void
-on_wifi_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+cc_update_status_badge(ControlCenterWidget *cc)
+{
+    if (!cc || !cc->status_badge)
+        return;
+
+    gtk_widget_remove_css_class(cc->status_badge, "active");
+    gtk_widget_remove_css_class(cc->status_badge, "urgent");
+    gtk_widget_remove_css_class(cc->status_badge, "peak-warn");
+
+    if (cc->dnd_enabled) {
+        gtk_label_set_text(GTK_LABEL(cc->status_badge), "[ DND MUTED ]");
+        gtk_widget_add_css_class(cc->status_badge, "peak-warn");
+    } else if (cc->idle_enabled) {
+        gtk_label_set_text(GTK_LABEL(cc->status_badge), "[ KEEP AWAKE ]");
+        gtk_widget_add_css_class(cc->status_badge, "active");
+    } else {
+        gtk_label_set_text(GTK_LABEL(cc->status_badge), "[ READY ]");
+    }
+}
+
+static void
+on_wifi_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    cc->wifi_enabled = !cc->wifi_enabled;
+    if (!cc || cc->updating_tiles)
+        return;
+    cc->wifi_enabled = gtk_toggle_button_get_active(btn);
     set_wifi_enabled(cc->wifi_enabled);
-    if (cc->wifi_enabled) {
-        gtk_widget_add_css_class(cc->wifi_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Enabled");
-    } else {
-        gtk_widget_remove_css_class(cc->wifi_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Disabled");
-    }
+    gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl),
+                       cc->wifi_enabled ? "Enabled" : "Disabled");
 }
 
 static void
@@ -333,35 +357,30 @@ set_bluetooth_powered(gboolean state)
 }
 
 static void
-on_bt_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_bt_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    cc->bt_enabled = !cc->bt_enabled;
+    if (!cc || cc->updating_tiles)
+        return;
+    cc->bt_enabled = gtk_toggle_button_get_active(btn);
     set_bluetooth_powered(cc->bt_enabled);
-    if (cc->bt_enabled) {
-        gtk_widget_add_css_class(cc->bt_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Enabled");
-    } else {
-        gtk_widget_remove_css_class(cc->bt_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Disabled");
-    }
+    gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl),
+                       cc->bt_enabled ? "Enabled" : "Disabled");
 }
 
 static void
-on_dnd_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_dnd_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    cc->dnd_enabled = !cc->dnd_enabled;
+    if (!cc || cc->updating_tiles)
+        return;
+    cc->dnd_enabled = gtk_toggle_button_get_active(btn);
     if (cc->base.app && cc->base.app->notifications) {
         shell_notification_daemon_set_dnd(cc->base.app->notifications, cc->dnd_enabled);
     }
-    if (cc->dnd_enabled) {
-        gtk_widget_add_css_class(cc->dnd_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "On (Alerts Muted)");
-    } else {
-        gtk_widget_remove_css_class(cc->dnd_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "Off (Alerts On)");
-    }
+    gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl),
+                       cc->dnd_enabled ? "On (Alerts Muted)" : "Off (Alerts On)");
+    cc_update_status_badge(cc);
 }
 
 static void
@@ -370,13 +389,12 @@ update_cc_idle_ui(ControlCenterWidget *cc)
     if (!cc || !cc->idle_btn || !cc->idle_sub_lbl)
         return;
 
-    if (cc->idle_enabled) {
-        gtk_widget_add_css_class(cc->idle_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->idle_sub_lbl), "Screen Awake");
-    } else {
-        gtk_widget_remove_css_class(cc->idle_btn, "active");
-        gtk_label_set_text(GTK_LABEL(cc->idle_sub_lbl), "Disabled");
-    }
+    cc->updating_tiles = TRUE;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->idle_btn), cc->idle_enabled);
+    cc->updating_tiles = FALSE;
+    gtk_label_set_text(GTK_LABEL(cc->idle_sub_lbl),
+                       cc->idle_enabled ? "Screen Awake" : "Disabled");
+    cc_update_status_badge(cc);
 }
 
 static void
@@ -390,12 +408,12 @@ on_cc_idle_manager_changed(gboolean inhibited, gpointer user_data)
 }
 
 static void
-on_idle_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_idle_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
-    if (!cc)
+    if (!cc || cc->updating_tiles)
         return;
-    cc->idle_enabled = !cc->idle_enabled;
+    cc->idle_enabled = gtk_toggle_button_get_active(btn);
     if (cc->base.app && cc->base.app->idle_manager) {
         shell_idle_manager_set_inhibited(cc->base.app->idle_manager, cc->idle_enabled);
     }
@@ -444,14 +462,57 @@ on_action_lock_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 }
 
 static void
-on_action_suspend_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+cc_reset_power_confirm(ControlCenterWidget *cc)
 {
+    if (!cc)
+        return;
+    if (cc->power_confirm_timer_id > 0) {
+        g_source_remove(cc->power_confirm_timer_id);
+        cc->power_confirm_timer_id = 0;
+    }
+    cc->power_confirm_armed = FALSE;
+    if (cc->btn_power && GTK_IS_BUTTON(cc->btn_power))
+        gtk_button_set_label(GTK_BUTTON(cc->btn_power), "⏻ Power");
+}
+
+static gboolean
+on_cc_power_confirm_timeout(gpointer user_data)
+{
+    ControlCenterWidget *cc = user_data;
+    if (cc) {
+        cc->power_confirm_timer_id = 0;
+        cc_reset_power_confirm(cc);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static void
+on_action_suspend_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    ControlCenterWidget *cc = user_data;
+    if (cc && cc->popover)
+        gtk_popover_popdown(GTK_POPOVER(cc->popover));
     call_logind_manager_method("Suspend", g_variant_new("(b)", TRUE));
 }
 
 static void
-on_action_power_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
+on_action_power_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
+    ControlCenterWidget *cc = user_data;
+    if (!cc)
+        return;
+    if (!cc->power_confirm_armed) {
+        cc->power_confirm_armed = TRUE;
+        if (cc->btn_power && GTK_IS_BUTTON(cc->btn_power))
+            gtk_button_set_label(GTK_BUTTON(cc->btn_power), "⚠ CONFIRM?");
+        if (cc->power_confirm_timer_id > 0)
+            g_source_remove(cc->power_confirm_timer_id);
+        cc->power_confirm_timer_id = g_timeout_add_seconds(4, on_cc_power_confirm_timeout, cc);
+        return;
+    }
+    cc_reset_power_confirm(cc);
+    if (cc->popover)
+        gtk_popover_popdown(GTK_POPOVER(cc->popover));
     call_logind_manager_method("PowerOff", g_variant_new("(b)", TRUE));
 }
 
@@ -464,26 +525,20 @@ cc_refresh_dbus_toggles(ControlCenterWidget *cc)
         return;
 
     cc->wifi_enabled = shell_dbus_nm_get_wireless_enabled();
-    if (cc->wifi_btn && cc->wifi_sub_lbl) {
-        if (cc->wifi_enabled) {
-            gtk_widget_add_css_class(cc->wifi_btn, "active");
-            gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Enabled");
-        } else {
-            gtk_widget_remove_css_class(cc->wifi_btn, "active");
-            gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl), "Disabled");
-        }
-    }
-
     cc->bt_enabled = shell_dbus_bluez_get_powered();
-    if (cc->bt_btn && cc->bt_sub_lbl) {
-        if (cc->bt_enabled) {
-            gtk_widget_add_css_class(cc->bt_btn, "active");
-            gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Enabled");
-        } else {
-            gtk_widget_remove_css_class(cc->bt_btn, "active");
-            gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl), "Disabled");
-        }
+
+    cc->updating_tiles = TRUE;
+    if (cc->wifi_btn && cc->wifi_sub_lbl) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->wifi_btn), cc->wifi_enabled);
+        gtk_label_set_text(GTK_LABEL(cc->wifi_sub_lbl),
+                           cc->wifi_enabled ? "Enabled" : "Disabled");
     }
+    if (cc->bt_btn && cc->bt_sub_lbl) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->bt_btn), cc->bt_enabled);
+        gtk_label_set_text(GTK_LABEL(cc->bt_sub_lbl),
+                           cc->bt_enabled ? "Enabled" : "Disabled");
+    }
+    cc->updating_tiles = FALSE;
 }
 
 static void
@@ -496,10 +551,12 @@ cc_refresh_state(ControlCenterWidget *cc)
 
     /* Update brightness scale */
     gint bright = cc_read_brightness_pct();
+    if (cc->bright_row)
+        gtk_widget_set_visible(cc->bright_row, bright >= 0);
     if (bright >= 0) {
         cc->updating_bright = TRUE;
         if (cc->bright_scale && GTK_IS_RANGE(cc->bright_scale)) {
-            gtk_range_set_value(GTK_RANGE(cc->bright_scale), (double)bright);
+            gtk_range_set_value(GTK_RANGE(cc->bright_scale), (double)MAX(1, bright));
         }
         gchar buf[32];
         snprintf(buf, sizeof(buf), "%d%%", bright);
@@ -513,15 +570,14 @@ cc_refresh_state(ControlCenterWidget *cc)
         cc->dnd_enabled = shell_notification_daemon_get_dnd(cc->base.app->notifications);
     }
     if (cc->dnd_btn && cc->dnd_sub_lbl) {
-        if (cc->dnd_enabled) {
-            gtk_widget_add_css_class(cc->dnd_btn, "active");
-            gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "On (Alerts Muted)");
-        } else {
-            gtk_widget_remove_css_class(cc->dnd_btn, "active");
-            gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl), "Off (Alerts On)");
-        }
+        cc->updating_tiles = TRUE;
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(cc->dnd_btn), cc->dnd_enabled);
+        cc->updating_tiles = FALSE;
+        gtk_label_set_text(GTK_LABEL(cc->dnd_sub_lbl),
+                           cc->dnd_enabled ? "On (Alerts Muted)" : "Off (Alerts On)");
     }
 
+    cc_update_status_badge(cc);
     cc_update_profile_radios(cc);
     shell_widget_apply_mode_visibility(cc->base.mode, cc->icon_img, cc->label);
 }
@@ -554,28 +610,39 @@ on_cc_popover_unmap(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
 {
     ControlCenterWidget *cc = user_data;
     if (!cc) return;
+    cc_reset_power_confirm(cc);
     if (cc->refresh_timer_id > 0) {
         g_source_remove(cc->refresh_timer_id);
         cc->refresh_timer_id = 0;
     }
+    if (cc->power_confirm_timer_id > 0) {
+        g_source_remove(cc->power_confirm_timer_id);
+        cc->power_confirm_timer_id = 0;
+    }
 }
 
-/* ─── Tile Creation Helper ─── */
+/* ─── Tile Creation Helper (Canonical GtkToggleButton .toggle-card) ─── */
 
 static GtkWidget *
 create_toggle_tile(const gchar *icon_name, const gchar *title, const gchar *sub_default,
-                   GtkWidget **out_sub_lbl, GCallback callback, gpointer user_data)
+                   gboolean initial_active, GtkWidget **out_sub_lbl,
+                   GCallback callback, gpointer user_data)
 {
-    GtkWidget *btn = gtk_button_new();
-    gtk_widget_add_css_class(btn, "control-center-tile");
+    GtkWidget *btn = gtk_toggle_button_new();
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), initial_active);
+    gtk_widget_add_css_class(btn, "toggle-card");
     gtk_widget_set_hexpand(btn, TRUE);
     gtk_widget_set_size_request(btn, 140, 52);
 
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
     GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
     gtk_image_set_pixel_size(GTK_IMAGE(icon), 20);
+    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
 
     GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(vbox, TRUE);
     GtkWidget *t_lbl = gtk_label_new(title);
     gtk_label_set_xalign(GTK_LABEL(t_lbl), 0.0);
     gtk_widget_add_css_class(t_lbl, "tile-title");
@@ -592,7 +659,7 @@ create_toggle_tile(const gchar *icon_name, const gchar *title, const gchar *sub_
     gtk_box_append(GTK_BOX(hbox), vbox);
 
     gtk_button_set_child(GTK_BUTTON(btn), hbox);
-    g_signal_connect(btn, "clicked", callback, user_data);
+    g_signal_connect(btn, "toggled", callback, user_data);
 
     return btn;
 }
@@ -602,8 +669,10 @@ create_toggle_tile(const gchar *icon_name, const gchar *title, const gchar *sub_
 typedef struct _ShellControlCenterPopover {
     GtkPopover parent_instance;
 
+    GtkWidget *status_badge;
     GtkWidget *vol_scale;
     GtkWidget *vol_val_lbl;
+    GtkWidget *bright_row;
     GtkWidget *bright_scale;
     GtkWidget *bright_val_lbl;
     GtkWidget *toggle_grid;
@@ -646,8 +715,10 @@ shell_control_center_popover_class_init(ShellControlCenterPopoverClass *klass)
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/control_center_popover.ui");
 
+    gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, status_badge);
     gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, vol_scale);
     gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, vol_val_lbl);
+    gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, bright_row);
     gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, bright_scale);
     gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, bright_val_lbl);
     gtk_widget_class_bind_template_child(widget_class, ShellControlCenterPopover, toggle_grid);
@@ -671,11 +742,9 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
     cc->bt_enabled = TRUE;
 
     /* Panel Button */
-    GtkWidget *panel_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     cc->icon_img = gtk_image_new_from_icon_name("fl-sliders-symbolic");
     cc->label = gtk_label_new("Control Center");
-    gtk_box_append(GTK_BOX(panel_box), cc->icon_img);
-    gtk_box_append(GTK_BOX(panel_box), cc->label);
+    GtkWidget *panel_box = shell_widget_pack_bar_box(cc->icon_img, cc->label);
 
     cc->button = gtk_menu_button_new();
     gtk_menu_button_set_has_frame(GTK_MENU_BUTTON(cc->button), FALSE);
@@ -688,31 +757,32 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
     ShellControlCenterPopover *popover = g_object_new(shell_control_center_popover_get_type(), NULL);
     cc->popover = GTK_WIDGET(popover);
 
+    cc->status_badge = popover->status_badge;
     cc->vol_scale = popover->vol_scale;
     cc->vol_val_lbl = popover->vol_val_lbl;
+    cc->bright_row = popover->bright_row;
     cc->bright_scale = popover->bright_scale;
     cc->bright_val_lbl = popover->bright_val_lbl;
     cc->prof_saver = popover->prof_saver;
     cc->prof_balanced = popover->prof_balanced;
     cc->prof_perf = popover->prof_perf;
+    cc->btn_power = popover->btn_power;
 
     g_signal_connect(cc->vol_scale, "value-changed", G_CALLBACK(on_vol_changed), cc);
     g_signal_connect(cc->bright_scale, "value-changed", G_CALLBACK(on_bright_changed), cc);
 
     /* Attach Quick Toggles to Grid */
-    cc->wifi_btn = create_toggle_tile("tb-wifi-symbolic", "Wi-Fi", "Connected",
-                                     &cc->wifi_sub_lbl, G_CALLBACK(on_wifi_clicked), cc);
-    gtk_widget_add_css_class(cc->wifi_btn, "active");
+    cc->wifi_btn = create_toggle_tile("tb-wifi-symbolic", "Wi-Fi", "Enabled",
+                                      TRUE, &cc->wifi_sub_lbl, G_CALLBACK(on_wifi_toggled), cc);
 
-    cc->bt_btn = create_toggle_tile("tb-bluetooth-symbolic", "Bluetooth", "On",
-                                   &cc->bt_sub_lbl, G_CALLBACK(on_bt_clicked), cc);
-    gtk_widget_add_css_class(cc->bt_btn, "active");
+    cc->bt_btn = create_toggle_tile("tb-bluetooth-symbolic", "Bluetooth", "Enabled",
+                                    TRUE, &cc->bt_sub_lbl, G_CALLBACK(on_bt_toggled), cc);
 
     cc->dnd_btn = create_toggle_tile("tb-bell-symbolic", "Do Not Disturb", "Off (Alerts On)",
-                                    &cc->dnd_sub_lbl, G_CALLBACK(on_dnd_clicked), cc);
+                                     FALSE, &cc->dnd_sub_lbl, G_CALLBACK(on_dnd_toggled), cc);
 
     cc->idle_btn = create_toggle_tile("tb-coffee-symbolic", "Keep Awake", "Disabled",
-                                     &cc->idle_sub_lbl, G_CALLBACK(on_idle_clicked), cc);
+                                      FALSE, &cc->idle_sub_lbl, G_CALLBACK(on_idle_toggled), cc);
 
     gtk_grid_attach(GTK_GRID(popover->toggle_grid), cc->wifi_btn, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(popover->toggle_grid), cc->bt_btn, 1, 0, 1, 1);
@@ -720,12 +790,12 @@ control_center_create(ShellCompositor *compositor G_GNUC_UNUSED)
     gtk_grid_attach(GTK_GRID(popover->toggle_grid), cc->idle_btn, 1, 1, 1, 1);
 
     if (cc->prof_balanced && cc->prof_saver) {
-        gtk_check_button_set_group(GTK_CHECK_BUTTON(cc->prof_balanced),
-                                   GTK_CHECK_BUTTON(cc->prof_saver));
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(cc->prof_balanced),
+                                    GTK_TOGGLE_BUTTON(cc->prof_saver));
     }
     if (cc->prof_perf && cc->prof_saver) {
-        gtk_check_button_set_group(GTK_CHECK_BUTTON(cc->prof_perf),
-                                   GTK_CHECK_BUTTON(cc->prof_saver));
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(cc->prof_perf),
+                                    GTK_TOGGLE_BUTTON(cc->prof_saver));
     }
 
     g_signal_connect(cc->prof_saver, "toggled", G_CALLBACK(on_prof_saver_toggled), cc);
@@ -802,6 +872,10 @@ control_center_destroy(ShellWidget *widget)
     if (cc->refresh_timer_id > 0) {
         g_source_remove(cc->refresh_timer_id);
         cc->refresh_timer_id = 0;
+    }
+    if (cc->power_confirm_timer_id > 0) {
+        g_source_remove(cc->power_confirm_timer_id);
+        cc->power_confirm_timer_id = 0;
     }
     if (cc->profiles_proxy) {
         g_signal_handlers_disconnect_by_data(cc->profiles_proxy, cc);

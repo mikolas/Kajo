@@ -39,13 +39,10 @@ launcher_widget_create(ShellCompositor *compositor G_GNUC_UNUSED)
     gtk_widget_add_css_class(lw->button, "shell-widget");
     gtk_widget_add_css_class(lw->button, "shell-widget-launcher");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     lw->icon_img = gtk_image_new_from_icon_name("fl-apps-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(lw->icon_img), shell_widget_get_icon_size((ShellWidget *)lw));
     lw->label = gtk_label_new("Start");
-
-    gtk_box_append(GTK_BOX(hbox), lw->icon_img);
-    gtk_box_append(GTK_BOX(hbox), lw->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(lw->icon_img, lw->label);
     gtk_button_set_child(GTK_BUTTON(lw->button), hbox);
 
     g_signal_connect(lw->button, "clicked", G_CALLBACK(on_launcher_btn_clicked), lw);

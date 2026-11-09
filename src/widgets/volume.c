@@ -712,12 +712,10 @@ static ShellWidget *volume_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(vol->button, "shell-widget");
     gtk_widget_add_css_class(vol->button, "shell-widget-volume");
 
-    vol->button_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     vol->icon = gtk_image_new_from_icon_name("audio-volume-muted-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(vol->icon), shell_widget_get_icon_size((ShellWidget *)vol));
     vol->label = gtk_label_new("--");
-    gtk_box_append(GTK_BOX(vol->button_box), vol->icon);
-    gtk_box_append(GTK_BOX(vol->button_box), vol->label);
+    vol->button_box = shell_widget_pack_bar_box(vol->icon, vol->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(vol->button), vol->button_box);
 
     /* Build popover and attach to button */

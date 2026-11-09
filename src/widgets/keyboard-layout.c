@@ -10,7 +10,9 @@ typedef struct {
     GtkWidget       *popover;
     GtkWidget       *panel_label;
     GtkWidget       *icon_img;
+    GtkWidget       *badge_label;
     GtkWidget       *layouts_box;
+    GtkWidget       *settings_btn;
     GtkWidget       *radio_buttons[MAX_LAYOUTS];
     gint             num_radios;
     ShellCompositor *compositor;
@@ -19,10 +21,18 @@ typedef struct {
 
 static void keyboard_layout_rebuild_radios(KeyboardLayoutWidget *kl);
 
+static void on_kl_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KeyboardLayoutWidget *kl = user_data;
+    shell_spawn_settings("panel", kl ? kl->popover : NULL);
+}
+
 static void keyboard_layout_update_panel(KeyboardLayoutWidget *kl)
 {
     if (!kl->compositor) {
         gtk_label_set_text(GTK_LABEL(kl->panel_label), "??");
+        if (kl->badge_label)
+            gtk_label_set_text(GTK_LABEL(kl->badge_label), "[ -- ]");
         return;
     }
 
@@ -31,6 +41,8 @@ static void keyboard_layout_update_panel(KeyboardLayoutWidget *kl)
         layouts->current_idx >= g_strv_length(layouts->names) ||
         !layouts->names[layouts->current_idx]) {
         gtk_label_set_text(GTK_LABEL(kl->panel_label), "??");
+        if (kl->badge_label)
+            gtk_label_set_text(GTK_LABEL(kl->badge_label), "[ -- ]");
         return;
     }
 
@@ -45,6 +57,11 @@ static void keyboard_layout_update_panel(KeyboardLayoutWidget *kl)
     }
 
     gtk_label_set_text(GTK_LABEL(kl->panel_label), short_name);
+    if (kl->badge_label) {
+        g_autofree gchar *badge = g_strdup_printf("[ %s ]", short_name[0] ? short_name : "--");
+        gtk_label_set_text(GTK_LABEL(kl->badge_label), badge);
+        gtk_widget_add_css_class(kl->badge_label, "active");
+    }
     shell_widget_apply_mode_visibility(kl->base.mode, kl->icon_img, kl->panel_label);
 
     /* Update radio selection */
@@ -94,14 +111,12 @@ static void keyboard_layout_rebuild_radios(KeyboardLayoutWidget *kl)
         return;
 
     const CompositorKeyboardLayouts *layouts = shell_compositor_get_keyboard_layouts(kl->compositor);
-    if (!layouts || !layouts->names)
+    if (!layouts || !layouts->names || !layouts->names[0]) {
+        GtkWidget *empty = gtk_label_new("No keyboard layouts reported");
+        gtk_widget_add_css_class(empty, "empty-state-label");
+        gtk_box_append(GTK_BOX(kl->layouts_box), empty);
         return;
-
-    /* Header */
-    GtkWidget *header = gtk_label_new("Keyboard Layout");
-    gtk_label_set_xalign(GTK_LABEL(header), 0.0);
-    gtk_widget_add_css_class(header, "heading");
-    gtk_box_append(GTK_BOX(kl->layouts_box), header);
+    }
 
     GtkWidget *first_radio = NULL;
     for (gint i = 0; layouts->names[i] != NULL && i < MAX_LAYOUTS; i++) {
@@ -150,11 +165,9 @@ static ShellWidget *keyboard_layout_create(ShellCompositor *compositor)
     kl->compositor = compositor;
 
     /* Panel button child hbox */
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     kl->icon_img = gtk_image_new_from_icon_name("fl-keyboard-symbolic");
     kl->panel_label = gtk_label_new("??");
-    gtk_box_append(GTK_BOX(hbox), kl->icon_img);
-    gtk_box_append(GTK_BOX(hbox), kl->panel_label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(kl->icon_img, kl->panel_label);
 
     /* Menu button */
     kl->button = gtk_menu_button_new();
@@ -164,17 +177,19 @@ static ShellWidget *keyboard_layout_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(kl->button, "shell-widget");
     gtk_widget_add_css_class(kl->button, "shell-widget-keyboard-layout");
 
-    /* Popover content */
-    kl->layouts_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
-    gtk_widget_set_margin_start(kl->layouts_box, 12);
-    gtk_widget_set_margin_end(kl->layouts_box, 12);
-    gtk_widget_set_margin_top(kl->layouts_box, 12);
-    gtk_widget_set_margin_bottom(kl->layouts_box, 12);
+    /* 3-Zone Popover */
+    GtkWidget *footer = NULL;
+    kl->popover = GTK_WIDGET(shell_widget_create_popover_shell(
+        "popover-compact", "KEYBOARD LAYOUT", "[ -- ]",
+        &kl->badge_label, &kl->layouts_box, &footer));
 
-    /* Popover */
-    kl->popover = gtk_popover_new();
-    gtk_widget_add_css_class(kl->popover, "shell-popover");
-    gtk_popover_set_child(GTK_POPOVER(kl->popover), kl->layouts_box);
+    kl->settings_btn = gtk_button_new_with_label("PANEL & INPUT SETTINGS");
+    gtk_widget_set_hexpand(kl->settings_btn, TRUE);
+    gtk_widget_set_halign(kl->settings_btn, GTK_ALIGN_END);
+    gtk_widget_set_valign(kl->settings_btn, GTK_ALIGN_CENTER);
+    g_signal_connect(kl->settings_btn, "clicked", G_CALLBACK(on_kl_settings_clicked), kl);
+    gtk_box_append(GTK_BOX(footer), kl->settings_btn);
+
     gtk_menu_button_set_popover(GTK_MENU_BUTTON(kl->button), kl->popover);
 
     return (ShellWidget *)kl;
@@ -185,6 +200,8 @@ static void keyboard_layout_destroy(ShellWidget *widget)
     KeyboardLayoutWidget *kl = (KeyboardLayoutWidget *)widget;
     if (kl) {
         kl->updating = TRUE;
+        if (kl->settings_btn)
+            g_signal_handlers_disconnect_by_data(kl->settings_btn, kl);
         for (gint i = 0; i < kl->num_radios; i++) {
             if (kl->radio_buttons[i])
                 g_signal_handlers_disconnect_by_data(kl->radio_buttons[i], kl);

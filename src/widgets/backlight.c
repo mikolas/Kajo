@@ -34,6 +34,7 @@ typedef struct {
     GtkWidget   *box_posture;
     GtkWidget   *lbl_posture_status;
     GtkWidget   *sw_autorotate;
+    GtkWidget   *settings_btn;
 
     gboolean     updating_ui;
 } BacklightWidget;
@@ -62,6 +63,7 @@ typedef struct _ShellBacklightPopover {
     GtkWidget *box_posture;
     GtkWidget *lbl_posture_status;
     GtkWidget *sw_autorotate;
+    GtkWidget *settings_btn;
 } ShellBacklightPopover;
 
 typedef struct _ShellBacklightPopoverClass {
@@ -113,6 +115,7 @@ shell_backlight_popover_class_init(ShellBacklightPopoverClass *klass)
     gtk_widget_class_bind_template_child(widget_class, ShellBacklightPopover, box_posture);
     gtk_widget_class_bind_template_child(widget_class, ShellBacklightPopover, lbl_posture_status);
     gtk_widget_class_bind_template_child(widget_class, ShellBacklightPopover, sw_autorotate);
+    gtk_widget_class_bind_template_child(widget_class, ShellBacklightPopover, settings_btn);
 }
 
 static void
@@ -120,10 +123,13 @@ set_active_button_style(GtkWidget *btn, gboolean active)
 {
     if (!btn)
         return;
-    if (active)
+    if (GTK_IS_TOGGLE_BUTTON(btn)) {
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(btn), active);
+    } else if (active) {
         gtk_widget_add_css_class(btn, "active");
-    else
+    } else {
         gtk_widget_remove_css_class(btn, "active");
+    }
 }
 
 static void
@@ -267,7 +273,7 @@ on_scale_display_changed(GtkRange *range, gpointer user_data)
 static void
 apply_kbd_level(BacklightWidget *bl, gint level)
 {
-    if (!bl)
+    if (!bl || bl->updating_ui)
         return;
     shell_kbd_backlight_set_level(level);
     backlight_save_config_Order(bl, level, -1, -1);
@@ -275,27 +281,36 @@ apply_kbd_level(BacklightWidget *bl, gint level)
 }
 
 static void
-on_btn_kbd_off_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    apply_kbd_level((BacklightWidget *)user_data, 0);
-}
-
-static void
-on_btn_kbd_low_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
-{
-    apply_kbd_level((BacklightWidget *)user_data, 1);
-}
-
-static void
-on_btn_kbd_high_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_btn_kbd_wake_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     apply_kbd_level((BacklightWidget *)user_data, 2);
 }
 
 static void
+on_btn_kbd_off_toggled(GtkToggleButton *btn, gpointer user_data)
+{
+    if (gtk_toggle_button_get_active(btn))
+        apply_kbd_level((BacklightWidget *)user_data, 0);
+}
+
+static void
+on_btn_kbd_low_toggled(GtkToggleButton *btn, gpointer user_data)
+{
+    if (gtk_toggle_button_get_active(btn))
+        apply_kbd_level((BacklightWidget *)user_data, 1);
+}
+
+static void
+on_btn_kbd_high_toggled(GtkToggleButton *btn, gpointer user_data)
+{
+    if (gtk_toggle_button_get_active(btn))
+        apply_kbd_level((BacklightWidget *)user_data, 2);
+}
+
+static void
 apply_kbd_timeout(BacklightWidget *bl, gint timeout_sec)
 {
-    if (!bl)
+    if (!bl || bl->updating_ui)
         return;
     shell_kbd_backlight_set_timeout_sec(timeout_sec);
     backlight_save_config_Order(bl, -1, timeout_sec, -1);
@@ -303,21 +318,31 @@ apply_kbd_timeout(BacklightWidget *bl, gint timeout_sec)
 }
 
 static void
-on_btn_timeout_always_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_btn_timeout_always_toggled(GtkToggleButton *btn, gpointer user_data)
 {
-    apply_kbd_timeout((BacklightWidget *)user_data, 0);
+    if (gtk_toggle_button_get_active(btn))
+        apply_kbd_timeout((BacklightWidget *)user_data, 0);
 }
 
 static void
-on_btn_timeout_30s_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_btn_timeout_30s_toggled(GtkToggleButton *btn, gpointer user_data)
 {
-    apply_kbd_timeout((BacklightWidget *)user_data, 30);
+    if (gtk_toggle_button_get_active(btn))
+        apply_kbd_timeout((BacklightWidget *)user_data, 30);
 }
 
 static void
-on_btn_timeout_3m_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+on_btn_timeout_3m_toggled(GtkToggleButton *btn, gpointer user_data)
 {
-    apply_kbd_timeout((BacklightWidget *)user_data, 180);
+    if (gtk_toggle_button_get_active(btn))
+        apply_kbd_timeout((BacklightWidget *)user_data, 180);
+}
+
+static void
+on_backlight_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    BacklightWidget *bl = user_data;
+    shell_spawn_settings("displays", bl ? bl->popover : NULL);
 }
 
 static gboolean
@@ -387,16 +412,27 @@ backlight_build_popover(BacklightWidget *bl)
     bl->box_posture        = pop->box_posture;
     bl->lbl_posture_status = pop->lbl_posture_status;
     bl->sw_autorotate      = pop->sw_autorotate;
+    bl->settings_btn       = pop->settings_btn;
+
+    if (bl->btn_kbd_low && bl->btn_kbd_off)
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(bl->btn_kbd_low), GTK_TOGGLE_BUTTON(bl->btn_kbd_off));
+    if (bl->btn_kbd_high && bl->btn_kbd_off)
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(bl->btn_kbd_high), GTK_TOGGLE_BUTTON(bl->btn_kbd_off));
+    if (bl->btn_timeout_30s && bl->btn_timeout_always)
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(bl->btn_timeout_30s), GTK_TOGGLE_BUTTON(bl->btn_timeout_always));
+    if (bl->btn_timeout_3m && bl->btn_timeout_always)
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(bl->btn_timeout_3m), GTK_TOGGLE_BUTTON(bl->btn_timeout_always));
 
     g_signal_connect(bl->scale_display, "value-changed", G_CALLBACK(on_scale_display_changed), bl);
-    g_signal_connect(bl->btn_kbd_wake, "clicked", G_CALLBACK(on_btn_kbd_high_clicked), bl);
-    g_signal_connect(bl->btn_kbd_off, "clicked", G_CALLBACK(on_btn_kbd_off_clicked), bl);
-    g_signal_connect(bl->btn_kbd_low, "clicked", G_CALLBACK(on_btn_kbd_low_clicked), bl);
-    g_signal_connect(bl->btn_kbd_high, "clicked", G_CALLBACK(on_btn_kbd_high_clicked), bl);
-    g_signal_connect(bl->btn_timeout_always, "clicked", G_CALLBACK(on_btn_timeout_always_clicked), bl);
-    g_signal_connect(bl->btn_timeout_30s, "clicked", G_CALLBACK(on_btn_timeout_30s_clicked), bl);
-    g_signal_connect(bl->btn_timeout_3m, "clicked", G_CALLBACK(on_btn_timeout_3m_clicked), bl);
+    g_signal_connect(bl->btn_kbd_wake, "clicked", G_CALLBACK(on_btn_kbd_wake_clicked), bl);
+    g_signal_connect(bl->btn_kbd_off, "toggled", G_CALLBACK(on_btn_kbd_off_toggled), bl);
+    g_signal_connect(bl->btn_kbd_low, "toggled", G_CALLBACK(on_btn_kbd_low_toggled), bl);
+    g_signal_connect(bl->btn_kbd_high, "toggled", G_CALLBACK(on_btn_kbd_high_toggled), bl);
+    g_signal_connect(bl->btn_timeout_always, "toggled", G_CALLBACK(on_btn_timeout_always_toggled), bl);
+    g_signal_connect(bl->btn_timeout_30s, "toggled", G_CALLBACK(on_btn_timeout_30s_toggled), bl);
+    g_signal_connect(bl->btn_timeout_3m, "toggled", G_CALLBACK(on_btn_timeout_3m_toggled), bl);
     g_signal_connect(bl->sw_autorotate, "state-set", G_CALLBACK(on_autorotate_state_set), bl);
+    g_signal_connect(bl->settings_btn, "clicked", G_CALLBACK(on_backlight_settings_clicked), bl);
     g_signal_connect(GTK_WIDGET(pop), "map", G_CALLBACK(on_popover_mapped), bl);
 
     return GTK_WIDGET(pop);
@@ -407,12 +443,10 @@ backlight_create(ShellCompositor *compositor G_GNUC_UNUSED)
 {
     BacklightWidget *bl = g_new0(BacklightWidget, 1);
 
-    bl->panel_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    bl->panel_image = gtk_image_new_from_icon_name("display-brightness-symbolic");
+    bl->panel_image = gtk_image_new_from_icon_name("tb-sun-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(bl->panel_image), shell_widget_get_icon_size((ShellWidget *)bl));
     bl->panel_label = gtk_label_new("--%");
-    gtk_box_append(GTK_BOX(bl->panel_box), bl->panel_image);
-    gtk_box_append(GTK_BOX(bl->panel_box), bl->panel_label);
+    bl->panel_box = shell_widget_pack_bar_box(bl->panel_image, bl->panel_label);
 
     bl->button = gtk_menu_button_new();
     gtk_menu_button_set_has_frame(GTK_MENU_BUTTON(bl->button), FALSE);
@@ -457,6 +491,8 @@ backlight_destroy(ShellWidget *widget)
         g_signal_handlers_disconnect_by_data(bl->btn_timeout_3m, bl);
     if (bl->sw_autorotate)
         g_signal_handlers_disconnect_by_data(bl->sw_autorotate, bl);
+    if (bl->settings_btn)
+        g_signal_handlers_disconnect_by_data(bl->settings_btn, bl);
     if (bl->popover)
         g_signal_handlers_disconnect_by_data(bl->popover, bl);
 

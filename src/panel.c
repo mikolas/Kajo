@@ -375,8 +375,14 @@ auto_register_popovers_in_widget(ShellPanel *panel, GtkWidget *widget)
         }
         GtkWidget *child = gtk_menu_button_get_child(GTK_MENU_BUTTON(widget));
         if (child) {
-            gtk_widget_set_halign(child, GTK_ALIGN_FILL);
-            gtk_widget_set_valign(child, GTK_ALIGN_FILL);
+            gtk_widget_set_halign(child, GTK_ALIGN_CENTER);
+            gtk_widget_set_valign(child, GTK_ALIGN_CENTER);
+        }
+    } else if (GTK_IS_BUTTON(widget)) {
+        GtkWidget *child = gtk_button_get_child(GTK_BUTTON(widget));
+        if (child) {
+            gtk_widget_set_halign(child, GTK_ALIGN_CENTER);
+            gtk_widget_set_valign(child, GTK_ALIGN_CENTER);
         }
     }
 

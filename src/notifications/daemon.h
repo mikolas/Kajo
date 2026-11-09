@@ -12,6 +12,7 @@ typedef struct _ShellNotificationDaemon ShellNotificationDaemon;
 
 typedef struct {
     guint32 id;
+    guint8 urgency;
     gchar *app_name;
     gchar *desktop_entry;
     gchar *summary;

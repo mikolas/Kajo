@@ -377,17 +377,19 @@ refresh_devices_list(BluetoothWidget *bt)
         if (dev_paired) {
             paired_count++;
             GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+            gtk_widget_set_valign(row_box, GTK_ALIGN_CENTER);
             gtk_widget_add_css_class(row_box, "shell-row-item");
             if (dev_connected) {
                 gtk_widget_add_css_class(row_box, "connected");
             }
 
-            GtkWidget *icon = gtk_image_new_from_icon_name(dev_connected ? "fl-bluetooth-symbolic" : "fl-bluetooth-off-symbolic");
+            GtkWidget *icon = gtk_image_new_from_icon_name(dev_connected ? "tb-bluetooth-symbolic" : "tb-bluetooth-off-symbolic");
             gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
             gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
             gtk_box_append(GTK_BOX(row_box), icon);
 
             GtkWidget *lbl_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+            gtk_widget_set_valign(lbl_vbox, GTK_ALIGN_CENTER);
             gtk_widget_set_hexpand(lbl_vbox, TRUE);
 
             GtkWidget *name_lbl = gtk_label_new(dev_name);
@@ -418,14 +420,16 @@ refresh_devices_list(BluetoothWidget *bt)
         } else {
             discovered_count++;
             GtkWidget *row_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+            gtk_widget_set_valign(row_box, GTK_ALIGN_CENTER);
             gtk_widget_add_css_class(row_box, "shell-device-row");
 
-            GtkWidget *icon = gtk_image_new_from_icon_name("fl-bluetooth-off-symbolic");
+            GtkWidget *icon = gtk_image_new_from_icon_name("tb-bluetooth-off-symbolic");
             gtk_image_set_pixel_size(GTK_IMAGE(icon), 16);
             gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
             gtk_box_append(GTK_BOX(row_box), icon);
 
             GtkWidget *lbl_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+            gtk_widget_set_valign(lbl_vbox, GTK_ALIGN_CENTER);
             gtk_widget_set_hexpand(lbl_vbox, TRUE);
 
             GtkWidget *name_lbl = gtk_label_new(dev_name);
@@ -468,7 +472,7 @@ refresh_devices_list(BluetoothWidget *bt)
     }
 
     if (discovered_count == 0) {
-        GtkWidget *ph = gtk_label_new(bt->is_discovering ? "Searching for devices..." : "Click 'Scan ↻' to search");
+        GtkWidget *ph = gtk_label_new(bt->is_discovering ? "Searching for devices..." : "Click 'RE-SCAN' to search");
         gtk_widget_add_css_class(ph, "shell-device-placeholder");
         gtk_label_set_xalign(GTK_LABEL(ph), 0.0);
         gtk_list_box_append(GTK_LIST_BOX(bt->discovered_list_box), ph);
@@ -764,13 +768,10 @@ bluetooth_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(bt->button, "shell-widget");
     gtk_widget_add_css_class(bt->button, "shell-widget-bluetooth");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    bt->icon_img = gtk_image_new_from_icon_name("fl-bluetooth-symbolic");
+    bt->icon_img = gtk_image_new_from_icon_name("tb-bluetooth-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(bt->icon_img), shell_widget_get_icon_size((ShellWidget *)bt));
     bt->label = gtk_label_new("Bluetooth");
-
-    gtk_box_append(GTK_BOX(hbox), bt->icon_img);
-    gtk_box_append(GTK_BOX(hbox), bt->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(bt->icon_img, bt->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(bt->button), hbox);
 
     /* Build Popover */

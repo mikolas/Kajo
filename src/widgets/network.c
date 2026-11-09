@@ -26,6 +26,7 @@ typedef struct {
     GtkWidget *popover;
 
     /* Popover UI elements */
+    GtkWidget *status_badge;
     GtkWidget *wifi_switch;
     GtkWidget *active_conn_box;
     GtkWidget *active_ssid_label;
@@ -203,7 +204,7 @@ update_network_ui(NetworkWidget *net)
         icon_name = "tb-wifi-off-symbolic";
         snprintf(label_text, sizeof(label_text), "Offline");
     } else if (net->is_ethernet) {
-        icon_name = "tb-wifi-symbolic";
+        icon_name = "network-wired-symbolic";
         snprintf(label_text, sizeof(label_text), "%s",
                  net->primary_ssid ? net->primary_ssid : "Ethernet");
     } else {
@@ -215,6 +216,21 @@ update_network_ui(NetworkWidget *net)
     gtk_image_set_from_icon_name(GTK_IMAGE(net->icon_img), icon_name);
     gtk_label_set_text(GTK_LABEL(net->label), label_text);
     shell_widget_apply_mode_visibility(net->base.mode, net->icon_img, net->label);
+
+    if (net->status_badge != NULL) {
+        gtk_widget_remove_css_class(net->status_badge, "active");
+        gtk_widget_remove_css_class(net->status_badge, "success");
+        if (!net->is_connected) {
+            gtk_label_set_text(GTK_LABEL(net->status_badge),
+                               net->wifi_enabled ? "[ OFFLINE ]" : "[ DISABLED ]");
+        } else if (net->is_ethernet) {
+            gtk_label_set_text(GTK_LABEL(net->status_badge), "[ ETHERNET ]");
+            gtk_widget_add_css_class(net->status_badge, "success");
+        } else {
+            gtk_label_set_text(GTK_LABEL(net->status_badge), "[ WI-FI ]");
+            gtk_widget_add_css_class(net->status_badge, "active");
+        }
+    }
 
     /* 2. Update Popover Controls (Popout-Gated) */
     gboolean popover_open = net->popover && gtk_widget_get_mapped(net->popover);
@@ -383,6 +399,7 @@ build_network_popover(NetworkWidget *net)
 {
     ShellNetworkPopover *popover = g_object_new(shell_network_popover_get_type(), NULL);
 
+    net->status_badge = popover->status_badge;
     net->wifi_switch = popover->wifi_switch;
     net->active_ssid_label = popover->active_ssid_label;
     net->active_ip_label = popover->active_ip_label;
@@ -417,13 +434,10 @@ network_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(net->button, "shell-widget");
     gtk_widget_add_css_class(net->button, "shell-widget-network");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    net->icon_img = gtk_image_new_from_icon_name("fl-wifi-symbolic");
+    net->icon_img = gtk_image_new_from_icon_name("tb-wifi-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(net->icon_img), shell_widget_get_icon_size((ShellWidget *)net));
     net->label = gtk_label_new("Wi-Fi");
-
-    gtk_box_append(GTK_BOX(hbox), net->icon_img);
-    gtk_box_append(GTK_BOX(hbox), net->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(net->icon_img, net->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(net->button), hbox);
 
     /* Build Popover */
