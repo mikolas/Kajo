@@ -45,23 +45,6 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 
 Use the tokens in `style.css`; do not add new raw hex literals for these roles. Remaining one-off grays (diff tints, syntax colors, the `#202020`/`#1c1c1c` family) are intentionally literal for now and should be folded into this ladder when touched.
 
---- | :--- | :--- | :--- |
-| *(literal)* `#101010` | `--surface-0-canvas` | `#101010` | Recessed media/thumbnail well, code viewer canvas |
-| `@metro-surface-bg` | `--surface-1-base` | `#141414` | Primary window, popover, header, and sidebar background |
-| *(literal)* `#161616` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
-| *(literal)* `#181818` | `--surface-3-card` | `#181818` | Popover body, list row, and table column header surface |
-| *(literal)* `#1a1a1a` | `--surface-4-control` | `#1a1a1a` | Interactive button, tile card, and section card surface |
-| `@metro-surface-hover` | `--surface-5-hover` | `#222222` | Hovered button, row, or card surface |
-| `@metro-border` | `--metro-border` | `#2b2b2b` | Structural `1px` divider and inactive control border |
-| `@metro-accent` | `--metro-accent` | `#0078d4` | Primary active accent (synced from `00-accent.css`) |
-| `@metro-accent-hover` | `--metro-accent-hover` | `#1084d8` | Hovered primary accent fill |
-| `@metro-fg-primary` | `--metro-fg-primary` | `#ffffff` | Primary text and active icon foreground |
-| `@metro-fg-secondary` | `--metro-fg-secondary` | `#a0a0a0` | Secondary subtitles, metadata, and inactive icons |
-| `@metro-urgent` | `--metro-urgent` | `#e81123` | Destructive actions, critical battery, window close hover |
-| *(literal)* `#ff8c00` | `--metro-warning` | `#ff8c00` | Warning banners, VU meter high zone, center accent stripe |
-| *(literal)* `#10893e` | `--metro-success` | `#10893e` | Connected/mounted indicators, right accent stripe |
-| *(literal)* `#00d8f0` | `--metro-telemetry` | `#00d8f0` | FFT spectrum bars, PAM verifying state, live OSD metrics |
-
 ---
 
 ## 3. Typography & Configurable Font Category Sizes
@@ -229,3 +212,26 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   3. **Zone 3 (`vexpand: TRUE`):** Scrollable **Page Content Canvas** (`.settings-scroll-canvas`) where every setting row uses `.widget-row-card` (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END` on `.row-title` / `.row-subtitle`, zero hardcoded `width-chars` traps) and dynamic list/matrix cards set `vexpand: TRUE` to absorb Niri's full-height column.
   4. **Zone 4 (`vexpand: FALSE`, `36px`):** Docked **Action & Persistence Footer Bar** (`.settings-footer-bar`) pinned at the bottom of the viewport with live dirty/saved status indicator, page secondary action, `[ ↺ REVERT ]`, and `[ ✓ SAVE & APPLY ]`.
 - **12 Modular Pages:** `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, `ide`, **`mod` (`Kajo Mod`)**, and `about`.
+
+### 4.10 Wayland Panel Bar, Widget Chips, 3-Zone Popovers & OSD (`kajo`)
+- **Panel Container (`window.shell-panel`, `#panel-container`, `.shell-panel-left`, `.shell-panel-center`, `.shell-panel-right`):**
+  - `@metro-panel-bg` (`rgba(24, 24, 24, 0.82)`) surface with `1px` subtle edge hairlines and `0px` corner radius.
+  - When hidden in OLED smart autohide mode (`#panel-container.autohide-hidden`), background uses `rgba(0, 0, 0, 0.01)` (never `transparent` or `opacity: 0`) so Wayland pointer/touch enter events fire reliably on the `2px` trigger strip.
+- **Single-Item Widget Chips (`.shell-widget`, `menubutton.shell-widget > button`):**
+  - `0px` corner radius, `padding: 0 6px`, `min-height: 0px` (scales freely with `cfg->panel_height` `24..64px`), `Fira Code` `ui_font_size_px` (`14px` default).
+  - Inner icon + label rows are built with `shell_widget_pack_bar_box()` (`6px` spacing, `GTK_ALIGN_CENTER` on box, `GtkImage`, and `GtkLabel`), and icons size dynamically from `shell_widget_get_icon_size(widget)` without hardcoded CSS `min-width` overrides.
+  - `:hover`: `@metro-surface-hover`. `:active`, `:checked`, and **`menubutton.shell-widget > button:checked`** (while popover is open): `@metro-accent` fill with `@metro-fg-primary` text.
+  - **Widget Modes (`ShellWidgetMode`):** Every chip supports `ICON`, `LABEL`, and `FULL` modes (`shell_widget_apply_mode_visibility()` never hides both icon and label). Empty contextual widgets (`window` when unfocused, `tray` when `0` SNI items exist, `privacy` when mic/cam are idle, `backlight` on unsupported desktops) set `visible = FALSE` rather than leaving blank hoverable slots.
+  - **Semantic Chip States:** `.shell-widget-volume.muted` (`@metro-fg-secondary`), `.shell-widget-battery.critical` (`@metro-urgent` bottom bar + `@metro-urgent-text` foreground at $\le 15\%$ discharging), `.shell-widget-dnd.active` & `.shell-widget-privacy.active` (`@metro-warning` bottom bar + foreground), and `.shell-widget-idle-inhibitor.active` (`@metro-telemetry` bottom bar + foreground).
+- **Multi-Item Strip Widgets (`.shell-widget-workspaces`, `.shell-widget-tray`):**
+  - Outer strip containers stay `transparent` on `:hover`; hover and active states apply strictly to individual child items:
+    - `.workspace`: `2px 8px` flat tile, `:hover` `@metro-surface-hover`, `.active` / `.focused` `alpha(@metro-accent, 0.14)` + `2px solid @metro-accent` bottom indicator, `.urgent` `@metro-urgent` fill, and `<= 18px` `.workspace-app-icon` buttons.
+    - `button.tray-item-button`: per-item `:hover` `@metro-surface-hover` and `:checked` `@metro-accent`.
+- **Mandatory 3-Zone Popover Architecture (`popover.shell-popover`):**
+  - Framed by `1px solid @metro-accent`, `@metro-surface-bg` (`#141414`), `0px` radius, and a canonical width-tier class on the root box: `.popover-compact` (`280px`), `.popover-medium` (`380px`), or `.popover-expanded` (`480px`).
+  - **Zone 1 (`.shell-popover-header`):** `@metro-surface-2` header with uppercase `.shell-popover-title` + live right-aligned `.shell-popover-badge` (`.active`, `.success`, `.peak-warn`, `.urgent`).
+  - **Zone 2 (`.shell-popover-body`):** Interactive controls following §4.3 (`GtkSwitch` rows, `GtkToggleButton.toggle-card` quick tiles, `.segmented-group` for 2–4 exclusive choices such as Power Profiles and Keyboard Backlight/Timeout, `selection-mode: none` on `GtkListBox` device lists, and `ScrolledWindow` height caps on unbounded telemetry/device lists).
+  - **Zone 3 (`.shell-popover-footer`):** `@metro-surface-2` footer housing contextual actions and `kajo-settings --page <id>` shortcuts; destructive actions (`Power Off`, `Reboot`, `Close Window`) use `.destructive-action` and require explicit confirmation before invoking `logind` shutdown/reboot.
+- **OSD & Notification Overlays (`window.shell-osd`, `.shell-notification-card`):**
+  - `.shell-osd-card` (`240×48px`) centers icon, `0px`-radius `@metro-accent` `levelbar`, and tabular `.shell-osd-label` (`GTK_ALIGN_CENTER`).
+  - `.shell-notification-card` uses `1px solid @metro-accent` + `4px` left bar (`@metro-urgent` when `urgency == 2` via `.critical` in both live overlay toasts and notification history) and compact `.popover-dismiss-btn` (`✕`, `@metro-urgent` hover).

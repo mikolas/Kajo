@@ -11,11 +11,20 @@ typedef struct {
     GtkWidget  *icon_img;
     GtkWidget  *badge_label;
     GtkWidget  *popover;
+    GtkWidget  *status_badge;
     GtkWidget  *list_vbox;
     GtkWidget  *clear_btn;
+    GtkWidget  *settings_btn;
 } NotificationsWidget;
 
 static void rebuild_notification_list(NotificationsWidget *nw);
+
+static void
+on_notifications_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    NotificationsWidget *nw = user_data;
+    shell_spawn_settings("notifications", nw ? nw->popover : NULL);
+}
 
 static void
 on_clear_all_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
@@ -92,14 +101,51 @@ rebuild_notification_list(NotificationsWidget *nw)
     const GPtrArray *history = daemon ? shell_notification_daemon_get_history(daemon) : NULL;
 
     guint count = history ? history->len : 0;
-    if (count > 0) {
-        gchar *cnt_str = g_strdup_printf("%u", count);
-        gtk_label_set_text(GTK_LABEL(nw->badge_label), cnt_str);
-        gtk_widget_set_visible(nw->badge_label, TRUE);
-        g_free(cnt_str);
-    } else {
-        gtk_widget_set_visible(nw->badge_label, FALSE);
+    gboolean has_critical = FALSE;
+    if (history) {
+        for (guint i = 0; i < history->len; i++) {
+            const ShellNotificationItem *it = g_ptr_array_index(history, i);
+            if (it && it->urgency == 2) {
+                has_critical = TRUE;
+                break;
+            }
+        }
     }
+
+    if (nw->icon_img)
+        gtk_widget_set_visible(nw->icon_img, nw->base.mode != WIDGET_MODE_LABEL);
+
+    if (nw->base.mode == WIDGET_MODE_ICON) {
+        if (count > 0) {
+            gchar *cnt_str = g_strdup_printf("%u", count);
+            gtk_label_set_text(GTK_LABEL(nw->badge_label), cnt_str);
+            gtk_widget_set_visible(nw->badge_label, TRUE);
+            g_free(cnt_str);
+        } else {
+            gtk_widget_set_visible(nw->badge_label, FALSE);
+        }
+    } else {
+        gchar *lbl_str = (count > 0)
+            ? g_strdup_printf("%u Alert%s", count, count == 1 ? "" : "s")
+            : g_strdup("Alerts");
+        gtk_label_set_text(GTK_LABEL(nw->badge_label), lbl_str);
+        gtk_widget_set_visible(nw->badge_label, TRUE);
+        g_free(lbl_str);
+    }
+
+    if (nw->status_badge) {
+        gtk_widget_remove_css_class(nw->status_badge, "active");
+        gtk_widget_remove_css_class(nw->status_badge, "urgent");
+        if (count > 0) {
+            g_autofree gchar *badge = g_strdup_printf("[ %u UNREAD ]", count);
+            gtk_label_set_text(GTK_LABEL(nw->status_badge), badge);
+            gtk_widget_add_css_class(nw->status_badge, has_critical ? "urgent" : "active");
+        } else {
+            gtk_label_set_text(GTK_LABEL(nw->status_badge), "[ CLEAR ]");
+        }
+    }
+    if (nw->clear_btn)
+        gtk_widget_set_sensitive(nw->clear_btn, count > 0);
 
     if (!history || history->len == 0) {
         GtkWidget *empty_lbl = gtk_label_new("[ NO NEW NOTIFICATIONS ]");
@@ -115,6 +161,8 @@ rebuild_notification_list(NotificationsWidget *nw)
 
         GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
         gtk_widget_add_css_class(card, "shell-notification-card");
+        if (item->urgency == 2)
+            gtk_widget_add_css_class(card, "critical");
         gtk_widget_set_margin_bottom(card, 4);
 
         GtkGesture *click = gtk_gesture_click_new();
@@ -127,6 +175,7 @@ rebuild_notification_list(NotificationsWidget *nw)
 
         /* Icon */
         GtkWidget *icon = shell_icons_create_app_icon_widget(item->app_icon && *item->app_icon ? item->app_icon : "preferences-system-notifications-symbolic", 24);
+        gtk_widget_set_valign(icon, GTK_ALIGN_START);
 
         /* Text box */
         GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
@@ -134,13 +183,16 @@ rebuild_notification_list(NotificationsWidget *nw)
 
         /* Header row: App Name + Timestamp */
         GtkWidget *hdr_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_widget_set_valign(hdr_box, GTK_ALIGN_CENTER);
         GtkWidget *app_lbl = gtk_label_new(item->app_name ? item->app_name : "System");
         gtk_widget_add_css_class(app_lbl, "shell-popover-title");
         gtk_widget_set_halign(app_lbl, GTK_ALIGN_START);
+        gtk_widget_set_valign(app_lbl, GTK_ALIGN_CENTER);
 
         GtkWidget *time_lbl = gtk_label_new(item->timestamp ? item->timestamp : "");
         gtk_widget_add_css_class(time_lbl, "shell-popover-subtitle");
         gtk_widget_set_halign(time_lbl, GTK_ALIGN_END);
+        gtk_widget_set_valign(time_lbl, GTK_ALIGN_CENTER);
         gtk_widget_set_hexpand(time_lbl, TRUE);
 
         gtk_box_append(GTK_BOX(hdr_box), app_lbl);
@@ -166,7 +218,8 @@ rebuild_notification_list(NotificationsWidget *nw)
 
         /* Dismiss button X */
         GtkWidget *del_btn = gtk_button_new_with_label("✕");
-        gtk_widget_add_css_class(del_btn, "settings-close-btn");
+        gtk_widget_add_css_class(del_btn, "popover-dismiss-btn");
+        gtk_widget_set_valign(del_btn, GTK_ALIGN_START);
         g_object_set_data(G_OBJECT(del_btn), "notification-id", GUINT_TO_POINTER(item->id));
         g_signal_connect(del_btn, "clicked", G_CALLBACK(on_remove_item_clicked), nw);
 
@@ -190,8 +243,10 @@ on_notification_history_changed(ShellNotificationDaemon *daemon, gpointer user_d
 typedef struct _ShellNotificationsPopover {
     GtkPopover parent_instance;
 
+    GtkWidget *status_badge;
     GtkWidget *list_vbox;
     GtkWidget *clear_btn;
+    GtkWidget *settings_btn;
 } ShellNotificationsPopover;
 
 typedef struct _ShellNotificationsPopoverClass {
@@ -222,8 +277,10 @@ shell_notifications_popover_class_init(ShellNotificationsPopoverClass *klass)
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/notifications_popover.ui");
 
+    gtk_widget_class_bind_template_child(widget_class, ShellNotificationsPopover, status_badge);
     gtk_widget_class_bind_template_child(widget_class, ShellNotificationsPopover, list_vbox);
     gtk_widget_class_bind_template_child(widget_class, ShellNotificationsPopover, clear_btn);
+    gtk_widget_class_bind_template_child(widget_class, ShellNotificationsPopover, settings_btn);
 }
 
 static GtkWidget *
@@ -231,33 +288,34 @@ build_notifications_popover(NotificationsWidget *nw)
 {
     ShellNotificationsPopover *popover = g_object_new(shell_notifications_popover_get_type(), NULL);
 
+    nw->status_badge = popover->status_badge;
     nw->list_vbox = popover->list_vbox;
     nw->clear_btn = popover->clear_btn;
+    nw->settings_btn = popover->settings_btn;
     g_signal_connect(popover->clear_btn, "clicked", G_CALLBACK(on_clear_all_clicked), nw);
+    g_signal_connect(popover->settings_btn, "clicked", G_CALLBACK(on_notifications_settings_clicked), nw);
 
     return GTK_WIDGET(popover);
 }
 
 static ShellWidget *
-notifications_widget_create(ShellCompositor *compositor)
+notifications_widget_create(ShellCompositor *compositor G_GNUC_UNUSED)
 {
     NotificationsWidget *nw = g_new0(NotificationsWidget, 1);
     nw->base.mode = WIDGET_MODE_ICON;
 
     nw->button = gtk_menu_button_new();
+    gtk_menu_button_set_has_frame(GTK_MENU_BUTTON(nw->button), FALSE);
+    gtk_widget_add_css_class(nw->button, "flat");
     gtk_widget_add_css_class(nw->button, "shell-widget");
     gtk_widget_add_css_class(nw->button, "shell-widget-notifications");
 
-    nw->box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    nw->icon_img = shell_icons_create_app_icon_widget("preferences-system-notifications-symbolic", 16);
-
+    nw->icon_img = gtk_image_new_from_icon_name("tb-bell-symbolic");
     nw->badge_label = gtk_label_new("");
     gtk_widget_add_css_class(nw->badge_label, "shell-widget-label");
     gtk_widget_set_visible(nw->badge_label, FALSE);
 
-    gtk_box_append(GTK_BOX(nw->box), nw->icon_img);
-    gtk_box_append(GTK_BOX(nw->box), nw->badge_label);
-
+    nw->box = shell_widget_pack_bar_box(nw->icon_img, nw->badge_label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(nw->button), nw->box);
 
     nw->popover = build_notifications_popover(nw);
@@ -273,6 +331,8 @@ notifications_widget_destroy(ShellWidget *widget)
     if (nw) {
         if (nw->clear_btn)
             g_signal_handlers_disconnect_by_data(nw->clear_btn, nw);
+        if (nw->settings_btn)
+            g_signal_handlers_disconnect_by_data(nw->settings_btn, nw);
         if (nw->base.app && shell_app_get_notification_daemon(nw->base.app)) {
             shell_notification_daemon_remove_callbacks(
                 shell_app_get_notification_daemon(nw->base.app), nw);
@@ -292,6 +352,9 @@ static void
 notifications_widget_enable(ShellWidget *widget)
 {
     NotificationsWidget *nw = (NotificationsWidget *)widget;
+    if (nw && nw->icon_img) {
+        gtk_image_set_pixel_size(GTK_IMAGE(nw->icon_img), shell_widget_get_icon_size(widget));
+    }
     if (nw && nw->base.app && shell_app_get_notification_daemon(nw->base.app)) {
         shell_notification_daemon_on_history_changed(
             shell_app_get_notification_daemon(nw->base.app),

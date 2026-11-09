@@ -141,6 +141,7 @@ workspaces_rebuild(WorkspacesWidget *ws)
 
         /* Create workspace sub-box */
         GtkWidget *workspace_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
+        gtk_widget_set_valign(workspace_box, GTK_ALIGN_CENTER);
         gtk_widget_add_css_class(workspace_box, "workspace");
 
         if (workspace->is_active)
@@ -150,69 +151,83 @@ workspaces_rebuild(WorkspacesWidget *ws)
         if (workspace->is_urgent)
             gtk_widget_add_css_class(workspace_box, "urgent");
 
-        /* Workspace label button */
-        gchar *label_text;
-        if (workspace->name != NULL && workspace->name[0] != '\0') {
-            label_text = g_strdup(workspace->name);
-        } else {
-            label_text = g_strdup_printf("%u", workspace->idx);
-        }
-
-        GtkWidget *label_btn = gtk_button_new_with_label(label_text);
-        g_free(label_text);
-        gtk_button_set_has_frame(GTK_BUTTON(label_btn), FALSE);
-
-        gchar *ws_tt = g_strdup_printf("Workspace #%u (%s)", workspace->idx, workspace->name ? workspace->name : "Active");
-        gtk_widget_set_tooltip_text(label_btn, ws_tt);
-        g_free(ws_tt);
-
-        g_object_set_data(G_OBJECT(label_btn), "workspace-id",
-                          (gpointer)(guintptr)workspace->id);
-        g_signal_connect(label_btn, "clicked",
-                         G_CALLBACK(on_workspace_label_clicked), ws);
-        gtk_box_append(GTK_BOX(workspace_box), label_btn);
-
         /* App icons for windows on this workspace */
         GArray *windows = shell_compositor_get_windows_for_workspace(
             ws->compositor, workspace->id);
+        guint win_count = (windows != NULL) ? windows->len : 0;
 
-        if (windows != NULL) {
-            guint count = windows->len;
-            guint show_count = (count > MAX_ICONS_PER_WORKSPACE)
-                                   ? MAX_ICONS_PER_WORKSPACE : count;
+        /* Workspace label button (hidden in ICON mode when window icons exist) */
+        gboolean show_label = (ws->base.mode != WIDGET_MODE_ICON || win_count == 0);
+        gboolean show_icons = (ws->base.mode != WIDGET_MODE_LABEL);
 
-            gint icon_sz = shell_widget_get_icon_size((ShellWidget *)ws);
-            for (guint j = 0; j < show_count; j++) {
-                CompositorWindow *win = &g_array_index(windows, CompositorWindow, j);
-
-                GtkWidget *icon = shell_icons_create_app_icon_widget(win->app_id, icon_sz);
-
-                GtkWidget *icon_btn = gtk_button_new();
-                gtk_button_set_child(GTK_BUTTON(icon_btn), icon);
-                gtk_button_set_has_frame(GTK_BUTTON(icon_btn), FALSE);
-                gtk_widget_add_css_class(icon_btn, "workspace-app-icon");
-
-                gchar *win_tt = g_strdup_printf("%s — %s",
-                    win->app_id ? win->app_id : "Window",
-                    (win->title && *win->title) ? win->title : "Untitled");
-                gtk_widget_set_tooltip_text(icon_btn, win_tt);
-                g_free(win_tt);
-
-                g_object_set_data(G_OBJECT(icon_btn), "window-id",
-                                  (gpointer)(guintptr)win->id);
-                g_signal_connect(icon_btn, "clicked",
-                                 G_CALLBACK(on_app_icon_clicked), ws);
-
-                gtk_box_append(GTK_BOX(workspace_box), icon_btn);
+        if (show_label) {
+            gchar *label_text;
+            if (workspace->name != NULL && workspace->name[0] != '\0') {
+                label_text = g_strdup(workspace->name);
+            } else {
+                label_text = g_strdup_printf("%u", workspace->idx);
             }
 
-            /* Show "+N" if more windows than max */
-            if (count > MAX_ICONS_PER_WORKSPACE) {
-                gchar *overflow_text = g_strdup_printf("+%u",
-                    count - MAX_ICONS_PER_WORKSPACE);
-                GtkWidget *overflow_label = gtk_label_new(overflow_text);
-                g_free(overflow_text);
-                gtk_box_append(GTK_BOX(workspace_box), overflow_label);
+            GtkWidget *label_btn = gtk_button_new_with_label(label_text);
+            g_free(label_text);
+            gtk_button_set_has_frame(GTK_BUTTON(label_btn), FALSE);
+            gtk_widget_set_valign(label_btn, GTK_ALIGN_CENTER);
+
+            gchar *ws_tt = g_strdup_printf("Workspace #%u (%s)",
+                                           workspace->idx,
+                                           workspace->name ? workspace->name : "Active");
+            gtk_widget_set_tooltip_text(label_btn, ws_tt);
+            g_free(ws_tt);
+
+            g_object_set_data(G_OBJECT(label_btn), "workspace-id",
+                              (gpointer)(guintptr)workspace->id);
+            g_signal_connect(label_btn, "clicked",
+                             G_CALLBACK(on_workspace_label_clicked), ws);
+            gtk_box_append(GTK_BOX(workspace_box), label_btn);
+        }
+
+        if (windows != NULL) {
+            if (show_icons) {
+                guint show_count = (win_count > MAX_ICONS_PER_WORKSPACE)
+                                       ? MAX_ICONS_PER_WORKSPACE : win_count;
+
+                gint cfg_sz = shell_widget_get_icon_size((ShellWidget *)ws);
+                gint icon_sz = MIN(APP_ICON_SIZE, cfg_sz);
+                for (guint j = 0; j < show_count; j++) {
+                    CompositorWindow *win = &g_array_index(windows, CompositorWindow, j);
+
+                    GtkWidget *icon = shell_icons_create_app_icon_widget(win->app_id, icon_sz);
+                    gtk_widget_set_valign(icon, GTK_ALIGN_CENTER);
+
+                    GtkWidget *icon_btn = gtk_button_new();
+                    gtk_button_set_child(GTK_BUTTON(icon_btn), icon);
+                    gtk_button_set_has_frame(GTK_BUTTON(icon_btn), FALSE);
+                    gtk_widget_set_valign(icon_btn, GTK_ALIGN_CENTER);
+                    gtk_widget_add_css_class(icon_btn, "workspace-app-icon");
+
+                    gchar *win_tt = g_strdup_printf("%s — %s",
+                        win->app_id ? win->app_id : "Window",
+                        (win->title && *win->title) ? win->title : "Untitled");
+                    gtk_widget_set_tooltip_text(icon_btn, win_tt);
+                    g_free(win_tt);
+
+                    g_object_set_data(G_OBJECT(icon_btn), "window-id",
+                                      (gpointer)(guintptr)win->id);
+                    g_signal_connect(icon_btn, "clicked",
+                                     G_CALLBACK(on_app_icon_clicked), ws);
+
+                    gtk_box_append(GTK_BOX(workspace_box), icon_btn);
+                }
+
+                /* Show "+N" if more windows than max */
+                if (win_count > MAX_ICONS_PER_WORKSPACE) {
+                    gchar *overflow_text = g_strdup_printf("+%u",
+                        win_count - MAX_ICONS_PER_WORKSPACE);
+                    GtkWidget *overflow_label = gtk_label_new(overflow_text);
+                    gtk_widget_set_valign(overflow_label, GTK_ALIGN_CENTER);
+                    g_free(overflow_text);
+                    gtk_box_append(GTK_BOX(workspace_box), overflow_label);
+                }
             }
 
             /* Free the windows array (elements cleared automatically by g_array_set_clear_func) */
@@ -252,6 +267,7 @@ workspaces_create(ShellCompositor *compositor)
     ws->compositor = compositor;
 
     ws->box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_set_valign(ws->box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(ws->box, "shell-widget");
     gtk_widget_add_css_class(ws->box, "shell-widget-workspaces");
 

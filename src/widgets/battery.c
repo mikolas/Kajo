@@ -27,6 +27,7 @@ typedef struct {
     GtkWidget     *panel_image;
     GtkWidget     *panel_label;
     /* Popover widgets */
+    GtkWidget     *status_badge;
     GtkWidget     *pct_label;
     GtkWidget     *pct_bar;
     GtkWidget     *status_label;
@@ -35,7 +36,9 @@ typedef struct {
     GtkWidget     *profile_power_saver;
     GtkWidget     *profile_balanced;
     GtkWidget     *profile_performance;
+    GtkWidget     *brightness_box;
     GtkWidget     *brightness_scale;
+    GtkWidget     *settings_btn;
     /* D-Bus */
     guint          timer_id;
     GDBusProxy    *upower_proxy;
@@ -77,11 +80,11 @@ static void battery_update_profile_radios(BatteryWidget *batt)
 
     batt->updating_profile = TRUE;
     if (g_strcmp0(profile, "power-saver") == 0)
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(batt->profile_power_saver), TRUE);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(batt->profile_power_saver), TRUE);
     else if (g_strcmp0(profile, "balanced") == 0)
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(batt->profile_balanced), TRUE);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(batt->profile_balanced), TRUE);
     else if (g_strcmp0(profile, "performance") == 0)
-        gtk_check_button_set_active(GTK_CHECK_BUTTON(batt->profile_performance), TRUE);
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(batt->profile_performance), TRUE);
     batt->updating_profile = FALSE;
 
     g_variant_unref(v);
@@ -102,25 +105,31 @@ static void battery_set_profile(BatteryWidget *batt, const gchar *profile)
                       -1, NULL, NULL, NULL);
 }
 
-static void on_profile_power_saver_toggled(GtkCheckButton *btn, gpointer user_data)
+static void on_profile_power_saver_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     BatteryWidget *batt = user_data;
-    if (gtk_check_button_get_active(btn))
+    if (gtk_toggle_button_get_active(btn))
         battery_set_profile(batt, "power-saver");
 }
 
-static void on_profile_balanced_toggled(GtkCheckButton *btn, gpointer user_data)
+static void on_profile_balanced_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     BatteryWidget *batt = user_data;
-    if (gtk_check_button_get_active(btn))
+    if (gtk_toggle_button_get_active(btn))
         battery_set_profile(batt, "balanced");
 }
 
-static void on_profile_performance_toggled(GtkCheckButton *btn, gpointer user_data)
+static void on_profile_performance_toggled(GtkToggleButton *btn, gpointer user_data)
 {
     BatteryWidget *batt = user_data;
-    if (gtk_check_button_get_active(btn))
+    if (gtk_toggle_button_get_active(btn))
         battery_set_profile(batt, "performance");
+}
+
+static void on_battery_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    BatteryWidget *batt = user_data;
+    shell_spawn_settings("displays", batt ? batt->popover : NULL);
 }
 
 /* --- Brightness --- */
@@ -179,11 +188,42 @@ static void battery_update(BatteryWidget *batt)
     }
 
     /* Panel */
+    gboolean is_critical = (state == UPOWER_STATE_DISCHARGING && percentage > 0.0 && percentage <= 15.0);
+    if (batt->button) {
+        if (is_critical)
+            gtk_widget_add_css_class(batt->button, "critical");
+        else
+            gtk_widget_remove_css_class(batt->button, "critical");
+    }
+
     gtk_image_set_from_icon_name(GTK_IMAGE(batt->panel_image), icon_name);
     gchar *pct_text = g_strdup_printf("%.0f%%", percentage);
     gtk_label_set_text(GTK_LABEL(batt->panel_label), pct_text);
     g_free(pct_text);
     shell_widget_apply_mode_visibility(batt->base.mode, batt->panel_image, batt->panel_label);
+
+    if (batt->status_badge) {
+        gtk_widget_remove_css_class(batt->status_badge, "active");
+        gtk_widget_remove_css_class(batt->status_badge, "urgent");
+        gtk_widget_remove_css_class(batt->status_badge, "peak-warn");
+        gtk_widget_remove_css_class(batt->status_badge, "success");
+        if (is_critical) {
+            gtk_label_set_text(GTK_LABEL(batt->status_badge), "[ CRITICAL ]");
+            gtk_widget_add_css_class(batt->status_badge, "urgent");
+        } else if (state == UPOWER_STATE_CHARGING) {
+            gtk_label_set_text(GTK_LABEL(batt->status_badge), "[ CHARGING ]");
+            gtk_widget_add_css_class(batt->status_badge, "active");
+        } else if (state == UPOWER_STATE_FULL) {
+            gtk_label_set_text(GTK_LABEL(batt->status_badge), "[ FULL ]");
+            gtk_widget_add_css_class(batt->status_badge, "success");
+        } else if (state == UPOWER_STATE_DISCHARGING && percentage <= 25.0) {
+            gtk_label_set_text(GTK_LABEL(batt->status_badge), "[ LOW ]");
+            gtk_widget_add_css_class(batt->status_badge, "peak-warn");
+        } else {
+            gtk_label_set_text(GTK_LABEL(batt->status_badge), "[ HEALTHY ]");
+            gtk_widget_add_css_class(batt->status_badge, "success");
+        }
+    }
 
     /* Popover: percentage */
     gchar *pct_detail = g_strdup_printf("Battery: %.0f%%", percentage);
@@ -332,6 +372,7 @@ static void battery_profiles_proxy_ready(GObject *source G_GNUC_UNUSED,
 typedef struct _ShellBatteryPopover {
     GtkPopover parent_instance;
 
+    GtkWidget *status_badge;
     GtkWidget *pct_label;
     GtkWidget *pct_bar;
     GtkWidget *status_label;
@@ -340,7 +381,9 @@ typedef struct _ShellBatteryPopover {
     GtkWidget *profile_power_saver;
     GtkWidget *profile_balanced;
     GtkWidget *profile_performance;
+    GtkWidget *brightness_box;
     GtkWidget *brightness_scale;
+    GtkWidget *settings_btn;
 } ShellBatteryPopover;
 
 typedef struct _ShellBatteryPopoverClass {
@@ -373,6 +416,7 @@ shell_battery_popover_class_init(ShellBatteryPopoverClass *klass)
     gtk_widget_class_set_template_from_resource(
         widget_class, "/org/kajo/shell/ui/battery_popover.ui");
 
+    gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, status_badge);
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, pct_label);
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, pct_bar);
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, status_label);
@@ -381,7 +425,9 @@ shell_battery_popover_class_init(ShellBatteryPopoverClass *klass)
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, profile_power_saver);
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, profile_balanced);
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, profile_performance);
+    gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, brightness_box);
     gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, brightness_scale);
+    gtk_widget_class_bind_template_child(widget_class, ShellBatteryPopover, settings_btn);
 }
 
 /* --- Widget interface --- */
@@ -392,9 +438,11 @@ static void on_battery_popover_map(GtkWidget *widget G_GNUC_UNUSED, gpointer use
     if (!batt)
         return;
     gint cur_bright = battery_read_brightness_pct();
+    if (batt->brightness_box)
+        gtk_widget_set_visible(batt->brightness_box, cur_bright >= 0);
     if (cur_bright >= 0 && batt->brightness_scale && GTK_IS_RANGE(batt->brightness_scale)) {
         batt->updating_brightness = TRUE;
-        gtk_range_set_value(GTK_RANGE(batt->brightness_scale), (double)cur_bright);
+        gtk_range_set_value(GTK_RANGE(batt->brightness_scale), (double)MAX(1, cur_bright));
         batt->updating_brightness = FALSE;
     }
     battery_update(batt);
@@ -404,6 +452,7 @@ static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
 {
     ShellBatteryPopover *popover = g_object_new(shell_battery_popover_get_type(), NULL);
 
+    batt->status_badge = popover->status_badge;
     batt->pct_label = popover->pct_label;
     batt->pct_bar = popover->pct_bar;
     batt->status_label = popover->status_label;
@@ -412,15 +461,17 @@ static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
     batt->profile_power_saver = popover->profile_power_saver;
     batt->profile_balanced = popover->profile_balanced;
     batt->profile_performance = popover->profile_performance;
+    batt->brightness_box = popover->brightness_box;
     batt->brightness_scale = popover->brightness_scale;
+    batt->settings_btn = popover->settings_btn;
 
     if (batt->profile_balanced && batt->profile_power_saver) {
-        gtk_check_button_set_group(GTK_CHECK_BUTTON(batt->profile_balanced),
-                                   GTK_CHECK_BUTTON(batt->profile_power_saver));
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(batt->profile_balanced),
+                                     GTK_TOGGLE_BUTTON(batt->profile_power_saver));
     }
     if (batt->profile_performance && batt->profile_power_saver) {
-        gtk_check_button_set_group(GTK_CHECK_BUTTON(batt->profile_performance),
-                                   GTK_CHECK_BUTTON(batt->profile_power_saver));
+        gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(batt->profile_performance),
+                                     GTK_TOGGLE_BUTTON(batt->profile_power_saver));
     }
 
     g_signal_connect(batt->profile_power_saver, "toggled",
@@ -431,14 +482,18 @@ static GtkWidget *battery_build_popover_content(BatteryWidget *batt)
                      G_CALLBACK(on_profile_performance_toggled), batt);
 
     gint cur_bright = battery_read_brightness_pct();
+    if (batt->brightness_box)
+        gtk_widget_set_visible(batt->brightness_box, cur_bright >= 0);
     if (cur_bright >= 0 && batt->brightness_scale && GTK_IS_RANGE(batt->brightness_scale)) {
         batt->updating_brightness = TRUE;
-        gtk_range_set_value(GTK_RANGE(batt->brightness_scale), (double)cur_bright);
+        gtk_range_set_value(GTK_RANGE(batt->brightness_scale), (double)MAX(1, cur_bright));
         batt->updating_brightness = FALSE;
     }
 
     g_signal_connect(batt->brightness_scale, "value-changed",
                      G_CALLBACK(on_brightness_changed), batt);
+    g_signal_connect(batt->settings_btn, "clicked",
+                     G_CALLBACK(on_battery_settings_clicked), batt);
     g_signal_connect(GTK_WIDGET(popover), "map",
                      G_CALLBACK(on_battery_popover_map), batt);
 
@@ -450,12 +505,10 @@ static ShellWidget *battery_create(ShellCompositor *compositor G_GNUC_UNUSED)
     BatteryWidget *batt = g_new0(BatteryWidget, 1);
 
     /* Panel: icon + label */
-    batt->panel_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     batt->panel_image = gtk_image_new_from_icon_name("tb-battery-4-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(batt->panel_image), shell_widget_get_icon_size((ShellWidget *)batt));
     batt->panel_label = gtk_label_new("--");
-    gtk_box_append(GTK_BOX(batt->panel_box), batt->panel_image);
-    gtk_box_append(GTK_BOX(batt->panel_box), batt->panel_label);
+    batt->panel_box = shell_widget_pack_bar_box(batt->panel_image, batt->panel_label);
 
     /* Menu button */
     batt->button = gtk_menu_button_new();
@@ -496,6 +549,8 @@ static void battery_destroy(ShellWidget *widget)
         g_signal_handlers_disconnect_by_data(batt->profile_performance, batt);
     if (batt->brightness_scale)
         g_signal_handlers_disconnect_by_data(batt->brightness_scale, batt);
+    if (batt->settings_btn)
+        g_signal_handlers_disconnect_by_data(batt->settings_btn, batt);
     if (batt->popover)
         g_signal_handlers_disconnect_by_data(batt->popover, batt);
 

@@ -2684,13 +2684,13 @@
             <tbody>
               <tr>
                 <td><span class="settings-header-title">⚙ SYSTEM SETTINGS • 📁 KAJO FILES</span></td>
-                <td class="files-list-meta">Fira Code • 700 Bold • 12px</td>
+                <td class="files-list-meta">Fira Code • 700 Bold • 13px</td>
                 <td class="files-list-meta">1.5px UPPERCASE</td>
                 <td><span class="gtk-class-tag" data-copy=".settings-header-title">.settings-header-title</span></td>
               </tr>
               <tr>
                 <td><span class="shell-popover-title">AUDIO OUTPUT ROUTING &amp; DSP</span></td>
-                <td class="files-list-meta">Fira Code • 700 Bold • 11px</td>
+                <td class="files-list-meta">Fira Code • 700 Bold • 13px</td>
                 <td class="files-list-meta">1.5px UPPERCASE</td>
                 <td>
                   <span class="gtk-class-tag" data-copy=".shell-popover-title">.shell-popover-title</span>
@@ -2699,23 +2699,24 @@
               </tr>
               <tr>
                 <td><span class="sidebar-category-header">DRIVES &amp; REMOVABLE MOUNTS</span></td>
-                <td class="files-list-meta">Fira Code • 700 Bold • 10px</td>
-                <td class="files-list-meta">1.2px UPPERCASE</td>
+                <td class="files-list-meta">Fira Code • 700 Bold • 13px</td>
+                <td class="files-list-meta">1.0px UPPERCASE</td>
                 <td><span class="gtk-class-tag" data-copy=".sidebar-category-header">.sidebar-category-header</span></td>
               </tr>
               <tr>
                 <td><span class="row-title">Enable Hardware Acceleration (VAAPI / Vulkan)</span></td>
-                <td class="files-list-meta">Sans-Serif • 600 SemiBold • 13px</td>
-                <td class="files-list-meta">0px Normal</td>
+                <td class="files-list-meta">Fira Code • 600 SemiBold • 14px</td>
+                <td class="files-list-meta">0px (@metro-fg-primary)</td>
                 <td>
                   <span class="gtk-class-tag" data-copy=".row-title">.row-title</span>
+                  <span class="gtk-class-tag" data-copy=".shell-widget">.shell-widget</span>
                   <span class="gtk-class-tag" data-copy=".files-list-name">.files-list-name</span>
                 </td>
               </tr>
               <tr>
                 <td><span class="row-subtitle">Zero-copy DMA-BUF rendering via libmpv and GtkGLArea</span></td>
-                <td class="files-list-meta">Sans-Serif • 400 Regular • 11px</td>
-                <td class="files-list-meta">0px (#888888)</td>
+                <td class="files-list-meta">Fira Code • 400 Regular • 12px</td>
+                <td class="files-list-meta">0px (@metro-fg-secondary)</td>
                 <td>
                   <span class="gtk-class-tag" data-copy=".row-subtitle">.row-subtitle</span>
                   <span class="gtk-class-tag" data-copy=".dim-label">.dim-label</span>
@@ -2723,14 +2724,14 @@
               </tr>
               <tr>
                 <td><span class="shell-popover-subtitle">48.0 kHz • 32-bit Float • 8ch Virtual Surround</span></td>
-                <td class="files-list-meta">Fira Code • 400 Regular • 11px</td>
-                <td class="files-list-meta">0px (#9a9a9a)</td>
+                <td class="files-list-meta">Fira Code • 600 SemiBold • 12px</td>
+                <td class="files-list-meta">0.3px (@metro-fg-secondary)</td>
                 <td><span class="gtk-class-tag" data-copy=".shell-popover-subtitle">.shell-popover-subtitle</span></td>
               </tr>
               <tr>
                 <td><span class="empty-state-label">[ NO ACTIVE BLUETOOTH PERIPHERALS DETECTED ]</span></td>
                 <td class="files-list-meta">Fira Code • 400 Regular • 12px</td>
-                <td class="files-list-meta">0px (#777777)</td>
+                <td class="files-list-meta">0px (@metro-fg-secondary)</td>
                 <td><span class="gtk-class-tag" data-copy=".empty-state-label">.empty-state-label</span></td>
               </tr>
             </tbody>
@@ -3385,6 +3386,59 @@
       </div>
 
       <div class="gallery-section-body">
+        <!-- 0. Wayland Panel Bar, Widget Chips, Strip Containers & OSD Specimen -->
+        <div class="specimen-box">
+          <div class="specimen-box-header">
+            <span class="specimen-box-title">WAYLAND PANEL BAR, WIDGET CHIPS (ICON / LABEL / FULL), STRIP CONTAINERS &amp; OSD</span>
+            <div class="tag-cluster">
+              <span class="gtk-class-tag" data-copy="#panel-container">#panel-container</span>
+              <span class="gtk-class-tag" data-copy=".shell-widget">.shell-widget</span>
+              <span class="gtk-class-tag" data-copy=".shell-widget-workspaces">.shell-widget-workspaces</span>
+              <span class="gtk-class-tag" data-copy=".shell-osd-card">.shell-osd-card</span>
+            </div>
+          </div>
+
+          <div style="background:rgba(24,24,24,0.92); border-top:1px solid rgba(255,255,255,0.08); border-bottom:1px solid rgba(255,255,255,0.08); height:38px; display:flex; align-items:stretch; justify-content:space-between; padding:0 4px; font-family:var(--font-mono); font-size:13px;">
+            <!-- Left Zone -->
+            <div style="display:flex; align-items:stretch; gap:4px;">
+              <span style="display:inline-flex; align-items:center; gap:6px; padding:0 8px; color:#ffffff; cursor:pointer;">⊞</span>
+              <div style="display:inline-flex; align-items:center; gap:4px; padding:0 2px;">
+                <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; background:rgba(0,120,212,0.14); border-bottom:2px solid var(--metro-accent); color:#ffffff; font-weight:600;">1 <span style="font-size:12px; opacity:0.95;">⌘ 📁</span></span>
+                <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; color:#ffffff; font-weight:600;">2 <span style="font-size:12px; opacity:0.85;">🌐</span></span>
+                <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 8px; background:var(--metro-urgent); color:#ffffff; font-weight:600;">3</span>
+              </div>
+              <span style="display:inline-flex; align-items:center; gap:6px; padding:0 8px; color:var(--text-muted);">⌘ kajo-ide — src/panel.c</span>
+            </div>
+
+            <!-- Center Zone -->
+            <div style="display:flex; align-items:stretch; gap:4px;">
+              <span style="display:inline-flex; align-items:center; padding:0 8px; color:#ffffff; font-weight:600; letter-spacing:0.5px;">23:35</span>
+            </div>
+
+            <!-- Right Zone (Semantic States + Open Popover :checked State) -->
+            <div style="display:flex; align-items:stretch; gap:2px;">
+              <span title=".shell-widget-privacy.active" style="display:inline-flex; align-items:center; gap:5px; padding:0 6px; color:var(--metro-warning); border-bottom:2px solid var(--metro-warning);">🎙</span>
+              <span title=".shell-widget-idle-inhibitor.active" style="display:inline-flex; align-items:center; gap:5px; padding:0 6px; color:var(--metro-telemetry); border-bottom:2px solid var(--metro-telemetry);">☕</span>
+              <span title=".shell-widget-dnd.active" style="display:inline-flex; align-items:center; gap:5px; padding:0 6px; color:var(--metro-warning); border-bottom:2px solid var(--metro-warning);">🔕</span>
+              <span title="LABEL mode" style="display:inline-flex; align-items:center; padding:0 6px; color:#ffffff;">FI</span>
+              <span title="menubutton.shell-widget > button:checked (open popover)" style="display:inline-flex; align-items:center; gap:5px; padding:0 8px; background:var(--metro-accent); color:#ffffff; font-weight:600;">🔊 74%</span>
+              <span title=".shell-widget-battery.critical" style="display:inline-flex; align-items:center; gap:5px; padding:0 6px; color:#ff6b6b; border-bottom:2px solid var(--metro-urgent);">🪫 12%</span>
+              <span style="display:inline-flex; align-items:center; padding:0 6px; color:#ffffff;">⚙</span>
+              <span style="display:inline-flex; align-items:center; padding:0 6px; color:#ffffff;">⏻</span>
+            </div>
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-top:12px;">
+            <span class="files-list-meta">Open popover buttons stay lit via <code>menubutton.shell-widget &gt; button:checked</code>; strip containers (<code>.shell-widget-workspaces</code>, <code>.shell-widget-tray</code>) hover per item only; unfocused <code>window</code> and empty <code>tray</code> auto-hide.</span>
+            <!-- OSD Specimen -->
+            <div style="background:rgba(17,17,17,0.96); border:1px solid var(--metro-accent); padding:10px 16px; width:240px; display:flex; align-items:center; gap:10px; font-family:var(--font-mono);">
+              <span>🔊</span>
+              <div style="flex:1; height:6px; background:var(--border-struct);"><div style="width:74%; height:100%; background:var(--metro-accent);"></div></div>
+              <span style="font-size:13px; font-weight:600; color:#ffffff; min-width:38px; text-align:right;">74%</span>
+            </div>
+          </div>
+        </div>
+
         <div class="specimen-grid-3">
           <!-- 1. Canonical 3-Zone Shell Widget Popover -->
           <div class="specimen-box">

@@ -56,7 +56,7 @@ window.shell-panel,
 }
 
 #panel-container.autohide-hidden {
-    background-color: transparent;
+    background-color: rgba(0, 0, 0, 0.01);
     border: none;
 }
 
@@ -75,14 +75,15 @@ menubutton.shell-widget > button {
     background-color: transparent;
     background-image: none;
     border: none;
+    border-radius: 0px;
     box-shadow: none;
     outline: none;
     color: @metro-fg-primary;
-    padding: 0 4px;
+    padding: 0 6px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
-    min-height: 32px;
+    min-height: 0px;
 }
 
 .shell-widget:hover,
@@ -95,27 +96,40 @@ menubutton.shell-widget > button:hover {
 .shell-widget:active,
 .shell-widget:checked,
 .shell-widget > button:active,
-menubutton.shell-widget > button:active {
+.shell-widget > button:checked,
+menubutton.shell-widget:checked > button,
+menubutton.shell-widget > button:active,
+menubutton.shell-widget > button:checked {
     background-color: @metro-accent;
     border-radius: 0px;
-    color: #ffffff;
-}
-
-.shell-widget image {
     color: @metro-fg-primary;
-    min-width: 24px;
-    min-height: 24px;
-    -gtk-icon-size: 24px;
 }
 
-.shell-widget label {
+button.shell-widget image,
+menubutton.shell-widget > button image {
+    color: @metro-fg-primary;
+}
+
+button.shell-widget label,
+menubutton.shell-widget > button label,
+.shell-widget-label {
     color: @metro-fg-primary;
 }
 
 /* ─── Clock ─── */
-.shell-widget-clock label {
+menubutton.shell-widget-clock > button label,
+button.shell-widget-clock label {
     font-weight: 600;
     letter-spacing: 0.5px;
+}
+
+/* ─── Multi-Item Strip Containers (Workspaces & Tray) ─── */
+.shell-widget-workspaces,
+.shell-widget-workspaces:hover,
+.shell-widget-tray,
+.shell-widget-tray:hover {
+    background: transparent;
+    background-color: transparent;
 }
 
 /* ─── Workspaces (Flat Sharp Tiles) ─── */
@@ -124,32 +138,39 @@ menubutton.shell-widget > button:active {
 }
 
 .shell-widget-workspaces .workspace {
-    padding: 3px 8px;
+    padding: 2px 8px;
     border-radius: 0px;
     margin: 0 2px;
     border: 1px solid transparent;
 }
 
+.shell-widget-workspaces .workspace:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-border;
+}
+
 .shell-widget-workspaces .workspace.active,
 .shell-widget-workspaces .workspace.focused {
-    background-color: transparent;
+    background-color: alpha(@metro-accent, 0.14);
     border-bottom: 2px solid @metro-accent;
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 
 .shell-widget-workspaces .workspace.urgent {
     background-color: @metro-urgent;
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 
 .shell-widget-workspaces button {
     background: transparent;
     background-color: transparent;
+    background-image: none;
     border: none;
     box-shadow: none;
     outline: none;
     color: @metro-fg-primary;
     padding: 0 2px;
+    min-height: 0px;
 }
 
 .shell-widget-workspaces button label {
@@ -158,7 +179,7 @@ menubutton.shell-widget > button:active {
 }
 
 .shell-widget-workspaces .workspace.active button label {
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 
 .shell-widget-workspaces .workspace-app-icon {
@@ -180,20 +201,85 @@ menubutton.shell-widget > button:active {
     opacity: 0.95;
 }
 
-/* ─── Volume ─── */
-.shell-widget-volume.muted label,
-.shell-widget-volume.muted image {
+/* ─── System Tray (SNI) ─── */
+.shell-widget-tray {
+    padding: 0 2px;
+}
+
+.shell-widget-tray button.tray-item-button {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0px;
+    box-shadow: none;
+    outline: none;
+    padding: 0 4px;
+    min-height: 0px;
+}
+
+.shell-widget-tray button.tray-item-button:hover {
+    background-color: @metro-surface-hover;
+}
+
+.shell-widget-tray button.tray-item-button:active,
+.shell-widget-tray button.tray-item-button:checked {
+    background-color: @metro-accent;
+}
+
+/* ─── Semantic Bar Chip States (Scoped to Bar Buttons Only — Never Leak Into Popovers) ─── */
+button.shell-widget-volume.muted label,
+button.shell-widget-volume.muted image,
+menubutton.shell-widget-volume.muted > button:not(:checked):not(:active) label,
+menubutton.shell-widget-volume.muted > button:not(:checked):not(:active) image {
     color: @metro-fg-secondary;
 }
 
-/* ─── Battery ─── */
-.shell-widget-battery.critical label,
-.shell-widget-battery.critical image {
-    color: @metro-urgent;
+button.shell-widget-battery.critical,
+menubutton.shell-widget-battery.critical > button {
+    border-bottom: 2px solid @metro-urgent;
+}
+
+button.shell-widget-battery.critical:not(:checked):not(:active) label,
+button.shell-widget-battery.critical:not(:checked):not(:active) image,
+menubutton.shell-widget-battery.critical > button:not(:checked):not(:active) label,
+menubutton.shell-widget-battery.critical > button:not(:checked):not(:active) image {
+    color: @metro-urgent-text;
+}
+
+button.shell-widget-dnd.active,
+menubutton.shell-widget-dnd.active > button,
+button.shell-widget-privacy.active,
+menubutton.shell-widget-privacy.active > button {
+    border-bottom: 2px solid @metro-warning;
+}
+
+button.shell-widget-dnd.active:not(:checked):not(:active) label,
+button.shell-widget-dnd.active:not(:checked):not(:active) image,
+menubutton.shell-widget-dnd.active > button:not(:checked):not(:active) label,
+menubutton.shell-widget-dnd.active > button:not(:checked):not(:active) image,
+button.shell-widget-privacy.active:not(:checked):not(:active) label,
+button.shell-widget-privacy.active:not(:checked):not(:active) image,
+menubutton.shell-widget-privacy.active > button:not(:checked):not(:active) label,
+menubutton.shell-widget-privacy.active > button:not(:checked):not(:active) image {
+    color: @metro-warning;
+}
+
+button.shell-widget-idle-inhibitor.active,
+menubutton.shell-widget-idle-inhibitor.active > button {
+    border-bottom: 2px solid @metro-telemetry;
+}
+
+button.shell-widget-idle-inhibitor.active:not(:checked):not(:active) label,
+button.shell-widget-idle-inhibitor.active:not(:checked):not(:active) image,
+menubutton.shell-widget-idle-inhibitor.active > button:not(:checked):not(:active) label,
+menubutton.shell-widget-idle-inhibitor.active > button:not(:checked):not(:active) image {
+    color: @metro-telemetry;
 }
 
 /* ─── Window Title ─── */
-.shell-widget-window label {
+button.shell-widget-window:not(:checked):not(:active) label,
+menubutton.shell-widget-window > button:not(:checked):not(:active) label {
     color: @metro-fg-secondary;
     font-weight: 400;
 }
@@ -247,10 +333,10 @@ popover.menu modelbutton {
 }
 popover.menu modelbutton:hover {
     background-color: @metro-accent;
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 popover.menu separator {
-    background-color: #2b2b2b;
+    background-color: @metro-border;
     min-height: 1px;
     margin: 2px 0;
 }
@@ -265,16 +351,19 @@ popover > arrow {
     min-width: 280px;
 }
 
-.popover-medium {
+.popover-medium,
+.popover-standard {
     min-width: 380px;
 }
 
-.popover-expanded {
+.popover-expanded,
+.popover-wide {
     min-width: 480px;
 }
 
 /* ─── 3-Zone Architecture & Canonical Typography ─── */
 .shell-popover-header {
+    background-color: @metro-surface-2;
     padding: 10px 14px;
     border-bottom: 1px solid @metro-border;
 }
@@ -294,20 +383,20 @@ popover > arrow {
 .row-title {
     font-size: 14px;
     font-weight: 600;
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 
 .row-subtitle,
 .dim-label {
     font-size: 12px;
-    color: #888888;
+    color: @metro-fg-secondary;
 }
 
 .shell-popover-subtitle {
     font-size: 12px;
     font-weight: 600;
     letter-spacing: 0.3px;
-    color: #9a9a9a;
+    color: @metro-fg-secondary;
     margin-top: 2px;
     margin-bottom: 2px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
@@ -316,7 +405,7 @@ popover > arrow {
 .empty-state-label,
 .shell-device-placeholder {
     font-size: 12px;
-    color: #777777;
+    color: @metro-fg-secondary;
     padding: 12px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
 }
@@ -325,9 +414,9 @@ popover > arrow {
     font-size: 11px;
     font-weight: 700;
     text-transform: uppercase;
-    color: #cccccc;
-    background-color: #1e1e1e;
-    border: 1px solid #333333;
+    color: @metro-fg-primary;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
     border-radius: 0px;
     padding: 2px 6px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
@@ -336,37 +425,37 @@ popover > arrow {
 .shell-popover-badge.accent,
 .shell-popover-badge.active {
     background-color: @metro-accent;
-    color: #ffffff;
-    border-color: #ffffff;
+    color: @metro-fg-primary;
+    border-color: @metro-fg-primary;
 }
 
 .shell-popover-badge.urgent,
 .shell-popover-badge.peak-clip {
     background-color: @metro-urgent;
-    color: #ffffff;
+    color: @metro-fg-primary;
     border-color: @metro-urgent;
 }
 
 .shell-popover-badge.peak-warn {
-    background-color: #332000;
+    background-color: alpha(@metro-warning, 0.18);
     color: @metro-warning;
     border-color: @metro-warning;
 }
 
 .shell-popover-badge.success {
-    background-color: #0d2818;
-    color: #3dd675;
+    background-color: alpha(@metro-success, 0.22);
+    color: @metro-fg-primary;
     border-color: @metro-success;
 }
 
 .code-preview-box {
-    background-color: #111111;
+    background-color: @metro-surface-0;
     border: 1px solid @metro-border;
     border-left: 3px solid @metro-accent;
     padding: 12px 14px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
-    color: #cccccc;
+    color: @metro-fg-primary;
 }
 
 .shell-popover-body {
@@ -374,6 +463,7 @@ popover > arrow {
 }
 
 .shell-popover-footer {
+    background-color: @metro-surface-2;
     padding: 10px 14px;
     border-top: 1px solid @metro-border;
 }
@@ -478,7 +568,9 @@ window.shell-settings-window button.toggle-card:checked:hover {
 }
 
 button.toggle-card:disabled,
+button.control-center-tile:disabled,
 popover button.toggle-card:disabled,
+popover button.control-center-tile:disabled,
 window.shell-settings-window button.toggle-card:disabled {
     opacity: 0.45;
     border-left-color: @metro-border;
@@ -487,12 +579,12 @@ window.shell-settings-window button.toggle-card:disabled {
 .tile-title {
     font-size: 14px;
     font-weight: 700;
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 
 .tile-subtitle {
     font-size: 11px;
-    color: #9a9a9a;
+    color: @metro-fg-secondary;
 }
 
 /* ─── Media Artwork & Labels ─── */
@@ -541,6 +633,11 @@ window.shell-settings-window button.toggle-card:disabled {
 .shell-notification-card.urgent {
     border-color: @metro-urgent;
     border-left: 4px solid @metro-urgent;
+}
+
+.shell-notification-card.critical .shell-popover-title,
+.shell-notification-card.urgent .shell-popover-title {
+    color: @metro-urgent-text;
 }
 
 .shell-osd-label {
@@ -849,7 +946,7 @@ popover scale trough,
 window.shell-settings-window scale trough {
     background: none;
     background-image: none;
-    background-color: #262626;
+    background-color: @metro-border;
     border-radius: 0px;
     min-height: 4px;
 }
@@ -866,7 +963,7 @@ popover scale slider,
 window.shell-settings-window scale slider {
     background: none;
     background-image: none;
-    background-color: #ffffff;
+    background-color: @metro-fg-primary;
     border: 2px solid @metro-accent;
     border-radius: 0px;
     min-width: 14px;
@@ -878,44 +975,82 @@ window.shell-settings-window scale slider {
 popover scale slider:hover,
 window.shell-settings-window scale slider:hover {
     background-color: @metro-accent;
-    border-color: #ffffff;
+    border-color: @metro-fg-primary;
 }
 
-/* Level Bars */
+/* Level Bars (Popovers, OSD & Settings) */
 popover levelbar trough,
+window.shell-osd levelbar trough,
+.shell-osd-card levelbar trough,
 window.shell-settings-window levelbar trough {
-    background-color: #262626;
+    background: none;
+    background-image: none;
+    background-color: @metro-border;
+    border: none;
     border-radius: 0px;
     min-height: 6px;
 }
 
+/* OSD Level Bars (Always Pure Accent — No Low/High/Full Traffic-Light Shifts) */
+window.shell-osd levelbar trough block.filled,
+window.shell-osd levelbar trough block.low,
+window.shell-osd levelbar trough block.high,
+window.shell-osd levelbar trough block.full,
+.shell-osd-card levelbar trough block.filled,
+.shell-osd-card levelbar trough block.low,
+.shell-osd-card levelbar trough block.high,
+.shell-osd-card levelbar trough block.full {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border: none;
+    border-radius: 0px;
+}
+
 popover levelbar trough block.filled,
 window.shell-settings-window levelbar trough block.filled {
+    background: none;
+    background-image: none;
     background-color: @metro-accent;
+    border: none;
     border-radius: 0px;
 }
 
 popover levelbar trough block.low,
 window.shell-settings-window levelbar trough block.low {
+    background: none;
+    background-image: none;
     background-color: @metro-success;
+    border: none;
     border-radius: 0px;
 }
 
 popover levelbar trough block.high,
 window.shell-settings-window levelbar trough block.high {
+    background: none;
+    background-image: none;
     background-color: @metro-warning;
+    border: none;
     border-radius: 0px;
 }
 
 popover levelbar trough block.full,
 window.shell-settings-window levelbar trough block.full {
+    background: none;
+    background-image: none;
     background-color: @metro-urgent;
+    border: none;
     border-radius: 0px;
 }
 
 popover levelbar trough block.empty,
+window.shell-osd levelbar trough block.empty,
+.shell-osd-card levelbar trough block.empty,
 window.shell-settings-window levelbar trough block.empty {
+    background: none;
+    background-image: none;
     background-color: transparent;
+    border: none;
 }
 
 /* Radio / Check Buttons */
@@ -1150,18 +1285,33 @@ window.shell-settings-window .settings-header-title {
     color: #ffffff;
 }
 
+popover .settings-close-btn,
+popover .popover-dismiss-btn,
+.shell-notification-card .settings-close-btn,
+.shell-notification-card .popover-dismiss-btn,
 window.shell-settings-window .settings-close-btn {
     background: transparent;
+    background-color: transparent;
+    background-image: none;
     border: none;
-    color: #a0a0a0;
+    border-radius: 0px;
+    box-shadow: none;
+    outline: none;
+    color: @metro-fg-secondary;
     padding: 2px 8px;
     font-size: 14px;
     min-height: 24px;
+    min-width: 24px;
 }
 
+popover .settings-close-btn:hover,
+popover .popover-dismiss-btn:hover,
+.shell-notification-card .settings-close-btn:hover,
+.shell-notification-card .popover-dismiss-btn:hover,
 window.shell-settings-window .settings-close-btn:hover {
     background-color: @metro-urgent;
-    color: #ffffff;
+    border-color: @metro-urgent;
+    color: @metro-fg-primary;
 }
 
 window.shell-settings-window .navigation-sidebar {
@@ -1315,16 +1465,26 @@ window.shell-settings-window .section-card-right {
     margin-bottom: 8px;
 }
 
+popover .widget-row-card,
 window.shell-settings-window .widget-row-card {
     background-color: @metro-surface-4;
-    border: 1px solid #262626;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
     padding: 8px 12px;
     margin-bottom: 4px;
 }
 
+popover .widget-row-card:hover,
 window.shell-settings-window .widget-row-card:hover {
-    background-color: #202020;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
+}
+
+popover .widget-row-card.active,
+window.shell-settings-window .widget-row-card.active {
+    background-color: alpha(@metro-accent, 0.14);
+    border-color: @metro-accent;
+    border-left: 3px solid @metro-accent;
 }
 
 /* ─── Media VU Meter & LevelBar Color Coding ─── */

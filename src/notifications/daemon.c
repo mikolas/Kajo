@@ -13,6 +13,7 @@
 
 typedef struct {
     guint32 id;
+    guint8 urgency;
     gchar *app_name;
     gchar *desktop_entry;
     gchar *summary;
@@ -246,6 +247,8 @@ create_notification_toast_card(ShellNotificationDaemon *daemon, ShellNotificatio
     /* Notification Card Layout */
     GtkWidget *card = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_add_css_class(card, "shell-notification-card");
+    if (toast->urgency == 2)
+        gtk_widget_add_css_class(card, "critical");
     gtk_widget_set_size_request(card, 300, -1);
 
     /* Icon */
@@ -356,6 +359,7 @@ handle_notifications_method_call(GDBusConnection *connection,
         if (!daemon->dnd_enabled || urgency == 2) {
             ShellNotificationToast *toast = g_new0(ShellNotificationToast, 1);
             toast->id = id;
+            toast->urgency = urgency;
             toast->app_name = g_strdup(app_name);
             toast->desktop_entry = g_strdup(desktop_entry);
             toast->summary = g_strdup(summary);
@@ -371,6 +375,7 @@ handle_notifications_method_call(GDBusConnection *connection,
         /* Add to history stack */
         ShellNotificationItem *item = g_new0(ShellNotificationItem, 1);
         item->id = id;
+        item->urgency = urgency;
         item->app_name = g_strdup(app_name);
         item->desktop_entry = g_strdup(desktop_entry);
         item->summary = g_strdup(summary);

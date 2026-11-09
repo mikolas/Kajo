@@ -15,6 +15,7 @@ template $ShellControlCenterPopover : Popover {
     /* Zone 1: Header (Title + Badge) */
     Box {
       orientation: horizontal;
+      valign: center;
 
       styles [
         "shell-popover-header",
@@ -24,6 +25,7 @@ template $ShellControlCenterPopover : Popover {
         label: "CONTROL CENTER";
         xalign: 0;
         hexpand: true;
+        valign: center;
 
         styles [
           "shell-popover-title",
@@ -32,6 +34,7 @@ template $ShellControlCenterPopover : Popover {
 
       Label status_badge {
         label: "[ READY ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -53,15 +56,18 @@ template $ShellControlCenterPopover : Popover {
       Box {
         orientation: horizontal;
         spacing: 8;
+        valign: center;
 
         Image {
           icon-name: "audio-volume-high-symbolic";
           pixel-size: 18;
+          valign: center;
         }
 
         Scale vol_scale {
           orientation: horizontal;
           hexpand: true;
+          valign: center;
 
           adjustment: Adjustment {
             lower: 0;
@@ -73,25 +79,30 @@ template $ShellControlCenterPopover : Popover {
         Label vol_val_lbl {
           label: "50%";
           width-request: 40;
+          xalign: 1;
+          valign: center;
         }
       }
 
       /* Brightness Row */
-      Box {
+      Box bright_row {
         orientation: horizontal;
         spacing: 8;
+        valign: center;
 
         Image {
           icon-name: "display-brightness-symbolic";
           pixel-size: 18;
+          valign: center;
         }
 
         Scale bright_scale {
           orientation: horizontal;
           hexpand: true;
+          valign: center;
 
           adjustment: Adjustment {
-            lower: 0;
+            lower: 1;
             upper: 100;
             step-increment: 1;
           };
@@ -100,6 +111,8 @@ template $ShellControlCenterPopover : Popover {
         Label bright_val_lbl {
           label: "50%";
           width-request: 40;
+          xalign: 1;
+          valign: center;
         }
       }
 
@@ -111,6 +124,7 @@ template $ShellControlCenterPopover : Popover {
       Grid toggle_grid {
         row-spacing: 8;
         column-spacing: 8;
+        column-homogeneous: true;
       }
 
       Separator {
@@ -129,19 +143,24 @@ template $ShellControlCenterPopover : Popover {
 
       Box {
         orientation: horizontal;
-        spacing: 4;
+        spacing: 0;
+        homogeneous: true;
 
-        CheckButton prof_saver {
-          label: "Saver";
+        styles [
+          "segmented-group",
+        ]
+
+        ToggleButton prof_saver {
+          label: "SAVER";
         }
 
-        CheckButton prof_balanced {
-          label: "Balanced";
+        ToggleButton prof_balanced {
+          label: "BALANCED";
           active: true;
         }
 
-        CheckButton prof_perf {
-          label: "Performance";
+        ToggleButton prof_perf {
+          label: "PERFORMANCE";
         }
       }
     }
@@ -150,6 +169,7 @@ template $ShellControlCenterPopover : Popover {
     Box {
       orientation: horizontal;
       spacing: 6;
+      valign: center;
 
       styles [
         "shell-popover-footer",
@@ -157,22 +177,30 @@ template $ShellControlCenterPopover : Popover {
 
       Button btn_settings {
         label: "⚙ Settings";
+        valign: center;
         hexpand: true;
       }
 
       Button btn_lock {
         label: "🔒 Lock";
+        valign: center;
         hexpand: true;
       }
 
       Button btn_suspend {
         label: "🌙 Suspend";
+        valign: center;
         hexpand: true;
       }
 
       Button btn_power {
         label: "⏻ Power";
+        valign: center;
         hexpand: true;
+
+        styles [
+          "destructive-action",
+        ]
       }
     }
   }

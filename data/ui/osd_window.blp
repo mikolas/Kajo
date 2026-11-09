@@ -8,6 +8,7 @@ template $ShellOSDWindow : Window {
   Box card_box {
     orientation: horizontal;
     spacing: 10;
+    valign: center;
     width-request: 240;
     height-request: 48;
 
@@ -18,6 +19,7 @@ template $ShellOSDWindow : Window {
     Image icon_img {
       icon-name: "audio-volume-high-symbolic";
       pixel-size: 24;
+      valign: center;
     }
 
     LevelBar level_bar {
@@ -29,6 +31,7 @@ template $ShellOSDWindow : Window {
 
     Label label {
       label: "100%";
+      valign: center;
 
       styles [
         "shell-osd-label",

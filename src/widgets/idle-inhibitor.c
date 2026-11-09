@@ -64,6 +64,12 @@ update_inhibitor_ui(IdleInhibitorWidget *in)
 
     gtk_image_set_from_icon_name(GTK_IMAGE(in->icon_img), icon_name);
     gtk_label_set_text(GTK_LABEL(in->label), in->is_inhibited ? "Awake" : "Idle");
+    if (in->button) {
+        if (in->is_inhibited)
+            gtk_widget_add_css_class(in->button, "active");
+        else
+            gtk_widget_remove_css_class(in->button, "active");
+    }
     shell_widget_apply_mode_visibility(in->base.mode, in->icon_img, in->label);
 
     if (in->toggle_switch != NULL) {
@@ -112,11 +118,14 @@ build_inhibitor_popover(IdleInhibitorWidget *in)
     gtk_widget_add_css_class(body_box, "shell-popover-body");
 
     GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
     GtkWidget *row_label = gtk_label_new("Prevent Screen Sleep");
     gtk_widget_set_hexpand(row_label, TRUE);
+    gtk_widget_set_valign(row_label, GTK_ALIGN_CENTER);
     gtk_label_set_xalign(GTK_LABEL(row_label), 0.0f);
 
     in->toggle_switch = gtk_switch_new();
+    gtk_widget_set_valign(in->toggle_switch, GTK_ALIGN_CENTER);
     g_signal_connect(in->toggle_switch, "state-set",
                      G_CALLBACK(on_inhibitor_switch_toggled), in);
 
@@ -127,11 +136,13 @@ build_inhibitor_popover(IdleInhibitorWidget *in)
 
     /* ─── Zone 3: Footer (Actions) ─── */
     GtkWidget *footer_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(footer_box, GTK_ALIGN_CENTER);
     gtk_widget_add_css_class(footer_box, "shell-popover-footer");
 
-    GtkWidget *settings_btn = gtk_button_new_with_label("POWER SETTINGS");
+    GtkWidget *settings_btn = gtk_button_new_with_label("IDLE & DISPLAY SETTINGS");
     gtk_button_set_has_frame(GTK_BUTTON(settings_btn), FALSE);
     gtk_widget_set_halign(settings_btn, GTK_ALIGN_END);
+    gtk_widget_set_valign(settings_btn, GTK_ALIGN_CENTER);
     gtk_widget_set_hexpand(settings_btn, TRUE);
     g_signal_connect(settings_btn, "clicked", G_CALLBACK(on_inhibitor_settings_clicked), in);
     in->settings_btn = settings_btn;
@@ -157,13 +168,10 @@ idle_inhibitor_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(in->button, "shell-widget");
     gtk_widget_add_css_class(in->button, "shell-widget-idle-inhibitor");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    in->icon_img = gtk_image_new_from_icon_name("fl-coffee-symbolic");
+    in->icon_img = gtk_image_new_from_icon_name("tb-coffee-symbolic");
     gtk_image_set_pixel_size(GTK_IMAGE(in->icon_img), shell_widget_get_icon_size((ShellWidget *)in));
     in->label = gtk_label_new("Idle");
-
-    gtk_box_append(GTK_BOX(hbox), in->icon_img);
-    gtk_box_append(GTK_BOX(hbox), in->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(in->icon_img, in->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(in->button), hbox);
 
     /* Build Popover */

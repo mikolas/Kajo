@@ -1063,12 +1063,9 @@ media_widget_create(ShellCompositor *compositor)
     gtk_widget_add_css_class(media->button, "shell-widget");
     gtk_widget_add_css_class(media->button, "shell-widget-media");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     media->icon_img = gtk_image_new_from_icon_name("fl-media-symbolic");
     media->label = gtk_label_new("Media");
-
-    gtk_box_append(GTK_BOX(hbox), media->icon_img);
-    gtk_box_append(GTK_BOX(hbox), media->label);
+    GtkWidget *hbox = shell_widget_pack_bar_box(media->icon_img, media->label);
     gtk_menu_button_set_child(GTK_MENU_BUTTON(media->button), hbox);
 
     /* Build Popover */

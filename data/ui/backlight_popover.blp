@@ -15,6 +15,7 @@ template $ShellBacklightPopover : Popover {
     /* Zone 1: Header */
     Box {
       orientation: horizontal;
+      valign: center;
 
       styles [
         "shell-popover-header",
@@ -24,6 +25,7 @@ template $ShellBacklightPopover : Popover {
         label: "BACKLIGHT & POSTURE";
         xalign: 0;
         hexpand: true;
+        valign: center;
 
         styles [
           "shell-popover-title",
@@ -32,6 +34,7 @@ template $ShellBacklightPopover : Popover {
 
       Label status_badge {
         label: "[ READY ]";
+        valign: center;
 
         styles [
           "shell-popover-badge",
@@ -55,11 +58,13 @@ template $ShellBacklightPopover : Popover {
 
         Box {
           orientation: horizontal;
+          valign: center;
 
           Label {
             label: "DISPLAY BRIGHTNESS";
             xalign: 0;
             hexpand: true;
+            valign: center;
 
             styles [
               "shell-popover-subtitle",
@@ -68,12 +73,14 @@ template $ShellBacklightPopover : Popover {
 
           Label lbl_display_pct {
             label: "--%";
+            valign: center;
           }
         }
 
         Scale scale_display {
           orientation: horizontal;
           hexpand: true;
+          valign: center;
 
           adjustment: Adjustment {
             lower: 1;
@@ -107,41 +114,29 @@ template $ShellBacklightPopover : Popover {
         }
 
         Button btn_kbd_wake {
-          label: "[ 💡 WAKE / TURN ON KEYLIGHTS ]";
+          label: "[ WAKE / TURN ON KEYLIGHTS ]";
           visible: false;
-
-          styles [
-            "flat",
-          ]
         }
 
         Box box_kbd_levels {
           orientation: horizontal;
-          spacing: 6;
+          spacing: 0;
           homogeneous: true;
 
-          Button btn_kbd_off {
-            label: "Off";
+          styles [
+            "segmented-group",
+          ]
 
-            styles [
-              "flat",
-            ]
+          ToggleButton btn_kbd_off {
+            label: "OFF";
           }
 
-          Button btn_kbd_low {
-            label: "Low";
-
-            styles [
-              "flat",
-            ]
+          ToggleButton btn_kbd_low {
+            label: "LOW";
           }
 
-          Button btn_kbd_high {
-            label: "High";
-
-            styles [
-              "flat",
-            ]
+          ToggleButton btn_kbd_high {
+            label: "HIGH";
           }
         }
 
@@ -160,31 +155,23 @@ template $ShellBacklightPopover : Popover {
 
           Box {
             orientation: horizontal;
-            spacing: 6;
+            spacing: 0;
             homogeneous: true;
 
-            Button btn_timeout_always {
-              label: "Always On";
+            styles [
+              "segmented-group",
+            ]
 
-              styles [
-                "flat",
-              ]
+            ToggleButton btn_timeout_always {
+              label: "ALWAYS ON";
             }
 
-            Button btn_timeout_30s {
-              label: "30s";
-
-              styles [
-                "flat",
-              ]
+            ToggleButton btn_timeout_30s {
+              label: "30S";
             }
 
-            Button btn_timeout_3m {
-              label: "3m";
-
-              styles [
-                "flat",
-              ]
+            ToggleButton btn_timeout_3m {
+              label: "3M";
             }
           }
         }
@@ -216,10 +203,12 @@ template $ShellBacklightPopover : Popover {
         Box {
           orientation: horizontal;
           spacing: 8;
+          valign: center;
 
           Label {
             label: "Auto-Rotate in Tablet Mode";
             xalign: 0;
+            valign: center;
             hexpand: true;
           }
 
@@ -227,6 +216,25 @@ template $ShellBacklightPopover : Popover {
             valign: center;
           }
         }
+      }
+    }
+
+    /* Zone 3: Footer */
+    Box {
+      orientation: horizontal;
+      spacing: 8;
+      valign: center;
+
+      styles [
+        "shell-popover-footer",
+      ]
+
+      Button settings_btn {
+        label: "DISPLAY & POSTURE SETTINGS";
+        has-frame: false;
+        halign: end;
+        valign: center;
+        hexpand: true;
       }
     }
   }

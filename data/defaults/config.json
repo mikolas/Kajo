@@ -53,7 +53,7 @@
       {"id": "window", "mode": "full"}
     ],
     "center": [
-      {"id": "clock", "mode": "full"}
+      {"id": "clock", "mode": "label"}
     ],
     "right": [
       "tray",
