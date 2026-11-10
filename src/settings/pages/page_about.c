@@ -249,7 +249,7 @@ build_page_about(void)
         "4 CORES", NULL));
     gtk_box_append(GTK_BOX(card_stack), create_about_info_row(
         "🔒", "Storage, Docs & Session Auth",
-        "GIO / GVFS • UDisks2 • libarchive • Linux-PAM",
+        "GIO / GVFS • UDisks2 • libarchive • poppler-glib • Linux-PAM",
         "SYSTEM", NULL));
 
     settings_bento_add_pair(GTK_WIDGET(self), card_hw, card_stack);

@@ -6,7 +6,7 @@ This document provides technical guidelines, architecture maps, testing workflow
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -21,6 +21,8 @@ src/
 ├── dbus_helpers.h/c                Shared GDBus helpers (NetworkManager, BlueZ, UPower)
 ├── audio/
 │   └── pa_conn.h/c                 Shared PulseAudio/PipeWire connection + 2s auto-reconnect (volume, control-center, media, settings audio)
+├── common/
+│   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
 ├── compositor/
 │   ├── compositor.h                Compositor abstraction interface
 │   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
@@ -144,7 +146,7 @@ data/
     └── *.blp                       Blueprint Markup (.blp) declarative UI templates
 
 tests/
-├── test_config.c                   Config JSON load/save roundtrip & defaults resolution tests
+├── test_config.c                   Per-domain TOML store tests: defaults parity, round-trip, `conf.d`, patching, subscriptions, migration
 ├── test_pam_auth.c                 Async PAM worker error/null/cancellation handling tests
 ├── test_idle_manager.c             Idle manager timeout & inhibitor state machine tests
 ├── test_ipc.c                      UNIX domain socket IPC server/client dispatch tests
@@ -179,7 +181,7 @@ tests/
 - `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
 - `libpulse`, `libpulse-mainloop-glib`
 - `pam` (`libpam`)
-- `libarchive`, `mpv` (`libmpv`)
+- `poppler-glib`, `libarchive`, `mpv` (`libmpv`)
 - `uade` (`libuade`), `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
 - `blueprint-compiler`, `meson`, `ninja`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
@@ -208,7 +210,8 @@ meson install -C builddir
 ### Automated Test Suites (`meson test -C builddir`)
 | Suite Name | Binary | Coverage |
 | :--- | :--- | :--- |
-| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` / `touch_gestures` / flat `files_*` fields, unknown-key preservation, defaults fallback. |
+| `config-roundtrip` | `test-config` | `KajoConfigStore` per-domain TOML: compiled-vs-shipped defaults parity, round trips and clamping, `conf.d` overlays with base-save isolation, concurrent readers, syntax-error preservation, comment/unknown-key preserving patch, patcher never writing an unparsable file, subscriber thread delivery, legacy `config.json` migration. |
+| `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
@@ -256,6 +259,19 @@ Run this before merging any change that touches object lifetimes, async callback
 
 # 5. Run kajo-greeter inside a nested Niri compositor window on your desktop
 KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
+```
+
+**Configuration while developing** (see `docs/spec_toml_config.md`):
+
+```bash
+# Use a throw-away config directory instead of ~/.config/kajo (never touches your real files)
+KAJO_CONFIG_DIR=/tmp/kajo-cfg ./builddir/kajo-settings
+
+# Read shipped defaults from the source tree (the lookup no longer checks the current
+# directory or a compiled-in source path; without this, a missing user file falls back to the
+# installed defaults in ~/.local/share/kajo/defaults, /usr/local/share/kajo/defaults, /usr/share/kajo/defaults,
+# and finally to the compiled defaults, which the test suite keeps identical to data/defaults/*.toml)
+KAJO_DEFAULTS_DIR=$PWD/data/defaults ./builddir/kajo
 ```
 
 ---

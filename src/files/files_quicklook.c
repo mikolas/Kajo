@@ -1,6 +1,8 @@
 #include "files_quicklook.h"
 #include "files_ops.h"
+#include "../common/pdf_render.h"
 #include "../player/player_mpv.h"
+#include <poppler.h>
 #include <archive.h>
 #include <archive_entry.h>
 #include <cairo.h>
@@ -18,6 +20,12 @@ struct _KajoQuickLook {
     KajoFileItem *current_item;
     GFile *current_dir;
     GCancellable *preview_cancel;
+    GCancellable *insp_thumb_cancel;
+
+    /* Active PDF Document for Multi-Page Quick Look */
+    PopplerDocument *pdf_doc;
+    int pdf_page_idx;
+    int pdf_n_pages;
 
     /* Right Inspector Widgets */
     GtkWidget *insp_preview_stack;
@@ -43,6 +51,10 @@ struct _KajoQuickLook {
     GtkWidget *ql_stack;
     GtkWidget *ql_picture;
     GtkWidget *ql_img_info_lbl;
+    GtkWidget *ql_pdf_picture;
+    GtkWidget *ql_pdf_page_lbl;
+    GtkWidget *ql_pdf_prev_btn;
+    GtkWidget *ql_pdf_next_btn;
     KajoPlayerMpv *ql_mpv;
     GtkWidget *ql_gl_area;
     GtkWidget *ql_media_play_btn;
@@ -120,6 +132,46 @@ on_ql_media_seek_value_changed(GtkRange *range, gpointer user_data)
     if (dur > 0) {
         double frac = CLAMP(gtk_range_get_value(range), 0.0, 1.0);
         kajo_player_mpv_seek_absolute_usec(self->ql_mpv, (gint64)(frac * (double)dur));
+    }
+}
+
+
+static void
+update_pdf_quicklook_page(KajoQuickLook *self)
+{
+    if (!self || !self->pdf_doc) return;
+
+    g_autoptr(GdkTexture) tex = kajo_pdf_render_page_texture(self->pdf_doc, self->pdf_page_idx, 720);
+    if (tex)
+        gtk_picture_set_paintable(GTK_PICTURE(self->ql_pdf_picture), GDK_PAINTABLE(tex));
+
+    g_autofree char *pg_txt = g_strdup_printf(
+        "PDF DOCUMENT  •  PAGE %d / %d",
+        self->pdf_page_idx + 1,
+        self->pdf_n_pages
+    );
+    gtk_label_set_text(GTK_LABEL(self->ql_pdf_page_lbl), pg_txt);
+    gtk_widget_set_sensitive(self->ql_pdf_prev_btn, self->pdf_page_idx > 0);
+    gtk_widget_set_sensitive(self->ql_pdf_next_btn, self->pdf_page_idx + 1 < self->pdf_n_pages);
+}
+
+static void
+on_pdf_prev_page_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    if (self->pdf_doc && self->pdf_page_idx > 0) {
+        self->pdf_page_idx--;
+        update_pdf_quicklook_page(self);
+    }
+}
+
+static void
+on_pdf_next_page_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    if (self->pdf_doc && self->pdf_page_idx + 1 < self->pdf_n_pages) {
+        self->pdf_page_idx++;
+        update_pdf_quicklook_page(self);
     }
 }
 
@@ -567,7 +619,36 @@ build_quicklook_overlay_ui(KajoQuickLook *self)
     gtk_box_append(GTK_BOX(img_page), self->ql_img_info_lbl);
     gtk_stack_add_named(GTK_STACK(self->ql_stack), img_page, "image");
 
-    /* Page B: Audio / Video Preview (libmpv + GtkGLArea) */
+    /* Page B: PDF Document Preview (Poppler) */
+    GtkWidget *pdf_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_add_css_class(pdf_page, "shell-popover-body");
+    self->ql_pdf_picture = gtk_picture_new();
+    gtk_picture_set_content_fit(GTK_PICTURE(self->ql_pdf_picture), GTK_CONTENT_FIT_CONTAIN);
+    gtk_widget_set_hexpand(self->ql_pdf_picture, TRUE);
+    gtk_widget_set_vexpand(self->ql_pdf_picture, TRUE);
+
+    GtkWidget *pdf_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_halign(pdf_bar, GTK_ALIGN_CENTER);
+    self->ql_pdf_prev_btn = gtk_button_new_with_label("‹ PREV PAGE");
+    gtk_widget_add_css_class(self->ql_pdf_prev_btn, "flat");
+    g_signal_connect(self->ql_pdf_prev_btn, "clicked", G_CALLBACK(on_pdf_prev_page_clicked), self);
+
+    self->ql_pdf_page_lbl = gtk_label_new("PAGE 1 / 1");
+    gtk_widget_add_css_class(self->ql_pdf_page_lbl, "shell-popover-badge");
+
+    self->ql_pdf_next_btn = gtk_button_new_with_label("NEXT PAGE ›");
+    gtk_widget_add_css_class(self->ql_pdf_next_btn, "flat");
+    g_signal_connect(self->ql_pdf_next_btn, "clicked", G_CALLBACK(on_pdf_next_page_clicked), self);
+
+    gtk_box_append(GTK_BOX(pdf_bar), self->ql_pdf_prev_btn);
+    gtk_box_append(GTK_BOX(pdf_bar), self->ql_pdf_page_lbl);
+    gtk_box_append(GTK_BOX(pdf_bar), self->ql_pdf_next_btn);
+
+    gtk_box_append(GTK_BOX(pdf_page), self->ql_pdf_picture);
+    gtk_box_append(GTK_BOX(pdf_page), pdf_bar);
+    gtk_stack_add_named(GTK_STACK(self->ql_stack), pdf_page, "pdf");
+
+    /* Page C: Audio / Video Preview (libmpv + GtkGLArea) */
     GtkWidget *media_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
     gtk_widget_add_css_class(media_page, "shell-popover-body");
 
@@ -857,7 +938,21 @@ populate_quicklook_modal_file(KajoQuickLook *self, KajoFileItem *item, GFile *fi
                          (g_str_has_prefix(ctype, "video/") || g_str_has_prefix(ctype, "audio/")));
     g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), is_dir);
 
-    /* 2. Image Preview */
+    /* 2. PDF Document Preview (Poppler) */
+    if ((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
+        (name && g_str_has_suffix(name, ".pdf"))) {
+        g_autoptr(GError) pdf_err = NULL;
+        self->pdf_doc = poppler_document_new_from_gfile(file, NULL, NULL, &pdf_err);
+        if (self->pdf_doc) {
+            self->pdf_n_pages = poppler_document_get_n_pages(self->pdf_doc);
+            self->pdf_page_idx = 0;
+            gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "pdf");
+            update_pdf_quicklook_page(self);
+            return;
+        }
+    }
+
+    /* 3. Image Preview */
     if (ctype && g_str_has_prefix(ctype, "image/")) {
         gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "image");
         gtk_picture_set_file(GTK_PICTURE(self->ql_picture), file);
@@ -935,6 +1030,7 @@ populate_quicklook_modal(KajoQuickLook *self)
 
     if (!is_media)
         stop_media_playback(self);
+    g_clear_object(&self->pdf_doc);
     if (!ctype || !g_str_has_prefix(ctype, "image/"))
         gtk_picture_set_file(GTK_PICTURE(self->ql_picture), NULL);
 
@@ -982,10 +1078,58 @@ populate_quicklook_modal(KajoQuickLook *self)
 
 /* ─── Public API ─── */
 
+static void
+insp_pdf_thumb_thread_cb(GTask *task,
+                         gpointer source_object,
+                         gpointer task_data G_GNUC_UNUSED,
+                         GCancellable *cancellable)
+{
+    GFile *file = G_FILE(source_object);
+    GError *err = NULL;
+    g_autoptr(PopplerDocument) doc = poppler_document_new_from_gfile(file, NULL, cancellable, &err);
+    if (!doc) {
+        g_task_return_error(task, err ? err : g_error_new_literal(G_IO_ERROR, G_IO_ERROR_FAILED, "PDF open failed"));
+        return;
+    }
+    GdkTexture *tex = kajo_pdf_render_page_texture(doc, 0, 160);
+    if (!tex) {
+        g_task_return_new_error(task, G_IO_ERROR, G_IO_ERROR_FAILED, "PDF page render failed");
+        return;
+    }
+    if (g_cancellable_set_error_if_cancelled(cancellable, &err)) {
+        g_object_unref(tex);
+        g_task_return_error(task, err);
+        return;
+    }
+    g_task_return_pointer(task, tex, g_object_unref);
+}
+
+static void
+on_insp_pdf_thumb_ready(GObject *source G_GNUC_UNUSED,
+                        GAsyncResult *res,
+                        gpointer user_data)
+{
+    KajoQuickLook *self = user_data;
+    g_autoptr(GError) error = NULL;
+    g_autoptr(GdkTexture) tex = g_task_propagate_pointer(G_TASK(res), &error);
+    if (!tex || g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
+        return;
+
+    if (self && self->insp_picture && self->insp_preview_stack) {
+        gtk_picture_set_paintable(GTK_PICTURE(self->insp_picture), GDK_PAINTABLE(tex));
+        gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");
+    }
+}
+
 void
 kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_dir)
 {
     g_return_if_fail(self != NULL);
+
+    if (self->insp_thumb_cancel) {
+        g_cancellable_cancel(self->insp_thumb_cancel);
+        g_clear_object(&self->insp_thumb_cancel);
+    }
 
     g_set_object(&self->current_item, item);
     g_set_object(&self->current_dir, current_dir);
@@ -1039,6 +1183,7 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     gtk_widget_set_sensitive(self->insp_btn_trash, !in_archive);
 
     const char *ctype = kajo_file_item_get_content_type(item);
+    const char *name = kajo_file_item_get_name(item);
     GFile *file = kajo_file_item_get_file(item);
     gboolean is_dir = kajo_file_item_is_dir(item);
     g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
@@ -1061,6 +1206,15 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     if (ctype && g_str_has_prefix(ctype, "image/") && local_path != NULL) {
         gtk_picture_set_file(GTK_PICTURE(self->insp_picture), file);
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "image");
+    } else if (((ctype && g_strcmp0(ctype, "application/pdf") == 0) ||
+                (name && g_str_has_suffix(name, ".pdf"))) && local_path != NULL) {
+        gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
+        gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
+        if (file) {
+            self->insp_thumb_cancel = g_cancellable_new();
+            g_autoptr(GTask) task = g_task_new(file, self->insp_thumb_cancel, on_insp_pdf_thumb_ready, self);
+            g_task_run_in_thread(task, insp_pdf_thumb_thread_cb);
+        }
     } else {
         gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
@@ -1118,6 +1272,7 @@ kajo_quicklook_hide(KajoQuickLook *self)
         g_clear_object(&self->preview_cancel);
     }
     stop_media_playback(self);
+    g_clear_object(&self->pdf_doc);
     gtk_widget_set_visible(self->ql_backdrop, FALSE);
 }
 
@@ -1163,8 +1318,13 @@ kajo_quicklook_free(KajoQuickLook *self)
         g_cancellable_cancel(self->preview_cancel);
         g_clear_object(&self->preview_cancel);
     }
+    if (self->insp_thumb_cancel) {
+        g_cancellable_cancel(self->insp_thumb_cancel);
+        g_clear_object(&self->insp_thumb_cancel);
+    }
     stop_media_playback(self);
     g_clear_pointer(&self->ql_mpv, kajo_player_mpv_free);
+    g_clear_object(&self->pdf_doc);
     g_clear_object(&self->current_item);
     g_clear_object(&self->current_dir);
     g_free(self);

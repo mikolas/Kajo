@@ -59,4 +59,4 @@ right = [
 
 1. **Script Permissions**: Ensure your custom script files have execute permissions (`chmod +x ~/scripts/myscript.sh`).
 2. **Stdout Buffer**: The widget reads the **first line of output** emitted to `stdout`. Use `echo` or `print()` to output single-line strings.
-3. **Execution Timeout**: Avoid long-running blocking commands in `exec_cmd`. Scripts execute asynchronously without blocking the UI looper, but fast execution (<500ms) provides the smoothest experience.
+3. **Execution Timeout**: Avoid long-running blocking commands in `exec`. Scripts execute asynchronously without blocking the UI looper, but fast execution (<500ms) provides the smoothest experience.

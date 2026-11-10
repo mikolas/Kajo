@@ -1106,6 +1106,45 @@ kajo_cfg_domain_patch_toml(const KajoDomainSchema *schema,
     return g_string_free(doc, FALSE);
 }
 
+/* Parses `text` into a fresh domain struct without logging syntax errors.
+ * Returns FALSE if the text is not valid TOML. */
+static gboolean
+parse_text_quiet(const KajoDomainSchema *schema, void *dst, const char *text)
+{
+    kajo_cfg_domain_init_defaults(schema, dst);
+    toml_result_t res = toml_parse(text, (int)strlen(text));
+    if (!res.ok) {
+        toml_free(res);
+        return FALSE;
+    }
+    kajo_cfg_domain_apply_toml_table(schema, dst, res.toptab, FALSE, "patched result");
+    toml_free(res);
+    return TRUE;
+}
+
+/* TRUE when `patched` parses and yields exactly the values `new_draft` would
+ * yield from a freshly serialized file (so clamping is accounted for). */
+static gboolean
+patched_text_matches_draft(const KajoDomainSchema *schema,
+                           const char             *patched,
+                           const void             *new_draft)
+{
+    g_autofree gchar *expected_text = kajo_cfg_domain_serialize_toml(schema, new_draft);
+    if (!expected_text)
+        return FALSE;
+
+    void *expected = g_malloc0(schema->struct_size);
+    void *got      = g_malloc0(schema->struct_size);
+    gboolean ok = parse_text_quiet(schema, expected, expected_text) &&
+                  parse_text_quiet(schema, got, patched) &&
+                  kajo_cfg_domain_equal(schema, expected, got);
+    kajo_cfg_domain_clear(schema, expected);
+    kajo_cfg_domain_clear(schema, got);
+    g_free(expected);
+    g_free(got);
+    return ok;
+}
+
 gboolean
 kajo_cfg_domain_save_patched(const KajoDomainSchema *schema,
                              const void             *old_base,
@@ -1128,7 +1167,32 @@ kajo_cfg_domain_save_patched(const KajoDomainSchema *schema,
     if (!patched)
         return FALSE;
 
-    return g_file_set_contents(filepath, patched, -1, error);
+    if (patched_text_matches_draft(schema, patched, new_draft))
+        return g_file_set_contents(filepath, patched, -1, error);
+
+    /* The in-place patcher only understands plain `key = value` lines inside
+     * `[section]` headers. Quoted keys, dotted keys and inline tables make it
+     * emit a duplicate definition. Never write such a file: keep the user's
+     * original text in `<file>.bak` and write a freshly serialized file. */
+    g_autofree gchar *regenerated = kajo_cfg_domain_serialize_toml(schema, new_draft);
+    if (!regenerated)
+        return FALSE;
+
+    if (existing_toml && *existing_toml) {
+        g_autofree gchar *bak_path = g_strconcat(filepath, ".bak", NULL);
+        g_autoptr(GError) bak_err = NULL;
+        if (!g_file_set_contents(bak_path, existing_toml, -1, &bak_err)) {
+            g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                        "Could not back up '%s' before regenerating it (%s); not saving",
+                        filepath, bak_err ? bak_err->message : "unknown error");
+            return FALSE;
+        }
+        g_warning("Config: could not update '%s' in place (it uses key syntax the editor "
+                  "does not preserve); wrote a regenerated file, previous contents are in '%s'",
+                  filepath, bak_path);
+    }
+
+    return g_file_set_contents(filepath, regenerated, -1, error);
 }
 
 gboolean
@@ -1209,13 +1273,6 @@ kajo_config_find_default_file(const char *filename)
     if (g_file_test(usr_share, G_FILE_TEST_EXISTS))
         return usr_share;
     g_free(usr_share);
-
-#ifdef KAJO_SOURCE_DIR
-    gchar *src_path = g_build_filename(KAJO_SOURCE_DIR, "data", "defaults", filename, NULL);
-    if (g_file_test(src_path, G_FILE_TEST_EXISTS))
-        return src_path;
-    g_free(src_path);
-#endif
 
     return g_build_filename("/usr/share/kajo/defaults", filename, NULL);
 }

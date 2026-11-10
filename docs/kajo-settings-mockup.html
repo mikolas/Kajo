@@ -1184,11 +1184,11 @@
             <div class="settings-deck-top">
               <div class="settings-deck-titles">
                 <div class="shell-popover-title" id="deckTitle">KAJO MOD — RETRO AMIGA, C64 SID &amp; TRACKER ENGINE</div>
-                <div class="shell-popover-subtitle" id="deckSub">Persistent global defaults in ~/.config/kajo/config.json • Live IPC broadcast to org.kajo.Mod</div>
+                <div class="shell-popover-subtitle" id="deckSub">Persistent global defaults in ~/.config/kajo/*.toml • Live IPC broadcast to org.kajo.Mod</div>
               </div>
               <div class="settings-deck-badges">
                 <span class="shell-popover-badge accent" id="deckBadge1">LIBUADE + RESIDFP</span>
-                <span class="shell-popover-badge success" id="deckBadge2">CONFIG.JSON</span>
+                <span class="shell-popover-badge success" id="deckBadge2">TOML</span>
               </div>
             </div>
 
@@ -2558,7 +2558,7 @@
           <div class="shell-popover-footer settings-footer-bar">
             <div class="footer-status-left">
               <span class="shell-popover-badge success" id="footerStateBadge">✓ ALL CHANGES SAVED</span>
-              <span class="row-subtitle" id="footerStatusText">~/.config/kajo/config.json • Live IPC ready</span>
+              <span class="row-subtitle" id="footerStatusText">~/.config/kajo/*.toml • Live IPC ready</span>
             </div>
             <div class="footer-actions-right">
               <button class="kajo-btn files-nav-btn" id="btnSecondaryAction">↺ RESET DSP DEFAULTS</button>
@@ -2683,7 +2683,7 @@
           badge: '07 / 12 • WIDGETS',
           title: 'PANEL BAR WIDGET SECTIONS (LEFT / CENTER / RIGHT)',
           sub: 'Configure and reorder the 22 built-in ShellWidget modules across panel zones',
-          b1: '22 MODULES', b2: 'CONFIG.JSON',
+          b1: '22 MODULES', b2: 'TOML',
           c1: ['LEFT', '3 WIDGETS'], c2: ['CENTER', '2 WIDGETS'], c3: ['RIGHT', '9 WIDGETS'], c4: ['TOTAL', '14 ACTIVE'],
           secBtn: '↺ DEFAULT LAYOUT'
         },
@@ -2691,7 +2691,7 @@
           badge: '08 / 12 • NOTIFICATIONS',
           title: 'NOTIFICATION TOASTS & FREEDESKTOP DAEMON',
           sub: 'Toast timeout, Niri source-window focus activation & Notification Center ring buffer',
-          b1: 'DBUS DAEMON', b2: 'CONFIG.JSON',
+          b1: 'DBUS DAEMON', b2: 'TOML',
           c1: ['DAEMON', 'ACTIVE'], c2: ['TIMEOUT', '8000MS (8S)'], c3: ['HISTORY', '50 ITEMS'], c4: ['CLICK', 'FOCUS WINDOW'],
           secBtn: '🔔 TEST TOAST'
         },
@@ -2714,8 +2714,8 @@
         mod: {
           badge: '11 / 12 • KAJO MOD',
           title: 'KAJO MOD — RETRO AMIGA, C64 SID & TRACKER ENGINE',
-          sub: 'Persistent global defaults in ~/.config/kajo/config.json • Live IPC broadcast to org.kajo.Mod',
-          b1: 'LIBUADE + RESIDFP', b2: 'CONFIG.JSON',
+          sub: 'Persistent global defaults in ~/.config/kajo/*.toml • Live IPC broadcast to org.kajo.Mod',
+          b1: 'LIBUADE + RESIDFP', b2: 'TOML',
           c1: ['PRIO 1', 'UADE 3.05 (68K)'], c2: ['PRIO 2', 'RESIDFP 6581/8580'], c3: ['PAULA', 'A500 + LED AUTO'], c4: ['HVSC', 'STIL + MD5 READY'],
           secBtn: '↺ RESET DSP DEFAULTS'
         },
@@ -2771,8 +2771,8 @@
           ? '● UNSAVED CHANGES — PREVIEW ONLY'
           : '✓ ALL CHANGES SAVED';
         footerStatusText.textContent = dirty
-          ? 'Click SAVE & APPLY to write ~/.config/kajo/config.json'
-          : '~/.config/kajo/config.json • Live IPC ready';
+          ? 'Click SAVE & APPLY to write ~/.config/kajo/*.toml'
+          : '~/.config/kajo/*.toml • Live IPC ready';
         btnRevert.disabled = !dirty;
         btnSaveApply.textContent = dirty ? '[ ✓ SAVE & APPLY ]' : '[ ✓ SAVED & APPLIED ]';
       }

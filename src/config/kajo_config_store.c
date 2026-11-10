@@ -6,12 +6,18 @@
 #include <unistd.h>
 #include <string.h>
 
+/* Reference-counted so that a notification queued on another thread's main
+ * context can safely outlive unsubscribe(). `destroy_notify` runs when the last
+ * reference is dropped, never while a queued callback can still read user_data. */
 typedef struct {
+    gint                ref;
+    gint                active;   /* atomic: 0 once unsubscribed or the store is destroyed */
     guint               id;
     KajoConfigDomain    domains;
     KajoConfigChangedCb cb;
     gpointer            user_data;
     GDestroyNotify      destroy_notify;
+    GMainContext       *context;  /* thread-default context of the subscriber */
 } KajoConfigSub;
 
 struct _KajoConfigStore {
@@ -37,15 +43,23 @@ struct _KajoConfigStore {
     guint               next_sub_id;
 };
 
+static KajoConfigSub *
+sub_ref(KajoConfigSub *sub)
+{
+    g_atomic_int_inc(&sub->ref);
+    return sub;
+}
+
 static void
-sub_free(gpointer data)
+sub_unref(gpointer data)
 {
     KajoConfigSub *sub = (KajoConfigSub *)data;
-    if (!sub)
+    if (!sub || !g_atomic_int_dec_and_test(&sub->ref))
         return;
     if (sub->destroy_notify && sub->user_data) {
         sub->destroy_notify(sub->user_data);
     }
+    g_clear_pointer(&sub->context, g_main_context_unref);
     g_free(sub);
 }
 
@@ -138,39 +152,64 @@ build_effective_rc_snapshot(KajoConfigStore        *store,
     return snap;
 }
 
+typedef struct {
+    KajoConfigStore *store;
+    KajoConfigSub   *sub;       /* owns one reference */
+    KajoConfigDomain matched;
+} PendingNotify;
+
+static gboolean
+pending_notify_run(gpointer data)
+{
+    PendingNotify *pn = (PendingNotify *)data;
+    /* Skip if the subscriber went away while this call was queued */
+    if (g_atomic_int_get(&pn->sub->active))
+        pn->sub->cb(pn->store, pn->matched, pn->sub->user_data);
+    return G_SOURCE_REMOVE;
+}
+
 static void
-notify_subscribers_on_caller_thread(KajoConfigStore *store, KajoConfigDomain changed_mask)
+pending_notify_free(gpointer data)
+{
+    PendingNotify *pn = (PendingNotify *)data;
+    sub_unref(pn->sub);
+    g_free(pn);
+}
+
+/* Delivers each callback on the GMainContext that was the subscriber's
+ * thread-default context when it subscribed. When that context is owned by the
+ * calling thread the callback runs immediately (so main-thread callers see the
+ * same synchronous behaviour as before); otherwise it is queued on that context. */
+static void
+notify_subscribers(KajoConfigStore *store, KajoConfigDomain changed_mask)
 {
     if (!store || changed_mask == 0)
         return;
 
-    /* Snapshot subscriber list under lock so callbacks can safely call acquire_* or unsubscribe */
-    typedef struct {
-        KajoConfigChangedCb cb;
-        gpointer            user_data;
-        KajoConfigDomain    matched;
-    } PendingCall;
-
-    GArray *calls = g_array_new(FALSE, FALSE, sizeof(PendingCall));
+    GPtrArray *calls = g_ptr_array_new();
 
     g_mutex_lock(&store->lock);
     if (store->subscribers) {
         for (guint i = 0; i < store->subscribers->len; i++) {
             KajoConfigSub *sub = (KajoConfigSub *)g_ptr_array_index(store->subscribers, i);
             KajoConfigDomain matched = (KajoConfigDomain)(sub->domains & changed_mask);
-            if (matched != 0 && sub->cb) {
-                PendingCall pc = { sub->cb, sub->user_data, matched };
-                g_array_append_val(calls, pc);
+            if (matched != 0 && sub->cb && g_atomic_int_get(&sub->active)) {
+                PendingNotify *pn = g_new0(PendingNotify, 1);
+                pn->store   = store;
+                pn->sub     = sub_ref(sub);
+                pn->matched = matched;
+                g_ptr_array_add(calls, pn);
             }
         }
     }
     g_mutex_unlock(&store->lock);
 
     for (guint i = 0; i < calls->len; i++) {
-        PendingCall *pc = &g_array_index(calls, PendingCall, i);
-        pc->cb(store, pc->matched, pc->user_data);
+        PendingNotify *pn = (PendingNotify *)g_ptr_array_index(calls, i);
+        g_main_context_invoke_full(pn->sub->context, G_PRIORITY_DEFAULT,
+                                   pending_notify_run, pn, pending_notify_free);
     }
-    g_array_free(calls, TRUE);
+    g_ptr_array_free(calls, TRUE);
 }
 
 void
@@ -294,7 +333,7 @@ kajo_config_store_reload(KajoConfigStore *store, KajoConfigDomain domains)
     }
 
     if (changed_mask != 0) {
-        notify_subscribers_on_caller_thread(store, changed_mask);
+        notify_subscribers(store, changed_mask);
     }
 }
 
@@ -422,7 +461,7 @@ kajo_config_store_new_for_dir(const gchar *config_dir)
         }
     }
 
-    store->subscribers = g_ptr_array_new_with_free_func(sub_free);
+    store->subscribers = g_ptr_array_new_with_free_func(sub_unref);
     store->next_sub_id = 1;
 
     /* Run one-time legacy config.json -> *.toml auto-migration if applicable */
@@ -475,6 +514,10 @@ kajo_config_store_destroy(KajoConfigStore *store)
     }
 
     if (store->subscribers) {
+        for (guint i = 0; i < store->subscribers->len; i++) {
+            KajoConfigSub *sub = (KajoConfigSub *)g_ptr_array_index(store->subscribers, i);
+            g_atomic_int_set(&sub->active, 0);
+        }
         g_ptr_array_free(store->subscribers, TRUE);
         store->subscribers = NULL;
     }
@@ -780,6 +823,9 @@ kajo_config_store_subscribe(KajoConfigStore    *store,
     g_mutex_lock(&store->lock);
     guint id = store->next_sub_id++;
     KajoConfigSub *sub = g_new0(KajoConfigSub, 1);
+    sub->ref            = 1;
+    sub->active         = 1;
+    sub->context        = g_main_context_ref_thread_default();
     sub->id             = id;
     sub->domains        = domains;
     sub->cb             = cb;
@@ -804,6 +850,7 @@ kajo_config_store_unsubscribe(KajoConfigStore *store, guint sub_id)
         for (guint i = 0; i < store->subscribers->len; i++) {
             KajoConfigSub *sub = (KajoConfigSub *)g_ptr_array_index(store->subscribers, i);
             if (sub->id == sub_id) {
+                g_atomic_int_set(&sub->active, 0);
                 g_ptr_array_remove_index(store->subscribers, i);
                 break;
             }

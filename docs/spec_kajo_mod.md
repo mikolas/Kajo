@@ -2,7 +2,7 @@
 
 **Status:** Active Specification — tracking branch `feat/kajo-mod`  
 **Target Binary:** `kajo-mod` (`org.kajo.Mod`, `src/mod/`)  
-**Dependencies:** `libuade` (`uade >= 3.0`), `libsidplayfp` (`>= 3.0`, with `libresidfp` & `libstilview`), `libgme`, `libopenmpt`, `libxmp`, `libarchive`, `libpulse-simple` / `libpulse`, `gtk4`, `ShellConfig` (`src/config.c`)
+**Dependencies:** `libuade` (`uade >= 3.0`), `libsidplayfp` (`>= 3.0`, with `libresidfp` & `libstilview`), `libgme`, `libopenmpt`, `libxmp`, `libarchive`, `libpulse-simple` / `libpulse`, `gtk4`, `KajoConfigStore` (`src/config/`, domain `mod.toml`)
 
 ---
 
@@ -288,15 +288,18 @@ In Kajo's Niri configuration (`30-layout-animations.kdl`, `00-kajo.kdl`, `50-win
 
 ## 7. Suite Integration & Persistence
 
-1. **`ShellConfig` (`src/config.h` / `src/config.c`):**
-   - Persist preferences in `~/.config/kajo/config.json`:
-     - `mod_stereo_separation`: `int` (`0..100`, default `50`)
-     - `mod_interp_mode`: `string` (`"a500"`, `"a1200"`, `"nearest"`, `"linear"`, `"sinc"`, default `"a500"`)
-     - `mod_led_filter`: `string` (`"auto"`, `"on"`, `"off"`, default `"auto"`)
-     - `mod_sid_model`: `string` (`"auto"`, `"6581"`, `"8580"`, default `"auto"`)
-     - `mod_loop_mode`: `string` (`"advance"`, `"subsong"`, `"fadeout"`, default `"fadeout"`)
-     - `mod_vis_mode`: `string` (`"scope"`, `"pattern"`, `"info"`, `"playlist"`, default `"scope"`)
-     - `mod_volume`: `int` (`0..100`, default `80`)
+1. **`mod.toml` (`src/config/schemas/schema_mod.c`, `KajoModCfg`):**
+   - Preferences persist in `~/.config/kajo/mod.toml` (top-level keys; the table in `docs/spec_toml_config.md` §7 is generated from the schema and is authoritative):
+     - `filter_mode`: `"a500"` (default), `"a1200"`, `"near"`, `"linear"` (alias `"lin"`), `"sinc"`
+     - `led_mode`: `"auto"` (default), `"on"`, `"off"`
+     - `sid_model`: `"auto"` (default), `"6581"`, `"8580"`
+     - `stereo_sep_pct`: `0..100`, default `70`
+     - `end_action`: `"next-sub"` (default), `"loop"`, `"next-mod"`
+     - `uade_timeout_sec`: `0` (none) or `60..600`, default `180`
+     - `auto_extract_archives`: `true` (default)
+     - `hvsc_path`: string, default `""`
+   - The earlier draft listed `mod_volume`, `mod_vis_mode`, `mod_loop_mode` and `mod_interp_mode`; those are **not** configuration keys in the implemented schema.
+   - UI code subscribes to the `mod` domain; the audio and probe threads call `kajo_config_store_acquire_mod()` directly.
 2. **MPRIS2 (`org.mpris.MediaPlayer2.kajo_mod`):**
    - Reuses Kajo's MPRIS2 D-Bus pattern so the top panel `mpris` widget and media keys control `kajo-mod` out of the box.
 3. **Desktop Entry (`data/org.kajo.Mod.desktop`) & `docs/ui-gallery.html`:**

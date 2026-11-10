@@ -183,7 +183,7 @@ shell_autohide_reload_config(ShellAutohide *self, const KajoShellCfg *config)
     self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
     self->hide_duration   = config->autohide_hide_duration > 0 ? config->autohide_hide_duration : 200;
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
-    self->edge_strip_px   = 2;
+    self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
     self->enabled         = config->autohide_enabled;
     self->touch_gestures_enabled = config->touch_gestures_enabled;
 

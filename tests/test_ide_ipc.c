@@ -349,6 +349,9 @@ static void test_markdown_rich_embeds_and_inline_pango(void) {
   g_assert_cmpint(ide_markdown_classify_asset("docs/kajo-banner.svg"),
                   ==,
                   IDE_MD_EMBED_IMAGE);
+  g_assert_cmpint(ide_markdown_classify_asset("manual.pdf"),
+                  ==,
+                  IDE_MD_EMBED_PDF);
   g_assert_cmpint(ide_markdown_classify_asset("release.tar.gz"),
                   ==,
                   IDE_MD_EMBED_ARCHIVE);
