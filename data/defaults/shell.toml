@@ -12,6 +12,7 @@ reveal_delay                   = 200
 hide_delay                     = 1000
 reveal_duration                = 150
 hide_duration                  = 200
+edge_strip_px                  = 2
 
 [notifications]
 toast_timeout_ms               = 8000

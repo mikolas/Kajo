@@ -165,6 +165,7 @@ typedef struct {
     gint                   autohide_hide_delay;        /* [0..10000], default 1000 */
     gint                   autohide_reveal_duration;   /* [0..2000], default 150 */
     gint                   autohide_hide_duration;     /* [0..2000], default 200 */
+    gint                   autohide_edge_strip_px;     /* [1..16], default 2 */
 
     /* [notifications] */
     gint                   toast_timeout_ms;           /* [1000..30000], default 8000 */

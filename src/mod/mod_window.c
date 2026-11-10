@@ -123,17 +123,12 @@ weak_ref_new(gpointer obj)
 }
 
 static void
-weak_ref_free(GWeakRef *wr)
+weak_ref_free(gpointer data)
 {
+    GWeakRef *wr = (GWeakRef *)data;
     if (!wr) return;
     g_weak_ref_clear(wr);
     g_free(wr);
-}
-
-static void
-weak_ref_closure_free(gpointer data, GClosure *closure G_GNUC_UNUSED)
-{
-    weak_ref_free((GWeakRef *)data);
 }
 
 static void
@@ -1491,7 +1486,7 @@ kajo_mod_window_init(KajoModWindow *self)
 
     self->cfg_sub_id = kajo_config_store_subscribe(
         NULL, KAJO_CONFIG_DOMAIN_MOD, on_mod_config_changed,
-        weak_ref_new(self), (GDestroyNotify)weak_ref_closure_free);
+        weak_ref_new(self), weak_ref_free);
 
     gtk_window_set_decorated(GTK_WINDOW(self), FALSE);
     gtk_window_set_title(GTK_WINDOW(self), "Kajo Mod");

@@ -1,6 +1,9 @@
 #include "kajo_config_store.h"
 #include "kajo_config_migrate.h"
 #include <gio/gio.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 #include <string.h>
 
 typedef struct {
@@ -13,6 +16,7 @@ typedef struct {
 
 struct _KajoConfigStore {
     GMutex              lock;
+    GMutex              write_lock;
     gchar              *config_dir;
 
     /* Active immutable refcounted domain snapshots */
@@ -53,21 +57,21 @@ cmp_strings(gconstpointer a, gconstpointer b)
     return g_strcmp0(sa, sb);
 }
 
-static void
+static gboolean
 load_base_domain_into(KajoConfigStore *store, const KajoDomainSchema *schema, void *dst)
 {
     kajo_cfg_domain_init_defaults(schema, dst);
 
     g_autofree gchar *user_path = g_build_filename(store->config_dir, schema->filename, NULL);
     if (g_file_test(user_path, G_FILE_TEST_EXISTS)) {
-        kajo_cfg_domain_parse_toml_file(schema, dst, user_path, FALSE);
-        return;
+        return kajo_cfg_domain_parse_toml_file(schema, dst, user_path, FALSE);
     }
 
     g_autofree gchar *def_path = kajo_config_find_default_file(schema->filename);
     if (def_path && g_file_test(def_path, G_FILE_TEST_EXISTS)) {
         kajo_cfg_domain_parse_toml_file(schema, dst, def_path, FALSE);
     }
+    return TRUE;
 }
 
 static void
@@ -121,10 +125,15 @@ apply_confd_overlays(KajoConfigStore *store, const KajoDomainSchema *schema, voi
 }
 
 static void *
-build_effective_rc_snapshot(KajoConfigStore *store, const KajoDomainSchema *schema)
+build_effective_rc_snapshot(KajoConfigStore        *store,
+                            const KajoDomainSchema *schema,
+                            gboolean                allow_fallback_on_error)
 {
     void *snap = kajo_cfg_domain_new_rc_default(schema);
-    load_base_domain_into(store, schema, snap);
+    if (!load_base_domain_into(store, schema, snap) && !allow_fallback_on_error) {
+        kajo_cfg_domain_unref_rc(schema, snap);
+        return NULL;
+    }
     apply_confd_overlays(store, schema, snap);
     return snap;
 }
@@ -176,102 +185,112 @@ kajo_config_store_reload(KajoConfigStore *store, KajoConfigDomain domains)
 
     if (domains & KAJO_CONFIG_DOMAIN_THEME) {
         const KajoDomainSchema *s = kajo_schema_get_theme();
-        const KajoThemeCfg *new_snap = (const KajoThemeCfg *)build_effective_rc_snapshot(store, s);
+        const KajoThemeCfg *new_snap = (const KajoThemeCfg *)build_effective_rc_snapshot(store, s, store->theme_snap == NULL);
         const KajoThemeCfg *old_snap = NULL;
 
-        g_mutex_lock(&store->lock);
-        old_snap = store->theme_snap;
-        if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
-            store->theme_snap = new_snap;
-            changed_mask |= KAJO_CONFIG_DOMAIN_THEME;
-            new_snap = NULL;
-        } else {
-            old_snap = NULL;
-        }
-        g_mutex_unlock(&store->lock);
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->theme_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->theme_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_THEME;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
 
-        if (old_snap) kajo_theme_cfg_unref(old_snap);
-        if (new_snap) kajo_theme_cfg_unref(new_snap);
+            if (old_snap) kajo_theme_cfg_unref(old_snap);
+            if (new_snap) kajo_theme_cfg_unref(new_snap);
+        }
     }
 
     if (domains & KAJO_CONFIG_DOMAIN_SHELL) {
         const KajoDomainSchema *s = kajo_schema_get_shell();
-        const KajoShellCfg *new_snap = (const KajoShellCfg *)build_effective_rc_snapshot(store, s);
+        const KajoShellCfg *new_snap = (const KajoShellCfg *)build_effective_rc_snapshot(store, s, store->shell_snap == NULL);
         const KajoShellCfg *old_snap = NULL;
 
-        g_mutex_lock(&store->lock);
-        old_snap = store->shell_snap;
-        if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
-            store->shell_snap = new_snap;
-            changed_mask |= KAJO_CONFIG_DOMAIN_SHELL;
-            new_snap = NULL;
-        } else {
-            old_snap = NULL;
-        }
-        g_mutex_unlock(&store->lock);
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->shell_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->shell_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_SHELL;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
 
-        if (old_snap) kajo_shell_cfg_unref(old_snap);
-        if (new_snap) kajo_shell_cfg_unref(new_snap);
+            if (old_snap) kajo_shell_cfg_unref(old_snap);
+            if (new_snap) kajo_shell_cfg_unref(new_snap);
+        }
     }
 
     if (domains & KAJO_CONFIG_DOMAIN_IDE) {
         const KajoDomainSchema *s = kajo_schema_get_ide();
-        const KajoIdeCfg *new_snap = (const KajoIdeCfg *)build_effective_rc_snapshot(store, s);
+        const KajoIdeCfg *new_snap = (const KajoIdeCfg *)build_effective_rc_snapshot(store, s, store->ide_snap == NULL);
         const KajoIdeCfg *old_snap = NULL;
 
-        g_mutex_lock(&store->lock);
-        old_snap = store->ide_snap;
-        if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
-            store->ide_snap = new_snap;
-            changed_mask |= KAJO_CONFIG_DOMAIN_IDE;
-            new_snap = NULL;
-        } else {
-            old_snap = NULL;
-        }
-        g_mutex_unlock(&store->lock);
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->ide_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->ide_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_IDE;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
 
-        if (old_snap) kajo_ide_cfg_unref(old_snap);
-        if (new_snap) kajo_ide_cfg_unref(new_snap);
+            if (old_snap) kajo_ide_cfg_unref(old_snap);
+            if (new_snap) kajo_ide_cfg_unref(new_snap);
+        }
     }
 
     if (domains & KAJO_CONFIG_DOMAIN_FILES) {
         const KajoDomainSchema *s = kajo_schema_get_files();
-        const KajoFilesCfg *new_snap = (const KajoFilesCfg *)build_effective_rc_snapshot(store, s);
+        const KajoFilesCfg *new_snap = (const KajoFilesCfg *)build_effective_rc_snapshot(store, s, store->files_snap == NULL);
         const KajoFilesCfg *old_snap = NULL;
 
-        g_mutex_lock(&store->lock);
-        old_snap = store->files_snap;
-        if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
-            store->files_snap = new_snap;
-            changed_mask |= KAJO_CONFIG_DOMAIN_FILES;
-            new_snap = NULL;
-        } else {
-            old_snap = NULL;
-        }
-        g_mutex_unlock(&store->lock);
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->files_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->files_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_FILES;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
 
-        if (old_snap) kajo_files_cfg_unref(old_snap);
-        if (new_snap) kajo_files_cfg_unref(new_snap);
+            if (old_snap) kajo_files_cfg_unref(old_snap);
+            if (new_snap) kajo_files_cfg_unref(new_snap);
+        }
     }
 
     if (domains & KAJO_CONFIG_DOMAIN_MOD) {
         const KajoDomainSchema *s = kajo_schema_get_mod();
-        const KajoModCfg *new_snap = (const KajoModCfg *)build_effective_rc_snapshot(store, s);
+        const KajoModCfg *new_snap = (const KajoModCfg *)build_effective_rc_snapshot(store, s, store->mod_snap == NULL);
         const KajoModCfg *old_snap = NULL;
 
-        g_mutex_lock(&store->lock);
-        old_snap = store->mod_snap;
-        if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
-            store->mod_snap = new_snap;
-            changed_mask |= KAJO_CONFIG_DOMAIN_MOD;
-            new_snap = NULL;
-        } else {
-            old_snap = NULL;
-        }
-        g_mutex_unlock(&store->lock);
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->mod_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->mod_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_MOD;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
 
-        if (old_snap) kajo_mod_cfg_unref(old_snap);
-        if (new_snap) kajo_mod_cfg_unref(new_snap);
+            if (old_snap) kajo_mod_cfg_unref(old_snap);
+            if (new_snap) kajo_mod_cfg_unref(new_snap);
+        }
     }
 
     if (changed_mask != 0) {
@@ -390,6 +409,7 @@ kajo_config_store_new_for_dir(const gchar *config_dir)
 {
     KajoConfigStore *store = g_new0(KajoConfigStore, 1);
     g_mutex_init(&store->lock);
+    g_mutex_init(&store->write_lock);
 
     if (config_dir && *config_dir) {
         store->config_dir = g_strdup(config_dir);
@@ -409,11 +429,11 @@ kajo_config_store_new_for_dir(const gchar *config_dir)
     kajo_config_migrate_legacy_json(store->config_dir);
 
     /* Build initial snapshots */
-    store->theme_snap = (const KajoThemeCfg *)build_effective_rc_snapshot(store, kajo_schema_get_theme());
-    store->shell_snap = (const KajoShellCfg *)build_effective_rc_snapshot(store, kajo_schema_get_shell());
-    store->ide_snap   = (const KajoIdeCfg *)build_effective_rc_snapshot(store, kajo_schema_get_ide());
-    store->files_snap = (const KajoFilesCfg *)build_effective_rc_snapshot(store, kajo_schema_get_files());
-    store->mod_snap   = (const KajoModCfg *)build_effective_rc_snapshot(store, kajo_schema_get_mod());
+    store->theme_snap = (const KajoThemeCfg *)build_effective_rc_snapshot(store, kajo_schema_get_theme(), TRUE);
+    store->shell_snap = (const KajoShellCfg *)build_effective_rc_snapshot(store, kajo_schema_get_shell(), TRUE);
+    store->ide_snap   = (const KajoIdeCfg *)build_effective_rc_snapshot(store, kajo_schema_get_ide(), TRUE);
+    store->files_snap = (const KajoFilesCfg *)build_effective_rc_snapshot(store, kajo_schema_get_files(), TRUE);
+    store->mod_snap   = (const KajoModCfg *)build_effective_rc_snapshot(store, kajo_schema_get_mod(), TRUE);
 
     /* Attach GFileMonitors to config_dir and config_dir/conf.d */
     g_autoptr(GFile) base_gfile = g_file_new_for_path(store->config_dir);
@@ -466,6 +486,7 @@ kajo_config_store_destroy(KajoConfigStore *store)
     kajo_mod_cfg_unref(store->mod_snap);
 
     g_free(store->config_dir);
+    g_mutex_clear(&store->write_lock);
     g_mutex_clear(&store->lock);
     g_free(store);
 }
@@ -561,16 +582,70 @@ update_domain_generic(KajoConfigStore        *store,
     if (!schema || !mutate_cb)
         return FALSE;
 
+    g_mutex_lock(&store->write_lock);
+
+    g_mkdir_with_parents(store->config_dir, 0755);
+    g_autofree gchar *lock_name = g_strdup_printf(".%s.lock", schema->filename);
+    g_autofree gchar *lock_path = g_build_filename(store->config_dir, lock_name, NULL);
+    int lock_fd = open(lock_path, O_CREAT | O_RDWR, 0600);
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_EX);
+    }
+
+    g_autofree gchar *filepath = g_build_filename(store->config_dir, schema->filename, NULL);
+    g_autofree gchar *existing_toml = NULL;
+    gsize existing_len = 0;
+
+    void *old_base = g_malloc0(schema->struct_size);
+    kajo_cfg_domain_init_defaults(schema, old_base);
+
+    if (g_file_test(filepath, G_FILE_TEST_EXISTS)) {
+        if (!g_file_get_contents(filepath, &existing_toml, &existing_len, error)) {
+            kajo_cfg_domain_clear(schema, old_base);
+            g_free(old_base);
+            if (lock_fd >= 0) {
+                flock(lock_fd, LOCK_UN);
+                close(lock_fd);
+            }
+            g_mutex_unlock(&store->write_lock);
+            return FALSE;
+        }
+
+        if (!kajo_cfg_domain_parse_toml_str(schema, old_base, existing_toml,
+                                            (gssize)existing_len, FALSE, filepath)) {
+            g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                        "Refusing to overwrite '%s' because the existing file contains a TOML syntax error",
+                        filepath);
+            kajo_cfg_domain_clear(schema, old_base);
+            g_free(old_base);
+            if (lock_fd >= 0) {
+                flock(lock_fd, LOCK_UN);
+                close(lock_fd);
+            }
+            g_mutex_unlock(&store->write_lock);
+            return FALSE;
+        }
+    } else {
+        load_base_domain_into(store, schema, old_base);
+    }
+
     void *draft = g_malloc0(schema->struct_size);
-    load_base_domain_into(store, schema, draft);
+    kajo_cfg_domain_copy_into(schema, draft, old_base);
 
     mutate_cb(draft, user_data);
 
-    g_autofree gchar *filepath = g_build_filename(store->config_dir, schema->filename, NULL);
-    gboolean ok = kajo_cfg_domain_save_atomic(schema, draft, filepath, error);
+    gboolean ok = kajo_cfg_domain_save_patched(schema, old_base, draft, existing_toml, filepath, error);
 
     kajo_cfg_domain_clear(schema, draft);
     g_free(draft);
+    kajo_cfg_domain_clear(schema, old_base);
+    g_free(old_base);
+
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_UN);
+        close(lock_fd);
+    }
+    g_mutex_unlock(&store->write_lock);
 
     if (ok) {
         kajo_config_store_reload(store, schema->domain);

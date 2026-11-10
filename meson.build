@@ -555,11 +555,19 @@ install_data(
 test_config_exe = executable(
   'test-config',
   files('tests/test_config.c') + kajo_config_sources,
-  dependencies: [gio_dep, json_glib_dep],
+  dependencies: [gio_dep, json_glib_dep, m_dep],
   build_by_default: false,
 )
 test('config-roundtrip', test_config_exe,
   env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
+
+test_fuzz_toml_exe = executable(
+  'test-fuzz-toml-config',
+  files('tests/fuzz/fuzz_toml_config.c') + kajo_config_sources,
+  dependencies: [gio_dep, json_glib_dep, m_dep],
+  build_by_default: false,
+)
+test('fuzz-toml-config', test_fuzz_toml_exe)
 
 test_pam_exe = executable(
   'test-pam-auth',
