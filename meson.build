@@ -35,6 +35,7 @@ gio_dep = dependency('gio-2.0')
 gio_unix_dep = dependency('gio-unix-2.0')
 pulse_dep = dependency('libpulse')
 pulse_glib_dep = dependency('libpulse-mainloop-glib')
+poppler_dep = dependency('poppler-glib')
 archive_dep = dependency('libarchive')
 mpv_dep = dependency('mpv')
 egl_dep = dependency('egl')
@@ -315,6 +316,7 @@ files_sources = files(
   'src/files/files_diskimage.c',
   'src/files/files_sidebar.c',
   'src/files/files_quicklook.c',
+  'src/common/pdf_render.c',
   'src/player/player_mpv.c',
   'src/compositor/niri.c',
 )
@@ -328,6 +330,7 @@ executable(
     json_glib_dep,
     gio_dep,
     gio_unix_dep,
+    poppler_dep,
     archive_dep,
     mpv_dep,
     egl_dep,
@@ -472,6 +475,7 @@ ide_sources = files(
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
   'src/ide/ide_mermaid.c',
+  'src/common/pdf_render.c',
   'src/compositor/niri.c',
 )
 
@@ -485,6 +489,7 @@ executable(
     json_glib_dep,
     gio_dep,
     gio_unix_dep,
+    poppler_dep,
     archive_dep,
     m_dep,
     ide_ts_dep,
@@ -784,6 +789,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_agent_ipc.c',
     'src/ide/ide_markdown.c',
     'src/ide/ide_mermaid.c',
+    'src/common/pdf_render.c',
     'src/ide/ide_buffer.c',
     'src/ide/ide_syntax.c',
     'src/ide/ide_picker.c',
@@ -791,7 +797,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_tasks.c',
     'src/ide/ide_native_exe.c',
   ),
-  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, archive_dep, m_dep, ide_ts_dep],
+  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, poppler_dep, archive_dep, m_dep, ide_ts_dep],
   build_by_default: false,
 )
 test('ide-ipc', test_ide_ipc_exe)

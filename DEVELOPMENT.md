@@ -6,7 +6,7 @@ This document provides technical guidelines, architecture maps, testing workflow
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -21,6 +21,8 @@ src/
 ├── dbus_helpers.h/c                Shared GDBus helpers (NetworkManager, BlueZ, UPower)
 ├── audio/
 │   └── pa_conn.h/c                 Shared PulseAudio/PipeWire connection + 2s auto-reconnect (volume, control-center, media, settings audio)
+├── common/
+│   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
 ├── compositor/
 │   ├── compositor.h                Compositor abstraction interface
 │   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
@@ -179,7 +181,7 @@ tests/
 - `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
 - `libpulse`, `libpulse-mainloop-glib`
 - `pam` (`libpam`)
-- `libarchive`, `mpv` (`libmpv`)
+- `poppler-glib`, `libarchive`, `mpv` (`libmpv`)
 - `uade` (`libuade`), `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
 - `blueprint-compiler`, `meson`, `ninja`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:

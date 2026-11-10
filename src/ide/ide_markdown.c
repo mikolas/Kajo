@@ -1,4 +1,5 @@
 #include "ide_markdown.h"
+#include "../common/pdf_render.h"
 #include "ide_buffer.h"
 #include <archive.h>
 #include <archive_entry.h>
@@ -7,6 +8,7 @@
 #include <gtksourceview/gtksource.h>
 #include <math.h>
 #include <pango/pangocairo.h>
+#include <poppler.h>
 #include <string.h>
 
 struct _IdeMarkdownView {
@@ -47,6 +49,18 @@ typedef struct {
   int              tex_height;
   double           zoom; /* 0.0 = FIT mode, >0.0 = explicit scale */
 } ImageCardState;
+
+typedef struct {
+  IdeMarkdownView *md;
+  PopplerDocument *doc;
+  char            *resolved_path;
+  GtkWidget       *picture;
+  GtkWidget       *page_label;
+  GtkWidget       *prev_btn;
+  GtkWidget       *next_btn;
+  int              page_idx;
+  int              n_pages;
+} PdfCardState;
 
 typedef struct {
   GtkWidget *stack;
@@ -106,6 +120,10 @@ IdeMarkdownEmbedKind ide_markdown_classify_asset(const char *path_or_ref) {
       g_strcmp0(ext, "bmp") == 0 || g_strcmp0(ext, "ico") == 0 ||
       g_strcmp0(ext, "avif") == 0 || g_strcmp0(ext, "xpm") == 0) {
     return IDE_MD_EMBED_IMAGE;
+  }
+
+  if (g_strcmp0(ext, "pdf") == 0) {
+    return IDE_MD_EMBED_PDF;
   }
 
   if (g_strcmp0(ext, "tar") == 0 || g_strcmp0(ext, "gz") == 0 ||
@@ -639,8 +657,7 @@ static void open_or_navigate_target(IdeMarkdownView *md, const char *uri_or_ref)
   if (!resolved) return;
 
   IdeMarkdownEmbedKind kind = ide_markdown_classify_asset(resolved);
-  if (((kind == IDE_MD_EMBED_DOCUMENT && !g_str_has_suffix(resolved, ".pdf")) ||
-       g_str_has_suffix(resolved, ".svg")) &&
+  if ((kind == IDE_MD_EMBED_DOCUMENT || g_str_has_suffix(resolved, ".svg")) &&
       md->open_file_cb && g_file_test(resolved, G_FILE_TEST_IS_REGULAR)) {
     md->open_file_cb(resolved, target_line > 0 ? target_line : 1, 1, md->user_data);
     return;
@@ -1101,7 +1118,140 @@ static GtkWidget *build_raw_svg_block_card(IdeMarkdownView *md, const char *svg_
   return build_image_card_from_texture(md, tex, "INLINE VECTOR SVG BLOCK", NULL, NULL, "SVG");
 }
 
-/* ─── 7. Embedded Archive Manifest Card (`libarchive`) & Media/File Cards ─── */
+/* ─── 7. Embedded Multi-Page PDF Card (`poppler-glib`) ─── */
+
+static void pdf_card_state_free(gpointer data) {
+  PdfCardState *st = data;
+  if (!st) return;
+  g_clear_object(&st->doc);
+  g_free(st->resolved_path);
+  g_free(st);
+}
+
+
+static void update_pdf_card_page(PdfCardState *st) {
+  if (!st || !st->doc) return;
+  g_autoptr(GdkTexture) tex = kajo_pdf_render_page_texture(st->doc, st->page_idx, 420);
+  if (tex) {
+    gtk_picture_set_paintable(GTK_PICTURE(st->picture), GDK_PAINTABLE(tex));
+    gtk_widget_set_size_request(st->picture, -1, 360);
+  }
+  g_autofree char *lbl =
+      g_strdup_printf("PAGE %d / %d", st->page_idx + 1, st->n_pages);
+  gtk_label_set_text(GTK_LABEL(st->page_label), lbl);
+  gtk_widget_set_sensitive(st->prev_btn, st->page_idx > 0);
+  gtk_widget_set_sensitive(st->next_btn, st->page_idx + 1 < st->n_pages);
+}
+
+static void on_pdf_card_prev(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  PdfCardState *st = user_data;
+  if (st && st->page_idx > 0) {
+    st->page_idx--;
+    update_pdf_card_page(st);
+  }
+}
+
+static void on_pdf_card_next(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  PdfCardState *st = user_data;
+  if (st && st->page_idx + 1 < st->n_pages) {
+    st->page_idx++;
+    update_pdf_card_page(st);
+  }
+}
+
+static void on_pdf_card_open(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  PdfCardState *st = user_data;
+  if (!st || !st->resolved_path) return;
+  open_or_navigate_target(st->md, st->resolved_path);
+}
+
+static GtkWidget *build_pdf_embed_card(IdeMarkdownView *md,
+                                       const char      *alt_text,
+                                       const char      *raw_src,
+                                       const char      *resolved_path) {
+  if (!resolved_path || !g_file_test(resolved_path, G_FILE_TEST_EXISTS)) {
+    return build_missing_asset_card("PDF DOCUMENT", alt_text, raw_src, resolved_path);
+  }
+
+  g_autoptr(GFile) gf = g_file_new_for_path(resolved_path);
+  PopplerDocument *doc = poppler_document_new_from_gfile(gf, NULL, NULL, NULL);
+  if (!doc) {
+    return build_missing_asset_card("PDF DECODE ERROR", alt_text, raw_src, resolved_path);
+  }
+
+  PdfCardState *st = g_new0(PdfCardState, 1);
+  st->md = md;
+  st->doc = doc;
+  st->resolved_path = g_strdup(resolved_path);
+  st->page_idx = 0;
+  st->n_pages = MAX(1, poppler_document_get_n_pages(doc));
+
+  GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(card, "ide-mermaid-card");
+  g_object_set_data_full(G_OBJECT(card), "pdf-card-state", st, pdf_card_state_free);
+
+  GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_add_css_class(hdr, "ide-mermaid-toolbar");
+  gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
+
+  GtkWidget *badge = gtk_label_new("📄 EMBEDDED PDF");
+  gtk_widget_add_css_class(badge, "shell-popover-badge");
+  gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+
+  g_autofree char *base = g_path_get_basename(resolved_path);
+  GtkWidget *title = gtk_label_new((alt_text && *alt_text) ? alt_text : base);
+  gtk_widget_add_css_class(title, "ide-tree-header-title");
+  gtk_label_set_ellipsize(GTK_LABEL(title), PANGO_ELLIPSIZE_END);
+  gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
+  gtk_widget_set_hexpand(title, TRUE);
+  gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
+
+  st->prev_btn = gtk_button_new_with_label("◀ PREV");
+  gtk_widget_set_focusable(st->prev_btn, FALSE);
+  gtk_widget_add_css_class(st->prev_btn, "ide-toolbar-btn");
+  gtk_widget_set_valign(st->prev_btn, GTK_ALIGN_CENTER);
+  g_signal_connect(st->prev_btn, "clicked", G_CALLBACK(on_pdf_card_prev), st);
+
+  st->page_label = gtk_label_new("PAGE 1 / 1");
+  gtk_widget_add_css_class(st->page_label, "shell-popover-badge");
+  gtk_widget_add_css_class(st->page_label, "accent");
+  gtk_widget_set_valign(st->page_label, GTK_ALIGN_CENTER);
+
+  st->next_btn = gtk_button_new_with_label("NEXT ▶");
+  gtk_widget_set_focusable(st->next_btn, FALSE);
+  gtk_widget_add_css_class(st->next_btn, "ide-toolbar-btn");
+  gtk_widget_set_valign(st->next_btn, GTK_ALIGN_CENTER);
+  g_signal_connect(st->next_btn, "clicked", G_CALLBACK(on_pdf_card_next), st);
+
+  GtkWidget *open_btn = gtk_button_new_with_label("↗ OPEN PDF");
+  gtk_widget_set_focusable(open_btn, FALSE);
+  gtk_widget_add_css_class(open_btn, "ide-toolbar-btn");
+  gtk_widget_set_valign(open_btn, GTK_ALIGN_CENTER);
+  g_signal_connect(open_btn, "clicked", G_CALLBACK(on_pdf_card_open), st);
+
+  gtk_box_append(GTK_BOX(hdr), badge);
+  gtk_box_append(GTK_BOX(hdr), title);
+  gtk_box_append(GTK_BOX(hdr), st->prev_btn);
+  gtk_box_append(GTK_BOX(hdr), st->page_label);
+  gtk_box_append(GTK_BOX(hdr), st->next_btn);
+  gtk_box_append(GTK_BOX(hdr), open_btn);
+  gtk_box_append(GTK_BOX(card), hdr);
+
+  st->picture = gtk_picture_new();
+  gtk_picture_set_can_shrink(GTK_PICTURE(st->picture), TRUE);
+  gtk_picture_set_content_fit(GTK_PICTURE(st->picture), GTK_CONTENT_FIT_CONTAIN);
+  gtk_widget_set_margin_top(st->picture, 8);
+  gtk_widget_set_margin_bottom(st->picture, 8);
+  gtk_box_append(GTK_BOX(card), st->picture);
+
+  update_pdf_card_page(st);
+  return card;
+}
+
+/* ─── 8. Embedded Archive Manifest Card (`libarchive`) & Media/File Cards ─── */
 
 static GtkWidget *build_archive_embed_card(const char *alt_text,
                                            const char *raw_src,
@@ -1237,6 +1387,8 @@ static GtkWidget *build_embed_widget_for_line(IdeMarkdownView *md,
   switch (kind) {
     case IDE_MD_EMBED_IMAGE:
       return build_image_embed_card(md, alt, src, resolved, link_url);
+    case IDE_MD_EMBED_PDF:
+      return build_pdf_embed_card(md, alt, src, resolved);
     case IDE_MD_EMBED_ARCHIVE:
       return build_archive_embed_card(alt, src, resolved);
     case IDE_MD_EMBED_MEDIA:
@@ -1936,7 +2088,7 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_widget_add_css_class(sync_badge, "shell-popover-badge");
   gtk_widget_set_valign(sync_badge, GTK_ALIGN_CENTER);
 
-  GtkWidget *badge = gtk_label_new("CAIRO + PANGO");
+  GtkWidget *badge = gtk_label_new("CAIRO + PANGO + POPPLER");
   gtk_widget_add_css_class(badge, "shell-popover-badge");
   gtk_widget_add_css_class(badge, "accent");
   gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
