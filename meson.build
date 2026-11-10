@@ -863,6 +863,43 @@ test_comp_config_exe = executable(
 test('comp-config', test_comp_config_exe,
   env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
 
+# The compositor binary. System headers are included as -isystem so the strict
+# warning set applies to our code only (spec §7.2.2).
+comp_wlroots_dep = dependency('wlroots-0.20', include_type: 'system')
+comp_wl_server_dep = dependency('wayland-server', include_type: 'system')
+comp_talloc_dep = dependency('talloc', include_type: 'system')
+kajo_comp_exe = executable(
+  'kajo-comp',
+  files(
+    'src/comp/main.c',
+    'src/comp/comp_listen.c',
+    'src/comp/comp_server.c',
+    'src/comp/comp_output.c',
+    'src/comp/comp_input.c',
+    'src/comp/comp_spawn.c',
+  ),
+  c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
+  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep,
+                 dependency('xkbcommon', include_type: 'system')],
+  install: true,
+)
+
+comp_test_client_exe = executable(
+  'comp-test-client',
+  files('tests/comp/comp_test_client.c'),
+  c_args: comp_strict_args,
+  dependencies: [dependency('wayland-client', include_type: 'system')],
+  build_by_default: false,
+)
+test('comp-headless', find_program('tests/comp/comp_headless_smoke.sh'),
+  args: [kajo_comp_exe, comp_test_client_exe],
+  depends: [kajo_comp_exe, comp_test_client_exe],
+  timeout: 180,
+)
+
+test('comp-audit', find_program('scripts/audit.sh'), args: ['comp'],
+  workdir: meson.project_source_root())
+
 # Fuzz targets, built here as corpus drivers (smoke tests). Real fuzzing: DEVELOPMENT.md.
 test_fuzz_comp_layout_exe = executable(
   'test-fuzz-comp-layout',

@@ -24,6 +24,13 @@ src/
 ├── common/
 │   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
 ├── comp/                           kajo-comp compositor (in progress, docs/spec_kajo_comp.md §8)
+│   ├── main.c                      kajo-comp entry point: options, SIGPIPE ignored, log level
+│   ├── comp_server.h/c             Server lifecycle (root talloc context), backend/renderer/allocator, protocol globals
+│   ├── comp_output.c               Outputs: preferred mode, scene render per frame, hot-unplug
+│   ├── comp_input.c                Seat, keyboards (xkb), pointers, cursor; built-in Ctrl+Alt+Fn VT switch
+│   ├── comp_spawn.c                fork/exec without a shell (own session), SIGCHLD reaping, startup command
+│   ├── comp_listen.h/c             comp_listen(): talloc-owned listeners that unlink themselves when freed
+│   └── comp_log.h                  COMP_WARN_RETURN (rate-limited, never aborts); no logging of key input
 │   └── core/                       Pure core: no wlroots/Vulkan/GLib, built with -Werror and the strict flag set
 │       ├── comp_diag.h/c           Collected config diagnostics ("binds.toml:12: unknown action ...")
 │       ├── comp_spring.h/c         Analytical damped spring; retargeting keeps position and velocity
@@ -223,6 +230,8 @@ meson install -C builddir
 | `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
 | `comp-config` | `test-comp-config` | `binds.toml` / `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics (the spec cannot advertise a bind or rule key that does not exist). |
 | `fuzz-comp-layout`, `fuzz-comp-config` | `test-fuzz-comp-*` | Corpus-driver builds of the two libFuzzer targets in `tests/fuzz/`. |
+| `comp-headless` | `tests/comp/comp_headless_smoke.sh` | Runs `kajo-comp` on the wlroots headless backend with the pixman renderer and a private `XDG_RUNTIME_DIR`: required globals present (`comp-test-client globals`), 200 connect/disconnect cycles, command exit status propagated, missing command → 127, SIGTERM → 0, clients survive compositor shutdown. |
+| `comp-audit` | `scripts/audit.sh comp` | Fails if `src/comp` uses `assert`/`abort`/`g_error`/sleeps/blocking subprocess calls or a `waitpid` without `WNOHANG`, or if `src/comp/core` includes wlroots, Vulkan or GLib headers. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
@@ -243,6 +252,17 @@ meson install -C builddir
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
 | `niri-ipc` | `test-niri` | Mock-Niri socket: exact JSON of `ToggleWindowFloating` / `LoadConfigFile` actions (regression for the dead FLOAT / TILE button), rejection logging, and EventStream parsing (workspaces, windows, focus, keyboard layouts). |
+
+### Running kajo-comp
+
+```bash
+# Headless (no window, nothing on screen): runs COMMAND as a client and exits with its status
+WLR_BACKENDS=headless WLR_RENDERER=pixman ./builddir/kajo-comp --exit-with-command -- wayland-info
+# Nested in your current Wayland session (opens a window; "Mod" mapped to Alt so the host keeps Super)
+WLR_BACKENDS=wayland ./builddir/kajo-comp --mod alt -- kitty
+# ASan/LSan run: suppress only Mesa's EGL driver allocations (see the file)
+LSAN_OPTIONS=suppressions=$PWD/scripts/lsan-comp.supp ASAN_OPTIONS=detect_leaks=1 <asan build>/kajo-comp ...
+```
 
 ### Fuzzing the compositor core (libFuzzer)
 

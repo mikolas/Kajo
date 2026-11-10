@@ -9,6 +9,8 @@
 #   scripts/audit.sh blocking   synchronous subprocess / D-Bus calls (UI-thread risks)
 #   scripts/audit.sh lifetimes  async calls that pass a raw pointer with no cancellable
 #   scripts/audit.sh colors     raw hex colours in style.css that should be tokens
+#   scripts/audit.sh comp       kajo-comp rules (spec §7.2/§7.3): no assert/abort/blocking calls in
+#                               src/comp, no wlroots/Vulkan/GLib in src/comp/core. Exits 1 on violation.
 #   scripts/audit.sh all
 #
 # Memory/UB bugs are found at runtime instead: scripts/asan-test.sh
@@ -146,6 +148,19 @@ cmd_colors() {
         | sort | uniq -c | sort -rn | head -20
 }
 
+cmd_comp() {
+    local bad=0
+    echo "== kajo-comp: forbidden calls in src/comp (spec §7.2.1, §7.2.3)"
+    # waitpid is only allowed with WNOHANG; sleeps and synchronous subprocess helpers never
+    if grep -rnE "\b(assert|abort|g_error|g_spawn_sync|g_spawn_command_line_sync|system|popen|sleep|usleep|nanosleep)[[:space:]]*\(" \
+            src/comp --include='*.c' --include='*.h'; then bad=1; fi
+    if grep -rnE "\bwaitpid[[:space:]]*\(" src/comp --include='*.c' | grep -v WNOHANG; then bad=1; fi
+    echo "== kajo-comp: src/comp/core must not include wlroots, Vulkan or GLib (spec §7.2.4)"
+    if grep -rnE "#include[[:space:]]*<(wlr/|vulkan/|glib|gio/|wayland-)" src/comp/core; then bad=1; fi
+    [ "$bad" = 0 ] && echo "ok"
+    return "$bad"
+}
+
 case "${1:-all}" in
     warnings)  cmd_warnings ;;
     tidy)      cmd_tidy ;;
@@ -154,6 +169,7 @@ case "${1:-all}" in
     blocking)  cmd_blocking ;;
     lifetimes) cmd_lifetimes ;;
     colors)    cmd_colors ;;
-    all)       cmd_sizes; cmd_dups; cmd_blocking; cmd_lifetimes; cmd_colors; cmd_warnings; cmd_tidy ;;
-    *) sed -n '2,15p' "$0"; exit 2 ;;
+    comp)      cmd_comp ;;
+    all)       cmd_sizes; cmd_dups; cmd_blocking; cmd_lifetimes; cmd_colors; cmd_comp; cmd_warnings; cmd_tidy ;;
+    *) sed -n '2,17p' "$0"; exit 2 ;;
 esac
