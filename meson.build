@@ -810,6 +810,78 @@ test_mod_router_exe = executable(
 )
 test('mod-router', test_mod_router_exe)
 
+# ─── kajo-comp (compositor) ───────────────────────────────────────────────
+# Pure core: no wlroots, Vulkan or GLib headers (spec §7.2.4). Built with the
+# stricter warning set from spec §7.2.2; -Werror is applied here only.
+comp_strict_args = [
+  '-Wall', '-Wextra', '-Werror', '-Wshadow', '-Wnull-dereference', '-Wformat=2',
+  '-Wstrict-prototypes', '-Wmissing-prototypes', '-Wconversion', '-Wsign-conversion',
+  '-Wvla', '-fno-common', '-D_POSIX_C_SOURCE=200809L',
+]
+comp_xkb_dep   = dependency('xkbcommon')
+comp_pcre2_dep = dependency('libpcre2-8')
+# The vendored TOML parser is third-party code: built without the strict set.
+comp_toml_lib = static_library('kajo-comp-toml', files('src/vendor/tomlc17/tomlc17.c'))
+comp_core_lib = static_library(
+  'kajo-comp-core',
+  files(
+    'src/comp/core/comp_diag.c',
+    'src/comp/core/comp_spring.c',
+    'src/comp/core/comp_layout.c',
+    'src/comp/core/comp_binds.c',
+    'src/comp/core/comp_rules.c',
+  ),
+  c_args: comp_strict_args,
+  link_with: comp_toml_lib,
+  dependencies: [m_dep, comp_xkb_dep, comp_pcre2_dep],
+)
+comp_core_dep = declare_dependency(link_with: [comp_core_lib, comp_toml_lib],
+                                   dependencies: [m_dep, comp_xkb_dep, comp_pcre2_dep])
+
+test_comp_spring_exe = executable(
+  'test-comp-spring',
+  files('tests/test_comp_spring.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-spring', test_comp_spring_exe)
+
+test_comp_layout_exe = executable(
+  'test-comp-layout',
+  files('tests/test_comp_layout.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-layout', test_comp_layout_exe)
+
+test_comp_config_exe = executable(
+  'test-comp-config',
+  files('tests/test_comp_config.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-config', test_comp_config_exe,
+  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
+
+# Fuzz targets, built here as corpus drivers (smoke tests). Real fuzzing: DEVELOPMENT.md.
+test_fuzz_comp_layout_exe = executable(
+  'test-fuzz-comp-layout',
+  files('tests/fuzz/fuzz_comp_layout.c'),
+  c_args: comp_strict_args,
+  dependencies: [comp_core_dep],
+  build_by_default: false,
+)
+test('fuzz-comp-layout', test_fuzz_comp_layout_exe)
+
+test_fuzz_comp_config_exe = executable(
+  'test-fuzz-comp-config',
+  files('tests/fuzz/fuzz_comp_config.c'),
+  c_args: comp_strict_args,
+  dependencies: [comp_core_dep],
+  build_by_default: false,
+)
+test('fuzz-comp-config', test_fuzz_comp_config_exe)
+
 gnome.post_install(
   update_desktop_database: true,
 )

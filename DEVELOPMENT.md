@@ -14,7 +14,7 @@ src/
 ├── shell.h/c                       ShellApp — core subsystem wiring & live widget reconciliation
 ├── panel.h/c                       Panel layer-shell surface & 2px Wayland autohide trigger strip
 ├── autohide.h/c                    Autohide reveal/hide state machine & live config reload
-├── config.h/c                      JSON configuration parser & serializer (3-tier path resolution)
+├── config.h                        Thin include of the per-domain TOML store in config/ (docs/spec_toml_config.md)
 ├── theme.h/c                       GTK CSS theme engine, override loader, GFileMonitor hot-reload, accent presets & shell_ide_font_stack()
 ├── app_init.h/c                    Standalone-app boot: kajo_app_init_theme() / kajo_app_shutdown_theme()
 ├── icons.h/c                       Icon resolution (Fluent UI SVGs + desktop/theme fallback)
@@ -23,6 +23,13 @@ src/
 │   └── pa_conn.h/c                 Shared PulseAudio/PipeWire connection + 2s auto-reconnect (volume, control-center, media, settings audio)
 ├── common/
 │   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
+├── comp/                           kajo-comp compositor (in progress, docs/spec_kajo_comp.md §8)
+│   └── core/                       Pure core: no wlroots/Vulkan/GLib, built with -Werror and the strict flag set
+│       ├── comp_diag.h/c           Collected config diagnostics ("binds.toml:12: unknown action ...")
+│       ├── comp_spring.h/c         Analytical damped spring; retargeting keeps position and velocity
+│       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, floating; geometry + camera target
+│       ├── comp_binds.h/c          binds.toml parser (xkbcommon keysyms, wheel triggers) and key/wheel lookup
+│       └── comp_rules.h/c          rules.toml parser (PCRE2 regexes) and window/layer rule matching
 ├── compositor/
 │   ├── compositor.h                Compositor abstraction interface
 │   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
@@ -212,6 +219,10 @@ meson install -C builddir
 | :--- | :--- | :--- |
 | `config-roundtrip` | `test-config` | `KajoConfigStore` per-domain TOML: compiled-vs-shipped defaults parity, round trips and clamping, `conf.d` overlays with base-save isolation, concurrent readers, syntax-error preservation, comment/unknown-key preserving patch, patcher never writing an unparsable file, subscriber thread delivery, legacy `config.json` migration. |
 | `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
+| `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the Niri spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
+| `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
+| `comp-config` | `test-comp-config` | `binds.toml` / `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics (the spec cannot advertise a bind or rule key that does not exist). |
+| `fuzz-comp-layout`, `fuzz-comp-config` | `test-fuzz-comp-*` | Corpus-driver builds of the two libFuzzer targets in `tests/fuzz/`. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
@@ -232,6 +243,19 @@ meson install -C builddir
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
 | `niri-ipc` | `test-niri` | Mock-Niri socket: exact JSON of `ToggleWindowFloating` / `LoadConfigFile` actions (regression for the dead FLOAT / TILE button), rejection logging, and EventStream parsing (workspaces, windows, focus, keyboard layouts). |
+
+### Fuzzing the compositor core (libFuzzer)
+
+`meson test` only runs the fuzz targets over a small built-in corpus. For real fuzzing, build them with clang:
+
+```bash
+clang -g -O1 -fsanitize=fuzzer,address,undefined -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION \
+  tests/fuzz/fuzz_comp_layout.c src/comp/core/comp_layout.c -lm -o /tmp/fuzz-comp-layout
+clang -g -O1 -fsanitize=fuzzer,address,undefined -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION -D_POSIX_C_SOURCE=200809L \
+  tests/fuzz/fuzz_comp_config.c src/comp/core/comp_{diag,layout,binds,rules}.c src/vendor/tomlc17/tomlc17.c \
+  $(pkg-config --cflags --libs xkbcommon libpcre2-8) -lm -o /tmp/fuzz-comp-config
+mkdir -p /tmp/fz && /tmp/fuzz-comp-config -max_total_time=300 /tmp/fz   # seed /tmp/fz with real .toml files for coverage
+```
 
 ### Sanitizer Run (ASan + UBSan)
 Run the whole suite under AddressSanitizer and UndefinedBehaviorSanitizer in a throwaway build directory (does not touch `builddir/`):
