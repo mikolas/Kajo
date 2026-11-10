@@ -35,7 +35,8 @@ autohide_tick_callback(GtkWidget     *widget,
     ShellAutohide *self = user_data;
     gint64 now = gdk_frame_clock_get_frame_time(frame_clock);
     gint64 elapsed = now - self->anim_start_time;
-    gint duration_ms = self->reveal_duration > 0 ? self->reveal_duration : 150;
+    gint raw_dur = (self->state == AUTOHIDE_HIDING) ? self->hide_duration : self->reveal_duration;
+    gint duration_ms = raw_dur > 0 ? raw_dur : ((self->state == AUTOHIDE_HIDING) ? 200 : 150);
     gdouble duration_us = (gdouble)duration_ms * 1000.0; /* ms to us */
 
     gdouble progress = CLAMP((gdouble)elapsed / duration_us, 0.0, 1.0);
@@ -126,7 +127,7 @@ on_hide_timeout(gpointer user_data)
 }
 
 ShellAutohide *
-shell_autohide_new(ShellPanel *panel, ShellConfig *config)
+shell_autohide_new(ShellPanel *panel, const KajoShellCfg *config)
 {
     ShellAutohide *self = g_new0(ShellAutohide, 1);
 
@@ -136,8 +137,9 @@ shell_autohide_new(ShellPanel *panel, ShellConfig *config)
     self->pointer_inside  = FALSE;
     self->hide_delay      = config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300;
     self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
+    self->hide_duration   = config->autohide_hide_duration > 0 ? config->autohide_hide_duration : 200;
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
-    self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
+    self->edge_strip_px   = 2;
     self->edge            = (config->panel_position == PANEL_POSITION_BOTTOM)
                             ? GTK_LAYER_SHELL_EDGE_BOTTOM
                             : GTK_LAYER_SHELL_EDGE_TOP;
@@ -162,7 +164,7 @@ shell_autohide_new(ShellPanel *panel, ShellConfig *config)
 }
 
 void
-shell_autohide_reload_config(ShellAutohide *self, ShellConfig *config)
+shell_autohide_reload_config(ShellAutohide *self, const KajoShellCfg *config)
 {
     if (!self || !config)
         return;
@@ -179,8 +181,9 @@ shell_autohide_reload_config(ShellAutohide *self, ShellConfig *config)
     self->edge            = new_edge;
     self->hide_delay      = config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300;
     self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
+    self->hide_duration   = config->autohide_hide_duration > 0 ? config->autohide_hide_duration : 200;
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
-    self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
+    self->edge_strip_px   = 2;
     self->enabled         = config->autohide_enabled;
     self->touch_gestures_enabled = config->touch_gestures_enabled;
 

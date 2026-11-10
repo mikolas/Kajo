@@ -1,0 +1,12 @@
+# ide.toml — Kajo IDE Defaults
+
+color_scheme                   = "kajo-metro-dark"
+font_family                    = "Fira Code"
+font_size_px                   = 13
+tab_width                      = 4
+insert_spaces                  = true
+word_wrap                      = false
+show_margin_guide              = true
+show_minimap                   = true
+show_line_numbers              = true
+highlight_current_line         = true

@@ -349,7 +349,7 @@ populate_section_list(SettingsPageWidgets *self, GtkWidget *list_box, GPtrArray 
 }
 
 static void
-load_widgets_from_shell_config(SettingsPageWidgets *self, ShellConfig *config, gboolean mark_dirty)
+load_widgets_from_shell_config(SettingsPageWidgets *self, const KajoShellCfg *config, gboolean mark_dirty)
 {
     if (!self || !config)
         return;
@@ -431,9 +431,8 @@ action_default_widgets_layout(gpointer user_data)
     SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
     if (!self)
         return;
-    ShellConfig *def_cfg = shell_config_get_default();
+    g_autoptr(KajoShellCfg) def_cfg = kajo_shell_cfg_new_default();
     load_widgets_from_shell_config(self, def_cfg, TRUE);
-    shell_config_destroy(def_cfg);
 }
 
 static void
@@ -442,24 +441,14 @@ action_revert_widgets(gpointer user_data)
     SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
     if (!self)
         return;
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
+    g_autoptr(KajoShellCfgRef) cfg = kajo_config_store_acquire_shell(NULL);
     load_widgets_from_shell_config(self, cfg, FALSE);
-    shell_config_destroy(cfg);
 }
 
 static void
-action_save_widgets(gpointer user_data)
+mutate_page_widgets_cfg(KajoShellCfg *config, gpointer user_data)
 {
     SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
-    if (!self)
-        return;
-
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
-
     GPtrArray *new_left   = collect_list_widget_configs(self->list_left);
     GPtrArray *new_center = collect_list_widget_configs(self->list_center);
     GPtrArray *new_right  = collect_list_widget_configs(self->list_right);
@@ -471,15 +460,18 @@ action_save_widgets(gpointer user_data)
     config->layout_left   = new_left;
     config->layout_center = new_center;
     config->layout_right  = new_right;
+}
 
-    g_autofree gchar *dir = g_build_filename(g_get_user_config_dir(), "kajo", NULL);
-    g_mkdir_with_parents(dir, 0755);
-    g_autofree gchar *path = g_build_filename(dir, "config.json", NULL);
+static void
+action_save_widgets(gpointer user_data)
+{
+    SettingsPageWidgets *self = (SettingsPageWidgets *)user_data;
+    if (!self)
+        return;
 
-    if (shell_config_save(config, path)) {
+    if (kajo_config_store_update_shell(NULL, mutate_page_widgets_cfg, self, NULL)) {
         settings_send_ipc_command("reload-config");
     }
-    shell_config_destroy(config);
 
     update_widgets_counts_and_telemetry(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);
@@ -586,11 +578,8 @@ build_page_widgets(void)
     settings_bento_add_pair(GTK_WIDGET(self), self->card_left, self->card_center);
     settings_bento_add_full(GTK_WIDGET(self), self->card_right);
 
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
+    g_autoptr(KajoShellCfgRef) cfg = kajo_config_store_acquire_shell(NULL);
     load_widgets_from_shell_config(self, cfg, FALSE);
-    shell_config_destroy(cfg);
 
     g_signal_connect(self, "map", G_CALLBACK(on_widgets_page_mapped), NULL);
 

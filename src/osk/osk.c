@@ -278,13 +278,13 @@ static const struct wl_seat_listener seat_listener = {
 
 static gboolean should_auto_show_osk(ShellOSK *self) {
     if (!self || !self->app) return FALSE;
-    ShellConfig *cfg = shell_app_get_config(self->app);
-    const char *mode = (cfg && cfg->osk_auto_show_mode) ? cfg->osk_auto_show_mode : "tablet";
+    const KajoShellCfg *cfg = shell_app_get_config(self->app);
+    ShellOskAutoShowMode mode = cfg ? cfg->osk_auto_show_mode : OSK_AUTO_SHOW_TABLET;
 
-    if (g_strcmp0(mode, "manual") == 0) {
+    if (mode == OSK_AUTO_SHOW_MANUAL) {
         return FALSE;
     }
-    if (g_strcmp0(mode, "always") == 0) {
+    if (mode == OSK_AUTO_SHOW_ALWAYS) {
         return TRUE;
     }
 
@@ -898,7 +898,7 @@ ShellOSK *shell_osk_new(ShellApp *app) {
 
 void shell_osk_apply_config(ShellOSK *self) {
     if (!self || !self->window) return;
-    ShellConfig *cfg = self->app ? shell_app_get_config(self->app) : NULL;
+    const KajoShellCfg *cfg = self->app ? shell_app_get_config(self->app) : NULL;
     gint height = (cfg && cfg->osk_height_px >= 180) ? cfg->osk_height_px : 260;
     gboolean push_windows = cfg ? cfg->osk_push_windows : TRUE;
 

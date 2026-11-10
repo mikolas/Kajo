@@ -1,0 +1,75 @@
+# shell.toml — Kajo Wayland Panel, Gestures, OSK, Lock & Widget Layout Defaults
+
+[panel]
+position                       = "bottom"
+height                         = 39
+layer                          = "top"
+icon_size                      = 24
+
+[autohide]
+enabled                        = true
+reveal_delay                   = 200
+hide_delay                     = 1000
+reveal_duration                = 150
+hide_duration                  = 200
+
+[notifications]
+toast_timeout_ms               = 8000
+max_history                    = 50
+click_action                   = "focus"
+dnd_enabled                    = false
+
+[touch]
+enabled                        = true
+swipe_center                   = "launcher"
+swipe_right                    = "control-center"
+swipe_horizontal               = "column"
+dwell_ms                       = 4000
+
+[osk]
+auto_show_mode                 = "tablet"
+push_windows                   = true
+height_px                      = 260
+
+[lock]
+screensaver_mode               = "overlay"
+screensaver_timeout_sec        = 300
+dpms_timeout_sec               = 600
+lock_timeout_sec               = 900
+lock_on_suspend                = true
+
+[hardware]
+kbd_backlight_level            = 2
+kbd_backlight_timeout_sec      = 0
+posture_auto_rotate            = true
+posture_disable_kbd_in_tablet  = true
+posture_disable_touch_in_laptop = false
+
+[layout]
+left = [
+    { id = "launcher", mode = "icon" },
+    { id = "workspaces", mode = "icon" },
+    { id = "window", mode = "full" },
+]
+
+center = [
+    { id = "clock", mode = "label" },
+]
+
+right = [
+    { id = "tray", mode = "icon" },
+    { id = "notifications", mode = "icon" },
+    { id = "media", mode = "icon" },
+    { id = "network", mode = "icon" },
+    { id = "bluetooth", mode = "icon" },
+    { id = "cpu-mem", mode = "icon" },
+    { id = "keyboard-layout", mode = "label" },
+    { id = "osk", mode = "icon" },
+    { id = "volume", mode = "icon" },
+    { id = "battery", mode = "icon" },
+    { id = "privacy", mode = "icon" },
+    { id = "theme", mode = "icon" },
+    { id = "custom-script", mode = "icon" },
+    { id = "control-center", mode = "icon" },
+    { id = "power", mode = "icon" },
+]

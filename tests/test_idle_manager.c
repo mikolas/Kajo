@@ -6,7 +6,7 @@
 #include <glib.h>
 
 /* Lightweight test stubs for symbols referenced by idle_manager.c */
-ShellConfig *
+const KajoShellCfg *
 shell_app_get_config(ShellApp *self)
 {
     return self ? self->config : NULL;

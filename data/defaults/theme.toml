@@ -1,0 +1,10 @@
+# theme.toml — Kajo Desktop Suite Theme & Typography Defaults
+
+accent_color                   = "#0078d4"
+ui_font_size_px                = 14
+font_heading_size_px           = 13
+font_subtitle_size_px          = 12
+font_badge_size_px             = 11
+css_path                       = ""
+settings_width                 = 900
+settings_height                = 640

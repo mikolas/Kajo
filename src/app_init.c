@@ -5,12 +5,12 @@
 ShellTheme *
 kajo_app_init_theme(void)
 {
-    ShellConfig *config = shell_config_load(NULL);
-    ShellTheme *theme = shell_theme_new(config ? config->css_path : NULL);
+    g_autoptr(KajoThemeCfgRef) config = kajo_config_store_acquire_theme(NULL);
+    const gchar *css_path = (config && config->css_path && *config->css_path)
+        ? config->css_path : NULL;
+    ShellTheme *theme = shell_theme_new(css_path);
     shell_theme_apply(theme, gdk_display_get_default());
-    shell_icons_init(config ? config->icon_map_path : NULL);
-    if (config)
-        shell_config_destroy(config);
+    shell_icons_init();
     return theme;
 }
 

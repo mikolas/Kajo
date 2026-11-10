@@ -244,25 +244,21 @@ shell_theme_destroy(ShellTheme *theme)
     g_free(theme);
 }
 
-static void
-write_override_css_full(const gchar *accent_hex,
-                        const gchar *hover_hex,
-                        gint         body_px,
-                        gint         heading_px,
-                        gint         subtitle_px,
-                        gint         badge_px,
-                        const gchar *ide_font_family,
-                        gint         ide_font_size_px)
+void
+shell_theme_write_override_css(const gchar *accent_hex,
+                               const gchar *hover_hex,
+                               gint         body_px,
+                               gint         heading_px,
+                               gint         subtitle_px,
+                               gint         badge_px)
 {
-    const gchar *accent   = (accent_hex && accent_hex[0] != '\0') ? accent_hex : "#0078d4";
-    const gchar *hover    = (hover_hex && hover_hex[0] != '\0') ? hover_hex : accent;
-    const gchar *ide_font = (ide_font_family && ide_font_family[0] != '\0') ? ide_font_family : "Fira Code";
+    const gchar *accent = (accent_hex && accent_hex[0] != '\0') ? accent_hex : "#0078d4";
+    const gchar *hover  = (hover_hex && hover_hex[0] != '\0') ? hover_hex : accent;
 
-    if (body_px < 11 || body_px > 20)             body_px = 14;
-    if (heading_px < 10 || heading_px > 18)       heading_px = 13;
-    if (subtitle_px < 10 || subtitle_px > 18)     subtitle_px = 12;
-    if (badge_px < 9 || badge_px > 16)            badge_px = 11;
-    if (ide_font_size_px < 9 || ide_font_size_px > 28) ide_font_size_px = 13;
+    if (body_px < 11 || body_px > 20)         body_px = 14;
+    if (heading_px < 10 || heading_px > 18)   heading_px = 13;
+    if (subtitle_px < 10 || subtitle_px > 18) subtitle_px = 12;
+    if (badge_px < 9 || badge_px > 16)        badge_px = 11;
 
     g_autofree gchar *theme_css_path = resolve_override_css_path();
     if (!theme_css_path)
@@ -362,37 +358,11 @@ write_override_css_full(const gchar *accent_hex,
         "window.shell-lock-window .lock-badge-label,\n"
         "window.shell-lock-window .greeter-field-label {\n"
         "    font-size: %dpx;\n"
-        "}\n\n",
-        badge_px);
-
-    /* 5. Kajo IDE Editor Typography */
-    g_string_append_printf(css,
-        "window.shell-ide-window .ide-source-view,\n"
-        "window.shell-ide-window .ide-source-view text {\n"
-        "    font-family: \"%s\", \"Fira Code\", \"FiraCode Nerd Font\", monospace;\n"
-        "    font-size: %dpx;\n"
         "}\n",
-        ide_font,
-        ide_font_size_px);
+        badge_px);
 
     g_file_set_contents(theme_css_path, css->str, css->len, NULL);
     g_string_free(css, TRUE);
-}
-
-void
-shell_theme_write_override_css(const gchar *accent_hex,
-                               const gchar *hover_hex,
-                               gint         body_px,
-                               gint         heading_px,
-                               gint         subtitle_px,
-                               gint         badge_px)
-{
-    ShellConfig *cfg = shell_config_load(NULL);
-    const gchar *ide_font = (cfg && cfg->ide_font_family) ? cfg->ide_font_family : "Fira Code";
-    gint ide_px = (cfg && cfg->ide_font_size_px > 0) ? cfg->ide_font_size_px : 13;
-    write_override_css_full(accent_hex, hover_hex, body_px, heading_px, subtitle_px, badge_px, ide_font, ide_px);
-    if (cfg)
-        shell_config_destroy(cfg);
 }
 
 gchar *
@@ -416,7 +386,7 @@ shell_ide_font_stack(const gchar *family)
 }
 
 void
-shell_theme_sync_from_config(const ShellConfig *config)
+shell_theme_sync_from_theme_cfg(const KajoThemeCfg *config)
 {
     if (!config)
         return;
@@ -431,12 +401,10 @@ shell_theme_sync_from_config(const ShellConfig *config)
     else if (g_ascii_strcasecmp(accent, "#c19c00") == 0) hover = "#d4ab00";
     else if (g_ascii_strcasecmp(accent, "#008272") == 0) hover = "#009684";
 
-    write_override_css_full(accent,
-                            hover,
-                            config->ui_font_size_px,
-                            config->font_heading_size_px,
-                            config->font_subtitle_size_px,
-                            config->font_badge_size_px,
-                            config->ide_font_family,
-                            config->ide_font_size_px);
+    shell_theme_write_override_css(accent,
+                                   hover,
+                                   config->ui_font_size_px,
+                                   config->font_heading_size_px,
+                                   config->font_subtitle_size_px,
+                                   config->font_badge_size_px);
 }

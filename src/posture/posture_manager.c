@@ -116,7 +116,7 @@ update_folded_orientation(ShellPostureManager *self)
     if (!self || self->state != SHELL_POSTURE_FOLDED)
         return;
 
-    ShellConfig *cfg = shell_app_get_config(self->app);
+    const KajoShellCfg *cfg = shell_app_get_config(self->app);
     if (!cfg || !cfg->posture_auto_rotate)
         return;
 
@@ -166,7 +166,7 @@ apply_posture_effects(ShellPostureManager *self, ShellPostureState new_state, gb
 
     self->state = new_state;
     const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    ShellConfig *cfg = shell_app_get_config(self->app);
+    const KajoShellCfg *cfg = shell_app_get_config(self->app);
     if (!caps || !cfg)
         return;
 
@@ -270,7 +270,7 @@ on_sensor_proxy_ready(GObject      *source G_GNUC_UNUSED,
                                            self);
 
     if (self->state == SHELL_POSTURE_FOLDED) {
-        ShellConfig *cfg = shell_app_get_config(self->app);
+        const KajoShellCfg *cfg = shell_app_get_config(self->app);
         if (cfg && cfg->posture_auto_rotate) {
             set_accel_claimed(self, TRUE);
             update_folded_orientation(self);
@@ -281,7 +281,7 @@ on_sensor_proxy_ready(GObject      *source G_GNUC_UNUSED,
 static void
 apply_saved_kbd_backlight_config(ShellApp *app)
 {
-    ShellConfig *cfg = shell_app_get_config(app);
+    const KajoShellCfg *cfg = shell_app_get_config(app);
     if (!cfg || !shell_kbd_backlight_available())
         return;
 

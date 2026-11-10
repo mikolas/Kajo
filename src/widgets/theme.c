@@ -35,13 +35,8 @@ sync_theme_popover_active(ThemeWidget *tw, const gchar *active_hex)
 
     g_autofree gchar *loaded_hex = NULL;
     if (!active_hex || !*active_hex) {
-        ShellConfig *cfg = shell_config_load(NULL);
-        if (cfg) {
-            loaded_hex = g_strdup(cfg->accent_color ? cfg->accent_color : "#0078d4");
-            shell_config_destroy(cfg);
-        } else {
-            loaded_hex = g_strdup("#0078d4");
-        }
+        g_autoptr(KajoThemeCfgRef) cfg = kajo_config_store_acquire_theme(NULL);
+        loaded_hex = g_strdup((cfg && cfg->accent_color) ? cfg->accent_color : "#0078d4");
         active_hex = loaded_hex;
     }
 
@@ -64,23 +59,25 @@ sync_theme_popover_active(ThemeWidget *tw, const gchar *active_hex)
 
 /* ─── Write Pure Accent Overrides ─── */
 
+static void
+mutate_theme_accent(KajoThemeCfg *draft, gpointer user_data)
+{
+    const gchar *accent = (const gchar *)user_data;
+    gchar *dup = g_strdup(accent);
+    g_free(draft->accent_color);
+    draft->accent_color = dup;
+}
+
 static void apply_accent_preset(const AccentPreset *preset)
 {
-    ShellConfig *cfg = shell_config_load(NULL);
+    g_autoptr(KajoThemeCfgRef) cfg = kajo_config_store_acquire_theme(NULL);
     gint body_px    = cfg ? cfg->ui_font_size_px : 14;
     gint heading_px = cfg ? cfg->font_heading_size_px : 13;
     gint sub_px     = cfg ? cfg->font_subtitle_size_px : 12;
     gint badge_px   = cfg ? cfg->font_badge_size_px : 11;
 
     shell_theme_write_override_css(preset->accent, preset->hover, body_px, heading_px, sub_px, badge_px);
-
-    if (cfg) {
-        g_free(cfg->accent_color);
-        cfg->accent_color = g_strdup(preset->accent);
-        g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-        shell_config_save(cfg, cfg_path);
-        shell_config_destroy(cfg);
-    }
+    kajo_config_store_update_theme(NULL, mutate_theme_accent, (gpointer)preset->accent, NULL);
 
     g_message("Applied Metro accent color '%s' (%s)", preset->name, preset->accent);
 }

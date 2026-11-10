@@ -59,7 +59,7 @@ struct _KajoModWindow {
     GtkWidget    *lbl_sep_readout;
     GtkWidget    *lbl_tempo_readout;
     GtkWidget    *scale_tempo;
-    GFileMonitor *cfg_monitor;
+    guint         cfg_sub_id;
 
     /* Voice Header & Scope/FFT */
     GtkWidget *ch_grid;
@@ -167,57 +167,19 @@ static void
 apply_shell_config_to_mod(KajoModWindow *self, gboolean sync_controls)
 {
     if (!self) return;
-    ShellConfig *cfg = shell_config_load(NULL);
+    g_autoptr(KajoModCfgRef) cfg = kajo_config_store_acquire_mod(NULL);
     if (!cfg) return;
 
     kajo_mod_set_runtime_prefs(
-        (double)CLAMP(cfg->mod_uade_timeout_sec, 60, 600),
-        cfg->mod_hvsc_path,
-        cfg->mod_auto_extract_archives);
+        (double)CLAMP(cfg->uade_timeout_sec, 60, 600),
+        cfg->hvsc_path,
+        cfg->auto_extract_archives);
 
-    if (cfg->mod_filter_mode) {
-        if (g_ascii_strcasecmp(cfg->mod_filter_mode, "a1200") == 0)
-            self->dsp.filter_mode = KAJO_MOD_FILTER_A1200;
-        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "near") == 0)
-            self->dsp.filter_mode = KAJO_MOD_FILTER_NEAR;
-        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "linear") == 0 ||
-                 g_ascii_strcasecmp(cfg->mod_filter_mode, "lin") == 0)
-            self->dsp.filter_mode = KAJO_MOD_FILTER_LINEAR;
-        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "sinc") == 0)
-            self->dsp.filter_mode = KAJO_MOD_FILTER_SINC;
-        else
-            self->dsp.filter_mode = KAJO_MOD_FILTER_A500;
-    }
-
-    if (cfg->mod_led_mode) {
-        if (g_ascii_strcasecmp(cfg->mod_led_mode, "on") == 0)
-            self->dsp.led_mode = KAJO_MOD_LED_ON;
-        else if (g_ascii_strcasecmp(cfg->mod_led_mode, "off") == 0)
-            self->dsp.led_mode = KAJO_MOD_LED_OFF;
-        else
-            self->dsp.led_mode = KAJO_MOD_LED_AUTO;
-    }
-
-    if (cfg->mod_sid_model) {
-        if (g_ascii_strcasecmp(cfg->mod_sid_model, "6581") == 0)
-            self->dsp.sid_model = KAJO_MOD_SID_6581;
-        else if (g_ascii_strcasecmp(cfg->mod_sid_model, "8580") == 0)
-            self->dsp.sid_model = KAJO_MOD_SID_8580;
-        else
-            self->dsp.sid_model = KAJO_MOD_SID_AUTO;
-    }
-
-    if (cfg->mod_end_action) {
-        if (g_ascii_strcasecmp(cfg->mod_end_action, "loop") == 0)
-            self->dsp.end_action = KAJO_MOD_END_LOOP;
-        else if (g_ascii_strcasecmp(cfg->mod_end_action, "next-mod") == 0)
-            self->dsp.end_action = KAJO_MOD_END_NEXT_MOD;
-        else
-            self->dsp.end_action = KAJO_MOD_END_NEXT_SUB;
-    }
-
-    self->dsp.stereo_sep_pct = (double)CLAMP(cfg->mod_stereo_sep_pct, 0, 100);
-    shell_config_destroy(cfg);
+    self->dsp.filter_mode    = cfg->filter_mode;
+    self->dsp.led_mode       = cfg->led_mode;
+    self->dsp.sid_model      = cfg->sid_model;
+    self->dsp.end_action     = cfg->end_action;
+    self->dsp.stereo_sep_pct = (double)CLAMP(cfg->stereo_sep_pct, 0, 100);
 
     if (sync_controls) {
         set_seg_box_active_index(self->loop_seg, (int)self->dsp.end_action);
@@ -232,16 +194,10 @@ apply_shell_config_to_mod(KajoModWindow *self, gboolean sync_controls)
 }
 
 static void
-on_mod_config_file_changed(GFileMonitor      *monitor G_GNUC_UNUSED,
-                           GFile             *file G_GNUC_UNUSED,
-                           GFile             *other_file G_GNUC_UNUSED,
-                           GFileMonitorEvent  event_type,
-                           gpointer           user_data)
+on_mod_config_changed(KajoConfigStore *store G_GNUC_UNUSED,
+                      KajoConfigDomain changed_domains G_GNUC_UNUSED,
+                      gpointer         user_data)
 {
-    if (event_type != G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT &&
-        event_type != G_FILE_MONITOR_EVENT_CREATED) {
-        return;
-    }
     GWeakRef *wr = (GWeakRef *)user_data;
     g_autoptr(KajoModWindow) self = g_weak_ref_get(wr);
     if (!self) return;
@@ -1511,9 +1467,9 @@ kajo_mod_window_dispose(GObject *object)
         g_source_remove(self->tick_id);
         self->tick_id = 0;
     }
-    if (self->cfg_monitor) {
-        g_file_monitor_cancel(self->cfg_monitor);
-        g_clear_object(&self->cfg_monitor);
+    if (self->cfg_sub_id != 0) {
+        kajo_config_store_unsubscribe(NULL, self->cfg_sub_id);
+        self->cfg_sub_id = 0;
     }
     g_clear_pointer(&self->audio, kajo_mod_audio_free);
     g_clear_pointer(&self->playlist, kajo_mod_playlist_free);
@@ -1533,14 +1489,9 @@ kajo_mod_window_init(KajoModWindow *self)
     self->playing         = FALSE;
     self->sim_col_width   = 0;
 
-    g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-    g_autoptr(GFile) cfg_file = g_file_new_for_path(cfg_path);
-    self->cfg_monitor = g_file_monitor_file(cfg_file, G_FILE_MONITOR_NONE, NULL, NULL);
-    if (self->cfg_monitor) {
-        g_signal_connect_data(self->cfg_monitor, "changed",
-                              G_CALLBACK(on_mod_config_file_changed),
-                              weak_ref_new(self), weak_ref_closure_free, 0);
-    }
+    self->cfg_sub_id = kajo_config_store_subscribe(
+        NULL, KAJO_CONFIG_DOMAIN_MOD, on_mod_config_changed,
+        weak_ref_new(self), (GDestroyNotify)weak_ref_closure_free);
 
     gtk_window_set_decorated(GTK_WINDOW(self), FALSE);
     gtk_window_set_title(GTK_WINDOW(self), "Kajo Mod");

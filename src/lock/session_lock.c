@@ -558,7 +558,7 @@ on_logind_prepare_for_sleep(GDBusConnection *connection G_GNUC_UNUSED,
     g_variant_get(parameters, "(b)", &going_to_sleep);
 
     if (going_to_sleep) {
-        ShellConfig *cfg = self->app ? shell_app_get_config(self->app) : NULL;
+        const KajoShellCfg *cfg = self->app ? shell_app_get_config(self->app) : NULL;
         if (!cfg || cfg->lock_on_suspend) {
             shell_session_lock_activate(self);
         }

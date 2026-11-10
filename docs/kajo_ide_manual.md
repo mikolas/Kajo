@@ -2,7 +2,7 @@
 
 **Binary:** `kajo-ide` (`org.kajo.IDE`)  
 **Design System:** Kajo Aero + Metro (`0px` sharp geometry, high-contrast `#111111`–`#1a1a1a` dark surfaces, `Fira Code` monospace typography)  
-**Settings Integration:** `kajo-settings` $\rightarrow$ **Kajo IDE & Code** (`~/.config/kajo/config.json`)
+**Settings Integration:** `kajo-settings` $\rightarrow$ **Kajo IDE & Code** (`~/.config/kajo/ide.toml`)
 
 ---
 
@@ -420,29 +420,28 @@ Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/page
   5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
 - **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter and minimap visibility. *(Relative line numbers are planned.)*
 
-Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/config.json` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `GFileMonitor`.
+Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/ide.toml` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `KajoConfigStore`.
 
 ### 12.2 Live On-the-Fly Editor Font Zoom
 Adjust editor font size at any time directly inside `kajo-ide`:
-- **`Ctrl + +` / `Ctrl + =`** — Increase editor font size (`+1pt`) and persist to `~/.config/kajo/config.json`.
-- **`Ctrl + -`** — Decrease editor font size (`-1pt`) and persist to `~/.config/kajo/config.json`.
+- **`Ctrl + +` / `Ctrl + =`** — Increase editor font size (`+1pt`) and persist to `~/.config/kajo/ide.toml`.
+- **`Ctrl + -`** — Decrease editor font size (`-1pt`) and persist to `~/.config/kajo/ide.toml`.
 - **`Ctrl + 0`** — Reset editor font size to the default `13pt`.
 
 ### 12.3 Configuration File & Key Remapping
-IDE settings live in the `ide` object of `~/.config/kajo/config.json` and are edited from `kajo-settings` → **Kajo IDE & Code**:
+IDE settings live in `~/.config/kajo/ide.toml` (with optional `[ide]` overrides in `~/.config/kajo/conf.d/*.toml`) and are edited from `kajo-settings` → **Kajo IDE & Code**:
 
-```json
-{
-  "ide": {
-    "color_scheme": "kajo-metro-dark",
-    "font_family": "Fira Code",
-    "font_size_px": 13,
-    "tab_width": 2,
-    "show_minimap": true,
-    "show_line_numbers": true,
-    "highlight_current_line": true
-  }
-}
+```toml
+color_scheme           = "kajo-metro-dark"
+font_family            = "Fira Code"
+font_size_px           = 13
+tab_width              = 2
+insert_spaces          = true
+word_wrap              = false
+show_margin_guide      = false
+show_minimap           = true
+show_line_numbers      = true
+highlight_current_line = true
 ```
 
 Custom per-mode key remapping (`[keys.*]`) is **not implemented yet**: the finite state machine has a remap table (`ide_fsm_set_remap`), but nothing loads user bindings into it. Tracked in `ROADMAP.md`.

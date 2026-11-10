@@ -156,16 +156,16 @@ setup_idle_notifications(ShellIdleManager *self)
     if (self->is_inhibited || !self->idle_notifier || !self->wl_seat || !self->app)
         return;
 
-    ShellConfig *cfg = shell_app_get_config(self->app);
+    const KajoShellCfg *cfg = shell_app_get_config(self->app);
     if (!cfg)
         return;
 
-    const gchar *mode = cfg->screensaver_mode ? cfg->screensaver_mode : "overlay";
+    ShellScreensaverMode mode = cfg->screensaver_mode;
     gint ss_sec   = cfg->screensaver_timeout_sec;
     gint dpms_sec = cfg->dpms_timeout_sec;
     gint lock_sec = cfg->lock_timeout_sec;
 
-    if (g_strcmp0(mode, "disabled") != 0 && ss_sec > 0) {
+    if (mode != SCREENSAVER_MODE_DISABLED && ss_sec > 0) {
         self->screensaver_notif = ext_idle_notifier_v1_get_idle_notification(
             self->idle_notifier, (uint32_t)(ss_sec * 1000), self->wl_seat);
         if (self->screensaver_notif) {

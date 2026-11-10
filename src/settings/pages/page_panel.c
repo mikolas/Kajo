@@ -66,18 +66,6 @@ typedef struct _SettingsPagePanelClass {
 
 G_DEFINE_TYPE(SettingsPagePanel, settings_page_panel, GTK_TYPE_BOX)
 
-static guint
-find_id_index(const char *const *ids, guint n_ids, const char *val)
-{
-    if (!val)
-        return 0;
-    for (guint i = 0; i < n_ids; i++) {
-        if (g_strcmp0(ids[i], val) == 0)
-            return i;
-    }
-    return 0;
-}
-
 static void
 sync_panel_Dependent_sensitivity(SettingsPagePanel *self)
 {
@@ -141,9 +129,9 @@ load_panel_ui_from_config(SettingsPagePanel *self)
     if (!self)
         return;
 
-    ShellConfig *config = shell_config_load(NULL);
+    g_autoptr(KajoShellCfgRef) config = kajo_config_store_acquire_shell(NULL);
     if (!config)
-        config = shell_config_get_default();
+        return;
 
     self->syncing_ui = TRUE;
 
@@ -156,25 +144,24 @@ load_panel_ui_from_config(SettingsPagePanel *self)
     gtk_switch_set_active(GTK_SWITCH(self->sw_touch_enabled), config->touch_gestures_enabled);
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(self->combo_swipe_center),
-        find_id_index(SWIPE_CENTER_IDS, G_N_ELEMENTS(SWIPE_CENTER_IDS), config->touch_swipe_center));
+        (guint)CLAMP((int)config->touch_swipe_center, 0, (int)G_N_ELEMENTS(SWIPE_CENTER_IDS) - 1));
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(self->combo_swipe_right),
-        find_id_index(SWIPE_RIGHT_IDS, G_N_ELEMENTS(SWIPE_RIGHT_IDS), config->touch_swipe_right));
+        (guint)CLAMP((int)config->touch_swipe_right, 0, (int)G_N_ELEMENTS(SWIPE_RIGHT_IDS) - 1));
     gtk_drop_down_set_selected(
         GTK_DROP_DOWN(self->combo_swipe_horiz),
-        find_id_index(SWIPE_HORIZ_IDS, G_N_ELEMENTS(SWIPE_HORIZ_IDS), config->touch_swipe_horizontal));
+        (guint)CLAMP((int)config->touch_swipe_horizontal, 0, (int)G_N_ELEMENTS(SWIPE_HORIZ_IDS) - 1));
     gtk_range_set_value(GTK_RANGE(self->scale_touch_dwell),
                         config->touch_dwell_ms > 0 ? config->touch_dwell_ms : 4000);
 
     segmented_group_set_selected(
         self->seg_osk_mode,
-        find_id_index(OSK_MODE_IDS, G_N_ELEMENTS(OSK_MODE_IDS), config->osk_auto_show_mode));
+        (guint)CLAMP((int)config->osk_auto_show_mode, 0, (int)G_N_ELEMENTS(OSK_MODE_IDS) - 1));
     segmented_group_set_selected(self->seg_osk_push, config->osk_push_windows ? 0 : 1);
     gtk_range_set_value(GTK_RANGE(self->scale_osk_height),
                         config->osk_height_px >= 180 ? config->osk_height_px : 260);
 
     self->syncing_ui = FALSE;
-    shell_config_destroy(config);
 
     sync_panel_Dependent_sensitivity(self);
     update_panel_badges_and_telemetry(self);
@@ -228,16 +215,9 @@ action_revert_panel(gpointer user_data)
 }
 
 static void
-action_save_panel(gpointer user_data)
+mutate_page_panel_cfg(KajoShellCfg *config, gpointer user_data)
 {
     SettingsPagePanel *self = (SettingsPagePanel *)user_data;
-    if (!self)
-        return;
-
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
-
     config->panel_position = (segmented_group_get_selected(self->seg_pos) == 1)
         ? PANEL_POSITION_BOTTOM
         : PANEL_POSITION_TOP;
@@ -250,37 +230,36 @@ action_save_panel(gpointer user_data)
 
     guint c_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_swipe_center));
     if (c_idx >= G_N_ELEMENTS(SWIPE_CENTER_IDS)) c_idx = 0;
-    g_free(config->touch_swipe_center);
-    config->touch_swipe_center = g_strdup(SWIPE_CENTER_IDS[c_idx]);
+    config->touch_swipe_center = (ShellSwipeCenterAction)c_idx;
 
     guint r_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_swipe_right));
     if (r_idx >= G_N_ELEMENTS(SWIPE_RIGHT_IDS)) r_idx = 0;
-    g_free(config->touch_swipe_right);
-    config->touch_swipe_right = g_strdup(SWIPE_RIGHT_IDS[r_idx]);
+    config->touch_swipe_right = (ShellSwipeRightAction)r_idx;
 
     guint h_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_swipe_horiz));
     if (h_idx >= G_N_ELEMENTS(SWIPE_HORIZ_IDS)) h_idx = 0;
-    g_free(config->touch_swipe_horizontal);
-    config->touch_swipe_horizontal = g_strdup(SWIPE_HORIZ_IDS[h_idx]);
+    config->touch_swipe_horizontal = (ShellSwipeHorizAction)h_idx;
 
     config->touch_dwell_ms = (int)gtk_range_get_value(GTK_RANGE(self->scale_touch_dwell));
 
     guint osk_idx = segmented_group_get_selected(self->seg_osk_mode);
     if (osk_idx >= G_N_ELEMENTS(OSK_MODE_IDS)) osk_idx = 0;
-    g_free(config->osk_auto_show_mode);
-    config->osk_auto_show_mode = g_strdup(OSK_MODE_IDS[osk_idx]);
+    config->osk_auto_show_mode = (ShellOskAutoShowMode)osk_idx;
 
     config->osk_push_windows = (segmented_group_get_selected(self->seg_osk_push) == 0);
     config->osk_height_px = (int)gtk_range_get_value(GTK_RANGE(self->scale_osk_height));
+}
 
-    g_autofree gchar *dir = g_build_filename(g_get_user_config_dir(), "kajo", NULL);
-    g_mkdir_with_parents(dir, 0755);
-    g_autofree gchar *path = g_build_filename(dir, "config.json", NULL);
+static void
+action_save_panel(gpointer user_data)
+{
+    SettingsPagePanel *self = (SettingsPagePanel *)user_data;
+    if (!self)
+        return;
 
-    if (shell_config_save(config, path)) {
+    if (kajo_config_store_update_shell(NULL, mutate_page_panel_cfg, self, NULL)) {
         settings_send_ipc_command("reload-config");
     }
-    shell_config_destroy(config);
 
     niri_reload_config();
     update_panel_badges_and_telemetry(self);

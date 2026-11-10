@@ -27,6 +27,9 @@ typedef enum {
 
 #define KAJO_MOD_SAMPLE_RATE 48000
 
+#ifndef KAJO_MOD_DSP_ENUMS_DEFINED
+#define KAJO_MOD_DSP_ENUMS_DEFINED
+
 typedef enum {
     KAJO_MOD_FILTER_A500   = 0,
     KAJO_MOD_FILTER_A1200  = 1,
@@ -52,6 +55,8 @@ typedef enum {
     KAJO_MOD_END_LOOP     = 1,
     KAJO_MOD_END_NEXT_MOD = 2
 } KajoModEndAction;
+
+#endif /* KAJO_MOD_DSP_ENUMS_DEFINED */
 
 typedef struct {
     KajoModFilterMode filter_mode;

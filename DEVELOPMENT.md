@@ -134,7 +134,7 @@ data/
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
-│   ├── config.json                 Default panel, widget, notification, IDE & idle configuration
+│   ├── {theme,shell,ide,files,mod}.toml  Shipped per-domain TOML 1.1 default configurations
 │   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, ide, osk, lock, greeter)
 │   └── icon-map.json               Logical-to-symbolic icon mappings
 ├── greetd/
@@ -274,7 +274,7 @@ Line-delimited UTF-8 commands (`<command>\n`) sent by `kajo <flag>` or `kajo-set
 | `launcher-close` | — | Closes the application launcher overlay. |
 | `lock` | `lock-session` | Activates the `ext-session-lock-v1` PAM lock screen. |
 | `screensaver` | `start-screensaver` | Activates the fullscreen Metro screen saver overlay. |
-| `reload-config` | — | Reloads `~/.config/kajo/config.json` and reconciles panel geometry, idle timers, and active widgets in-place. |
+| `reload-config` | — | Reloads `~/.config/kajo/shell.toml` (plus `conf.d/*.toml`) and reconciles panel geometry, idle timers, and active widgets in-place. |
 | `reload-theme` | — | Reloads `style.css` and `~/.config/kajo/theme-override.css` across all surfaces. |
 | `volume-up` | `volume+` | Increases default audio sink volume by 5% + shows OSD. |
 | `volume-down` | `volume-` | Decreases default audio sink volume by 5% + shows OSD. |

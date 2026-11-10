@@ -6,7 +6,7 @@
 static gchar *fallback_icon = NULL;
 
 void
-shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)
+shell_icons_init(void)
 {
     if (fallback_icon != NULL)
         g_free(fallback_icon);

@@ -2,12 +2,12 @@
 #define SHELL_APP_H
 
 #include <gtk/gtk.h>
+#include "config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct _ShellConfig          ShellConfig;
 typedef struct _ShellTheme           ShellTheme;
 typedef struct _ShellPanel           ShellPanel;
 typedef struct _ShellWidgetRegistry  ShellWidgetRegistry;
@@ -27,7 +27,8 @@ typedef struct _ShellApp ShellApp;
 
 struct _ShellApp {
     GtkApplication          *gtk_app;
-    ShellConfig             *config;
+    const KajoShellCfg      *config;
+    guint                    config_sub_id;
     ShellTheme              *theme;
     ShellPanel              *panel;
     ShellWidgetRegistry     *registry;
@@ -45,14 +46,14 @@ struct _ShellApp {
     GPtrArray               *active_widgets;
 };
 
-ShellApp    *shell_app_new(GtkApplication *app);
-void         shell_app_activate(ShellApp *self);
-void         shell_app_destroy(ShellApp *self);
-void         shell_app_reload_config(ShellApp *self);
-void         shell_app_reload_theme(ShellApp *self);
-void         shell_app_lock_session(ShellApp *self);
-void         shell_app_start_screensaver(ShellApp *self);
-ShellConfig *shell_app_get_config(ShellApp *self);
+ShellApp           *shell_app_new(GtkApplication *app);
+void                shell_app_activate(ShellApp *self);
+void                shell_app_destroy(ShellApp *self);
+void                shell_app_reload_config(ShellApp *self);
+void                shell_app_reload_theme(ShellApp *self);
+void                shell_app_lock_session(ShellApp *self);
+void                shell_app_start_screensaver(ShellApp *self);
+const KajoShellCfg *shell_app_get_config(ShellApp *self);
 ShellNotificationDaemon *shell_app_get_notification_daemon(ShellApp *self);
 ShellPanel  *shell_app_get_panel(ShellApp *self);
 ShellCompositor *shell_app_get_compositor(ShellApp *self);

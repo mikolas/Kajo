@@ -603,7 +603,7 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     char active_op_buf[32];
     g_ascii_formatd(active_op_buf, sizeof(active_op_buf), "%.2f", self->ns_opacity[active_idx] / 100.0);
 
-    ShellConfig *cfg = shell_config_load(NULL);
+    g_autoptr(KajoThemeCfgRef) cfg = kajo_config_store_acquire_theme(NULL);
     const char *accent_hex = (cfg && cfg->accent_color && cfg->accent_color[0] != '\0')
         ? cfg->accent_color
         : "#0078d4";
@@ -632,9 +632,6 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         self->gap_px,
         accent_hex,
         anim_block_str);
-
-    if (cfg)
-        shell_config_destroy(cfg);
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
     niri_reload_config();

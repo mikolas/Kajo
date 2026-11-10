@@ -269,13 +269,13 @@ shell_screensaver_start(ShellScreensaver *self)
     if (!self || self->is_active)
         return;
 
-    ShellConfig *cfg = self->app ? shell_app_get_config(self->app) : NULL;
-    const gchar *mode = (cfg && cfg->screensaver_mode) ? cfg->screensaver_mode : "overlay";
+    const KajoShellCfg *cfg = self->app ? shell_app_get_config(self->app) : NULL;
+    ShellScreensaverMode mode = cfg ? cfg->screensaver_mode : SCREENSAVER_MODE_OVERLAY;
 
-    if (g_strcmp0(mode, "disabled") == 0)
+    if (mode == SCREENSAVER_MODE_DISABLED)
         return;
 
-    if (g_strcmp0(mode, "dpms") == 0) {
+    if (mode == SCREENSAVER_MODE_DPMS) {
         self->is_active = TRUE;
         shell_screensaver_set_dpms(FALSE);
         return;

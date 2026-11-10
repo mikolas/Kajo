@@ -3,17 +3,10 @@
 #include <gio/gio.h>
 #include <string.h>
 
-static const char *const MOD_FILTER_IDS[]    = { "a500", "a1200", "near", "linear", "sinc", NULL };
 static const char *const MOD_FILTER_LABELS[] = { "A500", "A1200", "NEAR", "LIN", "SINC", NULL };
-
-static const char *const MOD_LED_IDS[]    = { "auto", "on", "off", NULL };
-static const char *const MOD_LED_LABELS[] = { "AUTO", "ON", "OFF", NULL };
-
-static const char *const MOD_SID_IDS[]    = { "auto", "6581", "8580", NULL };
-static const char *const MOD_SID_LABELS[] = { "AUTO", "6581", "8580", NULL };
-
-static const char *const MOD_END_IDS[]    = { "next-sub", "loop", "next-mod", NULL };
-static const char *const MOD_END_LABELS[] = { "ADVANCE", "LOOP", "NEXT MOD", NULL };
+static const char *const MOD_LED_LABELS[]    = { "AUTO", "ON", "OFF", NULL };
+static const char *const MOD_SID_LABELS[]    = { "AUTO", "6581", "8580", NULL };
+static const char *const MOD_END_LABELS[]    = { "ADVANCE", "LOOP", "NEXT MOD", NULL };
 
 typedef struct _SettingsPageMod {
     GtkBox parent_instance;
@@ -52,20 +45,6 @@ typedef struct _SettingsPageModClass {
 
 G_DEFINE_TYPE(SettingsPageMod, settings_page_mod, GTK_TYPE_BOX)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(SettingsPageMod, g_object_unref)
-
-static guint
-find_id_index(const char *const table[], const char *val, guint fallback)
-{
-    if (!val || !val[0])
-        return fallback;
-    for (guint i = 0; table[i] != NULL; i++) {
-        if (g_ascii_strcasecmp(table[i], val) == 0)
-            return i;
-    }
-    if (table == MOD_FILTER_IDS && g_ascii_strcasecmp(val, "lin") == 0)
-        return 3;
-    return fallback;
-}
 
 static gboolean
 mod_page_compute_dirty(SettingsPageMod *self)
@@ -267,6 +246,32 @@ action_revert_mod(gpointer user_data)
     update_mod_telemetry_and_dirty(self);
 }
 
+typedef struct {
+    guint        flt_idx;
+    guint        led_idx;
+    int          stereo;
+    guint        end_idx;
+    guint        sid_idx;
+    int          timeout;
+    gboolean     ext;
+    const gchar *hvsc;
+} SaveModCtx;
+
+static void
+mutate_save_mod(KajoModCfg *cfg, gpointer user_data)
+{
+    SaveModCtx *ctx = (SaveModCtx *)user_data;
+    cfg->filter_mode           = (KajoModFilterMode)ctx->flt_idx;
+    cfg->led_mode              = (KajoModLedMode)ctx->led_idx;
+    cfg->stereo_sep_pct        = ctx->stereo;
+    cfg->end_action            = (KajoModEndAction)ctx->end_idx;
+    cfg->sid_model             = (KajoModSidModel)ctx->sid_idx;
+    cfg->uade_timeout_sec      = ctx->timeout;
+    cfg->auto_extract_archives = ctx->ext;
+    g_free(cfg->hvsc_path);
+    cfg->hvsc_path = g_strdup(ctx->hvsc ? ctx->hvsc : "");
+}
+
 static void
 action_save_mod(gpointer user_data)
 {
@@ -286,28 +291,17 @@ action_save_mod(gpointer user_data)
     if (hvsc_trimmed)
         g_strstrip(hvsc_trimmed);
 
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
-    if (cfg) {
-        g_free(cfg->mod_filter_mode);
-        cfg->mod_filter_mode = g_strdup(MOD_FILTER_IDS[flt_idx]);
-        g_free(cfg->mod_led_mode);
-        cfg->mod_led_mode = g_strdup(MOD_LED_IDS[led_idx]);
-        cfg->mod_stereo_sep_pct = stereo;
-        g_free(cfg->mod_end_action);
-        cfg->mod_end_action = g_strdup(MOD_END_IDS[end_idx]);
-        g_free(cfg->mod_sid_model);
-        cfg->mod_sid_model = g_strdup(MOD_SID_IDS[sid_idx]);
-        cfg->mod_uade_timeout_sec = timeout;
-        cfg->mod_auto_extract_archives = ext;
-        g_free(cfg->mod_hvsc_path);
-        cfg->mod_hvsc_path = g_strdup(hvsc_trimmed ? hvsc_trimmed : "");
-
-        g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-        shell_config_save(cfg, cfg_path);
-        shell_config_destroy(cfg);
-    }
+    SaveModCtx ctx = {
+        flt_idx,
+        led_idx,
+        stereo,
+        end_idx,
+        sid_idx,
+        timeout,
+        ext,
+        hvsc_trimmed ? hvsc_trimmed : "",
+    };
+    kajo_config_store_update_mod(NULL, mutate_save_mod, &ctx, NULL);
 
     self->saved_filter_idx   = flt_idx;
     self->saved_led_idx      = led_idx;
@@ -399,17 +393,15 @@ build_page_mod(void)
     SettingsPageMod *self = g_object_new(settings_page_mod_get_type(), NULL);
     self->syncing_ui = TRUE;
 
-    ShellConfig *cfg = shell_config_load(NULL);
-    guint flt_idx = find_id_index(MOD_FILTER_IDS, cfg ? cfg->mod_filter_mode : "a500", 0);
-    guint led_idx = find_id_index(MOD_LED_IDS,    cfg ? cfg->mod_led_mode    : "auto", 0);
-    int   stereo  = cfg ? CLAMP(cfg->mod_stereo_sep_pct, 0, 100) : 70;
-    guint end_idx = find_id_index(MOD_END_IDS,    cfg ? cfg->mod_end_action  : "next-sub", 0);
-    guint sid_idx = find_id_index(MOD_SID_IDS,    cfg ? cfg->mod_sid_model   : "auto", 0);
-    int   timeout = cfg ? CLAMP(cfg->mod_uade_timeout_sec, 60, 600) : 180;
-    gboolean ext  = cfg ? cfg->mod_auto_extract_archives : TRUE;
-    gchar *hvsc   = g_strdup((cfg && cfg->mod_hvsc_path) ? cfg->mod_hvsc_path : "");
-    if (cfg)
-        shell_config_destroy(cfg);
+    g_autoptr(KajoModCfgRef) cfg = kajo_config_store_acquire_mod(NULL);
+    guint flt_idx = cfg ? MIN((guint)cfg->filter_mode, 4u) : 0u;
+    guint led_idx = cfg ? MIN((guint)cfg->led_mode,    2u) : 0u;
+    int   stereo  = cfg ? CLAMP(cfg->stereo_sep_pct, 0, 100) : 70;
+    guint end_idx = cfg ? MIN((guint)cfg->end_action,  2u) : 0u;
+    guint sid_idx = cfg ? MIN((guint)cfg->sid_model,   2u) : 0u;
+    int   timeout = cfg ? CLAMP(cfg->uade_timeout_sec, 60, 600) : 180;
+    gboolean ext  = cfg ? cfg->auto_extract_archives : TRUE;
+    gchar *hvsc   = g_strdup((cfg && cfg->hvsc_path) ? cfg->hvsc_path : "");
 
     self->saved_filter_idx   = flt_idx;
     self->saved_led_idx      = led_idx;

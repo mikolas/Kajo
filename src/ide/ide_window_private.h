@@ -99,7 +99,8 @@ struct _KajoIdeWindow {
   GActionGroup    *code_actions;
 
   /* Live Settings & Config Hot-Reload */
-  GFileMonitor    *config_monitor;
+  guint            config_sub_id;
+  GtkCssProvider  *editor_font_provider;
   char            *active_scheme_id;
   char            *active_font_family;
   int              active_font_size_px;

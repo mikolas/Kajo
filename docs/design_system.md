@@ -49,9 +49,9 @@ Use the tokens in `style.css`; do not add new raw hex literals for these roles. 
 
 ## 3. Typography & Configurable Font Category Sizes
 
-Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → Theme` (`config.json` & `~/.config/kajo/style.d/00-accent.css` via `shell_theme_write_override_css()`):
+Kajo exposes **4 independent Font Category Size sliders** in `kajo-settings → Theme` (`theme.toml` & `~/.config/kajo/theme-override.css` via `shell_theme_write_override_css()`):
 
-| Category Key (`config.json`) | Default (`px`) | Range (`px`) | Target Classes & Selectors |
+| Category Key (`theme.toml`) | Default (`px`) | Range (`px`) | Target Classes & Selectors |
 | :--- | :--- | :--- | :--- |
 | `ui_font_size_px` (**Primary Body & Row Titles**) | `14px` | `11–20px` | `.row-title`, `.sidebar-label`, `.navigation-sidebar row`, `.files-list-name`, `.files-tile-title`, `.tile-title`, `entry`, `passwordentry`, `searchentry`, `.shell-launcher-input`, `dropdown > button`, `dropdown listview row`, `button.files-menu-row`, `.shell-launcher-row label`, `.shell-widget`, `.shell-osd-label` |
 | `font_heading_size_px` (**Section & Window Headers**) | `13px` | `10–18px` | `.settings-header-title`, `.shell-popover-title`, `.heading`, `.shell-popover-section-title`, `.settings-section-title`, `.sidebar-category-header` |
