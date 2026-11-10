@@ -1,0 +1,10 @@
+# mod.toml — Kajo Mod Tracker & Synth Workstation Defaults
+
+filter_mode                    = "a500"
+led_mode                       = "auto"
+stereo_sep_pct                 = 70
+end_action                     = "next-sub"
+sid_model                      = "auto"
+uade_timeout_sec               = 180
+auto_extract_archives          = true
+hvsc_path                      = ""

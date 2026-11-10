@@ -41,7 +41,7 @@ void        shell_theme_write_override_css(const gchar *accent_hex,
                                            gint         heading_px,
                                            gint         subtitle_px,
                                            gint         badge_px);
-void        shell_theme_sync_from_config(const ShellConfig *config);
+void        shell_theme_sync_from_theme_cfg(const KajoThemeCfg *config);
 
 /* Pango font-family list for the kajo-ide editor font: the user's choice first,
  * then the same fallbacks the generated CSS uses ("Fira Code", "FiraCode Nerd

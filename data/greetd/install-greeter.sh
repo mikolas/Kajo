@@ -76,9 +76,11 @@ echo "==> Installing niri-greeter.kdl to /etc/greetd/ and /usr/local/share/kajo/
 install -Dm644 "$PROJECT_ROOT/data/greetd/niri-greeter.kdl" /etc/greetd/niri-greeter.kdl
 install -Dm644 "$PROJECT_ROOT/data/greetd/niri-greeter.kdl" /usr/local/share/kajo/greetd/niri-greeter.kdl
 
-echo "==> Installing default CSS theme & icons to /usr/local/share/kajo/..."
+echo "==> Installing default CSS theme, TOML defaults & icons to /usr/local/share/kajo/..."
 install -Dm644 "$PROJECT_ROOT/data/defaults/style.css" /usr/local/share/kajo/defaults/style.css
-install -Dm644 "$PROJECT_ROOT/data/defaults/config.json" /usr/local/share/kajo/defaults/config.json
+for toml_file in theme.toml shell.toml ide.toml files.toml mod.toml; do
+    install -Dm644 "$PROJECT_ROOT/data/defaults/$toml_file" "/usr/local/share/kajo/defaults/$toml_file"
+done
 install -Dm644 "$PROJECT_ROOT/data/defaults/icon-map.json" /usr/local/share/kajo/defaults/icon-map.json
 install -dm755 /usr/local/share/kajo/icons
 cp -r "$PROJECT_ROOT/data/icons/"* /usr/local/share/kajo/icons/

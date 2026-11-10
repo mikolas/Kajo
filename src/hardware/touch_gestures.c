@@ -371,7 +371,7 @@ dispatch_touch_gesture(ShellTouchGestures *self, ShellTouchGestureType gesture)
 {
     if (!self || !self->app || gesture == TOUCH_GESTURE_NONE) return;
 
-    ShellConfig *cfg = shell_app_get_config(self->app);
+    const KajoShellCfg *cfg = shell_app_get_config(self->app);
     if (!cfg || !cfg->touch_gestures_enabled) return;
 
     switch (gesture) {

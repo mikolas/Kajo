@@ -189,11 +189,22 @@ shell_resources = gnome.compile_resources(
   dependencies: compiled_blueprints,
 )
 
+kajo_config_sources = files(
+  'src/vendor/tomlc17/tomlc17.c',
+  'src/config/kajo_config_schema.c',
+  'src/config/kajo_config_migrate.c',
+  'src/config/kajo_config_store.c',
+  'src/config/schemas/schema_theme.c',
+  'src/config/schemas/schema_shell.c',
+  'src/config/schemas/schema_ide.c',
+  'src/config/schemas/schema_files.c',
+  'src/config/schemas/schema_mod.c',
+)
+
 # Sources shared by every executable are compiled once instead of once per binary.
 kajo_core = static_library(
   'kajo-core',
-  files(
-    'src/config.c',
+  kajo_config_sources + files(
     'src/theme.c',
     'src/icons.c',
     'src/compositor/niri.c',
@@ -543,11 +554,12 @@ install_data(
 
 test_config_exe = executable(
   'test-config',
-  files('tests/test_config.c', 'src/config.c'),
+  files('tests/test_config.c') + kajo_config_sources,
   dependencies: [gio_dep, json_glib_dep],
   build_by_default: false,
 )
-test('config-roundtrip', test_config_exe)
+test('config-roundtrip', test_config_exe,
+  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
 
 test_pam_exe = executable(
   'test-pam-auth',
@@ -577,7 +589,7 @@ test('ipc-socket', test_ipc_exe)
 
 test_autohide_exe = executable(
   'test-autohide',
-  files('tests/test_autohide.c', 'src/autohide.c', 'src/config.c'),
+  files('tests/test_autohide.c', 'src/autohide.c') + kajo_config_sources,
   dependencies: [layer_shell_dep, gtk4_dep, json_glib_dep, gio_dep],
   build_by_default: false,
 )
@@ -591,9 +603,8 @@ test_greetd_exe = executable(
 )
 test('greetd-ipc', test_greetd_exe)
 
-widget_sources = files(
+widget_sources = kajo_config_sources + files(
   'src/audio/pa_conn.c',
-  'src/config.c',
   'src/theme.c',
   'src/icons.c',
   'src/dbus_helpers.c',

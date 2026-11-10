@@ -6,64 +6,18 @@
 
 ## ⚙️ Configuration File Location
 
-Custom script widgets are configured in `~/.config/kajo/config.json`.
+Custom script widgets are configured in `~/.config/kajo/shell.toml` under `[layout]` (`left`, `center`, `right`):
 
-```json
-{
-  "panel": {
-    "position": "top",
-    "height": 32,
-    "widgets": {
-      "left": ["launcher", "workspaces", "window"],
-      "center": ["clock"],
-      "right": [
-        "custom_weather",
-        "custom_crypto",
-        "custom_vpn",
-        "custom_disk",
-        "tray",
-        "volume",
-        "battery",
-        "power"
-      ]
-    }
-  },
-  "widgets": {
-    "custom_weather": {
-      "type": "custom-script",
-      "exec_cmd": "/home/mikolas/src/desktop/data/examples/scripts/weather.sh Helsinki",
-      "interval_sec": 60,
-      "click_left_cmd": "zen https://wttr.in/Helsinki",
-      "click_right_cmd": "kitty -e curl wttr.in/Helsinki",
-      "mode": "both",
-      "icon": "weather-clear-symbolic"
-    },
-    "custom_crypto": {
-      "type": "custom-script",
-      "exec_cmd": "python3 /home/mikolas/src/desktop/data/examples/scripts/crypto.py",
-      "interval_sec": 30,
-      "click_left_cmd": "zen https://coingecko.com",
-      "mode": "both",
-      "icon": "security-high-symbolic"
-    },
-    "custom_vpn": {
-      "type": "custom-script",
-      "exec_cmd": "/home/mikolas/src/desktop/data/examples/scripts/vpn_status.sh",
-      "interval_sec": 5,
-      "click_left_cmd": "nm-connection-editor",
-      "mode": "both",
-      "icon": "network-vpn-symbolic"
-    },
-    "custom_disk": {
-      "type": "custom-script",
-      "exec_cmd": "/home/mikolas/src/desktop/data/examples/scripts/disk_usage.sh",
-      "interval_sec": 10,
-      "click_left_cmd": "baobab",
-      "mode": "both",
-      "icon": "drive-harddisk-symbolic"
-    }
-  }
-}
+```toml
+[layout]
+right = [
+    { id = "custom-script", mode = "full", interval = 60, exec = '/home/mikolas/src/desktop/data/examples/scripts/weather.sh Helsinki', click_left = 'zen https://wttr.in/Helsinki', click_right = 'kitty -e curl wttr.in/Helsinki' },
+    { id = "custom-script", mode = "full", interval = 30, exec = 'python3 /home/mikolas/src/desktop/data/examples/scripts/crypto.py', click_left = 'zen https://coingecko.com' },
+    { id = "tray", mode = "icon" },
+    { id = "volume", mode = "icon" },
+    { id = "battery", mode = "icon" },
+    { id = "power", mode = "icon" },
+]
 ```
 
 ---
@@ -72,13 +26,12 @@ Custom script widgets are configured in `~/.config/kajo/config.json`.
 
 | Parameter | Type | Required | Description | Example |
 |:---|:---|:---|:---|:---|
-| `type` | String | **Yes** | Must be `"custom-script"` | `"type": "custom-script"` |
-| `exec_cmd` | String | **Yes** | Command or script to execute at regular intervals. The first line of stdout is displayed in the panel label. | `"exec_cmd": "~/scripts/weather.sh"` |
-| `interval_sec` | Integer | **Yes** | Polling interval in seconds between script executions. | `"interval_sec": 10` |
-| `click_left_cmd` | String | Optional | Shell command executed when the user left-clicks the widget. | `"click_left_cmd": "kitty -e htop"` |
-| `click_right_cmd` | String | Optional | Shell command executed when the user right-clicks the widget. | `"click_right_cmd": "pavucontrol"` |
-| `mode` | String | Optional | Visibility mode: `"both"` (icon + text), `"icon-only"`, or `"text-only"`. Defaults to `"both"`. | `"mode": "both"` |
-| `icon` | String | Optional | GTK symbolic icon name displayed alongside the text label. | `"icon": "utilities-terminal-symbolic"` |
+| `id` | String | **Yes** | Must be `"custom-script"` | `id = "custom-script"` |
+| `exec` | String | **Yes** | Command or script to execute at regular intervals (use single-quoted TOML literal strings `'...'` so shell backslashes and quotes need no escaping). | `exec = '~/scripts/weather.sh'` |
+| `interval` | Integer | **Yes** | Polling interval in seconds between script executions. | `interval = 10` |
+| `click_left` | String | Optional | Shell command executed when the user left-clicks the widget. | `click_left = 'kitty -e htop'` |
+| `click_right` | String | Optional | Shell command executed when the user right-clicks the widget. | `click_right = 'pavucontrol'` |
+| `mode` | String | Optional | Visibility mode: `"full"` (icon + text), `"icon"`, or `"label"`. | `mode = "full"` |
 
 ---
 

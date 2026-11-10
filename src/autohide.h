@@ -3,13 +3,13 @@
 
 #include <gtk/gtk.h>
 #include <gtk4-layer-shell.h>
+#include "config.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct _ShellPanel  ShellPanel;
-typedef struct _ShellConfig ShellConfig;
+typedef struct _ShellPanel ShellPanel;
 
 typedef enum {
     AUTOHIDE_HIDDEN = 0,
@@ -31,6 +31,7 @@ struct _ShellAutohide {
     gboolean       pointer_inside;
     gint           hide_delay;
     gint           reveal_duration;
+    gint           hide_duration;
     gint           panel_height;
     gint           edge_strip_px;
     gint           popover_count;
@@ -42,8 +43,8 @@ struct _ShellAutohide {
     gint           anim_target_margin;
 };
 
-ShellAutohide *shell_autohide_new(ShellPanel *panel, ShellConfig *config);
-void           shell_autohide_reload_config(ShellAutohide *self, ShellConfig *config);
+ShellAutohide *shell_autohide_new(ShellPanel *panel, const KajoShellCfg *config);
+void           shell_autohide_reload_config(ShellAutohide *self, const KajoShellCfg *config);
 void           shell_autohide_enter(ShellAutohide *self);
 void           shell_autohide_leave(ShellAutohide *self);
 void           shell_autohide_touch_reveal(ShellAutohide *self, gint dwell_ms);

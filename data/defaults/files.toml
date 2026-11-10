@@ -1,0 +1,8 @@
+# files.toml — Kajo Files Defaults
+
+view_mode                      = "grid"
+sort_field                     = "name"
+sort_ascending                 = true
+sort_folders_first             = true
+show_hidden                    = false
+show_inspector                 = true

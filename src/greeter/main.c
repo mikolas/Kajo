@@ -49,9 +49,9 @@ typedef struct {
 } GreeterSurface;
 
 struct _GreeterApp {
-    GtkApplication  *gtk_app;
-    ShellConfig     *config;
-    ShellTheme      *theme;
+    GtkApplication     *gtk_app;
+    const KajoThemeCfg *config;
+    ShellTheme         *theme;
     GDBusConnection *system_bus;
     GCancellable    *cancellable;
     GPtrArray       *users;      /* GreeterUser* */
@@ -885,9 +885,11 @@ on_activate(GtkApplication *gtk_app G_GNUC_UNUSED, gpointer user_data)
     gtk_window_set_interactive_debugging(FALSE);
 
     /* Initialize ShellTheme so style.css and Metro styling apply (Rule #3) */
-    app->config = shell_config_load(NULL);
-    shell_icons_init(app->config ? app->config->icon_map_path : NULL);
-    app->theme = shell_theme_new(app->config ? app->config->css_path : NULL);
+    app->config = kajo_config_store_acquire_theme(NULL);
+    shell_icons_init();
+    const gchar *css_path = (app->config && app->config->css_path && *app->config->css_path)
+        ? app->config->css_path : NULL;
+    app->theme = shell_theme_new(css_path);
     shell_theme_apply(app->theme, display);
 
     app->use_layer_shell = (!opt_test_mode && !opt_fullscreen && gtk_layer_is_supported());
@@ -1015,7 +1017,7 @@ main(int argc, char *argv[])
     g_ptr_array_free(app.users, TRUE);
     g_ptr_array_free(app.sessions, TRUE);
     shell_theme_destroy(app.theme);
-    shell_config_destroy(app.config);
+    kajo_theme_cfg_unref(app.config);
     shell_icons_cleanup();
     g_free(opt_default_cmd);
     g_free(opt_default_user);

@@ -132,30 +132,29 @@ set_active_button_style(GtkWidget *btn, gboolean active)
     }
 }
 
+typedef struct {
+    gint kbd_level;
+    gint kbd_timeout_sec;
+    gint auto_rotate;
+} BacklightSaveCtx;
+
 static void
-backlight_save_config_Order(BacklightWidget *bl, gint kbd_level, gint kbd_timeout_sec, gint auto_rotate)
+mutate_backlight_shell_cfg(KajoShellCfg *draft, gpointer user_data)
 {
-    ShellConfig *cfg = bl->base.app ? shell_app_get_config(bl->base.app) : NULL;
-    gboolean own_cfg = FALSE;
-    if (!cfg) {
-        cfg = shell_config_load(NULL);
-        own_cfg = TRUE;
-    }
-    if (!cfg)
-        return;
+    const BacklightSaveCtx *ctx = (const BacklightSaveCtx *)user_data;
+    if (ctx->kbd_level >= 0)
+        draft->kbd_backlight_level = ctx->kbd_level;
+    if (ctx->kbd_timeout_sec >= 0)
+        draft->kbd_backlight_timeout_sec = ctx->kbd_timeout_sec;
+    if (ctx->auto_rotate >= 0)
+        draft->posture_auto_rotate = (ctx->auto_rotate != 0);
+}
 
-    if (kbd_level >= 0)
-        cfg->kbd_backlight_level = kbd_level;
-    if (kbd_timeout_sec >= 0)
-        cfg->kbd_backlight_timeout_sec = kbd_timeout_sec;
-    if (auto_rotate >= 0)
-        cfg->posture_auto_rotate = (auto_rotate != 0);
-
-    g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-    shell_config_save(cfg, cfg_path);
-
-    if (own_cfg)
-        shell_config_destroy(cfg);
+static void
+backlight_save_config_Order(BacklightWidget *bl G_GNUC_UNUSED, gint kbd_level, gint kbd_timeout_sec, gint auto_rotate)
+{
+    BacklightSaveCtx ctx = { kbd_level, kbd_timeout_sec, auto_rotate };
+    kajo_config_store_update_shell(NULL, mutate_backlight_shell_cfg, &ctx, NULL);
 }
 
 static void
@@ -240,7 +239,7 @@ backlight_refresh_ui(BacklightWidget *bl)
                 gtk_label_set_text(GTK_LABEL(bl->lbl_posture_status), status);
         }
 
-        ShellConfig *cfg = bl->base.app ? shell_app_get_config(bl->base.app) : NULL;
+        const KajoShellCfg *cfg = bl->base.app ? shell_app_get_config(bl->base.app) : NULL;
         if (cfg && bl->sw_autorotate)
             gtk_switch_set_active(GTK_SWITCH(bl->sw_autorotate), cfg->posture_auto_rotate);
     }

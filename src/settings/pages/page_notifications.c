@@ -76,9 +76,9 @@ load_notifications_from_config(SettingsPageNotifications *self)
     if (!self)
         return;
 
-    ShellConfig *config = shell_config_load(NULL);
+    g_autoptr(KajoShellCfgRef) config = kajo_config_store_acquire_shell(NULL);
     if (!config)
-        config = shell_config_get_default();
+        return;
 
     self->syncing_ui = TRUE;
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tile_dnd), config->dnd_enabled);
@@ -87,13 +87,11 @@ load_notifications_from_config(SettingsPageNotifications *self)
         config->toast_timeout_ms > 0 ? config->toast_timeout_ms : 8000);
     segmented_group_set_selected(
         self->seg_click,
-        (config->toast_click_action && g_strcmp0(config->toast_click_action, "dismiss") == 0) ? 1 : 0);
+        (config->toast_click_action == TOAST_CLICK_DISMISS) ? 1 : 0);
     gtk_range_set_value(
         GTK_RANGE(self->scale_hist),
         config->max_notification_history > 0 ? config->max_notification_history : 50);
     self->syncing_ui = FALSE;
-
-    shell_config_destroy(config);
 
     update_notifications_badges_and_telemetry(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);
@@ -197,32 +195,27 @@ action_revert_notifications(gpointer user_data)
 }
 
 static void
+mutate_page_notifications_cfg(KajoShellCfg *config, gpointer user_data)
+{
+    SettingsPageNotifications *self = (SettingsPageNotifications *)user_data;
+    config->dnd_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_dnd));
+    config->toast_timeout_ms = (gint)gtk_range_get_value(GTK_RANGE(self->scale_tout));
+    config->max_notification_history = (gint)gtk_range_get_value(GTK_RANGE(self->scale_hist));
+    config->toast_click_action = (segmented_group_get_selected(self->seg_click) == 1)
+        ? TOAST_CLICK_DISMISS
+        : TOAST_CLICK_FOCUS;
+}
+
+static void
 action_save_notifications(gpointer user_data)
 {
     SettingsPageNotifications *self = (SettingsPageNotifications *)user_data;
     if (!self)
         return;
 
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
-
-    config->dnd_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_dnd));
-    config->toast_timeout_ms = (gint)gtk_range_get_value(GTK_RANGE(self->scale_tout));
-    config->max_notification_history = (gint)gtk_range_get_value(GTK_RANGE(self->scale_hist));
-
-    const gchar *click_act = (segmented_group_get_selected(self->seg_click) == 1) ? "dismiss" : "focus";
-    g_free(config->toast_click_action);
-    config->toast_click_action = g_strdup(click_act);
-
-    g_autofree gchar *dir = g_build_filename(g_get_user_config_dir(), "kajo", NULL);
-    g_mkdir_with_parents(dir, 0755);
-    g_autofree gchar *path = g_build_filename(dir, "config.json", NULL);
-
-    if (shell_config_save(config, path)) {
+    if (kajo_config_store_update_shell(NULL, mutate_page_notifications_cfg, self, NULL)) {
         settings_send_ipc_command("reload-config");
     }
-    shell_config_destroy(config);
 
     update_notifications_badges_and_telemetry(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);

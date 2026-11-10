@@ -302,6 +302,27 @@ action_revert_theme(gpointer user_data)
     update_theme_telemetry_and_dirty(self);
 }
 
+typedef struct {
+    const gchar *accent;
+    gint         body_px;
+    gint         heading_px;
+    gint         sub_px;
+    gint         badge_px;
+} SaveThemeCtx;
+
+static void
+mutate_save_theme(KajoThemeCfg *draft, gpointer user_data)
+{
+    SaveThemeCtx *ctx = (SaveThemeCtx *)user_data;
+    gchar *acc_copy = g_strdup(ctx->accent);
+    g_free(draft->accent_color);
+    draft->accent_color          = acc_copy;
+    draft->ui_font_size_px       = ctx->body_px;
+    draft->font_heading_size_px  = ctx->heading_px;
+    draft->font_subtitle_size_px = ctx->sub_px;
+    draft->font_badge_size_px    = ctx->badge_px;
+}
+
 static void
 action_save_theme(gpointer user_data)
 {
@@ -326,22 +347,8 @@ action_save_theme(gpointer user_data)
 
     shell_theme_write_override_css(accent, hover, body_px, heading_px, sub_px, badge_px);
 
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
-    if (config) {
-        gchar *acc_copy = g_strdup(accent);
-        g_free(config->accent_color);
-        config->accent_color          = acc_copy;
-        config->ui_font_size_px       = body_px;
-        config->font_heading_size_px  = heading_px;
-        config->font_subtitle_size_px = sub_px;
-        config->font_badge_size_px    = badge_px;
-
-        g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-        shell_config_save(config, cfg_path);
-        shell_config_destroy(config);
-    }
+    SaveThemeCtx ctx = { accent, body_px, heading_px, sub_px, badge_px };
+    kajo_config_store_update_theme(NULL, mutate_save_theme, &ctx, NULL);
 
     gchar *saved_dup = g_strdup(accent);
     g_free(self->saved_accent_hex);
@@ -435,7 +442,7 @@ build_page_theme(void)
             GTK_STYLE_PROVIDER_PRIORITY_USER + 15);
     }
 
-    ShellConfig *config = shell_config_load(NULL);
+    g_autoptr(KajoThemeCfgRef) config = kajo_config_store_acquire_theme(NULL);
 
     /* Resolve initial accent hex from config or 00-accent.css */
     g_autofree gchar *init_hex = NULL;
@@ -468,9 +475,6 @@ build_page_theme(void)
         ? config->font_subtitle_size_px : 12;
     self->saved_badge_px = (config && config->font_badge_size_px >= 9 && config->font_badge_size_px <= 16)
         ? config->font_badge_size_px : 11;
-
-    if (config)
-        shell_config_destroy(config);
 
     /* ─── Card 1: Metro Accent Color Palette (8 Presets + Custom Hex) ─── */
     self->card_palette = create_section_card(

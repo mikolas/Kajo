@@ -106,42 +106,69 @@ static char *format_breadcrumb_for_path(const char *workspace_root,
   return g_strjoinv(" ▸ ", parts);
 }
 
+static void
+apply_ide_editor_font_css(KajoIdeWindow *self)
+{
+  if (!self) return;
+  GdkDisplay *display = gdk_display_get_default();
+  if (!self->editor_font_provider) {
+    self->editor_font_provider = gtk_css_provider_new();
+    if (display) {
+      gtk_style_context_add_provider_for_display(
+          display,
+          GTK_STYLE_PROVIDER(self->editor_font_provider),
+          GTK_STYLE_PROVIDER_PRIORITY_USER + 10);
+    }
+  }
+  const char *fam = (self->active_font_family && *self->active_font_family)
+      ? self->active_font_family : "Fira Code";
+  int px = CLAMP(self->active_font_size_px, 9, 28);
+  g_autofree char *css = g_strdup_printf(
+      "window.shell-ide-window .ide-source-view,\n"
+      "window.shell-ide-window .ide-source-view text {\n"
+      "    font-family: \"%s\", \"Fira Code\", \"FiraCode Nerd Font\", monospace;\n"
+      "    font-size: %dpx;\n"
+      "}\n",
+      fam, px);
+  gtk_css_provider_load_from_string(self->editor_font_provider, css);
+}
+
 void ide_window_apply_config(KajoIdeWindow *self) {
   if (!self) return;
-  ShellConfig *cfg = shell_config_load(NULL);
+  g_autoptr(KajoIdeCfgRef) cfg = kajo_config_store_acquire_ide(NULL);
   if (!cfg) return;
-
-  shell_theme_sync_from_config(cfg);
 
   g_free(self->active_scheme_id);
   self->active_scheme_id = g_strdup(
-      (cfg->ide_color_scheme && *cfg->ide_color_scheme)
-          ? cfg->ide_color_scheme
+      (cfg->color_scheme && *cfg->color_scheme)
+          ? cfg->color_scheme
           : "kajo-metro-dark");
 
   g_free(self->active_font_family);
   self->active_font_family = g_strdup(
-      (cfg->ide_font_family && *cfg->ide_font_family)
-          ? cfg->ide_font_family
+      (cfg->font_family && *cfg->font_family)
+          ? cfg->font_family
           : "Fira Code");
 
-  self->active_font_size_px = CLAMP(cfg->ide_font_size_px, 10, 24);
-  self->config_minimap_enabled = cfg->ide_show_minimap;
+  self->active_font_size_px = CLAMP(cfg->font_size_px, 9, 28);
+  self->config_minimap_enabled = cfg->show_minimap;
+
+  apply_ide_editor_font_css(self);
 
   if (self->source_view) {
     gtk_source_view_set_tab_width(
         GTK_SOURCE_VIEW(self->source_view),
-        (guint)CLAMP(cfg->ide_tab_width, 2, 8));
+        (guint)CLAMP(cfg->tab_width, 2, 8));
     gtk_source_view_set_highlight_current_line(
-        GTK_SOURCE_VIEW(self->source_view), cfg->ide_highlight_current_line);
+        GTK_SOURCE_VIEW(self->source_view), cfg->highlight_current_line);
     gtk_text_view_set_wrap_mode(
         GTK_TEXT_VIEW(self->source_view),
-        cfg->ide_word_wrap ? GTK_WRAP_WORD_CHAR : GTK_WRAP_NONE);
+        cfg->word_wrap ? GTK_WRAP_WORD_CHAR : GTK_WRAP_NONE);
     gtk_source_view_set_show_right_margin(
-        GTK_SOURCE_VIEW(self->source_view), cfg->ide_show_margin_guide);
+        GTK_SOURCE_VIEW(self->source_view), cfg->show_margin_guide);
     gtk_source_view_set_right_margin_position(GTK_SOURCE_VIEW(self->source_view), 100);
     gtk_source_view_set_insert_spaces_instead_of_tabs(
-        GTK_SOURCE_VIEW(self->source_view), cfg->ide_insert_spaces);
+        GTK_SOURCE_VIEW(self->source_view), cfg->insert_spaces);
   }
 
   if (self->gutter_renderer) {
@@ -149,7 +176,7 @@ void ide_window_apply_config(KajoIdeWindow *self) {
     g_autofree char *font_stack = shell_ide_font_stack(self->active_font_family);
     kajo_ide_gutter_renderer_set_font(self->gutter_renderer, font_stack, gutter_pt);
     gtk_widget_set_visible(GTK_WIDGET(self->gutter_renderer),
-                           cfg->ide_show_line_numbers);
+                           cfg->show_line_numbers);
   }
 
   if (self->source_map && self->md_split_container &&
@@ -165,41 +192,39 @@ void ide_window_apply_config(KajoIdeWindow *self) {
   }
 
   if (self->source_view) gtk_widget_queue_draw(self->source_view);
-  shell_config_destroy(cfg);
+}
+
+typedef struct {
+  int delta_or_zero;
+  int out_px;
+} IdeZoomCtx;
+
+static void
+mutate_ide_zoom(KajoIdeCfg *draft, gpointer user_data)
+{
+  IdeZoomCtx *ctx = (IdeZoomCtx *)user_data;
+  if (ctx->delta_or_zero == 0) {
+    draft->font_size_px = 13;
+  } else {
+    draft->font_size_px = CLAMP(draft->font_size_px + ctx->delta_or_zero, 10, 24);
+  }
+  ctx->out_px = draft->font_size_px;
 }
 
 void ide_window_zoom_editor_font(KajoIdeWindow *self, int delta_or_zero) {
   if (!self) return;
-  ShellConfig *cfg = shell_config_load(NULL);
-  if (!cfg) return;
-  if (delta_or_zero == 0) {
-    cfg->ide_font_size_px = 13;
-  } else {
-    cfg->ide_font_size_px = CLAMP(cfg->ide_font_size_px + delta_or_zero, 10, 24);
-  }
-  int new_px = cfg->ide_font_size_px;
-  shell_config_save(cfg, NULL);
-  shell_theme_sync_from_config(cfg);
-  shell_config_destroy(cfg);
+  IdeZoomCtx ctx = { delta_or_zero, 13 };
+  kajo_config_store_update_ide(NULL, mutate_ide_zoom, &ctx, NULL);
 
   ide_window_apply_config(self);
-  g_autofree char *msg = g_strdup_printf("🔍 Editor Font: %dpx", new_px);
+  g_autofree char *msg = g_strdup_printf("🔍 Editor Font: %dpx", ctx.out_px);
   ide_window_show_toast(self, msg);
 }
 
-static void on_config_file_changed(GFileMonitor      *monitor,
-                                   GFile             *file,
-                                   GFile             *other_file,
-                                   GFileMonitorEvent  event_type,
-                                   gpointer           user_data) {
-  (void)monitor;
-  (void)file;
-  (void)other_file;
-  if (event_type == G_FILE_MONITOR_EVENT_CHANGED ||
-      event_type == G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT ||
-      event_type == G_FILE_MONITOR_EVENT_CREATED) {
-    ide_window_apply_config(KAJO_IDE_WINDOW(user_data));
-  }
+static void on_ide_config_changed(KajoConfigStore *store G_GNUC_UNUSED,
+                                  KajoConfigDomain changed_domains G_GNUC_UNUSED,
+                                  gpointer         user_data) {
+  ide_window_apply_config(KAJO_IDE_WINDOW(user_data));
 }
 
 static gboolean on_leader_timeout_cb(gpointer user_data) {
@@ -1103,9 +1128,17 @@ static void on_drawer_close_clicked(GtkButton *b, gpointer d) {
 static void kajo_ide_window_dispose(GObject *object) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(object);
   g_clear_handle_id(&self->leader_timer_id, g_source_remove);
-  if (self->config_monitor) {
-    g_file_monitor_cancel(self->config_monitor);
-    g_clear_object(&self->config_monitor);
+  if (self->config_sub_id != 0) {
+    kajo_config_store_unsubscribe(NULL, self->config_sub_id);
+    self->config_sub_id = 0;
+  }
+  if (self->editor_font_provider) {
+    GdkDisplay *display = gdk_display_get_default();
+    if (display) {
+      gtk_style_context_remove_provider_for_display(
+          display, GTK_STYLE_PROVIDER(self->editor_font_provider));
+    }
+    g_clear_object(&self->editor_font_provider);
   }
   g_clear_pointer(&self->active_scheme_id, g_free);
   g_clear_pointer(&self->active_font_family, g_free);
@@ -1832,19 +1865,10 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   g_ptr_array_add(self->buffers, init_buf);
   self->active_buf_idx = 0;
 
-  /* Apply IDE Config & Start Live GFileMonitor on ~/.config/kajo/config.json */
+  /* Apply IDE Config & Subscribe to Live ide.toml Changes */
   ide_window_apply_config(self);
-  g_autofree char *cfg_path =
-      g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-  g_autoptr(GFile) cfg_file = g_file_new_for_path(cfg_path);
-  self->config_monitor =
-      g_file_monitor_file(cfg_file, G_FILE_MONITOR_NONE, NULL, NULL);
-  if (self->config_monitor) {
-    g_signal_connect(self->config_monitor,
-                     "changed",
-                     G_CALLBACK(on_config_file_changed),
-                     self);
-  }
+  self->config_sub_id = kajo_config_store_subscribe(
+      NULL, KAJO_CONFIG_DOMAIN_IDE, on_ide_config_changed, self, NULL);
 
   ide_window_bind_active_buffer_to_view(self);
 

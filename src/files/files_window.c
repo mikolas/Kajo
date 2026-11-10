@@ -7,42 +7,37 @@
 G_DEFINE_TYPE(KajoFilesWindow, kajo_files_window, GTK_TYPE_APPLICATION_WINDOW)
 
 static void
+mutate_files_prefs(KajoFilesCfg *draft, gpointer user_data)
+{
+    KajoFilesWindow *self = (KajoFilesWindow *)user_data;
+    draft->view_mode          = (KajoFilesViewMode)self->view_mode;
+    draft->sort_field         = (KajoFilesSortField)self->sort_field;
+    draft->sort_ascending     = self->sort_ascending;
+    draft->sort_folders_first = self->sort_folders_first;
+    draft->show_hidden        = self->show_hidden;
+    draft->show_inspector     = self->inspector_visible;
+}
+
+static void
 files_window_save_prefs(KajoFilesWindow *self)
 {
     if (!self) return;
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg) return;
-
-    g_free(cfg->files_view_mode);
-    cfg->files_view_mode = g_strdup(kajo_file_view_mode_to_string(self->view_mode));
-
-    g_free(cfg->files_sort_field);
-    cfg->files_sort_field = g_strdup(kajo_file_sort_field_to_string(self->sort_field));
-
-    cfg->files_sort_ascending = self->sort_ascending;
-    cfg->files_sort_folders_first = self->sort_folders_first;
-    cfg->files_show_hidden = self->show_hidden;
-    cfg->files_show_inspector = self->inspector_visible;
-
-    shell_config_save(cfg, NULL);
-    shell_config_destroy(cfg);
+    kajo_config_store_update_files(NULL, mutate_files_prefs, self, NULL);
 }
 
 static void
 files_window_load_prefs(KajoFilesWindow *self)
 {
     if (!self) return;
-    ShellConfig *cfg = shell_config_load(NULL);
+    g_autoptr(KajoFilesCfgRef) cfg = kajo_config_store_acquire_files(NULL);
     if (!cfg) return;
 
-    self->view_mode = kajo_file_view_mode_from_string(cfg->files_view_mode);
-    self->sort_field = kajo_file_sort_field_from_string(cfg->files_sort_field);
-    self->sort_ascending = cfg->files_sort_ascending;
-    self->sort_folders_first = cfg->files_sort_folders_first;
-    self->show_hidden = cfg->files_show_hidden;
-    self->inspector_visible = cfg->files_show_inspector;
-
-    shell_config_destroy(cfg);
+    self->view_mode          = (KajoFileViewMode)cfg->view_mode;
+    self->sort_field         = (KajoFileSortField)cfg->sort_field;
+    self->sort_ascending     = cfg->sort_ascending;
+    self->sort_folders_first = cfg->sort_folders_first;
+    self->show_hidden        = cfg->show_hidden;
+    self->inspector_visible  = cfg->show_inspector;
 }
 
 void files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx);

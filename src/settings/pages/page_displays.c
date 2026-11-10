@@ -411,13 +411,13 @@ load_niri_and_config_state(SettingsPageDisplays *self)
     self->saved_scale_idx  = scale_sel;
     self->saved_vrr_active = self->vrr_avail && vrr_active;
 
-    /* Populate Idle / Screensaver / Backlight / Posture from ShellConfig */
-    ShellConfig *cfg = shell_config_load(NULL);
+    /* Populate Idle / Screensaver / Backlight / Posture from KajoShellCfg */
+    g_autoptr(KajoShellCfgRef) cfg = kajo_config_store_acquire_shell(NULL);
 
     guint ss_mode_idx = 0;
-    if (cfg && cfg->screensaver_mode) {
-        if (g_strcmp0(cfg->screensaver_mode, "dpms") == 0) ss_mode_idx = 1;
-        else if (g_strcmp0(cfg->screensaver_mode, "disabled") == 0) ss_mode_idx = 2;
+    if (cfg) {
+        if (cfg->screensaver_mode == SCREENSAVER_MODE_DPMS) ss_mode_idx = 1;
+        else if (cfg->screensaver_mode == SCREENSAVER_MODE_DISABLED) ss_mode_idx = 2;
     }
     segmented_group_set_selected(self->seg_ss_mode, ss_mode_idx);
 
@@ -465,9 +465,6 @@ load_niri_and_config_state(SettingsPageDisplays *self)
             gtk_switch_set_active(GTK_SWITCH(self->sw_posture_disable_touch), cfg ? cfg->posture_disable_touch_in_laptop : FALSE);
     }
 
-    if (cfg)
-        shell_config_destroy(cfg);
-
     self->syncing_ui = FALSE;
     update_displays_dynamic_subtitles_and_telemetry(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);
@@ -477,6 +474,64 @@ static void
 on_displays_revert(gpointer user_data)
 {
     load_niri_and_config_state(user_data);
+}
+
+static void
+mutate_displays_shell_cfg(KajoShellCfg *cfg, gpointer user_data)
+{
+    SettingsPageDisplays *self = (SettingsPageDisplays *)user_data;
+
+    guint ss_mode = segmented_group_get_selected(self->seg_ss_mode);
+    cfg->screensaver_mode = (ss_mode == 1)
+        ? SCREENSAVER_MODE_DPMS
+        : ((ss_mode == 2) ? SCREENSAVER_MODE_DISABLED : SCREENSAVER_MODE_OVERLAY);
+
+    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ss_timeout));
+    if (ss_sel < G_N_ELEMENTS(k_ss_timeout_vals))
+        cfg->screensaver_timeout_sec = k_ss_timeout_vals[ss_sel];
+
+    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_dpms_timeout));
+    if (dpms_sel < G_N_ELEMENTS(k_dpms_timeout_vals))
+        cfg->dpms_timeout_sec = k_dpms_timeout_vals[dpms_sel];
+
+    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_lock_timeout));
+    if (lock_sel < G_N_ELEMENTS(k_lock_timeout_vals))
+        cfg->lock_timeout_sec = k_lock_timeout_vals[lock_sel];
+
+    cfg->lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(self->sw_lock_suspend));
+
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    if (caps && caps->kbd_bl_backend != KBD_BL_NONE && self->kbd_level_ctl) {
+        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
+            gboolean wake_on = gtk_switch_get_active(GTK_SWITCH(self->kbd_level_ctl));
+            cfg->kbd_backlight_level = wake_on ? 2 : 0;
+            if (wake_on && shell_kbd_backlight_get_level() <= 0)
+                shell_kbd_backlight_set_level(2);
+        } else {
+            gint level = CLAMP((gint)segmented_group_get_selected(self->kbd_level_ctl), 0, 2);
+            cfg->kbd_backlight_level = level;
+            shell_kbd_backlight_set_level(level);
+        }
+        if (shell_kbd_backlight_has_timeout() && self->kbd_timeout_ctl) {
+            guint t_sel = segmented_group_get_selected(self->kbd_timeout_ctl);
+            if (t_sel < G_N_ELEMENTS(k_kbd_timeout_vals)) {
+                cfg->kbd_backlight_timeout_sec = k_kbd_timeout_vals[t_sel];
+                shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
+            }
+        }
+    }
+
+    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
+        cfg->posture_auto_rotate             = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_autorotate));
+        cfg->posture_disable_kbd_in_tablet   = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_kbd));
+        cfg->posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_touch));
+
+        gdouble deg = 0.0;
+        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
+        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && cfg->posture_disable_touch_in_laptop);
+    }
 }
 
 static void
@@ -527,65 +582,8 @@ on_displays_save(gpointer user_data)
     run_niri_output_cmd_async(out_name, "vrr", vrr ? "on" : "off");
     niri_reload_config();
 
-    /* 2. Save Idle / Backlight / Posture settings to ~/.config/kajo/config.json */
-    ShellConfig *cfg = shell_config_load(NULL);
-    if (!cfg)
-        cfg = shell_config_get_default();
-
-    guint ss_mode = segmented_group_get_selected(self->seg_ss_mode);
-    g_free(cfg->screensaver_mode);
-    cfg->screensaver_mode = g_strdup(ss_mode == 1 ? "dpms" : (ss_mode == 2 ? "disabled" : "overlay"));
-
-    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ss_timeout));
-    if (ss_sel < G_N_ELEMENTS(k_ss_timeout_vals))
-        cfg->screensaver_timeout_sec = k_ss_timeout_vals[ss_sel];
-
-    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_dpms_timeout));
-    if (dpms_sel < G_N_ELEMENTS(k_dpms_timeout_vals))
-        cfg->dpms_timeout_sec = k_dpms_timeout_vals[dpms_sel];
-
-    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_lock_timeout));
-    if (lock_sel < G_N_ELEMENTS(k_lock_timeout_vals))
-        cfg->lock_timeout_sec = k_lock_timeout_vals[lock_sel];
-
-    cfg->lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(self->sw_lock_suspend));
-
-    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    if (caps && caps->kbd_bl_backend != KBD_BL_NONE && self->kbd_level_ctl) {
-        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
-            gboolean wake_on = gtk_switch_get_active(GTK_SWITCH(self->kbd_level_ctl));
-            cfg->kbd_backlight_level = wake_on ? 2 : 0;
-            if (wake_on && shell_kbd_backlight_get_level() <= 0)
-                shell_kbd_backlight_set_level(2);
-        } else {
-            gint level = CLAMP((gint)segmented_group_get_selected(self->kbd_level_ctl), 0, 2);
-            cfg->kbd_backlight_level = level;
-            shell_kbd_backlight_set_level(level);
-        }
-        if (shell_kbd_backlight_has_timeout() && self->kbd_timeout_ctl) {
-            guint t_sel = segmented_group_get_selected(self->kbd_timeout_ctl);
-            if (t_sel < G_N_ELEMENTS(k_kbd_timeout_vals)) {
-                cfg->kbd_backlight_timeout_sec = k_kbd_timeout_vals[t_sel];
-                shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
-            }
-        }
-    }
-
-    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
-        cfg->posture_auto_rotate            = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_autorotate));
-        cfg->posture_disable_kbd_in_tablet  = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_kbd));
-        cfg->posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_touch));
-
-        gdouble deg = 0.0;
-        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
-        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
-        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
-        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && cfg->posture_disable_touch_in_laptop);
-    }
-
-    g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-    shell_config_save(cfg, cfg_path);
-    shell_config_destroy(cfg);
+    /* 2. Save Idle / Backlight / Posture settings to ~/.config/kajo/shell.toml */
+    kajo_config_store_update_shell(NULL, mutate_displays_shell_cfg, self, NULL);
 
     settings_send_ipc_command("reload-config");
     update_displays_dynamic_subtitles_and_telemetry(self);

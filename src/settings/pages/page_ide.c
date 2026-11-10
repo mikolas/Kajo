@@ -356,7 +356,38 @@ action_revert_ide(gpointer user_data)
     update_ide_telemetry_and_dirty(self);
 }
 
-/* Writes the current control values to config.json and reloads every running
+typedef struct {
+    const gchar *scheme_id;
+    const gchar *font_fam;
+    gint         font_px;
+    gint         tab_w;
+    gboolean     minimap;
+    gboolean     gutter;
+    gboolean     cur_line;
+    gboolean     wrap;
+    gboolean     margin;
+    gboolean     spaces;
+} SaveIdeCtx;
+
+static void
+mutate_save_ide(KajoIdeCfg *config, gpointer user_data)
+{
+    SaveIdeCtx *ctx = (SaveIdeCtx *)user_data;
+    g_free(config->color_scheme);
+    config->color_scheme = g_strdup(ctx->scheme_id);
+    g_free(config->font_family);
+    config->font_family = g_strdup(ctx->font_fam);
+    config->font_size_px = ctx->font_px;
+    config->tab_width = ctx->tab_w;
+    config->show_minimap = ctx->minimap;
+    config->show_line_numbers = ctx->gutter;
+    config->highlight_current_line = ctx->cur_line;
+    config->word_wrap = ctx->wrap;
+    config->show_margin_guide = ctx->margin;
+    config->insert_spaces = ctx->spaces;
+}
+
+/* Writes the current control values to ide.toml and reloads every running
  * Kajo process. Only called from the SAVE & APPLY button. */
 static void
 action_save_ide(gpointer user_data)
@@ -379,29 +410,19 @@ action_save_ide(gpointer user_data)
     gboolean gutter   = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
     gboolean cur_line = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
 
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
-    if (config) {
-        g_free(config->ide_color_scheme);
-        config->ide_color_scheme = g_strdup(IDE_SCHEMES[s_idx].id);
-        g_free(config->ide_font_family);
-        config->ide_font_family = g_strdup(font_fam);
-        config->ide_font_size_px = font_px;
-        config->ide_tab_width = tab_w;
-        config->ide_show_minimap = minimap;
-        config->ide_show_line_numbers = gutter;
-        config->ide_highlight_current_line = cur_line;
-        config->ide_word_wrap = wrap;
-        config->ide_show_margin_guide = margin;
-        config->ide_insert_spaces = spaces;
-
-        shell_theme_sync_from_config(config);
-
-        g_autofree gchar *cfg_path = g_build_filename(g_get_user_config_dir(), "kajo", "config.json", NULL);
-        shell_config_save(config, cfg_path);
-        shell_config_destroy(config);
-    }
+    SaveIdeCtx ctx = {
+        IDE_SCHEMES[s_idx].id,
+        font_fam,
+        font_px,
+        tab_w,
+        minimap,
+        gutter,
+        cur_line,
+        wrap,
+        margin,
+        spaces,
+    };
+    kajo_config_store_update_ide(NULL, mutate_save_ide, &ctx, NULL);
 
     self->saved_scheme_idx = s_idx;
     self->saved_font_idx   = f_idx;
@@ -475,9 +496,7 @@ build_page_ide(void)
     SettingsPageIde *self = g_object_new(settings_page_ide_get_type(), NULL);
     self->syncing_ui = TRUE;
 
-    ShellConfig *config = shell_config_load(NULL);
-    if (!config)
-        config = shell_config_get_default();
+    g_autoptr(KajoIdeCfgRef) config = kajo_config_store_acquire_ide(NULL);
 
     GdkDisplay *display = gdk_display_get_default();
 
@@ -496,8 +515,8 @@ build_page_ide(void)
     gtk_widget_set_hexpand(grid, TRUE);
 
     guint init_scheme_idx = 0;
-    const char *cfg_scheme = (config && config->ide_color_scheme)
-        ? config->ide_color_scheme
+    const char *cfg_scheme = (config && config->color_scheme)
+        ? config->color_scheme
         : "kajo-metro-dark";
 
     for (size_t i = 0; i < N_IDE_SCHEMES; i++) {
@@ -598,9 +617,9 @@ build_page_ide(void)
 
     self->combo_font = create_string_dropdown(IDE_FONT_FAMILIES);
     guint init_font_idx = 0;
-    if (config && config->ide_font_family) {
+    if (config && config->font_family) {
         for (guint i = 0; IDE_FONT_FAMILIES[i] != NULL; i++) {
-            if (g_ascii_strcasecmp(config->ide_font_family, IDE_FONT_FAMILIES[i]) == 0) {
+            if (g_ascii_strcasecmp(config->font_family, IDE_FONT_FAMILIES[i]) == 0) {
                 init_font_idx = i;
                 break;
             }
@@ -613,8 +632,8 @@ build_page_ide(void)
         "Falls back via shell_ide_font_stack() in kajo-ide",
         self->combo_font));
 
-    int init_px = (config && config->ide_font_size_px >= 9 && config->ide_font_size_px <= 28)
-        ? config->ide_font_size_px
+    int init_px = (config && config->font_size_px >= 9 && config->font_size_px <= 28)
+        ? config->font_size_px
         : 13;
     GtkWidget *size_wrap = create_scale_with_badge(
         10.0, 24.0, 1.0, (double)init_px, "%.0fPX", &self->scale_font_size, NULL);
@@ -626,8 +645,8 @@ build_page_ide(void)
 
     guint init_tab_idx = 0;
     if (config) {
-        if (config->ide_tab_width == 4) init_tab_idx = 1;
-        else if (config->ide_tab_width == 8) init_tab_idx = 2;
+        if (config->tab_width == 4) init_tab_idx = 1;
+        else if (config->tab_width == 8) init_tab_idx = 2;
     }
     self->seg_tab_width = create_segmented_group(IDE_TAB_LABELS, init_tab_idx);
     gtk_box_append(GTK_BOX(card_typo), create_boxed_row(
@@ -638,7 +657,7 @@ build_page_ide(void)
 
     self->sw_spaces = gtk_switch_new();
     gtk_widget_set_valign(self->sw_spaces, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_spaces), config ? config->ide_insert_spaces : TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_spaces), config ? config->insert_spaces : TRUE);
     gtk_box_append(GTK_BOX(card_typo), create_boxed_row(
         "␣",
         "Insert Spaces Instead of Tabs",
@@ -657,7 +676,7 @@ build_page_ide(void)
 
     self->sw_gutter = gtk_switch_new();
     gtk_widget_set_valign(self->sw_gutter, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), config ? config->ide_show_line_numbers : TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), config ? config->show_line_numbers : TRUE);
     gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
         "☰",
         "Show 6-Column Cairo Gutter",
@@ -666,7 +685,7 @@ build_page_ide(void)
 
     self->sw_minimap = gtk_switch_new();
     gtk_widget_set_valign(self->sw_minimap, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), config ? config->ide_show_minimap : TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), config ? config->show_minimap : TRUE);
     gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
         "🗺",
         "Show Code Overview Minimap",
@@ -675,7 +694,7 @@ build_page_ide(void)
 
     self->sw_cur_line = gtk_switch_new();
     gtk_widget_set_valign(self->sw_cur_line, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), config ? config->ide_highlight_current_line : TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), config ? config->highlight_current_line : TRUE);
     gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
         "▬",
         "Highlight Active Cursor Line",
@@ -684,7 +703,7 @@ build_page_ide(void)
 
     self->sw_word_wrap = gtk_switch_new();
     gtk_widget_set_valign(self->sw_word_wrap, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_word_wrap), config ? config->ide_word_wrap : FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_word_wrap), config ? config->word_wrap : FALSE);
     gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
         "↩",
         "Word Wrap Long Lines",
@@ -693,7 +712,7 @@ build_page_ide(void)
 
     self->sw_margin_guide = gtk_switch_new();
     gtk_widget_set_valign(self->sw_margin_guide, GTK_ALIGN_CENTER);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), config ? config->ide_show_margin_guide : FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), config ? config->show_margin_guide : FALSE);
     gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
         "│",
         "Margin Guide at Column 100",
@@ -715,9 +734,6 @@ build_page_ide(void)
 
     select_ide_scheme(self, init_scheme_idx, FALSE);
     self->syncing_ui = FALSE;
-
-    if (config)
-        shell_config_destroy(config);
 
     g_signal_connect(self->combo_font, "notify::selected", G_CALLBACK(on_ide_dropdown_changed), self);
     g_signal_connect(self->scale_font_size, "value-changed", G_CALLBACK(on_ide_font_size_changed), self);

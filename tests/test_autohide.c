@@ -18,7 +18,7 @@ shell_panel_get_container(ShellPanel *panel)
 static void
 test_autohide_initial_disabled(void)
 {
-    ShellConfig *cfg = shell_config_get_default();
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = FALSE;
 
     ShellAutohide *ah = shell_autohide_new(NULL, cfg);
@@ -28,21 +28,23 @@ test_autohide_initial_disabled(void)
     g_assert_cmpuint(ah->hide_timeout_id, ==, 0);
 
     shell_autohide_destroy(ah);
-    shell_config_destroy(cfg);
+    kajo_shell_cfg_free(cfg);
 }
 
 static void
 test_autohide_enter_leave_cycle(void)
 {
-    ShellConfig *cfg = shell_config_get_default();
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = TRUE;
     cfg->autohide_hide_delay = 15;
     cfg->autohide_reveal_duration = 15;
+    cfg->autohide_hide_duration = 15;
 
     ShellAutohide *ah = shell_autohide_new(NULL, cfg);
     g_assert_nonnull(ah);
     g_assert_true(ah->enabled);
     g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
+    g_assert_cmpint(ah->hide_duration, ==, 15);
 
     /* Pointer enters edge strip -> reveals */
     shell_autohide_enter(ah);
@@ -65,13 +67,13 @@ test_autohide_enter_leave_cycle(void)
     g_assert_cmpuint(ah->hide_timeout_id, ==, 0);
 
     shell_autohide_destroy(ah);
-    shell_config_destroy(cfg);
+    kajo_shell_cfg_free(cfg);
 }
 
 static void
 test_autohide_popover_unlock_recovers_stuck_state(void)
 {
-    ShellConfig *cfg = shell_config_get_default();
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = TRUE;
     cfg->autohide_hide_delay = 15;
 
@@ -101,13 +103,13 @@ test_autohide_popover_unlock_recovers_stuck_state(void)
     g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
 
     shell_autohide_destroy(ah);
-    shell_config_destroy(cfg);
+    kajo_shell_cfg_free(cfg);
 }
 
 static void
 test_autohide_reload_config_live(void)
 {
-    ShellConfig *cfg = shell_config_get_default();
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = FALSE;
     cfg->autohide_hide_delay = 15;
 
@@ -134,21 +136,21 @@ test_autohide_reload_config_live(void)
     g_assert_cmpuint(ah->hide_timeout_id, ==, 0);
 
     shell_autohide_destroy(ah);
-    shell_config_destroy(cfg);
+    kajo_shell_cfg_free(cfg);
 }
 
 static void
 test_autohide_touch_reveal_and_force_hide(void)
 {
-    ShellConfig *cfg = shell_config_get_default();
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = TRUE;
     cfg->autohide_hide_delay = 15;
     cfg->touch_gestures_enabled = TRUE;
 
     ShellAutohide *ah = shell_autohide_new(NULL, cfg);
     g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
-    /* Touch-friendly edge strip: -(32 - 6) = -26 */
-    g_assert_cmpint(ah->anim_target_margin, ==, -26);
+    /* Touch-friendly edge strip: -(39 - 6) = -33 */
+    g_assert_cmpint(ah->anim_target_margin, ==, -(cfg->panel_height - 6));
 
     /* Touch reveal schedules dwell timer while keeping pointer_inside FALSE */
     shell_autohide_touch_reveal(ah, 20);
@@ -172,7 +174,7 @@ test_autohide_touch_reveal_and_force_hide(void)
     g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
 
     shell_autohide_destroy(ah);
-    shell_config_destroy(cfg);
+    kajo_shell_cfg_free(cfg);
 }
 
 int

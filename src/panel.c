@@ -154,7 +154,7 @@ on_panel_swipe_begin(GtkGesture       *gesture,
     if (!panel || !panel->app)
         return;
 
-    ShellConfig *cfg = shell_app_get_config(panel->app);
+    const KajoShellCfg *cfg = shell_app_get_config(panel->app);
     if (!cfg || !cfg->touch_gestures_enabled)
         return;
 
@@ -183,7 +183,7 @@ on_panel_swipe(GtkGestureSwipe *gesture,
     if (!panel || !panel->app)
         return;
 
-    ShellConfig *cfg = shell_app_get_config(panel->app);
+    const KajoShellCfg *cfg = shell_app_get_config(panel->app);
     if (!cfg || !cfg->touch_gestures_enabled)
         return;
 
@@ -192,14 +192,13 @@ on_panel_swipe(GtkGestureSwipe *gesture,
 
     /* Horizontal Swipe across the panel (Column or Workspace switch) */
     if (abs_vx > 1.35 * abs_vy && abs_vx >= 200.0) {
-        const gchar *horiz_mode = cfg->touch_swipe_horizontal ? cfg->touch_swipe_horizontal : "column";
-        if (g_strcmp0(horiz_mode, "workspace") == 0) {
+        if (cfg->touch_swipe_horizontal == SWIPE_HORIZ_WORKSPACE) {
             if (vx < 0.0)
                 niri_send_action("{\"Action\":{\"FocusWorkspaceDown\":{}}}");
             else
                 niri_send_action("{\"Action\":{\"FocusWorkspaceUp\":{}}}");
             gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-        } else if (g_strcmp0(horiz_mode, "column") == 0) {
+        } else if (cfg->touch_swipe_horizontal == SWIPE_HORIZ_COLUMN) {
             if (vx < 0.0)
                 niri_send_action("{\"Action\":{\"FocusColumnRight\":{}}}");
             else
@@ -240,29 +239,27 @@ on_panel_swipe(GtkGestureSwipe *gesture,
         gboolean is_right_zone = (width > 0 && panel->swipe_start_x >= (gdouble)width * 0.66);
 
         if (is_right_zone) {
-            const gchar *right_act = cfg->touch_swipe_right ? cfg->touch_swipe_right : "control-center";
-            if (g_strcmp0(right_act, "control-center") == 0) {
+            if (cfg->touch_swipe_right == SWIPE_RIGHT_CONTROL_CENTER) {
                 if (!open_panel_widget_popover_by_id(panel, "control-center"))
                     open_panel_widget_popover_by_id(panel, "notifications");
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-            } else if (g_strcmp0(right_act, "notifications") == 0) {
+            } else if (cfg->touch_swipe_right == SWIPE_RIGHT_NOTIFICATIONS) {
                 open_panel_widget_popover_by_id(panel, "notifications");
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-            } else if (g_strcmp0(right_act, "osk") == 0) {
+            } else if (cfg->touch_swipe_right == SWIPE_RIGHT_OSK) {
                 if (panel->app->osk)
                     shell_osk_toggle(panel->app->osk);
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
             }
         } else {
-            const gchar *center_act = cfg->touch_swipe_center ? cfg->touch_swipe_center : "launcher";
-            if (g_strcmp0(center_act, "launcher") == 0) {
+            if (cfg->touch_swipe_center == SWIPE_CENTER_LAUNCHER) {
                 if (panel->app->launcher)
                     shell_launcher_surface_toggle(panel->app->launcher);
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-            } else if (g_strcmp0(center_act, "overview") == 0) {
+            } else if (cfg->touch_swipe_center == SWIPE_CENTER_OVERVIEW) {
                 niri_send_action("{\"Action\":{\"ToggleOverview\":{}}}");
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
-            } else if (g_strcmp0(center_act, "osk") == 0) {
+            } else if (cfg->touch_swipe_center == SWIPE_CENTER_OSK) {
                 if (panel->app->osk)
                     shell_osk_toggle(panel->app->osk);
                 gtk_gesture_set_state(GTK_GESTURE(gesture), GTK_EVENT_SEQUENCE_CLAIMED);
@@ -272,22 +269,22 @@ on_panel_swipe(GtkGestureSwipe *gesture,
 }
 
 static GtkLayerShellLayer
-parse_panel_layer(const gchar *layer_str)
+panel_layer_to_gtk(ShellPanelLayer layer)
 {
-    if (g_strcmp0(layer_str, "overlay") == 0)
-        return GTK_LAYER_SHELL_LAYER_OVERLAY;
-    if (g_strcmp0(layer_str, "bottom") == 0)
-        return GTK_LAYER_SHELL_LAYER_BOTTOM;
-    if (g_strcmp0(layer_str, "background") == 0)
-        return GTK_LAYER_SHELL_LAYER_BACKGROUND;
-    return GTK_LAYER_SHELL_LAYER_TOP;
+    switch (layer) {
+    case PANEL_LAYER_OVERLAY:    return GTK_LAYER_SHELL_LAYER_OVERLAY;
+    case PANEL_LAYER_BOTTOM:     return GTK_LAYER_SHELL_LAYER_BOTTOM;
+    case PANEL_LAYER_BACKGROUND: return GTK_LAYER_SHELL_LAYER_BACKGROUND;
+    case PANEL_LAYER_TOP:
+    default:                     return GTK_LAYER_SHELL_LAYER_TOP;
+    }
 }
 
 ShellPanel *
 shell_panel_new(ShellApp *app)
 {
     ShellPanel *panel = g_new0(ShellPanel, 1);
-    ShellConfig *config = shell_app_get_config(app);
+    const KajoShellCfg *config = shell_app_get_config(app);
 
     panel->app = app;
     panel->widgets = g_ptr_array_new();
@@ -299,7 +296,7 @@ shell_panel_new(ShellApp *app)
 
     /* Configure gtk4-layer-shell */
     gtk_layer_init_for_window(panel->window);
-    gtk_layer_set_layer(panel->window, parse_panel_layer(config->panel_layer));
+    gtk_layer_set_layer(panel->window, panel_layer_to_gtk(config->panel_layer));
     gtk_layer_set_namespace(panel->window, "kajo");
 
     /* Anchor to top-left and top-right to stretch across the top */
@@ -466,13 +463,13 @@ shell_panel_register_popover(ShellPanel *panel, GtkPopover *popover)
 }
 
 void
-shell_panel_reload_config(ShellPanel *panel, ShellConfig *config)
+shell_panel_reload_config(ShellPanel *panel, const KajoShellCfg *config)
 {
     if (!panel || !config)
         return;
 
     if (panel->window) {
-        gtk_layer_set_layer(panel->window, parse_panel_layer(config->panel_layer));
+        gtk_layer_set_layer(panel->window, panel_layer_to_gtk(config->panel_layer));
         if (config->panel_position == PANEL_POSITION_TOP) {
             gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, FALSE);
             gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, TRUE);

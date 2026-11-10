@@ -9,7 +9,7 @@ extern "C" {
 
 /* Initialize the icon system: add bundled icon directory to GTK search path,
  * load the icon-map.json mapping file. Call once after GdkDisplay is ready. */
-void shell_icons_init(const gchar *icon_map_path);
+void shell_icons_init(void);
 void shell_icons_cleanup(void);
 
 /* Resolve an app_id to the best available symbolic icon name.

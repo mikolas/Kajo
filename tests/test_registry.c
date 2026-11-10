@@ -18,7 +18,7 @@ shell_osk_toggle(ShellOSK *self G_GNUC_UNUSED)
 }
 
 /* Stubs for shell_app_* entry points referenced by widget callbacks */
-ShellConfig *
+const KajoShellCfg *
 shell_app_get_config(ShellApp *self)
 {
     return self ? self->config : NULL;

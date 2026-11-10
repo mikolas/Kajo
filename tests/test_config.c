@@ -1,395 +1,437 @@
 #include "../src/config.h"
+#include "../src/config/kajo_config_schema.h"
+#include "../src/config/kajo_config_migrate.h"
 #include <glib.h>
 #include <glib/gstdio.h>
+#include <gio/gio.h>
 #include <string.h>
 
 static void
-test_config_defaults(void)
+rm_rf(const gchar *path)
 {
-    ShellConfig *cfg = shell_config_get_default();
-    g_assert_nonnull(cfg);
-
-    g_assert_cmpint(cfg->panel_position, ==, PANEL_POSITION_TOP);
-    g_assert_cmpint(cfg->panel_height, ==, 32);
-    g_assert_cmpstr(cfg->panel_layer, ==, "top");
-    g_assert_cmpint(cfg->default_widget_mode, ==, WIDGET_MODE_ICON);
-    g_assert_cmpint(cfg->icon_size, ==, 24);
-
-    g_assert_false(cfg->autohide_enabled);
-    g_assert_true(cfg->touch_gestures_enabled);
-    g_assert_cmpint(cfg->touch_dwell_ms, ==, 4000);
-    g_assert_cmpstr(cfg->touch_swipe_center, ==, "launcher");
-    g_assert_cmpstr(cfg->touch_swipe_right, ==, "control-center");
-    g_assert_cmpstr(cfg->touch_swipe_horizontal, ==, "column");
-    g_assert_cmpstr(cfg->osk_auto_show_mode, ==, "tablet");
-    g_assert_true(cfg->osk_push_windows);
-    g_assert_cmpint(cfg->osk_height_px, ==, 260);
-    g_assert_cmpint(cfg->toast_timeout_ms, ==, 8000);
-    g_assert_cmpint(cfg->max_notification_history, ==, 50);
-    g_assert_cmpstr(cfg->toast_click_action, ==, "focus");
-    g_assert_false(cfg->dnd_enabled);
-
-    /* Idle & Screen Lock defaults */
-    g_assert_cmpstr(cfg->screensaver_mode, ==, "overlay");
-    g_assert_cmpint(cfg->screensaver_timeout_sec, ==, 300);
-    g_assert_cmpint(cfg->dpms_timeout_sec, ==, 600);
-    g_assert_cmpint(cfg->lock_timeout_sec, ==, 900);
-    g_assert_true(cfg->lock_on_suspend);
-
-    /* Posture & Keyboard Backlight defaults */
-    g_assert_true(cfg->posture_auto_rotate);
-    g_assert_true(cfg->posture_disable_kbd_in_tablet);
-    g_assert_false(cfg->posture_disable_touch_in_laptop);
-    g_assert_cmpint(cfg->kbd_backlight_level, ==, 2);
-    g_assert_cmpint(cfg->kbd_backlight_timeout_sec, ==, 0);
-
-    /* Kajo IDE & Code Editor defaults */
-    g_assert_cmpstr(cfg->ide_color_scheme, ==, "kajo-metro-dark");
-    g_assert_cmpstr(cfg->ide_font_family, ==, "Fira Code");
-    g_assert_cmpint(cfg->ide_font_size_px, ==, 13);
-    g_assert_cmpint(cfg->ide_tab_width, ==, 2);
-    g_assert_true(cfg->ide_show_minimap);
-    g_assert_true(cfg->ide_show_line_numbers);
-    g_assert_true(cfg->ide_highlight_current_line);
-    g_assert_false(cfg->ide_word_wrap);
-    g_assert_false(cfg->ide_show_margin_guide);
-    g_assert_true(cfg->ide_insert_spaces);
-
-    /* Kajo Files defaults */
-    g_assert_cmpstr(cfg->files_view_mode, ==, "grid");
-    g_assert_cmpstr(cfg->files_sort_field, ==, "name");
-    g_assert_true(cfg->files_sort_ascending);
-    g_assert_true(cfg->files_sort_folders_first);
-    g_assert_false(cfg->files_show_hidden);
-    g_assert_false(cfg->files_show_inspector);
-
-    /* Kajo Mod defaults */
-    g_assert_cmpstr(cfg->mod_filter_mode, ==, "a500");
-    g_assert_cmpstr(cfg->mod_led_mode, ==, "auto");
-    g_assert_cmpstr(cfg->mod_sid_model, ==, "auto");
-    g_assert_cmpint(cfg->mod_stereo_sep_pct, ==, 70);
-    g_assert_cmpstr(cfg->mod_end_action, ==, "next-sub");
-    g_assert_cmpstr(cfg->mod_hvsc_path, ==, "");
-    g_assert_cmpint(cfg->mod_uade_timeout_sec, ==, 180);
-    g_assert_true(cfg->mod_auto_extract_archives);
-
-    g_assert_nonnull(cfg->layout_left);
-    g_assert_nonnull(cfg->layout_center);
-    g_assert_nonnull(cfg->layout_right);
-
-    shell_config_destroy(cfg);
+    if (!path || !g_file_test(path, G_FILE_TEST_EXISTS))
+        return;
+    if (g_file_test(path, G_FILE_TEST_IS_DIR)) {
+        GDir *dir = g_dir_open(path, 0, NULL);
+        if (dir) {
+            const gchar *name;
+            while ((name = g_dir_read_name(dir)) != NULL) {
+                g_autofree gchar *child = g_build_filename(path, name, NULL);
+                rm_rf(child);
+            }
+            g_dir_close(dir);
+        }
+        g_rmdir(path);
+    } else {
+        g_unlink(path);
+    }
 }
 
+/* 1. Shipped Default TOML Asset vs Compiled C Schema Parity */
 static void
-test_config_save_and_load_roundtrip(void)
+test_defaults_file_parity(void)
 {
-    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-test-cfg-XXXXXX", NULL);
-    g_assert_nonnull(tmpdir);
-    g_autofree gchar *cfg_path = g_build_filename(tmpdir, "config.json", NULL);
+    const gchar *src_root = g_getenv("KAJO_SOURCE_ROOT");
+    if (!src_root || !src_root[0])
+        src_root = KAJO_SOURCE_DIR;
 
-    ShellConfig *orig = shell_config_get_default();
-    orig->panel_position = PANEL_POSITION_BOTTOM;
-    orig->panel_height = 44;
-    g_free(orig->panel_layer);
-    orig->panel_layer = g_strdup("overlay");
-    orig->default_widget_mode = WIDGET_MODE_FULL;
-    orig->icon_size = 20;
+    const KajoDomainSchema *domains[] = {
+        kajo_schema_get_theme(),
+        kajo_schema_get_shell(),
+        kajo_schema_get_ide(),
+        kajo_schema_get_files(),
+        kajo_schema_get_mod(),
+    };
 
-    orig->autohide_enabled = TRUE;
-    orig->autohide_hide_delay = 500;
-    orig->autohide_reveal_delay = 120;
-    orig->autohide_reveal_duration = 180;
+    for (size_t i = 0; i < G_N_ELEMENTS(domains); i++) {
+        const KajoDomainSchema *d = domains[i];
+        g_autofree gchar *toml_path = g_build_filename(src_root, "data", "defaults", d->filename, NULL);
+        g_assert_true(g_file_test(toml_path, G_FILE_TEST_EXISTS));
 
-    orig->touch_gestures_enabled = FALSE;
-    orig->touch_dwell_ms = 5500;
-    g_free(orig->touch_swipe_center);
-    orig->touch_swipe_center = g_strdup("overview");
-    g_free(orig->touch_swipe_right);
-    orig->touch_swipe_right = g_strdup("notifications");
-    g_free(orig->touch_swipe_horizontal);
-    orig->touch_swipe_horizontal = g_strdup("workspace");
-    g_free(orig->osk_auto_show_mode);
-    orig->osk_auto_show_mode = g_strdup("always");
-    orig->osk_push_windows = FALSE;
-    orig->osk_height_px = 310;
+        gpointer c_def = kajo_cfg_domain_new_rc_default(d);
+        gpointer parsed = kajo_cfg_domain_new_rc_default(d);
+        g_assert_true(kajo_cfg_domain_parse_toml_file(d, parsed, toml_path, FALSE));
 
-    orig->toast_timeout_ms = 5000;
-    orig->max_notification_history = 100;
-    g_free(orig->toast_click_action);
-    orig->toast_click_action = g_strdup("dismiss");
-    orig->dnd_enabled = TRUE;
+        g_assert_true(kajo_cfg_domain_equal(d, c_def, parsed));
 
-    g_free(orig->screensaver_mode);
-    orig->screensaver_mode = g_strdup("dpms");
-    orig->screensaver_timeout_sec = 60;
-    orig->dpms_timeout_sec = 300;
-    orig->lock_timeout_sec = 600;
-    orig->lock_on_suspend = FALSE;
-
-    orig->posture_auto_rotate = FALSE;
-    orig->posture_disable_kbd_in_tablet = FALSE;
-    orig->posture_disable_touch_in_laptop = TRUE;
-    orig->kbd_backlight_level = 1;
-    orig->kbd_backlight_timeout_sec = 30;
-
-    g_free(orig->accent_color);
-    orig->accent_color = g_strdup("#ff8c00");
-    orig->ui_font_size_px = 15;
-    orig->font_heading_size_px = 14;
-    orig->font_subtitle_size_px = 13;
-    orig->font_badge_size_px = 12;
-
-    g_free(orig->ide_color_scheme);
-    orig->ide_color_scheme = g_strdup("kajo-monokai-metro");
-    g_free(orig->ide_font_family);
-    orig->ide_font_family = g_strdup("JetBrains Mono");
-    orig->ide_font_size_px = 16;
-    orig->ide_tab_width = 4;
-    orig->ide_show_minimap = FALSE;
-    orig->ide_show_line_numbers = TRUE;
-    orig->ide_highlight_current_line = FALSE;
-    orig->ide_word_wrap = TRUE;
-    orig->ide_show_margin_guide = TRUE;
-    orig->ide_insert_spaces = FALSE;
-
-    g_free(orig->files_view_mode);
-    orig->files_view_mode = g_strdup("list");
-    g_free(orig->files_sort_field);
-    orig->files_sort_field = g_strdup("modified");
-    orig->files_sort_ascending = FALSE;
-    orig->files_sort_folders_first = FALSE;
-    orig->files_show_hidden = TRUE;
-    orig->files_show_inspector = TRUE;
-
-    g_free(orig->mod_filter_mode);
-    orig->mod_filter_mode = g_strdup("sinc");
-    g_free(orig->mod_led_mode);
-    orig->mod_led_mode = g_strdup("on");
-    g_free(orig->mod_sid_model);
-    orig->mod_sid_model = g_strdup("8580");
-    orig->mod_stereo_sep_pct = 55;
-    g_free(orig->mod_end_action);
-    orig->mod_end_action = g_strdup("loop");
-    g_free(orig->mod_hvsc_path);
-    orig->mod_hvsc_path = g_strdup("/opt/HVSC");
-    orig->mod_uade_timeout_sec = 240;
-    orig->mod_auto_extract_archives = FALSE;
-
-    ShellWidgetConfig *wc_left = g_new0(ShellWidgetConfig, 1);
-    wc_left->id = g_strdup("launcher");
-    wc_left->mode = WIDGET_MODE_ICON;
-    g_ptr_array_add(orig->layout_left, wc_left);
-
-    ShellWidgetConfig *wc_center = g_new0(ShellWidgetConfig, 1);
-    wc_center->id = g_strdup("clock");
-    wc_center->mode = WIDGET_MODE_FULL;
-    g_ptr_array_add(orig->layout_center, wc_center);
-
-    ShellWidgetConfig *wc_right = g_new0(ShellWidgetConfig, 1);
-    wc_right->id = g_strdup("custom-script");
-    wc_right->mode = WIDGET_MODE_LABEL;
-    wc_right->interval_sec = 10;
-    wc_right->exec_cmd = g_strdup("echo ok");
-    wc_right->click_left_cmd = g_strdup("true");
-    wc_right->click_right_cmd = g_strdup("false");
-    g_ptr_array_add(orig->layout_right, wc_right);
-
-    g_assert_true(shell_config_save(orig, cfg_path));
-    shell_config_destroy(orig);
-
-    ShellConfig *loaded = shell_config_load(cfg_path);
-    g_assert_nonnull(loaded);
-
-    g_assert_cmpint(loaded->panel_position, ==, PANEL_POSITION_BOTTOM);
-    g_assert_cmpint(loaded->panel_height, ==, 44);
-    g_assert_cmpstr(loaded->panel_layer, ==, "overlay");
-    g_assert_cmpint(loaded->default_widget_mode, ==, WIDGET_MODE_FULL);
-    g_assert_cmpint(loaded->icon_size, ==, 20);
-
-    g_assert_true(loaded->autohide_enabled);
-    g_assert_cmpint(loaded->autohide_hide_delay, ==, 500);
-    g_assert_cmpint(loaded->autohide_reveal_delay, ==, 120);
-    g_assert_cmpint(loaded->autohide_reveal_duration, ==, 180);
-
-    g_assert_false(loaded->touch_gestures_enabled);
-    g_assert_cmpint(loaded->touch_dwell_ms, ==, 5500);
-    g_assert_cmpstr(loaded->touch_swipe_center, ==, "overview");
-    g_assert_cmpstr(loaded->touch_swipe_right, ==, "notifications");
-    g_assert_cmpstr(loaded->touch_swipe_horizontal, ==, "workspace");
-    g_assert_cmpstr(loaded->osk_auto_show_mode, ==, "always");
-    g_assert_false(loaded->osk_push_windows);
-    g_assert_cmpint(loaded->osk_height_px, ==, 310);
-
-    g_assert_cmpint(loaded->toast_timeout_ms, ==, 5000);
-    g_assert_cmpint(loaded->max_notification_history, ==, 100);
-    g_assert_cmpstr(loaded->toast_click_action, ==, "dismiss");
-    g_assert_true(loaded->dnd_enabled);
-
-    g_assert_cmpstr(loaded->screensaver_mode, ==, "dpms");
-    g_assert_cmpint(loaded->screensaver_timeout_sec, ==, 60);
-    g_assert_cmpint(loaded->dpms_timeout_sec, ==, 300);
-    g_assert_cmpint(loaded->lock_timeout_sec, ==, 600);
-    g_assert_false(loaded->lock_on_suspend);
-
-    g_assert_false(loaded->posture_auto_rotate);
-    g_assert_false(loaded->posture_disable_kbd_in_tablet);
-    g_assert_true(loaded->posture_disable_touch_in_laptop);
-    g_assert_cmpint(loaded->kbd_backlight_level, ==, 1);
-    g_assert_cmpint(loaded->kbd_backlight_timeout_sec, ==, 30);
-
-    g_assert_cmpstr(loaded->accent_color, ==, "#ff8c00");
-    g_assert_cmpint(loaded->ui_font_size_px, ==, 15);
-    g_assert_cmpint(loaded->font_heading_size_px, ==, 14);
-    g_assert_cmpint(loaded->font_subtitle_size_px, ==, 13);
-    g_assert_cmpint(loaded->font_badge_size_px, ==, 12);
-
-    g_assert_cmpstr(loaded->ide_color_scheme, ==, "kajo-monokai-metro");
-    g_assert_cmpstr(loaded->ide_font_family, ==, "JetBrains Mono");
-    g_assert_cmpint(loaded->ide_font_size_px, ==, 16);
-    g_assert_cmpint(loaded->ide_tab_width, ==, 4);
-    g_assert_false(loaded->ide_show_minimap);
-    g_assert_true(loaded->ide_show_line_numbers);
-    g_assert_false(loaded->ide_highlight_current_line);
-    g_assert_true(loaded->ide_word_wrap);
-    g_assert_true(loaded->ide_show_margin_guide);
-    g_assert_false(loaded->ide_insert_spaces);
-
-    g_assert_cmpstr(loaded->files_view_mode, ==, "list");
-    g_assert_cmpstr(loaded->files_sort_field, ==, "modified");
-    g_assert_false(loaded->files_sort_ascending);
-    g_assert_false(loaded->files_sort_folders_first);
-    g_assert_true(loaded->files_show_hidden);
-    g_assert_true(loaded->files_show_inspector);
-
-    g_assert_cmpstr(loaded->mod_filter_mode, ==, "sinc");
-    g_assert_cmpstr(loaded->mod_led_mode, ==, "on");
-    g_assert_cmpstr(loaded->mod_sid_model, ==, "8580");
-    g_assert_cmpint(loaded->mod_stereo_sep_pct, ==, 55);
-    g_assert_cmpstr(loaded->mod_end_action, ==, "loop");
-    g_assert_cmpstr(loaded->mod_hvsc_path, ==, "/opt/HVSC");
-    g_assert_cmpint(loaded->mod_uade_timeout_sec, ==, 240);
-    g_assert_false(loaded->mod_auto_extract_archives);
-
-    /* Verify flat keys are written directly in config.json per spec §4.1 */
-    g_autofree gchar *saved_raw = NULL;
-    g_assert_true(g_file_get_contents(cfg_path, &saved_raw, NULL, NULL));
-    g_assert_nonnull(strstr(saved_raw, "\"files_view_mode\""));
-    g_assert_nonnull(strstr(saved_raw, "\"files_sort_field\""));
-    g_assert_nonnull(strstr(saved_raw, "\"files_sort_ascending\""));
-    g_assert_nonnull(strstr(saved_raw, "\"files_sort_folders_first\""));
-    g_assert_nonnull(strstr(saved_raw, "\"files_show_hidden\""));
-    g_assert_nonnull(strstr(saved_raw, "\"files_show_inspector\""));
-
-    g_assert_cmpuint(loaded->layout_left->len, ==, 1);
-    ShellWidgetConfig *l0 = g_ptr_array_index(loaded->layout_left, 0);
-    g_assert_cmpstr(l0->id, ==, "launcher");
-    g_assert_cmpint(l0->mode, ==, WIDGET_MODE_ICON);
-
-    g_assert_cmpuint(loaded->layout_center->len, ==, 1);
-    ShellWidgetConfig *c0 = g_ptr_array_index(loaded->layout_center, 0);
-    g_assert_cmpstr(c0->id, ==, "clock");
-    g_assert_cmpint(c0->mode, ==, WIDGET_MODE_FULL);
-
-    g_assert_cmpuint(loaded->layout_right->len, ==, 1);
-    ShellWidgetConfig *r0 = g_ptr_array_index(loaded->layout_right, 0);
-    g_assert_cmpstr(r0->id, ==, "custom-script");
-    g_assert_cmpint(r0->mode, ==, WIDGET_MODE_LABEL);
-    g_assert_cmpint(r0->interval_sec, ==, 10);
-    g_assert_cmpstr(r0->exec_cmd, ==, "echo ok");
-    g_assert_cmpstr(r0->click_left_cmd, ==, "true");
-    g_assert_cmpstr(r0->click_right_cmd, ==, "false");
-
-    shell_config_destroy(loaded);
-    g_unlink(cfg_path);
-    g_rmdir(tmpdir);
+        kajo_cfg_domain_unref_rc(d, c_def);
+        kajo_cfg_domain_unref_rc(d, parsed);
+    }
 }
 
+/* 2. Per-Domain Round-Trip, Clamping, Malformed Input & Literal Exec Preservation */
 static void
-test_config_legacy_flat_keys_and_invalid_files(void)
+test_domain_theme(void)
 {
-    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-test-legacy-XXXXXX", NULL);
-    g_assert_nonnull(tmpdir);
-    g_autofree gchar *legacy_path = g_build_filename(tmpdir, "legacy.json", NULL);
-    g_autofree gchar *corrupt_path = g_build_filename(tmpdir, "corrupt.json", NULL);
+    const KajoDomainSchema *s_theme = kajo_schema_get_theme();
+    KajoThemeCfg *cfg = kajo_theme_cfg_new_default();
+    g_assert_cmpstr(cfg->accent_color, ==, "#0078d4");
+    g_assert_cmpint(cfg->ui_font_size_px, ==, 14);
 
-    const char *legacy_json = "{\n"
-                              "  \"position\": \"bottom\",\n"
-                              "  \"height\": 48,\n"
-                              "  \"autohide\": true\n"
-                              "}\n";
-    g_assert_true(g_file_set_contents(legacy_path, legacy_json, -1, NULL));
-
-    ShellConfig *cfg = shell_config_load(legacy_path);
-    g_assert_nonnull(cfg);
-    g_assert_cmpint(cfg->panel_position, ==, PANEL_POSITION_BOTTOM);
-    g_assert_cmpint(cfg->panel_height, ==, 48);
-    g_assert_true(cfg->autohide_enabled);
-    shell_config_destroy(cfg);
-
-    /* Corrupt JSON should emit a warning and gracefully fall back to defaults */
-    g_assert_true(g_file_set_contents(corrupt_path, "{ not valid json ", -1, NULL));
-    g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "*Failed to parse config*");
-    ShellConfig *fallback = shell_config_load(corrupt_path);
+    /* Out-of-range and invalid hex fallback */
+    const gchar *bad_toml =
+        "accent_color = \"not-a-color\"\n"
+        "ui_font_size_px = 999\n"
+        "font_heading_size_px = 2\n"
+        "font_subtitle_size_px = \"wrong-type\"\n";
+    g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "*invalid hex color*");
+    g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "*expected integer*");
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_theme, cfg, bad_toml, -1, FALSE, "theme.toml"));
     g_test_assert_expected_messages();
-    g_assert_nonnull(fallback);
-    g_assert_cmpint(fallback->panel_height, ==, 32);
-    shell_config_destroy(fallback);
+    g_assert_cmpstr(cfg->accent_color, ==, "#0078d4");
+    g_assert_cmpint(cfg->ui_font_size_px, ==, 20);
+    g_assert_cmpint(cfg->font_heading_size_px, ==, 10);
+    g_assert_cmpint(cfg->font_subtitle_size_px, ==, 12);
 
-    /* Non-existent path should gracefully fall back to defaults */
-    ShellConfig *missing = shell_config_load("/tmp/nonexistent-kajo-config-12345.json");
-    g_assert_nonnull(missing);
-    g_assert_cmpint(missing->screensaver_timeout_sec, ==, 300);
-    shell_config_destroy(missing);
+    /* Round-trip serialization */
+    g_free(cfg->accent_color);
+    cfg->accent_color = g_strdup("#ffb900");
+    cfg->ui_font_size_px = 16;
 
-    /* Unknown top-level JSON keys are preserved across shell_config_save(),
-     * and wrong types on files_* keys are safely ignored without criticals */
-    g_autofree gchar *extra_path = g_build_filename(tmpdir, "extra.json", NULL);
-    const char *extra_json = "{\n"
-                             "  \"custom_user_key\": \"keep_me\",\n"
-                             "  \"files_view_mode\": 12345,\n"
-                             "  \"files_sort_ascending\": \"not-a-bool\"\n"
-                             "}\n";
-    g_assert_true(g_file_set_contents(extra_path, extra_json, -1, NULL));
-    ShellConfig *extra_cfg = shell_config_load(extra_path);
-    g_assert_nonnull(extra_cfg);
-    g_assert_cmpstr(extra_cfg->files_view_mode, ==, "grid");
-    g_assert_true(extra_cfg->files_sort_ascending);
-    g_assert_true(shell_config_save(extra_cfg, extra_path));
-    shell_config_destroy(extra_cfg);
+    g_autofree gchar *serialized = kajo_cfg_domain_serialize_toml(s_theme, cfg);
+    KajoThemeCfg *reloaded = kajo_theme_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_theme, reloaded, serialized, -1, FALSE, "theme.toml"));
+    g_assert_true(kajo_cfg_domain_equal(s_theme, cfg, reloaded));
 
-    g_autofree gchar *extra_saved = NULL;
-    g_assert_true(g_file_get_contents(extra_path, &extra_saved, NULL, NULL));
-    g_assert_nonnull(strstr(extra_saved, "\"custom_user_key\""));
-    g_assert_nonnull(strstr(extra_saved, "\"keep_me\""));
+    kajo_theme_cfg_free(reloaded);
+    kajo_theme_cfg_free(cfg);
+}
 
-    /* Optional keys the writer owns can be cleared; the obsolete nested "files" object is dropped */
-    const char *opt_json = "{\n"
-                           "  \"css_path\": \"/tmp/old.css\",\n"
-                           "  \"icon_map_path\": \"/tmp/old-icons.json\",\n"
-                           "  \"files\": { \"view_mode\": \"list\" },\n"
-                           "  \"custom_user_key\": \"keep_me\"\n"
-                           "}\n";
-    g_assert_true(g_file_set_contents(extra_path, opt_json, -1, NULL));
-    ShellConfig *opt_cfg = shell_config_load(extra_path);
-    g_assert_nonnull(opt_cfg);
-    g_assert_cmpstr(opt_cfg->css_path, ==, "/tmp/old.css");
-    g_free(opt_cfg->css_path);
-    opt_cfg->css_path = NULL;
-    g_free(opt_cfg->icon_map_path);
-    opt_cfg->icon_map_path = NULL;
-    g_assert_true(shell_config_save(opt_cfg, extra_path));
-    shell_config_destroy(opt_cfg);
-    g_autofree gchar *opt_saved = NULL;
-    g_assert_true(g_file_get_contents(extra_path, &opt_saved, NULL, NULL));
-    g_assert_null(strstr(opt_saved, "css_path"));
-    g_assert_null(strstr(opt_saved, "icon_map_path"));
-    g_assert_null(strstr(opt_saved, "\"files\""));
-    g_assert_nonnull(strstr(opt_saved, "custom_user_key"));
-    g_unlink(extra_path);
+static void
+test_domain_shell(void)
+{
+    const KajoDomainSchema *s_shell = kajo_schema_get_shell();
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
+    g_assert_cmpint(cfg->panel_position, ==, PANEL_POSITION_BOTTOM);
+    g_assert_cmpint(cfg->panel_height, ==, 39);
+    g_assert_true(cfg->autohide_enabled);
+    g_assert_cmpint(cfg->autohide_hide_duration, ==, 200);
 
-    g_unlink(legacy_path);
-    g_unlink(corrupt_path);
-    g_rmdir(tmpdir);
+    /* Verify single-quoted literal exec string with backslashes and quotes round-trips losslessly */
+    const gchar *custom_toml =
+        "[panel]\n"
+        "position = \"top\"\n"
+        "height = 44\n"
+        "[autohide]\n"
+        "enabled = false\n"
+        "hide_duration = 320\n"
+        "[[layout.left]]\n"
+        "id = \"launcher\"\n"
+        "mode = \"icon\"\n"
+        "[[layout.right]]\n"
+        "id = \"custom-script\"\n"
+        "mode = \"label\"\n"
+        "interval = 5\n"
+        "exec = 'printf \"%s\\n\" $((1+1))'\n"
+        "click_left = 'notify-send \"GPU\"'\n";
+
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_shell, cfg, custom_toml, -1, FALSE, "shell.toml"));
+    g_assert_cmpint(cfg->panel_position, ==, PANEL_POSITION_TOP);
+    g_assert_cmpint(cfg->panel_height, ==, 44);
+    g_assert_false(cfg->autohide_enabled);
+    g_assert_cmpint(cfg->autohide_hide_duration, ==, 320);
+    g_assert_cmpuint(cfg->layout_left->len, ==, 1);
+    g_assert_cmpuint(cfg->layout_right->len, ==, 1);
+
+    ShellWidgetConfig *wp = g_ptr_array_index(cfg->layout_right, 0);
+    g_assert_cmpstr(wp->id, ==, "custom-script");
+    g_assert_cmpint(wp->mode, ==, WIDGET_MODE_LABEL);
+    g_assert_cmpint(wp->interval_sec, ==, 5);
+    g_assert_cmpstr(wp->exec_cmd, ==, "printf \"%s\\n\" $((1+1))");
+    g_assert_cmpstr(wp->click_left_cmd, ==, "notify-send \"GPU\"");
+
+    g_autofree gchar *serialized = kajo_cfg_domain_serialize_toml(s_shell, cfg);
+    KajoShellCfg *reloaded = kajo_shell_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_shell, reloaded, serialized, -1, FALSE, "shell.toml"));
+    g_assert_true(kajo_cfg_domain_equal(s_shell, cfg, reloaded));
+
+    kajo_shell_cfg_free(reloaded);
+    kajo_shell_cfg_free(cfg);
+}
+
+static void
+test_domain_ide_files_mod(void)
+{
+    const KajoDomainSchema *s_ide   = kajo_schema_get_ide();
+    const KajoDomainSchema *s_files = kajo_schema_get_files();
+    const KajoDomainSchema *s_mod   = kajo_schema_get_mod();
+
+    /* IDE */
+    KajoIdeCfg *ide = kajo_ide_cfg_new_default();
+    ide->tab_width = 5; /* Not in {2, 4, 8} -> normalized to 4 on parse */
+    g_autofree gchar *ide_str = kajo_cfg_domain_serialize_toml(s_ide, ide);
+    KajoIdeCfg *ide2 = kajo_ide_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_ide, ide2, ide_str, -1, FALSE, "ide.toml"));
+    g_assert_cmpint(ide2->tab_width, ==, 4);
+    kajo_ide_cfg_free(ide2);
+    kajo_ide_cfg_free(ide);
+
+    /* Files */
+    KajoFilesCfg *files = kajo_files_cfg_new_default();
+    files->view_mode = KAJO_FILES_VIEW_LIST;
+    files->show_hidden = TRUE;
+    files->sort_field = KAJO_FILES_SORT_MODIFIED;
+    files->sort_ascending = FALSE;
+    g_autofree gchar *files_str = kajo_cfg_domain_serialize_toml(s_files, files);
+    KajoFilesCfg *files2 = kajo_files_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_files, files2, files_str, -1, FALSE, "files.toml"));
+    g_assert_true(kajo_cfg_domain_equal(s_files, files, files2));
+    kajo_files_cfg_free(files2);
+    kajo_files_cfg_free(files);
+
+    /* Mod */
+    KajoModCfg *mod = kajo_mod_cfg_new_default();
+    mod->filter_mode = KAJO_MOD_FILTER_A1200;
+    mod->sid_model = KAJO_MOD_SID_8580;
+    mod->stereo_sep_pct = 50;
+    g_autofree gchar *mod_str = kajo_cfg_domain_serialize_toml(s_mod, mod);
+    KajoModCfg *mod2 = kajo_mod_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_mod, mod2, mod_str, -1, FALSE, "mod.toml"));
+    g_assert_true(kajo_cfg_domain_equal(s_mod, mod, mod2));
+    kajo_mod_cfg_free(mod2);
+    kajo_mod_cfg_free(mod);
+}
+
+/* 3. conf.d/ Lexicographical Overlay & Base-Only Save Discipline */
+static void
+mutate_shell_pos_top(KajoShellCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    draft->panel_position = PANEL_POSITION_TOP;
+    draft->panel_height = 40;
+}
+
+static void
+test_confd_overlay_and_save(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-confd-XXXXXX", NULL);
+    g_assert_nonnull(tmpdir);
+    g_autofree gchar *confd = g_build_filename(tmpdir, "conf.d", NULL);
+    g_mkdir_with_parents(confd, 0700);
+
+    /* Write base shell.toml */
+    g_autofree gchar *shell_path = g_build_filename(tmpdir, "shell.toml", NULL);
+    g_assert_true(g_file_set_contents(shell_path,
+        "[panel]\nposition = \"bottom\"\nheight = 39\n", -1, NULL));
+
+    /* Write conf.d/10-first.toml and conf.d/20-second.toml */
+    g_autofree gchar *drop1 = g_build_filename(confd, "10-first.toml", NULL);
+    g_autofree gchar *drop2 = g_build_filename(confd, "20-second.toml", NULL);
+    g_assert_true(g_file_set_contents(drop1,
+        "[shell.panel]\nheight = 48\n[shell.autohide]\nreveal_delay = 350\n", -1, NULL));
+    g_assert_true(g_file_set_contents(drop2,
+        "[shell.panel]\nheight = 52\n", -1, NULL));
+
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+    g_autoptr(KajoShellCfgRef) snap1 = kajo_config_store_acquire_shell(store);
+    g_assert_cmpint(snap1->panel_position, ==, PANEL_POSITION_BOTTOM);
+    g_assert_cmpint(snap1->panel_height, ==, 52); /* 20-second wins over 10-first and base */
+    g_assert_cmpint(snap1->autohide_reveal_delay, ==, 350); /* from 10-first */
+
+    /* Update via kajo_config_store_update_shell(): writes ONLY to base shell.toml */
+    g_assert_true(kajo_config_store_update_shell(store, mutate_shell_pos_top, NULL, NULL));
+
+    /* Base shell.toml on disk has height = 40 and default reveal_delay = 200 (did NOT bake 350 or 52 from conf.d!) */
+    g_autoptr(KajoShellCfg) base_parsed = kajo_shell_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_file(kajo_schema_get_shell(), base_parsed, shell_path, FALSE));
+    g_assert_cmpint(base_parsed->panel_position, ==, PANEL_POSITION_TOP);
+    g_assert_cmpint(base_parsed->panel_height, ==, 40);
+    g_assert_cmpint(base_parsed->autohide_reveal_delay, ==, 200);
+
+    /* Meanwhile effective snapshot still applies conf.d/ overlays (height = 52, reveal_delay = 350) */
+    g_autoptr(KajoShellCfgRef) snap2 = kajo_config_store_acquire_shell(store);
+    g_assert_cmpint(snap2->panel_position, ==, PANEL_POSITION_TOP);
+    g_assert_cmpint(snap2->panel_height, ==, 52);
+    g_assert_cmpint(snap2->autohide_reveal_delay, ==, 350);
+
+    rm_rf(tmpdir);
+}
+
+/* 4. Multi-Threaded Reader / Reload Stress Test */
+typedef struct {
+    KajoConfigStore *store;
+    gint             stop_flag;
+} StressCtx;
+
+static void
+mutate_mod_stereo(KajoModCfg *draft, gpointer user_data)
+{
+    draft->stereo_sep_pct = GPOINTER_TO_INT(user_data);
+}
+
+static gpointer
+reader_thread_fn(gpointer data)
+{
+    StressCtx *ctx = data;
+    while (!g_atomic_int_get(&ctx->stop_flag)) {
+        const KajoShellCfg *sh = kajo_config_store_acquire_shell(ctx->store);
+        g_assert_nonnull(sh);
+        g_assert_cmpint(sh->panel_height, >=, 24);
+        g_assert_cmpint(sh->panel_height, <=, 96);
+        kajo_shell_cfg_unref(sh);
+
+        const KajoModCfg *md = kajo_config_store_acquire_mod(ctx->store);
+        g_assert_nonnull(md);
+        g_assert_cmpint(md->stereo_sep_pct, >=, 0);
+        g_assert_cmpint(md->stereo_sep_pct, <=, 100);
+        kajo_mod_cfg_unref(md);
+    }
+    return NULL;
+}
+
+static void
+test_concurrent_readers_and_reload(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-mt-XXXXXX", NULL);
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+
+    StressCtx ctx = { .store = store, .stop_flag = 0 };
+    GThread *readers[4];
+    for (int i = 0; i < 4; i++)
+        readers[i] = g_thread_new("cfg-reader", reader_thread_fn, &ctx);
+
+    for (int iter = 0; iter < 200; iter++) {
+        kajo_config_store_update_mod(store, mutate_mod_stereo, GINT_TO_POINTER(iter % 101), NULL);
+        kajo_config_store_reload(store, KAJO_CONFIG_DOMAIN_ALL);
+    }
+
+    g_atomic_int_set(&ctx.stop_flag, 1);
+    for (int i = 0; i < 4; i++)
+        g_thread_join(readers[i]);
+
+    rm_rf(tmpdir);
+}
+
+/* 5. Legacy config.json -> *.toml One-Time Auto-Migration */
+static void
+test_legacy_json_migration(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-mig-XXXXXX", NULL);
+    g_autofree gchar *json_path = g_build_filename(tmpdir, "config.json", NULL);
+
+    const gchar *legacy_json =
+        "{\n"
+        "  \"accent_color\": \"#e81123\",\n"
+        "  \"ui_font_size_px\": 16,\n"
+        "  \"ide_color_scheme\": \"kajo-nord\",\n"
+        "  \"ide_tab_width\": 8,\n"
+        "  \"files_view_mode\": \"list\",\n"
+        "  \"files_show_hidden\": true,\n"
+        "  \"mod_filter_mode\": \"a1200\",\n"
+        "  \"mod_stereo_sep_pct\": 45,\n"
+        "  \"panel\": {\n"
+        "    \"position\": \"top\",\n"
+        "    \"height\": 42,\n"
+        "    \"touch_gestures\": {\n"
+        "      \"enabled\": true,\n"
+        "      \"dwell_ms\": 3500,\n"
+        "      \"swipe_center\": \"overview\",\n"
+        "      \"swipe_right\": \"notifications\",\n"
+        "      \"swipe_horizontal\": \"workspace\",\n"
+        "      \"osk_auto_show_mode\": \"always\",\n"
+        "      \"osk_push_windows\": false,\n"
+        "      \"osk_height_px\": 280\n"
+        "    }\n"
+        "  },\n"
+        "  \"autohide\": { \"enabled\": false, \"hide_duration\": 280 },\n"
+        "  \"notifications\": {\n"
+        "    \"toast_timeout_ms\": 6000,\n"
+        "    \"max_notification_history\": 100,\n"
+        "    \"toast_click_action\": \"dismiss\",\n"
+        "    \"dnd_enabled\": true\n"
+        "  },\n"
+        "  \"idle\": {\n"
+        "    \"screensaver_mode\": \"dpms\",\n"
+        "    \"screensaver_timeout_sec\": 120,\n"
+        "    \"dpms_timeout_sec\": 240,\n"
+        "    \"lock_timeout_sec\": 360,\n"
+        "    \"lock_on_suspend\": false\n"
+        "  },\n"
+        "  \"posture\": {\n"
+        "    \"auto_rotate\": false,\n"
+        "    \"disable_kbd_in_tablet\": false,\n"
+        "    \"disable_touch_in_laptop\": true\n"
+        "  },\n"
+        "  \"keyboard_backlight\": {\n"
+        "    \"level\": 1,\n"
+        "    \"timeout_sec\": 30\n"
+        "  },\n"
+        "  \"layout\": {\n"
+        "    \"left\": [ \"launcher\", { \"id\": \"window\", \"mode\": \"full\" } ],\n"
+        "    \"center\": [ { \"id\": \"clock\", \"mode\": \"label\" } ],\n"
+        "    \"right\": [\n"
+        "      { \"id\": \"custom-script\", \"mode\": \"label\", \"interval_sec\": 15, \"exec_cmd\": \"echo ok\", \"click_left_cmd\": \"true\" },\n"
+        "      \"power\"\n"
+        "    ]\n"
+        "  }\n"
+        "}\n";
+    g_assert_true(g_file_set_contents(json_path, legacy_json, -1, NULL));
+
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+
+    g_autofree gchar *bak_path = g_build_filename(tmpdir, "config.json.bak", NULL);
+    g_assert_true(g_file_test(bak_path, G_FILE_TEST_EXISTS));
+    g_assert_false(g_file_test(json_path, G_FILE_TEST_EXISTS));
+
+    g_autoptr(KajoThemeCfgRef) theme = kajo_config_store_acquire_theme(store);
+    g_assert_cmpstr(theme->accent_color, ==, "#e81123");
+    g_assert_cmpint(theme->ui_font_size_px, ==, 16);
+
+    g_autoptr(KajoShellCfgRef) shell = kajo_config_store_acquire_shell(store);
+    g_assert_cmpint(shell->panel_position, ==, PANEL_POSITION_TOP);
+    g_assert_cmpint(shell->panel_height, ==, 42);
+    g_assert_false(shell->autohide_enabled);
+    g_assert_cmpint(shell->autohide_hide_duration, ==, 280);
+    g_assert_cmpint(shell->touch_dwell_ms, ==, 3500);
+    g_assert_cmpint(shell->touch_swipe_center, ==, SWIPE_CENTER_OVERVIEW);
+    g_assert_cmpint(shell->touch_swipe_right, ==, SWIPE_RIGHT_NOTIFICATIONS);
+    g_assert_cmpint(shell->touch_swipe_horizontal, ==, SWIPE_HORIZ_WORKSPACE);
+    g_assert_cmpint(shell->osk_auto_show_mode, ==, OSK_AUTO_SHOW_ALWAYS);
+    g_assert_false(shell->osk_push_windows);
+    g_assert_cmpint(shell->osk_height_px, ==, 280);
+    g_assert_cmpint(shell->toast_timeout_ms, ==, 6000);
+    g_assert_cmpint(shell->max_notification_history, ==, 100);
+    g_assert_cmpint(shell->toast_click_action, ==, TOAST_CLICK_DISMISS);
+    g_assert_true(shell->dnd_enabled);
+    g_assert_cmpint(shell->screensaver_mode, ==, SCREENSAVER_MODE_DPMS);
+    g_assert_cmpint(shell->screensaver_timeout_sec, ==, 120);
+    g_assert_cmpint(shell->dpms_timeout_sec, ==, 240);
+    g_assert_cmpint(shell->lock_timeout_sec, ==, 360);
+    g_assert_false(shell->lock_on_suspend);
+    g_assert_false(shell->posture_auto_rotate);
+    g_assert_false(shell->posture_disable_kbd_in_tablet);
+    g_assert_true(shell->posture_disable_touch_in_laptop);
+    g_assert_cmpint(shell->kbd_backlight_level, ==, 1);
+    g_assert_cmpint(shell->kbd_backlight_timeout_sec, ==, 30);
+
+    g_assert_cmpuint(shell->layout_left->len, ==, 2);
+    ShellWidgetConfig *wl0 = g_ptr_array_index(shell->layout_left, 0);
+    ShellWidgetConfig *wl1 = g_ptr_array_index(shell->layout_left, 1);
+    g_assert_cmpstr(wl0->id, ==, "launcher");
+    g_assert_cmpint(wl0->mode, ==, WIDGET_MODE_ICON);
+    g_assert_cmpstr(wl1->id, ==, "window");
+    g_assert_cmpint(wl1->mode, ==, WIDGET_MODE_FULL);
+
+    g_assert_cmpuint(shell->layout_right->len, ==, 2);
+    ShellWidgetConfig *wr0 = g_ptr_array_index(shell->layout_right, 0);
+    g_assert_cmpstr(wr0->id, ==, "custom-script");
+    g_assert_cmpint(wr0->mode, ==, WIDGET_MODE_LABEL);
+    g_assert_cmpint(wr0->interval_sec, ==, 15);
+    g_assert_cmpstr(wr0->exec_cmd, ==, "echo ok");
+    g_assert_cmpstr(wr0->click_left_cmd, ==, "true");
+
+    g_autoptr(KajoIdeCfgRef) ide = kajo_config_store_acquire_ide(store);
+    g_assert_cmpstr(ide->color_scheme, ==, "kajo-nord");
+    g_assert_cmpint(ide->tab_width, ==, 8);
+
+    g_autoptr(KajoFilesCfgRef) files = kajo_config_store_acquire_files(store);
+    g_assert_cmpint(files->view_mode, ==, KAJO_FILES_VIEW_LIST);
+    g_assert_true(files->show_hidden);
+
+    g_autoptr(KajoModCfgRef) mod = kajo_config_store_acquire_mod(store);
+    g_assert_cmpint(mod->filter_mode, ==, KAJO_MOD_FILTER_A1200);
+    g_assert_cmpint(mod->stereo_sep_pct, ==, 45);
+
+    rm_rf(tmpdir);
 }
 
 int
@@ -397,9 +439,13 @@ main(int argc, char *argv[])
 {
     g_test_init(&argc, &argv, NULL);
 
-    g_test_add_func("/config/defaults", test_config_defaults);
-    g_test_add_func("/config/save-and-load-roundtrip", test_config_save_and_load_roundtrip);
-    g_test_add_func("/config/legacy-and-invalid-files", test_config_legacy_flat_keys_and_invalid_files);
+    g_test_add_func("/config/defaults-file-parity", test_defaults_file_parity);
+    g_test_add_func("/config/domain/theme", test_domain_theme);
+    g_test_add_func("/config/domain/shell", test_domain_shell);
+    g_test_add_func("/config/domain/ide-files-mod", test_domain_ide_files_mod);
+    g_test_add_func("/config/store/confd-overlay-and-save", test_confd_overlay_and_save);
+    g_test_add_func("/config/store/concurrent-readers-and-reload", test_concurrent_readers_and_reload);
+    g_test_add_func("/config/migrate/legacy-json", test_legacy_json_migration);
 
     return g_test_run();
 }

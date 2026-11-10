@@ -114,13 +114,13 @@ shell_widget_create_popover_shell(const char  *width_class,
     return GTK_POPOVER(popover);
 }
 
-ShellConfig *shell_app_get_config(ShellApp *self);
+const KajoShellCfg *shell_app_get_config(ShellApp *self);
 
 static inline gint
 shell_widget_get_icon_size(ShellWidget *widget)
 {
     if (widget && widget->app) {
-        ShellConfig *cfg = shell_app_get_config(widget->app);
+        const KajoShellCfg *cfg = shell_app_get_config(widget->app);
         if (cfg && cfg->icon_size > 0)
             return cfg->icon_size;
     }

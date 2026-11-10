@@ -49,6 +49,27 @@ shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPos
     }
 }
 
+static void shell_app_apply_shell_config(ShellApp *self);
+
+static void
+on_shell_store_changed(KajoConfigStore *store G_GNUC_UNUSED,
+                       KajoConfigDomain changed_domains,
+                       gpointer         user_data)
+{
+    ShellApp *self = (ShellApp *)user_data;
+    if (!self)
+        return;
+    if (changed_domains & KAJO_CONFIG_DOMAIN_THEME) {
+        g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+        shell_theme_sync_from_theme_cfg(tcfg);
+        if (self->theme)
+            shell_theme_reload(self->theme);
+    }
+    if (changed_domains & KAJO_CONFIG_DOMAIN_SHELL) {
+        shell_app_apply_shell_config(self);
+    }
+}
+
 ShellApp *
 shell_app_new(GtkApplication *app)
 {
@@ -62,11 +83,20 @@ shell_app_new(GtkApplication *app)
     self->notifications  = NULL;
     self->active_widgets = NULL;
 
-    /* Load configuration */
-    self->config = shell_config_load(NULL);
+    /* Load configuration snapshots */
+    self->config = kajo_config_store_acquire_shell(NULL);
+    g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+    const gchar *css_path = (tcfg && tcfg->css_path && *tcfg->css_path) ? tcfg->css_path : NULL;
 
     /* Load theme */
-    self->theme = shell_theme_new(self->config->css_path);
+    self->theme = shell_theme_new(css_path);
+
+    self->config_sub_id = kajo_config_store_subscribe(
+        NULL,
+        (KajoConfigDomain)(KAJO_CONFIG_DOMAIN_SHELL | KAJO_CONFIG_DOMAIN_THEME),
+        on_shell_store_changed,
+        self,
+        NULL);
 
     return self;
 }
@@ -83,7 +113,7 @@ shell_app_activate(ShellApp *self)
         shell_theme_apply(self->theme, display);
 
     /* Initialize icon system (add bundled symbolic icons to search path) */
-    shell_icons_init(self->config->icon_map_path);
+    shell_icons_init();
 
     /* Create panel */
     self->panel = shell_panel_new(self);
@@ -94,7 +124,9 @@ shell_app_activate(ShellApp *self)
     shell_notification_daemon_set_app(self->notifications, self);
     shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
     shell_notification_daemon_set_max_history(self->notifications, self->config->max_notification_history);
-    shell_notification_daemon_set_click_action(self->notifications, self->config->toast_click_action);
+    shell_notification_daemon_set_click_action(
+        self->notifications,
+        shell_toast_click_action_to_string(self->config->toast_click_action));
     shell_notification_daemon_set_dnd(self->notifications, self->config->dnd_enabled);
 
     /* Create widget registry and compositor */
@@ -220,19 +252,24 @@ shell_app_destroy(ShellApp *self)
         self->registry = NULL;
     }
 
+    if (self->config_sub_id != 0) {
+        kajo_config_store_unsubscribe(NULL, self->config_sub_id);
+        self->config_sub_id = 0;
+    }
+
     shell_panel_destroy(self->panel);
     self->panel = NULL;
 
     shell_theme_destroy(self->theme);
     self->theme = NULL;
 
-    shell_config_destroy(self->config);
+    kajo_shell_cfg_unref(self->config);
     self->config = NULL;
 
     g_free(self);
 }
 
-ShellConfig *
+const KajoShellCfg *
 shell_app_get_config(ShellApp *self)
 {
     return self ? self->config : NULL;
@@ -410,24 +447,31 @@ reconcile_section_widgets(ShellApp            *self,
     }
 }
 
-void
-shell_app_reload_config(ShellApp *self)
+static void
+shell_app_apply_shell_config(ShellApp *self)
 {
     if (!self || !self->panel) return;
 
-    ShellConfig *new_config = shell_config_load(NULL);
+    const KajoShellCfg *new_config = kajo_config_store_acquire_shell(NULL);
     if (!new_config) return;
 
-    ShellConfig *old_config = self->config;
+    if (new_config == self->config) {
+        kajo_shell_cfg_unref(new_config);
+        return;
+    }
+
+    const KajoShellCfg *old_config = self->config;
     self->config = new_config;
-    shell_config_destroy(old_config);
+    kajo_shell_cfg_unref(old_config);
 
     shell_panel_reload_config(self->panel, self->config);
 
     if (self->notifications) {
         shell_notification_daemon_set_toast_timeout(self->notifications, self->config->toast_timeout_ms);
         shell_notification_daemon_set_max_history(self->notifications, self->config->max_notification_history);
-        shell_notification_daemon_set_click_action(self->notifications, self->config->toast_click_action);
+        shell_notification_daemon_set_click_action(
+            self->notifications,
+            shell_toast_click_action_to_string(self->config->toast_click_action));
         shell_notification_daemon_set_dnd(self->notifications, self->config->dnd_enabled);
     }
 
@@ -494,8 +538,19 @@ shell_app_reload_config(ShellApp *self)
 }
 
 void
+shell_app_reload_config(ShellApp *self)
+{
+    if (!self || !self->panel) return;
+    kajo_config_store_reload(NULL, KAJO_CONFIG_DOMAIN_SHELL);
+    shell_app_apply_shell_config(self);
+}
+
+void
 shell_app_reload_theme(ShellApp *self)
 {
     if (!self || !self->theme) return;
+    kajo_config_store_reload(NULL, KAJO_CONFIG_DOMAIN_THEME);
+    g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+    shell_theme_sync_from_theme_cfg(tcfg);
     shell_theme_reload(self->theme);
 }

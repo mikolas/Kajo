@@ -101,8 +101,8 @@ static const SettingsPageMeta k_page_meta[] = {
     {
         "mod", "11 / 12", "11 / 12 • KAJO MOD",
         "KAJO MOD — RETRO AMIGA, C64 SID & TRACKER ENGINE",
-        "Persistent global defaults in ~/.config/kajo/config.json • Live monitor in org.kajo.Mod",
-        "LIBUADE + RESIDFP", "CONFIG.JSON",
+        "Persistent global defaults in ~/.config/kajo/mod.toml • Live monitor in org.kajo.Mod",
+        "LIBUADE + RESIDFP", "MOD.TOML",
         { "PAULA", "SID CHIP", "STEREO", "TIMEOUT" },
         { "A500 + AUTO", "AUTO (PSID)", "70% SEP", "180S" }
     },
@@ -160,52 +160,57 @@ populate_live_config_telemetry_defaults(const gchar *page_name,
         return;
     }
 
-    ShellConfig *cfg = shell_config_load(NULL);
-
     if (g_strcmp0(page_name, "theme") == 0) {
-        const gchar *hex = cfg->accent_color ? cfg->accent_color : "#0078d4";
+        g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+        const gchar *hex = (tcfg && tcfg->accent_color) ? tcfg->accent_color : "#0078d4";
         out_vals[0] = g_strdup_printf("%s %s", hex, settings_accent_short_name(hex));
-        out_vals[1] = g_strdup_printf("%dPX", cfg->ui_font_size_px);
-        out_vals[2] = g_strdup_printf("%dPX", cfg->font_heading_size_px);
-        out_vals[3] = g_strdup_printf("%dPX", cfg->font_badge_size_px);
+        out_vals[1] = g_strdup_printf("%dPX", tcfg ? tcfg->ui_font_size_px : 14);
+        out_vals[2] = g_strdup_printf("%dPX", tcfg ? tcfg->font_heading_size_px : 13);
+        out_vals[3] = g_strdup_printf("%dPX", tcfg ? tcfg->font_badge_size_px : 11);
     } else if (g_strcmp0(page_name, "panel") == 0) {
-        const gchar *edge = (cfg->panel_position == PANEL_POSITION_BOTTOM) ? "BOTTOM" : "TOP";
-        out_vals[0] = g_strdup_printf("%s (%dPX)", edge, cfg->panel_height);
-        out_vals[1] = g_strdup(cfg->autohide_enabled ? "ENABLED" : "DISABLED");
-        out_vals[2] = g_strdup(cfg->touch_gestures_enabled ? "ENABLED" : "DISABLED");
-        out_vals[3] = g_strdup_printf("%dPX", cfg->osk_height_px);
+        g_autoptr(KajoShellCfgRef) scfg = kajo_config_store_acquire_shell(NULL);
+        const gchar *edge = (scfg && scfg->panel_position == PANEL_POSITION_BOTTOM) ? "BOTTOM" : "TOP";
+        out_vals[0] = g_strdup_printf("%s (%dPX)", edge, scfg ? scfg->panel_height : 39);
+        out_vals[1] = g_strdup((scfg && scfg->autohide_enabled) ? "ENABLED" : "DISABLED");
+        out_vals[2] = g_strdup((scfg && scfg->touch_gestures_enabled) ? "ENABLED" : "DISABLED");
+        out_vals[3] = g_strdup_printf("%dPX", scfg ? scfg->osk_height_px : 260);
     } else if (g_strcmp0(page_name, "widgets") == 0) {
-        guint nl = cfg->layout_left ? cfg->layout_left->len : 0;
-        guint nc = cfg->layout_center ? cfg->layout_center->len : 0;
-        guint nr = cfg->layout_right ? cfg->layout_right->len : 0;
+        g_autoptr(KajoShellCfgRef) scfg = kajo_config_store_acquire_shell(NULL);
+        guint nl = (scfg && scfg->layout_left) ? scfg->layout_left->len : 0;
+        guint nc = (scfg && scfg->layout_center) ? scfg->layout_center->len : 0;
+        guint nr = (scfg && scfg->layout_right) ? scfg->layout_right->len : 0;
         out_vals[0] = g_strdup_printf("%u WIDGETS", nl);
         out_vals[1] = g_strdup_printf("%u WIDGETS", nc);
         out_vals[2] = g_strdup_printf("%u WIDGETS", nr);
         out_vals[3] = g_strdup_printf("%u ACTIVE", nl + nc + nr);
     } else if (g_strcmp0(page_name, "notifications") == 0) {
-        out_vals[0] = g_strdup(cfg->dnd_enabled ? "ACTIVE" : "OFF");
-        out_vals[1] = g_strdup_printf("%dMS (%dS)", cfg->toast_timeout_ms, MAX(1, cfg->toast_timeout_ms / 1000));
-        out_vals[2] = g_strdup_printf("%d ITEMS", cfg->max_notification_history);
-        out_vals[3] = g_strdup(g_strcmp0(cfg->toast_click_action, "dismiss") == 0 ? "DISMISS ONLY" : "FOCUS WINDOW");
+        g_autoptr(KajoShellCfgRef) scfg = kajo_config_store_acquire_shell(NULL);
+        gint tout = scfg ? scfg->toast_timeout_ms : 8000;
+        out_vals[0] = g_strdup((scfg && scfg->dnd_enabled) ? "ACTIVE" : "OFF");
+        out_vals[1] = g_strdup_printf("%dMS (%dS)", tout, MAX(1, tout / 1000));
+        out_vals[2] = g_strdup_printf("%d ITEMS", scfg ? scfg->max_notification_history : 50);
+        out_vals[3] = g_strdup((scfg && scfg->toast_click_action == TOAST_CLICK_DISMISS) ? "DISMISS ONLY" : "FOCUS WINDOW");
     } else if (g_strcmp0(page_name, "ide") == 0) {
-        out_vals[0] = g_ascii_strup(cfg->ide_color_scheme ? cfg->ide_color_scheme : "kajo-dark", -1);
+        g_autoptr(KajoIdeCfgRef) icfg = kajo_config_store_acquire_ide(NULL);
+        out_vals[0] = g_ascii_strup((icfg && icfg->color_scheme) ? icfg->color_scheme : "kajo-dark", -1);
         out_vals[1] = g_strdup_printf("%s %dPX",
-                                      cfg->ide_font_family ? cfg->ide_font_family : "Fira Code",
-                                      cfg->ide_font_size_px);
-        out_vals[2] = g_strdup_printf("%d %s", cfg->ide_tab_width, cfg->ide_insert_spaces ? "SPACES" : "TABS");
-        out_vals[3] = g_strdup(cfg->ide_show_line_numbers ? "6-COL CAIRO" : "COMPACT");
+                                      (icfg && icfg->font_family) ? icfg->font_family : "Fira Code",
+                                      icfg ? icfg->font_size_px : 13);
+        out_vals[2] = g_strdup_printf("%d %s",
+                                      icfg ? icfg->tab_width : 4,
+                                      (icfg && icfg->insert_spaces) ? "SPACES" : "TABS");
+        out_vals[3] = g_strdup((icfg && icfg->show_line_numbers) ? "6-COL CAIRO" : "COMPACT");
     } else if (g_strcmp0(page_name, "mod") == 0) {
-        g_autofree gchar *flt = g_ascii_strup(cfg->mod_filter_mode ? cfg->mod_filter_mode : "a500", -1);
-        g_autofree gchar *led = g_ascii_strup(cfg->mod_led_mode ? cfg->mod_led_mode : "auto", -1);
+        g_autoptr(KajoModCfgRef) mcfg = kajo_config_store_acquire_mod(NULL);
+        g_autofree gchar *flt = g_ascii_strup(kajo_mod_filter_mode_to_string(mcfg ? mcfg->filter_mode : KAJO_MOD_FILTER_A500), -1);
+        g_autofree gchar *led = g_ascii_strup(kajo_mod_led_mode_to_string(mcfg ? mcfg->led_mode : KAJO_MOD_LED_AUTO), -1);
         out_vals[0] = g_strdup_printf("%s + LED %s", flt, led);
-        out_vals[1] = g_ascii_strup(cfg->mod_sid_model ? cfg->mod_sid_model : "auto", -1);
-        out_vals[2] = g_strdup_printf("%d%% SEP", cfg->mod_stereo_sep_pct);
-        out_vals[3] = (cfg->mod_uade_timeout_sec == 0)
+        out_vals[1] = g_ascii_strup(kajo_mod_sid_model_to_string(mcfg ? mcfg->sid_model : KAJO_MOD_SID_AUTO), -1);
+        out_vals[2] = g_strdup_printf("%d%% SEP", mcfg ? mcfg->stereo_sep_pct : 70);
+        out_vals[3] = (mcfg && mcfg->uade_timeout_sec == 0)
             ? g_strdup("INFINITE")
-            : g_strdup_printf("%dS MAX", cfg->mod_uade_timeout_sec);
+            : g_strdup_printf("%dS MAX", mcfg ? mcfg->uade_timeout_sec : 180);
     }
-
-    shell_config_destroy(cfg);
 }
 
 static void
@@ -293,7 +298,7 @@ settings_window_sync_active_page_chrome(SettingsApp *app_ctx)
         gtk_label_set_text(GTK_LABEL(app_ctx->footer_state_badge),
                            app_ctx->is_narrow_mode ? "✓ READY" : "✓ LIVE / INLINE CONTROLS");
         gtk_label_set_text(GTK_LABEL(app_ctx->footer_status_lbl),
-                           "~/.config/kajo/config.json • Live IPC ready");
+                           "~/.config/kajo/*.toml • Live IPC ready");
         gtk_widget_set_visible(app_ctx->footer_actions_box, FALSE);
         return;
     }
@@ -308,7 +313,7 @@ settings_window_sync_active_page_chrome(SettingsApp *app_ctx)
                                    ? "● UNSAVED"
                                    : "● UNSAVED CHANGES — PREVIEW ONLY");
             gtk_label_set_text(GTK_LABEL(app_ctx->footer_status_lbl),
-                               "Click SAVE & APPLY to write ~/.config/kajo/config.json");
+                               "Click SAVE & APPLY to write ~/.config/kajo/*.toml");
         } else {
             gtk_widget_add_css_class(app_ctx->footer_state_badge, "success");
             gtk_label_set_text(GTK_LABEL(app_ctx->footer_state_badge),
@@ -318,7 +323,7 @@ settings_window_sync_active_page_chrome(SettingsApp *app_ctx)
             gtk_label_set_text(GTK_LABEL(app_ctx->footer_status_lbl),
                                st->live_status_text
                                    ? st->live_status_text
-                                   : "~/.config/kajo/config.json • Live IPC ready");
+                                   : "~/.config/kajo/*.toml • Live IPC ready");
         }
         gtk_widget_set_visible(app_ctx->btn_revert, st->on_revert != NULL);
         gtk_widget_set_sensitive(app_ctx->btn_revert, st->is_dirty);
@@ -815,35 +820,38 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
 {
     SettingsApp *app_ctx = g_new0(SettingsApp, 1);
 
-    ShellConfig *cfg = shell_config_load(NULL);
-    int init_w = CLAMP(cfg->settings_width, 480, 3840);
-    int init_h = CLAMP(cfg->settings_height, 360, 2160);
+    g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+    g_autoptr(KajoShellCfgRef) scfg = kajo_config_store_acquire_shell(NULL);
+    g_autoptr(KajoIdeCfgRef)   icfg = kajo_config_store_acquire_ide(NULL);
+    g_autoptr(KajoModCfgRef)   mcfg = kajo_config_store_acquire_mod(NULL);
 
-    const gchar *theme_badge = settings_accent_short_name(cfg->accent_color);
-    const gchar *panel_badge = (cfg->panel_position == PANEL_POSITION_BOTTOM) ? "BTM" : "TOP";
-    guint total_widgets = (cfg->layout_left ? cfg->layout_left->len : 0) +
-                          (cfg->layout_center ? cfg->layout_center->len : 0) +
-                          (cfg->layout_right ? cfg->layout_right->len : 0);
+    int init_w = CLAMP(tcfg ? tcfg->settings_width : 900, 480, 3840);
+    int init_h = CLAMP(tcfg ? tcfg->settings_height : 640, 360, 2160);
+
+    const gchar *theme_badge = settings_accent_short_name(tcfg ? tcfg->accent_color : "#0078d4");
+    const gchar *panel_badge = (scfg && scfg->panel_position == PANEL_POSITION_BOTTOM) ? "BTM" : "TOP";
+    guint total_widgets = ((scfg && scfg->layout_left) ? scfg->layout_left->len : 0) +
+                          ((scfg && scfg->layout_center) ? scfg->layout_center->len : 0) +
+                          ((scfg && scfg->layout_right) ? scfg->layout_right->len : 0);
     g_autofree gchar *widgets_badge = g_strdup_printf("%u", total_widgets);
-    gboolean dnd_on = cfg->dnd_enabled;
+    gboolean dnd_on = scfg ? scfg->dnd_enabled : FALSE;
+    gint tout_ms = scfg ? scfg->toast_timeout_ms : 8000;
     g_autofree gchar *notif_badge = dnd_on
         ? g_strdup("DND")
-        : g_strdup_printf("%dS", MAX(1, cfg->toast_timeout_ms / 1000));
-    const gchar *ide_badge = (cfg->ide_color_scheme && strstr(cfg->ide_color_scheme, "light"))
+        : g_strdup_printf("%dS", MAX(1, tout_ms / 1000));
+    const gchar *ide_badge = (icfg && icfg->color_scheme && strstr(icfg->color_scheme, "light"))
         ? "LIGHT" : "DARK";
     const gchar *mod_badge = "A500";
-    if (cfg->mod_filter_mode) {
-        if (g_ascii_strcasecmp(cfg->mod_filter_mode, "a1200") == 0)
-            mod_badge = "A1200";
-        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "near") == 0)
-            mod_badge = "NEAR";
-        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "linear") == 0 ||
-                 g_ascii_strcasecmp(cfg->mod_filter_mode, "lin") == 0)
-            mod_badge = "LIN";
-        else if (g_ascii_strcasecmp(cfg->mod_filter_mode, "sinc") == 0)
-            mod_badge = "SINC";
+    if (mcfg) {
+        switch (mcfg->filter_mode) {
+        case KAJO_MOD_FILTER_A1200:  mod_badge = "A1200"; break;
+        case KAJO_MOD_FILTER_NEAR:   mod_badge = "NEAR";  break;
+        case KAJO_MOD_FILTER_LINEAR: mod_badge = "LIN";   break;
+        case KAJO_MOD_FILTER_SINC:   mod_badge = "SINC";  break;
+        case KAJO_MOD_FILTER_A500:
+        default:                     mod_badge = "A500";  break;
+        }
     }
-    shell_config_destroy(cfg);
 
     app_ctx->current_width = init_w;
     app_ctx->window = gtk_application_window_new(app);
@@ -1130,7 +1138,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     gtk_label_set_ellipsize(GTK_LABEL(app_ctx->footer_state_badge), PANGO_ELLIPSIZE_END);
     gtk_label_set_width_chars(GTK_LABEL(app_ctx->footer_state_badge), 4);
 
-    app_ctx->footer_status_lbl = gtk_label_new("~/.config/kajo/config.json • Live IPC ready");
+    app_ctx->footer_status_lbl = gtk_label_new("~/.config/kajo/*.toml • Live IPC ready");
     gtk_widget_add_css_class(app_ctx->footer_status_lbl, "row-subtitle");
     gtk_widget_set_hexpand(app_ctx->footer_status_lbl, TRUE);
     gtk_widget_set_halign(app_ctx->footer_status_lbl, GTK_ALIGN_FILL);

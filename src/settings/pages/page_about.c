@@ -268,7 +268,7 @@ build_page_about(void)
         "SHELL", "accent"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "⚙", "kajo-settings — System & Suite Configurator (org.kajo.Settings)",
-        "12-page scalable Niri column UI with live D-Bus, PipeWire, config.json & GLSL shaders",
+        "12-page scalable Niri column UI with live D-Bus, PipeWire, TOML config & GLSL shaders",
         "SETTINGS", "success"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🮖", "kajo-ide — Selection-First Modal Code Editor (org.kajo.IDE)",

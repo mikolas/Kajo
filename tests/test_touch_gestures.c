@@ -7,7 +7,7 @@
 #include <linux/input-event-codes.h>
 #include <glib.h>
 
-ShellConfig *
+const KajoShellCfg *
 shell_app_get_config(ShellApp *self G_GNUC_UNUSED)
 {
     return NULL;
