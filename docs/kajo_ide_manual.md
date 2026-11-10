@@ -372,7 +372,6 @@ Unlike terminal editors that rely on ASCII approximations, `kajo-ide` includes a
   - Resolves paths relative to the current Markdown document's directory, the IDE workspace root, `file://` URIs, or `~/.gemini/antigravity-cli/brain/` artifact directories.
   - Also renders inline `32×32` image thumbnails inside Markdown `GtkGrid` pipe tables (`| ![icon](...) | ... |`) and extracts inline `![alt](src)` figures inside paragraphs and list items.
 - **Multi-Type Embedded Asset Cards:**
-  - **Embedded PDF Documents (`![Spec](doc.pdf)`):** Renders multi-page PDF documents inline via `poppler-glib` (`PopplerDocument` $\rightarrow$ Cairo $\rightarrow$ `GdkTexture`) with **`◀ PREV`**, **`PAGE 1 / N`**, **`NEXT ▶`**, and **`↗ OPEN PDF`** controls.
   - **Embedded Archives (`![Release](pkg.tar.gz)` / `.zip` / `.tar.zst`):** Inspects archive contents inline via `libarchive`, displaying total file count, uncompressed size, and a formatted manifest table.
   - **Embedded Audio / Video / Source Files (`![Clip](demo.mp4)`, `![Code](src/main.c)`):** Displays interactive launch cards with **`▶ PLAY IN KAJO PLAYER`** or **`📂 OPEN IN IDE`** actions.
 - **Interactive Slide Carousels (` ````carousel `) & Collapsible `<details>` Blocks:**
