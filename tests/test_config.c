@@ -544,6 +544,141 @@ test_surgical_patch_preserves_comments_and_unknown_keys(void)
     rm_rf(tmpdir);
 }
 
+/* 8. In-place patcher must never write an unparsable file (quoted keys, dotted keys, inline tables) */
+static void
+mutate_theme_font_20(KajoThemeCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    draft->ui_font_size_px = 20;
+}
+
+static void
+mutate_shell_panel_height_61(KajoShellCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    draft->panel_height = 61;
+}
+
+static void
+check_unpatchable_syntax(const gchar *filename,
+                         const gchar *original,
+                         gboolean     use_shell)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-unpatchable-XXXXXX", NULL);
+    g_autofree gchar *path = g_build_filename(tmpdir, filename, NULL);
+    g_autofree gchar *bak = g_strconcat(path, ".bak", NULL);
+    g_assert_true(g_file_set_contents(path, original, -1, NULL));
+
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+
+    g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "*could not update*in place*");
+    g_autoptr(GError) err = NULL;
+    gboolean ok = use_shell
+        ? kajo_config_store_update_shell(store, mutate_shell_panel_height_61, NULL, &err)
+        : kajo_config_store_update_theme(store, mutate_theme_font_20, NULL, &err);
+    g_test_assert_expected_messages();
+    g_assert_no_error(err);
+    g_assert_true(ok);
+
+    /* The original text is preserved verbatim in <file>.bak */
+    g_autofree gchar *bak_text = NULL;
+    g_assert_true(g_file_get_contents(bak, &bak_text, NULL, NULL));
+    g_assert_cmpstr(bak_text, ==, original);
+
+    /* The written file parses and holds the new value: a fresh store must see it */
+    g_autoptr(KajoConfigStore) fresh = kajo_config_store_new_for_dir(tmpdir);
+    if (use_shell) {
+        g_autoptr(KajoShellCfgRef) c = kajo_config_store_acquire_shell(fresh);
+        g_assert_cmpint(c->panel_height, ==, 61);
+    } else {
+        g_autoptr(KajoThemeCfgRef) c = kajo_config_store_acquire_theme(fresh);
+        g_assert_cmpint(c->ui_font_size_px, ==, 20);
+    }
+
+    /* And a second save must not be refused */
+    g_assert_true(use_shell
+        ? kajo_config_store_update_shell(store, mutate_shell_panel_height_61, NULL, NULL)
+        : kajo_config_store_update_theme(store, mutate_theme_font_20, NULL, NULL));
+
+    rm_rf(tmpdir);
+}
+
+static void
+test_patcher_never_writes_unparsable_file(void)
+{
+    check_unpatchable_syntax("theme.toml", "\"ui_font_size_px\" = 15\n", FALSE);
+    check_unpatchable_syntax("shell.toml", "panel.height = 50\n", TRUE);
+    check_unpatchable_syntax("shell.toml", "panel = { height = 50, position = \"top\" }\n", TRUE);
+}
+
+/* 9. Subscriber callbacks run on the subscriber's main context, not the writer's thread */
+typedef struct {
+    GThread *thread;
+    guint    calls;
+} SubProbe;
+
+static void
+on_probe_changed(KajoConfigStore *store G_GNUC_UNUSED,
+                 KajoConfigDomain changed G_GNUC_UNUSED,
+                 gpointer         user_data)
+{
+    SubProbe *probe = user_data;
+    probe->thread = g_thread_self();
+    probe->calls++;
+}
+
+static gpointer
+worker_update_theme(gpointer data)
+{
+    KajoConfigStore *store = data;
+    kajo_config_store_update_theme(store, mutate_theme_font_20, NULL, NULL);
+    return NULL;
+}
+
+static void
+drain_main_context(void)
+{
+    for (int i = 0; i < 20; i++)
+        g_main_context_iteration(NULL, FALSE);
+}
+
+static void
+test_subscriber_runs_on_subscriber_thread(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-subthread-XXXXXX", NULL);
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+
+    /* A running GTK main loop owns the default context; emulate that so that a
+     * writer thread cannot acquire it and run the callback itself. */
+    g_assert_true(g_main_context_acquire(g_main_context_default()));
+
+    SubProbe probe = { NULL, 0 };
+    guint id = kajo_config_store_subscribe(store, KAJO_CONFIG_DOMAIN_THEME,
+                                           on_probe_changed, &probe, NULL);
+    g_assert_cmpuint(id, !=, 0);
+
+    /* Writer on another thread: callback must not run on that thread, and must arrive here */
+    GThread *w = g_thread_new("cfg-writer", worker_update_theme, store);
+    g_thread_join(w);
+    drain_main_context();
+    g_assert_cmpuint(probe.calls, ==, 1);
+    g_assert_true(probe.thread == g_thread_self());
+
+    /* Writer on this thread: synchronous, as before */
+    probe.calls = 0;
+    g_assert_true(kajo_config_store_update_theme(store, mutate_theme_font_16, NULL, NULL));
+    g_assert_cmpuint(probe.calls, ==, 1);
+
+    /* Unsubscribe while a notification is queued: it must be dropped, not delivered */
+    probe.calls = 0;
+    w = g_thread_new("cfg-writer2", worker_update_theme, store);
+    g_thread_join(w);
+    kajo_config_store_unsubscribe(store, id);
+    drain_main_context();
+    g_assert_cmpuint(probe.calls, ==, 0);
+
+    g_main_context_release(g_main_context_default());
+    rm_rf(tmpdir);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -558,6 +693,8 @@ main(int argc, char *argv[])
     g_test_add_func("/config/migrate/legacy-json", test_legacy_json_migration);
     g_test_add_func("/config/store/syntax-error-preservation", test_syntax_error_preservation_and_save_guard);
     g_test_add_func("/config/store/surgical-patch-preserves-comments", test_surgical_patch_preserves_comments_and_unknown_keys);
+    g_test_add_func("/config/store/patcher-never-writes-unparsable-file", test_patcher_never_writes_unparsable_file);
+    g_test_add_func("/config/store/subscriber-runs-on-subscriber-thread", test_subscriber_runs_on_subscriber_thread);
 
     return g_test_run();
 }

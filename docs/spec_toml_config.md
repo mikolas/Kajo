@@ -1,453 +1,245 @@
-# Specification: Domain-Split TOML Configuration & `KajoConfigStore` (`docs/spec_toml_config.md`)
+# Domain-Split TOML Configuration & `KajoConfigStore` (`docs/spec_toml_config.md`)
 
-**Status:** Implemented  
-**Target Modules:** `src/vendor/tomlc17/`, `src/config/`, `kajo_core` (`meson.build`), all 7 Kajo binaries (`kajo`, `kajo-settings`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-greeter`) + future `kajo-comp`  
-**Dependencies:** Vendored upstream `cktan/tomlc17` (MIT, pure C17, zero external deps), `glib-2.0`, `gio-2.0`, `json-glib-1.0` *(strictly isolated inside one-time legacy importer `kajo_config_migrate.c`)*
+**Status:** Implemented (PRs #31 and #32, plus the follow-up fixes on branch `revert/poppler-removal`).
+This file describes the code as it is. Where it quotes values (defaults, ranges), they are generated from the compiled schemas in `src/config/schemas/`, not typed by hand.
 
----
-
-## 1. Objectives & Motivation
-
-Kajo's current configuration layer (`src/config.h` + `src/config.c`, 1,210 lines) stores every setting for the panel, widgets, OSK, notifications, idle/lock, foldable sensors, `kajo-ide`, `kajo-files`, and `kajo-mod` inside a single monolithic `~/.config/kajo/config.json` file. Auditing the current implementation reveals five structural flaws that must be resolved before introducing `kajo-comp`:
-
-1. **Cross-Process Write Clobbering:** Eleven separate write sites across `kajo-settings`, `kajo` panel popovers (`theme.c`, `backlight.c`), `kajo-files`, and `kajo-ide` rewrite the entire JSON blob via `shell_config_save()`, risking lost updates when two processes save concurrently.
-2. **Duplicated Raw String Literals & Stringly-Typed Modes:** Key names appear in 3+ places (JSON reader, JSON writer, tests), and 13 closed-set mode fields (`files_view_mode`, `screensaver_mode`, `mod_filter_mode`, `toast_click_action`, `osk_auto_show_mode`, …) are stored as heap-allocated `gchar *` strings compared via `g_strcmp0()` across dozens of files—where a single typo compiles cleanly and silently malfunctions at runtime.
-3. **Ad-Hoc File Watching & Multi-Thread Workarounds:** `ide_window.c` and `mod_window.c` each hand-roll single-file `GFileMonitor` instances on `config.json` without event debouncing, while `mod_engine.h` had to invent custom mutex-locked global copies (`kajo_mod_set_runtime_prefs()`) so background UADE/SID audio threads could read preferences safely.
-4. **Silent Default Drift:** Shipped `data/defaults/config.json` (`position = "bottom"`, `height = 39`, `autohide.enabled = true`, plus an unparsed `"hide_duration": 200` key) has already drifted apart from `shell_config_get_default()` in `src/config.c` (`PANEL_POSITION_TOP`, `height = 32`, `autohide_enabled = FALSE`).
-5. **Hostility to Human Hacking:** JSON forbids comments, rejects trailing commas, and requires double-escaped regexes—making it unsuitable for human-maintained files and future `kajo-comp` keybindings/window rules.
-
-### Core Design Goals
-- **Domain-Split Plain-Text TOML (`~/.config/kajo/*.toml` + `conf.d/*.toml`):** Small, domain-owned files (`theme.toml`, `shell.toml`, `ide.toml`, `files.toml`, `mod.toml`, and future `comp.toml` / `binds.toml` / `rules.toml`) with `#` comments and atomic per-domain saves.
-- **Lock-Free Multi-Threaded Reads via Immutable Refcounted Snapshots:** RCU-style `g_atomic_rc_box` snapshots (`const Kajo<Domain>Cfg *`) safe to acquire from GTK UI threads, PipeWire/UADE/SID DSP threads, `GTask` workers, and future 240Hz compositor render loops with zero torn reads and zero lock contention after pointer acquisition.
-- **Zero Raw String Literals in Application Code:** Strongly typed C `enum`s for all mode/choice fields (`-Wswitch-enum` checked) + single-header `#define` key/section/file constants (`kajo_config_keys.h`).
-- **Single-Source-of-Truth Table-Driven Schema Engine:** One declarative `offsetof()` field table per domain drives defaults, TOML parsing, type validation, `[min, max]` clamping, `conf.d/` overlay merging, TOML serialization, structural diffing, and memory cleanup—backed by a mandatory unit test asserting 1:1 parity between C defaults and `data/defaults/*.toml`.
+**Modules:** `src/vendor/tomlc17/`, `src/config/`, `data/defaults/*.toml`, built into the shared `kajo_core` library (`meson.build`) and used by `kajo`, `kajo-settings`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod` and `kajo-greeter`.
+**Dependencies:** `glib-2.0`, `gio-2.0`; `json-glib-1.0` only inside the one-time legacy importer `kajo_config_migrate.c`; vendored upstream `tomlc17` (MIT, `src/vendor/tomlc17/LICENSE`).
 
 ---
 
-## 2. Architecture & Module Layout
+## 1. What it replaces and why
 
-All files adhere strictly to `< 400` lines per module (`AGENTS.md` §5.1) and compile once into the shared `kajo_core` static library (`meson.build`):
+Everything used to live in one `~/.config/kajo/config.json` (`src/config.c`, 1,068 lines before removal) that every process rewrote in full. Problems that motivated the change: concurrent writers could lose each other's updates; mode fields were heap strings compared with `g_strcmp0()`; `kajo-ide` and `kajo-mod` each watched the file by hand; shipped defaults had drifted from compiled defaults; JSON has no comments.
+
+Now: small per-domain TOML files, typed enums, one table-driven schema engine, an in-process store with immutable snapshots, and a test that fails if the compiled defaults and `data/defaults/*.toml` ever differ.
+
+---
+
+## 2. Files and responsibilities
 
 | File | Responsibility |
 | :--- | :--- |
-| `src/vendor/tomlc17/tomlc17.h` / `tomlc17.c` | Unmodified upstream MIT C17 TOML 1.0/1.1 parser (`cktan/tomlc17`, `toml_parse()`, `toml_free()`). |
-| `src/config/kajo_config_keys.h` | Canonical `#define` constants for all directory env vars, `.toml` filenames, `[section]` names, and key names. Zero magic string literals outside this header. |
-| `src/config/kajo_config_types.h` | Strongly typed C `enum`s, `ShellWidgetConfig`, and immutable `const`-consumed domain structs (`KajoThemeCfg`, `KajoShellCfg`, `KajoIdeCfg`, `KajoFilesCfg`, `KajoModCfg`) + `G_DEFINE_AUTOPTR_CLEANUP_FUNC` declarations. |
-| `src/config/kajo_config_schema.h` / `.c` | Generic table-driven `offsetof()` engine: default initialization, TOML table extraction + type validation + `[min, max]` clamping, `conf.d/*.toml` partial overlay application, surgical comment/unknown-key-preserving TOML patcher (`kajo_cfg_domain_patch_toml()`) + full serializer, deep equality diffing (`kajo_cfg_domain_equal()`), and field destructor cleanup. |
-| `src/config/kajo_config_store.h` / `.c` | Process-wide (or sandboxed test-dir) thread-safe store managing atomic refcounted snapshots, `write_lock` + advisory `flock()`-serialized `conf.d/`-safe transactional `update_<domain>()` writes, a 50ms-debounced `GFileMonitor` directory watcher, and `GMainContext`-dispatched pub/sub notifications. |
-| `src/config/kajo_config_migrate.h` / `.c` | Quarantined, `flock()`-locked, retry-safe one-time `~/.config/kajo/config.json` $\rightarrow$ `{theme,ide,files,mod,shell}.toml` importer (renaming `config.json` $\rightarrow$ `config.json.bak` once all 5 files exist). **Only** file in `src/config/` linking `json-glib`. |
-| `src/config/schemas/schema_theme.c` | Declarative `KajoDomainSchema` for `theme.toml`. |
-| `src/config/schemas/schema_shell.c` | Declarative `KajoDomainSchema` + widget layout array (`left`/`center`/`right`) parser/serializer for `shell.toml`. |
-| `src/config/schemas/schema_ide.c` | Declarative `KajoDomainSchema` for `ide.toml`. |
-| `src/config/schemas/schema_files.c` | Declarative `KajoDomainSchema` for `files.toml`. |
-| `src/config/schemas/schema_mod.c` | Declarative `KajoDomainSchema` for `mod.toml`. |
-| `tests/test_config.c` | GTest suite: C-default vs `data/defaults/*.toml` parity gate, per-domain round-trip, `conf.d/` overlay & base-save isolation, multi-threaded reader + hot-reload stress test, corrupt-input recovery, and legacy `config.json` migration. |
-| `tests/fuzz/fuzz_toml_config.c` | `clang -fsanitize=fuzzer,address,undefined` target fuzzing all domain schemas and widget array parsers. |
+| `src/vendor/tomlc17/tomlc17.{c,h}` | Upstream `cktan/tomlc17` parser, unmodified (3,350 + 291 lines). Its headers mention TOML 1.1 behaviour (optional seconds, trailing commas and newlines in inline tables). |
+| `src/config/kajo_config_keys.h` | Environment variable names, file names, section and key names. |
+| `src/config/kajo_config_types.h` | Enums (`ShellPanelPosition`, `ShellPanelLayer`, `ShellWidgetMode`, `ShellToastClickAction`, `ShellSwipe*Action`, `ShellOskAutoShowMode`, `ShellScreensaverMode`, `KajoFilesViewMode`, `KajoFilesSortField`, `KajoMod*`), `ShellWidgetConfig`, the domain structs `KajoThemeCfg`, `KajoShellCfg`, `KajoIdeCfg`, `KajoFilesCfg`, `KajoModCfg`, and `g_autoptr` helpers (`Kajo*CfgRef` for acquired snapshots, `Kajo*Cfg` for mutable copies). |
+| `src/config/kajo_config_schema.{h,c}` | The schema engine: `KajoFieldSpec` (section, key, type, offset, default, range or normalizer, enum map) and `KajoDomainSchema` (file name, domain table name, struct size, fields, custom hooks for the widget arrays). Implements defaults, parsing with validation and clamping, `conf.d` overlay application, full serialization, in-place patching, structural equality, default-file lookup. |
+| `src/config/kajo_config_store.{h,c}` | `KajoConfigStore`: snapshots, transactional `update_<domain>()`, reload, directory watching, subscriptions. |
+| `src/config/kajo_config_migrate.{h,c}` | One-time `config.json` → `*.toml` importer (the only code using `json-glib`). |
+| `src/config/schemas/schema_{theme,shell,ide,files,mod}.c` | One `KajoDomainSchema` per domain. `schema_shell.c` also parses and writes the `[layout]` widget arrays. |
+| `tests/test_config.c` | 11 GTest cases (section 8). |
+| `tests/fuzz/fuzz_toml_config.c` | Fuzz entry point over all schemas; also built as the meson test `fuzz-toml-config`. |
 
 ---
 
-## 3. Core C17 Abstractions & Thread-Safety Design
-
-### 3.1 Zero Raw String Literals: Typed `enum`s & `kajo_config_keys.h`
-
-Every closed string option in the legacy `ShellConfig` is converted to a strongly typed C `enum` backed by a single `KajoCfgEnumEntry` mapping table:
-
-| Legacy `gchar *` Field | New C `enum` Type | Canonical TOML Values (`KajoCfgEnumEntry`) |
-| :--- | :--- | :--- |
-| `panel_position` *(existing)* | `KajoPanelPosition` | `"top"`, `"bottom"` |
-| `panel_layer` | `KajoPanelLayer` | `"background"`, `"bottom"`, `"top"`, `"overlay"` |
-| `default_widget_mode` *(existing)* | `KajoWidgetMode` | `"icon"`, `"label"`, `"full"` |
-| `touch_swipe_center` | `KajoSwipeCenterAction` | `"launcher"`, `"overview"`, `"osk"`, `"none"` |
-| `touch_swipe_right` | `KajoSwipeRightAction` | `"control-center"`, `"notifications"`, `"osk"`, `"none"` |
-| `touch_swipe_horizontal` | `KajoSwipeHorizAction` | `"column"`, `"workspace"`, `"none"` |
-| `osk_auto_show_mode` | `KajoOskAutoMode` | `"tablet"`, `"always"`, `"manual"` |
-| `toast_click_action` | `KajoToastClickAction` | `"focus"`, `"dismiss"` |
-| `screensaver_mode` | `KajoScreensaverMode` | `"overlay"`, `"dpms"`, `"disabled"` |
-| `files_view_mode` | `KajoFilesViewMode` | `"grid"`, `"list"` |
-| `files_sort_field` | `KajoFilesSortField` | `"name"`, `"size"`, `"modified"`, `"type"` |
-| `mod_filter_mode` | `KajoModFilterMode` | `"a500"`, `"a1200"`, `"near"`, `"linear"`, `"sinc"` |
-| `mod_led_mode` | `KajoModLedMode` | `"auto"`, `"on"`, `"off"` |
-| `mod_sid_model` | `KajoModSidModel` | `"auto"`, `"6581"`, `"8580"` |
-| `mod_end_action` | `KajoModEndAction` | `"next-sub"`, `"loop"`, `"next-mod"` |
-
-Open-ended user strings (`accent_color`, `ide_color_scheme`, `ide_font_family`, `mod_hvsc_path`, `css_path`, and custom-script `exec_cmd` / `click_*_cmd`) remain `gchar *` owned by the immutable snapshot and freed automatically when the snapshot's atomic reference count reaches zero.
-
-All file names, section headers, and key identifiers live exclusively in `src/config/kajo_config_keys.h`:
-```c
-#define KAJO_ENV_CONFIG_DIR                  "KAJO_CONFIG_DIR"
-
-#define KAJO_CFG_FILE_THEME                  "theme.toml"
-#define KAJO_CFG_FILE_SHELL                  "shell.toml"
-#define KAJO_CFG_FILE_IDE                    "ide.toml"
-#define KAJO_CFG_FILE_FILES                  "files.toml"
-#define KAJO_CFG_FILE_MOD                    "mod.toml"
-#define KAJO_CFG_DIR_CONFD                   "conf.d"
-#define KAJO_CFG_FILE_LEGACY_JSON            "config.json"
-
-/* Example section & key constants (used only in schema_*.c and tests) */
-#define KAJO_CFG_SEC_PANEL                   "panel"
-#define KAJO_CFG_SEC_AUTOHIDE                "autohide"
-#define KAJO_CFG_SEC_NOTIFICATIONS           "notifications"
-#define KAJO_CFG_SEC_TOUCH                   "touch"
-#define KAJO_CFG_SEC_OSK                     "osk"
-#define KAJO_CFG_SEC_LOCK                    "lock"
-#define KAJO_CFG_SEC_HARDWARE                "hardware"
-#define KAJO_CFG_SEC_LAYOUT                  "layout"
-```
-
----
-
-### 3.2 Table-Driven `offsetof()` Schema Engine (`kajo_config_schema.h`)
+## 3. Public API (as in the headers)
 
 ```c
-typedef enum {
-    KAJO_CFG_DOMAIN_THEME = 1u << 0,
-    KAJO_CFG_DOMAIN_SHELL = 1u << 1,
-    KAJO_CFG_DOMAIN_IDE   = 1u << 2,
-    KAJO_CFG_DOMAIN_FILES = 1u << 3,
-    KAJO_CFG_DOMAIN_MOD   = 1u << 4,
-    /* Reserved for Phase 2 compositor: KAJO_CFG_DOMAIN_COMP = 1u << 5 */
-    KAJO_CFG_DOMAIN_ALL   = 0x1Fu,
-} KajoCfgDomainFlags;
+/* Store */
+KajoConfigStore *kajo_config_store_get_default(void);              /* $KAJO_CONFIG_DIR or ~/.config/kajo */
+KajoConfigStore *kajo_config_store_new_for_dir(const gchar *dir);  /* hermetic store for tests */
+void             kajo_config_store_destroy(KajoConfigStore *store);  /* g_autoptr(KajoConfigStore) */
+const gchar     *kajo_config_store_get_config_dir(KajoConfigStore *store);
 
-typedef enum {
-    KAJO_CFG_FIELD_BOOL = 0,
-    KAJO_CFG_FIELD_INT,
-    KAJO_CFG_FIELD_DOUBLE,
-    KAJO_CFG_FIELD_STRING,
-    KAJO_CFG_FIELD_ENUM,
-} KajoCfgFieldKind;
-
-typedef struct {
-    gint        value;
-    const char *toml_str;
-} KajoCfgEnumEntry;
-
-typedef struct {
-    const char             *section;      /* NULL for top-level key, or KAJO_CFG_SEC_* */
-    const char             *key;          /* KAJO_CFG_KEY_* */
-    KajoCfgFieldKind        kind;
-    gsize                   offset;       /* offsetof(StructType, field) */
-    gboolean                def_bool;
-    gint                    def_int;
-    gint                    min_int;
-    gint                    max_int;
-    gdouble                 def_dbl;
-    gdouble                 min_dbl;
-    gdouble                 max_dbl;
-    const char             *def_str;      /* NULL = optional string (omitted on save when NULL) */
-    const KajoCfgEnumEntry *enum_table;   /* NULL-terminated array when kind == KAJO_CFG_FIELD_ENUM */
-} KajoCfgFieldSpec;
-
-typedef struct {
-    KajoCfgDomainFlags      domain;
-    const char             *filename;     /* KAJO_CFG_FILE_* */
-    const char             *header_comment;
-    gsize                   struct_size;
-    const KajoCfgFieldSpec *fields;
-    gsize                   n_fields;
-
-    /* Optional domain hooks for complex nested arrays (used by shell.toml widget lists) */
-    void     (*init_extra)(gpointer instance);
-    void     (*copy_extra)(gpointer dst, gconstpointer src);
-    void     (*clear_extra)(gpointer instance);
-    gboolean (*equal_extra)(gconstpointer a, gconstpointer b);
-    void     (*parse_extra)(gpointer instance, toml_datum_t root_table, const char *src_label);
-    void     (*write_extra)(gconstpointer instance, GString *out);
-} KajoDomainSchema;
-```
-
-**Validation & Resilience Guarantees:**
-- Out-of-range integers/doubles are clamped via `CLAMP(val, spec->min_int, spec->max_int)` with a structured `g_warning("%s: [%s].%s=%lld clamped to [%d..%d]", ...)`.
-- Wrong TOML value types (e.g. `show_hidden = "yes"` instead of boolean) or unknown enum strings log an exact diagnostic warning and preserve the prior/default field value—**never** crashing or aborting.
-- Unknown user keys in TOML files are harmlessly ignored without fatal errors.
-
----
-
-### 3.3 Thread-Safe `KajoConfigStore` & Hot-Reload Lifecycle (`kajo_config_store.h`)
-
-```c
-typedef struct _KajoConfigStore KajoConfigStore;
-
-typedef void (*KajoConfigChangedFn)(KajoConfigStore   *store,
-                                    KajoCfgDomainFlags changed_domains,
-                                    gpointer           user_data);
-
-/* Singleton default store (respects $KAJO_CONFIG_DIR, else ~/.config/kajo) */
-KajoConfigStore *kajo_config_store_get_default(void);
-
-/* Explicit store constructor for unit tests or isolated --config-dir sandboxes */
-KajoConfigStore *kajo_config_store_new(const gchar       *custom_config_dir,
-                                       KajoCfgDomainFlags watched_domains);
-void             kajo_config_store_unref(KajoConfigStore *store);
-
-/* Thread-safe O(1) snapshot acquisition (returns const refcounted pointer; free via g_autoptr / *_unref) */
+/* Snapshots: usable from any thread, release with the matching *_unref or g_autoptr(Kajo*CfgRef) */
 const KajoThemeCfg *kajo_config_store_acquire_theme(KajoConfigStore *store);
 const KajoShellCfg *kajo_config_store_acquire_shell(KajoConfigStore *store);
 const KajoIdeCfg   *kajo_config_store_acquire_ide  (KajoConfigStore *store);
 const KajoFilesCfg *kajo_config_store_acquire_files(KajoConfigStore *store);
 const KajoModCfg   *kajo_config_store_acquire_mod  (KajoConfigStore *store);
 
-void kajo_theme_cfg_unref(const KajoThemeCfg *cfg);
-void kajo_shell_cfg_unref(const KajoShellCfg *cfg);
-void kajo_ide_cfg_unref  (const KajoIdeCfg   *cfg);
-void kajo_files_cfg_unref(const KajoFilesCfg *cfg);
-void kajo_mod_cfg_unref  (const KajoModCfg   *cfg);
-
-/* Base-only snapshot loader (excludes conf.d/*.toml) for Settings UI inspection if needed */
-KajoShellCfg *kajo_config_store_dup_base_shell(KajoConfigStore *store);
-
-/* Transactional base-file mutators:
- * 1. Lock store->write_lock + advisory flock() on .<domain>.toml.lock
- * 2. Parse ONLY base <domain>.toml into mutable draft (refusing to clobber if on-disk file has syntax errors)
- * 3. Invoke mutate_fn(&draft, user_data)
- * 4. Surgically patch <domain>.toml (preserving # comments, unknown keys, and avoiding freezing untouched defaults)
- * 5. Re-evaluate base + conf.d/*.toml, swap active snapshot under snapshot_lock, notify subscribers */
-typedef void (*KajoThemeMutateFn)(KajoThemeCfg *draft, gpointer user_data);
-typedef void (*KajoShellMutateFn)(KajoShellCfg *draft, gpointer user_data);
-typedef void (*KajoIdeMutateFn)  (KajoIdeCfg   *draft, gpointer user_data);
-typedef void (*KajoFilesMutateFn)(KajoFilesCfg *draft, gpointer user_data);
-typedef void (*KajoModMutateFn)  (KajoModCfg   *draft, gpointer user_data);
-
+/* Transactional writes of the BASE file (never bakes conf.d values into it) */
 gboolean kajo_config_store_update_theme(KajoConfigStore *store, KajoThemeMutateFn fn, gpointer user_data, GError **error);
-gboolean kajo_config_store_update_shell(KajoConfigStore *store, KajoShellMutateFn fn, gpointer user_data, GError **error);
-gboolean kajo_config_store_update_ide  (KajoConfigStore *store, KajoIdeMutateFn   fn, gpointer user_data, GError **error);
-gboolean kajo_config_store_update_files(KajoConfigStore *store, KajoFilesMutateFn fn, gpointer user_data, GError **error);
-gboolean kajo_config_store_update_mod  (KajoConfigStore *store, KajoModMutateFn   fn, gpointer user_data, GError **error);
+/* ... and _shell, _ide, _files, _mod with the matching Kajo*MutateFn */
 
-/* Force synchronous reload of specified domains from disk */
-gboolean kajo_config_store_reload(KajoConfigStore *store, KajoCfgDomainFlags domains);
-
-/* Subscribe to live hot-reload events delivered on the subscriber's thread-default GMainContext */
-guint  kajo_config_store_subscribe(KajoConfigStore     *store,
-                                   KajoCfgDomainFlags   domains_mask,
-                                   KajoConfigChangedCb  cb,
-                                   gpointer             user_data,
-                                   GDestroyNotify       destroy_notify);
-void   kajo_config_store_unsubscribe(KajoConfigStore *store, guint sub_id);
+/* Reload and notification */
+void  kajo_config_store_reload(KajoConfigStore *store, KajoConfigDomain domains);
+guint kajo_config_store_subscribe(KajoConfigStore *store, KajoConfigDomain domains,
+                                  KajoConfigChangedCb cb, gpointer user_data, GDestroyNotify destroy_notify);
+void  kajo_config_store_unsubscribe(KajoConfigStore *store, guint sub_id);
 ```
 
-```mermaid
-sequenceDiagram
-    participant Writer as Settings / Editor (:w)
-    participant FS as ~/.config/kajo/*.toml + conf.d/
-    participant Mon as KajoConfigStore (50ms Debounce)
-    participant Snap as Atomic Snapshot Slot (GMutex + g_atomic_rc_box)
-    participant Audio as Audio / Worker Thread
-    participant UI as GTK / Compositor Main Loop
+`KajoConfigDomain` is a bit mask: `KAJO_CONFIG_DOMAIN_THEME | _SHELL | _IDE | _FILES | _MOD` (`_ALL` = all five). Passing `NULL` as `store` selects the default store.
 
-    Audio->>Snap: acquire_mod() -> const KajoModCfg* (ref=2)
-    Note over Audio: Reads cfg->filter_mode lock-free!
-    Writer->>FS: Atomic temp-write + rename(mod.toml)
-    FS-->>Mon: GFileMonitor event(s)
-    Mon->>Mon: Coalesce 50ms -> parse base + conf.d/*.toml -> next_cfg
-    Mon->>Snap: If !equal(cur, next): swap slot -> next_cfg, unref(old_cfg -> ref=1)
-    Mon-->>UI: g_main_context_invoke_full(on_config_changed)
-    Audio->>Snap: g_autoptr scope exit -> unref(old_cfg -> ref=0 -> freed!)
-```
+Environment variables: `KAJO_CONFIG_DIR` (config directory), `KAJO_DEFAULTS_DIR` (shipped-defaults directory, searched first).
 
 ---
 
-## 4. Domain Schemas, Reconciled Defaults & `conf.d/` Precedence
+## 4. Resolution order and what is read when
 
-### 4.1 Resolution Order (Lowest $\rightarrow$ Highest Priority)
-For each domain `<name>.toml`:
-1. **Compiled C Schema Defaults** (`KajoCfgFieldSpec.def_*`)
-2. **Shipped System Defaults** (`$KAJO_DEFAULTS_DIR/<name>.toml` $\rightarrow$ `~/.local/share/kajo/defaults/<name>.toml` $\rightarrow$ `/usr/local/share/kajo/defaults/<name>.toml` $\rightarrow$ `/usr/share/kajo/defaults/<name>.toml` $\rightarrow$ `KAJO_SOURCE_DIR/data/defaults/<name>.toml` in dev builds)
-3. **User Base Domain File** (`$XDG_CONFIG_HOME/kajo/<name>.toml`)
-4. **Drop-In Overrides (`$XDG_CONFIG_HOME/kajo/conf.d/*.toml`):** Sorted lexicographically (`g_strcmp0` on `*.toml` basenames). Drop-in files in `conf.d/` use top-level domain tables (`[theme]`, `[shell.panel]`, `[ide]`, `[files]`, `[mod]`) so a single `conf.d/90-laptop-experiment.toml` can cleanly override keys across one or more domains without ambiguity.
+For each domain the effective configuration is built as follows (`build_effective_rc_snapshot()`):
 
-> **Mandatory Default Parity Rule:** Shipped `data/defaults/{theme,shell,ide,files,mod}.toml` are the authoritative default configurations (preserving all shipped values from `data/defaults/config.json`: `panel.position = "bottom"`, `panel.height = 39`, `autohide.enabled = true`, `reveal_delay = 200`, `hide_delay = 1000`, `reveal_duration = 150`, `hide_duration = 200` wired into `src/autohide.c`, and the full default widget layout), and compiled C `KajoCfgFieldSpec` fallback defaults MUST match `data/defaults/*.toml` 100%. `tests/test_config.c` enforces `kajo_cfg_domain_equal(parsed_default_toml, compiled_c_default)` on every `meson test` run so they can never drift apart again.
+1. Start from the **compiled defaults** of the schema.
+2. Read the **user file** `<config dir>/<domain>.toml` if it exists, applying the keys it contains. If it does **not** exist, read the first **shipped default file** found in: `$KAJO_DEFAULTS_DIR`, `~/.local/share/kajo/defaults`, `/usr/local/share/kajo/defaults`, `/usr/share/kajo/defaults`. The shipped file is a fallback for a missing user file, not a layer under an existing one; keys missing from an existing user file take the *compiled* default. (The parity test keeps the two identical.) The current working directory and the source tree are not searched.
+3. Apply **drop-ins** `<config dir>/conf.d/*.toml` in lexicographic order. A drop-in only contributes if it has the domain's top-level table (`[theme]`, `[shell.<section>]`, `[ide]`, `[files]`, `[mod]`). A drop-in with a syntax error is skipped with a warning.
 
----
+Validation: integers and floats are clamped to the schema range (or run through the field's normalizer); wrong value types, unknown enum strings and invalid hex colours log a warning and keep the previous value; unknown keys are ignored.
 
-### 4.2 Exact Domain Schemas & Shipped Default Files
-
-#### 1. `data/defaults/theme.toml` (`KajoThemeCfg`)
-```toml
-# Kajo Aero + Metro Theme & Typography Tokens
-accent_color = "#0078d4"
-ui_font_size_px = 14            # clamp: [10..24]
-font_heading_size_px = 13       # clamp: [10..28]
-font_subtitle_size_px = 12      # clamp: [9..24]
-font_badge_size_px = 11         # clamp: [8..20]
-# css_path = ""                 # optional custom style.css path override
-```
-
-#### 2. `data/defaults/shell.toml` (`KajoShellCfg`)
-```toml
-# Kajo Shell, Panel, Overlays, Idle Lock & Hardware Posture Configuration
-
-[panel]
-position = "bottom"             # "top" | "bottom"
-height = 39                     # clamp: [24..96]
-layer = "top"                   # "background" | "bottom" | "top" | "overlay"
-widget_mode = "icon"            # "icon" | "label" | "full"
-icon_size = 24                  # clamp: [12..64]
-
-[autohide]
-enabled = true
-reveal_delay = 200              # ms, clamp: [0..5000]
-hide_delay = 1000               # ms, clamp: [0..10000]
-reveal_duration = 150           # ms, clamp: [0..2000]
-hide_duration = 200             # ms, clamp: [0..2000] (wired into autohide.c AUTOHIDE_HIDING)
-edge_strip_px = 2               # px, clamp: [1..16]
-
-[touch]
-enabled = true
-dwell_ms = 4000                 # ms, clamp: [500..15000]
-swipe_center = "launcher"       # "launcher" | "overview" | "osk" | "none"
-swipe_right = "control-center"  # "control-center" | "notifications" | "osk" | "none"
-swipe_horizontal = "column"     # "column" | "workspace" | "none"
-
-[osk]
-auto_show_mode = "tablet"       # "tablet" | "always" | "manual"
-push_windows = true
-height_px = 260                 # px, clamp: [160..600]
-
-[notifications]
-toast_timeout_ms = 8000         # ms, clamp: [1000..60000]
-max_history = 50                # items, clamp: [5..500]
-toast_click_action = "focus"    # "focus" | "dismiss"
-dnd_enabled = false
-
-[lock]
-screensaver_mode = "overlay"    # "overlay" | "dpms" | "disabled"
-screensaver_timeout_sec = 300   # 0 = disabled, clamp: [0..86400]
-dpms_timeout_sec = 600          # 0 = disabled, clamp: [0..86400]
-lock_timeout_sec = 900          # 0 = disabled, clamp: [0..86400]
-lock_on_suspend = true
-
-[hardware]
-posture_auto_rotate = true
-posture_disable_kbd_in_tablet = true
-posture_disable_touch_in_laptop = false
-kbd_backlight_level = 2         # clamp: [0..2] (0=Off, 1=Low, 2=High)
-kbd_backlight_timeout_sec = 0   # clamp: [0..3600] (0=Always On, 30=30s, 180=3m)
-osd_timeout_ms = 1500           # ms, clamp: [300..10000]
-osd_width = 200                 # px, clamp: [80..800]
-osd_height = 120                # px, clamp: [60..600]
-launcher_width = 640            # px, clamp: [320..1920]
-launcher_max_height = 320       # px, clamp: [160..1200]
-settings_width = 814            # px, clamp: [480..3840]
-settings_height = 680           # px, clamp: [360..2160]
-settings_transition_ms = 150    # ms, clamp: [0..2000]
-
-[layout]
-# Items accept either bare widget ID strings (uses [panel].widget_mode) or inline tables:
-# { id = "custom-script", mode = "label", interval_sec = 10, exec_cmd = "...", click_left_cmd = "...", click_right_cmd = "..." }
-left = [
-    "launcher",
-    "workspaces",
-    { id = "window", mode = "full" },
-]
-center = [
-    { id = "clock", mode = "label" },
-]
-right = [
-    "tray",
-    { id = "notifications", mode = "icon" },
-    { id = "media", mode = "icon" },
-    { id = "network", mode = "icon" },
-    { id = "bluetooth", mode = "icon" },
-    { id = "cpu-mem", mode = "icon" },
-    { id = "keyboard-layout", mode = "label" },
-    { id = "osk", mode = "icon" },
-    { id = "volume", mode = "icon" },
-    { id = "battery", mode = "icon" },
-    { id = "privacy", mode = "icon" },
-    { id = "theme", mode = "icon" },
-    { id = "custom-script", mode = "icon" },
-    { id = "control-center", mode = "icon" },
-    { id = "power", mode = "icon" },
-]
-```
-
-#### 3. `data/defaults/ide.toml` (`KajoIdeCfg`)
-```toml
-# Kajo IDE (org.kajo.IDE) Editor Preferences
-color_scheme = "kajo-metro-dark"
-font_family = "Fira Code"
-font_size_px = 13               # clamp: [9..28]
-tab_width = 2                   # clamp: [1..8]
-insert_spaces = true
-show_minimap = true
-show_line_numbers = true
-highlight_current_line = true
-word_wrap = false
-show_margin_guide = false
-```
-
-#### 4. `data/defaults/files.toml` (`KajoFilesCfg`)
-```toml
-# Kajo Files (org.kajo.Files) Browser Preferences
-view_mode = "grid"              # "grid" | "list"
-sort_field = "name"             # "name" | "size" | "modified" | "type"
-sort_ascending = true
-sort_folders_first = true
-show_hidden = false
-show_inspector = false
-```
-
-#### 5. `data/defaults/mod.toml` (`KajoModCfg`)
-```toml
-# Kajo Mod (org.kajo.Mod) Retro Audio & Emulation Defaults
-filter_mode = "a500"            # "a500" | "a1200" | "near" | "linear" | "sinc"
-led_mode = "auto"               # "auto" | "on" | "off"
-sid_model = "auto"              # "auto" | "6581" | "8580"
-stereo_sep_pct = 70             # clamp: [0..100]
-end_action = "next-sub"         # "next-sub" | "loop" | "next-mod"
-hvsc_path = ""
-uade_timeout_sec = 180          # 0 = infinite, else clamp: [0..600]
-auto_extract_archives = true
-```
+**Syntax errors.** If the base file does not parse, the *previous snapshot is kept* on reload (only the very first load at process start falls back to defaults), and `update_<domain>()` refuses to write and returns an error, leaving the file untouched.
 
 ---
 
-## 5. One-Time Legacy Migration, CSS Decoupling & Dead-Code Cleanup
+## 5. Writing (`update_<domain>()`)
 
-1. **Automatic One-Time `config.json` $\rightarrow$ `*.toml` Migration (`kajo_config_migrate.c`):**
-   - Triggered automatically inside `KajoConfigStore` initialization under an exclusive advisory `flock()` on `<config_dir>/.migrate.lock` when `<config_dir>/config.json` exists and any of the 5 domain `.toml` files is missing.
-   - Parses `config.json` (supporting both structured objects and legacy flat keys), writes missing `theme.toml`, `ide.toml`, `files.toml`, `mod.toml`, and finally `shell.toml` atomically, and renames `config.json` $\rightarrow$ `config.json.bak` only after all 5 domain `.toml` files exist on disk (making partial migration retry-safe).
-2. **Decouple `00-accent.css` from `ide.toml` (`src/theme.c`):**
-   - Previously `shell_theme_write_override_css()` (`src/theme.c:383`) had to load `ShellConfig` just to append `.ide-source-view` font rules into `~/.config/kajo/style.d/00-accent.css`.
-   - **Refactor:** `00-accent.css` emits **only** `KajoThemeCfg` rules (`@metro-accent`, `@metro-accent-hover`, UI/heading/subtitle/badge font sizes). `kajo-ide` applies its own scoped `GtkCssProvider` (`.ide-source-view` `font-family` and `font-size`) directly inside `ide_window_apply_config()` from `KajoIdeCfg`, eliminating cross-domain file writes when zooming font size in `kajo-ide`.
-3. **Remove Dead `icon_map_path` Relic:**
-   - `shell_icons_init(const gchar *icon_map_path G_GNUC_UNUSED)` (`src/icons.c:9`) already ignores its argument. Remove `icon_map_path` from config structs and change signature to `shell_icons_init(void)`.
-4. **Non-Config JSON Files Left Untouched:**
-   - Launcher frequency cache (`stats.json` in `src/launcher/launcher_surface.c`), Niri IPC (`src/compositor/niri.c`), and per-project IDE `.kajo/{tasks,debug}.json` files are machine/workspace formats and remain JSON.
+1. Take the in-process `write_lock` and an exclusive `flock()` on `<config dir>/.<file>.lock` (so concurrent writers in other processes serialize).
+2. Read and parse the base file. If it has a syntax error: return an error, change nothing.
+3. Copy it to a draft, call the mutator, and compute which fields changed.
+4. **Patch the existing text in place**: for each changed scalar, replace the value of its `key = value` line inside its `[section]` (or insert it), keeping comments, unknown keys and ordering. Untouched defaults are not written into the user's file. The `[layout]` widget arrays are rewritten as a block when they change.
+5. **Verify the patched text.** It is parsed and compared with what a freshly serialized file would yield. If it does not parse or differs (this happens for keys written as quoted keys, dotted keys or inline tables, which the patcher does not recognise), the original text is saved to `<file>.bak`, a warning is logged, and a regenerated file is written instead. A broken file is never written.
+6. Reload the domain and notify subscribers.
+
+Limits to know about: comments *inside* the `[layout]` arrays are lost when the layout is saved; the `.bak` fallback loses comments and unknown keys from the live file (they remain in `.bak`); a file that has two definitions of one table is invalid TOML and is refused like any syntax error.
 
 ---
 
-## 6. Complete Codebase Callsite Refactor Map
+## 6. Reading, hot reload and notifications
 
-| Target Binary / Component | Files Modified | Migration Action |
-| :--- | :--- | :--- |
-| **Shared Core (`kajo_core`)** | `meson.build`, `src/app_init.c`, `src/theme.{c,h}`, `src/icons.{c,h}`, delete `src/config.{c,h}` | Compile `tomlc17.c` + `src/config/*.c` + `src/config/schemas/*.c` into `kajo_core`. `kajo_app_init_theme()` acquires `KajoThemeCfg` from `kajo_config_store_get_default()`. |
-| **`kajo` (Shell & 22 Widgets)** | `src/shell.{c,h}`, `src/panel.c`, `src/autohide.c`, `src/osk/osk.c`, `src/osd/osd.c`, `src/notifications/daemon.c`, `src/launcher/launcher_surface.c`, `src/lock/{idle_manager,screensaver,session_lock}.c`, `src/hardware/touch_gestures.c`, `src/posture/posture_manager.c`, `src/widgets/{backlight,theme,control-center,dnd,notifications,widget.h}.c` | Replace `ShellApp.config` mutable pointer with `KajoConfigStore` + `acquire_shell()` / `acquire_theme()` snapshots and enum switches. `widgets/theme.c` calls `kajo_config_store_update_theme()`; `widgets/backlight.c` calls `kajo_config_store_update_shell()`. Subscribe `ShellApp` to `KAJO_CFG_DOMAIN_SHELL | KAJO_CFG_DOMAIN_THEME` so editing `shell.toml` or `theme.toml` in an editor live-reloads the panel automatically! |
-| **`kajo-settings`** | `src/settings/settings_window.c`, `src/settings/pages/page_{theme,panel,widgets,notifications,displays,ide,mod,niri,about}.c` | Each page acquires only its domain snapshot (`acquire_theme`, `acquire_shell`, `acquire_ide`, `acquire_mod`) and saves via `kajo_config_store_update_<domain>()`. Update footer telemetry strings to show the active `.toml` file (`~/.config/kajo/shell.toml`, `theme.toml`, `ide.toml`, `mod.toml`). |
-| **`kajo-ide`** | `src/ide/main.c`, `src/ide/ide_window.c` | Remove manual `GFileMonitor` on `config.json`; subscribe to `KAJO_CFG_DOMAIN_IDE` via `kajo_config_store_subscribe()` (with `GWeakRef`-safe teardown in `dispose()`). `Ctrl+Plus/Minus/0` zoom updates `ide.toml` via `kajo_config_store_update_ide()`. |
-| **`kajo-files`** | `src/files/main.c`, `src/files/files_window.c` | Acquire `KajoFilesCfg` via `acquire_files()` and persist view/sort/hidden/inspector toggles exclusively to `files.toml` via `kajo_config_store_update_files()`. |
-| **`kajo-mod`** | `src/mod/mod_window.c`, `src/mod/mod_engine.{c,h}`, `src/mod/mod_vis.c` | Remove manual `GFileMonitor` on `config.json` and remove duplicated mutex globals `kajo_mod_set_runtime_prefs()`; UI subscribes to `KAJO_CFG_DOMAIN_MOD`, and background UADE/SID probe/render threads call `kajo_config_store_acquire_mod()` directly. |
-| **`kajo-player` & `kajo-greeter`** | `src/player/main.c`, `src/greeter/main.c`, `data/greetd/install-greeter.sh` | Use `kajo_app_init_theme()` / `acquire_theme()`. Update `install-greeter.sh` and `meson.build` to install `data/defaults/{theme,shell,ide,files,mod}.toml` instead of `data/defaults/config.json`. |
+- Snapshots are `g_atomic_rc_box` objects, immutable after publication. `acquire_*()` takes a reference under a short mutex; readers on any thread (for example the `kajo-mod` audio thread) never see a half-updated struct.
+- `GFileMonitor` watches the config directory and `conf.d`. Events are coalesced for 50 ms (`g_timeout_add`), then the affected domains are rebuilt. The snapshot is replaced only if the new value differs structurally (`kajo_cfg_domain_equal()`).
+- **Subscriber callbacks run on the GMainContext that was the thread-default context when `subscribe()` was called.** If that context is owned by the calling thread the callback runs immediately; otherwise it is queued there. Each subscription is reference-counted and has an `active` flag: a callback queued before `unsubscribe()` (or before the store is destroyed) is dropped rather than delivered, and `destroy_notify` runs when the last reference is released.
+- The store needs a GLib main loop (`GFileMonitor`, `g_timeout_add`). It is not usable inside a program whose only event loop is a `wl_event_loop` (such as the planned `kajo-comp`); that program should link the schema engine and read files directly.
 
 ---
 
-## 7. Hardened Verification, Parity Gates & Fuzzing Plan
+## 7. Domain files (generated from the compiled schemas)
 
-1. **Default-File Parity Gate (`tests/test_config.c`):**
-   - Parse each file in `data/defaults/{theme,shell,ide,files,mod}.toml` and assert `kajo_cfg_domain_equal(parsed_file, compiled_default) == TRUE`. Any future edit to `schema_*.c` that forgets `data/defaults/*.toml` (or vice-versa) fails `meson test` immediately.
-2. **Round-Trip & Clamping Tests (`tests/test_config.c`):**
-   - Every field of every domain mutated to non-default values $\rightarrow$ `update_<domain>()` $\rightarrow$ fresh `KajoConfigStore` $\rightarrow$ exact field-for-field match.
-   - Out-of-bounds ints, wrong types, unknown keys, and syntax errors in `.toml` emit expected warnings without crashing and preserve valid settings.
-3. **`conf.d/` Precedence & Base-Save Isolation Test (`tests/test_config.c`):**
-   - Place `height = 32` in `shell.toml` and `[shell.panel]\nheight = 56` in `conf.d/10-override.toml`.
-   - Assert `acquire_shell()->panel_height == 56`.
-   - Call `update_shell()` modifying `dnd_enabled = true`.
-   - Assert `shell.toml` on disk **still has `height = 32`** (override was NOT leaked into base file!) while `acquire_shell()` returns `panel_height == 56 && dnd_enabled == true`.
-4. **Multi-Threaded Concurrency & Hot-Reload Stress Test (`tests/test_config.c`):**
-   - Spawn 4 reader threads tight-looping `acquire_mod()` / `acquire_shell()` + reading all string/enum/array fields while 2 writer threads run 200 `update_*()` and `reload()` cycles. Must pass with `0` errors under `scripts/asan-test.sh` (`ASan + UBSan + LSan`).
-5. **Legacy `config.json` Auto-Migration Test (`tests/test_config.c`):**
-   - Populate a temp config dir with a full `config.json` (including custom-script widgets, IDE, Files, and Mod keys), initialize `KajoConfigStore`, verify all 5 `.toml` files were generated with exact values, verify `config.json.bak` exists, and verify subsequent reloads ignore `config.json.bak`.
-6. **LibFuzzer Target (`tests/fuzz/fuzz_toml_config.c`):**
-   - Optional Meson fuzz target (`-Dfuzzing=true`, `clang -fsanitize=fuzzer,address,undefined`) feeding arbitrary byte streams through `tomlc17` + all 5 `KajoDomainSchema` parsers + widget array parser with zero leaks or crashes.
+Shipped default files live in `data/defaults/{theme,shell,ide,files,mod}.toml`. `shell.toml` additionally contains the `[layout]` tables `left`, `center` and `right`; each entry is a bare widget id string or an inline table with `id`, `mode` (`"icon"`, `"label"`, `"full"`), and for `custom-script` widgets `interval`, `exec`, `click_left`, `click_right` (see `docs/script_widgets.md`).
+
+#### `theme.toml`
+
+| Section | Key | Type | Default | Range / values |
+| :-- | :-- | :-- | :-- | :-- |
+| `(top level)` | `accent_color` | hex color | `"#0078d4"` | `#rrggbb` |
+| `(top level)` | `ui_font_size_px` | int | `14` | 11..20 |
+| `(top level)` | `font_heading_size_px` | int | `13` | 10..18 |
+| `(top level)` | `font_subtitle_size_px` | int | `12` | 10..18 |
+| `(top level)` | `font_badge_size_px` | int | `11` | 9..16 |
+| `(top level)` | `css_path` | string | `""` | |
+| `(top level)` | `settings_width` | int | `900` | 480..3840 |
+| `(top level)` | `settings_height` | int | `640` | 360..2160 |
+
+#### `shell.toml`
+
+| Section | Key | Type | Default | Range / values |
+| :-- | :-- | :-- | :-- | :-- |
+| `panel` | `position` | enum | `"bottom"` | `"top"`, `"bottom"` |
+| `panel` | `height` | int | `39` | 24..96 |
+| `panel` | `layer` | enum | `"top"` | `"top"`, `"overlay"`, `"bottom"`, `"background"` |
+| `panel` | `icon_size` | int | `24` | 12..64 |
+| `autohide` | `enabled` | bool | `true` | |
+| `autohide` | `reveal_delay` | int | `200` | 0..5000 |
+| `autohide` | `hide_delay` | int | `1000` | 0..10000 |
+| `autohide` | `reveal_duration` | int | `150` | 0..2000 |
+| `autohide` | `hide_duration` | int | `200` | 0..2000 |
+| `autohide` | `edge_strip_px` | int | `2` | 1..16 |
+| `notifications` | `toast_timeout_ms` | int | `8000` | 1000..30000 |
+| `notifications` | `max_history` | int | `50` | 10..200 |
+| `notifications` | `click_action` | enum | `"focus"` | `"focus"`, `"dismiss"` |
+| `notifications` | `dnd_enabled` | bool | `false` | |
+| `touch` | `enabled` | bool | `true` | |
+| `touch` | `swipe_center` | enum | `"launcher"` | `"launcher"`, `"overview"`, `"osk"`, `"none"` |
+| `touch` | `swipe_right` | enum | `"control-center"` | `"control-center"`, `"notifications"`, `"osk"`, `"none"` |
+| `touch` | `swipe_horizontal` | enum | `"column"` | `"column"`, `"workspace"`, `"none"` |
+| `touch` | `dwell_ms` | int | `4000` | 500..15000 |
+| `osk` | `auto_show_mode` | enum | `"tablet"` | `"tablet"`, `"always"`, `"manual"` |
+| `osk` | `push_windows` | bool | `true` | |
+| `osk` | `height_px` | int | `260` | 180..400 |
+| `lock` | `screensaver_mode` | enum | `"overlay"` | `"overlay"`, `"dpms"`, `"disabled"` |
+| `lock` | `screensaver_timeout_sec` | int | `300` | 0..86400 |
+| `lock` | `dpms_timeout_sec` | int | `600` | 0..86400 |
+| `lock` | `lock_timeout_sec` | int | `900` | 0..86400 |
+| `lock` | `lock_on_suspend` | bool | `true` | |
+| `hardware` | `kbd_backlight_level` | int | `2` | 0..2 |
+| `hardware` | `kbd_backlight_timeout_sec` | int | `0` | 0..86400 |
+| `hardware` | `posture_auto_rotate` | bool | `true` | |
+| `hardware` | `posture_disable_kbd_in_tablet` | bool | `true` | |
+| `hardware` | `posture_disable_touch_in_laptop` | bool | `false` | |
+
+#### `ide.toml`
+
+| Section | Key | Type | Default | Range / values |
+| :-- | :-- | :-- | :-- | :-- |
+| `(top level)` | `color_scheme` | string | `"kajo-metro-dark"` | |
+| `(top level)` | `font_family` | string | `"Fira Code"` | |
+| `(top level)` | `font_size_px` | int | `13` | 9..28 |
+| `(top level)` | `tab_width` | int | `4` | only 2, 4 or 8 (anything else becomes the default) |
+| `(top level)` | `insert_spaces` | bool | `true` | |
+| `(top level)` | `word_wrap` | bool | `false` | |
+| `(top level)` | `show_margin_guide` | bool | `true` | |
+| `(top level)` | `show_minimap` | bool | `true` | |
+| `(top level)` | `show_line_numbers` | bool | `true` | |
+| `(top level)` | `highlight_current_line` | bool | `true` | |
+
+#### `files.toml`
+
+| Section | Key | Type | Default | Range / values |
+| :-- | :-- | :-- | :-- | :-- |
+| `(top level)` | `view_mode` | enum | `"grid"` | `"grid"`, `"list"` |
+| `(top level)` | `sort_field` | enum | `"name"` | `"name"`, `"size"`, `"modified"`, `"type"` |
+| `(top level)` | `sort_ascending` | bool | `true` | |
+| `(top level)` | `sort_folders_first` | bool | `true` | |
+| `(top level)` | `show_hidden` | bool | `false` | |
+| `(top level)` | `show_inspector` | bool | `true` | |
+
+#### `mod.toml`
+
+| Section | Key | Type | Default | Range / values |
+| :-- | :-- | :-- | :-- | :-- |
+| `(top level)` | `filter_mode` | enum | `"a500"` | `"a500"`, `"a1200"`, `"near"`, `"linear"`, `"lin"`, `"sinc"` |
+| `(top level)` | `led_mode` | enum | `"auto"` | `"auto"`, `"on"`, `"off"` |
+| `(top level)` | `stereo_sep_pct` | int | `70` | 0..100 |
+| `(top level)` | `end_action` | enum | `"next-sub"` | `"next-sub"`, `"loop"`, `"next-mod"` |
+| `(top level)` | `sid_model` | enum | `"auto"` | `"auto"`, `"6581"`, `"8580"` |
+| `(top level)` | `uade_timeout_sec` | int | `180` | 0 (no timeout) or 60..600 |
+| `(top level)` | `auto_extract_archives` | bool | `true` | |
+| `(top level)` | `hvsc_path` | string | `""` | |
+
+
+---
+
+## 8. One-time legacy migration (`kajo_config_migrate.c`)
+
+- Runs when the store is created, only if `<config dir>/config.json` exists and at least one of the five domain files is missing.
+- Takes an exclusive `flock()` on `<config dir>/.migrate.lock` and re-checks the condition under the lock, so several processes starting together migrate once.
+- Parses the JSON (structured objects and the old flat keys) and writes each *missing* domain file; `shell.toml` is written last. When all five exist, `config.json` is renamed to `config.json.bak`. If a write fails, `config.json` stays and the next start retries.
+- Ranges used while importing are the legacy ones and can differ from the schema ranges for some keys; the schema clamps again on the next load.
+
+Other JSON files are not configuration and stay JSON: the launcher frequency cache, Niri IPC, per-project `.kajo/{tasks,debug}.json`.
+
+---
+
+## 9. Who uses what
+
+| Component | Uses |
+| :--- | :--- |
+| `kajo` (`src/shell.c`) | Subscribes to shell + theme; applies a new snapshot to the panel, notification daemon, autohide, widgets. `widgets/theme.c` writes `theme.toml`; `widgets/backlight.c` writes `shell.toml`. |
+| `kajo-settings` | Each page reads its domain and writes it with `update_<domain>()`; the Displays page collects UI state first and only then mutates a plain struct. |
+| `kajo-ide` | Subscribes to `ide.toml`; zoom writes it. |
+| `kajo-files` | Reads and writes `files.toml`. |
+| `kajo-mod` | UI subscribes to `mod.toml`; audio and probe threads call `acquire_mod()`. |
+| `kajo-player`, `kajo-greeter` | Read theme through `kajo_app_init_theme()` / `acquire_theme()`. The greeter runs as another user and therefore reads that user's config directory, then the shipped defaults. |
+
+`00-accent.css` is generated from `KajoThemeCfg` only; `kajo-ide` applies its own font CSS from `KajoIdeCfg`.
+
+---
+
+## 10. Tests
+
+`meson test` runs, among others:
+
+- `config-roundtrip` (`tests/test_config.c`, 11 cases): defaults-file parity; per-domain round trips and clamping; `conf.d` overlay with base-save isolation; concurrent readers during reload; syntax-error preservation and save refusal; comment/unknown-key/datetime-preserving patch; **patcher never writes an unparsable file** (quoted key, dotted key, inline table); **subscriber callbacks arrive on the subscriber's thread and are dropped after unsubscribe**; legacy migration.
+- `fuzz-toml-config`: smoke run of the fuzz entry point.
+- `autohide-state`: includes a check that `edge_strip_px` survives a live reload.
+
+Also verified by hand (scratch programs, not in the suite): two threads and two processes updating different keys of one file lose no updates (the `flock()` path).
+
+Not covered by tests: the file monitor path end to end, `conf.d` syntax-error handling beyond the warning, and migration with two processes racing.
+
+---
+
+## 11. Known limitations
+
+- Comments inside `[layout]` arrays are not preserved on save.
+- `KajoConfigStore` is GLib-main-loop based (see section 6).
+- Subscribers on a thread without a running main loop receive nothing until that context is iterated.
+- The shipped-defaults lookup is by file name; there is no merge of a partial user file with shipped values (compiled defaults fill the gaps).

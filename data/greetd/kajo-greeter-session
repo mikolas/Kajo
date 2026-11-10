@@ -4,7 +4,9 @@
 
 COMPOSITOR="niri"
 CMD=""
-USER=""
+# Do not name this USER: assigning to an imported variable keeps it exported,
+# which would hand the compositor and greeter an empty $USER.
+GREETER_USER=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -17,19 +19,24 @@ while [ $# -gt 0 ]; do
             shift 2
             ;;
         --user|-u)
-            USER="$2"
+            GREETER_USER="$2"
             shift 2
             ;;
         *)
+            echo "kajo-greeter-session: ignoring unknown argument: $1" >&2
             shift
             ;;
     esac
 done
 
 [ -n "$CMD" ] && export KAJO_GREETER_CMD="$CMD"
-[ -n "$USER" ] && export KAJO_GREETER_USER="$USER"
+[ -n "$GREETER_USER" ] && export KAJO_GREETER_USER="$GREETER_USER"
 
 if [ "$COMPOSITOR" = "cage" ] || ! command -v niri >/dev/null 2>&1; then
+    if ! command -v cage >/dev/null 2>&1; then
+        echo "kajo-greeter-session: neither niri nor cage is installed" >&2
+        exit 1
+    fi
     exec cage -s -- kajo-greeter
 fi
 

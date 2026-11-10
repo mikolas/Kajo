@@ -272,7 +272,10 @@ binds {
 ## 📄 License & Attribution
 
 - **Icons**: Incorporates [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons) by Microsoft Corporation (MIT License).
-- **License**: MIT License — see [LICENSE](LICENSE).
+- **Vendored code**:
+  - [`tomlc17`](https://github.com/cktan/tomlc17) by CK Tan (MIT License) in `src/vendor/tomlc17/`; its license text is in `src/vendor/tomlc17/LICENSE`.
+  - [`tinyexpr`](https://github.com/codeplea/tinyexpr) by Lewis Van Winkle (zlib License) in `src/vendor/tinyexpr/`; the notice is in the source header.
+- **License**: MIT License — see [LICENSE](LICENSE). Kajo is distributed as source only and links its dependencies dynamically. Some of those libraries are copyleft (for example `poppler-glib`, `libmpv`, `libsidplayfp`, `uade`); a binary that links them and is redistributed by someone else is a combined work under those libraries' terms, which is that redistributor's responsibility.
 
 ## Author
 

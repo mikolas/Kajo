@@ -107,6 +107,24 @@ test_autohide_popover_unlock_recovers_stuck_state(void)
 }
 
 static void
+test_autohide_edge_strip_survives_reload(void)
+{
+    KajoShellCfg *cfg = kajo_shell_cfg_new_default();
+    cfg->autohide_enabled = FALSE;
+    cfg->autohide_edge_strip_px = 5;
+
+    ShellAutohide *ah = shell_autohide_new(NULL, cfg);
+    g_assert_cmpint(ah->edge_strip_px, ==, 5);
+
+    cfg->autohide_edge_strip_px = 9;
+    shell_autohide_reload_config(ah, cfg);
+    g_assert_cmpint(ah->edge_strip_px, ==, 9);
+
+    shell_autohide_destroy(ah);
+    kajo_shell_cfg_free(cfg);
+}
+
+static void
 test_autohide_reload_config_live(void)
 {
     KajoShellCfg *cfg = kajo_shell_cfg_new_default();
@@ -186,6 +204,7 @@ main(int argc, char *argv[])
     g_test_add_func("/autohide/enter-leave-cycle", test_autohide_enter_leave_cycle);
     g_test_add_func("/autohide/popover-unlock-recovery", test_autohide_popover_unlock_recovers_stuck_state);
     g_test_add_func("/autohide/reload-config-live", test_autohide_reload_config_live);
+    g_test_add_func("/autohide/edge-strip-survives-reload", test_autohide_edge_strip_survives_reload);
     g_test_add_func("/autohide/touch-reveal-and-force-hide", test_autohide_touch_reveal_and_force_hide);
 
     return g_test_run();

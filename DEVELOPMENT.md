@@ -146,7 +146,7 @@ data/
     └── *.blp                       Blueprint Markup (.blp) declarative UI templates
 
 tests/
-├── test_config.c                   Config JSON load/save roundtrip & defaults resolution tests
+├── test_config.c                   Per-domain TOML store tests: defaults parity, round-trip, `conf.d`, patching, subscriptions, migration
 ├── test_pam_auth.c                 Async PAM worker error/null/cancellation handling tests
 ├── test_idle_manager.c             Idle manager timeout & inhibitor state machine tests
 ├── test_ipc.c                      UNIX domain socket IPC server/client dispatch tests
@@ -210,7 +210,8 @@ meson install -C builddir
 ### Automated Test Suites (`meson test -C builddir`)
 | Suite Name | Binary | Coverage |
 | :--- | :--- | :--- |
-| `config-roundtrip` | `test-config` | `ShellConfig` JSON serialization, `idle` / `panel` / `layout` / `touch_gestures` / flat `files_*` fields, unknown-key preservation, defaults fallback. |
+| `config-roundtrip` | `test-config` | `KajoConfigStore` per-domain TOML: compiled-vs-shipped defaults parity, round trips and clamping, `conf.d` overlays with base-save isolation, concurrent readers, syntax-error preservation, comment/unknown-key preserving patch, patcher never writing an unparsable file, subscriber thread delivery, legacy `config.json` migration. |
+| `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
@@ -258,6 +259,19 @@ Run this before merging any change that touches object lifetimes, async callback
 
 # 5. Run kajo-greeter inside a nested Niri compositor window on your desktop
 KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
+```
+
+**Configuration while developing** (see `docs/spec_toml_config.md`):
+
+```bash
+# Use a throw-away config directory instead of ~/.config/kajo (never touches your real files)
+KAJO_CONFIG_DIR=/tmp/kajo-cfg ./builddir/kajo-settings
+
+# Read shipped defaults from the source tree (the lookup no longer checks the current
+# directory or a compiled-in source path; without this, a missing user file falls back to the
+# installed defaults in ~/.local/share/kajo/defaults, /usr/local/share/kajo/defaults, /usr/share/kajo/defaults,
+# and finally to the compiled defaults, which the test suite keeps identical to data/defaults/*.toml)
+KAJO_DEFAULTS_DIR=$PWD/data/defaults ./builddir/kajo
 ```
 
 ---

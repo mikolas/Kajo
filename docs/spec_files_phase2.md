@@ -2,7 +2,7 @@
 
 **Status:** Active Specification — tracking branch `feat/files-phase2`  
 **Target Binary:** `kajo-files` (`org.kajo.Files`, `src/files/`)  
-**Shared Dependencies:** `libarchive`, `gio-2.0` / `gio-unix-2.0` (UDisks2 D-Bus), `gtk4`, `ShellConfig` (`src/config.c`)
+**Shared Dependencies:** `libarchive`, `gio-2.0` / `gio-unix-2.0` (UDisks2 D-Bus), `gtk4`, `KajoConfigStore` (`src/config/`, domain `files.toml`)
 
 ---
 
@@ -18,8 +18,8 @@ Phase 2 resolves the core usability shortcomings identified in daily use:
    - Creating `.zip`, `.tar.zst`, `.tar.gz`, and `.tar.xz` archives directly from single or multi-selected items.
 2. **ISO & Disk Image Loop-Mounting (`UDisks2` D-Bus):**
    - Double-clicking or choosing `"💿 Mount Disk Image"` on `.iso`, `.img`, and `.raw` disk images loop-mounts them via `org.freedesktop.UDisks2.Manager.LoopSetup` (`autoclear: true`), exposes them in the sidebar with one-click `⏏` Eject/Unmount, and navigates directly into the mounted filesystem.
-3. **Global Persistence of View Mode, Sort Column, Sort Direction & Chrome State (`ShellConfig`):**
-   - Remembering `files_view_mode` (`grid` vs `list`), `files_sort_field`, `files_sort_ascending`, `files_sort_folders_first`, `files_show_hidden`, and `files_show_inspector` across launches in `~/.config/kajo/config.json`.
+3. **Global Persistence of View Mode, Sort Column, Sort Direction & Chrome State (`files.toml`):**
+   - Remembering `view_mode` (`grid` vs `list`), `sort_field`, `sort_ascending`, `sort_folders_first`, `show_hidden`, and `show_inspector` across launches in `~/.config/kajo/files.toml` (see `docs/spec_toml_config.md`).
 4. **Breadcrumb Bar Auto-Scroll & Rapid Up-Tree Navigation:**
    - Auto-scrolling the breadcrumb bar to the rightmost active directory segment on every navigation.
    - Keeping `/` and `/home` reachable even when inside `$HOME`.
@@ -131,21 +131,21 @@ When the user double-clicks or selects `"💿 Mount Disk Image"` on a disk image
 
 ## 4. Persistent View Mode, Sort Order & Chrome Preferences
 
-### 4.1 `ShellConfig` Schema Additions (`src/config.h` & `src/config.c`)
-Add the following fields to `ShellConfig` and serialize/deserialize them in `~/.config/kajo/config.json`:
+### 4.1 `files.toml` Schema (`src/config/schemas/schema_files.c`)
+These six preferences are fields of `KajoFilesCfg` and live in `~/.config/kajo/files.toml` (top-level keys, no section):
 
-| Field | C Type | JSON Key | Default | Allowed Values |
-| :--- | :--- | :--- | :--- | :--- |
-| `files_view_mode` | `gchar *` | `"files_view_mode"` | `"grid"` | `"grid"`, `"list"` |
-| `files_sort_field` | `gchar *` | `"files_sort_field"` | `"name"` | `"name"`, `"size"`, `"modified"`, `"type"` |
-| `files_sort_ascending` | `gboolean` | `"files_sort_ascending"` | `TRUE` | `true`, `false` |
-| `files_sort_folders_first` | `gboolean` | `"files_sort_folders_first"` | `TRUE` | `true`, `false` |
-| `files_show_hidden` | `gboolean` | `"files_show_hidden"` | `FALSE` | `true`, `false` |
-| `files_show_inspector` | `gboolean` | `"files_show_inspector"` | `FALSE` | `true`, `false` |
+| TOML key | `KajoFilesCfg` field | Default | Allowed values |
+| :--- | :--- | :--- | :--- |
+| `view_mode` | `view_mode` (`KajoFilesViewMode`) | `"grid"` | `"grid"`, `"list"` |
+| `sort_field` | `sort_field` (`KajoFilesSortField`) | `"name"` | `"name"`, `"size"`, `"modified"`, `"type"` |
+| `sort_ascending` | `sort_ascending` | `true` | `true`, `false` |
+| `sort_folders_first` | `sort_folders_first` | `true` | `true`, `false` |
+| `show_hidden` | `show_hidden` | `false` | `true`, `false` |
+| `show_inspector` | `show_inspector` | `true` | `true`, `false` |
 
 ### 4.2 Load & Save Synchronization
-- On window initialization (`kajo_files_window_init()`), load `ShellConfig` via `shell_config_load(NULL)` and apply all six preferences to `KajoFilesWindow` state and button active classes.
-- Whenever the user changes view mode (`Ctrl+1` / `Ctrl+2` / header buttons), sort field/direction/folders-first (popover or list column headers), hidden files (`Ctrl+H` / ribbon button), or inspector visibility (`Ctrl+I` / header button), call `files_window_save_prefs(self)` to persist the updated fields to `~/.config/kajo/config.json`.
+- On window initialization (`kajo_files_window_init()`), acquire a `KajoFilesCfg` snapshot with `kajo_config_store_acquire_files(NULL)` and apply all six preferences to `KajoFilesWindow` state and button active classes.
+- Whenever the user changes view mode (`Ctrl+1` / `Ctrl+2` / header buttons), sort field/direction/folders-first (popover or list column headers), hidden files (`Ctrl+H` / ribbon button), or inspector visibility (`Ctrl+I` / header button), call `files_window_save_prefs(self)`, which writes the updated fields to `~/.config/kajo/files.toml` through `kajo_config_store_update_files()`.
 
 ---
 
@@ -203,7 +203,7 @@ Add the following fields to `ShellConfig` and serialize/deserialize them in `~/.
    - `archive://` URI parsing and building (`kajo_files_parse_archive_uri`, `kajo_files_build_archive_uri`).
    - Creating a `.zip` and `.tar.gz` archive via `kajo_files_op_compress_async()`, enumerating its contents via `archive://` in `kajo_files_enumerate_async()`, and extracting it via smart `kajo_files_op_extract_archive_async()` (verifying both single-root no-double-nesting and multi-root tarbomb wrapping).
    - Disk image classification (`kajo_files_is_disk_image` vs `kajo_files_is_archive`).
-   - `ShellConfig` round-trip serialization test for `files_view_mode`, `files_sort_field`, `files_sort_ascending`, `files_sort_folders_first`, `files_show_hidden`, and `files_show_inspector`.
+   - `files.toml` round-trip test for `view_mode`, `sort_field`, `sort_ascending`, `sort_folders_first`, `show_hidden`, and `show_inspector` (in `tests/test_config.c`).
 2. **Visual & ASan Verification:**
    - `meson compile -C builddir && meson test -C builddir` (0 warnings, 100% pass).
    - `scripts/asan-test.sh` for leak and lifetime verification.
