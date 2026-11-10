@@ -706,6 +706,85 @@ kajo_cfg_domain_parse_toml_file(const KajoDomainSchema *schema,
     return kajo_cfg_domain_parse_toml_str(schema, dst, contents, (gssize)length, is_overlay, filepath);
 }
 
+static void
+format_field_rhs(const KajoFieldSpec *f, const void *field_ptr, GString *out)
+{
+    switch (f->type) {
+    case KAJO_FIELD_BOOL:
+        g_string_append(out, (*(const gboolean *)field_ptr) ? "true" : "false");
+        break;
+
+    case KAJO_FIELD_INT: {
+        gint val = *(const gint *)field_ptr;
+        if (f->normalize_int) {
+            val = f->normalize_int(val, f->def.i);
+        } else if (f->min_int < f->max_int) {
+            val = CLAMP(val, f->min_int, f->max_int);
+        }
+        g_string_append_printf(out, "%d", val);
+        break;
+    }
+
+    case KAJO_FIELD_DOUBLE: {
+        gdouble val = *(const gdouble *)field_ptr;
+        if (f->min_dbl < f->max_dbl)
+            val = CLAMP(val, f->min_dbl, f->max_dbl);
+        char dbuf[64];
+        g_ascii_formatd(dbuf, sizeof(dbuf), "%.15g", val);
+        g_string_append(out, dbuf);
+        break;
+    }
+
+    case KAJO_FIELD_STRING: {
+        const gchar *s = *(const gchar *const *)field_ptr;
+        kajo_toml_append_quoted_string(out, s ? s : (f->def.s ? f->def.s : ""));
+        break;
+    }
+
+    case KAJO_FIELD_HEX_COLOR: {
+        const gchar *s = *(const gchar *const *)field_ptr;
+        const gchar *valid = (s && kajo_config_is_valid_hex_color(s))
+            ? s : (f->def.s ? f->def.s : "#0078d4");
+        g_autofree gchar *lower = g_ascii_strdown(valid, -1);
+        kajo_toml_append_quoted_string(out, lower);
+        break;
+    }
+
+    case KAJO_FIELD_ENUM: {
+        gint eval = *(const gint *)field_ptr;
+        const char *estr = enum_val_to_str(f->enum_map, eval,
+                                           enum_val_to_str(f->enum_map, f->def.e, ""));
+        kajo_toml_append_quoted_string(out, estr);
+        break;
+    }
+    }
+}
+
+static gboolean
+field_values_equal(const KajoFieldSpec *f, const void *fa, const void *fb)
+{
+    switch (f->type) {
+    case KAJO_FIELD_BOOL:
+        return (*(const gboolean *)fa ? TRUE : FALSE) == (*(const gboolean *)fb ? TRUE : FALSE);
+    case KAJO_FIELD_INT:
+    case KAJO_FIELD_ENUM:
+        return *(const gint *)fa == *(const gint *)fb;
+    case KAJO_FIELD_DOUBLE:
+        return fabs(*(const gdouble *)fa - *(const gdouble *)fb) <= 1e-9;
+    case KAJO_FIELD_STRING: {
+        const gchar *sa = *(const gchar *const *)fa;
+        const gchar *sb = *(const gchar *const *)fb;
+        return g_strcmp0(sa ? sa : "", sb ? sb : "") == 0;
+    }
+    case KAJO_FIELD_HEX_COLOR: {
+        const gchar *sa = *(const gchar *const *)fa;
+        const gchar *sb = *(const gchar *const *)fb;
+        return g_ascii_strcasecmp(sa ? sa : "", sb ? sb : "") == 0;
+    }
+    }
+    return TRUE;
+}
+
 gchar *
 kajo_cfg_domain_serialize_toml(const KajoDomainSchema *schema,
                                const void             *src)
@@ -740,59 +819,8 @@ kajo_cfg_domain_serialize_toml(const KajoDomainSchema *schema,
 
         const void *field_ptr = base + f->offset;
         g_string_append_printf(out, "%-30s = ", f->key);
-
-        switch (f->type) {
-        case KAJO_FIELD_BOOL:
-            g_string_append(out, (*(const gboolean *)field_ptr) ? "true\n" : "false\n");
-            break;
-
-        case KAJO_FIELD_INT: {
-            gint val = *(const gint *)field_ptr;
-            if (f->normalize_int) {
-                val = f->normalize_int(val, f->def.i);
-            } else if (f->min_int < f->max_int) {
-                val = CLAMP(val, f->min_int, f->max_int);
-            }
-            g_string_append_printf(out, "%d\n", val);
-            break;
-        }
-
-        case KAJO_FIELD_DOUBLE: {
-            gdouble val = *(const gdouble *)field_ptr;
-            if (f->min_dbl < f->max_dbl)
-                val = CLAMP(val, f->min_dbl, f->max_dbl);
-            char dbuf[64];
-            g_ascii_formatd(dbuf, sizeof(dbuf), "%.4g", val);
-            g_string_append_printf(out, "%s\n", dbuf);
-            break;
-        }
-
-        case KAJO_FIELD_STRING: {
-            const gchar *s = *(const gchar *const *)field_ptr;
-            kajo_toml_append_quoted_string(out, s ? s : (f->def.s ? f->def.s : ""));
-            g_string_append_c(out, '\n');
-            break;
-        }
-
-        case KAJO_FIELD_HEX_COLOR: {
-            const gchar *s = *(const gchar *const *)field_ptr;
-            const gchar *valid = (s && kajo_config_is_valid_hex_color(s))
-                ? s : (f->def.s ? f->def.s : "#0078d4");
-            g_autofree gchar *lower = g_ascii_strdown(valid, -1);
-            kajo_toml_append_quoted_string(out, lower);
-            g_string_append_c(out, '\n');
-            break;
-        }
-
-        case KAJO_FIELD_ENUM: {
-            gint eval = *(const gint *)field_ptr;
-            const char *estr = enum_val_to_str(f->enum_map, eval,
-                                               enum_val_to_str(f->enum_map, f->def.e, ""));
-            kajo_toml_append_quoted_string(out, estr);
-            g_string_append_c(out, '\n');
-            break;
-        }
-        }
+        format_field_rhs(f, field_ptr, out);
+        g_string_append_c(out, '\n');
     }
 
     if (schema->write_custom_toml) {
@@ -800,6 +828,307 @@ kajo_cfg_domain_serialize_toml(const KajoDomainSchema *schema,
     }
 
     return g_string_free(out, FALSE);
+}
+
+/* Scans a single line for `[section]` header; returns newly allocated section name or NULL. */
+static gchar *
+parse_line_section_header(const char *line, size_t line_len, gboolean *out_is_array_table)
+{
+    if (out_is_array_table)
+        *out_is_array_table = FALSE;
+
+    size_t i = 0;
+    while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+        i++;
+    if (i >= line_len || line[i] != '[')
+        return NULL;
+
+    if (i + 1 < line_len && line[i + 1] == '[') {
+        if (out_is_array_table)
+            *out_is_array_table = TRUE;
+        i += 2;
+        while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+            i++;
+        size_t start = i;
+        while (i < line_len && line[i] != ']' && line[i] != ' ' && line[i] != '\t')
+            i++;
+        return g_strndup(line + start, i - start);
+    }
+
+    i++;
+    while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+        i++;
+    size_t start = i;
+    while (i < line_len && line[i] != ']' && line[i] != ' ' && line[i] != '\t')
+        i++;
+    size_t end = i;
+    while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+        i++;
+    if (i >= line_len || line[i] != ']')
+        return NULL;
+    return g_strndup(line + start, end - start);
+}
+
+/* Checks if `line[0..line_len)` is a single-line `key = value [# comment]` for `target_key`.
+ * If matched, returns TRUE and sets `*out_val_start` and `*out_val_end` relative to `line`. */
+static gboolean
+match_line_scalar_key(const char *line,
+                      size_t      line_len,
+                      const char *target_key,
+                      size_t     *out_val_start,
+                      size_t     *out_val_end)
+{
+    size_t i = 0;
+    while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+        i++;
+    if (i >= line_len || line[i] == '#' || line[i] == '[')
+        return FALSE;
+
+    size_t klen = strlen(target_key);
+    if (i + klen > line_len || strncmp(line + i, target_key, klen) != 0)
+        return FALSE;
+    i += klen;
+
+    while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+        i++;
+    if (i >= line_len || line[i] != '=')
+        return FALSE;
+    i++;
+
+    while (i < line_len && (line[i] == ' ' || line[i] == '\t'))
+        i++;
+
+    size_t val_start = i;
+    if (i < line_len && line[i] == '"') {
+        i++;
+        while (i < line_len) {
+            if (line[i] == '\\' && i + 1 < line_len) {
+                i += 2;
+                continue;
+            }
+            if (line[i] == '"') {
+                i++;
+                break;
+            }
+            i++;
+        }
+    } else if (i < line_len && line[i] == '\'') {
+        i++;
+        while (i < line_len && line[i] != '\'')
+            i++;
+        if (i < line_len && line[i] == '\'')
+            i++;
+    } else {
+        while (i < line_len && line[i] != '#' && line[i] != '\r' && line[i] != '\n')
+            i++;
+        while (i > val_start && (line[i - 1] == ' ' || line[i - 1] == '\t'))
+            i--;
+    }
+
+    *out_val_start = val_start;
+    *out_val_end   = i;
+    return TRUE;
+}
+
+static void
+patch_or_insert_scalar_in_doc(GString    *doc,
+                              const char *section,
+                              const char *key,
+                              const char *rhs_val)
+{
+    g_autofree gchar *cur_sec = NULL;
+    gboolean cur_is_arr = FALSE;
+    gssize first_sec_offset = -1;
+    gssize target_sec_insert_offset = -1;
+    gboolean seen_target_sec = (section == NULL);
+
+    size_t pos = 0;
+    while (pos < doc->len) {
+        const char *nl = memchr(doc->str + pos, '\n', doc->len - pos);
+        size_t line_end = nl ? (size_t)(nl - doc->str) : doc->len;
+        size_t next_pos = nl ? (line_end + 1) : doc->len;
+        size_t content_len = line_end - pos;
+        if (content_len > 0 && doc->str[pos + content_len - 1] == '\r')
+            content_len--;
+
+        gboolean is_arr = FALSE;
+        gchar *hdr = parse_line_section_header(doc->str + pos, content_len, &is_arr);
+        if (hdr) {
+            if (first_sec_offset < 0)
+                first_sec_offset = (gssize)pos;
+            g_free(cur_sec);
+            cur_sec = hdr;
+            cur_is_arr = is_arr;
+            if (!cur_is_arr && section && g_strcmp0(cur_sec, section) == 0) {
+                seen_target_sec = TRUE;
+                target_sec_insert_offset = (gssize)next_pos;
+            }
+            pos = next_pos;
+            continue;
+        }
+
+        gboolean in_target = (!cur_is_arr && g_strcmp0(cur_sec, section) == 0);
+        if (in_target) {
+            /* Track non-blank line end inside target section */
+            size_t s = 0;
+            while (s < content_len && (doc->str[pos + s] == ' ' || doc->str[pos + s] == '\t'))
+                s++;
+            if (s < content_len) {
+                target_sec_insert_offset = (gssize)next_pos;
+            }
+
+            size_t v_start = 0, v_end = 0;
+            if (match_line_scalar_key(doc->str + pos, content_len, key, &v_start, &v_end)) {
+                g_string_erase(doc, (gssize)(pos + v_start), (gssize)(v_end - v_start));
+                g_string_insert(doc, (gssize)(pos + v_start), rhs_val);
+                return;
+            }
+        }
+
+        pos = next_pos;
+    }
+
+    /* Key was not found in doc: insert it into the appropriate section */
+    g_autofree gchar *new_line = g_strdup_printf("%-30s = %s\n", key, rhs_val);
+    if (seen_target_sec) {
+        if (section == NULL) {
+            if (first_sec_offset >= 0) {
+                g_string_insert(doc, first_sec_offset, new_line);
+            } else {
+                if (doc->len > 0 && doc->str[doc->len - 1] != '\n')
+                    g_string_append_c(doc, '\n');
+                g_string_append(doc, new_line);
+            }
+        } else if (target_sec_insert_offset >= 0) {
+            g_string_insert(doc, target_sec_insert_offset, new_line);
+        } else {
+            g_string_append(doc, new_line);
+        }
+    } else {
+        if (doc->len > 0 && doc->str[doc->len - 1] != '\n')
+            g_string_append_c(doc, '\n');
+        if (doc->len > 0)
+            g_string_append_c(doc, '\n');
+        g_string_append_printf(doc, "[%s]\n%s", section, new_line);
+    }
+}
+
+static void
+replace_or_append_custom_layout_in_doc(const KajoDomainSchema *schema,
+                                       const void             *new_draft,
+                                       GString                *doc)
+{
+    if (!schema->write_custom_toml)
+        return;
+
+    /* Find `[layout]` or `[[layout.*]]` span in `doc` and replace it */
+    gssize layout_start = -1;
+    gssize layout_end   = (gssize)doc->len;
+
+    size_t pos = 0;
+    while (pos < doc->len) {
+        const char *nl = memchr(doc->str + pos, '\n', doc->len - pos);
+        size_t line_end = nl ? (size_t)(nl - doc->str) : doc->len;
+        size_t next_pos = nl ? (line_end + 1) : doc->len;
+        size_t content_len = line_end - pos;
+        if (content_len > 0 && doc->str[pos + content_len - 1] == '\r')
+            content_len--;
+
+        gboolean is_arr = FALSE;
+        g_autofree gchar *hdr = parse_line_section_header(doc->str + pos, content_len, &is_arr);
+        if (hdr) {
+            gboolean is_layout = (g_strcmp0(hdr, KAJO_CFG_SEC_LAYOUT) == 0 ||
+                                  g_str_has_prefix(hdr, "layout."));
+            if (is_layout && layout_start < 0) {
+                layout_start = (gssize)pos;
+            } else if (!is_layout && layout_start >= 0) {
+                layout_end = (gssize)pos;
+                break;
+            }
+        }
+        pos = next_pos;
+    }
+
+    GString *custom_block = g_string_new(NULL);
+    schema->write_custom_toml(new_draft, custom_block);
+    /* Trim leading newline if replacing in-place */
+    const char *block_str = custom_block->str;
+    if (layout_start >= 0 && block_str[0] == '\n')
+        block_str++;
+
+    if (layout_start >= 0) {
+        g_string_erase(doc, layout_start, layout_end - layout_start);
+        g_string_insert(doc, layout_start, block_str);
+    } else {
+        if (doc->len > 0 && doc->str[doc->len - 1] != '\n')
+            g_string_append_c(doc, '\n');
+        g_string_append(doc, custom_block->str);
+    }
+    g_string_free(custom_block, TRUE);
+}
+
+gchar *
+kajo_cfg_domain_patch_toml(const KajoDomainSchema *schema,
+                           const void             *old_base,
+                           const void             *new_draft,
+                           const char             *existing_toml)
+{
+    if (!schema || !old_base || !new_draft)
+        return NULL;
+
+    GString *doc = g_string_new(existing_toml ? existing_toml : "");
+    if (!existing_toml || !*existing_toml) {
+        g_string_append_printf(doc, "# %s — Kajo Desktop Suite Configuration\n", schema->filename);
+    }
+
+    const char *obase = (const char *)old_base;
+    const char *nbase = (const char *)new_draft;
+
+    for (size_t i = 0; i < schema->n_fields; i++) {
+        const KajoFieldSpec *f = &schema->fields[i];
+        const void *fo = obase + f->offset;
+        const void *fn = nbase + f->offset;
+
+        if (!field_values_equal(f, fo, fn)) {
+            GString *rhs = g_string_new(NULL);
+            format_field_rhs(f, fn, rhs);
+            patch_or_insert_scalar_in_doc(doc, f->section, f->key, rhs->str);
+            g_string_free(rhs, TRUE);
+        }
+    }
+
+    if (schema->write_custom_toml && schema->equal_custom_fields) {
+        if (!schema->equal_custom_fields(old_base, new_draft)) {
+            replace_or_append_custom_layout_in_doc(schema, new_draft, doc);
+        }
+    }
+
+    return g_string_free(doc, FALSE);
+}
+
+gboolean
+kajo_cfg_domain_save_patched(const KajoDomainSchema *schema,
+                             const void             *old_base,
+                             const void             *new_draft,
+                             const char             *existing_toml,
+                             const char             *filepath,
+                             GError                **error)
+{
+    if (!schema || !old_base || !new_draft || !filepath)
+        return FALSE;
+
+    g_autofree gchar *dir = g_path_get_dirname(filepath);
+    if (dir && g_mkdir_with_parents(dir, 0755) != 0) {
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                    "Failed to create directory '%s'", dir);
+        return FALSE;
+    }
+
+    g_autofree gchar *patched = kajo_cfg_domain_patch_toml(schema, old_base, new_draft, existing_toml);
+    if (!patched)
+        return FALSE;
+
+    return g_file_set_contents(filepath, patched, -1, error);
 }
 
 gboolean
@@ -840,38 +1169,8 @@ kajo_cfg_domain_equal(const KajoDomainSchema *schema,
 
     for (size_t i = 0; i < schema->n_fields; i++) {
         const KajoFieldSpec *f = &schema->fields[i];
-        const void *fa = ba + f->offset;
-        const void *fb = bb + f->offset;
-
-        switch (f->type) {
-        case KAJO_FIELD_BOOL:
-            if ((*(const gboolean *)fa ? TRUE : FALSE) != (*(const gboolean *)fb ? TRUE : FALSE))
-                return FALSE;
-            break;
-        case KAJO_FIELD_INT:
-        case KAJO_FIELD_ENUM:
-            if (*(const gint *)fa != *(const gint *)fb)
-                return FALSE;
-            break;
-        case KAJO_FIELD_DOUBLE:
-            if (fabs(*(const gdouble *)fa - *(const gdouble *)fb) > 1e-6)
-                return FALSE;
-            break;
-        case KAJO_FIELD_STRING: {
-            const gchar *sa = *(const gchar *const *)fa;
-            const gchar *sb = *(const gchar *const *)fb;
-            if (g_strcmp0(sa ? sa : "", sb ? sb : "") != 0)
-                return FALSE;
-            break;
-        }
-        case KAJO_FIELD_HEX_COLOR: {
-            const gchar *sa = *(const gchar *const *)fa;
-            const gchar *sb = *(const gchar *const *)fb;
-            if (g_ascii_strcasecmp(sa ? sa : "", sb ? sb : "") != 0)
-                return FALSE;
-            break;
-        }
-        }
+        if (!field_values_equal(f, ba + f->offset, bb + f->offset))
+            return FALSE;
     }
 
     if (schema->equal_custom_fields) {
@@ -888,11 +1187,13 @@ kajo_config_find_default_file(const char *filename)
     if (!filename || !*filename)
         return NULL;
 
-    g_autofree gchar *cwd = g_get_current_dir();
-    gchar *dev_path = g_build_filename(cwd, "data", "defaults", filename, NULL);
-    if (g_file_test(dev_path, G_FILE_TEST_EXISTS))
-        return dev_path;
-    g_free(dev_path);
+    const gchar *env_defaults = g_getenv("KAJO_DEFAULTS_DIR");
+    if (env_defaults && *env_defaults) {
+        gchar *env_path = g_build_filename(env_defaults, filename, NULL);
+        if (g_file_test(env_path, G_FILE_TEST_EXISTS))
+            return env_path;
+        g_free(env_path);
+    }
 
     gchar *local_share = g_build_filename(g_get_user_data_dir(), "kajo", "defaults", filename, NULL);
     if (g_file_test(local_share, G_FILE_TEST_EXISTS))
@@ -903,6 +1204,18 @@ kajo_config_find_default_file(const char *filename)
     if (g_file_test(usr_local, G_FILE_TEST_EXISTS))
         return usr_local;
     g_free(usr_local);
+
+    gchar *usr_share = g_build_filename("/usr/share/kajo/defaults", filename, NULL);
+    if (g_file_test(usr_share, G_FILE_TEST_EXISTS))
+        return usr_share;
+    g_free(usr_share);
+
+#ifdef KAJO_SOURCE_DIR
+    gchar *src_path = g_build_filename(KAJO_SOURCE_DIR, "data", "defaults", filename, NULL);
+    if (g_file_test(src_path, G_FILE_TEST_EXISTS))
+        return src_path;
+    g_free(src_path);
+#endif
 
     return g_build_filename("/usr/share/kajo/defaults", filename, NULL);
 }

@@ -2,6 +2,9 @@
 #include "kajo_config_schema.h"
 #include <glib/gstdio.h>
 #include <json-glib/json-glib.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 #include <string.h>
 
 static void
@@ -199,6 +202,7 @@ import_shell_from_json(JsonObject *root, KajoShellCfg *shell)
             read_json_int_clamped(ah, "hide_delay",      &shell->autohide_hide_delay,      0, 10000);
             read_json_int_clamped(ah, "reveal_duration", &shell->autohide_reveal_duration, 0, 2000);
             read_json_int_clamped(ah, "hide_duration",   &shell->autohide_hide_duration,   0, 2000);
+            read_json_int_clamped(ah, "edge_strip_px",   &shell->autohide_edge_strip_px,   1, 16);
         }
     }
     read_json_bool(root, "autohide_enabled", &shell->autohide_enabled);
@@ -206,6 +210,7 @@ import_shell_from_json(JsonObject *root, KajoShellCfg *shell)
     read_json_int_clamped(root, "autohide_hide_delay",      &shell->autohide_hide_delay,      0, 10000);
     read_json_int_clamped(root, "autohide_reveal_duration", &shell->autohide_reveal_duration, 0, 2000);
     read_json_int_clamped(root, "autohide_hide_duration",   &shell->autohide_hide_duration,   0, 2000);
+    read_json_int_clamped(root, "autohide_edge_strip_px",   &shell->autohide_edge_strip_px,   1, 16);
 
     /* [notifications] */
     read_json_int_clamped(root, "toast_timeout_ms",         &shell->toast_timeout_ms, 1000, 30000);
@@ -484,11 +489,34 @@ kajo_config_migrate_legacy_json(const char *config_dir)
     if (!config_dir || !*config_dir)
         return FALSE;
 
-    g_autofree gchar *json_path  = g_build_filename(config_dir, "config.json", NULL);
+    g_autofree gchar *json_path = g_build_filename(config_dir, KAJO_CFG_FILE_LEGACY_JSON, NULL);
+    if (!g_file_test(json_path, G_FILE_TEST_EXISTS))
+        return FALSE;
+
+    g_mkdir_with_parents(config_dir, 0755);
+    g_autofree gchar *lock_path = g_build_filename(config_dir, ".migrate.lock", NULL);
+    int lock_fd = open(lock_path, O_CREAT | O_RDWR, 0600);
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_EX);
+    }
+
+    g_autofree gchar *theme_path = g_build_filename(config_dir, KAJO_CFG_FILE_THEME, NULL);
+    g_autofree gchar *ide_path   = g_build_filename(config_dir, KAJO_CFG_FILE_IDE,   NULL);
+    g_autofree gchar *files_path = g_build_filename(config_dir, KAJO_CFG_FILE_FILES, NULL);
+    g_autofree gchar *mod_path   = g_build_filename(config_dir, KAJO_CFG_FILE_MOD,   NULL);
     g_autofree gchar *shell_path = g_build_filename(config_dir, KAJO_CFG_FILE_SHELL, NULL);
 
+    /* Re-verify under exclusive lock in case another process just completed migration */
     if (!g_file_test(json_path, G_FILE_TEST_EXISTS) ||
-        g_file_test(shell_path, G_FILE_TEST_EXISTS)) {
+        (g_file_test(theme_path, G_FILE_TEST_EXISTS) &&
+         g_file_test(ide_path,   G_FILE_TEST_EXISTS) &&
+         g_file_test(files_path, G_FILE_TEST_EXISTS) &&
+         g_file_test(mod_path,   G_FILE_TEST_EXISTS) &&
+         g_file_test(shell_path, G_FILE_TEST_EXISTS))) {
+        if (lock_fd >= 0) {
+            flock(lock_fd, LOCK_UN);
+            close(lock_fd);
+        }
         return FALSE;
     }
 
@@ -497,12 +525,20 @@ kajo_config_migrate_legacy_json(const char *config_dir)
     if (!json_parser_load_from_file(parser, json_path, &err)) {
         g_warning("Config migration: failed to parse '%s' (%s), skipping migration",
                   json_path, err ? err->message : "unknown");
+        if (lock_fd >= 0) {
+            flock(lock_fd, LOCK_UN);
+            close(lock_fd);
+        }
         return FALSE;
     }
 
     JsonNode *root_node = json_parser_get_root(parser);
     if (!root_node || !JSON_NODE_HOLDS_OBJECT(root_node)) {
         g_warning("Config migration: root of '%s' is not a JSON object", json_path);
+        if (lock_fd >= 0) {
+            flock(lock_fd, LOCK_UN);
+            close(lock_fd);
+        }
         return FALSE;
     }
 
@@ -520,23 +556,29 @@ kajo_config_migrate_legacy_json(const char *config_dir)
     import_files_from_json(root, files);
     import_mod_from_json(root, mod);
 
-    g_autofree gchar *theme_path = g_build_filename(config_dir, KAJO_CFG_FILE_THEME, NULL);
-    g_autofree gchar *ide_path   = g_build_filename(config_dir, KAJO_CFG_FILE_IDE,   NULL);
-    g_autofree gchar *files_path = g_build_filename(config_dir, KAJO_CFG_FILE_FILES, NULL);
-    g_autofree gchar *mod_path   = g_build_filename(config_dir, KAJO_CFG_FILE_MOD,   NULL);
-
+    /* Write each missing domain file, with shell.toml written last as the final commit gate */
     gboolean ok = TRUE;
-    ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_theme(), theme, theme_path, NULL);
-    ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_shell(), shell, shell_path, NULL);
-    ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_ide(),   ide,   ide_path,   NULL);
-    ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_files(), files, files_path, NULL);
-    ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_mod(),   mod,   mod_path,   NULL);
+    if (!g_file_test(theme_path, G_FILE_TEST_EXISTS))
+        ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_theme(), theme, theme_path, NULL);
+    if (!g_file_test(ide_path, G_FILE_TEST_EXISTS))
+        ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_ide(),   ide,   ide_path,   NULL);
+    if (!g_file_test(files_path, G_FILE_TEST_EXISTS))
+        ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_files(), files, files_path, NULL);
+    if (!g_file_test(mod_path, G_FILE_TEST_EXISTS))
+        ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_mod(),   mod,   mod_path,   NULL);
+    if (!g_file_test(shell_path, G_FILE_TEST_EXISTS))
+        ok = ok && kajo_cfg_domain_save_atomic(kajo_schema_get_shell(), shell, shell_path, NULL);
 
     if (ok) {
-        g_autofree gchar *bak_path = g_build_filename(config_dir, "config.json.bak", NULL);
+        g_autofree gchar *bak_path = g_build_filename(config_dir, KAJO_CFG_FILE_LEGACY_JSON_BAK, NULL);
         g_rename(json_path, bak_path);
-        g_message("Migrated legacy '%s' -> domain TOML files in '%s' (backed up to config.json.bak)",
-                  json_path, config_dir);
+        g_message("Migrated legacy '%s' -> domain TOML files in '%s' (backed up to %s)",
+                  json_path, config_dir, KAJO_CFG_FILE_LEGACY_JSON_BAK);
+    }
+
+    if (lock_fd >= 0) {
+        flock(lock_fd, LOCK_UN);
+        close(lock_fd);
     }
 
     return ok;

@@ -139,6 +139,15 @@ static const KajoFieldSpec k_shell_fields[] = {
         .min_int = 0,
         .max_int = 2000,
     },
+    {
+        .section = KAJO_CFG_SEC_AUTOHIDE,
+        .key     = KAJO_CFG_KEY_AUTOHIDE_EDGE_STRIP,
+        .type    = KAJO_FIELD_INT,
+        .offset  = offsetof(KajoShellCfg, autohide_edge_strip_px),
+        .def.i   = 2,
+        .min_int = 1,
+        .max_int = 16,
+    },
 
     /* [notifications] */
     {

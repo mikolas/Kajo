@@ -9,6 +9,8 @@
 #define KAJO_CFG_FILE_MOD                 "mod.toml"
 #define KAJO_CFG_FILE_COMP                "compositor.toml"
 #define KAJO_CFG_DIR_CONFD                "conf.d"
+#define KAJO_CFG_FILE_LEGACY_JSON         "config.json"
+#define KAJO_CFG_FILE_LEGACY_JSON_BAK     "config.json.bak"
 
 /* Top-Level Domain Prefix Names (Used inside conf.d/ drop-ins) */
 #define KAJO_CFG_DOMAIN_THEME             "theme"
@@ -49,6 +51,7 @@
 #define KAJO_CFG_KEY_AUTOHIDE_HIDE_DELAY  "hide_delay"
 #define KAJO_CFG_KEY_AUTOHIDE_REV_DUR     "reveal_duration"
 #define KAJO_CFG_KEY_AUTOHIDE_HIDE_DUR    "hide_duration"
+#define KAJO_CFG_KEY_AUTOHIDE_EDGE_STRIP  "edge_strip_px"
 
 /* shell.toml [notifications] */
 #define KAJO_CFG_KEY_NOTIF_TIMEOUT_MS     "toast_timeout_ms"

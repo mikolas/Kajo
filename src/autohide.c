@@ -139,7 +139,7 @@ shell_autohide_new(ShellPanel *panel, const KajoShellCfg *config)
     self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
     self->hide_duration   = config->autohide_hide_duration > 0 ? config->autohide_hide_duration : 200;
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
-    self->edge_strip_px   = 2;
+    self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
     self->edge            = (config->panel_position == PANEL_POSITION_BOTTOM)
                             ? GTK_LAYER_SHELL_EDGE_BOTTOM
                             : GTK_LAYER_SHELL_EDGE_TOP;

@@ -434,6 +434,116 @@ test_legacy_json_migration(void)
     rm_rf(tmpdir);
 }
 
+/* 6. Syntax Error Preserves Previous Snapshot & Refuses to Clobber Broken File */
+static void
+mutate_theme_font_18(KajoThemeCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    draft->ui_font_size_px = 18;
+}
+
+static void
+test_syntax_error_preservation_and_save_guard(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-synerr-XXXXXX", NULL);
+    g_autofree gchar *theme_path = g_build_filename(tmpdir, "theme.toml", NULL);
+
+    g_assert_true(g_file_set_contents(theme_path,
+        "accent_color = \"#00ff00\"\nui_font_size_px = 16\n", -1, NULL));
+
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+    g_autoptr(KajoThemeCfgRef) snap1 = kajo_config_store_acquire_theme(store);
+    g_assert_cmpstr(snap1->accent_color, ==, "#00ff00");
+    g_assert_cmpint(snap1->ui_font_size_px, ==, 16);
+
+    /* Introduce a syntax error on disk */
+    const gchar *broken_toml = "# user edit in progress\naccent_color = [unclosed\n";
+    g_assert_true(g_file_set_contents(theme_path, broken_toml, -1, NULL));
+
+    /* Reload must warn and retain the last known-good snapshot (#00ff00 / 16) */
+    g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "*TOML syntax error*");
+    kajo_config_store_reload(store, KAJO_CONFIG_DOMAIN_THEME);
+    g_test_assert_expected_messages();
+
+    g_autoptr(KajoThemeCfgRef) snap2 = kajo_config_store_acquire_theme(store);
+    g_assert_cmpstr(snap2->accent_color, ==, "#00ff00");
+    g_assert_cmpint(snap2->ui_font_size_px, ==, 16);
+
+    /* A GUI save while the on-disk file is broken must refuse to overwrite it */
+    g_autoptr(GError) err = NULL;
+    g_test_expect_message(G_LOG_DOMAIN, G_LOG_LEVEL_WARNING, "*TOML syntax error*");
+    gboolean saved = kajo_config_store_update_theme(store, mutate_theme_font_18, NULL, &err);
+    g_test_assert_expected_messages();
+    g_assert_false(saved);
+    g_assert_nonnull(err);
+
+    g_autofree gchar *disk_after = NULL;
+    g_assert_true(g_file_get_contents(theme_path, &disk_after, NULL, NULL));
+    g_assert_cmpstr(disk_after, ==, broken_toml);
+
+    rm_rf(tmpdir);
+}
+
+/* 7. Surgical Patching Preserves Comments, Unknown Keys, Datetimes & Avoids Freezing Defaults */
+static void
+mutate_theme_font_16(KajoThemeCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    draft->ui_font_size_px = 16;
+}
+
+static void
+mutate_theme_accent_amber(KajoThemeCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    g_free(draft->accent_color);
+    draft->accent_color = g_strdup("#ffb900");
+}
+
+static void
+test_surgical_patch_preserves_comments_and_unknown_keys(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-patch-XXXXXX", NULL);
+    g_autofree gchar *theme_path = g_build_filename(tmpdir, "theme.toml", NULL);
+
+    const gchar *hand_edited =
+        "# My custom header comment\n"
+        "accent_color = \"#00ff00\" # inline green note\n"
+        "my_experimental_key = \"keep-me\"\n"
+        "last_edited = 2026-11-10T12:00:00Z\n";
+    g_assert_true(g_file_set_contents(theme_path, hand_edited, -1, NULL));
+
+    g_autoptr(KajoConfigStore) store = kajo_config_store_new_for_dir(tmpdir);
+    g_autoptr(KajoThemeCfgRef) s0 = kajo_config_store_acquire_theme(store);
+    g_assert_cmpstr(s0->accent_color, ==, "#00ff00");
+    g_assert_cmpint(s0->ui_font_size_px, ==, 14);
+
+    /* Save a font-size change: must preserve comments, unknown keys, datetime, and NOT freeze defaults */
+    g_assert_true(kajo_config_store_update_theme(store, mutate_theme_font_16, NULL, NULL));
+
+    g_autofree gchar *after1 = NULL;
+    g_assert_true(g_file_get_contents(theme_path, &after1, NULL, NULL));
+    g_assert_nonnull(strstr(after1, "# My custom header comment"));
+    g_assert_nonnull(strstr(after1, "# inline green note"));
+    g_assert_nonnull(strstr(after1, "my_experimental_key = \"keep-me\""));
+    g_assert_nonnull(strstr(after1, "last_edited = 2026-11-10T12:00:00Z"));
+    g_assert_nonnull(strstr(after1, "ui_font_size_px"));
+    /* Untouched defaults must NOT be frozen into the user's file */
+    g_assert_null(strstr(after1, "settings_width"));
+    g_assert_null(strstr(after1, "font_badge_size_px"));
+
+    /* Save an existing key (accent_color): must update value in-place and keep inline comment */
+    g_assert_true(kajo_config_store_update_theme(store, mutate_theme_accent_amber, NULL, NULL));
+
+    g_autofree gchar *after2 = NULL;
+    g_assert_true(g_file_get_contents(theme_path, &after2, NULL, NULL));
+    g_assert_nonnull(strstr(after2, "accent_color = \"#ffb900\" # inline green note"));
+    g_assert_nonnull(strstr(after2, "my_experimental_key = \"keep-me\""));
+
+    g_autoptr(KajoThemeCfgRef) s2 = kajo_config_store_acquire_theme(store);
+    g_assert_cmpstr(s2->accent_color, ==, "#ffb900");
+    g_assert_cmpint(s2->ui_font_size_px, ==, 16);
+
+    rm_rf(tmpdir);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -446,6 +556,8 @@ main(int argc, char *argv[])
     g_test_add_func("/config/store/confd-overlay-and-save", test_confd_overlay_and_save);
     g_test_add_func("/config/store/concurrent-readers-and-reload", test_concurrent_readers_and_reload);
     g_test_add_func("/config/migrate/legacy-json", test_legacy_json_migration);
+    g_test_add_func("/config/store/syntax-error-preservation", test_syntax_error_preservation_and_save_guard);
+    g_test_add_func("/config/store/surgical-patch-preserves-comments", test_surgical_patch_preserves_comments_and_unknown_keys);
 
     return g_test_run();
 }

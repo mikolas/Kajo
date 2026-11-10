@@ -97,10 +97,22 @@ gboolean kajo_cfg_domain_parse_toml_file(const KajoDomainSchema *schema,
 gchar   *kajo_cfg_domain_serialize_toml(const KajoDomainSchema *schema,
                                         const void             *src);
 
+gchar   *kajo_cfg_domain_patch_toml(const KajoDomainSchema *schema,
+                                    const void             *old_base,
+                                    const void             *new_draft,
+                                    const char             *existing_toml);
+
 gboolean kajo_cfg_domain_save_atomic(const KajoDomainSchema *schema,
                                      const void             *src,
                                      const char             *filepath,
                                      GError                **error);
+
+gboolean kajo_cfg_domain_save_patched(const KajoDomainSchema *schema,
+                                      const void             *old_base,
+                                      const void             *new_draft,
+                                      const char             *existing_toml,
+                                      const char             *filepath,
+                                      GError                **error);
 
 gboolean kajo_cfg_domain_equal(const KajoDomainSchema *schema,
                                const void             *a,

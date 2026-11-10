@@ -476,61 +476,48 @@ on_displays_revert(gpointer user_data)
     load_niri_and_config_state(user_data);
 }
 
+typedef struct {
+    ShellScreensaverMode screensaver_mode;
+    gboolean             has_ss_timeout;
+    gint                 screensaver_timeout_sec;
+    gboolean             has_dpms_timeout;
+    gint                 dpms_timeout_sec;
+    gboolean             has_lock_timeout;
+    gint                 lock_timeout_sec;
+    gboolean             lock_on_suspend;
+    gboolean             has_kbd_level;
+    gint                 kbd_backlight_level;
+    gboolean             has_kbd_timeout;
+    gint                 kbd_backlight_timeout_sec;
+    gboolean             has_posture;
+    gboolean             posture_auto_rotate;
+    gboolean             posture_disable_kbd_in_tablet;
+    gboolean             posture_disable_touch_in_laptop;
+} DisplaysSaveCtx;
+
 static void
 mutate_displays_shell_cfg(KajoShellCfg *cfg, gpointer user_data)
 {
-    SettingsPageDisplays *self = (SettingsPageDisplays *)user_data;
+    const DisplaysSaveCtx *ctx = (const DisplaysSaveCtx *)user_data;
 
-    guint ss_mode = segmented_group_get_selected(self->seg_ss_mode);
-    cfg->screensaver_mode = (ss_mode == 1)
-        ? SCREENSAVER_MODE_DPMS
-        : ((ss_mode == 2) ? SCREENSAVER_MODE_DISABLED : SCREENSAVER_MODE_OVERLAY);
+    cfg->screensaver_mode = ctx->screensaver_mode;
+    if (ctx->has_ss_timeout)
+        cfg->screensaver_timeout_sec = ctx->screensaver_timeout_sec;
+    if (ctx->has_dpms_timeout)
+        cfg->dpms_timeout_sec = ctx->dpms_timeout_sec;
+    if (ctx->has_lock_timeout)
+        cfg->lock_timeout_sec = ctx->lock_timeout_sec;
+    cfg->lock_on_suspend = ctx->lock_on_suspend;
 
-    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ss_timeout));
-    if (ss_sel < G_N_ELEMENTS(k_ss_timeout_vals))
-        cfg->screensaver_timeout_sec = k_ss_timeout_vals[ss_sel];
+    if (ctx->has_kbd_level)
+        cfg->kbd_backlight_level = ctx->kbd_backlight_level;
+    if (ctx->has_kbd_timeout)
+        cfg->kbd_backlight_timeout_sec = ctx->kbd_backlight_timeout_sec;
 
-    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_dpms_timeout));
-    if (dpms_sel < G_N_ELEMENTS(k_dpms_timeout_vals))
-        cfg->dpms_timeout_sec = k_dpms_timeout_vals[dpms_sel];
-
-    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_lock_timeout));
-    if (lock_sel < G_N_ELEMENTS(k_lock_timeout_vals))
-        cfg->lock_timeout_sec = k_lock_timeout_vals[lock_sel];
-
-    cfg->lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(self->sw_lock_suspend));
-
-    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    if (caps && caps->kbd_bl_backend != KBD_BL_NONE && self->kbd_level_ctl) {
-        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
-            gboolean wake_on = gtk_switch_get_active(GTK_SWITCH(self->kbd_level_ctl));
-            cfg->kbd_backlight_level = wake_on ? 2 : 0;
-            if (wake_on && shell_kbd_backlight_get_level() <= 0)
-                shell_kbd_backlight_set_level(2);
-        } else {
-            gint level = CLAMP((gint)segmented_group_get_selected(self->kbd_level_ctl), 0, 2);
-            cfg->kbd_backlight_level = level;
-            shell_kbd_backlight_set_level(level);
-        }
-        if (shell_kbd_backlight_has_timeout() && self->kbd_timeout_ctl) {
-            guint t_sel = segmented_group_get_selected(self->kbd_timeout_ctl);
-            if (t_sel < G_N_ELEMENTS(k_kbd_timeout_vals)) {
-                cfg->kbd_backlight_timeout_sec = k_kbd_timeout_vals[t_sel];
-                shell_kbd_backlight_set_timeout_sec(cfg->kbd_backlight_timeout_sec);
-            }
-        }
-    }
-
-    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
-        cfg->posture_auto_rotate             = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_autorotate));
-        cfg->posture_disable_kbd_in_tablet   = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_kbd));
-        cfg->posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_touch));
-
-        gdouble deg = 0.0;
-        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
-        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
-        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && cfg->posture_disable_kbd_in_tablet);
-        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && cfg->posture_disable_touch_in_laptop);
+    if (ctx->has_posture) {
+        cfg->posture_auto_rotate             = ctx->posture_auto_rotate;
+        cfg->posture_disable_kbd_in_tablet   = ctx->posture_disable_kbd_in_tablet;
+        cfg->posture_disable_touch_in_laptop = ctx->posture_disable_touch_in_laptop;
     }
 }
 
@@ -582,8 +569,80 @@ on_displays_save(gpointer user_data)
     run_niri_output_cmd_async(out_name, "vrr", vrr ? "on" : "off");
     niri_reload_config();
 
-    /* 2. Save Idle / Backlight / Posture settings to ~/.config/kajo/shell.toml */
-    kajo_config_store_update_shell(NULL, mutate_displays_shell_cfg, self, NULL);
+    /* 2. Snapshot GTK widget state, persist to ~/.config/kajo/shell.toml, then apply hardware sysfs */
+    DisplaysSaveCtx ctx = { 0 };
+    guint ss_mode = segmented_group_get_selected(self->seg_ss_mode);
+    ctx.screensaver_mode = (ss_mode == 1)
+        ? SCREENSAVER_MODE_DPMS
+        : ((ss_mode == 2) ? SCREENSAVER_MODE_DISABLED : SCREENSAVER_MODE_OVERLAY);
+
+    guint ss_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_ss_timeout));
+    if (ss_sel < G_N_ELEMENTS(k_ss_timeout_vals)) {
+        ctx.has_ss_timeout = TRUE;
+        ctx.screensaver_timeout_sec = k_ss_timeout_vals[ss_sel];
+    }
+
+    guint dpms_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_dpms_timeout));
+    if (dpms_sel < G_N_ELEMENTS(k_dpms_timeout_vals)) {
+        ctx.has_dpms_timeout = TRUE;
+        ctx.dpms_timeout_sec = k_dpms_timeout_vals[dpms_sel];
+    }
+
+    guint lock_sel = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_lock_timeout));
+    if (lock_sel < G_N_ELEMENTS(k_lock_timeout_vals)) {
+        ctx.has_lock_timeout = TRUE;
+        ctx.lock_timeout_sec = k_lock_timeout_vals[lock_sel];
+    }
+
+    ctx.lock_on_suspend = gtk_switch_get_active(GTK_SWITCH(self->sw_lock_suspend));
+
+    const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
+    gboolean hp_ec_wake_on = FALSE;
+    if (caps && caps->kbd_bl_backend != KBD_BL_NONE && self->kbd_level_ctl) {
+        ctx.has_kbd_level = TRUE;
+        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
+            hp_ec_wake_on = gtk_switch_get_active(GTK_SWITCH(self->kbd_level_ctl));
+            ctx.kbd_backlight_level = hp_ec_wake_on ? 2 : 0;
+        } else {
+            ctx.kbd_backlight_level = CLAMP((gint)segmented_group_get_selected(self->kbd_level_ctl), 0, 2);
+        }
+        if (shell_kbd_backlight_has_timeout() && self->kbd_timeout_ctl) {
+            guint t_sel = segmented_group_get_selected(self->kbd_timeout_ctl);
+            if (t_sel < G_N_ELEMENTS(k_kbd_timeout_vals)) {
+                ctx.has_kbd_timeout = TRUE;
+                ctx.kbd_backlight_timeout_sec = k_kbd_timeout_vals[t_sel];
+            }
+        }
+    }
+
+    if (caps && (caps->has_hinge_sensor || caps->has_accel_sensor)) {
+        ctx.has_posture                     = TRUE;
+        ctx.posture_auto_rotate             = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_autorotate));
+        ctx.posture_disable_kbd_in_tablet   = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_kbd));
+        ctx.posture_disable_touch_in_laptop = gtk_switch_get_active(GTK_SWITCH(self->sw_posture_disable_touch));
+    }
+
+    kajo_config_store_update_shell(NULL, mutate_displays_shell_cfg, &ctx, NULL);
+
+    /* Apply hardware sysfs changes outside the config mutator */
+    if (ctx.has_kbd_level && caps) {
+        if (caps->kbd_bl_backend == KBD_BL_HP_EC) {
+            if (hp_ec_wake_on && shell_kbd_backlight_get_level() <= 0)
+                shell_kbd_backlight_set_level(2);
+        } else {
+            shell_kbd_backlight_set_level(ctx.kbd_backlight_level);
+        }
+        if (ctx.has_kbd_timeout)
+            shell_kbd_backlight_set_timeout_sec(ctx.kbd_backlight_timeout_sec);
+    }
+
+    if (ctx.has_posture && caps) {
+        gdouble deg = 0.0;
+        gboolean is_folded = (shell_hw_caps_read_hinge_angle_deg(caps, &deg) && deg >= 180.0);
+        write_inhibit_paths_direct(caps->kbd_inhibit_paths, is_folded && ctx.posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchpad_inhibit_paths, is_folded && ctx.posture_disable_kbd_in_tablet);
+        write_inhibit_paths_direct(caps->touchscreen_inhibit_paths, (!is_folded) && ctx.posture_disable_touch_in_laptop);
+    }
 
     settings_send_ipc_command("reload-config");
     update_displays_dynamic_subtitles_and_telemetry(self);
