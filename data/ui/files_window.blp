@@ -96,6 +96,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
           Stack location_stack {
             hexpand: true;
+            hhomogeneous: false;
             transition-type: crossfade;
 
             StackPage {
@@ -142,7 +143,7 @@ template $KajoFilesWindow : ApplicationWindow {
           }
 
           SearchEntry search_entry {
-            width-request: 180;
+            width-request: 100;
             placeholder-text: "Filter (Ctrl+F)...";
 
             styles [
@@ -200,13 +201,19 @@ template $KajoFilesWindow : ApplicationWindow {
       }
 
       /* Zone 2: Command & Sort Ribbon */
-      Box action_ribbon {
-        orientation: horizontal;
-        spacing: 8;
+      ScrolledWindow {
+        hexpand: true;
+        hscrollbar-policy: external;
+        vscrollbar-policy: never;
+        propagate-natural-width: false;
 
-        styles [
-          "files-action-ribbon",
-        ]
+        Box action_ribbon {
+          orientation: horizontal;
+          spacing: 8;
+
+          styles [
+            "files-action-ribbon",
+          ]
 
         Label current_uri_badge {
           label: "PATH: ~";
@@ -420,6 +427,7 @@ template $KajoFilesWindow : ApplicationWindow {
             "files-nav-btn",
           ]
         }
+        }
       }
 
       /* Zone 3: 3-Pane Split Workspace (Sidebar | Content | Inspector) */
@@ -493,6 +501,7 @@ template $KajoFilesWindow : ApplicationWindow {
           Stack view_stack {
             hexpand: true;
             vexpand: true;
+            hhomogeneous: false;
             transition-type: crossfade;
 
             StackPage {
@@ -505,7 +514,7 @@ template $KajoFilesWindow : ApplicationWindow {
 
                 GridView grid_view {
                   max-columns: 12;
-                  min-columns: 2;
+                  min-columns: 1;
                   single-click-activate: false;
                   enable-rubberband: true;
 
@@ -518,11 +527,18 @@ template $KajoFilesWindow : ApplicationWindow {
 
             StackPage {
               name: "list";
-              child: Box {
-                orientation: vertical;
-                spacing: 0;
+              child: ScrolledWindow {
                 hexpand: true;
                 vexpand: true;
+                hscrollbar-policy: automatic;
+                vscrollbar-policy: never;
+                propagate-natural-width: false;
+
+                Box {
+                  orientation: vertical;
+                  spacing: 0;
+                  hexpand: true;
+                  vexpand: true;
 
                 Box list_header_bar {
                   orientation: horizontal;
@@ -592,6 +608,7 @@ template $KajoFilesWindow : ApplicationWindow {
                       "files-details-list",
                     ]
                   }
+                }
                 }
               };
             }
