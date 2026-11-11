@@ -1,18 +1,21 @@
 /* comp_rules.h — rules.toml parser and matcher for kajo-comp (pure C).
  *
- * Format (spec §4.3.3):
+ * Format (spec §5.2.3):
  *   [[rule]]
- *   app_id = '^steam$'                         # string or array of regexes (any may match)
- *   title  = '^notificationtoasts_\d+_desktop$'
+ *   app_id = ['^steam$']                        # non-empty array of regexes (any may match)
+ *   title  = ['^notificationtoasts_\d+_desktop$']
  *   floating = true
- *   anchor = { corner = "bottom-right", x = 10, y = 10 }
+ *   anchor_corner = "bottom-right"
+ *   anchor_x = 10
+ *   anchor_y = 10
  *   focus = false
  *
  *   [[layer_rule]]
  *   namespace = ['^kajo$', '^kajo-launcher$']
  *   opacity = 0.85
  *
- * Regexes use PCRE2 syntax (close to Niri's / Rust's: \d, \., anchors), UTF-8,
+ * Regexes use PCRE2 syntax (\d, \., anchors), UTF-8, case-insensitive by
+ * default (PCRE2_CASELESS; opt into exact case via `case_sensitive = true`),
  * unanchored unless the pattern anchors itself. Inside one rule, every given
  * match field must match. Rules apply in file order; later rules override
  * earlier ones for each property they set.
@@ -53,7 +56,12 @@ typedef struct {
 
 typedef struct CompRules CompRules;
 
+CompRules *comp_rules_new(void);
 CompRules *comp_rules_parse(const char *src, size_t len, const char *source_name, CompDiagList *diag);
+/* Parses any `reset_rules = true`, `[[rule]]`, and `[[layer_rule]]` blocks in `src`
+ * and appends them into `rules`. Returns false on TOML syntax error. */
+bool       comp_rules_merge_toml(CompRules *rules, const char *src, size_t len,
+                                 const char *source_name, CompDiagList *diag);
 void       comp_rules_free(CompRules *rules);
 size_t     comp_rules_window_count(const CompRules *rules);
 size_t     comp_rules_layer_count(const CompRules *rules);

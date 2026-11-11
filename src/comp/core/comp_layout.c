@@ -22,6 +22,7 @@ typedef struct {
     double  width;          /* proportion of the viewport */
     double  width_saved;    /* restored when maximize is toggled off */
     bool    maximized;
+    bool    fullscreen;
     bool    tabbed;
 } Column;
 
@@ -39,6 +40,7 @@ typedef struct {
     size_t   fl_focus;
     bool     focus_floating;
     bool     center_once;
+    bool     center_visible_once;
 } Workspace;
 
 struct CompLayout {
@@ -212,11 +214,8 @@ normalize_workspaces(CompLayout *L)
         }
         i++;
     }
-    /* Ensure the last one is empty. On allocation failure the invariant is
-     * temporarily violated; the next successful call restores it. */
     if (!workspace_empty(&L->ws[L->nws - 1]))
         (void)append_empty_workspace(L);
-    /* Two trailing empties: drop the last unless it is focused */
     while (L->nws >= 2 && workspace_empty(&L->ws[L->nws - 1]) &&
            workspace_empty(&L->ws[L->nws - 2]) && L->active != L->nws - 1) {
         workspace_free(&L->ws[L->nws - 1]);
@@ -459,6 +458,56 @@ comp_layout_focus_window(CompLayout *L, CompWinId id)
     return true;
 }
 
+/* ───────────────────────── fullscreen (S1–S4) ───────────────────────── */
+
+bool
+comp_layout_set_fullscreen(CompLayout *L, CompWinId id, bool fullscreen)
+{
+    Loc loc;
+    if (!L || !find_window(L, id, &loc) || loc.floating)
+        return false;
+    Workspace *ws = &L->ws[loc.ws];
+    Column *c = &ws->cols[loc.col];
+    if (c->fullscreen == fullscreen && (c->n == 1 || c->tabbed))
+        return false;
+    /* S2: promoting a window from a multi-window stacked column expels it first */
+    if (fullscreen && c->n >= 2 && !c->tabbed) {
+        Win w = c->wins[loc.win];
+        w.height = 0.0;
+        w.preset = -1;
+        Column ncol;
+        if (!column_new_with(&ncol, w, c->width))
+            return false;
+        ncol.fullscreen = true;
+        if (!insert_column(ws, loc.col + 1, ncol)) {
+            column_free(&ncol);
+            return false;
+        }
+        c = &ws->cols[loc.col];
+        (void)column_take(c, loc.win);
+        if (ws->focus == loc.col)
+            ws->focus = loc.col + 1;
+        else if (ws->focus > loc.col)
+            ws->focus++;
+        return true;
+    }
+    c->fullscreen = fullscreen;
+    return true;
+}
+
+bool
+comp_layout_toggle_fullscreen(CompLayout *L)
+{
+    if (!L)
+        return false;
+    CompWinId id = comp_layout_focused_window(L);
+    Loc loc;
+    if (!id || !find_window(L, id, &loc) || loc.floating)
+        return false;
+    bool cur = L->ws[loc.ws].cols[loc.col].fullscreen;
+    return comp_layout_set_fullscreen(L, id, !cur);
+}
+
 /* ───────────────────────── workspaces ───────────────────────── */
 
 size_t
@@ -471,6 +520,29 @@ size_t
 comp_layout_active_workspace(const CompLayout *L)
 {
     return L ? L->active : 0;
+}
+
+size_t
+comp_layout_workspace_window_count(const CompLayout *L, size_t ws_index)
+{
+    if (!L || ws_index >= L->nws)
+        return 0;
+    const Workspace *ws = &L->ws[ws_index];
+    size_t count = ws->nfl;
+    for (size_t c = 0; c < ws->n; c++)
+        count += ws->cols[c].n;
+    return count;
+}
+
+bool
+comp_layout_window_workspace(const CompLayout *L, CompWinId id, size_t *out_ws_index)
+{
+    Loc loc;
+    if (!L || id == 0 || !find_window(L, id, &loc))
+        return false;
+    if (out_ws_index)
+        *out_ws_index = loc.ws;
+    return true;
 }
 
 bool
@@ -494,7 +566,7 @@ move_column_to_workspace(CompLayout *L, size_t target)
     size_t at = dst->n ? dst->focus + 1 : 0;
     if (!insert_column(dst, at, col))
         return false;
-    src = active_ws(L);                 /* L->ws did not move, but keep it explicit */
+    src = active_ws(L);
     remove_column(src, src->focus, false);
     dst->focus          = at;
     dst->focus_floating = false;
@@ -504,7 +576,7 @@ move_column_to_workspace(CompLayout *L, size_t target)
 }
 
 static bool
-swap_workspace(CompLayout *L, bool up)
+ swap_workspace(CompLayout *L, bool up)
 {
     size_t a = L->active;
     if (up ? a == 0 : a + 1 >= L->nws)
@@ -525,8 +597,6 @@ swap_workspace(CompLayout *L, bool up)
 
 /* ───────────────────────── per-column actions ───────────────────────── */
 
-/* Next preset = the smallest preset strictly wider than the current width;
- * if there is none, wrap to the smallest preset. Presets need not be sorted. */
 static bool
 switch_preset_width(const CompLayoutConfig *cfg, Column *c)
 {
@@ -554,6 +624,13 @@ switch_preset_height(const CompLayoutConfig *cfg, Column *c)
 {
     if (cfg->n_preset_heights == 0 || c->n < 2 || c->tabbed)
         return false;
+    /* G4: at most one window in a column holds an explicit height */
+    for (size_t i = 0; i < c->n; i++) {
+        if (i != c->focus) {
+            c->wins[i].height = 0.0;
+            c->wins[i].preset = -1;
+        }
+    }
     Win *w = &c->wins[c->focus];
     int next = w->preset + 1;
     if (next < 0 || (size_t)next >= cfg->n_preset_heights)
@@ -572,7 +649,7 @@ toggle_floating(CompLayout *L)
         remove_floating_at(ws, ws->fl_focus);
         Win win = { .id = f.id, .height = 0.0, .preset = -1 };
         if (!add_tiled_to(L, L->active, win, L->cfg.default_width)) {
-            (void)add_floating_to(active_ws(L), f.id, f.rect);   /* put it back */
+            (void)add_floating_to(active_ws(L), f.id, f.rect);
             return false;
         }
         return true;
@@ -610,7 +687,30 @@ consume_into_left(Workspace *ws)
 }
 
 static bool
-expel_from_column(CompLayout *L)
+consume_into_right(Workspace *ws)
+{
+    if (ws->focus_floating || ws->n < 2 || ws->focus + 1 >= ws->n)
+        return false;
+    Column *c     = &ws->cols[ws->focus];
+    Column *right = &ws->cols[ws->focus + 1];
+    if (!grow((void **)&right->wins, &right->cap, right->n + 1, sizeof(Win)))
+        return false;
+    Win w = column_take(c, c->focus);
+    right->wins[right->n] = w;
+    right->focus          = right->n;
+    right->n++;
+    size_t old = ws->focus;
+    if (c->n == 0) {
+        remove_column(ws, old, true);
+        ws->focus = old;   /* right shifted into `old` */
+    } else {
+        ws->focus = old + 1;
+    }
+    return true;
+}
+
+static bool
+expel_dir(CompLayout *L, bool to_right)
 {
     Workspace *ws = active_ws(L);
     Column *c = focused_col(ws);
@@ -620,15 +720,65 @@ expel_from_column(CompLayout *L)
     w.height = 0.0;
     w.preset = -1;
     Column col;
-    if (!column_new_with(&col, w, L->cfg.default_width))
+    /* K4: expelled column inherits the width of the column it left */
+    if (!column_new_with(&col, w, c->width))
         return false;
-    if (!insert_column(ws, ws->focus + 1, col)) {
+    size_t ins = to_right ? ws->focus + 1 : ws->focus;
+    if (!insert_column(ws, ins, col)) {
         column_free(&col);
         return false;
     }
-    c = &ws->cols[ws->focus];        /* insert_column may have reallocated */
+    size_t src_col = to_right ? ws->focus : ws->focus + 1;
+    c = &ws->cols[src_col];
     (void)column_take(c, c->focus);
-    ws->focus++;
+    ws->focus = ins;
+    return true;
+}
+
+static bool
+expel_from_column(CompLayout *L)
+{
+    return expel_dir(L, true);
+}
+
+static bool
+consume_or_expel(CompLayout *L, bool to_right)
+{
+    Workspace *ws = active_ws(L);
+    Column *c = focused_col(ws);
+    if (ws->focus_floating || !c)
+        return false;
+    if (c->n == 1)
+        return to_right ? consume_into_right(ws) : consume_into_left(ws);
+    return expel_dir(L, to_right);
+}
+
+/* W3: expand focused column to fill remaining available width beside visible neighbors. */
+static bool
+expand_column_to_available(CompLayout *L)
+{
+    Workspace *ws = active_ws(L);
+    Column *c = focused_col(ws);
+    if (!c || c->maximized || c->fullscreen)
+        return false;
+    double target = 1.0;
+    if (ws->n > 1 && L->cfg.center_mode != COMP_CENTER_ALWAYS) {
+        double used = 0.0;
+        if (ws->focus > 0) {
+            double lw = ws->cols[ws->focus - 1].maximized ? 1.0 : ws->cols[ws->focus - 1].width;
+            if (lw + MIN_COL_WIDTH <= 1.0 + WIDTH_EPS)
+                used += lw;
+        }
+        if (used == 0.0 && ws->focus + 1 < ws->n) {
+            double rw = ws->cols[ws->focus + 1].maximized ? 1.0 : ws->cols[ws->focus + 1].width;
+            if (rw + MIN_COL_WIDTH <= 1.0 + WIDTH_EPS)
+                used += rw;
+        }
+        target = clampd(1.0 - used, MIN_COL_WIDTH, 1.0);
+    }
+    if (fabs(target - c->width) <= WIDTH_EPS)
+        return false;
+    c->width = target;
     return true;
 }
 
@@ -637,7 +787,7 @@ swap_columns(Workspace *ws, size_t a, size_t b)
 {
     if (a == b || a >= ws->n || b >= ws->n)
         return false;
-    Column t   = ws->cols[a];
+    Column t    = ws->cols[a];
     ws->cols[a] = ws->cols[b];
     ws->cols[b] = t;
     return true;
@@ -710,6 +860,10 @@ apply_tiling_action(CompLayout *L, CompAction a)
         return consume_into_left(ws);
     case COMP_ACT_EXPEL_FROM_COLUMN:
         return expel_from_column(L);
+    case COMP_ACT_CONSUME_OR_EXPEL_LEFT:
+        return consume_or_expel(L, false);
+    case COMP_ACT_CONSUME_OR_EXPEL_RIGHT:
+        return consume_or_expel(L, true);
     case COMP_ACT_SWITCH_PRESET_COLUMN_WIDTH:
         return c ? switch_preset_width(&L->cfg, c) : false;
     case COMP_ACT_SWITCH_PRESET_WINDOW_HEIGHT:
@@ -722,12 +876,18 @@ apply_tiling_action(CompLayout *L, CompAction a)
         if (c->maximized) { c->width = c->width_saved; c->maximized = false; }
         else { c->width_saved = c->width; c->width = 1.0; c->maximized = true; }
         return true;
+    case COMP_ACT_EXPAND_COLUMN_TO_AVAILABLE:
+        return expand_column_to_available(L);
     case COMP_ACT_TOGGLE_COLUMN_TABBED:
         if (!c) return false;
+        if (c->fullscreen && c->tabbed) c->fullscreen = false;
         c->tabbed = !c->tabbed; return true;
     case COMP_ACT_CENTER_COLUMN:
         if (!c) return false;
         ws->center_once = true; return true;
+    case COMP_ACT_CENTER_VISIBLE_COLUMNS:
+        if (!c || L->cfg.center_mode == COMP_CENTER_ALWAYS) return false;
+        ws->center_visible_once = true; return true;
     default:
         return false;
     }
@@ -802,6 +962,12 @@ comp_layout_adjust_window_height(CompLayout *L, double delta)
     double cur = w->height > 0.0 ? w->height : 1.0 / (double)c->n;
     double nh  = clampd(cur + delta, MIN_WIN_HEIGHT, 1.0);
     bool changed = fabs(nh - w->height) > WIDTH_EPS;
+    for (size_t i = 0; i < c->n; i++) {
+        if (i != c->focus) {
+            c->wins[i].height = 0.0;
+            c->wins[i].preset = -1;
+        }
+    }
     w->height = nh;
     w->preset = -1;
     return changed;
@@ -824,6 +990,8 @@ static const char *const k_action_names[COMP_ACT__COUNT] = {
     [COMP_ACT_MOVE_WINDOW_DOWN]               = "move-window-down",
     [COMP_ACT_CONSUME_INTO_COLUMN_LEFT]       = "consume-window-into-column",
     [COMP_ACT_EXPEL_FROM_COLUMN]              = "expel-window-from-column",
+    [COMP_ACT_CONSUME_OR_EXPEL_LEFT]          = "consume-or-expel-window-left",
+    [COMP_ACT_CONSUME_OR_EXPEL_RIGHT]         = "consume-or-expel-window-right",
     [COMP_ACT_FOCUS_WORKSPACE_UP]             = "focus-workspace-up",
     [COMP_ACT_FOCUS_WORKSPACE_DOWN]           = "focus-workspace-down",
     [COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_UP]    = "move-column-to-workspace-up",
@@ -834,10 +1002,12 @@ static const char *const k_action_names[COMP_ACT__COUNT] = {
     [COMP_ACT_SWITCH_PRESET_WINDOW_HEIGHT]    = "switch-preset-window-height",
     [COMP_ACT_RESET_WINDOW_HEIGHT]            = "reset-window-height",
     [COMP_ACT_MAXIMIZE_COLUMN]                = "maximize-column",
+    [COMP_ACT_EXPAND_COLUMN_TO_AVAILABLE]     = "expand-column-to-available-width",
     [COMP_ACT_TOGGLE_COLUMN_TABBED]           = "toggle-column-tabbed",
     [COMP_ACT_TOGGLE_WINDOW_FLOATING]         = "toggle-window-floating",
     [COMP_ACT_SWITCH_FOCUS_FLOATING_TILING]   = "switch-focus-floating-tiling",
     [COMP_ACT_CENTER_COLUMN]                  = "center-column",
+    [COMP_ACT_CENTER_VISIBLE_COLUMNS]         = "center-visible-columns",
 };
 
 const char *
@@ -866,11 +1036,12 @@ comp_action_from_name(const char *name, CompAction *out)
 static double
 column_px_width(const CompLayoutConfig *cfg, const Column *c, double view_w)
 {
+    if (c->fullscreen)
+        return fmax(1.0, view_w);
     double w = c->maximized ? view_w - 2.0 * cfg->gap : (view_w - cfg->gap) * c->width - cfg->gap;
     return fmax(1.0, w);
 }
 
-/* Column x positions (strip coordinates) and total strip width. */
 static double
 column_x(const CompLayoutConfig *cfg, const Workspace *ws, size_t idx, double view_w)
 {
@@ -886,7 +1057,6 @@ strip_width(const CompLayoutConfig *cfg, const Workspace *ws, double view_w)
     return ws->n ? column_x(cfg, ws, ws->n, view_w) : 0.0;
 }
 
-/* Heights of the windows of a non-tabbed column; writes c->n values into h[]. */
 static void
 column_heights(const CompLayoutConfig *cfg, const Column *c, double view_h, double *h)
 {
@@ -904,7 +1074,7 @@ column_heights(const CompLayoutConfig *cfg, const Column *c, double view_h, doub
         }
     }
     double remaining = avail - fixed;
-    double min_auto  = (double)n_auto;           /* at least 1 px each */
+    double min_auto  = (double)n_auto;
     if (remaining < min_auto && fixed > 0.0) {
         double scale = (avail - min_auto) / fixed;
         if (scale < 0.0)
@@ -924,7 +1094,6 @@ column_heights(const CompLayoutConfig *cfg, const Column *c, double view_h, doub
             if (c->wins[i].height <= 0.0)
                 h[i] = each;
     } else if (fixed > 0.0 && fixed != avail) {
-        /* Only fixed heights: fill the column exactly */
         for (size_t i = 0; i < c->n; i++)
             h[i] = fmax(1.0, h[i] * avail / fixed);
     }
@@ -953,11 +1122,23 @@ comp_layout_arrange(const CompLayout *L, double view_w, double view_h,
     for (size_t ci = 0; ci < ws->n; ci++) {
         const Column *c = &ws->cols[ci];
         double w = column_px_width(cfg, c, view_w);
-        if (c->tabbed) {
+        if (c->fullscreen) {
+            for (size_t i = 0; i < c->n; i++) {
+                CompWindowGeometry g = {
+                    .id = c->wins[i].id,
+                    .rect = { x, 0.0, fmax(1.0, view_w), fmax(1.0, view_h) },
+                    .fullscreen = true,
+                    .visible = (i == c->focus),
+                    .focused = (c->wins[i].id == focused),
+                };
+                emit(out, max, &k, g);
+            }
+        } else if (c->tabbed) {
             for (size_t i = 0; i < c->n; i++) {
                 CompWindowGeometry g = {
                     .id = c->wins[i].id,
                     .rect = { x, cfg->gap, w, fmax(1.0, view_h - 2.0 * cfg->gap) },
+                    .tabbed = true, .tab_index = i, .tab_count = c->n,
                     .visible = (i == c->focus), .focused = (c->wins[i].id == focused),
                 };
                 emit(out, max, &k, g);
@@ -966,7 +1147,7 @@ comp_layout_arrange(const CompLayout *L, double view_w, double view_h,
             double hs[64];
             double *h = c->n <= 64 ? hs : malloc(c->n * sizeof(double));
             if (!h) {
-                k += c->n;          /* report the count even if we cannot fill */
+                k += c->n;
                 x += w + cfg->gap;
                 continue;
             }
@@ -1014,6 +1195,7 @@ comp_layout_view_target(CompLayout *L, double view_w, double current)
     Workspace *ws = active_ws(L);
     if (ws->n == 0) {
         ws->center_once = false;
+        ws->center_visible_once = false;
         return 0.0;
     }
     const Column *c = &ws->cols[ws->focus];
@@ -1021,9 +1203,40 @@ comp_layout_view_target(CompLayout *L, double view_w, double current)
     double w  = column_px_width(cfg, c, view_w);
     double centered = x + w / 2.0 - view_w / 2.0;
 
+    /* V7: Fullscreen column aligns its left edge to the viewport */
+    if (c->fullscreen) {
+        ws->center_once = false;
+        ws->center_visible_once = false;
+        return x;
+    }
+
     if (ws->center_once) {
         ws->center_once = false;
+        ws->center_visible_once = false;
         return centered;
+    }
+    if (ws->center_visible_once) {
+        ws->center_visible_once = false;
+        size_t first = ws->focus, last = ws->focus;
+        while (first > 0) {
+            double lx = column_x(cfg, ws, first - 1, view_w);
+            if (lx - cfg->gap >= current - WIDTH_EPS)
+                first--;
+            else
+                break;
+        }
+        while (last + 1 < ws->n) {
+            double rx = column_x(cfg, ws, last + 1, view_w) +
+                        column_px_width(cfg, &ws->cols[last + 1], view_w);
+            if (rx + cfg->gap <= current + view_w + WIDTH_EPS)
+                last++;
+            else
+                break;
+        }
+        double left_edge  = column_x(cfg, ws, first, view_w);
+        double right_edge = column_x(cfg, ws, last, view_w) +
+                            column_px_width(cfg, &ws->cols[last], view_w);
+        return (left_edge + right_edge) / 2.0 - view_w / 2.0;
     }
     double total = strip_width(cfg, ws, view_w);
     if (cfg->always_center_single_column && total <= view_w + WIDTH_EPS)

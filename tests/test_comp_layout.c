@@ -1,5 +1,6 @@
-/* Tests for src/comp/core/comp_layout.c (pure core, no wlroots). */
+/* Tests for src/comp/core/comp_layout.c and comp_motion.c (pure core, no wlroots). */
 #include "../src/comp/core/comp_layout.h"
+#include "../src/comp/core/comp_motion.h"
 
 #include <glib.h>
 #include <math.h>
@@ -241,6 +242,58 @@ test_consume_expel_and_heights(void)
     n = comp_layout_arrange(L, VW, VH, g, 3);
     g_assert_cmpfloat(geom_of(g, n, 2)->rect.x, !=, geom_of(g, n, 3)->rect.x);
     g_assert_cmpuint(comp_layout_focused_window(L), ==, 3);
+
+    /* K1: consume-or-expel-window-left / -right */
+    g_assert_true(comp_layout_apply(L, COMP_ACT_CONSUME_OR_EXPEL_LEFT));  /* 1-win col -> consumes left */
+    assert_ok(L);
+    g_assert_true(comp_layout_apply(L, COMP_ACT_CONSUME_OR_EXPEL_RIGHT)); /* 2-win col -> expels right */
+    assert_ok(L);
+    comp_layout_free(L);
+}
+
+static void
+test_fullscreen_and_motion(void)
+{
+    CompLayout *L = new_default();
+    g_assert_true(comp_layout_add_window(L, 1));
+    g_assert_true(comp_layout_add_window(L, 2));
+    g_assert_true(comp_layout_apply(L, COMP_ACT_CONSUME_INTO_COLUMN_LEFT)); /* [1,2] stacked in col 0 */
+    /* S2: fullscreening a window inside a multi-window stacked column expels it first */
+    g_assert_true(comp_layout_toggle_fullscreen(L));
+    assert_ok(L);
+    CompWindowGeometry g[2];
+    size_t n = comp_layout_arrange(L, VW, VH, g, 2);
+    g_assert_cmpuint(n, ==, 2);
+    const CompWindowGeometry *w2 = geom_of(g, n, 2);
+    g_assert_true(w2->fullscreen);
+    g_assert_cmpfloat_with_epsilon(w2->rect.w, VW, 1e-9);
+    g_assert_cmpfloat_with_epsilon(w2->rect.h, VH, 1e-9);
+    g_assert_true(comp_layout_toggle_fullscreen(L));
+    n = comp_layout_arrange(L, VW, VH, g, 2);
+    g_assert_false(geom_of(g, n, 2)->fullscreen);
+
+    /* Spring coordinator (comp_motion) */
+    CompMotionConfig mcfg;
+    comp_motion_config_defaults(&mcfg);
+    g_assert_true(comp_motion_config_valid(&mcfg));
+    CompMotion *M = comp_motion_new(&mcfg);
+    g_assert_nonnull(M);
+
+    /* O1: initial sync snaps without animating */
+    g_assert_true(comp_motion_sync(M, L, VW, VH, 0.0));
+    g_assert_false(comp_motion_is_animating(M, 0.0));
+
+    /* Adding a third column scrolls the camera via horizontal_scroll spring */
+    g_assert_true(comp_layout_add_window(L, 3));
+    g_assert_true(comp_motion_sync(M, L, VW, VH, 1.0));
+    g_assert_true(comp_motion_is_animating(M, 1.0));
+    CompWindowGeometry mg[4];
+    double vx = 0.0, wy = 0.0;
+    g_assert_cmpuint(comp_motion_sample(M, 1.05, mg, 4, &vx, &wy), ==, 3);
+    g_assert_cmpfloat(vx, >, 0.0);
+    g_assert_false(comp_motion_is_animating(M, 3.0));
+
+    comp_motion_free(M);
     comp_layout_free(L);
 }
 
@@ -438,6 +491,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/layout/view-target-modes", test_view_target_modes);
     g_test_add_func("/comp/layout/preset-widths-maximize", test_preset_widths_and_maximize);
     g_test_add_func("/comp/layout/consume-expel-heights", test_consume_expel_and_heights);
+    g_test_add_func("/comp/layout/fullscreen-and-motion", test_fullscreen_and_motion);
     g_test_add_func("/comp/layout/tabbed-column", test_tabbed_column);
     g_test_add_func("/comp/layout/floating", test_floating);
     g_test_add_func("/comp/layout/workspaces", test_workspaces);

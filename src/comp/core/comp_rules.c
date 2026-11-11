@@ -62,30 +62,27 @@ comp_rules_free(CompRules *r)
 size_t comp_rules_window_count(const CompRules *r) { return r ? r->nwin : 0; }
 size_t comp_rules_layer_count(const CompRules *r)  { return r ? r->nlayer : 0; }
 
-/* Compile a string or array of strings. Returns false (with a diagnostic) on any bad pattern. */
+/* Compile a non-empty array of regex strings. Returns false (with a diagnostic) on any bad pattern. */
 static bool
-matcher_build(Matcher *m, toml_datum_t v, const char *field, const char *src, int line, CompDiagList *diag)
+matcher_build(Matcher *m, toml_datum_t v, bool case_sensitive, const char *field,
+              const char *src, int line, CompDiagList *diag)
 {
     memset(m, 0, sizeof(*m));
     if (v.type == TOML_UNKNOWN)
         return true;
-    size_t n;
-    const toml_datum_t *items;
-    if (v.type == TOML_STRING) {
-        n = 1;
-        items = &v;
-    } else if (v.type == TOML_ARRAY && v.u.arr.size > 0) {
-        n = (size_t)v.u.arr.size;
-        items = v.u.arr.elem;
-    } else {
-        comp_diag_add(diag, src, line, "'%s' must be a regex string or a non-empty array of them", field);
+    if (v.type != TOML_ARRAY || v.u.arr.size <= 0) {
+        comp_diag_add(diag, src, v.lineno ? v.lineno : line,
+                      "'%s' must be a non-empty array of regex strings, e.g. ['^foo$']", field);
         return false;
     }
+    size_t n = (size_t)v.u.arr.size;
+    const toml_datum_t *items = v.u.arr.elem;
     m->re = calloc(n, sizeof(pcre2_code *));
     if (!m->re) {
         comp_diag_add(diag, src, line, "out of memory");
         return false;
     }
+    uint32_t flags = PCRE2_UTF | PCRE2_MATCH_INVALID_UTF | (case_sensitive ? 0u : PCRE2_CASELESS);
     for (size_t i = 0; i < n; i++) {
         if (items[i].type != TOML_STRING) {
             comp_diag_add(diag, src, line, "'%s' array must contain only strings", field);
@@ -95,7 +92,7 @@ matcher_build(Matcher *m, toml_datum_t v, const char *field, const char *src, in
         int errcode = 0;
         PCRE2_SIZE erroff = 0;
         pcre2_code *re = pcre2_compile((PCRE2_SPTR)items[i].u.s, (PCRE2_SIZE)items[i].u.str.len,
-                                       PCRE2_UTF | PCRE2_MATCH_INVALID_UTF, &errcode, &erroff, NULL);
+                                       flags, &errcode, &erroff, NULL);
         if (!re) {
             PCRE2_UCHAR msg[160];
             pcre2_get_error_message(errcode, msg, sizeof(msg));
@@ -190,26 +187,32 @@ warn_unknown_keys(toml_datum_t t, const char *const *known, size_t nknown,
 }
 
 static const char *const k_win_keys[] = {
-    "app_id", "title", "floating", "width", "focus", "anchor", "scroll_factor", "vrr",
+    "app_id", "title", "case_sensitive", "floating", "width", "focus",
+    "anchor_corner", "anchor_x", "anchor_y", "scroll_factor", "vrr",
 };
-static const char *const k_layer_keys[] = { "namespace", "opacity", "popup_opacity" };
+static const char *const k_layer_keys[] = {
+    "namespace", "case_sensitive", "opacity", "popup_opacity",
+};
 static const char *const k_layer_unsupported[] = { "blur", "xray", "blur_popups" };   /* spec §10 */
 
 static bool
 parse_anchor(toml_datum_t t, CompWindowRuleResult *set, const char *src, CompDiagList *diag)
 {
-    toml_datum_t a = toml_get(t, "anchor");
-    if (a.type == TOML_UNKNOWN)
+    toml_datum_t c  = toml_get(t, "anchor_corner");
+    toml_datum_t ax = toml_get(t, "anchor_x");
+    toml_datum_t ay = toml_get(t, "anchor_y");
+    if (c.type == TOML_UNKNOWN) {
+        if (ax.type != TOML_UNKNOWN || ay.type != TOML_UNKNOWN) {
+            int ln = ax.type != TOML_UNKNOWN ? ax.lineno : ay.lineno;
+            comp_diag_add(diag, src, ln, "anchor_x / anchor_y require anchor_corner; ignored");
+            return false;
+        }
         return true;
-    if (a.type != TOML_TABLE) {
-        comp_diag_add(diag, src, a.lineno, "'anchor' must be a table { corner = \"...\", x = N, y = N }; ignored");
-        return false;
     }
     static const struct { const char *name; CompCorner c; } k_corners[] = {
         { "top-left", COMP_CORNER_TOP_LEFT }, { "top-right", COMP_CORNER_TOP_RIGHT },
         { "bottom-left", COMP_CORNER_BOTTOM_LEFT }, { "bottom-right", COMP_CORNER_BOTTOM_RIGHT },
     };
-    toml_datum_t c = toml_get(a, "corner");
     bool found = false;
     for (size_t i = 0; c.type == TOML_STRING && i < sizeof(k_corners) / sizeof(k_corners[0]); i++) {
         if (strcmp(c.u.s, k_corners[i].name) == 0) {
@@ -218,14 +221,14 @@ parse_anchor(toml_datum_t t, CompWindowRuleResult *set, const char *src, CompDia
         }
     }
     if (!found) {
-        comp_diag_add(diag, src, a.lineno,
-                      "anchor.corner must be \"top-left\", \"top-right\", \"bottom-left\" or \"bottom-right\"; ignored");
+        comp_diag_add(diag, src, c.lineno,
+                      "anchor_corner must be \"top-left\", \"top-right\", \"bottom-left\" or \"bottom-right\"; ignored");
         return false;
     }
     bool hx = false, hy = false;
     double x = 0.0, y = 0.0;
-    if (!get_number(a, "x", -10000.0, 10000.0, &hx, &x, src, diag) ||
-        !get_number(a, "y", -10000.0, 10000.0, &hy, &y, src, diag))
+    if (!get_number(t, "anchor_x", -10000.0, 10000.0, &hx, &x, src, diag) ||
+        !get_number(t, "anchor_y", -10000.0, 10000.0, &hy, &y, src, diag))
         return false;
     set->has_anchor = true;
     set->anchor_x = x;
@@ -249,8 +252,10 @@ parse_window_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *d
         comp_diag_add(diag, src, t.lineno, "[[rule]] needs app_id and/or title to match on; ignored");
         return;
     }
-    if (!matcher_build(&w.app_id, app, "app_id", src, t.lineno, diag) ||
-        !matcher_build(&w.title, title, "title", src, t.lineno, diag)) {
+    bool has_cs = false, case_sensitive = false;
+    (void)get_bool(t, "case_sensitive", &has_cs, &case_sensitive, src, diag);
+    if (!matcher_build(&w.app_id, app, case_sensitive, "app_id", src, t.lineno, diag) ||
+        !matcher_build(&w.title, title, case_sensitive, "title", src, t.lineno, diag)) {
         matcher_free(&w.app_id);
         matcher_free(&w.title);
         return;
@@ -290,7 +295,9 @@ parse_layer_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *di
         comp_diag_add(diag, src, t.lineno, "[[layer_rule]] needs a namespace to match on; ignored");
         return;
     }
-    if (!matcher_build(&l.ns, ns, "namespace", src, t.lineno, diag))
+    bool has_cs = false, case_sensitive = false;
+    (void)get_bool(t, "case_sensitive", &has_cs, &case_sensitive, src, diag);
+    if (!matcher_build(&l.ns, ns, case_sensitive, "namespace", src, t.lineno, diag))
         return;
     (void)get_number(t, "opacity", 0.0, 1.0, &l.set.has_opacity, &l.set.opacity, src, diag);
     (void)get_number(t, "popup_opacity", 0.0, 1.0, &l.set.has_popup_opacity, &l.set.popup_opacity, src, diag);
@@ -319,6 +326,60 @@ for_each_entry(CompRules *r, toml_datum_t v, const char *key, const char *src, C
         fn(r, v.u.arr.elem[i], src, diag);
 }
 
+static void
+clear_window_rules(CompRules *r)
+{
+    if (!r)
+        return;
+    for (size_t i = 0; i < r->nwin; i++) {
+        matcher_free(&r->win[i].app_id);
+        matcher_free(&r->win[i].title);
+    }
+    free(r->win);
+    r->win  = NULL;
+    r->nwin = 0;
+}
+
+CompRules *
+comp_rules_new(void)
+{
+    CompRules *r = calloc(1, sizeof(*r));
+    if (!r || !(r->md = pcre2_match_data_create(1, NULL))) {
+        free(r);
+        return NULL;
+    }
+    return r;
+}
+
+bool
+comp_rules_merge_toml(CompRules *r, const char *src, size_t len,
+                      const char *source_name, CompDiagList *diag)
+{
+    if (!r)
+        return false;
+    const char *name = source_name ? source_name : "rules.toml";
+    if (len > (size_t)INT_MAX) {
+        comp_diag_add(diag, name, 0, "file too large");
+        return false;
+    }
+    toml_result_t res = toml_parse_named(src ? src : "", (int)len, name);
+    if (!res.ok) {
+        comp_diag_add(diag, name, 0, "TOML syntax error: %s (keeping previous rules)", res.errmsg);
+        toml_free(res);
+        return false;
+    }
+    toml_datum_t rr = toml_get(res.toptab, "reset_rules");
+    if (rr.type == TOML_BOOLEAN && rr.u.boolean)
+        clear_window_rules(r);
+    else if (rr.type != TOML_UNKNOWN && rr.type != TOML_BOOLEAN)
+        comp_diag_add(diag, name, rr.lineno, "'reset_rules' must be true or false; ignored");
+
+    for_each_entry(r, toml_get(res.toptab, "rule"), "rule", name, diag, parse_window_rule);
+    for_each_entry(r, toml_get(res.toptab, "layer_rule"), "layer_rule", name, diag, parse_layer_rule);
+    toml_free(res);
+    return true;
+}
+
 CompRules *
 comp_rules_parse(const char *src, size_t len, const char *source_name, CompDiagList *diag)
 {
@@ -333,18 +394,21 @@ comp_rules_parse(const char *src, size_t len, const char *source_name, CompDiagL
         toml_free(res);
         return NULL;
     }
-    CompRules *r = calloc(1, sizeof(*r));
-    if (!r || !(r->md = pcre2_match_data_create(1, NULL))) {
-        free(r);
+    CompRules *r = comp_rules_new();
+    if (!r) {
         toml_free(res);
         return NULL;
     }
     for (int i = 0; i < res.toptab.u.tab.size; i++) {
         const char *k = res.toptab.u.tab.key[i];
-        if (strcmp(k, "rule") != 0 && strcmp(k, "layer_rule") != 0)
+        if (strcmp(k, "rule") != 0 && strcmp(k, "layer_rule") != 0 && strcmp(k, "reset_rules") != 0)
             comp_diag_add(diag, name, res.toptab.u.tab.value[i].lineno,
                           "unknown top-level key '%s' ignored (expected [[rule]] or [[layer_rule]])", k);
     }
+    toml_datum_t rr = toml_get(res.toptab, "reset_rules");
+    if (rr.type != TOML_UNKNOWN && rr.type != TOML_BOOLEAN)
+        comp_diag_add(diag, name, rr.lineno, "'reset_rules' must be true or false; ignored");
+
     for_each_entry(r, toml_get(res.toptab, "rule"), "rule", name, diag, parse_window_rule);
     for_each_entry(r, toml_get(res.toptab, "layer_rule"), "layer_rule", name, diag, parse_layer_rule);
     toml_free(res);

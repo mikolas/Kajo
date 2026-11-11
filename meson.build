@@ -208,6 +208,7 @@ kajo_core = static_library(
     'src/theme.c',
     'src/icons.c',
     'src/compositor/niri.c',
+    'src/compositor/kajo_comp_ipc.c',
     'src/app_init.c',
   ),
   dependencies: [gtk4_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
@@ -817,7 +818,7 @@ comp_strict_args = [
   '-Wall', '-Wextra', '-Werror', '-Wshadow', '-Wnull-dereference', '-Wformat=2',
   '-Wstrict-prototypes', '-Wmissing-prototypes', '-Wconversion', '-Wsign-conversion',
   '-Wvla', '-fno-common', '-D_POSIX_C_SOURCE=200809L',
-]
+] + cc.get_supported_arguments(['-ftrivial-auto-var-init=zero', '-fstack-protector-strong'])
 comp_xkb_dep   = dependency('xkbcommon')
 comp_pcre2_dep = dependency('libpcre2-8')
 # The vendored TOML parser is third-party code: built without the strict set.
@@ -828,8 +829,10 @@ comp_core_lib = static_library(
     'src/comp/core/comp_diag.c',
     'src/comp/core/comp_spring.c',
     'src/comp/core/comp_layout.c',
+    'src/comp/core/comp_motion.c',
     'src/comp/core/comp_binds.c',
     'src/comp/core/comp_rules.c',
+    'src/comp/core/comp_config.c',
   ),
   c_args: comp_strict_args,
   link_with: comp_toml_lib,
@@ -868,6 +871,20 @@ test('comp-config', test_comp_config_exe,
 comp_wlroots_dep = dependency('wlroots-0.20', include_type: 'system')
 comp_wl_server_dep = dependency('wayland-server', include_type: 'system')
 comp_talloc_dep = dependency('talloc', include_type: 'system')
+
+wlr_layer_shell_server_h = custom_target(
+  'wlr-layer-shell-unstable-v1-protocol.h',
+  input: files('protocol/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-protocol.h',
+  command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+)
+wlr_output_power_server_h = custom_target(
+  'wlr-output-power-management-unstable-v1-protocol.h',
+  input: files('protocol/wlr-output-power-management-unstable-v1.xml'),
+  output: 'wlr-output-power-management-unstable-v1-protocol.h',
+  command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+)
+
 kajo_comp_exe = executable(
   'kajo-comp',
   files(
@@ -875,18 +892,111 @@ kajo_comp_exe = executable(
     'src/comp/comp_listen.c',
     'src/comp/comp_server.c',
     'src/comp/comp_output.c',
+    'src/comp/comp_window.c',
+    'src/comp/comp_layer.c',
+    'src/comp/comp_lock_idle.c',
+    'src/comp/comp_protocols.c',
+    'src/comp/comp_xwayland.c',
     'src/comp/comp_input.c',
+    'src/comp/comp_ipc.c',
     'src/comp/comp_spawn.c',
+    'src/comp/comp_text.c',
+    'src/comp/comp_switcher.c',
+    'src/comp/comp_screenshot.c',
   ),
+  wlr_layer_shell_server_h,
+  wlr_output_power_server_h,
   c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
   dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep,
-                 dependency('xkbcommon', include_type: 'system')],
+                 dependency('xkbcommon', include_type: 'system'),
+                 dependency('cairo', include_type: 'system'),
+                 dependency('pangocairo', include_type: 'system'),
+                 dependency('libpng', include_type: 'system')],
   install: true,
+)
+
+xdg_shell_client_h = custom_target(
+  'xdg-shell-client-protocol.h',
+  input: wl_protocols_dir / 'stable/xdg-shell/xdg-shell.xml',
+  output: 'xdg-shell-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+xdg_shell_client_c = custom_target(
+  'xdg-shell-protocol.c',
+  input: wl_protocols_dir / 'stable/xdg-shell/xdg-shell.xml',
+  output: 'xdg-shell-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+xdg_dec_client_h = custom_target(
+  'xdg-decoration-unstable-v1-client-protocol.h',
+  input: wl_protocols_dir / 'unstable/xdg-decoration/xdg-decoration-unstable-v1.xml',
+  output: 'xdg-decoration-unstable-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+xdg_dec_client_c = custom_target(
+  'xdg-decoration-unstable-v1-protocol.c',
+  input: wl_protocols_dir / 'unstable/xdg-decoration/xdg-decoration-unstable-v1.xml',
+  output: 'xdg-decoration-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+spb_client_h = custom_target(
+  'single-pixel-buffer-v1-client-protocol.h',
+  input: wl_protocols_dir / 'staging/single-pixel-buffer/single-pixel-buffer-v1.xml',
+  output: 'single-pixel-buffer-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+spb_client_c = custom_target(
+  'single-pixel-buffer-v1-protocol.c',
+  input: wl_protocols_dir / 'staging/single-pixel-buffer/single-pixel-buffer-v1.xml',
+  output: 'single-pixel-buffer-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+wlr_layer_shell_client_h = custom_target(
+  'wlr-layer-shell-unstable-v1-client-protocol.h',
+  input: files('protocol/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+wlr_layer_shell_client_c = custom_target(
+  'wlr-layer-shell-unstable-v1-protocol.c',
+  input: files('protocol/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+ext_session_lock_client_h = custom_target(
+  'ext-session-lock-v1-client-protocol.h',
+  input: wl_protocols_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml',
+  output: 'ext-session-lock-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+ext_session_lock_client_c = custom_target(
+  'ext-session-lock-v1-protocol.c',
+  input: wl_protocols_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml',
+  output: 'ext-session-lock-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+viewporter_client_h = custom_target(
+  'viewporter-client-protocol.h',
+  input: wl_protocols_dir / 'stable/viewporter/viewporter.xml',
+  output: 'viewporter-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+viewporter_client_c = custom_target(
+  'viewporter-protocol.c',
+  input: wl_protocols_dir / 'stable/viewporter/viewporter.xml',
+  output: 'viewporter-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
 
 comp_test_client_exe = executable(
   'comp-test-client',
   files('tests/comp/comp_test_client.c'),
+  xdg_shell_client_h, xdg_shell_client_c,
+  xdg_dec_client_h, xdg_dec_client_c,
+  spb_client_h, spb_client_c,
+  wlr_layer_shell_client_h, wlr_layer_shell_client_c,
+  ext_session_lock_client_h, ext_session_lock_client_c,
+  viewporter_client_h, viewporter_client_c,
   c_args: comp_strict_args,
   dependencies: [dependency('wayland-client', include_type: 'system')],
   build_by_default: false,

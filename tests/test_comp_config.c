@@ -1,8 +1,10 @@
-/* Tests for src/comp/core/comp_binds.c and comp_rules.c (pure core). */
+/* Tests for src/comp/core/comp_binds.c, comp_rules.c, and comp_config.c (pure core). */
 #include "../src/comp/core/comp_binds.h"
+#include "../src/comp/core/comp_config.h"
 #include "../src/comp/core/comp_rules.h"
 
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <string.h>
 #include <xkbcommon/xkbcommon-keysyms.h>
 
@@ -25,23 +27,51 @@ test_binds_basic(void)
 {
     CompDiagList d;
     CompBinds *b = parse_binds(
-        "[binds]\n"
-        "\"Mod+H\" = \"focus-column-left\"\n"
-        "\"Mod+Shift+L\" = \"move-column-right\"\n"
-        "\"Mod+T\" = { spawn = [\"kitty\", \"-e\", \"htop\"] }\n"
-        "\"Mod+Q\" = { action = \"close-window\", repeat = false }\n"
-        "\"Mod+WheelScrollDown\" = { action = \"focus-workspace-down\", cooldown_ms = 150 }\n"
-        "\"Mod+Minus\" = { action = \"set-column-width\", delta = \"-10%\" }\n"
-        "\"Mod+Equal\" = { action = \"set-window-height\", delta = \"0.25\" }\n"
-        "\"XF86AudioMute\" = { spawn = [\"kajo\", \"--volume-mute\"], allow_when_locked = true }\n"
-        "\"Alt+Tab\" = { action = \"next-window\", scope = \"output\" }\n"
-        "\"Alt+grave\" = { action = \"next-window\", filter = \"app-id\" }\n"
-        "\"Ctrl+Print\" = { spawn = [\"kajo-capture\", \"--screen\"] }\n",
+        "[[bind]]\n"
+        "keys = [\"mod+left\", \"mod+h\"]\n"
+        "action = \"focus-column-left\"\n"
+        "[[bind]]\n"
+        "key = \"mod+shift+l\"\n"
+        "action = \"move-column-right\"\n"
+        "[[bind]]\n"
+        "key = \"mod+t\"\n"
+        "spawn = [\"kitty\", \"-e\", \"htop\"]\n"
+        "[[bind]]\n"
+        "key = \"mod+q\"\n"
+        "action = \"close-window\"\n"
+        "repeat = false\n"
+        "[[bind]]\n"
+        "key = \"mod+wheel-down\"\n"
+        "action = \"focus-workspace-down\"\n"
+        "cooldown_ms = 150\n"
+        "[[bind]]\n"
+        "key = \"mod+minus\"\n"
+        "action = \"set-column-width\"\n"
+        "delta = \"-10%\"\n"
+        "[[bind]]\n"
+        "key = \"mod+equal\"\n"
+        "action = \"set-window-height\"\n"
+        "delta = \"0.25\"\n"
+        "[[bind]]\n"
+        "key = \"volume-mute\"\n"
+        "spawn = [\"kajo\", \"--volume-mute\"]\n"
+        "allow_locked = true\n"
+        "[[bind]]\n"
+        "key = \"alt+tab\"\n"
+        "action = \"next-window\"\n"
+        "scope = \"output\"\n"
+        "[[bind]]\n"
+        "key = \"alt+grave\"\n"
+        "action = \"next-window\"\n"
+        "filter = \"app-id\"\n"
+        "[[bind]]\n"
+        "key = \"ctrl+print\"\n"
+        "spawn = [\"kajo-capture\", \"--screen\"]\n",
         &d);
     dump_diag(&d);
     g_assert_nonnull(b);
     g_assert_cmpuint(d.n, ==, 0);
-    g_assert_cmpuint(comp_binds_count(b), ==, 11);
+    g_assert_cmpuint(comp_binds_count(b), ==, 12);
 
     const CompBind *x = comp_binds_lookup_key(b, COMP_MOD_SUPER, XKB_KEY_h);
     g_assert_nonnull(x);
@@ -49,11 +79,15 @@ test_binds_basic(void)
     g_assert_cmpint(x->layout_action, ==, COMP_ACT_FOCUS_COLUMN_LEFT);
     g_assert_true(x->repeat);
 
+    x = comp_binds_lookup_key(b, COMP_MOD_SUPER, XKB_KEY_Left);
+    g_assert_nonnull(x);
+    g_assert_cmpint(x->layout_action, ==, COMP_ACT_FOCUS_COLUMN_LEFT);
+
     /* Upper-case keysym from the client side still matches (lower-cased) */
     x = comp_binds_lookup_key(b, COMP_MOD_SUPER | COMP_MOD_SHIFT, XKB_KEY_L);
     g_assert_nonnull(x);
     g_assert_cmpint(x->layout_action, ==, COMP_ACT_MOVE_COLUMN_RIGHT);
-    g_assert_cmpstr(x->spec, ==, "Super+Shift+l");
+    g_assert_cmpstr(x->spec, ==, "super+shift+l");
     /* Modifiers must match exactly */
     g_assert_null(comp_binds_lookup_key(b, COMP_MOD_SUPER, XKB_KEY_l));
     g_assert_null(comp_binds_lookup_key(b, COMP_MOD_SUPER | COMP_MOD_SHIFT | COMP_MOD_CTRL, XKB_KEY_l));
@@ -80,7 +114,8 @@ test_binds_basic(void)
     g_assert_cmpfloat_with_epsilon(x->delta, 0.25, 1e-12);
 
     x = comp_binds_lookup_key(b, 0, XKB_KEY_XF86AudioMute);
-    g_assert_true(x->allow_when_locked);
+    g_assert_nonnull(x);
+    g_assert_true(x->allow_locked);
 
     x = comp_binds_lookup_key(b, COMP_MOD_ALT, XKB_KEY_Tab);
     g_assert_cmpint(x->kind, ==, COMP_BIND_NEXT_WINDOW);
@@ -98,7 +133,7 @@ test_binds_mod_meaning(void)
 {
     CompDiagList d;
     comp_diag_init(&d);
-    const char *t = "[binds]\n\"Mod+J\" = \"focus-window-down\"\n";
+    const char *t = "[[bind]]\nkey = \"mod+j\"\naction = \"focus-window-down\"\n";
     CompBinds *b = comp_binds_parse(t, strlen(t), "binds.toml", COMP_MOD_ALT, &d);
     g_assert_nonnull(comp_binds_lookup_key(b, COMP_MOD_ALT, XKB_KEY_j));
     g_assert_null(comp_binds_lookup_key(b, COMP_MOD_SUPER, XKB_KEY_j));
@@ -112,47 +147,44 @@ test_binds_errors(void)
 {
     CompDiagList d;
     CompBinds *b = parse_binds(
-        "[binds]\n"
-        "\"Mod+H\" = \"focus-colum-left\"\n"                        /* 2 typo */
-        "\"Mod+D\" = \"toggle-overview\"\n"                         /* 3 planned */
-        "\"Hyper+X\" = \"close-window\"\n"                          /* 4 bad modifier */
-        "\"Mod+NoSuchKey\" = \"close-window\"\n"                    /* 5 bad key */
-        "\"Mod+Shift+Mod+X\" = \"close-window\"\n"                  /* 6 modifier twice */
-        "\"Mod+\" = \"close-window\"\n"                             /* 7 no key */
-        "\"Mod+T\" = { spawn = \"kitty\" }\n"                       /* 8 spawn as string */
-        "\"Mod+Y\" = { spawn = [] }\n"                              /* 9 empty spawn */
-        "\"Mod+U\" = { action = \"close-window\", spawn = [\"x\"] }\n" /* 10 both */
-        "\"Mod+I\" = { action = \"set-column-width\" }\n"           /* 11 no delta */
-        "\"Mod+O\" = { action = \"set-column-width\", delta = \"lots\" }\n" /* 12 bad delta */
-        "\"Mod+P\" = \"set-window-height\"\n"                       /* 13 needs table */
-        "\"Mod+A\" = 42\n"                                          /* 14 bad value */
-        "\"Super+B\" = \"close-window\"\n"                          /* 15 ok */
-        "\"Mod+b\" = \"maximize-column\"\n"                         /* 16 duplicate of 15 */
-        "\"Mod+C\" = { action = \"center-column\", cooldown_ms = 99999, colour = 1 }\n" /* 17 clamp + unknown */
-        "\"Mod+E\" = { action = \"close-window\", delta = \"5%\", scope = \"output\" }\n", /* 18 ignored opts */
+        "[[bind]]\nkey = \"mod+h\"\naction = \"focus-colum-left\"\n"                  /* typo */
+        "[[bind]]\nkey = \"mod+d\"\naction = \"toggle-overview\"\n"                   /* planned */
+        "[[bind]]\nkey = \"hyper+x\"\naction = \"close-window\"\n"                    /* bad modifier */
+        "[[bind]]\nkey = \"mod+nosuchkey\"\naction = \"close-window\"\n"              /* bad key */
+        "[[bind]]\nkey = \"mod+shift+mod+x\"\naction = \"close-window\"\n"            /* modifier twice */
+        "[[bind]]\nkey = \"mod+\"\naction = \"close-window\"\n"                       /* no key */
+        "[[bind]]\nkey = \"mod+t\"\nspawn = \"kitty\"\n"                              /* spawn as string */
+        "[[bind]]\nkey = \"mod+y\"\nspawn = []\n"                                     /* empty spawn */
+        "[[bind]]\nkey = \"mod+u\"\naction = \"close-window\"\nspawn = [\"x\"]\n"     /* both */
+        "[[bind]]\nkey = \"mod+i\"\naction = \"set-column-width\"\n"                  /* no delta */
+        "[[bind]]\nkey = \"mod+o\"\naction = \"set-column-width\"\ndelta = \"lots\"\n"/* bad delta */
+        "[[bind]]\naction = \"close-window\"\n"                                       /* missing key/keys */
+        "[[bind]]\nkey = \"super+b\"\naction = \"close-window\"\n"                    /* ok */
+        "[[bind]]\nkey = \"mod+b\"\naction = \"maximize-column\"\n"                   /* duplicate */
+        "[[bind]]\nkey = \"mod+c\"\naction = \"center-column\"\ncooldown_ms = 99999\ncolour = 1\n" /* clamp + unknown */
+        "[[bind]]\nkey = \"mod+e\"\naction = \"close-window\"\ndelta = \"5%\"\nscope = \"output\"\n", /* ignored opts */
         &d);
     dump_diag(&d);
     g_assert_nonnull(b);
-    g_assert_true(comp_diag_contains(&d, "binds.toml:2: 'Super+h': unknown action 'focus-colum-left'"));
-    g_assert_true(comp_diag_contains(&d, "binds.toml:3: 'Super+d': action 'toggle-overview' is planned but not available in this version"));
-    g_assert_true(comp_diag_contains(&d, "binds.toml:4: 'Hyper+X': unknown modifier"));
-    g_assert_true(comp_diag_contains(&d, "binds.toml:5: 'Mod+NoSuchKey': unknown key name"));
-    g_assert_true(comp_diag_contains(&d, ":6: 'Mod+Shift+Mod+X': modifier given twice"));
-    g_assert_true(comp_diag_contains(&d, ":7: 'Mod+': missing key"));
-    g_assert_true(comp_diag_contains(&d, ":8: 'Super+t': spawn takes an array"));
-    g_assert_true(comp_diag_contains(&d, ":9: 'Super+y': spawn must be a non-empty array"));
-    g_assert_true(comp_diag_contains(&d, ":10: 'Super+u': give exactly one of 'action' or 'spawn'"));
-    g_assert_true(comp_diag_contains(&d, ":11: 'Super+i': 'delta' must be"));
-    g_assert_true(comp_diag_contains(&d, ":12: 'Super+o': 'delta' must be"));
-    g_assert_true(comp_diag_contains(&d, ":13: 'Super+p': 'set-window-height' needs an inline table with a delta"));
-    g_assert_true(comp_diag_contains(&d, ":14: 'Super+a': value must be"));
-    g_assert_true(comp_diag_contains(&d, ":16: 'Mod+b' is the same key as line 15"));
-    g_assert_true(comp_diag_contains(&d, ":17: 'Super+c': cooldown_ms 99999 out of range"));
-    g_assert_true(comp_diag_contains(&d, ":17: 'Super+c': unknown option 'colour' ignored"));
-    g_assert_true(comp_diag_contains(&d, ":18: 'Super+e': 'delta' only applies"));
-    g_assert_true(comp_diag_contains(&d, ":18: 'Super+e': 'scope' only applies"));
+    g_assert_true(comp_diag_contains(&d, "'mod+h': unknown action 'focus-colum-left'"));
+    g_assert_true(comp_diag_contains(&d, "'mod+d': action 'toggle-overview' is planned but not available in this version"));
+    g_assert_true(comp_diag_contains(&d, "'hyper+x': unknown modifier"));
+    g_assert_true(comp_diag_contains(&d, "'mod+nosuchkey': unknown key name"));
+    g_assert_true(comp_diag_contains(&d, "'mod+shift+mod+x': modifier given twice"));
+    g_assert_true(comp_diag_contains(&d, "'mod+': missing key"));
+    g_assert_true(comp_diag_contains(&d, "'mod+t': spawn takes an array"));
+    g_assert_true(comp_diag_contains(&d, "'mod+y': spawn must be a non-empty array"));
+    g_assert_true(comp_diag_contains(&d, "'mod+u': give exactly one of 'action' or 'spawn'"));
+    g_assert_true(comp_diag_contains(&d, "'mod+i': 'delta' must be"));
+    g_assert_true(comp_diag_contains(&d, "'mod+o': 'delta' must be"));
+    g_assert_true(comp_diag_contains(&d, "[[bind]] requires exactly one of 'key' or 'keys'"));
+    g_assert_true(comp_diag_contains(&d, "'mod+b' is the same key as line"));
+    g_assert_true(comp_diag_contains(&d, "'mod+c': cooldown_ms 99999 out of range"));
+    g_assert_true(comp_diag_contains(&d, "'mod+c': unknown option 'colour' ignored"));
+    g_assert_true(comp_diag_contains(&d, "'mod+e': 'delta' only applies"));
+    g_assert_true(comp_diag_contains(&d, "'mod+e': 'scope' only applies"));
 
-    /* Survivors: 15 (close-window), 17 (center-column, clamped), 18 (close-window) */
+    /* Survivors: super+b (close-window), mod+c (center-column, clamped), mod+e (close-window) */
     g_assert_cmpuint(comp_binds_count(b), ==, 3);
     const CompBind *x = comp_binds_lookup_key(b, COMP_MOD_SUPER, XKB_KEY_b);
     g_assert_cmpint(x->kind, ==, COMP_BIND_CLOSE_WINDOW);
@@ -166,7 +198,7 @@ static void
 test_binds_syntax_error_and_empty(void)
 {
     CompDiagList d;
-    g_assert_null(parse_binds("[binds\n\"Mod+H\" = \"x\"\n", &d));
+    g_assert_null(parse_binds("[[bind\nkey = \"mod+h\"\n", &d));
     g_assert_true(comp_diag_contains(&d, "TOML syntax error"));
     g_assert_true(comp_diag_contains(&d, "keeping previous binds"));
     comp_diag_clear(&d);
@@ -183,7 +215,7 @@ test_binds_syntax_error_and_empty(void)
     comp_diag_clear(&d);
 }
 
-/* The binds.toml example in the spec (§4.3.2) must parse without any message, so the
+/* The binds.toml example in the spec (§5.2.2) must parse without any message, so the
  * spec cannot advertise binds the compositor does not have. Planned ones are commented out. */
 static void
 test_binds_spec_example(void)
@@ -228,23 +260,25 @@ test_rules_matching_and_order(void)
     CompDiagList d;
     CompRules *r = parse_rules(
         "[[rule]]\n"
-        "app_id = ['^org\\.gnome\\.Calculator$', '^galculator$']\n"
+        "app_id = ['^org\\.gnome\\.calculator$', '^galculator$']\n"
         "floating = true\n"
         "[[rule]]\n"
-        "app_id = '^steam$'\n"
-        "title  = '^notificationtoasts_\\d+_desktop$'\n"
+        "app_id = ['^steam$']\n"
+        "title  = ['^notificationtoasts_\\d+_desktop$']\n"
         "floating = true\n"
-        "anchor = { corner = \"bottom-right\", x = 10, y = 10 }\n"
+        "anchor_corner = \"bottom-right\"\n"
+        "anchor_x = 10\n"
+        "anchor_y = 10\n"
         "focus = false\n"
         "[[rule]]\n"
-        "title = ['Brave', 'Chromium']\n"
+        "title = ['brave', 'chromium']\n"
         "scroll_factor = 0.15\n"
         "[[rule]]\n"
-        "app_id = '^galculator$'\n"
+        "app_id = ['^galculator$']\n"
         "floating = false\n"
         "width = 0.5\n"
         "[[rule]]\n"
-        "app_id = ['^org\\.kajo\\.Player$', '^steam_app_\\d+$']\n"
+        "app_id = ['^org\\.kajo\\.player$', '^steam_app_\\d+$']\n"
         "vrr = true\n",
         &d);
     dump_diag(&d);
@@ -253,6 +287,7 @@ test_rules_matching_and_order(void)
     g_assert_cmpuint(comp_rules_window_count(r), ==, 5);
 
     CompWindowRuleResult m;
+    /* Case-insensitive by default: '^org\.gnome\.calculator$' matches 'org.gnome.Calculator' */
     comp_rules_match_window(r, "org.gnome.Calculator", "Calculator", &m);
     g_assert_true(m.has_floating && m.floating);
     g_assert_false(m.has_width);
@@ -276,7 +311,7 @@ test_rules_matching_and_order(void)
     comp_rules_match_window(r, "steam", "Steam", &m);
     g_assert_false(m.has_anchor);
 
-    /* Unanchored substring match on the title */
+    /* Unanchored case-insensitive substring match on the title */
     comp_rules_match_window(r, "brave-browser", "Kajo — Brave", &m);
     g_assert_true(m.has_scroll_factor);
     g_assert_cmpfloat_with_epsilon(m.scroll_factor, 0.15, 1e-12);
@@ -297,16 +332,19 @@ test_rules_errors(void)
         "[[rule]]\n"
         "floating = true\n"                                   /* 1-2 no match field */
         "[[rule]]\n"
-        "app_id = '([unclosed'\n"                             /* 3-4 bad regex */
+        "app_id = ['([unclosed']\n"                           /* 3-4 bad regex */
         "floating = true\n"
         "[[rule]]\n"
-        "app_id = 'ok'\n"
+        "app_id = 'not-an-array'\n"                           /* 6-7 bare string rejected */
+        "floating = true\n"
+        "[[rule]]\n"
+        "app_id = ['ok']\n"
         "width = 2.0\n"                                       /* out of range */
         "floating = \"yes\"\n"                                /* wrong type */
-        "anchor = { corner = \"middle\" }\n"                  /* bad corner */
+        "anchor_corner = \"middle\"\n"                        /* bad corner */
         "colour = 3\n"                                        /* unknown key */
         "[[layer_rule]]\n"
-        "namespace = '^kajo$'\n"
+        "namespace = ['^kajo$']\n"
         "opacity = 0.85\n"
         "blur = true\n"                                       /* unsupported in v1 */
         "[[layer_rule]]\n"
@@ -318,9 +356,10 @@ test_rules_errors(void)
     g_assert_nonnull(r);
     g_assert_true(comp_diag_contains(&d, "rules.toml:1: [[rule]] needs app_id and/or title"));
     g_assert_true(comp_diag_contains(&d, "'app_id' regex '([unclosed' is invalid"));
+    g_assert_true(comp_diag_contains(&d, "'app_id' must be a non-empty array of regex strings"));
     g_assert_true(comp_diag_contains(&d, "'width' = 2 is outside 0.05..1; ignored"));
     g_assert_true(comp_diag_contains(&d, "'floating' must be true or false"));
-    g_assert_true(comp_diag_contains(&d, "anchor.corner must be"));
+    g_assert_true(comp_diag_contains(&d, "anchor_corner must be"));
     g_assert_true(comp_diag_contains(&d, "unknown rule key 'colour' ignored"));
     g_assert_true(comp_diag_contains(&d, "layer_rule 'blur' is not supported in this version"));
     g_assert_true(comp_diag_contains(&d, "[[layer_rule]] needs a namespace"));
@@ -346,7 +385,7 @@ test_rules_errors(void)
     comp_diag_clear(&d);
 }
 
-/* The rules.toml example in the spec (§4.3.3) must parse cleanly. */
+/* The rules.toml example in the spec (§5.2.3) must parse cleanly. */
 static void
 test_rules_spec_example(void)
 {
@@ -378,6 +417,165 @@ test_rules_spec_example(void)
     comp_diag_clear(&d);
 }
 
+static void
+test_config_shipped_defaults(void)
+{
+    const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
+    if (!root)
+        root = KAJO_SOURCE_DIR;
+    g_autofree gchar *defaults_dir = g_build_filename(root, "data", "defaults", NULL);
+
+    CompDiagList d;
+    comp_diag_init(&d);
+    CompConfig *cfg = comp_config_load_dir(NULL, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    dump_diag(&d);
+    g_assert_nonnull(cfg);
+    g_assert_cmpuint(d.n, ==, 0);
+
+    g_assert_cmpfloat_with_epsilon(cfg->layout.gap, 6.0, 1e-9);
+    g_assert_cmpint(cfg->border_px, ==, 1);
+    g_assert_true(cfg->motion.enabled);
+    g_assert_true(cfg->xwayland_enabled);
+    g_assert_true(cfg->touch_enabled);
+    g_assert_cmpint(cfg->touch_dwell_ms, ==, 4000);
+
+    const CompBind *preset_h = comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER | COMP_MOD_SHIFT, XKB_KEY_r);
+    g_assert_nonnull(preset_h);
+    g_assert_cmpint(preset_h->kind, ==, COMP_BIND_LAYOUT);
+    g_assert_cmpint(preset_h->layout_action, ==, COMP_ACT_SWITCH_PRESET_WINDOW_HEIGHT);
+
+    const CompBind *brk = comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_Escape);
+    g_assert_nonnull(brk);
+    g_assert_cmpint(brk->kind, ==, COMP_BIND_BREAK_SHORTCUTS_INHIBIT);
+
+    CompWindowRuleResult wr;
+    comp_rules_match_window(cfg->rules, "org.gnome.Calculator", "Calculator", &wr);
+    g_assert_true(wr.has_floating && wr.floating);
+
+    CompLayerRuleResult lr;
+    comp_rules_match_layer(cfg->rules, "kajo", &lr);
+    g_assert_true(lr.has_opacity);
+    g_assert_cmpfloat_with_epsilon(lr.opacity, 0.85, 1e-9);
+
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+}
+
+static void
+test_config_multifile_merge_and_confd(void)
+{
+    const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
+    if (!root)
+        root = KAJO_SOURCE_DIR;
+    g_autofree gchar *defaults_dir = g_build_filename(root, "data", "defaults", NULL);
+
+    g_autofree gchar *tmp = g_dir_make_tmp("kajo-comp-cfg-XXXXXX", NULL);
+    g_assert_nonnull(tmp);
+    g_autofree gchar *confd = g_build_filename(tmp, "conf.d", NULL);
+    g_autofree gchar *extra = g_build_filename(tmp, "extra", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(confd, 0700), ==, 0);
+    g_assert_cmpint(g_mkdir_with_parents(extra, 0700), ==, 0);
+
+    g_autofree gchar *p_theme = g_build_filename(tmp, "theme.toml", NULL);
+    g_autofree gchar *p_shell = g_build_filename(tmp, "shell.toml", NULL);
+    g_autofree gchar *p_comp  = g_build_filename(tmp, "comp.toml", NULL);
+    g_autofree gchar *p_out   = g_build_filename(tmp, "outputs.toml", NULL);
+    g_autofree gchar *p_binds = g_build_filename(tmp, "binds.toml", NULL);
+    g_autofree gchar *p_rules = g_build_filename(tmp, "rules.toml", NULL);
+    g_autofree gchar *p_extra = g_build_filename(extra, "custom.toml", NULL);
+    g_autofree gchar *p_d10   = g_build_filename(confd, "10-broken.toml", NULL);
+    g_autofree gchar *p_d20   = g_build_filename(confd, "20-override.toml", NULL);
+
+    g_assert_true(g_file_set_contents(p_theme,
+        "accent_color = \"#008a00\"\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_shell,
+        "[touch]\n"
+        "dwell_ms = 750\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_comp,
+        "include = [\"extra/*.toml\"]\n"
+        "[layout]\n"
+        "gap_px = 12\n"
+        "[env]\n"
+        "FOO = \"bar\"\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_extra,
+        "[input.keyboard]\n"
+        "xkb_layout = \"us,cz\"\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_out,
+        "[[output]]\n"
+        "match = \"DP-1\"\n"
+        "scale = 1.5\n"
+        "vrr = \"on-demand\"\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_binds,
+        "[[bind]]\n"
+        "key = \"mod+q\"\n"
+        "action = \"none\"\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_rules,
+        "reset_rules = true\n"
+        "[[rule]]\n"
+        "app_id = ['^my-custom-app$']\n"
+        "floating = true\n", -1, NULL));
+    /* Fault isolation: syntax error in one drop-in must skip only that file */
+    g_assert_true(g_file_set_contents(p_d10,
+        "[layout\n"
+        "gap_px = 99\n", -1, NULL));
+    g_assert_true(g_file_set_contents(p_d20,
+        "[layout]\n"
+        "gap_px = 18\n", -1, NULL));
+
+    CompDiagList d;
+    comp_diag_init(&d);
+    CompConfig *cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    dump_diag(&d);
+    g_assert_nonnull(cfg);
+    g_assert_true(comp_diag_contains(&d, "10-broken.toml"));
+
+    /* theme.toml accent_color = "#008a00" */
+    g_assert_cmpfloat_with_epsilon(cfg->active_border_rgba[1], (float)(0x8a / 255.0), 1e-2f);
+    /* shell.toml [touch].dwell_ms */
+    g_assert_cmpint(cfg->touch_dwell_ms, ==, 750);
+    /* extra/custom.toml via include */
+    g_assert_cmpstr(cfg->xkb_layout, ==, "us,cz");
+    /* conf.d/20-override.toml overrode comp.toml gap_px */
+    g_assert_cmpfloat_with_epsilon(cfg->layout.gap, 18.0, 1e-9);
+    /* outputs.toml */
+    const CompOutputRule *orule = comp_config_match_output(cfg, "dp-1", NULL);
+    g_assert_nonnull(orule);
+    g_assert_true(orule->has_scale);
+    g_assert_cmpfloat_with_epsilon(orule->scale, 1.5, 1e-9);
+    g_assert_cmpstr(orule->vrr, ==, "on-demand");
+    /* binds.toml unbound mod+q while keeping mod+t */
+    g_assert_null(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_q));
+    g_assert_nonnull(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_t));
+    /* rules.toml reset_rules = true wiped default calculator rule and added my-custom-app */
+    CompWindowRuleResult wr;
+    comp_rules_match_window(cfg->rules, "org.gnome.Calculator", "Calculator", &wr);
+    g_assert_false(wr.has_floating);
+    comp_rules_match_window(cfg->rules, "my-custom-app", "Main", &wr);
+    g_assert_true(wr.has_floating && wr.floating);
+
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    /* Syntax error in base comp.toml must reject reload (return NULL) */
+    g_assert_true(g_file_set_contents(p_comp, "[layout\n", -1, NULL));
+    comp_diag_init(&d);
+    g_assert_null(comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d));
+    comp_diag_clear(&d);
+
+    g_unlink(p_d20);
+    g_unlink(p_d10);
+    g_unlink(p_extra);
+    g_unlink(p_rules);
+    g_unlink(p_binds);
+    g_unlink(p_out);
+    g_unlink(p_comp);
+    g_unlink(p_shell);
+    g_unlink(p_theme);
+    g_rmdir(confd);
+    g_rmdir(extra);
+    g_rmdir(tmp);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -390,5 +588,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/rules/matching-and-order", test_rules_matching_and_order);
     g_test_add_func("/comp/rules/errors", test_rules_errors);
     g_test_add_func("/comp/rules/spec-example", test_rules_spec_example);
+    g_test_add_func("/comp/config/shipped-defaults", test_config_shipped_defaults);
+    g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
     return g_test_run();
 }

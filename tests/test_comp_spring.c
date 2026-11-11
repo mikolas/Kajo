@@ -4,7 +4,7 @@
 #include <glib.h>
 #include <math.h>
 
-/* The three spring settings from the live Niri config (spec §3.3.5). */
+/* The three spring settings of the shipped comp.toml (spec §3.3.5). */
 static const CompSpringParams k_workspace = { 0.80, 523.0, 0.0001 };
 static const CompSpringParams k_hscroll   = { 0.85, 423.0, 0.0001 };
 static const CompSpringParams k_window    = { 0.75, 323.0, 0.0001 };

@@ -65,17 +65,17 @@ main(void)
 {
     static const char *const k_corpus[] = {
         "",
-        "[binds]\n\"Mod+H\" = \"focus-column-left\"\n",
-        "[binds]\n\"Mod+T\" = { spawn = [\"kitty\"], repeat = false, cooldown_ms = -5 }\n",
-        "[binds]\n\"+\" = 1\n\"Mod+\" = {}\n\"Mod+Mod+X\" = []\n",
-        "[binds]\n\"Mod+Minus\" = { action = \"set-column-width\", delta = \"-1e309%\" }\n",
-        "[binds]\n\"Mod+WheelScrollDown\" = { action = \"focus-workspace-down\", cooldown_ms = 9223372036854775807 }\n",
+        "[[bind]]\nkey = \"mod+h\"\naction = \"focus-column-left\"\n",
+        "[[bind]]\nkeys = [\"mod+t\", \"mod+return\"]\nspawn = [\"kitty\"]\nrepeat = false\ncooldown_ms = -5\n",
+        "[[bind]]\nkey = \"+\"\n[[bind]]\nkey = \"mod+\"\n[[bind]]\nkey = \"mod+mod+x\"\n",
+        "[[bind]]\nkey = \"mod+minus\"\naction = \"set-column-width\"\ndelta = \"-1e309%\"\n",
+        "[[bind]]\nkey = \"mod+wheel-down\"\naction = \"focus-workspace-down\"\ncooldown_ms = 9223372036854775807\n",
         "[[rule]]\napp_id = ['(?<x>a)\\\\k<x>', '\\\\p{L}+', '(((((((((((a)))))))))))']\nfloating = true\n",
-        "[[rule]]\ntitle = '.*' \nanchor = { corner = \"top-left\", x = 1e308, y = nan }\n",
-        "[[layer_rule]]\nnamespace = ''\nopacity = inf\nblur = true\n",
+        "[[rule]]\ntitle = ['.*']\nanchor_corner = \"top-left\"\nanchor_x = 1e308\nanchor_y = nan\n",
+        "[[layer_rule]]\nnamespace = ['']\nopacity = inf\nblur = true\n",
         "[[rule]]\n[[rule]]\napp_id = 5\n[[layer_rule]]\n",
-        "rule = 1\nlayer_rule = \"x\"\nbinds = []\n",
-        "[binds\n",
+        "rule = 1\nlayer_rule = \"x\"\nbind = []\n",
+        "[[bind\n",
     };
     for (size_t i = 0; i < sizeof(k_corpus) / sizeof(k_corpus[0]); i++)
         LLVMFuzzerTestOneInput((const uint8_t *)k_corpus[i], strlen(k_corpus[i]));

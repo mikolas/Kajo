@@ -9,7 +9,8 @@
  * continuous instead of restarting.
  *
  * Time is in seconds. Position units are the caller's (logical pixels, or a
- * 0..1 progress). Parameters match Niri's `spring` animation settings.
+ * 0..1 progress). Parameters: damping ratio, stiffness and settle epsilon
+ * (comp.toml [animations]).
  */
 #ifndef KAJO_COMP_SPRING_H
 #define KAJO_COMP_SPRING_H

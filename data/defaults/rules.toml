@@ -1,0 +1,50 @@
+# Window & Layer Rules — single quotes '...' are literal PCRE2 regular expressions
+# Match fields (`app_id`, `title`, `namespace`) are always non-empty string arrays and
+# match case-insensitively by default (`case_sensitive = true` opts into exact case).
+# Unanchored patterns match substrings unless ^ / $ are specified; later rules override per property.
+
+[[rule]]
+app_id = ['^gnome-control-center$', '^pavucontrol$', '^nm-connection-editor$']
+width = 0.5
+floating = false
+
+[[rule]]
+app_id = [
+    '^org\.gnome\.calculator$',
+    '^gnome-calculator$',
+    '^galculator$',
+    '^blueman-manager$',
+    '^xdg-desktop-portal$',
+]
+floating = true
+
+[[rule]]
+app_id = ['^steam$']
+title = ['^notificationtoasts_\d+_desktop$']
+floating = true
+anchor_corner = "bottom-right"
+anchor_x = 10
+anchor_y = 10
+focus = false
+
+[[rule]]
+app_id = ['firefox$']
+title = ['^picture-in-picture$']
+floating = true
+
+[[rule]]
+app_id = ['^zoom$']
+floating = true
+
+[[rule]]
+title = ['brave', 'whatsapp', 'signal', 'thorium', 'chrome', 'chromium', 'code']
+scroll_factor = 0.15
+
+[[rule]]
+app_id = ['^org\.kajo\.player$', '^mpv$', '^steam_app_\d+$']
+vrr = true
+
+[[layer_rule]]
+namespace = ['^kajo$', '^kajo-launcher$', '^kajo-notification$', '^kajo-osk$', '^kajo-osd$']
+opacity = 0.85
+popup_opacity = 0.85

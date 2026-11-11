@@ -4,15 +4,15 @@
  * 64-bit id chosen by the caller (the compositor maps ids to surfaces), so it
  * can be unit-tested and fuzzed without a display.
  *
- * Model (spec §3.3):
+ * Model (spec §3):
  *   layout → workspaces (vertical stack, one output) → columns (horizontal
  *   strip) → windows (vertical stack inside a column, or tabs);
  *   each workspace also has a list of floating windows.
  * There is always exactly one empty workspace at the end of the stack; other
- * empty workspaces are removed when they are not focused (Niri behaviour).
+ * empty workspaces are removed when they are not focused (spec §3.12 WS1–WS2).
  *
  * Geometry is computed on demand for a viewport; the layout returns *target*
- * positions. Animating towards them (springs) is the caller's job.
+ * positions. Animating towards them (springs) is the caller's job (comp_motion).
  */
 #ifndef KAJO_COMP_LAYOUT_H
 #define KAJO_COMP_LAYOUT_H
@@ -48,7 +48,7 @@ typedef struct {
 
 typedef struct CompLayout CompLayout;
 
-/* Fills `cfg` with the defaults used by the shipped comp.toml (live Niri values). */
+/* Fills `cfg` with the defaults used by the shipped comp.toml. */
 void        comp_layout_config_defaults(CompLayoutConfig *cfg);
 
 /* Returns NULL on allocation failure or invalid config. */
@@ -74,8 +74,11 @@ CompWinId   comp_layout_focused_window(const CompLayout *layout); /* 0 if none *
 /* Focus a specific window, switching workspace if needed. */
 bool        comp_layout_focus_window(CompLayout *layout, CompWinId id);
 size_t      comp_layout_window_count(const CompLayout *layout);
+/* Fullscreen state (spec §3.10 S1–S4). */
+bool        comp_layout_set_fullscreen(CompLayout *layout, CompWinId id, bool fullscreen);
+bool        comp_layout_toggle_fullscreen(CompLayout *layout);
 
-/* ── Actions (names follow binds.toml, spec §4.3) — each returns true if something changed ── */
+/* ── Actions (names follow binds.toml, spec §5.2.2) — each returns true if something changed ── */
 typedef enum {
     COMP_ACT_FOCUS_COLUMN_LEFT = 0,
     COMP_ACT_FOCUS_COLUMN_RIGHT,
@@ -91,6 +94,8 @@ typedef enum {
     COMP_ACT_MOVE_WINDOW_DOWN,
     COMP_ACT_CONSUME_INTO_COLUMN_LEFT,    /* move focused window into the column on the left */
     COMP_ACT_EXPEL_FROM_COLUMN,           /* move focused window into its own column on the right */
+    COMP_ACT_CONSUME_OR_EXPEL_LEFT,       /* spec §3.6 K1: 1-win col -> consume left; multi-win -> expel left */
+    COMP_ACT_CONSUME_OR_EXPEL_RIGHT,      /* spec §3.6 K1: 1-win col -> consume right; multi-win -> expel right */
     COMP_ACT_FOCUS_WORKSPACE_UP,
     COMP_ACT_FOCUS_WORKSPACE_DOWN,
     COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_UP,
@@ -101,10 +106,12 @@ typedef enum {
     COMP_ACT_SWITCH_PRESET_WINDOW_HEIGHT,
     COMP_ACT_RESET_WINDOW_HEIGHT,
     COMP_ACT_MAXIMIZE_COLUMN,             /* toggle full width */
+    COMP_ACT_EXPAND_COLUMN_TO_AVAILABLE,  /* spec §3.7 W3: fill remaining visible width */
     COMP_ACT_TOGGLE_COLUMN_TABBED,
     COMP_ACT_TOGGLE_WINDOW_FLOATING,
     COMP_ACT_SWITCH_FOCUS_FLOATING_TILING,
     COMP_ACT_CENTER_COLUMN,               /* one-shot: center the focused column */
+    COMP_ACT_CENTER_VISIBLE_COLUMNS,      /* spec §3.8 Z2: center all visible columns as a group */
     COMP_ACT__COUNT
 } CompAction;
 
@@ -121,6 +128,8 @@ bool        comp_action_from_name(const char *name, CompAction *out);
 /* ── Workspaces ── */
 size_t      comp_layout_workspace_count(const CompLayout *layout);
 size_t      comp_layout_active_workspace(const CompLayout *layout);
+size_t      comp_layout_workspace_window_count(const CompLayout *layout, size_t ws_index);
+bool        comp_layout_window_workspace(const CompLayout *layout, CompWinId id, size_t *out_ws_index);
 bool        comp_layout_focus_workspace_index(CompLayout *layout, size_t index);
 
 /* ── Geometry for the active workspace ── */
@@ -128,6 +137,10 @@ typedef struct {
     CompWinId id;
     CompRect  rect;        /* strip coordinates: x is relative to the strip origin, not the camera */
     bool      floating;    /* floating rects are viewport-relative */
+    bool      fullscreen;  /* covers full viewport without borders/gaps */
+    bool      tabbed;      /* column is in tabbed mode (spec §3.9) */
+    size_t    tab_index;   /* 0..tab_count-1 when tabbed */
+    size_t    tab_count;   /* number of tabs in column when tabbed */
     bool      visible;     /* false for inactive tabs */
     bool      focused;
 } CompWindowGeometry;

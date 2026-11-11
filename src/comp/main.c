@@ -1,17 +1,23 @@
-/* kajo-comp — Kajo Wayland compositor (in development; docs/spec_kajo_comp.md §8).
+/* kajo-comp — Kajo Wayland compositor (docs/spec_kajo_comp.md §6.1 & §8).
  *
- * Phase 2a: server skeleton. Runs bare metal, nested (WLR_BACKENDS=wayland)
- * or headless (WLR_BACKENDS=headless).
+ * Runs bare metal, nested (WLR_BACKENDS=wayland) or headless (WLR_BACKENDS=headless),
+ * and provides the `kajo-comp msg <subcommand>` IPC client.
  */
 #include "comp_server.h"
 
 #include "core/comp_binds.h"
 
+#include <ctype.h>
+#include <errno.h>
 #include <getopt.h>
+#include <math.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
 #include <wlr/util/log.h>
 
 static void
@@ -19,24 +25,214 @@ usage(FILE *f, const char *argv0)
 {
     fprintf(f,
             "Usage: %s [options] [-- COMMAND [ARGS...]]\n"
+            "       %s msg <subcommand> [args...]\n"
             "\n"
-            "  -v, --verbose          debug logging\n"
-            "  -q, --quiet            errors only\n"
-            "      --mod alt|super    what \"Mod\" means in binds.toml (default super)\n"
+            "      --session            run as primary login session compositor\n"
+            "      --greeter-mode       run as locked-down pre-login greeter host\n"
+            "  -c, --config PATH        override primary config file path\n"
+            "  -v, --verbose            debug logging\n"
+            "  -q, --quiet              errors only\n"
+            "      --mod alt|super      what \"mod\" means in binds.toml (default super)\n"
             "      --exit-with-command  exit when COMMAND exits, with its exit status\n"
-            "  -h, --help             this help\n"
+            "  -h, --help               this help\n"
             "\n"
-            "COMMAND is started once the Wayland socket exists, without a shell.\n"
-            "Backends follow WLR_BACKENDS (e.g. 'wayland' for a nested window, 'headless').\n",
-            argv0);
+            "IPC Subcommands:\n"
+            "  %s msg get-outputs\n"
+            "  %s msg get-workspaces\n"
+            "  %s msg get-windows\n"
+            "  %s msg get-keyboard-layouts\n"
+            "  %s msg action <ACTION_NAME> [KEY=VALUE ...]\n"
+            "  %s msg subscribe [EVENT ...]\n"
+            "  %s msg debug-mem\n",
+            argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0);
+}
+
+static void
+fprint_json_str(FILE *fp, const char *s)
+{
+    fputc('"', fp);
+    for (const unsigned char *p = (const unsigned char *)(s ? s : ""); *p; p++) {
+        unsigned char c = *p;
+        switch (c) {
+        case '"':  fputs("\\\"", fp); break;
+        case '\\': fputs("\\\\", fp); break;
+        case '\n': fputs("\\n", fp);  break;
+        case '\r': fputs("\\r", fp);  break;
+        case '\t': fputs("\\t", fp);  break;
+        default:
+            if (c < 0x20)
+                fprintf(fp, "\\u%04x", (unsigned)c);
+            else
+                fputc(c, fp);
+            break;
+        }
+    }
+    fputc('"', fp);
+}
+
+static bool
+is_numeric_key_val(const char *key, const char *val)
+{
+    if (strcmp(key, "id") != 0 && strcmp(key, "idx") != 0 && strcmp(key, "scale") != 0)
+        return false;
+    if (!val || !*val)
+        return false;
+    char *end = NULL;
+    errno = 0;
+    double d = strtod(val, &end);
+    return end != val && *end == '\0' && errno == 0 && isfinite(d);
+}
+
+static int
+run_msg_cli(int argc, char *argv[])
+{
+    if (argc < 3 || strcmp(argv[2], "--help") == 0 || strcmp(argv[2], "-h") == 0) {
+        usage(argc < 3 ? stderr : stdout, argv[0]);
+        return argc < 3 ? 2 : 0;
+    }
+
+    const char *sub = argv[2];
+    char *req_buf = NULL;
+    size_t req_len = 0;
+    FILE *req_fp = open_memstream(&req_buf, &req_len);
+    if (!req_fp)
+        return 1;
+
+    bool is_subscribe = false;
+    if (strcmp(sub, "get-outputs") == 0 ||
+        strcmp(sub, "get-workspaces") == 0 ||
+        strcmp(sub, "get-windows") == 0 ||
+        strcmp(sub, "get-keyboard-layouts") == 0 ||
+        strcmp(sub, "debug-mem") == 0) {
+        fprintf(req_fp, "{\"cmd\":");
+        fprint_json_str(req_fp, sub);
+        fprintf(req_fp, "}\n");
+    } else if (strcmp(sub, "subscribe") == 0) {
+        is_subscribe = true;
+        fprintf(req_fp, "{\"cmd\":\"subscribe\",\"events\":[");
+        for (int i = 3; i < argc; i++) {
+            if (i > 3)
+                fputc(',', req_fp);
+            fprint_json_str(req_fp, argv[i]);
+        }
+        fprintf(req_fp, "]}\n");
+    } else if (strcmp(sub, "action") == 0) {
+        if (argc < 4) {
+            fclose(req_fp);
+            free(req_buf);
+            fprintf(stderr, "kajo-comp msg action requires an <ACTION_NAME>\n");
+            return 2;
+        }
+        fprintf(req_fp, "{\"cmd\":\"action\",\"name\":");
+        fprint_json_str(req_fp, argv[3]);
+        for (int i = 4; i < argc; i++) {
+            const char *eq = strchr(argv[i], '=');
+            if (!eq || eq == argv[i]) {
+                fclose(req_fp);
+                free(req_buf);
+                fprintf(stderr, "invalid action argument '%s' (expected KEY=VALUE)\n", argv[i]);
+                return 2;
+            }
+            size_t klen = (size_t)(eq - argv[i]);
+            char key[128];
+            if (klen >= sizeof(key))
+                klen = sizeof(key) - 1;
+            memcpy(key, argv[i], klen);
+            key[klen] = '\0';
+            const char *val = eq + 1;
+
+            fputc(',', req_fp);
+            fprint_json_str(req_fp, key);
+            fputc(':', req_fp);
+            if (is_numeric_key_val(key, val) || val[0] == '[' ||
+                strcmp(val, "true") == 0 || strcmp(val, "false") == 0)
+                fputs(val, req_fp);
+            else
+                fprint_json_str(req_fp, val);
+        }
+        fprintf(req_fp, "}\n");
+    } else {
+        fclose(req_fp);
+        free(req_buf);
+        fprintf(stderr, "unknown msg subcommand '%s'\n", sub);
+        return 2;
+    }
+    fclose(req_fp);
+
+    char sock_path[256];
+    const char *env_sock = getenv("KAJO_COMP_SOCKET");
+    const char *xdg_run  = getenv("XDG_RUNTIME_DIR");
+    if (env_sock && *env_sock)
+        snprintf(sock_path, sizeof(sock_path), "%s", env_sock);
+    else if (xdg_run && *xdg_run)
+        snprintf(sock_path, sizeof(sock_path), "%s/kajo-comp.sock", xdg_run);
+    else
+        snprintf(sock_path, sizeof(sock_path), "/tmp/kajo-comp-%d.sock", (int)getuid());
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        free(req_buf);
+        perror("socket");
+        return 1;
+    }
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        fprintf(stderr, "cannot connect to %s: %s\n", sock_path, strerror(errno));
+        close(fd);
+        free(req_buf);
+        return 1;
+    }
+
+    size_t sent = 0;
+    while (sent < req_len) {
+        ssize_t n = send(fd, req_buf + sent, req_len - sent, MSG_NOSIGNAL);
+        if (n <= 0) {
+            close(fd);
+            free(req_buf);
+            return 1;
+        }
+        sent += (size_t)n;
+    }
+    free(req_buf);
+
+    FILE *sock_fp = fdopen(fd, "r");
+    if (!sock_fp) {
+        close(fd);
+        return 1;
+    }
+
+    char *line = NULL;
+    size_t cap = 0;
+    int exit_code = 1;
+    while (getline(&line, &cap, sock_fp) >= 0) {
+        fputs(line, stdout);
+        fflush(stdout);
+        if (strncmp(line, "{\"ok\":", 6) == 0)
+            exit_code = 0;
+        else if (strncmp(line, "{\"error\":", 9) == 0)
+            exit_code = 1;
+        if (!is_subscribe)
+            break;
+    }
+    free(line);
+    fclose(sock_fp);
+    return exit_code;
 }
 
 int
 main(int argc, char *argv[])
 {
+    if (argc >= 2 && strcmp(argv[1], "msg") == 0)
+        return run_msg_cli(argc, argv);
+
     enum wlr_log_importance level = WLR_INFO;
     CompServerOptions opts = { .mod_mask = COMP_MOD_SUPER };
     static const struct option long_opts[] = {
+        { "session", no_argument, NULL, 'S' },
+        { "greeter-mode", no_argument, NULL, 'G' },
+        { "config", required_argument, NULL, 'c' },
         { "verbose", no_argument, NULL, 'v' },
         { "quiet", no_argument, NULL, 'q' },
         { "mod", required_argument, NULL, 'm' },
@@ -45,8 +241,14 @@ main(int argc, char *argv[])
         { 0, 0, 0, 0 },
     };
     int c;
-    while ((c = getopt_long(argc, argv, "+vqh", long_opts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "+c:vqh", long_opts, NULL)) != -1) {
         switch (c) {
+        case 'S': opts.session_mode = true; break;
+        case 'G':
+            opts.greeter_mode = true;
+            opts.exit_with_startup = true;
+            break;
+        case 'c': opts.config_path = optarg; break;
         case 'v': level = WLR_DEBUG; break;
         case 'q': level = WLR_ERROR; break;
         case 'x': opts.exit_with_startup = true; break;

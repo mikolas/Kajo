@@ -1,21 +1,74 @@
-/* comp_output.c — outputs: enable with the preferred mode, render the scene each frame. */
+/* comp_output.c — outputs: enable with the preferred mode, drive spring frames and render the scene. */
 #include "comp_server.h"
 
 #include "comp_log.h"
 
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include <strings.h>
 #include <talloc.h>
 #include <time.h>
 #include <wlr/backend.h>
+#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include <wlr/types/wlr_seat.h>
 
-typedef struct {
-    struct wl_list            link;    /* CompServer.outputs */
-    CompServer               *server;
-    struct wlr_output        *wlr_output;
-    struct wlr_scene_output  *scene_output;
-} CompOutput;
+struct wlr_output *
+comp_server_primary_output(const CompServer *s)
+{
+    if (!s || wl_list_empty(&s->outputs))
+        return NULL;
+    CompOutput *o = wl_container_of(s->outputs.next, o, link);
+    return o->wlr_output;
+}
+
+void
+comp_server_viewport_size(const CompServer *s, double *out_w, double *out_h)
+{
+    double w = 1920.0, h = 1080.0;
+    struct wlr_output *wo = comp_server_primary_output(s);
+    if (wo) {
+        int ew = 0, eh = 0;
+        wlr_output_effective_resolution(wo, &ew, &eh);
+        if (ew > 0 && eh > 0) {
+            w = (double)ew;
+            h = (double)eh;
+        }
+    }
+    if (out_w) *out_w = w;
+    if (out_h) *out_h = h;
+}
+
+void
+comp_server_working_area(const CompServer *s, CompRect *out_area)
+{
+    if (!out_area)
+        return;
+    if (s && s->has_usable_area && s->usable_area.w > 0.0 && s->usable_area.h > 0.0) {
+        *out_area = s->usable_area;
+        return;
+    }
+    double vw = 1920.0, vh = 1080.0;
+    comp_server_viewport_size(s, &vw, &vh);
+    out_area->x = 0.0;
+    out_area->y = 0.0;
+    out_area->w = vw;
+    out_area->h = vh;
+}
+
+void
+comp_server_schedule_frames(CompServer *s)
+{
+    if (!s)
+        return;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        wlr_output_schedule_frame(o->wlr_output);
+    }
+}
 
 static int
 output_destructor(CompOutput *o)
@@ -28,12 +81,26 @@ static void
 handle_frame(void *owner, void *data)
 {
     CompOutput *o = owner;
+    CompServer *s = o->server;
     (void)data;
-    if (!wlr_scene_output_commit(o->scene_output, NULL))
-        return;   /* nothing to do or the backend refused; the next frame retries */
+
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
-    wlr_scene_output_send_frame_done(o->scene_output, &now);
+    double now_s = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
+
+    comp_window_tick_frame(s, now_s);
+
+    if (wlr_scene_output_commit(o->scene_output, NULL))
+        wlr_scene_output_send_frame_done(o->scene_output, &now);
+
+    bool animating = comp_motion_is_animating(s->motion, now_s);
+    if (animating || o->was_animating) {
+        uint32_t msec = (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000);
+        comp_input_refresh_pointer_focus(s, msec);
+        if (animating)
+            wlr_output_schedule_frame(o->wlr_output);
+    }
+    o->was_animating = animating;
 }
 
 static void
@@ -42,17 +109,225 @@ handle_request_state(void *owner, void *data)
     CompOutput *o = owner;
     const struct wlr_output_event_request_state *ev = data;
     /* Nested and headless backends ask for a new size when their window is resized */
-    if (!wlr_output_commit_state(o->wlr_output, ev->state))
+    if (!wlr_output_commit_state(o->wlr_output, ev->state)) {
         wlr_log(WLR_ERROR, "output %s: requested state was rejected", o->wlr_output->name);
+        return;
+    }
+    comp_lock_idle_reconfigure_output(o->server);
+    comp_layer_arrange(o->server);
+    comp_window_relayout(o->server);
+    comp_ipc_emit_outputs(o->server);
 }
 
 static void
 handle_destroy(void *owner, void *data)
 {
     CompOutput *o = owner;
+    CompServer *s = o->server;
     (void)data;
     wlr_log(WLR_INFO, "output %s removed", o->wlr_output->name);
     talloc_free(o);   /* unlinks all listeners and the list link */
+    comp_ipc_emit_outputs(s);
+}
+
+static enum wl_output_transform
+wl_transform_from_idx(int idx)
+{
+    switch (idx) {
+    case 1:  return WL_OUTPUT_TRANSFORM_90;
+    case 2:  return WL_OUTPUT_TRANSFORM_180;
+    case 3:  return WL_OUTPUT_TRANSFORM_270;
+    default: return WL_OUTPUT_TRANSFORM_NORMAL;
+    }
+}
+
+void
+comp_output_update_vrr(CompServer *s)
+{
+    if (!s)
+        return;
+    bool wants = comp_window_focused_wants_vrr(s);
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        struct wlr_output *wo = o->wlr_output;
+        if (!wo || !wo->enabled)
+            continue;
+        bool desired = (o->vrr_policy == COMP_VRR_ON) ||
+                       (o->vrr_policy == COMP_VRR_ON_DEMAND && wants);
+        bool current = (wo->adaptive_sync_status == WLR_OUTPUT_ADAPTIVE_SYNC_ENABLED);
+        if (desired == current)
+            continue;
+        struct wlr_output_state st;
+        wlr_output_state_init(&st);
+        wlr_output_state_set_adaptive_sync_enabled(&st, desired);
+        if (wlr_output_test_state(wo, &st))
+            wlr_output_commit_state(wo, &st);
+        wlr_output_state_finish(&st);
+    }
+}
+
+bool
+comp_output_configure(CompServer *s, const char *output_name,
+                      const char *mode_str, double scale, int transform, int vrr_policy)
+{
+    if (!s || wl_list_empty(&s->outputs))
+        return false;
+
+    CompOutput *target = NULL;
+    if (!output_name || !*output_name) {
+        target = wl_container_of(s->outputs.next, target, link);
+    } else {
+        CompOutput *o;
+        wl_list_for_each(o, &s->outputs, link) {
+            if (o->wlr_output->name && strcasecmp(o->wlr_output->name, output_name) == 0) {
+                target = o;
+                break;
+            }
+        }
+    }
+    if (!target)
+        return false;
+
+    struct wlr_output *wo = target->wlr_output;
+    if (vrr_policy >= 0 && vrr_policy <= COMP_VRR_ON_DEMAND)
+        target->vrr_policy = (CompVrrPolicy)vrr_policy;
+
+    struct wlr_output_state st;
+    wlr_output_state_init(&st);
+    bool has_changes = false;
+
+    if (mode_str && *mode_str) {
+        if (strcasecmp(mode_str, "preferred") == 0) {
+            struct wlr_output_mode *pm = wlr_output_preferred_mode(wo);
+            if (pm) {
+                wlr_output_state_set_mode(&st, pm);
+                has_changes = true;
+            }
+        } else {
+            int mw = 0, mh = 0;
+            double mhz = 0.0;
+            int n = sscanf(mode_str, "%dx%d@%lf", &mw, &mh, &mhz);
+            if (n >= 2 && mw > 0 && mh > 0) {
+                int32_t target_mhz = (n == 3 && mhz > 0.0) ? (int32_t)round(mhz * 1000.0) : 0;
+                struct wlr_output_mode *best = NULL;
+                int32_t best_diff = 0x7fffffff;
+                struct wlr_output_mode *m;
+                wl_list_for_each(m, &wo->modes, link) {
+                    if (m->width != mw || m->height != mh)
+                        continue;
+                    if (target_mhz == 0) {
+                        if (!best || m->preferred || m->refresh > best->refresh)
+                            best = m;
+                    } else {
+                        int32_t diff = abs(m->refresh - target_mhz);
+                        if (diff < best_diff) {
+                            best_diff = diff;
+                            best = m;
+                        }
+                    }
+                }
+                if (best)
+                    wlr_output_state_set_mode(&st, best);
+                else
+                    wlr_output_state_set_custom_mode(&st, mw, mh, target_mhz);
+                has_changes = true;
+            }
+        }
+    }
+
+    if (scale > 0.0) {
+        wlr_output_state_set_scale(&st, (float)scale);
+        has_changes = true;
+    }
+    if (transform >= 0 && transform <= 3) {
+        wlr_output_state_set_transform(&st, wl_transform_from_idx(transform));
+        has_changes = true;
+    }
+
+    bool ok = true;
+    if (has_changes) {
+        ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
+        if (!ok && (scale > 0.0 || (transform >= 0 && transform <= 3))) {
+            /* Fallback: apply scale/transform even if custom mode was rejected */
+            wlr_output_state_finish(&st);
+            wlr_output_state_init(&st);
+            if (scale > 0.0)
+                wlr_output_state_set_scale(&st, (float)scale);
+            if (transform >= 0 && transform <= 3)
+                wlr_output_state_set_transform(&st, wl_transform_from_idx(transform));
+            ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
+        }
+    }
+    wlr_output_state_finish(&st);
+
+    comp_output_update_vrr(s);
+    comp_lock_idle_reconfigure_output(s);
+    comp_layer_arrange(s);
+    comp_window_relayout(s);
+    comp_ipc_emit_outputs(s);
+    return ok;
+}
+
+static bool
+output_matches_rule(const struct wlr_output *wo, const char *match)
+{
+    if (!wo || !match || !*match)
+        return false;
+    if (wo->name && strcasecmp(wo->name, match) == 0)
+        return true;
+    if (wo->make && strcasecmp(wo->make, match) == 0)
+        return true;
+    if (wo->model && strcasecmp(wo->model, match) == 0)
+        return true;
+    if (wo->make && wo->model) {
+        char edid[256];
+        snprintf(edid, sizeof(edid), "%s %s", wo->make, wo->model);
+        if (strcasecmp(edid, match) == 0)
+            return true;
+    }
+    return false;
+}
+
+static int
+transform_idx_from_str(const char *s)
+{
+    if (!s) return -1;
+    if (strcasecmp(s, "normal") == 0) return 0;
+    if (strcmp(s, "90") == 0)         return 1;
+    if (strcmp(s, "180") == 0)        return 2;
+    if (strcmp(s, "270") == 0)        return 3;
+    return -1;
+}
+
+static int
+vrr_idx_from_str(const char *s)
+{
+    if (!s) return -1;
+    if (strcasecmp(s, "off") == 0)       return COMP_VRR_OFF;
+    if (strcasecmp(s, "on") == 0)        return COMP_VRR_ON;
+    if (strcasecmp(s, "on-demand") == 0) return COMP_VRR_ON_DEMAND;
+    return -1;
+}
+
+void
+comp_output_apply_config(CompServer *s)
+{
+    if (!s || !s->config)
+        return;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        struct wlr_output *wo = o->wlr_output;
+        for (size_t i = 0; i < s->config->n_outputs; i++) {
+            const CompOutputRule *r = &s->config->outputs[i];
+            if (output_matches_rule(wo, r->match)) {
+                comp_output_configure(s, wo->name,
+                                      r->has_mode ? r->mode : NULL,
+                                      r->has_scale ? r->scale : -1.0,
+                                      r->has_transform ? transform_idx_from_str(r->transform) : -1,
+                                      r->has_vrr ? vrr_idx_from_str(r->vrr) : -1);
+            }
+        }
+    }
 }
 
 static bool
@@ -107,8 +382,15 @@ handle_new_output(void *owner, void *data)
         return;
     }
     wlr_scene_output_layout_add_output(s->scene_layout, lo, o->scene_output);
+    if (s->cursor && s->cursor_mgr && (!s->seat || !s->seat->pointer_state.focused_surface))
+        wlr_cursor_set_xcursor(s->cursor, s->cursor_mgr, "default");
     wlr_log(WLR_INFO, "output %s: %dx%d @ %.3f Hz, scale %.2f", wo->name, wo->width, wo->height,
             wo->refresh / 1000.0, (double)wo->scale);
+    comp_output_apply_config(s);
+    comp_lock_idle_reconfigure_output(s);
+    comp_layer_arrange(s);
+    comp_window_relayout(s);
+    comp_ipc_emit_outputs(s);
 }
 
 void

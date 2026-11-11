@@ -524,7 +524,7 @@ kajo_cfg_domain_apply_toml_table(const KajoDomainSchema *schema,
         toml_datum_t d;
 
         if (f->section && *f->section) {
-            toml_datum_t sec_tab = toml_get(domain_tab, f->section);
+            toml_datum_t sec_tab = toml_seek(domain_tab, f->section);
             if (sec_tab.type != TOML_TABLE)
                 continue;
             d = toml_get(sec_tab, f->key);
