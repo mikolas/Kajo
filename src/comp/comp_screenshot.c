@@ -76,13 +76,13 @@ typedef struct ScreenshotJobResult {
 } ScreenshotJobResult;
 
 typedef struct {
-    CompServer *server;
-    uint8_t    *argb_pixels;
-    int         width;
-    int         height;
-    char       *path_template;
-    bool        copy_to_clipboard;
-    bool        show_notification;
+    struct CompScreenshot *ss;
+    uint8_t               *argb_pixels;
+    int                    width;
+    int                    height;
+    char                  *path_template;
+    bool                   copy_to_clipboard;
+    bool                   show_notification;
 } ScreenshotWorkerArg;
 
 typedef struct {
@@ -137,6 +137,9 @@ typedef struct CompScreenshot {
     int                       notify_fd;
     struct wl_event_source  *notify_ev;
     pthread_mutex_t          res_lock;
+    pthread_cond_t           workers_done;
+    int                      pending_workers;
+    bool                     shutting_down;
     ScreenshotJobResult     *res_head;
     ScreenshotJobResult     *res_tail;
 } CompScreenshot;
@@ -489,7 +492,7 @@ static void *
 screenshot_worker_main(void *arg)
 {
     ScreenshotWorkerArg *wa = arg;
-    CompScreenshot *ss = wa->server ? wa->server->screenshot : NULL;
+    CompScreenshot *ss = wa->ss;
 
     uint8_t *png_bytes = NULL;
     size_t png_len = 0;
@@ -506,7 +509,8 @@ screenshot_worker_main(void *arg)
 
     if (ss) {
         ScreenshotJobResult *res = calloc(1, sizeof(*res));
-        if (res) {
+        pthread_mutex_lock(&ss->res_lock);
+        if (!ss->shutting_down && res) {
             res->path              = final_path;
             res->png_bytes         = png_bytes;
             res->png_len           = png_len;
@@ -514,20 +518,25 @@ screenshot_worker_main(void *arg)
             res->show_notification = wa->show_notification;
             res->ok                = ok;
 
-            pthread_mutex_lock(&ss->res_lock);
             if (ss->res_tail)
                 ss->res_tail->next = res;
             else
                 ss->res_head = res;
             ss->res_tail = res;
-            pthread_mutex_unlock(&ss->res_lock);
+            final_path = NULL;
+            png_bytes  = NULL;
+            res        = NULL;
 
-            uint64_t one = 1;
-            ssize_t wr = write(ss->notify_fd, &one, sizeof(one));
-            (void)wr;
-            free(wa);
-            return NULL;
+            if (ss->notify_fd >= 0) {
+                uint64_t one = 1;
+                ssize_t wr = write(ss->notify_fd, &one, sizeof(one));
+                (void)wr;
+            }
         }
+        if (ss->pending_workers > 0 && --ss->pending_workers == 0)
+            pthread_cond_broadcast(&ss->workers_done);
+        pthread_mutex_unlock(&ss->res_lock);
+        free(res);
     }
 
     free(final_path);
@@ -539,17 +548,18 @@ screenshot_worker_main(void *arg)
 static void
 dispatch_screenshot_worker(CompServer *s, uint8_t *owned_argb, int width, int height)
 {
-    if (!s || !owned_argb || width <= 0 || height <= 0) {
+    if (!s || !s->screenshot || !owned_argb || width <= 0 || height <= 0) {
         free(owned_argb);
         return;
     }
+    CompScreenshot *ss = s->screenshot;
 
     ScreenshotWorkerArg *wa = calloc(1, sizeof(*wa));
     if (!wa) {
         free(owned_argb);
         return;
     }
-    wa->server            = s;
+    wa->ss                = ss;
     wa->argb_pixels       = owned_argb;
     wa->width             = width;
     wa->height            = height;
@@ -558,6 +568,17 @@ dispatch_screenshot_worker(CompServer *s, uint8_t *owned_argb, int width, int he
                                        : "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png");
     wa->copy_to_clipboard = s->config ? s->config->screenshot_copy : true;
     wa->show_notification = s->config ? s->config->screenshot_notify : true;
+
+    pthread_mutex_lock(&ss->res_lock);
+    if (ss->shutting_down) {
+        pthread_mutex_unlock(&ss->res_lock);
+        free(wa->path_template);
+        free(wa->argb_pixels);
+        free(wa);
+        return;
+    }
+    ss->pending_workers++;
+    pthread_mutex_unlock(&ss->res_lock);
 
     pthread_t tid;
     pthread_attr_t attr;
@@ -1038,20 +1059,23 @@ screenshot_destructor(CompScreenshot *ss)
         wl_event_source_remove(ss->notify_ev);
         ss->notify_ev = NULL;
     }
-    if (ss->notify_fd >= 0) {
-        close(ss->notify_fd);
-        ss->notify_fd = -1;
-    }
     if (ss->server && ss->server->scene)
         screenshot_close_overlay(ss);
     else
         free(ss->frozen_pixels);
 
     pthread_mutex_lock(&ss->res_lock);
+    ss->shutting_down = true;
+    while (ss->pending_workers > 0)
+        pthread_cond_wait(&ss->workers_done, &ss->res_lock);
     ScreenshotJobResult *cur = ss->res_head;
     ss->res_head = NULL;
     ss->res_tail = NULL;
     pthread_mutex_unlock(&ss->res_lock);
+    if (ss->notify_fd >= 0) {
+        close(ss->notify_fd);
+        ss->notify_fd = -1;
+    }
     while (cur) {
         ScreenshotJobResult *next = cur->next;
         free(cur->path);
@@ -1059,6 +1083,7 @@ screenshot_destructor(CompScreenshot *ss)
         free(cur);
         cur = next;
     }
+    pthread_cond_destroy(&ss->workers_done);
     pthread_mutex_destroy(&ss->res_lock);
     return 0;
 }
@@ -1075,6 +1100,7 @@ comp_screenshot_init(CompServer *s)
     ss->server    = s;
     ss->notify_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
     pthread_mutex_init(&ss->res_lock, NULL);
+    pthread_cond_init(&ss->workers_done, NULL);
     talloc_set_destructor(ss, screenshot_destructor);
 
     if (ss->notify_fd >= 0 && s->loop) {

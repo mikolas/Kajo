@@ -145,6 +145,7 @@ typedef struct CompServer {
     struct wlr_ext_foreign_toplevel_list_v1      *ext_foreign_toplevel_list;
     struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1 *ext_toplevel_capture_mgr;
     struct wlr_xwayland                          *xwayland;
+    int                                           xwayland_last_dpi;
 
     struct wlr_seat                      *seat;
     struct wlr_cursor                    *cursor;

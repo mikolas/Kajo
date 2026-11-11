@@ -49,6 +49,7 @@ typedef struct {
     char                   *wbuf;
     size_t                  wlen;
     size_t                  wcap;
+    bool                    closing, in_dispatch;
 } CompIpcClient;
 
 struct CompIpcState {
@@ -535,13 +536,12 @@ static int handle_client_fd(int fd, uint32_t mask, void *data);
 static void
 client_queue_line(CompIpcClient *c, const char *json_line)
 {
-    if (!c || c->fd < 0 || !json_line)
+    if (!c || c->fd < 0 || c->closing || !json_line)
         return;
     size_t len = strlen(json_line);
     bool add_nl = (len == 0 || json_line[len - 1] != '\n');
     size_t total = len + (add_nl ? 1 : 0);
 
-    /* If queue is empty, try immediate non-blocking write */
     if (c->wlen == 0) {
         ssize_t wr = send(c->fd, json_line, len, MSG_NOSIGNAL | MSG_DONTWAIT);
         if (wr == (ssize_t)len) {
@@ -558,14 +558,13 @@ client_queue_line(CompIpcClient *c, const char *json_line)
             len -= (size_t)wr;
             total = len + (add_nl ? 1 : 0);
         } else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
-            talloc_free(c);
+            c->closing = true;
             return;
         }
     }
 
     if (c->wlen + total > 1024 * 1024) {
-        /* Slow consumer cap (1 MB) */
-        talloc_free(c);
+        c->closing = true;
         return;
     }
     if (c->wlen + total > c->wcap) {
@@ -617,8 +616,11 @@ broadcast_event(CompServer *s, uint32_t sub_bit, const char *line)
         return;
     CompIpcClient *c, *tmp;
     wl_list_for_each_safe(c, tmp, &s->ipc->clients, link) {
-        if (c->subs & sub_bit)
+        if (c->subs & sub_bit) {
             client_queue_line(c, line);
+            if (c->closing && !c->in_dispatch)
+                talloc_free(c);
+        }
     }
 }
 
@@ -1213,11 +1215,17 @@ handle_client_fd(int fd, uint32_t mask, void *data)
 
         char *start = c->rbuf;
         char *nl = NULL;
-        while ((nl = memchr(start, '\n', (size_t)(c->rbuf + c->rlen - start))) != NULL) {
+        c->in_dispatch = true;
+        while (!c->closing && (nl = memchr(start, '\n', (size_t)(c->rbuf + c->rlen - start))) != NULL) {
             *nl = '\0';
             if (nl > start)
                 handle_client_line(c, start);
             start = nl + 1;
+        }
+        c->in_dispatch = false;
+        if (c->closing) {
+            talloc_free(c);
+            return 0;
         }
         size_t rem = (size_t)(c->rbuf + c->rlen - start);
         if (rem > 0 && start != c->rbuf)

@@ -5,6 +5,8 @@
 
 #include "comp_log.h"
 
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <talloc.h>
 #include <wlr/types/wlr_compositor.h>
@@ -32,7 +34,8 @@ comp_xwayland_update_workarea(CompServer *s)
     comp_server_working_area(s, &area);
 
     /* Spec §2.5.5: when force_zero_scaling is active (default in v1), advertise
-     * physical output dimensions to XWayland so X11 apps render 1:1 unscaled. */
+     * physical output dimensions to XWayland and sync Xft.dpi via xrdb so
+     * DPI-aware X11 clients render 1:1 physical pixels without upscaling. */
     bool force_zero = (!s->config || s->config->xwayland_force_zero_scaling);
     double scale = 1.0;
     struct wlr_output *out = comp_server_primary_output(s);
@@ -48,6 +51,18 @@ comp_xwayland_update_workarea(CompServer *s)
     if (box.width < 1)  box.width = 1;
     if (box.height < 1) box.height = 1;
     wlr_xwayland_set_workareas(s->xwayland, &box, 1);
+
+    int dpi = (int)lround(96.0 * scale);
+    if (dpi != s->xwayland_last_dpi && s->xwayland->display_name) {
+        s->xwayland_last_dpi = dpi;
+        const char *no_env = getenv("KAJO_COMP_NO_DBUS_ENV");
+        if (!no_env || no_env[0] == '\0' || no_env[0] == '0') {
+            char cmd[64];
+            snprintf(cmd, sizeof(cmd), "printf 'Xft.dpi: %d\\n' %d | xrdb -merge 2>/dev/null", dpi, dpi);
+            const char * const argv[] = { "sh", "-c", cmd, NULL };
+            (void)comp_spawn(s, argv);
+        }
+    }
 }
 
 static int
@@ -244,5 +259,6 @@ comp_xwayland_finish(CompServer *s)
         s->xwayland->data = NULL;
         wlr_xwayland_destroy(s->xwayland);
         s->xwayland = NULL;
+        s->xwayland_last_dpi = 0;
     }
 }

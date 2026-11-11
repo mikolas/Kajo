@@ -320,7 +320,8 @@ comp_config_new_defaults(uint32_t mod_mask)
 
     cfg->binds = comp_binds_new();
     cfg->rules = comp_rules_new();
-    if (!cfg->binds || !cfg->rules) {
+    if (!cfg->screenshot_path || !cfg->xkb_layout || !cfg->xkb_options ||
+        !cfg->binds || !cfg->rules) {
         comp_config_free(cfg);
         return NULL;
     }
@@ -547,12 +548,22 @@ merge_env_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDiagLi
             }
         }
         if (!found) {
-            CompEnvVar *p = realloc(cfg->env, (cfg->n_env + 1) * sizeof(CompEnvVar));
-            if (!p)
+            char *dup_k = strdup(k);
+            char *dup_v = strdup(v.u.s);
+            if (!dup_k || !dup_v) {
+                free(dup_k);
+                free(dup_v);
                 continue;
+            }
+            CompEnvVar *p = realloc(cfg->env, (cfg->n_env + 1) * sizeof(CompEnvVar));
+            if (!p) {
+                free(dup_k);
+                free(dup_v);
+                continue;
+            }
             cfg->env = p;
-            cfg->env[cfg->n_env].key   = strdup(k);
-            cfg->env[cfg->n_env].value = strdup(v.u.s);
+            cfg->env[cfg->n_env].key   = dup_k;
+            cfg->env[cfg->n_env].value = dup_v;
             cfg->n_env++;
         }
     }
@@ -842,8 +853,11 @@ expand_includes(CompConfig *cfg, toml_datum_t inc, const char *source_name,
                 char *fbuf = read_file_bytes(p, &flen);
                 if (!fbuf)
                     continue;
-                if (stack && stack->n < COMP_MAX_LOADED_FILES)
-                    stack->paths[stack->n++] = strdup(p);
+                if (stack && stack->n < COMP_MAX_LOADED_FILES) {
+                    char *dup_p = strdup(p);
+                    if (dup_p)
+                        stack->paths[stack->n++] = dup_p;
+                }
 
                 char inc_dir[PATH_MAX];
                 snprintf(inc_dir, sizeof(inc_dir), "%s", p);
@@ -1028,8 +1042,11 @@ load_one_file_with_fallback(CompConfig *cfg, const char *config_dir, const char 
     if (!buf)
         return !explicit_path; /* explicit --config path must be readable */
 
-    if (stack && stack->n < COMP_MAX_LOADED_FILES)
-        stack->paths[stack->n++] = strdup(chosen);
+    if (stack && stack->n < COMP_MAX_LOADED_FILES) {
+        char *dup_c = strdup(chosen);
+        if (dup_c)
+            stack->paths[stack->n++] = dup_c;
+    }
 
     bool ok = merge_toml_internal(cfg, buf, len, chosen, dir, replace_binds, 0, stack, diag);
     free(buf);
@@ -1099,11 +1116,16 @@ comp_config_load_dir(const char *config_dir, const char *defaults_dir,
                 size_t nl = strlen(de->d_name);
                 if (nl <= 5 || strcmp(de->d_name + nl - 5, COMP_CFG_EXT_TOML) != 0 || de->d_name[0] == '.')
                     continue;
-                char **p = realloc(names, (n_names + 1) * sizeof(char *));
-                if (!p)
+                char *dup_n = strdup(de->d_name);
+                if (!dup_n)
                     break;
+                char **p = realloc(names, (n_names + 1) * sizeof(char *));
+                if (!p) {
+                    free(dup_n);
+                    break;
+                }
                 names = p;
-                names[n_names++] = strdup(de->d_name);
+                names[n_names++] = dup_n;
             }
             closedir(d);
 
