@@ -1073,7 +1073,7 @@ Once `kajo-comp --session` binds `WAYLAND_DISPLAY`, `DISPLAY` (`wlr_xwayland`), 
 | **Phase 3 — In-Compositor UIs** | `pangocairo` text buffer helper, live window preview mirror buffers, Alt-Tab switcher (§4.1), in-compositor screenshot UI (§4.2) with off-thread PNG writer, third-party capture globals. | **Done** |
 | **Phase 4 — Bare Metal (SDR)** | DRM atomic test-before-commit cascade, `vrr = "on-demand"`, hotplug (`OUT1–OUT4`), `VK_ERROR_DEVICE_LOST` recovery, `WatchdogSec=10` heartbeat, in-compositor touch gestures & posture rotation. **Gate:** verified on both Host A (14" laptop) and Host B (34" desktop). | **Done** |
 | **Phase 5 — Session & Greeter** | `kajo-session`, `wayland-sessions/*.desktop`, `kajo-comp.service`, `kajo-comp --greeter-mode`, `kajo-greeter-session` fallback chain (`kajo-comp` $\rightarrow$ `niri` $\rightarrow$ `cage`). | **Done** |
-| **Phase 6 — Client IPC Switch-Over** | Compositor-neutral `shell_compositor_*` helpers, `page_displays.c` on `kajo-comp` IPC, and compositor settings in `kajo-settings`. | Not started. |
+| **Phase 6 — Client IPC Switch-Over** | Compositor-neutral `shell_compositor_*` helpers, `page_displays.c` on `kajo-comp` IPC, and compositor settings in `kajo-settings`. | **Done** |
 
 ---
 

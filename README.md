@@ -4,7 +4,7 @@
 
 # Kajo — Personal Native Application Suite & Wayland Environment
 
-**Kajo** is a self-contained suite of lightweight, native C17 / GTK4 applications and Wayland session components built around a single, uncompromising visual and ergonomic vision for the [Niri](https://github.com/niri-wm/niri) Wayland compositor.
+**Kajo** is a self-contained suite of lightweight, native C17 / GTK4 applications, a custom scrollable-tiling Wayland compositor (**`kajo-comp`**), and Wayland session components—built around a single, uncompromising visual and ergonomic vision with first-class support for both **`kajo-comp`** (`kajo.desktop`) and [Niri](https://github.com/niri-wm/niri) (`kajo-niri.desktop`).
 
 ---
 
@@ -14,143 +14,73 @@ Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. *
 
 1. **A Unified "Aero + Metro" Design Language** ([`docs/design_system.md`](docs/design_system.md) • [`docs/ui-gallery.html`](docs/ui-gallery.html))
    - Rejects bloated, rounded toolkit defaults in favor of **strict `0px` sharp corner geometry**, OLED-native dark charcoal surfaces (`#111111`–`#1a1a1a`), `1px solid #2b2b2b` structural hairlines, live `@metro-accent` window framing, and high-density `Fira Code` monospace telemetry badges.
-   - Every standalone application in the suite shares the exact same custom frameless window chrome, Niri tiling/floating IPC (`🗗 FLOAT / TILE`), and instant live CSS/accent hot-reload.
+   - Every standalone application in the suite shares the exact same custom frameless window chrome, scrollable-tiling / floating compositor IPC (`🗗 FLOAT / TILE` across `kajo-comp` and Niri), and instant live CSS/accent hot-reload.
 2. **Pure Native C17/C++20 Performance, Zero Runtime Bloat**
-   - Built directly on `C17` (`C++20` for `libsidplayfp`), `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron, CEF, or web-view wrappers.
+   - Built directly on `C17` (`C++20` for `libsidplayfp`), `wlroots-0.20`, `talloc`, `libinput`, `libpcre2-8`, `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libpng`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron, CEF, or web-view wrappers.
    - Strict map- and popout-gated resource discipline keeps background CPU usage below `0.05%`.
 3. **Tailored to Personal Workflows**
-   - Whether writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or managing Niri GLSL shaders and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
+   - Whether driving the infinite horizontal tiling strip in **`kajo-comp`**, writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or configuring multi-monitor outputs, tiling physics, Niri GLSL shaders, and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
 
 ---
 
 ## 🧩 The Kajo Application Suite
 
-The repository builds and installs **seven integrated native executables** (plus a `greetd` session wrapper):
+The repository builds and installs **eight integrated native executables** (plus `kajo-session` and `kajo-greeter-session` wrappers):
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
-| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) featuring a 10-state selection-first modal engine (`koodieditori` parity), Nordic text objects (`m i/a`), 6-column Cairo gutter, a real asynchronous LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, … — diagnostics, hover, completion with auto-imports, go-to-definition/implementation, workspace-wide rename, code actions, formatting; `ripgrep`/buffer fallbacks without a server), project tasks (`Space r b/t/r/c` for Maven, Gradle, Meson, CMake, Cargo, Go, Make with clickable `javac`/`gcc`/`go` errors), DAP debugger (`gdb -i=dap`, `lldb-dap`, `dlv dap`: breakpoints, stepping, call stack, locals, REPL), side-by-side GUI Markdown + native Cairo vector Mermaid renderer, and an AI Agent JSON-RPC 2.0 socket with atomic diff review. |
-| **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual read-only `archive://` browsing (ISOs included), UDisks2 disk-image mounting (`Open With → Mount Disk Image`), smart `libarchive` extraction & compression (`Ctrl+Shift+A`), persistent view/sort/inspector state (`files.toml`), full root-to-leaf auto-scrolling breadcrumbs with right-click subfolder jump popovers, rubber-band multi-selection (`GtkMultiSelection`) with batch operations & Wayland clipboard (`Ctrl+C/X/V`), natural filename collation, hit-tested context menu (`Open With / Set Default`), inline LUKS/SMB authentication banner, and macOS-style `Space` Quick Look preview (`GtkPicture`, `libmpv` media, Poppler PDF, `libarchive`, code). |
-| **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, embedded/external subtitle selector (`.srt`, `.ass`, PGS), multi-audio stream switching, sync offset, playback speed & frame-stepping, chapters, sibling folder queue, auto-hiding fullscreen HUD, and MPRIS2 D-Bus integration. |
-| **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Music Player** (`libuade` $\rightarrow$ `libsidplayfp`/`reSIDfp` $\rightarrow$ `libgme` $\rightarrow$ `libopenmpt` $\rightarrow$ `libxmp`) with subsong navigation, Amiga Paula A500/A1200 & LED filter control, MOS 6581/8580 SID selector, stereo crossfeed, live `$D400` SID register & sample/instrument inspector, HVSC `Songlengths.md5` / `STIL.txt` lookup, `.lha`/`.zip` multi-file companion extraction, and 60 FPS stereo oscilloscope + 16-band log FFT spectrum. |
-| **`kajo-settings`** | `org.kajo.Settings` | **12-Page Modular System & Suite Control Deck** with 3-tier responsive Niri column reflow managing Displays & Idle security, NetworkManager Wi-Fi, BlueZ Bluetooth, PipeWire/PulseAudio, Metro Accent Themes (`#RRGGBB` custom hex & font scale), Panel & Touch Gestures, Widgets, Notifications, **Kajo IDE & Code**, **Kajo Mod & DSP**, Niri GLSL Shaders, and hardware telemetry. |
-| **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 live widgets), 16-band FFT audio visualizer, multi-plugin app launcher, OSD overlays, `ShellOSK` virtual touch keyboard, bezel touch gestures, `org.freedesktop.Notifications` daemon, `ext-idle-notify-v1` OLED screen saver, 360° foldable posture manager, and `ext-session-lock-v1` PAM lock screen. |
-| **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage`, and desktop `--test` preview mode with PAM verification. |
+| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, live-preview `Alt+Tab`, and in-compositor screenshots. |
+| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) with selection-first Nordic keybindings, 16-language Tree-sitter highlighting, async LSP & DAP debugger, Cairo Mermaid diagrams, and AI Agent IPC. |
+| **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, batch clipboard operations, and `Space` Quick Look preview. |
+| **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
+| **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Player** (`libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`) with hardware filter controls, HVSC lookup, and 60 FPS scope/FFT. |
+| **`kajo-settings`** | `org.kajo.Settings` | **12-Page System & Suite Control Deck** managing displays, Wi-Fi, Bluetooth, PipeWire audio, Metro themes, panel/widgets, compositor layout, IDE/Mod preferences, and hardware telemetry. |
+| **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 widgets), app launcher, OSDs, virtual touch keyboard (`ShellOSK`), notifications, screen saver, and PAM session lock. |
+| **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting `kajo-comp --greeter-mode`, `niri`, `cage`, and desktop `--test` preview mode. |
 
 ---
 
 ## ✨ Suite Components in Detail
 
+### ❖ Kajo Compositor (`kajo-comp`)
+> 📖 **Full Specification & Storyboard**: [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) • [`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)
+
+- **Infinite Scrolling Strip & Spring Physics**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), and a closed-form 2nd-order damped spring solver.
+- **Vulkan / Pixman Scene Graph (`wlroots-0.20`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery.
+- **Built-In Switcher & Screenshot UI**: Live-thumbnail `Alt+Tab` MRU overlay and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
+- **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules, `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
+
 ### ⌨️ Kajo IDE (`kajo-ide`)
-> 📖 **Full Manual**: See [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) for the complete architecture, workflow & keybinding guide.
+> 📖 **Full Manual**: [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)
 
-- **Selection-First Modal Editing & Nordic Ergonomics**:
-  - 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) with color-coded status pills, bottom-right `Space` Leader chord HUD, and fast `jk` escape from `INSERT` mode.
-  - First-class Nordic layout bindings: `ä` / `ö` to step through LSP diagnostics, `Alt+ä` / `Alt+ö` for Git diff hunks, and Dead-Key-free `m i/a` structural text objects (`m i f` function, `m i c` class/struct, `m i b` block, `m i a` argument, `m i q` quote, `m m` bracket jump).
-- **Mouse Code Navigation**:
-  - Right-click opens a code menu (go to definition/implementation, references, hover docs, rename, code actions, format); `Ctrl+Click` jumps to the definition. The header breadcrumb shortens long project paths.
-- **6-Column Hardware-Accelerated Cairo Gutter (`68px`)**:
-  - Renders DAP breakpoints & instruction pointer (`●`/`▶`), LSP diagnostic severity pills (`●`/`▲`/`◆`), Git diff status bars (`HEAD`), AI Agent modification bars, `Fira Code` absolute/relative line numbers, and AST fold chevrons (`z a`).
-- **Code Intelligence & Debugger** *(a few LSP features are still planned — see [`ROADMAP.md`](ROADMAP.md))*:
-  - Today: workspace-aware hover (`K`), buffer-identifier completion (`Ctrl+Space`), go-to-definition (`g d`) and project-wide rename (`Space c r`) backed by `ripgrep` plus the buffer contents; server-availability badge for `clangd`, `gopls`, `rust-analyzer`, `pyright`; build runner with clickable compiler diagnostics.
-  - Debugger: a real DAP client drives `gdb -i=dap` (C/C++/Rust), `lldb-dap` and Delve (`dlv dap`, Go): `F9` breakpoints, `F5`/`F10`/`F11`/`F12`/`Shift+F5`, live call stack, locals, program output and an expression REPL in the bottom drawer. Java is debugged through `jdtls` with the java-debug bundle (`scripts/install-java-debug.sh`).
-  - Language servers: a stdio JSON-RPC 2.0 LSP client runs one server per project root (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, `pyright`, `typescript-language-server`, `bash-language-server`, `vscode-json-language-server`, `yaml-language-server`, `taplo`, `lua-language-server`, `mesonlsp`) and feeds diagnostics into the gutter and status bar. `jdtls` is launched with the newest installed JDK (override with `KAJO_JDTLS_JAVA`). 
-- **Graphical Markdown & Native Cairo Vector Mermaid Diagrams**:
-  - Live-synchronized 50/50 side-by-side split (`Space m p` / `📖 MD`) rendering interactive `- [ ]` task checkboxes (clicking mutates the source buffer), GitHub callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), tables, and code blocks.
-  - Pure C11 Cairo/Pango layout and vector renderer for Mermaid `flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, and `pie` blocks—complete with interactive zoom/pan (`25%`–`400%`) and 1-click `.svg` vector export.
-- **Fuzzy Finder, Live Ripgrep & 102-Command Interactive Help Palette**:
-  - `Space f f` (Files), `Space b b` (Buffers), and `Space f g` (async `rg --vimgrep` project search) with a live syntax-highlighted preview pane.
-  - `?` / `F1` / `Space h` opens the full-width 4-column **Help & Command Palette** with interactive category filter pills (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`).
-- **AI Agent JSON-RPC 2.0 IPC & Atomic Batch Diff Review**:
-  - Exposes `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock` (`$KAJO_IDE_SOCKET`) so external AI agents can query buffers/diagnostics and apply edits while recording pre-agent snapshots for instant developer review (`Space d s`), accept-all (`Space d a`), or atomic revert (`Space d r`).
-- **5 Bundled Syntax Schemes & Live Font Zoom**:
-  - Ships with `kajo-metro-dark`, `kajo-oled-pitch`, `kajo-nord-frost`, `kajo-amber-crt`, and `kajo-monokai-metro` (`data/ide/*.xml`), plus live `Ctrl++` / `Ctrl+-` / `Ctrl+0` font zoom and hot-reload via `kajo-settings`.
-
----
+- **Selection-First Modal Editing & Nordic Ergonomics**: 10-state modal engine with Nordic bindings (`ä`/`ö` diagnostics, `Alt+ä`/`Alt+ö` Git hunks, `m i/a` structural text objects) and a 6-column `68px` Cairo gutter (breakpoints, diagnostics, Git diff, agent bars, folds).
+- **Tree-Sitter, LSP & DAP Debugger**: Incremental 16-language Tree-sitter highlighting, async JSON-RPC 2.0 LSP client (`clangd`, `gopls`, `rust-analyzer`, `jdtls`, `pyright`, …), project build/test runner (`Space r b/t/r/c`), and integrated DAP debugger (`gdb`, `lldb-dap`, `dlv`, Java via `jdtls`).
+- **Markdown, Vector Mermaid & Fuzzy Picker**: Side-by-side Markdown preview with interactive task checkboxes, native Cairo/Pango Mermaid diagram renderer with `.svg` export, `ripgrep` project search (`Space f g`), and a 102-command Help Palette (`?`).
+- **AI Agent IPC & Diff Review**: Exposes `$KAJO_IDE_SOCKET` so external agents can query diagnostics and apply multi-file edits with atomic snapshot review (`Space d s/a/r`).
 
 ### 📁 Kajo Files (`kajo-files`)
-
-- **Virtual Read-Only Archive Folders (`archive://`) & `libarchive` Operations**:
-  - Double-clicking or pressing `Enter` on any archive (`.zip`, `.tar.zst`, `.tar.gz`, `.tar.xz`, `.tar.bz2`, `.7z`, `.rar`, `.cpio`, `.deb`, `.rpm`) navigates inside `archive://<path>!/<subpath>` as a virtual read-only directory with `📦 <archive>` breadcrumb segments, a contextual **`📦 ARCHIVE VIEW (READ-ONLY)`** banner (`[ 📦 EXTRACT ALL ]` / `[ ↩ EXIT ]`), on-demand entry extraction for `Space` Quick Look and default app opening, and `Ctrl+C` / `Ctrl+V` selective entry extraction.
-  - **ISO & Disk Images (`.iso`, `.img`, `.raw`)**: **Open** browses an ISO as a read-only `archive://` folder (no password; UDF-only images such as Windows installers show little there). **Open With → `💿 Mount Disk Image`** loop-mounts it read-only through UDisks2 and navigates into the mount (an already mounted image is reused); ISOs are extracted with the regular `📦 Extract Here`. `.img` / `.raw` cannot be browsed, so **Open** mounts them. The loop device is set to auto-clear, so ejecting the mount in the sidebar removes it; a loop device that could not be mounted is deleted again. `.raw` only counts when its type is unknown (camera RAW photos keep opening as images).
-  - **Smart Extraction (`📦 Extract Here`)**: Two-pass `libarchive` header inspection extracts single-root archives directly without `foo/foo/` double-nesting and wraps multi-root tarbombs inside a clean `<stem>/` directory.
-  - **Extraction Safety**: Entry paths go through one shared normalizer (absolute names are made relative, any `..` entry is skipped and counted), the destination is resolved to its real path first (so a symlinked `/home` or `~/Downloads` works), archive modes are sanitized (no group/other write, no setuid/setgid/sticky), hardlinks are re-targeted inside the extracted tree, and one bad entry is skipped and reported (`N skipped (reason)`) instead of aborting the rest. A cancelled or fully failed extraction removes the folder it created.
-  - **Previews**: `Space` / Open extract a single entry to a private file under `$XDG_CACHE_HOME/kajo/archive-preview/` via a temporary name and an atomic rename; links, folders and special files are refused, executable bits are stripped, and cache folders unused for 7 days are pruned. Opening an archive found inside an archive keeps `↩ EXIT` / `📦 EXTRACT ALL` pointing at the real outer archive. The folder listing is indexed once per archive (path, mtime, size) so moving between folders does not re-read it.
-  - **Create Archives (`📦 Compress to Archive...` / `Ctrl+Shift+A`)**: Compresses single or multi-selected files and folders to `.zip`, `.tar.zst`, `.tar.gz`, `.tar.xz`, `.tar.bz2`, or `.tar` on a cancellable `GTask` worker thread.
-- **Persistent View & Sort Preferences (`files.toml`)**:
-  - Automatically remembers view mode (`grid` vs `list`), sort column (`name`, `size`, `modified`, `type`), sort direction (`▲`/`▼`), `☑ Folders First`, `👁 Hidden` dotfiles, and `ⓘ Inspector` visibility across launches.
-- **Full Root-to-Leaf Auto-Scrolling Breadcrumb Bar**:
-  - Displays the complete ancestor chain from `/` (with a `⌂ <user>` badge on `$HOME` and `📦 <archive>` on `archive://` roots) to the leaf directory, auto-scrolling flush-right on navigation while supporting horizontal mouse-wheel scrolling, `Ctrl+Click` / middle-click to open any parent in a new window, and right-click **Subfolder Jump Popovers** (`SUBFOLDERS`) for rapid sibling/child navigation.
-- **Rubber-Band Multi-Selection, Batch Operations & Wayland Clipboard**:
-  - `GtkMultiSelection` (`enable-rubberband: true` in both Tile Grid and Details List) with URI-based selection preservation across live directory reloads (a selection you cleared stays cleared; a new folder or an active search selects the first entry), `Ctrl+A` Select All, multi-file `Ctrl+C` / `Ctrl+X` / `Ctrl+V` clipboard transfers (`x-special/gnome-copied-files` + `text/uri-list` with non-clobbering conflict resolution), `+ NEW FILE` (`Ctrl+Alt+N`), batch Trash/Restore/Delete, and a live `[ ✕ CANCEL ]` (`Esc`) button in the status bar (items already processed stay changed; clipboard file lists over 4 MB are refused instead of truncated).
-- **Natural Filename Collation & Interactive Column/Popover Sorting**:
-  - Precomputed `g_utf8_collate_key_for_filename()` keys sort numbered files naturally (`Episode_2.mkv` before `Episode_10.mkv`) with clickable Details List column headers (`NAME`, `SIZE`, `TYPE`, `MODIFIED`) and a **`☑ Folders First`** toggle.
-- **Hit-Tested Context Menu (`Right-Click` / `Menu` / `Shift+F10` / `.`)**:
-  - Item, multi-selection `BATCH`, and background modes supporting `▶ Open`, `⚙ Open With... ▸` (with **`☑ Set as Default`**), `👁 Quick Look`, asynchronous `libarchive` **`📦 Extract Here`** & **`📦 Compress to Archive...`** (`Ctrl+Shift+A`), `>_ Open Terminal Here`, `🗔 Open in New Window`, `📋 Copy/Cut/Paste`, `🔗 Copy Path / URI` (`Ctrl+Shift+C`), `✏ Rename`, `🗑 Move to Trash`, and `⚠ Delete Permanently`.
-- **URI-First GIO, GVFS & UDisks2 Integration**:
-  - Non-blocking async enumeration for local paths, `trash:///` (with batch **Restore** & **Empty Trash** bar), `recent:///`, `network:///`, `[ + CONNECT TO SERVER ]` (`smb://`, `sftp://`, `davs://`, `mtp://`), live drive capacity bars, 1-click Eject (`⏏`), and an inline Kajo-styled `GMountOperation` auth bar for LUKS/SMB credentials.
-- **macOS-Style `Space` Quick Look & Inspector (`Ctrl+I`)**:
-  - Asynchronous `GTask` modal preview for high-res images (`GtkPicture`), hardware-accelerated video/audio (`KajoPlayerMpv` / `libmpv` + `GtkGLArea`), multi-page PDFs (`poppler-glib`), archives (`libarchive`), and source code (`Fira Code`), plus a 1-click **`☑ EXECUTABLE (+X)`** (`chmod +x/-x`) toggle in the Inspector pane.
-
----
+- **URI-First Navigation & Breadcrumbs**: Non-blocking GIO/GVFS enumeration (`trash:///`, `recent:///`, `smb://`, `sftp://`, UDisks2 drives, inline LUKS/SMB auth) with auto-scrolling root-to-leaf breadcrumbs and right-click subfolder jump popovers.
+- **Seamless Archives & Disk Images**: Browse `.zip`, `.tar.*`, `.7z`, `.rar`, and `.iso` files directly as read-only `archive://` folders, loop-mount disk images via UDisks2, or run background `libarchive` extraction and compression (`Ctrl+Shift+A`).
+- **`Space` Quick Look & Batch Operations**: Instant modal previews for images, hardware-decoded video/audio (`libmpv`), PDFs (`poppler-glib`), archives, and code, alongside rubber-band multi-selection, natural filename sorting, and Wayland clipboard transfers.
 
 ### 🎬 Kajo Player (`kajo-player`)
-
-- **Hardware-Accelerated `libmpv` + `GtkGLArea` Engine**:
-  - Renders via `mpv_render_context` (OpenGL/EGL) with `hwdec=auto-safe` (VA-API / NVDEC), live header codec/resolution telemetry (`[ HEVC•vaapi | 1920×1080 | 42.1 MB ]`), and a toggleable technical stats overlay (`ℹ STATS` / `I` / `Ctrl+J`).
-- **Subtitles, Multi-Language Audio & Sync Controls**:
-  - **`💬 SUBS` & `🎧 AUDIO` Popovers**: Switch embedded or external subtitle tracks (`.srt`, `.ass`/`.ssa`, `.vtt`, PGS), load external subtitle files, adjust A/V & subtitle timing offset (`±100ms` / `Z` / `X`), and scale subtitle fonts (`30%–300%`).
-- **Transport, Frame-Stepping, Queue & Auto-Hiding Fullscreen**:
-  - Pitch-corrected playback speed (`0.5×`–`2.0×`, `[` / `]`), single-frame stepping (`,` / `.`), A–B loop (`Shift+L`), 1-key frame screenshots (`📷` / `S`), `240px` chapters/folder queue drawer (`☰ QUEUE` / `Ctrl+P`), bottom-edge auto-hiding fullscreen HUD (`F` / `F11`), and MPRIS2 D-Bus export.
-
----
+- **Hardware-Accelerated `libmpv` + `GtkGLArea`**: OpenGL/EGL rendering with VA-API/NVDEC decoding, live header codec/resolution badges, and a toggleable technical stats overlay (`I` / `Ctrl+J`).
+- **Subtitles, Audio & Transport**: Embedded/external subtitle and audio track selectors, A/V & subtitle sync offsets, pitch-corrected speed (`0.5×`–`2.0×`), single-frame stepping, A–B loops, sibling folder queue drawer, auto-hiding fullscreen HUD, and MPRIS2 export.
 
 ### 🎹 Kajo Mod (`kajo-mod`)
-> 📖 **Full Specification**: See [`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md) for the complete architecture, priority routing, and Niri column reflow design.
+> 📖 **Full Specification**: [`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)
 
-- **Strict 5-Tier Engine Priority Router**:
-  1. **Priority 1 — Amiga 68000 & Paula Hardware Emulation (`libuade`)**: Executes genuine M68000 player binaries + cycle-exact Paula BLEP synthesis for 150+ native Amiga formats (ProTracker `.mod` / `mod.*`, TFMX `mdat.*`+`smpl.*`, AHX/THX, OctaMED `MMD0–3`, Oktalyzer, Future Composer, Jochen Hippel, SidMon `.sid`, SoundMon, JamCracker, Custom Eagleplayers).
-  2. **Priority 2 — Commodore 64 SID (`libsidplayfp` / `reSIDfp` + HVSC)**: Cycle-exact 6510 CPU + transistor-level non-linear MOS 6581 / CSG 8580 filter emulation for `PSID` / `RSID` `.sid` files, with live `$D400–$D418` hardware register decoding (`FREQ`, `PW`, `ADSR`, waveform, filter cutoff/resonance) and automatic HVSC `Songlengths.md5` & `STIL.txt` lookup (`$KAJO_HVSC_DIR` or `~/Music/C64Music`).
-  3. **Priority 3 — 8/16-Bit Console Chiptunes (`libgme`)**: Native chip emulation for `AY`, `GBS`, `GYM`, `HES`, `KSS`, `NSF`/`NSFE`, `SAP`, `SPC`, and `VGM`/`VGZ`.
-  4. **Priority 4 — PC & Multi-Channel Trackers (`libopenmpt`)**: High-accuracy synthesis for `XM`, `S3M`, `IT`, `MPTM`, `STM`, `ULT`, `FAR`, `MTM`, `PTM`, `J2B`, `UMX`, and `>8`-channel PC `.mod` files.
-  5. **Priority 5 — Extended Tracker Fallback (`libxmp`)**: Secondary tracker engine with full sample table extraction, subsong switching, and live frame telemetry.
-- **Hardware DSP Strip, Voice Header & 60 FPS Scope/FFT**:
-  - Live `FLT:` (`A500`, `A1200`, `NEAR`, `LIN`, `SINC`) filter/resampler selector, Amiga `LED:` (`AUTO`, `ON`, `OFF`) 3.3 kHz low-pass override, `SID:` (`AUTO`, `6581`, `8580`) chip selector, Amiga stereo crossfeed (`SEP: 0%–100%`), tempo scaling (`50%–200%`), end-of-song `ADVANCE` / `LOOP` / 4-second `FADE`, and 4-voice Mute/Solo pills above a Cairo stereo oscilloscope and 16-band logarithmic FFT spectrum analyzer.
-- **Multi-File Archive Extraction (`libarchive`) & Responsive Niri Column Reflow**:
-  - Transparently extracts `.lha`, `.lzh`, `.lzx`, `.zip`, `.7z`, and `.tar.*` bundles so multi-file Amiga formats (`mdat.*` + `smpl.*`) find their companion sample files automatically while displaying bundled `.nfo` / `.diz` / `README` scene notes (with CP437 / ISO-8859-1 -> UTF-8 conversion) alongside sample/instrument tables.
-  - Controlled responsive reflow between Niri's `0.333` (`<760px`) and `0.50` (`≥760px`) column widths without horizontal clipping.
-
----
+- **5-Tier Retro Audio Router**: Priority dispatch across **`libuade`** (cycle-exact Amiga 68000 + Paula BLEP for 150+ formats), **`libsidplayfp`/`reSIDfp`** (C64 6581/8580 SID + HVSC `Songlengths.md5` & `STIL.txt`), **`libgme`** (console chiptunes), **`libopenmpt`**, and **`libxmp`**.
+- **Hardware DSP & 60 FPS Telemetry**: Live Paula `A500`/`A1200` & LED filter switches, SID chip selector, stereo crossfeed, 4-voice Mute/Solo, `$D400` SID register / sample inspector, `.lha`/`.zip` bundle extraction, and a 60 FPS stereo oscilloscope + 16-band FFT analyzer.
 
 ### ⚙️ Kajo Settings (`kajo-settings`)
-12 modular configuration pages (`src/settings/pages/page_*.c`) with responsive narrow-to-wide Niri column reflow (`0.25` / `0.333` / `0.50+`), zero mock data, and live D-Bus / IPC synchronization:
-1. **Displays & Idle Security (`displays`)**: Interactive monitor arrangement, live Niri output resolution, refresh rate, fractional scale, orientation, VRR, convertible posture & keyboard backlight, plus Screen Saver & Session Lock timeouts.
-2. **Network & Wi-Fi (`network`)**: Live NetworkManager D-Bus scanning, active connection hero card, real per-network security detection, and an inline passphrase banner for WPA/WPA2/WPA3-Personal networks.
-3. **Bluetooth (`bluetooth`)**: Dynamic BlueZ adapter discovery, device scanning, pairing, and connection toggling.
-4. **Audio & PipeWire (`audio`)**: Multi-channel (`2.0`–`7.1`) PulseAudio/PipeWire output sink routing, input gain, output/input mute switches, per-application stream mixer, and auto-reconnect.
-5. **Theme & Accent (`theme`)**: Live Metro accent color palette (`@metro-accent`) with 8 presets, custom `#RRGGBB` hex picker, and UI typography scaling hot-reloaded across all running Kajo apps.
-6. **Panel & Touch (`panel`)**: Panel edge (segmented Top/Bottom), height, padding, widget icon size, OLED smart autohide (toggle card), bezel touch swipe gestures, and on-screen-keyboard behaviour.
-7. **Widgets (`widgets`)**: Interactive ordering (`▲`/`▼`), removal (`✕`), add-to-zone bar, and segmented display mode (`ICON`, `TEXT`, `FULL`) for left/center/right panel zones, plus custom script widget management.
-8. **Notifications (`notifications`)**: Live Do-Not-Disturb toggle card, toast timeout, click action, history size, test notification trigger, and clear-history action.
-9. **Kajo IDE & Code (`ide`)**: Syntax color scheme selector (5 bundled schemes), editor font family & size, tab width (segmented), spaces-vs-tabs, word wrap, margin guide, minimap, gutter, and current-line highlight—saved with an explicit SAVE & APPLY and hot-reloaded via `~/.config/kajo/ide.toml`.
-10. **Kajo Mod & DSP (`mod`)**: Default Amiga Paula model (`A500`/`A1200`) & resampler, LED low-pass filter, C64 SID chip model (`AUTO`/`6581`/`8580`), HVSC directory path, stereo separation, end-of-song action, and subsong timeout—live-reloaded across running `kajo-mod` instances via `GFileMonitor`.
-11. **Niri & Shaders (`niri`)**: Live Niri layout settings (`gaps`, `focus-ring`, `preset-column-widths`) and GLSL window animation shader presets (`open`, `close`, `resize`).
-12. **About (`about`)**: Responsive 2-column hardware, kernel, Niri/Wayland, and Kajo suite binary inventory with 1-click system report copy.
+- **12 Live System & Suite Pages**: Modular control deck (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `niri`, `about`) with responsive 3-tier column reflow and zero mock data.
+- **Dual-Compositor & Live Theme Sync**: Synchronizes display modes/scale/VRR and tiling layout settings across both `kajo-comp` (`comp.toml` / `outputs.toml`) and Niri (`config.kdl`), and hot-reloads `@metro-accent` palettes across all running Kajo apps and compositor borders.
 
----
-
-### 🖥️ Kajo Desktop Shell, Lock Screen & Hardware Daemon (`kajo`)
-- **22 Live Panel Widgets & 16-Band FFT Visualizer**: Workspaces, clock/calendar, volume mixer, control center, battery, backlight & posture, Wi-Fi, Bluetooth, media player (with 30 FPS 16-band Cooley-Tukey FFT spectrum analyzer corked automatically when hidden), CPU/RAM/disk/network telemetry, theme picker, keyboard layout, SNI system tray, notifications, power menu, privacy indicator, DND, Keep Awake idle inhibitor, `ShellOSK` toggle, window title, launcher, and custom scripts.
-- **Multi-Plugin Application Launcher (`Mod+D`)**: App search, `:emoji` picker (1,914 entries), `=calculator` (TinyExpr), `>shell` runner, and `w:window` Niri switcher.
-- **Virtual Touch Keyboard (`ShellOSK`) & Bezel Edge Gestures**: 28-column proportional keyboard speaking `zwp_virtual_keyboard_unstable_v1` and `zwp_input_method_unstable_v2` with dynamic XKB layout discovery, paired with configurable screen-edge swipe recognizers.
-- **Wayland Session Lock (`ext-session-lock-v1`), Metro Screen Saver & Idle Manager (`ext-idle-notify-v1`)**: Multi-monitor PAM lock screen with `explicit_bzero` credential scrubbing, `systemd-logind` sleep lock hooks, and 3-mode OLED burn-in-safe screen saver (`clock`, `tiles`, `blank`).
-- **360° Foldable Posture, Auto-Rotation & EC Backlight *(Experimental)***: Runtime hardware probing for Intel ISH `hinge`/`accel_3d` IIO sensors, `/sys/class/input/input*/inhibited`, and HP Embedded Controller keyboard backlight registers (`0x97` `HKBL` / `0x96` `HKBT`).
-
----
-
-### 🔐 Kajo Login Greeter (`kajo-greeter`)
-- Speaks the `greetd` binary IPC protocol (`$GREETD_SOCK`) with scrubbed credential memory and `prctl(PR_SET_DUMPABLE, 0)` hardening.
-- Runs natively on multi-monitor `niri` (`gtk4-layer-shell`), single-monitor `cage` (`--fullscreen`), or inside an active desktop session (`kajo-greeter --test`) for instant previewing.
+### 🖥️ Kajo Desktop Shell (`kajo`) & Greeter (`kajo-greeter`)
+- **Panel, Launcher & Notifications**: 22 live panel widgets (including a popout-corked 30 FPS FFT media visualizer and SNI system tray), `Mod+D` multi-plugin launcher (apps, `:emoji`, `=calc`, `>shell`, `w:window`), OSDs, and a `freedesktop.org` notification daemon.
+- **Touch, Lock & Convertible Hardware**: Proportional 28-column virtual keyboard (`ShellOSK`), bezel edge swipe gestures, `ext-idle-notify-v1` OLED screen saver, `ext-session-lock-v1` PAM lock screen, and 360° foldable posture / EC backlight management.
+- **`greetd` Login Greeter (`kajo-greeter`)**: Hardened login screen (`explicit_bzero`, `PR_SET_DUMPABLE=0`) running on `kajo-comp --greeter-mode`, `niri`, `cage`, or desktop `--test` preview mode.
 
 ---
 
@@ -160,8 +90,12 @@ The repository builds and installs **seven integrated native executables** (plus
 | :--- | :--- |
 | **[`docs/design_system.md`](docs/design_system.md)** | Authoritative **Aero + Metro** visual design specification (color tokens, `0px` geometry, typography, component anatomy). |
 | **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
+| **[`docs/brand-logo-gallery.html`](docs/brand-logo-gallery.html)** | Brand & application vector icon system gallery across all 8 Kajo executables. |
+| **[`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md)** | Complete architecture specification for **`kajo-comp`** (scrollable-tiling strip, analytical springs, Wayland protocols, TOML schemas, IPC). |
+| **[`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)** | Interactive visual storyboard for **`kajo-comp`** strip mechanics, tabbed columns, `Alt+Tab` switcher, and screenshot UI. |
+| **[`docs/spec_toml_config.md`](docs/spec_toml_config.md)** | Specification for the per-domain TOML 1.1 configuration store (`theme`, `shell`, `ide`, `files`, `mod`, `comp`, `outputs`, `binds`, `rules`) and `conf.d/` overlays. |
 | **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
-| **[`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)** | Architecture specification for **`kajo-mod`** (5-tier audio priority router, DSP pipeline, Niri column reflow). |
+| **[`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)** | Architecture specification for **`kajo-mod`** (5-tier audio priority router, DSP pipeline, column reflow). |
 | **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
 | **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
@@ -174,9 +108,10 @@ The repository builds and installs **seven integrated native executables** (plus
 ### 1. System Dependencies (Arch Linux / CachyOS)
 ```bash
 sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-protocols \
-    libxkbcommon json-glib glib2 libpulse pam poppler-glib libarchive mpv \
+    wlroots0.20 talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    xorg-xwayland json-glib glib2 libpulse pam poppler-glib libarchive mpv \
     libsidplayfp libgme libopenmpt libxmp gvfs gvfs-smb udisks2 blueprint-compiler meson ninja
-paru -S --needed uade
+paru -S --needed uade bencodetools
 ```
 
 **Tree-sitter syntax engine** for `kajo-ide` (incremental parsing, AST-based highlighting). The runtime comes from the official repositories; the grammars are split between the official/CachyOS repositories and the AUR (use `paru` or `yay`):
@@ -198,7 +133,7 @@ sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
 For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server` (language server) and `vasmm68k_mot` from the [vasm](http://sun.hasenbraten.de/vasm/) distribution (build task and diagnostics) must be on `PATH`; both are optional.
 
 ### 2. Build, Verify & Install (`~/.local`)
-By default, `meson.build` configures `prefix=~/.local`, installing all seven binaries to `~/.local/bin` and theme/syntax/icon assets to `~/.local/share/kajo/`:
+By default, `meson.build` configures `prefix=~/.local`, installing all eight binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
 
 ```bash
 meson setup builddir
@@ -209,7 +144,35 @@ meson install -C builddir
 
 ---
 
-## 🖥️ Recommended Niri Configuration (`~/.config/niri/config.kdl`)
+## 🖥️ Compositor Sessions & Configuration (`kajo-comp` & Niri)
+
+Kajo installs three Wayland session entries (`data/session/*.desktop`) and selects the active compositor IPC backend automatically at runtime (`$KAJO_COMP_SOCKET` first, falling back to `$NIRI_SOCKET`):
+- **`kajo.desktop` ("Kajo")**: Launches `kajo-session` $\rightarrow$ `kajo-comp`, which automatically spawns the `kajo` desktop shell (`startup.command = ["kajo"]` in `data/defaults/comp.toml`) and binds all Kajo suite shortcuts out of the box (`data/defaults/binds.toml`).
+- **`kajo-debug.desktop` ("Kajo (Debug)")**: Launches `kajo-session --debug` with verbose compositor logging to `$XDG_STATE_HOME/kajo/kajo-comp.log`.
+- **`kajo-niri.desktop` ("Kajo (on Niri)")**: Launches `niri-session` for running the Kajo suite on the [Niri](https://github.com/niri-wm/niri) compositor.
+
+### A. Kajo Compositor Configuration (`~/.config/kajo/{comp,outputs,binds,rules}.toml`)
+`kajo-comp` works with zero user configuration out of the box using the shipped defaults in `~/.local/share/kajo/defaults/{comp,outputs,binds,rules}.toml`. Override any setting in `~/.config/kajo/comp.toml` or drop-in `~/.config/kajo/conf.d/*.toml`:
+
+```toml
+[layout]
+gaps = 8
+center_focused_column = "never"          # "never" | "always" | "on-overflow"
+preset_column_widths = [0.33333, 0.5, 0.66667]
+default_column_width = 0.5
+
+[border]
+enable = true
+width = 1
+active_color = "accent"                  # tracks live @metro-accent from theme.toml
+
+[animations]
+enable = true
+horizontal_view_movement = { damping_ratio = 1.0, stiffness = 800.0, epsilon = 0.0001 }
+```
+
+### B. Niri Configuration (`~/.config/niri/config.kdl`)
+When running the **`Kajo (on Niri)`** session (`kajo-niri.desktop`), add the Kajo shell startup and suite keybindings to `~/.config/niri/config.kdl`:
 
 ```kdl
 // 1. Launch Kajo shell daemon at session startup
@@ -247,6 +210,7 @@ binds {
 
 | Binary | Invocation | Description |
 | :--- | :--- | :--- |
+| **`kajo-comp`** | `kajo-comp [--config-dir <DIR>] [--renderer vulkan\|gles2\|pixman] [--mod super\|alt] [--greeter-mode] [--exit-with-command] [-- <CMD>...]` | Starts the Kajo scrollable-tiling Wayland compositor (`org.kajo.comp`) and listens on `$XDG_RUNTIME_DIR/kajo-comp.sock`. |
 | **`kajo-ide`** | `kajo-ide [DIR \| FILES...]` | Opens a project workspace directory or specific source files in Kajo IDE. |
 | **`kajo-files`** | `kajo-files [PATH_OR_URI...]` | Opens local folders or GVFS URIs (`trash:///`, `recent:///`, `smb://`, `sftp://`). |
 | **`kajo-player`** | `kajo-player [FILE_OR_URI...]` | Opens video/audio media files in Kajo Player with sibling folder queue discovery. |
@@ -261,10 +225,11 @@ binds {
 
 | Path | Managed By | Purpose |
 | :--- | :--- | :--- |
+| **`~/.config/kajo/{comp,outputs,binds,rules}.toml`** | `kajo-settings` (`displays` / `niri`) / User | `kajo-comp` compositor configuration (`comp.toml` layout/springs/borders/input, `outputs.toml` monitor modes/scales/positions/VRR, `binds.toml` key & mouse bindings, `rules.toml` window & layer rules). |
 | **`~/.config/kajo/{theme,shell,ide,files,mod}.toml`** | `kajo-settings` / User | Per-domain TOML 1.1 configuration files (`theme.toml` accent & typography, `shell.toml` panel/gestures/OSK/lock/widgets, `ide.toml` editor preferences, `files.toml` view/sort state, `mod.toml` DSP & HVSC settings). |
-| **`~/.config/kajo/conf.d/*.toml`** | User / Dotfiles | Lexicographical read-only drop-in overrides (`[theme]`, `[shell.*]`, `[ide]`, `[files]`, `[mod]`) merged on top of base `.toml` files. |
-| **`~/.config/kajo/theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) hot-reloaded across all Kajo processes. |
-| **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and Niri layout/GLSL shader settings. |
+| **`~/.config/kajo/conf.d/*.toml`** | User / Dotfiles | Lexicographical read-only drop-in overrides (`[comp.*]`, `[output.*]`, `[binds]`, `[window_rule]`, `[theme]`, `[shell.*]`, `[ide]`, `[files]`, `[mod]`) merged on top of base `.toml` files. |
+| **`~/.config/kajo/style.d/00-accent.css`** & **`theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) hot-reloaded across all Kajo processes. |
+| **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and layout/GLSL shader settings for Niri (`kajo-niri.desktop`). |
 | **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins. |
 
 ---

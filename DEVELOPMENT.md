@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo-comp`, `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `wayland-client`, `xkbcommon`, `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using `wlroots-0.20`, `wayland-server`, `wayland-client`, `talloc`, `libinput`, `libpcre2-8`, `xkbcommon`, `cairo`, `pangocairo`, `libpng`, GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `bencodetools`, `libsidplayfp`, `libstilview`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
 
 ```
 src/
@@ -15,6 +15,9 @@ src/
 ├── panel.h/c                       Panel layer-shell surface & 2px Wayland autohide trigger strip
 ├── autohide.h/c                    Autohide reveal/hide state machine & live config reload
 ├── config.h                        Thin include of the per-domain TOML store in config/ (docs/spec_toml_config.md)
+├── config/
+│   ├── config_store.h/c            Per-domain TOML 1.1 store, conf.d overlay merger, comment-preserving patcher & GFileMonitor
+│   └── config_schema_*.c           Domain schemas & defaults (theme, shell, ide, files, mod)
 ├── theme.h/c                       GTK CSS theme engine, override loader, GFileMonitor hot-reload, accent presets & shell_ide_font_stack()
 ├── app_init.h/c                    Standalone-app boot: kajo_app_init_theme() / kajo_app_shutdown_theme()
 ├── icons.h/c                       Icon resolution (Fluent UI SVGs + desktop/theme fallback)
@@ -23,23 +26,37 @@ src/
 │   └── pa_conn.h/c                 Shared PulseAudio/PipeWire connection + 2s auto-reconnect (volume, control-center, media, settings audio)
 ├── common/
 │   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
-├── comp/                           kajo-comp compositor (in progress, docs/spec_kajo_comp.md §8)
-│   ├── main.c                      kajo-comp entry point: options, SIGPIPE ignored, log level
-│   ├── comp_server.h/c             Server lifecycle (root talloc context), backend/renderer/allocator, protocol globals
-│   ├── comp_output.c               Outputs: preferred mode, scene render per frame, hot-unplug
-│   ├── comp_input.c                Seat, keyboards (xkb), pointers, cursor; built-in Ctrl+Alt+Fn VT switch
-│   ├── comp_spawn.c                fork/exec without a shell (own session), SIGCHLD reaping, startup command
+├── comp/                           kajo-comp scrollable-tiling Wayland compositor (docs/spec_kajo_comp.md)
+│   ├── main.c                      kajo-comp entry point: CLI options (--renderer, --mod, --greeter-mode, --exit-with-command)
+│   ├── comp_server.h/c             Server lifecycle (root talloc context), backend/renderer/allocator, VK_ERROR_DEVICE_LOST recovery
+│   ├── comp_output.c               Outputs: modes, DRM atomic test-before-commit cascade, vrr="on-demand", scene render, hot-unplug
+│   ├── comp_window.c               xdg_toplevel/popup, 1px @metro-accent borders, SSD bars, 24px tabbed column headers, interactive drag
+│   ├── comp_layer.c                zwlr_layer_shell_v1 4-layer exclusive-zone arrangement, focus semantics & layer_rule matching
+│   ├── comp_lock_idle.c            ext-session-lock-v1 veil, ext-idle-notify-v1, idle-inhibit-v1 & output-power-management DPMS
+│   ├── comp_protocols.c            Wayland globals (screencopy, data-control, virtual-kbd/ptr, IMv2, text-input-v3, fractional-scale, etc.)
+│   ├── comp_xwayland.c             wlr_xwayland lazy bridge: tiled/floating X11 clients & _NET_WM_WINDOW_TYPE dialog detection
+│   ├── comp_input.c                Seat, keyboards (xkb), libinput devices, bezel/3-finger swipe gestures & Ctrl+Alt+Fn VT switch
+│   ├── comp_ipc.c                  $XDG_RUNTIME_DIR/kajo-comp.sock line-delimited JSON server: queries, EventStream & 63 actions
+│   ├── comp_spawn.c                fork/exec without a shell (own session), SIGCHLD reaping, startup command & --exit-with-command
+│   ├── comp_text.h/c               PangoCairo ARGB32 text-to-wlr_buffer helper (SSD titlebars, tabbed column headers, overlays)
+│   ├── comp_switcher.h/c           Alt+Tab / Alt+Grave MRU window switcher overlay with live wlr_surface thumbnails
+│   ├── comp_screenshot.h/c         Interactive in-compositor screenshot UI (Region/Screen/Window), PNG writer & wl-copy pipe
 │   ├── comp_listen.h/c             comp_listen(): talloc-owned listeners that unlink themselves when freed
-│   └── comp_log.h                  COMP_WARN_RETURN (rate-limited, never aborts); no logging of key input
+│   ├── comp_log.h                  COMP_WARN_RETURN (rate-limited, never aborts); no logging of key input
 │   └── core/                       Pure core: no wlroots/Vulkan/GLib, built with -Werror and the strict flag set
+│       ├── comp_schema_keys.h      Canonical schema key tables for comp.toml, outputs.toml, binds.toml & rules.toml
 │       ├── comp_diag.h/c           Collected config diagnostics ("binds.toml:12: unknown action ...")
-│       ├── comp_spring.h/c         Analytical damped spring; retargeting keeps position and velocity
-│       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, floating; geometry + camera target
+│       ├── comp_spring.h/c         Analytical 2nd-order damped spring; retargeting preserves position and velocity
+│       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, tabbed/stacked, floating & camera target
+│       ├── comp_motion.h/c         Spring-animated strip camera, window geometry & workspace transitions
 │       ├── comp_binds.h/c          binds.toml parser (xkbcommon keysyms, wheel triggers) and key/wheel lookup
-│       └── comp_rules.h/c          rules.toml parser (PCRE2 regexes) and window/layer rule matching
+│       ├── comp_rules.h/c          rules.toml parser (PCRE2 regexes) and window/layer rule matching
+│       ├── comp_config.h/c         comp.toml & outputs.toml parser, conf.d overlay merger & theme.toml accent reader
+│       └── comp_touch.h/c          Multi-finger touchpad swipe & screen-edge bezel gesture state machines
 ├── compositor/
-│   ├── compositor.h                Compositor abstraction interface
-│   └── niri.c                      Niri UNIX socket ($NIRI_SOCKET) event stream & RPC actions
+│   ├── compositor.h                Compositor abstraction interface (workspaces, windows, outputs, layout & IPC actions)
+│   ├── niri.c                      Dual-compositor UNIX socket client ($KAJO_COMP_SOCKET first, fallback $NIRI_SOCKET)
+│   └── kajo_comp_ipc.h/c           Pure JSON action formatter & reply/EventStream parser for kajo-comp.sock
 ├── files/
 │   ├── main.c                      kajo-files standalone entry point (org.kajo.Files)
 │   ├── files_window.h/c            Main window controller, history stack, breadcrumbs & shortcuts
@@ -64,7 +81,7 @@ src/
 │   ├── ide_buffer.h/c              IdeBuffer, text objects, Git diff & Agent snapshots, scheme search paths
 │   ├── ide_syntax.c                11-token highlighter (ide_highlight_source_buffer): drives the tree-sitter engine, heuristic lexer fallback
 │   ├── ide_ts.c / ide_ts.h         Tree-sitter engine: incremental parse, base token pass + per-language query layer (no GTK)
-│   ├── ide_ts_queries.c            Highlight queries for all 15 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, JSON, TOML, YAML, CSS, HTML)
+│   ├── ide_ts_queries.c            Highlight queries for all 16 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, M68k, JSON, TOML, YAML, CSS, HTML)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
 │   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 102-command Help Palette
@@ -76,7 +93,7 @@ src/
 │   ├── ide_dap_launch.h/c          Adapter + debuggee discovery (.kajo/debug.json, Meson introspection, Cargo, Delve)
 │   ├── ide_dap_java.h/c            Java debug preparation: jdtls executeCommand chain (main class, classpath, JDK, debug port) + TCP connect
 │   ├── ide_jsonrpc.h/c             Content-Length framing shared by the LSP and DAP clients
-│   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make) -> build/test/run/clean commands (no GTK)
+│   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make/vasm) -> build/test/run/clean commands (no GTK)
 │   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)
 │   ├── ide_native_exe.h/c          Native executable discovery for run/debug (Meson/CMake/Make build trees)
 │   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
@@ -91,7 +108,7 @@ src/
 ├── lock/
 │   ├── session_lock.h/c            Wayland ext-session-lock-v1 lock screen & logind integration
 │   ├── pam_auth.h/c                Asynchronous GTask PAM authentication worker (libpam)
-│   ├── screensaver.h/c             Fullscreen layer-shell Metro screen saver & Niri DPMS control
+│   ├── screensaver.h/c             Fullscreen layer-shell Metro screen saver & compositor DPMS control
 │   └── idle_manager.h/c            Wayland ext-idle-notify-v1 seat timers & logind idle inhibitor FD
 ├── greeter/
 │   ├── main.c                      kajo-greeter GTK4 Layer-Shell / XDG fullscreen / --test UI
@@ -114,7 +131,7 @@ src/
 │   └── player_mpris.h/c            MPRIS2 D-Bus server (org.mpris.MediaPlayer2.kajo_player)
 ├── mod/
 │   ├── main.c                      kajo-mod standalone entry point (org.kajo.Mod)
-│   ├── mod_window.h/c              Main window, telemetry deck, DSP strip, 4-voice header, inspector & Niri column reflow
+│   ├── mod_window.h/c              Main window, telemetry deck, DSP strip, 4-voice header, inspector & column reflow
 │   ├── mod_vis.h/c                 Cairo 512-sample stereo oscilloscope & 16-band logarithmic FFT spectrum with peak hold
 │   ├── mod_engine.h/c              KajoModEngine VTable, strict 5-tier format router & ProTracker sample header parser
 │   ├── mod_backend_uade.c          Priority 1: libuade Amiga 68000 + Paula BLEP/LED filter & eagleplayer engine
@@ -126,12 +143,13 @@ src/
 │   └── mod_audio.h/c               libpulse 48 kHz S16LE synthesis worker thread, 512-pt Radix-2 FFT, stereo crossfeed & fade
 ├── settings/
 │   ├── main.c                      kajo-settings standalone entry point (org.kajo.Settings)
-│   ├── settings_window.h/c         Responsive 3-tier Niri column shell, icon-rail/sidebar & GtkStack
+│   ├── settings_window.h/c         Responsive 3-tier column shell, icon-rail/sidebar & GtkStack
 │   ├── settings_common.h/c         Shared Metro card, bento grid, tile, dropdown & IPC helpers
 │   └── pages/
 │       └── page_*.c                12 modular preference pages (displays, network, bluetooth,
 │                                   audio, theme, panel, widgets, notifications, ide, mod, niri, about)
 ├── vendor/
+│   ├── tomlc17/                    Vendored TOML 1.1 parser (CK Tan, MIT)
 │   └── tinyexpr/                   TinyExpr recursive-descent math expression evaluator
 └── widgets/
     ├── widget.h                    ShellWidgetClass vtable interface & mode visibility helper
@@ -141,19 +159,30 @@ src/
     └── *.c                         22 built-in panel widget implementations
 
 data/
-├── org.kajo.Files.desktop          Desktop entry for kajo-files (MimeType=inode/directory;)
-├── org.kajo.Player.desktop         Desktop entry for kajo-player (MimeType=video/*;audio/*;)
-├── org.kajo.Mod.desktop            Desktop entry for kajo-mod (MimeType=audio/x-mod;audio/prs.sid;...)
-├── org.kajo.IDE.desktop            Desktop entry for kajo-ide (MimeType=text/plain;text/x-csrc;...)
+├── org.kajo.*.desktop              Desktop entries for kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings
+├── icons/
+│   └── *.svg                       Suite application & UI vector icons (kajo-comp.svg, kajo-ide.svg, etc.)
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
+│   ├── {comp,outputs,binds,rules}.toml   Shipped kajo-comp TOML 1.1 default configurations
 │   ├── {theme,shell,ide,files,mod}.toml  Shipped per-domain TOML 1.1 default configurations
 │   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, ide, osk, lock, greeter)
 │   └── icon-map.json               Logical-to-symbolic icon mappings
+├── session/
+│   ├── kajo-session                Session wrapper launching kajo-comp (with D-Bus/systemd env export & crash-loop guard)
+│   ├── kajo.desktop                Primary Wayland session entry (Exec=kajo-session)
+│   ├── kajo-debug.desktop          Debug Wayland session entry (Exec=kajo-session --debug)
+│   ├── kajo-niri.desktop           Alternative Wayland session entry for Niri (Exec=niri-session)
+│   └── kajo-portals.conf           xdg-desktop-portal backend configuration (wlr + gtk)
+├── systemd/
+│   ├── kajo-comp.service           Optional user systemd unit for kajo-comp
+│   ├── kajo.service                Optional user systemd unit for kajo shell
+│   └── kajo-shutdown.target        Graphical session shutdown target
 ├── greetd/
-│   ├── niri-greeter.kdl            Locked-down Niri configuration for the greetd login session
-│   └── kajo-greeter-session        Wrapper launcher script for /etc/greetd/config.toml
+│   ├── comp-greeter.toml           Locked-down kajo-comp configuration for greetd (--greeter-mode)
+│   ├── niri-greeter.kdl            Alternative Niri configuration for the greetd login session
+│   └── kajo-greeter-session        Wrapper launcher script for /etc/greetd/config.toml (prefers kajo-comp --greeter-mode)
 ├── shaders/
 │   └── *.glsl                      Bundled Niri GLSL window open/close/resize shader presets
 └── ui/
@@ -161,6 +190,17 @@ data/
 
 tests/
 ├── test_config.c                   Per-domain TOML store tests: defaults parity, round-trip, `conf.d`, patching, subscriptions, migration
+├── test_comp_spring.c              kajo-comp analytical 2nd-order spring physics & retargeting continuity tests
+├── test_comp_layout.c              kajo-comp scrolling strip, columns, tabbed/stacked, floating & 60k-step randomized invariant tests
+├── test_comp_config.c              comp.toml, outputs.toml, binds.toml, rules.toml & spec_kajo_comp.md zero-diagnostic parity tests
+├── comp/
+│   ├── comp_test_client.c          Wayland protocol test client (globals, toplevel, layer, lock, screencopy, IPC)
+│   └── comp_headless_smoke.sh      End-to-end headless kajo-comp integration test runner
+├── fuzz/
+│   ├── fuzz_toml_config.c          Corpus/libFuzzer target for the 5 app TOML domain schemas
+│   ├── fuzz_comp_config.c          Corpus/libFuzzer target for comp/outputs/binds/rules TOML parsers
+│   ├── fuzz_comp_layout.c          Corpus/libFuzzer target for the compositor scrolling-tiling layout engine
+│   └── fuzz_ipc_socket.c           Corpus/libFuzzer target for $XDG_RUNTIME_DIR/kajo-comp.sock JSON IPC parser
 ├── test_pam_auth.c                 Async PAM worker error/null/cancellation handling tests
 ├── test_idle_manager.c             Idle manager timeout & inhibitor state machine tests
 ├── test_ipc.c                      UNIX domain socket IPC server/client dispatch tests
@@ -168,7 +208,7 @@ tests/
 ├── test_registry.c                 Widget registry completeness & lifecycle tests
 ├── test_greetd_ipc.c               greetd binary framing, auth roundtrip & session parser tests
 ├── test_osk_xkb.c                  XKB keymap compilation & keysym/keycode resolution tests
-├── test_touch_gestures.c           Bezel touch gesture directional threshold & trigger tests
+├── test_touch_gestures.c           Bezel touch gesture directional threshold & dual-compositor trigger tests
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
@@ -177,11 +217,11 @@ tests/
 ├── test_ide_tasks.c                Task resolution per build system, nested projects, Java main-class, shell quoting
 ├── test_lsp_client.c               LSP client against tests/mock_lsp_server.py (handshake queueing, errors, cancel, server death)
 ├── mock_lsp_server.py              Scripted language server used by the LSP tests
-├── test_ide_ts.c                   Tree-sitter engine: token classification for all 15 languages, query validity against the installed grammars, detection, incremental == fresh parse
+├── test_ide_ts.c                   Tree-sitter engine: token classification for all 16 languages, query validity against the installed grammars, detection, incremental == fresh parse
 ├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
 ├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, socket round-trip & stalled-client tests
 ├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
-├── test_niri.c                     Mock-Niri socket: action JSON shape, rejection logging, EventStream parsing
+├── test_niri.c                     Mock kajo-comp ($KAJO_COMP_SOCKET) & mock Niri ($NIRI_SOCKET) IPC socket tests
 └── test_shaders.c                  Headless EGL/GLES2 compiler verification for Niri GLSL shaders
 ```
 
@@ -190,13 +230,14 @@ tests/
 ## 2. Build, Test & Debug Workflow
 
 ### Prerequisites
-- `gtk4` (≥ 4.12), `gtk4-layer-shell` (≥ 1.0)
+- `wlroots-0.20` (`wlroots0.20` on Arch/CachyOS), `wayland-server`, `talloc`, `libinput`, `libpcre2-8` (`pcre2`), `cairo`, `pangocairo` (`pango`), `libpng`, `vulkan-icd-loader`, `xorg-xwayland` (for `kajo-comp`)
+- `gtk4` (≥ 4.12), `gtksourceview-5`, `gtk4-layer-shell` (≥ 1.0)
 - `wayland-client`, `wayland-protocols`, `wayland-scanner`, `xkbcommon`
 - `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
 - `libpulse`, `libpulse-mainloop-glib`
 - `pam` (`libpam`)
-- `poppler-glib`, `libarchive`, `mpv` (`libmpv`)
-- `uade` (`libuade`), `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
+- `poppler-glib`, `libarchive`, `mpv` (`libmpv`), `egl`, `glesv2`
+- `uade` (`libuade`), `bencodetools`, `libsidplayfp` (provides `libstilview`), `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
 - `blueprint-compiler`, `meson`, `ninja`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
   - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
@@ -205,16 +246,16 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 21 automated GTest suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 30 automated test suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
 meson setup builddir
 
-# Compile all targets (kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
+# Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 21 automated GTest suites
+# Run all 30 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -226,11 +267,11 @@ meson install -C builddir
 | :--- | :--- | :--- |
 | `config-roundtrip` | `test-config` | `KajoConfigStore` per-domain TOML: compiled-vs-shipped defaults parity, round trips and clamping, `conf.d` overlays with base-save isolation, concurrent readers, syntax-error preservation, comment/unknown-key preserving patch, patcher never writing an unparsable file, subscriber thread delivery, legacy `config.json` migration. |
 | `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
-| `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the Niri spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
+| `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
 | `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
-| `comp-config` | `test-comp-config` | `binds.toml` / `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics (the spec cannot advertise a bind or rule key that does not exist). |
-| `fuzz-comp-layout`, `fuzz-comp-config` | `test-fuzz-comp-*` | Corpus-driver builds of the two libFuzzer targets in `tests/fuzz/`. |
-| `comp-headless` | `tests/comp/comp_headless_smoke.sh` | Runs `kajo-comp` on the wlroots headless backend with the pixman renderer and a private `XDG_RUNTIME_DIR`: required globals present (`comp-test-client globals`), 200 connect/disconnect cycles, command exit status propagated, missing command → 127, SIGTERM → 0, clients survive compositor shutdown. |
+| `comp-config` | `test-comp-config` | `comp.toml`, `outputs.toml`, `binds.toml`, and `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics. |
+| `fuzz-comp-layout`, `fuzz-comp-config`, `fuzz-ipc-socket` | `test-fuzz-comp-*`, `test-fuzz-ipc-socket` | Corpus-driver builds of the three compositor libFuzzer targets in `tests/fuzz/` (layout engine, TOML config parsers, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC parser/dispatcher). |
+| `comp-headless` | `tests/comp/comp_headless_smoke.sh` | Runs `kajo-comp` on the wlroots headless backend with the pixman renderer and a private `XDG_RUNTIME_DIR`: required globals present, 200 connect/disconnect cycles, toplevel/popup/layer-shell/session-lock lifecycles, IPC queries (`Version`, `Outputs`, `Workspaces`, `Windows`, `KeyboardLayouts`), `EventStream`, actions, `Alt+Tab` switcher, screenshot capture, and `--greeter-mode` lockdown. |
 | `comp-audit` | `scripts/audit.sh comp` | Fails if `src/comp` uses `assert`/`abort`/`g_error`/sleeps/blocking subprocess calls or a `waitpid` without `WNOHANG`, or if `src/comp/core` includes wlroots, Vulkan or GLib headers. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
@@ -239,7 +280,7 @@ meson install -C builddir
 | `ipc-socket` | `test-ipc` | `$XDG_RUNTIME_DIR/kajo.sock` command dispatch (`lock`, `screensaver`, `reload-config`, etc.). |
 | `widget-registry` | `test-registry` | Verifies all 22 registered `ShellWidgetClass` definitions have valid `.id` and `.name` fields. |
 | `osk-xkb` | `test-osk-xkb` | XKB keymap generation (`us`, `fi`, etc.) and keysym/keycode resolution for `ShellOSK`. |
-| `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch. |
+| `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch against both mock `kajo-comp` and mock Niri sockets. |
 | `files-model` | `test-files-model` | `KajoFileItem` formatting, sorting and filtering, async file operations (non-clobbering move, cancellation), breadcrumb chain and selection restore, clipboard parsing and 4 MB cap, executable toggle, `archive://` URI round-trip and path normalizer, archive listing/extraction/compression hardening (symlinked destination, hardlinks, `..`/absolute entries, modes, preview cache), disk-image classification and UDisks2 reply helpers. |
 | `niri-shaders` | `test-shaders` | Headless EGL/GLES2 shader compilation validation for all bundled `data/shaders/*.glsl` presets. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
@@ -248,10 +289,10 @@ meson install -C builddir
 | `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, stop, stack, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
 | `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition) and unit-tests text edits, snippets and the server registry. |
-| `ide-ts` | `test-ide-ts` | Tree-sitter token classification for Java, Go and C, language detection, incremental re-parse equals a fresh parse, error tolerance. |
+| `ide-ts` | `test-ide-ts` | Tree-sitter token classification for all 16 languages, language detection, incremental re-parse equals a fresh parse, error tolerance. |
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
-| `niri-ipc` | `test-niri` | Mock-Niri socket: exact JSON of `ToggleWindowFloating` / `LoadConfigFile` actions (regression for the dead FLOAT / TILE button), rejection logging, and EventStream parsing (workspaces, windows, focus, keyboard layouts). |
+| `niri-ipc` | `test-niri` | Dual-compositor IPC client (`src/compositor/niri.c` + `kajo_comp_ipc.c`): mock `kajo-comp` (`$KAJO_COMP_SOCKET`) and mock Niri (`$NIRI_SOCKET`) sockets, priority selection when both env vars are set, `Outputs` query & `EventStream` parsing, `ToggleWindowFloating`, `ReloadConfig`, `SetOutputConfig`, `SetLayoutConfig`, `DpmsOff`, `ConfirmQuit`, output auto-matching, and rejection logging. |
 
 ### Running kajo-comp
 
@@ -272,7 +313,7 @@ LSAN_OPTIONS=suppressions=$PWD/scripts/lsan-comp.supp ASAN_OPTIONS=detect_leaks=
 clang -g -O1 -fsanitize=fuzzer,address,undefined -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION \
   tests/fuzz/fuzz_comp_layout.c src/comp/core/comp_layout.c -lm -o /tmp/fuzz-comp-layout
 clang -g -O1 -fsanitize=fuzzer,address,undefined -DFUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION -D_POSIX_C_SOURCE=200809L \
-  tests/fuzz/fuzz_comp_config.c src/comp/core/comp_{diag,layout,binds,rules}.c src/vendor/tomlc17/tomlc17.c \
+  tests/fuzz/fuzz_comp_config.c src/comp/core/comp_{diag,layout,binds,rules,config}.c src/vendor/tomlc17/tomlc17.c \
   $(pkg-config --cflags --libs xkbcommon libpcre2-8) -lm -o /tmp/fuzz-comp-config
 mkdir -p /tmp/fz && /tmp/fuzz-comp-config -max_total_time=300 /tmp/fz   # seed /tmp/fz with real .toml files for coverage
 ```
@@ -299,9 +340,12 @@ Run this before merging any change that touches object lifetimes, async callback
 ./builddir/kajo-files ~/Downloads
 
 # 4. Run kajo-greeter in safe desktop preview mode (uses PAM verification, no logout)
-./builddir/kajo-greeter --test --cmd niri-session
+./builddir/kajo-greeter --test --cmd kajo-session
 
-# 5. Run kajo-greeter inside a nested Niri compositor window on your desktop
+# 5. Run kajo-greeter inside a nested kajo-comp --greeter-mode window on your desktop
+WLR_BACKENDS=wayland KAJO_GREETER_TEST=1 ./builddir/kajo-comp --greeter-mode --exit-with-command -- ./builddir/kajo-greeter
+
+# 6. Or run kajo-greeter inside a nested Niri compositor window on your desktop
 KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
 ```
 
@@ -349,6 +393,12 @@ Binary length-prefixed framing (`uint32_t` native-endian length + UTF-8 JSON pay
 2. `{"type": "post_auth_message_response", "response": "<password>"}`
 3. `{"type": "start_session", "cmd": ["..."], "env": ["..."]}` (or `{"type": "cancel_session"}` on failure).
 
+### C. Kajo Compositor Socket (`$XDG_RUNTIME_DIR/kajo-comp.sock` / `$KAJO_COMP_SOCKET`)
+Line-delimited UTF-8 JSON requests (`<json>\n`) implemented in `src/comp/comp_ipc.c` and consumed by `src/compositor/{niri.c,kajo_comp_ipc.c}` (full specification in [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) §11):
+- **Queries**: `"Version"`, `"Outputs"`, `"Workspaces"`, `"Windows"`, `"FocusedWindow"`, `"FocusedOutput"`, `"KeyboardLayouts"` $\rightarrow$ returns `{"Ok": {"<Variant>": ...}}`.
+- **Event Stream**: `"EventStream"` $\rightarrow$ returns `{"Ok": "Handled"}` followed by an initial snapshot (`WorkspacesChanged`, `WindowsChanged`, `KeyboardLayoutsChanged`) and live incremental events (`WindowOpenedOrChanged`, `WindowClosed`, `WindowFocusChanged`, `WorkspaceActivated`, `OutputsChanged`, `KeyboardLayoutSwitched`, `ConfigLoaded`).
+- **Actions**: `{"Action": {"<ActionName>": {<args>}}}` (63 actions including `FocusColumnLeft`/`Right`, `ConsumeIntoColumn`, `ExpelFromColumn`, `ToggleColumnTabbedDisplay`, `ToggleWindowFloating`, `FocusWindow`, `FocusWorkspace`, `SwitchLayout`, `SetOutputConfig`, `SetLayoutConfig`, `ReloadConfig`, `DpmsOn`/`DpmsOff`, `ConfirmQuit`) $\rightarrow$ returns `{"Ok": "Handled"}` or `{"Err": {"msg": "..."}}`.
+
 ---
 
 ## 4. How to Add a New Panel Widget
@@ -374,7 +424,7 @@ Binary length-prefixed framing (`uint32_t` native-endian length + UTF-8 JSON pay
 
 ## 5. Strict Coding, Resource & Security Standards
 
-1. **No Mock Data in UI**: All Wi-Fi APs, Bluetooth devices, PipeWire sinks/sources/streams, UPower batteries, Niri outputs, and system users/sessions must query live system interfaces.
+1. **No Mock Data in UI**: All Wi-Fi APs, Bluetooth devices, PipeWire sinks/sources/streams, UPower batteries, compositor outputs (`kajo-comp` & Niri), and system users/sessions must query live system interfaces.
 2. **Popout-Gated Resource Architecture**: PulseAudio monitor streams (`@DEFAULT_MONITOR@`) must start corked (`PA_STREAM_START_CORKED`), uncork on popover `map`, and re-cork on popover `closed`/`unmap`. High-frequency timers (30 FPS FFT) must be removed when unmapped so idle background CPU stays $<0.05\%$.
 3. **Credential & Lock/Greeter Hardening**:
    - Never leave plaintext passwords in `GtkPasswordEntry` while asynchronous PAM or `greetd` verification is in flight—copy, clear the widget buffer immediately, reset `show-peek-icon` (`FALSE` $\rightarrow$ `TRUE`) so visibility returns to masked mode, and scrub temporary buffers with `explicit_bzero()`.
@@ -398,7 +448,7 @@ scripts/ui-shot.sh -o /tmp/files.png builddir/kajo-files ~/Downloads
 scripts/ui-shot.sh -d 6 -o /tmp/p.png builddir/kajo-player some.mkv       # -d: seconds to wait
 ```
 
-The script is isolated on purpose: private `XDG_RUNTIME_DIR`, `NIRI_SOCKET`/`WAYLAND_DISPLAY`/`DISPLAY` unset (Niri actions and `kajo` IPC can never reach your real session), throwaway **copies** of `~/.config/kajo` and `~/.local/share/kajo`, and the working tree's `style.css` copied over the CSS so you see your changes (`-k` keeps your installed CSS). It refuses to run the `kajo` shell. The D-Bus buses are your real ones, so pages read live state (Wi-Fi list, paired devices) but nothing is clicked. Do not wrap it in `dbus-run-session` (it activates your installed services and leaves FUSE mounts behind).
+The script is isolated on purpose: private `XDG_RUNTIME_DIR`, `KAJO_COMP_SOCKET`/`NIRI_SOCKET`/`WAYLAND_DISPLAY`/`DISPLAY` unset (compositor actions and `kajo` IPC can never reach your real session), throwaway **copies** of `~/.config/kajo` and `~/.local/share/kajo`, and the working tree's `style.css` copied over the CSS so you see your changes (`-k` keeps your installed CSS). It refuses to run the `kajo` shell. The D-Bus buses are your real ones, so pages read live state (Wi-Fi list, paired devices) but nothing is clicked. Do not wrap it in `dbus-run-session` (it activates your installed services and leaves FUSE mounts behind).
 
 Limits: the output is fixed at 1280×720 and there is no input, so only the top of long/scrolling pages is visible and dialogs/popovers that need a click cannot be opened. For those, review the Blueprint/C code and test in a real session. Log lines such as `Gtk-CRITICAL` are echoed after the capture; treat any as a bug.
 

@@ -186,5 +186,11 @@
 #define COMP_IPC_ACT_SCREENSHOT_CANCEL      "screenshot-cancel"
 #define COMP_IPC_ACT_TOGGLE_WINDOW_FLOATING "toggle-window-floating"
 #define COMP_IPC_ACT_RELOAD_CONFIG          "reload-config"
+#define COMP_IPC_ACT_FOCUS_WORKSPACE_DOWN   "focus-workspace-down"
+#define COMP_IPC_ACT_FOCUS_WORKSPACE_UP     "focus-workspace-up"
+#define COMP_IPC_ACT_FOCUS_COLUMN_RIGHT     "focus-column-right"
+#define COMP_IPC_ACT_FOCUS_COLUMN_LEFT      "focus-column-left"
+#define COMP_IPC_ACT_POWER_ON_MONITORS      "power-on-monitors"
+#define COMP_IPC_ACT_POWER_OFF_MONITORS     "power-off-monitors"
 
 #endif /* KAJO_COMP_SCHEMA_KEYS_H */

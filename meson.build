@@ -563,6 +563,7 @@ install_subdir(
 install_data(
   'data/icons/kajo.svg',
   'data/icons/kajo-symbolic.svg',
+  'data/icons/kajo-comp.svg',
   'data/icons/kajo-ide.svg',
   'data/icons/kajo-files.svg',
   'data/icons/kajo-player.svg',
@@ -641,6 +642,7 @@ widget_sources = kajo_config_sources + files(
   'src/hardware/hw_caps.c',
   'src/hardware/kbd_backlight.c',
   'src/compositor/niri.c',
+  'src/compositor/kajo_comp_ipc.c',
   'src/widgets/registry.c',
   'src/widgets/clock.c',
   'src/widgets/volume.c',
@@ -729,7 +731,7 @@ endif
 
 test_niri_exe = executable(
   'test-niri',
-  files('tests/test_niri.c', 'src/compositor/niri.c'),
+  files('tests/test_niri.c', 'src/compositor/niri.c', 'src/compositor/kajo_comp_ipc.c'),
   dependencies: [gio_dep, gio_unix_dep, json_glib_dep],
   build_by_default: false,
 )

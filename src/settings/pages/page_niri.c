@@ -1,5 +1,7 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include "../../compositor/compositor.h"
+#include "../../vendor/tomlc17/tomlc17.h"
 #include <string.h>
 
 #define N_NIRI_NAMESPACES 5
@@ -352,6 +354,49 @@ load_existing_niri_config(SettingsPageNiri *self)
                                 NULL, NULL);
         }
     }
+
+    /* 4. Read kajo-comp conf.d/40-layer-rules.toml (or comp.toml / rules.toml) */
+    const char *env_kajo = g_getenv("KAJO_CONFIG_DIR");
+    g_autofree gchar *kajo_dir = (env_kajo && *env_kajo)
+        ? g_strdup(env_kajo)
+        : g_build_filename(cfg_dir, "kajo", NULL);
+    g_autofree gchar *comp_toml_path = g_build_filename(kajo_dir, "conf.d", "40-layer-rules.toml", NULL);
+    if (!g_file_test(comp_toml_path, G_FILE_TEST_EXISTS)) {
+        g_free(comp_toml_path);
+        comp_toml_path = g_build_filename(kajo_dir, "comp.toml", NULL);
+    }
+    if (g_file_test(comp_toml_path, G_FILE_TEST_EXISTS)) {
+        toml_result_t r = toml_parse_file_ex(comp_toml_path);
+        if (r.ok) {
+            toml_datum_t g_v = toml_seek(r.toptab, "layout.gap_px");
+            if (g_v.type == TOML_INT64 && g_v.u.int64 >= 0 && g_v.u.int64 <= 64)
+                self->gap_px = (int)g_v.u.int64;
+            toml_datum_t l_arr = toml_get(r.toptab, "layer_rule");
+            if (l_arr.type == TOML_ARRAY) {
+                for (int li = 0; li < l_arr.u.arr.size; li++) {
+                    toml_datum_t lr = l_arr.u.arr.elem[li];
+                    if (lr.type != TOML_TABLE)
+                        continue;
+                    toml_datum_t ns_arr = toml_get(lr, "match_namespace");
+                    toml_datum_t op_v   = toml_get(lr, "opacity");
+                    double op_val = (op_v.type == TOML_FP64) ? op_v.u.fp64
+                                  : ((op_v.type == TOML_INT64) ? (double)op_v.u.int64 : -1.0);
+                    if (ns_arr.type == TOML_ARRAY && op_val > 0.0 && op_val <= 1.0) {
+                        for (int ni = 0; ni < ns_arr.u.arr.size; ni++) {
+                            toml_datum_t ns_e = ns_arr.u.arr.elem[ni];
+                            if (ns_e.type != TOML_STRING || !ns_e.u.s)
+                                continue;
+                            for (int k = 0; k < N_NIRI_NAMESPACES; k++) {
+                                if (g_strcmp0(ns_e.u.s, NIRI_NS_IDS[k]) == 0)
+                                    self->ns_opacity[k] = (int)(op_val * 100.0 + 0.5);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        toml_free(r);
+    }
 }
 
 /* ─── Non-Destructive KDL Animations Formatter ─── */
@@ -634,7 +679,31 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         anim_block_str);
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
-    niri_reload_config();
+
+    /* 4. Write kajo-comp conf.d/40-layer-rules.toml for non-destructive TOML hot-reload */
+    const char *env_kajo = g_getenv("KAJO_CONFIG_DIR");
+    g_autofree gchar *kajo_conf_d = (env_kajo && *env_kajo)
+        ? g_build_filename(env_kajo, "conf.d", NULL)
+        : g_build_filename(xdg_config, "kajo", "conf.d", NULL);
+    g_mkdir_with_parents(kajo_conf_d, 0755);
+    g_autofree gchar *toml_rules_path = g_build_filename(kajo_conf_d, "40-layer-rules.toml", NULL);
+    GString *toml_s = g_string_new("# Managed by kajo-settings — kajo-comp layout gap & layer opacity rules\n\n");
+    g_string_append_printf(toml_s, "[layout]\ngap_px = %d\n", self->gap_px);
+    for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
+        char op_buf[32];
+        g_ascii_formatd(op_buf, sizeof(op_buf), "%.2f", self->ns_opacity[i] / 100.0);
+        g_string_append_printf(
+            toml_s,
+            "\n[[layer_rule]]\n"
+            "match_namespace = [\"^%s$\"]\n"
+            "opacity = %s\n",
+            NIRI_NS_IDS[i],
+            op_buf);
+    }
+    g_file_set_contents(toml_rules_path, toml_s->str, (gssize)toml_s->len, NULL);
+    g_string_free(toml_s, TRUE);
+
+    shell_compositor_reload_config();
 
     update_niri_subtitles_and_telemetry(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);

@@ -1,4 +1,6 @@
 #include "compositor.h"
+#include "kajo_comp_ipc.h"
+#include "../comp/core/comp_schema_keys.h"
 
 #include <gio/gio.h>
 #include <gio/gunixsocketaddress.h>
@@ -26,9 +28,11 @@ struct _ShellCompositor {
     GArray *window_focus_callbacks;     /* CallbackEntry */
     GArray *keyboard_layout_callbacks;  /* CallbackEntry */
     GArray *windows_changed_callbacks;  /* CallbackEntry */
+    GArray *touch_bezel_callbacks;      /* CallbackEntry */
 
     JsonParser *parser;
     gboolean connected;
+    gboolean is_kajo_comp;
 };
 
 /* Forward declarations */
@@ -125,7 +129,9 @@ handle_workspaces_changed(ShellCompositor *compositor, JsonObject *obj)
             ws.output = g_strdup(json_object_get_string_member(ws_obj, "output"));
 
         ws.is_active = json_object_get_boolean_member_with_default(ws_obj, "is_active", FALSE);
-        ws.is_focused = json_object_get_boolean_member_with_default(ws_obj, "is_focused", FALSE);
+        ws.is_focused = json_object_has_member(ws_obj, "is_focused")
+                            ? json_object_get_boolean_member(ws_obj, "is_focused")
+                            : ws.is_active;
         ws.is_urgent = json_object_get_boolean_member_with_default(ws_obj, "is_urgent", FALSE);
 
         if (json_object_has_member(ws_obj, "active_window_id") &&
@@ -179,7 +185,8 @@ handle_workspace_activated(ShellCompositor *compositor, JsonObject *obj)
 static void
 handle_window_focus_changed(ShellCompositor *compositor, JsonObject *obj)
 {
-    if (json_object_has_member(obj, "id") && !json_object_get_null_member(obj, "id")) {
+    if (json_object_has_member(obj, "id") && !json_object_get_null_member(obj, "id") &&
+        json_object_get_int_member(obj, "id") > 0) {
         guint64 id = (guint64)json_object_get_int_member(obj, "id");
         window_clear(&compositor->focused_window);
         compositor->focused_window.id = id;
@@ -315,7 +322,9 @@ handle_window_closed(ShellCompositor *compositor, JsonObject *obj)
 static void
 handle_keyboard_layouts_changed(ShellCompositor *compositor, JsonObject *obj)
 {
-    JsonObject *kl_obj = json_object_get_object_member(obj, "keyboard_layouts");
+    JsonObject *kl_obj = json_object_has_member(obj, "keyboard_layouts")
+                             ? json_object_get_object_member(obj, "keyboard_layouts")
+                             : obj;
     if (!kl_obj)
         return;
 
@@ -358,6 +367,7 @@ handle_windows_changed(ShellCompositor *compositor, JsonObject *obj)
         window_clear(&g_array_index(compositor->windows, CompositorWindow, i));
     g_array_set_size(compositor->windows, 0);
 
+    gboolean found_focused = FALSE;
     guint len = json_array_get_length(arr);
     for (guint i = 0; i < len; i++) {
         JsonObject *win_obj = json_array_get_object_element(arr, i);
@@ -376,13 +386,49 @@ handle_windows_changed(ShellCompositor *compositor, JsonObject *obj)
         if (json_object_has_member(win_obj, "workspace_id") &&
             !json_object_get_null_member(win_obj, "workspace_id"))
             win.workspace_id = (guint64)json_object_get_int_member(win_obj, "workspace_id");
+        else if (json_object_has_member(win_obj, "workspace_idx") &&
+                 !json_object_get_null_member(win_obj, "workspace_idx"))
+            win.workspace_id = (guint64)json_object_get_int_member(win_obj, "workspace_idx");
 
         win.is_focused = json_object_get_boolean_member_with_default(win_obj, "is_focused", FALSE);
+        if (win.is_focused && compositor->is_kajo_comp) {
+            window_clear(&compositor->focused_window);
+            compositor->focused_window.id = win.id;
+            compositor->focused_window.title = g_strdup(win.title);
+            compositor->focused_window.app_id = g_strdup(win.app_id);
+            compositor->focused_window.workspace_id = win.workspace_id;
+            compositor->focused_window.is_focused = TRUE;
+            found_focused = TRUE;
+        }
 
         g_array_append_val(compositor->windows, win);
     }
 
+    if (compositor->is_kajo_comp && !found_focused && compositor->focused_window.id != 0) {
+        window_clear(&compositor->focused_window);
+    }
+
     emit_windows_changed_callbacks(compositor);
+    if (compositor->is_kajo_comp) {
+        emit_window_focus_callbacks(compositor);
+    }
+}
+
+static void
+handle_touch_bezel_swipe(ShellCompositor *compositor, JsonObject *obj)
+{
+    const gchar *edge = json_object_has_member(obj, "edge")
+                            ? json_object_get_string_member(obj, "edge")
+                            : "bottom";
+    gdouble x_ratio = json_object_has_member(obj, "x_ratio")
+                          ? json_object_get_double_member(obj, "x_ratio")
+                          : 0.5;
+    if (!compositor->touch_bezel_callbacks)
+        return;
+    for (guint i = 0; i < compositor->touch_bezel_callbacks->len; i++) {
+        CallbackEntry *entry = &g_array_index(compositor->touch_bezel_callbacks, CallbackEntry, i);
+        ((CompositorTouchBezelCallback)entry->callback)(compositor, edge, x_ratio, entry->userdata);
+    }
 }
 
 static void
@@ -401,18 +447,33 @@ niri_handle_event(ShellCompositor *compositor, const gchar *line)
         return;
 
     JsonObject *root_obj = json_node_get_object(root);
-    GList *members = json_object_get_members(root_obj);
-    if (!members)
+    if (json_object_has_member(root_obj, "ok") || json_object_has_member(root_obj, "Ok"))
         return;
 
-    const gchar *event_name = (const gchar *)members->data;
-    JsonNode *event_node = json_object_get_member(root_obj, event_name);
-    if (!event_node || !JSON_NODE_HOLDS_OBJECT(event_node)) {
-        g_list_free(members);
-        return;
+    const gchar *event_name = NULL;
+    JsonObject *event_obj = NULL;
+    GList *members = NULL;
+
+    if (json_object_has_member(root_obj, "event")) {
+        JsonNode *ev_node = json_object_get_member(root_obj, "event");
+        if (ev_node && JSON_NODE_HOLDS_VALUE(ev_node)) {
+            event_name = json_object_get_string_member(root_obj, "event");
+            event_obj = root_obj;
+        }
     }
 
-    JsonObject *event_obj = json_node_get_object(event_node);
+    if (!event_name) {
+        members = json_object_get_members(root_obj);
+        if (!members)
+            return;
+        event_name = (const gchar *)members->data;
+        JsonNode *event_node = json_object_get_member(root_obj, event_name);
+        if (!event_node || !JSON_NODE_HOLDS_OBJECT(event_node)) {
+            g_list_free(members);
+            return;
+        }
+        event_obj = json_node_get_object(event_node);
+    }
 
     if (g_strcmp0(event_name, "WorkspacesChanged") == 0) {
         handle_workspaces_changed(compositor, event_obj);
@@ -430,29 +491,45 @@ niri_handle_event(ShellCompositor *compositor, const gchar *line)
         handle_keyboard_layouts_changed(compositor, event_obj);
     } else if (g_strcmp0(event_name, "KeyboardLayoutSwitched") == 0) {
         handle_keyboard_layout_switched(compositor, event_obj);
+    } else if (g_strcmp0(event_name, "TouchBezelSwipe") == 0) {
+        handle_touch_bezel_swipe(compositor, event_obj);
     }
 
-    g_list_free(members);
+    if (members)
+        g_list_free(members);
 }
 
 /* --- Async line reading --- */
 
+typedef struct {
+    ShellCompositor *compositor;
+    GCancellable    *cancellable;
+} LineReadCtx;
+
 static void
 on_line_read(GObject *source, GAsyncResult *result, gpointer userdata)
 {
-    ShellCompositor *compositor = (ShellCompositor *)userdata;
+    LineReadCtx *ctx = (LineReadCtx *)userdata;
     GError *error = NULL;
     gsize length = 0;
 
     gchar *line = g_data_input_stream_read_line_finish_utf8(
         G_DATA_INPUT_STREAM(source), result, &length, &error);
 
-    if (!compositor || (compositor->cancellable && g_cancellable_is_cancelled(compositor->cancellable)) ||
-        g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED)) {
+    if (!ctx || g_error_matches(error, G_IO_ERROR, G_IO_ERROR_CANCELLED) ||
+        g_cancellable_is_cancelled(ctx->cancellable)) {
         if (error) g_clear_error(&error);
         if (line) g_free(line);
+        if (ctx) {
+            g_clear_object(&ctx->cancellable);
+            g_free(ctx);
+        }
         return;
     }
+
+    ShellCompositor *compositor = ctx->compositor;
+    g_clear_object(&ctx->cancellable);
+    g_free(ctx);
 
     if (!line) {
         if (error) {
@@ -489,22 +566,35 @@ niri_read_line_async(ShellCompositor *compositor)
     if (!compositor || !compositor->input_stream || !compositor->cancellable)
         return;
 
+    LineReadCtx *ctx = g_new0(LineReadCtx, 1);
+    ctx->compositor = compositor;
+    ctx->cancellable = g_object_ref(compositor->cancellable);
+
     g_data_input_stream_read_line_async(
         compositor->input_stream,
         G_PRIORITY_DEFAULT,
         compositor->cancellable,
         on_line_read,
-        compositor);
+        ctx);
 }
 
 /* --- Connection --- */
 
+gboolean
+shell_compositor_is_kajo_comp(void)
+{
+    return kajo_comp_ipc_available();
+}
+
 static void
 niri_connect(ShellCompositor *compositor)
 {
-    const gchar *socket_path = g_getenv("NIRI_SOCKET");
+    compositor->is_kajo_comp = shell_compositor_is_kajo_comp();
+    g_autofree gchar *kc_sock = compositor->is_kajo_comp ? kajo_comp_ipc_socket_path() : NULL;
+    const gchar *socket_path = compositor->is_kajo_comp ? kc_sock : g_getenv("NIRI_SOCKET");
+
     if (!socket_path) {
-        g_warning("niri: NIRI_SOCKET environment variable not set");
+        g_warning("compositor: neither KAJO_COMP_SOCKET nor NIRI_SOCKET environment variable is set");
         return;
     }
 
@@ -540,9 +630,11 @@ niri_connect(ShellCompositor *compositor)
 
     compositor->connected = TRUE;
 
-    /* Send the EventStream request while socket is still in blocking mode */
+    /* Send the subscription / EventStream request while socket is still in blocking mode */
     GOutputStream *ostream = g_io_stream_get_output_stream(G_IO_STREAM(compositor->conn));
-    const gchar *request = "\"EventStream\"\n";
+    const gchar *request = compositor->is_kajo_comp
+        ? "{\"cmd\":\"subscribe\",\"events\":[\"workspaces\",\"windows\",\"keyboard_layouts\",\"outputs\",\"touch_gestures\",\"screenshots\"]}\n"
+        : "\"EventStream\"\n";
     gsize bytes_written = 0;
 
     if (!g_output_stream_write_all(ostream, request, strlen(request),
@@ -581,7 +673,7 @@ on_niri_reconnect_timer(gpointer user_data)
 
     niri_connect(compositor);
     if (compositor->connected) {
-        g_info("niri: successfully reconnected to Niri compositor EventStream!");
+        g_info("compositor: successfully reconnected to compositor event stream!");
         compositor->reconnect_timer_id = 0;
         return G_SOURCE_REMOVE;
     }
@@ -591,35 +683,133 @@ on_niri_reconnect_timer(gpointer user_data)
 
 /* --- Actions (separate connection per action) --- */
 
+static const struct {
+    const char *niri_token;
+    const char *kajo_action;
+    const char *niri_json;
+} k_action_map[] = {
+    { "ToggleWindowFloating", COMP_IPC_ACT_TOGGLE_WINDOW_FLOATING, "{\"Action\":{\"ToggleWindowFloating\":{}}}" },
+    { "LoadConfigFile",       COMP_IPC_ACT_RELOAD_CONFIG,          "{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}" },
+    { "FocusWorkspaceDown",   COMP_IPC_ACT_FOCUS_WORKSPACE_DOWN,   "{\"Action\":{\"FocusWorkspaceDown\":{}}}" },
+    { "FocusWorkspaceUp",     COMP_IPC_ACT_FOCUS_WORKSPACE_UP,     "{\"Action\":{\"FocusWorkspaceUp\":{}}}" },
+    { "FocusColumnRight",     COMP_IPC_ACT_FOCUS_COLUMN_RIGHT,     "{\"Action\":{\"FocusColumnRight\":{}}}" },
+    { "FocusColumnLeft",      COMP_IPC_ACT_FOCUS_COLUMN_LEFT,      "{\"Action\":{\"FocusColumnLeft\":{}}}" },
+    { "ToggleOverview",       COMP_IPC_ACT_SWITCH_WINDOW_NEXT,     "{\"Action\":{\"ToggleOverview\":{}}}" },
+    { "PowerOnMonitors",      COMP_IPC_ACT_POWER_ON_MONITORS,      "{\"Action\":{\"PowerOnMonitors\":{}}}" },
+    { "PowerOffMonitors",     COMP_IPC_ACT_POWER_OFF_MONITORS,     "{\"Action\":{\"PowerOffMonitors\":{}}}" },
+};
+
 void
-niri_send_action(const gchar *json_str)
+shell_compositor_send_action(const char *action_or_json)
 {
-    if (!json_str)
+    if (!action_or_json || !*action_or_json)
         return;
-    gchar *resp = niri_send_ipc_request(json_str);
+
+    if (shell_compositor_is_kajo_comp()) {
+        if (action_or_json[0] != '{') {
+            (void)kajo_comp_ipc_send_action(action_or_json);
+            return;
+        }
+        if (strstr(action_or_json, "\"cmd\"")) {
+            g_autofree gchar *resp = kajo_comp_ipc_send_request(action_or_json);
+            return;
+        }
+        for (gsize i = 0; i < G_N_ELEMENTS(k_action_map); i++) {
+            if (strstr(action_or_json, k_action_map[i].niri_token)) {
+                (void)kajo_comp_ipc_send_action(k_action_map[i].kajo_action);
+                return;
+            }
+        }
+        return;
+    }
+
+    if (action_or_json[0] != '{') {
+        for (gsize i = 0; i < G_N_ELEMENTS(k_action_map); i++) {
+            if (g_strcmp0(action_or_json, k_action_map[i].kajo_action) == 0) {
+                niri_send_action(k_action_map[i].niri_json);
+                return;
+            }
+        }
+        return;
+    }
+
+    gchar *resp = niri_send_ipc_request(action_or_json);
     /* Niri replies {"Ok":...} or {"Err":"..."}; surface rejections instead of
      * silently dropping them (e.g. malformed action JSON). */
     if (resp && g_str_has_prefix(resp, "{\"Err\"")) {
-        g_warning("niri: action rejected: %s (request: %s)", resp, json_str);
+        g_warning("niri: action rejected: %s (request: %s)", resp, action_or_json);
     }
     g_free(resp);
 }
 
 void
+shell_compositor_toggle_floating(void)
+{
+    if (shell_compositor_is_kajo_comp()) {
+        (void)kajo_comp_ipc_toggle_floating();
+        return;
+    }
+    shell_compositor_send_action("{\"Action\":{\"ToggleWindowFloating\":{}}}");
+}
+
+void
+shell_compositor_reload_config(void)
+{
+    if (shell_compositor_is_kajo_comp()) {
+        (void)kajo_comp_ipc_reload_config();
+        return;
+    }
+    shell_compositor_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
+}
+
+static void
+on_niri_transform_subproc_done(GObject *source, GAsyncResult *res, gpointer user_data G_GNUC_UNUSED)
+{
+    g_subprocess_wait_finish(G_SUBPROCESS(source), res, NULL);
+}
+
+void
+shell_compositor_set_output_transform(const char *output_name, const char *transform)
+{
+    if (!transform || !*transform)
+        return;
+
+    if (shell_compositor_is_kajo_comp()) {
+        g_autofree gchar *req = (output_name && *output_name)
+            ? g_strdup_printf("{\"cmd\":\"action\",\"name\":\"set-output-transform\",\"output\":\"%s\",\"transform\":\"%s\"}",
+                              output_name, transform)
+            : g_strdup_printf("{\"cmd\":\"action\",\"name\":\"set-output-transform\",\"transform\":\"%s\"}",
+                              transform);
+        g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+        return;
+    }
+
+    const gchar *out = (output_name && *output_name) ? output_name : "eDP-1";
+    const gchar *argv[] = { "niri", "msg", "output", out, "transform", transform, NULL };
+    g_autoptr(GSubprocess) proc = g_subprocess_newv(
+        argv,
+        G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE,
+        NULL);
+    if (proc)
+        g_subprocess_wait_async(proc, NULL, on_niri_transform_subproc_done, NULL);
+}
+
+void
+niri_send_action(const gchar *json_str)
+{
+    shell_compositor_send_action(json_str);
+}
+
+void
 niri_toggle_window_floating(void)
 {
-    /* ToggleWindowFloating is a struct variant ({ id: Option<u64> }); the bare
-     * string form "ToggleWindowFloating" is rejected by Niri. Without an id it
-     * acts on the focused window. */
-    niri_send_action("{\"Action\":{\"ToggleWindowFloating\":{}}}");
+    shell_compositor_toggle_floating();
 }
 
 void
 niri_reload_config(void)
 {
-    /* Niri has no "ReloadConfig" action; LoadConfigFile with a null path
-     * reloads the active config file. */
-    niri_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
+    shell_compositor_reload_config();
 }
 
 gchar *
@@ -686,6 +876,7 @@ shell_compositor_new(void)
     compositor->window_focus_callbacks = g_array_new(FALSE, FALSE, sizeof(CallbackEntry));
     compositor->keyboard_layout_callbacks = g_array_new(FALSE, FALSE, sizeof(CallbackEntry));
     compositor->windows_changed_callbacks = g_array_new(FALSE, FALSE, sizeof(CallbackEntry));
+    compositor->touch_bezel_callbacks = g_array_new(FALSE, FALSE, sizeof(CallbackEntry));
     compositor->parser = json_parser_new();
 
     memset(&compositor->focused_window, 0, sizeof(CompositorWindow));
@@ -742,6 +933,7 @@ shell_compositor_destroy(ShellCompositor *compositor)
     g_array_free(compositor->window_focus_callbacks, TRUE);
     g_array_free(compositor->keyboard_layout_callbacks, TRUE);
     g_array_free(compositor->windows_changed_callbacks, TRUE);
+    g_array_free(compositor->touch_bezel_callbacks, TRUE);
 
     g_clear_object(&compositor->parser);
 
@@ -825,6 +1017,17 @@ shell_compositor_on_windows_changed(ShellCompositor *compositor,
     }
 }
 
+void
+shell_compositor_on_touch_bezel_swipe(ShellCompositor *compositor,
+                                      CompositorTouchBezelCallback cb,
+                                      gpointer userdata)
+{
+    g_return_if_fail(compositor != NULL);
+    g_return_if_fail(cb != NULL);
+    CallbackEntry entry = { .callback = (gpointer)cb, .userdata = userdata };
+    g_array_append_val(compositor->touch_bezel_callbacks, entry);
+}
+
 static void
 remove_callback_from_array(GArray *arr, gpointer userdata)
 {
@@ -847,12 +1050,21 @@ shell_compositor_remove_callbacks(ShellCompositor *compositor, gpointer userdata
     remove_callback_from_array(compositor->window_focus_callbacks, userdata);
     remove_callback_from_array(compositor->keyboard_layout_callbacks, userdata);
     remove_callback_from_array(compositor->windows_changed_callbacks, userdata);
+    remove_callback_from_array(compositor->touch_bezel_callbacks, userdata);
 }
 
 void
 shell_compositor_switch_workspace(ShellCompositor *compositor, guint64 workspace_id)
 {
     g_return_if_fail(compositor != NULL);
+
+    if (compositor->is_kajo_comp || shell_compositor_is_kajo_comp()) {
+        g_autofree gchar *req = g_strdup_printf(
+            "{\"cmd\":\"action\",\"name\":\"switch-workspace\",\"idx\":%" G_GUINT64_FORMAT "}",
+            workspace_id);
+        g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+        return;
+    }
 
     gchar *json = g_strdup_printf(
         "{\"Action\":{\"FocusWorkspace\":{\"reference\":{\"Id\":%" G_GUINT64_FORMAT "}}}}",
@@ -865,6 +1077,13 @@ void
 shell_compositor_switch_keyboard_layout_idx(ShellCompositor *compositor, guint8 idx)
 {
     g_return_if_fail(compositor != NULL);
+
+    if (compositor->is_kajo_comp || shell_compositor_is_kajo_comp()) {
+        g_autofree gchar *req = g_strdup_printf(
+            "{\"cmd\":\"action\",\"name\":\"switch-keyboard-layout\",\"idx\":%u}", (guint)idx);
+        g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+        return;
+    }
 
     gchar *json = g_strdup_printf(
         "{\"Action\":{\"SwitchLayout\":{\"layout\":{\"Index\":%u}}}}", (guint)idx);
@@ -917,6 +1136,14 @@ void
 shell_compositor_focus_window(ShellCompositor *compositor, guint64 window_id)
 {
     g_return_if_fail(compositor != NULL);
+
+    if (compositor->is_kajo_comp || shell_compositor_is_kajo_comp()) {
+        g_autofree gchar *req = g_strdup_printf(
+            "{\"cmd\":\"action\",\"name\":\"focus-window\",\"id\":%" G_GUINT64_FORMAT "}",
+            window_id);
+        g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+        return;
+    }
 
     gchar *json = g_strdup_printf(
         "{\"Action\":{\"FocusWindow\":{\"id\":%" G_GUINT64_FORMAT "}}}", window_id);
@@ -1049,6 +1276,14 @@ void
 shell_compositor_close_window(ShellCompositor *compositor, guint64 window_id)
 {
     g_return_if_fail(compositor != NULL);
+
+    if (compositor->is_kajo_comp || shell_compositor_is_kajo_comp()) {
+        g_autofree gchar *req = g_strdup_printf(
+            "{\"cmd\":\"action\",\"name\":\"close-window\",\"id\":%" G_GUINT64_FORMAT "}",
+            window_id);
+        g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+        return;
+    }
 
     gchar *json = g_strdup_printf(
         "{\"Action\":{\"CloseWindow\":{\"id\":%" G_GUINT64_FORMAT "}}}", window_id);

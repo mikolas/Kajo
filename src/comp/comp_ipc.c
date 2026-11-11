@@ -732,6 +732,8 @@ typedef enum {
     IPC_ACT_SET_OUTPUT_CONFIG,
     IPC_ACT_SCREENSHOT_CONFIRM,
     IPC_ACT_SCREENSHOT_CANCEL,
+    IPC_ACT_POWER_ON_MONITORS,
+    IPC_ACT_POWER_OFF_MONITORS,
 } CompIpcExtraAction;
 
 static const struct { const char *name; CompIpcExtraAction act; } k_ipc_extra_actions[] = {
@@ -745,6 +747,8 @@ static const struct { const char *name; CompIpcExtraAction act; } k_ipc_extra_ac
     { COMP_IPC_ACT_SET_OUTPUT_CONFIG,      IPC_ACT_SET_OUTPUT_CONFIG },
     { COMP_IPC_ACT_SCREENSHOT_CONFIRM,     IPC_ACT_SCREENSHOT_CONFIRM },
     { COMP_IPC_ACT_SCREENSHOT_CANCEL,      IPC_ACT_SCREENSHOT_CANCEL },
+    { COMP_IPC_ACT_POWER_ON_MONITORS,      IPC_ACT_POWER_ON_MONITORS },
+    { COMP_IPC_ACT_POWER_OFF_MONITORS,     IPC_ACT_POWER_OFF_MONITORS },
 };
 
 static bool
@@ -990,6 +994,26 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
     }
     case IPC_ACT_SCREENSHOT_CONFIRM: comp_screenshot_confirm(s); client_reply_ok(c); return;
     case IPC_ACT_SCREENSHOT_CANCEL:  comp_screenshot_cancel(s);  client_reply_ok(c); return;
+    case IPC_ACT_POWER_ON_MONITORS:
+        comp_output_apply_config(s);
+        comp_server_schedule_frames(s);
+        client_reply_ok(c);
+        return;
+    case IPC_ACT_POWER_OFF_MONITORS: {
+        CompOutput *o;
+        wl_list_for_each(o, &s->outputs, link) {
+            if (!o->wlr_output || !o->wlr_output->enabled)
+                continue;
+            struct wlr_output_state st;
+            wlr_output_state_init(&st);
+            wlr_output_state_set_enabled(&st, false);
+            if (wlr_output_test_state(o->wlr_output, &st))
+                wlr_output_commit_state(o->wlr_output, &st);
+            wlr_output_state_finish(&st);
+        }
+        client_reply_ok(c);
+        return;
+    }
     }
 }
 

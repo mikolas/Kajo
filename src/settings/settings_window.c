@@ -112,7 +112,7 @@ static const SettingsPageMeta k_page_meta[] = {
         "System kernel, CPU, memory & native C17 / GTK4 / Wayland application suite",
         "KAJO SUITE 0.1", "GTK4 WAYLAND",
         { "KERNEL", "TOOLKIT", "COMPOSITOR", "SUITE" },
-        { "Linux", "GTK4 + Layer", "Wayland / Niri", "7 Binaries" }
+        { "Linux", "GTK4 + Layer", "Wayland / kajo-comp", "8 Binaries" }
     }
 };
 
@@ -155,8 +155,10 @@ populate_live_config_telemetry_defaults(const gchar *page_name,
             out_vals[0] = g_strdup_printf("Linux %s", uts.release);
         out_vals[1] = g_strdup_printf("GTK %d.%d", GTK_MAJOR_VERSION, GTK_MINOR_VERSION);
         const gchar *niri_sock = g_getenv("NIRI_SOCKET");
-        out_vals[2] = g_strdup((niri_sock && niri_sock[0]) ? "Niri IPC Active" : "Wayland");
-        out_vals[3] = g_strdup("7 Binaries");
+        gboolean has_kc = shell_compositor_is_kajo_comp();
+        out_vals[2] = g_strdup(has_kc ? "kajo-comp IPC Active"
+                                      : ((niri_sock && niri_sock[0]) ? "Niri IPC Active" : "Wayland"));
+        out_vals[3] = g_strdup("8 Binaries");
         return;
     }
 

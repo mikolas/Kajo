@@ -868,16 +868,46 @@
     </div>
   </section>
 
-  <!-- SECTION 4: UNIFIED 7-APP SUITE ICON SYSTEM -->
+  <!-- SECTION 4: UNIFIED 8-APP SUITE ICON SYSTEM -->
   <section>
     <div class="section-hdr">
-      <span class="section-title">04 // Unified 7-Binary Suite Icon System</span>
+      <span class="section-title">04 // Unified 8-Binary Suite Icon System</span>
       <span class="section-sub">Shared 0px obsidian chassis + top-left Aero light catch + geometric inner glyph</span>
     </div>
 
     <div class="suite-grid">
 
-      <!-- 1. kajo (Shell) -->
+      <!-- 1. kajo-comp (Compositor) -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-cyan" stroke="#00d8f0" stroke-width="5"/>
+          <!-- Infinite Horizontal Strip Viewport Rails -->
+          <line x1="24" y1="42" x2="232" y2="42" stroke="#2b2b2b" stroke-width="3"/>
+          <rect x="68" y="40" width="96" height="5" class="fill-cyan" fill="#00d8f0"/>
+          <line x1="24" y1="214" x2="232" y2="214" stroke="#2b2b2b" stroke-width="3"/>
+          <!-- Left Off-Screen Peeking Column -->
+          <rect x="24" y="56" width="32" height="144" fill="#1a1a1a" stroke="#383838" stroke-width="3"/>
+          <rect x="24" y="56" width="32" height="16" fill="#2b2b2b"/>
+          <!-- Center Active Focused Column -->
+          <rect x="68" y="56" width="96" height="144" fill="#141414"/>
+          <rect x="68" y="56" width="96" height="24" fill="url(#ca-beam)"/>
+          <rect x="68" y="56" width="96" height="144" fill="none" class="stroke-cyan" stroke="#00d8f0" stroke-width="4"/>
+          <rect x="82" y="96" width="44" height="8" fill="#ffffff"/>
+          <rect x="82" y="114" width="68" height="6" class="fill-accent" fill="#0078d4"/>
+          <!-- Right Stacked 2-Window Column -->
+          <rect x="176" y="56" width="56" height="66" fill="url(#ca-beam)"/>
+          <rect x="186" y="68" width="28" height="6" fill="#ffffff"/>
+          <rect x="176" y="134" width="56" height="66" fill="#1a1a1a"/>
+          <rect x="176" y="134" width="56" height="12" class="fill-cyan" fill="#00d8f0"/>
+          <rect x="176" y="134" width="56" height="66" fill="none" class="stroke-accent" stroke="#0078d4" stroke-width="3"/>
+        </svg>
+        <div class="suite-title">KAJO COMP</div>
+        <div class="suite-app-id">org.kajo.comp</div>
+        <div class="suite-role">Scrollable-Tiling Wayland Compositor</div>
+      </div>
+
+      <!-- 2. kajo (Shell) -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>

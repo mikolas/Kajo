@@ -13,6 +13,10 @@ kajo_comp_ipc_socket_path(void)
     if (env_sock && *env_sock)
         return g_strdup(env_sock);
 
+    const gchar *niri_sock = g_getenv("NIRI_SOCKET");
+    if (niri_sock && *niri_sock)
+        return NULL;
+
     const gchar *xdg_run = g_getenv("XDG_RUNTIME_DIR");
     if (xdg_run && *xdg_run) {
         gchar *cand = g_build_filename(xdg_run, COMP_IPC_SOCK_NAME, NULL);
