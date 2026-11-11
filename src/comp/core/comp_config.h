@@ -34,79 +34,121 @@ typedef enum {
     COMP_VRR_ON_DEMAND = 2,
 } CompVrrPolicy;
 
+typedef enum {
+    COMP_TRANSFORM_NORMAL      = 0,
+    COMP_TRANSFORM_90          = 1,
+    COMP_TRANSFORM_180         = 2,
+    COMP_TRANSFORM_270         = 3,
+    COMP_TRANSFORM_FLIPPED     = 4,
+    COMP_TRANSFORM_FLIPPED_90  = 5,
+    COMP_TRANSFORM_FLIPPED_180 = 6,
+    COMP_TRANSFORM_FLIPPED_270 = 7,
+} CompTransform;
+
+typedef enum {
+    COMP_ACCEL_FLAT     = 0,
+    COMP_ACCEL_ADAPTIVE = 1,
+} CompAccelProfile;
+
+typedef enum {
+    COMP_SWIPE_NONE           = 0,
+    COMP_SWIPE_LAUNCHER       = 1,
+    COMP_SWIPE_OVERVIEW       = 2,
+    COMP_SWIPE_OSK            = 3,
+    COMP_SWIPE_CONTROL_CENTER = 4,
+    COMP_SWIPE_NOTIFICATIONS  = 5,
+    COMP_SWIPE_COLUMN         = 6,
+    COMP_SWIPE_WORKSPACE      = 7,
+} CompTouchSwipeAction;
+
+bool                  comp_vrr_policy_from_str(const char *s, CompVrrPolicy *out);
+const char           *comp_vrr_policy_to_str(CompVrrPolicy policy);
+
+bool                  comp_transform_from_str(const char *s, CompTransform *out);
+const char           *comp_transform_to_str(CompTransform tf);
+
+bool                  comp_center_mode_from_str(const char *s, CompCenterMode *out);
+const char           *comp_center_mode_to_str(CompCenterMode mode);
+
+bool                  comp_accel_profile_from_str(const char *s, CompAccelProfile *out);
+const char           *comp_accel_profile_to_str(CompAccelProfile profile);
+
+bool                  comp_touch_swipe_from_str(const char *s, CompTouchSwipeAction *out);
+const char           *comp_touch_swipe_to_str(CompTouchSwipeAction action);
+
 typedef struct {
     char *key;
     char *value;
 } CompEnvVar;
 
 typedef struct {
-    char  *match;          /* lowercase connector ("edp-1") or EDID ("samsung display corp. 0x41aa") */
-    bool   has_mode;
-    char  *mode;           /* "preferred" or "WxH@Hz" */
-    bool   has_scale;
-    double scale;          /* 0.5..4.0 */
-    bool   has_transform;
-    char  *transform;      /* "normal", "90", "180", "270", "flipped", ... */
-    bool   has_vrr;
-    char  *vrr;            /* "off", "on", "on-demand" */
+    char         *match;          /* lowercase connector ("edp-1") or EDID ("samsung display corp. 0x41aa") */
+    bool          has_mode;
+    char         *mode;           /* "preferred" or "WxH@Hz" */
+    bool          has_scale;
+    double        scale;          /* 0.5..4.0 */
+    bool          has_transform;
+    CompTransform transform;      /* COMP_TRANSFORM_* */
+    bool          has_vrr;
+    CompVrrPolicy vrr;            /* COMP_VRR_* */
 } CompOutputRule;
 
 typedef struct CompConfig {
-    uint32_t         mod_mask;
-    CompLayoutConfig layout;
-    int32_t          border_px;
+    uint32_t             mod_mask;
+    CompLayoutConfig     layout;
+    int32_t              border_px;
 
-    float            accent_rgba[4];
-    float            active_border_rgba[4];
-    bool             active_border_tracks_accent;
-    float            inactive_border_rgba[4];
-    float            urgent_border_rgba[4];
+    float                accent_rgba[4];
+    float                active_border_rgba[4];
+    bool                 active_border_tracks_accent;
+    float                inactive_border_rgba[4];
+    float                urgent_border_rgba[4];
 
-    float            switcher_active_rgba[4];
-    bool             switcher_active_tracks_accent;
-    float            switcher_urgent_rgba[4];
+    float                switcher_active_rgba[4];
+    bool                 switcher_active_tracks_accent;
+    float                switcher_urgent_rgba[4];
 
-    CompMotionConfig motion;
+    CompMotionConfig     motion;
 
-    char            *screenshot_path;
-    bool             screenshot_copy;
-    bool             screenshot_notify;
-    bool             screenshot_border;
+    char                *screenshot_path;
+    bool                 screenshot_copy;
+    bool                 screenshot_notify;
+    bool                 screenshot_border;
 
-    bool             xwayland_enabled;
-    bool             xwayland_force_zero_scaling;
+    bool                 xwayland_enabled;
+    bool                 xwayland_force_zero_scaling;
 
-    char            *xkb_layout;
-    char            *xkb_options;
-    bool             numlock_on_startup;
-    int32_t          repeat_rate;
-    int32_t          repeat_delay;
+    char                *xkb_layout;
+    char                *xkb_options;
+    bool                 numlock_on_startup;
+    int32_t              repeat_rate;
+    int32_t              repeat_delay;
 
-    bool             touchpad_tap;
-    bool             touchpad_natural_scroll;
-    bool             touchpad_dwt;
+    bool                 touchpad_tap;
+    bool                 touchpad_natural_scroll;
+    bool                 touchpad_dwt;
 
-    char            *mouse_accel_profile; /* "flat" | "adaptive" */
-    double           mouse_accel_speed;   /* -1.0..1.0 */
-    bool             mouse_natural_scroll;
+    CompAccelProfile     mouse_accel_profile; /* COMP_ACCEL_FLAT | COMP_ACCEL_ADAPTIVE */
+    double               mouse_accel_speed;   /* -1.0..1.0 */
+    bool                 mouse_natural_scroll;
 
-    bool             touch_enabled;
-    char            *touch_swipe_center;
-    char            *touch_swipe_right;
-    char            *touch_swipe_horizontal;
-    int32_t          touch_dwell_ms;
+    bool                 touch_enabled;
+    CompTouchSwipeAction touch_swipe_center;
+    CompTouchSwipeAction touch_swipe_right;
+    CompTouchSwipeAction touch_swipe_horizontal;
+    int32_t              touch_dwell_ms;
 
-    CompEnvVar      *env;
-    size_t           n_env;
+    CompEnvVar          *env;
+    size_t               n_env;
 
-    char          ***autostart;           /* array of NULL-terminated argv arrays */
-    size_t           n_autostart;
+    char              ***autostart;           /* array of NULL-terminated argv arrays */
+    size_t               n_autostart;
 
-    CompOutputRule  *outputs;
-    size_t           n_outputs;
+    CompOutputRule      *outputs;
+    size_t               n_outputs;
 
-    CompBinds       *binds;
-    CompRules       *rules;
+    CompBinds           *binds;
+    CompRules           *rules;
 } CompConfig;
 
 CompConfig           *comp_config_new_defaults(uint32_t mod_mask);

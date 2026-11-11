@@ -124,6 +124,62 @@ timeout 30 "$KC" -q --exit-with-command -- sh -c "
 "
 check "kajo-comp msg IPC, reload-config, Alt-Tab switcher, and screenshot UI" 0 $?
 
+# Phase 4: Single-output selection (OUT1-OUT4), KMS cascade, transform rotation & systemd notify/watchdog
+NOTIFY_SOCK="$RT/notify.sock"
+NOTIFY_LOG="$RT/notify.log"
+python3 -c "
+import socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+s.bind('$NOTIFY_SOCK')
+s.settimeout(10.0)
+with open('$NOTIFY_LOG', 'w') as f:
+    while True:
+        try:
+            data = s.recv(1024).decode('utf-8', 'replace')
+            f.write(data + '\n')
+            f.flush()
+            if 'STOPPING=1' in data:
+                break
+        except Exception:
+            break
+" &
+NPID=$!
+for _ in $(seq 30); do [ -S "$NOTIFY_SOCK" ] && break; sleep 0.02; done
+
+rm -f "$CFG_DIR/outputs.toml"
+WLR_HEADLESS_OUTPUTS=2 NOTIFY_SOCKET="$NOTIFY_SOCK" KAJO_WATCHDOG_MS=40 KAJO_COMP_NO_DBUS_ENV=1 \
+    timeout 30 "$KC" -q --session --exit-with-command -- sh -c "
+    set -e
+    OUTS=\$(\"${KC}\" msg get-outputs)
+    echo \"\$OUTS\" | grep -q '\"name\":\"HEADLESS-2\"[^}]*\"active\":true'
+    echo \"\$OUTS\" | grep -q '\"name\":\"HEADLESS-1\"[^}]*\"active\":false'
+
+    # Switch primary output via [[output]] priority (OUT2)
+    printf '[[output]]\nmatch = \"HEADLESS-1\"\n' > '$CFG_DIR/outputs.toml'
+    \"$KC\" msg action reload-config | grep -q '\"ok\"'
+    OUTS2=\$(\"${KC}\" msg get-outputs)
+    echo \"\$OUTS2\" | grep -q '\"name\":\"HEADLESS-2\"[^}]*\"active\":false'
+    echo \"\$OUTS2\" | grep -q '\"name\":\"HEADLESS-1\"[^}]*\"active\":true'
+
+    # Posture transform rotation (OUT4 + §3.15.4)
+    \"$KC\" msg action set-output-transform transform=90 | grep -q '\"ok\"'
+    \"$KC\" msg get-outputs | grep -q '\"name\":\"HEADLESS-1\"[^}]*\"transform\":\"90\"'
+    \"$KC\" msg action set-output-transform transform=normal | grep -q '\"ok\"'
+    \"$KC\" msg get-outputs | grep -q '\"name\":\"HEADLESS-1\"[^}]*\"transform\":\"normal\"'
+
+    # Atomic test-before-commit cascade (set-output-config)
+    \"$KC\" msg action set-output-config scale=1.5 vrr=on-demand | grep -q '\"ok\"'
+    \"$KC\" msg get-outputs | grep -q '\"name\":\"HEADLESS-1\"[^}]*\"vrr\":\"on-demand\"'
+
+    # Allow watchdog timer (40ms) to fire at least once
+    sleep 0.12
+"
+P4_RC=$?
+wait "$NPID" 2>/dev/null || true
+grep -q 'READY=1' "$NOTIFY_LOG" && grep -q 'WATCHDOG=1' "$NOTIFY_LOG" && grep -q 'STOPPING=1' "$NOTIFY_LOG" || P4_RC=1
+rm -f "$CFG_DIR/outputs.toml"
+check "Phase 4 single-output priority, transform rotation, KMS cascade & systemd watchdog" 0 $P4_RC
+
 timeout 60 "$KC" -q --exit-with-command -- "$CL" churn 200
 check "200 connect/disconnect cycles" 0 $?
 

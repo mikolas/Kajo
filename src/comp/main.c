@@ -6,6 +6,7 @@
 #include "comp_server.h"
 
 #include "core/comp_binds.h"
+#include "core/comp_schema_keys.h"
 
 #include <ctype.h>
 #include <errno.h>
@@ -73,7 +74,9 @@ fprint_json_str(FILE *fp, const char *s)
 static bool
 is_numeric_key_val(const char *key, const char *val)
 {
-    if (strcmp(key, "id") != 0 && strcmp(key, "idx") != 0 && strcmp(key, "scale") != 0)
+    if (strcmp(key, COMP_IPC_KEY_ID) != 0 &&
+        strcmp(key, COMP_IPC_KEY_IDX) != 0 &&
+        strcmp(key, COMP_KEY_SCALE) != 0)
         return false;
     if (!val || !*val)
         return false;
@@ -99,31 +102,31 @@ run_msg_cli(int argc, char *argv[])
         return 1;
 
     bool is_subscribe = false;
-    if (strcmp(sub, "get-outputs") == 0 ||
-        strcmp(sub, "get-workspaces") == 0 ||
-        strcmp(sub, "get-windows") == 0 ||
-        strcmp(sub, "get-keyboard-layouts") == 0 ||
-        strcmp(sub, "debug-mem") == 0) {
-        fprintf(req_fp, "{\"cmd\":");
+    if (strcmp(sub, COMP_IPC_CMD_GET_OUTPUTS) == 0 ||
+        strcmp(sub, COMP_IPC_CMD_GET_WORKSPACES) == 0 ||
+        strcmp(sub, COMP_IPC_CMD_GET_WINDOWS) == 0 ||
+        strcmp(sub, COMP_IPC_CMD_GET_KEYBOARD_LAYOUTS) == 0 ||
+        strcmp(sub, COMP_IPC_CMD_DEBUG_MEM) == 0) {
+        fprintf(req_fp, "{\"" COMP_IPC_KEY_CMD "\":");
         fprint_json_str(req_fp, sub);
         fprintf(req_fp, "}\n");
-    } else if (strcmp(sub, "subscribe") == 0) {
+    } else if (strcmp(sub, COMP_IPC_CMD_SUBSCRIBE) == 0) {
         is_subscribe = true;
-        fprintf(req_fp, "{\"cmd\":\"subscribe\",\"events\":[");
+        fprintf(req_fp, "{\"" COMP_IPC_KEY_CMD "\":\"" COMP_IPC_CMD_SUBSCRIBE "\",\"" COMP_IPC_KEY_EVENTS "\":[");
         for (int i = 3; i < argc; i++) {
             if (i > 3)
                 fputc(',', req_fp);
             fprint_json_str(req_fp, argv[i]);
         }
         fprintf(req_fp, "]}\n");
-    } else if (strcmp(sub, "action") == 0) {
+    } else if (strcmp(sub, COMP_IPC_CMD_ACTION) == 0) {
         if (argc < 4) {
             fclose(req_fp);
             free(req_buf);
             fprintf(stderr, "kajo-comp msg action requires an <ACTION_NAME>\n");
             return 2;
         }
-        fprintf(req_fp, "{\"cmd\":\"action\",\"name\":");
+        fprintf(req_fp, "{\"" COMP_IPC_KEY_CMD "\":\"" COMP_IPC_CMD_ACTION "\",\"" COMP_IPC_KEY_NAME "\":");
         fprint_json_str(req_fp, argv[3]);
         for (int i = 4; i < argc; i++) {
             const char *eq = strchr(argv[i], '=');
@@ -160,12 +163,12 @@ run_msg_cli(int argc, char *argv[])
     fclose(req_fp);
 
     char sock_path[256];
-    const char *env_sock = getenv("KAJO_COMP_SOCKET");
+    const char *env_sock = getenv(COMP_IPC_ENV_SOCKET);
     const char *xdg_run  = getenv("XDG_RUNTIME_DIR");
     if (env_sock && *env_sock)
         snprintf(sock_path, sizeof(sock_path), "%s", env_sock);
     else if (xdg_run && *xdg_run)
-        snprintf(sock_path, sizeof(sock_path), "%s/kajo-comp.sock", xdg_run);
+        snprintf(sock_path, sizeof(sock_path), "%s/%s", xdg_run, COMP_IPC_SOCK_NAME);
     else
         snprintf(sock_path, sizeof(sock_path), "/tmp/kajo-comp-%d.sock", (int)getuid());
 

@@ -1,5 +1,6 @@
 /* kajo_comp_ipc.c — Client-side IPC helper for $XDG_RUNTIME_DIR/kajo-comp.sock (Phase 2d). */
 #include "kajo_comp_ipc.h"
+#include "../comp/core/comp_schema_keys.h"
 
 #include <gio/gio.h>
 #include <gio/gunixsocketaddress.h>
@@ -8,13 +9,13 @@
 gchar *
 kajo_comp_ipc_socket_path(void)
 {
-    const gchar *env_sock = g_getenv("KAJO_COMP_SOCKET");
+    const gchar *env_sock = g_getenv(COMP_IPC_ENV_SOCKET);
     if (env_sock && *env_sock)
         return g_strdup(env_sock);
 
     const gchar *xdg_run = g_getenv("XDG_RUNTIME_DIR");
     if (xdg_run && *xdg_run) {
-        gchar *cand = g_build_filename(xdg_run, "kajo-comp.sock", NULL);
+        gchar *cand = g_build_filename(xdg_run, COMP_IPC_SOCK_NAME, NULL);
         if (g_file_test(cand, G_FILE_TEST_EXISTS))
             return cand;
         g_free(cand);
@@ -80,7 +81,8 @@ kajo_comp_ipc_send_action(const gchar *action_name)
     if (!action_name || !*action_name)
         return FALSE;
 
-    g_autofree gchar *req = g_strdup_printf("{\"cmd\":\"action\",\"name\":\"%s\"}", action_name);
+    g_autofree gchar *req = g_strdup_printf("{\"" COMP_IPC_KEY_CMD "\":\"" COMP_IPC_CMD_ACTION
+                                            "\",\"" COMP_IPC_KEY_NAME "\":\"%s\"}", action_name);
     g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
     if (!resp)
         return FALSE;
@@ -94,11 +96,11 @@ kajo_comp_ipc_send_action(const gchar *action_name)
 gboolean
 kajo_comp_ipc_toggle_floating(void)
 {
-    return kajo_comp_ipc_send_action("toggle-window-floating");
+    return kajo_comp_ipc_send_action(COMP_IPC_ACT_TOGGLE_WINDOW_FLOATING);
 }
 
 gboolean
 kajo_comp_ipc_reload_config(void)
 {
-    return kajo_comp_ipc_send_action("reload-config");
+    return kajo_comp_ipc_send_action(COMP_IPC_ACT_RELOAD_CONFIG);
 }

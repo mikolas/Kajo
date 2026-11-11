@@ -1,6 +1,7 @@
 /* comp_config.c — multi-file TOML configuration loader & merger (pure C). */
 #include "comp_config.h"
 
+#include "comp_schema_keys.h"
 #include "../../vendor/tomlc17/tomlc17.h"
 
 #include <ctype.h>
@@ -21,6 +22,183 @@ typedef struct {
     char  *paths[COMP_MAX_LOADED_FILES];
     size_t n;
 } IncludeStack;
+
+/* ───────────────────────── Enum Conversion Tables ───────────────────────── */
+
+static const struct {
+    const char   *name;
+    CompVrrPolicy val;
+} k_vrr_policies[] = {
+    { "off",       COMP_VRR_OFF },
+    { "on",        COMP_VRR_ON },
+    { "on-demand", COMP_VRR_ON_DEMAND },
+};
+
+bool
+comp_vrr_policy_from_str(const char *s, CompVrrPolicy *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_vrr_policies) / sizeof(k_vrr_policies[0]); i++) {
+        if (strcasecmp(s, k_vrr_policies[i].name) == 0) {
+            *out = k_vrr_policies[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_vrr_policy_to_str(CompVrrPolicy policy)
+{
+    for (size_t i = 0; i < sizeof(k_vrr_policies) / sizeof(k_vrr_policies[0]); i++) {
+        if (k_vrr_policies[i].val == policy)
+            return k_vrr_policies[i].name;
+    }
+    return "off";
+}
+
+static const struct {
+    const char   *name;
+    CompTransform val;
+} k_transforms[] = {
+    { "normal",      COMP_TRANSFORM_NORMAL },
+    { "0",           COMP_TRANSFORM_NORMAL },
+    { "90",          COMP_TRANSFORM_90 },
+    { "180",         COMP_TRANSFORM_180 },
+    { "270",         COMP_TRANSFORM_270 },
+    { "flipped",     COMP_TRANSFORM_FLIPPED },
+    { "flipped-90",  COMP_TRANSFORM_FLIPPED_90 },
+    { "flipped-180", COMP_TRANSFORM_FLIPPED_180 },
+    { "flipped-270", COMP_TRANSFORM_FLIPPED_270 },
+};
+
+bool
+comp_transform_from_str(const char *s, CompTransform *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_transforms) / sizeof(k_transforms[0]); i++) {
+        if (strcasecmp(s, k_transforms[i].name) == 0) {
+            *out = k_transforms[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_transform_to_str(CompTransform tf)
+{
+    for (size_t i = 0; i < sizeof(k_transforms) / sizeof(k_transforms[0]); i++) {
+        if (strcmp(k_transforms[i].name, "0") != 0 && k_transforms[i].val == tf)
+            return k_transforms[i].name;
+    }
+    return "normal";
+}
+
+static const struct {
+    const char    *name;
+    CompCenterMode val;
+} k_center_modes[] = {
+    { "never",       COMP_CENTER_NEVER },
+    { "on-overflow", COMP_CENTER_ON_OVERFLOW },
+    { "always",      COMP_CENTER_ALWAYS },
+};
+
+bool
+comp_center_mode_from_str(const char *s, CompCenterMode *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_center_modes) / sizeof(k_center_modes[0]); i++) {
+        if (strcmp(s, k_center_modes[i].name) == 0) {
+            *out = k_center_modes[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_center_mode_to_str(CompCenterMode mode)
+{
+    for (size_t i = 0; i < sizeof(k_center_modes) / sizeof(k_center_modes[0]); i++) {
+        if (k_center_modes[i].val == mode)
+            return k_center_modes[i].name;
+    }
+    return "never";
+}
+
+static const struct {
+    const char      *name;
+    CompAccelProfile val;
+} k_accel_profiles[] = {
+    { "flat",     COMP_ACCEL_FLAT },
+    { "adaptive", COMP_ACCEL_ADAPTIVE },
+};
+
+bool
+comp_accel_profile_from_str(const char *s, CompAccelProfile *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_accel_profiles) / sizeof(k_accel_profiles[0]); i++) {
+        if (strcasecmp(s, k_accel_profiles[i].name) == 0) {
+            *out = k_accel_profiles[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_accel_profile_to_str(CompAccelProfile profile)
+{
+    for (size_t i = 0; i < sizeof(k_accel_profiles) / sizeof(k_accel_profiles[0]); i++) {
+        if (k_accel_profiles[i].val == profile)
+            return k_accel_profiles[i].name;
+    }
+    return "flat";
+}
+
+static const struct {
+    const char          *name;
+    CompTouchSwipeAction val;
+} k_touch_swipes[] = {
+    { "none",           COMP_SWIPE_NONE },
+    { "launcher",       COMP_SWIPE_LAUNCHER },
+    { "overview",       COMP_SWIPE_OVERVIEW },
+    { "osk",            COMP_SWIPE_OSK },
+    { "control-center", COMP_SWIPE_CONTROL_CENTER },
+    { "notifications",  COMP_SWIPE_NOTIFICATIONS },
+    { "column",         COMP_SWIPE_COLUMN },
+    { "workspace",      COMP_SWIPE_WORKSPACE },
+};
+
+bool
+comp_touch_swipe_from_str(const char *s, CompTouchSwipeAction *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_touch_swipes) / sizeof(k_touch_swipes[0]); i++) {
+        if (strcasecmp(s, k_touch_swipes[i].name) == 0) {
+            *out = k_touch_swipes[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_touch_swipe_to_str(CompTouchSwipeAction action)
+{
+    for (size_t i = 0; i < sizeof(k_touch_swipes) / sizeof(k_touch_swipes[0]); i++) {
+        if (k_touch_swipes[i].val == action)
+            return k_touch_swipes[i].name;
+    }
+    return "none";
+}
 
 static bool
 parse_hex_rgba(const char *s, float out[4])
@@ -130,14 +308,14 @@ comp_config_new_defaults(uint32_t mod_mask)
     cfg->touchpad_natural_scroll = true;
     cfg->touchpad_dwt            = true;
 
-    cfg->mouse_accel_profile  = strdup("flat");
+    cfg->mouse_accel_profile  = COMP_ACCEL_FLAT;
     cfg->mouse_accel_speed    = 0.0;
     cfg->mouse_natural_scroll = false;
 
     cfg->touch_enabled          = true;
-    cfg->touch_swipe_center     = strdup("launcher");
-    cfg->touch_swipe_right      = strdup("control-center");
-    cfg->touch_swipe_horizontal = strdup("column");
+    cfg->touch_swipe_center     = COMP_SWIPE_LAUNCHER;
+    cfg->touch_swipe_right      = COMP_SWIPE_CONTROL_CENTER;
+    cfg->touch_swipe_horizontal = COMP_SWIPE_COLUMN;
     cfg->touch_dwell_ms         = 4000;
 
     cfg->binds = comp_binds_new();
@@ -157,10 +335,6 @@ comp_config_free(CompConfig *cfg)
     free(cfg->screenshot_path);
     free(cfg->xkb_layout);
     free(cfg->xkb_options);
-    free(cfg->mouse_accel_profile);
-    free(cfg->touch_swipe_center);
-    free(cfg->touch_swipe_right);
-    free(cfg->touch_swipe_horizontal);
 
     for (size_t i = 0; i < cfg->n_env; i++) {
         free(cfg->env[i].key);
@@ -173,8 +347,6 @@ comp_config_free(CompConfig *cfg)
     for (size_t i = 0; i < cfg->n_outputs; i++) {
         free(cfg->outputs[i].match);
         free(cfg->outputs[i].mode);
-        free(cfg->outputs[i].transform);
-        free(cfg->outputs[i].vrr);
     }
     free(cfg->outputs);
 
@@ -204,7 +376,7 @@ parse_color_or_accent(toml_datum_t d, float out_rgba[4], bool *tracks_accent,
 {
     if (d.type == TOML_UNKNOWN)
         return;
-    if (d.type == TOML_STRING && tracks_accent && strcmp(d.u.s, "accent") == 0) {
+    if (d.type == TOML_STRING && tracks_accent && strcmp(d.u.s, COMP_VAL_ACCENT) == 0) {
         *tracks_accent = true;
         memcpy(out_rgba, accent_rgba, 4 * sizeof(float));
         return;
@@ -223,14 +395,14 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
     if (tab.type != TOML_TABLE)
         return;
     /* Ignore shell.toml's `[layout]` (`left = [...]`, `center = [...]`, `right = [...]`) */
-    if (toml_get(tab, "left").type != TOML_UNKNOWN ||
-        toml_get(tab, "center").type != TOML_UNKNOWN ||
-        toml_get(tab, "right").type != TOML_UNKNOWN) {
+    if (toml_get(tab, COMP_KEY_LAYOUT_LEFT).type != TOML_UNKNOWN ||
+        toml_get(tab, COMP_KEY_LAYOUT_CENTER).type != TOML_UNKNOWN ||
+        toml_get(tab, COMP_KEY_LAYOUT_RIGHT).type != TOML_UNKNOWN) {
         return;
     }
 
     double v = 0.0;
-    toml_datum_t gap = toml_get(tab, "gap_px");
+    toml_datum_t gap = toml_get(tab, COMP_KEY_GAP_PX);
     if (gap.type != TOML_UNKNOWN) {
         if (datum_as_double(gap, &v) && v >= 0.0 && v <= 200.0)
             cfg->layout.gap = v;
@@ -238,7 +410,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
             comp_diag_add(diag, src, gap.lineno, "'gap_px' must be a number in 0..200; ignored");
     }
 
-    toml_datum_t bpx = toml_get(tab, "border_px");
+    toml_datum_t bpx = toml_get(tab, COMP_KEY_BORDER_PX);
     if (bpx.type != TOML_UNKNOWN) {
         if (bpx.type == TOML_INT64 && bpx.u.int64 >= 0 && bpx.u.int64 <= 32)
             cfg->border_px = (int32_t)bpx.u.int64;
@@ -246,34 +418,28 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
             comp_diag_add(diag, src, bpx.lineno, "'border_px' must be an integer in 0..32; ignored");
     }
 
-    parse_color_or_accent(toml_get(tab, "active_border_color"),
+    parse_color_or_accent(toml_get(tab, COMP_KEY_ACTIVE_BORDER_COLOR),
                           cfg->active_border_rgba, &cfg->active_border_tracks_accent,
-                          cfg->accent_rgba, "active_border_color", src, diag);
-    parse_color_or_accent(toml_get(tab, "inactive_border_color"),
+                          cfg->accent_rgba, COMP_KEY_ACTIVE_BORDER_COLOR, src, diag);
+    parse_color_or_accent(toml_get(tab, COMP_KEY_INACTIVE_BORDER_COLOR),
                           cfg->inactive_border_rgba, NULL,
-                          cfg->accent_rgba, "inactive_border_color", src, diag);
-    parse_color_or_accent(toml_get(tab, "urgent_border_color"),
+                          cfg->accent_rgba, COMP_KEY_INACTIVE_BORDER_COLOR, src, diag);
+    parse_color_or_accent(toml_get(tab, COMP_KEY_URGENT_BORDER_COLOR),
                           cfg->urgent_border_rgba, NULL,
-                          cfg->accent_rgba, "urgent_border_color", src, diag);
+                          cfg->accent_rgba, COMP_KEY_URGENT_BORDER_COLOR, src, diag);
 
-    toml_datum_t acs = toml_get(tab, "always_center_single_column");
+    toml_datum_t acs = toml_get(tab, COMP_KEY_ALWAYS_CENTER_SINGLE);
     if (acs.type == TOML_BOOLEAN)
         cfg->layout.always_center_single_column = acs.u.boolean;
 
-    toml_datum_t cfc = toml_get(tab, "center_focused_column");
+    toml_datum_t cfc = toml_get(tab, COMP_KEY_CENTER_FOCUSED_COLUMN);
     if (cfc.type == TOML_STRING) {
-        if (strcmp(cfc.u.s, "never") == 0)
-            cfg->layout.center_mode = COMP_CENTER_NEVER;
-        else if (strcmp(cfc.u.s, "on-overflow") == 0)
-            cfg->layout.center_mode = COMP_CENTER_ON_OVERFLOW;
-        else if (strcmp(cfc.u.s, "always") == 0)
-            cfg->layout.center_mode = COMP_CENTER_ALWAYS;
-        else
+        if (!comp_center_mode_from_str(cfc.u.s, &cfg->layout.center_mode))
             comp_diag_add(diag, src, cfc.lineno,
                           "'center_focused_column' must be \"never\", \"on-overflow\", or \"always\"; ignored");
     }
 
-    toml_datum_t dcw = toml_get(tab, "default_column_width");
+    toml_datum_t dcw = toml_get(tab, COMP_KEY_DEFAULT_COLUMN_WIDTH);
     if (dcw.type != TOML_UNKNOWN) {
         if (datum_as_double(dcw, &v) && v >= 0.05 && v <= 1.0)
             cfg->layout.default_width = v;
@@ -281,7 +447,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
             comp_diag_add(diag, src, dcw.lineno, "'default_column_width' must be in 0.05..1.0; ignored");
     }
 
-    toml_datum_t pw = toml_get(tab, "preset_widths");
+    toml_datum_t pw = toml_get(tab, COMP_KEY_PRESET_WIDTHS);
     if (pw.type == TOML_ARRAY && pw.u.arr.size > 0 && pw.u.arr.size <= COMP_LAYOUT_MAX_PRESETS) {
         double tmp[COMP_LAYOUT_MAX_PRESETS];
         bool ok = true;
@@ -297,7 +463,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
         }
     }
 
-    toml_datum_t ph = toml_get(tab, "preset_heights");
+    toml_datum_t ph = toml_get(tab, COMP_KEY_PRESET_HEIGHTS);
     if (ph.type == TOML_ARRAY && ph.u.arr.size > 0 && ph.u.arr.size <= COMP_LAYOUT_MAX_PRESETS) {
         double tmp[COMP_LAYOUT_MAX_PRESETS];
         bool ok = true;
@@ -322,13 +488,13 @@ merge_spring_subtable(CompSpringParams *sp, toml_datum_t sub, const char *name,
         return;
     CompSpringParams cand = *sp;
     double v = 0.0;
-    toml_datum_t dr = toml_get(sub, "damping_ratio");
+    toml_datum_t dr = toml_get(sub, COMP_KEY_DAMPING_RATIO);
     if (dr.type != TOML_UNKNOWN && datum_as_double(dr, &v))
         cand.damping_ratio = v;
-    toml_datum_t st = toml_get(sub, "stiffness");
+    toml_datum_t st = toml_get(sub, COMP_KEY_STIFFNESS);
     if (st.type != TOML_UNKNOWN && datum_as_double(st, &v))
         cand.stiffness = v;
-    toml_datum_t ep = toml_get(sub, "epsilon");
+    toml_datum_t ep = toml_get(sub, COMP_KEY_EPSILON);
     if (ep.type != TOML_UNKNOWN && datum_as_double(ep, &v))
         cand.epsilon = v;
 
@@ -343,21 +509,21 @@ merge_animations_section(CompConfig *cfg, toml_datum_t tab, const char *src, Com
 {
     if (tab.type != TOML_TABLE)
         return;
-    toml_datum_t en = toml_get(tab, "enabled");
+    toml_datum_t en = toml_get(tab, COMP_KEY_ENABLED);
     if (en.type == TOML_BOOLEAN)
         cfg->motion.enabled = en.u.boolean;
 
     double v = 0.0;
-    toml_datum_t sd = toml_get(tab, "slowdown");
+    toml_datum_t sd = toml_get(tab, COMP_KEY_SLOWDOWN);
     if (sd.type != TOML_UNKNOWN && datum_as_double(sd, &v) && v >= 0.0 && v <= 100.0)
         cfg->motion.slowdown = v;
 
     merge_spring_subtable(&cfg->motion.workspace_switch,
-                          toml_get(tab, "workspace_switch"), "workspace_switch", src, diag);
+                          toml_get(tab, COMP_SEC_ANIM_WORKSPACE_SWITCH), COMP_SEC_ANIM_WORKSPACE_SWITCH, src, diag);
     merge_spring_subtable(&cfg->motion.horizontal_scroll,
-                          toml_get(tab, "horizontal_scroll"), "horizontal_scroll", src, diag);
+                          toml_get(tab, COMP_SEC_ANIM_HORIZONTAL_SCROLL), COMP_SEC_ANIM_HORIZONTAL_SCROLL, src, diag);
     merge_spring_subtable(&cfg->motion.window_movement,
-                          toml_get(tab, "window_movement"), "window_movement", src, diag);
+                          toml_get(tab, COMP_SEC_ANIM_WINDOW_MOVEMENT), COMP_SEC_ANIM_WINDOW_MOVEMENT, src, diag);
 }
 
 static void
@@ -397,14 +563,14 @@ merge_autostart_section(CompConfig *cfg, toml_datum_t tab, const char *src, Comp
 {
     if (tab.type != TOML_TABLE)
         return;
-    toml_datum_t rst = toml_get(tab, "reset");
+    toml_datum_t rst = toml_get(tab, COMP_KEY_RESET);
     if (rst.type == TOML_BOOLEAN && rst.u.boolean) {
         free_argv_list(cfg->autostart, cfg->n_autostart);
         cfg->autostart   = NULL;
         cfg->n_autostart = 0;
     }
 
-    toml_datum_t cmds = toml_get(tab, "commands");
+    toml_datum_t cmds = toml_get(tab, COMP_KEY_COMMANDS);
     if (cmds.type != TOML_ARRAY)
         return;
     for (int i = 0; i < cmds.u.arr.size; i++) {
@@ -455,52 +621,54 @@ merge_input_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDiag
     if (tab.type != TOML_TABLE)
         return;
 
-    toml_datum_t kb = toml_get(tab, "keyboard");
+    toml_datum_t kb = toml_get(tab, COMP_SEC_INPUT_KEYBOARD);
     if (kb.type == TOML_TABLE) {
-        toml_datum_t xl = toml_get(kb, "xkb_layout");
+        toml_datum_t xl = toml_get(kb, COMP_KEY_XKB_LAYOUT);
         if (xl.type == TOML_STRING)
             set_str(&cfg->xkb_layout, xl.u.s);
-        toml_datum_t xo = toml_get(kb, "xkb_options");
+        toml_datum_t xo = toml_get(kb, COMP_KEY_XKB_OPTIONS);
         if (xo.type == TOML_STRING)
             set_str(&cfg->xkb_options, xo.u.s);
-        toml_datum_t nl = toml_get(kb, "numlock_on_startup");
+        toml_datum_t nl = toml_get(kb, COMP_KEY_NUMLOCK_ON_STARTUP);
         if (nl.type == TOML_BOOLEAN)
             cfg->numlock_on_startup = nl.u.boolean;
-        toml_datum_t rr = toml_get(kb, "repeat_rate");
+        toml_datum_t rr = toml_get(kb, COMP_KEY_REPEAT_RATE);
         if (rr.type == TOML_INT64 && rr.u.int64 >= 1 && rr.u.int64 <= 200)
             cfg->repeat_rate = (int32_t)rr.u.int64;
         else if (rr.type != TOML_UNKNOWN)
             comp_diag_add(diag, src, rr.lineno, "'repeat_rate' must be an integer in 1..200; ignored");
-        toml_datum_t rd = toml_get(kb, "repeat_delay");
+        toml_datum_t rd = toml_get(kb, COMP_KEY_REPEAT_DELAY);
         if (rd.type == TOML_INT64 && rd.u.int64 >= 50 && rd.u.int64 <= 2000)
             cfg->repeat_delay = (int32_t)rd.u.int64;
         else if (rd.type != TOML_UNKNOWN)
             comp_diag_add(diag, src, rd.lineno, "'repeat_delay' must be an integer in 50..2000; ignored");
     }
 
-    toml_datum_t tp = toml_get(tab, "touchpad");
+    toml_datum_t tp = toml_get(tab, COMP_SEC_INPUT_TOUCHPAD);
     if (tp.type == TOML_TABLE) {
-        toml_datum_t tap = toml_get(tp, "tap");
+        toml_datum_t tap = toml_get(tp, COMP_KEY_TAP);
         if (tap.type == TOML_BOOLEAN)
             cfg->touchpad_tap = tap.u.boolean;
-        toml_datum_t ns = toml_get(tp, "natural_scroll");
+        toml_datum_t ns = toml_get(tp, COMP_KEY_NATURAL_SCROLL);
         if (ns.type == TOML_BOOLEAN)
             cfg->touchpad_natural_scroll = ns.u.boolean;
-        toml_datum_t dwt = toml_get(tp, "dwt");
+        toml_datum_t dwt = toml_get(tp, COMP_KEY_DWT);
         if (dwt.type == TOML_BOOLEAN)
             cfg->touchpad_dwt = dwt.u.boolean;
     }
 
-    toml_datum_t ms = toml_get(tab, "mouse");
+    toml_datum_t ms = toml_get(tab, COMP_SEC_INPUT_MOUSE);
     if (ms.type == TOML_TABLE) {
-        toml_datum_t ap = toml_get(ms, "accel_profile");
-        if (ap.type == TOML_STRING)
-            set_str(&cfg->mouse_accel_profile, ap.u.s);
+        toml_datum_t ap = toml_get(ms, COMP_KEY_ACCEL_PROFILE);
+        if (ap.type == TOML_STRING) {
+            if (!comp_accel_profile_from_str(ap.u.s, &cfg->mouse_accel_profile))
+                comp_diag_add(diag, src, ap.lineno, "'accel_profile' must be \"flat\" or \"adaptive\"; ignored");
+        }
         double spd = 0.0;
-        toml_datum_t as = toml_get(ms, "accel_speed");
+        toml_datum_t as = toml_get(ms, COMP_KEY_ACCEL_SPEED);
         if (as.type != TOML_UNKNOWN && datum_as_double(as, &spd) && spd >= -1.0 && spd <= 1.0)
             cfg->mouse_accel_speed = spd;
-        toml_datum_t ns = toml_get(ms, "natural_scroll");
+        toml_datum_t ns = toml_get(ms, COMP_KEY_NATURAL_SCROLL);
         if (ns.type == TOML_BOOLEAN)
             cfg->mouse_natural_scroll = ns.u.boolean;
     }
@@ -520,7 +688,7 @@ merge_output_array(CompConfig *cfg, toml_datum_t arr, const char *src, CompDiagL
         toml_datum_t t = arr.u.arr.elem[i];
         if (t.type != TOML_TABLE)
             continue;
-        toml_datum_t m = toml_get(t, "match");
+        toml_datum_t m = toml_get(t, COMP_KEY_MATCH);
         if (m.type != TOML_STRING || m.u.str.len == 0) {
             comp_diag_add(diag, src, t.lineno, "[[output]] requires a non-empty 'match' string; ignored");
             continue;
@@ -550,13 +718,13 @@ merge_output_array(CompConfig *cfg, toml_datum_t arr, const char *src, CompDiagL
             free(low_match);
         }
 
-        toml_datum_t mode = toml_get(t, "mode");
+        toml_datum_t mode = toml_get(t, COMP_KEY_MODE);
         if (mode.type == TOML_STRING && mode.u.str.len > 0) {
             rule->has_mode = true;
             set_str(&rule->mode, mode.u.s);
         }
         double sc = 1.0;
-        toml_datum_t scale = toml_get(t, "scale");
+        toml_datum_t scale = toml_get(t, COMP_KEY_SCALE);
         if (scale.type != TOML_UNKNOWN) {
             if (datum_as_double(scale, &sc) && sc >= 0.5 && sc <= 4.0) {
                 rule->has_scale = true;
@@ -565,17 +733,23 @@ merge_output_array(CompConfig *cfg, toml_datum_t arr, const char *src, CompDiagL
                 comp_diag_add(diag, src, scale.lineno, "[[output]] 'scale' must be in 0.5..4.0; ignored");
             }
         }
-        toml_datum_t tr = toml_get(t, "transform");
+        toml_datum_t tr = toml_get(t, COMP_KEY_TRANSFORM);
         if (tr.type == TOML_STRING) {
-            rule->has_transform = true;
-            set_str(&rule->transform, tr.u.s);
+            CompTransform tf = COMP_TRANSFORM_NORMAL;
+            if (comp_transform_from_str(tr.u.s, &tf)) {
+                rule->has_transform = true;
+                rule->transform     = tf;
+            } else {
+                comp_diag_add(diag, src, tr.lineno,
+                              "[[output]] 'transform' must be \"normal\", \"90\", \"180\", or \"270\"; ignored");
+            }
         }
-        toml_datum_t vrr = toml_get(t, "vrr");
+        toml_datum_t vrr = toml_get(t, COMP_KEY_VRR);
         if (vrr.type == TOML_STRING) {
-            if (strcmp(vrr.u.s, "off") == 0 || strcmp(vrr.u.s, "on") == 0 ||
-                strcmp(vrr.u.s, "on-demand") == 0) {
+            CompVrrPolicy vp = COMP_VRR_OFF;
+            if (comp_vrr_policy_from_str(vrr.u.s, &vp)) {
                 rule->has_vrr = true;
-                set_str(&rule->vrr, vrr.u.s);
+                rule->vrr     = vp;
             } else {
                 comp_diag_add(diag, src, vrr.lineno,
                               "[[output]] 'vrr' must be \"off\", \"on\", or \"on-demand\"; ignored");
@@ -691,7 +865,7 @@ merge_toml_internal(CompConfig *cfg, const char *src, size_t len,
                     bool replace_binds, int depth, IncludeStack *stack,
                     CompDiagList *diag)
 {
-    const char *name = source_name ? source_name : "comp.toml";
+    const char *name = source_name ? source_name : COMP_CFG_FILE_COMP;
     if (len > (size_t)INT_MAX) {
         comp_diag_add(diag, name, 0, "file too large");
         return false;
@@ -704,93 +878,93 @@ merge_toml_internal(CompConfig *cfg, const char *src, size_t len,
     }
 
     /* 1. Top-level accent_color (from theme.toml) */
-    toml_datum_t acc = toml_get(res.toptab, "accent_color");
+    toml_datum_t acc = toml_get(res.toptab, COMP_KEY_ACCENT_COLOR);
     if (acc.type == TOML_STRING && parse_hex_rgba(acc.u.s, cfg->accent_rgba))
         sync_accent_dependents(cfg);
 
     /* 2. [layout], [animations], [switcher], [screenshots], [xwayland], [env], [autostart], [input], [touch] */
-    merge_layout_section(cfg, toml_get(res.toptab, "layout"), name, diag);
-    merge_animations_section(cfg, toml_get(res.toptab, "animations"), name, diag);
+    merge_layout_section(cfg, toml_get(res.toptab, COMP_SEC_LAYOUT), name, diag);
+    merge_animations_section(cfg, toml_get(res.toptab, COMP_SEC_ANIMATIONS), name, diag);
 
-    toml_datum_t sw = toml_get(res.toptab, "switcher");
+    toml_datum_t sw = toml_get(res.toptab, COMP_SEC_SWITCHER);
     if (sw.type == TOML_TABLE) {
-        parse_color_or_accent(toml_get(sw, "active_color"),
+        parse_color_or_accent(toml_get(sw, COMP_KEY_ACTIVE_COLOR),
                               cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
                               cfg->accent_rgba, "switcher.active_color", name, diag);
-        parse_color_or_accent(toml_get(sw, "active_border_color"),
+        parse_color_or_accent(toml_get(sw, COMP_KEY_ACTIVE_BORDER_COLOR),
                               cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
                               cfg->accent_rgba, "switcher.active_border_color", name, diag);
-        parse_color_or_accent(toml_get(sw, "urgent_color"),
+        parse_color_or_accent(toml_get(sw, COMP_KEY_URGENT_COLOR),
                               cfg->switcher_urgent_rgba, NULL,
                               cfg->accent_rgba, "switcher.urgent_color", name, diag);
-        parse_color_or_accent(toml_get(sw, "urgent_border_color"),
+        parse_color_or_accent(toml_get(sw, COMP_KEY_URGENT_BORDER_COLOR),
                               cfg->switcher_urgent_rgba, NULL,
                               cfg->accent_rgba, "switcher.urgent_border_color", name, diag);
     }
 
-    toml_datum_t ss = toml_get(res.toptab, "screenshots");
+    toml_datum_t ss = toml_get(res.toptab, COMP_SEC_SCREENSHOTS);
     if (ss.type == TOML_TABLE) {
-        toml_datum_t p = toml_get(ss, "path");
+        toml_datum_t p = toml_get(ss, COMP_KEY_PATH);
         if (p.type == TOML_STRING)
             set_str(&cfg->screenshot_path, p.u.s);
-        toml_datum_t c = toml_get(ss, "copy_to_clipboard");
+        toml_datum_t c = toml_get(ss, COMP_KEY_COPY_TO_CLIPBOARD);
         if (c.type == TOML_BOOLEAN)
             cfg->screenshot_copy = c.u.boolean;
-        toml_datum_t n = toml_get(ss, "show_notification");
+        toml_datum_t n = toml_get(ss, COMP_KEY_SHOW_NOTIFICATION);
         if (n.type == TOML_BOOLEAN)
             cfg->screenshot_notify = n.u.boolean;
-        toml_datum_t b = toml_get(ss, "include_window_border");
+        toml_datum_t b = toml_get(ss, COMP_KEY_INCLUDE_WINDOW_BORDER);
         if (b.type == TOML_BOOLEAN)
             cfg->screenshot_border = b.u.boolean;
     }
 
-    toml_datum_t xw = toml_get(res.toptab, "xwayland");
+    toml_datum_t xw = toml_get(res.toptab, COMP_SEC_XWAYLAND);
     if (xw.type == TOML_TABLE) {
-        toml_datum_t en = toml_get(xw, "enabled");
+        toml_datum_t en = toml_get(xw, COMP_KEY_ENABLED);
         if (en.type == TOML_BOOLEAN)
             cfg->xwayland_enabled = en.u.boolean;
-        toml_datum_t fz = toml_get(xw, "force_zero_scaling");
+        toml_datum_t fz = toml_get(xw, COMP_KEY_FORCE_ZERO_SCALING);
         if (fz.type == TOML_BOOLEAN)
             cfg->xwayland_force_zero_scaling = fz.u.boolean;
     }
 
-    merge_env_section(cfg, toml_get(res.toptab, "env"), name, diag);
-    merge_autostart_section(cfg, toml_get(res.toptab, "autostart"), name, diag);
-    merge_input_section(cfg, toml_get(res.toptab, "input"), name, diag);
+    merge_env_section(cfg, toml_get(res.toptab, COMP_SEC_ENV), name, diag);
+    merge_autostart_section(cfg, toml_get(res.toptab, COMP_SEC_AUTOSTART), name, diag);
+    merge_input_section(cfg, toml_get(res.toptab, COMP_SEC_INPUT), name, diag);
 
-    toml_datum_t tch = toml_get(res.toptab, "touch");
+    toml_datum_t tch = toml_get(res.toptab, COMP_SEC_TOUCH);
     if (tch.type == TOML_TABLE) {
-        toml_datum_t en = toml_get(tch, "enabled");
+        toml_datum_t en = toml_get(tch, COMP_KEY_ENABLED);
         if (en.type == TOML_BOOLEAN)
             cfg->touch_enabled = en.u.boolean;
-        toml_datum_t sc = toml_get(tch, "swipe_center");
+        toml_datum_t sc = toml_get(tch, COMP_KEY_SWIPE_CENTER);
         if (sc.type == TOML_STRING)
-            set_str(&cfg->touch_swipe_center, sc.u.s);
-        toml_datum_t sr = toml_get(tch, "swipe_right");
+            (void)comp_touch_swipe_from_str(sc.u.s, &cfg->touch_swipe_center);
+        toml_datum_t sr = toml_get(tch, COMP_KEY_SWIPE_RIGHT);
         if (sr.type == TOML_STRING)
-            set_str(&cfg->touch_swipe_right, sr.u.s);
-        toml_datum_t sh = toml_get(tch, "swipe_horizontal");
+            (void)comp_touch_swipe_from_str(sr.u.s, &cfg->touch_swipe_right);
+        toml_datum_t sh = toml_get(tch, COMP_KEY_SWIPE_HORIZONTAL);
         if (sh.type == TOML_STRING)
-            set_str(&cfg->touch_swipe_horizontal, sh.u.s);
-        toml_datum_t dw = toml_get(tch, "dwell_ms");
+            (void)comp_touch_swipe_from_str(sh.u.s, &cfg->touch_swipe_horizontal);
+        toml_datum_t dw = toml_get(tch, COMP_KEY_DWELL_MS);
         if (dw.type == TOML_INT64 && dw.u.int64 >= 200 && dw.u.int64 <= 30000)
             cfg->touch_dwell_ms = (int32_t)dw.u.int64;
     }
 
     /* 3. [[output]], [[bind]], [[rule]], [[layer_rule]] */
-    merge_output_array(cfg, toml_get(res.toptab, "output"), name, diag);
+    merge_output_array(cfg, toml_get(res.toptab, COMP_SEC_OUTPUT), name, diag);
 
-    if (toml_get(res.toptab, "bind").type != TOML_UNKNOWN) {
+    if (toml_get(res.toptab, COMP_SEC_BIND).type != TOML_UNKNOWN) {
         (void)comp_binds_merge_toml(cfg->binds, src, len, name, cfg->mod_mask, replace_binds, diag);
     }
-    if (toml_get(res.toptab, "rule").type != TOML_UNKNOWN ||
-        toml_get(res.toptab, "layer_rule").type != TOML_UNKNOWN ||
-        toml_get(res.toptab, "reset_rules").type != TOML_UNKNOWN) {
+    if (toml_get(res.toptab, COMP_SEC_RULE).type != TOML_UNKNOWN ||
+        toml_get(res.toptab, COMP_SEC_LAYER_RULE).type != TOML_UNKNOWN ||
+        toml_get(res.toptab, COMP_KEY_RESET_RULES).type != TOML_UNKNOWN) {
         (void)comp_rules_merge_toml(cfg->rules, src, len, name, diag);
     }
 
     /* 4. Top-level `include = [...]` globs */
-    expand_includes(cfg, toml_get(res.toptab, "include"), name, base_dir, depth, stack, diag);
+    expand_includes(cfg, toml_get(res.toptab, COMP_KEY_INCLUDE), name, base_dir, depth, stack, diag);
 
     toml_free(res);
     return true;
@@ -884,29 +1058,29 @@ comp_config_load_dir(const char *config_dir, const char *defaults_dir,
 
     /* 0. System/repo defaults (non-fatal if absent) */
     if (defaults_dir && defaults_dir[0]) {
-        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, "comp.toml",
+        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_COMP,
                                           NULL, true, false, &stack, diag);
-        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, "binds.toml",
+        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_BINDS,
                                           NULL, true, false, &stack, diag);
-        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, "rules.toml",
+        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_RULES,
                                           NULL, true, false, &stack, diag);
     }
 
     /* 1. Suite theme.toml & shell.toml (non-fatal if absent) */
-    (void)load_one_file_with_fallback(cfg, config_dir, NULL, "theme.toml",
+    (void)load_one_file_with_fallback(cfg, config_dir, NULL, COMP_CFG_FILE_THEME,
                                       NULL, true, false, &stack, diag);
-    (void)load_one_file_with_fallback(cfg, config_dir, NULL, "shell.toml",
+    (void)load_one_file_with_fallback(cfg, config_dir, NULL, COMP_CFG_FILE_SHELL,
                                       NULL, true, false, &stack, diag);
 
     /* 2. Base compositor files: comp.toml, outputs.toml, binds.toml, rules.toml.
      * Syntax error in a base file rejects the reload (retaining previous snapshot). */
-    if (!load_one_file_with_fallback(cfg, config_dir, NULL, "comp.toml",
+    if (!load_one_file_with_fallback(cfg, config_dir, NULL, COMP_CFG_FILE_COMP,
                                      override_comp_path, true, true, &stack, diag) ||
-        !load_one_file_with_fallback(cfg, config_dir, NULL, "outputs.toml",
+        !load_one_file_with_fallback(cfg, config_dir, NULL, COMP_CFG_FILE_OUTPUTS,
                                      NULL, true, true, &stack, diag) ||
-        !load_one_file_with_fallback(cfg, config_dir, NULL, "binds.toml",
+        !load_one_file_with_fallback(cfg, config_dir, NULL, COMP_CFG_FILE_BINDS,
                                      NULL, true, true, &stack, diag) ||
-        !load_one_file_with_fallback(cfg, config_dir, NULL, "rules.toml",
+        !load_one_file_with_fallback(cfg, config_dir, NULL, COMP_CFG_FILE_RULES,
                                      NULL, true, true, &stack, diag)) {
         ok = false;
     }
@@ -915,7 +1089,7 @@ comp_config_load_dir(const char *config_dir, const char *defaults_dir,
      * Syntax error in one drop-in logs a diagnostic and skips only that drop-in. */
     if (ok && config_dir && config_dir[0]) {
         char confd_dir[PATH_MAX];
-        snprintf(confd_dir, sizeof(confd_dir), "%s/conf.d", config_dir);
+        snprintf(confd_dir, sizeof(confd_dir), "%s/%s", config_dir, COMP_CFG_DIR_CONFD);
         DIR *d = opendir(confd_dir);
         if (d) {
             char **names = NULL;
@@ -923,7 +1097,7 @@ comp_config_load_dir(const char *config_dir, const char *defaults_dir,
             struct dirent *de;
             while ((de = readdir(d)) != NULL) {
                 size_t nl = strlen(de->d_name);
-                if (nl <= 5 || strcmp(de->d_name + nl - 5, ".toml") != 0 || de->d_name[0] == '.')
+                if (nl <= 5 || strcmp(de->d_name + nl - 5, COMP_CFG_EXT_TOML) != 0 || de->d_name[0] == '.')
                     continue;
                 char **p = realloc(names, (n_names + 1) * sizeof(char *));
                 if (!p)

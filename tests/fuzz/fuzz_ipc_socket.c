@@ -21,6 +21,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         return 0;
     wl_list_init(&s->outputs);
     wl_list_init(&s->keyboards);
+    wl_list_init(&s->input_devs);
     wl_list_init(&s->windows);
     wl_list_init(&s->layer_surfaces);
     wl_list_init(&s->xwayland_wins);

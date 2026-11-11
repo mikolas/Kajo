@@ -4,6 +4,7 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "core/comp_schema_keys.h"
 
 #include <ctype.h>
 #include <dirent.h>
@@ -284,11 +285,8 @@ jp_parse_value(JParser *jp)
 
     if (c == '"') {
         char *s = jp_parse_raw_string(jp);
-        if (!s)
-            return NULL;
-        JVal *v = talloc_zero(jp->ctx, JVal);
-        if (!v)
-            return NULL;
+        JVal *v = s ? talloc_zero(jp->ctx, JVal) : NULL;
+        if (!v) return NULL;
         v->kind = JV_STRING;
         v->u.str = s;
         return v;
@@ -296,122 +294,83 @@ jp_parse_value(JParser *jp)
     if (c == '{') {
         jp->p++;
         JVal *v = talloc_zero(jp->ctx, JVal);
-        if (!v)
-            return NULL;
+        if (!v) return NULL;
         v->kind = JV_OBJECT;
         jp_skip_ws(jp);
-        if (*jp->p == '}') {
-            jp->p++;
-            return v;
-        }
+        if (*jp->p == '}') { jp->p++; return v; }
         size_t cap = 8;
         v->u.obj.members = talloc_array(v, JMember, (unsigned)cap);
-        if (!v->u.obj.members)
-            return NULL;
+        if (!v->u.obj.members) return NULL;
         jp->depth++;
         for (;;) {
             jp_skip_ws(jp);
             char *k = jp_parse_raw_string(jp);
-            if (!k)
-                return NULL;
+            if (!k) return NULL;
             jp_skip_ws(jp);
-            if (*jp->p != ':')
-                return NULL;
+            if (*jp->p != ':') return NULL;
             jp->p++;
             JVal *child = jp_parse_value(jp);
-            if (!child)
-                return NULL;
+            if (!child) return NULL;
             if (v->u.obj.n == cap) {
                 cap *= 2;
                 JMember *nm = talloc_realloc(v, v->u.obj.members, JMember, (unsigned)cap);
-                if (!nm)
-                    return NULL;
+                if (!nm) return NULL;
                 v->u.obj.members = nm;
             }
             v->u.obj.members[v->u.obj.n++] = (JMember){ .key = k, .val = child };
             jp_skip_ws(jp);
-            if (*jp->p == ',') {
-                jp->p++;
-                continue;
-            }
-            if (*jp->p == '}') {
-                jp->p++;
-                jp->depth--;
-                return v;
-            }
+            if (*jp->p == ',') { jp->p++; continue; }
+            if (*jp->p == '}') { jp->p++; jp->depth--; return v; }
             return NULL;
         }
     }
     if (c == '[') {
         jp->p++;
         JVal *v = talloc_zero(jp->ctx, JVal);
-        if (!v)
-            return NULL;
+        if (!v) return NULL;
         v->kind = JV_ARRAY;
         jp_skip_ws(jp);
-        if (*jp->p == ']') {
-            jp->p++;
-            return v;
-        }
+        if (*jp->p == ']') { jp->p++; return v; }
         size_t cap = 8;
         v->u.arr.items = talloc_array(v, JVal *, (unsigned)cap);
-        if (!v->u.arr.items)
-            return NULL;
+        if (!v->u.arr.items) return NULL;
         jp->depth++;
         for (;;) {
             JVal *elem = jp_parse_value(jp);
-            if (!elem)
-                return NULL;
+            if (!elem) return NULL;
             if (v->u.arr.n == cap) {
                 cap *= 2;
                 JVal **ni = talloc_realloc(v, v->u.arr.items, JVal *, (unsigned)cap);
-                if (!ni)
-                    return NULL;
+                if (!ni) return NULL;
                 v->u.arr.items = ni;
             }
             v->u.arr.items[v->u.arr.n++] = elem;
             jp_skip_ws(jp);
-            if (*jp->p == ',') {
-                jp->p++;
-                continue;
-            }
-            if (*jp->p == ']') {
-                jp->p++;
-                jp->depth--;
-                return v;
-            }
+            if (*jp->p == ',') { jp->p++; continue; }
+            if (*jp->p == ']') { jp->p++; jp->depth--; return v; }
             return NULL;
         }
     }
-    if (strncmp(jp->p, "true", 4) == 0) {
-        jp->p += 4;
+    if (strncmp(jp->p, "true", 4) == 0 || strncmp(jp->p, "false", 5) == 0) {
+        bool bval = (*jp->p == 't');
+        jp->p += bval ? 4 : 5;
         JVal *v = talloc_zero(jp->ctx, JVal);
         if (!v) return NULL;
         v->kind = JV_BOOL;
-        v->u.b = true;
-        return v;
-    }
-    if (strncmp(jp->p, "false", 5) == 0) {
-        jp->p += 5;
-        JVal *v = talloc_zero(jp->ctx, JVal);
-        if (!v) return NULL;
-        v->kind = JV_BOOL;
-        v->u.b = false;
+        v->u.b = bval;
         return v;
     }
     if (strncmp(jp->p, "null", 4) == 0) {
         jp->p += 4;
         JVal *v = talloc_zero(jp->ctx, JVal);
-        if (!v) return NULL;
-        v->kind = JV_NULL;
+        if (v) v->kind = JV_NULL;
         return v;
     }
     if (c == '-' || isdigit((unsigned char)c)) {
         char *end = NULL;
         errno = 0;
         double d = strtod(jp->p, &end);
-        if (end == jp->p || errno != 0 || !isfinite(d))
-            return NULL;
+        if (end == jp->p || errno != 0 || !isfinite(d)) return NULL;
         jp->p = end;
         JVal *v = talloc_zero(jp->ctx, JVal);
         if (!v) return NULL;
@@ -453,30 +412,6 @@ jobj_num(const JVal *obj, const char *key, double *out)
 
 /* ───────────────────────── Payload Serializers ───────────────────────── */
 
-static const char *
-transform_to_str(enum wl_output_transform tf)
-{
-    switch (tf) {
-    case WL_OUTPUT_TRANSFORM_90:
-    case WL_OUTPUT_TRANSFORM_FLIPPED_90:  return "90";
-    case WL_OUTPUT_TRANSFORM_180:
-    case WL_OUTPUT_TRANSFORM_FLIPPED_180: return "180";
-    case WL_OUTPUT_TRANSFORM_270:
-    case WL_OUTPUT_TRANSFORM_FLIPPED_270: return "270";
-    default:                              return "normal";
-    }
-}
-
-static const char *
-vrr_policy_to_str(CompVrrPolicy p)
-{
-    switch (p) {
-    case COMP_VRR_ON:        return "on";
-    case COMP_VRR_ON_DEMAND: return "on-demand";
-    default:                 return "off";
-    }
-}
-
 static void
 append_outputs_array(JsonBuf *b, const CompServer *s)
 {
@@ -499,9 +434,9 @@ append_outputs_array(JsonBuf *b, const CompServer *s)
         jbuf_printf(b, ",\"active\":%s,\"width\":%d,\"height\":%d,\"refresh_mhz\":%d,\"scale\":%.4g,\"transform\":",
                     wo->enabled ? "true" : "false",
                     wo->width, wo->height, wo->refresh, (double)wo->scale);
-        jbuf_str(b, transform_to_str(wo->transform));
+        jbuf_str(b, comp_transform_to_str((CompTransform)wo->transform));
         jbuf_puts(b, ",\"vrr\":");
-        jbuf_str(b, vrr_policy_to_str(o->vrr_policy));
+        jbuf_str(b, comp_vrr_policy_to_str(o->vrr_policy));
         jbuf_puts(b, ",\"modes\":[");
         bool first_m = true;
         const struct wlr_output_mode *m;
@@ -655,6 +590,12 @@ client_queue_line(CompIpcClient *c, const char *json_line)
 }
 
 static void
+client_reply_ok(CompIpcClient *c)
+{
+    client_queue_line(c, "{\"ok\":null}\n");
+}
+
+static void
 client_reply_error(CompIpcClient *c, const char *msg)
 {
     void *tmp = talloc_new(c);
@@ -681,35 +622,59 @@ broadcast_event(CompServer *s, uint32_t sub_bit, const char *line)
     }
 }
 
-void
-comp_ipc_emit_workspaces(CompServer *s)
+static void
+build_workspaces_event(JsonBuf *b, const CompServer *s)
+{
+    b->len = 0;
+    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_WORKSPACES_CHANGED "\",\"workspaces\":");
+    append_workspaces_array(b, s);
+    jbuf_puts(b, "}\n");
+}
+
+static void
+build_windows_event(JsonBuf *b, const CompServer *s)
+{
+    b->len = 0;
+    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_WINDOWS_CHANGED "\",\"windows\":");
+    append_windows_array(b, s);
+    jbuf_puts(b, "}\n");
+}
+
+static void
+build_keyboard_layouts_event(JsonBuf *b, const CompServer *s)
+{
+    b->len = 0;
+    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_KEYBOARD_LAYOUTS_CHANGED "\",");
+    append_keyboard_layouts_fields(b, s);
+    jbuf_puts(b, "}\n");
+}
+
+static void
+build_outputs_event(JsonBuf *b, const CompServer *s)
+{
+    b->len = 0;
+    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_OUTPUTS_CHANGED "\",\"outputs\":");
+    append_outputs_array(b, s);
+    jbuf_puts(b, "}\n");
+}
+
+static void
+emit_built_event(CompServer *s, uint32_t sub_bit, void (*builder)(JsonBuf *, const CompServer *))
 {
     if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
         return;
     void *tmp = talloc_new(s->ipc);
     JsonBuf b;
     jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"WorkspacesChanged\",\"workspaces\":");
-    append_workspaces_array(&b, s);
-    jbuf_puts(&b, "}\n");
-    broadcast_event(s, SUB_WORKSPACES, b.buf);
+    builder(&b, s);
+    broadcast_event(s, sub_bit, b.buf);
     talloc_free(tmp);
 }
 
-void
-comp_ipc_emit_windows(CompServer *s)
-{
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
-        return;
-    void *tmp = talloc_new(s->ipc);
-    JsonBuf b;
-    jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"WindowsChanged\",\"windows\":");
-    append_windows_array(&b, s);
-    jbuf_puts(&b, "}\n");
-    broadcast_event(s, SUB_WINDOWS, b.buf);
-    talloc_free(tmp);
-}
+void comp_ipc_emit_workspaces(CompServer *s)       { emit_built_event(s, SUB_WORKSPACES, build_workspaces_event); }
+void comp_ipc_emit_windows(CompServer *s)          { emit_built_event(s, SUB_WINDOWS, build_windows_event); }
+void comp_ipc_emit_keyboard_layouts(CompServer *s) { emit_built_event(s, SUB_KEYBOARD_LAYOUTS, build_keyboard_layouts_event); }
+void comp_ipc_emit_outputs(CompServer *s)          { emit_built_event(s, SUB_OUTPUTS, build_outputs_event); }
 
 void
 comp_ipc_emit_focus(CompServer *s, CompWinId focused_id)
@@ -717,39 +682,9 @@ comp_ipc_emit_focus(CompServer *s, CompWinId focused_id)
     if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
         return;
     char buf[128];
-    snprintf(buf, sizeof(buf), "{\"event\":\"WindowFocusChanged\",\"id\":%llu}\n",
+    snprintf(buf, sizeof(buf), "{\"event\":\"" COMP_IPC_EVENT_WINDOW_FOCUS_CHANGED "\",\"id\":%llu}\n",
              (unsigned long long)focused_id);
     broadcast_event(s, SUB_WINDOWS, buf);
-}
-
-void
-comp_ipc_emit_keyboard_layouts(CompServer *s)
-{
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
-        return;
-    void *tmp = talloc_new(s->ipc);
-    JsonBuf b;
-    jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"KeyboardLayoutsChanged\",");
-    append_keyboard_layouts_fields(&b, s);
-    jbuf_puts(&b, "}\n");
-    broadcast_event(s, SUB_KEYBOARD_LAYOUTS, b.buf);
-    talloc_free(tmp);
-}
-
-void
-comp_ipc_emit_outputs(CompServer *s)
-{
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
-        return;
-    void *tmp = talloc_new(s->ipc);
-    JsonBuf b;
-    jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"OutputsChanged\",\"outputs\":");
-    append_outputs_array(&b, s);
-    jbuf_puts(&b, "}\n");
-    broadcast_event(s, SUB_OUTPUTS, b.buf);
-    talloc_free(tmp);
 }
 
 void
@@ -760,8 +695,8 @@ comp_ipc_emit_touch_bezel_swipe(CompServer *s, const char *edge, double x_ratio)
     void *tmp = talloc_new(s->ipc);
     JsonBuf b;
     jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"TouchBezelSwipe\",\"edge\":");
-    jbuf_str(&b, edge ? edge : "bottom");
+    jbuf_puts(&b, "{\"event\":\"" COMP_IPC_EVENT_TOUCH_BEZEL_SWIPE "\",\"edge\":");
+    jbuf_str(&b, edge ? edge : COMP_IPC_EDGE_BOTTOM);
     jbuf_printf(&b, ",\"x_ratio\":%.4f}\n", x_ratio);
     broadcast_event(s, SUB_TOUCH_GESTURES, b.buf);
     talloc_free(tmp);
@@ -775,7 +710,7 @@ comp_ipc_emit_screenshot_saved(CompServer *s, const char *path, bool copied)
     void *tmp = talloc_new(s->ipc);
     JsonBuf b;
     jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"ScreenshotSaved\",\"path\":");
+    jbuf_puts(&b, "{\"event\":\"" COMP_IPC_EVENT_SCREENSHOT_SAVED "\",\"path\":");
     jbuf_str(&b, path ? path : "");
     jbuf_printf(&b, ",\"copied\":%s}\n", copied ? "true" : "false");
     broadcast_event(s, SUB_SCREENSHOTS, b.buf);
@@ -784,31 +719,173 @@ comp_ipc_emit_screenshot_saved(CompServer *s, const char *path, bool copied)
 
 /* ───────────────────────── Request Dispatch ───────────────────────── */
 
-static int
-parse_transform_str(const char *s)
-{
-    if (!s) return -1;
-    if (strcasecmp(s, "normal") == 0 || strcmp(s, "0") == 0) return 0;
-    if (strcmp(s, "90") == 0)  return 1;
-    if (strcmp(s, "180") == 0) return 2;
-    if (strcmp(s, "270") == 0) return 3;
-    return -1;
-}
+typedef enum {
+    IPC_ACT_FOCUS_WINDOW = 0,
+    IPC_ACT_FOCUS_APP,
+    IPC_ACT_SWITCH_WORKSPACE,
+    IPC_ACT_SWITCHER_CONFIRM,
+    IPC_ACT_SWITCHER_CANCEL,
+    IPC_ACT_SWITCH_KEYBOARD_LAYOUT,
+    IPC_ACT_SET_OUTPUT_TRANSFORM,
+    IPC_ACT_SET_OUTPUT_CONFIG,
+    IPC_ACT_SCREENSHOT_CONFIRM,
+    IPC_ACT_SCREENSHOT_CANCEL,
+} CompIpcExtraAction;
 
-static int
-parse_vrr_str(const char *s)
+static const struct { const char *name; CompIpcExtraAction act; } k_ipc_extra_actions[] = {
+    { COMP_IPC_ACT_FOCUS_WINDOW,           IPC_ACT_FOCUS_WINDOW },
+    { COMP_IPC_ACT_FOCUS_APP,              IPC_ACT_FOCUS_APP },
+    { COMP_IPC_ACT_SWITCH_WORKSPACE,       IPC_ACT_SWITCH_WORKSPACE },
+    { COMP_IPC_ACT_SWITCHER_CONFIRM,       IPC_ACT_SWITCHER_CONFIRM },
+    { COMP_IPC_ACT_SWITCHER_CANCEL,        IPC_ACT_SWITCHER_CANCEL },
+    { COMP_IPC_ACT_SWITCH_KEYBOARD_LAYOUT, IPC_ACT_SWITCH_KEYBOARD_LAYOUT },
+    { COMP_IPC_ACT_SET_OUTPUT_TRANSFORM,   IPC_ACT_SET_OUTPUT_TRANSFORM },
+    { COMP_IPC_ACT_SET_OUTPUT_CONFIG,      IPC_ACT_SET_OUTPUT_CONFIG },
+    { COMP_IPC_ACT_SCREENSHOT_CONFIRM,     IPC_ACT_SCREENSHOT_CONFIRM },
+    { COMP_IPC_ACT_SCREENSHOT_CANCEL,      IPC_ACT_SCREENSHOT_CANCEL },
+};
+
+static bool
+ipc_extra_action_from_name(const char *name, CompIpcExtraAction *out)
 {
-    if (!s) return -1;
-    if (strcasecmp(s, "off") == 0)       return COMP_VRR_OFF;
-    if (strcasecmp(s, "on") == 0)        return COMP_VRR_ON;
-    if (strcasecmp(s, "on-demand") == 0) return COMP_VRR_ON_DEMAND;
-    return -1;
+    for (size_t i = 0; i < sizeof(k_ipc_extra_actions) / sizeof(k_ipc_extra_actions[0]); i++) {
+        if (strcmp(k_ipc_extra_actions[i].name, name) == 0) {
+            *out = k_ipc_extra_actions[i].act;
+            return true;
+        }
+    }
+    return false;
 }
 
 static bool
-handle_window_action_cmd(CompIpcClient *c, const JVal *req, const char *name)
+handle_bind_kind_action_cmd(CompIpcClient *c, const JVal *req, CompBindKind kind)
 {
     CompServer *s = c->server;
+    switch (kind) {
+    case COMP_BIND_FULLSCREEN_WINDOW:
+        if (comp_layout_toggle_fullscreen(s->layout)) {
+            comp_window_relayout(s);
+            comp_ipc_emit_windows(s);
+        }
+        client_reply_ok(c);
+        return true;
+
+    case COMP_BIND_CLOSE_WINDOW: {
+        double id_num = 0.0;
+        CompWinId id = jobj_num(req, COMP_IPC_KEY_ID, &id_num) && id_num > 0.0 ? (CompWinId)id_num : 0;
+        comp_window_close_id(s, id);
+        client_reply_ok(c);
+        return true;
+    }
+
+    case COMP_BIND_SET_COLUMN_WIDTH:
+    case COMP_BIND_SET_WINDOW_HEIGHT: {
+        const char *delta_s = jobj_str(req, COMP_KEY_DELTA);
+        double d = 0.0;
+        CompDeltaMode mode = COMP_DELTA_REL_PROP;
+        if (!delta_s || !comp_binds_parse_delta(delta_s, &d, &mode)) {
+            client_reply_error(c, "invalid or missing 'delta'");
+            return true;
+        }
+        if (kind == COMP_BIND_SET_COLUMN_WIDTH)
+            comp_window_resize_column(s, d, mode);
+        else
+            comp_window_resize_height(s, d, mode);
+        client_reply_ok(c);
+        return true;
+    }
+
+    case COMP_BIND_NEXT_WINDOW:
+    case COMP_BIND_PREVIOUS_WINDOW: {
+        const char *scope_s  = jobj_str(req, COMP_KEY_SCOPE);
+        const char *filter_s = jobj_str(req, COMP_KEY_FILTER);
+        const JVal *hold_v   = jobj_get(req, COMP_IPC_KEY_HOLD);
+        bool hold = (hold_v && hold_v->kind == JV_BOOL && hold_v->u.b);
+        CompSwitchScope scope = COMP_SWITCH_SCOPE_OUTPUT;
+        if (scope_s)
+            (void)comp_switch_scope_from_str(scope_s, &scope);
+        bool same_app = (filter_s && strcmp(filter_s, COMP_VAL_APP_ID) == 0);
+        comp_switcher_step(s, kind == COMP_BIND_NEXT_WINDOW, scope, same_app, hold ? COMP_MOD_ALT : 0);
+        client_reply_ok(c);
+        return true;
+    }
+
+    case COMP_BIND_SPAWN: {
+        const JVal *cmd_arr = jobj_get(req, COMP_IPC_KEY_COMMAND);
+        if (!cmd_arr || cmd_arr->kind != JV_ARRAY || cmd_arr->u.arr.n == 0) {
+            client_reply_error(c, "spawn requires non-empty 'command' array");
+            return true;
+        }
+        const char **argv = talloc_zero_array(c, const char *, (unsigned)(cmd_arr->u.arr.n + 1));
+        if (!argv) {
+            client_reply_error(c, "out of memory");
+            return true;
+        }
+        for (size_t i = 0; i < cmd_arr->u.arr.n; i++) {
+            const JVal *e = cmd_arr->u.arr.items[i];
+            if (!e || e->kind != JV_STRING || (i == 0 && !*e->u.str)) {
+                talloc_free(argv);
+                client_reply_error(c, "spawn command elements must be strings");
+                return true;
+            }
+            argv[i] = e->u.str;
+        }
+        if (!s->opts.greeter_mode)
+            comp_spawn(s, argv);
+        talloc_free(argv);
+        client_reply_ok(c);
+        return true;
+    }
+
+    case COMP_BIND_RELOAD_CONFIG:
+        if (!comp_server_reload_config(s))
+            client_reply_error(c, "config reload failed (syntax error; previous config retained)");
+        else
+            client_reply_ok(c);
+        return true;
+
+    case COMP_BIND_BREAK_SHORTCUTS_INHIBIT:
+        comp_protocols_break_shortcuts_inhibit(s);
+        client_reply_ok(c);
+        return true;
+
+    case COMP_BIND_SCREENSHOT:
+        if (!comp_screenshot_interactive(s)) client_reply_error(c, "screenshot failed");
+        else client_reply_ok(c);
+        return true;
+
+    case COMP_BIND_SCREENSHOT_WINDOW:
+        if (!comp_screenshot_window(s)) client_reply_error(c, "screenshot-window failed (no focused window)");
+        else client_reply_ok(c);
+        return true;
+
+    case COMP_BIND_SCREENSHOT_SCREEN:
+        if (!comp_screenshot_screen(s)) client_reply_error(c, "screenshot-screen failed");
+        else client_reply_ok(c);
+        return true;
+
+    case COMP_BIND_QUIT:
+        client_reply_ok(c);
+        if (!s->opts.greeter_mode)
+            comp_server_terminate(s, 0);
+        return true;
+
+    case COMP_BIND_LAYOUT:
+    default:
+        return false;
+    }
+}
+
+static void
+handle_action_cmd(CompIpcClient *c, const JVal *req)
+{
+    CompServer *s = c->server;
+    const char *name = jobj_str(req, COMP_IPC_KEY_NAME);
+    if (!name || !*name) {
+        client_reply_error(c, "action requires a 'name' field");
+        return;
+    }
+
     CompAction layout_act;
     if (comp_action_from_name(name, &layout_act)) {
         if (layout_act == COMP_ACT_TOGGLE_WINDOW_FLOATING) {
@@ -819,227 +896,189 @@ handle_window_action_cmd(CompIpcClient *c, const JVal *req, const char *name)
             comp_ipc_emit_workspaces(s);
             comp_ipc_emit_windows(s);
         }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
+        client_reply_ok(c);
+        return;
     }
-    if (strcmp(name, "fullscreen-window") == 0) {
-        if (comp_layout_toggle_fullscreen(s->layout)) {
-            comp_window_relayout(s);
-            comp_ipc_emit_windows(s);
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
+
+    CompBindKind bind_kind;
+    if (comp_bind_kind_from_name(name, &bind_kind) &&
+        handle_bind_kind_action_cmd(c, req, bind_kind)) {
+        return;
     }
-    if (strcmp(name, "close-window") == 0) {
+
+    CompIpcExtraAction extra;
+    if (!ipc_extra_action_from_name(name, &extra)) {
+        client_reply_error(c, "unknown action name");
+        return;
+    }
+
+    switch (extra) {
+    case IPC_ACT_FOCUS_WINDOW: {
         double id_num = 0.0;
-        CompWinId id = jobj_num(req, "id", &id_num) && id_num > 0.0 ? (CompWinId)id_num : 0;
-        comp_window_close_id(s, id);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
-    }
-    if (strcmp(name, "focus-window") == 0) {
-        double id_num = 0.0;
-        if (!jobj_num(req, "id", &id_num) || id_num <= 0.0) {
+        if (!jobj_num(req, COMP_IPC_KEY_ID, &id_num) || id_num <= 0.0) {
             client_reply_error(c, "focus-window requires numeric 'id'");
-            return true;
+            return;
         }
         comp_window_focus_id(s, (CompWinId)id_num);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
+        client_reply_ok(c);
+        return;
     }
-    if (strcmp(name, "focus-app") == 0) {
-        const char *app_id = jobj_str(req, "app_id");
+    case IPC_ACT_FOCUS_APP: {
+        const char *app_id = jobj_str(req, COMP_IPC_KEY_APP_ID);
         if (!app_id || !*app_id) {
             client_reply_error(c, "focus-app requires 'app_id'");
-            return true;
+            return;
         }
         comp_window_focus_app(s, app_id);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
+        client_reply_ok(c);
+        return;
     }
-    if (strcmp(name, "switch-workspace") == 0) {
+    case IPC_ACT_SWITCH_WORKSPACE: {
         double idx_num = 0.0;
-        if (!jobj_num(req, "idx", &idx_num) || idx_num < 1.0) {
+        if (!jobj_num(req, COMP_IPC_KEY_IDX, &idx_num) || idx_num < 1.0) {
             client_reply_error(c, "switch-workspace requires 'idx' >= 1");
-            return true;
+            return;
         }
         if (comp_layout_focus_workspace_index(s->layout, (size_t)idx_num - 1)) {
             comp_window_relayout(s);
             comp_ipc_emit_workspaces(s);
             comp_ipc_emit_windows(s);
         }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
+        client_reply_ok(c);
+        return;
     }
-    if (strcmp(name, "set-column-width") == 0 || strcmp(name, "set-window-height") == 0) {
-        const char *delta_s = jobj_str(req, "delta");
-        double d = 0.0;
-        CompDeltaMode mode = COMP_DELTA_REL_PROP;
-        if (!delta_s || !comp_binds_parse_delta(delta_s, &d, &mode)) {
-            client_reply_error(c, "invalid or missing 'delta'");
+    case IPC_ACT_SWITCHER_CONFIRM: comp_switcher_confirm(s); client_reply_ok(c); return;
+    case IPC_ACT_SWITCHER_CANCEL:  comp_switcher_cancel(s);  client_reply_ok(c); return;
+    case IPC_ACT_SWITCH_KEYBOARD_LAYOUT: {
+        double idx_num = -1.0;
+        int idx = jobj_num(req, COMP_IPC_KEY_IDX, &idx_num) ? (int)idx_num : -1;
+        comp_input_switch_keyboard_layout(s, idx);
+        client_reply_ok(c);
+        return;
+    }
+    case IPC_ACT_SET_OUTPUT_TRANSFORM: {
+        CompTransform tf = COMP_TRANSFORM_NORMAL;
+        bool tf_ok = comp_transform_from_str(jobj_str(req, COMP_KEY_TRANSFORM), &tf) &&
+                     tf <= COMP_TRANSFORM_270;
+        if (!tf_ok || !comp_output_configure(s, jobj_str(req, COMP_IPC_KEY_OUTPUT), NULL, -1.0, (int)tf, -1))
+            client_reply_error(c, !tf_ok ? "invalid 'transform' (expected normal, 90, 180, or 270)"
+                                         : "failed to configure output transform");
+        else
+            client_reply_ok(c);
+        return;
+    }
+    case IPC_ACT_SET_OUTPUT_CONFIG: {
+        const char *tf_str  = jobj_str(req, COMP_KEY_TRANSFORM);
+        const char *vrr_str = jobj_str(req, COMP_KEY_VRR);
+        double scale = -1.0;
+        jobj_num(req, COMP_KEY_SCALE, &scale);
+        CompTransform tf_val = COMP_TRANSFORM_NORMAL;
+        CompVrrPolicy vrr_val = COMP_VRR_OFF;
+        bool tf_ok  = !tf_str || (comp_transform_from_str(tf_str, &tf_val) && tf_val <= COMP_TRANSFORM_270);
+        bool vrr_ok = !vrr_str || comp_vrr_policy_from_str(vrr_str, &vrr_val);
+        if (!tf_ok || !vrr_ok ||
+            !comp_output_configure(s, jobj_str(req, COMP_IPC_KEY_OUTPUT),
+                                   jobj_str(req, COMP_KEY_MODE), scale,
+                                   tf_str ? (int)tf_val : -1,
+                                   vrr_str ? (int)vrr_val : -1))
+            client_reply_error(c, "output configuration rejected");
+        else
+            client_reply_ok(c);
+        return;
+    }
+    case IPC_ACT_SCREENSHOT_CONFIRM: comp_screenshot_confirm(s); client_reply_ok(c); return;
+    case IPC_ACT_SCREENSHOT_CANCEL:  comp_screenshot_cancel(s);  client_reply_ok(c); return;
+    }
+}
+
+typedef enum {
+    IPC_CMD_GET_OUTPUTS = 0,
+    IPC_CMD_GET_WORKSPACES,
+    IPC_CMD_GET_WINDOWS,
+    IPC_CMD_GET_KEYBOARD_LAYOUTS,
+    IPC_CMD_DEBUG_MEM,
+    IPC_CMD_SUBSCRIBE,
+    IPC_CMD_ACTION,
+} CompIpcCmd;
+
+static const struct { const char *name; CompIpcCmd cmd; } k_ipc_cmds[] = {
+    { COMP_IPC_CMD_GET_OUTPUTS,          IPC_CMD_GET_OUTPUTS },
+    { COMP_IPC_CMD_GET_WORKSPACES,       IPC_CMD_GET_WORKSPACES },
+    { COMP_IPC_CMD_GET_WINDOWS,          IPC_CMD_GET_WINDOWS },
+    { COMP_IPC_CMD_GET_KEYBOARD_LAYOUTS, IPC_CMD_GET_KEYBOARD_LAYOUTS },
+    { COMP_IPC_CMD_DEBUG_MEM,            IPC_CMD_DEBUG_MEM },
+    { COMP_IPC_CMD_SUBSCRIBE,            IPC_CMD_SUBSCRIBE },
+    { COMP_IPC_CMD_ACTION,               IPC_CMD_ACTION },
+};
+
+static bool
+ipc_cmd_from_str(const char *s, CompIpcCmd *out)
+{
+    for (size_t i = 0; i < sizeof(k_ipc_cmds) / sizeof(k_ipc_cmds[0]); i++) {
+        if (strcmp(k_ipc_cmds[i].name, s) == 0) {
+            *out = k_ipc_cmds[i].cmd;
             return true;
         }
-        if (strcmp(name, "set-column-width") == 0)
-            comp_window_resize_column(s, d, mode);
-        else
-            comp_window_resize_height(s, d, mode);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
-    }
-    if (strcmp(name, "next-window") == 0 || strcmp(name, "previous-window") == 0 ||
-        strcmp(name, "switch-window-next") == 0 || strcmp(name, "switch-window-prev") == 0) {
-        const char *scope_s = jobj_str(req, "scope");
-        const char *filter_s = jobj_str(req, "filter");
-        const JVal *hold_v = jobj_get(req, "hold");
-        bool hold = (hold_v && hold_v->kind == JV_BOOL && hold_v->u.b);
-        CompSwitchScope scope = COMP_SWITCH_SCOPE_OUTPUT;
-        if (scope_s && strcmp(scope_s, "workspace") == 0)
-            scope = COMP_SWITCH_SCOPE_WORKSPACE;
-        else if (scope_s && strcmp(scope_s, "all") == 0)
-            scope = COMP_SWITCH_SCOPE_ALL;
-        bool same_app = (filter_s && strcmp(filter_s, "app-id") == 0);
-        bool fwd = (strcmp(name, "next-window") == 0 || strcmp(name, "switch-window-next") == 0);
-        comp_switcher_step(s, fwd, scope, same_app, hold ? COMP_MOD_ALT : 0);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
-    }
-    if (strcmp(name, "switcher-confirm") == 0) {
-        comp_switcher_confirm(s);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
-    }
-    if (strcmp(name, "switcher-cancel") == 0) {
-        comp_switcher_cancel(s);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return true;
     }
     return false;
 }
 
+static const struct { const char *name; uint32_t bit; } k_ipc_sub_topics[] = {
+    { COMP_IPC_SUB_WORKSPACES,       SUB_WORKSPACES },
+    { COMP_IPC_SUB_WINDOWS,          SUB_WINDOWS },
+    { COMP_IPC_SUB_KEYBOARD_LAYOUTS, SUB_KEYBOARD_LAYOUTS },
+    { COMP_IPC_SUB_OUTPUTS,          SUB_OUTPUTS },
+    { COMP_IPC_SUB_TOUCH_GESTURES,   SUB_TOUCH_GESTURES },
+    { COMP_IPC_SUB_SCREENSHOTS,      SUB_SCREENSHOTS },
+};
+
 static void
-handle_action_cmd(CompIpcClient *c, const JVal *req)
+handle_subscribe_cmd(CompIpcClient *c, const JVal *req, JsonBuf *b)
 {
     CompServer *s = c->server;
-    const char *name = jobj_str(req, "name");
-    if (!name || !*name) {
-        client_reply_error(c, "action requires a 'name' field");
-        return;
-    }
-    if (handle_window_action_cmd(c, req, name))
-        return;
-
-    if (strcmp(name, "switch-keyboard-layout") == 0) {
-        double idx_num = -1.0;
-        int idx = jobj_num(req, "idx", &idx_num) ? (int)idx_num : -1;
-        comp_input_switch_keyboard_layout(s, idx);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
-    }
-    if (strcmp(name, "set-output-transform") == 0) {
-        int tf = parse_transform_str(jobj_str(req, "transform"));
-        if (tf < 0 || !comp_output_configure(s, jobj_str(req, "output"), NULL, -1.0, tf, -1)) {
-            client_reply_error(c, tf < 0 ? "invalid 'transform' (expected normal, 90, 180, or 270)"
-                                         : "failed to configure output transform");
-            return;
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
-    }
-    if (strcmp(name, "set-output-config") == 0) {
-        const char *tf_str  = jobj_str(req, "transform");
-        const char *vrr_str = jobj_str(req, "vrr");
-        double scale = -1.0;
-        jobj_num(req, "scale", &scale);
-        int tf  = tf_str ? parse_transform_str(tf_str) : -1;
-        int vrr = vrr_str ? parse_vrr_str(vrr_str) : -1;
-        if ((tf_str && tf < 0) || (vrr_str && vrr < 0) ||
-            !comp_output_configure(s, jobj_str(req, "output"), jobj_str(req, "mode"), scale, tf, vrr)) {
-            client_reply_error(c, "output configuration rejected");
-            return;
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
-    }
-    if (strcmp(name, "spawn") == 0) {
-        const JVal *cmd_arr = jobj_get(req, "command");
-        if (!cmd_arr || cmd_arr->kind != JV_ARRAY || cmd_arr->u.arr.n == 0) {
-            client_reply_error(c, "spawn requires non-empty 'command' array");
-            return;
-        }
-        const char **argv = talloc_zero_array(c, const char *, (unsigned)(cmd_arr->u.arr.n + 1));
-        if (!argv) {
-            client_reply_error(c, "out of memory");
-            return;
-        }
-        for (size_t i = 0; i < cmd_arr->u.arr.n; i++) {
-            const JVal *e = cmd_arr->u.arr.items[i];
-            if (!e || e->kind != JV_STRING || (i == 0 && !*e->u.str)) {
-                talloc_free(argv);
-                client_reply_error(c, "spawn command elements must be strings");
-                return;
+    uint32_t mask = 0;
+    const JVal *ev_arr = jobj_get(req, COMP_IPC_KEY_EVENTS);
+    if (!ev_arr || ev_arr->kind != JV_ARRAY || ev_arr->u.arr.n == 0) {
+        mask = SUB_ALL;
+    } else {
+        for (size_t i = 0; i < ev_arr->u.arr.n; i++) {
+            const JVal *e = ev_arr->u.arr.items[i];
+            if (!e || e->kind != JV_STRING)
+                continue;
+            for (size_t k = 0; k < sizeof(k_ipc_sub_topics) / sizeof(k_ipc_sub_topics[0]); k++) {
+                if (strcmp(e->u.str, k_ipc_sub_topics[k].name) == 0) {
+                    mask |= k_ipc_sub_topics[k].bit;
+                    break;
+                }
             }
-            argv[i] = e->u.str;
         }
-        if (!s->opts.greeter_mode)
-            comp_spawn(s, argv);
-        talloc_free(argv);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
     }
-    if (strcmp(name, "reload-config") == 0) {
-        if (!comp_server_reload_config(s)) {
-            client_reply_error(c, "config reload failed (syntax error; previous config retained)");
-            return;
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
+    c->subs |= mask;
+    client_reply_ok(c);
+
+    /* Initial snapshot events per spec §5.3 */
+    if (mask & SUB_WORKSPACES) {
+        build_workspaces_event(b, s);
+        client_queue_line(c, b->buf);
     }
-    if (strcmp(name, "break-keyboard-shortcuts-inhibit") == 0) {
-        comp_protocols_break_shortcuts_inhibit(s);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
+    if (mask & SUB_WINDOWS) {
+        build_windows_event(b, s);
+        client_queue_line(c, b->buf);
+
+        CompWinId fid = s->layout ? comp_layout_focused_window(s->layout) : 0;
+        b->len = 0;
+        jbuf_printf(b, "{\"event\":\"" COMP_IPC_EVENT_WINDOW_FOCUS_CHANGED "\",\"id\":%llu}\n",
+                    (unsigned long long)fid);
+        client_queue_line(c, b->buf);
     }
-    if (strcmp(name, "screenshot") == 0) {
-        if (!comp_screenshot_interactive(s)) {
-            client_reply_error(c, "screenshot failed");
-            return;
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
+    if (mask & SUB_KEYBOARD_LAYOUTS) {
+        build_keyboard_layouts_event(b, s);
+        client_queue_line(c, b->buf);
     }
-    if (strcmp(name, "screenshot-confirm") == 0) {
-        comp_screenshot_confirm(s);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
+    if (mask & SUB_OUTPUTS) {
+        build_outputs_event(b, s);
+        client_queue_line(c, b->buf);
     }
-    if (strcmp(name, "screenshot-cancel") == 0) {
-        comp_screenshot_cancel(s);
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
-    }
-    if (strcmp(name, "screenshot-window") == 0) {
-        if (!comp_screenshot_window(s)) {
-            client_reply_error(c, "screenshot-window failed (no focused window)");
-            return;
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
-    }
-    if (strcmp(name, "screenshot-screen") == 0) {
-        if (!comp_screenshot_screen(s)) {
-            client_reply_error(c, "screenshot-screen failed");
-            return;
-        }
-        client_queue_line(c, "{\"ok\":null}\n");
-        return;
-    }
-    if (strcmp(name, "quit") == 0) {
-        client_queue_line(c, "{\"ok\":null}\n");
-        if (!s->opts.greeter_mode)
-            comp_server_terminate(s, 0);
-        return;
-    }
-    client_reply_error(c, "unknown action name");
 }
 
 static void
@@ -1056,9 +1095,16 @@ handle_client_line(CompIpcClient *c, const char *line)
         return;
     }
 
-    const char *cmd = jobj_str(req, "cmd");
-    if (!cmd) {
+    const char *cmd_str = jobj_str(req, COMP_IPC_KEY_CMD);
+    if (!cmd_str) {
         client_reply_error(c, "missing 'cmd' field");
+        talloc_free(tmp);
+        return;
+    }
+
+    CompIpcCmd cmd;
+    if (!ipc_cmd_from_str(cmd_str, &cmd)) {
+        client_reply_error(c, "unknown cmd");
         talloc_free(tmp);
         return;
     }
@@ -1066,99 +1112,45 @@ handle_client_line(CompIpcClient *c, const char *line)
     JsonBuf b;
     jbuf_init(&b, tmp);
 
-    if (strcmp(cmd, "get-outputs") == 0) {
+    switch (cmd) {
+    case IPC_CMD_GET_OUTPUTS:
         jbuf_puts(&b, "{\"ok\":{\"outputs\":");
         append_outputs_array(&b, s);
         jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
-    } else if (strcmp(cmd, "get-workspaces") == 0) {
+        break;
+    case IPC_CMD_GET_WORKSPACES:
         jbuf_puts(&b, "{\"ok\":{\"workspaces\":");
         append_workspaces_array(&b, s);
         jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
-    } else if (strcmp(cmd, "get-windows") == 0) {
+        break;
+    case IPC_CMD_GET_WINDOWS:
         jbuf_puts(&b, "{\"ok\":{\"windows\":");
         append_windows_array(&b, s);
         jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
-    } else if (strcmp(cmd, "get-keyboard-layouts") == 0) {
+        break;
+    case IPC_CMD_GET_KEYBOARD_LAYOUTS:
         jbuf_puts(&b, "{\"ok\":{");
         append_keyboard_layouts_fields(&b, s);
         jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
-    } else if (strcmp(cmd, "debug-mem") == 0) {
+        break;
+    case IPC_CMD_DEBUG_MEM: {
         char *rep = NULL;
         size_t rep_len = 0;
         FILE *fp = open_memstream(&rep, &rep_len);
-        if (fp) {
-            talloc_report_full(s, fp);
-            fclose(fp);
-        }
+        if (fp) { talloc_report_full(s, fp); fclose(fp); }
         jbuf_puts(&b, "{\"ok\":{\"report\":");
         jbuf_str(&b, rep ? rep : "");
         jbuf_puts(&b, "}}\n");
         free(rep);
         client_queue_line(c, b.buf);
-    } else if (strcmp(cmd, "subscribe") == 0) {
-        uint32_t mask = 0;
-        const JVal *ev_arr = jobj_get(req, "events");
-        if (!ev_arr || ev_arr->kind != JV_ARRAY || ev_arr->u.arr.n == 0) {
-            mask = SUB_ALL;
-        } else {
-            for (size_t i = 0; i < ev_arr->u.arr.n; i++) {
-                const JVal *e = ev_arr->u.arr.items[i];
-                if (!e || e->kind != JV_STRING)
-                    continue;
-                if (strcmp(e->u.str, "workspaces") == 0)       mask |= SUB_WORKSPACES;
-                else if (strcmp(e->u.str, "windows") == 0)     mask |= SUB_WINDOWS;
-                else if (strcmp(e->u.str, "keyboard_layouts") == 0) mask |= SUB_KEYBOARD_LAYOUTS;
-                else if (strcmp(e->u.str, "outputs") == 0)     mask |= SUB_OUTPUTS;
-                else if (strcmp(e->u.str, "touch_gestures") == 0) mask |= SUB_TOUCH_GESTURES;
-                else if (strcmp(e->u.str, "screenshots") == 0) mask |= SUB_SCREENSHOTS;
-            }
-        }
-        c->subs |= mask;
-        client_queue_line(c, "{\"ok\":null}\n");
-
-        /* Initial snapshot events per spec §5.3 */
-        if (mask & SUB_WORKSPACES) {
-            b.len = 0;
-            jbuf_puts(&b, "{\"event\":\"WorkspacesChanged\",\"workspaces\":");
-            append_workspaces_array(&b, s);
-            jbuf_puts(&b, "}\n");
-            client_queue_line(c, b.buf);
-        }
-        if (mask & SUB_WINDOWS) {
-            b.len = 0;
-            jbuf_puts(&b, "{\"event\":\"WindowsChanged\",\"windows\":");
-            append_windows_array(&b, s);
-            jbuf_puts(&b, "}\n");
-            client_queue_line(c, b.buf);
-
-            CompWinId fid = s->layout ? comp_layout_focused_window(s->layout) : 0;
-            b.len = 0;
-            jbuf_printf(&b, "{\"event\":\"WindowFocusChanged\",\"id\":%llu}\n",
-                        (unsigned long long)fid);
-            client_queue_line(c, b.buf);
-        }
-        if (mask & SUB_KEYBOARD_LAYOUTS) {
-            b.len = 0;
-            jbuf_puts(&b, "{\"event\":\"KeyboardLayoutsChanged\",");
-            append_keyboard_layouts_fields(&b, s);
-            jbuf_puts(&b, "}\n");
-            client_queue_line(c, b.buf);
-        }
-        if (mask & SUB_OUTPUTS) {
-            b.len = 0;
-            jbuf_puts(&b, "{\"event\":\"OutputsChanged\",\"outputs\":");
-            append_outputs_array(&b, s);
-            jbuf_puts(&b, "}\n");
-            client_queue_line(c, b.buf);
-        }
-    } else if (strcmp(cmd, "action") == 0) {
-        handle_action_cmd(c, req);
-    } else {
-        client_reply_error(c, "unknown cmd");
+        break;
+    }
+    case IPC_CMD_SUBSCRIBE: handle_subscribe_cmd(c, req, &b); break;
+    case IPC_CMD_ACTION:    handle_action_cmd(c, req);        break;
     }
 
     talloc_free(tmp);
@@ -1307,7 +1299,7 @@ refresh_confd_watch(struct CompIpcState *ipc)
         if (stat(sub, &st) == 0 && S_ISDIR(st.st_mode)) {
             int wd = inotify_add_watch(ipc->inotify_fd, sub,
                                        IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_ATTRIB);
-            if (strcmp(de->d_name, "conf.d") == 0)
+            if (strcmp(de->d_name, COMP_CFG_DIR_CONFD) == 0)
                 ipc->wd_confd = wd;
         }
     }
@@ -1332,9 +1324,9 @@ handle_inotify_fd(int fd, uint32_t mask, void *data)
             const struct inotify_event *ev = (const struct inotify_event *)p;
             if (ev->len > 0) {
                 size_t nl = strlen(ev->name);
-                if (nl > 5 && strcmp(ev->name + nl - 5, ".toml") == 0)
+                if (nl > 5 && strcmp(ev->name + nl - 5, COMP_CFG_EXT_TOML) == 0)
                     trigger = true;
-                else if ((ev->mask & IN_ISDIR) || strcmp(ev->name, "conf.d") == 0) {
+                else if ((ev->mask & IN_ISDIR) || strcmp(ev->name, COMP_CFG_DIR_CONFD) == 0) {
                     refresh_confd_watch(ipc);
                     trigger = true;
                 }
@@ -1416,12 +1408,12 @@ comp_ipc_init(CompServer *s)
     if (s->opts.greeter_mode)
         return true;
 
-    const char *env_sock = getenv("KAJO_COMP_SOCKET");
+    const char *env_sock = getenv(COMP_IPC_ENV_SOCKET);
     const char *xdg_run  = getenv("XDG_RUNTIME_DIR");
     if (env_sock && *env_sock)
         ipc->socket_path = talloc_strdup(ipc, env_sock);
     else if (xdg_run && *xdg_run)
-        ipc->socket_path = talloc_asprintf(ipc, "%s/kajo-comp.sock", xdg_run);
+        ipc->socket_path = talloc_asprintf(ipc, "%s/%s", xdg_run, COMP_IPC_SOCK_NAME);
     else
         ipc->socket_path = talloc_asprintf(ipc, "/tmp/kajo-comp-%d.sock", (int)getuid());
 
@@ -1456,7 +1448,7 @@ comp_ipc_init(CompServer *s)
         return false;
     }
 
-    setenv("KAJO_COMP_SOCKET", ipc->socket_path, 1);
+    setenv(COMP_IPC_ENV_SOCKET, ipc->socket_path, 1);
     wlr_log(WLR_INFO, "kajo-comp IPC listening on %s", ipc->socket_path);
     return true;
 }

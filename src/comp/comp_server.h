@@ -15,6 +15,7 @@
 #include "core/comp_layout.h"
 #include "core/comp_motion.h"
 #include "core/comp_rules.h"
+#include "core/comp_touch.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -153,13 +154,20 @@ typedef struct CompServer {
                                                            wlroots objects; freed first on teardown */
 
     struct wl_event_source               *signal_sources[3]; /* SIGINT, SIGTERM, SIGCHLD; removed on teardown */
-    struct wl_list                        outputs;        /* CompOutput.link */
+    struct wl_event_source               *watchdog_timer;    /* systemd WatchdogSec heartbeat (Phase 4) */
+    void                                 *renderer_lost_ctx; /* talloc ctx for renderer->events.lost */
+    uint32_t                              gpu_recovery_count;
+    struct wl_list                        outputs;        /* CompOutput.link (FIFO connector order) */
     struct wl_list                        keyboards;      /* CompKeyboard.link */
+    struct wl_list                        input_devs;     /* CompInputDev.link (pointer/touch/tablet) */
     struct wl_list                        windows;        /* CompWindow.link */
     struct wl_list                        layer_surfaces; /* CompLayerSurface.link */
     struct wl_list                        xwayland_wins;  /* CompXWaylandWin.link */
     unsigned                              n_pointers;
     unsigned                              n_touch;
+    CompTouchTracker                      touch_tracker;
+    CompTouchpadSwipe                     touchpad_swipe;
+    double                                wheel_last_fire_sec[8];
 
     /* Usable working area after layer-shell exclusive zones (logical px) */
     CompRect                              usable_area;
@@ -207,6 +215,14 @@ typedef struct {
     struct wlr_scene_output  *scene_output;
     CompVrrPolicy             vrr_policy;
     bool                      was_animating;
+    bool                      has_manual_mode;
+    char                     *manual_mode;
+    bool                      has_manual_scale;
+    double                    manual_scale;
+    bool                      has_manual_transform;
+    CompTransform             manual_transform;
+    bool                      has_manual_vrr;
+    CompVrrPolicy             manual_vrr;
 } CompOutput;
 
 typedef struct {
@@ -228,6 +244,8 @@ bool        comp_server_start(CompServer *server);
 void        comp_server_run(CompServer *server);
 void        comp_server_destroy(CompServer *server);
 void        comp_server_terminate(CompServer *server, int exit_status);
+bool        comp_server_recover_gpu(CompServer *server);
+bool        comp_sd_notify(const char *state);
 
 /* Monotonic clock in seconds and active viewport / working-area dimensions. */
 double             comp_now_sec(void);
@@ -328,6 +346,7 @@ void comp_xwayland_update_workarea(CompServer *server);
 /* comp_input.c */
 void   comp_input_init(CompServer *server);
 void   comp_input_apply_config(CompServer *server);
+void   comp_input_map_devices_to_output(CompServer *server, struct wlr_output *output);
 void   comp_input_add_keyboard_device(CompServer *server, struct wlr_input_device *dev);
 void   comp_input_update_capabilities(CompServer *server);
 void   comp_input_refresh_pointer_focus(CompServer *server, uint32_t time_msec);

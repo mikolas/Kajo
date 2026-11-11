@@ -144,5 +144,9 @@ const CompBind *comp_binds_lookup_wheel(const CompBinds *binds, uint32_t mods, C
 /* Names accepted as actions, for docs/tests. Layout actions come from
  * comp_action_name(); these are the compositor-level ones. */
 const char     *comp_bind_kind_name(CompBindKind kind);
+bool            comp_bind_kind_from_name(const char *name, CompBindKind *out);
+
+bool            comp_switch_scope_from_str(const char *s, CompSwitchScope *out);
+const char     *comp_switch_scope_to_str(CompSwitchScope scope);
 
 #endif /* KAJO_COMP_BINDS_H */

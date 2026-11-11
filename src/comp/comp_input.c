@@ -1,4 +1,4 @@
-/* comp_input.c — seat, keyboards, pointers and cursor (Phase 2a: forward to clients).
+/* comp_input.c — seat, keyboards, pointers, touch, touchpad gestures & libinput (Phase 4).
  *
  * Built-in keys that are always handled, whatever the binds say:
  *   Ctrl+Alt+F1..F12        switch VT (bare metal only; spec §6.5.3, §7.5)
@@ -8,10 +8,14 @@
 
 #include "comp_log.h"
 #include "core/comp_binds.h"
+#include "core/comp_schema_keys.h"
 
+#include <libinput.h>
 #include <math.h>
 #include <talloc.h>
+#include <time.h>
 #include <wlr/backend.h>
+#include <wlr/backend/libinput.h>
 #include <wlr/backend/session.h>
 #include <wlr/interfaces/wlr_keyboard.h>
 #include <wlr/types/wlr_cursor.h>
@@ -21,6 +25,7 @@
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_pointer.h>
 #include <wlr/types/wlr_pointer_constraints_v1.h>
+#include <wlr/types/wlr_pointer_gestures_v1.h>
 #include <wlr/types/wlr_primary_selection.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_scene.h>
@@ -31,18 +36,27 @@
 #include <xkbcommon/xkbcommon.h>
 
 typedef struct {
-    struct wl_list       link;     /* CompServer.keyboards */
-    CompServer          *server;
-    struct wlr_keyboard *wlr_keyboard;
+    struct wl_list          link;           /* CompServer.keyboards */
+    CompServer             *server;
+    struct wlr_keyboard    *wlr_keyboard;
+    struct wl_event_source *repeat_timer;
+    const CompBind         *repeat_bind;
+    uint32_t                repeat_keycode;
 } CompKeyboard;
 
 typedef struct {
-    CompServer *server;
-} CompPointer;
+    struct wl_list           link;          /* CompServer.input_devs */
+    CompServer              *server;
+    struct wlr_input_device *dev;
+} CompInputDev;
 
-typedef struct {
-    CompServer *server;
-} CompTouch;
+static double
+now_monotonic_sec(void)
+{
+    struct timespec ts = {0};
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
 
 static uint32_t
 comp_mods_from_wlr(uint32_t m)
@@ -55,9 +69,45 @@ comp_mods_from_wlr(uint32_t m)
     return out;
 }
 
+static void
+keyboard_disarm_repeat(CompKeyboard *k)
+{
+    if (!k)
+        return;
+    k->repeat_bind = NULL;
+    if (k->repeat_timer)
+        wl_event_source_timer_update(k->repeat_timer, 0);
+}
+
+static int
+handle_keyboard_repeat_timer(void *data)
+{
+    CompKeyboard *k = data;
+    CompServer *s = k ? k->server : NULL;
+    if (!k || !s || !k->repeat_bind)
+        return 0;
+    if (s->locked && !k->repeat_bind->allow_locked) {
+        keyboard_disarm_repeat(k);
+        return 0;
+    }
+    comp_window_handle_bind(s, k->repeat_bind);
+    int32_t rate = k->wlr_keyboard ? k->wlr_keyboard->repeat_info.rate : 0;
+    if (rate > 0 && k->repeat_timer) {
+        int step_ms = 1000 / rate;
+        if (step_ms < 5)
+            step_ms = 5;
+        wl_event_source_timer_update(k->repeat_timer, step_ms);
+    }
+    return 0;
+}
+
 static int
 keyboard_destructor(CompKeyboard *k)
 {
+    if (k->repeat_timer) {
+        wl_event_source_remove(k->repeat_timer);
+        k->repeat_timer = NULL;
+    }
     wl_list_remove(&k->link);
     return 0;
 }
@@ -68,6 +118,7 @@ keyboard_handle_modifiers(void *owner, void *data)
     CompKeyboard *k = owner;
     CompServer *s = k->server;
     (void)data;
+    keyboard_disarm_repeat(k);
     wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);
     wlr_seat_keyboard_notify_modifiers(s->seat, &k->wlr_keyboard->modifiers);
     if (comp_switcher_is_active(s)) {
@@ -101,7 +152,13 @@ keyboard_handle_key(void *owner, void *data)
 
     comp_lock_idle_notify_activity(s);
 
-    if (pressed) {
+    if (!pressed) {
+        if (k->repeat_keycode == ev->keycode)
+            keyboard_disarm_repeat(k);
+        if (comp_screenshot_is_active(s) || comp_switcher_is_active(s))
+            handled = true;
+    } else {
+        keyboard_disarm_repeat(k);
         /* Translated keysyms catch the XF86Switch_VT_* produced by Ctrl+Alt+Fn */
         const xkb_keysym_t *syms;
         int n = xkb_state_key_get_syms(k->wlr_keyboard->xkb_state, keycode, &syms);
@@ -144,12 +201,18 @@ keyboard_handle_key(void *owner, void *data)
                             b->kind != COMP_BIND_BREAK_SHORTCUTS_INHIBIT)
                             continue;
                         handled = comp_window_handle_bind(s, b);
+                        if (handled && b->repeat && k->repeat_timer &&
+                            k->wlr_keyboard->repeat_info.rate > 0 &&
+                            k->wlr_keyboard->repeat_info.delay > 0) {
+                            k->repeat_bind = b;
+                            k->repeat_keycode = ev->keycode;
+                            wl_event_source_timer_update(k->repeat_timer,
+                                                         k->wlr_keyboard->repeat_info.delay);
+                        }
                     }
                 }
             }
         }
-    } else if (comp_screenshot_is_active(s) || comp_switcher_is_active(s)) {
-        handled = true;
     }
     if (!handled) {
         wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);
@@ -168,7 +231,7 @@ keyboard_handle_destroy(void *owner, void *data)
 }
 
 static void
-configure_keyboard(CompServer *s, struct wlr_keyboard *wk)
+configure_keyboard(CompServer *s, struct wlr_keyboard *wk, bool is_new)
 {
     struct xkb_context *ctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
     if (!ctx)
@@ -192,12 +255,54 @@ configure_keyboard(CompServer *s, struct wlr_keyboard *wk)
         km = xkb_keymap_new_from_names(ctx, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
     if (km) {
         wlr_keyboard_set_keymap(wk, km);
+        if (is_new && s && s->config && s->config->numlock_on_startup) {
+            xkb_mod_index_t numlock_idx = xkb_keymap_mod_get_index(km, XKB_MOD_NAME_NUM);
+            if (numlock_idx != XKB_MOD_INVALID) {
+                uint32_t locked = wk->modifiers.locked | (1u << numlock_idx);
+                wlr_keyboard_notify_modifiers(wk, wk->modifiers.depressed,
+                                              wk->modifiers.latched, locked,
+                                              wk->modifiers.group);
+            }
+        }
         xkb_keymap_unref(km);
     } else {
         wlr_log(WLR_ERROR, "keyboard: could not compile a keymap");
     }
     xkb_context_unref(ctx);
     wlr_keyboard_set_repeat_info(wk, rate, delay);
+}
+
+static void
+configure_libinput_device(CompServer *s, struct wlr_input_device *dev)
+{
+    if (!s || !s->config || !dev || !wlr_input_device_is_libinput(dev))
+        return;
+    struct libinput_device *ld = wlr_libinput_get_device_handle(dev);
+    if (!ld)
+        return;
+
+    bool is_touchpad = libinput_device_config_tap_get_finger_count(ld) > 0;
+    if (is_touchpad) {
+        libinput_device_config_tap_set_enabled(
+            ld, s->config->touchpad_tap ? LIBINPUT_CONFIG_TAP_ENABLED : LIBINPUT_CONFIG_TAP_DISABLED);
+        if (libinput_device_config_scroll_has_natural_scroll(ld))
+            libinput_device_config_scroll_set_natural_scroll_enabled(ld, s->config->touchpad_natural_scroll);
+        if (libinput_device_config_dwt_is_available(ld)) {
+            libinput_device_config_dwt_set_enabled(
+                ld, s->config->touchpad_dwt ? LIBINPUT_CONFIG_DWT_ENABLED : LIBINPUT_CONFIG_DWT_DISABLED);
+        }
+    } else if (dev->type == WLR_INPUT_DEVICE_POINTER) {
+        if (libinput_device_config_scroll_has_natural_scroll(ld))
+            libinput_device_config_scroll_set_natural_scroll_enabled(ld, s->config->mouse_natural_scroll);
+        if (libinput_device_config_accel_is_available(ld)) {
+            enum libinput_config_accel_profile prof =
+                (s->config->mouse_accel_profile == COMP_ACCEL_FLAT)
+                    ? LIBINPUT_CONFIG_ACCEL_PROFILE_FLAT
+                    : LIBINPUT_CONFIG_ACCEL_PROFILE_ADAPTIVE;
+            libinput_device_config_accel_set_profile(ld, prof);
+            libinput_device_config_accel_set_speed(ld, s->config->mouse_accel_speed);
+        }
+    }
 }
 
 void
@@ -207,9 +312,30 @@ comp_input_apply_config(CompServer *s)
         return;
     CompKeyboard *k;
     wl_list_for_each(k, &s->keyboards, link) {
-        configure_keyboard(s, k->wlr_keyboard);
+        keyboard_disarm_repeat(k);
+        configure_keyboard(s, k->wlr_keyboard, false);
+    }
+    CompInputDev *id;
+    wl_list_for_each(id, &s->input_devs, link) {
+        configure_libinput_device(s, id->dev);
     }
     comp_ipc_emit_keyboard_layouts(s);
+}
+
+void
+comp_input_map_devices_to_output(CompServer *s, struct wlr_output *output)
+{
+    if (!s || !s->cursor)
+        return;
+    CompInputDev *id;
+    wl_list_for_each(id, &s->input_devs, link) {
+        if (!id->dev)
+            continue;
+        if (id->dev->type == WLR_INPUT_DEVICE_TOUCH ||
+            id->dev->type == WLR_INPUT_DEVICE_TABLET) {
+            wlr_cursor_map_input_to_output(s->cursor, id->dev, output);
+        }
+    }
 }
 
 bool
@@ -294,8 +420,10 @@ new_keyboard(CompServer *s, struct wlr_input_device *dev)
     k->wlr_keyboard = wk;
     wl_list_insert(&s->keyboards, &k->link);
     talloc_set_destructor(k, keyboard_destructor);
+    if (s->loop)
+        k->repeat_timer = wl_event_loop_add_timer(s->loop, handle_keyboard_repeat_timer, k);
 
-    configure_keyboard(s, wk);
+    configure_keyboard(s, wk, true);
 
     if (!comp_listen(k, &wk->events.modifiers, keyboard_handle_modifiers) ||
         !comp_listen(k, &wk->events.key, keyboard_handle_key) ||
@@ -316,58 +444,67 @@ comp_input_add_keyboard_device(CompServer *s, struct wlr_input_device *dev)
     comp_input_update_capabilities(s);
 }
 
+static int
+input_dev_destructor(CompInputDev *id)
+{
+    wl_list_remove(&id->link);
+    return 0;
+}
+
 static void
-pointer_handle_destroy(void *owner, void *data)
+input_dev_handle_destroy(void *owner, void *data)
 {
     (void)data;
-    CompPointer *p = owner;
-    CompServer *s = p->server;
-    if (s->n_pointers)
-        s->n_pointers--;
-    talloc_free(p);
+    CompInputDev *id = owner;
+    CompServer *s = id->server;
+    if (id->dev) {
+        if (id->dev->type == WLR_INPUT_DEVICE_POINTER && s->n_pointers)
+            s->n_pointers--;
+        else if (id->dev->type == WLR_INPUT_DEVICE_TOUCH && s->n_touch)
+            s->n_touch--;
+    }
+    talloc_free(id);
     comp_input_update_capabilities(s);
 }
 
 static void
-new_pointer(CompServer *s, struct wlr_input_device *dev)
+register_input_dev(CompServer *s, struct wlr_input_device *dev)
 {
-    CompPointer *p = talloc_zero(s, CompPointer);
-    COMP_WARN_RETURN_VOID(p != NULL);
-    talloc_set_name_const(p, "CompPointer");
-    p->server = s;
-    if (!comp_listen(p, &dev->events.destroy, pointer_handle_destroy)) {
-        talloc_free(p);
+    CompInputDev *id = talloc_zero(s, CompInputDev);
+    COMP_WARN_RETURN_VOID(id != NULL);
+    talloc_set_name_const(id, "CompInputDev");
+    id->server = s;
+    id->dev    = dev;
+    wl_list_insert(&s->input_devs, &id->link);
+    talloc_set_destructor(id, input_dev_destructor);
+    if (!comp_listen(id, &dev->events.destroy, input_dev_handle_destroy)) {
+        talloc_free(id);
         return;
     }
-    s->n_pointers++;
-    wlr_cursor_attach_input_device(s->cursor, dev);
-}
+    configure_libinput_device(s, dev);
 
-static void
-touch_handle_destroy(void *owner, void *data)
-{
-    (void)data;
-    CompTouch *t = owner;
-    CompServer *s = t->server;
-    if (s->n_touch)
-        s->n_touch--;
-    talloc_free(t);
-    comp_input_update_capabilities(s);
-}
-
-static void
-new_touch(CompServer *s, struct wlr_input_device *dev)
-{
-    CompTouch *t = talloc_zero(s, CompTouch);
-    COMP_WARN_RETURN_VOID(t != NULL);
-    talloc_set_name_const(t, "CompTouch");
-    t->server = s;
-    if (!comp_listen(t, &dev->events.destroy, touch_handle_destroy)) {
-        talloc_free(t);
-        return;
+    if (dev->type == WLR_INPUT_DEVICE_POINTER) {
+        s->n_pointers++;
+        wlr_cursor_attach_input_device(s->cursor, dev);
+    } else if (dev->type == WLR_INPUT_DEVICE_TOUCH) {
+        s->n_touch++;
+        struct wlr_touch *wt = wlr_touch_from_input_device(dev);
+        if (wt && wt->width_mm > 0.0 && wt->height_mm > 0.0) {
+            s->touch_tracker.width_mm  = wt->width_mm;
+            s->touch_tracker.height_mm = wt->height_mm;
+        }
+        wlr_cursor_attach_input_device(s->cursor, dev);
+        struct wlr_output *primary = comp_server_primary_output(s);
+        if (primary)
+            wlr_cursor_map_input_to_output(s->cursor, dev, primary);
+    } else if (dev->type == WLR_INPUT_DEVICE_TABLET) {
+        if (s->tablet_mgr)
+            wlr_tablet_create(s->tablet_mgr, s->seat, dev);
+        wlr_cursor_attach_input_device(s->cursor, dev);
+        struct wlr_output *primary = comp_server_primary_output(s);
+        if (primary)
+            wlr_cursor_map_input_to_output(s->cursor, dev, primary);
     }
-    s->n_touch++;
-    wlr_cursor_attach_input_device(s->cursor, dev);
 }
 
 void
@@ -391,14 +528,9 @@ handle_new_input(void *owner, void *data)
         new_keyboard(s, dev);
         break;
     case WLR_INPUT_DEVICE_POINTER:
-        new_pointer(s, dev);
-        break;
     case WLR_INPUT_DEVICE_TOUCH:
-        new_touch(s, dev);
-        break;
     case WLR_INPUT_DEVICE_TABLET:
-        if (s->tablet_mgr)
-            wlr_tablet_create(s->tablet_mgr, s->seat, dev);
+        register_input_dev(s, dev);
         break;
     case WLR_INPUT_DEVICE_TABLET_PAD:
         if (s->tablet_mgr)
@@ -406,7 +538,7 @@ handle_new_input(void *owner, void *data)
         break;
     case WLR_INPUT_DEVICE_SWITCH:
     default:
-        break;   /* Phase 4 */
+        break;
     }
     comp_input_update_capabilities(s);
 }
@@ -564,8 +696,17 @@ cursor_axis(void *owner, void *data)
         else
             trig = ev->delta < 0.0 ? COMP_TRIGGER_WHEEL_LEFT : COMP_TRIGGER_WHEEL_RIGHT;
         const CompBind *b = comp_binds_lookup_wheel(s->binds, mods, trig);
-        if (b && comp_window_handle_bind(s, b))
-            return;
+        if (b) {
+            double now = now_monotonic_sec();
+            double cd_sec = (double)(b->cooldown_ms > 0 ? b->cooldown_ms : 0) / 1000.0;
+            if ((unsigned)trig < 8 && now - s->wheel_last_fire_sec[trig] < cd_sec)
+                return;   /* consume wheel tick within cooldown window */
+            if (comp_window_handle_bind(s, b)) {
+                if ((unsigned)trig < 8)
+                    s->wheel_last_fire_sec[trig] = now;
+                return;
+            }
+        }
     }
     double factor = comp_window_scroll_factor_for_surface(s, s->seat->pointer_state.focused_surface);
     double delta = ev->delta * factor;
@@ -582,7 +723,94 @@ cursor_frame(void *owner, void *data)
     wlr_seat_pointer_notify_frame(s->seat);
 }
 
-/* ── touch events via wlr_cursor ── */
+/* ── touch & touchpad gestures (Spec §3.15) ── */
+
+static CompTransform
+primary_comp_transform(const CompServer *s)
+{
+    struct wlr_output *out = comp_server_primary_output(s);
+    if (!out)
+        return COMP_TRANSFORM_NORMAL;
+    switch (out->transform) {
+    case WL_OUTPUT_TRANSFORM_90:
+        return COMP_TRANSFORM_90;
+    case WL_OUTPUT_TRANSFORM_180:
+        return COMP_TRANSFORM_180;
+    case WL_OUTPUT_TRANSFORM_270:
+        return COMP_TRANSFORM_270;
+    case WL_OUTPUT_TRANSFORM_FLIPPED:
+        return COMP_TRANSFORM_FLIPPED;
+    case WL_OUTPUT_TRANSFORM_FLIPPED_90:
+        return COMP_TRANSFORM_FLIPPED_90;
+    case WL_OUTPUT_TRANSFORM_FLIPPED_180:
+        return COMP_TRANSFORM_FLIPPED_180;
+    case WL_OUTPUT_TRANSFORM_FLIPPED_270:
+        return COMP_TRANSFORM_FLIPPED_270;
+    case WL_OUTPUT_TRANSFORM_NORMAL:
+    default:
+        return COMP_TRANSFORM_NORMAL;
+    }
+}
+
+static void
+cancel_all_client_touches(CompServer *s)
+{
+    if (!s || !s->seat)
+        return;
+    for (int i = 0; i < COMP_TOUCH_MAX_SLOTS; i++) {
+        if (!s->touch_tracker.slots[i].active)
+            continue;
+        struct wlr_touch_point *pt = wlr_seat_touch_get_point(s->seat, s->touch_tracker.slots[i].touch_id);
+        if (pt && pt->client)
+            wlr_seat_touch_notify_cancel(s->seat, pt->client);
+    }
+}
+
+static void
+dispatch_touch_event(CompServer *s, CompTouchGestureEvent ev)
+{
+    if (!s || s->locked || ev == COMP_TOUCH_EV_NONE)
+        return;
+
+    CompBind b = { .kind = COMP_BIND_LAYOUT };
+    CompTouchSwipeAction horiz = s->config ? s->config->touch_swipe_horizontal : COMP_SWIPE_COLUMN;
+
+    switch (ev) {
+    case COMP_TOUCH_EV_3F_SWIPE_UP:
+        b.layout_action = COMP_ACT_FOCUS_WORKSPACE_DOWN;
+        comp_window_handle_bind(s, &b);
+        break;
+    case COMP_TOUCH_EV_3F_SWIPE_DOWN:
+        b.layout_action = COMP_ACT_FOCUS_WORKSPACE_UP;
+        comp_window_handle_bind(s, &b);
+        break;
+    case COMP_TOUCH_EV_3F_SWIPE_LEFT:
+        if (horiz == COMP_SWIPE_NONE)
+            return;
+        b.layout_action = (horiz == COMP_SWIPE_WORKSPACE)
+                              ? COMP_ACT_FOCUS_WORKSPACE_DOWN
+                              : COMP_ACT_FOCUS_COLUMN_RIGHT;
+        comp_window_handle_bind(s, &b);
+        break;
+    case COMP_TOUCH_EV_3F_SWIPE_RIGHT:
+        if (horiz == COMP_SWIPE_NONE)
+            return;
+        b.layout_action = (horiz == COMP_SWIPE_WORKSPACE)
+                              ? COMP_ACT_FOCUS_WORKSPACE_UP
+                              : COMP_ACT_FOCUS_COLUMN_LEFT;
+        comp_window_handle_bind(s, &b);
+        break;
+    case COMP_TOUCH_EV_BEZEL_TOP:
+        comp_ipc_emit_touch_bezel_swipe(s, COMP_IPC_EDGE_TOP, s->touch_tracker.last_x_ratio);
+        break;
+    case COMP_TOUCH_EV_BEZEL_BOTTOM:
+        comp_ipc_emit_touch_bezel_swipe(s, COMP_IPC_EDGE_BOTTOM, s->touch_tracker.last_x_ratio);
+        break;
+    case COMP_TOUCH_EV_NONE:
+    default:
+        break;
+    }
+}
 
 static void
 cursor_touch_down(void *owner, void *data)
@@ -590,6 +818,13 @@ cursor_touch_down(void *owner, void *data)
     CompServer *s = owner;
     struct wlr_touch_down_event *ev = data;
     comp_lock_idle_notify_activity(s);
+
+    s->touch_tracker.transform = primary_comp_transform(s);
+    comp_touch_tracker_down(&s->touch_tracker, ev->touch_id, ev->x, ev->y);
+    if (comp_touch_tracker_active_count(&s->touch_tracker) >= 3) {
+        cancel_all_client_touches(s);
+        return;
+    }
 
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(s->cursor, &ev->touch->base, ev->x, ev->y, &lx, &ly);
@@ -616,6 +851,7 @@ cursor_touch_up(void *owner, void *data)
     CompServer *s = owner;
     struct wlr_touch_up_event *ev = data;
     comp_lock_idle_notify_activity(s);
+    comp_touch_tracker_up(&s->touch_tracker, ev->touch_id);
     wlr_seat_touch_notify_up(s->seat, ev->time_msec, ev->touch_id);
 }
 
@@ -625,6 +861,19 @@ cursor_touch_motion(void *owner, void *data)
     CompServer *s = owner;
     struct wlr_touch_motion_event *ev = data;
     comp_lock_idle_notify_activity(s);
+
+    bool enabled = !s->config || s->config->touch_enabled;
+    s->touch_tracker.transform = primary_comp_transform(s);
+    CompTouchGestureEvent gev = comp_touch_tracker_motion(&s->touch_tracker, ev->touch_id, ev->x, ev->y);
+    if (enabled && gev != COMP_TOUCH_EV_NONE) {
+        cancel_all_client_touches(s);
+        dispatch_touch_event(s, gev);
+        return;
+    }
+    if (enabled && (s->touch_tracker.gesture_triggered ||
+                    comp_touch_tracker_active_count(&s->touch_tracker) >= 3)) {
+        return;
+    }
 
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(s->cursor, &ev->touch->base, ev->x, ev->y, &lx, &ly);
@@ -638,6 +887,7 @@ cursor_touch_cancel(void *owner, void *data)
 {
     CompServer *s = owner;
     struct wlr_touch_cancel_event *ev = data;
+    comp_touch_tracker_cancel(&s->touch_tracker);
     struct wlr_touch_point *pt = wlr_seat_touch_get_point(s->seat, ev->touch_id);
     if (pt && pt->client)
         wlr_seat_touch_notify_cancel(s->seat, pt->client);
@@ -649,6 +899,103 @@ cursor_touch_frame(void *owner, void *data)
     CompServer *s = owner;
     (void)data;
     wlr_seat_touch_notify_frame(s->seat);
+}
+
+/* ── touchpad swipe / pinch / hold gestures (Spec §3.15.2) ── */
+
+static void
+cursor_swipe_begin(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_swipe_begin_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    comp_touchpad_swipe_begin(&s->touchpad_swipe, ev->fingers);
+    if (ev->fingers != 3 && s->pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_begin(s->pointer_gestures, s->seat, ev->time_msec, ev->fingers);
+}
+
+static void
+cursor_swipe_update(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_swipe_update_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    if (s->touchpad_swipe.fingers == 3) {
+        bool nat = !s->config || s->config->touchpad_natural_scroll;
+        bool en  = !s->config || s->config->touch_enabled;
+        CompAction act = COMP_ACT_FOCUS_COLUMN_LEFT;
+        if (en && !s->locked &&
+            comp_touchpad_swipe_update(&s->touchpad_swipe, ev->fingers, ev->dx, ev->dy, nat, &act)) {
+            CompBind b = { .kind = COMP_BIND_LAYOUT, .layout_action = act };
+            comp_window_handle_bind(s, &b);
+        }
+    } else if (s->pointer_gestures) {
+        wlr_pointer_gestures_v1_send_swipe_update(s->pointer_gestures, s->seat, ev->time_msec, ev->dx, ev->dy);
+    }
+}
+
+static void
+cursor_swipe_end(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_swipe_end_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    uint32_t prev_fingers = s->touchpad_swipe.fingers;
+    comp_touchpad_swipe_end(&s->touchpad_swipe);
+    if (prev_fingers != 3 && s->pointer_gestures)
+        wlr_pointer_gestures_v1_send_swipe_end(s->pointer_gestures, s->seat, ev->time_msec, ev->cancelled);
+}
+
+static void
+cursor_pinch_begin(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_pinch_begin_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    if (s->pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_begin(s->pointer_gestures, s->seat, ev->time_msec, ev->fingers);
+}
+
+static void
+cursor_pinch_update(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_pinch_update_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    if (s->pointer_gestures) {
+        wlr_pointer_gestures_v1_send_pinch_update(
+            s->pointer_gestures, s->seat, ev->time_msec, ev->dx, ev->dy, ev->scale, ev->rotation);
+    }
+}
+
+static void
+cursor_pinch_end(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_pinch_end_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    if (s->pointer_gestures)
+        wlr_pointer_gestures_v1_send_pinch_end(s->pointer_gestures, s->seat, ev->time_msec, ev->cancelled);
+}
+
+static void
+cursor_hold_begin(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_hold_begin_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    if (s->pointer_gestures)
+        wlr_pointer_gestures_v1_send_hold_begin(s->pointer_gestures, s->seat, ev->time_msec, ev->fingers);
+}
+
+static void
+cursor_hold_end(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_pointer_hold_end_event *ev = data;
+    comp_lock_idle_notify_activity(s);
+    if (s->pointer_gestures)
+        wlr_pointer_gestures_v1_send_hold_end(s->pointer_gestures, s->seat, ev->time_msec, ev->cancelled);
 }
 
 static void
@@ -696,6 +1043,14 @@ comp_input_init(CompServer *s)
               comp_listen_ctx(s->listeners, s, &s->cursor->events.button, cursor_button) &&
               comp_listen_ctx(s->listeners, s, &s->cursor->events.axis, cursor_axis) &&
               comp_listen_ctx(s->listeners, s, &s->cursor->events.frame, cursor_frame) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.swipe_begin, cursor_swipe_begin) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.swipe_update, cursor_swipe_update) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.swipe_end, cursor_swipe_end) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.pinch_begin, cursor_pinch_begin) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.pinch_update, cursor_pinch_update) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.pinch_end, cursor_pinch_end) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.hold_begin, cursor_hold_begin) &&
+              comp_listen_ctx(s->listeners, s, &s->cursor->events.hold_end, cursor_hold_end) &&
               comp_listen_ctx(s->listeners, s, &s->cursor->events.touch_down, cursor_touch_down) &&
               comp_listen_ctx(s->listeners, s, &s->cursor->events.touch_up, cursor_touch_up) &&
               comp_listen_ctx(s->listeners, s, &s->cursor->events.touch_motion, cursor_touch_motion) &&

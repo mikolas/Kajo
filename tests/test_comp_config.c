@@ -2,6 +2,7 @@
 #include "../src/comp/core/comp_binds.h"
 #include "../src/comp/core/comp_config.h"
 #include "../src/comp/core/comp_rules.h"
+#include "../src/comp/core/comp_touch.h"
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -438,6 +439,28 @@ test_config_shipped_defaults(void)
     g_assert_true(cfg->xwayland_enabled);
     g_assert_true(cfg->touch_enabled);
     g_assert_cmpint(cfg->touch_dwell_ms, ==, 4000);
+    g_assert_cmpint(cfg->mouse_accel_profile, ==, COMP_ACCEL_FLAT);
+    g_assert_cmpint(cfg->touch_swipe_center, ==, COMP_SWIPE_LAUNCHER);
+    g_assert_cmpint(cfg->touch_swipe_right, ==, COMP_SWIPE_CONTROL_CENTER);
+    g_assert_cmpint(cfg->touch_swipe_horizontal, ==, COMP_SWIPE_COLUMN);
+
+    /* Verify enum <-> string helpers round-trip */
+    CompTransform tf = COMP_TRANSFORM_NORMAL;
+    g_assert_true(comp_transform_from_str("flipped-270", &tf));
+    g_assert_cmpint(tf, ==, COMP_TRANSFORM_FLIPPED_270);
+    g_assert_cmpstr(comp_transform_to_str(tf), ==, "flipped-270");
+    CompVrrPolicy vrr = COMP_VRR_OFF;
+    g_assert_true(comp_vrr_policy_from_str("on-demand", &vrr));
+    g_assert_cmpint(vrr, ==, COMP_VRR_ON_DEMAND);
+    g_assert_cmpstr(comp_vrr_policy_to_str(vrr), ==, "on-demand");
+    CompAccelProfile ap = COMP_ACCEL_FLAT;
+    g_assert_true(comp_accel_profile_from_str("adaptive", &ap));
+    g_assert_cmpint(ap, ==, COMP_ACCEL_ADAPTIVE);
+    g_assert_cmpstr(comp_accel_profile_to_str(ap), ==, "adaptive");
+    CompTouchSwipeAction sw = COMP_SWIPE_NONE;
+    g_assert_true(comp_touch_swipe_from_str("control-center", &sw));
+    g_assert_cmpint(sw, ==, COMP_SWIPE_CONTROL_CENTER);
+    g_assert_cmpstr(comp_touch_swipe_to_str(sw), ==, "control-center");
 
     const CompBind *preset_h = comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER | COMP_MOD_SHIFT, XKB_KEY_r);
     g_assert_nonnull(preset_h);
@@ -542,7 +565,7 @@ test_config_multifile_merge_and_confd(void)
     g_assert_nonnull(orule);
     g_assert_true(orule->has_scale);
     g_assert_cmpfloat_with_epsilon(orule->scale, 1.5, 1e-9);
-    g_assert_cmpstr(orule->vrr, ==, "on-demand");
+    g_assert_cmpint(orule->vrr, ==, COMP_VRR_ON_DEMAND);
     /* binds.toml unbound mod+q while keeping mod+t */
     g_assert_null(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_q));
     g_assert_nonnull(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_t));
@@ -576,6 +599,68 @@ test_config_multifile_merge_and_confd(void)
     g_rmdir(tmp);
 }
 
+static void
+test_touch_gestures_and_transforms(void)
+{
+    CompTouchTracker t;
+    comp_touch_tracker_init(&t, 300.0, 200.0);
+
+    /* 1. 1-finger bottom bezel swipe (y_start >= 1 - 0.032 = 0.968, dy <= -12mm -> -0.06) */
+    comp_touch_tracker_down(&t, 1, 0.72, 0.99);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.72, 0.90), ==, COMP_TOUCH_EV_BEZEL_BOTTOM);
+    g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.72, 1e-4);
+    /* Latched until all fingers release */
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.72, 0.80), ==, COMP_TOUCH_EV_NONE);
+    comp_touch_tracker_up(&t, 1);
+
+    /* 2. 1-finger top bezel swipe (y_start <= 0.032, dy >= +12mm -> +0.06) */
+    comp_touch_tracker_down(&t, 2, 0.25, 0.01);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 2, 0.25, 0.10), ==, COMP_TOUCH_EV_BEZEL_TOP);
+    g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.25, 1e-4);
+    comp_touch_tracker_up(&t, 2);
+
+    /* 3. Multi-finger re-anchoring + 3-finger swipe up (dy <= -15mm -> -0.075 on 200mm height) */
+    comp_touch_tracker_down(&t, 10, 0.30, 0.60);
+    comp_touch_tracker_motion(&t, 10, 0.30, 0.50); /* moves before 2nd/3rd finger land */
+    comp_touch_tracker_down(&t, 11, 0.50, 0.50);
+    comp_touch_tracker_down(&t, 12, 0.70, 0.50);   /* re-anchors all 3 slots at y = 0.50 */
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 10, 0.30, 0.40), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 11, 0.50, 0.40), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 12, 0.70, 0.40), ==, COMP_TOUCH_EV_3F_SWIPE_UP);
+    comp_touch_tracker_up(&t, 10);
+    comp_touch_tracker_up(&t, 11);
+    comp_touch_tracker_up(&t, 12);
+
+    /* 4. 90-degree rotated posture: raw X=0.99 is rotated Y=0.99 (bottom bezel), rotated X = 1 - raw_y = 0.60 */
+    comp_touch_tracker_set_geometry(&t, 300.0, 200.0, COMP_TRANSFORM_90);
+    comp_touch_tracker_down(&t, 20, 0.99, 0.40);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 20, 0.90, 0.40), ==, COMP_TOUCH_EV_BEZEL_BOTTOM);
+    g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.60, 1e-4);
+    comp_touch_tracker_up(&t, 20);
+}
+
+static void
+test_touchpad_swipes(void)
+{
+    CompTouchpadSwipe s;
+    CompAction act = COMP_ACT_FOCUS_COLUMN_LEFT;
+
+    /* Natural scroll = true: 3-finger swipe left (dx < -40) -> focus-column-right */
+    comp_touchpad_swipe_begin(&s, 3);
+    g_assert_false(comp_touchpad_swipe_update(&s, 3, -25.0, 2.0, true, &act));
+    g_assert_true(comp_touchpad_swipe_update(&s, 3, -20.0, 1.0, true, &act));
+    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_COLUMN_RIGHT);
+    /* Latched until swipe_end */
+    g_assert_false(comp_touchpad_swipe_update(&s, 3, -50.0, 0.0, true, &act));
+    comp_touchpad_swipe_end(&s);
+
+    /* Natural scroll = false: 3-finger swipe down (dy > +40) -> focus-workspace-down */
+    comp_touchpad_swipe_begin(&s, 3);
+    g_assert_true(comp_touchpad_swipe_update(&s, 3, 2.0, 45.0, false, &act));
+    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_WORKSPACE_DOWN);
+    comp_touchpad_swipe_end(&s);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -590,5 +675,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/rules/spec-example", test_rules_spec_example);
     g_test_add_func("/comp/config/shipped-defaults", test_config_shipped_defaults);
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
+    g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
+    g_test_add_func("/comp/touch/touchpad-swipes", test_touchpad_swipes);
     return g_test_run();
 }

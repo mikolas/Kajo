@@ -2,6 +2,7 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include "comp_rules.h"
 
+#include "comp_schema_keys.h"
 #include "../../vendor/tomlc17/tomlc17.h"
 
 #include <limits.h>
@@ -187,20 +188,21 @@ warn_unknown_keys(toml_datum_t t, const char *const *known, size_t nknown,
 }
 
 static const char *const k_win_keys[] = {
-    "app_id", "title", "case_sensitive", "floating", "width", "focus",
-    "anchor_corner", "anchor_x", "anchor_y", "scroll_factor", "vrr",
+    COMP_KEY_APP_ID, COMP_KEY_TITLE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_FLOATING,
+    COMP_KEY_WIDTH, COMP_KEY_FOCUS, COMP_KEY_ANCHOR_CORNER, COMP_KEY_ANCHOR_X,
+    COMP_KEY_ANCHOR_Y, COMP_KEY_SCROLL_FACTOR, COMP_KEY_VRR,
 };
 static const char *const k_layer_keys[] = {
-    "namespace", "case_sensitive", "opacity", "popup_opacity",
+    COMP_KEY_NAMESPACE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_OPACITY, COMP_KEY_POPUP_OPACITY,
 };
 static const char *const k_layer_unsupported[] = { "blur", "xray", "blur_popups" };   /* spec §10 */
 
 static bool
 parse_anchor(toml_datum_t t, CompWindowRuleResult *set, const char *src, CompDiagList *diag)
 {
-    toml_datum_t c  = toml_get(t, "anchor_corner");
-    toml_datum_t ax = toml_get(t, "anchor_x");
-    toml_datum_t ay = toml_get(t, "anchor_y");
+    toml_datum_t c  = toml_get(t, COMP_KEY_ANCHOR_CORNER);
+    toml_datum_t ax = toml_get(t, COMP_KEY_ANCHOR_X);
+    toml_datum_t ay = toml_get(t, COMP_KEY_ANCHOR_Y);
     if (c.type == TOML_UNKNOWN) {
         if (ax.type != TOML_UNKNOWN || ay.type != TOML_UNKNOWN) {
             int ln = ax.type != TOML_UNKNOWN ? ax.lineno : ay.lineno;
@@ -227,8 +229,8 @@ parse_anchor(toml_datum_t t, CompWindowRuleResult *set, const char *src, CompDia
     }
     bool hx = false, hy = false;
     double x = 0.0, y = 0.0;
-    if (!get_number(t, "anchor_x", -10000.0, 10000.0, &hx, &x, src, diag) ||
-        !get_number(t, "anchor_y", -10000.0, 10000.0, &hy, &y, src, diag))
+    if (!get_number(t, COMP_KEY_ANCHOR_X, -10000.0, 10000.0, &hx, &x, src, diag) ||
+        !get_number(t, COMP_KEY_ANCHOR_Y, -10000.0, 10000.0, &hy, &y, src, diag))
         return false;
     set->has_anchor = true;
     set->anchor_x = x;
@@ -246,25 +248,25 @@ parse_window_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *d
         return;
     }
     warn_unknown_keys(t, k_win_keys, sizeof(k_win_keys) / sizeof(k_win_keys[0]), NULL, 0,
-                      "rule", src, diag);
-    toml_datum_t app = toml_get(t, "app_id"), title = toml_get(t, "title");
+                      COMP_SEC_RULE, src, diag);
+    toml_datum_t app = toml_get(t, COMP_KEY_APP_ID), title = toml_get(t, COMP_KEY_TITLE);
     if (app.type == TOML_UNKNOWN && title.type == TOML_UNKNOWN) {
         comp_diag_add(diag, src, t.lineno, "[[rule]] needs app_id and/or title to match on; ignored");
         return;
     }
     bool has_cs = false, case_sensitive = false;
-    (void)get_bool(t, "case_sensitive", &has_cs, &case_sensitive, src, diag);
-    if (!matcher_build(&w.app_id, app, case_sensitive, "app_id", src, t.lineno, diag) ||
-        !matcher_build(&w.title, title, case_sensitive, "title", src, t.lineno, diag)) {
+    (void)get_bool(t, COMP_KEY_CASE_SENSITIVE, &has_cs, &case_sensitive, src, diag);
+    if (!matcher_build(&w.app_id, app, case_sensitive, COMP_KEY_APP_ID, src, t.lineno, diag) ||
+        !matcher_build(&w.title, title, case_sensitive, COMP_KEY_TITLE, src, t.lineno, diag)) {
         matcher_free(&w.app_id);
         matcher_free(&w.title);
         return;
     }
-    (void)get_bool(t, "floating", &w.set.has_floating, &w.set.floating, src, diag);
-    (void)get_bool(t, "focus", &w.set.has_focus, &w.set.focus, src, diag);
-    (void)get_bool(t, "vrr", &w.set.has_vrr, &w.set.vrr, src, diag);
-    (void)get_number(t, "width", 0.05, 1.0, &w.set.has_width, &w.set.width, src, diag);
-    (void)get_number(t, "scroll_factor", 0.01, 10.0, &w.set.has_scroll_factor, &w.set.scroll_factor, src, diag);
+    (void)get_bool(t, COMP_KEY_FLOATING, &w.set.has_floating, &w.set.floating, src, diag);
+    (void)get_bool(t, COMP_KEY_FOCUS, &w.set.has_focus, &w.set.focus, src, diag);
+    (void)get_bool(t, COMP_KEY_VRR, &w.set.has_vrr, &w.set.vrr, src, diag);
+    (void)get_number(t, COMP_KEY_WIDTH, 0.05, 1.0, &w.set.has_width, &w.set.width, src, diag);
+    (void)get_number(t, COMP_KEY_SCROLL_FACTOR, 0.01, 10.0, &w.set.has_scroll_factor, &w.set.scroll_factor, src, diag);
     (void)parse_anchor(t, &w.set, src, diag);
 
     WinRule *p = realloc(r->win, (r->nwin + 1) * sizeof(WinRule));
@@ -289,18 +291,18 @@ parse_layer_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *di
     }
     warn_unknown_keys(t, k_layer_keys, sizeof(k_layer_keys) / sizeof(k_layer_keys[0]),
                       k_layer_unsupported, sizeof(k_layer_unsupported) / sizeof(k_layer_unsupported[0]),
-                      "layer_rule", src, diag);
-    toml_datum_t ns = toml_get(t, "namespace");
+                      COMP_SEC_LAYER_RULE, src, diag);
+    toml_datum_t ns = toml_get(t, COMP_KEY_NAMESPACE);
     if (ns.type == TOML_UNKNOWN) {
         comp_diag_add(diag, src, t.lineno, "[[layer_rule]] needs a namespace to match on; ignored");
         return;
     }
     bool has_cs = false, case_sensitive = false;
-    (void)get_bool(t, "case_sensitive", &has_cs, &case_sensitive, src, diag);
-    if (!matcher_build(&l.ns, ns, case_sensitive, "namespace", src, t.lineno, diag))
+    (void)get_bool(t, COMP_KEY_CASE_SENSITIVE, &has_cs, &case_sensitive, src, diag);
+    if (!matcher_build(&l.ns, ns, case_sensitive, COMP_KEY_NAMESPACE, src, t.lineno, diag))
         return;
-    (void)get_number(t, "opacity", 0.0, 1.0, &l.set.has_opacity, &l.set.opacity, src, diag);
-    (void)get_number(t, "popup_opacity", 0.0, 1.0, &l.set.has_popup_opacity, &l.set.popup_opacity, src, diag);
+    (void)get_number(t, COMP_KEY_OPACITY, 0.0, 1.0, &l.set.has_opacity, &l.set.opacity, src, diag);
+    (void)get_number(t, COMP_KEY_POPUP_OPACITY, 0.0, 1.0, &l.set.has_popup_opacity, &l.set.popup_opacity, src, diag);
 
     LayerRule *p = realloc(r->layer, (r->nlayer + 1) * sizeof(LayerRule));
     if (!p) {
@@ -357,7 +359,7 @@ comp_rules_merge_toml(CompRules *r, const char *src, size_t len,
 {
     if (!r)
         return false;
-    const char *name = source_name ? source_name : "rules.toml";
+    const char *name = source_name ? source_name : COMP_CFG_FILE_RULES;
     if (len > (size_t)INT_MAX) {
         comp_diag_add(diag, name, 0, "file too large");
         return false;
@@ -368,14 +370,14 @@ comp_rules_merge_toml(CompRules *r, const char *src, size_t len,
         toml_free(res);
         return false;
     }
-    toml_datum_t rr = toml_get(res.toptab, "reset_rules");
+    toml_datum_t rr = toml_get(res.toptab, COMP_KEY_RESET_RULES);
     if (rr.type == TOML_BOOLEAN && rr.u.boolean)
         clear_window_rules(r);
     else if (rr.type != TOML_UNKNOWN && rr.type != TOML_BOOLEAN)
         comp_diag_add(diag, name, rr.lineno, "'reset_rules' must be true or false; ignored");
 
-    for_each_entry(r, toml_get(res.toptab, "rule"), "rule", name, diag, parse_window_rule);
-    for_each_entry(r, toml_get(res.toptab, "layer_rule"), "layer_rule", name, diag, parse_layer_rule);
+    for_each_entry(r, toml_get(res.toptab, COMP_SEC_RULE), COMP_SEC_RULE, name, diag, parse_window_rule);
+    for_each_entry(r, toml_get(res.toptab, COMP_SEC_LAYER_RULE), COMP_SEC_LAYER_RULE, name, diag, parse_layer_rule);
     toml_free(res);
     return true;
 }
@@ -383,7 +385,7 @@ comp_rules_merge_toml(CompRules *r, const char *src, size_t len,
 CompRules *
 comp_rules_parse(const char *src, size_t len, const char *source_name, CompDiagList *diag)
 {
-    const char *name = source_name ? source_name : "rules.toml";
+    const char *name = source_name ? source_name : COMP_CFG_FILE_RULES;
     if (len > (size_t)INT_MAX) {
         comp_diag_add(diag, name, 0, "file too large");
         return NULL;
@@ -401,16 +403,17 @@ comp_rules_parse(const char *src, size_t len, const char *source_name, CompDiagL
     }
     for (int i = 0; i < res.toptab.u.tab.size; i++) {
         const char *k = res.toptab.u.tab.key[i];
-        if (strcmp(k, "rule") != 0 && strcmp(k, "layer_rule") != 0 && strcmp(k, "reset_rules") != 0)
+        if (strcmp(k, COMP_SEC_RULE) != 0 && strcmp(k, COMP_SEC_LAYER_RULE) != 0 &&
+            strcmp(k, COMP_KEY_RESET_RULES) != 0)
             comp_diag_add(diag, name, res.toptab.u.tab.value[i].lineno,
                           "unknown top-level key '%s' ignored (expected [[rule]] or [[layer_rule]])", k);
     }
-    toml_datum_t rr = toml_get(res.toptab, "reset_rules");
+    toml_datum_t rr = toml_get(res.toptab, COMP_KEY_RESET_RULES);
     if (rr.type != TOML_UNKNOWN && rr.type != TOML_BOOLEAN)
         comp_diag_add(diag, name, rr.lineno, "'reset_rules' must be true or false; ignored");
 
-    for_each_entry(r, toml_get(res.toptab, "rule"), "rule", name, diag, parse_window_rule);
-    for_each_entry(r, toml_get(res.toptab, "layer_rule"), "layer_rule", name, diag, parse_layer_rule);
+    for_each_entry(r, toml_get(res.toptab, COMP_SEC_RULE), COMP_SEC_RULE, name, diag, parse_window_rule);
+    for_each_entry(r, toml_get(res.toptab, COMP_SEC_LAYER_RULE), COMP_SEC_LAYER_RULE, name, diag, parse_layer_rule);
     toml_free(res);
     return r;
 }

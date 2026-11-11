@@ -3,13 +3,17 @@
 
 #include "comp_log.h"
 
+#include <errno.h>
 #include <libgen.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <talloc.h>
 #include <time.h>
+#include <unistd.h>
 #include <wlr/backend.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
@@ -113,6 +117,162 @@ comp_server_terminate(CompServer *s, int exit_status)
     wl_display_terminate(s->display);
 }
 
+bool
+comp_sd_notify(const char *state)
+{
+    if (!state || !*state)
+        return false;
+    const char *sock_path = getenv("NOTIFY_SOCKET");
+    if (!sock_path || !*sock_path)
+        return false;
+    if (sock_path[0] != '/' && sock_path[0] != '@')
+        return false;
+
+    int fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+    if (fd < 0)
+        return false;
+
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    size_t path_len = strlen(sock_path);
+    if (path_len >= sizeof(addr.sun_path)) {
+        close(fd);
+        return false;
+    }
+    memcpy(addr.sun_path, sock_path, path_len);
+    socklen_t addr_len = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + path_len + 1);
+    if (addr.sun_path[0] == '@') {
+        addr.sun_path[0] = '\0';
+        addr_len = (socklen_t)(offsetof(struct sockaddr_un, sun_path) + path_len);
+    }
+
+    ssize_t wr = sendto(fd, state, strlen(state), MSG_NOSIGNAL | MSG_DONTWAIT,
+                        (const struct sockaddr *)&addr, addr_len);
+    close(fd);
+    return wr == (ssize_t)strlen(state);
+}
+
+static int
+watchdog_interval_ms(void)
+{
+    const char *env_ms = getenv("KAJO_WATCHDOG_MS");
+    if (env_ms && *env_ms) {
+        int v = atoi(env_ms);
+        if (v >= 10 && v <= 60000)
+            return v;
+    }
+    const char *wd_usec = getenv("WATCHDOG_USEC");
+    if (wd_usec && *wd_usec) {
+        long long us = atoll(wd_usec);
+        if (us >= 300000) {
+            int ms = (int)(us / 3000);
+            if (ms >= 100 && ms <= 60000)
+                return ms;
+        }
+    }
+    return 3000; /* Default 3s heartbeat for WatchdogSec=10 (spec §6.4) */
+}
+
+static int
+handle_watchdog_timer(void *data)
+{
+    CompServer *s = data;
+    if (!s)
+        return 0;
+    comp_sd_notify("WATCHDOG=1");
+    if (s->watchdog_timer)
+        wl_event_source_timer_update(s->watchdog_timer, watchdog_interval_ms());
+    return 0;
+}
+
+static struct wlr_renderer *
+create_server_renderer(const CompServer *s)
+{
+    /* Spec §1.1 & §6.5.3: force the Vulkan renderer in normal/session mode unless
+     * WLR_RENDERER is explicitly set (e.g. headless CI) or --greeter-mode is active. */
+    bool forced_vk = false;
+    if (!s->opts.greeter_mode && !getenv("WLR_RENDERER")) {
+        setenv("WLR_RENDERER", "vulkan", 1);
+        forced_vk = true;
+    }
+    struct wlr_renderer *r = wlr_renderer_autocreate(s->backend);
+    if (forced_vk)
+        unsetenv("WLR_RENDERER");
+    return r;
+}
+
+static void handle_renderer_lost(void *owner, void *data);
+
+static bool
+attach_renderer_lost_listener(CompServer *s)
+{
+    talloc_free(s->renderer_lost_ctx);
+    s->renderer_lost_ctx = NULL;
+    if (!s->renderer)
+        return false;
+    s->renderer_lost_ctx = talloc_named_const(s, 0, "CompServer renderer_lost_ctx");
+    if (!s->renderer_lost_ctx)
+        return false;
+    return comp_listen_ctx(s->renderer_lost_ctx, s, &s->renderer->events.lost, handle_renderer_lost);
+}
+
+bool
+comp_server_recover_gpu(CompServer *s)
+{
+    COMP_WARN_RETURN(s && s->backend, false);
+    wlr_log(WLR_ERROR, "GPU renderer lost (VK_ERROR_DEVICE_LOST); recreating renderer, allocator, and output swapchains");
+
+    struct wlr_renderer *new_renderer = create_server_renderer(s);
+    if (!new_renderer) {
+        wlr_log(WLR_ERROR, "GPU recovery failed: could not recreate renderer");
+        return false;
+    }
+    struct wlr_allocator *new_allocator = wlr_allocator_autocreate(s->backend, new_renderer);
+    if (!new_allocator) {
+        wlr_log(WLR_ERROR, "GPU recovery failed: could not recreate allocator");
+        wlr_renderer_destroy(new_renderer);
+        return false;
+    }
+
+    /* Detach old renderer lost listener before destroying the old renderer */
+    talloc_free(s->renderer_lost_ctx);
+    s->renderer_lost_ctx = NULL;
+
+    struct wlr_allocator *old_allocator = s->allocator;
+    struct wlr_renderer  *old_renderer  = s->renderer;
+    s->renderer  = new_renderer;
+    s->allocator = new_allocator;
+    s->gpu_recovery_count++;
+
+    if (s->compositor)
+        wlr_compositor_set_renderer(s->compositor, new_renderer);
+
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (o->wlr_output)
+            wlr_output_init_render(o->wlr_output, new_allocator, new_renderer);
+    }
+
+    if (old_allocator)
+        wlr_allocator_destroy(old_allocator);
+    if (old_renderer)
+        wlr_renderer_destroy(old_renderer);
+
+    attach_renderer_lost_listener(s);
+    comp_output_apply_config(s);
+    comp_server_schedule_frames(s);
+    wlr_log(WLR_INFO, "GPU renderer recovery succeeded (recovery #%u)", s->gpu_recovery_count);
+    return true;
+}
+
+static void
+handle_renderer_lost(void *owner, void *data)
+{
+    CompServer *s = owner;
+    (void)data;
+    comp_server_recover_gpu(s);
+}
+
 static int
 server_destructor(CompServer *s)
 {
@@ -133,6 +293,13 @@ server_destructor(CompServer *s)
      * objects go: wlroots asserts that listener lists are empty on destroy. */
     talloc_free(s->listeners);
     s->listeners = NULL;
+    talloc_free(s->renderer_lost_ctx);
+    s->renderer_lost_ctx = NULL;
+    if (s->watchdog_timer) {
+        comp_sd_notify("STOPPING=1");
+        wl_event_source_remove(s->watchdog_timer);
+        s->watchdog_timer = NULL;
+    }
     if (s->scene) {
         wlr_scene_node_destroy(&s->scene->tree.node);
         s->scene = NULL;
@@ -214,7 +381,9 @@ comp_server_create(const CompServerOptions *opts)
         s->opts.mod_mask = COMP_MOD_SUPER;
     wl_list_init(&s->outputs);
     wl_list_init(&s->keyboards);
+    wl_list_init(&s->input_devs);
     wl_list_init(&s->windows);
+    comp_touch_tracker_init(&s->touch_tracker, 300.0, 188.0);
     s->listeners = talloc_named_const(s, 0, "CompServer listeners");
     if (!s->listeners)
         goto fail;
@@ -238,20 +407,12 @@ comp_server_create(const CompServerOptions *opts)
         wlr_log(WLR_ERROR, "could not create a backend");
         goto fail;
     }
-    /* Spec §1.1 & §6.5.3: force the Vulkan renderer in normal/session mode unless
-     * WLR_RENDERER is explicitly set (e.g. headless CI) or --greeter-mode is active. */
-    bool forced_vk = false;
-    if (!s->opts.greeter_mode && !getenv("WLR_RENDERER")) {
-        setenv("WLR_RENDERER", "vulkan", 1);
-        forced_vk = true;
-    }
-    s->renderer = wlr_renderer_autocreate(s->backend);
-    if (forced_vk)
-        unsetenv("WLR_RENDERER");
+    s->renderer = create_server_renderer(s);
     if (!s->renderer) {
         wlr_log(WLR_ERROR, "could not create a renderer");
         goto fail;
     }
+    attach_renderer_lost_listener(s);
     s->allocator = wlr_allocator_autocreate(s->backend, s->renderer);
     if (!s->allocator) {
         wlr_log(WLR_ERROR, "could not create an allocator");
@@ -313,7 +474,28 @@ comp_server_start(CompServer *s)
         return false;
     }
     setenv("WAYLAND_DISPLAY", s->socket, 1);
+    if (!s->opts.greeter_mode) {
+        setenv("XDG_CURRENT_DESKTOP", "kajo", 1);
+        setenv("XDG_SESSION_DESKTOP", "kajo", 1);
+        setenv("XDG_SESSION_TYPE", "wayland", 1);
+    }
     wlr_log(WLR_INFO, "kajo-comp running on WAYLAND_DISPLAY=%s", s->socket);
+
+    if (s->opts.session_mode && !s->opts.greeter_mode) {
+        if (!getenv("KAJO_COMP_NO_DBUS_ENV")) {
+            const char *const dbus_argv[] = {
+                "dbus-update-activation-environment", "--systemd",
+                "WAYLAND_DISPLAY", "DISPLAY", "KAJO_COMP_SOCKET",
+                "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE",
+                NULL,
+            };
+            comp_spawn(s, dbus_argv);
+        }
+        comp_sd_notify("READY=1");
+        s->watchdog_timer = wl_event_loop_add_timer(s->loop, handle_watchdog_timer, s);
+        if (s->watchdog_timer)
+            wl_event_source_timer_update(s->watchdog_timer, watchdog_interval_ms());
+    }
     if (s->opts.startup_argv && s->opts.startup_argv[0]) {
         s->startup_pid = comp_spawn(s, s->opts.startup_argv);
         if (s->startup_pid < 0) {

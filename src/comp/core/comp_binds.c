@@ -1,6 +1,7 @@
 /* comp_binds.c — see comp_binds.h. */
 #include "comp_binds.h"
 
+#include "comp_schema_keys.h"
 #include "../../vendor/tomlc17/tomlc17.h"
 
 #include <ctype.h>
@@ -49,7 +50,66 @@ comp_bind_kind_name(CompBindKind kind)
     for (size_t i = 0; i < sizeof(k_comp_actions) / sizeof(k_comp_actions[0]); i++)
         if (k_comp_actions[i].kind == kind)
             return k_comp_actions[i].name;
-    return kind == COMP_BIND_LAYOUT ? "layout" : (kind == COMP_BIND_SPAWN ? "spawn" : NULL);
+    return kind == COMP_BIND_LAYOUT ? "layout" : (kind == COMP_BIND_SPAWN ? COMP_KEY_SPAWN : NULL);
+}
+
+bool
+comp_bind_kind_from_name(const char *name, CompBindKind *out)
+{
+    if (!name || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_comp_actions) / sizeof(k_comp_actions[0]); i++) {
+        if (strcmp(k_comp_actions[i].name, name) == 0) {
+            *out = k_comp_actions[i].kind;
+            return true;
+        }
+    }
+    if (strcmp(name, COMP_IPC_ACT_SWITCH_WINDOW_NEXT) == 0) {
+        *out = COMP_BIND_NEXT_WINDOW;
+        return true;
+    }
+    if (strcmp(name, COMP_IPC_ACT_SWITCH_WINDOW_PREV) == 0) {
+        *out = COMP_BIND_PREVIOUS_WINDOW;
+        return true;
+    }
+    if (strcmp(name, COMP_KEY_SPAWN) == 0) {
+        *out = COMP_BIND_SPAWN;
+        return true;
+    }
+    return false;
+}
+
+static const struct {
+    const char     *name;
+    CompSwitchScope scope;
+} k_switch_scopes[] = {
+    { "all",       COMP_SWITCH_SCOPE_ALL },
+    { "output",    COMP_SWITCH_SCOPE_OUTPUT },
+    { "workspace", COMP_SWITCH_SCOPE_WORKSPACE },
+};
+
+bool
+comp_switch_scope_from_str(const char *s, CompSwitchScope *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_switch_scopes) / sizeof(k_switch_scopes[0]); i++) {
+        if (strcmp(s, k_switch_scopes[i].name) == 0) {
+            *out = k_switch_scopes[i].scope;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_switch_scope_to_str(CompSwitchScope scope)
+{
+    for (size_t i = 0; i < sizeof(k_switch_scopes) / sizeof(k_switch_scopes[0]); i++) {
+        if (k_switch_scopes[i].scope == scope)
+            return k_switch_scopes[i].name;
+    }
+    return "all";
 }
 
 static void
@@ -393,8 +453,9 @@ resolve_action(const char *name, CompBind *b, const char *label, const char *src
 }
 
 static const char *const k_known_options[] = {
-    "key", "keys", "action", "spawn", "repeat", "cooldown_ms", "allow_locked",
-    "allow_inhibiting", "delta", "scope", "filter",
+    COMP_KEY_KEY, COMP_KEY_KEYS, COMP_KEY_ACTION, COMP_KEY_SPAWN, COMP_KEY_REPEAT,
+    COMP_KEY_COOLDOWN_MS, COMP_KEY_ALLOW_LOCKED, COMP_KEY_ALLOW_INHIBITING,
+    COMP_KEY_DELTA, COMP_KEY_SCOPE, COMP_KEY_FILTER,
 };
 
 static bool
@@ -491,8 +552,8 @@ parse_bind_entry(CompBinds *binds, toml_datum_t v, uint32_t mod_meaning,
         return;
     }
 
-    toml_datum_t key_d  = toml_get(v, "key");
-    toml_datum_t keys_d = toml_get(v, "keys");
+    toml_datum_t key_d  = toml_get(v, COMP_KEY_KEY);
+    toml_datum_t keys_d = toml_get(v, COMP_KEY_KEYS);
     if ((key_d.type != TOML_UNKNOWN) == (keys_d.type != TOML_UNKNOWN)) {
         comp_diag_add(diag, src, line, "[[bind]] requires exactly one of 'key' or 'keys'");
         return;
@@ -532,8 +593,8 @@ parse_bind_entry(CompBinds *binds, toml_datum_t v, uint32_t mod_meaning,
     CompBind proto = { .repeat = true, .allow_inhibiting = true, .line = line };
     const char *err = NULL;
 
-    toml_datum_t action = toml_get(v, "action");
-    toml_datum_t spawn  = toml_get(v, "spawn");
+    toml_datum_t action = toml_get(v, COMP_KEY_ACTION);
+    toml_datum_t spawn  = toml_get(v, COMP_KEY_SPAWN);
     if ((action.type != TOML_UNKNOWN) == (spawn.type != TOML_UNKNOWN)) {
         comp_diag_add(diag, src, line, "'%s': give exactly one of 'action' or 'spawn'", label);
         return;
@@ -551,7 +612,7 @@ parse_bind_entry(CompBinds *binds, toml_datum_t v, uint32_t mod_meaning,
             return;
         }
         /* Spec §5.1: `action = "none"` unbinds a previously defined chord */
-        if (strcmp(action.u.s, "none") == 0) {
+        if (strcmp(action.u.s, COMP_VAL_NONE) == 0) {
             if (key_d.type != TOML_UNKNOWN) {
                 remove_bind_for_spec(binds, key_d.u.s, key_d.lineno, mod_meaning, src, diag);
             } else {
@@ -568,25 +629,25 @@ parse_bind_entry(CompBinds *binds, toml_datum_t v, uint32_t mod_meaning,
             proto.allow_inhibiting = false;
     }
 
-    toml_datum_t repeat = toml_get(v, "repeat");
+    toml_datum_t repeat = toml_get(v, COMP_KEY_REPEAT);
     if (repeat.type == TOML_BOOLEAN)
         proto.repeat = repeat.u.boolean;
     else if (repeat.type != TOML_UNKNOWN)
         comp_diag_add(diag, src, repeat.lineno, "'%s': 'repeat' must be true or false; using true", label);
 
-    toml_datum_t locked = toml_get(v, "allow_locked");
+    toml_datum_t locked = toml_get(v, COMP_KEY_ALLOW_LOCKED);
     if (locked.type == TOML_BOOLEAN)
         proto.allow_locked = locked.u.boolean;
     else if (locked.type != TOML_UNKNOWN)
         comp_diag_add(diag, src, locked.lineno, "'%s': 'allow_locked' must be true or false; using false", label);
 
-    toml_datum_t inhib = toml_get(v, "allow_inhibiting");
+    toml_datum_t inhib = toml_get(v, COMP_KEY_ALLOW_INHIBITING);
     if (inhib.type == TOML_BOOLEAN)
         proto.allow_inhibiting = inhib.u.boolean;
     else if (inhib.type != TOML_UNKNOWN)
         comp_diag_add(diag, src, inhib.lineno, "'%s': 'allow_inhibiting' must be true or false", label);
 
-    toml_datum_t cool = toml_get(v, "cooldown_ms");
+    toml_datum_t cool = toml_get(v, COMP_KEY_COOLDOWN_MS);
     if (cool.type == TOML_INT64) {
         int64_t c = cool.u.int64;
         if (c < 0 || c > 10000) {
@@ -599,7 +660,7 @@ parse_bind_entry(CompBinds *binds, toml_datum_t v, uint32_t mod_meaning,
         comp_diag_add(diag, src, cool.lineno, "'%s': 'cooldown_ms' must be an integer; ignored", label);
     }
 
-    toml_datum_t delta = toml_get(v, "delta");
+    toml_datum_t delta = toml_get(v, COMP_KEY_DELTA);
     bool wants_delta = proto.kind == COMP_BIND_SET_COLUMN_WIDTH || proto.kind == COMP_BIND_SET_WINDOW_HEIGHT;
     if (wants_delta) {
         if (delta.type != TOML_STRING || !parse_delta(delta.u.s, &proto.delta, &proto.delta_mode)) {
@@ -615,24 +676,18 @@ parse_bind_entry(CompBinds *binds, toml_datum_t v, uint32_t mod_meaning,
     }
 
     bool switcher = proto.kind == COMP_BIND_NEXT_WINDOW || proto.kind == COMP_BIND_PREVIOUS_WINDOW;
-    toml_datum_t scope = toml_get(v, "scope");
+    toml_datum_t scope = toml_get(v, COMP_KEY_SCOPE);
     if (scope.type != TOML_UNKNOWN) {
         if (!switcher)
             comp_diag_add(diag, src, scope.lineno, "'%s': 'scope' only applies to next-window / previous-window; ignored", label);
-        else if (datum_str_eq(scope, "all"))
-            proto.scope = COMP_SWITCH_SCOPE_ALL;
-        else if (datum_str_eq(scope, "output"))
-            proto.scope = COMP_SWITCH_SCOPE_OUTPUT;
-        else if (datum_str_eq(scope, "workspace"))
-            proto.scope = COMP_SWITCH_SCOPE_WORKSPACE;
-        else
+        else if (scope.type != TOML_STRING || !comp_switch_scope_from_str(scope.u.s, &proto.scope))
             comp_diag_add(diag, src, scope.lineno, "'%s': scope must be \"all\", \"output\" or \"workspace\"; using \"all\"", label);
     }
-    toml_datum_t filter = toml_get(v, "filter");
+    toml_datum_t filter = toml_get(v, COMP_KEY_FILTER);
     if (filter.type != TOML_UNKNOWN) {
         if (!switcher)
             comp_diag_add(diag, src, filter.lineno, "'%s': 'filter' only applies to next-window / previous-window; ignored", label);
-        else if (datum_str_eq(filter, "app-id"))
+        else if (datum_str_eq(filter, COMP_VAL_APP_ID))
             proto.same_app = true;
         else
             comp_diag_add(diag, src, filter.lineno, "'%s': filter must be \"app-id\"; ignored", label);
@@ -664,7 +719,7 @@ comp_binds_merge_toml(CompBinds *binds, const char *src, size_t len,
 {
     if (!binds)
         return false;
-    const char *name = source_name ? source_name : "binds.toml";
+    const char *name = source_name ? source_name : COMP_CFG_FILE_BINDS;
     if (len > (size_t)INT_MAX) {
         comp_diag_add(diag, name, 0, "file too large");
         return false;
@@ -675,7 +730,7 @@ comp_binds_merge_toml(CompBinds *binds, const char *src, size_t len,
         toml_free(res);
         return false;
     }
-    toml_datum_t arr = toml_get(res.toptab, "bind");
+    toml_datum_t arr = toml_get(res.toptab, COMP_SEC_BIND);
     if (arr.type != TOML_UNKNOWN && arr.type != TOML_ARRAY)
         comp_diag_add(diag, name, arr.lineno, "'bind' must be an array of tables ([[bind]])");
 
@@ -690,7 +745,7 @@ CompBinds *
 comp_binds_parse(const char *src, size_t len, const char *source_name,
                  uint32_t mod_meaning, CompDiagList *diag)
 {
-    const char *name = source_name ? source_name : "binds.toml";
+    const char *name = source_name ? source_name : COMP_CFG_FILE_BINDS;
     if (len > (size_t)INT_MAX) {
         comp_diag_add(diag, name, 0, "file too large");
         return NULL;
@@ -708,11 +763,11 @@ comp_binds_parse(const char *src, size_t len, const char *source_name,
     }
 
     for (int i = 0; i < res.toptab.u.tab.size; i++) {
-        if (strcmp(res.toptab.u.tab.key[i], "bind") != 0)
+        if (strcmp(res.toptab.u.tab.key[i], COMP_SEC_BIND) != 0)
             comp_diag_add(diag, name, res.toptab.u.tab.value[i].lineno,
                           "unknown top-level key '%s' ignored (expected [[bind]])", res.toptab.u.tab.key[i]);
     }
-    toml_datum_t arr = toml_get(res.toptab, "bind");
+    toml_datum_t arr = toml_get(res.toptab, COMP_SEC_BIND);
     if (arr.type != TOML_UNKNOWN && arr.type != TOML_ARRAY)
         comp_diag_add(diag, name, arr.lineno, "'bind' must be an array of tables ([[bind]])");
 

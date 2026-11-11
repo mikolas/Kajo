@@ -1,10 +1,14 @@
-/* comp_output.c — outputs: enable with the preferred mode, drive spring frames and render the scene. */
+/* comp_output.c — single-output priority selection (OUT1–OUT4), hotplug,
+ * atomic KMS test-before-commit cascade (§7.3.1), VRR on-demand, and scene rendering.
+ */
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "core/comp_schema_keys.h"
 
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <talloc.h>
@@ -17,6 +21,80 @@
 #include <wlr/types/wlr_output_management_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+
+static bool
+is_internal_panel_name(const char *name)
+{
+    if (!name)
+        return false;
+    return strncasecmp(name, "eDP-", 4) == 0 ||
+           strncasecmp(name, "LVDS-", 5) == 0 ||
+           strncasecmp(name, "DSI-", 4) == 0;
+}
+
+static bool
+output_matches_rule(const struct wlr_output *wo, const char *match)
+{
+    if (!wo || !match || !*match)
+        return false;
+    if (wo->name && strcasecmp(wo->name, match) == 0)
+        return true;
+    if (wo->make && strcasecmp(wo->make, match) == 0)
+        return true;
+    if (wo->model && strcasecmp(wo->model, match) == 0)
+        return true;
+    if (wo->make && wo->model) {
+        char edid[256];
+        snprintf(edid, sizeof(edid), "%s %s", wo->make, wo->model);
+        if (strcasecmp(edid, match) == 0)
+            return true;
+    }
+    return false;
+}
+
+static const CompOutputRule *
+find_matching_output_rule(const CompServer *s, const struct wlr_output *wo)
+{
+    if (!s || !s->config || !wo)
+        return NULL;
+    const CompOutputRule *matched = NULL;
+    for (size_t i = 0; i < s->config->n_outputs; i++) {
+        if (output_matches_rule(wo, s->config->outputs[i].match))
+            matched = &s->config->outputs[i];
+    }
+    return matched;
+}
+
+/* Spec §3.13 OUT2: deterministic output priority in session/normal mode.
+ * 1. First connected output matching an [[output]] rule in load order.
+ * 2. First connected internal panel (eDP-* / LVDS-* / DSI-*).
+ * 3. First connected connector in arrival order.
+ */
+static CompOutput *
+select_primary_output(const CompServer *s)
+{
+    if (!s || wl_list_empty(&s->outputs))
+        return NULL;
+
+    if (s->config) {
+        for (size_t i = 0; i < s->config->n_outputs; i++) {
+            const char *match = s->config->outputs[i].match;
+            CompOutput *o;
+            wl_list_for_each(o, &s->outputs, link) {
+                if (o->wlr_output && output_matches_rule(o->wlr_output, match))
+                    return o;
+            }
+        }
+    }
+
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (o->wlr_output && is_internal_panel_name(o->wlr_output->name))
+            return o;
+    }
+
+    return wl_container_of(s->outputs.next, o, link);
+}
 
 static void
 update_output_manager_config(CompServer *s)
@@ -34,7 +112,7 @@ update_output_manager_config(CompServer *s)
             continue;
         struct wlr_output_configuration_head_v1 *head =
             wlr_output_configuration_head_v1_create(cfg, o->wlr_output);
-        if (head && s->output_layout) {
+        if (head && s->output_layout && wlr_output_layout_get(s->output_layout, o->wlr_output)) {
             struct wlr_box box = {0};
             wlr_output_layout_get_box(s->output_layout, o->wlr_output, &box);
             head->state.x = box.x;
@@ -115,8 +193,13 @@ comp_server_primary_output(const CompServer *s)
 {
     if (!s || wl_list_empty(&s->outputs))
         return NULL;
-    CompOutput *o = wl_container_of(s->outputs.next, o, link);
-    return o->wlr_output;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (o->wlr_output && o->wlr_output->enabled)
+            return o->wlr_output;
+    }
+    CompOutput *first = wl_container_of(s->outputs.next, first, link);
+    return first->wlr_output;
 }
 
 void
@@ -160,7 +243,8 @@ comp_server_schedule_frames(CompServer *s)
         return;
     CompOutput *o;
     wl_list_for_each(o, &s->outputs, link) {
-        wlr_output_schedule_frame(o->wlr_output);
+        if (o->wlr_output && o->wlr_output->enabled)
+            wlr_output_schedule_frame(o->wlr_output);
     }
 }
 
@@ -177,6 +261,9 @@ handle_frame(void *owner, void *data)
     CompOutput *o = owner;
     CompServer *s = o->server;
     (void)data;
+
+    if (!o->wlr_output || !o->wlr_output->enabled || !o->scene_output)
+        return;
 
     struct timespec now;
     clock_gettime(CLOCK_MONOTONIC, &now);
@@ -202,8 +289,10 @@ handle_request_state(void *owner, void *data)
 {
     CompOutput *o = owner;
     const struct wlr_output_event_request_state *ev = data;
-    /* Nested and headless backends ask for a new size when their window is resized */
-    if (!wlr_output_commit_state(o->wlr_output, ev->state)) {
+    if (!o->wlr_output || !ev || !ev->state)
+        return;
+    if (!wlr_output_test_state(o->wlr_output, ev->state) ||
+        !wlr_output_commit_state(o->wlr_output, ev->state)) {
         wlr_log(WLR_ERROR, "output %s: requested state was rejected", o->wlr_output->name);
         return;
     }
@@ -220,20 +309,32 @@ handle_destroy(void *owner, void *data)
     CompOutput *o = owner;
     CompServer *s = o->server;
     (void)data;
-    wlr_log(WLR_INFO, "output %s removed", o->wlr_output->name);
+    wlr_log(WLR_INFO, "output %s removed", o->wlr_output ? o->wlr_output->name : "unknown");
     talloc_free(o);   /* unlinks all listeners and the list link */
+    if (!s || !s->scene)
+        return;
+    /* Spec §3.13 OUT3: select replacement output (if any) and transfer workspaces intact */
+    comp_output_apply_config(s);
     update_output_manager_config(s);
+    comp_lock_idle_reconfigure_output(s);
+    comp_layer_arrange(s);
+    comp_window_relayout(s);
     comp_ipc_emit_outputs(s);
 }
 
 static enum wl_output_transform
 wl_transform_from_idx(int idx)
 {
-    switch (idx) {
-    case 1:  return WL_OUTPUT_TRANSFORM_90;
-    case 2:  return WL_OUTPUT_TRANSFORM_180;
-    case 3:  return WL_OUTPUT_TRANSFORM_270;
-    default: return WL_OUTPUT_TRANSFORM_NORMAL;
+    switch ((CompTransform)idx) {
+    case COMP_TRANSFORM_90:          return WL_OUTPUT_TRANSFORM_90;
+    case COMP_TRANSFORM_180:         return WL_OUTPUT_TRANSFORM_180;
+    case COMP_TRANSFORM_270:         return WL_OUTPUT_TRANSFORM_270;
+    case COMP_TRANSFORM_FLIPPED:     return WL_OUTPUT_TRANSFORM_FLIPPED;
+    case COMP_TRANSFORM_FLIPPED_90:  return WL_OUTPUT_TRANSFORM_FLIPPED_90;
+    case COMP_TRANSFORM_FLIPPED_180: return WL_OUTPUT_TRANSFORM_FLIPPED_180;
+    case COMP_TRANSFORM_FLIPPED_270: return WL_OUTPUT_TRANSFORM_FLIPPED_270;
+    case COMP_TRANSFORM_NORMAL:
+    default:                         return WL_OUTPUT_TRANSFORM_NORMAL;
     }
 }
 
@@ -262,6 +363,190 @@ comp_output_update_vrr(CompServer *s)
     }
 }
 
+/* Spec §6.5.3: Greeter Mode Deterministic Integer Scale Rule.
+ * Assigns integer scale 2 if internal panel (eDP-*) with vertical resolution >= 1600 px
+ * or physical DPI >= 170, and 1 otherwise.
+ */
+static double
+greeter_default_scale(const struct wlr_output *wo)
+{
+    if (!wo || !is_internal_panel_name(wo->name))
+        return 1.0;
+    const struct wlr_output_mode *pm = wlr_output_preferred_mode((struct wlr_output *)wo);
+    int w = pm ? pm->width  : wo->width;
+    int h = pm ? pm->height : wo->height;
+    if (h >= 1600)
+        return 2.0;
+    if (wo->phys_width > 0 && w > 0) {
+        double dpi = ((double)w * 25.4) / (double)wo->phys_width;
+        if (dpi >= 170.0)
+            return 2.0;
+    }
+    return 1.0;
+}
+
+static bool
+try_test_and_commit(struct wlr_output *wo, const struct wlr_output_mode *mode,
+                    int custom_w, int custom_h, int32_t custom_mhz,
+                    double scale, int transform, int vrr_enable)
+{
+    struct wlr_output_state st;
+    wlr_output_state_init(&st);
+    wlr_output_state_set_enabled(&st, true);
+    if (mode)
+        wlr_output_state_set_mode(&st, (struct wlr_output_mode *)mode);
+    else if (custom_w > 0 && custom_h > 0)
+        wlr_output_state_set_custom_mode(&st, custom_w, custom_h, custom_mhz);
+    if (scale > 0.0)
+        wlr_output_state_set_scale(&st, (float)scale);
+    if (transform >= 0 && transform <= COMP_TRANSFORM_FLIPPED_270)
+        wlr_output_state_set_transform(&st, wl_transform_from_idx(transform));
+    if (vrr_enable >= 0)
+        wlr_output_state_set_adaptive_sync_enabled(&st, vrr_enable != 0);
+
+    bool ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
+    wlr_output_state_finish(&st);
+    return ok;
+}
+
+/* Spec §7.3.1: Atomic KMS Test-Before-Commit Cascade.
+ * Tests full requested state first; on failure steps down:
+ *   vrr = "off" -> lower refresh rate at same WxH -> preferred mode -> scale/transform only.
+ */
+static bool
+commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
+                      int transform, int vrr_policy)
+{
+    CompServer *s = o->server;
+    struct wlr_output *wo = o->wlr_output;
+    if (!wo)
+        return false;
+
+    if (vrr_policy >= 0 && vrr_policy <= COMP_VRR_ON_DEMAND)
+        o->vrr_policy = (CompVrrPolicy)vrr_policy;
+
+    const struct wlr_output_mode *req_mode = NULL;
+    int req_w = 0, req_h = 0;
+    int32_t req_mhz = 0;
+    bool has_explicit_mode = false;
+
+    if (mode_str && *mode_str) {
+        if (strcasecmp(mode_str, COMP_VAL_PREFERRED) == 0) {
+            req_mode = wlr_output_preferred_mode(wo);
+            has_explicit_mode = (req_mode != NULL);
+        } else {
+            double mhz_d = 0.0;
+            int n = sscanf(mode_str, "%dx%d@%lf", &req_w, &req_h, &mhz_d);
+            if (n >= 2 && req_w > 0 && req_h > 0) {
+                has_explicit_mode = true;
+                req_mhz = (n == 3 && mhz_d > 0.0) ? (int32_t)round(mhz_d * 1000.0) : 0;
+                int32_t best_diff = 0x7fffffff;
+                const struct wlr_output_mode *m;
+                wl_list_for_each(m, &wo->modes, link) {
+                    if (m->width != req_w || m->height != req_h)
+                        continue;
+                    if (req_mhz == 0) {
+                        if (!req_mode || m->preferred || m->refresh > req_mode->refresh)
+                            req_mode = m;
+                    } else {
+                        int32_t diff = abs(m->refresh - req_mhz);
+                        if (diff < best_diff) {
+                            best_diff = diff;
+                            req_mode = m;
+                        }
+                    }
+                }
+            }
+        }
+    } else if (!wo->enabled) {
+        req_mode = wlr_output_preferred_mode(wo);
+    }
+
+    bool want_vrr = (o->vrr_policy == COMP_VRR_ON) ||
+                    (o->vrr_policy == COMP_VRR_ON_DEMAND && comp_window_focused_wants_vrr(s));
+    int vrr_arg = want_vrr ? 1 : -1;
+
+    /* Step 1: Full requested state */
+    if (try_test_and_commit(wo, req_mode, req_w, req_h, req_mhz, scale, transform, vrr_arg))
+        return true;
+
+    bool stepped_down = false;
+
+    /* Step 2: Step down VRR -> "off" */
+    if (want_vrr && try_test_and_commit(wo, req_mode, req_w, req_h, req_mhz, scale, transform, 0)) {
+        o->vrr_policy = COMP_VRR_OFF;
+        stepped_down = true;
+        goto out_ok;
+    }
+
+    /* Step 3: Step down to lower refresh rate at the same WxH resolution */
+    if (req_w > 0 && req_h > 0 && !wl_list_empty(&wo->modes)) {
+        int32_t ceil_mhz = req_mode ? req_mode->refresh : (req_mhz > 0 ? req_mhz : 0x7fffffff);
+        for (;;) {
+            const struct wlr_output_mode *cand = NULL;
+            const struct wlr_output_mode *m;
+            wl_list_for_each(m, &wo->modes, link) {
+                if (m->width == req_w && m->height == req_h && m->refresh < ceil_mhz) {
+                    if (!cand || m->refresh > cand->refresh)
+                        cand = m;
+                }
+            }
+            if (!cand)
+                break;
+            ceil_mhz = cand->refresh;
+            if (try_test_and_commit(wo, cand, 0, 0, 0, scale, transform, -1)) {
+                stepped_down = true;
+                goto out_ok;
+            }
+        }
+    }
+
+    /* Step 4: Step down to preferred mode */
+    const struct wlr_output_mode *pm = wlr_output_preferred_mode(wo);
+    if (pm && try_test_and_commit(wo, pm, 0, 0, 0, scale, transform, -1)) {
+        stepped_down = has_explicit_mode;
+        goto out_ok;
+    }
+
+    /* Step 5: Apply scale/transform on current mode (e.g. headless/nested fixed mode) */
+    if (try_test_and_commit(wo, NULL, 0, 0, 0, scale, transform, -1)) {
+        stepped_down = has_explicit_mode;
+        goto out_ok;
+    }
+
+    return false;
+
+out_ok:
+    if (stepped_down) {
+        wlr_log(WLR_ERROR, "output %s: requested KMS state rejected; stepped down to %dx%d @ %.2f Hz (vrr=%s)",
+                wo->name ? wo->name : "unknown", wo->width, wo->height,
+                (double)wo->refresh / 1000.0, comp_vrr_policy_to_str(o->vrr_policy));
+        if (s->opts.session_mode && !s->opts.greeter_mode && !getenv("KAJO_COMP_NO_DBUS_ENV")) {
+            const char *const notify_argv[] = {
+                "notify-send", "-a", "kajo-comp",
+                "Display Configuration Stepped Down",
+                "Requested display mode or VRR was rejected by hardware; using safe fallback mode.",
+                NULL,
+            };
+            comp_spawn(s, notify_argv);
+        }
+    }
+    return true;
+}
+
+static void
+sync_primary_output_devices(CompServer *s)
+{
+    struct wlr_output *primary = comp_server_primary_output(s);
+    if (!primary)
+        return;
+    double w_mm = primary->phys_width > 0 ? (double)primary->phys_width : 300.0;
+    double h_mm = primary->phys_height > 0 ? (double)primary->phys_height : 188.0;
+    comp_touch_tracker_set_geometry(&s->touch_tracker, w_mm, h_mm,
+                                    (CompTransform)primary->transform);
+    comp_input_map_devices_to_output(s, primary);
+}
+
 bool
 comp_output_configure(CompServer *s, const char *output_name,
                       const char *mode_str, double scale, int transform, int vrr_policy)
@@ -271,92 +556,41 @@ comp_output_configure(CompServer *s, const char *output_name,
 
     CompOutput *target = NULL;
     if (!output_name || !*output_name) {
-        target = wl_container_of(s->outputs.next, target, link);
+        target = select_primary_output(s);
     } else {
         CompOutput *o;
         wl_list_for_each(o, &s->outputs, link) {
-            if (o->wlr_output->name && strcasecmp(o->wlr_output->name, output_name) == 0) {
+            if (o->wlr_output && o->wlr_output->name &&
+                strcasecmp(o->wlr_output->name, output_name) == 0) {
                 target = o;
                 break;
             }
         }
     }
-    if (!target)
+    if (!target || !target->wlr_output)
         return false;
 
-    struct wlr_output *wo = target->wlr_output;
-    if (vrr_policy >= 0 && vrr_policy <= COMP_VRR_ON_DEMAND)
-        target->vrr_policy = (CompVrrPolicy)vrr_policy;
-
-    struct wlr_output_state st;
-    wlr_output_state_init(&st);
-    bool has_changes = false;
-
     if (mode_str && *mode_str) {
-        if (strcasecmp(mode_str, "preferred") == 0) {
-            struct wlr_output_mode *pm = wlr_output_preferred_mode(wo);
-            if (pm) {
-                wlr_output_state_set_mode(&st, pm);
-                has_changes = true;
-            }
-        } else {
-            int mw = 0, mh = 0;
-            double mhz = 0.0;
-            int n = sscanf(mode_str, "%dx%d@%lf", &mw, &mh, &mhz);
-            if (n >= 2 && mw > 0 && mh > 0) {
-                int32_t target_mhz = (n == 3 && mhz > 0.0) ? (int32_t)round(mhz * 1000.0) : 0;
-                struct wlr_output_mode *best = NULL;
-                int32_t best_diff = 0x7fffffff;
-                struct wlr_output_mode *m;
-                wl_list_for_each(m, &wo->modes, link) {
-                    if (m->width != mw || m->height != mh)
-                        continue;
-                    if (target_mhz == 0) {
-                        if (!best || m->preferred || m->refresh > best->refresh)
-                            best = m;
-                    } else {
-                        int32_t diff = abs(m->refresh - target_mhz);
-                        if (diff < best_diff) {
-                            best_diff = diff;
-                            best = m;
-                        }
-                    }
-                }
-                if (best)
-                    wlr_output_state_set_mode(&st, best);
-                else
-                    wlr_output_state_set_custom_mode(&st, mw, mh, target_mhz);
-                has_changes = true;
-            }
-        }
+        talloc_free(target->manual_mode);
+        target->manual_mode = talloc_strdup(target, mode_str);
+        target->has_manual_mode = (target->manual_mode != NULL);
     }
-
     if (scale > 0.0) {
-        wlr_output_state_set_scale(&st, (float)scale);
-        has_changes = true;
+        target->has_manual_scale = true;
+        target->manual_scale     = scale;
     }
-    if (transform >= 0 && transform <= 3) {
-        wlr_output_state_set_transform(&st, wl_transform_from_idx(transform));
-        has_changes = true;
+    if (transform >= 0 && transform <= COMP_TRANSFORM_FLIPPED_270) {
+        target->has_manual_transform = true;
+        target->manual_transform     = (CompTransform)transform;
+    }
+    if (vrr_policy >= 0 && vrr_policy <= COMP_VRR_ON_DEMAND) {
+        target->has_manual_vrr = true;
+        target->manual_vrr     = (CompVrrPolicy)vrr_policy;
     }
 
-    bool ok = true;
-    if (has_changes) {
-        ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
-        if (!ok && (scale > 0.0 || (transform >= 0 && transform <= 3))) {
-            /* Fallback: apply scale/transform even if custom mode was rejected */
-            wlr_output_state_finish(&st);
-            wlr_output_state_init(&st);
-            if (scale > 0.0)
-                wlr_output_state_set_scale(&st, (float)scale);
-            if (transform >= 0 && transform <= 3)
-                wlr_output_state_set_transform(&st, wl_transform_from_idx(transform));
-            ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
-        }
-    }
-    wlr_output_state_finish(&st);
-
+    bool ok = commit_output_cascade(target, mode_str, scale, transform, vrr_policy);
     comp_output_update_vrr(s);
+    sync_primary_output_devices(s);
     update_output_manager_config(s);
     comp_lock_idle_reconfigure_output(s);
     comp_layer_arrange(s);
@@ -365,80 +599,66 @@ comp_output_configure(CompServer *s, const char *output_name,
     return ok;
 }
 
-static bool
-output_matches_rule(const struct wlr_output *wo, const char *match)
-{
-    if (!wo || !match || !*match)
-        return false;
-    if (wo->name && strcasecmp(wo->name, match) == 0)
-        return true;
-    if (wo->make && strcasecmp(wo->make, match) == 0)
-        return true;
-    if (wo->model && strcasecmp(wo->model, match) == 0)
-        return true;
-    if (wo->make && wo->model) {
-        char edid[256];
-        snprintf(edid, sizeof(edid), "%s %s", wo->make, wo->model);
-        if (strcasecmp(edid, match) == 0)
-            return true;
-    }
-    return false;
-}
-
-static int
-transform_idx_from_str(const char *s)
-{
-    if (!s) return -1;
-    if (strcasecmp(s, "normal") == 0) return 0;
-    if (strcmp(s, "90") == 0)         return 1;
-    if (strcmp(s, "180") == 0)        return 2;
-    if (strcmp(s, "270") == 0)        return 3;
-    return -1;
-}
-
-static int
-vrr_idx_from_str(const char *s)
-{
-    if (!s) return -1;
-    if (strcasecmp(s, "off") == 0)       return COMP_VRR_OFF;
-    if (strcasecmp(s, "on") == 0)        return COMP_VRR_ON;
-    if (strcasecmp(s, "on-demand") == 0) return COMP_VRR_ON_DEMAND;
-    return -1;
-}
-
 void
 comp_output_apply_config(CompServer *s)
 {
-    if (!s || !s->config)
+    if (!s || wl_list_empty(&s->outputs))
         return;
+
+    CompOutput *primary = s->opts.greeter_mode ? NULL : select_primary_output(s);
+
     CompOutput *o;
     wl_list_for_each(o, &s->outputs, link) {
         struct wlr_output *wo = o->wlr_output;
-        for (size_t i = 0; i < s->config->n_outputs; i++) {
-            const CompOutputRule *r = &s->config->outputs[i];
-            if (output_matches_rule(wo, r->match)) {
-                comp_output_configure(s, wo->name,
-                                      r->has_mode ? r->mode : NULL,
-                                      r->has_scale ? r->scale : -1.0,
-                                      r->has_transform ? transform_idx_from_str(r->transform) : -1,
-                                      r->has_vrr ? vrr_idx_from_str(r->vrr) : -1);
+        if (!wo)
+            continue;
+
+        bool should_enable = s->opts.greeter_mode || (o == primary);
+        if (!should_enable) {
+            if (wlr_output_layout_get(s->output_layout, wo)) {
+                wlr_output_layout_remove(s->output_layout, wo);
+                o->scene_output = wlr_scene_get_scene_output(s->scene, wo);
             }
+            if (wo->enabled) {
+                struct wlr_output_state st;
+                wlr_output_state_init(&st);
+                wlr_output_state_set_enabled(&st, false);
+                if (wlr_output_test_state(wo, &st))
+                    wlr_output_commit_state(wo, &st);
+                wlr_output_state_finish(&st);
+            }
+            continue;
+        }
+
+        const CompOutputRule *r = find_matching_output_rule(s, wo);
+        const char *mode_str = (r && r->has_mode) ? r->mode
+                                                  : (o->has_manual_mode ? o->manual_mode : NULL);
+        double scale = (r && r->has_scale) ? r->scale
+                                           : (o->has_manual_scale ? o->manual_scale
+                                                                  : (s->opts.greeter_mode ? greeter_default_scale(wo) : -1.0));
+        int tf = (r && r->has_transform) ? (int)r->transform
+                                         : (o->has_manual_transform ? (int)o->manual_transform : -1);
+        int vrr = (r && r->has_vrr) ? (int)r->vrr
+                                    : (o->has_manual_vrr ? (int)o->manual_vrr : -1);
+
+        if (!commit_output_cascade(o, mode_str, scale, tf, vrr)) {
+            wlr_log(WLR_ERROR, "output %s: failed to enable output", wo->name);
+            continue;
+        }
+
+        o->scene_output = wlr_scene_get_scene_output(s->scene, wo);
+        if (!o->scene_output)
+            o->scene_output = wlr_scene_output_create(s->scene, wo);
+        if (!wlr_output_layout_get(s->output_layout, wo)) {
+            struct wlr_output_layout_output *lo = wlr_output_layout_add_auto(s->output_layout, wo);
+            if (lo && o->scene_output)
+                wlr_scene_output_layout_add_output(s->scene_layout, lo, o->scene_output);
         }
     }
-}
 
-static bool
-enable_output(struct wlr_output *wo)
-{
-    struct wlr_output_state st;
-    wlr_output_state_init(&st);
-    wlr_output_state_set_enabled(&st, true);
-    struct wlr_output_mode *mode = wlr_output_preferred_mode(wo);
-    if (mode)
-        wlr_output_state_set_mode(&st, mode);
-    bool ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
-    wlr_output_state_finish(&st);
-    return ok;
+    comp_output_update_vrr(s);
+    sync_primary_output_devices(s);
+    update_output_manager_config(s);
 }
 
 static void
@@ -451,40 +671,31 @@ handle_new_output(void *owner, void *data)
         wlr_log(WLR_ERROR, "output %s: cannot initialise rendering; ignored", wo->name);
         return;
     }
-    if (!enable_output(wo)) {
-        wlr_log(WLR_ERROR, "output %s: preferred mode rejected; ignored", wo->name);
-        return;
-    }
 
     CompOutput *o = talloc_zero(s, CompOutput);
     COMP_WARN_RETURN_VOID(o != NULL);
     talloc_set_name_const(o, "CompOutput");
     o->server = s;
     o->wlr_output = wo;
-    wl_list_insert(&s->outputs, &o->link);
+    /* Insert at tail to preserve connector arrival order (OUT2 & §6.5.3) */
+    wl_list_insert(s->outputs.prev, &o->link);
     talloc_set_destructor(o, output_destructor);
 
-    if (!comp_listen(o, &wo->events.frame, handle_frame) ||
+    o->scene_output = wlr_scene_output_create(s->scene, wo);
+    if (!o->scene_output ||
+        !comp_listen(o, &wo->events.frame, handle_frame) ||
         !comp_listen(o, &wo->events.request_state, handle_request_state) ||
         !comp_listen(o, &wo->events.destroy, handle_destroy)) {
         talloc_free(o);
         return;
     }
 
-    struct wlr_output_layout_output *lo = wlr_output_layout_add_auto(s->output_layout, wo);
-    o->scene_output = wlr_scene_output_create(s->scene, wo);
-    if (!lo || !o->scene_output) {
-        wlr_log(WLR_ERROR, "output %s: cannot add to the layout", wo->name);
-        talloc_free(o);
-        return;
-    }
-    wlr_scene_output_layout_add_output(s->scene_layout, lo, o->scene_output);
+    comp_output_apply_config(s);
     if (s->cursor && s->cursor_mgr && (!s->seat || !s->seat->pointer_state.focused_surface))
         wlr_cursor_set_xcursor(s->cursor, s->cursor_mgr, "default");
-    wlr_log(WLR_INFO, "output %s: %dx%d @ %.3f Hz, scale %.2f", wo->name, wo->width, wo->height,
-            wo->refresh / 1000.0, (double)wo->scale);
-    comp_output_apply_config(s);
-    update_output_manager_config(s);
+    wlr_log(WLR_INFO, "output %s connected (%s, %dx%d @ %.3f Hz, scale %.2f)",
+            wo->name, wo->enabled ? "active" : "standby",
+            wo->width, wo->height, wo->refresh / 1000.0, (double)wo->scale);
     comp_lock_idle_reconfigure_output(s);
     comp_layer_arrange(s);
     comp_window_relayout(s);
