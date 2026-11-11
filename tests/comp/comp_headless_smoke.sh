@@ -29,11 +29,12 @@ timeout 30 "$KC" -q --exit-with-command -- "$CL" globals \
     zwp_pointer_constraints_v1 zwp_relative_pointer_manager_v1 zwp_pointer_gestures_v1 \
     zxdg_exporter_v2 zxdg_importer_v2 xdg_wm_dialog_v1 xdg_activation_v1 \
     zwp_keyboard_shortcuts_inhibit_manager_v1 zwp_tablet_manager_v2 \
-    zwlr_screencopy_manager_v1 ext_image_copy_capture_manager_v1 \
-    ext_output_image_capture_source_manager_v1 \
+    zwlr_screencopy_manager_v1 zwlr_export_dmabuf_manager_v1 \
+    ext_image_copy_capture_manager_v1 ext_output_image_capture_source_manager_v1 \
     ext_foreign_toplevel_image_capture_source_manager_v1 \
+    zwlr_output_manager_v1 zxdg_output_manager_v1 \
     zwlr_foreign_toplevel_manager_v1 ext_foreign_toplevel_list_v1 \
-    wp_alpha_modifier_v1
+    wp_alpha_modifier_v1 wp_tearing_control_manager_v1
 check "required globals advertised" 0 $?
 
 timeout 30 "$KC" -q --exit-with-command -- "$CL" windows 6
@@ -53,7 +54,8 @@ gaps_inner = 10
 [screenshots]
 path = "$SHOT_DIR/shot-%Y%m%d-%H%M%S.png"
 copy_to_clipboard = true
-include_border = true
+show_notification = true
+include_window_border = true
 EOF
 export XDG_CONFIG_HOME="$RT"
 timeout 30 "$KC" -q --exit-with-command -- sh -c "

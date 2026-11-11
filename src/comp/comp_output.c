@@ -11,10 +11,104 @@
 #include <time.h>
 #include <wlr/backend.h>
 #include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_drm_lease_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
+#include <wlr/types/wlr_output_management_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+
+static void
+update_output_manager_config(CompServer *s)
+{
+    if (!s || !s->output_mgr)
+        return;
+
+    struct wlr_output_configuration_v1 *cfg = wlr_output_configuration_v1_create();
+    if (!cfg)
+        return;
+
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (!o->wlr_output)
+            continue;
+        struct wlr_output_configuration_head_v1 *head =
+            wlr_output_configuration_head_v1_create(cfg, o->wlr_output);
+        if (head && s->output_layout) {
+            struct wlr_box box = {0};
+            wlr_output_layout_get_box(s->output_layout, o->wlr_output, &box);
+            head->state.x = box.x;
+            head->state.y = box.y;
+        }
+    }
+    wlr_output_manager_v1_set_configuration(s->output_mgr, cfg);
+}
+
+static void
+apply_or_test_output_config(CompServer *s, struct wlr_output_configuration_v1 *cfg, bool apply)
+{
+    if (!s || !cfg)
+        return;
+
+    bool ok = true;
+    struct wlr_output_configuration_head_v1 *head;
+    wl_list_for_each(head, &cfg->heads, link) {
+        struct wlr_output *wo = head->state.output;
+        if (!wo) {
+            ok = false;
+            break;
+        }
+        struct wlr_output_state st;
+        wlr_output_state_init(&st);
+        wlr_output_head_v1_state_apply(&head->state, &st);
+        bool step_ok = wlr_output_test_state(wo, &st);
+        if (step_ok && apply)
+            step_ok = wlr_output_commit_state(wo, &st);
+        wlr_output_state_finish(&st);
+        if (!step_ok) {
+            ok = false;
+            break;
+        }
+    }
+
+    if (ok)
+        wlr_output_configuration_v1_send_succeeded(cfg);
+    else
+        wlr_output_configuration_v1_send_failed(cfg);
+    wlr_output_configuration_v1_destroy(cfg);
+
+    if (apply && ok) {
+        update_output_manager_config(s);
+        comp_lock_idle_reconfigure_output(s);
+        comp_layer_arrange(s);
+        comp_window_relayout(s);
+        comp_ipc_emit_outputs(s);
+    }
+}
+
+static void
+handle_output_mgr_test(void *owner, void *data)
+{
+    apply_or_test_output_config(owner, data, false);
+}
+
+static void
+handle_output_mgr_apply(void *owner, void *data)
+{
+    apply_or_test_output_config(owner, data, true);
+}
+
+static void
+handle_drm_lease_request(void *owner, void *data)
+{
+    (void)owner;
+    struct wlr_drm_lease_request_v1 *req = data;
+    if (!req)
+        return;
+    struct wlr_drm_lease_v1 *lease = wlr_drm_lease_request_v1_grant(req);
+    if (!lease)
+        wlr_drm_lease_request_v1_reject(req);
+}
 
 struct wlr_output *
 comp_server_primary_output(const CompServer *s)
@@ -113,6 +207,7 @@ handle_request_state(void *owner, void *data)
         wlr_log(WLR_ERROR, "output %s: requested state was rejected", o->wlr_output->name);
         return;
     }
+    update_output_manager_config(o->server);
     comp_lock_idle_reconfigure_output(o->server);
     comp_layer_arrange(o->server);
     comp_window_relayout(o->server);
@@ -127,6 +222,7 @@ handle_destroy(void *owner, void *data)
     (void)data;
     wlr_log(WLR_INFO, "output %s removed", o->wlr_output->name);
     talloc_free(o);   /* unlinks all listeners and the list link */
+    update_output_manager_config(s);
     comp_ipc_emit_outputs(s);
 }
 
@@ -261,6 +357,7 @@ comp_output_configure(CompServer *s, const char *output_name,
     wlr_output_state_finish(&st);
 
     comp_output_update_vrr(s);
+    update_output_manager_config(s);
     comp_lock_idle_reconfigure_output(s);
     comp_layer_arrange(s);
     comp_window_relayout(s);
@@ -387,6 +484,7 @@ handle_new_output(void *owner, void *data)
     wlr_log(WLR_INFO, "output %s: %dx%d @ %.3f Hz, scale %.2f", wo->name, wo->width, wo->height,
             wo->refresh / 1000.0, (double)wo->scale);
     comp_output_apply_config(s);
+    update_output_manager_config(s);
     comp_lock_idle_reconfigure_output(s);
     comp_layer_arrange(s);
     comp_window_relayout(s);
@@ -396,6 +494,17 @@ handle_new_output(void *owner, void *data)
 void
 comp_output_init(CompServer *s)
 {
+    s->output_mgr = wlr_output_manager_v1_create(s->display);
+    if (s->output_mgr) {
+        comp_listen_ctx(s->listeners, s, &s->output_mgr->events.test, handle_output_mgr_test);
+        comp_listen_ctx(s->listeners, s, &s->output_mgr->events.apply, handle_output_mgr_apply);
+    }
+
+    s->drm_lease_mgr = wlr_drm_lease_v1_manager_create(s->display, s->backend);
+    if (s->drm_lease_mgr) {
+        comp_listen_ctx(s->listeners, s, &s->drm_lease_mgr->events.request, handle_drm_lease_request);
+    }
+
     if (!comp_listen_ctx(s->listeners, s, &s->backend->events.new_output, handle_new_output))
         wlr_log(WLR_ERROR, "cannot listen for outputs");
 }

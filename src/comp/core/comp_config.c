@@ -717,9 +717,15 @@ merge_toml_internal(CompConfig *cfg, const char *src, size_t len,
         parse_color_or_accent(toml_get(sw, "active_color"),
                               cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
                               cfg->accent_rgba, "switcher.active_color", name, diag);
+        parse_color_or_accent(toml_get(sw, "active_border_color"),
+                              cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
+                              cfg->accent_rgba, "switcher.active_border_color", name, diag);
         parse_color_or_accent(toml_get(sw, "urgent_color"),
                               cfg->switcher_urgent_rgba, NULL,
                               cfg->accent_rgba, "switcher.urgent_color", name, diag);
+        parse_color_or_accent(toml_get(sw, "urgent_border_color"),
+                              cfg->switcher_urgent_rgba, NULL,
+                              cfg->accent_rgba, "switcher.urgent_border_color", name, diag);
     }
 
     toml_datum_t ss = toml_get(res.toptab, "screenshots");

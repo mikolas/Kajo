@@ -7,6 +7,7 @@
  *     src/vendor/tomlc17/tomlc17.c $(pkg-config --cflags --libs xkbcommon libpcre2-8) -lm -o /tmp/fuzz-comp-config
  */
 #include "../../src/comp/core/comp_binds.h"
+#include "../../src/comp/core/comp_config.h"
 #include "../../src/comp/core/comp_rules.h"
 
 #include <stdint.h>
@@ -53,6 +54,12 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     comp_rules_match_window(r, NULL, "\xff\xfe invalid utf8", &w);
     comp_rules_match_layer(r, "kajo", &l);
     comp_rules_free(r);
+
+    CompConfig *cfg = comp_config_new_defaults(COMP_MOD_SUPER);
+    if (cfg) {
+        (void)comp_config_merge_toml(cfg, src, size, "fuzz-cfg", NULL, true, &d);
+        comp_config_free(cfg);
+    }
 
     comp_diag_clear(&d);
     free(src);

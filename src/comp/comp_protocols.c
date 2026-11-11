@@ -433,7 +433,7 @@ handle_xdg_activation_request(void *owner, void *data)
 
     struct wlr_xdg_toplevel *tl = wlr_xdg_toplevel_try_from_wlr_surface(ev->surface);
     if (tl && tl->base && tl->base->data)
-        comp_window_focus(s, (struct CompWindow *)tl->base->data);
+        comp_window_request_activate(s, (struct CompWindow *)tl->base->data, ev->token);
 }
 
 /* ── Color management (SDR in v1) ── */

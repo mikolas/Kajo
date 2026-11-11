@@ -6,6 +6,7 @@
 #include "comp_log.h"
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
@@ -198,6 +199,7 @@ struct JVal {
 typedef struct {
     void       *ctx;
     const char *p;
+    int         depth;
 } JParser;
 
 static void
@@ -273,6 +275,8 @@ jp_parse_raw_string(JParser *jp)
 static JVal *
 jp_parse_value(JParser *jp)
 {
+    if (jp->depth > 32)
+        return NULL;
     jp_skip_ws(jp);
     char c = *jp->p;
     if (!c)
@@ -304,6 +308,7 @@ jp_parse_value(JParser *jp)
         v->u.obj.members = talloc_array(v, JMember, (unsigned)cap);
         if (!v->u.obj.members)
             return NULL;
+        jp->depth++;
         for (;;) {
             jp_skip_ws(jp);
             char *k = jp_parse_raw_string(jp);
@@ -331,6 +336,7 @@ jp_parse_value(JParser *jp)
             }
             if (*jp->p == '}') {
                 jp->p++;
+                jp->depth--;
                 return v;
             }
             return NULL;
@@ -351,6 +357,7 @@ jp_parse_value(JParser *jp)
         v->u.arr.items = talloc_array(v, JVal *, (unsigned)cap);
         if (!v->u.arr.items)
             return NULL;
+        jp->depth++;
         for (;;) {
             JVal *elem = jp_parse_value(jp);
             if (!elem)
@@ -370,6 +377,7 @@ jp_parse_value(JParser *jp)
             }
             if (*jp->p == ']') {
                 jp->p++;
+                jp->depth--;
                 return v;
             }
             return NULL;
@@ -1284,12 +1292,26 @@ handle_debounce_timer(void *data)
 static void
 refresh_confd_watch(struct CompIpcState *ipc)
 {
-    if (!ipc || ipc->inotify_fd < 0 || !ipc->config_dir || ipc->wd_confd >= 0)
+    if (!ipc || ipc->inotify_fd < 0 || !ipc->config_dir)
         return;
-    char confd[PATH_MAX];
-    snprintf(confd, sizeof(confd), "%s/conf.d", ipc->config_dir);
-    ipc->wd_confd = inotify_add_watch(ipc->inotify_fd, confd,
-                                      IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_ATTRIB);
+    DIR *d = opendir(ipc->config_dir);
+    if (!d)
+        return;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (de->d_name[0] == '.')
+            continue;
+        char sub[PATH_MAX];
+        snprintf(sub, sizeof(sub), "%s/%s", ipc->config_dir, de->d_name);
+        struct stat st;
+        if (stat(sub, &st) == 0 && S_ISDIR(st.st_mode)) {
+            int wd = inotify_add_watch(ipc->inotify_fd, sub,
+                                       IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_ATTRIB);
+            if (strcmp(de->d_name, "conf.d") == 0)
+                ipc->wd_confd = wd;
+        }
+    }
+    closedir(d);
 }
 
 static int
@@ -1312,7 +1334,7 @@ handle_inotify_fd(int fd, uint32_t mask, void *data)
                 size_t nl = strlen(ev->name);
                 if (nl > 5 && strcmp(ev->name + nl - 5, ".toml") == 0)
                     trigger = true;
-                else if (strcmp(ev->name, "conf.d") == 0) {
+                else if ((ev->mask & IN_ISDIR) || strcmp(ev->name, "conf.d") == 0) {
                     refresh_confd_watch(ipc);
                     trigger = true;
                 }
@@ -1446,4 +1468,32 @@ comp_ipc_finish(CompServer *s)
         return;
     talloc_free(s->ipc);
     s->ipc = NULL;
+}
+
+void
+comp_ipc_fuzz_bytes(CompServer *s, const uint8_t *data, size_t len)
+{
+    if (!s || !data || len == 0 || len >= IPC_MAX_FRAME)
+        return;
+    CompIpcClient *c = talloc_zero(s, CompIpcClient);
+    if (!c)
+        return;
+    c->server = s;
+    c->fd     = -1;
+    wl_list_init(&c->link);
+    memcpy(c->rbuf, data, len);
+    c->rlen = len;
+    c->rbuf[c->rlen] = '\0';
+
+    char *start = c->rbuf;
+    char *nl = NULL;
+    while ((nl = memchr(start, '\n', (size_t)(c->rbuf + c->rlen - start))) != NULL) {
+        *nl = '\0';
+        if (nl > start)
+            handle_client_line(c, start);
+        start = nl + 1;
+    }
+    if (start < c->rbuf + c->rlen)
+        handle_client_line(c, start);
+    talloc_free(c);
 }

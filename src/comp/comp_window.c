@@ -18,7 +18,8 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
-#include <wlr/types/wlr_xdg_decoration_v1.h>
+#include <wlr/types/wlr_xdg_activation_v1.h>
+#include <wlr/types/wlr_xdg_dialog_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
 
@@ -515,6 +516,29 @@ comp_window_focus(CompServer *s, struct CompWindow *w)
 }
 
 void
+comp_window_request_activate(CompServer *s, struct CompWindow *w,
+                             const struct wlr_xdg_activation_token_v1 *token)
+{
+    if (!s || s->locked || !w || !w->mapped)
+        return;
+    CompWinId fid = s->layout ? comp_layout_focused_window(s->layout) : 0;
+    if (fid == w->id)
+        return;
+    bool token_from_focused = (token && token->seat && token->surface &&
+                               s->seat && token->surface == s->seat->keyboard_state.focused_surface);
+    if (fid == 0 || token_from_focused) {
+        comp_window_focus_id(s, w->id);
+        return;
+    }
+    if (!w->is_urgent) {
+        w->is_urgent = true;
+        comp_window_relayout(s);
+        comp_ipc_emit_workspaces(s);
+        comp_ipc_emit_windows(s);
+    }
+}
+
+void
 comp_window_focus_id(CompServer *s, CompWinId id)
 {
     if (!s || id == 0)
@@ -665,20 +689,10 @@ comp_window_get_capture_box(const struct CompWindow *w, bool include_border,
 
     if (include_border && !hide_border) {
         *out_node = &w->scene_tree->node;
-        *out_logical_box = (struct wlr_box){
-            .x      = 0,
-            .y      = 0,
-            .width  = cw + 2 * b,
-            .height = ch + 2 * b,
-        };
+        *out_logical_box = (struct wlr_box){ .x = 0, .y = 0, .width = cw + 2 * b, .height = ch + 2 * b };
     } else {
         *out_node = &w->xdg_tree->node;
-        *out_logical_box = (struct wlr_box){
-            .x      = 0,
-            .y      = 0,
-            .width  = cw,
-            .height = ch,
-        };
+        *out_logical_box = (struct wlr_box){ .x = 0, .y = 0, .width = cw, .height = ch };
     }
     return true;
 }
@@ -1040,14 +1054,12 @@ should_open_floating(const CompWindow *w, const CompWindowRuleResult *rr)
 {
     if (rr && rr->has_floating)
         return rr->floating;
-    if (w->toplevel->parent != NULL)
+    if (w->toplevel->parent != NULL ||
+        wlr_xdg_dialog_v1_try_from_wlr_xdg_toplevel(w->toplevel) != NULL)
         return true;
     const struct wlr_xdg_toplevel_state *st = &w->toplevel->current;
-    if (st->min_width > 0 && st->min_height > 0 &&
-        st->min_width == st->max_width && st->min_height == st->max_height) {
-        return true;
-    }
-    return false;
+    return (st->min_width > 0 && st->min_height > 0 &&
+            st->min_width == st->max_width && st->min_height == st->max_height);
 }
 
 static void
@@ -1400,19 +1412,7 @@ handle_request_resize(void *owner, void *data)
 }
 
 static void
-handle_set_title(void *owner, void *data)
-{
-    CompWindow *w = owner;
-    (void)data;
-    update_window_strings(w);
-    if (w->mapped) {
-        reapply_dynamic_rules_for_window(w);
-        comp_ipc_emit_windows(w->server);
-    }
-}
-
-static void
-handle_set_app_id(void *owner, void *data)
+handle_set_metadata(void *owner, void *data)
 {
     CompWindow *w = owner;
     (void)data;
@@ -1477,12 +1477,10 @@ handle_new_toplevel(void *owner, void *data)
               comp_listen(w, &toplevel->events.request_minimize, handle_request_minimize) &&
               comp_listen(w, &toplevel->events.request_move, handle_request_move) &&
               comp_listen(w, &toplevel->events.request_resize, handle_request_resize) &&
-              comp_listen(w, &toplevel->events.set_title, handle_set_title) &&
-              comp_listen(w, &toplevel->events.set_app_id, handle_set_app_id);
-    if (!ok) {
+              comp_listen(w, &toplevel->events.set_title, handle_set_metadata) &&
+              comp_listen(w, &toplevel->events.set_app_id, handle_set_metadata);
+    if (!ok)
         talloc_free(w);
-        return;
-    }
 }
 
 void
@@ -1493,7 +1491,6 @@ comp_window_init(CompServer *s)
         wlr_log(WLR_ERROR, "could not create xdg_shell");
         return;
     }
-
     if (!comp_listen_ctx(s->listeners, s, &s->xdg_shell->events.new_toplevel, handle_new_toplevel))
         wlr_log(WLR_ERROR, "could not register xdg-shell listeners");
 }

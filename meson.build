@@ -1029,6 +1029,37 @@ test_fuzz_comp_config_exe = executable(
 )
 test('fuzz-comp-config', test_fuzz_comp_config_exe)
 
+test_fuzz_ipc_socket_exe = executable(
+  'test-fuzz-ipc-socket',
+  files(
+    'tests/fuzz/fuzz_ipc_socket.c',
+    'src/comp/comp_listen.c',
+    'src/comp/comp_server.c',
+    'src/comp/comp_output.c',
+    'src/comp/comp_window.c',
+    'src/comp/comp_layer.c',
+    'src/comp/comp_lock_idle.c',
+    'src/comp/comp_protocols.c',
+    'src/comp/comp_xwayland.c',
+    'src/comp/comp_input.c',
+    'src/comp/comp_ipc.c',
+    'src/comp/comp_spawn.c',
+    'src/comp/comp_text.c',
+    'src/comp/comp_switcher.c',
+    'src/comp/comp_screenshot.c',
+  ),
+  wlr_layer_shell_server_h,
+  wlr_output_power_server_h,
+  c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
+  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep,
+                 dependency('xkbcommon', include_type: 'system'),
+                 dependency('cairo', include_type: 'system'),
+                 dependency('pangocairo', include_type: 'system'),
+                 dependency('libpng', include_type: 'system')],
+  build_by_default: false,
+)
+test('fuzz-ipc-socket', test_fuzz_ipc_socket_exe)
+
 gnome.post_install(
   update_desktop_database: true,
 )

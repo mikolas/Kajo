@@ -41,7 +41,9 @@ struct wlr_keyboard_shortcuts_inhibit_manager_v1;
 struct wlr_layer_shell_v1;
 struct wlr_output;
 struct wlr_output_layout;
+struct wlr_output_manager_v1;
 struct wlr_output_power_manager_v1;
+struct wlr_drm_lease_v1_manager;
 struct wlr_pointer_constraint_v1;
 struct wlr_pointer_constraints_v1;
 struct wlr_pointer_gestures_v1;
@@ -61,6 +63,7 @@ struct wlr_tablet_manager_v2;
 struct wlr_text_input_manager_v3;
 struct wlr_virtual_keyboard_manager_v1;
 struct wlr_xcursor_manager;
+struct wlr_xdg_activation_token_v1;
 struct wlr_xdg_activation_v1;
 struct wlr_xdg_decoration_manager_v1;
 struct wlr_xdg_foreign_registry;
@@ -118,7 +121,9 @@ typedef struct CompServer {
 
     struct wlr_idle_notifier_v1                  *idle_notifier;
     struct wlr_idle_inhibit_manager_v1           *idle_inhibit_mgr;
+    struct wlr_output_manager_v1                 *output_mgr;
     struct wlr_output_power_manager_v1           *output_power_mgr;
+    struct wlr_drm_lease_v1_manager              *drm_lease_mgr;
 
     struct wlr_input_method_manager_v2           *input_method_mgr;
     struct wlr_input_method_v2                   *active_input_method;
@@ -250,6 +255,8 @@ void               comp_window_tick_frame(CompServer *server, double now_s);
 struct CompWindow *comp_window_at(CompServer *server, double lx, double ly,
                                   struct wlr_surface **out_surface, double *out_sx, double *out_sy);
 void               comp_window_focus(CompServer *server, struct CompWindow *w);
+void               comp_window_request_activate(CompServer *server, struct CompWindow *w,
+                                                const struct wlr_xdg_activation_token_v1 *token);
 void               comp_window_focus_id(CompServer *server, CompWinId id);
 bool               comp_window_focus_app(CompServer *server, const char *app_id);
 bool               comp_window_close_id(CompServer *server, CompWinId id);
@@ -339,6 +346,7 @@ void comp_ipc_emit_keyboard_layouts(CompServer *server);
 void comp_ipc_emit_outputs(CompServer *server);
 void comp_ipc_emit_touch_bezel_swipe(CompServer *server, const char *edge, double x_ratio);
 void comp_ipc_emit_screenshot_saved(CompServer *server, const char *path, bool copied);
+void comp_ipc_fuzz_bytes(CompServer *server, const uint8_t *data, size_t len);
 /* comp_spawn.c: fork/exec without a shell, child in its own session with WAYLAND_DISPLAY set.
  * Returns the pid or -1. */
 int  comp_spawn(CompServer *server, const char *const *argv);

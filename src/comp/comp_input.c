@@ -435,6 +435,8 @@ surface_at_coords(CompServer *s, double lx, double ly, double *out_sx, double *o
 static void
 pointer_focus_at_cursor(CompServer *s, uint32_t time_msec)
 {
+    if (!s || !s->cursor || !s->seat)
+        return;
     double sx = 0.0, sy = 0.0;
     struct wlr_surface *surface = surface_at_coords(s, s->cursor->x, s->cursor->y, &sx, &sy);
     if (surface) {
