@@ -1159,6 +1159,101 @@ comp_config_load_dir(const char *config_dir, const char *defaults_dir,
     return cfg;
 }
 
+bool
+comp_config_merge_greeter_toml(CompConfig *cfg, const char *src, size_t len,
+                               const char *source_name, CompDiagList *diag)
+{
+    if (!cfg)
+        return false;
+    const char *name = source_name ? source_name : "comp-greeter.toml";
+    if (len > (size_t)INT_MAX) {
+        comp_diag_add(diag, name, 0, "file too large");
+        return false;
+    }
+    toml_result_t res = toml_parse_named(src ? src : "", (int)len, name);
+    if (!res.ok) {
+        comp_diag_add(diag, name, 0, "TOML syntax error: %s", res.errmsg);
+        toml_free(res);
+        return false;
+    }
+
+    /* Spec §6.5.3: only [[output]] and [input.*] sections are accepted in greeter mode */
+    if (res.toptab.type == TOML_TABLE) {
+        for (int i = 0; i < res.toptab.u.tab.size; i++) {
+            const char *k = res.toptab.u.tab.key[i];
+            if (!k)
+                continue;
+            if (strcmp(k, COMP_SEC_OUTPUT) != 0 && strcmp(k, COMP_SEC_INPUT) != 0) {
+                comp_diag_add(diag, name, res.toptab.u.tab.value[i].lineno,
+                              "section/key '%s' is not permitted in --greeter-mode (only [[output]] and [input.*] allowed)",
+                              k);
+            }
+        }
+    }
+
+    merge_input_section(cfg, toml_get(res.toptab, COMP_SEC_INPUT), name, diag);
+    merge_output_array(cfg, toml_get(res.toptab, COMP_SEC_OUTPUT), name, diag);
+    toml_free(res);
+    return true;
+}
+
+CompConfig *
+comp_config_load_greeter(const char *override_path, uint32_t mod_mask, CompDiagList *diag)
+{
+    CompConfig *cfg = comp_config_new_defaults(mod_mask);
+    if (!cfg)
+        return NULL;
+    cfg->xwayland_enabled = false;
+
+    const char *chosen = NULL;
+    char home_candidate[PATH_MAX] = {0};
+
+    if (override_path && override_path[0]) {
+        chosen = override_path;
+    } else {
+        const char *home = getenv("HOME");
+        if (home && *home) {
+            snprintf(home_candidate, sizeof(home_candidate),
+                     "%s/.local/share/kajo/greetd/comp-greeter.toml", home);
+        }
+        const char *candidates[] = {
+            "/etc/greetd/comp-greeter.toml",
+            "/usr/local/share/kajo/greetd/comp-greeter.toml",
+            "/usr/share/kajo/greetd/comp-greeter.toml",
+            home_candidate[0] ? home_candidate : NULL,
+        };
+        for (size_t i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++) {
+            struct stat st;
+            if (candidates[i] && stat(candidates[i], &st) == 0 && S_ISREG(st.st_mode)) {
+                chosen = candidates[i];
+                break;
+            }
+        }
+    }
+
+    if (!chosen)
+        return cfg;
+
+    size_t len = 0;
+    char *buf = read_file_bytes(chosen, &len);
+    if (!buf) {
+        if (override_path && override_path[0]) {
+            comp_diag_add(diag, chosen, 0, "cannot read greeter config '%s'", chosen);
+            comp_config_free(cfg);
+            return NULL;
+        }
+        return cfg;
+    }
+
+    bool ok = comp_config_merge_greeter_toml(cfg, buf, len, chosen, diag);
+    free(buf);
+    if (!ok) {
+        comp_config_free(cfg);
+        return NULL;
+    }
+    return cfg;
+}
+
 const CompOutputRule *
 comp_config_match_output(const CompConfig *cfg, const char *connector_name, const char *make_model)
 {

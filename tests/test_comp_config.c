@@ -661,6 +661,54 @@ test_touchpad_swipes(void)
     comp_touchpad_swipe_end(&s);
 }
 
+static void
+test_greeter_config_filtering(void)
+{
+    gchar *tmp = g_dir_make_tmp("kajo-greeter-cfg-XXXXXX", NULL);
+    g_assert_nonnull(tmp);
+    gchar *p_cfg = g_build_filename(tmp, "comp-greeter.toml", NULL);
+
+    g_assert_true(g_file_set_contents(p_cfg,
+        "[input.keyboard]\n"
+        "xkb_layout = \"fi\"\n"
+        "[env]\n"
+        "FORBIDDEN_VAR = \"1\"\n"
+        "[[bind]]\n"
+        "key = \"mod+q\"\n"
+        "action = \"close-window\"\n"
+        "[[output]]\n"
+        "match = \"edp-1\"\n"
+        "scale = 2.0\n", -1, NULL));
+
+    CompDiagList d;
+    comp_diag_init(&d);
+    CompConfig *cfg = comp_config_load_greeter(p_cfg, COMP_MOD_SUPER, &d);
+    g_assert_nonnull(cfg);
+    g_assert_false(cfg->xwayland_enabled);
+    g_assert_cmpstr(cfg->xkb_layout, ==, "fi");
+    /* Forbidden sections ([env], [[bind]]) must be flagged and ignored */
+    g_assert_true(comp_diag_contains(&d, "not permitted in --greeter-mode"));
+    g_assert_cmpuint(cfg->n_env, ==, 0);
+    g_assert_cmpuint(comp_binds_count(cfg->binds), ==, 0);
+    const CompOutputRule *orule = comp_config_match_output(cfg, "eDP-1", NULL);
+    g_assert_nonnull(orule);
+    g_assert_cmpfloat_with_epsilon(orule->scale, 2.0, 1e-9);
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    /* Unreadable explicit --config path in greeter mode returns NULL */
+    comp_diag_init(&d);
+    gchar *p_missing = g_build_filename(tmp, "nonexistent.toml", NULL);
+    g_assert_null(comp_config_load_greeter(p_missing, COMP_MOD_SUPER, &d));
+    comp_diag_clear(&d);
+
+    g_free(p_missing);
+    g_unlink(p_cfg);
+    g_free(p_cfg);
+    g_rmdir(tmp);
+    g_free(tmp);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -675,6 +723,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/rules/spec-example", test_rules_spec_example);
     g_test_add_func("/comp/config/shipped-defaults", test_config_shipped_defaults);
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
+    g_test_add_func("/comp/config/greeter-filtering", test_greeter_config_filtering);
     g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
     g_test_add_func("/comp/touch/touchpad-swipes", test_touchpad_swipes);
     return g_test_run();

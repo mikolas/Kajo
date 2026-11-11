@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Kajo on Niri
+Comment=Kajo Desktop running on the Niri Wayland compositor (fallback)
+Exec=kajo-session --compositor niri
+Type=Application
+DesktopNames=kajo;niri

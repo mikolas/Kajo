@@ -965,7 +965,7 @@ Options:
 1. **Standard Login Mode (`greetd` / `kajo-greeter` / TTY):**
    - Re-execs through `$SHELL -l` if not already a login shell so `~/.profile`, `PATH`, and `SSH_AUTH_SOCK` load consistently.
    - Exports `XDG_SESSION_TYPE=wayland`, `XDG_CURRENT_DESKTOP=kajo`, `XDG_SESSION_DESKTOP=kajo`, `ELECTRON_OZONE_PLATFORM_HINT=auto`, and `QT_WAYLAND_RECONNECT=1`.
-   - Runs `systemctl --user reset-failed`, imports the environment, and blocks on `systemctl --user --wait start kajo-comp.service`.
+   - Runs `systemctl --user reset-failed`, imports the environment, and executes `kajo-comp --session` directly (or delegates to `systemctl --user --wait start kajo-comp.service` if the user has explicitly enabled `kajo-comp.service`).
    - **Logout Environment Scrub:** On exit, starts `kajo-shutdown.target` and runs:
      ```bash
      systemctl --user unset-environment WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP \
@@ -1072,7 +1072,7 @@ Once `kajo-comp --session` binds `WAYLAND_DISPLAY`, `DISPLAY` (`wlr_xwayland`), 
 | **Phase 2d — Config Hot-Reload & IPC** | `comp.toml`/`outputs.toml`/`binds.toml`/`rules.toml`/`theme.toml`/`shell.toml` + `conf.d/*.toml` / `include` multi-file merge (§5.1) + `inotify` reload on `wl_event_loop`; `$XDG_RUNTIME_DIR/kajo-comp.sock` (§5.3) + mock-compositor test; `src/compositor/kajo_comp_ipc.c`. | **Done** |
 | **Phase 3 — In-Compositor UIs** | `pangocairo` text buffer helper, live window preview mirror buffers, Alt-Tab switcher (§4.1), in-compositor screenshot UI (§4.2) with off-thread PNG writer, third-party capture globals. | **Done** |
 | **Phase 4 — Bare Metal (SDR)** | DRM atomic test-before-commit cascade, `vrr = "on-demand"`, hotplug (`OUT1–OUT4`), `VK_ERROR_DEVICE_LOST` recovery, `WatchdogSec=10` heartbeat, in-compositor touch gestures & posture rotation. **Gate:** verified on both Host A (14" laptop) and Host B (34" desktop). | **Done** |
-| **Phase 5 — Session & Greeter** | `kajo-session`, `wayland-sessions/*.desktop`, `kajo-comp.service`, `kajo-comp --greeter-mode`, `kajo-greeter-session` fallback chain (`kajo-comp` $\rightarrow$ `niri` $\rightarrow$ `cage`). | Not started. |
+| **Phase 5 — Session & Greeter** | `kajo-session`, `wayland-sessions/*.desktop`, `kajo-comp.service`, `kajo-comp --greeter-mode`, `kajo-greeter-session` fallback chain (`kajo-comp` $\rightarrow$ `niri` $\rightarrow$ `cage`). | **Done** |
 | **Phase 6 — Client IPC Switch-Over** | Compositor-neutral `shell_compositor_*` helpers, `page_displays.c` on `kajo-comp` IPC, and compositor settings in `kajo-settings`. | Not started. |
 
 ---

@@ -1,0 +1,16 @@
+[Unit]
+Description=Kajo Wayland Compositor
+BindsTo=graphical-session.target
+Before=graphical-session.target xdg-desktop-autostart.target
+Wants=graphical-session-pre.target xdg-desktop-autostart.target
+After=graphical-session-pre.target
+
+[Service]
+Slice=session.slice
+Type=notify
+ExecStart=/usr/bin/kajo-comp --session
+WatchdogSec=10
+TimeoutStopSec=5
+
+[Install]
+WantedBy=graphical-session.target

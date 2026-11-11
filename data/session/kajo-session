@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+# kajo-session — Kajo Desktop Wayland Session Launcher (docs/spec_kajo_comp.md §6.3)
+#
+# Usage: kajo-session [OPTIONS] [-- COMMAND [ARGS...]]
+#   --compositor <kajo-comp|niri>    Select compositor backend (default: kajo-comp)
+#   --profile <release|debug|asan>   Enable validation layers / sanitizer options / session logs
+#   --config-dir <PATH>              Set KAJO_CONFIG_DIR for isolated config sandboxing
+#   --nested                         Launch isolated nested window inside the current live desktop
+#   --resolution <WxH>               Nested window geometry (default: 1920x1080)
+
+set -euo pipefail
+
+COMPOSITOR="kajo-comp"
+PROFILE="release"
+CONFIG_DIR=""
+NESTED=0
+RESOLUTION="1920x1080"
+EXTRA_ARGS=()
+
+usage() {
+    cat <<'EOF'
+Usage: kajo-session [OPTIONS] [-- COMMAND [ARGS...]]
+
+Options:
+  --compositor <kajo-comp|niri>    Select compositor backend (default: kajo-comp)
+  --profile <release|debug|asan>   Enable validation layers / sanitizer options / session logs
+  --config-dir <PATH>              Set KAJO_CONFIG_DIR for isolated config sandboxing
+  --nested                         Launch isolated nested window inside the current live desktop
+  --resolution <WxH>               Nested window geometry (default: 1920x1080)
+  -h, --help                       Show this help message
+EOF
+}
+
+ORIG_ARGS=("$@")
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --compositor)
+            COMPOSITOR="${2:-}"
+            shift 2
+            ;;
+        --profile)
+            PROFILE="${2:-}"
+            shift 2
+            ;;
+        --config-dir)
+            CONFIG_DIR="${2:-}"
+            shift 2
+            ;;
+        --nested)
+            NESTED=1
+            shift
+            ;;
+        --resolution)
+            RESOLUTION="${2:-}"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            EXTRA_ARGS=("$@")
+            break
+            ;;
+        *)
+            echo "kajo-session: unknown option: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+case "$COMPOSITOR" in
+    kajo-comp|niri) ;;
+    *)
+        echo "kajo-session: --compositor must be 'kajo-comp' or 'niri' (got '$COMPOSITOR')" >&2
+        exit 2
+        ;;
+esac
+
+case "$PROFILE" in
+    release|debug|asan) ;;
+    *)
+        echo "kajo-session: --profile must be 'release', 'debug', or 'asan' (got '$PROFILE')" >&2
+        exit 2
+        ;;
+esac
+
+if [ -n "$CONFIG_DIR" ]; then
+    export KAJO_CONFIG_DIR="$CONFIG_DIR"
+    export XDG_CONFIG_HOME="$CONFIG_DIR"
+fi
+
+# ── 1. Login-shell re-exec (non-nested login mode, spec §6.3.1) ──
+if [ "$NESTED" -eq 0 ] && [ "${KAJO_SESSION_LOGIN_SHELL:-0}" != "1" ]; then
+    if ! shopt -q login_shell 2>/dev/null; then
+        export KAJO_SESSION_LOGIN_SHELL=1
+        USER_SHELL="${SHELL:-/bin/sh}"
+        exec "$USER_SHELL" -l "$0" "${ORIG_ARGS[@]}"
+    fi
+fi
+
+# ── 2. Debug / ASan profile & rotating session logs (spec §6.3.2) ──
+setup_session_logging() {
+    local state_base="${XDG_STATE_HOME:-$HOME/.local/state}"
+    local log_dir="$state_base/kajo/logs"
+    mkdir -p "$log_dir"
+
+    # Retain the latest 9 existing logs so the new log is #10
+    local old_logs=()
+    while IFS= read -r -d '' f; do
+        old_logs+=("$f")
+    done < <(find "$log_dir" -maxdepth 1 -name 'session-*.log' -type f -print0 2>/dev/null | sort -z)
+
+    local count="${#old_logs[@]}"
+    if [ "$count" -ge 10 ]; then
+        local to_delete=$((count - 9))
+        for ((i = 0; i < to_delete; i++)); do
+            rm -f "${old_logs[$i]}"
+        done
+    fi
+
+    local ts
+    ts="$(date +%Y%m%d-%H%M%S)"
+    local log_file="$log_dir/session-${ts}.log"
+    ln -sf "$log_file" "$log_dir/latest.log"
+    exec > >(tee -a "$log_file") 2>&1
+    echo "==> kajo-session ($PROFILE) logging to $log_file"
+}
+
+if [ "$PROFILE" = "debug" ]; then
+    export VK_INSTANCE_LAYERS="VK_LAYER_KHRONOS_validation"
+    export WLR_DEBUG=1
+    setup_session_logging
+elif [ "$PROFILE" = "asan" ]; then
+    export ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:detect_stack_use_after_return=1:strict_string_checks=1}"
+    export UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}"
+    setup_session_logging
+fi
+
+# ── 3. Isolated Nested Mode (--nested, spec §6.3.3) ──
+if [ "$NESTED" -eq 1 ]; then
+    export WLR_BACKENDS="${WLR_BACKENDS:-wayland}"
+    export WLR_WL_OUTPUTS=1
+    export KAJO_COMP_NO_DBUS_ENV=1
+    export KAJO_COMP_SOCKET="${XDG_RUNTIME_DIR:-/tmp}/kajo-comp-nested-$$.sock"
+
+    cleanup_nested() {
+        rm -f "$KAJO_COMP_SOCKET"
+    }
+    trap cleanup_nested EXIT
+
+    COMP_ARGS=(--mod alt)
+    if [ -n "$CONFIG_DIR" ]; then
+        COMP_ARGS+=(--config "$CONFIG_DIR")
+    fi
+    if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
+        COMP_ARGS+=(--exit-with-command -- "${EXTRA_ARGS[@]}")
+    fi
+
+    if [ "$COMPOSITOR" = "niri" ]; then
+        exec niri "${EXTRA_ARGS[@]}"
+    fi
+    exec kajo-comp "${COMP_ARGS[@]}"
+fi
+
+# ── 4. Standard Login Session Mode (spec §6.3.1 & §6.4) ──
+export XDG_SESSION_TYPE="wayland"
+export XDG_CURRENT_DESKTOP="kajo"
+export XDG_SESSION_DESKTOP="kajo"
+export ELECTRON_OZONE_PLATFORM_HINT="auto"
+export QT_WAYLAND_RECONNECT="1"
+
+if [ "$COMPOSITOR" = "niri" ]; then
+    export XDG_CURRENT_DESKTOP="kajo:niri"
+fi
+
+cleanup_login_session() {
+    if command -v systemctl >/dev/null 2>&1 && [ "${KAJO_COMP_NO_DBUS_ENV:-0}" != "1" ]; then
+        systemctl --user start kajo-shutdown.target >/dev/null 2>&1 || true
+        systemctl --user unset-environment \
+            WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP \
+            XDG_SESSION_DESKTOP KAJO_COMP_SOCKET NIRI_SOCKET SWAYSOCK >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_login_session EXIT
+
+if command -v systemctl >/dev/null 2>&1 && [ "${KAJO_COMP_NO_DBUS_ENV:-0}" != "1" ]; then
+    systemctl --user reset-failed >/dev/null 2>&1 || true
+    systemctl --user import-environment \
+        PATH SSH_AUTH_SOCK XDG_SESSION_TYPE XDG_CURRENT_DESKTOP \
+        XDG_SESSION_DESKTOP ELECTRON_OZONE_PLATFORM_HINT QT_WAYLAND_RECONNECT >/dev/null 2>&1 || true
+fi
+
+if [ "$COMPOSITOR" = "niri" ]; then
+    if command -v niri-session >/dev/null 2>&1; then
+        niri-session "${EXTRA_ARGS[@]}"
+    else
+        niri --session "${EXTRA_ARGS[@]}"
+    fi
+    exit $?
+fi
+
+# Use systemd --user unit only if the user has explicitly enabled kajo-comp.service
+if [ -z "$CONFIG_DIR" ] && [ "${#EXTRA_ARGS[@]}" -eq 0 ] && \
+   command -v systemctl >/dev/null 2>&1 && \
+   [ "${KAJO_COMP_NO_DBUS_ENV:-0}" != "1" ] && \
+   systemctl --user is-enabled --quiet kajo-comp.service 2>/dev/null; then
+    systemctl --user --wait start kajo-comp.service
+    exit $?
+fi
+
+COMP_ARGS=(--session)
+if [ "$PROFILE" = "debug" ]; then
+    COMP_ARGS+=(--verbose)
+fi
+if [ -n "$CONFIG_DIR" ]; then
+    COMP_ARGS+=(--config "$CONFIG_DIR")
+fi
+if [ "${#EXTRA_ARGS[@]}" -gt 0 ]; then
+    COMP_ARGS+=(-- "${EXTRA_ARGS[@]}")
+fi
+
+kajo-comp "${COMP_ARGS[@]}"

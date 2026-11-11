@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Kajo Desktop (Debug)
+Comment=Kajo Desktop with Vulkan validation layers and rotating session logs
+Exec=kajo-session --profile debug
+Type=Application
+DesktopNames=kajo

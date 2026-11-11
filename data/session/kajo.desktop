@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Kajo Desktop
+Comment=Kajo scrollable-tiling Wayland desktop environment
+Exec=kajo-session
+Type=Application
+DesktopNames=kajo

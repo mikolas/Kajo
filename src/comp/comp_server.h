@@ -135,6 +135,7 @@ typedef struct CompServer {
     struct wlr_pointer_constraints_v1            *pointer_constraints;
     struct wlr_pointer_constraint_v1             *active_constraint;
     struct wlr_pointer_gestures_v1               *pointer_gestures;
+    struct wlr_cursor_shape_manager_v1           *cursor_shape_mgr;
     struct wlr_tablet_manager_v2                 *tablet_mgr;
     struct wlr_keyboard_shortcuts_inhibit_manager_v1 *shortcuts_inhibit_mgr;
     struct wlr_xdg_foreign_registry              *foreign_registry;
@@ -156,6 +157,8 @@ typedef struct CompServer {
 
     struct wl_event_source               *signal_sources[3]; /* SIGINT, SIGTERM, SIGCHLD; removed on teardown */
     struct wl_event_source               *watchdog_timer;    /* systemd WatchdogSec heartbeat (Phase 4) */
+    struct wl_event_source               *greeter_dpms_timer;/* 5-minute idle DPMS timer in --greeter-mode */
+    bool                                  greeter_dpms_blanked;
     void                                 *renderer_lost_ctx; /* talloc ctx for renderer->events.lost */
     uint32_t                              gpu_recovery_count;
     struct wl_list                        outputs;        /* CompOutput.link (FIFO connector order) */

@@ -171,6 +171,16 @@ CompConfig           *comp_config_load_dir(const char *config_dir,
                                            uint32_t mod_mask,
                                            CompDiagList *diag);
 
+/* Load a locked-down greeter `CompConfig` (`--greeter-mode`, spec §6.5.3).
+ * Accepts only `[[output]]` and `[input.*]` sections; never reads user
+ * `~/.config/kajo/` files. Returns NULL if an explicit `override_path` is
+ * unreadable or has a TOML syntax error. */
+bool                  comp_config_merge_greeter_toml(CompConfig *cfg, const char *src, size_t len,
+                                                     const char *source_name, CompDiagList *diag);
+CompConfig           *comp_config_load_greeter(const char *override_path,
+                                               uint32_t mod_mask,
+                                               CompDiagList *diag);
+
 /* Find the merged output rule matching connector `name` (e.g. "eDP-1") or
  * `make_model` (e.g. "Samsung Display Corp. 0x41AA"). Returns NULL if none. */
 const CompOutputRule *comp_config_match_output(const CompConfig *cfg,

@@ -5,11 +5,13 @@
 
 #include "comp_log.h"
 
+#include <stdlib.h>
 #include <talloc.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_idle_inhibit_v1.h>
 #include <wlr/types/wlr_idle_notify_v1.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_output_power_management_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
@@ -43,15 +45,27 @@ comp_lock_idle_reconfigure_output(CompServer *s)
     double vw = 1920.0, vh = 1080.0;
     comp_server_viewport_size(s, &vw, &vh);
 
+    int bg_x = 0, bg_y = 0, bg_w = (int)vw, bg_h = (int)vh;
+    if (s->output_layout) {
+        struct wlr_box total = {0};
+        wlr_output_layout_get_box(s->output_layout, NULL, &total);
+        if (total.width > 0 && total.height > 0) {
+            bg_x = total.x;
+            bg_y = total.y;
+            bg_w = total.width;
+            bg_h = total.height;
+        }
+    }
+
     if (s->desktop_bg) {
-        wlr_scene_node_set_position(&s->desktop_bg->node, 0, 0);
-        wlr_scene_rect_set_size(s->desktop_bg, (int)vw, (int)vh);
+        wlr_scene_node_set_position(&s->desktop_bg->node, bg_x, bg_y);
+        wlr_scene_rect_set_size(s->desktop_bg, bg_w, bg_h);
     }
 
     if (s->lock_backdrop) {
         wlr_scene_node_set_enabled(&s->lock_backdrop->node, s->locked);
-        wlr_scene_node_set_position(&s->lock_backdrop->node, 0, 0);
-        wlr_scene_rect_set_size(s->lock_backdrop, (int)vw, (int)vh);
+        wlr_scene_node_set_position(&s->lock_backdrop->node, bg_x, bg_y);
+        wlr_scene_rect_set_size(s->lock_backdrop, bg_w, bg_h);
     }
 
     if (s->active_lock) {
@@ -206,13 +220,58 @@ handle_new_session_lock(void *owner, void *data)
     }
 }
 
-/* ── ext-idle-notify-v1 & idle-inhibit-v1 ── */
+/* ── ext-idle-notify-v1, idle-inhibit-v1 & Greeter 5-min DPMS timer ── */
+
+static int
+greeter_dpms_timeout_ms(void)
+{
+    const char *env = getenv("KAJO_GREETER_DPMS_MS");
+    if (env && *env) {
+        int v = atoi(env);
+        if (v >= 50 && v <= 3600000)
+            return v;
+    }
+    return 300000; /* 5 minutes (spec §6.5.2) */
+}
+
+static int
+handle_greeter_dpms_timer(void *data)
+{
+    CompServer *s = data;
+    if (!s || !s->opts.greeter_mode)
+        return 0;
+    s->greeter_dpms_blanked = true;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (!o->wlr_output || !o->wlr_output->enabled)
+            continue;
+        struct wlr_output_state st;
+        wlr_output_state_init(&st);
+        wlr_output_state_set_enabled(&st, false);
+        if (wlr_output_test_state(o->wlr_output, &st))
+            wlr_output_commit_state(o->wlr_output, &st);
+        wlr_output_state_finish(&st);
+    }
+    wlr_log(WLR_INFO, "greeter idle timeout: outputs blanked via DPMS");
+    return 0;
+}
 
 void
 comp_lock_idle_notify_activity(CompServer *s)
 {
-    if (s && s->idle_notifier && s->seat)
+    if (!s)
+        return;
+    if (s->idle_notifier && s->seat)
         wlr_idle_notifier_v1_notify_activity(s->idle_notifier, s->seat);
+    if (s->opts.greeter_mode) {
+        if (s->greeter_dpms_blanked) {
+            s->greeter_dpms_blanked = false;
+            comp_output_apply_config(s);
+            comp_server_schedule_frames(s);
+        }
+        if (s->greeter_dpms_timer)
+            wl_event_source_timer_update(s->greeter_dpms_timer, greeter_dpms_timeout_ms());
+    }
 }
 
 void
@@ -312,4 +371,10 @@ comp_lock_idle_init(CompServer *s)
         comp_listen_ctx(s->listeners, s, &s->idle_inhibit_mgr->events.new_inhibitor, handle_new_inhibitor);
     if (s->output_power_mgr)
         comp_listen_ctx(s->listeners, s, &s->output_power_mgr->events.set_mode, handle_output_power_set_mode);
+
+    if (s->opts.greeter_mode && s->loop) {
+        s->greeter_dpms_timer = wl_event_loop_add_timer(s->loop, handle_greeter_dpms_timer, s);
+        if (s->greeter_dpms_timer)
+            wl_event_source_timer_update(s->greeter_dpms_timer, greeter_dpms_timeout_ms());
+    }
 }

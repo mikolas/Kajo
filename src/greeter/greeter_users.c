@@ -236,15 +236,30 @@ scan_session_directory(GPtrArray   *sessions,
 }
 
 static gint
+session_priority_rank(const GreeterSession *s)
+{
+    if (!s || !s->id)
+        return 3;
+    if (g_ascii_strcasecmp(s->id, "kajo") == 0)
+        return 0;
+    if (g_ascii_strcasecmp(s->id, "niri") == 0 ||
+        g_ascii_strcasecmp(s->id, "kajo-niri") == 0)
+        return 1;
+    if (g_ascii_strcasecmp(s->id, "kajo-debug") == 0)
+        return 2;
+    return 3;
+}
+
+static gint
 compare_sessions(gconstpointer a, gconstpointer b)
 {
     const GreeterSession *sa = *(const GreeterSession *const *)a;
     const GreeterSession *sb = *(const GreeterSession *const *)b;
-    /* Prioritize niri first, then alphabetical by name */
-    gboolean a_niri = (g_ascii_strcasecmp(sa->id, "niri") == 0);
-    gboolean b_niri = (g_ascii_strcasecmp(sb->id, "niri") == 0);
-    if (a_niri && !b_niri) return -1;
-    if (!a_niri && b_niri) return 1;
+    /* Prioritize kajo first, then niri, then alphabetical by name (spec §6.6) */
+    gint ra = session_priority_rank(sa);
+    gint rb = session_priority_rank(sb);
+    if (ra != rb)
+        return (ra < rb) ? -1 : 1;
     return g_ascii_strcasecmp(sa->name, sb->name);
 }
 
@@ -282,8 +297,8 @@ greeter_discover_sessions_from_dirs(const gchar *const *search_dirs,
 
     if (sessions->len == 0) {
         GreeterSession *fallback = create_session_entry(
-            "niri", "Niri", "A scrollable-tiling Wayland compositor",
-            "niri-session", "wayland", "niri");
+            "kajo", "Kajo Desktop", "Kajo scrollable-tiling Wayland desktop environment",
+            "kajo-session", "wayland", "kajo");
         if (fallback)
             g_ptr_array_add(sessions, fallback);
     }

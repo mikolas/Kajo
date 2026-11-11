@@ -16,8 +16,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sysexits.h>
 #include <unistd.h>
 #include <wlr/util/log.h>
 
@@ -232,6 +235,8 @@ main(int argc, char *argv[])
 
     enum wlr_log_importance level = WLR_INFO;
     CompServerOptions opts = { .mod_mask = COMP_MOD_SUPER };
+    bool mod_explicit = false;
+    static const char *const k_default_greeter_argv[] = { "kajo-greeter", NULL };
     static const struct option long_opts[] = {
         { "session", no_argument, NULL, 'S' },
         { "greeter-mode", no_argument, NULL, 'G' },
@@ -256,6 +261,7 @@ main(int argc, char *argv[])
         case 'q': level = WLR_ERROR; break;
         case 'x': opts.exit_with_startup = true; break;
         case 'm':
+            mod_explicit = true;
             if (strcmp(optarg, "alt") == 0)
                 opts.mod_mask = COMP_MOD_ALT;
             else if (strcmp(optarg, "super") == 0)
@@ -271,19 +277,45 @@ main(int argc, char *argv[])
     }
     if (optind < argc)
         opts.startup_argv = (const char *const *)&argv[optind];
+    else if (opts.greeter_mode)
+        opts.startup_argv = k_default_greeter_argv;
+
     if (opts.exit_with_startup && !opts.startup_argv) {
         fprintf(stderr, "--exit-with-command needs a COMMAND after --\n");
         return 2;
+    }
+
+    /* Spec §6.1: default Mod key is super in bare-metal/session, alt when nested */
+    if (!mod_explicit && !opts.session_mode && !opts.greeter_mode) {
+        const char *wl_disp = getenv("WAYLAND_DISPLAY");
+        const char *wlr_bk  = getenv("WLR_BACKENDS");
+        if ((wl_disp && *wl_disp && (!wlr_bk || !strstr(wlr_bk, "headless"))) ||
+            (wlr_bk && strstr(wlr_bk, "wayland"))) {
+            opts.mod_mask = COMP_MOD_ALT;
+        }
+    }
+
+    /* Spec §6.5.1 & §6.5.2: greeter-mode security hardening & EX_SOFTWARE (70) fallback */
+    if (opts.greeter_mode) {
+        struct rlimit zero_core = { 0, 0 };
+        (void)setrlimit(RLIMIT_CORE, &zero_core);
+        (void)prctl(PR_SET_DUMPABLE, 0);
+        const char *xdg_run = getenv("XDG_RUNTIME_DIR");
+        if (!xdg_run || !*xdg_run) {
+            fprintf(stderr, "kajo-comp: XDG_RUNTIME_DIR is required in --greeter-mode\n");
+            return EX_SOFTWARE;
+        }
     }
 
     /* Writing to a disconnected client must never kill the compositor (spec §7.2.1) */
     signal(SIGPIPE, SIG_IGN);
     wlr_log_init(level, NULL);
 
+    int fail_code = opts.greeter_mode ? EX_SOFTWARE : 1;
     CompServer *server = comp_server_create(&opts);
     if (!server)
-        return 1;
-    int status = 1;
+        return fail_code;
+    int status = fail_code;
     if (comp_server_start(server)) {
         comp_server_run(server);
         status = server->exit_status;

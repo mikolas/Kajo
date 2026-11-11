@@ -180,6 +180,66 @@ grep -q 'READY=1' "$NOTIFY_LOG" && grep -q 'WATCHDOG=1' "$NOTIFY_LOG" && grep -q
 rm -f "$CFG_DIR/outputs.toml"
 check "Phase 4 single-output priority, transform rotation, KMS cascade & systemd watchdog" 0 $P4_RC
 
+# ── Phase 5: Greeter Mode, EX_SOFTWARE (70) Fallback Chain & kajo-session (§6.1–6.5) ──
+GREETER_SOCK="$RT/greeter-dont-create.sock"
+GREETER_CFG="$RT/comp-greeter.toml"
+cat > "$GREETER_CFG" << 'EOF'
+[input.keyboard]
+xkb_layout = "us"
+
+[[output]]
+match = "HEADLESS-1"
+scale = 2.0
+EOF
+
+WLR_HEADLESS_OUTPUTS=2 KAJO_COMP_SOCKET="$GREETER_SOCK" KAJO_GREETER_DPMS_MS=60 \
+    timeout 30 "$KC" -q --greeter-mode --config "$GREETER_CFG" -- sh -c "
+    set -e
+    # IPC socket must NEVER be created in --greeter-mode
+    [ ! -e '$GREETER_SOCK' ]
+    # Allow 60ms DPMS blanking timer to fire cleanly
+    sleep 0.10
+"
+check "Phase 5 --greeter-mode multi-output, no IPC socket & DPMS idle timer" 0 $?
+
+# Missing XDG_RUNTIME_DIR or missing config or missing greeter binary -> exit 70 (EX_SOFTWARE)
+env -u XDG_RUNTIME_DIR "$KC" -q --greeter-mode -- sh -c 'exit 0' 2>/dev/null
+check "Phase 5 --greeter-mode without XDG_RUNTIME_DIR exits 70" 70 $?
+
+"$KC" -q --greeter-mode --config "$RT/nonexistent-greeter.toml" -- sh -c 'exit 0' 2>/dev/null
+check "Phase 5 --greeter-mode with invalid --config exits 70" 70 $?
+
+"$KC" -q --greeter-mode -- /nonexistent/kajo-greeter-missing 2>/dev/null
+check "Phase 5 --greeter-mode with missing greeter binary exits 70" 70 $?
+
+# Verify kajo-greeter-session fallback chain (kajo-comp -> niri -> cage) and kajo-session CLI
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+FAKE_BIN="$RT/fake-bin"
+mkdir -p "$FAKE_BIN"
+cat > "$FAKE_BIN/kajo-comp" << 'EOF'
+#!/bin/sh
+exit 70
+EOF
+cat > "$FAKE_BIN/niri" << 'EOF'
+#!/bin/sh
+exit 1
+EOF
+cat > "$FAKE_BIN/cage" << 'EOF'
+#!/bin/sh
+echo "cage-fallback:$*" > "$KAJO_FALLBACK_MARKER"
+exit 0
+EOF
+chmod +x "$FAKE_BIN/kajo-comp" "$FAKE_BIN/niri" "$FAKE_BIN/cage"
+
+KAJO_FALLBACK_MARKER="$RT/fallback.out" PATH="$FAKE_BIN:$PATH" \
+    sh "$REPO_ROOT/data/greetd/kajo-greeter-session" --cmd kajo-session 2>/dev/null
+FB_RC=$?
+grep -q "cage-fallback:-s -- kajo-greeter" "$RT/fallback.out" || FB_RC=1
+check "Phase 5 kajo-greeter-session 3-stage fallback chain" 0 $FB_RC
+
+bash "$REPO_ROOT/data/session/kajo-session" --help >/dev/null
+check "Phase 5 kajo-session --help" 0 $?
+
 timeout 60 "$KC" -q --exit-with-command -- "$CL" churn 200
 check "200 connect/disconnect cycles" 0 $?
 

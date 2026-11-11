@@ -205,14 +205,19 @@ test_user_and_session_discovery(void)
     g_assert_nonnull(u0->username);
     g_assert_cmpstr(u0->username, !=, "");
 
-    /* Custom .desktop session parsing */
+    /* Custom .desktop session parsing & kajo -> niri priority ordering (spec §6.6) */
     g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-sessions-XXXXXX", NULL);
+    g_autofree gchar *kajo_dt = g_build_filename(tmpdir, "kajo.desktop", NULL);
     g_autofree gchar *niri_dt = g_build_filename(tmpdir, "niri.desktop", NULL);
     g_autofree gchar *hidden_dt = g_build_filename(tmpdir, "hidden.desktop", NULL);
 
     g_assert_true(g_file_set_contents(
         niri_dt,
         "[Desktop Entry]\nName=Niri\nComment=Scrollable tiling\nExec=niri-session %U\nType=Application\nDesktopNames=niri\n",
+        -1, NULL));
+    g_assert_true(g_file_set_contents(
+        kajo_dt,
+        "[Desktop Entry]\nName=Kajo Desktop\nComment=Kajo Wayland desktop\nExec=kajo-session\nType=Application\nDesktopNames=kajo\n",
         -1, NULL));
     g_assert_true(g_file_set_contents(
         hidden_dt,
@@ -222,26 +227,40 @@ test_user_and_session_discovery(void)
     const gchar *dirs[] = { tmpdir, NULL };
     g_autoptr(GPtrArray) sessions = greeter_discover_sessions_from_dirs(dirs, NULL);
     g_assert_nonnull(sessions);
-    g_assert_cmpuint(sessions->len, ==, 1);
+    g_assert_cmpuint(sessions->len, ==, 2);
 
     GreeterSession *s0 = g_ptr_array_index(sessions, 0);
-    g_assert_cmpstr(s0->id, ==, "niri");
-    g_assert_cmpstr(s0->name, ==, "Niri");
-    g_assert_cmpstr(s0->exec, ==, "niri-session %U");
-    g_assert_nonnull(s0->cmd_argv);
-    g_assert_cmpstr(s0->cmd_argv[0], ==, "niri-session");
-    g_assert_null(s0->cmd_argv[1]);
+    g_assert_cmpstr(s0->id, ==, "kajo");
+    g_assert_cmpstr(s0->name, ==, "Kajo Desktop");
+    g_assert_cmpstr(s0->exec, ==, "kajo-session");
+
+    GreeterSession *s1 = g_ptr_array_index(sessions, 1);
+    g_assert_cmpstr(s1->id, ==, "niri");
+    g_assert_cmpstr(s1->name, ==, "Niri");
+    g_assert_cmpstr(s1->exec, ==, "niri-session %U");
+    g_assert_nonnull(s1->cmd_argv);
+    g_assert_cmpstr(s1->cmd_argv[0], ==, "niri-session");
+    g_assert_null(s1->cmd_argv[1]);
+
+    /* Empty directory fallback defaults to kajo-session */
+    const gchar *empty_dirs[] = { NULL };
+    g_autoptr(GPtrArray) fb_sessions = greeter_discover_sessions_from_dirs(empty_dirs, NULL);
+    g_assert_cmpuint(fb_sessions->len, ==, 1);
+    GreeterSession *fb0 = g_ptr_array_index(fb_sessions, 0);
+    g_assert_cmpstr(fb0->id, ==, "kajo");
+    g_assert_cmpstr(fb0->exec, ==, "kajo-session");
 
     /* State persistence roundtrip */
     g_autofree gchar *state_file = g_build_filename(tmpdir, "state.json", NULL);
-    g_assert_true(greeter_state_save(state_file, "mikolas", "niri"));
+    g_assert_true(greeter_state_save(state_file, "mikolas", "kajo"));
 
     g_autofree gchar *loaded_user = NULL;
     g_autofree gchar *loaded_sess = NULL;
     greeter_state_load(state_file, &loaded_user, &loaded_sess);
     g_assert_cmpstr(loaded_user, ==, "mikolas");
-    g_assert_cmpstr(loaded_sess, ==, "niri");
+    g_assert_cmpstr(loaded_sess, ==, "kajo");
 
+    g_unlink(kajo_dt);
     g_unlink(niri_dt);
     g_unlink(hidden_dt);
     g_unlink(state_file);

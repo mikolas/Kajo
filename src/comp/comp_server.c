@@ -300,6 +300,10 @@ server_destructor(CompServer *s)
         wl_event_source_remove(s->watchdog_timer);
         s->watchdog_timer = NULL;
     }
+    if (s->greeter_dpms_timer) {
+        wl_event_source_remove(s->greeter_dpms_timer);
+        s->greeter_dpms_timer = NULL;
+    }
     if (s->scene) {
         wlr_scene_node_destroy(&s->scene->tree.node);
         s->scene = NULL;
@@ -448,7 +452,10 @@ comp_server_create(const CompServerOptions *opts)
     comp_switcher_init(s);
     comp_screenshot_init(s);
     comp_ipc_init(s);
-    comp_server_reload_config(s);
+    if (!comp_server_reload_config(s) && s->opts.greeter_mode &&
+        s->opts.config_path && *s->opts.config_path) {
+        goto fail;
+    }
 
     s->signal_sources[0] = wl_event_loop_add_signal(s->loop, SIGINT, handle_terminate_signal, s);
     s->signal_sources[1] = wl_event_loop_add_signal(s->loop, SIGTERM, handle_terminate_signal, s);
@@ -574,22 +581,26 @@ comp_server_reload_config(CompServer *s)
 
     CompDiagList diag = {0};
     CompConfig *cfg = NULL;
-    const char *defaults_dir = resolve_defaults_dir();
 
-    void *tmp = talloc_new(s);
-    char *dir = comp_server_resolve_config_dir(tmp, &s->opts);
-
-    if (s->opts.config_path && *s->opts.config_path) {
-        struct stat st;
-        bool is_dir = (stat(s->opts.config_path, &st) == 0 && S_ISDIR(st.st_mode));
-        if (is_dir)
-            cfg = comp_config_load_dir(s->opts.config_path, defaults_dir, NULL, s->opts.mod_mask, &diag);
-        else
-            cfg = comp_config_load_dir(dir, defaults_dir, s->opts.config_path, s->opts.mod_mask, &diag);
+    if (s->opts.greeter_mode) {
+        cfg = comp_config_load_greeter(s->opts.config_path, s->opts.mod_mask, &diag);
     } else {
-        cfg = comp_config_load_dir(dir, defaults_dir, NULL, s->opts.mod_mask, &diag);
+        const char *defaults_dir = resolve_defaults_dir();
+        void *tmp = talloc_new(s);
+        char *dir = comp_server_resolve_config_dir(tmp, &s->opts);
+
+        if (s->opts.config_path && *s->opts.config_path) {
+            struct stat st;
+            bool is_dir = (stat(s->opts.config_path, &st) == 0 && S_ISDIR(st.st_mode));
+            if (is_dir)
+                cfg = comp_config_load_dir(s->opts.config_path, defaults_dir, NULL, s->opts.mod_mask, &diag);
+            else
+                cfg = comp_config_load_dir(dir, defaults_dir, s->opts.config_path, s->opts.mod_mask, &diag);
+        } else {
+            cfg = comp_config_load_dir(dir, defaults_dir, NULL, s->opts.mod_mask, &diag);
+        }
+        talloc_free(tmp);
     }
-    talloc_free(tmp);
 
     for (size_t i = 0; i < diag.n; i++)
         wlr_log(WLR_ERROR, "config: %s", diag.msgs[i] ? diag.msgs[i] : "<unknown>");
@@ -600,9 +611,11 @@ comp_server_reload_config(CompServer *s)
         return false;
     }
 
-    for (size_t i = 0; i < cfg->n_env; i++) {
-        if (cfg->env[i].key && cfg->env[i].value)
-            setenv(cfg->env[i].key, cfg->env[i].value, 1);
+    if (!s->opts.greeter_mode) {
+        for (size_t i = 0; i < cfg->n_env; i++) {
+            if (cfg->env[i].key && cfg->env[i].value)
+                setenv(cfg->env[i].key, cfg->env[i].value, 1);
+        }
     }
 
     if (s->layout)

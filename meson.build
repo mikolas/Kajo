@@ -505,14 +505,35 @@ install_data(
 )
 
 install_data(
+  'data/session/kajo-session',
   'data/greetd/kajo-greeter-session',
   install_dir: get_option('bindir'),
   install_mode: 'rwxr-xr-x',
 )
 
 install_data(
+  'data/greetd/comp-greeter.toml',
   'data/greetd/niri-greeter.kdl',
   install_dir: get_option('datadir') / 'kajo' / 'greetd',
+)
+
+install_data(
+  'data/session/kajo.desktop',
+  'data/session/kajo-debug.desktop',
+  'data/session/kajo-niri.desktop',
+  install_dir: get_option('datadir') / 'wayland-sessions',
+)
+
+install_data(
+  'data/session/kajo-portals.conf',
+  install_dir: get_option('datadir') / 'xdg-desktop-portal',
+)
+
+install_data(
+  'data/systemd/kajo-comp.service',
+  'data/systemd/kajo.service',
+  'data/systemd/kajo-shutdown.target',
+  install_dir: get_option('prefix') / 'lib' / 'systemd' / 'user',
 )
 
 install_subdir(

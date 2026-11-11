@@ -14,6 +14,8 @@
 #include <wlr/types/wlr_color_management_v1.h>
 #include <wlr/types/wlr_color_representation_v1.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_cursor.h>
+#include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_export_dmabuf_v1.h>
 #include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
 #include <wlr/types/wlr_ext_image_capture_source_v1.h>
@@ -40,6 +42,7 @@
 #include <wlr/types/wlr_xdg_foreign_v2.h>
 #include <wlr/types/wlr_xdg_output_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
+#include <wlr/types/wlr_xcursor_manager.h>
 
 typedef struct {
     CompServer                  *server;
@@ -668,6 +671,20 @@ handle_toplevel_capture_request(void *owner, void *data)
     comp_window_accept_capture_request(s, req);
 }
 
+static void
+handle_cursor_shape_request(void *owner, void *data)
+{
+    CompServer *s = owner;
+    const struct wlr_cursor_shape_manager_v1_request_set_shape_event *ev = data;
+    if (!s || !s->seat || !s->cursor || !s->cursor_mgr || !ev)
+        return;
+    if (s->seat->pointer_state.focused_client != ev->seat_client)
+        return;
+    const char *shape_name = wlr_cursor_shape_v1_name(ev->shape);
+    if (shape_name)
+        wlr_cursor_set_xcursor(s->cursor, s->cursor_mgr, shape_name);
+}
+
 void
 comp_protocols_init(CompServer *s)
 {
@@ -678,6 +695,7 @@ comp_protocols_init(CompServer *s)
     s->relative_pointer_mgr  = wlr_relative_pointer_manager_v1_create(s->display);
     s->pointer_constraints   = wlr_pointer_constraints_v1_create(s->display);
     s->pointer_gestures      = wlr_pointer_gestures_v1_create(s->display);
+    s->cursor_shape_mgr      = wlr_cursor_shape_manager_v1_create(s->display, 1);
     s->tablet_mgr            = wlr_tablet_v2_create(s->display);
     s->shortcuts_inhibit_mgr = wlr_keyboard_shortcuts_inhibit_v1_create(s->display);
     s->foreign_registry      = wlr_xdg_foreign_registry_create(s->display);
@@ -729,4 +747,6 @@ comp_protocols_init(CompServer *s)
         comp_listen_ctx(s->listeners, s, &s->shortcuts_inhibit_mgr->events.new_inhibitor, handle_new_shortcuts_inhibitor);
     if (s->xdg_activation)
         comp_listen_ctx(s->listeners, s, &s->xdg_activation->events.request_activate, handle_xdg_activation_request);
+    if (s->cursor_shape_mgr)
+        comp_listen_ctx(s->listeners, s, &s->cursor_shape_mgr->events.request_set_shape, handle_cursor_shape_request);
 }

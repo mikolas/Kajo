@@ -10,6 +10,7 @@
 #include <talloc.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
+#include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -76,24 +77,11 @@ apply_layer_rules(CompLayerSurface *cls)
     }
 }
 
-void
-comp_layer_arrange(CompServer *s)
+static void
+arrange_layers_on_box(CompServer *s, struct wlr_output *target_wo, bool is_primary,
+                      const struct wlr_box *full_area, struct wlr_box *usable_io,
+                      struct wlr_surface **exclusive_surf_io)
 {
-    if (!s)
-        return;
-
-    double vw = 1920.0, vh = 1080.0;
-    comp_server_viewport_size(s, &vw, &vh);
-
-    struct wlr_box full_area = {
-        .x      = 0,
-        .y      = 0,
-        .width  = (int)vw,
-        .height = (int)vh,
-    };
-    struct wlr_box usable = full_area;
-
-    /* Arrange from top-most layer to bottom-most per zwlr_layer_shell_v1 spec */
     static const enum zwlr_layer_shell_v1_layer k_order[4] = {
         ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY,
         ZWLR_LAYER_SHELL_V1_LAYER_TOP,
@@ -101,16 +89,17 @@ comp_layer_arrange(CompServer *s)
         ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND,
     };
 
-    struct wlr_surface *exclusive_surf = NULL;
-
     /* Pass 1: exclusive-zone surfaces (exclusive_zone > 0) */
     for (size_t li = 0; li < 4; li++) {
         CompLayerSurface *cls;
         wl_list_for_each(cls, &s->layer_surfaces, link) {
             if (!cls->lsurf->initialized || cls->lsurf->current.layer != k_order[li])
                 continue;
+            struct wlr_output *lo = cls->lsurf->output;
+            if (target_wo && lo != target_wo && !(is_primary && !lo))
+                continue;
             if (cls->lsurf->current.exclusive_zone > 0)
-                wlr_scene_layer_surface_v1_configure(cls->scene_layer, &full_area, &usable);
+                wlr_scene_layer_surface_v1_configure(cls->scene_layer, full_area, usable_io);
         }
     }
 
@@ -120,20 +109,72 @@ comp_layer_arrange(CompServer *s)
         wl_list_for_each(cls, &s->layer_surfaces, link) {
             if (!cls->lsurf->initialized || cls->lsurf->current.layer != k_order[li])
                 continue;
+            struct wlr_output *lo = cls->lsurf->output;
+            if (target_wo && lo != target_wo && !(is_primary && !lo))
+                continue;
             if (cls->lsurf->current.exclusive_zone <= 0)
-                wlr_scene_layer_surface_v1_configure(cls->scene_layer, &full_area, &usable);
+                wlr_scene_layer_surface_v1_configure(cls->scene_layer, full_area, usable_io);
             if (cls->mapped)
                 apply_layer_rules(cls);
 
-            if (cls->mapped && !exclusive_surf &&
+            if (cls->mapped && !*exclusive_surf_io &&
                 (k_order[li] == ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY ||
                  k_order[li] == ZWLR_LAYER_SHELL_V1_LAYER_TOP) &&
                 cls->lsurf->current.keyboard_interactive ==
                     ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_EXCLUSIVE) {
-                exclusive_surf = cls->lsurf->surface;
+                *exclusive_surf_io = cls->lsurf->surface;
             }
         }
     }
+}
+
+void
+comp_layer_arrange(CompServer *s)
+{
+    if (!s)
+        return;
+
+    double vw = 1920.0, vh = 1080.0;
+    comp_server_viewport_size(s, &vw, &vh);
+
+    struct wlr_box primary_usable = {
+        .x      = 0,
+        .y      = 0,
+        .width  = (int)vw,
+        .height = (int)vh,
+    };
+    struct wlr_surface *exclusive_surf = NULL;
+    struct wlr_output *primary_wo = comp_server_primary_output(s);
+    bool arranged_any = false;
+
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        struct wlr_output *wo = o->wlr_output;
+        if (!wo || !wo->enabled)
+            continue;
+        struct wlr_box full_area = {0};
+        if (s->output_layout)
+            wlr_output_layout_get_box(s->output_layout, wo, &full_area);
+        if (full_area.width <= 0 || full_area.height <= 0) {
+            int ew = 0, eh = 0;
+            wlr_output_effective_resolution(wo, &ew, &eh);
+            full_area.width  = ew > 0 ? ew : (int)vw;
+            full_area.height = eh > 0 ? eh : (int)vh;
+        }
+        struct wlr_box usable = full_area;
+        bool is_primary = (wo == primary_wo);
+        arrange_layers_on_box(s, wo, is_primary, &full_area, &usable, &exclusive_surf);
+        if (is_primary)
+            primary_usable = usable;
+        arranged_any = true;
+    }
+
+    if (!arranged_any) {
+        struct wlr_box full_area = primary_usable;
+        arrange_layers_on_box(s, NULL, true, &full_area, &primary_usable, &exclusive_surf);
+    }
+
+    struct wlr_box usable = primary_usable;
 
     if (usable.width < 1)  usable.width = 1;
     if (usable.height < 1) usable.height = 1;

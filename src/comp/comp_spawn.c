@@ -48,6 +48,8 @@ handle_sigchld(int sig, void *data)
             break;
         if (s->startup_pid && pid == s->startup_pid) {
             int code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+            if (s->opts.greeter_mode && code == 127)
+                code = 70; /* EX_SOFTWARE: greeter binary failed to exec (spec §6.5.1) */
             wlr_log(WLR_INFO, "startup command exited with status %d", code);
             s->startup_pid = 0;
             if (s->opts.exit_with_startup)
