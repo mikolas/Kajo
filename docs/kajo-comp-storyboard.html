@@ -245,7 +245,7 @@ const CFG = {
   // Second top-bar row: animated displayed size (M5), continuous workspace strip (WS7), 3-finger drag (GS*); off = old v1 behaviour
   animResize: true, wsStrip: true, gesture: true,
 };
-/* GS1–GS6 constants. tau: release projection time, from niri's 0.997/ms deceleration (0.997 / (1 − 0.997) ms ≈ 0.33 s). */
+/* GS1–GS6 constants. tau: release projection time (s). */
 const GESTURE = { lockPx: 16, ratio: 1.25, tau: 0.333, rubber: 0.55, rubberDim: 0.3, velWindow: 0.15 };
 const OUTPUTS = {
   laptop: { name: 'eDP-1', w: 1646, h: 1029, panel: 32 },
@@ -312,9 +312,9 @@ const RULES = {
   WS7: 'Workspaces form one vertical strip with a 10 % gap: during a switch both stay visible and scroll together, and each workspace keeps its own horizontal camera. Old v1 (WS switch = v1): the outgoing workspace was hidden at once and only the incoming one slid in.',
   GS1: '3 fingers on the touchscreen or touchpad. The gesture locks to the dominant axis after 16 px (|d| > 1.25 × the other axis); before that nothing moves. Client touches are cancelled at lock.',
   GS2: 'While dragging, the camera follows the fingers 1:1 (content follows the finger; touchpad honours natural_scroll): horizontally the camera of the focused workspace, vertically the workspace strip. Past the first/last column or workspace it rubber-bands instead of stopping.',
-  GS3: 'On release: projected position = position + release velocity × 0.33 s. Vertically the nearest workspace to the projection wins, at most one past the workspace nearest the release point; horizontally the column whose snapped view is nearest. A fast short flick therefore switches like the old discrete swipe, and a slow drag switches by position. The spring starts from the dragged position with the release velocity (M1).',
-  GS4: 'Glance: if the projection lands on the starting workspace/column, nothing changes and the view springs back. Touch cancel, lock, a 4th finger or a layout change during the drag cancel the same way.',
-  GS5: 'A horizontal release focuses the snapped column (as in niri); a vertical release focuses the snapped workspace (WS3).',
+  GS3: 'On release: projected position = position + release velocity × 0.33 s. Vertically the nearest workspace to the projection wins, at most one past the workspace nearest the release point; horizontally the nearest resting camera position, taken from column edges (each column\'s left edge at the left of the screen and its right edge at the right), never from the camera at drag start. A fast short flick therefore switches like the old discrete swipe, and a slow drag switches by position. The spring starts from the dragged position with the release velocity (M1).',
+  GS4: 'Glance: if the projection lands on the starting workspace, or a horizontal projection stays on the start, nothing changes and the view springs back. Touch cancel, lock, a 4th finger or a layout change during the drag return to the start without changing focus.',
+  GS5: 'A horizontal release focuses the fully visible column furthest in the drag direction at the chosen position, so a column already on screen can be focused by a drag; a vertical release focuses the snapped workspace (WS3). [touch].swipe_horizontal applies to the touchscreen only; the touchpad always scrolls columns.',
   GS6: 'Unchanged: 1-finger bezel swipes (panel/launcher), 4 fingers unhandled, keyboard and wheel binds unchanged.',
 };
 const APPS = [
@@ -966,20 +966,44 @@ function rubberBand(v, lo, hi, dim) {   // GS2: soft limit past the ends, at mos
   if (v > hi) return hi + rb(v - hi);
   return v;
 }
-/* Camera position that brings column i into view, starting from camera `fromView` (no side effects). */
-function columnSnapViews(w, fromView) {
-  const save = w.view; w.view = fromView;
-  const out = w.cols.map((_, i) => revealView(w, i, w.fc).view);
-  w.view = save;
-  return out;
+/* GS3: resting camera positions of a workspace, from column edges only (never from the
+ * camera at drag start), limited to [first column's left, last column's right]. */
+function restViews(w) {
+  const A = wa(), out = [];
+  w.cols.forEach((c, i) => {
+    const x = colX(w, i), cw = colWidth(c);
+    if (c.fs || c.edgeMax || isCentering(w) || cw + 2 * CFG.gap > A.w) {
+      out.push({ view: revealView(w, i, i).view, col: i });
+      return;
+    }
+    out.push({ view: x - CFG.gap, col: i }, { view: x + cw + CFG.gap - A.w, col: i });
+  });
+  if (!out.length) return { views: out, lo: 0, hi: 0 };
+  const lo = out[0].view, hi = Math.max(lo, out[out.length - 1].view);
+  out.forEach(r => { r.view = Math.min(hi, Math.max(lo, r.view)); });
+  return { views: out, lo, hi };
 }
-/* GS3/GS4: nearest snapped view to the projection; ties keep the focused column (glance). */
-function pickColumnSnap(w, fromView, projected) {
-  const snaps = columnSnapViews(w, fromView);
-  if (!snaps.length) return { col: 0, view: 0, snaps };
-  let best = Math.min(w.fc, snaps.length - 1), bd = Math.abs(snaps[best] - projected);
-  snaps.forEach((v, i) => { const d = Math.abs(v - projected); if (d < bd - 0.5) { bd = d; best = i; } });
-  return { col: best, view: snaps[best], snaps };
+function visibleAt(w, i, view) {
+  const A = wa(), c = w.cols[i], m = c.fs ? 0 : CFG.gap, x = colX(w, i), cw = colWidth(c);
+  return x - m >= view - 0.5 && x + cw + m <= view + A.w + 0.5;
+}
+/* GS3/GS5: nearest resting position to the projection; focus the fully visible column
+ * furthest in the drag direction ("always": the column the position belongs to). */
+function pickColumnRelease(w, startView, projected) {
+  const { views } = restViews(w);
+  if (!views.length) return { col: 0, view: 0 };
+  let best = views[0];
+  views.forEach(r => { if (Math.abs(r.view - projected) < Math.abs(best.view - projected)) best = r; });
+  let col = best.col;
+  if (CFG.center !== 'always') {
+    const dir = projected - startView, n = w.cols.length;
+    if (Math.abs(dir) <= 0.5 && !w.fa && w.fc < n && visibleAt(w, w.fc, best.view)) col = w.fc;
+    else for (let k = 0; k < n; k++) {
+      const i = dir < 0 ? k : n - 1 - k;
+      if (visibleAt(w, i, best.view)) { col = i; break; }
+    }
+  }
+  return { col, view: best.view };
 }
 /* GS3: workspace units. The flick adds at most one workspace to the one nearest the release point. */
 function pickWorkspaceSnap(released, projected, n) {
@@ -1000,7 +1024,7 @@ function gestureCommitWorkspace(target) {      // GS5, WS3
 }
 if (typeof module !== 'undefined') module.exports = { CFG, OUTPUTS, S, resetState, runAction, setOutput, finishSwitch, ws, wa,
   colX, colWidth, wsTargets, tileHeights, focusedWin, focusedCol, A_,
-  GESTURE, rubberBand, columnSnapViews, pickColumnSnap, pickWorkspaceSnap, gestureCommitColumn, gestureCommitWorkspace };
+  GESTURE, rubberBand, restViews, pickColumnRelease, pickWorkspaceSnap, gestureCommitColumn, gestureCommitWorkspace };
 // ==MODEL END==
 
 /* ───────────────────────── springs (§3.14 M1–M5: velocity kept on retarget) ───────────────────────── */
@@ -1221,8 +1245,8 @@ function gestMove(px, py, tr) {
     if (!g.axis) return;
     g.lockAt = g.axis === 'x' ? dx : dy;
     if (g.axis === 'x') {
-      const s = columnSnapViews(g.w, g.startView);
-      g.lo = Math.min(g.startView, ...s); g.hi = Math.max(g.startView, ...s);
+      const r = restViews(g.w);
+      g.lo = Math.min(g.startView, r.lo); g.hi = Math.max(g.startView, r.hi);
     }
     log('3-finger drag', { rules: ['GS1'], note: `axis locked ${g.axis === 'x' ? 'horizontal' : 'vertical'} after ${GESTURE.lockPx} px; client touches cancelled` });
   }
@@ -1245,7 +1269,7 @@ function gestEnd(tr, cancel) {
   const t = now(), sp = speed || 1, H = S.out.h + wsGap(), A = wa();
   if (g.axis === 'x') {
     const vView = -vf, proj = cancel ? g.startView : g.view + vView * GESTURE.tau;
-    const pick = pickColumnSnap(g.w, g.startView, proj);
+    const pick = cancel ? { col: g.w.fc, view: g.startView } : pickColumnRelease(g.w, g.startView, proj);
     const before = focusedWin(g.w);
     const res = gestureCommitColumn(g.w, pick.col, pick.view);
     for (const [, a] of anims) {           // M1: continue from the dragged place with the release velocity
@@ -1509,7 +1533,7 @@ const STORIES = [
     ['Glance at the workspace below', 'Fingers move up slowly to 40 % and hold, then lift. The strip follows the fingers 1:1 and workspace 2 is visible, but the projection lands back on workspace 1: it springs back and nothing changes. ' + R('GS1', 'GS2', 'GS4'), () => scriptDrag('y', -0.40 * S.out.h, 700, 450)],
     ['Drag past halfway', 'The same slow drag to 62 %, held still before lifting (no velocity): the nearest workspace is 2, so it switches and the strip settles from where the fingers left it. ' + R('GS3', 'GS5'), () => scriptDrag('y', -0.62 * S.out.h, 800, 350)],
     ['Flick back up', 'A short, fast flick down (14 % in 90 ms): the position alone would snap back, but the release velocity projects past halfway, so it switches to workspace 1. This is the old discrete swipe, kept as part of the same gesture. ' + R('GS3'), () => scriptDrag('y', 0.14 * S.out.h, 90, 0)],
-    ['Drag the strip sideways', 'A slow horizontal drag to the left, held: the camera of workspace 1 follows. On release the column whose snapped view is nearest takes focus (niri behaviour). ' + R('GS2', 'GS3', 'GS5'), () => scriptDrag('x', -0.55 * S.out.w, 900, 350)],
+    ['Drag the strip sideways', 'A slow horizontal drag to the left, held: the camera of workspace 1 follows. On release the view rests at the nearest column-edge position and the fully visible column furthest in the drag direction takes focus. ' + R('GS2', 'GS3', 'GS5'), () => scriptDrag('x', -0.55 * S.out.w, 900, 350)],
     ['Flick sideways', 'A fast short flick to the right moves focus back by velocity, not distance. ' + R('GS3', 'M1'), () => scriptDrag('x', 150, 90, 0)],
     ['Rubber band at the end', 'Focus the first column, then drag further right: past the end the strip stretches less and less and springs back on release. ' + R('GS2', 'GS4'), () => { act('focus-column-first'); later(500, () => scriptDrag('x', 0.45 * S.out.w, 700, 200)); }],
     ['What stays the same', '1-finger bezel swipes still open the launcher / control centre, 4 fingers do nothing, keyboard and wheel binds are unchanged. ' + R('GS6'), null],
