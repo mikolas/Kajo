@@ -433,6 +433,42 @@ test_config_shipped_defaults(void)
     g_assert_nonnull(cfg);
     g_assert_cmpuint(d.n, ==, 0);
 
+    /* Verify shipped defaults match compiled C defaults field-for-field */
+    CompConfig *def = comp_config_new_defaults(COMP_MOD_SUPER);
+    g_assert_nonnull(def);
+    g_assert_cmpfloat_with_epsilon(cfg->layout.gap, def->layout.gap, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg->layout.default_width, def->layout.default_width, 1e-9);
+    g_assert_cmpint(cfg->border_px, ==, def->border_px);
+    for (int i = 0; i < 4; i++) {
+        g_assert_cmpfloat_with_epsilon(cfg->active_border_rgba[i], def->active_border_rgba[i], 1e-4f);
+        g_assert_cmpfloat_with_epsilon(cfg->inactive_border_rgba[i], def->inactive_border_rgba[i], 1e-4f);
+        g_assert_cmpfloat_with_epsilon(cfg->urgent_border_rgba[i], def->urgent_border_rgba[i], 1e-4f);
+        g_assert_cmpfloat_with_epsilon(cfg->switcher_active_rgba[i], def->switcher_active_rgba[i], 1e-4f);
+        g_assert_cmpfloat_with_epsilon(cfg->switcher_urgent_rgba[i], def->switcher_urgent_rgba[i], 1e-4f);
+    }
+    g_assert_cmpint(cfg->motion.enabled, ==, def->motion.enabled);
+    g_assert_cmpfloat_with_epsilon(cfg->motion.horizontal_scroll.damping_ratio,
+                                   def->motion.horizontal_scroll.damping_ratio, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg->motion.horizontal_scroll.stiffness,
+                                   def->motion.horizontal_scroll.stiffness, 1e-9);
+    g_assert_cmpstr(cfg->screenshot_path, ==, def->screenshot_path);
+    g_assert_cmpint(cfg->screenshot_copy, ==, def->screenshot_copy);
+    g_assert_cmpint(cfg->screenshot_notify, ==, def->screenshot_notify);
+    g_assert_cmpint(cfg->screenshot_border, ==, def->screenshot_border);
+    g_assert_cmpint(cfg->xwayland_enabled, ==, def->xwayland_enabled);
+    g_assert_cmpstr(cfg->xkb_layout, ==, def->xkb_layout);
+    g_assert_cmpint(cfg->repeat_rate, ==, def->repeat_rate);
+    g_assert_cmpint(cfg->repeat_delay, ==, def->repeat_delay);
+    g_assert_cmpint(cfg->touchpad_tap, ==, def->touchpad_tap);
+    g_assert_cmpint(cfg->touchpad_natural_scroll, ==, def->touchpad_natural_scroll);
+    g_assert_cmpint(cfg->mouse_accel_profile, ==, def->mouse_accel_profile);
+    g_assert_cmpint(cfg->touch_enabled, ==, def->touch_enabled);
+    g_assert_cmpint(cfg->touch_dwell_ms, ==, def->touch_dwell_ms);
+    g_assert_cmpint(cfg->touch_swipe_center, ==, def->touch_swipe_center);
+    g_assert_cmpint(cfg->touch_swipe_right, ==, def->touch_swipe_right);
+    g_assert_cmpint(cfg->touch_swipe_horizontal, ==, def->touch_swipe_horizontal);
+    comp_config_free(def);
+
     g_assert_cmpfloat_with_epsilon(cfg->layout.gap, 6.0, 1e-9);
     g_assert_cmpint(cfg->border_px, ==, 1);
     g_assert_true(cfg->motion.enabled);
@@ -546,8 +582,24 @@ test_config_multifile_merge_and_confd(void)
         "[layout\n"
         "gap_px = 99\n", -1, NULL));
     g_assert_true(g_file_set_contents(p_d20,
-        "[layout]\n"
-        "gap_px = 18\n", -1, NULL));
+        "[theme]\n"
+        "accent_color = \"#e81123\"\n"
+        "[shell.touch]\n"
+        "dwell_ms = 1200\n"
+        "[comp.layout]\n"
+        "gap_px = 18\n"
+        "[[comp.output]]\n"
+        "match = \"HDMI-A-2\"\n"
+        "scale = 2.0\n"
+        "[[comp.bind]]\n"
+        "key = \"mod+b\"\n"
+        "action = \"toggle-window-floating\"\n"
+        "[[comp.rule]]\n"
+        "app_id = ['^scoped-app$']\n"
+        "floating = true\n"
+        "[[comp.layer_rule]]\n"
+        "namespace = [\"^kajo-scoped$\"]\n"
+        "opacity = 0.77\n", -1, NULL));
 
     CompDiagList d;
     comp_diag_init(&d);
@@ -556,29 +608,39 @@ test_config_multifile_merge_and_confd(void)
     g_assert_nonnull(cfg);
     g_assert_true(comp_diag_contains(&d, "10-broken.toml"));
 
-    /* theme.toml accent_color = "#008a00" */
-    g_assert_cmpfloat_with_epsilon(cfg->active_border_rgba[1], (float)(0x8a / 255.0), 1e-2f);
-    /* shell.toml [touch].dwell_ms */
-    g_assert_cmpint(cfg->touch_dwell_ms, ==, 750);
+    /* conf.d/20-override.toml [theme] accent_color = "#e81123" overrode theme.toml */
+    g_assert_cmpfloat_with_epsilon(cfg->active_border_rgba[0], (float)(0xe8 / 255.0), 1e-2f);
+    /* conf.d/20-override.toml [shell.touch].dwell_ms overrode shell.toml */
+    g_assert_cmpint(cfg->touch_dwell_ms, ==, 1200);
     /* extra/custom.toml via include */
     g_assert_cmpstr(cfg->xkb_layout, ==, "us,cz");
-    /* conf.d/20-override.toml overrode comp.toml gap_px */
+    /* conf.d/20-override.toml [comp.layout] overrode comp.toml gap_px */
     g_assert_cmpfloat_with_epsilon(cfg->layout.gap, 18.0, 1e-9);
-    /* outputs.toml */
+    /* outputs.toml + [[comp.output]] in conf.d */
     const CompOutputRule *orule = comp_config_match_output(cfg, "dp-1", NULL);
     g_assert_nonnull(orule);
     g_assert_true(orule->has_scale);
     g_assert_cmpfloat_with_epsilon(orule->scale, 1.5, 1e-9);
     g_assert_cmpint(orule->vrr, ==, COMP_VRR_ON_DEMAND);
-    /* binds.toml unbound mod+q while keeping mod+t */
+    const CompOutputRule *orule2 = comp_config_match_output(cfg, "hdmi-a-2", NULL);
+    g_assert_nonnull(orule2);
+    g_assert_cmpfloat_with_epsilon(orule2->scale, 2.0, 1e-9);
+    /* binds.toml unbound mod+q while keeping mod+t, and [[comp.bind]] bound mod+b */
     g_assert_null(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_q));
     g_assert_nonnull(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_t));
-    /* rules.toml reset_rules = true wiped default calculator rule and added my-custom-app */
+    g_assert_nonnull(comp_binds_lookup_key(cfg->binds, COMP_MOD_SUPER, XKB_KEY_b));
+    /* rules.toml reset_rules = true wiped default calculator rule and added my-custom-app + [[comp.rule]] */
     CompWindowRuleResult wr;
     comp_rules_match_window(cfg->rules, "org.gnome.Calculator", "Calculator", &wr);
     g_assert_false(wr.has_floating);
     comp_rules_match_window(cfg->rules, "my-custom-app", "Main", &wr);
     g_assert_true(wr.has_floating && wr.floating);
+    comp_rules_match_window(cfg->rules, "scoped-app", "Main", &wr);
+    g_assert_true(wr.has_floating && wr.floating);
+    CompLayerRuleResult lr;
+    comp_rules_match_layer(cfg->rules, "kajo-scoped", &lr);
+    g_assert_true(lr.has_opacity);
+    g_assert_cmpfloat_with_epsilon(lr.opacity, 0.77, 1e-9);
 
     comp_config_free(cfg);
     comp_diag_clear(&d);

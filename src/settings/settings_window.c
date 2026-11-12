@@ -21,10 +21,10 @@ static const SettingsPageMeta k_page_meta[] = {
     {
         "displays", "01 / 12", "01 / 12 • DISPLAYS",
         "DISPLAYS, IDLE SCREENSAVER & 360° FOLDABLE POSTURE",
-        "Niri IPC output management (10-outputs.kdl), ext-idle-notify-v1 & IIO hinge sensors",
-        "NIRI IPC", "10-OUTPUTS.KDL",
+        "Compositor output management (outputs.toml), ext-idle-notify-v1 & IIO hinge sensors",
+        "COMPOSITOR IPC", "OUTPUTS.TOML",
         { "BACKEND", "CONFIG", "IDLE", "POSTURE" },
-        { "Niri IPC", "10-outputs.kdl", "ext-idle-v1", "IIO Sensor" }
+        { "Compositor IPC", "outputs.toml", "ext-idle-v1", "IIO Sensor" }
     },
     {
         "network", "02 / 12", "02 / 12 • NETWORK",
@@ -70,23 +70,23 @@ static const SettingsPageMeta k_page_meta[] = {
         "widgets", "07 / 12", "07 / 12 • WIDGETS",
         "PANEL BAR WIDGET SECTIONS (LEFT / CENTER / RIGHT)",
         "Configure and reorder the 22 built-in ShellWidget modules across panel zones",
-        "22 MODULES", "CONFIG.JSON",
+        "22 MODULES", "SHELL.TOML",
         { "LEFT", "CENTER", "RIGHT", "TOTAL" },
         { "0 WIDGETS", "0 WIDGETS", "0 WIDGETS", "0 ACTIVE" }
     },
     {
         "notifications", "08 / 12", "08 / 12 • NOTIFICATIONS",
         "NOTIFICATION TOASTS & FREEDESKTOP DAEMON",
-        "Toast timeout, Niri source-window focus activation & Notification Center ring buffer",
-        "DBUS DAEMON", "CONFIG.JSON",
+        "Toast timeout, source-window focus activation & Notification Center ring buffer",
+        "DBUS DAEMON", "SHELL.TOML",
         { "DND", "TIMEOUT", "HISTORY", "CLICK" },
         { "OFF", "5000MS (5S)", "50 ITEMS", "FOCUS WINDOW" }
     },
     {
-        "niri", "09 / 12", "09 / 12 • NIRI & SHADERS",
-        "NIRI COMPOSITOR LAYER RULES & GLSL SHADERS",
-        "Per-namespace opacity/blur rules (40-layer-rules.kdl) & GLSL window animations (30-layout-animations.kdl)",
-        "GLSL 330", "NIRI KDL",
+        "niri", "09 / 12", "09 / 12 • COMPOSITOR & SHADERS",
+        "COMPOSITOR LAYER RULES & GLSL SHADERS",
+        "Per-namespace opacity rules (rules.toml / 40-layer-rules.kdl) & GLSL window animations",
+        "GLSL 330", "RULES.TOML",
         { "NAMESPACE", "GAPS", "OPEN", "CLOSE" },
         { "kajo (85%)", "12PX", "DEFAULT", "DEFAULT" }
     },
@@ -625,6 +625,36 @@ on_window_realize(GtkWidget *widget, gpointer user_data)
         if (width > 0)
             update_responsive_layout(app_ctx, width);
     }
+}
+
+typedef struct {
+    int w;
+    int h;
+} SaveWinSizeCtx;
+
+static void
+mutate_save_win_size(KajoThemeCfg *draft, gpointer user_data)
+{
+    const SaveWinSizeCtx *ctx = (const SaveWinSizeCtx *)user_data;
+    draft->settings_width  = ctx->w;
+    draft->settings_height = ctx->h;
+}
+
+static gboolean
+on_window_close_request(GtkWindow *win, gpointer user_data G_GNUC_UNUSED)
+{
+    int w = gtk_widget_get_width(GTK_WIDGET(win));
+    int h = gtk_widget_get_height(GTK_WIDGET(win));
+    if (w >= 480 && w <= 3840 && h >= 360 && h <= 2160) {
+        g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+        int cur_w = tcfg ? tcfg->settings_width : 900;
+        int cur_h = tcfg ? tcfg->settings_height : 640;
+        if (w != cur_w || h != cur_h) {
+            SaveWinSizeCtx ctx = { w, h };
+            kajo_config_store_update_theme(NULL, mutate_save_win_size, &ctx, NULL);
+        }
+    }
+    return FALSE;
 }
 
 static void
@@ -1211,6 +1241,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     update_responsive_layout(app_ctx, init_w);
 
     g_signal_connect(app_ctx->window, "notify::default-width", G_CALLBACK(on_window_size_changed), app_ctx);
+    g_signal_connect(app_ctx->window, "close-request", G_CALLBACK(on_window_close_request), app_ctx);
     g_signal_connect(app_ctx->window, "realize", G_CALLBACK(on_window_realize), app_ctx);
 
     return app_ctx->window;

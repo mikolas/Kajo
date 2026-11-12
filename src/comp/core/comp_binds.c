@@ -737,6 +737,15 @@ comp_binds_merge_toml(CompBinds *binds, const char *src, size_t len,
     for (int i = 0; arr.type == TOML_ARRAY && i < arr.u.arr.size; i++)
         parse_bind_entry(binds, arr.u.arr.elem[i], mod_meaning, replace_existing, name, diag);
 
+    toml_datum_t comp_tab = toml_get(res.toptab, COMP_SEC_COMP);
+    if (comp_tab.type == TOML_TABLE) {
+        toml_datum_t carr = toml_get(comp_tab, COMP_SEC_BIND);
+        if (carr.type != TOML_UNKNOWN && carr.type != TOML_ARRAY)
+            comp_diag_add(diag, name, carr.lineno, "'bind' must be an array of tables ([[bind]])");
+        for (int i = 0; carr.type == TOML_ARRAY && i < carr.u.arr.size; i++)
+            parse_bind_entry(binds, carr.u.arr.elem[i], mod_meaning, replace_existing, name, diag);
+    }
+
     toml_free(res);
     return true;
 }

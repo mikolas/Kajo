@@ -26,8 +26,9 @@ Now: small per-domain TOML files, typed enums, one table-driven schema engine, a
 | `src/config/kajo_config_schema.{h,c}` | The schema engine: `KajoFieldSpec` (section, key, type, offset, default, range or normalizer, enum map) and `KajoDomainSchema` (file name, domain table name, struct size, fields, custom hooks for the widget arrays). Implements defaults, parsing with validation and clamping, `conf.d` overlay application, full serialization, in-place patching, structural equality, default-file lookup. |
 | `src/config/kajo_config_store.{h,c}` | `KajoConfigStore`: snapshots, transactional `update_<domain>()`, reload, directory watching, subscriptions. |
 | `src/config/kajo_config_migrate.{h,c}` | One-time `config.json` → `*.toml` importer (the only code using `json-glib`). |
+| `src/config/kajo_config_comp.c` | Shared compositor TOML read/write helpers (`comp.toml` `[layout] gap_px`, `rules.toml` `[[layer_rule]]`, `outputs.toml` `[[output]]`) used by `kajo-settings`. |
 | `src/config/schemas/schema_{theme,shell,ide,files,mod}.c` | One `KajoDomainSchema` per domain. `schema_shell.c` also parses and writes the `[layout]` widget arrays. |
-| `tests/test_config.c` | 11 GTest cases (section 8). |
+| `tests/test_config.c` | 12 GTest cases (section 8). |
 | `tests/fuzz/fuzz_toml_config.c` | Fuzz entry point over all schemas; also built as the meson test `fuzz-toml-config`. |
 
 ---
@@ -70,8 +71,9 @@ Environment variables: `KAJO_CONFIG_DIR` (config directory), `KAJO_DEFAULTS_DIR`
 For each domain the effective configuration is built as follows (`build_effective_rc_snapshot()`):
 
 1. Start from the **compiled defaults** of the schema.
-2. Read the **user file** `<config dir>/<domain>.toml` if it exists, applying the keys it contains. If it does **not** exist, read the first **shipped default file** found in: `$KAJO_DEFAULTS_DIR`, `~/.local/share/kajo/defaults`, `/usr/local/share/kajo/defaults`, `/usr/share/kajo/defaults`. The shipped file is a fallback for a missing user file, not a layer under an existing one; keys missing from an existing user file take the *compiled* default. (The parity test keeps the two identical.) The current working directory and the source tree are not searched.
-3. Apply **drop-ins** `<config dir>/conf.d/*.toml` in lexicographic order. A drop-in only contributes if it has the domain's top-level table (`[theme]`, `[shell.<section>]`, `[ide]`, `[files]`, `[mod]`). A drop-in with a syntax error is skipped with a warning.
+2. Layer the first **shipped default file** (`defaults/<domain>.toml`) found in: `$KAJO_DEFAULTS_DIR` (fallback `$KAJO_COMP_DEFAULTS_DIR`), `$XDG_DATA_HOME/kajo/defaults` (or `~/.local/share/kajo/defaults`), each entry in `$XDG_DATA_DIRS` (`/kajo/defaults`, defaulting to `/usr/local/share:/usr/share`), and compiled `KAJO_DATA_DIR/defaults`. The current working directory and the source tree are not searched.
+3. Layer the **user file** `<config dir>/<domain>.toml` (`$KAJO_CONFIG_DIR`, `$XDG_CONFIG_HOME/kajo`, or `~/.config/kajo`) if it exists, overriding only the keys it specifies.
+4. Apply **drop-ins** `<config dir>/conf.d/*.toml` in lexicographic order. A drop-in contributes to a domain via its top-level domain table (`[theme]`, `[shell.<section>]`, `[ide]`, `[files]`, `[mod]`, `[comp.<section>]`). A drop-in with a syntax error is skipped with a warning.
 
 Validation: integers and floats are clamped to the schema range (or run through the field's normalizer); wrong value types, unknown enum strings and invalid hex colours log a warning and keep the previous value; unknown keys are ignored.
 

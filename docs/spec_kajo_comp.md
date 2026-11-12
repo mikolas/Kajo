@@ -389,11 +389,12 @@ No configuration file in `kajo-comp` is required to be a monolithic dump. Config
 ```
 
 1. **Deterministic Load Order & `include` Globs:**
+   - Config directory discovery (`$KAJO_CONFIG_DIR`, `$XDG_CONFIG_HOME/kajo`, `~/.config/kajo`) and shipped defaults discovery (`$KAJO_DEFAULTS_DIR`, `$KAJO_COMP_DEFAULTS_DIR`, `$XDG_DATA_HOME/kajo/defaults`, `$XDG_DATA_DIRS/kajo/defaults`, `KAJO_DATA_DIR/defaults`) are identical across `kajo-comp` and `KajoConfigStore`.
    - On startup and hot-reload, `kajo-comp` builds a fresh `CompConfig` from compiled defaults and merges files in strict order:
-     1. `theme.toml` and `shell.toml` (for `accent_color` and `[touch]` settings; falls back to `data/defaults/{theme,shell}.toml` if absent).
-     2. `comp.toml`, `outputs.toml`, `binds.toml`, and `rules.toml` (each falling back to its shipped default in `$KAJO_DEFAULTS_DIR` / `/usr/share/kajo/defaults/` if the user file does not exist).
-     3. Any relative path or glob listed in top-level `include = ["rules.d/*.toml", "binds.d/*.toml"]` inside a loaded file (expanded in sorted path order, with cycle detection and a max include depth of `4`).
-     4. All `~/.config/kajo/conf.d/*.toml` drop-ins in lexicographic (`strcmp`) filename order.
+     1. Shipped defaults in `<defaults_dir>/{theme,shell,comp,outputs,binds,rules}.toml`.
+     2. User files in `<config_dir>/{theme,shell,comp,outputs,binds,rules}.toml` (overriding only the keys/rules they specify).
+     3. Any relative path or glob listed in top-level `include = ["rules.d/*.toml", "binds.d/*.toml"]` inside a loaded compositor file (expanded in sorted path order, with cycle detection and a max include depth of `4`).
+     4. All `<config_dir>/conf.d/*.toml` drop-ins in lexicographic (`strcmp`) filename order. Drop-ins may use either top-level compositor sections (`[layout]`, `[[output]]`, `[[bind]]`, `[[rule]]`, `[[layer_rule]]`) or domain-scoped tables (`[theme]`, `[shell.touch]`, `[comp.layout]`, `[[comp.output]]`, `[[comp.bind]]`, `[[comp.rule]]`, `[[comp.layer_rule]]`) so a single drop-in file works seamlessly across both `KajoConfigStore` and `kajo-comp`.
 2. **Multi-File Composition & Distributed Block Merging:**
    - Any compositor section (`[layout]`, `[animations.*]`, `[input.*]`, `[[output]]`, `[[bind]]`, `[[rule]]`, `[[layer_rule]]`, `[env]`, `[autostart]`) may appear in **multiple files** (for example, base rules in `rules.toml`, gaming rules in `conf.d/30-gaming-rules.toml`, and work-app rules in `conf.d/40-work-rules.toml`):
      - **Distributed `[[rule]]` and `[[layer_rule]]` Blocks (Concatenation):** Every `[[rule]]` and `[[layer_rule]]` block across `rules.toml`, `comp.toml`, included files, and `conf.d/*.toml` is **appended in load order** into one combined rule list. When matching a window or layer surface, all matching rules in the combined list apply top-to-bottom per property (`has_*`), so a rule in `conf.d/90-local.toml` overrides only the specific properties (`floating`, `width`, `vrr`, etc.) it sets. Setting `reset_rules = true` at the top of a file clears previously accumulated window rules before appending that file's rules.
@@ -405,8 +406,8 @@ No configuration file in `kajo-comp` is required to be a monolithic dump. Config
    - `kajo-comp` runs exclusively on `wl_event_loop`. It watches `~/.config/kajo/` and `conf.d/` (plus any included subdirectories) via a non-blocking `inotify` file descriptor registered with `wl_event_loop_add_fd()` (coalesced with a `50 ms` timer) and atomically swaps its `talloc`-allocated `CompConfig` tree.
    - If a base file (`comp.toml`, `binds.toml`, `rules.toml`) has a TOML syntax error on reload, `kajo-comp` logs a structured diagnostic (`file:line:col`) and retains the previous valid `CompConfig` snapshot. If an individual `conf.d/*.toml` drop-in has a syntax error, that drop-in is skipped with a diagnostic while the rest of the configuration loads normally.
 4. **GUI Write Isolation & Multi-Host Portability:**
-   - GUI saves from `kajo-settings` patch only the target base file (`comp.toml` or `outputs.toml`) in place and **never** overwrite or flatten `conf.d/*.toml`, `binds.toml`, or `rules.toml`.
-   - `[[output]]` blocks for currently unplugged monitors remain dormant in memory and are preserved untouched when `kajo-settings` writes `comp.toml` or `outputs.toml`.
+   - GUI saves from `kajo-settings` patch `[layout] gap_px` in `comp.toml` in place, update `[[output]]` rules in `outputs.toml` (preserving unset fields on non-matching rules), and update `[[layer_rule]]` blocks in `rules.toml` (preserving `[[rule]]` window rules and `reset_rules`), and **never** overwrite or flatten `conf.d/*.toml` or `binds.toml`.
+   - `[[output]]` blocks for currently unplugged monitors remain dormant in memory and are preserved untouched when `kajo-settings` writes `outputs.toml`. Runtime `wlr-output-management` or IPC output changes survive config reloads unless the matching `[[output]]` rule in `outputs.toml` itself changed.
 
 ### 5.2 Reference TOML Schemas
 

@@ -4,7 +4,6 @@
 #include "../../compositor/kajo_comp_ipc.h"
 #include "../../hardware/hw_caps.h"
 #include "../../hardware/kbd_backlight.h"
-#include "../../vendor/tomlc17/tomlc17.h"
 #include <fcntl.h>
 #include <json-glib/json-glib.h>
 #include <math.h>
@@ -261,18 +260,6 @@ on_displays_preview_ss(gpointer user_data G_GNUC_UNUSED)
     settings_send_ipc_command("screensaver");
 }
 
-static gboolean
-output_match_equals(const char *cand, const char *out_name, const char *make_model)
-{
-    if (!cand || !*cand)
-        return FALSE;
-    if (out_name && *out_name && g_ascii_strcasecmp(cand, out_name) == 0)
-        return TRUE;
-    if (make_model && *make_model && g_ascii_strcasecmp(cand, make_model) == 0)
-        return TRUE;
-    return FALSE;
-}
-
 static void
 save_outputs_toml_preserving_others(const char *out_name,
                                     const char *make_model,
@@ -281,68 +268,8 @@ save_outputs_toml_preserving_others(const char *out_name,
                                     const char *orient,
                                     const char *vrr_str)
 {
-    const char *env_dir = g_getenv("KAJO_CONFIG_DIR");
-    g_autofree gchar *cfg_dir = (env_dir && *env_dir)
-        ? g_strdup(env_dir)
-        : g_build_filename(g_get_user_config_dir(), "kajo", NULL);
-    g_mkdir_with_parents(cfg_dir, 0755);
-    g_autofree gchar *outputs_path = g_build_filename(cfg_dir, "outputs.toml", NULL);
-
-    GString *out_s = g_string_new("# Managed by kajo-settings — unattached host outputs preserved\n");
-
-    if (g_file_test(outputs_path, G_FILE_TEST_EXISTS)) {
-        toml_result_t res = toml_parse_file_ex(outputs_path);
-        if (res.ok) {
-            toml_datum_t arr = toml_get(res.toptab, "output");
-            if (arr.type == TOML_ARRAY) {
-                for (int i = 0; i < arr.u.arr.size; i++) {
-                    toml_datum_t elem = arr.u.arr.elem[i];
-                    if (elem.type != TOML_TABLE)
-                        continue;
-                    toml_datum_t mv = toml_get(elem, "match");
-                    const char *m_str = (mv.type == TOML_STRING && mv.u.s) ? mv.u.s : "";
-                    if (!*m_str || output_match_equals(m_str, out_name, make_model))
-                        continue;
-
-                    toml_datum_t mode_v  = toml_get(elem, "mode");
-                    toml_datum_t scale_v = toml_get(elem, "scale");
-                    toml_datum_t tf_v    = toml_get(elem, "transform");
-                    toml_datum_t vrr_v   = toml_get(elem, "vrr");
-
-                    const char *e_mode = (mode_v.type == TOML_STRING && mode_v.u.s) ? mode_v.u.s : "preferred";
-                    double e_scale = (scale_v.type == TOML_FP64) ? scale_v.u.fp64
-                                   : ((scale_v.type == TOML_INT64) ? (double)scale_v.u.int64 : 1.0);
-                    const char *e_tf = (tf_v.type == TOML_STRING && tf_v.u.s) ? tf_v.u.s : "normal";
-                    const char *e_vrr = (vrr_v.type == TOML_STRING && vrr_v.u.s) ? vrr_v.u.s : "off";
-
-                    gchar e_sc_buf[32];
-                    g_ascii_formatd(e_sc_buf, sizeof(e_sc_buf), "%.2f", e_scale);
-                    g_string_append_printf(out_s,
-                        "\n[[output]]\n"
-                        "match = \"%s\"\n"
-                        "mode = \"%s\"\n"
-                        "scale = %s\n"
-                        "transform = \"%s\"\n"
-                        "vrr = \"%s\"\n",
-                        m_str, e_mode, e_sc_buf, e_tf, e_vrr);
-                }
-            }
-        }
-        toml_free(res);
-    }
-
-    const char *norm_mode = (g_strcmp0(mode_str, "auto") == 0) ? "preferred" : mode_str;
-    g_string_append_printf(out_s,
-        "\n[[output]]\n"
-        "match = \"%s\"\n"
-        "mode = \"%s\"\n"
-        "scale = %s\n"
-        "transform = \"%s\"\n"
-        "vrr = \"%s\"\n",
-        out_name, norm_mode, scale_buf, orient, vrr_str);
-
-    g_file_set_contents(outputs_path, out_s->str, (gssize)out_s->len, NULL);
-    g_string_free(out_s, TRUE);
+    kajo_config_comp_save_output_rule(
+        NULL, out_name, make_model, mode_str, scale_buf, orient, vrr_str, NULL);
 }
 
 static void

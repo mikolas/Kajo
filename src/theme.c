@@ -112,9 +112,9 @@ resolve_css_path(const gchar *css_path)
     if (g_file_test(etc_path, G_FILE_TEST_EXISTS))
         return g_strdup(etc_path);
 
-    /* 6. User Config Path (~/.config/kajo/style.css) */
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *user_path = g_build_filename(xdg_config, "kajo", "style.css", NULL);
+    /* 6. User Config Path ($KAJO_CONFIG_DIR/style.css or ~/.config/kajo/style.css) */
+    g_autofree gchar *user_cfg_dir = kajo_config_resolve_user_dir();
+    gchar *user_path = g_build_filename(user_cfg_dir, "style.css", NULL);
     if (g_file_test(user_path, G_FILE_TEST_EXISTS))
         return user_path;
     g_free(user_path);
@@ -125,8 +125,8 @@ resolve_css_path(const gchar *css_path)
 static gchar *
 resolve_override_css_path(void)
 {
-    const gchar *xdg_config = g_get_user_config_dir();
-    gchar *styled_dir = g_build_filename(xdg_config, "kajo", "style.d", NULL);
+    g_autofree gchar *user_cfg_dir = kajo_config_resolve_user_dir();
+    gchar *styled_dir = g_build_filename(user_cfg_dir, "style.d", NULL);
     g_mkdir_with_parents(styled_dir, 0755);
 
     gchar *override_path = g_build_filename(styled_dir, "00-accent.css", NULL);
@@ -161,6 +161,11 @@ shell_theme_new(const gchar *css_path)
     }
 
     if (theme->override_css_path) {
+        if (!g_file_test(theme->override_css_path, G_FILE_TEST_EXISTS)) {
+            g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+            if (tcfg)
+                shell_theme_sync_from_theme_cfg(tcfg);
+        }
         theme_reload_override_css(theme);
 
         g_autoptr(GFile) file = g_file_new_for_path(theme->override_css_path);
@@ -392,14 +397,13 @@ shell_theme_sync_from_theme_cfg(const KajoThemeCfg *config)
         return;
 
     const gchar *accent = config->accent_color ? config->accent_color : "#0078d4";
-    const gchar *hover  = "#1084d8";
-    if (g_ascii_strcasecmp(accent, "#6b69d6") == 0)      hover = "#7a78e0";
-    else if (g_ascii_strcasecmp(accent, "#cba6f7") == 0) hover = "#ddb6f2";
-    else if (g_ascii_strcasecmp(accent, "#88c0d0") == 0) hover = "#99d1e1";
-    else if (g_ascii_strcasecmp(accent, "#107c41") == 0) hover = "#138c4a";
-    else if (g_ascii_strcasecmp(accent, "#d13438") == 0) hover = "#e04347";
-    else if (g_ascii_strcasecmp(accent, "#c19c00") == 0) hover = "#d4ab00";
-    else if (g_ascii_strcasecmp(accent, "#008272") == 0) hover = "#009684";
+    const gchar *hover  = accent;
+    for (size_t i = 0; i < SHELL_N_ACCENT_PRESETS; i++) {
+        if (g_ascii_strcasecmp(accent, shell_accent_presets[i].accent) == 0) {
+            hover = shell_accent_presets[i].hover;
+            break;
+        }
+    }
 
     shell_theme_write_override_css(accent,
                                    hover,

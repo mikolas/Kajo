@@ -2,10 +2,13 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "core/comp_schema_keys.h"
 
 #include <errno.h>
 #include <libgen.h>
+#include <limits.h>
 #include <signal.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -556,6 +559,9 @@ comp_server_resolve_config_dir(void *talloc_ctx, const CompServerOptions *opts)
         free(tmp);
         return res;
     }
+    const char *env_cfg = getenv("KAJO_CONFIG_DIR");
+    if (env_cfg && *env_cfg)
+        return talloc_strdup(talloc_ctx, env_cfg);
     const char *xdg = getenv("XDG_CONFIG_HOME");
     if (xdg && *xdg)
         return talloc_asprintf(talloc_ctx, "%s/kajo", xdg);
@@ -565,19 +571,62 @@ comp_server_resolve_config_dir(void *talloc_ctx, const CompServerOptions *opts)
     return talloc_strdup(talloc_ctx, "/etc/kajo");
 }
 
-static const char *
-resolve_defaults_dir(void)
+static bool
+defaults_dir_has_comp_toml(const char *dir)
 {
-    const char *env = getenv("KAJO_COMP_DEFAULTS_DIR");
-    if (env && *env)
-        return env;
+    if (!dir || !*dir)
+        return false;
+    char path[PATH_MAX];
+    int n = snprintf(path, sizeof(path), "%s/%s", dir, COMP_CFG_FILE_COMP);
+    if (n <= 0 || (size_t)n >= sizeof(path))
+        return false;
     struct stat st;
-    if (stat("/usr/local/share/kajo/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
-        return "/usr/local/share/kajo/defaults";
-    if (stat("/usr/share/kajo/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
-        return "/usr/share/kajo/defaults";
-    if (stat("data/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
-        return "data/defaults";
+    return stat(path, &st) == 0 && S_ISREG(st.st_mode);
+}
+
+static char *
+resolve_defaults_dir(void *talloc_ctx)
+{
+    const char *env = getenv("KAJO_DEFAULTS_DIR");
+    if (!env || !*env)
+        env = getenv("KAJO_COMP_DEFAULTS_DIR");
+    if (env && *env)
+        return talloc_strdup(talloc_ctx, env);
+
+    const char *xdg_data = getenv("XDG_DATA_HOME");
+    if (xdg_data && *xdg_data) {
+        char *cand = talloc_asprintf(talloc_ctx, "%s/kajo/defaults", xdg_data);
+        if (defaults_dir_has_comp_toml(cand))
+            return cand;
+        talloc_free(cand);
+    } else {
+        const char *home = getenv("HOME");
+        if (home && *home) {
+            char *cand = talloc_asprintf(talloc_ctx, "%s/.local/share/kajo/defaults", home);
+            if (defaults_dir_has_comp_toml(cand))
+                return cand;
+            talloc_free(cand);
+        }
+    }
+
+    const char *xdg_dirs = getenv("XDG_DATA_DIRS");
+    if (!xdg_dirs || !*xdg_dirs)
+        xdg_dirs = "/usr/local/share:/usr/share";
+    char *dirs_dup = strdup(xdg_dirs);
+    if (dirs_dup) {
+        char *saveptr = NULL;
+        for (char *tok = strtok_r(dirs_dup, ":", &saveptr); tok; tok = strtok_r(NULL, ":", &saveptr)) {
+            if (!*tok)
+                continue;
+            char *cand = talloc_asprintf(talloc_ctx, "%s/kajo/defaults", tok);
+            if (defaults_dir_has_comp_toml(cand)) {
+                free(dirs_dup);
+                return cand;
+            }
+            talloc_free(cand);
+        }
+        free(dirs_dup);
+    }
     return NULL;
 }
 
@@ -593,8 +642,8 @@ comp_server_reload_config(CompServer *s)
     if (s->opts.greeter_mode) {
         cfg = comp_config_load_greeter(s->opts.config_path, s->opts.mod_mask, &diag);
     } else {
-        const char *defaults_dir = resolve_defaults_dir();
         void *tmp = talloc_new(s);
+        char *defaults_dir = resolve_defaults_dir(tmp);
         char *dir = comp_server_resolve_config_dir(tmp, &s->opts);
 
         if (s->opts.config_path && *s->opts.config_path) {
@@ -641,6 +690,7 @@ comp_server_reload_config(CompServer *s)
         cfg->rules = NULL;
     }
 
+    comp_output_invalidate_changed_rules(s, s->config, cfg);
     comp_config_free(s->config);
     s->config = cfg;
 

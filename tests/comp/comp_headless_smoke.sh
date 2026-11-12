@@ -9,7 +9,8 @@ KC="$1"
 CL="$2"
 fail=0
 export WLR_BACKENDS=headless WLR_RENDERER="${WLR_RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1
-unset WAYLAND_DISPLAY DISPLAY WAYLAND_SOCKET KAJO_COMP_SOCKET NIRI_SOCKET
+export KAJO_DEFAULTS_DIR="$(cd "$(dirname "$0")/../../data/defaults" && pwd)"
+unset WAYLAND_DISPLAY DISPLAY WAYLAND_SOCKET KAJO_COMP_SOCKET NIRI_SOCKET KAJO_CONFIG_DIR
 # Private runtime dir so the test never touches the user's live sockets
 RT="$(mktemp -d)"
 export XDG_RUNTIME_DIR="$RT"
@@ -50,7 +51,7 @@ SHOT_DIR="$RT/shots"
 mkdir -p "$CFG_DIR/conf.d" "$SHOT_DIR"
 cat > "$CFG_DIR/comp.toml" <<EOF
 [layout]
-gaps_inner = 10
+gap_px = 10
 
 [screenshots]
 path = "$SHOT_DIR/shot-%Y%m%d-%H%M%S.png"
@@ -68,7 +69,7 @@ timeout 30 "$KC" -q --exit-with-command -- sh -c "
     \"$KC\" msg action switch-workspace idx=2 | grep -q '\"ok\"'
     \"$KC\" msg action switch-workspace idx=1 | grep -q '\"ok\"'
     \"$KC\" msg debug-mem | grep -q 'CompServer'
-    printf '[layout]\ngaps_inner = 14\n' > '$CFG_DIR/conf.d/10-test.toml'
+    printf '[comp.layout]\ngap_px = 14\n' > '$CFG_DIR/conf.d/10-test.toml'
     \"$KC\" msg action reload-config | grep -q '\"ok\"'
 
     # Subscribe to screenshot events in background

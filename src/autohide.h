@@ -23,12 +23,14 @@ typedef struct _ShellAutohide ShellAutohide;
 struct _ShellAutohide {
     AutohideState  state;
     ShellPanel    *panel;
+    guint          reveal_timeout_id;
     guint          hide_timeout_id;
     guint          tick_callback_id;
 
     gboolean       enabled;
     gboolean       touch_gestures_enabled;
     gboolean       pointer_inside;
+    gint           reveal_delay;
     gint           hide_delay;
     gint           reveal_duration;
     gint           hide_duration;

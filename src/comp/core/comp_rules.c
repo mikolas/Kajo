@@ -366,6 +366,21 @@ comp_rules_new(void)
     return r;
 }
 
+static void
+merge_rules_from_table(CompRules *r, toml_datum_t tab, const char *name, CompDiagList *diag)
+{
+    if (tab.type != TOML_TABLE)
+        return;
+    toml_datum_t rr = toml_get(tab, COMP_KEY_RESET_RULES);
+    if (rr.type == TOML_BOOLEAN && rr.u.boolean)
+        clear_window_rules(r);
+    else if (rr.type != TOML_UNKNOWN && rr.type != TOML_BOOLEAN)
+        comp_diag_add(diag, name, rr.lineno, "'reset_rules' must be true or false; ignored");
+
+    for_each_entry(r, toml_get(tab, COMP_SEC_RULE), COMP_SEC_RULE, name, diag, parse_window_rule);
+    for_each_entry(r, toml_get(tab, COMP_SEC_LAYER_RULE), COMP_SEC_LAYER_RULE, name, diag, parse_layer_rule);
+}
+
 bool
 comp_rules_merge_toml(CompRules *r, const char *src, size_t len,
                       const char *source_name, CompDiagList *diag)
@@ -383,14 +398,8 @@ comp_rules_merge_toml(CompRules *r, const char *src, size_t len,
         toml_free(res);
         return false;
     }
-    toml_datum_t rr = toml_get(res.toptab, COMP_KEY_RESET_RULES);
-    if (rr.type == TOML_BOOLEAN && rr.u.boolean)
-        clear_window_rules(r);
-    else if (rr.type != TOML_UNKNOWN && rr.type != TOML_BOOLEAN)
-        comp_diag_add(diag, name, rr.lineno, "'reset_rules' must be true or false; ignored");
-
-    for_each_entry(r, toml_get(res.toptab, COMP_SEC_RULE), COMP_SEC_RULE, name, diag, parse_window_rule);
-    for_each_entry(r, toml_get(res.toptab, COMP_SEC_LAYER_RULE), COMP_SEC_LAYER_RULE, name, diag, parse_layer_rule);
+    merge_rules_from_table(r, res.toptab, name, diag);
+    merge_rules_from_table(r, toml_get(res.toptab, COMP_SEC_COMP), name, diag);
     toml_free(res);
     return true;
 }

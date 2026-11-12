@@ -291,6 +291,7 @@ struct CompWindow *comp_win_from_id(const CompServer *server, CompWinId id);
 /* comp_output.c */
 void comp_output_init(CompServer *server);
 void comp_output_apply_config(CompServer *server);
+void comp_output_invalidate_changed_rules(CompServer *server, const CompConfig *old_cfg, const CompConfig *new_cfg);
 bool comp_output_configure(CompServer *server, const char *output_name,
                            const char *mode_str, double scale, int transform, int vrr_policy);
 void comp_output_update_vrr(CompServer *server);

@@ -17,6 +17,9 @@
 #define COMP_KEY_ACCENT_COLOR             "accent_color"
 #define COMP_KEY_RESET_RULES              "reset_rules"
 
+#define COMP_SEC_THEME                    "theme"
+#define COMP_SEC_SHELL                    "shell"
+#define COMP_SEC_COMP                     "comp"
 #define COMP_SEC_LAYOUT                   "layout"
 #define COMP_SEC_ANIMATIONS               "animations"
 #define COMP_SEC_SWITCHER                 "switcher"

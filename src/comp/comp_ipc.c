@@ -1395,6 +1395,17 @@ refresh_confd_watch(struct CompIpcState *ipc)
     closedir(d);
 }
 
+static bool
+is_comp_root_toml(const char *name)
+{
+    return strcmp(name, COMP_CFG_FILE_THEME) == 0 ||
+           strcmp(name, COMP_CFG_FILE_SHELL) == 0 ||
+           strcmp(name, COMP_CFG_FILE_COMP) == 0 ||
+           strcmp(name, COMP_CFG_FILE_OUTPUTS) == 0 ||
+           strcmp(name, COMP_CFG_FILE_BINDS) == 0 ||
+           strcmp(name, COMP_CFG_FILE_RULES) == 0;
+}
+
 static int
 handle_inotify_fd(int fd, uint32_t mask, void *data)
 {
@@ -1413,9 +1424,10 @@ handle_inotify_fd(int fd, uint32_t mask, void *data)
             const struct inotify_event *ev = (const struct inotify_event *)p;
             if (ev->len > 0) {
                 size_t nl = strlen(ev->name);
-                if (nl > 5 && strcmp(ev->name + nl - 5, COMP_CFG_EXT_TOML) == 0)
-                    trigger = true;
-                else if ((ev->mask & IN_ISDIR) || strcmp(ev->name, COMP_CFG_DIR_CONFD) == 0) {
+                if (nl > 5 && strcmp(ev->name + nl - 5, COMP_CFG_EXT_TOML) == 0) {
+                    if (!ipc || ev->wd != ipc->wd_root || is_comp_root_toml(ev->name))
+                        trigger = true;
+                } else if ((ev->mask & IN_ISDIR) || strcmp(ev->name, COMP_CFG_DIR_CONFD) == 0) {
                     refresh_confd_watch(ipc);
                     trigger = true;
                 }

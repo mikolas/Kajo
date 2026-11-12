@@ -873,6 +873,86 @@ expand_includes(CompConfig *cfg, toml_datum_t inc, const char *source_name,
     }
 }
 
+static void
+merge_touch_section(CompConfig *cfg, toml_datum_t tch)
+{
+    if (tch.type != TOML_TABLE)
+        return;
+    toml_datum_t en = toml_get(tch, COMP_KEY_ENABLED);
+    if (en.type == TOML_BOOLEAN)
+        cfg->touch_enabled = en.u.boolean;
+    toml_datum_t sc = toml_get(tch, COMP_KEY_SWIPE_CENTER);
+    if (sc.type == TOML_STRING)
+        (void)comp_touch_swipe_from_str(sc.u.s, &cfg->touch_swipe_center);
+    toml_datum_t sr = toml_get(tch, COMP_KEY_SWIPE_RIGHT);
+    if (sr.type == TOML_STRING)
+        (void)comp_touch_swipe_from_str(sr.u.s, &cfg->touch_swipe_right);
+    toml_datum_t sh = toml_get(tch, COMP_KEY_SWIPE_HORIZONTAL);
+    if (sh.type == TOML_STRING)
+        (void)comp_touch_swipe_from_str(sh.u.s, &cfg->touch_swipe_horizontal);
+    toml_datum_t dw = toml_get(tch, COMP_KEY_DWELL_MS);
+    if (dw.type == TOML_INT64 && dw.u.int64 >= 200 && dw.u.int64 <= 30000)
+        cfg->touch_dwell_ms = (int32_t)dw.u.int64;
+}
+
+static void
+merge_comp_sections_from_table(CompConfig *cfg, toml_datum_t tab, const char *name, CompDiagList *diag)
+{
+    if (tab.type != TOML_TABLE)
+        return;
+
+    merge_layout_section(cfg, toml_get(tab, COMP_SEC_LAYOUT), name, diag);
+    merge_animations_section(cfg, toml_get(tab, COMP_SEC_ANIMATIONS), name, diag);
+
+    toml_datum_t sw = toml_get(tab, COMP_SEC_SWITCHER);
+    if (sw.type == TOML_TABLE) {
+        parse_color_or_accent(toml_get(sw, COMP_KEY_ACTIVE_COLOR),
+                              cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
+                              cfg->accent_rgba, "switcher.active_color", name, diag);
+        parse_color_or_accent(toml_get(sw, COMP_KEY_ACTIVE_BORDER_COLOR),
+                              cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
+                              cfg->accent_rgba, "switcher.active_border_color", name, diag);
+        parse_color_or_accent(toml_get(sw, COMP_KEY_URGENT_COLOR),
+                              cfg->switcher_urgent_rgba, NULL,
+                              cfg->accent_rgba, "switcher.urgent_color", name, diag);
+        parse_color_or_accent(toml_get(sw, COMP_KEY_URGENT_BORDER_COLOR),
+                              cfg->switcher_urgent_rgba, NULL,
+                              cfg->accent_rgba, "switcher.urgent_border_color", name, diag);
+    }
+
+    toml_datum_t ss = toml_get(tab, COMP_SEC_SCREENSHOTS);
+    if (ss.type == TOML_TABLE) {
+        toml_datum_t p = toml_get(ss, COMP_KEY_PATH);
+        if (p.type == TOML_STRING)
+            set_str(&cfg->screenshot_path, p.u.s);
+        toml_datum_t c = toml_get(ss, COMP_KEY_COPY_TO_CLIPBOARD);
+        if (c.type == TOML_BOOLEAN)
+            cfg->screenshot_copy = c.u.boolean;
+        toml_datum_t n = toml_get(ss, COMP_KEY_SHOW_NOTIFICATION);
+        if (n.type == TOML_BOOLEAN)
+            cfg->screenshot_notify = n.u.boolean;
+        toml_datum_t b = toml_get(ss, COMP_KEY_INCLUDE_WINDOW_BORDER);
+        if (b.type == TOML_BOOLEAN)
+            cfg->screenshot_border = b.u.boolean;
+    }
+
+    toml_datum_t xw = toml_get(tab, COMP_SEC_XWAYLAND);
+    if (xw.type == TOML_TABLE) {
+        toml_datum_t en = toml_get(xw, COMP_KEY_ENABLED);
+        if (en.type == TOML_BOOLEAN)
+            cfg->xwayland_enabled = en.u.boolean;
+        toml_datum_t fz = toml_get(xw, COMP_KEY_FORCE_ZERO_SCALING);
+        if (fz.type == TOML_BOOLEAN)
+            cfg->xwayland_force_zero_scaling = fz.u.boolean;
+    }
+
+    merge_env_section(cfg, toml_get(tab, COMP_SEC_ENV), name, diag);
+    merge_autostart_section(cfg, toml_get(tab, COMP_SEC_AUTOSTART), name, diag);
+    merge_input_section(cfg, toml_get(tab, COMP_SEC_INPUT), name, diag);
+    merge_touch_section(cfg, toml_get(tab, COMP_SEC_TOUCH));
+    merge_output_array(cfg, toml_get(tab, COMP_SEC_OUTPUT), name, diag);
+}
+
 static bool
 merge_toml_internal(CompConfig *cfg, const char *src, size_t len,
                     const char *source_name, const char *base_dir,
@@ -891,89 +971,39 @@ merge_toml_internal(CompConfig *cfg, const char *src, size_t len,
         return false;
     }
 
-    /* 1. Top-level accent_color (from theme.toml) */
+    /* 1. Top-level or [theme]-scoped accent_color */
     toml_datum_t acc = toml_get(res.toptab, COMP_KEY_ACCENT_COLOR);
     if (acc.type == TOML_STRING && parse_hex_rgba(acc.u.s, cfg->accent_rgba))
         sync_accent_dependents(cfg);
-
-    /* 2. [layout], [animations], [switcher], [screenshots], [xwayland], [env], [autostart], [input], [touch] */
-    merge_layout_section(cfg, toml_get(res.toptab, COMP_SEC_LAYOUT), name, diag);
-    merge_animations_section(cfg, toml_get(res.toptab, COMP_SEC_ANIMATIONS), name, diag);
-
-    toml_datum_t sw = toml_get(res.toptab, COMP_SEC_SWITCHER);
-    if (sw.type == TOML_TABLE) {
-        parse_color_or_accent(toml_get(sw, COMP_KEY_ACTIVE_COLOR),
-                              cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
-                              cfg->accent_rgba, "switcher.active_color", name, diag);
-        parse_color_or_accent(toml_get(sw, COMP_KEY_ACTIVE_BORDER_COLOR),
-                              cfg->switcher_active_rgba, &cfg->switcher_active_tracks_accent,
-                              cfg->accent_rgba, "switcher.active_border_color", name, diag);
-        parse_color_or_accent(toml_get(sw, COMP_KEY_URGENT_COLOR),
-                              cfg->switcher_urgent_rgba, NULL,
-                              cfg->accent_rgba, "switcher.urgent_color", name, diag);
-        parse_color_or_accent(toml_get(sw, COMP_KEY_URGENT_BORDER_COLOR),
-                              cfg->switcher_urgent_rgba, NULL,
-                              cfg->accent_rgba, "switcher.urgent_border_color", name, diag);
+    toml_datum_t theme_tab = toml_get(res.toptab, COMP_SEC_THEME);
+    if (theme_tab.type == TOML_TABLE) {
+        toml_datum_t tacc = toml_get(theme_tab, COMP_KEY_ACCENT_COLOR);
+        if (tacc.type == TOML_STRING && parse_hex_rgba(tacc.u.s, cfg->accent_rgba))
+            sync_accent_dependents(cfg);
     }
 
-    toml_datum_t ss = toml_get(res.toptab, COMP_SEC_SCREENSHOTS);
-    if (ss.type == TOML_TABLE) {
-        toml_datum_t p = toml_get(ss, COMP_KEY_PATH);
-        if (p.type == TOML_STRING)
-            set_str(&cfg->screenshot_path, p.u.s);
-        toml_datum_t c = toml_get(ss, COMP_KEY_COPY_TO_CLIPBOARD);
-        if (c.type == TOML_BOOLEAN)
-            cfg->screenshot_copy = c.u.boolean;
-        toml_datum_t n = toml_get(ss, COMP_KEY_SHOW_NOTIFICATION);
-        if (n.type == TOML_BOOLEAN)
-            cfg->screenshot_notify = n.u.boolean;
-        toml_datum_t b = toml_get(ss, COMP_KEY_INCLUDE_WINDOW_BORDER);
-        if (b.type == TOML_BOOLEAN)
-            cfg->screenshot_border = b.u.boolean;
-    }
+    /* 2. [shell.touch] (from conf.d/ drop-ins) */
+    toml_datum_t shell_tab = toml_get(res.toptab, COMP_SEC_SHELL);
+    if (shell_tab.type == TOML_TABLE)
+        merge_touch_section(cfg, toml_get(shell_tab, COMP_SEC_TOUCH));
 
-    toml_datum_t xw = toml_get(res.toptab, COMP_SEC_XWAYLAND);
-    if (xw.type == TOML_TABLE) {
-        toml_datum_t en = toml_get(xw, COMP_KEY_ENABLED);
-        if (en.type == TOML_BOOLEAN)
-            cfg->xwayland_enabled = en.u.boolean;
-        toml_datum_t fz = toml_get(xw, COMP_KEY_FORCE_ZERO_SCALING);
-        if (fz.type == TOML_BOOLEAN)
-            cfg->xwayland_force_zero_scaling = fz.u.boolean;
-    }
+    /* 3. Top-level and [comp]-scoped compositor sections */
+    merge_comp_sections_from_table(cfg, res.toptab, name, diag);
+    toml_datum_t comp_tab = toml_get(res.toptab, COMP_SEC_COMP);
+    if (comp_tab.type == TOML_TABLE)
+        merge_comp_sections_from_table(cfg, comp_tab, name, diag);
 
-    merge_env_section(cfg, toml_get(res.toptab, COMP_SEC_ENV), name, diag);
-    merge_autostart_section(cfg, toml_get(res.toptab, COMP_SEC_AUTOSTART), name, diag);
-    merge_input_section(cfg, toml_get(res.toptab, COMP_SEC_INPUT), name, diag);
-
-    toml_datum_t tch = toml_get(res.toptab, COMP_SEC_TOUCH);
-    if (tch.type == TOML_TABLE) {
-        toml_datum_t en = toml_get(tch, COMP_KEY_ENABLED);
-        if (en.type == TOML_BOOLEAN)
-            cfg->touch_enabled = en.u.boolean;
-        toml_datum_t sc = toml_get(tch, COMP_KEY_SWIPE_CENTER);
-        if (sc.type == TOML_STRING)
-            (void)comp_touch_swipe_from_str(sc.u.s, &cfg->touch_swipe_center);
-        toml_datum_t sr = toml_get(tch, COMP_KEY_SWIPE_RIGHT);
-        if (sr.type == TOML_STRING)
-            (void)comp_touch_swipe_from_str(sr.u.s, &cfg->touch_swipe_right);
-        toml_datum_t sh = toml_get(tch, COMP_KEY_SWIPE_HORIZONTAL);
-        if (sh.type == TOML_STRING)
-            (void)comp_touch_swipe_from_str(sh.u.s, &cfg->touch_swipe_horizontal);
-        toml_datum_t dw = toml_get(tch, COMP_KEY_DWELL_MS);
-        if (dw.type == TOML_INT64 && dw.u.int64 >= 200 && dw.u.int64 <= 30000)
-            cfg->touch_dwell_ms = (int32_t)dw.u.int64;
-    }
-
-    /* 3. [[output]], [[bind]], [[rule]], [[layer_rule]] */
-    merge_output_array(cfg, toml_get(res.toptab, COMP_SEC_OUTPUT), name, diag);
-
-    if (toml_get(res.toptab, COMP_SEC_BIND).type != TOML_UNKNOWN) {
+    if (toml_get(res.toptab, COMP_SEC_BIND).type != TOML_UNKNOWN ||
+        (comp_tab.type == TOML_TABLE && toml_get(comp_tab, COMP_SEC_BIND).type != TOML_UNKNOWN)) {
         (void)comp_binds_merge_toml(cfg->binds, src, len, name, cfg->mod_mask, replace_binds, diag);
     }
     if (toml_get(res.toptab, COMP_SEC_RULE).type != TOML_UNKNOWN ||
         toml_get(res.toptab, COMP_SEC_LAYER_RULE).type != TOML_UNKNOWN ||
-        toml_get(res.toptab, COMP_KEY_RESET_RULES).type != TOML_UNKNOWN) {
+        toml_get(res.toptab, COMP_KEY_RESET_RULES).type != TOML_UNKNOWN ||
+        (comp_tab.type == TOML_TABLE &&
+         (toml_get(comp_tab, COMP_SEC_RULE).type != TOML_UNKNOWN ||
+          toml_get(comp_tab, COMP_SEC_LAYER_RULE).type != TOML_UNKNOWN ||
+          toml_get(comp_tab, COMP_KEY_RESET_RULES).type != TOML_UNKNOWN))) {
         (void)comp_rules_merge_toml(cfg->rules, src, len, name, diag);
     }
 
@@ -1075,6 +1105,10 @@ comp_config_load_dir(const char *config_dir, const char *defaults_dir,
 
     /* 0. System/repo defaults (non-fatal if absent) */
     if (defaults_dir && defaults_dir[0]) {
+        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_THEME,
+                                          NULL, true, false, &stack, diag);
+        (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_SHELL,
+                                          NULL, true, false, &stack, diag);
         (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_COMP,
                                           NULL, true, false, &stack, diag);
         (void)load_one_file_with_fallback(cfg, NULL, defaults_dir, COMP_CFG_FILE_BINDS,

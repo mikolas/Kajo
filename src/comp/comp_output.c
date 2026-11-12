@@ -53,16 +53,52 @@ output_matches_rule(const struct wlr_output *wo, const char *match)
 }
 
 static const CompOutputRule *
-find_matching_output_rule(const CompServer *s, const struct wlr_output *wo)
+find_matching_output_rule_in_cfg(const CompConfig *cfg, const struct wlr_output *wo)
 {
-    if (!s || !s->config || !wo)
+    if (!cfg || !wo)
         return NULL;
     const CompOutputRule *matched = NULL;
-    for (size_t i = 0; i < s->config->n_outputs; i++) {
-        if (output_matches_rule(wo, s->config->outputs[i].match))
-            matched = &s->config->outputs[i];
+    for (size_t i = 0; i < cfg->n_outputs; i++) {
+        if (output_matches_rule(wo, cfg->outputs[i].match))
+            matched = &cfg->outputs[i];
     }
     return matched;
+}
+
+static const CompOutputRule *
+find_matching_output_rule(const CompServer *s, const struct wlr_output *wo)
+{
+    return s ? find_matching_output_rule_in_cfg(s->config, wo) : NULL;
+}
+
+void
+comp_output_invalidate_changed_rules(CompServer *s, const CompConfig *old_cfg, const CompConfig *new_cfg)
+{
+    if (!s)
+        return;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (!o->wlr_output)
+            continue;
+        const CompOutputRule *ro = find_matching_output_rule_in_cfg(old_cfg, o->wlr_output);
+        const CompOutputRule *rn = find_matching_output_rule_in_cfg(new_cfg, o->wlr_output);
+
+        bool om = (ro && ro->has_mode), nm = (rn && rn->has_mode);
+        if (om != nm || (om && strcmp(ro->mode ? ro->mode : "", rn->mode ? rn->mode : "") != 0))
+            o->has_manual_mode = false;
+
+        bool os = (ro && ro->has_scale), ns = (rn && rn->has_scale);
+        if (os != ns || (os && fabs(ro->scale - rn->scale) > 1e-6))
+            o->has_manual_scale = false;
+
+        bool ot = (ro && ro->has_transform), nt = (rn && rn->has_transform);
+        if (ot != nt || (ot && ro->transform != rn->transform))
+            o->has_manual_transform = false;
+
+        bool ov = (ro && ro->has_vrr), nv = (rn && rn->has_vrr);
+        if (ov != nv || (ov && ro->vrr != rn->vrr))
+            o->has_manual_vrr = false;
+    }
 }
 
 /* Spec §3.13 OUT2: deterministic output priority in session/normal mode.
@@ -807,15 +843,15 @@ comp_output_apply_config(CompServer *s)
         }
 
         const CompOutputRule *r = find_matching_output_rule(s, wo);
-        const char *mode_str = (r && r->has_mode) ? r->mode
-                                                  : (o->has_manual_mode ? o->manual_mode : NULL);
-        double scale = (r && r->has_scale) ? r->scale
-                                           : (o->has_manual_scale ? o->manual_scale
+        const char *mode_str = o->has_manual_mode ? o->manual_mode
+                                                  : ((r && r->has_mode) ? r->mode : NULL);
+        double scale = o->has_manual_scale ? o->manual_scale
+                                           : ((r && r->has_scale) ? r->scale
                                                                   : (s->opts.greeter_mode ? greeter_default_scale(wo) : -1.0));
-        int tf = (r && r->has_transform) ? (int)r->transform
-                                         : (o->has_manual_transform ? (int)o->manual_transform : -1);
-        int vrr = (r && r->has_vrr) ? (int)r->vrr
-                                    : (o->has_manual_vrr ? (int)o->manual_vrr : -1);
+        int tf = o->has_manual_transform ? (int)o->manual_transform
+                                         : ((r && r->has_transform) ? (int)r->transform : -1);
+        int vrr = o->has_manual_vrr ? (int)o->manual_vrr
+                                    : ((r && r->has_vrr) ? (int)r->vrr : -1);
 
         if (!commit_output_cascade(o, mode_str, scale, tf, vrr)) {
             wlr_log(WLR_ERROR, "output %s: failed to enable output", wo->name);

@@ -192,6 +192,7 @@ shell_resources = gnome.compile_resources(
 kajo_config_sources = files(
   'src/vendor/tomlc17/tomlc17.c',
   'src/config/kajo_config_schema.c',
+  'src/config/kajo_config_comp.c',
   'src/config/kajo_config_migrate.c',
   'src/config/kajo_config_store.c',
   'src/config/schemas/schema_theme.c',
