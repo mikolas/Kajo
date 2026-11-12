@@ -83,6 +83,7 @@ typedef struct {
     int                    width;
     int                    height;
     char                  *path_template;
+    char                  *home_dir;
     bool                   copy_to_clipboard;
     bool                   show_notification;
 } ScreenshotWorkerArg;
@@ -393,16 +394,14 @@ mkdir_parents(const char *file_path)
 }
 
 static char *
-expand_screenshot_path(const char *tmpl)
+expand_screenshot_path(const char *tmpl, const char *home_dir)
 {
     const char *use_tmpl = (tmpl && *tmpl)
                                ? tmpl
                                : "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png";
     char expanded_tilde[PATH_MAX];
     if (use_tmpl[0] == '~' && (use_tmpl[1] == '/' || use_tmpl[1] == '\0')) {
-        const char *home = getenv("HOME");
-        if (!home || !*home)
-            home = "/tmp";
+        const char *home = (home_dir && *home_dir) ? home_dir : "/tmp";
         snprintf(expanded_tilde, sizeof(expanded_tilde), "%s%s", home, use_tmpl + 1);
     } else {
         snprintf(expanded_tilde, sizeof(expanded_tilde), "%s", use_tmpl);
@@ -503,11 +502,12 @@ screenshot_worker_main(void *arg)
 
     char *final_path = NULL;
     if (ok) {
-        final_path = expand_screenshot_path(wa->path_template);
+        final_path = expand_screenshot_path(wa->path_template, wa->home_dir);
         if (!final_path || !write_bytes_to_file(final_path, png_bytes, png_len))
             ok = false;
     }
     free(wa->path_template);
+    free(wa->home_dir);
 
     if (ss) {
         ScreenshotJobResult *res = calloc(1, sizeof(*res));
@@ -561,6 +561,7 @@ dispatch_screenshot_worker(CompServer *s, uint8_t *owned_argb, int width, int he
         free(owned_argb);
         return;
     }
+    const char *env_home = getenv("HOME");
     wa->ss                = ss;
     wa->argb_pixels       = owned_argb;
     wa->width             = width;
@@ -568,6 +569,7 @@ dispatch_screenshot_worker(CompServer *s, uint8_t *owned_argb, int width, int he
     wa->path_template     = strdup((s->config && s->config->screenshot_path)
                                        ? s->config->screenshot_path
                                        : "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png");
+    wa->home_dir          = strdup((env_home && *env_home) ? env_home : "/tmp");
     wa->copy_to_clipboard = s->config ? s->config->screenshot_copy : true;
     wa->show_notification = s->config ? s->config->screenshot_notify : true;
 
@@ -575,6 +577,7 @@ dispatch_screenshot_worker(CompServer *s, uint8_t *owned_argb, int width, int he
     if (ss->shutting_down) {
         pthread_mutex_unlock(&ss->res_lock);
         free(wa->path_template);
+        free(wa->home_dir);
         free(wa->argb_pixels);
         free(wa);
         return;

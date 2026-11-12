@@ -156,6 +156,7 @@ handle_lock_unlock(void *owner, void *data)
     if (s->lock_backdrop)
         wlr_scene_node_set_enabled(&s->lock_backdrop->node, false);
 
+    comp_layer_arrange(s);
     comp_server_restore_keyboard_focus(s);
     comp_server_schedule_frames(s);
 }
@@ -226,6 +227,7 @@ handle_new_session_lock(void *owner, void *data)
     s->active_lock = lock;
     comp_window_destroy_capture_sources(s);
     comp_lock_idle_reconfigure_output(s);
+    comp_layer_arrange(s);
     comp_server_restore_keyboard_focus(s);
 
     if (has_any_enabled_output(s)) {
@@ -305,7 +307,8 @@ comp_lock_idle_update_inhibitors(CompServer *s)
     bool inhibited = false;
     struct wlr_idle_inhibitor_v1 *inh;
     wl_list_for_each(inh, &s->idle_inhibit_mgr->inhibitors, link) {
-        if (inh->surface && inh->surface->mapped) {
+        if (inh->surface && inh->surface->mapped &&
+            comp_server_surface_scene_coords(s, inh->surface, NULL, NULL)) {
             inhibited = true;
             break;
         }

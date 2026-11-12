@@ -7,6 +7,7 @@
 
 #include <math.h>
 #include <string.h>
+#include <strings.h>
 #include <talloc.h>
 #include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_output.h>
@@ -47,6 +48,24 @@ layer_tree_for(CompServer *s, enum zwlr_layer_shell_v1_layer layer)
         return s->tree_overlay;
     }
     return s->tree_top;
+}
+
+static bool
+is_osk_layer_surface(const struct wlr_layer_surface_v1 *lsurf)
+{
+    if (!lsurf || !lsurf->namespace)
+        return false;
+    return strcasecmp(lsurf->namespace, "osk") == 0 ||
+           strcasecmp(lsurf->namespace, "kajo-osk") == 0;
+}
+
+static struct wlr_scene_tree *
+layer_tree_for_surface(CompServer *s, const struct wlr_layer_surface_v1 *lsurf,
+                       enum zwlr_layer_shell_v1_layer layer)
+{
+    if (s->locked && s->tree_lock && is_osk_layer_surface(lsurf))
+        return s->tree_lock;
+    return layer_tree_for(s, layer);
 }
 
 static void
@@ -154,8 +173,16 @@ comp_layer_arrange(CompServer *s)
             cls->lsurf->output = primary_wo;
         struct wlr_output *lo = cls->lsurf->output;
         bool on_disabled_output = (!cls->follows_primary && lo && !lo->enabled);
-        if (cls->scene_layer && cls->scene_layer->tree)
+        if (cls->scene_layer && cls->scene_layer->tree) {
+            struct wlr_scene_tree *want_parent =
+                layer_tree_for_surface(s, cls->lsurf, cls->cur_layer);
+            if (want_parent && cls->scene_layer->tree->node.parent != want_parent) {
+                wlr_scene_node_reparent(&cls->scene_layer->tree->node, want_parent);
+                if (want_parent == s->tree_lock)
+                    wlr_scene_node_raise_to_top(&cls->scene_layer->tree->node);
+            }
             wlr_scene_node_set_enabled(&cls->scene_layer->tree->node, !on_disabled_output);
+        }
         if (on_disabled_output && cls->lsurf->initialized && !cls->lsurf->configured) {
             struct wlr_box dummy_usable = primary_usable;
             wlr_scene_layer_surface_v1_configure(cls->scene_layer, &primary_usable, &dummy_usable);
@@ -330,7 +357,8 @@ handle_layer_commit(void *owner, void *data)
     enum zwlr_layer_shell_v1_layer new_layer = cls->lsurf->current.layer;
     if (new_layer != cls->cur_layer && cls->scene_layer && cls->scene_layer->tree) {
         cls->cur_layer = new_layer;
-        wlr_scene_node_reparent(&cls->scene_layer->tree->node, layer_tree_for(s, new_layer));
+        wlr_scene_node_reparent(&cls->scene_layer->tree->node,
+                                layer_tree_for_surface(s, cls->lsurf, new_layer));
     }
 
     uint32_t committed = cls->lsurf->current.committed;
@@ -407,7 +435,7 @@ handle_new_layer_surface(void *owner, void *data)
     wl_list_insert(&s->layer_surfaces, &cls->link);
     talloc_set_destructor(cls, layer_surface_destructor);
 
-    struct wlr_scene_tree *parent = layer_tree_for(s, cls->cur_layer);
+    struct wlr_scene_tree *parent = layer_tree_for_surface(s, lsurf, cls->cur_layer);
     cls->scene_layer = wlr_scene_layer_surface_v1_create(parent, lsurf);
     if (!cls->scene_layer) {
         talloc_free(cls);

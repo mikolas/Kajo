@@ -135,30 +135,141 @@ comp_output_post_change(CompServer *s)
 }
 
 static void
+sync_primary_output_devices(CompServer *s)
+{
+    struct wlr_output *primary = comp_server_primary_output(s);
+    if (!primary)
+        return;
+    double w_mm = primary->phys_width > 0 ? (double)primary->phys_width : 300.0;
+    double h_mm = primary->phys_height > 0 ? (double)primary->phys_height : 188.0;
+    comp_touch_tracker_set_geometry(&s->touch_tracker, w_mm, h_mm,
+                                    (CompTransform)primary->transform);
+    comp_input_map_devices_to_output(s, primary);
+}
+
+static CompOutput *
+find_comp_output(CompServer *s, const struct wlr_output *wo)
+{
+    if (!s || !wo)
+        return NULL;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (o->wlr_output == wo)
+            return o;
+    }
+    return NULL;
+}
+
+static void
+persist_manual_head_state(CompOutput *o, const struct wlr_output_configuration_head_v1 *head)
+{
+    if (!o || !o->wlr_output || !head)
+        return;
+    struct wlr_output *wo = o->wlr_output;
+
+    const struct wlr_output_mode *m = head->state.mode;
+    int32_t w = m ? m->width   : (head->state.custom_mode.width > 0 ? head->state.custom_mode.width : wo->width);
+    int32_t h = m ? m->height  : (head->state.custom_mode.height > 0 ? head->state.custom_mode.height : wo->height);
+    int32_t r = m ? m->refresh : (head->state.custom_mode.refresh > 0 ? head->state.custom_mode.refresh : wo->refresh);
+    if (w > 0 && h > 0) {
+        char buf[64];
+        if (r > 0)
+            snprintf(buf, sizeof(buf), "%dx%d@%.3f", w, h, (double)r / 1000.0);
+        else
+            snprintf(buf, sizeof(buf), "%dx%d", w, h);
+        talloc_free(o->manual_mode);
+        o->manual_mode     = talloc_strdup(o, buf);
+        o->has_manual_mode = (o->manual_mode != NULL);
+    }
+    if (head->state.scale > 0.0f) {
+        o->has_manual_scale = true;
+        o->manual_scale     = (double)head->state.scale;
+    }
+    if ((int)head->state.transform >= COMP_TRANSFORM_NORMAL &&
+        (int)head->state.transform <= COMP_TRANSFORM_FLIPPED_270) {
+        o->has_manual_transform = true;
+        o->manual_transform     = (CompTransform)head->state.transform;
+    }
+    o->has_manual_vrr = true;
+    o->manual_vrr     = head->state.adaptive_sync_enabled ? COMP_VRR_ON : COMP_VRR_OFF;
+    o->vrr_policy     = o->manual_vrr;
+}
+
+static void
 apply_or_test_output_config(CompServer *s, struct wlr_output_configuration_v1 *cfg, bool apply)
 {
     if (!s || !cfg)
         return;
 
+    size_t n_heads = 0;
+    size_t n_enabled = 0;
     bool ok = true;
     struct wlr_output_configuration_head_v1 *head;
     wl_list_for_each(head, &cfg->heads, link) {
-        struct wlr_output *wo = head->state.output;
-        if (!wo) {
+        if (!head->state.output) {
             ok = false;
             break;
         }
-        struct wlr_output_state st;
-        wlr_output_state_init(&st);
-        wlr_output_head_v1_state_apply(&head->state, &st);
-        bool step_ok = wlr_output_test_state(wo, &st);
-        if (step_ok && apply)
-            step_ok = wlr_output_commit_state(wo, &st);
-        wlr_output_state_finish(&st);
-        if (!step_ok) {
+        if (head->state.enabled)
+            n_enabled++;
+        n_heads++;
+    }
+
+    /* Spec §3.13 OUT1: reject configs enabling > 1 output in normal/session mode. */
+    if (!s->opts.greeter_mode && n_enabled > 1)
+        ok = false;
+
+    struct wlr_backend_output_state *states = NULL;
+    if (ok && n_heads > 0) {
+        states = calloc(n_heads, sizeof(*states));
+        if (!states)
             ok = false;
-            break;
+    }
+
+    if (ok && states) {
+        size_t idx = 0;
+        wl_list_for_each(head, &cfg->heads, link) {
+            states[idx].output = head->state.output;
+            wlr_output_state_init(&states[idx].base);
+            wlr_output_head_v1_state_apply(&head->state, &states[idx].base);
+            idx++;
         }
+
+        ok = wlr_backend_test(s->backend, states, n_heads);
+        if (ok && apply)
+            ok = wlr_backend_commit(s->backend, states, n_heads);
+
+        for (size_t i = 0; i < n_heads; i++)
+            wlr_output_state_finish(&states[i].base);
+    }
+    free(states);
+
+    if (ok && apply) {
+        wl_list_for_each(head, &cfg->heads, link) {
+            struct wlr_output *wo = head->state.output;
+            CompOutput *o = find_comp_output(s, wo);
+            if (!head->state.enabled) {
+                if (wlr_output_layout_get(s->output_layout, wo)) {
+                    wlr_output_layout_remove(s->output_layout, wo);
+                    if (o)
+                        o->scene_output = wlr_scene_get_scene_output(s->scene, wo);
+                }
+                continue;
+            }
+            if (o) {
+                persist_manual_head_state(o, head);
+                o->scene_output = wlr_scene_get_scene_output(s->scene, wo);
+                if (!o->scene_output)
+                    o->scene_output = wlr_scene_output_create(s->scene, wo);
+            }
+            bool had_lo = (wlr_output_layout_get(s->output_layout, wo) != NULL);
+            struct wlr_output_layout_output *lo =
+                wlr_output_layout_add(s->output_layout, wo, head->state.x, head->state.y);
+            if (!had_lo && lo && o && o->scene_output)
+                wlr_scene_output_layout_add_output(s->scene_layout, lo, o->scene_output);
+        }
+        comp_output_update_vrr(s);
+        sync_primary_output_devices(s);
     }
 
     if (ok)
@@ -317,7 +428,21 @@ handle_frame(void *owner, void *data)
     comp_window_tick_frame(s, now_s);
 
     bool lock_active = s->locked;
-    bool committed = wlr_scene_output_commit(o->scene_output, NULL);
+    bool committed = false;
+    if (!lock_active && comp_window_focused_wants_tearing(s) &&
+        wlr_scene_output_needs_frame(o->scene_output)) {
+        struct wlr_output_state st;
+        wlr_output_state_init(&st);
+        if (wlr_scene_output_build_state(o->scene_output, &st, NULL)) {
+            st.tearing_page_flip = true;
+            if (!wlr_output_test_state(o->wlr_output, &st))
+                st.tearing_page_flip = false;
+            committed = wlr_output_commit_state(o->wlr_output, &st);
+        }
+        wlr_output_state_finish(&st);
+    } else {
+        committed = wlr_scene_output_commit(o->scene_output, NULL);
+    }
     if (committed)
         wlr_scene_output_send_frame_done(o->scene_output, &now);
     if (lock_active) {
@@ -572,6 +697,20 @@ commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
 
 out_ok:
     if (stepped_down) {
+        if (o->has_manual_mode && wo->width > 0 && wo->height > 0) {
+            char fallback_mode[64];
+            if (wo->refresh > 0) {
+                snprintf(fallback_mode, sizeof(fallback_mode), "%dx%d@%.3f",
+                         wo->width, wo->height, (double)wo->refresh / 1000.0);
+            } else {
+                snprintf(fallback_mode, sizeof(fallback_mode), "%dx%d", wo->width, wo->height);
+            }
+            talloc_free(o->manual_mode);
+            o->manual_mode     = talloc_strdup(o, fallback_mode);
+            o->has_manual_mode = (o->manual_mode != NULL);
+        }
+        if (o->has_manual_vrr)
+            o->manual_vrr = o->vrr_policy;
         wlr_log(WLR_ERROR, "output %s: requested KMS state rejected; stepped down to %dx%d @ %.2f Hz (vrr=%s)",
                 wo->name ? wo->name : "unknown", wo->width, wo->height,
                 (double)wo->refresh / 1000.0, comp_vrr_policy_to_str(o->vrr_policy));
@@ -586,19 +725,6 @@ out_ok:
         }
     }
     return true;
-}
-
-static void
-sync_primary_output_devices(CompServer *s)
-{
-    struct wlr_output *primary = comp_server_primary_output(s);
-    if (!primary)
-        return;
-    double w_mm = primary->phys_width > 0 ? (double)primary->phys_width : 300.0;
-    double h_mm = primary->phys_height > 0 ? (double)primary->phys_height : 188.0;
-    comp_touch_tracker_set_geometry(&s->touch_tracker, w_mm, h_mm,
-                                    (CompTransform)primary->transform);
-    comp_input_map_devices_to_output(s, primary);
 }
 
 bool

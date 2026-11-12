@@ -35,6 +35,7 @@
 #include <wlr/types/wlr_touch.h>
 #include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
+#include <wlr/util/region.h>
 #include <xkbcommon/xkbcommon.h>
 
 typedef struct {
@@ -650,7 +651,29 @@ cursor_motion(void *owner, void *data)
         return;
     }
 
-    wlr_cursor_move(s->cursor, &ev->pointer->base, ev->delta_x, ev->delta_y);
+    double dx = ev->delta_x;
+    double dy = ev->delta_y;
+    if (s->active_constraint &&
+        s->active_constraint->type == WLR_POINTER_CONSTRAINT_V1_CONFINED &&
+        s->active_constraint->surface) {
+        int slx = 0, sly = 0;
+        if (comp_server_surface_scene_coords(s, s->active_constraint->surface, &slx, &sly)) {
+            double sx1 = s->cursor->x - (double)slx;
+            double sy1 = s->cursor->y - (double)sly;
+            double sx2 = sx1 + dx;
+            double sy2 = sy1 + dy;
+            double cx = sx2, cy = sy2;
+            if (wlr_region_confine(&s->active_constraint->region, sx1, sy1, sx2, sy2, &cx, &cy)) {
+                dx = cx - sx1;
+                dy = cy - sy1;
+            } else {
+                dx = 0.0;
+                dy = 0.0;
+            }
+        }
+    }
+
+    wlr_cursor_move(s->cursor, &ev->pointer->base, dx, dy);
     if (comp_screenshot_is_active(s)) {
         comp_screenshot_handle_motion(s, s->cursor->x, s->cursor->y);
         return;
@@ -906,7 +929,14 @@ cursor_touch_motion(void *owner, void *data)
     double lx = 0.0, ly = 0.0;
     wlr_cursor_absolute_to_layout_coords(s->cursor, &ev->touch->base, ev->x, ev->y, &lx, &ly);
     double sx = 0.0, sy = 0.0;
-    surface_at_coords(s, lx, ly, &sx, &sy);
+    struct wlr_touch_point *pt = wlr_seat_touch_get_point(s->seat, ev->touch_id);
+    int slx = 0, sly = 0;
+    if (pt && pt->surface && comp_server_surface_scene_coords(s, pt->surface, &slx, &sly)) {
+        sx = lx - (double)slx;
+        sy = ly - (double)sly;
+    } else {
+        surface_at_coords(s, lx, ly, &sx, &sy);
+    }
     wlr_seat_touch_notify_motion(s->seat, ev->time_msec, ev->touch_id, sx, sy);
 }
 

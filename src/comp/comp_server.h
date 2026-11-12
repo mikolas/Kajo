@@ -67,6 +67,7 @@ struct wlr_session_lock_manager_v1;
 struct wlr_session_lock_v1;
 struct wlr_surface;
 struct wlr_tablet_manager_v2;
+struct wlr_tearing_control_manager_v1;
 struct wlr_text_input_manager_v3;
 struct wlr_virtual_keyboard_manager_v1;
 struct wlr_xcursor_manager;
@@ -157,6 +158,7 @@ typedef struct CompServer {
     struct wlr_ext_image_copy_capture_manager_v1 *ext_image_copy_capture_mgr;
     struct wlr_ext_output_image_capture_source_manager_v1 *ext_output_capture_mgr;
     struct wlr_security_context_manager_v1       *security_context_mgr;
+    struct wlr_tearing_control_manager_v1        *tearing_mgr;
     struct wlr_xwayland                          *xwayland;
     int                                           xwayland_last_dpi;
 
@@ -311,6 +313,10 @@ void               comp_window_resize_column(CompServer *server, double delta, C
 void               comp_window_resize_height(CompServer *server, double delta, CompDeltaMode mode);
 double             comp_window_scroll_factor_for_surface(CompServer *server, struct wlr_surface *surface);
 bool               comp_window_focused_wants_vrr(const CompServer *server);
+bool               comp_window_focused_wants_tearing(const CompServer *server);
+bool               comp_server_surface_scene_coords(const CompServer *server,
+                                                    const struct wlr_surface *surface,
+                                                    int *out_lx, int *out_ly);
 void               comp_window_reapply_rules(CompServer *server);
 void               comp_window_on_dialog_state_changed(struct wlr_xdg_toplevel *toplevel);
 size_t             comp_window_list_info(const CompServer *server, CompWindowInfo *out, size_t max_out);

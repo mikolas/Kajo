@@ -18,6 +18,7 @@
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_tearing_control_v1.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_dialog_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
@@ -317,7 +318,8 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
 }
 
 static void
-configure_window_toplevel(CompWindow *w, int32_t tile_w, int32_t tile_h,
+configure_window_toplevel(CompWindow *w, int32_t tile_x, int32_t tile_y,
+                          int32_t tile_w, int32_t tile_h,
                           bool activated, bool fullscreen, bool floating)
 {
     bool is_xdg = (w->toplevel && w->toplevel->base && w->toplevel->base->initialized);
@@ -333,11 +335,8 @@ configure_window_toplevel(CompWindow *w, int32_t tile_w, int32_t tile_h,
                          ? (WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT)
                          : WLR_EDGE_NONE;
 
-    int32_t xw_x = 0, xw_y = 0;
-    if (is_x11 && w->scene_tree) {
-        xw_x = w->scene_tree->node.x + b;
-        xw_y = w->scene_tree->node.y + b;
-    }
+    int32_t xw_x = tile_x + b;
+    int32_t xw_y = tile_y + b;
 
     bool changed = (cw != w->cfg_w) || (ch != w->cfg_h) ||
                    (is_x11 && (xw_x != w->cfg_x || xw_y != w->cfg_y)) ||
@@ -545,9 +544,11 @@ comp_window_relayout(CompServer *s)
         if (w->scene_tree && w->scene_tree->node.parent != target_parent)
             wlr_scene_node_reparent(&w->scene_tree->node, target_parent);
 
+        int32_t rx = g->fullscreen ? 0 : clamp_i32(g->rect.x + work.x, -32768, 32767);
+        int32_t ry = g->fullscreen ? 0 : clamp_i32(g->rect.y + work.y, -32768, 32767);
         int32_t rw = g->fullscreen ? clamp_i32(full_vw, 1, 32767) : clamp_i32(g->rect.w, 1, 32767);
         int32_t rh = g->fullscreen ? clamp_i32(full_vh, 1, 32767) : clamp_i32(g->rect.h, 1, 32767);
-        configure_window_toplevel(w, rw, rh, g->focused, g->fullscreen, g->floating);
+        configure_window_toplevel(w, rx, ry, rw, rh, g->focused, g->fullscreen, g->floating);
     }
 
     CompWinId focused_id = comp_layout_focused_window(s->layout);
@@ -581,6 +582,7 @@ comp_window_relayout(CompServer *s)
     s->last_active_ws = active_ws;
 
     comp_window_tick_frame(s, now_s);
+    comp_lock_idle_update_inhibitors(s);
     comp_input_refresh_pointer_focus(s, (uint32_t)(now_s * 1000.0));
     bool wants_vrr = comp_window_focused_wants_vrr(s);
     if (focus_changed || wants_vrr != s->last_wants_vrr)
@@ -750,6 +752,64 @@ comp_window_focused_wants_vrr(const CompServer *s)
     return w->is_fullscreen || w->rule_vrr;
 }
 
+bool
+comp_window_focused_wants_tearing(const CompServer *s)
+{
+    if (!s || !s->layout || !s->tearing_mgr)
+        return false;
+    CompWinId id = comp_layout_focused_window(s->layout);
+    CompWindow *w = comp_win_from_id(s, id);
+    if (!w || !w->mapped || !w->is_fullscreen)
+        return false;
+    struct wlr_surface *surf = comp_window_get_surface(w);
+    if (!surf)
+        return false;
+    return wlr_tearing_control_manager_v1_surface_hint_from_surface(s->tearing_mgr, surf) ==
+           WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC;
+}
+
+static struct wlr_scene_node *
+find_surface_node_recursive(struct wlr_scene_node *node, const struct wlr_surface *target)
+{
+    if (!node)
+        return NULL;
+    if (node->type == WLR_SCENE_NODE_BUFFER) {
+        struct wlr_scene_buffer *sbuf = wlr_scene_buffer_from_node(node);
+        struct wlr_scene_surface *ss = wlr_scene_surface_try_from_buffer(sbuf);
+        if (ss && ss->surface == target)
+            return node;
+        return NULL;
+    }
+    if (node->type == WLR_SCENE_NODE_TREE) {
+        struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+        struct wlr_scene_node *child;
+        wl_list_for_each(child, &tree->children, link) {
+            struct wlr_scene_node *found = find_surface_node_recursive(child, target);
+            if (found)
+                return found;
+        }
+    }
+    return NULL;
+}
+
+bool
+comp_server_surface_scene_coords(const CompServer *s, const struct wlr_surface *surface,
+                                 int *out_lx, int *out_ly)
+{
+    if (out_lx) *out_lx = 0;
+    if (out_ly) *out_ly = 0;
+    if (!s || !s->scene || !surface)
+        return false;
+    struct wlr_scene_node *node = find_surface_node_recursive(&s->scene->tree.node, surface);
+    if (!node)
+        return false;
+    int lx = 0, ly = 0;
+    bool enabled = wlr_scene_node_coords(node, &lx, &ly);
+    if (out_lx) *out_lx = lx;
+    if (out_ly) *out_ly = ly;
+    return enabled;
+}
+
 size_t
 comp_window_list_info(const CompServer *s, CompWindowInfo *out, size_t max_out)
 {
@@ -910,9 +970,9 @@ comp_window_update_grab(CompServer *s)
         }
     }
 
-    double vw = 0.0, vh = 0.0;
-    comp_server_viewport_size(s, &vw, &vh);
-    r = clamp_floating_rect(r, vw, vh);
+    CompRect work = {0};
+    comp_server_working_area(s, &work);
+    r = clamp_floating_rect(r, work.w, work.h);
 
     if (comp_layout_set_floating_rect(s->layout, w->id, r))
         comp_window_relayout(s);
@@ -1239,7 +1299,7 @@ handle_toplevel_commit(void *owner, void *data)
         if (w->toplevel->requested.fullscreen) {
             double full_vw = 0.0, full_vh = 0.0;
             comp_server_viewport_size(s, &full_vw, &full_vh);
-            configure_window_toplevel(w, clamp_i32(full_vw, 1, 32767),
+            configure_window_toplevel(w, 0, 0, clamp_i32(full_vw, 1, 32767),
                                       clamp_i32(full_vh, 1, 32767), false, true, false);
         } else if (!should_open_floating(w, &rr)) {
             CompRect work = {0};
@@ -1254,7 +1314,7 @@ handle_toplevel_commit(void *owner, void *data)
                 col_prop = 1.0;
             int32_t tile_w = clamp_i32((work.w - gap) * col_prop - gap, 1, 32767);
             int32_t tile_h = clamp_i32(work.h - 2.0 * gap, 1, 32767);
-            configure_window_toplevel(w, tile_w, tile_h, false, false, false);
+            configure_window_toplevel(w, 0, 0, tile_w, tile_h, false, false, false);
         } else {
             wlr_xdg_toplevel_set_size(w->toplevel, 0, 0);
         }
@@ -1560,14 +1620,26 @@ handle_request_minimize(void *owner, void *data)
         wlr_xdg_surface_schedule_configure(w->toplevel->base);
 }
 
+static bool
+validate_grab_serial(CompServer *s, CompWindow *w, uint32_t serial)
+{
+    if (!s || !s->seat || !w)
+        return false;
+    struct wlr_surface *surf = comp_window_get_surface(w);
+    if (!surf)
+        return false;
+    return wlr_seat_validate_pointer_grab_serial(s->seat, surf, serial) ||
+           wlr_seat_validate_touch_grab_serial(s->seat, surf, serial, NULL);
+}
+
 static void
 handle_request_move(void *owner, void *data)
 {
     CompWindow *w = owner;
     CompServer *s = w->server;
-    (void)data;
+    const struct wlr_xdg_toplevel_move_event *ev = data;
     /* Spec §3.11 L8: interactive move is supported on floating windows. */
-    if (!w->mapped || !w->is_floating)
+    if (!w->mapped || !w->is_floating || !ev || !validate_grab_serial(s, w, ev->serial))
         return;
     s->grab_win      = w->id;
     s->grab_resizing = false;
@@ -1583,7 +1655,7 @@ handle_request_resize(void *owner, void *data)
     CompWindow *w = owner;
     CompServer *s = w->server;
     const struct wlr_xdg_toplevel_resize_event *ev = data;
-    if (!w->mapped || !w->is_floating || !ev)
+    if (!w->mapped || !w->is_floating || !ev || !validate_grab_serial(s, w, ev->serial))
         return;
     s->grab_win      = w->id;
     s->grab_resizing = true;

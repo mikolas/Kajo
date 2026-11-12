@@ -572,12 +572,12 @@ resolve_defaults_dir(void)
     if (env && *env)
         return env;
     struct stat st;
-    if (stat("data/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
-        return "data/defaults";
     if (stat("/usr/local/share/kajo/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
         return "/usr/local/share/kajo/defaults";
     if (stat("/usr/share/kajo/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
         return "/usr/share/kajo/defaults";
+    if (stat("data/defaults/comp.toml", &st) == 0 && S_ISREG(st.st_mode))
+        return "data/defaults";
     return NULL;
 }
 

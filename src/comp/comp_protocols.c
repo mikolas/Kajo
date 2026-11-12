@@ -9,6 +9,7 @@
 
 #include <stdlib.h>
 #include <talloc.h>
+#include <wlr/backend.h>
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_alpha_modifier_v1.h>
 #include <wlr/types/wlr_color_management_v1.h>
@@ -91,6 +92,38 @@ find_active_text_input(CompServer *s)
 }
 
 static void
+update_im_popup_positions(CompServer *s)
+{
+    if (!s || !s->active_input_method)
+        return;
+    struct wlr_text_input_v3 *ti = find_active_text_input(s);
+    if (!ti || !ti->focused_surface)
+        return;
+
+    int slx = 0, sly = 0;
+    if (!comp_server_surface_scene_coords(s, ti->focused_surface, &slx, &sly))
+        return;
+
+    struct wlr_box cursor_rect = ti->current.cursor_rectangle;
+    if (cursor_rect.width <= 0)  cursor_rect.width = 1;
+    if (cursor_rect.height <= 0) cursor_rect.height = 16;
+
+    struct wlr_input_popup_surface_v2 *popup;
+    wl_list_for_each(popup, &s->active_input_method->popup_surfaces, link) {
+        CompInputPopup *cip = popup->data;
+        if (cip && cip->scene_tree) {
+            struct wlr_scene_tree *target_parent = s->locked ? s->tree_lock : s->tree_overlay;
+            if (target_parent && cip->scene_tree->node.parent != target_parent)
+                wlr_scene_node_reparent(&cip->scene_tree->node, target_parent);
+            wlr_scene_node_set_position(&cip->scene_tree->node,
+                                        slx + cursor_rect.x,
+                                        sly + cursor_rect.y + cursor_rect.height);
+        }
+        wlr_input_popup_surface_v2_send_text_input_rectangle(popup, &cursor_rect);
+    }
+}
+
+static void
 relay_text_input_to_im(CompServer *s, struct wlr_text_input_v3 *ti)
 {
     struct wlr_input_method_v2 *im = s->active_input_method;
@@ -110,6 +143,7 @@ relay_text_input_to_im(CompServer *s, struct wlr_text_input_v3 *ti)
             im, ti->current.content_type.hint, ti->current.content_type.purpose);
     }
     wlr_input_method_v2_send_done(im);
+    update_im_popup_positions(s);
 }
 
 static void
@@ -181,6 +215,8 @@ handle_new_text_input(void *owner, void *data)
 static int
 input_popup_destructor(CompInputPopup *cip)
 {
+    if (cip->popup && cip->popup->data == cip)
+        cip->popup->data = NULL;
     if (cip->server->scene && cip->scene_tree) {
         wlr_scene_node_destroy(&cip->scene_tree->node);
         cip->scene_tree = NULL;
@@ -207,11 +243,17 @@ handle_im_new_popup_surface(void *owner, void *data)
     COMP_WARN_RETURN_VOID(cip != NULL);
     cip->server = s;
     cip->popup  = popup;
+    popup->data = cip;
     talloc_set_destructor(cip, input_popup_destructor);
 
-    cip->scene_tree = wlr_scene_subsurface_tree_create(s->tree_overlay, popup->surface);
-    if (!comp_listen(cip, &popup->events.destroy, handle_input_popup_destroy))
+    struct wlr_scene_tree *parent = s->locked ? s->tree_lock : s->tree_overlay;
+    cip->scene_tree = wlr_scene_subsurface_tree_create(parent, popup->surface);
+    if (!cip->scene_tree ||
+        !comp_listen(cip, &popup->events.destroy, handle_input_popup_destroy)) {
         talloc_free(cip);
+        return;
+    }
+    update_im_popup_positions(s);
 }
 
 static void
@@ -320,13 +362,38 @@ handle_new_virtual_keyboard(void *owner, void *data)
 /* ── Pointer constraints (pointer-constraints-v1) ── */
 
 static void
+warp_to_constraint_cursor_hint(CompServer *s, struct wlr_pointer_constraint_v1 *constraint)
+{
+    if (!s || !s->cursor || !constraint ||
+        constraint->type != WLR_POINTER_CONSTRAINT_V1_LOCKED ||
+        !constraint->current.cursor_hint.enabled || !constraint->surface) {
+        return;
+    }
+    int slx = 0, sly = 0;
+    if (comp_server_surface_scene_coords(s, constraint->surface, &slx, &sly)) {
+        wlr_cursor_warp(s->cursor, NULL,
+                        (double)slx + constraint->current.cursor_hint.x,
+                        (double)sly + constraint->current.cursor_hint.y);
+    }
+}
+
+static void
+handle_constraint_set_region(void *owner, void *data)
+{
+    (void)owner;
+    (void)data;
+}
+
+static void
 handle_constraint_destroy(void *owner, void *data)
 {
     CompPointerConstraint *cpc = owner;
     CompServer *s = cpc->server;
     (void)data;
-    if (s->active_constraint == cpc->constraint)
+    if (s->active_constraint == cpc->constraint) {
+        warp_to_constraint_cursor_hint(s, cpc->constraint);
         s->active_constraint = NULL;
+    }
     talloc_free(cpc);
 }
 
@@ -341,7 +408,8 @@ handle_new_pointer_constraint(void *owner, void *data)
     cpc->server     = s;
     cpc->constraint = constraint;
 
-    if (!comp_listen(cpc, &constraint->events.destroy, handle_constraint_destroy)) {
+    if (!comp_listen(cpc, &constraint->events.set_region, handle_constraint_set_region) ||
+        !comp_listen(cpc, &constraint->events.destroy, handle_constraint_destroy)) {
         talloc_free(cpc);
         return;
     }
@@ -366,6 +434,7 @@ comp_protocols_check_pointer_constraint(CompServer *s, struct wlr_surface *surfa
     if (s->active_constraint) {
         struct wlr_pointer_constraint_v1 *old = s->active_constraint;
         s->active_constraint = NULL;
+        warp_to_constraint_cursor_hint(s, old);
         wlr_pointer_constraint_v1_send_deactivated(old);
     }
     if (want) {
@@ -806,7 +875,13 @@ comp_protocols_init(CompServer *s)
 
     wlr_alpha_modifier_v1_create(s->display);
     wlr_xdg_output_manager_v1_create(s->display, s->output_layout);
-    wlr_tearing_control_manager_v1_create(s->display, 1);
+    s->tearing_mgr = wlr_tearing_control_manager_v1_create(s->display, 1);
+
+    int drm_fd = s->renderer ? wlr_renderer_get_drm_fd(s->renderer) : -1;
+    if (drm_fd >= 0 && s->renderer->features.timeline &&
+        s->backend && s->backend->features.timeline) {
+        wlr_linux_drm_syncobj_manager_v1_create(s->display, 1, drm_fd);
+    }
 
     /* Spec §6.5.3: screen-capture and foreign-toplevel protocols are disabled in --greeter-mode */
     if (!s->opts.greeter_mode) {
