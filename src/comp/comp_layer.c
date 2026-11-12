@@ -135,7 +135,7 @@ comp_layer_arrange(CompServer *s)
     if (!s)
         return;
 
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
 
     struct wlr_box primary_usable = {
@@ -168,14 +168,7 @@ comp_layer_arrange(CompServer *s)
         if (!wo || !wo->enabled)
             continue;
         struct wlr_box full_area = {0};
-        if (s->output_layout)
-            wlr_output_layout_get_box(s->output_layout, wo, &full_area);
-        if (full_area.width <= 0 || full_area.height <= 0) {
-            int ew = 0, eh = 0;
-            wlr_output_effective_resolution(wo, &ew, &eh);
-            full_area.width  = ew > 0 ? ew : (int)vw;
-            full_area.height = eh > 0 ? eh : (int)vh;
-        }
+        comp_server_output_box(s, wo, &full_area);
         struct wlr_box usable = full_area;
         bool is_primary = (wo == primary_wo);
         arrange_layers_on_box(s, wo, is_primary, &full_area, &usable, &exclusive_surf);
@@ -228,7 +221,7 @@ unconstrain_layer_popup(CompLayerPopup *clp)
     if (!clp || !clp->popup || !clp->popup->base->initialized || !clp->parent_layer)
         return;
 
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(clp->parent_layer->server, &vw, &vh);
 
     int lx = 0, ly = 0;
@@ -256,8 +249,18 @@ handle_layer_popup_commit(void *owner, void *data)
 {
     CompLayerPopup *clp = owner;
     (void)data;
-    if (clp->popup->base->initial_commit)
+    if (clp->popup->base->initial_commit) {
         unconstrain_layer_popup(clp);
+        if (clp->parent_layer && clp->parent_layer->mapped)
+            apply_layer_rules(clp->parent_layer);
+    }
+}
+
+static void
+handle_layer_popup_map(void *owner, void *data)
+{
+    CompLayerPopup *clp = owner;
+    (void)data;
     if (clp->parent_layer && clp->parent_layer->mapped)
         apply_layer_rules(clp->parent_layer);
 }
@@ -298,6 +301,7 @@ handle_layer_new_popup(void *owner, void *data)
 
     struct wlr_surface *surf = popup->base->surface;
     if (!comp_listen(clp, &surf->events.commit, handle_layer_popup_commit) ||
+        !comp_listen(clp, &surf->events.map, handle_layer_popup_map) ||
         !comp_listen(clp, &popup->events.reposition, handle_layer_popup_reposition) ||
         !comp_listen(clp, &popup->events.destroy, handle_layer_popup_destroy)) {
         talloc_free(clp);
@@ -332,9 +336,6 @@ handle_layer_commit(void *owner, void *data)
     uint32_t committed = cls->lsurf->current.committed;
     if (cls->lsurf->initial_commit || committed != 0)
         comp_layer_arrange(s);
-
-    if (cls->mapped)
-        apply_layer_rules(cls);
 }
 
 static void

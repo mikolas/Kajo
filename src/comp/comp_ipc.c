@@ -646,6 +646,19 @@ client_reply_error(CompIpcClient *c, const char *msg)
 
 /* ───────────────────────── Event Broadcast ───────────────────────── */
 
+static bool
+has_subscribers(const CompServer *s, uint32_t sub_bit)
+{
+    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
+        return false;
+    const CompIpcClient *c;
+    wl_list_for_each(c, &s->ipc->clients, link) {
+        if (!c->closing && (c->subs & sub_bit))
+            return true;
+    }
+    return false;
+}
+
 static void
 broadcast_event(CompServer *s, uint32_t sub_bit, const char *line)
 {
@@ -700,7 +713,7 @@ build_outputs_event(JsonBuf *b, const CompServer *s)
 static void
 emit_built_event(CompServer *s, uint32_t sub_bit, void (*builder)(JsonBuf *, const CompServer *))
 {
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
+    if (!has_subscribers(s, sub_bit))
         return;
     void *tmp = talloc_new(s->ipc);
     JsonBuf b;
@@ -718,7 +731,7 @@ void comp_ipc_emit_outputs(CompServer *s)          { emit_built_event(s, SUB_OUT
 void
 comp_ipc_emit_focus(CompServer *s, CompWinId focused_id)
 {
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
+    if (!has_subscribers(s, SUB_WINDOWS))
         return;
     char buf[128];
     snprintf(buf, sizeof(buf), "{\"event\":\"" COMP_IPC_EVENT_WINDOW_FOCUS_CHANGED "\",\"id\":%llu}\n",
@@ -729,7 +742,7 @@ comp_ipc_emit_focus(CompServer *s, CompWinId focused_id)
 void
 comp_ipc_emit_touch_bezel_swipe(CompServer *s, const char *edge, double x_ratio)
 {
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
+    if (!has_subscribers(s, SUB_TOUCH_GESTURES))
         return;
     void *tmp = talloc_new(s->ipc);
     JsonBuf b;
@@ -744,7 +757,7 @@ comp_ipc_emit_touch_bezel_swipe(CompServer *s, const char *edge, double x_ratio)
 void
 comp_ipc_emit_screenshot_saved(CompServer *s, const char *path, bool copied)
 {
-    if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
+    if (!has_subscribers(s, SUB_SCREENSHOTS))
         return;
     void *tmp = talloc_new(s->ipc);
     JsonBuf b;

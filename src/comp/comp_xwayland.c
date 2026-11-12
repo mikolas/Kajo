@@ -107,13 +107,7 @@ handle_xsurf_map(void *owner, void *data)
 
     if (!s->locked && wlr_xwayland_surface_override_redirect_wants_focus(xw->xsurf)) {
         wlr_xwayland_surface_activate(xw->xsurf, true);
-        struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
-        if (kb) {
-            wlr_seat_keyboard_notify_enter(s->seat, xw->xsurf->surface,
-                                           kb->keycodes, kb->num_keycodes, &kb->modifiers);
-        } else {
-            wlr_seat_keyboard_notify_enter(s->seat, xw->xsurf->surface, NULL, 0, NULL);
-        }
+        comp_server_keyboard_enter(s, xw->xsurf->surface);
     }
     comp_server_schedule_frames(s);
 }

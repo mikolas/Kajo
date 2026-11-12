@@ -518,7 +518,7 @@ unconstrain_popup(CompPopup *cp)
     if (!cp || !cp->popup || !cp->popup->base->initialized)
         return;
 
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(cp->server, &vw, &vh);
 
     int lx = 0, ly = 0;

@@ -215,6 +215,11 @@ typedef struct CompServer {
     double                                grab_start_cx, grab_start_cy;
     CompRect                              grab_start_rect;
 
+    /* Persistent scratch buffer for comp_window_tick_frame / comp_window_relayout */
+    CompWindowGeometry                   *geom_scratch;
+    size_t                                geom_scratch_cap;
+    bool                                  last_wants_vrr;
+
     int                                   startup_pid;  /* 0 when none or already exited */
     int                                   exit_status;  /* main() returns this */
     bool                                  nested_at_startup; /* true if WAYLAND_DISPLAY was set before start */
@@ -231,6 +236,7 @@ typedef struct {
     struct wlr_output        *wlr_output;
     struct wlr_scene_output  *scene_output;
     CompVrrPolicy             vrr_policy;
+    bool                      vrr_unsupported;
     bool                      was_animating;
     bool                      pending_lock_present;
     bool                      has_manual_mode;
@@ -269,8 +275,10 @@ bool        comp_sd_notify(const char *state);
 double             comp_now_sec(void);
 struct wlr_output *comp_server_primary_output(const CompServer *server);
 void               comp_server_viewport_size(const CompServer *server, double *out_w, double *out_h);
+void               comp_server_output_box(const CompServer *server, struct wlr_output *wo, struct wlr_box *out_box);
 void               comp_server_working_area(const CompServer *server, CompRect *out_area);
 void               comp_server_schedule_frames(CompServer *server);
+void               comp_server_keyboard_enter(CompServer *server, struct wlr_surface *surface);
 void               comp_server_restore_keyboard_focus(CompServer *server);
 
 /* Generational CompWinId table (spec §2.6). */
@@ -376,9 +384,10 @@ void   comp_input_init(CompServer *server);
 void   comp_input_apply_config(CompServer *server);
 void   comp_input_map_devices_to_output(CompServer *server, struct wlr_output *output);
 void   comp_input_add_keyboard_device(CompServer *server, struct wlr_input_device *dev);
-void   comp_input_update_capabilities(CompServer *server);
-void   comp_input_refresh_pointer_focus(CompServer *server, uint32_t time_msec);
-bool   comp_input_switch_keyboard_layout(CompServer *server, int idx);
+void     comp_input_update_capabilities(CompServer *server);
+void     comp_input_refresh_pointer_focus(CompServer *server, uint32_t time_msec);
+uint32_t comp_input_mods_from_wlr(uint32_t wlr_mods);
+bool     comp_input_switch_keyboard_layout(CompServer *server, int idx);
 size_t comp_input_get_keyboard_layouts(const CompServer *server, const char **names_out,
                                        size_t max_names, uint32_t *current_idx_out);
 /* comp_ipc.c */

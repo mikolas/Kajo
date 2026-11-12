@@ -1012,13 +1012,7 @@ capture_primary_output_pixels(CompServer *s, struct wlr_box *out_logical_box,
         return NULL;
 
     struct wlr_box obox = {0};
-    wlr_output_layout_get_box(s->output_layout, out, &obox);
-    if (obox.width <= 0 || obox.height <= 0) {
-        double vw = 1920.0, vh = 1080.0;
-        comp_server_viewport_size(s, &vw, &vh);
-        obox.width  = (int)vw;
-        obox.height = (int)vh;
-    }
+    comp_server_output_box(s, out, &obox);
     double scale = out->scale > 0.0f ? (double)out->scale : 1.0;
 
     bool overlay_was_enabled = s->tree_overlay ? s->tree_overlay->node.enabled : false;

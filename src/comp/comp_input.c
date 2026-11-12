@@ -61,8 +61,8 @@ now_monotonic_sec(void)
     return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
 }
 
-static uint32_t
-comp_mods_from_wlr(uint32_t m)
+uint32_t
+comp_input_mods_from_wlr(uint32_t m)
 {
     uint32_t out = 0;
     if (m & WLR_MODIFIER_SHIFT) out |= COMP_MOD_SHIFT;
@@ -167,7 +167,7 @@ keyboard_handle_modifiers(void *owner, void *data)
     wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);
     wlr_seat_keyboard_notify_modifiers(s->seat, &k->wlr_keyboard->modifiers);
     if (comp_switcher_is_active(s)) {
-        uint32_t mods = comp_mods_from_wlr(wlr_keyboard_get_modifiers(k->wlr_keyboard));
+        uint32_t mods = comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(k->wlr_keyboard));
         comp_switcher_handle_modifiers(s, mods);
     }
 }
@@ -212,7 +212,7 @@ keyboard_handle_key(void *owner, void *data)
         for (int i = 0; i < n && !handled; i++)
             handled = handle_builtin_key(s, syms[i]);
 
-        uint32_t mods = comp_mods_from_wlr(wlr_keyboard_get_modifiers(k->wlr_keyboard));
+        uint32_t mods = comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(k->wlr_keyboard));
         if (!handled && comp_screenshot_is_active(s)) {
             for (int i = 0; i < n && !handled; i++)
                 handled = comp_screenshot_handle_key(s, mods, syms[i]);
@@ -686,13 +686,7 @@ maybe_focus_on_demand_layer(CompServer *s, struct wlr_surface *surf)
         lsurf->current.keyboard_interactive ==
             ZWLR_LAYER_SURFACE_V1_KEYBOARD_INTERACTIVITY_ON_DEMAND) {
         comp_protocols_notify_focus_surface(s, lsurf->surface);
-        struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
-        if (kb) {
-            wlr_seat_keyboard_notify_enter(s->seat, lsurf->surface,
-                                           kb->keycodes, kb->num_keycodes, &kb->modifiers);
-        } else {
-            wlr_seat_keyboard_notify_enter(s->seat, lsurf->surface, NULL, 0, NULL);
-        }
+        comp_server_keyboard_enter(s, lsurf->surface);
     }
 }
 
@@ -720,11 +714,13 @@ cursor_button(void *owner, void *data)
         struct wlr_surface *surf = NULL;
         double sx = 0.0, sy = 0.0;
         struct CompWindow *w = comp_window_at(s, s->cursor->x, s->cursor->y, &surf, &sx, &sy);
-        if (w)
+        if (w) {
             comp_window_focus(s, w);
-        else if (surf)
-            maybe_focus_on_demand_layer(s, surf);
-        pointer_focus_at_cursor(s, ev->time_msec);
+        } else {
+            if (surf)
+                maybe_focus_on_demand_layer(s, surf);
+            pointer_focus_at_cursor(s, ev->time_msec);
+        }
     }
     wlr_seat_pointer_notify_button(s->seat, ev->time_msec, ev->button, ev->state);
 }
@@ -737,7 +733,7 @@ cursor_axis(void *owner, void *data)
     comp_lock_idle_notify_activity(s);
     if (s->binds && ev->delta != 0.0 && !s->locked) {
         struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
-        uint32_t mods = kb ? comp_mods_from_wlr(wlr_keyboard_get_modifiers(kb)) : 0;
+        uint32_t mods = kb ? comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(kb)) : 0;
         CompTrigger trig = COMP_TRIGGER_WHEEL_DOWN;
         if (ev->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL)
             trig = ev->delta < 0.0 ? COMP_TRIGGER_WHEEL_UP : COMP_TRIGGER_WHEEL_DOWN;
@@ -777,27 +773,11 @@ static CompTransform
 primary_comp_transform(const CompServer *s)
 {
     struct wlr_output *out = comp_server_primary_output(s);
-    if (!out)
-        return COMP_TRANSFORM_NORMAL;
-    switch (out->transform) {
-    case WL_OUTPUT_TRANSFORM_90:
-        return COMP_TRANSFORM_90;
-    case WL_OUTPUT_TRANSFORM_180:
-        return COMP_TRANSFORM_180;
-    case WL_OUTPUT_TRANSFORM_270:
-        return COMP_TRANSFORM_270;
-    case WL_OUTPUT_TRANSFORM_FLIPPED:
-        return COMP_TRANSFORM_FLIPPED;
-    case WL_OUTPUT_TRANSFORM_FLIPPED_90:
-        return COMP_TRANSFORM_FLIPPED_90;
-    case WL_OUTPUT_TRANSFORM_FLIPPED_180:
-        return COMP_TRANSFORM_FLIPPED_180;
-    case WL_OUTPUT_TRANSFORM_FLIPPED_270:
-        return COMP_TRANSFORM_FLIPPED_270;
-    case WL_OUTPUT_TRANSFORM_NORMAL:
-    default:
+    if (!out || (int)out->transform < COMP_TRANSFORM_NORMAL ||
+        (int)out->transform > COMP_TRANSFORM_FLIPPED_270) {
         return COMP_TRANSFORM_NORMAL;
     }
+    return (CompTransform)out->transform;
 }
 
 static void

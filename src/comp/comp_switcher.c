@@ -166,19 +166,9 @@ switcher_rebuild_scene(CompSwitcher *sw)
     }
 
     struct wlr_output *out = comp_server_primary_output(s);
-    struct wlr_box obox = { .x = 0, .y = 0, .width = 1920, .height = 1080 };
-    double scale = 1.0;
-    if (out) {
-        wlr_output_layout_get_box(s->output_layout, out, &obox);
-        if (obox.width <= 0 || obox.height <= 0) {
-            double vw = 1920.0, vh = 1080.0;
-            comp_server_viewport_size(s, &vw, &vh);
-            obox.width  = (int)vw;
-            obox.height = (int)vh;
-        }
-        if (out->scale > 0.0f)
-            scale = (double)out->scale;
-    }
+    struct wlr_box obox = {0};
+    comp_server_output_box(s, out, &obox);
+    double scale = (out && out->scale > 0.0f) ? (double)out->scale : 1.0;
 
     int max_vis = (obox.width - 64) / (SWITCHER_CARD_W + SWITCHER_CARD_GAP);
     if (max_vis < 1)

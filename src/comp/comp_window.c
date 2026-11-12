@@ -378,6 +378,20 @@ configure_window_toplevel(CompWindow *w, int32_t tile_w, int32_t tile_h,
     }
 }
 
+void
+comp_server_keyboard_enter(CompServer *s, struct wlr_surface *surface)
+{
+    if (!s || !s->seat || !surface)
+        return;
+    struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
+    if (kb) {
+        wlr_seat_keyboard_notify_enter(s->seat, surface,
+                                       kb->keycodes, kb->num_keycodes, &kb->modifiers);
+    } else {
+        wlr_seat_keyboard_notify_enter(s->seat, surface, NULL, 0, NULL);
+    }
+}
+
 static void
 enter_keyboard_surface(CompServer *s, struct wlr_surface *surface)
 {
@@ -391,13 +405,7 @@ enter_keyboard_surface(CompServer *s, struct wlr_surface *surface)
     }
     if (s->seat->keyboard_state.focused_surface == surface)
         return;
-    struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
-    if (kb) {
-        wlr_seat_keyboard_notify_enter(s->seat, surface,
-                                       kb->keycodes, kb->num_keycodes, &kb->modifiers);
-    } else {
-        wlr_seat_keyboard_notify_enter(s->seat, surface, NULL, 0, NULL);
-    }
+    comp_server_keyboard_enter(s, surface);
 }
 
 void
@@ -419,6 +427,24 @@ comp_server_restore_keyboard_focus(CompServer *s)
     enter_keyboard_surface(s, comp_window_get_surface(w));
 }
 
+static CompWindowGeometry *
+ensure_geom_scratch(CompServer *s, size_t need)
+{
+    if (need < 32)
+        need = 32;
+    if (need <= s->geom_scratch_cap && s->geom_scratch)
+        return s->geom_scratch;
+    size_t ncap = s->geom_scratch_cap ? s->geom_scratch_cap * 2 : 32;
+    while (ncap < need)
+        ncap *= 2;
+    CompWindowGeometry *nb = talloc_realloc(s, s->geom_scratch, CompWindowGeometry, (unsigned)ncap);
+    if (!nb)
+        return NULL;
+    s->geom_scratch     = nb;
+    s->geom_scratch_cap = ncap;
+    return s->geom_scratch;
+}
+
 void
 comp_window_tick_frame(CompServer *s, double now_s)
 {
@@ -427,14 +453,12 @@ comp_window_tick_frame(CompServer *s, double now_s)
 
     CompRect work = {0};
     comp_server_working_area(s, &work);
-    double full_vw = 1920.0, full_vh = 1080.0;
+    double full_vw = 0.0, full_vh = 0.0;
     comp_server_viewport_size(s, &full_vw, &full_vh);
 
     size_t total = comp_layout_window_count(s->layout);
     size_t cap = total + 8;
-    CompWindowGeometry stack_geoms[32];
-    CompWindowGeometry *geoms = cap <= 32 ? stack_geoms
-                                          : talloc_array(s, CompWindowGeometry, (unsigned)cap);
+    CompWindowGeometry *geoms = ensure_geom_scratch(s, cap);
     if (!geoms)
         return;
 
@@ -474,9 +498,6 @@ comp_window_tick_frame(CompServer *s, double now_s)
         if (!w->tick_seen && w->scene_tree)
             wlr_scene_node_set_enabled(&w->scene_tree->node, false);
     }
-
-    if (geoms != stack_geoms)
-        talloc_free(geoms);
 }
 
 void
@@ -488,7 +509,7 @@ comp_window_relayout(CompServer *s)
     CompRect work = {0};
     comp_server_working_area(s, &work);
     double vw = work.w, vh = work.h;
-    double full_vw = 1920.0, full_vh = 1080.0;
+    double full_vw = 0.0, full_vh = 0.0;
     comp_server_viewport_size(s, &full_vw, &full_vh);
     double now_s = comp_now_sec();
 
@@ -496,9 +517,7 @@ comp_window_relayout(CompServer *s)
 
     size_t total = comp_layout_window_count(s->layout);
     size_t cap = total + 8;
-    CompWindowGeometry stack_geoms[32];
-    CompWindowGeometry *geoms = cap <= 32 ? stack_geoms
-                                          : talloc_array(s, CompWindowGeometry, (unsigned)cap);
+    CompWindowGeometry *geoms = ensure_geom_scratch(s, cap);
     if (!geoms)
         return;
 
@@ -561,12 +580,11 @@ comp_window_relayout(CompServer *s)
     bool ws_changed = (active_ws != s->last_active_ws);
     s->last_active_ws = active_ws;
 
-    if (geoms != stack_geoms)
-        talloc_free(geoms);
-
     comp_window_tick_frame(s, now_s);
     comp_input_refresh_pointer_focus(s, (uint32_t)(now_s * 1000.0));
-    comp_output_update_vrr(s);
+    bool wants_vrr = comp_window_focused_wants_vrr(s);
+    if (focus_changed || wants_vrr != s->last_wants_vrr)
+        comp_output_update_vrr(s);
     comp_server_schedule_frames(s);
 
     if (ws_changed)
@@ -892,7 +910,7 @@ comp_window_update_grab(CompServer *s)
         }
     }
 
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
     r = clamp_floating_rect(r, vw, vh);
 
@@ -924,6 +942,26 @@ comp_window_get_popup_trees(const struct CompWindow *w,
         *out_xdg_node = (w && w->xdg_tree) ? &w->xdg_tree->node : NULL;
 }
 
+static void
+resize_layout_axis(CompServer *s, double axis_px, double min_prop,
+                   double delta, CompDeltaMode mode,
+                   bool (*adjust_fn)(CompLayout *, double))
+{
+    double d = delta;
+    if (mode == COMP_DELTA_REL_PX && axis_px > 0.0)
+        d = delta / axis_px;
+    if (mode == COMP_DELTA_SET_PROP || mode == COMP_DELTA_SET_PX) {
+        double prop = (mode == COMP_DELTA_SET_PROP)
+                          ? delta
+                          : (axis_px > 0.0 ? delta / axis_px : 0.5);
+        adjust_fn(s->layout, -1.0);
+        adjust_fn(s->layout, prop - min_prop);
+    } else {
+        adjust_fn(s->layout, d);
+    }
+    comp_window_relayout(s);
+}
+
 void
 comp_window_resize_column(CompServer *s, double delta, CompDeltaMode mode)
 {
@@ -932,19 +970,9 @@ comp_window_resize_column(CompServer *s, double delta, CompDeltaMode mode)
     CompWindow *fw = comp_win_from_id(s, comp_layout_focused_window(s->layout));
     if (fw)
         fw->maximized_to_edges = false;
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
-    double d = delta;
-    if (mode == COMP_DELTA_REL_PX && vw > 0.0)
-        d = delta / vw;
-    if (mode == COMP_DELTA_SET_PROP || mode == COMP_DELTA_SET_PX) {
-        double prop = mode == COMP_DELTA_SET_PROP ? delta : (vw > 0.0 ? delta / vw : 0.5);
-        comp_layout_adjust_column_width(s->layout, -1.0);
-        comp_layout_adjust_column_width(s->layout, prop - 0.05);
-    } else {
-        comp_layout_adjust_column_width(s->layout, d);
-    }
-    comp_window_relayout(s);
+    resize_layout_axis(s, vw, 0.05, delta, mode, comp_layout_adjust_column_width);
 }
 
 void
@@ -952,19 +980,9 @@ comp_window_resize_height(CompServer *s, double delta, CompDeltaMode mode)
 {
     if (!s || !s->layout)
         return;
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
-    double d = delta;
-    if (mode == COMP_DELTA_REL_PX && vh > 0.0)
-        d = delta / vh;
-    if (mode == COMP_DELTA_SET_PROP || mode == COMP_DELTA_SET_PX) {
-        double prop = mode == COMP_DELTA_SET_PROP ? delta : (vh > 0.0 ? delta / vh : 0.5);
-        comp_layout_adjust_window_height(s->layout, -1.0);
-        comp_layout_adjust_window_height(s->layout, prop - 0.1);
-    } else {
-        comp_layout_adjust_window_height(s->layout, d);
-    }
-    comp_window_relayout(s);
+    resize_layout_axis(s, vh, 0.1, delta, mode, comp_layout_adjust_window_height);
 }
 
 bool
@@ -1015,13 +1033,8 @@ comp_window_handle_bind(CompServer *s, const CompBind *bind)
         uint32_t held_mods = 0;
         if (s->seat) {
             struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
-            if (kb) {
-                uint32_t m = wlr_keyboard_get_modifiers(kb);
-                if (m & WLR_MODIFIER_SHIFT) held_mods |= COMP_MOD_SHIFT;
-                if (m & WLR_MODIFIER_CTRL)  held_mods |= COMP_MOD_CTRL;
-                if (m & WLR_MODIFIER_ALT)   held_mods |= COMP_MOD_ALT;
-                if (m & WLR_MODIFIER_LOGO)  held_mods |= COMP_MOD_SUPER;
-            }
+            if (kb)
+                held_mods = comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(kb));
         }
         comp_switcher_step(s, forward, bind->scope, bind->same_app, held_mods);
         return true;
@@ -1224,15 +1237,10 @@ handle_toplevel_commit(void *owner, void *data)
             comp_rules_match_window(s->rules, w->app_id, w->title, &rr);
 
         if (w->toplevel->requested.fullscreen) {
-            double full_vw = 1920.0, full_vh = 1080.0;
+            double full_vw = 0.0, full_vh = 0.0;
             comp_server_viewport_size(s, &full_vw, &full_vh);
-            int32_t cw = clamp_i32(full_vw, 1, 32767);
-            int32_t ch = clamp_i32(full_vh, 1, 32767);
-            w->cfg_w = cw;
-            w->cfg_h = ch;
-            w->cfg_fullscreen = true;
-            wlr_xdg_toplevel_set_fullscreen(w->toplevel, true);
-            wlr_xdg_toplevel_set_size(w->toplevel, cw, ch);
+            configure_window_toplevel(w, clamp_i32(full_vw, 1, 32767),
+                                      clamp_i32(full_vh, 1, 32767), false, true, false);
         } else if (!should_open_floating(w, &rr)) {
             CompRect work = {0};
             comp_server_working_area(s, &work);
@@ -1244,17 +1252,9 @@ handle_toplevel_commit(void *owner, void *data)
                                          : 0.5);
             if (w->toplevel->requested.maximized)
                 col_prop = 1.0;
-            int32_t b = server_border_px(s);
             int32_t tile_w = clamp_i32((work.w - gap) * col_prop - gap, 1, 32767);
             int32_t tile_h = clamp_i32(work.h - 2.0 * gap, 1, 32767);
-            int32_t cw = tile_w > 2 * b ? tile_w - 2 * b : 1;
-            int32_t ch = tile_h > 2 * b ? tile_h - 2 * b : 1;
-            uint32_t tiled = WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT;
-            w->cfg_w     = cw;
-            w->cfg_h     = ch;
-            w->cfg_tiled = tiled;
-            wlr_xdg_toplevel_set_tiled(w->toplevel, tiled);
-            wlr_xdg_toplevel_set_size(w->toplevel, cw, ch);
+            configure_window_toplevel(w, tile_w, tile_h, false, false, false);
         } else {
             wlr_xdg_toplevel_set_size(w->toplevel, 0, 0);
         }

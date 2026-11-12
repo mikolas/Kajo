@@ -42,7 +42,7 @@ comp_lock_idle_reconfigure_output(CompServer *s)
     if (!s || !s->tree_lock)
         return;
 
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
 
     int bg_x = 0, bg_y = 0, bg_w = (int)vw, bg_h = (int)vh;
@@ -132,7 +132,7 @@ handle_lock_new_surface(void *owner, void *data)
         return;
     }
 
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
     wlr_session_lock_surface_v1_configure(lsurf, (uint32_t)vw, (uint32_t)vh);
 

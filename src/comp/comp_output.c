@@ -123,6 +123,18 @@ update_output_manager_config(CompServer *s)
 }
 
 static void
+comp_output_post_change(CompServer *s)
+{
+    if (!s)
+        return;
+    update_output_manager_config(s);
+    comp_lock_idle_reconfigure_output(s);
+    s->has_usable_area = false;
+    comp_layer_arrange(s);
+    comp_ipc_emit_outputs(s);
+}
+
+static void
 apply_or_test_output_config(CompServer *s, struct wlr_output_configuration_v1 *cfg, bool apply)
 {
     if (!s || !cfg)
@@ -155,13 +167,8 @@ apply_or_test_output_config(CompServer *s, struct wlr_output_configuration_v1 *c
         wlr_output_configuration_v1_send_failed(cfg);
     wlr_output_configuration_v1_destroy(cfg);
 
-    if (apply && ok) {
-        update_output_manager_config(s);
-        comp_lock_idle_reconfigure_output(s);
-        comp_layer_arrange(s);
-        comp_window_relayout(s);
-        comp_ipc_emit_outputs(s);
-    }
+    if (apply && ok)
+        comp_output_post_change(s);
 }
 
 static void
@@ -220,6 +227,30 @@ comp_server_viewport_size(const CompServer *s, double *out_w, double *out_h)
 }
 
 void
+comp_server_output_box(const CompServer *s, struct wlr_output *wo, struct wlr_box *out_box)
+{
+    if (!out_box)
+        return;
+    *out_box = (struct wlr_box){0};
+    if (s && s->output_layout && wo)
+        wlr_output_layout_get_box(s->output_layout, wo, out_box);
+    if (out_box->width <= 0 || out_box->height <= 0) {
+        int ew = 0, eh = 0;
+        if (wo)
+            wlr_output_effective_resolution(wo, &ew, &eh);
+        if (ew > 0 && eh > 0) {
+            out_box->width  = ew;
+            out_box->height = eh;
+        } else {
+            double vw = 0.0, vh = 0.0;
+            comp_server_viewport_size(s, &vw, &vh);
+            out_box->width  = (int)vw;
+            out_box->height = (int)vh;
+        }
+    }
+}
+
+void
 comp_server_working_area(const CompServer *s, CompRect *out_area)
 {
     if (!out_area)
@@ -228,7 +259,7 @@ comp_server_working_area(const CompServer *s, CompRect *out_area)
         *out_area = s->usable_area;
         return;
     }
-    double vw = 1920.0, vh = 1080.0;
+    double vw = 0.0, vh = 0.0;
     comp_server_viewport_size(s, &vw, &vh);
     out_area->x = 0.0;
     out_area->y = 0.0;
@@ -318,11 +349,7 @@ handle_request_state(void *owner, void *data)
         wlr_log(WLR_ERROR, "output %s: requested state was rejected", o->wlr_output->name);
         return;
     }
-    update_output_manager_config(o->server);
-    comp_lock_idle_reconfigure_output(o->server);
-    comp_layer_arrange(o->server);
-    comp_window_relayout(o->server);
-    comp_ipc_emit_outputs(o->server);
+    comp_output_post_change(o->server);
 }
 
 static void
@@ -337,27 +364,25 @@ handle_destroy(void *owner, void *data)
         return;
     /* Spec §3.13 OUT3: select replacement output (if any) and transfer workspaces intact */
     comp_output_apply_config(s);
-    update_output_manager_config(s);
-    comp_lock_idle_reconfigure_output(s);
-    comp_layer_arrange(s);
-    comp_window_relayout(s);
-    comp_ipc_emit_outputs(s);
+    comp_output_post_change(s);
 }
+
+_Static_assert((int)COMP_TRANSFORM_NORMAL      == (int)WL_OUTPUT_TRANSFORM_NORMAL &&
+               (int)COMP_TRANSFORM_90          == (int)WL_OUTPUT_TRANSFORM_90 &&
+               (int)COMP_TRANSFORM_180         == (int)WL_OUTPUT_TRANSFORM_180 &&
+               (int)COMP_TRANSFORM_270         == (int)WL_OUTPUT_TRANSFORM_270 &&
+               (int)COMP_TRANSFORM_FLIPPED     == (int)WL_OUTPUT_TRANSFORM_FLIPPED &&
+               (int)COMP_TRANSFORM_FLIPPED_90  == (int)WL_OUTPUT_TRANSFORM_FLIPPED_90 &&
+               (int)COMP_TRANSFORM_FLIPPED_180 == (int)WL_OUTPUT_TRANSFORM_FLIPPED_180 &&
+               (int)COMP_TRANSFORM_FLIPPED_270 == (int)WL_OUTPUT_TRANSFORM_FLIPPED_270,
+               "CompTransform and wl_output_transform values must match");
 
 static enum wl_output_transform
 wl_transform_from_idx(int idx)
 {
-    switch ((CompTransform)idx) {
-    case COMP_TRANSFORM_90:          return WL_OUTPUT_TRANSFORM_90;
-    case COMP_TRANSFORM_180:         return WL_OUTPUT_TRANSFORM_180;
-    case COMP_TRANSFORM_270:         return WL_OUTPUT_TRANSFORM_270;
-    case COMP_TRANSFORM_FLIPPED:     return WL_OUTPUT_TRANSFORM_FLIPPED;
-    case COMP_TRANSFORM_FLIPPED_90:  return WL_OUTPUT_TRANSFORM_FLIPPED_90;
-    case COMP_TRANSFORM_FLIPPED_180: return WL_OUTPUT_TRANSFORM_FLIPPED_180;
-    case COMP_TRANSFORM_FLIPPED_270: return WL_OUTPUT_TRANSFORM_FLIPPED_270;
-    case COMP_TRANSFORM_NORMAL:
-    default:                         return WL_OUTPUT_TRANSFORM_NORMAL;
-    }
+    if (idx >= COMP_TRANSFORM_NORMAL && idx <= COMP_TRANSFORM_FLIPPED_270)
+        return (enum wl_output_transform)idx;
+    return WL_OUTPUT_TRANSFORM_NORMAL;
 }
 
 void
@@ -366,6 +391,7 @@ comp_output_update_vrr(CompServer *s)
     if (!s)
         return;
     bool wants = comp_window_focused_wants_vrr(s);
+    s->last_wants_vrr = wants;
     CompOutput *o;
     wl_list_for_each(o, &s->outputs, link) {
         struct wlr_output *wo = o->wlr_output;
@@ -374,13 +400,17 @@ comp_output_update_vrr(CompServer *s)
         bool desired = (o->vrr_policy == COMP_VRR_ON) ||
                        (o->vrr_policy == COMP_VRR_ON_DEMAND && wants);
         bool current = (wo->adaptive_sync_status == WLR_OUTPUT_ADAPTIVE_SYNC_ENABLED);
-        if (desired == current)
+        if (desired == current || (desired && o->vrr_unsupported))
             continue;
         struct wlr_output_state st;
         wlr_output_state_init(&st);
         wlr_output_state_set_adaptive_sync_enabled(&st, desired);
-        if (wlr_output_test_state(wo, &st))
-            wlr_output_commit_state(wo, &st);
+        if (wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st)) {
+            if (desired)
+                o->vrr_unsupported = false;
+        } else if (desired) {
+            o->vrr_unsupported = true;
+        }
         wlr_output_state_finish(&st);
     }
 }
@@ -446,6 +476,7 @@ commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
 
     if (vrr_policy >= 0 && vrr_policy <= COMP_VRR_ON_DEMAND)
         o->vrr_policy = (CompVrrPolicy)vrr_policy;
+    o->vrr_unsupported = false;
 
     const struct wlr_output_mode *req_mode = NULL;
     int req_w = 0, req_h = 0;
@@ -496,8 +527,9 @@ commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
 
     /* Step 2: Step down VRR -> "off" */
     if (want_vrr && try_test_and_commit(wo, req_mode, req_w, req_h, req_mhz, scale, transform, 0)) {
-        o->vrr_policy = COMP_VRR_OFF;
-        stepped_down = true;
+        o->vrr_policy      = COMP_VRR_OFF;
+        o->vrr_unsupported = true;
+        stepped_down       = true;
         goto out_ok;
     }
 
@@ -613,11 +645,7 @@ comp_output_configure(CompServer *s, const char *output_name,
     bool ok = commit_output_cascade(target, mode_str, scale, transform, vrr_policy);
     comp_output_update_vrr(s);
     sync_primary_output_devices(s);
-    update_output_manager_config(s);
-    comp_lock_idle_reconfigure_output(s);
-    comp_layer_arrange(s);
-    comp_window_relayout(s);
-    comp_ipc_emit_outputs(s);
+    comp_output_post_change(s);
     return ok;
 }
 
@@ -719,10 +747,7 @@ handle_new_output(void *owner, void *data)
     wlr_log(WLR_INFO, "output %s connected (%s, %dx%d @ %.3f Hz, scale %.2f)",
             wo->name, wo->enabled ? "active" : "standby",
             wo->width, wo->height, wo->refresh / 1000.0, (double)wo->scale);
-    comp_lock_idle_reconfigure_output(s);
-    comp_layer_arrange(s);
-    comp_window_relayout(s);
-    comp_ipc_emit_outputs(s);
+    comp_output_post_change(s);
 }
 
 void

@@ -236,25 +236,26 @@ comp_text_render_badge(const char *text, double scale,
 }
 
 typedef struct {
-    struct wlr_scene_buffer *sbuf;
-    struct wlr_buffer       *locked_buf;
-    struct wl_listener       node_destroy;
+    struct wlr_addon   addon;
+    struct wlr_buffer *locked_buf;
 } CompSceneBufPin;
 
 static void
-scene_buf_pin_handle_destroy(struct wl_listener *listener, void *data)
+scene_buf_pin_addon_destroy(struct wlr_addon *addon)
 {
-    (void)data;
-    CompSceneBufPin *pin = wl_container_of(listener, pin, node_destroy);
-    wl_list_remove(&pin->node_destroy.link);
-    if (pin->sbuf && pin->sbuf->node.data == pin)
-        pin->sbuf->node.data = NULL;
+    CompSceneBufPin *pin = wl_container_of(addon, pin, addon);
     if (pin->locked_buf) {
         wlr_buffer_unlock(pin->locked_buf);
         pin->locked_buf = NULL;
     }
+    wlr_addon_finish(&pin->addon);
     free(pin);
 }
+
+static const struct wlr_addon_interface k_scene_buf_pin_addon_impl = {
+    .name    = "kajo_scene_buf_pin",
+    .destroy = scene_buf_pin_addon_destroy,
+};
 
 void
 comp_scene_buffer_set_owned_buffer(struct wlr_scene_buffer *sbuf, struct wlr_buffer *buf)
@@ -262,15 +263,14 @@ comp_scene_buffer_set_owned_buffer(struct wlr_scene_buffer *sbuf, struct wlr_buf
     if (!sbuf)
         return;
 
-    CompSceneBufPin *pin = sbuf->node.data;
+    struct wlr_addon *existing =
+        wlr_addon_find(&sbuf->node.addons, sbuf, &k_scene_buf_pin_addon_impl);
+    CompSceneBufPin *pin = existing ? wl_container_of(existing, pin, addon) : NULL;
+
     if (!pin && buf) {
         pin = calloc(1, sizeof(*pin));
-        if (pin) {
-            pin->sbuf                = sbuf;
-            pin->node_destroy.notify = scene_buf_pin_handle_destroy;
-            wl_signal_add(&sbuf->node.events.destroy, &pin->node_destroy);
-            sbuf->node.data = pin;
-        }
+        if (pin)
+            wlr_addon_init(&pin->addon, &sbuf->node.addons, sbuf, &k_scene_buf_pin_addon_impl);
     }
 
     struct wlr_buffer *new_lock = buf ? wlr_buffer_lock(buf) : NULL;
@@ -280,11 +280,8 @@ comp_scene_buffer_set_owned_buffer(struct wlr_scene_buffer *sbuf, struct wlr_buf
         if (pin->locked_buf)
             wlr_buffer_unlock(pin->locked_buf);
         pin->locked_buf = new_lock;
-        if (!pin->locked_buf) {
-            wl_list_remove(&pin->node_destroy.link);
-            sbuf->node.data = NULL;
-            free(pin);
-        }
+        if (!pin->locked_buf)
+            scene_buf_pin_addon_destroy(&pin->addon);
     } else if (new_lock) {
         wlr_buffer_unlock(new_lock);
     }
