@@ -83,6 +83,7 @@ void shell_compositor_switch_workspace(ShellCompositor *compositor, guint64 work
 void shell_compositor_switch_keyboard_layout_idx(ShellCompositor *compositor, guint8 idx);
 void shell_compositor_toggle_floating(void);
 void shell_compositor_reload_config(void);
+void shell_compositor_quit(void);
 void shell_compositor_send_action(const char *action_or_json);
 void shell_compositor_set_output_transform(const char *output_name, const char *transform);
 
@@ -90,6 +91,7 @@ void shell_compositor_set_output_transform(const char *output_name, const char *
 void niri_send_action(const char *json_action);
 void niri_toggle_window_floating(void);
 void niri_reload_config(void);
+void niri_quit_session(void);
 gchar *niri_send_ipc_request(const char *json_req);
 
 #ifdef __cplusplus

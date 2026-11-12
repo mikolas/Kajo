@@ -30,6 +30,7 @@ gboolean kajo_comp_ipc_send_action(const gchar *action_name);
 /* Convenience helpers matching niri_toggle_window_floating() / niri_reload_config(). */
 gboolean kajo_comp_ipc_toggle_floating(void);
 gboolean kajo_comp_ipc_reload_config(void);
+gboolean kajo_comp_ipc_quit(void);
 
 #ifdef __cplusplus
 }

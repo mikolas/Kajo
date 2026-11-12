@@ -697,6 +697,7 @@ static const struct {
     { "ToggleOverview",       COMP_IPC_ACT_SWITCH_WINDOW_NEXT,     "{\"Action\":{\"ToggleOverview\":{}}}" },
     { "PowerOnMonitors",      COMP_IPC_ACT_POWER_ON_MONITORS,      "{\"Action\":{\"PowerOnMonitors\":{}}}" },
     { "PowerOffMonitors",     COMP_IPC_ACT_POWER_OFF_MONITORS,     "{\"Action\":{\"PowerOffMonitors\":{}}}" },
+    { "Quit",                 COMP_IPC_ACT_QUIT,                   "{\"Action\":{\"Quit\":{\"skip_confirmation\":true}}}" },
 };
 
 void
@@ -762,6 +763,16 @@ shell_compositor_reload_config(void)
     shell_compositor_send_action("{\"Action\":{\"LoadConfigFile\":{\"path\":null}}}");
 }
 
+void
+shell_compositor_quit(void)
+{
+    if (shell_compositor_is_kajo_comp()) {
+        (void)kajo_comp_ipc_quit();
+        return;
+    }
+    shell_compositor_send_action("{\"Action\":{\"Quit\":{\"skip_confirmation\":true}}}");
+}
+
 static void
 on_niri_transform_subproc_done(GObject *source, GAsyncResult *res, gpointer user_data G_GNUC_UNUSED)
 {
@@ -810,6 +821,12 @@ void
 niri_reload_config(void)
 {
     shell_compositor_reload_config();
+}
+
+void
+niri_quit_session(void)
+{
+    shell_compositor_quit();
 }
 
 gchar *

@@ -192,5 +192,6 @@
 #define COMP_IPC_ACT_FOCUS_COLUMN_LEFT      "focus-column-left"
 #define COMP_IPC_ACT_POWER_ON_MONITORS      "power-on-monitors"
 #define COMP_IPC_ACT_POWER_OFF_MONITORS     "power-off-monitors"
+#define COMP_IPC_ACT_QUIT                   "quit"
 
 #endif /* KAJO_COMP_SCHEMA_KEYS_H */

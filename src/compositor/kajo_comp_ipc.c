@@ -108,3 +108,9 @@ kajo_comp_ipc_reload_config(void)
 {
     return kajo_comp_ipc_send_action(COMP_IPC_ACT_RELOAD_CONFIG);
 }
+
+gboolean
+kajo_comp_ipc_quit(void)
+{
+    return kajo_comp_ipc_send_action(COMP_IPC_ACT_QUIT);
+}

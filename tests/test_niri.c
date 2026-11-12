@@ -241,6 +241,11 @@ test_reload_config_sends_load_config_file(void)
     assert_action_object(req, "LoadConfigFile");
     g_assert_null(strstr(req, "ReloadConfig")); /* not a real Niri action */
 
+    shell_compositor_quit();
+    g_autofree char *req_quit = g_async_queue_timeout_pop(g_requests, 2 * G_USEC_PER_SEC);
+    g_assert_nonnull(req_quit);
+    assert_action_object(req_quit, "Quit");
+
     mock_niri_stop(m);
 }
 
@@ -387,6 +392,11 @@ test_kajo_comp_actions_and_events(void)
     g_autofree char *req2 = g_async_queue_timeout_pop(g_requests, 2 * G_USEC_PER_SEC);
     g_assert_nonnull(req2);
     g_assert_nonnull(strstr(req2, "\"reload-config\""));
+
+    shell_compositor_quit();
+    g_autofree char *req_quit = g_async_queue_timeout_pop(g_requests, 2 * G_USEC_PER_SEC);
+    g_assert_nonnull(req_quit);
+    g_assert_nonnull(strstr(req_quit, "\"quit\""));
 
     shell_compositor_set_output_transform("eDP-1", "90");
     g_autofree char *req3 = g_async_queue_timeout_pop(g_requests, 2 * G_USEC_PER_SEC);
