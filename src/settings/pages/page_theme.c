@@ -444,24 +444,11 @@ build_page_theme(void)
 
     g_autoptr(KajoThemeCfgRef) config = kajo_config_store_acquire_theme(NULL);
 
-    /* Resolve initial accent hex from config or 00-accent.css */
+    /* Resolve initial accent hex strictly from theme.toml snapshot */
     g_autofree gchar *init_hex = NULL;
-    if (config && config->accent_color && is_valid_hex_color(config->accent_color)) {
+    if (config && config->accent_color && is_valid_hex_color(config->accent_color))
         init_hex = g_ascii_strdown(config->accent_color, -1);
-    } else {
-        g_autofree gchar *accent_css_path = g_build_filename(
-            g_get_user_config_dir(), "kajo", "style.d", "00-accent.css", NULL);
-        g_autofree gchar *css_contents = NULL;
-        if (g_file_get_contents(accent_css_path, &css_contents, NULL, NULL) && css_contents) {
-            for (size_t i = 0; i < N_ACCENTS; i++) {
-                if (strstr(css_contents, ACCENTS[i].accent) != NULL) {
-                    init_hex = g_strdup(ACCENTS[i].accent);
-                    break;
-                }
-            }
-        }
-    }
-    if (!init_hex)
+    else
         init_hex = g_strdup(ACCENTS[0].accent);
 
     self->saved_accent_hex = g_strdup(init_hex);

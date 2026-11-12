@@ -679,6 +679,107 @@ test_subscriber_runs_on_subscriber_thread(void)
     rm_rf(tmpdir);
 }
 
+/* 10. Compositor TOML Helpers (comp.toml, rules.toml, outputs.toml) Round-Trip & Non-Destructive Saves */
+static void
+test_comp_toml_helpers_roundtrip(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-comp-XXXXXX", NULL);
+    g_autofree gchar *comp_path = g_build_filename(tmpdir, "comp.toml", NULL);
+    g_autofree gchar *rules_path = g_build_filename(tmpdir, "rules.toml", NULL);
+    g_autofree gchar *out_path = g_build_filename(tmpdir, "outputs.toml", NULL);
+
+    g_assert_true(g_file_set_contents(comp_path,
+        "# Custom comp.toml\n"
+        "[layout]\n"
+        "default_column_width = 0.75\n"
+        "gap_px = 6 # inline comment\n"
+        "[input.keyboard]\n"
+        "xkb_layout = \"us,fi\"\n", -1, NULL));
+
+    g_assert_true(g_file_set_contents(rules_path,
+        "reset_rules = true\n"
+        "[[rule]]\n"
+        "app_id = [\"^org\\\\.kajo\\\\.Settings$\"]\n"
+        "title = [\"Settings \\\"Main\\\"\"]\n"
+        "width = 0.65\n"
+        "floating = true\n"
+        "anchor_corner = \"top-right\"\n"
+        "anchor_margin_x = 24\n"
+        "anchor_margin_y = 32\n"
+        "opacity = 0.95\n"
+        "[[layer_rule]]\n"
+        "namespace = [\"^kajo$\"]\n"
+        "opacity = 0.80\n", -1, NULL));
+
+    const char *const ns_ids[] = { "kajo", "kajo-launcher" };
+    int opacities[2] = { 100, 100 };
+    int gap = 0;
+    g_assert_true(kajo_config_comp_read_layout_and_layers(
+        tmpdir, &gap, ns_ids, opacities, G_N_ELEMENTS(ns_ids)));
+    g_assert_cmpint(gap, ==, 6);
+    g_assert_cmpint(opacities[0], ==, 80);
+    /* kajo-launcher was not in user rules.toml, so it inherited 85% from data/defaults/rules.toml */
+    g_assert_cmpint(opacities[1], ==, 85);
+
+    const int new_opacities[2] = { 88, 92 };
+    g_assert_true(kajo_config_comp_save_layout_and_layers(
+        tmpdir, 14, ns_ids, new_opacities, G_N_ELEMENTS(ns_ids), NULL));
+
+    g_autofree gchar *comp_after = NULL;
+    g_assert_true(g_file_get_contents(comp_path, &comp_after, NULL, NULL));
+    g_assert_nonnull(strstr(comp_after, "# Custom comp.toml"));
+    g_assert_nonnull(strstr(comp_after, "default_column_width = 0.75"));
+    g_assert_nonnull(strstr(comp_after, "gap_px = 14 # inline comment"));
+    g_assert_nonnull(strstr(comp_after, "xkb_layout = \"us,fi\""));
+
+    g_autofree gchar *rules_after = NULL;
+    g_assert_true(g_file_get_contents(rules_path, &rules_after, NULL, NULL));
+    g_assert_nonnull(strstr(rules_after, "reset_rules = true"));
+    g_assert_nonnull(strstr(rules_after, "[[rule]]"));
+    g_assert_nonnull(strstr(rules_after, "anchor_corner = \"top-right\""));
+    g_assert_nonnull(strstr(rules_after, "namespace = [\"^kajo$\"]"));
+    g_assert_nonnull(strstr(rules_after, "namespace = [\"^kajo-launcher$\"]"));
+
+    opacities[0] = 0;
+    opacities[1] = 0;
+    g_assert_true(kajo_config_comp_read_layout_and_layers(
+        tmpdir, &gap, ns_ids, opacities, G_N_ELEMENTS(ns_ids)));
+    g_assert_cmpint(gap, ==, 14);
+    g_assert_cmpint(opacities[0], ==, 88);
+    g_assert_cmpint(opacities[1], ==, 92);
+
+    /* outputs.toml: preserve unset fields on non-matching rules and quote special chars */
+    g_assert_true(g_file_set_contents(out_path,
+        "[[output]]\n"
+        "match = \"HDMI-A-1\"\n"
+        "enabled = false\n"
+        "vrr = \"on-demand\"\n"
+        "scale_filter = \"nearest\"\n", -1, NULL));
+
+    g_assert_true(kajo_config_comp_save_output_rule(
+        tmpdir,
+        "Dell \"UltraSharp\" 27",
+        "DP-1",
+        "2560x1440@144.000",
+        "1.50",
+        "90",
+        "on",
+        NULL));
+
+    g_autofree gchar *out_after = NULL;
+    g_assert_true(g_file_get_contents(out_path, &out_after, NULL, NULL));
+    /* HDMI-A-1 kept enabled = false, vrr = "on-demand", scale_filter = "nearest", and no injected x/y */
+    g_assert_nonnull(strstr(out_after, "match = \"HDMI-A-1\""));
+    g_assert_nonnull(strstr(out_after, "enabled = false"));
+    g_assert_nonnull(strstr(out_after, "vrr = \"on-demand\""));
+    g_assert_nonnull(strstr(out_after, "scale_filter = \"nearest\""));
+    /* Newly added rule escaped quotes in match */
+    g_assert_nonnull(strstr(out_after, "match = \"Dell \\\"UltraSharp\\\" 27\""));
+    g_assert_nonnull(strstr(out_after, "mode = \"2560x1440@144.000\""));
+
+    rm_rf(tmpdir);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -695,6 +796,7 @@ main(int argc, char *argv[])
     g_test_add_func("/config/store/surgical-patch-preserves-comments", test_surgical_patch_preserves_comments_and_unknown_keys);
     g_test_add_func("/config/store/patcher-never-writes-unparsable-file", test_patcher_never_writes_unparsable_file);
     g_test_add_func("/config/store/subscriber-runs-on-subscriber-thread", test_subscriber_runs_on_subscriber_thread);
+    g_test_add_func("/config/comp-toml-helpers/roundtrip", test_comp_toml_helpers_roundtrip);
 
     return g_test_run();
 }

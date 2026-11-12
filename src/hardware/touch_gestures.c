@@ -487,12 +487,39 @@ open_direct_touchscreen_evdev(ShellTouchTracker *out_tracker)
     return -1;
 }
 
+static void
+on_compositor_touch_bezel_swipe(ShellCompositor *compositor G_GNUC_UNUSED,
+                                const gchar     *edge,
+                                gdouble          x_ratio,
+                                gpointer         userdata)
+{
+    ShellTouchGestures *self = userdata;
+    if (!self)
+        return;
+    self->tracker.last_trigger_x_ratio = x_ratio;
+    if (g_strcmp0(edge, "top") == 0)
+        dispatch_touch_gesture(self, TOUCH_GESTURE_EDGE_TOP_INWARD);
+    else
+        dispatch_touch_gesture(self, TOUCH_GESTURE_EDGE_BOTTOM_INWARD);
+}
+
 ShellTouchGestures *
 shell_touch_gestures_new(ShellApp *app)
 {
     ShellTouchGestures *self = g_new0(ShellTouchGestures, 1);
     self->app = app;
     self->wl_outputs = g_ptr_array_new();
+    self->fd = -1;
+
+    if (shell_compositor_is_kajo_comp()) {
+        if (app && app->compositor) {
+            shell_compositor_on_touch_bezel_swipe(app->compositor,
+                                                  on_compositor_touch_bezel_swipe,
+                                                  self);
+        }
+        return self;
+    }
+
     self->fd = open_direct_touchscreen_evdev(&self->tracker);
 
     GdkDisplay *display = gdk_display_get_default();
@@ -522,6 +549,9 @@ void
 shell_touch_gestures_destroy(ShellTouchGestures *self)
 {
     if (!self) return;
+    if (self->app && self->app->compositor) {
+        shell_compositor_remove_callbacks(self->app->compositor, self);
+    }
     if (self->watch_id > 0) {
         g_source_remove(self->watch_id);
         self->watch_id = 0;

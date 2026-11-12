@@ -31,6 +31,7 @@ struct _KajoFilesWindow {
     /* Blueprint Template Children */
     GtkOverlay *root_overlay;
     GtkWidget *btn_sidebar_toggle;
+    GtkWidget *title_label;
     GtkWidget *btn_back;
     GtkWidget *btn_forward;
     GtkWidget *btn_up;

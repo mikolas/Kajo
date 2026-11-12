@@ -1,5 +1,6 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include "../../compositor/compositor.h"
 #include <sys/utsname.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -155,12 +156,14 @@ query_live_system_specs(SettingsPageAbout *self,
 
     const gchar *wl_disp = g_getenv("WAYLAND_DISPLAY");
     const gchar *niri_sock = g_getenv("NIRI_SOCKET");
+    gboolean has_kc = shell_compositor_is_kajo_comp();
     gboolean has_niri = (niri_sock && niri_sock[0] != '\0');
-    *out_niri_active = has_niri;
+    *out_niri_active = (has_kc || has_niri);
     self->compositor_summary = g_strdup_printf(
         "%s • %s",
         (wl_disp && wl_disp[0] != '\0') ? wl_disp : "Wayland",
-        has_niri ? "Niri Scrollable-Tiling IPC Active" : "Standard Wayland Session");
+        has_kc ? "kajo-comp Scrollable-Tiling IPC Active"
+               : (has_niri ? "Niri Scrollable-Tiling IPC Active" : "Standard Wayland Session"));
 
     guint maj = gtk_get_major_version();
     guint min = gtk_get_minor_version();
@@ -227,7 +230,9 @@ build_page_about(void)
         "🧠", "System Memory (RAM)", self->mem_summary, "MEMINFO", NULL));
     gtk_box_append(GTK_BOX(card_hw), create_about_info_row(
         "❖", "Wayland & Compositor", self->compositor_summary,
-        niri_active ? "NIRI IPC" : "WAYLAND", niri_active ? "success" : NULL));
+        shell_compositor_is_kajo_comp() ? "KAJO-COMP IPC"
+                                        : (niri_active ? "NIRI IPC" : "WAYLAND"),
+        niri_active ? "success" : NULL));
 
     /* ─── Card 2: Runtime Toolkit & Subsystem Stack ─── */
     GtkWidget *card_stack = create_section_card(
@@ -254,14 +259,18 @@ build_page_about(void)
 
     settings_bento_add_pair(GTK_WIDGET(self), card_hw, card_stack);
 
-    /* ─── Card 3: Kajo Desktop Application Suite (7 Native Binaries) ─── */
+    /* ─── Card 3: Kajo Desktop Application Suite (8 Native Binaries) ─── */
     GtkWidget *card_suite = create_section_card(
         SETTINGS_CARD_RIGHT,
-        "3. KAJO DESKTOP APPLICATION SUITE (7 NATIVE BINARIES)",
-        "7 BINARIES",
+        "3. KAJO DESKTOP APPLICATION SUITE (8 NATIVE BINARIES)",
+        "8 BINARIES",
         "success",
         NULL);
 
+    gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
+        "❖", "kajo-comp — Scrollable-Tiling Wayland Compositor (org.kajo.comp)",
+        "wlroots 0.20 + Vulkan scrolling strip, analytical springs, MRU switcher & screenshot UI",
+        "COMPOSITOR", "accent"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "▬", "kajo — Desktop Shell & Layer-Shell Panel (org.kajo.shell)",
         "Wayland panel, 22 widgets, FFT visualizer, notifications, launcher, ShellOSK & PAM lock",
@@ -306,9 +315,11 @@ build_page_about(void)
     settings_page_set_deck_badges(root, "KAJO SUITE 0.1", gtk_badge);
     settings_page_set_counter(root, 0, "KERNEL", kernel_short, "accent");
     settings_page_set_counter(root, 1, "TOOLKIT", gtk_badge, NULL);
-    settings_page_set_counter(root, 2, "COMPOSITOR", niri_active ? "Niri IPC Active" : "Wayland",
+    settings_page_set_counter(root, 2, "COMPOSITOR",
+                              shell_compositor_is_kajo_comp() ? "kajo-comp IPC Active"
+                                                              : (niri_active ? "Niri IPC Active" : "Wayland"),
                               niri_active ? "success" : NULL);
-    settings_page_set_counter(root, 3, "SUITE", "7 Binaries", NULL);
+    settings_page_set_counter(root, 3, "SUITE", "8 Binaries", NULL);
 
     return root;
 }

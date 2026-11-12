@@ -18,6 +18,25 @@ niri_send_action(const char *json_action G_GNUC_UNUSED)
 {
 }
 
+gboolean
+shell_compositor_is_kajo_comp(void)
+{
+    return FALSE;
+}
+
+void
+shell_compositor_on_touch_bezel_swipe(ShellCompositor *compositor G_GNUC_UNUSED,
+                                      CompositorTouchBezelCallback cb G_GNUC_UNUSED,
+                                      gpointer userdata G_GNUC_UNUSED)
+{
+}
+
+void
+shell_compositor_remove_callbacks(ShellCompositor *compositor G_GNUC_UNUSED,
+                                  gpointer userdata G_GNUC_UNUSED)
+{
+}
+
 void
 shell_autohide_touch_reveal(ShellAutohide *self G_GNUC_UNUSED, gint dwell_ms G_GNUC_UNUSED)
 {

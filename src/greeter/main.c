@@ -321,8 +321,8 @@ on_test_pam_auth_complete(GObject      *source_object G_GNUC_UNUSED,
                                 : NULL;
         g_message("[TEST MODE] Authenticated user '%s' -> starting session '%s' (%s)",
                   u ? u->username : "user",
-                  s ? s->name : "Niri",
-                  s ? s->exec : "niri-session");
+                  s ? s->name : "Kajo Desktop",
+                  s ? s->exec : "kajo-session");
         set_greeter_auth_state(app, FALSE, "✓ Authentication succeeded — starting session...", FALSE, TRUE);
         quit_greeter_compositor_and_app(app);
     } else {
@@ -389,7 +389,7 @@ submit_greeter_login(GreeterSurface *surf)
         /* Test mode on live desktop: verify against real PAM worker thread */
         shell_pam_authenticate_user_async(username, pw_copy, app->cancellable, on_test_pam_auth_complete, app);
     } else {
-        const gchar *fallback_cmd[] = { "niri-session", NULL };
+        const gchar *fallback_cmd[] = { "kajo-session", NULL };
         const gchar *const *cmd = (s && s->cmd_argv) ? (const gchar *const *)s->cmd_argv : fallback_cmd;
         const gchar *const *env = (s && s->env_vars) ? (const gchar *const *)s->env_vars : NULL;
 

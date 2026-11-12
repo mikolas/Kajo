@@ -1,0 +1,1623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>kajo-comp — Interactive Layout Storyboard</title>
+<style>
+  :root {
+    --metro-bg: #111111;
+    --metro-surface-0: #0a0a0a;
+    --metro-surface-1: #101010;
+    --metro-surface-2: #141414;
+    --metro-surface-3: #181818;
+    --metro-surface-4: #1e1e1e;
+    --metro-border: #2b2b2b;
+    --metro-text: #ffffff;
+    --metro-subtext: #a0a0a0;
+    --metro-dim: #777777;
+    --metro-accent: #0078d4;
+    --metro-accent-rgb: 0, 120, 212;
+    --metro-telemetry: #00d8f0;
+    --metro-success: #10893e;
+    --metro-warning: #ffb900;
+    --metro-urgent: #e81123;
+    --font-mono: 'Fira Code', 'JetBrains Mono', monospace;
+    --font-sans: 'Inter', 'Cantarell', 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; border-radius: 0 !important; margin: 0; padding: 0; }
+  html, body { width: 100%; height: 100vh; overflow: hidden; background: #070707; color: var(--metro-text);
+               font-family: var(--font-sans); font-size: 13px; }
+  button { font-family: var(--font-mono); }
+
+  /* ── Top bar ── */
+  .topbar { height: 40px; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+            background: var(--metro-surface-2); border-bottom: 1px solid var(--metro-border); }
+  .title { font-family: var(--font-mono); font-weight: 700; letter-spacing: .8px; font-size: 12px; white-space: nowrap; }
+  .title small { color: var(--metro-dim); font-weight: 400; letter-spacing: 0; margin-left: 6px; }
+  .group { display: flex; align-items: center; gap: 6px; }
+  .glabel { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--metro-dim);
+            text-transform: uppercase; letter-spacing: .5px; }
+  .seg { display: flex; border: 1px solid var(--metro-border); }
+  .seg button { background: #181818; color: #bbb; border: 0; border-right: 1px solid var(--metro-border);
+                padding: 3px 8px; font-size: 10px; font-weight: 700; cursor: pointer; }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: #222; color: #fff; }
+  .seg button.on { background: var(--metro-accent); color: #fff; }
+  .spacer { flex: 1; }
+  .btn { background: #181818; color: #ddd; border: 1px solid var(--metro-border); padding: 3px 9px;
+         font-size: 10px; font-weight: 700; cursor: pointer; }
+  .btn:hover { background: #222; color: #fff; border-color: #3a3a3a; }
+  .btn.primary { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
+  .btn:disabled { opacity: .35; cursor: default; }
+
+  /* ── Main ── */
+  main { display: flex; height: calc(100vh - 40px - 28px - 26px); }
+  .stage { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 12px; gap: 10px; }
+  .screen-row { flex: 1; display: flex; gap: 10px; min-height: 0; }
+  .screen-wrap { flex: 1; position: relative; min-width: 0; display: flex; align-items: center; justify-content: center;
+                 background: repeating-linear-gradient(90deg, rgba(255,255,255,.012) 0 1px, transparent 1px 40px), #050505;
+                 border: 1px solid var(--metro-border); overflow: hidden; }
+  .bezel { position: relative; border: 1px solid #333; box-shadow: 0 10px 40px rgba(0,0,0,.8); overflow: hidden; }
+  .output { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden;
+            background: radial-gradient(circle at 25% 30%, rgba(var(--metro-accent-rgb), .10), transparent 50%),
+                        radial-gradient(circle at 80% 75%, rgba(0, 216, 240, .05), transparent 45%), #0b0b0d; }
+  .panel { position: absolute; left: 0; top: 0; right: 0; background: rgba(16,16,16,.92); border-bottom: 1px solid var(--metro-border);
+           display: flex; align-items: center; padding: 0 12px; gap: 14px; font-family: var(--font-mono); font-weight: 700;
+           color: #ddd; z-index: 50; }
+  .panel .dots { display: flex; gap: 6px; }
+  .panel .dot { width: 26px; height: 6px; background: #333; }
+  .panel .dot.on { background: var(--metro-accent); }
+  .panel .clock { margin-left: auto; color: var(--metro-subtext); }
+  .backdrop { position: absolute; left: 0; top: 0; background: #000; display: none; }
+  .win { position: absolute; background: var(--metro-bg); border: 1px solid #2b2b2b; overflow: visible; }
+  .win.focused { border-color: var(--metro-accent); }
+  .win.floating { box-shadow: 0 18px 50px rgba(0,0,0,.85); }
+  .win .bar { height: 30px; display: flex; align-items: center; gap: 10px; padding: 0 10px; background: var(--metro-surface-2);
+              border-bottom: 1px solid var(--metro-border); font-family: var(--font-mono); font-weight: 700; overflow: hidden; white-space: nowrap; }
+  .win .bar .id { color: var(--metro-telemetry); }
+  .win .bar .app { color: #fff; text-transform: uppercase; letter-spacing: .6px; }
+  .win .bar .t { color: var(--metro-subtext); font-weight: 400; overflow: hidden; text-overflow: ellipsis; }
+  .win .body { position: absolute; left: 0; right: 0; top: 30px; bottom: 0; overflow: hidden; }
+  .win .body i { display: block; height: 10px; margin: 16px 18px 0; background: rgba(255,255,255,.06); }
+  .win .badge { position: absolute; right: 10px; bottom: 10px; font-family: var(--font-mono); font-size: 18px; font-weight: 700;
+                color: rgba(255,255,255,.25); }
+  .win .tabs { position: absolute; left: -9px; top: 0; bottom: 0; width: 5px; display: flex; flex-direction: column; gap: 3px; }
+  .win .tabs b { flex: 1; background: #444; }
+  .win .tabs b.on { background: var(--metro-accent); }
+  .win .size { position: absolute; left: 10px; bottom: 10px; font-family: var(--font-mono); font-size: 16px; color: rgba(255,255,255,.28); }
+
+  .under { height: 112px; display: flex; gap: 10px; }
+  .box { background: var(--metro-surface-1); border: 1px solid var(--metro-border); position: relative; }
+  .box h3 { position: absolute; left: 8px; top: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim);
+            text-transform: uppercase; letter-spacing: .5px; }
+  #minimap { flex: 1; overflow: hidden; }
+  #minimap .col { position: absolute; border: 1px solid #3a3a3a; background: #181818; }
+  #minimap .col.f { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .25); }
+  #minimap .seg2 { position: absolute; left: 0; right: 0; border-bottom: 1px solid #333; }
+  #minimap .view { position: absolute; border: 2px solid var(--metro-telemetry); pointer-events: none; }
+  #minimap .note { position: absolute; right: 8px; top: 6px; font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim); }
+  #wslist { width: 150px; padding: 24px 8px 8px; display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+  .wsitem { font-family: var(--font-mono); font-size: 10px; padding: 3px 6px; border: 1px solid #2b2b2b; background: #151515; color: #bbb;
+            display: flex; justify-content: space-between; }
+  .wsitem.on { border-color: var(--metro-accent); color: #fff; }
+  .wsitem.empty { border-style: dashed; color: var(--metro-dim); }
+  .wsitem.doomed { color: var(--metro-warning); border-color: rgba(255,185,0,.5); }
+
+  /* ── Side panel ── */
+  aside { width: 400px; border-left: 1px solid var(--metro-border); background: var(--metro-surface-1); display: flex; flex-direction: column; min-height: 0; }
+  .tabs-head { display: flex; border-bottom: 1px solid var(--metro-border); }
+  .tabs-head button { flex: 1; background: transparent; color: var(--metro-subtext); border: 0; border-right: 1px solid var(--metro-border);
+                      padding: 9px 0; font-size: 11px; font-weight: 700; letter-spacing: .6px; cursor: pointer; }
+  .tabs-head button:last-child { border-right: 0; }
+  .tabs-head button.on { color: #fff; background: var(--metro-surface-3); box-shadow: inset 0 -2px 0 var(--metro-accent); }
+  .pane { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  .pane.on { display: block; }
+  .scen { width: 100%; text-align: left; background: #151515; color: #ddd; border: 1px solid #262626; padding: 7px 9px; margin-bottom: 4px;
+          font-size: 11px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+  .scen:hover { background: #1c1c1c; }
+  .scen.on { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .12); color: #fff; }
+  .scen span { color: var(--metro-dim); }
+  .stepbox { margin-top: 12px; border: 1px solid var(--metro-border); background: var(--metro-surface-2); }
+  .stepbox .head { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border-bottom: 1px solid var(--metro-border);
+                   font-family: var(--font-mono); font-size: 11px; font-weight: 700; }
+  .stepbox .head .count { color: var(--metro-telemetry); }
+  .stepbox .text { padding: 10px; line-height: 1.55; color: #ddd; min-height: 110px; }
+  .stepbox .text b { color: #fff; }
+  .stepbox .text code, .pane code { font-family: var(--font-mono); font-size: 11px; color: var(--metro-telemetry); }
+  .stepbox .nav { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--metro-border); }
+  .chip { display: inline-block; font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 0 5px; margin: 0 2px;
+          border: 1px solid rgba(var(--metro-accent-rgb), .7); color: #9fd0ff; cursor: help; }
+  .agroup { margin-bottom: 10px; }
+  .agroup h4 { font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px; }
+  .agroup .grid { display: flex; flex-wrap: wrap; gap: 4px; }
+  .act { background: #181818; color: #ddd; border: 1px solid #2b2b2b; padding: 4px 7px; font-size: 10px; cursor: pointer; }
+  .act:hover { background: #222; color: #fff; }
+  .act kbd { color: var(--metro-dim); font-family: var(--font-mono); margin-left: 4px; }
+  .act.nobind kbd { color: var(--metro-warning); }
+  .logrow { border-bottom: 1px solid #1f1f1f; padding: 6px 0; font-size: 11px; line-height: 1.45; }
+  .logrow .an { font-family: var(--font-mono); color: #fff; font-weight: 700; }
+  .logrow .nt { color: var(--metro-subtext); }
+  .ruledef { margin-top: 12px; padding: 10px; border: 1px solid var(--metro-border); background: var(--metro-surface-2); min-height: 60px;
+             line-height: 1.5; color: #ddd; }
+  .ruledef .rid { font-family: var(--font-mono); color: var(--metro-telemetry); font-weight: 700; margin-right: 6px; }
+  footer { height: 26px; display: flex; align-items: center; gap: 16px; padding: 0 12px; border-top: 1px solid var(--metro-border);
+           background: var(--metro-surface-2); font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim); white-space: nowrap; overflow: hidden; }
+  footer b { color: var(--metro-warning); }
+
+  /* ── New behaviour toggles and 3-finger drag (GS1–GS6) ── */
+  .topbar2 { height: 28px; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--metro-surface-1);
+             border-bottom: 1px solid rgba(255,185,0,.25); white-space: nowrap; overflow: hidden; }
+  .seg.newrow { border-color: rgba(255,185,0,.45); }
+  .glabel.newrow { color: var(--metro-warning); }
+  .gest-on .output { cursor: grab; touch-action: none; }
+  .gest-on.dragging .output { cursor: grabbing; }
+  #gestHud { position: absolute; left: 8px; bottom: 8px; z-index: 5; display: none; pointer-events: none; max-width: 70%;
+             font-family: var(--font-mono); font-size: 10px; line-height: 1.5; color: var(--metro-telemetry);
+             background: rgba(0,0,0,.72); border: 1px solid var(--metro-border); padding: 4px 7px; white-space: pre; }
+  #fingers { position: absolute; left: 0; top: 0; z-index: 70; display: none; pointer-events: none; }
+  #fingers b { position: absolute; width: 26px; height: 26px; border: 2px solid var(--metro-telemetry);
+               background: rgba(0, 216, 240, .18); }
+</style>
+</head>
+<body>
+<header class="topbar">
+  <div class="title">⊞ KAJO-COMP <small>layout storyboard · spec §3</small></div>
+  <div class="group"><span class="glabel">Output</span>
+    <div class="seg" id="segOut"><button data-v="laptop" class="on">14" 1646×1029</button><button data-v="wide">34" 3440×1440</button></div></div>
+  <div class="group"><span class="glabel">center_focused_column</span>
+    <div class="seg" id="segCenter"><button data-v="never" class="on">never</button><button data-v="on-overflow">on-overflow</button><button data-v="always">always</button></div></div>
+  <div class="group"><span class="glabel">single column</span>
+    <div class="seg" id="segSingle"><button data-v="1" class="on">centre</button><button data-v="0">off</button></div></div>
+  <div class="group"><span class="glabel">Motion</span>
+    <div class="seg" id="segSpeed"><button data-v="1" class="on">1×</button><button data-v="0.25">¼×</button><button data-v="0">off</button></div></div>
+  <div class="group"><span class="glabel">Mod</span>
+    <div class="seg" id="segMod"><button data-v="alt" class="on">Alt</button><button data-v="meta">Super</button></div></div>
+  <div class="spacer"></div>
+  <button class="btn" id="btnReset" title="Empty layout, one workspace">RESET</button>
+</header>
+<div class="topbar2">
+  <span class="glabel newrow">New behaviour — switch to v1 to compare:</span>
+  <div class="group"><span class="glabel newrow" title="Displayed width/height animate (M5). instant = old v1 behaviour">Resize</span>
+    <div class="seg newrow" id="segResize"><button data-v="0">instant</button><button data-v="1" class="on">animate</button></div></div>
+  <div class="group"><span class="glabel newrow" title="Both workspaces stay visible while switching (WS7). v1 = old behaviour, outgoing hidden at once">WS switch</span>
+    <div class="seg newrow" id="segWs"><button data-v="v1">v1</button><button data-v="strip" class="on">strip</button></div></div>
+  <div class="group"><span class="glabel newrow" title="Mouse drag on the screen = 3-finger touch / touchpad drag (GS1–GS6)">3-finger</span>
+    <div class="seg newrow" id="segGest"><button data-v="0">off</button><button data-v="1" class="on">drag</button></div></div>
+  <span class="glabel">stories 12–14 · drag the screen with the mouse</span>
+</div>
+
+<main>
+  <section class="stage">
+    <div class="screen-row">
+      <div class="screen-wrap" id="screenWrap">
+        <div id="gestHud"></div>
+        <div class="bezel" id="bezel"><div class="output" id="output">
+          <div class="backdrop" id="backdrop"></div>
+          <div id="fingers"><b></b><b></b><b></b></div>
+          <div class="panel" id="panel"><span>KAJO</span><span class="dots" id="panelDots"></span><span class="clock">10:42</span></div>
+        </div></div>
+      </div>
+    </div>
+    <div class="under">
+      <div class="box" id="minimap"><h3>Strip of the focused workspace · cyan = view</h3><div class="note" id="mapNote"></div></div>
+      <div class="box" id="wslist"><h3>Workspaces</h3></div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="tabs-head" id="tabsHead">
+      <button data-p="story" class="on">STORYBOARD</button><button data-p="actions">ACTIONS</button><button data-p="log">LOG</button></div>
+    <div class="pane on" id="pane-story">
+      <div id="scenList"></div>
+      <div class="stepbox">
+        <div class="head"><span id="stepTitle">Pick a story</span><span class="count" id="stepCount"></span></div>
+        <div class="text" id="stepText">Each story sets up a layout and then steps through actions. The rule chips name the rules in
+          <code>spec_kajo_comp.md</code> §3; hover a chip to read it. You can also act freely at any time with the keyboard
+          (Mod = Alt by default, see the ACTIONS tab) or the buttons.</div>
+        <div class="nav"><button class="btn" id="btnPrev">◀ BACK</button><button class="btn primary" id="btnNext">NEXT ▶</button>
+          <button class="btn" id="btnPlay">▶▶ PLAY</button><div class="spacer"></div><button class="btn" id="btnRestart">↺ RESTART</button></div>
+      </div>
+      <div class="ruledef" id="ruleDef">Hover or click a rule chip to see the rule text here.</div>
+    </div>
+    <div class="pane" id="pane-actions"><div id="actGroups"></div></div>
+    <div class="pane" id="pane-log"><div id="logList"></div></div>
+  </aside>
+</main>
+
+<footer>
+  <span>Illustration of §3 — the spec text is authoritative; where they differ, this page is wrong.</span>
+  <span>Single active session output (§1.1, §3.13)</span>
+  <span><b>New:</b> animated resize, workspace strip, 3-finger drag (yellow toggles compare with v1, stories 12–14)</span>
+</footer>
+
+<script>
+'use strict';
+// ==MODEL BEGIN==
+// No DOM in this block: scratch tests run it under node.
+const CFG = {
+  gap: 6, border: 1, defaultW: 0.5,
+  presetsW: [0.33333, 0.5, 0.66667],
+  presetsH: [0.33333, 0.5, 0.66667, 1.0],
+  center: 'never', single: true,
+  floatStep: 50, floatOffset: 50,          // L4, L2
+  springs: { ws: { z: 0.80, k: 523 }, scroll: { z: 0.85, k: 423 }, move: { z: 0.75, k: 323 } },
+  // Second top-bar row: animated displayed size (M5), continuous workspace strip (WS7), 3-finger drag (GS*); off = old v1 behaviour
+  animResize: true, wsStrip: true, gesture: true,
+};
+/* GS1–GS6 constants. tau: release projection time (s). */
+const GESTURE = { lockPx: 16, ratio: 1.25, tau: 0.333, rubber: 0.55, rubberDim: 0.3, velWindow: 0.15 };
+const OUTPUTS = {
+  laptop: { name: 'eDP-1', w: 1646, h: 1029, panel: 32 },
+  wide:   { name: 'DP-1',  w: 3440, h: 1440, panel: 32 },
+};
+const RULES = {
+  G3: 'Proportional width p: p × (working width − gap) − gap, so n columns of 1/n fit exactly. Pixel widths size the window; the border is added.',
+  G4: 'Windows share the column height by weight; at most one has an explicit height and the others keep their proportions. A lone window may have an explicit height (it sits at the top) and keeps it when its neighbour closes.',
+  G5: 'Widths are rounded down, heights to the nearest pixel.',
+  G6: 'Border on every window except fullscreen and maximized-to-edges ones.',
+  V1: '"never": an already fully visible column does not move the view; otherwise the view moves just enough (one gap of margin), towards the closer edge. Wide columns align left.',
+  V2: '"always": the focused column is centred.',
+  V3: '"on-overflow": centre the new column only if it and the column focus came from do not fit on screen together.',
+  V4: 'always_center_single_column: a lone column is centred.',
+  V5: 'The focused window does not move by itself: changes left of it slide the other columns, not the focused one.',
+  V6: 'After the focused column changes size or state, the view moves minimally to keep it visible.',
+  V7: 'A focused fullscreen column fills the output; the view aligns to it exactly.',
+  O1: 'A new window opens as a column right of the focused column and takes focus (no scroll animation when opening on an empty workspace).',
+  O2: 'A new window takes focus even when the focused window is fullscreen; the fullscreen window stays in the strip.',
+  O3: 'Dialogs, fixed-size windows and floating-rule windows open floating.',
+  O5: 'Close a just-opened window before focusing anything else and focus and view return to where they were.',
+  C1: 'Closing the focused column: the column on its right slides into place and gets focus (last column: the new last one).',
+  C2: 'Closing a window in a shared column: focus goes below, or above if it was the bottom one.',
+  C3: 'Closing an unfocused window never moves focus.',
+  F1: 'focus-column-* / focus-window-* move focus; at the ends nothing happens.',
+  F2: 'move-column-* / move-window-* move the focused column / window; it keeps focus.',
+  K1: 'consume-or-expel: a lone window joins the neighbour column (bottom); a window in a shared column becomes its own column on that side.',
+  K2: 'consume-window-into-column: the top window of the right column joins the bottom of the focused column; focus stays.',
+  K3: 'expel-window-from-column: the bottom window becomes a new column on the right; focus stays.',
+  K4: 'A window that becomes its own column keeps the width of the column it left.',
+  W1: 'switch-preset-column-width cycles the presets; off-preset it goes to the first wider preset.',
+  W2: 'maximize-column toggles full width (gaps and borders stay).',
+  W3: 'expand-column-to-available-width fills the space beside the other fully visible columns.',
+  W4: 'set-column-width / set-window-height delta: "+10%", "-10%", "50%", "+20", "800".',
+  W5: 'switch-preset-window-height cycles height presets; reset-window-height returns to a shared height.',
+  Z1: 'center-column centres the focused column (or focused floating window).',
+  Z2: 'center-visible-columns centres the block of fully visible columns.',
+  T1: 'Tabbed column: one window shown, all the same size, focus-window-up/down switch tabs.',
+  T2: 'A tabbed column may be fullscreen with several windows.',
+  S1: 'fullscreen-window: covers the output, stays a member of the strip.',
+  S2: 'A window from a shared stacked column goes fullscreen in its own column on the right.',
+  S3: 'Leaving fullscreen restores the remembered view (forgotten on focus change).',
+  S4: 'A floating window goes into the strip for fullscreen and returns to floating afterwards.',
+  S5: 'Maximize-to-edges covers the working area without gaps or border; floating windows stay above it.',
+  S6: 'A focused, stationary fullscreen window covers floating windows and the panel.',
+  L1: 'Floating windows stay above the tiled ones and do not scroll.',
+  L2: 'toggle-window-floating: last floating place, or 50 px right and down from the tile, clamped inside the working area; back in the strip as a new column with its floating width.',
+  L3: 'New floating windows open centred; dialogs open centred over their parent and take focus.',
+  L4: 'With floating focus, focus/move binds act on floating windows (nearest by centre, 50 px steps).',
+  L5: 'Focusing a floating window raises it.',
+  L6: 'A floating window keeps a quarter of its size inside the working area, at least 10 px and at most 75 px.',
+  L7: 'Last tiled window closed → focus floating; last floating closed → focus the strip.',
+  WS1: 'Always exactly one empty workspace at the bottom.',
+  WS2: 'Empty workspaces in the middle disappear once the switch away from them has finished.',
+  WS3: 'focus-workspace-up/down: input goes to the target at once.',
+  WS4: 'move-column-to-workspace-up/down: the column (or floating window) moves and focus follows.',
+  WS5: 'move-workspace-up/down swaps workspaces without animation; the empty bottom one can move up.',
+  OUT3: 'Another output takes over: every workspace, window and view carries over.',
+  OUT4: 'Size/scale/panel changes keep the arrangement; proportions follow the new size.',
+  M1: 'Every change animates from where things are shown now, keeping velocity.',
+  M2: 'Camera uses horizontal_scroll, window movements use window_movement, workspace switches use workspace_switch.',
+  M4: 'A window moved to another workspace animates from its old on-screen place.',
+  M5: 'The resized window gets its final size in one configure; the displayed size (border box and surface clip) animates on window_movement, together with the neighbours and the camera. Old v1 (Resize = instant): only neighbours to its right and the camera animated, so the rightmost column resized into free space showed no animation at all, narrower or wider.',
+  WS7: 'Workspaces form one vertical strip with a 10 % gap: during a switch both stay visible and scroll together, and each workspace keeps its own horizontal camera. Old v1 (WS switch = v1): the outgoing workspace was hidden at once and only the incoming one slid in.',
+  GS1: '3 fingers on the touchscreen or touchpad. The gesture locks to the dominant axis after 16 px (|d| > 1.25 × the other axis); before that nothing moves. Client touches are cancelled at lock.',
+  GS2: 'While dragging, the camera follows the fingers 1:1 (content follows the finger; touchpad honours natural_scroll): horizontally the camera of the focused workspace, vertically the workspace strip. Past the first/last column or workspace it rubber-bands instead of stopping.',
+  GS3: 'On release: projected position = position + release velocity × 0.33 s. Vertically the nearest workspace to the projection wins, at most one past the workspace nearest the release point; horizontally the nearest resting camera position, taken from column edges (each column\'s left edge at the left of the screen and its right edge at the right), never from the camera at drag start. A fast short flick therefore switches like the old discrete swipe, and a slow drag switches by position. The spring starts from the dragged position with the release velocity (M1).',
+  GS4: 'Glance: if the projection lands on the starting workspace, or a horizontal projection stays on the start, nothing changes and the view springs back. Touch cancel, lock, a 4th finger or a layout change during the drag return to the start without changing focus.',
+  GS5: 'A horizontal release focuses the fully visible column furthest in the drag direction at the chosen position, so a column already on screen can be focused by a drag; a vertical release focuses the snapped workspace (WS3). [touch].swipe_horizontal applies to the touchscreen only; the touchpad always scrolls columns.',
+  GS6: 'Unchanged: 1-finger bezel swipes (panel/launcher), 4 fingers unhandled, keyboard and wheel binds unchanged.',
+};
+const APPS = [
+  { app: 'kitty',         title: '~/src/Kajo — zsh' },
+  { app: 'firefox',       title: 'Wayland docs' },
+  { app: 'kajo-files',    title: 'Home' },
+  { app: 'kajo-ide',      title: 'comp_layout.c' },
+  { app: 'kajo-settings', title: 'Displays' },
+  { app: 'kajo-player',   title: 'clip.mkv' },
+];
+
+function newWs() { return { cols: [], fc: 0, view: 0, floats: [], ff: 0, fa: false, mem: null, fsMem: null }; }
+const S = { out: OUTPUTS.laptop, wss: [newWs()], active: 0, nextId: 1, appCursor: 0, switching: false };
+
+function resetState() {
+  S.out = OUTPUTS[S.outKey || 'laptop'];
+  S.wss = [newWs()]; S.active = 0; S.nextId = 1; S.appCursor = 0; S.switching = false;
+}
+function ws() { return S.wss[S.active]; }
+function wa() { return { x: 0, y: S.out.panel, w: S.out.w, h: S.out.h - S.out.panel }; }
+function floorTile(v) { const B = CFG.border; return Math.max(1, Math.floor(v - 2 * B)) + 2 * B; }
+function presetIndexOf(width) {
+  if (!width || width.k !== 'prop') return null;
+  const i = CFG.presetsW.findIndex(p => Math.abs(p - width.v) < 1e-6);
+  return i >= 0 ? i : null;
+}
+function makeWin(app) {
+  const a = app ? APPS.find(x => x.app === app) || { app, title: '' } : APPS[S.appCursor++ % APPS.length];
+  return { id: S.nextId++, app: a.app, title: a.title, h: { k: 'auto', w: 1 } };
+}
+function makeCol(win, width) {
+  const w = width || { k: 'prop', v: CFG.defaultW };
+  return { wins: [win], fw: 0, width: w, preset: presetIndexOf(w), full: false, fs: false, edgeMax: false, tabbed: false };
+}
+
+/* ── geometry (G3–G6) ── */
+function colWidth(c) {
+  const A = wa(), g = CFG.gap, B = CFG.border;
+  if (c.fs) return S.out.w;
+  if (c.edgeMax) return A.w;
+  let w;
+  if (c.full) w = (A.w - g) - g;
+  else if (c.width.k === 'prop') w = (A.w - g) * c.width.v - g;
+  else w = c.width.v + 2 * B;          // pixel width = window size, border added (G3)
+  return floorTile(Math.max(w, 1 + 2 * B));
+}
+function colX(w, i) { let x = 0; for (let k = 0; k < i; k++) x += colWidth(w.cols[k]) + CFG.gap; return x; }
+function stripWidth(w) { return w.cols.length ? colX(w, w.cols.length) - CFG.gap : 0; }
+const MIN_TILE = 60;   // illustrative client minimum height
+function resolveHeight(win) {
+  const A = wa(), g = CFG.gap, B = CFG.border;
+  if (win.h.k === 'preset') return (A.h - g) * CFG.presetsH[win.h.v] - g;
+  if (win.h.k === 'px') return win.h.v + 2 * B;
+  return null;
+}
+function tileHeights(c) {
+  const A = wa(), g = CFG.gap, n = c.wins.length;
+  if (c.fs) return c.wins.map(() => S.out.h);
+  if (c.edgeMax) return c.wins.map(() => A.h);
+  if (c.tabbed) {
+    let t = A.h - 2 * g;
+    const f = c.wins.find(w => w.h.k !== 'auto');
+    if (f) t = Math.min(resolveHeight(f), t);
+    t = floorTile(t);
+    return c.wins.map(() => t);
+  }
+  const avail = A.h - g * (n + 1);
+  const fi = c.wins.findIndex(w => w.h.k !== 'auto');
+  const hs = new Array(n).fill(0);
+  let rest = avail, total = 0;
+  if (fi >= 0) {
+    let f = resolveHeight(c.wins[fi]);
+    f = Math.max(MIN_TILE, Math.min(f, avail - (n - 1) * MIN_TILE));
+    hs[fi] = roundTile(f); rest -= hs[fi];
+  }
+  const shared = [];
+  c.wins.forEach((w, i) => { if (i !== fi) { total += w.h.w; shared.push(i); } });
+  let used = 0;
+  shared.forEach((i, idx) => {
+    if (idx === shared.length - 1 && n > 1) {
+      hs[i] = Math.max(MIN_TILE, rest - used);
+    } else {
+      hs[i] = roundTile(Math.max(MIN_TILE, rest * c.wins[i].h.w / total));
+      used += hs[i];
+    }
+  });
+  return hs;
+}
+function roundTile(v) { const B = CFG.border; return Math.max(1, Math.round(v - 2 * B)) + 2 * B; }   // G5: heights round to nearest
+function tileY(c, i, hs) {
+  if (c.fs) return 0;
+  const A = wa();
+  if (c.edgeMax) return A.y;
+  if (c.tabbed) return A.y + CFG.gap;
+  let y = A.y + CFG.gap;
+  for (let k = 0; k < i; k++) y += hs[k] + CFG.gap;
+  return y;
+}
+/* All window targets of a workspace, output-local (screen) coordinates. */
+function wsTargets(w) {
+  const out = [];
+  const A = wa();
+  w.cols.forEach((c, ci) => {
+    const x = A.x + colX(w, ci) - w.view, cw = colWidth(c), hs = tileHeights(c);
+    c.wins.forEach((win, k) => out.push({
+      win, col: c, x, y: tileY(c, k, hs), w: cw, h: hs[k], floating: false,
+      visible: !c.tabbed || k === c.fw, active: k === c.fw, fs: c.fs, edgeMax: !!c.edgeMax, tabs: c.tabbed ? c.wins.length : 0, tabIdx: k,
+      focused: S.wss[S.active] === w && !w.fa && ci === w.fc && k === c.fw,
+    }));
+  });
+  w.floats.forEach((f, idx) => out.push({
+    win: f.win, x: A.x + f.fx * A.w, y: A.y + f.fy * A.h, w: f.w, h: f.h, floating: true, visible: true,
+    active: f.win.id === w.ff, z: w.floats.length - idx, focused: S.wss[S.active] === w && w.fa && f.win.id === w.ff,
+  }));
+  return out;
+}
+function screenRect(w, c) { const i = w.cols.indexOf(c); return { x: wa().x + colX(w, i) - w.view, w: colWidth(c) }; }
+
+/* ── view (V1–V4, V7) ── */
+function isCentering(w) { return CFG.center === 'always' || (CFG.single && w.cols.length <= 1); }
+function centeredView(w, i) {
+  const A = wa(), x = colX(w, i), cw = colWidth(w.cols[i]);
+  if (w.cols[i].fs || w.cols[i].edgeMax || cw >= A.w) return x;
+  return x - (A.w - cw) / 2;
+}
+function revealView(w, i, prev) {
+  const c = w.cols[i], A = wa(), x = colX(w, i), cw = colWidth(c);
+  if (c.fs) return { view: x, rule: 'V7' };
+  if (c.edgeMax) return { view: x, rule: 'S5' };
+  if (isCentering(w)) return { view: centeredView(w, i), rule: CFG.center === 'always' ? 'V2' : 'V4' };
+  if (CFG.center === 'on-overflow' && prev != null && prev !== i) {
+    const src = prev > i ? Math.min(i + 1, w.cols.length - 1) : Math.max(i - 1, 0);
+    if (src !== i) {
+      const sx = colX(w, src), sw = colWidth(w.cols[src]);
+      const span = Math.max(sx + sw, x + cw) - Math.min(sx, x) + 2 * CFG.gap;
+      if (span > A.w) return { view: centeredView(w, i), rule: 'V3' };
+    }
+  }
+  if (cw >= A.w) return { view: x, rule: 'V1' };
+  const m = Math.min(CFG.gap, (A.w - cw) / 2);
+  if (x - m >= w.view - 0.5 && x + cw + m <= w.view + A.w + 0.5) return { view: w.view, rule: 'V1' };
+  const l = x - m, r = x + cw + m - A.w;
+  return { view: Math.abs(l - w.view) <= Math.abs(r - w.view) ? l : r, rule: 'V1' };
+}
+function fullyVisible(w, i) {
+  const A = wa(), x = colX(w, i), cw = colWidth(w.cols[i]);
+  return x >= w.view + CFG.gap - 0.5 && x + cw + CFG.gap <= w.view + A.w + 0.5;
+}
+
+/* ── helpers ── */
+function focusedCol(w) { return w.cols[w.fc]; }
+function focusedWin(w) {
+  if (w.fa) { const f = w.floats.find(f => f.win.id === w.ff); return f ? f.win : null; }
+  const c = focusedCol(w); return c ? c.wins[c.fw] : null;
+}
+function ensureLastEmpty() {
+  const last = S.wss[S.wss.length - 1];
+  if (last.cols.length || last.floats.length) { S.wss.push(newWs()); return true; }
+  return false;
+}
+function isEmpty(w) { return !w.cols.length && !w.floats.length; }
+function cleanupWorkspaces() {   // WS2: only when no switch animation is running
+  let removedBelow = 0;
+  for (let i = S.wss.length - 2; i >= 0; i--) {
+    if (i !== S.active && isEmpty(S.wss[i])) { S.wss.splice(i, 1); if (i < S.active) { S.active--; removedBelow++; } }
+  }
+  return removedBelow;
+}
+function setHeightsFromCurrent(c, except) {   // G4: others keep their current heights as weights
+  const hs = tileHeights(c);
+  c.wins.forEach((w, i) => { if (i !== except) w.h = { k: 'auto', w: hs[i] }; });
+}
+function clampFloat(f) {    // L6
+  const A = wa();
+  const kx = Math.min(75, Math.max(10, f.w / 4)), ky = Math.min(75, Math.max(10, f.h / 4));
+  let x = A.x + f.fx * A.w, y = A.y + f.fy * A.h;
+  x = Math.min(Math.max(x, A.x - (f.w - kx)), A.x + A.w - kx);
+  y = Math.min(Math.max(y, A.y - (f.h - ky)), A.y + A.h - ky);
+  f.fx = (x - A.x) / A.w; f.fy = (y - A.y) / A.h;
+}
+function placeFloat(f, x, y) { const A = wa(); f.fx = (x - A.x) / A.w; f.fy = (y - A.y) / A.h; clampFloat(f); }
+function placeInside(f, x, y) {   // clamp the whole window into the working area, top-left wins
+  const A = wa();
+  x = Math.max(A.x, Math.min(x, A.x + A.w - f.w)); y = Math.max(A.y, Math.min(y, A.y + A.h - f.h));
+  placeFloat(f, x, y);
+}
+function centerFloat(f) {
+  const A = wa();
+  placeFloat(f, A.x + Math.max(0, (A.w - f.w) / 2), A.y + Math.max(0, (A.h - f.h) / 2));
+}
+function raiseFloat(w, id) {
+  const i = w.floats.findIndex(f => f.win.id === id);
+  if (i > 0) w.floats.unshift(w.floats.splice(i, 1)[0]);
+  w.ff = id;
+}
+function removeFromStrip(w, win) {   // returns rules applied (C1/C2) and whether focus was there
+  const ci = w.cols.findIndex(c => c.wins.includes(win));
+  const c = w.cols[ci], k = c.wins.indexOf(win);
+  const wasFocused = !w.fa && ci === w.fc && k === c.fw;
+  const rules = [];
+  if (c.wins.length > 1) {
+    c.wins.splice(k, 1);
+    if (k < c.fw) c.fw--;
+    else if (k === c.fw) { c.fw = Math.min(k, c.wins.length - 1); if (wasFocused) rules.push('C2'); }
+    if (c.wins.length === 1 && c.wins[0].h.k === 'auto') c.wins[0].h = { k: 'auto', w: 1 };   // G4: explicit height is kept
+  } else {
+    w.cols.splice(ci, 1);
+    if (ci < w.fc) w.fc--;
+    else if (ci === w.fc) { w.fc = Math.min(w.fc, Math.max(0, w.cols.length - 1)); if (wasFocused) rules.push('C1'); }
+  }
+  if (!w.cols.length) { w.fc = 0; if (w.floats.length && wasFocused) { w.fa = true; rules.push('L7'); } }
+  return { rules, wasFocused, removedCol: c.wins.length === 0 || !w.cols.includes(c) ? c : null };
+}
+
+/* ── actions: each returns a result; commit() applies V5/V6 and memory rules ── */
+const A_ = {};
+A_['spawn'] = (w, arg) => {           // O1, O2 (focus moves even from a fullscreen window)
+  const wasEmpty = w.cols.length === 0 && w.floats.length === 0;
+  const win = makeWin(arg && arg.app);
+  const col = makeCol(win, arg && arg.width);
+  const opener = focusedCol(w);
+  const fromFs = !w.fa && opener && opener.fs;
+  const at = w.cols.length ? w.fc + 1 : 0;
+  const memView = w.view;
+  w.cols.splice(at, 0, col);
+  const rules = fromFs ? ['O1', 'O2', 'G3'] : ['O1', 'G3'];
+  const prev = w.cols.length > 1 ? w.fc : null;
+  w.fc = at; w.fa = false;
+  w.mem = opener ? { opener, col, view: memView } : null;
+  ensureLastEmpty();
+  return { rules, reveal: prev, keepMem: true, firstOnEmpty: wasEmpty, note: `${win.app} opened` };
+};
+A_['open-floating'] = (w, arg) => {   // O3, L3
+  const win = makeWin(arg && arg.app);
+  const f = { win, w: (arg && arg.w) || 640, h: (arg && arg.h) || 420, fx: 0, fy: 0 };
+  const parent = arg && arg.dialog ? focusedWin(w) : null;
+  if (parent) {
+    const t = wsTargets(w).find(t => t.win === parent);
+    placeFloat(f, t.x + (t.w - f.w) / 2, t.y + (t.h - f.h) / 2);
+  } else centerFloat(f);
+  w.floats.unshift(f); w.ff = win.id; w.fa = true;
+  ensureLastEmpty();
+  return { rules: ['O3', 'L3', 'L1'], note: parent ? `dialog over ${parent.app}` : `${win.app} floating` };
+};
+A_['close-window'] = (w) => {
+  const win = focusedWin(w);
+  if (!win) return { noop: true, note: 'nothing focused' };
+  if (w.fa) {
+    w.floats = w.floats.filter(f => f.win !== win);
+    if (w.floats.length) w.ff = w.floats[0].win.id; else { w.fa = false; w.ff = 0; }
+    return { rules: w.floats.length ? [] : ['L7'], note: `${win.app} closed`, noAnchor: true };
+  }
+  const c = focusedCol(w), mem = w.mem;
+  const r = removeFromStrip(w, win);
+  if (mem && mem.col === c && !w.cols.includes(c) && w.cols.includes(mem.opener)) {
+    w.fc = w.cols.indexOf(mem.opener); w.view = mem.view; w.mem = null;
+    return { rules: ['O5'], viewSet: true, reveal: null, note: `${win.app} closed: back to ${mem.opener.wins[mem.opener.fw].app}` };
+  }
+  return { rules: r.rules, noAnchor: r.rules.includes('C1'), reveal: w.cols.length ? null : undefined, note: `${win.app} closed` };
+};
+A_['close-left-of-focus'] = (w) => {  // C3 / V5 demo helper
+  if (w.fa || w.fc === 0) return { noop: true, note: 'no column left of focus' };
+  const victim = w.cols[0].wins[0];
+  removeFromStrip(w, victim);
+  return { rules: ['C3', 'V5'], note: `${victim.app} (left of focus) closed` };
+};
+function floatFocusDir(w, dx, dy) {
+  const cur = w.floats.find(f => f.win.id === w.ff); if (!cur) return { noop: true };
+  const A = wa(), c = f => ({ x: A.x + f.fx * A.w + f.w / 2, y: A.y + f.fy * A.h + f.h / 2 });
+  const o = c(cur); let best = null, bd = Infinity;
+  w.floats.forEach(f => { if (f === cur) return; const p = c(f); const d = dx ? (p.x - o.x) * dx : (p.y - o.y) * dy;
+    if (d > 0 && d < bd) { bd = d; best = f; } });
+  if (!best) return { noop: true, rules: ['L4'], note: 'no floating window in that direction' };
+  raiseFloat(w, best.win.id);
+  return { rules: ['L4', 'L5'], noAnchor: true };
+}
+function floatMove(w, dx, dy) {
+  const f = w.floats.find(f => f.win.id === w.ff); if (!f) return { noop: true };
+  const A = wa(); placeFloat(f, A.x + f.fx * A.w + dx, A.y + f.fy * A.h + dy);
+  return { rules: ['L4', 'L6'], noAnchor: true };
+}
+function focusColumn(w, idx, rules) {
+  if (w.fa) return null;
+  if (!w.cols.length || idx < 0 || idx >= w.cols.length || idx === w.fc) return { noop: true, rules: ['F1'], note: 'at the end: nothing happens' };
+  const prev = w.fc; w.fc = idx;
+  return { rules: rules || ['F1'], reveal: prev, anim: 'scroll' };
+}
+A_['focus-column-left']  = w => w.fa ? floatFocusDir(w, -1, 0) : focusColumn(w, w.fc - 1);
+A_['focus-column-right'] = w => w.fa ? floatFocusDir(w, 1, 0) : focusColumn(w, w.fc + 1);
+A_['focus-column-first'] = w => {
+  if (w.fa) { let b = w.floats.reduce((a, f) => !a || f.fx < a.fx ? f : a, null); if (b) raiseFloat(w, b.win.id); return { rules: ['L4'], noAnchor: true }; }
+  return focusColumn(w, 0);
+};
+A_['focus-column-last'] = w => {
+  if (w.fa) { let b = w.floats.reduce((a, f) => !a || f.fx >= a.fx ? f : a, null); if (b) raiseFloat(w, b.win.id); return { rules: ['L4'], noAnchor: true }; }
+  return focusColumn(w, w.cols.length - 1);
+};
+function focusWindowStep(w, d) {
+  if (w.fa) return floatFocusDir(w, 0, d);
+  const c = focusedCol(w); if (!c) return { noop: true };
+  const n = c.fw + d; if (n < 0 || n >= c.wins.length) return { noop: true, rules: ['F1'], note: 'top/bottom of the column' };
+  c.fw = n; return { rules: c.tabbed ? ['F1', 'T1'] : ['F1'], noAnchor: true };
+}
+A_['focus-window-up']   = w => focusWindowStep(w, -1);
+A_['focus-window-down'] = w => focusWindowStep(w, 1);
+function moveColumnTo(w, idx) {
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  if (!w.cols.length || idx < 0 || idx >= w.cols.length || idx === w.fc) return { noop: true, rules: ['F2'], note: 'at the end: nothing happens' };
+  const c = w.cols.splice(w.fc, 1)[0]; w.cols.splice(idx, 0, c); w.fc = idx;
+  return { rules: ['F2'], noAnchor: true, reveal: null };
+}
+A_['move-column-left']  = w => w.fa ? floatMove(w, -CFG.floatStep, 0) : moveColumnTo(w, w.fc - 1);
+A_['move-column-right'] = w => w.fa ? floatMove(w, CFG.floatStep, 0) : moveColumnTo(w, w.fc + 1);
+A_['move-column-to-first'] = w => moveColumnTo(w, 0);
+A_['move-column-to-last']  = w => moveColumnTo(w, w.cols.length - 1);
+function moveWindowStep(w, d) {
+  if (w.fa) return floatMove(w, 0, d * CFG.floatStep);
+  const c = focusedCol(w); if (!c) return { noop: true };
+  const n = c.fw + d; if (n < 0 || n >= c.wins.length) return { noop: true, rules: ['F2'] };
+  [c.wins[c.fw], c.wins[n]] = [c.wins[n], c.wins[c.fw]]; c.fw = n;
+  return { rules: ['F2'] };
+}
+A_['move-window-up']   = w => moveWindowStep(w, -1);
+A_['move-window-down'] = w => moveWindowStep(w, 1);
+function consumeOrExpel(w, dir) {   // K1, K4
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w); if (!c) return { noop: true };
+  const win = c.wins[c.fw];
+  if (c.wins.length === 1) {
+    const ti = w.fc + dir;
+    if (ti < 0 || ti >= w.cols.length) return { noop: true, rules: ['K1'], note: 'no column on that side' };
+    const t = w.cols[ti];
+    win.h = { k: 'auto', w: 1 };
+    w.cols.splice(w.fc, 1); t.wins.push(win); t.fw = t.wins.length - 1; w.fc = w.cols.indexOf(t);
+    return { rules: ['K1'], anchorCol: t, reveal: null };
+  }
+  c.wins.splice(c.fw, 1); c.fw = Math.min(c.fw, c.wins.length - 1);
+  if (c.wins.length === 1 && c.wins[0].h.k === 'auto') c.wins[0].h = { k: 'auto', w: 1 };
+  win.h = { k: 'auto', w: 1 };
+  const nc = makeCol(win, { ...c.width }); nc.full = c.full;
+  const at = dir < 0 ? w.fc : w.fc + 1;
+  w.cols.splice(at, 0, nc); w.fc = at;
+  return { rules: ['K1', 'K4'], anchorCol: c, reveal: null };
+}
+A_['consume-or-expel-window-left']  = w => consumeOrExpel(w, -1);
+A_['consume-or-expel-window-right'] = w => consumeOrExpel(w, 1);
+A_['consume-window-into-column'] = w => {   // K2
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w), r = w.cols[w.fc + 1];
+  if (!c || !r) return { noop: true, rules: ['K2'], note: 'no column on the right' };
+  const win = r.wins.shift(); win.h = { k: 'auto', w: 1 };
+  if (!r.wins.length) w.cols.splice(w.fc + 1, 1); else r.fw = Math.max(0, r.fw - 1);
+  c.wins.push(win);
+  return { rules: ['K2'] };
+};
+A_['expel-window-from-column'] = w => {     // K3, K4
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w); if (!c || c.wins.length < 2) return { noop: true, rules: ['K3'], note: 'the column has one window' };
+  const win = c.wins.pop(); win.h = { k: 'auto', w: 1 };
+  if (c.fw >= c.wins.length) c.fw = c.wins.length - 1;
+  if (c.wins.length === 1 && c.wins[0].h.k === 'auto') c.wins[0].h = { k: 'auto', w: 1 };
+  const nc = makeCol(win, { ...c.width }); w.cols.splice(w.fc + 1, 0, nc);
+  return { rules: ['K3', 'K4'] };
+};
+A_['switch-preset-column-width'] = w => {   // W1
+  if (w.fa) {
+    const f = w.floats.find(f => f.win.id === w.ff); const A = wa();
+    f.pw = f.pw == null ? CFG.presetsW.findIndex(p => A.w * p > f.w + 1) : (f.pw + 1) % CFG.presetsW.length;
+    if (f.pw < 0) f.pw = 0;
+    f.w = Math.round(A.w * CFG.presetsW[f.pw]); clampFloat(f);
+    return { rules: ['W1', 'L4'], noAnchor: true };
+  }
+  const c = focusedCol(w); if (!c) return { noop: true };
+  let i;
+  if (c.preset != null && !c.full) i = (c.preset + 1) % CFG.presetsW.length;
+  else {
+    const cur = colWidth(c), A = wa();
+    i = CFG.presetsW.findIndex(p => floorTile((A.w - CFG.gap) * p - CFG.gap) > cur + 1);
+    if (i < 0) i = 0;
+  }
+  c.width = { k: 'prop', v: CFG.presetsW[i] }; c.preset = i; c.full = false;
+  return { rules: ['W1', 'V6'], reveal: null, note: `width preset ${i + 1}/${CFG.presetsW.length} (${CFG.presetsW[i]})` };
+};
+A_['maximize-column'] = w => {   // W2
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w); if (!c) return { noop: true };
+  c.full = !c.full;
+  return { rules: ['W2', 'V6'], reveal: null, note: c.full ? 'full width' : 'previous width' };
+};
+A_['expand-column-to-available-width'] = w => {   // W3
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w); if (!c || c.full || c.fs) return { noop: true, rules: ['W3'] };
+  if (isCentering(w)) return Object.assign(A_['maximize-column'](w), { rules: ['W3', 'W2'] });
+  if (!fullyVisible(w, w.fc)) return { noop: true, rules: ['W3'], note: 'focused column not fully visible' };
+  const vis = w.cols.map((_, i) => i).filter(i => fullyVisible(w, i));
+  if (vis.length === 1) return Object.assign(A_['maximize-column'](w), { rules: ['W3', 'W2'] });
+  const A = wa(); const taken = vis.reduce((s, i) => s + colWidth(w.cols[i]) + CFG.gap, 0);
+  const free = A.w - CFG.gap - taken;
+  if (free <= 0) return { noop: true, rules: ['W3'], note: 'no room to grow' };
+  const left = vis[0];
+  c.width = { k: 'px', v: colWidth(c) + free - 2 * CFG.border }; c.preset = null;
+  w.view = colX(w, left) - CFG.gap;
+  return { rules: ['W3'], viewSet: true, reveal: null };
+};
+function setColumnWidth(w, delta) {   // W4 (delta in percent points)
+  if (w.fa) {
+    const f = w.floats.find(f => f.win.id === w.ff); const A = wa();
+    f.w = Math.max(100, Math.round(f.w + A.w * delta / 100)); f.pw = null; clampFloat(f);
+    return { rules: ['W4', 'L4'], noAnchor: true };
+  }
+  const c = focusedCol(w); if (!c) return { noop: true };
+  const A = wa();
+  let p = c.full ? 1 : c.width.k === 'prop' ? c.width.v : (colWidth(c) + CFG.gap) / (A.w - CFG.gap);
+  p = Math.max(0.05, Math.min(1, p + delta / 100));
+  c.width = { k: 'prop', v: p }; c.preset = null; c.full = false;
+  return { rules: ['W4', 'V6'], reveal: null, note: `width ${(p * 100).toFixed(0)}%` };
+}
+A_['set-column-width -10%'] = w => setColumnWidth(w, -10);
+A_['set-column-width +10%'] = w => setColumnWidth(w, 10);
+function setWindowHeight(w, delta) {   // W4, G4
+  if (w.fa) {
+    const f = w.floats.find(f => f.win.id === w.ff); const A = wa();
+    f.h = Math.max(80, Math.round(f.h + A.h * delta / 100)); clampFloat(f);
+    return { rules: ['W4', 'L4'], noAnchor: true };
+  }
+  const c = focusedCol(w); if (!c) return { noop: true };
+  const hs = tileHeights(c), A = wa();
+  setHeightsFromCurrent(c, c.fw);
+  const px = Math.round(hs[c.fw] - 2 * CFG.border + (A.h - CFG.gap) * delta / 100);
+  c.wins[c.fw].h = { k: 'px', v: Math.max(MIN_TILE, px), w: 1 };
+  return { rules: ['W4', 'G4'] };
+}
+A_['set-window-height -10%'] = w => setWindowHeight(w, -10);
+A_['set-window-height +10%'] = w => setWindowHeight(w, 10);
+A_['switch-preset-window-height'] = w => {   // W5
+  if (w.fa) {
+    const f = w.floats.find(f => f.win.id === w.ff); const A = wa();
+    f.ph = f.ph == null ? 0 : (f.ph + 1) % CFG.presetsH.length;
+    f.h = Math.round(A.h * CFG.presetsH[f.ph]); clampFloat(f);
+    return { rules: ['W5', 'L4'], noAnchor: true };
+  }
+  const c = focusedCol(w); if (!c) return { noop: true };
+  const win = c.wins[c.fw];
+  let i;
+  if (win.h.k === 'preset') i = (win.h.v + 1) % CFG.presetsH.length;
+  else {
+    const cur = tileHeights(c)[c.fw], A = wa();
+    i = CFG.presetsH.findIndex(p => roundTile((A.h - CFG.gap) * p - CFG.gap) > cur + 1); if (i < 0) i = 0;
+  }
+  setHeightsFromCurrent(c, c.fw);
+  win.h = { k: 'preset', v: i, w: 1 };
+  return { rules: ['W5', 'G4'], note: `height preset ${i + 1}/${CFG.presetsH.length}` };
+};
+A_['reset-window-height'] = w => {
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w); if (!c) return { noop: true };
+  if (c.tabbed) c.wins.forEach(x => x.h = { k: 'auto', w: 1 });
+  else c.wins[c.fw].h = { k: 'auto', w: 1 };
+  return { rules: ['W5'] };
+};
+A_['toggle-column-tabbed'] = w => {   // T1, T2
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  const c = focusedCol(w); if (!c) return { noop: true };
+  c.tabbed = !c.tabbed;
+  const rules = ['T1'];
+  if (!c.tabbed && (c.fs || c.edgeMax) && c.wins.length > 1) { c.fs = false; c.edgeMax = false; rules.push('T2'); }
+  return { rules, reveal: null, note: c.tabbed ? 'tabbed' : 'stacked' };
+};
+function toggleFullOrEdge(w, prop, mainRule, alignRule) {   // S1–S5
+  const win = focusedWin(w); if (!win) return { noop: true };
+  if (w.fa) {
+    const f = w.floats.find(f => f.win === win);
+    w.floats = w.floats.filter(x => x !== f); w.ff = w.floats.length ? w.floats[0].win.id : 0;
+    win.floatMem = { fx: f.fx, fy: f.fy, w: f.w, h: f.h };
+    const at = w.cols.length ? w.fc + 1 : 0;
+    const col = makeCol(win); col[prop] = true; w.cols.splice(at, 0, col);
+    w.fsMem = w.view; w.fc = at; w.fa = false;
+    return { rules: ['S4', mainRule], reveal: null, keepMem: true };
+  }
+  const c = focusedCol(w);
+  if (c[prop]) {
+    c[prop] = false;
+    if (win.floatMem) {
+      const m = win.floatMem; delete win.floatMem;
+      removeFromStrip(w, win);
+      const f = { win, fx: m.fx, fy: m.fy, w: m.w, h: m.h }; w.floats.unshift(f); w.ff = win.id; w.fa = true;
+      if (w.fsMem != null) { w.view = w.fsMem; w.fsMem = null; }
+      return { rules: ['S4', 'S3'], viewSet: true, keepMem: true };
+    }
+    if (w.fsMem != null) { w.view = w.fsMem; w.fsMem = null; return { rules: ['S3', 'V6'], viewSet: true, reveal: null }; }
+    return { rules: [mainRule, 'V6'], reveal: null };
+  }
+  c.fs = false; c.edgeMax = false;
+  w.fsMem = w.view;
+  if (c.wins.length > 1 && !c.tabbed) {
+    c.wins.splice(c.fw, 1); c.fw = Math.min(c.fw, c.wins.length - 1);
+    if (c.wins.length === 1 && c.wins[0].h.k === 'auto') c.wins[0].h = { k: 'auto', w: 1 };
+    win.h = { k: 'auto', w: 1 };
+    const nc = makeCol(win, { ...c.width }); nc[prop] = true; w.cols.splice(w.fc + 1, 0, nc); w.fc++;
+    return { rules: ['S2', mainRule, alignRule], anchorCol: c, reveal: null, keepMem: true };
+  }
+  c[prop] = true;
+  return { rules: c.tabbed && c.wins.length > 1 ? [mainRule, 'T2', alignRule] : [mainRule, alignRule], reveal: null };
+}
+A_['fullscreen-window'] = w => toggleFullOrEdge(w, 'fs', 'S1', 'V7');
+A_['maximize-window-to-edges'] = w => toggleFullOrEdge(w, 'edgeMax', 'S5', 'G6');
+A_['toggle-window-floating'] = w => {   // L2
+  const win = focusedWin(w); if (!win) return { noop: true };
+  if (w.fa) {
+    const f = w.floats.find(f => f.win === win);
+    w.floats = w.floats.filter(x => x !== f); w.ff = w.floats.length ? w.floats[0].win.id : 0;
+    win.floatMem = { fx: f.fx, fy: f.fy, w: f.w, h: f.h, keep: true };
+    const at = w.cols.length ? w.fc + 1 : 0;
+    const prev = w.cols.length ? w.fc : null;
+    w.cols.splice(at, 0, makeCol(win, { k: 'px', v: f.w - 2 * CFG.border })); w.fc = at; w.fa = false;
+    return { rules: ['L2', 'G3'], reveal: prev, note: 'back in the strip as a column with its floating width in pixels' };
+  }
+  const t = wsTargets(w).find(t => t.win === win);
+  removeFromStrip(w, win);
+  const f = { win, w: t.w, h: t.h, fx: 0, fy: 0 };
+  if (win.floatMem && win.floatMem.keep) { Object.assign(f, { fx: win.floatMem.fx, fy: win.floatMem.fy, w: win.floatMem.w, h: win.floatMem.h }); clampFloat(f); }
+  else { placeInside(f, t.x + CFG.floatOffset, t.y + CFG.floatOffset); }   // L2: +50 px right/down, clamped inside working area
+  delete win.floatMem;
+  w.floats.unshift(f); w.ff = win.id; w.fa = true;
+  return { rules: ['L2', 'L6', 'L1'], noAnchor: true };
+};
+A_['switch-focus-floating-tiling'] = w => {   // L4
+  if (!w.floats.length || !w.cols.length) return { noop: true, rules: ['L4'], note: 'needs windows on both layers' };
+  w.fa = !w.fa; if (w.fa && !w.ff) w.ff = w.floats[0].win.id;
+  return { rules: ['L4'], noAnchor: true, note: w.fa ? 'floating layer focused' : 'strip focused' };
+};
+A_['center-column'] = w => {   // Z1
+  if (w.fa) { const f = w.floats.find(f => f.win.id === w.ff); centerFloat(f); return { rules: ['Z1', 'L4'], noAnchor: true }; }
+  if (!w.cols.length) return { noop: true };
+  w.view = centeredView(w, w.fc);
+  return { rules: ['Z1'], viewSet: true, anim: 'scroll' };
+};
+A_['center-visible-columns'] = w => {   // Z2
+  if (w.fa) return { noop: true, rules: ['L4'] };
+  if (!w.cols.length || isCentering(w)) return { noop: true, rules: ['Z2'], note: 'centring mode active' };
+  if (!fullyVisible(w, w.fc)) return { noop: true, rules: ['Z2'], note: 'focused column not fully visible' };
+  const vis = w.cols.map((_, i) => i).filter(i => fullyVisible(w, i));
+  const left = colX(w, vis[0]), right = colX(w, vis[vis.length - 1]) + colWidth(w.cols[vis[vis.length - 1]]);
+  w.view = left - (wa().w - (right - left)) / 2;
+  return { rules: ['Z2'], viewSet: true, anim: 'scroll' };
+};
+function focusWorkspace(d) {   // WS3
+  const n = Math.max(0, Math.min(S.wss.length - 1, S.active + d));
+  if (n === S.active) return { noop: true, rules: ['WS3'], note: 'no workspace there' };
+  S.active = n; S.switching = true;
+  return { rules: ['WS3', 'WS2'], noAnchor: true, wsSwitch: true };
+}
+A_['focus-workspace-up']   = () => focusWorkspace(-1);
+A_['focus-workspace-down'] = () => focusWorkspace(1);
+function moveColumnToWorkspace(w, d) {   // WS4, M4
+  const n = Math.max(0, Math.min(S.wss.length - 1, S.active + d));
+  if (n === S.active) return { noop: true, rules: ['WS4'] };
+  const t = S.wss[n];
+  const moved = [];
+  if (w.fa) {
+    const f = w.floats.find(f => f.win.id === w.ff); if (!f) return { noop: true };
+    w.floats = w.floats.filter(x => x !== f); w.ff = w.floats.length ? w.floats[0].win.id : 0; if (!w.floats.length) w.fa = false;
+    t.floats.unshift(f); t.ff = f.win.id; t.fa = true; moved.push(f.win);
+  } else {
+    const c = focusedCol(w); if (!c) return { noop: true };
+    w.cols.splice(w.fc, 1); w.fc = Math.min(w.fc, Math.max(0, w.cols.length - 1));
+    if (!w.cols.length && w.floats.length) w.fa = true;
+    const at = t.cols.length ? t.fc + 1 : 0; const prev = t.cols.length ? t.fc : null;
+    t.cols.splice(at, 0, c); t.fc = at; t.fa = false;
+    t.view = revealView(t, at, prev).view;
+    moved.push(...c.wins);
+  }
+  const from = S.active; S.active = n; S.switching = true;
+  ensureLastEmpty();
+  return { rules: ['WS4', 'M4'], noAnchor: true, wsSwitch: true, movedWins: moved, fromWs: from };
+}
+A_['move-column-to-workspace-up']   = w => moveColumnToWorkspace(w, -1);
+A_['move-column-to-workspace-down'] = w => moveColumnToWorkspace(w, 1);
+function moveWorkspace(d) {   // WS5
+  const a = S.active, b = a + d;
+  if (b < 0 || b >= S.wss.length) return { noop: true, rules: ['WS5'] };
+  [S.wss[a], S.wss[b]] = [S.wss[b], S.wss[a]]; S.active = b;
+  ensureLastEmpty(); S.switching = false; cleanupWorkspaces();
+  return { rules: ['WS5', 'WS1'], noAnchor: true, wsJump: true };
+}
+A_['move-workspace-up']   = () => moveWorkspace(-1);
+A_['move-workspace-down'] = () => moveWorkspace(1);
+
+/* Run an action on the focused workspace and apply the cross-cutting rules. */
+function runAction(name, arg) {
+  const w = ws();
+  const fn = A_[name]; if (!fn) return { noop: true, note: 'unknown action ' + name };
+  const before = {
+    focusId: focusedWin(w) ? focusedWin(w).id : 0, col: w.fa ? null : focusedCol(w),
+    sx: new Map(w.cols.map((c, i) => [c, colX(w, i) - w.view])), view: w.view,
+  };
+  const res = fn(w, arg) || { noop: true };
+  if (res.noop) return res;
+  const rules = [...(res.rules || [])];
+  // V5: keep the anchor column where it is on screen
+  let v5View = before.view;
+  if (!res.viewSet && !res.noAnchor && !res.wsSwitch) {
+    const anchor = res.anchorCol || (before.col && w.cols.includes(before.col) ? before.col : null);
+    if (anchor && before.sx.has(anchor) && w.cols.includes(anchor)) {
+      const nv = colX(w, w.cols.indexOf(anchor)) - before.sx.get(anchor);
+      if (Math.abs(nv - w.view) > 0.5 && !rules.includes('V5')) rules.push('V5');
+      w.view = nv;
+      v5View = nv;
+    }
+  }
+  const movedCols = new Set();
+  if (!res.wsSwitch) {
+    w.cols.forEach((c, i) => {
+      if (!before.sx.has(c) || Math.abs((colX(w, i) - v5View) - before.sx.get(c)) > 0.5) movedCols.add(c);
+    });
+  }
+  // V1–V4, V6, V7: reveal the focused column
+  if (res.reveal !== undefined && w.cols.length && !w.fa) {
+    const r = revealView(w, w.fc, res.reveal);
+    const moved = Math.abs(r.view - w.view) > 0.5;
+    w.view = r.view;
+    rules.push(r.rule + (moved ? '' : '·'));
+  }
+  if (!w.cols.length) { w.view = 0; v5View = 0; }
+  res.v5Delta = v5View - before.view;
+  res.scrollDelta = w.view - v5View;
+  res.movedCols = movedCols;
+  // O5 / S3 memory is forgotten when focus changes
+  const after = focusedWin(w) ? focusedWin(w).id : 0;
+  if (after !== before.focusId && !res.keepMem) { w.mem = null; w.fsMem = null; }
+  res.rules = rules;
+  return res;
+}
+function setOutput(key) {   // OUT3, OUT4
+  S.outKey = key; S.out = OUTPUTS[key];
+  S.wss.forEach(w => { if (w.cols.length) w.view = revealView(w, w.fc, null).view; w.floats.forEach(clampFloat); });
+  return { rules: ['OUT3', 'OUT4'], note: `now on ${S.out.name} ${S.out.w}×${S.out.h}` };
+}
+function finishSwitch() {   // WS2: called when the switch animation settled
+  if (!S.switching) return 0;
+  S.switching = false;
+  return cleanupWorkspaces();
+}
+
+/* ── 3-finger drag (GS1–GS6), pure helpers (mirror src/comp/core/comp_gesture.c) ── */
+function rubberBand(v, lo, hi, dim) {   // GS2: soft limit past the ends, at most `dim` of overshoot
+  const rb = d => (1 - 1 / (d * GESTURE.rubber / dim + 1)) * dim;
+  if (v < lo) return lo - rb(lo - v);
+  if (v > hi) return hi + rb(v - hi);
+  return v;
+}
+/* GS3: resting camera positions of a workspace, from column edges only (never from the
+ * camera at drag start), limited to [first column's left, last column's right]. */
+function restViews(w) {
+  const A = wa(), out = [];
+  w.cols.forEach((c, i) => {
+    const x = colX(w, i), cw = colWidth(c);
+    if (c.fs || c.edgeMax || isCentering(w) || cw + 2 * CFG.gap > A.w) {
+      out.push({ view: revealView(w, i, i).view, col: i });
+      return;
+    }
+    out.push({ view: x - CFG.gap, col: i }, { view: x + cw + CFG.gap - A.w, col: i });
+  });
+  if (!out.length) return { views: out, lo: 0, hi: 0 };
+  const lo = out[0].view, hi = Math.max(lo, out[out.length - 1].view);
+  out.forEach(r => { r.view = Math.min(hi, Math.max(lo, r.view)); });
+  return { views: out, lo, hi };
+}
+function visibleAt(w, i, view) {
+  const A = wa(), c = w.cols[i], m = c.fs ? 0 : CFG.gap, x = colX(w, i), cw = colWidth(c);
+  return x - m >= view - 0.5 && x + cw + m <= view + A.w + 0.5;
+}
+/* GS3/GS5: nearest resting position to the projection; focus the fully visible column
+ * furthest in the drag direction ("always": the column the position belongs to). */
+function pickColumnRelease(w, startView, projected) {
+  const { views } = restViews(w);
+  if (!views.length) return { col: 0, view: 0 };
+  let best = views[0];
+  views.forEach(r => { if (Math.abs(r.view - projected) < Math.abs(best.view - projected)) best = r; });
+  let col = best.col;
+  if (CFG.center !== 'always') {
+    const dir = projected - startView, n = w.cols.length;
+    if (Math.abs(dir) <= 0.5 && !w.fa && w.fc < n && visibleAt(w, w.fc, best.view)) col = w.fc;
+    else for (let k = 0; k < n; k++) {
+      const i = dir < 0 ? k : n - 1 - k;
+      if (visibleAt(w, i, best.view)) { col = i; break; }
+    }
+  }
+  return { col, view: best.view };
+}
+/* GS3: workspace units. The flick adds at most one workspace to the one nearest the release point. */
+function pickWorkspaceSnap(released, projected, n) {
+  const clamp = v => Math.max(0, Math.min(n - 1, v));
+  const near = clamp(Math.round(released));
+  return clamp(Math.max(near - 1, Math.min(near + 1, Math.round(projected))));
+}
+function gestureCommitColumn(w, col, view) {   // GS5
+  const changed = col !== w.fc || w.fa;
+  w.fa = false; w.fc = col; w.view = view;
+  if (changed) { w.mem = null; w.fsMem = null; }
+  return { rules: changed ? ['GS3', 'GS5', 'F1'] : ['GS3', 'GS4'], changed };
+}
+function gestureCommitWorkspace(target) {      // GS5, WS3
+  if (target === S.active) return { rules: ['GS3', 'GS4'], changed: false };
+  S.active = target; S.switching = true;
+  return { rules: ['GS3', 'GS5', 'WS3', 'WS2'], changed: true };
+}
+if (typeof module !== 'undefined') module.exports = { CFG, OUTPUTS, S, resetState, runAction, setOutput, finishSwitch, ws, wa,
+  colX, colWidth, wsTargets, tileHeights, focusedWin, focusedCol, A_,
+  GESTURE, rubberBand, restViews, pickColumnRelease, pickWorkspaceSnap, gestureCommitColumn, gestureCommitWorkspace };
+// ==MODEL END==
+
+/* ───────────────────────── springs (§3.14 M1–M5: velocity kept on retarget) ───────────────────────── */
+class Spring {
+  constructor(x, t) { this.x0 = x; this.v0 = 0; this.t0 = t; this.to = x; this.p = null; }
+  _eval(t) {
+    if (!this.p) return [this.to, 0];
+    const dt = Math.max(0, t - this.t0), k = this.p.k, z = this.p.z, w0 = Math.sqrt(k);
+    const d0 = this.x0 - this.to, v0 = this.v0; let d, v;
+    if (Math.abs(z - 1) < 1e-6) { const b = v0 + w0 * d0, e = Math.exp(-w0 * dt); d = e * (d0 + b * dt); v = e * (b - w0 * (d0 + b * dt)); }
+    else if (z < 1) {
+      const wd = w0 * Math.sqrt(1 - z * z), a = z * w0, b = (v0 + a * d0) / wd, e = Math.exp(-a * dt), c = Math.cos(wd * dt), s = Math.sin(wd * dt);
+      d = e * (d0 * c + b * s); v = e * ((b * wd - a * d0) * c - (d0 * wd + a * b) * s);
+    } else {
+      const r = Math.sqrt(z * z - 1), r1 = -w0 * (z - r), r2 = -w0 * (z + r), c2 = (v0 - r1 * d0) / (r2 - r1), c1 = d0 - c2;
+      d = c1 * Math.exp(r1 * dt) + c2 * Math.exp(r2 * dt); v = c1 * r1 * Math.exp(r1 * dt) + c2 * r2 * Math.exp(r2 * dt);
+    }
+    return [this.to + d, v];
+  }
+  value(t) { return this._eval(t)[0]; }
+  retarget(to, t, p) { const [x, v] = this._eval(t); this.x0 = x; this.v0 = v; this.t0 = t; this.to = to; this.p = p; }
+  jump(x, t) { this.x0 = x; this.to = x; this.v0 = 0; this.t0 = t; this.p = null; }
+  launch(x, v, t, p) { this.x0 = x; this.to = x; this.v0 = v; this.t0 = t; this.p = p; }   // GS3: start at x with velocity v
+  shift(d) { this.x0 += d; this.to += d; }
+  done(t) { const [x, v] = this._eval(t); return Math.abs(x - this.to) < 0.3 && Math.abs(v) < 3; }
+}
+
+/* ───────────────────────── view layer ───────────────────────── */
+const $ = s => document.querySelector(s);
+let simTime = 0, speed = 1, modKey = 'alt', scaleF = 1;
+const anims = new Map();      // win id → { x, y: Spring, w, h, el, wsObj }
+let wsSpring = new Spring(0, 0);
+const camSprings = new Map(); // ws obj → Spring (minimap)
+const output = $('#output');
+
+function wsGap() { return Math.round(S.out.h * 0.1); }   // WS7
+function now() { return simTime; }
+
+function sync(kind, res) {
+  const t = now();
+  const seen = new Set();
+  if (res && res.movedWins) {          // M4: start from the old on-screen place in the new frame
+    const d = (res.fromWs - S.active) * (S.out.h + wsGap());
+    res.movedWins.forEach(win => { const a = anims.get(win.id); if (a) a.y.shift(d); });
+  }
+  S.wss.forEach(w => {
+    wsTargets(w).forEach(tg => {
+      seen.add(tg.win.id);
+      let a = anims.get(tg.win.id);
+      if (!a) { a = { x: new Spring(tg.x, t), y: new Spring(tg.y, t), w: new Spring(tg.w, t), h: new Spring(tg.h, t), el: makeWinEl(tg.win) }; anims.set(tg.win.id, a); }
+      if (speed === 0) { a.x.jump(tg.x, t); a.y.jump(tg.y, t); }
+      else {
+        const colMoved = res && res.movedCols && tg.col && res.movedCols.has(tg.col);
+        const px = kind === 'scroll' || (!colMoved && !tg.floating && res && Math.abs(res.scrollDelta || 0) > 0.5)
+          ? CFG.springs.scroll : CFG.springs.move;
+        if (a.x.to !== tg.x) a.x.retarget(tg.x, t, px);
+        if (a.y.to !== tg.y) a.y.retarget(tg.y, t, CFG.springs.move);
+      }
+      // M5: the displayed size animates on window_movement (Resize = instant shows the old v1 snap)
+      if (speed === 0 || !CFG.animResize) { a.w.jump(tg.w, t); a.h.jump(tg.h, t); }
+      else {
+        if (a.w.to !== tg.w) a.w.retarget(tg.w, t, CFG.springs.move);
+        if (a.h.to !== tg.h) a.h.retarget(tg.h, t, CFG.springs.move);
+      }
+      a.tg = tg; a.wsObj = w;
+    });
+    let cs = camSprings.get(w);
+    if (!cs) { cs = new Spring(w.view, t); camSprings.set(w, cs); }
+    else if (res && res.firstOnEmpty && w === ws()) cs.jump(w.view, t);
+    else {
+      if (res && res.v5Delta && w === ws()) cs.shift(res.v5Delta);
+      if (speed === 0) cs.jump(w.view, t); else if (cs.to !== w.view) cs.retarget(w.view, t, CFG.springs.scroll);
+    }
+  });
+  for (const [id, a] of anims) if (!seen.has(id)) { a.el.remove(); anims.delete(id); }
+  if (res && res.wsJump) wsSpring.jump(S.active, t);
+  else if (speed === 0) wsSpring.jump(S.active, t);
+  else if (wsSpring.to !== S.active) wsSpring.retarget(S.active, t, CFG.springs.ws);
+  renderLists();
+}
+
+function makeWinEl(win) {
+  const el = document.createElement('div');
+  el.className = 'win';
+  el.dataset.id = win.id;
+  el.innerHTML = `<div class="tabs"></div><div class="bar"><span class="id">#${win.id}</span><span class="app">${win.app}</span>` +
+    `<span class="t">${win.title}</span></div><div class="body">${'<i></i>'.repeat(14)}</div><div class="size"></div><div class="badge">${win.id}</div>`;
+  el.addEventListener('mousedown', () => { if (!CFG.gesture) focusById(win.id); });   // with drag on, a click focuses on release
+  output.appendChild(el);
+  return el;
+}
+
+function fitScreen() {
+  const wrap = $('#screenWrap').getBoundingClientRect();
+  const f = Math.min((wrap.width - 30) / S.out.w, (wrap.height - 30) / S.out.h);
+  scaleF = f;
+  const bez = $('#bezel');
+  bez.style.width = (S.out.w * f) + 'px'; bez.style.height = (S.out.h * f) + 'px';
+  output.style.width = S.out.w + 'px'; output.style.height = S.out.h + 'px';
+  output.style.transform = `scale(${f})`;
+  const p = $('#panel'); p.style.height = S.out.panel + 'px'; p.style.fontSize = Math.round(S.out.panel * 0.42) + 'px';
+  output.style.fontSize = Math.round(S.out.h / 70) + 'px';
+}
+
+function frame(ts) {
+  if (frame.last == null) frame.last = ts;
+  const dt = Math.min(0.05, (ts - frame.last) / 1000); frame.last = ts;
+  simTime += dt * (speed || 1);
+  const t = now(), H = S.out.h + wsGap();
+  const dragX = gesture && gesture.axis === 'x' ? gesture : null;
+  const r = gesture && gesture.axis === 'y' ? gesture.r : wsSpring.value(t);   // GS2: strip follows the fingers
+  if (S.switching && !gesture && (speed === 0 || wsSpring.done(t))) {
+    const removed = finishSwitch();
+    if (removed) { wsSpring.jump(S.active, t); }
+    renderLists();
+  }
+  const cur = ws(), fwin = focusedWin(cur), A = wa();
+  let coverFs = false;
+  for (const [, a] of anims) {
+    const tg = a.tg, wi = S.wss.indexOf(a.wsObj);
+    let x = a.x.value(t);
+    if (dragX && a.wsObj === dragX.w && !tg.floating && tg.col) {   // GS2: camera follows the fingers
+      const ci = dragX.w.cols.indexOf(tg.col); if (ci >= 0) x = A.x + colX(dragX.w, ci) - dragX.view;
+    }
+    const y = a.y.value(t) + (wi - r) * H;
+    const dw = a.w.value(t), dh = a.h.value(t);
+    const el = a.el, st = el.style;
+    st.left = x + 'px'; st.top = y + 'px'; st.width = dw + 'px'; st.height = dh + 'px';
+    const wsVisible = CFG.wsStrip ? Math.abs(wi - r) < 1.2 : wi === S.active;   // WS7: v1 hides the outgoing workspace at once
+    st.display = tg.visible && wsVisible ? 'block' : 'none';
+    el.classList.toggle('focused', !!tg.focused);
+    el.classList.toggle('floating', tg.floating);
+    const noBorder = tg.fs || tg.edgeMax;
+    st.borderWidth = noBorder ? '0' : CFG.border + 'px';
+    const stationary = a.x.done(t) && Math.abs(r - S.active) < 0.01;
+    const isFsFocused = tg.fs && tg.focused && stationary;
+    if (isFsFocused) coverFs = true;
+    st.zIndex = isFsFocused ? 60 : tg.floating ? 20 + tg.z : tg.fs ? 5 : 1;
+    const tabs = el.querySelector('.tabs');
+    tabs.innerHTML = tg.tabs ? Array.from({ length: tg.tabs }, (_, i) => `<b class="${i === tg.tabIdx ? 'on' : ''}"></b>`).join('') : '';
+    el.querySelector('.size').textContent = `${Math.round(dw - (noBorder ? 0 : 2 * CFG.border))}×${Math.round(dh - (noBorder ? 0 : 2 * CFG.border))}`;
+  }
+  const bd = $('#backdrop');
+  const fsT = [...anims.values()].find(a => a.tg.fs && a.wsObj === cur && a.tg.visible);
+  bd.style.display = fsT ? 'block' : 'none';
+  if (fsT) { bd.style.left = fsT.x.value(t) + 'px'; bd.style.top = (fsT.y.value(t)) + 'px'; bd.style.width = S.out.w + 'px'; bd.style.height = S.out.h + 'px'; bd.style.zIndex = coverFs ? 55 : 4; }
+  $('#panel').style.zIndex = coverFs ? 0 : 50;
+  renderMinimap(t);
+  renderGestureHud();
+  requestAnimationFrame(frame);
+}
+
+function renderMinimap(t) {
+  const box = $('#minimap'), w = ws();
+  [...box.querySelectorAll('.col,.view')].forEach(e => e.remove());
+  const A = wa(), cs = camSprings.get(w);
+  const view = gesture && gesture.axis === 'x' && gesture.w === w ? gesture.view : (cs ? cs.value(t) : w.view);
+  const minX = Math.min(0, view), maxX = Math.max(stripWidthOf(w), view + A.w);
+  const bw = box.clientWidth - 20, bh = box.clientHeight - 32, f = bw / Math.max(1, maxX - minX), top = 24;
+  const sh = Math.min(bh, (A.h) * f * 1.0);
+  w.cols.forEach((c, i) => {
+    const d = document.createElement('div'); d.className = 'col' + (i === w.fc && !w.fa ? ' f' : '');
+    d.style.left = (10 + (colX(w, i) - minX) * f) + 'px'; d.style.top = top + 'px';
+    d.style.width = Math.max(2, colWidth(c) * f) + 'px'; d.style.height = sh + 'px';
+    const hs = tileHeights(c);
+    if (!c.tabbed && c.wins.length > 1) { let acc = 0; hs.slice(0, -1).forEach(h => { acc += h + CFG.gap; const s = document.createElement('div'); s.className = 'seg2'; s.style.top = (acc / A.h * sh) + 'px'; d.appendChild(s); }); }
+    d.title = c.wins.map(x => '#' + x.id + ' ' + x.app).join(', ');
+    box.appendChild(d);
+  });
+  const v = document.createElement('div'); v.className = 'view';
+  v.style.left = (10 + (view - minX) * f) + 'px'; v.style.top = (top - 3) + 'px'; v.style.width = (A.w * f) + 'px'; v.style.height = (sh + 6) + 'px';
+  box.appendChild(v);
+  $('#mapNote').textContent = `${w.cols.length} columns · ${w.floats.length} floating · view x ${Math.round(w.view)} · ${w.fa ? 'FLOATING FOCUS' : 'strip focus'}`;
+}
+function stripWidthOf(w) { return w.cols.length ? colX(w, w.cols.length) - CFG.gap : 0; }
+
+function renderLists() {
+  const l = $('#wslist'); [...l.querySelectorAll('.wsitem')].forEach(e => e.remove());
+  S.wss.forEach((w, i) => {
+    const n = w.cols.reduce((s, c) => s + c.wins.length, 0) + w.floats.length;
+    const d = document.createElement('div');
+    const last = i === S.wss.length - 1;
+    d.className = 'wsitem' + (i === S.active ? ' on' : '') + (n === 0 ? ' empty' : '') + (n === 0 && !last && i !== S.active ? ' doomed' : '');
+    d.innerHTML = `<span>WS ${i + 1}${last ? ' · last' : ''}</span><span>${n ? n + ' win' : (last ? 'empty' : 'empty → gone')}</span>`;
+    l.appendChild(d);
+  });
+  $('#panelDots').innerHTML = S.wss.map((_, i) => `<span class="dot ${i === S.active ? 'on' : ''}"></span>`).join('');
+}
+
+/* ───────────────────────── 3-finger drag (GS1–GS6) ─────────────────────────
+ * Mouse drag on the screen stands in for 3 fingers on the touchscreen or touchpad.
+ * Gesture time is real time (finger velocity); spring time is simTime, so the release
+ * velocity is converted with `speed` to keep the motion continuous at ¼× too. */
+let gesture = null, gestSummary = null;
+function trimSamples(g) { const s = g.samples, tl = s.length ? s[s.length - 1].t : 0; while (s.length > 2 && s[0].t < tl - GESTURE.velWindow) s.shift(); }
+function gestVelocity(g) {
+  const s = g.samples; if (s.length < 2) return 0;
+  const a = s[0], b = s[s.length - 1], dt = b.t - a.t;
+  return dt > 1e-3 ? (b.d - a.d) / dt : 0;
+}
+function gestStart(px, py, tr, clickId) {
+  if (gesture) return false;
+  const w = ws(), cs = camSprings.get(w), t = now();
+  gesture = { x0: px, y0: py, px, py, axis: null, lockAt: 0, samples: [], w, clickId,
+              startView: cs ? cs.value(t) : w.view, startR: wsSpring.value(t) };
+  gesture.view = gesture.startView; gesture.r = gesture.startR;
+  document.body.classList.add('dragging');
+  return true;
+}
+function gestMove(px, py, tr) {
+  const g = gesture; if (!g) return;
+  g.px = px; g.py = py;
+  const dx = px - g.x0, dy = py - g.y0;
+  if (!g.axis) {   // GS1: axis lock
+    const ax = Math.abs(dx), ay = Math.abs(dy), L = GESTURE.lockPx;
+    if (ax >= L && ax > GESTURE.ratio * ay) g.axis = 'x';
+    else if (ay >= L && ay > GESTURE.ratio * ax) g.axis = 'y';
+    if (!g.axis) return;
+    g.lockAt = g.axis === 'x' ? dx : dy;
+    if (g.axis === 'x') {
+      const r = restViews(g.w);
+      g.lo = Math.min(g.startView, r.lo); g.hi = Math.max(g.startView, r.hi);
+    }
+    log('3-finger drag', { rules: ['GS1'], note: `axis locked ${g.axis === 'x' ? 'horizontal' : 'vertical'} after ${GESTURE.lockPx} px; client touches cancelled` });
+  }
+  const d = (g.axis === 'x' ? dx : dy) - g.lockAt;
+  g.samples.push({ t: tr, d }); trimSamples(g);
+  if (g.axis === 'x') g.view = rubberBand(g.startView - d, g.lo, g.hi, wa().w * GESTURE.rubberDim);
+  else {
+    const H = S.out.h + wsGap();
+    g.r = rubberBand(g.startR * H - d, 0, (S.wss.length - 1) * H, H * GESTURE.rubberDim) / H;
+  }
+}
+function gestEnd(tr, cancel) {
+  const g = gesture; gesture = null;
+  document.body.classList.remove('dragging');
+  if (!g) return;
+  if (!g.axis) { if (g.clickId && !cancel) focusById(g.clickId); return; }   // below the lock distance: a click
+  const last = g.samples.length ? g.samples[g.samples.length - 1].d : 0;
+  g.samples.push({ t: tr, d: last }); trimSamples(g);     // a held finger reports no motion: velocity decays to 0
+  const vf = cancel ? 0 : gestVelocity(g);                 // finger px per real second
+  const t = now(), sp = speed || 1, H = S.out.h + wsGap(), A = wa();
+  if (g.axis === 'x') {
+    const vView = -vf, proj = cancel ? g.startView : g.view + vView * GESTURE.tau;
+    const pick = cancel ? { col: g.w.fc, view: g.startView } : pickColumnRelease(g.w, g.startView, proj);
+    const before = focusedWin(g.w);
+    const res = gestureCommitColumn(g.w, pick.col, pick.view);
+    for (const [, a] of anims) {           // M1: continue from the dragged place with the release velocity
+      if (a.wsObj !== g.w || a.tg.floating || !a.tg.col) continue;
+      const ci = g.w.cols.indexOf(a.tg.col); if (ci >= 0) a.x.launch(A.x + colX(g.w, ci) - g.view, -vView / sp, t, CFG.springs.scroll);
+    }
+    const cs = camSprings.get(g.w); if (cs) cs.launch(g.view, vView / sp, t, CFG.springs.scroll);
+    const after = focusedWin(g.w);
+    gestSummary = { text: `released ↔  v ${Math.round(vView)} px/s\nprojected view ${Math.round(proj)} (now ${Math.round(g.view)})\n→ ${res.changed ? 'focus #' + (after ? after.id : '?') : 'snap back (glance)'}`, until: performance.now() + 2500 };
+    log(cancel ? '3-finger drag cancelled' : '3-finger drag released', { rules: cancel ? ['GS4'] : res.rules,
+      note: res.changed ? `${before ? before.app : '–'} → ${after ? after.app : '–'} (velocity ${Math.round(vView)} px/s)` : 'projection lands on the starting column: view springs back' });
+    sync('scroll', { scrollDelta: 1 });
+  } else {
+    const vR = -vf / H, proj = cancel ? g.startR : g.r + vR * GESTURE.tau;
+    const target = cancel ? S.active : pickWorkspaceSnap(g.r, proj, S.wss.length);
+    wsSpring.launch(g.r, vR / sp, t, CFG.springs.ws);
+    const from = S.active, res = gestureCommitWorkspace(target);
+    gestSummary = { text: `released ↕  v ${vR.toFixed(2)} ws/s\nprojected ${proj.toFixed(2)} (now ${g.r.toFixed(2)})\n→ ${res.changed ? 'WS ' + (target + 1) : 'snap back to WS ' + (from + 1) + ' (glance)'}`, until: performance.now() + 2500 };
+    log(cancel ? '3-finger drag cancelled' : '3-finger drag released', { rules: cancel ? ['GS4'] : res.rules,
+      note: res.changed ? `WS ${from + 1} → WS ${target + 1}` : 'projection lands on the starting workspace: strip springs back' });
+    sync('move', { wsSwitch: true });
+  }
+}
+/* Scripted drag for stories: finger travel `dist` (output px, sign = direction) over `ms`, then held `hold` ms.
+ * Under speed 0 (BACK replays) the same samples run on a synthetic clock. */
+function scriptDrag(axis, dist, ms, hold = 0) {
+  if (gesture) return;
+  const cx = S.out.w / 2, cy = S.out.h / 2;
+  const P = k => axis === 'x' ? [cx + dist * k, cy] : [cx, cy + dist * k];
+  if (speed === 0) {
+    gestStart(cx, cy, 0);
+    for (let i = 1; i <= 16; i++) gestMove(...P(i / 16), (ms / 1000) * i / 16);
+    gestEnd(ms / 1000 + hold / 1000);
+    return;
+  }
+  const t0 = performance.now();
+  gestStart(cx, cy, t0 / 1000);
+  const tick = ts => {
+    if (!gesture) return;
+    const k = Math.min(1, Math.max(0, (ts - t0) / ms));
+    gestMove(...P(k), ts / 1000);
+    if (ts - t0 < ms + hold) requestAnimationFrame(tick); else gestEnd(ts / 1000);
+  };
+  requestAnimationFrame(tick);
+}
+function later(ms, fn) { if (speed === 0) fn(); else setTimeout(fn, ms); }
+function outputPoint(e) { const r = output.getBoundingClientRect(); return [(e.clientX - r.left) / scaleF, (e.clientY - r.top) / scaleF]; }
+output.addEventListener('pointerdown', e => {
+  if (!CFG.gesture || e.button !== 0 || gesture) return;
+  e.preventDefault();
+  const winEl = e.target.closest && e.target.closest('.win');
+  const [px, py] = outputPoint(e);
+  if (gestStart(px, py, performance.now() / 1000, winEl ? Number(winEl.dataset.id) : 0)) output.setPointerCapture(e.pointerId);
+});
+output.addEventListener('pointermove', e => { if (gesture && output.hasPointerCapture(e.pointerId)) gestMove(...outputPoint(e), performance.now() / 1000); });
+output.addEventListener('pointerup', e => { if (gesture && output.hasPointerCapture(e.pointerId)) gestEnd(performance.now() / 1000, false); });
+output.addEventListener('pointercancel', () => { if (gesture) gestEnd(performance.now() / 1000, true); });   // GS4
+function renderGestureHud() {
+  const hud = $('#gestHud'), fg = $('#fingers');
+  if (gesture) {
+    const g = gesture, v = gestVelocity(g);
+    hud.textContent = g.axis
+      ? (g.axis === 'x' ? `dragging ↔  view ${Math.round(g.view)} (start ${Math.round(g.startView)})` : `dragging ↕  strip ${g.r.toFixed(2)} (start ${g.startR.toFixed(2)})`) + `\nfinger v ${Math.round(v)} px/s`
+      : `pending: locks after ${GESTURE.lockPx} px`;
+    hud.style.display = 'block';
+    fg.style.display = 'block';
+    [...fg.children].forEach((b, i) => { b.style.left = (g.px - 13 + (i - 1) * 46) + 'px'; b.style.top = (g.py - 13 + (i === 1 ? -18 : 0)) + 'px'; });
+  } else {
+    fg.style.display = 'none';
+    if (gestSummary && performance.now() < gestSummary.until) { hud.textContent = gestSummary.text; hud.style.display = 'block'; }
+    else hud.style.display = 'none';
+  }
+}
+
+/* ───────────────────────── log and rules ───────────────────────── */
+function chip(id) {
+  const base = id.replace('·', '');
+  const unchanged = id.endsWith('·');
+  return `<span class="chip" data-r="${base}" title="${(RULES[base] || '').replace(/"/g, '&quot;')}${unchanged ? ' (view did not need to move)' : ''}">${base}${unchanged ? ' ✓' : ''}</span>`;
+}
+function log(name, res) {
+  const row = document.createElement('div'); row.className = 'logrow';
+  row.innerHTML = `<span class="an">${name}</span> ${(res.rules || []).map(chip).join('')}<br><span class="nt">${res.noop ? 'nothing happens' + (res.note ? ': ' + res.note : '') : (res.note || '')}</span>`;
+  $('#logList').prepend(row);
+}
+document.addEventListener('mouseover', e => {
+  const c = e.target.closest && e.target.closest('.chip'); if (!c) return;
+  $('#ruleDef').innerHTML = `<span class="rid">${c.dataset.r}</span>${RULES[c.dataset.r] || ''}`;
+});
+
+function act(name, arg) {
+  const res = runAction(name, arg);
+  log(name, res);
+  if (!res.noop) sync(res.anim || 'move', res);
+  return res;
+}
+function focusById(id) {
+  const w = ws();
+  const f = w.floats.find(f => f.win.id === id);
+  if (f) { raiseFloat(w, id); w.fa = true; sync('move'); return; }
+  const ci = w.cols.findIndex(c => c.wins.some(x => x.id === id)); if (ci < 0) return;
+  const c = w.cols[ci]; c.fw = c.wins.findIndex(x => x.id === id);
+  const prev = w.fc; w.fa = false; w.fc = ci;
+  const r = revealView(w, ci, prev); w.view = r.view;
+  if (prev !== ci) { w.mem = null; w.fsMem = null; }
+  log('click to focus', { rules: ['F1', r.rule] }); sync('scroll');
+}
+
+/* ───────────────────────── actions panel and keys ───────────────────────── */
+const GROUPS = [
+  ['Open & close', [['spawn', 'Mod+T'], ['open-floating', '', { app: 'kajo-settings' }, 'open floating (rule)'], ['open-floating', '', { app: 'kajo-files', dialog: true, w: 520, h: 340 }, 'open dialog'],
+                    ['close-window', 'Mod+Q'], ['close-left-of-focus', '', null, 'close first column (demo)']]],
+  ['Focus', [['focus-column-left', 'Mod+H'], ['focus-column-right', 'Mod+L'], ['focus-window-up', 'Mod+K'], ['focus-window-down', 'Mod+J'],
+             ['focus-column-first', 'Mod+Home'], ['focus-column-last', 'Mod+End']]],
+  ['Move', [['move-column-left', 'Mod+Shift+H'], ['move-column-right', 'Mod+Shift+L'], ['move-window-up', 'Mod+Shift+K'], ['move-window-down', 'Mod+Shift+J'],
+            ['move-column-to-first', 'Mod+Ctrl+Home'], ['move-column-to-last', 'Mod+Ctrl+End']]],
+  ['Consume / expel', [['consume-or-expel-window-left', 'Mod+Ctrl+Left'], ['consume-or-expel-window-right', 'Mod+Ctrl+Right'],
+            ['consume-window-into-column', ''], ['expel-window-from-column', '']]],
+  ['Width & height', [['switch-preset-column-width', 'Mod+R'], ['maximize-column', 'Mod+F'], ['expand-column-to-available-width', 'Mod+Ctrl+F'],
+            ['set-column-width -10%', 'Mod+Minus'], ['set-column-width +10%', 'Mod+Equal'], ['switch-preset-window-height', 'Mod+Shift+R'],
+            ['set-window-height -10%', 'Mod+Shift+Minus'], ['set-window-height +10%', 'Mod+Shift+Equal'], ['reset-window-height', 'Mod+Ctrl+R']]],
+  ['View', [['center-column', 'Mod+C'], ['center-visible-columns', 'Mod+Ctrl+C']]],
+  ['State', [['toggle-column-tabbed', 'Mod+W'], ['fullscreen-window', 'Mod+Shift+F'], ['maximize-window-to-edges', ''], ['toggle-window-floating', 'Mod+Shift+T'], ['switch-focus-floating-tiling', 'Mod+Shift+V']]],
+  ['Workspaces', [['focus-workspace-up', 'Mod+I'], ['focus-workspace-down', 'Mod+U'], ['move-column-to-workspace-up', 'Mod+Ctrl+I'],
+            ['move-column-to-workspace-down', 'Mod+Ctrl+U'], ['move-workspace-up', 'Mod+Shift+I'], ['move-workspace-down', 'Mod+Shift+U']]],
+];
+const KEYMAP = {};
+function buildActions() {
+  const host = $('#actGroups');
+  GROUPS.forEach(([title, items]) => {
+    const g = document.createElement('div'); g.className = 'agroup';
+    g.innerHTML = `<h4>${title}</h4><div class="grid"></div>`;
+    items.forEach(([name, key, arg, label]) => {
+      const b = document.createElement('button'); b.className = 'act' + (key ? '' : ' nobind');
+      b.innerHTML = `${label || name}<kbd>${key || 'IPC'}</kbd>`;
+      b.onclick = () => act(name, arg);
+      g.querySelector('.grid').appendChild(b);
+      if (key) KEYMAP[key.toLowerCase()] = [name, arg];
+    });
+    host.appendChild(g);
+  });
+  [['Mod+Left', 'focus-column-left'], ['Mod+Right', 'focus-column-right'], ['Mod+Up', 'focus-window-up'], ['Mod+Down', 'focus-window-down'],
+   ['Mod+Page_Up', 'focus-workspace-up'], ['Mod+Page_Down', 'focus-workspace-down']].forEach(([k, n]) => KEYMAP[k.toLowerCase()] = [n]);
+  const note = document.createElement('p');
+  note.style.cssText = 'color:#777;font-size:11px;line-height:1.5;margin-top:8px';
+  note.innerHTML = 'Keys follow the §5.2 example with <code>Mod</code> = the key chosen in the top bar (Alt by default, because the desktop usually grabs Super). <kbd style="color:#ffb900">IPC</kbd> marks actions with no bind in the example.';
+  host.appendChild(note);
+}
+const KEYNAMES = { arrowleft: 'Left', arrowright: 'Right', arrowup: 'Up', arrowdown: 'Down', pageup: 'Page_Up', pagedown: 'Page_Down',
+                   home: 'Home', end: 'End', '-': 'Minus', '=': 'Equal', '_': 'Minus', '+': 'Equal' };
+document.addEventListener('keydown', e => {
+  const mod = modKey === 'alt' ? e.altKey : e.metaKey; if (!mod) return;
+  let k = e.key.toLowerCase(); k = (KEYNAMES[k] || (e.code.startsWith('Key') ? e.code.slice(3) : k));
+  const spec = ['Mod', e.ctrlKey ? 'Ctrl' : '', e.shiftKey ? 'Shift' : '', k].filter(Boolean).join('+').toLowerCase();
+  const m = KEYMAP[spec]; if (!m) return;
+  e.preventDefault(); act(m[0], m[1]);
+});
+
+/* ───────────────────────── storyboard ───────────────────────── */
+const SETUP = {
+  two: () => { act('spawn', { app: 'kitty' }); act('spawn', { app: 'firefox' }); },
+  four: () => { ['kitty', 'firefox', 'kajo-files', 'kajo-ide'].forEach(a => act('spawn', { app: a })); },
+};
+const STORIES = [
+  { title: 'Opening windows', steps: [
+    ['An empty workspace', 'One output, one workspace, nothing open. The panel is a layer-shell surface; the working area starts below it.', null],
+    ['First window', 'A new window opens as a column (<b>default_column_width = 0.5</b>). It is the only column, so it is centred.', () => act('spawn', { app: 'kitty' })],
+    ['Second window', 'It opens directly right of the focused column and takes focus. With two columns the single-column centring stops; both fit, so the view only shifts as needed.', () => act('spawn', { app: 'firefox' })],
+    ['Third window', 'There is no room: the view scrolls just far enough to show the new column with one gap of margin. Nothing resizes — opening a window never changes other windows\' sizes.', () => act('spawn', { app: 'kajo-files' })],
+    ['Back left', '<code>focus-column-left</code>: firefox is fully visible, so the view stays (✓ on the chip means "no move needed").', () => act('focus-column-left')],
+    ['Further left', 'kitty is partly off-screen; the view scrolls minimally to show it, from the side it comes in.', () => act('focus-column-left')],
+  ] },
+  { title: 'The focused window stays put', steps: [
+    ['Setup', 'Four columns; focus is on the last one.', () => { SETUP.four(); }],
+    ['Close something on the left', 'Closing the first column (not focused) does not move focus, and the focused column stays exactly where it is on screen. Everything left of the gap slides instead.', () => act('close-left-of-focus')],
+    ['Resize something on the left', 'Focus the left neighbour, widen it, come back: the widened column grows towards the right while the camera follows the focused one.', () => { act('focus-column-left'); act('switch-preset-column-width'); }],
+  ] },
+  { title: 'Temporary windows', steps: [
+    ['Setup', 'Three columns; focus the first one.', () => { ['kitty', 'firefox', 'kajo-files'].forEach(a => act('spawn', { app: a })); act('focus-column-first'); }],
+    ['Open a quick terminal', 'A new column appears right of kitty and takes focus. The view moves to show it.', () => act('spawn', { app: 'kitty' })],
+    ['Close it right away', 'Nothing else was focused in between, so focus returns to the window it was opened from and the view goes back to where it was.', () => act('close-window')],
+    ['Open again, look elsewhere, close', 'This time focus moves away and back before closing: the remembered view is forgotten, so closing behaves normally (the column on the right slides in).', () => { act('spawn', { app: 'kitty' }); act('focus-column-right'); act('focus-column-left'); act('close-window'); }],
+  ] },
+  { title: 'Centring modes', steps: [
+    ['Setup "never"', 'Four columns, centring "never".', () => { setCenter('never'); SETUP.four(); act('focus-column-first'); }],
+    ['Walk right with "never"', 'Each focus step scrolls minimally.', () => { act('focus-column-right'); act('focus-column-right'); }],
+    ['Switch to "always"', 'Every focus change centres the focused column.', () => { setCenter('always'); act('focus-column-right'); }],
+    ['Switch to "on-overflow"', 'The new column is centred only when it and the one focus came from do not fit together.', () => { setCenter('on-overflow'); act('focus-column-first'); act('focus-column-right'); }],
+    ['center-column', 'One-shot centring of the focused column.', () => { setCenter('never'); act('center-column'); }],
+    ['center-visible-columns', 'The fully visible columns are centred as a block.', () => act('center-visible-columns')],
+  ] },
+  { title: 'Consume and expel', steps: [
+    ['Setup', 'Three columns, focus on the middle one.', () => { ['kitty', 'firefox', 'kajo-files'].forEach(a => act('spawn', { app: a })); act('focus-column-left'); }],
+    ['Consume left', '<code>consume-or-expel-window-left</code>: firefox is alone, so it joins the bottom of kitty\'s column and stays focused.', () => act('consume-or-expel-window-left')],
+    ['Expel left', 'The same action again: now firefox shares a column, so it leaves and becomes its own column on the left, keeping the column width.', () => act('consume-or-expel-window-left')],
+    ['consume-window-into-column', 'The top window of the column on the right joins the bottom of the focused column. Focus does not move.', () => act('consume-window-into-column')],
+    ['expel-window-from-column', 'The bottom window of the focused column becomes a new column on the right.', () => act('expel-window-from-column')],
+  ] },
+  { title: 'Widths and heights', steps: [
+    ['Setup', 'Two columns.', () => SETUP.two()],
+    ['Presets', '<code>Mod+R</code> cycles 1/3 → 1/2 → 2/3. The view keeps the focused column visible.', () => act('switch-preset-column-width')],
+    ['Maximize column', 'Full width; gaps and borders stay. Press again to return.', () => act('maximize-column')],
+    ['Back, then expand', 'Back to the previous width, then <code>expand-column-to-available-width</code> fills the space next to the other visible column.', () => { act('maximize-column'); act('focus-column-left'); act('focus-column-right'); act('expand-column-to-available-width'); }],
+    ['Two windows in a column', 'Consume a window and use <code>Mod+Shift+R</code>: the focused window takes a preset height, the other keeps the rest.', () => { act('spawn', { app: 'kajo-ide' }); act('consume-or-expel-window-left'); act('switch-preset-window-height'); }],
+    ['Reset', '<code>Mod+Ctrl+R</code> returns to shared height.', () => act('reset-window-height')],
+    ['A lone window can be shorter', 'Close the other window: the remaining one fills the column. Give it a preset height and it becomes shorter, sitting at the top.', () => { act('focus-window-down'); act('close-window'); act('switch-preset-window-height'); }],
+  ] },
+  { title: 'Tabs', steps: [
+    ['Setup', 'Three windows in one column.', () => { act('spawn', { app: 'kitty' }); act('spawn', { app: 'firefox' }); act('consume-or-expel-window-left'); act('spawn', { app: 'kajo-files' }); act('consume-or-expel-window-left'); }],
+    ['Tabbed', '<code>Mod+W</code>: one window shown at full height; the indicator on the left shows the tabs.', () => act('toggle-column-tabbed')],
+    ['Switch tabs', '<code>Mod+K</code> / <code>Mod+J</code> switch tabs.', () => act('focus-window-up')],
+    ['Stacked again', 'Toggle back.', () => act('toggle-column-tabbed')],
+  ] },
+  { title: 'Fullscreen', steps: [
+    ['Setup', 'Three columns; the view is somewhere in the middle.', () => { ['kitty', 'firefox', 'kajo-player'].forEach(a => act('spawn', { app: a })); act('focus-column-left'); }],
+    ['Fullscreen', '<code>Mod+Shift+F</code>: firefox covers the output (no border, black backdrop). The panel and floating windows go behind it once it is stationary.', () => act('fullscreen-window')],
+    ['Scroll away and back', 'It stays part of the strip: focus right, then left again.', () => { act('focus-column-right'); act('focus-column-left'); }],
+    ['Leave fullscreen', 'Because focus changed meanwhile, the remembered view is gone; the column just stays visible.', () => act('fullscreen-window')],
+    ['Fullscreen and back directly', 'Without a focus change in between, leaving fullscreen restores the view exactly.', () => { act('fullscreen-window'); act('fullscreen-window'); }],
+    ['From a shared column', 'A window from a stacked column goes fullscreen in its own column on the right, and stays there afterwards.', () => { act('consume-or-expel-window-right'); act('fullscreen-window'); }],
+    ['Open a window over fullscreen', 'A new window still takes focus and opens right of the fullscreen one, which stays fullscreen in the strip.', () => act('spawn', { app: 'kajo-files' })],
+  ] },
+  { title: 'Floating windows', steps: [
+    ['Setup', 'Two columns.', () => SETUP.two()],
+    ['A dialog', 'A dialog opens floating, centred over its parent, above the strip.', () => act('open-floating', { app: 'kajo-files', dialog: true, w: 520, h: 340 })],
+    ['Move it', 'With floating focus, <code>Mod+Shift+L</code> moves it 50 px.', () => { act('move-column-right'); act('move-column-right'); }],
+    ['Back to the strip', '<code>switch-focus-floating-tiling</code> moves focus to the strip; floating windows stay on top and do not scroll.', () => { act('switch-focus-floating-tiling'); act('focus-column-left'); }],
+    ['Float a tiled window', '<code>Mod+Shift+T</code>: kitty leaves the strip and floats 50 px right and down from where it was, kept fully inside the working area.', () => act('toggle-window-floating')],
+    ['And back', 'It returns to the strip as a new column with its floating width in pixels.', () => act('toggle-window-floating')],
+  ] },
+  { title: 'Workspaces', steps: [
+    ['Setup', 'Two columns on workspace 1. There is always one empty workspace at the bottom.', () => SETUP.two()],
+    ['Move a column down', '<code>Mod+Ctrl+U</code>: firefox moves to the empty workspace, focus follows, and a new empty one appears below.', () => act('move-column-to-workspace-down')],
+    ['Switch up and down', '<code>Mod+I</code> / <code>Mod+U</code>: input goes to the target at once while the switch animates.', () => act('focus-workspace-up')],
+    ['Empty in the middle', 'Close kitty: workspace 1 is now empty but focused, so it stays. Switch away and it disappears once the animation finished.', () => { act('close-window'); act('focus-workspace-down'); }],
+    ['Insert a workspace', 'Go to the empty bottom workspace, open a window and move the workspace up: that is how a workspace is added in the middle.', () => { act('focus-workspace-down'); act('spawn', { app: 'kajo-settings' }); act('move-workspace-up'); }],
+  ] },
+  { title: 'Changing the output', steps: [
+    ['Setup', 'A few columns on the laptop panel.', () => { setOut('laptop'); SETUP.four(); }],
+    ['Dock to the ultrawide', 'One output only (§1): the ultrawide takes over. Workspaces, windows and focus carry over; proportional widths follow the new size; the view keeps the focused column visible.', () => setOut('wide')],
+    ['Undock', 'Back to the laptop.', () => setOut('laptop')],
+  ] },
+  { title: 'Animated resize', steps: [
+    ['Setup', 'Three columns; focus is on the rightmost one and there is free space to its right. <b>Former bug (fixed):</b> whenever the resized column had nothing to its right (free space after the last column), resizing it narrower or wider did not animate.', () => { setResize(false); setCenter('never'); ['kitty', 'firefox'].forEach(a => act('spawn', { app: a })); act('set-column-width -10%'); }],
+    ['Why: wider, as v1 did it', '<b>Resize = instant</b> (old v1). <code>Mod+Equal</code> on the rightmost column: the width is applied at once (M5). No column sits to its right, and it stays fully visible, so the camera does not move either: <b>nothing animates</b>. ' + R('M5', 'V1'), () => act('set-column-width +10%')],
+    ['Why: narrower, as v1 did it', '<code>Mod+Minus</code>: the same, the edge jumps back. The only thing that ever animated a resize was a neighbour sliding to the right of it (or the camera re-centring a single column).', () => act('set-column-width -10%')],
+    ['Compare: a column with a right neighbour', 'Focus the left column and resize it: here firefox slides, which is why a resize there looked animated even though the width itself also jumped.', () => { act('focus-column-left'); act('set-column-width +10%'); }],
+    ['Now: rightmost, wider', '<b>Resize = animate</b> (current): the client still gets its final size in one configure, but the displayed box (border and surface clip) grows on the <code>window_movement</code> spring, so the rightmost column animates into the free space. ' + R('M5', 'M1'), () => { setResize(true); act('focus-column-right'); act('set-column-width +10%'); }],
+    ['Now: rightmost, narrower', 'And it shrinks back the same way.', () => act('set-column-width -10%')],
+    ['Now: with a neighbour', 'Resize the left column: its right edge and the neighbour move on the same spring, so they never overlap mid-animation.', () => { act('focus-column-left'); act('set-column-width -10%'); }],
+  ] },
+  { title: 'Workspace strip', steps: [
+    ['Setup', 'Two windows on workspace 1, one on workspace 2; back on workspace 1. Scroll workspace 1 to its second column.', () => { SETUP.two(); act('spawn', { app: 'kajo-ide' }); act('move-column-to-workspace-down'); act('focus-workspace-up'); }],
+    ['Switch, as v1 did it', '<b>WS switch = v1</b> (old): the outgoing workspace disappears at once; only the incoming one slides in. ' + R('WS7'), () => { setWsMode('v1'); act('focus-workspace-down'); }],
+    ['Switch, now', '<b>WS switch = strip</b> (current): both workspaces stay visible and scroll together, like one tall strip. ' + R('WS7', 'M2'), () => { setWsMode('strip'); act('focus-workspace-up'); }],
+    ['Each workspace keeps its camera', 'Scroll workspace 1 to its first column, go down and come back: the camera of each workspace is where you left it, and both are rendered correctly during the switch.', () => { act('focus-column-left'); act('focus-workspace-down'); later(700, () => act('focus-workspace-up')); }],
+  ] },
+  { title: '3-finger drag & flick', steps: [
+    ['Setup', 'Workspace 1: three columns. Workspace 2: two columns. Focus: kitty on workspace 1. The mouse stands in for three fingers (<b>3-finger = drag</b>); the cyan squares show the fingers, the box top-left the gesture state.', () => {
+      setGesture(true); setWsMode('strip'); SETUP.four(); act('move-column-to-workspace-down'); act('spawn', { app: 'kajo-player' }); act('focus-workspace-up'); act('focus-column-first'); }],
+    ['Glance at the workspace below', 'Fingers move up slowly to 40 % and hold, then lift. The strip follows the fingers 1:1 and workspace 2 is visible, but the projection lands back on workspace 1: it springs back and nothing changes. ' + R('GS1', 'GS2', 'GS4'), () => scriptDrag('y', -0.40 * S.out.h, 700, 450)],
+    ['Drag past halfway', 'The same slow drag to 62 %, held still before lifting (no velocity): the nearest workspace is 2, so it switches and the strip settles from where the fingers left it. ' + R('GS3', 'GS5'), () => scriptDrag('y', -0.62 * S.out.h, 800, 350)],
+    ['Flick back up', 'A short, fast flick down (14 % in 90 ms): the position alone would snap back, but the release velocity projects past halfway, so it switches to workspace 1. This is the old discrete swipe, kept as part of the same gesture. ' + R('GS3'), () => scriptDrag('y', 0.14 * S.out.h, 90, 0)],
+    ['Drag the strip sideways', 'A slow horizontal drag to the left, held: the camera of workspace 1 follows. On release the view rests at the nearest column-edge position and the fully visible column furthest in the drag direction takes focus. ' + R('GS2', 'GS3', 'GS5'), () => scriptDrag('x', -0.55 * S.out.w, 900, 350)],
+    ['Flick sideways', 'A fast short flick to the right moves focus back by velocity, not distance. ' + R('GS3', 'M1'), () => scriptDrag('x', 150, 90, 0)],
+    ['Rubber band at the end', 'Focus the first column, then drag further right: past the end the strip stretches less and less and springs back on release. ' + R('GS2', 'GS4'), () => { act('focus-column-first'); later(500, () => scriptDrag('x', 0.45 * S.out.w, 700, 200)); }],
+    ['What stays the same', '1-finger bezel swipes still open the launcher / control centre, 4 fingers do nothing, keyboard and wheel binds are unchanged. ' + R('GS6'), null],
+    ['Your turn', 'Drag on the screen with the mouse (or a finger on a touch screen): up/down between workspaces, left/right along the strip. Try slow drags, holds and short flicks; switch <b>WS switch = v1</b> to see why the strip is needed for the glance.', null],
+  ] },
+];
+function R(...ids) { return 'Rules: ' + ids.map(chip).join(''); }
+let story = -1, step = 0, playTimer = null;
+function buildStories() {
+  const host = $('#scenList');
+  STORIES.forEach((s, i) => {
+    const b = document.createElement('button'); b.className = 'scen';
+    b.innerHTML = `${i + 1}. ${s.title}<span>${s.steps.length} steps</span>`;
+    b.onclick = () => startStory(i);
+    host.appendChild(b);
+  });
+}
+function hardReset() {
+  for (const [, a] of anims) a.el.remove();
+  anims.clear(); camSprings.clear();
+  resetState(); wsSpring = new Spring(0, now());
+  $('#logList').innerHTML = '';
+  sync('move'); fitScreen();
+}
+function startStory(i) {
+  stopPlay(); story = i; step = 0;
+  [...document.querySelectorAll('.scen')].forEach((b, k) => b.classList.toggle('on', k === i));
+  hardReset();
+  showStep(true);
+}
+function showStep(runIt) {
+  const s = STORIES[story]; const [title, text, fn] = s.steps[step];
+  const logBefore = $('#logList').children.length;
+  if (runIt && fn) {
+    const sp = speed; if (step === 0 || title.startsWith('Setup')) { speed = 0; fn(); speed = sp; sync('move'); } else fn();
+  }
+  $('#stepTitle').textContent = title;
+  $('#stepCount').textContent = `${step + 1} / ${s.steps.length}`;
+  const fresh = [...$('#logList').children].slice(0, $('#logList').children.length - logBefore);
+  const uniq = [...new Set(fresh.flatMap(r => [...r.querySelectorAll('.chip')]).map(c => c.dataset.r))];
+  $('#stepText').innerHTML = text + (uniq.length && step > 0 && !title.startsWith('Setup') ? `<br><br>Rules applied: ${uniq.map(chip).join('')}` : '');
+  $('#btnPrev').disabled = step === 0; $('#btnNext').disabled = step === s.steps.length - 1;
+}
+function next() { if (story < 0) return startStory(0); if (step < STORIES[story].steps.length - 1) { step++; showStep(true); } else stopPlay(); }
+function prev() {   // replay from the start up to the previous step (state is not reversible)
+  if (story < 0 || step === 0) return;
+  const target = step - 1; const sp = speed; speed = 0; hardReset();
+  for (step = 0; step <= target; step++) { const fn = STORIES[story].steps[step][2]; if (fn) fn(); }
+  step = target; speed = sp; sync('move'); showStep(false);
+}
+function stopPlay() { if (playTimer) { clearInterval(playTimer); playTimer = null; $('#btnPlay').textContent = '▶▶ PLAY'; } }
+$('#btnNext').onclick = next; $('#btnPrev').onclick = prev;
+$('#btnRestart').onclick = () => story >= 0 && startStory(story);
+$('#btnPlay').onclick = () => { if (playTimer) return stopPlay(); if (story < 0) startStory(0); $('#btnPlay').textContent = '■ STOP'; playTimer = setInterval(next, 1800); };
+$('#btnReset').onclick = () => { stopPlay(); story = -1; [...document.querySelectorAll('.scen')].forEach(b => b.classList.remove('on')); hardReset(); };
+
+/* ───────────────────────── top bar ───────────────────────── */
+function segment(id, fn) {
+  const seg = $(id);
+  seg.querySelectorAll('button').forEach(b => b.onclick = () => { seg.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); fn(b.dataset.v); });
+}
+function markSeg(id, v) { $(id).querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === v)); }
+function setCenter(v) { CFG.center = v; markSeg('#segCenter', v); }
+function setOut(k) { markSeg('#segOut', k); const r = setOutput(k); log('output change', r); fitScreen(); const sp = speed; speed = 0; sync('move'); speed = sp; }
+segment('#segOut', setOut);
+segment('#segCenter', v => { CFG.center = v; log('center_focused_column = "' + v + '"', { note: 'applies at the next focus change' }); });
+segment('#segSingle', v => { CFG.single = v === '1'; const w = ws(); if (w.cols.length) { w.view = revealView(w, w.fc, null).view; sync('scroll'); } });
+segment('#segSpeed', v => { speed = parseFloat(v); });
+segment('#segMod', v => { modKey = v; });
+function setResize(on) { CFG.animResize = on; markSeg('#segResize', on ? '1' : '0'); }
+function setWsMode(v) { CFG.wsStrip = v === 'strip'; markSeg('#segWs', v); }
+function setGesture(on) { CFG.gesture = on; markSeg('#segGest', on ? '1' : '0'); document.body.classList.toggle('gest-on', on); }
+segment('#segResize', v => setResize(v === '1'));
+segment('#segWs', v => setWsMode(v));
+segment('#segGest', v => setGesture(v === '1'));
+setGesture(CFG.gesture);
+$('#tabsHead').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('#tabsHead').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + b.dataset.p));
+});
+window.addEventListener('resize', fitScreen);
+
+buildActions(); buildStories(); hardReset();
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

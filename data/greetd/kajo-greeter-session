@@ -1,9 +1,13 @@
 #!/bin/sh
 # Wrapper session script for greetd (/etc/greetd/config.toml)
-# Supports both niri (default, multi-monitor + HiDPI) and cage (--compositor cage)
+# Implements the stateless 3-stage fallback chain (docs/spec_kajo_comp.md §6.5.1):
+#   1. kajo-comp --greeter-mode [--config PATH] -- kajo-greeter
+#   2. niri -c /etc/greetd/niri-greeter.kdl
+#   3. cage -s -- kajo-greeter
 
-COMPOSITOR="niri"
+COMPOSITOR="kajo-comp"
 CMD=""
+GREETER_CFG=""
 # Do not name this USER: assigning to an imported variable keeps it exported,
 # which would hand the compositor and greeter an empty $USER.
 GREETER_USER=""
@@ -12,6 +16,10 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --compositor)
             COMPOSITOR="$2"
+            shift 2
+            ;;
+        --config)
+            GREETER_CFG="$2"
             shift 2
             ;;
         --cmd|-c)
@@ -32,22 +40,50 @@ done
 [ -n "$CMD" ] && export KAJO_GREETER_CMD="$CMD"
 [ -n "$GREETER_USER" ] && export KAJO_GREETER_USER="$GREETER_USER"
 
-if [ "$COMPOSITOR" = "cage" ] || ! command -v niri >/dev/null 2>&1; then
-    if ! command -v cage >/dev/null 2>&1; then
-        echo "kajo-greeter-session: neither niri nor cage is installed" >&2
-        exit 1
+# Stage 1: kajo-comp --greeter-mode (primary greeter host)
+if [ "$COMPOSITOR" = "kajo-comp" ] && command -v kajo-comp >/dev/null 2>&1; then
+    if [ -n "$GREETER_CFG" ]; then
+        kajo-comp --greeter-mode --config "$GREETER_CFG" -- kajo-greeter
+    else
+        kajo-comp --greeter-mode -- kajo-greeter
     fi
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        exit 0
+    fi
+    echo "kajo-greeter-session: kajo-comp --greeter-mode exited with status $rc; falling back to niri" >&2
+fi
+
+# Stage 2: niri -c niri-greeter.kdl (fallback #1)
+if [ "$COMPOSITOR" != "cage" ] && command -v niri >/dev/null 2>&1; then
+    niri_cfg=""
+    for cfg in \
+        "/etc/greetd/niri-greeter.kdl" \
+        "/usr/local/share/kajo/greetd/niri-greeter.kdl" \
+        "/usr/share/kajo/greetd/niri-greeter.kdl" \
+        "$HOME/.local/share/kajo/greetd/niri-greeter.kdl"; do
+        if [ -f "$cfg" ]; then
+            niri_cfg="$cfg"
+            break
+        fi
+    done
+
+    if [ -n "$niri_cfg" ]; then
+        niri -c "$niri_cfg"
+    else
+        niri
+    fi
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
+        exit 0
+    fi
+    echo "kajo-greeter-session: niri exited with status $rc; falling back to cage" >&2
+fi
+
+# Stage 3: cage -s -- kajo-greeter (fallback #2)
+if command -v cage >/dev/null 2>&1; then
     exec cage -s -- kajo-greeter
 fi
 
-for cfg in \
-    "/etc/greetd/niri-greeter.kdl" \
-    "/usr/local/share/kajo/greetd/niri-greeter.kdl" \
-    "/usr/share/kajo/greetd/niri-greeter.kdl" \
-    "$HOME/.local/share/kajo/greetd/niri-greeter.kdl"; do
-    if [ -f "$cfg" ]; then
-        exec niri -c "$cfg"
-    fi
-done
-
-exec niri
+echo "kajo-greeter-session: no functional greeter compositor found (tried kajo-comp, niri, cage)" >&2
+exit 1

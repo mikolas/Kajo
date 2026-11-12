@@ -79,25 +79,36 @@ autohide_start_animation(ShellAutohide *self, gint target_margin)
 {
     GtkWindow *window = shell_panel_get_window(self->panel);
     GtkWidget *container = shell_panel_get_container(self->panel);
+    gint raw_dur = (self->state == AUTOHIDE_HIDING) ? self->hide_duration : self->reveal_duration;
 
     if (container && target_margin == 0) {
         gtk_widget_remove_css_class(container, "autohide-hidden");
         gtk_widget_add_css_class(container, "autohide-visible");
     }
 
-    if (!window) {
-        self->anim_target_margin = target_margin;
-        if (self->state == AUTOHIDE_REVEALING)
-            self->state = AUTOHIDE_VISIBLE;
-        else if (self->state == AUTOHIDE_HIDING)
-            self->state = AUTOHIDE_HIDDEN;
-        return;
-    }
-
     /* Remove existing tick callback */
-    if (self->tick_callback_id != 0) {
+    if (window && self->tick_callback_id != 0) {
         gtk_widget_remove_tick_callback(GTK_WIDGET(window), self->tick_callback_id);
         self->tick_callback_id = 0;
+    }
+
+    if (!window || raw_dur <= 0) {
+        self->anim_target_margin = target_margin;
+        autohide_set_margin(self, target_margin);
+        if (self->state == AUTOHIDE_REVEALING) {
+            self->state = AUTOHIDE_VISIBLE;
+            if (container) {
+                gtk_widget_remove_css_class(container, "autohide-hidden");
+                gtk_widget_add_css_class(container, "autohide-visible");
+            }
+        } else if (self->state == AUTOHIDE_HIDING) {
+            self->state = AUTOHIDE_HIDDEN;
+            if (container) {
+                gtk_widget_remove_css_class(container, "autohide-visible");
+                gtk_widget_add_css_class(container, "autohide-hidden");
+            }
+        }
+        return;
     }
 
     self->anim_start_time = g_get_monotonic_time();
@@ -106,6 +117,24 @@ autohide_start_animation(ShellAutohide *self, gint target_margin)
 
     self->tick_callback_id = gtk_widget_add_tick_callback(
         GTK_WIDGET(window), autohide_tick_callback, self, NULL);
+}
+
+static gboolean
+on_reveal_timeout(gpointer user_data)
+{
+    ShellAutohide *self = user_data;
+
+    self->reveal_timeout_id = 0;
+
+    if (!self->enabled || !self->pointer_inside)
+        return G_SOURCE_REMOVE;
+
+    if (self->state == AUTOHIDE_HIDDEN || self->state == AUTOHIDE_HIDING) {
+        self->state = AUTOHIDE_REVEALING;
+        autohide_start_animation(self, 0);
+    }
+
+    return G_SOURCE_REMOVE;
 }
 
 static gboolean
@@ -126,6 +155,21 @@ on_hide_timeout(gpointer user_data)
     return G_SOURCE_REMOVE;
 }
 
+static void
+schedule_hide_timeout(ShellAutohide *self)
+{
+    if (self->hide_timeout_id != 0) {
+        g_source_remove(self->hide_timeout_id);
+        self->hide_timeout_id = 0;
+    }
+    if (self->hide_delay <= 0) {
+        on_hide_timeout(self);
+    } else {
+        self->hide_timeout_id = g_timeout_add(
+            (guint)self->hide_delay, on_hide_timeout, self);
+    }
+}
+
 ShellAutohide *
 shell_autohide_new(ShellPanel *panel, const KajoShellCfg *config)
 {
@@ -135,15 +179,17 @@ shell_autohide_new(ShellPanel *panel, const KajoShellCfg *config)
     self->enabled         = config->autohide_enabled;
     self->touch_gestures_enabled = config->touch_gestures_enabled;
     self->pointer_inside  = FALSE;
-    self->hide_delay      = config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300;
-    self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
-    self->hide_duration   = config->autohide_hide_duration > 0 ? config->autohide_hide_duration : 200;
+    self->reveal_delay    = config->autohide_reveal_delay >= 0 ? config->autohide_reveal_delay : 150;
+    self->hide_delay      = config->autohide_hide_delay >= 0 ? config->autohide_hide_delay : 300;
+    self->reveal_duration = config->autohide_reveal_duration >= 0 ? config->autohide_reveal_duration : 150;
+    self->hide_duration   = config->autohide_hide_duration >= 0 ? config->autohide_hide_duration : 200;
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
     self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
     self->edge            = (config->panel_position == PANEL_POSITION_BOTTOM)
                             ? GTK_LAYER_SHELL_EDGE_BOTTOM
                             : GTK_LAYER_SHELL_EDGE_TOP;
     self->state           = AUTOHIDE_VISIBLE;
+    self->reveal_timeout_id = 0;
     self->hide_timeout_id = 0;
     self->tick_callback_id = 0;
     self->popover_count   = 0;
@@ -179,9 +225,10 @@ shell_autohide_reload_config(ShellAutohide *self, const KajoShellCfg *config)
     }
 
     self->edge            = new_edge;
-    self->hide_delay      = config->autohide_hide_delay > 0 ? config->autohide_hide_delay : 300;
-    self->reveal_duration = config->autohide_reveal_duration > 0 ? config->autohide_reveal_duration : 150;
-    self->hide_duration   = config->autohide_hide_duration > 0 ? config->autohide_hide_duration : 200;
+    self->reveal_delay    = config->autohide_reveal_delay >= 0 ? config->autohide_reveal_delay : 150;
+    self->hide_delay      = config->autohide_hide_delay >= 0 ? config->autohide_hide_delay : 300;
+    self->reveal_duration = config->autohide_reveal_duration >= 0 ? config->autohide_reveal_duration : 150;
+    self->hide_duration   = config->autohide_hide_duration >= 0 ? config->autohide_hide_duration : 200;
     self->panel_height    = config->panel_height > 0 ? config->panel_height : 32;
     self->edge_strip_px   = config->autohide_edge_strip_px > 0 ? config->autohide_edge_strip_px : 2;
     self->enabled         = config->autohide_enabled;
@@ -190,6 +237,10 @@ shell_autohide_reload_config(ShellAutohide *self, const KajoShellCfg *config)
     GtkWidget *container = shell_panel_get_container(self->panel);
 
     if (!self->enabled) {
+        if (self->reveal_timeout_id != 0) {
+            g_source_remove(self->reveal_timeout_id);
+            self->reveal_timeout_id = 0;
+        }
         if (self->hide_timeout_id != 0) {
             g_source_remove(self->hide_timeout_id);
             self->hide_timeout_id = 0;
@@ -214,10 +265,7 @@ shell_autohide_reload_config(ShellAutohide *self, const KajoShellCfg *config)
             }
         } else if (self->popover_count == 0 && !self->pointer_inside &&
                    (self->state == AUTOHIDE_VISIBLE || self->state == AUTOHIDE_REVEALING)) {
-            if (self->hide_timeout_id != 0)
-                g_source_remove(self->hide_timeout_id);
-            self->hide_timeout_id = g_timeout_add(
-                (guint)self->hide_delay, on_hide_timeout, self);
+            schedule_hide_timeout(self);
         }
     }
 }
@@ -234,6 +282,10 @@ shell_autohide_lock(ShellAutohide *self)
         return;
 
     /* Cancel any pending timers */
+    if (self->reveal_timeout_id != 0) {
+        g_source_remove(self->reveal_timeout_id);
+        self->reveal_timeout_id = 0;
+    }
     if (self->hide_timeout_id != 0) {
         g_source_remove(self->hide_timeout_id);
         self->hide_timeout_id = 0;
@@ -262,11 +314,7 @@ shell_autohide_unlock(ShellAutohide *self)
     if (self->popover_count == 0) {
         self->pointer_inside = FALSE;
         if (self->state == AUTOHIDE_VISIBLE || self->state == AUTOHIDE_REVEALING) {
-            if (self->hide_timeout_id != 0) {
-                g_source_remove(self->hide_timeout_id);
-            }
-            self->hide_timeout_id = g_timeout_add(
-                (guint)self->hide_delay, on_hide_timeout, self);
+            schedule_hide_timeout(self);
         }
     }
 }
@@ -288,10 +336,21 @@ shell_autohide_enter(ShellAutohide *self)
         self->hide_timeout_id = 0;
     }
 
-    /* Reveal immediately when mouse enters trigger edge */
-    if (self->state == AUTOHIDE_HIDDEN || self->state == AUTOHIDE_HIDING) {
+    if (self->state == AUTOHIDE_HIDING) {
+        if (self->reveal_timeout_id != 0) {
+            g_source_remove(self->reveal_timeout_id);
+            self->reveal_timeout_id = 0;
+        }
         self->state = AUTOHIDE_REVEALING;
         autohide_start_animation(self, 0);
+    } else if (self->state == AUTOHIDE_HIDDEN) {
+        if (self->reveal_delay <= 0) {
+            self->state = AUTOHIDE_REVEALING;
+            autohide_start_animation(self, 0);
+        } else if (self->reveal_timeout_id == 0) {
+            self->reveal_timeout_id = g_timeout_add(
+                (guint)self->reveal_delay, on_reveal_timeout, self);
+        }
     }
 }
 
@@ -303,6 +362,11 @@ shell_autohide_leave(ShellAutohide *self)
 
     self->pointer_inside = FALSE;
 
+    if (self->reveal_timeout_id != 0) {
+        g_source_remove(self->reveal_timeout_id);
+        self->reveal_timeout_id = 0;
+    }
+
     if (!self->enabled)
         return;
 
@@ -310,11 +374,7 @@ shell_autohide_leave(ShellAutohide *self)
         return;
 
     if (self->state == AUTOHIDE_VISIBLE || self->state == AUTOHIDE_REVEALING) {
-        if (self->hide_timeout_id != 0) {
-            g_source_remove(self->hide_timeout_id);
-        }
-        self->hide_timeout_id = g_timeout_add(
-            (guint)self->hide_delay, on_hide_timeout, self);
+        schedule_hide_timeout(self);
     }
 }
 
@@ -326,6 +386,10 @@ shell_autohide_touch_reveal(ShellAutohide *self, gint dwell_ms)
 
     self->pointer_inside = FALSE;
 
+    if (self->reveal_timeout_id != 0) {
+        g_source_remove(self->reveal_timeout_id);
+        self->reveal_timeout_id = 0;
+    }
     if (self->hide_timeout_id != 0) {
         g_source_remove(self->hide_timeout_id);
         self->hide_timeout_id = 0;
@@ -350,6 +414,10 @@ shell_autohide_force_hide(ShellAutohide *self)
 
     self->pointer_inside = FALSE;
 
+    if (self->reveal_timeout_id != 0) {
+        g_source_remove(self->reveal_timeout_id);
+        self->reveal_timeout_id = 0;
+    }
     if (self->hide_timeout_id != 0) {
         g_source_remove(self->hide_timeout_id);
         self->hide_timeout_id = 0;
@@ -369,6 +437,11 @@ shell_autohide_destroy(ShellAutohide *self)
 {
     if (!self)
         return;
+
+    if (self->reveal_timeout_id != 0) {
+        g_source_remove(self->reveal_timeout_id);
+        self->reveal_timeout_id = 0;
+    }
 
     if (self->hide_timeout_id != 0) {
         g_source_remove(self->hide_timeout_id);

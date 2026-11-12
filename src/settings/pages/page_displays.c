@@ -1,5 +1,7 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include "../../compositor/compositor.h"
+#include "../../compositor/kajo_comp_ipc.h"
 #include "../../hardware/hw_caps.h"
 #include "../../hardware/kbd_backlight.h"
 #include <fcntl.h>
@@ -25,7 +27,8 @@ typedef struct _SettingsPageDisplays {
     GtkWidget *seg_orient;
     GtkWidget *row_scale;
     GtkWidget *seg_scale;
-    GtkWidget *tile_vrr;
+    GtkWidget *row_vrr;
+    GtkWidget *seg_vrr;
 
     gchar     *out_name;
     gchar     *make_model;
@@ -33,6 +36,7 @@ typedef struct _SettingsPageDisplays {
     GArray    *mode_geoms;
     gboolean   vrr_avail;
     gboolean   saved_vrr_active;
+    guint      saved_vrr_idx;
     guint      saved_mode_idx;
     guint      saved_orient_idx;
     guint      saved_scale_idx;
@@ -218,12 +222,29 @@ on_any_switch_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *pspec G_GNUC_UNUSE
 }
 
 static void
-on_vrr_toggled(GtkToggleButton *btn, gpointer user_data)
+sync_vrr_row_subtitle(SettingsPageDisplays *self, guint vrr_idx)
+{
+    if (!self || !self->row_vrr)
+        return;
+    if (!self->vrr_avail) {
+        boxed_row_set_subtitle(self->row_vrr, "Unsupported by this output");
+        return;
+    }
+    const char *sub = "Adaptive Sync Disabled (Off)";
+    if (vrr_idx == 1)
+        sub = "Adaptive Sync Active (Always On)";
+    else if (vrr_idx == 2)
+        sub = "Adaptive Sync Active (Fullscreen On-Demand)";
+    boxed_row_set_subtitle(self->row_vrr, sub);
+}
+
+static void
+on_vrr_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint idx, gpointer user_data)
 {
     SettingsPageDisplays *self = user_data;
-    toggle_card_set_subtitle(
-        GTK_WIDGET(btn),
-        gtk_toggle_button_get_active(btn) ? "Adaptive Sync Active" : "Adaptive Sync Disabled");
+    if (!self || self->syncing_ui)
+        return;
+    sync_vrr_row_subtitle(self, idx);
     mark_displays_changed(self);
 }
 
@@ -240,6 +261,18 @@ on_displays_preview_ss(gpointer user_data G_GNUC_UNUSED)
 }
 
 static void
+save_outputs_toml_preserving_others(const char *out_name,
+                                    const char *make_model,
+                                    const char *mode_str,
+                                    const char *scale_buf,
+                                    const char *orient,
+                                    const char *vrr_str)
+{
+    kajo_config_comp_save_output_rule(
+        NULL, out_name, make_model, mode_str, scale_buf, orient, vrr_str, NULL);
+}
+
+static void
 load_niri_and_config_state(SettingsPageDisplays *self)
 {
     if (!self)
@@ -252,6 +285,7 @@ load_niri_and_config_state(SettingsPageDisplays *self)
     self->make_model = g_strdup("Built-in Display");
     self->vrr_avail  = FALSE;
     gboolean vrr_active = FALSE;
+    guint vrr_idx = 0;
     guint active_mode_idx = 0;
     double current_scale = 1.0;
     g_autofree gchar *current_transform = g_strdup("Normal");
@@ -260,7 +294,110 @@ load_niri_and_config_state(SettingsPageDisplays *self)
     g_array_set_size(self->mode_geoms, 0);
     GtkStringList *slist_res = gtk_string_list_new(NULL);
 
-    g_autofree gchar *ipc_resp = niri_send_ipc_request("\"Outputs\"");
+    gboolean use_kajo_comp = shell_compositor_is_kajo_comp();
+    if (self->card_mon) {
+        section_card_set_badge(self->card_mon, use_kajo_comp ? "outputs.toml" : "10-outputs.kdl", "accent");
+    }
+
+    if (use_kajo_comp) {
+        g_autofree gchar *kc_resp = kajo_comp_ipc_send_request("{\"cmd\":\"get-outputs\"}");
+        if (kc_resp) {
+            g_autoptr(JsonParser) parser = json_parser_new();
+            if (json_parser_load_from_data(parser, kc_resp, -1, NULL)) {
+                JsonNode *root = json_parser_get_root(parser);
+                if (root && JSON_NODE_HOLDS_OBJECT(root)) {
+                    JsonObject *root_obj = json_node_get_object(root);
+                    JsonObject *ok_obj = (json_object_has_member(root_obj, "ok") &&
+                                          !json_object_get_null_member(root_obj, "ok"))
+                                             ? json_object_get_object_member(root_obj, "ok")
+                                             : NULL;
+                    JsonArray *outputs_arr = (ok_obj && json_object_has_member(ok_obj, "outputs"))
+                                                 ? json_object_get_array_member(ok_obj, "outputs")
+                                                 : NULL;
+                    if (outputs_arr && json_array_get_length(outputs_arr) > 0) {
+                        JsonObject *out_info = json_array_get_object_element(outputs_arr, 0);
+                        for (guint oi = 0; oi < json_array_get_length(outputs_arr); oi++) {
+                            JsonObject *cand = json_array_get_object_element(outputs_arr, oi);
+                            if (cand && json_object_get_boolean_member_with_default(cand, "active", FALSE)) {
+                                out_info = cand;
+                                break;
+                            }
+                        }
+                        if (out_info) {
+                            const gchar *o_name = json_object_has_member(out_info, "name")
+                                ? json_object_get_string_member(out_info, "name") : "eDP-1";
+                            g_free(self->out_name);
+                            self->out_name = g_strdup(o_name);
+
+                            const gchar *m_make  = json_object_has_member(out_info, "make") ? json_object_get_string_member(out_info, "make") : "";
+                            const gchar *m_model = json_object_has_member(out_info, "model") ? json_object_get_string_member(out_info, "model") : "";
+                            g_free(self->make_model);
+                            self->make_model = g_strstrip(g_strdup_printf("%s %s", m_make, m_model));
+                            if (self->make_model[0] == '\0') {
+                                g_free(self->make_model);
+                                self->make_model = g_strdup("Display Output");
+                            }
+
+                            self->vrr_avail = TRUE;
+                            const gchar *vrr_s = json_object_has_member(out_info, "vrr")
+                                ? json_object_get_string_member(out_info, "vrr") : "off";
+                            if (g_strcmp0(vrr_s, "on") == 0) {
+                                vrr_idx = 1;
+                                vrr_active = TRUE;
+                            } else if (g_strcmp0(vrr_s, "on-demand") == 0) {
+                                vrr_idx = 2;
+                                vrr_active = TRUE;
+                            }
+
+                            if (json_object_has_member(out_info, "scale"))
+                                current_scale = json_object_get_double_member(out_info, "scale");
+                            if (json_object_has_member(out_info, "transform")) {
+                                g_free(current_transform);
+                                current_transform = g_strdup(json_object_get_string_member(out_info, "transform"));
+                            }
+
+                            gint64 cur_w = json_object_has_member(out_info, "width") ? json_object_get_int_member(out_info, "width") : 0;
+                            gint64 cur_h = json_object_has_member(out_info, "height") ? json_object_get_int_member(out_info, "height") : 0;
+                            gint64 cur_mhz = json_object_has_member(out_info, "refresh_mhz") ? json_object_get_int_member(out_info, "refresh_mhz") : 0;
+
+                            if (json_object_has_member(out_info, "modes")) {
+                                JsonArray *modes_arr = json_object_get_array_member(out_info, "modes");
+                                guint n_modes = modes_arr ? json_array_get_length(modes_arr) : 0;
+                                for (guint i = 0; i < n_modes; i++) {
+                                    JsonObject *m = json_array_get_object_element(modes_arr, i);
+                                    gint64 w = json_object_has_member(m, "width") ? json_object_get_int_member(m, "width") : 0;
+                                    gint64 h = json_object_has_member(m, "height") ? json_object_get_int_member(m, "height") : 0;
+                                    gint64 mhz = json_object_has_member(m, "refresh_mhz") ? json_object_get_int_member(m, "refresh_mhz") : 60000;
+                                    double rr = (double)mhz / 1000.0;
+                                    gboolean pref = json_object_get_boolean_member_with_default(m, "preferred", FALSE);
+
+                                    if (w == cur_w && h == cur_h && llabs(mhz - cur_mhz) <= 50)
+                                        active_mode_idx = i;
+
+                                    gchar rr_raw_buf[32];
+                                    g_ascii_formatd(rr_raw_buf, sizeof(rr_raw_buf), "%.3f", rr);
+                                    g_ptr_array_add(self->raw_modes,
+                                                    g_strdup_printf("%" G_GINT64_FORMAT "x%" G_GINT64_FORMAT "@%s", w, h, rr_raw_buf));
+
+                                    DisplayModeGeom geom = { w, h, rr };
+                                    g_array_append_val(self->mode_geoms, geom);
+
+                                    gchar rr_disp_buf[32];
+                                    g_ascii_formatd(rr_disp_buf, sizeof(rr_disp_buf), "%.2f", rr);
+                                    g_autofree gchar *disp_mode = g_strdup_printf(
+                                        "%" G_GINT64_FORMAT "×%" G_GINT64_FORMAT " @ %sHz%s",
+                                        w, h, rr_disp_buf, pref ? " (Preferred)" : "");
+                                    gtk_string_list_append(slist_res, disp_mode);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    g_autofree gchar *ipc_resp = (!use_kajo_comp) ? niri_send_ipc_request("\"Outputs\"") : NULL;
     if (ipc_resp) {
         g_autoptr(JsonParser) parser = json_parser_new();
         if (json_parser_load_from_data(parser, ipc_resp, -1, NULL)) {
@@ -398,18 +535,20 @@ load_niri_and_config_state(SettingsPageDisplays *self)
     else if (current_scale >= 1.15) scale_sel = 1;
     segmented_group_set_selected(self->seg_scale, scale_sel);
 
-    gtk_widget_set_sensitive(self->tile_vrr, self->vrr_avail);
-    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tile_vrr), self->vrr_avail && vrr_active);
-    toggle_card_set_subtitle(
-        self->tile_vrr,
-        self->vrr_avail
-            ? (vrr_active ? "Adaptive Sync Active" : "Adaptive Sync Disabled")
-            : "Unsupported by this output");
+    if (!use_kajo_comp && vrr_active)
+        vrr_idx = 1;
+
+    if (self->seg_vrr) {
+        gtk_widget_set_sensitive(self->seg_vrr, self->vrr_avail);
+        segmented_group_set_selected(self->seg_vrr, self->vrr_avail ? vrr_idx : 0);
+    }
+    sync_vrr_row_subtitle(self, self->vrr_avail ? vrr_idx : 0);
 
     self->saved_mode_idx   = active_mode_idx;
     self->saved_orient_idx = orient_sel;
     self->saved_scale_idx  = scale_sel;
     self->saved_vrr_active = self->vrr_avail && vrr_active;
+    self->saved_vrr_idx    = self->vrr_avail ? vrr_idx : 0;
 
     /* Populate Idle / Screensaver / Backlight / Posture from KajoShellCfg */
     g_autoptr(KajoShellCfgRef) cfg = kajo_config_store_acquire_shell(NULL);
@@ -541,11 +680,18 @@ on_displays_save(gpointer user_data)
 
     guint scale_sel = segmented_group_get_selected(self->seg_scale);
     double sc = (scale_sel < G_N_ELEMENTS(k_scale_vals)) ? k_scale_vals[scale_sel] : 1.00;
-    gboolean vrr = self->vrr_avail && gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_vrr));
+    guint vrr_sel = (self->vrr_avail && self->seg_vrr) ? segmented_group_get_selected(self->seg_vrr) : 0;
+    static const char *const k_vrr_vals[] = { "off", "on", "on-demand" };
+    const gchar *vrr_str = (vrr_sel < G_N_ELEMENTS(k_vrr_vals)) ? k_vrr_vals[vrr_sel] : "off";
+    gboolean vrr = (vrr_sel > 0);
 
     gchar scale_buf[32];
     g_ascii_formatd(scale_buf, sizeof(scale_buf), "%.2f", sc);
 
+    /* Save outputs.toml preserving unattached host output entries */
+    save_outputs_toml_preserving_others(out_name, self->make_model, res, scale_buf, orient, vrr_str);
+
+    /* Save 10-outputs.kdl for Niri session compatibility */
     g_autofree gchar *niri_dir = g_build_filename(g_get_user_config_dir(), "niri", "config.d", NULL);
     g_mkdir_with_parents(niri_dir, 0755);
     g_autofree gchar *kdl_path = g_build_filename(niri_dir, "10-outputs.kdl", NULL);
@@ -563,11 +709,20 @@ on_displays_save(gpointer user_data)
         vrr ? "    variable-refresh-rate\n" : "");
     g_file_set_contents(kdl_path, kdl_content, -1, NULL);
 
-    run_niri_output_cmd_async(out_name, "mode", res);
-    run_niri_output_cmd_async(out_name, "scale", scale_buf);
-    run_niri_output_cmd_async(out_name, "transform", orient);
-    run_niri_output_cmd_async(out_name, "vrr", vrr ? "on" : "off");
-    niri_reload_config();
+    if (shell_compositor_is_kajo_comp()) {
+        const char *kc_mode = (g_strcmp0(res, "auto") == 0) ? "preferred" : res;
+        g_autofree gchar *req = g_strdup_printf(
+            "{\"cmd\":\"action\",\"name\":\"set-output-config\",\"output\":\"%s\","
+            "\"mode\":\"%s\",\"scale\":%s,\"transform\":\"%s\",\"vrr\":\"%s\"}",
+            out_name, kc_mode, scale_buf, orient, vrr_str);
+        g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+    } else {
+        run_niri_output_cmd_async(out_name, "mode", res);
+        run_niri_output_cmd_async(out_name, "scale", scale_buf);
+        run_niri_output_cmd_async(out_name, "transform", orient);
+        run_niri_output_cmd_async(out_name, "vrr", vrr ? "on" : "off");
+        shell_compositor_reload_config();
+    }
 
     /* 2. Snapshot GTK widget state, persist to ~/.config/kajo/shell.toml, then apply hardware sysfs */
     DisplaysSaveCtx ctx = { 0 };
@@ -720,9 +875,13 @@ build_page_displays(void)
                                        self->seg_scale);
     gtk_box_append(GTK_BOX(self->card_mon), self->row_scale);
 
-    self->tile_vrr = create_toggle_card("🖥", "Variable Refresh Rate (VRR)", "Unsupported by this output", FALSE);
-    g_signal_connect(self->tile_vrr, "toggled", G_CALLBACK(on_vrr_toggled), self);
-    gtk_box_append(GTK_BOX(self->card_mon), self->tile_vrr);
+    static const char *const vrr_labels[] = { "OFF", "ON", "ON-DEMAND", NULL };
+    self->seg_vrr = create_segmented_group(vrr_labels, 0);
+    segmented_group_connect(self->seg_vrr, on_vrr_segment_changed, self);
+    self->row_vrr = create_boxed_row("⚡", "Adaptive Sync Policy (VRR)",
+                                     "Unsupported by this output",
+                                     self->seg_vrr);
+    gtk_box_append(GTK_BOX(self->card_mon), self->row_vrr);
 
     /* ─── Card 2: Idle Screensaver, DPMS & Session Lock ─── */
     GtkWidget *btn_lock_now = create_action_button("🔒 LOCK NOW", NULL, NULL, G_CALLBACK(on_lock_now_clicked), self);

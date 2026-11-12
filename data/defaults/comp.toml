@@ -1,0 +1,89 @@
+# Kajo Compositor Configuration — Outputs, Input & Scrolling Layout
+
+[layout]
+gap_px = 6
+border_px = 1
+active_border_color = "accent"          # Tracks @metro-accent from theme.toml, or explicit "#0078d4"
+inactive_border_color = "#2b2b2b"
+urgent_border_color = "#e81123"
+always_center_single_column = true
+center_focused_column = "never"         # "never" | "on-overflow" | "always"
+default_column_width = 0.5
+preset_widths = [0.33333, 0.5, 0.66667]
+preset_heights = [0.33333, 0.5, 0.66667, 1.0]
+
+[animations]
+enabled = true
+
+[animations.workspace_switch]
+damping_ratio = 0.80
+stiffness = 523.0
+epsilon = 0.0001
+
+[animations.horizontal_scroll]
+damping_ratio = 0.85
+stiffness = 423.0
+epsilon = 0.0001
+
+[animations.window_movement]
+damping_ratio = 0.75
+stiffness = 323.0
+epsilon = 0.0001
+
+[switcher]
+active_border_color = "accent"
+urgent_border_color = "#e81123"
+
+[screenshots]
+path = "~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png"
+copy_to_clipboard = true
+show_notification = true
+include_window_border = true
+
+[xwayland]
+enabled = true
+force_zero_scaling = true
+
+[env]
+XDG_CURRENT_DESKTOP = "kajo"
+ELECTRON_OZONE_PLATFORM_HINT = "auto"
+
+[autostart]
+commands = [
+    ["gnome-keyring-daemon", "--start", "--components=secrets"],
+    ["/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1"],
+    ["kajo"],
+]
+
+[input.keyboard]
+xkb_layout = "us"                       # Or comma-separated "us,fi"
+xkb_options = ""
+numlock_on_startup = true
+repeat_rate = 35
+repeat_delay = 250
+
+[input.touchpad]
+tap = true
+natural_scroll = true
+dwt = true
+
+[input.mouse]
+accel_profile = "flat"
+accel_speed = 0.0
+natural_scroll = false
+
+# ─── Host Profile A: HP OmniBook X Flip 14 OLED (matched case-insensitively by EDID Make/Model or "edp-1") ───
+[[output]]
+match = "samsung display corp. 0x41aa"
+mode = "2880x1800@120.001"
+scale = 1.75
+transform = "normal"
+vrr = "on"
+
+# ─── Host Profile B: 34" Ultrawide Desktop Monitor (matched case-insensitively by connector or EDID Make/Model) ───
+[[output]]
+match = "dp-1"
+mode = "preferred"
+scale = 1.0
+transform = "normal"
+vrr = "on-demand"                       # Engages adaptive sync only for fullscreen windows or vrr=true rules

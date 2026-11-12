@@ -2400,6 +2400,8 @@ update_responsive_width(KajoFilesWindow *self, int width)
 
     self->is_narrow = narrow;
     gtk_widget_set_visible(self->btn_sidebar_toggle, narrow);
+    if (self->title_label)
+        gtk_widget_set_visible(self->title_label, !narrow);
     gtk_widget_set_visible(self->sidebar_vbox, !narrow);
     gtk_widget_set_visible(self->inspector_vbox, self->inspector_visible && !narrow);
 }
@@ -2493,6 +2495,7 @@ kajo_files_window_class_init(KajoFilesWindowClass *klass)
 
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, root_overlay);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_sidebar_toggle);
+    gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, title_label);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_back);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_forward);
     gtk_widget_class_bind_template_child(widget_class, KajoFilesWindow, btn_up);

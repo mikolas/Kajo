@@ -36,6 +36,7 @@ test_autohide_enter_leave_cycle(void)
 {
     KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = TRUE;
+    cfg->autohide_reveal_delay = 0;
     cfg->autohide_hide_delay = 15;
     cfg->autohide_reveal_duration = 15;
     cfg->autohide_hide_duration = 15;
@@ -46,7 +47,7 @@ test_autohide_enter_leave_cycle(void)
     g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
     g_assert_cmpint(ah->hide_duration, ==, 15);
 
-    /* Pointer enters edge strip -> reveals */
+    /* Pointer enters edge strip with reveal_delay = 0 -> reveals immediately */
     shell_autohide_enter(ah);
     g_assert_true(ah->pointer_inside);
     g_assert_cmpint(ah->state, ==, AUTOHIDE_VISIBLE);
@@ -66,6 +67,29 @@ test_autohide_enter_leave_cycle(void)
     g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
     g_assert_cmpuint(ah->hide_timeout_id, ==, 0);
 
+    /* Now test reveal_delay > 0 dwell timer and early leave cancellation */
+    cfg->autohide_reveal_delay = 25;
+    shell_autohide_reload_config(ah, cfg);
+    g_assert_cmpint(ah->reveal_delay, ==, 25);
+
+    /* Enter then immediately leave before dwell expires -> stays hidden */
+    shell_autohide_enter(ah);
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
+    g_assert_cmpuint(ah->reveal_timeout_id, !=, 0);
+    shell_autohide_leave(ah);
+    g_assert_cmpuint(ah->reveal_timeout_id, ==, 0);
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_HIDDEN);
+
+    /* Enter and hold until dwell expires -> reveals */
+    shell_autohide_enter(ah);
+    g_assert_cmpuint(ah->reveal_timeout_id, !=, 0);
+    deadline = g_get_monotonic_time() + 500 * 1000;
+    while (ah->state != AUTOHIDE_VISIBLE && g_get_monotonic_time() < deadline) {
+        g_main_context_iteration(NULL, TRUE);
+    }
+    g_assert_cmpint(ah->state, ==, AUTOHIDE_VISIBLE);
+    g_assert_cmpuint(ah->reveal_timeout_id, ==, 0);
+
     shell_autohide_destroy(ah);
     kajo_shell_cfg_free(cfg);
 }
@@ -75,6 +99,7 @@ test_autohide_popover_unlock_recovers_stuck_state(void)
 {
     KajoShellCfg *cfg = kajo_shell_cfg_new_default();
     cfg->autohide_enabled = TRUE;
+    cfg->autohide_reveal_delay = 0;
     cfg->autohide_hide_delay = 15;
 
     ShellAutohide *ah = shell_autohide_new(NULL, cfg);

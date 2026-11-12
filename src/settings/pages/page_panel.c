@@ -139,7 +139,7 @@ load_panel_ui_from_config(SettingsPagePanel *self)
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tile_hide), config->autohide_enabled);
     gtk_range_set_value(GTK_RANGE(self->scale_height), config->panel_height > 0 ? config->panel_height : 32);
     gtk_range_set_value(GTK_RANGE(self->scale_rev),
-                        config->autohide_reveal_delay > 0 ? config->autohide_reveal_delay : 150);
+                        config->autohide_reveal_delay >= 0 ? config->autohide_reveal_delay : 150);
 
     gtk_switch_set_active(GTK_SWITCH(self->sw_touch_enabled), config->touch_gestures_enabled);
     gtk_drop_down_set_selected(
@@ -224,7 +224,6 @@ mutate_page_panel_cfg(KajoShellCfg *config, gpointer user_data)
     config->autohide_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tile_hide));
     config->panel_height = (int)gtk_range_get_value(GTK_RANGE(self->scale_height));
     config->autohide_reveal_delay = (int)gtk_range_get_value(GTK_RANGE(self->scale_rev));
-    config->autohide_reveal_duration = config->autohide_reveal_delay;
 
     config->touch_gestures_enabled = gtk_switch_get_active(GTK_SWITCH(self->sw_touch_enabled));
 
@@ -315,7 +314,7 @@ build_page_panel(void)
         FALSE);
     gtk_box_append(GTK_BOX(self->card_geom), self->tile_hide);
 
-    GtkWidget *w_rev = create_scale_with_badge(50, 500, 25, 150, "%.0fms", &self->scale_rev, NULL);
+    GtkWidget *w_rev = create_scale_with_badge(0, 500, 25, 150, "%.0fms", &self->scale_rev, NULL);
     self->row_rev = create_boxed_row(
         "⏱",
         "Autohide Reveal Delay",

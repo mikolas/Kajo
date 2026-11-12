@@ -524,7 +524,7 @@ kajo_cfg_domain_apply_toml_table(const KajoDomainSchema *schema,
         toml_datum_t d;
 
         if (f->section && *f->section) {
-            toml_datum_t sec_tab = toml_get(domain_tab, f->section);
+            toml_datum_t sec_tab = toml_seek(domain_tab, f->section);
             if (sec_tab.type != TOML_TABLE)
                 continue;
             d = toml_get(sec_tab, f->key);
@@ -1013,6 +1013,17 @@ patch_or_insert_scalar_in_doc(GString    *doc,
     }
 }
 
+void
+kajo_toml_patch_or_insert_scalar(GString    *doc,
+                                 const char *section,
+                                 const char *key,
+                                 const char *rhs_val)
+{
+    if (!doc || !key || !rhs_val)
+        return;
+    patch_or_insert_scalar_in_doc(doc, section, key, rhs_val);
+}
+
 static void
 replace_or_append_custom_layout_in_doc(const KajoDomainSchema *schema,
                                        const void             *new_draft,
@@ -1246,12 +1257,23 @@ kajo_cfg_domain_equal(const KajoDomainSchema *schema,
 }
 
 gchar *
+kajo_config_resolve_user_dir(void)
+{
+    const gchar *env_dir = g_getenv("KAJO_CONFIG_DIR");
+    if (env_dir && *env_dir)
+        return g_strdup(env_dir);
+    return g_build_filename(g_get_user_config_dir(), "kajo", NULL);
+}
+
+gchar *
 kajo_config_find_default_file(const char *filename)
 {
     if (!filename || !*filename)
         return NULL;
 
     const gchar *env_defaults = g_getenv("KAJO_DEFAULTS_DIR");
+    if (!env_defaults || !*env_defaults)
+        env_defaults = g_getenv("KAJO_COMP_DEFAULTS_DIR");
     if (env_defaults && *env_defaults) {
         gchar *env_path = g_build_filename(env_defaults, filename, NULL);
         if (g_file_test(env_path, G_FILE_TEST_EXISTS))
@@ -1264,15 +1286,17 @@ kajo_config_find_default_file(const char *filename)
         return local_share;
     g_free(local_share);
 
-    gchar *usr_local = g_build_filename("/usr/local/share/kajo/defaults", filename, NULL);
-    if (g_file_test(usr_local, G_FILE_TEST_EXISTS))
-        return usr_local;
-    g_free(usr_local);
-
-    gchar *usr_share = g_build_filename("/usr/share/kajo/defaults", filename, NULL);
-    if (g_file_test(usr_share, G_FILE_TEST_EXISTS))
-        return usr_share;
-    g_free(usr_share);
+    const gchar * const *sys_dirs = g_get_system_data_dirs();
+    if (sys_dirs) {
+        for (size_t i = 0; sys_dirs[i] != NULL; i++) {
+            if (!*sys_dirs[i])
+                continue;
+            gchar *cand = g_build_filename(sys_dirs[i], "kajo", "defaults", filename, NULL);
+            if (g_file_test(cand, G_FILE_TEST_EXISTS))
+                return cand;
+            g_free(cand);
+        }
+    }
 
     return g_build_filename("/usr/share/kajo/defaults", filename, NULL);
 }

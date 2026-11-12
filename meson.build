@@ -192,6 +192,7 @@ shell_resources = gnome.compile_resources(
 kajo_config_sources = files(
   'src/vendor/tomlc17/tomlc17.c',
   'src/config/kajo_config_schema.c',
+  'src/config/kajo_config_comp.c',
   'src/config/kajo_config_migrate.c',
   'src/config/kajo_config_store.c',
   'src/config/schemas/schema_theme.c',
@@ -208,6 +209,7 @@ kajo_core = static_library(
     'src/theme.c',
     'src/icons.c',
     'src/compositor/niri.c',
+    'src/compositor/kajo_comp_ipc.c',
     'src/app_init.c',
   ),
   dependencies: [gtk4_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
@@ -504,14 +506,35 @@ install_data(
 )
 
 install_data(
+  'data/session/kajo-session',
   'data/greetd/kajo-greeter-session',
   install_dir: get_option('bindir'),
   install_mode: 'rwxr-xr-x',
 )
 
 install_data(
+  'data/greetd/comp-greeter.toml',
   'data/greetd/niri-greeter.kdl',
   install_dir: get_option('datadir') / 'kajo' / 'greetd',
+)
+
+install_data(
+  'data/session/kajo.desktop',
+  'data/session/kajo-debug.desktop',
+  'data/session/kajo-niri.desktop',
+  install_dir: get_option('datadir') / 'wayland-sessions',
+)
+
+install_data(
+  'data/session/kajo-portals.conf',
+  install_dir: get_option('datadir') / 'xdg-desktop-portal',
+)
+
+install_data(
+  'data/systemd/kajo-comp.service',
+  'data/systemd/kajo.service',
+  'data/systemd/kajo-shutdown.target',
+  install_dir: get_option('prefix') / 'lib' / 'systemd' / 'user',
 )
 
 install_subdir(
@@ -541,6 +564,7 @@ install_subdir(
 install_data(
   'data/icons/kajo.svg',
   'data/icons/kajo-symbolic.svg',
+  'data/icons/kajo-comp.svg',
   'data/icons/kajo-ide.svg',
   'data/icons/kajo-files.svg',
   'data/icons/kajo-player.svg',
@@ -619,6 +643,7 @@ widget_sources = kajo_config_sources + files(
   'src/hardware/hw_caps.c',
   'src/hardware/kbd_backlight.c',
   'src/compositor/niri.c',
+  'src/compositor/kajo_comp_ipc.c',
   'src/widgets/registry.c',
   'src/widgets/clock.c',
   'src/widgets/volume.c',
@@ -707,7 +732,7 @@ endif
 
 test_niri_exe = executable(
   'test-niri',
-  files('tests/test_niri.c', 'src/compositor/niri.c'),
+  files('tests/test_niri.c', 'src/compositor/niri.c', 'src/compositor/kajo_comp_ipc.c'),
   dependencies: [gio_dep, gio_unix_dep, json_glib_dep],
   build_by_default: false,
 )
@@ -809,6 +834,271 @@ test_mod_router_exe = executable(
   build_by_default: false,
 )
 test('mod-router', test_mod_router_exe)
+
+# ─── kajo-comp (compositor) ───────────────────────────────────────────────
+# Pure core: no wlroots, Vulkan or GLib headers (spec §7.2.4). Built with the
+# stricter warning set from spec §7.2.2; -Werror is applied here only.
+comp_strict_args = [
+  '-Wall', '-Wextra', '-Werror', '-Wshadow', '-Wnull-dereference', '-Wformat=2',
+  '-Wstrict-prototypes', '-Wmissing-prototypes', '-Wconversion', '-Wsign-conversion',
+  '-Wvla', '-fno-common', '-D_POSIX_C_SOURCE=200809L',
+] + cc.get_supported_arguments(['-ftrivial-auto-var-init=zero', '-fstack-protector-strong'])
+comp_xkb_dep   = dependency('xkbcommon')
+comp_pcre2_dep = dependency('libpcre2-8')
+# The vendored TOML parser is third-party code: built without the strict set.
+comp_toml_lib = static_library('kajo-comp-toml', files('src/vendor/tomlc17/tomlc17.c'))
+comp_core_lib = static_library(
+  'kajo-comp-core',
+  files(
+    'src/comp/core/comp_diag.c',
+    'src/comp/core/comp_spring.c',
+    'src/comp/core/comp_layout.c',
+    'src/comp/core/comp_motion.c',
+    'src/comp/core/comp_binds.c',
+    'src/comp/core/comp_rules.c',
+    'src/comp/core/comp_config.c',
+    'src/comp/core/comp_touch.c',
+    'src/comp/core/comp_gesture.c',
+  ),
+  c_args: comp_strict_args,
+  link_with: comp_toml_lib,
+  dependencies: [m_dep, comp_xkb_dep, comp_pcre2_dep],
+)
+comp_core_dep = declare_dependency(link_with: [comp_core_lib, comp_toml_lib],
+                                   dependencies: [m_dep, comp_xkb_dep, comp_pcre2_dep])
+
+test_comp_spring_exe = executable(
+  'test-comp-spring',
+  files('tests/test_comp_spring.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-spring', test_comp_spring_exe)
+
+test_comp_layout_exe = executable(
+  'test-comp-layout',
+  files('tests/test_comp_layout.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-layout', test_comp_layout_exe)
+
+test_comp_motion_exe = executable(
+  'test-comp-motion',
+  files('tests/test_comp_motion.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-motion', test_comp_motion_exe)
+
+test_comp_config_exe = executable(
+  'test-comp-config',
+  files('tests/test_comp_config.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-config', test_comp_config_exe,
+  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
+
+# The compositor binary. System headers are included as -isystem so the strict
+# warning set applies to our code only (spec §7.2.2).
+comp_wlroots_dep = dependency('wlroots-0.20', include_type: 'system')
+comp_wl_server_dep = dependency('wayland-server', include_type: 'system')
+comp_talloc_dep = dependency('talloc', include_type: 'system')
+
+wlr_layer_shell_server_h = custom_target(
+  'wlr-layer-shell-unstable-v1-protocol.h',
+  input: files('protocol/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-protocol.h',
+  command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+)
+wlr_output_power_server_h = custom_target(
+  'wlr-output-power-management-unstable-v1-protocol.h',
+  input: files('protocol/wlr-output-power-management-unstable-v1.xml'),
+  output: 'wlr-output-power-management-unstable-v1-protocol.h',
+  command: [wayland_scanner, 'server-header', '@INPUT@', '@OUTPUT@'],
+)
+
+kajo_comp_exe = executable(
+  'kajo-comp',
+  files(
+    'src/comp/main.c',
+    'src/comp/comp_listen.c',
+    'src/comp/comp_server.c',
+    'src/comp/comp_output.c',
+    'src/comp/comp_window.c',
+    'src/comp/comp_layer.c',
+    'src/comp/comp_lock_idle.c',
+    'src/comp/comp_protocols.c',
+    'src/comp/comp_xwayland.c',
+    'src/comp/comp_input.c',
+    'src/comp/comp_drag.c',
+    'src/comp/comp_ipc.c',
+    'src/comp/comp_spawn.c',
+    'src/comp/comp_text.c',
+    'src/comp/comp_switcher.c',
+    'src/comp/comp_screenshot.c',
+  ),
+  wlr_layer_shell_server_h,
+  wlr_output_power_server_h,
+  c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
+  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep,
+                 dependency('libinput', include_type: 'system'),
+                 dependency('xkbcommon', include_type: 'system'),
+                 dependency('cairo', include_type: 'system'),
+                 dependency('pangocairo', include_type: 'system'),
+                 dependency('libpng', include_type: 'system')],
+  install: true,
+)
+
+xdg_shell_client_h = custom_target(
+  'xdg-shell-client-protocol.h',
+  input: wl_protocols_dir / 'stable/xdg-shell/xdg-shell.xml',
+  output: 'xdg-shell-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+xdg_shell_client_c = custom_target(
+  'xdg-shell-protocol.c',
+  input: wl_protocols_dir / 'stable/xdg-shell/xdg-shell.xml',
+  output: 'xdg-shell-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+xdg_dec_client_h = custom_target(
+  'xdg-decoration-unstable-v1-client-protocol.h',
+  input: wl_protocols_dir / 'unstable/xdg-decoration/xdg-decoration-unstable-v1.xml',
+  output: 'xdg-decoration-unstable-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+xdg_dec_client_c = custom_target(
+  'xdg-decoration-unstable-v1-protocol.c',
+  input: wl_protocols_dir / 'unstable/xdg-decoration/xdg-decoration-unstable-v1.xml',
+  output: 'xdg-decoration-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+spb_client_h = custom_target(
+  'single-pixel-buffer-v1-client-protocol.h',
+  input: wl_protocols_dir / 'staging/single-pixel-buffer/single-pixel-buffer-v1.xml',
+  output: 'single-pixel-buffer-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+spb_client_c = custom_target(
+  'single-pixel-buffer-v1-protocol.c',
+  input: wl_protocols_dir / 'staging/single-pixel-buffer/single-pixel-buffer-v1.xml',
+  output: 'single-pixel-buffer-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+wlr_layer_shell_client_h = custom_target(
+  'wlr-layer-shell-unstable-v1-client-protocol.h',
+  input: files('protocol/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+wlr_layer_shell_client_c = custom_target(
+  'wlr-layer-shell-unstable-v1-protocol.c',
+  input: files('protocol/wlr-layer-shell-unstable-v1.xml'),
+  output: 'wlr-layer-shell-unstable-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+ext_session_lock_client_h = custom_target(
+  'ext-session-lock-v1-client-protocol.h',
+  input: wl_protocols_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml',
+  output: 'ext-session-lock-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+ext_session_lock_client_c = custom_target(
+  'ext-session-lock-v1-protocol.c',
+  input: wl_protocols_dir / 'staging/ext-session-lock/ext-session-lock-v1.xml',
+  output: 'ext-session-lock-v1-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+viewporter_client_h = custom_target(
+  'viewporter-client-protocol.h',
+  input: wl_protocols_dir / 'stable/viewporter/viewporter.xml',
+  output: 'viewporter-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+viewporter_client_c = custom_target(
+  'viewporter-protocol.c',
+  input: wl_protocols_dir / 'stable/viewporter/viewporter.xml',
+  output: 'viewporter-protocol.c',
+  command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
+)
+
+comp_test_client_exe = executable(
+  'comp-test-client',
+  files('tests/comp/comp_test_client.c'),
+  xdg_shell_client_h, xdg_shell_client_c,
+  xdg_dec_client_h, xdg_dec_client_c,
+  spb_client_h, spb_client_c,
+  wlr_layer_shell_client_h, wlr_layer_shell_client_c,
+  ext_session_lock_client_h, ext_session_lock_client_c,
+  viewporter_client_h, viewporter_client_c,
+  vkbd_header, vkbd_code,
+  im_header, im_code,
+  c_args: comp_strict_args,
+  dependencies: [dependency('wayland-client', include_type: 'system'), comp_xkb_dep],
+  build_by_default: false,
+)
+test('comp-headless', find_program('tests/comp/comp_headless_smoke.sh'),
+  args: [kajo_comp_exe, comp_test_client_exe],
+  depends: [kajo_comp_exe, comp_test_client_exe],
+  timeout: 180,
+)
+
+test('comp-audit', find_program('scripts/audit.sh'), args: ['comp'],
+  workdir: meson.project_source_root())
+
+# Fuzz targets, built here as corpus drivers (smoke tests). Real fuzzing: DEVELOPMENT.md.
+test_fuzz_comp_layout_exe = executable(
+  'test-fuzz-comp-layout',
+  files('tests/fuzz/fuzz_comp_layout.c'),
+  c_args: comp_strict_args,
+  dependencies: [comp_core_dep],
+  build_by_default: false,
+)
+test('fuzz-comp-layout', test_fuzz_comp_layout_exe)
+
+test_fuzz_comp_config_exe = executable(
+  'test-fuzz-comp-config',
+  files('tests/fuzz/fuzz_comp_config.c'),
+  c_args: comp_strict_args,
+  dependencies: [comp_core_dep],
+  build_by_default: false,
+)
+test('fuzz-comp-config', test_fuzz_comp_config_exe)
+
+test_fuzz_ipc_socket_exe = executable(
+  'test-fuzz-ipc-socket',
+  files(
+    'tests/fuzz/fuzz_ipc_socket.c',
+    'src/comp/comp_listen.c',
+    'src/comp/comp_server.c',
+    'src/comp/comp_output.c',
+    'src/comp/comp_window.c',
+    'src/comp/comp_layer.c',
+    'src/comp/comp_lock_idle.c',
+    'src/comp/comp_protocols.c',
+    'src/comp/comp_xwayland.c',
+    'src/comp/comp_input.c',
+    'src/comp/comp_drag.c',
+    'src/comp/comp_ipc.c',
+    'src/comp/comp_spawn.c',
+    'src/comp/comp_text.c',
+    'src/comp/comp_switcher.c',
+    'src/comp/comp_screenshot.c',
+  ),
+  wlr_layer_shell_server_h,
+  wlr_output_power_server_h,
+  c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
+  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep,
+                 dependency('libinput', include_type: 'system'),
+                 dependency('xkbcommon', include_type: 'system'),
+                 dependency('cairo', include_type: 'system'),
+                 dependency('pangocairo', include_type: 'system'),
+                 dependency('libpng', include_type: 'system')],
+  build_by_default: false,
+)
+test('fuzz-ipc-socket', test_fuzz_ipc_socket_exe)
 
 gnome.post_install(
   update_desktop_database: true,

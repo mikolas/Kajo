@@ -1,0 +1,289 @@
+# Keyboard, Mouse Wheel & Hardware Key Bindings
+# Every binding is a [[bind]] block with `key = "..."` or `keys = ["...", "..."]` (100% lowercase).
+# Modifiers: mod (super by default, alt with --mod alt), super, ctrl, alt, shift.
+# Built-in lowercase aliases: volume-up, volume-down, volume-mute, mic-mute, brightness-up,
+# brightness-down, media-play, media-next, media-prev, page-up, page-down, bracket-left,
+# bracket-right, wheel-up, wheel-down, wheel-left, wheel-right.
+# Actions scheduled for Phase 3 commits are commented until wired in comp_binds.c.
+
+# === Shell, Launcher, Lock & Session ===
+[[bind]]
+key = "mod+space"
+spawn = ["kajo", "--toggle-launcher"]
+
+[[bind]]
+keys = ["mod+shift+s", "print"]
+action = "screenshot"                                         # Phase 3 (§4.2)
+
+[[bind]]
+key = "alt+print"
+action = "screenshot-window"                                  # Phase 3 (§4.2)
+
+[[bind]]
+key = "ctrl+print"
+action = "screenshot-screen"                                  # Phase 3 (§4.2)
+
+[[bind]]
+key = "mod+ctrl+l"
+spawn = ["kajo", "--lock"]
+allow_locked = true
+
+[[bind]]
+key = "mod+ctrl+s"
+spawn = ["kajo", "--screensaver"]
+
+[[bind]]
+key = "mod+t"
+spawn = ["kitty"]
+
+[[bind]]
+key = "mod+shift+e"
+action = "quit"
+
+# === Audio, Brightness & Media ===
+[[bind]]
+key = "volume-up"
+spawn = ["kajo", "--volume-up"]
+allow_locked = true
+
+[[bind]]
+key = "volume-down"
+spawn = ["kajo", "--volume-down"]
+allow_locked = true
+
+[[bind]]
+key = "volume-mute"
+spawn = ["kajo", "--volume-mute"]
+allow_locked = true
+
+[[bind]]
+key = "brightness-up"
+spawn = ["kajo", "--brightness-up"]
+allow_locked = true
+
+[[bind]]
+key = "brightness-down"
+spawn = ["kajo", "--brightness-down"]
+allow_locked = true
+
+[[bind]]
+key = "media-play"
+spawn = ["playerctl", "play-pause"]
+allow_locked = true
+
+[[bind]]
+key = "media-next"
+spawn = ["playerctl", "next"]
+allow_locked = true
+
+[[bind]]
+key = "media-prev"
+spawn = ["playerctl", "previous"]
+allow_locked = true
+
+# === Window Switcher ===
+[[bind]]
+key = "alt+tab"
+action = "next-window"
+scope = "output"
+
+[[bind]]
+key = "alt+shift+tab"
+action = "previous-window"
+scope = "output"
+
+[[bind]]
+key = "alt+grave"
+action = "next-window"
+filter = "app-id"
+
+[[bind]]
+key = "alt+shift+grave"
+action = "previous-window"
+filter = "app-id"
+
+# === Window Lifecycle & State ===
+[[bind]]
+key = "mod+q"
+action = "close-window"
+repeat = false
+
+[[bind]]
+key = "mod+f"
+action = "maximize-column"
+
+[[bind]]
+key = "mod+shift+f"
+action = "fullscreen-window"
+
+[[bind]]
+key = "mod+shift+t"
+action = "toggle-window-floating"
+
+[[bind]]
+key = "mod+shift+v"
+action = "switch-focus-floating-tiling"
+
+[[bind]]
+key = "mod+w"
+action = "toggle-column-tabbed"
+
+[[bind]]
+key = "mod+escape"
+action = "break-keyboard-shortcuts-inhibit"
+allow_inhibiting = false
+
+# === Directional Focus & Movement ===
+[[bind]]
+keys = ["mod+left", "mod+h", "mod+wheel-left", "mod+shift+wheel-up"]
+action = "focus-column-left"
+
+[[bind]]
+keys = ["mod+right", "mod+l", "mod+wheel-right", "mod+shift+wheel-down"]
+action = "focus-column-right"
+
+[[bind]]
+keys = ["mod+down", "mod+j"]
+action = "focus-window-down"
+
+[[bind]]
+keys = ["mod+up", "mod+k"]
+action = "focus-window-up"
+
+[[bind]]
+keys = ["mod+shift+left", "mod+shift+h", "mod+ctrl+wheel-left", "mod+ctrl+shift+wheel-up"]
+action = "move-column-left"
+
+[[bind]]
+keys = ["mod+shift+right", "mod+shift+l", "mod+ctrl+wheel-right", "mod+ctrl+shift+wheel-down"]
+action = "move-column-right"
+
+[[bind]]
+keys = ["mod+shift+down", "mod+shift+j"]
+action = "move-window-down"
+
+[[bind]]
+keys = ["mod+shift+up", "mod+shift+k"]
+action = "move-window-up"
+
+[[bind]]
+key = "mod+home"
+action = "focus-column-first"
+
+[[bind]]
+key = "mod+end"
+action = "focus-column-last"
+
+[[bind]]
+key = "mod+ctrl+home"
+action = "move-column-to-first"
+
+[[bind]]
+key = "mod+ctrl+end"
+action = "move-column-to-last"
+
+[[bind]]
+keys = ["mod+bracket-left", "mod+comma"]
+action = "consume-window-into-column"
+
+[[bind]]
+keys = ["mod+bracket-right", "mod+period"]
+action = "expel-window-from-column"
+
+[[bind]]
+key = "mod+ctrl+left"
+action = "consume-or-expel-window-left"
+
+[[bind]]
+key = "mod+ctrl+right"
+action = "consume-or-expel-window-right"
+
+# === Vertical Workspaces & Wheel Navigation ===
+[[bind]]
+keys = ["mod+page-down", "mod+u"]
+action = "focus-workspace-down"
+
+[[bind]]
+keys = ["mod+page-up", "mod+i"]
+action = "focus-workspace-up"
+
+[[bind]]
+keys = ["mod+ctrl+down", "mod+ctrl+u"]
+action = "move-column-to-workspace-down"
+
+[[bind]]
+keys = ["mod+ctrl+up", "mod+ctrl+i"]
+action = "move-column-to-workspace-up"
+
+[[bind]]
+keys = ["mod+shift+page-down", "mod+shift+u"]
+action = "move-workspace-down"
+
+[[bind]]
+keys = ["mod+shift+page-up", "mod+shift+i"]
+action = "move-workspace-up"
+
+[[bind]]
+key = "mod+wheel-down"
+action = "focus-workspace-down"
+cooldown_ms = 150
+
+[[bind]]
+key = "mod+wheel-up"
+action = "focus-workspace-up"
+cooldown_ms = 150
+
+[[bind]]
+key = "mod+ctrl+wheel-down"
+action = "move-column-to-workspace-down"
+cooldown_ms = 150
+
+[[bind]]
+key = "mod+ctrl+wheel-up"
+action = "move-column-to-workspace-up"
+cooldown_ms = 150
+
+# === Column & Window Sizing ===
+[[bind]]
+key = "mod+r"
+action = "switch-preset-column-width"
+
+[[bind]]
+key = "mod+shift+r"
+action = "switch-preset-window-height"
+
+[[bind]]
+key = "mod+ctrl+r"
+action = "reset-window-height"
+
+[[bind]]
+key = "mod+ctrl+f"
+action = "expand-column-to-available-width"
+
+[[bind]]
+key = "mod+c"
+action = "center-column"
+
+[[bind]]
+key = "mod+ctrl+c"
+action = "center-visible-columns"
+
+[[bind]]
+key = "mod+minus"
+action = "set-column-width"
+delta = "-10%"
+
+[[bind]]
+key = "mod+equal"
+action = "set-column-width"
+delta = "+10%"
+
+[[bind]]
+key = "mod+shift+minus"
+action = "set-window-height"
+delta = "-10%"
+
+[[bind]]
+key = "mod+shift+equal"
+action = "set-window-height"
+delta = "+10%"

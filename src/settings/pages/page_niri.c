@@ -1,5 +1,6 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include "../../compositor/compositor.h"
 #include <string.h>
 
 #define N_NIRI_NAMESPACES 5
@@ -352,6 +353,10 @@ load_existing_niri_config(SettingsPageNiri *self)
                                 NULL, NULL);
         }
     }
+
+    /* 4. Read kajo-comp comp.toml & rules.toml (plus conf.d/ drop-ins) */
+    kajo_config_comp_read_layout_and_layers(
+        NULL, &self->gap_px, NIRI_NS_IDS, self->ns_opacity, N_NIRI_NAMESPACES);
 }
 
 /* ─── Non-Destructive KDL Animations Formatter ─── */
@@ -634,7 +639,12 @@ save_and_reload_niri_config(SettingsPageNiri *self)
         anim_block_str);
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
-    niri_reload_config();
+
+    /* 4. Patch kajo-comp comp.toml ([layout].gap_px) and rules.toml ([[layer_rule]]) */
+    kajo_config_comp_save_layout_and_layers(
+        NULL, self->gap_px, NIRI_NS_IDS, self->ns_opacity, N_NIRI_NAMESPACES, NULL);
+
+    shell_compositor_reload_config();
 
     update_niri_subtitles_and_telemetry(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);

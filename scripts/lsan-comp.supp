@@ -1,0 +1,7 @@
+# LeakSanitizer suppressions for kajo-comp test runs (spec §7.3.2).
+# Only third-party driver internals belong here; never suppress our own code.
+#
+# Mesa's EGL driver keeps per-display allocations that it does not free at
+# eglTerminate (seen with the GLES2 renderer on Intel Lunar Lake, Mesa 26.2.6,
+# 2026-11-10). The pixman and Vulkan renderers do not trigger this.
+leak:libEGL_mesa.so

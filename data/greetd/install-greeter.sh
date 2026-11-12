@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 ACTION="install"
-DEFAULT_CMD="niri-session"
+DEFAULT_CMD="kajo-session"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -34,7 +34,7 @@ while [ $# -gt 0 ]; do
             echo ""
             echo "Options:"
             echo "  --enable, -e       Also update /etc/greetd/config.toml (backs up to config.toml.bak)"
-            echo "  --cmd, -c <CMD>    Default session command (default: niri-session)"
+            echo "  --cmd, -c <CMD>    Default session command (default: kajo-session)"
             echo "  --restore, -r      Restore /etc/greetd/config.toml from config.toml.bak"
             exit 0
             ;;
@@ -45,10 +45,10 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# Ensure builddir/kajo-greeter is freshly compiled as normal user before elevating privileges
+# Ensure builddir/kajo-comp and builddir/kajo-greeter are freshly compiled before elevating privileges
 if [ "$ACTION" != "restore" ] && [ "$(id -u)" -ne 0 ]; then
-    echo "==> Building kajo-greeter in $PROJECT_ROOT/builddir..."
-    meson compile -C "$PROJECT_ROOT/builddir" kajo-greeter
+    echo "==> Building kajo-comp and kajo-greeter in $PROJECT_ROOT/builddir..."
+    meson compile -C "$PROJECT_ROOT/builddir" kajo-comp kajo-greeter
 fi
 
 # Escalate to root via sudo if not already root
@@ -68,17 +68,30 @@ if [ "$ACTION" = "restore" ]; then
     exit 0
 fi
 
-echo "==> Installing kajo-greeter binaries to /usr/local/bin..."
+echo "==> Installing kajo-comp, kajo-session, and kajo-greeter binaries..."
+install -Dm755 "$PROJECT_ROOT/builddir/kajo-comp" /usr/bin/kajo-comp
+install -Dm755 "$PROJECT_ROOT/data/session/kajo-session" /usr/bin/kajo-session
 install -Dm755 "$PROJECT_ROOT/builddir/kajo-greeter" /usr/local/bin/kajo-greeter
 install -Dm755 "$PROJECT_ROOT/data/greetd/kajo-greeter-session" /usr/local/bin/kajo-greeter-session
 
-echo "==> Installing niri-greeter.kdl to /etc/greetd/ and /usr/local/share/kajo/greetd/..."
+echo "==> Installing comp-greeter.toml and niri-greeter.kdl to /etc/greetd/ and /usr/local/share/kajo/greetd/..."
+install -Dm644 "$PROJECT_ROOT/data/greetd/comp-greeter.toml" /etc/greetd/comp-greeter.toml
+install -Dm644 "$PROJECT_ROOT/data/greetd/comp-greeter.toml" /usr/local/share/kajo/greetd/comp-greeter.toml
 install -Dm644 "$PROJECT_ROOT/data/greetd/niri-greeter.kdl" /etc/greetd/niri-greeter.kdl
 install -Dm644 "$PROJECT_ROOT/data/greetd/niri-greeter.kdl" /usr/local/share/kajo/greetd/niri-greeter.kdl
 
+echo "==> Installing Wayland session entries, portal config, and systemd user units..."
+for dt_file in kajo.desktop kajo-debug.desktop kajo-niri.desktop; do
+    install -Dm644 "$PROJECT_ROOT/data/session/$dt_file" "/usr/share/wayland-sessions/$dt_file"
+done
+install -Dm644 "$PROJECT_ROOT/data/session/kajo-portals.conf" /usr/share/xdg-desktop-portal/kajo-portals.conf
+for unit_file in kajo-comp.service kajo.service kajo-shutdown.target; do
+    install -Dm644 "$PROJECT_ROOT/data/systemd/$unit_file" "/usr/lib/systemd/user/$unit_file"
+done
+
 echo "==> Installing default CSS theme, TOML defaults & icons to /usr/local/share/kajo/..."
 install -Dm644 "$PROJECT_ROOT/data/defaults/style.css" /usr/local/share/kajo/defaults/style.css
-for toml_file in theme.toml shell.toml ide.toml files.toml mod.toml; do
+for toml_file in theme.toml shell.toml ide.toml files.toml mod.toml comp.toml binds.toml rules.toml; do
     install -Dm644 "$PROJECT_ROOT/data/defaults/$toml_file" "/usr/local/share/kajo/defaults/$toml_file"
 done
 install -Dm644 "$PROJECT_ROOT/data/defaults/icon-map.json" /usr/local/share/kajo/defaults/icon-map.json

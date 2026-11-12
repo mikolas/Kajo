@@ -1,4 +1,5 @@
 #include "posture_manager.h"
+#include "../compositor/compositor.h"
 #include "../config.h"
 #include "../hardware/hw_caps.h"
 #include "../hardware/kbd_backlight.h"
@@ -59,10 +60,7 @@ apply_niri_transform(ShellPostureManager *self, const gchar *transform)
     g_free(self->last_transform);
     self->last_transform = g_strdup(transform);
 
-    const gchar *argv[] = { "niri", "msg", "output", "eDP-1", "transform", transform, NULL };
-    g_spawn_async(NULL, (gchar **)argv, NULL,
-                  G_SPAWN_SEARCH_PATH | G_SPAWN_STDOUT_TO_DEV_NULL | G_SPAWN_STDERR_TO_DEV_NULL,
-                  NULL, NULL, NULL, NULL);
+    shell_compositor_set_output_transform("eDP-1", transform);
 }
 
 static const gchar *

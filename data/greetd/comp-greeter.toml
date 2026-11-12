@@ -1,0 +1,37 @@
+# System-wide output & input configuration for `kajo-comp --greeter-mode`
+# Installed to /etc/greetd/comp-greeter.toml (docs/spec_kajo_comp.md §6.5.3).
+# Only [input.*] and [[output]] sections are accepted in greeter mode;
+# user ~/.config/kajo/ files are never read.
+
+[input.keyboard]
+xkb_layout = "us"
+xkb_options = ""
+numlock_on_startup = true
+repeat_rate = 35
+repeat_delay = 250
+
+[input.touchpad]
+tap = true
+natural_scroll = true
+dwt = true
+
+[input.mouse]
+accel_profile = "flat"
+accel_speed = 0.0
+natural_scroll = false
+
+# Host Profile A: HP OmniBook X Flip 14 OLED (integer scale 2 in greeter mode)
+[[output]]
+match = "samsung display corp. 0x41aa"
+mode = "preferred"
+scale = 2.0
+transform = "normal"
+vrr = "off"
+
+# Host Profile B: 34" Ultrawide Desktop Monitor (integer scale 1 in greeter mode)
+[[output]]
+match = "dp-1"
+mode = "preferred"
+scale = 1.0
+transform = "normal"
+vrr = "off"

@@ -118,6 +118,9 @@ gboolean kajo_cfg_domain_equal(const KajoDomainSchema *schema,
                                const void             *a,
                                const void             *b);
 
+/* Resolves user configuration directory ($KAJO_CONFIG_DIR or $XDG_CONFIG_HOME/kajo) */
+gchar   *kajo_config_resolve_user_dir(void);
+
 /* Resolves shipped default asset path for a domain filename */
 gchar   *kajo_config_find_default_file(const char *filename);
 
@@ -127,6 +130,35 @@ gboolean kajo_config_is_valid_hex_color(const char *str);
 /* Shared helper to append escaped TOML basic or literal strings */
 void     kajo_toml_append_quoted_string(GString *out, const char *str);
 void     kajo_toml_append_literal_or_quoted_string(GString *out, const char *str);
+
+/* Shared helper to patch or insert a single scalar `key = rhs_val` inside `[section]` */
+void     kajo_toml_patch_or_insert_scalar(GString    *doc,
+                                          const char *section,
+                                          const char *key,
+                                          const char *rhs_val);
+
+/* Compositor TOML read/patch helpers for comp.toml, rules.toml, and outputs.toml */
+gboolean kajo_config_comp_read_layout_and_layers(const char        *config_dir,
+                                                 int               *out_gap_px,
+                                                 const char *const *ns_ids,
+                                                 int               *inout_ns_opacity_pct,
+                                                 size_t             n_ns);
+
+gboolean kajo_config_comp_save_layout_and_layers(const char        *config_dir,
+                                                 int                gap_px,
+                                                 const char *const *ns_ids,
+                                                 const int         *ns_opacity_pct,
+                                                 size_t             n_ns,
+                                                 GError           **error);
+
+gboolean kajo_config_comp_save_output_rule(const char *config_dir,
+                                           const char *out_name,
+                                           const char *make_model,
+                                           const char *mode_str,
+                                           const char *scale_buf,
+                                           const char *transform_str,
+                                           const char *vrr_str,
+                                           GError    **error);
 
 #ifdef __cplusplus
 }

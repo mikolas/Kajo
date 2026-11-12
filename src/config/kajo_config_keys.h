@@ -1,23 +1,29 @@
 #ifndef KAJO_CONFIG_KEYS_H
 #define KAJO_CONFIG_KEYS_H
 
+#include "../comp/core/comp_schema_keys.h"
+
 /* Domain File Names */
-#define KAJO_CFG_FILE_THEME               "theme.toml"
-#define KAJO_CFG_FILE_SHELL               "shell.toml"
+#define KAJO_CFG_FILE_THEME               COMP_CFG_FILE_THEME
+#define KAJO_CFG_FILE_SHELL               COMP_CFG_FILE_SHELL
 #define KAJO_CFG_FILE_IDE                 "ide.toml"
 #define KAJO_CFG_FILE_FILES               "files.toml"
 #define KAJO_CFG_FILE_MOD                 "mod.toml"
-#define KAJO_CFG_FILE_COMP                "compositor.toml"
-#define KAJO_CFG_DIR_CONFD                "conf.d"
+#define KAJO_CFG_FILE_COMP                COMP_CFG_FILE_COMP
+#define KAJO_CFG_FILE_OUTPUTS             COMP_CFG_FILE_OUTPUTS
+#define KAJO_CFG_FILE_BINDS               COMP_CFG_FILE_BINDS
+#define KAJO_CFG_FILE_RULES               COMP_CFG_FILE_RULES
+#define KAJO_CFG_DIR_CONFD                COMP_CFG_DIR_CONFD
 #define KAJO_CFG_FILE_LEGACY_JSON         "config.json"
 #define KAJO_CFG_FILE_LEGACY_JSON_BAK     "config.json.bak"
 
 /* Top-Level Domain Prefix Names (Used inside conf.d/ drop-ins) */
-#define KAJO_CFG_DOMAIN_THEME             "theme"
-#define KAJO_CFG_DOMAIN_SHELL             "shell"
+#define KAJO_CFG_DOMAIN_THEME             COMP_SEC_THEME
+#define KAJO_CFG_DOMAIN_SHELL             COMP_SEC_SHELL
 #define KAJO_CFG_DOMAIN_IDE               "ide"
 #define KAJO_CFG_DOMAIN_FILES             "files"
 #define KAJO_CFG_DOMAIN_MOD               "mod"
+#define KAJO_CFG_DOMAIN_COMP              COMP_SEC_COMP
 
 /* theme.toml */
 #define KAJO_CFG_KEY_ACCENT_COLOR         "accent_color"

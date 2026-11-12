@@ -160,13 +160,7 @@ static void on_logout_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     if (pw && pw->popover) {
         gtk_popover_popdown(GTK_POPOVER(pw->popover));
     }
-    GError *err = NULL;
-    if (!g_spawn_command_line_async("niri msg action quit --skip-confirmation", &err)) {
-        if (err) {
-            g_warning("power: failed to run niri quit: %s", err->message);
-            g_clear_error(&err);
-        }
-    }
+    shell_compositor_quit();
 }
 
 /* --- Popover opened callback: reset to main view --- */

@@ -105,18 +105,19 @@ static const char *NIRI_RESIZE_EPILOGUE =
 static gboolean
 init_headless_egl(EGLDisplay *out_dpy, EGLContext *out_ctx)
 {
-    EGLDisplay dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    if (dpy == EGL_NO_DISPLAY) {
-        PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_dpy =
-            (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
-        if (get_platform_dpy)
-            dpy = get_platform_dpy(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
+    EGLDisplay dpy = EGL_NO_DISPLAY;
+    PFNEGLGETPLATFORMDISPLAYEXTPROC get_platform_dpy =
+        (PFNEGLGETPLATFORMDISPLAYEXTPROC)eglGetProcAddress("eglGetPlatformDisplayEXT");
+    if (get_platform_dpy) {
+        dpy = get_platform_dpy(EGL_PLATFORM_SURFACELESS_MESA, EGL_DEFAULT_DISPLAY, NULL);
+        if (dpy != EGL_NO_DISPLAY && !eglInitialize(dpy, NULL, NULL))
+            dpy = EGL_NO_DISPLAY;
     }
-    if (dpy == EGL_NO_DISPLAY)
-        return FALSE;
-
-    if (!eglInitialize(dpy, NULL, NULL))
-        return FALSE;
+    if (dpy == EGL_NO_DISPLAY) {
+        dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+        if (dpy == EGL_NO_DISPLAY || !eglInitialize(dpy, NULL, NULL))
+            return FALSE;
+    }
 
     if (!eglBindAPI(EGL_OPENGL_ES_API))
         return FALSE;

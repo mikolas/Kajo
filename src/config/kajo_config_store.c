@@ -76,14 +76,14 @@ load_base_domain_into(KajoConfigStore *store, const KajoDomainSchema *schema, vo
 {
     kajo_cfg_domain_init_defaults(schema, dst);
 
-    g_autofree gchar *user_path = g_build_filename(store->config_dir, schema->filename, NULL);
-    if (g_file_test(user_path, G_FILE_TEST_EXISTS)) {
-        return kajo_cfg_domain_parse_toml_file(schema, dst, user_path, FALSE);
-    }
-
     g_autofree gchar *def_path = kajo_config_find_default_file(schema->filename);
     if (def_path && g_file_test(def_path, G_FILE_TEST_EXISTS)) {
-        kajo_cfg_domain_parse_toml_file(schema, dst, def_path, FALSE);
+        kajo_cfg_domain_parse_toml_file(schema, dst, def_path, TRUE);
+    }
+
+    g_autofree gchar *user_path = g_build_filename(store->config_dir, schema->filename, NULL);
+    if (g_file_test(user_path, G_FILE_TEST_EXISTS)) {
+        return kajo_cfg_domain_parse_toml_file(schema, dst, user_path, TRUE);
     }
     return TRUE;
 }
@@ -453,12 +453,7 @@ kajo_config_store_new_for_dir(const gchar *config_dir)
     if (config_dir && *config_dir) {
         store->config_dir = g_strdup(config_dir);
     } else {
-        const gchar *env_dir = g_getenv("KAJO_CONFIG_DIR");
-        if (env_dir && *env_dir) {
-            store->config_dir = g_strdup(env_dir);
-        } else {
-            store->config_dir = g_build_filename(g_get_user_config_dir(), "kajo", NULL);
-        }
+        store->config_dir = kajo_config_resolve_user_dir();
     }
 
     store->subscribers = g_ptr_array_new_with_free_func(sub_unref);
