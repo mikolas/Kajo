@@ -24,7 +24,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Foldable & 2-in-1 Posture Manager** | ✅ Done | Hinge angle, tablet mode, IIO accelerometer auto-rotation (`src/posture/posture_manager.c`) |
 | **Niri GLSL Window Shaders** | ✅ Done | Live shader preset switcher for window open/close/resize animations (`src/settings/pages/page_niri.c`) |
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications (`src/hardware/touch_gestures.c`) |
-| **kajo-comp: 3-Finger Drag & Flick** | ✅ Done | `kajo-comp` (`src/comp/comp_drag.c`, `src/comp/core/comp_gesture.c`): touchscreen and touchpad drags follow the fingers along the strip or between workspaces and snap on release by position or velocity (spec §3.15 GS1–GS6). Touch input verified by unit tests only, not yet on hardware. |
+| **kajo-comp: 3-Finger Drag & Flick** | 🧪 Beta | `kajo-comp` (`src/comp/comp_drag.c`, `src/comp/core/comp_gesture.c`): touchscreen and touchpad drags follow the fingers along the strip or between workspaces and snap on release by position or velocity (spec §3.15 GS1–GS6). Touchpad verified on Host A hardware; the touchscreen drag works on hardware but has known bugs (§3.7, "Fix touchscreen gestures"). |
 | **kajo-comp: Workspace Strip & Animated Resize** | ✅ Done | `kajo-comp` (`src/comp/core/comp_motion.c`): continuous vertical workspace strip with per-workspace cameras (WS7) and animated displayed size on resize (M5). |
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching (`src/osk/osk.c`) |
 | **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
@@ -50,7 +50,7 @@ All Kajo components and standalone applications share a unified design language:
 | **kajo-comp: wlroots fork for visual effects** | 📋 Planned | `kajo-comp` — see §3.6 below (fork branch, built as a static submodule) |
 | **kajo-comp: HDR10 output, SDR white level, tone mapping** | 📋 Planned | `kajo-comp` — §3.7.1 |
 | **kajo-comp: backdrop blur, window transitions, shadows** | 📋 Planned | `kajo-comp` — needs the wlroots fork (§3.6), design in §3.7.2 |
-| **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor** | 📋 Planned | `kajo-comp` — §3.7 |
+| **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
 | **Native Aero + Metro file chooser portal** | 📋 Planned | `kajo-files --portal` — §3.8 |
 
 ### 3.1 [PLANNED] `kajo-files` Future Enhancements
@@ -127,6 +127,7 @@ The compositor spec describes what is built; everything below is not implemented
 | **`Mod + drag` interactive move/resize of tiled columns** | Keyboard-first workflow and presets cover v1; client-initiated move/resize exists for floating windows (`L8`). | `Mod + Left/Right Button` tiled grab. |
 | **Layout extras** | Not needed for v1. | Evaluate individually: `focus-follows-mouse`, `switch-preset-column-width-back`, a `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts. |
 | **Multi-monitor sessions** | v1 policy drives one active output (spec §3.13 `OUT1–OUT4`; greeter mode is the exception). | Workspaces per output, layer surfaces and IPC per output. Expect a few thousand lines. |
+| **Fix touchscreen gestures** | The 3-finger touchscreen drag (spec §3.15 GS1–GS6, `touch_drag_*` in `src/comp/comp_input.c`) works on Host A hardware but is buggy. Low priority; the touchpad path is verified. | Reproduce on hardware, write down each bug with steps, then cover it with a `test_comp_motion` / `test_comp_config` case before fixing. |
 
 #### 3.7.1 HDR10 design notes & Phase 0 hardware findings
 
