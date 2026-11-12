@@ -555,7 +555,15 @@ test_shell(void)
     struct ext_session_lock_surface_v1 *lock_surf =
         ext_session_lock_v1_get_lock_surface(lock, lock_wl, env.output);
     ext_session_lock_surface_v1_add_listener(lock_surf, &k_lock_surf_listener, &lock_st);
-    if (wl_display_roundtrip(d) < 0 || !lock_st.locked || !lock_st.surf_configured ||
+    for (int i = 0; i < 25 && (!lock_st.locked || !lock_st.surf_configured); i++) {
+        if (i > 0) {
+            struct timespec ts = { .tv_sec = 0, .tv_nsec = 2000000L };
+            nanosleep(&ts, NULL);
+        }
+        if (wl_display_roundtrip(d) < 0)
+            return 1;
+    }
+    if (!lock_st.locked || !lock_st.surf_configured ||
         lock_st.width == 0 || lock_st.height == 0) {
         fprintf(stderr, "comp-test-client: session lock failed (locked=%d surf_cfg=%d %ux%u)\n",
                 lock_st.locked, lock_st.surf_configured, lock_st.width, lock_st.height);
@@ -568,6 +576,25 @@ test_shell(void)
     wl_surface_commit(lock_wl);
     if (wl_display_roundtrip(d) < 0)
         return 1;
+
+    /* Verify screen-capture globals are hidden from clients while locked */
+    {
+        char *cap_ifaces[] = { "zwlr_screencopy_manager_v1" };
+        int seen = 0;
+        GlobalsCheck gc = { cap_ifaces, 1, &seen };
+        struct wl_display *d2 = wl_display_connect(NULL);
+        if (!d2)
+            return 1;
+        struct wl_registry *r2 = wl_display_get_registry(d2);
+        wl_registry_add_listener(r2, &k_registry, &gc);
+        int rrc = wl_display_roundtrip(d2);
+        wl_registry_destroy(r2);
+        wl_display_disconnect(d2);
+        if (rrc < 0 || seen != 0) {
+            fprintf(stderr, "comp-test-client: zwlr_screencopy_manager_v1 leaked while locked\n");
+            return 1;
+        }
+    }
 
     wp_viewport_destroy(lock_vp);
     ext_session_lock_surface_v1_destroy(lock_surf);

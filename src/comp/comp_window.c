@@ -22,6 +22,7 @@
 #include <wlr/types/wlr_xdg_dialog_v1.h>
 #include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
+#include <wlr/xwayland/xwayland.h>
 
 #define COMP_BORDER_PX 1
 #define COMP_MAX_TABS  16
@@ -38,11 +39,30 @@ static const float k_color_urgent[4]       = { 0.909804f, 0.066667f, 0.137255f, 
 static const float k_color_tab_inactive[4] = { 0.266667f, 0.266667f, 0.266667f, 1.0f };
 static const float k_color_backdrop[4]     = { 0.0f, 0.0f, 0.0f, 1.0f };
 
+typedef struct {
+    int32_t        tile_w;
+    int32_t        tile_h;
+    int32_t        border_px;
+    struct wlr_box geom;
+    bool           has_mapped_surf;
+    bool           fullscreen;
+    bool           focused;
+    bool           urgent;
+    bool           maximized;
+    bool           tabbed;
+    size_t         tab_count;
+    size_t         tab_index;
+    float          col_active[4];
+    float          col_inactive[4];
+    float          col_urgent[4];
+} CompBorderState;
+
 typedef struct CompWindow {
     struct wl_list                          link;        /* CompServer.windows (mapped only) */
     CompServer                             *server;
     CompWinId                               id;          /* 0 when unmapped */
     struct wlr_xdg_toplevel                *toplevel;
+    struct wlr_xwayland_surface            *xsurf;
 
     struct wlr_scene_tree                  *scene_tree;  /* node.data == CompWindow* */
     struct wlr_scene_rect                  *backdrop;    /* solid #000000 behind fullscreen */
@@ -61,6 +81,7 @@ typedef struct CompWindow {
     uint64_t                                focus_timestamp;
 
     bool                                    mapped;
+    bool                                    tick_seen;
     bool                                    is_floating;
     bool                                    is_fullscreen;
     bool                                    is_urgent;
@@ -71,10 +92,19 @@ typedef struct CompWindow {
 
     int32_t                                 cfg_w;
     int32_t                                 cfg_h;
+    int32_t                                 cfg_x;
+    int32_t                                 cfg_y;
     bool                                    cfg_activated;
     bool                                    cfg_fullscreen;
     bool                                    cfg_maximized;
     uint32_t                                cfg_tiled;
+
+    bool                                    border_state_valid;
+    CompBorderState                         last_border;
+    bool                                    has_last_g;
+    int32_t                                 last_rw;
+    int32_t                                 last_rh;
+    CompWindowGeometry                      last_g;
 
     CompRect                                last_screen_rect;
 } CompWindow;
@@ -129,8 +159,10 @@ update_window_strings(CompWindow *w)
 {
     talloc_free(w->title);
     talloc_free(w->app_id);
-    w->title  = dup_bounded_utf8(w, w->toplevel->title);
-    w->app_id = dup_bounded_utf8(w, w->toplevel->app_id);
+    const char *raw_title  = w->toplevel ? w->toplevel->title  : (w->xsurf ? w->xsurf->title : "");
+    const char *raw_app_id = w->toplevel ? w->toplevel->app_id : (w->xsurf ? w->xsurf->class : "");
+    w->title  = dup_bounded_utf8(w, raw_title);
+    w->app_id = dup_bounded_utf8(w, raw_app_id);
 
     if (w->foreign_handle) {
         wlr_foreign_toplevel_handle_v1_set_title(w->foreign_handle, w->title ? w->title : "");
@@ -154,6 +186,48 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
     bool fullscreen = g->fullscreen;
     bool focused    = g->focused;
     bool hide_border = fullscreen || w->maximized_to_edges || b <= 0;
+    const float *col_active   = (s && s->config) ? s->config->active_border_rgba   : k_color_active;
+    const float *col_inactive = (s && s->config) ? s->config->inactive_border_rgba : k_color_inactive;
+    const float *col_urgent   = (s && s->config) ? s->config->urgent_border_rgba   : k_color_urgent;
+
+    struct wlr_box geom = {0};
+    bool has_mapped_surf = false;
+    if (w->toplevel && w->toplevel->base &&
+        w->toplevel->base->surface && w->toplevel->base->surface->mapped) {
+        has_mapped_surf = true;
+        geom = w->toplevel->base->geometry;
+    } else if (w->xsurf && w->xsurf->surface && w->xsurf->surface->mapped) {
+        has_mapped_surf = true;
+    }
+
+    w->last_rw    = tile_w;
+    w->last_rh    = tile_h;
+    w->last_g     = *g;
+    w->has_last_g = true;
+
+    CompBorderState st = {
+        .tile_w          = tile_w,
+        .tile_h          = tile_h,
+        .border_px       = b,
+        .geom            = geom,
+        .has_mapped_surf = has_mapped_surf,
+        .fullscreen      = fullscreen,
+        .focused         = focused,
+        .urgent          = w->is_urgent,
+        .maximized       = w->maximized_to_edges,
+        .tabbed          = g->tabbed,
+        .tab_count       = g->tab_count,
+        .tab_index       = g->tab_index,
+    };
+    memcpy(st.col_active,   col_active,   sizeof(st.col_active));
+    memcpy(st.col_inactive, col_inactive, sizeof(st.col_inactive));
+    memcpy(st.col_urgent,   col_urgent,   sizeof(st.col_urgent));
+
+    if (w->border_state_valid && memcmp(&st, &w->last_border, sizeof(st)) == 0)
+        return;
+    w->last_border        = st;
+    w->border_state_valid = true;
+
     if (w->backdrop) {
         wlr_scene_node_set_enabled(&w->backdrop->node, fullscreen);
         if (fullscreen) {
@@ -161,9 +235,6 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
             wlr_scene_rect_set_size(w->backdrop, tile_w, tile_h);
         }
     }
-    const float *col_active   = (s && s->config) ? s->config->active_border_rgba   : k_color_active;
-    const float *col_inactive = (s && s->config) ? s->config->inactive_border_rgba : k_color_inactive;
-    const float *col_urgent   = (s && s->config) ? s->config->urgent_border_rgba   : k_color_urgent;
     const float *col = focused ? col_active : (w->is_urgent ? col_urgent : col_inactive);
     for (int i = 0; i < 4; i++) {
         if (!w->border[i])
@@ -177,21 +248,14 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
     int32_t ch = hide_border ? (tile_h > 1 ? tile_h : 1)
                              : (tile_h > 2 * b ? tile_h - 2 * b : 1);
 
-    struct wlr_box geom = {0};
-    bool has_mapped_surf = (w->toplevel && w->toplevel->base &&
-                            w->toplevel->base->surface &&
-                            w->toplevel->base->surface->mapped);
-    if (has_mapped_surf) {
-        geom = w->toplevel->base->geometry;
-        if (w->xdg_tree) {
-            struct wlr_box clip = {
-                .x      = geom.x,
-                .y      = geom.y,
-                .width  = cw,
-                .height = ch,
-            };
-            wlr_scene_subsurface_tree_set_clip(&w->xdg_tree->node, &clip);
-        }
+    if (has_mapped_surf && w->xdg_tree) {
+        struct wlr_box clip = {
+            .x      = geom.x,
+            .y      = geom.y,
+            .width  = cw,
+            .height = ch,
+        };
+        wlr_scene_subsurface_tree_set_clip(&w->xdg_tree->node, &clip);
     }
 
     if (!hide_border) {
@@ -256,7 +320,9 @@ static void
 configure_window_toplevel(CompWindow *w, int32_t tile_w, int32_t tile_h,
                           bool activated, bool fullscreen, bool floating)
 {
-    if (!w->toplevel || !w->toplevel->base->initialized)
+    bool is_xdg = (w->toplevel && w->toplevel->base && w->toplevel->base->initialized);
+    bool is_x11 = (w->xsurf != NULL);
+    if (!is_xdg && !is_x11)
         return;
 
     bool hide_border = fullscreen || w->maximized_to_edges;
@@ -267,7 +333,14 @@ configure_window_toplevel(CompWindow *w, int32_t tile_w, int32_t tile_h,
                          ? (WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT)
                          : WLR_EDGE_NONE;
 
+    int32_t xw_x = 0, xw_y = 0;
+    if (is_x11 && w->scene_tree) {
+        xw_x = w->scene_tree->node.x + b;
+        xw_y = w->scene_tree->node.y + b;
+    }
+
     bool changed = (cw != w->cfg_w) || (ch != w->cfg_h) ||
+                   (is_x11 && (xw_x != w->cfg_x || xw_y != w->cfg_y)) ||
                    (activated != w->cfg_activated) ||
                    (fullscreen != w->cfg_fullscreen) ||
                    (w->maximized_to_edges != w->cfg_maximized) ||
@@ -277,16 +350,26 @@ configure_window_toplevel(CompWindow *w, int32_t tile_w, int32_t tile_h,
 
     w->cfg_w          = cw;
     w->cfg_h          = ch;
+    w->cfg_x          = xw_x;
+    w->cfg_y          = xw_y;
     w->cfg_activated  = activated;
     w->cfg_fullscreen = fullscreen;
     w->cfg_maximized  = w->maximized_to_edges;
     w->cfg_tiled      = tiled;
 
-    wlr_xdg_toplevel_set_tiled(w->toplevel, tiled);
-    wlr_xdg_toplevel_set_activated(w->toplevel, activated);
-    wlr_xdg_toplevel_set_fullscreen(w->toplevel, fullscreen);
-    wlr_xdg_toplevel_set_maximized(w->toplevel, w->maximized_to_edges);
-    wlr_xdg_toplevel_set_size(w->toplevel, cw, ch);
+    if (is_xdg) {
+        wlr_xdg_toplevel_set_tiled(w->toplevel, tiled);
+        wlr_xdg_toplevel_set_activated(w->toplevel, activated);
+        wlr_xdg_toplevel_set_fullscreen(w->toplevel, fullscreen);
+        wlr_xdg_toplevel_set_maximized(w->toplevel, w->maximized_to_edges);
+        wlr_xdg_toplevel_set_size(w->toplevel, cw, ch);
+    } else if (is_x11) {
+        wlr_xwayland_surface_activate(w->xsurf, activated);
+        wlr_xwayland_surface_set_fullscreen(w->xsurf, fullscreen);
+        wlr_xwayland_surface_set_maximized(w->xsurf, w->maximized_to_edges, w->maximized_to_edges);
+        wlr_xwayland_surface_configure(w->xsurf, (int16_t)xw_x, (int16_t)xw_y,
+                                       (uint16_t)cw, (uint16_t)ch);
+    }
 
     if (w->foreign_handle) {
         wlr_foreign_toplevel_handle_v1_set_activated(w->foreign_handle, activated);
@@ -331,10 +414,9 @@ comp_server_restore_keyboard_focus(CompServer *s)
         return;
     }
     CompWindow *w = s->layout ? comp_win_from_id(s, comp_layout_focused_window(s->layout)) : NULL;
-    struct wlr_surface *surf = (w && w->mapped && w->toplevel && w->toplevel->base)
-                                   ? w->toplevel->base->surface
-                                   : NULL;
-    enter_keyboard_surface(s, surf);
+    if (w && w->mapped && w->xsurf)
+        wlr_xwayland_surface_activate(w->xsurf, true);
+    enter_keyboard_surface(s, comp_window_get_surface(w));
 }
 
 void
@@ -361,11 +443,9 @@ comp_window_tick_frame(CompServer *s, double now_s)
     if (n > cap)
         n = cap;
 
-    /* Mark all windows hidden first; active workspace visible windows are enabled below. */
     CompWindow *w;
     wl_list_for_each(w, &s->windows, link) {
-        if (w->scene_tree)
-            wlr_scene_node_set_enabled(&w->scene_tree->node, false);
+        w->tick_seen = false;
     }
 
     for (size_t i = 0; i < n; i++) {
@@ -375,10 +455,10 @@ comp_window_tick_frame(CompServer *s, double now_s)
             continue;
 
         win->last_screen_rect = g->rect;
-        if (!g->visible) {
-            wlr_scene_node_set_enabled(&win->scene_tree->node, false);
+        if (!g->visible)
             continue;
-        }
+
+        win->tick_seen = true;
 
         int32_t rx = g->fullscreen ? 0 : clamp_i32(g->rect.x + work.x, -32768, 32767);
         int32_t ry = g->fullscreen ? 0 : clamp_i32(g->rect.y + work.y, -32768, 32767);
@@ -388,6 +468,11 @@ comp_window_tick_frame(CompServer *s, double now_s)
         wlr_scene_node_set_enabled(&win->scene_tree->node, true);
         wlr_scene_node_set_position(&win->scene_tree->node, rx, ry);
         update_window_borders(win, rw, rh, g);
+    }
+
+    wl_list_for_each(w, &s->windows, link) {
+        if (!w->tick_seen && w->scene_tree)
+            wlr_scene_node_set_enabled(&w->scene_tree->node, false);
     }
 
     if (geoms != stack_geoms)
@@ -600,10 +685,17 @@ comp_window_close_id(CompServer *s, CompWinId id)
     if (id == 0 && s->layout)
         id = comp_layout_focused_window(s->layout);
     CompWindow *w = comp_win_from_id(s, id);
-    if (!w || !w->mapped || !w->toplevel)
+    if (!w || !w->mapped)
         return false;
-    wlr_xdg_toplevel_send_close(w->toplevel);
-    return true;
+    if (w->toplevel) {
+        wlr_xdg_toplevel_send_close(w->toplevel);
+        return true;
+    }
+    if (w->xsurf) {
+        wlr_xwayland_surface_close(w->xsurf);
+        return true;
+    }
+    return false;
 }
 
 double
@@ -675,9 +767,13 @@ comp_window_list_info(const CompServer *s, CompWindowInfo *out, size_t max_out)
 struct wlr_surface *
 comp_window_get_surface(const struct CompWindow *w)
 {
-    if (!w || !w->mapped || !w->toplevel || !w->toplevel->base)
+    if (!w || !w->mapped)
         return NULL;
-    return w->toplevel->base->surface;
+    if (w->toplevel && w->toplevel->base)
+        return w->toplevel->base->surface;
+    if (w->xsurf)
+        return w->xsurf->surface;
+    return NULL;
 }
 
 bool
@@ -733,6 +829,20 @@ comp_window_accept_capture_request(
 }
 
 void
+comp_window_destroy_capture_sources(CompServer *s)
+{
+    if (!s)
+        return;
+    CompWindow *w;
+    wl_list_for_each(w, &s->windows, link) {
+        if (w->capture_source && w->scene_tree) {
+            wl_signal_emit_mutable(&w->scene_tree->node.events.destroy, NULL);
+            w->capture_source = NULL;
+        }
+    }
+}
+
+void
 comp_window_update_grab(CompServer *s)
 {
     if (!s || s->grab_win == 0)
@@ -753,10 +863,14 @@ comp_window_update_grab(CompServer *s)
         r.y += dy;
     } else {
         double min_w = 50.0, min_h = 50.0;
-        if (w->toplevel->current.min_width > 0)
+        if (w->toplevel && w->toplevel->current.min_width > 0)
             min_w = (double)w->toplevel->current.min_width + 2 * b;
-        if (w->toplevel->current.min_height > 0)
+        else if (w->xsurf && w->xsurf->size_hints && w->xsurf->size_hints->min_width > 0)
+            min_w = (double)w->xsurf->size_hints->min_width + 2 * b;
+        if (w->toplevel && w->toplevel->current.min_height > 0)
             min_h = (double)w->toplevel->current.min_height + 2 * b;
+        else if (w->xsurf && w->xsurf->size_hints && w->xsurf->size_hints->min_height > 0)
+            min_h = (double)w->xsurf->size_hints->min_height + 2 * b;
 
         if (s->grab_edges & WLR_EDGE_LEFT) {
             double new_w = r.w - dx;
@@ -1056,6 +1170,8 @@ window_destructor(CompWindow *w)
     }
     if (w->toplevel && w->toplevel->base)
         w->toplevel->base->data = NULL;
+    if (w->xsurf)
+        w->xsurf->data = NULL;
     if (s->scene && w->scene_tree) {
         w->scene_tree->node.data = NULL;
         wlr_scene_node_destroy(&w->scene_tree->node);
@@ -1069,13 +1185,25 @@ should_open_floating(const CompWindow *w, const CompWindowRuleResult *rr)
 {
     if (rr && rr->has_floating)
         return rr->floating;
-    const struct wlr_xdg_dialog_v1 *dlg =
-        wlr_xdg_dialog_v1_try_from_wlr_xdg_toplevel(w->toplevel);
-    if (w->toplevel->parent != NULL || (dlg != NULL && dlg->modal))
-        return true;
-    const struct wlr_xdg_toplevel_state *st = &w->toplevel->current;
-    return (st->min_width > 0 && st->min_height > 0 &&
-            st->min_width == st->max_width && st->min_height == st->max_height);
+    if (w->toplevel) {
+        const struct wlr_xdg_dialog_v1 *dlg =
+            wlr_xdg_dialog_v1_try_from_wlr_xdg_toplevel(w->toplevel);
+        if (w->toplevel->parent != NULL || (dlg != NULL && dlg->modal))
+            return true;
+        const struct wlr_xdg_toplevel_state *st = &w->toplevel->current;
+        return (st->min_width > 0 && st->min_height > 0 &&
+                st->min_width == st->max_width && st->min_height == st->max_height);
+    }
+    if (w->xsurf) {
+        if (w->xsurf->parent != NULL || w->xsurf->modal)
+            return true;
+        const xcb_size_hints_t *sh = w->xsurf->size_hints;
+        if (sh && sh->min_width > 0 && sh->min_height > 0 &&
+            sh->min_width == sh->max_width && sh->min_height == sh->max_height) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void
@@ -1133,19 +1261,25 @@ handle_toplevel_commit(void *owner, void *data)
         return;
     }
 
-    if (w->mapped && s)
-        comp_window_tick_frame(s, comp_now_sec());
+    if (w->mapped && w->has_last_g && w->scene_tree && w->scene_tree->node.enabled)
+        update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
 }
 
 static CompRect
 initial_floating_rect(const CompWindow *w, const CompWindowRuleResult *rr, double vw, double vh)
 {
-    double fw = (double)w->toplevel->base->geometry.width;
-    double fh = (double)w->toplevel->base->geometry.height;
-    if (fw <= 0.0 && w->toplevel->base->surface)
-        fw = (double)w->toplevel->base->surface->current.width;
-    if (fh <= 0.0 && w->toplevel->base->surface)
-        fh = (double)w->toplevel->base->surface->current.height;
+    double fw = 0.0, fh = 0.0;
+    if (w->toplevel && w->toplevel->base) {
+        fw = (double)w->toplevel->base->geometry.width;
+        fh = (double)w->toplevel->base->geometry.height;
+        if (fw <= 0.0 && w->toplevel->base->surface)
+            fw = (double)w->toplevel->base->surface->current.width;
+        if (fh <= 0.0 && w->toplevel->base->surface)
+            fh = (double)w->toplevel->base->surface->current.height;
+    } else if (w->xsurf) {
+        fw = (double)w->xsurf->width;
+        fh = (double)w->xsurf->height;
+    }
     if (fw <= 0.0) fw = fmin(800.0, round(vw * 0.6));
     if (fh <= 0.0) fh = fmin(600.0, round(vh * 0.6));
     double b = (double)server_border_px(w->server);
@@ -1155,12 +1289,14 @@ initial_floating_rect(const CompWindow *w, const CompWindowRuleResult *rr, doubl
     double fx = round((vw - fw) * 0.5);
     double fy = round((vh - fh) * 0.5);
 
-    if (w->toplevel->parent && w->toplevel->parent->base && w->toplevel->parent->base->data) {
-        const CompWindow *pw = w->toplevel->parent->base->data;
-        if (pw->mapped) {
-            fx = round(pw->last_screen_rect.x + (pw->last_screen_rect.w - fw) * 0.5);
-            fy = round(pw->last_screen_rect.y + (pw->last_screen_rect.h - fh) * 0.5);
-        }
+    const CompWindow *pw = NULL;
+    if (w->toplevel && w->toplevel->parent && w->toplevel->parent->base)
+        pw = w->toplevel->parent->base->data;
+    else if (w->xsurf && w->xsurf->parent)
+        pw = w->xsurf->parent->data;
+    if (pw && pw->mapped) {
+        fx = round(pw->last_screen_rect.x + (pw->last_screen_rect.w - fw) * 0.5);
+        fy = round(pw->last_screen_rect.y + (pw->last_screen_rect.h - fh) * 0.5);
     }
 
     if (rr && rr->has_anchor) {
@@ -1310,9 +1446,13 @@ handle_toplevel_map(void *owner, void *data)
         }
     }
 
-    if (w->toplevel->requested.fullscreen)
+    bool want_fullscreen = (w->toplevel && w->toplevel->requested.fullscreen) ||
+                           (w->xsurf && w->xsurf->fullscreen);
+    bool want_maximized  = (w->toplevel && w->toplevel->requested.maximized) ||
+                           (w->xsurf && (w->xsurf->maximized_horz || w->xsurf->maximized_vert));
+    if (want_fullscreen)
         comp_layout_set_fullscreen(s->layout, w->id, true);
-    if (w->toplevel->requested.maximized) {
+    if (want_maximized) {
         if (floating)
             w->maximized_to_edges = true;
         else
@@ -1535,6 +1675,105 @@ handle_new_toplevel(void *owner, void *data)
               comp_listen(w, &toplevel->events.set_app_id, handle_set_metadata);
     if (!ok)
         talloc_free(w);
+}
+
+/* ── XWayland managed window hooks (called from comp_xwayland.c) ── */
+
+struct CompWindow *
+comp_window_create_xwayland(CompServer *s, struct wlr_xwayland_surface *xsurf)
+{
+    if (!s || !xsurf)
+        return NULL;
+    CompWindow *w = talloc_zero(s, CompWindow);
+    COMP_WARN_RETURN(w != NULL, NULL);
+    talloc_set_name_const(w, "CompWindow");
+    w->server        = s;
+    w->xsurf         = xsurf;
+    w->scroll_factor = 1.0;
+    xsurf->data      = w;
+    talloc_set_destructor(w, window_destructor);
+
+    w->scene_tree = wlr_scene_tree_create(s->tree_tiled);
+    if (!w->scene_tree) {
+        talloc_free(w);
+        return NULL;
+    }
+    w->scene_tree->node.data = w;
+    wlr_scene_node_set_enabled(&w->scene_tree->node, false);
+
+    w->backdrop = wlr_scene_rect_create(w->scene_tree, 0, 0, k_color_backdrop);
+    if (w->backdrop)
+        wlr_scene_node_set_enabled(&w->backdrop->node, false);
+
+    for (int i = 0; i < 4; i++)
+        w->border[i] = wlr_scene_rect_create(w->scene_tree, 0, 0, k_color_inactive);
+
+    w->popup_tree = wlr_scene_tree_create(w->scene_tree);
+    if (!w->popup_tree) {
+        talloc_free(w);
+        return NULL;
+    }
+    update_window_strings(w);
+    return w;
+}
+
+void
+comp_window_map_xwayland(struct CompWindow *w)
+{
+    if (!w || w->mapped || !w->xsurf || !w->xsurf->surface || !w->scene_tree)
+        return;
+    if (!w->xdg_tree) {
+        w->xdg_tree = wlr_scene_subsurface_tree_create(w->scene_tree, w->xsurf->surface);
+        if (!w->xdg_tree)
+            return;
+        if (w->border[0])
+            wlr_scene_node_place_below(&w->xdg_tree->node, &w->border[0]->node);
+    }
+    w->border_state_valid = false;
+    handle_toplevel_map(w, NULL);
+}
+
+void
+comp_window_unmap_xwayland(struct CompWindow *w)
+{
+    if (!w)
+        return;
+    handle_toplevel_unmap(w, NULL);
+    if (w->server && w->server->scene && w->xdg_tree) {
+        wlr_scene_node_destroy(&w->xdg_tree->node);
+        w->xdg_tree = NULL;
+    }
+    w->border_state_valid = false;
+}
+
+void
+comp_window_update_xwayland_metadata(struct CompWindow *w)
+{
+    if (!w)
+        return;
+    handle_set_metadata(w, NULL);
+}
+
+void
+comp_window_set_xwayland_fullscreen(struct CompWindow *w, bool fullscreen)
+{
+    if (!w || !w->mapped || !w->server)
+        return;
+    comp_layout_set_fullscreen(w->server->layout, w->id, fullscreen);
+    comp_window_relayout(w->server);
+    comp_ipc_emit_windows(w->server);
+}
+
+void
+comp_window_set_xwayland_maximized(struct CompWindow *w, bool maximized)
+{
+    if (!w || !w->server)
+        return;
+    w->maximized_to_edges = maximized;
+    if (w->mapped) {
+        comp_window_relayout(w->server);
+        comp_ipc_emit_windows(w->server);
+    }
 }
 
 void

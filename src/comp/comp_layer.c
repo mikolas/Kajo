@@ -22,6 +22,7 @@ typedef struct {
     struct wlr_scene_layer_surface_v1 *scene_layer;
     struct wl_list                   popups;      /* CompLayerPopup.link */
     enum zwlr_layer_shell_v1_layer   cur_layer;
+    bool                             follows_primary;
     bool                             mapped;
 } CompLayerSurface;
 
@@ -96,7 +97,7 @@ arrange_layers_on_box(CompServer *s, struct wlr_output *target_wo, bool is_prima
             if (!cls->lsurf->initialized || cls->lsurf->current.layer != k_order[li])
                 continue;
             struct wlr_output *lo = cls->lsurf->output;
-            if (target_wo && lo != target_wo && !(is_primary && !lo))
+            if (target_wo && lo != target_wo && !(is_primary && (cls->follows_primary || !lo)))
                 continue;
             if (cls->lsurf->current.exclusive_zone > 0)
                 wlr_scene_layer_surface_v1_configure(cls->scene_layer, full_area, usable_io);
@@ -110,7 +111,7 @@ arrange_layers_on_box(CompServer *s, struct wlr_output *target_wo, bool is_prima
             if (!cls->lsurf->initialized || cls->lsurf->current.layer != k_order[li])
                 continue;
             struct wlr_output *lo = cls->lsurf->output;
-            if (target_wo && lo != target_wo && !(is_primary && !lo))
+            if (target_wo && lo != target_wo && !(is_primary && (cls->follows_primary || !lo)))
                 continue;
             if (cls->lsurf->current.exclusive_zone <= 0)
                 wlr_scene_layer_surface_v1_configure(cls->scene_layer, full_area, usable_io);
@@ -146,6 +147,20 @@ comp_layer_arrange(CompServer *s)
     struct wlr_surface *exclusive_surf = NULL;
     struct wlr_output *primary_wo = comp_server_primary_output(s);
     bool arranged_any = false;
+
+    CompLayerSurface *cls;
+    wl_list_for_each(cls, &s->layer_surfaces, link) {
+        if (cls->follows_primary && primary_wo)
+            cls->lsurf->output = primary_wo;
+        struct wlr_output *lo = cls->lsurf->output;
+        bool on_disabled_output = (!cls->follows_primary && lo && !lo->enabled);
+        if (cls->scene_layer && cls->scene_layer->tree)
+            wlr_scene_node_set_enabled(&cls->scene_layer->tree->node, !on_disabled_output);
+        if (on_disabled_output && cls->lsurf->initialized && !cls->lsurf->configured) {
+            struct wlr_box dummy_usable = primary_usable;
+            wlr_scene_layer_surface_v1_configure(cls->scene_layer, &primary_usable, &dummy_usable);
+        }
+    }
 
     CompOutput *o;
     wl_list_for_each(o, &s->outputs, link) {
@@ -354,12 +369,24 @@ handle_layer_destroy(void *owner, void *data)
 }
 
 static void
+handle_layer_output_destroy(void *owner, void *data)
+{
+    CompLayerSurface *cls = owner;
+    (void)data;
+    if (!cls || !cls->lsurf)
+        return;
+    cls->lsurf->output = NULL;
+    wlr_layer_surface_v1_destroy(cls->lsurf);
+}
+
+static void
 handle_new_layer_surface(void *owner, void *data)
 {
     CompServer *s = owner;
     struct wlr_layer_surface_v1 *lsurf = data;
 
-    if (!lsurf->output) {
+    bool follows_primary = (lsurf->output == NULL);
+    if (follows_primary) {
         lsurf->output = comp_server_primary_output(s);
         if (!lsurf->output) {
             wlr_layer_surface_v1_destroy(lsurf);
@@ -370,10 +397,11 @@ handle_new_layer_surface(void *owner, void *data)
     CompLayerSurface *cls = talloc_zero(s, CompLayerSurface);
     COMP_WARN_RETURN_VOID(cls != NULL);
     talloc_set_name_const(cls, "CompLayerSurface");
-    cls->server    = s;
-    cls->lsurf     = lsurf;
-    cls->cur_layer = lsurf->pending.layer;
-    lsurf->data    = cls;
+    cls->server          = s;
+    cls->lsurf           = lsurf;
+    cls->cur_layer       = lsurf->pending.layer;
+    cls->follows_primary = follows_primary;
+    lsurf->data          = cls;
     wl_list_init(&cls->popups);
     wl_list_insert(&s->layer_surfaces, &cls->link);
     talloc_set_destructor(cls, layer_surface_destructor);
@@ -391,6 +419,8 @@ handle_new_layer_surface(void *owner, void *data)
               comp_listen(cls, &surf->events.unmap, handle_layer_unmap) &&
               comp_listen(cls, &lsurf->events.new_popup, handle_layer_new_popup) &&
               comp_listen(cls, &lsurf->events.destroy, handle_layer_destroy);
+    if (ok && !follows_primary && lsurf->output)
+        ok = comp_listen(cls, &lsurf->output->events.destroy, handle_layer_output_destroy);
     if (!ok) {
         talloc_free(cls);
         return;

@@ -30,8 +30,10 @@
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/types/wlr_tablet_v2.h>
 #include <wlr/types/wlr_touch.h>
+#include <wlr/types/wlr_virtual_keyboard_v1.h>
 #include <wlr/types/wlr_xcursor_manager.h>
 #include <xkbcommon/xkbcommon.h>
 
@@ -42,6 +44,7 @@ typedef struct {
     struct wl_event_source *repeat_timer;
     const CompBind         *repeat_bind;
     uint32_t                repeat_keycode;
+    uint64_t                consumed_keys[8]; /* 512-bit bitmap of compositor-consumed key presses */
 } CompKeyboard;
 
 typedef struct {
@@ -113,11 +116,53 @@ keyboard_destructor(CompKeyboard *k)
 }
 
 static void
+keyboard_set_consumed(CompKeyboard *k, uint32_t ev_keycode, bool consumed)
+{
+    if (!k || ev_keycode >= 512)
+        return;
+    uint64_t bit = 1ULL << (ev_keycode & 63u);
+    if (consumed)
+        k->consumed_keys[ev_keycode >> 6] |= bit;
+    else
+        k->consumed_keys[ev_keycode >> 6] &= ~bit;
+}
+
+static bool
+keyboard_take_consumed(CompKeyboard *k, uint32_t ev_keycode)
+{
+    if (!k || ev_keycode >= 512)
+        return false;
+    uint64_t bit = 1ULL << (ev_keycode & 63u);
+    bool was = (k->consumed_keys[ev_keycode >> 6] & bit) != 0;
+    k->consumed_keys[ev_keycode >> 6] &= ~bit;
+    return was;
+}
+
+static bool
+keyboard_allowed_while_locked(const CompServer *s, struct wlr_keyboard *wk)
+{
+    if (!s || !wk || !s->locked)
+        return true;
+    struct wlr_virtual_keyboard_v1 *vkbd =
+        wlr_input_device_get_virtual_keyboard(&wk->base);
+    if (!vkbd)
+        return true;
+    /* Only the session-lock owner (e.g. ShellOSK inside kajo) may inject
+     * virtual-keyboard events while the session is locked. */
+    if (!s->active_lock || !s->active_lock->resource || !vkbd->resource)
+        return false;
+    return wl_resource_get_client(vkbd->resource) ==
+           wl_resource_get_client(s->active_lock->resource);
+}
+
+static void
 keyboard_handle_modifiers(void *owner, void *data)
 {
     CompKeyboard *k = owner;
     CompServer *s = k->server;
     (void)data;
+    if (!keyboard_allowed_while_locked(s, k->wlr_keyboard))
+        return;
     keyboard_disarm_repeat(k);
     wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);
     wlr_seat_keyboard_notify_modifiers(s->seat, &k->wlr_keyboard->modifiers);
@@ -146,6 +191,9 @@ keyboard_handle_key(void *owner, void *data)
     CompKeyboard *k = owner;
     CompServer *s = k->server;
     struct wlr_keyboard_key_event *ev = data;
+    if (!keyboard_allowed_while_locked(s, k->wlr_keyboard))
+        return;
+
     bool pressed = ev->state == WL_KEYBOARD_KEY_STATE_PRESSED;
     uint32_t keycode = ev->keycode + 8;
     bool handled = false;
@@ -155,8 +203,7 @@ keyboard_handle_key(void *owner, void *data)
     if (!pressed) {
         if (k->repeat_keycode == ev->keycode)
             keyboard_disarm_repeat(k);
-        if (comp_screenshot_is_active(s) || comp_switcher_is_active(s))
-            handled = true;
+        handled = keyboard_take_consumed(k, ev->keycode);
     } else {
         keyboard_disarm_repeat(k);
         /* Translated keysyms catch the XF86Switch_VT_* produced by Ctrl+Alt+Fn */
@@ -213,6 +260,7 @@ keyboard_handle_key(void *owner, void *data)
                 }
             }
         }
+        keyboard_set_consumed(k, ev->keycode, handled);
     }
     if (!handled) {
         wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);

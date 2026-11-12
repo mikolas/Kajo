@@ -102,11 +102,6 @@ handle_lock_surface_map(void *owner, void *data)
 
     s->lock_surface = cls->lsurf->surface;
     comp_server_restore_keyboard_focus(s);
-
-    if (!cls->parent_lock->locked_sent) {
-        cls->parent_lock->locked_sent = true;
-        wlr_session_lock_v1_send_locked(cls->parent_lock->lock);
-    }
     comp_server_schedule_frames(s);
 }
 
@@ -174,12 +169,36 @@ handle_lock_destroy(void *owner, void *data)
 
     if (s->active_lock == csl->lock)
         s->active_lock = NULL;
+    csl->lock->data = NULL;
     s->lock_surface = NULL;
     /* Note: if destroyed without unlock (client crashed), s->locked stays true
      * and s->lock_backdrop stays enabled (fail-secure per ext-session-lock-v1). */
     talloc_free(csl);
     comp_server_restore_keyboard_focus(s);
     comp_server_schedule_frames(s);
+}
+
+void
+comp_lock_idle_notify_output_presented(CompServer *s)
+{
+    if (!s || !s->locked || !s->active_lock || !s->active_lock->data)
+        return;
+    CompSessionLock *csl = s->active_lock->data;
+    if (!csl->locked_sent) {
+        csl->locked_sent = true;
+        wlr_session_lock_v1_send_locked(csl->lock);
+    }
+}
+
+static bool
+has_any_enabled_output(const CompServer *s)
+{
+    const CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (o->wlr_output && o->wlr_output->enabled)
+            return true;
+    }
+    return false;
 }
 
 static void
@@ -201,17 +220,20 @@ handle_new_session_lock(void *owner, void *data)
     talloc_set_name_const(csl, "CompSessionLock");
     csl->server = s;
     csl->lock   = lock;
+    lock->data  = csl;
 
     s->locked      = true;
     s->active_lock = lock;
+    comp_window_destroy_capture_sources(s);
     comp_lock_idle_reconfigure_output(s);
     comp_server_restore_keyboard_focus(s);
 
-    /* s->lock_backdrop in s->tree_lock immediately covers the entire viewport
-     * with solid #111111 before any client surface maps, so normal desktop
-     * content is already hidden and we can confirm locked state immediately. */
-    csl->locked_sent = true;
-    wlr_session_lock_v1_send_locked(lock);
+    if (has_any_enabled_output(s)) {
+        comp_server_schedule_frames(s);
+    } else {
+        csl->locked_sent = true;
+        wlr_session_lock_v1_send_locked(lock);
+    }
 
     if (!comp_listen(csl, &lock->events.new_surface, handle_lock_new_surface) ||
         !comp_listen(csl, &lock->events.unlock, handle_lock_unlock) ||

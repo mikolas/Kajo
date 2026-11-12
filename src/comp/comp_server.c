@@ -255,6 +255,10 @@ comp_server_recover_gpu(CompServer *s)
             wlr_output_init_render(o->wlr_output, new_allocator, new_renderer);
     }
 
+    /* Destroy any per-window capture sources bound to old_allocator/old_renderer
+     * before freeing those objects; subsequent requests will recreate them. */
+    comp_window_destroy_capture_sources(s);
+
     if (old_allocator)
         wlr_allocator_destroy(old_allocator);
     if (old_renderer)

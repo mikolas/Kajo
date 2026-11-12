@@ -31,6 +31,9 @@ struct wlr_cursor;
 struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1;
 struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request;
 struct wlr_ext_foreign_toplevel_list_v1;
+struct wlr_ext_image_copy_capture_manager_v1;
+struct wlr_ext_output_image_capture_source_manager_v1;
+struct wlr_export_dmabuf_manager_v1;
 struct wlr_foreign_toplevel_manager_v1;
 struct wlr_idle_inhibit_manager_v1;
 struct wlr_idle_notifier_v1;
@@ -56,7 +59,9 @@ struct wlr_scene_node;
 struct wlr_scene_output_layout;
 struct wlr_scene_rect;
 struct wlr_scene_tree;
+struct wlr_screencopy_manager_v1;
 struct wlr_seat;
+struct wlr_security_context_manager_v1;
 struct wlr_session;
 struct wlr_session_lock_manager_v1;
 struct wlr_session_lock_v1;
@@ -74,6 +79,7 @@ struct wlr_xdg_shell;
 struct wlr_xdg_toplevel;
 struct wlr_xdg_wm_dialog_v1;
 struct wlr_xwayland;
+struct wlr_xwayland_surface;
 
 struct CompWindow;
 struct CompSwitcher;
@@ -146,6 +152,11 @@ typedef struct CompServer {
     struct wlr_foreign_toplevel_manager_v1       *foreign_toplevel_mgr;
     struct wlr_ext_foreign_toplevel_list_v1      *ext_foreign_toplevel_list;
     struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1 *ext_toplevel_capture_mgr;
+    struct wlr_screencopy_manager_v1             *screencopy_mgr;
+    struct wlr_export_dmabuf_manager_v1          *export_dmabuf_mgr;
+    struct wlr_ext_image_copy_capture_manager_v1 *ext_image_copy_capture_mgr;
+    struct wlr_ext_output_image_capture_source_manager_v1 *ext_output_capture_mgr;
+    struct wlr_security_context_manager_v1       *security_context_mgr;
     struct wlr_xwayland                          *xwayland;
     int                                           xwayland_last_dpi;
 
@@ -221,6 +232,7 @@ typedef struct {
     struct wlr_scene_output  *scene_output;
     CompVrrPolicy             vrr_policy;
     bool                      was_animating;
+    bool                      pending_lock_present;
     bool                      has_manual_mode;
     char                     *manual_mode;
     bool                      has_manual_scale;
@@ -299,6 +311,13 @@ bool               comp_window_get_capture_box(const struct CompWindow *w, bool 
                                                struct wlr_scene_node **out_node, struct wlr_box *out_logical_box);
 void               comp_window_accept_capture_request(CompServer *server,
                                                       struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1_request *req);
+void               comp_window_destroy_capture_sources(CompServer *server);
+struct CompWindow *comp_window_create_xwayland(CompServer *server, struct wlr_xwayland_surface *xsurf);
+void               comp_window_map_xwayland(struct CompWindow *w);
+void               comp_window_unmap_xwayland(struct CompWindow *w);
+void               comp_window_update_xwayland_metadata(struct CompWindow *w);
+void               comp_window_set_xwayland_fullscreen(struct CompWindow *w, bool fullscreen);
+void               comp_window_set_xwayland_maximized(struct CompWindow *w, bool maximized);
 void               comp_window_update_grab(CompServer *server);
 void               comp_window_end_grab(CompServer *server);
 bool               comp_window_handle_bind(CompServer *server, const CompBind *bind);
@@ -341,6 +360,7 @@ void comp_lock_idle_init(CompServer *server);
 void comp_lock_idle_notify_activity(CompServer *server);
 void comp_lock_idle_update_inhibitors(CompServer *server);
 void comp_lock_idle_reconfigure_output(CompServer *server);
+void comp_lock_idle_notify_output_presented(CompServer *server);
 /* comp_protocols.c */
 void comp_protocols_init(CompServer *server);
 void comp_protocols_notify_focus_surface(CompServer *server, struct wlr_surface *surface);

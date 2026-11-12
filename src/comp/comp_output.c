@@ -256,6 +256,20 @@ output_destructor(CompOutput *o)
 }
 
 static void
+handle_present(void *owner, void *data)
+{
+    CompOutput *o = owner;
+    const struct wlr_output_event_present *ev = data;
+    if (!o->pending_lock_present)
+        return;
+    if (ev && !ev->presented)
+        return;
+    o->pending_lock_present = false;
+    if (o->server && o->server->locked)
+        comp_lock_idle_notify_output_presented(o->server);
+}
+
+static void
 handle_frame(void *owner, void *data)
 {
     CompOutput *o = owner;
@@ -271,8 +285,16 @@ handle_frame(void *owner, void *data)
 
     comp_window_tick_frame(s, now_s);
 
-    if (wlr_scene_output_commit(o->scene_output, NULL))
+    bool lock_active = s->locked;
+    bool committed = wlr_scene_output_commit(o->scene_output, NULL);
+    if (committed)
         wlr_scene_output_send_frame_done(o->scene_output, &now);
+    if (lock_active) {
+        if (committed)
+            o->pending_lock_present = true;
+        else
+            comp_lock_idle_notify_output_presented(s);
+    }
 
     bool animating = comp_motion_is_animating(s->motion, now_s);
     if (animating || o->was_animating) {
@@ -684,6 +706,7 @@ handle_new_output(void *owner, void *data)
     o->scene_output = wlr_scene_output_create(s->scene, wo);
     if (!o->scene_output ||
         !comp_listen(o, &wo->events.frame, handle_frame) ||
+        !comp_listen(o, &wo->events.present, handle_present) ||
         !comp_listen(o, &wo->events.request_state, handle_request_state) ||
         !comp_listen(o, &wo->events.destroy, handle_destroy)) {
         talloc_free(o);

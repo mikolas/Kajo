@@ -23,14 +23,19 @@
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_input_method_v2.h>
 #include <wlr/types/wlr_keyboard_shortcuts_inhibit_v1.h>
+#include <wlr/types/wlr_layer_shell_v1.h>
 #include <wlr/types/wlr_linux_drm_syncobj_v1.h>
+#include <wlr/types/wlr_output_management_v1.h>
+#include <wlr/types/wlr_output_power_management_v1.h>
 #include <wlr/types/wlr_pointer_constraints_v1.h>
 #include <wlr/types/wlr_pointer_gestures_v1.h>
 #include <wlr/types/wlr_relative_pointer_v1.h>
 #include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_screencopy_v1.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_security_context_v1.h>
 #include <wlr/types/wlr_server_decoration.h>
+#include <wlr/types/wlr_session_lock_v1.h>
 #include <wlr/types/wlr_tablet_v2.h>
 #include <wlr/types/wlr_tearing_control_v1.h>
 #include <wlr/types/wlr_text_input_v3.h>
@@ -722,9 +727,63 @@ handle_cursor_shape_request(void *owner, void *data)
         wlr_cursor_set_xcursor(s->cursor, s->cursor_mgr, shape_name);
 }
 
+static bool
+is_screen_capture_global(const CompServer *s, const struct wl_global *global)
+{
+    if (!s || !global)
+        return false;
+    return (s->screencopy_mgr && global == s->screencopy_mgr->global) ||
+           (s->export_dmabuf_mgr && global == s->export_dmabuf_mgr->global) ||
+           (s->ext_image_copy_capture_mgr && global == s->ext_image_copy_capture_mgr->global) ||
+           (s->ext_output_capture_mgr && global == s->ext_output_capture_mgr->global) ||
+           (s->ext_toplevel_capture_mgr && global == s->ext_toplevel_capture_mgr->global);
+}
+
+static bool
+is_privileged_shell_global(const CompServer *s, const struct wl_global *global)
+{
+    if (!s || !global)
+        return false;
+    if (is_screen_capture_global(s, global))
+        return true;
+    return (s->security_context_mgr && global == s->security_context_mgr->global) ||
+           (s->session_lock_mgr && global == s->session_lock_mgr->global) ||
+           (s->layer_shell && global == s->layer_shell->global) ||
+           (s->output_mgr && global == s->output_mgr->global) ||
+           (s->output_power_mgr && global == s->output_power_mgr->global) ||
+           (s->input_method_mgr && global == s->input_method_mgr->global) ||
+           (s->virtual_kbd_mgr && global == s->virtual_kbd_mgr->global) ||
+           (s->foreign_toplevel_mgr && global == s->foreign_toplevel_mgr->global) ||
+           (s->ext_foreign_toplevel_list && global == s->ext_foreign_toplevel_list->global);
+}
+
+static bool
+handle_global_filter(const struct wl_client *client, const struct wl_global *global, void *data)
+{
+    const CompServer *s = data;
+    if (!s || !client || !global)
+        return true;
+
+    /* Block screen-capture globals while the session is locked. */
+    if (s->locked && is_screen_capture_global(s, global))
+        return false;
+
+    /* Hide privileged shell/capture/input globals from sandboxed clients (Flatpak, etc.). */
+    if (s->security_context_mgr &&
+        wlr_security_context_manager_v1_lookup_client(s->security_context_mgr, client) != NULL &&
+        is_privileged_shell_global(s, global)) {
+        return false;
+    }
+
+    return true;
+}
+
 void
 comp_protocols_init(CompServer *s)
 {
+    s->security_context_mgr  = wlr_security_context_manager_v1_create(s->display);
+    wl_display_set_global_filter(s->display, handle_global_filter, s);
+
     s->xdg_decoration_mgr    = wlr_xdg_decoration_manager_v1_create(s->display);
     s->input_method_mgr      = wlr_input_method_manager_v2_create(s->display);
     s->text_input_mgr        = wlr_text_input_manager_v3_create(s->display);
@@ -751,13 +810,13 @@ comp_protocols_init(CompServer *s)
 
     /* Spec §6.5.3: screen-capture and foreign-toplevel protocols are disabled in --greeter-mode */
     if (!s->opts.greeter_mode) {
-        wlr_screencopy_manager_v1_create(s->display);
-        wlr_export_dmabuf_manager_v1_create(s->display);
-        wlr_ext_image_copy_capture_manager_v1_create(s->display, 1);
-        wlr_ext_output_image_capture_source_manager_v1_create(s->display, 1);
-        s->foreign_toplevel_mgr      = wlr_foreign_toplevel_manager_v1_create(s->display);
-        s->ext_foreign_toplevel_list = wlr_ext_foreign_toplevel_list_v1_create(s->display, 1);
-        s->ext_toplevel_capture_mgr  = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(s->display, 1);
+        s->screencopy_mgr             = wlr_screencopy_manager_v1_create(s->display);
+        s->export_dmabuf_mgr          = wlr_export_dmabuf_manager_v1_create(s->display);
+        s->ext_image_copy_capture_mgr = wlr_ext_image_copy_capture_manager_v1_create(s->display, 1);
+        s->ext_output_capture_mgr     = wlr_ext_output_image_capture_source_manager_v1_create(s->display, 1);
+        s->foreign_toplevel_mgr       = wlr_foreign_toplevel_manager_v1_create(s->display);
+        s->ext_foreign_toplevel_list  = wlr_ext_foreign_toplevel_list_v1_create(s->display, 1);
+        s->ext_toplevel_capture_mgr   = wlr_ext_foreign_toplevel_image_capture_source_manager_v1_create(s->display, 1);
         if (s->ext_toplevel_capture_mgr) {
             comp_listen_ctx(s->listeners, s,
                             &s->ext_toplevel_capture_mgr->events.new_request,

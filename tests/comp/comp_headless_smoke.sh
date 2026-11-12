@@ -34,7 +34,8 @@ timeout 30 "$KC" -q --exit-with-command -- "$CL" globals \
     ext_foreign_toplevel_image_capture_source_manager_v1 \
     zwlr_output_manager_v1 zxdg_output_manager_v1 \
     zwlr_foreign_toplevel_manager_v1 ext_foreign_toplevel_list_v1 \
-    wp_alpha_modifier_v1 wp_tearing_control_manager_v1
+    wp_alpha_modifier_v1 wp_tearing_control_manager_v1 \
+    wp_security_context_manager_v1
 check "required globals advertised" 0 $?
 
 timeout 30 "$KC" -q --exit-with-command -- "$CL" windows 6
