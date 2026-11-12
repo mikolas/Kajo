@@ -200,7 +200,7 @@ static const char *const k_win_keys[] = {
 static const char *const k_layer_keys[] = {
     COMP_KEY_NAMESPACE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_OPACITY, COMP_KEY_POPUP_OPACITY,
 };
-static const char *const k_layer_unsupported[] = { "blur", "xray", "blur_popups" };   /* spec §10 */
+static const char *const k_layer_unsupported[] = { "blur", "xray", "blur_popups" };   /* planned: ROADMAP.md §3.7.2 */
 
 static bool
 parse_anchor(toml_datum_t t, CompWindowRuleResult *set, const char *src, CompDiagList *diag)

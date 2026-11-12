@@ -14,7 +14,7 @@
 
 1. **SDR Output on Stock `wlroots 0.20.2` (Vulkan Forced):**
    - Session mode forces the `wlroots` Vulkan renderer (`WLR_RENDERER=vulkan` unless `WLR_RENDERER` is already set in the environment for development or automated tests). If the Vulkan renderer cannot be created in session mode, `kajo-comp` logs the error and exits non-zero (no silent GLES2 fallback).
-   - Output color pipeline in v1 is strictly 8-bit SDR. HDR10 is deferred to v2 (§9).
+   - Output color pipeline in v1 is strictly 8-bit SDR. HDR10 is future work (§9, `ROADMAP.md` §3.7.1).
 2. **Scrolling-Tiling Layout with Spring-Driven Motion:**
    - Horizontal strip of columns per workspace, vertical stack of dynamic workspaces, plus one per-workspace floating layer.
    - Analytical 2nd-order spring engine driving camera and window **positions** (`workspace_switch`, `horizontal_scroll`, `window_movement`) with instantaneous velocity preservation on mid-flight retargeting.
@@ -41,7 +41,7 @@
 | :--- | :---: | :--- |
 | **`wlroots 0.20.2` + Vulkan (`wlr_vk_renderer`)** | **Pure C11** | **Selected.** Native C11/Meson/ASan fit. Provides `wlr_scene` damage tracking, explicit sync (`linux-drm-syncobj-v1`), tearing control, XWayland, layer-shell, session-lock, input-method, fractional scale, capture protocols, and color management. |
 | **`scenefx` on `wlroots`** | C | **Rejected.** GLES-only (`mesa`/`libglvnd`); incompatible with the Vulkan renderer path. |
-| **Forked/patched `wlroots` Vulkan renderer** | C | **Deferred (§9).** Required only for multi-pass backdrop blur and custom window shaders. |
+| **Forked/patched `wlroots` Vulkan renderer** | C | **Planned (`ROADMAP.md` §3.6).** Only needed for effect passes (backdrop blur, window shaders, HDR tone mapping); v1 uses stock `wlroots`. |
 | **C++ frameworks (`Aquamarine`, `libkwin`, `Louvre`, `Mir`)** | C++ | **Rejected.** Mismatched language/toolkit stack (`wlroots` C99 `static` array declarators require shims in C++; `libkwin` pulls Qt6). |
 
 ### 2.2 Core `wlroots 0.20` Subsystem Map
@@ -361,7 +361,7 @@ The screenshot UI is built directly into `kajo-comp` with zero external CLI help
 
 1. **GTK4 CSS & Layer Opacity:**
    - `kajo` surfaces (`kajo`, `kajo-launcher`, `kajo-notification`, `kajo-osk`, `kajo-osd`) render premultiplied-alpha DMABUFs styled by `data/defaults/style.css` and `style.d/00-accent.css`.
-   - `kajo-comp` applies `[[layer_rule]]` `opacity` and `popup_opacity` (`0.85` default) via `wlr_scene_buffer_set_opacity()`. (Multi-pass background blur is deferred to §9.3; unsupported keys `blur`, `xray`, and `blur_popups` in `rules.toml` emit a non-fatal diagnostic).
+   - `kajo-comp` applies `[[layer_rule]]` `opacity` and `popup_opacity` (`0.85` default) via `wlr_scene_buffer_set_opacity()`. (Background blur is future work, `ROADMAP.md` §3.7.2; the unsupported keys `blur`, `xray`, and `blur_popups` in `rules.toml` emit a non-fatal diagnostic).
 2. **`zwlr_layer_shell_v1` Semantics:**
    - Supports animated margin commits for `src/autohide.c`, exclusive zones for `src/panel.c`, `src/osk/osk.c`, and `src/lock/screensaver.c`, `KEYBOARD_INTERACTIVITY_EXCLUSIVE` for the app launcher, and `KEYBOARD_INTERACTIVITY_NONE` for `ShellOSK`.
 
@@ -515,7 +515,6 @@ vrr = "on-demand"                       # Engages adaptive sync only for fullscr
 # Built-in lowercase aliases: volume-up, volume-down, volume-mute, mic-mute, brightness-up,
 # brightness-down, media-play, media-next, media-prev, page-up, page-down, bracket-left,
 # bracket-right, wheel-up, wheel-down, wheel-left, wheel-right.
-# Actions scheduled for upcoming Phase 1/2c/3 commits are commented until wired in comp_binds.c.
 
 # === Shell, Launcher, Lock & Session ===
 [[bind]]
@@ -1057,7 +1056,7 @@ Once `kajo-comp --session` binds `WAYLAND_DISPLAY`, `DISPLAY` (`wlr_xwayland`), 
    - `fuzz_toml_config`: Fuzzes `comp.toml`, `binds.toml`, and `rules.toml` parsers.
    - `fuzz_ipc_socket`: Fuzzes `kajo-comp.sock` JSON framing and command dispatch.
    - `fuzz_layout_monkey`: Stateful property fuzzer exercising random sequences of `open`, `close`, `close_mid_anim`, `float`, `fullscreen`, `tabbed`, `move_col`, `move_window`, `consume/expel`, `switch_ws`, `output_change`, and `step_springs` under ASan/LSan.
-4. **Spec-Example Parity Tests (`test_binds_spec_example`, `test_rules_spec_example`):** Unit tests in `tests/test_comp_config.c` extract and parse the exact `binds.toml` and `rules.toml` code blocks from §5.2 with zero diagnostics (`d.n == 0`); actions scheduled for upcoming phases stay commented in the `binds.toml` example block until the commit that implements them in `comp_binds.c`.
+4. **Spec-Example Parity Tests (`test_binds_spec_example`, `test_rules_spec_example`):** Unit tests in `tests/test_comp_config.c` extract and parse the exact `binds.toml` and `rules.toml` code blocks from §5.2 with zero diagnostics (`d.n == 0`); the `binds.toml` example only contains actions implemented in `comp_binds.c`.
 
 ### 7.3 Hardware Fault Recovery & Session Isolation
 
@@ -1113,80 +1112,10 @@ Once `kajo-comp --session` binds `WAYLAND_DISPLAY`, `DISPLAY` (`wlr_xwayland`), 
 
 ---
 
-## 9. Deferred (Post-v1 Ledger)
+## 9. Future Work
 
-This section is the single ledger of compositor features deferred past v1, recording the verified technical reason and the starting design for each item.
+Not part of this specification: the sections above describe what `kajo-comp` implements. Planned compositor work is tracked in [`ROADMAP.md`](../ROADMAP.md):
 
-### 9.1 Deferred Feature Summary
-
-| Deferred Item | Reason / Blocker in v1 | Target Approach (Post-v1) |
-| :--- | :--- | :--- |
-| **HDR10 Output & Mixed SDR/HDR Pipeline (v2)** | Scoped to v2 so v1 ships a rock-solid SDR compositor first. On Host A, `libdisplay-info` 0.3.0 also misses DisplayID 2.0 CTA HDR blocks (fixed in `libdisplay-info` 0.4.0). | Full design and Phase 0 hardware spike findings recorded in §9.2 below. |
-| **Adjustable SDR White Level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) when compositing onto a PQ HDR output and rejects `color_transform` when an output image description is set. | Small patch to `wlr_scene`'s luminance multiplier or upstream `wlroots` proposal in v2. |
-| **Compositor-Side HDR Tone Mapping (BT.2390)** | Stock `wlroots 0.20.2` has no tone-mapping curve in `render/` or `types/`; content exceeding panel peak luminance relies on display hardware tone mapping. | Custom tone-mapping shader pass in v2+. |
-| **Backdrop Blur (Dual-Kawase Frosted Glass)** | `wlr_render_pass` exposes only `add_texture()` and `add_rect()` with no multi-pass downsample/upsample API. | Inject backdrop `wlr_scene_buffer` nodes behind blurred layer surfaces and popups, driven by a scissored 2-pass Dual-Kawase downsample/upsample pipeline (`blur = true`, `popup_blur = true`, `xray = false`; see §9.3). |
-| **Window Open/Close/Resize Shaders** | Same `wlr_render_pass` limitation; closing animations also require freezing textures of unmapped surfaces, and resize crossfades require dual-texture blending. | Defer custom SPIR-V/GLSL window effects. |
-| **Overview Zoom (`toggle-overview`)** | `wlr_scene` has no scene-tree scale transform; zooming requires recomputing per-buffer positions and `wlr_scene_buffer_set_dest_size()` across all surfaces, subsurfaces, and popups. | Implement manual scene-buffer scaling pass post-v1. |
-| **Drop Shadows** | Not built into `wlr_scene` (rounded corners are permanently excluded by the Aero + Metro `0px` radius design system). | Optional shadow rects/nine-patch in a later release. |
-| **OSK Window Push-Up Reflow** | Requires dynamic working-area reflow when `ShellOSK` maps in tablet posture. | Dynamic layer-shell exclusive zone + column viewport offset. |
-| **Interactive Mouse Drag/Resize of Tiled Columns (`Mod + Drag`)** | Keyboard-first workflow + preset sizing cover v1; client-initiated drag/resize is implemented for floating windows (`L8`). | Add `Mod + Left/Right Button` interactive tiled grab in a subsequent point release. |
-| **Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)** | v1 routes `FileChooser` requests to `xdg-desktop-portal-gtk` (`default=gtk` in `kajo-portals.conf`), which renders a GTK3 Adwaita dialog rather than a native Aero + Metro surface. | Implement `org.freedesktop.impl.portal.FileChooser` directly in `kajo-files` (`org.freedesktop.impl.portal.desktop.kajo`) with `zxdg_importer_v2` + `xdg_wm_dialog_v1` parent/modal attachment (see §9.4). |
-| **Additional Layout Extras** | `focus-follows-mouse`, `switch-preset-column-width-back`, `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts, and multi-monitor workspace spanning. | Evaluate individually post-v1. |
-
-### 9.2 Deferred v2 Design Notes: HDR10 & Phase 0 Hardware Findings
-
-The following facts were verified against `wlroots 0.20.2` (`backend/drm`, `types/scene/wlr_scene.c`, `render/color.c`, `render/vulkan`) and measured on Host A (HP OmniBook X Flip 14 OLED, `Samsung Display Corp. 0x41AA`, Intel Lunar Lake Xe2, Mesa 26.2.6) during the Phase 0 feasibility spike:
-
-1. **DRM Capability Detection & `libdisplay-info` 0.4.0 Requirement:**
-   - `wlroots`' DRM backend sets `BT2020` in `wlr_output.supported_primaries` when the connector exposes `Colorspace` and the EDID signals BT.2020, and sets `ST2084_PQ` in `supported_transfer_functions` when `HDR_OUTPUT_METADATA` and EDID PQ static metadata are present.
-   - Host A's `eDP-1` OLED panel stores its HDR static metadata (`616.9 cd/m²` peak, `400 cd/m²` sustained, `0.0004 cd/m²` black) inside CTA data blocks nested within a **DisplayID 2.0 extension block**. `libdisplay-info` 0.3.0 does not scan CTA blocks inside DisplayID 2.0; `libdisplay-info >= 0.4.0` (upstream commit `73ec53d`) parses them properly.
-2. **Atomic Output State Must Route Through `wlr_scene_output_build_state()`:**
-   - When enabling HDR10 on a capable output (`DRM_FORMAT_XRGB2101010` + `WLR_COLOR_NAMED_PRIMARIES_BT2020` + `WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ`), the output image description **must** be committed through `wlr_scene_output_build_state()` so `wlr_scene` configures its Vulkan output color transform (encoding SDR sRGB surfaces at `203 cd/m²` PQ reference white rather than raw gamma 2.2).
-   - Never pass primaries other than `NONE` or `BT2020` in an output image description (`convert_primaries_to_colorspace()` in `wlroots`' DRM backend calls `abort()` on any other value).
-3. **Headless Vulkan Verification:**
-   - `WLR_BACKENDS=headless WLR_RENDERER=vulkan` succeeds on Host A with `input_color_transform`, `output_color_transform`, and timeline syncobjs available, and the 6-patch SDR color accuracy self-test (`#000000`, `#111111`, `#1a1a1a`, `#0078d4`, `#808080`, `#ffffff`) reads back bit-exact 8-bit values on both headless and bare-metal `2880×1800`.
-
-### 9.3 Deferred Design Notes: Dual-Kawase Backdrop Blur Pipeline
-
-To restore frosted-glass backdrop blur behind `kajo` layer surfaces and popups (`blur = true`, `popup_blur = true`, `xray = false`) while preserving `wlr_scene_output_commit()` (DRM atomic test-before-commit cascade, damage ring tracking, direct scanout when unblurred, and screencopy):
-
-1. **Config & Layer-Rule Schema (`src/comp/core/comp_schema_keys.h`, `comp_rules.{h,c}`, `comp_config.{h,c}`):**
-   - Add a top-level `[blur]` section to `comp.toml` (`enabled = true`, `passes = 2`, `radius = 5.0`, `noise = 0.02`).
-   - Move `"blur"` into `k_known_layer_keys` and add `"popup_blur"` and `"xray"` to `[[layer_rule]]` (`CompLayerRuleResult`: `has_blur`/`blur`, `has_popup_blur`/`popup_blur`, `has_xray`/`xray`).
-   - Update `tests/test_comp_config.c` (`test_rules_unsupported_keys_flagged`) to test a different unimplemented key and add positive unit tests for `blur`, `popup_blur`, and `xray`.
-2. **Backdrop `wlr_scene_buffer` Nodes (`src/comp/comp_layer.c`):**
-   - For each `CompLayerSurface` and `CompLayerPopup`, attach a `struct wlr_scene_buffer *blur_backdrop` as the lowest-z child inside `cls->scene_layer->tree` and `popup->scene_tree`, enabled when `blur = true` / `popup_blur = true`.
-   - Keep `opacity = 1.0` and `popup_opacity = 1.0` in `rules.toml` so foreground `#ffffff` text and `1px` `@metro-accent` borders stay crisp, while lowering `@metro-panel-bg` and `popover > contents` alpha in `style.css` (`0.72–0.80`) so the blurred backdrop buffer shines through.
-3. **Dual-Kawase Offscreen Pipeline (`src/comp/comp_blur.{h,c}` & `src/comp/comp_server.c`):**
-   - When `config->blur.enabled` is true (and `WLR_RENDERER` is not overridden), prefer `wlr_gles2_renderer_create_with_drm_fd()` in `create_server_renderer()` since `wlroots-0.20` exposes raw EGL/GL handles in `<wlr/render/gles2.h>`.
-   - Maintain per-output half/quarter-resolution ping-pong FBO textures (`tex_ping`, `tex_pong`) and compile two GLSL ES fragment shaders:
-     - `kawase_down.frag`: 5-tap diagonal + center downsample filter.
-     - `kawase_up.frag`: 8-tap tent upsample filter with procedural dithering (`noise`) on the final pass to prevent 8-bit banding on dark `#141414` Aero glass.
-   - Support both `xray = false` (samples `tree_background` + `tree_bottom` + `tree_tiled` + `tree_floating` so scrolling windows refract dynamically behind the bar and popovers) and `xray = true` (samples only `tree_background` + `tree_bottom`).
-4. **Damage-Gated Per-Frame Hook (`handle_frame` in `src/comp/comp_output.c`):**
-   - Before calling `wlr_scene_output_commit(o->scene_output, NULL)`, collect output-local bounding boxes of mapped layer surfaces and popups with `blur = true`.
-   - **Zero-Cost Idle Fast Path:** If no scene node below `tree_top` / `tree_overlay` intersecting those bounding boxes (expanded by the blur kernel radius) was damaged this frame and no blurred popup moved/resized, skip the blur pass (`0.0 ms` GPU overhead) and reuse the existing `blur_backdrop` buffer.
-   - **Dirty Blur Update Path:** When underlying damage intersects a blur rect, render the underlying scene trees clipped to the union of dirty blur rects, run 2 downsample + 2 upsample passes restricted via `glScissor`, and bind the resulting `wlr_buffer` to each `blur_backdrop` `wlr_scene_buffer` with `wlr_scene_buffer_set_source_box()` and `wlr_scene_buffer_set_dest_size()`.
-
-### 9.4 Deferred Design Notes: Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)
-
-In v1, `data/session/kajo-portals.conf` routes `org.freedesktop.impl.portal.FileChooser` to `xdg-desktop-portal-gtk` (`default=gtk`). To replace the stock GTK3 dialog with a native Aero + Metro file selector across both Kajo apps (`GtkFileDialog` in `kajo-mod`, `kajo-player`, `kajo-ide`) and third-party Wayland apps (browsers, Electron, Flatpak):
-
-1. **D-Bus Backend in `kajo-files` (`src/files/files_portal.{h,c}`):**
-   - Acquire bus name `org.freedesktop.impl.portal.desktop.kajo` and export `org.freedesktop.impl.portal.FileChooser` at `/org/freedesktop/portal/desktop`:
-     - `OpenFile(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`
-     - `SaveFile(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`
-     - `SaveFiles(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`
-   - Export `org.freedesktop.impl.portal.Request` (`Close()`) on each in-flight `handle` object path to honor caller-initiated cancellation.
-   - Support standard `a{sv}` options: `multiple` (`b`), `directory` (`b`), `filters` (`a(sa(us))`), `current_filter` (`(sa(us))`), `current_folder` (`ay`), `current_name` (`s`), `accept_label` (`s`), `choices` (`a(ssa(ss)s)`), and `modal` (`b`).
-2. **Aero + Metro Chooser Surface (`src/files/files_chooser.{h,c}`):**
-   - Reuse `files_model.c` and `files_sidebar.c` inside an undecorated `880×580` dialog window (`.shell-settings-window .shell-files-chooser`, `0px` corner radius):
-     - Header bar (`.settings-header-bar`) with mode badge (`OPEN FILE`, `OPEN MULTIPLE`, `SELECT FOLDER`, `SAVE FILE`), caller `title`, and `.settings-close-btn` (`✕`).
-     - Places/mounts sidebar (`files_sidebar`) + breadcrumb/URI bar + search + virtualized `GtkListView` / `GtkGridView` (with `Space` Quick Look preview).
-     - Bottom action bar with filename `GtkEntry` (in `SaveFile` mode), filter `GtkDropDown` (glob `u=0` and MIME `u=1` patterns), `[ CANCEL ]` (`response = 1`), and `[ ✓ OPEN ]` / `[ ✓ SAVE ]` (`response = 0`, returning `uris` and `current_filter` in `results`).
-3. **Wayland Foreign Parent & Modal Integration (`zxdg_importer_v2` + `xdg_wm_dialog_v1`):**
-   - Parse `parent_window` (`"wayland:<handle>"`), import the parent surface via `zxdg_importer_v2_import_toplevel(handle)`, and call `zxdg_imported_v2_set_parent_of()` on the chooser's `wl_surface` alongside `xdg_wm_dialog_v1.get_xdg_dialog()` + `xdg_dialog_v1.set_modal()` so `kajo-comp` centers and stacks the chooser over the requesting window.
-   - Add `app_id = "^org\\.kajo\\.Files\\.Chooser$"` (or `floating = true` via `xdg_dialog_v1` modal / parent rules) in `data/defaults/rules.toml`.
-4. **Portal Registration & Session Routing:**
-   - Install `/usr/share/xdg-desktop-portal/portals/kajo.portal` (`DBusName=org.freedesktop.impl.portal.desktop.kajo`, `Interfaces=org.freedesktop.impl.portal.FileChooser;`) and D-Bus service file `org.freedesktop.impl.portal.desktop.kajo.service` (`Exec=/usr/local/bin/kajo-files --portal`).
-   - Add `org.freedesktop.impl.portal.FileChooser=kajo` under `[preferred]` in `data/session/kajo-portals.conf`.
+- §3.6: wlroots fork for visual effects (Vulkan effect passes, built as a static submodule);
+- §3.7: HDR10 output, SDR white level and tone mapping (with the Phase 0 hardware findings), backdrop blur design, window transitions, overview zoom, drop shadows, OSK text-field visibility, `Mod + drag` tiled columns, layout extras and multi-monitor sessions;
+- §3.8: native Aero + Metro file chooser portal (`kajo-files --portal`).
