@@ -9,6 +9,7 @@
 #include "core/comp_schema_keys.h"
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <getopt.h>
 #include <math.h>
@@ -87,6 +88,60 @@ is_numeric_key_val(const char *key, const char *val)
     errno = 0;
     double d = strtod(val, &end);
     return end != val && *end == '\0' && errno == 0 && isfinite(d);
+}
+
+static int
+connect_unix_socket(const char *path)
+{
+    if (!path || !*path)
+        return -1;
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    if (strlen(path) >= sizeof(addr.sun_path)) {
+        errno = ENAMETOOLONG;
+        return -1;
+    }
+    strncpy(addr.sun_path, path, sizeof(addr.sun_path) - 1);
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0)
+        return -1;
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+        int saved = errno;
+        close(fd);
+        errno = saved;
+        return -1;
+    }
+    return fd;
+}
+
+static int
+connect_nested_fallback_socket(const char *dir, char *out_path, size_t out_cap)
+{
+    if (!dir || !*dir)
+        return -1;
+    DIR *d = opendir(dir);
+    if (!d)
+        return -1;
+    int fd = -1;
+    struct dirent *de;
+    while ((de = readdir(d)) != NULL) {
+        if (strncmp(de->d_name, "kajo-comp-", 10) != 0)
+            continue;
+        size_t nlen = strlen(de->d_name);
+        if (nlen <= 15 || strcmp(de->d_name + nlen - 5, ".sock") != 0)
+            continue;
+        char candidate[256];
+        int n = snprintf(candidate, sizeof(candidate), "%s/%s", dir, de->d_name);
+        if (n <= 0 || (size_t)n >= sizeof(candidate))
+            continue;
+        fd = connect_unix_socket(candidate);
+        if (fd >= 0) {
+            snprintf(out_path, out_cap, "%s", candidate);
+            break;
+        }
+    }
+    closedir(d);
+    return fd;
 }
 
 static int
@@ -175,18 +230,16 @@ run_msg_cli(int argc, char *argv[])
     else
         snprintf(sock_path, sizeof(sock_path), "/tmp/kajo-comp-%d.sock", (int)getuid());
 
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) {
-        free(req_buf);
-        perror("socket");
-        return 1;
+    int fd = connect_unix_socket(sock_path);
+    if (fd < 0 && (!env_sock || !*env_sock)) {
+        int saved_err = errno;
+        const char *scan_dir = (xdg_run && *xdg_run) ? xdg_run : "/tmp";
+        fd = connect_nested_fallback_socket(scan_dir, sock_path, sizeof(sock_path));
+        if (fd < 0)
+            errno = saved_err;
     }
-    struct sockaddr_un addr = {0};
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+    if (fd < 0) {
         fprintf(stderr, "cannot connect to %s: %s\n", sock_path, strerror(errno));
-        close(fd);
         free(req_buf);
         return 1;
     }

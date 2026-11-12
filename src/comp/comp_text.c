@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wlr/interfaces/wlr_buffer.h>
+#include <wlr/types/wlr_scene.h>
 
 typedef struct {
     struct wlr_buffer  base;
@@ -233,3 +234,59 @@ comp_text_render_badge(const char *text, double scale,
     return comp_text_render_label(text ? text : "", logical_w, logical_h, scale,
                                   fg_rgba, bg_rgba, border_rgba, 1, pad_x);
 }
+
+typedef struct {
+    struct wlr_scene_buffer *sbuf;
+    struct wlr_buffer       *locked_buf;
+    struct wl_listener       node_destroy;
+} CompSceneBufPin;
+
+static void
+scene_buf_pin_handle_destroy(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    CompSceneBufPin *pin = wl_container_of(listener, pin, node_destroy);
+    wl_list_remove(&pin->node_destroy.link);
+    if (pin->sbuf && pin->sbuf->node.data == pin)
+        pin->sbuf->node.data = NULL;
+    if (pin->locked_buf) {
+        wlr_buffer_unlock(pin->locked_buf);
+        pin->locked_buf = NULL;
+    }
+    free(pin);
+}
+
+void
+comp_scene_buffer_set_owned_buffer(struct wlr_scene_buffer *sbuf, struct wlr_buffer *buf)
+{
+    if (!sbuf)
+        return;
+
+    CompSceneBufPin *pin = sbuf->node.data;
+    if (!pin && buf) {
+        pin = calloc(1, sizeof(*pin));
+        if (pin) {
+            pin->sbuf                = sbuf;
+            pin->node_destroy.notify = scene_buf_pin_handle_destroy;
+            wl_signal_add(&sbuf->node.events.destroy, &pin->node_destroy);
+            sbuf->node.data = pin;
+        }
+    }
+
+    struct wlr_buffer *new_lock = buf ? wlr_buffer_lock(buf) : NULL;
+    wlr_scene_buffer_set_buffer(sbuf, buf);
+
+    if (pin) {
+        if (pin->locked_buf)
+            wlr_buffer_unlock(pin->locked_buf);
+        pin->locked_buf = new_lock;
+        if (!pin->locked_buf) {
+            wl_list_remove(&pin->node_destroy.link);
+            sbuf->node.data = NULL;
+            free(pin);
+        }
+    } else if (new_lock) {
+        wlr_buffer_unlock(new_lock);
+    }
+}
+

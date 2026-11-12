@@ -1127,6 +1127,7 @@ This section is the single ledger of compositor features deferred past v1, recor
 | **Drop Shadows** | Not built into `wlr_scene` (rounded corners are permanently excluded by the Aero + Metro `0px` radius design system). | Optional shadow rects/nine-patch in a later release. |
 | **OSK Window Push-Up Reflow** | Requires dynamic working-area reflow when `ShellOSK` maps in tablet posture. | Dynamic layer-shell exclusive zone + column viewport offset. |
 | **Interactive Mouse Drag/Resize of Tiled Columns (`Mod + Drag`)** | Keyboard-first workflow + preset sizing cover v1; client-initiated drag/resize is implemented for floating windows (`L8`). | Add `Mod + Left/Right Button` interactive tiled grab in a subsequent point release. |
+| **Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)** | v1 routes `FileChooser` requests to `xdg-desktop-portal-gtk` (`default=gtk` in `kajo-portals.conf`), which renders a GTK3 Adwaita dialog rather than a native Aero + Metro surface. | Implement `org.freedesktop.impl.portal.FileChooser` directly in `kajo-files` (`org.freedesktop.impl.portal.desktop.kajo`) with `zxdg_importer_v2` + `xdg_wm_dialog_v1` parent/modal attachment (see §9.5). |
 | **Additional Layout Extras** | `focus-follows-mouse`, `switch-preset-column-width-back`, `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts, and multi-monitor workspace spanning. | Evaluate individually post-v1. |
 
 ### 9.2 Deferred v2 Design Notes: HDR10 & Phase 0 Hardware Findings
@@ -1181,3 +1182,26 @@ To restore frosted-glass backdrop blur behind `kajo` layer surfaces and popups (
    - Before calling `wlr_scene_output_commit(o->scene_output, NULL)`, collect output-local bounding boxes of mapped layer surfaces and popups with `blur = true`.
    - **Zero-Cost Idle Fast Path:** If no scene node below `tree_top` / `tree_overlay` intersecting those bounding boxes (expanded by the blur kernel radius) was damaged this frame and no blurred popup moved/resized, skip the blur pass (`0.0 ms` GPU overhead) and reuse the existing `blur_backdrop` buffer.
    - **Dirty Blur Update Path:** When underlying damage intersects a blur rect, render the underlying scene trees clipped to the union of dirty blur rects, run 2 downsample + 2 upsample passes restricted via `glScissor`, and bind the resulting `wlr_buffer` to each `blur_backdrop` `wlr_scene_buffer` with `wlr_scene_buffer_set_source_box()` and `wlr_scene_buffer_set_dest_size()`.
+
+### 9.5 Deferred Design Notes: Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)
+
+In v1, `data/session/kajo-portals.conf` routes `org.freedesktop.impl.portal.FileChooser` to `xdg-desktop-portal-gtk` (`default=gtk`). To replace the stock GTK3 dialog with a native Aero + Metro file selector across both Kajo apps (`GtkFileDialog` in `kajo-mod`, `kajo-player`, `kajo-ide`) and third-party Wayland apps (browsers, Electron, Flatpak):
+
+1. **D-Bus Backend in `kajo-files` (`src/files/files_portal.{h,c}`):**
+   - Acquire bus name `org.freedesktop.impl.portal.desktop.kajo` and export `org.freedesktop.impl.portal.FileChooser` at `/org/freedesktop/portal/desktop`:
+     - `OpenFile(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`
+     - `SaveFile(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`
+     - `SaveFiles(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`
+   - Export `org.freedesktop.impl.portal.Request` (`Close()`) on each in-flight `handle` object path to honor caller-initiated cancellation.
+   - Support standard `a{sv}` options: `multiple` (`b`), `directory` (`b`), `filters` (`a(sa(us))`), `current_filter` (`(sa(us))`), `current_folder` (`ay`), `current_name` (`s`), `accept_label` (`s`), `choices` (`a(ssa(ss)s)`), and `modal` (`b`).
+2. **Aero + Metro Chooser Surface (`src/files/files_chooser.{h,c}`):**
+   - Reuse `files_model.c` and `files_sidebar.c` inside an undecorated `880×580` dialog window (`.shell-settings-window .shell-files-chooser`, `0px` corner radius):
+     - Header bar (`.settings-header-bar`) with mode badge (`OPEN FILE`, `OPEN MULTIPLE`, `SELECT FOLDER`, `SAVE FILE`), caller `title`, and `.settings-close-btn` (`✕`).
+     - Places/mounts sidebar (`files_sidebar`) + breadcrumb/URI bar + search + virtualized `GtkListView` / `GtkGridView` (with `Space` Quick Look preview).
+     - Bottom action bar with filename `GtkEntry` (in `SaveFile` mode), filter `GtkDropDown` (glob `u=0` and MIME `u=1` patterns), `[ CANCEL ]` (`response = 1`), and `[ ✓ OPEN ]` / `[ ✓ SAVE ]` (`response = 0`, returning `uris` and `current_filter` in `results`).
+3. **Wayland Foreign Parent & Modal Integration (`zxdg_importer_v2` + `xdg_wm_dialog_v1`):**
+   - Parse `parent_window` (`"wayland:<handle>"`), import the parent surface via `zxdg_importer_v2_import_toplevel(handle)`, and call `zxdg_imported_v2_set_parent_of()` on the chooser's `wl_surface` alongside `xdg_wm_dialog_v1.get_xdg_dialog()` + `xdg_dialog_v1.set_modal()` so `kajo-comp` centers and stacks the chooser over the requesting window.
+   - Add `app_id = "^org\\.kajo\\.Files\\.Chooser$"` (or `floating = true` via `xdg_dialog_v1` modal / parent rules) in `data/defaults/rules.toml`.
+4. **Portal Registration & Session Routing:**
+   - Install `/usr/share/xdg-desktop-portal/portals/kajo.portal` (`DBusName=org.freedesktop.impl.portal.desktop.kajo`, `Interfaces=org.freedesktop.impl.portal.FileChooser;`) and D-Bus service file `org.freedesktop.impl.portal.desktop.kajo.service` (`Exec=/usr/local/bin/kajo-files --portal`).
+   - Add `org.freedesktop.impl.portal.FileChooser=kajo` under `[preferred]` in `data/session/kajo-portals.conf`.

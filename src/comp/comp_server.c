@@ -385,6 +385,8 @@ comp_server_create(const CompServerOptions *opts)
     s->opts = *opts;
     if (!s->opts.mod_mask)
         s->opts.mod_mask = COMP_MOD_SUPER;
+    const char *host_wl = getenv("WAYLAND_DISPLAY");
+    s->nested_at_startup = (host_wl != NULL && *host_wl != '\0');
     wl_list_init(&s->outputs);
     wl_list_init(&s->keyboards);
     wl_list_init(&s->input_devs);

@@ -58,6 +58,9 @@ struct CompIpcState {
     char                   *socket_path;
     int                     listen_fd;
     struct wl_event_source *listen_ev;
+    bool                    has_socket_stat;
+    dev_t                   socket_dev;
+    ino_t                   socket_ino;
     struct wl_list          clients;        /* CompIpcClient.link */
     size_t                  n_clients;
 
@@ -1440,8 +1443,14 @@ ipc_state_destructor(struct CompIpcState *ipc)
         close(ipc->listen_fd);
         ipc->listen_fd = -1;
     }
-    if (ipc->socket_path && *ipc->socket_path)
-        unlink(ipc->socket_path);
+    if (ipc->socket_path && *ipc->socket_path && ipc->has_socket_stat) {
+        struct stat st;
+        if (stat(ipc->socket_path, &st) == 0 &&
+            st.st_dev == ipc->socket_dev && st.st_ino == ipc->socket_ino) {
+            unlink(ipc->socket_path);
+        }
+        ipc->has_socket_stat = false;
+    }
     return 0;
 }
 
@@ -1458,7 +1467,28 @@ bind_ipc_socket(struct CompIpcState *ipc)
         return false;
     }
     strncpy(addr.sun_path, ipc->socket_path, sizeof(addr.sun_path) - 1);
-    unlink(ipc->socket_path);
+
+    struct stat existing_st;
+    if (stat(ipc->socket_path, &existing_st) == 0) {
+        bool is_self = (ipc->listen_fd >= 0 && ipc->has_socket_stat &&
+                        existing_st.st_dev == ipc->socket_dev &&
+                        existing_st.st_ino == ipc->socket_ino);
+        if (!is_self && S_ISSOCK(existing_st.st_mode)) {
+            int probe_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+            if (probe_fd >= 0) {
+                int rc = connect(probe_fd, (struct sockaddr *)&addr, sizeof(addr));
+                int err = errno;
+                close(probe_fd);
+                if (rc == 0 || err == EAGAIN || err == EWOULDBLOCK || err == EINPROGRESS) {
+                    wlr_log(WLR_ERROR,
+                            "IPC socket %s is already active in another instance; refusing to unlink",
+                            ipc->socket_path);
+                    return false;
+                }
+            }
+        }
+        unlink(ipc->socket_path);
+    }
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
     if (fd < 0) {
@@ -1473,6 +1503,15 @@ bind_ipc_socket(struct CompIpcState *ipc)
     }
     (void)chmod(ipc->socket_path, S_IRUSR | S_IWUSR);
 
+    struct stat bound_st;
+    if (stat(ipc->socket_path, &bound_st) == 0) {
+        ipc->socket_dev      = bound_st.st_dev;
+        ipc->socket_ino      = bound_st.st_ino;
+        ipc->has_socket_stat = true;
+    } else {
+        ipc->has_socket_stat = false;
+    }
+
     if (ipc->listen_ev) {
         wl_event_source_remove(ipc->listen_ev);
         ipc->listen_ev = NULL;
@@ -1486,7 +1525,8 @@ bind_ipc_socket(struct CompIpcState *ipc)
     ipc->listen_ev = wl_event_loop_add_fd(ipc->server->loop, fd, WL_EVENT_READABLE, handle_ipc_accept, ipc->server);
     if (!ipc->listen_ev) {
         close(fd);
-        ipc->listen_fd = -1;
+        ipc->listen_fd       = -1;
+        ipc->has_socket_stat = false;
         return false;
     }
     return true;
@@ -1498,10 +1538,23 @@ comp_ipc_ensure_socket(CompServer *s)
     if (!s || !s->ipc || s->opts.greeter_mode || !s->ipc->socket_path)
         return;
     struct stat path_st;
-    if (stat(s->ipc->socket_path, &path_st) == 0 && S_ISSOCK(path_st.st_mode) && s->ipc->listen_fd >= 0)
+    if (s->ipc->listen_fd >= 0 && s->ipc->has_socket_stat &&
+        stat(s->ipc->socket_path, &path_st) == 0 &&
+        S_ISSOCK(path_st.st_mode) &&
+        path_st.st_dev == s->ipc->socket_dev &&
+        path_st.st_ino == s->ipc->socket_ino) {
         return;
+    }
     if (bind_ipc_socket(s->ipc))
         wlr_log(WLR_INFO, "kajo-comp IPC socket restored at %s", s->ipc->socket_path);
+}
+
+const char *
+comp_ipc_socket_path(const CompServer *s)
+{
+    if (!s || !s->ipc || s->ipc->listen_fd < 0 || !s->ipc->has_socket_stat)
+        return NULL;
+    return s->ipc->socket_path;
 }
 
 bool
@@ -1542,12 +1595,18 @@ comp_ipc_init(CompServer *s)
 
     const char *env_sock = getenv(COMP_IPC_ENV_SOCKET);
     const char *xdg_run  = getenv("XDG_RUNTIME_DIR");
-    if (env_sock && *env_sock)
+    if (env_sock && *env_sock) {
         ipc->socket_path = talloc_strdup(ipc, env_sock);
-    else if (xdg_run && *xdg_run)
+    } else if (s->nested_at_startup) {
+        if (xdg_run && *xdg_run)
+            ipc->socket_path = talloc_asprintf(ipc, "%s/kajo-comp-%d.sock", xdg_run, (int)getpid());
+        else
+            ipc->socket_path = talloc_asprintf(ipc, "/tmp/kajo-comp-%d-%d.sock", (int)getuid(), (int)getpid());
+    } else if (xdg_run && *xdg_run) {
         ipc->socket_path = talloc_asprintf(ipc, "%s/%s", xdg_run, COMP_IPC_SOCK_NAME);
-    else
+    } else {
         ipc->socket_path = talloc_asprintf(ipc, "/tmp/kajo-comp-%d.sock", (int)getuid());
+    }
 
     if (!ipc->socket_path)
         return false;

@@ -310,6 +310,199 @@ check "Phase 5 kajo-greeter-session 3-stage fallback chain" 0 $FB_RC
 bash "$REPO_ROOT/data/session/kajo-session" --help >/dev/null
 check "Phase 5 kajo-session --help" 0 $?
 
+# ── Screenshot #1: Headless Vulkan + validation layers with window touching/overhanging screen edge ──
+if WLR_BACKENDS=headless WLR_RENDERER=vulkan timeout 10 "$KC" -q --exit-with-command -- true >/dev/null 2>&1; then
+    VK_SHOT_DIR="$RT/vk-shots"
+    VK_CFG="$RT/vk-comp.toml"
+    VK_LOG="$RT/vk-validation.log"
+    mkdir -p "$VK_SHOT_DIR"
+    cat > "$VK_CFG" <<EOF
+[layout]
+gaps_inner = 0
+gaps_outer = 0
+default_column_width = 0.75
+
+[screenshots]
+path = "$VK_SHOT_DIR/vk-%Y%m%d-%H%M%S.png"
+copy_to_clipboard = false
+show_notification = true
+include_window_border = true
+EOF
+    WLR_BACKENDS=headless WLR_RENDERER=vulkan \
+    VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation \
+    timeout 30 "$KC" --config "$VK_CFG" --exit-with-command -- sh -c "
+        set -e
+        \"$KC\" msg subscribe screenshots > '$RT/vk-sub.log' &
+        VSUB_PID=\$!
+        sleep 0.05
+
+        \"$CL\" hold 2 '$RT/vk-ready' &
+        VHOLD_PID=\$!
+        for _ in \$(seq 50); do [ -f '$RT/vk-ready' ] && break; sleep 0.05; done
+        [ -f '$RT/vk-ready' ]
+
+        # Window 2 touches the right screen edge and Window 1 overhangs the left edge
+        \"$KC\" msg action screenshot-screen | grep -q '\"ok\"'
+        \"$KC\" msg action screenshot | grep -q '\"ok\"'
+        \"$KC\" msg action screenshot-confirm | grep -q '\"ok\"'
+
+        for _ in \$(seq 60); do
+            C=\$(grep -c 'ScreenshotSaved' '$RT/vk-sub.log' 2>/dev/null || true)
+            [ \"\$C\" -ge 2 ] && break
+            sleep 0.05
+        done
+        C=\$(grep -c 'ScreenshotSaved' '$RT/vk-sub.log' 2>/dev/null || true)
+        [ \"\$C\" -eq 2 ]
+
+        python3 -c '
+import glob, zlib, struct
+pngs = sorted(glob.glob(\"$VK_SHOT_DIR/*.png\"))
+assert len(pngs) == 2
+with open(pngs[0], \"rb\") as f:
+    data = f.read()
+assert data[:8] == b\"\\x89PNG\\r\\n\\x1a\\n\"
+pos = 8
+w = h = 0
+idat = bytearray()
+while pos < len(data):
+    ln, ctype = struct.unpack(\">I4s\", data[pos:pos+8])
+    chunk = data[pos+8:pos+8+ln]
+    pos += 12 + ln
+    if ctype == b\"IHDR\":
+        w, h = struct.unpack(\">II\", chunk[:8])
+    elif ctype == b\"IDAT\":
+        idat.extend(chunk)
+raw = zlib.decompress(bytes(idat))
+stride = w * 4
+# Verify not solid #0078d4 blue and that window single-pixel color (0x22, 0x33, 0x44) is present
+found_win = False
+non_blue = False
+prev = bytearray(stride)
+for y in range(h):
+    row_start = y * (stride + 1)
+    filt = raw[row_start]
+    cur = bytearray(raw[row_start + 1 : row_start + 1 + stride])
+    if filt == 1:
+        for i in range(4, stride): cur[i] = (cur[i] + cur[i - 4]) & 0xff
+    elif filt == 2:
+        for i in range(stride): cur[i] = (cur[i] + prev[i]) & 0xff
+    elif filt == 3:
+        for i in range(stride):
+            a = cur[i - 4] if i >= 4 else 0
+            cur[i] = (cur[i] + ((a + prev[i]) >> 1)) & 0xff
+    elif filt == 4:
+        for i in range(stride):
+            a = cur[i - 4] if i >= 4 else 0
+            b = prev[i]
+            c = prev[i - 4] if i >= 4 else 0
+            p = a + b - c
+            pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+            pr = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+            cur[i] = (cur[i] + pr) & 0xff
+    prev = cur
+    for x in range(0, stride, 4):
+        r, g, b = cur[x], cur[x+1], cur[x+2]
+        if (r, g, b) != (0, 120, 212):
+            non_blue = True
+        if abs(r - 0x22) <= 2 and abs(g - 0x33) <= 2 and abs(b - 0x44) <= 2:
+            found_win = True
+assert non_blue, \"Screenshot is solid #0078d4 blue!\"
+assert found_win, \"Single-pixel client window color (0x22, 0x33, 0x44) missing from screenshot!\"
+'
+
+        rm -f '$RT/vk-ready'
+        wait \"\$VHOLD_PID\" || true
+        kill \"\$VSUB_PID\" 2>/dev/null || true
+    " >"$VK_LOG" 2>&1
+    VK_RC=$?
+    if grep -q "VUID-vkCmdClearAttachments" "$VK_LOG" 2>/dev/null; then
+        echo "Found VUID-vkCmdClearAttachments in Vulkan validation log:" >&2
+        grep "VUID-vkCmdClearAttachments" "$VK_LOG" >&2
+        VK_RC=1
+    fi
+    check "Vulkan headless screenshot-screen with edge/overhanging window (no VUID-vkCmdClearAttachments)" 0 $VK_RC
+fi
+
+# ── IPC Socket Ownership (#7-#10): two instances against one XDG_RUNTIME_DIR ──
+SOCK_RT="$RT/ipc-own"
+mkdir -p "$SOCK_RT/kajo"
+printf '[layout]\ngaps_inner = 8\n' > "$SOCK_RT/kajo/comp.toml"
+INST1_READY="$SOCK_RT/inst1.ready"
+INST1_DONE="$SOCK_RT/inst1.done"
+INST2_READY="$SOCK_RT/inst2.ready"
+INST2_DONE="$SOCK_RT/inst2.done"
+
+XDG_RUNTIME_DIR="$SOCK_RT" XDG_CONFIG_HOME="$SOCK_RT" \
+    timeout 30 "$KC" -q --exit-with-command -- sh -c "
+        touch '$INST1_READY'
+        while [ ! -f '$INST1_DONE' ]; do sleep 0.03; done
+    " >/dev/null 2>&1 &
+INST1_PID=$!
+
+IPC_OWN_RC=0
+for _ in $(seq 60); do [ -f "$INST1_READY" ] && break; sleep 0.03; done
+[ -f "$INST1_READY" ] || IPC_OWN_RC=1
+
+# Instance 1 is reachable before Instance 2 starts
+XDG_RUNTIME_DIR="$SOCK_RT" "$KC" msg get-workspaces | grep -q '"ok"' || IPC_OWN_RC=1
+
+# Start Instance 2 against the same XDG_RUNTIME_DIR (no WAYLAND_DISPLAY -> targets same kajo-comp.sock)
+XDG_RUNTIME_DIR="$SOCK_RT" XDG_CONFIG_HOME="$SOCK_RT" \
+    timeout 30 "$KC" -q --exit-with-command -- sh -c "
+        touch '$INST2_READY'
+        while [ ! -f '$INST2_DONE' ]; do sleep 0.03; done
+    " >/dev/null 2>&1 &
+INST2_PID=$!
+
+for _ in $(seq 60); do [ -f "$INST2_READY" ] && break; sleep 0.03; done
+[ -f "$INST2_READY" ] || IPC_OWN_RC=1
+
+# Instance 1 must stay reachable while Instance 2 is running (#7)
+XDG_RUNTIME_DIR="$SOCK_RT" "$KC" msg get-workspaces | grep -q '"ok"' || IPC_OWN_RC=1
+
+# Exit Instance 2; its destructor must NOT delete Instance 1's socket (#8)
+touch "$INST2_DONE"
+wait "$INST2_PID" 2>/dev/null || true
+
+# Instance 1 must stay reachable after Instance 2 exits (#8)
+XDG_RUNTIME_DIR="$SOCK_RT" "$KC" msg get-workspaces | grep -q '"ok"' || IPC_OWN_RC=1
+
+# Replace socket file with a stale dead socket and trigger reload; Instance 1 must rebind (#9)
+python3 -c "
+import os, socket
+p = '$SOCK_RT/kajo-comp.sock'
+os.unlink(p)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.bind(p)
+s.close()
+" || IPC_OWN_RC=1
+printf '[layout]\ngaps_inner = 12\n' > "$SOCK_RT/kajo/comp.toml"
+for _ in $(seq 40); do
+    if XDG_RUNTIME_DIR="$SOCK_RT" "$KC" msg get-workspaces 2>/dev/null | grep -q '"ok"'; then
+        break
+    fi
+    sleep 0.05
+done
+XDG_RUNTIME_DIR="$SOCK_RT" "$KC" msg get-workspaces | grep -q '"ok"' || IPC_OWN_RC=1
+
+# Nested instance (WAYLAND_DISPLAY set at startup) uses kajo-comp-<pid>.sock and exports KAJO_COMP_SOCKET (#10)
+XDG_RUNTIME_DIR="$SOCK_RT" XDG_CONFIG_HOME="$SOCK_RT" WAYLAND_DISPLAY="wayland-host-fake" \
+    timeout 30 "$KC" -q --exit-with-command -- sh -c "
+        set -e
+        case \"\$KAJO_COMP_SOCKET\" in
+            '$SOCK_RT'/kajo-comp-*.sock) ;;
+            *) exit 1 ;;
+        esac
+        \"$KC\" msg get-workspaces | grep -q '\"ok\"'
+    " || IPC_OWN_RC=1
+
+# Instance 1 is still reachable after nested instance exits
+XDG_RUNTIME_DIR="$SOCK_RT" "$KC" msg get-workspaces | grep -q '"ok"' || IPC_OWN_RC=1
+
+touch "$INST1_DONE"
+wait "$INST1_PID" 2>/dev/null || true
+check "IPC socket ownership (#7-#10): live socket protection, safe destructor, stale rebind & nested pid socket" 0 $IPC_OWN_RC
+
 timeout 60 "$KC" -q --exit-with-command -- "$CL" churn 200
 check "200 connect/disconnect cycles" 0 $?
 

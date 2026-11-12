@@ -51,6 +51,7 @@ struct wlr_pointer_gestures_v1;
 struct wlr_relative_pointer_manager_v1;
 struct wlr_renderer;
 struct wlr_scene;
+struct wlr_scene_buffer;
 struct wlr_scene_node;
 struct wlr_scene_output_layout;
 struct wlr_scene_rect;
@@ -205,6 +206,7 @@ typedef struct CompServer {
 
     int                                   startup_pid;  /* 0 when none or already exited */
     int                                   exit_status;  /* main() returns this */
+    bool                                  nested_at_startup; /* true if WAYLAND_DISPLAY was set before start */
 
     /* Optional hook for tests/binds: called for every handled key press
      * before it is forwarded. Return true to consume. */
@@ -309,6 +311,7 @@ struct wlr_buffer *comp_text_render_badge(const char *text, double scale,
                                           const float fg_rgba[4], const float bg_rgba[4],
                                           const float border_rgba[4], int pad_x, int pad_y,
                                           int *out_logical_w, int *out_logical_h);
+void               comp_scene_buffer_set_owned_buffer(struct wlr_scene_buffer *sbuf, struct wlr_buffer *buf);
 /* comp_switcher.c */
 void comp_switcher_init(CompServer *server);
 bool comp_switcher_is_active(const CompServer *server);
@@ -359,9 +362,10 @@ bool   comp_input_switch_keyboard_layout(CompServer *server, int idx);
 size_t comp_input_get_keyboard_layouts(const CompServer *server, const char **names_out,
                                        size_t max_names, uint32_t *current_idx_out);
 /* comp_ipc.c */
-bool comp_ipc_init(CompServer *server);
-void comp_ipc_finish(CompServer *server);
-void comp_ipc_ensure_socket(CompServer *server);
+bool        comp_ipc_init(CompServer *server);
+void        comp_ipc_finish(CompServer *server);
+void        comp_ipc_ensure_socket(CompServer *server);
+const char *comp_ipc_socket_path(const CompServer *server);
 char *comp_server_resolve_config_dir(void *talloc_ctx, const CompServerOptions *opts);
 bool comp_server_reload_config(CompServer *server);
 void comp_ipc_emit_workspaces(CompServer *server);

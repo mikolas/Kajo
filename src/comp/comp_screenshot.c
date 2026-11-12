@@ -23,7 +23,9 @@
 #include <time.h>
 #include <unistd.h>
 #include <wlr/render/allocator.h>
+#include <wlr/render/color.h>
 #include <wlr/render/drm_format_set.h>
+#include <wlr/render/interface.h>
 #include <wlr/render/pass.h>
 #include <wlr/render/swapchain.h>
 #include <wlr/render/wlr_renderer.h>
@@ -631,6 +633,48 @@ handle_worker_notify_fd(int fd, uint32_t mask, void *data)
 
 /* ── Scene subtree offscreen rendering & pixel readback ── */
 
+static float
+transfer_function_luminance_multiplier_to_srgb(enum wlr_color_transfer_function tf)
+{
+    /* Matches wlroots color_transfer_function_get_default_luminance() against sRGB (ref=80, max=80) */
+    float src_max = 80.0f;
+    float src_ref = 80.0f;
+    switch (tf) {
+    case WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ:
+        src_max = 10000.0f;
+        src_ref = 203.0f;
+        break;
+    case WLR_COLOR_TRANSFER_FUNCTION_BT1886:
+        src_max = 100.0f;
+        src_ref = 100.0f;
+        break;
+    case WLR_COLOR_TRANSFER_FUNCTION_SRGB:
+    case WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR:
+    case WLR_COLOR_TRANSFER_FUNCTION_GAMMA22:
+        break;
+    }
+    return (80.0f / src_ref) * (src_max / 80.0f);
+}
+
+static bool
+clip_box_to_pass(int x, int y, int w, int h, int pass_w, int pass_h,
+                 struct wlr_box *out_box)
+{
+    if (w <= 0 || h <= 0 || pass_w <= 0 || pass_h <= 0)
+        return false;
+    int x0 = x < 0 ? 0 : x;
+    int y0 = y < 0 ? 0 : y;
+    int x1 = (x + w > pass_w) ? pass_w : (x + w);
+    int y1 = (y + h > pass_h) ? pass_h : (y + h);
+    if (x1 <= x0 || y1 <= y0)
+        return false;
+    out_box->x      = x0;
+    out_box->y      = y0;
+    out_box->width  = x1 - x0;
+    out_box->height = y1 - y0;
+    return true;
+}
+
 static void
 render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pass,
                       struct wlr_scene_node *node, int parent_lx, int parent_ly,
@@ -661,19 +705,18 @@ render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pas
         int ry = (int)lround((double)(ly - origin_ly) * scale);
         int rw = (int)lround((double)(lx - origin_lx + rect->width) * scale) - rx;
         int rh = (int)lround((double)(ly - origin_ly + rect->height) * scale) - ry;
-        if (rw <= 0 || rh <= 0 || rx >= pass_w || ry >= pass_h || rx + rw <= 0 || ry + rh <= 0)
+        struct wlr_box cbox;
+        if (!clip_box_to_pass(rx, ry, rw, rh, pass_w, pass_h, &cbox))
             return;
         wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
-            .box = { .x = rx, .y = ry, .width = rw, .height = rh },
+            .box = cbox,
             .color = {
                 .r = rect->color[0],
                 .g = rect->color[1],
                 .b = rect->color[2],
                 .a = rect->color[3],
             },
-            .blend_mode = rect->color[3] < 1.0f
-                              ? WLR_RENDER_BLEND_MODE_PREMULTIPLIED
-                              : WLR_RENDER_BLEND_MODE_NONE,
+            .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
         });
         return;
     }
@@ -690,48 +733,90 @@ render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pas
         int by = (int)lround((double)(ly - origin_ly) * scale);
         int bw = (int)lround((double)(lx - origin_lx + log_w) * scale) - bx;
         int bh = (int)lround((double)(ly - origin_ly + log_h) * scale) - by;
-        if (bw <= 0 || bh <= 0 || bx >= pass_w || by >= pass_h || bx + bw <= 0 || by + bh <= 0)
+        struct wlr_box cbox;
+        if (!clip_box_to_pass(bx, by, bw, bh, pass_w, pass_h, &cbox))
             return;
 
+        struct wlr_client_buffer *cbuf = wlr_client_buffer_get(sbuf->buffer);
         struct wlr_single_pixel_buffer_v1 *spb =
-            wlr_single_pixel_buffer_v1_try_from_buffer(sbuf->buffer);
+            wlr_single_pixel_buffer_v1_try_from_buffer(
+                (cbuf && cbuf->source) ? cbuf->source : sbuf->buffer);
         if (spb) {
             float op = sbuf->opacity;
             float a = ((float)spb->a / (float)UINT32_MAX) * op;
             wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
-                .box = { .x = bx, .y = by, .width = bw, .height = bh },
+                .box = cbox,
                 .color = {
                     .r = ((float)spb->r / (float)UINT32_MAX) * op,
                     .g = ((float)spb->g / (float)UINT32_MAX) * op,
                     .b = ((float)spb->b / (float)UINT32_MAX) * op,
                     .a = a,
                 },
-                .blend_mode = a < 1.0f
-                                  ? WLR_RENDER_BLEND_MODE_PREMULTIPLIED
-                                  : WLR_RENDER_BLEND_MODE_NONE,
+                .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
             });
             return;
         }
 
-        struct wlr_client_buffer *cbuf = wlr_client_buffer_get(sbuf->buffer);
         struct wlr_texture *tex = (cbuf && cbuf->texture)
                                       ? cbuf->texture
                                       : wlr_texture_from_buffer(renderer, sbuf->buffer);
         if (!tex)
             return;
+
+        struct wlr_fbox src_box = sbuf->src_box;
+        if (cbox.x != bx || cbox.y != by || cbox.width != bw || cbox.height != bh) {
+            if (wlr_fbox_empty(&src_box)) {
+                int tw = (int)tex->width;
+                int th = (int)tex->height;
+                wlr_output_transform_coords(sbuf->transform, &tw, &th);
+                src_box = (struct wlr_fbox){
+                    .x = 0.0,
+                    .y = 0.0,
+                    .width  = (double)(tw > 0 ? tw : sbuf->buffer->width),
+                    .height = (double)(th > 0 ? th : sbuf->buffer->height),
+                };
+            }
+            double sx_scale = src_box.width / (double)bw;
+            double sy_scale = src_box.height / (double)bh;
+            src_box.x      += (double)(cbox.x - bx) * sx_scale;
+            src_box.y      += (double)(cbox.y - by) * sy_scale;
+            src_box.width   = (double)cbox.width * sx_scale;
+            src_box.height  = (double)cbox.height * sy_scale;
+        }
+
+        struct wlr_color_primaries primaries_val;
+        const struct wlr_color_primaries *primaries = NULL;
+        if (sbuf->primaries != 0) {
+            wlr_color_primaries_from_named(&primaries_val, sbuf->primaries);
+            primaries = &primaries_val;
+        }
+        float lum_mult = transfer_function_luminance_multiplier_to_srgb(sbuf->transfer_function);
         float alpha = sbuf->opacity;
         wlr_render_pass_add_texture(pass, &(struct wlr_render_texture_options){
-            .texture     = tex,
-            .src_box     = sbuf->src_box,
-            .dst_box     = { .x = bx, .y = by, .width = bw, .height = bh },
-            .transform   = wlr_output_transform_invert(sbuf->transform),
-            .alpha       = &alpha,
-            .filter_mode = sbuf->filter_mode,
-            .blend_mode  = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
+            .texture              = tex,
+            .src_box              = src_box,
+            .dst_box              = cbox,
+            .transform            = wlr_output_transform_invert(sbuf->transform),
+            .alpha                = &alpha,
+            .filter_mode          = sbuf->filter_mode,
+            .blend_mode           = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,
+            .transfer_function    = sbuf->transfer_function,
+            .primaries            = primaries,
+            .color_encoding       = sbuf->color_encoding,
+            .color_range          = sbuf->color_range,
+            .luminance_multiplier = &lum_mult,
         });
         if (!cbuf || !cbuf->texture)
             wlr_texture_destroy(tex);
     }
+}
+
+static const struct wlr_drm_format_set *
+renderer_get_render_formats(struct wlr_renderer *r)
+{
+    if (!r || !r->WLR_PRIVATE.impl || !r->WLR_PRIVATE.impl->get_render_formats)
+        return NULL;
+    return r->WLR_PRIVATE.impl->get_render_formats(r);
 }
 
 static struct wlr_buffer *
@@ -740,23 +825,35 @@ allocate_offscreen_buffer(CompServer *s, int width, int height)
     if (!s || !s->allocator || !s->renderer || width <= 0 || height <= 0)
         return NULL;
 
+    const struct wlr_drm_format_set *render_fmts =
+        renderer_get_render_formats(s->renderer);
     const struct wlr_drm_format_set *tex_fmts =
         wlr_renderer_get_texture_formats(s->renderer, s->allocator->buffer_caps);
-    if (tex_fmts) {
+    if (render_fmts) {
+        struct wlr_drm_format_set usable = {0};
+        const struct wlr_drm_format_set *pick_set = render_fmts;
+        if (tex_fmts && wlr_drm_format_set_intersect(&usable, render_fmts, tex_fmts))
+            pick_set = &usable;
+
         static const uint32_t k_try_fmts[] = {
             DRM_FORMAT_ARGB8888,
-            DRM_FORMAT_XRGB8888,
             DRM_FORMAT_ABGR8888,
+            DRM_FORMAT_XRGB8888,
             DRM_FORMAT_XBGR8888,
         };
         for (size_t i = 0; i < sizeof(k_try_fmts) / sizeof(k_try_fmts[0]); i++) {
-            const struct wlr_drm_format *fmt = wlr_drm_format_set_get(tex_fmts, k_try_fmts[i]);
+            if (tex_fmts && !wlr_drm_format_set_get(tex_fmts, k_try_fmts[i]))
+                continue;
+            const struct wlr_drm_format *fmt = wlr_drm_format_set_get(pick_set, k_try_fmts[i]);
             if (fmt) {
                 struct wlr_buffer *b = wlr_allocator_create_buffer(s->allocator, width, height, fmt);
-                if (b)
+                if (b) {
+                    wlr_drm_format_set_finish(&usable);
                     return b;
+                }
             }
         }
+        wlr_drm_format_set_finish(&usable);
     }
 
     struct wlr_output *out = comp_server_primary_output(s);
@@ -764,6 +861,44 @@ allocate_offscreen_buffer(CompServer *s, int width, int height)
         return wlr_allocator_create_buffer(s->allocator, width, height, &out->swapchain->format);
     }
     return NULL;
+}
+
+static void
+convert_pixels_to_argb8888(uint8_t *pixels, int width, int height, uint32_t fmt)
+{
+    uint32_t *p32 = (uint32_t *)(void *)pixels;
+    size_t total = (size_t)width * (size_t)height;
+    switch (fmt) {
+    case DRM_FORMAT_ARGB8888:
+        break;
+    case DRM_FORMAT_XRGB8888:
+        for (size_t i = 0; i < total; i++)
+            p32[i] |= 0xff000000u;
+        break;
+    case DRM_FORMAT_ABGR8888:
+        for (size_t i = 0; i < total; i++) {
+            uint32_t v = p32[i];
+            p32[i] = (v & 0xff00ff00u) | ((v & 0x00ff0000u) >> 16) | ((v & 0x000000ffu) << 16);
+        }
+        break;
+    case DRM_FORMAT_XBGR8888:
+        for (size_t i = 0; i < total; i++) {
+            uint32_t v = p32[i];
+            p32[i] = 0xff000000u | (v & 0x0000ff00u) | ((v & 0x00ff0000u) >> 16) | ((v & 0x000000ffu) << 16);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static bool
+is_supported_read_format(uint32_t fmt)
+{
+    return fmt == DRM_FORMAT_ARGB8888 ||
+           fmt == DRM_FORMAT_ABGR8888 ||
+           fmt == DRM_FORMAT_XRGB8888 ||
+           fmt == DRM_FORMAT_XBGR8888;
 }
 
 static uint8_t *
@@ -818,36 +953,39 @@ render_subtree_to_argb8888(CompServer *s, struct wlr_scene_node *root_node,
     bool read_ok = false;
     struct wlr_texture *tex = wlr_texture_from_buffer(s->renderer, gpu_buf);
     if (tex) {
-        read_ok = wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
-            .data   = pixels,
-            .format = DRM_FORMAT_ARGB8888,
-            .stride = (uint32_t)stride,
-        });
-        if (!read_ok) {
+        uint32_t pref_fmt = wlr_texture_preferred_read_format(tex);
+        if (is_supported_read_format(pref_fmt)) {
             read_ok = wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
                 .data   = pixels,
-                .format = DRM_FORMAT_XRGB8888,
+                .format = pref_fmt,
                 .stride = (uint32_t)stride,
             });
-            if (read_ok) {
-                uint32_t *p32 = (uint32_t *)(void *)pixels;
-                size_t total = (size_t)phys_w * (size_t)phys_h;
-                for (size_t i = 0; i < total; i++)
-                    p32[i] |= 0xff000000u;
-            }
+            if (read_ok)
+                convert_pixels_to_argb8888(pixels, phys_w, phys_h, pref_fmt);
         }
+
         if (!read_ok) {
-            read_ok = wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
-                .data   = pixels,
-                .format = DRM_FORMAT_ABGR8888,
-                .stride = (uint32_t)stride,
-            });
-            if (read_ok) {
-                uint32_t *p32 = (uint32_t *)(void *)pixels;
-                size_t total = (size_t)phys_w * (size_t)phys_h;
-                for (size_t i = 0; i < total; i++) {
-                    uint32_t v = p32[i];
-                    p32[i] = (v & 0xff00ff00u) | ((v & 0x00ff0000u) >> 16) | ((v & 0x000000ffu) << 16);
+            static const uint32_t k_fallback_fmts[] = {
+                DRM_FORMAT_ARGB8888,
+                DRM_FORMAT_ABGR8888,
+                DRM_FORMAT_XRGB8888,
+                DRM_FORMAT_XBGR8888,
+            };
+            for (size_t i = 0; i < sizeof(k_fallback_fmts) / sizeof(k_fallback_fmts[0]); i++) {
+                uint32_t ffmt = k_fallback_fmts[i];
+                if (ffmt == pref_fmt)
+                    continue;
+                read_ok = wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+                    .data   = pixels,
+                    .format = ffmt,
+                    .stride = (uint32_t)stride,
+                });
+                if (read_ok) {
+                    wlr_log(WLR_ERROR,
+                            "screenshot texture readback used fallback format 0x%08x (preferred=0x%08x)",
+                            ffmt, pref_fmt);
+                    convert_pixels_to_argb8888(pixels, phys_w, phys_h, ffmt);
+                    break;
                 }
             }
         }
@@ -1010,7 +1148,7 @@ update_selection_scene(CompScreenshot *ss)
     struct wlr_buffer *bbuf = comp_text_render_badge(
         badge_str, ss->scale, k_badge_fg, k_badge_bg, k_badge_border, 8, 6, &bw, &bh);
     if (bbuf && ss->badge_buf) {
-        wlr_scene_buffer_set_buffer(ss->badge_buf, bbuf);
+        comp_scene_buffer_set_owned_buffer(ss->badge_buf, bbuf);
         wlr_buffer_drop(bbuf);
         wlr_scene_buffer_set_dest_size(ss->badge_buf, bw, bh);
 
@@ -1211,10 +1349,12 @@ comp_screenshot_interactive(CompServer *s)
     wlr_scene_node_set_position(&ss->tree->node, obox.x, obox.y);
     wlr_scene_node_raise_to_top(&ss->tree->node);
 
-    ss->frozen_buf = wlr_scene_buffer_create(ss->tree, fbuf);
-    wlr_buffer_drop(fbuf);
-    if (ss->frozen_buf)
+    ss->frozen_buf = wlr_scene_buffer_create(ss->tree, NULL);
+    if (ss->frozen_buf) {
+        comp_scene_buffer_set_owned_buffer(ss->frozen_buf, fbuf);
         wlr_scene_buffer_set_dest_size(ss->frozen_buf, obox.width, obox.height);
+    }
+    wlr_buffer_drop(fbuf);
 
     const float *accent = s->config ? s->config->switcher_active_rgba : k_default_accent;
     for (int i = 0; i < 4; i++)

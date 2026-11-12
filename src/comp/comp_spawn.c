@@ -8,9 +8,11 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "core/comp_schema_keys.h"
 
 #include <errno.h>
 #include <signal.h>
+#include <stdlib.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -18,6 +20,9 @@ int
 comp_spawn(CompServer *s, const char *const *argv)
 {
     COMP_WARN_RETURN(s && argv && argv[0], -1);
+    const char *ipc_sock = comp_ipc_socket_path(s);
+    if (ipc_sock && *ipc_sock)
+        setenv(COMP_IPC_ENV_SOCKET, ipc_sock, 1);
     pid_t pid = fork();
     if (pid < 0) {
         wlr_log_errno(WLR_ERROR, "fork");

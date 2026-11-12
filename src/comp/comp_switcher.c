@@ -271,12 +271,13 @@ switcher_rebuild_scene(CompSwitcher *sw)
             label, SWITCHER_TITLE_W, SWITCHER_TITLE_H, scale,
             selected ? k_title_sel : k_title_unsel, NULL, NULL, 0, 2);
         if (lbuf) {
-            struct wlr_scene_buffer *sbuf = wlr_scene_buffer_create(sw->tree, lbuf);
-            wlr_buffer_drop(lbuf);
+            struct wlr_scene_buffer *sbuf = wlr_scene_buffer_create(sw->tree, NULL);
             if (sbuf) {
+                comp_scene_buffer_set_owned_buffer(sbuf, lbuf);
                 wlr_scene_node_set_position(&sbuf->node, cx + SWITCHER_TITLE_X, cy + SWITCHER_TITLE_Y);
                 wlr_scene_buffer_set_dest_size(sbuf, SWITCHER_TITLE_W, SWITCHER_TITLE_H);
             }
+            wlr_buffer_drop(lbuf);
         }
 
         /* Card border: 2px active/urgent on selected card, 1px #2b2b2b/urgent on unselected */
