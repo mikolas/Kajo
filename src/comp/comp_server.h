@@ -16,6 +16,7 @@
 #include "core/comp_motion.h"
 #include "core/comp_rules.h"
 #include "core/comp_touch.h"
+#include "core/comp_gesture.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -185,6 +186,12 @@ typedef struct CompServer {
     unsigned                              n_touch;
     CompTouchTracker                      touch_tracker;
     CompTouchpadSwipe                     touchpad_swipe;
+    /* 3-finger drag & flick (spec §3.15 GS1–GS6, comp_drag.c) */
+    CompGesture                           drag;
+    bool                                  drag_active;
+    int                                   drag_source;   /* CompDragSource */
+    CompMotionDragAxis                    drag_axis;     /* NONE until the gesture locked an axis */
+    double                                drag_prev_x, drag_prev_y; /* touchscreen centroid, normalized */
     double                                wheel_last_fire_sec[8];
 
     /* Usable working area after layer-shell exclusive zones (logical px) */
@@ -412,6 +419,17 @@ void comp_ipc_emit_outputs(CompServer *server);
 void comp_ipc_emit_touch_bezel_swipe(CompServer *server, const char *edge, double x_ratio);
 void comp_ipc_emit_screenshot_saved(CompServer *server, const char *path, bool copied);
 void comp_ipc_fuzz_bytes(CompServer *server, const uint8_t *data, size_t len);
+/* comp_drag.c: 3-finger touchscreen / touchpad drag & flick (spec §3.15 GS1–GS6).
+ * Deltas are logical px in content direction (+x: fingers moved right). */
+typedef enum {
+    COMP_DRAG_SOURCE_TOUCH = 1,
+    COMP_DRAG_SOURCE_TOUCHPAD,
+} CompDragSource;
+bool comp_drag_begin(CompServer *server, CompDragSource source);
+/* Returns true if this delta locked the gesture to an axis (clients should be cancelled). */
+bool comp_drag_motion(CompServer *server, double dx, double dy, uint32_t time_msec);
+void comp_drag_end(CompServer *server, uint32_t time_msec, bool cancel);
+bool comp_drag_is_active(const CompServer *server, CompDragSource source);
 /* comp_spawn.c: fork/exec without a shell, child in its own session with WAYLAND_DISPLAY set.
  * Returns the pid or -1. */
 int  comp_spawn(CompServer *server, const char *const *argv);

@@ -41,6 +41,7 @@ typedef struct {
     bool     focus_floating;
     bool     center_once;
     bool     center_visible_once;
+    uint64_t id;            /* stable across reordering and removal of other workspaces */
 } Workspace;
 
 struct CompLayout {
@@ -48,6 +49,7 @@ struct CompLayout {
     Workspace       *ws;
     size_t           nws, capws;
     size_t           active;
+    uint64_t         next_ws_id;
 };
 
 /* ───────────────────────── small helpers ───────────────────────── */
@@ -158,6 +160,7 @@ append_empty_workspace(CompLayout *L)
     if (!grow((void **)&L->ws, &L->capws, L->nws + 1, sizeof(Workspace)))
         return false;
     memset(&L->ws[L->nws], 0, sizeof(Workspace));
+    L->ws[L->nws].id = ++L->next_ws_id;
     L->nws++;
     return true;
 }
@@ -553,6 +556,45 @@ comp_layout_focus_workspace_index(CompLayout *L, size_t index)
     L->active = index;
     normalize_workspaces(L);
     return true;
+}
+
+uint64_t
+comp_layout_workspace_id(const CompLayout *L, size_t index)
+{
+    return (L && index < L->nws) ? L->ws[index].id : 0;
+}
+
+size_t
+comp_layout_column_count(const CompLayout *L, size_t ws_index)
+{
+    return (L && ws_index < L->nws) ? L->ws[ws_index].n : 0;
+}
+
+bool
+comp_layout_focused_column(const CompLayout *L, size_t *out_column)
+{
+    if (!L)
+        return false;
+    const Workspace *ws = active_ws(L);
+    if (ws->n == 0 || ws->focus_floating)
+        return false;
+    if (out_column)
+        *out_column = ws->focus;
+    return true;
+}
+
+bool
+comp_layout_focus_column_index(CompLayout *L, size_t column)
+{
+    if (!L)
+        return false;
+    Workspace *ws = active_ws(L);
+    if (column >= ws->n)
+        return false;
+    bool changed = ws->focus != column || ws->focus_floating;
+    ws->focus          = column;
+    ws->focus_floating = false;
+    return changed;
 }
 
 static bool
@@ -1108,14 +1150,15 @@ emit(CompWindowGeometry *out, size_t max, size_t *k, CompWindowGeometry g)
 }
 
 size_t
-comp_layout_arrange(const CompLayout *L, double view_w, double view_h,
-                    CompWindowGeometry *out, size_t max)
+comp_layout_arrange_workspace(const CompLayout *L, size_t ws_index, double view_w, double view_h,
+                              CompWindowGeometry *out, size_t max)
 {
-    if (!L || !(view_w > 0.0) || !(view_h > 0.0) || !isfinite(view_w) || !isfinite(view_h))
+    if (!L || ws_index >= L->nws ||
+        !(view_w > 0.0) || !(view_h > 0.0) || !isfinite(view_w) || !isfinite(view_h))
         return 0;
     const CompLayoutConfig *cfg = &L->cfg;
-    const Workspace *ws = active_ws(L);
-    CompWinId focused = comp_layout_focused_window(L);
+    const Workspace *ws = &L->ws[ws_index];
+    CompWinId focused = ws_index == L->active ? comp_layout_focused_window(L) : 0;
     size_t k = 0;
 
     double x = cfg->gap;
@@ -1184,15 +1227,47 @@ comp_layout_arrange(const CompLayout *L, double view_w, double view_h,
     return k;
 }
 
-double
-comp_layout_view_target(CompLayout *L, double view_w, double current)
+size_t
+comp_layout_arrange(const CompLayout *L, double view_w, double view_h,
+                    CompWindowGeometry *out, size_t max)
 {
-    if (!L || !(view_w > 0.0) || !isfinite(view_w))
-        return 0.0;
-    if (!isfinite(current))
-        current = 0.0;
-    const CompLayoutConfig *cfg = &L->cfg;
-    Workspace *ws = active_ws(L);
+    return L ? comp_layout_arrange_workspace(L, L->active, view_w, view_h, out, max) : 0;
+}
+
+/* Camera position that shows column `idx` of `ws` as if it were focused, starting
+ * from camera `current` (V1–V4, V7). Pure: no one-shot centring flags. */
+static double
+view_for_column(const CompLayoutConfig *cfg, const Workspace *ws, size_t idx,
+                double view_w, double current)
+{
+    const Column *c = &ws->cols[idx];
+    double x  = column_x(cfg, ws, idx, view_w);
+    double w  = column_px_width(cfg, c, view_w);
+    double centered = x + w / 2.0 - view_w / 2.0;
+
+    /* V7: Fullscreen column aligns its left edge to the viewport */
+    if (c->fullscreen)
+        return x;
+    double total = strip_width(cfg, ws, view_w);
+    if (cfg->always_center_single_column && total <= view_w + WIDTH_EPS)
+        return (total - view_w) / 2.0;
+    if (cfg->center_mode == COMP_CENTER_ALWAYS)
+        return centered;
+
+    double left  = x - cfg->gap;
+    double right = x + w + cfg->gap;
+    if (right - left > view_w)
+        return cfg->center_mode == COMP_CENTER_ON_OVERFLOW ? centered : left;
+    if (left < current)
+        return left;
+    if (right > current + view_w)
+        return right - view_w;
+    return current;
+}
+
+static double
+workspace_view_target(const CompLayoutConfig *cfg, Workspace *ws, double view_w, double current)
+{
     if (ws->n == 0) {
         ws->center_once = false;
         ws->center_visible_once = false;
@@ -1201,19 +1276,16 @@ comp_layout_view_target(CompLayout *L, double view_w, double current)
     const Column *c = &ws->cols[ws->focus];
     double x  = column_x(cfg, ws, ws->focus, view_w);
     double w  = column_px_width(cfg, c, view_w);
-    double centered = x + w / 2.0 - view_w / 2.0;
 
-    /* V7: Fullscreen column aligns its left edge to the viewport */
     if (c->fullscreen) {
         ws->center_once = false;
         ws->center_visible_once = false;
         return x;
     }
-
     if (ws->center_once) {
         ws->center_once = false;
         ws->center_visible_once = false;
-        return centered;
+        return x + w / 2.0 - view_w / 2.0;
     }
     if (ws->center_visible_once) {
         ws->center_visible_once = false;
@@ -1238,21 +1310,36 @@ comp_layout_view_target(CompLayout *L, double view_w, double current)
                             column_px_width(cfg, &ws->cols[last], view_w);
         return (left_edge + right_edge) / 2.0 - view_w / 2.0;
     }
-    double total = strip_width(cfg, ws, view_w);
-    if (cfg->always_center_single_column && total <= view_w + WIDTH_EPS)
-        return (total - view_w) / 2.0;
-    if (cfg->center_mode == COMP_CENTER_ALWAYS)
-        return centered;
+    return view_for_column(cfg, ws, ws->focus, view_w, current);
+}
 
-    double left  = x - cfg->gap;
-    double right = x + w + cfg->gap;
-    if (right - left > view_w)
-        return cfg->center_mode == COMP_CENTER_ON_OVERFLOW ? centered : left;
-    if (left < current)
-        return left;
-    if (right > current + view_w)
-        return right - view_w;
-    return current;
+double
+comp_layout_view_target(CompLayout *L, double view_w, double current)
+{
+    return L ? comp_layout_workspace_view_target(L, L->active, view_w, current) : 0.0;
+}
+
+double
+comp_layout_workspace_view_target(CompLayout *L, size_t ws_index, double view_w, double current)
+{
+    if (!L || ws_index >= L->nws || !(view_w > 0.0) || !isfinite(view_w))
+        return 0.0;
+    if (!isfinite(current))
+        current = 0.0;
+    return workspace_view_target(&L->cfg, &L->ws[ws_index], view_w, current);
+}
+
+double
+comp_layout_column_snap_view(const CompLayout *L, size_t column, double view_w, double current)
+{
+    if (!L || !(view_w > 0.0) || !isfinite(view_w))
+        return 0.0;
+    if (!isfinite(current))
+        current = 0.0;
+    const Workspace *ws = active_ws(L);
+    if (column >= ws->n)
+        return 0.0;
+    return view_for_column(&L->cfg, ws, column, view_w, current);
 }
 
 /* ───────────────────────── invariants ───────────────────────── */

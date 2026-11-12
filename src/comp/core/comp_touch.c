@@ -211,18 +211,7 @@ comp_touch_tracker_motion(CompTouchTracker *t, int32_t touch_id, double x_norm, 
     double abs_dx = fabs(avg_dx_mm);
     double abs_dy = fabs(avg_dy_mm);
 
-    /* Spec §3.15.1: 3-Finger Global Swipes (SWIPE_3F_THRESHOLD_MM = 15.0) */
-    if (active == 3 && t->max_fingers_in_gesture == 3) {
-        if (abs_dy >= COMP_SWIPE_3F_THRESHOLD_MM && abs_dy > 1.25 * abs_dx) {
-            t->gesture_triggered = true;
-            return (avg_dy_mm < 0.0) ? COMP_TOUCH_EV_3F_SWIPE_UP : COMP_TOUCH_EV_3F_SWIPE_DOWN;
-        }
-        if (abs_dx >= COMP_SWIPE_3F_THRESHOLD_MM && abs_dx > 1.25 * abs_dy) {
-            t->gesture_triggered = true;
-            return (avg_dx_mm < 0.0) ? COMP_TOUCH_EV_3F_SWIPE_LEFT : COMP_TOUCH_EV_3F_SWIPE_RIGHT;
-        }
-        return COMP_TOUCH_EV_NONE;
-    }
+    /* 3-finger swipes are interactive drags (comp_gesture.c via comp_drag.c, spec §3.15 GS1–GS6). */
 
     /* Spec §3.15.1: 1-Finger Top/Bottom Bezel Swipe (EDGE_BEZEL_RATIO = 0.032, EDGE_SWIPE_MM = 12.0) */
     if (active == 1 && t->max_fingers_in_gesture == 1 && first_idx >= 0) {
@@ -275,48 +264,40 @@ comp_touch_tracker_cancel(CompTouchTracker *t)
     t->gesture_triggered      = false;
 }
 
-/* ───────────────────────── Touchpad 3-Finger Swipes (§3.15.2) ───────────────────────── */
+/* ───────────────────────── Touchscreen centroid (§3.15 GS2) ───────────────────────── */
+
+bool
+comp_touch_tracker_centroid(const CompTouchTracker *t, double *out_x, double *out_y)
+{
+    if (!t)
+        return false;
+    double sx = 0.0, sy = 0.0;
+    int n = 0;
+    for (int i = 0; i < COMP_TOUCH_MAX_SLOTS; i++) {
+        if (!t->slots[i].active)
+            continue;
+        double x = 0.0, y = 0.0;
+        transform_norm_point(t->transform, t->slots[i].cur_x, t->slots[i].cur_y, &x, &y);
+        sx += x;
+        sy += y;
+        n++;
+    }
+    if (n == 0)
+        return false;
+    if (out_x) *out_x = sx / (double)n;
+    if (out_y) *out_y = sy / (double)n;
+    return true;
+}
+
+/* ───────────────────────── Touchpad 3-finger gesture tracking (§3.15.2) ───────────────────────── */
 
 void
 comp_touchpad_swipe_begin(CompTouchpadSwipe *s, uint32_t fingers)
 {
     if (!s)
         return;
-    s->active    = true;
-    s->triggered = false;
-    s->fingers   = fingers;
-    s->dx_accum  = 0.0;
-    s->dy_accum  = 0.0;
-}
-
-bool
-comp_touchpad_swipe_update(CompTouchpadSwipe *s, uint32_t fingers,
-                           double dx, double dy, bool natural_scroll,
-                           CompAction *out_action)
-{
-    if (!s || !s->active || s->triggered || fingers != 3 || s->fingers != 3 ||
-        !out_action || !isfinite(dx) || !isfinite(dy))
-        return false;
-
-    s->dx_accum += dx;
-    s->dy_accum += dy;
-
-    double abs_dx = fabs(s->dx_accum);
-    double abs_dy = fabs(s->dy_accum);
-
-    if (abs_dx >= COMP_TOUCHPAD_SWIPE_THRESH && abs_dx > 1.25 * abs_dy) {
-        s->triggered = true;
-        bool go_right = natural_scroll ? (s->dx_accum < 0.0) : (s->dx_accum > 0.0);
-        *out_action = go_right ? COMP_ACT_FOCUS_COLUMN_RIGHT : COMP_ACT_FOCUS_COLUMN_LEFT;
-        return true;
-    }
-    if (abs_dy >= COMP_TOUCHPAD_SWIPE_THRESH && abs_dy > 1.25 * abs_dx) {
-        s->triggered = true;
-        bool go_down = natural_scroll ? (s->dy_accum < 0.0) : (s->dy_accum > 0.0);
-        *out_action = go_down ? COMP_ACT_FOCUS_WORKSPACE_DOWN : COMP_ACT_FOCUS_WORKSPACE_UP;
-        return true;
-    }
-    return false;
+    s->active  = true;
+    s->fingers = fingers;
 }
 
 void
@@ -324,9 +305,6 @@ comp_touchpad_swipe_end(CompTouchpadSwipe *s)
 {
     if (!s)
         return;
-    s->active    = false;
-    s->triggered = false;
-    s->fingers   = 0;
-    s->dx_accum  = 0.0;
-    s->dy_accum  = 0.0;
+    s->active  = false;
+    s->fingers = 0;
 }

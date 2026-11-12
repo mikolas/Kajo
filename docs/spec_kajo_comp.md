@@ -277,7 +277,7 @@ Each workspace has one floating layer rendered above the tiled column strip (`fl
 - **WS4 (`move-column-to-workspace-up` / `move-workspace-to-workspace-down`):** Moves the focused column (or, when the floating layer is focused, the focused floating window) to the target workspace and switches focus to follow it. Moving onto the bottom empty workspace appends a new empty workspace per `WS1`.
 - **WS5 (`move-workspace-up` / `move-workspace-down`):** Reorders the active workspace with its upper or lower neighbor without playing a vertical switch animation. Moving the bottom empty workspace upward keeps it focused and creates a new trailing empty workspace at the bottom.
 - **WS6 (Dynamic Indexing):** Workspaces are indexed `1..K` dynamically by their current vertical order (no fixed workspace numbers or named workspaces in v1).
-- **WS7 (Vertical Switch Geometry):** During a workspace switch animation, adjacent workspaces are separated vertically by a gap of $\lfloor 0.10 \times \text{output\_height} \rfloor$.
+- **WS7 (Continuous Workspace Strip):** Workspaces are stacked vertically like one tall strip, adjacent ones separated by a gap of $\lfloor 0.10 \times \text{working\_height} \rfloor$. During a switch (or a vertical drag, §3.15) the outgoing and the incoming workspace stay visible and scroll together; a window is shown while its workspace band intersects the viewport. Each workspace keeps its own horizontal camera, so switching away and back restores its scroll position. Workspaces are followed by a stable identity (`comp_layout_workspace_id()`), so removing an empty workspace above the active one never animates.
 
 ### 3.13 Single-Output Selection & Hotplug Policy (`OUT1–OUT4`)
 
@@ -286,7 +286,7 @@ Each workspace has one floating layer rendered above the tiled column strip (`fl
 - **OUT3 (Disconnect & Reconnect Preservation):** If the active output disconnects and another output is connected, `OUT2` selects the replacement and transfers all workspaces, windows, and camera states intact. If zero outputs remain connected, all workspaces and client windows stay alive in memory and re-bind when an output connects.
 - **OUT4 (Geometry Reflow):** Changes to output mode, scale, transform, or layer-shell exclusive zones preserve the workspace/column/window tree, recomputing proportional tile sizes and re-applying `V1–V4` camera constraints.
 
-### 3.14 Spring Motion Engine (`M1–M5`)
+### 3.14 Spring Motion Engine (`M1–M6`)
 
 All animations in v1 are driven by an analytical 2nd-order spring solver (`src/comp/core/comp_spring.c`, parameterized by `damping_ratio`, `stiffness`, and settling threshold `epsilon`):
 
@@ -297,22 +297,25 @@ All animations in v1 are driven by an analytical 2nd-order spring solver (`src/c
   - `window_movement`: `damping_ratio = 0.75`, `stiffness = 323`, `epsilon = 0.0001`
 - **M3 (Stationary Invariant):** Windows whose on-screen coordinates do not change as a result of an action (`V5`) remain at zero velocity and do not oscillate.
 - **M4 (Cross-Workspace Window Transfer):** A column or floating window moved to another workspace (`WS4`) animates smoothly from its prior on-screen coordinates into its target slot on the destination workspace.
-- **M5 (Immediate Resize, Animated Neighbors):** On width or height changes, the resized client receives a single `xdg_toplevel.configure` with its final target size immediately, while neighboring columns and windows slide into their new positions via `window_movement` springs.
+- **M5 (Single Configure, Animated Size):** On width or height changes, the resized client receives a single `xdg_toplevel.configure` with its final target size immediately. The *displayed* size of tiled windows (border box and surface clip) animates on the `window_movement` spring, alongside neighbouring columns and windows sliding to their new positions; this also applies when nothing else moves (the rightmost column resized into free space). While the displayed size animates, the border box does not hug a smaller client buffer and the window backdrop fills the box. Floating windows (client-driven sizes, interactive resize) take their new size at once.
+- **M6 (Interactive Camera Drag):** While a 3-finger drag is active (§3.15), the dragged camera (the active workspace's horizontal camera, or the vertical workspace strip) follows the fingers directly and is never retargeted by layout changes. On release it continues from the dragged position with the release velocity (`M1`).
 
 ### 3.15 In-Process Touch & Touchpad Gestures, Wheel Cooldown & Tablet Posture
 
 1. **Touchscreen Multi-Finger & Bezel Gesture State Machine:**
    - Handled directly inside `kajo-comp`'s `libinput` touch handler (matching the state machine in `src/hardware/touch_gestures.c`, which disables its client-side `/dev/input/event*` reader when `KAJO_COMP_SOCKET` is active).
    - **Multi-Finger Re-Anchoring:** Up to `10` active touch slots are tracked. Whenever the active finger count increases (`1 -> 2 -> 3`), all active slot origins (`start_x`, `start_y`) re-anchor to their current positions so multi-finger displacement is measured cleanly.
-   - **3-Finger Global Swipes (`SWIPE_3F_THRESHOLD_MM = 15.0`):** When `active_count == 3` and average physical displacement (rotated by the active output transform `0/90/180/270`) reaches $\ge 15.0\text{ mm}$ with dominant-axis dominance ($|\Delta_{\text{dom}}| > 1.25 \times |\Delta_{\text{ortho}}|$):
-     - Swipe Up ($\Delta y < 0$) $\rightarrow$ `focus-workspace-down` (natural scroll)
-     - Swipe Down ($\Delta y > 0$) $\rightarrow$ `focus-workspace-up`
-     - Swipe Left ($\Delta x < 0$) $\rightarrow$ `focus-column-right` (or `focus-workspace-down` when `shell.toml` `[touch].swipe_horizontal = "workspace"`, no-op when `"none"`)
-     - Swipe Right ($\Delta x > 0$) $\rightarrow$ `focus-column-left` (or `focus-workspace-up` when `"workspace"`, no-op when `"none"`)
+   - **3-Finger Drag & Flick:** Three fingers start an interactive drag (`GS1–GS6` below), shared with the touchpad. Finger travel is the change of the centroid of the active fingers, rotated by the output transform and converted to logical px. Lifting the first finger releases the gesture; a 4th finger or a touch cancel cancels it.
    - **1-Finger Top/Bottom Bezel Swipe (`EDGE_BEZEL_RATIO = 0.032`, `EDGE_SWIPE_MM = 12.0`):** When a 1-finger touch begins within `3.2%` of the rotated top or bottom screen edge and moves inward by $\ge 12.0\text{ mm}$ ($|\Delta y| > 1.3 \times |\Delta x|$), `kajo-comp` emits `{"event":"TouchBezelSwipe","edge":"top"|"bottom","x_ratio":<0.0..1.0>}` to subscribed `kajo-comp.sock` clients (§5.3) so `kajo` reveals the autohide panel (`shell_autohide_touch_reveal()`) or triggers the configured edge action (`swipe_center` / `swipe_right`).
-   - **Client Touch Cancellation:** The instant a 3-finger swipe or 1-finger bezel swipe crosses its activation threshold, `kajo-comp` latches `gesture_triggered = true` until all fingers lift and sends `wlr_seat_touch_notify_cancel()` to the client surface so the underlying application never processes stray taps or scrolls.
-2. **Touchpad 3-Finger Swipes (`LIBINPUT_EVENT_GESTURE_SWIPE_*`):**
-   - Accumulates `libinput_event_gesture_get_dx()` / `get_dy()` on 3-finger touchpad swipe events. Once cumulative displacement reaches `40.0` logical units along the dominant axis ($|\Delta_{\text{dom}}| > 1.25 \times |\Delta_{\text{ortho}}|$), triggers `focus-column-left/right` (horizontal) or `focus-workspace-up/down` (vertical), inverting direction when `input.touchpad.natural_scroll = true` (default), and latches until `LIBINPUT_EVENT_GESTURE_SWIPE_END`.
+   - **Client Touch Cancellation:** When the 3rd finger lands, or a 1-finger bezel swipe crosses its activation threshold, `kajo-comp` latches `gesture_triggered = true` until all fingers lift and sends `wlr_seat_touch_notify_cancel()` to the client surface so the underlying application never processes stray taps or scrolls.
+2. **Touchpad 3-Finger Drag & Flick (`LIBINPUT_EVENT_GESTURE_SWIPE_*`):**
+   - 3-finger swipe `begin` / `update` / `end` drive the same drag as the touchscreen (`GS1–GS6`). `libinput` deltas are used as logical px; with `input.touchpad.natural_scroll = true` (default) the content follows the fingers, otherwise it moves against them. `end` with `cancelled` cancels. Swipes with other finger counts are forwarded to clients (`pointer-gestures-v1`).
+   - **GS1 (Axis Lock):** Nothing moves until the finger travel reaches `16` px along one axis with $|\Delta_{\text{dom}}| > 1.25 \times |\Delta_{\text{ortho}}|$; the gesture then locks to that axis.
+   - **GS2 (Follow):** While dragging, the camera follows the fingers 1:1 (camera = start − finger travel): horizontally the active workspace's camera, vertically the workspace strip (`WS7`), so neighbouring columns and workspaces are visible during the drag. Past the first/last column or workspace the camera rubber-bands, at most `30 %` of the viewport beyond the end.
+   - **GS3 (Release & Snap):** On release, the camera position is projected forward by the release velocity (measured over the last `150` ms) times `0.333` s (niri's deceleration). Vertically, the workspace nearest the projection wins, at most one past the workspace nearest the release point. Horizontally, the column whose snapped view (`comp_layout_column_snap_view()`) is nearest wins. A slow drag therefore switches by position, and a short fast flick switches by velocity, like the former discrete swipe. The camera continues from the dragged position with the release velocity (`M6`, `M1`).
+   - **GS4 (Glance & Cancel):** If the projection lands on the starting column or workspace, nothing changes and the camera springs back, so a drag can be used to look at a neighbouring workspace without switching. Lifting with no motion (held still) has no velocity. A cancel (touch cancel, touchpad `cancelled`, a 4th finger, the screen locking) snaps back the same way. A gesture that never locked an axis changes nothing.
+   - **GS5 (Focus):** A horizontal release focuses the snapped column (as in niri); a vertical release focuses the snapped workspace (`WS3`). `shell.toml` `[touch].swipe_horizontal = "workspace"` maps horizontal drags onto the workspace strip (fingers left = next workspace); `"none"` ignores horizontal drags. `[touch].enabled = false` disables the gesture.
+   - **GS6 (Unchanged):** 1-finger bezel swipes, 4-finger gestures (forwarded to clients on the touchpad), keyboard and wheel binds are not affected. No drag starts while locked, during the screenshot UI or the window switcher.
 3. **Wheel Bind Cooldown:**
    - Discrete and high-resolution wheel bindings support `cooldown_ms` (`150` ms default) so a single flick of a free-spinning wheel steps one workspace at a time.
 4. **Convertible Posture Rotation:**
@@ -358,7 +361,7 @@ The screenshot UI is built directly into `kajo-comp` with zero external CLI help
 
 1. **GTK4 CSS & Layer Opacity:**
    - `kajo` surfaces (`kajo`, `kajo-launcher`, `kajo-notification`, `kajo-osk`, `kajo-osd`) render premultiplied-alpha DMABUFs styled by `data/defaults/style.css` and `style.d/00-accent.css`.
-   - `kajo-comp` applies `[[layer_rule]]` `opacity` and `popup_opacity` (`0.85` default) via `wlr_scene_buffer_set_opacity()`. (Multi-pass background blur is deferred to §9; unsupported keys `blur`, `xray`, and `blur_popups` in `rules.toml` emit a non-fatal diagnostic).
+   - `kajo-comp` applies `[[layer_rule]]` `opacity` and `popup_opacity` (`0.85` default) via `wlr_scene_buffer_set_opacity()`. (Multi-pass background blur is deferred to §9.3; unsupported keys `blur`, `xray`, and `blur_popups` in `rules.toml` emit a non-fatal diagnostic).
 2. **`zwlr_layer_shell_v1` Semantics:**
    - Supports animated margin commits for `src/autohide.c`, exclusive zones for `src/panel.c`, `src/osk/osk.c`, and `src/lock/screensaver.c`, `KEYBOARD_INTERACTIVITY_EXCLUSIVE` for the app launcher, and `KEYBOARD_INTERACTIVITY_NONE` for `ShellOSK`.
 
@@ -1121,14 +1124,13 @@ This section is the single ledger of compositor features deferred past v1, recor
 | **HDR10 Output & Mixed SDR/HDR Pipeline (v2)** | Scoped to v2 so v1 ships a rock-solid SDR compositor first. On Host A, `libdisplay-info` 0.3.0 also misses DisplayID 2.0 CTA HDR blocks (fixed in `libdisplay-info` 0.4.0). | Full design and Phase 0 hardware spike findings recorded in §9.2 below. |
 | **Adjustable SDR White Level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) when compositing onto a PQ HDR output and rejects `color_transform` when an output image description is set. | Small patch to `wlr_scene`'s luminance multiplier or upstream `wlroots` proposal in v2. |
 | **Compositor-Side HDR Tone Mapping (BT.2390)** | Stock `wlroots 0.20.2` has no tone-mapping curve in `render/` or `types/`; content exceeding panel peak luminance relies on display hardware tone mapping. | Custom tone-mapping shader pass in v2+. |
-| **Full-Strip Vertical Workspace Scrolling** | v1 hides non-active workspace windows immediately on workspace switch and stores a single `view_x` camera per output, causing outgoing workspace windows to flick off instead of scrolling off-screen simultaneously with incoming workspace windows. | Store per-workspace `view_x` cameras, compute continuous vertical strip offsets (`ws_idx * (vh + ws_gap) - ws_y`), and keep both outgoing and incoming workspace windows enabled during vertical spring transitions (see §9.3). |
-| **Backdrop Blur (Dual-Kawase Frosted Glass)** | `wlr_render_pass` exposes only `add_texture()` and `add_rect()` with no multi-pass downsample/upsample API. | Inject backdrop `wlr_scene_buffer` nodes behind blurred layer surfaces and popups, driven by a scissored 2-pass Dual-Kawase downsample/upsample pipeline (`blur = true`, `popup_blur = true`, `xray = false`; see §9.4). |
+| **Backdrop Blur (Dual-Kawase Frosted Glass)** | `wlr_render_pass` exposes only `add_texture()` and `add_rect()` with no multi-pass downsample/upsample API. | Inject backdrop `wlr_scene_buffer` nodes behind blurred layer surfaces and popups, driven by a scissored 2-pass Dual-Kawase downsample/upsample pipeline (`blur = true`, `popup_blur = true`, `xray = false`; see §9.3). |
 | **Window Open/Close/Resize Shaders** | Same `wlr_render_pass` limitation; closing animations also require freezing textures of unmapped surfaces, and resize crossfades require dual-texture blending. | Defer custom SPIR-V/GLSL window effects. |
 | **Overview Zoom (`toggle-overview`)** | `wlr_scene` has no scene-tree scale transform; zooming requires recomputing per-buffer positions and `wlr_scene_buffer_set_dest_size()` across all surfaces, subsurfaces, and popups. | Implement manual scene-buffer scaling pass post-v1. |
 | **Drop Shadows** | Not built into `wlr_scene` (rounded corners are permanently excluded by the Aero + Metro `0px` radius design system). | Optional shadow rects/nine-patch in a later release. |
 | **OSK Window Push-Up Reflow** | Requires dynamic working-area reflow when `ShellOSK` maps in tablet posture. | Dynamic layer-shell exclusive zone + column viewport offset. |
 | **Interactive Mouse Drag/Resize of Tiled Columns (`Mod + Drag`)** | Keyboard-first workflow + preset sizing cover v1; client-initiated drag/resize is implemented for floating windows (`L8`). | Add `Mod + Left/Right Button` interactive tiled grab in a subsequent point release. |
-| **Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)** | v1 routes `FileChooser` requests to `xdg-desktop-portal-gtk` (`default=gtk` in `kajo-portals.conf`), which renders a GTK3 Adwaita dialog rather than a native Aero + Metro surface. | Implement `org.freedesktop.impl.portal.FileChooser` directly in `kajo-files` (`org.freedesktop.impl.portal.desktop.kajo`) with `zxdg_importer_v2` + `xdg_wm_dialog_v1` parent/modal attachment (see §9.5). |
+| **Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)** | v1 routes `FileChooser` requests to `xdg-desktop-portal-gtk` (`default=gtk` in `kajo-portals.conf`), which renders a GTK3 Adwaita dialog rather than a native Aero + Metro surface. | Implement `org.freedesktop.impl.portal.FileChooser` directly in `kajo-files` (`org.freedesktop.impl.portal.desktop.kajo`) with `zxdg_importer_v2` + `xdg_wm_dialog_v1` parent/modal attachment (see §9.4). |
 | **Additional Layout Extras** | `focus-follows-mouse`, `switch-preset-column-width-back`, `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts, and multi-monitor workspace spanning. | Evaluate individually post-v1. |
 
 ### 9.2 Deferred v2 Design Notes: HDR10 & Phase 0 Hardware Findings
@@ -1144,25 +1146,7 @@ The following facts were verified against `wlroots 0.20.2` (`backend/drm`, `type
 3. **Headless Vulkan Verification:**
    - `WLR_BACKENDS=headless WLR_RENDERER=vulkan` succeeds on Host A with `input_color_transform`, `output_color_transform`, and timeline syncobjs available, and the 6-patch SDR color accuracy self-test (`#000000`, `#111111`, `#1a1a1a`, `#0078d4`, `#808080`, `#ffffff`) reads back bit-exact 8-bit values on both headless and bare-metal `2880×1800`.
 
-### 9.3 Deferred Design Notes: Full-Strip Vertical Workspace Scrolling
-
-In v1 (`comp_layout.c` + `comp_motion.c` + `comp_xdg.c`), switching workspaces updates `active_ws` immediately, disables scene nodes for windows not on `active_ws`, and resets `ws_y` to `(new_ws - old_ws) * (vh + ws_gap)` to decay back to `0`. Consequently, outgoing workspace windows disappear instantly while only the incoming workspace windows slide into view.
-
-To match Niri's continuous vertical strip transition where both outgoing and incoming workspaces remain visible and scroll together:
-
-1. **Per-Workspace Horizontal Camera (`CompWorkspace.view_x` in `src/comp/core/comp_layout.h` & `comp_layout.c`):**
-   - Store `double view_x` per workspace (`CompWorkspace`) rather than a single `view_x` per output so each workspace preserves its own horizontal scroll offset simultaneously during a vertical transition.
-   - Add an explicit `double ws_gap` (default `32` logical px) between stacked workspaces on the vertical axis.
-2. **All-Workspace Layout Solver (`comp_layout_solve` in `src/comp/core/comp_layout.c`):**
-   - Instead of skipping non-active workspaces (`if (c->ws != out->active_ws) continue;`), solve column/window `target_x` and `target_y` across all workspaces on the output using each workspace's own `ws->view_x` and vertical strip offset:
-     $$\text{ws\_offset\_y}(w) = (w - \text{active\_ws}) \cdot (\text{vh} + \text{ws\_gap})$$
-3. **Continuous Vertical Camera Spring (`src/comp/core/comp_motion.c`):**
-   - Replace the relative `ws_y` jump-and-decay with a continuous vertical camera spring targeting `active_ws * (vh + ws_gap)` (or offset each workspace's solved `y` by `ws_y.pos`).
-   - Add `bool on_screen` to `CompSolvedWindow`, set to `true` whenever the window belongs to `active_ws` **or** the vertical `ws_y` spring is actively in flight and the window's vertical bounding box intersects `[vy, vy + vh]`.
-4. **Scene Node Visibility Gate (`comp_server_sync_layout` in `src/comp/comp_xdg.c`):**
-   - Replace `bool visible = (win->workspace_idx == active_ws);` with `bool visible = sw->on_screen;` so outgoing workspace windows smoothly scroll out of the viewport as incoming workspace windows scroll in, and are disabled in `wlr_scene` only after they leave `[vy, vy + vh]` and `ws_y` settles.
-
-### 9.4 Deferred Design Notes: Dual-Kawase Backdrop Blur Pipeline
+### 9.3 Deferred Design Notes: Dual-Kawase Backdrop Blur Pipeline
 
 To restore frosted-glass backdrop blur behind `kajo` layer surfaces and popups (`blur = true`, `popup_blur = true`, `xray = false`) while preserving `wlr_scene_output_commit()` (DRM atomic test-before-commit cascade, damage ring tracking, direct scanout when unblurred, and screencopy):
 
@@ -1184,7 +1168,7 @@ To restore frosted-glass backdrop blur behind `kajo` layer surfaces and popups (
    - **Zero-Cost Idle Fast Path:** If no scene node below `tree_top` / `tree_overlay` intersecting those bounding boxes (expanded by the blur kernel radius) was damaged this frame and no blurred popup moved/resized, skip the blur pass (`0.0 ms` GPU overhead) and reuse the existing `blur_backdrop` buffer.
    - **Dirty Blur Update Path:** When underlying damage intersects a blur rect, render the underlying scene trees clipped to the union of dirty blur rects, run 2 downsample + 2 upsample passes restricted via `glScissor`, and bind the resulting `wlr_buffer` to each `blur_backdrop` `wlr_scene_buffer` with `wlr_scene_buffer_set_source_box()` and `wlr_scene_buffer_set_dest_size()`.
 
-### 9.5 Deferred Design Notes: Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)
+### 9.4 Deferred Design Notes: Native Aero + Metro File Chooser Portal (`org.freedesktop.impl.portal.FileChooser`)
 
 In v1, `data/session/kajo-portals.conf` routes `org.freedesktop.impl.portal.FileChooser` to `xdg-desktop-portal-gtk` (`default=gtk`). To replace the stock GTK3 dialog with a native Aero + Metro file selector across both Kajo apps (`GtkFileDialog` in `kajo-mod`, `kajo-player`, `kajo-ide`) and third-party Wayland apps (browsers, Electron, Flatpak):
 

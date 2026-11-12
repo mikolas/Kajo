@@ -47,6 +47,15 @@ double comp_spring_velocity(const CompSpring *s, double t);
 /* Change the target at time `now`, keeping the current position and velocity. */
 void   comp_spring_retarget(CompSpring *s, double to, double now);
 
+/* Start a new segment at `from` with velocity `v0` (per second) towards `to`.
+ * Used when an interactive gesture hands the position back to the spring (M1). */
+void   comp_spring_launch(CompSpring *s, const CompSpringParams *params,
+                          double from, double to, double v0, double now);
+
+/* Translate the whole segment by `d` (position, target and history), e.g. when the
+ * coordinate origin moves under a running animation. Velocity is unchanged. */
+void   comp_spring_shift(CompSpring *s, double d);
+
 /* True once both the remaining distance and the velocity are within
  * epsilon * scale (velocity measured per second). */
 bool   comp_spring_is_done(const CompSpring *s, double t);

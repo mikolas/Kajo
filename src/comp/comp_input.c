@@ -823,34 +823,7 @@ dispatch_touch_event(CompServer *s, CompTouchGestureEvent ev)
     if (!s || s->locked || ev == COMP_TOUCH_EV_NONE)
         return;
 
-    CompBind b = { .kind = COMP_BIND_LAYOUT };
-    CompTouchSwipeAction horiz = s->config ? s->config->touch_swipe_horizontal : COMP_SWIPE_COLUMN;
-
     switch (ev) {
-    case COMP_TOUCH_EV_3F_SWIPE_UP:
-        b.layout_action = COMP_ACT_FOCUS_WORKSPACE_DOWN;
-        comp_window_handle_bind(s, &b);
-        break;
-    case COMP_TOUCH_EV_3F_SWIPE_DOWN:
-        b.layout_action = COMP_ACT_FOCUS_WORKSPACE_UP;
-        comp_window_handle_bind(s, &b);
-        break;
-    case COMP_TOUCH_EV_3F_SWIPE_LEFT:
-        if (horiz == COMP_SWIPE_NONE)
-            return;
-        b.layout_action = (horiz == COMP_SWIPE_WORKSPACE)
-                              ? COMP_ACT_FOCUS_WORKSPACE_DOWN
-                              : COMP_ACT_FOCUS_COLUMN_RIGHT;
-        comp_window_handle_bind(s, &b);
-        break;
-    case COMP_TOUCH_EV_3F_SWIPE_RIGHT:
-        if (horiz == COMP_SWIPE_NONE)
-            return;
-        b.layout_action = (horiz == COMP_SWIPE_WORKSPACE)
-                              ? COMP_ACT_FOCUS_WORKSPACE_UP
-                              : COMP_ACT_FOCUS_COLUMN_LEFT;
-        comp_window_handle_bind(s, &b);
-        break;
     case COMP_TOUCH_EV_BEZEL_TOP:
         comp_ipc_emit_touch_bezel_swipe(s, COMP_IPC_EDGE_TOP, s->touch_tracker.last_x_ratio);
         break;
@@ -863,6 +836,35 @@ dispatch_touch_event(CompServer *s, CompTouchGestureEvent ev)
     }
 }
 
+/* ── 3-finger touchscreen drag (spec §3.15 GS1–GS6) ── */
+
+static void
+touch_drag_begin(CompServer *s)
+{
+    double cx = 0.0, cy = 0.0;
+    if (!comp_touch_tracker_centroid(&s->touch_tracker, &cx, &cy))
+        return;
+    if (comp_drag_begin(s, COMP_DRAG_SOURCE_TOUCH)) {
+        s->drag_prev_x = cx;
+        s->drag_prev_y = cy;
+    }
+}
+
+static void
+touch_drag_motion(CompServer *s, uint32_t time_msec)
+{
+    double cx = 0.0, cy = 0.0;
+    if (!comp_touch_tracker_centroid(&s->touch_tracker, &cx, &cy))
+        return;
+    double vw = 0.0, vh = 0.0;
+    comp_server_viewport_size(s, &vw, &vh);
+    double dx = (cx - s->drag_prev_x) * vw;
+    double dy = (cy - s->drag_prev_y) * vh;
+    s->drag_prev_x = cx;
+    s->drag_prev_y = cy;
+    comp_drag_motion(s, dx, dy, time_msec);
+}
+
 static void
 cursor_touch_down(void *owner, void *data)
 {
@@ -872,8 +874,16 @@ cursor_touch_down(void *owner, void *data)
 
     s->touch_tracker.transform = primary_comp_transform(s);
     comp_touch_tracker_down(&s->touch_tracker, ev->touch_id, ev->x, ev->y);
-    if (comp_touch_tracker_active_count(&s->touch_tracker) >= 3) {
+    int fingers = comp_touch_tracker_active_count(&s->touch_tracker);
+    if (fingers >= 3) {
+        bool enabled = !s->config || s->config->touch_enabled;
         cancel_all_client_touches(s);
+        if (enabled)
+            s->touch_tracker.gesture_triggered = true;   /* no client touches until all fingers lift */
+        if (fingers == 3 && enabled)
+            touch_drag_begin(s);
+        else if (comp_drag_is_active(s, COMP_DRAG_SOURCE_TOUCH))
+            comp_drag_end(s, ev->time_msec, true);       /* GS4: a 4th finger cancels */
         return;
     }
 
@@ -903,6 +913,10 @@ cursor_touch_up(void *owner, void *data)
     struct wlr_touch_up_event *ev = data;
     comp_lock_idle_notify_activity(s);
     comp_touch_tracker_up(&s->touch_tracker, ev->touch_id);
+    /* GS3: lifting the first finger releases the drag */
+    if (comp_drag_is_active(s, COMP_DRAG_SOURCE_TOUCH) &&
+        comp_touch_tracker_active_count(&s->touch_tracker) < 3)
+        comp_drag_end(s, ev->time_msec, false);
     wlr_seat_touch_notify_up(s->seat, ev->time_msec, ev->touch_id);
 }
 
@@ -916,6 +930,10 @@ cursor_touch_motion(void *owner, void *data)
     bool enabled = !s->config || s->config->touch_enabled;
     s->touch_tracker.transform = primary_comp_transform(s);
     CompTouchGestureEvent gev = comp_touch_tracker_motion(&s->touch_tracker, ev->touch_id, ev->x, ev->y);
+    if (comp_drag_is_active(s, COMP_DRAG_SOURCE_TOUCH)) {
+        touch_drag_motion(s, ev->time_msec);
+        return;
+    }
     if (enabled && gev != COMP_TOUCH_EV_NONE) {
         cancel_all_client_touches(s);
         dispatch_touch_event(s, gev);
@@ -945,6 +963,8 @@ cursor_touch_cancel(void *owner, void *data)
 {
     CompServer *s = owner;
     struct wlr_touch_cancel_event *ev = data;
+    if (comp_drag_is_active(s, COMP_DRAG_SOURCE_TOUCH))
+        comp_drag_end(s, ev->time_msec, true);           /* GS4 */
     comp_touch_tracker_cancel(&s->touch_tracker);
     struct wlr_touch_point *pt = wlr_seat_touch_get_point(s->seat, ev->touch_id);
     if (pt && pt->client)
@@ -968,7 +988,9 @@ cursor_swipe_begin(void *owner, void *data)
     struct wlr_pointer_swipe_begin_event *ev = data;
     comp_lock_idle_notify_activity(s);
     comp_touchpad_swipe_begin(&s->touchpad_swipe, ev->fingers);
-    if (ev->fingers != 3 && s->pointer_gestures)
+    if (ev->fingers == 3)
+        comp_drag_begin(s, COMP_DRAG_SOURCE_TOUCHPAD);   /* GS1–GS6 */
+    else if (s->pointer_gestures)
         wlr_pointer_gestures_v1_send_swipe_begin(s->pointer_gestures, s->seat, ev->time_msec, ev->fingers);
 }
 
@@ -979,14 +1001,11 @@ cursor_swipe_update(void *owner, void *data)
     struct wlr_pointer_swipe_update_event *ev = data;
     comp_lock_idle_notify_activity(s);
     if (s->touchpad_swipe.fingers == 3) {
+        /* Content follows the fingers with natural scrolling, and moves against them without */
         bool nat = !s->config || s->config->touchpad_natural_scroll;
-        bool en  = !s->config || s->config->touch_enabled;
-        CompAction act = COMP_ACT_FOCUS_COLUMN_LEFT;
-        if (en && !s->locked &&
-            comp_touchpad_swipe_update(&s->touchpad_swipe, ev->fingers, ev->dx, ev->dy, nat, &act)) {
-            CompBind b = { .kind = COMP_BIND_LAYOUT, .layout_action = act };
-            comp_window_handle_bind(s, &b);
-        }
+        double sign = nat ? 1.0 : -1.0;
+        if (comp_drag_is_active(s, COMP_DRAG_SOURCE_TOUCHPAD))
+            comp_drag_motion(s, sign * ev->dx, sign * ev->dy, ev->time_msec);
     } else if (s->pointer_gestures) {
         wlr_pointer_gestures_v1_send_swipe_update(s->pointer_gestures, s->seat, ev->time_msec, ev->dx, ev->dy);
     }
@@ -1000,6 +1019,8 @@ cursor_swipe_end(void *owner, void *data)
     comp_lock_idle_notify_activity(s);
     uint32_t prev_fingers = s->touchpad_swipe.fingers;
     comp_touchpad_swipe_end(&s->touchpad_swipe);
+    if (comp_drag_is_active(s, COMP_DRAG_SOURCE_TOUCHPAD))
+        comp_drag_end(s, ev->time_msec, ev->cancelled);
     if (prev_fingers != 3 && s->pointer_gestures)
         wlr_pointer_gestures_v1_send_swipe_end(s->pointer_gestures, s->seat, ev->time_msec, ev->cancelled);
 }

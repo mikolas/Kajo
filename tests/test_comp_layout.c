@@ -522,24 +522,31 @@ test_touch_gestures_and_touchpad_swipes(void)
     comp_touch_tracker_up(&t, 5);
     comp_touch_tracker_set_geometry(&t, 300.0, 200.0, COMP_TRANSFORM_NORMAL);
 
-    /* 5. 3-finger global swipes (up, down, left, right) + progressive 1->2->3 re-anchoring */
+    /* 5. 3-finger touches no longer emit discrete swipes (they are drags, comp_gesture):
+     *    progressive 1->2->3 re-anchoring still holds and the centroid follows the fingers */
     comp_touch_tracker_down(&t, 10, 0.3, 0.5);
     comp_touch_tracker_motion(&t, 10, 0.3, 0.6); /* moved before 2nd/3rd finger land -> re-anchored */
     comp_touch_tracker_down(&t, 11, 0.5, 0.6);
     comp_touch_tracker_down(&t, 12, 0.7, 0.6);
     g_assert_cmpint(comp_touch_tracker_motion(&t, 10, 0.3, 0.50), ==, COMP_TOUCH_EV_NONE);
     g_assert_cmpint(comp_touch_tracker_motion(&t, 11, 0.5, 0.50), ==, COMP_TOUCH_EV_NONE);
-    g_assert_cmpint(comp_touch_tracker_motion(&t, 12, 0.7, 0.50), ==, COMP_TOUCH_EV_3F_SWIPE_UP);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 12, 0.7, 0.50), ==, COMP_TOUCH_EV_NONE);
+    double cx = 0.0, cy = 0.0;
+    g_assert_true(comp_touch_tracker_centroid(&t, &cx, &cy));
+    g_assert_cmpfloat_with_epsilon(cx, 0.5, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cy, 0.5, 1e-9);
     comp_touch_tracker_cancel(&t);
     g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, 0);
+    g_assert_false(comp_touch_tracker_centroid(&t, &cx, &cy));
 
-    comp_touch_tracker_down(&t, 1, 0.3, 0.5);
-    comp_touch_tracker_down(&t, 2, 0.5, 0.5);
-    comp_touch_tracker_down(&t, 3, 0.7, 0.5);
-    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.36, 0.5), ==, COMP_TOUCH_EV_NONE);
-    g_assert_cmpint(comp_touch_tracker_motion(&t, 2, 0.56, 0.5), ==, COMP_TOUCH_EV_NONE);
-    g_assert_cmpint(comp_touch_tracker_motion(&t, 3, 0.76, 0.5), ==, COMP_TOUCH_EV_3F_SWIPE_RIGHT);
+    /* Centroid is reported in the rotated output frame */
+    comp_touch_tracker_set_geometry(&t, 300.0, 200.0, COMP_TRANSFORM_90);
+    comp_touch_tracker_down(&t, 1, 0.2, 0.3);
+    g_assert_true(comp_touch_tracker_centroid(&t, &cx, &cy));
+    g_assert_cmpfloat_with_epsilon(cx, 0.7, 1e-9);   /* 1 - raw_y */
+    g_assert_cmpfloat_with_epsilon(cy, 0.2, 1e-9);   /* raw_x */
     comp_touch_tracker_cancel(&t);
+    comp_touch_tracker_set_geometry(&t, 300.0, 200.0, COMP_TRANSFORM_NORMAL);
 
     /* 6. NaN / Infinity / slot overflow safety */
     comp_touch_tracker_down(&t, 99, NAN, 0.5);
@@ -550,22 +557,14 @@ test_touch_gestures_and_touchpad_swipes(void)
     g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, COMP_TOUCH_MAX_SLOTS);
     comp_touch_tracker_cancel(&t);
 
-    /* 7. Touchpad 3-finger swipe state machine */
+    /* 7. Touchpad 3-finger gesture tracking */
     CompTouchpadSwipe tp;
-    CompAction act = COMP_ACT__COUNT;
     comp_touchpad_swipe_begin(&tp, 3);
-    g_assert_false(comp_touchpad_swipe_update(&tp, 3, NAN, 10.0, true, &act));
-    g_assert_false(comp_touchpad_swipe_update(&tp, 3, -20.0, 0.0, true, &act));
-    g_assert_true(comp_touchpad_swipe_update(&tp, 3, -25.0, 0.0, true, &act));
-    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_COLUMN_RIGHT);
-    /* Already triggered in this gesture */
-    g_assert_false(comp_touchpad_swipe_update(&tp, 3, -50.0, 0.0, true, &act));
+    g_assert_true(tp.active);
+    g_assert_cmpuint(tp.fingers, ==, 3);
     comp_touchpad_swipe_end(&tp);
-
-    comp_touchpad_swipe_begin(&tp, 3);
-    g_assert_true(comp_touchpad_swipe_update(&tp, 3, 0.0, -45.0, true, &act));
-    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_WORKSPACE_DOWN);
-    comp_touchpad_swipe_end(&tp);
+    g_assert_false(tp.active);
+    g_assert_cmpuint(tp.fingers, ==, 0);
 }
 
 int

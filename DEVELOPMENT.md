@@ -192,6 +192,7 @@ tests/
 ├── test_config.c                   Per-domain TOML store tests: defaults parity, round-trip, `conf.d`, patching, subscriptions, migration
 ├── test_comp_spring.c              kajo-comp analytical 2nd-order spring physics & retargeting continuity tests
 ├── test_comp_layout.c              kajo-comp scrolling strip, columns, tabbed/stacked, floating & 60k-step randomized invariant tests
+├── test_comp_motion.c              kajo-comp springs over the layout: animated resize, workspace strip, cameras, 3-finger drag & flick
 ├── test_comp_config.c              comp.toml, outputs.toml, binds.toml, rules.toml & spec_kajo_comp.md zero-diagnostic parity tests
 ├── comp/
 │   ├── comp_test_client.c          Wayland protocol test client (globals, toplevel, layer, lock, screencopy, IPC)
@@ -246,7 +247,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 30 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 31 automated test suites:
 
 ```bash
 # Configure (defaults to prefix=~/.local)
@@ -255,7 +256,7 @@ meson setup builddir
 # Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 30 automated test suites
+# Run all 31 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo
@@ -269,6 +270,7 @@ meson install -C builddir
 | `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
 | `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
 | `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
+| `comp-motion` | `test-comp-motion` | Compositor animation and gestures: animated resize of the rightmost column (the former no-animation case), snap mode and floating sizes, continuous workspace strip, per-workspace cameras, no animation when an empty workspace above is removed, drag override and velocity hand-off on release, stationary windows, stable workspace ids and side-effect-free snap views, and the 3-finger gesture state machine (axis lock, rubber band, velocity, projection, glance/drag/flick snap picks). |
 | `comp-config` | `test-comp-config` | `comp.toml`, `outputs.toml`, `binds.toml`, and `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics. |
 | `fuzz-comp-layout`, `fuzz-comp-config`, `fuzz-ipc-socket` | `test-fuzz-comp-*`, `test-fuzz-ipc-socket` | Corpus-driver builds of the three compositor libFuzzer targets in `tests/fuzz/` (layout engine, TOML config parsers, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC parser/dispatcher). |
 | `comp-headless` | `tests/comp/comp_headless_smoke.sh` | Runs `kajo-comp` on the wlroots headless backend with the pixman renderer and a private `XDG_RUNTIME_DIR`: required globals present, 200 connect/disconnect cycles, toplevel/popup/layer-shell/session-lock lifecycles, IPC queries (`Version`, `Outputs`, `Workspaces`, `Windows`, `KeyboardLayouts`), `EventStream`, actions, `Alt+Tab` switcher, screenshot capture, and `--greeter-mode` lockdown. |

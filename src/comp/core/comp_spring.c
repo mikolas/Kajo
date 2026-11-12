@@ -98,6 +98,23 @@ comp_spring_retarget(CompSpring *s, double to, double now)
     spring_start_segment(s, s->to + d, to, v, now);
 }
 
+void
+comp_spring_launch(CompSpring *s, const CompSpringParams *params,
+                   double from, double to, double v0, double now)
+{
+    s->params = *params;
+    spring_start_segment(s, from, to, isfinite(v0) ? v0 : 0.0, now);
+}
+
+void
+comp_spring_shift(CompSpring *s, double d)
+{
+    if (!isfinite(d))
+        return;
+    s->from += d;
+    s->to   += d;
+}
+
 bool
 comp_spring_is_done(const CompSpring *s, double t)
 {

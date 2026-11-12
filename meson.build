@@ -858,6 +858,7 @@ comp_core_lib = static_library(
     'src/comp/core/comp_rules.c',
     'src/comp/core/comp_config.c',
     'src/comp/core/comp_touch.c',
+    'src/comp/core/comp_gesture.c',
   ),
   c_args: comp_strict_args,
   link_with: comp_toml_lib,
@@ -881,6 +882,14 @@ test_comp_layout_exe = executable(
   build_by_default: false,
 )
 test('comp-layout', test_comp_layout_exe)
+
+test_comp_motion_exe = executable(
+  'test-comp-motion',
+  files('tests/test_comp_motion.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-motion', test_comp_motion_exe)
 
 test_comp_config_exe = executable(
   'test-comp-config',
@@ -923,6 +932,7 @@ kajo_comp_exe = executable(
     'src/comp/comp_protocols.c',
     'src/comp/comp_xwayland.c',
     'src/comp/comp_input.c',
+    'src/comp/comp_drag.c',
     'src/comp/comp_ipc.c',
     'src/comp/comp_spawn.c',
     'src/comp/comp_text.c',
@@ -1070,6 +1080,7 @@ test_fuzz_ipc_socket_exe = executable(
     'src/comp/comp_protocols.c',
     'src/comp/comp_xwayland.c',
     'src/comp/comp_input.c',
+    'src/comp/comp_drag.c',
     'src/comp/comp_ipc.c',
     'src/comp/comp_spawn.c',
     'src/comp/comp_text.c',

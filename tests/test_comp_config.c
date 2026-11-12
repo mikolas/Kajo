@@ -685,14 +685,14 @@ test_touch_gestures_and_transforms(void)
     g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.25, 1e-4);
     comp_touch_tracker_up(&t, 2);
 
-    /* 3. Multi-finger re-anchoring + 3-finger swipe up (dy <= -15mm -> -0.075 on 200mm height) */
+    /* 3. Multi-finger re-anchoring; 3 fingers are a drag (comp_gesture), never a discrete event */
     comp_touch_tracker_down(&t, 10, 0.30, 0.60);
     comp_touch_tracker_motion(&t, 10, 0.30, 0.50); /* moves before 2nd/3rd finger land */
     comp_touch_tracker_down(&t, 11, 0.50, 0.50);
     comp_touch_tracker_down(&t, 12, 0.70, 0.50);   /* re-anchors all 3 slots at y = 0.50 */
     g_assert_cmpint(comp_touch_tracker_motion(&t, 10, 0.30, 0.40), ==, COMP_TOUCH_EV_NONE);
     g_assert_cmpint(comp_touch_tracker_motion(&t, 11, 0.50, 0.40), ==, COMP_TOUCH_EV_NONE);
-    g_assert_cmpint(comp_touch_tracker_motion(&t, 12, 0.70, 0.40), ==, COMP_TOUCH_EV_3F_SWIPE_UP);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 12, 0.70, 0.40), ==, COMP_TOUCH_EV_NONE);
     comp_touch_tracker_up(&t, 10);
     comp_touch_tracker_up(&t, 11);
     comp_touch_tracker_up(&t, 12);
@@ -705,27 +705,6 @@ test_touch_gestures_and_transforms(void)
     comp_touch_tracker_up(&t, 20);
 }
 
-static void
-test_touchpad_swipes(void)
-{
-    CompTouchpadSwipe s;
-    CompAction act = COMP_ACT_FOCUS_COLUMN_LEFT;
-
-    /* Natural scroll = true: 3-finger swipe left (dx < -40) -> focus-column-right */
-    comp_touchpad_swipe_begin(&s, 3);
-    g_assert_false(comp_touchpad_swipe_update(&s, 3, -25.0, 2.0, true, &act));
-    g_assert_true(comp_touchpad_swipe_update(&s, 3, -20.0, 1.0, true, &act));
-    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_COLUMN_RIGHT);
-    /* Latched until swipe_end */
-    g_assert_false(comp_touchpad_swipe_update(&s, 3, -50.0, 0.0, true, &act));
-    comp_touchpad_swipe_end(&s);
-
-    /* Natural scroll = false: 3-finger swipe down (dy > +40) -> focus-workspace-down */
-    comp_touchpad_swipe_begin(&s, 3);
-    g_assert_true(comp_touchpad_swipe_update(&s, 3, 2.0, 45.0, false, &act));
-    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_WORKSPACE_DOWN);
-    comp_touchpad_swipe_end(&s);
-}
 
 static void
 test_greeter_config_filtering(void)
@@ -791,6 +770,5 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
     g_test_add_func("/comp/config/greeter-filtering", test_greeter_config_filtering);
     g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
-    g_test_add_func("/comp/touch/touchpad-swipes", test_touchpad_swipes);
     return g_test_run();
 }

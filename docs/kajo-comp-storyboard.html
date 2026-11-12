@@ -145,11 +145,11 @@
            background: var(--metro-surface-2); font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim); white-space: nowrap; overflow: hidden; }
   footer b { color: var(--metro-warning); }
 
-  /* ── Planned: 3-finger drag (GS1–GS6) ── */
+  /* ── New behaviour toggles and 3-finger drag (GS1–GS6) ── */
   .topbar2 { height: 28px; display: flex; align-items: center; gap: 14px; padding: 0 12px; background: var(--metro-surface-1);
              border-bottom: 1px solid rgba(255,185,0,.25); white-space: nowrap; overflow: hidden; }
-  .seg.planned { border-color: rgba(255,185,0,.45); }
-  .glabel.planned { color: var(--metro-warning); }
+  .seg.newrow { border-color: rgba(255,185,0,.45); }
+  .glabel.newrow { color: var(--metro-warning); }
   .gest-on .output { cursor: grab; touch-action: none; }
   .gest-on.dragging .output { cursor: grabbing; }
   #gestHud { position: absolute; left: 8px; bottom: 8px; z-index: 5; display: none; pointer-events: none; max-width: 70%;
@@ -177,13 +177,13 @@
   <button class="btn" id="btnReset" title="Empty layout, one workspace">RESET</button>
 </header>
 <div class="topbar2">
-  <span class="glabel planned">Planned — not implemented, for review:</span>
-  <div class="group"><span class="glabel planned" title="Planned: displayed width/height animate (M5). instant = v1">Resize</span>
-    <div class="seg planned" id="segResize"><button data-v="0">instant</button><button data-v="1" class="on">animate</button></div></div>
-  <div class="group"><span class="glabel planned" title="Planned: both workspaces stay visible while switching (WS7). v1 = outgoing hidden at once">WS switch</span>
-    <div class="seg planned" id="segWs"><button data-v="v1">v1</button><button data-v="strip" class="on">strip</button></div></div>
-  <div class="group"><span class="glabel planned" title="Planned: mouse drag on the screen = 3-finger touch / touchpad drag (GS1–GS6)">3-finger</span>
-    <div class="seg planned" id="segGest"><button data-v="0">off</button><button data-v="1" class="on">drag</button></div></div>
+  <span class="glabel newrow">New behaviour — switch to v1 to compare:</span>
+  <div class="group"><span class="glabel newrow" title="Displayed width/height animate (M5). instant = old v1 behaviour">Resize</span>
+    <div class="seg newrow" id="segResize"><button data-v="0">instant</button><button data-v="1" class="on">animate</button></div></div>
+  <div class="group"><span class="glabel newrow" title="Both workspaces stay visible while switching (WS7). v1 = old behaviour, outgoing hidden at once">WS switch</span>
+    <div class="seg newrow" id="segWs"><button data-v="v1">v1</button><button data-v="strip" class="on">strip</button></div></div>
+  <div class="group"><span class="glabel newrow" title="Mouse drag on the screen = 3-finger touch / touchpad drag (GS1–GS6)">3-finger</span>
+    <div class="seg newrow" id="segGest"><button data-v="0">off</button><button data-v="1" class="on">drag</button></div></div>
   <span class="glabel">stories 12–14 · drag the screen with the mouse</span>
 </div>
 
@@ -228,7 +228,7 @@
 <footer>
   <span>Illustration of §3 — the spec text is authoritative; where they differ, this page is wrong.</span>
   <span>Single active session output (§1.1, §3.13)</span>
-  <span><b>Planned, not implemented:</b> animated resize, workspace strip, 3-finger drag (yellow toggles, stories 12–14)</span>
+  <span><b>New:</b> animated resize, workspace strip, 3-finger drag (yellow toggles compare with v1, stories 12–14)</span>
 </footer>
 
 <script>
@@ -242,7 +242,7 @@ const CFG = {
   center: 'never', single: true,
   floatStep: 50, floatOffset: 50,          // L4, L2
   springs: { ws: { z: 0.80, k: 523 }, scroll: { z: 0.85, k: 423 }, move: { z: 0.75, k: 323 } },
-  // Planned (top-bar toggles): animated displayed size (M5), continuous workspace strip (WS7), 3-finger drag (GS*)
+  // Second top-bar row: animated displayed size (M5), continuous workspace strip (WS7), 3-finger drag (GS*); off = old v1 behaviour
   animResize: true, wsStrip: true, gesture: true,
 };
 /* GS1–GS6 constants. tau: release projection time, from niri's 0.997/ms deceleration (0.997 / (1 − 0.997) ms ≈ 0.33 s). */
@@ -308,13 +308,13 @@ const RULES = {
   M1: 'Every change animates from where things are shown now, keeping velocity.',
   M2: 'Camera uses horizontal_scroll, window movements use window_movement, workspace switches use workspace_switch.',
   M4: 'A window moved to another workspace animates from its old on-screen place.',
-  M5: 'v1: the resized window gets its final size at once (one configure); only neighbours to its right and the camera animate. So when nothing sits to its right (free space after the last column) and the camera does not move, a resize shows no animation at all, narrower or wider. PLANNED (Resize = animate): the configure is still sent once, but the displayed size (border box and surface clip) animates on window_movement too.',
-  WS7: 'Workspaces are stacked vertically with a 10 % gap. v1 hides the outgoing workspace at once and slides only the incoming one in. PLANNED (WS switch = strip): both stay visible and scroll together; each workspace keeps its own horizontal camera.',
-  GS1: 'PLANNED. 3 fingers on the touchscreen or touchpad. The gesture locks to the dominant axis after 16 px (|d| > 1.25 × the other axis); before that nothing moves. Client touches are cancelled at lock.',
-  GS2: 'PLANNED. While dragging, the camera follows the fingers 1:1 (content follows the finger; touchpad honours natural_scroll): horizontally the camera of the focused workspace, vertically the workspace strip. Past the first/last column or workspace it rubber-bands instead of stopping.',
-  GS3: 'PLANNED. On release: projected position = position + release velocity × 0.33 s. Vertically the nearest workspace to the projection wins, at most one past the workspace nearest the release point; horizontally the column whose snapped view is nearest. A fast short flick therefore switches like the old discrete swipe, and a slow drag switches by position. The spring starts from the dragged position with the release velocity (M1).',
-  GS4: 'PLANNED. Glance: if the projection lands on the starting workspace/column, nothing changes and the view springs back. Touch cancel, lock, a 4th finger or a layout change during the drag cancel the same way.',
-  GS5: 'PLANNED. A horizontal release focuses the snapped column (as in niri); a vertical release focuses the snapped workspace (WS3).',
+  M5: 'The resized window gets its final size in one configure; the displayed size (border box and surface clip) animates on window_movement, together with the neighbours and the camera. Old v1 (Resize = instant): only neighbours to its right and the camera animated, so the rightmost column resized into free space showed no animation at all, narrower or wider.',
+  WS7: 'Workspaces form one vertical strip with a 10 % gap: during a switch both stay visible and scroll together, and each workspace keeps its own horizontal camera. Old v1 (WS switch = v1): the outgoing workspace was hidden at once and only the incoming one slid in.',
+  GS1: '3 fingers on the touchscreen or touchpad. The gesture locks to the dominant axis after 16 px (|d| > 1.25 × the other axis); before that nothing moves. Client touches are cancelled at lock.',
+  GS2: 'While dragging, the camera follows the fingers 1:1 (content follows the finger; touchpad honours natural_scroll): horizontally the camera of the focused workspace, vertically the workspace strip. Past the first/last column or workspace it rubber-bands instead of stopping.',
+  GS3: 'On release: projected position = position + release velocity × 0.33 s. Vertically the nearest workspace to the projection wins, at most one past the workspace nearest the release point; horizontally the column whose snapped view is nearest. A fast short flick therefore switches like the old discrete swipe, and a slow drag switches by position. The spring starts from the dragged position with the release velocity (M1).',
+  GS4: 'Glance: if the projection lands on the starting workspace/column, nothing changes and the view springs back. Touch cancel, lock, a 4th finger or a layout change during the drag cancel the same way.',
+  GS5: 'A horizontal release focuses the snapped column (as in niri); a vertical release focuses the snapped workspace (WS3).',
   GS6: 'Unchanged: 1-finger bezel swipes (panel/launcher), 4 fingers unhandled, keyboard and wheel binds unchanged.',
 };
 const APPS = [
@@ -959,7 +959,7 @@ function finishSwitch() {   // WS2: called when the switch animation settled
   return cleanupWorkspaces();
 }
 
-/* ── PLANNED: 3-finger drag (GS1–GS6), pure helpers ── */
+/* ── 3-finger drag (GS1–GS6), pure helpers (mirror src/comp/core/comp_gesture.c) ── */
 function rubberBand(v, lo, hi, dim) {   // GS2: soft limit past the ends, at most `dim` of overshoot
   const rb = d => (1 - 1 / (d * GESTURE.rubber / dim + 1)) * dim;
   if (v < lo) return lo - rb(lo - v);
@@ -1059,7 +1059,7 @@ function sync(kind, res) {
         if (a.x.to !== tg.x) a.x.retarget(tg.x, t, px);
         if (a.y.to !== tg.y) a.y.retarget(tg.y, t, CFG.springs.move);
       }
-      // M5: v1 snaps the displayed size; planned animates it on window_movement
+      // M5: the displayed size animates on window_movement (Resize = instant shows the old v1 snap)
       if (speed === 0 || !CFG.animResize) { a.w.jump(tg.w, t); a.h.jump(tg.h, t); }
       else {
         if (a.w.to !== tg.w) a.w.retarget(tg.w, t, CFG.springs.move);
@@ -1190,7 +1190,7 @@ function renderLists() {
   $('#panelDots').innerHTML = S.wss.map((_, i) => `<span class="dot ${i === S.active ? 'on' : ''}"></span>`).join('');
 }
 
-/* ───────────────────────── PLANNED: 3-finger drag (GS1–GS6) ─────────────────────────
+/* ───────────────────────── 3-finger drag (GS1–GS6) ─────────────────────────
  * Mouse drag on the screen stands in for 3 fingers on the touchscreen or touchpad.
  * Gesture time is real time (finger velocity); spring time is simTime, so the release
  * velocity is converted with `speed` to keep the motion continuous at ¼× too. */
@@ -1488,22 +1488,22 @@ const STORIES = [
     ['Dock to the ultrawide', 'One output only (§1): the ultrawide takes over. Workspaces, windows and focus carry over; proportional widths follow the new size; the view keeps the focused column visible.', () => setOut('wide')],
     ['Undock', 'Back to the laptop.', () => setOut('laptop')],
   ] },
-  { title: 'PLANNED · Animated resize', steps: [
-    ['Setup', 'Three columns; focus is on the rightmost one and there is free space to its right. <b>Reported bug:</b> whenever the resized column has nothing to its right (free space after the last column), resizing it narrower or wider does not animate.', () => { setResize(false); setCenter('never'); ['kitty', 'firefox'].forEach(a => act('spawn', { app: a })); act('set-column-width -10%'); }],
-    ['Why: wider, as v1 does it', '<b>Resize = instant</b> (today). <code>Mod+Equal</code> on the rightmost column: the width is applied at once (M5). No column sits to its right, and it stays fully visible, so the camera does not move either: <b>nothing animates</b>. ' + R('M5', 'V1'), () => act('set-column-width +10%')],
-    ['Why: narrower, as v1 does it', '<code>Mod+Minus</code>: the same, the edge jumps back. The only thing that ever animated a resize was a neighbour sliding to the right of it (or the camera re-centring a single column).', () => act('set-column-width -10%')],
+  { title: 'Animated resize', steps: [
+    ['Setup', 'Three columns; focus is on the rightmost one and there is free space to its right. <b>Former bug (fixed):</b> whenever the resized column had nothing to its right (free space after the last column), resizing it narrower or wider did not animate.', () => { setResize(false); setCenter('never'); ['kitty', 'firefox'].forEach(a => act('spawn', { app: a })); act('set-column-width -10%'); }],
+    ['Why: wider, as v1 did it', '<b>Resize = instant</b> (old v1). <code>Mod+Equal</code> on the rightmost column: the width is applied at once (M5). No column sits to its right, and it stays fully visible, so the camera does not move either: <b>nothing animates</b>. ' + R('M5', 'V1'), () => act('set-column-width +10%')],
+    ['Why: narrower, as v1 did it', '<code>Mod+Minus</code>: the same, the edge jumps back. The only thing that ever animated a resize was a neighbour sliding to the right of it (or the camera re-centring a single column).', () => act('set-column-width -10%')],
     ['Compare: a column with a right neighbour', 'Focus the left column and resize it: here firefox slides, which is why a resize there looked animated even though the width itself also jumped.', () => { act('focus-column-left'); act('set-column-width +10%'); }],
-    ['Planned: rightmost, wider', '<b>Resize = animate</b>: the client still gets its final size in one configure, but the displayed box (border and surface clip) grows on the <code>window_movement</code> spring, so the rightmost column animates into the free space. ' + R('M5', 'M1'), () => { setResize(true); act('focus-column-right'); act('set-column-width +10%'); }],
-    ['Planned: rightmost, narrower', 'And it shrinks back the same way.', () => act('set-column-width -10%')],
-    ['Planned: with a neighbour', 'Resize the left column: its right edge and the neighbour move on the same spring, so they never overlap mid-animation.', () => { act('focus-column-left'); act('set-column-width -10%'); }],
+    ['Now: rightmost, wider', '<b>Resize = animate</b> (current): the client still gets its final size in one configure, but the displayed box (border and surface clip) grows on the <code>window_movement</code> spring, so the rightmost column animates into the free space. ' + R('M5', 'M1'), () => { setResize(true); act('focus-column-right'); act('set-column-width +10%'); }],
+    ['Now: rightmost, narrower', 'And it shrinks back the same way.', () => act('set-column-width -10%')],
+    ['Now: with a neighbour', 'Resize the left column: its right edge and the neighbour move on the same spring, so they never overlap mid-animation.', () => { act('focus-column-left'); act('set-column-width -10%'); }],
   ] },
-  { title: 'PLANNED · Workspace strip', steps: [
+  { title: 'Workspace strip', steps: [
     ['Setup', 'Two windows on workspace 1, one on workspace 2; back on workspace 1. Scroll workspace 1 to its second column.', () => { SETUP.two(); act('spawn', { app: 'kajo-ide' }); act('move-column-to-workspace-down'); act('focus-workspace-up'); }],
-    ['Switch, as v1 does it', '<b>WS switch = v1</b> (today): the outgoing workspace disappears at once; only the incoming one slides in. ' + R('WS7'), () => { setWsMode('v1'); act('focus-workspace-down'); }],
-    ['Switch, planned', '<b>WS switch = strip</b>: both workspaces stay visible and scroll together, like one tall strip. ' + R('WS7', 'M2'), () => { setWsMode('strip'); act('focus-workspace-up'); }],
+    ['Switch, as v1 did it', '<b>WS switch = v1</b> (old): the outgoing workspace disappears at once; only the incoming one slides in. ' + R('WS7'), () => { setWsMode('v1'); act('focus-workspace-down'); }],
+    ['Switch, now', '<b>WS switch = strip</b> (current): both workspaces stay visible and scroll together, like one tall strip. ' + R('WS7', 'M2'), () => { setWsMode('strip'); act('focus-workspace-up'); }],
     ['Each workspace keeps its camera', 'Scroll workspace 1 to its first column, go down and come back: the camera of each workspace is where you left it, and both are rendered correctly during the switch.', () => { act('focus-column-left'); act('focus-workspace-down'); later(700, () => act('focus-workspace-up')); }],
   ] },
-  { title: 'PLANNED · 3-finger drag & flick', steps: [
+  { title: '3-finger drag & flick', steps: [
     ['Setup', 'Workspace 1: three columns. Workspace 2: two columns. Focus: kitty on workspace 1. The mouse stands in for three fingers (<b>3-finger = drag</b>); the cyan squares show the fingers, the box top-left the gesture state.', () => {
       setGesture(true); setWsMode('strip'); SETUP.four(); act('move-column-to-workspace-down'); act('spawn', { app: 'kajo-player' }); act('focus-workspace-up'); act('focus-column-first'); }],
     ['Glance at the workspace below', 'Fingers move up slowly to 40 % and hold, then lift. The strip follows the fingers 1:1 and workspace 2 is visible, but the projection lands back on workspace 1: it springs back and nothing changes. ' + R('GS1', 'GS2', 'GS4'), () => scriptDrag('y', -0.40 * S.out.h, 700, 450)],

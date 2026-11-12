@@ -131,6 +131,14 @@ size_t      comp_layout_active_workspace(const CompLayout *layout);
 size_t      comp_layout_workspace_window_count(const CompLayout *layout, size_t ws_index);
 bool        comp_layout_window_workspace(const CompLayout *layout, CompWinId id, size_t *out_ws_index);
 bool        comp_layout_focus_workspace_index(CompLayout *layout, size_t index);
+/* Stable workspace identity (never 0, never reused): survives reordering and the
+ * removal of other workspaces, so animations can follow a workspace whose index moves. */
+uint64_t    comp_layout_workspace_id(const CompLayout *layout, size_t index);
+size_t      comp_layout_column_count(const CompLayout *layout, size_t ws_index);
+/* Focused column of the active workspace; false if it has none or the floating layer is focused. */
+bool        comp_layout_focused_column(const CompLayout *layout, size_t *out_column);
+/* Focus column `column` of the active workspace (its focused window). True if focus changed. */
+bool        comp_layout_focus_column_index(CompLayout *layout, size_t column);
 
 /* ── Geometry for the active workspace ── */
 typedef struct {
@@ -141,17 +149,30 @@ typedef struct {
     bool      tabbed;      /* column is in tabbed mode (spec §3.9) */
     size_t    tab_index;   /* 0..tab_count-1 when tabbed */
     size_t    tab_count;   /* number of tabs in column when tabbed */
-    bool      visible;     /* false for inactive tabs */
+    bool      visible;     /* false for inactive tabs (and, from comp_motion_sample, off-screen windows) */
     bool      focused;
+    bool      resizing;    /* comp_motion_sample only: displayed size still animating towards the target */
 } CompWindowGeometry;
 
 /* Writes up to `max` entries for the active workspace (tiled first, then floating,
  * bottom to top). Returns the number of windows on that workspace (may exceed `max`). */
 size_t      comp_layout_arrange(const CompLayout *layout, double view_w, double view_h,
                                 CompWindowGeometry *out, size_t max);
+/* Same for any workspace; `focused` is only ever set on the active one. */
+size_t      comp_layout_arrange_workspace(const CompLayout *layout, size_t ws_index,
+                                          double view_w, double view_h,
+                                          CompWindowGeometry *out, size_t max);
 /* Target camera x (strip coordinate shown at the viewport's left edge) for the active
- * workspace, given the camera's current position. Deterministic for a given input. */
+ * workspace, given the camera's current position. Deterministic for a given input.
+ * Consumes the one-shot center-column / center-visible-columns requests. */
 double      comp_layout_view_target(CompLayout *layout, double view_w, double current_view_x);
+double      comp_layout_workspace_view_target(CompLayout *layout, size_t ws_index,
+                                              double view_w, double current_view_x);
+/* Camera x that would show column `column` of the active workspace if it were focused,
+ * starting from `current_view_x` (V1–V4, V7). No side effects: used to pick the snap
+ * target of an interactive horizontal drag (spec §3.15 GS3). */
+double      comp_layout_column_snap_view(const CompLayout *layout, size_t column,
+                                         double view_w, double current_view_x);
 
 /* Checks structural invariants; on failure returns false and, if `why` is non-NULL,
  * points it at a static description. Used by tests and the fuzzer. */

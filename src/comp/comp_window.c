@@ -51,6 +51,7 @@ typedef struct {
     bool           urgent;
     bool           maximized;
     bool           tabbed;
+    bool           resizing;
     size_t         tab_count;
     size_t         tab_index;
     float          col_active[4];
@@ -217,6 +218,7 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         .urgent          = w->is_urgent,
         .maximized       = w->maximized_to_edges,
         .tabbed          = g->tabbed,
+        .resizing        = g->resizing && !fullscreen,
         .tab_count       = g->tab_count,
         .tab_index       = g->tab_index,
     };
@@ -229,13 +231,6 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
     w->last_border        = st;
     w->border_state_valid = true;
 
-    if (w->backdrop) {
-        wlr_scene_node_set_enabled(&w->backdrop->node, fullscreen);
-        if (fullscreen) {
-            wlr_scene_node_set_position(&w->backdrop->node, 0, 0);
-            wlr_scene_rect_set_size(w->backdrop, tile_w, tile_h);
-        }
-    }
     const float *col = focused ? col_active : (w->is_urgent ? col_urgent : col_inactive);
     for (int i = 0; i < 4; i++) {
         if (!w->border[i])
@@ -249,6 +244,22 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
     int32_t ch = hide_border ? (tile_h > 1 ? tile_h : 1)
                              : (tile_h > 2 * b ? tile_h - 2 * b : 1);
 
+    /* M5: while the displayed size animates, the client buffer may already be smaller
+     * than the box (shrinking): fill the box with the backdrop instead of showing what
+     * is behind the window. Fullscreen uses the backdrop for the whole output. */
+    if (w->backdrop) {
+        bool show = fullscreen || st.resizing;
+        wlr_scene_node_set_enabled(&w->backdrop->node, show);
+        if (fullscreen) {
+            wlr_scene_node_set_position(&w->backdrop->node, 0, 0);
+            wlr_scene_rect_set_size(w->backdrop, tile_w, tile_h);
+        } else if (show) {
+            int32_t off = hide_border ? 0 : b;
+            wlr_scene_node_set_position(&w->backdrop->node, off, off);
+            wlr_scene_rect_set_size(w->backdrop, cw, ch);
+        }
+    }
+
     if (has_mapped_surf && w->xdg_tree) {
         struct wlr_box clip = {
             .x      = geom.x,
@@ -260,8 +271,9 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
     }
 
     if (!hide_border) {
-        int32_t bw = (geom.width > 0 && geom.width < cw) ? geom.width : cw;
-        int32_t bh = (geom.height > 0 && geom.height < ch) ? geom.height : ch;
+        /* Borders hug a client that is smaller than its tile, except while the size animates (M5) */
+        int32_t bw = (!st.resizing && geom.width > 0 && geom.width < cw) ? geom.width : cw;
+        int32_t bh = (!st.resizing && geom.height > 0 && geom.height < ch) ? geom.height : ch;
         /* top, bottom, left, right around client at (b, b) */
         wlr_scene_node_set_position(&w->border[0]->node, 0, 0);
         wlr_scene_rect_set_size(w->border[0], bw + 2 * b, b);
@@ -484,7 +496,9 @@ comp_window_tick_frame(CompServer *s, double now_s)
         win->tick_seen = true;
 
         int32_t rx = g->fullscreen ? 0 : clamp_i32(g->rect.x + work.x, -32768, 32767);
-        int32_t ry = g->fullscreen ? 0 : clamp_i32(g->rect.y + work.y, -32768, 32767);
+        /* WS7: fullscreen windows scroll with their workspace on the strip (rect.y is 0 when settled) */
+        int32_t ry = g->fullscreen ? clamp_i32(g->rect.y, -32768, 32767)
+                                   : clamp_i32(g->rect.y + work.y, -32768, 32767);
         int32_t rw = g->fullscreen ? clamp_i32(full_vw, 1, 32767) : clamp_i32(g->rect.w, 1, 32767);
         int32_t rh = g->fullscreen ? clamp_i32(full_vh, 1, 32767) : clamp_i32(g->rect.h, 1, 32767);
 
