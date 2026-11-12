@@ -666,6 +666,27 @@ test_config_multifile_merge_and_confd(void)
 }
 
 static void
+test_horizontal_drag_routing(void)
+{
+    /* GS5: `[touch].swipe_horizontal` steers the touchscreen only */
+    CompConfig *cfg = comp_config_new_defaults(COMP_MOD_SUPER);
+    g_assert_nonnull(cfg);
+    CompDiagList d;
+    comp_diag_init(&d);
+    const char *src = "[touch]\nswipe_horizontal = \"workspace\"\n";
+    g_assert_true(comp_config_merge_toml(cfg, src, strlen(src), "shell.toml", NULL, false, &d));
+    g_assert_cmpint(cfg->touch_swipe_horizontal, ==, COMP_SWIPE_WORKSPACE);
+    g_assert_cmpint(comp_config_horizontal_drag_action(cfg, false), ==, COMP_SWIPE_WORKSPACE);
+    g_assert_cmpint(comp_config_horizontal_drag_action(cfg, true), ==, COMP_SWIPE_COLUMN);
+    cfg->touch_swipe_horizontal = COMP_SWIPE_NONE;
+    g_assert_cmpint(comp_config_horizontal_drag_action(cfg, false), ==, COMP_SWIPE_NONE);
+    g_assert_cmpint(comp_config_horizontal_drag_action(cfg, true), ==, COMP_SWIPE_COLUMN);
+    g_assert_cmpint(comp_config_horizontal_drag_action(NULL, false), ==, COMP_SWIPE_COLUMN);
+    comp_diag_clear(&d);
+    comp_config_free(cfg);
+}
+
+static void
 test_touch_gestures_and_transforms(void)
 {
     CompTouchTracker t;
@@ -770,5 +791,6 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
     g_test_add_func("/comp/config/greeter-filtering", test_greeter_config_filtering);
     g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
+    g_test_add_func("/comp/touch/horizontal-drag-routing", test_horizontal_drag_routing);
     return g_test_run();
 }

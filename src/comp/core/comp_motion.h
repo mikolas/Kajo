@@ -84,8 +84,8 @@ void        comp_motion_drag_set(CompMotion *m, double value);
 /* Hands the camera back to its spring at the dragged value with `velocity` (camera
  * units per second), heading to `target` (NAN: stay at the dragged value). The next
  * sync retargets from there, keeping the velocity (M1). For a horizontal drag pass
- * the snapped view (comp_layout_column_snap_view), because the view target of the
- * "never" centring mode depends on the current camera position. */
+ * the resting position from comp_layout_drag_release_target, because the view target
+ * of the "never" centring mode depends on the current camera position. */
 void        comp_motion_drag_end(CompMotion *m, double velocity, double target, double now);
 CompMotionDragAxis comp_motion_drag_axis(const CompMotion *m);
 

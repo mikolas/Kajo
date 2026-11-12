@@ -140,22 +140,3 @@ comp_gesture_pick_workspace(double released, double projected, size_t n)
     p = fmin(hi, fmax(0.0, p));
     return (size_t)p;
 }
-
-size_t
-comp_gesture_pick_snap(const double *snaps, size_t n, size_t current, double projected)
-{
-    if (!snaps || n == 0)
-        return 0;
-    size_t best = current < n ? current : n - 1;
-    if (!isfinite(projected))
-        return best;
-    double bd = fabs(snaps[best] - projected);
-    for (size_t i = 0; i < n; i++) {
-        double d = fabs(snaps[i] - projected);
-        if (d < bd - 0.5) {
-            bd   = d;
-            best = i;
-        }
-    }
-    return best;
-}

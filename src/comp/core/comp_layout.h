@@ -168,11 +168,21 @@ size_t      comp_layout_arrange_workspace(const CompLayout *layout, size_t ws_in
 double      comp_layout_view_target(CompLayout *layout, double view_w, double current_view_x);
 double      comp_layout_workspace_view_target(CompLayout *layout, size_t ws_index,
                                               double view_w, double current_view_x);
-/* Camera x that would show column `column` of the active workspace if it were focused,
- * starting from `current_view_x` (V1–V4, V7). No side effects: used to pick the snap
- * target of an interactive horizontal drag (spec §3.15 GS3). */
-double      comp_layout_column_snap_view(const CompLayout *layout, size_t column,
-                                         double view_w, double current_view_x);
+/* Interactive horizontal drag (spec §3.15 GS2/GS3/GS5). Resting camera positions are
+ * derived from column edges only, never from the current camera, so a column that is
+ * already on screen is still a valid target. No side effects.
+ *
+ * Range of resting camera positions on the active workspace; false if it has no columns. */
+bool        comp_layout_drag_view_range(const CompLayout *layout, double view_w,
+                                        double *out_lo, double *out_hi);
+/* Release decision: the resting camera position nearest `projected_view_x`, and the
+ * column to focus there: the fully visible column furthest in the drag direction
+ * (sign of projected − start) under "never", otherwise the column the position
+ * belongs to. With no movement the focused column is kept if it stays visible.
+ * False if the active workspace has no columns. */
+bool        comp_layout_drag_release_target(const CompLayout *layout, double view_w,
+                                            double start_view_x, double projected_view_x,
+                                            double *out_view_x, size_t *out_column);
 
 /* Checks structural invariants; on failure returns false and, if `why` is non-NULL,
  * points it at a static description. Used by tests and the fuzzer. */

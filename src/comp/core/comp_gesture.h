@@ -6,7 +6,8 @@
  * COMP_GESTURE_LOCK_PX; from then on the camera value follows the fingers 1:1
  * (camera = start − finger travel), rubber-banded past [lo, hi]. On release the
  * position is projected forward by the release velocity, and the caller snaps to the
- * target nearest that projection (comp_gesture_pick_*).
+ * target nearest that projection (comp_gesture_pick_workspace,
+ * comp_layout_drag_release_target).
  *
  * Zero wlroots, Vulkan or GLib dependencies.
  */
@@ -18,7 +19,7 @@
 
 #define COMP_GESTURE_LOCK_PX      16.0   /* GS1: axis lock distance */
 #define COMP_GESTURE_LOCK_RATIO   1.25   /* GS1: dominant axis must exceed the other by this */
-#define COMP_GESTURE_TAU_S        0.333  /* GS3: projection time; niri's 0.997/ms deceleration */
+#define COMP_GESTURE_TAU_S        0.333  /* GS3: release projection time */
 #define COMP_GESTURE_RUBBER_K     0.55   /* GS2: rubber band stiffness */
 #define COMP_GESTURE_RUBBER_DIM   0.30   /* GS2: max overshoot as a fraction of the axis size */
 #define COMP_GESTURE_VEL_WINDOW_S 0.15   /* velocity is measured over the last 150 ms */
@@ -67,7 +68,5 @@ double          comp_gesture_rubber_band(double v, double lo, double hi, double 
 /* GS3: workspace (in workspace units) nearest the projection, at most one away from
  * the workspace nearest the release point, clamped to [0, n). */
 size_t          comp_gesture_pick_workspace(double released, double projected, size_t n);
-/* GS3/GS4: index of the snap view nearest `projected`; ties keep `current`. */
-size_t          comp_gesture_pick_snap(const double *snaps, size_t n, size_t current, double projected);
 
 #endif /* KAJO_COMP_GESTURE_H */

@@ -4,18 +4,19 @@
  * core/comp_motion.c; this file connects them to the layout:
  *   - lock:    the camera of the locked axis is frozen and then follows the fingers
  *              (horizontal: active workspace camera; vertical: workspace strip);
- *   - release: the projected position picks the column / workspace to snap to,
- *              focus moves there (GS5) and the camera continues with the release
- *              velocity (M1); a projection onto the start is a glance (GS4).
- * `[touch].swipe_horizontal = "workspace"` maps horizontal drags onto the strip,
- * `"none"` ignores them.
+ *   - release: the projected position picks the nearest resting camera position
+ *              (derived from column edges, not from the start view) and the column
+ *              to focus there (GS5); the camera continues with the release velocity
+ *              (M1). A cancel returns to the start (GS4).
+ * `[touch].swipe_horizontal` applies to the touchscreen only: `"workspace"` maps
+ * horizontal drags onto the strip, `"none"` ignores them. The touchpad always
+ * scrolls columns horizontally.
  */
 #include "comp_server.h"
 
 #include "comp_log.h"
 
 #include <math.h>
-#include <stdlib.h>
 
 static void
 drag_reset(CompServer *s)
@@ -50,21 +51,7 @@ comp_drag_begin(CompServer *s, CompDragSource source)
 static CompTouchSwipeAction
 horizontal_mode(const CompServer *s)
 {
-    return s->config ? s->config->touch_swipe_horizontal : COMP_SWIPE_COLUMN;
-}
-
-/* Camera range for the rubber band: every column's snapped view and the start. */
-static void
-horizontal_range(CompServer *s, double start, double view_w, double *lo, double *hi)
-{
-    *lo = start;
-    *hi = start;
-    size_t ncols = comp_layout_column_count(s->layout, comp_layout_active_workspace(s->layout));
-    for (size_t i = 0; i < ncols; i++) {
-        double v = comp_layout_column_snap_view(s->layout, i, view_w, start);
-        *lo = fmin(*lo, v);
-        *hi = fmax(*hi, v);
-    }
+    return comp_config_horizontal_drag_action(s->config, s->drag_source == (int)COMP_DRAG_SOURCE_TOUCHPAD);
 }
 
 static bool
@@ -89,7 +76,11 @@ drag_lock(CompServer *s, CompGestureAxis axis)
 
     double lo = start, hi = start, dim = 0.0;
     if (maxis == COMP_MOTION_DRAG_X) {
-        horizontal_range(s, start, work.w, &lo, &hi);
+        /* Rubber band outside the resting positions; the start is always reachable */
+        if (comp_layout_drag_view_range(s->layout, work.w, &lo, &hi)) {
+            lo = fmin(lo, start);
+            hi = fmax(hi, start);
+        }
         dim = work.w * COMP_GESTURE_RUBBER_DIM;
     } else {
         double step = comp_motion_workspace_step(s->motion);
@@ -135,21 +126,17 @@ release_horizontal(CompServer *s, double velocity, double projected, bool cancel
 {
     CompRect work = {0};
     comp_server_working_area(s, &work);
-    size_t ncols = comp_layout_column_count(s->layout, comp_layout_active_workspace(s->layout));
     size_t cur = 0;
     bool has_focus = comp_layout_focused_column(s->layout, &cur);
 
     double target = NAN;
     size_t pick   = cur;
-    double *snaps = ncols ? calloc(ncols, sizeof(double)) : NULL;
-    if (snaps) {
-        for (size_t i = 0; i < ncols; i++)
-            snaps[i] = comp_layout_column_snap_view(s->layout, i, work.w, s->drag.start);
-        if (!cancel && has_focus)
-            pick = comp_gesture_pick_snap(snaps, ncols, cur, projected);
-        if (pick < ncols)
-            target = snaps[pick];
-        free(snaps);
+    if (cancel) {
+        target = s->drag.start;   /* GS4: back to where the drag started */
+    } else if (!comp_layout_drag_release_target(s->layout, work.w, s->drag.start, projected,
+                                                &target, &pick)) {
+        target = NAN;
+        pick   = cur;
     }
     comp_motion_drag_end(s->motion, velocity, target, now);
     bool changed = !cancel && has_focus && pick != cur &&

@@ -249,7 +249,9 @@ test_drag_override_and_release(void)
     Sample s = sample(M, 5.2);
     g_assert_cmpfloat_with_epsilon(s.view_x, start - 300.0, 1e-9);
 
-    double target = comp_layout_column_snap_view(L, 0, VW, start);
+    double target = 0.0;
+    size_t tcol   = 0;
+    g_assert_true(comp_layout_drag_release_target(L, VW, start, start - 300.0, &target, &tcol));
     comp_motion_drag_end(M, -2000.0, target, 5.2);
     g_assert_cmpint(comp_motion_drag_axis(M), ==, COMP_MOTION_DRAG_NONE);
     s = sample(M, 5.2);
@@ -309,10 +311,15 @@ test_layout_ids_and_snap_views(void)
     g_assert_true(comp_layout_focused_column(L2, &col));
     g_assert_cmpuint(col, ==, 3);
     g_assert_cmpuint(comp_layout_column_count(L2, 0), ==, 4);
-    /* Snap views have no side effects: a pending center-column request survives */
+    /* Drag targets have no side effects: a pending center-column request survives */
     g_assert_true(comp_layout_apply(L2, COMP_ACT_CENTER_COLUMN));
-    double v0 = comp_layout_column_snap_view(L2, 0, VW, 2000.0);
+    double v0 = 99.0;
+    size_t c0 = 99;
+    g_assert_true(comp_layout_drag_release_target(L2, VW, 2000.0, -5000.0, &v0, &c0));
     g_assert_cmpfloat_with_epsilon(v0, 0.0, 1e-9);                            /* first column at the left */
+    g_assert_cmpuint(c0, ==, 0);
+    g_assert_true(comp_layout_focused_column(L2, &col));
+    g_assert_cmpuint(col, ==, 3);
     double centered = comp_layout_view_target(L2, VW, 0.0);
     CompWindowGeometry g[8];
     size_t n = comp_layout_arrange(L2, VW, VH, g, 8);
@@ -371,6 +378,90 @@ test_gesture_velocity_and_projection(void)
     g_assert_cmpfloat_with_epsilon(comp_gesture_velocity(&g, 1.0), 0.0, 1e-9);
 }
 
+/* GS3/GS5: resting positions come from column edges, independent of the start view,
+ * and focus moves to the fully visible column furthest in the drag direction. */
+static void
+test_drag_release_targets(void)
+{
+    /* Defaults: gap 6, width 0.5 → columns 814 px wide at x = 6, 826, 1646, … */
+    double view = 0.0, lo = 0.0, hi = 0.0;
+    size_t col = 99, cur = 99;
+
+    /* No columns: no target */
+    CompLayout *E = new_layout();
+    g_assert_false(comp_layout_drag_view_range(E, VW, &lo, &hi));
+    g_assert_false(comp_layout_drag_release_target(E, VW, 0.0, 100.0, &view, &col));
+    comp_layout_free(E);
+
+    /* Two half columns fit: one resting view, focus follows the direction */
+    CompLayout *L = new_layout();
+    g_assert_true(comp_layout_add_window(L, 1));
+    g_assert_true(comp_layout_add_window(L, 2));
+    g_assert_true(comp_layout_drag_view_range(L, VW, &lo, &hi));
+    g_assert_cmpfloat_with_epsilon(lo, 0.0, 1e-9);
+    g_assert_cmpfloat_with_epsilon(hi, 0.0, 1e-9);
+    g_assert_true(comp_layout_drag_release_target(L, VW, 0.0, -400.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 0.0, 1e-9);
+    g_assert_cmpuint(col, ==, 0);                                   /* camera left → left column */
+    g_assert_true(comp_layout_focus_column_index(L, 0));
+    g_assert_true(comp_layout_drag_release_target(L, VW, 0.0, 400.0, &view, &col));
+    g_assert_cmpuint(col, ==, 1);                                   /* camera right → right column */
+    g_assert_true(comp_layout_drag_release_target(L, VW, 0.0, 0.2, &view, &col));
+    g_assert_cmpuint(col, ==, 0);                                   /* no movement keeps focus */
+
+    /* Three half columns (one hidden): reveal the hidden one and come back */
+    g_assert_true(comp_layout_focus_column_index(L, 1));
+    g_assert_true(comp_layout_add_window(L, 3));                   /* column 2, focused */
+    g_assert_true(comp_layout_focused_column(L, &cur));
+    g_assert_cmpuint(cur, ==, 2);
+    g_assert_true(comp_layout_drag_view_range(L, VW, &lo, &hi));
+    g_assert_cmpfloat_with_epsilon(lo, 0.0, 1e-9);
+    g_assert_cmpfloat_with_epsilon(hi, 820.0, 1e-9);
+    g_assert_true(comp_layout_drag_release_target(L, VW, 820.0, 500.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 820.0, 1e-9);              /* short drag: stays */
+    g_assert_cmpuint(col, ==, 1);                                   /* leftmost visible there */
+    g_assert_true(comp_layout_drag_release_target(L, VW, 820.0, 300.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 0.0, 1e-9);                /* past half: first page */
+    g_assert_cmpuint(col, ==, 0);
+    g_assert_true(comp_layout_drag_release_target(L, VW, 0.0, 9000.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 820.0, 1e-9);              /* flick: clamped to the end */
+    g_assert_cmpuint(col, ==, 2);
+    g_assert_true(comp_layout_drag_release_target(L, VW, 820.0, NAN, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 820.0, 1e-9);              /* non-finite: no movement */
+    g_assert_cmpuint(col, ==, 2);
+
+    /* Fullscreen column: rests at its own left edge and keeps focus */
+    g_assert_true(comp_layout_toggle_fullscreen(L));
+    g_assert_true(comp_layout_drag_release_target(L, VW, 1640.0, 1700.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 1646.0, 1e-9);
+    g_assert_cmpuint(col, ==, 2);
+    comp_layout_free(L);
+
+    /* "always": one centered position per column, focus is that column */
+    CompLayoutConfig cfg;
+    comp_layout_config_defaults(&cfg);
+    cfg.center_mode = COMP_CENTER_ALWAYS;
+    CompLayout *A = comp_layout_new(&cfg);
+    g_assert_nonnull(A);
+    for (CompWinId id = 1; id <= 3; id++)
+        g_assert_true(comp_layout_add_window(A, id));
+    g_assert_true(comp_layout_drag_release_target(A, VW, 1230.0, 420.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 826.0 + 407.0 - VW / 2.0, 1e-9);
+    g_assert_cmpuint(col, ==, 1);
+    comp_layout_free(A);
+
+    /* Centering off, strip fits: rest left-aligned */
+    comp_layout_config_defaults(&cfg);
+    cfg.always_center_single_column = false;
+    CompLayout *S = comp_layout_new(&cfg);
+    g_assert_nonnull(S);
+    g_assert_true(comp_layout_add_window(S, 1));
+    g_assert_true(comp_layout_drag_release_target(S, VW, 0.0, -300.0, &view, &col));
+    g_assert_cmpfloat_with_epsilon(view, 0.0, 1e-9);
+    g_assert_cmpuint(col, ==, 0);
+    comp_layout_free(S);
+}
+
 static void
 test_gesture_snap_picks(void)
 {
@@ -383,14 +474,6 @@ test_gesture_snap_picks(void)
     g_assert_cmpuint(comp_gesture_pick_workspace(0.00, -0.8, 3), ==, 0);
     g_assert_cmpuint(comp_gesture_pick_workspace(1.00, NAN, 3), ==, 1);
     g_assert_cmpuint(comp_gesture_pick_workspace(1.00, 1.0, 0), ==, 0);
-
-    /* Columns: nearest snap; ties keep the current one (glance) */
-    const double snaps[4] = { 0.0, 0.0, 600.0, 1200.0 };
-    g_assert_cmpuint(comp_gesture_pick_snap(snaps, 4, 1, 10.0), ==, 1);
-    g_assert_cmpuint(comp_gesture_pick_snap(snaps, 4, 1, 700.0), ==, 2);
-    g_assert_cmpuint(comp_gesture_pick_snap(snaps, 4, 3, 1100.0), ==, 3);
-    g_assert_cmpuint(comp_gesture_pick_snap(snaps, 4, 9, NAN), ==, 3);
-    g_assert_cmpuint(comp_gesture_pick_snap(NULL, 0, 0, 1.0), ==, 0);
 
     /* Rubber band: identity inside, bounded outside, swapped bounds accepted */
     g_assert_cmpfloat_with_epsilon(comp_gesture_rubber_band(5.0, 0.0, 10.0, 100.0), 5.0, 1e-12);
@@ -413,6 +496,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/motion/drag-override-and-release", test_drag_override_and_release);
     g_test_add_func("/comp/motion/stationary-windows", test_stationary_windows_stay_still);
     g_test_add_func("/comp/layout/workspace-ids-and-snap-views", test_layout_ids_and_snap_views);
+    g_test_add_func("/comp/layout/drag-release-targets", test_drag_release_targets);
     g_test_add_func("/comp/gesture/lock-and-follow", test_gesture_lock_and_follow);
     g_test_add_func("/comp/gesture/velocity-and-projection", test_gesture_velocity_and_projection);
     g_test_add_func("/comp/gesture/snap-picks", test_gesture_snap_picks);

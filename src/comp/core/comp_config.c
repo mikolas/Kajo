@@ -200,6 +200,14 @@ comp_touch_swipe_to_str(CompTouchSwipeAction action)
     return "none";
 }
 
+CompTouchSwipeAction
+comp_config_horizontal_drag_action(const CompConfig *cfg, bool touchpad)
+{
+    if (touchpad || !cfg)
+        return COMP_SWIPE_COLUMN;
+    return cfg->touch_swipe_horizontal;
+}
+
 static bool
 parse_hex_rgba(const char *s, float out[4])
 {

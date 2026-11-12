@@ -154,6 +154,10 @@ typedef struct CompConfig {
 CompConfig           *comp_config_new_defaults(uint32_t mod_mask);
 void                  comp_config_free(CompConfig *cfg);
 
+/* Action of a horizontal 3-finger drag (spec §3.15 GS5). `[touch].swipe_horizontal`
+ * applies to the touchscreen only; the touchpad always scrolls columns. */
+CompTouchSwipeAction  comp_config_horizontal_drag_action(const CompConfig *cfg, bool touchpad);
+
 /* Merge a single TOML buffer into `cfg`. `base_dir` is used to resolve relative
  * `include = [...]` globs when `allow_includes` is true. Returns false on TOML
  * syntax error. */

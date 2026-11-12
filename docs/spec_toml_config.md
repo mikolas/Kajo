@@ -141,7 +141,7 @@ Shipped default files live in `data/defaults/{theme,shell,ide,files,mod}.toml`. 
 | `touch` | `enabled` | bool | `true` | |
 | `touch` | `swipe_center` | enum | `"launcher"` | `"launcher"`, `"overview"`, `"osk"`, `"none"` |
 | `touch` | `swipe_right` | enum | `"control-center"` | `"control-center"`, `"notifications"`, `"osk"`, `"none"` |
-| `touch` | `swipe_horizontal` | enum | `"column"` | `"column"`, `"workspace"`, `"none"` |
+| `touch` | `swipe_horizontal` | enum | `"column"` | `"column"`, `"workspace"`, `"none"`. Touchscreen only (panel swipe and 3-finger drag); the touchpad always scrolls columns. |
 | `touch` | `dwell_ms` | int | `4000` | 500..15000 |
 | `osk` | `auto_show_mode` | enum | `"tablet"` | `"tablet"`, `"always"`, `"manual"` |
 | `osk` | `push_windows` | bool | `true` | |

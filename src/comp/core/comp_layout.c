@@ -1329,17 +1329,130 @@ comp_layout_workspace_view_target(CompLayout *L, size_t ws_index, double view_w,
     return workspace_view_target(&L->cfg, &L->ws[ws_index], view_w, current);
 }
 
-double
-comp_layout_column_snap_view(const CompLayout *L, size_t column, double view_w, double current)
+/* ───────────────────────── interactive drag targets ───────────────────────── */
+
+typedef struct {
+    double view;     /* camera x */
+    size_t column;   /* column this resting position was derived from */
+} RestView;
+
+#define REST_EPS 0.5   /* px tolerance for "fully visible" and "no movement" */
+
+/* Resting camera positions of `ws` (GS3), written to `out` (capacity 2 * ws->n) and
+ * limited to [first column's leftmost, last column's rightmost]. Independent of the
+ * current camera. Returns the count and the limits. */
+static size_t
+rest_views(const CompLayoutConfig *cfg, const Workspace *ws, double view_w, RestView *out,
+           double *out_lo, double *out_hi)
 {
-    if (!L || !(view_w > 0.0) || !isfinite(view_w))
-        return 0.0;
-    if (!isfinite(current))
-        current = 0.0;
+    double total = strip_width(cfg, ws, view_w);
+    bool fits = total <= view_w + WIDTH_EPS;
+    size_t k = 0;
+    for (size_t i = 0; i < ws->n; i++) {
+        const Column *c = &ws->cols[i];
+        double x = column_x(cfg, ws, i, view_w);
+        double w = column_px_width(cfg, c, view_w);
+        if (c->fullscreen) {
+            out[k++] = (RestView){ x, i };                                  /* V7 */
+        } else if (cfg->always_center_single_column && fits) {
+            out[k++] = (RestView){ (total - view_w) / 2.0, i };             /* V4 */
+        } else if (cfg->center_mode == COMP_CENTER_ALWAYS || w + 2.0 * cfg->gap > view_w) {
+            /* V2 / wide column: these branches of view_for_column ignore `current` */
+            out[k++] = (RestView){ view_for_column(cfg, ws, i, view_w, 0.0), i };
+        } else {
+            out[k++] = (RestView){ x - cfg->gap, i };                       /* left edge at the left */
+            out[k++] = (RestView){ x + w + cfg->gap - view_w, i };          /* right edge at the right */
+        }
+    }
+    /* Candidates are emitted left to right per column, so the first one is the first
+     * column's leftmost resting position and the last one the last column's rightmost. */
+    double lo = out[0].view, hi = out[k - 1].view;
+    if (hi < lo)
+        hi = lo;   /* the strip fits: rest left-aligned (V4 with centering off) */
+    for (size_t j = 0; j < k; j++)
+        out[j].view = fmin(hi, fmax(lo, out[j].view));
+    *out_lo = lo;
+    *out_hi = hi;
+    return k;
+}
+
+static bool
+column_fully_visible(const CompLayoutConfig *cfg, const Workspace *ws, size_t i,
+                     double view_w, double view)
+{
+    const Column *c = &ws->cols[i];
+    double m = c->fullscreen ? 0.0 : cfg->gap;
+    double x = column_x(cfg, ws, i, view_w);
+    double w = column_px_width(cfg, c, view_w);
+    return x - m >= view - REST_EPS && x + w + m <= view + view_w + REST_EPS;
+}
+
+bool
+comp_layout_drag_view_range(const CompLayout *L, double view_w, double *out_lo, double *out_hi)
+{
+    if (!L || !(view_w > 0.0) || !isfinite(view_w) || !out_lo || !out_hi)
+        return false;
     const Workspace *ws = active_ws(L);
-    if (column >= ws->n)
-        return 0.0;
-    return view_for_column(&L->cfg, ws, column, view_w, current);
+    if (ws->n == 0)
+        return false;
+    RestView *rv = malloc(2 * ws->n * sizeof(*rv));
+    if (!rv)
+        return false;
+    (void)rest_views(&L->cfg, ws, view_w, rv, out_lo, out_hi);
+    free(rv);
+    return true;
+}
+
+bool
+comp_layout_drag_release_target(const CompLayout *L, double view_w, double start,
+                                double projected, double *out_view, size_t *out_column)
+{
+    if (!L || !(view_w > 0.0) || !isfinite(view_w) || !out_view || !out_column)
+        return false;
+    const Workspace *ws = active_ws(L);
+    if (ws->n == 0)
+        return false;
+    RestView *rv = malloc(2 * ws->n * sizeof(*rv));
+    if (!rv)
+        return false;
+    double lo = 0.0, hi = 0.0;
+    size_t k = rest_views(&L->cfg, ws, view_w, rv, &lo, &hi);
+    if (!isfinite(start))
+        start = isfinite(projected) ? projected : lo;
+    if (!isfinite(projected))
+        projected = start;
+
+    size_t best = 0;
+    for (size_t j = 1; j < k; j++)
+        if (fabs(rv[j].view - projected) < fabs(rv[best].view - projected))
+            best = j;
+    double view  = rv[best].view;
+    size_t focus = rv[best].column;
+    free(rv);
+
+    /* GS5: under "never"/"on-overflow" every fully visible column keeps the camera
+     * still when focused (V1), so prefer the one the fingers were heading for. */
+    if (L->cfg.center_mode != COMP_CENTER_ALWAYS) {
+        double dir = projected - start;
+        bool found = false;
+        size_t pick = focus;
+        if (fabs(dir) <= REST_EPS && !ws->focus_floating && ws->focus < ws->n &&
+            column_fully_visible(&L->cfg, ws, ws->focus, view_w, view)) {
+            pick  = ws->focus;
+            found = true;
+        }
+        for (size_t i = 0; !found && i < ws->n; i++) {
+            size_t c = dir < 0.0 ? i : ws->n - 1 - i;   /* scan from the side being revealed */
+            if (column_fully_visible(&L->cfg, ws, c, view_w, view)) {
+                pick  = c;
+                found = true;
+            }
+        }
+        focus = pick;
+    }
+    *out_view   = view;
+    *out_column = focus;
+    return true;
 }
 
 /* ───────────────────────── invariants ───────────────────────── */
