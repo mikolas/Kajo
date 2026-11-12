@@ -290,6 +290,7 @@ void               comp_window_resize_height(CompServer *server, double delta, C
 double             comp_window_scroll_factor_for_surface(CompServer *server, struct wlr_surface *surface);
 bool               comp_window_focused_wants_vrr(const CompServer *server);
 void               comp_window_reapply_rules(CompServer *server);
+void               comp_window_on_dialog_state_changed(struct wlr_xdg_toplevel *toplevel);
 size_t             comp_window_list_info(const CompServer *server, CompWindowInfo *out, size_t max_out);
 struct wlr_surface *comp_window_get_surface(const struct CompWindow *w);
 bool               comp_window_get_capture_box(const struct CompWindow *w, bool include_border,

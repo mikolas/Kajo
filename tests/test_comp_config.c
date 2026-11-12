@@ -474,6 +474,10 @@ test_config_shipped_defaults(void)
     CompWindowRuleResult wr;
     comp_rules_match_window(cfg->rules, "org.gnome.Calculator", "Calculator", &wr);
     g_assert_true(wr.has_floating && wr.floating);
+    comp_rules_match_window(cfg->rules, "xdg-desktop-portal-gtk", "Open File", &wr);
+    g_assert_true(wr.has_floating && wr.floating);
+    comp_rules_match_window(cfg->rules, "org.freedesktop.impl.portal.desktop.gtk", "Select Folder", &wr);
+    g_assert_true(wr.has_floating && wr.floating);
 
     CompLayerRuleResult lr;
     comp_rules_match_layer(cfg->rules, "kajo", &lr);

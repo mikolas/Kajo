@@ -663,6 +663,43 @@ handle_new_toplevel_decoration(void *owner, void *data)
     }
 }
 
+typedef struct {
+    struct wlr_xdg_dialog_v1 *dlg;
+} CompXdgDialog;
+
+static void
+handle_xdg_dialog_set_modal(void *owner, void *data)
+{
+    CompXdgDialog *cd = owner;
+    (void)data;
+    if (cd && cd->dlg && cd->dlg->xdg_toplevel)
+        comp_window_on_dialog_state_changed(cd->dlg->xdg_toplevel);
+}
+
+static void
+handle_xdg_dialog_destroy(void *owner, void *data)
+{
+    CompXdgDialog *cd = owner;
+    (void)data;
+    talloc_free(cd);
+}
+
+static void
+handle_new_xdg_dialog(void *owner, void *data)
+{
+    CompServer *s = owner;
+    struct wlr_xdg_dialog_v1 *dlg = data;
+    if (!s || !dlg)
+        return;
+    CompXdgDialog *cd = talloc_zero(s, CompXdgDialog);
+    COMP_WARN_RETURN_VOID(cd != NULL);
+    cd->dlg = dlg;
+    if (!comp_listen(cd, &dlg->events.set_modal, handle_xdg_dialog_set_modal) ||
+        !comp_listen(cd, &dlg->events.destroy, handle_xdg_dialog_destroy)) {
+        talloc_free(cd);
+    }
+}
+
 static void
 handle_toplevel_capture_request(void *owner, void *data)
 {
@@ -735,6 +772,9 @@ comp_protocols_init(CompServer *s)
     if (s->xdg_decoration_mgr)
         comp_listen_ctx(s->listeners, s, &s->xdg_decoration_mgr->events.new_toplevel_decoration,
                         handle_new_toplevel_decoration);
+    if (s->xdg_dialog_mgr)
+        comp_listen_ctx(s->listeners, s, &s->xdg_dialog_mgr->events.new_dialog,
+                        handle_new_xdg_dialog);
     if (s->text_input_mgr)
         comp_listen_ctx(s->listeners, s, &s->text_input_mgr->events.new_text_input, handle_new_text_input);
     if (s->input_method_mgr)

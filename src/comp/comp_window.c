@@ -1202,9 +1202,10 @@ reapply_dynamic_rules_for_window(CompWindow *w)
     w->scroll_factor = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
     w->rule_vrr      = rr.has_vrr ? rr.vrr : false;
 
-    /* Spec §5.2.3: if not manually floated/tiled since map and a newly matching
-     * rule sets floating = true, promote to the floating layer. */
-    if (!w->manually_floated && !w->is_floating && rr.has_floating && rr.floating) {
+    /* Spec §5.2.3 & §3.3 O3: if not manually floated/tiled since map and a newly matching
+     * rule, parent relationship, or modal xdg_dialog state requires floating, promote to
+     * the floating layer. */
+    if (!w->manually_floated && !w->is_floating && should_open_floating(w, &rr)) {
         CompRect work = {0};
         comp_server_working_area(s, &work);
         CompRect r = initial_floating_rect(w, &rr, work.w, work.h);
@@ -1220,6 +1221,33 @@ reapply_dynamic_rules_for_window(CompWindow *w)
     } else {
         comp_output_update_vrr(s);
     }
+}
+
+void
+comp_window_on_dialog_state_changed(struct wlr_xdg_toplevel *toplevel)
+{
+    if (!toplevel || !toplevel->base || !toplevel->base->data)
+        return;
+    CompWindow *w = toplevel->base->data;
+    CompServer *s = w->server;
+    if (!w->mapped) {
+        if (toplevel->base->initialized && w->cfg_tiled != WLR_EDGE_NONE) {
+            CompWindowRuleResult rr = {0};
+            if (s && s->rules)
+                comp_rules_match_window(s->rules, w->app_id, w->title, &rr);
+            if (should_open_floating(w, &rr)) {
+                w->cfg_w     = 0;
+                w->cfg_h     = 0;
+                w->cfg_tiled = WLR_EDGE_NONE;
+                wlr_xdg_toplevel_set_tiled(toplevel, WLR_EDGE_NONE);
+                wlr_xdg_toplevel_set_size(toplevel, 0, 0);
+            }
+        }
+        return;
+    }
+    reapply_dynamic_rules_for_window(w);
+    if (s)
+        comp_ipc_emit_windows(s);
 }
 
 void
@@ -1428,6 +1456,15 @@ handle_request_resize(void *owner, void *data)
 }
 
 static void
+handle_set_parent(void *owner, void *data)
+{
+    CompWindow *w = owner;
+    (void)data;
+    if (w && w->toplevel)
+        comp_window_on_dialog_state_changed(w->toplevel);
+}
+
+static void
 handle_set_metadata(void *owner, void *data)
 {
     CompWindow *w = owner;
@@ -1493,6 +1530,7 @@ handle_new_toplevel(void *owner, void *data)
               comp_listen(w, &toplevel->events.request_minimize, handle_request_minimize) &&
               comp_listen(w, &toplevel->events.request_move, handle_request_move) &&
               comp_listen(w, &toplevel->events.request_resize, handle_request_resize) &&
+              comp_listen(w, &toplevel->events.set_parent, handle_set_parent) &&
               comp_listen(w, &toplevel->events.set_title, handle_set_metadata) &&
               comp_listen(w, &toplevel->events.set_app_id, handle_set_metadata);
     if (!ok)

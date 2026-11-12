@@ -814,7 +814,8 @@ app_id = [
     '^gnome-calculator$',
     '^galculator$',
     '^blueman-manager$',
-    '^xdg-desktop-portal$',
+    '^xdg-desktop-portal',
+    '^org\.freedesktop\.impl\.portal\.',
 ]
 floating = true
 
