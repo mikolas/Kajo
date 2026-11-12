@@ -6,8 +6,10 @@
  * Exit status: 0 ok, 1 missing global / protocol error, 2 usage, 3 cannot connect.
  */
 #include "ext-session-lock-v1-client-protocol.h"
+#include "input-method-unstable-v2-client-protocol.h"
 #include "single-pixel-buffer-v1-client-protocol.h"
 #include "viewporter-client-protocol.h"
+#include "virtual-keyboard-unstable-v1-client-protocol.h"
 #include "wlr-layer-shell-unstable-v1-client-protocol.h"
 #include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
@@ -17,9 +19,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
 #include <wayland-client.h>
+#include <xkbcommon/xkbcommon.h>
 
 typedef struct {
     char **want;
@@ -691,6 +695,194 @@ test_hold_windows(int n, const char *ready_file)
     return 0;
 }
 
+typedef struct {
+    struct wl_compositor                     *compositor;
+    struct wl_seat                           *seat;
+    struct xdg_wm_base                       *wm_base;
+    struct wp_single_pixel_buffer_manager_v1 *spb_mgr;
+    struct wp_viewporter                     *viewporter;
+    struct zwp_virtual_keyboard_manager_v1   *vkbd_mgr;
+    struct zwp_input_method_manager_v2       *im_mgr;
+} RogueEnv;
+
+static void
+on_rogue_global(void *data, struct wl_registry *reg, uint32_t name, const char *iface, uint32_t ver)
+{
+    RogueEnv *e = data;
+    if (strcmp(iface, wl_compositor_interface.name) == 0) {
+        e->compositor = wl_registry_bind(reg, name, &wl_compositor_interface, ver < 4 ? ver : 4);
+    } else if (strcmp(iface, wl_seat_interface.name) == 0) {
+        e->seat = wl_registry_bind(reg, name, &wl_seat_interface, 1);
+    } else if (strcmp(iface, xdg_wm_base_interface.name) == 0) {
+        e->wm_base = wl_registry_bind(reg, name, &xdg_wm_base_interface, ver < 6 ? ver : 6);
+        xdg_wm_base_add_listener(e->wm_base, &k_wm_base_listener, e);
+    } else if (strcmp(iface, wp_single_pixel_buffer_manager_v1_interface.name) == 0) {
+        e->spb_mgr = wl_registry_bind(reg, name, &wp_single_pixel_buffer_manager_v1_interface, 1);
+    } else if (strcmp(iface, wp_viewporter_interface.name) == 0) {
+        e->viewporter = wl_registry_bind(reg, name, &wp_viewporter_interface, 1);
+    } else if (strcmp(iface, zwp_virtual_keyboard_manager_v1_interface.name) == 0) {
+        e->vkbd_mgr = wl_registry_bind(reg, name, &zwp_virtual_keyboard_manager_v1_interface, 1);
+    } else if (strcmp(iface, zwp_input_method_manager_v2_interface.name) == 0) {
+        e->im_mgr = wl_registry_bind(reg, name, &zwp_input_method_manager_v2_interface, 1);
+    }
+}
+
+static const struct wl_registry_listener k_rogue_reg_listener = { on_rogue_global, on_global_remove };
+
+static int
+test_rogue(const char *ready_file)
+{
+    if (!ready_file)
+        return 2;
+
+    struct wl_display *d = wl_display_connect(NULL);
+    if (!d)
+        return 3;
+
+    RogueEnv env = {0};
+    struct wl_registry *reg = wl_display_get_registry(d);
+    wl_registry_add_listener(reg, &k_rogue_reg_listener, &env);
+    if (wl_display_roundtrip(d) < 0 || !env.compositor || !env.seat || !env.wm_base ||
+        !env.spb_mgr || !env.viewporter || !env.vkbd_mgr || !env.im_mgr) {
+        return 1;
+    }
+
+    struct wl_buffer *buf = wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(
+        env.spb_mgr, 0x112233ffu, 0x445566ffu, 0x778899ffu, 0xffffffffu);
+
+    /* 1. Rapid rogue surface churn: 25 toplevels created and immediately destroyed mid-flight */
+    for (int i = 0; i < 25; i++) {
+        struct wl_surface *s = wl_compositor_create_surface(env.compositor);
+        struct xdg_surface *xs = xdg_wm_base_get_xdg_surface(env.wm_base, s);
+        struct xdg_toplevel *top = xdg_surface_get_toplevel(xs);
+        xdg_toplevel_set_app_id(top, "org.kajo.RogueChurn");
+        xdg_toplevel_set_title(top, "Transient");
+        if (i % 2 == 0)
+            wl_surface_commit(s);
+        xdg_toplevel_destroy(top);
+        xdg_surface_destroy(xs);
+        wl_surface_destroy(s);
+    }
+    if (wl_display_roundtrip(d) < 0)
+        return 1;
+
+    /* 2. Virtual keyboard + input-method v2 exercise */
+    struct zwp_virtual_keyboard_v1 *vkbd =
+        zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(env.vkbd_mgr, env.seat);
+    struct zwp_input_method_v2 *im =
+        zwp_input_method_manager_v2_get_input_method(env.im_mgr, env.seat);
+
+    struct xkb_context *xctx = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+    struct xkb_keymap *kmap = xctx ? xkb_keymap_new_from_names(xctx, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS) : NULL;
+    char *kmap_str = kmap ? xkb_keymap_get_as_string(kmap, XKB_KEYMAP_FORMAT_TEXT_V1) : NULL;
+    if (kmap_str) {
+        size_t klen = strlen(kmap_str) + 1;
+        char tmpl[] = "/tmp/kajo-vkbd-XXXXXX";
+        int kfd = mkstemp(tmpl);
+        if (kfd >= 0) {
+            unlink(tmpl);
+            if (write(kfd, kmap_str, klen) == (ssize_t)klen) {
+                zwp_virtual_keyboard_v1_keymap(vkbd, WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1, kfd, (uint32_t)klen);
+                zwp_virtual_keyboard_v1_modifiers(vkbd, 0, 0, 0, 0);
+                zwp_virtual_keyboard_v1_key(vkbd, 10, 30 /* KEY_A */, WL_KEYBOARD_KEY_STATE_PRESSED);
+                zwp_virtual_keyboard_v1_key(vkbd, 20, 30 /* KEY_A */, WL_KEYBOARD_KEY_STATE_RELEASED);
+            }
+            close(kfd);
+        }
+        free(kmap_str);
+    }
+    if (kmap) xkb_keymap_unref(kmap);
+    if (xctx) xkb_context_unref(xctx);
+
+    zwp_input_method_v2_commit_string(im, "hei");
+    zwp_input_method_v2_commit(im, 1);
+
+    /* 3. Map two persistent windows:
+     *    - win[0]: app_id="firefox", starts title="Browser" (tiled), then mutates to "Picture-in-Picture"
+     *    - win[1]: app_id="org.kajo.Oversized", sets a 8192-byte title with UTF-8 'ä' (0xC3 0xA4) at 511..512 */
+    TestWin wins[2] = {0};
+    for (int i = 0; i < 2; i++) {
+        wins[i].surface = wl_compositor_create_surface(env.compositor);
+        wins[i].viewport = wp_viewporter_get_viewport(env.viewporter, wins[i].surface);
+        wins[i].xdg_surface = xdg_wm_base_get_xdg_surface(env.wm_base, wins[i].surface);
+        xdg_surface_add_listener(wins[i].xdg_surface, &k_xdg_surf_listener, &wins[i]);
+        wins[i].toplevel = xdg_surface_get_toplevel(wins[i].xdg_surface);
+        xdg_toplevel_add_listener(wins[i].toplevel, &k_toplevel_listener, &wins[i]);
+        if (i == 0) {
+            xdg_toplevel_set_app_id(wins[i].toplevel, "firefox");
+            xdg_toplevel_set_title(wins[i].toplevel, "Browser");
+        } else {
+            xdg_toplevel_set_app_id(wins[i].toplevel, "org.kajo.Oversized");
+            xdg_toplevel_set_title(wins[i].toplevel, "Short");
+        }
+        wl_surface_commit(wins[i].surface);
+    }
+    if (wl_display_roundtrip(d) < 0)
+        return 1;
+
+    for (int i = 0; i < 2; i++) {
+        wp_viewport_set_destination(wins[i].viewport, 400, 300);
+        wl_surface_attach(wins[i].surface, buf, 0, 0);
+        wl_surface_damage_buffer(wins[i].surface, 0, 0, 1, 1);
+        wl_surface_commit(wins[i].surface);
+    }
+    if (wl_display_roundtrip(d) < 0 || wl_display_roundtrip(d) < 0)
+        return 1;
+
+    /* Mutate win[0] title to trigger dynamic floating rule, and win[1] to 2048-byte string */
+    xdg_toplevel_set_title(wins[0].toplevel, "Picture-in-Picture");
+    xdg_toplevel_move(wins[0].toplevel, env.seat, 1u);
+    xdg_toplevel_resize(wins[0].toplevel, env.seat, 1u, XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT);
+    char *huge = malloc(2049);
+    if (!huge)
+        return 1;
+    memset(huge, 'X', 2048);
+    /* Place 2-byte UTF-8 'ä' (0xC3 0xA4) straddling index 511..512 */
+    huge[511] = (char)0xC3;
+    huge[512] = (char)0xA4;
+    huge[2048] = '\0';
+    xdg_toplevel_set_title(wins[1].toplevel, huge);
+    free(huge);
+
+    if (wl_display_roundtrip(d) < 0)
+        return 1;
+
+    FILE *fp = fopen(ready_file, "w");
+    if (fp) {
+        fputs("ready\n", fp);
+        fclose(fp);
+    }
+
+    while (access(ready_file, F_OK) == 0) {
+        if (wl_display_dispatch_pending(d) < 0 || wl_display_flush(d) < 0)
+            break;
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 10000000L };
+        nanosleep(&ts, NULL);
+    }
+
+    for (int i = 1; i >= 0; i--) {
+        wp_viewport_destroy(wins[i].viewport);
+        xdg_toplevel_destroy(wins[i].toplevel);
+        xdg_surface_destroy(wins[i].xdg_surface);
+        wl_surface_destroy(wins[i].surface);
+    }
+    zwp_input_method_v2_destroy(im);
+    zwp_virtual_keyboard_v1_destroy(vkbd);
+    wl_buffer_destroy(buf);
+    wl_display_roundtrip(d);
+
+    zwp_input_method_manager_v2_destroy(env.im_mgr);
+    zwp_virtual_keyboard_manager_v1_destroy(env.vkbd_mgr);
+    wp_viewporter_destroy(env.viewporter);
+    wp_single_pixel_buffer_manager_v1_destroy(env.spb_mgr);
+    xdg_wm_base_destroy(env.wm_base);
+    wl_seat_destroy(env.seat);
+    wl_compositor_destroy(env.compositor);
+    wl_registry_destroy(reg);
+    wl_display_disconnect(d);
+    return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -702,8 +894,10 @@ main(int argc, char *argv[])
         return test_windows(atoi(argv[2]));
     if (argc == 4 && strcmp(argv[1], "hold") == 0)
         return test_hold_windows(atoi(argv[2]), argv[3]);
+    if (argc == 3 && strcmp(argv[1], "rogue") == 0)
+        return test_rogue(argv[2]);
     if (argc == 2 && strcmp(argv[1], "shell") == 0)
         return test_shell();
-    fprintf(stderr, "usage: %s globals IFACE... | churn N | windows N | hold N FILE | shell\n", argv[0]);
+    fprintf(stderr, "usage: %s globals IFACE... | churn N | windows N | hold N FILE | rogue FILE | shell\n", argv[0]);
     return 2;
 }

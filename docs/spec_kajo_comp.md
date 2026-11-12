@@ -1119,7 +1119,8 @@ This section is the single ledger of compositor features deferred past v1, recor
 | **HDR10 Output & Mixed SDR/HDR Pipeline (v2)** | Scoped to v2 so v1 ships a rock-solid SDR compositor first. On Host A, `libdisplay-info` 0.3.0 also misses DisplayID 2.0 CTA HDR blocks (fixed in `libdisplay-info` 0.4.0). | Full design and Phase 0 hardware spike findings recorded in §9.2 below. |
 | **Adjustable SDR White Level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) when compositing onto a PQ HDR output and rejects `color_transform` when an output image description is set. | Small patch to `wlr_scene`'s luminance multiplier or upstream `wlroots` proposal in v2. |
 | **Compositor-Side HDR Tone Mapping (BT.2390)** | Stock `wlroots 0.20.2` has no tone-mapping curve in `render/` or `types/`; content exceeding panel peak luminance relies on display hardware tone mapping. | Custom tone-mapping shader pass in v2+. |
-| **Backdrop Blur (Dual-Kawase Frosted Glass)** | `wlr_render_pass` exposes only `add_texture()` and `add_rect()` with no multi-pass downsample/upsample API. | Custom Vulkan blur pass on shared `VkDevice` (`wlr_vk_renderer_get_device()`) or `ext-background-effect-v1` when supported upstream. |
+| **Full-Strip Vertical Workspace Scrolling** | v1 hides non-active workspace windows immediately on workspace switch and stores a single `view_x` camera per output, causing outgoing workspace windows to flick off instead of scrolling off-screen simultaneously with incoming workspace windows. | Store per-workspace `view_x` cameras, compute continuous vertical strip offsets (`ws_idx * (vh + ws_gap) - ws_y`), and keep both outgoing and incoming workspace windows enabled during vertical spring transitions (see §9.3). |
+| **Backdrop Blur (Dual-Kawase Frosted Glass)** | `wlr_render_pass` exposes only `add_texture()` and `add_rect()` with no multi-pass downsample/upsample API. | Inject backdrop `wlr_scene_buffer` nodes behind blurred layer surfaces and popups, driven by a scissored 2-pass Dual-Kawase downsample/upsample pipeline (`blur = true`, `popup_blur = true`, `xray = false`; see §9.4). |
 | **Window Open/Close/Resize Shaders** | Same `wlr_render_pass` limitation; closing animations also require freezing textures of unmapped surfaces, and resize crossfades require dual-texture blending. | Defer custom SPIR-V/GLSL window effects. |
 | **Overview Zoom (`toggle-overview`)** | `wlr_scene` has no scene-tree scale transform; zooming requires recomputing per-buffer positions and `wlr_scene_buffer_set_dest_size()` across all surfaces, subsurfaces, and popups. | Implement manual scene-buffer scaling pass post-v1. |
 | **Drop Shadows** | Not built into `wlr_scene` (rounded corners are permanently excluded by the Aero + Metro `0px` radius design system). | Optional shadow rects/nine-patch in a later release. |
@@ -1139,3 +1140,43 @@ The following facts were verified against `wlroots 0.20.2` (`backend/drm`, `type
    - Never pass primaries other than `NONE` or `BT2020` in an output image description (`convert_primaries_to_colorspace()` in `wlroots`' DRM backend calls `abort()` on any other value).
 3. **Headless Vulkan Verification:**
    - `WLR_BACKENDS=headless WLR_RENDERER=vulkan` succeeds on Host A with `input_color_transform`, `output_color_transform`, and timeline syncobjs available, and the 6-patch SDR color accuracy self-test (`#000000`, `#111111`, `#1a1a1a`, `#0078d4`, `#808080`, `#ffffff`) reads back bit-exact 8-bit values on both headless and bare-metal `2880×1800`.
+
+### 9.3 Deferred Design Notes: Full-Strip Vertical Workspace Scrolling
+
+In v1 (`comp_layout.c` + `comp_motion.c` + `comp_xdg.c`), switching workspaces updates `active_ws` immediately, disables scene nodes for windows not on `active_ws`, and resets `ws_y` to `(new_ws - old_ws) * (vh + ws_gap)` to decay back to `0`. Consequently, outgoing workspace windows disappear instantly while only the incoming workspace windows slide into view.
+
+To match Niri's continuous vertical strip transition where both outgoing and incoming workspaces remain visible and scroll together:
+
+1. **Per-Workspace Horizontal Camera (`CompWorkspace.view_x` in `src/comp/core/comp_layout.h` & `comp_layout.c`):**
+   - Store `double view_x` per workspace (`CompWorkspace`) rather than a single `view_x` per output so each workspace preserves its own horizontal scroll offset simultaneously during a vertical transition.
+   - Add an explicit `double ws_gap` (default `32` logical px) between stacked workspaces on the vertical axis.
+2. **All-Workspace Layout Solver (`comp_layout_solve` in `src/comp/core/comp_layout.c`):**
+   - Instead of skipping non-active workspaces (`if (c->ws != out->active_ws) continue;`), solve column/window `target_x` and `target_y` across all workspaces on the output using each workspace's own `ws->view_x` and vertical strip offset:
+     $$\text{ws\_offset\_y}(w) = (w - \text{active\_ws}) \cdot (\text{vh} + \text{ws\_gap})$$
+3. **Continuous Vertical Camera Spring (`src/comp/core/comp_motion.c`):**
+   - Replace the relative `ws_y` jump-and-decay with a continuous vertical camera spring targeting `active_ws * (vh + ws_gap)` (or offset each workspace's solved `y` by `ws_y.pos`).
+   - Add `bool on_screen` to `CompSolvedWindow`, set to `true` whenever the window belongs to `active_ws` **or** the vertical `ws_y` spring is actively in flight and the window's vertical bounding box intersects `[vy, vy + vh]`.
+4. **Scene Node Visibility Gate (`comp_server_sync_layout` in `src/comp/comp_xdg.c`):**
+   - Replace `bool visible = (win->workspace_idx == active_ws);` with `bool visible = sw->on_screen;` so outgoing workspace windows smoothly scroll out of the viewport as incoming workspace windows scroll in, and are disabled in `wlr_scene` only after they leave `[vy, vy + vh]` and `ws_y` settles.
+
+### 9.4 Deferred Design Notes: Dual-Kawase Backdrop Blur Pipeline
+
+To restore frosted-glass backdrop blur behind `kajo` layer surfaces and popups (`blur = true`, `popup_blur = true`, `xray = false`) while preserving `wlr_scene_output_commit()` (DRM atomic test-before-commit cascade, damage ring tracking, direct scanout when unblurred, and screencopy):
+
+1. **Config & Layer-Rule Schema (`src/comp/core/comp_schema_keys.h`, `comp_rules.{h,c}`, `comp_config.{h,c}`):**
+   - Add a top-level `[blur]` section to `comp.toml` (`enabled = true`, `passes = 2`, `radius = 5.0`, `noise = 0.02`).
+   - Move `"blur"` into `k_known_layer_keys` and add `"popup_blur"` and `"xray"` to `[[layer_rule]]` (`CompLayerRuleResult`: `has_blur`/`blur`, `has_popup_blur`/`popup_blur`, `has_xray`/`xray`).
+   - Update `tests/test_comp_config.c` (`test_rules_unsupported_keys_flagged`) to test a different unimplemented key and add positive unit tests for `blur`, `popup_blur`, and `xray`.
+2. **Backdrop `wlr_scene_buffer` Nodes (`src/comp/comp_layer.c`):**
+   - For each `CompLayerSurface` and `CompLayerPopup`, attach a `struct wlr_scene_buffer *blur_backdrop` as the lowest-z child inside `cls->scene_layer->tree` and `popup->scene_tree`, enabled when `blur = true` / `popup_blur = true`.
+   - Keep `opacity = 1.0` and `popup_opacity = 1.0` in `rules.toml` so foreground `#ffffff` text and `1px` `@metro-accent` borders stay crisp, while lowering `@metro-panel-bg` and `popover > contents` alpha in `style.css` (`0.72–0.80`) so the blurred backdrop buffer shines through.
+3. **Dual-Kawase Offscreen Pipeline (`src/comp/comp_blur.{h,c}` & `src/comp/comp_server.c`):**
+   - When `config->blur.enabled` is true (and `WLR_RENDERER` is not overridden), prefer `wlr_gles2_renderer_create_with_drm_fd()` in `create_server_renderer()` since `wlroots-0.20` exposes raw EGL/GL handles in `<wlr/render/gles2.h>`.
+   - Maintain per-output half/quarter-resolution ping-pong FBO textures (`tex_ping`, `tex_pong`) and compile two GLSL ES fragment shaders:
+     - `kawase_down.frag`: 5-tap diagonal + center downsample filter.
+     - `kawase_up.frag`: 8-tap tent upsample filter with procedural dithering (`noise`) on the final pass to prevent 8-bit banding on dark `#141414` Aero glass.
+   - Support both `xray = false` (samples `tree_background` + `tree_bottom` + `tree_tiled` + `tree_floating` so scrolling windows refract dynamically behind the bar and popovers) and `xray = true` (samples only `tree_background` + `tree_bottom`).
+4. **Damage-Gated Per-Frame Hook (`handle_frame` in `src/comp/comp_output.c`):**
+   - Before calling `wlr_scene_output_commit(o->scene_output, NULL)`, collect output-local bounding boxes of mapped layer surfaces and popups with `blur = true`.
+   - **Zero-Cost Idle Fast Path:** If no scene node below `tree_top` / `tree_overlay` intersecting those bounding boxes (expanded by the blur kernel radius) was damaged this frame and no blurred popup moved/resized, skip the blur pass (`0.0 ms` GPU overhead) and reuse the existing `blur_backdrop` buffer.
+   - **Dirty Blur Update Path:** When underlying damage intersects a blur rect, render the underlying scene trees clipped to the union of dirty blur rects, run 2 downsample + 2 upsample passes restricted via `glScissor`, and bind the resulting `wlr_buffer` to each `blur_backdrop` `wlr_scene_buffer` with `wlr_scene_buffer_set_source_box()` and `wlr_scene_buffer_set_dest_size()`.

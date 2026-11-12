@@ -125,7 +125,7 @@ comp_touch_tracker_active_count(const CompTouchTracker *t)
 void
 comp_touch_tracker_down(CompTouchTracker *t, int32_t touch_id, double x_norm, double y_norm)
 {
-    if (!t)
+    if (!t || !isfinite(x_norm) || !isfinite(y_norm))
         return;
 
     int slot_idx = -1;
@@ -165,7 +165,7 @@ comp_touch_tracker_down(CompTouchTracker *t, int32_t touch_id, double x_norm, do
 CompTouchGestureEvent
 comp_touch_tracker_motion(CompTouchTracker *t, int32_t touch_id, double x_norm, double y_norm)
 {
-    if (!t)
+    if (!t || !isfinite(x_norm) || !isfinite(y_norm))
         return COMP_TOUCH_EV_NONE;
 
     if (x_norm < 0.0) x_norm = 0.0;
@@ -294,7 +294,8 @@ comp_touchpad_swipe_update(CompTouchpadSwipe *s, uint32_t fingers,
                            double dx, double dy, bool natural_scroll,
                            CompAction *out_action)
 {
-    if (!s || !s->active || s->triggered || fingers != 3 || s->fingers != 3 || !out_action)
+    if (!s || !s->active || s->triggered || fingers != 3 || s->fingers != 3 ||
+        !out_action || !isfinite(dx) || !isfinite(dy))
         return false;
 
     s->dx_accum += dx;

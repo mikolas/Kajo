@@ -1,6 +1,7 @@
-/* Tests for src/comp/core/comp_layout.c and comp_motion.c (pure core, no wlroots). */
+/* Tests for src/comp/core/comp_layout.c, comp_motion.c, and comp_touch.c (pure core, no wlroots). */
 #include "../src/comp/core/comp_layout.h"
 #include "../src/comp/core/comp_motion.h"
+#include "../src/comp/core/comp_touch.h"
 
 #include <glib.h>
 #include <math.h>
@@ -481,6 +482,92 @@ test_monkey(void)
     g_rand_free(rng);
 }
 
+static void
+test_touch_gestures_and_touchpad_swipes(void)
+{
+    CompTouchTracker t;
+    comp_touch_tracker_init(&t, 300.0, 200.0);
+
+    /* 1. Top bezel swipe down (>= 12mm in 200mm height -> dy >= 0.06) */
+    comp_touch_tracker_down(&t, 1, 0.45, 0.01);
+    g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, 1);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.45, 0.04), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.45, 0.09), ==, COMP_TOUCH_EV_BEZEL_TOP);
+    g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.45, 1e-6);
+    /* Second motion in same gesture must not re-fire */
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.45, 0.15), ==, COMP_TOUCH_EV_NONE);
+    comp_touch_tracker_up(&t, 1);
+    g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, 0);
+
+    /* 2. Bottom bezel swipe up */
+    comp_touch_tracker_down(&t, 2, 0.70, 0.99);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 2, 0.70, 0.90), ==, COMP_TOUCH_EV_BEZEL_BOTTOM);
+    g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.70, 1e-6);
+    comp_touch_tracker_up(&t, 2);
+
+    /* 3. Mid-screen 1-finger swipe and diagonal drift must NOT trigger bezel swipe */
+    comp_touch_tracker_down(&t, 3, 0.50, 0.50);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 3, 0.50, 0.30), ==, COMP_TOUCH_EV_NONE);
+    comp_touch_tracker_up(&t, 3);
+
+    comp_touch_tracker_down(&t, 4, 0.50, 0.01);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 4, 0.60, 0.09), ==, COMP_TOUCH_EV_NONE);
+    comp_touch_tracker_up(&t, 4);
+
+    /* 4. 90-degree rotated output transform: physical left edge (raw_x = 0.01) becomes logical top bezel */
+    comp_touch_tracker_set_geometry(&t, 300.0, 200.0, COMP_TRANSFORM_90);
+    comp_touch_tracker_down(&t, 5, 0.01, 0.40);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 5, 0.08, 0.40), ==, COMP_TOUCH_EV_BEZEL_TOP);
+    g_assert_cmpfloat_with_epsilon(t.last_x_ratio, 0.60, 1e-6);
+    comp_touch_tracker_up(&t, 5);
+    comp_touch_tracker_set_geometry(&t, 300.0, 200.0, COMP_TRANSFORM_NORMAL);
+
+    /* 5. 3-finger global swipes (up, down, left, right) + progressive 1->2->3 re-anchoring */
+    comp_touch_tracker_down(&t, 10, 0.3, 0.5);
+    comp_touch_tracker_motion(&t, 10, 0.3, 0.6); /* moved before 2nd/3rd finger land -> re-anchored */
+    comp_touch_tracker_down(&t, 11, 0.5, 0.6);
+    comp_touch_tracker_down(&t, 12, 0.7, 0.6);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 10, 0.3, 0.50), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 11, 0.5, 0.50), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 12, 0.7, 0.50), ==, COMP_TOUCH_EV_3F_SWIPE_UP);
+    comp_touch_tracker_cancel(&t);
+    g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, 0);
+
+    comp_touch_tracker_down(&t, 1, 0.3, 0.5);
+    comp_touch_tracker_down(&t, 2, 0.5, 0.5);
+    comp_touch_tracker_down(&t, 3, 0.7, 0.5);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 1, 0.36, 0.5), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 2, 0.56, 0.5), ==, COMP_TOUCH_EV_NONE);
+    g_assert_cmpint(comp_touch_tracker_motion(&t, 3, 0.76, 0.5), ==, COMP_TOUCH_EV_3F_SWIPE_RIGHT);
+    comp_touch_tracker_cancel(&t);
+
+    /* 6. NaN / Infinity / slot overflow safety */
+    comp_touch_tracker_down(&t, 99, NAN, 0.5);
+    comp_touch_tracker_down(&t, 99, 0.5, INFINITY);
+    g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, 0);
+    for (int i = 0; i < COMP_TOUCH_MAX_SLOTS + 4; i++)
+        comp_touch_tracker_down(&t, i + 100, 0.5, 0.5);
+    g_assert_cmpint(comp_touch_tracker_active_count(&t), ==, COMP_TOUCH_MAX_SLOTS);
+    comp_touch_tracker_cancel(&t);
+
+    /* 7. Touchpad 3-finger swipe state machine */
+    CompTouchpadSwipe tp;
+    CompAction act = COMP_ACT__COUNT;
+    comp_touchpad_swipe_begin(&tp, 3);
+    g_assert_false(comp_touchpad_swipe_update(&tp, 3, NAN, 10.0, true, &act));
+    g_assert_false(comp_touchpad_swipe_update(&tp, 3, -20.0, 0.0, true, &act));
+    g_assert_true(comp_touchpad_swipe_update(&tp, 3, -25.0, 0.0, true, &act));
+    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_COLUMN_RIGHT);
+    /* Already triggered in this gesture */
+    g_assert_false(comp_touchpad_swipe_update(&tp, 3, -50.0, 0.0, true, &act));
+    comp_touchpad_swipe_end(&tp);
+
+    comp_touchpad_swipe_begin(&tp, 3);
+    g_assert_true(comp_touchpad_swipe_update(&tp, 3, 0.0, -45.0, true, &act));
+    g_assert_cmpint(act, ==, COMP_ACT_FOCUS_WORKSPACE_DOWN);
+    comp_touchpad_swipe_end(&tp);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -496,6 +583,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/layout/floating", test_floating);
     g_test_add_func("/comp/layout/workspaces", test_workspaces);
     g_test_add_func("/comp/layout/action-names", test_action_names);
+    g_test_add_func("/comp/layout/touch-and-touchpad", test_touch_gestures_and_touchpad_swipes);
     g_test_add_func("/comp/layout/monkey", test_monkey);
     return g_test_run();
 }

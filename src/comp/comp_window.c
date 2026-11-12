@@ -109,13 +109,28 @@ clamp_floating_rect(CompRect r, double vw, double vh)
     return r;
 }
 
+#define COMP_MAX_META_LEN 512
+
+static char *
+dup_bounded_utf8(void *ctx, const char *s)
+{
+    if (!s)
+        return talloc_strdup(ctx, "");
+    size_t len = strnlen(s, COMP_MAX_META_LEN);
+    if (len == COMP_MAX_META_LEN && (unsigned char)s[len] != '\0') {
+        while (len > 0 && ((unsigned char)s[len] & 0xC0u) == 0x80u)
+            len--;
+    }
+    return talloc_strndup(ctx, s, len);
+}
+
 static void
 update_window_strings(CompWindow *w)
 {
     talloc_free(w->title);
     talloc_free(w->app_id);
-    w->title  = talloc_strdup(w, w->toplevel->title ? w->toplevel->title : "");
-    w->app_id = talloc_strdup(w, w->toplevel->app_id ? w->toplevel->app_id : "");
+    w->title  = dup_bounded_utf8(w, w->toplevel->title);
+    w->app_id = dup_bounded_utf8(w, w->toplevel->app_id);
 
     if (w->foreign_handle) {
         wlr_foreign_toplevel_handle_v1_set_title(w->foreign_handle, w->title ? w->title : "");
@@ -1054,8 +1069,9 @@ should_open_floating(const CompWindow *w, const CompWindowRuleResult *rr)
 {
     if (rr && rr->has_floating)
         return rr->floating;
-    if (w->toplevel->parent != NULL ||
-        wlr_xdg_dialog_v1_try_from_wlr_xdg_toplevel(w->toplevel) != NULL)
+    const struct wlr_xdg_dialog_v1 *dlg =
+        wlr_xdg_dialog_v1_try_from_wlr_xdg_toplevel(w->toplevel);
+    if (w->toplevel->parent != NULL || (dlg != NULL && dlg->modal))
         return true;
     const struct wlr_xdg_toplevel_state *st = &w->toplevel->current;
     return (st->min_width > 0 && st->min_height > 0 &&

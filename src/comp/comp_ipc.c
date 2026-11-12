@@ -26,7 +26,8 @@
 #include <unistd.h>
 #include <wlr/types/wlr_output.h>
 
-#define IPC_MAX_FRAME 65536
+#define IPC_MAX_FRAME   65536
+#define IPC_MAX_CLIENTS 64
 
 enum {
     SUB_WORKSPACES       = 1u << 0,
@@ -58,6 +59,7 @@ struct CompIpcState {
     int                     listen_fd;
     struct wl_event_source *listen_ev;
     struct wl_list          clients;        /* CompIpcClient.link */
+    size_t                  n_clients;
 
     char                   *config_dir;
     int                     inotify_fd;
@@ -405,9 +407,41 @@ static bool
 jobj_num(const JVal *obj, const char *key, double *out)
 {
     const JVal *v = jobj_get(obj, key);
-    if (!v || v->kind != JV_NUMBER)
+    if (!v || v->kind != JV_NUMBER || !isfinite(v->u.num))
         return false;
     *out = v->u.num;
+    return true;
+}
+
+static bool
+jobj_win_id(const JVal *obj, const char *key, CompWinId *out)
+{
+    double d = 0.0;
+    /* Max exact integer in IEEE-754 double is 2^53 (9007199254740992.0), which
+     * covers 32-bit slot + 21-bit generation without float-cast UB. */
+    if (!jobj_num(obj, key, &d) || d <= 0.0 || d > 9007199254740992.0)
+        return false;
+    *out = (CompWinId)d;
+    return true;
+}
+
+static bool
+jobj_ws_idx(const JVal *obj, const char *key, size_t *out)
+{
+    double d = 0.0;
+    if (!jobj_num(obj, key, &d) || d < 1.0 || d > 4096.0)
+        return false;
+    *out = (size_t)d;
+    return true;
+}
+
+static bool
+jobj_i32_bounded(const JVal *obj, const char *key, int lo, int hi, int *out)
+{
+    double d = 0.0;
+    if (!jobj_num(obj, key, &d) || d < (double)lo || d > (double)hi)
+        return false;
+    *out = (int)d;
     return true;
 }
 
@@ -777,8 +811,8 @@ handle_bind_kind_action_cmd(CompIpcClient *c, const JVal *req, CompBindKind kind
         return true;
 
     case COMP_BIND_CLOSE_WINDOW: {
-        double id_num = 0.0;
-        CompWinId id = jobj_num(req, COMP_IPC_KEY_ID, &id_num) && id_num > 0.0 ? (CompWinId)id_num : 0;
+        CompWinId id = 0;
+        (void)jobj_win_id(req, COMP_IPC_KEY_ID, &id);
         comp_window_close_id(s, id);
         client_reply_ok(c);
         return true;
@@ -836,7 +870,7 @@ handle_bind_kind_action_cmd(CompIpcClient *c, const JVal *req, CompBindKind kind
             }
             argv[i] = e->u.str;
         }
-        if (!s->opts.greeter_mode)
+        if (!s->opts.greeter_mode && c->fd >= 0)
             comp_spawn(s, argv);
         talloc_free(argv);
         client_reply_ok(c);
@@ -872,7 +906,7 @@ handle_bind_kind_action_cmd(CompIpcClient *c, const JVal *req, CompBindKind kind
 
     case COMP_BIND_QUIT:
         client_reply_ok(c);
-        if (!s->opts.greeter_mode)
+        if (!s->opts.greeter_mode && c->fd >= 0 && s->display)
             comp_server_terminate(s, 0);
         return true;
 
@@ -920,12 +954,12 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
 
     switch (extra) {
     case IPC_ACT_FOCUS_WINDOW: {
-        double id_num = 0.0;
-        if (!jobj_num(req, COMP_IPC_KEY_ID, &id_num) || id_num <= 0.0) {
+        CompWinId id = 0;
+        if (!jobj_win_id(req, COMP_IPC_KEY_ID, &id)) {
             client_reply_error(c, "focus-window requires numeric 'id'");
             return;
         }
-        comp_window_focus_id(s, (CompWinId)id_num);
+        comp_window_focus_id(s, id);
         client_reply_ok(c);
         return;
     }
@@ -940,12 +974,12 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
         return;
     }
     case IPC_ACT_SWITCH_WORKSPACE: {
-        double idx_num = 0.0;
-        if (!jobj_num(req, COMP_IPC_KEY_IDX, &idx_num) || idx_num < 1.0) {
+        size_t idx = 0;
+        if (!jobj_ws_idx(req, COMP_IPC_KEY_IDX, &idx)) {
             client_reply_error(c, "switch-workspace requires 'idx' >= 1");
             return;
         }
-        if (comp_layout_focus_workspace_index(s->layout, (size_t)idx_num - 1)) {
+        if (comp_layout_focus_workspace_index(s->layout, idx - 1)) {
             comp_window_relayout(s);
             comp_ipc_emit_workspaces(s);
             comp_ipc_emit_windows(s);
@@ -956,8 +990,8 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
     case IPC_ACT_SWITCHER_CONFIRM: comp_switcher_confirm(s); client_reply_ok(c); return;
     case IPC_ACT_SWITCHER_CANCEL:  comp_switcher_cancel(s);  client_reply_ok(c); return;
     case IPC_ACT_SWITCH_KEYBOARD_LAYOUT: {
-        double idx_num = -1.0;
-        int idx = jobj_num(req, COMP_IPC_KEY_IDX, &idx_num) ? (int)idx_num : -1;
+        int idx = -1;
+        (void)jobj_i32_bounded(req, COMP_IPC_KEY_IDX, -1, 64, &idx);
         comp_input_switch_keyboard_layout(s, idx);
         client_reply_ok(c);
         return;
@@ -1194,6 +1228,8 @@ client_destructor(CompIpcClient *c)
         c->fd = -1;
     }
     wl_list_remove(&c->link);
+    if (c->server && c->server->ipc && c->server->ipc->n_clients > 0)
+        c->server->ipc->n_clients--;
     return 0;
 }
 
@@ -1282,6 +1318,10 @@ handle_ipc_accept(int fd, uint32_t mask, void *data)
                 continue;
             break;
         }
+        if (!s->ipc || s->ipc->n_clients >= IPC_MAX_CLIENTS) {
+            close(cfd);
+            continue;
+        }
         set_nonblock_cloexec(cfd);
         CompIpcClient *c = talloc_zero(s->ipc, CompIpcClient);
         if (!c) {
@@ -1292,6 +1332,7 @@ handle_ipc_accept(int fd, uint32_t mask, void *data)
         c->server = s;
         c->fd     = cfd;
         wl_list_insert(&s->ipc->clients, &c->link);
+        s->ipc->n_clients++;
         talloc_set_destructor(c, client_destructor);
         c->ev = wl_event_loop_add_fd(s->loop, cfd, WL_EVENT_READABLE, handle_client_fd, c);
         if (!c->ev) {
@@ -1404,6 +1445,65 @@ ipc_state_destructor(struct CompIpcState *ipc)
     return 0;
 }
 
+static bool
+bind_ipc_socket(struct CompIpcState *ipc)
+{
+    if (!ipc || !ipc->server || !ipc->socket_path || !*ipc->socket_path)
+        return false;
+
+    struct sockaddr_un addr = {0};
+    addr.sun_family = AF_UNIX;
+    if (strlen(ipc->socket_path) >= sizeof(addr.sun_path)) {
+        wlr_log(WLR_ERROR, "IPC socket path too long: %s", ipc->socket_path);
+        return false;
+    }
+    strncpy(addr.sun_path, ipc->socket_path, sizeof(addr.sun_path) - 1);
+    unlink(ipc->socket_path);
+
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        wlr_log(WLR_ERROR, "could not create IPC socket: %s", strerror(errno));
+        return false;
+    }
+    (void)fchmod(fd, S_IRUSR | S_IWUSR);
+    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 || listen(fd, 16) < 0) {
+        wlr_log(WLR_ERROR, "could not bind/listen on %s: %s", ipc->socket_path, strerror(errno));
+        close(fd);
+        return false;
+    }
+    (void)chmod(ipc->socket_path, S_IRUSR | S_IWUSR);
+
+    if (ipc->listen_ev) {
+        wl_event_source_remove(ipc->listen_ev);
+        ipc->listen_ev = NULL;
+    }
+    if (ipc->listen_fd >= 0) {
+        close(ipc->listen_fd);
+        ipc->listen_fd = -1;
+    }
+
+    ipc->listen_fd = fd;
+    ipc->listen_ev = wl_event_loop_add_fd(ipc->server->loop, fd, WL_EVENT_READABLE, handle_ipc_accept, ipc->server);
+    if (!ipc->listen_ev) {
+        close(fd);
+        ipc->listen_fd = -1;
+        return false;
+    }
+    return true;
+}
+
+void
+comp_ipc_ensure_socket(CompServer *s)
+{
+    if (!s || !s->ipc || s->opts.greeter_mode || !s->ipc->socket_path)
+        return;
+    struct stat path_st;
+    if (stat(s->ipc->socket_path, &path_st) == 0 && S_ISSOCK(path_st.st_mode) && s->ipc->listen_fd >= 0)
+        return;
+    if (bind_ipc_socket(s->ipc))
+        wlr_log(WLR_INFO, "kajo-comp IPC socket restored at %s", s->ipc->socket_path);
+}
+
 bool
 comp_ipc_init(CompServer *s)
 {
@@ -1452,33 +1552,8 @@ comp_ipc_init(CompServer *s)
     if (!ipc->socket_path)
         return false;
 
-    struct sockaddr_un addr = {0};
-    addr.sun_family = AF_UNIX;
-    if (strlen(ipc->socket_path) >= sizeof(addr.sun_path)) {
-        wlr_log(WLR_ERROR, "IPC socket path too long: %s", ipc->socket_path);
+    if (!bind_ipc_socket(ipc))
         return false;
-    }
-    strncpy(addr.sun_path, ipc->socket_path, sizeof(addr.sun_path) - 1);
-    unlink(ipc->socket_path);
-
-    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
-    if (fd < 0) {
-        wlr_log(WLR_ERROR, "could not create IPC socket: %s", strerror(errno));
-        return false;
-    }
-    if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0 || listen(fd, 16) < 0) {
-        wlr_log(WLR_ERROR, "could not bind/listen on %s: %s", ipc->socket_path, strerror(errno));
-        close(fd);
-        return false;
-    }
-
-    ipc->listen_fd = fd;
-    ipc->listen_ev = wl_event_loop_add_fd(s->loop, fd, WL_EVENT_READABLE, handle_ipc_accept, s);
-    if (!ipc->listen_ev) {
-        close(fd);
-        ipc->listen_fd = -1;
-        return false;
-    }
 
     setenv(COMP_IPC_ENV_SOCKET, ipc->socket_path, 1);
     wlr_log(WLR_INFO, "kajo-comp IPC listening on %s", ipc->socket_path);

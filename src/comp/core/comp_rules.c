@@ -27,11 +27,12 @@ typedef struct {
 } LayerRule;
 
 struct CompRules {
-    WinRule   *win;
-    size_t     nwin;
-    LayerRule *layer;
-    size_t     nlayer;
-    pcre2_match_data *md;
+    WinRule             *win;
+    size_t               nwin;
+    LayerRule           *layer;
+    size_t               nlayer;
+    pcre2_match_data    *md;
+    pcre2_match_context *mctx;
 };
 
 static void
@@ -57,6 +58,7 @@ comp_rules_free(CompRules *r)
     free(r->win);
     free(r->layer);
     pcre2_match_data_free(r->md);
+    pcre2_match_context_free(r->mctx);
     free(r);
 }
 
@@ -108,14 +110,17 @@ matcher_build(Matcher *m, toml_datum_t v, bool case_sensitive, const char *field
 }
 
 static bool
-matcher_matches(const Matcher *m, const char *s, pcre2_match_data *md)
+matcher_matches(const Matcher *m, const char *s, pcre2_match_data *md, pcre2_match_context *mctx)
 {
     if (m->n == 0)
         return true;
     if (!s)
         s = "";
+    size_t slen = strlen(s);
+    if (slen > 1024)
+        slen = 1024;
     for (size_t i = 0; i < m->n; i++) {
-        int rc = pcre2_match(m->re[i], (PCRE2_SPTR)s, strlen(s), 0, 0, md, NULL);
+        int rc = pcre2_match(m->re[i], (PCRE2_SPTR)s, slen, 0, 0, md, mctx);
         if (rc >= 0)
             return true;
     }
@@ -346,10 +351,18 @@ CompRules *
 comp_rules_new(void)
 {
     CompRules *r = calloc(1, sizeof(*r));
-    if (!r || !(r->md = pcre2_match_data_create(1, NULL))) {
+    if (!r)
+        return NULL;
+    r->md   = pcre2_match_data_create(1, NULL);
+    r->mctx = pcre2_match_context_create(NULL);
+    if (!r->md || !r->mctx) {
+        pcre2_match_data_free(r->md);
+        pcre2_match_context_free(r->mctx);
         free(r);
         return NULL;
     }
+    pcre2_set_match_limit(r->mctx, 10000);
+    pcre2_set_depth_limit(r->mctx, 250);
     return r;
 }
 
@@ -426,7 +439,8 @@ comp_rules_match_window(const CompRules *r, const char *app_id, const char *titl
     memset(out, 0, sizeof(*out));
     for (size_t i = 0; r && i < r->nwin; i++) {
         const WinRule *w = &r->win[i];
-        if (!matcher_matches(&w->app_id, app_id, r->md) || !matcher_matches(&w->title, title, r->md))
+        if (!matcher_matches(&w->app_id, app_id, r->md, r->mctx) ||
+            !matcher_matches(&w->title, title, r->md, r->mctx))
             continue;
         const CompWindowRuleResult *s = &w->set;
         if (s->has_floating)      { out->has_floating = true; out->floating = s->floating; }
@@ -445,7 +459,7 @@ comp_rules_match_layer(const CompRules *r, const char *ns, CompLayerRuleResult *
     memset(out, 0, sizeof(*out));
     for (size_t i = 0; r && i < r->nlayer; i++) {
         const LayerRule *l = &r->layer[i];
-        if (!matcher_matches(&l->ns, ns, r->md))
+        if (!matcher_matches(&l->ns, ns, r->md, r->mctx))
             continue;
         if (l->set.has_opacity)       { out->has_opacity = true; out->opacity = l->set.opacity; }
         if (l->set.has_popup_opacity) { out->has_popup_opacity = true; out->popup_opacity = l->set.popup_opacity; }

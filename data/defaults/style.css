@@ -3,7 +3,7 @@
  * Design Tokens & Color Palette
  */
 
-@define-color metro-panel-bg      rgba(24, 24, 24, 0.82);
+@define-color metro-panel-bg      rgba(20, 20, 20, 0.92);
 @define-color metro-surface-bg    #141414;
 @define-color metro-surface-hover #222222;
 @define-color metro-border        #2b2b2b;
@@ -309,7 +309,7 @@ window.shell-settings-window popover {
 
 popover > contents,
 popover contents {
-    background-color: @metro-surface-bg;
+    background-color: rgba(20, 20, 20, 0.95);
     background-image: none;
     color: @metro-fg-primary;
     border: 1px solid @metro-accent;
@@ -652,7 +652,7 @@ window.shell-settings-window button.toggle-card:disabled {
 /* ═══════════════════════════════════════════════ */
 
 .shell-launcher-card {
-    background-color: @metro-surface-bg;
+    background-color: rgba(20, 20, 20, 0.95);
     border: 1px solid @metro-accent;
     border-radius: 0px;
     padding: 16px;

@@ -29,6 +29,10 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     CompLayoutConfig lcfg;
     comp_layout_config_defaults(&lcfg);
     s->layout = comp_layout_new(&lcfg);
+    if (s->layout) {
+        comp_layout_add_window(s->layout, 1);
+        comp_layout_add_window(s->layout, 2);
+    }
 
     CompMotionConfig mcfg;
     comp_motion_config_defaults(&mcfg);
@@ -50,18 +54,33 @@ main(void)
         "",
         "\n",
         "{}\n",
-        "{\"cmd\":\"get_workspaces\"}\n",
-        "{\"cmd\":\"get_windows\"}\n",
-        "{\"cmd\":\"get_focused_window\"}\n",
-        "{\"cmd\":\"get_outputs\"}\n",
-        "{\"cmd\":\"get_keyboard_layouts\"}\n",
-        "{\"cmd\":\"get_config_errors\"}\n",
-        "{\"cmd\":\"subscribe\",\"events\":[\"workspaces\",\"windows\",\"outputs\",\"screenshots\"]}\n",
+        "{\"cmd\":\"get-workspaces\"}\n",
+        "{\"cmd\":\"get-windows\"}\n",
+        "{\"cmd\":\"get-outputs\"}\n",
+        "{\"cmd\":\"get-keyboard-layouts\"}\n",
+        "{\"cmd\":\"debug-mem\"}\n",
+        "{\"cmd\":\"subscribe\",\"events\":[\"workspaces\",\"windows\",\"outputs\",\"screenshots\",\"touch_gestures\",\"keyboard_layouts\"]}\n",
+        "{\"cmd\":\"subscribe\"}\n",
         "{\"cmd\":\"action\",\"name\":\"focus-column-left\"}\n",
+        "{\"cmd\":\"action\",\"name\":\"toggle-column-tabbed\"}\n",
+        "{\"cmd\":\"action\",\"name\":\"consume-or-expel-window-left\"}\n",
         "{\"cmd\":\"action\",\"name\":\"set-column-width\",\"delta\":\"+10%\"}\n",
+        "{\"cmd\":\"action\",\"name\":\"set-window-height\",\"delta\":\"-1e309%\"}\n",
         "{\"cmd\":\"action\",\"name\":\"switch-workspace\",\"idx\":3}\n",
+        "{\"cmd\":\"action\",\"name\":\"switch-workspace\",\"idx\":1e300}\n",
+        "{\"cmd\":\"action\",\"name\":\"switch-workspace\",\"idx\":-1e300}\n",
+        "{\"cmd\":\"action\",\"name\":\"focus-window\",\"id\":1}\n",
+        "{\"cmd\":\"action\",\"name\":\"focus-window\",\"id\":1e300}\n",
+        "{\"cmd\":\"action\",\"name\":\"close-window\",\"id\":1e300}\n",
+        "{\"cmd\":\"action\",\"name\":\"close-window\",\"id\":-99999999999999}\n",
+        "{\"cmd\":\"action\",\"name\":\"switch-keyboard-layout\",\"idx\":1e100}\n",
+        "{\"cmd\":\"action\",\"name\":\"set-output-transform\",\"transform\":\"90\"}\n",
+        "{\"cmd\":\"action\",\"name\":\"set-output-config\",\"scale\":1e300,\"vrr\":\"on-demand\"}\n",
+        "{\"cmd\":\"action\",\"name\":\"spawn\",\"command\":[\"/bin/true\"]}\n",
+        "{\"cmd\":\"action\",\"name\":\"quit\"}\n",
         "{\"cmd\":\"action\",\"name\":\"unknown-action\"}\n",
         "{\"cmd\":\"unknown\"}\n",
+        "{\"cmd\":\"get-workspaces\"}\n{\"cmd\":\"action\",\"name\":\"focus-column-right\"}\n{\"cmd\":\"get-windows\"}\n",
         "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]]\n",
         "{\"cmd\":\"\\u0041\\n\\t\\\"\\\\\"}\n",
         "{\"unterminated\": [1, 2, true, false, null, -1e308\n",

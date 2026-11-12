@@ -360,6 +360,7 @@ size_t comp_input_get_keyboard_layouts(const CompServer *server, const char **na
 /* comp_ipc.c */
 bool comp_ipc_init(CompServer *server);
 void comp_ipc_finish(CompServer *server);
+void comp_ipc_ensure_socket(CompServer *server);
 char *comp_server_resolve_config_dir(void *talloc_ctx, const CompServerOptions *opts);
 bool comp_server_reload_config(CompServer *server);
 void comp_ipc_emit_workspaces(CompServer *server);

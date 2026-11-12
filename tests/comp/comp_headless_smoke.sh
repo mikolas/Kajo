@@ -9,7 +9,7 @@ KC="$1"
 CL="$2"
 fail=0
 export WLR_BACKENDS=headless WLR_RENDERER="${WLR_RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1
-unset WAYLAND_DISPLAY DISPLAY WAYLAND_SOCKET
+unset WAYLAND_DISPLAY DISPLAY WAYLAND_SOCKET KAJO_COMP_SOCKET NIRI_SOCKET
 # Private runtime dir so the test never touches the user's live sockets
 RT="$(mktemp -d)"
 export XDG_RUNTIME_DIR="$RT"
@@ -91,6 +91,17 @@ timeout 30 "$KC" -q --exit-with-command -- sh -c "
     \"$KC\" msg action switcher-confirm | grep -q '\"ok\"'
     \"$KC\" msg get-windows | grep -q '\"title\":\"Kajo Test Window 2\".*\"is_focused\":true'
 
+    # Exercise layout & window IPC actions end-to-end
+    \"$KC\" msg action set-column-width delta=+10% | grep -q '\"ok\"'
+    \"$KC\" msg action set-window-height delta=-10% | grep -q '\"ok\"'
+    \"$KC\" msg action toggle-column-tabbed | grep -q '\"ok\"'
+    \"$KC\" msg action toggle-column-tabbed | grep -q '\"ok\"'
+    \"$KC\" msg action consume-or-expel-window-left | grep -q '\"ok\"'
+    \"$KC\" msg action toggle-window-floating | grep -q '\"ok\"'
+    \"$KC\" msg get-windows | grep -q '\"title\":\"Kajo Test Window 2\"[^}]*\"is_floating\":true'
+    \"$KC\" msg action toggle-window-floating | grep -q '\"ok\"'
+    \"$KC\" msg action focus-app app_id=org.kajo.TestClient | grep -q '\"ok\"'
+
     # Test screenshot-screen, screenshot-window, and interactive screenshot (cancel + confirm)
     \"$KC\" msg action screenshot-screen | grep -q '\"ok\"'
     \"$KC\" msg action screenshot-window | grep -q '\"ok\"'
@@ -123,6 +134,65 @@ timeout 30 "$KC" -q --exit-with-command -- sh -c "
     kill \"\$SUB_PID\" 2>/dev/null || true
 "
 check "kajo-comp msg IPC, reload-config, Alt-Tab switcher, and screenshot UI" 0 $?
+
+# Attack-surface & rogue-client resilience: dynamic rule promotion, UTF-8 title clamping,
+# virtual-keyboard/IMv2 lifecycle, and 96-socket IPC flood + float-cast overflow immunity
+cat > "$CFG_DIR/rules.toml" << 'EOF'
+[[rule]]
+app_id = ['firefox$']
+title = ['^picture-in-picture$']
+floating = true
+
+[[rule]]
+title = ['(X+)+Y']
+floating = true
+EOF
+
+timeout 30 "$KC" -q --exit-with-command -- sh -c "
+    set -e
+    \"$CL\" rogue '$RT/rogue.ready' &
+    ROGUE_PID=\$!
+    for _ in \$(seq 50); do [ -f '$RT/rogue.ready' ] && break; sleep 0.05; done
+    [ -f '$RT/rogue.ready' ]
+
+    WINS=\$(\"${KC}\" msg get-windows)
+    # 1. Verify firefox window dynamically promoted to floating on set_title('Picture-in-Picture')
+    echo \"\$WINS\" | grep -q '\"title\":\"Picture-in-Picture\",\"app_id\":\"firefox\"[^}]*\"is_floating\":true'
+    # 2. Verify 8192-byte title with 2-byte UTF-8 at byte 511..512 was truncated cleanly to 511 'X' chars
+    python3 -c '
+import json, sys
+doc = json.loads(sys.argv[1])
+oversized = [w for w in doc[\"ok\"][\"windows\"] if w[\"app_id\"] == \"org.kajo.Oversized\"]
+assert len(oversized) == 1
+assert len(oversized[0][\"title\"]) == 511
+' \"\$WINS\"
+
+    # 3. Flood IPC socket with 96 simultaneous connections + adversarial 1e300 numeric payloads
+    python3 -c '
+import os, socket
+path = os.environ[\"KAJO_COMP_SOCKET\"]
+socks = []
+for _ in range(96):
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.setblocking(False)
+        s.connect(path)
+        s.send(b\"{\\\"cmd\\\":\\\"action\\\",\\\"name\\\":\\\"focus-window\\\",\\\"id\\\":1e300}\\n\")
+        s.send(b\"{\\\"cmd\\\":\\\"action\\\",\\\"name\\\":\\\"switch-workspace\\\",\\\"idx\\\":1e300}\\n\")
+        socks.append(s)
+    except Exception:
+        pass
+for s in socks:
+    s.close()
+'
+    # Compositor must remain responsive immediately after connection flood
+    \"$KC\" msg get-workspaces | grep -q '\"ok\"'
+
+    rm -f '$RT/rogue.ready'
+    wait \"\$ROGUE_PID\" || true
+"
+check "rogue client churn, dynamic rule promotion, UTF-8 title cap, vkbd/IMv2 & IPC flood" 0 $?
+rm -f "$CFG_DIR/rules.toml"
 
 # Phase 4: Single-output selection (OUT1-OUT4), KMS cascade, transform rotation & systemd notify/watchdog
 NOTIFY_SOCK="$RT/notify.sock"

@@ -1022,8 +1022,10 @@ comp_test_client_exe = executable(
   wlr_layer_shell_client_h, wlr_layer_shell_client_c,
   ext_session_lock_client_h, ext_session_lock_client_c,
   viewporter_client_h, viewporter_client_c,
+  vkbd_header, vkbd_code,
+  im_header, im_code,
   c_args: comp_strict_args,
-  dependencies: [dependency('wayland-client', include_type: 'system')],
+  dependencies: [dependency('wayland-client', include_type: 'system'), comp_xkb_dep],
   build_by_default: false,
 )
 test('comp-headless', find_program('tests/comp/comp_headless_smoke.sh'),

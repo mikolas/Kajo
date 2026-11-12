@@ -50,8 +50,12 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
     CompRules *r = comp_rules_parse(src, size, "fuzz-rules", &d);
     CompWindowRuleResult w;
     CompLayerRuleResult l;
+    char long_a[2049];
+    memset(long_a, 'a', sizeof(long_a) - 1);
+    long_a[sizeof(long_a) - 1] = '\0';
     comp_rules_match_window(r, "kitty", "~", &w);
     comp_rules_match_window(r, NULL, "\xff\xfe invalid utf8", &w);
+    comp_rules_match_window(r, long_a, long_a, &w);
     comp_rules_match_layer(r, "kajo", &l);
     comp_rules_free(r);
 
@@ -78,6 +82,7 @@ main(void)
         "[[bind]]\nkey = \"mod+minus\"\naction = \"set-column-width\"\ndelta = \"-1e309%\"\n",
         "[[bind]]\nkey = \"mod+wheel-down\"\naction = \"focus-workspace-down\"\ncooldown_ms = 9223372036854775807\n",
         "[[rule]]\napp_id = ['(?<x>a)\\\\k<x>', '\\\\p{L}+', '(((((((((((a)))))))))))']\nfloating = true\n",
+        "[[rule]]\ntitle = ['(a+)+b']\nfloating = true\n",
         "[[rule]]\ntitle = ['.*']\nanchor_corner = \"top-left\"\nanchor_x = 1e308\nanchor_y = nan\n",
         "[[layer_rule]]\nnamespace = ['']\nopacity = inf\nblur = true\n",
         "[[rule]]\n[[rule]]\napp_id = 5\n[[layer_rule]]\n",

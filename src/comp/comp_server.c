@@ -61,12 +61,14 @@ comp_win_alloc_id(CompServer *s, struct CompWindow *w)
     if (slot == 0) {
         size_t old_cap = s->win_slots_cap;
         size_t new_cap = old_cap * 2;
+        COMP_WARN_RETURN(new_cap <= 4096, 0);
         struct CompWindow **ns = talloc_realloc(s, s->win_slots, struct CompWindow *, (unsigned)new_cap);
-        uint32_t *ng = talloc_realloc(s, s->win_gens, uint32_t, (unsigned)new_cap);
-        COMP_WARN_RETURN(ns && ng, 0);
+        COMP_WARN_RETURN(ns != NULL, 0);
+        s->win_slots = ns;
         memset(ns + old_cap, 0, (new_cap - old_cap) * sizeof(*ns));
+        uint32_t *ng = talloc_realloc(s, s->win_gens, uint32_t, (unsigned)new_cap);
+        COMP_WARN_RETURN(ng != NULL, 0);
         memset(ng + old_cap, 0, (new_cap - old_cap) * sizeof(*ng));
-        s->win_slots     = ns;
         s->win_gens      = ng;
         s->win_slots_cap = new_cap;
         slot             = old_cap;
@@ -647,5 +649,6 @@ comp_server_reload_config(CompServer *s)
     comp_window_reapply_rules(s);
     comp_layer_arrange(s);
     comp_window_relayout(s);
+    comp_ipc_ensure_socket(s);
     return true;
 }
