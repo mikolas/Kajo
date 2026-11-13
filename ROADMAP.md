@@ -51,7 +51,8 @@ All Kajo components and standalone applications share a unified design language:
 | **kajo-comp: HDR10 output, SDR white level, tone mapping** | 📋 Planned | `kajo-comp` — §3.7.1 |
 | **kajo-comp: backdrop blur, window transitions, shadows** | 📋 Planned | `kajo-comp` — needs the wlroots fork (§3.6), design in §3.7.2 |
 | **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
-| **Native Aero + Metro file chooser portal** | 📋 Planned | `kajo-files --portal` — §3.8 |
+| **Portal backends: Settings (theme/accent) and FileChooser** | 📋 Planned | `kajo` shell + `kajo-files --portal` — §3.8 |
+| **Apply the Kajo theme to other apps (GTK, Qt)** | 📋 Planned | `kajo-settings` — §3.9 |
 
 ### 3.1 [PLANNED] `kajo-files` Future Enhancements
 - **Archive Compression (`libarchive`):**
@@ -157,9 +158,30 @@ Goal: frosted-glass blur behind `kajo` layer surfaces and popups while keeping `
 
 ---
 
-### 3.8 [PLANNED] Native Aero + Metro file chooser portal (`org.freedesktop.impl.portal.FileChooser`)
+### 3.8 [PLANNED] Portal backends (`org.freedesktop.impl.portal.*`): Settings and FileChooser
 
-Today `data/session/kajo-portals.conf` routes `FileChooser` to `xdg-desktop-portal-gtk` (`default=gtk`), which shows a GTK3 Adwaita dialog. Goal: a native chooser for Kajo apps (`GtkFileDialog` in `kajo-mod`, `kajo-player`, `kajo-ide`) and third-party Wayland apps (browsers, Electron, Flatpak).
+A portal backend is a D-Bus service that answers requests which `xdg-desktop-portal` forwards from apps (sandboxed apps always use it; others opt in). Kajo has no backend of its own yet.
+
+**State on Host A (checked, not assumed):**
+- `kajo-comp` exports `XDG_CURRENT_DESKTOP=kajo`; `kajo-portals.conf` is installed under `/usr/local/share/xdg-desktop-portal/`; no `kajo.portal` exists.
+- Only `xdg-desktop-portal-gtk` is running. The frontend offers FileChooser v4, ScreenCast v4 and Screenshot v2.
+- `org.freedesktop.appearance` `color-scheme` reads `2` (prefer light), `accent-color` is "not found", and GSettings `org.gnome.desktop.interface` has `color-scheme = 'prefer-light'`. Apps that follow the portal therefore get a light Adwaita look next to Kajo's dark one.
+- `data/session/kajo-portals.conf` says `default=gnome;gtk;`. Which backend currently serves FileChooser was not checked (calling it opens a real dialog).
+
+**Scope:** Settings and FileChooser. ScreenCast and Screenshot stay on `xdg-desktop-portal-wlr` (the compositor already offers screencopy and ext-image-copy-capture; an actual capture through the portal has not been tested). GlobalShortcuts, RemoteDesktop, InputCapture and a native ScreenCast are not planned.
+
+**Rules for both backends:** write them from the public portal interface descriptions, not from the GTK or GNOME backends' source (LGPL). Keep the GTK backend as the fallback in `[preferred]` (`…=kajo;gtk;`), because a bug in a backend breaks every app that uses it. Test the D-Bus logic with a mock client in the style of `tests/test_niri.c`; the dialogs themselves need a manual check.
+
+#### 3.8.1 Settings backend (`org.freedesktop.impl.portal.Settings`)
+
+- Answer `Read` / `ReadAll` for `org.freedesktop.appearance`: `color-scheme` (`1` = prefer dark), `accent-color` (RGB doubles from `theme.toml` `accent_color`), and `contrast`; emit `SettingChanged` when `kajo-settings` applies a new theme.
+- Host: the always-running `kajo` shell (it already owns the notification name) avoids a cold start; to be decided.
+- Register with a `kajo.portal` (`UseIn=kajo`, `Interfaces=org.freedesktop.impl.portal.Settings;`) and a `Settings=kajo;gtk;` line in `kajo-portals.conf`.
+- Quick path to evaluate first: writing `org.gnome.desktop.interface color-scheme='prefer-dark'` on SAVE & APPLY. The portal value matched GSettings in the one comparison made, but propagation was not tested, the GTK backend here returns no accent, and it changes a setting GNOME tools also use.
+
+#### 3.8.2 FileChooser (`kajo-files --portal`)
+
+Goal: a native chooser for Kajo apps (`GtkFileDialog` in `kajo-mod`, `kajo-player`, `kajo-ide`) and third-party Wayland apps (browsers, Electron, Flatpak) instead of the GTK dialog.
 
 1. **D-Bus backend in `kajo-files`** (`src/files/files_portal.{h,c}`):
    - Own `org.freedesktop.impl.portal.desktop.kajo`, export `org.freedesktop.impl.portal.FileChooser` at `/org/freedesktop/portal/desktop`: `OpenFile`, `SaveFile`, `SaveFiles` (`(o handle, s app_id, s parent_window, s title, a{sv} options) -> (u response, a{sv} results)`).
@@ -170,4 +192,23 @@ Today `data/session/kajo-portals.conf` routes `FileChooser` to `xdg-desktop-port
    - places sidebar, breadcrumb / URI bar, search, virtualized list / grid with `Space` Quick Look;
    - bottom bar: filename entry (save mode), filter dropdown (glob `u=0`, MIME `u=1`), `[ CANCEL ]` (`response = 1`), `[ ✓ OPEN ]` / `[ ✓ SAVE ]` (`response = 0`, `uris` + `current_filter` in results).
 3. **Parent & modal:** parse `parent_window` (`"wayland:<handle>"`), `zxdg_importer_v2_import_toplevel()` + `zxdg_imported_v2_set_parent_of()`, plus `xdg_wm_dialog_v1.get_xdg_dialog()` + `set_modal()`, so `kajo-comp` centres and stacks the chooser over the caller (already supported by the compositor, spec §2.5 / §3.3 `O3`). Add an `^org\.kajo\.Files\.Chooser$` floating rule in `data/defaults/rules.toml` if needed.
-4. **Registration:** install `/usr/share/xdg-desktop-portal/portals/kajo.portal` (`DBusName=org.freedesktop.impl.portal.desktop.kajo`, `Interfaces=org.freedesktop.impl.portal.FileChooser;`) and `org.freedesktop.impl.portal.desktop.kajo.service` (`Exec=…/kajo-files --portal`); add `org.freedesktop.impl.portal.FileChooser=kajo` under `[preferred]` in `kajo-portals.conf`.
+4. **Registration:** install `/usr/share/xdg-desktop-portal/portals/kajo.portal` (`DBusName=org.freedesktop.impl.portal.desktop.kajo`, `Interfaces=org.freedesktop.impl.portal.FileChooser;`) and `org.freedesktop.impl.portal.desktop.kajo.service` (`Exec=…/kajo-files --portal`); add `org.freedesktop.impl.portal.FileChooser=kajo;gtk;` under `[preferred]` in `kajo-portals.conf`.
+
+---
+
+### 3.9 [PLANNED] Apply the Kajo theme to other apps (GTK, Qt)
+
+Nothing in the repository themes other toolkits today (no GTK/Qt theme export, no GSettings writes). On Host A, GSettings has `color-scheme = 'prefer-light'`, `gtk-theme = 'Adwaita'` and `accent-color = 'blue'`, so GTK4/libadwaita apps such as Nautilus render light and Adwaita-styled next to the dark shell. `~/.config/gtk-3.0` and `gtk-4.0` contain only a `dank-colors.css` left by another tool (there is no `gtk.css` that loads it). `qt6ct` is installed and configured, but `QT_QPA_PLATFORMTHEME` is not set; `qt5ct`, Kvantum and `adw-gtk3` are not installed.
+
+| Layer | Reaches | Mechanism | Cost / caveat |
+| :--- | :--- | :--- | :--- |
+| 1. Dark/light and accent | libadwaita/GTK4 apps, Chromium/Thorium, Qt 6 apps that follow the portal | Settings portal backend (§3.8.1), or GSettings `color-scheme` on SAVE & APPLY | Small. Which source libadwaita reads for the accent was not verified |
+| 2. Full palette and shape | GTK3 and GTK4 apps | Generate `~/.config/gtk-4.0/gtk.css` and `gtk-3.0/gtk.css` from the `@metro-*` tokens in `data/defaults/style.css` (surfaces, accent, 0 px radius) | Moderate. Breaks when libadwaita renames a named color; apps with their own CSS only partly follow |
+| 3. Qt palette | Qt apps | Generate a `qt6ct` color scheme and set the platform theme in the session environment | Moderate. Needs `qt6ct`; Qt 5 and Kvantum are not installed |
+
+**Not reachable:** Electron apps (VS Code) and terminals (kitty) draw their own UI and take only the dark/light preference or their own theme files.
+
+**Rules (AGENTS.md §8):**
+- An explicit opt-in toggle in `kajo-settings`, off by default, with a working revert. No automatic changes to other apps' configuration.
+- Write only a clearly marked file or block. Never overwrite an existing `gtk.css` or `qt6ct.conf`, and warn about leftovers such as `dank-colors.css`.
+- Do not ship the toggle until each layer it offers works end to end; verify against a real GTK4, GTK3 and Qt 6 app.

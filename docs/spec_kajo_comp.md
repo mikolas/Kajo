@@ -1118,4 +1118,5 @@ Not part of this specification: the sections above describe what `kajo-comp` imp
 
 - §3.6: wlroots fork for visual effects (Vulkan effect passes, built as a static submodule);
 - §3.7: HDR10 output, SDR white level and tone mapping (with the Phase 0 hardware findings), backdrop blur design, window transitions, overview zoom, drop shadows, OSK text-field visibility, `Mod + drag` tiled columns, layout extras and multi-monitor sessions;
-- §3.8: native Aero + Metro file chooser portal (`kajo-files --portal`).
+- §3.8: portal backends for Settings (theme, accent) and FileChooser (`kajo-files --portal`);
+- §3.9: applying the Kajo theme to other GTK and Qt apps.
