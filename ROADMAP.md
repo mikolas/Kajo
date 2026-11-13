@@ -47,7 +47,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
-| **kajo-comp: wlroots fork for visual effects** | 📋 Planned | `kajo-comp` — see §3.6 below (fork branch, built as a static submodule) |
+| **kajo-comp: wlroots fork for visual effects** | 🚧 In progress | `kajo-comp` — see §3.6 below (fork branch, built as a static submodule) |
 | **kajo-comp: HDR10 output, SDR white level, tone mapping** | 📋 Planned | `kajo-comp` — §3.7.1 |
 | **kajo-comp: backdrop blur, window transitions, shadows** | 📋 Planned | `kajo-comp` — needs the wlroots fork (§3.6), design in §3.7.2 |
 | **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
@@ -85,19 +85,20 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.6 [PLANNED] `kajo-comp` wlroots fork for visual effects
+### 3.6 [IN PROGRESS] `kajo-comp` wlroots fork for visual effects
 
-**Status:** 📋 Planned, not started. Nothing below is implemented; `kajo-comp` builds against the system `wlroots-0.20` (0.20.2).
+**Status:** 🚧 In progress; specification in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) (branch `feat/wlroots-fork`). Milestone 1 (plumbing) is implemented: `kajo-comp` builds against the fork `github.com/mikolas/wlroots` at `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject; the live-session check is pending. No effects exist yet.
 
 **Why:** Effects such as backdrop blur, window open/close/resize transitions, dimming, shadows and, later, HDR tone mapping (BT.2390) and an adjustable SDR white level need render passes and scene features that stock `wlroots` does not offer (`wlr_render_pass` has only `add_texture` / `add_rect`). HDR requires the Vulkan renderer: in 0.20.2 only Vulkan sets `features.input_color_transform` / `output_color_transform`, so GLES-based solutions (SceneFX, a GLES2 renderer swap) are excluded. Replacing `wlroots` entirely (~75k lines of backends, protocols and XWayland) is out of scope.
 
-**Approach:** Maintain a fork of `wlroots` on GitHub and build `kajo-comp` from a branch of it.
+**Approach:** Maintain a fork of `wlroots` on GitHub (`github.com/mikolas/wlroots`, filled from upstream at `gitlab.freedesktop.org/wlroots/wlroots`; upstream moved off GitHub, so this is a plain repository, not a GitHub fork) and build `kajo-comp` from a branch of it.
 
 - **Branch per upstream base:** `kajo/<upstream-tag>` (first: `kajo/0.20.2`), with the effect work as a short series of additive commits on top. Rebase onto new upstream releases (not master); cherry-pick only security / crash fixes in between.
 - **Pinned commits are never rewritten:** never force-push a branch that Kajo pins; tag every pinned commit (e.g. `kajo-0.20.2-fx1`) so old Kajo revisions stay buildable.
-- **Additive patches:** effects in new files (`render/vulkan/fx_*`, `types/scene/fx_*`, Vulkan shaders); upstream files only get small hooks. A `FORK.md` in the fork lists the base tag and the patch series.
+- **Additive patches:** effects in new files (`render/vulkan/kfx_*`, `types/scene/kfx_*`, `include/wlr/kfx/`, Vulkan shaders); upstream files only get small hooks. A `FORK.md` in the fork lists the base tag and the patch series.
 - **Vulkan only**, effects applied in linear light before the output encode so they compose with the colour pipeline and later PQ output. No rounded corners (excluded by the 0 px design system).
-- **Build:** git submodule at `subprojects/wlroots`, used via `subproject('wlroots')` (not `dependency('wlroots-0.20')`, so the system wlroots is never picked), linked statically (`default_library=static`), trimmed with the wlroots meson options. `PKGBUILD` gets the fork as a source plus wlroots' build dependencies (it currently does not declare wlroots at all); `DEVELOPMENT.md` documents `--recursive` clones.
+- **Drop-in compatible:** the fork is upstream plus additive extensions (`wlr_kfx_*`, detectable via `WLR_HAS_KFX`); no upstream functionality is removed and API/ABI stay compatible except for documented exceptions (spec §3).
+- **Build:** git submodule at `subprojects/wlroots` (HTTPS URL), used via `subproject('wlroots')` (not `dependency('wlroots-0.20')`, so the system wlroots is never picked), linked statically (`default_library=static`), with upstream's default options. `PKGBUILD` gets the fork as a source plus wlroots' build dependencies (it currently does not declare wlroots at all); `DEVELOPMENT.md` documents `--recursive` clones.
 - **Tests:** headless Vulkan pixel tests per effect hook, so a rebase that breaks a hook fails the gate. Every effect must be damage-gated (no work while nothing changes; idle CPU budget in `AGENTS.md`).
 
 **Order:**

@@ -137,10 +137,11 @@ For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server
 By default, `meson.build` configures `prefix=~/.local`, installing all eight binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
 
 ```bash
+git clone --recursive https://github.com/mikolas/Kajo.git   # existing clones: git submodule update --init
 meson setup builddir
 meson compile -C builddir
 meson test -C builddir
-meson install -C builddir
+meson install -C builddir --skip-subprojects   # keeps the statically linked wlroots out of the install tree
 ```
 
 ---

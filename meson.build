@@ -2,7 +2,7 @@ project(
   'kajo',
   ['c', 'cpp'],
   version: '0.1.0',
-  meson_version: '>= 0.60.0',
+  meson_version: '>= 1.3.0',
   default_options: [
     'c_std=c17',
     'cpp_std=c++17',
@@ -892,7 +892,21 @@ test('comp-config', test_comp_config_exe,
 
 # The compositor binary. System headers are included as -isystem so the strict
 # warning set applies to our code only (spec §7.2.2).
-comp_wlroots_dep = dependency('wlroots-0.20', include_type: 'system')
+#
+# wlroots comes from Kajo's fork (subprojects/wlroots, a git submodule pinned at
+# a kajo-* tag; docs/spec_wlroots_fork.md). It is built statically and never
+# installed (install with --skip-subprojects). Upstream's defaults are kept
+# (spec C1); features kajo-comp relies on are required so a missing dependency
+# fails the build instead of silently dropping the feature (spec K4).
+comp_wlroots_proj = subproject('wlroots', default_options: [
+  'default_library=static',
+  'examples=false',
+  'werror=false',
+  'xwayland=enabled',
+  'session=enabled',
+  'color-management=enabled',
+])
+comp_wlroots_dep = comp_wlroots_proj.get_variable('wlroots').as_system()
 comp_wl_server_dep = dependency('wayland-server', include_type: 'system')
 comp_talloc_dep = dependency('talloc', include_type: 'system')
 
