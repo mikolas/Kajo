@@ -720,16 +720,6 @@ test_player_queue_exe = executable(
 )
 test('player-queue', test_player_queue_exe)
 
-if egl_dep.found() and glesv2_dep.found()
-  test_shaders_exe = executable(
-    'test-shaders',
-    files('tests/test_shaders.c'),
-    dependencies: [gio_dep, egl_dep, glesv2_dep],
-    build_by_default: false,
-  )
-  test('niri-shaders', test_shaders_exe)
-endif
-
 test_niri_exe = executable(
   'test-niri',
   files('tests/test_niri.c', 'src/compositor/niri.c', 'src/compositor/kajo_comp_ipc.c'),

@@ -241,7 +241,7 @@ binds {
 - **Vendored code**:
   - [`tomlc17`](https://github.com/cktan/tomlc17) by CK Tan (MIT License) in `src/vendor/tomlc17/`; its license text is in `src/vendor/tomlc17/LICENSE`.
   - [`tinyexpr`](https://github.com/codeplea/tinyexpr) by Lewis Van Winkle (zlib License) in `src/vendor/tinyexpr/`; the notice is in the source header.
-- **License**: MIT License — see [LICENSE](LICENSE). Kajo is distributed as source only and links its dependencies dynamically. Some of those libraries are copyleft (for example `poppler-glib`, `libmpv`, `libsidplayfp`, `uade`); a binary that links them and is redistributed by someone else is a combined work under those libraries' terms, which is that redistributor's responsibility.
+- **License**: MIT License — see [LICENSE](LICENSE); bundled third-party code and icons and their notices are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Kajo is distributed as source only and links its dependencies dynamically. Some of those libraries are copyleft (for example `poppler-glib`, `libmpv`, `libsidplayfp`, `uade`); a binary that links them and is redistributed by someone else is a combined work under those libraries' terms, which is that redistributor's responsibility.
 
 ## Author
 
