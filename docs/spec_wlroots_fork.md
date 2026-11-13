@@ -2,7 +2,7 @@
 
 **Status:** Milestone 1 implemented and verified (M1.1–M1.6). `kajo-comp` builds against the fork's `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject. Kajo branch: `feat/wlroots-fork`. Roadmap: [`ROADMAP.md`](../ROADMAP.md) §3.6.
 
-`kajo-comp` currently links the system `wlroots0.20` package (0.20.2) through `dependency('wlroots-0.20')` (`meson.build:895`). Effects such as blur, transitions, shadows and HDR tone mapping need render passes and scene features that stock wlroots does not offer, so Kajo builds from its own wlroots branch. Why a fork and not SceneFX or a replacement is recorded in ROADMAP §3.6.
+Until Milestone 1, `kajo-comp` linked the system `wlroots0.20` package (0.20.2) through `dependency('wlroots-0.20')`; it now builds the fork as a static subproject (§4, K2). Effects such as blur, transitions, shadows and HDR tone mapping need render passes and scene features that stock wlroots does not offer, so Kajo builds from its own wlroots branch. Why a fork and not SceneFX or a replacement is recorded in ROADMAP §3.6.
 
 **Principle:** the fork is upstream wlroots, unchanged, plus additive extensions. It can be swapped into any build that uses upstream wlroots and everything keeps working; no upstream functionality is ever removed. Breaking API or ABI compatibility is only allowed as a documented exception (C7).
 
@@ -44,7 +44,7 @@ On a freshly created `kajo/<base>` branch the series has two layers on top of th
 2. **Kajo-only patches:** effects and policy that only `kajo-comp` uses (blur, transitions, experiments).
 
 - **B3 (Dependencies between layers):** a Kajo-only patch may depend on an upstreamable one, never the other way round. Because of B2, commits added between base moves append on top in any order; the two-layer order is restored at the next base move (B6).
-- **B4 (Additive changes):** new functionality lives in new files (`render/vulkan/kfx_*`, `types/scene/kfx_*`, public headers under `include/wlr/kfx/`, shaders under `render/vulkan/shaders/`); upstream files only get small, commented hooks. This keeps the replay onto a new release mechanical and makes C1–C6 easy to check.
+- **B4 (Additive changes):** new functionality lives in new files (`render/vulkan/kfx_*` for targets and passes, `types/scene/kfx_*` for scene traversal using only the generic render-pass API, never Vulkan internals; public headers under `include/wlr/kfx/`, the fork's own internal shaders under `render/vulkan/shaders/`); upstream files only get small, commented hooks. Effect shaders are never in the fork; they are Kajo's (effects spec §7.2). This keeps the replay onto a new release mechanical and makes C1–C6 easy to check.
 
 ### 2.3 `FORK.md`
 
@@ -110,13 +110,13 @@ Realistic candidates, as an impression not confirmed with the maintainers: fixes
   - `xwayland=enabled`, `session=enabled`, `color-management=enabled`: features `kajo-comp` relies on are turned from `auto` into required, so a missing dependency fails the build instead of silently dropping the feature.
 - **K5 (Meson version):** wlroots 0.20.2 requires meson `>= 1.3`; Kajo's `project()` declares `>= 0.60.0` and must be raised. Local meson is 1.12.1.
 - **K6 (Dependencies):** the build dependencies of upstream's default build become Kajo build dependencies: `wayland` / `wayland-protocols`, `libdrm`, `libinput`, `libxkbcommon`, `pixman`, `seatd` (libseat), `libdisplay-info`, `libliftoff`, `hwdata`, `lcms2`, `egl` / `gbm`, Vulkan headers and loader, `glslang`, and the `xcb` libraries for XWayland and the X11 backend. The exact list is taken from the subproject's configure output in Milestone 1. wlroots' bundled wraps are not used (`wrap_mode=nodownload`).
-- **K7 (Kajo still builds without the fork):** `kajo-comp` guards every use of the extension API with `#if WLR_HAS_KFX`, so it also builds against plain upstream or the system package, with effects unavailable. This keeps P3 possible and is the Kajo-side half of the drop-in principle.
+- **K7 (Kajo still builds without the fork):** the effect code sits behind one facade (`src/comp/fx/comp_fx.h`); meson builds the real runtime when the wlroots dependency reports `have_kfx` and a no-op stub otherwise, so the rest of `src/comp/` never needs a guard (effects spec §15, CB1–CB2). Inside `src/comp/fx/`, extension-only code is guarded with `#if defined(WLR_HAS_KFX) && WLR_HAS_KFX` (wlroots emits feature macros with `set10`, so a disabled feature is defined as 0 and `#ifdef` would be wrong; `-Wundef` is added to `comp_strict_args`), so it also builds against plain upstream or the system package, with effects unavailable. This keeps P3 possible and is the Kajo-side half of the drop-in principle.
 
 ## 5. Packaging and developer setup
 
 - **P1 (`PKGBUILD`):** add the fork as a second `source=` entry without a ref (the commit that is built is the submodule pin recorded in Kajo, so there is one place to bump, F5), point the submodule at that local mirror in `prepare()`, add the build and runtime dependencies (K6), install with `--skip-subprojects`, and install `THIRD_PARTY_NOTICES.md` and wlroots' `LICENSE` next to Kajo's (wlroots is linked into `kajo-comp`). `wlroots0.20` is not a dependency.
 - **P2 (`DEVELOPMENT.md`):** `git clone --recursive`, `git submodule update --init` for existing clones, how to bump the pin (F5), and where the fork is developed (F4).
-- **P3 (Plain-upstream build):** for comparisons, the submodule can be pointed at the plain upstream tag (`0.20.2`); `kajo-comp` then builds without effects (K7).
+- **P3 (Plain-upstream build):** for comparisons, the submodule can be pointed at the plain upstream tag (`0.20.2`), or a meson option `-Dwlroots=system` (default `fork`, added in Milestone 2) builds against the system package; `kajo-comp` then builds without effects (K7). The system package is never used without the option (K2).
 
 ## 6. Milestone 1: plumbing, no behaviour change
 
@@ -143,11 +143,9 @@ Results (2026-11-13):
 - M1.5 ✅ `meson install --skip-subprojects` installs 358 files, none from wlroots; the package contains 389 entries, the only wlroots file is `usr/share/licenses/kajo-git/wlroots-LICENSE`. Without the flag, 126 wlroots files would be installed.
 - M1.6 ✅ confirmed by the user on Host A: a live session on the new build works.
 
-## 7. Later milestones (outline; specified when reached)
+## 7. Later milestones
 
-1. **Effect hook + tint (Milestone 2):** a minimal Vulkan render-pass hook under `wlr_kfx_`, `WLR_HAS_KFX` / `have_kfx` (C5), a trivial tint effect, a headless Vulkan pixel test so a base move that breaks the hook fails the gate, and the first run of V1–V4. Effects are damage-gated (no work while nothing changes).
-2. **Backdrop blur:** design in ROADMAP §3.7.2.
-3. **Window transitions**, then **HDR tone mapping and SDR white level** (ROADMAP §3.7.1).
+The effect pipeline, the fork's extension points (X1–X6, all `wlr_kfx_*`) and the milestones M2–M5 are specified in [`docs/spec_comp_effects.md`](spec_comp_effects.md). In short: M2 custom fragment shaders, node hooks and soft shadows; M3 glassy backdrop blur; M4 the output stage (SDR white, tone mapping, per-pixel colour filters); M5 transitions without new fork code. Each milestone adds patches to `kajo/0.20.2` under §2–§3 and ends with a new `kajo-0.20.2-fx<N>` tag and Kajo pin bump (F5).
 
 Effects need the Vulkan renderer. On GLES2 or pixman they are unavailable and the renderer works as upstream (C3).
 

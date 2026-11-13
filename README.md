@@ -109,7 +109,9 @@ The repository builds and installs **eight integrated native executables** (plus
 ### 1. System Dependencies (Arch Linux / CachyOS)
 ```bash
 sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-protocols \
-    wlroots0.20 talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    libdrm seatd libdisplay-info libliftoff lcms2 pixman mesa vulkan-headers glslang hwdata \
+    libxcb xcb-util-wm xcb-util-renderutil xcb-util-errors \
     xorg-xwayland json-glib glib2 libpulse pam poppler-glib libarchive mpv \
     libsidplayfp libgme libopenmpt libxmp gvfs gvfs-smb udisks2 blueprint-compiler meson ninja
 paru -S --needed uade bencodetools
