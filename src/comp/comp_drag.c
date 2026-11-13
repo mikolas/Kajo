@@ -122,7 +122,7 @@ comp_drag_motion(CompServer *s, double dx, double dy, uint32_t time_msec)
 }
 
 static void
-release_horizontal(CompServer *s, double velocity, double projected, bool cancel, double now)
+release_horizontal(CompServer *s, const CompGestureRelease *r, bool cancel, double now)
 {
     CompRect work = {0};
     comp_server_working_area(s, &work);
@@ -132,13 +132,13 @@ release_horizontal(CompServer *s, double velocity, double projected, bool cancel
     double target = NAN;
     size_t pick   = cur;
     if (cancel) {
-        target = s->drag.start;   /* GS4: back to where the drag started */
-    } else if (!comp_layout_drag_release_target(s->layout, work.w, s->drag.start, projected,
+        target = r->start;   /* GS4: back to where the drag started */
+    } else if (!comp_layout_drag_release_target(s->layout, work.w, r->start, r->projected,
                                                 &target, &pick)) {
         target = NAN;
         pick   = cur;
     }
-    comp_motion_drag_end(s->motion, velocity, target, now);
+    comp_motion_drag_end(s->motion, r->velocity, target, now);
     bool changed = !cancel && has_focus && pick != cur &&
                    comp_layout_focus_column_index(s->layout, pick);
     comp_window_relayout(s);
@@ -147,15 +147,13 @@ release_horizontal(CompServer *s, double velocity, double projected, bool cancel
 }
 
 static void
-release_vertical(CompServer *s, double velocity, double projected, bool cancel, double now)
+release_vertical(CompServer *s, const CompGestureRelease *r, bool cancel, double now)
 {
     double step   = comp_motion_workspace_step(s->motion);
     size_t nws    = comp_layout_workspace_count(s->layout);
     size_t active = comp_layout_active_workspace(s->layout);
-    size_t target = active;
-    if (!cancel && step > 0.0)
-        target = comp_gesture_pick_workspace(s->drag.value / step, projected / step, nws);
-    comp_motion_drag_end(s->motion, velocity, NAN, now);
+    size_t target = cancel ? active : comp_gesture_release_workspace(r, step, nws, active);
+    comp_motion_drag_end(s->motion, r->velocity, NAN, now);
     bool changed = target != active && comp_layout_focus_workspace_index(s->layout, target);
     comp_window_relayout(s);
     if (changed) {
@@ -173,14 +171,13 @@ comp_drag_end(CompServer *s, uint32_t time_msec, bool cancel)
         drag_reset(s);
         return;
     }
-    double t         = (double)time_msec / 1000.0;
-    double velocity  = cancel ? 0.0 : comp_gesture_velocity(&s->drag, t);
-    double projected = cancel ? s->drag.start : comp_gesture_projected(&s->drag, t);
-    double now       = comp_now_sec();
+    /* Snapshot first: drag_reset() clears s->drag, so the release must not read it. */
+    CompGestureRelease r = comp_gesture_release(&s->drag, (double)time_msec / 1000.0, cancel);
     CompMotionDragAxis axis = s->drag_axis;
+    double now = comp_now_sec();
     drag_reset(s);
     if (axis == COMP_MOTION_DRAG_X)
-        release_horizontal(s, velocity, projected, cancel, now);
+        release_horizontal(s, &r, cancel, now);
     else
-        release_vertical(s, velocity, projected, cancel, now);
+        release_vertical(s, &r, cancel, now);
 }
