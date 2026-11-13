@@ -87,7 +87,7 @@ All Kajo components and standalone applications share a unified design language:
 
 ### 3.6 [IN PROGRESS] `kajo-comp` wlroots fork for visual effects
 
-**Status:** 🚧 In progress; specification in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) (branch `feat/wlroots-fork`). Milestone 1 (plumbing) is implemented: `kajo-comp` builds against the fork `github.com/mikolas/wlroots` at `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject; the live-session check is pending. No effects exist yet.
+**Status:** 🚧 In progress; specification in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) (branch `feat/wlroots-fork`). Milestone 1 (plumbing) is implemented: `kajo-comp` builds against the fork `github.com/mikolas/wlroots` at `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject, verified in a live session on Host A. No effects exist yet.
 
 **Why:** Effects such as backdrop blur, window open/close/resize transitions, dimming, shadows and, later, HDR tone mapping (BT.2390) and an adjustable SDR white level need render passes and scene features that stock `wlroots` does not offer (`wlr_render_pass` has only `add_texture` / `add_rect`). HDR requires the Vulkan renderer: in 0.20.2 only Vulkan sets `features.input_color_transform` / `output_color_transform`, so GLES-based solutions (SceneFX, a GLES2 renderer swap) are excluded. Replacing `wlroots` entirely (~75k lines of backends, protocols and XWayland) is out of scope.
 

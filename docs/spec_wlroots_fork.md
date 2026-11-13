@@ -1,6 +1,6 @@
 # Spec: Kajo's wlroots fork (`kajo-comp` effects base)
 
-**Status:** Milestone 1 implemented; M1.1–M1.5 verified, M1.6 (live session on Host A) pending. `kajo-comp` builds against the fork's `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject. Kajo branch: `feat/wlroots-fork`. Roadmap: [`ROADMAP.md`](../ROADMAP.md) §3.6.
+**Status:** Milestone 1 implemented and verified (M1.1–M1.6). `kajo-comp` builds against the fork's `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject. Kajo branch: `feat/wlroots-fork`. Roadmap: [`ROADMAP.md`](../ROADMAP.md) §3.6.
 
 `kajo-comp` currently links the system `wlroots0.20` package (0.20.2) through `dependency('wlroots-0.20')` (`meson.build:895`). Effects such as blur, transitions, shadows and HDR tone mapping need render passes and scene features that stock wlroots does not offer, so Kajo builds from its own wlroots branch. Why a fork and not SceneFX or a replacement is recorded in ROADMAP §3.6.
 
@@ -141,7 +141,7 @@ Results (2026-11-13):
 - M1.3 ✅ no `libwlroots` in `ldd`; 847 `wlr_*` functions linked in; debug binary 5.4 MB (was 1.1 MB), LTO package build 1.7 MB.
 - M1.4 ✅ with limits: `makepkg` on a throwaway clone fetched the fork anonymously over HTTPS (global git config disabled), `prepare()` checked out the pinned `70893923`, the LTO build had 0 compiler warnings. Run with `--nodeps` on Host A, not in a clean chroot; every declared dependency is installed here, so a missing declaration would not have been caught.
 - M1.5 ✅ `meson install --skip-subprojects` installs 358 files, none from wlroots; the package contains 389 entries, the only wlroots file is `usr/share/licenses/kajo-git/wlroots-LICENSE`. Without the flag, 126 wlroots files would be installed.
-- M1.6 ⏳ pending (install, log in through `kajo-greeter`).
+- M1.6 ✅ confirmed by the user on Host A: a live session on the new build works.
 
 ## 7. Later milestones (outline; specified when reached)
 
