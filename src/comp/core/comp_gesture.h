@@ -61,6 +61,22 @@ void            comp_gesture_set_range(CompGesture *g, double start, double lo, 
 double          comp_gesture_velocity(const CompGesture *g, double t);
 /* Release-point projection: value + velocity × COMP_GESTURE_TAU_S. */
 double          comp_gesture_projected(const CompGesture *g, double t);
+
+/* Everything a release decision needs, captured before the gesture is reset. */
+typedef struct {
+    CompGestureAxis axis;
+    double          start;      /* camera value when the axis locked */
+    double          value;      /* camera value at release (rubber-banded) */
+    double          velocity;   /* 0 on cancel */
+    double          projected;  /* `start` on cancel */
+} CompGestureRelease;
+
+/* Snapshot of `g` at release time `t`. A cancel keeps the start and drops velocity. */
+CompGestureRelease comp_gesture_release(const CompGesture *g, double t, bool cancel);
+/* GS3: workspace to land on for a vertical release on a strip of `n` workspaces
+ * spaced `step` apart (camera units); `fallback` if the snapshot is unusable. */
+size_t          comp_gesture_release_workspace(const CompGestureRelease *r, double step,
+                                               size_t n, size_t fallback);
 void            comp_gesture_end(CompGesture *g);
 
 /* Soft limit: identity inside [lo, hi]; outside approaches lo − dim / hi + dim. */

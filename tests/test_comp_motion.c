@@ -462,6 +462,67 @@ test_drag_release_targets(void)
     comp_layout_free(S);
 }
 
+/* Regression: the release decision must use a snapshot taken before the gesture is
+ * reset. Reading the reset gesture made every vertical release start at workspace 0,
+ * so only workspaces 1–2 were reachable (ws2 could not reach ws3; ws4 fell back to ws2). */
+static double
+drag_strip(CompGesture *g, size_t from, double step, size_t nws, double travel, double dur)
+{
+    comp_gesture_begin(g);
+    double sgn = travel > 0.0 ? 1.0 : -1.0, t = 10.0;
+    (void)comp_gesture_update(g, 0.0, -sgn * 20.0, t);   /* lock on Y; camera moves by -finger */
+    comp_gesture_set_range(g, (double)from * step, 0.0, (double)(nws - 1) * step,
+                           step * COMP_GESTURE_RUBBER_DIM);
+    for (int i = 1; i <= 20; i++) {
+        t += dur / 20.0;
+        (void)comp_gesture_update(g, 0.0, -(travel - sgn * 20.0) / 20.0, t);
+    }
+    return t;
+}
+
+static void
+test_gesture_release_snapshot(void)
+{
+    const double step = 1096.0;
+    const size_t nws  = 4;   /* ws1–ws3 with windows, ws4 the trailing empty one */
+    CompGesture g;
+    struct { size_t from; double travel, dur; size_t want; const char *what; } cases[] = {
+        { 1, +0.60 * step, 0.60, 2, "ws2 slow drag down -> ws3" },
+        { 1, +0.30 * step, 0.08, 2, "ws2 flick down -> ws3" },
+        { 2, +0.60 * step, 0.60, 3, "ws3 slow drag down -> ws4" },
+        { 2, -0.30 * step, 0.08, 1, "ws3 flick up -> ws2, not ws1" },
+        { 2, -0.60 * step, 0.60, 1, "ws3 slow drag up -> ws2" },
+        { 3, +0.40 * step, 0.08, 3, "ws4 flick down: end of the strip, stays" },
+        { 3, -0.30 * step, 0.08, 2, "ws4 flick up -> ws3" },
+        { 1, +0.10 * step, 0.60, 1, "ws2 short slow drag: glance, stays" },
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(cases); i++) {
+        double t = drag_strip(&g, cases[i].from, step, nws, cases[i].travel, cases[i].dur);
+        CompGestureRelease r = comp_gesture_release(&g, t, false);
+        comp_gesture_end(&g);                                     /* as comp_drag_end does */
+        g_test_message("%s", cases[i].what);
+        g_assert_cmpint(r.axis, ==, COMP_GESTURE_AXIS_Y);
+        g_assert_cmpfloat_with_epsilon(r.start, (double)cases[i].from * step, 1e-9);
+        g_assert_cmpuint(comp_gesture_release_workspace(&r, step, nws, 99), ==, cases[i].want);
+    }
+
+    /* Cancel: no velocity, projection on the start */
+    double t = drag_strip(&g, 2, step, nws, -0.5 * step, 0.08);
+    CompGestureRelease c = comp_gesture_release(&g, t, true);
+    g_assert_cmpfloat_with_epsilon(c.velocity, 0.0, 1e-12);
+    g_assert_cmpfloat_with_epsilon(c.projected, 2.0 * step, 1e-9);
+    g_assert_cmpfloat_with_epsilon(c.start, 2.0 * step, 1e-9);
+    comp_gesture_end(&g);
+
+    /* A snapshot of the reset gesture is the old bug: everything collapses to 0 */
+    CompGestureRelease z = comp_gesture_release(&g, t, false);
+    g_assert_cmpfloat_with_epsilon(z.value, 0.0, 1e-12);
+    g_assert_cmpint(z.axis, ==, COMP_GESTURE_AXIS_NONE);
+    g_assert_cmpuint(comp_gesture_release_workspace(NULL, step, nws, 7), ==, 7);
+    g_assert_cmpuint(comp_gesture_release_workspace(&z, 0.0, nws, 7), ==, 7);
+    g_assert_cmpuint(comp_gesture_release_workspace(&z, step, 0, 7), ==, 7);
+}
+
 static void
 test_gesture_snap_picks(void)
 {
@@ -500,5 +561,6 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/gesture/lock-and-follow", test_gesture_lock_and_follow);
     g_test_add_func("/comp/gesture/velocity-and-projection", test_gesture_velocity_and_projection);
     g_test_add_func("/comp/gesture/snap-picks", test_gesture_snap_picks);
+    g_test_add_func("/comp/gesture/release-snapshot", test_gesture_release_snapshot);
     return g_test_run();
 }

@@ -128,6 +128,28 @@ comp_gesture_projected(const CompGesture *g, double t)
     return g->value + comp_gesture_velocity(g, t) * COMP_GESTURE_TAU_S;
 }
 
+CompGestureRelease
+comp_gesture_release(const CompGesture *g, double t, bool cancel)
+{
+    CompGestureRelease r = { .axis = COMP_GESTURE_AXIS_NONE };
+    if (!g)
+        return r;
+    r.axis      = g->axis;
+    r.start     = g->start;
+    r.value     = g->value;
+    r.velocity  = cancel ? 0.0 : comp_gesture_velocity(g, t);
+    r.projected = cancel ? g->start : comp_gesture_projected(g, t);
+    return r;
+}
+
+size_t
+comp_gesture_release_workspace(const CompGestureRelease *r, double step, size_t n, size_t fallback)
+{
+    if (!r || n == 0 || !(step > 0.0) || !isfinite(step))
+        return fallback;
+    return comp_gesture_pick_workspace(r->value / step, r->projected / step, n);
+}
+
 size_t
 comp_gesture_pick_workspace(double released, double projected, size_t n)
 {
