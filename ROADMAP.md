@@ -87,7 +87,7 @@ All Kajo components and standalone applications share a unified design language:
 
 ### 3.6 [IN PROGRESS] `kajo-comp` wlroots fork for visual effects
 
-**Status:** 🚧 In progress; specification in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) (branch `feat/wlroots-fork`). Milestone 1 (plumbing) is implemented: `kajo-comp` builds against the fork `github.com/mikolas/wlroots` at `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject, verified in a live session on Host A. No effects exist yet.
+**Status:** 🚧 In progress; specifications in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) and [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (branch `feat/wlroots-fork`). Milestones 1–3 are implemented: `kajo-comp` builds against `github.com/mikolas/wlroots` at `kajo-0.20.2-fx5` (`b5da89e0`) as a static subproject with custom Vulkan fragment shaders (`X1`), below-node backdrop render (`X2`), pooled offscreen targets (`X3`), scene leaf hooks (`X4`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), analytic soft drop shadows, unfocused window dimming, and dual-filter Kawase frosted backdrop glass (`xray` background cache + popup propagation). Milestones 4–5 remain.
 
 **Why:** Effects such as backdrop blur, window open/close/resize transitions, dimming, shadows and, later, HDR tone mapping (BT.2390) and an adjustable SDR white level need render passes and scene features that stock `wlroots` does not offer (`wlr_render_pass` has only `add_texture` / `add_rect`). HDR requires the Vulkan renderer: in 0.20.2 only Vulkan sets `features.input_color_transform` / `output_color_transform`, so GLES-based solutions (SceneFX, a GLES2 renderer swap) are excluded. Replacing `wlroots` entirely (~75k lines of backends, protocols and XWayland) is out of scope.
 
@@ -104,7 +104,9 @@ All Kajo components and standalone applications share a unified design language:
 **Order:**
 
 1. ✅ Milestone 1: fork, branch `kajo/0.20.2`, submodule, `subproject()`, full gate (no behaviour change).
-2. M2–M5 per [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md): custom fragment shaders, node hooks and soft shadows; glassy backdrop blur; output stage (SDR white, tone mapping, per-pixel colour filters); transitions.
+2. ✅ Milestone 2 (`kajo-0.20.2-fx3`): custom fragment shaders (`X1`), scene leaf hooks (`X4`), two-pass pathway (`X6`), analytic soft shadows and unfocused dimming (`shadow.frag`, `dim.frag`).
+3. ✅ Milestone 3 (`kajo-0.20.2-fx5`): below-node scene render (`X2`), pooled offscreen targets (`X3`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), dual-filter Kawase frosted backdrop glass (`blur_down.frag`, `blur_up.frag`, `glass.frag`).
+4. M4–M5 per [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md): output stage (SDR white, tone mapping, per-pixel colour filters); transitions.
 
 **Open, not decided:** whether to contribute parts back upstream once they are stable.
 
@@ -117,12 +119,10 @@ The compositor spec describes what is built; everything below is not implemented
 | Item | Why not built yet / blocker | Starting approach |
 | :--- | :--- | :--- |
 | **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
-| **Adjustable SDR white level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) on a PQ output and rejects `color_transform` when an output image description is set. | Patch `wlr_scene`'s luminance multiplier in the wlroots fork (§3.6), or propose upstream. |
-| **Compositor-side HDR tone mapping (BT.2390)** | wlroots 0.20.2 has no tone-mapping curve; content above panel peak relies on the display's own tone mapping. | Tone-mapping pass in the wlroots fork (§3.6). |
-| **Glassy backdrop blur** | `wlr_render_pass` has only `add_texture()` / `add_rect()`; no custom shaders, no access to what is drawn below. `[[layer_rule]]` keys `blur`, `xray`, `blur_popups` are currently rejected with a non-fatal diagnostic. | Effects spec §10, milestone M3 (fork extension points X2/X3). |
-| **Window open/close/resize shaders** | Same render-pass limitation. (Resize already animates the box size, spec_kajo_comp M5.) | Effects spec, milestone M5 (pixel-level only; Kajo's own snapshot nodes). |
+| **Adjustable SDR white level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) on a PQ output and rejects `color_transform` when an output image description is set. | Patch `wlr_scene`'s luminance multiplier in the wlroots fork (§3.6), or propose upstream (Milestone M4). |
+| **Compositor-side HDR tone mapping (BT.2390)** | wlroots 0.20.2 has no tone-mapping curve; content above panel peak relies on the display's own tone mapping. | Tone-mapping pass in the wlroots fork (§3.6, Milestone M4). |
+| **Window open/close/resize shaders** | Needs snapshot nodes in `kajo-comp` (Resize already animates the box size, spec_kajo_comp M5). | Effects spec, milestone M5 (pixel-level only; Kajo's own snapshot nodes). |
 | **Overview zoom (`toggle-overview`)** | `wlr_scene` has no tree scale transform; zooming means recomputing positions and `wlr_scene_buffer_set_dest_size()` for every surface, subsurface and popup. | Manual scene-buffer scaling pass, or a scale-aware scene node in the fork. |
-| **Soft shadows** | Not in `wlr_scene`; no custom shaders. Rounded corners stay excluded (0 px design system). | Effects spec §11, milestone M2: exact analytic shadow of a rectangle, no capture. |
 | **OSK: keep the focused text field visible** | Push-up is built: with `[osk] push_windows = true` the shell sets a layer-shell exclusive zone (`src/osk/osk.c`) and `kajo-comp` shrinks the working area and relays out (`comp_layer_arrange`). Checked by eye on Host A with kitty and Thorium (native Wayland). Missing: scrolling the focused column / window so the text cursor stays above the keyboard when the field is hidden even after the shrink. | Use the `text-input-v3` cursor rectangle to offset the camera. |
 | **`Mod + drag` interactive move/resize of tiled columns** | Keyboard-first workflow and presets cover v1; client-initiated move/resize exists for floating windows (`L8`). | `Mod + Left/Right Button` tiled grab. |
 | **Layout extras** | Not needed for v1. | Evaluate individually: `focus-follows-mouse`, `switch-preset-column-width-back`, a `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts. |

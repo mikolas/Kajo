@@ -396,12 +396,17 @@ destroy_all_shaders(CompFxSystem *sys)
 }
 
 bool
-fx_compute_outer_buf_box(const CompFxSurface *fx,
-                         const struct wlr_kfx_render_ctx *ctx,
-                         CompFxRect *out_outer_buf,
-                         float *out_scale, int *out_transform)
+fx_compute_slot_pass_boxes(const CompFxSurface *fx,
+                           FxSlotKind slot_kind,
+                           const struct wlr_kfx_render_ctx *ctx,
+                           CompFxRect *out_full_slot_buf,
+                           CompFxRect *out_pass_outer_buf,
+                           float *out_eff_scale,
+                           int *out_transform)
 {
     if (!fx || !fx->parent_tree || !ctx || !ctx->output || !ctx->output->output)
+        return false;
+    if (slot_kind < 0 || slot_kind >= FX_SLOT_COUNT)
         return false;
 
     int px = 0, py = 0;
@@ -411,13 +416,8 @@ fx_compute_outer_buf_box(const CompFxSurface *fx,
     struct wlr_output *wo = ctx->output->output;
     int trans_w = 0, trans_h = 0;
     wlr_output_transformed_resolution(wo, &trans_w, &trans_h);
+    float base_scale = wo->scale > 0.0f ? wo->scale : 1.0f;
 
-    CompFxRect outer_logical = {
-        .x      = px + fx->state.outer_box.x,
-        .y      = py + fx->state.outer_box.y,
-        .width  = fx->state.outer_box.width,
-        .height = fx->state.outer_box.height,
-    };
     CompFxRect output_logical = {
         .x      = ctx->output->x,
         .y      = ctx->output->y,
@@ -425,15 +425,66 @@ fx_compute_outer_buf_box(const CompFxSurface *fx,
         .height = 0,
     };
 
-    if (out_outer_buf) {
-        *out_outer_buf = comp_fx_transform_box(
-            outer_logical, output_logical, wo->scale, (int)wo->transform, trans_w, trans_h);
+    const struct wlr_box *slot_local = &fx->slots[slot_kind].local_box;
+    CompFxRect slot_logical = {
+        .x      = px + slot_local->x,
+        .y      = py + slot_local->y,
+        .width  = slot_local->width,
+        .height = slot_local->height,
+    };
+    CompFxRect full_slot_buf = comp_fx_transform_box(
+        slot_logical, output_logical, base_scale, (int)wo->transform, trans_w, trans_h);
+
+    CompFxRect outer_logical = {
+        .x      = px + fx->state.outer_box.x,
+        .y      = py + fx->state.outer_box.y,
+        .width  = fx->state.outer_box.width,
+        .height = fx->state.outer_box.height,
+    };
+    CompFxRect full_outer_buf = comp_fx_transform_box(
+        outer_logical, output_logical, base_scale, (int)wo->transform, trans_w, trans_h);
+
+    double rx = (full_slot_buf.width > 0 && ctx->dst_box.width > 0)
+        ? ((double)ctx->dst_box.width / (double)full_slot_buf.width)
+        : 1.0;
+    double ry = (full_slot_buf.height > 0 && ctx->dst_box.height > 0)
+        ? ((double)ctx->dst_box.height / (double)full_slot_buf.height)
+        : 1.0;
+
+    if (out_full_slot_buf)
+        *out_full_slot_buf = full_slot_buf;
+
+    if (out_pass_outer_buf) {
+        if (ctx->dst_box.x == full_slot_buf.x &&
+            ctx->dst_box.y == full_slot_buf.y &&
+            ctx->dst_box.width == full_slot_buf.width &&
+            ctx->dst_box.height == full_slot_buf.height) {
+            *out_pass_outer_buf = full_outer_buf;
+        } else {
+            out_pass_outer_buf->x = (int32_t)lround(
+                (double)ctx->dst_box.x + (double)(full_outer_buf.x - full_slot_buf.x) * rx);
+            out_pass_outer_buf->y = (int32_t)lround(
+                (double)ctx->dst_box.y + (double)(full_outer_buf.y - full_slot_buf.y) * ry);
+            out_pass_outer_buf->width  = (int32_t)lround((double)full_outer_buf.width * rx);
+            out_pass_outer_buf->height = (int32_t)lround((double)full_outer_buf.height * ry);
+        }
     }
-    if (out_scale)
-        *out_scale = wo->scale > 0.0f ? wo->scale : 1.0f;
+
+    if (out_eff_scale)
+        *out_eff_scale = (float)((double)base_scale * 0.5 * (rx + ry));
     if (out_transform)
         *out_transform = (int)wo->transform;
     return true;
+}
+
+bool
+fx_compute_outer_buf_box(const CompFxSurface *fx,
+                         const struct wlr_kfx_render_ctx *ctx,
+                         CompFxRect *out_outer_buf,
+                         float *out_scale, int *out_transform)
+{
+    return fx_compute_slot_pass_boxes(fx, FX_SLOT_SHADOW, ctx, NULL,
+                                      out_outer_buf, out_scale, out_transform);
 }
 
 bool
@@ -819,13 +870,28 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         .y      = origin_ly,
     };
     struct wlr_scene_output *use_so = &dummy_so;
+    double shot_scale = scale > 0.0 ? scale : 1.0;
+    struct wlr_box shot_box = {
+        .x      = origin_lx,
+        .y      = origin_ly,
+        .width  = pass_w > 0 ? (int)ceil((double)pass_w / shot_scale) : 1,
+        .height = pass_h > 0 ? (int)ceil((double)pass_h / shot_scale) : 1,
+    };
     struct CompOutput *out;
     wl_list_for_each(out, &server->outputs, link) {
-        if (out->scene_output && out->wlr_output &&
-            out->scene_output->x == origin_lx &&
-            out->scene_output->y == origin_ly &&
-            out->wlr_output->width == pass_w &&
-            out->wlr_output->height == pass_h) {
+        if (!out->scene_output || !out->wlr_output)
+            continue;
+        int trans_w = 0, trans_h = 0;
+        wlr_output_transformed_resolution(out->wlr_output, &trans_w, &trans_h);
+        float os = out->wlr_output->scale > 0.0f ? out->wlr_output->scale : 1.0f;
+        struct wlr_box out_box = {
+            .x      = out->scene_output->x,
+            .y      = out->scene_output->y,
+            .width  = (int)ceil((double)trans_w / (double)os),
+            .height = (int)ceil((double)trans_h / (double)os),
+        };
+        struct wlr_box inter = {0};
+        if (wlr_box_intersection(&inter, &out_box, &shot_box)) {
             use_so = out->scene_output;
             break;
         }

@@ -35,6 +35,7 @@ typedef struct {
     struct wlr_box           last_logical_box;
     uint64_t                 built_bg_serial;
     double                   last_recompute_s;
+    bool                     dirty_pending;
     bool                     valid;
 } CompFxGlassOutput;
 
@@ -120,6 +121,14 @@ extern const CompFxEffectDesc k_fx_glass_desc;
 extern const CompFxEffectDesc k_fx_dim_desc;
 
 const CompFxEffectDesc *fx_registry_get(FxSlotKind kind);
+
+bool fx_compute_slot_pass_boxes(const CompFxSurface *fx,
+                                FxSlotKind slot_kind,
+                                const struct wlr_kfx_render_ctx *ctx,
+                                CompFxRect *out_full_slot_buf,
+                                CompFxRect *out_pass_outer_buf,
+                                float *out_eff_scale,
+                                int *out_transform);
 
 bool fx_compute_outer_buf_box(const CompFxSurface *fx,
                               const struct wlr_kfx_render_ctx *ctx,

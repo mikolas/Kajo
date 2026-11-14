@@ -75,7 +75,8 @@ dim_draw(CompFxSystem *sys, CompFxSurface *fx,
     CompFxRect outer_buf = {0};
     float scale = 1.0f;
     int transform = 0;
-    if (!fx_compute_outer_buf_box(fx, ctx, &outer_buf, &scale, &transform))
+    if (!fx_compute_slot_pass_boxes(fx, FX_SLOT_DIM, ctx, NULL,
+                                    &outer_buf, &scale, &transform))
         return;
 
     CompFxRect anchor_dst = {

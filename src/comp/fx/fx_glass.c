@@ -251,6 +251,25 @@ div_ceil_i32(int a, int b)
     return q;
 }
 
+static CompFxRect
+clamp_buf_rect(CompFxRect r, int max_w, int max_h)
+{
+    int x1 = r.x < 0 ? 0 : r.x;
+    int y1 = r.y < 0 ? 0 : r.y;
+    int x2 = r.x + r.width;
+    int y2 = r.y + r.height;
+    if (x2 > max_w) x2 = max_w;
+    if (y2 > max_h) y2 = max_h;
+    if (x2 <= x1 || y2 <= y1)
+        return (CompFxRect){0};
+    return (CompFxRect){
+        .x      = x1,
+        .y      = y1,
+        .width  = x2 - x1,
+        .height = y2 - y1,
+    };
+}
+
 static bool
 recompute_glass_target(CompFxSystem *sys,
                        CompFxSurface *fx,
@@ -265,8 +284,14 @@ recompute_glass_target(CompFxSystem *sys,
     if (!so || !wo || !r)
         return false;
 
-    int eff_w = 0, eff_h = 0;
-    wlr_output_effective_resolution(wo, &eff_w, &eff_h);
+    int trans_w = 0, trans_h = 0;
+    wlr_output_transformed_resolution(wo, &trans_w, &trans_h);
+    if (trans_w <= 0 || trans_h <= 0)
+        return false;
+
+    float scale = wo->scale > 0.0f ? wo->scale : 1.0f;
+    int eff_w = (int)ceil((double)trans_w / (double)scale);
+    int eff_h = (int)ceil((double)trans_h / (double)scale);
     if (eff_w <= 0 || eff_h <= 0)
         return false;
 
@@ -280,12 +305,13 @@ recompute_glass_target(CompFxSystem *sys,
     if (!wlr_box_intersection(&clamped_sample, sample_logical_box, &out_logical))
         return false;
 
-    int trans_w = 0, trans_h = 0;
-    wlr_output_transformed_resolution(wo, &trans_w, &trans_h);
     CompFxRect buf_box = comp_fx_transform_box(
         (CompFxRect){ clamped_sample.x, clamped_sample.y, clamped_sample.width, clamped_sample.height },
         (CompFxRect){ so->x, so->y, eff_w, eff_h },
-        wo->scale, (int)wo->transform, trans_w, trans_h);
+        scale, (int)wo->transform, trans_w, trans_h);
+    buf_box = clamp_buf_rect(buf_box, trans_w, trans_h);
+    if (buf_box.width <= 0 || buf_box.height <= 0)
+        return false;
 
     int req_w = div_ceil_i32(buf_box.x + buf_box.width, GLASS_DOWNSCALE) -
                 div_floor_i32(buf_box.x, GLASS_DOWNSCALE) + 2;
@@ -390,8 +416,14 @@ fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
 
     struct wlr_scene_output *so = output->scene_output;
     struct wlr_output *wo = output->wlr_output;
-    int eff_w = 0, eff_h = 0;
-    wlr_output_effective_resolution(wo, &eff_w, &eff_h);
+    int trans_w = 0, trans_h = 0;
+    wlr_output_transformed_resolution(wo, &trans_w, &trans_h);
+    if (trans_w <= 0 || trans_h <= 0)
+        return false;
+
+    float scale = wo->scale > 0.0f ? wo->scale : 1.0f;
+    int eff_w = (int)ceil((double)trans_w / (double)scale);
+    int eff_h = (int)ceil((double)trans_h / (double)scale);
     if (eff_w <= 0 || eff_h <= 0)
         return false;
 
@@ -404,7 +436,7 @@ fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
 
     bool any_throttled = false;
     CompFxSurface *fx;
-    wl_list_for_each(fx, &sys->surfaces, link) {
+    wl_list_for_each_reverse(fx, &sys->surfaces, link) {
         if (!fx->state.mapped || !fx->slots[FX_SLOT_GLASS].enabled ||
             !fx->slots[FX_SLOT_GLASS].anchor || !fx->parent_tree) {
             if (!wl_list_empty(&fx->glass_outputs))
@@ -449,10 +481,13 @@ fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
         bool need_recompute = false;
 
         if (is_xray) {
+            go->dirty_pending = false;
             if (geom_changed || go->built_bg_serial != track->bg_serial)
                 need_recompute = true;
         } else {
-            bool damaged = wlr_kfx_scene_output_damage_intersects(so, &sample_box);
+            if (wlr_kfx_scene_output_damage_intersects(so, &sample_box))
+                go->dirty_pending = true;
+            bool damaged = go->dirty_pending;
             if (!geom_changed && damaged && sys->cfg.glass.max_recompute_hz > 0 &&
                 go->last_recompute_s > 0.0) {
                 double min_dt = 1.0 / (double)sys->cfg.glass.max_recompute_hz;
@@ -468,6 +503,7 @@ fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
         if (need_recompute) {
             if (recompute_glass_target(sys, fx, go, output, &sample_box, is_xray)) {
                 go->valid            = true;
+                go->dirty_pending    = false;
                 go->last_logical_box = glass_box;
                 go->built_bg_serial  = track->bg_serial;
                 go->last_recompute_s = now_s;
@@ -487,15 +523,6 @@ glass_draw(CompFxSystem *sys, CompFxSurface *fx,
         return;
 
     CompFxGlassOutput *go = find_glass_output(fx, ctx->output);
-    if (!go) {
-        CompFxGlassOutput *cand;
-        wl_list_for_each(cand, &fx->glass_outputs, link) {
-            if (cand->valid && cand->target) {
-                go = cand;
-                break;
-            }
-        }
-    }
     if (!go || !go->valid || !go->target ||
         go->t0_src_box.width <= 0 || go->t0_src_box.height <= 0)
         return;
@@ -513,6 +540,13 @@ glass_draw(CompFxSystem *sys, CompFxSurface *fx,
         .width  = ctx->dst_box.width,
         .height = ctx->dst_box.height,
     };
+    CompFxRect full_glass_buf = {0};
+    if (fx_compute_slot_pass_boxes(fx, FX_SLOT_GLASS, ctx,
+                                   &full_glass_buf, NULL, NULL, NULL) &&
+        full_glass_buf.width > 0 && full_glass_buf.height > 0) {
+        dst_rect = full_glass_buf;
+    }
+
     CompFxRect t0_src_rect = {
         .x      = go->t0_src_box.x,
         .y      = go->t0_src_box.y,

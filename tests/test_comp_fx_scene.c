@@ -534,12 +534,420 @@ test_pixman_fallback(void)
     comp_config_free(cfg);
 }
 
+static void
+test_m3_review_regressions(void)
+{
+    setenv("WLR_BACKENDS", "headless", 1);
+    setenv("WLR_RENDERER", "vulkan", 1);
+
+    struct wl_display *dpy = wl_display_create();
+    g_assert_nonnull(dpy);
+    struct wl_event_loop *loop = wl_display_get_event_loop(dpy);
+    struct wlr_backend *backend = wlr_headless_backend_create(loop);
+    g_assert_nonnull(backend);
+    struct wlr_renderer *renderer = wlr_renderer_autocreate(backend);
+    g_assert_nonnull(renderer);
+    g_assert_true(wlr_renderer_is_vk(renderer));
+    struct wlr_allocator *alloc = wlr_allocator_autocreate(backend, renderer);
+    g_assert_nonnull(alloc);
+
+    struct wlr_output *wo = wlr_headless_add_output(backend, 1280, 720);
+    g_assert_nonnull(wo);
+    g_assert_true(wlr_output_init_render(wo, alloc, renderer));
+    struct wlr_output_state ost;
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_enabled(&ost, true);
+    wlr_output_state_set_custom_mode(&ost, 1280, 720, 0);
+    g_assert_true(wlr_output_commit_state(wo, &ost));
+    wlr_output_state_finish(&ost);
+    g_assert_true(wlr_backend_start(backend));
+
+    struct wlr_scene *scene = wlr_scene_create();
+    g_assert_nonnull(scene);
+    struct wlr_output_layout *layout = wlr_output_layout_create(dpy);
+    struct wlr_scene_output_layout *scene_layout = wlr_scene_attach_output_layout(scene, layout);
+    struct wlr_output_layout_output *lo = wlr_output_layout_add(layout, wo, 0, 0);
+    struct wlr_scene_output *so = wlr_scene_output_create(scene, wo);
+    wlr_scene_output_layout_add_output(scene_layout, lo, so);
+
+    CompConfig *cfg = comp_config_new_defaults(COMP_MOD_SUPER);
+    g_assert_nonnull(cfg);
+    cfg->fx.dim.enabled = true;
+    cfg->fx.dim.opacity = 0.65;
+    cfg->fx.dim.duration_ms = 0;
+    cfg->fx.shadow.duration_ms = 0;
+    cfg->fx.glass.tint_alpha = 0.0;
+    cfg->fx.glass.brightness = 1.0;
+    cfg->fx.glass.saturation = 1.0;
+
+    CompServer srv = {
+        .display   = dpy,
+        .loop      = loop,
+        .backend   = backend,
+        .renderer  = renderer,
+        .allocator = alloc,
+        .scene     = scene,
+        .config    = cfg,
+    };
+    wl_list_init(&srv.outputs);
+
+    CompOutput out = {
+        .server       = &srv,
+        .wlr_output   = wo,
+        .scene_output = so,
+    };
+    wl_list_insert(&srv.outputs, &out.link);
+
+    g_assert_true(comp_fx_init(&srv));
+    g_assert_true(comp_fx_is_active(&srv));
+    comp_fx_config_apply(&srv, cfg);
+
+    /* White background + floating window + popup glass over it. */
+    const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    struct wlr_scene_rect *bg_rect = wlr_scene_rect_create(&scene->tree, 1280, 720, white);
+    g_assert_nonnull(bg_rect);
+
+    struct wlr_scene_tree *win_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&win_tree->node, 200, 150);
+    struct wlr_scene_rect *win_rect = wlr_scene_rect_create(win_tree, 300, 200, white);
+    CompFxSurface *fx_win = comp_fx_surface_create(&srv, win_tree, COMP_FX_SURFACE_WINDOW);
+    CompFxSurfaceState win_st = {
+        .outer_box    = { .x = 0, .y = 0, .width = 300, .height = 200 },
+        .surface_box  = { .x = 0, .y = 0, .width = 300, .height = 200 },
+        .shadow_below = &win_rect->node,
+        .dim_above    = &win_rect->node,
+        .is_floating  = true,
+        .is_focused   = true,
+        .mapped       = true,
+    };
+    comp_fx_surface_sync(fx_win, &win_st);
+
+    struct wlr_scene_tree *pop_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&pop_tree->node, 160, 150);
+    const float pop_col[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    struct wlr_scene_rect *pop_rect = wlr_scene_rect_create(pop_tree, 240, 160, pop_col);
+    CompFxSurface *fx_pop = comp_fx_surface_create(&srv, pop_tree, COMP_FX_SURFACE_POPUP);
+    CompFxSurfaceState pop_st = {
+        .outer_box      = { .x = 0, .y = 0, .width = 240, .height = 160 },
+        .surface_box    = { .x = 0, .y = 0, .width = 240, .height = 160 },
+        .shadow_below   = &pop_rect->node,
+        .dim_above      = &pop_rect->node,
+        .has_rule_shadow = true,
+        .rule_shadow    = false,
+        .is_floating    = true,
+        .is_focused     = true,
+        .mapped         = true,
+    };
+    comp_fx_surface_sync(fx_pop, &pop_st);
+
+    const struct wlr_drm_format_set *tex_fmts =
+        wlr_renderer_get_texture_formats(renderer, alloc->buffer_caps);
+    const struct wlr_drm_format *fmt_xrgb =
+        wlr_drm_format_set_get(tex_fmts, DRM_FORMAT_XRGB8888);
+    g_assert_nonnull(fmt_xrgb);
+    struct wlr_buffer *shot_buf = wlr_allocator_create_buffer(alloc, 1280, 720, fmt_xrgb);
+    g_assert_nonnull(shot_buf);
+
+    cfg->fx.shadow.layers[0].opacity = 0.85;
+    cfg->fx.shadow.layers[1].opacity = 0.85;
+    comp_fx_config_apply(&srv, cfg);
+
+    /* Finding 1: Glass backdrop includes dim and shadow WLR_KFX_INSTEAD hooks. */
+    comp_fx_output_prepare(&out, 10.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+
+    struct wlr_box gbox = { .x = 160, .y = 150, .width = 240, .height = 160 };
+    struct wlr_render_pass *spass = comp_fx_screenshot_begin_pass(&srv, shot_buf);
+    g_assert_nonnull(spass);
+    struct wlr_scene_node *child;
+    wl_list_for_each(child, &pop_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &gbox, &gbox,
+                                             0, 0, 1.0, 1280, 720);
+    }
+    g_assert_true(wlr_render_pass_submit(spass));
+
+    uint8_t px_focused[4] = {0};
+    uint8_t px_halo_with_shadow[4] = {0};
+    struct wlr_texture *stex = wlr_texture_from_buffer(renderer, shot_buf);
+    g_assert_nonnull(stex);
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_focused,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 300, .y = 230, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_halo_with_shadow,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 194, .y = 230, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(stex);
+
+    /* Step 1B: Disable shadow on focused win_tree (keep focused so dim is off) -> halo becomes pure white. */
+    win_st.has_rule_shadow = true;
+    win_st.rule_shadow = false;
+    comp_fx_surface_sync(fx_win, &win_st);
+    comp_fx_output_prepare(&out, 11.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+
+    spass = comp_fx_screenshot_begin_pass(&srv, shot_buf);
+    g_assert_nonnull(spass);
+    wl_list_for_each(child, &pop_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &gbox, &gbox,
+                                             0, 0, 1.0, 1280, 720);
+    }
+    g_assert_true(wlr_render_pass_submit(spass));
+
+    uint8_t px_halo_no_shadow[4] = {0};
+    stex = wlr_texture_from_buffer(renderer, shot_buf);
+    g_assert_nonnull(stex);
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_halo_no_shadow,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 194, .y = 230, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(stex);
+
+    /* Step 1C: Unfocus win_tree -> dim overlay becomes active on win_tree; glass over (300, 230) must darken! */
+    win_st.is_focused = false;
+    comp_fx_surface_sync(fx_win, &win_st);
+    comp_fx_output_prepare(&out, 12.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+
+    spass = comp_fx_screenshot_begin_pass(&srv, shot_buf);
+    g_assert_nonnull(spass);
+    wl_list_for_each(child, &pop_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &gbox, &gbox,
+                                             0, 0, 1.0, 1280, 720);
+    }
+    g_assert_true(wlr_render_pass_submit(spass));
+
+    uint8_t px_unfocused[4] = {0};
+    stex = wlr_texture_from_buffer(renderer, shot_buf);
+    g_assert_nonnull(stex);
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_unfocused,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 300, .y = 230, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(stex);
+
+    /* Dimmed backdrop is significantly darker than focused white backdrop. */
+    g_assert_cmpint(px_unfocused[0], <, (int)px_focused[0] - 80);
+    /* Shadow halo at x=194 (6px left of win_tree at x=200) is darker when shadow is enabled. */
+    g_assert_cmpint(px_halo_with_shadow[0], <, (int)px_halo_no_shadow[0] - 8);
+
+    /* Finding 2: Multi-monitor glass_draw does not fall back to another output's target. */
+    struct wlr_output *wo2 = wlr_headless_add_output(backend, 1280, 720);
+    g_assert_nonnull(wo2);
+    g_assert_true(wlr_output_init_render(wo2, alloc, renderer));
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_enabled(&ost, true);
+    wlr_output_state_set_custom_mode(&ost, 1280, 720, 0);
+    g_assert_true(wlr_output_commit_state(wo2, &ost));
+    wlr_output_state_finish(&ost);
+    struct wlr_output_layout_output *lo2 = wlr_output_layout_add(layout, wo2, 1280, 0);
+    struct wlr_scene_output *so2 = wlr_scene_output_create(scene, wo2);
+    wlr_scene_output_layout_add_output(scene_layout, lo2, so2);
+    CompOutput out2 = {
+        .server       = &srv,
+        .wlr_output   = wo2,
+        .scene_output = so2,
+    };
+    wl_list_insert(&srv.outputs, &out2.link);
+
+    /* Clear shot_buf to green, then attempt to render fx_pop's glass node as if on out2 (origin_lx = 1280).
+     * Since pop_tree is at x=160 (only on out1, no valid target on out2), glass_draw must draw nothing! */
+    spass = comp_fx_screenshot_begin_pass(&srv, shot_buf);
+    g_assert_nonnull(spass);
+    wlr_render_pass_add_rect(spass, &(struct wlr_render_rect_options){
+        .box   = { .x = 0, .y = 0, .width = 1280, .height = 720 },
+        .color = { 0.0f, 1.0f, 0.0f, 1.0f },
+    });
+    wl_list_for_each(child, &pop_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &gbox, &gbox,
+                                             1280, 0, 1.0, 1280, 720);
+    }
+    g_assert_true(wlr_render_pass_submit(spass));
+
+    uint8_t px_out2[4] = {0};
+    stex = wlr_texture_from_buffer(renderer, shot_buf);
+    g_assert_nonnull(stex);
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_out2,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 200, .y = 200, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(stex);
+    /* Still pure green (R == 0, G == 255) because glass_draw did not fall back to out1's target! */
+    g_assert_cmpint(px_out2[2], ==, 0);
+    g_assert_cmpint(px_out2[1], ==, 255);
+
+    wl_list_remove(&out2.link);
+    wlr_scene_output_destroy(so2);
+    wlr_output_destroy(wo2);
+
+    /* Finding 8: Throttled glass latches dirty_pending across a frame with no new damage. */
+    cfg->fx.glass.max_recompute_hz = 10; /* min_dt = 0.10 s */
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 100.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+    uint64_t r0 = comp_fx_surface_get_glass_recomputes(fx_pop);
+
+    /* Damage bg_rect under pop_tree, then prepare at t=100.02 (throttled!). */
+    const float grey[4] = { 0.5f, 0.5f, 0.5f, 1.0f };
+    wlr_scene_rect_set_color(bg_rect, grey);
+    g_assert_true(comp_fx_output_prepare(&out, 100.02));
+    g_assert_cmpuint(comp_fx_surface_get_glass_recomputes(fx_pop), ==, r0);
+    /* Commit clears so->pending_commit_damage. */
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+
+    /* Next frame at t=100.15 with NO new client damage: dirty_pending must still trigger recompute! */
+    g_assert_false(comp_fx_output_prepare(&out, 100.15));
+    g_assert_cmpuint(comp_fx_surface_get_glass_recomputes(fx_pop), ==, r0 + 1);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+
+    /* Finding 6: Fractional scale (1.75 on 2880x1800) right/bottom edge clamp does not truncate 1 px short. */
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_custom_mode(&ost, 2880, 1800, 0);
+    wlr_output_state_set_scale(&ost, 1.75f);
+    g_assert_true(wlr_output_commit_state(wo, &ost));
+    wlr_output_state_finish(&ost);
+
+    /* At 2880x1800 @ 1.75, ceil(2880/1.75) = 1646, ceil(1800/1.75) = 1029.
+     * Place pop_tree touching the bottom-right corner: (1446, 869) + (200, 160) = (1646, 1029). */
+    wlr_scene_node_set_position(&pop_tree->node, 1446, 869);
+    comp_fx_output_prepare(&out, 200.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+    g_assert_cmpuint(comp_fx_surface_get_glass_recomputes(fx_pop), ==, r0 + 2);
+
+    /* Finding 3: 16x16 blue-noise dither amplitude scales with bit depth (8-bit /255 vs 10-bit /1023). */
+    const struct wlr_drm_format *fmt_10 =
+        wlr_drm_format_set_get(tex_fmts, DRM_FORMAT_XRGB2101010);
+    if (fmt_10) {
+        struct wlr_buffer *buf8  = wlr_allocator_create_buffer(alloc, 16, 16, fmt_xrgb);
+        struct wlr_buffer *buf10 = wlr_allocator_create_buffer(alloc, 16, 16, fmt_10);
+        g_assert_nonnull(buf8);
+        g_assert_nonnull(buf10);
+
+        cfg->fx.dither = true;
+        comp_fx_config_apply(&srv, cfg);
+
+        struct wlr_render_pass *p8 = comp_fx_screenshot_begin_pass(&srv, buf8);
+        g_assert_nonnull(p8);
+        wlr_render_pass_add_rect(p8, &(struct wlr_render_rect_options){
+            .box   = { .x = 0, .y = 0, .width = 16, .height = 16 },
+            .color = { 0.501f, 0.501f, 0.501f, 1.0f },
+        });
+        g_assert_true(wlr_render_pass_submit(p8));
+
+        struct wlr_render_pass *p10 = comp_fx_screenshot_begin_pass(&srv, buf10);
+        g_assert_nonnull(p10);
+        wlr_render_pass_add_rect(p10, &(struct wlr_render_rect_options){
+            .box   = { .x = 0, .y = 0, .width = 16, .height = 16 },
+            .color = { 0.501f, 0.501f, 0.501f, 1.0f },
+        });
+        g_assert_true(wlr_render_pass_submit(p10));
+
+        uint32_t px8[16 * 16] = {0};
+        struct wlr_texture *t8 = wlr_texture_from_buffer(renderer, buf8);
+        g_assert_nonnull(t8);
+        g_assert_true(wlr_texture_read_pixels(t8, &(struct wlr_texture_read_pixels_options){
+            .data    = px8,
+            .format  = DRM_FORMAT_XRGB8888,
+            .stride  = 16 * sizeof(uint32_t),
+            .src_box = { .x = 0, .y = 0, .width = 16, .height = 16 },
+        }));
+        wlr_texture_destroy(t8);
+
+        uint32_t min8 = 255, max8 = 0;
+        for (int i = 0; i < 256; i++) {
+            uint32_t v = px8[i] & 0xFFu;
+            if (v < min8) min8 = v;
+            if (v > max8) max8 = v;
+        }
+        /* Dithering spans 2 adjacent 8-bit quantization levels (max8 - min8 == 1). */
+        g_assert_cmpuint(max8 - min8, ==, 1);
+
+        uint32_t px10[16 * 16] = {0};
+        struct wlr_texture *t10 = wlr_texture_from_buffer(renderer, buf10);
+        g_assert_nonnull(t10);
+        g_assert_true(wlr_texture_read_pixels(t10, &(struct wlr_texture_read_pixels_options){
+            .data    = px10,
+            .format  = DRM_FORMAT_XRGB2101010,
+            .stride  = 16 * sizeof(uint32_t),
+            .src_box = { .x = 0, .y = 0, .width = 16, .height = 16 },
+        }));
+        wlr_texture_destroy(t10);
+
+        uint32_t min10 = 1023, max10 = 0;
+        for (int i = 0; i < 256; i++) {
+            uint32_t v = px10[i] & 0x3FFu;
+            if (v < min10) min10 = v;
+            if (v > max10) max10 = v;
+        }
+        /* 10-bit dither amplitude is 1/1023, so peak-to-peak spread is at most 1 10-bit LSB (not 4). */
+        g_assert_cmpuint(max10 - min10, <=, 1);
+        g_assert_cmpuint(max10 - min10, >=, 1);
+
+        /* GB6: with dither = false, output.frag adds zero noise (uniform input -> 1 exact output level). */
+        cfg->fx.dither = false;
+        comp_fx_config_apply(&srv, cfg);
+        struct wlr_render_pass *p8_nodither = comp_fx_screenshot_begin_pass(&srv, buf8);
+        g_assert_nonnull(p8_nodither);
+        wlr_render_pass_add_rect(p8_nodither, &(struct wlr_render_rect_options){
+            .box   = { .x = 0, .y = 0, .width = 16, .height = 16 },
+            .color = { 0.501f, 0.501f, 0.501f, 1.0f },
+        });
+        g_assert_true(wlr_render_pass_submit(p8_nodither));
+
+        t8 = wlr_texture_from_buffer(renderer, buf8);
+        g_assert_nonnull(t8);
+        g_assert_true(wlr_texture_read_pixels(t8, &(struct wlr_texture_read_pixels_options){
+            .data    = px8,
+            .format  = DRM_FORMAT_XRGB8888,
+            .stride  = 16 * sizeof(uint32_t),
+            .src_box = { .x = 0, .y = 0, .width = 16, .height = 16 },
+        }));
+        wlr_texture_destroy(t8);
+
+        uint32_t min_nd = 255, max_nd = 0;
+        for (int i = 0; i < 256; i++) {
+            uint32_t v = px8[i] & 0xFFu;
+            if (v < min_nd) min_nd = v;
+            if (v > max_nd) max_nd = v;
+        }
+        g_assert_cmpuint(max_nd, ==, min_nd);
+
+        wlr_buffer_drop(buf8);
+        wlr_buffer_drop(buf10);
+    }
+
+    wlr_buffer_drop(shot_buf);
+    comp_fx_surface_destroy(fx_pop);
+    comp_fx_surface_destroy(fx_win);
+    comp_fx_finish(&srv);
+    wl_list_remove(&out.link);
+    wlr_scene_node_destroy(&scene->tree.node);
+    wlr_allocator_destroy(alloc);
+    wlr_renderer_destroy(renderer);
+    wlr_backend_destroy(backend);
+    wl_display_destroy(dpy);
+    comp_config_free(cfg);
+}
+
 int
 main(int argc, char *argv[])
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/comp/fx/scene-click-through-and-lifecycle",
                     test_scene_lifecycle_and_click_through);
+    g_test_add_func("/comp/fx/m3-review-regressions",
+                    test_m3_review_regressions);
     g_test_add_func("/comp/fx/pixman-fallback",
                     test_pixman_fallback);
     return g_test_run();
