@@ -56,6 +56,8 @@ typedef struct {
     bool           floating;
     bool           has_rule_shadow;
     bool           rule_shadow;
+    bool           has_rule_blur;
+    bool           rule_blur;
     bool           mapped;
     size_t         tab_count;
     size_t         tab_index;
@@ -97,6 +99,10 @@ typedef struct CompWindow {
     bool                                    rule_vrr;
     bool                                    has_rule_shadow;
     bool                                    rule_shadow;
+    bool                                    has_rule_blur;
+    bool                                    rule_blur;
+    bool                                    has_rule_blur_popups;
+    bool                                    rule_blur_popups;
     double                                  scroll_factor;
     bool                                    maximized_to_edges;
 
@@ -230,6 +236,8 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         .floating        = g->floating,
         .has_rule_shadow = w->has_rule_shadow,
         .rule_shadow     = w->rule_shadow,
+        .has_rule_blur   = w->has_rule_blur,
+        .rule_blur       = w->rule_blur,
         .mapped          = w->mapped,
         .tab_count       = g->tab_count,
         .tab_index       = g->tab_index,
@@ -362,6 +370,8 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
             .dim_above       = w->xdg_tree ? &w->xdg_tree->node : NULL,
             .has_rule_shadow = w->has_rule_shadow,
             .rule_shadow     = w->rule_shadow,
+            .has_rule_blur   = w->has_rule_blur,
+            .rule_blur       = w->rule_blur,
             .is_floating     = g->floating,
             .is_fullscreen   = fullscreen,
             .is_focused      = focused,
@@ -1058,6 +1068,21 @@ comp_window_get_popup_trees(const struct CompWindow *w,
         *out_xdg_node = (w && w->xdg_tree) ? &w->xdg_tree->node : NULL;
 }
 
+void
+comp_window_get_popup_fx_rules(const struct CompWindow *w,
+                               bool *out_has_shadow, bool *out_shadow,
+                               bool *out_has_blur, bool *out_blur)
+{
+    if (out_has_shadow)
+        *out_has_shadow = w ? w->has_rule_shadow : false;
+    if (out_shadow)
+        *out_shadow = w ? w->rule_shadow : false;
+    if (out_has_blur)
+        *out_has_blur = w ? w->has_rule_blur_popups : false;
+    if (out_blur)
+        *out_blur = w ? w->rule_blur_popups : false;
+}
+
 static void
 resize_layout_axis(CompServer *s, double axis_px, double min_prop,
                    double delta, CompDeltaMode mode,
@@ -1453,10 +1478,14 @@ reapply_dynamic_rules_for_window(CompWindow *w)
     if (s->rules)
         comp_rules_match_window(s->rules, w->app_id, w->title, &rr);
 
-    w->scroll_factor   = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
-    w->rule_vrr        = rr.has_vrr ? rr.vrr : false;
-    w->has_rule_shadow = rr.has_shadow;
-    w->rule_shadow     = rr.shadow;
+    w->scroll_factor        = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
+    w->rule_vrr             = rr.has_vrr ? rr.vrr : false;
+    w->has_rule_shadow      = rr.has_shadow;
+    w->rule_shadow          = rr.shadow;
+    w->has_rule_blur        = rr.has_blur;
+    w->rule_blur            = rr.blur;
+    w->has_rule_blur_popups = rr.has_blur_popups;
+    w->rule_blur_popups     = rr.blur_popups;
 
     /* Spec §5.2.3 & §3.3 O3: if not manually floated/tiled since map and a newly matching
      * rule, parent relationship, or modal xdg_dialog state requires floating, promote to
@@ -1542,10 +1571,14 @@ handle_toplevel_map(void *owner, void *data)
     if (s->rules)
         comp_rules_match_window(s->rules, w->app_id, w->title, &rr);
 
-    w->scroll_factor   = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
-    w->rule_vrr        = rr.has_vrr ? rr.vrr : false;
-    w->has_rule_shadow = rr.has_shadow;
-    w->rule_shadow     = rr.shadow;
+    w->scroll_factor        = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
+    w->rule_vrr             = rr.has_vrr ? rr.vrr : false;
+    w->has_rule_shadow      = rr.has_shadow;
+    w->rule_shadow          = rr.shadow;
+    w->has_rule_blur        = rr.has_blur;
+    w->rule_blur            = rr.blur;
+    w->has_rule_blur_popups = rr.has_blur_popups;
+    w->rule_blur_popups     = rr.blur_popups;
 
     CompRect work = {0};
     comp_server_working_area(s, &work);

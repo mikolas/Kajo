@@ -8,6 +8,7 @@ fx_registry_get(FxSlotKind kind)
 {
     switch (kind) {
     case FX_SLOT_SHADOW: return &k_fx_shadow_desc;
+    case FX_SLOT_GLASS:  return &k_fx_glass_desc;
     case FX_SLOT_DIM:    return &k_fx_dim_desc;
     case FX_SLOT_COUNT:  break;
     }

@@ -42,7 +42,7 @@ comp_fx_config_defaults(CompFxConfig *cfg)
         return;
     memset(cfg, 0, sizeof(*cfg));
     cfg->enabled = true;
-    cfg->dither  = false;
+    cfg->dither  = true;
 
     cfg->shadow.enabled         = true;
     cfg->shadow.color_rgba[0]   = 0.0f;
@@ -72,6 +72,18 @@ comp_fx_config_defaults(CompFxConfig *cfg)
     cfg->dim.color_rgba[3] = 1.0f;
     cfg->dim.opacity       = 0.15;
     cfg->dim.duration_ms   = 150;
+
+    cfg->glass.enabled          = true;
+    cfg->glass.passes           = 3;
+    cfg->glass.offset           = 2.0;
+    cfg->glass.saturation       = 1.15;
+    cfg->glass.brightness       = 0.90;
+    cfg->glass.tint_rgba[0]     = 20.0f / 255.0f; /* #141414 */
+    cfg->glass.tint_rgba[1]     = 20.0f / 255.0f;
+    cfg->glass.tint_rgba[2]     = 20.0f / 255.0f;
+    cfg->glass.tint_rgba[3]     = 1.0f;
+    cfg->glass.tint_alpha       = 0.35;
+    cfg->glass.max_recompute_hz = 0;
 }
 
 float
@@ -132,6 +144,34 @@ comp_fx_shadow_anchor_box(CompFxRect outer_box, const CompFxShadowConfig *cfg)
         .y      = outer_box.y - m.top,
         .width  = outer_box.width + m.left + m.right,
         .height = outer_box.height + m.top + m.bottom,
+    };
+}
+
+int32_t
+comp_fx_glass_sample_reach(const CompFxGlassConfig *cfg)
+{
+    if (!cfg || !cfg->enabled || cfg->passes <= 0 || !(cfg->offset > 0.0))
+        return 0;
+    int32_t passes = cfg->passes;
+    if (passes > COMP_FX_GLASS_MAX_PASSES)
+        passes = COMP_FX_GLASS_MAX_PASSES;
+    double r = (double)(1 << passes) * cfg->offset;
+    if (!(r > 0.0))
+        return 0;
+    return (int32_t)ceil(r);
+}
+
+CompFxRect
+comp_fx_glass_sample_box(CompFxRect surface_box, const CompFxGlassConfig *cfg)
+{
+    if (surface_box.width <= 0 || surface_box.height <= 0 || !cfg)
+        return (CompFxRect){0};
+    int32_t r = comp_fx_glass_sample_reach(cfg);
+    return (CompFxRect){
+        .x      = surface_box.x - r,
+        .y      = surface_box.y - r,
+        .width  = surface_box.width + 2 * r,
+        .height = surface_box.height + 2 * r,
     };
 }
 
@@ -325,6 +365,107 @@ comp_fx_dim_pack(const CompFxDimConfig *cfg,
 
     if (cfg)
         comp_fx_rgba_srgb_to_linear(cfg->color_rgba, out->color_lin);
+}
+
+void
+comp_fx_blur_pack(CompFxRect dst_box,
+                  CompFxRect src_rect,
+                  int32_t tex_w, int32_t tex_h,
+                  double offset,
+                  CompFxBlurParams *out)
+{
+    if (!out)
+        return;
+    memset(out, 0, sizeof(*out));
+
+    int32_t dw = dst_box.width  > 0 ? dst_box.width  : 1;
+    int32_t dh = dst_box.height > 0 ? dst_box.height : 1;
+    int32_t sw = src_rect.width  > 0 ? src_rect.width  : 1;
+    int32_t sh = src_rect.height > 0 ? src_rect.height : 1;
+    int32_t tw = tex_w > 0 ? tex_w : sw;
+    int32_t th = tex_h > 0 ? tex_h : sh;
+
+    out->common.dst_origin[0] = (float)dst_box.x;
+    out->common.dst_origin[1] = (float)dst_box.y;
+    out->common.dst_size[0]   = (float)dw;
+    out->common.dst_size[1]   = (float)dh;
+    out->common.opacity       = 1.0f;
+    out->common.scale         = 1.0f;
+    out->common.hdr_headroom  = 1.0f;
+    out->common.flags         = 0;
+
+    out->src_rect[0] = (float)src_rect.x;
+    out->src_rect[1] = (float)src_rect.y;
+    out->src_rect[2] = (float)sw;
+    out->src_rect[3] = (float)sh;
+
+    float min_x = (float)src_rect.x + 0.5f;
+    float min_y = (float)src_rect.y + 0.5f;
+    float max_x = fmaxf(min_x, (float)(src_rect.x + sw) - 0.5f);
+    float max_y = fmaxf(min_y, (float)(src_rect.y + sh) - 0.5f);
+    out->valid_bounds[0] = min_x;
+    out->valid_bounds[1] = min_y;
+    out->valid_bounds[2] = max_x;
+    out->valid_bounds[3] = max_y;
+
+    out->inv_tex_size[0] = 1.0f / (float)tw;
+    out->inv_tex_size[1] = 1.0f / (float)th;
+    out->offset          = (float)(offset > 0.0 ? offset : 0.0);
+}
+
+void
+comp_fx_glass_pack(const CompFxGlassConfig *cfg,
+                   CompFxRect dst_box,
+                   CompFxRect t0_src_box,
+                   int32_t tex_w, int32_t tex_h,
+                   int downscale,
+                   float opacity, float scale,
+                   CompFxGlassParams *out)
+{
+    if (!out)
+        return;
+    memset(out, 0, sizeof(*out));
+
+    float s  = (scale > 0.0f) ? scale : 1.0f;
+    float ds = (downscale > 0) ? (float)downscale : 2.0f;
+    int32_t dw = dst_box.width  > 0 ? dst_box.width  : 1;
+    int32_t dh = dst_box.height > 0 ? dst_box.height : 1;
+    int32_t sw = t0_src_box.width  > 0 ? t0_src_box.width  : 1;
+    int32_t sh = t0_src_box.height > 0 ? t0_src_box.height : 1;
+    int32_t tw = tex_w > 0 ? tex_w : sw;
+    int32_t th = tex_h > 0 ? tex_h : sh;
+
+    out->common.dst_origin[0] = (float)dst_box.x;
+    out->common.dst_origin[1] = (float)dst_box.y;
+    out->common.dst_size[0]   = (float)dw;
+    out->common.dst_size[1]   = (float)dh;
+    out->common.opacity       = clamp01f(opacity);
+    out->common.scale         = s;
+    out->common.hdr_headroom  = 1.0f;
+    out->common.flags         = 0;
+
+    out->crop_rect[0] = (float)dst_box.x / ds - (float)t0_src_box.x;
+    out->crop_rect[1] = (float)dst_box.y / ds - (float)t0_src_box.y;
+    out->crop_rect[2] = (float)dw / ds;
+    out->crop_rect[3] = (float)dh / ds;
+
+    out->valid_bounds[0] = 0.5f;
+    out->valid_bounds[1] = 0.5f;
+    out->valid_bounds[2] = fmaxf(0.5f, (float)sw - 0.5f);
+    out->valid_bounds[3] = fmaxf(0.5f, (float)sh - 0.5f);
+
+    out->inv_tex_size[0] = 1.0f / (float)tw;
+    out->inv_tex_size[1] = 1.0f / (float)th;
+
+    if (cfg) {
+        comp_fx_rgba_srgb_to_linear(cfg->tint_rgba, out->tint_lin);
+        out->tint_lin[3] = clamp01f((float)cfg->tint_alpha);
+        out->saturation  = (float)(cfg->saturation >= 0.0 ? cfg->saturation : 1.0);
+        out->brightness  = (float)(cfg->brightness >= 0.0 ? cfg->brightness : 1.0);
+    } else {
+        out->saturation = 1.0f;
+        out->brightness = 1.0f;
+    }
 }
 
 bool

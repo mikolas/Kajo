@@ -12,6 +12,8 @@
 _Static_assert(sizeof(CompFxCommonParams) == 32, "CompFxCommonParams must be 32 bytes (std140)");
 _Static_assert(sizeof(CompFxShadowParams) == 128, "CompFxShadowParams must be 128 bytes (std140)");
 _Static_assert(sizeof(CompFxDimParams) == 64, "CompFxDimParams must be 64 bytes (std140)");
+_Static_assert(sizeof(CompFxBlurParams) == 80, "CompFxBlurParams must be 80 bytes (std140)");
+_Static_assert(sizeof(CompFxGlassParams) == 96, "CompFxGlassParams must be 96 bytes (std140)");
 _Static_assert(offsetof(CompFxCommonParams, dst_origin) == 0, "dst_origin offset");
 _Static_assert(offsetof(CompFxCommonParams, dst_size) == 8, "dst_size offset");
 _Static_assert(offsetof(CompFxCommonParams, opacity) == 16, "opacity offset");
@@ -23,6 +25,16 @@ _Static_assert(offsetof(CompFxShadowParams, outer_rect) == 48, "shadow outer_rec
 _Static_assert(offsetof(CompFxShadowParams, layers) == 64, "shadow layers offset");
 _Static_assert(offsetof(CompFxDimParams, color_lin) == 32, "dim color_lin offset");
 _Static_assert(offsetof(CompFxDimParams, outer_rect) == 48, "dim outer_rect offset");
+_Static_assert(offsetof(CompFxBlurParams, src_rect) == 32, "blur src_rect offset");
+_Static_assert(offsetof(CompFxBlurParams, valid_bounds) == 48, "blur valid_bounds offset");
+_Static_assert(offsetof(CompFxBlurParams, inv_tex_size) == 64, "blur inv_tex_size offset");
+_Static_assert(offsetof(CompFxBlurParams, offset) == 72, "blur offset offset");
+_Static_assert(offsetof(CompFxGlassParams, crop_rect) == 32, "glass crop_rect offset");
+_Static_assert(offsetof(CompFxGlassParams, valid_bounds) == 48, "glass valid_bounds offset");
+_Static_assert(offsetof(CompFxGlassParams, tint_lin) == 64, "glass tint_lin offset");
+_Static_assert(offsetof(CompFxGlassParams, inv_tex_size) == 80, "glass inv_tex_size offset");
+_Static_assert(offsetof(CompFxGlassParams, saturation) == 88, "glass saturation offset");
+_Static_assert(offsetof(CompFxGlassParams, brightness) == 92, "glass brightness offset");
 
 static void
 test_defaults_and_srgb(void)
@@ -31,7 +43,14 @@ test_defaults_and_srgb(void)
     comp_fx_config_defaults(&cfg);
 
     g_assert_true(cfg.enabled);
-    g_assert_false(cfg.dither);
+    g_assert_true(cfg.dither);
+    g_assert_true(cfg.glass.enabled);
+    g_assert_cmpint(cfg.glass.passes, ==, 3);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.offset, 2.0, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.saturation, 1.15, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.brightness, 0.90, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.tint_alpha, 0.35, 1e-9);
+    g_assert_cmpint(cfg.glass.max_recompute_hz, ==, 0);
     g_assert_true(cfg.shadow.enabled);
     g_assert_cmpuint(cfg.shadow.n_layers, ==, 2);
     g_assert_cmpfloat_with_epsilon(cfg.shadow.unfocused_scale, 0.6, 1e-9);
@@ -195,6 +214,44 @@ test_transforms_and_packing(void)
     g_assert_true(comp_fx_focus_spring_params(150, 1.0, &spr));
     g_assert_cmpfloat(spr.stiffness, >, 0.0);
     g_assert_cmpfloat_with_epsilon(spr.damping_ratio, 1.0, 1e-9);
+
+    /* Glass sample reach & box */
+    g_assert_cmpint(comp_fx_glass_sample_reach(&cfg.glass), ==, 16);
+    CompFxRect g_surf = { .x = 100, .y = 50, .width = 300, .height = 200 };
+    CompFxRect g_samp = comp_fx_glass_sample_box(g_surf, &cfg.glass);
+    g_assert_cmpint(g_samp.x, ==, 84);
+    g_assert_cmpint(g_samp.y, ==, 34);
+    g_assert_cmpint(g_samp.width, ==, 332);
+    g_assert_cmpint(g_samp.height, ==, 232);
+
+    /* Blur & Glass UBO packing */
+    CompFxBlurParams bp;
+    memset(&bp, 0xAA, sizeof(bp));
+    CompFxRect b_dst = { .x = 0, .y = 0, .width = 166, .height = 116 };
+    CompFxRect b_src = { .x = 0, .y = 0, .width = 332, .height = 232 };
+    comp_fx_blur_pack(b_dst, b_src, 512, 256, 2.0, &bp);
+    g_assert_cmpfloat_with_epsilon(bp.common.dst_size[0], 166.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.src_rect[2], 332.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.valid_bounds[0], 0.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.valid_bounds[2], 331.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.inv_tex_size[0], 1.0f / 512.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.offset, 2.0f, 1e-6);
+
+    CompFxGlassParams gp;
+    memset(&gp, 0xAA, sizeof(gp));
+    CompFxRect t0_src = { .x = 42, .y = 17, .width = 166, .height = 116 };
+    comp_fx_glass_pack(&cfg.glass, g_surf, t0_src, 512, 256, 2, 1.0f, 1.0f, &gp);
+    g_assert_cmpfloat_with_epsilon(gp.common.dst_origin[0], 100.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.common.dst_size[0], 300.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[0], 8.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[1], 8.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[2], 150.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[3], 100.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.valid_bounds[0], 0.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.valid_bounds[2], 165.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.tint_lin[3], 0.35f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.saturation, 1.15f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.brightness, 0.90f, 1e-6);
 }
 
 int

@@ -32,7 +32,17 @@ epsilon = 0.0001
 
 [effects]
 enabled = true
-dither = false
+dither = true
+
+[effects.glass]
+enabled = true
+passes = 3
+offset = 2.0
+saturation = 1.15
+brightness = 0.90
+tint = "#141414"
+tint_alpha = 0.35
+max_recompute_hz = 0
 
 [effects.shadow]
 enabled = true

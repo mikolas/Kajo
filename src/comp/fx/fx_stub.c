@@ -69,6 +69,13 @@ comp_fx_surface_destroy(CompFxSurface *fx)
     (void)fx;
 }
 
+uint64_t
+comp_fx_surface_get_glass_recomputes(const CompFxSurface *fx)
+{
+    (void)fx;
+    return 0;
+}
+
 bool
 comp_fx_is_active(const struct CompServer *server)
 {

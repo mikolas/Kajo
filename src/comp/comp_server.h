@@ -319,6 +319,9 @@ bool               comp_window_close_id(CompServer *server, CompWinId id);
 void               comp_window_get_popup_trees(const struct CompWindow *w,
                                                struct wlr_scene_tree **out_popup_tree,
                                                struct wlr_scene_node **out_xdg_node);
+void               comp_window_get_popup_fx_rules(const struct CompWindow *w,
+                                                  bool *out_has_shadow, bool *out_shadow,
+                                                  bool *out_has_blur, bool *out_blur);
 void               comp_window_resize_column(CompServer *server, double delta, CompDeltaMode mode);
 void               comp_window_resize_height(CompServer *server, double delta, CompDeltaMode mode);
 double             comp_window_scroll_factor_for_surface(CompServer *server, struct wlr_surface *surface);

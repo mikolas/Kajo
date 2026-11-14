@@ -347,7 +347,7 @@ test_rules_errors(void)
         "[[layer_rule]]\n"
         "namespace = ['^kajo$']\n"
         "opacity = 0.85\n"
-        "blur = true\n"                                       /* unsupported in v1 */
+        "blur = \"yes\"\n"                                    /* wrong type */
         "[[layer_rule]]\n"
         "opacity = 0.5\n"                                     /* no namespace */
         "[layouts]\n"
@@ -362,7 +362,7 @@ test_rules_errors(void)
     g_assert_true(comp_diag_contains(&d, "'floating' must be true or false"));
     g_assert_true(comp_diag_contains(&d, "anchor_corner must be"));
     g_assert_true(comp_diag_contains(&d, "unknown rule key 'colour' ignored"));
-    g_assert_true(comp_diag_contains(&d, "layer_rule 'blur' is not supported in this version"));
+    g_assert_true(comp_diag_contains(&d, "'blur' must be true or false"));
     g_assert_true(comp_diag_contains(&d, "[[layer_rule]] needs a namespace"));
     g_assert_true(comp_diag_contains(&d, "unknown top-level key 'layouts'"));
     g_assert_cmpuint(comp_rules_window_count(r), ==, 1);
@@ -519,11 +519,24 @@ test_config_shipped_defaults(void)
     comp_rules_match_layer(cfg->rules, "kajo", &lr);
     g_assert_true(lr.has_opacity);
     g_assert_cmpfloat_with_epsilon(lr.opacity, 0.85, 1e-9);
+    g_assert_true(lr.has_blur && lr.blur);
+    g_assert_true(lr.has_blur_popups && lr.blur_popups);
+    g_assert_true(lr.has_xray && lr.xray);
+    comp_rules_match_layer(cfg->rules, "kajo-launcher", &lr);
+    g_assert_true(lr.has_blur && lr.blur);
+    g_assert_false(lr.has_xray);
 
     CompFxConfig def_fx;
     comp_fx_config_defaults(&def_fx);
     g_assert_cmpint(cfg->fx.enabled, ==, def_fx.enabled);
     g_assert_cmpint(cfg->fx.dither, ==, def_fx.dither);
+    g_assert_cmpint(cfg->fx.glass.enabled, ==, def_fx.glass.enabled);
+    g_assert_cmpint(cfg->fx.glass.passes, ==, def_fx.glass.passes);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.offset, def_fx.glass.offset, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.saturation, def_fx.glass.saturation, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.brightness, def_fx.glass.brightness, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_alpha, def_fx.glass.tint_alpha, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.max_recompute_hz, def_fx.glass.max_recompute_hz, 1e-6);
     g_assert_cmpint(cfg->fx.shadow.enabled, ==, def_fx.shadow.enabled);
     g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.unfocused_scale, def_fx.shadow.unfocused_scale, 1e-6);
     g_assert_cmpint(cfg->fx.shadow.duration_ms, ==, def_fx.shadow.duration_ms);
@@ -806,6 +819,16 @@ test_effects_and_shadow_rules(void)
         "enabled = true\n"
         "dither = true\n"
         "\n"
+        "[effects.glass]\n"
+        "enabled = true\n"
+        "passes = 2\n"
+        "offset = 3.5\n"
+        "saturation = 1.40\n"
+        "brightness = 0.80\n"
+        "tint = \"#203040\"\n"
+        "tint_alpha = 0.65\n"
+        "max_recompute_hz = 60\n"
+        "\n"
         "[effects.shadow]\n"
         "enabled = true\n"
         "color = \"#112233ff\"\n"
@@ -829,18 +852,27 @@ test_effects_and_shadow_rules(void)
         "app_id = ['^org\\.example\\.Shadowed$']\n"
         "floating = true\n"
         "shadow = true\n"
+        "blur = true\n"
+        "blur_popups = false\n"
         "\n"
         "[[rule]]\n"
         "app_id = ['^org\\.example\\.Flat$']\n"
         "shadow = false\n"
+        "blur = false\n"
+        "blur_popups = true\n"
         "\n"
         "[[layer_rule]]\n"
         "namespace = ['^kajo-popup$']\n"
         "shadow = true\n"
+        "blur = true\n"
+        "blur_popups = true\n"
+        "xray = false\n"
         "\n"
         "[[layer_rule]]\n"
         "namespace = ['^kajo-panel$']\n"
-        "shadow = false\n", -1, NULL));
+        "shadow = false\n"
+        "blur = true\n"
+        "xray = true\n", -1, NULL));
 
     const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
     if (!root)
@@ -855,6 +887,16 @@ test_effects_and_shadow_rules(void)
 
     g_assert_true(cfg->fx.enabled);
     g_assert_true(cfg->fx.dither);
+    g_assert_true(cfg->fx.glass.enabled);
+    g_assert_cmpint(cfg->fx.glass.passes, ==, 2);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.offset, 3.5, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.saturation, 1.40, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.brightness, 0.80, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_rgba[0], (double)0x20 / 255.0, 1e-4);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_rgba[1], (double)0x30 / 255.0, 1e-4);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_rgba[2], (double)0x40 / 255.0, 1e-4);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_alpha, 0.65, 1e-6);
+    g_assert_cmpint(cfg->fx.glass.max_recompute_hz, ==, 60);
     g_assert_true(cfg->fx.shadow.enabled);
     g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[0], (double)0x11 / 255.0, 1e-4);
     g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[1], (double)0x22 / 255.0, 1e-4);
@@ -873,22 +915,36 @@ test_effects_and_shadow_rules(void)
     CompWindowRuleResult wr = {0};
     comp_rules_match_window(cfg->rules, "org.example.Shadowed", "t", &wr);
     g_assert_true(wr.has_shadow && wr.shadow);
+    g_assert_true(wr.has_blur && wr.blur);
+    g_assert_true(wr.has_blur_popups && !wr.blur_popups);
     memset(&wr, 0, sizeof(wr));
     comp_rules_match_window(cfg->rules, "org.example.Flat", "t", &wr);
     g_assert_true(wr.has_shadow && !wr.shadow);
+    g_assert_true(wr.has_blur && !wr.blur);
+    g_assert_true(wr.has_blur_popups && wr.blur_popups);
 
     CompLayerRuleResult lr = {0};
     comp_rules_match_layer(cfg->rules, "kajo-popup", &lr);
     g_assert_true(lr.has_shadow && lr.shadow);
+    g_assert_true(lr.has_blur && lr.blur);
+    g_assert_true(lr.has_blur_popups && lr.blur_popups);
+    g_assert_true(lr.has_xray && !lr.xray);
     memset(&lr, 0, sizeof(lr));
     comp_rules_match_layer(cfg->rules, "kajo-panel", &lr);
     g_assert_true(lr.has_shadow && !lr.shadow);
+    g_assert_true(lr.has_blur && lr.blur);
+    g_assert_true(lr.has_xray && lr.xray);
 
     comp_config_free(cfg);
     comp_diag_clear(&d);
 
-    /* Invalid range diagnostics for [effects.shadow] & [effects.dim] */
+    /* Invalid range diagnostics for [effects.glass], [effects.shadow] & [effects.dim] */
     g_assert_true(g_file_set_contents(p_cfg,
+        "[effects.glass]\n"
+        "passes = 9\n"
+        "offset = 99.0\n"
+        "tint_alpha = 2.0\n"
+        "max_recompute_hz = 2000\n"
         "[effects.shadow]\n"
         "color = \"not-hex\"\n"
         "unfocused_scale = 5.0\n"
@@ -901,6 +957,10 @@ test_effects_and_shadow_rules(void)
     comp_diag_init(&d);
     cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
     g_assert_nonnull(cfg);
+    g_assert_true(comp_diag_contains(&d, "[effects.glass] 'passes'"));
+    g_assert_true(comp_diag_contains(&d, "[effects.glass] 'offset'"));
+    g_assert_true(comp_diag_contains(&d, "[effects.glass] 'tint_alpha'"));
+    g_assert_true(comp_diag_contains(&d, "[effects.glass] 'max_recompute_hz'"));
     g_assert_true(comp_diag_contains(&d, "invalid hex color"));
     g_assert_true(comp_diag_contains(&d, "unfocused_scale"));
     g_assert_true(comp_diag_contains(&d, "'sigma' must be"));

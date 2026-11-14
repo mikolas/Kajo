@@ -137,10 +137,14 @@
 #define COMP_KEY_OPACITY                  "opacity"
 #define COMP_KEY_POPUP_OPACITY            "popup_opacity"
 #define COMP_KEY_SHADOW                   "shadow"
+#define COMP_KEY_BLUR                     "blur"
+#define COMP_KEY_XRAY                     "xray"
+#define COMP_KEY_BLUR_POPUPS              "blur_popups"
 
 /* ───────────────────────── [effects] Subtables & Keys ───────────────────────── */
 #define COMP_SEC_FX_SHADOW                "shadow"
 #define COMP_SEC_FX_DIM                   "dim"
+#define COMP_SEC_FX_GLASS                 "glass"
 #define COMP_KEY_DITHER                   "dither"
 #define COMP_KEY_COLOR                    "color"
 #define COMP_KEY_LAYERS                   "layers"
@@ -149,6 +153,13 @@
 #define COMP_KEY_OFFSET_Y                 "offset_y"
 #define COMP_KEY_UNFOCUSED_SCALE          "unfocused_scale"
 #define COMP_KEY_DURATION_MS              "duration_ms"
+#define COMP_KEY_PASSES                   "passes"
+#define COMP_KEY_OFFSET                   "offset"
+#define COMP_KEY_SATURATION               "saturation"
+#define COMP_KEY_BRIGHTNESS               "brightness"
+#define COMP_KEY_TINT                     "tint"
+#define COMP_KEY_TINT_ALPHA               "tint_alpha"
+#define COMP_KEY_MAX_RECOMPUTE_HZ         "max_recompute_hz"
 
 /* ───────────────────────── IPC Wire Protocol (`kajo-comp.sock`) ───────────────────────── */
 #define COMP_IPC_ENV_SOCKET               "KAJO_COMP_SOCKET"

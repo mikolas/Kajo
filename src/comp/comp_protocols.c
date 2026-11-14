@@ -623,12 +623,16 @@ sync_popup_fx(CompPopup *cp)
         w = surf->current.width;
         h = surf->current.height;
     }
+    struct CompWindow *root = find_popup_root_window(cp->popup);
     CompFxSurfaceState st = {
         .outer_box   = { 0, 0, w, h },
         .surface_box = { 0, 0, w, h },
         .is_focused  = true,
         .mapped      = mapped,
     };
+    comp_window_get_popup_fx_rules(root,
+                                   &st.has_rule_shadow, &st.rule_shadow,
+                                   &st.has_rule_blur, &st.rule_blur);
     comp_fx_surface_sync(cp->fx, &st);
 }
 

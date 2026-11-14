@@ -18,11 +18,36 @@
 
 typedef enum {
     FX_SLOT_SHADOW = 0,
-    FX_SLOT_DIM    = 1,
+    FX_SLOT_GLASS  = 1,
+    FX_SLOT_DIM    = 2,
     FX_SLOT_COUNT
 } FxSlotKind;
 
 typedef struct CompFxSystem CompFxSystem;
+
+typedef struct {
+    struct wl_list           link;        /* CompFxSurface.glass_outputs */
+    struct CompFxSurface    *surface;
+    struct wlr_scene_output *scene_output;
+    struct wl_listener       output_destroy;
+    struct wlr_kfx_target   *target;
+    struct wlr_box           t0_src_box;
+    struct wlr_box           last_logical_box;
+    uint64_t                 built_bg_serial;
+    double                   last_recompute_s;
+    bool                     valid;
+} CompFxGlassOutput;
+
+typedef struct {
+    struct wl_list           link;        /* CompFxSystem.output_tracks */
+    struct wlr_scene_output *scene_output;
+    struct wl_listener       output_destroy;
+    int                      last_w;
+    int                      last_h;
+    float                    last_scale;
+    int                      last_transform;
+    uint64_t                 bg_serial;
+} CompFxOutputTrack;
 
 typedef struct {
     struct wlr_buffer base;
@@ -40,7 +65,7 @@ typedef struct {
 } CompFxSlot;
 
 struct CompFxSurface {
-    struct wl_list         link; /* CompFxSystem.surfaces */
+    struct wl_list         link;          /* CompFxSystem.surfaces */
     CompFxSystem          *sys;
     struct wlr_scene_tree *parent_tree;
     struct wl_listener     tree_destroy;
@@ -48,6 +73,8 @@ struct CompFxSurface {
     CompFxSurfaceState     state;
 
     CompFxSlot             slots[FX_SLOT_COUNT];
+    struct wl_list         glass_outputs; /* CompFxGlassOutput.link */
+    uint64_t               glass_recomputes;
 
     bool                   spring_init;
     bool                   was_focused;
@@ -64,10 +91,14 @@ struct CompFxSystem {
     bool                     logged_unsupported;
 
     CompFxBlankBuffer       *blank_buf;
-    struct wl_list           surfaces; /* CompFxSurface.link */
+    struct wl_list           surfaces;      /* CompFxSurface.link */
+    struct wl_list           output_tracks; /* CompFxOutputTrack.link */
 
     struct wlr_kfx_shader   *shadow_shader;
     struct wlr_kfx_shader   *dim_shader;
+    struct wlr_kfx_shader   *blur_down_shader;
+    struct wlr_kfx_shader   *blur_up_shader;
+    struct wlr_kfx_shader   *glass_shader;
 };
 
 typedef struct {
@@ -85,6 +116,7 @@ typedef struct {
 } CompFxEffectDesc;
 
 extern const CompFxEffectDesc k_fx_shadow_desc;
+extern const CompFxEffectDesc k_fx_glass_desc;
 extern const CompFxEffectDesc k_fx_dim_desc;
 
 const CompFxEffectDesc *fx_registry_get(FxSlotKind kind);
@@ -93,6 +125,11 @@ bool fx_compute_outer_buf_box(const CompFxSurface *fx,
                               const struct wlr_kfx_render_ctx *ctx,
                               CompFxRect *out_outer_buf,
                               float *out_scale, int *out_transform);
+
+void fx_glass_surface_clear_targets(CompFxSurface *fx);
+void fx_glass_system_invalidate_all(CompFxSystem *sys);
+bool fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
+                             CompFxOutputTrack *track, double now_s);
 
 #endif /* WLR_HAS_KFX */
 

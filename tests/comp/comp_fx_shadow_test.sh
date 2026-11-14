@@ -529,4 +529,236 @@ PY
     wait \$WIN_PID \$BG_PID || true
 "
 
+# ── Case 6: GB1 & GB2 glass blur over high-contrast step edge + edge-hugging panel ──
+mkdir -p "$RT/gb1_gb2_glass/cfg" "$RT/gb1_gb2_glass/shots"
+cat > "$RT/gb1_gb2_glass/cfg/comp.toml" <<EOF
+[layout]
+gaps_inner = 0
+gaps_outer = 0
+border_px = 0
+
+[effects]
+enabled = true
+dither = false
+
+[effects.glass]
+enabled = true
+passes = 3
+offset = 2.0
+saturation = 1.15
+brightness = 0.90
+tint = "#141414"
+tint_alpha = 0.35
+
+[effects.shadow]
+enabled = false
+
+[screenshots]
+path = "$RT/gb1_gb2_glass/shots/s-%Y%m%d-%H%M%S.png"
+copy_to_clipboard = false
+show_notification = false
+include_window_border = false
+EOF
+cat > "$RT/gb1_gb2_glass/cfg/rules.toml" <<'EOF'
+[[rule]]
+app_id = ['^org\.kajo\.FxStep$']
+floating = true
+anchor_corner = "top-left"
+anchor_x = 400
+anchor_y = 200
+shadow = false
+blur = false
+
+[[rule]]
+app_id = ['^org\.kajo\.FxGlass$']
+floating = true
+anchor_corner = "top-left"
+anchor_x = 500
+anchor_y = 220
+shadow = false
+blur = true
+
+[[layer_rule]]
+namespace = ['^kajo-edge-panel$']
+blur = true
+xray = false
+shadow = false
+EOF
+run_case "gb1_gb2_glass" "
+    set -eu
+    '$CL' fx-layer background kajo-bg 0 0 0 0 ffffffff '$RT/gb2-bg' &
+    BG_PID=\$!
+    wait_file '$RT/gb2-bg'
+
+    # Edge-hugging translucent panel at (0, 0) size 1280x32
+    '$CL' fx-layer top kajo-edge-panel 1280 32 0 0 00000000 '$RT/gb2-panel' >/dev/null 2>&1 &
+    PANEL_PID=\$!
+    wait_file '$RT/gb2-panel'
+
+    # Opaque red step [400..600]x[200..400]
+    '$CL' fx-win org.kajo.FxStep 200 200 ff0000ff '$RT/gb2-step' &
+    STEP_PID=\$!
+    wait_file '$RT/gb2-step'
+
+    # Transparent glass surface [500..700]x[220..380] straddling x=600 red/white boundary
+    '$CL' fx-win org.kajo.FxGlass 200 160 00000000 '$RT/gb2-glass' &
+    GLASS_PID=\$!
+    wait_file '$RT/gb2-glass'
+    sleep 0.05
+
+    take_shot '$KC' '$RT/gb1_gb2_glass/shots' 'gb2.png'
+    PYTHONPATH='$RT' python3 - '$RT/gb1_gb2_glass/shots/gb2.png' <<'PY'
+import sys, png_helper as ph
+
+w, h, rows = ph.read_png(sys.argv[1])
+# 1. GB2: Pixels outside glass box [500..700]x[220..380] are 100% untouched!
+assert ph.px(rows, 550, 210)[:3] == (255, 0, 0), f'red outside glass modified: {ph.px(rows, 550, 210)}'
+assert ph.px(rows, 650, 210)[:3] == (255, 255, 255), f'white outside glass modified: {ph.px(rows, 650, 210)}'
+assert ph.px(rows, 705, 300)[:3] == (255, 255, 255), f'right of glass modified: {ph.px(rows, 705, 300)}'
+
+# 2. GB2: Reference match deep inside glass over white (x=670, y=300) and over red (x=530, y=300)
+tint_l = ph.srgb_to_lin(0x14)
+exp_white_l = (1.0 - 0.35) * (1.0 * 0.90) + 0.35 * tint_l
+wr, wg, wb, _ = ph.px(rows, 670, 300)
+assert abs(ph.srgb_to_lin(wr) - exp_white_l) < 0.03, f'white glass mismatch: {ph.srgb_to_lin(wr):.4f} vs {exp_white_l:.4f}'
+
+# Over red (1, 0, 0): after brightness 0.9 -> (0.9, 0, 0), luma = 0.2126*0.9 = 0.19134,
+# sat 1.15 -> r = 0.19134 + (0.9 - 0.19134)*1.15 = 1.0063, g=b clamped to 0.0
+exp_red_r_l = (1.0 - 0.35) * (0.19134 + (0.90 - 0.19134) * 1.15) + 0.35 * tint_l
+exp_red_gb_l = 0.35 * tint_l
+rr, rg, rb, _ = ph.px(rows, 530, 300)
+assert abs(ph.srgb_to_lin(rr) - exp_red_r_l) < 0.035, f'red glass R mismatch: {ph.srgb_to_lin(rr):.4f} vs {exp_red_r_l:.4f}'
+assert abs(ph.srgb_to_lin(rg) - exp_red_gb_l) < 0.02, f'red glass G mismatch: {ph.srgb_to_lin(rg):.4f} vs {exp_red_gb_l:.4f}'
+
+# 3. GB2: Smooth blur transition across step edge at x=600 (green channel increases monotonically)
+g_vals = [ph.px(rows, x, 300)[1] for x in (584, 592, 600, 608, 616)]
+assert g_vals[0] < g_vals[2] < g_vals[4], f'expected smooth blur across x=600, got G={g_vals}'
+assert 30 < g_vals[2] < 190, f'step edge at x=600 not blurred: G={g_vals[2]}'
+
+# 4. GB1: Edge-hugging panel at (0, 0) has no dark border bleed at y=0..1 vs y=16
+e0 = ph.px(rows, 100, 0)[:3]
+e1 = ph.px(rows, 100, 1)[:3]
+em = ph.px(rows, 100, 16)[:3]
+assert abs(e0[0] - em[0]) <= 3 and abs(e1[0] - em[0]) <= 3, f'edge bleed at top border: y0={e0} y1={e1} mid={em}'
+
+# 5. GB6 (dither=false): Uniform glass region [650..658]x[260..268] has 1 exact code value (no dither)
+u_vals = {ph.px(rows, 650 + dx, 260 + dy)[0] for dx in range(8) for dy in range(8)}
+assert len(u_vals) == 1, f'expected uniform code value when dither=false, got {u_vals}'
+PY
+    rm -f '$RT/gb2-glass' '$RT/gb2-step' '$RT/gb2-panel' '$RT/gb2-bg'
+    wait \$GLASS_PID \$STEP_PID \$PANEL_PID \$BG_PID || true
+"
+
+# ── Case 7: GB8 (opaque occlusion under/over glass) & GB9 (xray background-only panel) & GB6 (dither) ──
+mkdir -p "$RT/gb6_gb8_gb9/cfg" "$RT/gb6_gb8_gb9/shots"
+cat > "$RT/gb6_gb8_gb9/cfg/comp.toml" <<EOF
+[layout]
+gaps_inner = 0
+gaps_outer = 0
+border_px = 0
+
+[effects]
+enabled = true
+dither = true
+
+[effects.glass]
+enabled = true
+passes = 3
+offset = 2.0
+saturation = 1.15
+brightness = 0.90
+tint = "#141414"
+tint_alpha = 0.35
+
+[effects.shadow]
+enabled = false
+
+[screenshots]
+path = "$RT/gb6_gb8_gb9/shots/s-%Y%m%d-%H%M%S.png"
+copy_to_clipboard = false
+show_notification = false
+include_window_border = false
+EOF
+cat > "$RT/gb6_gb8_gb9/cfg/rules.toml" <<'EOF'
+[[rule]]
+app_id = ['^org\.kajo\.FxUnderPanel$']
+floating = true
+anchor_corner = "top-left"
+anchor_x = 100
+anchor_y = 0
+shadow = false
+blur = false
+
+[[rule]]
+app_id = ['^org\.kajo\.FxGlassOcc$']
+floating = true
+anchor_corner = "top-left"
+anchor_x = 500
+anchor_y = 200
+shadow = false
+blur = true
+
+[[rule]]
+app_id = ['^org\.kajo\.FxTopOcc$']
+floating = true
+anchor_corner = "top-left"
+anchor_x = 600
+anchor_y = 200
+shadow = false
+blur = false
+
+[[layer_rule]]
+namespace = ['^kajo-xray-panel$']
+blur = true
+xray = true
+shadow = false
+EOF
+run_case "gb6_gb8_gb9" "
+    set -eu
+    '$CL' fx-layer background kajo-bg 0 0 0 0 ffffffff '$RT/gb9-bg' &
+    BG_PID=\$!
+    wait_file '$RT/gb9-bg'
+
+    # Bright red floating window at (100, 0) directly underneath the xray panel
+    '$CL' fx-win org.kajo.FxUnderPanel 300 120 ff0000ff '$RT/gb9-under' &
+    UNDER_PID=\$!
+    wait_file '$RT/gb9-under'
+
+    # Top-layer xray=true panel at (0, 0) size 1280x36: must blur ONLY background (white), ignoring FxUnderPanel!
+    '$CL' fx-layer top kajo-xray-panel 1280 36 0 0 00000000 '$RT/gb9-panel' >/dev/null 2>&1 &
+    PANEL_PID=\$!
+    wait_file '$RT/gb9-panel'
+
+    # GB8: Glass window [500..700]x[200..400] with an opaque white window FxTopOcc [600..800]x[200..400] above its right half
+    '$CL' fx-win org.kajo.FxGlassOcc 200 200 00000000 '$RT/gb9-gocc' &
+    GOCC_PID=\$!
+    wait_file '$RT/gb9-gocc'
+
+    '$CL' fx-win org.kajo.FxTopOcc 200 200 ffffffff '$RT/gb9-tocc' &
+    TOCC_PID=\$!
+    wait_file '$RT/gb9-tocc'
+    sleep 0.05
+
+    take_shot '$KC' '$RT/gb6_gb8_gb9/shots' 'gb9.png'
+    PYTHONPATH='$RT' python3 - '$RT/gb6_gb8_gb9/shots/gb9.png' <<'PY'
+import sys, png_helper as ph
+
+_, _, rows = ph.read_png(sys.argv[1])
+# 1. GB9: xray=true panel at (200, 18) over red FxUnderPanel blurs white wallpaper (neutral R==G==B), NOT red window!
+pr, pg, pb, _ = ph.px(rows, 200, 18)
+assert abs(pr - pg) <= 2 and abs(pg - pb) <= 2 and pr > 180, f'xray panel bled red window: {(pr, pg, pb)}'
+
+# 2. GB8: Uncovered left half of FxGlassOcc right next to FxTopOcc edge at (595, 300) has no dark halo
+or_, og, ob, _ = ph.px(rows, 595, 300)
+mr, mg, mb, _ = ph.px(rows, 530, 300)
+assert abs(or_ - mr) <= 3 and abs(og - mg) <= 3, f'dark halo next to opaque occluder: edge={(or_, og, ob)} mid={(mr, mg, mb)}'
+
+# 3. GB6: With dither=true, an 8x8 tile in uniform glass region [520..528]x[260..268] has Bayer dither variance (>1 distinct code value)
+vals = {ph.px(rows, 520 + dx, 260 + dy)[0] for dx in range(8) for dy in range(8)}
+assert len(vals) >= 2 and max(vals) - min(vals) <= 2, f'expected 1-LSB Bayer dither in 8x8 block, got {vals}'
+PY
+    rm -f '$RT/gb9-tocc' '$RT/gb9-gocc' '$RT/gb9-panel' '$RT/gb9-under' '$RT/gb9-bg'
+    wait \$TOCC_PID \$GOCC_PID \$PANEL_PID \$UNDER_PID \$BG_PID || true
+"
+
 echo "All comp-fx-shadow headless Vulkan pixel tests passed."

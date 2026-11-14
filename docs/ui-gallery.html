@@ -19,10 +19,12 @@
       --metro-telemetry: #00d8f0;
 
       --surface-tier-0: #101010; /* Canvas / Scrolled viewport */
-      --surface-tier-1: #141414; /* Window base / Popover / Sidebar */
+      --surface-tier-1: #141414; /* Window base / Sidebar */
       --surface-tier-2: #161616; /* Action ribbon / Group box */
       --surface-tier-3: #181818; /* Section card / Header bar */
       --surface-tier-4: #1a1a1a; /* Interactive control / Tile / Button */
+      --metro-panel-bg: rgba(20, 20, 20, 0.78); /* Translucent panel surface (Aero glass) */
+      --metro-glass-bg: rgba(20, 20, 20, 0.80); /* Translucent popover / OSD / notification / launcher */
       --surface-hover:  #222222; /* Control hover surface */
       --surface-active: #282828; /* Pressed / active neutral surface */
 
@@ -2572,6 +2574,26 @@
               <div class="color-card-meta">
                 <div class="color-card-name">Elevated Hover Surface</div>
                 <div class="color-card-role">Row/button hover background + accent border</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="@metro-panel-bg">
+              <div class="color-card-preview" style="background:rgba(20, 20, 20, 0.78); color:#ffffff;">
+                <span>@metro-panel-bg</span><span>rgba(20,20,20,0.78)</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Translucent Panel Glass</div>
+                <div class="color-card-role">window.shell-panel (compositor xray blur)</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="@metro-glass-bg">
+              <div class="color-card-preview" style="background:rgba(20, 20, 20, 0.80); color:#ffffff;">
+                <span>@metro-glass-bg</span><span>rgba(20,20,20,0.80)</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Translucent Chrome Glass</div>
+                <div class="color-card-role">Popovers, OSD, notifications, launcher card</div>
               </div>
             </div>
 

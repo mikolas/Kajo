@@ -929,6 +929,9 @@ if comp_have_kfx == 'true'
   comp_fx_shader_specs = [
     ['shadow.frag', 'shadow_frag.h', 'shadow_frag_spv'],
     ['dim.frag', 'dim_frag.h', 'dim_frag_spv'],
+    ['blur_down.frag', 'blur_down_frag.h', 'blur_down_frag_spv'],
+    ['blur_up.frag', 'blur_up_frag.h', 'blur_up_frag_spv'],
+    ['glass.frag', 'glass_frag.h', 'glass_frag_spv'],
   ]
   foreach spec : comp_fx_shader_specs
     comp_fx_shader_headers += custom_target(
@@ -947,6 +950,7 @@ if comp_have_kfx == 'true'
     'src/comp/fx/fx_runtime.c',
     'src/comp/fx/fx_shadow.c',
     'src/comp/fx/fx_dim.c',
+    'src/comp/fx/fx_glass.c',
   )
 else
   comp_fx_sources = files('src/comp/fx/fx_stub.c')

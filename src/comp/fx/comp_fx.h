@@ -7,6 +7,7 @@
 #define KAJO_COMP_FX_H
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <wlr/util/box.h>
 
 struct CompConfig;
@@ -32,6 +33,10 @@ typedef struct {
     struct wlr_scene_node *dim_above;    /* sibling to place dim anchor above (nullable) */
     bool                   has_rule_shadow;
     bool                   rule_shadow;
+    bool                   has_rule_blur;
+    bool                   rule_blur;
+    bool                   has_rule_xray;
+    bool                   rule_xray;
     bool                   is_floating;
     bool                   is_fullscreen;
     bool                   is_focused;
@@ -54,6 +59,7 @@ CompFxSurface *comp_fx_surface_create(struct CompServer *server,
                                       CompFxSurfaceKind kind);
 void comp_fx_surface_sync(CompFxSurface *fx, const CompFxSurfaceState *state);
 void comp_fx_surface_destroy(CompFxSurface *fx);
+uint64_t comp_fx_surface_get_glass_recomputes(const CompFxSurface *fx);
 
 bool comp_fx_is_active(const struct CompServer *server);
 

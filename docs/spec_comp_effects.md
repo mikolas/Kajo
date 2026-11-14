@@ -1,6 +1,6 @@
 # Spec: `kajo-comp` effect pipeline (pixel / fragment shaders)
 
-**Status:** Milestone 2 (Foundation + shadows + dim, `kajo-0.20.2-fx3`) implemented and verified (V1–V4, SH1–SH4, CB1–CB6); pre-M2/M3 spikes S1–S6, S8 verified. Kajo branch `feat/wlroots-fork`. Builds on [`docs/spec_wlroots_fork.md`](spec_wlroots_fork.md) (the fork, its compatibility rules C1–C7 and Milestone 1) and replaces the effect outline in ROADMAP §3.6 / §3.7.2.
+**Status:** Milestone 2 (Foundation + shadows + dim, `kajo-0.20.2-fx3`) and Milestone 3 (Glass, `kajo-0.20.2-fx4`) implemented and verified (V1–V4, SH1–SH4, GB1–GB10, CB1–CB6); pre-M2/M3 spikes S1–S6, S8 verified. Kajo branch `feat/wlroots-fork`. Builds on [`docs/spec_wlroots_fork.md`](spec_wlroots_fork.md) (the fork, its compatibility rules C1–C7 and Milestone 1) and replaces the effect outline in ROADMAP §3.6 / §3.7.2.
 
 This spec defines how `kajo-comp` runs custom fragment shaders on what it draws: which parts live in the wlroots fork, which in Kajo, how a frame flows through them, and how HDR constrains all of it. The acceptance tests are a **glassy backdrop blur** (§10) and **high-quality soft shadows** (§11).
 

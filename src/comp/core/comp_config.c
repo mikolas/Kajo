@@ -1026,6 +1026,67 @@ merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDia
         if (ddur.type == TOML_INT64 && ddur.u.int64 >= 0 && ddur.u.int64 <= 5000)
             cfg->fx.dim.duration_ms = (int32_t)ddur.u.int64;
     }
+
+    toml_datum_t gl = toml_get(fx, COMP_SEC_FX_GLASS);
+    if (gl.type == TOML_TABLE) {
+        toml_datum_t gen = toml_get(gl, COMP_KEY_ENABLED);
+        if (gen.type == TOML_BOOLEAN)
+            cfg->fx.glass.enabled = gen.u.boolean;
+
+        toml_datum_t gpa = toml_get(gl, COMP_KEY_PASSES);
+        if (gpa.type != TOML_UNKNOWN) {
+            if (gpa.type == TOML_INT64 && gpa.u.int64 >= 1 && gpa.u.int64 <= COMP_FX_GLASS_MAX_PASSES)
+                cfg->fx.glass.passes = (int32_t)gpa.u.int64;
+            else
+                comp_diag_add(diag, src, gpa.lineno, "[effects.glass] 'passes' must be an integer in 1..%d; ignored",
+                              COMP_FX_GLASS_MAX_PASSES);
+        }
+
+        double dval = 0.0;
+        toml_datum_t gof = toml_get(gl, COMP_KEY_OFFSET);
+        if (gof.type != TOML_UNKNOWN) {
+            if (datum_as_double(gof, &dval) && dval >= 0.0 && dval <= 16.0)
+                cfg->fx.glass.offset = dval;
+            else
+                comp_diag_add(diag, src, gof.lineno, "[effects.glass] 'offset' must be in 0..16; ignored");
+        }
+
+        toml_datum_t gsa = toml_get(gl, COMP_KEY_SATURATION);
+        if (gsa.type != TOML_UNKNOWN) {
+            if (datum_as_double(gsa, &dval) && dval >= 0.0 && dval <= 4.0)
+                cfg->fx.glass.saturation = dval;
+            else
+                comp_diag_add(diag, src, gsa.lineno, "[effects.glass] 'saturation' must be in 0..4; ignored");
+        }
+
+        toml_datum_t gbr = toml_get(gl, COMP_KEY_BRIGHTNESS);
+        if (gbr.type != TOML_UNKNOWN) {
+            if (datum_as_double(gbr, &dval) && dval >= 0.0 && dval <= 4.0)
+                cfg->fx.glass.brightness = dval;
+            else
+                comp_diag_add(diag, src, gbr.lineno, "[effects.glass] 'brightness' must be in 0..4; ignored");
+        }
+
+        toml_datum_t gti = toml_get(gl, COMP_KEY_TINT);
+        if (gti.type == TOML_STRING && !parse_hex_rgba(gti.u.s, cfg->fx.glass.tint_rgba))
+            comp_diag_add(diag, src, gti.lineno, "[effects.glass] invalid hex color '%s'; ignored", gti.u.s);
+
+        toml_datum_t gta = toml_get(gl, COMP_KEY_TINT_ALPHA);
+        if (gta.type != TOML_UNKNOWN) {
+            if (datum_as_double(gta, &dval) && dval >= 0.0 && dval <= 1.0)
+                cfg->fx.glass.tint_alpha = dval;
+            else
+                comp_diag_add(diag, src, gta.lineno, "[effects.glass] 'tint_alpha' must be in 0..1; ignored");
+        }
+
+        toml_datum_t mhz = toml_get(gl, COMP_KEY_MAX_RECOMPUTE_HZ);
+        if (mhz.type != TOML_UNKNOWN) {
+            if (mhz.type == TOML_INT64 && mhz.u.int64 >= 0 && mhz.u.int64 <= 1000)
+                cfg->fx.glass.max_recompute_hz = (int32_t)mhz.u.int64;
+            else
+                comp_diag_add(diag, src, mhz.lineno, "[effects.glass] 'max_recompute_hz' must be in 0..1000; ignored");
+        }
+    }
 }
 
 static void

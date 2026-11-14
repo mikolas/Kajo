@@ -155,12 +155,70 @@ place_slot_anchor(CompFxSlot *slot, const CompFxSurfaceState *st)
             wlr_scene_node_place_below(&slot->anchor->node, st->shadow_below);
         else
             wlr_scene_node_lower_to_bottom(&slot->anchor->node);
+    } else if (slot->kind == FX_SLOT_GLASS) {
+        if (st->shadow_below && st->shadow_below->parent == slot->anchor->node.parent)
+            wlr_scene_node_place_below(&slot->anchor->node, st->shadow_below);
+        else
+            wlr_scene_node_lower_to_bottom(&slot->anchor->node);
+        CompFxSurface *fx = slot->surface;
+        if (fx && fx->slots[FX_SLOT_SHADOW].anchor &&
+            fx->slots[FX_SLOT_SHADOW].anchor->node.parent == slot->anchor->node.parent) {
+            wlr_scene_node_place_above(&slot->anchor->node,
+                                       &fx->slots[FX_SLOT_SHADOW].anchor->node);
+        }
     } else if (slot->kind == FX_SLOT_DIM) {
         if (st->dim_above && st->dim_above->parent == slot->anchor->node.parent)
             wlr_scene_node_place_above(&slot->anchor->node, st->dim_above);
         else
             wlr_scene_node_raise_to_top(&slot->anchor->node);
     }
+}
+
+static void
+output_track_destroy(CompFxOutputTrack *track)
+{
+    if (!track)
+        return;
+    wl_list_remove(&track->output_destroy.link);
+    wl_list_init(&track->output_destroy.link);
+    wl_list_remove(&track->link);
+    free(track);
+}
+
+static void
+handle_output_track_destroy(struct wl_listener *listener, void *data)
+{
+    (void)data;
+    CompFxOutputTrack *track = wl_container_of(listener, track, output_destroy);
+    output_track_destroy(track);
+}
+
+static CompFxOutputTrack *
+ensure_output_track(CompFxSystem *sys, struct wlr_scene_output *so)
+{
+    if (!sys || !so)
+        return NULL;
+    CompFxOutputTrack *track;
+    wl_list_for_each(track, &sys->output_tracks, link) {
+        if (track->scene_output == so)
+            return track;
+    }
+
+    track = calloc(1, sizeof(*track));
+    if (!track)
+        return NULL;
+    track->scene_output = so;
+    track->bg_serial    = 1;
+    if (so->output) {
+        track->last_w         = so->output->width;
+        track->last_h         = so->output->height;
+        track->last_scale     = so->output->scale;
+        track->last_transform = (int)so->output->transform;
+    }
+    track->output_destroy.notify = handle_output_track_destroy;
+    wl_signal_add(&so->events.destroy, &track->output_destroy);
+    wl_list_insert(&sys->output_tracks, &track->link);
+    return track;
 }
 
 static void
@@ -178,6 +236,7 @@ refresh_surface_slots(CompFxSurface *fx)
                 slot->enabled = false;
             }
         }
+        fx_glass_surface_clear_targets(fx);
         return;
     }
 
@@ -191,6 +250,8 @@ refresh_surface_slots(CompFxSurface *fx)
                 wlr_scene_node_set_enabled(&slot->anchor->node, false);
                 slot->enabled = false;
             }
+            if (kind == FX_SLOT_GLASS)
+                fx_glass_surface_clear_targets(fx);
             continue;
         }
 
@@ -203,6 +264,8 @@ refresh_surface_slots(CompFxSurface *fx)
                 wlr_scene_node_set_enabled(&slot->anchor->node, false);
                 slot->enabled = false;
             }
+            if (kind == FX_SLOT_GLASS)
+                fx_glass_surface_clear_targets(fx);
             continue;
         }
 
@@ -303,6 +366,7 @@ handle_parent_tree_destroy(struct wl_listener *listener, void *data)
     CompFxSurface *fx = wl_container_of(listener, fx, tree_destroy);
     wl_list_remove(&fx->tree_destroy.link);
     wl_list_init(&fx->tree_destroy.link);
+    fx_glass_surface_clear_targets(fx);
     for (int i = 0; i < FX_SLOT_COUNT; i++)
         slot_finish(&fx->slots[i]);
     fx->parent_tree = NULL;
@@ -385,6 +449,7 @@ comp_fx_init(struct CompServer *server)
         return false;
     sys->server = server;
     wl_list_init(&sys->surfaces);
+    wl_list_init(&sys->output_tracks);
     comp_fx_config_defaults(&sys->cfg);
 
     sys->blank_buf = calloc(1, sizeof(*sys->blank_buf));
@@ -419,12 +484,18 @@ comp_fx_finish(struct CompServer *server)
     wl_list_for_each_safe(fx, tmp, &sys->surfaces, link) {
         wl_list_remove(&fx->tree_destroy.link);
         wl_list_init(&fx->tree_destroy.link);
+        fx_glass_surface_clear_targets(fx);
         for (int i = 0; i < FX_SLOT_COUNT; i++)
             slot_finish(&fx->slots[i]);
         wl_list_remove(&fx->link);
         wl_list_init(&fx->link);
         fx->sys         = NULL;
         fx->parent_tree = NULL;
+    }
+
+    CompFxOutputTrack *track, *track_tmp;
+    wl_list_for_each_safe(track, track_tmp, &sys->output_tracks, link) {
+        output_track_destroy(track);
     }
 
     destroy_all_shaders(sys);
@@ -449,6 +520,12 @@ comp_fx_config_apply(struct CompServer *server, const struct CompConfig *cfg)
     else
         comp_fx_config_defaults(&sys->cfg);
 
+    fx_glass_system_invalidate_all(sys);
+    CompFxOutputTrack *track;
+    wl_list_for_each(track, &sys->output_tracks, link) {
+        track->bg_serial++;
+    }
+
     double now_s = comp_now_sec();
     CompFxSurface *fx;
     wl_list_for_each(fx, &sys->surfaces, link) {
@@ -468,6 +545,11 @@ comp_fx_renderer_lost(struct CompServer *server)
         return;
     CompFxSystem *sys = server->fx;
 
+    CompFxSurface *fx;
+    wl_list_for_each(fx, &sys->surfaces, link) {
+        fx_glass_surface_clear_targets(fx);
+    }
+
     destroy_all_shaders(sys);
     sys->supported = server->renderer && wlr_kfx_is_supported(server->renderer);
     if (sys->supported) {
@@ -480,7 +562,11 @@ comp_fx_renderer_lost(struct CompServer *server)
         sys->logged_unsupported = true;
     }
 
-    CompFxSurface *fx;
+    CompFxOutputTrack *track;
+    wl_list_for_each(track, &sys->output_tracks, link) {
+        track->bg_serial++;
+    }
+
     wl_list_for_each(fx, &sys->surfaces, link) {
         refresh_surface_slots(fx);
         for (int i = 0; i < FX_SLOT_COUNT; i++) {
@@ -496,8 +582,29 @@ comp_fx_output_prepare(struct CompOutput *output, double now_s)
     if (!output || !output->server || !output->server->fx)
         return false;
     CompFxSystem *sys = output->server->fx;
-    if (!sys->supported || !sys->cfg.enabled)
+    if (!sys->supported || !sys->cfg.enabled) {
+        if (output->wlr_output)
+            wlr_kfx_output_set_dither(output->wlr_output, false);
         return false;
+    }
+
+    if (output->wlr_output)
+        wlr_kfx_output_set_dither(output->wlr_output, sys->cfg.dither);
+
+    CompFxOutputTrack *track = ensure_output_track(sys, output->scene_output);
+    if (track && output->wlr_output) {
+        struct wlr_output *wo = output->wlr_output;
+        if (wo->width != track->last_w ||
+            wo->height != track->last_h ||
+            fabsf(wo->scale - track->last_scale) > 1e-4f ||
+            (int)wo->transform != track->last_transform) {
+            track->last_w         = wo->width;
+            track->last_h         = wo->height;
+            track->last_scale     = wo->scale;
+            track->last_transform = (int)wo->transform;
+            track->bg_serial++;
+        }
+    }
 
     bool any_animating = false;
     CompFxSurface *fx;
@@ -532,13 +639,23 @@ comp_fx_output_prepare(struct CompOutput *output, double now_s)
                 any_animating = true;
         }
     }
+
+    if (track && fx_glass_prepare_output(sys, output, track, now_s))
+        any_animating = true;
+
     return any_animating;
 }
 
 void
 comp_fx_background_changed(struct CompOutput *output)
 {
-    (void)output; /* M3 cached backdrop serial hook */
+    if (!output || !output->server || !output->server->fx || !output->scene_output)
+        return;
+    CompFxOutputTrack *track = ensure_output_track(output->server->fx, output->scene_output);
+    if (track)
+        track->bg_serial++;
+    if (output->wlr_output)
+        wlr_output_schedule_frame(output->wlr_output);
 }
 
 CompFxSurface *
@@ -556,6 +673,7 @@ comp_fx_surface_create(struct CompServer *server,
     fx->sys         = sys;
     fx->parent_tree = parent_tree;
     fx->kind        = kind;
+    wl_list_init(&fx->glass_outputs);
     for (int i = 0; i < FX_SLOT_COUNT; i++) {
         fx->slots[i].surface = fx;
         fx->slots[i].kind    = (FxSlotKind)i;
@@ -575,12 +693,22 @@ comp_fx_surface_sync(CompFxSurface *fx, const CompFxSurfaceState *state)
         return;
 
     bool rule_changed = (fx->state.has_rule_shadow != state->has_rule_shadow ||
-                         fx->state.rule_shadow != state->rule_shadow);
+                         fx->state.rule_shadow != state->rule_shadow ||
+                         fx->state.has_rule_blur != state->has_rule_blur ||
+                         fx->state.rule_blur != state->rule_blur ||
+                         fx->state.has_rule_xray != state->has_rule_xray ||
+                         fx->state.rule_xray != state->rule_xray);
     bool outer_changed = (fx->state.outer_box.x != state->outer_box.x ||
                           fx->state.outer_box.y != state->outer_box.y ||
                           fx->state.outer_box.width != state->outer_box.width ||
-                          fx->state.outer_box.height != state->outer_box.height);
+                          fx->state.outer_box.height != state->outer_box.height ||
+                          fx->state.surface_box.x != state->surface_box.x ||
+                          fx->state.surface_box.y != state->surface_box.y ||
+                          fx->state.surface_box.width != state->surface_box.width ||
+                          fx->state.surface_box.height != state->surface_box.height);
     fx->state = *state;
+    if (!state->mapped)
+        fx_glass_surface_clear_targets(fx);
 
     update_focus_springs(fx, comp_now_sec());
     refresh_surface_slots(fx);
@@ -600,11 +728,18 @@ comp_fx_surface_destroy(CompFxSurface *fx)
         return;
     wl_list_remove(&fx->tree_destroy.link);
     wl_list_init(&fx->tree_destroy.link);
+    fx_glass_surface_clear_targets(fx);
     for (int i = 0; i < FX_SLOT_COUNT; i++)
         slot_finish(&fx->slots[i]);
     wl_list_remove(&fx->link);
     wl_list_init(&fx->link);
     free(fx);
+}
+
+uint64_t
+comp_fx_surface_get_glass_recomputes(const CompFxSurface *fx)
+{
+    return fx ? fx->glass_recomputes : 0;
 }
 
 bool
@@ -618,8 +753,19 @@ comp_fx_screenshot_begin_pass(struct CompServer *server, struct wlr_buffer *buff
 {
     if (!server || !server->renderer || !buffer)
         return NULL;
-    return wlr_kfx_renderer_begin_buffer_pass(
-        server->renderer, buffer, NULL, comp_fx_is_active(server));
+    bool active = comp_fx_is_active(server);
+    if (active) {
+        double now_s = comp_now_sec();
+        struct CompOutput *out;
+        wl_list_for_each(out, &server->outputs, link) {
+            (void)comp_fx_output_prepare(out, now_s);
+        }
+    }
+    struct wlr_render_pass *pass = wlr_kfx_renderer_begin_buffer_pass(
+        server->renderer, buffer, NULL, active);
+    if (pass && active)
+        wlr_kfx_render_pass_set_dither(pass, server->fx->cfg.dither);
+    return pass;
 }
 
 bool
@@ -672,6 +818,18 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         .x      = origin_lx,
         .y      = origin_ly,
     };
+    struct wlr_scene_output *use_so = &dummy_so;
+    struct CompOutput *out;
+    wl_list_for_each(out, &server->outputs, link) {
+        if (out->scene_output && out->wlr_output &&
+            out->scene_output->x == origin_lx &&
+            out->scene_output->y == origin_ly &&
+            out->wlr_output->width == pass_w &&
+            out->wlr_output->height == pass_h) {
+            use_so = out->scene_output;
+            break;
+        }
+    }
     pixman_region32_t clip_reg;
     pixman_region32_init_rect(&clip_reg, clip_box->x, clip_box->y,
                               (unsigned int)clip_box->width,
@@ -681,7 +839,7 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         .render_pass = pass,
         .dst_box     = *dst_box,
         .clip        = &clip_reg,
-        .output      = &dummy_so,
+        .output      = use_so,
     };
     desc->draw(sys, matched->surface, &ctx);
 

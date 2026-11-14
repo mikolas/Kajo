@@ -25,6 +25,7 @@ typedef struct {
     CompFxSurface                    *fx;
     struct wl_list                   popups;      /* CompLayerPopup.link */
     enum zwlr_layer_shell_v1_layer   cur_layer;
+    CompLayerRuleResult              last_rr;
     bool                             follows_primary;
     bool                             mapped;
 } CompLayerSurface;
@@ -101,6 +102,8 @@ sync_layer_popup_fx(CompLayerPopup *clp, const CompLayerRuleResult *parent_rr)
 {
     if (!clp || !clp->fx || !clp->popup || !clp->popup->base)
         return;
+    if (!parent_rr && clp->parent_layer)
+        parent_rr = &clp->parent_layer->last_rr;
     struct wlr_xdg_surface *xs = clp->popup->base;
     struct wlr_surface *surf = xs->surface;
     bool mapped = surf && surf->mapped;
@@ -115,6 +118,8 @@ sync_layer_popup_fx(CompLayerPopup *clp, const CompLayerRuleResult *parent_rr)
         .surface_box     = { 0, 0, w, h },
         .has_rule_shadow = parent_rr ? parent_rr->has_shadow : false,
         .rule_shadow     = parent_rr ? parent_rr->shadow : false,
+        .has_rule_blur   = parent_rr ? parent_rr->has_blur_popups : false,
+        .rule_blur       = parent_rr ? parent_rr->blur_popups : false,
         .is_focused      = true,
         .mapped          = mapped,
     };
@@ -131,6 +136,7 @@ apply_layer_rules(CompLayerSurface *cls)
     CompLayerRuleResult rr = {0};
     if (s->rules)
         comp_rules_match_layer(s->rules, ns, &rr);
+    cls->last_rr = rr;
     float op = rr.has_opacity ? (float)rr.opacity : 1.0f;
     wlr_scene_node_for_each_buffer(&cls->scene_layer->tree->node, set_buf_opacity_iter, &op);
 
@@ -144,6 +150,10 @@ apply_layer_rules(CompLayerSurface *cls)
         .surface_box             = { 0, 0, lw, lh },
         .has_rule_shadow         = rr.has_shadow,
         .rule_shadow             = rr.shadow,
+        .has_rule_blur           = rr.has_blur,
+        .rule_blur               = rr.blur,
+        .has_rule_xray           = rr.has_xray,
+        .rule_xray               = rr.xray,
         .is_focused              = true,
         .is_background_or_bottom = is_bg_or_excl,
         .mapped                  = cls->mapped,
@@ -446,6 +456,8 @@ handle_layer_commit(void *owner, void *data)
     uint32_t committed = cls->lsurf->current.committed;
     if (cls->lsurf->initial_commit || committed != 0)
         comp_layer_arrange(s);
+    else if (cls->mapped)
+        notify_bg_changed_for_layer(cls);
 }
 
 static void

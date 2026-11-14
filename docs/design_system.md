@@ -28,6 +28,8 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 | :--- | :--- | :--- | :--- |
 | `@metro-surface-0` | `--surface-0-canvas` | `#101010` | Recessed media/thumbnail well, code viewer canvas |
 | `@metro-surface-bg` | `--surface-1-base` | `#141414` | Primary window, popover, header, and sidebar background |
+| `@metro-panel-bg` | `--metro-panel-bg` | `rgba(20, 20, 20, 0.78)` | Top/bottom panel surface over compositor backdrop glass |
+| `@metro-glass-bg` | `--metro-glass-bg` | `rgba(20, 20, 20, 0.80)` | Popover, launcher, OSD, and notification glass surface |
 | `@metro-surface-2` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
 | `@metro-surface-3` | `--surface-3-card` | `#181818` | Popover body, list row, and table column header surface |
 | `@metro-surface-4` | `--surface-4-control` | `#1a1a1a` | Interactive button, tile card, and section card surface |
