@@ -193,6 +193,39 @@ comp_fx_shadow_coverage(double x, double y,
     return cov;
 }
 
+void
+comp_fx_effective_resolution(int32_t trans_width, int32_t trans_height,
+                             float scale,
+                             int32_t *out_width, int32_t *out_height)
+{
+    double s = (scale > 0.0f) ? (double)scale : 1.0;
+    int32_t w = (trans_width > 0) ? (int32_t)ceil((double)trans_width / s) : 0;
+    int32_t h = (trans_height > 0) ? (int32_t)ceil((double)trans_height / s) : 0;
+    if (out_width)
+        *out_width = w;
+    if (out_height)
+        *out_height = h;
+}
+
+CompFxRect
+comp_fx_clamp_rect(CompFxRect r, int32_t max_w, int32_t max_h)
+{
+    if (r.width <= 0 || r.height <= 0 || max_w <= 0 || max_h <= 0)
+        return (CompFxRect){0};
+    int32_t x0 = r.x > 0 ? r.x : 0;
+    int32_t y0 = r.y > 0 ? r.y : 0;
+    int32_t x1 = (r.x + r.width < max_w) ? (r.x + r.width) : max_w;
+    int32_t y1 = (r.y + r.height < max_h) ? (r.y + r.height) : max_h;
+    if (x1 <= x0 || y1 <= y0)
+        return (CompFxRect){0};
+    return (CompFxRect){
+        .x      = x0,
+        .y      = y0,
+        .width  = x1 - x0,
+        .height = y1 - y0,
+    };
+}
+
 CompFxRect
 comp_fx_transform_box(CompFxRect box_logical, CompFxRect output_logical,
                       float scale, int transform,

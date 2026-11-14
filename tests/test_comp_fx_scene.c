@@ -787,9 +787,222 @@ test_m3_review_regressions(void)
     g_assert_cmpint(px_out2[2], ==, 0);
     g_assert_cmpint(px_out2[1], ==, 255);
 
+    /* Multi-monitor spanning screenshot (fx5 follow-up #5):
+     * Place a red backdrop + glass popup at x=1100 on out1 (0..1280) and a blue backdrop +
+     * glass popup at x=1340 on out2 (1280..2560), then capture a region screenshot spanning
+     * both outputs (origin_lx=1000, pass_w=600 -> x=1000..1600). */
+    const float red_col[4]  = { 1.0f, 0.0f, 0.0f, 1.0f };
+    const float blue_col[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
+    struct wlr_scene_rect *red_bg = wlr_scene_rect_create(&scene->tree, 200, 200, red_col);
+    wlr_scene_node_set_position(&red_bg->node, 1080, 180);
+    struct wlr_scene_rect *blue_bg = wlr_scene_rect_create(&scene->tree, 200, 200, blue_col);
+    wlr_scene_node_set_position(&blue_bg->node, 1320, 180);
+
+    struct wlr_scene_tree *span_pop1_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&span_pop1_tree->node, 1100, 200);
+    struct wlr_scene_rect *span_pop1_rect = wlr_scene_rect_create(span_pop1_tree, 120, 100, pop_col);
+    CompFxSurface *fx_span1 = comp_fx_surface_create(&srv, span_pop1_tree, COMP_FX_SURFACE_POPUP);
+    CompFxSurfaceState span1_st = {
+        .outer_box       = { .x = 0, .y = 0, .width = 120, .height = 100 },
+        .surface_box     = { .x = 0, .y = 0, .width = 120, .height = 100 },
+        .shadow_below    = &span_pop1_rect->node,
+        .dim_above       = &span_pop1_rect->node,
+        .has_rule_shadow = true,
+        .rule_shadow     = false,
+        .is_floating     = true,
+        .is_focused      = true,
+        .mapped          = true,
+    };
+    comp_fx_surface_sync(fx_span1, &span1_st);
+
+    struct wlr_scene_tree *span_pop2_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&span_pop2_tree->node, 1340, 200);
+    struct wlr_scene_rect *span_pop2_rect = wlr_scene_rect_create(span_pop2_tree, 120, 100, pop_col);
+    CompFxSurface *fx_span2 = comp_fx_surface_create(&srv, span_pop2_tree, COMP_FX_SURFACE_POPUP);
+    span1_st.shadow_below = &span_pop2_rect->node;
+    span1_st.dim_above    = &span_pop2_rect->node;
+    comp_fx_surface_sync(fx_span2, &span1_st);
+
+    comp_fx_output_prepare(&out, 20.0);
+    comp_fx_output_prepare(&out2, 20.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+    g_assert_true(wlr_scene_output_commit(so2, NULL));
+
+    struct wlr_buffer *span_buf = wlr_allocator_create_buffer(alloc, 600, 720, fmt_xrgb);
+    g_assert_nonnull(span_buf);
+    spass = comp_fx_screenshot_begin_pass(&srv, span_buf);
+    g_assert_nonnull(spass);
+    struct wlr_box span1_dst = { .x = 1100 - 1000, .y = 200, .width = 120, .height = 100 };
+    struct wlr_box span2_dst = { .x = 1340 - 1000, .y = 200, .width = 120, .height = 100 };
+    wl_list_for_each(child, &span_pop1_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &span1_dst, &span1_dst,
+                                             1000, 0, 1.0, 600, 720);
+    }
+    wl_list_for_each(child, &span_pop2_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &span2_dst, &span2_dst,
+                                             1000, 0, 1.0, 600, 720);
+    }
+    g_assert_true(wlr_render_pass_submit(spass));
+
+    uint8_t px_span_out1[4] = {0};
+    uint8_t px_span_out2[4] = {0};
+    stex = wlr_texture_from_buffer(renderer, span_buf);
+    g_assert_nonnull(stex);
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_span_out1,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 160, .y = 250, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_span_out2,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 400, .y = 250, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(stex);
+    wlr_buffer_drop(span_buf);
+    /* XRGB8888 little-endian: [0]=B, [1]=G, [2]=R. out1 popup is red, out2 popup is blue. */
+    g_assert_cmpint(px_span_out1[2], >, 200);
+    g_assert_cmpint(px_span_out1[0], <, 20);
+    g_assert_cmpint(px_span_out2[0], >, 200);
+    g_assert_cmpint(px_span_out2[2], <, 20);
+
+    comp_fx_surface_destroy(fx_span2);
+    comp_fx_surface_destroy(fx_span1);
+    wlr_scene_node_destroy(&span_pop2_tree->node);
+    wlr_scene_node_destroy(&span_pop1_tree->node);
+    wlr_scene_node_destroy(&blue_bg->node);
+    wlr_scene_node_destroy(&red_bg->node);
+
     wl_list_remove(&out2.link);
     wlr_scene_output_destroy(so2);
     wlr_output_destroy(wo2);
+
+    /* Nested glass-under-glass + scene-tree stacking order (fx5 follow-up #1 & #2):
+     * Create pop_upper FIRST and pop_lower SECOND, then raise pop_upper above pop_lower
+     * in the scene tree via wlr_scene_node_place_above. Place a black backdrop at x=500..700
+     * with a bright green patch at x=580..680, y=220..320 under pop_lower (x=500, y=150, 200x200).
+     * pop_upper (x=540, y=180, 140x140) sits over pop_lower. In pop_upper's render_below pass,
+     * pop_lower's glass_draw must already be valid (prepared in stacking order, not creation order)
+     * and must map its downscaled dst_box accurately so pop_upper sees green at (620, 260) and
+     * dark black at (555, 195). */
+    const float black_col[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const float green_col[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+    struct wlr_scene_rect *nest_black = wlr_scene_rect_create(&scene->tree, 240, 240, black_col);
+    wlr_scene_node_set_position(&nest_black->node, 480, 130);
+    struct wlr_scene_rect *nest_green = wlr_scene_rect_create(&scene->tree, 80, 80, green_col);
+    wlr_scene_node_set_position(&nest_green->node, 600, 240);
+
+    struct wlr_scene_tree *pop_upper_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&pop_upper_tree->node, 540, 180);
+    struct wlr_scene_rect *pop_upper_rect = wlr_scene_rect_create(pop_upper_tree, 140, 140, pop_col);
+    CompFxSurface *fx_upper = comp_fx_surface_create(&srv, pop_upper_tree, COMP_FX_SURFACE_POPUP);
+
+    struct wlr_scene_tree *pop_lower_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&pop_lower_tree->node, 500, 150);
+    struct wlr_scene_rect *pop_lower_rect = wlr_scene_rect_create(pop_lower_tree, 200, 200, pop_col);
+    CompFxSurface *fx_lower = comp_fx_surface_create(&srv, pop_lower_tree, COMP_FX_SURFACE_POPUP);
+
+    /* Raise pop_upper_tree above pop_lower_tree even though fx_upper was created first! */
+    wlr_scene_node_place_above(&pop_upper_tree->node, &pop_lower_tree->node);
+
+    CompFxSurfaceState lower_st = {
+        .outer_box       = { .x = 0, .y = 0, .width = 200, .height = 200 },
+        .surface_box     = { .x = 0, .y = 0, .width = 200, .height = 200 },
+        .shadow_below    = &pop_lower_rect->node,
+        .dim_above       = &pop_lower_rect->node,
+        .has_rule_shadow = true,
+        .rule_shadow     = false,
+        .is_floating     = true,
+        .is_focused      = true,
+        .mapped          = true,
+    };
+    CompFxSurfaceState upper_st = {
+        .outer_box       = { .x = 0, .y = 0, .width = 140, .height = 140 },
+        .surface_box     = { .x = 0, .y = 0, .width = 140, .height = 140 },
+        .shadow_below    = &pop_upper_rect->node,
+        .dim_above       = &pop_upper_rect->node,
+        .has_rule_shadow = true,
+        .rule_shadow     = false,
+        .is_floating     = true,
+        .is_focused      = true,
+        .mapped          = true,
+    };
+    comp_fx_surface_sync(fx_lower, &lower_st);
+    comp_fx_surface_sync(fx_upper, &upper_st);
+
+    /* Zero out nest_green before rendering pop_upper? Even better: in pop_upper's backdrop pass,
+     * pop_lower's glass_draw overwrites nest_green with pop_lower's blurred target. To prove
+     * pop_upper sampled pop_lower's glass_draw (and not nest_green directly), give glass a 50% blue tint!
+     * Then 1 glass layer over black has B ~ 188, whereas 2 nested glass layers (pop_upper over pop_lower)
+     * has B ~ 225, and over the green patch at (630, 270) pop_upper has both high G (from pop_lower's
+     * properly positioned crop) and 2-layer blue tint! */
+    cfg->fx.glass.tint_rgba[0] = 0.0f;
+    cfg->fx.glass.tint_rgba[1] = 0.0f;
+    cfg->fx.glass.tint_rgba[2] = 1.0f;
+    cfg->fx.glass.tint_alpha   = 0.50;
+    comp_fx_config_apply(&srv, cfg);
+
+    /* Single prepare call must prepare fx_lower BEFORE fx_upper according to scene-tree order! */
+    comp_fx_output_prepare(&out, 30.0);
+    g_assert_true(wlr_scene_output_commit(so, NULL));
+
+    struct wlr_box lower_box = { .x = 500, .y = 150, .width = 200, .height = 200 };
+    struct wlr_box upper_box = { .x = 540, .y = 180, .width = 140, .height = 140 };
+    spass = comp_fx_screenshot_begin_pass(&srv, shot_buf);
+    g_assert_nonnull(spass);
+    wl_list_for_each(child, &pop_lower_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &lower_box, &lower_box,
+                                             0, 0, 1.0, 1280, 720);
+    }
+    wl_list_for_each(child, &pop_upper_tree->children, link) {
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &upper_box, &upper_box,
+                                             0, 0, 1.0, 1280, 720);
+    }
+    g_assert_true(wlr_render_pass_submit(spass));
+
+    uint8_t px_1layer_black[4] = {0};
+    uint8_t px_2layer_black[4] = {0};
+    uint8_t px_2layer_green[4] = {0};
+    stex = wlr_texture_from_buffer(renderer, shot_buf);
+    g_assert_nonnull(stex);
+    /* (515, 165) is inside pop_lower only (1 glass layer over black). */
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_1layer_black,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 515, .y = 165, .width = 1, .height = 1 },
+    }));
+    /* (550, 190) is inside pop_upper over pop_lower's black top-left region (2 glass layers over black). */
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_2layer_black,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 550, .y = 190, .width = 1, .height = 1 },
+    }));
+    /* (630, 270) is inside pop_upper over pop_lower's green patch (2 glass layers over green). */
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_2layer_green,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 630, .y = 270, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(stex);
+
+    /* 2-layer glass blue channel [0] is significantly brighter than 1-layer glass blue channel [0]. */
+    g_assert_cmpint(px_2layer_black[0], >, (int)px_1layer_black[0] + 20);
+    /* Green channel [1] at (630, 270) is bright (over green patch), while at (550, 190) it is dark. */
+    g_assert_cmpint(px_2layer_green[1], >, 100);
+    g_assert_cmpint(px_2layer_black[1], <, 15);
+
+    cfg->fx.glass.tint_alpha = 0.0;
+    comp_fx_surface_destroy(fx_upper);
+    comp_fx_surface_destroy(fx_lower);
+    wlr_scene_node_destroy(&pop_upper_tree->node);
+    wlr_scene_node_destroy(&pop_lower_tree->node);
+    wlr_scene_node_destroy(&nest_green->node);
+    wlr_scene_node_destroy(&nest_black->node);
 
     /* Finding 8: Throttled glass latches dirty_pending across a frame with no new damage. */
     cfg->fx.glass.max_recompute_hz = 10; /* min_dt = 0.10 s */

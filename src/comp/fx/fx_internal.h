@@ -130,11 +130,6 @@ bool fx_compute_slot_pass_boxes(const CompFxSurface *fx,
                                 float *out_eff_scale,
                                 int *out_transform);
 
-bool fx_compute_outer_buf_box(const CompFxSurface *fx,
-                              const struct wlr_kfx_render_ctx *ctx,
-                              CompFxRect *out_outer_buf,
-                              float *out_scale, int *out_transform);
-
 void fx_glass_surface_clear_targets(CompFxSurface *fx);
 void fx_glass_system_invalidate_all(CompFxSystem *sys);
 bool fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,

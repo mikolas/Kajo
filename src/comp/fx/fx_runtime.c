@@ -478,16 +478,6 @@ fx_compute_slot_pass_boxes(const CompFxSurface *fx,
 }
 
 bool
-fx_compute_outer_buf_box(const CompFxSurface *fx,
-                         const struct wlr_kfx_render_ctx *ctx,
-                         CompFxRect *out_outer_buf,
-                         float *out_scale, int *out_transform)
-{
-    return fx_compute_slot_pass_boxes(fx, FX_SLOT_SHADOW, ctx, NULL,
-                                      out_outer_buf, out_scale, out_transform);
-}
-
-bool
 comp_fx_init(struct CompServer *server)
 {
     if (!server)
@@ -858,10 +848,11 @@ comp_fx_screenshot_render_node(struct CompServer *server,
     if (!desc || !desc->draw)
         return true;
 
+    float shot_scale = (float)(scale > 0.0 ? scale : 1.0);
     struct wlr_output dummy_wo = {
         .width     = pass_w,
         .height    = pass_h,
-        .scale     = (float)(scale > 0.0 ? scale : 1.0),
+        .scale     = shot_scale,
         .transform = WL_OUTPUT_TRANSFORM_NORMAL,
     };
     struct wlr_scene_output dummy_so = {
@@ -869,14 +860,38 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         .x      = origin_lx,
         .y      = origin_ly,
     };
-    struct wlr_scene_output *use_so = &dummy_so;
-    double shot_scale = scale > 0.0 ? scale : 1.0;
+
+    if (matched->kind != FX_SLOT_GLASS) {
+        pixman_region32_t clip_reg;
+        pixman_region32_init_rect(&clip_reg, clip_box->x, clip_box->y,
+                                  (unsigned int)clip_box->width,
+                                  (unsigned int)clip_box->height);
+        struct wlr_kfx_render_ctx ctx = {
+            .render_pass = pass,
+            .dst_box     = *dst_box,
+            .clip        = &clip_reg,
+            .output      = &dummy_so,
+        };
+        desc->draw(sys, matched->surface, &ctx);
+        pixman_region32_fini(&clip_reg);
+        return true;
+    }
+
+    int32_t shot_eff_w = 0, shot_eff_h = 0;
+    comp_fx_effective_resolution(pass_w, pass_h, shot_scale, &shot_eff_w, &shot_eff_h);
     struct wlr_box shot_box = {
         .x      = origin_lx,
         .y      = origin_ly,
-        .width  = pass_w > 0 ? (int)ceil((double)pass_w / shot_scale) : 1,
-        .height = pass_h > 0 ? (int)ceil((double)pass_h / shot_scale) : 1,
+        .width  = shot_eff_w > 0 ? shot_eff_w : 1,
+        .height = shot_eff_h > 0 ? shot_eff_h : 1,
     };
+    CompFxRect shot_logical = {
+        .x      = origin_lx,
+        .y      = origin_ly,
+        .width  = shot_box.width,
+        .height = shot_box.height,
+    };
+
     struct CompOutput *out;
     wl_list_for_each(out, &server->outputs, link) {
         if (!out->scene_output || !out->wlr_output)
@@ -884,32 +899,44 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         int trans_w = 0, trans_h = 0;
         wlr_output_transformed_resolution(out->wlr_output, &trans_w, &trans_h);
         float os = out->wlr_output->scale > 0.0f ? out->wlr_output->scale : 1.0f;
+        int32_t out_eff_w = 0, out_eff_h = 0;
+        comp_fx_effective_resolution(trans_w, trans_h, os, &out_eff_w, &out_eff_h);
         struct wlr_box out_box = {
             .x      = out->scene_output->x,
             .y      = out->scene_output->y,
-            .width  = (int)ceil((double)trans_w / (double)os),
-            .height = (int)ceil((double)trans_h / (double)os),
+            .width  = out_eff_w,
+            .height = out_eff_h,
         };
         struct wlr_box inter = {0};
-        if (wlr_box_intersection(&inter, &out_box, &shot_box)) {
-            use_so = out->scene_output;
-            break;
-        }
+        if (!wlr_box_intersection(&inter, &out_box, &shot_box))
+            continue;
+
+        CompFxRect out_shot_r = comp_fx_transform_box(
+            (CompFxRect){ out_box.x, out_box.y, out_box.width, out_box.height },
+            shot_logical, shot_scale, WL_OUTPUT_TRANSFORM_NORMAL, pass_w, pass_h);
+        struct wlr_box out_shot_box = {
+            .x      = out_shot_r.x,
+            .y      = out_shot_r.y,
+            .width  = out_shot_r.width,
+            .height = out_shot_r.height,
+        };
+        struct wlr_box out_clip = {0};
+        if (!wlr_box_intersection(&out_clip, clip_box, &out_shot_box))
+            continue;
+
+        pixman_region32_t clip_reg;
+        pixman_region32_init_rect(&clip_reg, out_clip.x, out_clip.y,
+                                  (unsigned int)out_clip.width,
+                                  (unsigned int)out_clip.height);
+        struct wlr_kfx_render_ctx ctx = {
+            .render_pass = pass,
+            .dst_box     = *dst_box,
+            .clip        = &clip_reg,
+            .output      = out->scene_output,
+        };
+        desc->draw(sys, matched->surface, &ctx);
+        pixman_region32_fini(&clip_reg);
     }
-    pixman_region32_t clip_reg;
-    pixman_region32_init_rect(&clip_reg, clip_box->x, clip_box->y,
-                              (unsigned int)clip_box->width,
-                              (unsigned int)clip_box->height);
-
-    struct wlr_kfx_render_ctx ctx = {
-        .render_pass = pass,
-        .dst_box     = *dst_box,
-        .clip        = &clip_reg,
-        .output      = use_so,
-    };
-    desc->draw(sys, matched->surface, &ctx);
-
-    pixman_region32_fini(&clip_reg);
     return true;
 }
 

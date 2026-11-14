@@ -139,6 +139,15 @@ double comp_fx_shadow_coverage(double x, double y,
                                double x0, double y0, double x1, double y1,
                                double sigma);
 
+/* Computes effective logical output dimensions ceil(trans_width / scale),
+ * ceil(trans_height / scale) matching wlr_output_effective_resolution(). */
+void comp_fx_effective_resolution(int32_t trans_width, int32_t trans_height,
+                                  float scale,
+                                  int32_t *out_width, int32_t *out_height);
+
+/* Clamps `r` to [0, max_w) x [0, max_h). Returns {0} when non-intersecting. */
+CompFxRect comp_fx_clamp_rect(CompFxRect r, int32_t max_w, int32_t max_h);
+
 /* Logical-to-output-buffer coordinate transform matching wlr_scene.c's
  * scale_box() + wlr_box_transform(invert(transform), trans_w, trans_h).
  * `transform` uses wl_output_transform / CompTransform enum values 0..7. */

@@ -252,6 +252,24 @@ test_transforms_and_packing(void)
     g_assert_cmpfloat_with_epsilon(gp.tint_lin[3], 0.35f, 1e-6);
     g_assert_cmpfloat_with_epsilon(gp.saturation, 1.15f, 1e-6);
     g_assert_cmpfloat_with_epsilon(gp.brightness, 0.90f, 1e-6);
+
+    /* Effective resolution (fractional scale ceiling) & rect clamp */
+    int32_t eff_w = 0, eff_h = 0;
+    comp_fx_effective_resolution(1920, 1080, 1.75f, &eff_w, &eff_h);
+    g_assert_cmpint(eff_w, ==, 1098);
+    g_assert_cmpint(eff_h, ==, 618);
+
+    CompFxRect clamped = comp_fx_clamp_rect(
+        (CompFxRect){ .x = -10, .y = 50, .width = 120, .height = 100 }, 80, 120);
+    g_assert_cmpint(clamped.x, ==, 0);
+    g_assert_cmpint(clamped.y, ==, 50);
+    g_assert_cmpint(clamped.width, ==, 80);
+    g_assert_cmpint(clamped.height, ==, 70);
+
+    CompFxRect empty_clamp = comp_fx_clamp_rect(
+        (CompFxRect){ .x = 90, .y = 0, .width = 20, .height = 20 }, 80, 80);
+    g_assert_cmpint(empty_clamp.width, ==, 0);
+    g_assert_cmpint(empty_clamp.height, ==, 0);
 }
 
 int
