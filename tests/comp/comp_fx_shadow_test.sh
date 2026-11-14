@@ -712,6 +712,10 @@ namespace = ['^kajo-xray-panel$']
 blur = true
 xray = true
 shadow = false
+
+[[layer_rule]]
+namespace = ['^kajo-autohide-panel$']
+blur = true
 EOF
 run_case "gb6_gb8_gb9" "
     set -eu
@@ -725,9 +729,14 @@ run_case "gb6_gb8_gb9" "
     wait_file '$RT/gb9-under'
 
     # Top-layer xray=true panel at (0, 0) size 1280x36: must blur ONLY background (white), ignoring FxUnderPanel!
-    '$CL' fx-layer top kajo-xray-panel 1280 36 0 0 00000000 '$RT/gb9-panel' >/dev/null 2>&1 &
+    '$CL' fx-layer top kajo-xray-panel 600 36 0 0 00000000 '$RT/gb9-panel' >/dev/null 2>&1 &
     PANEL_PID=\$!
     wait_file '$RT/gb9-panel'
+
+    # Retracted autohide top-layer panel at (700, -34) size 400x36 (2px edge strip): blur & shadow must be suppressed!
+    '$CL' fx-layer top kajo-autohide-panel 400 36 -34 700 00000000 '$RT/gb9-ah' >/dev/null 2>&1 &
+    AH_PID=\$!
+    wait_file '$RT/gb9-ah'
 
     # GB8: Glass window [500..700]x[200..400] with an opaque white window FxTopOcc [600..800]x[200..400] above its right half
     '$CL' fx-win org.kajo.FxGlassOcc 200 200 00000000 '$RT/gb9-gocc' &
@@ -753,12 +762,18 @@ or_, og, ob, _ = ph.px(rows, 595, 300)
 mr, mg, mb, _ = ph.px(rows, 530, 300)
 assert abs(or_ - mr) <= 3 and abs(og - mg) <= 3, f'dark halo next to opaque occluder: edge={(or_, og, ob)} mid={(mr, mg, mb)}'
 
-# 3. GB6: With dither=true, an 8x8 tile in uniform glass region [520..528]x[260..268] has Bayer dither variance (>1 distinct code value)
+# 3. GB6: With dither=true, an 8x8 tile in uniform glass region [520..528]x[260..268] has blue-noise dither variance (>1 distinct code value)
 vals = {ph.px(rows, 520 + dx, 260 + dy)[0] for dx in range(8) for dy in range(8)}
-assert len(vals) >= 2 and max(vals) - min(vals) <= 2, f'expected 1-LSB Bayer dither in 8x8 block, got {vals}'
+assert len(vals) >= 2 and max(vals) - min(vals) <= 2, f'expected 1-LSB dither in 8x8 block, got {vals}'
+
+# 4. Retracted autohide panel at [700..1100]x[-34..2]: neither glass tint at (900, 1) nor drop shadow at (900, 10)
+ar1, ag1, ab1, _ = ph.px(rows, 900, 1)
+ar2, ag2, ab2, _ = ph.px(rows, 900, 10)
+assert (ar1, ag1, ab1) == (255, 255, 255), f'retracted autohide strip drew glass tint: {(ar1, ag1, ab1)}'
+assert (ar2, ag2, ab2) == (255, 255, 255), f'retracted autohide strip cast shadow: {(ar2, ag2, ab2)}'
 PY
-    rm -f '$RT/gb9-tocc' '$RT/gb9-gocc' '$RT/gb9-panel' '$RT/gb9-under' '$RT/gb9-bg'
-    wait \$TOCC_PID \$GOCC_PID \$PANEL_PID \$UNDER_PID \$BG_PID || true
+    rm -f '$RT/gb9-tocc' '$RT/gb9-gocc' '$RT/gb9-ah' '$RT/gb9-panel' '$RT/gb9-under' '$RT/gb9-bg'
+    wait \$TOCC_PID \$GOCC_PID \$AH_PID \$PANEL_PID \$UNDER_PID \$BG_PID || true
 "
 
 echo "All comp-fx-shadow headless Vulkan pixel tests passed."

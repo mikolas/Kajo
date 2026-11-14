@@ -308,11 +308,12 @@ shell_panel_new(ShellApp *app)
     gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_LEFT, TRUE);
     gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_RIGHT, TRUE);
 
-    /* Set exclusive zone to 0 (Overlay Mode: panel floats over windows without resizing them) */
-    gtk_layer_set_exclusive_zone(panel->window, 0);
+    /* Reserve exclusive zone when docked; use 0 (overlay mode) when autohide is enabled */
+    gint panel_h = config->panel_height > 0 ? config->panel_height : 32;
+    gtk_layer_set_exclusive_zone(panel->window, config->autohide_enabled ? 0 : panel_h);
 
     /* Set panel height */
-    gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1, config->panel_height);
+    gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1, panel_h);
 
     /* Create the main GtkCenterBox container */
     panel->container = gtk_center_box_new();
@@ -477,8 +478,9 @@ shell_panel_reload_config(ShellPanel *panel, const KajoShellCfg *config)
             gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_TOP, FALSE);
             gtk_layer_set_anchor(panel->window, GTK_LAYER_SHELL_EDGE_BOTTOM, TRUE);
         }
-        gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1,
-                                    config->panel_height > 0 ? config->panel_height : 32);
+        gint panel_h = config->panel_height > 0 ? config->panel_height : 32;
+        gtk_layer_set_exclusive_zone(panel->window, config->autohide_enabled ? 0 : panel_h);
+        gtk_widget_set_size_request(GTK_WIDGET(panel->window), -1, panel_h);
     }
 
     if (panel->autohide) {

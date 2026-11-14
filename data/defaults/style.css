@@ -1772,7 +1772,7 @@ window.shell-lock-window .greeter-poweroff-btn:hover {
 
 /* ─── Kajo Virtual Keyboard (window.osk-window) — Windows Touch Keyboard flat design ─── */
 window.osk-window {
-    background-color: @metro-surface-bg;
+    background-color: @metro-glass-bg;
     border-top: 2px solid @metro-accent;
     color: #f4f4f6;
 }

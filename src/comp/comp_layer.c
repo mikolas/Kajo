@@ -142,16 +142,23 @@ apply_layer_rules(CompLayerSurface *cls)
 
     int32_t lw = cls->lsurf->surface ? cls->lsurf->surface->current.width : 0;
     int32_t lh = cls->lsurf->surface ? cls->lsurf->surface->current.height : 0;
+    int32_t m_top = cls->lsurf->current.margin.top;
+    int32_t m_bot = cls->lsurf->current.margin.bottom;
+    int32_t m_left = cls->lsurf->current.margin.left;
+    int32_t m_right = cls->lsurf->current.margin.right;
+    bool autohide_retracted =
+        (lh > 8 && (m_top <= -(lh - 8) || m_bot <= -(lh - 8))) ||
+        (lw > 8 && (m_left <= -(lw - 8) || m_right <= -(lw - 8)));
     bool is_bg_or_excl = (cls->cur_layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND ||
                           cls->cur_layer == ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM ||
                           cls->lsurf->current.exclusive_zone > 0);
     CompFxSurfaceState st = {
         .outer_box               = { 0, 0, lw, lh },
         .surface_box             = { 0, 0, lw, lh },
-        .has_rule_shadow         = rr.has_shadow,
-        .rule_shadow             = rr.shadow,
-        .has_rule_blur           = rr.has_blur,
-        .rule_blur               = rr.blur,
+        .has_rule_shadow         = autohide_retracted ? true : rr.has_shadow,
+        .rule_shadow             = autohide_retracted ? false : rr.shadow,
+        .has_rule_blur           = autohide_retracted ? true : rr.has_blur,
+        .rule_blur               = autohide_retracted ? false : rr.blur,
         .has_rule_xray           = rr.has_xray,
         .rule_xray               = rr.xray,
         .is_focused              = true,
@@ -457,7 +464,7 @@ handle_layer_commit(void *owner, void *data)
     if (cls->lsurf->initial_commit || committed != 0)
         comp_layer_arrange(s);
     else if (cls->mapped)
-        notify_bg_changed_for_layer(cls);
+        apply_layer_rules(cls);
 }
 
 static void
