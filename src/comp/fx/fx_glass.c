@@ -479,20 +479,20 @@ walk_scene_prepare_glass(CompFxSystem *sys,
     if (!tree || !tree->node.enabled)
         return;
 
-    CompFxSurface *fx;
-    wl_list_for_each(fx, &sys->surfaces, link) {
-        if (fx->parent_tree == tree &&
-            fx->state.mapped &&
-            fx->slots[FX_SLOT_GLASS].enabled &&
-            fx->slots[FX_SLOT_GLASS].anchor) {
-            prepare_glass_surface_on_output(sys, fx, output, track,
-                                            out_logical, now_s, any_throttled);
-        }
-    }
-
     struct wlr_scene_node *child;
     wl_list_for_each(child, &tree->children, link) {
-        if (child->type == WLR_SCENE_NODE_TREE) {
+        if (!child->enabled)
+            continue;
+        if (child->type == WLR_SCENE_NODE_BUFFER && child->data != NULL) {
+            CompFxSlot *slot = child->data;
+            if (slot->kind == FX_SLOT_GLASS && slot->enabled &&
+                slot->anchor && &slot->anchor->node == child &&
+                slot->surface && slot->surface->sys == sys &&
+                slot->surface->state.mapped) {
+                prepare_glass_surface_on_output(sys, slot->surface, output, track,
+                                                out_logical, now_s, any_throttled);
+            }
+        } else if (child->type == WLR_SCENE_NODE_TREE) {
             struct wlr_scene_tree *sub = wlr_scene_tree_from_node(child);
             walk_scene_prepare_glass(sys, sub, output, track,
                                      out_logical, now_s, any_throttled);
@@ -527,17 +527,37 @@ fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
         .height = eff_h,
     };
 
+    size_t n_active_glass = 0;
     CompFxSurface *fx;
     wl_list_for_each(fx, &sys->surfaces, link) {
+        int px = 0, py = 0;
+        bool in_enabled_tree = fx->parent_tree &&
+                               wlr_scene_node_coords(&fx->parent_tree->node, &px, &py);
         if (!fx->state.mapped || !fx->slots[FX_SLOT_GLASS].enabled ||
-            !fx->slots[FX_SLOT_GLASS].anchor || !fx->parent_tree) {
+            !fx->slots[FX_SLOT_GLASS].anchor || !in_enabled_tree) {
             if (!wl_list_empty(&fx->glass_outputs))
                 fx_glass_surface_clear_targets(fx);
+            continue;
         }
+
+        struct wlr_box glass_box = {
+            .x      = px + fx->state.surface_box.x,
+            .y      = py + fx->state.surface_box.y,
+            .width  = fx->state.surface_box.width,
+            .height = fx->state.surface_box.height,
+        };
+        struct wlr_box inter = {0};
+        if (!wlr_box_intersection(&inter, &glass_box, &out_logical)) {
+            CompFxGlassOutput *go = find_glass_output(fx, so);
+            if (go)
+                glass_output_destroy(go);
+            continue;
+        }
+        n_active_glass++;
     }
 
     bool any_throttled = false;
-    if (so->scene) {
+    if (n_active_glass > 0 && so->scene) {
         walk_scene_prepare_glass(sys, &so->scene->tree, output, track,
                                  &out_logical, now_s, &any_throttled);
     }

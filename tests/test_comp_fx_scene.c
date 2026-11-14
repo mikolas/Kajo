@@ -3,6 +3,7 @@
  * sync, focus spring lifecycle, renderer loss, and effects.enabled=false (V4). */
 #include "../src/comp/comp_server.h"
 #include "../src/comp/fx/comp_fx.h"
+#include "../src/comp/fx/fx_internal.h"
 
 #include <drm_fourcc.h>
 #include <glib.h>
@@ -787,16 +788,17 @@ test_m3_review_regressions(void)
     g_assert_cmpint(px_out2[2], ==, 0);
     g_assert_cmpint(px_out2[1], ==, 255);
 
-    /* Multi-monitor spanning screenshot (fx5 follow-up #5):
-     * Place a red backdrop + glass popup at x=1100 on out1 (0..1280) and a blue backdrop +
-     * glass popup at x=1340 on out2 (1280..2560), then capture a region screenshot spanning
-     * both outputs (origin_lx=1000, pass_w=600 -> x=1000..1600). */
+    /* Multi-monitor spanning screenshot (fx5 follow-up #5 & fx6 follow-up #4):
+     * Place a red backdrop (x=1080..1280) on out1 (0..1280) and a blue backdrop (x=1280..1520)
+     * on out2 (1280..2560). Test both separate popups on each output AND a single straddling
+     * glass+shadow popup at x=1220..1340 crossing the boundary at x=1280 in a spanning
+     * screenshot (origin_lx=1000, pass_w=600 -> x=1000..1600). */
     const float red_col[4]  = { 1.0f, 0.0f, 0.0f, 1.0f };
     const float blue_col[4] = { 0.0f, 0.0f, 1.0f, 1.0f };
-    struct wlr_scene_rect *red_bg = wlr_scene_rect_create(&scene->tree, 200, 200, red_col);
+    struct wlr_scene_rect *red_bg = wlr_scene_rect_create(&scene->tree, 200, 320, red_col);
     wlr_scene_node_set_position(&red_bg->node, 1080, 180);
-    struct wlr_scene_rect *blue_bg = wlr_scene_rect_create(&scene->tree, 200, 200, blue_col);
-    wlr_scene_node_set_position(&blue_bg->node, 1320, 180);
+    struct wlr_scene_rect *blue_bg = wlr_scene_rect_create(&scene->tree, 240, 320, blue_col);
+    wlr_scene_node_set_position(&blue_bg->node, 1280, 180);
 
     struct wlr_scene_tree *span_pop1_tree = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_set_position(&span_pop1_tree->node, 1100, 200);
@@ -823,6 +825,17 @@ test_m3_review_regressions(void)
     span1_st.dim_above    = &span_pop2_rect->node;
     comp_fx_surface_sync(fx_span2, &span1_st);
 
+    /* Single popup straddling the output boundary x=1280 (x=1220..1340, y=340..440) with shadow enabled! */
+    struct wlr_scene_tree *span_straddle_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&span_straddle_tree->node, 1220, 340);
+    struct wlr_scene_rect *span_straddle_rect = wlr_scene_rect_create(span_straddle_tree, 120, 100, pop_col);
+    CompFxSurface *fx_straddle = comp_fx_surface_create(&srv, span_straddle_tree, COMP_FX_SURFACE_POPUP);
+    CompFxSurfaceState straddle_st = span1_st;
+    straddle_st.shadow_below = &span_straddle_rect->node;
+    straddle_st.dim_above    = &span_straddle_rect->node;
+    straddle_st.rule_shadow  = true;
+    comp_fx_surface_sync(fx_straddle, &straddle_st);
+
     comp_fx_output_prepare(&out, 20.0);
     comp_fx_output_prepare(&out2, 20.0);
     g_assert_true(wlr_scene_output_commit(so, NULL));
@@ -832,6 +845,10 @@ test_m3_review_regressions(void)
     g_assert_nonnull(span_buf);
     spass = comp_fx_screenshot_begin_pass(&srv, span_buf);
     g_assert_nonnull(spass);
+    wlr_render_pass_add_rect(spass, &(struct wlr_render_rect_options){
+        .box   = { .x = 0, .y = 0, .width = 600, .height = 720 },
+        .color = { 1.0f, 1.0f, 1.0f, 1.0f },
+    });
     struct wlr_box span1_dst = { .x = 1100 - 1000, .y = 200, .width = 120, .height = 100 };
     struct wlr_box span2_dst = { .x = 1340 - 1000, .y = 200, .width = 120, .height = 100 };
     wl_list_for_each(child, &span_pop1_tree->children, link) {
@@ -842,10 +859,28 @@ test_m3_review_regressions(void)
         (void)comp_fx_screenshot_render_node(&srv, spass, child, &span2_dst, &span2_dst,
                                              1000, 0, 1.0, 600, 720);
     }
+    wl_list_for_each(child, &span_straddle_tree->children, link) {
+        if (child->type != WLR_SCENE_NODE_BUFFER)
+            continue;
+        int nx = 0, ny = 0;
+        wlr_scene_node_coords(child, &nx, &ny);
+        struct wlr_scene_buffer *sbuf = wlr_scene_buffer_from_node(child);
+        struct wlr_box cbox = {
+            .x      = nx - 1000,
+            .y      = ny,
+            .width  = sbuf->dst_width,
+            .height = sbuf->dst_height,
+        };
+        (void)comp_fx_screenshot_render_node(&srv, spass, child, &cbox, &cbox,
+                                             1000, 0, 1.0, 600, 720);
+    }
     g_assert_true(wlr_render_pass_submit(spass));
 
     uint8_t px_span_out1[4] = {0};
     uint8_t px_span_out2[4] = {0};
+    uint8_t px_straddle_left[4] = {0};
+    uint8_t px_straddle_right[4] = {0};
+    uint8_t px_straddle_shadow[4] = {0};
     stex = wlr_texture_from_buffer(renderer, span_buf);
     g_assert_nonnull(stex);
     g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
@@ -860,6 +895,24 @@ test_m3_review_regressions(void)
         .stride  = 4,
         .src_box = { .x = 400, .y = 250, .width = 1, .height = 1 },
     }));
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_straddle_left,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 240, .y = 390, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_straddle_right,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 310, .y = 390, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(stex, &(struct wlr_texture_read_pixels_options){
+        .data    = px_straddle_shadow,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = 4,
+        .src_box = { .x = 280, .y = 444, .width = 1, .height = 1 },
+    }));
     wlr_texture_destroy(stex);
     wlr_buffer_drop(span_buf);
     /* XRGB8888 little-endian: [0]=B, [1]=G, [2]=R. out1 popup is red, out2 popup is blue. */
@@ -867,9 +920,20 @@ test_m3_review_regressions(void)
     g_assert_cmpint(px_span_out1[0], <, 20);
     g_assert_cmpint(px_span_out2[0], >, 200);
     g_assert_cmpint(px_span_out2[2], <, 20);
+    /* Single straddling popup: left half (on out1) is red, right half (on out2) is blue,
+     * and non-glass FX_SLOT_SHADOW darkens the white background below y=440. */
+    g_assert_cmpint(px_straddle_left[2], >, 200);
+    g_assert_cmpint(px_straddle_left[0], <, 20);
+    g_assert_cmpint(px_straddle_right[0], >, 200);
+    g_assert_cmpint(px_straddle_right[2], <, 20);
+    g_assert_cmpint(px_straddle_shadow[0], <, 245);
+    g_assert_cmpint(px_straddle_shadow[1], <, 245);
+    g_assert_cmpint(px_straddle_shadow[2], <, 245);
 
+    comp_fx_surface_destroy(fx_straddle);
     comp_fx_surface_destroy(fx_span2);
     comp_fx_surface_destroy(fx_span1);
+    wlr_scene_node_destroy(&span_straddle_tree->node);
     wlr_scene_node_destroy(&span_pop2_tree->node);
     wlr_scene_node_destroy(&span_pop1_tree->node);
     wlr_scene_node_destroy(&blue_bg->node);
@@ -1037,6 +1101,112 @@ test_m3_review_regressions(void)
     comp_fx_output_prepare(&out, 200.0);
     g_assert_true(wlr_scene_output_commit(so, NULL));
     g_assert_cmpuint(comp_fx_surface_get_glass_recomputes(fx_pop), ==, r0 + 2);
+
+    /* fx6 follow-up #1: Disabling an ancestor scene tree (e.g. inactive workspace) while
+     * surface remains mapped immediately releases go->target back to the pool so idle eviction
+     * can free it, and re-enabling the tree recomputes the target cleanly. */
+    g_assert_false(wl_list_empty(&fx_pop->glass_outputs));
+    wlr_scene_node_set_enabled(&pop_tree->node, false);
+    comp_fx_output_prepare(&out, 201.0);
+    g_assert_true(wl_list_empty(&fx_pop->glass_outputs));
+    wlr_scene_node_set_enabled(&pop_tree->node, true);
+    comp_fx_output_prepare(&out, 202.0);
+    g_assert_false(wl_list_empty(&fx_pop->glass_outputs));
+    g_assert_cmpuint(comp_fx_surface_get_glass_recomputes(fx_pop), ==, r0 + 3);
+
+    /* fx6 follow-up #3: wlr_kfx_renderer_run_target_chain pre-flight validation (un-transitioned
+     * input, empty dst_box, self-dependency, bad params_len) and multi-step write-sample-write
+     * reuse of the same targets in a single chain under VK_LAYER_KHRONOS_validation. */
+    struct wlr_kfx_target *t_a      = wlr_kfx_target_acquire(renderer, 63, 63);
+    struct wlr_kfx_target *t_b      = wlr_kfx_target_acquire(renderer, 61, 61);
+    struct wlr_kfx_target *t_uninit = wlr_kfx_target_acquire(renderer, 59, 59);
+    g_assert_nonnull(t_a);
+    g_assert_nonnull(t_b);
+    g_assert_nonnull(t_uninit);
+
+    CompFxBlurParams chain_bp = {0};
+    comp_fx_blur_pack((CompFxRect){ 0, 0, 61, 61 }, (CompFxRect){ 0, 0, 63, 63 },
+                      63, 63, 1.5, &chain_bp);
+
+    /* Pre-flight rejects un-transitioned input t_uninit. */
+    struct wlr_kfx_target_draw_step bad_step = {
+        .dst  = t_b,
+        .draw = {
+            .shader     = srv.fx->blur_down_shader,
+            .dst_box    = { 0, 0, 61, 61 },
+            .inputs     = { t_uninit, NULL, NULL, NULL },
+            .params     = &chain_bp,
+            .params_len = sizeof(chain_bp),
+            .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+        },
+    };
+    g_assert_false(wlr_kfx_renderer_run_target_chain(renderer, &bad_step, 1));
+
+    /* Transition t_a via a target render pass. */
+    struct wlr_render_pass *tpass = wlr_kfx_target_begin_pass(t_a);
+    g_assert_nonnull(tpass);
+    wlr_render_pass_add_rect(tpass, &(struct wlr_render_rect_options){
+        .box   = { .x = 0, .y = 0, .width = 63, .height = 63 },
+        .color = { 0.0f, 1.0f, 0.0f, 1.0f },
+    });
+    g_assert_true(wlr_render_pass_submit(tpass));
+
+    /* Pre-flight rejects zero-width dst_box. */
+    bad_step.draw.inputs[0]     = t_a;
+    bad_step.draw.dst_box.width = 0;
+    g_assert_false(wlr_kfx_renderer_run_target_chain(renderer, &bad_step, 1));
+
+    /* Pre-flight rejects self-dependency (dst == inputs[0]). */
+    bad_step.draw.dst_box.width = 61;
+    bad_step.dst                = t_a;
+    g_assert_false(wlr_kfx_renderer_run_target_chain(renderer, &bad_step, 1));
+
+    /* Pre-flight rejects wrong params_len. */
+    bad_step.dst             = t_b;
+    bad_step.draw.params_len = 4;
+    g_assert_false(wlr_kfx_renderer_run_target_chain(renderer, &bad_step, 1));
+
+    /* Multi-step write-sample-write chain: t_a -> t_b -> t_a -> t_b in one command buffer! */
+    struct wlr_kfx_target_draw_step chain3[3] = {
+        {
+            .dst  = t_b,
+            .draw = {
+                .shader     = srv.fx->blur_down_shader,
+                .dst_box    = { 0, 0, 61, 61 },
+                .inputs     = { t_a, NULL, NULL, NULL },
+                .params     = &chain_bp,
+                .params_len = sizeof(chain_bp),
+                .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+            },
+        },
+        {
+            .dst  = t_a,
+            .draw = {
+                .shader     = srv.fx->blur_up_shader,
+                .dst_box    = { 0, 0, 63, 63 },
+                .inputs     = { t_b, NULL, NULL, NULL },
+                .params     = &chain_bp,
+                .params_len = sizeof(chain_bp),
+                .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+            },
+        },
+        {
+            .dst  = t_b,
+            .draw = {
+                .shader     = srv.fx->blur_down_shader,
+                .dst_box    = { 0, 0, 61, 61 },
+                .inputs     = { t_a, NULL, NULL, NULL },
+                .params     = &chain_bp,
+                .params_len = sizeof(chain_bp),
+                .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+            },
+        },
+    };
+    g_assert_true(wlr_kfx_renderer_run_target_chain(renderer, chain3, 3));
+
+    wlr_kfx_target_release(t_uninit);
+    wlr_kfx_target_release(t_b);
+    wlr_kfx_target_release(t_a);
 
     /* Finding 3: 16x16 blue-noise dither amplitude scales with bit depth (8-bit /255 vs 10-bit /1023). */
     const struct wlr_drm_format *fmt_10 =

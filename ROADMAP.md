@@ -87,7 +87,7 @@ All Kajo components and standalone applications share a unified design language:
 
 ### 3.6 [IN PROGRESS] `kajo-comp` wlroots fork for visual effects
 
-**Status:** 🚧 In progress; specifications in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) and [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (branch `feat/wlroots-fork`). Milestones 1–3 are implemented: `kajo-comp` builds against `github.com/mikolas/wlroots` at `kajo-0.20.2-fx6` (`6a36a9c9`) as a static subproject with custom Vulkan fragment shaders (`X1`), below-node backdrop render (`X2`), pooled offscreen targets and single-CB target chains (`X3`), scene leaf hooks (`X4`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), analytic soft drop shadows, unfocused window dimming, and dual-filter Kawase frosted backdrop glass (`xray` background cache + popup propagation). Milestones 4–5 remain.
+**Status:** 🚧 In progress; specifications in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) and [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (branch `feat/wlroots-fork`). Milestones 1–3 are implemented: `kajo-comp` builds against `github.com/mikolas/wlroots` at `kajo-0.20.2-fx7` (`eec1b967`) as a static subproject with custom Vulkan fragment shaders (`X1`), below-node backdrop render (`X2`), pooled offscreen targets and single-CB target chains (`X3`), scene leaf hooks (`X4`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), analytic soft drop shadows, unfocused window dimming, and dual-filter Kawase frosted backdrop glass (`xray` background cache + popup propagation). Milestones 4–5 remain.
 
 **Why:** Effects such as backdrop blur, window open/close/resize transitions, dimming, shadows and, later, HDR tone mapping (BT.2390) and an adjustable SDR white level need render passes and scene features that stock `wlroots` does not offer (`wlr_render_pass` has only `add_texture` / `add_rect`). HDR requires the Vulkan renderer: in 0.20.2 only Vulkan sets `features.input_color_transform` / `output_color_transform`, so GLES-based solutions (SceneFX, a GLES2 renderer swap) are excluded. Replacing `wlroots` entirely (~75k lines of backends, protocols and XWayland) is out of scope.
 
@@ -105,7 +105,7 @@ All Kajo components and standalone applications share a unified design language:
 
 1. ✅ Milestone 1: fork, branch `kajo/0.20.2`, submodule, `subproject()`, full gate (no behaviour change).
 2. ✅ Milestone 2 (`kajo-0.20.2-fx3`): custom fragment shaders (`X1`), scene leaf hooks (`X4`), two-pass pathway (`X6`), analytic soft shadows and unfocused dimming (`shadow.frag`, `dim.frag`).
-3. ✅ Milestone 3 (`kajo-0.20.2-fx6`): below-node scene render (`X2`), pooled offscreen targets and single-CB target chains (`X3`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), dual-filter Kawase frosted backdrop glass (`blur_down.frag`, `blur_up.frag`, `glass.frag`).
+3. ✅ Milestone 3 (`kajo-0.20.2-fx7`): below-node scene render (`X2`), pooled offscreen targets and single-CB target chains (`X3`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), dual-filter Kawase frosted backdrop glass (`blur_down.frag`, `blur_up.frag`, `glass.frag`).
 4. M4–M5 per [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md): output stage (SDR white, tone mapping, per-pixel colour filters); transitions.
 
 **Open, not decided:** whether to contribute parts back upstream once they are stable.

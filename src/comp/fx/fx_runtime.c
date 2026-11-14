@@ -71,6 +71,8 @@ handle_slot_anchor_destroy(struct wl_listener *listener, void *data)
 {
     (void)data;
     CompFxSlot *slot = wl_container_of(listener, slot, anchor_destroy);
+    if (slot->anchor)
+        slot->anchor->node.data = NULL;
     wl_list_remove(&slot->anchor_destroy.link);
     wl_list_init(&slot->anchor_destroy.link);
     wlr_kfx_node_hook_finish(&slot->hook);
@@ -107,7 +109,8 @@ slot_finish(CompFxSlot *slot)
     wl_list_init(&slot->anchor_destroy.link);
     if (slot->anchor) {
         struct wlr_scene_buffer *buf = slot->anchor;
-        slot->anchor = NULL;
+        buf->node.data = NULL;
+        slot->anchor   = NULL;
         wlr_scene_node_destroy(&buf->node);
     }
     slot->enabled = false;
@@ -129,11 +132,13 @@ slot_ensure_created(CompFxSurface *fx, FxSlotKind kind)
     slot->anchor = wlr_scene_buffer_create(fx->parent_tree, &fx->sys->blank_buf->base);
     if (!slot->anchor)
         return false;
+    slot->anchor->node.data           = slot;
     slot->anchor->point_accepts_input = anchor_never_accepts_input;
     wlr_scene_node_set_enabled(&slot->anchor->node, false);
 
     if (!wlr_kfx_node_hook_init(&slot->hook, &slot->anchor->node,
                                 desc->stage, &k_slot_hook_impl)) {
+        slot->anchor->node.data = NULL;
         wlr_scene_node_destroy(&slot->anchor->node);
         slot->anchor = NULL;
         return false;
@@ -823,17 +828,10 @@ comp_fx_screenshot_render_node(struct CompServer *server,
     CompFxSystem *sys = server->fx;
 
     CompFxSlot *matched = NULL;
-    CompFxSurface *fx;
-    wl_list_for_each(fx, &sys->surfaces, link) {
-        for (int i = 0; i < FX_SLOT_COUNT; i++) {
-            CompFxSlot *slot = &fx->slots[i];
-            if (slot->anchor && &slot->anchor->node == node) {
-                matched = slot;
-                break;
-            }
-        }
-        if (matched)
-            break;
+    if (node->type == WLR_SCENE_NODE_BUFFER && node->data != NULL) {
+        CompFxSlot *cand = node->data;
+        if (cand->anchor && &cand->anchor->node == node)
+            matched = cand;
     }
     if (!matched)
         return false;
