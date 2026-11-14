@@ -43,15 +43,27 @@ src/
 │   ├── comp_screenshot.h/c         Interactive in-compositor screenshot UI (Region/Screen/Window), PNG writer & wl-copy pipe
 │   ├── comp_listen.h/c             comp_listen(): talloc-owned listeners that unlink themselves when freed
 │   ├── comp_log.h                  COMP_WARN_RETURN (rate-limited, never aborts); no logging of key input
+│   ├── fx/                         Vulkan visual effects (docs/spec_comp_effects.md; sole consumer of wlr_kfx_*)
+│   │   ├── comp_fx.h               Public compositor-facing FX lifecycle & frame/screenshot hooks
+│   │   ├── fx_internal.h           CompFxSystem/CompFxSurface/CompFxSlot internal structures & magic-tag validation
+│   │   ├── fx_runtime.c            Scene anchor management, stacking-order prepare, below-node & screenshot passes
+│   │   ├── fx_registry.c           Slot vtable registry (SHADOW, GLASS, DIM)
+│   │   ├── fx_shadow.c             2-layer analytical SDF drop shadows (contact + ambient)
+│   │   ├── fx_dim.c                Inactive-window tint overlay
+│   │   ├── fx_glass.c              3-pass Dual-Kawase frosted glass, xray background cache & blue-noise dither
+│   │   ├── fx_stub.c               No-op compilation stub when built without WLR_HAS_KFX
+│   │   └── shaders/                GLSL 450 fragment shaders (shadow, dim, blur_down, blur_up, glass) -> SPIR-V headers
 │   └── core/                       Pure core: no wlroots/Vulkan/GLib, built with -Werror and the strict flag set
 │       ├── comp_schema_keys.h      Canonical schema key tables for comp.toml, outputs.toml, binds.toml & rules.toml
 │       ├── comp_diag.h/c           Collected config diagnostics ("binds.toml:12: unknown action ...")
 │       ├── comp_spring.h/c         Analytical 2nd-order damped spring; retargeting preserves position and velocity
 │       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, tabbed/stacked, floating & camera target
 │       ├── comp_motion.h/c         Spring-animated strip camera, window geometry & workspace transitions
+│       ├── comp_gesture.h/c        3-finger drag & flick velocity/position release state machine
 │       ├── comp_binds.h/c          binds.toml parser (xkbcommon keysyms, wheel triggers) and key/wheel lookup
 │       ├── comp_rules.h/c          rules.toml parser (PCRE2 regexes) and window/layer rule matching
 │       ├── comp_config.h/c         comp.toml & outputs.toml parser, conf.d overlay merger & theme.toml accent reader
+│       ├── comp_fx_core.h/c        Pure FX math: SDF shadow box expansion, Dual-Kawase pyramid sizes & std140 UBO packing
 │       └── comp_touch.h/c          Multi-finger touchpad swipe & screen-edge bezel gesture state machines
 ├── compositor/
 │   ├── compositor.h                Compositor abstraction interface (workspaces, windows, outputs, layout & IPC actions)
@@ -194,9 +206,12 @@ tests/
 ├── test_comp_layout.c              kajo-comp scrolling strip, columns, tabbed/stacked, floating & 60k-step randomized invariant tests
 ├── test_comp_motion.c              kajo-comp springs over the layout: animated resize, workspace strip, cameras, 3-finger drag & flick
 ├── test_comp_config.c              comp.toml, outputs.toml, binds.toml, rules.toml & spec_kajo_comp.md zero-diagnostic parity tests
+├── test_comp_fx_core.c             Pure FX math: SDF shadow expansion, Dual-Kawase pyramid dimensions, std140 UBO packing & rect clamping
+├── test_comp_fx_scene.c            Scene-graph FX anchor ordering, stacking-order glass prepare, target pooling/eviction & multi-output screenshot clipping
 ├── comp/
 │   ├── comp_test_client.c          Wayland protocol test client (globals, toplevel, layer, lock, screencopy, IPC)
-│   └── comp_headless_smoke.sh      End-to-end headless kajo-comp integration test runner
+│   ├── comp_headless_smoke.sh      End-to-end headless kajo-comp integration test runner
+│   └── comp_fx_shadow_test.sh      Headless Vulkan pixel verification for SDF shadows, dimming, Dual-Kawase glass, xray panels & blue-noise dither
 ├── fuzz/
 │   ├── fuzz_toml_config.c          Corpus/libFuzzer target for the 5 app TOML domain schemas
 │   ├── fuzz_comp_config.c          Corpus/libFuzzer target for comp/outputs/binds/rules TOML parsers
@@ -246,7 +261,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 30 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 33 automated test suites:
 
 ```bash
 # Clone with the wlroots submodule (existing clones: git submodule update --init)
@@ -258,7 +273,7 @@ meson setup builddir
 # Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 30 automated test suites
+# Run all 33 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
@@ -274,10 +289,13 @@ meson install -C builddir --skip-subprojects
 | `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
 | `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
 | `comp-motion` | `test-comp-motion` | Compositor animation and gestures: animated resize of the rightmost column (the former no-animation case), snap mode and floating sizes, continuous workspace strip, per-workspace cameras, no animation when an empty workspace above is removed, drag override and velocity hand-off on release, stationary windows, stable workspace ids, side-effect-free drag release targets (column-edge resting positions, focus in the drag direction), and the 3-finger gesture state machine (axis lock, rubber band, velocity, projection, workspace picks, and release decisions from a snapshot taken before the gesture is reset). |
-| `comp-config` | `test-comp-config` | `comp.toml`, `outputs.toml`, `binds.toml`, and `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics. Also: `[touch].swipe_horizontal` steers only the touchscreen drag (the touchpad always scrolls columns). |
+| `comp-config` | `test-comp-config` | `comp.toml`, `outputs.toml`, `binds.toml`, and `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, `[effects]` / `[effects.shadow]` / `[effects.glass]` / `[effects.dim_inactive]` schemas, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics. Also: `[touch].swipe_horizontal` steers only the touchscreen drag (the touchpad always scrolls columns). |
+| `comp-fx-core` | `test-comp-fx-core` | Pure FX math (`src/comp/core/comp_fx_core.c`): 2-layer SDF shadow anchor box expansion, Dual-Kawase pyramid dimensions (power-of-two halving + `16×16` floor), `std140` 64-byte UBO packing for `shadow.frag`, `dim.frag`, `blur_down.frag`, `blur_up.frag`, and `glass.frag`, effective output resolution under `WL_OUTPUT_TRANSFORM_*`, and rectangle clamping. |
+| `comp-fx-scene` | `test-comp-fx-scene` | Scene-graph FX anchor lifecycle (`src/comp/fx/`): `SHADOW_ANCHOR` / `GLASS_ANCHOR` / `DIM_ANCHOR` sibling ordering, `COMP_FX_SLOT_MAGIC` validation against non-FX `node.data` pointers, $O(N)$ stacking-order glass traversal, hidden-tree (`!wlr_scene_node_coords`) target release, target pool reuse/eviction, `kfx_vk_renderer_run_target_chain` validation, and multi-output straddling screenshot clipping. |
+| `comp-fx-shadow` | `tests/comp/comp_fx_shadow_test.sh` | Headless Vulkan pixel verification: 2-layer SDF drop shadows (contact + ambient monotony, tiling suppression, `shadow = false` / `opacity = 0.0` rules, `scale = 2` HiDPI), inactive-window dimming (`dim_inactive`), 3-pass Dual-Kawase frosted glass (`blur = true`, `blur_popups = true`, `xray = true` panel over red window, retracted autohide strip suppression, adjacent opaque occluder halo check, and 16×16 blue-noise dither variance). |
 | `fuzz-comp-layout`, `fuzz-comp-config`, `fuzz-ipc-socket` | `test-fuzz-comp-*`, `test-fuzz-ipc-socket` | Corpus-driver builds of the three compositor libFuzzer targets in `tests/fuzz/` (layout engine, TOML config parsers, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC parser/dispatcher). |
 | `comp-headless` | `tests/comp/comp_headless_smoke.sh` | Runs `kajo-comp` on the wlroots headless backend with the pixman renderer and a private `XDG_RUNTIME_DIR`: required globals present, 200 connect/disconnect cycles, toplevel/popup/layer-shell/session-lock lifecycles, IPC queries (`Version`, `Outputs`, `Workspaces`, `Windows`, `KeyboardLayouts`), `EventStream`, actions, `Alt+Tab` switcher, screenshot capture, and `--greeter-mode` lockdown. |
-| `comp-audit` | `scripts/audit.sh comp` | Fails if `src/comp` uses `assert`/`abort`/`g_error`/sleeps/blocking subprocess calls or a `waitpid` without `WNOHANG`, or if `src/comp/core` includes wlroots, Vulkan or GLib headers. |
+| `comp-audit` | `scripts/audit.sh comp` | Fails if `src/comp` uses `assert`/`abort`/`g_error`/sleeps/blocking subprocess calls or a `waitpid` without `WNOHANG`, if `src/comp/core` includes wlroots, Vulkan or GLib headers, or if `wlr_kfx_*` / `WLR_HAS_KFX` appear outside `src/comp/fx/`. |
 | `pam-auth` | `test-pam-auth` | `shell_pam_authenticate_async` worker thread lifecycle, empty password rejection, cancellation. |
 | `greetd-ipc` | `test-greetd-ipc` | Mock `greetd` UNIX socket server (`uint32_t LE` + JSON), auth success/failure/cancel, JSON quote/backslash escaping, `getpwent()` user discovery, and `.desktop` `%U` field code stripping. |
 | `idle-manager` | `test-idle-manager` | Idle timeout configuration, Keep Awake inhibitor toggling, callback notification. |
