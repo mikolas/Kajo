@@ -178,7 +178,7 @@ horizontal_view_movement = { damping_ratio = 1.0, stiffness = 800.0, epsilon = 0
 
 [effects]
 enabled = true
-disable_on_software_gpu = false
+dither = true
 
 [effects.shadow]
 enabled = true
@@ -186,10 +186,11 @@ enabled = true
 [effects.glass]
 enabled = true
 passes = 3
-radius = 1.25
-tint = "#141414b8"
-top_highlight_alpha = 0.08
-dither = true
+offset = 2.0
+saturation = 1.15
+brightness = 0.90
+tint = "#141414"
+tint_alpha = 0.35
 ```
 
 ### B. Niri Configuration (`~/.config/niri/config.kdl`)
