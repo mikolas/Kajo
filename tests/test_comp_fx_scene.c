@@ -1114,6 +1114,16 @@ test_m3_review_regressions(void)
     g_assert_false(wl_list_empty(&fx_pop->glass_outputs));
     g_assert_cmpuint(comp_fx_surface_get_glass_recomputes(fx_pop), ==, r0 + 3);
 
+    /* fx7 follow-up #3: A non-FX wlr_scene_buffer with non-NULL node.data (even an invalid
+     * sentinel pointer) is rejected via sbuf->buffer != &sys->blank_buf->base before node.data
+     * is ever dereferenced by walk_scene_prepare_glass or comp_fx_screenshot_render_node. */
+    struct wlr_scene_buffer *foreign_buf = wlr_scene_buffer_create(&scene->tree, NULL);
+    g_assert_nonnull(foreign_buf);
+    foreign_buf->node.data = (void *)(uintptr_t)0xdeadbeefULL;
+    g_assert_null(fx_slot_from_scene_node(srv.fx, &foreign_buf->node));
+    comp_fx_output_prepare(&out, 203.0);
+    wlr_scene_node_destroy(&foreign_buf->node);
+
     /* fx6 follow-up #3: wlr_kfx_renderer_run_target_chain pre-flight validation (un-transitioned
      * input, empty dst_box, self-dependency, bad params_len) and multi-step write-sample-write
      * reuse of the same targets in a single chain under VK_LAYER_KHRONOS_validation. */

@@ -483,11 +483,9 @@ walk_scene_prepare_glass(CompFxSystem *sys,
     wl_list_for_each(child, &tree->children, link) {
         if (!child->enabled)
             continue;
-        if (child->type == WLR_SCENE_NODE_BUFFER && child->data != NULL) {
-            CompFxSlot *slot = child->data;
-            if (slot->kind == FX_SLOT_GLASS && slot->enabled &&
-                slot->anchor && &slot->anchor->node == child &&
-                slot->surface && slot->surface->sys == sys &&
+        if (child->type == WLR_SCENE_NODE_BUFFER) {
+            CompFxSlot *slot = fx_slot_from_scene_node(sys, child);
+            if (slot && slot->kind == FX_SLOT_GLASS && slot->enabled &&
                 slot->surface->state.mapped) {
                 prepare_glass_surface_on_output(sys, slot->surface, output, track,
                                                 out_logical, now_s, any_throttled);

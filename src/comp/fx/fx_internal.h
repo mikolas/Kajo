@@ -54,7 +54,10 @@ typedef struct {
     struct wlr_buffer base;
 } CompFxBlankBuffer;
 
+#define COMP_FX_SLOT_MAGIC 0x4B465853u /* "KFXS" */
+
 typedef struct {
+    uint32_t                 magic;
     struct wlr_scene_buffer *anchor;
     struct wl_listener       anchor_destroy;
     struct wlr_kfx_node_hook hook;
@@ -121,6 +124,22 @@ extern const CompFxEffectDesc k_fx_glass_desc;
 extern const CompFxEffectDesc k_fx_dim_desc;
 
 const CompFxEffectDesc *fx_registry_get(FxSlotKind kind);
+
+static inline CompFxSlot *
+fx_slot_from_scene_node(const CompFxSystem *sys, struct wlr_scene_node *node)
+{
+    if (!sys || !sys->blank_buf || !node ||
+        node->type != WLR_SCENE_NODE_BUFFER || !node->data)
+        return NULL;
+    struct wlr_scene_buffer *sbuf = wlr_scene_buffer_from_node(node);
+    if (!sbuf || sbuf->buffer != &sys->blank_buf->base)
+        return NULL;
+    CompFxSlot *slot = node->data;
+    if (slot->magic != COMP_FX_SLOT_MAGIC || slot->anchor != sbuf ||
+        !slot->surface || slot->surface->sys != sys)
+        return NULL;
+    return slot;
+}
 
 bool fx_compute_slot_pass_boxes(const CompFxSurface *fx,
                                 FxSlotKind slot_kind,

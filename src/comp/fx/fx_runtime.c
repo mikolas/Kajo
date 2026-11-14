@@ -73,6 +73,7 @@ handle_slot_anchor_destroy(struct wl_listener *listener, void *data)
     CompFxSlot *slot = wl_container_of(listener, slot, anchor_destroy);
     if (slot->anchor)
         slot->anchor->node.data = NULL;
+    slot->magic = 0;
     wl_list_remove(&slot->anchor_destroy.link);
     wl_list_init(&slot->anchor_destroy.link);
     wlr_kfx_node_hook_finish(&slot->hook);
@@ -104,6 +105,7 @@ slot_finish(CompFxSlot *slot)
 {
     if (!slot)
         return;
+    slot->magic = 0;
     wlr_kfx_node_hook_finish(&slot->hook);
     wl_list_remove(&slot->anchor_destroy.link);
     wl_list_init(&slot->anchor_destroy.link);
@@ -132,12 +134,14 @@ slot_ensure_created(CompFxSurface *fx, FxSlotKind kind)
     slot->anchor = wlr_scene_buffer_create(fx->parent_tree, &fx->sys->blank_buf->base);
     if (!slot->anchor)
         return false;
+    slot->magic                       = COMP_FX_SLOT_MAGIC;
     slot->anchor->node.data           = slot;
     slot->anchor->point_accepts_input = anchor_never_accepts_input;
     wlr_scene_node_set_enabled(&slot->anchor->node, false);
 
     if (!wlr_kfx_node_hook_init(&slot->hook, &slot->anchor->node,
                                 desc->stage, &k_slot_hook_impl)) {
+        slot->magic             = 0;
         slot->anchor->node.data = NULL;
         wlr_scene_node_destroy(&slot->anchor->node);
         slot->anchor = NULL;
@@ -827,12 +831,7 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         return false;
     CompFxSystem *sys = server->fx;
 
-    CompFxSlot *matched = NULL;
-    if (node->type == WLR_SCENE_NODE_BUFFER && node->data != NULL) {
-        CompFxSlot *cand = node->data;
-        if (cand->anchor && &cand->anchor->node == node)
-            matched = cand;
-    }
+    CompFxSlot *matched = fx_slot_from_scene_node(sys, node);
     if (!matched)
         return false;
 
