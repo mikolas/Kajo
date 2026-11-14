@@ -30,6 +30,34 @@ damping_ratio = 0.75
 stiffness = 323.0
 epsilon = 0.0001
 
+[effects]
+enabled = true
+dither = false
+
+[effects.shadow]
+enabled = true
+color = "#000000"
+unfocused_scale = 0.60
+duration_ms = 150
+
+[[effects.shadow.layers]]
+sigma = 6.0
+offset_x = 0.0
+offset_y = 2.0
+opacity = 0.30
+
+[[effects.shadow.layers]]
+sigma = 24.0
+offset_x = 0.0
+offset_y = 8.0
+opacity = 0.18
+
+[effects.dim]
+enabled = false
+color = "#000000"
+opacity = 0.15
+duration_ms = 150
+
 [switcher]
 active_border_color = "accent"
 urgent_border_color = "#e81123"

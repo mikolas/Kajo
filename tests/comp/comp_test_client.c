@@ -14,6 +14,7 @@
 #include "xdg-decoration-unstable-v1-client-protocol.h"
 #include "xdg-shell-client-protocol.h"
 
+#include <poll.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -114,6 +115,7 @@ typedef struct {
     int32_t                            cfg_h;
     uint32_t                           dec_mode;
     bool                               configured;
+    bool                               has_buffer;
 } TestWin;
 
 typedef struct {
@@ -158,6 +160,11 @@ xdg_surf_configure(void *data, struct xdg_surface *xs, uint32_t serial)
     TestWin *w = data;
     xdg_surface_ack_configure(xs, serial);
     w->configured = true;
+    if (w->has_buffer && w->viewport && w->cfg_w > 0 && w->cfg_h > 0) {
+        wp_viewport_set_destination(w->viewport, w->cfg_w, w->cfg_h);
+        wl_surface_damage_buffer(w->surface, 0, 0, 1, 1);
+        wl_surface_commit(w->surface);
+    }
 }
 
 static const struct xdg_surface_listener k_xdg_surf_listener = { xdg_surf_configure };
@@ -910,6 +917,255 @@ test_rogue(const char *ready_file)
     return 0;
 }
 
+static uint32_t
+scale_u8_u32(uint8_t v)
+{
+    return (uint32_t)v * 0x01010101u;
+}
+
+static bool
+parse_rgba_hex(const char *s, uint32_t *r, uint32_t *g, uint32_t *b, uint32_t *a)
+{
+    unsigned int ur = 0, ug = 0, ub = 0, ua = 0;
+    if (!s || strlen(s) != 8 || sscanf(s, "%02x%02x%02x%02x", &ur, &ug, &ub, &ua) != 4)
+        return false;
+    *r = scale_u8_u32((uint8_t)ur);
+    *g = scale_u8_u32((uint8_t)ug);
+    *b = scale_u8_u32((uint8_t)ub);
+    *a = scale_u8_u32((uint8_t)ua);
+    return true;
+}
+
+static void
+wait_ready_loop(struct wl_display *d, const char *ready_file)
+{
+    FILE *fp = fopen(ready_file, "w");
+    if (fp) {
+        fputs("ready\n", fp);
+        fclose(fp);
+    }
+    int fd = wl_display_get_fd(d);
+    while (access(ready_file, F_OK) == 0) {
+        while (wl_display_prepare_read(d) != 0) {
+            if (wl_display_dispatch_pending(d) < 0)
+                return;
+        }
+        wl_display_flush(d);
+        struct pollfd pfd = { .fd = fd, .events = POLLIN };
+        int prc = poll(&pfd, 1, 10);
+        if (prc > 0 && (pfd.revents & (POLLIN | POLLHUP | POLLERR))) {
+            if (wl_display_read_events(d) < 0)
+                return;
+            if (wl_display_dispatch_pending(d) < 0)
+                return;
+        } else {
+            wl_display_cancel_read(d);
+            if (prc < 0)
+                return;
+        }
+    }
+}
+
+static int
+test_fx_layer(const char *layer_name, const char *ns, int w, int h,
+              int margin_top, int margin_left, const char *rgba_hex, const char *ready_file)
+{
+    uint32_t r = 0, g = 0, b = 0, a = 0;
+    if (!parse_rgba_hex(rgba_hex, &r, &g, &b, &a) || !ready_file)
+        return 2;
+
+    enum zwlr_layer_shell_v1_layer layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+    bool full_bg = false;
+    if (strcmp(layer_name, "background") == 0) {
+        layer = ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+        full_bg = true;
+    } else if (strcmp(layer_name, "bottom") == 0) {
+        layer = ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+    } else if (strcmp(layer_name, "top") == 0) {
+        layer = ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    } else if (strcmp(layer_name, "overlay") == 0) {
+        layer = ZWLR_LAYER_SHELL_V1_LAYER_OVERLAY;
+    } else {
+        return 2;
+    }
+
+    struct wl_display *d = wl_display_connect(NULL);
+    if (!d)
+        return 3;
+
+    ShellEnv env = {0};
+    struct wl_registry *reg = wl_display_get_registry(d);
+    wl_registry_add_listener(reg, &k_shell_reg_listener, &env);
+    if (wl_display_roundtrip(d) < 0 || !env.compositor || !env.layer_shell ||
+        !env.spb_mgr || !env.viewporter) {
+        return 1;
+    }
+
+    struct wl_surface *surf = wl_compositor_create_surface(env.compositor);
+    struct wp_viewport *vp = wp_viewporter_get_viewport(env.viewporter, surf);
+    struct zwlr_layer_surface_v1 *ls = zwlr_layer_shell_v1_get_layer_surface(
+        env.layer_shell, surf, env.output, layer, ns);
+    LayerState st = {0};
+    zwlr_layer_surface_v1_add_listener(ls, &k_layer_surf_listener, &st);
+    if (full_bg) {
+        zwlr_layer_surface_v1_set_size(ls, 0, 0);
+        zwlr_layer_surface_v1_set_anchor(ls,
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM |
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT | ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT);
+        zwlr_layer_surface_v1_set_exclusive_zone(ls, -1);
+    } else {
+        zwlr_layer_surface_v1_set_size(ls, (uint32_t)w, (uint32_t)h);
+        zwlr_layer_surface_v1_set_anchor(ls,
+            ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP | ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT);
+        zwlr_layer_surface_v1_set_margin(ls, margin_top, 0, 0, margin_left);
+        zwlr_layer_surface_v1_set_exclusive_zone(ls, 0);
+    }
+    wl_surface_commit(surf);
+    if (wl_display_roundtrip(d) < 0 || !st.configured)
+        return 1;
+
+    uint32_t dw = st.width > 0 ? st.width : (uint32_t)w;
+    uint32_t dh = st.height > 0 ? st.height : (uint32_t)h;
+    struct wl_buffer *buf = wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(
+        env.spb_mgr, r, g, b, a);
+    wp_viewport_set_destination(vp, (int32_t)dw, (int32_t)dh);
+    wl_surface_attach(surf, buf, 0, 0);
+    wl_surface_damage_buffer(surf, 0, 0, 1, 1);
+    wl_surface_commit(surf);
+    if (wl_display_roundtrip(d) < 0)
+        return 1;
+
+    wait_ready_loop(d, ready_file);
+
+    wp_viewport_destroy(vp);
+    zwlr_layer_surface_v1_destroy(ls);
+    wl_surface_destroy(surf);
+    wl_buffer_destroy(buf);
+    wl_display_roundtrip(d);
+    if (env.output)
+        wl_output_destroy(env.output);
+    wp_viewporter_destroy(env.viewporter);
+    wp_single_pixel_buffer_manager_v1_destroy(env.spb_mgr);
+    if (env.lock_mgr)
+        ext_session_lock_manager_v1_destroy(env.lock_mgr);
+    if (env.wm_base)
+        xdg_wm_base_destroy(env.wm_base);
+    zwlr_layer_shell_v1_destroy(env.layer_shell);
+    wl_compositor_destroy(env.compositor);
+    wl_registry_destroy(reg);
+    wl_display_disconnect(d);
+    return 0;
+}
+
+static int
+test_fx_win(const char *app_id, int w, int h, const char *rgba_hex, const char *ready_file,
+            int pop_x, int pop_y, int pop_w, int pop_h)
+{
+    uint32_t r = 0, g = 0, b = 0, a = 0;
+    if (!parse_rgba_hex(rgba_hex, &r, &g, &b, &a) || w <= 0 || h <= 0 || !ready_file)
+        return 2;
+
+    struct wl_display *d = wl_display_connect(NULL);
+    if (!d)
+        return 3;
+
+    WinEnv env = {0};
+    struct wl_registry *reg = wl_display_get_registry(d);
+    wl_registry_add_listener(reg, &k_win_reg_listener, &env);
+    if (wl_display_roundtrip(d) < 0 || !env.compositor || !env.wm_base ||
+        !env.spb_mgr || !env.viewporter) {
+        return 1;
+    }
+
+    TestWin win = {0};
+    win.surface = wl_compositor_create_surface(env.compositor);
+    win.viewport = wp_viewporter_get_viewport(env.viewporter, win.surface);
+    win.xdg_surface = xdg_wm_base_get_xdg_surface(env.wm_base, win.surface);
+    xdg_surface_add_listener(win.xdg_surface, &k_xdg_surf_listener, &win);
+    win.toplevel = xdg_surface_get_toplevel(win.xdg_surface);
+    xdg_toplevel_add_listener(win.toplevel, &k_toplevel_listener, &win);
+    xdg_toplevel_set_app_id(win.toplevel, app_id);
+    xdg_toplevel_set_title(win.toplevel, app_id);
+    if (env.dec_mgr) {
+        win.dec = zxdg_decoration_manager_v1_get_toplevel_decoration(env.dec_mgr, win.toplevel);
+        zxdg_toplevel_decoration_v1_add_listener(win.dec, &k_dec_listener, &win);
+    }
+    wl_surface_commit(win.surface);
+    if (wl_display_roundtrip(d) < 0)
+        return 1;
+
+    int32_t dw = win.cfg_w > 0 ? win.cfg_w : w;
+    int32_t dh = win.cfg_h > 0 ? win.cfg_h : h;
+    struct wl_buffer *buf = wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(
+        env.spb_mgr, r, g, b, a);
+    wp_viewport_set_destination(win.viewport, dw, dh);
+    wl_surface_attach(win.surface, buf, 0, 0);
+    wl_surface_damage_buffer(win.surface, 0, 0, 1, 1);
+    wl_surface_commit(win.surface);
+    win.has_buffer = true;
+    if (wl_display_roundtrip(d) < 0)
+        return 1;
+
+    TestPopup pop = {0};
+    struct wp_viewport *pop_vp = NULL;
+    struct wl_buffer *pbuf = NULL;
+    if (pop_w > 0 && pop_h > 0) {
+        struct xdg_positioner *pos = xdg_wm_base_create_positioner(env.wm_base);
+        xdg_positioner_set_size(pos, pop_w, pop_h);
+        xdg_positioner_set_anchor_rect(pos, 0, 0, 1, 1);
+        xdg_positioner_set_anchor(pos, XDG_POSITIONER_ANCHOR_TOP_LEFT);
+        xdg_positioner_set_gravity(pos, XDG_POSITIONER_GRAVITY_BOTTOM_RIGHT);
+        xdg_positioner_set_offset(pos, pop_x, pop_y);
+        pop.surface = wl_compositor_create_surface(env.compositor);
+        pop_vp = wp_viewporter_get_viewport(env.viewporter, pop.surface);
+        pop.xdg_surface = xdg_wm_base_get_xdg_surface(env.wm_base, pop.surface);
+        xdg_surface_add_listener(pop.xdg_surface, &k_popup_xdg_listener, &pop);
+        pop.popup = xdg_surface_get_popup(pop.xdg_surface, win.xdg_surface, pos);
+        xdg_popup_add_listener(pop.popup, &k_popup_listener, &pop);
+        xdg_positioner_destroy(pos);
+        wl_surface_commit(pop.surface);
+        if (wl_display_roundtrip(d) < 0 || !pop.configured)
+            return 1;
+        pbuf = wp_single_pixel_buffer_manager_v1_create_u32_rgba_buffer(
+            env.spb_mgr, scale_u8_u32(0x10), scale_u8_u32(0x60), scale_u8_u32(0x20), scale_u8_u32(0xff));
+        wp_viewport_set_destination(pop_vp, pop_w, pop_h);
+        wl_surface_attach(pop.surface, pbuf, 0, 0);
+        wl_surface_damage_buffer(pop.surface, 0, 0, 1, 1);
+        wl_surface_commit(pop.surface);
+        if (wl_display_roundtrip(d) < 0)
+            return 1;
+    }
+
+    wait_ready_loop(d, ready_file);
+
+    if (pop.popup) {
+        wp_viewport_destroy(pop_vp);
+        xdg_popup_destroy(pop.popup);
+        xdg_surface_destroy(pop.xdg_surface);
+        wl_surface_destroy(pop.surface);
+        if (pbuf)
+            wl_buffer_destroy(pbuf);
+    }
+    wp_viewport_destroy(win.viewport);
+    if (win.dec)
+        zxdg_toplevel_decoration_v1_destroy(win.dec);
+    xdg_toplevel_destroy(win.toplevel);
+    xdg_surface_destroy(win.xdg_surface);
+    wl_surface_destroy(win.surface);
+    wl_buffer_destroy(buf);
+    wl_display_roundtrip(d);
+
+    wp_viewporter_destroy(env.viewporter);
+    wp_single_pixel_buffer_manager_v1_destroy(env.spb_mgr);
+    if (env.dec_mgr)
+        zxdg_decoration_manager_v1_destroy(env.dec_mgr);
+    xdg_wm_base_destroy(env.wm_base);
+    wl_compositor_destroy(env.compositor);
+    wl_registry_destroy(reg);
+    wl_display_disconnect(d);
+    return 0;
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -921,10 +1177,22 @@ main(int argc, char *argv[])
         return test_windows(atoi(argv[2]));
     if (argc == 4 && strcmp(argv[1], "hold") == 0)
         return test_hold_windows(atoi(argv[2]), argv[3]);
+    if (argc == 10 && strcmp(argv[1], "fx-layer") == 0) {
+        return test_fx_layer(argv[2], argv[3], atoi(argv[4]), atoi(argv[5]),
+                             atoi(argv[6]), atoi(argv[7]), argv[8], argv[9]);
+    }
+    if ((argc == 7 || argc == 11) && strcmp(argv[1], "fx-win") == 0) {
+        int px = argc == 11 ? atoi(argv[7]) : 0;
+        int py = argc == 11 ? atoi(argv[8]) : 0;
+        int pw = argc == 11 ? atoi(argv[9]) : 0;
+        int ph = argc == 11 ? atoi(argv[10]) : 0;
+        return test_fx_win(argv[2], atoi(argv[3]), atoi(argv[4]), argv[5], argv[6],
+                           px, py, pw, ph);
+    }
     if (argc == 3 && strcmp(argv[1], "rogue") == 0)
         return test_rogue(argv[2]);
     if (argc == 2 && strcmp(argv[1], "shell") == 0)
         return test_shell();
-    fprintf(stderr, "usage: %s globals IFACE... | churn N | windows N | hold N FILE | rogue FILE | shell\n", argv[0]);
+    fprintf(stderr, "usage: %s globals IFACE... | churn N | windows N | hold N FILE | fx-layer ... | fx-win ... | rogue FILE | shell\n", argv[0]);
     return 2;
 }

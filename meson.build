@@ -2,7 +2,7 @@ project(
   'kajo',
   ['c', 'cpp'],
   version: '0.1.0',
-  meson_version: '>= 0.60.0',
+  meson_version: '>= 1.3.0',
   default_options: [
     'c_std=c17',
     'cpp_std=c++17',
@@ -831,7 +831,7 @@ test('mod-router', test_mod_router_exe)
 comp_strict_args = [
   '-Wall', '-Wextra', '-Werror', '-Wshadow', '-Wnull-dereference', '-Wformat=2',
   '-Wstrict-prototypes', '-Wmissing-prototypes', '-Wconversion', '-Wsign-conversion',
-  '-Wvla', '-fno-common', '-D_POSIX_C_SOURCE=200809L',
+  '-Wvla', '-Wundef', '-fno-common', '-D_POSIX_C_SOURCE=200809L',
 ] + cc.get_supported_arguments(['-ftrivial-auto-var-init=zero', '-fstack-protector-strong'])
 comp_xkb_dep   = dependency('xkbcommon')
 comp_pcre2_dep = dependency('libpcre2-8')
@@ -847,6 +847,7 @@ comp_core_lib = static_library(
     'src/comp/core/comp_binds.c',
     'src/comp/core/comp_rules.c',
     'src/comp/core/comp_config.c',
+    'src/comp/core/comp_fx_core.c',
     'src/comp/core/comp_touch.c',
     'src/comp/core/comp_gesture.c',
   ),
@@ -890,9 +891,66 @@ test_comp_config_exe = executable(
 test('comp-config', test_comp_config_exe,
   env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
 
+test_comp_fx_core_exe = executable(
+  'test-comp-fx-core',
+  files('tests/test_comp_fx_core.c'),
+  dependencies: [comp_core_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-fx-core', test_comp_fx_core_exe)
+
 # The compositor binary. System headers are included as -isystem so the strict
 # warning set applies to our code only (spec §7.2.2).
-comp_wlroots_dep = dependency('wlroots-0.20', include_type: 'system')
+#
+# wlroots comes from Kajo's fork (subprojects/wlroots, a git submodule pinned at
+# a kajo-* tag; docs/spec_wlroots_fork.md). It is built statically and never
+# installed (install with --skip-subprojects). Upstream's defaults are kept
+# (spec C1); features kajo-comp relies on are required so a missing dependency
+# fails the build instead of silently dropping the feature (spec K4).
+if get_option('wlroots') == 'fork'
+  comp_wlroots_proj = subproject('wlroots', default_options: [
+    'default_library=static',
+    'examples=false',
+    'werror=false',
+    'xwayland=enabled',
+    'session=enabled',
+    'color-management=enabled',
+  ])
+  comp_wlroots_dep = comp_wlroots_proj.get_variable('wlroots').as_system()
+else
+  comp_wlroots_dep = dependency('wlroots-0.20', include_type: 'system', required: true)
+endif
+comp_have_kfx = comp_wlroots_dep.get_variable('have_kfx', default_value: 'false')
+
+comp_fx_shader_headers = []
+if comp_have_kfx == 'true'
+  glslang = find_program('glslang', 'glslangValidator', required: true)
+  fx_shader_inc = meson.current_source_dir() / 'src/comp/fx/shaders'
+  comp_fx_shader_specs = [
+    ['shadow.frag', 'shadow_frag.h', 'shadow_frag_spv'],
+    ['dim.frag', 'dim_frag.h', 'dim_frag_spv'],
+  ]
+  foreach spec : comp_fx_shader_specs
+    comp_fx_shader_headers += custom_target(
+      spec[1],
+      input: files('src/comp/fx/shaders' / spec[0]),
+      output: spec[1],
+      depend_files: files('src/comp/fx/shaders/fx_common.glsl'),
+      command: [
+        glslang, '-V', '-I' + fx_shader_inc, '@INPUT@',
+        '-o', '@OUTPUT@', '--vn', spec[2], '--quiet',
+      ],
+    )
+  endforeach
+  comp_fx_sources = files(
+    'src/comp/fx/fx_registry.c',
+    'src/comp/fx/fx_runtime.c',
+    'src/comp/fx/fx_shadow.c',
+    'src/comp/fx/fx_dim.c',
+  )
+else
+  comp_fx_sources = files('src/comp/fx/fx_stub.c')
+endif
 comp_wl_server_dep = dependency('wayland-server', include_type: 'system')
 comp_talloc_dep = dependency('talloc', include_type: 'system')
 
@@ -929,6 +987,8 @@ kajo_comp_exe = executable(
     'src/comp/comp_switcher.c',
     'src/comp/comp_screenshot.c',
   ),
+  comp_fx_sources,
+  comp_fx_shader_headers,
   wlr_layer_shell_server_h,
   wlr_output_power_server_h,
   c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
@@ -1029,11 +1089,29 @@ comp_test_client_exe = executable(
   dependencies: [dependency('wayland-client', include_type: 'system'), comp_xkb_dep],
   build_by_default: false,
 )
+test_comp_fx_scene_exe = executable(
+  'test-comp-fx-scene',
+  files('tests/test_comp_fx_scene.c'),
+  comp_fx_sources,
+  comp_fx_shader_headers,
+  c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
+  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-fx-scene', test_comp_fx_scene_exe)
+
 test('comp-headless', find_program('tests/comp/comp_headless_smoke.sh'),
   args: [kajo_comp_exe, comp_test_client_exe],
   depends: [kajo_comp_exe, comp_test_client_exe],
   timeout: 180,
 )
+if comp_have_kfx == 'true'
+  test('comp-fx-shadow', find_program('tests/comp/comp_fx_shadow_test.sh'),
+    args: [kajo_comp_exe, comp_test_client_exe],
+    depends: [kajo_comp_exe, comp_test_client_exe],
+    timeout: 180,
+  )
+endif
 
 test('comp-audit', find_program('scripts/audit.sh'), args: ['comp'],
   workdir: meson.project_source_root())
@@ -1077,6 +1155,8 @@ test_fuzz_ipc_socket_exe = executable(
     'src/comp/comp_switcher.c',
     'src/comp/comp_screenshot.c',
   ),
+  comp_fx_sources,
+  comp_fx_shader_headers,
   wlr_layer_shell_server_h,
   wlr_output_power_server_h,
   c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],

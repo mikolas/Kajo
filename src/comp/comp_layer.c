@@ -4,6 +4,7 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "fx/comp_fx.h"
 
 #include <math.h>
 #include <string.h>
@@ -21,6 +22,7 @@ typedef struct {
     CompServer                      *server;
     struct wlr_layer_surface_v1     *lsurf;
     struct wlr_scene_layer_surface_v1 *scene_layer;
+    CompFxSurface                    *fx;
     struct wl_list                   popups;      /* CompLayerPopup.link */
     enum zwlr_layer_shell_v1_layer   cur_layer;
     bool                             follows_primary;
@@ -32,6 +34,7 @@ typedef struct {
     CompLayerSurface     *parent_layer;
     struct wlr_xdg_popup *popup;
     struct wlr_scene_tree *popup_tree;
+    CompFxSurface         *fx;
 } CompLayerPopup;
 
 static struct wlr_scene_tree *
@@ -72,8 +75,50 @@ static void
 set_buf_opacity_iter(struct wlr_scene_buffer *buffer, int sx, int sy, void *data)
 {
     (void)sx; (void)sy;
+    if (!wlr_scene_surface_try_from_buffer(buffer))
+        return;
     const float *opacity = data;
     wlr_scene_buffer_set_opacity(buffer, *opacity);
+}
+
+static void
+notify_bg_changed_for_layer(CompLayerSurface *cls)
+{
+    if (!cls || !cls->server || !cls->lsurf)
+        return;
+    if (cls->cur_layer != ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND &&
+        cls->cur_layer != ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM)
+        return;
+    CompOutput *o;
+    wl_list_for_each(o, &cls->server->outputs, link) {
+        if (!cls->lsurf->output || o->wlr_output == cls->lsurf->output)
+            comp_fx_background_changed(o);
+    }
+}
+
+static void
+sync_layer_popup_fx(CompLayerPopup *clp, const CompLayerRuleResult *parent_rr)
+{
+    if (!clp || !clp->fx || !clp->popup || !clp->popup->base)
+        return;
+    struct wlr_xdg_surface *xs = clp->popup->base;
+    struct wlr_surface *surf = xs->surface;
+    bool mapped = surf && surf->mapped;
+    int32_t w = xs->geometry.width;
+    int32_t h = xs->geometry.height;
+    if ((w <= 0 || h <= 0) && surf) {
+        w = surf->current.width;
+        h = surf->current.height;
+    }
+    CompFxSurfaceState st = {
+        .outer_box       = { 0, 0, w, h },
+        .surface_box     = { 0, 0, w, h },
+        .has_rule_shadow = parent_rr ? parent_rr->has_shadow : false,
+        .rule_shadow     = parent_rr ? parent_rr->shadow : false,
+        .is_focused      = true,
+        .mapped          = mapped,
+    };
+    comp_fx_surface_sync(clp->fx, &st);
 }
 
 static void
@@ -89,11 +134,29 @@ apply_layer_rules(CompLayerSurface *cls)
     float op = rr.has_opacity ? (float)rr.opacity : 1.0f;
     wlr_scene_node_for_each_buffer(&cls->scene_layer->tree->node, set_buf_opacity_iter, &op);
 
+    int32_t lw = cls->lsurf->surface ? cls->lsurf->surface->current.width : 0;
+    int32_t lh = cls->lsurf->surface ? cls->lsurf->surface->current.height : 0;
+    bool is_bg_or_excl = (cls->cur_layer == ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND ||
+                          cls->cur_layer == ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM ||
+                          cls->lsurf->current.exclusive_zone > 0);
+    CompFxSurfaceState st = {
+        .outer_box               = { 0, 0, lw, lh },
+        .surface_box             = { 0, 0, lw, lh },
+        .has_rule_shadow         = rr.has_shadow,
+        .rule_shadow             = rr.shadow,
+        .is_focused              = true,
+        .is_background_or_bottom = is_bg_or_excl,
+        .mapped                  = cls->mapped,
+    };
+    comp_fx_surface_sync(cls->fx, &st);
+    notify_bg_changed_for_layer(cls);
+
     float pop_op = rr.has_popup_opacity ? (float)rr.popup_opacity : op;
     CompLayerPopup *clp;
     wl_list_for_each(clp, &cls->popups, link) {
         if (clp->popup_tree)
             wlr_scene_node_for_each_buffer(&clp->popup_tree->node, set_buf_opacity_iter, &pop_op);
+        sync_layer_popup_fx(clp, &rr);
     }
 }
 
@@ -267,6 +330,8 @@ unconstrain_layer_popup(CompLayerPopup *clp)
 static int
 layer_popup_destructor(CompLayerPopup *clp)
 {
+    comp_fx_surface_destroy(clp->fx);
+    clp->fx = NULL;
     wl_list_remove(&clp->link);
     return 0;
 }
@@ -280,6 +345,8 @@ handle_layer_popup_commit(void *owner, void *data)
         unconstrain_layer_popup(clp);
         if (clp->parent_layer && clp->parent_layer->mapped)
             apply_layer_rules(clp->parent_layer);
+    } else if (clp->parent_layer && clp->parent_layer->mapped) {
+        sync_layer_popup_fx(clp, NULL);
     }
 }
 
@@ -290,6 +357,16 @@ handle_layer_popup_map(void *owner, void *data)
     (void)data;
     if (clp->parent_layer && clp->parent_layer->mapped)
         apply_layer_rules(clp->parent_layer);
+    else
+        sync_layer_popup_fx(clp, NULL);
+}
+
+static void
+handle_layer_popup_unmap(void *owner, void *data)
+{
+    CompLayerPopup *clp = owner;
+    (void)data;
+    sync_layer_popup_fx(clp, NULL);
 }
 
 static void
@@ -323,12 +400,15 @@ handle_layer_new_popup(void *owner, void *data)
     clp->parent_layer = cls;
     clp->popup        = popup;
     clp->popup_tree   = ptree;
+    if (ptree)
+        clp->fx = comp_fx_surface_create(cls->server, ptree, COMP_FX_SURFACE_POPUP);
     wl_list_insert(&cls->popups, &clp->link);
     talloc_set_destructor(clp, layer_popup_destructor);
 
     struct wlr_surface *surf = popup->base->surface;
     if (!comp_listen(clp, &surf->events.commit, handle_layer_popup_commit) ||
         !comp_listen(clp, &surf->events.map, handle_layer_popup_map) ||
+        !comp_listen(clp, &surf->events.unmap, handle_layer_popup_unmap) ||
         !comp_listen(clp, &popup->events.reposition, handle_layer_popup_reposition) ||
         !comp_listen(clp, &popup->events.destroy, handle_layer_popup_destroy)) {
         talloc_free(clp);
@@ -340,6 +420,8 @@ handle_layer_new_popup(void *owner, void *data)
 static int
 layer_surface_destructor(CompLayerSurface *cls)
 {
+    comp_fx_surface_destroy(cls->fx);
+    cls->fx = NULL;
     wl_list_remove(&cls->link);
     return 0;
 }
@@ -382,6 +464,7 @@ handle_layer_unmap(void *owner, void *data)
     CompLayerSurface *cls = owner;
     (void)data;
     cls->mapped = false;
+    apply_layer_rules(cls);
     comp_layer_arrange(cls->server);
 }
 
@@ -441,6 +524,8 @@ handle_new_layer_surface(void *owner, void *data)
         talloc_free(cls);
         return;
     }
+    if (cls->scene_layer->tree)
+        cls->fx = comp_fx_surface_create(s, cls->scene_layer->tree, COMP_FX_SURFACE_LAYER);
 
     struct wlr_surface *surf = lsurf->surface;
     bool ok = comp_listen(cls, &surf->events.commit, handle_layer_commit) &&

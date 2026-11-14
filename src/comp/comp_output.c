@@ -5,6 +5,7 @@
 
 #include "comp_log.h"
 #include "core/comp_schema_keys.h"
+#include "fx/comp_fx.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -462,6 +463,7 @@ handle_frame(void *owner, void *data)
     double now_s = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
 
     comp_window_tick_frame(s, now_s);
+    bool fx_animating = comp_fx_output_prepare(o, now_s);
 
     bool lock_active = s->locked;
     bool committed = false;
@@ -492,9 +494,9 @@ handle_frame(void *owner, void *data)
     if (animating || o->was_animating) {
         uint32_t msec = (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000);
         comp_input_refresh_pointer_focus(s, msec);
-        if (animating)
-            wlr_output_schedule_frame(o->wlr_output);
     }
+    if (animating || fx_animating)
+        wlr_output_schedule_frame(o->wlr_output);
     o->was_animating = animating;
 }
 

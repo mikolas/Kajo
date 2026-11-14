@@ -230,7 +230,7 @@ tests/
 ## 2. Build, Test & Debug Workflow
 
 ### Prerequisites
-- `wlroots-0.20` (`wlroots0.20` on Arch/CachyOS), `wayland-server`, `talloc`, `libinput`, `libpcre2-8` (`pcre2`), `cairo`, `pangocairo` (`pango`), `libpng`, `vulkan-icd-loader`, `xorg-xwayland` (for `kajo-comp`)
+- For `kajo-comp`: `wayland-server`, `talloc`, `libinput`, `libpcre2-8` (`pcre2`), `cairo`, `pangocairo` (`pango`), `libpng`, `xorg-xwayland`, plus the build dependencies of Kajo's wlroots fork (`subprojects/wlroots`, built statically; [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md)): `libdrm`, `seatd` (libseat), `libdisplay-info`, `libliftoff`, `lcms2`, `pixman`, `mesa` (`gbm`, `egl`), `vulkan-icd-loader`, `vulkan-headers`, `glslang`, `hwdata`, `libxcb`, `xcb-util-wm`, `xcb-util-renderutil`, `xcb-util-errors`. The system `wlroots0.20` package is not used.
 - `gtk4` (≥ 4.12), `gtksourceview-5`, `gtk4-layer-shell` (≥ 1.0)
 - `wayland-client`, `wayland-protocols`, `wayland-scanner`, `xkbcommon`
 - `json-glib-1.0`, `gio-2.0`, `gio-unix-2.0`
@@ -246,20 +246,24 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 31 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 30 automated test suites:
 
 ```bash
+# Clone with the wlroots submodule (existing clones: git submodule update --init)
+git clone --recursive https://github.com/mikolas/Kajo.git
+
 # Configure (defaults to prefix=~/.local)
 meson setup builddir
 
 # Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 31 automated test suites
+# Run all 30 automated test suites
 meson test -C builddir
 
-# Install to ~/.local/bin and ~/.local/share/kajo
-meson install -C builddir
+# Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
+# statically linked wlroots (headers, .a, .pc) out of the install tree.
+meson install -C builddir --skip-subprojects
 ```
 
 ### Automated Test Suites (`meson test -C builddir`)

@@ -195,10 +195,11 @@ warn_unknown_keys(toml_datum_t t, const char *const *known, size_t nknown,
 static const char *const k_win_keys[] = {
     COMP_KEY_APP_ID, COMP_KEY_TITLE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_FLOATING,
     COMP_KEY_WIDTH, COMP_KEY_FOCUS, COMP_KEY_ANCHOR_CORNER, COMP_KEY_ANCHOR_X,
-    COMP_KEY_ANCHOR_Y, COMP_KEY_SCROLL_FACTOR, COMP_KEY_VRR,
+    COMP_KEY_ANCHOR_Y, COMP_KEY_SCROLL_FACTOR, COMP_KEY_VRR, COMP_KEY_SHADOW,
 };
 static const char *const k_layer_keys[] = {
     COMP_KEY_NAMESPACE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_OPACITY, COMP_KEY_POPUP_OPACITY,
+    COMP_KEY_SHADOW,
 };
 static const char *const k_layer_unsupported[] = { "blur", "xray", "blur_popups" };   /* planned: ROADMAP.md §3.7.2 */
 
@@ -270,6 +271,7 @@ parse_window_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *d
     (void)get_bool(t, COMP_KEY_FLOATING, &w.set.has_floating, &w.set.floating, src, diag);
     (void)get_bool(t, COMP_KEY_FOCUS, &w.set.has_focus, &w.set.focus, src, diag);
     (void)get_bool(t, COMP_KEY_VRR, &w.set.has_vrr, &w.set.vrr, src, diag);
+    (void)get_bool(t, COMP_KEY_SHADOW, &w.set.has_shadow, &w.set.shadow, src, diag);
     (void)get_number(t, COMP_KEY_WIDTH, 0.05, 1.0, &w.set.has_width, &w.set.width, src, diag);
     (void)get_number(t, COMP_KEY_SCROLL_FACTOR, 0.01, 10.0, &w.set.has_scroll_factor, &w.set.scroll_factor, src, diag);
     (void)parse_anchor(t, &w.set, src, diag);
@@ -308,6 +310,7 @@ parse_layer_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *di
         return;
     (void)get_number(t, COMP_KEY_OPACITY, 0.0, 1.0, &l.set.has_opacity, &l.set.opacity, src, diag);
     (void)get_number(t, COMP_KEY_POPUP_OPACITY, 0.0, 1.0, &l.set.has_popup_opacity, &l.set.popup_opacity, src, diag);
+    (void)get_bool(t, COMP_KEY_SHADOW, &l.set.has_shadow, &l.set.shadow, src, diag);
 
     LayerRule *p = realloc(r->layer, (r->nlayer + 1) * sizeof(LayerRule));
     if (!p) {
@@ -459,6 +462,7 @@ comp_rules_match_window(const CompRules *r, const char *app_id, const char *titl
                                     out->anchor_x = s->anchor_x; out->anchor_y = s->anchor_y; }
         if (s->has_scroll_factor) { out->has_scroll_factor = true; out->scroll_factor = s->scroll_factor; }
         if (s->has_vrr)           { out->has_vrr = true; out->vrr = s->vrr; }
+        if (s->has_shadow)        { out->has_shadow = true; out->shadow = s->shadow; }
     }
 }
 
@@ -472,5 +476,6 @@ comp_rules_match_layer(const CompRules *r, const char *ns, CompLayerRuleResult *
             continue;
         if (l->set.has_opacity)       { out->has_opacity = true; out->opacity = l->set.opacity; }
         if (l->set.has_popup_opacity) { out->has_popup_opacity = true; out->popup_opacity = l->set.popup_opacity; }
+        if (l->set.has_shadow)        { out->has_shadow = true; out->shadow = l->set.shadow; }
     }
 }

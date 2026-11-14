@@ -1,0 +1,2 @@
+option('wlroots', type: 'combo', choices: ['fork', 'system'], value: 'fork',
+  description: 'Build kajo-comp against the bundled Kajo wlroots fork or system wlroots')

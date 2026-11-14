@@ -47,11 +47,13 @@ typedef struct {
     bool       has_anchor;        CompCorner corner; double anchor_x, anchor_y;  /* floating offset, logical px */
     bool       has_scroll_factor; double scroll_factor;  /* 0.01..10 */
     bool       has_vrr;           bool   vrr;
+    bool       has_shadow;        bool   shadow;
 } CompWindowRuleResult;
 
 typedef struct {
     bool   has_opacity;       double opacity;        /* 0..1 */
     bool   has_popup_opacity; double popup_opacity;  /* 0..1 */
+    bool   has_shadow;        bool   shadow;
 } CompLayerRuleResult;
 
 typedef struct CompRules CompRules;

@@ -109,7 +109,9 @@ The repository builds and installs **eight integrated native executables** (plus
 ### 1. System Dependencies (Arch Linux / CachyOS)
 ```bash
 sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-protocols \
-    wlroots0.20 talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    libdrm seatd libdisplay-info libliftoff lcms2 pixman mesa vulkan-headers glslang hwdata \
+    libxcb xcb-util-wm xcb-util-renderutil xcb-util-errors \
     xorg-xwayland json-glib glib2 libpulse pam poppler-glib libarchive mpv \
     libsidplayfp libgme libopenmpt libxmp gvfs gvfs-smb udisks2 blueprint-compiler meson ninja
 paru -S --needed uade bencodetools
@@ -137,10 +139,11 @@ For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server
 By default, `meson.build` configures `prefix=~/.local`, installing all eight binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
 
 ```bash
+git clone --recursive https://github.com/mikolas/Kajo.git   # existing clones: git submodule update --init
 meson setup builddir
 meson compile -C builddir
 meson test -C builddir
-meson install -C builddir
+meson install -C builddir --skip-subprojects   # keeps the statically linked wlroots out of the install tree
 ```
 
 ---

@@ -47,9 +47,9 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
-| **kajo-comp: wlroots fork for visual effects** | 📋 Planned | `kajo-comp` — see §3.6 below (fork branch, built as a static submodule) |
+| **kajo-comp: wlroots fork for visual effects** | 🚧 In progress | `kajo-comp` — see §3.6 below (fork branch, built as a static submodule) |
 | **kajo-comp: HDR10 output, SDR white level, tone mapping** | 📋 Planned | `kajo-comp` — §3.7.1 |
-| **kajo-comp: backdrop blur, window transitions, shadows** | 📋 Planned | `kajo-comp` — needs the wlroots fork (§3.6), design in §3.7.2 |
+| **kajo-comp: soft shadows, glassy backdrop blur, output stage (SDR white, tone mapping), transitions** | 📋 Planned | `kajo-comp` + wlroots fork — [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (M2–M5) |
 | **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
 | **Portal backends: Settings (theme/accent) and FileChooser** | 📋 Planned | `kajo` shell + `kajo-files --portal` — §3.8 |
 | **Apply the Kajo theme to other apps (GTK, Qt)** | 📋 Planned | `kajo-settings` — §3.9 |
@@ -85,27 +85,26 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.6 [PLANNED] `kajo-comp` wlroots fork for visual effects
+### 3.6 [IN PROGRESS] `kajo-comp` wlroots fork for visual effects
 
-**Status:** 📋 Planned, not started. Nothing below is implemented; `kajo-comp` builds against the system `wlroots-0.20` (0.20.2).
+**Status:** 🚧 In progress; specification in [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) (branch `feat/wlroots-fork`). Milestone 1 (plumbing) is implemented: `kajo-comp` builds against the fork `github.com/mikolas/wlroots` at `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject, verified in a live session on Host A. No effects exist yet.
 
 **Why:** Effects such as backdrop blur, window open/close/resize transitions, dimming, shadows and, later, HDR tone mapping (BT.2390) and an adjustable SDR white level need render passes and scene features that stock `wlroots` does not offer (`wlr_render_pass` has only `add_texture` / `add_rect`). HDR requires the Vulkan renderer: in 0.20.2 only Vulkan sets `features.input_color_transform` / `output_color_transform`, so GLES-based solutions (SceneFX, a GLES2 renderer swap) are excluded. Replacing `wlroots` entirely (~75k lines of backends, protocols and XWayland) is out of scope.
 
-**Approach:** Maintain a fork of `wlroots` on GitHub and build `kajo-comp` from a branch of it.
+**Approach:** Maintain a fork of `wlroots` on GitHub (`github.com/mikolas/wlroots`, filled from upstream at `gitlab.freedesktop.org/wlroots/wlroots`; upstream moved off GitHub, so this is a plain repository, not a GitHub fork) and build `kajo-comp` from a branch of it.
 
 - **Branch per upstream base:** `kajo/<upstream-tag>` (first: `kajo/0.20.2`), with the effect work as a short series of additive commits on top. Rebase onto new upstream releases (not master); cherry-pick only security / crash fixes in between.
 - **Pinned commits are never rewritten:** never force-push a branch that Kajo pins; tag every pinned commit (e.g. `kajo-0.20.2-fx1`) so old Kajo revisions stay buildable.
-- **Additive patches:** effects in new files (`render/vulkan/fx_*`, `types/scene/fx_*`, Vulkan shaders); upstream files only get small hooks. A `FORK.md` in the fork lists the base tag and the patch series.
+- **Additive patches:** effects in new files (`render/vulkan/kfx_*`, `types/scene/kfx_*`, `include/wlr/kfx/`, Vulkan shaders); upstream files only get small hooks. A `FORK.md` in the fork lists the base tag and the patch series.
 - **Vulkan only**, effects applied in linear light before the output encode so they compose with the colour pipeline and later PQ output. No rounded corners (excluded by the 0 px design system).
-- **Build:** git submodule at `subprojects/wlroots`, used via `subproject('wlroots')` (not `dependency('wlroots-0.20')`, so the system wlroots is never picked), linked statically (`default_library=static`), trimmed with the wlroots meson options. `PKGBUILD` gets the fork as a source plus wlroots' build dependencies (it currently does not declare wlroots at all); `DEVELOPMENT.md` documents `--recursive` clones.
+- **Drop-in compatible:** the fork is upstream plus additive extensions (`wlr_kfx_*`, detectable via `WLR_HAS_KFX`); no upstream functionality is removed and API/ABI stay compatible except for documented exceptions (spec §3).
+- **Build:** git submodule at `subprojects/wlroots` (HTTPS URL), used via `subproject('wlroots')` (not `dependency('wlroots-0.20')`, so the system wlroots is never picked), linked statically (`default_library=static`), with upstream's default options. `PKGBUILD` has the fork as a source plus wlroots' build and runtime dependencies; `DEVELOPMENT.md` and `README.md` document `--recursive` clones and `--skip-subprojects` installs.
 - **Tests:** headless Vulkan pixel tests per effect hook, so a rebase that breaks a hook fails the gate. Every effect must be damage-gated (no work while nothing changes; idle CPU budget in `AGENTS.md`).
 
 **Order:**
 
-1. Fork, branch `kajo/0.20.2` with no changes, tag, add the submodule, switch `meson.build` to `subproject()`, full gate. (No behaviour change; proves the build plumbing.)
-2. Effect hook + a trivial effect (tint) + headless Vulkan pixel test.
-3. Backdrop blur (design in §3.7.2).
-4. Window transitions; HDR tone mapping and SDR white level when HDR work starts (§3.7.1).
+1. ✅ Milestone 1: fork, branch `kajo/0.20.2`, submodule, `subproject()`, full gate (no behaviour change).
+2. M2–M5 per [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md): custom fragment shaders, node hooks and soft shadows; glassy backdrop blur; output stage (SDR white, tone mapping, per-pixel colour filters); transitions.
 
 **Open, not decided:** whether to contribute parts back upstream once they are stable.
 
@@ -120,10 +119,10 @@ The compositor spec describes what is built; everything below is not implemented
 | **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
 | **Adjustable SDR white level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) on a PQ output and rejects `color_transform` when an output image description is set. | Patch `wlr_scene`'s luminance multiplier in the wlroots fork (§3.6), or propose upstream. |
 | **Compositor-side HDR tone mapping (BT.2390)** | wlroots 0.20.2 has no tone-mapping curve; content above panel peak relies on the display's own tone mapping. | Tone-mapping pass in the wlroots fork (§3.6). |
-| **Backdrop blur (dual-Kawase frosted glass)** | `wlr_render_pass` has only `add_texture()` / `add_rect()`, no multi-pass API. `[[layer_rule]]` keys `blur`, `xray`, `blur_popups` are currently rejected with a non-fatal diagnostic. | §3.7.2, on the wlroots fork (§3.6). |
-| **Window open/close/resize shaders** | Same render-pass limitation; close animations need frozen textures of unmapped surfaces, resize crossfades need dual-texture blending. (Resize already animates the box size, M5.) | Effect passes in the wlroots fork (§3.6). |
+| **Glassy backdrop blur** | `wlr_render_pass` has only `add_texture()` / `add_rect()`; no custom shaders, no access to what is drawn below. `[[layer_rule]]` keys `blur`, `xray`, `blur_popups` are currently rejected with a non-fatal diagnostic. | Effects spec §10, milestone M3 (fork extension points X2/X3). |
+| **Window open/close/resize shaders** | Same render-pass limitation. (Resize already animates the box size, spec_kajo_comp M5.) | Effects spec, milestone M5 (pixel-level only; Kajo's own snapshot nodes). |
 | **Overview zoom (`toggle-overview`)** | `wlr_scene` has no tree scale transform; zooming means recomputing positions and `wlr_scene_buffer_set_dest_size()` for every surface, subsurface and popup. | Manual scene-buffer scaling pass, or a scale-aware scene node in the fork. |
-| **Drop shadows** | Not in `wlr_scene`. Rounded corners stay excluded (0 px design system). | Shadow rects / nine-patch (cheap with 0 px radius). |
+| **Soft shadows** | Not in `wlr_scene`; no custom shaders. Rounded corners stay excluded (0 px design system). | Effects spec §11, milestone M2: exact analytic shadow of a rectangle, no capture. |
 | **OSK: keep the focused text field visible** | Push-up is built: with `[osk] push_windows = true` the shell sets a layer-shell exclusive zone (`src/osk/osk.c`) and `kajo-comp` shrinks the working area and relays out (`comp_layer_arrange`). Checked by eye on Host A with kitty and Thorium (native Wayland). Missing: scrolling the focused column / window so the text cursor stays above the keyboard when the field is hidden even after the shrink. | Use the `text-input-v3` cursor rectangle to offset the camera. |
 | **`Mod + drag` interactive move/resize of tiled columns** | Keyboard-first workflow and presets cover v1; client-initiated move/resize exists for floating windows (`L8`). | `Mod + Left/Right Button` tiled grab. |
 | **Layout extras** | Not needed for v1. | Evaluate individually: `focus-follows-mouse`, `switch-preset-column-width-back`, a `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts. |
@@ -145,16 +144,7 @@ Verified against `wlroots 0.20.2` (`backend/drm`, `types/scene/wlr_scene.c`, `re
 
 #### 3.7.2 Backdrop blur design notes
 
-Goal: frosted-glass blur behind `kajo` layer surfaces and popups while keeping `wlr_scene_output_commit()` / `build_state()` (KMS test-before-commit cascade, damage tracking, direct scanout when nothing is blurred, screencopy). Requires the wlroots fork (§3.6) for Vulkan shader passes; GLES2 is excluded (§3.7.1).
-
-1. **Config & layer rules** (`src/comp/core/comp_schema_keys.h`, `comp_rules.{h,c}`, `comp_config.{h,c}`):
-   - `[blur]` section in `comp.toml` (`enabled`, `passes = 2`, `radius = 5.0`, `noise = 0.02`).
-   - Move `blur` out of `k_layer_unsupported` and add `popup_blur` and `xray` to `[[layer_rule]]`; update `test_rules_unsupported_keys_flagged` and add positive tests.
-2. **Backdrop nodes** (`src/comp/comp_layer.c`): a `wlr_scene_buffer` as the lowest child of each blurred layer surface / popup tree, sized to the xdg geometry (not the buffer, so GTK popover margins do not show a halo), with `point_accepts_input` returning false.
-3. **Shell CSS:** keep layer `opacity = 1.0` so text and 1 px accent borders stay crisp; lower `@metro-panel-bg` / `popover > contents` alpha (`0.72–0.80`) so the backdrop shows. Document in `docs/design_system.md` and the gallery.
-4. **Pipeline** (fork: Vulkan shader passes): capture the trees below the surface into a ¼-resolution offscreen buffer with a margin of the blur radius, 2 down + 2 up dual-Kawase passes, noise on the last pass against banding on dark glass. `xray = true` samples only `tree_background` + `tree_bottom` (wallpaper, nearly static; recommended default for the panel); `xray = false` also samples tiled and floating windows.
-5. **Damage gate** (`handle_frame` in `src/comp/comp_output.c`): before the output commit, recompute only if `scene_output->damage_ring.current` intersects a blur rect grown by the radius, or the rect moved. The buffer swap's own damage is consumed by the same commit. Known cost: with `xray = false`, the panel's own repaints (spectrum visualizer) are indistinguishable from damage underneath. Recompute in z-order (a popup's backdrop includes the blurred panel). Drop all buffers on GPU recovery, unmap and output size/scale changes; disable on pixman.
-6. **Fallback without the fork** (lower quality, not preferred): the same blur built from stock `wlr_render_pass` draws: repeated `add_texture` with sub-pixel `src_box` offsets, bilinear filtering and alpha weights `w_k / Σ_{j≤k} w_j`, which reproduces any tap kernel. Watch 8-bit banding between passes.
+Superseded by [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) §10 (glassy backdrop blur) and the fork extension points X1–X6 there. The GLES exclusion is covered there (§1, §5); the earlier fallback of emulating blur with repeated stock texture draws is dropped.
 
 ---
 
