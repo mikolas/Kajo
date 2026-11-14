@@ -9,6 +9,7 @@ KC="$1"
 CL="$2"
 fail=0
 export WLR_BACKENDS=headless WLR_RENDERER="${WLR_RENDERER:-pixman}" WLR_LIBINPUT_NO_DEVICES=1
+export KAJO_COMP_NO_XWAYLAND=1
 export KAJO_DEFAULTS_DIR="$(cd "$(dirname "$0")/../../data/defaults" && pwd)"
 unset WAYLAND_DISPLAY DISPLAY WAYLAND_SOCKET KAJO_COMP_SOCKET NIRI_SOCKET KAJO_CONFIG_DIR
 # Private runtime dir so the test never touches the user's live sockets

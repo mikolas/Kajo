@@ -4,6 +4,7 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "fx/comp_fx.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -52,6 +53,10 @@ typedef struct {
     bool           maximized;
     bool           tabbed;
     bool           resizing;
+    bool           floating;
+    bool           has_rule_shadow;
+    bool           rule_shadow;
+    bool           mapped;
     size_t         tab_count;
     size_t         tab_index;
     float          col_active[4];
@@ -72,6 +77,7 @@ typedef struct CompWindow {
     struct wlr_scene_rect                  *border[4];   /* top, bottom, left, right 1px rects */
     struct wlr_scene_rect                  *tabs[COMP_MAX_TABS]; /* spec §3.9 T3 tab strip */
     struct wlr_scene_tree                  *popup_tree;  /* xdg_popup trees (unclipped, above borders) */
+    CompFxSurface                          *fx;
 
     struct wlr_foreign_toplevel_handle_v1      *foreign_handle;
     struct wlr_ext_foreign_toplevel_handle_v1  *ext_foreign_handle;
@@ -89,6 +95,8 @@ typedef struct CompWindow {
     bool                                    is_urgent;
     bool                                    manually_floated;
     bool                                    rule_vrr;
+    bool                                    has_rule_shadow;
+    bool                                    rule_shadow;
     double                                  scroll_factor;
     bool                                    maximized_to_edges;
 
@@ -219,6 +227,10 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         .maximized       = w->maximized_to_edges,
         .tabbed          = g->tabbed,
         .resizing        = g->resizing && !fullscreen,
+        .floating        = g->floating,
+        .has_rule_shadow = w->has_rule_shadow,
+        .rule_shadow     = w->rule_shadow,
+        .mapped          = w->mapped,
         .tab_count       = g->tab_count,
         .tab_index       = g->tab_index,
     };
@@ -270,10 +282,23 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         wlr_scene_subsurface_tree_set_clip(&w->xdg_tree->node, &clip);
     }
 
+    int32_t outer_w = cw;
+    int32_t outer_h = ch;
+    int32_t surf_x  = 0;
+    int32_t surf_y  = 0;
+    int32_t surf_w  = cw;
+    int32_t surf_h  = ch;
+
     if (!hide_border) {
         /* Borders hug a client that is smaller than its tile, except while the size animates (M5) */
         int32_t bw = (!st.resizing && geom.width > 0 && geom.width < cw) ? geom.width : cw;
         int32_t bh = (!st.resizing && geom.height > 0 && geom.height < ch) ? geom.height : ch;
+        outer_w = bw + 2 * b;
+        outer_h = bh + 2 * b;
+        surf_x  = b;
+        surf_y  = b;
+        surf_w  = bw;
+        surf_h  = bh;
         /* top, bottom, left, right around client at (b, b) */
         wlr_scene_node_set_position(&w->border[0]->node, 0, 0);
         wlr_scene_rect_set_size(w->border[0], bw + 2 * b, b);
@@ -326,6 +351,23 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         wlr_scene_rect_set_size(w->tabs[i], 4, seg_h);
         wlr_scene_rect_set_color(w->tabs[i], (i == g->tab_index) ? col_active : k_color_tab_inactive);
         cur_y += seg_h + 2;
+    }
+
+    if (w->fx) {
+        CompFxSurfaceState fx_st = {
+            .outer_box       = { 0, 0, outer_w, outer_h },
+            .surface_box     = { surf_x, surf_y, surf_w, surf_h },
+            .shadow_below    = w->backdrop ? &w->backdrop->node
+                                           : (w->xdg_tree ? &w->xdg_tree->node : NULL),
+            .dim_above       = w->xdg_tree ? &w->xdg_tree->node : NULL,
+            .has_rule_shadow = w->has_rule_shadow,
+            .rule_shadow     = w->rule_shadow,
+            .is_floating     = g->floating,
+            .is_fullscreen   = fullscreen,
+            .is_focused      = focused,
+            .mapped          = w->mapped,
+        };
+        comp_fx_surface_sync(w->fx, &fx_st);
     }
 }
 
@@ -1259,6 +1301,8 @@ window_destructor(CompWindow *w)
         w->toplevel->base->data = NULL;
     if (w->xsurf)
         w->xsurf->data = NULL;
+    comp_fx_surface_destroy(w->fx);
+    w->fx = NULL;
     if (s->scene && w->scene_tree) {
         w->scene_tree->node.data = NULL;
         wlr_scene_node_destroy(&w->scene_tree->node);
@@ -1409,8 +1453,10 @@ reapply_dynamic_rules_for_window(CompWindow *w)
     if (s->rules)
         comp_rules_match_window(s->rules, w->app_id, w->title, &rr);
 
-    w->scroll_factor = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
-    w->rule_vrr      = rr.has_vrr ? rr.vrr : false;
+    w->scroll_factor   = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
+    w->rule_vrr        = rr.has_vrr ? rr.vrr : false;
+    w->has_rule_shadow = rr.has_shadow;
+    w->rule_shadow     = rr.shadow;
 
     /* Spec §5.2.3 & §3.3 O3: if not manually floated/tiled since map and a newly matching
      * rule, parent relationship, or modal xdg_dialog state requires floating, promote to
@@ -1429,6 +1475,8 @@ reapply_dynamic_rules_for_window(CompWindow *w)
             comp_layout_focus_window(s->layout, prev_focus);
         comp_window_relayout(s);
     } else {
+        if (w->has_last_g)
+            update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
         comp_output_update_vrr(s);
     }
 }
@@ -1494,8 +1542,10 @@ handle_toplevel_map(void *owner, void *data)
     if (s->rules)
         comp_rules_match_window(s->rules, w->app_id, w->title, &rr);
 
-    w->scroll_factor = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
-    w->rule_vrr      = rr.has_vrr ? rr.vrr : false;
+    w->scroll_factor   = rr.has_scroll_factor ? rr.scroll_factor : 1.0;
+    w->rule_vrr        = rr.has_vrr ? rr.vrr : false;
+    w->has_rule_shadow = rr.has_shadow;
+    w->rule_shadow     = rr.shadow;
 
     CompRect work = {0};
     comp_server_working_area(s, &work);
@@ -1561,6 +1611,9 @@ handle_toplevel_unmap(void *owner, void *data)
     w->id = 0;
     w->mapped = false;
     wl_list_remove(&w->link);
+
+    if (w->fx)
+        comp_fx_surface_sync(w->fx, &(CompFxSurfaceState){ .mapped = false });
 
     if (w->scene_tree)
         wlr_scene_node_set_enabled(&w->scene_tree->node, false);
@@ -1743,6 +1796,7 @@ handle_new_toplevel(void *owner, void *data)
         talloc_free(w);
         return;
     }
+    w->fx = comp_fx_surface_create(s, w->scene_tree, COMP_FX_SURFACE_WINDOW);
 
     update_window_strings(w);
 
@@ -1799,6 +1853,7 @@ comp_window_create_xwayland(CompServer *s, struct wlr_xwayland_surface *xsurf)
         talloc_free(w);
         return NULL;
     }
+    w->fx = comp_fx_surface_create(s, w->scene_tree, COMP_FX_SURFACE_WINDOW);
     update_window_strings(w);
     return w;
 }

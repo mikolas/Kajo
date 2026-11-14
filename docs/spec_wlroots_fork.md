@@ -1,6 +1,6 @@
 # Spec: Kajo's wlroots fork (`kajo-comp` effects base)
 
-**Status:** Milestone 1 implemented and verified (M1.1–M1.6). `kajo-comp` builds against the fork's `kajo-0.20.2-fx2` (upstream 0.20.2 plus `FORK.md`, no code changes) as a static subproject. Kajo branch: `feat/wlroots-fork`. Roadmap: [`ROADMAP.md`](../ROADMAP.md) §3.6.
+**Status:** Milestone 1 (M1.1–M1.6) and Milestone 2 (`kajo-0.20.2-fx3` = `0b0ac7d6`: `WLR_HAS_KFX`/`have_kfx`, X1, X4, X6, plus `wlr_scene` `color_manager_v1_destroy` listener fix) implemented, verified (V1–V4) and pushed. `kajo-comp` builds against `kajo-0.20.2-fx3` as a static subproject (`-Dwlroots=system` fallback verified). Kajo branch: `feat/wlroots-fork`. Roadmap: [`ROADMAP.md`](../ROADMAP.md) §3.6.
 
 Until Milestone 1, `kajo-comp` linked the system `wlroots0.20` package (0.20.2) through `dependency('wlroots-0.20')`; it now builds the fork as a static subproject (§4, K2). Effects such as blur, transitions, shadows and HDR tone mapping need render passes and scene features that stock wlroots does not offer, so Kajo builds from its own wlroots branch. Why a fork and not SceneFX or a replacement is recorded in ROADMAP §3.6.
 

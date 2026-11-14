@@ -288,6 +288,7 @@ comp_config_new_defaults(uint32_t mod_mask)
     cfg->mod_mask = mod_mask ? mod_mask : COMP_MOD_SUPER;
     comp_layout_config_defaults(&cfg->layout);
     comp_motion_config_defaults(&cfg->motion);
+    comp_fx_config_defaults(&cfg->fx);
     cfg->border_px = 1;
 
     (void)parse_hex_rgba("#0078d4", cfg->accent_rgba);
@@ -904,6 +905,130 @@ merge_touch_section(CompConfig *cfg, toml_datum_t tch)
 }
 
 static void
+merge_effects_shadow_layers(CompFxShadowConfig *sh, toml_datum_t arr,
+                            const char *src, CompDiagList *diag)
+{
+    if (arr.type == TOML_UNKNOWN)
+        return;
+    if (arr.type != TOML_ARRAY) {
+        comp_diag_add(diag, src, arr.lineno, "[effects.shadow] 'layers' must be an array of tables; ignored");
+        return;
+    }
+
+    size_t count = (size_t)arr.u.arr.size;
+    if (count > COMP_FX_SHADOW_MAX_LAYERS) {
+        comp_diag_add(diag, src, arr.lineno,
+                      "[effects.shadow] at most %d layers supported; truncating extras",
+                      COMP_FX_SHADOW_MAX_LAYERS);
+        count = COMP_FX_SHADOW_MAX_LAYERS;
+    }
+
+    CompFxShadowLayer parsed[COMP_FX_SHADOW_MAX_LAYERS];
+    memset(parsed, 0, sizeof(parsed));
+    size_t valid_n = 0;
+
+    for (size_t i = 0; i < count; i++) {
+        toml_datum_t elem = arr.u.arr.elem[i];
+        if (elem.type != TOML_TABLE) {
+            comp_diag_add(diag, src, elem.lineno, "[effects.shadow] layer entry must be a table; ignored");
+            continue;
+        }
+        CompFxShadowLayer l = { .sigma = 6.0, .offset_x = 0.0, .offset_y = 0.0, .opacity = 0.25 };
+        double v = 0.0;
+        toml_datum_t sg = toml_get(elem, COMP_KEY_SIGMA);
+        if (sg.type != TOML_UNKNOWN) {
+            if (datum_as_double(sg, &v) && v > 0.0 && v <= 256.0)
+                l.sigma = v;
+            else
+                comp_diag_add(diag, src, sg.lineno, "[effects.shadow] 'sigma' must be in (0..256]; ignored");
+        }
+        toml_datum_t ox = toml_get(elem, COMP_KEY_OFFSET_X);
+        if (ox.type != TOML_UNKNOWN) {
+            if (datum_as_double(ox, &v) && v >= -256.0 && v <= 256.0)
+                l.offset_x = v;
+            else
+                comp_diag_add(diag, src, ox.lineno, "[effects.shadow] 'offset_x' must be in -256..256; ignored");
+        }
+        toml_datum_t oy = toml_get(elem, COMP_KEY_OFFSET_Y);
+        if (oy.type != TOML_UNKNOWN) {
+            if (datum_as_double(oy, &v) && v >= -256.0 && v <= 256.0)
+                l.offset_y = v;
+            else
+                comp_diag_add(diag, src, oy.lineno, "[effects.shadow] 'offset_y' must be in -256..256; ignored");
+        }
+        toml_datum_t op = toml_get(elem, COMP_KEY_OPACITY);
+        if (op.type != TOML_UNKNOWN) {
+            if (datum_as_double(op, &v) && v >= 0.0 && v <= 1.0)
+                l.opacity = v;
+            else
+                comp_diag_add(diag, src, op.lineno, "[effects.shadow] 'opacity' must be in 0..1; ignored");
+        }
+        parsed[valid_n++] = l;
+    }
+
+    sh->n_layers = valid_n;
+    if (valid_n > 0)
+        memcpy(sh->layers, parsed, valid_n * sizeof(parsed[0]));
+}
+
+static void
+merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDiagList *diag)
+{
+    if (fx.type != TOML_TABLE)
+        return;
+
+    toml_datum_t en = toml_get(fx, COMP_KEY_ENABLED);
+    if (en.type == TOML_BOOLEAN)
+        cfg->fx.enabled = en.u.boolean;
+    toml_datum_t di = toml_get(fx, COMP_KEY_DITHER);
+    if (di.type == TOML_BOOLEAN)
+        cfg->fx.dither = di.u.boolean;
+
+    toml_datum_t sh = toml_get(fx, COMP_SEC_FX_SHADOW);
+    if (sh.type == TOML_TABLE) {
+        toml_datum_t sen = toml_get(sh, COMP_KEY_ENABLED);
+        if (sen.type == TOML_BOOLEAN)
+            cfg->fx.shadow.enabled = sen.u.boolean;
+        toml_datum_t scol = toml_get(sh, COMP_KEY_COLOR);
+        if (scol.type == TOML_STRING && !parse_hex_rgba(scol.u.s, cfg->fx.shadow.color_rgba))
+            comp_diag_add(diag, src, scol.lineno, "[effects.shadow] invalid hex color '%s'; ignored", scol.u.s);
+        toml_datum_t us = toml_get(sh, COMP_KEY_UNFOCUSED_SCALE);
+        double dval = 0.0;
+        if (us.type != TOML_UNKNOWN) {
+            if (datum_as_double(us, &dval) && dval >= 0.0 && dval <= 2.0)
+                cfg->fx.shadow.unfocused_scale = dval;
+            else
+                comp_diag_add(diag, src, us.lineno, "[effects.shadow] 'unfocused_scale' must be in 0..2; ignored");
+        }
+        toml_datum_t dur = toml_get(sh, COMP_KEY_DURATION_MS);
+        if (dur.type == TOML_INT64 && dur.u.int64 >= 0 && dur.u.int64 <= 5000)
+            cfg->fx.shadow.duration_ms = (int32_t)dur.u.int64;
+        merge_effects_shadow_layers(&cfg->fx.shadow, toml_get(sh, COMP_KEY_LAYERS), src, diag);
+    }
+
+    toml_datum_t dm = toml_get(fx, COMP_SEC_FX_DIM);
+    if (dm.type == TOML_TABLE) {
+        toml_datum_t den = toml_get(dm, COMP_KEY_ENABLED);
+        if (den.type == TOML_BOOLEAN)
+            cfg->fx.dim.enabled = den.u.boolean;
+        toml_datum_t dcol = toml_get(dm, COMP_KEY_COLOR);
+        if (dcol.type == TOML_STRING && !parse_hex_rgba(dcol.u.s, cfg->fx.dim.color_rgba))
+            comp_diag_add(diag, src, dcol.lineno, "[effects.dim] invalid hex color '%s'; ignored", dcol.u.s);
+        toml_datum_t dop = toml_get(dm, COMP_KEY_OPACITY);
+        double dval = 0.0;
+        if (dop.type != TOML_UNKNOWN) {
+            if (datum_as_double(dop, &dval) && dval >= 0.0 && dval <= 1.0)
+                cfg->fx.dim.opacity = dval;
+            else
+                comp_diag_add(diag, src, dop.lineno, "[effects.dim] 'opacity' must be in 0..1; ignored");
+        }
+        toml_datum_t ddur = toml_get(dm, COMP_KEY_DURATION_MS);
+        if (ddur.type == TOML_INT64 && ddur.u.int64 >= 0 && ddur.u.int64 <= 5000)
+            cfg->fx.dim.duration_ms = (int32_t)ddur.u.int64;
+    }
+}
+
+static void
 merge_comp_sections_from_table(CompConfig *cfg, toml_datum_t tab, const char *name, CompDiagList *diag)
 {
     if (tab.type != TOML_TABLE)
@@ -911,6 +1036,7 @@ merge_comp_sections_from_table(CompConfig *cfg, toml_datum_t tab, const char *na
 
     merge_layout_section(cfg, toml_get(tab, COMP_SEC_LAYOUT), name, diag);
     merge_animations_section(cfg, toml_get(tab, COMP_SEC_ANIMATIONS), name, diag);
+    merge_effects_section(cfg, toml_get(tab, COMP_SEC_EFFECTS), name, diag);
 
     toml_datum_t sw = toml_get(tab, COMP_SEC_SWITCHER);
     if (sw.type == TOML_TABLE) {

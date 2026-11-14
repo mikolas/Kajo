@@ -20,6 +20,7 @@
 
 #include "comp_binds.h"
 #include "comp_diag.h"
+#include "comp_fx_core.h"
 #include "comp_layout.h"
 #include "comp_motion.h"
 #include "comp_rules.h"
@@ -109,6 +110,7 @@ typedef struct CompConfig {
     float                switcher_urgent_rgba[4];
 
     CompMotionConfig     motion;
+    CompFxConfig         fx;
 
     char                *screenshot_path;
     bool                 screenshot_copy;

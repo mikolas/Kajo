@@ -520,6 +520,24 @@ test_config_shipped_defaults(void)
     g_assert_true(lr.has_opacity);
     g_assert_cmpfloat_with_epsilon(lr.opacity, 0.85, 1e-9);
 
+    CompFxConfig def_fx;
+    comp_fx_config_defaults(&def_fx);
+    g_assert_cmpint(cfg->fx.enabled, ==, def_fx.enabled);
+    g_assert_cmpint(cfg->fx.dither, ==, def_fx.dither);
+    g_assert_cmpint(cfg->fx.shadow.enabled, ==, def_fx.shadow.enabled);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.unfocused_scale, def_fx.shadow.unfocused_scale, 1e-6);
+    g_assert_cmpint(cfg->fx.shadow.duration_ms, ==, def_fx.shadow.duration_ms);
+    g_assert_cmpuint(cfg->fx.shadow.n_layers, ==, def_fx.shadow.n_layers);
+    for (size_t i = 0; i < def_fx.shadow.n_layers; i++) {
+        g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[i].sigma, def_fx.shadow.layers[i].sigma, 1e-6);
+        g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[i].offset_x, def_fx.shadow.layers[i].offset_x, 1e-6);
+        g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[i].offset_y, def_fx.shadow.layers[i].offset_y, 1e-6);
+        g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[i].opacity, def_fx.shadow.layers[i].opacity, 1e-6);
+    }
+    g_assert_cmpint(cfg->fx.dim.enabled, ==, def_fx.dim.enabled);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.dim.opacity, def_fx.dim.opacity, 1e-6);
+    g_assert_cmpint(cfg->fx.dim.duration_ms, ==, def_fx.dim.duration_ms);
+
     comp_config_free(cfg);
     comp_diag_clear(&d);
 }
@@ -775,6 +793,129 @@ test_greeter_config_filtering(void)
     g_free(tmp);
 }
 
+static void
+test_effects_and_shadow_rules(void)
+{
+    gchar *tmp = g_dir_make_tmp("kajo-fx-cfg-XXXXXX", NULL);
+    g_assert_nonnull(tmp);
+    gchar *p_cfg = g_build_filename(tmp, "comp.toml", NULL);
+    gchar *p_rules = g_build_filename(tmp, "rules.toml", NULL);
+
+    g_assert_true(g_file_set_contents(p_cfg,
+        "[effects]\n"
+        "enabled = true\n"
+        "dither = true\n"
+        "\n"
+        "[effects.shadow]\n"
+        "enabled = true\n"
+        "color = \"#112233ff\"\n"
+        "unfocused_scale = 0.45\n"
+        "duration_ms = 220\n"
+        "\n"
+        "[[effects.shadow.layers]]\n"
+        "sigma = 12.5\n"
+        "offset_x = -3.0\n"
+        "offset_y = 4.0\n"
+        "opacity = 0.40\n"
+        "\n"
+        "[effects.dim]\n"
+        "enabled = true\n"
+        "color = \"#050607\"\n"
+        "opacity = 0.22\n"
+        "duration_ms = 180\n", -1, NULL));
+
+    g_assert_true(g_file_set_contents(p_rules,
+        "[[rule]]\n"
+        "app_id = ['^org\\.example\\.Shadowed$']\n"
+        "floating = true\n"
+        "shadow = true\n"
+        "\n"
+        "[[rule]]\n"
+        "app_id = ['^org\\.example\\.Flat$']\n"
+        "shadow = false\n"
+        "\n"
+        "[[layer_rule]]\n"
+        "namespace = ['^kajo-popup$']\n"
+        "shadow = true\n"
+        "\n"
+        "[[layer_rule]]\n"
+        "namespace = ['^kajo-panel$']\n"
+        "shadow = false\n", -1, NULL));
+
+    const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
+    if (!root)
+        root = KAJO_SOURCE_DIR;
+    g_autofree gchar *defaults_dir = g_build_filename(root, "data", "defaults", NULL);
+
+    CompDiagList d;
+    comp_diag_init(&d);
+    CompConfig *cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    g_assert_nonnull(cfg);
+    g_assert_cmpuint(d.n, ==, 0);
+
+    g_assert_true(cfg->fx.enabled);
+    g_assert_true(cfg->fx.dither);
+    g_assert_true(cfg->fx.shadow.enabled);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[0], (double)0x11 / 255.0, 1e-4);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[1], (double)0x22 / 255.0, 1e-4);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[2], (double)0x33 / 255.0, 1e-4);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.unfocused_scale, 0.45, 1e-6);
+    g_assert_cmpint(cfg->fx.shadow.duration_ms, ==, 220);
+    g_assert_cmpuint(cfg->fx.shadow.n_layers, ==, 1);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[0].sigma, 12.5, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[0].offset_x, -3.0, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[0].offset_y, 4.0, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.layers[0].opacity, 0.40, 1e-6);
+    g_assert_true(cfg->fx.dim.enabled);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.dim.opacity, 0.22, 1e-6);
+    g_assert_cmpint(cfg->fx.dim.duration_ms, ==, 180);
+
+    CompWindowRuleResult wr = {0};
+    comp_rules_match_window(cfg->rules, "org.example.Shadowed", "t", &wr);
+    g_assert_true(wr.has_shadow && wr.shadow);
+    memset(&wr, 0, sizeof(wr));
+    comp_rules_match_window(cfg->rules, "org.example.Flat", "t", &wr);
+    g_assert_true(wr.has_shadow && !wr.shadow);
+
+    CompLayerRuleResult lr = {0};
+    comp_rules_match_layer(cfg->rules, "kajo-popup", &lr);
+    g_assert_true(lr.has_shadow && lr.shadow);
+    memset(&lr, 0, sizeof(lr));
+    comp_rules_match_layer(cfg->rules, "kajo-panel", &lr);
+    g_assert_true(lr.has_shadow && !lr.shadow);
+
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    /* Invalid range diagnostics for [effects.shadow] & [effects.dim] */
+    g_assert_true(g_file_set_contents(p_cfg,
+        "[effects.shadow]\n"
+        "color = \"not-hex\"\n"
+        "unfocused_scale = 5.0\n"
+        "[[effects.shadow.layers]]\n"
+        "sigma = 0.0\n"
+        "opacity = 2.0\n"
+        "[effects.dim]\n"
+        "opacity = -0.2\n", -1, NULL));
+
+    comp_diag_init(&d);
+    cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    g_assert_nonnull(cfg);
+    g_assert_true(comp_diag_contains(&d, "invalid hex color"));
+    g_assert_true(comp_diag_contains(&d, "unfocused_scale"));
+    g_assert_true(comp_diag_contains(&d, "'sigma' must be"));
+    g_assert_true(comp_diag_contains(&d, "[effects.dim] 'opacity' must be"));
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    g_unlink(p_cfg);
+    g_unlink(p_rules);
+    g_free(p_cfg);
+    g_free(p_rules);
+    g_rmdir(tmp);
+    g_free(tmp);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -790,6 +931,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/config/shipped-defaults", test_config_shipped_defaults);
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
     g_test_add_func("/comp/config/greeter-filtering", test_greeter_config_filtering);
+    g_test_add_func("/comp/config/effects-and-shadow-rules", test_effects_and_shadow_rules);
     g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
     g_test_add_func("/comp/touch/horizontal-drag-routing", test_horizontal_drag_routing);
     return g_test_run();

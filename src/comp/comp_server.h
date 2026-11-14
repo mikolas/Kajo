@@ -86,8 +86,9 @@ struct wlr_xwayland_surface;
 struct CompWindow;
 struct CompSwitcher;
 struct CompScreenshot;
+struct CompFxSystem;
 
-typedef struct {
+typedef struct CompServerOptions {
     const char *const *startup_argv;      /* optional: run once the socket exists (no shell) */
     const char        *config_path;       /* optional --config override */
     bool               exit_with_startup; /* terminate when that child exits (tests, greeter-like use) */
@@ -208,6 +209,7 @@ typedef struct CompServer {
     struct CompIpcState                  *ipc;
     struct CompSwitcher                  *switcher;
     struct CompScreenshot                *screenshot;
+    struct CompFxSystem                  *fx;
     size_t                                last_active_ws;
 
     /* Generational CompWinId slot table (spec §2.6) */
@@ -239,7 +241,7 @@ typedef struct CompServer {
                                                     uint32_t keysym, bool pressed);
 } CompServer;
 
-typedef struct {
+typedef struct CompOutput {
     struct wl_list            link;    /* CompServer.outputs */
     CompServer               *server;
     struct wlr_output        *wlr_output;
@@ -258,7 +260,7 @@ typedef struct {
     CompVrrPolicy             manual_vrr;
 } CompOutput;
 
-typedef struct {
+typedef struct CompWindowInfo {
     CompWinId   id;
     const char *title;
     const char *app_id;

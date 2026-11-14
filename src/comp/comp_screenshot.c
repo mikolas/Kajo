@@ -5,6 +5,7 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "fx/comp_fx.h"
 
 #include <drm_fourcc.h>
 #include <errno.h>
@@ -679,7 +680,7 @@ clip_box_to_pass(int x, int y, int w, int h, int pass_w, int pass_h,
 }
 
 static void
-render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pass,
+render_node_recursive(CompServer *s, struct wlr_render_pass *pass,
                       struct wlr_scene_node *node, int parent_lx, int parent_ly,
                       int origin_lx, int origin_ly, double scale,
                       int pass_w, int pass_h)
@@ -694,7 +695,7 @@ render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pas
         struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
         struct wlr_scene_node *child;
         wl_list_for_each(child, &tree->children, link) {
-            render_node_recursive(renderer, pass, child, lx, ly,
+            render_node_recursive(s, pass, child, lx, ly,
                                   origin_lx, origin_ly, scale, pass_w, pass_h);
         }
         return;
@@ -740,6 +741,11 @@ render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pas
         if (!clip_box_to_pass(bx, by, bw, bh, pass_w, pass_h, &cbox))
             return;
 
+        struct wlr_box dst_box = { .x = bx, .y = by, .width = bw, .height = bh };
+        if (comp_fx_screenshot_render_node(s, pass, node, &dst_box, &cbox,
+                                           origin_lx, origin_ly, scale, pass_w, pass_h))
+            return;
+
         struct wlr_client_buffer *cbuf = wlr_client_buffer_get(sbuf->buffer);
         struct wlr_single_pixel_buffer_v1 *spb =
             wlr_single_pixel_buffer_v1_try_from_buffer(
@@ -762,7 +768,7 @@ render_node_recursive(struct wlr_renderer *renderer, struct wlr_render_pass *pas
 
         struct wlr_texture *tex = (cbuf && cbuf->texture)
                                       ? cbuf->texture
-                                      : wlr_texture_from_buffer(renderer, sbuf->buffer);
+                                      : wlr_texture_from_buffer(s->renderer, sbuf->buffer);
         if (!tex)
             return;
 
@@ -926,7 +932,7 @@ render_subtree_to_argb8888(CompServer *s, struct wlr_scene_node *root_node,
     if (!gpu_buf)
         return NULL;
 
-    struct wlr_render_pass *pass = wlr_renderer_begin_buffer_pass(s->renderer, gpu_buf, NULL);
+    struct wlr_render_pass *pass = comp_fx_screenshot_begin_pass(s, gpu_buf);
     if (!pass) {
         wlr_buffer_drop(gpu_buf);
         return NULL;
@@ -938,7 +944,7 @@ render_subtree_to_argb8888(CompServer *s, struct wlr_scene_node *root_node,
         .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
     });
 
-    render_node_recursive(s->renderer, pass, root_node, parent_lx, parent_ly,
+    render_node_recursive(s, pass, root_node, parent_lx, parent_ly,
                           origin_lx, origin_ly, scale, phys_w, phys_h);
 
     if (!wlr_render_pass_submit(pass)) {

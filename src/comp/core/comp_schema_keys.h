@@ -22,6 +22,7 @@
 #define COMP_SEC_COMP                     "comp"
 #define COMP_SEC_LAYOUT                   "layout"
 #define COMP_SEC_ANIMATIONS               "animations"
+#define COMP_SEC_EFFECTS                  "effects"
 #define COMP_SEC_SWITCHER                 "switcher"
 #define COMP_SEC_SCREENSHOTS              "screenshots"
 #define COMP_SEC_XWAYLAND                 "xwayland"
@@ -135,6 +136,19 @@
 #define COMP_KEY_NAMESPACE                "namespace"
 #define COMP_KEY_OPACITY                  "opacity"
 #define COMP_KEY_POPUP_OPACITY            "popup_opacity"
+#define COMP_KEY_SHADOW                   "shadow"
+
+/* ───────────────────────── [effects] Subtables & Keys ───────────────────────── */
+#define COMP_SEC_FX_SHADOW                "shadow"
+#define COMP_SEC_FX_DIM                   "dim"
+#define COMP_KEY_DITHER                   "dither"
+#define COMP_KEY_COLOR                    "color"
+#define COMP_KEY_LAYERS                   "layers"
+#define COMP_KEY_SIGMA                    "sigma"
+#define COMP_KEY_OFFSET_X                 "offset_x"
+#define COMP_KEY_OFFSET_Y                 "offset_y"
+#define COMP_KEY_UNFOCUSED_SCALE          "unfocused_scale"
+#define COMP_KEY_DURATION_MS              "duration_ms"
 
 /* ───────────────────────── IPC Wire Protocol (`kajo-comp.sock`) ───────────────────────── */
 #define COMP_IPC_ENV_SOCKET               "KAJO_COMP_SOCKET"

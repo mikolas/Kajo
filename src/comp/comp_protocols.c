@@ -6,6 +6,7 @@
 #include "comp_server.h"
 
 #include "comp_log.h"
+#include "fx/comp_fx.h"
 
 #include <stdlib.h>
 #include <talloc.h>
@@ -556,6 +557,7 @@ typedef struct {
     CompServer            *server;
     struct wlr_xdg_popup  *popup;
     struct wlr_scene_tree *scene_tree;
+    CompFxSurface         *fx;
 } CompPopup;
 
 typedef struct {
@@ -607,9 +609,34 @@ unconstrain_popup(CompPopup *cp)
     wlr_xdg_popup_unconstrain_from_box(cp->popup, &box);
 }
 
+static void
+sync_popup_fx(CompPopup *cp)
+{
+    if (!cp || !cp->fx || !cp->popup || !cp->popup->base)
+        return;
+    struct wlr_xdg_surface *xs = cp->popup->base;
+    struct wlr_surface *surf = xs->surface;
+    bool mapped = surf && surf->mapped;
+    int32_t w = xs->geometry.width;
+    int32_t h = xs->geometry.height;
+    if ((w <= 0 || h <= 0) && surf) {
+        w = surf->current.width;
+        h = surf->current.height;
+    }
+    CompFxSurfaceState st = {
+        .outer_box   = { 0, 0, w, h },
+        .surface_box = { 0, 0, w, h },
+        .is_focused  = true,
+        .mapped      = mapped,
+    };
+    comp_fx_surface_sync(cp->fx, &st);
+}
+
 static int
 popup_destructor(CompPopup *cp)
 {
+    comp_fx_surface_destroy(cp->fx);
+    cp->fx = NULL;
     if (cp->popup && cp->popup->base && cp->popup->base->data == cp)
         cp->popup->base->data = NULL;
     return 0;
@@ -622,6 +649,23 @@ handle_popup_commit(void *owner, void *data)
     (void)data;
     if (cp->popup->base->initial_commit)
         unconstrain_popup(cp);
+    sync_popup_fx(cp);
+}
+
+static void
+handle_popup_map(void *owner, void *data)
+{
+    CompPopup *cp = owner;
+    (void)data;
+    sync_popup_fx(cp);
+}
+
+static void
+handle_popup_unmap(void *owner, void *data)
+{
+    CompPopup *cp = owner;
+    (void)data;
+    sync_popup_fx(cp);
 }
 
 static void
@@ -630,6 +674,7 @@ handle_popup_reposition(void *owner, void *data)
     CompPopup *cp = owner;
     (void)data;
     unconstrain_popup(cp);
+    sync_popup_fx(cp);
 }
 
 static void
@@ -671,10 +716,14 @@ handle_new_popup(void *owner, void *data)
     cp->scene_tree = wlr_scene_xdg_surface_create(parent_tree, popup->base);
     popup->base->data = cp;
     talloc_set_destructor(cp, popup_destructor);
+    if (cp->scene_tree)
+        cp->fx = comp_fx_surface_create(s, cp->scene_tree, COMP_FX_SURFACE_POPUP);
 
     struct wlr_surface *surf = popup->base->surface;
     if (!cp->scene_tree ||
         !comp_listen(cp, &surf->events.commit, handle_popup_commit) ||
+        !comp_listen(cp, &surf->events.map, handle_popup_map) ||
+        !comp_listen(cp, &surf->events.unmap, handle_popup_unmap) ||
         !comp_listen(cp, &popup->events.reposition, handle_popup_reposition) ||
         !comp_listen(cp, &popup->events.destroy, handle_popup_destroy)) {
         talloc_free(cp);

@@ -1,6 +1,6 @@
 # Spec: `kajo-comp` effect pipeline (pixel / fragment shaders)
 
-**Status:** draft, nothing implemented (revision 6, after five reviews). Kajo branch `feat/wlroots-fork`. Builds on [`docs/spec_wlroots_fork.md`](spec_wlroots_fork.md) (the fork, its compatibility rules C1–C7 and Milestone 1) and replaces the effect outline in ROADMAP §3.6 / §3.7.2.
+**Status:** Milestone 2 (Foundation + shadows + dim, `kajo-0.20.2-fx3`) implemented and verified (V1–V4, SH1–SH4, CB1–CB6); pre-M2/M3 spikes S1–S6, S8 verified. Kajo branch `feat/wlroots-fork`. Builds on [`docs/spec_wlroots_fork.md`](spec_wlroots_fork.md) (the fork, its compatibility rules C1–C7 and Milestone 1) and replaces the effect outline in ROADMAP §3.6 / §3.7.2.
 
 This spec defines how `kajo-comp` runs custom fragment shaders on what it draws: which parts live in the wlroots fork, which in Kajo, how a frame flows through them, and how HDR constrains all of it. The acceptance tests are a **glassy backdrop blur** (§10) and **high-quality soft shadows** (§11).
 
@@ -501,16 +501,20 @@ Each milestone ends with a new `kajo-0.20.2-fxN` tag, a Kajo pin bump (fork spec
 - **D3 (Tiled shadows):** off by default (§2). If wanted, a subtle variant whose anchor is clipped to the gaps.
 - **D4 (Defaults):** §10.3 and §11.3 values are starting points to tune on Host A.
 
-## 14. Not verified yet (spikes before M2 / M3)
+## 14. Verification spikes (before M2 / M3)
 
-- **S1:** a pixel readback confirming the blend-image scale of §5 (sRGB white → 1.0; PQ 203 cd/m² → 1.0) on the headless Vulkan renderer.
-- **S2:** X1 inside wlroots' Vulkan pass: adding our pipeline to the pass's render-pass variants and descriptor layouts without touching existing pipelines.
-- **S3:** X2 cost on Lunar Lake: building a render list for the box and rendering it below a popup into a ½-size target, versus the pass-split fallback.
-- **S4:** which pathway Kajo's outputs use today (expected two-pass via the gamma 2.2 default) and what forcing two-pass costs where the sRGB pathway would apply.
-- **S5:** the cost of the hook check (`wlr_addon_find()` over a node's one or two addons) in `scene_entry_render()` for unhooked nodes, measured on a busy scene.
-- **S6:** the anchor at runtime. From the source (§4.1): a 1×1 transparent buffer is not dropped as invisible, not dropped as black-opaque, and has no opaque region. Still to confirm by running it: correct `visible` region after `set_dest_size()`, skipped by `wlr_scene_node_at()` with `point_accepts_input` false, and no texture upload or draw with an `INSTEAD` hook.
-- **S8:** the effect batch: cost of one wlroots render pass per X2 / X3 step (submissions, CPU time) on a dirty frame with two glass surfaces, and whether merging X3 steps into the X2 pass's command buffer is worth its fork code. (Recording into wlroots' staging command buffer is ruled out, §6 X3.)
-- **S7:** HDR output on Host A is blocked on `libdisplay-info` 0.4 (0.3.0 installed; waiting for the Arch package). HDR checks run headless until then.
+Spikes S1–S6 and S8 were run on `Intel(R) Graphics (LNL)` (Mesa `26.2.6-arch3.1`, headless Vulkan + GBM DMA-BUF targets) against the pinned `libwlroots-0.20.a` (`kajo-0.20.2-fx2`) with `VK_LAYER_KHRONOS_validation`; GPU/CPU timings were measured with validation off.
+
+- **S1 — Verified (blend-image scale & PQ encode):** `wlr_scene` scales incoming textures by `1.0` (`sRGB`, `EXT_LINEAR`) and `10000/203 = 49.261` (`ST2084_PQ`). Readback from `R16G16B16A16_SFLOAT` `blend_image` (via `wlr_texture_from_buffer` + `wlr_texture_read_pixels`, `0` validation errors): `sRGB white = 1.000000`, `PQ 203 cd/m² = 0.998535` (under scene multiplier), `PQ 1000 cd/m² = 4.906250`; PQ encode into `XBGR2101010` outputs `202.9 cd/m²` and `998.9 cd/m²`.
+  - *Test-harness finding:* `vulkan_import_dmabuf(..., for_render=true)` and `two_pass.blend_image` lack `VK_IMAGE_USAGE_TRANSFER_SRC_BIT`, so calling `vulkan_read_pixels` directly on a render target triggers `VUID-01212` / `VUID-00219`. Pixel tests must wrap the output `wlr_buffer` via `wlr_texture_from_buffer()` + `wlr_texture_read_pixels()` (as `comp_screenshot.c` does). `HEADLESS-1` modifier-less swapchains also reject `ABGR16161616F` and `XBGR2101010`.
+- **S2 — Verified (X1 inside `VkRenderPass`):** A separate `VkGraphicsPipeline` targeting `setup->render_pass` (`subpass 0`, reusing `vert_module`) bound and drew cleanly between `wlr_render_pass_add_rect()` calls on both `two_pass` and `one_pass_SRGB` with `0` validation errors, leaving `setup->pipelines` untouched (`3 -> 3`).
+  - *Required invariants:* clear `pass->bound_pipeline = VK_NULL_HANDLE` after custom draws; call `render_pass_mark_box_updated(pass, &box)` per clip rect (or `two_pass` subpass 1 skips encoding); route any externally sampled client DMA-BUF through `foreign_textures` / `pass->textures` sync.
+- **S3 — Measured (X2 vs pass-split on LNL, `VkQueryPool` `52.083 ns/tick`):** Popup (`1750×1225`, ½-size `875×613`, `R16F`, 6 overdraw quads): `X2 = 0.153 ms`, `X3 (2d+2u) = 0.084 ms`, main `2880×1800` = `1.883 ms` (`2.120 ms` total). Panel (`2880×112`, ½-size `1440×56`, 4 quads): `X2 = 0.138 ms`, `X3 = 0.028 ms`. Pass-split fallback (`STORE` + `vkCmdBlitImage` `2880×1800 -> 875×613` + X3 + `LOAD_OP_LOAD` resume): `0.165 ms` blit alone + `LOAD/STORE` (`2.116 ms` heavy-main total), plus requires `blend_image` usage changes and breaks stacked glass. Keeps X2+X3 design.
+- **S4 — Verified (output pathway & cost):** `src/comp/comp_output.c` passes `NULL` options to `wlr_scene_output_build_state()`, so Kajo outputs already use `two_pass` (`GAMMA22`, `blend_image != NULL`). At `2880×1800` (8 overlapping `1440×900` quads): `two_pass_GAMMA22 = 1.210 ms` sync (`0.998 ms` pipelined) vs `one_pass_SRGB = 0.826 ms` sync (`0.537 ms` pipelined). Note: `wlr_render_timer_create()` returns `NULL` on Vulkan.
+- **S5 — Verified (`wlr_addon_find()` cost):** Over 1,000 `wlr_scene_buffer` nodes (5,000 iterations): `2.34 ns/call` (`2.338 µs/frame`) with 2 unrelated addons/node; `1.59 ns/call` (`1.587 µs/frame`) with 0 addons.
+- **S6 — Verified (anchor runtime semantics):** `1×1 RGBA(0,0,0,0)` buffer + `set_dest_size(400, 300)` at `(100, 100)` with a `150×150` opaque occluder above produced an empty `opaque_region`, left the underlying background `visible` unpunched (`n_rects=4`), computed exact occluded `node.visible` (`n_rects=4`, `(100,100)-(500,400)`), and skipped cleanly in `wlr_scene_node_at()` (`point_accepts_input` false). Stock `wlr_scene` uploaded a 1×1 texture as expected without the fork's `INSTEAD` hook.
+- **S8 — Measured (effect batching, 2 glass surfaces = 10 offscreen + 1 main = 11 passes):** `11` separate DMA-BUF `wlr_render_pass` submissions took `0.264 ms` CPU record+submit and `3.430 ms` sync total (vs `0.057 ms` / `2.562 ms` for main pass alone). In single/grouped Vulkan CBs on internal `VkImage`s: `11` submits = `0.022 ms` CPU / `2.641 ms` GPU span / `2.963 ms` wall; `3` submits (panel batch, popup batch, main) = `0.008 ms` CPU / `2.451 ms` GPU span / `2.803 ms` wall; `1` submit = `0.004 ms` CPU / `2.374 ms` GPU span / `2.774 ms` wall. Merging X3 steps onto pooled internal `VkImage`s in X2's CB saves `~0.63–0.66 ms` per dirty two-glass frame and eliminates per-blur DMA-BUF sync.
+- **S7 — Blocked:** `libdisplay-info 0.3.0-1.1` installed on Host A (`0.4` not yet packaged). HDR physical scanout checks remain headless until `0.4` lands.
 
 ## 15. Code boundaries (rules for the M2–M4 code)
 
