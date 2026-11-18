@@ -272,6 +272,144 @@ test_transforms_and_packing(void)
     g_assert_cmpint(empty_clamp.height, ==, 0);
 }
 
+static void
+test_m4_color_filters_and_bt2390(void)
+{
+    CompFxColorFilter f = COMP_FX_FILTER_NONE;
+    g_assert_true(comp_fx_color_filter_from_str("none", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_NONE);
+    g_assert_cmpstr(comp_fx_color_filter_to_str(f), ==, "none");
+
+    g_assert_true(comp_fx_color_filter_from_str("GRAYSCALE", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_GRAYSCALE);
+    g_assert_cmpstr(comp_fx_color_filter_to_str(f), ==, "grayscale");
+
+    g_assert_true(comp_fx_color_filter_from_str("night-light", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_NIGHT_LIGHT);
+    g_assert_true(comp_fx_color_filter_from_str("night_light", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_NIGHT_LIGHT);
+    g_assert_cmpstr(comp_fx_color_filter_to_str(f), ==, "night-light");
+
+    g_assert_true(comp_fx_color_filter_from_str("protanopia", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_PROTANOPIA);
+    g_assert_true(comp_fx_color_filter_from_str("deuteranopia", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_DEUTERANOPIA);
+    g_assert_true(comp_fx_color_filter_from_str("tritanopia", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_TRITANOPIA);
+    g_assert_false(comp_fx_color_filter_from_str("sepia-unknown", &f));
+
+    CompFxConfig cfg;
+    comp_fx_config_defaults(&cfg);
+    float mat[9];
+    g_assert_false(comp_fx_color_filter_matrix(&cfg, mat));
+    g_assert_cmpfloat_with_epsilon(mat[0], 1.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(mat[4], 1.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(mat[8], 1.0f, 1e-6);
+
+    /* Grayscale preserves neutral white (1, 1, 1) and produces equal RGB for primaries */
+    cfg.color_filter          = COMP_FX_FILTER_GRAYSCALE;
+    cfg.color_filter_strength = 1.0;
+    g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+    const float white[3] = { 1.0f, 1.0f, 1.0f };
+    float out_rgb[3] = {0};
+    comp_fx_color_filter_apply_linear(mat, white, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 1.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[1], 1.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[2], 1.0f, 1e-5);
+
+    const float red[3] = { 1.0f, 0.0f, 0.0f };
+    comp_fx_color_filter_apply_linear(mat, red, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[1], 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[2], 0.2126f, 1e-5);
+
+    /* Strength 0.5 blends 50% between identity and grayscale */
+    cfg.color_filter_strength = 0.5;
+    g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+    comp_fx_color_filter_apply_linear(mat, red, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 0.5f * 1.0f + 0.5f * 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[1], 0.5f * 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[2], 0.5f * 0.2126f, 1e-5);
+
+    /* Night Light: 6500K is identity (returns false); 3200K warms (1.0 == R > G > B > 0) */
+    cfg.color_filter            = COMP_FX_FILTER_NIGHT_LIGHT;
+    cfg.color_filter_strength   = 1.0;
+    cfg.night_light_temperature = 6500;
+    g_assert_false(comp_fx_color_filter_matrix(&cfg, mat));
+
+    cfg.night_light_temperature = 3200;
+    g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+    comp_fx_color_filter_apply_linear(mat, white, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 1.0f, 1e-5);
+    g_assert(out_rgb[1] < 0.90f && out_rgb[1] > 0.20f);
+    g_assert(out_rgb[2] < out_rgb[1] && out_rgb[2] > 0.02f);
+
+    /* CVD filters preserve neutral white */
+    CompFxColorFilter cvds[3] = {
+        COMP_FX_FILTER_PROTANOPIA,
+        COMP_FX_FILTER_DEUTERANOPIA,
+        COMP_FX_FILTER_TRITANOPIA,
+    };
+    for (int i = 0; i < 3; i++) {
+        cfg.color_filter = cvds[i];
+        g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+        comp_fx_color_filter_apply_linear(mat, white, out_rgb);
+        g_assert_cmpfloat_with_epsilon(out_rgb[0], 1.0f, 1e-4);
+        g_assert_cmpfloat_with_epsilon(out_rgb[1], 1.0f, 1e-4);
+        g_assert_cmpfloat_with_epsilon(out_rgb[2], 1.0f, 1e-4);
+    }
+
+    /* ITU-R BT.2390 EETF in PQ domain */
+    float max_pq = comp_fx_linear_to_pq(600.0f / 10000.0f); /* ~0.7014 */
+    float ks     = 1.5f * max_pq - 0.5f;                    /* ~0.5521 */
+    g_assert(max_pq > 0.65f && max_pq < 0.75f);
+    g_assert(ks > 0.50f && ks < max_pq);
+
+    /* 1. Identity below and at knee KS */
+    g_assert_cmpfloat_with_epsilon(comp_fx_bt2390_pq(0.25f, max_pq), 0.25f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(comp_fx_bt2390_pq(ks, max_pq), ks, 1e-6);
+
+    /* 2. C^1 continuity at KS (right slope ~= 1.0) */
+    float eps = 1e-4f;
+    float slope_ks = (comp_fx_bt2390_pq(ks + eps, max_pq) - comp_fx_bt2390_pq(ks, max_pq)) / eps;
+    g_assert_cmpfloat_with_epsilon(slope_ks, 1.0f, 1e-2);
+
+    /* 3. Strict monotonicity above KS and exact asymptote to max_pq at e1 = 1.0 */
+    float prev = ks;
+    for (int step = 1; step <= 20; step++) {
+        float e1 = ks + (1.0f - ks) * ((float)step / 20.0f);
+        float e2 = comp_fx_bt2390_pq(e1, max_pq);
+        g_assert(e2 > prev);
+        g_assert(e2 <= max_pq + 1e-6f);
+        prev = e2;
+    }
+    g_assert_cmpfloat_with_epsilon(comp_fx_bt2390_pq(1.0f, max_pq), max_pq, 1e-6);
+    float slope_top = (comp_fx_bt2390_pq(1.0f, max_pq) - comp_fx_bt2390_pq(1.0f - eps, max_pq)) / eps;
+    g_assert_cmpfloat_with_epsilon(slope_top, 0.0f, 1e-2);
+
+    /* 4. TOML config parsing for M4 [effects] keys */
+    CompConfig *cc = comp_config_new_defaults(0);
+    CompDiagList diag = {0};
+    const char *toml_ok =
+        "[effects]\n"
+        "color_filter = \"night-light\"\n"
+        "color_filter_strength = 0.75\n"
+        "night_light_temperature = 3400\n"
+        "sdr_white_nits = 260.0\n"
+        "tonemap = true\n"
+        "tonemap_peak_nits = 616.9\n";
+    g_assert_true(comp_config_merge_toml(cc, toml_ok, strlen(toml_ok), "m4.toml", NULL, false, &diag));
+    g_assert_cmpuint(diag.n, ==, 0);
+    g_assert_cmpint(cc->fx.color_filter, ==, COMP_FX_FILTER_NIGHT_LIGHT);
+    g_assert_cmpfloat_with_epsilon(cc->fx.color_filter_strength, 0.75, 1e-6);
+    g_assert_cmpint(cc->fx.night_light_temperature, ==, 3400);
+    g_assert_cmpfloat_with_epsilon(cc->fx.sdr_white_nits, 260.0, 1e-6);
+    g_assert_true(cc->fx.tonemap);
+    g_assert_cmpfloat_with_epsilon(cc->fx.tonemap_peak_nits, 616.9, 1e-6);
+    comp_diag_clear(&diag);
+    comp_config_free(cc);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -280,5 +418,6 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/fx-core/reach-and-anchor-box", test_reach_and_anchor_box);
     g_test_add_func("/comp/fx-core/coverage-gaussian-box", test_coverage_gaussian_box);
     g_test_add_func("/comp/fx-core/transforms-and-packing", test_transforms_and_packing);
+    g_test_add_func("/comp/fx-core/m4-color-filters-and-bt2390", test_m4_color_filters_and_bt2390);
     return g_test_run();
 }

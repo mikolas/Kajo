@@ -1333,6 +1333,367 @@ test_m3_review_regressions(void)
     comp_config_free(cfg);
 }
 
+static void
+test_m4_output_stage_and_color_filters(void)
+{
+    setenv("WLR_BACKENDS", "headless", 1);
+    setenv("WLR_RENDERER", "vulkan", 1);
+
+    struct wl_display *dpy = wl_display_create();
+    g_assert_nonnull(dpy);
+    struct wl_event_loop *loop = wl_display_get_event_loop(dpy);
+    struct wlr_backend *backend = wlr_headless_backend_create(loop);
+    g_assert_nonnull(backend);
+    struct wlr_renderer *renderer = wlr_renderer_autocreate(backend);
+    if (!renderer || !wlr_renderer_is_vk(renderer)) {
+        g_error("Headless Vulkan renderer required for comp-fx-scene (KAJO_REQUIRE_VULKAN)");
+    }
+    struct wlr_allocator *alloc = wlr_allocator_autocreate(backend, renderer);
+    g_assert_nonnull(alloc);
+
+    struct wlr_scene *scene = wlr_scene_create();
+    g_assert_nonnull(scene);
+
+    struct wlr_output *wo = wlr_headless_add_output(backend, 320, 200);
+    g_assert_nonnull(wo);
+    g_assert_true(wlr_output_init_render(wo, alloc, renderer));
+
+    struct wlr_output_state st;
+    wlr_output_state_init(&st);
+    wlr_output_state_set_enabled(&st, true);
+    wlr_output_state_set_custom_mode(&st, 320, 200, 60000);
+    g_assert_true(wlr_output_commit_state(wo, &st));
+    wlr_output_state_finish(&st);
+
+    struct wlr_scene_output *so = wlr_scene_output_create(scene, wo);
+    g_assert_nonnull(so);
+
+    CompConfig *cfg = comp_config_new_defaults(0);
+    cfg->fx.dither  = false; /* disable dither for deterministic exact pixel comparisons */
+
+    CompServer srv = {0};
+    wl_list_init(&srv.outputs);
+    wl_list_init(&srv.windows);
+    wl_list_init(&srv.layer_surfaces);
+    srv.display   = dpy;
+    srv.backend   = backend;
+    srv.renderer  = renderer;
+    srv.allocator = alloc;
+    srv.scene     = scene;
+    srv.config    = cfg;
+
+    CompOutput out = {0};
+    out.server       = &srv;
+    out.wlr_output   = wo;
+    out.scene_output = so;
+    wl_list_insert(&srv.outputs, &out.link);
+
+    g_assert_true(comp_fx_init(&srv));
+    comp_fx_config_apply(&srv, cfg);
+    g_assert_null(comp_fx_output_get_color_transform(&out));
+
+    /* Place 4 colour patches: Red (x=0..80), Green (x=80..160), Blue (x=160..240), White (x=240..320) */
+    const float c_red[4]   = { 1.0f, 0.0f, 0.0f, 1.0f };
+    const float c_green[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+    const float c_blue[4]  = { 0.0f, 0.0f, 1.0f, 1.0f };
+    const float c_white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    struct wlr_scene_rect *r_red   = wlr_scene_rect_create(&scene->tree, 80, 200, c_red);
+    struct wlr_scene_rect *r_green = wlr_scene_rect_create(&scene->tree, 80, 200, c_green);
+    struct wlr_scene_rect *r_blue  = wlr_scene_rect_create(&scene->tree, 80, 200, c_blue);
+    struct wlr_scene_rect *r_white = wlr_scene_rect_create(&scene->tree, 80, 200, c_white);
+    wlr_scene_node_set_position(&r_red->node,   0,   0);
+    wlr_scene_node_set_position(&r_green->node, 80,  0);
+    wlr_scene_node_set_position(&r_blue->node,  160, 0);
+    wlr_scene_node_set_position(&r_white->node, 240, 0);
+
+    /* 1. Unfiltered SDR commit */
+    comp_fx_output_prepare(&out, 1.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_r[4] = {0}, px_g[4] = {0}, px_w[4] = {0};
+    struct wlr_texture *tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_r, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 40, .y = 100, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_w, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    g_assert_true(wlr_output_commit_state(wo, &st));
+    wlr_output_state_finish(&st);
+    /* XRGB8888 little-endian: [0]=B, [1]=G, [2]=R */
+    g_assert_cmpint(px_r[2], ==, 255);
+    g_assert_cmpint(px_r[1], ==, 0);
+    g_assert_cmpint(px_r[0], ==, 0);
+    g_assert_cmpint(px_w[2], ==, 255);
+    g_assert_cmpint(px_w[1], ==, 255);
+    g_assert_cmpint(px_w[0], ==, 255);
+
+    /* 2. Grayscale colour filter on SDR via comp_fx_output_get_color_transform() */
+    cfg->fx.color_filter          = COMP_FX_FILTER_GRAYSCALE;
+    cfg->fx.color_filter_strength = 1.0;
+    comp_fx_config_apply(&srv, cfg);
+    struct wlr_color_transform *ct = comp_fx_output_get_color_transform(&out);
+    g_assert_nonnull(ct);
+
+    comp_fx_output_prepare(&out, 2.0);
+    struct wlr_scene_output_state_options s_opts = { .color_transform = ct };
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_r, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 40, .y = 100, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_g, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 120, .y = 100, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_w, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    g_assert_true(wlr_output_commit_state(wo, &st));
+    wlr_output_state_finish(&st);
+
+    /* Red grayscale: linear 0.2126 -> gamma2.2 = 0.2126^(1/2.2) * 255 ~= 126 */
+    int exp_r_gray = (int)lround(comp_fx_linear_to_gamma22(0.2126f) * 255.0f);
+    int exp_g_gray = (int)lround(comp_fx_linear_to_gamma22(0.7152f) * 255.0f);
+    g_assert_cmpint(px_r[0], ==, px_r[1]);
+    g_assert_cmpint(px_r[1], ==, px_r[2]);
+    g_assert_cmpint(abs((int)px_r[2] - exp_r_gray), <=, 2);
+    g_assert_cmpint(px_g[0], ==, px_g[1]);
+    g_assert_cmpint(abs((int)px_g[1] - exp_g_gray), <=, 2);
+    /* White stays (255, 255, 255) */
+    g_assert_cmpint(px_w[0], ==, 255);
+    g_assert_cmpint(px_w[1], ==, 255);
+    g_assert_cmpint(px_w[2], ==, 255);
+
+    /* 3. Night-light filter (3200K) warms white patch (255 == R > G > B) */
+    cfg->fx.color_filter            = COMP_FX_FILTER_NIGHT_LIGHT;
+    cfg->fx.night_light_temperature = 3200;
+    comp_fx_config_apply(&srv, cfg);
+    s_opts.color_transform = comp_fx_output_get_color_transform(&out);
+    g_assert_nonnull(s_opts.color_transform);
+
+    comp_fx_output_prepare(&out, 3.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_w, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    g_assert_true(wlr_output_commit_state(wo, &st));
+    wlr_output_state_finish(&st);
+
+    g_assert_cmpint(px_w[2], ==, 255);
+    g_assert_cmpint(px_w[1], <, 240);
+    g_assert_cmpint(px_w[0], <, px_w[1]);
+
+    /* 4. Resetting filter to NONE restores unfiltered (255, 255, 255) */
+    cfg->fx.color_filter = COMP_FX_FILTER_NONE;
+    comp_fx_config_apply(&srv, cfg);
+    g_assert_null(comp_fx_output_get_color_transform(&out));
+
+    comp_fx_output_prepare(&out, 4.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_w, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    g_assert_true(wlr_output_commit_state(wo, &st));
+    wlr_output_state_finish(&st);
+    g_assert_cmpint(px_w[0], ==, 255);
+    g_assert_cmpint(px_w[1], ==, 255);
+    g_assert_cmpint(px_w[2], ==, 255);
+
+    /* 5. X6 HDR PQ output stage: SDR reference white override, HDR filter folding, and BT.2390 tone mapping */
+    const struct wlr_output_image_description hdr_desc = {
+        .primaries         = WLR_COLOR_NAMED_PRIMARIES_BT2020,
+        .transfer_function = WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ,
+    };
+
+    /* 5a. Default SDR white on PQ (203 cd/m^2 -> PQ(203/10000) * 255 ~= 148) */
+    cfg->fx.sdr_white_nits    = 0.0;
+    cfg->fx.tonemap           = false;
+    cfg->fx.tonemap_peak_nits = 0.0;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 5.0);
+
+    wlr_output_state_init(&st);
+    wlr_output_state_set_image_description(&st, &hdr_desc);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_pq_203[4] = {0};
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_pq_203, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+
+    int exp_pq_203 = (int)lround(comp_fx_linear_to_pq(203.0f / 10000.0f) * 255.0f);
+    g_assert_cmpint(abs((int)px_pq_203[0] - exp_pq_203), <=, 2);
+    g_assert_cmpint(abs((int)px_pq_203[1] - exp_pq_203), <=, 2);
+    g_assert_cmpint(abs((int)px_pq_203[2] - exp_pq_203), <=, 2);
+
+    /* 5b. Override SDR white to 406 cd/m^2 -> PQ(406/10000) * 255 ~= 167 */
+    cfg->fx.sdr_white_nits = 406.0;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 6.0);
+    g_assert_cmpfloat_with_epsilon(wlr_kfx_output_get_sdr_white_nits(wo), 406.0f, 1e-3);
+
+    wlr_output_state_init(&st);
+    wlr_output_state_set_image_description(&st, &hdr_desc);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_pq_406[4] = {0};
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_pq_406, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+
+    int exp_pq_406 = (int)lround(comp_fx_linear_to_pq(406.0f / 10000.0f) * 255.0f);
+    g_assert_cmpint(px_pq_406[1], >, px_pq_203[1] + 14);
+    g_assert_cmpint(abs((int)px_pq_406[0] - exp_pq_406), <=, 2);
+    g_assert_cmpint(abs((int)px_pq_406[1] - exp_pq_406), <=, 2);
+    g_assert_cmpint(abs((int)px_pq_406[2] - exp_pq_406), <=, 2);
+
+    /* 5c. Fold colour filter (night-light 3000K) into X6's HDR output matrix on ST2084_PQ */
+    cfg->fx.color_filter            = COMP_FX_FILTER_NIGHT_LIGHT;
+    cfg->fx.night_light_temperature = 3000;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 7.0);
+    s_opts.color_transform = comp_fx_output_get_color_transform(&out);
+    g_assert_nonnull(s_opts.color_transform);
+
+    wlr_output_state_init(&st);
+    wlr_output_state_set_image_description(&st, &hdr_desc);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_pq_nl[4] = {0};
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_pq_nl, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+    /* Warmed HDR white has R > G > B in PQ output */
+    g_assert_cmpint(px_pq_nl[2], >, px_pq_nl[1]);
+    g_assert_cmpint(px_pq_nl[1], >, px_pq_nl[0]);
+
+    /* 5d. X6 BT.2390 tone mapping on ST2084_PQ:
+     * With sdr_white_nits = 1000.0 (so white rect is 1000 cd/m^2, PQ ~= 0.7518) and
+     * tonemap_peak_nits = 400.0 (max_pq = PQ(400/10000) ~= 0.6525, knee KS ~= 0.4788),
+     * BT.2390 rolls off the 1000-nit white rect below max_pq while leaving a dark
+     * patch below the knee untouched. */
+    const float c_dark[4] = { 0.15f, 0.15f, 0.15f, 1.0f };
+    wlr_scene_rect_set_color(r_red, c_dark);
+
+    cfg->fx.color_filter      = COMP_FX_FILTER_NONE;
+    cfg->fx.sdr_white_nits    = 1000.0;
+    cfg->fx.tonemap           = false;
+    cfg->fx.tonemap_peak_nits = 0.0;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 8.0);
+
+    wlr_output_state_init(&st);
+    wlr_output_state_set_image_description(&st, &hdr_desc);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_notm_dark[4] = {0}, px_notm_bright[4] = {0};
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_notm_dark, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 40, .y = 100, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_notm_bright, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+
+    cfg->fx.tonemap           = true;
+    cfg->fx.tonemap_peak_nits = 400.0;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 9.0);
+
+    wlr_output_state_init(&st);
+    wlr_output_state_set_image_description(&st, &hdr_desc);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_tm_dark[4] = {0}, px_tm_bright[4] = {0};
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_tm_dark, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 40, .y = 100, .width = 1, .height = 1 },
+    }));
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_tm_bright, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 280, .y = 100, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+
+    /* Dark patch (below BT.2390 knee KS) is bit-exact untouched */
+    g_assert_cmpint(px_tm_dark[0], ==, px_notm_dark[0]);
+    g_assert_cmpint(px_tm_dark[1], ==, px_notm_dark[1]);
+    g_assert_cmpint(px_tm_dark[2], ==, px_notm_dark[2]);
+
+    /* Bright 1000-nit patch (above knee KS) is compressed by BT.2390 to match comp_fx_bt2390_pq() */
+    float e1_1000 = comp_fx_linear_to_pq(1000.0f / 10000.0f);
+    float max_pq_400 = comp_fx_linear_to_pq(400.0f / 10000.0f);
+    float e2_bt2390 = comp_fx_bt2390_pq(e1_1000, max_pq_400);
+    int exp_tm_bright = (int)lround(e2_bt2390 * 255.0f);
+    g_assert_cmpint(px_tm_bright[1], <, px_notm_bright[1] - 20);
+    g_assert_cmpint(abs((int)px_tm_bright[1] - exp_tm_bright), <=, 2);
+
+    comp_fx_finish(&srv);
+    wl_list_remove(&out.link);
+    wlr_scene_node_destroy(&scene->tree.node);
+    wlr_allocator_destroy(alloc);
+    wlr_renderer_destroy(renderer);
+    wlr_backend_destroy(backend);
+    wl_display_destroy(dpy);
+    comp_config_free(cfg);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1341,6 +1702,8 @@ main(int argc, char *argv[])
                     test_scene_lifecycle_and_click_through);
     g_test_add_func("/comp/fx/m3-review-regressions",
                     test_m3_review_regressions);
+    g_test_add_func("/comp/fx/m4-output-stage-and-color-filters",
+                    test_m4_output_stage_and_color_filters);
     g_test_add_func("/comp/fx/pixman-fallback",
                     test_pixman_fallback);
     return g_test_run();

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wlr/interfaces/wlr_buffer.h>
+#include <wlr/render/color.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/util/log.h>
 
@@ -404,6 +405,57 @@ destroy_all_shaders(CompFxSystem *sys)
     }
 }
 
+static void
+update_system_color_transform(CompFxSystem *sys, bool force_rebuild)
+{
+    if (!sys)
+        return;
+
+    float mat[9];
+    bool active = sys->supported && sys->cfg.enabled &&
+                  comp_fx_color_filter_matrix(&sys->cfg, mat);
+    if (!active) {
+        if (sys->color_transform) {
+            wlr_color_transform_unref(sys->color_transform);
+            sys->color_transform = NULL;
+        }
+        sys->has_color_matrix = false;
+        return;
+    }
+
+    if (!force_rebuild && sys->has_color_matrix && sys->color_transform) {
+        bool same = true;
+        for (int i = 0; i < 9; i++) {
+            if (fabsf(sys->color_matrix[i] - mat[i]) > 1e-5f) {
+                same = false;
+                break;
+            }
+        }
+        if (same)
+            return;
+    }
+
+    struct wlr_color_transform *m_tr = wlr_color_transform_init_matrix(mat);
+    struct wlr_color_transform *e_tr = wlr_color_transform_init_linear_to_inverse_eotf(
+        WLR_COLOR_TRANSFER_FUNCTION_GAMMA22);
+    struct wlr_color_transform *pipe = NULL;
+    if (m_tr && e_tr) {
+        struct wlr_color_transform *stages[2] = { m_tr, e_tr };
+        pipe = wlr_color_transform_init_pipeline(stages, 2);
+    }
+    wlr_color_transform_unref(m_tr);
+    wlr_color_transform_unref(e_tr);
+
+    wlr_color_transform_unref(sys->color_transform);
+    sys->color_transform = pipe;
+    if (pipe) {
+        memcpy(sys->color_matrix, mat, sizeof(mat));
+        sys->has_color_matrix = true;
+    } else {
+        sys->has_color_matrix = false;
+    }
+}
+
 bool
 fx_compute_slot_pass_boxes(const CompFxSurface *fx,
                            FxSlotKind slot_kind,
@@ -550,6 +602,12 @@ comp_fx_finish(struct CompServer *server)
 
     destroy_all_shaders(sys);
 
+    if (sys->color_transform) {
+        wlr_color_transform_unref(sys->color_transform);
+        sys->color_transform = NULL;
+    }
+    sys->has_color_matrix = false;
+
     if (sys->blank_buf) {
         wlr_buffer_drop(&sys->blank_buf->base);
         sys->blank_buf = NULL;
@@ -569,6 +627,26 @@ comp_fx_config_apply(struct CompServer *server, const struct CompConfig *cfg)
         sys->cfg = cfg->fx;
     else
         comp_fx_config_defaults(&sys->cfg);
+
+    update_system_color_transform(sys, false);
+
+    if (server) {
+        struct CompOutput *out;
+        wl_list_for_each(out, &server->outputs, link) {
+            if (!out->wlr_output)
+                continue;
+            if (!sys->supported || !sys->cfg.enabled) {
+                wlr_kfx_output_set_dither(out->wlr_output, false);
+                wlr_kfx_output_set_sdr_white_nits(out->wlr_output, 0.0f);
+                wlr_kfx_output_set_tonemap(out->wlr_output, false, 0.0f);
+            } else {
+                wlr_kfx_output_set_dither(out->wlr_output, sys->cfg.dither);
+                wlr_kfx_output_set_sdr_white_nits(out->wlr_output, (float)sys->cfg.sdr_white_nits);
+                wlr_kfx_output_set_tonemap(out->wlr_output, sys->cfg.tonemap,
+                                           (float)sys->cfg.tonemap_peak_nits);
+            }
+        }
+    }
 
     fx_glass_system_invalidate_all(sys);
     CompFxOutputTrack *track;
@@ -601,6 +679,12 @@ comp_fx_renderer_lost(struct CompServer *server)
     }
 
     destroy_all_shaders(sys);
+    if (sys->color_transform) {
+        wlr_color_transform_unref(sys->color_transform);
+        sys->color_transform = NULL;
+    }
+    sys->has_color_matrix = false;
+
     sys->supported = server->renderer && wlr_kfx_is_supported(server->renderer);
     if (sys->supported) {
         if (!init_all_shaders(sys)) {
@@ -611,6 +695,7 @@ comp_fx_renderer_lost(struct CompServer *server)
         wlr_log(WLR_INFO, "kfx: new renderer does not support custom shaders; effects disabled");
         sys->logged_unsupported = true;
     }
+    update_system_color_transform(sys, true);
 
     CompFxOutputTrack *track;
     wl_list_for_each(track, &sys->output_tracks, link) {
@@ -633,13 +718,20 @@ comp_fx_output_prepare(struct CompOutput *output, double now_s)
         return false;
     CompFxSystem *sys = output->server->fx;
     if (!sys->supported || !sys->cfg.enabled) {
-        if (output->wlr_output)
+        if (output->wlr_output) {
             wlr_kfx_output_set_dither(output->wlr_output, false);
+            wlr_kfx_output_set_sdr_white_nits(output->wlr_output, 0.0f);
+            wlr_kfx_output_set_tonemap(output->wlr_output, false, 0.0f);
+        }
         return false;
     }
 
-    if (output->wlr_output)
+    if (output->wlr_output) {
         wlr_kfx_output_set_dither(output->wlr_output, sys->cfg.dither);
+        wlr_kfx_output_set_sdr_white_nits(output->wlr_output, (float)sys->cfg.sdr_white_nits);
+        wlr_kfx_output_set_tonemap(output->wlr_output, sys->cfg.tonemap,
+                                   (float)sys->cfg.tonemap_peak_nits);
+    }
 
     CompFxOutputTrack *track = ensure_output_track(sys, output->scene_output);
     if (track && output->wlr_output) {
@@ -706,6 +798,17 @@ comp_fx_background_changed(struct CompOutput *output)
         track->bg_serial++;
     if (output->wlr_output)
         wlr_output_schedule_frame(output->wlr_output);
+}
+
+struct wlr_color_transform *
+comp_fx_output_get_color_transform(struct CompOutput *output)
+{
+    if (!output || !output->server || !output->server->fx)
+        return NULL;
+    CompFxSystem *sys = output->server->fx;
+    if (!sys->supported || !sys->cfg.enabled)
+        return NULL;
+    return sys->color_transform;
 }
 
 CompFxSurface *
@@ -811,8 +914,11 @@ comp_fx_screenshot_begin_pass(struct CompServer *server, struct wlr_buffer *buff
             (void)comp_fx_output_prepare(out, now_s);
         }
     }
+    struct wlr_buffer_pass_options pass_opts = {
+        .color_transform = (active && server->fx) ? server->fx->color_transform : NULL,
+    };
     struct wlr_render_pass *pass = wlr_kfx_renderer_begin_buffer_pass(
-        server->renderer, buffer, NULL, active);
+        server->renderer, buffer, pass_opts.color_transform ? &pass_opts : NULL, active);
     if (pass && active)
         wlr_kfx_render_pass_set_dither(pass, server->fx->cfg.dither);
     return pass;
@@ -852,6 +958,7 @@ comp_fx_screenshot_render_node(struct CompServer *server,
         .scale     = shot_scale,
         .transform = WL_OUTPUT_TRANSFORM_NORMAL,
     };
+    wlr_addon_set_init(&dummy_wo.addons);
     struct wlr_scene_output dummy_so = {
         .output = &dummy_wo,
         .x      = origin_lx,
@@ -948,6 +1055,10 @@ void comp_fx_config_apply(struct CompServer *server, const struct CompConfig *cf
 void comp_fx_renderer_lost(struct CompServer *server) { (void)server; }
 bool comp_fx_output_prepare(struct CompOutput *output, double now_s) { (void)output; (void)now_s; return false; }
 void comp_fx_background_changed(struct CompOutput *output) { (void)output; }
+struct wlr_color_transform *comp_fx_output_get_color_transform(struct CompOutput *output) {
+    (void)output;
+    return NULL;
+}
 CompFxSurface *comp_fx_surface_create(struct CompServer *s, struct wlr_scene_tree *p, CompFxSurfaceKind k) {
     (void)s; (void)p; (void)k; return NULL;
 }

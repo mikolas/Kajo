@@ -47,7 +47,7 @@ The repository builds and installs **eight integrated native executables** (plus
 
 - **Infinite Scrolling Strip & Spring Physics**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), and a closed-form 2nd-order damped spring solver. Resizes animate, and workspaces form one continuous vertical strip (both stay visible while switching).
 - **3-Finger Drag & Flick**: On the touchscreen and touchpad the view follows three fingers along the strip or between workspaces and snaps on release: a slow drag switches by position, a quick flick by velocity, and a short drag springs back (a glance).
-- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo/0.20.2`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 3-pass Dual-Kawase frosted glass backdrop blur (with top-edge specular hairline, 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
+- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo/0.20.2`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 3-pass Dual-Kawase frosted glass backdrop blur (with top-edge specular hairline, 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
 - **Built-In Switcher & Screenshot UI**: Live-thumbnail `Alt+Tab` MRU overlay and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
 - **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
 
@@ -179,6 +179,12 @@ horizontal_view_movement = { damping_ratio = 1.0, stiffness = 800.0, epsilon = 0
 [effects]
 enabled = true
 dither = true
+color_filter = "none"                   # "none" | "grayscale" | "night-light" | "protanopia" | "deuteranopia" | "tritanopia"
+color_filter_strength = 1.0
+night_light_temperature = 4000
+sdr_white_nits = 0.0                    # 0.0 = default (203 cd/m^2 on HDR PQ), or 80.0..1000.0
+tonemap = true
+tonemap_peak_nits = 0.0                 # 0.0 = container max, or target panel peak (e.g. 616.9 cd/m^2)
 
 [effects.shadow]
 enabled = true

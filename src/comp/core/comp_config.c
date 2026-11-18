@@ -984,6 +984,53 @@ merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDia
     if (di.type == TOML_BOOLEAN)
         cfg->fx.dither = di.u.boolean;
 
+    toml_datum_t cf = toml_get(fx, COMP_KEY_COLOR_FILTER);
+    if (cf.type != TOML_UNKNOWN) {
+        CompFxColorFilter parsed_cf = COMP_FX_FILTER_NONE;
+        if (cf.type == TOML_STRING && comp_fx_color_filter_from_str(cf.u.s, &parsed_cf))
+            cfg->fx.color_filter = parsed_cf;
+        else
+            comp_diag_add(diag, src, cf.lineno,
+                          "[effects] invalid 'color_filter' (expected none|grayscale|night-light|protanopia|deuteranopia|tritanopia); ignored");
+    }
+
+    double fx_dval = 0.0;
+    toml_datum_t cfs = toml_get(fx, COMP_KEY_COLOR_FILTER_STRENGTH);
+    if (cfs.type != TOML_UNKNOWN) {
+        if (datum_as_double(cfs, &fx_dval) && fx_dval >= 0.0 && fx_dval <= 1.0)
+            cfg->fx.color_filter_strength = fx_dval;
+        else
+            comp_diag_add(diag, src, cfs.lineno, "[effects] 'color_filter_strength' must be in 0..1; ignored");
+    }
+
+    toml_datum_t nlt = toml_get(fx, COMP_KEY_NIGHT_LIGHT_TEMPERATURE);
+    if (nlt.type != TOML_UNKNOWN) {
+        if (nlt.type == TOML_INT64 && nlt.u.int64 >= 1500 && nlt.u.int64 <= 6500)
+            cfg->fx.night_light_temperature = (int32_t)nlt.u.int64;
+        else
+            comp_diag_add(diag, src, nlt.lineno, "[effects] 'night_light_temperature' must be an integer in 1500..6500; ignored");
+    }
+
+    toml_datum_t swn = toml_get(fx, COMP_KEY_SDR_WHITE_NITS);
+    if (swn.type != TOML_UNKNOWN) {
+        if (datum_as_double(swn, &fx_dval) && (fx_dval == 0.0 || (fx_dval >= 80.0 && fx_dval <= 1000.0)))
+            cfg->fx.sdr_white_nits = fx_dval;
+        else
+            comp_diag_add(diag, src, swn.lineno, "[effects] 'sdr_white_nits' must be 0 or in 80..1000; ignored");
+    }
+
+    toml_datum_t tm = toml_get(fx, COMP_KEY_TONEMAP);
+    if (tm.type == TOML_BOOLEAN)
+        cfg->fx.tonemap = tm.u.boolean;
+
+    toml_datum_t tmpk = toml_get(fx, COMP_KEY_TONEMAP_PEAK_NITS);
+    if (tmpk.type != TOML_UNKNOWN) {
+        if (datum_as_double(tmpk, &fx_dval) && (fx_dval == 0.0 || (fx_dval >= 100.0 && fx_dval <= 10000.0)))
+            cfg->fx.tonemap_peak_nits = fx_dval;
+        else
+            comp_diag_add(diag, src, tmpk.lineno, "[effects] 'tonemap_peak_nits' must be 0 or in 100..10000; ignored");
+    }
+
     toml_datum_t sh = toml_get(fx, COMP_SEC_FX_SHADOW);
     if (sh.type == TOML_TABLE) {
         toml_datum_t sen = toml_get(sh, COMP_KEY_ENABLED);

@@ -103,6 +103,10 @@ struct CompFxSystem {
     struct wlr_kfx_shader   *blur_down_shader;
     struct wlr_kfx_shader   *blur_up_shader;
     struct wlr_kfx_shader   *glass_shader;
+
+    struct wlr_color_transform *color_transform;
+    float                       color_matrix[9];
+    bool                        has_color_matrix;
 };
 
 typedef struct {

@@ -739,6 +739,37 @@ test_comp_toml_helpers_roundtrip(void)
     g_assert_nonnull(strstr(rules_after, "anchor_corner = \"top-right\""));
     g_assert_nonnull(strstr(rules_after, "namespace = [\"^kajo$\"]"));
     g_assert_nonnull(strstr(rules_after, "namespace = [\"^kajo-launcher$\"]"));
+    g_assert_nonnull(strstr(rules_after, "popup_opacity = 0.88"));
+    g_assert_nonnull(strstr(rules_after, "blur = true"));
+    g_assert_nonnull(strstr(rules_after, "blur_popups = true"));
+    g_assert_nonnull(strstr(rules_after, "xray = true"));
+
+    KajoCompEffectsCfg fx_in = {
+        .glass_enabled             = FALSE,
+        .shadow_enabled            = TRUE,
+        .dim_enabled               = TRUE,
+        .dither_enabled            = FALSE,
+        .color_filter              = "night-light",
+        .color_filter_strength_pct = 75,
+        .night_light_temperature   = 3400,
+    };
+    const gboolean new_xray[2] = { FALSE, TRUE };
+    g_assert_true(kajo_config_comp_save_effects(
+        tmpdir, &fx_in, ns_ids, new_xray, G_N_ELEMENTS(ns_ids), NULL));
+
+    KajoCompEffectsCfg fx_out = {0};
+    gboolean read_xray[2] = { TRUE, FALSE };
+    g_assert_true(kajo_config_comp_read_effects(
+        tmpdir, &fx_out, ns_ids, read_xray, G_N_ELEMENTS(ns_ids)));
+    g_assert_false(fx_out.glass_enabled);
+    g_assert_true(fx_out.shadow_enabled);
+    g_assert_true(fx_out.dim_enabled);
+    g_assert_false(fx_out.dither_enabled);
+    g_assert_cmpstr(fx_out.color_filter, ==, "night-light");
+    g_assert_cmpint(fx_out.color_filter_strength_pct, ==, 75);
+    g_assert_cmpint(fx_out.night_light_temperature, ==, 3400);
+    g_assert_false(read_xray[0]);
+    g_assert_true(read_xray[1]);
 
     opacities[0] = 0;
     opacities[1] = 0;

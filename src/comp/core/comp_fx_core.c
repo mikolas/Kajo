@@ -84,6 +84,77 @@ comp_fx_config_defaults(CompFxConfig *cfg)
     cfg->glass.tint_rgba[3]     = 1.0f;
     cfg->glass.tint_alpha       = 0.35;
     cfg->glass.max_recompute_hz = 0;
+
+    cfg->color_filter            = COMP_FX_FILTER_NONE;
+    cfg->color_filter_strength   = 1.0;
+    cfg->night_light_temperature = 4000;
+    cfg->sdr_white_nits          = 0.0;
+    cfg->tonemap                 = true;
+    cfg->tonemap_peak_nits       = 0.0;
+}
+
+static bool
+ascii_ieq(const char *a, const char *b)
+{
+    if (!a || !b)
+        return false;
+    while (*a && *b) {
+        unsigned char ca = (unsigned char)*a++;
+        unsigned char cb = (unsigned char)*b++;
+        if (ca >= 'A' && ca <= 'Z')
+            ca = (unsigned char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z')
+            cb = (unsigned char)(cb - 'A' + 'a');
+        if (ca != cb)
+            return false;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+bool
+comp_fx_color_filter_from_str(const char *s, CompFxColorFilter *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "none") || ascii_ieq(s, "off")) {
+        *out = COMP_FX_FILTER_NONE;
+        return true;
+    }
+    if (ascii_ieq(s, "grayscale") || ascii_ieq(s, "greyscale")) {
+        *out = COMP_FX_FILTER_GRAYSCALE;
+        return true;
+    }
+    if (ascii_ieq(s, "night-light") || ascii_ieq(s, "night_light")) {
+        *out = COMP_FX_FILTER_NIGHT_LIGHT;
+        return true;
+    }
+    if (ascii_ieq(s, "protanopia")) {
+        *out = COMP_FX_FILTER_PROTANOPIA;
+        return true;
+    }
+    if (ascii_ieq(s, "deuteranopia")) {
+        *out = COMP_FX_FILTER_DEUTERANOPIA;
+        return true;
+    }
+    if (ascii_ieq(s, "tritanopia")) {
+        *out = COMP_FX_FILTER_TRITANOPIA;
+        return true;
+    }
+    return false;
+}
+
+const char *
+comp_fx_color_filter_to_str(CompFxColorFilter filter)
+{
+    switch (filter) {
+    case COMP_FX_FILTER_NONE:         return "none";
+    case COMP_FX_FILTER_GRAYSCALE:    return "grayscale";
+    case COMP_FX_FILTER_NIGHT_LIGHT:  return "night-light";
+    case COMP_FX_FILTER_PROTANOPIA:   return "protanopia";
+    case COMP_FX_FILTER_DEUTERANOPIA: return "deuteranopia";
+    case COMP_FX_FILTER_TRITANOPIA:   return "tritanopia";
+    }
+    return "none";
 }
 
 float
@@ -93,6 +164,174 @@ comp_fx_srgb_to_linear(float v)
     if (c <= 0.04045f)
         return c / 12.92f;
     return powf((c + 0.055f) / 1.055f, 2.4f);
+}
+
+float
+comp_fx_linear_to_srgb(float v)
+{
+    float c = clamp01f(v);
+    if (c <= 0.0031308f)
+        return c * 12.92f;
+    return 1.055f * powf(c, 1.0f / 2.4f) - 0.055f;
+}
+
+float
+comp_fx_linear_to_gamma22(float v)
+{
+    float c = clamp01f(v);
+    return powf(c, 1.0f / 2.2f);
+}
+
+float
+comp_fx_linear_to_pq(float v)
+{
+    const float c1 = 0.8359375f;
+    const float c2 = 18.8515625f;
+    const float c3 = 18.6875f;
+    const float m  = 78.84375f;
+    const float n  = 0.1593017578125f;
+    float c = clamp01f(v);
+    float pow_n = powf(c, n);
+    return powf((c1 + c2 * pow_n) / (1.0f + c3 * pow_n), m);
+}
+
+float
+comp_fx_bt2390_pq(float e1, float max_pq)
+{
+    float e = clamp01f(e1);
+    float mp = clamp01f(max_pq);
+    float ks = fmaxf(1.5f * mp - 0.5f, 0.0f);
+    if (e <= ks || mp >= 1.0f || ks >= 1.0f)
+        return fminf(e, mp);
+    float t  = clamp01f((e - ks) / (1.0f - ks));
+    float t2 = t * t;
+    float t3 = t2 * t;
+    float h00 = 2.0f * t3 - 3.0f * t2 + 1.0f;
+    float h10 = t3 - 2.0f * t2 + t;
+    float h01 = -2.0f * t3 + 3.0f * t2;
+    return h00 * ks + h10 * (1.0f - ks) + h01 * mp;
+}
+
+static void
+night_light_kelvin_to_linear_gains(int32_t temp_k, float out_rgb[3])
+{
+    int32_t k = temp_k;
+    if (k < 1500)
+        k = 1500;
+    if (k > 6500)
+        k = 6500;
+    if (k >= 6500) {
+        out_rgb[0] = 1.0f;
+        out_rgb[1] = 1.0f;
+        out_rgb[2] = 1.0f;
+        return;
+    }
+
+    double t = (double)k / 100.0;
+    double r_srgb = 1.0;
+    double g_srgb = (99.4708025861 * log(t) - 161.1195681661) / 255.0;
+    double b_srgb = (t <= 19.0)
+        ? 0.0
+        : ((138.5177312231 * log(t - 10.0) - 305.0447927307) / 255.0);
+
+    out_rgb[0] = comp_fx_srgb_to_linear((float)r_srgb);
+    out_rgb[1] = comp_fx_srgb_to_linear((float)g_srgb);
+    out_rgb[2] = comp_fx_srgb_to_linear((float)b_srgb);
+}
+
+bool
+comp_fx_color_filter_matrix(const CompFxConfig *cfg, float out_matrix[9])
+{
+    static const float k_identity[9] = {
+        1.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 1.0f,
+    };
+    /* Rec.709 / sRGB linear luminance weights (row sum = 1.0). */
+    static const float k_grayscale[9] = {
+        0.2126f, 0.7152f, 0.0722f,
+        0.2126f, 0.7152f, 0.0722f,
+        0.2126f, 0.7152f, 0.0722f,
+    };
+    /* Linear sRGB CVD compensation / Daltonization matrices (neutral-white invariant: each row sums to 1.0). */
+    static const float k_protanopia[9] = {
+        0.56667f, 0.43333f, 0.00000f,
+        0.55833f, 0.44167f, 0.00000f,
+        0.00000f, 0.24167f, 0.75833f,
+    };
+    static const float k_deuteranopia[9] = {
+        0.62500f, 0.37500f, 0.00000f,
+        0.70000f, 0.30000f, 0.00000f,
+        0.00000f, 0.30000f, 0.70000f,
+    };
+    static const float k_tritanopia[9] = {
+        0.95000f, 0.05000f, 0.00000f,
+        0.00000f, 0.43333f, 0.56667f,
+        0.00000f, 0.47500f, 0.52500f,
+    };
+
+    if (!out_matrix)
+        return false;
+    memcpy(out_matrix, k_identity, sizeof(k_identity));
+    if (!cfg || !cfg->enabled || cfg->color_filter == COMP_FX_FILTER_NONE)
+        return false;
+
+    float strength = clamp01f((float)cfg->color_filter_strength);
+    if (strength <= 1e-5f)
+        return false;
+
+    float target[9];
+    switch (cfg->color_filter) {
+    case COMP_FX_FILTER_GRAYSCALE:
+        memcpy(target, k_grayscale, sizeof(target));
+        break;
+    case COMP_FX_FILTER_NIGHT_LIGHT: {
+        float gains[3] = { 1.0f, 1.0f, 1.0f };
+        night_light_kelvin_to_linear_gains(cfg->night_light_temperature, gains);
+        if (fabsf(gains[0] - 1.0f) <= 1e-5f &&
+            fabsf(gains[1] - 1.0f) <= 1e-5f &&
+            fabsf(gains[2] - 1.0f) <= 1e-5f) {
+            return false;
+        }
+        memset(target, 0, sizeof(target));
+        target[0] = gains[0];
+        target[4] = gains[1];
+        target[8] = gains[2];
+        break;
+    }
+    case COMP_FX_FILTER_PROTANOPIA:
+        memcpy(target, k_protanopia, sizeof(target));
+        break;
+    case COMP_FX_FILTER_DEUTERANOPIA:
+        memcpy(target, k_deuteranopia, sizeof(target));
+        break;
+    case COMP_FX_FILTER_TRITANOPIA:
+        memcpy(target, k_tritanopia, sizeof(target));
+        break;
+    case COMP_FX_FILTER_NONE:
+    default:
+        return false;
+    }
+
+    for (int i = 0; i < 9; i++) {
+        out_matrix[i] = (1.0f - strength) * k_identity[i] + strength * target[i];
+    }
+    return true;
+}
+
+void
+comp_fx_color_filter_apply_linear(const float matrix[9],
+                                  const float in_rgb[3],
+                                  float out_rgb[3])
+{
+    if (!matrix || !in_rgb || !out_rgb)
+        return;
+    float r = in_rgb[0];
+    float g = in_rgb[1];
+    float b = in_rgb[2];
+    out_rgb[0] = fmaxf(0.0f, matrix[0] * r + matrix[1] * g + matrix[2] * b);
+    out_rgb[1] = fmaxf(0.0f, matrix[3] * r + matrix[4] * g + matrix[5] * b);
+    out_rgb[2] = fmaxf(0.0f, matrix[6] * r + matrix[7] * g + matrix[8] * b);
 }
 
 void

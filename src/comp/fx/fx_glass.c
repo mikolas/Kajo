@@ -612,6 +612,8 @@ glass_draw(CompFxSystem *sys, CompFxSurface *fx,
     params.common.dst_size[0]   = (float)(pass_dst.width  > 0 ? pass_dst.width  : 1);
     params.common.dst_size[1]   = (float)(pass_dst.height > 0 ? pass_dst.height : 1);
     params.common.scale         = eff_scale;
+    if (ctx->output && ctx->output->output)
+        params.common.hdr_headroom = wlr_kfx_output_get_hdr_headroom(ctx->output->output);
 
     struct wlr_kfx_draw_options opts = {
         .shader     = sys->glass_shader,

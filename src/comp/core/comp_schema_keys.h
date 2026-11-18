@@ -160,6 +160,12 @@
 #define COMP_KEY_TINT                     "tint"
 #define COMP_KEY_TINT_ALPHA               "tint_alpha"
 #define COMP_KEY_MAX_RECOMPUTE_HZ         "max_recompute_hz"
+#define COMP_KEY_COLOR_FILTER             "color_filter"
+#define COMP_KEY_COLOR_FILTER_STRENGTH    "color_filter_strength"
+#define COMP_KEY_NIGHT_LIGHT_TEMPERATURE  "night_light_temperature"
+#define COMP_KEY_SDR_WHITE_NITS           "sdr_white_nits"
+#define COMP_KEY_TONEMAP                  "tonemap"
+#define COMP_KEY_TONEMAP_PEAK_NITS        "tonemap_peak_nits"
 
 /* ───────────────────────── IPC Wire Protocol (`kajo-comp.sock`) ───────────────────────── */
 #define COMP_IPC_ENV_SOCKET               "KAJO_COMP_SOCKET"

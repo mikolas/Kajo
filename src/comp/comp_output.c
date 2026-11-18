@@ -465,13 +465,19 @@ handle_frame(void *owner, void *data)
     comp_window_tick_frame(s, now_s);
     bool fx_animating = comp_fx_output_prepare(o, now_s);
 
+    struct wlr_scene_output_state_options scene_opts = {
+        .color_transform = comp_fx_output_get_color_transform(o),
+    };
+    const struct wlr_scene_output_state_options *opts_ptr =
+        scene_opts.color_transform ? &scene_opts : NULL;
+
     bool lock_active = s->locked;
     bool committed = false;
     if (!lock_active && comp_window_focused_wants_tearing(s) &&
         wlr_scene_output_needs_frame(o->scene_output)) {
         struct wlr_output_state st;
         wlr_output_state_init(&st);
-        if (wlr_scene_output_build_state(o->scene_output, &st, NULL)) {
+        if (wlr_scene_output_build_state(o->scene_output, &st, opts_ptr)) {
             st.tearing_page_flip = true;
             if (!wlr_output_test_state(o->wlr_output, &st))
                 st.tearing_page_flip = false;
@@ -479,7 +485,7 @@ handle_frame(void *owner, void *data)
         }
         wlr_output_state_finish(&st);
     } else {
-        committed = wlr_scene_output_commit(o->scene_output, NULL);
+        committed = wlr_scene_output_commit(o->scene_output, opts_ptr);
     }
     if (committed)
         wlr_scene_output_send_frame_done(o->scene_output, &now);

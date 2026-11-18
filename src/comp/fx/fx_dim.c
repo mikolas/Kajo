@@ -90,6 +90,8 @@ dim_draw(CompFxSystem *sys, CompFxSurface *fx,
     CompFxDimParams params;
     comp_fx_dim_pack(&sys->cfg.dim, anchor_dst, anchor_dst,
                      strength * (float)sys->cfg.dim.opacity, scale, &params);
+    if (ctx->output && ctx->output->output)
+        params.common.hdr_headroom = wlr_kfx_output_get_hdr_headroom(ctx->output->output);
 
     struct wlr_kfx_draw_options opts = {
         .shader     = sys->dim_shader,

@@ -14,6 +14,7 @@ struct CompConfig;
 struct CompOutput;
 struct CompServer;
 struct wlr_buffer;
+struct wlr_color_transform;
 struct wlr_render_pass;
 struct wlr_scene_node;
 struct wlr_scene_tree;
@@ -53,6 +54,7 @@ void comp_fx_renderer_lost(struct CompServer *server);
  * Returns true while any effect timeline is still animating and needs frames. */
 bool comp_fx_output_prepare(struct CompOutput *output, double now_s);
 void comp_fx_background_changed(struct CompOutput *output);
+struct wlr_color_transform *comp_fx_output_get_color_transform(struct CompOutput *output);
 
 CompFxSurface *comp_fx_surface_create(struct CompServer *server,
                                       struct wlr_scene_tree *parent_tree,

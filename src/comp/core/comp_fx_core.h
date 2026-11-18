@@ -60,9 +60,27 @@ typedef struct {
     int32_t max_recompute_hz;            /* 0 = off, 1..1000 Hz */
 } CompFxGlassConfig;
 
+typedef enum {
+    COMP_FX_FILTER_NONE         = 0,
+    COMP_FX_FILTER_GRAYSCALE    = 1,
+    COMP_FX_FILTER_NIGHT_LIGHT  = 2,
+    COMP_FX_FILTER_PROTANOPIA   = 3,
+    COMP_FX_FILTER_DEUTERANOPIA = 4,
+    COMP_FX_FILTER_TRITANOPIA   = 5,
+} CompFxColorFilter;
+
+bool        comp_fx_color_filter_from_str(const char *s, CompFxColorFilter *out);
+const char *comp_fx_color_filter_to_str(CompFxColorFilter filter);
+
 typedef struct {
     bool               enabled;
     bool               dither;
+    CompFxColorFilter  color_filter;            /* default COMP_FX_FILTER_NONE */
+    double             color_filter_strength;   /* 0..1 (default 1.0) */
+    int32_t            night_light_temperature; /* 1500..6500 K (default 4000 K) */
+    double             sdr_white_nits;          /* 0 = default (203 cd/m^2), or 80..1000 */
+    bool               tonemap;                 /* default true */
+    double             tonemap_peak_nits;       /* 0 = default/off, or 100..10000 cd/m^2 */
     CompFxShadowConfig shadow;
     CompFxDimConfig    dim;
     CompFxGlassConfig  glass;
@@ -123,7 +141,21 @@ void comp_fx_config_defaults(CompFxConfig *cfg);
 
 /* IEC 61966-2-1 sRGB <-> linear conversion matching wlroots output/rect encoding (spec §5 H2). */
 float comp_fx_srgb_to_linear(float v);
+float comp_fx_linear_to_srgb(float v);
+float comp_fx_linear_to_gamma22(float v);
 void  comp_fx_rgba_srgb_to_linear(const float srgb[4], float out_lin[4]);
+
+/* ST.2084 PQ inverse EOTF and ITU-R BT.2390-11 §5.4 EETF Hermite roll-off (spec §6 X6). */
+float comp_fx_linear_to_pq(float v);
+float comp_fx_bt2390_pq(float e1, float max_pq);
+
+/* Computes the 3x3 row-major linear-light colour filter matrix for `cfg` (spec §6 X6, M4).
+ * Always writes a valid 3x3 matrix to `out_matrix`; returns true when a non-identity
+ * filter is active (`cfg->enabled`, `color_filter != NONE`, `color_filter_strength > 0`). */
+bool  comp_fx_color_filter_matrix(const CompFxConfig *cfg, float out_matrix[9]);
+void  comp_fx_color_filter_apply_linear(const float matrix[9],
+                                        const float in_rgb[3],
+                                        float out_rgb[3]);
 
 /* Shadow paint reach (max over active layers of ceil(max(0, 3*sigma +/- offset))). */
 CompFxMargins comp_fx_shadow_reach(const CompFxShadowConfig *cfg);

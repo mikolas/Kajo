@@ -109,6 +109,8 @@ shadow_draw(CompFxSystem *sys, CompFxSurface *fx,
     CompFxShadowParams params;
     comp_fx_shadow_pack(&sys->cfg.shadow, anchor_dst, outer_buf,
                         strength, scale, transform, &params);
+    if (ctx->output && ctx->output->output)
+        params.common.hdr_headroom = wlr_kfx_output_get_hdr_headroom(ctx->output->output);
 
     struct wlr_kfx_draw_options opts = {
         .shader     = sys->shadow_shader,

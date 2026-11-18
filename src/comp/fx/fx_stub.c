@@ -45,6 +45,13 @@ comp_fx_background_changed(struct CompOutput *output)
     (void)output;
 }
 
+struct wlr_color_transform *
+comp_fx_output_get_color_transform(struct CompOutput *output)
+{
+    (void)output;
+    return NULL;
+}
+
 CompFxSurface *
 comp_fx_surface_create(struct CompServer *server,
                        struct wlr_scene_tree *parent_tree,
