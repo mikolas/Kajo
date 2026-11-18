@@ -403,14 +403,26 @@ handle_layer_popup_destroy(void *owner, void *data)
 }
 
 static void
-handle_layer_new_popup(void *owner, void *data)
-{
-    CompLayerSurface *cls = owner;
-    struct wlr_xdg_popup *popup = data;
+spawn_layer_popup(CompLayerSurface *cls, struct wlr_scene_tree *parent_tree,
+                  struct wlr_xdg_popup *popup);
 
-    if (!cls->scene_layer || !cls->scene_layer->tree)
+static void
+handle_layer_popup_new_popup(void *owner, void *data)
+{
+    CompLayerPopup *clp = owner;
+    struct wlr_xdg_popup *popup = data;
+    if (!clp || !clp->parent_layer || !clp->popup_tree || !popup)
         return;
-    struct wlr_scene_tree *ptree = wlr_scene_xdg_surface_create(cls->scene_layer->tree, popup->base);
+    spawn_layer_popup(clp->parent_layer, clp->popup_tree, popup);
+}
+
+static void
+spawn_layer_popup(CompLayerSurface *cls, struct wlr_scene_tree *parent_tree,
+                  struct wlr_xdg_popup *popup)
+{
+    if (!cls || !parent_tree || !popup)
+        return;
+    struct wlr_scene_tree *ptree = wlr_scene_xdg_surface_create(parent_tree, popup->base);
 
     CompLayerPopup *clp = talloc_zero(cls, CompLayerPopup);
     COMP_WARN_RETURN_VOID(clp != NULL);
@@ -426,10 +438,22 @@ handle_layer_new_popup(void *owner, void *data)
     if (!comp_listen(clp, &surf->events.commit, handle_layer_popup_commit) ||
         !comp_listen(clp, &surf->events.map, handle_layer_popup_map) ||
         !comp_listen(clp, &surf->events.unmap, handle_layer_popup_unmap) ||
+        !comp_listen(clp, &popup->base->events.new_popup, handle_layer_popup_new_popup) ||
         !comp_listen(clp, &popup->events.reposition, handle_layer_popup_reposition) ||
         !comp_listen(clp, &popup->events.destroy, handle_layer_popup_destroy)) {
         talloc_free(clp);
     }
+}
+
+static void
+handle_layer_new_popup(void *owner, void *data)
+{
+    CompLayerSurface *cls = owner;
+    struct wlr_xdg_popup *popup = data;
+
+    if (!cls || !cls->scene_layer || !cls->scene_layer->tree || !popup)
+        return;
+    spawn_layer_popup(cls, cls->scene_layer->tree, popup);
 }
 
 /* ── Layer surface lifecycle ── */

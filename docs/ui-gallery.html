@@ -23,8 +23,13 @@
       --surface-tier-2: #161616; /* Action ribbon / Group box */
       --surface-tier-3: #181818; /* Section card / Header bar */
       --surface-tier-4: #1a1a1a; /* Interactive control / Tile / Button */
-      --metro-panel-bg: rgba(20, 20, 20, 0.78); /* Translucent panel surface (Aero glass) */
-      --metro-glass-bg: rgba(20, 20, 20, 0.80); /* Translucent popover / OSD / notification / launcher */
+      --metro-panel-bg: rgba(18, 18, 18, 0.58); /* Translucent panel surface (Aero glass) */
+      --metro-glass-bg: rgba(18, 18, 18, 0.62); /* Translucent popover / OSD / notification / launcher */
+      --metro-glass-well: rgba(0, 0, 0, 0.24); /* Recessed code / media well inside glass */
+      --metro-glass-header: rgba(255, 255, 255, 0.035); /* Translucent popover Zone 1/3 band */
+      --metro-glass-control: rgba(255, 255, 255, 0.065); /* Translucent button / tile / row on glass */
+      --metro-glass-hover: rgba(255, 255, 255, 0.13); /* Translucent hover glaze on glass */
+      --metro-glass-border: rgba(255, 255, 255, 0.10); /* Specular 1px border on glass */
       --surface-hover:  #222222; /* Control hover surface */
       --surface-active: #282828; /* Pressed / active neutral surface */
 
@@ -2578,22 +2583,32 @@
             </div>
 
             <div class="color-card" data-copy="@metro-panel-bg">
-              <div class="color-card-preview" style="background:rgba(20, 20, 20, 0.78); color:#ffffff;">
-                <span>@metro-panel-bg</span><span>rgba(20,20,20,0.78)</span>
+              <div class="color-card-preview" style="background:rgba(18, 18, 18, 0.58); color:#ffffff;">
+                <span>@metro-panel-bg</span><span>rgba(18,18,18,0.58)</span>
               </div>
               <div class="color-card-meta">
                 <div class="color-card-name">Translucent Panel Glass</div>
-                <div class="color-card-role">window.shell-panel (compositor xray blur)</div>
+                <div class="color-card-role">window.shell-panel (compositor Dual-Kawase blur)</div>
               </div>
             </div>
 
             <div class="color-card" data-copy="@metro-glass-bg">
-              <div class="color-card-preview" style="background:rgba(20, 20, 20, 0.80); color:#ffffff;">
-                <span>@metro-glass-bg</span><span>rgba(20,20,20,0.80)</span>
+              <div class="color-card-preview" style="background:rgba(18, 18, 18, 0.62); color:#ffffff;">
+                <span>@metro-glass-bg</span><span>rgba(18,18,18,0.62)</span>
               </div>
               <div class="color-card-meta">
                 <div class="color-card-name">Translucent Chrome Glass</div>
-                <div class="color-card-role">Popovers, OSD, notifications, launcher card</div>
+                <div class="color-card-role">Popovers, OSD, notifications, launcher, OSK</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="@metro-glass-control">
+              <div class="color-card-preview" style="background:rgba(255, 255, 255, 0.065); border:1px solid rgba(255, 255, 255, 0.10); color:#ffffff;">
+                <span>@metro-glass-control</span><span>rgba(255,255,255,0.065)</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Translucent Glass Control</div>
+                <div class="color-card-role">Popover headers, buttons, quick tiles, rows &amp; inputs</div>
               </div>
             </div>
 
