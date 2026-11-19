@@ -745,13 +745,30 @@ test_comp_toml_helpers_roundtrip(void)
     g_assert_nonnull(strstr(rules_after, "xray = true"));
 
     KajoCompEffectsCfg fx_in = {
-        .glass_enabled             = FALSE,
-        .shadow_enabled            = TRUE,
-        .dim_enabled               = TRUE,
-        .dither_enabled            = FALSE,
-        .color_filter              = "night-light",
-        .color_filter_strength_pct = 75,
-        .night_light_temperature   = 3400,
+        .border_px                  = 2,
+        .glass_enabled              = FALSE,
+        .glass_passes               = 4,
+        .glass_offset               = 2.5,
+        .glass_brightness_pct       = 85,
+        .glass_saturation_pct       = 130,
+        .glass_tint                 = "#1a202c",
+        .glass_tint_alpha_pct       = 45,
+        .shadow_enabled             = TRUE,
+        .shadow_strength_pct        = 145,
+        .shadow_unfocused_scale_pct = 50,
+        .dim_enabled                = TRUE,
+        .dim_opacity_pct            = 25,
+        .dither_enabled             = FALSE,
+        .color_filter               = "night-light",
+        .color_filter_strength_pct  = 75,
+        .night_light_temperature    = 3400,
+        .open_preset                = "metro-flip",
+        .open_duration_ms           = 250,
+        .open_curve                 = "ease-out-cubic",
+        .close_preset               = "crt-off",
+        .close_duration_ms          = 360,
+        .close_curve                = "linear",
+        .resize_preset              = "glitch-morph",
     };
     const gboolean new_xray[2] = { FALSE, TRUE };
     g_assert_true(kajo_config_comp_save_effects(
@@ -761,15 +778,38 @@ test_comp_toml_helpers_roundtrip(void)
     gboolean read_xray[2] = { TRUE, FALSE };
     g_assert_true(kajo_config_comp_read_effects(
         tmpdir, &fx_out, ns_ids, read_xray, G_N_ELEMENTS(ns_ids)));
+    g_assert_cmpint(fx_out.border_px, ==, 2);
     g_assert_false(fx_out.glass_enabled);
+    g_assert_cmpint(fx_out.glass_passes, ==, 4);
+    g_assert_cmpfloat_with_epsilon(fx_out.glass_offset, 2.5, 1e-4);
+    g_assert_cmpint(fx_out.glass_brightness_pct, ==, 85);
+    g_assert_cmpint(fx_out.glass_saturation_pct, ==, 130);
+    g_assert_cmpstr(fx_out.glass_tint, ==, "#1a202c");
+    g_assert_cmpint(fx_out.glass_tint_alpha_pct, ==, 45);
     g_assert_true(fx_out.shadow_enabled);
+    g_assert_cmpint(fx_out.shadow_strength_pct, ==, 145);
+    g_assert_cmpint(fx_out.shadow_unfocused_scale_pct, ==, 50);
     g_assert_true(fx_out.dim_enabled);
+    g_assert_cmpint(fx_out.dim_opacity_pct, ==, 25);
     g_assert_false(fx_out.dither_enabled);
     g_assert_cmpstr(fx_out.color_filter, ==, "night-light");
     g_assert_cmpint(fx_out.color_filter_strength_pct, ==, 75);
     g_assert_cmpint(fx_out.night_light_temperature, ==, 3400);
+    g_assert_cmpstr(fx_out.open_preset, ==, "metro-flip");
+    g_assert_cmpint(fx_out.open_duration_ms, ==, 250);
+    g_assert_cmpstr(fx_out.open_curve, ==, "ease-out-cubic");
+    g_assert_cmpstr(fx_out.close_preset, ==, "crt-off");
+    g_assert_cmpint(fx_out.close_duration_ms, ==, 360);
+    g_assert_cmpstr(fx_out.close_curve, ==, "linear");
+    g_assert_cmpstr(fx_out.resize_preset, ==, "glitch-morph");
     g_assert_false(read_xray[0]);
     g_assert_true(read_xray[1]);
+
+    g_assert_true(kajo_config_comp_save_inactive_border_color(tmpdir, "#333842", NULL));
+    g_autofree gchar *comp_after_bdr = NULL;
+    g_assert_true(g_file_get_contents(comp_path, &comp_after_bdr, NULL, NULL));
+    g_assert_nonnull(strstr(comp_after_bdr, "inactive_border_color"));
+    g_assert_nonnull(strstr(comp_after_bdr, "\"#333842\""));
 
     opacities[0] = 0;
     opacities[1] = 0;

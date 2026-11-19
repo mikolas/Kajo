@@ -165,6 +165,9 @@ gaps_inner = 0
 gaps_outer = 0
 border_px = 0
 
+[animations]
+enabled = false
+
 [effects]
 enabled = true
 dither = false
@@ -238,6 +241,9 @@ cat > "$RT/sh1_occlusion_dim/cfg/comp.toml" <<EOF
 gaps_inner = 0
 gaps_outer = 0
 border_px = 0
+
+[animations]
+enabled = false
 
 [effects]
 enabled = true
@@ -338,6 +344,9 @@ cat > "$RT/sh3_focus/cfg/comp.toml" <<EOF
 gaps_inner = 0
 gaps_outer = 0
 border_px = 0
+
+[animations]
+enabled = false
 
 [effects]
 enabled = true
@@ -537,6 +546,9 @@ gaps_inner = 0
 gaps_outer = 0
 border_px = 0
 
+[animations]
+enabled = false
+
 [effects]
 enabled = true
 dither = false
@@ -656,6 +668,9 @@ cat > "$RT/gb6_gb8_gb9/cfg/comp.toml" <<EOF
 gaps_inner = 0
 gaps_outer = 0
 border_px = 0
+
+[animations]
+enabled = false
 
 [effects]
 enabled = true

@@ -392,12 +392,15 @@ init_all_shaders(CompFxSystem *sys)
                 return false;
         }
     }
+    if (!fx_transition_init_shaders(sys))
+        return false;
     return true;
 }
 
 static void
 destroy_all_shaders(CompFxSystem *sys)
 {
+    fx_transition_destroy_shaders(sys);
     for (int i = 0; i < FX_SLOT_COUNT; i++) {
         const CompFxEffectDesc *desc = fx_registry_get((FxSlotKind)i);
         if (desc && desc->destroy_shaders)
@@ -552,6 +555,7 @@ comp_fx_init(struct CompServer *server)
     sys->server = server;
     wl_list_init(&sys->surfaces);
     wl_list_init(&sys->output_tracks);
+    wl_list_init(&sys->transitions);
     comp_fx_config_defaults(&sys->cfg);
 
     sys->blank_buf = calloc(1, sizeof(*sys->blank_buf));
@@ -581,6 +585,8 @@ comp_fx_finish(struct CompServer *server)
     if (!server || !server->fx)
         return;
     CompFxSystem *sys = server->fx;
+
+    fx_transition_cancel_all(sys);
 
     CompFxSurface *fx, *tmp;
     wl_list_for_each_safe(fx, tmp, &sys->surfaces, link) {
@@ -672,6 +678,8 @@ comp_fx_renderer_lost(struct CompServer *server)
     if (!server || !server->fx)
         return;
     CompFxSystem *sys = server->fx;
+
+    fx_transition_cancel_all(sys);
 
     CompFxSurface *fx;
     wl_list_for_each(fx, &sys->surfaces, link) {
@@ -783,6 +791,9 @@ comp_fx_output_prepare(struct CompOutput *output, double now_s)
     }
 
     if (track && fx_glass_prepare_output(sys, output, track, now_s))
+        any_animating = true;
+
+    if (fx_transition_prepare_output(sys, now_s))
         any_animating = true;
 
     return any_animating;

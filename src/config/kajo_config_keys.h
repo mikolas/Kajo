@@ -26,14 +26,25 @@
 #define KAJO_CFG_DOMAIN_COMP              COMP_SEC_COMP
 
 /* theme.toml */
-#define KAJO_CFG_KEY_ACCENT_COLOR         "accent_color"
-#define KAJO_CFG_KEY_UI_FONT_SIZE_PX      "ui_font_size_px"
-#define KAJO_CFG_KEY_HEADING_FONT_SIZE_PX "font_heading_size_px"
-#define KAJO_CFG_KEY_SUB_FONT_SIZE_PX     "font_subtitle_size_px"
-#define KAJO_CFG_KEY_BADGE_FONT_SIZE_PX   "font_badge_size_px"
-#define KAJO_CFG_KEY_CSS_PATH             "css_path"
-#define KAJO_CFG_KEY_SETTINGS_WIDTH       "settings_width"
-#define KAJO_CFG_KEY_SETTINGS_HEIGHT      "settings_height"
+#define KAJO_CFG_KEY_ACCENT_COLOR          "accent_color"
+#define KAJO_CFG_KEY_UI_FONT_FAMILY        "ui_font_family"
+#define KAJO_CFG_KEY_UI_FONT_SIZE_PX       "ui_font_size_px"
+#define KAJO_CFG_KEY_HEADING_FONT_SIZE_PX  "font_heading_size_px"
+#define KAJO_CFG_KEY_SUB_FONT_SIZE_PX      "font_subtitle_size_px"
+#define KAJO_CFG_KEY_BADGE_FONT_SIZE_PX    "font_badge_size_px"
+#define KAJO_CFG_KEY_GLASS_TINT            "glass_tint"
+#define KAJO_CFG_KEY_PANEL_OPACITY         "panel_opacity"
+#define KAJO_CFG_KEY_GLASS_OPACITY         "glass_opacity"
+#define KAJO_CFG_KEY_GLASS_CTRL_CONTRAST   "glass_control_contrast"
+#define KAJO_CFG_KEY_WIDGET_CHIP_OPACITY   "widget_chip_opacity"
+#define KAJO_CFG_KEY_ACCENT_GLASS_TINT     "accent_glass_tint"
+#define KAJO_CFG_KEY_SURFACE_BASE          "surface_base"
+#define KAJO_CFG_KEY_SURFACE_CONTRAST      "surface_contrast"
+#define KAJO_CFG_KEY_BORDER_OPACITY        "border_opacity"
+#define KAJO_CFG_KEY_SECONDARY_FG_CONTRAST "secondary_fg_contrast"
+#define KAJO_CFG_KEY_CSS_PATH              "css_path"
+#define KAJO_CFG_KEY_SETTINGS_WIDTH        "settings_width"
+#define KAJO_CFG_KEY_SETTINGS_HEIGHT       "settings_height"
 
 /* shell.toml sections */
 #define KAJO_CFG_SEC_PANEL                "panel"

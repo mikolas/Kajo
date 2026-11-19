@@ -140,14 +140,25 @@ gboolean           shell_widget_config_equal(const ShellWidgetConfig *a,
 /* ─── 1. Theme & Typography Domain (theme.toml) ─── */
 
 typedef struct {
-    gchar *accent_color;          /* "#0078d4" */
-    gint   ui_font_size_px;       /* [11..20], default 14 */
-    gint   font_heading_size_px;  /* [10..18], default 13 */
-    gint   font_subtitle_size_px; /* [10..18], default 12 */
-    gint   font_badge_size_px;    /* [9..16],  default 11 */
-    gchar *css_path;              /* Optional custom CSS override path or "" */
-    gint   settings_width;        /* [480..3840], default 900 */
-    gint   settings_height;       /* [360..2160], default 640 */
+    gchar   *accent_color;          /* "#0078d4" */
+    gchar   *ui_font_family;        /* "Fira Code" */
+    gint     ui_font_size_px;       /* [11..20], default 14 */
+    gint     font_heading_size_px;  /* [10..18], default 13 */
+    gint     font_subtitle_size_px; /* [10..18], default 12 */
+    gint     font_badge_size_px;    /* [9..16],  default 11 */
+    gchar   *glass_tint;            /* "#121212" */
+    gdouble  panel_opacity;         /* [0.0..1.0], default 0.58 */
+    gdouble  glass_opacity;         /* [0.0..1.0], default 0.62 */
+    gdouble  glass_control_contrast;/* [0.0..2.0], default 1.0 */
+    gdouble  widget_chip_opacity;   /* [0.0..0.25], default 0.0 */
+    gdouble  accent_glass_tint;     /* [0.0..0.25], default 0.0 */
+    gchar   *surface_base;          /* "#141414" */
+    gdouble  surface_contrast;      /* [0.0..2.0], default 1.0 */
+    gdouble  border_opacity;        /* [0.0..1.0], default 1.0 */
+    gdouble  secondary_fg_contrast; /* [0.5..1.5], default 1.0 */
+    gchar   *css_path;              /* Optional custom CSS override path or "" */
+    gint     settings_width;        /* [480..3840], default 900 */
+    gint     settings_height;       /* [360..2160], default 640 */
 } KajoThemeCfg;
 
 /* ─── 2. Wayland Shell Domain (shell.toml) ─── */

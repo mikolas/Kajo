@@ -1,10 +1,21 @@
 # theme.toml — Kajo Desktop Suite Theme & Typography Defaults
 
 accent_color                   = "#0078d4"
+ui_font_family                 = "Fira Code"
 ui_font_size_px                = 14
 font_heading_size_px           = 13
 font_subtitle_size_px          = 12
 font_badge_size_px             = 11
+glass_tint                     = "#121212"
+panel_opacity                  = 0.58
+glass_opacity                  = 0.62
+glass_control_contrast         = 1.0
+widget_chip_opacity            = 0.0
+accent_glass_tint              = 0.0
+surface_base                   = "#141414"
+surface_contrast               = 1.0
+border_opacity                 = 1.0
+secondary_fg_contrast          = 1.0
 css_path                       = ""
 settings_width                 = 900
 settings_height                = 640

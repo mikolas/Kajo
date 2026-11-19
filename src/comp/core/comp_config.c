@@ -1047,6 +1047,13 @@ merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDia
             else
                 comp_diag_add(diag, src, us.lineno, "[effects.shadow] 'unfocused_scale' must be in 0..2; ignored");
         }
+        toml_datum_t st = toml_get(sh, COMP_KEY_STRENGTH);
+        if (st.type != TOML_UNKNOWN) {
+            if (datum_as_double(st, &dval) && dval >= 0.0 && dval <= 2.0)
+                cfg->fx.shadow.strength = dval;
+            else
+                comp_diag_add(diag, src, st.lineno, "[effects.shadow] 'strength' must be in 0..2; ignored");
+        }
         toml_datum_t dur = toml_get(sh, COMP_KEY_DURATION_MS);
         if (dur.type == TOML_INT64 && dur.u.int64 >= 0 && dur.u.int64 <= 5000)
             cfg->fx.shadow.duration_ms = (int32_t)dur.u.int64;
@@ -1133,6 +1140,65 @@ merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDia
             else
                 comp_diag_add(diag, src, mhz.lineno, "[effects.glass] 'max_recompute_hz' must be in 0..1000; ignored");
         }
+    }
+
+    toml_datum_t tr = toml_get(fx, COMP_SEC_FX_TRANSITIONS);
+    if (tr.type == TOML_TABLE) {
+        toml_datum_t ten = toml_get(tr, COMP_KEY_ENABLED);
+        if (ten.type == TOML_BOOLEAN)
+            cfg->fx.transitions.enabled = ten.u.boolean;
+
+        toml_datum_t op = toml_get(tr, COMP_KEY_OPEN_PRESET);
+        if (op.type == TOML_STRING) {
+            CompFxOpenPreset p = COMP_FX_OPEN_DEFAULT;
+            if (comp_fx_open_preset_from_str(op.u.s, &p))
+                cfg->fx.transitions.open_preset = p;
+            else
+                comp_diag_add(diag, src, op.lineno, "[effects.transitions] unknown open_preset '%s'; ignored", op.u.s);
+        }
+        toml_datum_t od = toml_get(tr, COMP_KEY_OPEN_DURATION_MS);
+        if (od.type == TOML_INT64 && od.u.int64 >= 0 && od.u.int64 <= 2000)
+            cfg->fx.transitions.open_duration_ms = (int32_t)od.u.int64;
+        toml_datum_t oc = toml_get(tr, COMP_KEY_OPEN_CURVE);
+        if (oc.type == TOML_STRING) {
+            CompFxTransitionCurve c = COMP_FX_CURVE_EASE_OUT_EXPO;
+            if (comp_fx_curve_from_str(oc.u.s, &c))
+                cfg->fx.transitions.open_curve = c;
+            else
+                comp_diag_add(diag, src, oc.lineno, "[effects.transitions] unknown open_curve '%s'; ignored", oc.u.s);
+        }
+
+        toml_datum_t cp = toml_get(tr, COMP_KEY_CLOSE_PRESET);
+        if (cp.type == TOML_STRING) {
+            CompFxClosePreset p = COMP_FX_CLOSE_DEFAULT;
+            if (comp_fx_close_preset_from_str(cp.u.s, &p))
+                cfg->fx.transitions.close_preset = p;
+            else
+                comp_diag_add(diag, src, cp.lineno, "[effects.transitions] unknown close_preset '%s'; ignored", cp.u.s);
+        }
+        toml_datum_t cd = toml_get(tr, COMP_KEY_CLOSE_DURATION_MS);
+        if (cd.type == TOML_INT64 && cd.u.int64 >= 0 && cd.u.int64 <= 2000)
+            cfg->fx.transitions.close_duration_ms = (int32_t)cd.u.int64;
+        toml_datum_t cc = toml_get(tr, COMP_KEY_CLOSE_CURVE);
+        if (cc.type == TOML_STRING) {
+            CompFxTransitionCurve c = COMP_FX_CURVE_EASE_OUT_QUAD;
+            if (comp_fx_curve_from_str(cc.u.s, &c))
+                cfg->fx.transitions.close_curve = c;
+            else
+                comp_diag_add(diag, src, cc.lineno, "[effects.transitions] unknown close_curve '%s'; ignored", cc.u.s);
+        }
+
+        toml_datum_t rp = toml_get(tr, COMP_KEY_RESIZE_PRESET);
+        if (rp.type == TOML_STRING) {
+            CompFxResizePreset p = COMP_FX_RESIZE_DEFAULT;
+            if (comp_fx_resize_preset_from_str(rp.u.s, &p))
+                cfg->fx.transitions.resize_preset = p;
+            else
+                comp_diag_add(diag, src, rp.lineno, "[effects.transitions] unknown resize_preset '%s'; ignored", rp.u.s);
+        }
+        toml_datum_t rd = toml_get(tr, COMP_KEY_RESIZE_DURATION_MS);
+        if (rd.type == TOML_INT64 && rd.u.int64 >= 0 && rd.u.int64 <= 2000)
+            cfg->fx.transitions.resize_duration_ms = (int32_t)rd.u.int64;
     }
 }
 

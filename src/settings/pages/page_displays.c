@@ -864,7 +864,7 @@ build_page_displays(void)
     segmented_group_connect(self->seg_orient, on_any_segment_changed, self);
     gtk_box_append(GTK_BOX(self->card_mon),
                    create_boxed_row("🔄", "Display Transform Orientation",
-                                    "Wayland output rotation applied via Niri IPC",
+                                    "Wayland output rotation applied via Compositor IPC",
                                     self->seg_orient));
 
     static const char *const scale_labels[] = { "100%", "125%", "150%", "175%", "200%", NULL };

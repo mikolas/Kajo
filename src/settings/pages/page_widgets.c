@@ -10,7 +10,7 @@ typedef struct {
 
 static const WidgetCatalogEntry WIDGET_CATALOG[] = {
     { "launcher",        "launcher — App Launcher",            "system-search-symbolic" },
-    { "workspaces",      "workspaces — Niri Workspaces",       "view-grid-symbolic" },
+    { "workspaces",      "workspaces — Compositor Workspaces", "view-grid-symbolic" },
     { "window",          "window — Focused Window Title",      "window-new-symbolic" },
     { "clock",           "clock — Clock & Calendar",           "preferences-system-time-symbolic" },
     { "media",           "media — MPRIS2 + 16-Band FFT",       "media-playback-start-symbolic" },
