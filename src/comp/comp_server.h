@@ -86,8 +86,9 @@ struct wlr_xwayland_surface;
 struct CompWindow;
 struct CompSwitcher;
 struct CompScreenshot;
+struct CompFxSystem;
 
-typedef struct {
+typedef struct CompServerOptions {
     const char *const *startup_argv;      /* optional: run once the socket exists (no shell) */
     const char        *config_path;       /* optional --config override */
     bool               exit_with_startup; /* terminate when that child exits (tests, greeter-like use) */
@@ -208,6 +209,7 @@ typedef struct CompServer {
     struct CompIpcState                  *ipc;
     struct CompSwitcher                  *switcher;
     struct CompScreenshot                *screenshot;
+    struct CompFxSystem                  *fx;
     size_t                                last_active_ws;
 
     /* Generational CompWinId slot table (spec §2.6) */
@@ -239,7 +241,7 @@ typedef struct CompServer {
                                                     uint32_t keysym, bool pressed);
 } CompServer;
 
-typedef struct {
+typedef struct CompOutput {
     struct wl_list            link;    /* CompServer.outputs */
     CompServer               *server;
     struct wlr_output        *wlr_output;
@@ -258,7 +260,7 @@ typedef struct {
     CompVrrPolicy             manual_vrr;
 } CompOutput;
 
-typedef struct {
+typedef struct CompWindowInfo {
     CompWinId   id;
     const char *title;
     const char *app_id;
@@ -317,6 +319,9 @@ bool               comp_window_close_id(CompServer *server, CompWinId id);
 void               comp_window_get_popup_trees(const struct CompWindow *w,
                                                struct wlr_scene_tree **out_popup_tree,
                                                struct wlr_scene_node **out_xdg_node);
+void               comp_window_get_popup_fx_rules(const struct CompWindow *w,
+                                                  bool *out_has_shadow, bool *out_shadow,
+                                                  bool *out_has_blur, bool *out_blur);
 void               comp_window_resize_column(CompServer *server, double delta, CompDeltaMode mode);
 void               comp_window_resize_height(CompServer *server, double delta, CompDeltaMode mode);
 double             comp_window_scroll_factor_for_surface(CompServer *server, struct wlr_surface *surface);

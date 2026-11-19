@@ -5,6 +5,7 @@
 
 #include "comp_log.h"
 #include "core/comp_schema_keys.h"
+#include "fx/comp_fx.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -462,6 +463,13 @@ handle_frame(void *owner, void *data)
     double now_s = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
 
     comp_window_tick_frame(s, now_s);
+    bool fx_animating = comp_fx_output_prepare(o, now_s);
+
+    struct wlr_scene_output_state_options scene_opts = {
+        .color_transform = comp_fx_output_get_color_transform(o),
+    };
+    const struct wlr_scene_output_state_options *opts_ptr =
+        scene_opts.color_transform ? &scene_opts : NULL;
 
     bool lock_active = s->locked;
     bool committed = false;
@@ -469,7 +477,7 @@ handle_frame(void *owner, void *data)
         wlr_scene_output_needs_frame(o->scene_output)) {
         struct wlr_output_state st;
         wlr_output_state_init(&st);
-        if (wlr_scene_output_build_state(o->scene_output, &st, NULL)) {
+        if (wlr_scene_output_build_state(o->scene_output, &st, opts_ptr)) {
             st.tearing_page_flip = true;
             if (!wlr_output_test_state(o->wlr_output, &st))
                 st.tearing_page_flip = false;
@@ -477,7 +485,7 @@ handle_frame(void *owner, void *data)
         }
         wlr_output_state_finish(&st);
     } else {
-        committed = wlr_scene_output_commit(o->scene_output, NULL);
+        committed = wlr_scene_output_commit(o->scene_output, opts_ptr);
     }
     if (committed)
         wlr_scene_output_send_frame_done(o->scene_output, &now);
@@ -492,9 +500,9 @@ handle_frame(void *owner, void *data)
     if (animating || o->was_animating) {
         uint32_t msec = (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000);
         comp_input_refresh_pointer_focus(s, msec);
-        if (animating)
-            wlr_output_schedule_frame(o->wlr_output);
     }
+    if (animating || fx_animating)
+        wlr_output_schedule_frame(o->wlr_output);
     o->was_animating = animating;
 }
 

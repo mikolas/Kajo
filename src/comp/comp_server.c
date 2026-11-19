@@ -3,6 +3,7 @@
 
 #include "comp_log.h"
 #include "core/comp_schema_keys.h"
+#include "fx/comp_fx.h"
 
 #include <errno.h>
 #include <libgen.h>
@@ -258,9 +259,10 @@ comp_server_recover_gpu(CompServer *s)
             wlr_output_init_render(o->wlr_output, new_allocator, new_renderer);
     }
 
-    /* Destroy any per-window capture sources bound to old_allocator/old_renderer
-     * before freeing those objects; subsequent requests will recreate them. */
+    /* Destroy any per-window capture sources and FX shaders bound to old_renderer
+     * before freeing old_allocator/old_renderer; FX shaders are recreated against new_renderer. */
     comp_window_destroy_capture_sources(s);
+    comp_fx_renderer_lost(s);
 
     if (old_allocator)
         wlr_allocator_destroy(old_allocator);
@@ -329,6 +331,7 @@ server_destructor(CompServer *s)
         wlr_backend_destroy(s->backend);       /* emits output/input destroy signals */
     if (s->display)
         wl_display_destroy(s->display);         /* destroys globals, compositor textures, seat, layout */
+    comp_fx_finish(s);
     if (s->allocator)
         wlr_allocator_destroy(s->allocator);
     if (s->renderer)
@@ -444,6 +447,8 @@ comp_server_create(const CompServerOptions *opts)
         wlr_log(WLR_ERROR, "could not create protocol globals");
         goto fail;
     }
+    if (!comp_fx_init(s))
+        goto fail;
 
     s->seat = wlr_seat_create(s->display, "seat0");
     s->cursor = wlr_cursor_create();
@@ -693,6 +698,7 @@ comp_server_reload_config(CompServer *s)
     comp_output_invalidate_changed_rules(s, s->config, cfg);
     comp_config_free(s->config);
     s->config = cfg;
+    comp_fx_config_apply(s, s->config);
 
     if (!cfg->xwayland_enabled && s->xwayland)
         comp_xwayland_finish(s);

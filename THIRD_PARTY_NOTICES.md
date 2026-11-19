@@ -8,12 +8,13 @@ Libraries that Kajo links dynamically (for example `poppler-glib`, `libmpv`,
 `libsidplayfp`, `uade`) are not part of this repository; see the License section of
 the [README](README.md).
 
-## Vendored source code
+## Vendored and statically linked source code
 
 | Component | Path | Licence | Notice |
 | :--- | :--- | :--- | :--- |
 | tomlc17 (TOML parser) | `src/vendor/tomlc17/` | MIT, Copyright (c) 2024-2026 CK Tan | `src/vendor/tomlc17/LICENSE` |
 | tinyexpr (expression evaluator) | `src/vendor/tinyexpr/` | Zlib, Copyright (c) 2015-2020 Lewis Van Winkle | header of `tinyexpr.h` / `tinyexpr.c` (`SPDX-License-Identifier: Zlib`) |
+| wlroots (Kajo's fork, linked statically into `kajo-comp`) | `subprojects/wlroots/` (git submodule of `https://github.com/mikolas/wlroots`) | MIT, Copyright (c) 2017, 2018 Drew DeVault, Copyright (c) 2014 Jari Vetoniemi, Copyright (c) 2023 The wlroots contributors | `subprojects/wlroots/LICENSE`, installed by `PKGBUILD` as `wlroots-LICENSE` |
 
 ## Wayland protocol definitions
 

@@ -12,6 +12,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <getopt.h>
+#include <limits.h>
 #include <math.h>
 #include <signal.h>
 #include <stdio.h>
@@ -20,10 +21,112 @@
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <sysexits.h>
+#include <time.h>
 #include <unistd.h>
 #include <wlr/util/log.h>
+
+static FILE *g_session_log_fp = NULL;
+
+static const char *
+log_importance_label(enum wlr_log_importance importance)
+{
+    switch (importance) {
+    case WLR_ERROR: return "ERROR";
+    case WLR_INFO:  return "INFO";
+    case WLR_DEBUG: return "DEBUG";
+    default:        return "LOG";
+    }
+}
+
+static void
+comp_log_callback(enum wlr_log_importance importance, const char *fmt, va_list args)
+{
+    struct timespec ts = {0};
+    clock_gettime(CLOCK_REALTIME, &ts);
+    struct tm tm_val = {0};
+    localtime_r(&ts.tv_sec, &tm_val);
+    char time_buf[32];
+    strftime(time_buf, sizeof(time_buf), "%Y-%m-%d %H:%M:%S", &tm_val);
+    long msec = ts.tv_nsec / 1000000L;
+    const char *lvl = log_importance_label(importance);
+
+    va_list args_copy;
+    va_copy(args_copy, args);
+    fprintf(stderr, "%s.%03ld [%s] ", time_buf, msec, lvl);
+    vfprintf(stderr, fmt, args);
+    fputc('\n', stderr);
+
+    if (g_session_log_fp) {
+        fprintf(g_session_log_fp, "%s.%03ld [%s] ", time_buf, msec, lvl);
+        vfprintf(g_session_log_fp, fmt, args_copy);
+        fputc('\n', g_session_log_fp);
+        fflush(g_session_log_fp);
+    }
+    va_end(args_copy);
+}
+
+static void
+mkdir_p(const char *dir_path)
+{
+    if (!dir_path || !*dir_path)
+        return;
+    char tmp[PATH_MAX];
+    snprintf(tmp, sizeof(tmp), "%s", dir_path);
+    for (char *p = tmp + 1; *p; p++) {
+        if (*p == '/') {
+            *p = '\0';
+            (void)mkdir(tmp, 0700);
+            *p = '/';
+        }
+    }
+    (void)mkdir(tmp, 0700);
+}
+
+static void
+open_session_log_file(bool session_mode)
+{
+    const char *explicit_log = getenv("KAJO_COMP_LOG_FILE");
+    if (!session_mode && (!explicit_log || !*explicit_log))
+        return;
+
+    char log_path[PATH_MAX];
+    char prev_path[PATH_MAX];
+    if (explicit_log && *explicit_log) {
+        int n1 = snprintf(log_path, sizeof(log_path), "%s", explicit_log);
+        int n2 = snprintf(prev_path, sizeof(prev_path), "%s.prev", explicit_log);
+        if (n1 < 0 || (size_t)n1 >= sizeof(log_path) ||
+            n2 < 0 || (size_t)n2 >= sizeof(prev_path))
+            return;
+    } else {
+        const char *state_home = getenv("XDG_STATE_HOME");
+        const char *home       = getenv("HOME");
+        char dir_path[PATH_MAX];
+        int nd = -1;
+        if (state_home && *state_home) {
+            nd = snprintf(dir_path, sizeof(dir_path), "%s/kajo", state_home);
+        } else if (home && *home) {
+            nd = snprintf(dir_path, sizeof(dir_path), "%s/.local/state/kajo", home);
+        } else {
+            return;
+        }
+        if (nd < 0 || (size_t)nd >= sizeof(dir_path))
+            return;
+        mkdir_p(dir_path);
+        int n1 = snprintf(log_path, sizeof(log_path), "%s/kajo-comp.log", dir_path);
+        int n2 = snprintf(prev_path, sizeof(prev_path), "%s/kajo-comp.prev.log", dir_path);
+        if (n1 < 0 || (size_t)n1 >= sizeof(log_path) ||
+            n2 < 0 || (size_t)n2 >= sizeof(prev_path))
+            return;
+    }
+
+    if (access(log_path, F_OK) == 0)
+        (void)rename(log_path, prev_path);
+
+    g_session_log_fp = fopen(log_path, "we");
+}
 
 static void
 usage(FILE *f, const char *argv0)
@@ -358,21 +461,40 @@ main(int argc, char *argv[])
             fprintf(stderr, "kajo-comp: XDG_RUNTIME_DIR is required in --greeter-mode\n");
             return EX_SOFTWARE;
         }
+    } else {
+        /* Uncap inherited soft RLIMIT_DATA up to rlim_max so child apps with large
+         * virtual data cages (e.g. Chromium/Thorium V8 PartitionAlloc) do not hit
+         * an 8 GB VmData limit and trap with SIGILL. */
+        struct rlimit rl_data = {0};
+        if (getrlimit(RLIMIT_DATA, &rl_data) == 0 && rl_data.rlim_cur < rl_data.rlim_max) {
+            rl_data.rlim_cur = rl_data.rlim_max;
+            (void)setrlimit(RLIMIT_DATA, &rl_data);
+        }
+        open_session_log_file(opts.session_mode);
     }
 
     /* Writing to a disconnected client must never kill the compositor (spec §7.2.1) */
     signal(SIGPIPE, SIG_IGN);
-    wlr_log_init(level, NULL);
+    wlr_log_init(level, g_session_log_fp ? comp_log_callback : NULL);
 
     int fail_code = opts.greeter_mode ? EX_SOFTWARE : 1;
     CompServer *server = comp_server_create(&opts);
-    if (!server)
+    if (!server) {
+        if (g_session_log_fp) {
+            fclose(g_session_log_fp);
+            g_session_log_fp = NULL;
+        }
         return fail_code;
+    }
     int status = fail_code;
     if (comp_server_start(server)) {
         comp_server_run(server);
         status = server->exit_status;
     }
     comp_server_destroy(server);
+    if (g_session_log_fp) {
+        fclose(g_session_log_fp);
+        g_session_log_fp = NULL;
+    }
     return status;
 }

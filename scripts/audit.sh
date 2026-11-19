@@ -157,6 +157,8 @@ cmd_comp() {
     if grep -rnE "\bwaitpid[[:space:]]*\(" src/comp --include='*.c' | grep -v WNOHANG; then bad=1; fi
     echo "== kajo-comp: src/comp/core must not include wlroots, Vulkan or GLib (spec §7.2.4)"
     if grep -rnE "#include[[:space:]]*<(wlr/|vulkan/|glib|gio/|wayland-)" src/comp/core; then bad=1; fi
+    echo "== kajo-comp: wlr_kfx_* and WLR_HAS_KFX restricted to src/comp/fx/ (spec §15 CB1, CB2)"
+    if rg -n "wlr_kfx_|WLR_HAS_KFX" src/comp --glob '!src/comp/fx/**'; then bad=1; fi
     [ "$bad" = 0 ] && echo "ok"
     return "$bad"
 }

@@ -30,6 +30,50 @@ damping_ratio = 0.75
 stiffness = 323.0
 epsilon = 0.0001
 
+[effects]
+enabled = true
+dither = true
+color_filter = "none"                   # "none" | "grayscale" | "night-light" | "protanopia" | "deuteranopia" | "tritanopia"
+color_filter_strength = 1.0
+night_light_temperature = 4000
+sdr_white_nits = 0.0                    # 0.0 = default (203 cd/m^2 on HDR PQ), or 80.0..1000.0
+tonemap = true
+tonemap_peak_nits = 0.0                 # 0.0 = container max, or target panel peak (e.g. 616.9 cd/m^2)
+
+[effects.glass]
+enabled = true
+passes = 3
+offset = 2.0
+saturation = 1.15
+brightness = 0.90
+tint = "#141414"
+tint_alpha = 0.35
+max_recompute_hz = 0
+
+[effects.shadow]
+enabled = true
+color = "#000000"
+unfocused_scale = 0.60
+duration_ms = 150
+
+[[effects.shadow.layers]]
+sigma = 6.0
+offset_x = 0.0
+offset_y = 2.0
+opacity = 0.30
+
+[[effects.shadow.layers]]
+sigma = 24.0
+offset_x = 0.0
+offset_y = 8.0
+opacity = 0.18
+
+[effects.dim]
+enabled = false
+color = "#000000"
+opacity = 0.15
+duration_ms = 150
+
 [switcher]
 active_border_color = "accent"
 urgent_border_color = "#e81123"

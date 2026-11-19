@@ -1,0 +1,423 @@
+/* test_comp_fx_core.c — unit tests for pure-C effects math, std140 packing,
+ * transforms, and config defaults (spec §15 CB6). */
+#include "../src/comp/core/comp_fx_core.h"
+#include "../src/comp/core/comp_config.h"
+
+#include <glib.h>
+#include <math.h>
+#include <stddef.h>
+#include <string.h>
+
+/* Verify std140 UBO layout & offsets match src/comp/fx/shaders/ shaders exactly. */
+_Static_assert(sizeof(CompFxCommonParams) == 32, "CompFxCommonParams must be 32 bytes (std140)");
+_Static_assert(sizeof(CompFxShadowParams) == 128, "CompFxShadowParams must be 128 bytes (std140)");
+_Static_assert(sizeof(CompFxDimParams) == 64, "CompFxDimParams must be 64 bytes (std140)");
+_Static_assert(sizeof(CompFxBlurParams) == 80, "CompFxBlurParams must be 80 bytes (std140)");
+_Static_assert(sizeof(CompFxGlassParams) == 96, "CompFxGlassParams must be 96 bytes (std140)");
+_Static_assert(offsetof(CompFxCommonParams, dst_origin) == 0, "dst_origin offset");
+_Static_assert(offsetof(CompFxCommonParams, dst_size) == 8, "dst_size offset");
+_Static_assert(offsetof(CompFxCommonParams, opacity) == 16, "opacity offset");
+_Static_assert(offsetof(CompFxCommonParams, scale) == 20, "scale offset");
+_Static_assert(offsetof(CompFxCommonParams, hdr_headroom) == 24, "hdr_headroom offset");
+_Static_assert(offsetof(CompFxCommonParams, flags) == 28, "flags offset");
+_Static_assert(offsetof(CompFxShadowParams, color_lin) == 32, "shadow color_lin offset");
+_Static_assert(offsetof(CompFxShadowParams, outer_rect) == 48, "shadow outer_rect offset");
+_Static_assert(offsetof(CompFxShadowParams, layers) == 64, "shadow layers offset");
+_Static_assert(offsetof(CompFxDimParams, color_lin) == 32, "dim color_lin offset");
+_Static_assert(offsetof(CompFxDimParams, outer_rect) == 48, "dim outer_rect offset");
+_Static_assert(offsetof(CompFxBlurParams, src_rect) == 32, "blur src_rect offset");
+_Static_assert(offsetof(CompFxBlurParams, valid_bounds) == 48, "blur valid_bounds offset");
+_Static_assert(offsetof(CompFxBlurParams, inv_tex_size) == 64, "blur inv_tex_size offset");
+_Static_assert(offsetof(CompFxBlurParams, offset) == 72, "blur offset offset");
+_Static_assert(offsetof(CompFxGlassParams, crop_rect) == 32, "glass crop_rect offset");
+_Static_assert(offsetof(CompFxGlassParams, valid_bounds) == 48, "glass valid_bounds offset");
+_Static_assert(offsetof(CompFxGlassParams, tint_lin) == 64, "glass tint_lin offset");
+_Static_assert(offsetof(CompFxGlassParams, inv_tex_size) == 80, "glass inv_tex_size offset");
+_Static_assert(offsetof(CompFxGlassParams, saturation) == 88, "glass saturation offset");
+_Static_assert(offsetof(CompFxGlassParams, brightness) == 92, "glass brightness offset");
+
+static void
+test_defaults_and_srgb(void)
+{
+    CompFxConfig cfg;
+    comp_fx_config_defaults(&cfg);
+
+    g_assert_true(cfg.enabled);
+    g_assert_true(cfg.dither);
+    g_assert_true(cfg.glass.enabled);
+    g_assert_cmpint(cfg.glass.passes, ==, 3);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.offset, 2.0, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.saturation, 1.15, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.brightness, 0.90, 1e-9);
+    g_assert_cmpfloat_with_epsilon(cfg.glass.tint_alpha, 0.35, 1e-9);
+    g_assert_cmpint(cfg.glass.max_recompute_hz, ==, 0);
+    g_assert_true(cfg.shadow.enabled);
+    g_assert_cmpuint(cfg.shadow.n_layers, ==, 2);
+    g_assert_cmpfloat_with_epsilon(cfg.shadow.unfocused_scale, 0.6, 1e-9);
+    g_assert_cmpint(cfg.shadow.duration_ms, ==, 150);
+    g_assert_false(cfg.dim.enabled);
+    g_assert_cmpfloat_with_epsilon(cfg.dim.opacity, 0.15, 1e-9);
+
+    g_assert_cmpfloat_with_epsilon(comp_fx_srgb_to_linear(-0.5f), 0.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(comp_fx_srgb_to_linear(0.0f), 0.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(comp_fx_srgb_to_linear(0.04045f), 0.04045f / 12.92f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(comp_fx_srgb_to_linear(0.5f), 0.214041f, 1e-4);
+    g_assert_cmpfloat_with_epsilon(comp_fx_srgb_to_linear(1.5f), 1.0f, 1e-6);
+
+    float srgb[4] = { 0.5f, 0.25f, 1.0f, 0.8f };
+    float lin[4] = {0};
+    comp_fx_rgba_srgb_to_linear(srgb, lin);
+    g_assert_cmpfloat_with_epsilon(lin[0], comp_fx_srgb_to_linear(0.5f), 1e-6);
+    g_assert_cmpfloat_with_epsilon(lin[1], comp_fx_srgb_to_linear(0.25f), 1e-6);
+    g_assert_cmpfloat_with_epsilon(lin[2], 1.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(lin[3], 0.8f, 1e-6);
+}
+
+static void
+test_reach_and_anchor_box(void)
+{
+    CompFxShadowConfig sh = {0};
+    sh.enabled = true;
+    sh.n_layers = 2;
+    sh.layers[0] = (CompFxShadowLayer){ .sigma = 6.0, .offset_x = 0.0, .offset_y = 2.0, .opacity = 0.30 };
+    sh.layers[1] = (CompFxShadowLayer){ .sigma = 24.0, .offset_x = 0.0, .offset_y = 8.0, .opacity = 0.18 };
+
+    /* 3 * 24 = 72 px; top = 72 - 8 = 64, bottom = 72 + 8 = 80, left = 72, right = 72. */
+    CompFxMargins m = comp_fx_shadow_reach(&sh);
+    g_assert_cmpint(m.left, ==, 72);
+    g_assert_cmpint(m.top, ==, 64);
+    g_assert_cmpint(m.right, ==, 72);
+    g_assert_cmpint(m.bottom, ==, 80);
+
+    CompFxRect outer = { .x = 100, .y = 200, .width = 400, .height = 300 };
+    CompFxRect anchor = comp_fx_shadow_anchor_box(outer, &sh);
+    g_assert_cmpint(anchor.x, ==, 100 - 72);
+    g_assert_cmpint(anchor.y, ==, 200 - 64);
+    g_assert_cmpint(anchor.width, ==, 400 + 72 + 72);
+    g_assert_cmpint(anchor.height, ==, 300 + 64 + 80);
+
+    /* Offset larger than 3*sigma clamps opposite side to >= 0, and caps at 256 px. */
+    CompFxShadowConfig sh_extreme = {0};
+    sh_extreme.enabled = true;
+    sh_extreme.n_layers = 1;
+    sh_extreme.layers[0] = (CompFxShadowLayer){ .sigma = 1.0, .offset_x = 200.0, .offset_y = -200.0, .opacity = 0.5 };
+    CompFxMargins m2 = comp_fx_shadow_reach(&sh_extreme);
+    g_assert_cmpint(m2.left, ==, 0);
+    g_assert_cmpint(m2.right, ==, 203);
+    g_assert_cmpint(m2.top, ==, 203);
+    g_assert_cmpint(m2.bottom, ==, 0);
+
+    /* 3*120 = 360; right = 360 + 50 = 410, left = 360 - 50 = 310. */
+    sh_extreme.layers[0] = (CompFxShadowLayer){ .sigma = 120.0, .offset_x = 50.0, .offset_y = 0.0, .opacity = 0.5 };
+    CompFxMargins m3 = comp_fx_shadow_reach(&sh_extreme);
+    g_assert_cmpint(m3.right, ==, 410);
+    g_assert_cmpint(m3.left, ==, 310);
+}
+
+static void
+test_coverage_gaussian_box(void)
+{
+    double x0 = 100.0, y0 = 100.0, x1 = 500.0, y1 = 400.0;
+    double sigma = 10.0;
+
+    /* Deep interior approaches 1.0 */
+    double center = comp_fx_shadow_coverage(300.0, 250.0, x0, y0, x1, y1, sigma);
+    g_assert_cmpfloat_with_epsilon(center, 1.0, 1e-6);
+
+    /* Center of straight top edge is 0.5 in Y and ~1.0 in X -> ~0.5 */
+    double edge = comp_fx_shadow_coverage(300.0, y0, x0, y0, x1, y1, sigma);
+    g_assert_cmpfloat_with_epsilon(edge, 0.5, 1e-4);
+
+    /* Corner is 0.5 * 0.5 = 0.25 */
+    double corner = comp_fx_shadow_coverage(x0, y0, x0, y0, x1, y1, sigma);
+    g_assert_cmpfloat_with_epsilon(corner, 0.25, 1e-4);
+
+    /* 1*sigma outside straight edge: 0.5 * erfc(1/sqrt(2)) ≈ 0.158655 */
+    double one_sigma = comp_fx_shadow_coverage(300.0, y0 - sigma, x0, y0, x1, y1, sigma);
+    g_assert_cmpfloat_with_epsilon(one_sigma, 0.158655, 1e-4);
+
+    /* Monotonic decrease away from edge */
+    double two_sigma = comp_fx_shadow_coverage(300.0, y0 - 2.0 * sigma, x0, y0, x1, y1, sigma);
+    g_assert_cmpfloat(two_sigma, <, one_sigma);
+    g_assert_cmpfloat(two_sigma, >, 0.0);
+}
+
+static void
+test_transforms_and_packing(void)
+{
+    /* Test transform at fractional scale 1.75 and 90-degree rotation (trans_w=1920, trans_h=1080 buffer). */
+    CompFxRect out_log = { .x = 0, .y = 0, .width = 1097, .height = 617 };
+    CompFxRect box_log = { .x = 100, .y = 80, .width = 200, .height = 120 };
+
+    CompFxRect b_norm = comp_fx_transform_box(box_log, out_log, 1.75f, COMP_TRANSFORM_NORMAL, 1920, 1080);
+    /* round(100*1.75)=175, round(300*1.75)-175=525-175=350; round(80*1.75)=140, round(200*1.75)-140=350-140=210 */
+    g_assert_cmpint(b_norm.x, ==, 175);
+    g_assert_cmpint(b_norm.y, ==, 140);
+    g_assert_cmpint(b_norm.width, ==, 350);
+    g_assert_cmpint(b_norm.height, ==, 210);
+
+    CompFxRect b_90 = comp_fx_transform_box(box_log, out_log, 1.0f, COMP_TRANSFORM_90, 1080, 1097);
+    g_assert_cmpint(b_90.width, ==, 120);
+    g_assert_cmpint(b_90.height, ==, 200);
+
+    float ox = 0.0f, oy = 0.0f;
+    comp_fx_transform_offset(4.0, 10.0, 2.0f, COMP_TRANSFORM_90, &ox, &oy);
+    g_assert_cmpfloat(hypot((double)ox, (double)oy), >, 20.0);
+
+    /* Pack shadow UBO & check std140 fields */
+    CompFxConfig cfg;
+    comp_fx_config_defaults(&cfg);
+    cfg.shadow.color_rgba[0] = 0.5f;
+    cfg.shadow.color_rgba[1] = 0.0f;
+    cfg.shadow.color_rgba[2] = 0.25f;
+    cfg.shadow.color_rgba[3] = 1.0f;
+
+    CompFxRect dst_box = { .x = 40, .y = 50, .width = 500, .height = 400 };
+    CompFxRect outer_buf = { .x = 120, .y = 110, .width = 350, .height = 210 };
+    CompFxShadowParams sp;
+    memset(&sp, 0xAA, sizeof(sp));
+    comp_fx_shadow_pack(&cfg.shadow, dst_box, outer_buf, 0.75f, 1.75f, COMP_TRANSFORM_NORMAL, &sp);
+
+    g_assert_cmpfloat_with_epsilon(sp.common.dst_origin[0], 40.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.common.dst_origin[1], 50.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.common.dst_size[0], 500.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.common.dst_size[1], 400.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.common.opacity, 0.75f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.common.scale, 1.75f, 1e-6);
+    g_assert_cmpuint(sp.common.flags, ==, 2u);
+    g_assert_cmpfloat_with_epsilon(sp.color_lin[0], comp_fx_srgb_to_linear(0.5f), 1e-5);
+    g_assert_cmpfloat_with_epsilon(sp.outer_rect[0], 120.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.outer_rect[2], 470.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.layers[0][2], 6.0f * 1.75f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(sp.layers[0][3], 0.30f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.layers[1][1], 8.0f * 1.75f, 1e-5);
+    /* Unused layers zeroed */
+    g_assert_cmpfloat_with_epsilon(sp.layers[2][2], 0.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(sp.layers[3][3], 0.0f, 1e-6);
+
+    /* Pack dim UBO */
+    cfg.dim.enabled = true;
+    cfg.dim.color_rgba[0] = 0.1f;
+    CompFxDimParams dp;
+    memset(&dp, 0xAA, sizeof(dp));
+    comp_fx_dim_pack(&cfg.dim, outer_buf, outer_buf, 0.25f, 2.0f, &dp);
+    g_assert_cmpfloat_with_epsilon(dp.common.opacity, 0.25f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(dp.common.scale, 2.0f, 1e-6);
+    g_assert_cmpuint(dp.common.flags, ==, 0u);
+    g_assert_cmpfloat_with_epsilon(dp.color_lin[0], comp_fx_srgb_to_linear(0.1f), 1e-5);
+    g_assert_cmpfloat_with_epsilon(dp.outer_rect[3], 320.0f, 1e-6);
+
+    /* Focus spring params */
+    CompSpringParams spr;
+    g_assert_false(comp_fx_focus_spring_params(0, 1.0, &spr));
+    g_assert_false(comp_fx_focus_spring_params(150, 0.0, &spr));
+    g_assert_true(comp_fx_focus_spring_params(150, 1.0, &spr));
+    g_assert_cmpfloat(spr.stiffness, >, 0.0);
+    g_assert_cmpfloat_with_epsilon(spr.damping_ratio, 1.0, 1e-9);
+
+    /* Glass sample reach & box */
+    g_assert_cmpint(comp_fx_glass_sample_reach(&cfg.glass), ==, 16);
+    CompFxRect g_surf = { .x = 100, .y = 50, .width = 300, .height = 200 };
+    CompFxRect g_samp = comp_fx_glass_sample_box(g_surf, &cfg.glass);
+    g_assert_cmpint(g_samp.x, ==, 84);
+    g_assert_cmpint(g_samp.y, ==, 34);
+    g_assert_cmpint(g_samp.width, ==, 332);
+    g_assert_cmpint(g_samp.height, ==, 232);
+
+    /* Blur & Glass UBO packing */
+    CompFxBlurParams bp;
+    memset(&bp, 0xAA, sizeof(bp));
+    CompFxRect b_dst = { .x = 0, .y = 0, .width = 166, .height = 116 };
+    CompFxRect b_src = { .x = 0, .y = 0, .width = 332, .height = 232 };
+    comp_fx_blur_pack(b_dst, b_src, 512, 256, 2.0, &bp);
+    g_assert_cmpfloat_with_epsilon(bp.common.dst_size[0], 166.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.src_rect[2], 332.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.valid_bounds[0], 0.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.valid_bounds[2], 331.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.inv_tex_size[0], 1.0f / 512.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(bp.offset, 2.0f, 1e-6);
+
+    CompFxGlassParams gp;
+    memset(&gp, 0xAA, sizeof(gp));
+    CompFxRect t0_src = { .x = 42, .y = 17, .width = 166, .height = 116 };
+    comp_fx_glass_pack(&cfg.glass, g_surf, t0_src, 512, 256, 2, 1.0f, 1.0f, &gp);
+    g_assert_cmpfloat_with_epsilon(gp.common.dst_origin[0], 100.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.common.dst_size[0], 300.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[0], 8.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[1], 8.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[2], 150.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.crop_rect[3], 100.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.valid_bounds[0], 0.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.valid_bounds[2], 165.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.tint_lin[3], 0.35f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.saturation, 1.15f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.brightness, 0.90f, 1e-6);
+
+    /* Effective resolution (fractional scale ceiling) & rect clamp */
+    int32_t eff_w = 0, eff_h = 0;
+    comp_fx_effective_resolution(1920, 1080, 1.75f, &eff_w, &eff_h);
+    g_assert_cmpint(eff_w, ==, 1098);
+    g_assert_cmpint(eff_h, ==, 618);
+
+    CompFxRect clamped = comp_fx_clamp_rect(
+        (CompFxRect){ .x = -10, .y = 50, .width = 120, .height = 100 }, 80, 120);
+    g_assert_cmpint(clamped.x, ==, 0);
+    g_assert_cmpint(clamped.y, ==, 50);
+    g_assert_cmpint(clamped.width, ==, 80);
+    g_assert_cmpint(clamped.height, ==, 70);
+
+    CompFxRect empty_clamp = comp_fx_clamp_rect(
+        (CompFxRect){ .x = 90, .y = 0, .width = 20, .height = 20 }, 80, 80);
+    g_assert_cmpint(empty_clamp.width, ==, 0);
+    g_assert_cmpint(empty_clamp.height, ==, 0);
+}
+
+static void
+test_m4_color_filters_and_bt2390(void)
+{
+    CompFxColorFilter f = COMP_FX_FILTER_NONE;
+    g_assert_true(comp_fx_color_filter_from_str("none", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_NONE);
+    g_assert_cmpstr(comp_fx_color_filter_to_str(f), ==, "none");
+
+    g_assert_true(comp_fx_color_filter_from_str("GRAYSCALE", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_GRAYSCALE);
+    g_assert_cmpstr(comp_fx_color_filter_to_str(f), ==, "grayscale");
+
+    g_assert_true(comp_fx_color_filter_from_str("night-light", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_NIGHT_LIGHT);
+    g_assert_true(comp_fx_color_filter_from_str("night_light", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_NIGHT_LIGHT);
+    g_assert_cmpstr(comp_fx_color_filter_to_str(f), ==, "night-light");
+
+    g_assert_true(comp_fx_color_filter_from_str("protanopia", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_PROTANOPIA);
+    g_assert_true(comp_fx_color_filter_from_str("deuteranopia", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_DEUTERANOPIA);
+    g_assert_true(comp_fx_color_filter_from_str("tritanopia", &f));
+    g_assert_cmpint(f, ==, COMP_FX_FILTER_TRITANOPIA);
+    g_assert_false(comp_fx_color_filter_from_str("sepia-unknown", &f));
+
+    CompFxConfig cfg;
+    comp_fx_config_defaults(&cfg);
+    float mat[9];
+    g_assert_false(comp_fx_color_filter_matrix(&cfg, mat));
+    g_assert_cmpfloat_with_epsilon(mat[0], 1.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(mat[4], 1.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(mat[8], 1.0f, 1e-6);
+
+    /* Grayscale preserves neutral white (1, 1, 1) and produces equal RGB for primaries */
+    cfg.color_filter          = COMP_FX_FILTER_GRAYSCALE;
+    cfg.color_filter_strength = 1.0;
+    g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+    const float white[3] = { 1.0f, 1.0f, 1.0f };
+    float out_rgb[3] = {0};
+    comp_fx_color_filter_apply_linear(mat, white, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 1.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[1], 1.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[2], 1.0f, 1e-5);
+
+    const float red[3] = { 1.0f, 0.0f, 0.0f };
+    comp_fx_color_filter_apply_linear(mat, red, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[1], 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[2], 0.2126f, 1e-5);
+
+    /* Strength 0.5 blends 50% between identity and grayscale */
+    cfg.color_filter_strength = 0.5;
+    g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+    comp_fx_color_filter_apply_linear(mat, red, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 0.5f * 1.0f + 0.5f * 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[1], 0.5f * 0.2126f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(out_rgb[2], 0.5f * 0.2126f, 1e-5);
+
+    /* Night Light: 6500K is identity (returns false); 3200K warms (1.0 == R > G > B > 0) */
+    cfg.color_filter            = COMP_FX_FILTER_NIGHT_LIGHT;
+    cfg.color_filter_strength   = 1.0;
+    cfg.night_light_temperature = 6500;
+    g_assert_false(comp_fx_color_filter_matrix(&cfg, mat));
+
+    cfg.night_light_temperature = 3200;
+    g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+    comp_fx_color_filter_apply_linear(mat, white, out_rgb);
+    g_assert_cmpfloat_with_epsilon(out_rgb[0], 1.0f, 1e-5);
+    g_assert(out_rgb[1] < 0.90f && out_rgb[1] > 0.20f);
+    g_assert(out_rgb[2] < out_rgb[1] && out_rgb[2] > 0.02f);
+
+    /* CVD filters preserve neutral white */
+    CompFxColorFilter cvds[3] = {
+        COMP_FX_FILTER_PROTANOPIA,
+        COMP_FX_FILTER_DEUTERANOPIA,
+        COMP_FX_FILTER_TRITANOPIA,
+    };
+    for (int i = 0; i < 3; i++) {
+        cfg.color_filter = cvds[i];
+        g_assert_true(comp_fx_color_filter_matrix(&cfg, mat));
+        comp_fx_color_filter_apply_linear(mat, white, out_rgb);
+        g_assert_cmpfloat_with_epsilon(out_rgb[0], 1.0f, 1e-4);
+        g_assert_cmpfloat_with_epsilon(out_rgb[1], 1.0f, 1e-4);
+        g_assert_cmpfloat_with_epsilon(out_rgb[2], 1.0f, 1e-4);
+    }
+
+    /* ITU-R BT.2390 EETF in PQ domain */
+    float max_pq = comp_fx_linear_to_pq(600.0f / 10000.0f); /* ~0.7014 */
+    float ks     = 1.5f * max_pq - 0.5f;                    /* ~0.5521 */
+    g_assert(max_pq > 0.65f && max_pq < 0.75f);
+    g_assert(ks > 0.50f && ks < max_pq);
+
+    /* 1. Identity below and at knee KS */
+    g_assert_cmpfloat_with_epsilon(comp_fx_bt2390_pq(0.25f, max_pq), 0.25f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(comp_fx_bt2390_pq(ks, max_pq), ks, 1e-6);
+
+    /* 2. C^1 continuity at KS (right slope ~= 1.0) */
+    float eps = 1e-4f;
+    float slope_ks = (comp_fx_bt2390_pq(ks + eps, max_pq) - comp_fx_bt2390_pq(ks, max_pq)) / eps;
+    g_assert_cmpfloat_with_epsilon(slope_ks, 1.0f, 1e-2);
+
+    /* 3. Strict monotonicity above KS and exact asymptote to max_pq at e1 = 1.0 */
+    float prev = ks;
+    for (int step = 1; step <= 20; step++) {
+        float e1 = ks + (1.0f - ks) * ((float)step / 20.0f);
+        float e2 = comp_fx_bt2390_pq(e1, max_pq);
+        g_assert(e2 > prev);
+        g_assert(e2 <= max_pq + 1e-6f);
+        prev = e2;
+    }
+    g_assert_cmpfloat_with_epsilon(comp_fx_bt2390_pq(1.0f, max_pq), max_pq, 1e-6);
+    float slope_top = (comp_fx_bt2390_pq(1.0f, max_pq) - comp_fx_bt2390_pq(1.0f - eps, max_pq)) / eps;
+    g_assert_cmpfloat_with_epsilon(slope_top, 0.0f, 1e-2);
+
+    /* 4. TOML config parsing for M4 [effects] keys */
+    CompConfig *cc = comp_config_new_defaults(0);
+    CompDiagList diag = {0};
+    const char *toml_ok =
+        "[effects]\n"
+        "color_filter = \"night-light\"\n"
+        "color_filter_strength = 0.75\n"
+        "night_light_temperature = 3400\n"
+        "sdr_white_nits = 260.0\n"
+        "tonemap = true\n"
+        "tonemap_peak_nits = 616.9\n";
+    g_assert_true(comp_config_merge_toml(cc, toml_ok, strlen(toml_ok), "m4.toml", NULL, false, &diag));
+    g_assert_cmpuint(diag.n, ==, 0);
+    g_assert_cmpint(cc->fx.color_filter, ==, COMP_FX_FILTER_NIGHT_LIGHT);
+    g_assert_cmpfloat_with_epsilon(cc->fx.color_filter_strength, 0.75, 1e-6);
+    g_assert_cmpint(cc->fx.night_light_temperature, ==, 3400);
+    g_assert_cmpfloat_with_epsilon(cc->fx.sdr_white_nits, 260.0, 1e-6);
+    g_assert_true(cc->fx.tonemap);
+    g_assert_cmpfloat_with_epsilon(cc->fx.tonemap_peak_nits, 616.9, 1e-6);
+    comp_diag_clear(&diag);
+    comp_config_free(cc);
+}
+
+int
+main(int argc, char *argv[])
+{
+    g_test_init(&argc, &argv, NULL);
+    g_test_add_func("/comp/fx-core/defaults-and-srgb", test_defaults_and_srgb);
+    g_test_add_func("/comp/fx-core/reach-and-anchor-box", test_reach_and_anchor_box);
+    g_test_add_func("/comp/fx-core/coverage-gaussian-box", test_coverage_gaussian_box);
+    g_test_add_func("/comp/fx-core/transforms-and-packing", test_transforms_and_packing);
+    g_test_add_func("/comp/fx-core/m4-color-filters-and-bt2390", test_m4_color_filters_and_bt2390);
+    return g_test_run();
+}

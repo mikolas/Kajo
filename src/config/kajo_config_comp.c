@@ -223,6 +223,132 @@ strip_managed_layer_rules_from_doc(const char *doc, const char *const *ns_ids, s
     return out;
 }
 
+typedef struct {
+    gboolean has_blur;
+    gboolean blur;
+    gboolean has_blur_popups;
+    gboolean blur_popups;
+    gboolean has_xray;
+    gboolean xray;
+    gboolean has_shadow;
+    gboolean shadow;
+    gboolean has_popup_opacity;
+    int      opacity_pct;
+} ManagedLayerProps;
+
+static void
+init_default_managed_layer_props(const char *ns_id, ManagedLayerProps *p)
+{
+    if (!p)
+        return;
+    memset(p, 0, sizeof(*p));
+    p->opacity_pct       = 85;
+    p->has_popup_opacity = TRUE;
+    p->has_blur          = TRUE;
+    p->blur              = TRUE;
+    p->has_blur_popups   = TRUE;
+    p->blur_popups       = TRUE;
+    if (g_strcmp0(ns_id, "kajo") == 0) {
+        p->has_xray = TRUE;
+        p->xray     = TRUE;
+    }
+}
+
+static void
+apply_layer_rules_doc_to_props(const char        *doc,
+                               const char *const *ns_ids,
+                               ManagedLayerProps *props,
+                               size_t             n_ns)
+{
+    if (!doc || !*doc || !ns_ids || !props || n_ns == 0)
+        return;
+    toml_result_t r = toml_parse(doc, (int)strlen(doc));
+    if (!r.ok) {
+        toml_free(r);
+        return;
+    }
+    toml_datum_t tabs[2] = { r.toptab, toml_get(r.toptab, COMP_SEC_COMP) };
+    for (int ti = 0; ti < 2; ti++) {
+        if (tabs[ti].type != TOML_TABLE)
+            continue;
+        toml_datum_t l_arr = toml_get(tabs[ti], COMP_SEC_LAYER_RULE);
+        if (l_arr.type != TOML_ARRAY)
+            continue;
+        for (int li = 0; li < l_arr.u.arr.size; li++) {
+            toml_datum_t lr = l_arr.u.arr.elem[li];
+            if (lr.type != TOML_TABLE)
+                continue;
+            for (size_t k = 0; k < n_ns; k++) {
+                if (!layer_table_matches_ns_id(lr, ns_ids[k]))
+                    continue;
+                toml_datum_t op_v = toml_get(lr, COMP_KEY_OPACITY);
+                double op_val = (op_v.type == TOML_FP64) ? op_v.u.fp64
+                              : ((op_v.type == TOML_INT64) ? (double)op_v.u.int64 : -1.0);
+                if (op_val >= 0.0 && op_val <= 1.0)
+                    props[k].opacity_pct = (int)(op_val * 100.0 + 0.5);
+
+                toml_datum_t pop_v = toml_get(lr, COMP_KEY_POPUP_OPACITY);
+                if (pop_v.type == TOML_FP64 || pop_v.type == TOML_INT64)
+                    props[k].has_popup_opacity = TRUE;
+
+                toml_datum_t bl_v = toml_get(lr, COMP_KEY_BLUR);
+                if (bl_v.type == TOML_BOOLEAN) {
+                    props[k].has_blur = TRUE;
+                    props[k].blur     = bl_v.u.boolean;
+                }
+                toml_datum_t bp_v = toml_get(lr, COMP_KEY_BLUR_POPUPS);
+                if (bp_v.type == TOML_BOOLEAN) {
+                    props[k].has_blur_popups = TRUE;
+                    props[k].blur_popups     = bp_v.u.boolean;
+                }
+                toml_datum_t xr_v = toml_get(lr, COMP_KEY_XRAY);
+                if (xr_v.type == TOML_BOOLEAN) {
+                    props[k].has_xray = TRUE;
+                    props[k].xray     = xr_v.u.boolean;
+                }
+                toml_datum_t sh_v = toml_get(lr, COMP_KEY_SHADOW);
+                if (sh_v.type == TOML_BOOLEAN) {
+                    props[k].has_shadow = TRUE;
+                    props[k].shadow     = sh_v.u.boolean;
+                }
+            }
+        }
+    }
+    toml_free(r);
+}
+
+static void
+append_managed_layer_rules(GString                 *rules_doc,
+                           const char *const       *ns_ids,
+                           const ManagedLayerProps *props,
+                           size_t                   n_ns)
+{
+    for (size_t i = 0; i < n_ns; i++) {
+        char op_buf[32];
+        int pct = CLAMP(props[i].opacity_pct, 0, 100);
+        g_ascii_formatd(op_buf, sizeof(op_buf), "%.2f", (double)pct / 100.0);
+        g_autofree gchar *pat = g_strdup_printf("^%s$", ns_ids[i] ? ns_ids[i] : "");
+
+        g_string_append(rules_doc, "\n[[" COMP_SEC_LAYER_RULE "]]\n" COMP_KEY_NAMESPACE " = [");
+        kajo_toml_append_quoted_string(rules_doc, pat);
+        g_string_append_printf(rules_doc, "]\n" COMP_KEY_OPACITY " = %s\n", op_buf);
+        if (props[i].has_popup_opacity)
+            g_string_append_printf(rules_doc, COMP_KEY_POPUP_OPACITY " = %s\n", op_buf);
+        if (props[i].has_blur)
+            g_string_append_printf(rules_doc, COMP_KEY_BLUR " = %s\n",
+                                   props[i].blur ? "true" : "false");
+        if (props[i].has_blur_popups)
+            g_string_append_printf(rules_doc, COMP_KEY_BLUR_POPUPS " = %s\n",
+                                   props[i].blur_popups ? "true" : "false");
+        if (props[i].has_xray)
+            g_string_append_printf(rules_doc, COMP_KEY_XRAY " = %s\n",
+                                   props[i].xray ? "true" : "false");
+        if (props[i].has_shadow)
+            g_string_append_printf(rules_doc, COMP_KEY_SHADOW " = %s\n",
+                                   props[i].shadow ? "true" : "false");
+    }
+}
+
 gboolean
 kajo_config_comp_save_layout_and_layers(const char        *config_dir,
                                         int                gap_px,
@@ -257,26 +383,28 @@ kajo_config_comp_save_layout_and_layers(const char        *config_dir,
     if (!ok_comp)
         return FALSE;
 
-    /* 2. Update [[layer_rule]] blocks in rules.toml while preserving [[rule]] blocks */
+    /* 2. Update [[layer_rule]] blocks in rules.toml while preserving [[rule]] blocks and blur/xray flags */
     if (ns_ids && ns_opacity_pct && n_ns > 0) {
         g_autofree gchar *rules_path = g_build_filename(dir, COMP_CFG_FILE_RULES, NULL);
-        g_autofree gchar *rules_existing = NULL;
-        if (!g_file_get_contents(rules_path, &rules_existing, NULL, NULL)) {
-            g_autofree gchar *def_rules = kajo_config_find_default_file(COMP_CFG_FILE_RULES);
-            if (def_rules)
-                (void)g_file_get_contents(def_rules, &rules_existing, NULL, NULL);
-        }
-        GString *rules_doc = strip_managed_layer_rules_from_doc(rules_existing, ns_ids, n_ns);
-        for (size_t i = 0; i < n_ns; i++) {
-            char op_buf[32];
-            int pct = CLAMP(ns_opacity_pct[i], 0, 100);
-            g_ascii_formatd(op_buf, sizeof(op_buf), "%.2f", (double)pct / 100.0);
-            g_autofree gchar *pat = g_strdup_printf("^%s$", ns_ids[i] ? ns_ids[i] : "");
+        g_autofree gchar *def_rules_path = kajo_config_find_default_file(COMP_CFG_FILE_RULES);
+        g_autofree gchar *def_rules_str = NULL;
+        if (def_rules_path)
+            (void)g_file_get_contents(def_rules_path, &def_rules_str, NULL, NULL);
 
-            g_string_append(rules_doc, "\n[[" COMP_SEC_LAYER_RULE "]]\n" COMP_KEY_NAMESPACE " = [");
-            kajo_toml_append_quoted_string(rules_doc, pat);
-            g_string_append_printf(rules_doc, "]\n" COMP_KEY_OPACITY " = %s\n", op_buf);
-        }
+        g_autofree gchar *rules_existing = NULL;
+        if (!g_file_get_contents(rules_path, &rules_existing, NULL, NULL) && def_rules_str)
+            rules_existing = g_strdup(def_rules_str);
+
+        g_autofree ManagedLayerProps *props = g_new0(ManagedLayerProps, n_ns);
+        for (size_t i = 0; i < n_ns; i++)
+            init_default_managed_layer_props(ns_ids[i], &props[i]);
+        apply_layer_rules_doc_to_props(def_rules_str, ns_ids, props, n_ns);
+        apply_layer_rules_doc_to_props(rules_existing, ns_ids, props, n_ns);
+        for (size_t i = 0; i < n_ns; i++)
+            props[i].opacity_pct = CLAMP(ns_opacity_pct[i], 0, 100);
+
+        GString *rules_doc = strip_managed_layer_rules_from_doc(rules_existing, ns_ids, n_ns);
+        append_managed_layer_rules(rules_doc, ns_ids, props, n_ns);
         gboolean ok_rules = g_file_set_contents(rules_path, rules_doc->str, (gssize)rules_doc->len, error);
         g_string_free(rules_doc, TRUE);
         if (!ok_rules)
@@ -287,6 +415,249 @@ kajo_config_comp_save_layout_and_layers(const char        *config_dir,
     g_autofree gchar *legacy_dropin = g_build_filename(dir, COMP_CFG_DIR_CONFD, "40-layer-rules.toml", NULL);
     if (g_file_test(legacy_dropin, G_FILE_TEST_EXISTS))
         g_unlink(legacy_dropin);
+
+    return TRUE;
+}
+
+static void
+apply_effects_table_to_state(toml_datum_t        tab,
+                             KajoCompEffectsCfg *inout_fx,
+                             const char *const  *ns_ids,
+                             gboolean           *inout_ns_xray,
+                             size_t              n_ns)
+{
+    if (tab.type != TOML_TABLE)
+        return;
+
+    if (inout_fx) {
+        toml_datum_t fx = toml_get(tab, COMP_SEC_EFFECTS);
+        if (fx.type == TOML_TABLE) {
+            toml_datum_t di = toml_get(fx, COMP_KEY_DITHER);
+            if (di.type == TOML_BOOLEAN)
+                inout_fx->dither_enabled = di.u.boolean;
+
+            toml_datum_t cf = toml_get(fx, COMP_KEY_COLOR_FILTER);
+            if (cf.type == TOML_STRING && cf.u.s && *cf.u.s)
+                g_strlcpy(inout_fx->color_filter, cf.u.s, sizeof(inout_fx->color_filter));
+
+            toml_datum_t cfs = toml_get(fx, COMP_KEY_COLOR_FILTER_STRENGTH);
+            double sv = -1.0;
+            if (cfs.type == TOML_FP64 && isfinite(cfs.u.fp64))
+                sv = cfs.u.fp64;
+            else if (cfs.type == TOML_INT64)
+                sv = (double)cfs.u.int64;
+            if (sv >= 0.0 && sv <= 1.0)
+                inout_fx->color_filter_strength_pct = (int)(sv * 100.0 + 0.5);
+
+            toml_datum_t nlt = toml_get(fx, COMP_KEY_NIGHT_LIGHT_TEMPERATURE);
+            if (nlt.type == TOML_INT64 && nlt.u.int64 >= 1500 && nlt.u.int64 <= 6500)
+                inout_fx->night_light_temperature = (int)nlt.u.int64;
+
+            toml_datum_t gl = toml_get(fx, COMP_SEC_FX_GLASS);
+            if (gl.type == TOML_TABLE) {
+                toml_datum_t gen = toml_get(gl, COMP_KEY_ENABLED);
+                if (gen.type == TOML_BOOLEAN)
+                    inout_fx->glass_enabled = gen.u.boolean;
+            }
+            toml_datum_t sh = toml_get(fx, COMP_SEC_FX_SHADOW);
+            if (sh.type == TOML_TABLE) {
+                toml_datum_t sen = toml_get(sh, COMP_KEY_ENABLED);
+                if (sen.type == TOML_BOOLEAN)
+                    inout_fx->shadow_enabled = sen.u.boolean;
+            }
+            toml_datum_t dm = toml_get(fx, COMP_SEC_FX_DIM);
+            if (dm.type == TOML_TABLE) {
+                toml_datum_t den = toml_get(dm, COMP_KEY_ENABLED);
+                if (den.type == TOML_BOOLEAN)
+                    inout_fx->dim_enabled = den.u.boolean;
+            }
+        }
+    }
+
+    if (ns_ids && inout_ns_xray && n_ns > 0) {
+        toml_datum_t l_arr = toml_get(tab, COMP_SEC_LAYER_RULE);
+        if (l_arr.type == TOML_ARRAY) {
+            for (int li = 0; li < l_arr.u.arr.size; li++) {
+                toml_datum_t lr = l_arr.u.arr.elem[li];
+                toml_datum_t xr = toml_get(lr, COMP_KEY_XRAY);
+                if (xr.type != TOML_BOOLEAN)
+                    continue;
+                for (size_t k = 0; k < n_ns; k++) {
+                    if (layer_table_matches_ns_id(lr, ns_ids[k]))
+                        inout_ns_xray[k] = xr.u.boolean;
+                }
+            }
+        }
+    }
+}
+
+static void
+apply_effects_file_if_exists(const char         *path,
+                             KajoCompEffectsCfg *inout_fx,
+                             const char *const  *ns_ids,
+                             gboolean           *inout_ns_xray,
+                             size_t              n_ns)
+{
+    if (!path || !g_file_test(path, G_FILE_TEST_EXISTS))
+        return;
+    g_autofree gchar *contents = NULL;
+    gsize len = 0;
+    if (!g_file_get_contents(path, &contents, &len, NULL) || !contents)
+        return;
+
+    toml_result_t r = toml_parse(contents, (int)len);
+    if (r.ok) {
+        apply_effects_table_to_state(r.toptab, inout_fx, ns_ids, inout_ns_xray, n_ns);
+        apply_effects_table_to_state(toml_get(r.toptab, COMP_SEC_COMP),
+                                     inout_fx, ns_ids, inout_ns_xray, n_ns);
+    }
+    toml_free(r);
+}
+
+gboolean
+kajo_config_comp_read_effects(const char         *config_dir,
+                              KajoCompEffectsCfg *out_fx,
+                              const char *const  *ns_ids,
+                              gboolean           *inout_ns_xray,
+                              size_t              n_ns)
+{
+    if (out_fx) {
+        out_fx->glass_enabled             = TRUE;
+        out_fx->shadow_enabled            = TRUE;
+        out_fx->dim_enabled               = FALSE;
+        out_fx->dither_enabled            = TRUE;
+        g_strlcpy(out_fx->color_filter, "none", sizeof(out_fx->color_filter));
+        out_fx->color_filter_strength_pct = 100;
+        out_fx->night_light_temperature   = 4000;
+    }
+    if (ns_ids && inout_ns_xray) {
+        for (size_t i = 0; i < n_ns; i++)
+            inout_ns_xray[i] = (g_strcmp0(ns_ids[i], "kajo") == 0);
+    }
+
+    g_autofree gchar *dir = (config_dir && *config_dir)
+        ? g_strdup(config_dir)
+        : kajo_config_resolve_user_dir();
+
+    g_autofree gchar *def_comp  = kajo_config_find_default_file(COMP_CFG_FILE_COMP);
+    g_autofree gchar *def_rules = kajo_config_find_default_file(COMP_CFG_FILE_RULES);
+    apply_effects_file_if_exists(def_comp,  out_fx, ns_ids, inout_ns_xray, n_ns);
+    apply_effects_file_if_exists(def_rules, out_fx, ns_ids, inout_ns_xray, n_ns);
+
+    g_autofree gchar *usr_comp  = g_build_filename(dir, COMP_CFG_FILE_COMP, NULL);
+    g_autofree gchar *usr_rules = g_build_filename(dir, COMP_CFG_FILE_RULES, NULL);
+    apply_effects_file_if_exists(usr_comp,  out_fx, ns_ids, inout_ns_xray, n_ns);
+    apply_effects_file_if_exists(usr_rules, out_fx, ns_ids, inout_ns_xray, n_ns);
+
+    g_autofree gchar *confd_dir = g_build_filename(dir, COMP_CFG_DIR_CONFD, NULL);
+    GDir *d = g_dir_open(confd_dir, 0, NULL);
+    if (d) {
+        GPtrArray *names = g_ptr_array_new_with_free_func(g_free);
+        const gchar *name = NULL;
+        while ((name = g_dir_read_name(d)) != NULL) {
+            if (name[0] != '.' && g_str_has_suffix(name, COMP_CFG_EXT_TOML))
+                g_ptr_array_add(names, g_strdup(name));
+        }
+        g_dir_close(d);
+        g_ptr_array_sort(names, cmp_str_ptrs);
+        for (guint i = 0; i < names->len; i++) {
+            const gchar *fn = (const gchar *)g_ptr_array_index(names, i);
+            g_autofree gchar *p = g_build_filename(confd_dir, fn, NULL);
+            apply_effects_file_if_exists(p, out_fx, ns_ids, inout_ns_xray, n_ns);
+        }
+        g_ptr_array_free(names, TRUE);
+    }
+    return TRUE;
+}
+
+gboolean
+kajo_config_comp_save_effects(const char               *config_dir,
+                              const KajoCompEffectsCfg *fx,
+                              const char *const        *ns_ids,
+                              const gboolean           *ns_xray,
+                              size_t                    n_ns,
+                              GError                  **error)
+{
+    g_autofree gchar *dir = (config_dir && *config_dir)
+        ? g_strdup(config_dir)
+        : kajo_config_resolve_user_dir();
+    if (g_mkdir_with_parents(dir, 0755) != 0) {
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                    "Failed to create config directory '%s'", dir);
+        return FALSE;
+    }
+
+    if (fx) {
+        g_autofree gchar *comp_path = g_build_filename(dir, COMP_CFG_FILE_COMP, NULL);
+        g_autofree gchar *comp_existing = NULL;
+        if (!g_file_get_contents(comp_path, &comp_existing, NULL, NULL)) {
+            g_autofree gchar *def_comp = kajo_config_find_default_file(COMP_CFG_FILE_COMP);
+            if (def_comp)
+                (void)g_file_get_contents(def_comp, &comp_existing, NULL, NULL);
+        }
+        GString *comp_doc = g_string_new(comp_existing ? comp_existing :
+                                         "# comp.toml — Kajo Compositor Configuration\n");
+
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_DITHER,
+                                         fx->dither_enabled ? "true" : "false");
+
+        GString *cf_rhs = g_string_new(NULL);
+        kajo_toml_append_quoted_string(cf_rhs, fx->color_filter[0] ? fx->color_filter : "none");
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_COLOR_FILTER,
+                                         cf_rhs->str);
+        g_string_free(cf_rhs, TRUE);
+
+        char str_buf[32];
+        int str_pct = CLAMP(fx->color_filter_strength_pct, 0, 100);
+        g_ascii_formatd(str_buf, sizeof(str_buf), "%.2f", (double)str_pct / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_COLOR_FILTER_STRENGTH,
+                                         str_buf);
+
+        g_autofree gchar *temp_rhs = g_strdup_printf("%d", CLAMP(fx->night_light_temperature, 1500, 6500));
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_NIGHT_LIGHT_TEMPERATURE,
+                                         temp_rhs);
+
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS "." COMP_SEC_FX_GLASS,
+                                         COMP_KEY_ENABLED, fx->glass_enabled ? "true" : "false");
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS "." COMP_SEC_FX_SHADOW,
+                                         COMP_KEY_ENABLED, fx->shadow_enabled ? "true" : "false");
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS "." COMP_SEC_FX_DIM,
+                                         COMP_KEY_ENABLED, fx->dim_enabled ? "true" : "false");
+
+        gboolean ok_comp = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);
+        g_string_free(comp_doc, TRUE);
+        if (!ok_comp)
+            return FALSE;
+    }
+
+    if (ns_ids && ns_xray && n_ns > 0) {
+        g_autofree gchar *rules_path = g_build_filename(dir, COMP_CFG_FILE_RULES, NULL);
+        g_autofree gchar *def_rules_path = kajo_config_find_default_file(COMP_CFG_FILE_RULES);
+        g_autofree gchar *def_rules_str = NULL;
+        if (def_rules_path)
+            (void)g_file_get_contents(def_rules_path, &def_rules_str, NULL, NULL);
+
+        g_autofree gchar *rules_existing = NULL;
+        if (!g_file_get_contents(rules_path, &rules_existing, NULL, NULL) && def_rules_str)
+            rules_existing = g_strdup(def_rules_str);
+
+        g_autofree ManagedLayerProps *props = g_new0(ManagedLayerProps, n_ns);
+        for (size_t i = 0; i < n_ns; i++)
+            init_default_managed_layer_props(ns_ids[i], &props[i]);
+        apply_layer_rules_doc_to_props(def_rules_str, ns_ids, props, n_ns);
+        apply_layer_rules_doc_to_props(rules_existing, ns_ids, props, n_ns);
+        for (size_t i = 0; i < n_ns; i++) {
+            props[i].has_xray = TRUE;
+            props[i].xray     = ns_xray[i] ? TRUE : FALSE;
+        }
+
+        GString *rules_doc = strip_managed_layer_rules_from_doc(rules_existing, ns_ids, n_ns);
+        append_managed_layer_rules(rules_doc, ns_ids, props, n_ns);
+        gboolean ok_rules = g_file_set_contents(rules_path, rules_doc->str, (gssize)rules_doc->len, error);
+        g_string_free(rules_doc, TRUE);
+        if (!ok_rules)
+            return FALSE;
+    }
 
     return TRUE;
 }

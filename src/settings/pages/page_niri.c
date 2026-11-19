@@ -68,6 +68,26 @@ static const ShaderPreset RESIZE_PRESETS[] = {
 };
 #define N_RESIZE_PRESETS G_N_ELEMENTS(RESIZE_PRESETS)
 
+static const char *const COLOR_FILTER_IDS[] = {
+    "none",
+    "grayscale",
+    "night-light",
+    "protanopia",
+    "deuteranopia",
+    "tritanopia",
+};
+#define N_COLOR_FILTERS G_N_ELEMENTS(COLOR_FILTER_IDS)
+
+static const char *const COLOR_FILTER_LABELS[] = {
+    "None (Unfiltered sRGB / BT.2020)",
+    "Grayscale (Rec.709 Luminance)",
+    "Night Light (Warm White Point)",
+    "Protanopia (Red-Weak CVD Aid)",
+    "Deuteranopia (Green-Weak CVD Aid)",
+    "Tritanopia (Blue-Weak CVD Aid)",
+    NULL
+};
+
 typedef struct _SettingsPageNiri {
     GtkBox parent_instance;
 
@@ -88,9 +108,22 @@ typedef struct _SettingsPageNiri {
 
     GtkWidget *combo_shader_resize;
 
+    GtkWidget *tc_glass;
+    GtkWidget *tc_shadow;
+    GtkWidget *tc_dim;
+    GtkWidget *tc_dither;
+    GtkWidget *combo_color_filter;
+    GtkWidget *scale_filter_strength;
+    GtkWidget *scale_night_temp;
+    GtkWidget *row_filter_strength;
+    GtkWidget *row_night_temp;
+
     int      ns_opacity[N_NIRI_NAMESPACES];
     gboolean ns_xray[N_NIRI_NAMESPACES];
     int      gap_px;
+
+    KajoCompEffectsCfg fx_cfg;
+    guint              color_filter_idx;
 
     guint    open_preset_idx;
     int      open_duration_ms;
@@ -262,12 +295,26 @@ parse_anim_subblock(const char         *anim_block,
     }
 }
 
+static guint
+color_filter_index_from_id(const char *id)
+{
+    if (!id || !*id)
+        return 0;
+    if (g_ascii_strcasecmp(id, "night_light") == 0)
+        return 2;
+    for (guint i = 0; i < N_COLOR_FILTERS; i++) {
+        if (g_ascii_strcasecmp(id, COLOR_FILTER_IDS[i]) == 0)
+            return i;
+    }
+    return 0;
+}
+
 static void
 reset_niri_defaults_in_memory(SettingsPageNiri *self)
 {
     for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
         self->ns_opacity[i] = 85;
-        self->ns_xray[i]    = FALSE;
+        self->ns_xray[i]    = (i == 0);
     }
     self->gap_px            = 12;
     self->open_preset_idx   = 0;
@@ -277,6 +324,15 @@ reset_niri_defaults_in_memory(SettingsPageNiri *self)
     self->close_duration_ms = 200;
     self->close_curve_idx   = 2;
     self->resize_preset_idx = 0;
+
+    self->fx_cfg.glass_enabled             = TRUE;
+    self->fx_cfg.shadow_enabled            = TRUE;
+    self->fx_cfg.dim_enabled               = FALSE;
+    self->fx_cfg.dither_enabled            = TRUE;
+    g_strlcpy(self->fx_cfg.color_filter, "none", sizeof(self->fx_cfg.color_filter));
+    self->fx_cfg.color_filter_strength_pct = 100;
+    self->fx_cfg.night_light_temperature   = 4000;
+    self->color_filter_idx                 = 0;
 }
 
 static void
@@ -357,6 +413,9 @@ load_existing_niri_config(SettingsPageNiri *self)
     /* 4. Read kajo-comp comp.toml & rules.toml (plus conf.d/ drop-ins) */
     kajo_config_comp_read_layout_and_layers(
         NULL, &self->gap_px, NIRI_NS_IDS, self->ns_opacity, N_NIRI_NAMESPACES);
+    kajo_config_comp_read_effects(
+        NULL, &self->fx_cfg, NIRI_NS_IDS, self->ns_xray, N_NIRI_NAMESPACES);
+    self->color_filter_idx = color_filter_index_from_id(self->fx_cfg.color_filter);
 }
 
 /* ─── Non-Destructive KDL Animations Formatter ─── */
@@ -497,19 +556,35 @@ update_niri_subtitles_and_telemetry(SettingsPageNiri *self)
         boxed_row_set_subtitle(self->row_close_shader, sub);
     }
 
+    guint cf_idx = self->color_filter_idx < N_COLOR_FILTERS ? self->color_filter_idx : 0;
+
     g_autofree gchar *c0 = g_strdup_printf("%s (%d%%)", NIRI_NS_IDS[ns_idx], self->ns_opacity[ns_idx]);
     g_autofree gchar *c1 = g_strdup_printf("%dPX", self->gap_px);
-    g_autofree gchar *c2 = g_ascii_strup(OPEN_PRESETS[open_idx].id, -1);
-    g_autofree gchar *c3 = g_ascii_strup(CLOSE_PRESETS[close_idx].id, -1);
+    g_autofree gchar *c2 = g_strdup_printf(
+        "%s%s%s",
+        self->fx_cfg.glass_enabled ? "GLASS " : "",
+        self->fx_cfg.shadow_enabled ? "SHADOW " : "",
+        self->fx_cfg.dither_enabled ? "DITHER" : (self->fx_cfg.dim_enabled ? "DIM" : "OFF"));
+    g_strstrip(c2);
+    if (c2[0] == '\0') {
+        g_free(c2);
+        c2 = g_strdup("OFF");
+    }
+    g_autofree gchar *cf_up = g_ascii_strup(COLOR_FILTER_IDS[cf_idx], -1);
+    g_autofree gchar *c3 = (cf_idx == 2)
+        ? g_strdup_printf("%s (%dK)", cf_up, self->fx_cfg.night_light_temperature)
+        : g_strdup(cf_up);
 
     settings_page_set_counter(GTK_WIDGET(self), 0, "NAMESPACE", c0, "accent");
     settings_page_set_counter(GTK_WIDGET(self), 1, "GAPS", c1, NULL);
-    settings_page_set_counter(GTK_WIDGET(self), 2, "OPEN", c2, NULL);
-    settings_page_set_counter(GTK_WIDGET(self), 3, "CLOSE", c3, NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 2, "EFFECTS", c2,
+                              (self->fx_cfg.glass_enabled || self->fx_cfg.shadow_enabled) ? "accent" : NULL);
+    settings_page_set_counter(GTK_WIDGET(self), 3, "COLOUR STAGE", c3,
+                              cf_idx > 0 ? "accent" : NULL);
 
-    gboolean has_glsl = (open_idx > 0 || close_idx > 0 || resize_idx > 0);
+    gboolean has_glsl = (open_idx > 0 || close_idx > 0 || resize_idx > 0 || cf_idx > 0);
     settings_page_set_nav_badge(
-        GTK_WIDGET(self), "niri", has_glsl ? "GLSL" : "KDL", has_glsl ? "accent" : NULL);
+        GTK_WIDGET(self), "niri", has_glsl ? "KFX" : "TOML", has_glsl ? "accent" : NULL);
 }
 
 static void
@@ -536,6 +611,25 @@ sync_niri_widgets_from_state(SettingsPageNiri *self)
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_close_curve), self->close_curve_idx);
 
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_shader_resize), self->resize_preset_idx);
+
+    if (self->tc_glass)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_glass), self->fx_cfg.glass_enabled);
+    if (self->tc_shadow)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_shadow), self->fx_cfg.shadow_enabled);
+    if (self->tc_dim)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_dim), self->fx_cfg.dim_enabled);
+    if (self->tc_dither)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_dither), self->fx_cfg.dither_enabled);
+    if (self->combo_color_filter)
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_color_filter), self->color_filter_idx);
+    if (self->scale_filter_strength)
+        gtk_range_set_value(GTK_RANGE(self->scale_filter_strength), self->fx_cfg.color_filter_strength_pct);
+    if (self->scale_night_temp)
+        gtk_range_set_value(GTK_RANGE(self->scale_night_temp), self->fx_cfg.night_light_temperature);
+    if (self->row_filter_strength)
+        gtk_widget_set_sensitive(self->row_filter_strength, self->color_filter_idx != 0);
+    if (self->row_night_temp)
+        gtk_widget_set_sensitive(self->row_night_temp, self->color_filter_idx == 2);
     self->syncing_ui = FALSE;
 
     update_niri_subtitles_and_telemetry(self);
@@ -561,6 +655,26 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     self->close_curve_idx   = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_close_curve));
 
     self->resize_preset_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_shader_resize));
+
+    if (self->tc_glass)
+        self->fx_cfg.glass_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_glass));
+    if (self->tc_shadow)
+        self->fx_cfg.shadow_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_shadow));
+    if (self->tc_dim)
+        self->fx_cfg.dim_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_dim));
+    if (self->tc_dither)
+        self->fx_cfg.dither_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_dither));
+    if (self->combo_color_filter) {
+        guint cf_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_color_filter));
+        if (cf_idx >= N_COLOR_FILTERS)
+            cf_idx = 0;
+        self->color_filter_idx = cf_idx;
+        g_strlcpy(self->fx_cfg.color_filter, COLOR_FILTER_IDS[cf_idx], sizeof(self->fx_cfg.color_filter));
+    }
+    if (self->scale_filter_strength)
+        self->fx_cfg.color_filter_strength_pct = (int)gtk_range_get_value(GTK_RANGE(self->scale_filter_strength));
+    if (self->scale_night_temp)
+        self->fx_cfg.night_light_temperature = (int)gtk_range_get_value(GTK_RANGE(self->scale_night_temp));
 
     const gchar *xdg_config = g_get_user_config_dir();
     g_autofree gchar *dir = g_build_filename(xdg_config, "niri", "config.d", NULL);
@@ -640,9 +754,11 @@ save_and_reload_niri_config(SettingsPageNiri *self)
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
 
-    /* 4. Patch kajo-comp comp.toml ([layout].gap_px) and rules.toml ([[layer_rule]]) */
+    /* 4. Patch kajo-comp comp.toml ([layout].gap_px, [effects]) and rules.toml ([[layer_rule]]) */
     kajo_config_comp_save_layout_and_layers(
         NULL, self->gap_px, NIRI_NS_IDS, self->ns_opacity, N_NIRI_NAMESPACES, NULL);
+    kajo_config_comp_save_effects(
+        NULL, &self->fx_cfg, NIRI_NS_IDS, self->ns_xray, N_NIRI_NAMESPACES, NULL);
 
     shell_compositor_reload_config();
 
@@ -824,6 +940,62 @@ on_combo_shader_resize_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_U
     settings_page_set_dirty(GTK_WIDGET(self), TRUE);
 }
 
+static void
+on_fx_toggle_changed(GtkToggleButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.glass_enabled  = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_glass));
+    self->fx_cfg.shadow_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_shadow));
+    self->fx_cfg.dim_enabled    = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_dim));
+    self->fx_cfg.dither_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_dither));
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_color_filter_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx >= N_COLOR_FILTERS)
+        idx = 0;
+    self->color_filter_idx = idx;
+    g_strlcpy(self->fx_cfg.color_filter, COLOR_FILTER_IDS[idx], sizeof(self->fx_cfg.color_filter));
+    if (self->row_filter_strength)
+        gtk_widget_set_sensitive(self->row_filter_strength, idx != 0);
+    if (self->row_night_temp)
+        gtk_widget_set_sensitive(self->row_night_temp, idx == 2);
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_filter_strength_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.color_filter_strength_pct = (int)gtk_range_get_value(range);
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_night_temp_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.night_light_temperature = (int)gtk_range_get_value(range);
+    update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
 /* ─── Live Transition Preview Window (Open -> Resize -> Close) ─── */
 
 typedef struct {
@@ -995,7 +1167,7 @@ build_page_niri(void)
     GtkWidget *card_layer = create_section_card(
         SETTINGS_CARD_LEFT,
         "1. LAYER SURFACE RULES & WORKSPACE GAPS",
-        "40-layer-rules.kdl",
+        "rules.toml",
         "accent",
         NULL);
 
@@ -1017,7 +1189,7 @@ build_page_niri(void)
     gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
         "⊞",
         "Workspace Window Gaps",
-        "Niri layout { gaps N } in pixels",
+        "Compositor [layout] gap_px in pixels",
         w_gap));
 
     self->sw_xray = gtk_switch_new();
@@ -1027,10 +1199,79 @@ build_page_niri(void)
         "Sample desktop backdrop behind translucent surfaces",
         self->sw_xray));
 
-    /* ─── Card 2: Window Transition Shaders (GLSL) ─── */
+    /* ─── Card 2: Compositor Effects & Colour Stage (comp.toml [effects]) ─── */
+    GtkWidget *card_fx = create_section_card(
+        SETTINGS_CARD_RIGHT,
+        "2. COMPOSITOR EFFECTS & COLOUR STAGE",
+        "comp.toml [effects]",
+        "accent",
+        NULL);
+
+    GtkWidget *fx_grid = gtk_grid_new();
+    gtk_grid_set_row_spacing(GTK_GRID(fx_grid), 6);
+    gtk_grid_set_column_spacing(GTK_GRID(fx_grid), 6);
+    gtk_grid_set_column_homogeneous(GTK_GRID(fx_grid), TRUE);
+
+    self->tc_glass = create_toggle_card(
+        "weather-fog-symbolic",
+        "Backdrop Glass Blur",
+        "Dual-Kawase frosted blur",
+        self->fx_cfg.glass_enabled);
+    gtk_grid_attach(GTK_GRID(fx_grid), self->tc_glass, 0, 0, 1, 1);
+
+    self->tc_shadow = create_toggle_card(
+        "view-restore-symbolic",
+        "Analytic Soft Shadows",
+        "2-layer Gaussian drop shadow",
+        self->fx_cfg.shadow_enabled);
+    gtk_grid_attach(GTK_GRID(fx_grid), self->tc_shadow, 1, 0, 1, 1);
+
+    self->tc_dim = create_toggle_card(
+        "display-brightness-symbolic",
+        "Unfocused Window Dim",
+        "Dimming on inactive windows",
+        self->fx_cfg.dim_enabled);
+    gtk_grid_attach(GTK_GRID(fx_grid), self->tc_dim, 0, 1, 1, 1);
+
+    self->tc_dither = create_toggle_card(
+        "preferences-color-symbolic",
+        "Blue-Noise Dither",
+        "16×16 ±0.5 LSB output dither",
+        self->fx_cfg.dither_enabled);
+    gtk_grid_attach(GTK_GRID(fx_grid), self->tc_dither, 1, 1, 1, 1);
+    gtk_box_append(GTK_BOX(card_fx), fx_grid);
+
+    self->combo_color_filter = create_string_dropdown(COLOR_FILTER_LABELS);
+    gtk_box_append(GTK_BOX(card_fx), create_boxed_row(
+        "◐",
+        "Output Colour Filter",
+        "Linear-light 3×3 matrix filter in output stage",
+        self->combo_color_filter));
+
+    GtkWidget *w_cf_str = create_scale_with_badge(
+        10, 100, 5, 100, "%.0f%%", &self->scale_filter_strength, NULL);
+    self->row_filter_strength = create_boxed_row(
+        NULL,
+        "Colour Filter Strength",
+        "Blend ratio between unfiltered identity and active colour matrix",
+        w_cf_str);
+    gtk_box_append(GTK_BOX(card_fx), self->row_filter_strength);
+
+    GtkWidget *w_nl_temp = create_scale_with_badge(
+        1800, 6500, 100, 4000, "%.0fK", &self->scale_night_temp, NULL);
+    self->row_night_temp = create_boxed_row(
+        "☀",
+        "Night Light Temperature",
+        "Blackbody white-point temperature in Kelvin (1800K–6500K)",
+        w_nl_temp);
+    gtk_box_append(GTK_BOX(card_fx), self->row_night_temp);
+
+    settings_bento_add_pair(GTK_WIDGET(self), card_layer, card_fx);
+
+    /* ─── Card 3: Window Transition Shaders (GLSL) ─── */
     GtkWidget *card_shaders = create_section_card(
         SETTINGS_CARD_CENTER,
-        "2. WINDOW TRANSITION SHADERS (GLSL)",
+        "3. WINDOW TRANSITION SHADERS (GLSL)",
         "30-layout-animations.kdl",
         "peak-warn",
         NULL);
@@ -1103,7 +1344,7 @@ build_page_niri(void)
         "Column width transition morph",
         self->combo_shader_resize));
 
-    settings_bento_add_pair(GTK_WIDGET(self), card_layer, card_shaders);
+    settings_bento_add_full(GTK_WIDGET(self), card_shaders);
 
     sync_niri_widgets_from_state(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);
@@ -1122,6 +1363,14 @@ build_page_niri(void)
     g_signal_connect(self->combo_close_curve, "notify::selected", G_CALLBACK(on_combo_close_curve_changed), self);
 
     g_signal_connect(self->combo_shader_resize, "notify::selected", G_CALLBACK(on_combo_shader_resize_changed), self);
+
+    g_signal_connect(self->tc_glass, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
+    g_signal_connect(self->tc_shadow, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
+    g_signal_connect(self->tc_dim, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
+    g_signal_connect(self->tc_dither, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
+    g_signal_connect(self->combo_color_filter, "notify::selected", G_CALLBACK(on_combo_color_filter_changed), self);
+    g_signal_connect(self->scale_filter_strength, "value-changed", G_CALLBACK(on_scale_filter_strength_changed), self);
+    g_signal_connect(self->scale_night_temp, "value-changed", G_CALLBACK(on_scale_night_temp_changed), self);
     g_signal_connect(self, "map", G_CALLBACK(on_niri_page_mapped), NULL);
 
     settings_page_bind_actions(

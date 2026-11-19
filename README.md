@@ -29,7 +29,7 @@ The repository builds and installs **eight integrated native executables** (plus
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
-| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, live-preview `Alt+Tab`, and in-compositor screenshots. |
+| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, Vulkan SDF shadows & Dual-Kawase frosted glass, live-preview `Alt+Tab`, and in-compositor screenshots. |
 | **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) with selection-first Nordic keybindings, 16-language Tree-sitter highlighting, async LSP & DAP debugger, Cairo Mermaid diagrams, and AI Agent IPC. |
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, batch clipboard operations, and `Space` Quick Look preview. |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
@@ -43,13 +43,13 @@ The repository builds and installs **eight integrated native executables** (plus
 ## ✨ Suite Components in Detail
 
 ### ❖ Kajo Compositor (`kajo-comp`)
-> 📖 **Full Specification & Storyboard**: [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) • [`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)
+> 📖 **Specifications & Storyboard**: [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) • [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) • [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) • [`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)
 
 - **Infinite Scrolling Strip & Spring Physics**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), and a closed-form 2nd-order damped spring solver. Resizes animate, and workspaces form one continuous vertical strip (both stay visible while switching).
 - **3-Finger Drag & Flick**: On the touchscreen and touchpad the view follows three fingers along the strip or between workspaces and snaps on release: a slow drag switches by position, a quick flick by velocity, and a short drag springs back (a glance).
-- **Vulkan / Pixman Scene Graph (`wlroots-0.20`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery.
+- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo/0.20.2`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 3-pass Dual-Kawase frosted glass backdrop blur (with top-edge specular hairline, 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
 - **Built-In Switcher & Screenshot UI**: Live-thumbnail `Alt+Tab` MRU overlay and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
-- **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules, `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
+- **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
 
 ### ⌨️ Kajo IDE (`kajo-ide`)
 > 📖 **Full Manual**: [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)
@@ -93,6 +93,8 @@ The repository builds and installs **eight integrated native executables** (plus
 | **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
 | **[`docs/brand-logo-gallery.html`](docs/brand-logo-gallery.html)** | Brand & application vector icon system gallery across all 8 Kajo executables. |
 | **[`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md)** | Complete architecture specification for **`kajo-comp`** (scrollable-tiling strip, analytical springs, Wayland protocols, TOML schemas, IPC). |
+| **[`docs/spec_comp_effects.md`](docs/spec_comp_effects.md)** | Specification for **`kajo-comp`** Vulkan visual effects (2-layer SDF drop shadows, Dual-Kawase frosted glass, `xray` panel blur, inactive dimming). |
+| **[`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md)** | Specification for Kajo's statically linked `wlroots-0.20.2` fork (`subprojects/wlroots`, `wlr_kfx_*` custom shader, pooled target & below-node pass APIs). |
 | **[`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)** | Interactive visual storyboard for **`kajo-comp`** strip mechanics, tabbed columns, `Alt+Tab` switcher, and screenshot UI. |
 | **[`docs/spec_toml_config.md`](docs/spec_toml_config.md)** | Specification for the per-domain TOML 1.1 configuration store (`theme`, `shell`, `ide`, `files`, `mod`, `comp`, `outputs`, `binds`, `rules`) and `conf.d/` overlays. |
 | **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
@@ -109,7 +111,9 @@ The repository builds and installs **eight integrated native executables** (plus
 ### 1. System Dependencies (Arch Linux / CachyOS)
 ```bash
 sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-protocols \
-    wlroots0.20 talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    talloc pcre2 libinput libxkbcommon cairo pango libpng vulkan-icd-loader \
+    libdrm seatd libdisplay-info libliftoff lcms2 pixman mesa vulkan-headers glslang hwdata \
+    libxcb xcb-util-wm xcb-util-renderutil xcb-util-errors \
     xorg-xwayland json-glib glib2 libpulse pam poppler-glib libarchive mpv \
     libsidplayfp libgme libopenmpt libxmp gvfs gvfs-smb udisks2 blueprint-compiler meson ninja
 paru -S --needed uade bencodetools
@@ -137,10 +141,11 @@ For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server
 By default, `meson.build` configures `prefix=~/.local`, installing all eight binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
 
 ```bash
+git clone --recursive https://github.com/mikolas/Kajo.git   # existing clones: git submodule update --init
 meson setup builddir
 meson compile -C builddir
 meson test -C builddir
-meson install -C builddir
+meson install -C builddir --skip-subprojects   # keeps the statically linked wlroots out of the install tree
 ```
 
 ---
@@ -170,6 +175,28 @@ active_color = "accent"                  # tracks live @metro-accent from theme.
 [animations]
 enable = true
 horizontal_view_movement = { damping_ratio = 1.0, stiffness = 800.0, epsilon = 0.0001 }
+
+[effects]
+enabled = true
+dither = true
+color_filter = "none"                   # "none" | "grayscale" | "night-light" | "protanopia" | "deuteranopia" | "tritanopia"
+color_filter_strength = 1.0
+night_light_temperature = 4000
+sdr_white_nits = 0.0                    # 0.0 = default (203 cd/m^2 on HDR PQ), or 80.0..1000.0
+tonemap = true
+tonemap_peak_nits = 0.0                 # 0.0 = container max, or target panel peak (e.g. 616.9 cd/m^2)
+
+[effects.shadow]
+enabled = true
+
+[effects.glass]
+enabled = true
+passes = 3
+offset = 2.0
+saturation = 1.15
+brightness = 0.90
+tint = "#141414"
+tint_alpha = 0.35
 ```
 
 ### B. Niri Configuration (`~/.config/niri/config.kdl`)

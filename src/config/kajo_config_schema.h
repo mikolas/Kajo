@@ -151,6 +151,29 @@ gboolean kajo_config_comp_save_layout_and_layers(const char        *config_dir,
                                                  size_t             n_ns,
                                                  GError           **error);
 
+typedef struct {
+    gboolean glass_enabled;
+    gboolean shadow_enabled;
+    gboolean dim_enabled;
+    gboolean dither_enabled;
+    char     color_filter[32];
+    int      color_filter_strength_pct;
+    int      night_light_temperature;
+} KajoCompEffectsCfg;
+
+gboolean kajo_config_comp_read_effects(const char         *config_dir,
+                                       KajoCompEffectsCfg *out_fx,
+                                       const char *const  *ns_ids,
+                                       gboolean           *inout_ns_xray,
+                                       size_t              n_ns);
+
+gboolean kajo_config_comp_save_effects(const char               *config_dir,
+                                       const KajoCompEffectsCfg *fx,
+                                       const char *const        *ns_ids,
+                                       const gboolean           *ns_xray,
+                                       size_t                    n_ns,
+                                       GError                  **error);
+
 gboolean kajo_config_comp_save_output_rule(const char *config_dir,
                                            const char *out_name,
                                            const char *make_model,
