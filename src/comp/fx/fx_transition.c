@@ -265,6 +265,15 @@ capture_tree_snapshot(CompFxSystem *sys,
         return NULL;
     }
 
+    /* Pooled targets retain previous contents; clear full bucket to transparent black. */
+    int tex_w = px_w, tex_h = px_h;
+    wlr_kfx_target_get_size(target, &tex_w, &tex_h);
+    wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
+        .box        = { .x = 0, .y = 0, .width = tex_w, .height = tex_h },
+        .color      = { 0.0f, 0.0f, 0.0f, 0.0f },
+        .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+    });
+
     bool was_enabled = tree->node.enabled;
     tree->node.enabled = true;
     struct wlr_scene_node *child;
@@ -457,8 +466,10 @@ transition_draw_cb(struct wlr_kfx_node_hook *hook,
                             (float)tr->curr_box.width, (float)tr->curr_box.height,
                             uvs0_x, uvs0_y, uvs1_x, uvs1_y,
                             scale, &params);
-    if (ctx->output && ctx->output->output)
+    if (ctx->output && ctx->output->output) {
         params.common.hdr_headroom = wlr_kfx_output_get_hdr_headroom(ctx->output->output);
+        params.common.flags        = (uint32_t)ctx->output->output->transform;
+    }
 
     opts.shader     = shader;
     opts.dst_box    = ctx->dst_box;

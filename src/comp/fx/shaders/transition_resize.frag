@@ -24,31 +24,43 @@ float kajo_resize_hash(float n) {
     return fract(sin(n * 113.57) * 43758.5453);
 }
 
+vec2 unrotate_uv(vec2 p, uint tf) {
+    if (tf == 1u) return vec2(1.0 - p.y, p.x);
+    if (tf == 2u) return vec2(1.0 - p.x, 1.0 - p.y);
+    if (tf == 3u) return vec2(p.y, 1.0 - p.x);
+    if (tf == 4u) return vec2(1.0 - p.x, p.y);
+    if (tf == 5u) return vec2(p.y, p.x);
+    if (tf == 6u) return vec2(p.x, 1.0 - p.y);
+    if (tf == 7u) return vec2(1.0 - p.y, 1.0 - p.x);
+    return p;
+}
+
 void main() {
     float p = clamp(u.eased_progress, 0.0, 1.0);
+    vec2 luv = unrotate_uv(uv, u.common_hdr.flags);
     vec4 col = vec4(0.0);
 
     if (u.preset == 1u) {
         // stretch-next
-        col = texture(u_tex1, uv * u.uv_scale1);
+        col = texture(u_tex1, luv * u.uv_scale1);
     } else if (u.preset == 2u) {
         // pixelate-morph
         float pulse = sin(p * 3.14159265);
         float block = max(1.0, floor(1.0 + pulse * pulse * 24.0));
         vec2 sz = mix(u.prev_size, u.curr_size, p);
         vec2 grid = max(sz / block, vec2(1.0));
-        vec2 suv = (floor(uv * grid) + 0.5) / grid;
+        vec2 suv = (floor(luv * grid) + 0.5) / grid;
         col = mix(texture(u_tex0, suv * u.uv_scale0), texture(u_tex1, suv * u.uv_scale1), p);
     } else if (u.preset == 3u) {
         // glitch-morph
         float pulse = sin(p * 3.14159265);
-        float band = floor(uv.y * 20.0);
+        float band = floor(luv.y * 20.0);
         float jitter = (kajo_resize_hash(band + floor(p * 10.0)) - 0.5) * 0.06 * pulse;
-        vec2 suv = vec2(clamp(uv.x + jitter, 0.0, 1.0), uv.y);
+        vec2 suv = vec2(clamp(luv.x + jitter, 0.0, 1.0), luv.y);
         col = mix(texture(u_tex0, suv * u.uv_scale0), texture(u_tex1, suv * u.uv_scale1), p);
     } else {
         // default: smooth crossfade
-        col = mix(texture(u_tex0, uv * u.uv_scale0), texture(u_tex1, uv * u.uv_scale1), p);
+        col = mix(texture(u_tex0, luv * u.uv_scale0), texture(u_tex1, luv * u.uv_scale1), p);
     }
 
     if (col.a <= 0.0001) {

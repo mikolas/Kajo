@@ -179,9 +179,22 @@ vec4 eval_close(vec2 coords, float p) {
     return sample_clamped(suv) * (1.0 - p);
 }
 
+vec2 unrotate_uv(vec2 p, uint tf) {
+    // Map output-buffer UV back to logical unrotated window UV (wl_output_transform 0..7)
+    if (tf == 1u) return vec2(1.0 - p.y, p.x);         // 90
+    if (tf == 2u) return vec2(1.0 - p.x, 1.0 - p.y);   // 180
+    if (tf == 3u) return vec2(p.y, 1.0 - p.x);         // 270
+    if (tf == 4u) return vec2(1.0 - p.x, p.y);         // flipped
+    if (tf == 5u) return vec2(p.y, p.x);               // flipped_90
+    if (tf == 6u) return vec2(p.x, 1.0 - p.y);         // flipped_180
+    if (tf == 7u) return vec2(1.0 - p.y, 1.0 - p.x);   // flipped_270
+    return p;
+}
+
 void main() {
     float p = clamp(u.eased_progress, 0.0, 1.0);
-    vec4 col = (u.kind == 0u) ? eval_open(uv, p) : eval_close(uv, p);
+    vec2 luv = unrotate_uv(uv, u.common_hdr.flags);
+    vec4 col = (u.kind == 0u) ? eval_open(luv, p) : eval_close(luv, p);
     if (col.a <= 0.0001) {
         discard;
     }
