@@ -15,6 +15,8 @@ layout(std140, set = 1, binding = 0) uniform Params {
     uint kind;
     vec2 prev_size;
     vec2 curr_size;
+    vec2 uv_scale0;
+    vec2 uv_scale1;
 } u;
 
 float kajo_hash1(float n) {
@@ -40,7 +42,7 @@ vec4 sample_clamped(vec2 p) {
     if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) {
         return vec4(0.0);
     }
-    return texture(u_tex0, p);
+    return texture(u_tex0, p * u.uv_scale0);
 }
 
 vec4 eval_open(vec2 coords, float p) {
@@ -93,9 +95,9 @@ vec4 eval_open(vec2 coords, float p) {
         vec2 base_uv = vec2(coords.x + shift, coords.y);
         if (base_uv.x < 0.0 || base_uv.x > 1.0 || base_uv.y < 0.0 || base_uv.y > 1.0) return vec4(0.0);
         float chroma = 0.025 * intensity;
-        vec4 col_r = texture(u_tex0, vec2(clamp(base_uv.x + chroma, 0.0, 1.0), base_uv.y));
-        vec4 col_g = texture(u_tex0, base_uv);
-        vec4 col_b = texture(u_tex0, vec2(clamp(base_uv.x - chroma, 0.0, 1.0), base_uv.y));
+        vec4 col_r = texture(u_tex0, vec2(clamp(base_uv.x + chroma, 0.0, 1.0), base_uv.y) * u.uv_scale0);
+        vec4 col_g = texture(u_tex0, base_uv * u.uv_scale0);
+        vec4 col_b = texture(u_tex0, vec2(clamp(base_uv.x - chroma, 0.0, 1.0), base_uv.y) * u.uv_scale0);
         return vec4(col_r.r, col_g.g, col_b.b, col_g.a) * smoothstep(0.0, 0.35, p);
     } else if (u.preset == 6u) {
         // curtain-open
@@ -141,7 +143,7 @@ vec4 eval_close(vec2 coords, float p) {
         float n = clamp((raw_n - 0.18) / 0.64, 0.0, 1.0);
         float threshold = p * 1.25 - (1.0 - suv.y) * 0.25;
         if (n < threshold) return vec4(0.0);
-        vec4 col = texture(u_tex0, suv);
+        vec4 col = texture(u_tex0, suv * u.uv_scale0);
         float edge = 1.0 - smoothstep(0.0, 0.14, n - threshold);
         vec3 ember = vec3(1.0, 0.22, 0.015) * col.a;
         col.rgb = mix(col.rgb, ember, edge * 0.90);

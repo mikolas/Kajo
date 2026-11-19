@@ -1757,21 +1757,29 @@ test_m5_window_transitions(void)
     g_assert_true(comp_fx_is_active(&srv));
     comp_fx_config_apply(&srv, cfg);
 
-    /* Black background + bright green window rect at (60, 40, 200, 160) */
+    /* Black background + bright green window at non-64-aligned size (200x130 -> bucket 256x192) */
     const float bg_col[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
     wlr_scene_rect_create(&scene->tree, 320, 240, bg_col);
 
     struct wlr_scene_tree *win_tree = wlr_scene_tree_create(&scene->tree);
     wlr_scene_node_set_position(&win_tree->node, 60, 40);
+    /* Simulate a client subsurface tree that wlroots disables right before unmap */
+    struct wlr_scene_tree *sub_tree = wlr_scene_tree_create(win_tree);
     const float win_col[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
-    wlr_scene_rect_create(win_tree, 200, 160, win_col);
+    wlr_scene_rect_create(sub_tree, 200, 130, win_col);
 
-    /* Start a Close transition snapshot and immediately hide win_tree */
-    struct wlr_box box = { 60, 40, 200, 160 };
+    /* Disable sub_tree (mimicking subsurface_tree_handle_surface_unmap) before close capture */
+    wlr_scene_node_set_enabled(&sub_tree->node, false);
+
+    /* Start a Close transition snapshot (pixelate-out) and hide win_tree */
+    cfg->fx.transitions.close_preset = COMP_FX_CLOSE_PIXELATE_OUT;
+    comp_fx_config_apply(&srv, cfg);
+    struct wlr_box box = { 60, 40, 200, 130 };
     comp_fx_transition_start_close(&srv, win_tree, &scene->tree, box);
     wlr_scene_node_set_enabled(&win_tree->node, false);
 
-    /* Advance 0.05s (~25% into 200ms CRT-off close) and render */
+    /* Advance 0.05s (~25% into 200ms close) and check BOTH center AND bottom-right edge pixel
+     * (verifies 64px bucket uv_scale0 + disabled-subsurface close capture) */
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     double now_s = (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
@@ -1782,27 +1790,33 @@ test_m5_window_transitions(void)
     g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
     g_assert_nonnull(st.buffer);
 
-    uint8_t px_mid[4] = {0};
+    uint8_t px_mid[4] = {0}, px_edge[4] = {0};
     struct wlr_texture *tex = wlr_texture_from_buffer(renderer, st.buffer);
     g_assert_nonnull(tex);
     g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
         .data = px_mid, .format = DRM_FORMAT_XRGB8888, .stride = 4,
-        .src_box = { .x = 160, .y = 120, .width = 1, .height = 1 },
+        .src_box = { .x = 160, .y = 105, .width = 1, .height = 1 },
+    }));
+    /* Near bottom-right corner (250, 162) of (60,40,200,130): would be black without uv_scale0! */
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_edge, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 250, .y = 162, .width = 1, .height = 1 },
     }));
     wlr_texture_destroy(tex);
     wlr_output_state_finish(&st);
 
-    /* Center of the collapsing CRT-off snapshot must be lit (bright green/white beam) */
     g_assert_cmpint(px_mid[1], >, 100);
+    g_assert_cmpint(px_edge[1], >, 100);
 
     /* Advance past duration (now_s + 1.0s): transition finishes and cleans up cleanly */
     g_assert_false(comp_fx_output_prepare(&out, now_s + 1.0));
 
-    /* Test Resize transition (2-input shader) */
+    /* Test Resize transition (2-input shader, non-64-aligned sizes) */
+    wlr_scene_node_set_enabled(&sub_tree->node, true);
     wlr_scene_node_set_enabled(&win_tree->node, true);
     comp_fx_transition_start_resize(&srv, win_tree, &scene->tree,
-                                    (struct wlr_box){ 60, 40, 200, 160 },
-                                    (struct wlr_box){ 60, 40, 240, 160 });
+                                    (struct wlr_box){ 60, 40, 200, 130 },
+                                    (struct wlr_box){ 60, 40, 240, 130 });
     g_assert_true(comp_fx_tree_is_transitioning(&srv, win_tree));
     clock_gettime(CLOCK_MONOTONIC, &ts);
     now_s = (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
@@ -1816,7 +1830,7 @@ test_m5_window_transitions(void)
     g_assert_nonnull(tex);
     g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
         .data = px_rsz, .format = DRM_FORMAT_XRGB8888, .stride = 4,
-        .src_box = { .x = 160, .y = 120, .width = 1, .height = 1 },
+        .src_box = { .x = 160, .y = 105, .width = 1, .height = 1 },
     }));
     wlr_texture_destroy(tex);
     wlr_output_state_finish(&st);

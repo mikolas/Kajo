@@ -201,7 +201,7 @@ typedef struct {
     float              brightness;      /* offset 92 */
 } CompFxGlassParams;
 
-/* Window transition fragment shader UBO (std140, 64 bytes <= 256).
+/* Window transition fragment shader UBO (std140, 80 bytes <= 256).
  * Matches src/comp/fx/shaders/transition_single.frag and transition_resize.frag Params. */
 typedef struct {
     CompFxCommonParams common;         /* offset 0 */
@@ -211,6 +211,8 @@ typedef struct {
     uint32_t           kind;           /* offset 44: 0=open, 1=close, 2=resize */
     float              prev_size[2];   /* offset 48: previous logical size */
     float              curr_size[2];   /* offset 56: current logical size */
+    float              uv_scale0[2];   /* offset 64: valid/bucket UV scale for u_tex0 */
+    float              uv_scale1[2];   /* offset 72: valid/bucket UV scale for u_tex1 */
 } CompFxTransitionParams;
 
 void comp_fx_config_defaults(CompFxConfig *cfg);
@@ -300,6 +302,8 @@ void comp_fx_transition_pack(CompFxRect dst_box,
                              double eased_progress,
                              float prev_w, float prev_h,
                              float curr_w, float curr_h,
+                             float uv_scale0_x, float uv_scale0_y,
+                             float uv_scale1_x, float uv_scale1_y,
                              float scale,
                              CompFxTransitionParams *out);
 

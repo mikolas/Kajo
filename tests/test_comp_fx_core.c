@@ -461,12 +461,15 @@ test_m5_transitions_and_shadow_strength(void)
     CompFxTransitionParams tp;
     comp_fx_transition_pack((CompFxRect){ 10, 20, 300, 200 },
                             COMP_FX_TRANS_CLOSE, COMP_FX_CLOSE_CRT_OFF,
-                            0.5, 0.75, 300.0f, 200.0f, 300.0f, 200.0f, 2.0f, &tp);
-    g_assert_cmpuint(sizeof(tp), ==, 64);
+                            0.5, 0.75, 300.0f, 200.0f, 300.0f, 200.0f,
+                            0.75f, 0.5f, 1.0f, 1.0f, 2.0f, &tp);
+    g_assert_cmpuint(sizeof(tp), ==, 80);
     g_assert_cmpfloat_with_epsilon(tp.progress, 0.5f, 1e-6);
     g_assert_cmpfloat_with_epsilon(tp.eased_progress, 0.75f, 1e-6);
     g_assert_cmpuint(tp.preset, ==, COMP_FX_CLOSE_CRT_OFF);
     g_assert_cmpuint(tp.kind, ==, COMP_FX_TRANS_CLOSE);
+    g_assert_cmpfloat_with_epsilon(tp.uv_scale0[0], 0.75f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(tp.uv_scale0[1], 0.5f, 1e-6);
 
     CompConfig *cc = comp_config_new_defaults(0);
     CompDiagList diag = {0};

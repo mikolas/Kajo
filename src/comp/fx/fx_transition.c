@@ -15,6 +15,7 @@
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_single_pixel_buffer_v1.h>
 #include <wlr/util/log.h>
@@ -40,6 +41,11 @@ typedef struct {
 
     struct wlr_kfx_target   *target0;       /* main snapshot (or prev for resize) */
     struct wlr_kfx_target   *target1;       /* curr snapshot (resize only) */
+    int                      t0_px_w;
+    int                      t0_px_h;
+    int                      t1_px_w;
+    int                      t1_px_h;
+    bool                     follow_live_box;
 
     struct wlr_scene_tree   *src_tree;      /* live window tree (NULL for close) */
     struct wl_listener       src_tree_destroy;
@@ -91,10 +97,15 @@ snapshot_walk_node(CompFxSystem *sys,
                    struct wlr_render_pass *pass,
                    struct wlr_scene_node *node,
                    int rel_x, int rel_y,
-                   double scale, int pass_w, int pass_h)
+                   double scale, int pass_w, int pass_h,
+                   bool ignore_disabled_subsurfaces)
 {
-    if (!node || !node->enabled)
+    if (!node)
         return;
+    if (!node->enabled) {
+        if (!ignore_disabled_subsurfaces || node->type == WLR_SCENE_NODE_RECT)
+            return;
+    }
 
     int lx = rel_x + node->x;
     int ly = rel_y + node->y;
@@ -103,7 +114,8 @@ snapshot_walk_node(CompFxSystem *sys,
         struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
         struct wlr_scene_node *child;
         wl_list_for_each(child, &tree->children, link) {
-            snapshot_walk_node(sys, pass, child, lx, ly, scale, pass_w, pass_h);
+            snapshot_walk_node(sys, pass, child, lx, ly, scale, pass_w, pass_h,
+                               ignore_disabled_subsurfaces);
         }
         return;
     }
@@ -227,7 +239,9 @@ static struct wlr_kfx_target *
 capture_tree_snapshot(CompFxSystem *sys,
                       struct wlr_scene_tree *tree,
                       int log_w, int log_h,
-                      float scale)
+                      float scale,
+                      bool ignore_disabled_subsurfaces,
+                      int *out_px_w, int *out_px_h)
 {
     if (!sys || !sys->server || !sys->server->renderer || !tree ||
         log_w <= 0 || log_h <= 0)
@@ -255,7 +269,8 @@ capture_tree_snapshot(CompFxSystem *sys,
     tree->node.enabled = true;
     struct wlr_scene_node *child;
     wl_list_for_each(child, &tree->children, link) {
-        snapshot_walk_node(sys, pass, child, 0, 0, (double)s, px_w, px_h);
+        snapshot_walk_node(sys, pass, child, 0, 0, (double)s, px_w, px_h,
+                           ignore_disabled_subsurfaces);
     }
     tree->node.enabled = was_enabled;
 
@@ -263,7 +278,30 @@ capture_tree_snapshot(CompFxSystem *sys,
         wlr_kfx_target_release(target);
         return NULL;
     }
+    if (out_px_w) *out_px_w = px_w;
+    if (out_px_h) *out_px_h = px_h;
     return target;
+}
+
+static void
+send_frame_done_walk(struct wlr_scene_node *node, const struct timespec *now)
+{
+    if (!node)
+        return;
+    if (node->type == WLR_SCENE_NODE_TREE) {
+        struct wlr_scene_tree *tree = wlr_scene_tree_from_node(node);
+        struct wlr_scene_node *child;
+        wl_list_for_each(child, &tree->children, link) {
+            send_frame_done_walk(child, now);
+        }
+        return;
+    }
+    if (node->type == WLR_SCENE_NODE_BUFFER) {
+        struct wlr_scene_buffer *sbuf = wlr_scene_buffer_from_node(node);
+        struct wlr_scene_surface *ss = wlr_scene_surface_try_from_buffer(sbuf);
+        if (ss && ss->surface)
+            wlr_surface_send_frame_done(ss->surface, now);
+    }
 }
 
 static float
@@ -393,11 +431,31 @@ transition_draw_cb(struct wlr_kfx_node_hook *hook,
                       ? ctx->output->output->scale
                       : 1.0f;
 
+    float uvs0_x = 1.0f, uvs0_y = 1.0f;
+    float uvs1_x = 1.0f, uvs1_y = 1.0f;
+    if (tr->target0 && tr->t0_px_w > 0 && tr->t0_px_h > 0) {
+        int tw = 0, th = 0;
+        wlr_kfx_target_get_size(tr->target0, &tw, &th);
+        if (tw > 0 && th > 0) {
+            uvs0_x = (float)tr->t0_px_w / (float)tw;
+            uvs0_y = (float)tr->t0_px_h / (float)th;
+        }
+    }
+    if (tr->target1 && tr->t1_px_w > 0 && tr->t1_px_h > 0) {
+        int tw = 0, th = 0;
+        wlr_kfx_target_get_size(tr->target1, &tw, &th);
+        if (tw > 0 && th > 0) {
+            uvs1_x = (float)tr->t1_px_w / (float)tw;
+            uvs1_y = (float)tr->t1_px_h / (float)th;
+        }
+    }
+
     CompFxTransitionParams params;
     comp_fx_transition_pack(dst, tr->kind, tr->preset,
                             tr->progress, tr->eased_progress,
                             (float)tr->prev_box.width, (float)tr->prev_box.height,
                             (float)tr->curr_box.width, (float)tr->curr_box.height,
+                            uvs0_x, uvs0_y, uvs1_x, uvs1_y,
                             scale, &params);
     if (ctx->output && ctx->output->output)
         params.common.hdr_headroom = wlr_kfx_output_get_hdr_headroom(ctx->output->output);
@@ -590,18 +648,24 @@ comp_fx_transition_start_open(struct CompServer *server,
     cancel_transitions_for_tree(sys, win_tree);
 
     float scale = max_output_scale(server);
+    int px_w = 0, px_h = 0;
     struct wlr_kfx_target *t0 = capture_tree_snapshot(
-        sys, win_tree, outer_box.width, outer_box.height, scale);
+        sys, win_tree, outer_box.width, outer_box.height, scale, false, &px_w, &px_h);
     if (!t0)
         return;
 
-    if (!create_transition(sys, parent_tree, win_tree, COMP_FX_TRANS_OPEN,
-                           (uint32_t)sys->cfg.transitions.open_preset,
-                           sys->cfg.transitions.open_curve,
-                           sys->cfg.transitions.open_duration_ms,
-                           outer_box, outer_box, t0, NULL)) {
+    CompFxTransition *tr = create_transition(sys, parent_tree, win_tree, COMP_FX_TRANS_OPEN,
+                                             (uint32_t)sys->cfg.transitions.open_preset,
+                                             sys->cfg.transitions.open_curve,
+                                             sys->cfg.transitions.open_duration_ms,
+                                             outer_box, outer_box, t0, NULL);
+    if (!tr) {
         wlr_kfx_target_release(t0);
+        return;
     }
+    tr->t0_px_w = px_w;
+    tr->t0_px_h = px_h;
+    tr->follow_live_box = true;
 }
 
 void
@@ -623,18 +687,23 @@ comp_fx_transition_start_close(struct CompServer *server,
     cancel_transitions_for_tree(sys, win_tree);
 
     float scale = max_output_scale(server);
+    int px_w = 0, px_h = 0;
     struct wlr_kfx_target *t0 = capture_tree_snapshot(
-        sys, win_tree, outer_box.width, outer_box.height, scale);
+        sys, win_tree, outer_box.width, outer_box.height, scale, true, &px_w, &px_h);
     if (!t0)
         return;
 
-    if (!create_transition(sys, parent_tree, NULL, COMP_FX_TRANS_CLOSE,
-                           (uint32_t)sys->cfg.transitions.close_preset,
-                           sys->cfg.transitions.close_curve,
-                           sys->cfg.transitions.close_duration_ms,
-                           outer_box, outer_box, t0, NULL)) {
+    CompFxTransition *tr = create_transition(sys, parent_tree, NULL, COMP_FX_TRANS_CLOSE,
+                                             (uint32_t)sys->cfg.transitions.close_preset,
+                                             sys->cfg.transitions.close_curve,
+                                             sys->cfg.transitions.close_duration_ms,
+                                             outer_box, outer_box, t0, NULL);
+    if (!tr) {
         wlr_kfx_target_release(t0);
+        return;
     }
+    tr->t0_px_w = px_w;
+    tr->t0_px_h = px_h;
 }
 
 void
@@ -654,30 +723,83 @@ comp_fx_transition_start_resize(struct CompServer *server,
     if (prev_box.width <= 0 || prev_box.height <= 0 ||
         curr_box.width <= 0 || curr_box.height <= 0)
         return;
-    if (abs(curr_box.width - prev_box.width) < 4 &&
-        abs(curr_box.height - prev_box.height) < 4)
-        return;
 
     cancel_transitions_for_tree(sys, win_tree);
 
     float scale = max_output_scale(server);
+    int px_w0 = 0, px_h0 = 0;
+    int px_w1 = 0, px_h1 = 0;
     struct wlr_kfx_target *t0 = capture_tree_snapshot(
-        sys, win_tree, prev_box.width, prev_box.height, scale);
+        sys, win_tree, prev_box.width, prev_box.height, scale, false, &px_w0, &px_h0);
     struct wlr_kfx_target *t1 = capture_tree_snapshot(
-        sys, win_tree, curr_box.width, curr_box.height, scale);
+        sys, win_tree, curr_box.width, curr_box.height, scale, false, &px_w1, &px_h1);
     if (!t0 || !t1) {
         if (t0) wlr_kfx_target_release(t0);
         if (t1) wlr_kfx_target_release(t1);
         return;
     }
 
-    if (!create_transition(sys, parent_tree, win_tree, COMP_FX_TRANS_RESIZE,
-                           (uint32_t)sys->cfg.transitions.resize_preset,
-                           COMP_FX_CURVE_EASE_OUT_CUBIC,
-                           sys->cfg.transitions.resize_duration_ms,
-                           prev_box, curr_box, t0, t1)) {
+    CompFxTransition *tr = create_transition(sys, parent_tree, win_tree, COMP_FX_TRANS_RESIZE,
+                                             (uint32_t)sys->cfg.transitions.resize_preset,
+                                             COMP_FX_CURVE_EASE_OUT_CUBIC,
+                                             sys->cfg.transitions.resize_duration_ms,
+                                             prev_box, curr_box, t0, t1);
+    if (!tr) {
         wlr_kfx_target_release(t0);
         wlr_kfx_target_release(t1);
+        return;
+    }
+    tr->t0_px_w = px_w0;
+    tr->t0_px_h = px_h0;
+    tr->t1_px_w = px_w1;
+    tr->t1_px_h = px_h1;
+}
+
+void
+comp_fx_transition_update_live(struct CompServer *server,
+                               struct wlr_scene_tree *win_tree,
+                               struct wlr_box live_box,
+                               bool recapture_curr)
+{
+    if (!server || !server->fx || !win_tree)
+        return;
+    CompFxSystem *sys = server->fx;
+    CompFxTransition *tr;
+    wl_list_for_each(tr, &sys->transitions, link) {
+        if (tr->src_tree != win_tree)
+            continue;
+        if (live_box.width > 0 && live_box.height > 0) {
+            if (tr->kind == COMP_FX_TRANS_OPEN) {
+                tr->prev_box = live_box;
+                tr->curr_box = live_box;
+            } else if (tr->kind == COMP_FX_TRANS_RESIZE) {
+                tr->curr_box = live_box;
+                tr->follow_live_box = true;
+            }
+        }
+        if (recapture_curr && live_box.width > 0 && live_box.height > 0) {
+            float scale = max_output_scale(server);
+            int px_w = 0, px_h = 0;
+            struct wlr_kfx_target *fresh = capture_tree_snapshot(
+                sys, win_tree, live_box.width, live_box.height, scale, false, &px_w, &px_h);
+            if (fresh) {
+                if (tr->kind == COMP_FX_TRANS_OPEN) {
+                    if (tr->target0)
+                        wlr_kfx_target_release(tr->target0);
+                    tr->target0 = fresh;
+                    tr->t0_px_w = px_w;
+                    tr->t0_px_h = px_h;
+                } else if (tr->kind == COMP_FX_TRANS_RESIZE) {
+                    if (tr->target1)
+                        wlr_kfx_target_release(tr->target1);
+                    tr->target1 = fresh;
+                    tr->t1_px_w = px_w;
+                    tr->t1_px_h = px_h;
+                } else {
+                    wlr_kfx_target_release(fresh);
+                }
+            }
+        }
     }
 }
 
@@ -702,6 +824,9 @@ fx_transition_prepare_output(CompFxSystem *sys, double now_s)
     if (!sys || wl_list_empty(&sys->transitions))
         return false;
 
+    struct timespec now_ts;
+    clock_gettime(CLOCK_MONOTONIC, &now_ts);
+
     bool animating = false;
     CompFxTransition *tr, *tmp;
     wl_list_for_each_safe(tr, tmp, &sys->transitions, link) {
@@ -717,12 +842,23 @@ fx_transition_prepare_output(CompFxSystem *sys, double now_s)
         tr->progress       = prog;
         tr->eased_progress = comp_fx_transition_eval_curve(tr->curve, prog);
 
+        if (tr->src_tree)
+            send_frame_done_walk(&tr->src_tree->node, &now_ts);
+
         if (tr->anchor) {
-            double e = tr->eased_progress;
-            int x = (int)lround((double)tr->prev_box.x + (double)(tr->curr_box.x - tr->prev_box.x) * e);
-            int y = (int)lround((double)tr->prev_box.y + (double)(tr->curr_box.y - tr->prev_box.y) * e);
-            int w = (int)lround((double)tr->prev_box.width + (double)(tr->curr_box.width - tr->prev_box.width) * e);
-            int h = (int)lround((double)tr->prev_box.height + (double)(tr->curr_box.height - tr->prev_box.height) * e);
+            int x, y, w, h;
+            if (tr->follow_live_box) {
+                x = tr->curr_box.x;
+                y = tr->curr_box.y;
+                w = tr->curr_box.width;
+                h = tr->curr_box.height;
+            } else {
+                double e = tr->eased_progress;
+                x = (int)lround((double)tr->prev_box.x + (double)(tr->curr_box.x - tr->prev_box.x) * e);
+                y = (int)lround((double)tr->prev_box.y + (double)(tr->curr_box.y - tr->prev_box.y) * e);
+                w = (int)lround((double)tr->prev_box.width + (double)(tr->curr_box.width - tr->prev_box.width) * e);
+                h = (int)lround((double)tr->prev_box.height + (double)(tr->curr_box.height - tr->prev_box.height) * e);
+            }
             if (w < 1) w = 1;
             if (h < 1) h = 1;
             wlr_scene_node_set_position(&tr->anchor->node, x, y);

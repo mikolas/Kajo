@@ -16,6 +16,8 @@ layout(std140, set = 1, binding = 0) uniform Params {
     uint kind;
     vec2 prev_size;
     vec2 curr_size;
+    vec2 uv_scale0;
+    vec2 uv_scale1;
 } u;
 
 float kajo_resize_hash(float n) {
@@ -28,7 +30,7 @@ void main() {
 
     if (u.preset == 1u) {
         // stretch-next
-        col = texture(u_tex1, uv);
+        col = texture(u_tex1, uv * u.uv_scale1);
     } else if (u.preset == 2u) {
         // pixelate-morph
         float pulse = sin(p * 3.14159265);
@@ -36,17 +38,17 @@ void main() {
         vec2 sz = mix(u.prev_size, u.curr_size, p);
         vec2 grid = max(sz / block, vec2(1.0));
         vec2 suv = (floor(uv * grid) + 0.5) / grid;
-        col = mix(texture(u_tex0, suv), texture(u_tex1, suv), p);
+        col = mix(texture(u_tex0, suv * u.uv_scale0), texture(u_tex1, suv * u.uv_scale1), p);
     } else if (u.preset == 3u) {
         // glitch-morph
         float pulse = sin(p * 3.14159265);
         float band = floor(uv.y * 20.0);
         float jitter = (kajo_resize_hash(band + floor(p * 10.0)) - 0.5) * 0.06 * pulse;
         vec2 suv = vec2(clamp(uv.x + jitter, 0.0, 1.0), uv.y);
-        col = mix(texture(u_tex0, suv), texture(u_tex1, suv), p);
+        col = mix(texture(u_tex0, suv * u.uv_scale0), texture(u_tex1, suv * u.uv_scale1), p);
     } else {
         // default: smooth crossfade
-        col = mix(texture(u_tex0, uv), texture(u_tex1, uv), p);
+        col = mix(texture(u_tex0, uv * u.uv_scale0), texture(u_tex1, uv * u.uv_scale1), p);
     }
 
     if (col.a <= 0.0001) {

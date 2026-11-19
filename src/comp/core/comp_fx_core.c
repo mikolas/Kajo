@@ -922,6 +922,8 @@ comp_fx_transition_pack(CompFxRect dst_box,
                         double eased_progress,
                         float prev_w, float prev_h,
                         float curr_w, float curr_h,
+                        float uv_scale0_x, float uv_scale0_y,
+                        float uv_scale1_x, float uv_scale1_y,
                         float scale,
                         CompFxTransitionParams *out)
 {
@@ -947,4 +949,8 @@ comp_fx_transition_pack(CompFxRect dst_box,
     out->prev_size[1]   = fmaxf(prev_h, 1.0f);
     out->curr_size[0]   = fmaxf(curr_w, 1.0f);
     out->curr_size[1]   = fmaxf(curr_h, 1.0f);
+    out->uv_scale0[0]   = (uv_scale0_x > 0.0f && uv_scale0_x <= 1.0f) ? uv_scale0_x : 1.0f;
+    out->uv_scale0[1]   = (uv_scale0_y > 0.0f && uv_scale0_y <= 1.0f) ? uv_scale0_y : 1.0f;
+    out->uv_scale1[0]   = (uv_scale1_x > 0.0f && uv_scale1_x <= 1.0f) ? uv_scale1_x : 1.0f;
+    out->uv_scale1[1]   = (uv_scale1_y > 0.0f && uv_scale1_y <= 1.0f) ? uv_scale1_y : 1.0f;
 }

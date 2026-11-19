@@ -121,6 +121,18 @@ comp_fx_transition_start_resize(struct CompServer *server,
     (void)curr_box;
 }
 
+void
+comp_fx_transition_update_live(struct CompServer *server,
+                               struct wlr_scene_tree *win_tree,
+                               struct wlr_box live_box,
+                               bool recapture_curr)
+{
+    (void)server;
+    (void)win_tree;
+    (void)live_box;
+    (void)recapture_curr;
+}
+
 bool
 comp_fx_tree_is_transitioning(const struct CompServer *server,
                               const struct wlr_scene_tree *win_tree)

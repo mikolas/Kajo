@@ -92,6 +92,7 @@ typedef struct CompWindow {
 
     bool                                    mapped;
     bool                                    tick_seen;
+    bool                                    was_resizing;
     bool                                    is_floating;
     bool                                    is_fullscreen;
     bool                                    is_urgent;
@@ -563,22 +564,31 @@ comp_window_tick_frame(CompServer *s, double now_s)
         };
         struct wlr_box curr_box = { .x = rx, .y = ry, .width = rw, .height = rh };
 
+        bool start_resize = !was_first_layout &&
+                            prev_box.width > 0 && prev_box.height > 0 &&
+                            win->scene_tree->node.parent &&
+                            ((!win->was_resizing && g->resizing) ||
+                             (!g->resizing && (abs(rw - prev_box.width) >= 4 || abs(rh - prev_box.height) >= 4)));
+        win->was_resizing = g->resizing;
+
+        if (start_resize) {
+            /* Capture pre-resize snapshot BEFORE updating borders/clip to the new size. */
+            comp_fx_transition_start_resize(s, win->scene_tree,
+                                            win->scene_tree->node.parent,
+                                            prev_box, curr_box);
+        }
+
         wlr_scene_node_set_position(&win->scene_tree->node, rx, ry);
         update_window_borders(win, rw, rh, g);
 
         if (was_first_layout && rw > 0 && rh > 0 && win->scene_tree->node.parent) {
             comp_fx_transition_start_open(s, win->scene_tree,
                                           win->scene_tree->node.parent, curr_box);
-        } else if (!was_first_layout && !g->resizing &&
-                   prev_box.width > 0 && prev_box.height > 0 &&
-                   (abs(rw - prev_box.width) >= 4 || abs(rh - prev_box.height) >= 4) &&
-                   win->scene_tree->node.parent) {
-            comp_fx_transition_start_resize(s, win->scene_tree,
-                                            win->scene_tree->node.parent,
-                                            prev_box, curr_box);
         }
 
         bool transitioning = comp_fx_tree_is_transitioning(s, win->scene_tree);
+        if (transitioning)
+            comp_fx_transition_update_live(s, win->scene_tree, curr_box, start_resize);
         wlr_scene_node_set_enabled(&win->scene_tree->node, !transitioning);
     }
 
@@ -1437,8 +1447,20 @@ handle_toplevel_commit(void *owner, void *data)
         return;
     }
 
-    if (w->mapped && w->has_last_g && w->scene_tree && w->scene_tree->node.enabled)
-        update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
+    if (w->mapped && w->has_last_g && w->scene_tree) {
+        bool transitioning = comp_fx_tree_is_transitioning(s, w->scene_tree);
+        if (w->scene_tree->node.enabled || transitioning)
+            update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
+        if (transitioning) {
+            struct wlr_box live_box = {
+                .x      = w->scene_tree->node.x,
+                .y      = w->scene_tree->node.y,
+                .width  = w->last_rw,
+                .height = w->last_rh,
+            };
+            comp_fx_transition_update_live(s, w->scene_tree, live_box, true);
+        }
+    }
 }
 
 static CompRect
