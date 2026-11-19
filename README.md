@@ -19,7 +19,7 @@ Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. *
    - Built directly on `C17` (`C++20` for `libsidplayfp`), `wlroots-0.20`, `talloc`, `libinput`, `libpcre2-8`, `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libpng`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron, CEF, or web-view wrappers.
    - Strict map- and popout-gated resource discipline keeps background CPU usage below `0.05%`.
 3. **Tailored to Personal Workflows**
-   - Whether driving the infinite horizontal tiling strip in **`kajo-comp`**, writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or configuring multi-monitor outputs, tiling physics, Niri GLSL shaders, and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
+   - Whether driving the infinite horizontal tiling strip in **`kajo-comp`**, writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or configuring multi-monitor outputs, tiling physics, compositor effects & shaders, and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
 
 ---
 
@@ -29,7 +29,7 @@ The repository builds and installs **eight integrated native executables** (plus
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
-| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, Vulkan SDF shadows & Dual-Kawase frosted glass, live-preview `Alt+Tab`, and in-compositor screenshots. |
+| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, Vulkan SDF shadows, Dual-Kawase frosted glass & window open/close/resize transitions, live-preview `Alt+Tab`, and in-compositor screenshots. |
 | **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) with selection-first Nordic keybindings, 16-language Tree-sitter highlighting, async LSP & DAP debugger, Cairo Mermaid diagrams, and AI Agent IPC. |
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, batch clipboard operations, and `Space` Quick Look preview. |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
@@ -47,7 +47,7 @@ The repository builds and installs **eight integrated native executables** (plus
 
 - **Infinite Scrolling Strip & Spring Physics**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), and a closed-form 2nd-order damped spring solver. Resizes animate, and workspaces form one continuous vertical strip (both stay visible while switching).
 - **3-Finger Drag & Flick**: On the touchscreen and touchpad the view follows three fingers along the strip or between workspaces and snaps on release: a slow drag switches by position, a quick flick by velocity, and a short drag springs back (a glance).
-- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo/0.20.2`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 3-pass Dual-Kawase frosted glass backdrop blur (with top-edge specular hairline, 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
+- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo/0.20.2`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 3-pass Dual-Kawase frosted glass backdrop blur (with top-edge specular hairline, 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, window open/close/resize snapshot transitions (`[effects.transitions]`, 18 ported presets), subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
 - **Built-In Switcher & Screenshot UI**: Live-thumbnail `Alt+Tab` MRU overlay and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
 - **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
 
@@ -76,7 +76,7 @@ The repository builds and installs **eight integrated native executables** (plus
 
 ### ⚙️ Kajo Settings (`kajo-settings`)
 - **12 Live System & Suite Pages**: Modular control deck (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `niri`, `about`) with responsive 3-tier column reflow and zero mock data.
-- **Dual-Compositor & Live Theme Sync**: Synchronizes display modes/scale/VRR and tiling layout settings across both `kajo-comp` (`comp.toml` / `outputs.toml`) and Niri (`config.kdl`), and hot-reloads `@metro-accent` palettes across all running Kajo apps and compositor borders.
+- **Dual-Compositor & Live Theme Sync**: Compositor-agnostic **Compositor & Effects** page synchronizing display modes/scale/VRR, layout/border geometry, glass/shadow/dim optical knobs, and window transition presets across both `kajo-comp` (`comp.toml` / `outputs.toml`) and Niri (`config.kdl`), plus live `@metro-accent`, surface/glass preset, and typography hot-reload across all running Kajo apps and compositor borders.
 
 ### 🖥️ Kajo Desktop Shell (`kajo`) & Greeter (`kajo-greeter`)
 - **Panel, Launcher & Notifications**: 22 live panel widgets (including a popout-corked 30 FPS FFT media visualizer and SNI system tray), `Mod+D` multi-plugin launcher (apps, `:emoji`, `=calc`, `>shell`, `w:window`), OSDs, and a `freedesktop.org` notification daemon.
@@ -93,7 +93,7 @@ The repository builds and installs **eight integrated native executables** (plus
 | **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
 | **[`docs/brand-logo-gallery.html`](docs/brand-logo-gallery.html)** | Brand & application vector icon system gallery across all 8 Kajo executables. |
 | **[`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md)** | Complete architecture specification for **`kajo-comp`** (scrollable-tiling strip, analytical springs, Wayland protocols, TOML schemas, IPC). |
-| **[`docs/spec_comp_effects.md`](docs/spec_comp_effects.md)** | Specification for **`kajo-comp`** Vulkan visual effects (2-layer SDF drop shadows, Dual-Kawase frosted glass, `xray` panel blur, inactive dimming). |
+| **[`docs/spec_comp_effects.md`](docs/spec_comp_effects.md)** | Specification for **`kajo-comp`** Vulkan visual effects (2-layer SDF drop shadows, Dual-Kawase frosted glass, `xray` panel blur, inactive dimming, output colour stage, and window open/close/resize transitions). |
 | **[`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md)** | Specification for Kajo's statically linked `wlroots-0.20.2` fork (`subprojects/wlroots`, `wlr_kfx_*` custom shader, pooled target & below-node pass APIs). |
 | **[`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)** | Interactive visual storyboard for **`kajo-comp`** strip mechanics, tabbed columns, `Alt+Tab` switcher, and screenshot UI. |
 | **[`docs/spec_toml_config.md`](docs/spec_toml_config.md)** | Specification for the per-domain TOML 1.1 configuration store (`theme`, `shell`, `ide`, `files`, `mod`, `comp`, `outputs`, `binds`, `rules`) and `conf.d/` overlays. |
@@ -153,7 +153,7 @@ meson install -C builddir --skip-subprojects   # keeps the statically linked wlr
 ## 🖥️ Compositor Sessions & Configuration (`kajo-comp` & Niri)
 
 Kajo installs three Wayland session entries (`data/session/*.desktop`) and selects the active compositor IPC backend automatically at runtime (`$KAJO_COMP_SOCKET` first, falling back to `$NIRI_SOCKET`):
-- **`kajo.desktop` ("Kajo")**: Launches `kajo-session` $\rightarrow$ `kajo-comp`, which automatically spawns the `kajo` desktop shell (`startup.command = ["kajo"]` in `data/defaults/comp.toml`) and binds all Kajo suite shortcuts out of the box (`data/defaults/binds.toml`).
+- **`kajo.desktop` ("Kajo")**: Launches `kajo-session` $\rightarrow$ `kajo-comp`, which automatically spawns the `kajo` desktop shell (`[autostart] commands` in `data/defaults/comp.toml`) and binds all Kajo suite shortcuts out of the box (`data/defaults/binds.toml`).
 - **`kajo-debug.desktop` ("Kajo (Debug)")**: Launches `kajo-session --debug` with verbose compositor logging to `$XDG_STATE_HOME/kajo/kajo-comp.log`.
 - **`kajo-niri.desktop` ("Kajo (on Niri)")**: Launches `niri-session` for running the Kajo suite on the [Niri](https://github.com/niri-wm/niri) compositor.
 
@@ -162,19 +162,21 @@ Kajo installs three Wayland session entries (`data/session/*.desktop`) and selec
 
 ```toml
 [layout]
-gaps = 8
-center_focused_column = "never"          # "never" | "always" | "on-overflow"
-preset_column_widths = [0.33333, 0.5, 0.66667]
+gap_px = 6
+border_px = 1
+active_border_color = "accent"          # tracks live @metro-accent from theme.toml
+inactive_border_color = "#2b2b2b"
+center_focused_column = "never"         # "never" | "on-overflow" | "always"
+preset_widths = [0.33333, 0.5, 0.66667]
 default_column_width = 0.5
 
-[border]
-enable = true
-width = 1
-active_color = "accent"                  # tracks live @metro-accent from theme.toml
-
 [animations]
-enable = true
-horizontal_view_movement = { damping_ratio = 1.0, stiffness = 800.0, epsilon = 0.0001 }
+enabled = true
+
+[animations.horizontal_scroll]
+damping_ratio = 0.85
+stiffness = 423.0
+epsilon = 0.0001
 
 [effects]
 enabled = true
@@ -188,6 +190,8 @@ tonemap_peak_nits = 0.0                 # 0.0 = container max, or target panel p
 
 [effects.shadow]
 enabled = true
+strength = 1.0
+unfocused_scale = 0.60
 
 [effects.glass]
 enabled = true
@@ -197,6 +201,19 @@ saturation = 1.15
 brightness = 0.90
 tint = "#141414"
 tint_alpha = 0.35
+
+[effects.dim]
+enabled = false
+opacity = 0.15
+
+[effects.transitions]
+enabled = true
+open_preset = "default"
+open_duration_ms = 150
+close_preset = "default"
+close_duration_ms = 200
+resize_preset = "default"
+resize_duration_ms = 180
 ```
 
 ### B. Niri Configuration (`~/.config/niri/config.kdl`)
@@ -254,9 +271,9 @@ binds {
 | Path | Managed By | Purpose |
 | :--- | :--- | :--- |
 | **`~/.config/kajo/{comp,outputs,binds,rules}.toml`** | `kajo-settings` (`displays` / `niri`) / User | `kajo-comp` compositor configuration (`comp.toml` layout/springs/borders/input, `outputs.toml` monitor modes/scales/positions/VRR, `binds.toml` key & mouse bindings, `rules.toml` window & layer rules). |
-| **`~/.config/kajo/{theme,shell,ide,files,mod}.toml`** | `kajo-settings` / User | Per-domain TOML 1.1 configuration files (`theme.toml` accent & typography, `shell.toml` panel/gestures/OSK/lock/widgets, `ide.toml` editor preferences, `files.toml` view/sort state, `mod.toml` DSP & HVSC settings). |
+| **`~/.config/kajo/{theme,shell,ide,files,mod}.toml`** | `kajo-settings` / User | Per-domain TOML 1.1 configuration files (`theme.toml` accent, surface/glass presets & tokens, and typography; `shell.toml` panel/gestures/OSK/lock/widgets; `ide.toml` editor preferences; `files.toml` view/sort state; `mod.toml` DSP & HVSC settings). |
 | **`~/.config/kajo/conf.d/*.toml`** | User / Dotfiles | Lexicographical read-only drop-in overrides (`[comp.*]`, `[output.*]`, `[binds]`, `[window_rule]`, `[theme]`, `[shell.*]`, `[ide]`, `[files]`, `[mod]`) merged on top of base `.toml` files. |
-| **`~/.config/kajo/style.d/00-accent.css`** & **`theme-override.css`** | `kajo-settings` (`theme`) | Live Metro accent color definitions (`@define-color metro-accent ...`) hot-reloaded across all Kajo processes. |
+| **`~/.config/kajo/style.d/00-accent.css`** & **`theme-override.css`** | `kajo-settings` (`theme`) | Live `@metro-*` accent, surface, glass, border, and UI font tokens hot-reloaded across all Kajo processes. |
 | **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and layout/GLSL shader settings for Niri (`kajo-niri.desktop`). |
 | **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins. |
 

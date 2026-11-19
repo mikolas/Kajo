@@ -19,10 +19,10 @@ All Kajo components and standalone applications share a unified design language:
 | Component / Binary | Status | Specification / Notes |
 | :--- | :---: | :--- |
 | **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 20+ widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, App Launcher, Session Lock & Screensaver |
-| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 12 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Custom `#RRGGBB` Hex Picker, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Niri Shaders, About) with responsive 3-tier Niri column reflow |
+| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 12 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Surface/Glass Presets, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Compositor & Effects, About) with responsive 3-tier column reflow |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
 | **Foldable & 2-in-1 Posture Manager** | ✅ Done | Hinge angle, tablet mode, IIO accelerometer auto-rotation (`src/posture/posture_manager.c`) |
-| **Niri GLSL Window Shaders** | ✅ Done | Live shader preset switcher for window open/close/resize animations (`src/settings/pages/page_niri.c`) |
+| **Compositor Window Transitions & Shaders** | ✅ Done | Live preset switcher for window open/close/resize animations on both `kajo-comp` (Vulkan snapshot transitions) and Niri (GLSL shaders) via `src/settings/pages/page_niri.c` |
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications (`src/hardware/touch_gestures.c`) |
 | **kajo-comp: 3-Finger Drag & Flick** | 🧪 Beta | `kajo-comp` (`src/comp/comp_drag.c`, `src/comp/core/comp_gesture.c`): touchscreen and touchpad drags follow the fingers along the strip or between workspaces and snap on release by position or velocity (spec §3.15 GS1–GS6). Touchpad verified on Host A hardware; the touchscreen drag works on hardware but has known bugs (§3.7, "Fix touchscreen gestures"). |
 | **kajo-comp: Workspace Strip & Animated Resize** | ✅ Done | `kajo-comp` (`src/comp/core/comp_motion.c`): continuous vertical workspace strip with per-workspace cameras (WS7) and animated displayed size on resize (M5). |
@@ -47,8 +47,8 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
-| **kajo-comp: wlroots fork for visual effects** | 🚧 In progress | `kajo-comp` — see §3.6 below (fork branch, built as a static submodule) |
-| **kajo-comp: HDR10 output, SDR white level, tone mapping** | 📋 Planned | `kajo-comp` — §3.7.1 |
+| **kajo-comp: wlroots fork for visual effects** | ✅ Done | `kajo-comp` — see §3.6 below (fork branch `kajo/0.20.2`, built as a static submodule) |
+| **kajo-comp: HDR10 output & mixed SDR/HDR pipeline** | 📋 Planned | `kajo-comp` — §3.7.1 (blocked on `libdisplay-info >= 0.4.0` on Host A) |
 | **kajo-comp: soft shadows, glassy backdrop blur, output stage (SDR white, tone mapping), transitions** | ✅ Done | `kajo-comp` + wlroots fork — [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (M1–M5 complete) |
 | **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
 | **Portal backends: Settings (theme/accent) and FileChooser** | 📋 Planned | `kajo` shell + `kajo-files --portal` — §3.8 |
@@ -119,10 +119,7 @@ The compositor spec describes what is built; everything below is not implemented
 
 | Item | Why not built yet / blocker | Starting approach |
 | :--- | :--- | :--- |
-| **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
-| **Adjustable SDR white level (`sdr_brightness_nits`)** | Stock `wlr_scene` fixes SDR reference white at `203 cd/m²` (ITU-R BT.2408) on a PQ output and rejects `color_transform` when an output image description is set. | Patch `wlr_scene`'s luminance multiplier in the wlroots fork (§3.6), or propose upstream (Milestone M4). |
-| **Compositor-side HDR tone mapping (BT.2390)** | wlroots 0.20.2 has no tone-mapping curve; content above panel peak relies on the display's own tone mapping. | Tone-mapping pass in the wlroots fork (§3.6, Milestone M4). |
-| **Window open/close/resize shaders** | Needs snapshot nodes in `kajo-comp` (Resize already animates the box size, spec_kajo_comp M5). | Effects spec, milestone M5 (pixel-level only; Kajo's own snapshot nodes). |
+| **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). Fork output-stage SDR white & BT.2390 tone mapping are already in place (M4). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
 | **Overview zoom (`toggle-overview`)** | `wlr_scene` has no tree scale transform; zooming means recomputing positions and `wlr_scene_buffer_set_dest_size()` for every surface, subsurface and popup. | Manual scene-buffer scaling pass, or a scale-aware scene node in the fork. |
 | **OSK: keep the focused text field visible** | Push-up is built: with `[osk] push_windows = true` the shell sets a layer-shell exclusive zone (`src/osk/osk.c`) and `kajo-comp` shrinks the working area and relays out (`comp_layer_arrange`). Checked by eye on Host A with kitty and Thorium (native Wayland). Missing: scrolling the focused column / window so the text cursor stays above the keyboard when the field is hidden even after the shrink. | Use the `text-input-v3` cursor rectangle to offset the camera. |
 | **`Mod + drag` interactive move/resize of tiled columns** | Keyboard-first workflow and presets cover v1; client-initiated move/resize exists for floating windows (`L8`). | `Mod + Left/Right Button` tiled grab. |
