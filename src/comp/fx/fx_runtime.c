@@ -861,7 +861,9 @@ comp_fx_surface_sync(CompFxSurface *fx, const CompFxSurfaceState *state)
                          fx->state.has_rule_blur != state->has_rule_blur ||
                          fx->state.rule_blur != state->rule_blur ||
                          fx->state.has_rule_xray != state->has_rule_xray ||
-                         fx->state.rule_xray != state->rule_xray);
+                         fx->state.rule_xray != state->rule_xray ||
+                         fx->state.has_rule_glass_style != state->has_rule_glass_style ||
+                         fx->state.rule_glass_style != state->rule_glass_style);
     bool outer_changed = (fx->state.outer_box.x != state->outer_box.x ||
                           fx->state.outer_box.y != state->outer_box.y ||
                           fx->state.outer_box.width != state->outer_box.width ||

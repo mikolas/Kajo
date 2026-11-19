@@ -104,6 +104,36 @@ static const GlassBlurPreset GLASS_BLUR_PRESETS[] = {
 
 static const char *const GLASS_BLUR_LABELS[] = { "Light", "Medium", "Strong", "Heavy", NULL };
 
+static const char *const GLASS_STYLE_IDS[] = {
+    "frosted", "liquid", "halation", "fluted", "acrylic", "aero", "dichroic", NULL
+};
+static const char *const GLASS_STYLE_LABELS[] = {
+    "Frosted (Kawase)",
+    "Liquid Glass (Refractive)",
+    "Halation (Light Scatter)",
+    "Fluted (Reeded Lenses)",
+    "Acrylic (Etched Micro-Facet)",
+    "Aero Sheen (Beveled Crystal)",
+    "Dichroic (Iridescent Rim)",
+    NULL
+};
+#define N_GLASS_STYLES 7
+
+static const char *const FLUTE_AXIS_IDS[]    = { "vertical", "horizontal", NULL };
+static const char *const FLUTE_AXIS_LABELS[] = { "Vertical", "Horizontal", NULL };
+
+static guint
+glass_style_idx_from_id(const char *id)
+{
+    if (!id || !id[0])
+        return 0;
+    for (guint i = 0; i < N_GLASS_STYLES; i++) {
+        if (g_ascii_strcasecmp(id, GLASS_STYLE_IDS[i]) == 0)
+            return i;
+    }
+    return 0;
+}
+
 static const int SHADOW_STRENGTH_PCTS[] = { 60, 100, 145 };
 #define N_SHADOW_STRENGTH_PRESETS 3
 static const char *const SHADOW_STRENGTH_LABELS[] = { "Subtle", "Standard", "Deep", NULL };
@@ -160,18 +190,33 @@ typedef struct _SettingsPageNiri {
     GtkWidget *tc_shadow;
     GtkWidget *tc_dim;
     GtkWidget *tc_dither;
+    GtkWidget *combo_glass_style;
     GtkWidget *seg_glass_blur;
     GtkWidget *scale_glass_bright;
     GtkWidget *scale_glass_sat;
     GtkWidget *entry_glass_tint;
     GtkWidget *scale_glass_tint_alpha;
+    GtkWidget *scale_glass_refraction;
+    GtkWidget *scale_glass_dispersion;
+    GtkWidget *scale_glass_bevel;
+    GtkWidget *scale_glass_specular;
+    GtkWidget *scale_glass_grain;
+    GtkWidget *scale_glass_flute_px;
+    GtkWidget *seg_glass_flute_axis;
     GtkWidget *seg_shadow_strength;
     GtkWidget *scale_shadow_unfocused;
     GtkWidget *scale_dim_opacity;
+    GtkWidget *row_glass_style;
     GtkWidget *row_glass_blur;
     GtkWidget *row_glass_bright;
     GtkWidget *row_glass_sat;
     GtkWidget *row_glass_tint;
+    GtkWidget *row_glass_refraction;
+    GtkWidget *row_glass_dispersion;
+    GtkWidget *row_glass_bevel;
+    GtkWidget *row_glass_specular;
+    GtkWidget *row_glass_grain;
+    GtkWidget *row_glass_flute;
     GtkWidget *row_shadow_strength;
     GtkWidget *row_shadow_unfocused;
     GtkWidget *row_dim_opacity;
@@ -390,12 +435,20 @@ reset_niri_defaults_in_memory(SettingsPageNiri *self)
 
     self->fx_cfg.border_px                  = 1;
     self->fx_cfg.glass_enabled              = TRUE;
+    g_strlcpy(self->fx_cfg.glass_style, "frosted", sizeof(self->fx_cfg.glass_style));
     self->fx_cfg.glass_passes               = 3;
     self->fx_cfg.glass_offset               = 2.0;
     self->fx_cfg.glass_brightness_pct       = 90;
     self->fx_cfg.glass_saturation_pct       = 115;
     g_strlcpy(self->fx_cfg.glass_tint, "#141414", sizeof(self->fx_cfg.glass_tint));
     self->fx_cfg.glass_tint_alpha_pct       = 35;
+    self->fx_cfg.glass_refraction_pct       = 45;
+    self->fx_cfg.glass_dispersion_pct       = 25;
+    self->fx_cfg.glass_bevel_px             = 14;
+    self->fx_cfg.glass_specular_pct         = 55;
+    self->fx_cfg.glass_grain_pct            = 35;
+    self->fx_cfg.glass_flute_px             = 14;
+    g_strlcpy(self->fx_cfg.glass_flute_axis, "vertical", sizeof(self->fx_cfg.glass_flute_axis));
     self->fx_cfg.shadow_enabled             = TRUE;
     self->fx_cfg.shadow_strength_pct        = 100;
     self->fx_cfg.shadow_unfocused_scale_pct = 60;
@@ -704,10 +757,36 @@ update_fx_row_sensitivity(SettingsPageNiri *self)
     gboolean g_on = self->fx_cfg.glass_enabled;
     gboolean s_on = self->fx_cfg.shadow_enabled;
     gboolean d_on = self->fx_cfg.dim_enabled;
+    guint    st   = glass_style_idx_from_id(self->fx_cfg.glass_style);
+    if (self->row_glass_style)       gtk_widget_set_sensitive(self->row_glass_style, g_on);
     if (self->row_glass_blur)        gtk_widget_set_sensitive(self->row_glass_blur, g_on);
     if (self->row_glass_bright)      gtk_widget_set_sensitive(self->row_glass_bright, g_on);
     if (self->row_glass_sat)         gtk_widget_set_sensitive(self->row_glass_sat, g_on);
     if (self->row_glass_tint)        gtk_widget_set_sensitive(self->row_glass_tint, g_on);
+    if (self->row_glass_refraction) {
+        gtk_widget_set_visible(self->row_glass_refraction, st == 1 || st == 3);
+        gtk_widget_set_sensitive(self->row_glass_refraction, g_on);
+    }
+    if (self->row_glass_dispersion) {
+        gtk_widget_set_visible(self->row_glass_dispersion, st == 1 || st == 3 || st == 6);
+        gtk_widget_set_sensitive(self->row_glass_dispersion, g_on);
+    }
+    if (self->row_glass_bevel) {
+        gtk_widget_set_visible(self->row_glass_bevel, st == 1 || st == 5 || st == 6);
+        gtk_widget_set_sensitive(self->row_glass_bevel, g_on);
+    }
+    if (self->row_glass_specular) {
+        gtk_widget_set_visible(self->row_glass_specular, st != 0);
+        gtk_widget_set_sensitive(self->row_glass_specular, g_on);
+    }
+    if (self->row_glass_grain) {
+        gtk_widget_set_visible(self->row_glass_grain, st == 2 || st == 4);
+        gtk_widget_set_sensitive(self->row_glass_grain, g_on);
+    }
+    if (self->row_glass_flute) {
+        gtk_widget_set_visible(self->row_glass_flute, st == 3);
+        gtk_widget_set_sensitive(self->row_glass_flute, g_on);
+    }
     if (self->row_shadow_strength)   gtk_widget_set_sensitive(self->row_shadow_strength, s_on);
     if (self->row_shadow_unfocused)  gtk_widget_set_sensitive(self->row_shadow_unfocused, s_on);
     if (self->row_dim_opacity)       gtk_widget_set_sensitive(self->row_dim_opacity, d_on);
@@ -751,6 +830,9 @@ sync_niri_widgets_from_state(SettingsPageNiri *self)
     if (self->tc_dither)
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_dither), self->fx_cfg.dither_enabled);
 
+    if (self->combo_glass_style)
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_glass_style),
+                                   glass_style_idx_from_id(self->fx_cfg.glass_style));
     if (self->seg_glass_blur)
         segmented_group_set_selected(self->seg_glass_blur,
             glass_blur_idx_from_cfg(self->fx_cfg.glass_passes, self->fx_cfg.glass_offset));
@@ -763,6 +845,22 @@ sync_niri_widgets_from_state(SettingsPageNiri *self)
                               self->fx_cfg.glass_tint[0] ? self->fx_cfg.glass_tint : "#141414");
     if (self->scale_glass_tint_alpha)
         gtk_range_set_value(GTK_RANGE(self->scale_glass_tint_alpha), self->fx_cfg.glass_tint_alpha_pct);
+    if (self->scale_glass_refraction)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_refraction), self->fx_cfg.glass_refraction_pct);
+    if (self->scale_glass_dispersion)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_dispersion), self->fx_cfg.glass_dispersion_pct);
+    if (self->scale_glass_bevel)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_bevel), self->fx_cfg.glass_bevel_px);
+    if (self->scale_glass_specular)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_specular), self->fx_cfg.glass_specular_pct);
+    if (self->scale_glass_grain)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_grain), self->fx_cfg.glass_grain_pct);
+    if (self->scale_glass_flute_px)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_flute_px), self->fx_cfg.glass_flute_px);
+    if (self->seg_glass_flute_axis) {
+        guint ax = (g_ascii_strcasecmp(self->fx_cfg.glass_flute_axis, "horizontal") == 0) ? 1 : 0;
+        segmented_group_set_selected(self->seg_glass_flute_axis, ax);
+    }
     if (self->seg_shadow_strength)
         segmented_group_set_selected(self->seg_shadow_strength,
             shadow_strength_idx_from_pct(self->fx_cfg.shadow_strength_pct));
@@ -1182,6 +1280,90 @@ on_scale_glass_tint_alpha_changed(GtkRange *range, gpointer user_data)
 }
 
 static void
+on_combo_glass_style_changed(GtkDropDown *dd, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    guint idx = gtk_drop_down_get_selected(dd);
+    if (idx >= N_GLASS_STYLES)
+        idx = 0;
+    g_strlcpy(self->fx_cfg.glass_style, GLASS_STYLE_IDS[idx], sizeof(self->fx_cfg.glass_style));
+    update_fx_row_sensitivity(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_refraction_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    self->fx_cfg.glass_refraction_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_dispersion_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    self->fx_cfg.glass_dispersion_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_bevel_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    self->fx_cfg.glass_bevel_px = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_specular_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    self->fx_cfg.glass_specular_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_grain_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    self->fx_cfg.glass_grain_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_flute_px_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui)
+        return;
+    self->fx_cfg.glass_flute_px = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_seg_glass_flute_axis_changed(GtkWidget *group G_GNUC_UNUSED, guint selected, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (!self || self->syncing_ui || selected > 1)
+        return;
+    g_strlcpy(self->fx_cfg.glass_flute_axis, FLUTE_AXIS_IDS[selected], sizeof(self->fx_cfg.glass_flute_axis));
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
 on_seg_shadow_strength_changed(GtkWidget *group G_GNUC_UNUSED, guint selected, gpointer user_data)
 {
     SettingsPageNiri *self = (SettingsPageNiri *)user_data;
@@ -1505,6 +1687,15 @@ build_page_niri(void)
     gtk_grid_attach(GTK_GRID(fx_grid), self->tc_dither, 1, 1, 1, 1);
     gtk_box_append(GTK_BOX(card_fx), fx_grid);
 
+    self->combo_glass_style = create_string_dropdown(GLASS_STYLE_LABELS);
+    gtk_widget_set_size_request(self->combo_glass_style, 230, -1);
+    self->row_glass_style = create_boxed_row(
+        NULL,
+        "Glass Material Style",
+        "[effects.glass] optical shader material (Frosted / Liquid / Halation / Fluted / Acrylic / Aero / Dichroic)",
+        self->combo_glass_style);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_style);
+
     self->seg_glass_blur = create_segmented_group(GLASS_BLUR_LABELS, 1);
     self->row_glass_blur = create_boxed_row(
         NULL,
@@ -1546,6 +1737,59 @@ build_page_niri(void)
         "[effects.glass] tint hex & tint_alpha blend",
         gt_box);
     gtk_box_append(GTK_BOX(card_fx), self->row_glass_tint);
+
+    GtkWidget *w_gref = create_scale_with_badge(0, 200, 5, 45, "%.0f%%", &self->scale_glass_refraction, NULL);
+    self->row_glass_refraction = create_boxed_row(
+        NULL,
+        "Optical Refraction",
+        "[effects.glass] Snell UV bending strength (Liquid / Fluted)",
+        w_gref);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_refraction);
+
+    GtkWidget *w_gdisp = create_scale_with_badge(0, 100, 5, 25, "%.0f%%", &self->scale_glass_dispersion, NULL);
+    self->row_glass_dispersion = create_boxed_row(
+        NULL,
+        "Chromatic Dispersion / Iridescence",
+        "[effects.glass] RGB prism split & thin-film shift (0–100%)",
+        w_gdisp);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_dispersion);
+
+    GtkWidget *w_gbev = create_scale_with_badge(2, 64, 2, 14, "%.0f px", &self->scale_glass_bevel, NULL);
+    self->row_glass_bevel = create_boxed_row(
+        NULL,
+        "Bevel Width",
+        "[effects.glass] chamfered 0px-corner optical rim width (2–64 px)",
+        w_gbev);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_bevel);
+
+    GtkWidget *w_gspec = create_scale_with_badge(0, 200, 5, 55, "%.0f%%", &self->scale_glass_specular, NULL);
+    self->row_glass_specular = create_boxed_row(
+        NULL,
+        "Specular / Sheen Intensity",
+        "[effects.glass] linear Fresnel rim, ridge & sheen brightness (0–200%)",
+        w_gspec);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_specular);
+
+    GtkWidget *w_ggr = create_scale_with_badge(0, 100, 5, 35, "%.0f%%", &self->scale_glass_grain, NULL);
+    self->row_glass_grain = create_boxed_row(
+        NULL,
+        "Scatter / Etch Roughness",
+        "[effects.glass] Halation wide-glow scatter or Acrylic micro-facet grain (0–100%)",
+        w_ggr);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_grain);
+
+    GtkWidget *fl_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(fl_box, GTK_ALIGN_CENTER);
+    self->seg_glass_flute_axis = create_segmented_group(FLUTE_AXIS_LABELS, 0);
+    GtkWidget *w_gfp = create_scale_with_badge(4, 64, 2, 14, "%.0f px", &self->scale_glass_flute_px, NULL);
+    gtk_box_append(GTK_BOX(fl_box), self->seg_glass_flute_axis);
+    gtk_box_append(GTK_BOX(fl_box), w_gfp);
+    self->row_glass_flute = create_boxed_row(
+        NULL,
+        "Fluted Rib Axis & Pitch",
+        "[effects.glass] cylindrical lenslet orientation & spacing (4–64 px)",
+        fl_box);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_flute);
 
     self->seg_shadow_strength = create_segmented_group(SHADOW_STRENGTH_LABELS, 1);
     self->row_shadow_strength = create_boxed_row(
@@ -1699,11 +1943,19 @@ build_page_niri(void)
     g_signal_connect(self->tc_shadow, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
     g_signal_connect(self->tc_dim, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
     g_signal_connect(self->tc_dither, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
+    g_signal_connect(self->combo_glass_style, "notify::selected", G_CALLBACK(on_combo_glass_style_changed), self);
     segmented_group_connect(self->seg_glass_blur, on_seg_glass_blur_changed, self);
     g_signal_connect(self->scale_glass_bright, "value-changed", G_CALLBACK(on_scale_glass_bright_changed), self);
     g_signal_connect(self->scale_glass_sat, "value-changed", G_CALLBACK(on_scale_glass_sat_changed), self);
     g_signal_connect(self->entry_glass_tint, "changed", G_CALLBACK(on_entry_glass_tint_changed), self);
     g_signal_connect(self->scale_glass_tint_alpha, "value-changed", G_CALLBACK(on_scale_glass_tint_alpha_changed), self);
+    g_signal_connect(self->scale_glass_refraction, "value-changed", G_CALLBACK(on_scale_glass_refraction_changed), self);
+    g_signal_connect(self->scale_glass_dispersion, "value-changed", G_CALLBACK(on_scale_glass_dispersion_changed), self);
+    g_signal_connect(self->scale_glass_bevel, "value-changed", G_CALLBACK(on_scale_glass_bevel_changed), self);
+    g_signal_connect(self->scale_glass_specular, "value-changed", G_CALLBACK(on_scale_glass_specular_changed), self);
+    g_signal_connect(self->scale_glass_grain, "value-changed", G_CALLBACK(on_scale_glass_grain_changed), self);
+    g_signal_connect(self->scale_glass_flute_px, "value-changed", G_CALLBACK(on_scale_glass_flute_px_changed), self);
+    segmented_group_connect(self->seg_glass_flute_axis, on_seg_glass_flute_axis_changed, self);
     segmented_group_connect(self->seg_shadow_strength, on_seg_shadow_strength_changed, self);
     g_signal_connect(self->scale_shadow_unfocused, "value-changed", G_CALLBACK(on_scale_shadow_unfocused_changed), self);
     g_signal_connect(self->scale_dim_opacity, "value-changed", G_CALLBACK(on_scale_dim_opacity_changed), self);

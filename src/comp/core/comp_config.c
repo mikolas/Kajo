@@ -1140,6 +1140,74 @@ merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDia
             else
                 comp_diag_add(diag, src, mhz.lineno, "[effects.glass] 'max_recompute_hz' must be in 0..1000; ignored");
         }
+
+        toml_datum_t gst = toml_get(gl, COMP_KEY_STYLE);
+        if (gst.type != TOML_UNKNOWN) {
+            CompFxGlassStyle st = COMP_FX_GLASS_FROSTED;
+            if (gst.type == TOML_STRING && comp_fx_glass_style_from_str(gst.u.s, &st))
+                cfg->fx.glass.style = st;
+            else
+                comp_diag_add(diag, src, gst.lineno,
+                              "[effects.glass] 'style' must be frosted|liquid|halation|fluted|acrylic|aero|dichroic; ignored");
+        }
+
+        toml_datum_t gref = toml_get(gl, COMP_KEY_REFRACTION);
+        if (gref.type != TOML_UNKNOWN) {
+            if (datum_as_double(gref, &dval) && dval >= 0.0 && dval <= 2.0)
+                cfg->fx.glass.refraction = dval;
+            else
+                comp_diag_add(diag, src, gref.lineno, "[effects.glass] 'refraction' must be in 0..2; ignored");
+        }
+
+        toml_datum_t gdisp = toml_get(gl, COMP_KEY_DISPERSION);
+        if (gdisp.type != TOML_UNKNOWN) {
+            if (datum_as_double(gdisp, &dval) && dval >= 0.0 && dval <= 1.0)
+                cfg->fx.glass.dispersion = dval;
+            else
+                comp_diag_add(diag, src, gdisp.lineno, "[effects.glass] 'dispersion' must be in 0..1; ignored");
+        }
+
+        toml_datum_t gbev = toml_get(gl, COMP_KEY_BEVEL_PX);
+        if (gbev.type != TOML_UNKNOWN) {
+            if (datum_as_double(gbev, &dval) && dval >= 2.0 && dval <= 64.0)
+                cfg->fx.glass.bevel_px = dval;
+            else
+                comp_diag_add(diag, src, gbev.lineno, "[effects.glass] 'bevel_px' must be in 2..64; ignored");
+        }
+
+        toml_datum_t gspec = toml_get(gl, COMP_KEY_SPECULAR);
+        if (gspec.type != TOML_UNKNOWN) {
+            if (datum_as_double(gspec, &dval) && dval >= 0.0 && dval <= 2.0)
+                cfg->fx.glass.specular = dval;
+            else
+                comp_diag_add(diag, src, gspec.lineno, "[effects.glass] 'specular' must be in 0..2; ignored");
+        }
+
+        toml_datum_t ggr = toml_get(gl, COMP_KEY_GRAIN);
+        if (ggr.type != TOML_UNKNOWN) {
+            if (datum_as_double(ggr, &dval) && dval >= 0.0 && dval <= 1.0)
+                cfg->fx.glass.grain = dval;
+            else
+                comp_diag_add(diag, src, ggr.lineno, "[effects.glass] 'grain' must be in 0..1; ignored");
+        }
+
+        toml_datum_t gfp = toml_get(gl, COMP_KEY_FLUTE_PX);
+        if (gfp.type != TOML_UNKNOWN) {
+            if (datum_as_double(gfp, &dval) && dval >= 4.0 && dval <= 64.0)
+                cfg->fx.glass.flute_px = dval;
+            else
+                comp_diag_add(diag, src, gfp.lineno, "[effects.glass] 'flute_px' must be in 4..64; ignored");
+        }
+
+        toml_datum_t gfa = toml_get(gl, COMP_KEY_FLUTE_AXIS);
+        if (gfa.type != TOML_UNKNOWN) {
+            CompFxFluteAxis ax = COMP_FX_FLUTE_VERTICAL;
+            if (gfa.type == TOML_STRING && comp_fx_flute_axis_from_str(gfa.u.s, &ax))
+                cfg->fx.glass.flute_axis = ax;
+            else
+                comp_diag_add(diag, src, gfa.lineno,
+                              "[effects.glass] 'flute_axis' must be 'vertical' or 'horizontal'; ignored");
+        }
     }
 
     toml_datum_t tr = toml_get(fx, COMP_SEC_FX_TRANSITIONS);

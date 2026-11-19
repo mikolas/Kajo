@@ -42,6 +42,7 @@ tonemap_peak_nits = 0.0                 # 0.0 = container max, or target panel p
 
 [effects.glass]
 enabled = true
+style = "frosted"                       # "frosted" | "liquid" | "halation" | "fluted" | "acrylic" | "aero" | "dichroic"
 passes = 3
 offset = 2.0
 saturation = 1.15
@@ -49,6 +50,13 @@ brightness = 0.90
 tint = "#141414"
 tint_alpha = 0.35
 max_recompute_hz = 0
+refraction = 0.45
+dispersion = 0.25
+bevel_px = 14.0
+specular = 0.55
+grain = 0.35
+flute_px = 14.0
+flute_axis = "vertical"                 # "vertical" | "horizontal"
 
 [effects.shadow]
 enabled = true

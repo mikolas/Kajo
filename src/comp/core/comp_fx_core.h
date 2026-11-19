@@ -50,15 +50,44 @@ typedef struct {
     int32_t duration_ms;                 /* 0..5000 ms */
 } CompFxDimConfig;
 
+typedef enum {
+    COMP_FX_GLASS_FROSTED  = 0,
+    COMP_FX_GLASS_LIQUID   = 1,
+    COMP_FX_GLASS_HALATION = 2,
+    COMP_FX_GLASS_FLUTED   = 3,
+    COMP_FX_GLASS_ACRYLIC  = 4,
+    COMP_FX_GLASS_AERO     = 5,
+    COMP_FX_GLASS_DICHROIC = 6,
+} CompFxGlassStyle;
+
+typedef enum {
+    COMP_FX_FLUTE_VERTICAL   = 0,
+    COMP_FX_FLUTE_HORIZONTAL = 1,
+} CompFxFluteAxis;
+
+bool        comp_fx_glass_style_from_str(const char *s, CompFxGlassStyle *out);
+const char *comp_fx_glass_style_to_str(CompFxGlassStyle style);
+bool        comp_fx_glass_style_is_dual_input(CompFxGlassStyle style);
+bool        comp_fx_flute_axis_from_str(const char *s, CompFxFluteAxis *out);
+const char *comp_fx_flute_axis_to_str(CompFxFluteAxis axis);
+
 typedef struct {
-    bool    enabled;
-    int32_t passes;                      /* 1..COMP_FX_GLASS_MAX_PASSES (default 3) */
-    double  offset;                      /* sample offset per pass in px (0..16, default 2.0) */
-    double  saturation;                  /* 0..4 (default 1.15) */
-    double  brightness;                  /* linear light multiplier 0..4 (default 0.90) */
-    float   tint_rgba[4];                /* config sRGB [0..1] (default #141414) */
-    double  tint_alpha;                  /* 0..1 (default 0.35) */
-    int32_t max_recompute_hz;            /* 0 = off, 1..1000 Hz */
+    bool             enabled;
+    CompFxGlassStyle style;              /* default COMP_FX_GLASS_FROSTED */
+    int32_t          passes;             /* 1..COMP_FX_GLASS_MAX_PASSES (default 3) */
+    double           offset;             /* sample offset per pass in px (0..16, default 2.0) */
+    double           saturation;         /* 0..4 (default 1.15) */
+    double           brightness;         /* linear light multiplier 0..4 (default 0.90) */
+    float            tint_rgba[4];       /* config sRGB [0..1] (default #141414) */
+    double           tint_alpha;         /* 0..1 (default 0.35) */
+    int32_t          max_recompute_hz;   /* 0 = off, 1..1000 Hz */
+    double           refraction;         /* 0..2 (default 0.45: liquid, fluted) */
+    double           dispersion;         /* 0..1 (default 0.25: liquid, fluted, dichroic) */
+    double           bevel_px;           /* 2..64 logical px (default 14.0: liquid, aero, dichroic) */
+    double           specular;           /* 0..2 (default 0.55) */
+    double           grain;              /* 0..1 (default 0.35: acrylic roughness / halation scatter) */
+    double           flute_px;           /* 4..64 logical px (default 14.0: fluted rib pitch) */
+    CompFxFluteAxis  flute_axis;         /* default COMP_FX_FLUTE_VERTICAL */
 } CompFxGlassConfig;
 
 typedef enum {
@@ -189,16 +218,30 @@ typedef struct {
     float              _pad0;           /* offset 76: std140 16-byte struct alignment */
 } CompFxBlurParams;
 
-/* Glass composite fragment shader UBO (std140, 96 bytes <= 256).
- * Matches src/comp/fx/shaders/glass.frag Params. */
+/* Glass composite fragment shader UBO (std140, 192 bytes <= 256).
+ * Matches src/comp/fx/shaders/glass.frag and glass_dual.frag Params. */
 typedef struct {
-    CompFxCommonParams common;          /* offset 0 */
-    float              crop_rect[4];    /* offset 32: (x, y, w, h) in T0' target px */
-    float              valid_bounds[4]; /* offset 48: clamp (min_x, min_y, max_x, max_y) in T0' px */
-    float              tint_lin[4];     /* offset 64: linear RGB + tint_alpha in .a */
-    float              inv_tex_size[2]; /* offset 80: (1.0 / tex_w, 1.0 / tex_h) */
-    float              saturation;      /* offset 88 */
-    float              brightness;      /* offset 92 */
+    CompFxCommonParams common;              /*   0..32 */
+    float              crop_rect[4];        /*  32..48:  (x, y, w, h) in u_tex0 px */
+    float              valid_bounds[4];     /*  48..64:  clamp (min_x, min_y, max_x, max_y) in u_tex0 px */
+    float              tint_lin[4];         /*  64..80:  linear RGB + tint_alpha in .a */
+    float              inv_tex_size[2];     /*  80..88:  (1.0 / tex0_w, 1.0 / tex0_h) */
+    float              saturation;          /*  88..92 */
+    float              brightness;          /*  92..96 */
+    float              aux_crop_rect[4];    /*  96..112: (x, y, w, h) in u_tex1 px (dual-input) */
+    float              aux_valid_bounds[4]; /* 112..128: clamp bounds in u_tex1 px */
+    float              aux_inv_tex_size[2]; /* 128..136: (1.0 / tex1_w, 1.0 / tex1_h) */
+    float              surface_size[2];     /* 136..144: full surface logical size (W, H) */
+    float              light_dir[2];        /* 144..152: pre-rotated key light / flute axis */
+    float              surface_offset[2];   /* 152..160: clipped pass_dst - full_glass_buf (logical px) */
+    uint32_t           style;               /* 160..164: CompFxGlassStyle (0..6) */
+    float              refraction;          /* 164..168: 0..2 */
+    float              dispersion;          /* 168..172: 0..1 */
+    float              bevel_px;            /* 172..176: 2..64 logical px */
+    float              specular;            /* 176..180: 0..2 */
+    float              grain;               /* 180..184: 0..1 (acrylic roughness / halation scatter) */
+    float              flute_px;            /* 184..188: 4..64 logical px */
+    float              _pad0;               /* 188..192: std140 16-byte struct alignment */
 } CompFxGlassParams;
 
 /* Window transition fragment shader UBO (std140, 80 bytes <= 256).
@@ -239,9 +282,14 @@ void  comp_fx_color_filter_apply_linear(const float matrix[9],
 CompFxMargins comp_fx_shadow_reach(const CompFxShadowConfig *cfg);
 CompFxRect    comp_fx_shadow_anchor_box(CompFxRect outer_box, const CompFxShadowConfig *cfg);
 
-/* Glass sample reach: ceil(2^passes * offset) in logical px (spec §10.2). */
+/* Glass sample reach: ceil(2^passes * offset) + optical displacement in logical px. */
 int32_t    comp_fx_glass_sample_reach(const CompFxGlassConfig *cfg);
+int32_t    comp_fx_glass_sample_reach_for_style(const CompFxGlassConfig *cfg,
+                                                CompFxGlassStyle style);
 CompFxRect comp_fx_glass_sample_box(CompFxRect surface_box, const CompFxGlassConfig *cfg);
+CompFxRect comp_fx_glass_sample_box_for_style(CompFxRect surface_box,
+                                              const CompFxGlassConfig *cfg,
+                                              CompFxGlassStyle style);
 
 /* Closed-form 2D Gaussian box coverage at point (x, y) for box [x0, x1] x [y0, y1]
  * with blur standard deviation `sigma` (spec §11.2). */
@@ -294,6 +342,20 @@ void comp_fx_glass_pack(const CompFxGlassConfig *cfg,
                         int downscale,
                         float opacity, float scale,
                         CompFxGlassParams *out);
+
+void comp_fx_glass_pack_ex(const CompFxGlassConfig *cfg,
+                           CompFxGlassStyle style,
+                           CompFxRect full_buf_box,
+                           CompFxRect pass_dst_box,
+                           CompFxRect t0_src_box,
+                           int32_t tex0_w, int32_t tex0_h,
+                           int downscale0,
+                           CompFxRect t1_src_box,
+                           int32_t tex1_w, int32_t tex1_h,
+                           int downscale1,
+                           float opacity, float scale,
+                           int transform,
+                           CompFxGlassParams *out);
 
 void comp_fx_transition_pack(CompFxRect dst_box,
                              CompFxTransitionKind kind,

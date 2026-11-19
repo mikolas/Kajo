@@ -494,6 +494,30 @@ apply_effects_table_to_state(toml_datum_t        tab,
                 if (toml_datum_as_double(toml_get(gl, COMP_KEY_TINT_ALPHA), &dv) &&
                     dv >= 0.0 && dv <= 1.0)
                     inout_fx->glass_tint_alpha_pct = (int)(dv * 100.0 + 0.5);
+                toml_datum_t gst = toml_get(gl, COMP_KEY_STYLE);
+                if (gst.type == TOML_STRING && gst.u.s && gst.u.s[0])
+                    g_strlcpy(inout_fx->glass_style, gst.u.s, sizeof(inout_fx->glass_style));
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_REFRACTION), &dv) &&
+                    dv >= 0.0 && dv <= 2.0)
+                    inout_fx->glass_refraction_pct = (int)(dv * 100.0 + 0.5);
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_DISPERSION), &dv) &&
+                    dv >= 0.0 && dv <= 1.0)
+                    inout_fx->glass_dispersion_pct = (int)(dv * 100.0 + 0.5);
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_BEVEL_PX), &dv) &&
+                    dv >= 2.0 && dv <= 64.0)
+                    inout_fx->glass_bevel_px = (int)(dv + 0.5);
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_SPECULAR), &dv) &&
+                    dv >= 0.0 && dv <= 2.0)
+                    inout_fx->glass_specular_pct = (int)(dv * 100.0 + 0.5);
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_GRAIN), &dv) &&
+                    dv >= 0.0 && dv <= 1.0)
+                    inout_fx->glass_grain_pct = (int)(dv * 100.0 + 0.5);
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_FLUTE_PX), &dv) &&
+                    dv >= 4.0 && dv <= 64.0)
+                    inout_fx->glass_flute_px = (int)(dv + 0.5);
+                toml_datum_t gfa = toml_get(gl, COMP_KEY_FLUTE_AXIS);
+                if (gfa.type == TOML_STRING && gfa.u.s && gfa.u.s[0])
+                    g_strlcpy(inout_fx->glass_flute_axis, gfa.u.s, sizeof(inout_fx->glass_flute_axis));
             }
             toml_datum_t sh = toml_get(fx, COMP_SEC_FX_SHADOW);
             if (sh.type == TOML_TABLE) {
@@ -593,12 +617,20 @@ kajo_config_comp_read_effects(const char         *config_dir,
     if (out_fx) {
         out_fx->border_px                  = 1;
         out_fx->glass_enabled              = TRUE;
+        g_strlcpy(out_fx->glass_style, "frosted", sizeof(out_fx->glass_style));
         out_fx->glass_passes               = 3;
         out_fx->glass_offset               = 2.0;
         out_fx->glass_brightness_pct       = 90;
         out_fx->glass_saturation_pct       = 115;
         g_strlcpy(out_fx->glass_tint, "#141414", sizeof(out_fx->glass_tint));
         out_fx->glass_tint_alpha_pct       = 35;
+        out_fx->glass_refraction_pct       = 45;
+        out_fx->glass_dispersion_pct       = 25;
+        out_fx->glass_bevel_px             = 14;
+        out_fx->glass_specular_pct         = 55;
+        out_fx->glass_grain_pct            = 35;
+        out_fx->glass_flute_px             = 14;
+        g_strlcpy(out_fx->glass_flute_axis, "vertical", sizeof(out_fx->glass_flute_axis));
         out_fx->shadow_enabled             = TRUE;
         out_fx->shadow_strength_pct        = 100;
         out_fx->shadow_unfocused_scale_pct = 60;
@@ -725,6 +757,30 @@ kajo_config_comp_save_effects(const char               *config_dir,
         }
         g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_tint_alpha_pct, 0, 100) / 100.0);
         kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_TINT_ALPHA, num_buf);
+        {
+            GString *gs_rhs = g_string_new(NULL);
+            kajo_toml_append_quoted_string(gs_rhs, fx->glass_style[0] ? fx->glass_style : "frosted");
+            kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_STYLE, gs_rhs->str);
+            g_string_free(gs_rhs, TRUE);
+        }
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_refraction_pct, 0, 200) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_REFRACTION, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_dispersion_pct, 0, 100) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_DISPERSION, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.1f", (double)CLAMP(fx->glass_bevel_px, 2, 64));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_BEVEL_PX, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_specular_pct, 0, 200) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_SPECULAR, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_grain_pct, 0, 100) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_GRAIN, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.1f", (double)CLAMP(fx->glass_flute_px, 4, 64));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_FLUTE_PX, num_buf);
+        {
+            GString *fa_rhs = g_string_new(NULL);
+            kajo_toml_append_quoted_string(fa_rhs, fx->glass_flute_axis[0] ? fx->glass_flute_axis : "vertical");
+            kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_FLUTE_AXIS, fa_rhs->str);
+            g_string_free(fa_rhs, TRUE);
+        }
 
         const char *sec_shadow = COMP_SEC_EFFECTS "." COMP_SEC_FX_SHADOW;
         kajo_toml_patch_or_insert_scalar(comp_doc, sec_shadow,

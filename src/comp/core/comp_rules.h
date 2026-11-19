@@ -27,6 +27,7 @@
 #define KAJO_COMP_RULES_H
 
 #include "comp_diag.h"
+#include "comp_fx_core.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -47,18 +48,20 @@ typedef struct {
     bool       has_anchor;        CompCorner corner; double anchor_x, anchor_y;  /* floating offset, logical px */
     bool       has_scroll_factor; double scroll_factor;  /* 0.01..10 */
     bool       has_vrr;           bool   vrr;
-    bool       has_shadow;        bool   shadow;
-    bool       has_blur;          bool   blur;
-    bool       has_blur_popups;   bool   blur_popups;
+    bool             has_shadow;        bool             shadow;
+    bool             has_blur;          bool             blur;
+    bool             has_blur_popups;   bool             blur_popups;
+    bool             has_glass_style;   CompFxGlassStyle glass_style;
 } CompWindowRuleResult;
 
 typedef struct {
-    bool   has_opacity;       double opacity;        /* 0..1 */
-    bool   has_popup_opacity; double popup_opacity;  /* 0..1 */
-    bool   has_shadow;        bool   shadow;
-    bool   has_blur;          bool   blur;
-    bool   has_xray;          bool   xray;
-    bool   has_blur_popups;   bool   blur_popups;
+    bool             has_opacity;       double           opacity;        /* 0..1 */
+    bool             has_popup_opacity; double           popup_opacity;  /* 0..1 */
+    bool             has_shadow;        bool             shadow;
+    bool             has_blur;          bool             blur;
+    bool             has_xray;          bool             xray;
+    bool             has_blur_popups;   bool             blur_popups;
+    bool             has_glass_style;   CompFxGlassStyle glass_style;
 } CompLayerRuleResult;
 
 typedef struct CompRules CompRules;

@@ -140,6 +140,7 @@
 #define COMP_KEY_BLUR                     "blur"
 #define COMP_KEY_XRAY                     "xray"
 #define COMP_KEY_BLUR_POPUPS              "blur_popups"
+#define COMP_KEY_GLASS_STYLE              "glass_style"
 
 /* ───────────────────────── [effects] Subtables & Keys ───────────────────────── */
 #define COMP_SEC_FX_SHADOW                "shadow"
@@ -170,6 +171,14 @@
 #define COMP_KEY_TINT                     "tint"
 #define COMP_KEY_TINT_ALPHA               "tint_alpha"
 #define COMP_KEY_MAX_RECOMPUTE_HZ         "max_recompute_hz"
+#define COMP_KEY_STYLE                    "style"
+#define COMP_KEY_REFRACTION               "refraction"
+#define COMP_KEY_DISPERSION               "dispersion"
+#define COMP_KEY_BEVEL_PX                 "bevel_px"
+#define COMP_KEY_SPECULAR                 "specular"
+#define COMP_KEY_GRAIN                    "grain"
+#define COMP_KEY_FLUTE_PX                 "flute_px"
+#define COMP_KEY_FLUTE_AXIS               "flute_axis"
 #define COMP_KEY_COLOR_FILTER             "color_filter"
 #define COMP_KEY_COLOR_FILTER_STRENGTH    "color_filter_strength"
 #define COMP_KEY_NIGHT_LIGHT_TEMPERATURE  "night_light_temperature"
