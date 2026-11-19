@@ -52,6 +52,8 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 
 Use the tokens in `style.css`; do not add new raw hex literals for these roles. Remaining one-off grays (diff tints, syntax colors, the `#202020`/`#1c1c1c` family) are intentionally literal for now and should be folded into this ladder when touched.
 
+**Live Surface & Glass Token Generation (`theme.toml` → `~/.config/kajo/style.d/00-accent.css`):** `kajo-settings → Theme` exposes 4 curated surface presets (**Aero Charcoal**, **OLED Pitch**, **Frosted Clear**, **Nord Slate**) plus individual controls (`glass_tint`, `panel_opacity`, `glass_opacity`, `glass_control_contrast`, `widget_chip_opacity`, `accent_glass_tint`, `surface_base`, `surface_contrast`, `border_opacity`, `secondary_fg_contrast`, and `ui_font_family`). On save, `shell_theme_write_accent_css()` regenerates `~/.config/kajo/style.d/00-accent.css` to override all `@metro-surface-*`, `@metro-panel-bg`, `@metro-glass-*`, `@metro-border`, and `@metro-fg-secondary` tokens live across all running Kajo applications, and syncs `comp.toml` `[layout].inactive_border_color` to the derived `@metro-border`.
+
 ---
 
 ## 3. Typography & Configurable Font Category Sizes

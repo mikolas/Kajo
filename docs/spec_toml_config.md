@@ -112,10 +112,21 @@ Shipped default files live in `data/defaults/{theme,shell,ide,files,mod}.toml`. 
 | Section | Key | Type | Default | Range / values |
 | :-- | :-- | :-- | :-- | :-- |
 | `(top level)` | `accent_color` | hex color | `"#0078d4"` | `#rrggbb` |
+| `(top level)` | `ui_font_family` | string | `"Fira Code"` | |
 | `(top level)` | `ui_font_size_px` | int | `14` | 11..20 |
 | `(top level)` | `font_heading_size_px` | int | `13` | 10..18 |
 | `(top level)` | `font_subtitle_size_px` | int | `12` | 10..18 |
 | `(top level)` | `font_badge_size_px` | int | `11` | 9..16 |
+| `(top level)` | `glass_tint` | hex color | `"#121212"` | `#rrggbb` |
+| `(top level)` | `panel_opacity` | double | `0.58` | 0.0..1.0 |
+| `(top level)` | `glass_opacity` | double | `0.62` | 0.0..1.0 |
+| `(top level)` | `glass_control_contrast` | double | `1.0` | 0.0..2.0 |
+| `(top level)` | `widget_chip_opacity` | double | `0.0` | 0.0..0.25 |
+| `(top level)` | `accent_glass_tint` | double | `0.0` | 0.0..0.25 |
+| `(top level)` | `surface_base` | hex color | `"#141414"` | `#rrggbb` |
+| `(top level)` | `surface_contrast` | double | `1.0` | 0.0..2.0 |
+| `(top level)` | `border_opacity` | double | `1.0` | 0.0..1.0 |
+| `(top level)` | `secondary_fg_contrast` | double | `1.0` | 0.5..1.5 |
 | `(top level)` | `css_path` | string | `""` | |
 | `(top level)` | `settings_width` | int | `900` | 480..3840 |
 | `(top level)` | `settings_height` | int | `640` | 360..2160 |
