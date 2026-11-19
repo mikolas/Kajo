@@ -325,6 +325,9 @@ gaps_inner = 0
 gaps_outer = 0
 default_column_width = 0.75
 
+[animations]
+enabled = false
+
 [screenshots]
 path = "$VK_SHOT_DIR/vk-%Y%m%d-%H%M%S.png"
 copy_to_clipboard = false

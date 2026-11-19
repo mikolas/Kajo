@@ -88,12 +88,60 @@ static const char *const COLOR_FILTER_LABELS[] = {
     NULL
 };
 
+typedef struct {
+    const char *label;
+    int         passes;
+    double      offset;
+} GlassBlurPreset;
+
+static const GlassBlurPreset GLASS_BLUR_PRESETS[] = {
+    { "Light",  2, 1.5 },
+    { "Medium", 3, 2.0 },
+    { "Strong", 4, 2.5 },
+    { "Heavy",  5, 3.0 },
+};
+#define N_GLASS_BLUR_PRESETS 4
+
+static const char *const GLASS_BLUR_LABELS[] = { "Light", "Medium", "Strong", "Heavy", NULL };
+
+static const int SHADOW_STRENGTH_PCTS[] = { 60, 100, 145 };
+#define N_SHADOW_STRENGTH_PRESETS 3
+static const char *const SHADOW_STRENGTH_LABELS[] = { "Subtle", "Standard", "Deep", NULL };
+
+static guint
+glass_blur_idx_from_cfg(int passes, double offset)
+{
+    guint best = 1;
+    double best_d = 1e9;
+    for (guint i = 0; i < N_GLASS_BLUR_PRESETS; i++) {
+        double dp = (double)(passes - GLASS_BLUR_PRESETS[i].passes);
+        double doff = offset - GLASS_BLUR_PRESETS[i].offset;
+        double d = dp * dp + doff * doff;
+        if (d < best_d) {
+            best_d = d;
+            best = i;
+        }
+    }
+    return best;
+}
+
+static guint
+shadow_strength_idx_from_pct(int pct)
+{
+    if (pct <= 80)
+        return 0;
+    if (pct >= 122)
+        return 2;
+    return 1;
+}
+
 typedef struct _SettingsPageNiri {
     GtkBox parent_instance;
 
     GtkWidget *combo_ns;
     GtkWidget *scale_op;
     GtkWidget *scale_gap;
+    GtkWidget *scale_border_px;
     GtkWidget *sw_xray;
 
     GtkWidget *row_open_shader;
@@ -112,6 +160,21 @@ typedef struct _SettingsPageNiri {
     GtkWidget *tc_shadow;
     GtkWidget *tc_dim;
     GtkWidget *tc_dither;
+    GtkWidget *seg_glass_blur;
+    GtkWidget *scale_glass_bright;
+    GtkWidget *scale_glass_sat;
+    GtkWidget *entry_glass_tint;
+    GtkWidget *scale_glass_tint_alpha;
+    GtkWidget *seg_shadow_strength;
+    GtkWidget *scale_shadow_unfocused;
+    GtkWidget *scale_dim_opacity;
+    GtkWidget *row_glass_blur;
+    GtkWidget *row_glass_bright;
+    GtkWidget *row_glass_sat;
+    GtkWidget *row_glass_tint;
+    GtkWidget *row_shadow_strength;
+    GtkWidget *row_shadow_unfocused;
+    GtkWidget *row_dim_opacity;
     GtkWidget *combo_color_filter;
     GtkWidget *scale_filter_strength;
     GtkWidget *scale_night_temp;
@@ -325,14 +388,24 @@ reset_niri_defaults_in_memory(SettingsPageNiri *self)
     self->close_curve_idx   = 2;
     self->resize_preset_idx = 0;
 
-    self->fx_cfg.glass_enabled             = TRUE;
-    self->fx_cfg.shadow_enabled            = TRUE;
-    self->fx_cfg.dim_enabled               = FALSE;
-    self->fx_cfg.dither_enabled            = TRUE;
+    self->fx_cfg.border_px                  = 1;
+    self->fx_cfg.glass_enabled              = TRUE;
+    self->fx_cfg.glass_passes               = 3;
+    self->fx_cfg.glass_offset               = 2.0;
+    self->fx_cfg.glass_brightness_pct       = 90;
+    self->fx_cfg.glass_saturation_pct       = 115;
+    g_strlcpy(self->fx_cfg.glass_tint, "#141414", sizeof(self->fx_cfg.glass_tint));
+    self->fx_cfg.glass_tint_alpha_pct       = 35;
+    self->fx_cfg.shadow_enabled             = TRUE;
+    self->fx_cfg.shadow_strength_pct        = 100;
+    self->fx_cfg.shadow_unfocused_scale_pct = 60;
+    self->fx_cfg.dim_enabled                = FALSE;
+    self->fx_cfg.dim_opacity_pct            = 15;
+    self->fx_cfg.dither_enabled             = TRUE;
     g_strlcpy(self->fx_cfg.color_filter, "none", sizeof(self->fx_cfg.color_filter));
-    self->fx_cfg.color_filter_strength_pct = 100;
-    self->fx_cfg.night_light_temperature   = 4000;
-    self->color_filter_idx                 = 0;
+    self->fx_cfg.color_filter_strength_pct  = 100;
+    self->fx_cfg.night_light_temperature    = 4000;
+    self->color_filter_idx                  = 0;
 }
 
 static void
@@ -416,6 +489,42 @@ load_existing_niri_config(SettingsPageNiri *self)
     kajo_config_comp_read_effects(
         NULL, &self->fx_cfg, NIRI_NS_IDS, self->ns_xray, N_NIRI_NAMESPACES);
     self->color_filter_idx = color_filter_index_from_id(self->fx_cfg.color_filter);
+
+    /* Apply comp.toml [effects.transitions] when present (overrides KDL fallback) */
+    for (guint i = 0; i < N_OPEN_PRESETS; i++) {
+        if (g_ascii_strcasecmp(OPEN_PRESETS[i].id, self->fx_cfg.open_preset) == 0) {
+            self->open_preset_idx = i;
+            break;
+        }
+    }
+    if (self->fx_cfg.open_duration_ms >= 50 && self->fx_cfg.open_duration_ms <= 800)
+        self->open_duration_ms = self->fx_cfg.open_duration_ms;
+    for (guint i = 0; i < N_CURVES; i++) {
+        if (g_ascii_strcasecmp(CURVE_NAMES[i], self->fx_cfg.open_curve) == 0) {
+            self->open_curve_idx = i;
+            break;
+        }
+    }
+    for (guint i = 0; i < N_CLOSE_PRESETS; i++) {
+        if (g_ascii_strcasecmp(CLOSE_PRESETS[i].id, self->fx_cfg.close_preset) == 0) {
+            self->close_preset_idx = i;
+            break;
+        }
+    }
+    if (self->fx_cfg.close_duration_ms >= 50 && self->fx_cfg.close_duration_ms <= 800)
+        self->close_duration_ms = self->fx_cfg.close_duration_ms;
+    for (guint i = 0; i < N_CURVES; i++) {
+        if (g_ascii_strcasecmp(CURVE_NAMES[i], self->fx_cfg.close_curve) == 0) {
+            self->close_curve_idx = i;
+            break;
+        }
+    }
+    for (guint i = 0; i < N_RESIZE_PRESETS; i++) {
+        if (g_ascii_strcasecmp(RESIZE_PRESETS[i].id, self->fx_cfg.resize_preset) == 0) {
+            self->resize_preset_idx = i;
+            break;
+        }
+    }
 }
 
 /* ─── Non-Destructive KDL Animations Formatter ─── */
@@ -588,6 +697,25 @@ update_niri_subtitles_and_telemetry(SettingsPageNiri *self)
 }
 
 static void
+update_fx_row_sensitivity(SettingsPageNiri *self)
+{
+    if (!self)
+        return;
+    gboolean g_on = self->fx_cfg.glass_enabled;
+    gboolean s_on = self->fx_cfg.shadow_enabled;
+    gboolean d_on = self->fx_cfg.dim_enabled;
+    if (self->row_glass_blur)        gtk_widget_set_sensitive(self->row_glass_blur, g_on);
+    if (self->row_glass_bright)      gtk_widget_set_sensitive(self->row_glass_bright, g_on);
+    if (self->row_glass_sat)         gtk_widget_set_sensitive(self->row_glass_sat, g_on);
+    if (self->row_glass_tint)        gtk_widget_set_sensitive(self->row_glass_tint, g_on);
+    if (self->row_shadow_strength)   gtk_widget_set_sensitive(self->row_shadow_strength, s_on);
+    if (self->row_shadow_unfocused)  gtk_widget_set_sensitive(self->row_shadow_unfocused, s_on);
+    if (self->row_dim_opacity)       gtk_widget_set_sensitive(self->row_dim_opacity, d_on);
+    if (self->row_filter_strength)   gtk_widget_set_sensitive(self->row_filter_strength, self->color_filter_idx != 0);
+    if (self->row_night_temp)        gtk_widget_set_sensitive(self->row_night_temp, self->color_filter_idx == 2);
+}
+
+static void
 sync_niri_widgets_from_state(SettingsPageNiri *self)
 {
     if (!self)
@@ -601,6 +729,8 @@ sync_niri_widgets_from_state(SettingsPageNiri *self)
     gtk_range_set_value(GTK_RANGE(self->scale_op), self->ns_opacity[ns_idx]);
     gtk_switch_set_active(GTK_SWITCH(self->sw_xray), self->ns_xray[ns_idx]);
     gtk_range_set_value(GTK_RANGE(self->scale_gap), self->gap_px);
+    if (self->scale_border_px)
+        gtk_range_set_value(GTK_RANGE(self->scale_border_px), self->fx_cfg.border_px);
 
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_shader_open), self->open_preset_idx);
     gtk_range_set_value(GTK_RANGE(self->scale_open_dur), self->open_duration_ms);
@@ -620,16 +750,34 @@ sync_niri_widgets_from_state(SettingsPageNiri *self)
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_dim), self->fx_cfg.dim_enabled);
     if (self->tc_dither)
         gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->tc_dither), self->fx_cfg.dither_enabled);
+
+    if (self->seg_glass_blur)
+        segmented_group_set_selected(self->seg_glass_blur,
+            glass_blur_idx_from_cfg(self->fx_cfg.glass_passes, self->fx_cfg.glass_offset));
+    if (self->scale_glass_bright)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_bright), self->fx_cfg.glass_brightness_pct);
+    if (self->scale_glass_sat)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_sat), self->fx_cfg.glass_saturation_pct);
+    if (self->entry_glass_tint)
+        gtk_editable_set_text(GTK_EDITABLE(self->entry_glass_tint),
+                              self->fx_cfg.glass_tint[0] ? self->fx_cfg.glass_tint : "#141414");
+    if (self->scale_glass_tint_alpha)
+        gtk_range_set_value(GTK_RANGE(self->scale_glass_tint_alpha), self->fx_cfg.glass_tint_alpha_pct);
+    if (self->seg_shadow_strength)
+        segmented_group_set_selected(self->seg_shadow_strength,
+            shadow_strength_idx_from_pct(self->fx_cfg.shadow_strength_pct));
+    if (self->scale_shadow_unfocused)
+        gtk_range_set_value(GTK_RANGE(self->scale_shadow_unfocused), self->fx_cfg.shadow_unfocused_scale_pct);
+    if (self->scale_dim_opacity)
+        gtk_range_set_value(GTK_RANGE(self->scale_dim_opacity), self->fx_cfg.dim_opacity_pct);
+
     if (self->combo_color_filter)
         gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_color_filter), self->color_filter_idx);
     if (self->scale_filter_strength)
         gtk_range_set_value(GTK_RANGE(self->scale_filter_strength), self->fx_cfg.color_filter_strength_pct);
     if (self->scale_night_temp)
         gtk_range_set_value(GTK_RANGE(self->scale_night_temp), self->fx_cfg.night_light_temperature);
-    if (self->row_filter_strength)
-        gtk_widget_set_sensitive(self->row_filter_strength, self->color_filter_idx != 0);
-    if (self->row_night_temp)
-        gtk_widget_set_sensitive(self->row_night_temp, self->color_filter_idx == 2);
+    update_fx_row_sensitivity(self);
     self->syncing_ui = FALSE;
 
     update_niri_subtitles_and_telemetry(self);
@@ -754,7 +902,21 @@ save_and_reload_niri_config(SettingsPageNiri *self)
 
     g_file_set_contents(kajo_path, kdl_content, -1, NULL);
 
-    /* 4. Patch kajo-comp comp.toml ([layout].gap_px, [effects]) and rules.toml ([[layer_rule]]) */
+    /* 4. Patch kajo-comp comp.toml ([layout], [effects], [effects.transitions]) and rules.toml */
+    guint op_i = self->open_preset_idx < N_OPEN_PRESETS ? self->open_preset_idx : 0;
+    guint oc_i = self->open_curve_idx < N_CURVES ? self->open_curve_idx : 0;
+    guint cp_i = self->close_preset_idx < N_CLOSE_PRESETS ? self->close_preset_idx : 0;
+    guint cc_i = self->close_curve_idx < N_CURVES ? self->close_curve_idx : 2;
+    guint rp_i = self->resize_preset_idx < N_RESIZE_PRESETS ? self->resize_preset_idx : 0;
+
+    g_strlcpy(self->fx_cfg.open_preset, OPEN_PRESETS[op_i].id, sizeof(self->fx_cfg.open_preset));
+    self->fx_cfg.open_duration_ms = self->open_duration_ms;
+    g_strlcpy(self->fx_cfg.open_curve, CURVE_NAMES[oc_i], sizeof(self->fx_cfg.open_curve));
+    g_strlcpy(self->fx_cfg.close_preset, CLOSE_PRESETS[cp_i].id, sizeof(self->fx_cfg.close_preset));
+    self->fx_cfg.close_duration_ms = self->close_duration_ms;
+    g_strlcpy(self->fx_cfg.close_curve, CURVE_NAMES[cc_i], sizeof(self->fx_cfg.close_curve));
+    g_strlcpy(self->fx_cfg.resize_preset, RESIZE_PRESETS[rp_i].id, sizeof(self->fx_cfg.resize_preset));
+
     kajo_config_comp_save_layout_and_layers(
         NULL, self->gap_px, NIRI_NS_IDS, self->ns_opacity, N_NIRI_NAMESPACES, NULL);
     kajo_config_comp_save_effects(
@@ -950,7 +1112,102 @@ on_fx_toggle_changed(GtkToggleButton *btn G_GNUC_UNUSED, gpointer user_data)
     self->fx_cfg.shadow_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_shadow));
     self->fx_cfg.dim_enabled    = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_dim));
     self->fx_cfg.dither_enabled = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->tc_dither));
+    update_fx_row_sensitivity(self);
     update_niri_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_border_px_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.border_px = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_seg_glass_blur_changed(GtkWidget *group G_GNUC_UNUSED, guint selected, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui || selected >= N_GLASS_BLUR_PRESETS)
+        return;
+    self->fx_cfg.glass_passes = GLASS_BLUR_PRESETS[selected].passes;
+    self->fx_cfg.glass_offset = GLASS_BLUR_PRESETS[selected].offset;
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_bright_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.glass_brightness_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_sat_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.glass_saturation_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_entry_glass_tint_changed(GtkEditable *editable, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    const gchar *txt = gtk_editable_get_text(editable);
+    if (!kajo_config_is_valid_hex_color(txt))
+        return;
+    g_strlcpy(self->fx_cfg.glass_tint, txt, sizeof(self->fx_cfg.glass_tint));
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_glass_tint_alpha_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.glass_tint_alpha_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_seg_shadow_strength_changed(GtkWidget *group G_GNUC_UNUSED, guint selected, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui || selected >= N_SHADOW_STRENGTH_PRESETS)
+        return;
+    self->fx_cfg.shadow_strength_pct = SHADOW_STRENGTH_PCTS[selected];
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_shadow_unfocused_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.shadow_unfocused_scale_pct = (int)gtk_range_get_value(range);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_scale_dim_opacity_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->fx_cfg.dim_opacity_pct = (int)gtk_range_get_value(range);
     settings_page_set_dirty(GTK_WIDGET(self), TRUE);
 }
 
@@ -1060,7 +1317,7 @@ spawn_shader_preview_window(gpointer user_data)
     gtk_widget_set_margin_start(vbox, 24);
     gtk_widget_set_margin_end(vbox, 24);
 
-    GtkWidget *title = gtk_label_new("✦ NIRI SHADER TRANSITION TEST");
+    GtkWidget *title = gtk_label_new("✦ WINDOW TRANSITION TEST");
     gtk_widget_add_css_class(title, "settings-header-title");
 
     guint open_idx   = self->open_preset_idx < N_OPEN_PRESETS ? self->open_preset_idx : 0;
@@ -1163,10 +1420,10 @@ build_page_niri(void)
     SettingsPageNiri *self = g_object_new(settings_page_niri_get_type(), NULL);
     load_existing_niri_config(self);
 
-    /* ─── Card 1: Layer Surface Rules & Workspace Gaps ─── */
+    /* ─── Card 1: Layer Surface Rules & Layout ─── */
     GtkWidget *card_layer = create_section_card(
         SETTINGS_CARD_LEFT,
-        "1. LAYER SURFACE RULES & WORKSPACE GAPS",
+        "1. LAYER SURFACE RULES & LAYOUT",
         "rules.toml",
         "accent",
         NULL);
@@ -1191,6 +1448,13 @@ build_page_niri(void)
         "Workspace Window Gaps",
         "Compositor [layout] gap_px in pixels",
         w_gap));
+
+    GtkWidget *w_bpx = create_scale_with_badge(0, 4, 1, 1, "%.0fpx", &self->scale_border_px, NULL);
+    gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
+        "▢",
+        "Window Border Width",
+        "Compositor [layout] border_px (0–4px, default 1px)",
+        w_bpx));
 
     self->sw_xray = gtk_switch_new();
     gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
@@ -1241,6 +1505,72 @@ build_page_niri(void)
     gtk_grid_attach(GTK_GRID(fx_grid), self->tc_dither, 1, 1, 1, 1);
     gtk_box_append(GTK_BOX(card_fx), fx_grid);
 
+    self->seg_glass_blur = create_segmented_group(GLASS_BLUR_LABELS, 1);
+    self->row_glass_blur = create_boxed_row(
+        NULL,
+        "Glass Blur Strength",
+        "Dual-Kawase pass depth & sample offset",
+        self->seg_glass_blur);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_blur);
+
+    GtkWidget *w_gb = create_scale_with_badge(50, 150, 5, 90, "%.0f%%", &self->scale_glass_bright, NULL);
+    self->row_glass_bright = create_boxed_row(
+        NULL,
+        "Glass Brightness",
+        "[effects.glass] brightness multiplier (50–150%)",
+        w_gb);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_bright);
+
+    GtkWidget *w_gs = create_scale_with_badge(50, 200, 5, 115, "%.0f%%", &self->scale_glass_sat, NULL);
+    self->row_glass_sat = create_boxed_row(
+        NULL,
+        "Glass Saturation",
+        "[effects.glass] saturation multiplier (50–200%)",
+        w_gs);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_sat);
+
+    GtkWidget *gt_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(gt_box, GTK_ALIGN_CENTER);
+    self->entry_glass_tint = gtk_entry_new();
+    gtk_entry_set_max_length(GTK_ENTRY(self->entry_glass_tint), 7);
+    gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_glass_tint), 8);
+    gtk_editable_set_max_width_chars(GTK_EDITABLE(self->entry_glass_tint), 9);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_glass_tint), "#141414");
+    gtk_widget_set_valign(self->entry_glass_tint, GTK_ALIGN_CENTER);
+    GtkWidget *w_gta = create_scale_with_badge(0, 100, 5, 35, "%.0f%%", &self->scale_glass_tint_alpha, NULL);
+    gtk_box_append(GTK_BOX(gt_box), self->entry_glass_tint);
+    gtk_box_append(GTK_BOX(gt_box), w_gta);
+    self->row_glass_tint = create_boxed_row(
+        NULL,
+        "Glass Tint & Strength",
+        "[effects.glass] tint hex & tint_alpha blend",
+        gt_box);
+    gtk_box_append(GTK_BOX(card_fx), self->row_glass_tint);
+
+    self->seg_shadow_strength = create_segmented_group(SHADOW_STRENGTH_LABELS, 1);
+    self->row_shadow_strength = create_boxed_row(
+        NULL,
+        "Shadow Strength",
+        "[effects.shadow] strength preset (Subtle / Standard / Deep)",
+        self->seg_shadow_strength);
+    gtk_box_append(GTK_BOX(card_fx), self->row_shadow_strength);
+
+    GtkWidget *w_sh_un = create_scale_with_badge(0, 100, 5, 60, "%.0f%%", &self->scale_shadow_unfocused, NULL);
+    self->row_shadow_unfocused = create_boxed_row(
+        NULL,
+        "Unfocused Shadow Scale",
+        "[effects.shadow] unfocused_scale for inactive windows",
+        w_sh_un);
+    gtk_box_append(GTK_BOX(card_fx), self->row_shadow_unfocused);
+
+    GtkWidget *w_dim_op = create_scale_with_badge(0, 60, 5, 15, "%.0f%%", &self->scale_dim_opacity, NULL);
+    self->row_dim_opacity = create_boxed_row(
+        NULL,
+        "Unfocused Dim Opacity",
+        "[effects.dim] scrim opacity on inactive windows (0–60%)",
+        w_dim_op);
+    gtk_box_append(GTK_BOX(card_fx), self->row_dim_opacity);
+
     self->combo_color_filter = create_string_dropdown(COLOR_FILTER_LABELS);
     gtk_box_append(GTK_BOX(card_fx), create_boxed_row(
         "◐",
@@ -1268,11 +1598,11 @@ build_page_niri(void)
 
     settings_bento_add_pair(GTK_WIDGET(self), card_layer, card_fx);
 
-    /* ─── Card 3: Window Transition Shaders (GLSL) ─── */
+    /* ─── Card 3: Window Transition Shaders ─── */
     GtkWidget *card_shaders = create_section_card(
         SETTINGS_CARD_CENTER,
-        "3. WINDOW TRANSITION SHADERS (GLSL)",
-        "30-layout-animations.kdl",
+        "3. WINDOW TRANSITION SHADERS",
+        "comp.toml + KDL",
         "peak-warn",
         NULL);
 
@@ -1301,7 +1631,7 @@ build_page_niri(void)
     gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
         NULL,
         "Open Easing Curve",
-        "Niri interpolation curve",
+        "Transition interpolation curve",
         self->combo_open_curve));
 
     const char *close_labels[N_CLOSE_PRESETS + 1];
@@ -1329,7 +1659,7 @@ build_page_niri(void)
     gtk_box_append(GTK_BOX(card_shaders), create_boxed_row(
         NULL,
         "Close Easing Curve",
-        "Niri interpolation curve",
+        "Transition interpolation curve",
         self->combo_close_curve));
 
     const char *resize_labels[N_RESIZE_PRESETS + 1];
@@ -1352,6 +1682,7 @@ build_page_niri(void)
     g_signal_connect(self->combo_ns, "notify::selected", G_CALLBACK(on_combo_ns_changed), self);
     g_signal_connect(self->scale_op, "value-changed", G_CALLBACK(on_scale_op_changed), self);
     g_signal_connect(self->scale_gap, "value-changed", G_CALLBACK(on_scale_gap_changed), self);
+    g_signal_connect(self->scale_border_px, "value-changed", G_CALLBACK(on_scale_border_px_changed), self);
     g_signal_connect(self->sw_xray, "notify::active", G_CALLBACK(on_sw_xray_changed), self);
 
     g_signal_connect(self->combo_shader_open, "notify::selected", G_CALLBACK(on_combo_shader_open_changed), self);
@@ -1368,6 +1699,14 @@ build_page_niri(void)
     g_signal_connect(self->tc_shadow, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
     g_signal_connect(self->tc_dim, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
     g_signal_connect(self->tc_dither, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
+    segmented_group_connect(self->seg_glass_blur, on_seg_glass_blur_changed, self);
+    g_signal_connect(self->scale_glass_bright, "value-changed", G_CALLBACK(on_scale_glass_bright_changed), self);
+    g_signal_connect(self->scale_glass_sat, "value-changed", G_CALLBACK(on_scale_glass_sat_changed), self);
+    g_signal_connect(self->entry_glass_tint, "changed", G_CALLBACK(on_entry_glass_tint_changed), self);
+    g_signal_connect(self->scale_glass_tint_alpha, "value-changed", G_CALLBACK(on_scale_glass_tint_alpha_changed), self);
+    segmented_group_connect(self->seg_shadow_strength, on_seg_shadow_strength_changed, self);
+    g_signal_connect(self->scale_shadow_unfocused, "value-changed", G_CALLBACK(on_scale_shadow_unfocused_changed), self);
+    g_signal_connect(self->scale_dim_opacity, "value-changed", G_CALLBACK(on_scale_dim_opacity_changed), self);
     g_signal_connect(self->combo_color_filter, "notify::selected", G_CALLBACK(on_combo_color_filter_changed), self);
     g_signal_connect(self->scale_filter_strength, "value-changed", G_CALLBACK(on_scale_filter_strength_changed), self);
     g_signal_connect(self->scale_night_temp, "value-changed", G_CALLBACK(on_scale_night_temp_changed), self);

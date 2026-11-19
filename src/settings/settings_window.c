@@ -83,10 +83,10 @@ static const SettingsPageMeta k_page_meta[] = {
         { "OFF", "5000MS (5S)", "50 ITEMS", "FOCUS WINDOW" }
     },
     {
-        "niri", "09 / 12", "09 / 12 • COMPOSITOR & SHADERS",
-        "COMPOSITOR LAYER RULES & GLSL SHADERS",
-        "Per-namespace opacity rules (rules.toml / 40-layer-rules.kdl) & GLSL window animations",
-        "GLSL 330", "RULES.TOML",
+        "niri", "09 / 12", "09 / 12 • COMPOSITOR & EFFECTS",
+        "COMPOSITOR LAYOUT, EFFECTS & TRANSITIONS",
+        "Unified compositor settings (comp.toml / rules.toml + Niri KDL compatibility)",
+        "COMP.TOML", "RULES.TOML",
         { "NAMESPACE", "GAPS", "OPEN", "CLOSE" },
         { "kajo (85%)", "12PX", "DEFAULT", "DEFAULT" }
     },
@@ -939,7 +939,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     app_ctx->btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
     gtk_widget_add_css_class(app_ctx->btn_float, "files-nav-btn");
     gtk_widget_set_valign(app_ctx->btn_float, GTK_ALIGN_CENTER);
-    gtk_widget_set_tooltip_text(app_ctx->btn_float, "Toggle Floating / Tiling Window (Niri IPC)");
+    gtk_widget_set_tooltip_text(app_ctx->btn_float, "Toggle Floating / Tiling Window (Compositor IPC)");
     GtkWidget *fl_lbl = gtk_button_get_child(GTK_BUTTON(app_ctx->btn_float));
     if (fl_lbl && GTK_IS_LABEL(fl_lbl)) {
         gtk_label_set_ellipsize(GTK_LABEL(fl_lbl), PANGO_ELLIPSIZE_END);
@@ -985,7 +985,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
 
     /* Category 1: HARDWARE & SYSTEM */
     add_sidebar_category(nav, "HARDWARE & SYSTEM");
-    append_nav_item(nav, "🖥", "Displays & Posture", "NIRI", NULL,
+    append_nav_item(nav, "🖥", "Displays & Posture", "OUT", NULL,
                     "Displays, Idle & Foldable Posture", "displays",
                     "display monitor screen resolution refresh scale scaling vrr orientation idle screensaver hinge posture foldable");
     append_nav_item(nav, "🌐", "Network & Wi-Fi", "NM", NULL,
@@ -1000,9 +1000,9 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
 
     /* Category 2: SHELL & COMPOSITOR */
     add_sidebar_category(nav, "SHELL & COMPOSITOR");
-    append_nav_item(nav, "🎨", "Theme & Fonts", theme_badge, "accent",
-                    "Metro Accent Palette & Typography", "theme",
-                    "theme accent color palette font typography css metro aero style appearance");
+    append_nav_item(nav, "🎨", "Theme & Surfaces", theme_badge, "accent",
+                    "Accent Palette, Glass Surfaces & Typography", "theme",
+                    "theme accent color palette font typography css metro aero style appearance glass opacity surface darkness tint border preset");
     append_nav_item(nav, "▬", "Panel, Touch & OSK", panel_badge, NULL,
                     "Panel Geometry, Touch Gestures & Virtual Keyboard", "panel",
                     "panel geometry autohide height position top bottom edge bar touch gesture swipe osk keyboard virtual");
@@ -1012,9 +1012,9 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     append_nav_item(nav, "🔔", "Notifications", notif_badge, dnd_on ? "peak-warn" : NULL,
                     "Notification Daemon & Toast Popups", "notifications",
                     "notifications toast banner timeout history dnd do not disturb alert daemon focus");
-    append_nav_item(nav, "❖", "Niri & Shaders", "GLSL", NULL,
-                    "Niri Layer Surface Rules & GLSL Transition Shaders", "niri",
-                    "niri compositor rules layout gaps blur xray window floating tiling kdl shader shaders glsl animation");
+    append_nav_item(nav, "❖", "Compositor & Effects", "COMP", NULL,
+                    "Compositor Layout, Glass, Shadows, Color Filters & Transitions", "niri",
+                    "compositor niri kajo-comp rules layout gaps border blur glass shadow dim xray color filter night light window floating tiling kdl toml shader shaders glsl animation transitions");
 
     /* Category 3: KAJO SUITE APPS */
     add_sidebar_category(nav, "KAJO SUITE APPS");

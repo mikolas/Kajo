@@ -1,0 +1,56 @@
+#version 450
+#extension GL_GOOGLE_include_directive : require
+#include "fx_common.glsl"
+
+layout(location = 0) in vec2 uv;
+layout(location = 0) out vec4 out_color;
+
+layout(set = 0, binding = 0) uniform sampler2D u_tex0; // previous snapshot
+layout(set = 0, binding = 1) uniform sampler2D u_tex1; // current snapshot
+
+layout(std140, set = 1, binding = 0) uniform Params {
+    FxCommon common_hdr;
+    float progress;
+    float eased_progress;
+    uint preset;
+    uint kind;
+    vec2 prev_size;
+    vec2 curr_size;
+} u;
+
+float kajo_resize_hash(float n) {
+    return fract(sin(n * 113.57) * 43758.5453);
+}
+
+void main() {
+    float p = clamp(u.eased_progress, 0.0, 1.0);
+    vec4 col = vec4(0.0);
+
+    if (u.preset == 1u) {
+        // stretch-next
+        col = texture(u_tex1, uv);
+    } else if (u.preset == 2u) {
+        // pixelate-morph
+        float pulse = sin(p * 3.14159265);
+        float block = max(1.0, floor(1.0 + pulse * pulse * 24.0));
+        vec2 sz = mix(u.prev_size, u.curr_size, p);
+        vec2 grid = max(sz / block, vec2(1.0));
+        vec2 suv = (floor(uv * grid) + 0.5) / grid;
+        col = mix(texture(u_tex0, suv), texture(u_tex1, suv), p);
+    } else if (u.preset == 3u) {
+        // glitch-morph
+        float pulse = sin(p * 3.14159265);
+        float band = floor(uv.y * 20.0);
+        float jitter = (kajo_resize_hash(band + floor(p * 10.0)) - 0.5) * 0.06 * pulse;
+        vec2 suv = vec2(clamp(uv.x + jitter, 0.0, 1.0), uv.y);
+        col = mix(texture(u_tex0, suv), texture(u_tex1, suv), p);
+    } else {
+        // default: smooth crossfade
+        col = mix(texture(u_tex0, uv), texture(u_tex1, uv), p);
+    }
+
+    if (col.a <= 0.0001) {
+        discard;
+    }
+    out_color = col * clamp(u.common_hdr.opacity, 0.0, 1.0);
+}

@@ -289,7 +289,7 @@ build_page_notifications(void)
     gtk_box_append(GTK_BOX(self->card_toast), create_boxed_row(
         "🖱",
         "Toast Click Action",
-        "Focus source window via Niri or dismiss banner only",
+        "Focus source window via compositor or dismiss banner only",
         self->seg_click));
 
     /* ─── Card 2: Notification Center & Ring Buffer ─── */

@@ -5,7 +5,7 @@
 static const char *const SWIPE_CENTER_IDS[] = { "launcher", "overview", "osk", "none" };
 static const char *const SWIPE_CENTER_LABELS[] = {
     "Open App Launcher (Default)",
-    "Toggle Niri Overview",
+    "Toggle Compositor Overview",
     "Toggle Virtual Keyboard",
     "Disabled",
     NULL

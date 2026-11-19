@@ -63,6 +63,23 @@ void comp_fx_surface_sync(CompFxSurface *fx, const CompFxSurfaceState *state);
 void comp_fx_surface_destroy(CompFxSurface *fx);
 uint64_t comp_fx_surface_get_glass_recomputes(const CompFxSurface *fx);
 
+/* Window open / close / resize transitions (M5, FX_IN_TEXTURE). */
+void comp_fx_transition_start_open(struct CompServer *server,
+                                   struct wlr_scene_tree *win_tree,
+                                   struct wlr_scene_tree *parent_tree,
+                                   struct wlr_box outer_box);
+void comp_fx_transition_start_close(struct CompServer *server,
+                                    struct wlr_scene_tree *win_tree,
+                                    struct wlr_scene_tree *parent_tree,
+                                    struct wlr_box outer_box);
+void comp_fx_transition_start_resize(struct CompServer *server,
+                                     struct wlr_scene_tree *win_tree,
+                                     struct wlr_scene_tree *parent_tree,
+                                     struct wlr_box prev_box,
+                                     struct wlr_box curr_box);
+bool comp_fx_tree_is_transitioning(const struct CompServer *server,
+                                   const struct wlr_scene_tree *win_tree);
+
 bool comp_fx_is_active(const struct CompServer *server);
 
 /* Screenshot capture helpers (keeps wlr_kfx_* isolated inside src/comp/fx/). */

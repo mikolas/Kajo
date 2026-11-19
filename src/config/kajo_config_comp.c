@@ -419,6 +419,20 @@ kajo_config_comp_save_layout_and_layers(const char        *config_dir,
     return TRUE;
 }
 
+static gboolean
+toml_datum_as_double(toml_datum_t d, double *out)
+{
+    if (d.type == TOML_FP64 && isfinite(d.u.fp64)) {
+        *out = d.u.fp64;
+        return TRUE;
+    }
+    if (d.type == TOML_INT64) {
+        *out = (double)d.u.int64;
+        return TRUE;
+    }
+    return FALSE;
+}
+
 static void
 apply_effects_table_to_state(toml_datum_t        tab,
                              KajoCompEffectsCfg *inout_fx,
@@ -430,8 +444,17 @@ apply_effects_table_to_state(toml_datum_t        tab,
         return;
 
     if (inout_fx) {
+        toml_datum_t ltab = toml_get(tab, COMP_SEC_LAYOUT);
+        if (ltab.type == TOML_TABLE &&
+            toml_get(ltab, COMP_KEY_LAYOUT_LEFT).type == TOML_UNKNOWN) {
+            toml_datum_t bpx = toml_get(ltab, COMP_KEY_BORDER_PX);
+            if (bpx.type == TOML_INT64 && bpx.u.int64 >= 0 && bpx.u.int64 <= 32)
+                inout_fx->border_px = (int)bpx.u.int64;
+        }
+
         toml_datum_t fx = toml_get(tab, COMP_SEC_EFFECTS);
         if (fx.type == TOML_TABLE) {
+            double dv = 0.0;
             toml_datum_t di = toml_get(fx, COMP_KEY_DITHER);
             if (di.type == TOML_BOOLEAN)
                 inout_fx->dither_enabled = di.u.boolean;
@@ -440,14 +463,9 @@ apply_effects_table_to_state(toml_datum_t        tab,
             if (cf.type == TOML_STRING && cf.u.s && *cf.u.s)
                 g_strlcpy(inout_fx->color_filter, cf.u.s, sizeof(inout_fx->color_filter));
 
-            toml_datum_t cfs = toml_get(fx, COMP_KEY_COLOR_FILTER_STRENGTH);
-            double sv = -1.0;
-            if (cfs.type == TOML_FP64 && isfinite(cfs.u.fp64))
-                sv = cfs.u.fp64;
-            else if (cfs.type == TOML_INT64)
-                sv = (double)cfs.u.int64;
-            if (sv >= 0.0 && sv <= 1.0)
-                inout_fx->color_filter_strength_pct = (int)(sv * 100.0 + 0.5);
+            if (toml_datum_as_double(toml_get(fx, COMP_KEY_COLOR_FILTER_STRENGTH), &dv) &&
+                dv >= 0.0 && dv <= 1.0)
+                inout_fx->color_filter_strength_pct = (int)(dv * 100.0 + 0.5);
 
             toml_datum_t nlt = toml_get(fx, COMP_KEY_NIGHT_LIGHT_TEMPERATURE);
             if (nlt.type == TOML_INT64 && nlt.u.int64 >= 1500 && nlt.u.int64 <= 6500)
@@ -458,18 +476,69 @@ apply_effects_table_to_state(toml_datum_t        tab,
                 toml_datum_t gen = toml_get(gl, COMP_KEY_ENABLED);
                 if (gen.type == TOML_BOOLEAN)
                     inout_fx->glass_enabled = gen.u.boolean;
+                toml_datum_t gp = toml_get(gl, COMP_KEY_PASSES);
+                if (gp.type == TOML_INT64 && gp.u.int64 >= 1 && gp.u.int64 <= 6)
+                    inout_fx->glass_passes = (int)gp.u.int64;
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_OFFSET), &dv) &&
+                    dv >= 0.5 && dv <= 8.0)
+                    inout_fx->glass_offset = dv;
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_BRIGHTNESS), &dv) &&
+                    dv >= 0.0 && dv <= 2.0)
+                    inout_fx->glass_brightness_pct = (int)(dv * 100.0 + 0.5);
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_SATURATION), &dv) &&
+                    dv >= 0.0 && dv <= 2.0)
+                    inout_fx->glass_saturation_pct = (int)(dv * 100.0 + 0.5);
+                toml_datum_t gt = toml_get(gl, COMP_KEY_TINT);
+                if (gt.type == TOML_STRING && gt.u.s && kajo_config_is_valid_hex_color(gt.u.s))
+                    g_strlcpy(inout_fx->glass_tint, gt.u.s, sizeof(inout_fx->glass_tint));
+                if (toml_datum_as_double(toml_get(gl, COMP_KEY_TINT_ALPHA), &dv) &&
+                    dv >= 0.0 && dv <= 1.0)
+                    inout_fx->glass_tint_alpha_pct = (int)(dv * 100.0 + 0.5);
             }
             toml_datum_t sh = toml_get(fx, COMP_SEC_FX_SHADOW);
             if (sh.type == TOML_TABLE) {
                 toml_datum_t sen = toml_get(sh, COMP_KEY_ENABLED);
                 if (sen.type == TOML_BOOLEAN)
                     inout_fx->shadow_enabled = sen.u.boolean;
+                if (toml_datum_as_double(toml_get(sh, COMP_KEY_STRENGTH), &dv) &&
+                    dv >= 0.0 && dv <= 2.0)
+                    inout_fx->shadow_strength_pct = (int)(dv * 100.0 + 0.5);
+                if (toml_datum_as_double(toml_get(sh, COMP_KEY_UNFOCUSED_SCALE), &dv) &&
+                    dv >= 0.0 && dv <= 2.0)
+                    inout_fx->shadow_unfocused_scale_pct = (int)(dv * 100.0 + 0.5);
             }
             toml_datum_t dm = toml_get(fx, COMP_SEC_FX_DIM);
             if (dm.type == TOML_TABLE) {
                 toml_datum_t den = toml_get(dm, COMP_KEY_ENABLED);
                 if (den.type == TOML_BOOLEAN)
                     inout_fx->dim_enabled = den.u.boolean;
+                if (toml_datum_as_double(toml_get(dm, COMP_KEY_OPACITY), &dv) &&
+                    dv >= 0.0 && dv <= 1.0)
+                    inout_fx->dim_opacity_pct = (int)(dv * 100.0 + 0.5);
+            }
+            toml_datum_t tr = toml_get(fx, COMP_SEC_FX_TRANSITIONS);
+            if (tr.type == TOML_TABLE) {
+                toml_datum_t op = toml_get(tr, COMP_KEY_OPEN_PRESET);
+                if (op.type == TOML_STRING && op.u.s && *op.u.s)
+                    g_strlcpy(inout_fx->open_preset, op.u.s, sizeof(inout_fx->open_preset));
+                toml_datum_t od = toml_get(tr, COMP_KEY_OPEN_DURATION_MS);
+                if (od.type == TOML_INT64 && od.u.int64 >= 50 && od.u.int64 <= 2000)
+                    inout_fx->open_duration_ms = (int)od.u.int64;
+                toml_datum_t oc = toml_get(tr, COMP_KEY_OPEN_CURVE);
+                if (oc.type == TOML_STRING && oc.u.s && *oc.u.s)
+                    g_strlcpy(inout_fx->open_curve, oc.u.s, sizeof(inout_fx->open_curve));
+                toml_datum_t cp = toml_get(tr, COMP_KEY_CLOSE_PRESET);
+                if (cp.type == TOML_STRING && cp.u.s && *cp.u.s)
+                    g_strlcpy(inout_fx->close_preset, cp.u.s, sizeof(inout_fx->close_preset));
+                toml_datum_t cd = toml_get(tr, COMP_KEY_CLOSE_DURATION_MS);
+                if (cd.type == TOML_INT64 && cd.u.int64 >= 50 && cd.u.int64 <= 2000)
+                    inout_fx->close_duration_ms = (int)cd.u.int64;
+                toml_datum_t cc = toml_get(tr, COMP_KEY_CLOSE_CURVE);
+                if (cc.type == TOML_STRING && cc.u.s && *cc.u.s)
+                    g_strlcpy(inout_fx->close_curve, cc.u.s, sizeof(inout_fx->close_curve));
+                toml_datum_t rp = toml_get(tr, COMP_KEY_RESIZE_PRESET);
+                if (rp.type == TOML_STRING && rp.u.s && *rp.u.s)
+                    g_strlcpy(inout_fx->resize_preset, rp.u.s, sizeof(inout_fx->resize_preset));
             }
         }
     }
@@ -522,13 +591,30 @@ kajo_config_comp_read_effects(const char         *config_dir,
                               size_t              n_ns)
 {
     if (out_fx) {
-        out_fx->glass_enabled             = TRUE;
-        out_fx->shadow_enabled            = TRUE;
-        out_fx->dim_enabled               = FALSE;
-        out_fx->dither_enabled            = TRUE;
+        out_fx->border_px                  = 1;
+        out_fx->glass_enabled              = TRUE;
+        out_fx->glass_passes               = 3;
+        out_fx->glass_offset               = 2.0;
+        out_fx->glass_brightness_pct       = 90;
+        out_fx->glass_saturation_pct       = 115;
+        g_strlcpy(out_fx->glass_tint, "#141414", sizeof(out_fx->glass_tint));
+        out_fx->glass_tint_alpha_pct       = 35;
+        out_fx->shadow_enabled             = TRUE;
+        out_fx->shadow_strength_pct        = 100;
+        out_fx->shadow_unfocused_scale_pct = 60;
+        out_fx->dim_enabled                = FALSE;
+        out_fx->dim_opacity_pct            = 15;
+        out_fx->dither_enabled             = TRUE;
         g_strlcpy(out_fx->color_filter, "none", sizeof(out_fx->color_filter));
-        out_fx->color_filter_strength_pct = 100;
-        out_fx->night_light_temperature   = 4000;
+        out_fx->color_filter_strength_pct  = 100;
+        out_fx->night_light_temperature    = 4000;
+        g_strlcpy(out_fx->open_preset, "default", sizeof(out_fx->open_preset));
+        out_fx->open_duration_ms           = 150;
+        g_strlcpy(out_fx->open_curve, "ease-out-expo", sizeof(out_fx->open_curve));
+        g_strlcpy(out_fx->close_preset, "default", sizeof(out_fx->close_preset));
+        out_fx->close_duration_ms          = 200;
+        g_strlcpy(out_fx->close_curve, "ease-out-quad", sizeof(out_fx->close_curve));
+        g_strlcpy(out_fx->resize_preset, "default", sizeof(out_fx->resize_preset));
     }
     if (ns_ids && inout_ns_xray) {
         for (size_t i = 0; i < n_ns; i++)
@@ -598,6 +684,9 @@ kajo_config_comp_save_effects(const char               *config_dir,
         GString *comp_doc = g_string_new(comp_existing ? comp_existing :
                                          "# comp.toml — Kajo Compositor Configuration\n");
 
+        g_autofree gchar *bpx_rhs = g_strdup_printf("%d", CLAMP(fx->border_px, 0, 32));
+        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_LAYOUT, COMP_KEY_BORDER_PX, bpx_rhs);
+
         kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_DITHER,
                                          fx->dither_enabled ? "true" : "false");
 
@@ -607,22 +696,71 @@ kajo_config_comp_save_effects(const char               *config_dir,
                                          cf_rhs->str);
         g_string_free(cf_rhs, TRUE);
 
-        char str_buf[32];
+        char num_buf[32];
         int str_pct = CLAMP(fx->color_filter_strength_pct, 0, 100);
-        g_ascii_formatd(str_buf, sizeof(str_buf), "%.2f", (double)str_pct / 100.0);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)str_pct / 100.0);
         kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_COLOR_FILTER_STRENGTH,
-                                         str_buf);
+                                         num_buf);
 
         g_autofree gchar *temp_rhs = g_strdup_printf("%d", CLAMP(fx->night_light_temperature, 1500, 6500));
         kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_NIGHT_LIGHT_TEMPERATURE,
                                          temp_rhs);
 
-        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS "." COMP_SEC_FX_GLASS,
+        const char *sec_glass = COMP_SEC_EFFECTS "." COMP_SEC_FX_GLASS;
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass,
                                          COMP_KEY_ENABLED, fx->glass_enabled ? "true" : "false");
-        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS "." COMP_SEC_FX_SHADOW,
+        g_autofree gchar *gp_rhs = g_strdup_printf("%d", CLAMP(fx->glass_passes, 1, 6));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_PASSES, gp_rhs);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", CLAMP(fx->glass_offset, 0.5, 8.0));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_OFFSET, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_brightness_pct, 50, 150) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_BRIGHTNESS, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_saturation_pct, 50, 200) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_SATURATION, num_buf);
+        if (kajo_config_is_valid_hex_color(fx->glass_tint)) {
+            GString *gt_rhs = g_string_new(NULL);
+            kajo_toml_append_quoted_string(gt_rhs, fx->glass_tint);
+            kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_TINT, gt_rhs->str);
+            g_string_free(gt_rhs, TRUE);
+        }
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->glass_tint_alpha_pct, 0, 100) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_TINT_ALPHA, num_buf);
+
+        const char *sec_shadow = COMP_SEC_EFFECTS "." COMP_SEC_FX_SHADOW;
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_shadow,
                                          COMP_KEY_ENABLED, fx->shadow_enabled ? "true" : "false");
-        kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS "." COMP_SEC_FX_DIM,
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->shadow_strength_pct, 0, 200) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_shadow, COMP_KEY_STRENGTH, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->shadow_unfocused_scale_pct, 0, 200) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_shadow, COMP_KEY_UNFOCUSED_SCALE, num_buf);
+
+        const char *sec_dim = COMP_SEC_EFFECTS "." COMP_SEC_FX_DIM;
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_dim,
                                          COMP_KEY_ENABLED, fx->dim_enabled ? "true" : "false");
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f", (double)CLAMP(fx->dim_opacity_pct, 0, 100) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_dim, COMP_KEY_OPACITY, num_buf);
+
+        const char *sec_tr = COMP_SEC_EFFECTS "." COMP_SEC_FX_TRANSITIONS;
+        GString *tr_rhs = g_string_new(NULL);
+        kajo_toml_append_quoted_string(tr_rhs, fx->open_preset[0] ? fx->open_preset : "default");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_OPEN_PRESET, tr_rhs->str);
+        g_autofree gchar *od_rhs = g_strdup_printf("%d", CLAMP(fx->open_duration_ms > 0 ? fx->open_duration_ms : 150, 50, 2000));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_OPEN_DURATION_MS, od_rhs);
+        g_string_truncate(tr_rhs, 0);
+        kajo_toml_append_quoted_string(tr_rhs, fx->open_curve[0] ? fx->open_curve : "ease-out-expo");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_OPEN_CURVE, tr_rhs->str);
+        g_string_truncate(tr_rhs, 0);
+        kajo_toml_append_quoted_string(tr_rhs, fx->close_preset[0] ? fx->close_preset : "default");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_CLOSE_PRESET, tr_rhs->str);
+        g_autofree gchar *cd_rhs = g_strdup_printf("%d", CLAMP(fx->close_duration_ms > 0 ? fx->close_duration_ms : 200, 50, 2000));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_CLOSE_DURATION_MS, cd_rhs);
+        g_string_truncate(tr_rhs, 0);
+        kajo_toml_append_quoted_string(tr_rhs, fx->close_curve[0] ? fx->close_curve : "ease-out-quad");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_CLOSE_CURVE, tr_rhs->str);
+        g_string_truncate(tr_rhs, 0);
+        kajo_toml_append_quoted_string(tr_rhs, fx->resize_preset[0] ? fx->resize_preset : "default");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_RESIZE_PRESET, tr_rhs->str);
+        g_string_free(tr_rhs, TRUE);
 
         gboolean ok_comp = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);
         g_string_free(comp_doc, TRUE);
@@ -660,6 +798,43 @@ kajo_config_comp_save_effects(const char               *config_dir,
     }
 
     return TRUE;
+}
+
+gboolean
+kajo_config_comp_save_inactive_border_color(const char *config_dir,
+                                            const char *hex_color,
+                                            GError    **error)
+{
+    if (!hex_color || !kajo_config_is_valid_hex_color(hex_color))
+        return FALSE;
+
+    g_autofree gchar *dir = (config_dir && *config_dir)
+        ? g_strdup(config_dir)
+        : kajo_config_resolve_user_dir();
+    if (g_mkdir_with_parents(dir, 0755) != 0) {
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                    "Failed to create config directory '%s'", dir);
+        return FALSE;
+    }
+
+    g_autofree gchar *comp_path = g_build_filename(dir, COMP_CFG_FILE_COMP, NULL);
+    g_autofree gchar *comp_existing = NULL;
+    if (!g_file_get_contents(comp_path, &comp_existing, NULL, NULL)) {
+        g_autofree gchar *def_comp = kajo_config_find_default_file(COMP_CFG_FILE_COMP);
+        if (def_comp)
+            (void)g_file_get_contents(def_comp, &comp_existing, NULL, NULL);
+    }
+
+    GString *comp_doc = g_string_new(comp_existing ? comp_existing : "");
+    GString *rhs = g_string_new(NULL);
+    kajo_toml_append_quoted_string(rhs, hex_color);
+    kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_LAYOUT,
+                                     COMP_KEY_INACTIVE_BORDER_COLOR, rhs->str);
+    g_string_free(rhs, TRUE);
+
+    gboolean ok = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);
+    g_string_free(comp_doc, TRUE);
+    return ok;
 }
 
 static gboolean

@@ -50,6 +50,7 @@ comp_fx_config_defaults(CompFxConfig *cfg)
     cfg->shadow.color_rgba[2]   = 0.0f;
     cfg->shadow.color_rgba[3]   = 1.0f;
     cfg->shadow.unfocused_scale = 0.6;
+    cfg->shadow.strength        = 1.0;
     cfg->shadow.duration_ms     = 150;
     cfg->shadow.n_layers        = 2;
     cfg->shadow.layers[0]       = (CompFxShadowLayer){
@@ -91,6 +92,16 @@ comp_fx_config_defaults(CompFxConfig *cfg)
     cfg->sdr_white_nits          = 0.0;
     cfg->tonemap                 = true;
     cfg->tonemap_peak_nits       = 0.0;
+
+    cfg->transitions.enabled            = true;
+    cfg->transitions.open_preset        = COMP_FX_OPEN_DEFAULT;
+    cfg->transitions.open_duration_ms   = 150;
+    cfg->transitions.open_curve         = COMP_FX_CURVE_EASE_OUT_EXPO;
+    cfg->transitions.close_preset       = COMP_FX_CLOSE_DEFAULT;
+    cfg->transitions.close_duration_ms  = 200;
+    cfg->transitions.close_curve        = COMP_FX_CURVE_EASE_OUT_QUAD;
+    cfg->transitions.resize_preset      = COMP_FX_RESIZE_DEFAULT;
+    cfg->transitions.resize_duration_ms = 180;
 }
 
 static bool
@@ -593,17 +604,18 @@ comp_fx_shadow_pack(const CompFxShadowConfig *cfg,
     if (count > COMP_FX_SHADOW_MAX_LAYERS)
         count = COMP_FX_SHADOW_MAX_LAYERS;
 
+    double strength = (cfg->strength >= 0.0 && cfg->strength <= 2.0) ? cfg->strength : 1.0;
     uint32_t active = 0;
     for (size_t i = 0; i < count; i++) {
         const CompFxShadowLayer *l = &cfg->layers[i];
-        if (!(l->sigma > 0.0) || !(l->opacity > 0.0))
+        if (!(l->sigma > 0.0) || !(l->opacity > 0.0) || !(strength > 0.0))
             continue;
         float ox = 0.0f, oy = 0.0f;
         comp_fx_transform_offset(l->offset_x, l->offset_y, s, transform, &ox, &oy);
         out->layers[active][0] = ox;
         out->layers[active][1] = oy;
         out->layers[active][2] = (float)(l->sigma * (double)s);
-        out->layers[active][3] = clamp01f((float)l->opacity);
+        out->layers[active][3] = clamp01f((float)(l->opacity * strength));
         active++;
     }
     out->common.flags = active;
@@ -755,4 +767,184 @@ comp_fx_focus_spring_params(int32_t duration_ms, double slowdown, CompSpringPara
     out->stiffness     = omega0 * omega0;
     out->epsilon       = 0.005;
     return comp_spring_params_valid(out);
+}
+
+bool
+comp_fx_curve_from_str(const char *s, CompFxTransitionCurve *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "ease-out-expo") || ascii_ieq(s, "ease_out_expo")) {
+        *out = COMP_FX_CURVE_EASE_OUT_EXPO;
+        return true;
+    }
+    if (ascii_ieq(s, "ease-out-cubic") || ascii_ieq(s, "ease_out_cubic")) {
+        *out = COMP_FX_CURVE_EASE_OUT_CUBIC;
+        return true;
+    }
+    if (ascii_ieq(s, "ease-out-quad") || ascii_ieq(s, "ease_out_quad")) {
+        *out = COMP_FX_CURVE_EASE_OUT_QUAD;
+        return true;
+    }
+    if (ascii_ieq(s, "linear")) {
+        *out = COMP_FX_CURVE_LINEAR;
+        return true;
+    }
+    return false;
+}
+
+const char *
+comp_fx_curve_to_str(CompFxTransitionCurve curve)
+{
+    switch (curve) {
+    case COMP_FX_CURVE_EASE_OUT_EXPO:  return "ease-out-expo";
+    case COMP_FX_CURVE_EASE_OUT_CUBIC: return "ease-out-cubic";
+    case COMP_FX_CURVE_EASE_OUT_QUAD:  return "ease-out-quad";
+    case COMP_FX_CURVE_LINEAR:         return "linear";
+    }
+    return "ease-out-expo";
+}
+
+bool
+comp_fx_open_preset_from_str(const char *s, CompFxOpenPreset *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "default"))          { *out = COMP_FX_OPEN_DEFAULT;          return true; }
+    if (ascii_ieq(s, "metro-flip"))       { *out = COMP_FX_OPEN_METRO_FLIP;       return true; }
+    if (ascii_ieq(s, "expanding-circle")) { *out = COMP_FX_OPEN_EXPANDING_CIRCLE; return true; }
+    if (ascii_ieq(s, "crt-on"))           { *out = COMP_FX_OPEN_CRT_ON;           return true; }
+    if (ascii_ieq(s, "pixelate-in"))      { *out = COMP_FX_OPEN_PIXELATE_IN;      return true; }
+    if (ascii_ieq(s, "glitch-in"))        { *out = COMP_FX_OPEN_GLITCH_IN;        return true; }
+    if (ascii_ieq(s, "curtain-open"))     { *out = COMP_FX_OPEN_CURTAIN_OPEN;     return true; }
+    return false;
+}
+
+const char *
+comp_fx_open_preset_to_str(CompFxOpenPreset preset)
+{
+    switch (preset) {
+    case COMP_FX_OPEN_DEFAULT:          return "default";
+    case COMP_FX_OPEN_METRO_FLIP:       return "metro-flip";
+    case COMP_FX_OPEN_EXPANDING_CIRCLE: return "expanding-circle";
+    case COMP_FX_OPEN_CRT_ON:           return "crt-on";
+    case COMP_FX_OPEN_PIXELATE_IN:      return "pixelate-in";
+    case COMP_FX_OPEN_GLITCH_IN:        return "glitch-in";
+    case COMP_FX_OPEN_CURTAIN_OPEN:     return "curtain-open";
+    }
+    return "default";
+}
+
+bool
+comp_fx_close_preset_from_str(const char *s, CompFxClosePreset *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "default"))         { *out = COMP_FX_CLOSE_DEFAULT;         return true; }
+    if (ascii_ieq(s, "fall-and-rotate")) { *out = COMP_FX_CLOSE_FALL_AND_ROTATE; return true; }
+    if (ascii_ieq(s, "crt-off"))         { *out = COMP_FX_CLOSE_CRT_OFF;         return true; }
+    if (ascii_ieq(s, "ash-dissolve"))    { *out = COMP_FX_CLOSE_ASH_DISSOLVE;    return true; }
+    if (ascii_ieq(s, "vortex-implode"))  { *out = COMP_FX_CLOSE_VORTEX_IMPLODE;  return true; }
+    if (ascii_ieq(s, "pixelate-out"))    { *out = COMP_FX_CLOSE_PIXELATE_OUT;    return true; }
+    if (ascii_ieq(s, "slice-shatter"))   { *out = COMP_FX_CLOSE_SLICE_SHATTER;   return true; }
+    return false;
+}
+
+const char *
+comp_fx_close_preset_to_str(CompFxClosePreset preset)
+{
+    switch (preset) {
+    case COMP_FX_CLOSE_DEFAULT:         return "default";
+    case COMP_FX_CLOSE_FALL_AND_ROTATE: return "fall-and-rotate";
+    case COMP_FX_CLOSE_CRT_OFF:         return "crt-off";
+    case COMP_FX_CLOSE_ASH_DISSOLVE:    return "ash-dissolve";
+    case COMP_FX_CLOSE_VORTEX_IMPLODE:  return "vortex-implode";
+    case COMP_FX_CLOSE_PIXELATE_OUT:    return "pixelate-out";
+    case COMP_FX_CLOSE_SLICE_SHATTER:   return "slice-shatter";
+    }
+    return "default";
+}
+
+bool
+comp_fx_resize_preset_from_str(const char *s, CompFxResizePreset *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "default"))        { *out = COMP_FX_RESIZE_DEFAULT;        return true; }
+    if (ascii_ieq(s, "stretch-next"))   { *out = COMP_FX_RESIZE_STRETCH_NEXT;   return true; }
+    if (ascii_ieq(s, "pixelate-morph")) { *out = COMP_FX_RESIZE_PIXELATE_MORPH; return true; }
+    if (ascii_ieq(s, "glitch-morph"))   { *out = COMP_FX_RESIZE_GLITCH_MORPH;   return true; }
+    return false;
+}
+
+const char *
+comp_fx_resize_preset_to_str(CompFxResizePreset preset)
+{
+    switch (preset) {
+    case COMP_FX_RESIZE_DEFAULT:        return "default";
+    case COMP_FX_RESIZE_STRETCH_NEXT:   return "stretch-next";
+    case COMP_FX_RESIZE_PIXELATE_MORPH: return "pixelate-morph";
+    case COMP_FX_RESIZE_GLITCH_MORPH:   return "glitch-morph";
+    }
+    return "default";
+}
+
+double
+comp_fx_transition_eval_curve(CompFxTransitionCurve curve, double t)
+{
+    if (!isfinite(t) || t <= 0.0)
+        return 0.0;
+    if (t >= 1.0)
+        return 1.0;
+
+    switch (curve) {
+    case COMP_FX_CURVE_EASE_OUT_EXPO:
+        return 1.0 - pow(2.0, -10.0 * t);
+    case COMP_FX_CURVE_EASE_OUT_CUBIC: {
+        double u = 1.0 - t;
+        return 1.0 - u * u * u;
+    }
+    case COMP_FX_CURVE_EASE_OUT_QUAD: {
+        double u = 1.0 - t;
+        return 1.0 - u * u;
+    }
+    case COMP_FX_CURVE_LINEAR:
+        return t;
+    }
+    return t;
+}
+
+void
+comp_fx_transition_pack(CompFxRect dst_box,
+                        CompFxTransitionKind kind,
+                        uint32_t preset,
+                        double progress,
+                        double eased_progress,
+                        float prev_w, float prev_h,
+                        float curr_w, float curr_h,
+                        float scale,
+                        CompFxTransitionParams *out)
+{
+    if (!out)
+        return;
+    memset(out, 0, sizeof(*out));
+    float s = (scale > 0.0f) ? scale : 1.0f;
+
+    out->common.dst_origin[0] = (float)dst_box.x;
+    out->common.dst_origin[1] = (float)dst_box.y;
+    out->common.dst_size[0]   = (float)dst_box.width;
+    out->common.dst_size[1]   = (float)dst_box.height;
+    out->common.opacity       = 1.0f;
+    out->common.scale         = s;
+    out->common.hdr_headroom  = 1.0f;
+    out->common.flags         = 0;
+
+    out->progress       = clamp01f((float)progress);
+    out->eased_progress = clamp01f((float)eased_progress);
+    out->preset         = preset;
+    out->kind           = (uint32_t)kind;
+    out->prev_size[0]   = fmaxf(prev_w, 1.0f);
+    out->prev_size[1]   = fmaxf(prev_h, 1.0f);
+    out->curr_size[0]   = fmaxf(curr_w, 1.0f);
+    out->curr_size[1]   = fmaxf(curr_h, 1.0f);
 }

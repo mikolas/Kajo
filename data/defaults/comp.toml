@@ -53,6 +53,7 @@ max_recompute_hz = 0
 [effects.shadow]
 enabled = true
 color = "#000000"
+strength = 1.0
 unfocused_scale = 0.60
 duration_ms = 150
 
@@ -73,6 +74,17 @@ enabled = false
 color = "#000000"
 opacity = 0.15
 duration_ms = 150
+
+[effects.transitions]
+enabled = true
+open_preset = "default"
+open_duration_ms = 150
+open_curve = "ease-out-expo"
+close_preset = "default"
+close_duration_ms = 200
+close_curve = "ease-out-quad"
+resize_preset = "default"
+resize_duration_ms = 180
 
 [switcher]
 active_border_color = "accent"

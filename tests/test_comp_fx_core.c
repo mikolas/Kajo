@@ -410,6 +410,103 @@ test_m4_color_filters_and_bt2390(void)
     comp_config_free(cc);
 }
 
+static void
+test_m5_transitions_and_shadow_strength(void)
+{
+    /* 1. Easing curves: endpoints, clamping, strict monotonicity */
+    const CompFxTransitionCurve curves[] = {
+        COMP_FX_CURVE_EASE_OUT_EXPO,
+        COMP_FX_CURVE_EASE_OUT_CUBIC,
+        COMP_FX_CURVE_EASE_OUT_QUAD,
+        COMP_FX_CURVE_LINEAR,
+    };
+    for (size_t c = 0; c < G_N_ELEMENTS(curves); c++) {
+        g_assert_cmpfloat_with_epsilon(comp_fx_transition_eval_curve(curves[c], -0.5), 0.0, 1e-9);
+        g_assert_cmpfloat_with_epsilon(comp_fx_transition_eval_curve(curves[c], 0.0),  0.0, 1e-9);
+        g_assert_cmpfloat_with_epsilon(comp_fx_transition_eval_curve(curves[c], 1.0),  1.0, 1e-9);
+        g_assert_cmpfloat_with_epsilon(comp_fx_transition_eval_curve(curves[c], 1.5),  1.0, 1e-9);
+        double prev = 0.0;
+        for (int s = 1; s <= 10; s++) {
+            double v = comp_fx_transition_eval_curve(curves[c], (double)s / 10.0);
+            g_assert(v >= prev);
+            g_assert(v <= 1.0);
+            prev = v;
+        }
+    }
+    /* ease-out-expo rises faster than linear at t = 0.25 */
+    g_assert(comp_fx_transition_eval_curve(COMP_FX_CURVE_EASE_OUT_EXPO, 0.25) > 0.75);
+
+    /* 2. Preset & curve string round-trips */
+    CompFxOpenPreset op;
+    g_assert_true(comp_fx_open_preset_from_str("metro-flip", &op));
+    g_assert_cmpint(op, ==, COMP_FX_OPEN_METRO_FLIP);
+    g_assert_cmpstr(comp_fx_open_preset_to_str(op), ==, "metro-flip");
+
+    CompFxClosePreset cp;
+    g_assert_true(comp_fx_close_preset_from_str("ash-dissolve", &cp));
+    g_assert_cmpint(cp, ==, COMP_FX_CLOSE_ASH_DISSOLVE);
+    g_assert_cmpstr(comp_fx_close_preset_to_str(cp), ==, "ash-dissolve");
+
+    CompFxResizePreset rp;
+    g_assert_true(comp_fx_resize_preset_from_str("glitch-morph", &rp));
+    g_assert_cmpint(rp, ==, COMP_FX_RESIZE_GLITCH_MORPH);
+    g_assert_cmpstr(comp_fx_resize_preset_to_str(rp), ==, "glitch-morph");
+
+    CompFxTransitionCurve cv;
+    g_assert_true(comp_fx_curve_from_str("ease-out-cubic", &cv));
+    g_assert_cmpint(cv, ==, COMP_FX_CURVE_EASE_OUT_CUBIC);
+    g_assert_cmpstr(comp_fx_curve_to_str(cv), ==, "ease-out-cubic");
+
+    /* 3. Packing & shadow strength scaling */
+    CompFxTransitionParams tp;
+    comp_fx_transition_pack((CompFxRect){ 10, 20, 300, 200 },
+                            COMP_FX_TRANS_CLOSE, COMP_FX_CLOSE_CRT_OFF,
+                            0.5, 0.75, 300.0f, 200.0f, 300.0f, 200.0f, 2.0f, &tp);
+    g_assert_cmpuint(sizeof(tp), ==, 64);
+    g_assert_cmpfloat_with_epsilon(tp.progress, 0.5f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(tp.eased_progress, 0.75f, 1e-6);
+    g_assert_cmpuint(tp.preset, ==, COMP_FX_CLOSE_CRT_OFF);
+    g_assert_cmpuint(tp.kind, ==, COMP_FX_TRANS_CLOSE);
+
+    CompConfig *cc = comp_config_new_defaults(0);
+    CompDiagList diag = {0};
+    const char *toml_m5 =
+        "[effects.shadow]\n"
+        "strength = 1.5\n"
+        "[effects.transitions]\n"
+        "enabled = true\n"
+        "open_preset = \"crt-on\"\n"
+        "open_duration_ms = 300\n"
+        "open_curve = \"ease-out-cubic\"\n"
+        "close_preset = \"vortex-implode\"\n"
+        "close_duration_ms = 380\n"
+        "close_curve = \"linear\"\n"
+        "resize_preset = \"pixelate-morph\"\n"
+        "resize_duration_ms = 220\n";
+    g_assert_true(comp_config_merge_toml(cc, toml_m5, strlen(toml_m5), "m5.toml", NULL, false, &diag));
+    g_assert_cmpuint(diag.n, ==, 0);
+    g_assert_cmpfloat_with_epsilon(cc->fx.shadow.strength, 1.5, 1e-6);
+    g_assert_cmpint(cc->fx.transitions.open_preset, ==, COMP_FX_OPEN_CRT_ON);
+    g_assert_cmpint(cc->fx.transitions.open_duration_ms, ==, 300);
+    g_assert_cmpint(cc->fx.transitions.open_curve, ==, COMP_FX_CURVE_EASE_OUT_CUBIC);
+    g_assert_cmpint(cc->fx.transitions.close_preset, ==, COMP_FX_CLOSE_VORTEX_IMPLODE);
+    g_assert_cmpint(cc->fx.transitions.close_duration_ms, ==, 380);
+    g_assert_cmpint(cc->fx.transitions.close_curve, ==, COMP_FX_CURVE_LINEAR);
+    g_assert_cmpint(cc->fx.transitions.resize_preset, ==, COMP_FX_RESIZE_PIXELATE_MORPH);
+    g_assert_cmpint(cc->fx.transitions.resize_duration_ms, ==, 220);
+
+    CompFxShadowParams sp;
+    comp_fx_shadow_pack(&cc->fx.shadow,
+                        (CompFxRect){ 0, 0, 200, 200 },
+                        (CompFxRect){ 50, 50, 100, 100 },
+                        1.0f, 1.0f, 0, &sp);
+    g_assert_cmpfloat_with_epsilon(sp.layers[0][3], 0.30f * 1.5f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(sp.layers[1][3], 0.18f * 1.5f, 1e-5);
+
+    comp_diag_clear(&diag);
+    comp_config_free(cc);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -419,5 +516,6 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/fx-core/coverage-gaussian-box", test_coverage_gaussian_box);
     g_test_add_func("/comp/fx-core/transforms-and-packing", test_transforms_and_packing);
     g_test_add_func("/comp/fx-core/m4-color-filters-and-bt2390", test_m4_color_filters_and_bt2390);
+    g_test_add_func("/comp/fx-core/m5-transitions-and-shadow-strength", test_m5_transitions_and_shadow_strength);
     return g_test_run();
 }

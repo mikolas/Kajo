@@ -37,6 +37,7 @@ typedef struct {
     bool              enabled;
     float             color_rgba[4];     /* config sRGB [0..1] */
     double            unfocused_scale;   /* 0..2 */
+    double            strength;          /* 0..2 multiplier on layer opacities */
     int32_t           duration_ms;       /* focus animation duration (0..5000 ms) */
     CompFxShadowLayer layers[COMP_FX_SHADOW_MAX_LAYERS];
     size_t            n_layers;
@@ -72,18 +73,81 @@ typedef enum {
 bool        comp_fx_color_filter_from_str(const char *s, CompFxColorFilter *out);
 const char *comp_fx_color_filter_to_str(CompFxColorFilter filter);
 
+typedef enum {
+    COMP_FX_CURVE_EASE_OUT_EXPO  = 0,
+    COMP_FX_CURVE_EASE_OUT_CUBIC = 1,
+    COMP_FX_CURVE_EASE_OUT_QUAD  = 2,
+    COMP_FX_CURVE_LINEAR         = 3,
+} CompFxTransitionCurve;
+
+typedef enum {
+    COMP_FX_OPEN_DEFAULT          = 0,
+    COMP_FX_OPEN_METRO_FLIP       = 1,
+    COMP_FX_OPEN_EXPANDING_CIRCLE = 2,
+    COMP_FX_OPEN_CRT_ON           = 3,
+    COMP_FX_OPEN_PIXELATE_IN      = 4,
+    COMP_FX_OPEN_GLITCH_IN        = 5,
+    COMP_FX_OPEN_CURTAIN_OPEN     = 6,
+} CompFxOpenPreset;
+
+typedef enum {
+    COMP_FX_CLOSE_DEFAULT         = 0,
+    COMP_FX_CLOSE_FALL_AND_ROTATE = 1,
+    COMP_FX_CLOSE_CRT_OFF         = 2,
+    COMP_FX_CLOSE_ASH_DISSOLVE    = 3,
+    COMP_FX_CLOSE_VORTEX_IMPLODE  = 4,
+    COMP_FX_CLOSE_PIXELATE_OUT    = 5,
+    COMP_FX_CLOSE_SLICE_SHATTER   = 6,
+} CompFxClosePreset;
+
+typedef enum {
+    COMP_FX_RESIZE_DEFAULT        = 0,
+    COMP_FX_RESIZE_STRETCH_NEXT   = 1,
+    COMP_FX_RESIZE_PIXELATE_MORPH = 2,
+    COMP_FX_RESIZE_GLITCH_MORPH   = 3,
+} CompFxResizePreset;
+
+typedef enum {
+    COMP_FX_TRANS_OPEN   = 0,
+    COMP_FX_TRANS_CLOSE  = 1,
+    COMP_FX_TRANS_RESIZE = 2,
+} CompFxTransitionKind;
+
 typedef struct {
-    bool               enabled;
-    bool               dither;
-    CompFxColorFilter  color_filter;            /* default COMP_FX_FILTER_NONE */
-    double             color_filter_strength;   /* 0..1 (default 1.0) */
-    int32_t            night_light_temperature; /* 1500..6500 K (default 4000 K) */
-    double             sdr_white_nits;          /* 0 = default (203 cd/m^2), or 80..1000 */
-    bool               tonemap;                 /* default true */
-    double             tonemap_peak_nits;       /* 0 = default/off, or 100..10000 cd/m^2 */
-    CompFxShadowConfig shadow;
-    CompFxDimConfig    dim;
-    CompFxGlassConfig  glass;
+    bool                  enabled;
+    CompFxOpenPreset      open_preset;
+    int32_t               open_duration_ms;
+    CompFxTransitionCurve open_curve;
+    CompFxClosePreset     close_preset;
+    int32_t               close_duration_ms;
+    CompFxTransitionCurve close_curve;
+    CompFxResizePreset    resize_preset;
+    int32_t               resize_duration_ms;
+} CompFxTransitionsConfig;
+
+bool        comp_fx_curve_from_str(const char *s, CompFxTransitionCurve *out);
+const char *comp_fx_curve_to_str(CompFxTransitionCurve curve);
+bool        comp_fx_open_preset_from_str(const char *s, CompFxOpenPreset *out);
+const char *comp_fx_open_preset_to_str(CompFxOpenPreset preset);
+bool        comp_fx_close_preset_from_str(const char *s, CompFxClosePreset *out);
+const char *comp_fx_close_preset_to_str(CompFxClosePreset preset);
+bool        comp_fx_resize_preset_from_str(const char *s, CompFxResizePreset *out);
+const char *comp_fx_resize_preset_to_str(CompFxResizePreset preset);
+double      comp_fx_transition_eval_curve(CompFxTransitionCurve curve, double t);
+
+typedef struct {
+    bool                    enabled;
+    bool                    dither;
+    CompFxColorFilter       color_filter;            /* default COMP_FX_FILTER_NONE */
+    double                  color_filter_strength;   /* 0..1 (default 1.0) */
+    int32_t                 night_light_temperature; /* 1500..6500 K (default 4000 K) */
+    double                  sdr_white_nits;          /* 0 = default (203 cd/m^2), or 80..1000 */
+    bool                    tonemap;                 /* default true */
+    double                  tonemap_peak_nits;       /* 0 = default/off, or 100..10000 cd/m^2 */
+    CompFxShadowConfig      shadow;
+    CompFxDimConfig         dim;
+    CompFxGlassConfig       glass;
+    CompFxTransitionsConfig transitions;
 } CompFxConfig;
 
 /* Common 32-byte header shared by all Kajo effect shaders (std140, 16-byte aligned).
@@ -136,6 +200,18 @@ typedef struct {
     float              saturation;      /* offset 88 */
     float              brightness;      /* offset 92 */
 } CompFxGlassParams;
+
+/* Window transition fragment shader UBO (std140, 64 bytes <= 256).
+ * Matches src/comp/fx/shaders/transition_single.frag and transition_resize.frag Params. */
+typedef struct {
+    CompFxCommonParams common;         /* offset 0 */
+    float              progress;       /* offset 32: linear progress 0..1 */
+    float              eased_progress; /* offset 36: eased progress 0..1 */
+    uint32_t           preset;         /* offset 40: preset enum id */
+    uint32_t           kind;           /* offset 44: 0=open, 1=close, 2=resize */
+    float              prev_size[2];   /* offset 48: previous logical size */
+    float              curr_size[2];   /* offset 56: current logical size */
+} CompFxTransitionParams;
 
 void comp_fx_config_defaults(CompFxConfig *cfg);
 
@@ -216,6 +292,16 @@ void comp_fx_glass_pack(const CompFxGlassConfig *cfg,
                         int downscale,
                         float opacity, float scale,
                         CompFxGlassParams *out);
+
+void comp_fx_transition_pack(CompFxRect dst_box,
+                             CompFxTransitionKind kind,
+                             uint32_t preset,
+                             double progress,
+                             double eased_progress,
+                             float prev_w, float prev_h,
+                             float curr_w, float curr_h,
+                             float scale,
+                             CompFxTransitionParams *out);
 
 /* Builds a critically damped CompSpringParams for focus opacity transitions.
  * Returns false when animation should snap immediately (duration_ms <= 0 or slowdown <= 0). */

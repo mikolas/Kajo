@@ -932,6 +932,8 @@ if comp_have_kfx == 'true'
     ['blur_down.frag', 'blur_down_frag.h', 'blur_down_frag_spv'],
     ['blur_up.frag', 'blur_up_frag.h', 'blur_up_frag_spv'],
     ['glass.frag', 'glass_frag.h', 'glass_frag_spv'],
+    ['transition_single.frag', 'transition_single_frag.h', 'transition_single_frag_spv'],
+    ['transition_resize.frag', 'transition_resize_frag.h', 'transition_resize_frag_spv'],
   ]
   foreach spec : comp_fx_shader_specs
     comp_fx_shader_headers += custom_target(
@@ -951,6 +953,7 @@ if comp_have_kfx == 'true'
     'src/comp/fx/fx_shadow.c',
     'src/comp/fx/fx_dim.c',
     'src/comp/fx/fx_glass.c',
+    'src/comp/fx/fx_transition.c',
   )
 else
   comp_fx_sources = files('src/comp/fx/fx_stub.c')

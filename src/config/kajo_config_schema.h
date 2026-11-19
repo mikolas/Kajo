@@ -152,13 +152,30 @@ gboolean kajo_config_comp_save_layout_and_layers(const char        *config_dir,
                                                  GError           **error);
 
 typedef struct {
+    int      border_px;
     gboolean glass_enabled;
+    int      glass_passes;
+    double   glass_offset;
+    int      glass_brightness_pct;
+    int      glass_saturation_pct;
+    char     glass_tint[16];
+    int      glass_tint_alpha_pct;
     gboolean shadow_enabled;
+    int      shadow_strength_pct;
+    int      shadow_unfocused_scale_pct;
     gboolean dim_enabled;
+    int      dim_opacity_pct;
     gboolean dither_enabled;
     char     color_filter[32];
     int      color_filter_strength_pct;
     int      night_light_temperature;
+    char     open_preset[32];
+    int      open_duration_ms;
+    char     open_curve[32];
+    char     close_preset[32];
+    int      close_duration_ms;
+    char     close_curve[32];
+    char     resize_preset[32];
 } KajoCompEffectsCfg;
 
 gboolean kajo_config_comp_read_effects(const char         *config_dir,
@@ -173,6 +190,10 @@ gboolean kajo_config_comp_save_effects(const char               *config_dir,
                                        const gboolean           *ns_xray,
                                        size_t                    n_ns,
                                        GError                  **error);
+
+gboolean kajo_config_comp_save_inactive_border_color(const char *config_dir,
+                                                     const char *hex_color,
+                                                     GError    **error);
 
 gboolean kajo_config_comp_save_output_rule(const char *config_dir,
                                            const char *out_name,

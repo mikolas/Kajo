@@ -277,7 +277,7 @@ build_page_about(void)
         "SHELL", "accent"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "⚙", "kajo-settings — System & Suite Configurator (org.kajo.Settings)",
-        "12-page scalable Niri column UI with live D-Bus, PipeWire, TOML config & GLSL shaders",
+        "12-page scalable compositor column UI with live D-Bus, PipeWire, TOML config & effects",
         "SETTINGS", "success"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🮖", "kajo-ide — Selection-First Modal Code Editor (org.kajo.IDE)",
@@ -297,7 +297,7 @@ build_page_about(void)
         "MOD", NULL));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🔑", "kajo-greeter — Native Wayland Login Greeter (org.kajo.greeter)",
-        "greetd IPC Wayland session greeter with PAM --test mode & multi-monitor Niri/Cage support",
+        "greetd IPC Wayland session greeter with PAM --test mode & multi-monitor Wayland support",
         "GREETER", NULL));
 
     settings_bento_add_full(GTK_WIDGET(self), card_suite);

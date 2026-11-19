@@ -97,12 +97,15 @@ struct CompFxSystem {
     CompFxBlankBuffer       *blank_buf;
     struct wl_list           surfaces;      /* CompFxSurface.link */
     struct wl_list           output_tracks; /* CompFxOutputTrack.link */
+    struct wl_list           transitions;   /* CompFxTransition.link */
 
     struct wlr_kfx_shader   *shadow_shader;
     struct wlr_kfx_shader   *dim_shader;
     struct wlr_kfx_shader   *blur_down_shader;
     struct wlr_kfx_shader   *blur_up_shader;
     struct wlr_kfx_shader   *glass_shader;
+    struct wlr_kfx_shader   *transition_single_shader;
+    struct wlr_kfx_shader   *transition_resize_shader;
 
     struct wlr_color_transform *color_transform;
     float                       color_matrix[9];
@@ -157,6 +160,11 @@ void fx_glass_surface_clear_targets(CompFxSurface *fx);
 void fx_glass_system_invalidate_all(CompFxSystem *sys);
 bool fx_glass_prepare_output(CompFxSystem *sys, struct CompOutput *output,
                              CompFxOutputTrack *track, double now_s);
+
+bool fx_transition_init_shaders(CompFxSystem *sys);
+void fx_transition_destroy_shaders(CompFxSystem *sys);
+void fx_transition_cancel_all(CompFxSystem *sys);
+bool fx_transition_prepare_output(CompFxSystem *sys, double now_s);
 
 #endif /* WLR_HAS_KFX */
 

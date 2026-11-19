@@ -1694,6 +1694,149 @@ test_m4_output_stage_and_color_filters(void)
     comp_config_free(cfg);
 }
 
+static void
+test_m5_window_transitions(void)
+{
+    setenv("WLR_BACKENDS", "headless", 1);
+    setenv("WLR_RENDERER", "vulkan", 1);
+
+    struct wl_display *dpy = wl_display_create();
+    g_assert_nonnull(dpy);
+    struct wl_event_loop *loop = wl_display_get_event_loop(dpy);
+    struct wlr_backend *backend = wlr_headless_backend_create(loop);
+    g_assert_nonnull(backend);
+    struct wlr_renderer *renderer = wlr_renderer_autocreate(backend);
+    g_assert_nonnull(renderer);
+    g_assert_true(wlr_renderer_is_vk(renderer));
+    struct wlr_allocator *alloc = wlr_allocator_autocreate(backend, renderer);
+    g_assert_nonnull(alloc);
+
+    struct wlr_output *wo = wlr_headless_add_output(backend, 320, 240);
+    g_assert_nonnull(wo);
+    g_assert_true(wlr_output_init_render(wo, alloc, renderer));
+    struct wlr_output_state ost;
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_enabled(&ost, true);
+    g_assert_true(wlr_output_commit_state(wo, &ost));
+    wlr_output_state_finish(&ost);
+
+    struct wlr_scene *scene = wlr_scene_create();
+    g_assert_nonnull(scene);
+    struct wlr_scene_output *so = wlr_scene_output_create(scene, wo);
+    g_assert_nonnull(so);
+
+    CompConfig *cfg = comp_config_new_defaults(COMP_MOD_SUPER);
+    cfg->fx.shadow.enabled = false;
+    cfg->fx.glass.enabled  = false;
+    cfg->fx.transitions.enabled          = true;
+    cfg->fx.transitions.open_preset      = COMP_FX_OPEN_DEFAULT;
+    cfg->fx.transitions.open_duration_ms = 200;
+    cfg->fx.transitions.close_preset     = COMP_FX_CLOSE_CRT_OFF;
+    cfg->fx.transitions.close_duration_ms = 200;
+    cfg->fx.transitions.resize_preset    = COMP_FX_RESIZE_DEFAULT;
+    cfg->fx.transitions.resize_duration_ms = 200;
+
+    CompServer srv = {
+        .display   = dpy,
+        .loop      = loop,
+        .backend   = backend,
+        .renderer  = renderer,
+        .allocator = alloc,
+        .scene     = scene,
+        .config    = cfg,
+    };
+    wl_list_init(&srv.outputs);
+    CompOutput out = {
+        .server       = &srv,
+        .wlr_output   = wo,
+        .scene_output = so,
+    };
+    wl_list_insert(&srv.outputs, &out.link);
+
+    g_assert_true(comp_fx_init(&srv));
+    g_assert_true(comp_fx_is_active(&srv));
+    comp_fx_config_apply(&srv, cfg);
+
+    /* Black background + bright green window rect at (60, 40, 200, 160) */
+    const float bg_col[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    wlr_scene_rect_create(&scene->tree, 320, 240, bg_col);
+
+    struct wlr_scene_tree *win_tree = wlr_scene_tree_create(&scene->tree);
+    wlr_scene_node_set_position(&win_tree->node, 60, 40);
+    const float win_col[4] = { 0.0f, 1.0f, 0.0f, 1.0f };
+    wlr_scene_rect_create(win_tree, 200, 160, win_col);
+
+    /* Start a Close transition snapshot and immediately hide win_tree */
+    struct wlr_box box = { 60, 40, 200, 160 };
+    comp_fx_transition_start_close(&srv, win_tree, &scene->tree, box);
+    wlr_scene_node_set_enabled(&win_tree->node, false);
+
+    /* Advance 0.05s (~25% into 200ms CRT-off close) and render */
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double now_s = (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+    g_assert_true(comp_fx_output_prepare(&out, now_s + 0.05));
+
+    struct wlr_output_state st;
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    uint8_t px_mid[4] = {0};
+    struct wlr_texture *tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_mid, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 160, .y = 120, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+
+    /* Center of the collapsing CRT-off snapshot must be lit (bright green/white beam) */
+    g_assert_cmpint(px_mid[1], >, 100);
+
+    /* Advance past duration (now_s + 1.0s): transition finishes and cleans up cleanly */
+    g_assert_false(comp_fx_output_prepare(&out, now_s + 1.0));
+
+    /* Test Resize transition (2-input shader) */
+    wlr_scene_node_set_enabled(&win_tree->node, true);
+    comp_fx_transition_start_resize(&srv, win_tree, &scene->tree,
+                                    (struct wlr_box){ 60, 40, 200, 160 },
+                                    (struct wlr_box){ 60, 40, 240, 160 });
+    g_assert_true(comp_fx_tree_is_transitioning(&srv, win_tree));
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    now_s = (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+    g_assert_true(comp_fx_output_prepare(&out, now_s + 0.05));
+
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+    uint8_t px_rsz[4] = {0};
+    tex = wlr_texture_from_buffer(renderer, st.buffer);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data = px_rsz, .format = DRM_FORMAT_XRGB8888, .stride = 4,
+        .src_box = { .x = 160, .y = 120, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    wlr_output_state_finish(&st);
+    g_assert_cmpint(px_rsz[1], >, 200);
+
+    /* Finish resize -> win_tree is re-enabled and no longer transitioning */
+    g_assert_false(comp_fx_output_prepare(&out, now_s + 1.0));
+    g_assert_false(comp_fx_tree_is_transitioning(&srv, win_tree));
+    g_assert_true(win_tree->node.enabled);
+
+    comp_fx_finish(&srv);
+    wl_list_remove(&out.link);
+    wlr_scene_node_destroy(&scene->tree.node);
+    wlr_allocator_destroy(alloc);
+    wlr_renderer_destroy(renderer);
+    wlr_backend_destroy(backend);
+    wl_display_destroy(dpy);
+    comp_config_free(cfg);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1704,6 +1847,8 @@ main(int argc, char *argv[])
                     test_m3_review_regressions);
     g_test_add_func("/comp/fx/m4-output-stage-and-color-filters",
                     test_m4_output_stage_and_color_filters);
+    g_test_add_func("/comp/fx/m5-window-transitions",
+                    test_m5_window_transitions);
     g_test_add_func("/comp/fx/pixman-fallback",
                     test_pixman_fallback);
     return g_test_run();

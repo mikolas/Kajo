@@ -1,4 +1,6 @@
 #include "theme.h"
+#include <math.h>
+#include <string.h>
 
 const ShellAccentPreset shell_accent_presets[SHELL_N_ACCENT_PRESETS] = {
     { "cobalt-blue",  "Cobalt Blue",         "#0078d4", "#1084d8" },
@@ -9,6 +11,65 @@ const ShellAccentPreset shell_accent_presets[SHELL_N_ACCENT_PRESETS] = {
     { "crimson",      "Metro Crimson",       "#d13438", "#e04347" },
     { "amber",        "Amber Gold",          "#c19c00", "#d4ab00" },
     { "cyan",         "Cyberpunk Cyan",      "#008272", "#009684" },
+};
+
+const ShellSurfacePreset shell_surface_presets[SHELL_N_SURFACE_PRESETS] = {
+    {
+        .id                     = "aero-charcoal",
+        .name                   = "Aero Charcoal",
+        .glass_tint             = "#121212",
+        .panel_opacity          = 0.58,
+        .glass_opacity          = 0.62,
+        .glass_control_contrast = 1.0,
+        .widget_chip_opacity    = 0.0,
+        .accent_glass_tint      = 0.0,
+        .surface_base           = "#141414",
+        .surface_contrast       = 1.0,
+        .border_opacity         = 1.0,
+        .secondary_fg_contrast  = 1.0,
+    },
+    {
+        .id                     = "oled-pitch",
+        .name                   = "OLED Pitch",
+        .glass_tint             = "#000000",
+        .panel_opacity          = 0.72,
+        .glass_opacity          = 0.78,
+        .glass_control_contrast = 1.20,
+        .widget_chip_opacity    = 0.0,
+        .accent_glass_tint      = 0.0,
+        .surface_base           = "#000000",
+        .surface_contrast       = 1.30,
+        .border_opacity         = 1.0,
+        .secondary_fg_contrast  = 1.05,
+    },
+    {
+        .id                     = "frosted-clear",
+        .name                   = "Frosted Clear",
+        .glass_tint             = "#10141c",
+        .panel_opacity          = 0.38,
+        .glass_opacity          = 0.44,
+        .glass_control_contrast = 1.25,
+        .widget_chip_opacity    = 0.06,
+        .accent_glass_tint      = 0.08,
+        .surface_base           = "#12161e",
+        .surface_contrast       = 1.0,
+        .border_opacity         = 0.85,
+        .secondary_fg_contrast  = 1.15,
+    },
+    {
+        .id                     = "nord-slate",
+        .name                   = "Nord Slate",
+        .glass_tint             = "#1b212c",
+        .panel_opacity          = 0.64,
+        .glass_opacity          = 0.70,
+        .glass_control_contrast = 1.05,
+        .widget_chip_opacity    = 0.04,
+        .accent_glass_tint      = 0.06,
+        .surface_base           = "#1c222d",
+        .surface_contrast       = 1.0,
+        .border_opacity         = 0.95,
+        .secondary_fg_contrast  = 1.05,
+    },
 };
 
 static void
@@ -249,13 +310,193 @@ shell_theme_destroy(ShellTheme *theme)
     g_free(theme);
 }
 
+static gboolean
+parse_hex_rgb(const gchar *hex, int *out_r, int *out_g, int *out_b)
+{
+    if (!hex || hex[0] != '#' || strlen(hex) != 7)
+        return FALSE;
+    unsigned int r = 0, g = 0, b = 0;
+    if (sscanf(hex + 1, "%02x%02x%02x", &r, &g, &b) != 3)
+        return FALSE;
+    *out_r = (int)r;
+    *out_g = (int)g;
+    *out_b = (int)b;
+    return TRUE;
+}
+
+static int
+clamp_u8(int v)
+{
+    if (v < 0)
+        return 0;
+    if (v > 255)
+        return 255;
+    return v;
+}
+
+static gchar *
+sanitize_css_font_family(const gchar *family)
+{
+    if (!family || !*family)
+        return NULL;
+    GString *out = g_string_new(NULL);
+    for (const char *p = family; *p; p++) {
+        unsigned char c = (unsigned char)*p;
+        if (c < 0x20 || c == '"' || c == '\'' || c == '\\' || c == ';' || c == '{' || c == '}')
+            continue;
+        g_string_append_c(out, (char)c);
+    }
+    g_strstrip(out->str);
+    if (out->str[0] == '\0') {
+        g_string_free(out, TRUE);
+        return NULL;
+    }
+    return g_string_free(out, FALSE);
+}
+
+static void
+append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
+                                    const gchar *accent, const gchar *hover)
+{
+    int ar = 0x00, ag = 0x78, ab = 0xd4;
+    parse_hex_rgb(accent, &ar, &ag, &ab);
+
+    int gr = 0x12, gg = 0x12, gb = 0x12;
+    if (cfg && cfg->glass_tint)
+        parse_hex_rgb(cfg->glass_tint, &gr, &gg, &gb);
+
+    int sr = 0x14, sg = 0x14, sb = 0x14;
+    if (cfg && cfg->surface_base)
+        parse_hex_rgb(cfg->surface_base, &sr, &sg, &sb);
+
+    double panel_op   = cfg ? CLAMP(cfg->panel_opacity, 0.0, 1.0)          : 0.58;
+    double glass_op   = cfg ? CLAMP(cfg->glass_opacity, 0.0, 1.0)          : 0.62;
+    double glass_ctrl = cfg ? CLAMP(cfg->glass_control_contrast, 0.0, 2.0) : 1.0;
+    double chip_op    = cfg ? CLAMP(cfg->widget_chip_opacity, 0.0, 0.25)   : 0.0;
+    double acc_tint   = cfg ? CLAMP(cfg->accent_glass_tint, 0.0, 0.25)     : 0.0;
+    double surf_c     = cfg ? CLAMP(cfg->surface_contrast, 0.0, 2.0)       : 1.0;
+    double border_op  = cfg ? CLAMP(cfg->border_opacity, 0.0, 1.0)         : 1.0;
+    double fg_sec_c   = cfg ? CLAMP(cfg->secondary_fg_contrast, 0.5, 1.5)  : 1.0;
+
+    int gr_eff = clamp_u8((int)lround((double)gr * (1.0 - acc_tint) + (double)ar * acc_tint));
+    int gg_eff = clamp_u8((int)lround((double)gg * (1.0 - acc_tint) + (double)ag * acc_tint));
+    int gb_eff = clamp_u8((int)lround((double)gb * (1.0 - acc_tint) + (double)ab * acc_tint));
+
+    double well_a   = CLAMP(0.24  * glass_ctrl, 0.0, 0.65);
+    double hdr_a    = CLAMP(0.035 * glass_ctrl, 0.0, 0.16);
+    double ctrl_a   = CLAMP(0.065 * glass_ctrl, 0.0, 0.26);
+    double hov_a    = CLAMP(0.13  * glass_ctrl, 0.0, 0.36);
+    double gbdr_a   = CLAMP(0.10  * glass_ctrl * border_op, 0.0, 0.35);
+
+    int s0_r = clamp_u8(sr - (int)lround(4.0 * surf_c));
+    int s0_g = clamp_u8(sg - (int)lround(4.0 * surf_c));
+    int s0_b = clamp_u8(sb - (int)lround(4.0 * surf_c));
+    int s2_r = clamp_u8(sr + (int)lround(2.0 * surf_c));
+    int s2_g = clamp_u8(sg + (int)lround(2.0 * surf_c));
+    int s2_b = clamp_u8(sb + (int)lround(2.0 * surf_c));
+    int s3_r = clamp_u8(sr + (int)lround(4.0 * surf_c));
+    int s3_g = clamp_u8(sg + (int)lround(4.0 * surf_c));
+    int s3_b = clamp_u8(sb + (int)lround(4.0 * surf_c));
+    int s4_r = clamp_u8(sr + (int)lround(6.0 * surf_c));
+    int s4_g = clamp_u8(sg + (int)lround(6.0 * surf_c));
+    int s4_b = clamp_u8(sb + (int)lround(6.0 * surf_c));
+    int sh_r = clamp_u8(sr + (int)lround(14.0 * surf_c));
+    int sh_g = clamp_u8(sg + (int)lround(14.0 * surf_c));
+    int sh_b = clamp_u8(sb + (int)lround(14.0 * surf_c));
+    int bd_r = clamp_u8(sr + (int)lround(23.0 * surf_c));
+    int bd_g = clamp_u8(sg + (int)lround(23.0 * surf_c));
+    int bd_b = clamp_u8(sb + (int)lround(23.0 * surf_c));
+
+    /* Auto-boost secondary text slightly when glass is very sheer (< 0.50). */
+    double sheer_boost = (glass_op < 0.50) ? ((0.50 - glass_op) * 48.0) : 0.0;
+    int sec_v = CLAMP((int)lround(160.0 * fg_sec_c + sheer_boost), 96, 235);
+
+    char f_panel[32], f_glass[32], f_well[32], f_hdr[32], f_ctrl[32], f_hov[32], f_gbdr[32], f_bdr[32];
+    g_ascii_formatd(f_panel, sizeof(f_panel), "%.3f", panel_op);
+    g_ascii_formatd(f_glass, sizeof(f_glass), "%.3f", glass_op);
+    g_ascii_formatd(f_well,  sizeof(f_well),  "%.3f", well_a);
+    g_ascii_formatd(f_hdr,   sizeof(f_hdr),   "%.3f", hdr_a);
+    g_ascii_formatd(f_ctrl,  sizeof(f_ctrl),  "%.3f", ctrl_a);
+    g_ascii_formatd(f_hov,   sizeof(f_hov),   "%.3f", hov_a);
+    g_ascii_formatd(f_gbdr,  sizeof(f_gbdr),  "%.3f", gbdr_a);
+    g_ascii_formatd(f_bdr,   sizeof(f_bdr),   "%.3f", border_op);
+
+    g_string_append_printf(css, "@define-color metro-accent %s;\n", accent);
+    g_string_append_printf(css, "@define-color metro-accent-hover %s;\n", hover);
+    g_string_append_printf(css, "@define-color metro-panel-bg rgba(%d, %d, %d, %s);\n", gr_eff, gg_eff, gb_eff, f_panel);
+    g_string_append_printf(css, "@define-color metro-glass-bg rgba(%d, %d, %d, %s);\n", gr_eff, gg_eff, gb_eff, f_glass);
+    g_string_append_printf(css, "@define-color metro-glass-well rgba(0, 0, 0, %s);\n", f_well);
+    g_string_append_printf(css, "@define-color metro-glass-header rgba(255, 255, 255, %s);\n", f_hdr);
+    g_string_append_printf(css, "@define-color metro-glass-control rgba(255, 255, 255, %s);\n", f_ctrl);
+    g_string_append_printf(css, "@define-color metro-glass-hover rgba(255, 255, 255, %s);\n", f_hov);
+    g_string_append_printf(css, "@define-color metro-glass-border rgba(255, 255, 255, %s);\n", f_gbdr);
+    g_string_append_printf(css, "@define-color metro-surface-0 #%02x%02x%02x;\n", s0_r, s0_g, s0_b);
+    g_string_append_printf(css, "@define-color metro-surface-bg #%02x%02x%02x;\n", sr, sg, sb);
+    g_string_append_printf(css, "@define-color metro-surface-2 #%02x%02x%02x;\n", s2_r, s2_g, s2_b);
+    g_string_append_printf(css, "@define-color metro-surface-3 #%02x%02x%02x;\n", s3_r, s3_g, s3_b);
+    g_string_append_printf(css, "@define-color metro-surface-4 #%02x%02x%02x;\n", s4_r, s4_g, s4_b);
+    g_string_append_printf(css, "@define-color metro-surface-hover #%02x%02x%02x;\n", sh_r, sh_g, sh_b);
+    if (border_op >= 0.995) {
+        g_string_append_printf(css, "@define-color metro-border #%02x%02x%02x;\n", bd_r, bd_g, bd_b);
+    } else {
+        g_string_append_printf(css, "@define-color metro-border rgba(%d, %d, %d, %s);\n", bd_r, bd_g, bd_b, f_bdr);
+    }
+    g_string_append_printf(css, "@define-color metro-fg-secondary #%02x%02x%02x;\n\n", sec_v, sec_v, sec_v);
+
+    g_autofree gchar *safe_font = cfg ? sanitize_css_font_family(cfg->ui_font_family) : NULL;
+    if (safe_font && g_ascii_strcasecmp(safe_font, "Fira Code") != 0) {
+        g_string_append_printf(css,
+            "* {\n"
+            "    font-family: \"%s\", \"Fira Code\", \"FiraCode Nerd Font\", monospace;\n"
+            "}\n\n",
+            safe_font);
+    }
+
+    if (chip_op > 0.001) {
+        char f_chip[32];
+        g_ascii_formatd(f_chip, sizeof(f_chip), "%.3f", chip_op);
+        g_string_append_printf(css,
+            "#panel-container .shell-widget > button,\n"
+            "#panel-container menubutton.shell-widget > button {\n"
+            "    background-color: rgba(255, 255, 255, %s);\n"
+            "}\n\n",
+            f_chip);
+    }
+}
+
+gchar *
+shell_theme_build_token_css(const KajoThemeCfg *config,
+                            const gchar        *accent_hex,
+                            const gchar        *hover_hex)
+{
+    const gchar *accent = (accent_hex && accent_hex[0] != '\0') ? accent_hex : "#0078d4";
+    const gchar *hover  = (hover_hex && hover_hex[0] != '\0') ? hover_hex : accent;
+    GString *css = g_string_new(NULL);
+    append_override_css_tokens_from_cfg(css, config, accent, hover);
+    return g_string_free(css, FALSE);
+}
+
 void
-shell_theme_write_override_css(const gchar *accent_hex,
-                               const gchar *hover_hex,
-                               gint         body_px,
-                               gint         heading_px,
-                               gint         subtitle_px,
-                               gint         badge_px)
+shell_theme_compute_border_hex(const KajoThemeCfg *config, gchar out_hex[8])
+{
+    int sr = 0x14, sg = 0x14, sb = 0x14;
+    if (config && config->surface_base)
+        parse_hex_rgb(config->surface_base, &sr, &sg, &sb);
+    double surf_c = config ? CLAMP(config->surface_contrast, 0.0, 2.0) : 1.0;
+    int bd_r = clamp_u8(sr + (int)lround(23.0 * surf_c));
+    int bd_g = clamp_u8(sg + (int)lround(23.0 * surf_c));
+    int bd_b = clamp_u8(sb + (int)lround(23.0 * surf_c));
+    g_snprintf(out_hex, 8, "#%02x%02x%02x", bd_r, bd_g, bd_b);
+}
+
+static void
+shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
+                                        const gchar        *accent_hex,
+                                        const gchar        *hover_hex,
+                                        gint                body_px,
+                                        gint                heading_px,
+                                        gint                subtitle_px,
+                                        gint                badge_px)
 {
     const gchar *accent = (accent_hex && accent_hex[0] != '\0') ? accent_hex : "#0078d4";
     const gchar *hover  = (hover_hex && hover_hex[0] != '\0') ? hover_hex : accent;
@@ -269,9 +510,8 @@ shell_theme_write_override_css(const gchar *accent_hex,
     if (!theme_css_path)
         return;
 
-    GString *css = g_string_new("/* Auto-generated accent & typography override by kajo */\n");
-    g_string_append_printf(css, "@define-color metro-accent %s;\n", accent);
-    g_string_append_printf(css, "@define-color metro-accent-hover %s;\n\n", hover);
+    GString *css = g_string_new("/* Auto-generated accent, surface & typography override by kajo */\n");
+    append_override_css_tokens_from_cfg(css, cfg, accent, hover);
 
     /* 1. Primary Body, Controls & Row Titles */
     g_string_append_printf(css,
@@ -370,6 +610,19 @@ shell_theme_write_override_css(const gchar *accent_hex,
     g_string_free(css, TRUE);
 }
 
+void
+shell_theme_write_override_css(const gchar *accent_hex,
+                               const gchar *hover_hex,
+                               gint         body_px,
+                               gint         heading_px,
+                               gint         subtitle_px,
+                               gint         badge_px)
+{
+    g_autoptr(KajoThemeCfgRef) cur = kajo_config_store_acquire_theme(NULL);
+    shell_theme_write_override_css_internal(cur, accent_hex, hover_hex,
+                                            body_px, heading_px, subtitle_px, badge_px);
+}
+
 gchar *
 shell_ide_font_stack(const gchar *family)
 {
@@ -405,10 +658,11 @@ shell_theme_sync_from_theme_cfg(const KajoThemeCfg *config)
         }
     }
 
-    shell_theme_write_override_css(accent,
-                                   hover,
-                                   config->ui_font_size_px,
-                                   config->font_heading_size_px,
-                                   config->font_subtitle_size_px,
-                                   config->font_badge_size_px);
+    shell_theme_write_override_css_internal(config,
+                                            accent,
+                                            hover,
+                                            config->ui_font_size_px,
+                                            config->font_heading_size_px,
+                                            config->font_subtitle_size_px,
+                                            config->font_badge_size_px);
 }

@@ -554,9 +554,32 @@ comp_window_tick_frame(CompServer *s, double now_s)
         int32_t rw = g->fullscreen ? clamp_i32(full_vw, 1, 32767) : clamp_i32(g->rect.w, 1, 32767);
         int32_t rh = g->fullscreen ? clamp_i32(full_vh, 1, 32767) : clamp_i32(g->rect.h, 1, 32767);
 
-        wlr_scene_node_set_enabled(&win->scene_tree->node, true);
+        bool was_first_layout = !win->has_last_g;
+        struct wlr_box prev_box = {
+            .x      = win->scene_tree->node.x,
+            .y      = win->scene_tree->node.y,
+            .width  = win->last_rw,
+            .height = win->last_rh,
+        };
+        struct wlr_box curr_box = { .x = rx, .y = ry, .width = rw, .height = rh };
+
         wlr_scene_node_set_position(&win->scene_tree->node, rx, ry);
         update_window_borders(win, rw, rh, g);
+
+        if (was_first_layout && rw > 0 && rh > 0 && win->scene_tree->node.parent) {
+            comp_fx_transition_start_open(s, win->scene_tree,
+                                          win->scene_tree->node.parent, curr_box);
+        } else if (!was_first_layout && !g->resizing &&
+                   prev_box.width > 0 && prev_box.height > 0 &&
+                   (abs(rw - prev_box.width) >= 4 || abs(rh - prev_box.height) >= 4) &&
+                   win->scene_tree->node.parent) {
+            comp_fx_transition_start_resize(s, win->scene_tree,
+                                            win->scene_tree->node.parent,
+                                            prev_box, curr_box);
+        }
+
+        bool transitioning = comp_fx_tree_is_transitioning(s, win->scene_tree);
+        wlr_scene_node_set_enabled(&win->scene_tree->node, !transitioning);
     }
 
     wl_list_for_each(w, &s->windows, link) {
@@ -1313,6 +1336,16 @@ window_destructor(CompWindow *w)
     CompServer *s = w->server;
     destroy_foreign_handles(w);
     if (w->mapped) {
+        if (w->has_last_g && w->scene_tree && w->scene_tree->node.parent) {
+            struct wlr_box close_box = {
+                .x      = w->scene_tree->node.x,
+                .y      = w->scene_tree->node.y,
+                .width  = w->last_rw,
+                .height = w->last_rh,
+            };
+            comp_fx_transition_start_close(s, w->scene_tree,
+                                           w->scene_tree->node.parent, close_box);
+        }
         CompWinId old_id = w->id;
         if (s->grab_win == w->id)
             comp_window_end_grab(s);
@@ -1633,6 +1666,17 @@ handle_toplevel_unmap(void *owner, void *data)
 
     if (!w->mapped)
         return;
+
+    if (w->has_last_g && w->scene_tree && w->scene_tree->node.parent) {
+        struct wlr_box close_box = {
+            .x      = w->scene_tree->node.x,
+            .y      = w->scene_tree->node.y,
+            .width  = w->last_rw,
+            .height = w->last_rh,
+        };
+        comp_fx_transition_start_close(s, w->scene_tree,
+                                       w->scene_tree->node.parent, close_box);
+    }
 
     if (s->grab_win == w->id)
         comp_window_end_grab(s);

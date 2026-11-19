@@ -21,6 +21,24 @@ typedef struct {
 #define SHELL_N_ACCENT_PRESETS 8
 extern const ShellAccentPreset shell_accent_presets[SHELL_N_ACCENT_PRESETS];
 
+typedef struct {
+    const char *id;
+    const char *name;
+    const char *glass_tint;
+    gdouble     panel_opacity;
+    gdouble     glass_opacity;
+    gdouble     glass_control_contrast;
+    gdouble     widget_chip_opacity;
+    gdouble     accent_glass_tint;
+    const char *surface_base;
+    gdouble     surface_contrast;
+    gdouble     border_opacity;
+    gdouble     secondary_fg_contrast;
+} ShellSurfacePreset;
+
+#define SHELL_N_SURFACE_PRESETS 4
+extern const ShellSurfacePreset shell_surface_presets[SHELL_N_SURFACE_PRESETS];
+
 struct _ShellTheme {
     GtkCssProvider *provider;
     GFileMonitor   *monitor;
@@ -42,6 +60,10 @@ void        shell_theme_write_override_css(const gchar *accent_hex,
                                            gint         subtitle_px,
                                            gint         badge_px);
 void        shell_theme_sync_from_theme_cfg(const KajoThemeCfg *config);
+gchar      *shell_theme_build_token_css(const KajoThemeCfg *config,
+                                        const gchar        *accent_hex,
+                                        const gchar        *hover_hex);
+void        shell_theme_compute_border_hex(const KajoThemeCfg *config, gchar out_hex[8]);
 
 /* Pango font-family list for the kajo-ide editor font: the user's choice first,
  * then the same fallbacks the generated CSS uses ("Fira Code", "FiraCode Nerd

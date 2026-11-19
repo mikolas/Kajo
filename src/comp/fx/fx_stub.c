@@ -83,6 +83,53 @@ comp_fx_surface_get_glass_recomputes(const CompFxSurface *fx)
     return 0;
 }
 
+void
+comp_fx_transition_start_open(struct CompServer *server,
+                              struct wlr_scene_tree *win_tree,
+                              struct wlr_scene_tree *parent_tree,
+                              struct wlr_box outer_box)
+{
+    (void)server;
+    (void)win_tree;
+    (void)parent_tree;
+    (void)outer_box;
+}
+
+void
+comp_fx_transition_start_close(struct CompServer *server,
+                               struct wlr_scene_tree *win_tree,
+                               struct wlr_scene_tree *parent_tree,
+                               struct wlr_box outer_box)
+{
+    (void)server;
+    (void)win_tree;
+    (void)parent_tree;
+    (void)outer_box;
+}
+
+void
+comp_fx_transition_start_resize(struct CompServer *server,
+                                struct wlr_scene_tree *win_tree,
+                                struct wlr_scene_tree *parent_tree,
+                                struct wlr_box prev_box,
+                                struct wlr_box curr_box)
+{
+    (void)server;
+    (void)win_tree;
+    (void)parent_tree;
+    (void)prev_box;
+    (void)curr_box;
+}
+
+bool
+comp_fx_tree_is_transitioning(const struct CompServer *server,
+                              const struct wlr_scene_tree *win_tree)
+{
+    (void)server;
+    (void)win_tree;
+    return false;
+}
+
 bool
 comp_fx_is_active(const struct CompServer *server)
 {
