@@ -125,12 +125,38 @@ void
 comp_fx_transition_update_live(struct CompServer *server,
                                struct wlr_scene_tree *win_tree,
                                struct wlr_box live_box,
+                               int capture_w, int capture_h,
                                bool recapture_curr)
 {
     (void)server;
     (void)win_tree;
     (void)live_box;
+    (void)capture_w;
+    (void)capture_h;
     (void)recapture_curr;
+}
+
+bool
+comp_fx_transition_sync_resize(struct CompServer *server,
+                               struct wlr_scene_tree *win_tree,
+                               struct wlr_box live_box,
+                               double progress,
+                               bool done)
+{
+    (void)server;
+    (void)win_tree;
+    (void)live_box;
+    (void)progress;
+    (void)done;
+    return false;
+}
+
+void
+comp_fx_transition_cancel_tree(struct CompServer *server,
+                               const struct wlr_scene_tree *win_tree)
+{
+    (void)server;
+    (void)win_tree;
 }
 
 bool

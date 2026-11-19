@@ -92,7 +92,16 @@ typedef struct CompWindow {
 
     bool                                    mapped;
     bool                                    tick_seen;
+    bool                                    pending_open_transition;
     bool                                    was_resizing;
+    bool                                    was_fullscreen;
+    bool                                    was_floating;
+    int32_t                                 last_outer_w;
+    int32_t                                 last_outer_h;
+    int32_t                                 resize_start_w;
+    int32_t                                 resize_start_h;
+    int32_t                                 resize_target_w;
+    int32_t                                 resize_target_h;
     bool                                    is_floating;
     bool                                    is_fullscreen;
     bool                                    is_urgent;
@@ -362,6 +371,9 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         cur_y += seg_h + 2;
     }
 
+    w->last_outer_w = outer_w;
+    w->last_outer_h = outer_h;
+
     if (w->fx) {
         CompFxSurfaceState fx_st = {
             .outer_box       = { 0, 0, outer_w, outer_h },
@@ -555,23 +567,32 @@ comp_window_tick_frame(CompServer *s, double now_s)
         int32_t rw = g->fullscreen ? clamp_i32(full_vw, 1, 32767) : clamp_i32(g->rect.w, 1, 32767);
         int32_t rh = g->fullscreen ? clamp_i32(full_vh, 1, 32767) : clamp_i32(g->rect.h, 1, 32767);
 
-        bool was_first_layout = !win->has_last_g;
+        int32_t prev_ow = (win->last_outer_w > 0) ? win->last_outer_w : win->last_rw;
+        int32_t prev_oh = (win->last_outer_h > 0) ? win->last_outer_h : win->last_rh;
         struct wlr_box prev_box = {
             .x      = win->scene_tree->node.x,
             .y      = win->scene_tree->node.y,
-            .width  = win->last_rw,
-            .height = win->last_rh,
+            .width  = prev_ow,
+            .height = prev_oh,
         };
         struct wlr_box curr_box = { .x = rx, .y = ry, .width = rw, .height = rh };
 
-        bool start_resize = !was_first_layout &&
-                            prev_box.width > 0 && prev_box.height > 0 &&
-                            win->scene_tree->node.parent &&
-                            ((!win->was_resizing && g->resizing) ||
-                             (!g->resizing && (abs(rw - prev_box.width) >= 4 || abs(rh - prev_box.height) >= 4)));
-        win->was_resizing = g->resizing;
+        bool already_trans = comp_fx_tree_is_transitioning(s, win->scene_tree);
+        bool same_layer    = !g->fullscreen && !win->was_fullscreen && (g->floating == win->was_floating);
+        bool start_resize  = !win->pending_open_transition &&
+                             !already_trans &&
+                             win->has_last_g &&
+                             same_layer &&
+                             !win->was_resizing && g->resizing &&
+                             prev_box.width > 0 && prev_box.height > 0 &&
+                             win->scene_tree->node.parent != NULL;
 
         if (start_resize) {
+            int32_t b = (g->fullscreen || win->maximized_to_edges) ? 0 : server_border_px(s);
+            win->resize_start_w  = prev_box.width;
+            win->resize_start_h  = prev_box.height;
+            win->resize_target_w = (win->cfg_w > 0) ? (win->cfg_w + 2 * b) : rw;
+            win->resize_target_h = (win->cfg_h > 0) ? (win->cfg_h + 2 * b) : rh;
             /* Capture pre-resize snapshot BEFORE updating borders/clip to the new size. */
             comp_fx_transition_start_resize(s, win->scene_tree,
                                             win->scene_tree->node.parent,
@@ -581,20 +602,63 @@ comp_window_tick_frame(CompServer *s, double now_s)
         wlr_scene_node_set_position(&win->scene_tree->node, rx, ry);
         update_window_borders(win, rw, rh, g);
 
-        if (was_first_layout && rw > 0 && rh > 0 && win->scene_tree->node.parent) {
-            comp_fx_transition_start_open(s, win->scene_tree,
-                                          win->scene_tree->node.parent, curr_box);
+        struct wlr_box live_box = {
+            .x      = rx,
+            .y      = ry,
+            .width  = (win->last_outer_w > 0) ? win->last_outer_w : rw,
+            .height = (win->last_outer_h > 0) ? win->last_outer_h : rh,
+        };
+
+        if (win->pending_open_transition) {
+            win->pending_open_transition = false;
+            if (live_box.width > 0 && live_box.height > 0 && win->scene_tree->node.parent) {
+                comp_fx_transition_start_open(s, win->scene_tree,
+                                              win->scene_tree->node.parent, live_box);
+            }
         }
 
         bool transitioning = comp_fx_tree_is_transitioning(s, win->scene_tree);
-        if (transitioning)
-            comp_fx_transition_update_live(s, win->scene_tree, curr_box, start_resize);
+        if (transitioning) {
+            bool synced_resize = false;
+            if (win->was_resizing || start_resize) {
+                double dw = fabs((double)win->resize_target_w - (double)win->resize_start_w);
+                double dh = fabs((double)win->resize_target_h - (double)win->resize_start_h);
+                double prog = 1.0;
+                if (g->resizing) {
+                    if (dw >= dh && dw > 1.0)
+                        prog = fabs((double)rw - (double)win->resize_start_w) / dw;
+                    else if (dh > 1.0)
+                        prog = fabs((double)rh - (double)win->resize_start_h) / dh;
+                    else
+                        prog = 0.0;
+                }
+                synced_resize = comp_fx_transition_sync_resize(
+                    s, win->scene_tree, live_box, prog, !g->resizing);
+                if (synced_resize && !g->resizing)
+                    transitioning = false;
+            }
+            if (!synced_resize) {
+                comp_fx_transition_update_live(s, win->scene_tree, live_box,
+                                               live_box.width, live_box.height, false);
+            }
+        }
+
+        win->was_resizing   = g->resizing;
+        win->was_fullscreen = g->fullscreen;
+        win->was_floating   = g->floating;
         wlr_scene_node_set_enabled(&win->scene_tree->node, !transitioning);
     }
 
     wl_list_for_each(w, &s->windows, link) {
-        if (!w->tick_seen && w->scene_tree)
-            wlr_scene_node_set_enabled(&w->scene_tree->node, false);
+        if (!w->tick_seen) {
+            /* Do not play a deferred Open animation later if a window mapped off-screen,
+             * and cancel any in-flight transition so its anchor never bleeds across workspaces. */
+            w->pending_open_transition = false;
+            if (w->scene_tree) {
+                comp_fx_transition_cancel_tree(s, w->scene_tree);
+                wlr_scene_node_set_enabled(&w->scene_tree->node, false);
+            }
+        }
     }
 }
 
@@ -640,8 +704,10 @@ comp_window_relayout(CompServer *s)
         else if (g->floating)
             target_parent = s->tree_floating;
 
-        if (w->scene_tree && w->scene_tree->node.parent != target_parent)
+        if (w->scene_tree && w->scene_tree->node.parent != target_parent) {
+            comp_fx_transition_cancel_tree(s, w->scene_tree);
             wlr_scene_node_reparent(&w->scene_tree->node, target_parent);
+        }
 
         int32_t rx = g->fullscreen ? 0 : clamp_i32(g->rect.x + work.x, -32768, 32767);
         int32_t ry = g->fullscreen ? 0 : clamp_i32(g->rect.y + work.y, -32768, 32767);
@@ -1350,8 +1416,8 @@ window_destructor(CompWindow *w)
             struct wlr_box close_box = {
                 .x      = w->scene_tree->node.x,
                 .y      = w->scene_tree->node.y,
-                .width  = w->last_rw,
-                .height = w->last_rh,
+                .width  = (w->last_outer_w > 0) ? w->last_outer_w : w->last_rw,
+                .height = (w->last_outer_h > 0) ? w->last_outer_h : w->last_rh,
             };
             comp_fx_transition_start_close(s, w->scene_tree,
                                            w->scene_tree->node.parent, close_box);
@@ -1452,13 +1518,17 @@ handle_toplevel_commit(void *owner, void *data)
         if (w->scene_tree->node.enabled || transitioning)
             update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
         if (transitioning) {
+            int32_t lw = (w->last_outer_w > 0) ? w->last_outer_w : w->last_rw;
+            int32_t lh = (w->last_outer_h > 0) ? w->last_outer_h : w->last_rh;
+            int32_t cap_w = (w->was_resizing && w->resize_target_w > 0) ? w->resize_target_w : lw;
+            int32_t cap_h = (w->was_resizing && w->resize_target_h > 0) ? w->resize_target_h : lh;
             struct wlr_box live_box = {
                 .x      = w->scene_tree->node.x,
                 .y      = w->scene_tree->node.y,
-                .width  = w->last_rw,
-                .height = w->last_rh,
+                .width  = lw,
+                .height = lh,
             };
-            comp_fx_transition_update_live(s, w->scene_tree, live_box, true);
+            comp_fx_transition_update_live(s, w->scene_tree, live_box, cap_w, cap_h, true);
         }
     }
 }
@@ -1618,6 +1688,8 @@ handle_toplevel_map(void *owner, void *data)
     w->id = comp_win_alloc_id(s, w);
     COMP_WARN_RETURN_VOID(w->id != 0);
     w->mapped = true;
+    w->pending_open_transition = true;
+    w->was_resizing = false;
     w->manually_floated = false;
     wl_list_insert(&s->windows, &w->link);
     create_foreign_handles(w);
@@ -1693,12 +1765,18 @@ handle_toplevel_unmap(void *owner, void *data)
         struct wlr_box close_box = {
             .x      = w->scene_tree->node.x,
             .y      = w->scene_tree->node.y,
-            .width  = w->last_rw,
-            .height = w->last_rh,
+            .width  = (w->last_outer_w > 0) ? w->last_outer_w : w->last_rw,
+            .height = (w->last_outer_h > 0) ? w->last_outer_h : w->last_rh,
         };
         comp_fx_transition_start_close(s, w->scene_tree,
                                        w->scene_tree->node.parent, close_box);
     }
+
+    w->has_last_g              = false;
+    w->was_resizing            = false;
+    w->pending_open_transition = false;
+    w->last_outer_w            = 0;
+    w->last_outer_h            = 0;
 
     if (s->grab_win == w->id)
         comp_window_end_grab(s);

@@ -46,6 +46,8 @@ typedef struct {
     int                      t1_px_w;
     int                      t1_px_h;
     bool                     follow_live_box;
+    bool                     driven_by_motion;
+    bool                     motion_done;
 
     struct wlr_scene_tree   *src_tree;      /* live window tree (NULL for close) */
     struct wl_listener       src_tree_destroy;
@@ -562,6 +564,7 @@ static CompFxTransition *
 create_transition(CompFxSystem *sys,
                   struct wlr_scene_tree *parent_tree,
                   struct wlr_scene_tree *src_tree,
+                  struct wlr_scene_node *place_below_node,
                   CompFxTransitionKind kind,
                   uint32_t preset,
                   CompFxTransitionCurve curve,
@@ -625,6 +628,9 @@ create_transition(CompFxSystem *sys,
         wl_signal_add(&src_tree->node.events.destroy, &tr->src_tree_destroy);
         wlr_scene_node_place_above(&tr->anchor->node, &src_tree->node);
         wlr_scene_node_set_enabled(&src_tree->node, false);
+    } else if (place_below_node && place_below_node->parent == parent_tree) {
+        /* Place close snapshot at the closing window's exact Z-order (above bg, below overlays). */
+        wlr_scene_node_place_below(&tr->anchor->node, place_below_node);
     }
 
     if (!wlr_kfx_node_hook_init(&tr->hook, &tr->anchor->node,
@@ -665,7 +671,7 @@ comp_fx_transition_start_open(struct CompServer *server,
     if (!t0)
         return;
 
-    CompFxTransition *tr = create_transition(sys, parent_tree, win_tree, COMP_FX_TRANS_OPEN,
+    CompFxTransition *tr = create_transition(sys, parent_tree, win_tree, NULL, COMP_FX_TRANS_OPEN,
                                              (uint32_t)sys->cfg.transitions.open_preset,
                                              sys->cfg.transitions.open_curve,
                                              sys->cfg.transitions.open_duration_ms,
@@ -704,7 +710,8 @@ comp_fx_transition_start_close(struct CompServer *server,
     if (!t0)
         return;
 
-    CompFxTransition *tr = create_transition(sys, parent_tree, NULL, COMP_FX_TRANS_CLOSE,
+    CompFxTransition *tr = create_transition(sys, parent_tree, NULL, &win_tree->node,
+                                             COMP_FX_TRANS_CLOSE,
                                              (uint32_t)sys->cfg.transitions.close_preset,
                                              sys->cfg.transitions.close_curve,
                                              sys->cfg.transitions.close_duration_ms,
@@ -750,7 +757,7 @@ comp_fx_transition_start_resize(struct CompServer *server,
         return;
     }
 
-    CompFxTransition *tr = create_transition(sys, parent_tree, win_tree, COMP_FX_TRANS_RESIZE,
+    CompFxTransition *tr = create_transition(sys, parent_tree, win_tree, NULL, COMP_FX_TRANS_RESIZE,
                                              (uint32_t)sys->cfg.transitions.resize_preset,
                                              COMP_FX_CURVE_EASE_OUT_CUBIC,
                                              sys->cfg.transitions.resize_duration_ms,
@@ -770,6 +777,7 @@ void
 comp_fx_transition_update_live(struct CompServer *server,
                                struct wlr_scene_tree *win_tree,
                                struct wlr_box live_box,
+                               int capture_w, int capture_h,
                                bool recapture_curr)
 {
     if (!server || !server->fx || !win_tree)
@@ -788,11 +796,13 @@ comp_fx_transition_update_live(struct CompServer *server,
                 tr->follow_live_box = true;
             }
         }
-        if (recapture_curr && live_box.width > 0 && live_box.height > 0) {
+        int cw = (capture_w > 0) ? capture_w : live_box.width;
+        int ch = (capture_h > 0) ? capture_h : live_box.height;
+        if (recapture_curr && cw > 0 && ch > 0) {
             float scale = max_output_scale(server);
             int px_w = 0, px_h = 0;
             struct wlr_kfx_target *fresh = capture_tree_snapshot(
-                sys, win_tree, live_box.width, live_box.height, scale, false, &px_w, &px_h);
+                sys, win_tree, cw, ch, scale, false, &px_w, &px_h);
             if (fresh) {
                 if (tr->kind == COMP_FX_TRANS_OPEN) {
                     if (tr->target0)
@@ -812,6 +822,44 @@ comp_fx_transition_update_live(struct CompServer *server,
             }
         }
     }
+}
+
+bool
+comp_fx_transition_sync_resize(struct CompServer *server,
+                               struct wlr_scene_tree *win_tree,
+                               struct wlr_box live_box,
+                               double progress,
+                               bool done)
+{
+    if (!server || !server->fx || !win_tree)
+        return false;
+    CompFxSystem *sys = server->fx;
+    bool matched = false;
+    CompFxTransition *tr;
+    wl_list_for_each(tr, &sys->transitions, link) {
+        if (tr->src_tree != win_tree || tr->kind != COMP_FX_TRANS_RESIZE)
+            continue;
+        tr->driven_by_motion = true;
+        tr->follow_live_box  = true;
+        if (live_box.width > 0 && live_box.height > 0)
+            tr->curr_box = live_box;
+        if (progress < 0.0) progress = 0.0;
+        if (progress > 1.0) progress = 1.0;
+        tr->progress       = progress;
+        tr->eased_progress = progress;
+        tr->motion_done    = done;
+        matched = true;
+    }
+    return matched;
+}
+
+void
+comp_fx_transition_cancel_tree(struct CompServer *server,
+                               const struct wlr_scene_tree *win_tree)
+{
+    if (!server || !server->fx || !win_tree)
+        return;
+    cancel_transitions_for_tree(server->fx, win_tree);
 }
 
 bool
@@ -844,14 +892,22 @@ fx_transition_prepare_output(CompFxSystem *sys, double now_s)
         double elapsed = now_s - tr->start_s;
         if (elapsed < 0.0)
             elapsed = 0.0;
-        double prog = (tr->duration_s > 0.0) ? (elapsed / tr->duration_s) : 1.0;
-        if (prog >= 1.0) {
-            transition_destroy(tr, true);
-            continue;
-        }
 
-        tr->progress       = prog;
-        tr->eased_progress = comp_fx_transition_eval_curve(tr->curve, prog);
+        if (tr->driven_by_motion) {
+            /* Safety cap (2.0s) in case motion state is unexpectedly interrupted. */
+            if (tr->motion_done || elapsed >= 2.0) {
+                transition_destroy(tr, true);
+                continue;
+            }
+        } else {
+            double prog = (tr->duration_s > 0.0) ? (elapsed / tr->duration_s) : 1.0;
+            if (prog >= 1.0) {
+                transition_destroy(tr, true);
+                continue;
+            }
+            tr->progress       = prog;
+            tr->eased_progress = comp_fx_transition_eval_curve(tr->curve, prog);
+        }
 
         if (tr->src_tree)
             send_frame_done_walk(&tr->src_tree->node, &now_ts);
