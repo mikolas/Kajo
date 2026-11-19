@@ -107,7 +107,7 @@ All Kajo components and standalone applications share a unified design language:
 2. ✅ Milestone 2 (`kajo-0.20.2-fx3`): custom fragment shaders (`X1`), scene leaf hooks (`X4`), two-pass pathway (`X6`), analytic soft shadows and unfocused dimming (`shadow.frag`, `dim.frag`).
 3. ✅ Milestone 3 (`kajo-0.20.2-fx8`): below-node scene render (`X2`), pooled offscreen targets and single-CB target chains (`X3`), damage helpers (`X5`), lazy 16×16 blue-noise output dither (`X6`), dual-filter Kawase frosted backdrop glass (`blur_down.frag`, `blur_up.frag`, `glass.frag`).
 4. ✅ Milestone 4 (`kajo-0.20.2-fx9`): output stage (`X6` adjustable SDR reference white, ITU-R BT.2390 PQ tone mapping, HDR headroom query, HDR matrix folding) and per-pixel linear colour filters (`color_filter`, `color_filter_strength`, `night_light_temperature`) with `kajo-settings` controls.
-5. M5 per [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md): window open / close / resize transitions.
+5. M5 per [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) §12.1: window open / close / resize transitions (`FX_IN_TEXTURE` snapshot nodes + ported `data/shaders/`); live CSS surface/glass token configurability (`theme.toml` → `00-accent.css`: `glass_tint`, `panel_opacity`, `glass_opacity`, `glass_control_contrast`, `widget_chip_opacity`, `accent_glass_tint`, `surface_base`, `surface_contrast`, `border_opacity`, `ui_font_family`, `secondary_fg_contrast`, surface presets); remaining `comp.toml` glass/shadow/dim/border controls in `kajo-settings`; and compositor-agnostic naming in `kajo-settings` (serving both `kajo-comp` and `niri` where applicable).
 
 **Open, not decided:** whether to contribute parts back upstream once they are stable.
 

@@ -488,7 +488,22 @@ Per window/layer: `[[rule]]` / `[[layer_rule]]` `shadow = true|false`.
 | **M2 Foundation + shadows** | X1, X4, X6 pathway guarantee; `WLR_HAS_KFX` / `have_kfx`; compatibility checks V1–V4 for the first time | anchors, `src/comp/fx/` runtime and registry, shader build step, `shadow` and `dim`, rules and `[effects]` config, `-Wundef`, `-Dwlroots=`, headless Vulkan pixel test harness that fails hard (below) | custom shaders inside the scene; acceptance test 2 (§11) |
 | **M3 Glass** | X2 (real render pass, client sync), X3 (pool, effect batch), X5 helpers, X6 dither | `glass`, X5 policy, background glass cache with background serial, popups propagation, per-output targets, shell CSS translucency | acceptance test 1 (§10) |
 | **M4 Output stage** | X6 SDR white and tone map | adjustable SDR white; tone mapping when HDR output lands (ROADMAP §3.7.1); per-pixel colour filters | H7 |
-| **M5 Transitions** | (none expected) | open / close / resize on Kajo's own snapshot nodes, client buffers pre-drawn into targets (H5), ported `data/shaders/` | animated effects without new fork code |
+| **M5 Transitions & style polish** | (none expected) | open / close / resize on Kajo's own snapshot nodes, client buffers pre-drawn into targets (H5), ported `data/shaders/`; live CSS surface/glass token configurability (`theme.toml` → `00-accent.css`), remaining `comp.toml` optical/shadow/dim/border controls, and compositor-agnostic naming in `kajo-settings` | animated effects without new fork code; unified theme/effects polish |
+
+### 12.1 Milestone 5 Scope: Transitions, Style Configurability & Generic Settings
+
+In addition to window open / close / resize snapshot transitions (`FX_IN_TEXTURE`, H5) and porting `data/shaders/{open,close,resize}/*.frag` to `X1` / `fx_common.glsl`, Milestone 5 adds full style & optical configurability across the shell and compositor:
+
+1. **Frosted Glass & Opaque Surface Tokens (`theme.toml` → `style.d/00-accent.css` live hot-reload):**
+   - **Glass surfaces:** `glass_tint` (`#RRGGBB`, default `#121212`), `panel_opacity` (`0.00–1.00`, default `0.58`), `glass_opacity` (`0.00–1.00`, default `0.62`), `glass_control_contrast` (`0.0–2.0`, default `1.0`, scaling `@metro-glass-well`/`-header`/`-control`/`-hover`/`-border` together), `widget_chip_opacity` (`0.00–0.25`, default `0.00`, flush vs subtle chip backing on the bar), and optional `accent_glass_tint` (`0.00–0.25`, default `0.00`, subtle `@metro-accent` tint in glass).
+   - **Opaque app surfaces:** `surface_base` (`#RRGGBB`, default `#141414`), `surface_contrast` (`0.0–2.0`, default `1.0`, deriving `@metro-surface-0/2/3/4`, `@metro-surface-hover`, and `@metro-border`), optional `border_opacity` (`0.00–1.00`, default `1.0`).
+   - **Typography & legibility:** `ui_font_family` (default `"Fira Code"`, wired to `00-accent.css` and `shell_ide_font_stack()`), and `secondary_fg_contrast` (or automatic `@metro-fg-secondary` boost on low `glass_opacity`).
+   - **Curated Surface Presets:** e.g. `Aero Charcoal` (default), `OLED Pitch`, `Frosted Clear`, `Nord Slate` — driving the orthogonal knobs above rather than per-widget pickers.
+   - **CSS background alpha vs. compositor surface opacity:** Prefer CSS background alpha (`panel_opacity`, `glass_opacity`) while keeping compositor `rules.toml` `opacity = 1.0` so text, icons, and 1 px borders stay crisp over frosted glass.
+2. **Compositor Optical & Framing Controls (`comp.toml` → `kajo-settings`):**
+   - Expose already-implemented `[effects.glass]` optical knobs (`passes`/`offset` blur strength, `brightness`, `saturation`, `tint`/`tint_alpha` synced with `glass_tint`), `[effects.dim].opacity`, `[effects.shadow]` strength preset (`Subtle` / `Standard` / `Deep` + `unfocused_scale`), and `[layout].border_px` (`0–4 px`) with `inactive_border_color` synced to `@metro-border`.
+3. **Compositor-Agnostic Settings UI (`kajo-settings`):**
+   - Replace Niri-specific page titles, navigation labels, and subtitles (e.g. `Niri & Shaders`, `Niri layout { ... }`) with generic **Compositor** terminology (`Compositor & Effects`, `Compositor layout`, etc.), while continuing to write both Kajo TOML (`comp.toml`, `rules.toml`) and Niri KDL (`config.d/*.kdl`) where applicable so one generic settings UI serves both `kajo-comp` and `niri`.
 
 **Test harness rule:** pixel tests run on the Vulkan renderer (headless backend). When `KAJO_REQUIRE_VULKAN=1` (set by the effect test suites), failing to start Vulkan is a test failure, not a skip. Today `tests/comp/comp_headless_smoke.sh:316–426` silently skips its Vulkan block when Vulkan does not start; the effect tests must not inherit that.
 
