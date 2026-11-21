@@ -1,0 +1,4079 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAJO IDE — Scrollable-Tiling Code Strip &amp; Dependency Graph Lenses</title>
+  <style>
+    /* ==========================================================================
+       KAJO "AERO + METRO" DESIGN TOKENS (Strict 0px Corner Radius)
+       ========================================================================== */
+    :root {
+      --metro-accent: #0078d4;
+      --metro-accent-hover: #1084df;
+      --metro-accent-rgb: 0, 120, 212;
+      --metro-telemetry: #00d8f0;
+      --metro-telemetry-rgb: 0, 216, 240;
+      --metro-success: #10893e;
+      --metro-warning: #ffb900;
+      --metro-warning-alt: #ff8c00;
+      --metro-urgent: #e81123;
+      --metro-agent: #b4009e;
+      --metro-agent-rgb: 180, 0, 158;
+
+      --surface-0: #0a0a0a;
+      --surface-1: #101010;
+      --surface-2: #141414;
+      --surface-3: #181818;
+      --surface-4: #1e1e1e;
+      --surface-hover: #242424;
+      --surface-active: #2a2a2a;
+
+      --border-subtle: #222222;
+      --border-struct: #2b2b2b;
+      --border-strong: #3a3a3a;
+
+      --text-primary: #ffffff;
+      --text-secondary: #dddddd;
+      --text-muted: #8a8a8a;
+      --text-dim: #606060;
+
+      /* Kajo IDE Syntax Palette (matching docs/ui-gallery.html) */
+      --syn-kw: #569cd6;
+      --syn-ctrl: #c586c0;
+      --syn-fn: #dcdcaa;
+      --syn-type: #4ec9b0;
+      --syn-str: #ce9178;
+      --syn-num: #b5cea8;
+      --syn-mac: #00d8f0;
+      --syn-cmt: #6a9955;
+
+      --font-mono: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
+      --font-sans: 'Inter', 'Cantarell', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+      /* Active lens accent (updated dynamically via JS) */
+      --lens-color: #0078d4;
+      --lens-rgb: 0, 120, 212;
+    }
+
+    * {
+      box-sizing: border-box;
+      border-radius: 0 !important;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #060606;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Custom Aero+Metro Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+      background: var(--surface-1);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #333333;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4a4a4a;
+    }
+
+    /* ==========================================================================
+       OUTER WORKSPACE FRAME (Tiled vs Floating Niri Demo)
+       ========================================================================== */
+    .niri-stage {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      padding: 0;
+      background: radial-gradient(circle at 20% 0%, rgba(0, 120, 212, 0.08), transparent 45%), #060606;
+      transition: padding 140ms ease;
+    }
+    .niri-stage.floating {
+      padding: 18px 26px;
+    }
+
+    .kajo-window {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-1);
+      border: 1px solid var(--metro-accent);
+      overflow: hidden;
+      position: relative;
+    }
+    .niri-stage.floating .kajo-window {
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(0, 120, 212, 0.4);
+    }
+
+    /* ==========================================================================
+       1. TOP FRAMELESS WINDOW HEADER BAR (34px)
+       ========================================================================== */
+    .ide-header-bar {
+      height: 34px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px 0 10px;
+      gap: 8px;
+      user-select: none;
+    }
+
+    .hdr-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .ide-brand {
+      font-family: var(--font-mono);
+      font-weight: 800;
+      font-size: 11.5px;
+      letter-spacing: 1.1px;
+      color: var(--text-primary);
+      padding-right: 8px;
+      border-right: 1px solid var(--border-struct);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ide-brand-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--metro-accent);
+      display: inline-block;
+    }
+
+    .kajo-btn {
+      background: var(--surface-4);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-struct);
+      padding: 3px 8px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      transition: background 90ms ease, border-color 90ms ease, color 90ms ease;
+    }
+    .kajo-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: #ffffff;
+    }
+    .kajo-btn.active {
+      background: rgba(var(--metro-accent-rgb), 0.22);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .kajo-btn.primary {
+      background: var(--metro-accent);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .kajo-btn.primary:hover {
+      background: var(--metro-accent-hover);
+    }
+    .kajo-btn.telemetry-active {
+      background: rgba(var(--metro-telemetry-rgb), 0.18);
+      border-color: var(--metro-telemetry);
+      color: var(--metro-telemetry);
+    }
+    .kajo-btn.warn-active {
+      background: rgba(255, 185, 0, 0.16);
+      border-color: var(--metro-warning);
+      color: var(--metro-warning);
+    }
+    .kajo-btn.close-btn {
+      padding: 3px 9px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .kajo-btn.close-btn:hover {
+      background: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+    .kajo-btn:disabled {
+      opacity: 0.38;
+      cursor: not-allowed;
+    }
+
+    .branch-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      background: rgba(var(--metro-accent-rgb), 0.12);
+      border: 1px solid rgba(var(--metro-accent-rgb), 0.45);
+      color: #79c0ff;
+      letter-spacing: 0.4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .kbd-hint {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--text-muted);
+      background: var(--surface-1);
+      border: 1px solid var(--border-struct);
+      padding: 0 4px;
+    }
+
+    /* ==========================================================================
+       2. STRIP TOOLBAR / TRAIL RAIL (30px)
+       ========================================================================== */
+    .strip-toolbar {
+      min-height: 30px;
+      flex-shrink: 0;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 8px;
+      gap: 8px;
+      user-select: none;
+      flex-wrap: wrap;
+    }
+    .strip-toolbar.hidden {
+      display: none;
+    }
+
+    .trail-rail {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      min-width: 0;
+    }
+    .trail-pill {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      border-top: 2px solid transparent;
+    }
+    .trail-pill:hover {
+      background: var(--surface-4);
+      color: var(--text-secondary);
+    }
+    .trail-pill.active {
+      background: var(--surface-4);
+      color: #ffffff;
+      border-color: var(--border-strong);
+      border-top: 2px solid var(--metro-accent);
+    }
+    .trail-pill .trail-idx {
+      color: var(--metro-telemetry);
+    }
+    .trail-pill.add-trail {
+      color: var(--metro-accent);
+      border-style: dashed;
+    }
+    .trail-pill.add-trail:hover {
+      background: rgba(var(--metro-accent-rgb), 0.14);
+      color: #ffffff;
+      border-style: solid;
+      border-color: var(--metro-accent);
+    }
+
+    /* Segmented Lens Group */
+    .seg-group {
+      display: inline-flex;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-1);
+    }
+    .seg-btn {
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: 0.4px;
+    }
+    .seg-btn:last-child {
+      border-right: none;
+    }
+    .seg-btn:hover {
+      background: var(--surface-4);
+      color: #ffffff;
+    }
+    .seg-dot {
+      width: 6px;
+      height: 6px;
+      display: inline-block;
+    }
+    .seg-btn.active[data-lens="calls"] {
+      background: rgba(0, 120, 212, 0.28);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #0078d4;
+    }
+    .seg-btn.active[data-lens="types"] {
+      background: rgba(0, 216, 240, 0.22);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #00d8f0;
+    }
+    .seg-btn.active[data-lens="impact"] {
+      background: rgba(255, 185, 0, 0.22);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #ffb900;
+    }
+    .seg-btn.active[data-lens="diff"] {
+      background: rgba(180, 0, 158, 0.28);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #b4009e;
+    }
+
+    .col-controls {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .width-btn {
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 6px;
+      cursor: pointer;
+    }
+    .width-btn:last-child { border-right: none; }
+    .width-btn:hover { background: var(--surface-4); color: #fff; }
+    .width-btn.active {
+      background: var(--metro-accent);
+      color: #ffffff;
+    }
+
+    .mini-ctrl-btn {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      color: var(--text-secondary);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 7px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .mini-ctrl-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: #ffffff;
+    }
+    .mini-ctrl-btn.active {
+      background: rgba(var(--metro-accent-rgb), 0.24);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .mini-ctrl-btn.lsp-ok {
+      border-color: rgba(16, 137, 62, 0.7);
+      color: #6ee7a0;
+      background: rgba(16, 137, 62, 0.14);
+    }
+    .mini-ctrl-btn.lsp-fallback {
+      border-color: var(--metro-warning);
+      color: var(--metro-warning);
+      background: rgba(255, 185, 0, 0.14);
+    }
+    .status-pulse {
+      width: 6px;
+      height: 6px;
+      display: inline-block;
+      background: #10b981;
+    }
+    .lsp-fallback .status-pulse {
+      background: var(--metro-warning);
+    }
+
+    /* ==========================================================================
+       3. MAIN WORKSPACE BODY (Optional Tree Sidebar + Strip / Tabs / Overview)
+       ========================================================================== */
+    .workspace-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      position: relative;
+      background: var(--surface-0);
+      overflow: hidden;
+    }
+
+    /* Left Collapsible Project File Tree */
+    .ide-tree-sidebar {
+      width: 215px;
+      flex-shrink: 0;
+      background: var(--surface-2);
+      border-right: 1px solid var(--border-struct);
+      display: flex;
+      flex-direction: column;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      user-select: none;
+    }
+    .ide-tree-sidebar.collapsed {
+      display: none;
+    }
+    .ide-tree-header {
+      padding: 6px 10px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.7px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .ide-tree-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .tree-row {
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-left: 2px solid transparent;
+    }
+    .tree-row:hover {
+      background: var(--surface-4);
+    }
+    .tree-row.active {
+      background: rgba(var(--metro-accent-rgb), 0.18);
+      border-left-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .tree-row.dir {
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+    .git-badge {
+      font-size: 9.5px;
+      font-weight: 800;
+      padding: 0 4px;
+    }
+    .git-badge.M { color: #ffb900; }
+    .git-badge.A { color: #4ec9b0; }
+    .git-badge.AG { color: #e879f9; background: rgba(180, 0, 158, 0.25); }
+
+    /* ==========================================================================
+       4. SCROLLABLE-TILING CODE STRIP VIEWPORT
+       ========================================================================== */
+    .strip-viewport {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px) 0 0 / 32px 32px,
+        linear-gradient(0deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px) 0 0 / 32px 32px,
+        var(--surface-0);
+    }
+    .strip-viewport.hidden {
+      display: none;
+    }
+
+    /* RG Fallback Banner inside viewport when active */
+    .rg-fallback-banner {
+      position: absolute;
+      top: 6px;
+      right: 12px;
+      z-index: 35;
+      background: rgba(24, 18, 8, 0.94);
+      border: 1px solid var(--metro-warning);
+      border-left: 3px solid var(--metro-warning);
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #ffd666;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65);
+    }
+    .rg-fallback-banner.visible {
+      display: flex;
+    }
+
+    /* Horizontal Spring Track */
+    .strip-track {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      display: flex;
+      align-items: stretch;
+      padding: 10px 44px 10px 14px;
+      gap: 38px; /* Bridge channel gap for live SVG connectors */
+      will-change: transform;
+    }
+
+    /* Strip Column */
+    .strip-column {
+      flex-shrink: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      transition: width 160ms cubic-bezier(0.2, 0.85, 0.25, 1);
+    }
+
+    .col-cap-bar {
+      height: 18px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 4px;
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--text-dim);
+      border-bottom: 1px solid var(--border-subtle);
+      user-select: none;
+    }
+    .strip-column.col-focused .col-cap-bar {
+      color: var(--metro-telemetry);
+      border-bottom-color: rgba(var(--metro-telemetry-rgb), 0.45);
+    }
+    .col-cards-stack {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* ==========================================================================
+       5. CODE CARD & LENS CARD ARCHITECTURE
+       ========================================================================== */
+    .code-card {
+      flex: 1 1 0;
+      min-height: 92px;
+      background: var(--surface-2);
+      border: 1px solid var(--border-struct);
+      border-top: 2px solid var(--border-strong);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+    .code-card.focused {
+      border-color: var(--metro-accent);
+      border-top: 2px solid var(--metro-accent);
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(var(--metro-accent-rgb), 0.35);
+    }
+    .code-card.lens-card {
+      border-top: 2px solid var(--lens-color);
+    }
+    .code-card.lens-card.focused {
+      border-color: var(--lens-color);
+      border-top: 2px solid var(--lens-color);
+    }
+    .code-card.collapsed {
+      flex: 0 0 30px !important;
+      min-height: 30px !important;
+      max-height: 30px !important;
+    }
+    .code-card.collapsed .card-body,
+    .code-card.collapsed .card-footer {
+      display: none;
+    }
+    .code-card.spawn-flash {
+      animation: cardFlash 520ms ease-out;
+    }
+    @keyframes cardFlash {
+      0% { box-shadow: 0 0 0 2px var(--metro-telemetry), 0 0 24px rgba(0, 216, 240, 0.45); }
+      100% { box-shadow: 0 10px 28px rgba(0, 0, 0, 0.65); }
+    }
+
+    /* Card Header */
+    .card-header {
+      height: 29px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 0 6px 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .code-card.focused .card-header {
+      background: #1c2229;
+    }
+    .code-card.lens-card .card-header {
+      background: #17171a;
+    }
+
+    .card-title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .sym-kind-badge {
+      font-size: 9.5px;
+      font-weight: 800;
+      padding: 1px 5px;
+      border: 1px solid;
+      flex-shrink: 0;
+    }
+    .sym-kind-badge.fn {
+      color: var(--syn-fn);
+      border-color: rgba(220, 220, 170, 0.4);
+      background: rgba(220, 220, 170, 0.1);
+    }
+    .sym-kind-badge.type {
+      color: var(--syn-type);
+      border-color: rgba(78, 201, 176, 0.45);
+      background: rgba(78, 201, 176, 0.1);
+    }
+    .sym-kind-badge.lens-types {
+      color: var(--metro-telemetry);
+      border-color: var(--metro-telemetry);
+      background: rgba(0, 216, 240, 0.14);
+    }
+    .sym-kind-badge.lens-impact {
+      color: var(--metro-warning);
+      border-color: var(--metro-warning);
+      background: rgba(255, 185, 0, 0.14);
+    }
+    .sym-kind-badge.lens-diff {
+      color: #f08cff;
+      border-color: var(--metro-agent);
+      background: rgba(180, 0, 158, 0.22);
+    }
+
+    .card-symbol-name {
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-file-path {
+      color: var(--text-muted);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .card-bounds-chip {
+      font-size: 9.5px;
+      padding: 1px 5px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-struct);
+      color: var(--metro-telemetry);
+      flex-shrink: 0;
+    }
+    .card-bounds-chip.full-mode {
+      color: var(--metro-warning);
+      border-color: rgba(255, 185, 0, 0.5);
+    }
+    .card-bounds-chip.rg-chip {
+      color: var(--metro-warning);
+      border-color: var(--metro-warning);
+      background: rgba(255, 185, 0, 0.12);
+    }
+
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .card-icon-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      padding: 1px 5px;
+      cursor: pointer;
+    }
+    .card-icon-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: #ffffff;
+    }
+    .card-icon-btn.active {
+      color: var(--metro-telemetry);
+      border-color: rgba(var(--metro-telemetry-rgb), 0.5);
+      background: rgba(var(--metro-telemetry-rgb), 0.12);
+    }
+    .card-icon-btn.close:hover {
+      background: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #fff;
+    }
+
+    /* Card Code Canvas */
+    .card-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: auto;
+      background: var(--surface-1);
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.52;
+      position: relative;
+    }
+
+    /* 6-Column Cairo-Style Gutter + Code Line */
+    .code-line {
+      display: flex;
+      align-items: stretch;
+      min-height: 18px;
+      padding-right: 10px;
+      position: relative;
+      white-space: pre;
+    }
+    .code-line:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .code-line.active-line {
+      background: rgba(var(--metro-accent-rgb), 0.14);
+    }
+    .code-line.dap-pc-line {
+      background: rgba(255, 185, 0, 0.12);
+    }
+    .code-line.bridge-source-active {
+      background: rgba(var(--lens-rgb), 0.18);
+      box-shadow: inset -3px 0 0 var(--lens-color);
+    }
+
+    /* Dimmed Out-of-Scope Veil (Option B Visualization) */
+    .code-line.veil-line {
+      opacity: 0.34;
+      background: repeating-linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.012),
+        rgba(255, 255, 255, 0.012) 4px,
+        transparent 4px,
+        transparent 8px
+      );
+      transition: opacity 150ms ease;
+    }
+    .code-line.veil-line:hover {
+      opacity: 0.58;
+    }
+    .code-card.full-file .code-line.veil-line {
+      opacity: 1;
+      background: transparent;
+    }
+    .scope-tick {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1px 10px 1px 8px;
+      background: rgba(var(--metro-telemetry-rgb), 0.07);
+      border-top: 1px solid rgba(var(--metro-telemetry-rgb), 0.38);
+      border-bottom: 1px solid rgba(var(--metro-telemetry-rgb), 0.16);
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--metro-telemetry);
+      letter-spacing: 0.4px;
+      user-select: none;
+    }
+    .scope-tick.bottom {
+      border-top: 1px solid rgba(var(--metro-telemetry-rgb), 0.16);
+      border-bottom: 1px solid rgba(var(--metro-telemetry-rgb), 0.38);
+      color: var(--text-muted);
+    }
+    .code-card.full-file .scope-tick {
+      background: rgba(255, 185, 0, 0.06);
+      border-color: rgba(255, 185, 0, 0.3);
+      color: var(--metro-warning);
+    }
+
+    /* 6-Column Gutter */
+    .gutter {
+      width: 82px;
+      flex-shrink: 0;
+      display: grid;
+      grid-template-columns: 14px 12px 11px 30px 4px 11px;
+      align-items: center;
+      background: #121212;
+      border-right: 1px solid var(--border-subtle);
+      margin-right: 8px;
+      user-select: none;
+      cursor: pointer;
+    }
+    .g-bp {
+      text-align: center;
+      font-size: 10px;
+      color: var(--metro-urgent);
+      line-height: 1;
+    }
+    .g-bp.cond {
+      color: var(--metro-urgent);
+      text-shadow: 0 0 0 1px var(--metro-warning);
+      outline: 1px solid var(--metro-warning);
+      outline-offset: -2px;
+    }
+    .g-diag {
+      text-align: center;
+      font-size: 9.5px;
+      line-height: 1;
+    }
+    .g-diag.err { color: var(--metro-urgent); }
+    .g-diag.warn { color: var(--metro-warning); }
+    .g-pc {
+      text-align: center;
+      font-size: 9px;
+      color: var(--metro-warning);
+    }
+    .g-ln {
+      text-align: right;
+      padding-right: 4px;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .code-line.active-line .g-ln {
+      color: var(--text-primary);
+      font-weight: 700;
+    }
+    .g-diff {
+      width: 3px;
+      height: 100%;
+    }
+    .g-diff.add { background: var(--metro-success); }
+    .g-diff.mod { background: var(--metro-accent); }
+    .g-diff.agent { background: var(--metro-agent); }
+    .g-fold {
+      text-align: center;
+      font-size: 9px;
+      color: #555555;
+    }
+
+    .code-content {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #d4d4d4;
+    }
+
+    /* Syntax Tokens */
+    .syn-kw   { color: var(--syn-kw); font-weight: 700; }
+    .syn-ctrl { color: var(--syn-ctrl); }
+    .syn-fn   { color: var(--syn-fn); }
+    .syn-type { color: var(--syn-type); }
+    .syn-str  { color: var(--syn-str); }
+    .syn-num  { color: var(--syn-num); }
+    .syn-mac  { color: var(--syn-mac); }
+    .syn-cmt  { color: var(--syn-cmt); font-style: italic; }
+
+    /* Interactive Call / Type Jump Tokens */
+    .call-link {
+      cursor: pointer;
+      border-bottom: 1px dotted rgba(var(--lens-rgb), 0.75);
+      padding: 0 1px;
+      transition: background 80ms ease;
+    }
+    .call-link:hover {
+      background: rgba(var(--lens-rgb), 0.25);
+      border-bottom: 1px solid var(--lens-color);
+      color: #ffffff;
+    }
+    .call-link.type-link {
+      border-bottom-color: rgba(0, 216, 240, 0.7);
+    }
+    .call-link.type-link:hover {
+      background: rgba(0, 216, 240, 0.22);
+      border-bottom-color: var(--metro-telemetry);
+    }
+    .call-link.spawnable::after {
+      content: '↗';
+      font-size: 9px;
+      margin-left: 2px;
+      color: var(--metro-telemetry);
+      opacity: 0.85;
+    }
+
+    .inline-diag {
+      font-size: 10px;
+      padding: 0 6px;
+      border-left: 2px solid var(--metro-warning);
+      background: rgba(255, 185, 0, 0.13);
+      color: #ffd166;
+      white-space: nowrap;
+    }
+    .inline-diag.err {
+      border-left-color: var(--metro-urgent);
+      background: rgba(232, 17, 35, 0.16);
+      color: #ff8080;
+    }
+
+    .card-footer {
+      height: 20px;
+      flex-shrink: 0;
+      background: #121212;
+      border-top: 1px solid var(--border-subtle);
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--text-dim);
+      user-select: none;
+    }
+
+    /* ==========================================================================
+       6. INTERACTIVE LENS CARDS (TYPES / IMPACT / DIFF)
+       ========================================================================== */
+    .lens-body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      background: var(--surface-1);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .lens-section-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 5px;
+      border-bottom: 1px solid var(--border-struct);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+
+    .lens-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+    }
+    .lens-table th {
+      text-align: left;
+      padding: 4px 6px;
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-size: 9.5px;
+    }
+    .lens-table td {
+      padding: 4px 6px;
+      border: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+    }
+    .lens-table tr:hover td {
+      background: rgba(0, 216, 240, 0.08);
+    }
+
+    .ref-item {
+      background: var(--surface-2);
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-warning);
+      padding: 6px 8px;
+      font-family: var(--font-mono);
+      cursor: pointer;
+    }
+    .ref-item:hover {
+      background: var(--surface-3);
+      border-color: var(--metro-warning);
+    }
+    .ref-item-top {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 3px;
+    }
+    .ref-item-code {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .diff-hunk {
+      background: var(--surface-2);
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-agent);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+    }
+    .diff-hunk.accepted {
+      border-left-color: var(--metro-success);
+      opacity: 0.72;
+    }
+    .diff-hunk.reverted {
+      border-left-color: var(--metro-urgent);
+      opacity: 0.62;
+    }
+    .diff-hunk-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 8px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      gap: 6px;
+    }
+    .diff-lines {
+      padding: 4px 0;
+    }
+    .diff-line {
+      padding: 1px 8px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .diff-line.del {
+      background: rgba(232, 17, 35, 0.16);
+      color: #ff99a4;
+    }
+    .diff-line.add {
+      background: rgba(16, 137, 62, 0.2);
+      color: #8ce9ad;
+    }
+    .diff-line.ctx {
+      color: var(--text-muted);
+    }
+
+    /* ==========================================================================
+       7. LIVE SVG DEPENDENCY BRIDGE OVERLAY
+       ========================================================================== */
+    .bridge-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 20;
+      overflow: visible;
+    }
+    .bridge-label-bg {
+      fill: #101010;
+      stroke-width: 1;
+    }
+    .bridge-label-text {
+      font-family: 'Fira Code', 'JetBrains Mono', monospace;
+      font-size: 9px;
+      font-weight: 700;
+      text-anchor: middle;
+      dominant-baseline: central;
+    }
+
+    /* ==========================================================================
+       8. CLASSIC TABS VIEW (Mode Contrast)
+       ========================================================================== */
+    .classic-tabs-view {
+      flex: 1;
+      min-width: 0;
+      display: none;
+      flex-direction: column;
+      background: var(--surface-1);
+    }
+    .classic-tabs-view.active {
+      display: flex;
+    }
+    .classic-tab-ribbon {
+      height: 30px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      user-select: none;
+    }
+    .classic-tab {
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      border-right: 1px solid var(--border-struct);
+      border-top: 2px solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .classic-tab:hover {
+      background: var(--surface-3);
+      color: var(--text-secondary);
+    }
+    .classic-tab.active {
+      background: var(--surface-1);
+      color: #ffffff;
+      border-top-color: var(--metro-accent);
+    }
+    .classic-banner {
+      padding: 6px 12px;
+      background: rgba(var(--metro-accent-rgb), 0.1);
+      border-bottom: 1px solid var(--border-struct);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--text-secondary);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .classic-editor-body {
+      flex: 1;
+      overflow: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.55;
+      background: var(--surface-1);
+    }
+
+    /* ==========================================================================
+       9. BIRD'S-EYE OVERVIEW OVERLAY (Space t o / o)
+       ========================================================================== */
+    .overview-overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 40;
+      background: rgba(10, 10, 10, 0.94);
+      backdrop-filter: blur(8px);
+      display: none;
+      flex-direction: column;
+      padding: 16px 20px;
+    }
+    .overview-overlay.active {
+      display: flex;
+    }
+    .overview-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-struct);
+      margin-bottom: 14px;
+      font-family: var(--font-mono);
+    }
+    .overview-title {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 1px;
+      color: var(--metro-telemetry);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .overview-canvas-wrap {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      background:
+        linear-gradient(90deg, rgba(0, 216, 240, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(0deg, rgba(0, 216, 240, 0.035) 1px, transparent 1px) 0 0 / 28px 28px,
+        #0c0c0c;
+      border: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: auto;
+      padding: 24px;
+    }
+    .overview-stage {
+      position: relative;
+      display: flex;
+      gap: 28px;
+      padding: 18px 22px;
+      height: 360px;
+      align-items: stretch;
+    }
+    .ov-col {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      position: relative;
+      z-index: 5;
+    }
+    .ov-col-label {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+    .ov-card {
+      flex: 1;
+      background: var(--surface-2);
+      border: 1px solid var(--border-strong);
+      border-top: 2px solid var(--border-strong);
+      padding: 6px 8px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      overflow: hidden;
+      transition: border-color 100ms ease, background 100ms ease;
+    }
+    .ov-card:hover {
+      background: #1b222a;
+      border-color: var(--metro-telemetry);
+      border-top-color: var(--metro-telemetry);
+    }
+    .ov-card.focused {
+      border-color: var(--metro-accent);
+      border-top-color: var(--metro-accent);
+      background: #161d26;
+    }
+    .ov-card.collapsed {
+      flex: 0 0 28px;
+    }
+    .ov-card-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ov-card-file {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .ov-code-bars {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      margin-top: 2px;
+      opacity: 0.7;
+    }
+    .ov-bar-row {
+      height: 3px;
+      background: #353b45;
+    }
+    .ov-bar-row.accent { background: var(--syn-kw); }
+    .ov-bar-row.fn { background: var(--syn-fn); }
+    .ov-bar-row.type { background: var(--syn-type); }
+    .ov-bar-row.agent { background: var(--metro-agent); }
+
+    .ov-camera-rect {
+      position: absolute;
+      top: 4px;
+      bottom: 4px;
+      border: 2px solid var(--metro-telemetry);
+      background: rgba(0, 216, 240, 0.06);
+      z-index: 3;
+      pointer-events: none;
+    }
+    .ov-camera-tag {
+      position: absolute;
+      top: -1px;
+      left: 0;
+      background: var(--metro-telemetry);
+      color: #000000;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+    }
+    .ov-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 8;
+      overflow: visible;
+    }
+
+    /* ==========================================================================
+       10. BOTTOM STRIP MINIMAP BAR (36px)
+       ========================================================================== */
+    .strip-minimap-bar {
+      height: 36px;
+      flex-shrink: 0;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 10px;
+      user-select: none;
+    }
+    .strip-minimap-bar.hidden {
+      display: none;
+    }
+    .minimap-label {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 800;
+      color: var(--text-muted);
+      letter-spacing: 0.6px;
+      white-space: nowrap;
+    }
+    .minimap-track-wrap {
+      flex: 1;
+      height: 24px;
+      background: var(--surface-0);
+      border: 1px solid var(--border-struct);
+      position: relative;
+      cursor: ew-resize;
+      overflow: hidden;
+    }
+    .minimap-cols {
+      position: absolute;
+      inset: 2px 4px;
+      display: flex;
+      gap: 4px;
+      align-items: stretch;
+    }
+    .mm-col {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      height: 100%;
+    }
+    .mm-card {
+      flex: 1;
+      background: #252525;
+      border: 1px solid #353535;
+      position: relative;
+    }
+    .mm-card.focused {
+      background: rgba(var(--metro-accent-rgb), 0.55);
+      border-color: var(--metro-accent);
+    }
+    .mm-card.lens {
+      background: rgba(var(--lens-rgb), 0.35);
+      border-color: var(--lens-color);
+    }
+    .mm-card.collapsed {
+      flex: 0 0 4px;
+    }
+    .minimap-viewport-box {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border: 1.5px solid var(--metro-telemetry);
+      background: rgba(0, 216, 240, 0.12);
+      pointer-events: none;
+    }
+    .minimap-meta {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* ==========================================================================
+       11. BOTTOM MODAL STATUS BAR (24px)
+       ========================================================================== */
+    .ide-status-bar {
+      height: 24px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-top: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      user-select: none;
+    }
+    .status-left, .status-right {
+      display: flex;
+      align-items: center;
+      height: 100%;
+    }
+    .mode-pill {
+      height: 100%;
+      padding: 0 10px;
+      background: var(--metro-accent);
+      color: #ffffff;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      letter-spacing: 0.6px;
+    }
+    .status-seg {
+      height: 100%;
+      padding: 0 9px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      border-right: 1px solid var(--border-struct);
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .status-seg.muted {
+      color: var(--text-muted);
+    }
+    .status-right .status-seg {
+      border-right: none;
+      border-left: 1px solid var(--border-struct);
+    }
+
+    /* ==========================================================================
+       12. HELP PALETTE / SHORTCUTS OVERLAY & TOAST
+       ========================================================================== */
+    .help-modal {
+      position: absolute;
+      inset: 0;
+      z-index: 60;
+      background: rgba(6, 6, 6, 0.78);
+      backdrop-filter: blur(5px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .help-modal.active {
+      display: flex;
+    }
+    .help-box {
+      width: 580px;
+      max-width: 92vw;
+      background: var(--surface-2);
+      border: 1px solid var(--metro-accent);
+      border-top: 2px solid var(--metro-accent);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.85);
+    }
+    .help-box-hdr {
+      padding: 8px 12px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+    }
+    .help-grid {
+      padding: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px 18px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .help-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text-secondary);
+    }
+
+    .ide-toast {
+      position: absolute;
+      bottom: 68px;
+      right: 16px;
+      z-index: 55;
+      background: var(--surface-3);
+      border: 1px solid var(--metro-telemetry);
+      border-left: 3px solid var(--metro-telemetry);
+      padding: 6px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #ffffff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+      opacity: 0;
+      transform: translateY(6px);
+      pointer-events: none;
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+    .ide-toast.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="niri-stage" id="niriStage">
+    <div class="kajo-window" id="kajoWindow">
+
+      <!-- ==================================================================
+           1. TOP FRAMELESS WINDOW CHROME
+           ================================================================== -->
+      <header class="ide-header-bar">
+        <div class="hdr-group">
+          <div class="ide-brand">
+            <span class="ide-brand-dot"></span>
+            <span>⌨ KAJO IDE</span>
+          </div>
+          <button class="kajo-btn" id="btnTree" title="Toggle Project Tree (Space e)">🌲 TREE</button>
+          <button class="kajo-btn active" id="btnStripMode" title="Toggle Code Strip / Classic Tabs">▥ STRIP</button>
+          <button class="kajo-btn" id="btnOverview" title="Bird's-Eye Overview (Space t o / o)">⬡ OVERVIEW <span class="kbd-hint">Space t o</span></button>
+          <button class="kajo-btn" id="btnHelp" title="Keybindings & Strip Guide (?)">❓ HELP</button>
+        </div>
+
+        <div class="hdr-group">
+          <span class="branch-badge" title="Active Git Branch">⎇ FEAT/IDE-CODE-STRIP-SPEC</span>
+        </div>
+
+        <div class="hdr-group">
+          <button class="kajo-btn primary" id="btnBuild" title="Run meson compile -C builddir">▶ BUILD</button>
+          <button class="kajo-btn" id="btnFloatTile" title="Toggle Floating / Tiled Niri Geometry">🗗 FLOAT / TILE</button>
+          <button class="kajo-btn close-btn" id="btnClose" title="Close Preview">×</button>
+        </div>
+      </header>
+
+      <!-- ==================================================================
+           2. STRIP TOOLBAR / TRAIL RAIL + LENS SELECTOR + COLUMN CONTROLS
+           ================================================================== -->
+      <div class="strip-toolbar" id="stripToolbar">
+        <!-- Left: Trail Switcher -->
+        <div class="trail-rail" id="trailRail"></div>
+
+        <!-- Center: Explicit Lens Selector -->
+        <div class="seg-group" id="lensSelector" title="Switch Dependency Lens (Keys 1-4)">
+          <button class="seg-btn active" data-lens="calls"><span class="seg-dot" style="background:#0078d4;"></span>1 CALLS</button>
+          <button class="seg-btn" data-lens="types"><span class="seg-dot" style="background:#00d8f0;"></span>2 TYPES</button>
+          <button class="seg-btn" data-lens="impact"><span class="seg-dot" style="background:#ffb900;"></span>3 IMPACT</button>
+          <button class="seg-btn" data-lens="diff"><span class="seg-dot" style="background:#b4009e;"></span>4 DIFF</button>
+        </div>
+
+        <!-- Right: Focused Column Controls & LSP/RG Toggle -->
+        <div class="col-controls">
+          <div class="seg-group" id="widthPresets" title="Focused Column Width Preset (Key r)">
+            <button class="width-btn" data-width="33">33%</button>
+            <button class="width-btn active" data-width="50">50%</button>
+            <button class="width-btn" data-width="66">66%</button>
+            <button class="width-btn" data-width="100">100%</button>
+          </div>
+          <button class="mini-ctrl-btn" id="btnFullFile" title="Lift/Restore Dimmed Out-of-Scope Veil (Key f)">⤢ FULL FILE</button>
+          <button class="mini-ctrl-btn" id="btnConsume" title="Consume card from right column into focused stack">↙ CONSUME</button>
+          <button class="mini-ctrl-btn" id="btnExpel" title="Expel focused card into its own right column">↗ EXPEL</button>
+          <button class="mini-ctrl-btn" id="btnCollapse" title="Collapse / Expand focused card">▁ COLLAPSE</button>
+          <button class="mini-ctrl-btn" id="btnRelNum" title="Toggle Hybrid Relative Line Numbers"># REL</button>
+          <button class="mini-ctrl-btn lsp-ok" id="btnLspToggle" title="Click to preview RG Fallback degradation badge">
+            <span class="status-pulse"></span>
+            <span id="lspToggleLabel">⚡ LSP: CLANGD ●</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           3. MAIN WORKSPACE BODY
+           ================================================================== -->
+      <div class="workspace-body">
+        <!-- Left Collapsible Project Tree -->
+        <aside class="ide-tree-sidebar collapsed" id="treeSidebar">
+          <div class="ide-tree-header">
+            <span>WORKSPACE: KAJO</span>
+            <span>[Space e]</span>
+          </div>
+          <div class="ide-tree-list" id="treeList"></div>
+        </aside>
+
+        <!-- Scrollable-Tiling Code Strip Viewport -->
+        <main class="strip-viewport" id="stripViewport">
+          <div class="rg-fallback-banner" id="rgFallbackBanner">
+            <span>⚠ RG FALLBACK MODE ACTIVE — clangd offline · AST scope estimated via tree-sitter · edges resolved heuristically via ripgrep (dashed)</span>
+          </div>
+
+          <div class="strip-track" id="stripTrack"></div>
+          <svg class="bridge-svg" id="bridgeSvg" aria-hidden="true"></svg>
+        </main>
+
+        <!-- Classic Tabs View (Comparison Mode) -->
+        <section class="classic-tabs-view" id="classicTabsView">
+          <div class="classic-tab-ribbon" id="classicTabRibbon"></div>
+          <div class="classic-banner">
+            <span>CLASSIC TABS MODE — Single-file linear viewport. Switch back to <b>[ ▥ STRIP ]</b> to restore scrollable-tiling dependency columns &amp; live SVG connectors.</span>
+            <button class="kajo-btn active" id="btnReturnStrip">▥ RETURN TO CODE STRIP</button>
+          </div>
+          <div class="classic-editor-body" id="classicEditorBody"></div>
+        </section>
+
+        <!-- Bird's-Eye Overview Overlay -->
+        <section class="overview-overlay" id="overviewOverlay">
+          <div class="overview-hdr">
+            <div class="overview-title">
+              <span>⬡ BIRD'S-EYE STRIP OVERVIEW</span>
+              <span class="kbd-hint" id="ovTrailBadge">01 · fx_glass pipeline</span>
+              <span class="kbd-hint" id="ovLensBadge">LENS: CALLS</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:10.5px; color:var(--text-muted);">Click any card to snap spring camera &amp; exit</span>
+              <button class="kajo-btn" id="btnExitOverview">✕ EXIT OVERVIEW [Esc]</button>
+            </div>
+          </div>
+          <div class="overview-canvas-wrap" id="overviewCanvasWrap">
+            <div class="overview-stage" id="overviewStage"></div>
+          </div>
+        </section>
+
+        <!-- Help / Shortcuts Modal -->
+        <div class="help-modal" id="helpModal">
+          <div class="help-box">
+            <div class="help-box-hdr">
+              <span>⌨ KAJO IDE — CODE STRIP KEYBINDINGS &amp; CONTROLS</span>
+              <button class="kajo-btn close-btn" id="btnCloseHelp">×</button>
+            </div>
+            <div class="help-grid">
+              <div class="help-row"><span>Focus Prev / Next Column</span><span><kbd class="kbd-hint">h</kbd> / <kbd class="kbd-hint">l</kbd></span></div>
+              <div class="help-row"><span>Focus Up / Down in Stack</span><span><kbd class="kbd-hint">k</kbd> / <kbd class="kbd-hint">j</kbd></span></div>
+              <div class="help-row"><span>Cycle Column Width Preset</span><span><kbd class="kbd-hint">r</kbd></span></div>
+              <div class="help-row"><span>Center Camera on Column</span><span><kbd class="kbd-hint">c</kbd></span></div>
+              <div class="help-row"><span>Toggle Bird's-Eye Overview</span><span><kbd class="kbd-hint">o</kbd></span></div>
+              <div class="help-row"><span>Switch Dependency Lens</span><span><kbd class="kbd-hint">1</kbd> – <kbd class="kbd-hint">4</kbd></span></div>
+              <div class="help-row"><span>Lift / Restore Scope Veil</span><span><kbd class="kbd-hint">f</kbd></span></div>
+              <div class="help-row"><span>Toggle Breakpoint / Cond BP</span><span><kbd class="kbd-hint">Click</kbd> / <kbd class="kbd-hint">Shift+Click</kbd></span></div>
+              <div class="help-row"><span>Follow / Spawn Call Site</span><span><kbd class="kbd-hint">Click underlined symbol</kbd></span></div>
+              <div class="help-row"><span>Pan Strip Horizontally</span><span><kbd class="kbd-hint">Shift+Wheel</kbd> / <kbd class="kbd-hint">Minimap</kbd></span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ide-toast" id="ideToast"></div>
+      </div>
+
+      <!-- ==================================================================
+           4. BOTTOM STRIP MINIMAP BAR (36px)
+           ================================================================== -->
+      <div class="strip-minimap-bar" id="stripMinimapBar">
+        <span class="minimap-label">CAMERA MAP</span>
+        <div class="minimap-track-wrap" id="minimapTrackWrap" title="Click or drag to pan spring camera">
+          <div class="minimap-cols" id="minimapCols"></div>
+          <div class="minimap-viewport-box" id="minimapViewportBox"></div>
+        </div>
+        <div class="minimap-meta">
+          <span id="minimapCamReadout">X: 0px</span>
+          <button class="mini-ctrl-btn" id="btnCenterCam" title="Center camera on focused column (Key c)">⌖ CENTER</button>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           5. BOTTOM MODAL STATUS BAR (24px)
+           ================================================================== -->
+      <footer class="ide-status-bar">
+        <div class="status-left">
+          <span class="mode-pill">NORMAL</span>
+          <span class="status-seg" id="statusTrail">STRIP: 01 · fx_glass pipeline</span>
+          <span class="status-seg" id="statusCol">COL 2/4 (50%)</span>
+          <span class="status-seg" id="statusLens" style="color:var(--lens-color); font-weight:700;">LENS: CALLS</span>
+          <span class="status-seg" id="statusLsp" style="color:#6ee7a0;">LSP: CLANGD ●</span>
+        </div>
+        <div class="status-right">
+          <span class="status-seg muted">h/l col · j/k stack · r width · c center · 1-4 lens · o overview</span>
+          <span class="status-seg" id="statusSymbol">fx_glass_render()</span>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    'use strict';
+
+    /* ========================================================================
+       1. LENS METADATA & AUTHENTIC KAJO C CODE DATA
+       ======================================================================== */
+    const LENS_META = {
+      calls:  { id: 'calls',  label: 'CALLS',  color: '#0078d4', rgb: '0, 120, 212',   edgeTag: 'calls' },
+      types:  { id: 'types',  label: 'TYPES',  color: '#00d8f0', rgb: '0, 216, 240',   edgeTag: 'type'  },
+      impact: { id: 'impact', label: 'IMPACT', color: '#ffb900', rgb: '255, 185, 0',   edgeTag: 'ref'   },
+      diff:   { id: 'diff',   label: 'DIFF',   color: '#b4009e', rgb: '180, 0, 158',   edgeTag: 'agent' }
+    };
+
+    const WIDTH_PRESETS = [33, 50, 66, 100];
+
+    /* Helper to construct structured syntax-highlighted C lines */
+    function ln(num, html, opts = {}) {
+      return {
+        num,
+        html,
+        bp: opts.bp || null,         // null | 'normal' | 'cond'
+        diag: opts.diag || null,     // null | { type:'err'|'warn', msg:'...' }
+        pc: Boolean(opts.pc),
+        diff: opts.diff || null,     // null | 'add' | 'mod' | 'agent'
+        fold: opts.fold || ''
+      };
+    }
+
+    /* Spawnable cards catalog (clicked call sites or Materialize Callers) */
+    const SPAWN_CATALOG = {
+      'gl_shader_bind_blur': {
+        id: 'gl_shader_bind_blur',
+        kind: 'fn',
+        symbol: 'gl_shader_bind_blur()',
+        file: 'src/compositor/gl_shaders.c',
+        bounds: 'L64..L92',
+        activeLine: 72,
+        beforeVeil: [
+          ln(61, '<span class="syn-cmt">/* Shared Dual-Kawase program cache */</span>'),
+          ln(62, '<span class="syn-kw">static</span> <span class="syn-type">GLuint</span> g_blur_prog[<span class="syn-num">2</span>] = { <span class="syn-num">0</span>, <span class="syn-num">0</span> };'),
+          ln(63, '')
+        ],
+        scopeLines: [
+          ln(64, '<span class="syn-kw">void</span> <span class="syn-fn">gl_shader_bind_blur</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-type">BlurPassDir</span> dir, <span class="syn-kw">float</span> offset)', { fold: '▾', diff: 'add' }),
+          ln(65, '{', { fold: '{' }),
+          ln(66, '  <span class="syn-type">GLuint</span> prog = r->shaders.kawase[dir];'),
+          ln(67, '  <span class="syn-fn">glUseProgram</span>(prog);'),
+          ln(68, '  <span class="syn-fn">glUniform2f</span>(r->u_halfpixel[dir],'),
+          ln(69, '              <span class="syn-num">0.5f</span> / (<span class="syn-kw">float</span>)r->fb_w, <span class="syn-num">0.5f</span> / (<span class="syn-kw">float</span>)r->fb_h);'),
+          ln(70, '  <span class="syn-fn">glUniform1f</span>(r->u_offset[dir], offset);', { diff: 'agent' }),
+          ln(71, '  <span class="syn-fn">glActiveTexture</span>(<span class="syn-mac">GL_TEXTURE0</span>);'),
+          ln(72, '  <span class="syn-fn">glUniform1i</span>(r->u_tex[dir], <span class="syn-num">0</span>);'),
+          ln(73, '}', { fold: '}' })
+        ],
+        afterVeil: [
+          ln(74, ''),
+          ln(75, '<span class="syn-kw">static void</span> <span class="syn-fn">gl_shader_check_link</span>(<span class="syn-type">GLuint</span> prog)'),
+          ln(76, '{ <span class="syn-cmt">/* ... */</span> }')
+        ]
+      },
+      'ide_jsonrpc_get_range': {
+        id: 'ide_jsonrpc_get_range',
+        kind: 'fn',
+        symbol: 'ide_jsonrpc_get_range()',
+        file: 'src/ide/ide_jsonrpc.c',
+        bounds: 'L142..L168',
+        activeLine: 150,
+        beforeVeil: [
+          ln(139, '<span class="syn-cmt">/* LSP Range { start, end } -> IdeRange */</span>'),
+          ln(140, '<span class="syn-kw">static int</span> <span class="syn-fn">read_u32</span>(<span class="syn-type">JsonObject</span> *obj, <span class="syn-kw">const char</span> *k);')
+        ],
+        scopeLines: [
+          ln(142, '<span class="syn-kw">gboolean</span> <span class="syn-fn">ide_jsonrpc_get_range</span>(<span class="syn-type">JsonObject</span> *obj, <span class="syn-type">IdeRange</span> *out)', { fold: '▾' }),
+          ln(143, '{', { fold: '{' }),
+          ln(144, '  <span class="syn-type">JsonObject</span> *s = <span class="syn-fn">json_object_get_object_member</span>(obj, <span class="syn-str">"start"</span>);'),
+          ln(145, '  <span class="syn-type">JsonObject</span> *e = <span class="syn-fn">json_object_get_object_member</span>(obj, <span class="syn-str">"end"</span>);'),
+          ln(146, '  <span class="syn-ctrl">if</span> (!s || !e) <span class="syn-ctrl">return</span> <span class="syn-mac">FALSE</span>;'),
+          ln(147, '  out->start_line = (<span class="syn-kw">int</span>)<span class="syn-fn">json_object_get_int_member</span>(s, <span class="syn-str">"line"</span>);'),
+          ln(148, '  out->end_line   = (<span class="syn-kw">int</span>)<span class="syn-fn">json_object_get_int_member</span>(e, <span class="syn-str">"line"</span>);'),
+          ln(149, '  <span class="syn-ctrl">return</span> out->end_line >= out->start_line;'),
+          ln(150, '}', { fold: '}' })
+        ],
+        afterVeil: [
+          ln(151, ''),
+          ln(152, '<span class="syn-kw">char</span> *<span class="syn-fn">ide_jsonrpc_uri_to_path</span>(<span class="syn-kw">const char</span> *uri);')
+        ]
+      },
+      'wl_display_add_socket_auto': {
+        id: 'wl_display_add_socket_auto',
+        kind: 'fn',
+        symbol: 'comp_ipc_bind_socket()',
+        file: 'src/compositor/comp_ipc.c',
+        bounds: 'L54..L76',
+        activeLine: 62,
+        beforeVeil: [
+          ln(52, '<span class="syn-cmt">/* Bind Wayland & Kajo IPC sockets before XWayland */</span>')
+        ],
+        scopeLines: [
+          ln(54, '<span class="syn-kw">const char</span> *<span class="syn-fn">comp_ipc_bind_socket</span>(<span class="syn-type">CompServer</span> *srv)', { fold: '▾' }),
+          ln(55, '{', { fold: '{' }),
+          ln(56, '  <span class="syn-kw">const char</span> *sock = <span class="syn-fn">wl_display_add_socket_auto</span>(srv->wl_display);'),
+          ln(57, '  <span class="syn-ctrl">if</span> (!sock) <span class="syn-ctrl">return</span> <span class="syn-mac">NULL</span>;'),
+          ln(58, '  <span class="syn-fn">g_setenv</span>(<span class="syn-str">"WAYLAND_DISPLAY"</span>, sock, <span class="syn-mac">TRUE</span>);'),
+          ln(59, '  <span class="syn-ctrl">return</span> sock;'),
+          ln(60, '}', { fold: '}' })
+        ],
+        afterVeil: [
+          ln(61, ''),
+          ln(62, '<span class="syn-kw">void</span> <span class="syn-fn">comp_ipc_shutdown</span>(<span class="syn-type">CompServer</span> *srv);')
+        ]
+      },
+      'caller_overview_glass': {
+        id: 'caller_overview_glass',
+        kind: 'fn',
+        symbol: 'comp_overview_render_backdrop()',
+        file: 'src/compositor/comp_overview.c',
+        bounds: 'L114..L136',
+        activeLine: 122,
+        beforeVeil: [
+          ln(112, '<span class="syn-cmt">/* Materialized caller from Impact Lens */</span>')
+        ],
+        scopeLines: [
+          ln(114, '<span class="syn-kw">void</span> <span class="syn-fn">comp_overview_render_backdrop</span>(<span class="syn-type">CompOutput</span> *out)', { fold: '▾', diff: 'mod' }),
+          ln(115, '{', { fold: '{' }),
+          ln(116, '  <span class="syn-type">CompFxGlassParams</span> p = { .passes = <span class="syn-num">4</span>, .offset = <span class="syn-num">2.4f</span>, .tint = <span class="syn-num">0x101010B8</span> };'),
+          ln(117, '  <span class="syn-fn call-link" data-jump="fx_glass_render">fx_glass_render</span>(out->renderer, &amp;out->backdrop_fb, &amp;p);'),
+          ln(118, '}', { fold: '}' })
+        ],
+        afterVeil: [
+          ln(119, '')
+        ]
+      },
+      'caller_lock_glass': {
+        id: 'caller_lock_glass',
+        kind: 'fn',
+        symbol: 'comp_lock_render_blur()',
+        file: 'src/compositor/comp_session_lock.c',
+        bounds: 'L82..L101',
+        activeLine: 89,
+        beforeVeil: [
+          ln(80, '<span class="syn-cmt">/* Materialized caller: ext-session-lock-v1 frosted backdrop */</span>')
+        ],
+        scopeLines: [
+          ln(82, '<span class="syn-kw">void</span> <span class="syn-fn">comp_lock_render_blur</span>(<span class="syn-type">CompOutput</span> *out, <span class="syn-kw">float</span> progress)', { fold: '▾' }),
+          ln(83, '{', { fold: '{' }),
+          ln(84, '  <span class="syn-type">CompFxGlassParams</span> p = { .passes = <span class="syn-num">5</span>, .offset = <span class="syn-num">3.0f</span> * progress };'),
+          ln(85, '  <span class="syn-fn call-link" data-jump="fx_glass_render">fx_glass_render</span>(out->renderer, &amp;out->lock_fb, &amp;p);'),
+          ln(86, '}', { fold: '}' })
+        ],
+        afterVeil: [
+          ln(87, '')
+        ]
+      }
+    };
+
+    /* Three Pre-Populated Trails */
+    function buildInitialTrails() {
+      return [
+        {
+          id: 'trail-glass',
+          index: '01',
+          name: 'fx_glass pipeline',
+          focusedCol: 1,
+          focusedCardId: 'fx_glass_render',
+          columns: [
+            {
+              id: 'c1-0',
+              width: 50,
+              cards: [
+                {
+                  id: 'comp_output_frame',
+                  kind: 'fn',
+                  symbol: 'comp_output_frame()',
+                  file: 'src/compositor/comp_output.c',
+                  bounds: 'L184..L248',
+                  activeLine: 214,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(181, '<span class="syn-cmt">/* Frame pacing &amp; Aero glass damage submission */</span>'),
+                    ln(182, '<span class="syn-kw">static void</span> <span class="syn-fn">comp_output_collect_damage</span>(<span class="syn-type">CompOutput</span> *out);'),
+                    ln(183, '')
+                  ],
+                  scopeLines: [
+                    ln(184, '<span class="syn-kw">void</span> <span class="syn-fn">comp_output_frame</span>(<span class="syn-type">CompOutput</span> *out, <span class="syn-type">uint64_t</span> now_ns)', { fold: '▾' }),
+                    ln(185, '{', { fold: '{' }),
+                    ln(186, '  <span class="syn-type">CompRenderer</span> *r = out->server->renderer;'),
+                    ln(187, '  <span class="syn-fn">comp_spring_step_all</span>(out->workspace, now_ns);'),
+                    ln(188, ''),
+                    ln(189, '  <span class="syn-type call-link type-link" data-jump="CompFxGlassParams">CompFxGlassParams</span> glass = {', { diff: 'mod' }),
+                    ln(190, '    .passes      = out->cfg->glass_passes,  <span class="syn-cmt">/* default: 3 */</span>'),
+                    ln(191, '    .offset      = <span class="syn-num">1.75f</span>,'),
+                    ln(192, '    .noise_grain = <span class="syn-num">0.018f</span>,'),
+                    ln(193, '    .tint_rgba   = <span class="syn-num">0x1212129E</span>               <span class="syn-cmt">/* @metro-glass-bg */</span>'),
+                    ln(194, '  };'),
+                    ln(195, ''),
+                    ln(196, '  <span class="syn-ctrl">if</span> (out->has_translucent_layers) {', { bp: 'cond' }),
+                    ln(197, '    <span class="syn-fn call-link" data-jump="fx_glass_render">fx_glass_render</span>(r, &amp;out->scene_fb, &amp;glass);', { pc: true, diff: 'agent' }),
+                    ln(198, '  }'),
+                    ln(199, '  <span class="syn-fn">comp_output_commit_drm</span>(out, now_ns);'),
+                    ln(200, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(201, ''),
+                    ln(202, '<span class="syn-kw">static void</span> <span class="syn-fn">comp_output_on_present</span>(<span class="syn-type">struct wl_listener</span> *l, <span class="syn-kw">void</span> *data)'),
+                    ln(203, '{ <span class="syn-cmt">/* VRR frame feedback timestamps */</span> }')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c1-1',
+              width: 50,
+              cards: [
+                {
+                  id: 'CompFxGlassParams',
+                  kind: 'type',
+                  symbol: 'struct CompFxGlassParams',
+                  file: 'src/compositor/fx_glass.h',
+                  bounds: 'L18..L34',
+                  activeLine: 22,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(16, '<span class="syn-mac">#pragma once</span>'),
+                    ln(17, '<span class="syn-mac">#include</span> <span class="syn-str">&lt;stdint.h&gt;</span>')
+                  ],
+                  scopeLines: [
+                    ln(18, '<span class="syn-kw">typedef struct</span> <span class="syn-type">CompFxGlassParams</span> {', { fold: '▾' }),
+                    ln(19, '  <span class="syn-type">uint32_t</span> passes;       <span class="syn-cmt">/* Dual-Kawase pyramid depth (1..5) */</span>'),
+                    ln(20, '  <span class="syn-kw">float</span>    offset;       <span class="syn-cmt">/* Tap radius in texels */</span>'),
+                    ln(21, '  <span class="syn-kw">float</span>    noise_grain;  <span class="syn-cmt">/* Specular micro-dither amplitude */</span>', { diff: 'agent' }),
+                    ln(22, '  <span class="syn-type">uint32_t</span> tint_rgba;    <span class="syn-cmt">/* Aero dark tint + alpha */</span>'),
+                    ln(23, '  <span class="syn-kw">float</span>    specular_edge;<span class="syn-cmt">/* 1px top highlight intensity */</span>', { diff: 'add' }),
+                    ln(24, '} <span class="syn-type">CompFxGlassParams</span>;', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(25, ''),
+                    ln(26, '<span class="syn-kw">void</span> <span class="syn-fn">fx_glass_render</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-type">CompFb</span> *fb, <span class="syn-kw">const</span> <span class="syn-type">CompFxGlassParams</span> *p);')
+                  ]
+                },
+                {
+                  id: 'fx_glass_render',
+                  kind: 'fn',
+                  symbol: 'fx_glass_render()',
+                  file: 'src/compositor/fx_glass.c',
+                  bounds: 'L210..L268',
+                  activeLine: 224,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(207, '<span class="syn-cmt">/* Dual-Kawase ping-pong pyramid (zero allocations per frame) */</span>'),
+                    ln(208, '<span class="syn-kw">static void</span> <span class="syn-fn">fx_glass_ensure_pyramid</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-kw">int</span> w, <span class="syn-kw">int</span> h);'),
+                    ln(209, '')
+                  ],
+                  scopeLines: [
+                    ln(210, '<span class="syn-kw">void</span> <span class="syn-fn">fx_glass_render</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-type">CompFb</span> *scene,', { fold: '▾' }),
+                    ln(211, '                     <span class="syn-kw">const</span> <span class="syn-type call-link type-link" data-jump="CompFxGlassParams">CompFxGlassParams</span> *params)'),
+                    ln(212, '{', { fold: '{' }),
+                    ln(213, '  <span class="syn-kw">const uint32_t</span> n = <span class="syn-mac">CLAMP</span>(params->passes, <span class="syn-num">1</span>, <span class="syn-mac">FX_MAX_PASSES</span>);'),
+                    ln(214, '  <span class="syn-fn">fx_glass_ensure_pyramid</span>(r, scene->w, scene->h);'),
+                    ln(215, ''),
+                    ln(216, '  <span class="syn-cmt">/* 1. Downsample chain: full -> 1/2 -> 1/4 -> 1/8 */</span>'),
+                    ln(217, '  <span class="syn-ctrl">for</span> (<span class="syn-type">uint32_t</span> i = <span class="syn-num">0</span>; i &lt; n; i++) {', { bp: 'normal' }),
+                    ln(218, '    <span class="syn-fn call-link" data-jump="blur_down_pass">blur_down_pass</span>(r, i, params->offset);', { diff: 'agent' }),
+                    ln(219, '  }'),
+                    ln(220, '  <span class="syn-cmt">/* 2. Upsample tent chain back to scene resolution */</span>'),
+                    ln(221, '  <span class="syn-ctrl">for</span> (<span class="syn-kw">int</span> i = (<span class="syn-kw">int</span>)n - <span class="syn-num">1</span>; i &gt;= <span class="syn-num">0</span>; i--) {'),
+                    ln(222, '    <span class="syn-fn call-link" data-jump="blur_up_pass">blur_up_pass</span>(r, (<span class="syn-type">uint32_t</span>)i, params->offset);', { diff: 'agent' }),
+                    ln(223, '  }'),
+                    ln(224, '  <span class="syn-fn call-link" data-jump="fx_glass_composite_pass">fx_glass_composite_pass</span>(r, scene, params);', { diag: { type: 'warn', msg: 'perf: ensure scissor box clipped to glass damage rect' } }),
+                    ln(225, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(226, ''),
+                    ln(227, '<span class="syn-kw">void</span> <span class="syn-fn">fx_glass_destroy_pyramid</span>(<span class="syn-type">CompRenderer</span> *r)'),
+                    ln(228, '{ <span class="syn-fn">glDeleteFramebuffers</span>(<span class="syn-mac">FX_MAX_PASSES</span>, r->blur_fbo); }')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c1-2',
+              width: 50,
+              cards: [
+                {
+                  id: 'blur_down_pass',
+                  kind: 'fn',
+                  symbol: 'blur_down_pass()',
+                  file: 'src/compositor/fx_glass.c',
+                  bounds: 'L88..L132',
+                  activeLine: 94,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(86, '<span class="syn-cmt">/* 5-tap Dual-Kawase downsample shader pass */</span>'),
+                    ln(87, '')
+                  ],
+                  scopeLines: [
+                    ln(88, '<span class="syn-kw">static void</span> <span class="syn-fn">blur_down_pass</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-type">uint32_t</span> lvl, <span class="syn-kw">float</span> off)', { fold: '▾' }),
+                    ln(89, '{', { fold: '{' }),
+                    ln(90, '  <span class="syn-type">CompFb</span> *src = (lvl == <span class="syn-num">0</span>) ? &amp;r->scene_copy : &amp;r->pyramid[lvl - <span class="syn-num">1</span>];'),
+                    ln(91, '  <span class="syn-type">CompFb</span> *dst = &amp;r->pyramid[lvl];'),
+                    ln(92, '  <span class="syn-fn">glBindFramebuffer</span>(<span class="syn-mac">GL_FRAMEBUFFER</span>, dst->fbo);'),
+                    ln(93, '  <span class="syn-fn">glViewport</span>(<span class="syn-num">0</span>, <span class="syn-num">0</span>, dst->w, dst->h);'),
+                    ln(94, '  <span class="syn-fn call-link spawnable" data-jump="gl_shader_bind_blur">gl_shader_bind_blur</span>(r, <span class="syn-mac">BLUR_DIR_DOWN</span>, off);', { diff: 'mod' }),
+                    ln(95, '  <span class="syn-fn">glBindTexture</span>(<span class="syn-mac">GL_TEXTURE_2D</span>, src->tex);'),
+                    ln(96, '  <span class="syn-fn">glDrawArrays</span>(<span class="syn-mac">GL_TRIANGLE_STRIP</span>, <span class="syn-num">0</span>, <span class="syn-num">4</span>);'),
+                    ln(97, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(98, ''),
+                    ln(99, '<span class="syn-cmt">/* Paired 8-tap tent upsample immediately below */</span>')
+                  ]
+                },
+                {
+                  id: 'blur_up_pass',
+                  kind: 'fn',
+                  symbol: 'blur_up_pass()',
+                  file: 'src/compositor/fx_glass.c',
+                  bounds: 'L135..L184',
+                  activeLine: 141,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(133, '<span class="syn-cmt">/* 8-tap Dual-Kawase upsample tent filter */</span>'),
+                    ln(134, '')
+                  ],
+                  scopeLines: [
+                    ln(135, '<span class="syn-kw">static void</span> <span class="syn-fn">blur_up_pass</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-type">uint32_t</span> lvl, <span class="syn-kw">float</span> off)', { fold: '▾' }),
+                    ln(136, '{', { fold: '{' }),
+                    ln(137, '  <span class="syn-type">CompFb</span> *src = &amp;r->pyramid[lvl];'),
+                    ln(138, '  <span class="syn-type">CompFb</span> *dst = (lvl == <span class="syn-num">0</span>) ? &amp;r->glass_out : &amp;r->pyramid[lvl - <span class="syn-num">1</span>];'),
+                    ln(139, '  <span class="syn-fn">glBindFramebuffer</span>(<span class="syn-mac">GL_FRAMEBUFFER</span>, dst->fbo);'),
+                    ln(140, '  <span class="syn-fn">glViewport</span>(<span class="syn-num">0</span>, <span class="syn-num">0</span>, dst->w, dst->h);'),
+                    ln(141, '  <span class="syn-fn call-link spawnable" data-jump="gl_shader_bind_blur">gl_shader_bind_blur</span>(r, <span class="syn-mac">BLUR_DIR_UP</span>, off);'),
+                    ln(142, '  <span class="syn-fn">glBindTexture</span>(<span class="syn-mac">GL_TEXTURE_2D</span>, src->tex);'),
+                    ln(143, '  <span class="syn-fn">glDrawArrays</span>(<span class="syn-mac">GL_TRIANGLE_STRIP</span>, <span class="syn-num">0</span>, <span class="syn-num">4</span>);'),
+                    ln(144, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(145, '')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c1-3',
+              width: 50,
+              cards: [
+                {
+                  id: 'fx_glass_composite_pass',
+                  kind: 'fn',
+                  symbol: 'fx_glass_composite_pass()',
+                  file: 'src/compositor/fx_glass.c',
+                  bounds: 'L272..L320',
+                  activeLine: 284,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(270, '<span class="syn-cmt">/* Final Aero tint + micro-noise + 1px specular border */</span>'),
+                    ln(271, '')
+                  ],
+                  scopeLines: [
+                    ln(272, '<span class="syn-kw">static void</span> <span class="syn-fn">fx_glass_composite_pass</span>(<span class="syn-type">CompRenderer</span> *r, <span class="syn-type">CompFb</span> *scene,', { fold: '▾' }),
+                    ln(273, '                                    <span class="syn-kw">const</span> <span class="syn-type call-link type-link" data-jump="CompFxGlassParams">CompFxGlassParams</span> *p)'),
+                    ln(274, '{', { fold: '{' }),
+                    ln(275, '  <span class="syn-fn">glBindFramebuffer</span>(<span class="syn-mac">GL_FRAMEBUFFER</span>, scene->fbo);'),
+                    ln(276, '  <span class="syn-fn">glEnable</span>(<span class="syn-mac">GL_SCISSOR_TEST</span>);', { diff: 'agent' }),
+                    ln(277, '  <span class="syn-fn">glUseProgram</span>(r->shaders.glass_composite);'),
+                    ln(278, '  <span class="syn-fn">glUniform1f</span>(r->u_noise_amp, p->noise_grain);'),
+                    ln(279, '  <span class="syn-fn">glUniform1f</span>(r->u_specular, p->specular_edge);', { diff: 'add' }),
+                    ln(280, '  <span class="syn-fn">glBindTexture</span>(<span class="syn-mac">GL_TEXTURE_2D</span>, r->glass_out.tex);'),
+                    ln(281, '  <span class="syn-fn">glDrawArrays</span>(<span class="syn-mac">GL_TRIANGLE_STRIP</span>, <span class="syn-num">0</span>, <span class="syn-num">4</span>);'),
+                    ln(282, '  <span class="syn-fn">glDisable</span>(<span class="syn-mac">GL_SCISSOR_TEST</span>);'),
+                    ln(283, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(284, ''),
+                    ln(285, '<span class="syn-cmt">/* End of fx_glass.c */</span>')
+                  ]
+                }
+              ]
+            }
+          ],
+          edges: [
+            { fromCardId: 'comp_output_frame', fromLine: 189, toCardId: 'CompFxGlassParams', kind: 'types',  label: 'struct' },
+            { fromCardId: 'comp_output_frame', fromLine: 197, toCardId: 'fx_glass_render',   kind: 'calls',  label: 'calls'  },
+            { fromCardId: 'fx_glass_render',   fromLine: 218, toCardId: 'blur_down_pass',    kind: 'calls',  label: 'down ×n' },
+            { fromCardId: 'fx_glass_render',   fromLine: 222, toCardId: 'blur_up_pass',      kind: 'calls',  label: 'up ×n'   },
+            { fromCardId: 'fx_glass_render',   fromLine: 224, toCardId: 'fx_glass_composite_pass', kind: 'calls', label: 'composite' }
+          ],
+          lensData: {
+            types: {
+              symbol: 'CompFxGlassParams',
+              sizeof: '20 bytes (4-byte aligned)',
+              fields: [
+                { off: '+0x00', name: 'passes',        type: 'uint32_t', size: '4B', note: 'Dual-Kawase depth (1..5)' },
+                { off: '+0x04', name: 'offset',        type: 'float',    size: '4B', note: 'Half-texel sample radius' },
+                { off: '+0x08', name: 'noise_grain',   type: 'float',    size: '4B', note: 'Banding micro-dither' },
+                { off: '+0x0C', name: 'tint_rgba',     type: 'uint32_t', size: '4B', note: '@metro-glass-bg RGBA' },
+                { off: '+0x10', name: 'specular_edge', type: 'float',    size: '4B', note: '1px glass bezel glaze' }
+              ]
+            },
+            impact: {
+              targetSymbol: 'fx_glass_render()',
+              refs: [
+                { file: 'src/compositor/comp_output.c:197',       fn: 'comp_output_frame()',           snippet: 'fx_glass_render(r, &out->scene_fb, &glass);',       jump: 'comp_output_frame', badge: 'IN STRIP' },
+                { file: 'src/compositor/comp_overview.c:117',     fn: 'comp_overview_render_backdrop()', snippet: 'fx_glass_render(out->renderer, &out->backdrop_fb, &p);', spawn: 'caller_overview_glass', badge: 'HOT PATH' },
+                { file: 'src/compositor/comp_session_lock.c:85',  fn: 'comp_lock_render_blur()',       snippet: 'fx_glass_render(out->renderer, &out->lock_fb, &p);',     spawn: 'caller_lock_glass', badge: 'LOCK' },
+                { file: 'tests/test_fx_glass.c:48',               fn: 'test_glass_pyramid_zero_alloc()', snippet: 'fx_glass_render(&mock_r, &fb, &params);',           jump: 'fx_glass_render', badge: 'TEST' }
+              ],
+              materializeIds: ['caller_overview_glass', 'caller_lock_glass']
+            },
+            diff: {
+              txId: 'agent_tx #042',
+              summary: 'Scoped scissor rect + specular_edge uniform for Aero glass pass',
+              hunks: [
+                {
+                  id: 'hunk-1',
+                  file: 'src/compositor/fx_glass.h:21-24',
+                  status: 'pending',
+                  lines: [
+                    { t: 'ctx', s: '   uint32_t tint_rgba;' },
+                    { t: 'del', s: '-  float    border_alpha;' },
+                    { t: 'add', s: '+  float    specular_edge; /* 1px top highlight */' },
+                    { t: 'ctx', s: ' } CompFxGlassParams;' }
+                  ]
+                },
+                {
+                  id: 'hunk-2',
+                  file: 'src/compositor/fx_glass.c:275-282',
+                  status: 'pending',
+                  lines: [
+                    { t: 'ctx', s: '   glBindFramebuffer(GL_FRAMEBUFFER, scene->fbo);' },
+                    { t: 'add', s: '+  glEnable(GL_SCISSOR_TEST);' },
+                    { t: 'ctx', s: '   glUseProgram(r->shaders.glass_composite);' },
+                    { t: 'add', s: '+  glUniform1f(r->u_specular, p->specular_edge);' }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+
+        /* TRAIL 02: LSP Call Hierarchy */
+        {
+          id: 'trail-lsp',
+          index: '02',
+          name: 'LSP call hierarchy',
+          focusedCol: 1,
+          focusedCardId: 'ide_lsp_parse_call_hierarchy',
+          columns: [
+            {
+              id: 'c2-0',
+              width: 50,
+              cards: [
+                {
+                  id: 'ide_lsp_request_call_hierarchy',
+                  kind: 'fn',
+                  symbol: 'ide_lsp_request_call_hierarchy()',
+                  file: 'src/ide/ide_lsp.c',
+                  bounds: 'L412..L458',
+                  activeLine: 424,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(410, '<span class="syn-cmt">/* Async callHierarchy/outgoingCalls dispatch */</span>')
+                  ],
+                  scopeLines: [
+                    ln(412, '<span class="syn-kw">void</span> <span class="syn-fn">ide_lsp_request_call_hierarchy</span>(<span class="syn-type">IdeLspBridge</span> *b, <span class="syn-type">IdeCursor</span> pos)', { fold: '▾' }),
+                    ln(413, '{', { fold: '{' }),
+                    ln(414, '  <span class="syn-ctrl">if</span> (!<span class="syn-fn">ide_lsp_client_is_ready</span>(b->client)) {'),
+                    ln(415, '    <span class="syn-fn">ide_strip_notify_rg_fallback</span>(b->strip, <span class="syn-mac">TRUE</span>);'),
+                    ln(416, '    <span class="syn-ctrl">return</span>;'),
+                    ln(417, '  }'),
+                    ln(418, '  <span class="syn-type call-link type-link" data-jump="IdeLspCallItem">IdeLspCallItem</span> req = { .uri = b->uri, .line = pos.line };'),
+                    ln(419, '  <span class="syn-fn">ide_lsp_client_call</span>(b->client, <span class="syn-str">"callHierarchy/outgoingCalls"</span>,'),
+                    ln(420, '                      &amp;req, <span class="syn-fn call-link" data-jump="ide_lsp_parse_call_hierarchy">ide_lsp_parse_call_hierarchy</span>, b);', { diff: 'mod', pc: true }),
+                    ln(421, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(422, '')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c2-1',
+              width: 50,
+              cards: [
+                {
+                  id: 'IdeLspCallItem',
+                  kind: 'type',
+                  symbol: 'struct IdeLspCallItem',
+                  file: 'src/ide/ide_lsp_client.h',
+                  bounds: 'L64..L84',
+                  activeLine: 68,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(62, '<span class="syn-cmt">/* GTK-free LSP call hierarchy node */</span>')
+                  ],
+                  scopeLines: [
+                    ln(64, '<span class="syn-kw">typedef struct</span> <span class="syn-type">IdeLspCallItem</span> {', { fold: '▾' }),
+                    ln(65, '  <span class="syn-kw">char</span>     *name;'),
+                    ln(66, '  <span class="syn-kw">char</span>     *uri;'),
+                    ln(67, '  <span class="syn-type">IdeRange</span>  ast_range;   <span class="syn-cmt">/* Full symbol bounds for Strip Veil */</span>', { diff: 'add' }),
+                    ln(68, '  <span class="syn-type">IdeRange</span>  select_range;<span class="syn-cmt">/* Call site anchor line */</span>'),
+                    ln(69, '  <span class="syn-type">uint32_t</span>  kind;        <span class="syn-cmt">/* LSP SymbolKind (12=Fn, 23=Struct) */</span>'),
+                    ln(70, '} <span class="syn-type">IdeLspCallItem</span>;', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(71, '')
+                  ]
+                },
+                {
+                  id: 'ide_lsp_parse_call_hierarchy',
+                  kind: 'fn',
+                  symbol: 'ide_lsp_parse_call_hierarchy()',
+                  file: 'src/ide/ide_lsp_client.c',
+                  bounds: 'L518..L566',
+                  activeLine: 528,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(516, '<span class="syn-cmt">/* Parses JSON-RPC result[] into Strip Card descriptors */</span>')
+                  ],
+                  scopeLines: [
+                    ln(518, '<span class="syn-kw">void</span> <span class="syn-fn">ide_lsp_parse_call_hierarchy</span>(<span class="syn-type">JsonNode</span> *res, <span class="syn-kw">gpointer</span> user)', { fold: '▾' }),
+                    ln(519, '{', { fold: '{' }),
+                    ln(520, '  <span class="syn-type">IdeLspBridge</span> *b = user;'),
+                    ln(521, '  <span class="syn-type">JsonArray</span> *arr = <span class="syn-fn">json_node_get_array</span>(res);'),
+                    ln(522, '  <span class="syn-ctrl">for</span> (<span class="syn-type">guint</span> i = <span class="syn-num">0</span>; i &lt; <span class="syn-fn">json_array_get_length</span>(arr); i++) {'),
+                    ln(523, '    <span class="syn-type">JsonObject</span> *to = <span class="syn-fn">json_object_get_object_member</span>(<span class="syn-fn">json_array_get_object_element</span>(arr, i), <span class="syn-str">"to"</span>);'),
+                    ln(524, '    <span class="syn-type">IdeLspCallItem</span> item = { <span class="syn-num">0</span> };'),
+                    ln(525, '    <span class="syn-fn call-link spawnable" data-jump="ide_jsonrpc_get_range">ide_jsonrpc_get_range</span>(to, &amp;item.ast_range);', { bp: 'normal' }),
+                    ln(526, '    <span class="syn-fn call-link" data-jump="ide_strip_spawn_card">ide_strip_spawn_card</span>(b->strip, &amp;item, <span class="syn-mac">STRIP_LENS_CALLS</span>);', { diff: 'agent' }),
+                    ln(527, '  }'),
+                    ln(528, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(529, '')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c2-2',
+              width: 50,
+              cards: [
+                {
+                  id: 'ide_strip_spawn_card',
+                  kind: 'fn',
+                  symbol: 'ide_strip_spawn_card()',
+                  file: 'src/ide/ide_strip.c',
+                  bounds: 'L190..L238',
+                  activeLine: 200,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(188, '<span class="syn-cmt">/* Inserts card into Column i+1 and triggers spring camera */</span>')
+                  ],
+                  scopeLines: [
+                    ln(190, '<span class="syn-type">IdeStripCard</span> *<span class="syn-fn">ide_strip_spawn_card</span>(<span class="syn-type">IdeStrip</span> *s, <span class="syn-kw">const</span> <span class="syn-type call-link type-link" data-jump="IdeLspCallItem">IdeLspCallItem</span> *it, <span class="syn-type">IdeLens</span> lens)', { fold: '▾' }),
+                    ln(191, '{', { fold: '{' }),
+                    ln(192, '  <span class="syn-type">IdeStripCol</span> *col = <span class="syn-fn">ide_strip_ensure_next_col</span>(s, s->focused_col);'),
+                    ln(193, '  <span class="syn-type">IdeStripCard</span> *card = <span class="syn-fn">ide_strip_card_new_scoped</span>(it->uri, it->ast_range);'),
+                    ln(194, '  <span class="syn-fn">ide_strip_col_push</span>(col, card);'),
+                    ln(195, '  <span class="syn-fn">ide_strip_bridge_connect</span>(s, s->focused_card, it->select_range.start_line, card, lens);', { diff: 'add' }),
+                    ln(196, '  <span class="syn-fn">ide_strip_camera_spring_to</span>(s, col->x_offset);'),
+                    ln(197, '  <span class="syn-ctrl">return</span> card;'),
+                    ln(198, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(199, '')
+                  ]
+                }
+              ]
+            }
+          ],
+          edges: [
+            { fromCardId: 'ide_lsp_request_call_hierarchy', fromLine: 418, toCardId: 'IdeLspCallItem',               kind: 'types', label: 'struct' },
+            { fromCardId: 'ide_lsp_request_call_hierarchy', fromLine: 420, toCardId: 'ide_lsp_parse_call_hierarchy', kind: 'calls', label: 'async cb' },
+            { fromCardId: 'ide_lsp_parse_call_hierarchy',   fromLine: 526, toCardId: 'ide_strip_spawn_card',         kind: 'calls', label: 'spawns' }
+          ],
+          lensData: {
+            types: {
+              symbol: 'IdeLspCallItem',
+              sizeof: '40 bytes (8-byte aligned)',
+              fields: [
+                { off: '+0x00', name: 'name',         type: 'char *',   size: '8B', note: 'Owned symbol identifier' },
+                { off: '+0x08', name: 'uri',          type: 'char *',   size: '8B', note: 'file:// URI' },
+                { off: '+0x10', name: 'ast_range',    type: 'IdeRange', size: '8B', note: 'Dimmed Veil boundaries' },
+                { off: '+0x18', name: 'select_range', type: 'IdeRange', size: '8B', note: 'Connector source line' },
+                { off: '+0x20', name: 'kind',         type: 'uint32_t', size: '4B', note: 'LSP SymbolKind enum' }
+              ]
+            },
+            impact: {
+              targetSymbol: 'ide_strip_spawn_card()',
+              refs: [
+                { file: 'src/ide/ide_lsp_client.c:526', fn: 'ide_lsp_parse_call_hierarchy()', snippet: 'ide_strip_spawn_card(b->strip, &item, STRIP_LENS_CALLS);', jump: 'ide_lsp_parse_call_hierarchy', badge: 'IN STRIP' },
+                { file: 'src/ide/ide_window.c:892',     fn: 'ide_window_goto_definition()',   snippet: 'ide_strip_spawn_card(self->strip, &def, STRIP_LENS_CALLS);', jump: 'ide_lsp_request_call_hierarchy', badge: 'g d' },
+                { file: 'tests/test_ide_strip.c:74',    fn: 'test_strip_dedup_existing()',    snippet: 'c2 = ide_strip_spawn_card(strip, &item, STRIP_LENS_CALLS);', jump: 'ide_strip_spawn_card', badge: 'TEST' }
+              ],
+              materializeIds: ['ide_jsonrpc_get_range']
+            },
+            diff: {
+              txId: 'agent_tx #047',
+              summary: 'Wire LSP outgoingCalls directly into Strip Column i+1 with bridge edges',
+              hunks: [
+                {
+                  id: 'hunk-lsp-1',
+                  file: 'src/ide/ide_strip.c:194-197',
+                  status: 'pending',
+                  lines: [
+                    { t: 'ctx', s: '   ide_strip_col_push(col, card);' },
+                    { t: 'add', s: '+  ide_strip_bridge_connect(s, s->focused_card, it->select_range.start_line, card, lens);' },
+                    { t: 'ctx', s: '   ide_strip_camera_spring_to(s, col->x_offset);' }
+                  ]
+                }
+              ]
+            }
+          }
+        },
+
+        /* TRAIL 03: XWayland DISPLAY */
+        {
+          id: 'trail-xwayland',
+          index: '03',
+          name: 'XWayland DISPLAY',
+          focusedCol: 0,
+          focusedCardId: 'comp_xwayland_init',
+          columns: [
+            {
+              id: 'c3-0',
+              width: 50,
+              cards: [
+                {
+                  id: 'comp_xwayland_init',
+                  kind: 'fn',
+                  symbol: 'comp_xwayland_init()',
+                  file: 'src/compositor/comp_xwayland.c',
+                  bounds: 'L42..L88',
+                  activeLine: 52,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(40, '<span class="syn-cmt">/* Lazy XWayland bridge with systemd env sync */</span>')
+                  ],
+                  scopeLines: [
+                    ln(42, '<span class="syn-kw">gboolean</span> <span class="syn-fn">comp_xwayland_init</span>(<span class="syn-type">CompServer</span> *srv)', { fold: '▾' }),
+                    ln(43, '{', { fold: '{' }),
+                    ln(44, '  <span class="syn-kw">const char</span> *wl = <span class="syn-fn call-link spawnable" data-jump="wl_display_add_socket_auto">comp_ipc_bind_socket</span>(srv);'),
+                    ln(45, '  srv->xwayland = <span class="syn-fn">wlr_xwayland_create</span>(srv->wl_display, srv->compositor, <span class="syn-mac">TRUE</span>);'),
+                    ln(46, '  <span class="syn-ctrl">if</span> (!srv->xwayland) <span class="syn-ctrl">return</span> <span class="syn-mac">FALSE</span>;'),
+                    ln(47, ''),
+                    ln(48, '  srv->xw_ready.notify = <span class="syn-fn call-link" data-jump="comp_xwayland_on_ready">comp_xwayland_on_ready</span>;', { diff: 'mod', pc: true }),
+                    ln(49, '  <span class="syn-fn">wl_signal_add</span>(&amp;srv->xwayland->events.ready, &amp;srv->xw_ready);'),
+                    ln(50, '  <span class="syn-fn">g_info</span>(<span class="syn-str">"xwayland: armed on %s (lazy)"</span>, wl);'),
+                    ln(51, '  <span class="syn-ctrl">return</span> <span class="syn-mac">TRUE</span>;'),
+                    ln(52, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(53, '')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c3-1',
+              width: 50,
+              cards: [
+                {
+                  id: 'comp_xwayland_on_ready',
+                  kind: 'fn',
+                  symbol: 'comp_xwayland_on_ready()',
+                  file: 'src/compositor/comp_xwayland.c',
+                  bounds: 'L99..L136',
+                  activeLine: 108,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(97, '<span class="syn-cmt">/* Fired once Xwayland publishes its :N display socket */</span>')
+                  ],
+                  scopeLines: [
+                    ln(99, '<span class="syn-kw">static void</span> <span class="syn-fn">comp_xwayland_on_ready</span>(<span class="syn-type">struct wl_listener</span> *l, <span class="syn-kw">void</span> *data)', { fold: '▾' }),
+                    ln(100, '{', { fold: '{' }),
+                    ln(101, '  <span class="syn-type">CompServer</span> *srv = <span class="syn-fn">wl_container_of</span>(l, srv, xw_ready);'),
+                    ln(102, '  <span class="syn-kw">const char</span> *disp = srv->xwayland->display_name;'),
+                    ln(103, '  <span class="syn-fn call-link" data-jump="comp_env_export_display">comp_env_export_display</span>(disp);', { bp: 'normal', diff: 'agent' }),
+                    ln(104, '  <span class="syn-fn call-link" data-jump="comp_seat_set_xcursor">comp_seat_set_xcursor</span>(srv->seat, srv->xwayland);'),
+                    ln(105, '  <span class="syn-fn">wlr_xwayland_set_seat</span>(srv->xwayland, srv->seat->wlr_seat);'),
+                    ln(106, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(107, '')
+                  ]
+                }
+              ]
+            },
+            {
+              id: 'c3-2',
+              width: 50,
+              cards: [
+                {
+                  id: 'comp_env_export_display',
+                  kind: 'fn',
+                  symbol: 'comp_env_export_display()',
+                  file: 'src/compositor/comp_env.c',
+                  bounds: 'L28..L56',
+                  activeLine: 34,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(26, '<span class="syn-cmt">/* Async dbus-update-activation-environment (no main-loop block) */</span>')
+                  ],
+                  scopeLines: [
+                    ln(28, '<span class="syn-kw">void</span> <span class="syn-fn">comp_env_export_display</span>(<span class="syn-kw">const char</span> *display_name)', { fold: '▾' }),
+                    ln(29, '{', { fold: '{' }),
+                    ln(30, '  <span class="syn-fn">g_setenv</span>(<span class="syn-str">"DISPLAY"</span>, display_name, <span class="syn-mac">TRUE</span>);'),
+                    ln(31, '  <span class="syn-kw">const char</span> *argv[] = { <span class="syn-str">"systemctl"</span>, <span class="syn-str">"--user"</span>, <span class="syn-str">"import-environment"</span>, <span class="syn-str">"DISPLAY"</span>, <span class="syn-mac">NULL</span> };'),
+                    ln(32, '  <span class="syn-fn">g_subprocess_newv</span>(argv, <span class="syn-mac">G_SUBPROCESS_FLAGS_NONE</span>, <span class="syn-mac">NULL</span>);', { diff: 'add' }),
+                    ln(33, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(34, '')
+                  ]
+                },
+                {
+                  id: 'comp_seat_set_xcursor',
+                  kind: 'fn',
+                  symbol: 'comp_seat_set_xcursor()',
+                  file: 'src/compositor/comp_seat.c',
+                  bounds: 'L204..L232',
+                  activeLine: 212,
+                  fullFile: false,
+                  collapsed: false,
+                  beforeVeil: [
+                    ln(202, '<span class="syn-cmt">/* Synchronize HiDPI XCursor theme with XWayland root */</span>')
+                  ],
+                  scopeLines: [
+                    ln(204, '<span class="syn-kw">void</span> <span class="syn-fn">comp_seat_set_xcursor</span>(<span class="syn-type">CompSeat</span> *seat, <span class="syn-type">struct wlr_xwayland</span> *xw)', { fold: '▾' }),
+                    ln(205, '{', { fold: '{' }),
+                    ln(206, '  <span class="syn-type">struct wlr_xcursor</span> *xc = <span class="syn-fn">wlr_xcursor_manager_get_xcursor</span>(seat->cursor_mgr, <span class="syn-str">"left_ptr"</span>, <span class="syn-num">1</span>);'),
+                    ln(207, '  <span class="syn-ctrl">if</span> (!xc || xc->image_count == <span class="syn-num">0</span>) <span class="syn-ctrl">return</span>;'),
+                    ln(208, '  <span class="syn-type">struct wlr_xcursor_image</span> *img = xc->images[<span class="syn-num">0</span>];'),
+                    ln(209, '  <span class="syn-fn">wlr_xwayland_set_cursor</span>(xw, img->buffer, img->width * <span class="syn-num">4</span>, img->width, img->height, img->hotspot_x, img->hotspot_y);'),
+                    ln(210, '}', { fold: '}' })
+                  ],
+                  afterVeil: [
+                    ln(211, '')
+                  ]
+                }
+              ]
+            }
+          ],
+          edges: [
+            { fromCardId: 'comp_xwayland_init',     fromLine: 48,  toCardId: 'comp_xwayland_on_ready',  kind: 'calls', label: 'signal ready' },
+            { fromCardId: 'comp_xwayland_on_ready', fromLine: 103, toCardId: 'comp_env_export_display', kind: 'calls', label: 'export :N' },
+            { fromCardId: 'comp_xwayland_on_ready', fromLine: 104, toCardId: 'comp_seat_set_xcursor',   kind: 'calls', label: 'xcursor' }
+          ],
+          lensData: {
+            types: {
+              symbol: 'struct wlr_xwayland',
+              sizeof: '128 bytes (wlroots 0.18)',
+              fields: [
+                { off: '+0x00', name: 'server',       type: 'wlr_xwayland_server *', size: '8B', note: 'Lazy process supervisor' },
+                { off: '+0x18', name: 'display_name', type: 'char[16]',              size: '16B', note: 'e.g. ":0" or ":1"' },
+                { off: '+0x28', name: 'seat',         type: 'struct wlr_seat *',     size: '8B', note: 'Pointer/keyboard focus' },
+                { off: '+0x40', name: 'events.ready', type: 'struct wl_signal',      size: '16B', note: 'Emitted on X11 ready' }
+              ]
+            },
+            impact: {
+              targetSymbol: 'comp_env_export_display()',
+              refs: [
+                { file: 'src/compositor/comp_xwayland.c:103', fn: 'comp_xwayland_on_ready()', snippet: 'comp_env_export_display(disp);', jump: 'comp_xwayland_on_ready', badge: 'IN STRIP' },
+                { file: 'src/compositor/comp_main.c:218',     fn: 'comp_server_start()',      snippet: 'comp_ipc_bind_socket(srv);',     spawn: 'wl_display_add_socket_auto', badge: 'BOOT' }
+              ],
+              materializeIds: ['wl_display_add_socket_auto']
+            },
+            diff: {
+              txId: 'agent_tx #051',
+              summary: 'Replace blocking g_spawn_sync with async GSubprocess for DISPLAY export',
+              hunks: [
+                {
+                  id: 'hunk-xw-1',
+                  file: 'src/compositor/comp_env.c:30-33',
+                  status: 'pending',
+                  lines: [
+                    { t: 'del', s: '-  g_spawn_sync(NULL, argv, NULL, 0, NULL, NULL, NULL, NULL, NULL, NULL);' },
+                    { t: 'add', s: '+  g_subprocess_newv(argv, G_SUBPROCESS_FLAGS_NONE, NULL);' }
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ];
+    }
+
+    /* ========================================================================
+       2. GLOBAL APPLICATION STATE
+       ======================================================================== */
+    const state = {
+      trails: buildInitialTrails(),
+      activeTrailIdx: 0,
+      activeLens: 'calls',     // calls | types | impact | diff
+      viewMode: 'strip',       // strip | tabs
+      overviewOpen: false,
+      helpOpen: false,
+      treeOpen: false,
+      floating: false,
+      relLineNumbers: false,
+      rgFallback: false,
+      hoveredTargetId: null,
+      toastTimer: null
+    };
+
+    /* Analytical Critically-Damped Spring Camera (comp_spring.c model) */
+    const camera = {
+      pos: 0,
+      vel: 0,
+      target: 0,
+      rafId: null,
+      lastTime: 0,
+      omega: 14.5,   // natural frequency (rad/s)
+      zeta: 0.92     // damping ratio (crisp Niri feel, minimal overshoot)
+    };
+
+    /* DOM References */
+    const dom = {
+      niriStage:       document.getElementById('niriStage'),
+      btnTree:         document.getElementById('btnTree'),
+      btnStripMode:    document.getElementById('btnStripMode'),
+      btnOverview:     document.getElementById('btnOverview'),
+      btnHelp:         document.getElementById('btnHelp'),
+      btnBuild:        document.getElementById('btnBuild'),
+      btnFloatTile:    document.getElementById('btnFloatTile'),
+      btnClose:        document.getElementById('btnClose'),
+      stripToolbar:    document.getElementById('stripToolbar'),
+      trailRail:       document.getElementById('trailRail'),
+      lensSelector:    document.getElementById('lensSelector'),
+      widthPresets:    document.getElementById('widthPresets'),
+      btnFullFile:     document.getElementById('btnFullFile'),
+      btnConsume:      document.getElementById('btnConsume'),
+      btnExpel:        document.getElementById('btnExpel'),
+      btnCollapse:     document.getElementById('btnCollapse'),
+      btnRelNum:       document.getElementById('btnRelNum'),
+      btnLspToggle:    document.getElementById('btnLspToggle'),
+      lspToggleLabel:  document.getElementById('lspToggleLabel'),
+      rgBanner:        document.getElementById('rgFallbackBanner'),
+      treeSidebar:     document.getElementById('treeSidebar'),
+      treeList:        document.getElementById('treeList'),
+      stripViewport:   document.getElementById('stripViewport'),
+      stripTrack:      document.getElementById('stripTrack'),
+      bridgeSvg:       document.getElementById('bridgeSvg'),
+      classicTabsView: document.getElementById('classicTabsView'),
+      classicTabRibbon:document.getElementById('classicTabRibbon'),
+      classicEditorBody:document.getElementById('classicEditorBody'),
+      btnReturnStrip:  document.getElementById('btnReturnStrip'),
+      overviewOverlay: document.getElementById('overviewOverlay'),
+      overviewStage:   document.getElementById('overviewStage'),
+      ovTrailBadge:    document.getElementById('ovTrailBadge'),
+      ovLensBadge:     document.getElementById('ovLensBadge'),
+      btnExitOverview: document.getElementById('btnExitOverview'),
+      helpModal:       document.getElementById('helpModal'),
+      btnCloseHelp:    document.getElementById('btnCloseHelp'),
+      stripMinimapBar: document.getElementById('stripMinimapBar'),
+      minimapTrackWrap:document.getElementById('minimapTrackWrap'),
+      minimapCols:     document.getElementById('minimapCols'),
+      minimapViewportBox: document.getElementById('minimapViewportBox'),
+      minimapCamReadout: document.getElementById('minimapCamReadout'),
+      btnCenterCam:    document.getElementById('btnCenterCam'),
+      statusTrail:     document.getElementById('statusTrail'),
+      statusCol:       document.getElementById('statusCol'),
+      statusLens:      document.getElementById('statusLens'),
+      statusLsp:       document.getElementById('statusLsp'),
+      statusSymbol:    document.getElementById('statusSymbol'),
+      ideToast:        document.getElementById('ideToast')
+    };
+
+    function getActiveTrail() {
+      return state.trails[state.activeTrailIdx];
+    }
+
+    function findCardLocation(trail, cardId) {
+      for (let ci = 0; ci < trail.columns.length; ci++) {
+        const col = trail.columns[ci];
+        for (let ki = 0; ki < col.cards.length; ki++) {
+          if (col.cards[ki].id === cardId) {
+            return { colIdx: ci, cardIdx: ki, col, card: col.cards[ki] };
+          }
+        }
+      }
+      return null;
+    }
+
+    function getFocusedCard() {
+      const trail = getActiveTrail();
+      const loc = findCardLocation(trail, trail.focusedCardId);
+      if (loc) return loc;
+      const col = trail.columns[0];
+      if (col && col.cards.length) {
+        trail.focusedCol = 0;
+        trail.focusedCardId = col.cards[0].id;
+        return { colIdx: 0, cardIdx: 0, col, card: col.cards[0] };
+      }
+      return null;
+    }
+
+    function showToast(msg) {
+      dom.ideToast.textContent = msg;
+      dom.ideToast.classList.add('visible');
+      clearTimeout(state.toastTimer);
+      state.toastTimer = setTimeout(() => {
+        dom.ideToast.classList.remove('visible');
+      }, 2400);
+    }
+
+    /* ========================================================================
+       3. SPRING CAMERA PHYSICS (requestAnimationFrame)
+       ======================================================================== */
+    function getMaxCameraScroll() {
+      const vpW = dom.stripViewport.clientWidth || 1;
+      const trackW = dom.stripTrack.scrollWidth || vpW;
+      return Math.max(0, trackW - vpW);
+    }
+
+    function setCameraTarget(targetX, immediate = false) {
+      const maxScroll = getMaxCameraScroll();
+      const clamped = Math.max(0, Math.min(maxScroll, targetX));
+      camera.target = clamped;
+
+      if (immediate) {
+        camera.pos = clamped;
+        camera.vel = 0;
+        applyCameraTransform();
+        return;
+      }
+
+      if (!camera.rafId) {
+        camera.lastTime = performance.now();
+        camera.rafId = requestAnimationFrame(stepSpringCamera);
+      }
+    }
+
+    function stepSpringCamera(now) {
+      const dt = Math.min(0.04, Math.max(0.001, (now - camera.lastTime) / 1000));
+      camera.lastTime = now;
+
+      const disp = camera.pos - camera.target;
+      const k = camera.omega * camera.omega;
+      const c = 2 * camera.zeta * camera.omega;
+      const accel = -k * disp - c * camera.vel;
+
+      camera.vel += accel * dt;
+      camera.pos += camera.vel * dt;
+
+      if (Math.abs(camera.pos - camera.target) < 0.35 && Math.abs(camera.vel) < 1.8) {
+        camera.pos = camera.target;
+        camera.vel = 0;
+        camera.rafId = null;
+        applyCameraTransform();
+        return;
+      }
+
+      applyCameraTransform();
+      camera.rafId = requestAnimationFrame(stepSpringCamera);
+    }
+
+    function applyCameraTransform() {
+      dom.stripTrack.style.transform = `translate3d(${-camera.pos.toFixed(2)}px, 0, 0)`;
+      dom.minimapCamReadout.textContent = `X: ${Math.round(camera.pos)}px`;
+      updateMinimapViewportBox();
+      drawDependencyBridges();
+    }
+
+    function ensureColumnInView(colIdx, center = false) {
+      const colEls = dom.stripTrack.querySelectorAll('.strip-column');
+      const el = colEls[colIdx];
+      if (!el) return;
+      const vpW = dom.stripViewport.clientWidth;
+      const left = el.offsetLeft;
+      const right = left + el.offsetWidth;
+
+      if (center) {
+        setCameraTarget(left - (vpW - el.offsetWidth) / 2);
+        return;
+      }
+
+      const margin = 28;
+      if (left - margin < camera.target) {
+        setCameraTarget(left - margin);
+      } else if (right + margin > camera.target + vpW) {
+        setCameraTarget(right + margin - vpW);
+      }
+    }
+
+    /* ========================================================================
+       4. RENDERING: TRAILS, PROJECT TREE, STRIP COLUMNS, LENS CARDS
+       ======================================================================== */
+    function renderTrailRail() {
+      dom.trailRail.innerHTML = '';
+      state.trails.forEach((tr, idx) => {
+        const btn = document.createElement('button');
+        btn.className = 'trail-pill' + (idx === state.activeTrailIdx ? ' active' : '');
+        btn.innerHTML = `<span class="trail-idx">${tr.index}</span><span>· ${tr.name}</span>`;
+        btn.addEventListener('click', () => {
+          state.activeTrailIdx = idx;
+          renderAll({ resetCamera: true });
+          showToast(`Switched to Trail ${tr.index} · ${tr.name}`);
+        });
+        dom.trailRail.appendChild(btn);
+      });
+
+      const addBtn = document.createElement('button');
+      addBtn.className = 'trail-pill add-trail';
+      addBtn.textContent = '+ NEW TRAIL';
+      addBtn.title = 'Spawn a fresh investigation trail';
+      addBtn.addEventListener('click', createNewTrail);
+      dom.trailRail.appendChild(addBtn);
+    }
+
+    function createNewTrail() {
+      const nextNum = String(state.trails.length + 1).padStart(2, '0');
+      const newTrail = {
+        id: `trail-custom-${Date.now()}`,
+        index: nextNum,
+        name: `scratch trail ${nextNum}`,
+        focusedCol: 0,
+        focusedCardId: `scratch_entry_${nextNum}`,
+        columns: [
+          {
+            id: `c-${nextNum}-0`,
+            width: 50,
+            cards: [
+              {
+                id: `scratch_entry_${nextNum}`,
+                kind: 'fn',
+                symbol: 'kajo_shell_dispatch()',
+                file: 'src/shell/shell_ipc.c',
+                bounds: 'L72..L96',
+                activeLine: 78,
+                fullFile: false,
+                collapsed: false,
+                beforeVeil: [ln(70, '<span class="syn-cmt">/* Fresh Code Strip investigation trail */</span>')],
+                scopeLines: [
+                  ln(72, '<span class="syn-kw">void</span> <span class="syn-fn">kajo_shell_dispatch</span>(<span class="syn-type">ShellIpc</span> *ipc, <span class="syn-kw">const char</span> *cmd)', { fold: '▾' }),
+                  ln(73, '{', { fold: '{' }),
+                  ln(74, '  <span class="syn-ctrl">if</span> (<span class="syn-fn">g_str_equal</span>(cmd, <span class="syn-str">"toggle-glass"</span>)) {'),
+                  ln(75, '    <span class="syn-fn call-link spawnable" data-jump="gl_shader_bind_blur">gl_shader_bind_blur</span>(ipc->renderer, <span class="syn-mac">BLUR_DIR_DOWN</span>, <span class="syn-num">1.5f</span>);'),
+                  ln(76, '  }'),
+                  ln(77, '}', { fold: '}' })
+                ],
+                afterVeil: [ln(78, '')]
+              }
+            ]
+          }
+        ],
+        edges: [],
+        lensData: {
+          types: {
+            symbol: 'ShellIpc',
+            sizeof: '32 bytes',
+            fields: [
+              { off: '+0x00', name: 'socket_fd', type: 'int', size: '4B', note: 'UNIX_SEQPACKET fd' },
+              { off: '+0x08', name: 'renderer',  type: 'CompRenderer *', size: '8B', note: 'Active GL backend' }
+            ]
+          },
+          impact: {
+            targetSymbol: 'kajo_shell_dispatch()',
+            refs: [
+              { file: 'src/shell/main.c:142', fn: 'on_ipc_readable()', snippet: 'kajo_shell_dispatch(app->ipc, line);', spawn: 'gl_shader_bind_blur', badge: 'IPC' }
+            ],
+            materializeIds: ['gl_shader_bind_blur']
+          },
+          diff: {
+            txId: 'agent_tx #new',
+            summary: 'No pending AI agent edits in this scratch trail',
+            hunks: []
+          }
+        }
+      };
+      state.trails.push(newTrail);
+      state.activeTrailIdx = state.trails.length - 1;
+      renderAll({ resetCamera: true });
+      showToast(`Created Trail ${nextNum} — click underlined call site to branch!`);
+    }
+
+    function renderTreeSidebar() {
+      const trail = getActiveTrail();
+      const activeFiles = new Set();
+      trail.columns.forEach(col => col.cards.forEach(c => activeFiles.add(c.file)));
+
+      const treeEntries = [
+        { dir: true,  indent: 0,  label: '▾ 📁 src' },
+        { dir: true,  indent: 14, label: '▾ 📁 compositor' },
+        { dir: false, indent: 28, label: '📄 comp_output.c',   file: 'src/compositor/comp_output.c',   git: 'M' },
+        { dir: false, indent: 28, label: '📄 fx_glass.h',      file: 'src/compositor/fx_glass.h',      git: 'AG' },
+        { dir: false, indent: 28, label: '📄 fx_glass.c',      file: 'src/compositor/fx_glass.c',      git: 'AG' },
+        { dir: false, indent: 28, label: '📄 gl_shaders.c',    file: 'src/compositor/gl_shaders.c',    git: 'A' },
+        { dir: false, indent: 28, label: '📄 comp_xwayland.c', file: 'src/compositor/comp_xwayland.c', git: 'M' },
+        { dir: false, indent: 28, label: '📄 comp_env.c',      file: 'src/compositor/comp_env.c',      git: 'M' },
+        { dir: false, indent: 28, label: '📄 comp_seat.c',     file: 'src/compositor/comp_seat.c' },
+        { dir: true,  indent: 14, label: '▾ 📁 ide' },
+        { dir: false, indent: 28, label: '📄 ide_lsp.c',       file: 'src/ide/ide_lsp.c',              git: 'M' },
+        { dir: false, indent: 28, label: '📄 ide_lsp_client.h',file: 'src/ide/ide_lsp_client.h',       git: 'A' },
+        { dir: false, indent: 28, label: '📄 ide_lsp_client.c',file: 'src/ide/ide_lsp_client.c',       git: 'AG' },
+        { dir: false, indent: 28, label: '📄 ide_strip.c',     file: 'src/ide/ide_strip.c',            git: 'A' },
+        { dir: false, indent: 28, label: '📄 ide_jsonrpc.c',   file: 'src/ide/ide_jsonrpc.c' },
+        { dir: true,  indent: 0,  label: '▾ 📁 docs' },
+        { dir: false, indent: 14, label: '📖 ui-gallery.html', file: 'docs/ui-gallery.html' }
+      ];
+
+      dom.treeList.innerHTML = '';
+      treeEntries.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'tree-row' + (item.dir ? ' dir' : '') + (item.file && activeFiles.has(item.file) ? ' active' : '');
+        row.style.paddingLeft = `${10 + item.indent}px`;
+        row.innerHTML = `<span>${item.label}</span>${item.git ? `<span class="git-badge ${item.git}">${item.git}</span>` : ''}`;
+        if (!item.dir && item.file) {
+          row.addEventListener('click', () => {
+            // Focus first card matching this file in current trail if present
+            for (let ci = 0; ci < trail.columns.length; ci++) {
+              const found = trail.columns[ci].cards.find(c => c.file === item.file);
+              if (found) {
+                focusCard(found.id, true);
+                return;
+              }
+            }
+            showToast(`${item.file} — switch trail or click a call site to inspect`);
+          });
+        }
+        dom.treeList.appendChild(row);
+      });
+    }
+
+    function getColumnPixelWidth(pct) {
+      const vpW = Math.max(760, dom.stripViewport.clientWidth || window.innerWidth);
+      const usable = vpW - 28;
+      if (pct === 100) return Math.round(usable - 24);
+      if (pct === 66)  return Math.round(usable * 0.64);
+      if (pct === 50)  return Math.round(usable * 0.475);
+      return Math.round(usable * 0.325);
+    }
+
+    function buildCodeLineEl(card, lineObj, isVeil, activeLineNum) {
+      const div = document.createElement('div');
+      const isActive = !isVeil && lineObj.num === activeLineNum;
+      div.className = 'code-line'
+        + (isVeil ? ' veil-line' : '')
+        + (isActive ? ' active-line' : '')
+        + (lineObj.pc ? ' dap-pc-line' : '');
+      div.dataset.line = String(lineObj.num);
+
+      const displayLn = (state.relLineNumbers && !isActive)
+        ? Math.abs(lineObj.num - activeLineNum)
+        : lineObj.num;
+
+      const bpMark = lineObj.bp ? '●' : '';
+      const bpCls = lineObj.bp === 'cond' ? 'g-bp cond' : 'g-bp';
+      const diagMark = lineObj.diag ? (lineObj.diag.type === 'err' ? '✖' : '⚠') : '';
+      const diagCls = lineObj.diag ? `g-diag ${lineObj.diag.type}` : 'g-diag';
+      const pcMark = lineObj.pc ? '▶' : '';
+      const diffCls = lineObj.diff ? `g-diff ${lineObj.diff}` : 'g-diff';
+
+      const gutter = document.createElement('div');
+      gutter.className = 'gutter';
+      gutter.title = 'Click: toggle breakpoint · Shift+Click: conditional breakpoint';
+      gutter.innerHTML =
+        `<span class="${bpCls}">${bpMark}</span>` +
+        `<span class="${diagCls}">${diagMark}</span>` +
+        `<span class="g-pc">${pcMark}</span>` +
+        `<span class="g-ln">${displayLn}</span>` +
+        `<span class="${diffCls}"></span>` +
+        `<span class="g-fold">${lineObj.fold || ''}</span>`;
+
+      gutter.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (e.shiftKey) {
+          lineObj.bp = lineObj.bp === 'cond' ? null : 'cond';
+          showToast(lineObj.bp ? `Conditional BP set at ${card.file}:${lineObj.num}` : `Breakpoint cleared at L${lineObj.num}`);
+        } else {
+          lineObj.bp = lineObj.bp ? null : 'normal';
+          showToast(lineObj.bp ? `Breakpoint set at ${card.file}:${lineObj.num}` : `Breakpoint cleared at L${lineObj.num}`);
+        }
+        renderStrip();
+      });
+
+      const content = document.createElement('div');
+      content.className = 'code-content';
+      content.innerHTML = `<span>${lineObj.html}</span>` +
+        (lineObj.diag ? `<span class="inline-diag ${lineObj.diag.type === 'err' ? 'err' : ''}">${lineObj.diag.type === 'err' ? '■' : '▲'} ${lineObj.diag.msg}</span>` : '');
+
+      // Bind interactive call/type jump links
+      content.querySelectorAll('.call-link').forEach(link => {
+        const targetId = link.dataset.jump;
+        link.addEventListener('mouseenter', () => {
+          state.hoveredTargetId = targetId;
+          drawDependencyBridges();
+        });
+        link.addEventListener('mouseleave', () => {
+          state.hoveredTargetId = null;
+          drawDependencyBridges();
+        });
+        link.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleSymbolClick(card.id, lineObj.num, targetId);
+        });
+      });
+
+      div.appendChild(gutter);
+      div.appendChild(content);
+
+      div.addEventListener('click', () => {
+        card.activeLine = lineObj.num;
+        focusCard(card.id, false);
+      });
+
+      return div;
+    }
+
+    function buildCodeCardEl(card, colIdx, trail) {
+      const isFocused = trail.focusedCardId === card.id;
+      const cardEl = document.createElement('article');
+      cardEl.className = 'code-card'
+        + (isFocused ? ' focused' : '')
+        + (card.fullFile ? ' full-file' : '')
+        + (card.collapsed ? ' collapsed' : '')
+        + (card._flash ? ' spawn-flash' : '');
+      cardEl.dataset.cardId = card.id;
+
+      if (card._flash) {
+        setTimeout(() => { card._flash = false; }, 600);
+      }
+
+      const kindLabel = card.kind === 'type' ? 'STRUCT' : 'ƒ FN';
+      const kindCls = card.kind === 'type' ? 'type' : 'fn';
+
+      const hdr = document.createElement('div');
+      hdr.className = 'card-header';
+      hdr.innerHTML = `
+        <div class="card-title-group">
+          <span class="sym-kind-badge ${kindCls}">${kindLabel}</span>
+          <span class="card-symbol-name">${card.symbol}</span>
+          <span class="card-file-path">${card.file}</span>
+          <span class="card-bounds-chip ${card.fullFile ? 'full-mode' : ''}">${card.fullFile ? 'FULL FILE' : card.bounds}</span>
+          ${state.rgFallback ? '<span class="card-bounds-chip rg-chip">~RG</span>' : ''}
+        </div>
+        <div class="card-actions">
+          <button class="card-icon-btn ${card.fullFile ? 'active' : ''}" data-act="full" title="Lift/Restore Scope Veil (f)">⤢</button>
+          <button class="card-icon-btn" data-act="collapse" title="Collapse / Expand card">${card.collapsed ? '▢' : '▁'}</button>
+          <button class="card-icon-btn close" data-act="close" title="Close card">×</button>
+        </div>
+      `;
+
+      hdr.addEventListener('click', (e) => {
+        const btn = e.target.closest('button');
+        if (btn) {
+          e.stopPropagation();
+          const act = btn.dataset.act;
+          if (act === 'full') {
+            card.fullFile = !card.fullFile;
+            showToast(card.fullFile ? `${card.symbol}: Full File veil lifted` : `${card.symbol}: AST Scope [${card.bounds}] restored`);
+            renderStrip();
+          } else if (act === 'collapse') {
+            card.collapsed = !card.collapsed;
+            renderStrip();
+          } else if (act === 'close') {
+            closeCard(card.id);
+          }
+          return;
+        }
+        focusCard(card.id, true);
+      });
+
+      const body = document.createElement('div');
+      body.className = 'card-body';
+
+      // Before-scope dimmed veil lines
+      (card.beforeVeil || []).forEach(l => body.appendChild(buildCodeLineEl(card, l, true, card.activeLine)));
+
+      // Top AST scope tick
+      const topTick = document.createElement('div');
+      topTick.className = 'scope-tick';
+      topTick.innerHTML = card.fullFile
+        ? `<span>┌── FULL FILE VIEW · AST SYMBOL [${card.bounds}] ──</span><span>[⤢ click to re-veil]</span>`
+        : `<span>┌── AST SCOPE: ${card.symbol} [${card.bounds}] ──</span><span>${state.rgFallback ? 'tree-sitter ~rg' : 'clangd AST'}</span>`;
+      body.appendChild(topTick);
+
+      // In-scope lines
+      (card.scopeLines || []).forEach(l => body.appendChild(buildCodeLineEl(card, l, false, card.activeLine)));
+
+      // Bottom AST scope tick
+      const botTick = document.createElement('div');
+      botTick.className = 'scope-tick bottom';
+      botTick.innerHTML = `<span>└── END SCOPE [${card.bounds.split('..')[1] || card.bounds}] ──</span><span>dimmed context below</span>`;
+      body.appendChild(botTick);
+
+      // After-scope dimmed veil lines
+      (card.afterVeil || []).forEach(l => body.appendChild(buildCodeLineEl(card, l, true, card.activeLine)));
+
+      body.addEventListener('scroll', () => drawDependencyBridges(), { passive: true });
+
+      const footer = document.createElement('div');
+      footer.className = 'card-footer';
+      footer.innerHTML = `
+        <span>UTF-8 · C11 · Ln ${card.activeLine}</span>
+        <span>${card.fullFile ? 'VEIL: OFF (FULL)' : 'VEIL: DIMMED OUT-OF-SCOPE'}</span>
+      `;
+
+      cardEl.appendChild(hdr);
+      cardEl.appendChild(body);
+      cardEl.appendChild(footer);
+      return cardEl;
+    }
+
+    /* Build dedicated Lens Column Card when lens != calls */
+    function buildLensColumnEl(trail) {
+      if (state.activeLens === 'calls') return null;
+
+      const lens = LENS_META[state.activeLens];
+      const colEl = document.createElement('div');
+      colEl.className = 'strip-column';
+      colEl.style.width = `${getColumnPixelWidth(33) + 60}px`;
+
+      colEl.innerHTML = `
+        <div class="col-cap-bar" style="color:${lens.color}; border-bottom-color:${lens.color};">
+          <span>LENS PANEL · ${lens.label}</span>
+          <span>ACTIVE</span>
+        </div>
+      `;
+
+      const stack = document.createElement('div');
+      stack.className = 'col-cards-stack';
+
+      const cardEl = document.createElement('article');
+      cardEl.className = 'code-card lens-card focused';
+      cardEl.dataset.cardId = `lens-${state.activeLens}`;
+
+      if (state.activeLens === 'types') {
+        const td = trail.lensData.types;
+        cardEl.innerHTML = `
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="sym-kind-badge lens-types">TYPE LAYOUT</span>
+              <span class="card-symbol-name">${td.symbol}</span>
+            </div>
+            <span class="card-bounds-chip">${td.sizeof}</span>
+          </div>
+          <div class="lens-body">
+            <div class="lens-section-hdr" style="color:var(--metro-telemetry);">
+              <span>ABI MEMORY LAYOUT &amp; FIELD ALIGNMENT</span>
+              <span>${td.fields.length} FIELDS</span>
+            </div>
+            <table class="lens-table">
+              <thead><tr><th>OFF</th><th>FIELD</th><th>TYPE</th><th>SIZE</th></tr></thead>
+              <tbody>
+                ${td.fields.map(f => `
+                  <tr>
+                    <td style="color:var(--metro-telemetry);">${f.off}</td>
+                    <td style="color:#fff; font-weight:700;">${f.name}</td>
+                    <td style="color:var(--syn-type);">${f.type}</td>
+                    <td>${f.size}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            <div style="font-family:var(--font-mono); font-size:10px; color:var(--text-muted); padding:6px 8px; background:var(--surface-2); border:1px solid var(--border-struct);">
+              Cyan connectors highlight every card in the active strip reading or mutating <b style="color:var(--metro-telemetry);">${td.symbol}</b>.
+            </div>
+          </div>
+        `;
+      } else if (state.activeLens === 'impact') {
+        const imp = trail.lensData.impact;
+        cardEl.innerHTML = `
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="sym-kind-badge lens-impact">IMPACT</span>
+              <span class="card-symbol-name">REFERENCES (${imp.refs.length})</span>
+            </div>
+            <span class="card-bounds-chip" style="color:var(--metro-warning); border-color:var(--metro-warning);">${imp.targetSymbol}</span>
+          </div>
+          <div class="lens-body">
+            <div class="lens-section-hdr" style="color:var(--metro-warning);">
+              <span>INCOMING CALLERS &amp; BLAST RADIUS</span>
+              <button class="kajo-btn warn-active" id="btnMaterializeCallers">▤ MATERIALIZE CALLERS</button>
+            </div>
+            ${imp.refs.map((r, i) => `
+              <div class="ref-item" data-ref-idx="${i}">
+                <div class="ref-item-top">
+                  <span>${r.fn}</span>
+                  <span style="color:var(--metro-warning); font-size:9.5px;">[${r.badge}]</span>
+                </div>
+                <div style="font-size:9.5px; color:var(--text-dim); margin-bottom:2px;">${r.file}</div>
+                <div class="ref-item-code">${r.snippet}</div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        cardEl.querySelector('#btnMaterializeCallers').addEventListener('click', () => {
+          materializeImpactCallers(trail);
+        });
+        cardEl.querySelectorAll('.ref-item').forEach(el => {
+          el.addEventListener('click', () => {
+            const ref = imp.refs[Number(el.dataset.refIdx)];
+            if (ref.jump && findCardLocation(trail, ref.jump)) {
+              focusCard(ref.jump, true);
+            } else if (ref.spawn) {
+              spawnFromCatalog(ref.spawn, trail.focusedCardId, 197, 'impact');
+            }
+          });
+        });
+      } else if (state.activeLens === 'diff') {
+        const dd = trail.lensData.diff;
+        const pendingCount = dd.hunks.filter(h => h.status === 'pending').length;
+        cardEl.innerHTML = `
+          <div class="card-header">
+            <div class="card-title-group">
+              <span class="sym-kind-badge lens-diff">AGENT DIFF</span>
+              <span class="card-symbol-name">${dd.txId}</span>
+            </div>
+            <span class="card-bounds-chip" style="color:#f08cff; border-color:var(--metro-agent);">${pendingCount} PENDING</span>
+          </div>
+          <div class="lens-body">
+            <div class="lens-section-hdr" style="color:#f08cff;">
+              <span>${dd.summary}</span>
+            </div>
+            ${dd.hunks.length === 0 ? `<div style="color:var(--text-muted); font-family:var(--font-mono); font-size:11px;">No agent hunks in this trail.</div>` : ''}
+            ${dd.hunks.map((h, idx) => `
+              <div class="diff-hunk ${h.status}" data-hunk-idx="${idx}">
+                <div class="diff-hunk-hdr">
+                  <span style="color:#fff; font-weight:700;">${h.file}</span>
+                  <div style="display:flex; gap:4px; align-items:center;">
+                    ${h.status === 'pending' ? `
+                      <button class="mini-ctrl-btn" style="border-color:var(--metro-success); color:#6ee7a0;" data-diff-act="accept" data-idx="${idx}">✓ ACCEPT</button>
+                      <button class="mini-ctrl-btn" style="border-color:var(--metro-urgent); color:#ff8080;" data-diff-act="revert" data-idx="${idx}">✕ REVERT</button>
+                    ` : `<span style="font-size:9.5px; font-weight:800; color:${h.status === 'accepted' ? '#6ee7a0' : '#ff8080'};">${h.status.toUpperCase()}</span>`}
+                  </div>
+                </div>
+                <div class="diff-lines">
+                  ${h.lines.map(dl => `<div class="diff-line ${dl.t}">${dl.s}</div>`).join('')}
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        `;
+
+        cardEl.querySelectorAll('[data-diff-act]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.idx);
+            const act = btn.dataset.diffAct;
+            dd.hunks[idx].status = act === 'accept' ? 'accepted' : 'reverted';
+            showToast(act === 'accept' ? `Accepted agent hunk ${dd.hunks[idx].file}` : `Reverted agent hunk ${dd.hunks[idx].file}`);
+            renderStrip();
+          });
+        });
+      }
+
+      stack.appendChild(cardEl);
+      colEl.appendChild(stack);
+      return colEl;
+    }
+
+    function renderStrip() {
+      const trail = getActiveTrail();
+      getFocusedCard(); // ensure valid focus
+      dom.stripTrack.innerHTML = '';
+
+      trail.columns.forEach((col, colIdx) => {
+        const colEl = document.createElement('section');
+        colEl.className = 'strip-column' + (colIdx === trail.focusedCol ? ' col-focused' : '');
+        colEl.dataset.colIdx = String(colIdx);
+        colEl.style.width = `${getColumnPixelWidth(col.width)}px`;
+
+        const cap = document.createElement('div');
+        cap.className = 'col-cap-bar';
+        cap.innerHTML = `<span>COL ${colIdx + 1}/${trail.columns.length} · ${col.cards.length} CARD${col.cards.length > 1 ? 'S' : ''}</span><span>${col.width}% WIDTH</span>`;
+        colEl.appendChild(cap);
+
+        const stack = document.createElement('div');
+        stack.className = 'col-cards-stack';
+        col.cards.forEach(card => {
+          stack.appendChild(buildCodeCardEl(card, colIdx, trail));
+        });
+
+        colEl.appendChild(stack);
+        dom.stripTrack.appendChild(colEl);
+      });
+
+      // Append active Lens Card column when lens is types / impact / diff
+      const lensCol = buildLensColumnEl(trail);
+      if (lensCol) {
+        dom.stripTrack.appendChild(lensCol);
+      }
+
+      syncToolbarAndStatus();
+      renderMinimap();
+      renderClassicTabs();
+      if (state.overviewOpen) renderOverview();
+
+      requestAnimationFrame(() => {
+        // Clamp camera in case columns shrank
+        const maxS = getMaxCameraScroll();
+        if (camera.pos > maxS) setCameraTarget(maxS, true);
+        drawDependencyBridges();
+        updateMinimapViewportBox();
+      });
+    }
+
+    /* ========================================================================
+       5. LIVE SVG DEPENDENCY BRIDGE CONNECTORS
+       ======================================================================== */
+    function drawDependencyBridges() {
+      if (state.viewMode !== 'strip') {
+        dom.bridgeSvg.innerHTML = '';
+        return;
+      }
+
+      const trail = getActiveTrail();
+      const vpRect = dom.stripViewport.getBoundingClientRect();
+      if (vpRect.width === 0 || vpRect.height === 0) return;
+
+      const lens = LENS_META[state.activeLens];
+      const svgNS = 'http://www.w3.org/2000/svg';
+      dom.bridgeSvg.innerHTML = '';
+
+      // Arrowhead defs
+      const defs = document.createElementNS(svgNS, 'defs');
+      Object.values(LENS_META).forEach(m => {
+        const marker = document.createElementNS(svgNS, 'marker');
+        marker.setAttribute('id', `arrow-${m.id}`);
+        marker.setAttribute('viewBox', '0 0 10 10');
+        marker.setAttribute('refX', '8');
+        marker.setAttribute('refY', '5');
+        marker.setAttribute('markerWidth', '6');
+        marker.setAttribute('markerHeight', '6');
+        marker.setAttribute('orient', 'auto');
+        const poly = document.createElementNS(svgNS, 'path');
+        poly.setAttribute('d', 'M 0 1 L 9 5 L 0 9 z');
+        poly.setAttribute('fill', m.color);
+        marker.appendChild(poly);
+        defs.appendChild(marker);
+      });
+      dom.bridgeSvg.appendChild(defs);
+
+      // Clear previous bridge line highlights
+      dom.stripTrack.querySelectorAll('.bridge-source-active').forEach(el => el.classList.remove('bridge-source-active'));
+
+      // Build list of edges to render (standard + synthetic lens edges)
+      const edgesToDraw = [...trail.edges];
+      if (state.activeLens !== 'calls') {
+        const lastCol = trail.columns[trail.columns.length - 1];
+        const anchorCard = getFocusedCard()?.card || lastCol?.cards[0];
+        if (anchorCard) {
+          edgesToDraw.push({
+            fromCardId: anchorCard.id,
+            fromLine: anchorCard.activeLine,
+            toCardId: `lens-${state.activeLens}`,
+            kind: state.activeLens,
+            label: lens.edgeTag
+          });
+        }
+      }
+
+      edgesToDraw.forEach(edge => {
+        const fromCardEl = dom.stripTrack.querySelector(`[data-card-id="${edge.fromCardId}"]`);
+        const toCardEl   = dom.stripTrack.querySelector(`[data-card-id="${edge.toCardId}"]`);
+        if (!fromCardEl || !toCardEl) return;
+
+        const fromRect = fromCardEl.getBoundingClientRect();
+        const toRect   = toCardEl.getBoundingClientRect();
+
+        // Only draw forward or adjacent connectors cleanly
+        const x1 = fromRect.right - vpRect.left;
+        const x2 = toRect.left - vpRect.left;
+        if (x2 < -120 && x1 < -120) return;
+        if (x1 > vpRect.width + 120 && x2 > vpRect.width + 120) return;
+
+        // Find exact source line Y coordinate (clamped to card body)
+        let y1 = fromRect.top + 14 - vpRect.top;
+        const lineEl = fromCardEl.querySelector(`.code-line[data-line="${edge.fromLine}"]`);
+        const bodyEl = fromCardEl.querySelector('.card-body');
+        if (lineEl && bodyEl && !fromCardEl.classList.contains('collapsed')) {
+          const lRect = lineEl.getBoundingClientRect();
+          const bRect = bodyEl.getBoundingClientRect();
+          const rawY = lRect.top + lRect.height / 2;
+          const clampedY = Math.max(bRect.top + 6, Math.min(bRect.bottom - 6, rawY));
+          y1 = clampedY - vpRect.top;
+        }
+
+        const toHdr = toCardEl.querySelector('.card-header') || toCardEl;
+        const toHdrRect = toHdr.getBoundingClientRect();
+        const y2 = (toHdrRect.top + toHdrRect.height / 2) - vpRect.top;
+
+        const isActiveEdge =
+          trail.focusedCardId === edge.fromCardId ||
+          trail.focusedCardId === edge.toCardId ||
+          state.hoveredTargetId === edge.toCardId ||
+          edge.toCardId === `lens-${state.activeLens}`;
+
+        // Color strictly follows the selected explicit Lens!
+        const strokeColor = lens.color;
+        const markerId = `arrow-${lens.id}`;
+
+        if (isActiveEdge && lineEl && !fromCardEl.classList.contains('collapsed')) {
+          lineEl.classList.add('bridge-source-active');
+        }
+
+        const dx = Math.max(24, Math.abs(x2 - x1) * 0.52);
+        const cx1 = x1 + (x2 >= x1 ? dx : -dx);
+        const cx2 = x2 - (x2 >= x1 ? dx : -dx);
+        const d = `M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${cx1.toFixed(1)} ${y1.toFixed(1)}, ${cx2.toFixed(1)} ${y2.toFixed(1)}, ${(x2 - 2).toFixed(1)} ${y2.toFixed(1)}`;
+
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', d);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', strokeColor);
+        path.setAttribute('stroke-width', isActiveEdge ? '2' : '1.25');
+        path.setAttribute('stroke-opacity', isActiveEdge ? '0.95' : '0.35');
+        if (state.rgFallback) {
+          path.setAttribute('stroke-dasharray', '5 3');
+        }
+        path.setAttribute('marker-end', `url(#${markerId})`);
+        dom.bridgeSvg.appendChild(path);
+
+        // Source anchor square (strict 0px Metro geometry)
+        const sq = document.createElementNS(svgNS, 'rect');
+        sq.setAttribute('x', (x1 - 3).toFixed(1));
+        sq.setAttribute('y', (y1 - 3).toFixed(1));
+        sq.setAttribute('width', '6');
+        sq.setAttribute('height', '6');
+        sq.setAttribute('fill', strokeColor);
+        sq.setAttribute('fill-opacity', isActiveEdge ? '1' : '0.5');
+        dom.bridgeSvg.appendChild(sq);
+
+        // Midpoint badge for active edges when gap is visible
+        if (isActiveEdge && Math.abs(x2 - x1) >= 26) {
+          const mx = (x1 + x2) / 2;
+          const my = (y1 + y2) / 2;
+          const textStr = state.rgFallback ? `${edge.label || lens.edgeTag} ~rg` : (edge.label || lens.edgeTag);
+          const boxW = Math.max(36, textStr.length * 6.2 + 8);
+
+          const bg = document.createElementNS(svgNS, 'rect');
+          bg.setAttribute('x', (mx - boxW / 2).toFixed(1));
+          bg.setAttribute('y', (my - 8).toFixed(1));
+          bg.setAttribute('width', boxW.toFixed(1));
+          bg.setAttribute('height', '16');
+          bg.setAttribute('class', 'bridge-label-bg');
+          bg.setAttribute('stroke', strokeColor);
+          dom.bridgeSvg.appendChild(bg);
+
+          const txt = document.createElementNS(svgNS, 'text');
+          txt.setAttribute('x', mx.toFixed(1));
+          txt.setAttribute('y', my.toFixed(1));
+          txt.setAttribute('class', 'bridge-label-text');
+          txt.setAttribute('fill', strokeColor);
+          txt.textContent = textStr;
+          dom.bridgeSvg.appendChild(txt);
+        }
+      });
+    }
+
+    /* ========================================================================
+       6. INTERACTIVE ACTIONS: CLICK SYMBOL, SPAWN, CONSUME, EXPEL, COLLAPSE
+       ======================================================================== */
+    function focusCard(cardId, scrollIntoView = true) {
+      const trail = getActiveTrail();
+      const loc = findCardLocation(trail, cardId);
+      if (!loc) return;
+      trail.focusedCol = loc.colIdx;
+      trail.focusedCardId = cardId;
+      if (loc.card.collapsed) loc.card.collapsed = false;
+      renderStrip();
+      if (scrollIntoView) {
+        requestAnimationFrame(() => ensureColumnInView(loc.colIdx, false));
+      }
+    }
+
+    function handleSymbolClick(fromCardId, fromLine, targetId) {
+      const trail = getActiveTrail();
+      const existing = findCardLocation(trail, targetId);
+      if (existing) {
+        existing.card.collapsed = false;
+        existing.card._flash = true;
+        trail.focusedCol = existing.colIdx;
+        trail.focusedCardId = targetId;
+        renderStrip();
+        requestAnimationFrame(() => ensureColumnInView(existing.colIdx, false));
+        showToast(`Focused ${existing.card.symbol} in Column ${existing.colIdx + 1}`);
+        return;
+      }
+
+      if (SPAWN_CATALOG[targetId]) {
+        spawnFromCatalog(targetId, fromCardId, fromLine, state.activeLens);
+      }
+    }
+
+    function spawnFromCatalog(catalogId, fromCardId, fromLine, edgeKind) {
+      const trail = getActiveTrail();
+      const tpl = SPAWN_CATALOG[catalogId];
+      if (!tpl) return;
+
+      const existing = findCardLocation(trail, tpl.id);
+      if (existing) {
+        focusCard(tpl.id, true);
+        return;
+      }
+
+      const fromLoc = findCardLocation(trail, fromCardId);
+      const targetColIdx = fromLoc ? fromLoc.colIdx + 1 : trail.columns.length;
+      const newCard = JSON.parse(JSON.stringify(tpl));
+      newCard.fullFile = false;
+      newCard.collapsed = false;
+      newCard._flash = true;
+
+      if (targetColIdx < trail.columns.length) {
+        trail.columns[targetColIdx].cards.push(newCard);
+      } else {
+        trail.columns.push({
+          id: `col-spawn-${Date.now()}`,
+          width: 50,
+          cards: [newCard]
+        });
+      }
+
+      if (fromLoc) {
+        trail.edges.push({
+          fromCardId,
+          fromLine,
+          toCardId: newCard.id,
+          kind: edgeKind || 'calls',
+          label: 'spawned'
+        });
+      }
+
+      trail.focusedCol = targetColIdx;
+      trail.focusedCardId = newCard.id;
+      renderStrip();
+      requestAnimationFrame(() => ensureColumnInView(targetColIdx, false));
+      showToast(`Spawned ${newCard.symbol} in Column ${targetColIdx + 1}`);
+    }
+
+    function materializeImpactCallers(trail) {
+      const ids = trail.lensData.impact.materializeIds || [];
+      let spawned = 0;
+      const anchor = getFocusedCard();
+      const fromId = anchor ? anchor.card.id : trail.columns[0].cards[0].id;
+      const fromLn = anchor ? anchor.card.activeLine : 197;
+
+      ids.forEach(id => {
+        if (!findCardLocation(trail, id) && SPAWN_CATALOG[id]) {
+          const tpl = JSON.parse(JSON.stringify(SPAWN_CATALOG[id]));
+          tpl.fullFile = false;
+          tpl.collapsed = false;
+          tpl._flash = true;
+
+          let callerCol = trail.columns.find(c => c.id === 'col-impact-callers');
+          if (!callerCol) {
+            callerCol = { id: 'col-impact-callers', width: 50, cards: [] };
+            trail.columns.push(callerCol);
+          }
+          callerCol.cards.push(tpl);
+          trail.edges.push({
+            fromCardId: fromId,
+            fromLine: fromLn,
+            toCardId: tpl.id,
+            kind: 'impact',
+            label: 'caller'
+          });
+          spawned++;
+        }
+      });
+
+      if (spawned > 0) {
+        const lastIdx = trail.columns.length - 1;
+        trail.focusedCol = lastIdx;
+        trail.focusedCardId = trail.columns[lastIdx].cards[0].id;
+        renderStrip();
+        requestAnimationFrame(() => ensureColumnInView(lastIdx, false));
+        showToast(`Materialized ${spawned} caller card${spawned > 1 ? 's' : ''} into Column ${lastIdx + 1}`);
+      } else {
+        showToast('All impact callers are already materialized in this strip');
+      }
+    }
+
+    function consumeFromRight() {
+      const trail = getActiveTrail();
+      const ci = trail.focusedCol;
+      if (ci >= trail.columns.length - 1) {
+        showToast('No right neighbor column to consume from');
+        return;
+      }
+      const rightCol = trail.columns[ci + 1];
+      const moved = rightCol.cards.shift();
+      if (!moved) return;
+      trail.columns[ci].cards.push(moved);
+      if (rightCol.cards.length === 0) {
+        trail.columns.splice(ci + 1, 1);
+      }
+      moved._flash = true;
+      trail.focusedCardId = moved.id;
+      renderStrip();
+      showToast(`↙ Consumed ${moved.symbol} into Column ${ci + 1}`);
+    }
+
+    function expelFocusedCard() {
+      const trail = getActiveTrail();
+      const loc = getFocusedCard();
+      if (!loc) return;
+      if (loc.col.cards.length <= 1) {
+        showToast('Card is already alone in its column');
+        return;
+      }
+      const [moved] = loc.col.cards.splice(loc.cardIdx, 1);
+      moved._flash = true;
+      trail.columns.splice(loc.colIdx + 1, 0, {
+        id: `col-expel-${Date.now()}`,
+        width: loc.col.width,
+        cards: [moved]
+      });
+      trail.focusedCol = loc.colIdx + 1;
+      trail.focusedCardId = moved.id;
+      renderStrip();
+      requestAnimationFrame(() => ensureColumnInView(trail.focusedCol, false));
+      showToast(`↗ Expelled ${moved.symbol} into new Column ${trail.focusedCol + 1}`);
+    }
+
+    function closeCard(cardId) {
+      const trail = getActiveTrail();
+      const totalCards = trail.columns.reduce((acc, c) => acc + c.cards.length, 0);
+      if (totalCards <= 1) {
+        showToast('Cannot close the last card in a trail');
+        return;
+      }
+      const loc = findCardLocation(trail, cardId);
+      if (!loc) return;
+      loc.col.cards.splice(loc.cardIdx, 1);
+      if (loc.col.cards.length === 0) {
+        trail.columns.splice(loc.colIdx, 1);
+        trail.focusedCol = Math.max(0, loc.colIdx - 1);
+      }
+      const nextCol = trail.columns[trail.focusedCol] || trail.columns[0];
+      trail.focusedCardId = nextCol.cards[0].id;
+      renderStrip();
+      showToast(`Closed ${loc.card.symbol}`);
+    }
+
+    /* ========================================================================
+       7. CLASSIC TABS VIEW & BIRD'S-EYE OVERVIEW & MINIMAP
+       ======================================================================== */
+    function renderClassicTabs() {
+      const trail = getActiveTrail();
+      const allCards = [];
+      trail.columns.forEach(c => c.cards.forEach(card => allCards.push(card)));
+      const focused = getFocusedCard()?.card || allCards[0];
+
+      dom.classicTabRibbon.innerHTML = '';
+      allCards.forEach((c, idx) => {
+        const tab = document.createElement('div');
+        tab.className = 'classic-tab' + (focused && c.id === focused.id ? ' active' : '');
+        tab.innerHTML = `<span style="color:var(--text-dim);">[${idx + 1}]</span><span>📄 ${c.file.split('/').pop()}</span><span style="color:var(--metro-telemetry); font-size:9.5px;">${c.symbol}</span>`;
+        tab.addEventListener('click', () => {
+          focusCard(c.id, false);
+        });
+        dom.classicTabRibbon.appendChild(tab);
+      });
+
+      dom.classicEditorBody.innerHTML = '';
+      if (focused) {
+        const allLines = [...(focused.beforeVeil || []), ...(focused.scopeLines || []), ...(focused.afterVeil || [])];
+        allLines.forEach(l => {
+          dom.classicEditorBody.appendChild(buildCodeLineEl(focused, l, false, focused.activeLine));
+        });
+      }
+    }
+
+    function renderMinimap() {
+      const trail = getActiveTrail();
+      dom.minimapCols.innerHTML = '';
+      trail.columns.forEach((col, ci) => {
+        const colEl = document.createElement('div');
+        colEl.className = 'mm-col';
+        colEl.style.flex = `${col.width} 1 0`;
+        col.cards.forEach(card => {
+          const cardEl = document.createElement('div');
+          cardEl.className = 'mm-card'
+            + (trail.focusedCardId === card.id ? ' focused' : '')
+            + (card.collapsed ? ' collapsed' : '');
+          cardEl.title = `${card.symbol} (${card.file})`;
+          colEl.appendChild(cardEl);
+        });
+        dom.minimapCols.appendChild(colEl);
+      });
+
+      if (state.activeLens !== 'calls') {
+        const lCol = document.createElement('div');
+        lCol.className = 'mm-col';
+        lCol.style.flex = '35 1 0';
+        const lCard = document.createElement('div');
+        lCard.className = 'mm-card lens';
+        lCol.appendChild(lCard);
+        dom.minimapCols.appendChild(lCol);
+      }
+      updateMinimapViewportBox();
+    }
+
+    function updateMinimapViewportBox() {
+      const vpW = dom.stripViewport.clientWidth || 1;
+      const trackW = Math.max(vpW, dom.stripTrack.scrollWidth || vpW);
+      const mapW = dom.minimapTrackWrap.clientWidth || 1;
+
+      const boxW = Math.max(24, (vpW / trackW) * mapW);
+      const maxScroll = Math.max(1, trackW - vpW);
+      const ratio = trackW <= vpW ? 0 : camera.pos / maxScroll;
+      const left = ratio * (mapW - boxW);
+
+      dom.minimapViewportBox.style.width = `${boxW.toFixed(1)}px`;
+      dom.minimapViewportBox.style.left = `${left.toFixed(1)}px`;
+    }
+
+    function renderOverview() {
+      const trail = getActiveTrail();
+      const lens = LENS_META[state.activeLens];
+      dom.ovTrailBadge.textContent = `${trail.index} · ${trail.name}`;
+      dom.ovLensBadge.textContent = `LENS: ${lens.label}`;
+      dom.ovLensBadge.style.color = lens.color;
+
+      dom.overviewStage.innerHTML = '';
+
+      trail.columns.forEach((col, ci) => {
+        const colEl = document.createElement('div');
+        colEl.className = 'ov-col';
+        colEl.style.width = `${Math.round(col.width * 3.3)}px`;
+
+        const lbl = document.createElement('div');
+        lbl.className = 'ov-col-label';
+        lbl.innerHTML = `<span>COL ${ci + 1}</span><span>${col.width}%</span>`;
+        colEl.appendChild(lbl);
+
+        col.cards.forEach(card => {
+          const cEl = document.createElement('div');
+          cEl.className = 'ov-card' + (trail.focusedCardId === card.id ? ' focused' : '') + (card.collapsed ? ' collapsed' : '');
+          cEl.dataset.ovCardId = card.id;
+          cEl.innerHTML = `
+            <div class="ov-card-title">${card.symbol}</div>
+            <div class="ov-card-file">${card.file} [${card.bounds}]</div>
+            <div class="ov-code-bars">
+              <div class="ov-bar-row accent" style="width:72%;"></div>
+              <div class="ov-bar-row fn" style="width:88%;"></div>
+              <div class="ov-bar-row type" style="width:56%;"></div>
+              <div class="ov-bar-row" style="width:92%;"></div>
+              <div class="ov-bar-row agent" style="width:64%;"></div>
+            </div>
+          `;
+          cEl.addEventListener('click', () => {
+            toggleOverview(false);
+            focusCard(card.id, false);
+            requestAnimationFrame(() => ensureColumnInView(ci, true));
+            showToast(`Snapped camera to ${card.symbol}`);
+          });
+          colEl.appendChild(cEl);
+        });
+        dom.overviewStage.appendChild(colEl);
+      });
+
+      // Add cyan viewport camera rectangle proportionally
+      const camRect = document.createElement('div');
+      camRect.className = 'ov-camera-rect';
+      camRect.innerHTML = `<span class="ov-camera-tag">CAMERA VIEWPORT</span>`;
+      dom.overviewStage.appendChild(camRect);
+
+      // Overview SVG arrows
+      const ovSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      ovSvg.setAttribute('class', 'ov-svg');
+      dom.overviewStage.appendChild(ovSvg);
+
+      requestAnimationFrame(() => {
+        const stageRect = dom.overviewStage.getBoundingClientRect();
+        const vpW = dom.stripViewport.clientWidth || 1;
+        const trackW = Math.max(vpW, dom.stripTrack.scrollWidth || vpW);
+        const wRatio = Math.min(1, vpW / trackW);
+        const leftRatio = camera.pos / trackW;
+        camRect.style.width = `${Math.max(80, stageRect.width * wRatio)}px`;
+        camRect.style.left = `${Math.max(4, stageRect.width * leftRatio)}px`;
+
+        const svgNS = 'http://www.w3.org/2000/svg';
+        trail.edges.forEach(edge => {
+          const a = dom.overviewStage.querySelector(`[data-ov-card-id="${edge.fromCardId}"]`);
+          const b = dom.overviewStage.querySelector(`[data-ov-card-id="${edge.toCardId}"]`);
+          if (!a || !b) return;
+          const ar = a.getBoundingClientRect();
+          const br = b.getBoundingClientRect();
+          const x1 = ar.right - stageRect.left;
+          const y1 = ar.top + ar.height / 2 - stageRect.top;
+          const x2 = br.left - stageRect.left;
+          const y2 = br.top + br.height / 2 - stageRect.top;
+          const path = document.createElementNS(svgNS, 'path');
+          const dx = Math.max(16, Math.abs(x2 - x1) * 0.5);
+          path.setAttribute('d', `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`);
+          path.setAttribute('fill', 'none');
+          path.setAttribute('stroke', lens.color);
+          path.setAttribute('stroke-width', '2');
+          if (state.rgFallback) path.setAttribute('stroke-dasharray', '4 3');
+          ovSvg.appendChild(path);
+        });
+      });
+    }
+
+    /* ========================================================================
+       8. SYNC CHROME, TOOLBAR & STATUS BAR
+       ======================================================================== */
+    function syncToolbarAndStatus() {
+      const trail = getActiveTrail();
+      const loc = getFocusedCard();
+      const lens = LENS_META[state.activeLens];
+
+      document.documentElement.style.setProperty('--lens-color', lens.color);
+      document.documentElement.style.setProperty('--lens-rgb', lens.rgb);
+
+      // Lens buttons
+      dom.lensSelector.querySelectorAll('.seg-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.lens === state.activeLens);
+      });
+
+      // Width presets
+      const activeWidth = loc ? loc.col.width : 50;
+      dom.widthPresets.querySelectorAll('.width-btn').forEach(btn => {
+        btn.classList.toggle('active', Number(btn.dataset.width) === activeWidth);
+      });
+
+      // Focused card toggles
+      dom.btnFullFile.classList.toggle('active', Boolean(loc && loc.card.fullFile));
+      dom.btnCollapse.classList.toggle('active', Boolean(loc && loc.card.collapsed));
+      dom.btnRelNum.classList.toggle('active', state.relLineNumbers);
+
+      // LSP vs RG Fallback
+      dom.btnLspToggle.classList.toggle('lsp-ok', !state.rgFallback);
+      dom.btnLspToggle.classList.toggle('lsp-fallback', state.rgFallback);
+      dom.lspToggleLabel.textContent = state.rgFallback ? '⚠ RG FALLBACK ●' : '⚡ LSP: CLANGD ●';
+      dom.rgBanner.classList.toggle('visible', state.rgFallback);
+
+      // View mode (Strip vs Classic Tabs)
+      const isStrip = state.viewMode === 'strip';
+      dom.btnStripMode.classList.toggle('active', isStrip);
+      dom.btnStripMode.textContent = isStrip ? '▥ STRIP' : '📑 TABS';
+      dom.stripToolbar.classList.toggle('hidden', !isStrip);
+      dom.stripViewport.classList.toggle('hidden', !isStrip);
+      dom.stripMinimapBar.classList.toggle('hidden', !isStrip);
+      dom.classicTabsView.classList.toggle('active', !isStrip);
+
+      // Tree & Overview & Float
+      dom.treeSidebar.classList.toggle('collapsed', !state.treeOpen);
+      dom.btnTree.classList.toggle('active', state.treeOpen);
+      dom.btnOverview.classList.toggle('telemetry-active', state.overviewOpen);
+      dom.btnFloatTile.classList.toggle('active', state.floating);
+      dom.niriStage.classList.toggle('floating', state.floating);
+
+      // Status bar
+      dom.statusTrail.textContent = `${isStrip ? 'STRIP' : 'TABS'}: ${trail.index} · ${trail.name}`;
+      dom.statusCol.textContent = `COL ${(loc ? loc.colIdx + 1 : 1)}/${trail.columns.length} (${activeWidth}%)`;
+      dom.statusLens.textContent = `LENS: ${lens.label}`;
+      dom.statusLens.style.color = lens.color;
+      dom.statusLsp.textContent = state.rgFallback ? 'RG FALLBACK (HEURISTIC) ⚠' : 'LSP: CLANGD ●';
+      dom.statusLsp.style.color = state.rgFallback ? 'var(--metro-warning)' : '#6ee7a0';
+      dom.statusSymbol.textContent = loc ? loc.card.symbol : '';
+    }
+
+    function setLens(lensId) {
+      if (!LENS_META[lensId]) return;
+      state.activeLens = lensId;
+      renderStrip();
+      showToast(`Lens switched to ${LENS_META[lensId].label}`);
+    }
+
+    function toggleOverview(force) {
+      state.overviewOpen = typeof force === 'boolean' ? force : !state.overviewOpen;
+      dom.overviewOverlay.classList.toggle('active', state.overviewOpen);
+      syncToolbarAndStatus();
+      if (state.overviewOpen) renderOverview();
+    }
+
+    function renderAll(opts = {}) {
+      renderTrailRail();
+      renderTreeSidebar();
+      renderStrip();
+      if (opts.resetCamera) {
+        requestAnimationFrame(() => setCameraTarget(0, true));
+      }
+    }
+
+    /* ========================================================================
+       9. EVENT WIRING (BUTTONS, MINIMAP DRAG, WHEEL PAN, KEYBOARD SHORTCUTS)
+       ======================================================================== */
+    dom.btnTree.addEventListener('click', () => {
+      state.treeOpen = !state.treeOpen;
+      syncToolbarAndStatus();
+      requestAnimationFrame(() => drawDependencyBridges());
+    });
+
+    dom.btnStripMode.addEventListener('click', () => {
+      state.viewMode = state.viewMode === 'strip' ? 'tabs' : 'strip';
+      if (state.overviewOpen) toggleOverview(false);
+      syncToolbarAndStatus();
+      if (state.viewMode === 'strip') {
+        requestAnimationFrame(() => {
+          drawDependencyBridges();
+          updateMinimapViewportBox();
+        });
+      }
+    });
+
+    dom.btnReturnStrip.addEventListener('click', () => {
+      state.viewMode = 'strip';
+      syncToolbarAndStatus();
+      requestAnimationFrame(() => {
+        drawDependencyBridges();
+        updateMinimapViewportBox();
+      });
+    });
+
+    dom.btnOverview.addEventListener('click', () => {
+      if (state.viewMode !== 'strip') {
+        state.viewMode = 'strip';
+      }
+      toggleOverview();
+    });
+    dom.btnExitOverview.addEventListener('click', () => toggleOverview(false));
+
+    dom.btnHelp.addEventListener('click', () => {
+      state.helpOpen = !state.helpOpen;
+      dom.helpModal.classList.toggle('active', state.helpOpen);
+    });
+    dom.btnCloseHelp.addEventListener('click', () => {
+      state.helpOpen = false;
+      dom.helpModal.classList.remove('active');
+    });
+    dom.helpModal.addEventListener('click', (e) => {
+      if (e.target === dom.helpModal) {
+        state.helpOpen = false;
+        dom.helpModal.classList.remove('active');
+      }
+    });
+
+    dom.btnBuild.addEventListener('click', () => {
+      dom.btnBuild.textContent = '⏳ BUILDING…';
+      setTimeout(() => {
+        dom.btnBuild.textContent = '▶ BUILD';
+        showToast('✓ meson compile -C builddir — 0 errors, 0 warnings (142ms)');
+      }, 420);
+    });
+
+    dom.btnFloatTile.addEventListener('click', () => {
+      state.floating = !state.floating;
+      syncToolbarAndStatus();
+      setTimeout(() => {
+        drawDependencyBridges();
+        updateMinimapViewportBox();
+      }, 170);
+    });
+
+    dom.btnClose.addEventListener('click', () => {
+      showToast('Kajo IDE interactive preview — reload page to reset trails');
+    });
+
+    // Lens segmented buttons
+    dom.lensSelector.querySelectorAll('.seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => setLens(btn.dataset.lens));
+    });
+
+    // Column width presets
+    dom.widthPresets.querySelectorAll('.width-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const trail = getActiveTrail();
+        const col = trail.columns[trail.focusedCol];
+        if (!col) return;
+        col.width = Number(btn.dataset.width);
+        renderStrip();
+        setTimeout(() => {
+          ensureColumnInView(trail.focusedCol, false);
+          drawDependencyBridges();
+        }, 180);
+      });
+    });
+
+    dom.btnFullFile.addEventListener('click', () => {
+      const loc = getFocusedCard();
+      if (!loc) return;
+      loc.card.fullFile = !loc.card.fullFile;
+      renderStrip();
+      showToast(loc.card.fullFile ? `${loc.card.symbol}: Full File mode` : `${loc.card.symbol}: AST Scoped Veil`);
+    });
+
+    dom.btnConsume.addEventListener('click', consumeFromRight);
+    dom.btnExpel.addEventListener('click', expelFocusedCard);
+
+    dom.btnCollapse.addEventListener('click', () => {
+      const loc = getFocusedCard();
+      if (!loc) return;
+      loc.card.collapsed = !loc.card.collapsed;
+      renderStrip();
+    });
+
+    dom.btnRelNum.addEventListener('click', () => {
+      state.relLineNumbers = !state.relLineNumbers;
+      renderStrip();
+      showToast(state.relLineNumbers ? 'Hybrid relative line numbers enabled' : 'Absolute line numbers enabled');
+    });
+
+    dom.btnLspToggle.addEventListener('click', () => {
+      state.rgFallback = !state.rgFallback;
+      renderStrip();
+      showToast(state.rgFallback ? 'Switched to RG Fallback demo (dashed heuristic bridges)' : 'Restored clangd LSP live AST & call hierarchy');
+    });
+
+    dom.btnCenterCam.addEventListener('click', () => {
+      const trail = getActiveTrail();
+      ensureColumnInView(trail.focusedCol, true);
+    });
+
+    // Horizontal wheel panning on Strip viewport
+    dom.stripViewport.addEventListener('wheel', (e) => {
+      if (state.viewMode !== 'strip' || state.overviewOpen) return;
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
+        const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+        setCameraTarget(camera.target + delta * 1.45);
+      }
+    }, { passive: false });
+
+    // Click & drag on bottom Minimap to pan spring camera
+    let minimapDragging = false;
+    function panFromMinimapEvent(e) {
+      const rect = dom.minimapTrackWrap.getBoundingClientRect();
+      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const maxScroll = getMaxCameraScroll();
+      const vpW = dom.stripViewport.clientWidth;
+      const trackW = Math.max(vpW, dom.stripTrack.scrollWidth);
+      const target = ratio * trackW - vpW / 2;
+      setCameraTarget(Math.max(0, Math.min(maxScroll, target)));
+    }
+    dom.minimapTrackWrap.addEventListener('mousedown', (e) => {
+      minimapDragging = true;
+      panFromMinimapEvent(e);
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (minimapDragging) panFromMinimapEvent(e);
+    });
+    window.addEventListener('mouseup', () => { minimapDragging = false; });
+
+    // Keyboard shortcuts (h/l columns, j/k stack, r width, c center, o overview, 1-4 lenses, f full file, Esc)
+    window.addEventListener('keydown', (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+      if (e.key === 'Escape') {
+        if (state.helpOpen) {
+          state.helpOpen = false;
+          dom.helpModal.classList.remove('active');
+        } else if (state.overviewOpen) {
+          toggleOverview(false);
+        }
+        return;
+      }
+
+      if (e.key === '?') {
+        state.helpOpen = !state.helpOpen;
+        dom.helpModal.classList.toggle('active', state.helpOpen);
+        return;
+      }
+
+      if (state.helpOpen) return;
+
+      const trail = getActiveTrail();
+      const loc = getFocusedCard();
+
+      if (e.key === 'o') {
+        e.preventDefault();
+        if (state.viewMode !== 'strip') state.viewMode = 'strip';
+        toggleOverview();
+        return;
+      }
+
+      if (state.overviewOpen) return;
+
+      if (e.key === 'h' || e.key === 'ArrowLeft') {
+        e.preventDefault();
+        const nextCol = Math.max(0, trail.focusedCol - 1);
+        trail.focusedCol = nextCol;
+        trail.focusedCardId = trail.columns[nextCol].cards[0].id;
+        renderStrip();
+        requestAnimationFrame(() => ensureColumnInView(nextCol, false));
+      } else if (e.key === 'l' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const nextCol = Math.min(trail.columns.length - 1, trail.focusedCol + 1);
+        trail.focusedCol = nextCol;
+        trail.focusedCardId = trail.columns[nextCol].cards[0].id;
+        renderStrip();
+        requestAnimationFrame(() => ensureColumnInView(nextCol, false));
+      } else if (e.key === 'j' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        if (!loc) return;
+        const nextIdx = Math.min(loc.col.cards.length - 1, loc.cardIdx + 1);
+        trail.focusedCardId = loc.col.cards[nextIdx].id;
+        renderStrip();
+      } else if (e.key === 'k' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (!loc) return;
+        const prevIdx = Math.max(0, loc.cardIdx - 1);
+        trail.focusedCardId = loc.col.cards[prevIdx].id;
+        renderStrip();
+      } else if (e.key === 'r') {
+        e.preventDefault();
+        if (!loc) return;
+        const idx = WIDTH_PRESETS.indexOf(loc.col.width);
+        loc.col.width = WIDTH_PRESETS[(idx + 1) % WIDTH_PRESETS.length];
+        renderStrip();
+        setTimeout(() => {
+          ensureColumnInView(trail.focusedCol, false);
+          drawDependencyBridges();
+        }, 180);
+      } else if (e.key === 'c') {
+        e.preventDefault();
+        ensureColumnInView(trail.focusedCol, true);
+      } else if (e.key === 'f') {
+        e.preventDefault();
+        if (!loc) return;
+        loc.card.fullFile = !loc.card.fullFile;
+        renderStrip();
+      } else if (e.key === '1') {
+        setLens('calls');
+      } else if (e.key === '2') {
+        setLens('types');
+      } else if (e.key === '3') {
+        setLens('impact');
+      } else if (e.key === '4') {
+        setLens('diff');
+      }
+    });
+
+    // ResizeObserver for instant SVG connector + column reflow
+    window.addEventListener('resize', () => {
+      renderStrip();
+    });
+
+    /* Initial Boot */
+    renderAll({ resetCamera: true });
+  </script>
+</body>
+</html>

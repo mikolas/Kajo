@@ -1,0 +1,2873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KAJO IDE — Code Strip Storyboard</title>
+<style>
+  :root {
+    --metro-bg: #111111;
+    --metro-surface-0: #0a0a0a;
+    --metro-surface-1: #101010;
+    --metro-surface-2: #141414;
+    --metro-surface-3: #181818;
+    --metro-surface-4: #1e1e1e;
+    --metro-border: #2b2b2b;
+    --metro-text: #ffffff;
+    --metro-subtext: #a0a0a0;
+    --metro-dim: #777777;
+    --metro-accent: #0078d4;
+    --metro-accent-rgb: 0, 120, 212;
+    --metro-telemetry: #00d8f0;
+    --metro-success: #10893e;
+    --metro-warning: #ffb900;
+    --metro-urgent: #e81123;
+    --metro-agent: #b4009e;
+    --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+    --font-sans: 'Inter', 'Cantarell', 'Segoe UI', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; border-radius: 0 !important; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100vh; overflow: hidden;
+    background: #070707; color: var(--metro-text);
+    font-family: var(--font-sans); font-size: 13px;
+    user-select: none;
+  }
+  button, input { font-family: var(--font-mono); }
+
+  /* ── Top Bar ── */
+  .topbar {
+    height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+    background: var(--metro-surface-2); border-bottom: 1px solid var(--metro-border);
+    white-space: nowrap; overflow: hidden;
+  }
+  .title {
+    font-family: var(--font-mono); font-weight: 700; letter-spacing: .8px; font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .title .ico { color: var(--metro-accent); font-size: 14px; }
+  .title small { color: var(--metro-dim); font-weight: 400; letter-spacing: 0; font-size: 10px; }
+  .group { display: flex; align-items: center; gap: 6px; }
+  .glabel {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--metro-dim);
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .seg { display: flex; border: 1px solid var(--metro-border); }
+  .seg button {
+    background: var(--metro-surface-3); color: #bbb; border: 0;
+    border-right: 1px solid var(--metro-border); padding: 3px 8px;
+    font-size: 10px; font-weight: 700; cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: #222; color: #fff; }
+  .seg button.on { background: var(--metro-accent); color: #fff; }
+  .spacer { flex: 1; }
+  .btn {
+    background: var(--metro-surface-3); color: #ddd; border: 1px solid var(--metro-border);
+    padding: 4px 9px; font-size: 10px; font-weight: 700; cursor: pointer; letter-spacing: .4px;
+  }
+  .btn:hover { background: #222; color: #fff; border-color: #3d3d3d; }
+  .btn.primary { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
+  .btn.primary:hover { background: #1084dd; }
+  .btn.playing { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #fff; }
+  .btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+  .step-pill {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .6px;
+    padding: 4px 9px; border: 1px solid var(--metro-accent);
+    background: rgba(var(--metro-accent-rgb), .16); color: var(--metro-telemetry);
+    min-width: 92px; text-align: center;
+  }
+
+  /* ── Main Layout ── */
+  main { display: flex; height: calc(100vh - 40px - 30px); }
+  .stage { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 10px; gap: 10px; }
+  .screen-wrap {
+    flex: 1; position: relative; min-height: 0; min-width: 0;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.014) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.010) 0 1px, transparent 1px 40px),
+      #050505;
+    border: 1px solid var(--metro-border); overflow: hidden;
+  }
+  .bezel {
+    position: relative; border: 1px solid var(--metro-accent);
+    box-shadow: 0 12px 44px rgba(0,0,0,.85); overflow: hidden;
+    background: var(--metro-surface-0);
+  }
+  .ide-screen {
+    position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden;
+    display: flex; flex-direction: column;
+    background: var(--metro-bg); color: var(--metro-text);
+  }
+
+  /* ── Inside Scaled IDE Viewport ── */
+  .ide-header {
+    height: 34px; flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: var(--metro-surface-2); border-bottom: 1px solid var(--metro-border);
+    font-family: var(--font-mono); font-size: 11px;
+  }
+  .ide-brand { font-weight: 700; letter-spacing: .8px; color: #fff; display: flex; align-items: center; gap: 6px; }
+  .ide-brand .spark { color: var(--metro-accent); }
+  .ide-ws { color: var(--metro-dim); font-size: 10px; padding: 2px 6px; border: 1px solid #242424; background: #101010; }
+  .ide-mode-btn {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 3px 8px;
+    border: 1px solid var(--metro-border); background: #181818; color: #ccc; cursor: pointer;
+  }
+  .ide-mode-btn.on { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .2); color: #fff; }
+  .lens-bar { display: flex; border: 1px solid var(--metro-border); }
+  .lens-pill {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; padding: 3px 8px;
+    border: 0; border-right: 1px solid var(--metro-border); background: #151515; color: #8c8c8c; cursor: pointer;
+  }
+  .lens-pill:last-child { border-right: 0; }
+  .lens-pill:hover { color: #fff; background: #1e1e1e; }
+  .lens-pill.on[data-l="CALLS"]  { background: var(--metro-accent); color: #fff; }
+  .lens-pill.on[data-l="TYPES"]  { background: var(--metro-telemetry); color: #050505; }
+  .lens-pill.on[data-l="IMPACT"] { background: var(--metro-warning); color: #080808; }
+  .lens-pill.on[data-l="DIFF"]   { background: var(--metro-agent); color: #fff; }
+  .lsp-badge {
+    margin-left: auto; font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border: 1px solid rgba(16,137,62,.7); background: rgba(16,137,62,.16); color: #5ce08b;
+  }
+  .lsp-badge.fallback {
+    border-color: var(--metro-warning); background: rgba(255,185,0,.16); color: var(--metro-warning);
+  }
+  .win-close {
+    width: 28px; height: 24px; border: 1px solid var(--metro-border); background: #181818;
+    color: #aaa; font-size: 11px; display: flex; align-items: center; justify-content: center;
+  }
+  .win-close:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #fff; }
+
+  .trail-rail {
+    height: 28px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px;
+    background: var(--metro-surface-1); border-bottom: 1px solid var(--metro-border);
+    font-family: var(--font-mono); font-size: 10px;
+  }
+  .trail-rail .rlabel { color: var(--metro-dim); font-weight: 700; letter-spacing: .5px; margin-right: 4px; }
+  .trail-pill {
+    padding: 3px 8px; border: 1px solid #262626; background: #151515; color: #9c9c9c;
+    cursor: pointer; display: flex; align-items: center; gap: 6px; font-size: 10px; font-weight: 700;
+  }
+  .trail-pill:hover { color: #fff; border-color: #3a3a3a; }
+  .trail-pill.on { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .18); color: #fff; }
+  .trail-pill .ldot { width: 6px; height: 6px; display: inline-block; }
+  .trail-meta { margin-left: auto; color: var(--metro-dim); display: flex; gap: 12px; }
+  .trail-meta b { color: var(--metro-telemetry); font-weight: 700; }
+
+  .ide-body {
+    flex: 1; position: relative; overflow: hidden; min-height: 0;
+    background:
+      radial-gradient(circle at 18% 20%, rgba(var(--metro-accent-rgb), .06), transparent 45%),
+      #0c0c0e;
+  }
+
+  /* ── Classic File Tabs View ── */
+  #classicView {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    background: var(--metro-bg); z-index: 30;
+  }
+  #classicView.on { display: flex; }
+  .classic-tabs {
+    height: 30px; display: flex; align-items: stretch; background: var(--metro-surface-1);
+    border-bottom: 1px solid var(--metro-border); font-family: var(--font-mono); font-size: 11px;
+  }
+  .ctab {
+    padding: 0 14px; display: flex; align-items: center; gap: 8px;
+    border-right: 1px solid var(--metro-border); color: var(--metro-subtext); background: #131313;
+  }
+  .ctab.on {
+    background: var(--metro-bg); color: #fff; font-weight: 700;
+    box-shadow: inset 0 2px 0 var(--metro-accent);
+  }
+  .classic-banner {
+    padding: 6px 14px; background: rgba(var(--metro-accent-rgb), .12);
+    border-bottom: 1px solid rgba(var(--metro-accent-rgb), .45);
+    font-family: var(--font-mono); font-size: 11px; color: #bfe0ff;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .classic-banner kbd {
+    background: #141414; border: 1px solid var(--metro-accent); color: var(--metro-telemetry);
+    padding: 1px 6px; font-weight: 700;
+  }
+  .classic-editor {
+    flex: 1; overflow: hidden; padding: 8px 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.55;
+  }
+
+  /* ── Code Strip Viewport ── */
+  #stripView { position: absolute; inset: 0; overflow: hidden; }
+  #stripCards { position: absolute; inset: 0; overflow: hidden; }
+  #depSvg {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    pointer-events: none; z-index: 25; overflow: visible;
+  }
+
+  .strip-card {
+    position: absolute; background: var(--metro-surface-1);
+    border: 1px solid var(--metro-border); display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .strip-card.focused {
+    border-color: var(--metro-accent);
+    box-shadow: 0 0 0 1px rgba(var(--metro-accent-rgb), .35), inset 0 2px 0 var(--metro-accent);
+    z-index: 12;
+  }
+  .strip-card.lens-TYPES.focused  { border-color: var(--metro-telemetry); box-shadow: inset 0 2px 0 var(--metro-telemetry); }
+  .strip-card.lens-IMPACT.focused { border-color: var(--metro-warning);   box-shadow: inset 0 2px 0 var(--metro-warning); }
+  .strip-card.lens-DIFF.focused   { border-color: var(--metro-agent);     box-shadow: inset 0 2px 0 var(--metro-agent); }
+  .strip-card.collapsed { background: var(--metro-surface-2); }
+
+  .card-head {
+    height: 26px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 7px;
+    background: var(--metro-surface-2); border-bottom: 1px solid var(--metro-border);
+    font-family: var(--font-mono); font-size: 11px; white-space: nowrap; overflow: hidden;
+    cursor: pointer;
+  }
+  .strip-card.focused .card-head { background: var(--metro-surface-3); }
+  .strip-card.collapsed .card-head { border-bottom: 0; }
+  .kbadge {
+    width: 17px; height: 17px; flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; border: 1px solid #333; background: #191919; color: var(--metro-telemetry);
+  }
+  .kbadge.S { color: #7ce8ff; border-color: rgba(0,216,240,.5); background: rgba(0,216,240,.12); }
+  .kbadge.f { color: #7ec4ff; border-color: rgba(0,120,212,.6); background: rgba(0,120,212,.14); }
+  .kbadge.F { color: #e2e2e2; border-color: #444; background: #222; }
+  .kbadge.L { color: var(--metro-warning); border-color: rgba(255,185,0,.6); background: rgba(255,185,0,.14); }
+  .sym-name { font-weight: 700; color: #fff; overflow: hidden; text-overflow: ellipsis; }
+  .sym-loc { color: var(--metro-dim); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+  .chip-tag {
+    font-size: 9px; font-weight: 700; padding: 1px 4px; border: 1px solid #333;
+    background: #141414; color: #bbb; flex-shrink: 0;
+  }
+  .chip-tag.dirty { color: var(--metro-warning); border-color: rgba(255,185,0,.6); background: rgba(255,185,0,.12); }
+  .chip-tag.err   { color: #ff6b78; border-color: rgba(232,17,35,.7); background: rgba(232,17,35,.15); }
+  .chip-tag.ok    { color: #5ce08b; border-color: rgba(16,137,62,.7); background: rgba(16,137,62,.16); }
+  .chip-tag.agent { color: #f48ce7; border-color: rgba(180,0,158,.8); background: rgba(180,0,158,.2); }
+  .chip-tag.buf   { color: #8ad8ff; border-color: rgba(0,216,240,.35); background: rgba(0,216,240,.08); }
+  .chip-tag.fb    { color: var(--metro-warning); border-color: var(--metro-warning); background: rgba(255,185,0,.16); }
+
+  .card-acts { margin-left: auto; display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .cbtn {
+    border: 1px solid #2f2f2f; background: #141414; color: #aaa;
+    font-size: 10px; font-weight: 700; padding: 1px 5px; cursor: pointer; line-height: 1.3;
+  }
+  .cbtn:hover { background: #262626; color: #fff; border-color: #4a4a4a; }
+  .cbtn.acc { border-color: rgba(16,137,62,.8); color: #5ce08b; background: rgba(16,137,62,.16); }
+  .cbtn.acc:hover { background: var(--metro-success); color: #fff; }
+  .cbtn.rev { border-color: rgba(232,17,35,.7); color: #ff7c87; background: rgba(232,17,35,.14); }
+  .cbtn.rev:hover { background: var(--metro-urgent); color: #fff; }
+  .cbtn.cls:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #fff; }
+
+  .card-body {
+    flex: 1; position: relative; overflow: hidden; background: #111111;
+    font-family: var(--font-mono); font-size: 11.5px; line-height: 1.52;
+  }
+  .strip-card.collapsed .card-body { display: none; }
+
+  /* ── 6-Column Cairo Gutter + Code Lines + Scope Dimming Veil ── */
+  .code-line {
+    display: flex; align-items: stretch; height: 19px; padding-right: 10px;
+    white-space: pre; position: relative;
+  }
+  .code-line.cur { background: rgba(var(--metro-accent-rgb), .16); }
+  .code-line.hit { background: rgba(255, 185, 0, .14); }
+  .code-line.diff-add { background: rgba(16, 137, 62, .14); }
+  .code-line.diff-agent { background: rgba(180, 0, 158, .15); }
+  .code-line.out-of-scope {
+    opacity: .34; background: #0a0a0a;
+  }
+  .code-line.scope-top {
+    border-top: 2px solid var(--metro-accent);
+  }
+  .code-line.scope-bot {
+    border-bottom: 2px solid var(--metro-accent);
+  }
+  .scope-pill {
+    position: absolute; right: 8px; top: 1px; font-size: 9px; font-weight: 700;
+    color: var(--metro-telemetry); background: rgba(10,10,10,.92);
+    border: 1px solid rgba(0,216,240,.45); padding: 0 5px; pointer-events: none;
+  }
+  .gut {
+    width: 62px; flex-shrink: 0; display: grid;
+    grid-template-columns: 10px 10px 10px 24px 4px 4px;
+    align-items: center; text-align: right;
+    background: #0d0d0d; border-right: 1px solid #222; margin-right: 9px;
+    font-size: 10px; color: #5c5c5c; padding-left: 2px;
+  }
+  .g-bp { color: var(--metro-urgent); text-align: center; font-size: 9px; }
+  .g-dg { color: var(--metro-warning); text-align: center; font-size: 9px; }
+  .g-pc { color: var(--metro-telemetry); text-align: center; font-size: 9px; }
+  .g-ln { padding-right: 4px; }
+  .code-line.cur .g-ln { color: #fff; font-weight: 700; }
+  .g-df { height: 100%; width: 3px; }
+  .g-df.add { background: var(--metro-success); }
+  .g-df.mod { background: var(--metro-accent); }
+  .g-df.agt { background: var(--metro-agent); }
+  .g-fd { color: #444; font-size: 8px; text-align: center; }
+
+  .code-txt { flex: 1; overflow: hidden; text-overflow: ellipsis; color: #dcdcdc; }
+  .tok-kw  { color: #569cd6; }
+  .tok-ty  { color: #4ec9b0; }
+  .tok-fn  { color: #dcdcaa; }
+  .tok-cm  { color: #6a9955; }
+  .tok-st  { color: #ce9178; }
+  .tok-nu  { color: #b5cea8; }
+  .tok-link {
+    border-bottom: 1px dotted var(--metro-telemetry); cursor: pointer;
+    padding-bottom: 0;
+  }
+  .tok-link:hover { background: rgba(0, 216, 240, .18); color: #fff; }
+
+  /* ── Lens Card Body ── */
+  .lens-body {
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 6px;
+    font-family: var(--font-mono); font-size: 11px; height: 100%; background: #101012;
+  }
+  .lens-sub {
+    color: var(--metro-subtext); font-size: 10px; display: flex; justify-content: space-between;
+    border-bottom: 1px solid #242424; padding-bottom: 5px;
+  }
+  .lens-item {
+    border: 1px solid #262626; background: #161618; padding: 6px 8px;
+    display: flex; flex-direction: column; gap: 3px; cursor: pointer;
+  }
+  .lens-item:hover { border-color: var(--metro-warning); background: #1c1c1f; }
+  .lens-item .li-top { display: flex; justify-content: space-between; color: #fff; font-weight: 700; }
+  .lens-item .li-top span:last-child { color: var(--metro-dim); font-weight: 400; font-size: 10px; }
+  .lens-item .li-code { color: #b8b8b8; font-size: 10px; }
+  .lens-cta {
+    margin-top: auto; padding: 7px 10px; border: 1px solid var(--metro-warning);
+    background: rgba(255,185,0,.16); color: var(--metro-warning);
+    font-size: 10px; font-weight: 700; cursor: pointer; text-align: center; letter-spacing: .5px;
+  }
+  .lens-cta:hover { background: var(--metro-warning); color: #090909; }
+
+  /* ── Bird's-Eye Overview Overlay ── */
+  #overviewOverlay {
+    position: absolute; inset: 0; z-index: 40; display: none; flex-direction: column;
+    background:
+      repeating-linear-gradient(90deg, rgba(0,216,240,.03) 0 1px, transparent 1px 48px),
+      repeating-linear-gradient(0deg, rgba(0,216,240,.025) 0 1px, transparent 1px 48px),
+      rgba(8, 10, 13, .96);
+  }
+  #overviewOverlay.on { display: flex; }
+  .ov-top {
+    height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 14px;
+    background: #101318; border-bottom: 1px solid var(--metro-telemetry);
+    font-family: var(--font-mono); font-size: 11px;
+  }
+  .ov-top .ov-title { font-weight: 700; color: var(--metro-telemetry); letter-spacing: .6px; }
+  .ov-search {
+    background: #0a0a0a; border: 1px solid var(--metro-border); color: #fff;
+    padding: 4px 9px; font-size: 11px; width: 240px; outline: none;
+  }
+  .ov-search:focus { border-color: var(--metro-telemetry); }
+  .ov-hint { margin-left: auto; color: var(--metro-subtext); font-size: 10px; }
+  .ov-canvas { flex: 1; position: relative; overflow: hidden; }
+  #ovSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .ov-col-label {
+    position: absolute; font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    color: var(--metro-dim); letter-spacing: .6px; text-transform: uppercase;
+  }
+  .ov-card {
+    position: absolute; background: #14161a; border: 1px solid #30353d;
+    padding: 8px 10px; display: flex; flex-direction: column; gap: 4px;
+    cursor: pointer; font-family: var(--font-mono);
+  }
+  .ov-card:hover { border-color: #777; background: #1a1d24; }
+  .ov-card.sel { border-color: var(--metro-accent); box-shadow: inset 0 3px 0 var(--metro-accent); background: #15212e; }
+  .ov-card.match { border-color: var(--metro-telemetry); box-shadow: 0 0 0 1px var(--metro-telemetry); background: #10262c; }
+  .ov-card.dimmed { opacity: .22; }
+  .ov-card .oc-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+  .ov-card .oc-p { font-size: 10px; color: var(--metro-subtext); }
+  .ov-card .oc-m { margin-top: auto; display: flex; justify-content: space-between; font-size: 9px; color: var(--metro-dim); }
+  .ov-cam {
+    position: absolute; border: 2px solid var(--metro-telemetry); pointer-events: none;
+    background: rgba(0, 216, 240, .04);
+  }
+  .ov-cam-tag {
+    position: absolute; left: 0; top: -18px; background: var(--metro-telemetry); color: #050505;
+    font-family: var(--font-mono); font-size: 9px; font-weight: 700; padding: 1px 6px;
+  }
+
+  /* ── IDE Bottom Modal Status Bar ── */
+  .ide-statusbar {
+    height: 24px; flex-shrink: 0; display: flex; align-items: center; gap: 12px; padding: 0 10px;
+    background: var(--metro-surface-2); border-top: 1px solid var(--metro-border);
+    font-family: var(--font-mono); font-size: 10px; color: var(--metro-subtext);
+  }
+  .mode-pill {
+    padding: 2px 7px; font-weight: 700; background: var(--metro-accent); color: #fff; letter-spacing: .5px;
+  }
+  .mode-pill.ov { background: var(--metro-telemetry); color: #050505; }
+  .mode-pill.tabs { background: #333; color: #eee; }
+  .ide-statusbar .right { margin-left: auto; display: flex; gap: 14px; }
+  .ide-statusbar b { color: #fff; }
+
+  /* ── Under-stage Minimap + Vertical Trails ── */
+  .under { height: 118px; display: flex; gap: 10px; flex-shrink: 0; }
+  .box { background: var(--metro-surface-1); border: 1px solid var(--metro-border); position: relative; }
+  .box h3 {
+    position: absolute; left: 8px; top: 6px; font-family: var(--font-mono); font-size: 10px;
+    color: var(--metro-dim); text-transform: uppercase; letter-spacing: .5px; z-index: 2;
+  }
+  #minimap { flex: 1; overflow: hidden; }
+  #minimapSvg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  #minimap .mcol {
+    position: absolute; border: 1px solid #353535; background: #161616; cursor: pointer; z-index: 1;
+  }
+  #minimap .mcol.f { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .2); }
+  #minimap .mcard {
+    position: absolute; left: 1px; right: 1px; border-bottom: 1px solid #2b2b2b;
+    font-family: var(--font-mono); font-size: 8px; color: #9c9c9c; padding: 1px 3px;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  #minimap .mcard.fc { color: #fff; background: rgba(var(--metro-accent-rgb), .22); }
+  #minimap .mcard.colp { background: #222; color: var(--metro-warning); }
+  #minimap .mview {
+    position: absolute; border: 2px solid var(--metro-telemetry); pointer-events: none; z-index: 4;
+    background: rgba(0, 216, 240, .06);
+  }
+  #minimap .note {
+    position: absolute; right: 8px; top: 6px; font-family: var(--font-mono); font-size: 10px;
+    color: var(--metro-dim); z-index: 2;
+  }
+  #trailList {
+    width: 224px; padding: 24px 8px 8px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
+  }
+  .titem {
+    font-family: var(--font-mono); font-size: 10px; padding: 4px 7px; border: 1px solid #262626;
+    background: #151515; color: #bbb; display: flex; justify-content: space-between; align-items: center;
+    cursor: pointer; gap: 6px;
+  }
+  .titem:hover { border-color: #404040; color: #fff; }
+  .titem.on { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .14); color: #fff; font-weight: 700; }
+  .titem .tmeta { color: var(--metro-dim); font-size: 9px; font-weight: 400; }
+
+  /* ── Right Side Panel (400px) ── */
+  aside {
+    width: 400px; flex-shrink: 0; border-left: 1px solid var(--metro-border);
+    background: var(--metro-surface-1); display: flex; flex-direction: column; min-height: 0;
+  }
+  .tabs-head { display: flex; border-bottom: 1px solid var(--metro-border); }
+  .tabs-head button {
+    flex: 1; background: transparent; color: var(--metro-subtext); border: 0;
+    border-right: 1px solid var(--metro-border); padding: 9px 0;
+    font-size: 11px; font-weight: 700; letter-spacing: .7px; cursor: pointer;
+  }
+  .tabs-head button:last-child { border-right: 0; }
+  .tabs-head button.on {
+    color: #fff; background: var(--metro-surface-3);
+    box-shadow: inset 0 -2px 0 var(--metro-accent);
+  }
+  .pane { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  .pane.on { display: block; }
+
+  .scen {
+    width: 100%; text-align: left; background: #151515; color: #d8d8d8;
+    border: 1px solid #262626; padding: 7px 9px; margin-bottom: 4px;
+    font-size: 11px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .scen:hover { background: #1c1c1c; border-color: #363636; }
+  .scen.on {
+    border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), .14); color: #fff;
+    box-shadow: inset 3px 0 0 var(--metro-accent);
+  }
+  .scen .sid { color: var(--metro-telemetry); font-weight: 700; margin-right: 4px; }
+  .scen .scnt { color: var(--metro-dim); font-size: 10px; white-space: nowrap; }
+
+  .stepbox { margin-top: 10px; border: 1px solid var(--metro-border); background: var(--metro-surface-2); }
+  .stepbox .head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 10px; border-bottom: 1px solid var(--metro-border);
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  }
+  .stepbox .head .count { color: var(--metro-telemetry); white-space: nowrap; }
+  .step-chord {
+    padding: 6px 10px; border-bottom: 1px solid #222; background: #111113;
+    font-family: var(--font-mono); font-size: 10px; color: var(--metro-subtext);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .step-chord kbd {
+    background: #181818; border: 1px solid var(--metro-accent); color: var(--metro-telemetry);
+    padding: 2px 6px; font-weight: 700;
+  }
+  .stepbox .text {
+    padding: 10px; line-height: 1.56; color: #d8d8d8; min-height: 112px; font-size: 12px;
+  }
+  .stepbox .text b { color: #fff; }
+  .stepbox .text code { font-family: var(--font-mono); font-size: 11px; color: var(--metro-telemetry); }
+  .stepbox .refs {
+    padding: 6px 10px 8px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+    font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim);
+  }
+  .chip {
+    display: inline-block; font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    padding: 1px 6px; border: 1px solid rgba(var(--metro-accent-rgb), .75);
+    background: rgba(var(--metro-accent-rgb), .12); color: #9fd0ff; cursor: pointer;
+  }
+  .chip:hover, .chip.active { background: var(--metro-accent); color: #fff; }
+  .stepbox .nav {
+    display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--metro-border);
+    background: #121212;
+  }
+  .specdef {
+    margin-top: 10px; padding: 9px 10px; border: 1px solid var(--metro-border);
+    background: var(--metro-surface-2); min-height: 76px; line-height: 1.5; color: #ccc; font-size: 11.5px;
+  }
+  .specdef .rid { font-family: var(--font-mono); color: var(--metro-telemetry); font-weight: 700; margin-right: 6px; }
+  .specdef .rtitle { font-family: var(--font-mono); color: #fff; font-weight: 700; }
+
+  /* ── Playground Tab ── */
+  .agroup { margin-bottom: 11px; }
+  .agroup h4 {
+    font-family: var(--font-mono); font-size: 10px; color: var(--metro-dim);
+    text-transform: uppercase; letter-spacing: .6px; margin-bottom: 5px;
+  }
+  .agroup .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+  .act {
+    background: var(--metro-surface-3); color: #ddd; border: 1px solid var(--metro-border);
+    padding: 5px 7px; font-size: 10px; cursor: pointer; text-align: left;
+    display: flex; justify-content: space-between; align-items: center; gap: 4px;
+  }
+  .act:hover { background: #222; color: #fff; border-color: #444; }
+  .act kbd { color: var(--metro-telemetry); font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; }
+  .act.l-calls  kbd { color: #6bb8ff; }
+  .act.l-types  kbd { color: var(--metro-telemetry); }
+  .act.l-impact kbd { color: var(--metro-warning); }
+  .act.l-diff   kbd { color: #f08ce4; }
+
+  .pg-log {
+    margin-top: 10px; border: 1px solid var(--metro-border); background: #0e0e0e;
+    max-height: 155px; overflow-y: auto; padding: 6px 8px;
+  }
+  .pg-log h4 {
+    font-family: var(--font-mono); font-size: 9.5px; color: var(--metro-dim);
+    text-transform: uppercase; letter-spacing: .5px; margin-bottom: 4px;
+  }
+  .logrow {
+    border-bottom: 1px solid #1d1d1d; padding: 4px 0; font-family: var(--font-mono);
+    font-size: 10px; line-height: 1.4; color: #bbb;
+  }
+  .logrow:last-child { border-bottom: 0; }
+  .logrow .lk { color: var(--metro-telemetry); font-weight: 700; }
+
+  /* ── Bottom Keystroke / Event Bar ── */
+  footer {
+    height: 30px; display: flex; align-items: center; gap: 12px; padding: 0 12px;
+    border-top: 1px solid var(--metro-border); background: var(--metro-surface-2);
+    font-family: var(--font-mono); font-size: 10.5px; color: var(--metro-subtext);
+    white-space: nowrap; overflow: hidden;
+  }
+  .ev-chord {
+    padding: 2px 7px; border: 1px solid var(--metro-accent);
+    background: rgba(var(--metro-accent-rgb), .18); color: var(--metro-telemetry);
+    font-weight: 700;
+  }
+  .ev-msg { color: #e6e6e6; overflow: hidden; text-overflow: ellipsis; }
+  .inv-pill {
+    margin-left: auto; padding: 2px 8px; border: 1px solid rgba(16,137,62,.75);
+    background: rgba(16,137,62,.14); color: #67e695; font-size: 10px; font-weight: 700;
+  }
+  .inv-pill.warn {
+    border-color: rgba(255,185,0,.7); background: rgba(255,185,0,.14); color: var(--metro-warning);
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="title">
+    <span class="ico">▥</span>
+    <span>KAJO IDE — CODE STRIP STORYBOARD</span>
+    <small>spec_ide_code_strip.md</small>
+  </div>
+  <div class="group">
+    <span class="glabel">Viewport</span>
+    <div class="seg" id="segViewport">
+      <button data-v="1280x720" class="on">1280×720</button>
+      <button data-v="1600x900">1600×900</button>
+      <button data-v="1920x1080">1920×1080</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="glabel">Spring</span>
+    <div class="seg" id="segSpeed">
+      <button data-v="1" class="on">1×</button>
+      <button data-v="0.25">¼×</button>
+      <button data-v="0">off</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <div class="group">
+    <button class="btn" id="topPrev">◀ PREV</button>
+    <button class="btn primary" id="topNext">▶ NEXT</button>
+    <button class="btn" id="topPlay">▶ PLAY</button>
+    <button class="btn" id="topReset">↺ RESET</button>
+  </div>
+  <div class="step-pill" id="stepPill">STEP 1 / 4</div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="screen-wrap" id="screenWrap">
+      <div class="bezel" id="bezel">
+        <div class="ide-screen" id="ideScreen">
+          <!-- IDE Top Header -->
+          <div class="ide-header">
+            <div class="ide-brand"><span class="spark">✦</span> KAJO IDE</div>
+            <span class="ide-ws">~/src/Kajo</span>
+            <button class="ide-mode-btn on" id="btnModeToggle" title="Space t s">[ ▥ STRIP ]</button>
+            <div class="lens-bar" id="lensBar">
+              <button class="lens-pill on" data-l="CALLS">1 CALLS</button>
+              <button class="lens-pill" data-l="TYPES">2 TYPES</button>
+              <button class="lens-pill" data-l="IMPACT">3 IMPACT</button>
+              <button class="lens-pill" data-l="DIFF">4 DIFF</button>
+            </div>
+            <button class="ide-mode-btn" id="btnOvToggle" title="Space t o">[ ⊞ OVERVIEW ]</button>
+            <span class="lsp-badge" id="lspBadge">clangd · LSP 3.17</span>
+            <div class="win-close">✕</div>
+          </div>
+
+          <!-- Slim Trail Rail -->
+          <div class="trail-rail">
+            <span class="rlabel">TRAILS</span>
+            <div id="trailRailPills" style="display:flex;gap:5px;align-items:center;"></div>
+            <div class="trail-meta">
+              <span id="railCols"><b>1</b> cols</span>
+              <span id="railCam">cam <b>0px</b></span>
+              <span id="railBufs">pool <b>4</b> bufs</span>
+            </div>
+          </div>
+
+          <!-- Main IDE Editor Body -->
+          <div class="ide-body" id="ideBody">
+            <!-- Classic File Tabs View -->
+            <div id="classicView">
+              <div class="classic-tabs">
+                <div class="ctab on">comp_output.c</div>
+                <div class="ctab">fx_glass.c</div>
+                <div class="ctab">fx_glass.h</div>
+                <div class="ctab">xwayland.c</div>
+              </div>
+              <div class="classic-banner">
+                <span>Classic File Tabs (Default Mode) — Full 1,600-line canonical buffer <code>src/comp/comp_output.c</code> · Cursor inside <code>comp_output_frame()</code> L224</span>
+                <span>Press <kbd>Space t s</kbd> or click <b>[ ▥ STRIP ]</b> to frame symbol in Code Strip</span>
+              </div>
+              <div class="classic-editor" id="classicEditor"></div>
+            </div>
+
+            <!-- Scrollable-Tiling Code Strip View -->
+            <div id="stripView">
+              <div id="stripCards"></div>
+              <svg id="depSvg"></svg>
+            </div>
+
+            <!-- Bird's-Eye Overview -->
+            <div id="overviewOverlay">
+              <div class="ov-top">
+                <span class="ov-title">⊞ BIRD'S-EYE STRIP OVERVIEW · IDE_STATE_STRIP_OVERVIEW</span>
+                <input class="ov-search" id="ovSearch" type="text" placeholder="Type to filter nodes (e.g. blur)..." />
+                <span class="ov-hint">Click node or Enter to spring camera · Esc to cancel</span>
+              </div>
+              <div class="ov-canvas" id="ovCanvas">
+                <svg id="ovSvg"></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- IDE Modal Status Bar -->
+          <div class="ide-statusbar">
+            <span class="mode-pill" id="ideModePill">NORMAL · STRIP</span>
+            <span id="ideStatusSym">ƒ comp_output_frame — src/comp/comp_output.c:L182–L248</span>
+            <div class="right">
+              <span id="ideStatusLens">LENS: <b>CALLS</b></span>
+              <span id="ideStatusBuf">SHARED BUFFER: <b>0 duplicated</b></span>
+              <span>IDLE CPU: <b>0.02%</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Under-Stage Minimap & Vertical Trails -->
+    <div class="under">
+      <div class="box" id="minimap">
+        <h3>Strip Minimap · cyan = viewport camera</h3>
+        <div class="note" id="mapNote"></div>
+        <svg id="minimapSvg"></svg>
+      </div>
+      <div class="box" id="trailList">
+        <h3>Vertical Trails</h3>
+      </div>
+    </div>
+  </section>
+
+  <!-- Right Side Panel (400px) -->
+  <aside>
+    <div class="tabs-head" id="tabsHead">
+      <button data-p="scenarios" class="on">SCENARIOS</button>
+      <button data-p="playground">PLAYGROUND</button>
+    </div>
+
+    <div class="pane on" id="pane-scenarios">
+      <div id="scenList"></div>
+      <div class="stepbox">
+        <div class="head">
+          <span id="stepTitle">Select a scenario</span>
+          <span class="count" id="stepCount">STEP 1 / 4</span>
+        </div>
+        <div class="step-chord" id="stepChord">
+          <kbd>Space t s</kbd>
+          <span>Toggle Classic Tabs ↔ Code Strip</span>
+        </div>
+        <div class="text" id="stepText"></div>
+        <div class="refs" id="stepRefs"></div>
+        <div class="nav">
+          <button class="btn" id="btnPrev">◀ PREV</button>
+          <button class="btn primary" id="btnNext">▶ NEXT</button>
+          <button class="btn" id="btnPlay">▶ PLAY</button>
+          <div class="spacer"></div>
+          <button class="btn" id="btnRestart">↺ RESTART</button>
+        </div>
+      </div>
+      <div class="specdef" id="specDef">
+        Hover or click any <span class="rid">§x.y</span> spec chip above to read the governing section from <code>spec_ide_code_strip.md</code>.
+      </div>
+    </div>
+
+    <div class="pane" id="pane-playground">
+      <div id="pgGroups"></div>
+      <div class="pg-log">
+        <h4>Live Strip Event Log</h4>
+        <div id="pgLogList"></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span class="ev-chord" id="evChord">[ INIT ]</span>
+  <span class="ev-msg" id="evMsg">Storyboard ready — S1 loaded. Use ◀ PREV / ▶ NEXT or Playground actions.</span>
+  <span class="inv-pill" id="invPill">✓ INVARIANT: Canonical buffer pool · 0px overlap · cam 0px</span>
+</footer>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 1. ANALYTICAL DAMPED-SPRING OSCILLATOR (exact port of comp_spring.c)
+ * ═══════════════════════════════════════════════════════════════════════ */
+const SPRINGS = {
+  trail:  { z: 0.80, k: 523 },
+  scroll: { z: 0.85, k: 423 },
+  move:   { z: 0.75, k: 323 },
+};
+
+class Spring {
+  constructor(x, t) { this.x0 = x; this.v0 = 0; this.t0 = t; this.to = x; this.p = null; }
+  _eval(t) {
+    if (!this.p) return [this.to, 0];
+    const dt = Math.max(0, t - this.t0), k = this.p.k, z = this.p.z, w0 = Math.sqrt(k);
+    const d0 = this.x0 - this.to, v0 = this.v0;
+    let d, v;
+    if (Math.abs(z - 1) < 1e-6) {
+      const b = v0 + w0 * d0, e = Math.exp(-w0 * dt);
+      d = e * (d0 + b * dt); v = e * (b - w0 * (d0 + b * dt));
+    } else if (z < 1) {
+      const wd = w0 * Math.sqrt(1 - z * z), a = z * w0, b = (v0 + a * d0) / wd;
+      const e = Math.exp(-a * dt), c = Math.cos(wd * dt), s = Math.sin(wd * dt);
+      d = e * (d0 * c + b * s);
+      v = e * ((b * wd - a * d0) * c - (d0 * wd + a * b) * s);
+    } else {
+      const r = Math.sqrt(z * z - 1), r1 = -w0 * (z - r), r2 = -w0 * (z + r);
+      const c2 = (v0 - r1 * d0) / (r2 - r1), c1 = d0 - c2;
+      d = c1 * Math.exp(r1 * dt) + c2 * Math.exp(r2 * dt);
+      v = c1 * r1 * Math.exp(r1 * dt) + c2 * r2 * Math.exp(r2 * dt);
+    }
+    return [this.to + d, v];
+  }
+  value(t) { return this._eval(t)[0]; }
+  retarget(to, t, p) {
+    const [x, v] = this._eval(t);
+    this.x0 = x; this.v0 = v; this.t0 = t; this.to = to; this.p = p;
+  }
+  jump(x, t) { this.x0 = x; this.to = x; this.v0 = 0; this.t0 = t; this.p = null; }
+  done(t) { const [x, v] = this._eval(t); return Math.abs(x - this.to) < 0.35 && Math.abs(v) < 3; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 2. SPEC CROSS-REFERENCE DICTIONARY (spec_ide_code_strip.md)
+ * ═══════════════════════════════════════════════════════════════════════ */
+const SPECS = {
+  '§1':   ['Motivation & Non-Goals', 'Opt-in spatial code strip; classic file tabs remain default (Space t s). No ambient auto-spawning on cursor hover; honest [TS+RG FALLBACK] when no LSP is running.'],
+  '§3.1': ['Horizontal Column Strip & Camera Policy', 'Columns cycle 33% → 50% → 66% → 100% separated by a 14px Dependency Bridge Gutter. Camera stays still if focused column already fits; otherwise springs minimally to keep caller + callee side-by-side.'],
+  '§3.2': ['Vertical Card Stacking (Consume / Expel)', '1–4 cards stack per column. Space t , consumes top card from Column i+1 into bottom of Column i; Space t . expels focused card right; Space t z folds a card to a 26px header bar.'],
+  '§3.3': ['Vertical Trails (Task Workspaces)', 'Independent named trails preserve their own columns, camera_x, active lens, and collapsed state. Space t b branches a fresh trail; Space t [ / ] slides cleanly between trails.'],
+  '§4.1': ['Card Kinds (SYMBOL / FILE / LENS)', 'ƒ/S SYMBOL cards frame one tree-sitter/LSP symbol; 📄 FILE cards show full files; ⬡ LENS cards list structural edges or references with one-keystroke materialization.'],
+  '§4.2': ['Card Chrome (26px Aero+Metro Header)', '0px radius, 26px title bar with kind badge, symbol, relpath:Lstart–Lend, status chips (●, ✖, ◆, 🤖), and [⤢] Symbol↔File, [▁] Collapse, [×] Remove (plus Accept/Revert in DIFF lens).'],
+  '§4.3': ['Shared Canonical GtkSourceBuffer + Scope Veil', 'Option B: every SYMBOL/FILE card attaches directly to the canonical IdeBuffer GtkSourceBuffer (shared undo, LSP, DAP, breakpoints). Lines outside [start..end] are dimmed under a #0a0a0a veil with 2px boundary ticks.'],
+  '§5.1': ['Lens 1 — CALLS (#0078d4)', 'LSP prepareCallHierarchy / definition opens callees in Column i+1 (g d) or fans out outgoing callees (Space t e). Without LSP, degrades visibly to [TS+RG FALLBACK] using ide_ts + async ripgrep.'],
+  '§5.2': ['Lens 2 — TYPES (#00d8f0)', 'Extracts IDE_TS_TOKEN_TYPE references from signature/body and resolves struct/enum/interface definitions via LSP so data layouts can be stacked directly above functions.'],
+  '§5.3': ['Lens 3 — IMPACT (#ffb900)', 'Runs LSP textDocument/references (includeDeclaration: false) to surface blast-radius call sites and materialize live editable caller cards stacked vertically on the right.'],
+  '§5.4': ['Lens 4 — DIFF (#b4009e / #10893e)', 'Maps git diff hunks and AI-agent snapshots to enclosing symbols and arranges them left-to-right in topological call order with inline [✓ ACCEPT] / [✕ REVERT] controls.'],
+  '§6.1': ['Damage-Gated Bridge Connectors', 'Single non-targeting overlay draws 1.5px Bezier connectors (1px at 30% alpha for background edges) from source call lines to target card headers. Redraws only on spring tick or scroll (<0.05% idle CPU).'],
+  '§6.2': ['Bird\'s-Eye Strip Overview (Space t o)', 'Transitions FSM to IDE_STATE_STRIP_OVERVIEW: interactive vector map of all columns, stacked cards, edges, and cyan #00d8f0 viewport frame with live fuzzy filtering and Enter snap-to-card.'],
+  '§7':   ['Modal FSM & Space t * Keybindings', 'Zero collisions with existing kajo-ide Space chords. All strip actions live under Space t * (plus g d / g D in NORMAL mode) and register in ide.toml & Help Palette.'],
+  '§8':   ['Data Model & Virtualization', 'Pure GTK-free ide_strip_layout + ide_strip_graph modules unit-tested headlessly; max 12 live GtkSourceViews with off-screen metadata preservation.'],
+};
+
+const LENS_COLOR = {
+  CALLS:  '#0078d4',
+  TYPES:  '#00d8f0',
+  IMPACT: '#ffb900',
+  DIFF:   '#b4009e',
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 3. REALISTIC KAJO CODEBASE SYMBOL CATALOG
+ * ═══════════════════════════════════════════════════════════════════════ */
+const SYMBOLS = {
+  comp_output_frame: {
+    id: 'comp_output_frame', kind: 'f', badge: 'ƒ', name: 'comp_output_frame',
+    file: 'src/comp/comp_output.c', buf: 'comp_output.c', start: 182, end: 248,
+    callee: 'fx_glass_render', typeRef: 'CompFxGlassParams', curLine: 224,
+    lines: [
+      { ln: 179, out: true,  t: '<span class="tok-cm">/* Frame scheduler: damage clip + glass compositor pass */</span>' },
+      { ln: 180, out: true,  t: '<span class="tok-kw">static void</span> <span class="tok-fn">comp_output_pre_damage</span>(<span class="tok-ty">CompOutput</span> *out);' },
+      { ln: 182, top: true,  t: '<span class="tok-kw">void</span> <span class="tok-fn">comp_output_frame</span>(<span class="tok-ty">CompOutput</span> *out, <span class="tok-ty">uint64_t</span> now_ns) {', fd: '▾' },
+      { ln: 186,             t: '    <span class="tok-ty">CompFxGlassParams</span> params = out->glass_cfg;' },
+      { ln: 194, bp: true,   t: '    <span class="tok-kw">if</span> (!out->needs_frame || out->locked) <span class="tok-kw">return</span>;' },
+      { ln: 212,             t: '    <span class="tok-fn">comp_scene_collect_damage</span>(out, &amp;out->damage);' },
+      { ln: 224, cur: true,  t: '    <span class="tok-fn tok-link" data-jump="fx_glass_render">fx_glass_render</span>(out, &amp;params);  <span class="tok-cm">// g d → Column i+1</span>', diff: 'agt' },
+      { ln: 238,             t: '    <span class="tok-fn">comp_damage_commit</span>(out, now_ns);' },
+      { ln: 248, bot: true,  t: '}' },
+      { ln: 251, out: true,  t: '<span class="tok-kw">static void</span> <span class="tok-fn">comp_output_present_cb</span>(<span class="tok-kw">void</span> *data) {' },
+      { ln: 252, out: true,  t: '    <span class="tok-ty">CompOutput</span> *out = data; <span class="tok-fn">comp_spring_tick</span>(out);' },
+    ],
+    refactoredLine224: '    <span class="tok-fn tok-link" data-jump="fx_glass_render">fx_glass_render</span>(out, &amp;params, <span class="tok-nu">FX_GLASS_SRGB</span>); <span class="tok-cm">// synced</span>',
+  },
+  fx_glass_render: {
+    id: 'fx_glass_render', kind: 'f', badge: 'ƒ', name: 'fx_glass_render',
+    file: 'src/comp/fx/fx_glass.c', buf: 'fx_glass.c', start: 210, end: 295,
+    callee: 'blur_down_pass', typeRef: 'CompFxGlassParams', curLine: 256,
+    lines: [
+      { ln: 207, out: true,  t: '<span class="tok-cm">/* Dual-Kawase glass backdrop compositor pass */</span>' },
+      { ln: 210, top: true,  t: '<span class="tok-kw">void</span> <span class="tok-fn">fx_glass_render</span>(<span class="tok-ty">CompOutput</span> *out, <span class="tok-kw">const</span> <span class="tok-ty tok-link" data-jump="CompFxGlassParams">CompFxGlassParams</span> *p) {', fd: '▾', diff: 'agt' },
+      { ln: 218,             t: '    <span class="tok-kw">float</span> r = p->blur_radius, a = p->tint_alpha;' },
+      { ln: 229,             t: '    <span class="tok-ty">FxFbo</span> *fb = <span class="tok-fn">fx_fbo_acquire</span>(out, p->passes);' },
+      { ln: 242,             t: '    <span class="tok-kw">if</span> (r &lt;= <span class="tok-nu">0.5f</span>) <span class="tok-kw">return</span>;' },
+      { ln: 256, cur: true,  t: '    <span class="tok-fn tok-link" data-jump="blur_down_pass">blur_down_pass</span>(fb, p);  <span class="tok-cm">// downsample pyramid</span>', diff: 'agt' },
+      { ln: 264,             t: '    <span class="tok-fn tok-link" data-jump="blur_up_pass">blur_up_pass</span>(fb, p);    <span class="tok-cm">// upsample + tint</span>' },
+      { ln: 272,             t: '    <span class="tok-fn tok-link" data-jump="shader_blur_compile">shader_blur_compile</span>(p); <span class="tok-cm">// cache hot-path</span>' },
+      { ln: 295, bot: true,  t: '}' },
+      { ln: 298, out: true,  t: '<span class="tok-kw">void</span> <span class="tok-fn">fx_glass_destroy</span>(<span class="tok-ty">CompOutput</span> *out) { <span class="tok-fn">fx_fbo_free</span>(out); }' },
+    ],
+    refactoredSig: '<span class="tok-kw">void</span> <span class="tok-fn">fx_glass_render</span>(<span class="tok-ty">CompOutput</span> *out, <span class="tok-kw">const</span> <span class="tok-ty">CompFxGlassParams</span> *p, <span class="tok-ty">uint32_t</span> flags) {',
+  },
+  CompFxGlassParams: {
+    id: 'CompFxGlassParams', kind: 'S', badge: 'S', name: 'CompFxGlassParams',
+    file: 'src/comp/fx/fx_glass.h', buf: 'fx_glass.h', start: 14, end: 46,
+    callee: null, typeRef: null, curLine: 18,
+    lines: [
+      { ln: 11, out: true,  t: '<span class="tok-kw">#pragma</span> once' },
+      { ln: 14, top: true,  t: '<span class="tok-kw">typedef struct</span> <span class="tok-ty">CompFxGlassParams</span> {', fd: '▾' },
+      { ln: 18, cur: true,  t: '    <span class="tok-kw">float</span>    blur_radius;   <span class="tok-cm">// [0.0 .. 24.0] px</span>' },
+      { ln: 22,             t: '    <span class="tok-kw">float</span>    tint_alpha;    <span class="tok-cm">// backdrop opacity</span>' },
+      { ln: 28,             t: '    <span class="tok-ty">uint8_t</span>  passes;        <span class="tok-cm">// kawase pyramid depth</span>' },
+      { ln: 34,             t: '    <span class="tok-kw">float</span>    noise_gain;    <span class="tok-cm">// frosted grain</span>' },
+      { ln: 40,             t: '    <span class="tok-ty">uint32_t</span> flags;         <span class="tok-cm">// FX_GLASS_SRGB</span>' },
+      { ln: 46, bot: true,  t: '} <span class="tok-ty">CompFxGlassParams</span>;' },
+      { ln: 49, out: true,  t: '<span class="tok-kw">void</span> <span class="tok-fn">fx_glass_render</span>(<span class="tok-ty">CompOutput</span> *out, <span class="tok-kw">const</span> <span class="tok-ty">CompFxGlassParams</span> *p);' },
+    ],
+  },
+  blur_down_pass: {
+    id: 'blur_down_pass', kind: 'f', badge: 'ƒ', name: 'blur_down_pass',
+    file: 'src/comp/fx/fx_glass.c', buf: 'fx_glass.c', start: 92, end: 138,
+    callee: 'gles_quad_draw', typeRef: 'CompFxGlassParams', curLine: 118,
+    lines: [
+      { ln: 89, out: true,  t: '<span class="tok-cm">/* Shared canonical GtkSourceBuffer with fx_glass_render */</span>' },
+      { ln: 92, top: true,  t: '<span class="tok-kw">static void</span> <span class="tok-fn">blur_down_pass</span>(<span class="tok-ty">FxFbo</span> *fb, <span class="tok-kw">const</span> <span class="tok-ty">CompFxGlassParams</span> *p) {', fd: '▾' },
+      { ln: 102,            t: '    <span class="tok-fn">glUseProgram</span>(fb->prog_down);' },
+      { ln: 110,            t: '    <span class="tok-fn">glUniform2f</span>(fb->u_halfpixel, fb->dx * <span class="tok-nu">0.5f</span>, fb->dy * <span class="tok-nu">0.5f</span>);' },
+      { ln: 118, cur: true, t: '    <span class="tok-fn tok-link" data-jump="gles_quad_draw">gles_quad_draw</span>(fb, <span class="tok-nu">0.5f</span>); <span class="tok-cm">// half-res target</span>' },
+      { ln: 138, bot: true, t: '}' },
+      { ln: 140, out: true, t: '<span class="tok-kw">static void</span> <span class="tok-fn">blur_up_pass</span>(<span class="tok-ty">FxFbo</span> *fb, <span class="tok-kw">const</span> <span class="tok-ty">CompFxGlassParams</span> *p) {' },
+    ],
+  },
+  blur_up_pass: {
+    id: 'blur_up_pass', kind: 'f', badge: 'ƒ', name: 'blur_up_pass',
+    file: 'src/comp/fx/fx_glass.c', buf: 'fx_glass.c', start: 140, end: 188,
+    callee: 'shader_cache_get', typeRef: 'CompFxGlassParams', curLine: 166,
+    lines: [
+      { ln: 138, out: true, t: '}' },
+      { ln: 140, top: true, t: '<span class="tok-kw">static void</span> <span class="tok-fn">blur_up_pass</span>(<span class="tok-ty">FxFbo</span> *fb, <span class="tok-kw">const</span> <span class="tok-ty">CompFxGlassParams</span> *p) {', fd: '▾' },
+      { ln: 152,            t: '    <span class="tok-ty">GLuint</span> prog = <span class="tok-fn tok-link" data-jump="shader_cache_get">shader_cache_get</span>(<span class="tok-nu">KEY_KAWASE_UP</span>);' },
+      { ln: 159,            t: '    <span class="tok-fn">glUniform1f</span>(fb->u_tint, p->tint_alpha);' },
+      { ln: 166, cur: true, t: '    <span class="tok-fn tok-link" data-jump="gles_quad_draw">gles_quad_draw</span>(fb, <span class="tok-nu">2.0f</span>); <span class="tok-cm">// full-res composite</span>' },
+      { ln: 188, bot: true, t: '}' },
+    ],
+  },
+  gles_quad_draw: {
+    id: 'gles_quad_draw', kind: 'f', badge: 'ƒ', name: 'gles_quad_draw',
+    file: 'src/comp/fx/gles_quad.c', buf: 'gles_quad.c', start: 40, end: 82,
+    callee: null, typeRef: null, curLine: 62,
+    lines: [
+      { ln: 40, top: true,  t: '<span class="tok-kw">void</span> <span class="tok-fn">gles_quad_draw</span>(<span class="tok-ty">FxFbo</span> *fb, <span class="tok-kw">float</span> scale) {', fd: '▾' },
+      { ln: 51,             t: '    <span class="tok-fn">glViewport</span>(<span class="tok-nu">0</span>, <span class="tok-nu">0</span>, fb->w * scale, fb->h * scale);' },
+      { ln: 62, cur: true,  t: '    <span class="tok-fn">glDrawArrays</span>(<span class="tok-nu">GL_TRIANGLE_STRIP</span>, <span class="tok-nu">0</span>, <span class="tok-nu">4</span>);' },
+      { ln: 82, bot: true,  t: '}' },
+    ],
+  },
+  shader_cache_get: {
+    id: 'shader_cache_get', kind: 'f', badge: 'ƒ', name: 'shader_cache_get',
+    file: 'src/comp/fx/fx_shader.c', buf: 'fx_shader.c', start: 28, end: 64,
+    callee: 'shader_blur_compile', typeRef: null, curLine: 44,
+    lines: [
+      { ln: 28, top: true,  t: '<span class="tok-ty">GLuint</span> <span class="tok-fn">shader_cache_get</span>(<span class="tok-ty">FxShaderKey</span> key) {', fd: '▾' },
+      { ln: 38,             t: '    <span class="tok-kw">if</span> (g_cache[key]) <span class="tok-kw">return</span> g_cache[key];' },
+      { ln: 44, cur: true,  t: '    <span class="tok-kw">return</span> <span class="tok-fn tok-link" data-jump="shader_blur_compile">shader_blur_compile</span>(&amp;g_defaults);' },
+      { ln: 64, bot: true,  t: '}' },
+    ],
+  },
+  shader_blur_compile: {
+    id: 'shader_blur_compile', kind: 'f', badge: 'ƒ', name: 'shader_blur_compile',
+    file: 'src/comp/fx/fx_shader.c', buf: 'fx_shader.c', start: 88, end: 134,
+    callee: null, typeRef: 'CompFxGlassParams', curLine: 108,
+    lines: [
+      { ln: 88, top: true,  t: '<span class="tok-ty">GLuint</span> <span class="tok-fn">shader_blur_compile</span>(<span class="tok-kw">const</span> <span class="tok-ty">CompFxGlassParams</span> *p) {', fd: '▾', diff: 'agt' },
+      { ln: 99,             t: '    <span class="tok-kw">const char</span> *src = p->flags &amp; <span class="tok-nu">FX_GLASS_SRGB</span> ? kFragSrgb : kFrag;' },
+      { ln: 108, cur: true, t: '    <span class="tok-kw">return</span> <span class="tok-fn">gles_link_program</span>(kVertQuad, src);', diff: 'agt' },
+      { ln: 134, bot: true, t: '}' },
+    ],
+  },
+  comp_panel_paint: {
+    id: 'comp_panel_paint', kind: 'f', badge: 'ƒ', name: 'comp_panel_paint',
+    file: 'src/comp/comp_panel.c', buf: 'comp_panel.c', start: 74, end: 118,
+    callee: 'fx_glass_render', typeRef: 'CompFxGlassParams', curLine: 98,
+    lines: [
+      { ln: 74, top: true,  t: '<span class="tok-kw">void</span> <span class="tok-fn">comp_panel_paint</span>(<span class="tok-ty">CompOutput</span> *out, <span class="tok-ty">PanelLayer</span> *pl) {', fd: '▾' },
+      { ln: 88,             t: '    <span class="tok-ty">CompFxGlassParams</span> p = pl->panel_glass;' },
+      { ln: 98, cur: true,  t: '    <span class="tok-fn">fx_glass_render</span>(out, &amp;p); <span class="tok-cm">// caller #2</span>', dg: true },
+      { ln: 118, bot: true, t: '}' },
+    ],
+    refactoredLine98: '    <span class="tok-fn">fx_glass_render</span>(out, &amp;p, <span class="tok-nu">FX_GLASS_SRGB</span>); <span class="tok-cm">// updated</span>',
+  },
+  comp_lock_blur: {
+    id: 'comp_lock_blur', kind: 'f', badge: 'ƒ', name: 'comp_lock_blur',
+    file: 'src/comp/comp_lock.c', buf: 'comp_lock.c', start: 120, end: 168,
+    callee: 'fx_glass_render', typeRef: 'CompFxGlassParams', curLine: 144,
+    lines: [
+      { ln: 120, top: true, t: '<span class="tok-kw">void</span> <span class="tok-fn">comp_lock_blur</span>(<span class="tok-ty">CompOutput</span> *out) {', fd: '▾' },
+      { ln: 132,            t: '    <span class="tok-ty">CompFxGlassParams</span> p = { .blur_radius = <span class="tok-nu">18.0f</span>, .passes = <span class="tok-nu">4</span> };' },
+      { ln: 144, cur: true, t: '    <span class="tok-fn">fx_glass_render</span>(out, &amp;p); <span class="tok-cm">// caller #3</span>', dg: true },
+      { ln: 168, bot: true, t: '}' },
+    ],
+    refactoredLine144: '    <span class="tok-fn">fx_glass_render</span>(out, &amp;p, <span class="tok-nu">FX_GLASS_LOCK</span>); <span class="tok-cm">// updated</span>',
+  },
+  lsp_call_hierarchy: {
+    id: 'lsp_call_hierarchy', kind: 'f', badge: 'ƒ', name: 'ide_lsp_prepare_calls',
+    file: 'src/ide/ide_lsp.c', buf: 'ide_lsp.c', start: 412, end: 468,
+    callee: 'lsp_jsonrpc_send', typeRef: null, curLine: 440,
+    lines: [
+      { ln: 412, top: true, t: '<span class="tok-kw">void</span> <span class="tok-fn">ide_lsp_prepare_calls</span>(<span class="tok-ty">IdeLsp</span> *lsp, <span class="tok-ty">IdePos</span> pos) {', fd: '▾' },
+      { ln: 428,            t: '    <span class="tok-ty">JsonNode</span> *req = <span class="tok-fn">lsp_make_pos_params</span>(lsp, pos);' },
+      { ln: 440, cur: true, t: '    <span class="tok-fn tok-link" data-jump="lsp_jsonrpc_send">ide_jsonrpc_call</span>(lsp->rpc, <span class="tok-st">"textDocument/prepareCallHierarchy"</span>, req);' },
+      { ln: 468, bot: true, t: '}' },
+    ],
+  },
+  lsp_jsonrpc_send: {
+    id: 'lsp_jsonrpc_send', kind: 'f', badge: 'ƒ', name: 'ide_jsonrpc_call',
+    file: 'src/ide/ide_jsonrpc.c', buf: 'ide_jsonrpc.c', start: 118, end: 162,
+    callee: null, typeRef: null, curLine: 141,
+    lines: [
+      { ln: 118, top: true, t: '<span class="tok-ty">int64_t</span> <span class="tok-fn">ide_jsonrpc_call</span>(<span class="tok-ty">IdeRpc</span> *r, <span class="tok-kw">const char</span> *m, <span class="tok-ty">JsonNode</span> *p) {', fd: '▾' },
+      { ln: 132,            t: '    <span class="tok-ty">int64_t</span> id = ++r->next_id;' },
+      { ln: 141, cur: true, t: '    <span class="tok-fn">rpc_write_framed_async</span>(r, id, m, p);' },
+      { ln: 162, bot: true, t: '}' },
+    ],
+  },
+  xwl_display_init: {
+    id: 'xwl_display_init', kind: 'f', badge: 'ƒ', name: 'xwl_display_init',
+    file: 'src/comp/xwayland.c', buf: 'xwayland.c', start: 64, end: 112,
+    callee: 'xwl_socket_bind', typeRef: null, curLine: 92,
+    lines: [
+      { ln: 64, top: true,  t: '<span class="tok-kw">bool</span> <span class="tok-fn">xwl_display_init</span>(<span class="tok-ty">CompServer</span> *srv) {', fd: '▾' },
+      { ln: 78,             t: '    <span class="tok-kw">int</span> dpy = <span class="tok-fn">xwl_pick_free_display</span>();' },
+      { ln: 92, cur: true,  t: '    <span class="tok-kw">if</span> (!<span class="tok-fn tok-link" data-jump="xwl_socket_bind">xwl_socket_bind</span>(srv, dpy)) <span class="tok-kw">return false</span>; <span class="tok-cm">// race here</span>' },
+      { ln: 104,            t: '    <span class="tok-fn">setenv</span>(<span class="tok-st">"DISPLAY"</span>, srv->xwl_name, <span class="tok-nu">1</span>);' },
+      { ln: 112, bot: true, t: '}' },
+    ],
+  },
+  xwl_socket_bind: {
+    id: 'xwl_socket_bind', kind: 'f', badge: 'ƒ', name: 'xwl_socket_bind',
+    file: 'src/comp/xwayland.c', buf: 'xwayland.c', start: 116, end: 158,
+    callee: null, typeRef: null, curLine: 138,
+    lines: [
+      { ln: 116, top: true, t: '<span class="tok-kw">static bool</span> <span class="tok-fn">xwl_socket_bind</span>(<span class="tok-ty">CompServer</span> *srv, <span class="tok-kw">int</span> dpy) {', fd: '▾' },
+      { ln: 129,            t: '    <span class="tok-fn">unlink</span>(lock_path); <span class="tok-cm">// stale lock cleanup</span>' },
+      { ln: 138, cur: true, t: '    <span class="tok-kw">return</span> <span class="tok-fn">bind</span>(srv->xwl_fd, &amp;addr, <span class="tok-kw">sizeof</span>(addr)) == <span class="tok-nu">0</span>;' },
+      { ln: 158, bot: true, t: '}' },
+    ],
+  },
+  pack_lut_main: {
+    id: 'pack_lut_main', kind: 'f', badge: 'ƒ', name: 'pack_lut_main',
+    file: 'tools/pack_lut.zig', buf: 'pack_lut.zig', start: 18, end: 54,
+    callee: 'lut_bake_3d', typeRef: null, curLine: 36, fallback: true,
+    lines: [
+      { ln: 18, top: true,  t: '<span class="tok-kw">pub fn</span> <span class="tok-fn">pack_lut_main</span>(alloc: <span class="tok-ty">Allocator</span>) !<span class="tok-kw">void</span> {', fd: '▾' },
+      { ln: 27,             t: '    <span class="tok-kw">const</span> cfg = <span class="tok-ty">LutSpec</span>{ .size = <span class="tok-nu">32</span>, .srgb = <span class="tok-kw">true</span> };' },
+      { ln: 36, cur: true,  t: '    <span class="tok-kw">const</span> cube = <span class="tok-kw">try</span> <span class="tok-fn tok-link" data-jump="lut_bake_3d">lut_bake_3d</span>(alloc, cfg); <span class="tok-cm">// TS+RG match</span>' },
+      { ln: 54, bot: true,  t: '}' },
+    ],
+  },
+  lut_bake_3d: {
+    id: 'lut_bake_3d', kind: 'f', badge: 'ƒ', name: 'lut_bake_3d',
+    file: 'tools/pack_lut.zig', buf: 'pack_lut.zig', start: 58, end: 102,
+    callee: null, typeRef: null, curLine: 78, fallback: true,
+    lines: [
+      { ln: 58, top: true,  t: '<span class="tok-kw">pub fn</span> <span class="tok-fn">lut_bake_3d</span>(a: <span class="tok-ty">Allocator</span>, s: <span class="tok-ty">LutSpec</span>) ![]<span class="tok-ty">u8</span> {', fd: '▾' },
+      { ln: 69,             t: '    <span class="tok-kw">var</span> out = <span class="tok-kw">try</span> a.<span class="tok-fn">alloc</span>(<span class="tok-ty">u8</span>, s.size * s.size * s.size * <span class="tok-nu">4</span>);' },
+      { ln: 78, cur: true,  t: '    <span class="tok-kw">return</span> <span class="tok-fn">encode_rgba8_cube</span>(out, s);' },
+      { ln: 102, bot: true, t: '}' },
+    ],
+  },
+  impact_lens: {
+    id: 'impact_lens', kind: 'L', badge: '⬡', name: 'IMPACT · 3 Call Sites',
+    file: 'textDocument/references', buf: 'lens:impact', start: 1, end: 3,
+    isLens: true,
+    items: [
+      { sym: 'comp_output_frame', loc: 'comp_output.c:L224', code: 'fx_glass_render(out, &params);' },
+      { sym: 'comp_panel_paint',  loc: 'comp_panel.c:L98',   code: 'fx_glass_render(out, &p);' },
+      { sym: 'comp_lock_blur',    loc: 'comp_lock.c:L144',   code: 'fx_glass_render(out, &p);' },
+    ],
+  },
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 4. STRIP STATE MODEL & LAYOUT ENGINE
+ * ═══════════════════════════════════════════════════════════════════════ */
+const VIEWPORTS = {
+  '1280x720':  { w: 1280, h: 720 },
+  '1600x900':  { w: 1600, h: 900 },
+  '1920x1080': { w: 1920, h: 1080 },
+};
+const WIDTH_PRESETS = [0.3333, 0.5, 0.6667, 1.0];
+const GAP_X = 14;   // §3.1 14px Dependency Bridge Gutter
+const PAD_X = 10;
+const PAD_Y = 10;
+const GAP_Y = 6;
+const HEADER_H = 26;
+
+let nextCardUid = 1;
+let simTime = 0;
+let speed = 1;
+let scaleF = 1;
+let curScenario = 0;
+let curStep = 0;
+let playTimer = null;
+
+const S = {
+  vpKey: '1280x720',
+  vp: VIEWPORTS['1280x720'],
+  mode: 'strip',         // 'strip' | 'tabs'
+  overview: false,
+  ovFilter: '',
+  ovSelectedUid: null,
+  lspFallback: false,
+  refactoredS4: false,
+  activeTrail: 0,
+  trails: [],
+};
+
+function makeCard(symId, opts = {}) {
+  const sym = SYMBOLS[symId];
+  return {
+    uid: nextCardUid++,
+    symId,
+    scope: opts.scope || (sym.isLens ? 'LENS' : 'SYMBOL'), // 'SYMBOL' | 'FILE' | 'LENS'
+    collapsed: !!opts.collapsed,
+    dirty: !!opts.dirty,
+    errCount: opts.errCount || 0,
+    agentState: opts.agentState || null, // null | 'pending' | 'accepted' | 'reverted'
+    fallback: opts.fallback !== undefined ? opts.fallback : !!sym.fallback,
+  };
+}
+
+function makeCol(cards, widthPreset = 0.5) {
+  return { cards, widthPreset, focusedCard: 0 };
+}
+
+function makeTrail(code, title, lens, cols, edges = []) {
+  return {
+    id: code + '_' + Math.random().toString(36).slice(2, 6),
+    code, title, lens,
+    cols, edges,
+    fc: 0,
+    cam: 0,
+  };
+}
+
+function activeTrail() { return S.trails[S.activeTrail]; }
+function stripArea() {
+  return { w: S.vp.w, h: S.vp.h - 34 - 28 - 24 };
+}
+function colPx(col) {
+  const aw = stripArea().w - PAD_X * 2;
+  if (col.widthPreset >= 0.99) return Math.floor(aw);
+  const raw = Math.floor(col.widthPreset * (aw + GAP_X) - GAP_X);
+  return Math.max(360, Math.min(aw, raw));
+}
+function colX(tr, ci) {
+  let x = PAD_X;
+  for (let i = 0; i < ci; i++) x += colPx(tr.cols[i]) + GAP_X;
+  return x;
+}
+function stripTotalWidth(tr) {
+  if (!tr.cols.length) return stripArea().w;
+  const last = tr.cols.length - 1;
+  return colX(tr, last) + colPx(tr.cols[last]) + PAD_X;
+}
+function cardHeights(col, areaH) {
+  const n = col.cards.length;
+  const avail = areaH - PAD_Y * 2 - GAP_Y * Math.max(0, n - 1);
+  let collapsedCount = 0;
+  col.cards.forEach(c => { if (c.collapsed) collapsedCount++; });
+  const openCount = n - collapsedCount;
+  const rem = Math.max(40, avail - collapsedCount * HEADER_H);
+  const openH = openCount > 0 ? Math.floor(rem / openCount) : 0;
+  return col.cards.map(c => c.collapsed ? HEADER_H : openH);
+}
+function revealCamera(tr, ci) {
+  if (!tr.cols.length) return 0;
+  const aw = stripArea().w;
+  const left = colX(tr, ci);
+  const cw = colPx(tr.cols[ci]);
+  const right = left + cw;
+  let cam = tr.cam;
+  if (left - PAD_X < cam) cam = Math.max(0, left - PAD_X);
+  else if (right + PAD_X > cam + aw) cam = Math.max(0, right + PAD_X - aw);
+  const maxCam = Math.max(0, stripTotalWidth(tr) - aw);
+  return Math.min(maxCam, Math.max(0, Math.round(cam)));
+}
+function centerCamera(tr, ci) {
+  if (!tr.cols.length) return 0;
+  const aw = stripArea().w;
+  const left = colX(tr, ci);
+  const cw = colPx(tr.cols[ci]);
+  const target = Math.round(left - (aw - cw) / 2);
+  return Math.max(0, target);
+}
+function focusedCardObj(tr = activeTrail()) {
+  if (!tr || !tr.cols.length) return null;
+  const c = tr.cols[tr.fc];
+  if (!c || !c.cards.length) return null;
+  return c.cards[Math.min(c.focusedCard, c.cards.length - 1)];
+}
+
+function buildDefaultTrails() {
+  S.trails = [
+    makeTrail('01', 'fx_glass', 'CALLS', [
+      makeCol([makeCard('comp_output_frame')], 0.5),
+    ], []),
+    makeTrail('02', 'LSP calls', 'CALLS', [
+      makeCol([makeCard('lsp_call_hierarchy')], 0.5),
+      makeCol([makeCard('lsp_jsonrpc_send')], 0.5),
+    ], [
+      { from: 'lsp_call_hierarchy', to: 'lsp_jsonrpc_send', line: 440, label: 'calls · L440', lens: 'CALLS' },
+    ]),
+    makeTrail('03', 'XWayland', 'CALLS', [
+      makeCol([makeCard('xwl_display_init')], 0.5),
+    ], []),
+  ];
+  S.activeTrail = 0;
+  S.mode = 'strip';
+  S.overview = false;
+  S.ovFilter = '';
+  S.lspFallback = false;
+  S.refactoredS4 = false;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 5. SPRING ANIMATION REGISTRY & VIEW SYNC
+ * ═══════════════════════════════════════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const cardAnims = new Map();  // card.uid -> { x, y, w, h, el, trailId }
+const camSprings = new Map(); // trail.id -> Spring
+let trailSpring = new Spring(0, 0);
+
+function now() { return simTime; }
+
+function clearDomAnims() {
+  for (const [, a] of cardAnims) a.el.remove();
+  cardAnims.clear();
+  camSprings.clear();
+  trailSpring = new Spring(S.activeTrail, now());
+}
+
+function renderCardInner(el, card, tr, isFocused) {
+  const sym = SYMBOLS[card.symId];
+  const lensCls = 'lens-' + tr.lens;
+  el.className = 'strip-card ' + lensCls + (isFocused ? ' focused' : '') + (card.collapsed ? ' collapsed' : '');
+
+  // Header chips
+  let chips = '';
+  if (card.agentState === 'pending')  chips += '<span class="chip-tag agent">🤖 AGENT</span>';
+  if (card.agentState === 'accepted') chips += '<span class="chip-tag ok">✓ ACCEPTED</span>';
+  if (card.agentState === 'reverted') chips += '<span class="chip-tag err">↺ REVERTED</span>';
+  if (card.dirty)    chips += '<span class="chip-tag dirty">●</span>';
+  if (card.errCount) chips += `<span class="chip-tag err">✖ ${card.errCount}</span>`;
+  if (card.fallback) chips += '<span class="chip-tag fb">[TS+RG]</span>';
+  if (!sym.isLens) {
+    // Check if another card in active trail shares this canonical buffer
+    const sharedCount = tr.cols.reduce((acc, c) => acc + c.cards.filter(k => SYMBOLS[k.symId].buf === sym.buf).length, 0);
+    if (sharedCount > 1) chips += `<span class="chip-tag buf">buf:${sym.buf}</span>`;
+  }
+
+  let actBtns = '';
+  if (card.agentState === 'pending') {
+    actBtns += `<button class="cbtn acc" data-ca="accept" title="Accept agent hunk">✓ ACCEPT</button>`;
+    actBtns += `<button class="cbtn rev" data-ca="revert" title="Revert agent hunk">✕ REVERT</button>`;
+  }
+  if (!sym.isLens) {
+    actBtns += `<button class="cbtn" data-ca="scope" title="Space t f · Toggle SYMBOL / FILE">${card.scope === 'FILE' ? 'ƒ' : '⤢'}</button>`;
+  }
+  actBtns += `<button class="cbtn" data-ca="collapse" title="Space t z · Collapse to 26px">${card.collapsed ? '▾' : '▁'}</button>`;
+  actBtns += `<button class="cbtn cls" data-ca="close" title="Space t q · Remove card">×</button>`;
+
+  const badgeChar = card.scope === 'FILE' ? '📄' : sym.badge;
+  const badgeCls  = card.scope === 'FILE' ? 'F' : sym.kind;
+  const locText   = sym.isLens ? sym.file : (card.scope === 'FILE' ? `${sym.file} (FULL FILE)` : `${sym.file.split('/').pop()}:L${sym.start}–L${sym.end}`);
+
+  let bodyHtml = '';
+  if (sym.isLens) {
+    bodyHtml = `<div class="lens-body">
+      <div class="lens-sub"><span>LSP textDocument/references · includeDeclaration=false</span><span>3 matches</span></div>
+      ${sym.items.map(it => `
+        <div class="lens-item" data-materialize="1">
+          <div class="li-top"><span>ƒ ${it.sym}()</span><span>${it.loc}</span></div>
+          <div class="li-code">${it.code}</div>
+        </div>
+      `).join('')}
+      <button class="lens-cta" data-materialize="1">[ ▤ MATERIALIZE TOP CALLERS ]</button>
+    </div>`;
+  } else {
+    const rows = sym.lines.map(line => {
+      const isOut = card.scope === 'SYMBOL' && line.out;
+      const isTop = card.scope === 'SYMBOL' && line.top;
+      const isBot = card.scope === 'SYMBOL' && line.bot;
+      let txt = line.t;
+      if (S.refactoredS4) {
+        if (card.symId === 'fx_glass_render' && line.ln === 210) txt = sym.refactoredSig;
+        if (card.symId === 'comp_output_frame' && line.ln === 224) txt = sym.refactoredLine224;
+        if (card.symId === 'comp_panel_paint' && line.ln === 98) txt = sym.refactoredLine98;
+        if (card.symId === 'comp_lock_blur' && line.ln === 144) txt = sym.refactoredLine144;
+      }
+      const cls = [
+        'code-line',
+        line.cur ? 'cur' : '',
+        isOut ? 'out-of-scope' : '',
+        isTop ? 'scope-top' : '',
+        isBot ? 'scope-bot' : '',
+        (card.agentState === 'pending' && line.diff === 'agt') ? 'diff-agent' : '',
+        (card.agentState === 'accepted' && line.diff === 'agt') ? 'diff-add' : '',
+      ].filter(Boolean).join(' ');
+      const diffCls = line.diff === 'agt'
+        ? (card.agentState === 'accepted' ? 'add' : (card.agentState === 'pending' ? 'agt' : ''))
+        : (card.dirty && line.cur ? 'mod' : '');
+      const dgIcon = (line.dg && !S.refactoredS4 && tr.lens === 'IMPACT') ? '▲' : '';
+      return `<div class="${cls}" data-ln="${line.ln}">
+        <span class="gut">
+          <span class="g-bp">${line.bp ? '●' : ''}</span>
+          <span class="g-dg">${dgIcon}</span>
+          <span class="g-pc">${(line.cur && isFocused) ? '▸' : ''}</span>
+          <span class="g-ln">${line.ln}</span>
+          <span class="g-df ${diffCls}"></span>
+          <span class="g-fd">${line.fd || ''}</span>
+        </span>
+        <span class="code-txt">${txt}</span>
+        ${isTop ? '<span class="scope-pill">SCOPE VEIL · Space t f</span>' : ''}
+      </div>`;
+    }).join('');
+    bodyHtml = rows;
+  }
+
+  el.innerHTML = `
+    <div class="card-head">
+      <span class="kbadge ${badgeCls}">${badgeChar}</span>
+      <span class="sym-name">${sym.name}</span>
+      <span class="sym-loc">${locText}</span>
+      ${chips}
+      <div class="card-acts">${actBtns}</div>
+    </div>
+    <div class="card-body">${bodyHtml}</div>
+  `;
+
+  el.onmousedown = e => {
+    const btn = e.target.closest('button[data-ca]');
+    if (btn) {
+      e.stopPropagation();
+      focusCardUid(card.uid, false);
+      const act = btn.dataset.ca;
+      if (act === 'scope')    execAction('toggle-scope');
+      if (act === 'collapse') execAction('toggle-collapse');
+      if (act === 'close')    execAction('close-card');
+      if (act === 'accept')   execAction('accept-agent');
+      if (act === 'revert')   execAction('revert-agent');
+      return;
+    }
+    if (e.target.closest('[data-materialize]')) {
+      e.stopPropagation();
+      execAction('materialize-impact');
+      return;
+    }
+    const link = e.target.closest('.tok-link');
+    if (link) {
+      e.stopPropagation();
+      focusCardUid(card.uid, false);
+      execAction('goto-def', link.dataset.jump);
+      return;
+    }
+    focusCardUid(card.uid, true);
+  };
+}
+
+function syncView(instant = false) {
+  const t = now();
+  const area = stripArea();
+  const seen = new Set();
+
+  S.trails.forEach((tr, ti) => {
+    let cs = camSprings.get(tr.id);
+    if (!cs) { cs = new Spring(tr.cam, t); camSprings.set(tr.id, cs); }
+    else if (instant || speed === 0) cs.jump(tr.cam, t);
+    else if (cs.to !== tr.cam) cs.retarget(tr.cam, t, SPRINGS.scroll);
+
+    tr.cols.forEach((col, ci) => {
+      const cx = colX(tr, ci);
+      const cw = colPx(col);
+      const hs = cardHeights(col, area.h);
+      let cy = PAD_Y;
+      col.cards.forEach((card, ki) => {
+        const ch = hs[ki];
+        seen.add(card.uid);
+        let a = cardAnims.get(card.uid);
+        const isFoc = (ti === S.activeTrail && ci === tr.fc && ki === col.focusedCard);
+        if (!a) {
+          const el = document.createElement('div');
+          $('#stripCards').appendChild(el);
+          // Start newly spawned cards gently from +28px right for crisp entrance
+          const startX = (instant || speed === 0) ? cx : cx + 24;
+          a = {
+            x: new Spring(startX, t),
+            y: new Spring(cy, t),
+            w: new Spring(cw, t),
+            h: new Spring(ch, t),
+            el,
+            trailId: tr.id,
+          };
+          cardAnims.set(card.uid, a);
+        }
+        a.trailId = tr.id;
+        a.card = card;
+        a.colIdx = ci;
+        a.cardIdx = ki;
+        if (instant || speed === 0) {
+          a.x.jump(cx, t); a.y.jump(cy, t); a.w.jump(cw, t); a.h.jump(ch, t);
+        } else {
+          if (a.x.to !== cx) a.x.retarget(cx, t, SPRINGS.move);
+          if (a.y.to !== cy) a.y.retarget(cy, t, SPRINGS.move);
+          if (a.w.to !== cw) a.w.retarget(cw, t, SPRINGS.move);
+          if (a.h.to !== ch) a.h.retarget(ch, t, SPRINGS.move);
+        }
+        renderCardInner(a.el, card, tr, isFoc);
+        cy += ch + GAP_Y;
+      });
+    });
+  });
+
+  for (const [uid, a] of cardAnims) {
+    if (!seen.has(uid)) { a.el.remove(); cardAnims.delete(uid); }
+  }
+
+  if (instant || speed === 0) trailSpring.jump(S.activeTrail, t);
+  else if (trailSpring.to !== S.activeTrail) trailSpring.retarget(S.activeTrail, t, SPRINGS.trail);
+
+  renderChrome();
+  renderClassicEditor();
+  renderOverview();
+  updateInvariant();
+}
+
+function renderChrome() {
+  const tr = activeTrail();
+  const fc = focusedCardObj(tr);
+  // Mode toggle & Classic view
+  $('#classicView').classList.toggle('on', S.mode === 'tabs');
+  $('#btnModeToggle').classList.toggle('on', S.mode === 'strip');
+  $('#btnModeToggle').textContent = S.mode === 'strip' ? '[ ▥ STRIP ]' : '[ ▤ TABS ]';
+
+  // Overview toggle
+  $('#btnOvToggle').classList.toggle('on', S.overview);
+  $('#overviewOverlay').classList.toggle('on', S.overview);
+
+  // Lens pills
+  document.querySelectorAll('#lensBar .lens-pill').forEach(b => {
+    b.classList.toggle('on', b.dataset.l === tr.lens);
+  });
+
+  // LSP / Fallback badge
+  const lspEl = $('#lspBadge');
+  lspEl.classList.toggle('fallback', S.lspFallback);
+  lspEl.textContent = S.lspFallback ? '[TS+RG FALLBACK] · zig (no zls)' : 'clangd · LSP 3.17';
+
+  // Top Trail Rail + Under-stage Trail List
+  const rail = $('#trailRailPills');
+  rail.innerHTML = '';
+  const list = $('#trailList');
+  [...list.querySelectorAll('.titem')].forEach(n => n.remove());
+
+  S.trails.forEach((tObj, i) => {
+    const lc = LENS_COLOR[tObj.lens] || '#0078d4';
+    const p = document.createElement('div');
+    p.className = 'trail-pill' + (i === S.activeTrail ? ' on' : '');
+    p.innerHTML = `<span class="ldot" style="background:${lc}"></span>${tObj.code} · ${tObj.title}`;
+    p.onclick = () => switchTrail(i);
+    rail.appendChild(p);
+
+    const cardCnt = tObj.cols.reduce((s, c) => s + c.cards.length, 0);
+    const ti = document.createElement('div');
+    ti.className = 'titem' + (i === S.activeTrail ? ' on' : '');
+    ti.innerHTML = `<span><span style="color:${lc}">■</span> ${tObj.code} · ${tObj.title}</span><span class="tmeta">${tObj.cols.length}c/${cardCnt}k</span>`;
+    ti.onclick = () => switchTrail(i);
+    list.appendChild(ti);
+  });
+
+  // Unique canonical buffers across all trails
+  const bufs = new Set();
+  S.trails.forEach(tObj => tObj.cols.forEach(c => c.cards.forEach(k => {
+    const sym = SYMBOLS[k.symId];
+    if (!sym.isLens) bufs.add(sym.buf);
+  })));
+  $('#railCols').innerHTML = `<b>${tr.cols.length}</b> cols`;
+  $('#railCam').innerHTML  = `cam <b>${Math.round(tr.cam)}px</b>`;
+  $('#railBufs').innerHTML = `pool <b>${Math.max(4, bufs.size)}</b> bufs`;
+
+  // Status bar
+  const mp = $('#ideModePill');
+  if (S.overview) { mp.textContent = 'IDE_STATE_STRIP_OVERVIEW'; mp.className = 'mode-pill ov'; }
+  else if (S.mode === 'tabs') { mp.textContent = 'NORMAL · CLASSIC TABS'; mp.className = 'mode-pill tabs'; }
+  else { mp.textContent = 'NORMAL · CODE STRIP'; mp.className = 'mode-pill'; }
+
+  if (fc) {
+    const sym = SYMBOLS[fc.symId];
+    $('#ideStatusSym').textContent = `${sym.badge} ${sym.name} — ${sym.file}:L${sym.start}–L${sym.end} (${fc.scope})`;
+  } else {
+    $('#ideStatusSym').textContent = 'Empty trail';
+  }
+  $('#ideStatusLens').innerHTML = `LENS: <b style="color:${LENS_COLOR[tr.lens]}">${tr.lens}</b>`;
+  $('#ideStatusBuf').innerHTML = `CANONICAL POOL: <b>${Math.max(4, bufs.size)} bufs · 0 duplicated</b>`;
+}
+
+function renderClassicEditor() {
+  const ed = $('#classicEditor');
+  const sym = SYMBOLS.comp_output_frame;
+  const extraTop = [
+    { ln: 168, t: '<span class="tok-kw">#include</span> <span class="tok-st">"comp/comp_output.h"</span>' },
+    { ln: 169, t: '<span class="tok-kw">#include</span> <span class="tok-st">"comp/fx/fx_glass.h"</span>' },
+    { ln: 174, t: '<span class="tok-cm">/* ... 160 unrelated lines of output lifecycle helpers ... */</span>' },
+  ];
+  const extraBot = [
+    { ln: 256, t: '    <span class="tok-fn">wlr_output_commit_state</span>(out->wlr, &amp;out->pending);' },
+    { ln: 257, t: '}' },
+    { ln: 264, t: '<span class="tok-cm">/* ... 1,330 more lines in comp_output.c ... */</span>' },
+  ];
+  const all = [...extraTop, ...sym.lines, ...extraBot];
+  ed.innerHTML = all.map(l => `
+    <div class="code-line ${l.cur ? 'cur' : ''}">
+      <span class="gut">
+        <span class="g-bp">${l.bp ? '●' : ''}</span>
+        <span class="g-dg"></span>
+        <span class="g-pc">${l.cur ? '▸' : ''}</span>
+        <span class="g-ln">${l.ln}</span>
+        <span class="g-df"></span>
+        <span class="g-fd">${l.fd || ''}</span>
+      </span>
+      <span class="code-txt">${l.t}</span>
+    </div>
+  `).join('');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 6. LIVE SVG BEZIER DEPENDENCY CONNECTORS (60 FPS SPRING-TRACKED)
+ * ═══════════════════════════════════════════════════════════════════════ */
+function renderEdges(t) {
+  const svg = $('#depSvg');
+  if (S.mode !== 'strip' || S.overview) { svg.innerHTML = ''; return; }
+  const tr = activeTrail();
+  const cs = camSprings.get(tr.id);
+  const camX = cs ? cs.value(t) : tr.cam;
+  const area = stripArea();
+  const H = area.h + 48;
+  const r = trailSpring.value(t);
+  const yTrailOff = (S.activeTrail - r) * H;
+  const fc = focusedCardObj(tr);
+
+  // Map symId -> live animated box for active trail
+  const boxBySym = new Map();
+  for (const [, a] of cardAnims) {
+    if (a.trailId !== tr.id) continue;
+    boxBySym.set(a.card.symId, {
+      x: a.x.value(t) - camX,
+      y: a.y.value(t) + yTrailOff,
+      w: a.w.value(t),
+      h: a.h.value(t),
+      card: a.card,
+      colIdx: a.colIdx,
+    });
+  }
+
+  let defs = '<defs>';
+  Object.entries(LENS_COLOR).forEach(([k, col]) => {
+    defs += `<marker id="arr-${k}" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,1 L7,4 L0,7 Z" fill="${col}"/></marker>`;
+  });
+  defs += `<marker id="arr-FB" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+    <path d="M0,1 L7,4 L0,7 Z" fill="#ffb900"/></marker></defs>`;
+
+  let paths = '';
+  tr.edges.forEach(edge => {
+    const src = boxBySym.get(edge.from);
+    const dst = boxBySym.get(edge.to);
+    if (!src || !dst) return;
+
+    const lensKey = edge.lens || tr.lens;
+    const isFb = !!edge.fallback || S.lspFallback;
+    const color = isFb ? '#ffb900' : (LENS_COLOR[lensKey] || '#0078d4');
+    const attachedToFocus = fc && (fc.symId === edge.from || fc.symId === edge.to);
+    const opacity = attachedToFocus ? 0.95 : 0.34;
+    const strokeW = attachedToFocus ? 1.8 : 1.1;
+    const dash = isFb ? 'stroke-dasharray="5,3"' : '';
+    const marker = isFb ? 'url(#arr-FB)' : `url(#arr-${lensKey})`;
+
+    // Find source line vertical position inside src card
+    let ySrc = src.y + 13;
+    if (!src.card.collapsed) {
+      const sym = SYMBOLS[src.card.symId];
+      const idx = sym.lines ? sym.lines.findIndex(l => l.ln === edge.line) : -1;
+      const lineOffset = idx >= 0 ? (HEADER_H + idx * 19 + 9) : Math.min(src.h - 14, HEADER_H + 54);
+      ySrc = Math.min(src.y + src.h - 8, Math.max(src.y + HEADER_H + 6, src.y + lineOffset));
+    }
+    const yDst = dst.y + HEADER_H / 2;
+
+    let d, lx, ly, xDot;
+    if (src.colIdx === dst.colIdx) {
+      // Intra-column stacked connector: use right bridge gutter unless near viewport edge, else left gutter
+      if (src.x + src.w + 26 <= area.w) {
+        const xR = src.x + src.w;
+        const bulge = xR + 18;
+        d = `M ${xR} ${ySrc} C ${bulge} ${ySrc}, ${bulge} ${yDst}, ${xR + 2} ${yDst}`;
+        lx = bulge - 4; ly = (ySrc + yDst) / 2; xDot = xR;
+      } else {
+        const xL = src.x;
+        const bulge = Math.max(4, xL - 14);
+        d = `M ${xL} ${ySrc} C ${bulge} ${ySrc}, ${bulge} ${yDst}, ${xL - 2} ${yDst}`;
+        lx = xL + 44; ly = (ySrc + yDst) / 2; xDot = xL;
+      }
+    } else if (src.colIdx < dst.colIdx) {
+      const x1 = src.x + src.w;
+      const x2 = dst.x;
+      const dx = Math.max(22, (x2 - x1) * 0.55);
+      d = `M ${x1} ${ySrc} C ${x1 + dx} ${ySrc}, ${x2 - dx} ${yDst}, ${x2 - 2} ${yDst}`;
+      lx = (x1 + x2) / 2; ly = (ySrc + yDst) / 2; xDot = x1;
+    } else {
+      const x1 = src.x;
+      const x2 = dst.x + dst.w;
+      const dx = Math.max(22, (x1 - x2) * 0.55);
+      d = `M ${x1} ${ySrc} C ${x1 - dx} ${ySrc}, ${x2 + dx} ${yDst}, ${x2 + 2} ${yDst}`;
+      lx = (x1 + x2) / 2; ly = (ySrc + yDst) / 2; xDot = x1;
+    }
+
+    paths += `<g opacity="${opacity}">
+      <path d="${d}" fill="none" stroke="${color}" stroke-width="${strokeW}" ${dash} marker-end="${marker}"/>
+      <circle cx="${xDot}" cy="${ySrc}" r="3.2" fill="${color}"/>
+    </g>`;
+
+    if (attachedToFocus && edge.label && Math.abs(src.colIdx - dst.colIdx) <= 1) {
+      const tw = edge.label.length * 6.2 + 10;
+      paths += `<g>
+        <rect x="${lx - tw / 2}" y="${ly - 9}" width="${tw}" height="16" fill="#0d0d10" stroke="${color}" stroke-width="1"/>
+        <text x="${lx}" y="${ly + 2.5}" text-anchor="middle" fill="${color}" font-family="Fira Code, monospace" font-size="9" font-weight="700">${edge.label}</text>
+      </g>`;
+    }
+  });
+
+  svg.innerHTML = defs + paths;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 7. BIRD'S-EYE OVERVIEW (Space t o · IDE_STATE_STRIP_OVERVIEW)
+ * ═══════════════════════════════════════════════════════════════════════ */
+function renderOverview() {
+  if (!S.overview) return;
+  const tr = activeTrail();
+  const host = $('#ovCanvas');
+  [...host.querySelectorAll('.ov-card,.ov-col-label,.ov-cam')].forEach(n => n.remove());
+
+  const area = stripArea();
+  const cw = area.w, ch = area.h - 38;
+  const totalW = Math.max(stripTotalWidth(tr), cw);
+  const padX = 36, padY = 44;
+  const scaleX = (cw - padX * 2) / totalW;
+  const scaleY = (ch - padY * 2) / area.h;
+  const sc = Math.min(scaleX, scaleY, 0.78);
+  const ox = Math.round((cw - totalW * sc) / 2);
+  const oy = padY;
+
+  const q = S.ovFilter.trim().toLowerCase();
+  const boxes = new Map();
+  const fc = focusedCardObj(tr);
+  if (!S.ovSelectedUid && fc) S.ovSelectedUid = fc.uid;
+
+  tr.cols.forEach((col, ci) => {
+    const x = ox + colX(tr, ci) * sc;
+    const w = colPx(col) * sc;
+    const lbl = document.createElement('div');
+    lbl.className = 'ov-col-label';
+    lbl.style.left = x + 'px';
+    lbl.style.top = (oy - 20) + 'px';
+    lbl.textContent = `COL ${ci} · ${Math.round(col.widthPreset * 100)}%`;
+    host.appendChild(lbl);
+
+    const hs = cardHeights(col, area.h);
+    let cy = PAD_Y;
+    col.cards.forEach((card, ki) => {
+      const sym = SYMBOLS[card.symId];
+      const y = oy + cy * sc;
+      const h = Math.max(46, hs[ki] * sc);
+      const isMatch = q ? (sym.name.toLowerCase().includes(q) || sym.file.toLowerCase().includes(q)) : false;
+      const isDim = q && !isMatch;
+      const isSel = card.uid === S.ovSelectedUid;
+
+      const el = document.createElement('div');
+      el.className = 'ov-card' + (isSel ? ' sel' : '') + (isMatch ? ' match' : '') + (isDim ? ' dimmed' : '');
+      el.style.left = x + 'px'; el.style.top = y + 'px';
+      el.style.width = w + 'px'; el.style.height = h + 'px';
+      el.innerHTML = `
+        <div class="oc-h"><span class="kbadge ${sym.kind}">${sym.badge}</span><span>${sym.name}</span></div>
+        <div class="oc-p">${sym.file}${sym.isLens ? '' : `:L${sym.start}–L${sym.end}`}</div>
+        <div class="oc-m"><span>${card.scope}${card.collapsed ? ' · COLLAPSED' : ''}</span><span>${card.dirty ? '● dirty' : 'synced'}</span></div>
+      `;
+      el.onclick = () => jumpFromOverview(card.uid);
+      host.appendChild(el);
+      boxes.set(card.symId, { x, y, w, h });
+      cy += hs[ki] + GAP_Y;
+    });
+  });
+
+  // Cyan Viewport Camera Frame
+  const camEl = document.createElement('div');
+  camEl.className = 'ov-cam';
+  camEl.style.left = (ox + tr.cam * sc - 4) + 'px';
+  camEl.style.top = (oy - 6) + 'px';
+  camEl.style.width = (area.w * sc + 8) + 'px';
+  camEl.style.height = (area.h * sc + 12) + 'px';
+  camEl.innerHTML = `<span class="ov-cam-tag">VIEWPORT CAMERA · x=${Math.round(tr.cam)}px</span>`;
+  host.appendChild(camEl);
+
+  // Overview SVG edges
+  const svg = $('#ovSvg');
+  let paths = '';
+  tr.edges.forEach(edge => {
+    const a = boxes.get(edge.from), b = boxes.get(edge.to);
+    if (!a || !b) return;
+    const col = LENS_COLOR[edge.lens || tr.lens] || '#0078d4';
+    const x1 = a.x + a.w, y1 = a.y + a.h * 0.42;
+    const x2 = b.x,       y2 = b.y + 18;
+    const dx = Math.max(18, Math.abs(x2 - x1) * 0.5);
+    paths += `<path d="M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}" fill="none" stroke="${col}" stroke-width="1.8" opacity="${q ? 0.45 : 0.85}"/>`;
+    paths += `<circle cx="${x1}" cy="${y1}" r="3" fill="${col}"/>`;
+  });
+  svg.innerHTML = paths;
+}
+
+function jumpFromOverview(uid) {
+  S.overview = false;
+  S.ovFilter = '';
+  $('#ovSearch').value = '';
+  focusCardUid(uid, true, 'Enter (Overview)');
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 8. UNDER-STAGE LIVE MINIMAP (60 FPS)
+ * ═══════════════════════════════════════════════════════════════════════ */
+function renderMinimap(t) {
+  const box = $('#minimap');
+  const tr = activeTrail();
+  [...box.querySelectorAll('.mcol,.mview')].forEach(n => n.remove());
+  const area = stripArea();
+  const cs = camSprings.get(tr.id);
+  const camX = cs ? cs.value(t) : tr.cam;
+
+  const totalW = Math.max(stripTotalWidth(tr), camX + area.w);
+  const bw = box.clientWidth - 20;
+  const bh = box.clientHeight - 32;
+  const f = Math.min(bw / Math.max(1, totalW), bh / Math.max(1, area.h) * 1.15);
+  const sh = Math.min(bh, Math.max(46, area.h * f));
+  const top = 26;
+  const leftOff = 10;
+
+  const colBoxes = new Map();
+  tr.cols.forEach((col, ci) => {
+    const x = leftOff + colX(tr, ci) * f;
+    const w = Math.max(24, colPx(col) * f);
+    const el = document.createElement('div');
+    el.className = 'mcol' + (ci === tr.fc ? ' f' : '');
+    el.style.left = x + 'px'; el.style.top = top + 'px';
+    el.style.width = w + 'px'; el.style.height = sh + 'px';
+    el.onclick = () => {
+      const prevCam = tr.cam;
+      tr.fc = ci;
+      tr.cam = revealCamera(tr, ci);
+      emitEvent('Minimap Click', `Focused Column ${ci} (${SYMBOLS[col.cards[col.focusedCard].symId].name}), camera ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+    };
+
+    const hs = cardHeights(col, area.h);
+    let acc = 0;
+    col.cards.forEach((card, ki) => {
+      const sym = SYMBOLS[card.symId];
+      const ch = Math.max(10, (hs[ki] / area.h) * sh);
+      const cdiv = document.createElement('div');
+      cdiv.className = 'mcard' + (ci === tr.fc && ki === col.focusedCard ? ' fc' : '') + (card.collapsed ? ' colp' : '');
+      cdiv.style.top = acc + 'px';
+      cdiv.style.height = Math.max(8, ch - 1) + 'px';
+      cdiv.textContent = sym.name;
+      el.appendChild(cdiv);
+      colBoxes.set(card.symId, { x, y: top + acc + ch / 2, w });
+      acc += ch;
+    });
+    box.appendChild(el);
+  });
+
+  // Minimap edges
+  const msvg = $('#minimapSvg');
+  let mp = '';
+  tr.edges.forEach(e => {
+    const a = colBoxes.get(e.from), b = colBoxes.get(e.to);
+    if (!a || !b) return;
+    const col = LENS_COLOR[e.lens || tr.lens] || '#0078d4';
+    mp += `<line x1="${a.x + a.w}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="${col}" stroke-width="1.3" opacity="0.75"/>`;
+  });
+  msvg.innerHTML = mp;
+
+  // Cyan viewport camera box
+  const mv = document.createElement('div');
+  mv.className = 'mview';
+  mv.style.left = (leftOff + camX * f) + 'px';
+  mv.style.top = (top - 3) + 'px';
+  mv.style.width = Math.max(20, area.w * f) + 'px';
+  mv.style.height = (sh + 6) + 'px';
+  box.appendChild(mv);
+
+  $('#mapNote').textContent = `${tr.code} · ${tr.title} · ${tr.cols.length} cols · lens ${tr.lens} · cam ${Math.round(camX)}px`;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 9. ACTIONS ENGINE (Playground + Storyboard + Card Controls)
+ * ═══════════════════════════════════════════════════════════════════════ */
+function camDeltaStr(before, after) {
+  const d = Math.round(after - before);
+  if (d === 0) return 'camera steady (0px)';
+  return `camera sprang ${d > 0 ? '+' : ''}${d}px`;
+}
+
+function emitEvent(chord, msg) {
+  $('#evChord').textContent = `[ ${chord} ]`;
+  $('#evMsg').textContent = `→ ${msg}`;
+  const row = document.createElement('div');
+  row.className = 'logrow';
+  row.innerHTML = `<span class="lk">[${chord}]</span> ${msg}`;
+  const logHost = $('#pgLogList');
+  logHost.prepend(row);
+  while (logHost.children.length > 24) logHost.lastChild.remove();
+}
+
+function updateInvariant() {
+  const tr = activeTrail();
+  const pill = $('#invPill');
+  // Verify zero column overlap and valid focus bounds
+  let overlap = false;
+  for (let i = 1; i < tr.cols.length; i++) {
+    if (colX(tr, i) < colX(tr, i - 1) + colPx(tr.cols[i - 1]) + GAP_X - 0.5) overlap = true;
+  }
+  const bufs = new Set();
+  let cardsTotal = 0;
+  tr.cols.forEach(c => c.cards.forEach(k => { cardsTotal++; bufs.add(SYMBOLS[k.symId].buf); }));
+  if (S.lspFallback) {
+    pill.className = 'inv-pill warn';
+    pill.textContent = `⚠ HONEST FALLBACK: [TS+RG] active · ${tr.cols.length} cols · 0px overlap`;
+  } else if (overlap) {
+    pill.className = 'inv-pill warn';
+    pill.textContent = '⚠ GEOMETRY DRIFT DETECTED';
+  } else {
+    pill.className = 'inv-pill';
+    pill.textContent = `✓ INVARIANT: ${bufs.size} canonical buf / ${cardsTotal} cards · cam=${Math.round(tr.cam)}px · 0px overlap`;
+  }
+}
+
+function focusCardUid(uid, reveal = true, chordLabel = 'Click') {
+  const tr = activeTrail();
+  for (let ci = 0; ci < tr.cols.length; ci++) {
+    const ki = tr.cols[ci].cards.findIndex(k => k.uid === uid);
+    if (ki >= 0) {
+      const prevCam = tr.cam;
+      tr.fc = ci;
+      tr.cols[ci].focusedCard = ki;
+      if (reveal) tr.cam = revealCamera(tr, ci);
+      emitEvent(chordLabel, `Focused ${SYMBOLS[tr.cols[ci].cards[ki].symId].name}() in Column ${ci}, ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+  }
+}
+
+function switchTrail(idx, chord = 'Space t ]') {
+  if (idx < 0 || idx >= S.trails.length) return;
+  S.activeTrail = idx;
+  S.overview = false;
+  const tr = activeTrail();
+  emitEvent(chord, `Switched to vertical Trail ${tr.code} · ${tr.title} (${tr.cols.length} cols, cam=${Math.round(tr.cam)}px preserved)`);
+  syncView(false);
+}
+
+function ensureEdge(tr, edge) {
+  if (!tr.edges.some(e => e.from === edge.from && e.to === edge.to && e.lens === edge.lens)) {
+    tr.edges.push(edge);
+  }
+}
+
+function execAction(action, arg) {
+  const tr = activeTrail();
+  const prevCam = tr.cam;
+
+  switch (action) {
+    case 'toggle-mode': {
+      S.mode = S.mode === 'strip' ? 'tabs' : 'strip';
+      S.overview = false;
+      emitEvent('Space t s', S.mode === 'strip'
+        ? 'Entered Code Strip — comp_output_frame() framed as SYMBOL card in Column 0 (50%) with Scope Veil'
+        : 'Switched back to Classic File Tabs sharing the exact same canonical GtkSourceBuffer');
+      syncView(false);
+      return;
+    }
+
+    case 'goto-def': {
+      if (S.mode === 'tabs') S.mode = 'strip';
+      const fc = focusedCardObj(tr);
+      if (!fc) return;
+      const srcSym = SYMBOLS[fc.symId];
+      const targetId = arg || srcSym.callee || 'fx_glass_render';
+      if (!SYMBOLS[targetId]) {
+        emitEvent('g d', `${srcSym.name}() is a leaf symbol in this demo`);
+        return;
+      }
+      // If already open in trail, focus it instead of duplicating (§5.1 / §10.2)
+      for (let ci = 0; ci < tr.cols.length; ci++) {
+        const ki = tr.cols[ci].cards.findIndex(k => k.symId === targetId);
+        if (ki >= 0) {
+          tr.fc = ci; tr.cols[ci].focusedCard = ki;
+          tr.cam = revealCamera(tr, ci);
+          ensureEdge(tr, { from: fc.symId, to: targetId, line: srcSym.curLine, label: `calls · L${srcSym.curLine}`, lens: 'CALLS', fallback: S.lspFallback });
+          emitEvent('g d', `Focused existing ${SYMBOLS[targetId].name}() in Column ${ci}, ${camDeltaStr(prevCam, tr.cam)}`);
+          syncView(false);
+          return;
+        }
+      }
+      const insertAt = tr.fc + 1;
+      tr.cols.splice(insertAt, 0, makeCol([makeCard(targetId, { fallback: S.lspFallback })], 0.5));
+      tr.fc = insertAt;
+      tr.cam = revealCamera(tr, insertAt);
+      ensureEdge(tr, { from: fc.symId, to: targetId, line: srcSym.curLine, label: S.lspFallback ? `ts+rg · L${srcSym.curLine}` : `calls · L${srcSym.curLine}`, lens: 'CALLS', fallback: S.lspFallback });
+      emitEvent('g d', `Opened ${SYMBOLS[targetId].name}() in Column ${insertAt}, ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'expand-callees': {
+      const fc = focusedCardObj(tr);
+      if (!fc) return;
+      if (fc.symId === 'fx_glass_render' || tr.cols.some(c => c.cards.some(k => k.symId === 'blur_down_pass'))) {
+        // Stack blur_up_pass into blur_down_pass's column
+        let ci = tr.cols.findIndex(c => c.cards.some(k => k.symId === 'blur_down_pass'));
+        if (ci < 0) {
+          ci = tr.fc + 1;
+          tr.cols.splice(ci, 0, makeCol([makeCard('blur_down_pass')], 0.5));
+        }
+        if (!tr.cols[ci].cards.some(k => k.symId === 'blur_up_pass')) {
+          tr.cols[ci].cards.push(makeCard('blur_up_pass'));
+        }
+        ensureEdge(tr, { from: 'fx_glass_render', to: 'blur_down_pass', line: 256, label: 'calls · L256', lens: 'CALLS' });
+        ensureEdge(tr, { from: 'fx_glass_render', to: 'blur_up_pass',   line: 264, label: 'calls · L264', lens: 'CALLS' });
+        tr.fc = ci; tr.cols[ci].focusedCard = tr.cols[ci].cards.length - 1;
+        tr.cam = revealCamera(tr, ci);
+        emitEvent('Space t e', `Expanded outgoing callees in Column ${ci} (blur_down_pass + blur_up_pass), ${camDeltaStr(prevCam, tr.cam)}`);
+        syncView(false);
+      } else {
+        execAction('goto-def');
+      }
+      return;
+    }
+
+    case 'focus-left': {
+      if (tr.fc <= 0) { emitEvent('Space t h', 'Already at leftmost Column 0'); return; }
+      tr.fc--;
+      tr.cam = revealCamera(tr, tr.fc);
+      emitEvent('Space t h', `Focused Column ${tr.fc} (${SYMBOLS[focusedCardObj(tr).symId].name}), ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'focus-right': {
+      if (tr.fc >= tr.cols.length - 1) { emitEvent('Space t l', `Already at rightmost Column ${tr.fc}`); return; }
+      tr.fc++;
+      tr.cam = revealCamera(tr, tr.fc);
+      emitEvent('Space t l', `Focused Column ${tr.fc} (${SYMBOLS[focusedCardObj(tr).symId].name}), ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'focus-down': {
+      const col = tr.cols[tr.fc];
+      if (!col || col.focusedCard >= col.cards.length - 1) { emitEvent('Space t j', 'Already at bottom card in column'); return; }
+      col.focusedCard++;
+      emitEvent('Space t j', `Focused card #${col.focusedCard + 1} (${SYMBOLS[col.cards[col.focusedCard].symId].name}) inside Column ${tr.fc}`);
+      syncView(false);
+      return;
+    }
+
+    case 'focus-up': {
+      const col = tr.cols[tr.fc];
+      if (!col || col.focusedCard <= 0) { emitEvent('Space t k', 'Already at top card in column'); return; }
+      col.focusedCard--;
+      emitEvent('Space t k', `Focused card #${col.focusedCard + 1} (${SYMBOLS[col.cards[col.focusedCard].symId].name}) inside Column ${tr.fc}`);
+      syncView(false);
+      return;
+    }
+
+    case 'center-col': {
+      tr.cam = centerCamera(tr, tr.fc);
+      emitEvent('Space t c', `Centered Column ${tr.fc} in viewport, ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'cycle-width': {
+      const col = tr.cols[tr.fc];
+      if (!col) return;
+      const curIdx = WIDTH_PRESETS.findIndex(w => Math.abs(w - col.widthPreset) < 0.05);
+      col.widthPreset = WIDTH_PRESETS[(curIdx + 1) % WIDTH_PRESETS.length];
+      tr.cam = revealCamera(tr, tr.fc);
+      emitEvent('Space t r', `Column ${tr.fc} width preset → ${Math.round(col.widthPreset * 100)}% (${colPx(col)}px), ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'consume': {
+      if (tr.fc >= tr.cols.length - 1) {
+        emitEvent('Space t ,', 'No column to the right to consume from');
+        return;
+      }
+      const curCol = tr.cols[tr.fc];
+      const nextCol = tr.cols[tr.fc + 1];
+      if (curCol.cards.length >= 4) { emitEvent('Space t ,', 'Column already at max 4 stacked cards'); return; }
+      const moved = nextCol.cards.shift();
+      if (!nextCol.cards.length) tr.cols.splice(tr.fc + 1, 1);
+      else nextCol.focusedCard = Math.min(nextCol.focusedCard, nextCol.cards.length - 1);
+      curCol.cards.push(moved);
+      curCol.focusedCard = curCol.cards.length - 1;
+      tr.cam = revealCamera(tr, tr.fc);
+      emitEvent('Space t ,', `Consumed ${SYMBOLS[moved.symId].name} into Column ${tr.fc} stack (${curCol.cards.length} cards), ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'move-card-up': {
+      const col = tr.cols[tr.fc];
+      if (!col || col.focusedCard <= 0) return;
+      const i = col.focusedCard;
+      [col.cards[i - 1], col.cards[i]] = [col.cards[i], col.cards[i - 1]];
+      col.focusedCard = i - 1;
+      emitEvent('Space t K', `Reordered ${SYMBOLS[col.cards[col.focusedCard].symId].name} to top of Column ${tr.fc}`);
+      syncView(false);
+      return;
+    }
+
+    case 'expel': {
+      const curCol = tr.cols[tr.fc];
+      if (!curCol || curCol.cards.length <= 1) {
+        emitEvent('Space t .', 'Card is already alone in its column');
+        return;
+      }
+      const [expelled] = curCol.cards.splice(curCol.focusedCard, 1);
+      curCol.focusedCard = Math.min(curCol.focusedCard, curCol.cards.length - 1);
+      tr.cols.splice(tr.fc + 1, 0, makeCol([expelled], curCol.widthPreset));
+      tr.fc = tr.fc + 1;
+      tr.cam = revealCamera(tr, tr.fc);
+      emitEvent('Space t .', `Expelled ${SYMBOLS[expelled.symId].name} into new Column ${tr.fc}, ${camDeltaStr(prevCam, tr.cam)}`);
+      syncView(false);
+      return;
+    }
+
+    case 'toggle-scope': {
+      const fc = focusedCardObj(tr);
+      if (!fc || SYMBOLS[fc.symId].isLens) return;
+      fc.scope = fc.scope === 'SYMBOL' ? 'FILE' : 'SYMBOL';
+      emitEvent('Space t f', `${SYMBOLS[fc.symId].name} → ${fc.scope === 'FILE' ? 'FILE full view (Scope Veil lifted)' : 'SYMBOL scoped view (out-of-scope lines dimmed)'}`);
+      syncView(false);
+      return;
+    }
+
+    case 'toggle-collapse': {
+      const fc = focusedCardObj(tr);
+      if (!fc) return;
+      fc.collapsed = !fc.collapsed;
+      emitEvent('Space t z', `${SYMBOLS[fc.symId].name} ${fc.collapsed ? 'collapsed to 26px pinned header' : 'expanded to full stack height'}`);
+      syncView(false);
+      return;
+    }
+
+    case 'close-card': {
+      const col = tr.cols[tr.fc];
+      if (!col) return;
+      if (tr.cols.length === 1 && col.cards.length === 1) {
+        emitEvent('Space t q', 'Last card in trail kept (buffers stay in canonical pool)');
+        return;
+      }
+      const [rem] = col.cards.splice(col.focusedCard, 1);
+      if (!col.cards.length) {
+        tr.cols.splice(tr.fc, 1);
+        tr.fc = Math.min(tr.fc, tr.cols.length - 1);
+      } else {
+        col.focusedCard = Math.min(col.focusedCard, col.cards.length - 1);
+      }
+      tr.cam = revealCamera(tr, tr.fc);
+      emitEvent('Space t q', `Removed ${SYMBOLS[rem.symId].name} from trail (canonical GtkSourceBuffer untouched)`);
+      syncView(false);
+      return;
+    }
+
+    case 'toggle-overview': {
+      S.mode = 'strip';
+      S.overview = !S.overview;
+      const fc = focusedCardObj(tr);
+      S.ovSelectedUid = fc ? fc.uid : null;
+      if (!S.overview) { S.ovFilter = ''; $('#ovSearch').value = ''; }
+      emitEvent('Space t o', S.overview
+        ? `Entered Bird's-Eye Overview (IDE_STATE_STRIP_OVERVIEW) — ${tr.cols.length} columns visible`
+        : 'Exited Overview back to live Code Strip');
+      syncView(false);
+      if (S.overview) setTimeout(() => $('#ovSearch').focus(), 20);
+      return;
+    }
+
+    case 'lens': {
+      const L = arg;
+      S.mode = 'strip';
+      S.overview = false;
+      tr.lens = L;
+      if (L === 'TYPES') {
+        const hasStruct = tr.cols.some(c => c.cards.some(k => k.symId === 'CompFxGlassParams'));
+        if (!hasStruct) {
+          const at = Math.min(tr.cols.length, tr.fc + 1);
+          tr.cols.splice(at, 0, makeCol([makeCard('CompFxGlassParams')], 0.5));
+          ensureEdge(tr, { from: 'fx_glass_render', to: 'CompFxGlassParams', line: 218, label: 'reads · L218', lens: 'TYPES' });
+          tr.fc = at;
+          tr.cam = revealCamera(tr, at);
+        }
+        emitEvent('Space t 2', `Activated TYPES lens (#00d8f0) — pulled struct CompFxGlassParams (fx_glass.h) into strip`);
+      } else if (L === 'IMPACT') {
+        const hasImpact = tr.cols.some(c => c.cards.some(k => k.symId === 'impact_lens' || k.symId === 'comp_panel_paint'));
+        if (!hasImpact) {
+          const at = tr.fc + 1;
+          tr.cols.splice(at, 0, makeCol([makeCard('impact_lens')], 0.5));
+          ensureEdge(tr, { from: focusedCardObj(tr).symId, to: 'impact_lens', line: 210, label: 'refs · 3 sites', lens: 'IMPACT' });
+          tr.fc = at;
+          tr.cam = revealCamera(tr, at);
+        }
+        emitEvent('Space t 3', `Activated IMPACT lens (#ffb900) — LSP textDocument/references found 3 call sites`);
+      } else if (L === 'DIFF') {
+        tr.cols = [
+          makeCol([makeCard('comp_output_frame', { agentState: 'pending', dirty: true })], 0.3333),
+          makeCol([makeCard('fx_glass_render', { agentState: 'pending', dirty: true })], 0.3333),
+          makeCol([makeCard('shader_blur_compile', { agentState: 'pending', dirty: true })], 0.3333),
+        ];
+        tr.edges = [
+          { from: 'comp_output_frame', to: 'fx_glass_render', line: 224, label: 'agent · Δ1', lens: 'DIFF' },
+          { from: 'fx_glass_render', to: 'shader_blur_compile', line: 272, label: 'agent · Δ2', lens: 'DIFF' },
+        ];
+        tr.fc = 0; tr.cam = 0;
+        emitEvent('Space t 4', `Activated DIFF flow lens (#b4009e) — 3 AI-modified symbols ordered topologically left→right`);
+      } else {
+        emitEvent('Space t 1', `Activated CALLS lens (#0078d4) — execution call trail active`);
+      }
+      syncView(false);
+      return;
+    }
+
+    case 'materialize-impact': {
+      tr.lens = 'IMPACT';
+      const idx = tr.cols.findIndex(c => c.cards.some(k => k.symId === 'impact_lens'));
+      const targetCol = idx >= 0 ? idx : Math.min(tr.cols.length, 1);
+      const callers = [
+        makeCard('comp_output_frame', { errCount: 1 }),
+        makeCard('comp_panel_paint',  { errCount: 1 }),
+        makeCard('comp_lock_blur',    { errCount: 1 }),
+      ];
+      if (idx >= 0) tr.cols[idx] = makeCol(callers, 0.5);
+      else tr.cols.splice(targetCol, 0, makeCol(callers, 0.5));
+      tr.edges = [
+        { from: 'fx_glass_render', to: 'comp_output_frame', line: 210, label: 'ref · L224', lens: 'IMPACT' },
+        { from: 'fx_glass_render', to: 'comp_panel_paint',  line: 210, label: 'ref · L98',  lens: 'IMPACT' },
+        { from: 'fx_glass_render', to: 'comp_lock_blur',    line: 210, label: 'ref · L144', lens: 'IMPACT' },
+      ];
+      tr.fc = targetCol; tr.cols[targetCol].focusedCard = 0;
+      tr.cam = revealCamera(tr, targetCol);
+      emitEvent('Enter', `Materialized 3 live editable caller cards stacked in Column ${targetCol} with amber #ffb900 connectors`);
+      syncView(false);
+      return;
+    }
+
+    case 'accept-agent': {
+      const fc = focusedCardObj(tr);
+      if (!fc) return;
+      fc.agentState = 'accepted';
+      fc.dirty = false;
+      emitEvent('✓ ACCEPT', `Accepted AI agent hunk for ${SYMBOLS[fc.symId].name}() into canonical buffer`);
+      syncView(false);
+      return;
+    }
+
+    case 'revert-agent': {
+      const fc = focusedCardObj(tr);
+      if (!fc) return;
+      fc.agentState = 'reverted';
+      fc.dirty = false;
+      emitEvent('✕ REVERT', `Reverted AI agent hunk for ${SYMBOLS[fc.symId].name}() back to disk baseline`);
+      syncView(false);
+      return;
+    }
+
+    case 'branch-trail': {
+      const code = String(S.trails.length + 1).padStart(2, '0');
+      const symId = arg || (focusedCardObj(tr) ? focusedCardObj(tr).symId : 'xwl_display_init');
+      const name = arg === 'xwl_display_init' ? 'XWayland DISPLAY' : `${SYMBOLS[symId].name} branch`;
+      const insertIdx = S.activeTrail + 1;
+      S.trails.splice(insertIdx, 0, makeTrail(code, name, 'CALLS', [
+        makeCol([makeCard(symId)], 0.5),
+      ], []));
+      // Renumber trail codes cleanly
+      S.trails.forEach((tObj, k) => { tObj.code = String(k + 1).padStart(2, '0'); });
+      S.activeTrail = insertIdx;
+      emitEvent('Space t b', `Branched new vertical Trail ${S.trails[insertIdx].code} · ${name} (previous trail preserved intact)`);
+      syncView(false);
+      return;
+    }
+
+    case 'prev-trail': {
+      if (S.activeTrail <= 0) { emitEvent('Space t [', 'Already at top Trail 01'); return; }
+      switchTrail(S.activeTrail - 1, 'Space t [');
+      return;
+    }
+
+    case 'next-trail': {
+      if (S.activeTrail >= S.trails.length - 1) { emitEvent('Space t ]', 'Already at last Trail'); return; }
+      switchTrail(S.activeTrail + 1, 'Space t ]');
+      return;
+    }
+
+    case 'toggle-fallback': {
+      S.lspFallback = !S.lspFallback;
+      emitEvent('LSP Toggle', S.lspFallback
+        ? 'No language server (zls absent) — visibly switched to [TS+RG FALLBACK] using ide_ts + ripgrep'
+        : 'Restored clangd · LSP 3.17 live semantic provider');
+      syncView(false);
+      return;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 10. THE 7 WORKFLOW SCENARIOS (S1 – S7)
+ * ═══════════════════════════════════════════════════════════════════════ */
+const SCENARIOS = [
+  {
+    id: 'S1', title: 'From Classic Tabs to Code Strip',
+    steps: [
+      {
+        title: 'Classic File Tabs (Default Mode)',
+        chord: 'Classic Mode',
+        chordDesc: 'comp_output.c open in traditional file tab bar',
+        refs: ['§1', '§4.3', '§7'],
+        text: '<code>kajo-ide</code> keeps <b>Classic File Tabs</b> as the untouched default. Here <code>comp_output.c</code> (1,600 lines) is open with cursor inside <code>comp_output_frame()</code> at <code>L224</code>.',
+        run: () => {
+          buildDefaultTrails();
+          S.mode = 'tabs';
+          emitEvent('Classic Tabs', 'Opened comp_output.c:L224 in default Classic File Tabs mode');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Toggle Into Code Strip (Space t s)',
+        chord: 'Space t s',
+        chordDesc: 'Switch Classic Tabs → Code Strip using same IdeBuffer',
+        refs: ['§3.1', '§4.2', '§4.3'],
+        text: 'Pressing <code>Space t s</code> switches seamlessly into <b>Code Strip</b> without reopening any files. <code>comp_output_frame()</code> is framed as a <code>SYMBOL</code> card (<code>ƒ</code>) in <b>Column 0 (50%)</b> with out-of-scope lines dimmed under the <b>#0a0a0a Scope Veil</b>.',
+        run: () => execAction('toggle-mode'),
+      },
+      {
+        title: 'Lift Scope Veil to Full File (Space t f)',
+        chord: 'Space t f',
+        chordDesc: 'Toggle focused card SYMBOL ↔ FILE view',
+        refs: ['§4.1', '§4.3'],
+        text: 'Need to inspect surrounding <code>#include</code>s or static helpers? Because Option B attaches directly to the canonical <code>GtkSourceBuffer</code>, pressing <code>Space t f</code> lifts the dimming veil instantaneously with zero buffer copying.',
+        run: () => execAction('toggle-scope'),
+      },
+      {
+        title: 'Restore Focused Symbol Veil (Space t f)',
+        chord: 'Space t f',
+        chordDesc: 'Re-apply SYMBOL scope veil on L182–L248',
+        refs: ['§4.3', '§7'],
+        text: 'Pressing <code>Space t f</code> again re-applies the <b>Scope Veil</b> on <code>comp_output_frame()</code> (<code>L182–L248</code>). Column 0 sits cleanly at 50% width, ready to trace callees horizontally into Column 1.',
+        run: () => execAction('toggle-scope'),
+      },
+    ],
+  },
+  {
+    id: 'S2', title: 'Tracing a Call Chain Horizontally',
+    steps: [
+      {
+        title: 'Caller Ready in Column 0',
+        chord: 'NORMAL · L224',
+        chordDesc: 'Cursor on fx_glass_render(out, &params) in Column 0',
+        refs: ['§3.1', '§5.1'],
+        text: 'Trail <code>01 · fx_glass</code> holds <code>ƒ comp_output_frame()</code> in <b>Column 0 (50%)</b>. The cursor sits on call site <code>L224: fx_glass_render(out, &amp;params)</code> with the blue <b>CALLS</b> lens active.',
+        run: () => {
+          buildDefaultTrails();
+          emitEvent('Trail 01', 'Cursor on L224 fx_glass_render() in Column 0 (50%)');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Jump to Callee Right (g d → Column 1)',
+        chord: 'g d',
+        chordDesc: 'Open fx_glass_render() in Column 1 beside caller',
+        refs: ['§3.1', '§5.1', '§6.1'],
+        text: 'Pressing <code>g d</code> opens <code>ƒ fx_glass_render()</code> in <b>Column 1 (50%)</b> right beside its caller. Because both columns fit inside 100% viewport width, <b>camera stays steady (0px jitter)</b> and a blue <code>#0078d4</code> Bezier bridge links <code>L224 → fx_glass_render</code>.',
+        run: () => execAction('goto-def', 'fx_glass_render'),
+      },
+      {
+        title: 'Hop Deeper (g d → Column 2 + Spring Camera)',
+        chord: 'g d',
+        chordDesc: 'Open blur_down_pass() in Column 2; spring camera right',
+        refs: ['§3.1', '§4.3', '§6.1'],
+        text: 'Pressing <code>g d</code> on <code>L256: blur_down_pass(fb, p)</code> spawns <b>Column 2</b> off the right edge. <code>comp_spring</code> smoothly glides the camera right (<code>col_right - W</code>) so <b>Column 1 + Column 2 stay side-by-side</b>. Both cards share <code>buf:fx_glass.c</code>!',
+        run: () => execAction('goto-def', 'blur_down_pass'),
+      },
+      {
+        title: 'Fan Out Sibling Callee & Focus Back',
+        chord: 'Space t e → Space t h',
+        chordDesc: 'Stack blur_up_pass() in Column 2, then focus Column 1',
+        refs: ['§3.1', '§5.1', '§6.1'],
+        text: 'Expanding callees stacks <code>ƒ blur_up_pass()</code> below <code>blur_down_pass()</code> in Column 2 with dual blue connectors (<code>L256</code> &amp; <code>L264</code>). Focusing back left (<code>Space t h</code>) keeps <b>camera rock-steady (0px)</b> since Column 1 is already fully visible.',
+        run: () => {
+          execAction('expand-callees');
+          execAction('focus-left');
+        },
+      },
+    ],
+  },
+  {
+    id: 'S3', title: 'Vertical Stacking: Struct + Function',
+    steps: [
+      {
+        title: 'Function Reading Struct Fields',
+        chord: 'Column 1 · L218',
+        chordDesc: 'fx_glass_render() reads p->blur_radius & p->tint_alpha',
+        refs: ['§3.2', '§5.2'],
+        text: 'In Column 1, <code>ƒ fx_glass_render()</code> dereferences <code>CompFxGlassParams *p</code> on <code>L218</code>. You want the struct layout visible right above the function without wasting a full horizontal column.',
+        run: () => {
+          buildDefaultTrails();
+          const tr = activeTrail();
+          tr.cols = [
+            makeCol([makeCard('comp_output_frame')], 0.5),
+            makeCol([makeCard('fx_glass_render')], 0.5),
+          ];
+          tr.edges = [{ from: 'comp_output_frame', to: 'fx_glass_render', line: 224, label: 'calls · L224', lens: 'CALLS' }];
+          tr.fc = 1; tr.cam = 0;
+          emitEvent('Setup S3', 'Focused fx_glass_render() in Column 1 beside comp_output_frame()');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Activate TYPES Lens (Space t 2)',
+        chord: 'Space t 2',
+        chordDesc: 'Pull struct CompFxGlassParams into Column 2',
+        refs: ['§5.2', '§6.1'],
+        text: 'Pressing <code>Space t 2</code> switches to the cyan <b>TYPES</b> lens (<code>#00d8f0</code>). <code>ide_ts</code> extracts <code>CompFxGlassParams</code> and opens <code>fx_glass.h:L14–L46</code> in Column 2 with a cyan <code>reads · L218</code> bridge.',
+        run: () => execAction('lens', 'TYPES'),
+      },
+      {
+        title: 'Consume Into Column 1 Above Function (Space t ,)',
+        chord: 'Space t h → Space t , → Space t K',
+        chordDesc: 'Consume CompFxGlassParams into Column 1 above fx_glass_render',
+        refs: ['§3.2', '§7'],
+        text: 'Focusing Column 1 and pressing <code>Space t ,</code> (<b>Consume</b> — exact <code>kajo-comp</code> muscle memory) pulls <code>S CompFxGlassParams</code> vertically into Column 1, then <code>Space t K</code> moves it directly above <code>fx_glass_render()</code>!',
+        run: () => {
+          execAction('focus-left');
+          execAction('consume');
+          execAction('move-card-up');
+        },
+      },
+      {
+        title: 'Collapse Struct to 26px Header (Space t z)',
+        chord: 'Space t z',
+        chordDesc: 'Fold CompFxGlassParams to a pinned 26px title bar',
+        refs: ['§3.2', '§4.2'],
+        text: 'Done verifying the struct fields? Pressing <code>Space t z</code> folds <code>S CompFxGlassParams</code> into a crisp <b>26px pinned header</b> so <code>fx_glass_render()</code> reclaims full vertical height while keeping the struct one tap away.',
+        run: () => execAction('toggle-collapse'),
+      },
+      {
+        title: 'Unfold & Expel Back Out (Space t z → Space t .)',
+        chord: 'Space t z → Space t .',
+        chordDesc: 'Restore struct card and expel into dedicated Column 2',
+        refs: ['§3.2', '§7'],
+        text: 'Whenever you need side-by-side editing again, unfold (<code>Space t z</code>) and press <code>Space t .</code> (<b>Expel</b>) to pop <code>CompFxGlassParams</code> cleanly back into its own column.',
+        run: () => {
+          execAction('toggle-collapse');
+          execAction('expel');
+        },
+      },
+    ],
+  },
+  {
+    id: 'S4', title: 'Impact Refactoring Across Callers',
+    steps: [
+      {
+        title: 'Signature Refactor Starting Point',
+        chord: 'Column 0 · L210',
+        chordDesc: 'Preparing to add uint32_t flags to fx_glass_render()',
+        refs: ['§5.3'],
+        text: 'You need to add a <code>uint32_t flags</code> parameter to <code>fx_glass_render()</code> in Column 0 and update every call site across the compositor without tab amnesia.',
+        run: () => {
+          buildDefaultTrails();
+          const tr = activeTrail();
+          tr.cols = [makeCol([makeCard('fx_glass_render')], 0.5)];
+          tr.edges = []; tr.fc = 0; tr.cam = 0;
+          S.refactoredS4 = false;
+          emitEvent('Setup S4', 'Ready to refactor fx_glass_render() signature in Column 0');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Activate IMPACT Lens (Space t 3)',
+        chord: 'Space t 3',
+        chordDesc: 'LSP textDocument/references → ⬡ IMPACT Lens card',
+        refs: ['§4.1', '§5.3'],
+        text: 'Pressing <code>Space t 3</code> queries LSP <code>textDocument/references</code> and opens a <code>⬡ IMPACT · 3 Call Sites</code> Lens card in Column 1 with amber <code>#ffb900</code> blast-radius connectors.',
+        run: () => execAction('lens', 'IMPACT'),
+      },
+      {
+        title: 'Materialize All 3 Callers Stacked (Enter)',
+        chord: 'Enter',
+        chordDesc: 'Materialize 3 live editable caller cards in Column 1',
+        refs: ['§5.3', '§6.1'],
+        text: 'Triggering <b>[ ▤ MATERIALIZE TOP CALLERS ]</b> spawns 3 live <code>SYMBOL</code> cards stacked vertically in Column 1: <code>comp_output_frame</code>, <code>comp_panel_paint</code>, and <code>comp_lock_blur</code> — each linked with amber <code>#ffb900</code> curves and <code>✖ 1</code> diagnostics.',
+        run: () => execAction('materialize-impact'),
+      },
+      {
+        title: 'Live Shared-Buffer Edit Across All Call Sites',
+        chord: 'Edit · Canonical Buffers',
+        chordDesc: 'Update signature left + 3 callers right simultaneously',
+        refs: ['§4.3', '§5.3'],
+        text: 'Edit the signature in Column 0 and update all 3 callers on the right side-by-side. Every edit writes directly to each file\'s <b>canonical <code>GtkSourceBuffer</code></b> — dirty <code>●</code> badges appear and diagnostics drop to <b>0 errors</b>.',
+        run: () => {
+          S.refactoredS4 = true;
+          const tr = activeTrail();
+          tr.cols.forEach(c => c.cards.forEach(k => { k.dirty = true; k.errCount = 0; }));
+          emitEvent('Shared Edit', 'Updated fx_glass_render() + 3 callers in canonical GtkSourceBuffers (0 diagnostics)');
+          syncView(false);
+        },
+      },
+    ],
+  },
+  {
+    id: 'S5', title: 'Bird\'s-Eye Overview & Camera Snap',
+    steps: [
+      {
+        title: 'Deep 4-Column Trail (> 200% Width)',
+        chord: '4 Columns · 6 Cards',
+        chordDesc: 'C0–C1 on screen; C2–C3 off-screen to the right',
+        refs: ['§3.1', '§6.2'],
+        text: 'Trail <code>01 · fx_glass</code> now spans <b>4 columns (6 cards)</b>. Currently only <code>C0</code> and <code>C1</code> are in view while <code>C2</code> (<code>blur_down_pass</code>, <code>blur_up_pass</code>) and <code>C3</code> (<code>gles_quad_draw</code>, <code>shader_cache_get</code>) sit off-screen right.',
+        run: () => {
+          buildDefaultTrails();
+          const tr = activeTrail();
+          tr.cols = [
+            makeCol([makeCard('comp_output_frame')], 0.5),
+            makeCol([makeCard('CompFxGlassParams'), makeCard('fx_glass_render')], 0.5),
+            makeCol([makeCard('blur_down_pass'), makeCard('blur_up_pass')], 0.5),
+            makeCol([makeCard('gles_quad_draw'), makeCard('shader_cache_get')], 0.5),
+          ];
+          tr.edges = [
+            { from: 'comp_output_frame', to: 'fx_glass_render', line: 224, label: 'calls · L224', lens: 'CALLS' },
+            { from: 'fx_glass_render', to: 'CompFxGlassParams', line: 218, label: 'reads · L218', lens: 'TYPES' },
+            { from: 'fx_glass_render', to: 'blur_down_pass', line: 256, label: 'calls · L256', lens: 'CALLS' },
+            { from: 'fx_glass_render', to: 'blur_up_pass',   line: 264, label: 'calls · L264', lens: 'CALLS' },
+            { from: 'blur_down_pass',  to: 'gles_quad_draw', line: 118, label: 'calls · L118', lens: 'CALLS' },
+            { from: 'blur_up_pass',    to: 'shader_cache_get', line: 152, label: 'calls · L152', lens: 'CALLS' },
+          ];
+          tr.fc = 0; tr.cam = 0;
+          emitEvent('Setup S5', '4-column deep trail loaded (2 columns visible, 2 columns off-screen right)');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Open Bird\'s-Eye Overview (Space t o)',
+        chord: 'Space t o',
+        chordDesc: 'FSM → IDE_STATE_STRIP_OVERVIEW full vector strip map',
+        refs: ['§6.2', '§7'],
+        text: 'Pressing <code>Space t o</code> switches the viewport to the <b>Bird\'s-Eye Vector Strip Map</b> showing all 4 columns, stacked cards, dependency edges, and the cyan <code>#00d8f0</code> viewport camera rectangle.',
+        run: () => execAction('toggle-overview'),
+      },
+      {
+        title: 'Live Fuzzy Node Filter ("blur")',
+        chord: 'Type: blur',
+        chordDesc: 'Highlight matching symbols in Overview',
+        refs: ['§6.2'],
+        text: 'Typing <code>blur</code> inside Overview immediately dims non-matching nodes and highlights <code>blur_down_pass</code> and <code>blur_up_pass</code> in Column 2, focusing <code>blur_up_pass</code>.',
+        run: () => {
+          S.overview = true;
+          S.ovFilter = 'blur';
+          $('#ovSearch').value = 'blur';
+          const tr = activeTrail();
+          const target = tr.cols[2].cards.find(k => k.symId === 'blur_up_pass');
+          if (target) S.ovSelectedUid = target.uid;
+          emitEvent('Filter: blur', 'Filtered Overview to 2 matching nodes; selected blur_up_pass() in Column 2');
+          syncView(false);
+        },
+      },
+      {
+        title: 'Snap Camera Directly to Node (Enter)',
+        chord: 'Enter',
+        chordDesc: 'Exit Overview and spring camera straight to blur_up_pass()',
+        refs: ['§3.1', '§6.2'],
+        text: 'Pressing <code>Enter</code> exits <code>IDE_STATE_STRIP_OVERVIEW</code> and fires <code>comp_spring</code> directly to Column 2 with <code>ƒ blur_up_pass()</code> focused and its caller still visible on the left!',
+        run: () => {
+          const tr = activeTrail();
+          const target = tr.cols[2].cards.find(k => k.symId === 'blur_up_pass');
+          if (target) jumpFromOverview(target.uid);
+        },
+      },
+    ],
+  },
+  {
+    id: 'S6', title: 'Branching a Vertical Trail',
+    steps: [
+      {
+        title: 'Mid-Investigation on Trail 01',
+        chord: 'Trail 01 · cam parked',
+        chordDesc: '3 columns carefully arranged in 01 · fx_glass',
+        refs: ['§3.3'],
+        text: 'You have 3 columns arranged in <b>Trail 01 · fx_glass</b> (camera parked on C1–C2). Mid-debug, a log alert reveals an unrelated <b>XWayland DISPLAY</b> race condition.',
+        run: () => {
+          buildDefaultTrails();
+          const tr = activeTrail();
+          tr.cols = [
+            makeCol([makeCard('comp_output_frame')], 0.5),
+            makeCol([makeCard('CompFxGlassParams', { collapsed: true }), makeCard('fx_glass_render')], 0.5),
+            makeCol([makeCard('blur_down_pass')], 0.5),
+          ];
+          tr.edges = [
+            { from: 'comp_output_frame', to: 'fx_glass_render', line: 224, label: 'calls · L224', lens: 'CALLS' },
+            { from: 'fx_glass_render', to: 'blur_down_pass', line: 256, label: 'calls · L256', lens: 'CALLS' },
+          ];
+          tr.fc = 2; tr.cam = revealCamera(tr, 2);
+          emitEvent('Trail 01', '3-column fx_glass trail parked on Column 2 — unrelated XWayland bug spotted');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Branch Fresh Vertical Trail (Space t b)',
+        chord: 'Space t b',
+        chordDesc: 'Fork vertical Trail 02 · XWayland DISPLAY cleanly',
+        refs: ['§3.3', '§7'],
+        text: 'Pressing <code>Space t b</code> branches a fresh vertical trail (<code>02 · XWayland DISPLAY</code>) with a crisp vertical spring slide. Notice in the <b>Vertical Trails</b> box below that Trail 01 keeps all 3 columns untouched!',
+        run: () => execAction('branch-trail', 'xwl_display_init'),
+      },
+      {
+        title: 'Trace Side Bug Independently (g d)',
+        chord: 'g d',
+        chordDesc: 'Open xwl_socket_bind() beside xwl_display_init()',
+        refs: ['§3.3', '§5.1'],
+        text: 'Inside Trail 02, pressing <code>g d</code> opens <code>ƒ xwl_socket_bind()</code> in Column 1 right beside <code>xwl_display_init()</code>. Your side tangent stays 100% isolated from <code>fx_glass</code>.',
+        run: () => execAction('goto-def', 'xwl_socket_bind'),
+      },
+      {
+        title: 'Jump Straight Back to Trail 01 (Space t [)',
+        chord: 'Space t [',
+        chordDesc: 'Slide vertically back to Trail 01 with exact camera & stacks',
+        refs: ['§3.3', '§7'],
+        text: 'Bug fixed! Pressing <code>Space t [</code> springs vertically back to <b>Trail 01 · fx_glass</b> — every column, collapsed struct header, and exact <code>camera_x</code> is restored instantaneously.',
+        run: () => execAction('prev-trail'),
+      },
+    ],
+  },
+  {
+    id: 'S7', title: 'AI Agent / Git Flow Review & No-LSP Fallback',
+    steps: [
+      {
+        title: 'AI Agent Edits Across 3 Files',
+        chord: '3 Modified Symbols',
+        chordDesc: 'Agent touched comp_output.c, fx_glass.c, fx_shader.c',
+        refs: ['§5.4'],
+        text: 'An AI agent just modified 3 functions across 3 separate files. Alphabetical file diffs scatter the execution flow; Code Strip\'s <b>DIFF</b> lens groups changes by call order instead.',
+        run: () => {
+          buildDefaultTrails();
+          emitEvent('Agent Snapshot', '3 modified symbols ready in canonical IdeBuffer snapshots');
+          syncView(true);
+        },
+      },
+      {
+        title: 'Activate DIFF Flow Lens (Space t 4)',
+        chord: 'Space t 4',
+        chordDesc: 'Topological call-order review with #b4009e connectors',
+        refs: ['§4.2', '§5.4', '§6.1'],
+        text: 'Pressing <code>Space t 4</code> lays out all 3 AI-modified symbols left-to-right in <b>topological call order</b> (<code>comp_output_frame → fx_glass_render → shader_blur_compile</code>) with Agent Magenta <code>#b4009e</code> connectors and inline <b>[✓ ACCEPT]</b> / <b>[✕ REVERT]</b> headers.',
+        run: () => execAction('lens', 'DIFF'),
+      },
+      {
+        title: 'Accept Hunk In-Place ([✓ ACCEPT])',
+        chord: '✓ ACCEPT',
+        chordDesc: 'Commit comp_output_frame() hunk while reviewing remaining 2',
+        refs: ['§4.2', '§5.4'],
+        text: 'Clicking <b>[✓ ACCEPT]</b> on Column 0 accepts <code>comp_output_frame()</code> (badge turns green <code>✓ ACCEPTED</code>, gutter bar flips green) while Columns 1 and 2 remain pending review.',
+        run: () => execAction('accept-agent'),
+      },
+      {
+        title: 'Honest No-LSP Fallback ([TS+RG FALLBACK])',
+        chord: 'No zls · TS+RG',
+        chordDesc: 'Graceful tree-sitter + ripgrep fallback visibly badged',
+        refs: ['§1', '§5.1'],
+        text: 'Opening <code>tools/pack_lut.zig</code> with no <code>zls</code> server installed: <code>kajo-ide</code> never fakes LSP support. The header badge switches visibly to amber <b>[TS+RG FALLBACK]</b> and resolves <code>pack_lut_main → lut_bake_3d</code> via bundled tree-sitter + async <code>ripgrep</code>.',
+        run: () => {
+          S.lspFallback = true;
+          const tr = activeTrail();
+          tr.lens = 'CALLS';
+          tr.cols = [
+            makeCol([makeCard('pack_lut_main', { fallback: true })], 0.5),
+            makeCol([makeCard('lut_bake_3d', { fallback: true })], 0.5),
+          ];
+          tr.edges = [{ from: 'pack_lut_main', to: 'lut_bake_3d', line: 36, label: 'ts+rg · L36', lens: 'CALLS', fallback: true }];
+          tr.fc = 1; tr.cam = 0;
+          emitEvent('[TS+RG FALLBACK]', 'No zls installed — resolved pack_lut_main → lut_bake_3d via ide_ts + async ripgrep');
+          syncView(false);
+        },
+      },
+    ],
+  },
+];
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * 11. UI WIRING: SCENARIOS, PLAYGROUND, TRANSPORT, ANIMATION LOOP
+ * ═══════════════════════════════════════════════════════════════════════ */
+function showSpec(id) {
+  const def = SPECS[id];
+  if (!def) return;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.dataset.s === id));
+  $('#specDef').innerHTML = `<span class="rid">${id}</span><span class="rtitle">${def[0]}</span><br><div style="margin-top:4px;color:#ccc">${def[1]}</div>`;
+}
+
+function renderScenarioList() {
+  const host = $('#scenList');
+  host.innerHTML = '';
+  SCENARIOS.forEach((sc, i) => {
+    const b = document.createElement('button');
+    b.className = 'scen' + (i === curScenario ? ' on' : '');
+    b.innerHTML = `<span><span class="sid">${sc.id}</span> · ${sc.title}</span><span class="scnt">${sc.steps.length} steps</span>`;
+    b.onclick = () => startScenario(i);
+    host.appendChild(b);
+  });
+}
+
+function updateStepUI() {
+  const sc = SCENARIOS[curScenario];
+  const st = sc.steps[curStep];
+  const pillText = `STEP ${curStep + 1} / ${sc.steps.length}`;
+  $('#stepPill').textContent = pillText;
+  $('#stepCount').textContent = pillText;
+  $('#stepTitle').textContent = `${sc.id} · ${st.title}`;
+  $('#stepChord').innerHTML = `<kbd>${st.chord}</kbd><span>${st.chordDesc}</span>`;
+  $('#stepText').innerHTML = st.text;
+  $('#stepRefs').innerHTML = '<span>SPEC:</span>' + st.refs.map(r => `<span class="chip" data-s="${r}">${r}</span>`).join('');
+  $('#stepRefs').querySelectorAll('.chip').forEach(ch => {
+    ch.onmouseenter = () => showSpec(ch.dataset.s);
+    ch.onclick = () => showSpec(ch.dataset.s);
+  });
+  if (st.refs.length) showSpec(st.refs[0]);
+
+  const atStart = curStep === 0;
+  const atEnd = curStep === sc.steps.length - 1;
+  $('#btnPrev').disabled = atStart;
+  $('#topPrev').disabled = atStart;
+  $('#btnNext').disabled = atEnd;
+  $('#topNext').disabled = atEnd;
+  renderScenarioList();
+}
+
+function startScenario(idx) {
+  stopPlay();
+  curScenario = idx;
+  curStep = 0;
+  clearDomAnims();
+  SCENARIOS[curScenario].steps[0].run();
+  updateStepUI();
+}
+
+function stepNext() {
+  const sc = SCENARIOS[curScenario];
+  if (curStep < sc.steps.length - 1) {
+    curStep++;
+    sc.steps[curStep].run();
+    updateStepUI();
+  } else {
+    stopPlay();
+  }
+}
+
+function stepPrev() {
+  if (curStep <= 0) return;
+  stopPlay();
+  const target = curStep - 1;
+  const savedSpeed = speed;
+  speed = 0;
+  clearDomAnims();
+  for (let i = 0; i <= target; i++) SCENARIOS[curScenario].steps[i].run();
+  curStep = target;
+  speed = savedSpeed;
+  syncView(true);
+  updateStepUI();
+}
+
+function stopPlay() {
+  if (playTimer) { clearInterval(playTimer); playTimer = null; }
+  $('#btnPlay').textContent = '▶ PLAY';
+  $('#topPlay').textContent = '▶ PLAY';
+  $('#btnPlay').classList.remove('playing');
+  $('#topPlay').classList.remove('playing');
+}
+
+function togglePlay() {
+  if (playTimer) { stopPlay(); return; }
+  const sc = SCENARIOS[curScenario];
+  if (curStep >= sc.steps.length - 1) startScenario(curScenario);
+  $('#btnPlay').textContent = '■ STOP';
+  $('#topPlay').textContent = '■ STOP';
+  $('#btnPlay').classList.add('playing');
+  $('#topPlay').classList.add('playing');
+  playTimer = setInterval(() => {
+    if (curStep < SCENARIOS[curScenario].steps.length - 1) stepNext();
+    else stopPlay();
+  }, 2400);
+}
+
+const PG_GROUPS = [
+  ['Navigation & Spawn', [
+    ['Open Callee Right', 'g d',       () => execAction('goto-def')],
+    ['Expand Callees',    'Space t e', () => execAction('expand-callees')],
+    ['Focus Col Left',    'Space t h', () => execAction('focus-left')],
+    ['Focus Col Right',   'Space t l', () => execAction('focus-right')],
+    ['Focus Card Up',     'Space t k', () => execAction('focus-up')],
+    ['Focus Card Down',   'Space t j', () => execAction('focus-down')],
+    ['Center Column',     'Space t c', () => execAction('center-col')],
+    ['Remove Card',       'Space t q', () => execAction('close-card')],
+  ]],
+  ['Column & Stack Geometry', [
+    ['Consume Left',      'Space t ,', () => execAction('consume')],
+    ['Expel Right',       'Space t .', () => execAction('expel')],
+    ['Cycle Width',       'Space t r', () => execAction('cycle-width')],
+    ['Symbol ↔ File',     'Space t f', () => execAction('toggle-scope')],
+    ['Collapse 26px',     'Space t z', () => execAction('toggle-collapse')],
+    ['Move Card Up',      'Space t K', () => execAction('move-card-up')],
+  ]],
+  ['Dependency Lenses & Overview', [
+    ['Lens: CALLS',       'Space t 1', () => execAction('lens', 'CALLS'),  'l-calls'],
+    ['Lens: TYPES',       'Space t 2', () => execAction('lens', 'TYPES'),  'l-types'],
+    ['Lens: IMPACT',      'Space t 3', () => execAction('lens', 'IMPACT'), 'l-impact'],
+    ['Lens: DIFF',        'Space t 4', () => execAction('lens', 'DIFF'),   'l-diff'],
+    ['Bird\'s-Eye Map',   'Space t o', () => execAction('toggle-overview')],
+    ['LSP ↔ TS+RG',       'Fallback',  () => execAction('toggle-fallback')],
+  ]],
+  ['Vertical Trails & Mode', [
+    ['Branch Trail',      'Space t b', () => execAction('branch-trail', 'xwl_display_init')],
+    ['Classic Tabs',      'Space t s', () => execAction('toggle-mode')],
+    ['Prev Trail',        'Space t [', () => execAction('prev-trail')],
+    ['Next Trail',        'Space t ]', () => execAction('next-trail')],
+  ]],
+];
+
+function buildPlayground() {
+  const host = $('#pgGroups');
+  PG_GROUPS.forEach(([title, items]) => {
+    const g = document.createElement('div');
+    g.className = 'agroup';
+    g.innerHTML = `<h4>${title}</h4><div class="grid"></div>`;
+    const grid = g.querySelector('.grid');
+    items.forEach(([label, key, fn, cls]) => {
+      const b = document.createElement('button');
+      b.className = 'act' + (cls ? ' ' + cls : '');
+      b.innerHTML = `<span>${label}</span><kbd>${key}</kbd>`;
+      b.onclick = () => { stopPlay(); fn(); };
+      grid.appendChild(b);
+    });
+    host.appendChild(g);
+  });
+}
+
+/* ── Viewport Scaling & 60 FPS Animation Loop ── */
+function fitScreen() {
+  const wrap = $('#screenWrap').getBoundingClientRect();
+  const f = Math.min((wrap.width - 24) / S.vp.w, (wrap.height - 24) / S.vp.h);
+  scaleF = Math.max(0.2, f);
+  const bez = $('#bezel');
+  bez.style.width = Math.round(S.vp.w * scaleF) + 'px';
+  bez.style.height = Math.round(S.vp.h * scaleF) + 'px';
+  const scr = $('#ideScreen');
+  scr.style.width = S.vp.w + 'px';
+  scr.style.height = S.vp.h + 'px';
+  scr.style.transform = `scale(${scaleF})`;
+}
+
+function tick(ts) {
+  if (tick.last == null) tick.last = ts;
+  const dt = Math.min(0.05, (ts - tick.last) / 1000);
+  tick.last = ts;
+  simTime += dt * (speed || 1);
+  const t = now();
+  const area = stripArea();
+  const H = area.h + 48;
+  const r = trailSpring.value(t);
+
+  for (const [, a] of cardAnims) {
+    const ti = S.trails.findIndex(x => x.id === a.trailId);
+    if (ti < 0) continue;
+    const cs = camSprings.get(a.trailId);
+    const camX = cs ? cs.value(t) : S.trails[ti].cam;
+    const vis = Math.abs(ti - r) < 1.15;
+    a.el.style.display = vis ? 'flex' : 'none';
+    if (!vis) continue;
+    a.el.style.left = (a.x.value(t) - camX) + 'px';
+    a.el.style.top  = (a.y.value(t) + (ti - r) * H) + 'px';
+    a.el.style.width  = a.w.value(t) + 'px';
+    a.el.style.height = a.h.value(t) + 'px';
+  }
+
+  renderEdges(t);
+  renderMinimap(t);
+  requestAnimationFrame(tick);
+}
+
+/* ── Event Listeners ── */
+$('#topPrev').onclick = stepPrev;
+$('#btnPrev').onclick = stepPrev;
+$('#topNext').onclick = stepNext;
+$('#btnNext').onclick = stepNext;
+$('#topPlay').onclick = togglePlay;
+$('#btnPlay').onclick = togglePlay;
+$('#btnRestart').onclick = () => startScenario(curScenario);
+$('#topReset').onclick = () => startScenario(curScenario);
+
+$('#btnModeToggle').onclick = () => execAction('toggle-mode');
+$('#btnOvToggle').onclick = () => execAction('toggle-overview');
+document.querySelectorAll('#lensBar .lens-pill').forEach(b => {
+  b.onclick = () => execAction('lens', b.dataset.l);
+});
+
+$('#segViewport').querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    $('#segViewport').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    S.vpKey = b.dataset.v;
+    S.vp = VIEWPORTS[S.vpKey];
+    S.trails.forEach(tr => { tr.cam = revealCamera(tr, tr.fc); });
+    fitScreen();
+    syncView(true);
+    emitEvent('Viewport', `Scaled IDE preview to ${S.vp.w}×${S.vp.h} — proportional column widths recomputed`);
+  };
+});
+
+$('#segSpeed').querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    $('#segSpeed').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    speed = parseFloat(b.dataset.v);
+  };
+});
+
+$('#tabsHead').querySelectorAll('button').forEach(b => {
+  b.onclick = () => {
+    $('#tabsHead').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + b.dataset.p));
+  };
+});
+
+$('#ovSearch').addEventListener('input', e => {
+  S.ovFilter = e.target.value;
+  const q = S.ovFilter.trim().toLowerCase();
+  if (q) {
+    const tr = activeTrail();
+    for (const c of tr.cols) {
+      const m = c.cards.find(k => SYMBOLS[k.symId].name.toLowerCase().includes(q));
+      if (m) { S.ovSelectedUid = m.uid; break; }
+    }
+  }
+  renderOverview();
+});
+
+$('#ovSearch').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && S.ovSelectedUid) {
+    e.preventDefault();
+    jumpFromOverview(S.ovSelectedUid);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    execAction('toggle-overview');
+  }
+});
+
+// Horizontal wheel pan inside the code strip viewport
+$('#stripView').addEventListener('wheel', e => {
+  if (S.mode !== 'strip' || S.overview) return;
+  const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : (e.shiftKey ? e.deltaY : 0);
+  if (!delta) return;
+  e.preventDefault();
+  const tr = activeTrail();
+  const maxCam = Math.max(0, stripTotalWidth(tr) - stripArea().w);
+  tr.cam = Math.max(0, Math.min(maxCam, tr.cam + delta));
+  syncView(false);
+}, { passive: false });
+
+document.addEventListener('keydown', e => {
+  if (document.activeElement === $('#ovSearch')) return;
+  if (e.key === 'ArrowRight') { e.preventDefault(); stepNext(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); stepPrev(); }
+  else if (e.key === 'Escape' && S.overview) { e.preventDefault(); execAction('toggle-overview'); }
+});
+
+window.addEventListener('resize', fitScreen);
+
+/* ── Boot ── */
+buildPlayground();
+fitScreen();
+startScenario(0);
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
