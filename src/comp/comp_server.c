@@ -700,10 +700,18 @@ comp_server_reload_config(CompServer *s)
     s->config = cfg;
     comp_fx_config_apply(s, s->config);
 
-    if (!cfg->xwayland_enabled && s->xwayland)
+    if (!cfg->xwayland_enabled && s->xwayland) {
         comp_xwayland_finish(s);
-    else if (cfg->xwayland_enabled && !s->xwayland)
+    } else if (cfg->xwayland_enabled && !s->xwayland) {
         comp_xwayland_init(s);
+        if (s->xwayland && s->socket && s->opts.session_mode && !s->opts.greeter_mode &&
+            !getenv("KAJO_COMP_NO_DBUS_ENV")) {
+            const char *const dbus_argv[] = {
+                "dbus-update-activation-environment", "--systemd", "DISPLAY", NULL,
+            };
+            comp_spawn(s, dbus_argv);
+        }
+    }
     comp_xwayland_update_workarea(s);
 
     comp_input_apply_config(s);

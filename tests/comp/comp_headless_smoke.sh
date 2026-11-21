@@ -535,4 +535,28 @@ else
     echo "not ok - client did not survive compositor shutdown"; fail=1
 fi
 
+# Lazy XWayland must export DISPLAY immediately to spawned clients (before any X11 client connects),
+# and unset DISPLAY when [xwayland] enabled = false.
+if command -v Xwayland >/dev/null 2>&1; then
+    XW_RC=0
+    env -u KAJO_COMP_NO_XWAYLAND -u DISPLAY \
+        timeout 30 "$KC" -q --exit-with-command -- sh -c '
+            case "$DISPLAY" in
+                :[0-9]*) exit 0 ;;
+                *) echo "expected DISPLAY=:<N>, got: [$DISPLAY]" >&2; exit 1 ;;
+            esac
+        ' || XW_RC=1
+    check "lazy XWayland exports DISPLAY to spawned clients" 0 $XW_RC
+
+    XW_OFF_CFG="$RT/xw-off"
+    mkdir -p "$XW_OFF_CFG/kajo"
+    printf '[xwayland]\nenabled = false\n' > "$XW_OFF_CFG/kajo/comp.toml"
+    XW_OFF_RC=0
+    env -u KAJO_COMP_NO_XWAYLAND -u DISPLAY XDG_CONFIG_HOME="$XW_OFF_CFG" \
+        timeout 30 "$KC" -q --exit-with-command -- sh -c '
+            test -z "$DISPLAY"
+        ' || XW_OFF_RC=1
+    check "xwayland.enabled = false leaves DISPLAY unset" 0 $XW_OFF_RC
+fi
+
 exit $fail

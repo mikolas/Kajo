@@ -50,10 +50,10 @@ src/
 │   │   ├── fx_registry.c           Slot vtable registry (SHADOW, GLASS, DIM, TRANSITION)
 │   │   ├── fx_shadow.c             2-layer analytical SDF drop shadows (contact + ambient)
 │   │   ├── fx_dim.c                Inactive-window tint overlay
-│   │   ├── fx_glass.c              3-pass Dual-Kawase frosted glass, xray background cache & blue-noise dither
+│   │   ├── fx_glass.c              7 optical glass materials (frosted, liquid, halation, fluted, acrylic, aero, dichroic), xray cache & blue-noise dither
 │   │   ├── fx_transition.c         Window open/close/resize snapshot transitions (18 presets, FX_IN_TEXTURE, H5)
 │   │   ├── fx_stub.c               No-op compilation stub when built without WLR_HAS_KFX
-│   │   └── shaders/                GLSL 450 fragment shaders (shadow, dim, blur_down, blur_up, glass, transition_single, transition_resize, fx_common.glsl) -> SPIR-V headers
+│   │   └── shaders/                GLSL 450 fragment shaders (shadow, dim, blur_down, blur_up, glass, glass_dual, transition_single, transition_resize, fx_common.glsl) -> SPIR-V headers
 │   └── core/                       Pure core: no wlroots/Vulkan/GLib, built with -Werror and the strict flag set
 │       ├── comp_schema_keys.h      Canonical schema key tables for comp.toml, outputs.toml, binds.toml & rules.toml
 │       ├── comp_diag.h/c           Collected config diagnostics ("binds.toml:12: unknown action ...")

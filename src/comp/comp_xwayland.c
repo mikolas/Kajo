@@ -299,6 +299,10 @@ comp_xwayland_init(CompServer *s)
         wlr_log(WLR_INFO, "XWayland not available; continuing Wayland-only");
         return;
     }
+    if (s->xwayland->display_name) {
+        setenv("DISPLAY", s->xwayland->display_name, 1);
+        wlr_log(WLR_INFO, "XWayland listening on DISPLAY=%s (lazy)", s->xwayland->display_name);
+    }
     void *xw_ctx = talloc_named_const(s, 0, "CompXWayland listeners");
     s->xwayland->data = xw_ctx;
     if (xw_ctx) {
@@ -316,5 +320,6 @@ comp_xwayland_finish(CompServer *s)
         wlr_xwayland_destroy(s->xwayland);
         s->xwayland = NULL;
         s->xwayland_last_dpi = 0;
+        unsetenv("DISPLAY");
     }
 }
