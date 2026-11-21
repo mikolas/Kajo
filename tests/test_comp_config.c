@@ -821,6 +821,7 @@ test_effects_and_shadow_rules(void)
         "\n"
         "[effects.glass]\n"
         "enabled = true\n"
+        "style = \"liquid\"\n"
         "passes = 2\n"
         "offset = 3.5\n"
         "saturation = 1.40\n"
@@ -828,6 +829,13 @@ test_effects_and_shadow_rules(void)
         "tint = \"#203040\"\n"
         "tint_alpha = 0.65\n"
         "max_recompute_hz = 60\n"
+        "refraction = 0.85\n"
+        "dispersion = 0.40\n"
+        "bevel_px = 18.0\n"
+        "specular = 0.90\n"
+        "grain = 0.50\n"
+        "flute_px = 16.0\n"
+        "flute_axis = \"horizontal\"\n"
         "\n"
         "[effects.shadow]\n"
         "enabled = true\n"
@@ -854,6 +862,7 @@ test_effects_and_shadow_rules(void)
         "shadow = true\n"
         "blur = true\n"
         "blur_popups = false\n"
+        "glass_style = \"dichroic\"\n"
         "\n"
         "[[rule]]\n"
         "app_id = ['^org\\.example\\.Flat$']\n"
@@ -872,7 +881,8 @@ test_effects_and_shadow_rules(void)
         "namespace = ['^kajo-panel$']\n"
         "shadow = false\n"
         "blur = true\n"
-        "xray = true\n", -1, NULL));
+        "xray = true\n"
+        "glass_style = \"halation\"\n", -1, NULL));
 
     const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
     if (!root)
@@ -888,6 +898,7 @@ test_effects_and_shadow_rules(void)
     g_assert_true(cfg->fx.enabled);
     g_assert_true(cfg->fx.dither);
     g_assert_true(cfg->fx.glass.enabled);
+    g_assert_cmpint(cfg->fx.glass.style, ==, COMP_FX_GLASS_LIQUID);
     g_assert_cmpint(cfg->fx.glass.passes, ==, 2);
     g_assert_cmpfloat_with_epsilon(cfg->fx.glass.offset, 3.5, 1e-6);
     g_assert_cmpfloat_with_epsilon(cfg->fx.glass.saturation, 1.40, 1e-6);
@@ -897,6 +908,13 @@ test_effects_and_shadow_rules(void)
     g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_rgba[2], (double)0x40 / 255.0, 1e-4);
     g_assert_cmpfloat_with_epsilon(cfg->fx.glass.tint_alpha, 0.65, 1e-6);
     g_assert_cmpint(cfg->fx.glass.max_recompute_hz, ==, 60);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.refraction, 0.85, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.dispersion, 0.40, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.bevel_px, 18.0, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.specular, 0.90, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.grain, 0.50, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->fx.glass.flute_px, 16.0, 1e-6);
+    g_assert_cmpint(cfg->fx.glass.flute_axis, ==, COMP_FX_FLUTE_HORIZONTAL);
     g_assert_true(cfg->fx.shadow.enabled);
     g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[0], (double)0x11 / 255.0, 1e-4);
     g_assert_cmpfloat_with_epsilon(cfg->fx.shadow.color_rgba[1], (double)0x22 / 255.0, 1e-4);
@@ -917,11 +935,13 @@ test_effects_and_shadow_rules(void)
     g_assert_true(wr.has_shadow && wr.shadow);
     g_assert_true(wr.has_blur && wr.blur);
     g_assert_true(wr.has_blur_popups && !wr.blur_popups);
+    g_assert_true(wr.has_glass_style && wr.glass_style == COMP_FX_GLASS_DICHROIC);
     memset(&wr, 0, sizeof(wr));
     comp_rules_match_window(cfg->rules, "org.example.Flat", "t", &wr);
     g_assert_true(wr.has_shadow && !wr.shadow);
     g_assert_true(wr.has_blur && !wr.blur);
     g_assert_true(wr.has_blur_popups && wr.blur_popups);
+    g_assert_false(wr.has_glass_style);
 
     CompLayerRuleResult lr = {0};
     comp_rules_match_layer(cfg->rules, "kajo-popup", &lr);
@@ -929,11 +949,13 @@ test_effects_and_shadow_rules(void)
     g_assert_true(lr.has_blur && lr.blur);
     g_assert_true(lr.has_blur_popups && lr.blur_popups);
     g_assert_true(lr.has_xray && !lr.xray);
+    g_assert_false(lr.has_glass_style);
     memset(&lr, 0, sizeof(lr));
     comp_rules_match_layer(cfg->rules, "kajo-panel", &lr);
     g_assert_true(lr.has_shadow && !lr.shadow);
     g_assert_true(lr.has_blur && lr.blur);
     g_assert_true(lr.has_xray && lr.xray);
+    g_assert_true(lr.has_glass_style && lr.glass_style == COMP_FX_GLASS_HALATION);
 
     comp_config_free(cfg);
     comp_diag_clear(&d);

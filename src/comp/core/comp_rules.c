@@ -196,12 +196,29 @@ static const char *const k_win_keys[] = {
     COMP_KEY_APP_ID, COMP_KEY_TITLE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_FLOATING,
     COMP_KEY_WIDTH, COMP_KEY_FOCUS, COMP_KEY_ANCHOR_CORNER, COMP_KEY_ANCHOR_X,
     COMP_KEY_ANCHOR_Y, COMP_KEY_SCROLL_FACTOR, COMP_KEY_VRR, COMP_KEY_SHADOW,
-    COMP_KEY_BLUR, COMP_KEY_BLUR_POPUPS,
+    COMP_KEY_BLUR, COMP_KEY_BLUR_POPUPS, COMP_KEY_GLASS_STYLE,
 };
 static const char *const k_layer_keys[] = {
     COMP_KEY_NAMESPACE, COMP_KEY_CASE_SENSITIVE, COMP_KEY_OPACITY, COMP_KEY_POPUP_OPACITY,
-    COMP_KEY_SHADOW, COMP_KEY_BLUR, COMP_KEY_XRAY, COMP_KEY_BLUR_POPUPS,
+    COMP_KEY_SHADOW, COMP_KEY_BLUR, COMP_KEY_XRAY, COMP_KEY_BLUR_POPUPS, COMP_KEY_GLASS_STYLE,
 };
+
+static void
+parse_glass_style(toml_datum_t t, bool *has_out, CompFxGlassStyle *val_out,
+                  const char *src, CompDiagList *diag)
+{
+    toml_datum_t v = toml_get(t, COMP_KEY_GLASS_STYLE);
+    if (v.type == TOML_UNKNOWN)
+        return;
+    CompFxGlassStyle st = COMP_FX_GLASS_FROSTED;
+    if (v.type == TOML_STRING && comp_fx_glass_style_from_str(v.u.s, &st)) {
+        *has_out = true;
+        *val_out = st;
+    } else {
+        comp_diag_add(diag, src, v.lineno,
+                      "'glass_style' must be frosted|liquid|halation|fluted|acrylic|aero|dichroic; ignored");
+    }
+}
 
 static bool
 parse_anchor(toml_datum_t t, CompWindowRuleResult *set, const char *src, CompDiagList *diag)
@@ -274,6 +291,7 @@ parse_window_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *d
     (void)get_bool(t, COMP_KEY_SHADOW, &w.set.has_shadow, &w.set.shadow, src, diag);
     (void)get_bool(t, COMP_KEY_BLUR, &w.set.has_blur, &w.set.blur, src, diag);
     (void)get_bool(t, COMP_KEY_BLUR_POPUPS, &w.set.has_blur_popups, &w.set.blur_popups, src, diag);
+    parse_glass_style(t, &w.set.has_glass_style, &w.set.glass_style, src, diag);
     (void)get_number(t, COMP_KEY_WIDTH, 0.05, 1.0, &w.set.has_width, &w.set.width, src, diag);
     (void)get_number(t, COMP_KEY_SCROLL_FACTOR, 0.01, 10.0, &w.set.has_scroll_factor, &w.set.scroll_factor, src, diag);
     (void)parse_anchor(t, &w.set, src, diag);
@@ -316,6 +334,7 @@ parse_layer_rule(CompRules *r, toml_datum_t t, const char *src, CompDiagList *di
     (void)get_bool(t, COMP_KEY_BLUR, &l.set.has_blur, &l.set.blur, src, diag);
     (void)get_bool(t, COMP_KEY_XRAY, &l.set.has_xray, &l.set.xray, src, diag);
     (void)get_bool(t, COMP_KEY_BLUR_POPUPS, &l.set.has_blur_popups, &l.set.blur_popups, src, diag);
+    parse_glass_style(t, &l.set.has_glass_style, &l.set.glass_style, src, diag);
 
     LayerRule *p = realloc(r->layer, (r->nlayer + 1) * sizeof(LayerRule));
     if (!p) {
@@ -470,6 +489,7 @@ comp_rules_match_window(const CompRules *r, const char *app_id, const char *titl
         if (s->has_shadow)        { out->has_shadow = true; out->shadow = s->shadow; }
         if (s->has_blur)          { out->has_blur = true; out->blur = s->blur; }
         if (s->has_blur_popups)   { out->has_blur_popups = true; out->blur_popups = s->blur_popups; }
+        if (s->has_glass_style)   { out->has_glass_style = true; out->glass_style = s->glass_style; }
     }
 }
 
@@ -487,5 +507,6 @@ comp_rules_match_layer(const CompRules *r, const char *ns, CompLayerRuleResult *
         if (l->set.has_blur)          { out->has_blur = true; out->blur = l->set.blur; }
         if (l->set.has_xray)          { out->has_xray = true; out->xray = l->set.xray; }
         if (l->set.has_blur_popups)   { out->has_blur_popups = true; out->blur_popups = l->set.blur_popups; }
+        if (l->set.has_glass_style)   { out->has_glass_style = true; out->glass_style = l->set.glass_style; }
     }
 }

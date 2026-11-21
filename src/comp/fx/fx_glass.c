@@ -6,6 +6,7 @@
 #include "blur_down_frag.h"
 #include "blur_up_frag.h"
 #include "glass_frag.h"
+#include "glass_dual_frag.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -27,8 +28,41 @@ glass_output_destroy(CompFxGlassOutput *go)
         wlr_kfx_target_release(go->target);
         go->target = NULL;
     }
+    if (go->aux_target) {
+        wlr_kfx_target_release(go->aux_target);
+        go->aux_target = NULL;
+    }
     wl_list_remove(&go->link);
     free(go);
+}
+
+static CompFxGlassStyle
+glass_resolve_style(const CompFxSystem *sys, const CompFxSurface *fx)
+{
+    if (fx && fx->state.has_rule_glass_style)
+        return fx->state.rule_glass_style;
+    return sys ? sys->cfg.glass.style : COMP_FX_GLASS_FROSTED;
+}
+
+static bool
+ensure_pooled_target(struct wlr_renderer *r, struct wlr_kfx_target **slot,
+                     int req_w, int req_h)
+{
+    if (*slot) {
+        int cur_w = 0, cur_h = 0;
+        wlr_kfx_target_get_size(*slot, &cur_w, &cur_h);
+        if (cur_w < req_w || cur_h < req_h ||
+            (cur_w > req_w + 256 && cur_h > req_h + 256)) {
+            wlr_kfx_target_release(*slot);
+            *slot = NULL;
+        }
+    }
+    if (!*slot) {
+        *slot = wlr_kfx_target_acquire(r, req_w, req_h);
+        if (!*slot)
+            return false;
+    }
+    return true;
 }
 
 static void
@@ -140,6 +174,19 @@ glass_init_shaders(CompFxSystem *sys)
         }
     }
 
+    if (!sys->glass_dual_shader) {
+        struct wlr_kfx_shader_layout dual_layout = {
+            .n_inputs    = 2,
+            .params_size = sizeof(CompFxGlassParams),
+        };
+        sys->glass_dual_shader = wlr_kfx_shader_create(
+            sys->server->renderer, glass_dual_frag_spv, sizeof(glass_dual_frag_spv), &dual_layout);
+        if (!sys->glass_dual_shader) {
+            wlr_log(WLR_ERROR, "kfx: failed to create dual-input glass composite fragment shader");
+            return false;
+        }
+    }
+
     return true;
 }
 
@@ -159,6 +206,10 @@ glass_destroy_shaders(CompFxSystem *sys)
     if (sys->glass_shader) {
         wlr_kfx_shader_destroy(sys->glass_shader);
         sys->glass_shader = NULL;
+    }
+    if (sys->glass_dual_shader) {
+        wlr_kfx_shader_destroy(sys->glass_dual_shader);
+        sys->glass_dual_shader = NULL;
     }
 }
 
@@ -221,7 +272,8 @@ recompute_glass_target(CompFxSystem *sys,
                        CompFxGlassOutput *go,
                        struct CompOutput *output,
                        const struct wlr_box *sample_logical_box,
-                       bool is_xray)
+                       bool is_xray,
+                       CompFxGlassStyle style)
 {
     struct wlr_scene_output *so = output->scene_output;
     struct wlr_output *wo = output->wlr_output;
@@ -258,26 +310,31 @@ recompute_glass_target(CompFxSystem *sys,
     if (buf_box.width <= 0 || buf_box.height <= 0)
         return false;
 
-    int req_w = div_ceil_i32(buf_box.x + buf_box.width, GLASS_DOWNSCALE) -
-                div_floor_i32(buf_box.x, GLASS_DOWNSCALE) + 2;
-    int req_h = div_ceil_i32(buf_box.y + buf_box.height, GLASS_DOWNSCALE) -
-                div_floor_i32(buf_box.y, GLASS_DOWNSCALE) + 2;
+    bool dual = comp_fx_glass_style_is_dual_input(style);
+    int ds = GLASS_DOWNSCALE;
+    if (style == COMP_FX_GLASS_LIQUID &&
+        buf_box.width <= 1920 && buf_box.height <= 1080) {
+        ds = 1;
+    } else if (style == COMP_FX_GLASS_FLUTED && !(sys->cfg.glass.offset > 0.0)) {
+        ds = 1;
+    }
+
+    int req_w = div_ceil_i32(buf_box.x + buf_box.width, ds) -
+                div_floor_i32(buf_box.x, ds) + 2;
+    int req_h = div_ceil_i32(buf_box.y + buf_box.height, ds) -
+                div_floor_i32(buf_box.y, ds) + 2;
     if (req_w < 1) req_w = 1;
     if (req_h < 1) req_h = 1;
 
-    if (go->target) {
-        int cur_w = 0, cur_h = 0;
-        wlr_kfx_target_get_size(go->target, &cur_w, &cur_h);
-        if (cur_w < req_w || cur_h < req_h ||
-            (cur_w > req_w + 256 && cur_h > req_h + 256)) {
-            wlr_kfx_target_release(go->target);
-            go->target = NULL;
-        }
-    }
-    if (!go->target) {
-        go->target = wlr_kfx_target_acquire(r, req_w, req_h);
-        if (!go->target)
+    if (!ensure_pooled_target(r, &go->target, req_w, req_h))
+        return false;
+
+    if (dual) {
+        if (!ensure_pooled_target(r, &go->aux_target, req_w, req_h))
             return false;
+    } else if (go->aux_target) {
+        wlr_kfx_target_release(go->aux_target);
+        go->aux_target = NULL;
     }
 
     struct wlr_scene_node *boundary = NULL;
@@ -291,24 +348,35 @@ recompute_glass_target(CompFxSystem *sys,
     if (!boundary)
         return false;
 
+    /* Liquid captures sharp backdrop into aux_target; all others capture into target. */
+    struct wlr_kfx_target *capture_dst = (style == COMP_FX_GLASS_LIQUID) ? go->aux_target : go->target;
     struct wlr_box t0_src = {0};
     if (!wlr_kfx_scene_output_render_below(so, boundary, sample_logical_box,
-                                           go->target, GLASS_DOWNSCALE, &t0_src)) {
+                                           capture_dst, ds, &t0_src)) {
         return false;
     }
-    go->t0_src_box = t0_src;
+    go->t0_src_box       = t0_src;
+    go->aux_src_box      = t0_src;
+    go->target_downscale = ds;
+    go->aux_downscale    = ds;
 
     int32_t passes = sys->cfg.glass.passes;
     if (passes < 1) passes = 1;
     if (passes > COMP_FX_GLASS_MAX_PASSES) passes = COMP_FX_GLASS_MAX_PASSES;
     int chain_steps = (passes > 1) ? (passes - 1) : 1;
+    if (style == COMP_FX_GLASS_HALATION && chain_steps < 3)
+        chain_steps = 3;
+    if (chain_steps >= COMP_FX_GLASS_MAX_PASSES)
+        chain_steps = COMP_FX_GLASS_MAX_PASSES - 1;
 
-    if (sys->cfg.glass.offset > 0.0 && t0_src.width > 0 && t0_src.height > 0) {
+    bool run_blur = (sys->cfg.glass.offset > 0.0 || dual) &&
+                    t0_src.width > 0 && t0_src.height > 0;
+    if (run_blur) {
         struct wlr_kfx_target *levels[COMP_FX_GLASS_MAX_PASSES] = {0};
         int lw[COMP_FX_GLASS_MAX_PASSES] = {0};
         int lh[COMP_FX_GLASS_MAX_PASSES] = {0};
 
-        levels[0] = go->target;
+        levels[0] = capture_dst;
         lw[0]     = t0_src.width;
         lh[0]     = t0_src.height;
 
@@ -326,9 +394,10 @@ recompute_glass_target(CompFxSystem *sys,
         }
 
         if (ok) {
-            struct wlr_kfx_target_draw_step steps[2 * COMP_FX_GLASS_MAX_PASSES];
-            CompFxBlurParams blur_params[2 * COMP_FX_GLASS_MAX_PASSES];
+            struct wlr_kfx_target_draw_step steps[2 * COMP_FX_GLASS_MAX_PASSES + 2];
+            CompFxBlurParams blur_params[2 * COMP_FX_GLASS_MAX_PASSES + 2];
             size_t n_steps = 0;
+            double eff_off = sys->cfg.glass.offset > 0.0 ? sys->cfg.glass.offset : 1.0;
 
             for (int i = 0; i < chain_steps; i++) {
                 int tex_w = 0, tex_h = 0;
@@ -336,7 +405,7 @@ recompute_glass_target(CompFxSystem *sys,
                 comp_fx_blur_pack(
                     (CompFxRect){ 0, 0, lw[i + 1], lh[i + 1] },
                     (CompFxRect){ 0, 0, lw[i], lh[i] },
-                    tex_w, tex_h, sys->cfg.glass.offset, &blur_params[n_steps]);
+                    tex_w, tex_h, eff_off, &blur_params[n_steps]);
                 steps[n_steps] = (struct wlr_kfx_target_draw_step){
                     .dst  = levels[i + 1],
                     .draw = {
@@ -352,15 +421,45 @@ recompute_glass_target(CompFxSystem *sys,
                 n_steps++;
             }
 
+            if (style == COMP_FX_GLASS_HALATION) {
+                /* Tight 1-level upsample into go->target before wide upsample overwrites levels[1]. */
+                int tw1 = 0, th1 = 0;
+                wlr_kfx_target_get_size(levels[1], &tw1, &th1);
+                comp_fx_blur_pack(
+                    (CompFxRect){ 0, 0, lw[0], lh[0] },
+                    (CompFxRect){ 0, 0, lw[1], lh[1] },
+                    tw1, th1, eff_off * 0.75, &blur_params[n_steps]);
+                steps[n_steps] = (struct wlr_kfx_target_draw_step){
+                    .dst  = go->target,
+                    .draw = {
+                        .shader     = sys->blur_up_shader,
+                        .dst_box    = { 0, 0, lw[0], lh[0] },
+                        .clip       = NULL,
+                        .inputs     = { levels[1], NULL, NULL, NULL },
+                        .params     = &blur_params[n_steps],
+                        .params_len = sizeof(CompFxBlurParams),
+                        .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+                    },
+                };
+                n_steps++;
+            }
+
+            /* Final upsample destination:
+             * - liquid:   go->target (keeps go->aux_target sharp!)
+             * - halation: go->aux_target (wide scatter, keeps go->target tight!)
+             * - others:   go->target (in-place) */
+            struct wlr_kfx_target *final_up_dst =
+                (style == COMP_FX_GLASS_HALATION) ? go->aux_target : go->target;
+
             for (int i = chain_steps - 1; i >= 0; i--) {
                 int tex_w = 0, tex_h = 0;
                 wlr_kfx_target_get_size(levels[i + 1], &tex_w, &tex_h);
                 comp_fx_blur_pack(
                     (CompFxRect){ 0, 0, lw[i], lh[i] },
                     (CompFxRect){ 0, 0, lw[i + 1], lh[i + 1] },
-                    tex_w, tex_h, sys->cfg.glass.offset, &blur_params[n_steps]);
+                    tex_w, tex_h, eff_off, &blur_params[n_steps]);
                 steps[n_steps] = (struct wlr_kfx_target_draw_step){
-                    .dst  = levels[i],
+                    .dst  = (i == 0) ? final_up_dst : levels[i],
                     .draw = {
                         .shader     = sys->blur_up_shader,
                         .dst_box    = { 0, 0, lw[i], lh[i] },
@@ -385,6 +484,7 @@ recompute_glass_target(CompFxSystem *sys,
             return false;
     }
 
+    go->built_style = style;
     fx->glass_recomputes++;
     return true;
 }
@@ -413,9 +513,10 @@ prepare_glass_surface_on_output(CompFxSystem *sys,
     if (!wlr_box_intersection(&inter, &glass_box, out_logical))
         return;
 
-    CompFxRect sample_r = comp_fx_glass_sample_box(
+    CompFxGlassStyle style = glass_resolve_style(sys, fx);
+    CompFxRect sample_r = comp_fx_glass_sample_box_for_style(
         (CompFxRect){ glass_box.x, glass_box.y, glass_box.width, glass_box.height },
-        &sys->cfg.glass);
+        &sys->cfg.glass, style);
     struct wlr_box sample_box = {
         .x      = sample_r.x,
         .y      = sample_r.y,
@@ -428,6 +529,7 @@ prepare_glass_surface_on_output(CompFxSystem *sys,
         return;
 
     bool geom_changed = !go->valid ||
+                        go->built_style != style ||
                         go->last_logical_box.x != glass_box.x ||
                         go->last_logical_box.y != glass_box.y ||
                         go->last_logical_box.width != glass_box.width ||
@@ -456,7 +558,7 @@ prepare_glass_surface_on_output(CompFxSystem *sys,
     }
 
     if (need_recompute) {
-        if (recompute_glass_target(sys, fx, go, output, &sample_box, is_xray)) {
+        if (recompute_glass_target(sys, fx, go, output, &sample_box, is_xray, style)) {
             go->valid            = true;
             go->dirty_pending    = false;
             go->last_logical_box = glass_box;
@@ -575,12 +677,51 @@ glass_draw(CompFxSystem *sys, CompFxSurface *fx,
         go->t0_src_box.width <= 0 || go->t0_src_box.height <= 0)
         return;
 
-    int tex_w = 0, tex_h = 0;
-    wlr_kfx_target_get_size(go->target, &tex_w, &tex_h);
+    CompFxGlassStyle style = go->built_style;
+    bool dual = comp_fx_glass_style_is_dual_input(style);
+    if (dual && (!sys->glass_dual_shader || !go->aux_target)) {
+        dual  = false;
+        style = COMP_FX_GLASS_FROSTED;
+    }
+
+    struct wlr_kfx_target *in0 = go->target;
+    struct wlr_kfx_target *in1 = NULL;
+    struct wlr_box src0 = go->t0_src_box;
+    struct wlr_box src1 = {0};
+    int ds0 = go->target_downscale > 0 ? go->target_downscale : GLASS_DOWNSCALE;
+    int ds1 = go->aux_downscale > 0 ? go->aux_downscale : GLASS_DOWNSCALE;
+
+    if (dual) {
+        if (style == COMP_FX_GLASS_LIQUID) {
+            /* u_tex0 = sharp aux_target, u_tex1 = blurred target. */
+            in0  = go->aux_target;
+            in1  = go->target;
+            src0 = go->aux_src_box;
+            src1 = go->t0_src_box;
+            ds0  = go->aux_downscale > 0 ? go->aux_downscale : GLASS_DOWNSCALE;
+            ds1  = go->target_downscale > 0 ? go->target_downscale : GLASS_DOWNSCALE;
+        } else {
+            /* Halation: u_tex0 = tight target, u_tex1 = wide aux_target. */
+            in0  = go->target;
+            in1  = go->aux_target;
+            src0 = go->t0_src_box;
+            src1 = go->aux_src_box;
+        }
+    }
+
+    int tex0_w = 0, tex0_h = 0;
+    wlr_kfx_target_get_size(in0, &tex0_w, &tex0_h);
+    int tex1_w = 0, tex1_h = 0;
+    if (in1)
+        wlr_kfx_target_get_size(in1, &tex1_w, &tex1_h);
 
     float scale = 1.0f;
-    if (ctx->output && ctx->output->output && ctx->output->output->scale > 0.0f)
-        scale = ctx->output->output->scale;
+    int transform = 0;
+    if (ctx->output && ctx->output->output) {
+        if (ctx->output->output->scale > 0.0f)
+            scale = ctx->output->output->scale;
+        transform = (int)ctx->output->output->transform;
+    }
 
     CompFxRect pass_dst = {
         .x      = ctx->dst_box.x,
@@ -597,29 +738,22 @@ glass_draw(CompFxSystem *sys, CompFxSurface *fx,
         eff_scale      = scale;
     }
 
-    CompFxRect t0_src_rect = {
-        .x      = go->t0_src_box.x,
-        .y      = go->t0_src_box.y,
-        .width  = go->t0_src_box.width,
-        .height = go->t0_src_box.height,
-    };
+    CompFxRect t0_src_rect = { src0.x, src0.y, src0.width, src0.height };
+    CompFxRect t1_src_rect = { src1.x, src1.y, src1.width, src1.height };
 
     CompFxGlassParams params;
-    comp_fx_glass_pack(&sys->cfg.glass, full_glass_buf, t0_src_rect,
-                       tex_w, tex_h, GLASS_DOWNSCALE, 1.0f, eff_scale, &params);
-    params.common.dst_origin[0] = (float)pass_dst.x;
-    params.common.dst_origin[1] = (float)pass_dst.y;
-    params.common.dst_size[0]   = (float)(pass_dst.width  > 0 ? pass_dst.width  : 1);
-    params.common.dst_size[1]   = (float)(pass_dst.height > 0 ? pass_dst.height : 1);
-    params.common.scale         = eff_scale;
+    comp_fx_glass_pack_ex(&sys->cfg.glass, style, full_glass_buf, pass_dst,
+                          t0_src_rect, tex0_w, tex0_h, ds0,
+                          t1_src_rect, tex1_w, tex1_h, ds1,
+                          1.0f, eff_scale, transform, &params);
     if (ctx->output && ctx->output->output)
         params.common.hdr_headroom = wlr_kfx_output_get_hdr_headroom(ctx->output->output);
 
     struct wlr_kfx_draw_options opts = {
-        .shader     = sys->glass_shader,
+        .shader     = dual ? sys->glass_dual_shader : sys->glass_shader,
         .dst_box    = ctx->dst_box,
         .clip       = ctx->clip,
-        .inputs     = { go->target, NULL, NULL, NULL },
+        .inputs     = { in0, in1, NULL, NULL },
         .params     = &params,
         .params_len = sizeof(params),
         .blend_mode = WLR_RENDER_BLEND_MODE_PREMULTIPLIED,

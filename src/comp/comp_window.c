@@ -56,8 +56,10 @@ typedef struct {
     bool           floating;
     bool           has_rule_shadow;
     bool           rule_shadow;
-    bool           has_rule_blur;
-    bool           rule_blur;
+    bool             has_rule_blur;
+    bool             rule_blur;
+    bool             has_rule_glass_style;
+    CompFxGlassStyle rule_glass_style;
     bool           mapped;
     size_t         tab_count;
     size_t         tab_index;
@@ -113,6 +115,8 @@ typedef struct CompWindow {
     bool                                    rule_blur;
     bool                                    has_rule_blur_popups;
     bool                                    rule_blur_popups;
+    bool                                    has_rule_glass_style;
+    CompFxGlassStyle                        rule_glass_style;
     double                                  scroll_factor;
     bool                                    maximized_to_edges;
 
@@ -246,8 +250,10 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
         .floating        = g->floating,
         .has_rule_shadow = w->has_rule_shadow,
         .rule_shadow     = w->rule_shadow,
-        .has_rule_blur   = w->has_rule_blur,
-        .rule_blur       = w->rule_blur,
+        .has_rule_blur        = w->has_rule_blur,
+        .rule_blur            = w->rule_blur,
+        .has_rule_glass_style = w->has_rule_glass_style,
+        .rule_glass_style     = w->rule_glass_style,
         .mapped          = w->mapped,
         .tab_count       = g->tab_count,
         .tab_index       = g->tab_index,
@@ -383,8 +389,10 @@ update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
             .dim_above       = w->xdg_tree ? &w->xdg_tree->node : NULL,
             .has_rule_shadow = w->has_rule_shadow,
             .rule_shadow     = w->rule_shadow,
-            .has_rule_blur   = w->has_rule_blur,
-            .rule_blur       = w->rule_blur,
+            .has_rule_blur        = w->has_rule_blur,
+            .rule_blur            = w->rule_blur,
+            .has_rule_glass_style = w->has_rule_glass_style,
+            .rule_glass_style     = w->rule_glass_style,
             .is_floating     = g->floating,
             .is_fullscreen   = fullscreen,
             .is_focused      = focused,
@@ -1611,6 +1619,8 @@ reapply_dynamic_rules_for_window(CompWindow *w)
     w->rule_blur            = rr.blur;
     w->has_rule_blur_popups = rr.has_blur_popups;
     w->rule_blur_popups     = rr.blur_popups;
+    w->has_rule_glass_style = rr.has_glass_style;
+    w->rule_glass_style     = rr.glass_style;
 
     /* Spec §5.2.3 & §3.3 O3: if not manually floated/tiled since map and a newly matching
      * rule, parent relationship, or modal xdg_dialog state requires floating, promote to
@@ -1706,6 +1716,8 @@ handle_toplevel_map(void *owner, void *data)
     w->rule_blur            = rr.blur;
     w->has_rule_blur_popups = rr.has_blur_popups;
     w->rule_blur_popups     = rr.blur_popups;
+    w->has_rule_glass_style = rr.has_glass_style;
+    w->rule_glass_style     = rr.glass_style;
 
     CompRect work = {0};
     comp_server_working_area(s, &work);

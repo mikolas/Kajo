@@ -6,6 +6,8 @@
 #ifndef KAJO_COMP_FX_H
 #define KAJO_COMP_FX_H
 
+#include "../core/comp_fx_core.h"
+
 #include <stdbool.h>
 #include <stdint.h>
 #include <wlr/util/box.h>
@@ -38,6 +40,8 @@ typedef struct {
     bool                   rule_blur;
     bool                   has_rule_xray;
     bool                   rule_xray;
+    bool                   has_rule_glass_style;
+    CompFxGlassStyle       rule_glass_style;
     bool                   is_floating;
     bool                   is_fullscreen;
     bool                   is_focused;

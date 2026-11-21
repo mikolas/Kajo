@@ -932,6 +932,7 @@ if comp_have_kfx == 'true'
     ['blur_down.frag', 'blur_down_frag.h', 'blur_down_frag_spv'],
     ['blur_up.frag', 'blur_up_frag.h', 'blur_up_frag_spv'],
     ['glass.frag', 'glass_frag.h', 'glass_frag_spv'],
+    ['glass_dual.frag', 'glass_dual_frag.h', 'glass_dual_frag_spv'],
     ['transition_single.frag', 'transition_single_frag.h', 'transition_single_frag_spv'],
     ['transition_resize.frag', 'transition_resize_frag.h', 'transition_resize_frag_spv'],
   ]

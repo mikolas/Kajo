@@ -13,7 +13,7 @@ _Static_assert(sizeof(CompFxCommonParams) == 32, "CompFxCommonParams must be 32 
 _Static_assert(sizeof(CompFxShadowParams) == 128, "CompFxShadowParams must be 128 bytes (std140)");
 _Static_assert(sizeof(CompFxDimParams) == 64, "CompFxDimParams must be 64 bytes (std140)");
 _Static_assert(sizeof(CompFxBlurParams) == 80, "CompFxBlurParams must be 80 bytes (std140)");
-_Static_assert(sizeof(CompFxGlassParams) == 96, "CompFxGlassParams must be 96 bytes (std140)");
+_Static_assert(sizeof(CompFxGlassParams) == 192, "CompFxGlassParams must be 192 bytes (std140)");
 _Static_assert(offsetof(CompFxCommonParams, dst_origin) == 0, "dst_origin offset");
 _Static_assert(offsetof(CompFxCommonParams, dst_size) == 8, "dst_size offset");
 _Static_assert(offsetof(CompFxCommonParams, opacity) == 16, "opacity offset");
@@ -510,6 +510,64 @@ test_m5_transitions_and_shadow_strength(void)
     comp_config_free(cc);
 }
 
+static void
+test_glass_optical_styles_core(void)
+{
+    g_assert_cmpuint(sizeof(CompFxGlassParams), ==, 192);
+    g_assert_cmpuint(sizeof(CompFxGlassParams), <=, 256);
+
+    const char *const names[] = {
+        "frosted", "liquid", "halation", "fluted", "acrylic", "aero", "dichroic"
+    };
+    for (size_t i = 0; i < G_N_ELEMENTS(names); i++) {
+        CompFxGlassStyle st = COMP_FX_GLASS_FROSTED;
+        g_assert_true(comp_fx_glass_style_from_str(names[i], &st));
+        g_assert_cmpuint((unsigned)st, ==, (unsigned)i);
+        g_assert_cmpstr(comp_fx_glass_style_to_str(st), ==, names[i]);
+    }
+    CompFxGlassStyle bad = COMP_FX_GLASS_FROSTED;
+    g_assert_false(comp_fx_glass_style_from_str("nonexistent", &bad));
+    g_assert_true(comp_fx_glass_style_is_dual_input(COMP_FX_GLASS_LIQUID));
+    g_assert_true(comp_fx_glass_style_is_dual_input(COMP_FX_GLASS_HALATION));
+    g_assert_false(comp_fx_glass_style_is_dual_input(COMP_FX_GLASS_FROSTED));
+    g_assert_false(comp_fx_glass_style_is_dual_input(COMP_FX_GLASS_FLUTED));
+
+    CompFxFluteAxis ax = COMP_FX_FLUTE_VERTICAL;
+    g_assert_true(comp_fx_flute_axis_from_str("horizontal", &ax));
+    g_assert_cmpint(ax, ==, COMP_FX_FLUTE_HORIZONTAL);
+    g_assert_cmpstr(comp_fx_flute_axis_to_str(ax), ==, "horizontal");
+    g_assert_false(comp_fx_flute_axis_from_str("diagonal", &ax));
+
+    CompFxConfig cfg;
+    comp_fx_config_defaults(&cfg);
+    int32_t r_frosted = comp_fx_glass_sample_reach_for_style(&cfg.glass, COMP_FX_GLASS_FROSTED);
+    int32_t r_liquid  = comp_fx_glass_sample_reach_for_style(&cfg.glass, COMP_FX_GLASS_LIQUID);
+    int32_t r_hal     = comp_fx_glass_sample_reach_for_style(&cfg.glass, COMP_FX_GLASS_HALATION);
+    int32_t r_fluted  = comp_fx_glass_sample_reach_for_style(&cfg.glass, COMP_FX_GLASS_FLUTED);
+    int32_t r_acrylic = comp_fx_glass_sample_reach_for_style(&cfg.glass, COMP_FX_GLASS_ACRYLIC);
+    g_assert_cmpint(r_frosted, ==, 16);
+    g_assert_cmpint(r_liquid, >, r_frosted);
+    g_assert_cmpint(r_hal, >=, 32);
+    g_assert_cmpint(r_fluted, >, r_frosted);
+    g_assert_cmpint(r_acrylic, >, r_frosted);
+
+    /* Pack dual-input params with clipped pass_dst and rotated output transform (90 deg). */
+    CompFxGlassParams gp;
+    comp_fx_glass_pack_ex(&cfg.glass, COMP_FX_GLASS_LIQUID,
+                          (CompFxRect){ 100, 50, 400, 200 },
+                          (CompFxRect){ 120, 50, 380, 200 },
+                          (CompFxRect){ 40, 20, 440, 240 }, 512, 256, 1,
+                          (CompFxRect){ 20, 10, 220, 120 }, 256, 128, 2,
+                          1.0f, 2.0f, 1 /* 90 deg */, &gp);
+    g_assert_cmpuint(gp.style, ==, COMP_FX_GLASS_LIQUID);
+    g_assert_cmpfloat_with_epsilon(gp.surface_size[0], 200.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(gp.surface_size[1], 100.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(gp.surface_offset[0], 10.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(gp.surface_offset[1], 0.0f, 1e-5);
+    g_assert_cmpfloat_with_epsilon(gp.inv_tex_size[0], 1.0f / 512.0f, 1e-6);
+    g_assert_cmpfloat_with_epsilon(gp.aux_inv_tex_size[0], 1.0f / 256.0f, 1e-6);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -520,5 +578,6 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/fx-core/transforms-and-packing", test_transforms_and_packing);
     g_test_add_func("/comp/fx-core/m4-color-filters-and-bt2390", test_m4_color_filters_and_bt2390);
     g_test_add_func("/comp/fx-core/m5-transitions-and-shadow-strength", test_m5_transitions_and_shadow_strength);
+    g_test_add_func("/comp/fx-core/glass-optical-styles", test_glass_optical_styles_core);
     return g_test_run();
 }

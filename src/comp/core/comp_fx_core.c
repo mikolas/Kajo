@@ -75,6 +75,7 @@ comp_fx_config_defaults(CompFxConfig *cfg)
     cfg->dim.duration_ms   = 150;
 
     cfg->glass.enabled          = true;
+    cfg->glass.style            = COMP_FX_GLASS_FROSTED;
     cfg->glass.passes           = 3;
     cfg->glass.offset           = 2.0;
     cfg->glass.saturation       = 1.15;
@@ -85,6 +86,13 @@ comp_fx_config_defaults(CompFxConfig *cfg)
     cfg->glass.tint_rgba[3]     = 1.0f;
     cfg->glass.tint_alpha       = 0.35;
     cfg->glass.max_recompute_hz = 0;
+    cfg->glass.refraction       = 0.45;
+    cfg->glass.dispersion       = 0.25;
+    cfg->glass.bevel_px         = 14.0;
+    cfg->glass.specular         = 0.55;
+    cfg->glass.grain            = 0.35;
+    cfg->glass.flute_px         = 14.0;
+    cfg->glass.flute_axis       = COMP_FX_FLUTE_VERTICAL;
 
     cfg->color_filter            = COMP_FX_FILTER_NONE;
     cfg->color_filter_strength   = 1.0;
@@ -397,32 +405,173 @@ comp_fx_shadow_anchor_box(CompFxRect outer_box, const CompFxShadowConfig *cfg)
     };
 }
 
+bool
+comp_fx_glass_style_from_str(const char *s, CompFxGlassStyle *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "frosted") || ascii_ieq(s, "default")) {
+        *out = COMP_FX_GLASS_FROSTED;
+        return true;
+    }
+    if (ascii_ieq(s, "liquid")) {
+        *out = COMP_FX_GLASS_LIQUID;
+        return true;
+    }
+    if (ascii_ieq(s, "halation")) {
+        *out = COMP_FX_GLASS_HALATION;
+        return true;
+    }
+    if (ascii_ieq(s, "fluted")) {
+        *out = COMP_FX_GLASS_FLUTED;
+        return true;
+    }
+    if (ascii_ieq(s, "acrylic")) {
+        *out = COMP_FX_GLASS_ACRYLIC;
+        return true;
+    }
+    if (ascii_ieq(s, "aero")) {
+        *out = COMP_FX_GLASS_AERO;
+        return true;
+    }
+    if (ascii_ieq(s, "dichroic")) {
+        *out = COMP_FX_GLASS_DICHROIC;
+        return true;
+    }
+    return false;
+}
+
+const char *
+comp_fx_glass_style_to_str(CompFxGlassStyle style)
+{
+    switch (style) {
+    case COMP_FX_GLASS_FROSTED:  return "frosted";
+    case COMP_FX_GLASS_LIQUID:   return "liquid";
+    case COMP_FX_GLASS_HALATION: return "halation";
+    case COMP_FX_GLASS_FLUTED:   return "fluted";
+    case COMP_FX_GLASS_ACRYLIC:  return "acrylic";
+    case COMP_FX_GLASS_AERO:     return "aero";
+    case COMP_FX_GLASS_DICHROIC: return "dichroic";
+    }
+    return "frosted";
+}
+
+bool
+comp_fx_glass_style_is_dual_input(CompFxGlassStyle style)
+{
+    return style == COMP_FX_GLASS_LIQUID || style == COMP_FX_GLASS_HALATION;
+}
+
+bool
+comp_fx_flute_axis_from_str(const char *s, CompFxFluteAxis *out)
+{
+    if (!s || !out)
+        return false;
+    if (ascii_ieq(s, "vertical")) {
+        *out = COMP_FX_FLUTE_VERTICAL;
+        return true;
+    }
+    if (ascii_ieq(s, "horizontal")) {
+        *out = COMP_FX_FLUTE_HORIZONTAL;
+        return true;
+    }
+    return false;
+}
+
+const char *
+comp_fx_flute_axis_to_str(CompFxFluteAxis axis)
+{
+    switch (axis) {
+    case COMP_FX_FLUTE_VERTICAL:   return "vertical";
+    case COMP_FX_FLUTE_HORIZONTAL: return "horizontal";
+    }
+    return "vertical";
+}
+
+int32_t
+comp_fx_glass_sample_reach_for_style(const CompFxGlassConfig *cfg, CompFxGlassStyle style)
+{
+    if (!cfg || !cfg->enabled)
+        return 0;
+
+    int32_t passes = cfg->passes;
+    if (passes < 0)
+        passes = 0;
+    if (passes > COMP_FX_GLASS_MAX_PASSES)
+        passes = COMP_FX_GLASS_MAX_PASSES;
+
+    double r_blur = 0.0;
+    if (passes > 0 && cfg->offset > 0.0) {
+        int32_t eff_passes = passes;
+        if (style == COMP_FX_GLASS_HALATION && eff_passes < 4)
+            eff_passes = 4;
+        r_blur = (double)(1 << eff_passes) * cfg->offset;
+    }
+
+    double r_opt = 0.0;
+    double ref   = cfg->refraction > 0.0 ? cfg->refraction : 0.0;
+    double disp  = cfg->dispersion > 0.0 ? cfg->dispersion : 0.0;
+    double bev   = cfg->bevel_px > 0.0 ? cfg->bevel_px : 0.0;
+    double flute = cfg->flute_px > 0.0 ? cfg->flute_px : 0.0;
+    double grain = cfg->grain > 0.0 ? cfg->grain : 0.0;
+
+    switch (style) {
+    case COMP_FX_GLASS_LIQUID:
+        r_opt = ref * bev * (1.0 + 0.18 * disp);
+        break;
+    case COMP_FX_GLASS_FLUTED:
+        r_opt = ref * flute * 0.65 * (1.0 + 0.18 * disp);
+        break;
+    case COMP_FX_GLASS_ACRYLIC:
+        r_opt = 4.0 * grain;
+        break;
+    case COMP_FX_GLASS_FROSTED:
+    case COMP_FX_GLASS_HALATION:
+    case COMP_FX_GLASS_AERO:
+    case COMP_FX_GLASS_DICHROIC:
+        r_opt = 0.0;
+        break;
+    }
+
+    double total = r_blur + r_opt;
+    if (!(total > 0.0))
+        return 0;
+    int32_t ri = (int32_t)ceil(total);
+    if (ri > 256)
+        ri = 256;
+    return ri;
+}
+
 int32_t
 comp_fx_glass_sample_reach(const CompFxGlassConfig *cfg)
 {
-    if (!cfg || !cfg->enabled || cfg->passes <= 0 || !(cfg->offset > 0.0))
+    if (!cfg)
         return 0;
-    int32_t passes = cfg->passes;
-    if (passes > COMP_FX_GLASS_MAX_PASSES)
-        passes = COMP_FX_GLASS_MAX_PASSES;
-    double r = (double)(1 << passes) * cfg->offset;
-    if (!(r > 0.0))
-        return 0;
-    return (int32_t)ceil(r);
+    return comp_fx_glass_sample_reach_for_style(cfg, cfg->style);
 }
 
 CompFxRect
-comp_fx_glass_sample_box(CompFxRect surface_box, const CompFxGlassConfig *cfg)
+comp_fx_glass_sample_box_for_style(CompFxRect surface_box,
+                                   const CompFxGlassConfig *cfg,
+                                   CompFxGlassStyle style)
 {
     if (surface_box.width <= 0 || surface_box.height <= 0 || !cfg)
         return (CompFxRect){0};
-    int32_t r = comp_fx_glass_sample_reach(cfg);
+    int32_t r = comp_fx_glass_sample_reach_for_style(cfg, style);
     return (CompFxRect){
         .x      = surface_box.x - r,
         .y      = surface_box.y - r,
         .width  = surface_box.width + 2 * r,
         .height = surface_box.height + 2 * r,
     };
+}
+
+CompFxRect
+comp_fx_glass_sample_box(CompFxRect surface_box, const CompFxGlassConfig *cfg)
+{
+    if (!cfg)
+        return (CompFxRect){0};
+    return comp_fx_glass_sample_box_for_style(surface_box, cfg, cfg->style);
 }
 
 double
@@ -697,6 +846,120 @@ comp_fx_blur_pack(CompFxRect dst_box,
     out->offset          = (float)(offset > 0.0 ? offset : 0.0);
 }
 
+_Static_assert(sizeof(CompFxGlassParams) == 192, "CompFxGlassParams must be 192 bytes (std140)");
+
+void
+comp_fx_glass_pack_ex(const CompFxGlassConfig *cfg,
+                      CompFxGlassStyle style,
+                      CompFxRect full_buf_box,
+                      CompFxRect pass_dst_box,
+                      CompFxRect t0_src_box,
+                      int32_t tex0_w, int32_t tex0_h,
+                      int downscale0,
+                      CompFxRect t1_src_box,
+                      int32_t tex1_w, int32_t tex1_h,
+                      int downscale1,
+                      float opacity, float scale,
+                      int transform,
+                      CompFxGlassParams *out)
+{
+    if (!out)
+        return;
+    memset(out, 0, sizeof(*out));
+
+    float s   = (scale > 0.0f) ? scale : 1.0f;
+    float ds0 = (downscale0 > 0) ? (float)downscale0 : 2.0f;
+    float ds1 = (downscale1 > 0) ? (float)downscale1 : 2.0f;
+    int32_t dw = pass_dst_box.width  > 0 ? pass_dst_box.width  : 1;
+    int32_t dh = pass_dst_box.height > 0 ? pass_dst_box.height : 1;
+    int32_t fw = full_buf_box.width  > 0 ? full_buf_box.width  : dw;
+    int32_t fh = full_buf_box.height > 0 ? full_buf_box.height : dh;
+
+    int32_t sw0 = t0_src_box.width  > 0 ? t0_src_box.width  : 1;
+    int32_t sh0 = t0_src_box.height > 0 ? t0_src_box.height : 1;
+    int32_t tw0 = tex0_w > 0 ? tex0_w : sw0;
+    int32_t th0 = tex0_h > 0 ? tex0_h : sh0;
+
+    out->common.dst_origin[0] = (float)pass_dst_box.x;
+    out->common.dst_origin[1] = (float)pass_dst_box.y;
+    out->common.dst_size[0]   = (float)dw;
+    out->common.dst_size[1]   = (float)dh;
+    out->common.opacity       = clamp01f(opacity);
+    out->common.scale         = s;
+    out->common.hdr_headroom  = 1.0f;
+    out->common.flags         = 0;
+
+    out->crop_rect[0] = (float)full_buf_box.x / ds0 - (float)t0_src_box.x;
+    out->crop_rect[1] = (float)full_buf_box.y / ds0 - (float)t0_src_box.y;
+    out->crop_rect[2] = (float)fw / ds0;
+    out->crop_rect[3] = (float)fh / ds0;
+
+    out->valid_bounds[0] = 0.5f;
+    out->valid_bounds[1] = 0.5f;
+    out->valid_bounds[2] = fmaxf(0.5f, (float)sw0 - 0.5f);
+    out->valid_bounds[3] = fmaxf(0.5f, (float)sh0 - 0.5f);
+
+    out->inv_tex_size[0] = 1.0f / (float)tw0;
+    out->inv_tex_size[1] = 1.0f / (float)th0;
+
+    if (tex1_w > 0 && tex1_h > 0 && t1_src_box.width > 0 && t1_src_box.height > 0) {
+        out->aux_crop_rect[0]    = (float)full_buf_box.x / ds1 - (float)t1_src_box.x;
+        out->aux_crop_rect[1]    = (float)full_buf_box.y / ds1 - (float)t1_src_box.y;
+        out->aux_crop_rect[2]    = (float)fw / ds1;
+        out->aux_crop_rect[3]    = (float)fh / ds1;
+        out->aux_valid_bounds[0] = 0.5f;
+        out->aux_valid_bounds[1] = 0.5f;
+        out->aux_valid_bounds[2] = fmaxf(0.5f, (float)t1_src_box.width  - 0.5f);
+        out->aux_valid_bounds[3] = fmaxf(0.5f, (float)t1_src_box.height - 0.5f);
+        out->aux_inv_tex_size[0] = 1.0f / (float)tex1_w;
+        out->aux_inv_tex_size[1] = 1.0f / (float)tex1_h;
+    } else {
+        memcpy(out->aux_crop_rect, out->crop_rect, sizeof(out->aux_crop_rect));
+        memcpy(out->aux_valid_bounds, out->valid_bounds, sizeof(out->aux_valid_bounds));
+        memcpy(out->aux_inv_tex_size, out->inv_tex_size, sizeof(out->aux_inv_tex_size));
+    }
+
+    out->surface_size[0]   = (float)fw / s;
+    out->surface_size[1]   = (float)fh / s;
+    out->surface_offset[0] = (float)(pass_dst_box.x - full_buf_box.x) / s;
+    out->surface_offset[1] = (float)(pass_dst_box.y - full_buf_box.y) / s;
+
+    /* Pre-rotate 2D directional vector into output-buffer orientation. */
+    double dir_x = -0.4008188; /* normalize(-0.35, -0.80) */
+    double dir_y = -0.9161573;
+    if (style == COMP_FX_GLASS_FLUTED) {
+        CompFxFluteAxis axis = cfg ? cfg->flute_axis : COMP_FX_FLUTE_VERTICAL;
+        dir_x = (axis == COMP_FX_FLUTE_HORIZONTAL) ? 0.0 : 1.0;
+        dir_y = (axis == COMP_FX_FLUTE_HORIZONTAL) ? 1.0 : 0.0;
+    }
+    comp_fx_transform_offset(dir_x, dir_y, 1.0f, transform,
+                             &out->light_dir[0], &out->light_dir[1]);
+
+    out->style = (uint32_t)style;
+
+    if (cfg) {
+        comp_fx_rgba_srgb_to_linear(cfg->tint_rgba, out->tint_lin);
+        out->tint_lin[3] = clamp01f((float)cfg->tint_alpha);
+        out->saturation  = (float)(cfg->saturation >= 0.0 ? cfg->saturation : 1.0);
+        out->brightness  = (float)(cfg->brightness >= 0.0 ? cfg->brightness : 1.0);
+        out->refraction  = (float)(cfg->refraction >= 0.0 ? cfg->refraction : 0.0);
+        out->dispersion  = clamp01f((float)cfg->dispersion);
+        out->bevel_px    = (float)(cfg->bevel_px >= 2.0 ? cfg->bevel_px : 2.0);
+        out->specular    = (float)(cfg->specular >= 0.0 ? cfg->specular : 0.0);
+        out->grain       = clamp01f((float)cfg->grain);
+        out->flute_px    = (float)(cfg->flute_px >= 4.0 ? cfg->flute_px : 4.0);
+    } else {
+        out->saturation = 1.0f;
+        out->brightness = 1.0f;
+        out->refraction = 0.45f;
+        out->dispersion = 0.25f;
+        out->bevel_px   = 14.0f;
+        out->specular   = 0.55f;
+        out->grain      = 0.35f;
+        out->flute_px   = 14.0f;
+    }
+}
+
 void
 comp_fx_glass_pack(const CompFxGlassConfig *cfg,
                    CompFxRect dst_box,
@@ -706,50 +969,11 @@ comp_fx_glass_pack(const CompFxGlassConfig *cfg,
                    float opacity, float scale,
                    CompFxGlassParams *out)
 {
-    if (!out)
-        return;
-    memset(out, 0, sizeof(*out));
-
-    float s  = (scale > 0.0f) ? scale : 1.0f;
-    float ds = (downscale > 0) ? (float)downscale : 2.0f;
-    int32_t dw = dst_box.width  > 0 ? dst_box.width  : 1;
-    int32_t dh = dst_box.height > 0 ? dst_box.height : 1;
-    int32_t sw = t0_src_box.width  > 0 ? t0_src_box.width  : 1;
-    int32_t sh = t0_src_box.height > 0 ? t0_src_box.height : 1;
-    int32_t tw = tex_w > 0 ? tex_w : sw;
-    int32_t th = tex_h > 0 ? tex_h : sh;
-
-    out->common.dst_origin[0] = (float)dst_box.x;
-    out->common.dst_origin[1] = (float)dst_box.y;
-    out->common.dst_size[0]   = (float)dw;
-    out->common.dst_size[1]   = (float)dh;
-    out->common.opacity       = clamp01f(opacity);
-    out->common.scale         = s;
-    out->common.hdr_headroom  = 1.0f;
-    out->common.flags         = 0;
-
-    out->crop_rect[0] = (float)dst_box.x / ds - (float)t0_src_box.x;
-    out->crop_rect[1] = (float)dst_box.y / ds - (float)t0_src_box.y;
-    out->crop_rect[2] = (float)dw / ds;
-    out->crop_rect[3] = (float)dh / ds;
-
-    out->valid_bounds[0] = 0.5f;
-    out->valid_bounds[1] = 0.5f;
-    out->valid_bounds[2] = fmaxf(0.5f, (float)sw - 0.5f);
-    out->valid_bounds[3] = fmaxf(0.5f, (float)sh - 0.5f);
-
-    out->inv_tex_size[0] = 1.0f / (float)tw;
-    out->inv_tex_size[1] = 1.0f / (float)th;
-
-    if (cfg) {
-        comp_fx_rgba_srgb_to_linear(cfg->tint_rgba, out->tint_lin);
-        out->tint_lin[3] = clamp01f((float)cfg->tint_alpha);
-        out->saturation  = (float)(cfg->saturation >= 0.0 ? cfg->saturation : 1.0);
-        out->brightness  = (float)(cfg->brightness >= 0.0 ? cfg->brightness : 1.0);
-    } else {
-        out->saturation = 1.0f;
-        out->brightness = 1.0f;
-    }
+    CompFxGlassStyle st = cfg ? cfg->style : COMP_FX_GLASS_FROSTED;
+    comp_fx_glass_pack_ex(cfg, st, dst_box, dst_box,
+                          t0_src_box, tex_w, tex_h, downscale,
+                          (CompFxRect){0}, 0, 0, downscale,
+                          opacity, scale, 0, out);
 }
 
 bool

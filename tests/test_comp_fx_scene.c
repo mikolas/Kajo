@@ -1851,6 +1851,246 @@ test_m5_window_transitions(void)
     comp_config_free(cfg);
 }
 
+static void
+read_rect_xrgb(struct wlr_renderer *renderer, struct wlr_buffer *buf,
+               int x, int y, int w, int h, uint32_t *out_px)
+{
+    struct wlr_texture *tex = wlr_texture_from_buffer(renderer, buf);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data    = out_px,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = (uint32_t)w * sizeof(uint32_t),
+        .src_box = { .x = x, .y = y, .width = w, .height = h },
+    }));
+    wlr_texture_destroy(tex);
+}
+
+static void
+test_glass_optical_styles(void)
+{
+    struct wl_display *dpy = wl_display_create();
+    g_assert_nonnull(dpy);
+    struct wlr_backend *backend = wlr_headless_backend_create(wl_display_get_event_loop(dpy));
+    g_assert_nonnull(backend);
+    struct wlr_renderer *renderer = wlr_vk_renderer_create_with_drm_fd(-1);
+    if (!renderer) {
+        wlr_backend_destroy(backend);
+        wl_display_destroy(dpy);
+        g_test_skip("Vulkan renderer unavailable in headless environment");
+        return;
+    }
+    struct wlr_allocator *alloc = wlr_allocator_autocreate(backend, renderer);
+    g_assert_nonnull(alloc);
+    g_assert_true(wlr_backend_start(backend));
+
+    struct wlr_output *wo = wlr_headless_add_output(backend, 320, 240);
+    g_assert_nonnull(wo);
+    wlr_output_init_render(wo, alloc, renderer);
+    struct wlr_output_state init_st;
+    wlr_output_state_init(&init_st);
+    wlr_output_state_set_enabled(&init_st, true);
+    g_assert_true(wlr_output_commit_state(wo, &init_st));
+    wlr_output_state_finish(&init_st);
+
+    struct wlr_scene *scene = wlr_scene_create();
+    struct wlr_scene_output *so = wlr_scene_output_create(scene, wo);
+    g_assert_nonnull(so);
+
+    CompConfig *cfg = comp_config_new_defaults(0);
+    cfg->fx.enabled          = true;
+    cfg->fx.dither           = false;
+    cfg->fx.glass.enabled    = true;
+    cfg->fx.glass.passes     = 2;
+    cfg->fx.glass.offset     = 2.0;
+    cfg->fx.glass.brightness = 1.0;
+    cfg->fx.glass.saturation = 1.0;
+    cfg->fx.glass.tint_alpha = 0.0;
+    cfg->fx.glass.refraction = 0.85;
+    cfg->fx.glass.dispersion = 0.70;
+    cfg->fx.glass.bevel_px   = 20.0;
+    cfg->fx.glass.specular   = 0.90;
+    cfg->fx.glass.grain      = 0.65;
+    cfg->fx.glass.flute_px   = 16.0;
+    cfg->fx.shadow.enabled   = false;
+    cfg->fx.dim.enabled      = false;
+
+    CompServer srv = {0};
+    srv.display    = dpy;
+    srv.backend    = backend;
+    srv.renderer   = renderer;
+    srv.allocator  = alloc;
+    srv.scene      = scene;
+    srv.config     = cfg;
+    wl_list_init(&srv.outputs);
+    struct wlr_scene_tree *tree_bg = wlr_scene_tree_create(&scene->tree);
+    srv.tree_tiled    = wlr_scene_tree_create(&scene->tree);
+    srv.tree_floating = wlr_scene_tree_create(&scene->tree);
+
+    CompOutput out = {0};
+    out.server       = &srv;
+    out.wlr_output   = wo;
+    out.scene_output = so;
+    wl_list_insert(&srv.outputs, &out.link);
+
+    g_assert_true(comp_fx_init(&srv));
+    comp_fx_config_apply(&srv, cfg);
+
+    /* High-contrast split backdrop: left half black, right half white, plus a bright strip. */
+    const float black[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
+    const float white[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    const float mid[4]   = { 0.45f, 0.45f, 0.45f, 1.0f };
+    struct wlr_scene_rect *bg_l = wlr_scene_rect_create(tree_bg, 160, 240, black);
+    wlr_scene_node_set_position(&bg_l->node, 0, 0);
+    struct wlr_scene_rect *bg_r = wlr_scene_rect_create(tree_bg, 160, 240, white);
+    wlr_scene_node_set_position(&bg_r->node, 160, 0);
+
+    /* Glass surface spanning (40, 40, 240, 160) across the black/white seam at x=160. */
+    struct wlr_scene_tree *panel_tree = wlr_scene_tree_create(srv.tree_floating);
+    wlr_scene_node_set_position(&panel_tree->node, 40, 40);
+    CompFxSurface *fx = comp_fx_surface_create(&srv, panel_tree, COMP_FX_SURFACE_LAYER);
+    g_assert_nonnull(fx);
+    CompFxSurfaceState fst = {
+        .outer_box   = { 0, 0, 240, 160 },
+        .surface_box = { 0, 0, 240, 160 },
+        .has_rule_blur = true,
+        .rule_blur     = true,
+        .mapped        = true,
+    };
+    comp_fx_surface_sync(fx, &fst);
+
+    /* Helper macro to render a frame for a given style. */
+    uint32_t px_row[240];
+    struct wlr_output_state st;
+
+    /* GS5: Liquid Glass — dual-input (aux_target + target), chromatic dispersion on bevel + Fresnel rim. */
+    cfg->fx.glass.style = COMP_FX_GLASS_LIQUID;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 1.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    g_assert_nonnull(st.buffer);
+
+    /* Top bevel row (y=44, 4px inside top edge) across the seam at x=160 should show RGB dispersion
+     * and top-left bevel specular lift over black (x=50, y=44). */
+    read_rect_xrgb(renderer, st.buffer, 40, 44, 240, 1, px_row);
+    int max_rb_diff = 0;
+    for (int i = 0; i < 240; i++) {
+        int r = (int)((px_row[i] >> 16) & 0xFF);
+        int b = (int)(px_row[i] & 0xFF);
+        int d = r > b ? (r - b) : (b - r);
+        if (d > max_rb_diff) max_rb_diff = d;
+    }
+    g_assert_cmpint(max_rb_diff, >=, 4);
+    int tl_luma = (int)((px_row[10] >> 8) & 0xFF); /* (50, 44) over black -> Fresnel lift */
+    g_assert_cmpint(tl_luma, >, 5);
+    wlr_output_state_finish(&st);
+
+    /* GS6: Halation — wide scatter glow extends further into black than tight blur. */
+    cfg->fx.glass.style = COMP_FX_GLASS_HALATION;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 2.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    read_rect_xrgb(renderer, st.buffer, 40, 120, 240, 1, px_row);
+    /* Far-left black (x=48 -> idx 8) stays dark; near-seam black (x=150 -> idx 110) gets glow. */
+    int far_luma  = (int)((px_row[8] >> 8) & 0xFF);
+    int near_luma = (int)((px_row[110] >> 8) & 0xFF);
+    g_assert_cmpint(near_luma, >, far_luma + 8);
+    wlr_output_state_finish(&st);
+
+    /* GS7: Fluted — periodic specular ridge modulation across uniform mid-gray backdrop. */
+    wlr_scene_rect_set_color(bg_l, mid);
+    wlr_scene_rect_set_color(bg_r, mid);
+    cfg->fx.glass.style = COMP_FX_GLASS_FLUTED;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 3.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    read_rect_xrgb(renderer, st.buffer, 40, 120, 240, 1, px_row);
+    int min_g = 255, max_g = 0;
+    for (int i = 16; i < 224; i++) {
+        int g = (int)((px_row[i] >> 8) & 0xFF);
+        if (g < min_g) min_g = g;
+        if (g > max_g) max_g = g;
+    }
+    g_assert_cmpint(max_g - min_g, >=, 12);
+    wlr_output_state_finish(&st);
+
+    /* GS8a: Acrylic — spatial micro-facet variance over flat mid-gray. */
+    cfg->fx.glass.style = COMP_FX_GLASS_ACRYLIC;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 4.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    read_rect_xrgb(renderer, st.buffer, 40, 120, 240, 1, px_row);
+    min_g = 255; max_g = 0;
+    for (int i = 16; i < 224; i++) {
+        int g = (int)((px_row[i] >> 8) & 0xFF);
+        if (g < min_g) min_g = g;
+        if (g > max_g) max_g = g;
+    }
+    g_assert_cmpint(max_g - min_g, >=, 2);
+    wlr_output_state_finish(&st);
+
+    /* GS8b: Aero — diagonal sheen band brightens over flat mid-gray. */
+    cfg->fx.glass.style = COMP_FX_GLASS_AERO;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 5.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    read_rect_xrgb(renderer, st.buffer, 40, 120, 240, 1, px_row);
+    min_g = 255; max_g = 0;
+    for (int i = 24; i < 216; i++) {
+        int g = (int)((px_row[i] >> 8) & 0xFF);
+        if (g < min_g) min_g = g;
+        if (g > max_g) max_g = g;
+    }
+    g_assert_cmpint(max_g - min_g, >=, 6);
+    wlr_output_state_finish(&st);
+
+    /* GS8c: Dichroic — non-neutral spectral chroma shift on bevel pixels over neutral gray. */
+    cfg->fx.glass.style = COMP_FX_GLASS_DICHROIC;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 6.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    read_rect_xrgb(renderer, st.buffer, 40, 44, 240, 1, px_row);
+    int max_chroma = 0;
+    for (int i = 0; i < 240; i++) {
+        int r = (int)((px_row[i] >> 16) & 0xFF);
+        int g = (int)((px_row[i] >> 8) & 0xFF);
+        int b = (int)(px_row[i] & 0xFF);
+        int hi = r > g ? (r > b ? r : b) : (g > b ? g : b);
+        int lo = r < g ? (r < b ? r : b) : (g < b ? g : b);
+        if (hi - lo > max_chroma) max_chroma = hi - lo;
+    }
+    g_assert_cmpint(max_chroma, >=, 8);
+    wlr_output_state_finish(&st);
+
+    /* GS9: Switch back to Frosted -> releases aux_target cleanly. */
+    cfg->fx.glass.style = COMP_FX_GLASS_FROSTED;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 7.0);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, NULL));
+    wlr_output_state_finish(&st);
+    CompFxGlassOutput *go;
+    wl_list_for_each(go, &fx->glass_outputs, link) {
+        g_assert_null(go->aux_target);
+    }
+
+    comp_fx_surface_destroy(fx);
+    comp_fx_finish(&srv);
+    wl_list_remove(&out.link);
+    wlr_scene_node_destroy(&scene->tree.node);
+    wlr_allocator_destroy(alloc);
+    wlr_renderer_destroy(renderer);
+    wlr_backend_destroy(backend);
+    wl_display_destroy(dpy);
+    comp_config_free(cfg);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1863,6 +2103,8 @@ main(int argc, char *argv[])
                     test_m4_output_stage_and_color_filters);
     g_test_add_func("/comp/fx/m5-window-transitions",
                     test_m5_window_transitions);
+    g_test_add_func("/comp/fx/glass-optical-styles",
+                    test_glass_optical_styles);
     g_test_add_func("/comp/fx/pixman-fallback",
                     test_pixman_fallback);
     return g_test_run();

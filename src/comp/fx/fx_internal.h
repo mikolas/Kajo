@@ -31,7 +31,12 @@ typedef struct {
     struct wlr_scene_output *scene_output;
     struct wl_listener       output_destroy;
     struct wlr_kfx_target   *target;
+    struct wlr_kfx_target   *aux_target;
     struct wlr_box           t0_src_box;
+    struct wlr_box           aux_src_box;
+    int                      target_downscale;
+    int                      aux_downscale;
+    CompFxGlassStyle         built_style;
     struct wlr_box           last_logical_box;
     uint64_t                 built_bg_serial;
     double                   last_recompute_s;
@@ -104,6 +109,7 @@ struct CompFxSystem {
     struct wlr_kfx_shader   *blur_down_shader;
     struct wlr_kfx_shader   *blur_up_shader;
     struct wlr_kfx_shader   *glass_shader;
+    struct wlr_kfx_shader   *glass_dual_shader;
     struct wlr_kfx_shader   *transition_single_shader;
     struct wlr_kfx_shader   *transition_resize_shader;
 

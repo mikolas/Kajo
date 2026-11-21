@@ -154,12 +154,20 @@ gboolean kajo_config_comp_save_layout_and_layers(const char        *config_dir,
 typedef struct {
     int      border_px;
     gboolean glass_enabled;
+    char     glass_style[32];
     int      glass_passes;
     double   glass_offset;
     int      glass_brightness_pct;
     int      glass_saturation_pct;
     char     glass_tint[16];
     int      glass_tint_alpha_pct;
+    int      glass_refraction_pct;
+    int      glass_dispersion_pct;
+    int      glass_bevel_px;
+    int      glass_specular_pct;
+    int      glass_grain_pct;
+    int      glass_flute_px;
+    char     glass_flute_axis[16];
     gboolean shadow_enabled;
     int      shadow_strength_pct;
     int      shadow_unfocused_scale_pct;

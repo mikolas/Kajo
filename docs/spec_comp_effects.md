@@ -50,35 +50,46 @@ Consequences used throughout this spec:
 ```mermaid
 flowchart TB
   subgraph KAJO["kajo-comp (Kajo repository, MIT): policy and all effect code"]
-    RULES["Rules and config<br/>comp.toml [effects], [[rule]], [[layer_rule]]"]
-    REG["Effect registry<br/>descriptors: passes, inputs, params, reach"]
-    LIB["Shader library<br/>src/comp/fx/shaders/*.frag (GLSL)<br/>compiled to SPIR-V at build time"]
-    RUN["Effect runtime<br/>anchors, timelines (comp_motion springs),<br/>background glass cache, per-output targets, fallbacks"]
-    X5["X5 sample reach policy<br/>(which glass, which reach)"]
-    SCN["Scene owner<br/>comp_window / comp_layer build the wlr_scene tree<br/>(+ one effect anchor per effect surface)"]
+    RULES["Rules and config: comp.toml [effects], [[rule]], [[layer_rule]]"]
+    REG["Effect registry: descriptors (passes, inputs, params, reach)"]
+    LIB["Shader library: src/comp/fx/shaders/*.frag (GLSL -> SPIR-V)"]
+    RUN["Effect runtime: anchors, springs, transitions, glass cache, targets"]
+    X5["X5 sample reach policy (which glass, which reach)"]
+    SCN["Scene owner: comp_window / comp_layer (+ one anchor per active effect slot)"]
   end
-  subgraph FORK["wlroots fork (github.com/mikolas/wlroots, kajo/* branch): mechanisms only"]
+  subgraph FORK["wlroots fork (github.com/mikolas/wlroots, kajo/0.20.2): mechanisms only"]
     X1["X1 custom fragment-shader draw"]
     X2["X2 backdrop render into a target"]
-    X3["X3 offscreen targets and side passes"]
+    X3["X3 offscreen targets and single-CB target chains"]
     X4["X4 leaf-node hooks"]
-    X5F["X5 damage helpers<br/>(logical box → output damage)"]
-    X6["X6 output stage: dither, SDR white, tone map"]
+    X5F["X5 damage helpers (logical box -> output damage)"]
+    X6["X6 output stage: dither, SDR white, BT.2390 tone map"]
   end
   subgraph UP["upstream wlroots 0.20.2 (unchanged)"]
     SCENE["wlr_scene: render list, damage, visibility, direct scanout"]
-    VK["Vulkan renderer: two-pass FP16 blend image,<br/>texture decode, output encode (sRGB, PQ, LUT)"]
+    VK["Vulkan renderer: two-pass FP16 blend image, decode, output encode"]
     BE["backends, DRM/KMS, protocols"]
   end
-  RULES --> REG --> RUN
+  RULES --> REG
+  REG --> RUN
   LIB --> RUN
   SCN --> SCENE
-  RUN -- "hooks on anchors, shaders, targets" --> X4
-  RUN --> X1 & X2 & X3 & X6
-  RUN --> X5 --> X5F --> SCENE
+  RUN -->|"hooks on anchors"| X4
+  RUN --> X1
+  RUN --> X2
+  RUN --> X3
+  RUN --> X6
+  RUN --> X5
+  X5 --> X5F
+  X5F --> SCENE
   X4 --> SCENE
-  X1 & X2 & X3 & X6 --> VK
-  SCENE --> VK --> BE
+  X2 --> SCENE
+  X2 --> X3
+  X1 --> VK
+  X3 --> VK
+  X6 --> VK
+  SCENE --> VK
+  VK --> BE
 ```
 
 The fork knows how to *run* a shader at a point in the frame; it does not know what blur or a shadow is. Kajo knows every effect and decides where, when and with which parameters it runs.
@@ -106,32 +117,31 @@ So Kajo gives every effect on a surface its own **effect anchor**: a leaf node K
                 fullscreen
                 top       [panel]         glass anchor (cached background blur)
                           [launcher]      shadow anchor, glass anchor
-                floating  [dialog]        shadow anchor
+                floating  [dialog]        shadow anchor, dim anchor (above xdg_tree)
                             └ [popup]     shadow anchor, glass anchor
-                tiled     [win A][win B][win C]   (no anchors by default)
+                tiled     [win A][win B][win C]   dim anchor (above xdg_tree), M5 transition overlay when animating
                 bottom
                 background [wallpaper]    ◄ background glass blurs are rendered from these trees
  bottom         ────────────────────────────────────────────────────
-                anchors are the lowest children of their surface's tree (shadow
-                first, then glass), so their hooks run after everything below
-                and before the surface itself
+                shadow and glass anchors are the lowest children of their surface's
+                tree (shadow first, then glass); dim anchors sit above xdg_tree
 ```
 
 ### 4.2 One frame
 
 ```mermaid
 flowchart TD
-  A["Kajo frame tick (comp_output.c, before build_state)<br/>advance effect timelines, update params, resize anchors"] --> B
-  B["X5: for each glass anchor, does accumulated scene damage touch box ⊕ r_sample?<br/>yes → damage the glass box (fork helper: damage ring + commit damage + schedule), mark dirty (DM2)"] --> C
-  C["still before build_state, for dirty glass only:<br/>X2 renders the backdrop below the glass anchor into a pooled target,<br/>X3 runs the blur passes into smaller targets;<br/>submitted as one effect batch before build_state"] --> D
-  D["wlr_scene_output_build_state (unchanged upstream flow):<br/>render list, acquire buffer, begin pass, rotate damage,<br/>subpass 0 draws the list bottom-up into the RGBA16F blend image"] --> E
+  A["Kajo frame tick (comp_output.c, before build_state): advance springs & transitions, update params, resize anchors"] --> B
+  B["X5 / bg_serial: check dirty glass (xray checks bg_serial; true backdrop tests X5 damage_intersects on box + r_sample)"] --> C
+  C["Before build_state, for dirty glass only: X2 renders backdrop pass into pooled target, X3 runs blur pyramid in one CB, X5 damage_box marks glass dirty"] --> D
+  D["wlr_scene_output_build_state (upstream): render list, acquire buffer, begin pass, rotate damage, subpass 0 -> RGBA16F blend image"] --> E
   E{"next entry"} -->|"effect anchor"| F
   E -->|"plain leaf"| G
-  F["X4 INSTEAD hook: X1 draws the effect<br/>(shadow formula, or glass composite of the blurred target)<br/>clipped to the anchor's visible ∩ damage, marks the area updated"] --> E
+  F["X4 INSTEAD hook: X1 draws effect (shadow, glass, dim, or M5 transition) clipped to visible & damage, marks area updated"] --> E
   G["scene draws the leaf as usual"] --> E
   E -->|"list done"| H
   H["software cursors (wlr_scene.c:2619)"] --> I
-  I["subpass 1: output.frag on the updated region<br/>matrix / 3D LUT, SDR white (X6), dither (X6), inverse EOTF"] --> J
+  I["subpass 1: output.frag on updated region — colour matrix / 3D LUT, SDR white (X6), BT.2390 tone map (X6), dither (X6), inverse EOTF"] --> J
   J["submit the frame (wlroots), commit, KMS page flip"]
 ```
 
@@ -171,7 +181,7 @@ Requirements:
 
 ## 6. Extension points (X1–X6)
 
-X1–X4 and X6 are fork code; X5 is implemented in Kajo with public API and is listed here because it belongs to the same pipeline.
+X1–X4, X5's two damage helpers, and X6 are fork code; X5's sample-reach policy lives in Kajo and is listed here because it belongs to the same pipeline.
 
 Rules for all of them: Vulkan only (`wlr_kfx_*_supported()` reports false on GLES2 and pixman); public names `wlr_kfx_*`, headers in `include/wlr/kfx/`, detectable with `WLR_HAS_KFX` (fork spec C4, C5); no change to existing structs or to behaviour when unused (C2, C3). The C declarations are sketches to fix the shape, not final API.
 
@@ -233,9 +243,11 @@ RGBA16F images usable as X2 destinations, X1 inputs and side-pass render targets
 struct wlr_kfx_target *wlr_kfx_target_acquire(struct wlr_renderer *r, int width, int height);
 void wlr_kfx_target_release(struct wlr_kfx_target *target);   /* back to the pool */
 /* An ordinary wlr_render_pass targeting the image, with the full texture sync of a
- * normal pass; used by X2 (scene side) and for X3 blur steps (X1 draws). */
-struct wlr_render_pass *wlr_kfx_target_begin_pass(struct wlr_renderer *r,
-        struct wlr_kfx_target *target, struct wlr_kfx_batch *batch);
+ * normal pass; used by X2 (scene side) and M5 transition snapshot captures. */
+struct wlr_render_pass *wlr_kfx_target_begin_pass(struct wlr_kfx_target *target);
+/* Records and submits a chain of target-to-target X1 shader steps in one Vulkan CB. */
+bool wlr_kfx_renderer_run_target_chain(struct wlr_renderer *r,
+        const struct wlr_kfx_target_draw_step *steps, size_t n_steps);
 ```
 
 - **Plain Vulkan images:** targets are images the renderer allocates internally (`COLOR_ATTACHMENT | SAMPLED`), not dmabuf-backed `wlr_buffer`s. Rendering into a `wlr_buffer` goes through dmabuf sync-file import / export on every pass (`pass.c:156`), which internal images do not need.
@@ -319,7 +331,7 @@ typedef struct {
 } FxEffect;
 ```
 
-- Code in `src/comp/fx/` (new): `comp_fx.h` (the facade, §15), `fx_registry.c` (descriptors), `fx_runtime.c` (anchors, scheduling, damage, targets), one file per effect (`fx_glass.c`, `fx_shadow.c`, `fx_dim.c`), and `fx_stub.c` (no-op facade for builds without the extensions). The pure parts (descriptor validation, reach and anchor-box maths, parameter packing including the common header, sRGB → linear colour conversion) live in `src/comp/core/` with unit tests like the rest of the core.
+- Code in `src/comp/fx/`: `comp_fx.h` (the facade, §15), `fx_registry.c` (descriptors), `fx_runtime.c` (anchors, scheduling, damage, targets), one file per effect (`fx_glass.c`, `fx_shadow.c`, `fx_dim.c`, `fx_transition.c`), and `fx_stub.c` (no-op facade for builds without the extensions). The pure parts (descriptor validation, reach and anchor-box maths, parameter packing including the common header, sRGB → linear colour conversion) live in `src/comp/core/` with unit tests like the rest of the core.
 - Each effect on a surface gets its own anchor (§4.1), stacked in a fixed order: shadow, then glass, then any others. Several passes of one effect (e.g. the blur) run within that effect; effects never share an anchor, so each keeps its own paint area.
 
 ### 7.2 Shader library
@@ -330,7 +342,7 @@ typedef struct {
 
 ### 7.3 Attachment and configuration
 
-- **Rules:** `[[layer_rule]]` already reserves `blur`, `xray` and `blur_popups` and rejects them with a diagnostic (`src/comp/core/comp_rules.c:203`); they become accepted, plus `shadow`. `[[rule]]` (windows) gains `shadow` and `blur`. Defaults per §2.
+- **Rules:** `[[layer_rule]]` accepts `blur`, `xray`, `blur_popups`, `shadow`, and `glass_style`; `[[rule]]` (windows) accepts `shadow`, `blur`, `blur_popups`, and `glass_style` (`src/comp/core/comp_rules.c`). Defaults per §2.
 - **Popups:** `blur_popups` and inherited shadows must reach popups that live outside the surface's tree: xdg popups in each window's `popup_tree`, and layer popups in `CompLayerSurface.popups` (`src/comp/comp_layer.c`), separate from `scene_layer->tree`. Each popup gets its own anchor when created.
 - **Config:** `comp.toml` `[effects]` with `enabled`, and per-effect tables `[effects.glass]`, `[effects.shadow]` (§10.3, §11.3). Keys go into `src/comp/core/comp_schema_keys.h` and the config schema; `kajo-settings` gets controls only once each works end to end.
 - **Shell side:** glass only shows if the surface is translucent. The shell's CSS lowers the panel and popover background alpha (`@metro-panel-bg`, `popover > contents`) while text and 1 px accent borders stay opaque; documented in `docs/design_system.md` and the gallery when it lands.
@@ -404,6 +416,7 @@ sequenceDiagram
 
 - Background glass (panel, `xray = true`) composites its cached blur result (§7.4) and skips X2 and the blur passes.
 - `r_sample` (X5) is the blur's footprint, about `2^passes × offset` pixels at full size, so the edges of the box blur correctly.
+- For the 7 optical glass material styles (`frosted`, `liquid`, `halation`, `fluted`, `acrylic`, `aero`, `dichroic`) and the dual-input `glass_dual.frag` path, see [`docs/spec_comp_glass_styles.md`](spec_comp_glass_styles.md).
 
 ### 10.3 Parameters (`[effects.glass]`, defaults to be tuned)
 
@@ -470,7 +483,9 @@ with `(x0, y0, x1, y1)` the window's outer box shifted by the layer's offset. Al
 | :--- | :--- | :--- |
 | `layers` | list of `{ sigma, offset_x, offset_y, opacity }` | key + ambient as above |
 | `color` | shadow colour (sRGB) | `#000000` |
+| `strength` | global multiplier on layer opacities (0..2) | 1.0 |
 | `unfocused_scale` | opacity factor for unfocused windows | 0.6 |
+| `duration_ms` | focus animation spring duration (0..5000 ms) | 150 |
 
 Per window/layer: `[[rule]]` / `[[layer_rule]]` `shadow = true|false`.
 
@@ -485,10 +500,10 @@ Per window/layer: `[[rule]]` / `[[layer_rule]]` `shadow = true|false`.
 
 | Milestone | Fork (`kajo/0.20.2`) | Kajo | Proves |
 | :--- | :--- | :--- | :--- |
-| **M2 Foundation + shadows** | X1, X4, X6 pathway guarantee; `WLR_HAS_KFX` / `have_kfx`; compatibility checks V1–V4 for the first time | anchors, `src/comp/fx/` runtime and registry, shader build step, `shadow` and `dim`, rules and `[effects]` config, `-Wundef`, `-Dwlroots=`, headless Vulkan pixel test harness that fails hard (below) | custom shaders inside the scene; acceptance test 2 (§11) |
-| **M3 Glass** | X2 (real render pass, client sync), X3 (pool, effect batch), X5 helpers, X6 dither | `glass`, X5 policy, background glass cache with background serial, popups propagation, per-output targets, shell CSS translucency | acceptance test 1 (§10) |
-| **M4 Output stage** | X6 SDR white and tone map | adjustable SDR white; tone mapping when HDR output lands (ROADMAP §3.7.1); per-pixel colour filters | H7 |
-| **M5 Transitions & style polish** | (none expected) | open / close / resize on Kajo's own snapshot nodes, client buffers pre-drawn into targets (H5), ported `data/shaders/`; live CSS surface/glass token configurability (`theme.toml` → `00-accent.css`), remaining `comp.toml` optical/shadow/dim/border controls, and compositor-agnostic naming in `kajo-settings` | animated effects without new fork code; unified theme/effects polish |
+| **✅ M2 Foundation + shadows** | X1, X4, X6 pathway guarantee; `WLR_HAS_KFX` / `have_kfx`; compatibility checks V1–V4 for the first time | anchors, `src/comp/fx/` runtime and registry, shader build step, `shadow` and `dim`, rules and `[effects]` config, `-Wundef`, `-Dwlroots=`, headless Vulkan pixel test harness that fails hard (below) | custom shaders inside the scene; acceptance test 2 (§11) |
+| **✅ M3 Glass** | X2 (real render pass, client sync), X3 (pool, effect batch), X5 helpers, X6 dither | `glass`, X5 policy, background glass cache with background serial, popups propagation, per-output targets, shell CSS translucency | acceptance test 1 (§10) |
+| **✅ M4 Output stage** | X6 SDR white and tone map | adjustable SDR white; tone mapping when HDR output lands (ROADMAP §3.7.1); per-pixel colour filters | H7 |
+| **✅ M5 Transitions & style polish** | (none needed) | open / close / resize on Kajo's own snapshot nodes, client buffers pre-drawn into targets (H5), ported `data/shaders/`; live CSS surface/glass token configurability (`theme.toml` → `00-accent.css`), remaining `comp.toml` optical/shadow/dim/border controls, and compositor-agnostic naming in `kajo-settings` | animated effects without new fork code; unified theme/effects polish |
 
 ### 12.1 Milestone 5 Scope: Transitions, Style Configurability & Generic Settings
 
