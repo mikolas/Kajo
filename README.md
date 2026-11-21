@@ -56,7 +56,7 @@ The repository builds and installs **eight integrated native executables** (plus
 
 - **Selection-First Modal Editing & Nordic Ergonomics**: 10-state modal engine with Nordic bindings (`ä`/`ö` diagnostics, `Alt+ä`/`Alt+ö` Git hunks, `m i/a` structural text objects) and a 6-column `68px` Cairo gutter (breakpoints, diagnostics, Git diff, agent bars, folds).
 - **Tree-Sitter, LSP & DAP Debugger**: Incremental 16-language Tree-sitter highlighting, async JSON-RPC 2.0 LSP client (`clangd`, `gopls`, `rust-analyzer`, `jdtls`, `pyright`, …), project build/test runner (`Space r b/t/r/c`), and integrated DAP debugger (`gdb`, `lldb-dap`, `dlv`, Java via `jdtls`).
-- **Markdown, Vector Mermaid & Fuzzy Picker**: Side-by-side Markdown preview with interactive task checkboxes, native Cairo/Pango Mermaid diagram renderer with `.svg` export, `ripgrep` project search (`Space f g`), and a 102-command Help Palette (`?`).
+- **Markdown, Vector Mermaid & Fuzzy Picker**: Side-by-side Markdown preview with interactive task checkboxes, native Cairo/Pango Mermaid diagram renderer with `.svg` export, `ripgrep` project search (`Space f g`), and a 108-command Help Palette (`?`).
 - **AI Agent IPC & Diff Review**: Exposes `$KAJO_IDE_SOCKET` so external agents can query diagnostics and apply multi-file edits with atomic snapshot review (`Space d s/a/r`).
 
 ### 📁 Kajo Files (`kajo-files`)

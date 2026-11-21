@@ -342,6 +342,70 @@ test_fsm_standard_shortcuts_and_chords(void)
   ide_fsm_free(fsm);
 }
 
+static void
+test_fsm_new_lsp_dap_view_chords_and_state_names(void)
+{
+  /* ide_state_from_name */
+  g_assert_cmpint(ide_state_from_name("normal"), ==, IDE_STATE_NORMAL);
+  g_assert_cmpint(ide_state_from_name("SELECT"), ==, IDE_STATE_SELECT);
+  g_assert_cmpint(ide_state_from_name("tree"), ==, IDE_STATE_TREE);
+  g_assert_cmpint(ide_state_from_name("drawer"), ==, IDE_STATE_DRAWER);
+  g_assert_cmpint(ide_state_from_name("bogus"), ==, IDE_STATE_COUNT);
+
+  IdeFsm *fsm = ide_fsm_new();
+
+  /* g r -> LSP References */
+  IdeAction act = ide_fsm_handle_key(fsm, "g");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_NONE);
+  act = ide_fsm_handle_key(fsm, "r");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_REFERENCES);
+
+  /* Space g s -> Signature Help, Space g c / g o -> Call Hierarchy */
+  ide_fsm_handle_key(fsm, "Space");
+  ide_fsm_handle_key(fsm, "g");
+  act = ide_fsm_handle_key(fsm, "s");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_SIGNATURE_HELP);
+
+  ide_fsm_handle_key(fsm, "Space");
+  ide_fsm_handle_key(fsm, "g");
+  act = ide_fsm_handle_key(fsm, "c");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CALL_HIERARCHY_IN);
+
+  ide_fsm_handle_key(fsm, "Space");
+  ide_fsm_handle_key(fsm, "g");
+  act = ide_fsm_handle_key(fsm, "o");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CALL_HIERARCHY_OUT);
+
+  /* Space d B & Shift+F9 -> Conditional Breakpoint */
+  ide_fsm_handle_key(fsm, "Space");
+  ide_fsm_handle_key(fsm, "d");
+  act = ide_fsm_handle_key(fsm, "B");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT);
+
+  act = ide_fsm_handle_key(fsm, "shift+f9");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT);
+
+  /* Space v r -> Toggle Relative Line Numbers */
+  ide_fsm_handle_key(fsm, "Space");
+  ide_fsm_handle_key(fsm, "v");
+  act = ide_fsm_handle_key(fsm, "r");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_TOGGLE_RELATIVE_LINES);
+
+  /* Ctrl+Shift+Space in NORMAL and INSERT -> Signature Help */
+  act = ide_fsm_handle_key(fsm, "ctrl+shift+space");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_SIGNATURE_HELP);
+  ide_fsm_set_state(fsm, IDE_STATE_INSERT);
+  act = ide_fsm_handle_key(fsm, "ctrl+shift+space");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_SIGNATURE_HELP);
+
+  /* Tab in CODE_ACTION state toggles Call Hierarchy direction */
+  ide_fsm_set_state(fsm, IDE_STATE_CODE_ACTION);
+  act = ide_fsm_handle_key(fsm, "tab");
+  g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE);
+
+  ide_fsm_free(fsm);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -353,6 +417,8 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/fsm/leader-chords-and-timeout", test_fsm_leader_chords_and_timeout);
   g_test_add_func("/ide/fsm/custom-remaps", test_fsm_custom_remaps);
   g_test_add_func("/ide/fsm/standard-shortcuts-and-chords", test_fsm_standard_shortcuts_and_chords);
+  g_test_add_func("/ide/fsm/new-lsp-dap-view-chords-and-state-names",
+                  test_fsm_new_lsp_dap_view_chords_and_state_names);
 
   return g_test_run();
 }

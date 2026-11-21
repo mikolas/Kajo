@@ -18,6 +18,10 @@ typedef void (*IdeGutterBreakpointToggledCb)(IdeBuffer *buf,
                                              gboolean   enabled,
                                              gpointer   user_data);
 
+typedef void (*IdeGutterConditionalBpCb)(IdeBuffer *buf,
+                                         guint      line_1based,
+                                         gpointer   user_data);
+
 GtkSourceGutterRenderer *kajo_ide_gutter_renderer_new(IdeBuffer *buf);
 void                     kajo_ide_gutter_renderer_set_buffer(KajoIdeGutterRenderer *self,
                                                              IdeBuffer             *buf);
@@ -25,10 +29,23 @@ void                     kajo_ide_gutter_renderer_set_breakpoint_callback(
                              KajoIdeGutterRenderer       *self,
                              IdeGutterBreakpointToggledCb cb,
                              gpointer                     user_data);
+void                     kajo_ide_gutter_renderer_set_conditional_bp_callback(
+                             KajoIdeGutterRenderer   *self,
+                             IdeGutterConditionalBpCb cb,
+                             gpointer                 user_data);
 void                     kajo_ide_gutter_renderer_set_font(
                              KajoIdeGutterRenderer *self,
                              const char            *font_family,
                              int                    font_size_px);
+void                     kajo_ide_gutter_renderer_set_relative_numbers(
+                             KajoIdeGutterRenderer *self,
+                             gboolean               relative);
+gboolean                 kajo_ide_gutter_renderer_get_relative_numbers(
+                             KajoIdeGutterRenderer *self);
+guint                    ide_gutter_display_line_number(
+                             guint    line_1based,
+                             guint    cursor_line_1based,
+                             gboolean relative);
 
 G_END_DECLS
 

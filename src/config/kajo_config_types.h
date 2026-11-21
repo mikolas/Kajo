@@ -219,16 +219,32 @@ typedef struct {
 /* ─── 3. IDE Domain (ide.toml) ─── */
 
 typedef struct {
-    gchar   *color_scheme;           /* "kajo-metro-dark" */
-    gchar   *font_family;            /* "Fira Code" */
-    gint     font_size_px;           /* [9..28], default 13 */
-    gint     tab_width;              /* {2, 4, 8}, default 4 */
-    gboolean insert_spaces;
-    gboolean word_wrap;
-    gboolean show_margin_guide;
-    gboolean show_minimap;
-    gboolean show_line_numbers;
-    gboolean highlight_current_line;
+    gchar *state;   /* e.g. "normal", "select", "tree", "drawer" */
+    gchar *key;     /* e.g. "j", "Ctrl+k", "Space" */
+    gchar *action;  /* e.g. "move_down", "save" */
+} KajoIdeKeyRemap;
+
+KajoIdeKeyRemap *kajo_ide_key_remap_new(const char *state,
+                                        const char *key,
+                                        const char *action);
+KajoIdeKeyRemap *kajo_ide_key_remap_copy(const KajoIdeKeyRemap *src);
+void             kajo_ide_key_remap_free(gpointer ptr);
+gboolean         kajo_ide_key_remap_equal(const KajoIdeKeyRemap *a,
+                                          const KajoIdeKeyRemap *b);
+
+typedef struct {
+    gchar     *color_scheme;           /* "kajo-metro-dark" */
+    gchar     *font_family;            /* "Fira Code" */
+    gint       font_size_px;           /* [9..28], default 13 */
+    gint       tab_width;              /* {2, 4, 8}, default 4 */
+    gboolean   insert_spaces;
+    gboolean   word_wrap;
+    gboolean   show_margin_guide;
+    gboolean   show_minimap;
+    gboolean   show_line_numbers;
+    gboolean   relative_line_numbers;
+    gboolean   highlight_current_line;
+    GPtrArray *key_remaps;             /* KajoIdeKeyRemap* */
 } KajoIdeCfg;
 
 /* ─── 4. File Manager Domain (files.toml) ─── */

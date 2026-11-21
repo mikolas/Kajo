@@ -841,7 +841,7 @@ ide_buffer_new(const char *file_path)
                                              G_CALLBACK(on_source_buffer_text_changed),
                                              buf);
 
-  buf->breakpoints = g_hash_table_new(g_direct_hash, g_direct_equal);
+  buf->breakpoints = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
   buf->diagnostics = g_ptr_array_new_with_free_func(ide_diagnostic_free);
 
   if (file_path != NULL && file_path[0] != '\0') {
@@ -1113,8 +1113,46 @@ ide_buffer_toggle_breakpoint(IdeBuffer *buf, guint line_1based)
     g_hash_table_remove(buf->breakpoints, key);
     return FALSE;
   }
-  g_hash_table_add(buf->breakpoints, key);
+  g_hash_table_insert(buf->breakpoints, key, g_strdup(""));
   return TRUE;
+}
+
+const char *
+ide_buffer_get_breakpoint_condition(const IdeBuffer *buf, guint line_1based)
+{
+  g_return_val_if_fail(buf != NULL, NULL);
+  if (line_1based == 0) {
+    return NULL;
+  }
+  const char *cond = g_hash_table_lookup(buf->breakpoints, GUINT_TO_POINTER(line_1based));
+  if (cond == NULL || cond[0] == '\0') {
+    return NULL;
+  }
+  return cond;
+}
+
+gboolean
+ide_buffer_has_breakpoint_condition(const IdeBuffer *buf, guint line_1based)
+{
+  return ide_buffer_get_breakpoint_condition(buf, line_1based) != NULL;
+}
+
+void
+ide_buffer_set_breakpoint_condition(IdeBuffer  *buf,
+                                    guint       line_1based,
+                                    const char *condition)
+{
+  g_return_if_fail(buf != NULL);
+  if (line_1based == 0) {
+    return;
+  }
+  gpointer key = GUINT_TO_POINTER(line_1based);
+  g_autofree char *trimmed = (condition != NULL) ? g_strstrip(g_strdup(condition)) : NULL;
+  if (trimmed != NULL && trimmed[0] != '\0') {
+    g_hash_table_replace(buf->breakpoints, key, g_steal_pointer(&trimmed));
+  } else if (g_hash_table_contains(buf->breakpoints, key)) {
+    g_hash_table_replace(buf->breakpoints, key, g_strdup(""));
+  }
 }
 
 static gint

@@ -114,6 +114,7 @@
 #define KAJO_CFG_KEY_WIDGET_CLICK_RIGHT   "click_right"
 
 /* ide.toml */
+#define KAJO_CFG_SEC_IDE_KEYS             "keys"
 #define KAJO_CFG_KEY_IDE_COLOR_SCHEME     "color_scheme"
 #define KAJO_CFG_KEY_IDE_FONT_FAMILY      "font_family"
 #define KAJO_CFG_KEY_IDE_FONT_SIZE_PX     "font_size_px"
@@ -123,6 +124,7 @@
 #define KAJO_CFG_KEY_IDE_MARGIN_GUIDE     "show_margin_guide"
 #define KAJO_CFG_KEY_IDE_MINIMAP          "show_minimap"
 #define KAJO_CFG_KEY_IDE_LINE_NUMBERS     "show_line_numbers"
+#define KAJO_CFG_KEY_IDE_RELATIVE_NUMBERS "relative_line_numbers"
 #define KAJO_CFG_KEY_IDE_CUR_LINE         "highlight_current_line"
 
 /* files.toml */

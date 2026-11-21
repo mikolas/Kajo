@@ -54,6 +54,9 @@ typedef enum {
   IDE_LSP_UI_COMPLETION,
   IDE_LSP_UI_CODE_ACTION,
   IDE_LSP_UI_RENAME,
+  IDE_LSP_UI_REFERENCES,
+  IDE_LSP_UI_SIGNATURE,
+  IDE_LSP_UI_CALL_HIERARCHY,
 } IdeLspUiState;
 
 typedef void (*IdeLspUiStateCb)(IdeLspUiState state, gpointer user_data);
@@ -79,6 +82,46 @@ GPtrArray     *ide_lsp_parse_text_edits(JsonNode *edits_node);
 char          *ide_lsp_strip_snippet(const char *snippet);
 /* Flattens hover `contents` (MarkupContent / MarkedString / array) to markdown. */
 char          *ide_lsp_hover_to_markdown(JsonNode *contents);
+
+/* Parsed Location / LocationLink entry (textDocument/references). */
+typedef struct {
+  char  *path;
+  guint  line_1based;
+  guint  col_1based;
+  char  *preview; /* optional trimmed line from disk/open buffer */
+} IdeLspLocation;
+
+void           ide_lsp_location_free(gpointer data);
+GPtrArray     *ide_lsp_parse_locations(JsonNode *result); /* IdeLspLocation* */
+
+/* Parsed SignatureInformation entry (textDocument/signatureHelp). */
+typedef struct {
+  char      *label;
+  char      *documentation;
+  GPtrArray *param_labels; /* char* */
+  gint       active_param; /* -1 if none */
+} IdeLspSignatureInfo;
+
+void           ide_lsp_signature_info_free(gpointer data);
+GPtrArray     *ide_lsp_parse_signature_help(JsonNode *result,
+                                            guint    *out_active_sig,
+                                            gint     *out_active_param);
+char          *ide_lsp_format_signature_pango(const IdeLspSignatureInfo *sig,
+                                              gint                       active_param);
+
+/* Parsed CallHierarchyIncomingCall / CallHierarchyOutgoingCall entry. */
+typedef struct {
+  char     *name;
+  char     *detail;
+  char     *path;
+  guint     line_1based;
+  guint     col_1based;
+  char      kind_badge[4];
+  gboolean  outgoing;
+} IdeLspCallEntry;
+
+void           ide_lsp_call_entry_free(gpointer data);
+GPtrArray     *ide_lsp_parse_call_hierarchy(JsonNode *result, gboolean outgoing);
 
 /* Manager: owns one client per (server, project root). */
 IdeLspManager *ide_lsp_manager_new(const char    *workspace_root,
@@ -142,6 +185,27 @@ void           ide_lsp_manager_request_rename(IdeLspManager *lsp,
 
 /* textDocument/implementation (jumps like definition). */
 void           ide_lsp_manager_request_implementation(IdeLspManager *lsp, IdeBuffer *buf);
+
+/* textDocument/references (pixel-anchored popover list; confirm jumps via jump_cb). */
+void           ide_lsp_manager_request_references(IdeLspManager *lsp,
+                                                  GtkWidget     *anchor_view,
+                                                  IdeBuffer     *buf,
+                                                  guint          line_1based,
+                                                  guint          col_1based);
+
+/* textDocument/signatureHelp (pixel-anchored popover; select_next/prev cycles overloads). */
+void           ide_lsp_manager_request_signature_help(IdeLspManager *lsp,
+                                                      GtkWidget     *anchor_view,
+                                                      IdeBuffer     *buf,
+                                                      guint          line_1based,
+                                                      guint          col_1based);
+
+/* textDocument/prepareCallHierarchy + incomingCalls / outgoingCalls popover. */
+void           ide_lsp_manager_request_call_hierarchy(IdeLspManager *lsp,
+                                                      GtkWidget     *anchor_view,
+                                                      IdeBuffer     *buf,
+                                                      gboolean       outgoing);
+void           ide_lsp_manager_toggle_call_hierarchy_dir(IdeLspManager *lsp);
 
 /* Interactive rename prompt: begin -> input/backspace -> confirm | cancel_popover. */
 void           ide_lsp_manager_rename_begin(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf);

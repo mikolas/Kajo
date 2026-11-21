@@ -161,7 +161,10 @@ test_handshake_queueing_and_responses(void)
   /* capabilities */
   g_assert_true(ide_lsp_client_has_capability(c, "hoverProvider"));
   g_assert_true(ide_lsp_client_has_capability(c, "completionProvider.triggerCharacters"));
-  g_assert_false(ide_lsp_client_has_capability(c, "referencesProvider"));
+  g_assert_true(ide_lsp_client_has_capability(c, "referencesProvider"));
+  g_assert_true(ide_lsp_client_has_capability(c, "signatureHelpProvider.triggerCharacters"));
+  g_assert_true(ide_lsp_client_has_capability(c, "callHierarchyProvider"));
+  g_assert_false(ide_lsp_client_has_capability(c, "documentHighlightProvider"));
 
   /* diagnostics + server->client showMessage (server requests were auto-answered) */
   WAIT_UNTIL(ctx.got_diag && ctx.got_message);

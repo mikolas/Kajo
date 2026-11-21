@@ -568,6 +568,136 @@ static void test_lsp_text_edits_and_snippets(void) {
   json_node_unref(en);
 }
 
+static void test_lsp_references_signature_call_hierarchy_parsers(void) {
+  /* 1. ide_lsp_parse_locations: Location + LocationLink */
+  const char *locs_json =
+      "["
+      "  {\"uri\":\"file:///tmp/a.c\",\"range\":{\"start\":{\"line\":4,\"character\":2},\"end\":{\"line\":4,\"character\":5}}},"
+      "  {\"targetUri\":\"file:///tmp/b.c\",\"targetRange\":{\"start\":{\"line\":1,\"character\":0},\"end\":{\"line\":9,\"character\":1}},"
+      "   \"targetSelectionRange\":{\"start\":{\"line\":2,\"character\":7},\"end\":{\"line\":2,\"character\":11}}},"
+      "  {\"targetUri\":\"file:///tmp/c.c\",\"targetRange\":{\"start\":{\"line\":0,\"character\":0},\"end\":{\"line\":0,\"character\":3}}}"
+      "]";
+  g_autoptr(JsonNode) locs_node = json_from_string(locs_json, NULL);
+  g_autoptr(GPtrArray) locs = ide_lsp_parse_locations(locs_node);
+  g_assert_cmpuint(locs->len, ==, 3);
+
+  const IdeLspLocation *l0 = g_ptr_array_index(locs, 0);
+  g_assert_cmpstr(l0->path, ==, "/tmp/a.c");
+  g_assert_cmpuint(l0->line_1based, ==, 5);
+  g_assert_cmpuint(l0->col_1based, ==, 3);
+
+  const IdeLspLocation *l1 = g_ptr_array_index(locs, 1);
+  g_assert_cmpstr(l1->path, ==, "/tmp/b.c");
+  g_assert_cmpuint(l1->line_1based, ==, 3);
+  g_assert_cmpuint(l1->col_1based, ==, 8);
+
+  const IdeLspLocation *l2 = g_ptr_array_index(locs, 2);
+  g_assert_cmpstr(l2->path, ==, "/tmp/c.c");
+  g_assert_cmpuint(l2->line_1based, ==, 1);
+  g_assert_cmpuint(l2->col_1based, ==, 1);
+
+  g_autoptr(GPtrArray) empty_locs = ide_lsp_parse_locations(NULL);
+  g_assert_cmpuint(empty_locs->len, ==, 0);
+
+  /* 2. ide_lsp_parse_signature_help + ide_lsp_format_signature_pango */
+  const char *sig_json =
+      "{"
+      "  \"activeSignature\": 0,"
+      "  \"activeParameter\": 1,"
+      "  \"signatures\": ["
+      "    {"
+      "      \"label\": \"void fill(std::vector<int> &out, const T *ptr)\","
+      "      \"documentation\": {\"kind\":\"markdown\",\"value\":\"Fills out.\"},"
+      "      \"parameters\": ["
+      "        {\"label\": \"std::vector<int> &out\"},"
+      "        {\"label\": \"const T *ptr\"}"
+      "      ]"
+      "    },"
+      "    {"
+      "      \"label\": \"int add(int, int)\","
+      "      \"documentation\": \"Adds two ints.\","
+      "      \"parameters\": [{\"label\": [8, 11]}, {\"label\": [13, 16]}]"
+      "    }"
+      "  ]"
+      "}";
+  g_autoptr(JsonNode) sig_node = json_from_string(sig_json, NULL);
+  guint active_sig = 99;
+  gint active_param = -99;
+  g_autoptr(GPtrArray) sigs = ide_lsp_parse_signature_help(sig_node, &active_sig, &active_param);
+  g_assert_cmpuint(sigs->len, ==, 2);
+  g_assert_cmpuint(active_sig, ==, 0);
+  g_assert_cmpint(active_param, ==, 1);
+
+  const IdeLspSignatureInfo *s0 = g_ptr_array_index(sigs, 0);
+  g_assert_cmpstr(s0->documentation, ==, "Fills out.");
+  g_assert_cmpuint(s0->param_labels->len, ==, 2);
+  g_autofree char *p0 = ide_lsp_format_signature_pango(s0, 0);
+  g_autoptr(GError) perr = NULL;
+  g_assert_true(pango_parse_markup(p0, -1, 0, NULL, NULL, NULL, &perr));
+  g_assert_no_error(perr);
+  g_assert_nonnull(strstr(p0, "<span foreground=\"#00d8f0\" weight=\"bold\">std::vector&lt;int&gt; &amp;out</span>"));
+
+  g_autofree char *p1 = ide_lsp_format_signature_pango(s0, 1);
+  g_assert_true(pango_parse_markup(p1, -1, 0, NULL, NULL, NULL, &perr));
+  g_assert_no_error(perr);
+  g_assert_nonnull(strstr(p1, "<span foreground=\"#00d8f0\" weight=\"bold\">const T *ptr</span>"));
+
+  /* Offset-tuple parameter labels + duplicate type highlighting (2nd "int") */
+  const IdeLspSignatureInfo *s1 = g_ptr_array_index(sigs, 1);
+  g_assert_cmpuint(s1->param_labels->len, ==, 2);
+  g_assert_cmpstr(g_ptr_array_index(s1->param_labels, 0), ==, "int");
+  g_assert_cmpstr(g_ptr_array_index(s1->param_labels, 1), ==, "int");
+  g_autofree char *p_dup = ide_lsp_format_signature_pango(s1, 1);
+  g_assert_true(pango_parse_markup(p_dup, -1, 0, NULL, NULL, NULL, &perr));
+  g_assert_no_error(perr);
+  g_assert_cmpstr(p_dup, ==, "int add(int, <span foreground=\"#00d8f0\" weight=\"bold\">int</span>)");
+
+  /* 3. ide_lsp_parse_call_hierarchy: incoming & outgoing */
+  const char *in_json =
+      "["
+      "  {\"from\":{\"name\":\"dispatch\",\"kind\":12,\"detail\":\"core.c\",\"uri\":\"file:///tmp/core.c\","
+      "            \"range\":{\"start\":{\"line\":10,\"character\":0},\"end\":{\"line\":20,\"character\":1}},"
+      "            \"selectionRange\":{\"start\":{\"line\":10,\"character\":4},\"end\":{\"line\":10,\"character\":12}}},"
+      "   \"fromRanges\":[{\"start\":{\"line\":14,\"character\":6},\"end\":{\"line\":14,\"character\":10}}]},"
+      "  {\"from\":{\"name\":\"init_all\",\"kind\":6,\"uri\":\"file:///tmp/init.c\","
+      "            \"selectionRange\":{\"start\":{\"line\":3,\"character\":2},\"end\":{\"line\":3,\"character\":10}}},"
+      "   \"fromRanges\":[]}"
+      "]";
+  g_autoptr(JsonNode) in_node = json_from_string(in_json, NULL);
+  g_autoptr(GPtrArray) inc = ide_lsp_parse_call_hierarchy(in_node, FALSE);
+  g_assert_cmpuint(inc->len, ==, 2);
+  const IdeLspCallEntry *ci0 = g_ptr_array_index(inc, 0);
+  g_assert_cmpstr(ci0->name, ==, "dispatch");
+  g_assert_cmpstr(ci0->detail, ==, "core.c");
+  g_assert_cmpstr(ci0->path, ==, "/tmp/core.c");
+  g_assert_cmpuint(ci0->line_1based, ==, 15);
+  g_assert_cmpuint(ci0->col_1based, ==, 7);
+  g_assert_cmpstr(ci0->kind_badge, ==, "ƒ");
+  g_assert_false(ci0->outgoing);
+  const IdeLspCallEntry *ci1 = g_ptr_array_index(inc, 1);
+  g_assert_cmpuint(ci1->line_1based, ==, 4);
+  g_assert_cmpuint(ci1->col_1based, ==, 3);
+
+  const char *out_json =
+      "["
+      "  {\"to\":{\"name\":\"helper\",\"kind\":5,\"detail\":\"pkg.Type\",\"uri\":\"file:///tmp/helper.c\","
+      "          \"range\":{\"start\":{\"line\":20,\"character\":0},\"end\":{\"line\":30,\"character\":1}},"
+      "          \"selectionRange\":{\"start\":{\"line\":21,\"character\":5},\"end\":{\"line\":21,\"character\":11}}},"
+      "   \"fromRanges\":[{\"start\":{\"line\":5,\"character\":2},\"end\":{\"line\":5,\"character\":8}}]}"
+      "]";
+  g_autoptr(JsonNode) out_node = json_from_string(out_json, NULL);
+  g_autoptr(GPtrArray) outc = ide_lsp_parse_call_hierarchy(out_node, TRUE);
+  g_assert_cmpuint(outc->len, ==, 1);
+  const IdeLspCallEntry *co0 = g_ptr_array_index(outc, 0);
+  g_assert_cmpstr(co0->name, ==, "helper");
+  g_assert_cmpstr(co0->detail, ==, "pkg.Type");
+  g_assert_cmpstr(co0->path, ==, "/tmp/helper.c");
+  g_assert_cmpuint(co0->line_1based, ==, 22);
+  g_assert_cmpuint(co0->col_1based, ==, 6);
+  g_assert_cmpstr(co0->kind_badge, ==, "T");
+  g_assert_true(co0->outgoing);
+}
+
 static void test_lsp_server_registry(void) {
   const IdeLspServerSpec *go = ide_lsp_server_spec_for_file("/w/pkg/main.go");
   g_assert_nonnull(go);
@@ -625,11 +755,13 @@ static void test_lsp_server_registry(void) {
 /* ───────────── LSP: manager against the mock server ───────────── */
 
 typedef struct {
-  int       diag_calls;
-  int       msg_calls;
-  char     *last_msg;
-  char     *jump_path;
-  guint     jump_line, jump_col;
+  int           diag_calls;
+  int           msg_calls;
+  int           ui_calls;
+  IdeLspUiState last_ui_state;
+  char         *last_msg;
+  char         *jump_path;
+  guint         jump_line, jump_col;
 } MgrProbe;
 
 static void probe_diag(IdeBuffer *b, gpointer ud) { (void)b; ((MgrProbe *)ud)->diag_calls++; }
@@ -639,7 +771,11 @@ static void probe_msg(const char *m, gpointer ud) {
   g_free(p->last_msg);
   p->last_msg = g_strdup(m);
 }
-static void probe_ui(IdeLspUiState s, gpointer ud) { (void)s; (void)ud; }
+static void probe_ui(IdeLspUiState s, gpointer ud) {
+  MgrProbe *p = ud;
+  p->ui_calls++;
+  p->last_ui_state = s;
+}
 static void probe_status(const char *n, gboolean a, gpointer ud) { (void)n; (void)a; (void)ud; }
 static void probe_jump(const char *path, guint l, guint c, gpointer ud) {
   MgrProbe *p = ud;
@@ -734,7 +870,47 @@ static void test_lsp_manager_with_mock_server(void) {
   g_assert_cmpuint(probe.jump_line, ==, 3);
   g_assert_cmpuint(probe.jump_col, ==, 5);
 
-  /* 7. closing the buffer sends didClose and detaches it */
+  /* 7. references: opens IDE_LSP_UI_REFERENCES, select_next + confirm jumps to 2nd ref */
+  g_clear_pointer(&probe.jump_path, g_free);
+  probe.jump_line = 0;
+  probe.jump_col = 0;
+  ide_lsp_manager_request_references(lsp, NULL, buf, 1, 10);
+  SPIN_UNTIL(probe.last_ui_state == IDE_LSP_UI_REFERENCES);
+  ide_lsp_manager_select_next(lsp);
+  ide_lsp_manager_confirm_selection(lsp, buf);
+  g_assert_cmpint(probe.last_ui_state, ==, IDE_LSP_UI_CLOSED);
+  g_assert_cmpstr(probe.jump_path, ==, path);
+  g_assert_cmpuint(probe.jump_line, ==, 2);
+  g_assert_cmpuint(probe.jump_col, ==, 1);
+
+  /* 8. signature help: opens IDE_LSP_UI_SIGNATURE, cycles overloads, cancels cleanly */
+  ide_lsp_manager_request_signature_help(lsp, NULL, buf, 1, 13);
+  SPIN_UNTIL(probe.last_ui_state == IDE_LSP_UI_SIGNATURE);
+  ide_lsp_manager_select_next(lsp);
+  ide_lsp_manager_select_prev(lsp);
+  g_assert_true(ide_lsp_manager_select_index(lsp, 1));
+  g_assert_false(ide_lsp_manager_select_index(lsp, 5));
+  ide_lsp_manager_cancel_popover(lsp);
+  g_assert_cmpint(probe.last_ui_state, ==, IDE_LSP_UI_CLOSED);
+
+  /* 9. call hierarchy: incoming -> toggle to outgoing -> confirm jumps to callee */
+  g_clear_pointer(&probe.jump_path, g_free);
+  probe.jump_line = 0;
+  probe.jump_col = 0;
+  gtk_text_buffer_get_iter_at_line_offset(tb, &at, 0, 9);
+  gtk_text_buffer_place_cursor(tb, &at);
+  ide_lsp_manager_request_call_hierarchy(lsp, NULL, buf, FALSE);
+  SPIN_UNTIL(probe.last_ui_state == IDE_LSP_UI_CALL_HIERARCHY);
+  int ui_before_toggle = probe.ui_calls;
+  ide_lsp_manager_toggle_call_hierarchy_dir(lsp);
+  SPIN_UNTIL(probe.ui_calls > ui_before_toggle && probe.last_ui_state == IDE_LSP_UI_CALL_HIERARCHY);
+  ide_lsp_manager_confirm_selection(lsp, buf);
+  g_assert_cmpint(probe.last_ui_state, ==, IDE_LSP_UI_CLOSED);
+  g_assert_cmpstr(probe.jump_path, ==, path);
+  g_assert_cmpuint(probe.jump_line, ==, 3);
+  g_assert_cmpuint(probe.jump_col, ==, 1);
+
+  /* 10. closing the buffer sends didClose and detaches it */
   ide_buffer_free(buf);
   ide_lsp_manager_free(lsp);
 
@@ -758,6 +934,12 @@ static void test_lsp_manager_without_server(void) {
   ide_lsp_manager_request_format(lsp, buf);
   g_assert_nonnull(probe.last_msg);
   g_assert_nonnull(strstr(probe.last_msg, "No language server"));
+  ide_lsp_manager_request_references(lsp, NULL, buf, 1, 1);
+  g_assert_nonnull(strstr(probe.last_msg, "Find references needs"));
+  ide_lsp_manager_request_signature_help(lsp, NULL, buf, 1, 1);
+  g_assert_nonnull(strstr(probe.last_msg, "Signature help needs"));
+  ide_lsp_manager_request_call_hierarchy(lsp, NULL, buf, FALSE);
+  g_assert_nonnull(strstr(probe.last_msg, "Call hierarchy needs"));
   /* Out-of-range selection (e.g. digit 5 with two code actions) must be rejected,
    * never clamped onto a different item. */
   g_assert_false(ide_lsp_manager_select_index(lsp, 0));
@@ -788,6 +970,8 @@ int main(int argc, char **argv) {
   g_test_add_func("/ide/markdown/rich-embeds-and-inline-pango",
                   test_markdown_rich_embeds_and_inline_pango);
   g_test_add_func("/ide/lsp/text-edits-snippets-hover", test_lsp_text_edits_and_snippets);
+  g_test_add_func("/ide/lsp/references-signature-call-hierarchy-parsers",
+                  test_lsp_references_signature_call_hierarchy_parsers);
   g_test_add_func("/ide/lsp/server-registry", test_lsp_server_registry);
   g_test_add_func("/ide/lsp/manager-mock-server", test_lsp_manager_with_mock_server);
   g_test_add_func("/ide/lsp/manager-without-server", test_lsp_manager_without_server);

@@ -101,9 +101,15 @@ typedef enum {
   IDE_ACTION_ALTERNATE_FILE,
   IDE_ACTION_LSP_DEFINITION,
   IDE_ACTION_LSP_IMPLEMENTATION,
+  IDE_ACTION_LSP_REFERENCES,
+  IDE_ACTION_LSP_SIGNATURE_HELP,
+  IDE_ACTION_LSP_CALL_HIERARCHY_IN,
+  IDE_ACTION_LSP_CALL_HIERARCHY_OUT,
+  IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE,
   IDE_ACTION_LSP_CODE_ACTION,
   IDE_ACTION_LSP_RENAME,
   IDE_ACTION_LSP_FORMAT,
+  IDE_ACTION_TOGGLE_RELATIVE_LINES,
   IDE_ACTION_TASK_BUILD,
   IDE_ACTION_TASK_TEST,
   IDE_ACTION_TASK_RUN,
@@ -181,6 +187,7 @@ typedef enum {
 
   /* DAP Debugger */
   IDE_ACTION_DAP_TOGGLE_BREAKPOINT,
+  IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT,
   IDE_ACTION_DAP_START,
   IDE_ACTION_DAP_CONTINUE,
   IDE_ACTION_DAP_STEP_OVER,
@@ -220,6 +227,7 @@ IdeState      ide_fsm_get_state(const IdeFsm *fsm);
 IdeState      ide_fsm_get_previous_state(const IdeFsm *fsm);
 void          ide_fsm_set_state(IdeFsm *fsm, IdeState state);
 const char   *ide_state_to_string(IdeState state);
+IdeState      ide_state_from_name(const char *name);
 const char   *ide_state_get_css_class(IdeState state);
 
 const char   *ide_fsm_get_pending_chord(const IdeFsm *fsm);

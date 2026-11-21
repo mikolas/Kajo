@@ -1902,6 +1902,7 @@
     }
 
     .ide-gutter-bp { color: var(--metro-urgent); text-align: center; font-size: 10px; }
+    .ide-gutter-bp.cond { color: var(--metro-urgent); text-shadow: 0 0 0 1px var(--metro-warning); border: 1.5px solid var(--metro-warning); border-radius: 50%; width: 10px; height: 10px; line-height: 7px; margin: auto; }
     .ide-gutter-diag { text-align: center; font-size: 10px; }
     .ide-gutter-pc { color: #ffd700; text-align: center; font-size: 10px; }
     .ide-gutter-ln { color: #666666; text-align: right; padding-right: 4px; }
@@ -1998,8 +1999,24 @@
     .ide-mode-pill.match  { background-color: #b4009e; }
     .ide-mode-pill.leader { background-color: var(--metro-telemetry); color: #000000; }
 
+    /* Inline Disk Conflict & Conditional Breakpoint Banners */
+    .ide-conflict-bar,
+    .ide-cond-bp-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background-color: var(--surface-tier-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 6px 12px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #f0f0f0;
+    }
+    .ide-conflict-bar { border-left: 3px solid var(--metro-warning); }
+    .ide-cond-bp-bar  { border-left: 3px solid var(--metro-urgent); }
+
     /* Right-click code menu (popover.menu in kajo-ide) */
-    .ide-code-menu { background:#141414; border:1px solid var(--metro-accent); width:260px; font-family:'Fira Code',monospace; font-size:12px; padding:2px 0; }
+    .ide-code-menu { background:#141414; border:1px solid var(--metro-accent); width:295px; font-family:'Fira Code',monospace; font-size:12px; padding:2px 0; }
     .ide-code-menu .item { display:flex; justify-content:space-between; padding:4px 10px; color:#e0e0e0; }
     .ide-code-menu .item:hover { background:var(--metro-accent); color:#fff; }
     .ide-code-menu .item.disabled { color:#666; }
@@ -4223,10 +4240,10 @@
                   </div>
                   <div><span class="syn-fn">ide_window_dispatch_action</span>(<span class="syn-type">KajoIdeWindow</span> *self, <span class="syn-type">IdeAction</span> act)</div>
                 </div>
-                <!-- Line 140 (Breakpoint) -->
+                <!-- Line 140 (Conditional Breakpoint: red dot + #ff8c00 amber ring) -->
                 <div class="ide-code-line ide-obj-target">
-                  <div class="ide-gutter" title="Click to toggle DAP Breakpoint (F9)">
-                    <span class="ide-gutter-bp">●</span><span class="ide-gutter-diag"></span><span class="ide-gutter-pc"></span>
+                  <div class="ide-gutter" title="Shift+Click or Shift+F9 for Conditional Breakpoint (count > 5)">
+                    <span class="ide-gutter-bp cond">●</span><span class="ide-gutter-diag"></span><span class="ide-gutter-pc"></span>
                     <span class="ide-gutter-ln">140</span><span class="ide-gutter-diff add"></span><span class="ide-gutter-fold">{</span>
                   </div>
                   <div>{</div>
@@ -4266,24 +4283,41 @@
                   <div>}</div>
                 </div>
 
+                <!-- Inline Disk Conflict (.ide-conflict-bar) & Conditional Breakpoint (.ide-cond-bp-bar) Banners -->
+                <div class="ide-conflict-bar" style="margin-bottom:4px;">
+                  <span style="flex:1;">⚠ External disk change on modified buffer <b>ide_window.c</b></span>
+                  <button class="kajo-btn files-nav-btn">↻ RELOAD FROM DISK</button>
+                  <button class="kajo-btn files-nav-btn">✓ KEEP MY EDITS</button>
+                </div>
+                <div class="ide-cond-bp-bar" style="margin-bottom:6px;">
+                  <span>◆ BP CONDITION (L140):</span>
+                  <input type="text" class="kajo-entry" value="count > 5" style="flex:1; padding:2px 8px; font-size:11px;" />
+                  <button class="kajo-btn action-btn-primary files-nav-btn">✓ SET</button>
+                  <button class="kajo-btn files-nav-btn">✕ CLEAR</button>
+                </div>
+
                 <!-- Right-click code menu specimen: server-only items are greyed until the language server is ready. Use for code actions on the symbol under the pointer; do not add non-code commands (those belong in the Help Palette). -->
                 <div style="margin:6px 0 4px 190px;"><div class="ide-code-menu">
-                  <div class="item"><span>Go to Definition</span><kbd>F12 / Ctrl+Click</kbd></div>
+                  <div class="item"><span>Go to Definition</span><kbd>g d</kbd></div>
                   <div class="item"><span>Go to Implementation</span><kbd>Space g i</kbd></div>
-                  <div class="item"><span>Find References</span><kbd>Space g r</kbd></div>
-                  <div class="item"><span>Show Hover Docs</span><kbd>K</kbd></div>
+                  <div class="item"><span>Find References</span><kbd>g r</kbd></div>
+                  <div class="item"><span>Signature Help</span><kbd>Space g s</kbd></div>
+                  <div class="item"><span>Call Hierarchy (Incoming)</span><kbd>Space g c</kbd></div>
+                  <div class="item"><span>Call Hierarchy (Outgoing)</span><kbd>Space g o</kbd></div>
+                  <div class="item"><span>Show Documentation</span><kbd>K</kbd></div>
                   <hr>
                   <div class="item"><span>Rename Symbol…</span><kbd>Space c r</kbd></div>
                   <div class="item"><span>Code Actions…</span><kbd>Space c a</kbd></div>
-                  <div class="item disabled"><span>Format Document</span><kbd>Space c f</kbd></div>
+                  <div class="item disabled"><span>Format Buffer</span><kbd>Space c f</kbd></div>
                   <hr>
-                  <div class="item"><span>Cut / Copy / Paste</span><kbd></kbd></div>
+                  <div class="item"><span>Toggle Breakpoint</span><kbd>F9</kbd></div>
+                  <div class="item"><span>Conditional Breakpoint…</span><kbd>Shift+F9</kbd></div>
                 </div></div>
 
-                <!-- Pixel-Anchored LSP Completion & Rich GUI Hover Popover Overlay -->
+                <!-- Pixel-Anchored LSP Completion, Signature Help & References / Call Hierarchy Popover Overlays -->
                 <div style="margin:6px 0 4px 190px; display:flex; gap:12px; flex-wrap:wrap; align-items:flex-start;">
                   <!-- Autocomplete Popover -->
-                  <div class="ide-lsp-popover" style="width:360px;">
+                  <div class="ide-lsp-popover" style="width:340px;">
                     <div style="padding:5px 10px; background:rgba(var(--metro-accent-rgb),0.26); border-left:3px solid var(--metro-accent); display:flex; align-items:center; justify-content:space-between;">
                       <div style="display:flex; align-items:center; gap:8px;">
                         <span class="ide-symbol-badge fn">ƒ</span>
@@ -4298,15 +4332,33 @@
                       </div>
                       <span class="files-list-meta">void (IdeBuffer *, ...)</span>
                     </div>
-                    <div style="padding:5px 10px; display:flex; align-items:center; justify-content:space-between;">
-                      <div style="display:flex; align-items:center; gap:8px;">
-                        <span class="ide-symbol-badge struct">S</span>
-                        <span>IdeBufferSaveFlags</span>
-                      </div>
-                      <span class="files-list-meta">enum IdeBufferSaveFlags</span>
-                    </div>
                     <div style="padding:6px 10px; background:#111111; border-top:1px solid var(--border-subtle); font-family:var(--font-sans); font-size:11.5px; color:#bbbbbb;">
                       Writes buffer to a temporary sibling file and atomically <code class="ide-md-code-inline">rename()</code>s over target URI.
+                    </div>
+                  </div>
+                  <!-- Signature Help Popover (Ctrl+Shift+Space / Space g s) -->
+                  <div class="ide-lsp-popover" style="width:320px;">
+                    <div style="padding:4px 10px; background:#181818; border-bottom:1px solid var(--border-subtle); font-size:10px; font-weight:700; color:#999;">SIGNATURE HELP (1 / 2)</div>
+                    <div style="padding:7px 10px; color:#e4e4e4;">
+                      ide_buffer_save_atomic(IdeBuffer *buf, <span style="color:var(--metro-telemetry); font-weight:700;">GError **error</span>)
+                    </div>
+                    <div style="padding:6px 10px; background:#111111; border-top:1px solid var(--border-subtle); font-family:var(--font-sans); font-size:11px; color:#bbbbbb;">
+                      Active parameter highlighted in <code class="ide-md-code-inline">@metro-telemetry</code>; <kbd>j</kbd>/<kbd>k</kbd> cycle overloads.
+                    </div>
+                  </div>
+                  <!-- References / Call Hierarchy Popover (g r / Space g c / Space g o) -->
+                  <div class="ide-lsp-popover" style="width:340px;">
+                    <div style="padding:4px 10px; background:#181818; border-bottom:1px solid var(--border-subtle); display:flex; justify-content:space-between; align-items:center; font-size:10px; font-weight:700; color:#999;">
+                      <span>CALL HIERARCHY — INCOMING (2)</span>
+                      <span style="color:var(--metro-accent);">[ ⇄ OUTGOING (Tab) ]</span>
+                    </div>
+                    <div style="padding:5px 10px; background:rgba(var(--metro-accent-rgb),0.26); border-left:3px solid var(--metro-accent); display:flex; justify-content:space-between;">
+                      <span><span class="ide-symbol-badge fn" style="margin-right:6px;">ƒ</span>ide_window_dispatch_action</span>
+                      <span class="files-list-meta">ide_actions.c:722</span>
+                    </div>
+                    <div style="padding:5px 10px; display:flex; justify-content:space-between;">
+                      <span><span class="ide-symbol-badge fn" style="margin-right:6px;">ƒ</span>on_task_build_save_all</span>
+                      <span class="files-list-meta">ide_actions.c:814</span>
                     </div>
                   </div>
                 </div>
@@ -4571,12 +4623,20 @@
                 <div class="ide-tree-row"><span>  #1 ide_fsm_handle_key</span><span class="files-list-meta">:310</span></div>
                 <div class="ide-tree-row"><span>  #2 on_key_pressed_cb</span><span class="files-list-meta">:89</span></div>
               </div>
-              <div style="border-right:1px solid var(--border-struct); padding:8px;">
-                <div style="font-size:10px; font-weight:700; color:#888; margin-bottom:6px;">LOCALS &amp; EXPANDABLE STRUCTS</div>
-                <div class="ide-tree-row"><span>▾ self</span><span class="syn-type">(KajoIdeWindow *) 0x55a8f0</span></div>
-                <div class="ide-tree-row" style="padding-left:22px;"><span>active_buf</span><span class="syn-str">"src/ide/ide_window.c"</span></div>
-                <div class="ide-tree-row" style="padding-left:22px;"><span>fsm_state</span><span class="syn-mac">IDE_STATE_NORMAL (0)</span></div>
-                <div class="ide-tree-row"><span>  act.type</span><span class="syn-num">IDE_ACTION_SAVE (14)</span></div>
+              <div style="border-right:1px solid var(--border-struct); padding:8px; display:flex; flex-direction:column; gap:6px;">
+                <div>
+                  <div style="font-size:10px; font-weight:700; color:#888; margin-bottom:4px;">LOCALS &amp; SCOPES (CLICK ▸ TO EXPAND)</div>
+                  <div class="ide-tree-row"><span>▾ self</span><span class="syn-type">(KajoIdeWindow *) 0x55a8f0</span></div>
+                  <div class="ide-tree-row" style="padding-left:22px;"><span>active_buf</span><span class="syn-str">"src/ide/ide_window.c"</span></div>
+                  <div class="ide-tree-row" style="padding-left:22px;"><span>fsm_state</span><span class="syn-mac">IDE_STATE_NORMAL (0)</span></div>
+                  <div class="ide-tree-row"><span>▸ point</span><span class="syn-type">struct P = {...}</span></div>
+                </div>
+                <div style="border-top:1px solid #222; padding-top:6px;">
+                  <div style="font-size:10px; font-weight:700; color:#888; margin-bottom:4px;">WATCHES</div>
+                  <div class="ide-tree-row"><span>▾ point = {x=1, y=2}</span><span style="color:#888;">×</span></div>
+                  <div class="ide-tree-row" style="padding-left:22px;"><span>x : int = 1</span><span></span></div>
+                  <input type="text" class="kajo-entry" placeholder="Add watch expression..." style="padding:3px 8px; font-size:11px; margin-top:4px; width:100%;" />
+                </div>
               </div>
               <div style="padding:8px; display:flex; flex-direction:column; justify-content:space-between; background:#101010;">
                 <div>

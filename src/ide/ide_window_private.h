@@ -79,6 +79,10 @@ struct _KajoIdeWindow {
   guint            toast_timer_id;
   GtkWidget       *conflict_bar;
   GtkWidget       *conflict_label;
+  GtkWidget       *cond_bp_bar;
+  GtkWidget       *cond_bp_label;
+  GtkWidget       *cond_bp_entry;
+  guint            cond_bp_line;
   guint            md_sync_timer_id;
 
   /* Bottom Contextual Drawer */
@@ -132,6 +136,8 @@ IdeBuffer *ide_window_get_active_buffer(KajoIdeWindow *self);
 void       ide_window_record_jumplist_here(KajoIdeWindow *self);
 void       ide_window_show_toast(KajoIdeWindow *self, const char *msg);
 void       ide_window_sync_conflict_bar(KajoIdeWindow *self);
+void       ide_window_open_cond_bp_bar(KajoIdeWindow *self, guint line_1based);
+void       ide_window_toggle_relative_lines(KajoIdeWindow *self);
 void       ide_window_sync_markdown_views(KajoIdeWindow *self);
 void       ide_window_schedule_markdown_sync(KajoIdeWindow *self);
 void       ide_window_zoom_editor_font(KajoIdeWindow *self, int delta_or_zero);

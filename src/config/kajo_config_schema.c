@@ -1048,11 +1048,16 @@ replace_or_append_custom_layout_in_doc(const KajoDomainSchema *schema,
         gboolean is_arr = FALSE;
         g_autofree gchar *hdr = parse_line_section_header(doc->str + pos, content_len, &is_arr);
         if (hdr) {
-            gboolean is_layout = (g_strcmp0(hdr, KAJO_CFG_SEC_LAYOUT) == 0 ||
-                                  g_str_has_prefix(hdr, "layout."));
-            if (is_layout && layout_start < 0) {
+            gboolean is_custom =
+                (schema->domain == KAJO_CONFIG_DOMAIN_SHELL &&
+                 (g_strcmp0(hdr, KAJO_CFG_SEC_LAYOUT) == 0 ||
+                  g_str_has_prefix(hdr, "layout."))) ||
+                (schema->domain == KAJO_CONFIG_DOMAIN_IDE &&
+                 (g_strcmp0(hdr, KAJO_CFG_SEC_IDE_KEYS) == 0 ||
+                  g_str_has_prefix(hdr, "keys.")));
+            if (is_custom && layout_start < 0) {
                 layout_start = (gssize)pos;
-            } else if (!is_layout && layout_start >= 0) {
+            } else if (!is_custom && layout_start >= 0) {
                 layout_end = (gssize)pos;
                 break;
             }

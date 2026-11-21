@@ -74,6 +74,14 @@ static const char *const IDE_FONT_FAMILIES[] = {
 
 static const char *const IDE_TAB_LABELS[] = { "2", "4", "8", NULL };
 
+static const char *const IDE_REMAP_STATES[] = {
+    "normal",
+    "select",
+    "tree",
+    "drawer",
+    NULL
+};
+
 typedef struct _SettingsPageIde {
     GtkBox parent_instance;
 
@@ -91,7 +99,18 @@ typedef struct _SettingsPageIde {
     GtkWidget      *sw_margin_guide;
     GtkWidget      *sw_minimap;
     GtkWidget      *sw_gutter;
+    GtkWidget      *sw_rel_lines;
     GtkWidget      *sw_cur_line;
+
+    GtkWidget      *card_remaps;
+    GtkWidget      *remap_list_box;
+    GtkWidget      *combo_remap_state;
+    GtkWidget      *entry_remap_key;
+    GtkWidget      *entry_remap_action;
+    GtkWidget      *btn_remap_add;
+
+    GPtrArray      *draft_remaps;    /* KajoIdeKeyRemap* */
+    GPtrArray      *saved_remaps;    /* KajoIdeKeyRemap* */
 
     guint           current_scheme_idx;
     guint           saved_scheme_idx;
@@ -103,6 +122,7 @@ typedef struct _SettingsPageIde {
     gboolean        saved_margin;
     gboolean        saved_minimap;
     gboolean        saved_gutter;
+    gboolean        saved_rel_lines;
     gboolean        saved_cur_line;
 
     gboolean        syncing_ui;
@@ -113,6 +133,188 @@ typedef struct _SettingsPageIdeClass {
 } SettingsPageIdeClass;
 
 G_DEFINE_TYPE(SettingsPageIde, settings_page_ide, GTK_TYPE_BOX)
+
+static gint
+compare_ide_remaps(gconstpointer pa, gconstpointer pb)
+{
+    const KajoIdeKeyRemap *a = *(const KajoIdeKeyRemap *const *)pa;
+    const KajoIdeKeyRemap *b = *(const KajoIdeKeyRemap *const *)pb;
+    if (a == b)
+        return 0;
+    if (!a)
+        return -1;
+    if (!b)
+        return 1;
+    gint cmp = g_strcmp0(a->state ? a->state : "", b->state ? b->state : "");
+    if (cmp != 0)
+        return cmp;
+    cmp = g_strcmp0(a->key ? a->key : "", b->key ? b->key : "");
+    if (cmp != 0)
+        return cmp;
+    return g_strcmp0(a->action ? a->action : "", b->action ? b->action : "");
+}
+
+static GPtrArray *
+clone_remap_array(const GPtrArray *src)
+{
+    GPtrArray *dst = g_ptr_array_new_with_free_func(kajo_ide_key_remap_free);
+    if (!src)
+        return dst;
+    for (guint i = 0; i < src->len; i++) {
+        const KajoIdeKeyRemap *r = g_ptr_array_index(src, i);
+        if (r)
+            g_ptr_array_add(dst, kajo_ide_key_remap_copy(r));
+    }
+    g_ptr_array_sort(dst, compare_ide_remaps);
+    return dst;
+}
+
+static gboolean
+remap_arrays_equal(const GPtrArray *a, const GPtrArray *b)
+{
+    guint la = a ? a->len : 0;
+    guint lb = b ? b->len : 0;
+    if (la != lb)
+        return FALSE;
+    for (guint i = 0; i < la; i++) {
+        const KajoIdeKeyRemap *ra = g_ptr_array_index(a, i);
+        const KajoIdeKeyRemap *rb = g_ptr_array_index(b, i);
+        if (!kajo_ide_key_remap_equal(ra, rb))
+            return FALSE;
+    }
+    return TRUE;
+}
+
+static void update_ide_telemetry_and_dirty(SettingsPageIde *self);
+static void rebuild_remap_rows(SettingsPageIde *self);
+
+static void
+on_remap_remove_clicked(GtkButton *btn, gpointer user_data)
+{
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    if (!self || !self->draft_remaps)
+        return;
+
+    guint idx = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(btn), "remap-index"));
+    if (idx >= self->draft_remaps->len)
+        return;
+
+    g_ptr_array_remove_index(self->draft_remaps, idx);
+    rebuild_remap_rows(self);
+    update_ide_telemetry_and_dirty(self);
+}
+
+static void
+on_remap_add_clicked(GtkWidget *widget G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageIde *self = (SettingsPageIde *)user_data;
+    if (!self || !self->draft_remaps)
+        return;
+
+    guint st_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_remap_state));
+    const char *state = (st_idx < 4 && IDE_REMAP_STATES[st_idx]) ? IDE_REMAP_STATES[st_idx] : "normal";
+
+    g_autofree gchar *key = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_remap_key)));
+    g_autofree gchar *action = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_remap_action)));
+    g_strstrip(key);
+    g_strstrip(action);
+
+    if (!key[0] || !action[0])
+        return;
+
+    gboolean replaced = FALSE;
+    for (guint i = 0; i < self->draft_remaps->len; i++) {
+        KajoIdeKeyRemap *existing = g_ptr_array_index(self->draft_remaps, i);
+        if (existing &&
+            g_strcmp0(existing->state, state) == 0 &&
+            g_strcmp0(existing->key, key) == 0) {
+            g_free(existing->action);
+            existing->action = g_strdup(action);
+            replaced = TRUE;
+            break;
+        }
+    }
+
+    if (!replaced)
+        g_ptr_array_add(self->draft_remaps, kajo_ide_key_remap_new(state, key, action));
+
+    g_ptr_array_sort(self->draft_remaps, compare_ide_remaps);
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_remap_key), "");
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_remap_action), "");
+
+    rebuild_remap_rows(self);
+    update_ide_telemetry_and_dirty(self);
+}
+
+static void
+rebuild_remap_rows(SettingsPageIde *self)
+{
+    if (!self || !self->remap_list_box)
+        return;
+
+    GtkWidget *child;
+    while ((child = gtk_widget_get_first_child(self->remap_list_box)) != NULL) {
+        gtk_box_remove(GTK_BOX(self->remap_list_box), child);
+    }
+
+    guint count = self->draft_remaps ? self->draft_remaps->len : 0;
+    if (self->card_remaps) {
+        g_autofree gchar *badge = g_strdup_printf("%u %s", count, count == 1 ? "REMAP" : "REMAPS");
+        section_card_set_badge(self->card_remaps, badge, count > 0 ? "accent" : NULL);
+    }
+
+    if (count == 0) {
+        gtk_box_append(GTK_BOX(self->remap_list_box),
+                       create_empty_state_label("No custom key remappings — add a state, key, and action below"));
+        return;
+    }
+
+    for (guint i = 0; i < count; i++) {
+        const KajoIdeKeyRemap *r = g_ptr_array_index(self->draft_remaps, i);
+        if (!r)
+            continue;
+
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_add_css_class(row, "widget-row-card");
+        gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
+        gtk_widget_set_hexpand(row, TRUE);
+
+        g_autofree gchar *up_state = g_ascii_strup(r->state ? r->state : "normal", -1);
+        g_autofree gchar *badge_txt = g_strdup_printf("[%s]", up_state);
+        GtkWidget *badge = gtk_label_new(badge_txt);
+        gtk_widget_add_css_class(badge, "shell-popover-badge");
+        gtk_widget_set_hexpand(badge, FALSE);
+        gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+
+        g_autofree gchar *map_txt = g_strdup_printf("%s  →  %s",
+                                                    r->key ? r->key : "",
+                                                    r->action ? r->action : "");
+        GtkWidget *lbl = gtk_label_new(map_txt);
+        gtk_widget_add_css_class(lbl, "row-title");
+        gtk_widget_set_hexpand(lbl, TRUE);
+        gtk_widget_set_halign(lbl, GTK_ALIGN_FILL);
+        gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+        gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
+        gtk_label_set_width_chars(GTK_LABEL(lbl), 4);
+        gtk_widget_set_tooltip_text(lbl, map_txt);
+
+        GtkWidget *btn_rem = gtk_button_new_with_label("✕");
+        gtk_widget_add_css_class(btn_rem, "files-nav-btn");
+        gtk_widget_add_css_class(btn_rem, "widget-item-btn");
+        gtk_widget_add_css_class(btn_rem, "action-btn-danger");
+        gtk_widget_set_hexpand(btn_rem, FALSE);
+        gtk_widget_set_valign(btn_rem, GTK_ALIGN_CENTER);
+        gtk_widget_set_tooltip_text(btn_rem, "Remove Key Remapping");
+        g_object_set_data(G_OBJECT(btn_rem), "remap-index", GUINT_TO_POINTER(i));
+        g_signal_connect(btn_rem, "clicked", G_CALLBACK(on_remap_remove_clicked), self);
+
+        gtk_box_append(GTK_BOX(row), badge);
+        gtk_box_append(GTK_BOX(row), lbl);
+        gtk_box_append(GTK_BOX(row), btn_rem);
+        gtk_box_append(GTK_BOX(self->remap_list_box), row);
+    }
+}
 
 static void
 update_code_preview_markup(SettingsPageIde *self)
@@ -192,7 +394,9 @@ compute_ide_dirty(SettingsPageIde *self)
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide)) != self->saved_margin) return TRUE;
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_minimap)) != self->saved_minimap) return TRUE;
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_gutter)) != self->saved_gutter) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines)) != self->saved_rel_lines) return TRUE;
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line)) != self->saved_cur_line) return TRUE;
+    if (!remap_arrays_equal(self->draft_remaps, self->saved_remaps)) return TRUE;
     return FALSE;
 }
 
@@ -210,6 +414,7 @@ update_ide_telemetry_and_dirty(SettingsPageIde *self)
     int tab_w = (t_idx == 1) ? 4 : ((t_idx == 2) ? 8 : 2);
     gboolean spaces = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
     gboolean gutter = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    gboolean rel_lines = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
 
     g_autofree gchar *up_font = g_ascii_strup(font_fam, -1);
     g_autofree gchar *c2 = g_strdup_printf("%s %dPX", up_font, font_px);
@@ -219,7 +424,7 @@ update_ide_telemetry_and_dirty(SettingsPageIde *self)
     settings_page_set_counter(GTK_WIDGET(self), 1, "FONT", c2, NULL);
     settings_page_set_counter(GTK_WIDGET(self), 2, "TAB WIDTH", c3, NULL);
     settings_page_set_counter(GTK_WIDGET(self), 3, "GUTTER",
-                              gutter ? "6-COL CAIRO" : "HIDDEN",
+                              gutter ? (rel_lines ? "6-COL REL" : "6-COL CAIRO") : "HIDDEN",
                               gutter ? "success" : NULL);
 
     settings_page_set_nav_badge(GTK_WIDGET(self), "ide", "DARK", NULL);
@@ -306,9 +511,17 @@ action_reset_ide_defaults(gpointer user_data)
     gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), FALSE);
     gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), TRUE);
     gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_rel_lines), FALSE);
     gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), TRUE);
+    if (self->draft_remaps)
+        g_ptr_array_set_size(self->draft_remaps, 0);
+    if (self->entry_remap_key)
+        gtk_editable_set_text(GTK_EDITABLE(self->entry_remap_key), "");
+    if (self->entry_remap_action)
+        gtk_editable_set_text(GTK_EDITABLE(self->entry_remap_action), "");
     self->syncing_ui = FALSE;
 
+    rebuild_remap_rows(self);
     update_code_preview_markup(self);
     update_ide_telemetry_and_dirty(self);
 }
@@ -349,24 +562,34 @@ action_revert_ide(gpointer user_data)
     gtk_switch_set_active(GTK_SWITCH(self->sw_margin_guide), self->saved_margin);
     gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), self->saved_minimap);
     gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), self->saved_gutter);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_rel_lines), self->saved_rel_lines);
     gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), self->saved_cur_line);
+    g_clear_pointer(&self->draft_remaps, g_ptr_array_unref);
+    self->draft_remaps = clone_remap_array(self->saved_remaps);
+    if (self->entry_remap_key)
+        gtk_editable_set_text(GTK_EDITABLE(self->entry_remap_key), "");
+    if (self->entry_remap_action)
+        gtk_editable_set_text(GTK_EDITABLE(self->entry_remap_action), "");
     self->syncing_ui = FALSE;
 
+    rebuild_remap_rows(self);
     update_code_preview_markup(self);
     update_ide_telemetry_and_dirty(self);
 }
 
 typedef struct {
-    const gchar *scheme_id;
-    const gchar *font_fam;
-    gint         font_px;
-    gint         tab_w;
-    gboolean     minimap;
-    gboolean     gutter;
-    gboolean     cur_line;
-    gboolean     wrap;
-    gboolean     margin;
-    gboolean     spaces;
+    const gchar     *scheme_id;
+    const gchar     *font_fam;
+    gint             font_px;
+    gint             tab_w;
+    gboolean         minimap;
+    gboolean         gutter;
+    gboolean         rel_lines;
+    gboolean         cur_line;
+    gboolean         wrap;
+    gboolean         margin;
+    gboolean         spaces;
+    const GPtrArray *remaps;
 } SaveIdeCtx;
 
 static void
@@ -381,10 +604,14 @@ mutate_save_ide(KajoIdeCfg *config, gpointer user_data)
     config->tab_width = ctx->tab_w;
     config->show_minimap = ctx->minimap;
     config->show_line_numbers = ctx->gutter;
+    config->relative_line_numbers = ctx->rel_lines;
     config->highlight_current_line = ctx->cur_line;
     config->word_wrap = ctx->wrap;
     config->show_margin_guide = ctx->margin;
     config->insert_spaces = ctx->spaces;
+    if (config->key_remaps)
+        g_ptr_array_free(config->key_remaps, TRUE);
+    config->key_remaps = clone_remap_array(ctx->remaps);
 }
 
 /* Writes the current control values to ide.toml and reloads every running
@@ -403,12 +630,13 @@ action_save_ide(gpointer user_data)
     guint t_idx = segmented_group_get_selected(self->seg_tab_width);
     int tab_w = (t_idx == 1) ? 4 : ((t_idx == 2) ? 8 : 2);
 
-    gboolean spaces   = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
-    gboolean wrap     = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
-    gboolean margin   = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
-    gboolean minimap  = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
-    gboolean gutter   = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
-    gboolean cur_line = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
+    gboolean spaces    = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
+    gboolean wrap      = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
+    gboolean margin    = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
+    gboolean minimap   = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
+    gboolean gutter    = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    gboolean rel_lines = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
+    gboolean cur_line  = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
 
     SaveIdeCtx ctx = {
         IDE_SCHEMES[s_idx].id,
@@ -417,10 +645,12 @@ action_save_ide(gpointer user_data)
         tab_w,
         minimap,
         gutter,
+        rel_lines,
         cur_line,
         wrap,
         margin,
         spaces,
+        self->draft_remaps,
     };
     kajo_config_store_update_ide(NULL, mutate_save_ide, &ctx, NULL);
 
@@ -433,7 +663,10 @@ action_save_ide(gpointer user_data)
     self->saved_margin     = margin;
     self->saved_minimap    = minimap;
     self->saved_gutter     = gutter;
+    self->saved_rel_lines  = rel_lines;
     self->saved_cur_line   = cur_line;
+    g_clear_pointer(&self->saved_remaps, g_ptr_array_unref);
+    self->saved_remaps = clone_remap_array(self->draft_remaps);
 
     settings_reload_global_theme();
     settings_send_ipc_command("reload-config");
@@ -469,6 +702,9 @@ settings_page_ide_dispose(GObject *object)
         }
         g_clear_object(&self->preview_bg_provider);
     }
+
+    g_clear_pointer(&self->draft_remaps, g_ptr_array_unref);
+    g_clear_pointer(&self->saved_remaps, g_ptr_array_unref);
 
     G_OBJECT_CLASS(settings_page_ide_parent_class)->dispose(object);
 }
@@ -683,6 +919,15 @@ build_page_ide(void)
         "Breakpoints • LSP Diagnostics • DAP PC • Line • Git Diff • Fold",
         self->sw_gutter));
 
+    self->sw_rel_lines = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_rel_lines, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_rel_lines), config ? config->relative_line_numbers : FALSE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "↕",
+        "Relative Line Numbers",
+        "Hybrid relative distance from cursor line (absolute on active line)",
+        self->sw_rel_lines));
+
     self->sw_minimap = gtk_switch_new();
     gtk_widget_set_valign(self->sw_minimap, GTK_ALIGN_CENTER);
     gtk_switch_set_active(GTK_SWITCH(self->sw_minimap), config ? config->show_minimap : TRUE);
@@ -721,6 +966,55 @@ build_page_ide(void)
 
     settings_bento_add_full(GTK_WIDGET(self), card_chrome);
 
+    /* ─── Card 4: Key Remapping (ide.toml) ─── */
+    self->card_remaps = create_section_card(
+        SETTINGS_CARD_LEFT,
+        "4. KEY REMAPPING (ide.toml)",
+        "0 REMAPS",
+        NULL,
+        NULL);
+
+    self->remap_list_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_set_hexpand(self->remap_list_box, TRUE);
+    gtk_box_append(GTK_BOX(self->card_remaps), self->remap_list_box);
+
+    GtkWidget *add_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_valign(add_bar, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(add_bar, TRUE);
+
+    self->combo_remap_state = create_string_dropdown(IDE_REMAP_STATES);
+    gtk_widget_set_valign(self->combo_remap_state, GTK_ALIGN_CENTER);
+    gtk_widget_set_hexpand(self->combo_remap_state, FALSE);
+
+    self->entry_remap_key = gtk_entry_new();
+    gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_remap_key), 10);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_remap_key), "Key (e.g. j, Ctrl+k, Space)");
+    gtk_widget_set_hexpand(self->entry_remap_key, TRUE);
+    gtk_widget_set_valign(self->entry_remap_key, GTK_ALIGN_CENTER);
+
+    self->entry_remap_action = gtk_entry_new();
+    gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_remap_action), 14);
+    gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_remap_action), "Action (e.g. move_down, save)");
+    gtk_widget_set_hexpand(self->entry_remap_action, TRUE);
+    gtk_widget_set_valign(self->entry_remap_action, GTK_ALIGN_CENTER);
+
+    self->btn_remap_add = gtk_button_new_with_label("+ ADD");
+    gtk_widget_add_css_class(self->btn_remap_add, "files-nav-btn");
+    gtk_widget_set_hexpand(self->btn_remap_add, FALSE);
+    gtk_widget_set_valign(self->btn_remap_add, GTK_ALIGN_CENTER);
+
+    gtk_box_append(GTK_BOX(add_bar), self->combo_remap_state);
+    gtk_box_append(GTK_BOX(add_bar), self->entry_remap_key);
+    gtk_box_append(GTK_BOX(add_bar), self->entry_remap_action);
+    gtk_box_append(GTK_BOX(add_bar), self->btn_remap_add);
+    gtk_box_append(GTK_BOX(self->card_remaps), add_bar);
+
+    settings_bento_add_full(GTK_WIDGET(self), self->card_remaps);
+
+    self->saved_remaps = clone_remap_array(config ? config->key_remaps : NULL);
+    self->draft_remaps = clone_remap_array(self->saved_remaps);
+    rebuild_remap_rows(self);
+
     self->saved_scheme_idx = init_scheme_idx;
     self->saved_font_idx   = init_font_idx;
     self->saved_font_px    = init_px;
@@ -730,6 +1024,7 @@ build_page_ide(void)
     self->saved_margin     = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
     self->saved_minimap    = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
     self->saved_gutter     = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    self->saved_rel_lines  = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
     self->saved_cur_line   = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
 
     select_ide_scheme(self, init_scheme_idx, FALSE);
@@ -743,7 +1038,10 @@ build_page_ide(void)
     g_signal_connect(self->sw_margin_guide, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
     g_signal_connect(self->sw_minimap, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
     g_signal_connect(self->sw_gutter, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_rel_lines, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
     g_signal_connect(self->sw_cur_line, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->btn_remap_add, "clicked", G_CALLBACK(on_remap_add_clicked), self);
+    g_signal_connect(self->entry_remap_action, "activate", G_CALLBACK(on_remap_add_clicked), self);
     g_signal_connect(self, "map", G_CALLBACK(on_ide_page_mapped), NULL);
 
     settings_page_bind_actions(

@@ -103,6 +103,11 @@ void          ide_buffer_set_external_change_callback(IdeBuffer                *
 gboolean      ide_buffer_has_breakpoint(const IdeBuffer *buf, guint line_1based);
 gboolean      ide_buffer_toggle_breakpoint(IdeBuffer *buf, guint line_1based);
 GArray       *ide_buffer_get_breakpoints(const IdeBuffer *buf);
+const char   *ide_buffer_get_breakpoint_condition(const IdeBuffer *buf, guint line_1based);
+gboolean      ide_buffer_has_breakpoint_condition(const IdeBuffer *buf, guint line_1based);
+void          ide_buffer_set_breakpoint_condition(IdeBuffer  *buf,
+                                                  guint       line_1based,
+                                                  const char *condition);
 
 void          ide_buffer_clear_diagnostics(IdeBuffer *buf);
 void          ide_buffer_add_diagnostic(IdeBuffer      *buf,

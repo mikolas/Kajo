@@ -1,5 +1,6 @@
 #include "../src/ide/ide_buffer.h"
 #include "../src/ide/ide_fsm.h"
+#include "../src/ide/ide_gutter.h"
 #include "../src/ide/ide_picker.h"
 #include "../src/ide/ide_search.h"
 #include "../src/ide/ide_tree.h"
@@ -731,6 +732,41 @@ test_file_monitor_self_save_reload_and_collision(void)
   g_rmdir(tmp_dir);
 }
 
+static void
+test_gutter_relative_numbers_and_conditional_breakpoints(void)
+{
+  /* 1. Hybrid relative line numbers: cursor line shows absolute, others distance */
+  g_assert_cmpuint(ide_gutter_display_line_number(10, 10, FALSE), ==, 10);
+  g_assert_cmpuint(ide_gutter_display_line_number(7, 10, FALSE), ==, 7);
+  g_assert_cmpuint(ide_gutter_display_line_number(10, 10, TRUE), ==, 10);
+  g_assert_cmpuint(ide_gutter_display_line_number(7, 10, TRUE), ==, 3);
+  g_assert_cmpuint(ide_gutter_display_line_number(15, 10, TRUE), ==, 5);
+  g_assert_cmpuint(ide_gutter_display_line_number(4, 0, TRUE), ==, 4);
+
+  /* 2. Conditional breakpoint API on IdeBuffer */
+  IdeBuffer *buf = ide_buffer_new("bp.c");
+  g_assert_false(ide_buffer_has_breakpoint(buf, 12));
+  g_assert_false(ide_buffer_has_breakpoint_condition(buf, 12));
+  g_assert_null(ide_buffer_get_breakpoint_condition(buf, 12));
+
+  /* Setting condition on a line without a breakpoint creates it */
+  ide_buffer_set_breakpoint_condition(buf, 12, "  count > 5  ");
+  g_assert_true(ide_buffer_has_breakpoint(buf, 12));
+  g_assert_true(ide_buffer_has_breakpoint_condition(buf, 12));
+  g_assert_cmpstr(ide_buffer_get_breakpoint_condition(buf, 12), ==, "count > 5");
+
+  /* Clearing condition keeps the breakpoint enabled as unconditional */
+  ide_buffer_set_breakpoint_condition(buf, 12, "");
+  g_assert_true(ide_buffer_has_breakpoint(buf, 12));
+  g_assert_false(ide_buffer_has_breakpoint_condition(buf, 12));
+  g_assert_null(ide_buffer_get_breakpoint_condition(buf, 12));
+
+  /* Toggling removes the breakpoint cleanly */
+  g_assert_false(ide_buffer_toggle_breakpoint(buf, 12));
+  g_assert_false(ide_buffer_has_breakpoint(buf, 12));
+  ide_buffer_free(buf);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -751,6 +787,8 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/vasm-diagnostics", test_vasm_diagnostics_are_clickable);
   g_test_add_func("/ide/buffer/file-monitor-self-save-reload-collision",
                   test_file_monitor_self_save_reload_and_collision);
+  g_test_add_func("/ide/buffer/gutter-relative-and-conditional-bp",
+                  test_gutter_relative_numbers_and_conditional_breakpoints);
 
   return g_test_run();
 }

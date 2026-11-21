@@ -2,9 +2,58 @@
 #include "ide_picker.h"
 #include "ide_search.h"
 
+#include <stdio.h>
 #include <string.h>
 
 /* ═══════════════════════════ Pure helpers ═══════════════════════════ */
+
+static const char *
+json_str(JsonObject *o, const char *name)
+{
+  return (o != NULL && json_object_has_member(o, name) &&
+          JSON_NODE_HOLDS_VALUE(json_object_get_member(o, name)))
+             ? json_object_get_string_member(o, name)
+             : NULL;
+}
+
+static JsonObject *
+json_obj_member(JsonObject *o, const char *name)
+{
+  if (o == NULL || !json_object_has_member(o, name)) {
+    return NULL;
+  }
+  JsonNode *n = json_object_get_member(o, name);
+  return (n != NULL && JSON_NODE_HOLDS_OBJECT(n)) ? json_node_get_object(n) : NULL;
+}
+
+static char *
+extract_lsp_doc(JsonNode *dn)
+{
+  if (dn == NULL || JSON_NODE_HOLDS_NULL(dn)) {
+    return NULL;
+  }
+  if (JSON_NODE_HOLDS_VALUE(dn)) {
+    return g_strdup(json_node_get_string(dn));
+  }
+  if (JSON_NODE_HOLDS_OBJECT(dn)) {
+    return g_strdup(json_str(json_node_get_object(dn), "value"));
+  }
+  return NULL;
+}
+
+static const char *
+symbol_kind_badge(gint kind)
+{
+  switch (kind) {
+    case 1: return "F";                        /* File */
+    case 2: case 3: case 4: return "m";        /* Module, Namespace, Package */
+    case 5: case 10: case 11: case 23: return "T"; /* Class, Enum, Interface, Struct */
+    case 6: case 9: case 12: return "ƒ";       /* Method, Constructor, Function */
+    case 7: case 8: case 13: return "v";       /* Property, Field, Variable */
+    case 14: case 22: return "c";              /* Constant, EnumMember */
+    default: return "•";
+  }
+}
 
 IdeLspTextEdit *
 ide_lsp_text_edit_new(guint line_start, guint char_start, guint line_end, guint char_end,
@@ -274,6 +323,464 @@ ide_completion_item_free(gpointer data)
   g_free(it);
 }
 
+void
+ide_lsp_location_free(gpointer data)
+{
+  IdeLspLocation *loc = data;
+  if (loc == NULL) {
+    return;
+  }
+  g_free(loc->path);
+  g_free(loc->preview);
+  g_free(loc);
+}
+
+static IdeLspLocation *
+parse_location_object(JsonObject *o)
+{
+  if (o == NULL) {
+    return NULL;
+  }
+  const char *uri = json_str(o, "targetUri");
+  if (uri == NULL) {
+    uri = json_str(o, "uri");
+  }
+  JsonObject *range = json_obj_member(o, "targetSelectionRange");
+  if (range == NULL) {
+    range = json_obj_member(o, "range");
+  }
+  if (range == NULL) {
+    range = json_obj_member(o, "targetRange");
+  }
+  if (uri == NULL || range == NULL) {
+    return NULL;
+  }
+  JsonObject *start = json_obj_member(range, "start");
+  if (start == NULL) {
+    return NULL;
+  }
+  char *path = g_filename_from_uri(uri, NULL, NULL);
+  if (path == NULL) {
+    return NULL;
+  }
+  gint64 line0 = MAX(0, json_object_get_int_member_with_default(start, "line", 0));
+  gint64 ch0 = MAX(0, json_object_get_int_member_with_default(start, "character", 0));
+
+  IdeLspLocation *loc = g_new0(IdeLspLocation, 1);
+  loc->path = path;
+  loc->line_1based = (guint)line0 + 1;
+  loc->col_1based = (guint)ch0 + 1;
+  return loc;
+}
+
+GPtrArray *
+ide_lsp_parse_locations(JsonNode *result)
+{
+  GPtrArray *out = g_ptr_array_new_with_free_func(ide_lsp_location_free);
+  if (result == NULL || JSON_NODE_HOLDS_NULL(result)) {
+    return out;
+  }
+  if (JSON_NODE_HOLDS_OBJECT(result)) {
+    IdeLspLocation *loc = parse_location_object(json_node_get_object(result));
+    if (loc != NULL) {
+      g_ptr_array_add(out, loc);
+    }
+    return out;
+  }
+  if (!JSON_NODE_HOLDS_ARRAY(result)) {
+    return out;
+  }
+  JsonArray *arr = json_node_get_array(result);
+  for (guint i = 0; i < json_array_get_length(arr); i++) {
+    JsonNode *n = json_array_get_element(arr, i);
+    if (n == NULL || !JSON_NODE_HOLDS_OBJECT(n)) {
+      continue;
+    }
+    IdeLspLocation *loc = parse_location_object(json_node_get_object(n));
+    if (loc != NULL) {
+      g_ptr_array_add(out, loc);
+    }
+  }
+  return out;
+}
+
+void
+ide_lsp_signature_info_free(gpointer data)
+{
+  IdeLspSignatureInfo *sig = data;
+  if (sig == NULL) {
+    return;
+  }
+  g_free(sig->label);
+  g_free(sig->documentation);
+  g_clear_pointer(&sig->param_labels, g_ptr_array_unref);
+  g_free(sig);
+}
+
+static gboolean
+json_int_opt(JsonObject *o, const char *name, gint64 *out)
+{
+  if (o == NULL || !json_object_has_member(o, name)) {
+    return FALSE;
+  }
+  JsonNode *n = json_object_get_member(o, name);
+  if (n == NULL || !JSON_NODE_HOLDS_VALUE(n) || json_node_is_null(n)) {
+    return FALSE;
+  }
+  GType t = json_node_get_value_type(n);
+  if (t != G_TYPE_INT64 && t != G_TYPE_DOUBLE) {
+    return FALSE;
+  }
+  *out = json_node_get_int(n);
+  return TRUE;
+}
+
+GPtrArray *
+ide_lsp_parse_signature_help(JsonNode *result,
+                             guint    *out_active_sig,
+                             gint     *out_active_param)
+{
+  if (out_active_sig != NULL) {
+    *out_active_sig = 0;
+  }
+  if (out_active_param != NULL) {
+    *out_active_param = -1;
+  }
+  GPtrArray *out = g_ptr_array_new_with_free_func(ide_lsp_signature_info_free);
+  if (result == NULL || !JSON_NODE_HOLDS_OBJECT(result)) {
+    return out;
+  }
+
+  JsonObject *ro = json_node_get_object(result);
+  gint64 top_sig_val = 0;
+  guint active_sig = 0;
+  if (json_int_opt(ro, "activeSignature", &top_sig_val) && top_sig_val >= 0) {
+    active_sig = (guint)top_sig_val;
+  }
+  gint64 top_param_val = -1;
+  gint top_active_param = -1;
+  if (json_int_opt(ro, "activeParameter", &top_param_val) && top_param_val >= 0) {
+    top_active_param = (gint)top_param_val;
+  }
+
+  if (!json_object_has_member(ro, "signatures") ||
+      !JSON_NODE_HOLDS_ARRAY(json_object_get_member(ro, "signatures"))) {
+    return out;
+  }
+  JsonArray *sarr = json_object_get_array_member(ro, "signatures");
+  for (guint i = 0; i < json_array_get_length(sarr); i++) {
+    JsonNode *sn = json_array_get_element(sarr, i);
+    if (sn == NULL || !JSON_NODE_HOLDS_OBJECT(sn)) {
+      continue;
+    }
+    JsonObject *so = json_node_get_object(sn);
+    const char *label = json_str(so, "label");
+    if (label == NULL) {
+      continue;
+    }
+    IdeLspSignatureInfo *sig = g_new0(IdeLspSignatureInfo, 1);
+    sig->label = g_strdup(label);
+    if (json_object_has_member(so, "documentation")) {
+      sig->documentation = extract_lsp_doc(json_object_get_member(so, "documentation"));
+    }
+    sig->param_labels = g_ptr_array_new_with_free_func(g_free);
+
+    gint64 per_sig_param = -1;
+    if (json_int_opt(so, "activeParameter", &per_sig_param) && per_sig_param >= 0) {
+      sig->active_param = (gint)per_sig_param;
+    } else {
+      sig->active_param = top_active_param;
+    }
+
+    if (json_object_has_member(so, "parameters") &&
+        JSON_NODE_HOLDS_ARRAY(json_object_get_member(so, "parameters"))) {
+      JsonArray *parr = json_object_get_array_member(so, "parameters");
+      gsize label_len = strlen(sig->label);
+      for (guint j = 0; j < json_array_get_length(parr); j++) {
+        JsonNode *pn = json_array_get_element(parr, j);
+        if (pn == NULL || !JSON_NODE_HOLDS_OBJECT(pn)) {
+          continue;
+        }
+        JsonObject *po = json_node_get_object(pn);
+        if (!json_object_has_member(po, "label")) {
+          continue;
+        }
+        JsonNode *ln = json_object_get_member(po, "label");
+        if (ln != NULL && JSON_NODE_HOLDS_VALUE(ln) && !json_node_is_null(ln)) {
+          const char *pl = json_node_get_string(ln);
+          if (pl != NULL) {
+            g_ptr_array_add(sig->param_labels, g_strdup(pl));
+          }
+        } else if (ln != NULL && JSON_NODE_HOLDS_ARRAY(ln)) {
+          /* ParameterInformation.label as [start, end] UTF-16 offsets in sig->label */
+          JsonArray *offs = json_node_get_array(ln);
+          if (json_array_get_length(offs) >= 2) {
+            gint64 u0 = MAX(0, json_array_get_int_element(offs, 0));
+            gint64 u1 = MAX(u0, json_array_get_int_element(offs, 1));
+            gsize b0 = MIN(ide_utf16_col_to_utf8_byte(sig->label, (guint)u0), label_len);
+            gsize b1 = MIN(ide_utf16_col_to_utf8_byte(sig->label, (guint)u1), label_len);
+            if (b1 > b0) {
+              g_ptr_array_add(sig->param_labels, g_strndup(sig->label + b0, b1 - b0));
+            }
+          }
+        }
+      }
+    }
+
+    g_ptr_array_add(out, sig);
+  }
+
+  if (out->len > 0) {
+    if (active_sig >= out->len) {
+      active_sig = out->len - 1;
+    }
+    const IdeLspSignatureInfo *cur = g_ptr_array_index(out, active_sig);
+    if (out_active_sig != NULL) {
+      *out_active_sig = active_sig;
+    }
+    if (out_active_param != NULL) {
+      *out_active_param = cur->active_param;
+    }
+  } else if (out_active_param != NULL) {
+    *out_active_param = top_active_param;
+  }
+  return out;
+}
+
+/* Locates the `param_idx`-th comma-separated parameter inside the first balanced
+ * `(...)` in `label`, ignoring commas nested in `()`, `<>`, `[]`. */
+static gboolean
+find_nth_param_span(const char *label, gint param_idx, gsize *start_out, gsize *end_out)
+{
+  if (label == NULL || param_idx < 0) {
+    return FALSE;
+  }
+  const char *open = strchr(label, '(');
+  if (open == NULL) {
+    return FALSE;
+  }
+  const char *p = open + 1;
+  const char *seg_start = p;
+  int paren_depth = 0;
+  int angle_depth = 0;
+  int bracket_depth = 0;
+  gint cur_idx = 0;
+
+  while (*p != '\0') {
+    char c = *p;
+    if (c == '(') {
+      paren_depth++;
+    } else if (c == ')') {
+      if (paren_depth == 0) {
+        if (cur_idx == param_idx) {
+          const char *s = seg_start;
+          const char *e = p;
+          while (s < e && g_ascii_isspace(*s)) s++;
+          while (e > s && g_ascii_isspace(e[-1])) e--;
+          if (e > s) {
+            *start_out = (gsize)(s - label);
+            *end_out = (gsize)(e - label);
+            return TRUE;
+          }
+        }
+        return FALSE;
+      }
+      paren_depth--;
+    } else if (c == '<') {
+      angle_depth++;
+    } else if (c == '>' && angle_depth > 0) {
+      angle_depth--;
+    } else if (c == '[') {
+      bracket_depth++;
+    } else if (c == ']' && bracket_depth > 0) {
+      bracket_depth--;
+    } else if (c == ',' && paren_depth == 0 && angle_depth == 0 && bracket_depth == 0) {
+      if (cur_idx == param_idx) {
+        const char *s = seg_start;
+        const char *e = p;
+        while (s < e && g_ascii_isspace(*s)) s++;
+        while (e > s && g_ascii_isspace(e[-1])) e--;
+        if (e > s) {
+          *start_out = (gsize)(s - label);
+          *end_out = (gsize)(e - label);
+          return TRUE;
+        }
+        return FALSE;
+      }
+      cur_idx++;
+      seg_start = p + 1;
+    }
+    p++;
+  }
+  return FALSE;
+}
+
+char *
+ide_lsp_format_signature_pango(const IdeLspSignatureInfo *sig, gint active_param)
+{
+  if (sig == NULL || sig->label == NULL) {
+    return g_strdup("");
+  }
+  const char *label = sig->label;
+  gint idx = (active_param >= 0) ? active_param : sig->active_param;
+  gsize span_start = 0;
+  gsize span_end = 0;
+  gboolean found = FALSE;
+
+  if (idx >= 0 && sig->param_labels != NULL && (guint)idx < sig->param_labels->len) {
+    /* Walk parameters sequentially after '(' so duplicate parameter types
+     * (e.g. `add(int, int)`) highlight the right occurrence. */
+    const char *open = strchr(label, '(');
+    const char *cursor = (open != NULL) ? (open + 1) : label;
+    gboolean seq_ok = TRUE;
+    for (guint k = 0; k <= (guint)idx; k++) {
+      const char *p = g_ptr_array_index(sig->param_labels, k);
+      if (p == NULL || p[0] == '\0') {
+        seq_ok = FALSE;
+        break;
+      }
+      const char *hit = strstr(cursor, p);
+      if (hit == NULL) {
+        seq_ok = FALSE;
+        break;
+      }
+      gsize plen = strlen(p);
+      if (k == (guint)idx) {
+        span_start = (gsize)(hit - label);
+        span_end = span_start + plen;
+        found = TRUE;
+      }
+      cursor = hit + plen;
+    }
+    if (!found && !seq_ok) {
+      const char *p = g_ptr_array_index(sig->param_labels, (guint)idx);
+      if (p != NULL && p[0] != '\0') {
+        const char *hit = strstr(label, p);
+        if (hit != NULL) {
+          span_start = (gsize)(hit - label);
+          span_end = span_start + strlen(p);
+          found = TRUE;
+        }
+      }
+    }
+  }
+
+  if (!found && idx >= 0) {
+    found = find_nth_param_span(label, idx, &span_start, &span_end);
+  }
+
+  if (found && span_end > span_start) {
+    g_autofree char *before = g_markup_escape_text(label, (gssize)span_start);
+    g_autofree char *mid = g_markup_escape_text(label + span_start, (gssize)(span_end - span_start));
+    g_autofree char *after = g_markup_escape_text(label + span_end, -1);
+    return g_strdup_printf("%s<span foreground=\"#00d8f0\" weight=\"bold\">%s</span>%s",
+                           before, mid, after);
+  }
+  return g_markup_escape_text(label, -1);
+}
+
+void
+ide_lsp_call_entry_free(gpointer data)
+{
+  IdeLspCallEntry *ce = data;
+  if (ce == NULL) {
+    return;
+  }
+  g_free(ce->name);
+  g_free(ce->detail);
+  g_free(ce->path);
+  g_free(ce);
+}
+
+static JsonObject *
+first_from_range(JsonObject *o)
+{
+  if (o == NULL || !json_object_has_member(o, "fromRanges")) {
+    return NULL;
+  }
+  JsonNode *rn = json_object_get_member(o, "fromRanges");
+  if (rn == NULL || !JSON_NODE_HOLDS_ARRAY(rn)) {
+    return NULL;
+  }
+  JsonArray *rarr = json_node_get_array(rn);
+  if (json_array_get_length(rarr) == 0) {
+    return NULL;
+  }
+  JsonNode *r0 = json_array_get_element(rarr, 0);
+  return (r0 != NULL && JSON_NODE_HOLDS_OBJECT(r0)) ? json_node_get_object(r0) : NULL;
+}
+
+GPtrArray *
+ide_lsp_parse_call_hierarchy(JsonNode *result, gboolean outgoing)
+{
+  GPtrArray *out = g_ptr_array_new_with_free_func(ide_lsp_call_entry_free);
+  if (result == NULL || !JSON_NODE_HOLDS_ARRAY(result)) {
+    return out;
+  }
+  JsonArray *arr = json_node_get_array(result);
+  for (guint i = 0; i < json_array_get_length(arr); i++) {
+    JsonNode *n = json_array_get_element(arr, i);
+    if (n == NULL || !JSON_NODE_HOLDS_OBJECT(n)) {
+      continue;
+    }
+    JsonObject *o = json_node_get_object(n);
+    JsonObject *item = json_obj_member(o, outgoing ? "to" : "from");
+    if (item == NULL) {
+      continue;
+    }
+    const char *name = json_str(item, "name");
+    const char *uri = json_str(item, "uri");
+    if (name == NULL || uri == NULL) {
+      continue;
+    }
+    char *path = g_filename_from_uri(uri, NULL, NULL);
+    if (path == NULL) {
+      continue;
+    }
+
+    JsonObject *range = NULL;
+    if (!outgoing) {
+      /* Incoming calls: fromRanges[0] is the call site inside `from.uri`. */
+      range = first_from_range(o);
+      if (range == NULL) {
+        range = json_obj_member(item, "selectionRange");
+      }
+      if (range == NULL) {
+        range = json_obj_member(item, "range");
+      }
+    } else {
+      /* Outgoing calls: `to.selectionRange` is the callee inside `to.uri`. */
+      range = json_obj_member(item, "selectionRange");
+      if (range == NULL) {
+        range = json_obj_member(item, "range");
+      }
+      if (range == NULL) {
+        range = first_from_range(o);
+      }
+    }
+
+    guint line0 = 0;
+    guint ch0 = 0;
+    JsonObject *start = json_obj_member(range, "start");
+    if (start != NULL) {
+      line0 = (guint)MAX(0, json_object_get_int_member_with_default(start, "line", 0));
+      ch0 = (guint)MAX(0, json_object_get_int_member_with_default(start, "character", 0));
+    }
+
+    IdeLspCallEntry *ce = g_new0(IdeLspCallEntry, 1);
+    ce->name = g_strdup(name);
+    ce->detail = g_strdup(json_str(item, "detail"));
+    ce->path = path;
+    ce->line_1based = line0 + 1;
+    ce->col_1based = ch0 + 1;
+    ce->outgoing = outgoing;
+    gint kind = (gint)json_object_get_int_member_with_default(item, "kind", 12);
+    g_strlcpy(ce->kind_badge, symbol_kind_badge(kind), sizeof(ce->kind_badge));
+    g_ptr_array_add(out, ce);
+  }
+  return out;
+}
+
 /* ═══════════════════════════ Manager state ═══════════════════════════ */
 
 typedef struct _DocState DocState;
@@ -290,6 +797,10 @@ typedef enum {
   CTX_RENAME,
   CTX_FORMAT,
   CTX_COMMAND,
+  CTX_REFERENCES,
+  CTX_SIGNATURE,
+  CTX_CALL_PREPARE,
+  CTX_CALL_LIST,
 } CtxKind;
 
 typedef struct {
@@ -298,6 +809,8 @@ typedef struct {
   char          *uri;
   guint          token;
   GtkWidget     *anchor;     /* weak: cleared when the widget is destroyed */
+  gboolean       had_anchor; /* TRUE if caller supplied a non-NULL anchor */
+  gboolean       outgoing;   /* call hierarchy direction */
   IdeBuffer     *buf;
   guint          line_1based;
   guint          col_1based;
@@ -359,6 +872,19 @@ struct _IdeLspManager {
   GString             *rename_input;
   char                *rename_old;
   GtkWidget           *rename_label;
+
+  /* references / signature help / call hierarchy */
+  GPtrArray           *ref_items;       /* IdeLspLocation* */
+  GPtrArray           *sig_items;       /* IdeLspSignatureInfo* */
+  guint                sig_active_idx;
+  gint                 sig_active_param;
+  GtkWidget           *sig_hdr_label;
+  GtkWidget           *sig_code_label;
+  GtkWidget           *sig_doc_label;
+  GPtrArray           *call_items;      /* IdeLspCallEntry* */
+  JsonNode            *call_root_item;  /* cloned CallHierarchyItem for dir toggle */
+  char                *call_root_uri;
+  gboolean             call_outgoing;
 
   /* the single in-flight popover request, cancelled by the next one */
   IdeLspClient        *inflight_client;
@@ -502,6 +1028,76 @@ file_lsp_to_line_col(const char *path, guint line0, guint utf16, guint *line1, g
     gsize byte = MIN(ide_utf16_col_to_utf8_byte(lines[line0], utf16), strlen(lines[line0]));
     *col1 = (guint)g_utf8_pointer_to_offset(lines[line0], lines[line0] + byte) + 1;
   }
+}
+
+/* Reads only up to `line0` from disk; returns trimmed preview line (or NULL)
+ * and resolves UTF-16 `utf16` into 1-based char column `*col1_out`. */
+static char *
+read_disk_line_and_col(const char *path, guint line0, guint utf16, guint *col1_out)
+{
+  if (col1_out != NULL) {
+    *col1_out = utf16 + 1;
+  }
+  if (path == NULL) {
+    return NULL;
+  }
+  FILE *fp = fopen(path, "r");
+  if (fp == NULL) {
+    return NULL;
+  }
+  GString *cur = g_string_new(NULL);
+  guint cur_line = 0;
+  gboolean found = FALSE;
+  char chunk[512];
+  while (fgets(chunk, sizeof(chunk), fp) != NULL) {
+    gsize n = strlen(chunk);
+    gboolean has_nl = (n > 0 && chunk[n - 1] == '\n');
+    if (cur_line == line0) {
+      g_string_append_len(cur, chunk, (gssize)n);
+      if (has_nl) {
+        found = TRUE;
+        break;
+      }
+    } else if (has_nl) {
+      cur_line++;
+    }
+  }
+  if (!found && cur_line == line0 && cur->len > 0) {
+    found = TRUE;
+  }
+  fclose(fp);
+  if (!found) {
+    g_string_free(cur, TRUE);
+    return NULL;
+  }
+  while (cur->len > 0 && (cur->str[cur->len - 1] == '\n' || cur->str[cur->len - 1] == '\r')) {
+    g_string_truncate(cur, cur->len - 1);
+  }
+  if (col1_out != NULL) {
+    gsize byte = MIN(ide_utf16_col_to_utf8_byte(cur->str, utf16), cur->len);
+    *col1_out = (guint)g_utf8_pointer_to_offset(cur->str, cur->str + byte) + 1;
+  }
+  g_strstrip(cur->str);
+  return g_string_free(cur, FALSE);
+}
+
+static void
+resolve_request_lsp_position(IdeBuffer *buf, guint line_1based, guint col_1based,
+                             guint *line0, guint *utf16)
+{
+  if (line_1based == 0 || col_1based == 0) {
+    buffer_cursor_lsp_position(buf, line0, utf16);
+    return;
+  }
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+  gint max_line = MAX(0, gtk_text_buffer_get_line_count(tbuf) - 1);
+  *line0 = (guint)MIN((gint)(line_1based - 1), max_line);
+  g_autofree char *line = buffer_line_text(tbuf, *line0);
+  glong chars = g_utf8_strlen(line, -1);
+  glong off = MIN((glong)(col_1based - 1), chars);
+  const char *p = g_utf8_offset_to_pointer(line, off);
+  gsize byte = MIN((gsize)(p - line), strlen(line));
+  *utf16 = ide_utf8_byte_to_utf16_col(line, byte);
 }
 
 /* ─── status ─── */
@@ -877,6 +1473,10 @@ ide_lsp_manager_new(const char *workspace_root, IdeLspJumpCb jump_cb, IdeLspStat
   lsp->cb_data = user_data;
   lsp->comp_items = g_ptr_array_new_with_free_func(ide_completion_item_free);
   lsp->code_actions = g_ptr_array_new_with_free_func((GDestroyNotify)json_node_unref);
+  lsp->ref_items = g_ptr_array_new_with_free_func(ide_lsp_location_free);
+  lsp->sig_items = g_ptr_array_new_with_free_func(ide_lsp_signature_info_free);
+  lsp->sig_active_param = -1;
+  lsp->call_items = g_ptr_array_new_with_free_func(ide_lsp_call_entry_free);
   lsp->clients = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, client_entry_free);
   lsp->docs = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, doc_free);
   lsp->docs_by_uri = g_hash_table_new(g_str_hash, g_str_equal);
@@ -964,6 +1564,11 @@ ide_lsp_manager_free(IdeLspManager *lsp)
   g_free(lsp->comp_prefix);
   g_clear_pointer(&lsp->comp_items, g_ptr_array_unref);
   g_clear_pointer(&lsp->code_actions, g_ptr_array_unref);
+  g_clear_pointer(&lsp->ref_items, g_ptr_array_unref);
+  g_clear_pointer(&lsp->sig_items, g_ptr_array_unref);
+  g_clear_pointer(&lsp->call_items, g_ptr_array_unref);
+  g_clear_pointer(&lsp->call_root_item, json_node_unref);
+  g_clear_pointer(&lsp->call_root_uri, g_free);
   if (lsp->rename_input != NULL) {
     g_string_free(lsp->rename_input, TRUE);
   }
@@ -1069,6 +1674,9 @@ ide_lsp_manager_notify_close(IdeLspManager *lsp, IdeBuffer *buf)
   }
   if (doc->uri != NULL) {
     g_hash_table_remove(lsp->docs_by_uri, doc->uri);
+  }
+  if (lsp->active_buf == buf) {
+    ide_lsp_manager_cancel_popover(lsp);
   }
   cancel_inflight(lsp);
   g_hash_table_remove(lsp->docs, buf); /* frees doc */
@@ -1258,15 +1866,53 @@ apply_workspace_edit(IdeLspManager *mgr, JsonNode *edit, guint *edits_out, guint
 /* ═══════════════════════════ Popovers ═══════════════════════════ */
 
 static void
-set_ui_state(IdeLspManager *lsp, IdeLspUiState state)
+set_active_anchor(IdeLspManager *lsp, GtkWidget *anchor_view)
 {
-  if (lsp->ui_state == state) {
+  if (lsp->active_anchor != NULL) {
+    g_object_remove_weak_pointer(G_OBJECT(lsp->active_anchor), (gpointer *)&lsp->active_anchor);
+    lsp->active_anchor = NULL;
+  }
+  if (anchor_view != NULL) {
+    lsp->active_anchor = anchor_view;
+    g_object_add_weak_pointer(G_OBJECT(anchor_view), (gpointer *)&lsp->active_anchor);
+  }
+}
+
+static void
+set_ui_state_ex(IdeLspManager *lsp, IdeLspUiState state, gboolean force_notify)
+{
+  if (!force_notify && lsp->ui_state == state) {
     return;
   }
   lsp->ui_state = state;
   if (lsp->ui_state_cb != NULL && !lsp->shutting_down) {
     lsp->ui_state_cb(state, lsp->ui_data);
   }
+}
+
+static void
+set_ui_state(IdeLspManager *lsp, IdeLspUiState state)
+{
+  set_ui_state_ex(lsp, state, FALSE);
+}
+
+static void
+close_popover_widgets(IdeLspManager *lsp)
+{
+  if (lsp->active_popover != NULL) {
+    gtk_popover_popdown(GTK_POPOVER(lsp->active_popover));
+    gtk_widget_unparent(lsp->active_popover);
+    lsp->active_popover = NULL;
+  }
+  set_active_anchor(lsp, NULL);
+  lsp->active_buf = NULL;
+  lsp->comp_list_box = NULL;
+  lsp->comp_scroller = NULL;
+  lsp->comp_doc_label = NULL;
+  lsp->rename_label = NULL;
+  lsp->sig_hdr_label = NULL;
+  lsp->sig_code_label = NULL;
+  lsp->sig_doc_label = NULL;
 }
 
 void
@@ -1279,22 +1925,26 @@ ide_lsp_manager_cancel_popover(IdeLspManager *lsp)
     g_clear_object(&lsp->rg_cancellable);
   }
   lsp->popover_token++;
-  if (lsp->active_popover != NULL) {
-    gtk_popover_popdown(GTK_POPOVER(lsp->active_popover));
-    gtk_widget_unparent(lsp->active_popover);
-    lsp->active_popover = NULL;
-    lsp->active_anchor = NULL;
-    lsp->active_buf = NULL;
-    lsp->comp_list_box = NULL;
-    lsp->comp_scroller = NULL;
-    lsp->comp_doc_label = NULL;
-    lsp->rename_label = NULL;
-  }
+  close_popover_widgets(lsp);
   if (lsp->rename_input != NULL) {
     g_string_free(lsp->rename_input, TRUE);
     lsp->rename_input = NULL;
   }
   lsp->comp_is_code_actions = FALSE;
+  if (lsp->ref_items != NULL) {
+    g_ptr_array_set_size(lsp->ref_items, 0);
+  }
+  if (lsp->sig_items != NULL) {
+    g_ptr_array_set_size(lsp->sig_items, 0);
+  }
+  lsp->sig_active_idx = 0;
+  lsp->sig_active_param = -1;
+  if (lsp->call_items != NULL) {
+    g_ptr_array_set_size(lsp->call_items, 0);
+  }
+  g_clear_pointer(&lsp->call_root_item, json_node_unref);
+  g_clear_pointer(&lsp->call_root_uri, g_free);
+  lsp->call_outgoing = FALSE;
   set_ui_state(lsp, IDE_LSP_UI_CLOSED);
 }
 
@@ -1333,13 +1983,14 @@ static GtkWidget *
 new_popover_for(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf)
 {
   GtkWidget *pop = gtk_popover_new();
+  gtk_widget_add_css_class(pop, "ide-lsp-popover");
   gtk_popover_set_has_arrow(GTK_POPOVER(pop), FALSE);
   gtk_popover_set_autohide(GTK_POPOVER(pop), FALSE);
   gtk_widget_set_parent(pop, anchor_view);
   GdkRectangle rect = compute_cursor_rect(anchor_view, buf);
   gtk_popover_set_pointing_to(GTK_POPOVER(pop), &rect);
   lsp->active_popover = pop;
-  lsp->active_anchor = anchor_view;
+  set_active_anchor(lsp, anchor_view);
   lsp->active_buf = buf;
   return pop;
 }
@@ -1691,36 +2342,58 @@ collect_buffer_identifiers(IdeLspManager *lsp, IdeBuffer *buf, const char *prefi
   }
 }
 
+static guint
+active_list_count(const IdeLspManager *lsp)
+{
+  if (lsp == NULL) {
+    return 0;
+  }
+  switch (lsp->ui_state) {
+    case IDE_LSP_UI_REFERENCES:
+      return lsp->ref_items != NULL ? lsp->ref_items->len : 0;
+    case IDE_LSP_UI_CALL_HIERARCHY:
+      return lsp->call_items != NULL ? lsp->call_items->len : 0;
+    default:
+      return lsp->comp_items != NULL ? lsp->comp_items->len : 0;
+  }
+}
+
 static void
 update_comp_selection_ui(IdeLspManager *lsp)
 {
-  if (lsp->comp_list_box == NULL || lsp->comp_items->len == 0) {
+  guint count = active_list_count(lsp);
+  if (count == 0) {
     return;
   }
-  lsp->selected_comp_idx = CLAMP(lsp->selected_comp_idx, 0, (gint)lsp->comp_items->len - 1);
-  GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(lsp->comp_list_box),
-                                                     lsp->selected_comp_idx);
-  if (row != NULL) {
-    gtk_list_box_select_row(GTK_LIST_BOX(lsp->comp_list_box), row);
+  lsp->selected_comp_idx = CLAMP(lsp->selected_comp_idx, 0, (gint)count - 1);
+  if (lsp->comp_list_box != NULL) {
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(lsp->comp_list_box),
+                                                       lsp->selected_comp_idx);
+    if (row != NULL) {
+      gtk_list_box_select_row(GTK_LIST_BOX(lsp->comp_list_box), row);
 
-    if (lsp->comp_scroller != NULL) {
-      GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(lsp->comp_scroller));
-      graphene_rect_t b;
-      if (adj != NULL && gtk_widget_compute_bounds(GTK_WIDGET(row), lsp->comp_list_box, &b)) {
-        double top = b.origin.y;
-        double bottom = b.origin.y + b.size.height;
-        double value = gtk_adjustment_get_value(adj);
-        double page = gtk_adjustment_get_page_size(adj);
-        if (top < value) {
-          gtk_adjustment_set_value(adj, top);
-        } else if (bottom > value + page) {
-          gtk_adjustment_set_value(adj, bottom - page);
+      if (lsp->comp_scroller != NULL) {
+        GtkAdjustment *adj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(lsp->comp_scroller));
+        graphene_rect_t b;
+        if (adj != NULL && gtk_widget_compute_bounds(GTK_WIDGET(row), lsp->comp_list_box, &b)) {
+          double top = b.origin.y;
+          double bottom = b.origin.y + b.size.height;
+          double value = gtk_adjustment_get_value(adj);
+          double page = gtk_adjustment_get_page_size(adj);
+          if (top < value) {
+            gtk_adjustment_set_value(adj, top);
+          } else if (bottom > value + page) {
+            gtk_adjustment_set_value(adj, bottom - page);
+          }
         }
       }
     }
   }
-  const IdeCompletionItem *it = g_ptr_array_index(lsp->comp_items, lsp->selected_comp_idx);
-  if (lsp->comp_doc_label != NULL) {
+  if ((lsp->ui_state == IDE_LSP_UI_COMPLETION || lsp->ui_state == IDE_LSP_UI_CODE_ACTION ||
+       lsp->ui_state == IDE_LSP_UI_CLOSED) &&
+      lsp->comp_doc_label != NULL && lsp->comp_items != NULL &&
+      (guint)lsp->selected_comp_idx < lsp->comp_items->len) {
+    const IdeCompletionItem *it = g_ptr_array_index(lsp->comp_items, lsp->selected_comp_idx);
     gtk_label_set_text(GTK_LABEL(lsp->comp_doc_label), it->documentation ? it->documentation : "");
   }
 }
@@ -1811,15 +2484,6 @@ completion_badge(gint kind)
     case 21: case 20: return "c";            /* constant, enum member */
     default: return "•";
   }
-}
-
-static const char *
-json_str(JsonObject *o, const char *name)
-{
-  return (o != NULL && json_object_has_member(o, name) &&
-          JSON_NODE_HOLDS_VALUE(json_object_get_member(o, name)))
-             ? json_object_get_string_member(o, name)
-             : NULL;
 }
 
 static IdeCompletionItem *
@@ -2006,10 +2670,19 @@ ide_lsp_manager_request_completion(IdeLspManager *lsp, GtkWidget *anchor_view, I
   present_completion_popover(lsp, anchor_view, buf);
 }
 
+static void refresh_signature_ui(IdeLspManager *lsp);
+
 void
 ide_lsp_manager_select_next(IdeLspManager *lsp)
 {
   g_return_if_fail(lsp != NULL);
+  if (lsp->ui_state == IDE_LSP_UI_SIGNATURE) {
+    if (lsp->sig_items != NULL && lsp->sig_items->len > 1) {
+      lsp->sig_active_idx = (lsp->sig_active_idx + 1) % lsp->sig_items->len;
+      refresh_signature_ui(lsp);
+    }
+    return;
+  }
   lsp->selected_comp_idx++;
   update_comp_selection_ui(lsp);
 }
@@ -2018,6 +2691,13 @@ void
 ide_lsp_manager_select_prev(IdeLspManager *lsp)
 {
   g_return_if_fail(lsp != NULL);
+  if (lsp->ui_state == IDE_LSP_UI_SIGNATURE) {
+    if (lsp->sig_items != NULL && lsp->sig_items->len > 1) {
+      lsp->sig_active_idx = (lsp->sig_active_idx + lsp->sig_items->len - 1) % lsp->sig_items->len;
+      refresh_signature_ui(lsp);
+    }
+    return;
+  }
   lsp->selected_comp_idx--;
   update_comp_selection_ui(lsp);
 }
@@ -2026,7 +2706,16 @@ gboolean
 ide_lsp_manager_select_index(IdeLspManager *lsp, int idx)
 {
   g_return_val_if_fail(lsp != NULL, FALSE);
-  if (lsp->comp_items == NULL || idx < 0 || (guint)idx >= lsp->comp_items->len) {
+  if (lsp->ui_state == IDE_LSP_UI_SIGNATURE) {
+    if (lsp->sig_items == NULL || idx < 0 || (guint)idx >= lsp->sig_items->len) {
+      return FALSE;
+    }
+    lsp->sig_active_idx = (guint)idx;
+    refresh_signature_ui(lsp);
+    return TRUE;
+  }
+  guint count = active_list_count(lsp);
+  if (count == 0 || idx < 0 || (guint)idx >= count) {
     return FALSE;
   }
   lsp->selected_comp_idx = idx;
@@ -2040,6 +2729,44 @@ void
 ide_lsp_manager_confirm_selection(IdeLspManager *lsp, IdeBuffer *buf)
 {
   g_return_if_fail(lsp != NULL);
+  if (lsp->ui_state == IDE_LSP_UI_REFERENCES) {
+    g_autofree char *jump_path = NULL;
+    guint jump_line = 0;
+    guint jump_col = 0;
+    if (lsp->ref_items != NULL && lsp->selected_comp_idx >= 0 &&
+        (guint)lsp->selected_comp_idx < lsp->ref_items->len) {
+      const IdeLspLocation *loc = g_ptr_array_index(lsp->ref_items, lsp->selected_comp_idx);
+      jump_path = g_strdup(loc->path);
+      jump_line = loc->line_1based;
+      jump_col = loc->col_1based;
+    }
+    ide_lsp_manager_cancel_popover(lsp);
+    if (jump_path != NULL && lsp->jump_cb != NULL) {
+      lsp->jump_cb(jump_path, jump_line, jump_col, lsp->cb_data);
+    }
+    return;
+  }
+  if (lsp->ui_state == IDE_LSP_UI_CALL_HIERARCHY) {
+    g_autofree char *jump_path = NULL;
+    guint jump_line = 0;
+    guint jump_col = 0;
+    if (lsp->call_items != NULL && lsp->selected_comp_idx >= 0 &&
+        (guint)lsp->selected_comp_idx < lsp->call_items->len) {
+      const IdeLspCallEntry *ce = g_ptr_array_index(lsp->call_items, lsp->selected_comp_idx);
+      jump_path = g_strdup(ce->path);
+      jump_line = ce->line_1based;
+      jump_col = ce->col_1based;
+    }
+    ide_lsp_manager_cancel_popover(lsp);
+    if (jump_path != NULL && lsp->jump_cb != NULL) {
+      lsp->jump_cb(jump_path, jump_line, jump_col, lsp->cb_data);
+    }
+    return;
+  }
+  if (lsp->ui_state == IDE_LSP_UI_SIGNATURE) {
+    ide_lsp_manager_cancel_popover(lsp);
+    return;
+  }
   if (lsp->comp_is_code_actions) {
     gint idx = lsp->selected_comp_idx;
     ide_lsp_manager_cancel_popover(lsp);
@@ -2264,6 +2991,778 @@ ide_lsp_manager_request_implementation(IdeLspManager *lsp, IdeBuffer *buf)
   if (!request_location(lsp, buf, "textDocument/implementation")) {
     report_message(lsp, "Go to implementation needs a running language server");
   }
+}
+
+/* ─── References, Signature Help, Call Hierarchy ─── */
+
+static const char *
+rel_path_for_display(const IdeLspManager *lsp, const char *abs_path)
+{
+  if (abs_path == NULL) {
+    return "";
+  }
+  if (lsp != NULL && lsp->workspace_root != NULL && lsp->workspace_root[0] != '\0') {
+    gsize rlen = strlen(lsp->workspace_root);
+    if (g_str_has_prefix(abs_path, lsp->workspace_root)) {
+      if (abs_path[rlen] == '/') {
+        return abs_path + rlen + 1;
+      }
+      if (rlen > 0 && lsp->workspace_root[rlen - 1] == '/') {
+        return abs_path + rlen;
+      }
+    }
+  }
+  return abs_path;
+}
+
+static void
+on_popover_list_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data)
+{
+  (void)box;
+  IdeLspManager *lsp = user_data;
+  if (lsp == NULL || row == NULL || lsp->shutting_down) {
+    return;
+  }
+  gint idx = gtk_list_box_row_get_index(row);
+  if (idx >= 0) {
+    lsp->selected_comp_idx = idx;
+    ide_lsp_manager_confirm_selection(lsp, lsp->active_buf);
+  }
+}
+
+/* ── References ── */
+
+static void
+populate_location_preview(IdeLspManager *mgr, IdeLspLocation *loc)
+{
+  if (loc == NULL || loc->path == NULL) {
+    return;
+  }
+  guint line0 = loc->line_1based > 0 ? loc->line_1based - 1 : 0;
+  guint utf16 = loc->col_1based > 0 ? loc->col_1based - 1 : 0;
+  g_autofree char *uri = g_filename_to_uri(loc->path, NULL, NULL);
+  DocState *odoc = (uri != NULL) ? g_hash_table_lookup(mgr->docs_by_uri, uri) : NULL;
+  if (odoc != NULL && odoc->buf != NULL) {
+    GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(odoc->buf));
+    loc->col_1based = buffer_char_col_1based(tbuf, line0, utf16);
+    if ((gint)line0 < gtk_text_buffer_get_line_count(tbuf)) {
+      g_free(loc->preview);
+      loc->preview = g_strstrip(buffer_line_text(tbuf, line0));
+    }
+    return;
+  }
+  guint col1 = loc->col_1based;
+  g_free(loc->preview);
+  loc->preview = read_disk_line_and_col(loc->path, line0, utf16, &col1);
+  loc->col_1based = col1;
+}
+
+static void
+present_references_popover(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf)
+{
+  if (lsp->ref_items == NULL || lsp->ref_items->len == 0) {
+    return;
+  }
+  close_popover_widgets(lsp);
+  lsp->selected_comp_idx = 0;
+  lsp->active_buf = buf;
+
+  if (anchor_view != NULL) {
+    GtkWidget *pop = new_popover_for(lsp, anchor_view, buf);
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_add_css_class(card, "shell-popover-card");
+    gtk_widget_set_size_request(card, 460, -1);
+
+    g_autofree char *hdr_txt = g_strdup_printf("REFERENCES (%u)", lsp->ref_items->len);
+    GtkWidget *hdr = gtk_label_new(hdr_txt);
+    gtk_label_set_xalign(GTK_LABEL(hdr), 0.0f);
+    gtk_widget_add_css_class(hdr, "shell-popover-title");
+    gtk_box_append(GTK_BOX(card), hdr);
+
+    lsp->comp_list_box = gtk_list_box_new();
+    gtk_widget_add_css_class(lsp->comp_list_box, "ide-tree-listbox");
+    gtk_list_box_set_selection_mode(GTK_LIST_BOX(lsp->comp_list_box), GTK_SELECTION_SINGLE);
+    gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(lsp->comp_list_box), TRUE);
+    g_signal_connect(lsp->comp_list_box, "row-activated",
+                     G_CALLBACK(on_popover_list_row_activated), lsp);
+
+    guint shown = MIN(lsp->ref_items->len, 100u);
+    for (guint i = 0; i < shown; i++) {
+      const IdeLspLocation *loc = g_ptr_array_index(lsp->ref_items, i);
+      GtkWidget *row = gtk_list_box_row_new();
+      gtk_widget_add_css_class(row, "widget-row-card");
+      gtk_widget_add_css_class(row, "ide-picker-row");
+
+      GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+      gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
+
+      char num_buf[8];
+      if (i < 9) {
+        g_snprintf(num_buf, sizeof(num_buf), "%u", i + 1);
+      } else {
+        g_strlcpy(num_buf, "•", sizeof(num_buf));
+      }
+      GtkWidget *badge = gtk_label_new(num_buf);
+      gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+      gtk_widget_add_css_class(badge, "shell-popover-badge");
+      gtk_widget_add_css_class(badge, "ide-symbol-badge");
+      gtk_box_append(GTK_BOX(hbox), badge);
+
+      GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+      gtk_widget_set_hexpand(vbox, TRUE);
+      gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
+
+      g_autofree char *loc_txt = g_strdup_printf("%s:%u:%u",
+                                                 rel_path_for_display(lsp, loc->path),
+                                                 loc->line_1based,
+                                                 loc->col_1based);
+      GtkWidget *loc_lbl = gtk_label_new(loc_txt);
+      gtk_label_set_xalign(GTK_LABEL(loc_lbl), 0.0f);
+      gtk_label_set_ellipsize(GTK_LABEL(loc_lbl), PANGO_ELLIPSIZE_START);
+      gtk_widget_set_valign(loc_lbl, GTK_ALIGN_CENTER);
+      gtk_widget_add_css_class(loc_lbl, "row-title");
+      gtk_box_append(GTK_BOX(vbox), loc_lbl);
+
+      if (loc->preview != NULL && loc->preview[0] != '\0') {
+        GtkWidget *prev_lbl = gtk_label_new(loc->preview);
+        gtk_label_set_xalign(GTK_LABEL(prev_lbl), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(prev_lbl), PANGO_ELLIPSIZE_END);
+        gtk_label_set_max_width_chars(GTK_LABEL(prev_lbl), 58);
+        gtk_widget_set_valign(prev_lbl, GTK_ALIGN_CENTER);
+        gtk_widget_add_css_class(prev_lbl, "row-subtitle");
+        gtk_box_append(GTK_BOX(vbox), prev_lbl);
+      }
+
+      gtk_box_append(GTK_BOX(hbox), vbox);
+      gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+      gtk_list_box_append(GTK_LIST_BOX(lsp->comp_list_box), row);
+    }
+
+    lsp->comp_scroller = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(lsp->comp_scroller), GTK_POLICY_NEVER,
+                                   GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(lsp->comp_scroller), TRUE);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(lsp->comp_scroller), 280);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(lsp->comp_scroller), lsp->comp_list_box);
+    gtk_box_append(GTK_BOX(card), lsp->comp_scroller);
+
+    GtkWidget *hint = gtk_label_new("[j/k: Select]   [Enter / 1-9: Jump]   [Esc: Close]");
+    gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+    gtk_widget_add_css_class(hint, "shell-popover-badge");
+    gtk_box_append(GTK_BOX(card), hint);
+
+    gtk_popover_set_child(GTK_POPOVER(pop), card);
+    gtk_popover_popup(GTK_POPOVER(pop));
+  }
+
+  set_ui_state(lsp, IDE_LSP_UI_REFERENCES);
+  update_comp_selection_ui(lsp);
+}
+
+static void
+on_references_response(IdeLspClient *client, JsonNode *result, const char *error_message,
+                       gpointer user_data)
+{
+  (void)client;
+  RequestCtx *ctx = user_data;
+  IdeLspManager *mgr = ctx->mgr;
+  if (mgr->shutting_down) {
+    ctx_done(ctx);
+    return;
+  }
+  DocState *doc = g_hash_table_lookup(mgr->docs_by_uri, ctx->uri);
+  GtkWidget *anchor = ctx->anchor;
+  gboolean had_anchor = ctx->had_anchor;
+  gboolean current = ctx->token == mgr->popover_token;
+  ctx_done(ctx);
+  if (!current || doc == NULL || (had_anchor && anchor == NULL)) {
+    return;
+  }
+  if (error_message != NULL) {
+    report_message(mgr, "Find references failed: %s", error_message);
+    return;
+  }
+
+  g_autoptr(GPtrArray) locs = ide_lsp_parse_locations(result);
+  if (locs->len == 0) {
+    report_message(mgr, "No references found");
+    return;
+  }
+  for (guint i = 0; i < locs->len; i++) {
+    populate_location_preview(mgr, g_ptr_array_index(locs, i));
+  }
+
+  g_clear_pointer(&mgr->ref_items, g_ptr_array_unref);
+  mgr->ref_items = g_steal_pointer(&locs);
+  present_references_popover(mgr, anchor, doc->buf);
+}
+
+void
+ide_lsp_manager_request_references(IdeLspManager *lsp,
+                                   GtkWidget     *anchor_view,
+                                   IdeBuffer     *buf,
+                                   guint          line_1based,
+                                   guint          col_1based)
+{
+  g_return_if_fail(lsp != NULL);
+  ide_lsp_manager_cancel_popover(lsp);
+  if (buf == NULL) {
+    return;
+  }
+
+  DocState *doc = g_hash_table_lookup(lsp->docs, buf);
+  if (doc == NULL || doc->client == NULL || !doc->sent_open ||
+      ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_STOPPED) {
+    report_message(lsp, "Find references needs a running language server");
+    return;
+  }
+  if (ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_READY &&
+      !ide_lsp_client_has_capability(doc->client, "referencesProvider")) {
+    report_message(lsp, "Language server %s does not support references",
+                   ide_lsp_client_get_server_id(doc->client));
+    return;
+  }
+
+  doc_send_change_now(doc);
+  guint line0 = 0;
+  guint utf16 = 0;
+  resolve_request_lsp_position(buf, line_1based, col_1based, &line0, &utf16);
+
+  JsonNode *params = ide_lsp_position_params(doc->uri, line0, utf16);
+  JsonObject *po = json_node_get_object(params);
+  JsonObject *rctx = json_object_new();
+  json_object_set_boolean_member(rctx, "includeDeclaration", TRUE);
+  json_object_set_object_member(po, "context", rctx);
+
+  RequestCtx *ctx = ctx_new(lsp, CTX_REFERENCES, doc->uri);
+  ctx->token = lsp->popover_token;
+  ctx->had_anchor = (anchor_view != NULL);
+  ctx_set_anchor(ctx, anchor_view);
+  lsp->inflight_ctx = ctx;
+  lsp->inflight_client = doc->client;
+  lsp->inflight_id = 0;
+  guint id = ide_lsp_client_request(doc->client, "textDocument/references", params,
+                                    on_references_response, ctx);
+  if (lsp->inflight_ctx == ctx) {
+    lsp->inflight_id = id;
+  }
+}
+
+/* ── Signature Help ── */
+
+static void
+refresh_signature_ui(IdeLspManager *lsp)
+{
+  if (lsp->sig_items == NULL || lsp->sig_items->len == 0) {
+    return;
+  }
+  if (lsp->sig_active_idx >= lsp->sig_items->len) {
+    lsp->sig_active_idx = lsp->sig_items->len - 1;
+  }
+  const IdeLspSignatureInfo *sig = g_ptr_array_index(lsp->sig_items, lsp->sig_active_idx);
+  gint active_param = (sig->active_param >= 0) ? sig->active_param : lsp->sig_active_param;
+
+  if (lsp->sig_hdr_label != NULL) {
+    if (lsp->sig_items->len > 1) {
+      g_autofree char *hdr = g_strdup_printf("SIGNATURE HELP (%u / %u)",
+                                             lsp->sig_active_idx + 1, lsp->sig_items->len);
+      gtk_label_set_text(GTK_LABEL(lsp->sig_hdr_label), hdr);
+    } else {
+      gtk_label_set_text(GTK_LABEL(lsp->sig_hdr_label), "SIGNATURE HELP");
+    }
+  }
+  if (lsp->sig_code_label != NULL) {
+    g_autofree char *markup = ide_lsp_format_signature_pango(sig, active_param);
+    gtk_label_set_markup(GTK_LABEL(lsp->sig_code_label), markup);
+  }
+  if (lsp->sig_doc_label != NULL) {
+    if (sig->documentation != NULL && sig->documentation[0] != '\0') {
+      gtk_label_set_text(GTK_LABEL(lsp->sig_doc_label), sig->documentation);
+      gtk_widget_set_visible(lsp->sig_doc_label, TRUE);
+    } else {
+      gtk_label_set_text(GTK_LABEL(lsp->sig_doc_label), "");
+      gtk_widget_set_visible(lsp->sig_doc_label, FALSE);
+    }
+  }
+}
+
+static void
+present_signature_popover(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf)
+{
+  if (lsp->sig_items == NULL || lsp->sig_items->len == 0) {
+    return;
+  }
+  close_popover_widgets(lsp);
+  lsp->active_buf = buf;
+
+  if (anchor_view != NULL) {
+    GtkWidget *pop = new_popover_for(lsp, anchor_view, buf);
+    gtk_popover_set_position(GTK_POPOVER(pop), GTK_POS_TOP);
+
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_add_css_class(card, "shell-popover-card");
+    gtk_widget_set_size_request(card, 420, -1);
+
+    lsp->sig_hdr_label = gtk_label_new("SIGNATURE HELP");
+    gtk_label_set_xalign(GTK_LABEL(lsp->sig_hdr_label), 0.0f);
+    gtk_widget_add_css_class(lsp->sig_hdr_label, "shell-popover-title");
+    gtk_box_append(GTK_BOX(card), lsp->sig_hdr_label);
+
+    lsp->sig_code_label = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(lsp->sig_code_label), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(lsp->sig_code_label), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(lsp->sig_code_label), 64);
+    gtk_widget_add_css_class(lsp->sig_code_label, "code-preview-box");
+    gtk_box_append(GTK_BOX(card), lsp->sig_code_label);
+
+    lsp->sig_doc_label = gtk_label_new("");
+    gtk_label_set_xalign(GTK_LABEL(lsp->sig_doc_label), 0.0f);
+    gtk_label_set_wrap(GTK_LABEL(lsp->sig_doc_label), TRUE);
+    gtk_label_set_max_width_chars(GTK_LABEL(lsp->sig_doc_label), 64);
+    gtk_widget_add_css_class(lsp->sig_doc_label, "row-subtitle");
+    gtk_box_append(GTK_BOX(card), lsp->sig_doc_label);
+
+    const char *hint_txt = (lsp->sig_items->len > 1)
+                               ? "[j/k: Cycle Overload]   [Esc / Enter: Dismiss]"
+                               : "[Esc / Enter: Dismiss]";
+    GtkWidget *hint = gtk_label_new(hint_txt);
+    gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+    gtk_widget_add_css_class(hint, "shell-popover-badge");
+    gtk_box_append(GTK_BOX(card), hint);
+
+    gtk_popover_set_child(GTK_POPOVER(pop), card);
+    refresh_signature_ui(lsp);
+    gtk_popover_popup(GTK_POPOVER(pop));
+  }
+
+  set_ui_state(lsp, IDE_LSP_UI_SIGNATURE);
+}
+
+static void
+on_signature_help_response(IdeLspClient *client, JsonNode *result, const char *error_message,
+                           gpointer user_data)
+{
+  (void)client;
+  RequestCtx *ctx = user_data;
+  IdeLspManager *mgr = ctx->mgr;
+  if (mgr->shutting_down) {
+    ctx_done(ctx);
+    return;
+  }
+  DocState *doc = g_hash_table_lookup(mgr->docs_by_uri, ctx->uri);
+  GtkWidget *anchor = ctx->anchor;
+  gboolean had_anchor = ctx->had_anchor;
+  gboolean current = ctx->token == mgr->popover_token;
+  ctx_done(ctx);
+  if (!current || doc == NULL || (had_anchor && anchor == NULL)) {
+    return;
+  }
+  if (error_message != NULL) {
+    report_message(mgr, "Signature help failed: %s", error_message);
+    return;
+  }
+
+  guint active_sig = 0;
+  gint active_param = -1;
+  g_autoptr(GPtrArray) sigs = ide_lsp_parse_signature_help(result, &active_sig, &active_param);
+  if (sigs->len == 0) {
+    report_message(mgr, "No signature help available here");
+    return;
+  }
+
+  g_clear_pointer(&mgr->sig_items, g_ptr_array_unref);
+  mgr->sig_items = g_steal_pointer(&sigs);
+  mgr->sig_active_idx = active_sig;
+  mgr->sig_active_param = active_param;
+  present_signature_popover(mgr, anchor, doc->buf);
+}
+
+void
+ide_lsp_manager_request_signature_help(IdeLspManager *lsp,
+                                       GtkWidget     *anchor_view,
+                                       IdeBuffer     *buf,
+                                       guint          line_1based,
+                                       guint          col_1based)
+{
+  g_return_if_fail(lsp != NULL);
+  ide_lsp_manager_cancel_popover(lsp);
+  if (buf == NULL) {
+    return;
+  }
+
+  DocState *doc = g_hash_table_lookup(lsp->docs, buf);
+  if (doc == NULL || doc->client == NULL || !doc->sent_open ||
+      ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_STOPPED) {
+    report_message(lsp, "Signature help needs a running language server");
+    return;
+  }
+  if (ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_READY &&
+      !ide_lsp_client_has_capability(doc->client, "signatureHelpProvider")) {
+    report_message(lsp, "Language server %s does not support signature help",
+                   ide_lsp_client_get_server_id(doc->client));
+    return;
+  }
+
+  doc_send_change_now(doc);
+  guint line0 = 0;
+  guint utf16 = 0;
+  resolve_request_lsp_position(buf, line_1based, col_1based, &line0, &utf16);
+
+  RequestCtx *ctx = ctx_new(lsp, CTX_SIGNATURE, doc->uri);
+  ctx->token = lsp->popover_token;
+  ctx->had_anchor = (anchor_view != NULL);
+  ctx_set_anchor(ctx, anchor_view);
+  lsp->inflight_ctx = ctx;
+  lsp->inflight_client = doc->client;
+  lsp->inflight_id = 0;
+  guint id = ide_lsp_client_request(doc->client, "textDocument/signatureHelp",
+                                    ide_lsp_position_params(doc->uri, line0, utf16),
+                                    on_signature_help_response, ctx);
+  if (lsp->inflight_ctx == ctx) {
+    lsp->inflight_id = id;
+  }
+}
+
+/* ── Call Hierarchy ── */
+
+static void
+on_call_hierarchy_toggle_clicked(GtkButton *btn, gpointer user_data)
+{
+  (void)btn;
+  IdeLspManager *lsp = user_data;
+  if (lsp != NULL && !lsp->shutting_down) {
+    ide_lsp_manager_toggle_call_hierarchy_dir(lsp);
+  }
+}
+
+static void
+resolve_call_entry_col(IdeLspManager *mgr, IdeLspCallEntry *ce)
+{
+  if (ce == NULL || ce->path == NULL) {
+    return;
+  }
+  guint line0 = ce->line_1based > 0 ? ce->line_1based - 1 : 0;
+  guint utf16 = ce->col_1based > 0 ? ce->col_1based - 1 : 0;
+  g_autofree char *uri = g_filename_to_uri(ce->path, NULL, NULL);
+  DocState *odoc = (uri != NULL) ? g_hash_table_lookup(mgr->docs_by_uri, uri) : NULL;
+  if (odoc != NULL && odoc->buf != NULL) {
+    GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(odoc->buf));
+    ce->col_1based = buffer_char_col_1based(tbuf, line0, utf16);
+    return;
+  }
+  guint col1 = ce->col_1based;
+  g_autofree char *unused = read_disk_line_and_col(ce->path, line0, utf16, &col1);
+  ce->col_1based = col1;
+}
+
+static void
+present_call_hierarchy_popover(IdeLspManager *lsp, GtkWidget *anchor_view, IdeBuffer *buf)
+{
+  close_popover_widgets(lsp);
+  lsp->selected_comp_idx = 0;
+  lsp->active_buf = buf;
+
+  guint count = lsp->call_items != NULL ? lsp->call_items->len : 0;
+  if (anchor_view != NULL) {
+    GtkWidget *pop = new_popover_for(lsp, anchor_view, buf);
+    GtkWidget *card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    gtk_widget_add_css_class(card, "shell-popover-card");
+    gtk_widget_set_size_request(card, 480, -1);
+
+    GtkWidget *hdr_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    gtk_widget_set_valign(hdr_row, GTK_ALIGN_CENTER);
+
+    g_autofree char *hdr_txt = g_strdup_printf("CALL HIERARCHY — %s (%u)",
+                                               lsp->call_outgoing ? "OUTGOING" : "INCOMING",
+                                               count);
+    GtkWidget *hdr = gtk_label_new(hdr_txt);
+    gtk_label_set_xalign(GTK_LABEL(hdr), 0.0f);
+    gtk_widget_set_hexpand(hdr, TRUE);
+    gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(hdr, "shell-popover-title");
+    gtk_box_append(GTK_BOX(hdr_row), hdr);
+
+    GtkWidget *toggle_btn = gtk_button_new_with_label(
+        lsp->call_outgoing ? "⇄ SWITCH TO INCOMING" : "⇄ SWITCH TO OUTGOING");
+    gtk_widget_set_valign(toggle_btn, GTK_ALIGN_CENTER);
+    g_signal_connect(toggle_btn, "clicked",
+                     G_CALLBACK(on_call_hierarchy_toggle_clicked), lsp);
+    gtk_box_append(GTK_BOX(hdr_row), toggle_btn);
+    gtk_box_append(GTK_BOX(card), hdr_row);
+
+    if (count == 0) {
+      GtkWidget *empty = gtk_label_new(lsp->call_outgoing ? "No outgoing calls found."
+                                                          : "No incoming calls found.");
+      gtk_label_set_xalign(GTK_LABEL(empty), 0.0f);
+      gtk_widget_add_css_class(empty, "row-subtitle");
+      gtk_box_append(GTK_BOX(card), empty);
+    } else {
+      lsp->comp_list_box = gtk_list_box_new();
+      gtk_widget_add_css_class(lsp->comp_list_box, "ide-tree-listbox");
+      gtk_list_box_set_selection_mode(GTK_LIST_BOX(lsp->comp_list_box), GTK_SELECTION_SINGLE);
+      gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(lsp->comp_list_box), TRUE);
+      g_signal_connect(lsp->comp_list_box, "row-activated",
+                       G_CALLBACK(on_popover_list_row_activated), lsp);
+
+      guint shown = MIN(count, 100u);
+      for (guint i = 0; i < shown; i++) {
+        const IdeLspCallEntry *ce = g_ptr_array_index(lsp->call_items, i);
+        GtkWidget *row = gtk_list_box_row_new();
+        gtk_widget_add_css_class(row, "widget-row-card");
+        gtk_widget_add_css_class(row, "ide-picker-row");
+
+        GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
+
+        GtkWidget *badge = gtk_label_new(ce->kind_badge);
+        gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
+        gtk_widget_add_css_class(badge, "shell-popover-badge");
+        gtk_widget_add_css_class(badge, "ide-symbol-badge");
+        gtk_box_append(GTK_BOX(hbox), badge);
+
+        GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+        gtk_widget_set_hexpand(vbox, TRUE);
+        gtk_widget_set_valign(vbox, GTK_ALIGN_CENTER);
+
+        GtkWidget *top = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+        gtk_widget_set_valign(top, GTK_ALIGN_CENTER);
+
+        GtkWidget *name_lbl = gtk_label_new(ce->name);
+        gtk_label_set_xalign(GTK_LABEL(name_lbl), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(name_lbl), PANGO_ELLIPSIZE_END);
+        gtk_widget_set_hexpand(name_lbl, TRUE);
+        gtk_widget_set_valign(name_lbl, GTK_ALIGN_CENTER);
+        gtk_widget_add_css_class(name_lbl, "row-title");
+        gtk_box_append(GTK_BOX(top), name_lbl);
+
+        if (ce->detail != NULL && ce->detail[0] != '\0') {
+          GtkWidget *det_lbl = gtk_label_new(ce->detail);
+          gtk_label_set_ellipsize(GTK_LABEL(det_lbl), PANGO_ELLIPSIZE_END);
+          gtk_label_set_max_width_chars(GTK_LABEL(det_lbl), 28);
+          gtk_widget_set_valign(det_lbl, GTK_ALIGN_CENTER);
+          gtk_widget_add_css_class(det_lbl, "row-subtitle");
+          gtk_box_append(GTK_BOX(top), det_lbl);
+        }
+        gtk_box_append(GTK_BOX(vbox), top);
+
+        g_autofree char *loc_txt = g_strdup_printf("%s:%u",
+                                                   rel_path_for_display(lsp, ce->path),
+                                                   ce->line_1based);
+        GtkWidget *loc_lbl = gtk_label_new(loc_txt);
+        gtk_label_set_xalign(GTK_LABEL(loc_lbl), 0.0f);
+        gtk_label_set_ellipsize(GTK_LABEL(loc_lbl), PANGO_ELLIPSIZE_START);
+        gtk_widget_set_valign(loc_lbl, GTK_ALIGN_CENTER);
+        gtk_widget_add_css_class(loc_lbl, "row-subtitle");
+        gtk_box_append(GTK_BOX(vbox), loc_lbl);
+
+        gtk_box_append(GTK_BOX(hbox), vbox);
+        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+        gtk_list_box_append(GTK_LIST_BOX(lsp->comp_list_box), row);
+      }
+
+      lsp->comp_scroller = gtk_scrolled_window_new();
+      gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(lsp->comp_scroller), GTK_POLICY_NEVER,
+                                     GTK_POLICY_AUTOMATIC);
+      gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(lsp->comp_scroller), TRUE);
+      gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(lsp->comp_scroller), 260);
+      gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(lsp->comp_scroller), lsp->comp_list_box);
+      gtk_box_append(GTK_BOX(card), lsp->comp_scroller);
+    }
+
+    GtkWidget *hint = gtk_label_new("[j/k: Select]   [Enter / 1-9: Jump]   [Esc: Close]");
+    gtk_label_set_xalign(GTK_LABEL(hint), 0.0f);
+    gtk_widget_add_css_class(hint, "shell-popover-badge");
+    gtk_box_append(GTK_BOX(card), hint);
+
+    gtk_popover_set_child(GTK_POPOVER(pop), card);
+    gtk_popover_popup(GTK_POPOVER(pop));
+  }
+
+  set_ui_state_ex(lsp, IDE_LSP_UI_CALL_HIERARCHY, TRUE);
+  update_comp_selection_ui(lsp);
+}
+
+static void
+on_call_hierarchy_list_response(IdeLspClient *client, JsonNode *result, const char *error_message,
+                                gpointer user_data)
+{
+  (void)client;
+  RequestCtx *ctx = user_data;
+  IdeLspManager *mgr = ctx->mgr;
+  if (mgr->shutting_down) {
+    ctx_done(ctx);
+    return;
+  }
+  DocState *doc = g_hash_table_lookup(mgr->docs_by_uri, ctx->uri);
+  GtkWidget *anchor = ctx->anchor;
+  gboolean had_anchor = ctx->had_anchor;
+  gboolean outgoing = ctx->outgoing;
+  gboolean current = ctx->token == mgr->popover_token;
+  ctx_done(ctx);
+  if (!current || doc == NULL || (had_anchor && anchor == NULL)) {
+    return;
+  }
+  if (error_message != NULL) {
+    report_message(mgr, "Call hierarchy failed: %s", error_message);
+    return;
+  }
+
+  g_autoptr(GPtrArray) entries = ide_lsp_parse_call_hierarchy(result, outgoing);
+  for (guint i = 0; i < entries->len; i++) {
+    resolve_call_entry_col(mgr, g_ptr_array_index(entries, i));
+  }
+  g_clear_pointer(&mgr->call_items, g_ptr_array_unref);
+  mgr->call_items = g_steal_pointer(&entries);
+  mgr->call_outgoing = outgoing;
+  present_call_hierarchy_popover(mgr, anchor, doc->buf);
+}
+
+static void
+send_call_hierarchy_list_request(IdeLspManager *mgr, DocState *doc, GtkWidget *anchor,
+                                 gboolean had_anchor, gboolean outgoing)
+{
+  if (mgr->call_root_item == NULL || doc == NULL || doc->client == NULL) {
+    return;
+  }
+  g_autoptr(JsonBuilder) b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "item");
+  json_builder_add_value(b, json_node_copy(mgr->call_root_item));
+  json_builder_end_object(b);
+
+  RequestCtx *ctx = ctx_new(mgr, CTX_CALL_LIST, doc->uri);
+  ctx->token = mgr->popover_token;
+  ctx->had_anchor = had_anchor;
+  ctx->outgoing = outgoing;
+  ctx_set_anchor(ctx, anchor);
+  mgr->inflight_ctx = ctx;
+  mgr->inflight_client = doc->client;
+  mgr->inflight_id = 0;
+  const char *method = outgoing ? "callHierarchy/outgoingCalls" : "callHierarchy/incomingCalls";
+  guint id = ide_lsp_client_request(doc->client, method, json_builder_get_root(b),
+                                    on_call_hierarchy_list_response, ctx);
+  if (mgr->inflight_ctx == ctx) {
+    mgr->inflight_id = id;
+  }
+}
+
+static void
+on_call_hierarchy_prepare_response(IdeLspClient *client, JsonNode *result,
+                                   const char *error_message, gpointer user_data)
+{
+  (void)client;
+  RequestCtx *ctx = user_data;
+  IdeLspManager *mgr = ctx->mgr;
+  if (mgr->shutting_down) {
+    ctx_done(ctx);
+    return;
+  }
+  DocState *doc = g_hash_table_lookup(mgr->docs_by_uri, ctx->uri);
+  GtkWidget *anchor = ctx->anchor;
+  gboolean had_anchor = ctx->had_anchor;
+  gboolean outgoing = ctx->outgoing;
+  gboolean current = ctx->token == mgr->popover_token;
+  ctx_done(ctx);
+  if (!current || doc == NULL || (had_anchor && anchor == NULL)) {
+    return;
+  }
+  if (error_message != NULL) {
+    report_message(mgr, "Call hierarchy failed: %s", error_message);
+    return;
+  }
+
+  JsonNode *first = NULL;
+  if (result != NULL && JSON_NODE_HOLDS_ARRAY(result)) {
+    JsonArray *arr = json_node_get_array(result);
+    if (json_array_get_length(arr) > 0) {
+      JsonNode *n0 = json_array_get_element(arr, 0);
+      if (n0 != NULL && JSON_NODE_HOLDS_OBJECT(n0)) {
+        first = n0;
+      }
+    }
+  } else if (result != NULL && JSON_NODE_HOLDS_OBJECT(result)) {
+    first = result;
+  }
+  if (first == NULL) {
+    report_message(mgr, "No call hierarchy symbol at cursor");
+    return;
+  }
+
+  g_clear_pointer(&mgr->call_root_item, json_node_unref);
+  mgr->call_root_item = json_node_copy(first);
+  g_free(mgr->call_root_uri);
+  mgr->call_root_uri = g_strdup(doc->uri);
+  mgr->call_outgoing = outgoing;
+
+  send_call_hierarchy_list_request(mgr, doc, anchor, had_anchor, outgoing);
+}
+
+void
+ide_lsp_manager_request_call_hierarchy(IdeLspManager *lsp,
+                                       GtkWidget     *anchor_view,
+                                       IdeBuffer     *buf,
+                                       gboolean       outgoing)
+{
+  g_return_if_fail(lsp != NULL);
+  ide_lsp_manager_cancel_popover(lsp);
+  if (buf == NULL) {
+    return;
+  }
+
+  DocState *doc = g_hash_table_lookup(lsp->docs, buf);
+  if (doc == NULL || doc->client == NULL || !doc->sent_open ||
+      ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_STOPPED) {
+    report_message(lsp, "Call hierarchy needs a running language server");
+    return;
+  }
+  if (ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_READY &&
+      !ide_lsp_client_has_capability(doc->client, "callHierarchyProvider")) {
+    report_message(lsp, "Language server %s does not support call hierarchy",
+                   ide_lsp_client_get_server_id(doc->client));
+    return;
+  }
+
+  doc_send_change_now(doc);
+  guint line0 = 0;
+  guint utf16 = 0;
+  buffer_cursor_lsp_position(buf, &line0, &utf16);
+
+  RequestCtx *ctx = ctx_new(lsp, CTX_CALL_PREPARE, doc->uri);
+  ctx->token = lsp->popover_token;
+  ctx->had_anchor = (anchor_view != NULL);
+  ctx->outgoing = outgoing;
+  ctx_set_anchor(ctx, anchor_view);
+  lsp->inflight_ctx = ctx;
+  lsp->inflight_client = doc->client;
+  lsp->inflight_id = 0;
+  guint id = ide_lsp_client_request(doc->client, "textDocument/prepareCallHierarchy",
+                                    ide_lsp_position_params(doc->uri, line0, utf16),
+                                    on_call_hierarchy_prepare_response, ctx);
+  if (lsp->inflight_ctx == ctx) {
+    lsp->inflight_id = id;
+  }
+}
+
+void
+ide_lsp_manager_toggle_call_hierarchy_dir(IdeLspManager *lsp)
+{
+  g_return_if_fail(lsp != NULL);
+  if (lsp->call_root_item == NULL || lsp->call_root_uri == NULL) {
+    return;
+  }
+  DocState *doc = g_hash_table_lookup(lsp->docs_by_uri, lsp->call_root_uri);
+  if (doc == NULL || doc->client == NULL ||
+      ide_lsp_client_get_state(doc->client) == IDE_LSP_CLIENT_STOPPED) {
+    return;
+  }
+
+  GtkWidget *anchor = lsp->active_anchor;
+  gboolean had_anchor = (anchor != NULL);
+  gboolean next_outgoing = !lsp->call_outgoing;
+
+  cancel_inflight(lsp);
+  lsp->popover_token++;
+  send_call_hierarchy_list_request(lsp, doc, anchor, had_anchor, next_outgoing);
 }
 
 /* ─── Rename ─── */
