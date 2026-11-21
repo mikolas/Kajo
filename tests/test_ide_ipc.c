@@ -304,6 +304,32 @@ static void test_mermaid_vector_parser_and_markdown_checklist(void) {
   g_assert_nonnull(strstr(toggled2, "- [ ] Ship UI"));
 }
 
+/* Validate GtkLabel markup: well-formed XML, no nested <a>, and valid Pango
+ * once GtkLabel's <a href="...">/</a> wrappers are stripped. */
+static void assert_valid_gtk_label_markup(const char *markup) {
+  g_assert_nonnull(markup);
+  g_autoptr(GRegex) re_open = g_regex_new("<a\\s+href=\"[^\"]*\">", 0, 0, NULL);
+  g_autoptr(GRegex) re_close = g_regex_new("</a>", 0, 0, NULL);
+  /* Verify balanced, non-nested <a> tags */
+  int depth = 0;
+  for (const char *p = markup; *p; p++) {
+    if (g_str_has_prefix(p, "<a ")) {
+      depth++;
+      g_assert_cmpint(depth, ==, 1);
+    } else if (g_str_has_prefix(p, "</a>")) {
+      depth--;
+      g_assert_cmpint(depth, >=, 0);
+    }
+  }
+  g_assert_cmpint(depth, ==, 0);
+  g_autofree char *s1 = g_regex_replace_literal(re_open, markup, -1, 0, "", 0, NULL);
+  g_autofree char *s2 = g_regex_replace_literal(re_close, s1, -1, 0, "", 0, NULL);
+  g_autoptr(GError) err = NULL;
+  gboolean ok = pango_parse_markup(s2, -1, 0, NULL, NULL, NULL, &err);
+  g_assert_no_error(err);
+  g_assert_true(ok);
+}
+
 static void test_markdown_rich_embeds_and_inline_pango(void) {
   /* 1. Markdown ![alt](src "title") extraction */
   char *alt = NULL, *src = NULL, *link_url = NULL;
@@ -399,6 +425,79 @@ static void test_markdown_rich_embeds_and_inline_pango(void) {
   g_assert_nonnull(strstr(pango, " code "));
   g_assert_nonnull(strstr(pango, "Ctrl+P"));
   g_assert_nonnull(strstr(pango, "<a href=\"https://kajo.org\">"));
+  assert_valid_gtk_label_markup(pango);
+
+  /* 7. Auto-link tag must only check inside <...> and not swallow trailing text */
+  g_autofree char *auto_pango = ide_markdown_format_inline_pango(
+      "See <https://kajo.org> followed by <not-a-link> and plain text.");
+  assert_valid_gtk_label_markup(auto_pango);
+  g_assert_nonnull(strstr(auto_pango, "<a href=\"https://kajo.org\">"));
+  g_assert_nonnull(strstr(auto_pango, "followed by"));
+  g_assert_null(strstr(auto_pango, "<a href=\"not-a-link\">"));
+
+  /* 8. Nested link/badge inside [label](url) must produce valid Pango (no nested <a>) */
+  g_autofree char *nested_pango = ide_markdown_format_inline_pango(
+      "[![Build](https://ci.example/b.svg)](https://kajo.org)");
+  assert_valid_gtk_label_markup(nested_pango);
+  const char *first_a = strstr(nested_pango, "<a ");
+  g_assert_nonnull(first_a);
+  g_assert_null(strstr(first_a + 3, "<a "));
+
+  /* 9. Table separator row detection and markdown path classification */
+  g_assert_true(ide_markdown_is_table_separator_row("| :-- | :---: | ---: |"));
+  g_assert_true(ide_markdown_is_table_separator_row("|---|---|"));
+  g_assert_false(ide_markdown_is_table_separator_row("| feature | ---flag |"));
+  g_assert_false(ide_markdown_is_table_separator_row("| a | b |"));
+  g_assert_false(ide_markdown_is_table_separator_row("plain text --- here"));
+
+  g_assert_true(ide_markdown_is_markdown_path("README.md"));
+  g_assert_true(ide_markdown_is_markdown_path("/tmp/docs/spec.markdown"));
+  g_assert_true(ide_markdown_is_markdown_path("guide.MDX"));
+  g_assert_false(ide_markdown_is_markdown_path("src/ide/ide_window.c"));
+  g_assert_false(ide_markdown_is_markdown_path("Makefile"));
+  g_assert_false(ide_markdown_is_markdown_path(NULL));
+}
+
+static void test_mermaid_extended_syntax(void) {
+  /* Chained arrows, & multi-target fan-out, mid-arrow labels, and <br/> line breaks */
+  const char *flow =
+      "flowchart TD\n"
+      "  A[\"Stage 1<br/>Init\"] --> B[\"Stage 2\"] --> C[\"Done\"]\n"
+      "  B & C -- \"writes\" --> D[\"Output\"]\n";
+  IdeMermaidGraph *g = ide_mermaid_parse_graph(flow, 1);
+  g_assert_nonnull(g);
+  g_assert_cmpint(g->kind, ==, IDE_MERMAID_FLOWCHART_TD);
+  g_assert_cmpuint(g->nodes->len, ==, 4);
+  g_assert_cmpuint(g->edges->len, ==, 4);
+
+  IdeMermaidNode *na = g_ptr_array_index(g->nodes, 0);
+  g_assert_cmpstr(na->label, ==, "Stage 1\nInit");
+
+  int writes_edges = 0;
+  for (guint i = 0; i < g->edges->len; i++) {
+    IdeMermaidEdge *e = g_ptr_array_index(g->edges, i);
+    if (g_strcmp0(e->label, "writes") == 0) writes_edges++;
+  }
+  g_assert_cmpint(writes_edges, ==, 2);
+  ide_mermaid_graph_free(g);
+
+  /* Sequence diagram participant aliases & Note skipping */
+  const char *seq =
+      "sequenceDiagram\n"
+      "  participant K as Kajo IDE\n"
+      "  participant L as Language Server\n"
+      "  Note over K,L: handshake\n"
+      "  K->>L: initialize\n"
+      "  L-->>K: capabilities\n";
+  IdeMermaidGraph *sg = ide_mermaid_parse_graph(seq, 10);
+  g_assert_nonnull(sg);
+  g_assert_cmpint(sg->kind, ==, IDE_MERMAID_SEQUENCE);
+  g_assert_cmpuint(sg->nodes->len, ==, 2);
+  g_assert_cmpuint(sg->edges->len, ==, 2);
+  IdeMermaidNode *sk = g_ptr_array_index(sg->nodes, 0);
+  g_assert_cmpstr(sk->id, ==, "K");
+  g_assert_cmpstr(sk->label, ==, "Kajo IDE");
+  ide_mermaid_graph_free(sg);
 }
 
 
@@ -684,6 +783,8 @@ int main(int argc, char **argv) {
                   test_agent_socket_roundtrip_and_stalled_client);
   g_test_add_func("/ide/markdown/mermaid-vector-and-checklist",
                   test_mermaid_vector_parser_and_markdown_checklist);
+  g_test_add_func("/ide/markdown/mermaid-extended-syntax",
+                  test_mermaid_extended_syntax);
   g_test_add_func("/ide/markdown/rich-embeds-and-inline-pango",
                   test_markdown_rich_embeds_and_inline_pango);
   g_test_add_func("/ide/lsp/text-edits-snippets-hover", test_lsp_text_edits_and_snippets);

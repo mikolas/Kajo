@@ -154,6 +154,8 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
 ### 4.6 Kajo IDE (`kajo-ide`) Code Canvas, Tree Explorer, Diff & Debugger Components
 - **Buffer Tab Ribbon (`.ide-tab-ribbon`, `.ide-tab-pill`):**
   - `#161616` strip with `1px solid #2b2b2b` bottom border. Each `.ide-tab-pill` displays `[1..9]` index, file icon, filename, state badge (`●` dirty in `@metro-accent`, `⚡` reloaded in `#00d8f0`, `⚠` collision in `#e81123`), and `×` close button. Active tab uses `#101010` background and `border-top: 2px solid @metro-accent`.
+- **Disk Conflict Resolution Banner (`.ide-conflict-bar`):**
+  - Shown directly above the editor canvas when the active modified buffer changes on disk externally: `@metro-surface-3` surface with `border-bottom: 1px solid @metro-border` and `border-left: 3px solid @metro-warning`, offering `[ ↻ RELOAD FROM DISK ]` and `[ ✓ KEEP MY EDITS ]` actions.
 - **Hierarchical Project File Tree (`.ide-tree-sidebar`, `.ide-tree-row`):**
   - Compact `26px`-tall tree rows with `1px solid #242424` vertical indentation guides, folder chevrons (`▾`/`▸`), file-type icon, filename (colored `#ff8c00` if modified, `#e81123` if containing LSP errors), and right-aligned Git status pill (`.ide-git-badge`: `M` `#ff8c00`, `A` `#10893e`, `U` `#00d8f0`, `D` `#e81123`).
 - **Code Canvas, 6-Column Cairo Gutter & Minimap (`.ide-editor-canvas`, `.ide-gutter`, `.ide-minimap`):**

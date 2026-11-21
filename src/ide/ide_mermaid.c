@@ -34,6 +34,28 @@ void ide_mermaid_graph_free(IdeMermaidGraph *graph) {
   g_free(graph);
 }
 
+static char *clean_mermaid_label(const char *raw) {
+  if (!raw) return g_strdup("");
+  GString *out = g_string_new("");
+  const char *p = raw;
+  while (*p) {
+    if (g_ascii_strncasecmp(p, "<br/>", 5) == 0) {
+      g_string_append_c(out, '\n');
+      p += 5;
+    } else if (g_ascii_strncasecmp(p, "<br />", 6) == 0) {
+      g_string_append_c(out, '\n');
+      p += 6;
+    } else if (g_ascii_strncasecmp(p, "<br>", 4) == 0) {
+      g_string_append_c(out, '\n');
+      p += 4;
+    } else {
+      g_string_append_c(out, *p);
+      p++;
+    }
+  }
+  return g_string_free(out, FALSE);
+}
+
 static IdeMermaidNode *ensure_mermaid_node(IdeMermaidGraph *graph,
                                            const char      *raw_token,
                                            guint            line_1based) {
@@ -44,22 +66,30 @@ static IdeMermaidNode *ensure_mermaid_node(IdeMermaidGraph *graph,
   g_autofree char *id = NULL;
   g_autofree char *label = NULL;
 
-  const char *open_br = strpbrk(trimmed, "[({");
-  if (open_br && open_br > trimmed) {
-    id = g_strndup(trimmed, open_br - trimmed);
-    g_strstrip(id);
-    const char *label_start = open_br + 1;
-    if (*label_start == '"' || *label_start == '[' || *label_start == '(')
-      label_start++;
-    g_autofree char *raw_lbl = g_strdup(label_start);
-    gsize len = strlen(raw_lbl);
-    while (len > 0 && (raw_lbl[len - 1] == ']' || raw_lbl[len - 1] == ')' ||
-                       raw_lbl[len - 1] == '}' || raw_lbl[len - 1] == '"')) {
-      raw_lbl[--len] = '\0';
-    }
-    label = g_strdup(raw_lbl);
+  /* Support `participant K as Kajo glass effect` alias syntax */
+  const char *as_kw = strstr(trimmed, " as ");
+  if (as_kw && strpbrk(trimmed, "[({") == NULL) {
+    id = g_strstrip(g_strndup(trimmed, as_kw - trimmed));
+    label = clean_mermaid_label(as_kw + 4);
+    g_strstrip(label);
   } else {
-    id = g_strdup(trimmed);
+    const char *open_br = strpbrk(trimmed, "[({");
+    if (open_br && open_br > trimmed) {
+      id = g_strndup(trimmed, open_br - trimmed);
+      g_strstrip(id);
+      const char *label_start = open_br + 1;
+      if (*label_start == '"' || *label_start == '[' || *label_start == '(')
+        label_start++;
+      g_autofree char *raw_lbl = g_strdup(label_start);
+      gsize len = strlen(raw_lbl);
+      while (len > 0 && (raw_lbl[len - 1] == ']' || raw_lbl[len - 1] == ')' ||
+                         raw_lbl[len - 1] == '}' || raw_lbl[len - 1] == '"')) {
+        raw_lbl[--len] = '\0';
+      }
+      label = clean_mermaid_label(raw_lbl);
+    } else {
+      id = g_strdup(trimmed);
+    }
   }
 
   for (guint i = 0; i < graph->nodes->len; i++) {
@@ -80,6 +110,82 @@ static IdeMermaidNode *ensure_mermaid_node(IdeMermaidGraph *graph,
   node->is_accent = (graph->nodes->len == 0);
   g_ptr_array_add(graph->nodes, node);
   return node;
+}
+
+static const char *find_mermaid_arrow(const char *s, gsize *out_len, gboolean *out_dashed) {
+  int depth = 0;
+  gboolean in_q = FALSE;
+  for (const char *p = s; *p; p++) {
+    if (*p == '"') {
+      in_q = !in_q;
+      continue;
+    }
+    if (in_q) continue;
+    if (*p == '[' || *p == '(' || *p == '{') {
+      depth++;
+      continue;
+    }
+    if ((*p == ']' || *p == ')' || *p == '}') && depth > 0) {
+      depth--;
+      continue;
+    }
+    if (depth > 0) continue;
+
+    if (g_str_has_prefix(p, "-.->")) { *out_len = 4; *out_dashed = TRUE;  return p; }
+    if (g_str_has_prefix(p, "-->>")) { *out_len = 4; *out_dashed = TRUE;  return p; }
+    if (g_str_has_prefix(p, "==>"))  { *out_len = 3; *out_dashed = FALSE; return p; }
+    if (g_str_has_prefix(p, "-->"))  { *out_len = 3; *out_dashed = FALSE; return p; }
+    if (g_str_has_prefix(p, "->>"))  { *out_len = 3; *out_dashed = FALSE; return p; }
+    if (g_str_has_prefix(p, "->"))   { *out_len = 2; *out_dashed = FALSE; return p; }
+  }
+  return NULL;
+}
+
+static GPtrArray *split_ampersand_tokens(const char *expr) {
+  GPtrArray *arr = g_ptr_array_new_with_free_func(g_free);
+  if (!expr) return arr;
+  int depth = 0;
+  gboolean in_q = FALSE;
+  const char *start = expr;
+  for (const char *p = expr; ; p++) {
+    if (*p == '"') in_q = !in_q;
+    else if (!in_q) {
+      if (*p == '[' || *p == '(' || *p == '{') depth++;
+      else if ((*p == ']' || *p == ')' || *p == '}') && depth > 0) depth--;
+    }
+    if (*p == '\0' || (*p == '&' && !in_q && depth == 0)) {
+      char *tok = g_strstrip(g_strndup(start, p - start));
+      if (*tok) g_ptr_array_add(arr, tok);
+      else g_free(tok);
+      if (*p == '\0') break;
+      start = p + 1;
+    }
+  }
+  return arr;
+}
+
+static void add_mermaid_edges_between(IdeMermaidGraph *g,
+                                      const char      *lhs_expr,
+                                      const char      *rhs_expr,
+                                      const char      *edge_lbl,
+                                      gboolean         dashed,
+                                      guint            cur_line) {
+  g_autoptr(GPtrArray) srcs = split_ampersand_tokens(lhs_expr);
+  g_autoptr(GPtrArray) dsts = split_ampersand_tokens(rhs_expr);
+  for (guint si = 0; si < srcs->len; si++) {
+    IdeMermaidNode *src_node = ensure_mermaid_node(g, g_ptr_array_index(srcs, si), cur_line);
+    if (!src_node) continue;
+    for (guint di = 0; di < dsts->len; di++) {
+      IdeMermaidNode *dst_node = ensure_mermaid_node(g, g_ptr_array_index(dsts, di), cur_line);
+      if (!dst_node) continue;
+      IdeMermaidEdge *e = g_new0(IdeMermaidEdge, 1);
+      e->from_id = g_strdup(src_node->id);
+      e->to_id = g_strdup(dst_node->id);
+      e->label = (edge_lbl && *edge_lbl) ? clean_mermaid_label(edge_lbl) : NULL;
+      e->dashed = dashed;
+      g_ptr_array_add(g->edges, e);
+    }
+  }
 }
 
 IdeMermaidGraph *ide_mermaid_parse_graph(const char *mermaid_src,
@@ -129,63 +235,86 @@ IdeMermaidGraph *ide_mermaid_parse_graph(const char *mermaid_src,
       continue;
     }
     if (g_str_has_prefix(line, "subgraph ") || g_strcmp0(line, "end") == 0 ||
-        g_str_has_prefix(line, "style ") || g_str_has_prefix(line, "classDef ")) {
+        g_str_has_prefix(line, "style ") || g_str_has_prefix(line, "classDef ") ||
+        g_str_has_prefix(line, "Note ") || g_str_has_prefix(line, "note ")) {
       continue;
     }
 
-    const char *arrow = NULL;
     gsize arrow_len = 0;
     gboolean dashed = FALSE;
-
-    if ((arrow = strstr(line, "-.->")) != NULL) {
-      arrow_len = 4;
-      dashed = TRUE;
-    } else if ((arrow = strstr(line, "-->>")) != NULL) {
-      arrow_len = 4;
-      dashed = TRUE;
-    } else if ((arrow = strstr(line, "==>")) != NULL) {
-      arrow_len = 3;
-    } else if ((arrow = strstr(line, "-->")) != NULL) {
-      arrow_len = 3;
-    } else if ((arrow = strstr(line, "->>")) != NULL) {
-      arrow_len = 3;
-    } else if ((arrow = strstr(line, "->")) != NULL) {
-      arrow_len = 2;
-    }
+    const char *arrow = find_mermaid_arrow(line, &arrow_len, &dashed);
 
     if (arrow) {
-      g_autofree char *lhs = g_strndup(line, arrow - line);
-      const char *rhs_raw = arrow + arrow_len;
-      g_autofree char *edge_lbl = NULL;
-      g_autofree char *rhs = NULL;
+      const char *seg_start = line;
+      while (arrow) {
+        g_autofree char *lhs = g_strstrip(g_strndup(seg_start, arrow - seg_start));
+        const char *rhs_raw = arrow + arrow_len;
+        g_autofree char *edge_lbl = NULL;
 
-      while (*rhs_raw == ' ' || *rhs_raw == '\t') rhs_raw++;
-      if (*rhs_raw == '|') {
-        const char *end_pipe = strchr(rhs_raw + 1, '|');
-        if (end_pipe) {
-          edge_lbl = g_strndup(rhs_raw + 1, end_pipe - (rhs_raw + 1));
-          rhs = g_strdup(end_pipe + 1);
+        /* Handle mid-arrow label syntax: `A -- "label" --> B` */
+        char *mid = strstr(lhs, " -- ");
+        if (mid) {
+          g_autofree char *lbl_part = g_strstrip(g_strdup(mid + 4));
+          gsize ll = strlen(lbl_part);
+          if (ll >= 2 && lbl_part[0] == '"' && lbl_part[ll - 1] == '"') {
+            lbl_part[ll - 1] = '\0';
+            edge_lbl = g_strdup(lbl_part + 1);
+          } else {
+            edge_lbl = g_strdup(lbl_part);
+          }
+          *mid = '\0';
+          g_strstrip(lhs);
         }
-      }
-      if (!rhs) {
-        const char *colon = strchr(rhs_raw, ':');
-        if (colon && (g->kind == IDE_MERMAID_SEQUENCE || g->kind == IDE_MERMAID_STATE)) {
-          rhs = g_strndup(rhs_raw, colon - rhs_raw);
-          edge_lbl = g_strstrip(g_strdup(colon + 1));
+
+        while (*rhs_raw == ' ' || *rhs_raw == '\t') rhs_raw++;
+        if (*rhs_raw == '|') {
+          const char *end_pipe = strchr(rhs_raw + 1, '|');
+          if (end_pipe) {
+            g_free(edge_lbl);
+            edge_lbl = g_strstrip(g_strndup(rhs_raw + 1, end_pipe - (rhs_raw + 1)));
+            gsize ll = strlen(edge_lbl);
+            if (ll >= 2 && edge_lbl[0] == '"' && edge_lbl[ll - 1] == '"') {
+              edge_lbl[ll - 1] = '\0';
+              char *unq = g_strdup(edge_lbl + 1);
+              g_free(edge_lbl);
+              edge_lbl = unq;
+            }
+            rhs_raw = end_pipe + 1;
+            while (*rhs_raw == ' ' || *rhs_raw == '\t') rhs_raw++;
+          }
+        }
+
+        gsize next_len = 0;
+        gboolean next_dashed = FALSE;
+        const char *next_arrow = (g->kind == IDE_MERMAID_SEQUENCE || g->kind == IDE_MERMAID_STATE)
+                                     ? NULL
+                                     : find_mermaid_arrow(rhs_raw, &next_len, &next_dashed);
+        g_autofree char *rhs = NULL;
+        if (next_arrow) {
+          rhs = g_strstrip(g_strndup(rhs_raw, next_arrow - rhs_raw));
+          /* Strip trailing ` -- "label"` belonging to next_arrow */
+          char *next_mid = strstr(rhs, " -- ");
+          if (next_mid) {
+            *next_mid = '\0';
+            g_strstrip(rhs);
+          }
         } else {
-          rhs = g_strdup(rhs_raw);
+          const char *colon = strchr(rhs_raw, ':');
+          if (colon && (g->kind == IDE_MERMAID_SEQUENCE || g->kind == IDE_MERMAID_STATE)) {
+            rhs = g_strstrip(g_strndup(rhs_raw, colon - rhs_raw));
+            g_free(edge_lbl);
+            edge_lbl = g_strstrip(g_strdup(colon + 1));
+          } else {
+            rhs = g_strstrip(g_strdup(rhs_raw));
+          }
         }
-      }
 
-      IdeMermaidNode *src_node = ensure_mermaid_node(g, lhs, cur_line);
-      IdeMermaidNode *dst_node = ensure_mermaid_node(g, rhs, cur_line);
-      if (src_node && dst_node) {
-        IdeMermaidEdge *e = g_new0(IdeMermaidEdge, 1);
-        e->from_id = g_strdup(src_node->id);
-        e->to_id = g_strdup(dst_node->id);
-        e->label = edge_lbl ? g_steal_pointer(&edge_lbl) : NULL;
-        e->dashed = dashed;
-        g_ptr_array_add(g->edges, e);
+        add_mermaid_edges_between(g, lhs, rhs, edge_lbl, dashed, cur_line);
+
+        seg_start = rhs_raw;
+        arrow = next_arrow;
+        arrow_len = next_len;
+        dashed = next_dashed;
       }
     } else if (g_str_has_prefix(line, "participant ")) {
       ensure_mermaid_node(g, line + strlen("participant "), cur_line);
