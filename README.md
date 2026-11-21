@@ -43,13 +43,13 @@ The repository builds and installs **eight integrated native executables** (plus
 ## ✨ Suite Components in Detail
 
 ### ❖ Kajo Compositor (`kajo-comp`)
-> 📖 **Specifications & Storyboard**: [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) • [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) • [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) • [`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)
+> 📖 **Specifications & Storyboard**: [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) • [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) • [`docs/spec_comp_glass_styles.md`](docs/spec_comp_glass_styles.md) • [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) • [`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)
 
 - **Infinite Scrolling Strip & Spring Physics**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), and a closed-form 2nd-order damped spring solver. Resizes animate, and workspaces form one continuous vertical strip (both stay visible while switching).
 - **3-Finger Drag & Flick**: On the touchscreen and touchpad the view follows three fingers along the strip or between workspaces and snaps on release: a slow drag switches by position, a quick flick by velocity, and a short drag springs back (a glance).
-- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo/0.20.2`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 3-pass Dual-Kawase frosted glass backdrop blur (with top-edge specular hairline, 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, window open/close/resize snapshot transitions (`[effects.transitions]`, 18 ported presets), subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
+- **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo-0.20.2-fx10`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 7 optical glass & light-scattering backdrop materials (`frosted`, `liquid`, `halation`, `fluted`, `acrylic`, `aero`, `dichroic`, with top-edge specular hairline, cross-GPU FP32-quantized 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, window open/close/resize snapshot transitions (`[effects.transitions]`, 18 ported presets), subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), lazy XWayland with immediate `DISPLAY` export, DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
 - **Built-In Switcher & Screenshot UI**: Live-thumbnail `Alt+Tab` MRU overlay and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
-- **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
+- **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `glass_style`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
 
 ### ⌨️ Kajo IDE (`kajo-ide`)
 > 📖 **Full Manual**: [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)
@@ -196,6 +196,7 @@ unfocused_scale = 0.60
 
 [effects.glass]
 enabled = true
+style = "frosted"                       # "frosted" | "liquid" | "halation" | "fluted" | "acrylic" | "aero" | "dichroic"
 passes = 3
 offset = 2.0
 saturation = 1.15
