@@ -24,9 +24,16 @@ struct _IdeMarkdownView {
   GtkWidget              *root_box;
   GtkWidget              *scroll_win;
   GtkWidget              *doc_box;
+  GtkWidget              *doc_badge;
   GtkWidget              *task_badge;
   char                   *current_markdown;
   gboolean                updating_checklists;
+  gboolean                context_dirty;
+  guint                   tasks_done;
+  guint                   tasks_total;
+  guint                   scroll_restore_id;
+  double                  pending_scroll_frac;
+  gboolean                has_pending_scroll;
 };
 
 typedef struct {
@@ -474,7 +481,9 @@ char *ide_markdown_format_inline_pango(const char *raw) {
       if (g_str_has_prefix(p, "<https://") || g_str_has_prefix(p, "<http://") ||
           g_str_has_prefix(p, "<file://")) {
         const char *end = strchr(p + 1, '>');
-        if (end && !strchr(p + 1, ' ')) {
+        if (end && end > p + 1 &&
+            memchr(p + 1, ' ', (size_t)(end - (p + 1))) == NULL &&
+            memchr(p + 1, '\t', (size_t)(end - (p + 1))) == NULL) {
           g_autofree char *url = g_strndup(p + 1, end - (p + 1));
           g_autofree char *esc = g_markup_escape_text(url, -1);
           g_string_append_printf(
@@ -530,11 +539,19 @@ char *ide_markdown_format_inline_pango(const char *raw) {
           g_autofree char *clean_url = strip_optional_markdown_title(url_raw, NULL);
           g_autofree char *lbl_fmt = ide_markdown_format_inline_pango(lbl_raw);
           g_autofree char *esc_url = g_markup_escape_text(clean_url, -1);
+          /* Pango rejects nested <a> tags (e.g. [![alt](img)](url)): strip inner
+           * <a>...</a> wrappers by falling back to escaped label text if nested. */
+          const char *safe_lbl = lbl_fmt;
+          g_autofree char *fallback_lbl = NULL;
+          if (strstr(lbl_fmt, "<a ") != NULL) {
+            fallback_lbl = g_markup_escape_text(lbl_raw, -1);
+            safe_lbl = fallback_lbl;
+          }
           g_string_append_printf(
               out,
               "<a href=\"%s\"><span foreground=\"#00d8f0\" underline=\"single\">%s</span></a>",
               esc_url,
-              lbl_fmt);
+              safe_lbl);
           p = url_end + 1;
           continue;
         }
@@ -1574,12 +1591,31 @@ static GtkWidget *build_carousel_card(IdeMarkdownView *md,
 
 /* ─── 10. Block-Level Markdown & HTML Document Renderer ─── */
 
+static void update_task_badge(IdeMarkdownView *md) {
+  if (!md || !md->task_badge) return;
+  if (md->tasks_total > 0) {
+    g_autofree char *tstr =
+        g_strdup_printf("✓ %u / %u TASKS DONE", md->tasks_done, md->tasks_total);
+    gtk_label_set_text(GTK_LABEL(md->task_badge), tstr);
+    gtk_widget_set_visible(md->task_badge, TRUE);
+  } else {
+    gtk_widget_set_visible(md->task_badge, FALSE);
+  }
+}
+
 static void on_checklist_toggled(GtkCheckButton *chk, gpointer user_data) {
   IdeMarkdownView *md = user_data;
   if (!md || md->updating_checklists || !md->current_markdown) return;
   guint line_1based =
       GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(chk), "md-line"));
   if (line_1based == 0) return;
+
+  if (gtk_check_button_get_active(chk)) {
+    if (md->tasks_done < md->tasks_total) md->tasks_done++;
+  } else {
+    if (md->tasks_done > 0) md->tasks_done--;
+  }
+  update_task_badge(md);
 
   char *updated =
       ide_markdown_toggle_checklist_line(md->current_markdown, line_1based);
@@ -1624,6 +1660,60 @@ static gboolean is_pure_html_wrapper_line(const char *trimmed) {
         return TRUE;
     }
   }
+  return FALSE;
+}
+
+gboolean ide_markdown_is_markdown_path(const char *path_or_title) {
+  if (!path_or_title || !*path_or_title) return FALSE;
+  g_autofree char *low = g_ascii_strdown(path_or_title, -1);
+  return g_str_has_suffix(low, ".md") ||
+         g_str_has_suffix(low, ".markdown") ||
+         g_str_has_suffix(low, ".mdown") ||
+         g_str_has_suffix(low, ".mkd") ||
+         g_str_has_suffix(low, ".mdx");
+}
+
+gboolean ide_markdown_is_table_separator_row(const char *line) {
+  if (!line || !*line) return FALSE;
+  gboolean has_dash = FALSE;
+  gboolean has_pipe = FALSE;
+  for (const char *p = line; *p; p++) {
+    if (*p == '-') {
+      has_dash = TRUE;
+    } else if (*p == '|') {
+      has_pipe = TRUE;
+    } else if (*p == ':' || *p == ' ' || *p == '\t' || *p == '\r') {
+      continue;
+    } else {
+      return FALSE;
+    }
+  }
+  return has_dash && has_pipe;
+}
+
+static gboolean is_block_starter_line(const char *trimmed) {
+  if (!trimmed || *trimmed == '\0') return TRUE;
+  if (g_str_has_prefix(trimmed, "```") || g_str_has_prefix(trimmed, "<details") ||
+      g_str_has_prefix(trimmed, ">") || g_str_has_prefix(trimmed, "<hr") ||
+      g_strcmp0(trimmed, "---") == 0 || g_strcmp0(trimmed, "***") == 0 ||
+      g_strcmp0(trimmed, "___") == 0)
+    return TRUE;
+  if (trimmed[0] == '#') {
+    guint h = 0;
+    while (trimmed[h] == '#') h++;
+    if (h >= 1 && h <= 6 && trimmed[h] == ' ') return TRUE;
+  }
+  if ((trimmed[0] == '-' || trimmed[0] == '*' || trimmed[0] == '+') &&
+      trimmed[1] == ' ')
+    return TRUE;
+  if (g_ascii_isdigit(trimmed[0])) {
+    const char *d = trimmed;
+    while (g_ascii_isdigit(*d)) d++;
+    if (d[0] == '.' && d[1] == ' ') return TRUE;
+  }
+  if (trimmed[0] == '|' && strchr(trimmed + 1, '|') != NULL) return TRUE;
+  if (is_pure_html_wrapper_line(trimmed)) return TRUE;
+  if (ide_markdown_extract_embed(trimmed, NULL, NULL, NULL)) return TRUE;
   return FALSE;
 }
 
@@ -1686,6 +1776,8 @@ static void render_markdown_into_box(IdeMarkdownView *md,
     if (g_str_has_prefix(trimmed, "<details")) {
       g_autofree char *sum_title = g_strdup("DETAILS");
       GString *inner_md = g_string_new("");
+      guint details_body_start = base_line_offset + i + 1;
+      gboolean body_started = FALSE;
       i++;
       while (i < n_lines) {
         const char *dtr = lines[i];
@@ -1697,6 +1789,10 @@ static void render_markdown_into_box(IdeMarkdownView *md,
           g_free(sum_title);
           sum_title = g_strndup(s_open + 9, s_close - (s_open + 9));
         } else {
+          if (!body_started) {
+            details_body_start = base_line_offset + i;
+            body_started = TRUE;
+          }
           if (inner_md->len > 0) g_string_append_c(inner_md, '\n');
           g_string_append(inner_md, lines[i]);
         }
@@ -1711,7 +1807,7 @@ static void render_markdown_into_box(IdeMarkdownView *md,
       gtk_widget_set_margin_top(exp_box, 8);
       gtk_widget_set_margin_bottom(exp_box, 8);
       render_markdown_into_box(
-          md, exp_box, inner_md->str, base_line_offset + i, io_tasks_done, io_tasks_total);
+          md, exp_box, inner_md->str, details_body_start, io_tasks_done, io_tasks_total);
       gtk_expander_set_child(GTK_EXPANDER(exp), exp_box);
       gtk_box_append(GTK_BOX(target_box), exp);
       g_string_free(inner_md, TRUE);
@@ -1923,7 +2019,7 @@ static void render_markdown_into_box(IdeMarkdownView *md,
           i--;
           break;
         }
-        if (strstr(tline, "---") == NULL) {
+        if (!ide_markdown_is_table_separator_row(tline)) {
           g_auto(GStrv) cells = g_strsplit(tline, "|", -1);
           int col_idx = 0;
           for (guint c = 1; cells[c] != NULL && cells[c + 1] != NULL; c++) {
@@ -1972,25 +2068,74 @@ static void render_markdown_into_box(IdeMarkdownView *md,
         }
         i++;
       }
-      gtk_box_append(GTK_BOX(target_box), grid);
+      GtkWidget *tbl_scroll = gtk_scrolled_window_new();
+      gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tbl_scroll),
+                                     GTK_POLICY_AUTOMATIC,
+                                     GTK_POLICY_NEVER);
+      gtk_scrolled_window_set_propagate_natural_width(
+          GTK_SCROLLED_WINDOW(tbl_scroll), FALSE);
+      gtk_scrolled_window_set_propagate_natural_height(
+          GTK_SCROLLED_WINDOW(tbl_scroll), TRUE);
+      gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(tbl_scroll), grid);
+      gtk_box_append(GTK_BOX(target_box), tbl_scroll);
       continue;
     }
 
-    /* 12. Regular Paragraph (with automatic inline ![alt](src) figure extraction) */
+    /* 12. Regular Paragraph (join consecutive wrapped lines + inline embeds) */
     {
-      GtkWidget *p_lbl = create_rich_markdown_label(md, trimmed, NULL);
+      GString *para = g_string_new(trimmed);
+      while (i + 1 < n_lines) {
+        const char *nxt = lines[i + 1];
+        while (*nxt == ' ' || *nxt == '\t') nxt++;
+        if (is_block_starter_line(nxt)) break;
+        g_string_append_c(para, ' ');
+        g_string_append(para, nxt);
+        i++;
+      }
+      GtkWidget *p_lbl = create_rich_markdown_label(md, para->str, NULL);
       gtk_box_append(GTK_BOX(target_box), p_lbl);
-      append_inline_embeds_from_text(md, target_box, trimmed);
+      append_inline_embeds_from_text(md, target_box, para->str);
+      g_string_free(para, TRUE);
     }
   }
 }
 
+static gboolean on_md_restore_scroll_idle(gpointer user_data) {
+  IdeMarkdownView *md = user_data;
+  md->scroll_restore_id = 0;
+  if (!md->has_pending_scroll || !md->scroll_win) return G_SOURCE_REMOVE;
+  md->has_pending_scroll = FALSE;
+  ide_markdown_view_sync_scroll(md, md->pending_scroll_frac);
+  return G_SOURCE_REMOVE;
+}
+
 void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
   if (!md || !md->doc_box) return;
+  const char *incoming = markdown_text ? markdown_text : "";
+  if (!md->context_dirty && md->current_markdown &&
+      g_strcmp0(md->current_markdown, incoming) == 0) {
+    return;
+  }
 
-  char *new_md = g_strdup(markdown_text ? markdown_text : "");
+  /* Preserve current scroll fraction across DOM rebuilds on the same document. */
+  gboolean keep_scroll = !md->context_dirty;
+  double saved_frac = 0.0;
+  if (keep_scroll && md->scroll_win) {
+    GtkAdjustment *vadj =
+        gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(md->scroll_win));
+    if (vadj) {
+      double upper = gtk_adjustment_get_upper(vadj);
+      double page = gtk_adjustment_get_page_size(vadj);
+      if (upper > page) {
+        saved_frac = CLAMP(gtk_adjustment_get_value(vadj) / (upper - page), 0.0, 1.0);
+      }
+    }
+  }
+
+  char *new_md = g_strdup(incoming);
   g_free(md->current_markdown);
   md->current_markdown = new_md;
+  md->context_dirty = FALSE;
 
   GtkWidget *child;
   while ((child = gtk_widget_get_first_child(md->doc_box)) != NULL)
@@ -2002,16 +2147,41 @@ void ide_markdown_view_render(IdeMarkdownView *md, const char *markdown_text) {
   render_markdown_into_box(
       md, md->doc_box, md->current_markdown, 0, &tasks_done, &tasks_total);
 
-  if (md->task_badge) {
-    if (tasks_total > 0) {
-      g_autofree char *tstr =
-          g_strdup_printf("✓ %u / %u TASKS DONE", tasks_done, tasks_total);
-      gtk_label_set_text(GTK_LABEL(md->task_badge), tstr);
-      gtk_widget_set_visible(md->task_badge, TRUE);
-    } else {
-      gtk_widget_set_visible(md->task_badge, FALSE);
-    }
+  md->tasks_done = tasks_done;
+  md->tasks_total = tasks_total;
+  update_task_badge(md);
+
+  g_clear_handle_id(&md->scroll_restore_id, g_source_remove);
+  if (keep_scroll && saved_frac > 0.0001) {
+    md->pending_scroll_frac = saved_frac;
+    md->has_pending_scroll = TRUE;
+    md->scroll_restore_id = g_idle_add(on_md_restore_scroll_idle, md);
   }
+}
+
+void ide_markdown_view_show_notice(IdeMarkdownView *md, const char *notice_text) {
+  if (!md || !md->doc_box) return;
+  g_clear_handle_id(&md->scroll_restore_id, g_source_remove);
+  g_clear_pointer(&md->current_markdown, g_free);
+  md->context_dirty = TRUE;
+  md->tasks_done = 0;
+  md->tasks_total = 0;
+  update_task_badge(md);
+  if (md->doc_badge) gtk_widget_set_visible(md->doc_badge, FALSE);
+
+  GtkWidget *child;
+  while ((child = gtk_widget_get_first_child(md->doc_box)) != NULL)
+    gtk_box_remove(GTK_BOX(md->doc_box), child);
+
+  GtkWidget *lbl = gtk_label_new(notice_text ? notice_text : "No Markdown document open");
+  gtk_widget_add_css_class(lbl, "empty-state-label");
+  gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+  gtk_label_set_wrap(GTK_LABEL(lbl), TRUE);
+  gtk_box_append(GTK_BOX(md->doc_box), lbl);
+}
+
+const char *ide_markdown_view_get_doc_path(const IdeMarkdownView *md) {
+  return md ? md->doc_file_path : NULL;
 }
 
 void ide_markdown_view_sync_scroll(IdeMarkdownView *md, double scroll_fraction) {
@@ -2040,6 +2210,10 @@ void ide_markdown_view_set_context(IdeMarkdownView *md,
                                    const char      *doc_file_path,
                                    const char      *workspace_root) {
   if (!md) return;
+  if (g_strcmp0(md->doc_file_path, doc_file_path) != 0 ||
+      g_strcmp0(md->workspace_root, workspace_root) != 0) {
+    md->context_dirty = TRUE;
+  }
   char *new_path = doc_file_path ? g_strdup(doc_file_path) : NULL;
   char *new_dir = (doc_file_path && *doc_file_path)
                       ? g_path_get_dirname(doc_file_path)
@@ -2053,6 +2227,16 @@ void ide_markdown_view_set_context(IdeMarkdownView *md,
   md->doc_file_path = new_path;
   md->doc_dir = new_dir;
   md->workspace_root = new_root;
+
+  if (md->doc_badge) {
+    if (md->doc_file_path && *md->doc_file_path) {
+      g_autofree char *base = g_path_get_basename(md->doc_file_path);
+      gtk_label_set_text(GTK_LABEL(md->doc_badge), base);
+      gtk_widget_set_visible(md->doc_badge, TRUE);
+    } else {
+      gtk_widget_set_visible(md->doc_badge, FALSE);
+    }
+  }
 }
 
 IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
@@ -2073,10 +2257,17 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
 
   GtkWidget *title =
-      gtk_label_new("📖 GRAPHICAL MARKDOWN, EMBEDS & VECTOR MERMAID");
+      gtk_label_new("📖 MARKDOWN PREVIEW");
   gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
   gtk_widget_set_hexpand(title, TRUE);
   gtk_label_set_xalign(GTK_LABEL(title), 0.0f);
+  gtk_label_set_ellipsize(GTK_LABEL(title), PANGO_ELLIPSIZE_END);
+
+  md->doc_badge = gtk_label_new("");
+  gtk_widget_add_css_class(md->doc_badge, "shell-popover-badge");
+  gtk_widget_add_css_class(md->doc_badge, "accent");
+  gtk_widget_set_valign(md->doc_badge, GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(md->doc_badge, FALSE);
 
   md->task_badge = gtk_label_new("✓ 0 / 0 TASKS DONE");
   gtk_widget_add_css_class(md->task_badge, "shell-popover-badge");
@@ -2084,19 +2275,9 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_widget_set_valign(md->task_badge, GTK_ALIGN_CENTER);
   gtk_widget_set_visible(md->task_badge, FALSE);
 
-  GtkWidget *sync_badge = gtk_label_new("SYNC SCROLL: ON");
-  gtk_widget_add_css_class(sync_badge, "shell-popover-badge");
-  gtk_widget_set_valign(sync_badge, GTK_ALIGN_CENTER);
-
-  GtkWidget *badge = gtk_label_new("CAIRO + PANGO + POPPLER");
-  gtk_widget_add_css_class(badge, "shell-popover-badge");
-  gtk_widget_add_css_class(badge, "accent");
-  gtk_widget_set_valign(badge, GTK_ALIGN_CENTER);
-
   gtk_box_append(GTK_BOX(hdr), title);
+  gtk_box_append(GTK_BOX(hdr), md->doc_badge);
   gtk_box_append(GTK_BOX(hdr), md->task_badge);
-  gtk_box_append(GTK_BOX(hdr), sync_badge);
-  gtk_box_append(GTK_BOX(hdr), badge);
   gtk_box_append(GTK_BOX(md->root_box), hdr);
 
   md->scroll_win = gtk_scrolled_window_new();
@@ -2120,6 +2301,7 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
 
 void ide_markdown_view_free(IdeMarkdownView *md) {
   if (!md) return;
+  g_clear_handle_id(&md->scroll_restore_id, g_source_remove);
   g_free(md->current_markdown);
   g_free(md->doc_file_path);
   g_free(md->doc_dir);

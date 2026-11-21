@@ -42,6 +42,8 @@ char            *ide_markdown_resolve_asset_path(const char *raw_ref,
                                                  const char *workspace_root,
                                                  guint      *out_line_1based);
 IdeMarkdownEmbedKind ide_markdown_classify_asset(const char *path_or_ref);
+gboolean             ide_markdown_is_table_separator_row(const char *line);
+gboolean             ide_markdown_is_markdown_path(const char *path_or_title);
 
 /* Full Graphical Markdown, Embedded Media/Image/PDF/Archive & Cairo Vector Mermaid View */
 IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
@@ -55,8 +57,11 @@ void             ide_markdown_view_set_context(IdeMarkdownView *md,
 void             ide_markdown_view_free(IdeMarkdownView *md);
 
 GtkWidget       *ide_markdown_view_get_widget(IdeMarkdownView *md);
+const char      *ide_markdown_view_get_doc_path(const IdeMarkdownView *md);
 void             ide_markdown_view_render(IdeMarkdownView *md,
                                           const char      *markdown_text);
+void             ide_markdown_view_show_notice(IdeMarkdownView *md,
+                                               const char      *notice_text);
 void             ide_markdown_view_sync_scroll(IdeMarkdownView *md,
                                                double           scroll_fraction);
 

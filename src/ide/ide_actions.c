@@ -35,6 +35,7 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
 
   gboolean extend = (ide_fsm_get_state(self->fsm) == IDE_STATE_SELECT ||
                      act->type == IDE_ACTION_EXTEND_SELECTION);
+  gboolean was_modified = ide_buffer_get_modified(buf);
 
   switch (act->type) {
     case IDE_ACTION_MOVE_LEFT:
@@ -385,8 +386,9 @@ scroll_and_done:
 post_edit:
   ide_buffer_recompute_diffs(buf);
   ide_lsp_manager_notify_change(self->lsp, buf);
-  ide_window_sync_markdown_views(self);
-  ide_window_rebuild_tab_ribbon(self);
+  ide_window_schedule_markdown_sync(self);
+  if (ide_buffer_get_modified(buf) != was_modified)
+    ide_window_rebuild_tab_ribbon(self);
   gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(self->source_view),
                                      gtk_text_buffer_get_insert(tbuf));
   gtk_widget_queue_draw(self->source_view);
@@ -561,7 +563,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_TOGGLE_MARKDOWN_PREVIEW: {
       gboolean next_vis = !gtk_widget_get_visible(self->md_split_container);
       gtk_widget_set_visible(self->md_split_container, next_vis);
-      gtk_widget_set_visible(self->source_map, !next_vis);
+      gtk_widget_set_visible(self->source_map, !next_vis && self->config_minimap_enabled);
       if (next_vis && self->editor_md_paned) {
         int avail_w = gtk_widget_get_width(self->editor_md_paned);
         if (avail_w <= 200) avail_w = 1040;
@@ -718,6 +720,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       if (buf && ide_buffer_save(buf, NULL)) {
         ide_lsp_manager_notify_save(self->lsp, buf);
         ide_tree_refresh(self->tree);
+        ide_window_sync_conflict_bar(self);
         ide_window_rebuild_tab_ribbon(self);
         ide_window_show_toast(self, "✓ Saved file atomically");
       }
@@ -725,15 +728,23 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_SAVE_ALL:
       for (guint i = 0; i < self->buffers->len; i++) {
         IdeBuffer *b = g_ptr_array_index(self->buffers, i);
-        if (ide_buffer_get_file_path(b)) ide_buffer_save(b, NULL);
+        if (ide_buffer_get_file_path(b) && ide_buffer_save(b, NULL))
+          ide_lsp_manager_notify_save(self->lsp, b);
       }
       ide_tree_refresh(self->tree);
+      ide_window_sync_conflict_bar(self);
       ide_window_rebuild_tab_ribbon(self);
       ide_window_show_toast(self, "✓ Saved all open buffers");
       break;
     case IDE_ACTION_BUFFER_CLOSE:
     case IDE_ACTION_BUFFER_FORCE_CLOSE:
       if (self->buffers->len > 1) {
+        IdeBuffer *closing = g_ptr_array_index(self->buffers, self->active_buf_idx);
+        if (closing) {
+          GtkSourceBuffer *old_sb = ide_buffer_get_source_buffer(closing);
+          if (old_sb)
+            g_signal_handlers_disconnect_by_data(old_sb, self);
+        }
         g_ptr_array_remove_index(self->buffers, self->active_buf_idx);
         if (self->active_buf_idx >= self->buffers->len)
           self->active_buf_idx = self->buffers->len - 1;

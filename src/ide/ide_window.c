@@ -53,13 +53,74 @@ void ide_window_record_jumplist_here(KajoIdeWindow *self) {
   self->jumplist_idx = (int)self->jumplist->len - 1;
 }
 
+static gboolean on_toast_timeout_cb(gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  self->toast_timer_id = 0;
+  if (self->toast_banner)
+    gtk_widget_set_visible(self->toast_banner, FALSE);
+  return G_SOURCE_REMOVE;
+}
+
+static void on_toast_close_clicked(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  KajoIdeWindow *self = user_data;
+  if (!self) return;
+  g_clear_handle_id(&self->toast_timer_id, g_source_remove);
+  if (self->toast_banner)
+    gtk_widget_set_visible(self->toast_banner, FALSE);
+}
+
 void ide_window_show_toast(KajoIdeWindow *self, const char *msg) {
   if (!self || !self->toast_banner || !msg || !*msg) return;
   gtk_label_set_text(GTK_LABEL(self->toast_label), msg);
   gtk_widget_set_visible(self->toast_banner, TRUE);
+  g_clear_handle_id(&self->toast_timer_id, g_source_remove);
+  self->toast_timer_id = g_timeout_add(3200, on_toast_timeout_cb, self);
+}
+
+void ide_window_sync_conflict_bar(KajoIdeWindow *self) {
+  if (!self || !self->conflict_bar) return;
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  if (buf && ide_buffer_get_collision(buf)) {
+    g_autofree char *msg = g_strdup_printf(
+        "⚠ %s changed on disk while you have unsaved edits",
+        ide_buffer_get_title(buf));
+    gtk_label_set_text(GTK_LABEL(self->conflict_label), msg);
+    gtk_widget_set_visible(self->conflict_bar, TRUE);
+  } else {
+    gtk_widget_set_visible(self->conflict_bar, FALSE);
+  }
+}
+
+static void on_conflict_reload_clicked(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  KajoIdeWindow *self = user_data;
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  if (!buf) return;
+  if (ide_buffer_load_from_disk(buf, NULL)) {
+    ide_window_sync_conflict_bar(self);
+    ide_window_rebuild_tab_ribbon(self);
+    ide_window_sync_markdown_views(self);
+    ide_window_update_status_bar_and_hud(self);
+    ide_window_show_toast(self, "↻ Reloaded file from disk");
+    gtk_widget_grab_focus(self->source_view);
+  }
+}
+
+static void on_conflict_keep_clicked(GtkButton *btn, gpointer user_data) {
+  (void)btn;
+  KajoIdeWindow *self = user_data;
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  if (!buf) return;
+  ide_buffer_clear_collision(buf);
+  ide_window_sync_conflict_bar(self);
+  ide_window_rebuild_tab_ribbon(self);
+  ide_window_show_toast(self, "✓ Kept unsaved buffer edits");
+  gtk_widget_grab_focus(self->source_view);
 }
 
 void ide_window_sync_markdown_views(KajoIdeWindow *self) {
+  g_clear_handle_id(&self->md_sync_timer_id, g_source_remove);
   IdeBuffer *buf = ide_window_get_active_buffer(self);
   if (!buf) return;
   gboolean split_vis = gtk_widget_get_visible(self->md_split_container);
@@ -70,6 +131,25 @@ void ide_window_sync_markdown_views(KajoIdeWindow *self) {
   if (!split_vis && !drawer_vis) return;
 
   const char *doc_path = ide_buffer_get_file_path(buf);
+  const char *title = ide_buffer_get_title(buf);
+  gboolean is_md = ide_markdown_is_markdown_path(doc_path ? doc_path : title) ||
+                   doc_path == NULL;
+  if (!is_md) {
+    /* Keep the currently rendered Markdown document pinned when the user
+     * navigates into a source file (e.g. clicking a code link inside a spec). */
+    if (split_vis && !ide_markdown_view_get_doc_path(self->md_split_view)) {
+      ide_markdown_view_show_notice(
+          self->md_split_view,
+          "Open a Markdown (.md) file to render preview. Non-Markdown buffers are not parsed as Markdown.");
+    }
+    if (drawer_vis && !ide_markdown_view_get_doc_path(self->md_drawer_view)) {
+      ide_markdown_view_show_notice(
+          self->md_drawer_view,
+          "Open a Markdown (.md) file to render preview. Non-Markdown buffers are not parsed as Markdown.");
+    }
+    return;
+  }
+
   ide_markdown_view_set_context(
       self->md_split_view, doc_path, self->workspace_root);
   ide_markdown_view_set_context(
@@ -78,6 +158,27 @@ void ide_window_sync_markdown_views(KajoIdeWindow *self) {
   g_autofree char *text = ide_buffer_get_text(buf);
   if (split_vis) ide_markdown_view_render(self->md_split_view, text);
   if (drawer_vis) ide_markdown_view_render(self->md_drawer_view, text);
+}
+
+static gboolean on_md_sync_debounced(gpointer user_data) {
+  KajoIdeWindow *self = user_data;
+  self->md_sync_timer_id = 0;
+  ide_window_sync_markdown_views(self);
+  return G_SOURCE_REMOVE;
+}
+
+void ide_window_schedule_markdown_sync(KajoIdeWindow *self) {
+  if (!self) return;
+  gboolean split_vis = self->md_split_container &&
+                       gtk_widget_get_visible(self->md_split_container);
+  gboolean drawer_vis =
+      self->drawer_revealer && self->drawer_stack &&
+      gtk_revealer_get_reveal_child(GTK_REVEALER(self->drawer_revealer)) &&
+      g_strcmp0(gtk_stack_get_visible_child_name(GTK_STACK(self->drawer_stack)),
+                "markdown") == 0;
+  if (!split_vis && !drawer_vis) return;
+  g_clear_handle_id(&self->md_sync_timer_id, g_source_remove);
+  self->md_sync_timer_id = g_timeout_add(180, on_md_sync_debounced, self);
 }
 
 static char *format_breadcrumb_for_path(const char *workspace_root,
@@ -440,7 +541,12 @@ void ide_window_rebuild_tab_ribbon(KajoIdeWindow *self) {
     gtk_box_append(GTK_BOX(inner), icon_lbl);
     gtk_box_append(GTK_BOX(inner), name_lbl);
 
-    if (ide_buffer_get_agent_snapshot(b) != NULL) {
+    if (ide_buffer_get_collision(b)) {
+      GtkWidget *col_lbl = gtk_label_new("⚠");
+      gtk_widget_add_css_class(col_lbl, "ide-tab-collision");
+      gtk_widget_set_valign(col_lbl, GTK_ALIGN_CENTER);
+      gtk_box_append(GTK_BOX(inner), col_lbl);
+    } else if (ide_buffer_get_agent_snapshot(b) != NULL) {
       GtkWidget *ag_lbl = gtk_label_new("⚡");
       gtk_widget_add_css_class(ag_lbl, "ide-tab-agent");
       gtk_widget_set_valign(ag_lbl, GTK_ALIGN_CENTER);
@@ -489,6 +595,7 @@ void ide_window_bind_active_buffer_to_view(KajoIdeWindow *self) {
   ide_lsp_manager_notify_open(self->lsp, buf);
 
   ide_window_rebuild_tab_ribbon(self);
+  ide_window_sync_conflict_bar(self);
   ide_window_sync_markdown_views(self);
   ide_window_update_status_bar_and_hud(self);
   gtk_widget_grab_focus(self->source_view);
@@ -512,6 +619,9 @@ static void on_tab_close_btn_clicked(GtkButton *btn, gpointer user_data) {
     IdeBuffer *only = g_ptr_array_index(self->buffers, 0);
     if (ide_buffer_get_file_path(only) != NULL ||
         ide_buffer_get_modified(only)) {
+      GtkSourceBuffer *old_sb = ide_buffer_get_source_buffer(only);
+      if (old_sb)
+        g_signal_handlers_disconnect_by_func(old_sb, G_CALLBACK(on_buffer_mark_set), self);
       IdeBuffer *fresh = ide_buffer_new(NULL);
       if (self->active_scheme_id)
         ide_buffer_set_style_scheme(fresh, self->active_scheme_id);
@@ -523,6 +633,10 @@ static void on_tab_close_btn_clicked(GtkButton *btn, gpointer user_data) {
     return;
   }
   if (idx < self->buffers->len) {
+    IdeBuffer *closing = g_ptr_array_index(self->buffers, idx);
+    GtkSourceBuffer *old_sb = closing ? ide_buffer_get_source_buffer(closing) : NULL;
+    if (old_sb)
+      g_signal_handlers_disconnect_by_func(old_sb, G_CALLBACK(on_buffer_mark_set), self);
     g_ptr_array_remove_index(self->buffers, idx);
     if (self->active_buf_idx >= self->buffers->len)
       self->active_buf_idx = self->buffers->len - 1;
@@ -539,12 +653,17 @@ void ide_window_move_cursor_to_line_col(KajoIdeWindow *self,
   if (!buf) return;
   GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
   GtkTextIter iter;
-  int line0 = line_1based > 0 ? (int)line_1based - 1 : 0;
+  int max_line = MAX(0, gtk_text_buffer_get_line_count(tbuf) - 1);
+  int line0 = line_1based > 0 ? CLAMP((int)line_1based - 1, 0, max_line) : 0;
   int col0 = col_1based > 0 ? (int)col_1based - 1 : 0;
   gtk_text_buffer_get_iter_at_line_offset(tbuf, &iter, line0, 0);
-  int chars_in_line = gtk_text_iter_get_chars_in_line(&iter);
-  if (col0 < chars_in_line)
-    gtk_text_iter_set_line_offset(&iter, col0);
+  if (col0 > 0) {
+    GtkTextIter line_end = iter;
+    if (!gtk_text_iter_ends_line(&line_end))
+      gtk_text_iter_forward_to_line_end(&line_end);
+    int max_col = gtk_text_iter_get_line_offset(&line_end);
+    gtk_text_iter_set_line_offset(&iter, MIN(col0, max_col));
+  }
   gtk_text_buffer_place_cursor(tbuf, &iter);
   gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(self->source_view),
                                &iter,
@@ -569,7 +688,11 @@ static void on_external_buffer_change(IdeBuffer *buf,
         ide_buffer_get_title(buf));
     ide_window_show_toast(self, msg);
   }
-  ide_window_sync_markdown_views(self);
+  ide_window_rebuild_tab_ribbon(self);
+  ide_window_sync_conflict_bar(self);
+  if (buf == ide_window_get_active_buffer(self)) {
+    ide_window_sync_markdown_views(self);
+  }
   ide_window_update_status_bar_and_hud(self);
 }
 
@@ -1041,7 +1164,10 @@ static void on_markdown_checklist_edit(const char *new_full_text,
   KajoIdeWindow *self = user_data;
   IdeBuffer *buf = ide_window_get_active_buffer(self);
   if (!buf || !new_full_text) return;
+  guint saved_line = 1, saved_col = 1;
+  ide_window_get_cursor_line_col(self, &saved_line, &saved_col);
   ide_buffer_set_text(buf, new_full_text);
+  ide_window_move_cursor_to_line_col(self, saved_line, saved_col);
   ide_window_rebuild_tab_ribbon(self);
 }
 
@@ -1128,6 +1254,8 @@ static void on_drawer_close_clicked(GtkButton *b, gpointer d) {
 static void kajo_ide_window_dispose(GObject *object) {
   KajoIdeWindow *self = KAJO_IDE_WINDOW(object);
   g_clear_handle_id(&self->leader_timer_id, g_source_remove);
+  g_clear_handle_id(&self->toast_timer_id, g_source_remove);
+  g_clear_handle_id(&self->md_sync_timer_id, g_source_remove);
   if (self->config_sub_id != 0) {
     kajo_config_store_unsubscribe(NULL, self->config_sub_id);
     self->config_sub_id = 0;
@@ -1181,6 +1309,11 @@ static void on_editor_vadj_changed(GtkAdjustment *vadj, gpointer user_data) {
   if (self->lsp && ide_lsp_manager_popover_visible(self->lsp))
     ide_lsp_manager_reposition_popover(self->lsp, self->source_view);
   if (!gtk_widget_get_visible(self->md_split_container)) return;
+  IdeBuffer *abuf = ide_window_get_active_buffer(self);
+  const char *active_path = abuf ? ide_buffer_get_file_path(abuf) : NULL;
+  const char *md_path = ide_markdown_view_get_doc_path(self->md_split_view);
+  if (active_path && md_path && g_strcmp0(active_path, md_path) != 0)
+    return;
   double upper = gtk_adjustment_get_upper(vadj);
   double page = gtk_adjustment_get_page_size(vadj);
   if (upper > page) {
@@ -1330,10 +1463,17 @@ static void on_source_view_secondary(GtkGestureClick *gesture, int n_press, doub
 static void on_source_view_focus_leave(GtkEventControllerFocus *ctrl, gpointer user_data) {
   (void)ctrl;
   KajoIdeWindow *self = user_data;
-  /* Leaving the editor (another pane, another window) dismisses hover/completion
-   * popovers so they never linger detached from the cursor. */
-  if (self->lsp && ide_lsp_manager_popover_visible(self->lsp))
-    ide_lsp_manager_cancel_popover(self->lsp);
+  if (!self || !self->lsp || !ide_lsp_manager_popover_visible(self->lsp))
+    return;
+  /* Do not dismiss if focus moved into a GtkPopover owned by the editor
+   * (e.g. clicking an item inside completion / code actions). */
+  GtkWidget *nf = gtk_window_get_focus(GTK_WINDOW(self));
+  if (nf && (nf == self->source_view ||
+             gtk_widget_is_ancestor(nf, self->source_view) ||
+             gtk_widget_get_ancestor(nf, GTK_TYPE_POPOVER) != NULL)) {
+    return;
+  }
+  ide_lsp_manager_cancel_popover(self->lsp);
 }
 
 static void on_source_view_pressed(GtkGestureClick *gesture,
@@ -1549,9 +1689,43 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_vexpand(self->editor_md_paned, TRUE);
   gtk_paned_set_wide_handle(GTK_PANED(self->editor_md_paned), TRUE);
 
+  GtkWidget *editor_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_hexpand(editor_col, TRUE);
+  gtk_widget_set_vexpand(editor_col, TRUE);
+
+  /* Inline Disk Conflict Resolution Bar (shown only on external edit conflict) */
+  self->conflict_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_add_css_class(self->conflict_bar, "ide-conflict-bar");
+  gtk_widget_set_valign(self->conflict_bar, GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(self->conflict_bar, FALSE);
+
+  self->conflict_label = gtk_label_new("");
+  gtk_widget_set_hexpand(self->conflict_label, TRUE);
+  gtk_widget_set_valign(self->conflict_label, GTK_ALIGN_CENTER);
+  gtk_label_set_xalign(GTK_LABEL(self->conflict_label), 0.0f);
+  gtk_label_set_ellipsize(GTK_LABEL(self->conflict_label), PANGO_ELLIPSIZE_END);
+
+  GtkWidget *btn_conflict_reload = gtk_button_new_with_label("↻ RELOAD FROM DISK");
+  gtk_widget_set_focusable(btn_conflict_reload, FALSE);
+  gtk_widget_add_css_class(btn_conflict_reload, "ide-toolbar-btn");
+  gtk_widget_set_valign(btn_conflict_reload, GTK_ALIGN_CENTER);
+  g_signal_connect(btn_conflict_reload, "clicked", G_CALLBACK(on_conflict_reload_clicked), self);
+
+  GtkWidget *btn_conflict_keep = gtk_button_new_with_label("✓ KEEP MY EDITS");
+  gtk_widget_set_focusable(btn_conflict_keep, FALSE);
+  gtk_widget_add_css_class(btn_conflict_keep, "ide-toolbar-btn");
+  gtk_widget_set_valign(btn_conflict_keep, GTK_ALIGN_CENTER);
+  g_signal_connect(btn_conflict_keep, "clicked", G_CALLBACK(on_conflict_keep_clicked), self);
+
+  gtk_box_append(GTK_BOX(self->conflict_bar), self->conflict_label);
+  gtk_box_append(GTK_BOX(self->conflict_bar), btn_conflict_reload);
+  gtk_box_append(GTK_BOX(self->conflict_bar), btn_conflict_keep);
+  gtk_box_append(GTK_BOX(editor_col), self->conflict_bar);
+
   GtkWidget *editor_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(editor_hbox, TRUE);
   gtk_widget_set_vexpand(editor_hbox, TRUE);
+  gtk_box_append(GTK_BOX(editor_col), editor_hbox);
 
   self->source_scroll = gtk_scrolled_window_new();
   gtk_widget_set_hexpand(self->source_scroll, TRUE);
@@ -1629,12 +1803,12 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_size_request(self->md_split_container, 280, -1);
   gtk_widget_set_visible(self->md_split_container, FALSE);
 
-  gtk_paned_set_start_child(GTK_PANED(self->editor_md_paned), editor_hbox);
+  gtk_paned_set_start_child(GTK_PANED(self->editor_md_paned), editor_col);
   gtk_paned_set_end_child(GTK_PANED(self->editor_md_paned), self->md_split_container);
   gtk_paned_set_resize_start_child(GTK_PANED(self->editor_md_paned), TRUE);
   gtk_paned_set_shrink_start_child(GTK_PANED(self->editor_md_paned), FALSE);
   gtk_paned_set_resize_end_child(GTK_PANED(self->editor_md_paned), TRUE);
-  gtk_paned_set_shrink_end_child(GTK_PANED(self->editor_md_paned), FALSE);
+  gtk_paned_set_shrink_end_child(GTK_PANED(self->editor_md_paned), TRUE);
   gtk_paned_set_position(GTK_PANED(self->editor_md_paned), 540);
 
   gtk_paned_set_end_child(GTK_PANED(self->tree_paned), self->editor_md_paned);
@@ -1672,7 +1846,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(self->chord_hud_box), self->chord_hud_grid);
   gtk_overlay_add_overlay(GTK_OVERLAY(stage_overlay), self->chord_hud_box);
 
-  /* Top-Right Toast / External Reload Banner */
+  /* Top-Right Toast / External Reload Banner (auto-dismissing + dismiss button) */
   self->toast_banner = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
   gtk_widget_add_css_class(self->toast_banner, "ide-chord-hud");
   gtk_widget_set_halign(self->toast_banner, GTK_ALIGN_END);
@@ -1681,7 +1855,14 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_widget_set_margin_end(self->toast_banner, 16);
   gtk_widget_set_visible(self->toast_banner, FALSE);
   self->toast_label = gtk_label_new("");
+  gtk_widget_set_valign(self->toast_label, GTK_ALIGN_CENTER);
+  GtkWidget *toast_close = gtk_button_new_with_label("×");
+  gtk_widget_set_focusable(toast_close, FALSE);
+  gtk_widget_add_css_class(toast_close, "ide-tab-close");
+  gtk_widget_set_valign(toast_close, GTK_ALIGN_CENTER);
+  g_signal_connect(toast_close, "clicked", G_CALLBACK(on_toast_close_clicked), self);
   gtk_box_append(GTK_BOX(self->toast_banner), self->toast_label);
+  gtk_box_append(GTK_BOX(self->toast_banner), toast_close);
   gtk_overlay_add_overlay(GTK_OVERLAY(stage_overlay), self->toast_banner);
 
   /* 4. Contextual Bottom Drawer inside Resizable Vertical GtkPaned */

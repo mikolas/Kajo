@@ -612,6 +612,125 @@ test_treesitter_incremental_tags_match_fresh(void)
   }
 }
 
+typedef struct {
+  int      reload_count;
+  int      collision_count;
+} ExtChangeProbe;
+
+static void
+on_test_external_change(IdeBuffer *buf G_GNUC_UNUSED,
+                        gboolean   reloaded_cleanly,
+                        gpointer   user_data)
+{
+  ExtChangeProbe *p = user_data;
+  if (reloaded_cleanly)
+    p->reload_count++;
+  else
+    p->collision_count++;
+}
+
+static gboolean
+pump_quit_cb(gpointer user_data)
+{
+  g_main_loop_quit((GMainLoop *)user_data);
+  return G_SOURCE_REMOVE;
+}
+
+static void
+pump_main_loop_ms(guint ms)
+{
+  GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+  g_timeout_add(ms, pump_quit_cb, loop);
+  g_main_loop_run(loop);
+  g_main_loop_unref(loop);
+}
+
+static void
+test_file_monitor_self_save_reload_and_collision(void)
+{
+  g_autofree char *tmp_dir = g_dir_make_tmp("kajo_ide_mon_XXXXXX", NULL);
+  g_assert_nonnull(tmp_dir);
+  g_autofree char *fpath = g_build_filename(tmp_dir, "sample.c", NULL);
+
+  g_autoptr(GError) err = NULL;
+  g_assert_true(g_file_set_contents(fpath, "line 0\nline 1\nline 2\n", -1, &err));
+  g_assert_no_error(err);
+
+  IdeBuffer *buf = ide_buffer_new(fpath);
+  g_assert_true(ide_buffer_load_from_disk(buf, &err));
+  g_assert_no_error(err);
+
+  ExtChangeProbe probe = { 0, 0 };
+  ide_buffer_set_external_change_callback(buf, on_test_external_change, &probe);
+
+  /* 1. Local edit + save must NOT echo back as an external reload or wipe undo */
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+  gtk_text_buffer_begin_user_action(tbuf);
+  GtkTextIter end_it;
+  gtk_text_buffer_get_end_iter(tbuf, &end_it);
+  gtk_text_buffer_insert(tbuf, &end_it, "line 3\n", -1);
+  gtk_text_buffer_end_user_action(tbuf);
+  g_assert_true(gtk_text_buffer_get_can_undo(tbuf));
+
+  g_assert_true(ide_buffer_save(buf, &err));
+  g_assert_no_error(err);
+
+  /* Wait past the 120ms GFileMonitor debounce window */
+  pump_main_loop_ms(260);
+  g_assert_cmpint(probe.reload_count, ==, 0);
+  g_assert_cmpint(probe.collision_count, ==, 0);
+  g_assert_false(ide_buffer_get_collision(buf));
+  g_assert_true(gtk_text_buffer_get_can_undo(tbuf));
+
+  /* 2. External disk edit on a clean buffer hot-reloads and preserves cursor */
+  GtkTextIter cur;
+  gtk_text_buffer_get_iter_at_line_offset(tbuf, &cur, 2, 4);
+  gtk_text_buffer_place_cursor(tbuf, &cur);
+
+  g_assert_true(g_file_set_contents(fpath,
+                                    "line 0\nline 1\nline TWO\nline 3\n",
+                                    -1,
+                                    &err));
+  g_assert_no_error(err);
+  pump_main_loop_ms(300);
+
+  g_assert_cmpint(probe.reload_count, ==, 1);
+  g_assert_cmpint(probe.collision_count, ==, 0);
+  g_autofree char *reloaded = ide_buffer_get_text(buf);
+  g_assert_nonnull(strstr(reloaded, "line TWO"));
+
+  GtkTextIter after_cur;
+  gtk_text_buffer_get_iter_at_mark(tbuf, &after_cur, gtk_text_buffer_get_insert(tbuf));
+  g_assert_cmpint(gtk_text_iter_get_line(&after_cur), ==, 2);
+  g_assert_cmpint(gtk_text_iter_get_line_offset(&after_cur), ==, 4);
+
+  /* 3. External disk edit on a dirty buffer flags collision without clobbering edits */
+  gtk_text_buffer_get_end_iter(tbuf, &end_it);
+  gtk_text_buffer_insert(tbuf, &end_it, "local unsaved\n", -1);
+  g_assert_true(ide_buffer_get_modified(buf));
+
+  g_assert_true(g_file_set_contents(fpath,
+                                    "completely different disk text\n",
+                                    -1,
+                                    &err));
+  g_assert_no_error(err);
+  pump_main_loop_ms(300);
+
+  g_assert_cmpint(probe.collision_count, ==, 1);
+  g_assert_true(ide_buffer_get_collision(buf));
+  g_autofree char *still_local = ide_buffer_get_text(buf);
+  g_assert_nonnull(strstr(still_local, "local unsaved"));
+
+  /* Dismissing collision clears the warning while keeping local edits dirty */
+  ide_buffer_clear_collision(buf);
+  g_assert_false(ide_buffer_get_collision(buf));
+  g_assert_true(ide_buffer_get_modified(buf));
+
+  ide_buffer_free(buf);
+  g_unlink(fpath);
+  g_rmdir(tmp_dir);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -630,6 +749,8 @@ main(int argc, char *argv[])
   g_test_add_func("/ide/buffer/documented-palette-count", test_documented_palette_count);
   g_test_add_func("/ide/buffer/atomic-save-mode", test_atomic_save_preserves_mode);
   g_test_add_func("/ide/buffer/vasm-diagnostics", test_vasm_diagnostics_are_clickable);
+  g_test_add_func("/ide/buffer/file-monitor-self-save-reload-collision",
+                  test_file_monitor_self_save_reload_and_collision);
 
   return g_test_run();
 }

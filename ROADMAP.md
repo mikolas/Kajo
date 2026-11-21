@@ -43,6 +43,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo IDE: DAP variable expansion / watches / conditional breakpoints** | 📋 Planned | `kajo-ide` |
 | **Kajo IDE: relative line numbers** | 📋 Planned | `kajo-ide` (gutter option; documented before it was built) |
 | **Kajo IDE: user key remapping** | 📋 Planned | `kajo-ide` (FSM remap table exists in `ide_fsm.c`; config loading is not wired) |
+| **Kajo IDE: Scrollable-Tiling Code Strip & Dependency Graph Lenses** | 📋 Planned | `kajo-ide` — needs dedicated spec (`docs/spec_ide_code_strip.md`): Niri/`kajo-comp`-style infinite horizontal scrollable strip of live editable symbol/definition cards linked by LSP/tree-sitter call & dependency trails instead of flat file tabs |
 | **`kajo-files` Phase 2** | ✅ Done | [`docs/spec_files_phase2.md`](docs/spec_files_phase2.md) — Virtual read-only archive folders (`archive://`), smart extraction, archive compression, UDisks2 ISO/disk image loop-mounting, global view/sort persistence, breadcrumb auto-scroll & sibling jump popover, and multi-selection |
 | **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |

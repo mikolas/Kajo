@@ -70,12 +70,16 @@ struct _KajoIdeWindow {
   KajoIdeGutterRenderer *gutter_renderer;
   GtkWidget       *md_split_container;
 
-  /* Overlays */
+  /* Overlays & Inline Conflict Bar */
   GtkWidget       *chord_hud_box;
   GtkWidget       *chord_hud_title;
   GtkWidget       *chord_hud_grid;
   GtkWidget       *toast_banner;
   GtkWidget       *toast_label;
+  guint            toast_timer_id;
+  GtkWidget       *conflict_bar;
+  GtkWidget       *conflict_label;
+  guint            md_sync_timer_id;
 
   /* Bottom Contextual Drawer */
   GtkWidget       *drawer_revealer;
@@ -127,7 +131,9 @@ struct _KajoIdeWindow {
 IdeBuffer *ide_window_get_active_buffer(KajoIdeWindow *self);
 void       ide_window_record_jumplist_here(KajoIdeWindow *self);
 void       ide_window_show_toast(KajoIdeWindow *self, const char *msg);
+void       ide_window_sync_conflict_bar(KajoIdeWindow *self);
 void       ide_window_sync_markdown_views(KajoIdeWindow *self);
+void       ide_window_schedule_markdown_sync(KajoIdeWindow *self);
 void       ide_window_zoom_editor_font(KajoIdeWindow *self, int delta_or_zero);
 void       ide_window_update_status_bar_and_hud(KajoIdeWindow *self);
 void       ide_window_rebuild_tab_ribbon(KajoIdeWindow *self);

@@ -13,6 +13,7 @@ struct _IdeBuffer {
   char                     *agent_snapshot;
   GFileMonitor             *monitor;
   gulong                    monitor_handler_id;
+  guint                     monitor_debounce_id;
   gulong                    changed_handler_id;
   gboolean                  saving_internally;
   gboolean                  external_reloaded;
@@ -749,21 +750,32 @@ ide_buffer_apply_style_and_language(IdeBuffer *buf)
   ide_buffer_set_style_scheme(buf, buf->scheme_id ? buf->scheme_id : "kajo-metro-dark");
 }
 
-static void
-on_file_monitor_changed(GFileMonitor      *monitor,
-                        GFile             *file,
-                        GFile             *other_file,
-                        GFileMonitorEvent  event_type,
-                        gpointer           user_data)
+static gboolean
+on_file_monitor_debounced(gpointer user_data)
 {
   IdeBuffer *buf = user_data;
-  if (buf->saving_internally) {
-    return;
+  buf->monitor_debounce_id = 0;
+
+  if (buf->saving_internally || buf->file_path == NULL) {
+    return G_SOURCE_REMOVE;
   }
-  if (event_type != G_FILE_MONITOR_EVENT_CHANGED &&
-      event_type != G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT &&
-      event_type != G_FILE_MONITOR_EVENT_CREATED) {
-    return;
+
+  /* Compare disk content against our baseline first. This filters out async
+   * inotify echoes from our own ide_buffer_save() and no-op touches without
+   * ever wiping the GTK undo stack or firing spurious reload notifications. */
+  g_autofree char *contents = NULL;
+  gsize len = 0;
+  if (!g_file_get_contents(buf->file_path, &contents, &len, NULL)) {
+    return G_SOURCE_REMOVE;
+  }
+  g_autofree char *valid_utf8 = NULL;
+  const char *disk_text = contents;
+  if (!g_utf8_validate(contents, (gssize)len, NULL)) {
+    valid_utf8 = g_utf8_make_valid(contents, (gssize)len);
+    disk_text = valid_utf8;
+  }
+  if (buf->disk_baseline != NULL && g_strcmp0(disk_text, buf->disk_baseline) == 0) {
+    return G_SOURCE_REMOVE;
   }
 
   if (ide_buffer_get_modified(buf)) {
@@ -772,7 +784,7 @@ on_file_monitor_changed(GFileMonitor      *monitor,
     if (buf->external_cb != NULL) {
       buf->external_cb(buf, FALSE, buf->external_cb_data);
     }
-    return;
+    return G_SOURCE_REMOVE;
   }
 
   /* Record pre-agent snapshot if not already recorded before hot-reloading */
@@ -787,6 +799,33 @@ on_file_monitor_changed(GFileMonitor      *monitor,
       buf->external_cb(buf, TRUE, buf->external_cb_data);
     }
   }
+  return G_SOURCE_REMOVE;
+}
+
+static void
+on_file_monitor_changed(GFileMonitor      *monitor,
+                        GFile             *file,
+                        GFile             *other_file,
+                        GFileMonitorEvent  event_type,
+                        gpointer           user_data)
+{
+  (void)monitor;
+  (void)file;
+  (void)other_file;
+  IdeBuffer *buf = user_data;
+  if (buf->saving_internally) {
+    return;
+  }
+  if (event_type != G_FILE_MONITOR_EVENT_CHANGED &&
+      event_type != G_FILE_MONITOR_EVENT_CHANGES_DONE_HINT &&
+      event_type != G_FILE_MONITOR_EVENT_CREATED &&
+      event_type != G_FILE_MONITOR_EVENT_MOVED_IN) {
+    return;
+  }
+
+  /* Coalesce atomic-rename / write bursts (CREATED + CHANGED + DONE_HINT). */
+  g_clear_handle_id(&buf->monitor_debounce_id, g_source_remove);
+  buf->monitor_debounce_id = g_timeout_add(120, on_file_monitor_debounced, buf);
 }
 
 IdeBuffer *
@@ -846,6 +885,7 @@ ide_buffer_free(IdeBuffer *buf)
     buf->destroy_notify = NULL;
     notify(buf, buf->destroy_notify_data);
   }
+  g_clear_handle_id(&buf->monitor_debounce_id, g_source_remove);
   if (buf->monitor != NULL) {
     if (buf->monitor_handler_id != 0) {
       g_signal_handler_disconnect(buf->monitor, buf->monitor_handler_id);
@@ -938,10 +978,31 @@ ide_buffer_load_from_disk(IdeBuffer *buf, GError **error)
     text_to_set = valid_utf8;
   }
 
-  gtk_text_buffer_begin_irreversible_action(GTK_TEXT_BUFFER(buf->source_buf));
-  gtk_text_buffer_set_text(GTK_TEXT_BUFFER(buf->source_buf), text_to_set, -1);
-  gtk_text_buffer_end_irreversible_action(GTK_TEXT_BUFFER(buf->source_buf));
-  gtk_text_buffer_set_modified(GTK_TEXT_BUFFER(buf->source_buf), FALSE);
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(buf->source_buf);
+  GtkTextIter saved_it;
+  gtk_text_buffer_get_iter_at_mark(tbuf, &saved_it, gtk_text_buffer_get_insert(tbuf));
+  int saved_line = gtk_text_iter_get_line(&saved_it);
+  int saved_col = gtk_text_iter_get_line_offset(&saved_it);
+
+  gtk_text_buffer_begin_irreversible_action(tbuf);
+  gtk_text_buffer_set_text(tbuf, text_to_set, -1);
+  gtk_text_buffer_end_irreversible_action(tbuf);
+  gtk_text_buffer_set_modified(tbuf, FALSE);
+
+  /* Preserve cursor line & column clamped to the reloaded file bounds. */
+  int max_line = MAX(0, gtk_text_buffer_get_line_count(tbuf) - 1);
+  int target_line = CLAMP(saved_line, 0, max_line);
+  GtkTextIter restored;
+  gtk_text_buffer_get_iter_at_line_offset(tbuf, &restored, target_line, 0);
+  if (saved_col > 0) {
+    GtkTextIter line_end = restored;
+    if (!gtk_text_iter_ends_line(&line_end)) {
+      gtk_text_iter_forward_to_line_end(&line_end);
+    }
+    int max_col = gtk_text_iter_get_line_offset(&line_end);
+    gtk_text_iter_set_line_offset(&restored, MIN(saved_col, max_col));
+  }
+  gtk_text_buffer_place_cursor(tbuf, &restored);
 
   g_free(buf->disk_baseline);
   buf->disk_baseline = g_strdup(text_to_set);
@@ -1000,6 +1061,27 @@ ide_buffer_get_collision(const IdeBuffer *buf)
 {
   g_return_val_if_fail(buf != NULL, FALSE);
   return buf->collision;
+}
+
+void
+ide_buffer_clear_collision(IdeBuffer *buf)
+{
+  g_return_if_fail(buf != NULL);
+  buf->collision = FALSE;
+  if (buf->file_path != NULL) {
+    g_autofree char *contents = NULL;
+    gsize len = 0;
+    if (g_file_get_contents(buf->file_path, &contents, &len, NULL)) {
+      g_autofree char *valid_utf8 = NULL;
+      const char *disk_text = contents;
+      if (!g_utf8_validate(contents, (gssize)len, NULL)) {
+        valid_utf8 = g_utf8_make_valid(contents, (gssize)len);
+        disk_text = valid_utf8;
+      }
+      g_free(buf->disk_baseline);
+      buf->disk_baseline = g_strdup(disk_text);
+    }
+  }
 }
 
 void

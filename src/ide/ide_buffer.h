@@ -93,6 +93,7 @@ gboolean      ide_buffer_get_modified(const IdeBuffer *buf);
 gboolean      ide_buffer_get_external_reloaded(const IdeBuffer *buf);
 void          ide_buffer_clear_external_reloaded(IdeBuffer *buf);
 gboolean      ide_buffer_get_collision(const IdeBuffer *buf);
+void          ide_buffer_clear_collision(IdeBuffer *buf);
 
 void          ide_buffer_set_external_change_callback(IdeBuffer                *buf,
                                                       IdeBufferExternalChangeCb cb,
