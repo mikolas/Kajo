@@ -7,14 +7,24 @@
 #include <string.h>
 
 typedef struct {
-  GPtrArray *events;      /* char* "event" names in arrival order */
-  gboolean   exited;
-  gboolean   got;
-  gboolean   ok;
-  char      *msg;
-  gint64     value;
-  char      *text;
+  GPtrArray  *events;      /* char* "event" names in arrival order */
+  gboolean    exited;
+  gboolean    got;
+  gboolean    ok;
+  char       *msg;
+  gint64      value;
+  char       *text;
+  JsonObject *body;
 } Probe;
+
+static void
+probe_clear(Probe *p)
+{
+  g_clear_pointer(&p->events, g_ptr_array_unref);
+  g_clear_pointer(&p->msg, g_free);
+  g_clear_pointer(&p->text, g_free);
+  g_clear_pointer(&p->body, json_object_unref);
+}
 
 static gboolean
 to_cb(gpointer d)
@@ -59,7 +69,9 @@ on_resp(IdeDapClient *c, gboolean ok, JsonObject *body, const char *msg, gpointe
   p->msg = g_strdup(msg);
   g_free(p->text);
   p->text = NULL;
+  g_clear_pointer(&p->body, json_object_unref);
   if (body != NULL) {
+    p->body = json_object_ref(body);
     if (json_object_has_member(body, "result")) {
       p->text = g_strdup(json_object_get_string_member(body, "result"));
     }
@@ -183,9 +195,7 @@ test_session_flow(void)
   g_assert_false(p.ok);
 
   ide_dap_client_free(c);
-  g_ptr_array_unref(p.events);
-  g_free(p.msg);
-  g_free(p.text);
+  probe_clear(&p);
 }
 
 static void
@@ -201,8 +211,7 @@ test_launch_failure_reported(void)
   ide_dap_client_stop(c);
   g_assert_true(ide_dap_client_wait_exit(c, 5000));
   ide_dap_client_free(c);
-  g_ptr_array_unref(p.events);
-  g_free(p.msg);
+  probe_clear(&p);
 }
 
 static void
@@ -221,8 +230,7 @@ test_pending_failed_when_adapter_dies(void)
   SPIN_UNTIL(p.got);
   g_assert_false(p.ok);
   ide_dap_client_free(c);
-  g_ptr_array_unref(p.events);
-  g_free(p.msg);
+  probe_clear(&p);
 }
 
 static void
@@ -236,7 +244,191 @@ test_missing_adapter(void)
   g_assert_nonnull(err);
   g_clear_error(&err);
   ide_dap_client_free(c);
-  g_ptr_array_unref(p.events);
+  probe_clear(&p);
+}
+
+static void
+test_conditional_breakpoints(void)
+{
+  Probe p = { .events = g_ptr_array_new_with_free_func(g_free) };
+  IdeDapClient *c = make_client(&p);
+  g_assert_true(ide_dap_client_start(c, NULL));
+
+  REQUEST_WAIT(c, "initialize", obj1("adapterID", "mock", 0), &p);
+  g_assert_true(p.ok);
+  REQUEST_WAIT(c, "launch", obj1("program", "/tmp/prog", 0), &p);
+  g_assert_true(p.ok);
+  SPIN_UNTIL(has_event(&p, "initialized"));
+
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "source");
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "path");
+  json_builder_add_string_value(b, "/src/cond.c");
+  json_builder_end_object(b);
+  json_builder_set_member_name(b, "breakpoints");
+  json_builder_begin_array(b);
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "line");
+  json_builder_add_int_value(b, 7);
+  json_builder_set_member_name(b, "condition");
+  json_builder_add_string_value(b, "count > 5");
+  json_builder_end_object(b);
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "line");
+  json_builder_add_int_value(b, 12);
+  json_builder_end_object(b);
+  json_builder_end_array(b);
+  json_builder_end_object(b);
+  JsonNode *bp = json_builder_get_root(b);
+  g_object_unref(b);
+
+  REQUEST_WAIT(c, "setBreakpoints", bp, &p);
+  g_assert_true(p.ok);
+  g_assert_nonnull(p.body);
+  g_assert_true(json_object_has_member(p.body, "breakpoints"));
+  JsonArray *bps = json_object_get_array_member(p.body, "breakpoints");
+  g_assert_cmpuint(json_array_get_length(bps), ==, 2);
+
+  JsonObject *bp0 = json_array_get_object_element(bps, 0);
+  g_assert_true(json_object_get_boolean_member(bp0, "verified"));
+  g_assert_cmpint(json_object_get_int_member(bp0, "line"), ==, 7);
+  g_assert_cmpstr(json_object_get_string_member(bp0, "condition"), ==, "count > 5");
+
+  JsonObject *bp1 = json_array_get_object_element(bps, 1);
+  g_assert_true(json_object_get_boolean_member(bp1, "verified"));
+  g_assert_cmpint(json_object_get_int_member(bp1, "line"), ==, 12);
+  g_assert_false(json_object_has_member(bp1, "condition"));
+
+  REQUEST_WAIT(c, "configurationDone", NULL, &p);
+  SPIN_UNTIL(has_event(&p, "stopped"));
+
+  REQUEST_WAIT(c, "disconnect", NULL, &p);
+  g_assert_true(ide_dap_client_wait_exit(c, 5000));
+  ide_dap_client_free(c);
+  probe_clear(&p);
+}
+
+static void
+test_nested_variable_expansion(void)
+{
+  Probe p = { .events = g_ptr_array_new_with_free_func(g_free) };
+  IdeDapClient *c = make_client(&p);
+  g_assert_true(ide_dap_client_start(c, NULL));
+
+  REQUEST_WAIT(c, "initialize", obj1("adapterID", "mock", 0), &p);
+  g_assert_true(p.ok);
+  REQUEST_WAIT(c, "launch", obj1("program", "/tmp/prog", 0), &p);
+  g_assert_true(p.ok);
+  SPIN_UNTIL(has_event(&p, "initialized"));
+  REQUEST_WAIT(c, "configurationDone", NULL, &p);
+  SPIN_UNTIL(has_event(&p, "stopped"));
+
+  REQUEST_WAIT(c, "stackTrace", obj1("threadId", NULL, 1), &p);
+  g_assert_true(p.ok);
+  JsonArray *frames = json_object_get_array_member(p.body, "stackFrames");
+  gint64 frame_id = json_object_get_int_member(json_array_get_object_element(frames, 0), "id");
+
+  REQUEST_WAIT(c, "scopes", obj1("frameId", NULL, frame_id), &p);
+  g_assert_true(p.ok);
+  JsonArray *scopes = json_object_get_array_member(p.body, "scopes");
+  g_assert_cmpuint(json_array_get_length(scopes), ==, 1);
+  JsonObject *sc0 = json_array_get_object_element(scopes, 0);
+  g_assert_cmpstr(json_object_get_string_member(sc0, "name"), ==, "Locals");
+  gint64 locals_ref = json_object_get_int_member(sc0, "variablesReference");
+  g_assert_cmpint(locals_ref, >, 0);
+
+  REQUEST_WAIT(c, "variables", obj1("variablesReference", NULL, locals_ref), &p);
+  g_assert_true(p.ok);
+  JsonArray *vars = json_object_get_array_member(p.body, "variables");
+  g_assert_cmpuint(json_array_get_length(vars), ==, 3);
+  gint64 point_ref = 0;
+  for (guint i = 0; i < json_array_get_length(vars); i++) {
+    JsonObject *v = json_array_get_object_element(vars, i);
+    if (g_strcmp0(json_object_get_string_member(v, "name"), "point") == 0) {
+      g_assert_cmpstr(json_object_get_string_member(v, "type"), ==, "struct P");
+      point_ref = json_object_get_int_member(v, "variablesReference");
+    }
+  }
+  g_assert_cmpint(point_ref, ==, 777);
+
+  REQUEST_WAIT(c, "variables", obj1("variablesReference", NULL, point_ref), &p);
+  g_assert_true(p.ok);
+  JsonArray *children = json_object_get_array_member(p.body, "variables");
+  g_assert_cmpuint(json_array_get_length(children), ==, 2);
+  JsonObject *cx = json_array_get_object_element(children, 0);
+  JsonObject *cy = json_array_get_object_element(children, 1);
+  g_assert_cmpstr(json_object_get_string_member(cx, "name"), ==, "x");
+  g_assert_cmpstr(json_object_get_string_member(cx, "value"), ==, "1");
+  g_assert_cmpstr(json_object_get_string_member(cy, "name"), ==, "y");
+  g_assert_cmpstr(json_object_get_string_member(cy, "value"), ==, "2");
+
+  REQUEST_WAIT(c, "disconnect", NULL, &p);
+  g_assert_true(ide_dap_client_wait_exit(c, 5000));
+  ide_dap_client_free(c);
+  probe_clear(&p);
+}
+
+static JsonNode *
+watch_eval_args(const char *expression, gint64 frame_id)
+{
+  JsonBuilder *b = json_builder_new();
+  json_builder_begin_object(b);
+  json_builder_set_member_name(b, "expression");
+  json_builder_add_string_value(b, expression);
+  json_builder_set_member_name(b, "context");
+  json_builder_add_string_value(b, "watch");
+  json_builder_set_member_name(b, "frameId");
+  json_builder_add_int_value(b, frame_id);
+  json_builder_end_object(b);
+  JsonNode *n = json_builder_get_root(b);
+  g_object_unref(b);
+  return n;
+}
+
+static void
+test_watch_evaluation_and_expansion(void)
+{
+  Probe p = { .events = g_ptr_array_new_with_free_func(g_free) };
+  IdeDapClient *c = make_client(&p);
+  g_assert_true(ide_dap_client_start(c, NULL));
+
+  REQUEST_WAIT(c, "initialize", obj1("adapterID", "mock", 0), &p);
+  g_assert_true(p.ok);
+  REQUEST_WAIT(c, "launch", obj1("program", "/tmp/prog", 0), &p);
+  g_assert_true(p.ok);
+  SPIN_UNTIL(has_event(&p, "initialized"));
+  REQUEST_WAIT(c, "configurationDone", NULL, &p);
+  SPIN_UNTIL(has_event(&p, "stopped"));
+
+  /* Scalar watch expression */
+  REQUEST_WAIT(c, "evaluate", watch_eval_args("count + 1", 10), &p);
+  g_assert_true(p.ok);
+  g_assert_cmpstr(p.text, ==, "count + 1 = 42");
+  g_assert_cmpstr(json_object_get_string_member(p.body, "type"), ==, "int");
+  g_assert_cmpint(json_object_get_int_member(p.body, "variablesReference"), ==, 0);
+
+  /* Compound watch expression with variablesReference == 777 */
+  REQUEST_WAIT(c, "evaluate", watch_eval_args("point", 10), &p);
+  g_assert_true(p.ok);
+  g_assert_cmpstr(p.text, ==, "{x=1, y=2}");
+  g_assert_cmpstr(json_object_get_string_member(p.body, "type"), ==, "struct P");
+  gint64 ref = json_object_get_int_member(p.body, "variablesReference");
+  g_assert_cmpint(ref, ==, 777);
+
+  /* Expand compound watch via variables request */
+  REQUEST_WAIT(c, "variables", obj1("variablesReference", NULL, ref), &p);
+  g_assert_true(p.ok);
+  JsonArray *children = json_object_get_array_member(p.body, "variables");
+  g_assert_cmpuint(json_array_get_length(children), ==, 2);
+  g_assert_cmpstr(json_object_get_string_member(json_array_get_object_element(children, 0), "name"), ==, "x");
+  g_assert_cmpstr(json_object_get_string_member(json_array_get_object_element(children, 1), "name"), ==, "y");
+
+  REQUEST_WAIT(c, "disconnect", NULL, &p);
+  g_assert_true(ide_dap_client_wait_exit(c, 5000));
+  ide_dap_client_free(c);
+  probe_clear(&p);
 }
 
 
@@ -362,9 +554,7 @@ test_java_prepare_and_tcp_session(void)
   g_free(jp.error);
   g_subprocess_force_exit(srv);
   g_ptr_array_unref(jp.commands);
-  g_ptr_array_unref(p.events);
-  g_free(p.msg);
-  g_free(p.text);
+  probe_clear(&p);
 }
 
 static void
@@ -503,6 +693,9 @@ main(int argc, char **argv)
   g_test_add_func("/ide/dap-client/launch-failure", test_launch_failure_reported);
   g_test_add_func("/ide/dap-client/adapter-dies", test_pending_failed_when_adapter_dies);
   g_test_add_func("/ide/dap-client/missing-adapter", test_missing_adapter);
+  g_test_add_func("/ide/dap-client/conditional-breakpoints", test_conditional_breakpoints);
+  g_test_add_func("/ide/dap-client/nested-variable-expansion", test_nested_variable_expansion);
+  g_test_add_func("/ide/dap-client/watch-evaluation", test_watch_evaluation_and_expansion);
   g_test_add_func("/ide/dap-java/prepare-and-tcp-session", test_java_prepare_and_tcp_session);
   g_test_add_func("/ide/dap-java/errors", test_java_prepare_errors);
   g_test_add_func("/ide/dap-launch/config-and-meson", test_launch_from_config_and_meson);

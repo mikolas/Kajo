@@ -21,10 +21,10 @@ struct _IdeFsm {
 static const char *const kValidLeaderChords[] = {
   " ",  ",",  "ff", "fg", "fs", "fa", "bb", "bd", "bD", "e",  "o",  "a",  "k",  "?",  "h",
   "/",  "q",  "Q",  "mp", "mt", "md", "mm", "ne", "pe", "nd", "pd", "nh", "ph",
-  "ns", "ps", "ds", "da", "dr", "db", "dd", "dc", "dn", "di", "do", "dp", "dq",
-  "dv", "ca", "cr", "cf", "ch", "rb", "rt", "rr", "rc", "gd", "gi", "sr", "sp",
-  "sf", "s/", "ws", "wa", "wq", "w>", "w<", "w+", "w-", "ww", "wh", "wl", "wj",
-  "wk", NULL
+  "ns", "ps", "ds", "da", "dr", "db", "dB", "dd", "dc", "dn", "di", "do", "dp", "dq",
+  "dv", "ca", "cr", "cf", "ch", "rb", "rt", "rr", "rc", "gd", "gi", "gr", "gs", "gc", "go",
+  "vr", "sr", "sp", "sf", "s/", "ws", "wa", "wq", "w>", "w<", "w+", "w-", "ww", "wh", "wl",
+  "wj", "wk", NULL
 };
 
 static gboolean
@@ -207,6 +207,34 @@ ide_state_to_string(IdeState state)
   }
 }
 
+IdeState
+ide_state_from_name(const char *name)
+{
+  if (name == NULL || name[0] == '\0') {
+    return IDE_STATE_COUNT;
+  }
+  g_autofree char *lower = g_ascii_strdown(name, -1);
+  g_strstrip(lower);
+  if (g_strcmp0(lower, "normal") == 0) return IDE_STATE_NORMAL;
+  if (g_strcmp0(lower, "insert") == 0) return IDE_STATE_INSERT;
+  if (g_strcmp0(lower, "select") == 0) return IDE_STATE_SELECT;
+  if (g_strcmp0(lower, "leader") == 0) return IDE_STATE_LEADER;
+  if (g_strcmp0(lower, "match") == 0) return IDE_STATE_MATCH_PENDING;
+  if (g_strcmp0(lower, "picker") == 0) return IDE_STATE_PICKER;
+  if (g_strcmp0(lower, "drawer") == 0) return IDE_STATE_DRAWER;
+  if (g_strcmp0(lower, "diff") == 0) return IDE_STATE_DIFF_REVIEW;
+  if (g_strcmp0(lower, "tree") == 0) return IDE_STATE_TREE;
+  if (g_strcmp0(lower, "hover") == 0) return IDE_STATE_HOVER;
+  if (g_strcmp0(lower, "complete") == 0 || g_strcmp0(lower, "completion") == 0)
+    return IDE_STATE_COMPLETION;
+  if (g_strcmp0(lower, "action") == 0 || g_strcmp0(lower, "code_action") == 0)
+    return IDE_STATE_CODE_ACTION;
+  if (g_strcmp0(lower, "rename") == 0) return IDE_STATE_RENAME;
+  if (g_strcmp0(lower, "search") == 0) return IDE_STATE_SEARCH;
+  if (g_strcmp0(lower, "help") == 0) return IDE_STATE_HELP;
+  return IDE_STATE_COUNT;
+}
+
 const char *
 ide_state_get_css_class(IdeState state)
 {
@@ -292,16 +320,20 @@ ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
     }
     if (g_strcmp0(chord, "d") == 0) {
       return "d s  Review Agent Diffs   d a  Accept All         d r  Revert All\n"
-             "d b  Toggle Breakpoint    d d / d c  Start/Cont   d p  Pause\n"
-             "d n  Step Over            d i  Step Into          d o  Step Out\n"
-             "d q  Stop Session         d v  DAP Drawer";
+             "d b  Toggle Breakpoint    d B  Cond Breakpoint    d d / d c  Start/Cont\n"
+             "d p  Pause                d n  Step Over          d i  Step Into\n"
+             "d o  Step Out             d q  Stop Session       d v  DAP Drawer";
     }
     if (g_strcmp0(chord, "f") == 0) {
       return "f f  Find Files           f g  Live Grep          f s  Save Buffer\n"
              "f a  Save All";
     }
     if (g_strcmp0(chord, "g") == 0) {
-      return "g d  Go to Definition     g i  Go to Implementation";
+      return "g d  Go to Definition     g i  Implementation     g r  References\n"
+             "g s  Signature Help       g c  Incoming Calls     g o  Outgoing Calls";
+    }
+    if (g_strcmp0(chord, "v") == 0) {
+      return "v r  Relative Line Numbers";
     }
     if (g_strcmp0(chord, "m") == 0) {
       return "m p  Toggle Markdown GUI  m m / m d  Mermaid Drawer\n"
@@ -332,8 +364,8 @@ ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
            "e        File Tree       a      Alt File    w  Window / Save\n"
            "m        Markdown/Merm   s      Search/Rep  d  Agent / Debug\n"
            "c        Code / Format   r      Run / Build q / Q  Close Buffer\n"
-           "g        Goto            n / p  Next/Prev   o  Drawer    ? / h  Help\n"
-           "k        Hover Docs";
+           "g        Goto / LSP      n / p  Next/Prev   v  View Options\n"
+           "o        Drawer          k      Hover Docs  ? / h  Help";
   }
   if (state == IDE_STATE_MATCH_PENDING) {
     return "i + ( [ { \" ' w f c b a   Select Inside Delimiter / Word / AST\n"
@@ -341,7 +373,7 @@ ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
   }
   if (g_strcmp0(chord, "g") == 0) {
     return "g g  Buffer Start     g h  Line Start     g l  Line End\n"
-           "g d  Go to Definition";
+           "g d  Go to Definition g r  References";
   }
   return "";
 }
@@ -477,6 +509,19 @@ ide_action_type_from_name(const char *name)
     { "definition", IDE_ACTION_LSP_DEFINITION },
     { "lsp_implementation", IDE_ACTION_LSP_IMPLEMENTATION },
     { "implementation", IDE_ACTION_LSP_IMPLEMENTATION },
+    { "lsp_references", IDE_ACTION_LSP_REFERENCES },
+    { "references", IDE_ACTION_LSP_REFERENCES },
+    { "lsp_signature_help", IDE_ACTION_LSP_SIGNATURE_HELP },
+    { "signature_help", IDE_ACTION_LSP_SIGNATURE_HELP },
+    { "lsp_call_hierarchy_in", IDE_ACTION_LSP_CALL_HIERARCHY_IN },
+    { "call_hierarchy_in", IDE_ACTION_LSP_CALL_HIERARCHY_IN },
+    { "incoming_calls", IDE_ACTION_LSP_CALL_HIERARCHY_IN },
+    { "lsp_call_hierarchy_out", IDE_ACTION_LSP_CALL_HIERARCHY_OUT },
+    { "call_hierarchy_out", IDE_ACTION_LSP_CALL_HIERARCHY_OUT },
+    { "outgoing_calls", IDE_ACTION_LSP_CALL_HIERARCHY_OUT },
+    { "lsp_call_hierarchy_toggle", IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE },
+    { "toggle_relative_lines", IDE_ACTION_TOGGLE_RELATIVE_LINES },
+    { "relative_lines", IDE_ACTION_TOGGLE_RELATIVE_LINES },
     { "lsp_code_action", IDE_ACTION_LSP_CODE_ACTION },
     { "code_action", IDE_ACTION_LSP_CODE_ACTION },
     { "task_build", IDE_ACTION_TASK_BUILD },
@@ -536,6 +581,8 @@ ide_action_type_from_name(const char *name)
     { "project_replace_open", IDE_ACTION_PROJECT_REPLACE_OPEN },
     { "dap_toggle_breakpoint", IDE_ACTION_DAP_TOGGLE_BREAKPOINT },
     { "toggle_breakpoint", IDE_ACTION_DAP_TOGGLE_BREAKPOINT },
+    { "dap_conditional_breakpoint", IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT },
+    { "conditional_breakpoint", IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT },
     { "dap_start", IDE_ACTION_DAP_START },
     { "dap_continue", IDE_ACTION_DAP_CONTINUE },
     { "debug_continue", IDE_ACTION_DAP_CONTINUE },
@@ -630,6 +677,9 @@ handle_normal(IdeFsm *fsm, const char *key)
     }
     if (g_strcmp0(key, "d") == 0) {
       return ide_action_make(IDE_ACTION_LSP_DEFINITION);
+    }
+    if (g_strcmp0(key, "r") == 0) {
+      return ide_action_make(IDE_ACTION_LSP_REFERENCES);
     }
   }
 
@@ -818,6 +868,9 @@ handle_normal(IdeFsm *fsm, const char *key)
   if (g_strcmp0(key, "K") == 0) {
     return ide_action_make(IDE_ACTION_LSP_HOVER);
   }
+  if (g_strcmp0(key, "ctrl+shift+space") == 0) {
+    return ide_action_make(IDE_ACTION_LSP_SIGNATURE_HELP);
+  }
   if (g_strcmp0(key, "ctrl+s") == 0) {
     return ide_action_make(IDE_ACTION_SAVE);
   }
@@ -828,6 +881,9 @@ handle_normal(IdeFsm *fsm, const char *key)
   }
   if (g_strcmp0(key, "f9") == 0) {
     return ide_action_make(IDE_ACTION_DAP_TOGGLE_BREAKPOINT);
+  }
+  if (g_strcmp0(key, "shift+f9") == 0) {
+    return ide_action_make(IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT);
   }
   if (g_strcmp0(key, "f10") == 0) {
     return ide_action_make(IDE_ACTION_DAP_STEP_OVER);
@@ -883,6 +939,9 @@ handle_insert(IdeFsm *fsm, const char *key, gint64 now_usec)
   }
   if (g_strcmp0(key, "ctrl+space") == 0 || g_strcmp0(key, "ctrl+@") == 0) {
     return ide_action_make(IDE_ACTION_LSP_COMPLETE);
+  }
+  if (g_strcmp0(key, "ctrl+shift+space") == 0) {
+    return ide_action_make(IDE_ACTION_LSP_SIGNATURE_HELP);
   }
   if (g_strcmp0(key, "ctrl+s") == 0) {
     return ide_action_make(IDE_ACTION_SAVE);
@@ -1287,6 +1346,11 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_DAP_TOGGLE_BREAKPOINT);
   }
+  if (g_strcmp0(b, "dB") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT);
+  }
   if (g_strcmp0(b, "dd") == 0) {
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
@@ -1362,6 +1426,31 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_LSP_IMPLEMENTATION);
+  }
+  if (g_strcmp0(b, "gr") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_LSP_REFERENCES);
+  }
+  if (g_strcmp0(b, "gs") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_LSP_SIGNATURE_HELP);
+  }
+  if (g_strcmp0(b, "gc") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_LSP_CALL_HIERARCHY_IN);
+  }
+  if (g_strcmp0(b, "go") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_LSP_CALL_HIERARCHY_OUT);
+  }
+  if (g_strcmp0(b, "vr") == 0) {
+    fsm->state = IDE_STATE_NORMAL;
+    fsm->leader_buf[0] = '\0';
+    return ide_action_make(IDE_ACTION_TOGGLE_RELATIVE_LINES);
   }
   if (g_strcmp0(b, "k") == 0) {
     fsm->state = IDE_STATE_NORMAL;
@@ -1812,6 +1901,9 @@ handle_code_action(IdeFsm *fsm, const char *key)
   }
   if (g_strcmp0(key, "k") == 0 || g_strcmp0(key, "up") == 0) {
     return ide_action_make(IDE_ACTION_LSP_SELECT_PREV);
+  }
+  if (g_strcmp0(key, "tab") == 0) {
+    return ide_action_make(IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE);
   }
   if (strlen(key) == 1 && key[0] >= '1' && key[0] <= '9') {
     fsm->state = IDE_STATE_NORMAL;

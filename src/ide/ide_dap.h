@@ -13,8 +13,9 @@ typedef void (*IdeDapActionCb)(const char *dap_cmd, gpointer user_data);
 
 /* Breakpoints of one source file (1-based lines). */
 typedef struct {
-  char   *path;
-  GArray *lines; /* guint */
+  char      *path;
+  GArray    *lines;      /* guint (1-based) */
+  GPtrArray *conditions; /* optional parallel char* (NULL or "" = unconditional) */
 } IdeDapBreakpointSet;
 
 void ide_dap_breakpoint_set_free(gpointer data);
@@ -44,6 +45,11 @@ void        ide_dap_view_free(IdeDapView *dap);
 
 GtkWidget  *ide_dap_view_get_widget(IdeDapView *dap);
 GtkWidget  *ide_dap_view_get_repl_entry(IdeDapView *dap);
+GtkWidget  *ide_dap_view_get_watch_entry(IdeDapView *dap);
+
+void        ide_dap_view_add_watch(IdeDapView *dap, const char *expression);
+void        ide_dap_view_remove_watch(IdeDapView *dap, guint index);
+void        ide_dap_view_clear_watches(IdeDapView *dap);
 
 void        ide_dap_view_set_context(IdeDapView         *dap,
                                      const char         *workspace_root,

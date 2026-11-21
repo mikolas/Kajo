@@ -2988,6 +2988,17 @@ window.shell-ide-window .ide-conflict-bar {
     color: #f0f0f0;
 }
 
+/* Inline conditional breakpoint prompt bar in kajo-ide */
+window.shell-ide-window .ide-cond-bp-bar {
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
+    border-left: 3px solid @metro-urgent;
+    padding: 6px 12px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: #f0f0f0;
+}
+
 /* Bottom Modal Status Bar */
 window.shell-ide-window .ide-status-bar {
     background-color: @metro-surface-bg;

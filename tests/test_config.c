@@ -158,11 +158,19 @@ test_domain_ide_files_mod(void)
 
     /* IDE */
     KajoIdeCfg *ide = kajo_ide_cfg_new_default();
+    g_assert_false(ide->relative_line_numbers);
+    g_assert_nonnull(ide->key_remaps);
+    g_assert_cmpuint(ide->key_remaps->len, ==, 0);
     ide->tab_width = 5; /* Not in {2, 4, 8} -> normalized to 4 on parse */
+    ide->relative_line_numbers = TRUE;
     g_autofree gchar *ide_str = kajo_cfg_domain_serialize_toml(s_ide, ide);
+    g_assert_null(strstr(ide_str, "[keys."));
     KajoIdeCfg *ide2 = kajo_ide_cfg_new_default();
     g_assert_true(kajo_cfg_domain_parse_toml_str(s_ide, ide2, ide_str, -1, FALSE, "ide.toml"));
     g_assert_cmpint(ide2->tab_width, ==, 4);
+    g_assert_true(ide2->relative_line_numbers);
+    ide->tab_width = 4;
+    g_assert_true(kajo_cfg_domain_equal(s_ide, ide, ide2));
     kajo_ide_cfg_free(ide2);
     kajo_ide_cfg_free(ide);
 
@@ -851,6 +859,93 @@ test_comp_toml_helpers_roundtrip(void)
     rm_rf(tmpdir);
 }
 
+static void
+test_domain_ide_key_remaps(void)
+{
+    const KajoDomainSchema *s_ide = kajo_schema_get_ide();
+
+    const gchar *base_toml =
+        "relative_line_numbers = true\n"
+        "\n"
+        "[keys.select]\n"
+        "\"x\" = \"delete_selection\"\n"
+        "\n"
+        "[keys.normal]\n"
+        "\"k\" = \"move_up\"\n"
+        "\"j\" = \"move_down\"\n"
+        "\"Ctrl+k\" = \"focus_up\"\n";
+
+    g_autoptr(KajoIdeCfg) cfg = kajo_ide_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_ide, cfg, base_toml, -1, FALSE, "ide.toml"));
+    g_assert_true(cfg->relative_line_numbers);
+    g_assert_nonnull(cfg->key_remaps);
+    g_assert_cmpuint(cfg->key_remaps->len, ==, 4);
+
+    /* Deterministically sorted by (state, key) */
+    const KajoIdeKeyRemap *r0 = g_ptr_array_index(cfg->key_remaps, 0);
+    const KajoIdeKeyRemap *r1 = g_ptr_array_index(cfg->key_remaps, 1);
+    const KajoIdeKeyRemap *r2 = g_ptr_array_index(cfg->key_remaps, 2);
+    const KajoIdeKeyRemap *r3 = g_ptr_array_index(cfg->key_remaps, 3);
+    g_assert_cmpstr(r0->state, ==, "normal");
+    g_assert_cmpstr(r0->key, ==, "Ctrl+k");
+    g_assert_cmpstr(r0->action, ==, "focus_up");
+    g_assert_cmpstr(r1->state, ==, "normal");
+    g_assert_cmpstr(r1->key, ==, "j");
+    g_assert_cmpstr(r1->action, ==, "move_down");
+    g_assert_cmpstr(r2->state, ==, "normal");
+    g_assert_cmpstr(r2->key, ==, "k");
+    g_assert_cmpstr(r2->action, ==, "move_up");
+    g_assert_cmpstr(r3->state, ==, "select");
+    g_assert_cmpstr(r3->key, ==, "x");
+    g_assert_cmpstr(r3->action, ==, "delete_selection");
+
+    /* Serialize -> parse roundtrip & equality */
+    g_autofree gchar *serialized = kajo_cfg_domain_serialize_toml(s_ide, cfg);
+    g_assert_nonnull(strstr(serialized, "[keys.normal]"));
+    g_assert_nonnull(strstr(serialized, "[keys.select]"));
+    g_assert_nonnull(strstr(serialized, "\"j\" = \"move_down\""));
+
+    g_autoptr(KajoIdeCfg) reloaded = kajo_ide_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_ide, reloaded, serialized, -1, FALSE, "ide.toml"));
+    g_assert_true(kajo_cfg_domain_equal(s_ide, cfg, reloaded));
+
+    /* Deep copy independence */
+    g_autoptr(KajoIdeCfg) copy = kajo_ide_cfg_copy(cfg);
+    g_assert_true(kajo_cfg_domain_equal(s_ide, cfg, copy));
+    KajoIdeKeyRemap *copy_r1 = g_ptr_array_index(copy->key_remaps, 1);
+    g_free(copy_r1->action);
+    copy_r1->action = g_strdup("custom_action");
+    g_assert_false(kajo_cfg_domain_equal(s_ide, cfg, copy));
+    g_assert_cmpstr(((KajoIdeKeyRemap *)g_ptr_array_index(cfg->key_remaps, 1))->action, ==, "move_down");
+
+    /* Overlay override + empty-string removal + addition */
+    const gchar *overlay_toml =
+        "[ide.keys.normal]\n"
+        "\"j\" = \"page_down\"\n"
+        "\"Space\" = \"leader\"\n"
+        "[ide.keys.select]\n"
+        "\"x\" = \"\"\n";
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_ide, reloaded, overlay_toml, -1, TRUE, "10-keys.toml"));
+    g_assert_cmpuint(reloaded->key_remaps->len, ==, 4);
+
+    const KajoIdeKeyRemap *o0 = g_ptr_array_index(reloaded->key_remaps, 0);
+    const KajoIdeKeyRemap *o1 = g_ptr_array_index(reloaded->key_remaps, 1);
+    const KajoIdeKeyRemap *o2 = g_ptr_array_index(reloaded->key_remaps, 2);
+    const KajoIdeKeyRemap *o3 = g_ptr_array_index(reloaded->key_remaps, 3);
+    g_assert_cmpstr(o0->state, ==, "normal");
+    g_assert_cmpstr(o0->key, ==, "Ctrl+k");
+    g_assert_cmpstr(o0->action, ==, "focus_up");
+    g_assert_cmpstr(o1->state, ==, "normal");
+    g_assert_cmpstr(o1->key, ==, "Space");
+    g_assert_cmpstr(o1->action, ==, "leader");
+    g_assert_cmpstr(o2->state, ==, "normal");
+    g_assert_cmpstr(o2->key, ==, "j");
+    g_assert_cmpstr(o2->action, ==, "page_down");
+    g_assert_cmpstr(o3->state, ==, "normal");
+    g_assert_cmpstr(o3->key, ==, "k");
+    g_assert_cmpstr(o3->action, ==, "move_up");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -860,6 +955,7 @@ main(int argc, char *argv[])
     g_test_add_func("/config/domain/theme", test_domain_theme);
     g_test_add_func("/config/domain/shell", test_domain_shell);
     g_test_add_func("/config/domain/ide-files-mod", test_domain_ide_files_mod);
+    g_test_add_func("/config/domain/ide-key-remaps", test_domain_ide_key_remaps);
     g_test_add_func("/config/store/confd-overlay-and-save", test_confd_overlay_and_save);
     g_test_add_func("/config/store/concurrent-readers-and-reload", test_concurrent_readers_and_reload);
     g_test_add_func("/config/migrate/legacy-json", test_legacy_json_migration);

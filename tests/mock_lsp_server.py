@@ -96,6 +96,9 @@ def handle(msg):
             "completionProvider": {"triggerCharacters": ["."]},
             "definitionProvider": True,
             "implementationProvider": True,
+            "referencesProvider": True,
+            "signatureHelpProvider": {"triggerCharacters": ["(", ","]},
+            "callHierarchyProvider": True,
             "renameProvider": True,
             "documentFormattingProvider": True,
             "codeActionProvider": {"resolveProvider": False},
@@ -149,6 +152,91 @@ def handle(msg):
         uri = params["textDocument"]["uri"]
         respond(msg, [{"uri": uri, "range": {"start": {"line": 2, "character": 4},
                                               "end": {"line": 2, "character": 7}}}])
+    elif method == "textDocument/references":
+        uri = params["textDocument"]["uri"]
+        pos = params["position"]
+        w = word_at(docs.get(uri, ""), pos["line"], pos["character"])
+        if not w:
+            respond(msg, [])
+            return
+        locs = []
+        for doc_uri, text in sorted(docs.items()):
+            for n, ln in enumerate(text.split("\n")):
+                for m in re.finditer(r"\b%s\b" % re.escape(w), ln):
+                    locs.append({
+                        "uri": doc_uri,
+                        "range": {"start": {"line": n, "character": m.start()},
+                                  "end": {"line": n, "character": m.end()}},
+                    })
+        respond(msg, locs)
+    elif method == "textDocument/signatureHelp":
+        respond(msg, {
+            "signatures": [
+                {
+                    "label": "bar(x int, y string) error",
+                    "documentation": {"kind": "markdown", "value": "First overload of bar."},
+                    "parameters": [
+                        {"label": "x int", "documentation": "first arg"},
+                        {"label": "y string", "documentation": "second arg"},
+                    ],
+                },
+                {
+                    "label": "bar(opts *Options) error",
+                    "documentation": "Second overload of bar.",
+                    "parameters": [
+                        {"label": [4, 17]},
+                    ],
+                },
+            ],
+            "activeSignature": 0,
+            "activeParameter": 1,
+        })
+    elif method == "textDocument/prepareCallHierarchy":
+        uri = params["textDocument"]["uri"]
+        pos = params["position"]
+        w = word_at(docs.get(uri, ""), pos["line"], pos["character"]) or "sym"
+        rng = {"start": {"line": pos["line"], "character": pos["character"]},
+               "end": {"line": pos["line"], "character": pos["character"] + len(w)}}
+        respond(msg, [{
+            "name": w,
+            "kind": 12,
+            "detail": "mock.pkg",
+            "uri": uri,
+            "range": rng,
+            "selectionRange": rng,
+        }])
+    elif method == "callHierarchy/incomingCalls":
+        item = params.get("item", {})
+        uri = item.get("uri", "")
+        respond(msg, [{
+            "from": {
+                "name": "caller_fn",
+                "kind": 12,
+                "detail": "mock.caller",
+                "uri": uri,
+                "range": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 15}},
+                "selectionRange": {"start": {"line": 0, "character": 0}, "end": {"line": 0, "character": 9}},
+            },
+            "fromRanges": [
+                {"start": {"line": 0, "character": 9}, "end": {"line": 0, "character": 12}},
+            ],
+        }])
+    elif method == "callHierarchy/outgoingCalls":
+        item = params.get("item", {})
+        uri = item.get("uri", "")
+        respond(msg, [{
+            "to": {
+                "name": "callee_fn",
+                "kind": 6,
+                "detail": "mock.callee",
+                "uri": uri,
+                "range": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 10}},
+                "selectionRange": {"start": {"line": 2, "character": 0}, "end": {"line": 2, "character": 5}},
+            },
+            "fromRanges": [
+                {"start": {"line": 1, "character": 0}, "end": {"line": 1, "character": 3}},
+            ],
+        }])
     elif method == "textDocument/rename":
         uri = params["textDocument"]["uri"]
         pos = params["position"]

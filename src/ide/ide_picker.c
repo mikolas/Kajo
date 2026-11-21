@@ -127,6 +127,10 @@ static const IdeHelpCommandSpec kHelpCommands[] = {
   /* 6. LSP 3.17 Code Intelligence */
   { "LSP", "Go to Definition", "Jump to symbol definition via clangd / gopls / rust-analyzer", "g d / Space g d", IDE_ACTION_LSP_DEFINITION },
   { "LSP", "Go to Implementation", "Jump to interface or trait implementation", "Space g i", IDE_ACTION_LSP_IMPLEMENTATION },
+  { "LSP", "Find References", "List all workspace references to symbol under cursor via LSP", "g r / Space g r", IDE_ACTION_LSP_REFERENCES },
+  { "LSP", "Signature Help", "Show active function signature and parameter hint popover", "Ctrl+Shift+Space / Space g s", IDE_ACTION_LSP_SIGNATURE_HELP },
+  { "LSP", "Call Hierarchy (Incoming)", "Show incoming callers of symbol under cursor (Tab flips direction)", "Space g c", IDE_ACTION_LSP_CALL_HIERARCHY_IN },
+  { "LSP", "Call Hierarchy (Outgoing)", "Show outgoing callees of symbol under cursor (Tab flips direction)", "Space g o", IDE_ACTION_LSP_CALL_HIERARCHY_OUT },
   { "LSP", "Hover Documentation", "Show pixel-anchored signature and doc comment popover", "K / Space k", IDE_ACTION_LSP_HOVER },
   { "LSP", "Autocomplete", "Trigger pixel-anchored LSP completion popover at cursor", "Ctrl+Space", IDE_ACTION_LSP_COMPLETE },
   { "LSP", "Code Actions", "Open LSP quickfix and refactoring action menu", "Space c a", IDE_ACTION_LSP_CODE_ACTION },
@@ -142,6 +146,7 @@ static const IdeHelpCommandSpec kHelpCommands[] = {
 
   /* 7. DAP Interactive Debugger */
   { "DEBUGGER", "Toggle Breakpoint", "Set or clear red breakpoint dot on current line", "F9 / Space d b", IDE_ACTION_DAP_TOGGLE_BREAKPOINT },
+  { "DEBUGGER", "Conditional Breakpoint", "Set or edit condition expression for breakpoint on current line", "Shift+F9 / Space d B", IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT },
   { "DEBUGGER", "Start Debug Session", "Launch gdb / lldb / delve DAP session for target", "Space d d", IDE_ACTION_DAP_START },
   { "DEBUGGER", "Continue Execution", "Start or resume paused program execution", "F5 / Space d c", IDE_ACTION_DAP_CONTINUE },
   { "DEBUGGER", "Step Over Line", "Execute current line without stepping into calls", "F10 / Space d n", IDE_ACTION_DAP_STEP_OVER },
@@ -169,6 +174,7 @@ static const IdeHelpCommandSpec kHelpCommands[] = {
   { "LAYOUT", "Resize File Tree", "Grow or shrink File Tree sidebar width (+/- 24px)", "Space w > / <", IDE_ACTION_RESIZE_TREE_GROW },
   { "LAYOUT", "Resize Bottom Drawer", "Grow or shrink Bottom Drawer height (+/- 30px)", "Space w + / -", IDE_ACTION_RESIZE_DRAWER_GROW },
   { "LAYOUT", "Zoom Editor Font", "Increase, decrease, or reset editor font size (10-24px)", "Ctrl++ / Ctrl+- / Ctrl+0", IDE_ACTION_NONE },
+  { "LAYOUT", "Toggle Relative Line Numbers", "Switch 6-column Cairo gutter between absolute and hybrid relative line numbers", "Space v r", IDE_ACTION_TOGGLE_RELATIVE_LINES },
 
   /* 11. Mouse & Touchpad */
   { "MOUSE", "Gutter Breakpoint", "Click column 1 in the left gutter to toggle a breakpoint", "Left Click Gutter", IDE_ACTION_NONE },

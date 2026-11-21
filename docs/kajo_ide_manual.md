@@ -263,7 +263,7 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Navigation:** `↑` / `↓`, `Tab` / `Shift+Tab`, `Ctrl+n` / `Ctrl+p`, or mouse click to select; `Enter` or double-click to open the file at the exact line/column.
 
 ### 7.2 Interactive Help Viewer & Command Palette (`?`, `F1`, `Space h`, or `❓ HELP`)
-- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **102 commands** across 12 categories.
+- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **108 commands** across 12 categories.
 - **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `TASKS`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
 - **Instant Fuzzy Filter:** Type any key chord, command name, or description keyword to filter rows in real time.
 - **Executable Command Palette:** Pressing `Enter` or double-clicking any row immediately executes that command in the editor.
@@ -291,6 +291,9 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Hover (`K`, `Space k`):** signature and documentation (markdown flattened to text) plus any diagnostic on the line. `Esc` / `q` dismisses; moving the cursor, scrolling the symbol out of view, clicking elsewhere or leaving the editor also dismisses it, and the popover stays pinned to the cursor as you scroll.
 - **Completion (`Ctrl+Space`, or automatically after a server trigger character such as `.`):** ranked, scrollable list with kind badges and documentation. The list follows your typing, `Up`/`Down`/`Ctrl+n`/`Ctrl+p` select, `Tab`/`Enter` insert. The server's `textEdit` and `additionalTextEdits` are honored, so auto-imports (Go, Java) are added with the completion.
 - **Go to Definition (`g d` / `Space g d`) and Implementation (`Space g i`):** jumps (and records the jumplist). Definitions inside libraries (`jdt://`) are reported instead of opened.
+- **Find References (`g r` / `Space g r`):** pixel-anchored popover listing every workspace reference with file/line/column and trimmed source preview (`j`/`k`/`1..9`/`Enter` jumps).
+- **Signature Help (`Ctrl+Shift+Space` / `Space g s`):** pixel-anchored popover showing the active function signature with the active parameter highlighted in cyan (`j`/`k` cycle overloads; `Esc`/`Enter` dismisses).
+- **Call Hierarchy (`Space g c` incoming / `Space g o` outgoing):** two-step `prepareCallHierarchy` + `incomingCalls` / `outgoingCalls` popover; press `Tab` (or click the direction toggle button) to flip between incoming callers and outgoing callees, and `Enter` to jump.
 - **Rename (`Space c r`):** prompt anchored at the cursor (type the new name, `Enter` applies, `Esc` cancels). The server's `WorkspaceEdit` is applied to open buffers (undoable) and to files that are not open (atomic write); a toast reports the edit/file count.
 - **Code Actions (`Space c a`):** quick fixes and refactorings for the cursor or selection (organize imports, extract, fix) in a popover list; `Enter` runs the action (resolving it first when the server asks for that).
 - **Format (`Space c f`, command palette *LSP › Format Buffer*):** `textDocument/formatting` applied as minimal edits.
@@ -300,7 +303,7 @@ All fallback results are visibly badged in the UI and status bar (`[RG FALLBACK 
 - Hover: asynchronous one-line declaration lookup via `ripgrep`. Completion: ranked identifiers from the buffer. Definition: asynchronous `ripgrep` declaration search. Rename: whole-word replace in the current buffer.
 
 ### Limits / not yet implemented
-Call hierarchy, references list, signature help, semantic tokens (highlighting stays tree-sitter based), and incremental text sync (full-document sync is used).
+Semantic tokens (highlighting stays tree-sitter based) and incremental text sync (full-document sync is used).
 
 ---
 
@@ -345,6 +348,7 @@ Without any breakpoint, C/C++/Rust programs stop at the start of `main` so you c
 | Key / Chord | Transport Button | Action |
 | :--- | :--- | :--- |
 | **`F9`** / `Space d b` | Gutter Col 1 Click | Toggle source line breakpoint (`●`) |
+| **`Shift+F9`** / `Space d B` | Shift+Click Gutter | Set or edit conditional breakpoint expression (`◆`) |
 | **`F5`** / `Space d c` | `▶ Continue` | Launch debug session or continue execution |
 | **`F10`** | `↷ Step Over` | Step over the current statement (`next`) |
 | **`F11`** | `↓ Step Into` | Step into the called function (`stepIn`) |
@@ -352,11 +356,11 @@ Without any breakpoint, C/C++/Rust programs stop at the start of `main` so you c
 | **`Shift+F5`** | `⏹ Stop` | Terminate the active debuggee session |
 
 When paused at a breakpoint, step or signal:
-1. The editor opens the active frame's file and highlights the execution line with an amber `▶` gutter indicator.
+1. The editor opens the active frame's file and highlights the execution line with an amber `▶` gutter indicator. Conditional breakpoints display a `#ff8c00` amber ring around the red dot in the gutter and transmit `"condition"` in DAP `setBreakpoints`.
 2. The **`🐞 DEBUGGER (DAP)`** bottom drawer opens automatically with three synchronized panes:
-   - **Call Stack:** click a frame to jump to its source and load that frame's locals.
-   - **Locals:** the adapter's locals scope (`name : type = value`).
-   - **Debug Console / REPL:** adapter and program output; type an expression (for gdb: a GDB command or expression) and press `Enter` to run DAP `evaluate` in the selected frame (only while paused). Toggling a breakpoint (`F9`) during a session updates the adapter immediately.
+   - **Call Stack:** click a frame to jump to its source and load that frame's locals and watches.
+   - **Locals & Watches:** expandable tree of local scopes and compound variables (click any `▸` struct/array/pointer row to lazy-fetch nested fields via DAP `variables`), plus an inline **Watches** list (`Add watch expression...`) that re-evaluates every watch (`context: "watch"`) on each stop/frame switch and supports expanding compound watch results.
+   - **Debug Console / REPL:** adapter and program output; type an expression (for gdb: a GDB command or expression) and press `Enter` to run DAP `evaluate` in the selected frame (only while paused). Toggling or editing a breakpoint (`F9` / `Shift+F9`) during a session updates the adapter immediately.
 
 ---
 
@@ -418,7 +422,7 @@ Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/page
   3. **`kajo-nord-frost`** — Arctic Nord Frost dark palette (`#14171d`).
   4. **`kajo-amber-crt`** — Retro monochrome amber phosphor CRT terminal palette (`#0c0900`).
   5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
-- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter and minimap visibility. *(Relative line numbers are planned.)*
+- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter visibility, hybrid **Relative Line Numbers** (also toggleable live via `Space v r`), minimap visibility, and per-mode **Key Remapping** (`[keys.<state>]`).
 
 Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/ide.toml` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `KajoConfigStore`.
 
@@ -435,14 +439,22 @@ IDE settings live in `~/.config/kajo/ide.toml` (with optional `[ide]` overrides 
 color_scheme           = "kajo-metro-dark"
 font_family            = "Fira Code"
 font_size_px           = 13
-tab_width              = 2
+tab_width              = 4
 insert_spaces          = true
 word_wrap              = false
-show_margin_guide      = false
+show_margin_guide      = true
 show_minimap           = true
 show_line_numbers      = true
+relative_line_numbers  = false
 highlight_current_line = true
+
+[keys.normal]
+"j" = "move_down"
+"k" = "move_up"
+
+[keys.select]
+"x" = "delete_selection"
 ```
 
-Custom per-mode key remapping (`[keys.*]`) is **not implemented yet**: the finite state machine has a remap table (`ide_fsm_set_remap`), but nothing loads user bindings into it. Tracked in `ROADMAP.md`.
+Every `[keys.<state>]` table (`normal`, `select`, `tree`, `drawer`, `insert`, `search`, `help`) maps a key name to an `IdeActionType` name (`ide_action_type_from_name()`). Remaps are hot-reloaded into `IdeFsm` whenever `ide.toml` is saved.
 

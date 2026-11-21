@@ -8,8 +8,14 @@ struct _KajoIdeGutterRenderer {
   IdeBuffer                   *ide_buf;
   IdeGutterBreakpointToggledCb bp_cb;
   gpointer                     bp_cb_data;
+  IdeGutterConditionalBpCb     cond_bp_cb;
+  gpointer                     cond_bp_cb_data;
   char                        *font_family;
   int                          font_size_px;
+  gboolean                     relative_numbers;
+  GWeakRef                     sbuf_weak;
+  gulong                       cursor_sig_id;
+  int                          last_cursor_line;
 };
 
 G_DEFINE_FINAL_TYPE(KajoIdeGutterRenderer,
@@ -17,9 +23,72 @@ G_DEFINE_FINAL_TYPE(KajoIdeGutterRenderer,
                     GTK_SOURCE_TYPE_GUTTER_RENDERER)
 
 static void
+detach_buffer_cursor_signal(KajoIdeGutterRenderer *self)
+{
+  g_autoptr(GtkSourceBuffer) sbuf = g_weak_ref_get(&self->sbuf_weak);
+  if (sbuf != NULL && self->cursor_sig_id != 0) {
+    g_signal_handler_disconnect(sbuf, self->cursor_sig_id);
+  }
+  self->cursor_sig_id = 0;
+  g_weak_ref_set(&self->sbuf_weak, NULL);
+  self->last_cursor_line = -1;
+}
+
+static void
+on_buffer_cursor_moved(GObject    *obj,
+                       GParamSpec *pspec G_GNUC_UNUSED,
+                       gpointer    user_data)
+{
+  KajoIdeGutterRenderer *self = KAJO_IDE_GUTTER_RENDERER(user_data);
+  if (!self->relative_numbers) {
+    return;
+  }
+  GtkTextBuffer *tbuf = GTK_TEXT_BUFFER(obj);
+  GtkTextMark *insert = gtk_text_buffer_get_insert(tbuf);
+  if (insert == NULL) {
+    return;
+  }
+  GtkTextIter cur;
+  gtk_text_buffer_get_iter_at_mark(tbuf, &cur, insert);
+  int line = gtk_text_iter_get_line(&cur);
+  if (line != self->last_cursor_line) {
+    self->last_cursor_line = line;
+    gtk_widget_queue_draw(GTK_WIDGET(self));
+  }
+}
+
+static void
+attach_buffer_cursor_signal(KajoIdeGutterRenderer *self)
+{
+  detach_buffer_cursor_signal(self);
+  if (self->ide_buf == NULL) {
+    return;
+  }
+  GtkSourceBuffer *sbuf = ide_buffer_get_source_buffer(self->ide_buf);
+  if (sbuf == NULL) {
+    return;
+  }
+  g_weak_ref_set(&self->sbuf_weak, sbuf);
+  self->cursor_sig_id = g_signal_connect_object(sbuf,
+                                                "notify::cursor-position",
+                                                G_CALLBACK(on_buffer_cursor_moved),
+                                                self,
+                                                0);
+}
+
+static void
+kajo_ide_gutter_renderer_dispose(GObject *object)
+{
+  KajoIdeGutterRenderer *self = KAJO_IDE_GUTTER_RENDERER(object);
+  detach_buffer_cursor_signal(self);
+  G_OBJECT_CLASS(kajo_ide_gutter_renderer_parent_class)->dispose(object);
+}
+
+static void
 kajo_ide_gutter_renderer_finalize(GObject *object)
 {
   KajoIdeGutterRenderer *self = KAJO_IDE_GUTTER_RENDERER(object);
+  g_weak_ref_clear(&self->sbuf_weak);
   g_free(self->font_family);
   G_OBJECT_CLASS(kajo_ide_gutter_renderer_parent_class)->finalize(object);
 }
@@ -108,11 +177,18 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
   cairo_rectangle(cr, 0.0, y, 68.0, h);
   cairo_fill(cr);
 
-  /* 1. DAP Breakpoint circle (● #e81123) at x = 6 */
+  /* 1. DAP Breakpoint circle (● #e81123; amber ring #ff8c00 when conditional) at x = 6 */
   if (has_bp) {
+    gboolean is_cond = self->ide_buf ? ide_buffer_has_breakpoint_condition(self->ide_buf, line_1based) : FALSE;
     cairo_set_source_rgb(cr, 0.910, 0.067, 0.137); /* #e81123 */
-    cairo_arc(cr, 6.0, cy, 3.8, 0.0, 2.0 * G_PI);
+    cairo_arc(cr, 6.0, cy, is_cond ? 3.2 : 3.8, 0.0, 2.0 * G_PI);
     cairo_fill(cr);
+    if (is_cond) {
+      cairo_set_source_rgb(cr, 1.0, 0.549, 0.0); /* #ff8c00 */
+      cairo_set_line_width(cr, 1.4);
+      cairo_arc(cr, 6.0, cy, 4.3, 0.0, 2.0 * G_PI);
+      cairo_stroke(cr);
+    }
   }
 
   /* 2. Diagnostic indicator at x = 15 */
@@ -150,8 +226,23 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
   }
 
   /* 4. Right-aligned Line Number at x = 25..49 */
+  guint cursor_line_1based = 0;
+  if (self->relative_numbers && self->ide_buf != NULL) {
+    GtkSourceBuffer *sbuf = ide_buffer_get_source_buffer(self->ide_buf);
+    if (sbuf != NULL) {
+      GtkTextMark *insert = gtk_text_buffer_get_insert(GTK_TEXT_BUFFER(sbuf));
+      if (insert != NULL) {
+        GtkTextIter cur;
+        gtk_text_buffer_get_iter_at_mark(GTK_TEXT_BUFFER(sbuf), &cur, insert);
+        cursor_line_1based = (guint)gtk_text_iter_get_line(&cur) + 1;
+      }
+    }
+  }
+  guint display_line = ide_gutter_display_line_number(line_1based,
+                                                      cursor_line_1based,
+                                                      self->relative_numbers);
   char num_buf[16];
-  g_snprintf(num_buf, sizeof(num_buf), "%u", line_1based);
+  g_snprintf(num_buf, sizeof(num_buf), "%u", display_line);
   PangoLayout *layout = gtk_widget_create_pango_layout(GTK_WIDGET(self), num_buf);
   int pt = MAX(7, (self->font_size_px > 0 ? self->font_size_px : 13) - 4);
   g_autofree char *fstr = g_strdup_printf("%s %s %d",
@@ -235,6 +326,10 @@ kajo_ide_gutter_renderer_activate(GtkSourceGutterRenderer *renderer,
   }
 
   guint line_1based = (guint)gtk_text_iter_get_line(iter) + 1;
+  if ((state & GDK_SHIFT_MASK) != 0 && self->cond_bp_cb != NULL) {
+    self->cond_bp_cb(self->ide_buf, line_1based, self->cond_bp_cb_data);
+    return;
+  }
   gboolean enabled = ide_buffer_toggle_breakpoint(self->ide_buf, line_1based);
   gtk_widget_queue_draw(GTK_WIDGET(self));
   if (self->bp_cb != NULL) {
@@ -249,6 +344,7 @@ kajo_ide_gutter_renderer_class_init(KajoIdeGutterRendererClass *klass)
   GtkWidgetClass *widget_class = GTK_WIDGET_CLASS(klass);
   GtkSourceGutterRendererClass *renderer_class = GTK_SOURCE_GUTTER_RENDERER_CLASS(klass);
 
+  object_class->dispose = kajo_ide_gutter_renderer_dispose;
   object_class->finalize = kajo_ide_gutter_renderer_finalize;
   widget_class->measure = kajo_ide_gutter_renderer_measure;
   renderer_class->snapshot_line = kajo_ide_gutter_renderer_snapshot_line;
@@ -261,6 +357,9 @@ kajo_ide_gutter_renderer_init(KajoIdeGutterRenderer *self)
 {
   self->font_family = g_strdup("Fira Code");
   self->font_size_px = 13;
+  self->relative_numbers = FALSE;
+  self->last_cursor_line = -1;
+  g_weak_ref_init(&self->sbuf_weak, NULL);
   gtk_widget_add_css_class(GTK_WIDGET(self), "ide-gutter-renderer");
 }
 
@@ -269,6 +368,7 @@ kajo_ide_gutter_renderer_new(IdeBuffer *buf)
 {
   KajoIdeGutterRenderer *self = g_object_new(KAJO_TYPE_IDE_GUTTER_RENDERER, NULL);
   self->ide_buf = buf;
+  attach_buffer_cursor_signal(self);
   return GTK_SOURCE_GUTTER_RENDERER(self);
 }
 
@@ -277,6 +377,7 @@ kajo_ide_gutter_renderer_set_buffer(KajoIdeGutterRenderer *self, IdeBuffer *buf)
 {
   g_return_if_fail(KAJO_IS_IDE_GUTTER_RENDERER(self));
   self->ide_buf = buf;
+  attach_buffer_cursor_signal(self);
   gtk_widget_queue_draw(GTK_WIDGET(self));
 }
 
@@ -291,6 +392,16 @@ kajo_ide_gutter_renderer_set_breakpoint_callback(KajoIdeGutterRenderer       *se
 }
 
 void
+kajo_ide_gutter_renderer_set_conditional_bp_callback(KajoIdeGutterRenderer   *self,
+                                                     IdeGutterConditionalBpCb cb,
+                                                     gpointer                 user_data)
+{
+  g_return_if_fail(KAJO_IS_IDE_GUTTER_RENDERER(self));
+  self->cond_bp_cb = cb;
+  self->cond_bp_cb_data = user_data;
+}
+
+void
 kajo_ide_gutter_renderer_set_font(KajoIdeGutterRenderer *self,
                                   const char            *font_family,
                                   int                    font_size_px)
@@ -300,4 +411,37 @@ kajo_ide_gutter_renderer_set_font(KajoIdeGutterRenderer *self,
   self->font_family = g_strdup((font_family && font_family[0] != '\0') ? font_family : "Fira Code");
   self->font_size_px = CLAMP(font_size_px, 9, 28);
   gtk_widget_queue_draw(GTK_WIDGET(self));
+}
+
+guint
+ide_gutter_display_line_number(guint    line_1based,
+                               guint    cursor_line_1based,
+                               gboolean relative)
+{
+  if (!relative || cursor_line_1based == 0 || line_1based == cursor_line_1based) {
+    return line_1based;
+  }
+  return line_1based > cursor_line_1based
+    ? (line_1based - cursor_line_1based)
+    : (cursor_line_1based - line_1based);
+}
+
+void
+kajo_ide_gutter_renderer_set_relative_numbers(KajoIdeGutterRenderer *self,
+                                              gboolean               relative)
+{
+  g_return_if_fail(KAJO_IS_IDE_GUTTER_RENDERER(self));
+  gboolean normalized = relative ? TRUE : FALSE;
+  if (self->relative_numbers != normalized) {
+    self->relative_numbers = normalized;
+    self->last_cursor_line = -1;
+    gtk_widget_queue_draw(GTK_WIDGET(self));
+  }
+}
+
+gboolean
+kajo_ide_gutter_renderer_get_relative_numbers(KajoIdeGutterRenderer *self)
+{
+  g_return_val_if_fail(KAJO_IS_IDE_GUTTER_RENDERER(self), FALSE);
+  return self->relative_numbers;
 }

@@ -9,4 +9,5 @@ word_wrap                      = false
 show_margin_guide              = true
 show_minimap                   = true
 show_line_numbers              = true
+relative_line_numbers          = false
 highlight_current_line         = true

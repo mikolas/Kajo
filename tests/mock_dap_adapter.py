@@ -11,7 +11,7 @@ import sys
 
 inp = sys.stdin.buffer
 outp = sys.stdout.buffer
-breakpoints = {}   # path -> [lines]
+breakpoints = {}   # path -> [{"line": int, "condition"?: str}]
 state = {"line": 1, "path": "/tmp/mock.c", "stops": 0}
 
 
@@ -83,16 +83,26 @@ def main():
             event("output", {"category": "console", "output": "mock adapter launched %s\n" % args.get("program")})
         elif cmd == "setBreakpoints":
             path = args["source"]["path"]
-            lines = [b["line"] for b in args.get("breakpoints", [])]
-            breakpoints[path] = lines
-            respond(req, {"breakpoints": [{"verified": True, "line": l} for l in lines]})
+            bps = []
+            resp_bps = []
+            for b in args.get("breakpoints", []):
+                entry = {"line": b["line"]}
+                resp_entry = {"verified": True, "line": b["line"]}
+                cond = b.get("condition")
+                if cond:
+                    entry["condition"] = cond
+                    resp_entry["condition"] = cond
+                bps.append(entry)
+                resp_bps.append(resp_entry)
+            breakpoints[path] = bps
+            respond(req, {"breakpoints": resp_bps})
         elif cmd == "setExceptionBreakpoints":
             respond(req, {})
         elif cmd == "configurationDone":
             respond(req)
             for p, ls in breakpoints.items():
                 if ls:
-                    state["path"], state["line"] = p, ls[0]
+                    state["path"], state["line"] = p, ls[0]["line"]
                     break
             stop("breakpoint" if any(breakpoints.values()) else "entry")
         elif cmd == "threads":
@@ -137,7 +147,14 @@ def main():
             respond(req)
             stop("pause")
         elif cmd == "evaluate":
-            respond(req, {"result": "%s = 42" % args.get("expression", ""), "variablesReference": 0})
+            expr = args.get("expression", "")
+            ctx = args.get("context", "")
+            if ctx == "watch" and expr == "point":
+                respond(req, {"result": "{x=1, y=2}", "type": "struct P", "variablesReference": 777})
+            elif ctx == "watch":
+                respond(req, {"result": "%s = 42" % expr, "type": "int", "variablesReference": 0})
+            else:
+                respond(req, {"result": "%s = 42" % expr, "variablesReference": 0})
         elif cmd in ("terminate", "disconnect"):
             respond(req)
             if cmd == "disconnect":

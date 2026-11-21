@@ -276,8 +276,26 @@ void ide_window_apply_config(KajoIdeWindow *self) {
     int gutter_pt = MAX(8, (self->active_font_size_px - 2) * 3 / 4);
     g_autofree char *font_stack = shell_ide_font_stack(self->active_font_family);
     kajo_ide_gutter_renderer_set_font(self->gutter_renderer, font_stack, gutter_pt);
+    kajo_ide_gutter_renderer_set_relative_numbers(
+        self->gutter_renderer, cfg->relative_line_numbers);
     gtk_widget_set_visible(GTK_WIDGET(self->gutter_renderer),
                            cfg->show_line_numbers);
+  }
+
+  /* Apply user key remappings from ide.toml [keys.<state>] */
+  if (self->fsm) {
+    ide_fsm_clear_remaps(self->fsm);
+    if (cfg->key_remaps) {
+      for (guint i = 0; i < cfg->key_remaps->len; i++) {
+        const KajoIdeKeyRemap *rm = g_ptr_array_index(cfg->key_remaps, i);
+        if (!rm || !rm->state || !rm->key || !rm->action) continue;
+        IdeState st = ide_state_from_name(rm->state);
+        IdeActionType act = ide_action_type_from_name(rm->action);
+        if (st < IDE_STATE_COUNT && rm->key[0] != '\0' && act != IDE_ACTION_NONE) {
+          ide_fsm_set_remap(self->fsm, st, rm->key, act);
+        }
+      }
+    }
   }
 
   if (self->source_map && self->md_split_container &&
@@ -310,6 +328,92 @@ mutate_ide_zoom(KajoIdeCfg *draft, gpointer user_data)
     draft->font_size_px = CLAMP(draft->font_size_px + ctx->delta_or_zero, 10, 24);
   }
   ctx->out_px = draft->font_size_px;
+}
+
+static void
+mutate_ide_rel_lines(KajoIdeCfg *draft, gpointer user_data)
+{
+  gboolean *out_val = (gboolean *)user_data;
+  draft->relative_line_numbers = !draft->relative_line_numbers;
+  *out_val = draft->relative_line_numbers;
+}
+
+void ide_window_toggle_relative_lines(KajoIdeWindow *self) {
+  if (!self) return;
+  gboolean next_rel = FALSE;
+  kajo_config_store_update_ide(NULL, mutate_ide_rel_lines, &next_rel, NULL);
+  ide_window_apply_config(self);
+  ide_window_show_toast(self, next_rel ? "# Line Numbers: RELATIVE" : "# Line Numbers: ABSOLUTE");
+}
+
+static void close_cond_bp_bar(KajoIdeWindow *self) {
+  if (!self || !self->cond_bp_bar) return;
+  gtk_widget_set_visible(self->cond_bp_bar, FALSE);
+  self->cond_bp_line = 0;
+  if (self->source_view) gtk_widget_grab_focus(self->source_view);
+}
+
+static void apply_cond_bp_from_entry(KajoIdeWindow *self) {
+  if (!self || self->cond_bp_line == 0) return;
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  if (buf) {
+    const char *expr = gtk_editable_get_text(GTK_EDITABLE(self->cond_bp_entry));
+    ide_buffer_set_breakpoint_condition(buf, self->cond_bp_line, expr);
+    if (self->dap) ide_dap_view_breakpoints_changed(self->dap);
+    if (self->source_view) gtk_widget_queue_draw(self->source_view);
+    const char *stored = ide_buffer_get_breakpoint_condition(buf, self->cond_bp_line);
+    g_autofree char *msg = stored
+        ? g_strdup_printf("◆ Breakpoint L%u condition: %s", self->cond_bp_line, stored)
+        : g_strdup_printf("● Breakpoint L%u condition cleared", self->cond_bp_line);
+    ide_window_show_toast(self, msg);
+  }
+  close_cond_bp_bar(self);
+}
+
+static void on_cond_bp_activate(GtkEntry *entry G_GNUC_UNUSED, gpointer user_data) {
+  apply_cond_bp_from_entry(KAJO_IDE_WINDOW(user_data));
+}
+
+static void on_cond_bp_set_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data) {
+  apply_cond_bp_from_entry(KAJO_IDE_WINDOW(user_data));
+}
+
+static void on_cond_bp_clear_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  if (self->cond_bp_entry) gtk_editable_set_text(GTK_EDITABLE(self->cond_bp_entry), "");
+  apply_cond_bp_from_entry(self);
+}
+
+static void on_cond_bp_close_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data) {
+  close_cond_bp_bar(KAJO_IDE_WINDOW(user_data));
+}
+
+void ide_window_open_cond_bp_bar(KajoIdeWindow *self, guint line_1based) {
+  if (!self || !self->cond_bp_bar || !self->cond_bp_entry) return;
+  IdeBuffer *buf = ide_window_get_active_buffer(self);
+  if (!buf || line_1based == 0) return;
+  self->cond_bp_line = line_1based;
+  g_autofree char *lbl = g_strdup_printf("◆ BP CONDITION (L%u):", line_1based);
+  gtk_label_set_text(GTK_LABEL(self->cond_bp_label), lbl);
+  const char *existing = ide_buffer_get_breakpoint_condition(buf, line_1based);
+  gtk_editable_set_text(GTK_EDITABLE(self->cond_bp_entry), existing ? existing : "");
+  gtk_widget_set_visible(self->cond_bp_bar, TRUE);
+  gtk_widget_grab_focus(self->cond_bp_entry);
+  gtk_editable_select_region(GTK_EDITABLE(self->cond_bp_entry), 0, -1);
+}
+
+static void on_gutter_bp_toggled(IdeBuffer *buf G_GNUC_UNUSED,
+                                 guint      line_1based G_GNUC_UNUSED,
+                                 gboolean   enabled G_GNUC_UNUSED,
+                                 gpointer   user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  if (self && self->dap) ide_dap_view_breakpoints_changed(self->dap);
+}
+
+static void on_gutter_cond_bp_requested(IdeBuffer *buf G_GNUC_UNUSED,
+                                        guint      line_1based,
+                                        gpointer   user_data) {
+  ide_window_open_cond_bp_bar(KAJO_IDE_WINDOW(user_data), line_1based);
 }
 
 void ide_window_zoom_editor_font(KajoIdeWindow *self, int delta_or_zero) {
@@ -797,7 +901,7 @@ static char *translate_gdk_key_to_fsm(guint keyval, GdkModifierType state) {
       case GDK_KEY_Down:  return g_strdup("ctrl+down");
       case GDK_KEY_Home:  return g_strdup("ctrl+home");
       case GDK_KEY_End:   return g_strdup("ctrl+end");
-      case GDK_KEY_space: return g_strdup("ctrl+space");
+      case GDK_KEY_space: return g_strdup(shift ? "ctrl+shift+space" : "ctrl+space");
       default: break;
     }
     gunichar uc = gdk_keyval_to_unicode(gdk_keyval_to_lower(keyval));
@@ -817,6 +921,7 @@ static char *translate_gdk_key_to_fsm(guint keyval, GdkModifierType state) {
       case GDK_KEY_Up:           return g_strdup("shift+up");
       case GDK_KEY_Down:         return g_strdup("shift+down");
       case GDK_KEY_F5:           return g_strdup("shift+f5");
+      case GDK_KEY_F9:           return g_strdup("shift+f9");
       case GDK_KEY_F11:          return g_strdup("shift+f11");
       default: break;
     }
@@ -892,11 +997,27 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
     return TRUE;
   }
 
-  /* Allow the DAP REPL GtkEntry to receive direct text input & Enter activation */
+  /* Allow DAP REPL, DAP Watch, and Conditional Breakpoint GtkEntries to receive
+   * direct text input & Enter activation without being intercepted by the FSM. */
   GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(self));
   GtkWidget *repl_entry = self->dap ? ide_dap_view_get_repl_entry(self->dap) : NULL;
-  if (focus && repl_entry &&
-      (focus == repl_entry || gtk_widget_is_ancestor(focus, repl_entry))) {
+  GtkWidget *watch_entry = self->dap ? ide_dap_view_get_watch_entry(self->dap) : NULL;
+  gboolean in_cond_bp = (focus && self->cond_bp_entry &&
+                         (focus == self->cond_bp_entry ||
+                          gtk_widget_is_ancestor(focus, self->cond_bp_entry)));
+  gboolean in_dap_entry = (focus &&
+                           ((repl_entry &&
+                             (focus == repl_entry || gtk_widget_is_ancestor(focus, repl_entry))) ||
+                            (watch_entry &&
+                             (focus == watch_entry || gtk_widget_is_ancestor(focus, watch_entry)))));
+  if (in_cond_bp) {
+    if (keyval == GDK_KEY_Escape) {
+      close_cond_bp_bar(self);
+      return TRUE;
+    }
+    return FALSE;
+  }
+  if (in_dap_entry) {
     if (keyval == GDK_KEY_Escape) {
       ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
       gtk_widget_grab_focus(self->source_view);
@@ -1011,6 +1132,9 @@ static void on_lsp_ui_state(IdeLspUiState state, gpointer user_data) {
       ide_fsm_set_state(self->fsm, IDE_STATE_COMPLETION);
       break;
     case IDE_LSP_UI_CODE_ACTION:
+    case IDE_LSP_UI_REFERENCES:
+    case IDE_LSP_UI_SIGNATURE:
+    case IDE_LSP_UI_CALL_HIERARCHY:
       ide_fsm_set_state(self->fsm, IDE_STATE_CODE_ACTION);
       break;
     case IDE_LSP_UI_RENAME:
@@ -1106,6 +1230,12 @@ static GPtrArray *on_dap_breakpoints(gpointer user_data) {
     IdeDapBreakpointSet *bs = g_new0(IdeDapBreakpointSet, 1);
     bs->path = g_strdup(path);
     bs->lines = lines;
+    bs->conditions = g_ptr_array_new_with_free_func(g_free);
+    for (guint k = 0; k < lines->len; k++) {
+      guint line_1based = g_array_index(lines, guint, k);
+      const char *cond = ide_buffer_get_breakpoint_condition(b, line_1based);
+      g_ptr_array_add(bs->conditions, g_strdup(cond ? cond : ""));
+    }
     g_ptr_array_add(sets, bs);
   }
   return sets;
@@ -1348,11 +1478,16 @@ static void code_menu_dispatch(GSimpleAction *action, GVariant *p, gpointer user
   static const struct { const char *name; IdeActionType act; } map[] = {
     { "definition", IDE_ACTION_LSP_DEFINITION },
     { "implementation", IDE_ACTION_LSP_IMPLEMENTATION },
+    { "references", IDE_ACTION_LSP_REFERENCES },
+    { "signature", IDE_ACTION_LSP_SIGNATURE_HELP },
+    { "call_in", IDE_ACTION_LSP_CALL_HIERARCHY_IN },
+    { "call_out", IDE_ACTION_LSP_CALL_HIERARCHY_OUT },
     { "hover", IDE_ACTION_LSP_HOVER },
     { "rename", IDE_ACTION_LSP_RENAME },
     { "codeaction", IDE_ACTION_LSP_CODE_ACTION },
     { "format", IDE_ACTION_LSP_FORMAT },
     { "breakpoint", IDE_ACTION_DAP_TOGGLE_BREAKPOINT },
+    { "cond_bp", IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT },
   };
   for (gsize i = 0; i < G_N_ELEMENTS(map); i++) {
     if (g_strcmp0(name, map[i].name) == 0) {
@@ -1369,8 +1504,9 @@ static void ensure_code_menu(KajoIdeWindow *self) {
   if (self->code_menu_built) return;
 
   GSimpleActionGroup *group = g_simple_action_group_new();
-  const char *acts[] = { "definition", "implementation", "hover", "rename",
-                         "codeaction", "format", "breakpoint" };
+  const char *acts[] = { "definition", "implementation", "references", "signature",
+                         "call_in", "call_out", "hover", "rename",
+                         "codeaction", "format", "breakpoint", "cond_bp" };
   for (gsize i = 0; i < G_N_ELEMENTS(acts); i++) {
     GSimpleAction *a = g_simple_action_new(acts[i], NULL);
     g_signal_connect(a, "activate", G_CALLBACK(code_menu_dispatch), self);
@@ -1384,6 +1520,10 @@ static void ensure_code_menu(KajoIdeWindow *self) {
   GMenu *nav = g_menu_new();
   g_menu_append(nav, "Go to Definition\t g d", "code.definition");
   g_menu_append(nav, "Go to Implementation\t Space g i", "code.implementation");
+  g_menu_append(nav, "Find References\t g r", "code.references");
+  g_menu_append(nav, "Signature Help\t Space g s", "code.signature");
+  g_menu_append(nav, "Call Hierarchy (Incoming)\t Space g c", "code.call_in");
+  g_menu_append(nav, "Call Hierarchy (Outgoing)\t Space g o", "code.call_out");
   g_menu_append(nav, "Show Documentation\t K", "code.hover");
   GMenu *edit = g_menu_new();
   g_menu_append(edit, "Rename Symbol…\t Space c r", "code.rename");
@@ -1391,6 +1531,7 @@ static void ensure_code_menu(KajoIdeWindow *self) {
   g_menu_append(edit, "Format Buffer\t Space c f", "code.format");
   GMenu *dbg = g_menu_new();
   g_menu_append(dbg, "Toggle Breakpoint\t F9", "code.breakpoint");
+  g_menu_append(dbg, "Conditional Breakpoint…\t Shift+F9", "code.cond_bp");
 
   GMenu *root = g_menu_new();
   g_menu_append_section(root, NULL, G_MENU_MODEL(nav));
@@ -1413,7 +1554,8 @@ static void refresh_code_menu_state(KajoIdeWindow *self) {
   gboolean ready = self->lsp && buf && ide_lsp_manager_is_ready(self->lsp, buf);
   /* definition/hover have ripgrep fallbacks, so stay enabled; the rest need a
    * ready server to do anything useful. */
-  const char *server_only[] = { "implementation", "codeaction", "format", NULL };
+  const char *server_only[] = { "implementation", "references", "signature",
+                                "call_in", "call_out", "codeaction", "format", NULL };
   for (gsize i = 0; server_only[i] != NULL; i++) {
     GAction *a = g_action_map_lookup_action(G_ACTION_MAP(group), server_only[i]);
     if (a) g_simple_action_set_enabled(G_SIMPLE_ACTION(a), ready);
@@ -1722,6 +1864,49 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(self->conflict_bar), btn_conflict_keep);
   gtk_box_append(GTK_BOX(editor_col), self->conflict_bar);
 
+  /* Inline Conditional Breakpoint Prompt Bar (Shift+F9 / Space d B / Shift+Click gutter) */
+  self->cond_bp_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_add_css_class(self->cond_bp_bar, "ide-cond-bp-bar");
+  gtk_widget_set_valign(self->cond_bp_bar, GTK_ALIGN_CENTER);
+  gtk_widget_set_visible(self->cond_bp_bar, FALSE);
+
+  self->cond_bp_label = gtk_label_new("◆ BP CONDITION:");
+  gtk_widget_set_valign(self->cond_bp_label, GTK_ALIGN_CENTER);
+
+  self->cond_bp_entry = gtk_entry_new();
+  gtk_widget_set_hexpand(self->cond_bp_entry, TRUE);
+  gtk_widget_set_valign(self->cond_bp_entry, GTK_ALIGN_CENTER);
+  gtk_entry_set_placeholder_text(GTK_ENTRY(self->cond_bp_entry),
+                                 "Condition expression (e.g. count > 5; leave empty to clear)...");
+  gtk_widget_add_css_class(self->cond_bp_entry, "shell-launcher-input");
+  g_signal_connect(self->cond_bp_entry, "activate", G_CALLBACK(on_cond_bp_activate), self);
+
+  GtkWidget *btn_cond_set = gtk_button_new_with_label("✓ SET");
+  gtk_widget_set_focusable(btn_cond_set, FALSE);
+  gtk_widget_add_css_class(btn_cond_set, "ide-toolbar-btn");
+  gtk_widget_add_css_class(btn_cond_set, "action-btn-primary");
+  gtk_widget_set_valign(btn_cond_set, GTK_ALIGN_CENTER);
+  g_signal_connect(btn_cond_set, "clicked", G_CALLBACK(on_cond_bp_set_clicked), self);
+
+  GtkWidget *btn_cond_clear = gtk_button_new_with_label("✕ CLEAR");
+  gtk_widget_set_focusable(btn_cond_clear, FALSE);
+  gtk_widget_add_css_class(btn_cond_clear, "ide-toolbar-btn");
+  gtk_widget_set_valign(btn_cond_clear, GTK_ALIGN_CENTER);
+  g_signal_connect(btn_cond_clear, "clicked", G_CALLBACK(on_cond_bp_clear_clicked), self);
+
+  GtkWidget *btn_cond_close = gtk_button_new_with_label("×");
+  gtk_widget_set_focusable(btn_cond_close, FALSE);
+  gtk_widget_add_css_class(btn_cond_close, "ide-tab-close");
+  gtk_widget_set_valign(btn_cond_close, GTK_ALIGN_CENTER);
+  g_signal_connect(btn_cond_close, "clicked", G_CALLBACK(on_cond_bp_close_clicked), self);
+
+  gtk_box_append(GTK_BOX(self->cond_bp_bar), self->cond_bp_label);
+  gtk_box_append(GTK_BOX(self->cond_bp_bar), self->cond_bp_entry);
+  gtk_box_append(GTK_BOX(self->cond_bp_bar), btn_cond_set);
+  gtk_box_append(GTK_BOX(self->cond_bp_bar), btn_cond_clear);
+  gtk_box_append(GTK_BOX(self->cond_bp_bar), btn_cond_close);
+  gtk_box_append(GTK_BOX(editor_col), self->cond_bp_bar);
+
   GtkWidget *editor_hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
   gtk_widget_set_hexpand(editor_hbox, TRUE);
   gtk_widget_set_vexpand(editor_hbox, TRUE);
@@ -1780,6 +1965,10 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
       GTK_SOURCE_VIEW(self->source_view), GTK_TEXT_WINDOW_LEFT);
   self->gutter_renderer =
       KAJO_IDE_GUTTER_RENDERER(kajo_ide_gutter_renderer_new(NULL));
+  kajo_ide_gutter_renderer_set_breakpoint_callback(
+      self->gutter_renderer, on_gutter_bp_toggled, self);
+  kajo_ide_gutter_renderer_set_conditional_bp_callback(
+      self->gutter_renderer, on_gutter_cond_bp_requested, self);
   gtk_source_gutter_insert(
       left_gutter, GTK_SOURCE_GUTTER_RENDERER(self->gutter_renderer), 0);
 

@@ -795,6 +795,32 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_LSP_IMPLEMENTATION:
       if (buf) ide_lsp_manager_request_implementation(self->lsp, buf);
       break;
+    case IDE_ACTION_LSP_REFERENCES:
+      if (buf)
+        ide_lsp_manager_request_references(
+            self->lsp, self->source_view, buf, cur_line, cur_col);
+      break;
+    case IDE_ACTION_LSP_SIGNATURE_HELP:
+      if (buf)
+        ide_lsp_manager_request_signature_help(
+            self->lsp, self->source_view, buf, cur_line, cur_col);
+      break;
+    case IDE_ACTION_LSP_CALL_HIERARCHY_IN:
+      if (buf)
+        ide_lsp_manager_request_call_hierarchy(
+            self->lsp, self->source_view, buf, FALSE);
+      break;
+    case IDE_ACTION_LSP_CALL_HIERARCHY_OUT:
+      if (buf)
+        ide_lsp_manager_request_call_hierarchy(
+            self->lsp, self->source_view, buf, TRUE);
+      break;
+    case IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE:
+      ide_lsp_manager_toggle_call_hierarchy_dir(self->lsp);
+      break;
+    case IDE_ACTION_TOGGLE_RELATIVE_LINES:
+      ide_window_toggle_relative_lines(self);
+      break;
     case IDE_ACTION_LSP_CODE_ACTION:
       if (buf) ide_lsp_manager_request_code_actions(self->lsp, self->source_view, buf);
       break;
@@ -1080,6 +1106,11 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
         ide_buffer_toggle_breakpoint(buf, cur_line);
         ide_dap_view_breakpoints_changed(self->dap);
         gtk_widget_queue_draw(self->source_view);
+      }
+      break;
+    case IDE_ACTION_DAP_CONDITIONAL_BREAKPOINT:
+      if (buf) {
+        ide_window_open_cond_bp_bar(self, cur_line);
       }
       break;
     case IDE_ACTION_DAP_TOGGLE_VIEW:
