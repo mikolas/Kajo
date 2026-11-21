@@ -1,6 +1,6 @@
 # Kajo IDE — Scrollable-Tiling Code Strip & Dependency Graph Lenses (`spec_ide_code_strip.md`)
 
-**Status:** 📋 Specification Draft (for review — not implemented yet)  
+**Status:** 📋 Specification Draft v2 (for review — not implemented yet)  
 **Target Binary:** `kajo-ide` (`org.kajo.IDE`)  
 **Interactive Companions:**
 - High-Fidelity Interactive UI Mockup: [`docs/kajo-ide-strip-mockup.html`](kajo-ide-strip-mockup.html)
@@ -8,259 +8,158 @@
 
 ---
 
-## 1. Motivation & Paradigm ("Scrollable Tiling for Code")
+## 1. Paradigm: Call-Depth Columns & Peekish Target Tiles
 
-Traditional IDEs organize code around **flat file tabs** and **rigid split grids**. That model breaks down the moment a developer traces a non-trivial execution path:
+Traditional IDEs force developers to browse software through **flat file tabs** and **rigid manual splits**. Jumping `g d` four hops deep (`comp_output_frame → fx_glass_render → blur_down_pass → kfx_dispatch_shader`) overwrites the screen four times and destroys structural context.
 
-1. **Tab amnesia:** Jumping `g d` four hops deep (`main → dispatch → render → shader`) overwrites the viewport four times. By hop 4, the caller's invariants are no longer visible.
-2. **Rigid splits don't scale:** Splitting vertically once gives 2 cramped panes; splitting twice yields unusable 40-column slivers and forces manual pane micromanagement.
-3. **File boundaries are arbitrary:** A 1,600-line C file mixes unrelated helpers with the 35-line function you actually care about, while the `struct` it mutates lives in a header two directories away.
+**Kajo Code Strip** replaces flat tab juggling with a **Call-Depth Miller Column Strip** powered by live **Tree-sitter**, **LSP 3.17**, and `kajo-comp`'s analytical damped-spring physics (`comp_spring.c`):
 
-Kajo already solved the window-management equivalent of this problem in **`kajo-comp`** (inspired by Niri): an **infinite horizontal scrollable strip of resizable columns** with analytical spring camera motion (`comp_spring.c`), vertical stacking inside columns, and vertical workspaces for separate tasks.
+### The Two Primitives & One Core Invariant
+1. **Columns = Structural / Call Depth (`D0 | D+1 | D+2 | ...`)**
+2. **Target Tiles = Every workspace symbol (function, struct, method, class) is a tile**
 
-**Kajo Code Strip** brings that exact spatial model inside `kajo-ide`, fused with live **LSP 3.17** and **Tree-sitter** structural intelligence:
+**Core Invariant ("Active Tile Leftmost, Downstream Structure to the Right"):**
+- Whatever tile is currently **full-column editable** sits **leftmost** in the viewport (**`60%`** width).
+- Immediately to its right sit the downstream call-depth columns:
+  - **Column `D+1` (`25%` width):** Every workspace target symbol referenced by the leftmost column, ordered top-to-bottom in **source call order**, rendered as **Peekish Tiles** (compact `32px` tiles by default; the active/aligned tile smoothly **accordion-expands** into a 4–6 line syntax-highlighted peek).
+  - **Column `D+2` (`15%` width):** Workspace targets of the currently active `D+1` tile, rendered as crisp **`26px` Micro-Tiles** (fits 20–25+ tiles on screen at once).
+- **Magnetic Code Following:** As you scroll or move your cursor through the leftmost `60%` source column (even across a file with 30–1,000 workspace calls), `D+1` smoothly springs its scroll position to **vertically align the active call's target tile opposite your cursor**, accordion-expanding its peek, while `D+2` smoothly updates to show the next depth level of that tile.
+- **Promoting a Tile ("Sliding the World Left"):** Promoting any tile in `D+1` (`Enter` / double-click / `g d` / `→` button) slides the entire strip **left by 1 depth level** via `comp_spring`:
+  - The promoted `D+1` tile expands from **`25%` → `60%`** to become the new leftmost live editor.
+  - `D+2` expands from **`15%` → `25%`** (becoming the new `D+1` Peek column).
+  - A fresh `D+3` column slides in from the right at **`15%`** (new `D+2` Micro-Tiles).
+  - The former leftmost caller slides off the left edge into a slim **`28px` Ancestor Spine** so you can click or press `Backspace` / `Alt+Left` / Mouse Back to surface back cleanly at any time.
 
-- **Horizontal axis = Execution / Dependency Trail:** Navigating from a call site or type reference in Column `i` opens the target symbol in **Column `i + 1`** right beside its caller and smoothly springs the camera so both stay in view, linked by a subtle Cairo dependency connector.
-- **Vertical axis inside a column = Related Context Stack:** Consume/expel cards into or out of a column (e.g., stack a `struct` definition directly above the function that mutates it, or stack two sibling callees in Column `i + 1`).
-- **Vertical axis across workspaces = Named Trails:** Each vertical **Trail** preserves an entire multi-column investigation (e.g. `01 · fx_glass pipeline`, `02 · LSP call hierarchy`, `03 · XWayland DISPLAY`) independently.
-- **Unit of editing = Live Symbol Card (or Full File):** Every card edits the **exact same canonical `GtkSourceBuffer`** as classic file-tab mode — shared undo/redo, breakpoints, diagnostics, tree-sitter highlights, and LSP `didChange`.
-
-### Non-Goals & Strict Guardrails (`AGENTS.md` §8)
-- **Opt-in, zero forced migration:** Classic File Tab mode remains untouched and default. Pressing **`Space t s`** (or clicking **`[ ▥ STRIP ]`** in the header bar) switches seamlessly between Classic Tabs and Code Strip using the same open `IdeBuffer` set.
-- **No ambient auto-spawning:** Moving the cursor over a symbol never automatically opens cards or shifts the camera. Every card spawn, lens switch, and overview zoom happens only on an explicit user action.
-- **No free-form infinite 2D node-graph canvas:** Free-floating draggable boxes require constant mouse tidying and clash with modal keyboard editing. Strict **columnar scrollable tiling** keeps every card keyboard-addressable (`h/j/k/l`), crisp, and predictable.
-- **Honest fallback without LSP:** When no language server is running for a file, structural lenses degrade visibly (`[TS+RG FALLBACK]`) using `ide_ts` (16 bundled grammars) and asynchronous `ripgrep`.
-
----
-
-## 2. Architecture & Reuse of Existing Kajo Subsystems
-
-Kajo already has almost every primitive needed to build Code Strip without adding external dependencies:
-
-| Existing Kajo Module | Role in Kajo Code Strip |
-| :--- | :--- |
-| [`src/comp/core/comp_spring.{h,c}`](../src/comp/core/comp_spring.h) | Pure C (zero wlroots/GLib deps) analytical damped-spring oscillator (`comp_spring_init`, `comp_spring_retarget`, `comp_spring_value`). Drives smooth horizontal camera scrolling and vertical trail transitions with seamless retargeting on rapid `Space t l` / `Space t h` taps. |
-| [`src/ide/ide_ts.{h,c}`](../src/ide/ide_ts.h) | Tree-sitter AST across 16 languages (`ide_ts_doc_find_object` for `'f'` function & `'c'` struct/class/enum). Extracts enclosing symbol spans `[start_line..end_line]` and local call/type sites without blocking on LSP. |
-| [`src/ide/ide_lsp.{h,c}`](../src/ide/ide_lsp.h) | Real async LSP client already supporting `textDocument/definition`, `textDocument/implementation`, `textDocument/references`, `textDocument/prepareCallHierarchy`, `callHierarchy/incomingCalls`, and `callHierarchy/outgoingCalls` (plus `textDocument/documentSymbol` to be added in M1). |
-| [`src/ide/ide_buffer.{h,c}`](../src/ide/ide_buffer.h) | Single canonical `IdeBuffer` + `GtkSourceBuffer` per open file, owning disk baseline, atomic save, `GFileMonitor`, breakpoints (with conditions), diagnostics, DAP PC line, and git/agent diffs. |
-| [`src/ide/ide_gutter.{h,c}`](../src/ide/ide_gutter.h) | 6-column Cairo gutter reused per card (breakpoints, diagnostics, DAP PC, absolute/relative line numbers, git/agent diff bars, fold indicators). |
-| [`src/ide/ide_fsm.{h,c}`](../src/ide/ide_fsm.h) | Modal FSM extended with explicit `Space t *` (Trail/Strip) chords and an `IDE_STATE_STRIP_OVERVIEW` state for bird's-eye overview navigation. |
+### Strict Guardrails (`AGENTS.md` §8 & Kajo Platform Constraints)
+- **Workspace-only tiles:** Only symbols whose resolved definition path resides inside `workspace_root` become tiles (`WS ONLY`). External/stdlib calls (`GLib`, `GTK`, `/usr/include`, JDK/Maven jars, `GOROOT`/`GOMODCACHE`, Cargo registry) are **suppressed** from tile columns so `D+1`/`D+2` stay 100% pure project architecture. (Explicit `K` Hover and `g d` still work on external symbols.)
+- **Zero 2- or 3-finger swipes:** `kajo-comp` owns multi-finger gestures. All Code Strip scrolling and depth transitions use per-column vertical wheel / 1-finger touch drag, keyboard chords, click/double-click, Ancestor Spine pills, Mouse Back/Forward buttons, or `Shift+Wheel`.
+- **Opt-in, zero forced migration:** Classic File Tabs remain untouched and default. **`Space t s`** (or `[ ▥ STRIP ]`) switches seamlessly between Classic Tabs and Code Strip over the exact same live `IdeBuffer` pool.
+- **Manual scroll never gets fought:** If the user scrolls `D+1` manually with the mouse wheel or `j`/`k`, magnetic follow pauses cleanly (`[ ⛓ UNLINKED · RESYNC ]`) until the user moves the cursor in `Col 0` again or clicks resync.
 
 ---
 
-## 3. Spatial Model & Geometry
+## 2. Screen-Space Geometry (`60% | 25% | 15%`) & 3-Tier Tile Level-of-Detail
 
 ```mermaid
 flowchart LR
-  subgraph C0["Column 0 (50% width)"]
-    A["ƒ comp_output_frame\ncomp_output.c:L182–L248"]
-  end
-  subgraph C1["Column 1 (50% width)"]
-    B1["S CompFxGlassParams\nfx_glass.h:L14–L46"]
-    B2["ƒ fx_glass_render\nfx_glass.c:L210–L295"]
-  end
-  subgraph C2["Column 2 (33% width — off-screen right)"]
-    D1["ƒ blur_down_pass\nfx_glass.c:L92–L138"]
-    D2["ƒ blur_up_pass\nfx_glass.c:L140–L188"]
-  end
-  A -->|"calls · L224"| B2
-  B2 -->|"reads · L218"| B1
-  B2 -->|"calls · L256"| D1
-  B2 -->|"calls · L264"| D2
+  SP["Ancestor Spine\n28px (when depth > 0)\n[comp_output_frame]"]
+  D0["Col D0 · Active Editor\n60% width\nLive GtkSourceView + 6-Col Gutter\n(Full File or Promoted Symbol)"]
+  D1["Col D+1 · Target Tiles\n25% width\nPeekish LoD 1 (32px tiles)\nActive tile accordion-peeks (6 lines)\nFollows Col D0 cursor via spring"]
+  D2["Col D+2 · Next Depth\n15% width\nMicro-Tiles LoD 0 (26px chips)\n20+ tiles visible at once\nCascades from active D+1 tile"]
+  SP -.->|"surface right"| D0
+  D0 -->|"call site L224 · spring-aligned"| D1
+  D1 -->|"callees of active tile"| D2
 ```
 
-### 3.1 Horizontal Column Strip
-- Each **Trail** (`IdeStripTrail`) owns an ordered array of columns `C[0..N-1]`.
-- Each **Column** (`IdeStripColumn`) has a normalized width preset relative to the viewport width `W`:
-  - `STRIP_WIDTH_THIRD` (`0.333 * W`, min `360px`)
-  - `STRIP_WIDTH_HALF` (`0.500 * W`, default — fits caller + callee cleanly side-by-side at `1280px+`)
-  - `STRIP_WIDTH_TWOTHIRDS` (`0.667 * W`)
-  - `STRIP_WIDTH_FULL` (`1.000 * W` — distraction-free focus on one column)
-- Columns are separated by a **`14px` Dependency Bridge Gutter** where the strip's Cairo overlay draws crisp orthogonal/Bezier connectors linking source lines in Column `i` to target cards in Column `i + 1`.
-- **Camera Positioning Policy (matching `kajo-comp` `center_focused_column = "never"`):**
-  - If the newly focused column already fits completely inside `[camera_x, camera_x + W]`, the camera does **not** move (zero disorienting jitter when toggling between two visible neighbors).
-  - If the newly focused column extends past the right edge (`col_right > camera_x + W`), `camera_target = col_right - W` (so the previous caller column stays visible on the left!).
-  - If it extends past the left edge (`col_left < camera_x`), `camera_target = col_left`.
-  - Explicit **`Space t c`** centers the focused column (`camera_target = col_left - (W - col_width) / 2`).
-  - Horizontal mouse-wheel / 2-finger trackpad scroll pans `camera_x` directly and settles smoothly via `comp_spring_launch()`.
+### 2.1 Column Proportions
+For any viewport width `W` (minus `28px` Ancestor Spine when `depth > 0` and two `12px` Cairo Dependency Bridge Gutters):
+- **`Col D0` (Leftmost Active Editor):** **`60%`** — at `1280px` wide this gives `~735px` (~90 monospace columns with the 6-column Cairo gutter); at `1920px` it gives `~1120px`.
+- **`Col D+1` (Direct Targets — Peekish):** **`25%`** — `~305px` at `1280px` (`~465px` at `1920px`), comfortably showing symbol name, file:line badge, and an accordion syntax-highlighted peek of the active tile.
+- **`Col D+2` (Grandchildren — Horizon):** **`15%`** — `~185px` at `1280px` (`~280px` at `1920px`), displaying dense `26px` micro-tiles (`[ƒ] name` + `→N` child count) so the entire next depth level is scannable at a glance.
+- **Zen / Focus Mode (`Space t z`):** Temporarily expands `D0` to `96%` and collapses `D+1`/`D+2` into a `4%` right edge count strip (`D+1: 18 · D+2: 7`) clickable to restore.
+- **Vertical Pin Split Inside `D0` (`Space t p`):** When you need to edit or reference a second symbol (e.g., a `struct` definition) alongside the active function without stealing width from `D+1`/`D+2`, pinning docks it vertically at the top of `D0` (`30%` pinned / `70%` active).
 
-### 3.2 Vertical Card Stacking Inside a Column
-- A column holds `1..4` stacked **Cards** (`IdeStripCard`), sharing the column's vertical height `H` (equal weights by default; draggable `4px` splitter handle between stacked cards, plus collapse-to-header `Space t z` which folds a card to its `26px` title bar while keeping it pinned in the column!).
-- **Consume Left / Expel Right (exact Niri / `kajo-comp` muscle memory):**
-  - **`Space t ,`** (*Consume into column*): pulls the top card from Column `i + 1` into the bottom of Column `i`.
-  - **`Space t .`** (*Expel out of column*): ejects the focused card out of Column `i` into its own new Column `i + 1`.
-  - **`Space t H` / `Space t L`**: swaps the focused column left/right in the strip.
-  - **`Space t J` / `Space t K`**: reorders the focused card down/up within its column.
+### 2.2 Three-Tier Tile Level-of-Detail (LoD) & 1,000-Tile Performance
+Rendering 1,000 `GtkSourceView` widgets would destroy memory and frame rate. Instead, `kajo-ide` keeps **at most 1–2 live `GtkSourceView` widgets** (in `D0`, plus optional pinned split) while `D+1` and `D+2` use virtualized native GTK4 list views (`GtkListView` / recycled rows + Pango-highlighted peek labels):
 
-### 3.3 Vertical Trails (Task Workspaces)
-- Just as `kajo-comp` has a vertical stack of workspaces (`WS1, WS2, ...`), `kajo-ide` maintains a vertical list of named **Trails** (`IdeStripTrail`):
-  - Example: `01 · fx_glass pipeline`, `02 · LSP call hierarchy`, `03 · xwayland DISPLAY`.
-  - Switching trails (**`Space t ]` / `Space t [`** or clicking the trail pills in the slim top strip rail) swaps the active strip instantaneously (or with a crisp vertical spring slide) while preserving every trail's columns, camera position, active lens, and collapsed cards.
-  - **`Space t n`**: create a new blank trail (opens fuzzy symbol/file picker).
-  - **`Space t b`**: **Branch Trail** — forks a new trail rooted at the currently focused card so you can explore a side tangent without cluttering your main trail.
-  - **`Space t x`**: close active trail (never closes unsaved `IdeBuffer`s — buffers live in the IDE's canonical buffer pool!).
+| Tier | Column | Height | Visual Content | Widget Weight |
+| :--- | :--- | :---: | :--- | :--- |
+| **LoD 2 — Live Editor** | `D0` (`60%`) | `100%` column height | Real `GtkSourceView` attached directly to canonical `IdeBuffer`'s `GtkSourceBuffer` + 6-col Cairo gutter + optional out-of-scope dimming veil (`[ ⤢ FULL FILE ]`). | 1 live `GtkSourceView` |
+| **LoD 1 — Peekish Tile** | `D+1` (`25%`) | `32px` collapsed; `124–160px` accordion-expanded (active tile only) | Header: `[kind]` `symbol_name`, `file:L`, occurrence badge (`×3`), `→` promote button. Active/selected tile smoothly expands to show signature + 4–6 syntax-highlighted preview lines (reusing `ide_ts` token colors via Pango markup). | Virtualized `GtkListView` row |
+| **LoD 0 — Micro-Tile** | `D+2` (`15%`) | `26px` | Compact Metro chip: `[kind]` `symbol_name` + right-aligned `→N` downstream count / `✖` diagnostic dot. Fits 22–28 tiles per screen height. | Virtualized `GtkListView` row |
+
+Because `GtkListView` recycles only the ~25–35 visible rows on screen, a column holding **1,000 workspace calls** renders at 60 FPS with constant `O(visible_rows)` memory and `< 0.05%` idle CPU.
 
 ---
 
-## 4. Card Types & Shared-Buffer Editing Mechanics
+## 3. Magnetic Code-Following & Arrangement Mechanics
 
-### 4.1 Card Kinds
-| Kind | Header Badge | Purpose | Editable? |
-| :--- | :---: | :--- | :---: |
-| **`IDE_STRIP_CARD_SYMBOL`** | `ƒ` / `S` / `T` / `M` | Focused slice of one function, struct, class, method, or macro (`start_line..end_line` from tree-sitter / LSP). | **Yes** (live shared `GtkSourceBuffer`) |
-| **`IDE_STRIP_CARD_FILE`** | `📄` | Full-file column (headers, configs, `meson.build`, Markdown docs). | **Yes** (live shared `GtkSourceBuffer`) |
-| **`IDE_STRIP_CARD_LENS`** | `⬡` | Live structural card (Call Graph, Type Dependencies, References/Impact list, or Git/Agent Diff queue). | Interactive (click / `Enter` spawns or focuses target card in Column `i+1`) |
+When `D0` is a large source file or complex dispatcher containing tens or hundreds of workspace calls, `D+1` and `D+2` must feel **effortlessly alive and predictable**:
 
-### 4.2 Card Chrome (Aero + Metro, `0px` Radius)
-Every card has a `26px` header strip (`.ide-strip-card-header`):
-- Left: `[kind badge]` + bold `symbol_name` + muted `relpath:L210–L295` + state chips (`●` dirty, `✖ N` error, `◆` conditional BP, `🤖` agent modified).
-- Right: compact action buttons (`focusable = FALSE`):
-  - `[ ⤢ ]` — Toggle between `SYMBOL` scope and `FILE` full view (`Space t f`).
-  - `[ ▁ ]` — Collapse card to its `26px` header strip (`Space t z`).
-  - `[ × ]` — Remove card from trail (`Space t q`, does **not** close the underlying buffer if dirty or open elsewhere).
-- Active card gets a `1px solid @metro-accent` outer frame and `2px solid @metro-accent` top bar; inactive cards use `1px solid #2b2b2b` (`@metro-border`).
+1. **Source-Order Alignment (Anti-Tangle Rule):**
+   - Tiles in `D+1` are sorted by **first call-site line number in `D0`** (`L42`, `L58`, `L71`, …). Because both `D0` and `D+1` flow in the exact same top-to-bottom order, the Cairo bridge connectors form clean parallel/fanning lanes instead of a tangled spiderweb.
+   - Repeated calls to the same workspace function within `D0` are deduplicated into **one tile** (at its first occurrence in the active scope, or dynamically re-anchored to the occurrence nearest the cursor) with a `×N` call-count chip.
+2. **Viewport Band Highlighting:**
+   - Every `D+1` tile whose call site(s) fall inside `D0`'s currently visible line range `[vis_top..vis_bottom]` displays a crisp `2px` left rail in `@metro-accent` (`#0078d4`). Tiles above/below the visible band dim softly (`opacity: 0.52`), giving instant visual feedback of which targets belong to the code on screen right now.
+3. **Cursor / Scroll Magnetic Spring Alignment:**
+   - Moving the cursor onto (or scrolling past) a line containing a workspace call smoothly selects that call's target tile in `D+1`, **accordion-expands** its 5-line code peek, and uses `comp_spring` to scroll `D+1` vertically so the tile's header aligns horizontally with the calling line in `D0` (clamped cleanly to `D+1`'s scroll bounds).
+   - A `1.5px` horizontal/Bezier Cairo connector locks the calling line's right gutter edge in `D0` directly to the left edge of the expanded `D+1` tile, and `0.8px` muted connectors link the other visible-band call sites.
+   - Debounced at `60 ms` during rapid `j`/`k` cursor motion so fast scrolling stays silky and never stutters.
+4. **Cascading `D+2` Horizon:**
+   - Whenever `D+1`'s active tile changes (via `D0` magnetic follow OR via explicit `D+1` selection), `D+2` updates asynchronously (using cached call-graph entries first, falling back to `ide_ts` + LSP `outgoingCalls`) with a subtle `90 ms` vertical slide-in, and draws thin connectors from the active `D+1` tile to its `D+2` micro-tiles.
+5. **Manual Scroll Override (Zero Tug-of-War):**
+   - Scrolling `D+1` with the mouse wheel, 1-finger touch drag, or `j`/`k` immediately detaches magnetic follow and displays a small clickable **`[ ⛓ RESYNC ]`** chip in `D+1`'s header.
+   - Magnetic follow re-engages automatically when the user next moves the cursor onto a new call site in `D0` or clicks `[ ⛓ RESYNC ]`.
 
-### 4.3 Critical Technical Decision: How `CARD_SYMBOL` Shares `GtkSourceBuffer` in GTK4
+---
 
-In GTK4, multiple `GtkSourceView` widgets can natively attach to the **exact same `GtkSourceBuffer`** (`gtk_text_view_set_buffer()`). However, `GtkTextTag` properties (including `invisible = TRUE`) belong to the `GtkTextBuffer`, **not** the individual `GtkSourceView`! Therefore, hiding out-of-scope lines via an `invisible` tag would break whenever two cards show different functions from the same file (e.g., `blur_down_pass` and `blur_up_pass` in `fx_glass.c`).
+## 4. Interaction, Scrolling & Keyboard Model (Zero 2-/3-Finger Swipes)
 
-Two honest engineering options exist:
+### 4.1 Vertical Scrolling Inside Dense Columns (10–1,000 Tiles)
+- **Pointer / Mouse:** Hover any column (`D0`, `D+1`, or `D+2`) and use the standard **mouse wheel** (each column is an independent `GtkScrolledWindow` with a slim `4px` Metro scrollbar).
+- **Touchscreen:** Standard **1-finger vertical drag** inside any column scrolls that column directly.
+- **Keyboard (inside `D+1` or `D+2`):**
+  - `j` / `k` / `↑` / `↓`: step tile-by-tile (accordion-peeking each tile and updating `D+2`).
+  - `Ctrl+d` / `Ctrl+u` / `PgDn` / `PgUp`: half/full page jump; `g g` / `G`: top/bottom.
+  - **`/` (Inline Column Filter):** filters a 50+ tile column live as you type (`Esc` clears).
 
-| Aspect | Option A: Synced Sub-Buffer Slice (`IdeBufferSlice`) | Option B: Shared Canonical Buffer + Viewport Scope Veil *(Recommended)* |
+### 4.2 Horizontal Depth Navigation (Dive In ← / Surface Out →)
+| Action | Keyboard | Mouse / Touchscreen |
 | :--- | :--- | :--- |
-| **Mechanism** | Allocate a secondary `GtkSourceBuffer` containing only lines `[start..end]`; mirror edits bidirectionally to canonical `IdeBuffer` with line-offset translation. | Attach the card's `GtkSourceView` directly to the canonical `IdeBuffer`'s `GtkSourceBuffer`. Scroll viewport to `start_line`, draw a subtle `#0a0a0a` dimmed veil (65% alpha) + `2px` scope boundary ticks over lines outside `[start_line..end_line]`, and auto-track `[start_line..end_line]` via `GtkTextMark`s (left/right gravity) + tree-sitter re-query on edit. |
-| **Undo / Redo** | Must manually coordinate undo stacks across slice and canonical buffer (fragile). | **100% native shared GTK undo stack** across all cards and Classic Tab mode. |
-| **LSP / Diagnostics / DAP / Tree-sitter** | Must translate every line offset back and forth on every edit. | **Zero translation:** diagnostics, breakpoints, DAP PC arrow, git diff bars, and tree-sitter highlights appear identically in real time. |
-| **Peek Surrounding Context** | Impossible without expanding slice bounds and reloading text. | Effortless: user can scroll slightly above/below the dimmed boundary to peek at comments/includes, or press `Space t f` to lift the veil completely. |
-| **Compactness in Stacked Columns** | Strictly shows only the N lines of the function. | Shows the function framed cleanly from `start_line` down; dimmed lines below/above stay visually quiet and non-distracting. |
-
-**Recommendation:** **Option B (Shared Canonical Buffer + Viewport Scope Veil + `GtkTextMark` Bounds)** for M1–M5. It eliminates an entire class of dual-buffer desynchronization bugs while giving instant live editing across multiple cards of the same file. *(Highlighted in §10 Open Questions for user sign-off.)*
-
----
-
-## 5. Dependency Graph Lenses (`Space t 1..4`)
-
-Lenses transform how the strip populates and connects columns. Lenses are **explicitly invoked** — switching lenses updates the active Lens indicator pill in the strip toolbar and lets the user materialize cards with one keystroke:
-
-### 5.1 Lens 1 — `CALLS` (Execution Call Trail, Default)
-- **Data source:** LSP `textDocument/prepareCallHierarchy` → `callHierarchy/incomingCalls` (left) & `callHierarchy/outgoingCalls` (right).
-- **Fallback (no LSP):** `ide_ts` walks `call_expression` / `IDE_TS_TOKEN_FUNCTION` nodes inside the focused symbol's AST range + async `ripgrep` for definitions (`[TS+RG FALLBACK]` badge).
-- **Behavior:**
-  - Inside any `SYMBOL` or `FILE` card, **`g d`** / **`Ctrl+Click`** opens the target symbol in **Column `i + 1`** (if already present in the trail, smoothly focuses it instead of duplicating — unless **`g D`** is pressed to stack/duplicate explicitly).
-  - **`Space t i`** opens/updates an **Incoming Callers** lens card in Column `i - 1` (showing who calls the focused function).
-  - **`Space t e`** (*Expand Callees*) fans out the focused function's direct outgoing callees into a stacked column at `i + 1` (up to 4 cards, or a `LENS` card if > 4).
-- **Connector color:** `@metro-accent` (`#0078d4`).
-
-### 5.2 Lens 2 — `TYPES` (Type & Data-Flow Lens)
-- **Data source:** `ide_ts` extracts `IDE_TS_TOKEN_TYPE` tokens from the focused symbol's signature and body, resolved via LSP `textDocument/definition` (or `rg` `struct|enum|typedef|class|interface` fallback).
-- **Behavior:** Shows referenced structs, enums, and interfaces in a compact `LENS` card (or pulls the selected type definition into the focused column's vertical stack via `Enter` / `Space t ,`). Ideal for inspecting data layouts right above the logic operating on them.
-- **Connector color:** `@metro-telemetry` (`#00d8f0`).
-
-### 5.3 Lens 3 — `IMPACT` (References & Blast-Radius Lens)
-- **Data source:** LSP `textDocument/references` (`includeDeclaration: false`).
-- **Behavior:** When refactoring a function signature or struct field in Column `i`, activating `IMPACT` (`Space t 3`) places a `References` lens card in Column `i + 1` grouped by caller symbol, with **`[ ▤ MATERIALIZE TOP CALLERS ]`** to open the live editable caller cards stacked vertically in Column `i + 1` — edit the callee on the left and update every caller on the right without losing context.
-- **Connector color:** `@metro-warning` (`#ffb900`).
-
-### 5.4 Lens 4 — `DIFF` (Git & AI-Agent Flow Review Lens)
-- **Data source:** `git diff` hunks + `IdeBuffer` agent snapshots (`ide_buffer_has_agent_changes`), mapped to enclosing tree-sitter symbols (`ide_ts_doc_find_object`), topologically ordered by call edges where available.
-- **Behavior:** Instead of reviewing AI agent edits or a PR in alphabetical file order, `DIFF` lays out every modified symbol left-to-right in call order, with `[ ✓ ACCEPT ]` / `[ ✕ REVERT ]` actions directly in each card's header.
-- **Connector color:** `#b4009e` (Agent magenta) / `@metro-success` (`#10893e` git diff).
+| **Select / Peek tile in `D+1`** | `j` / `k` in `D+1` (or magnetic cursor follow in `D0`) | Single-click tile in `D+1` |
+| **Promote tile to Leftmost `D0` (Dive +1 depth)** | `Enter` on tile in `D+1`, or `g d` on call site in `D0` | **Double-click** tile in `D+1`, or click its `→` promote button |
+| **Jump directly 2 depths (`D+2 → D0`)** | `Enter` on tile in `D+2` | **Double-click** micro-tile in `D+2` (promotes intermediate `D+1` into Ancestor Spine and lands target in `D0`) |
+| **Surface Back (-1 depth)** | `Backspace` (in `D+1`/`D+2`), `Alt+Left`, or `Space t h` | Click any pill in far-left **Ancestor Spine**, or **Mouse Back (`Button 8`)** |
+| **Move Focus Between `D0 ↔ D+1 ↔ D+2`** | `Alt+H` / `Alt+L` or `Tab` / `Shift+Tab` (in strip nav) | Click anywhere in target column |
+| **Scrub Depth Strip Without Changing Focus** | `Space t [` / `Space t ]` | **`Shift + Mouse Wheel`**, click **bottom Depth Minimap**, or **1-finger drag on top Trail Header bar** |
+| **Toggle `D0` Symbol Veil ↔ Full File** | `Space t f` | Click `[ ⤢ ]` in `D0` header |
+| **Pin / Unpin Reference Tile at Top of `D0`** | `Space t p` | Click `[ 📌 ]` on any `D+1` tile |
+| **Toggle Bird's-Eye Overview / Zen Mode** | `Space t o` / `Space t z` | Click `[ ⬡ OVERVIEW ]` / `[ ⤢ ZEN ]` |
+| **Toggle Classic File Tabs ↔ Code Strip** | `Space t s` | Click `[ ▥ STRIP ]` in IDE header |
 
 ---
 
-## 6. Dependency Connectors & Bird's-Eye Overview (`Space t o`)
+## 5. Dependency Lenses (`Space t 1..4`)
 
-### 6.1 Strip Bridge Connectors (Always Lightweight, Damage-Gated)
-- Between Column `i` and Column `i + 1`, a `14px` bridge gutter is rendered by a single lightweight `GtkDrawingArea` overlay (`can-target = FALSE`, zero input interception).
-- For every directed edge `(card_a, src_line) -> card_b` where both endpoints are currently visible on screen:
-  - Compute `y_src` from `gtk_text_view_get_line_yrange()` mapped into strip coordinates (clamped to card bounds if scrolled out of card viewport, drawing a small `▲`/`▼` off-viewport indicator tick).
-  - Compute `y_dst` at the vertical midpoint of `card_b`'s header bar.
-  - Draw a crisp stepped/cubic Bezier connector (`1.5px` stroke for edges attached to the focused card; `1px` at 30% alpha for background edges; small `4px` filled anchor dot on `y_src` and crisp arrowhead on `y_dst`).
-- **Idle CPU discipline:** Redraws ONLY on camera spring tick, card scroll, or layout change. Zero background timers when idle (`< 0.05%` CPU).
+Switching Lenses changes *what relationship populates `D+1` and `D+2`* while keeping the exact same `60% | 25% | 15%` layout and magnetic follow behavior:
 
-### 6.2 Bird's-Eye Strip Overview (`Space t o`)
-- Pressing **`Space t o`** transitions the FSM to `IDE_STATE_STRIP_OVERVIEW` and switches the main viewport to an interactive **Cairo Vector Strip Map** (reusing the exact visual clarity of `ide_mermaid.c` and `kajo-comp-storyboard.html`'s minimap):
-  - Displays every column `C0..CN` and stacked card as crisp Aero+Metro rectangles showing symbol name, file badge, line count, diagnostic/dirty/BP indicators, and all directed dependency curves across the entire trail.
-  - Highlights the current viewport frame in `2px solid @metro-telemetry` (`#00d8f0`).
-  - **Keyboard navigation:** `h/j/k/l` moves selection across cards; typing filters/highlights matching symbols; `Enter` exits overview and springs the camera directly to the chosen card; `Esc` cancels back to prior focus.
-  - **Mouse interaction:** Click any card to jump; drag a card onto another column to reorder or stack.
+| Key | Lens | Connector Color | What Populates `D+1` & `D+2` (Workspace-Only) |
+| :--- | :--- | :---: | :--- |
+| **`Space t 1`** | **`CALLS`** *(Default)* | `@metro-accent` (`#0078d4`) | Downstream workspace function/method calls (`D+1` = callees of `D0` in call order; `D+2` = callees of active `D+1` tile). |
+| **`Space t 2`** | **`TYPES`** | `@metro-telemetry` (`#00d8f0`) | Workspace `struct`, `enum`, `typedef`, `class`, and `interface` definitions referenced in `D0` (`D+2` = nested member types / functions accepting that type). |
+| **`Space t 3`** | **`IMPACT`** | `@metro-warning` (`#ffb900`) | Incoming callers / `textDocument/references` of `D0` (`D+1` = direct callers in workspace; `D+2` = callers-of-callers — full blast radius while refactoring!). |
+| **`Space t 4`** | **`DIFF`** | `#b4009e` (Agent) / `#10893e` (Git) | Git- or AI-Agent-modified workspace symbols ordered in call-depth flow, with `[ ✓ ACCEPT ]` / `[ ✕ REVERT ]` actions on headers. |
+
+### Honest Fallback Without LSP
+When no language server is running for a file, `ide_strip_graph` extracts calls and types using bundled **tree-sitter grammars (`ide_ts`, 16 languages)** + workspace-scoped async **`ripgrep`** index, displaying a visible **`[TS+RG FALLBACK]`** chip in the strip bar and dashed connectors.
 
 ---
 
-## 7. Modal FSM & Keybinding Specification
+## 6. Shared Canonical Buffer & Editing Integrity
 
-All strip commands live under the **`Space t`** (*Trail / Tiling Strip*) leader namespace — zero collisions with existing `kajo-ide` bindings (`Space f/b/c/d/g/m/n/p/r/s/v/w`):
-
-| Key / Chord | Scope | Action |
-| :--- | :--- | :--- |
-| **`Space t s`** | Normal / Strip | Toggle between **Classic File Tabs** and **Code Strip** mode |
-| **`Space t h` / `Space t l`** | Strip | Focus previous / next column (spring camera scroll) |
-| **`Alt+H` / `Alt+L`** | Strip | Fast column focus left / right (mirrors `kajo-comp` `Mod+H/L`) |
-| **`Space t j` / `Space t k`** | Strip | Focus card below / above inside current column |
-| **`Space t r`** | Strip | Cycle focused column width (`33%` → `50%` → `66%` → `100%`) |
-| **`Space t c`** | Strip | Center focused column in viewport |
-| **`Space t ,`** | Strip | Consume card from right column into bottom of current column |
-| **`Space t .`** | Strip | Expel focused card out of column into its own column to the right |
-| **`Space t H` / `Space t L`** | Strip | Move focused column left / right in strip |
-| **`Space t f`** | Strip | Toggle focused card between `SYMBOL` scope and `FILE` full view |
-| **`Space t z`** | Strip | Collapse / expand focused card to `26px` header bar |
-| **`Space t o`** | Strip | Toggle **Bird's-Eye Strip Overview** (`IDE_STATE_STRIP_OVERVIEW`) |
-| **`Space t 1` / `2` / `3` / `4`** | Strip | Activate Lens: `1=CALLS`, `2=TYPES`, `3=IMPACT`, `4=DIFF` |
-| **`Space t i` / `Space t e`** | Strip | Open Incoming Callers (left) / Expand Outgoing Callees (right) |
-| **`Space t n` / `Space t b`** | Strip | New empty Trail / Branch new Trail from focused card |
-| **`Space t [` / `Space t ]`** | Strip | Switch to previous / next vertical Trail |
-| **`Space t q`** | Strip | Remove focused card from current Trail (keeps underlying buffer) |
-| **`g d` / `Ctrl+Click`** | Strip (`NORMAL`) | Jump to definition → opens/focuses card in **Column `i + 1`** |
-| **`g D`** | Strip (`NORMAL`) | Open definition stacked into **Column `i + 1`** (even if already open) |
-
-All actions will be registered in `ide_action_type_from_name()` (so users can remap them in `ide.toml` `[keys.normal]`), `kValidLeaderChords`, Which-Key HUD (`Space t`), and the Help Palette (`?`).
+- `D0` attaches its `GtkSourceView` directly to the canonical `IdeBuffer`'s `GtkSourceBuffer` (zero secondary buffer copy, zero undo-stack split).
+- When `D0` is focused on a promoted symbol (e.g., `fx_glass_render` at `L210–L268`), out-of-scope lines outside its `GtkTextMark`-tracked bounds are gently dimmed by a `#0a0a0a` veil while remaining scrollable for quick surrounding-context peeking; pressing `Space t f` (`[ ⤢ FULL FILE ]`) lifts the veil immediately.
+- Editing in `D0` updates diagnostics, breakpoints (including conditional breakpoints), DAP PC arrows, tree-sitter highlights, and LSP `didChange` identically to Classic Tab mode.
 
 ---
 
-## 8. Data Model & Module Decomposition
+## 7. Data Model & Module Split
 
-To honor `AGENTS.md` §5 ("no monolithic files", keep pure logic GTK-free and unit-tested):
-
-| New Module | Responsibility | GTK-Free? |
+| Module | Responsibility | GTK-Free? |
 | :--- | :--- | :---: |
-| `src/ide/ide_strip_layout.{h,c}` | Pure data model (`IdeStripWorkspace`, `IdeStripTrail`, `IdeStripColumn`, `IdeStripCard`, `IdeStripEdge`), column geometry calculation, camera follow/center policy, consume/expel, reorder, and `comp_spring` camera state. | **Yes** (100% pure C + GLib, unit-tested headlessly in `tests/test_ide_strip.c`) |
-| `src/ide/ide_strip_graph.{h,c}` | Dependency edge builder & Lens query coordinator (extracts symbol spans via `ide_ts_doc_find_object`, dispatches LSP `prepareCallHierarchy`/`references`/`definition` or `ts+rg` fallback, computes topological order for `DIFF` lens). | **Yes** (tested against `mock_lsp_server.py`) |
-| `src/ide/ide_strip_view.{h,c}` | GTK4 widget layer: horizontal scrolled viewport hosting live `GtkSourceView` cards, `.ide-strip-card-header`, out-of-scope dimming veil, `GtkDrawingArea` Cairo connector overlay, Trail switcher rail, and Bird's-Eye Cairo overview canvas. | GTK4 UI |
-
-### Virtualization & Resource Discipline
-- **Max live `GtkSourceView` cap (default `12`):** If a long trail grows beyond 12 cards, cards far outside `[camera_x - W, camera_x + 2*W]` release their `GtkSourceView` widget while preserving their `IdeStripCard` metadata (path, symbol range, cursor `GtkTextMark`/line, scroll offset) and re-materialize seamlessly when scrolled back within range.
-- **Session persistence (optional, M5):** Trails can be serialized to `<workspace>/.kajo/strip-trails.json` (only when the user saves/enables workspace session state; never writes surprise files without config).
+| `src/ide/ide_strip_layout.{h,c}` | Pure depth-stack state (`IdeStripTrail`, `IdeStripDepthCol`, `IdeStripTile`, `IdeStripAnchorSpine`), `60/25/15` geometry, magnetic scroll target calculation, manual-override state, and `comp_spring` camera/scroll springs. | **Yes** (`tests/test_ide_strip.c`) |
+| `src/ide/ide_strip_graph.{h,c}` | Workspace-only symbol filter (`is_inside_workspace`), source-order call extractor (`ide_ts`), async LSP `callHierarchy` / `references` / `definition` resolver + `[TS+RG FALLBACK]`, and per-buffer call-graph cache invalidated on edit. | **Yes** (`tests/test_ide_ipc.c` + `mock_lsp_server.py`) |
+| `src/ide/ide_strip_view.{h,c}` | GTK4 widget tree: `28px` Ancestor Spine, `60%` live `GtkSourceView` (`D0`) with optional pin split & scope veil, `25%` virtualized `GtkListView` (`D+1` Peekish accordion rows), `15%` virtualized `GtkListView` (`D+2` Micro-Tiles), Cairo bridge connector overlay, and Bird's-Eye Overview canvas. | GTK4 UI |
 
 ---
 
-## 9. Phased Implementation Roadmap (M0–M5)
-
-Each milestone lands cleanly behind `meson compile && meson test` + ASan/UBSan + `scripts/ui-shot.sh`:
+## 8. Phased Implementation Milestones (M0–M5)
 
 | Milestone | Scope | Verification Gate |
 | :--- | :--- | :--- |
-| **M0 — Spec, Mockup & Storyboard** | [`docs/spec_ide_code_strip.md`](spec_ide_code_strip.md), [`docs/kajo-ide-strip-mockup.html`](kajo-ide-strip-mockup.html), [`docs/kajo-ide-strip-storyboard.html`](kajo-ide-strip-storyboard.html) | User review & sign-off on §10 open questions |
-| **M1 — Pure Strip Core & Spring Camera** | `ide_strip_layout.{h,c}` sharing `comp_spring.c`, column width presets, consume/expel, vertical trails, camera policy, `tests/test_ide_strip.c` | 100% unit tests + ASan/UBSan clean |
-| **M2 — Live Strip View & Shared-Buffer Symbol Cards** | `ide_strip_view.{h,c}`, `Space t s` toggle, `SYMBOL` + `FILE` cards sharing canonical `GtkSourceBuffer` with scope dimming veil, `g d` opening target in `Column i+1`, Cairo bridge connectors | `ui-shot.sh` visual verify + shared-buffer edit/undo test + `test_ide_fsm` chords |
-| **M3 — Dependency Graph Lenses (`CALLS`, `TYPES`, `IMPACT`, `DIFF`)** | `ide_strip_graph.{h,c}`, `LENS` cards, LSP `documentSymbol`/call-hierarchy/references integration + `[TS+RG FALLBACK]` | Mock LSP end-to-end tests in `test_ide_ipc.c` + real `clangd` check |
-| **M4 — Bird's-Eye Cairo Overview & Off-Screen Virtualization** | `Space t o` interactive Cairo overview canvas with fuzzy filter, click-to-jump, drag-to-reorder, and live widget cap (`<= 12`) | Headless Cairo export test + ASan/UBSan stress test (30-card trail) |
-| **M5 — Polish, `kajo-settings`, Docs & UI Gallery** | Strip preferences in `ide.toml` (`default_strip_mode`, `strip_default_col_width`), `kajo-settings` controls, Help Palette entries, `docs/ui-gallery.html`, `docs/design_system.md`, `docs/kajo_ide_manual.md`, `ROADMAP.md` | Full 33+ test gate + `ui-shot.sh` + live testing |
-
----
-
-## 10. Open Design Decisions for User Review
-
-Before writing any C implementation code, please weigh in on these 5 choices:
-
-1. **Symbol Card Buffer Strategy (§4.3):**
-   - **Recommended (Option B):** Attach each `SYMBOL` card directly to the canonical `GtkSourceBuffer`, scrolling to the symbol and softly dimming lines outside `[start_line..end_line]` (zero sync risk, shared undo, can scroll slightly past bounds to peek context).
-   - **Alternative (Option A):** Strictly clipped sub-buffer showing *only* the symbol's lines (cleaner compact height when stacking 3 functions in one column, but requires bidirectional slice-to-buffer sync).
-2. **Re-opening an Already-Open Symbol on `g d`:**
-   - **Recommended:** Focus and spring-scroll to the existing card if it's already in the current trail (prevents duplicate clutter), while `g D` forces opening/stacking a new card in Column `i + 1`.
-   - **Alternative:** Always open or move the target into Column `i + 1` right beside the caller so the active hop is always immediately adjacent.
-3. **Default Column Width Preset:**
-   - **Recommended:** `50%` (`0.50 * W`) so caller (left) + callee (right) always sit side-by-side at `1280px+`, cycling `33% → 50% → 66% → 100%` via `Space t r`.
-4. **Workspace Mode Default:**
-   - **Recommended:** Classic File Tabs remains the default; `Space t s` (or `[ ▥ STRIP ]` header toggle) switches into Code Strip, with an opt-in `start_in_strip_mode = false` toggle in `kajo-settings` (`ide.toml`).
-5. **Trail Persistence Across Restarts:**
-   - **Recommended (opt-in):** Keep trails in-memory during M1–M4, and add explicit `[ 💾 SAVE TRAIL ]` / optional `.kajo/strip-trails.json` restoration in M5 so the IDE never litters repos with untracked state files by default.
+| **M0 — Spec, Mockup & Storyboard** | `spec_ide_code_strip.md` v2, `kajo-ide-strip-mockup.html`, `kajo-ide-strip-storyboard.html` | User visual review & sign-off |
+| **M1 — Pure Depth Model & Spring Engine** | `ide_strip_layout.{h,c}` sharing `comp_spring.c`, `60/25/15` math, Ancestor Spine push/pop, magnetic align + manual-override state machine, `tests/test_ide_strip.c` | 100% unit tests + ASan/UBSan |
+| **M2 — Workspace Call-Graph Indexer & Cache** | `ide_strip_graph.{h,c}`, strict `workspace_root` filter, `ide_ts` source-order call extraction, LSP + `[TS+RG FALLBACK]`, 1,000-call benchmark test | Mock LSP tests + stress test |
+| **M3 — Live `60/25/15` Strip View & Peekish Accordion** | `ide_strip_view.{h,c}`, `D0` shared `GtkSourceView` + scope veil + pin split, virtualized `D+1` Peekish + `D+2` Micro-Tiles, magnetic follow, Cairo connectors, `Space t *` FSM bindings | `scripts/ui-shot.sh` + `test_ide_fsm` + ASan |
+| **M4 — Lenses (`TYPES`, `IMPACT`, `DIFF`) & Bird's-Eye Overview** | All 4 lenses + `Space t o` overview canvas + `/` inline column filter + vertical Trails (`Space t b` / `[` / `]`) | Mock LSP + Cairo headless test |
+| **M5 — Settings, Gallery & Docs** | `ide.toml` options, `kajo-settings`, Help Palette, `ui-gallery.html`, `design_system.md`, `kajo_ide_manual.md`, `ROADMAP.md` | Full test suite + live session check |
