@@ -242,7 +242,7 @@ init_default_managed_layer_props(const char *ns_id, ManagedLayerProps *p)
     if (!p)
         return;
     memset(p, 0, sizeof(*p));
-    p->opacity_pct       = 85;
+    p->opacity_pct       = 100;
     p->has_popup_opacity = TRUE;
     p->has_blur          = TRUE;
     p->blur              = TRUE;
@@ -886,6 +886,43 @@ kajo_config_comp_save_inactive_border_color(const char *config_dir,
     kajo_toml_append_quoted_string(rhs, hex_color);
     kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_LAYOUT,
                                      COMP_KEY_INACTIVE_BORDER_COLOR, rhs->str);
+    g_string_free(rhs, TRUE);
+
+    gboolean ok = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);
+    g_string_free(comp_doc, TRUE);
+    return ok;
+}
+
+gboolean
+kajo_config_comp_save_glass_tint(const char *config_dir,
+                                 const char *hex_color,
+                                 GError    **error)
+{
+    if (!hex_color || !kajo_config_is_valid_hex_color(hex_color))
+        return FALSE;
+
+    g_autofree gchar *dir = (config_dir && *config_dir)
+        ? g_strdup(config_dir)
+        : kajo_config_resolve_user_dir();
+    if (g_mkdir_with_parents(dir, 0755) != 0) {
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                    "Failed to create config directory '%s'", dir);
+        return FALSE;
+    }
+
+    g_autofree gchar *comp_path = g_build_filename(dir, COMP_CFG_FILE_COMP, NULL);
+    g_autofree gchar *comp_existing = NULL;
+    if (!g_file_get_contents(comp_path, &comp_existing, NULL, NULL)) {
+        g_autofree gchar *def_comp = kajo_config_find_default_file(COMP_CFG_FILE_COMP);
+        if (def_comp)
+            (void)g_file_get_contents(def_comp, &comp_existing, NULL, NULL);
+    }
+
+    const char *sec_glass = COMP_SEC_EFFECTS "." COMP_SEC_FX_GLASS;
+    GString *comp_doc = g_string_new(comp_existing ? comp_existing : "");
+    GString *rhs = g_string_new(NULL);
+    kajo_toml_append_quoted_string(rhs, hex_color);
+    kajo_toml_patch_or_insert_scalar(comp_doc, sec_glass, COMP_KEY_TINT, rhs->str);
     g_string_free(rhs, TRUE);
 
     gboolean ok = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);

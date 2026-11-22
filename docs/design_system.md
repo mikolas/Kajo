@@ -34,16 +34,22 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 | `@metro-glass-header` | `--metro-glass-header` | `rgba(255, 255, 255, 0.035)` | Translucent popover Zone 1 header and Zone 3 footer band |
 | `@metro-glass-control` | `--metro-glass-control` | `rgba(255, 255, 255, 0.065)` | Translucent button, quick tile, row, input, and badge on glass |
 | `@metro-glass-hover` | `--metro-glass-hover` | `rgba(255, 255, 255, 0.13)` | Translucent hover glaze on glass controls and panel chips |
-| `@metro-glass-border` | `--metro-glass-border` | `rgba(255, 255, 255, 0.10)` | Specular `1px` inner border on glass controls and dividers |
+| `@metro-glass-border` | `--metro-glass-border` | `rgba(255, 255, 255, 0.10)` | Specular `1px` inner border on glass controls, panel edge, and dividers |
+| `@metro-panel-chip` | `--metro-panel-chip` | `rgba(255, 255, 255, 0.0)` | Optional subtle panel widget chip backing (`widget_chip_opacity`, preserves `:hover`/`:checked`) |
+| `@metro-surface-1` | `--surface-1-recessed` | `#121212` | Recessed secondary surface (search inputs, icon wells, IDE sidebars) |
 | `@metro-surface-2` | `--surface-2-ribbon` | `#161616` | Secondary action ribbon and sub-toolbar background |
 | `@metro-surface-3` | `--surface-3-card` | `#181818` | Popover body, list row, and table column header surface |
 | `@metro-surface-4` | `--surface-4-control` | `#1a1a1a` | Interactive button, tile card, and section card surface |
 | `@metro-surface-hover` | `--surface-5-hover` | `#222222` | Hovered button, row, or card surface |
+| `@metro-border-subtle` | `--metro-border-subtle` | `#242424` | Inner divider / low-contrast hairline (settings rows, counter strips) |
 | `@metro-border` | `--metro-border` | `#2b2b2b` | Structural `1px` divider and inactive control border |
+| `@metro-border-strong` | `--metro-border-strong` | `#333333` | Elevated input and search-bar border |
 | `@metro-accent` | `--metro-accent` | `#0078d4` | Primary active accent (overridden live from `00-accent.css`) |
 | `@metro-accent-hover` | `--metro-accent-hover` | `#1084d8` | Hovered primary accent fill |
 | `@metro-fg-primary` | `--metro-fg-primary` | `#ffffff` | Primary text and active icon foreground |
 | `@metro-fg-secondary` | `--metro-fg-secondary` | `#a0a0a0` | Secondary subtitles, metadata, and inactive icons |
+| `@metro-fg-muted` | `--metro-fg-muted` | `#999999` | Muted metadata labels |
+| `@metro-fg-dim` | `--metro-fg-dim` | `#888888` | Dim captions, counter keys, and line locations |
 | `@metro-urgent` | `--metro-urgent` | `#e81123` | Destructive fills/borders, critical battery, window close hover |
 | `@metro-urgent-text` | `--metro-urgent-text` | `#ff6b6b` | Error / danger **text** on dark surfaces (readable red) |
 | `@metro-warning` | `--metro-warning` | `#ff8c00` | Warning banners, VU meter high zone, center accent stripe |
@@ -52,7 +58,7 @@ The Kajo Desktop Suite blends **Windows 8/10 Metro** (sharp `0px` geometry, high
 
 Use the tokens in `style.css`; do not add new raw hex literals for these roles. Remaining one-off grays (diff tints, syntax colors, the `#202020`/`#1c1c1c` family) are intentionally literal for now and should be folded into this ladder when touched.
 
-**Live Surface & Glass Token Generation (`theme.toml` → `~/.config/kajo/style.d/00-accent.css`):** `kajo-settings → Theme` exposes 4 curated surface presets (**Aero Charcoal**, **OLED Pitch**, **Frosted Clear**, **Nord Slate**) plus individual controls (`glass_tint`, `panel_opacity`, `glass_opacity`, `glass_control_contrast`, `widget_chip_opacity`, `accent_glass_tint`, `surface_base`, `surface_contrast`, `border_opacity`, `secondary_fg_contrast`, and `ui_font_family`). On save, `shell_theme_write_accent_css()` regenerates `~/.config/kajo/style.d/00-accent.css` to override all `@metro-surface-*`, `@metro-panel-bg`, `@metro-glass-*`, `@metro-border`, and `@metro-fg-secondary` tokens live across all running Kajo applications, and syncs `comp.toml` `[layout].inactive_border_color` to the derived `@metro-border`.
+**Live Surface & Glass Token Generation (`theme.toml` → `~/.config/kajo/style.d/00-accent.css`):** `kajo-settings → Theme` exposes 4 curated surface presets (**Aero Charcoal**, **OLED Pitch**, **Frosted Clear**, **Nord Slate**), a live **Glass & Panel Preview** strip, and individual controls (`glass_tint`, `panel_opacity`, `glass_opacity`, `glass_control_contrast`, `widget_chip_opacity`, `accent_glass_tint`, `surface_base`, `surface_contrast`, `border_opacity`, `secondary_fg_contrast`, and `ui_font_family`). On startup (if out of sync) and on save, `shell_theme_sync_from_theme_cfg()` regenerates `~/.config/kajo/style.d/00-accent.css` to override all `@metro-surface-*` (`0`/`1`/`bg`/`2`/`3`/`4`/`hover`), `@metro-panel-bg`, `@metro-panel-chip`, `@metro-glass-*`, `@metro-border{-subtle,,-strong}`, and `@metro-fg-{secondary,muted,dim}` tokens live across all running Kajo applications, and syncs `comp.toml` `[layout].inactive_border_color` (blended with `border_opacity`) and `[effects.glass].tint` (blended with `accent_glass_tint`).
 
 ---
 

@@ -518,7 +518,7 @@ test_config_shipped_defaults(void)
     CompLayerRuleResult lr;
     comp_rules_match_layer(cfg->rules, "kajo", &lr);
     g_assert_true(lr.has_opacity);
-    g_assert_cmpfloat_with_epsilon(lr.opacity, 0.85, 1e-9);
+    g_assert_cmpfloat_with_epsilon(lr.opacity, 1.0, 1e-9);
     g_assert_true(lr.has_blur && lr.blur);
     g_assert_true(lr.has_blur_popups && lr.blur_popups);
     g_assert_true(lr.has_xray && lr.xray);

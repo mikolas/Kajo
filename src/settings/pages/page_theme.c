@@ -651,10 +651,14 @@ action_save_theme(gpointer user_data)
     g_autoptr(KajoThemeCfgRef) saved = kajo_config_store_acquire_theme(NULL);
     shell_theme_sync_from_theme_cfg(saved ? saved : &draft);
 
-    /* Keep compositor inactive window border in sync with derived @metro-border. */
+    /* Keep compositor inactive window border & glass tint in sync with Theme tokens. */
     gchar border_hex[8] = {0};
     shell_theme_compute_border_hex(saved ? saved : &draft, border_hex);
     (void)kajo_config_comp_save_inactive_border_color(NULL, border_hex, NULL);
+
+    gchar glass_hex[8] = {0};
+    shell_theme_compute_glass_tint_hex(saved ? saved : &draft, draft.accent_color, glass_hex);
+    (void)kajo_config_comp_save_glass_tint(NULL, glass_hex, NULL);
 
     gchar *saved_dup = g_strdup(draft.accent_color);
     g_free(self->saved_accent_hex);
@@ -999,6 +1003,76 @@ theme_build_card_typography(SettingsPageTheme *self)
 }
 
 static GtkWidget *
+theme_build_glass_preview(void)
+{
+    GtkWidget *stage = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    gtk_widget_add_css_class(stage, "theme-glass-preview-stage");
+    gtk_widget_set_hexpand(stage, TRUE);
+
+    /* Simulated panel bar with chip, hover & active accent states */
+    GtkWidget *bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    gtk_widget_add_css_class(bar, "theme-preview-bar");
+    gtk_widget_set_hexpand(bar, TRUE);
+
+    GtkWidget *c_chip = gtk_label_new("CHIP");
+    gtk_widget_add_css_class(c_chip, "theme-preview-chip");
+    GtkWidget *c_hov = gtk_label_new("HOVER");
+    gtk_widget_add_css_class(c_hov, "theme-preview-chip-hover");
+    GtkWidget *c_act = gtk_label_new("ACTIVE");
+    gtk_widget_add_css_class(c_act, "theme-preview-chip-active");
+
+    GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+    gtk_widget_set_hexpand(spacer, TRUE);
+
+    GtkWidget *c_clk = gtk_label_new("19:25");
+    gtk_widget_add_css_class(c_clk, "theme-preview-chip");
+
+    gtk_box_append(GTK_BOX(bar), c_act);
+    gtk_box_append(GTK_BOX(bar), c_chip);
+    gtk_box_append(GTK_BOX(bar), c_hov);
+    gtk_box_append(GTK_BOX(bar), spacer);
+    gtk_box_append(GTK_BOX(bar), c_clk);
+    gtk_box_append(GTK_BOX(stage), bar);
+
+    /* Simulated translucent popover card (header + control + recessed well) */
+    GtkWidget *pop = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_add_css_class(pop, "theme-preview-popover");
+    gtk_widget_set_hexpand(pop, TRUE);
+
+    GtkWidget *phdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_add_css_class(phdr, "theme-preview-pop-hdr");
+    GtkWidget *ptitle = gtk_label_new("LIVE GLASS & PANEL PREVIEW");
+    gtk_widget_add_css_class(ptitle, "theme-preview-pop-title");
+    gtk_label_set_xalign(GTK_LABEL(ptitle), 0.0f);
+    gtk_widget_set_hexpand(ptitle, TRUE);
+    GtkWidget *psub = gtk_label_new("Secondary label");
+    gtk_widget_add_css_class(psub, "theme-preview-sub");
+    gtk_box_append(GTK_BOX(phdr), ptitle);
+    gtk_box_append(GTK_BOX(phdr), psub);
+    gtk_box_append(GTK_BOX(pop), phdr);
+
+    GtkWidget *pbody = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    gtk_widget_set_margin_top(pbody, 6);
+    gtk_widget_set_margin_bottom(pbody, 6);
+    gtk_widget_set_margin_start(pbody, 8);
+    gtk_widget_set_margin_end(pbody, 8);
+
+    GtkWidget *pctrl = gtk_label_new("Glass Control");
+    gtk_widget_add_css_class(pctrl, "theme-preview-pop-ctrl");
+    gtk_widget_set_hexpand(pctrl, TRUE);
+    GtkWidget *pwell = gtk_label_new("Inner Well");
+    gtk_widget_add_css_class(pwell, "theme-preview-pop-well");
+    gtk_widget_set_hexpand(pwell, TRUE);
+
+    gtk_box_append(GTK_BOX(pbody), pctrl);
+    gtk_box_append(GTK_BOX(pbody), pwell);
+    gtk_box_append(GTK_BOX(pop), pbody);
+    gtk_box_append(GTK_BOX(stage), pop);
+
+    return stage;
+}
+
+static GtkWidget *
 theme_build_card_glass(SettingsPageTheme *self)
 {
     /* ─── Card 3: Frosted Glass & Panel Surfaces ─── */
@@ -1012,6 +1086,8 @@ theme_build_card_glass(SettingsPageTheme *self)
         "theme.toml",
         "accent",
         btn_reset_surf);
+
+    gtk_box_append(GTK_BOX(card_glass), theme_build_glass_preview());
 
     GtkWidget *grid_presets = gtk_grid_new();
     gtk_grid_set_column_homogeneous(GTK_GRID(grid_presets), TRUE);
@@ -1054,7 +1130,7 @@ theme_build_card_glass(SettingsPageTheme *self)
     gtk_box_append(GTK_BOX(card_glass), create_boxed_row(
         NULL,
         "Glass Tint Hex",
-        "Base hue for panel, popovers, launcher & notifications",
+        "Base hue for panel, popovers & launcher (synced to comp.toml glass tint)",
         gt_box));
 
     GtkWidget *w_panel_op = create_scale_with_badge(
@@ -1062,7 +1138,7 @@ theme_build_card_glass(SettingsPageTheme *self)
     gtk_box_append(GTK_BOX(card_glass), create_boxed_row(
         NULL,
         "Panel Bar Opacity",
-        "panel_opacity (0–100%, default 58%)",
+        "panel_opacity (0–100%, default 58%; keeps text & icons 100% crisp)",
         w_panel_op));
 
     GtkWidget *w_glass_op = create_scale_with_badge(
@@ -1077,8 +1153,8 @@ theme_build_card_glass(SettingsPageTheme *self)
         0, 200, 5, self->saved_glass_ctrl_pct, "%.0f%%", &self->scale_glass_ctrl, NULL);
     gtk_box_append(GTK_BOX(card_glass), create_boxed_row(
         NULL,
-        "Glass Control Contrast",
-        "glass_control_contrast — inner wells, headers & buttons (default 100%)",
+        "Glass Control & Border Contrast",
+        "glass_control_contrast — popover wells, headers, controls & panel border/hover",
         w_glass_ctrl));
 
     GtkWidget *w_chip_op = create_scale_with_badge(
@@ -1144,7 +1220,7 @@ theme_build_card_surface(SettingsPageTheme *self)
     gtk_box_append(GTK_BOX(card_surface), create_boxed_row(
         NULL,
         "Border Opacity",
-        "border_opacity — structural hairlines (0–100%, synced to comp.toml)",
+        "border_opacity — structural hairlines (0–100%, blended into comp.toml inactive border)",
         w_bdr_op));
 
     GtkWidget *w_sec_fg = create_scale_with_badge(

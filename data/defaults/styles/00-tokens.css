@@ -4,6 +4,7 @@
  */
 
 @define-color metro-panel-bg      rgba(18, 18, 18, 0.58);
+@define-color metro-panel-chip    rgba(255, 255, 255, 0.0);
 @define-color metro-glass-bg      rgba(18, 18, 18, 0.62);
 @define-color metro-glass-well    rgba(0, 0, 0, 0.24);
 @define-color metro-glass-header  rgba(255, 255, 255, 0.035);

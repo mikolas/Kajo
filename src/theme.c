@@ -232,11 +232,9 @@ shell_theme_new(const gchar *css_path)
     }
 
     if (theme->override_css_path) {
-        if (!g_file_test(theme->override_css_path, G_FILE_TEST_EXISTS)) {
-            g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
-            if (tcfg)
-                shell_theme_sync_from_theme_cfg(tcfg);
-        }
+        g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+        if (tcfg)
+            shell_theme_sync_from_theme_cfg(tcfg);
         theme_reload_override_css(theme);
 
         g_autoptr(GFile) file = g_file_new_for_path(theme->override_css_path);
@@ -370,6 +368,27 @@ sanitize_css_font_family(const gchar *family)
     return g_string_free(out, FALSE);
 }
 
+static double
+surface_contrast_curve(double surf_c)
+{
+    double c = CLAMP(surf_c, 0.0, 2.0);
+    /* Exact 1:1 defaults at c <= 1.0; stronger visible separation above 1.0. */
+    return (c <= 1.0) ? c : (1.0 + (c - 1.0) * 2.5);
+}
+
+static void
+append_border_token(GString *css, const char *name,
+                    int r, int g, int b,
+                    double border_op, const char *f_bdr)
+{
+    if (border_op >= 0.995) {
+        g_string_append_printf(css, "@define-color %s #%02x%02x%02x;\n", name, r, g, b);
+    } else {
+        g_string_append_printf(css, "@define-color %s rgba(%d, %d, %d, %s);\n",
+                               name, r, g, b, f_bdr);
+    }
+}
+
 static void
 append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
                                     const gchar *accent, const gchar *hover)
@@ -390,7 +409,7 @@ append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
     double glass_ctrl = cfg ? CLAMP(cfg->glass_control_contrast, 0.0, 2.0) : 1.0;
     double chip_op    = cfg ? CLAMP(cfg->widget_chip_opacity, 0.0, 0.25)   : 0.0;
     double acc_tint   = cfg ? CLAMP(cfg->accent_glass_tint, 0.0, 0.25)     : 0.0;
-    double surf_c     = cfg ? CLAMP(cfg->surface_contrast, 0.0, 2.0)       : 1.0;
+    double surf_c     = surface_contrast_curve(cfg ? cfg->surface_contrast : 1.0);
     double border_op  = cfg ? CLAMP(cfg->border_opacity, 0.0, 1.0)         : 1.0;
     double fg_sec_c   = cfg ? CLAMP(cfg->secondary_fg_contrast, 0.5, 1.5)  : 1.0;
 
@@ -398,37 +417,50 @@ append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
     int gg_eff = clamp_u8((int)lround((double)gg * (1.0 - acc_tint) + (double)ag * acc_tint));
     int gb_eff = clamp_u8((int)lround((double)gb * (1.0 - acc_tint) + (double)ab * acc_tint));
 
-    double well_a   = CLAMP(0.24  * glass_ctrl, 0.0, 0.65);
-    double hdr_a    = CLAMP(0.035 * glass_ctrl, 0.0, 0.16);
-    double ctrl_a   = CLAMP(0.065 * glass_ctrl, 0.0, 0.26);
-    double hov_a    = CLAMP(0.13  * glass_ctrl, 0.0, 0.36);
-    double gbdr_a   = CLAMP(0.10  * glass_ctrl * border_op, 0.0, 0.35);
+    double gc = (glass_ctrl <= 1.0) ? glass_ctrl : (1.0 + (glass_ctrl - 1.0) * 1.6);
+    double well_a   = CLAMP(0.24  * gc, 0.0, 0.65);
+    double hdr_a    = CLAMP(0.035 * gc, 0.0, 0.18);
+    double ctrl_a   = CLAMP(0.065 * gc, 0.0, 0.28);
+    double hov_a    = CLAMP(0.13  * gc, 0.0, 0.38);
+    double gbdr_a   = CLAMP(0.10  * gc * border_op, 0.0, 0.40);
 
-    int s0_r = clamp_u8(sr - (int)lround(4.0 * surf_c));
-    int s0_g = clamp_u8(sg - (int)lround(4.0 * surf_c));
-    int s0_b = clamp_u8(sb - (int)lround(4.0 * surf_c));
-    int s2_r = clamp_u8(sr + (int)lround(2.0 * surf_c));
-    int s2_g = clamp_u8(sg + (int)lround(2.0 * surf_c));
-    int s2_b = clamp_u8(sb + (int)lround(2.0 * surf_c));
-    int s3_r = clamp_u8(sr + (int)lround(4.0 * surf_c));
-    int s3_g = clamp_u8(sg + (int)lround(4.0 * surf_c));
-    int s3_b = clamp_u8(sb + (int)lround(4.0 * surf_c));
-    int s4_r = clamp_u8(sr + (int)lround(6.0 * surf_c));
-    int s4_g = clamp_u8(sg + (int)lround(6.0 * surf_c));
-    int s4_b = clamp_u8(sb + (int)lround(6.0 * surf_c));
-    int sh_r = clamp_u8(sr + (int)lround(14.0 * surf_c));
-    int sh_g = clamp_u8(sg + (int)lround(14.0 * surf_c));
-    int sh_b = clamp_u8(sb + (int)lround(14.0 * surf_c));
-    int bd_r = clamp_u8(sr + (int)lround(23.0 * surf_c));
-    int bd_g = clamp_u8(sg + (int)lround(23.0 * surf_c));
-    int bd_b = clamp_u8(sb + (int)lround(23.0 * surf_c));
+    int s0_r  = clamp_u8(sr - (int)lround(4.0 * surf_c));
+    int s0_g  = clamp_u8(sg - (int)lround(4.0 * surf_c));
+    int s0_b  = clamp_u8(sb - (int)lround(4.0 * surf_c));
+    int s1_r  = clamp_u8(sr - (int)lround(2.0 * surf_c));
+    int s1_g  = clamp_u8(sg - (int)lround(2.0 * surf_c));
+    int s1_b  = clamp_u8(sb - (int)lround(2.0 * surf_c));
+    int s2_r  = clamp_u8(sr + (int)lround(2.0 * surf_c));
+    int s2_g  = clamp_u8(sg + (int)lround(2.0 * surf_c));
+    int s2_b  = clamp_u8(sb + (int)lround(2.0 * surf_c));
+    int s3_r  = clamp_u8(sr + (int)lround(4.0 * surf_c));
+    int s3_g  = clamp_u8(sg + (int)lround(4.0 * surf_c));
+    int s3_b  = clamp_u8(sb + (int)lround(4.0 * surf_c));
+    int s4_r  = clamp_u8(sr + (int)lround(6.0 * surf_c));
+    int s4_g  = clamp_u8(sg + (int)lround(6.0 * surf_c));
+    int s4_b  = clamp_u8(sb + (int)lround(6.0 * surf_c));
+    int sh_r  = clamp_u8(sr + (int)lround(14.0 * surf_c));
+    int sh_g  = clamp_u8(sg + (int)lround(14.0 * surf_c));
+    int sh_b  = clamp_u8(sb + (int)lround(14.0 * surf_c));
+    int bds_r = clamp_u8(sr + (int)lround(16.0 * surf_c));
+    int bds_g = clamp_u8(sg + (int)lround(16.0 * surf_c));
+    int bds_b = clamp_u8(sb + (int)lround(16.0 * surf_c));
+    int bd_r  = clamp_u8(sr + (int)lround(23.0 * surf_c));
+    int bd_g  = clamp_u8(sg + (int)lround(23.0 * surf_c));
+    int bd_b  = clamp_u8(sb + (int)lround(23.0 * surf_c));
+    int bdh_r = clamp_u8(sr + (int)lround(31.0 * surf_c));
+    int bdh_g = clamp_u8(sg + (int)lround(31.0 * surf_c));
+    int bdh_b = clamp_u8(sb + (int)lround(31.0 * surf_c));
 
     /* Auto-boost secondary text slightly when glass is very sheer (< 0.50). */
     double sheer_boost = (glass_op < 0.50) ? ((0.50 - glass_op) * 48.0) : 0.0;
-    int sec_v = CLAMP((int)lround(160.0 * fg_sec_c + sheer_boost), 96, 235);
+    int sec_v = CLAMP((int)lround(160.0 * fg_sec_c + sheer_boost), 96, 238);
+    int mut_v = CLAMP((int)lround(153.0 * fg_sec_c + sheer_boost), 90, 230);
+    int dim_v = CLAMP((int)lround(136.0 * fg_sec_c + sheer_boost), 76, 214);
 
-    char f_panel[32], f_glass[32], f_well[32], f_hdr[32], f_ctrl[32], f_hov[32], f_gbdr[32], f_bdr[32];
+    char f_panel[32], f_chip[32], f_glass[32], f_well[32], f_hdr[32], f_ctrl[32], f_hov[32], f_gbdr[32], f_bdr[32];
     g_ascii_formatd(f_panel, sizeof(f_panel), "%.3f", panel_op);
+    g_ascii_formatd(f_chip,  sizeof(f_chip),  "%.3f", chip_op);
     g_ascii_formatd(f_glass, sizeof(f_glass), "%.3f", glass_op);
     g_ascii_formatd(f_well,  sizeof(f_well),  "%.3f", well_a);
     g_ascii_formatd(f_hdr,   sizeof(f_hdr),   "%.3f", hdr_a);
@@ -440,6 +472,7 @@ append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
     g_string_append_printf(css, "@define-color metro-accent %s;\n", accent);
     g_string_append_printf(css, "@define-color metro-accent-hover %s;\n", hover);
     g_string_append_printf(css, "@define-color metro-panel-bg rgba(%d, %d, %d, %s);\n", gr_eff, gg_eff, gb_eff, f_panel);
+    g_string_append_printf(css, "@define-color metro-panel-chip rgba(255, 255, 255, %s);\n", f_chip);
     g_string_append_printf(css, "@define-color metro-glass-bg rgba(%d, %d, %d, %s);\n", gr_eff, gg_eff, gb_eff, f_glass);
     g_string_append_printf(css, "@define-color metro-glass-well rgba(0, 0, 0, %s);\n", f_well);
     g_string_append_printf(css, "@define-color metro-glass-header rgba(255, 255, 255, %s);\n", f_hdr);
@@ -447,17 +480,18 @@ append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
     g_string_append_printf(css, "@define-color metro-glass-hover rgba(255, 255, 255, %s);\n", f_hov);
     g_string_append_printf(css, "@define-color metro-glass-border rgba(255, 255, 255, %s);\n", f_gbdr);
     g_string_append_printf(css, "@define-color metro-surface-0 #%02x%02x%02x;\n", s0_r, s0_g, s0_b);
+    g_string_append_printf(css, "@define-color metro-surface-1 #%02x%02x%02x;\n", s1_r, s1_g, s1_b);
     g_string_append_printf(css, "@define-color metro-surface-bg #%02x%02x%02x;\n", sr, sg, sb);
     g_string_append_printf(css, "@define-color metro-surface-2 #%02x%02x%02x;\n", s2_r, s2_g, s2_b);
     g_string_append_printf(css, "@define-color metro-surface-3 #%02x%02x%02x;\n", s3_r, s3_g, s3_b);
     g_string_append_printf(css, "@define-color metro-surface-4 #%02x%02x%02x;\n", s4_r, s4_g, s4_b);
     g_string_append_printf(css, "@define-color metro-surface-hover #%02x%02x%02x;\n", sh_r, sh_g, sh_b);
-    if (border_op >= 0.995) {
-        g_string_append_printf(css, "@define-color metro-border #%02x%02x%02x;\n", bd_r, bd_g, bd_b);
-    } else {
-        g_string_append_printf(css, "@define-color metro-border rgba(%d, %d, %d, %s);\n", bd_r, bd_g, bd_b, f_bdr);
-    }
-    g_string_append_printf(css, "@define-color metro-fg-secondary #%02x%02x%02x;\n\n", sec_v, sec_v, sec_v);
+    append_border_token(css, "metro-border-subtle", bds_r, bds_g, bds_b, border_op, f_bdr);
+    append_border_token(css, "metro-border",        bd_r,  bd_g,  bd_b,  border_op, f_bdr);
+    append_border_token(css, "metro-border-strong", bdh_r, bdh_g, bdh_b, border_op, f_bdr);
+    g_string_append_printf(css, "@define-color metro-fg-secondary #%02x%02x%02x;\n", sec_v, sec_v, sec_v);
+    g_string_append_printf(css, "@define-color metro-fg-muted #%02x%02x%02x;\n", mut_v, mut_v, mut_v);
+    g_string_append_printf(css, "@define-color metro-fg-dim #%02x%02x%02x;\n\n", dim_v, dim_v, dim_v);
 
     g_autofree gchar *safe_font = cfg ? sanitize_css_font_family(cfg->ui_font_family) : NULL;
     if (safe_font && g_ascii_strcasecmp(safe_font, "Fira Code") != 0) {
@@ -466,17 +500,6 @@ append_override_css_tokens_from_cfg(GString *css, const KajoThemeCfg *cfg,
             "    font-family: \"%s\", \"Fira Code\", \"FiraCode Nerd Font\", monospace;\n"
             "}\n\n",
             safe_font);
-    }
-
-    if (chip_op > 0.001) {
-        char f_chip[32];
-        g_ascii_formatd(f_chip, sizeof(f_chip), "%.3f", chip_op);
-        g_string_append_printf(css,
-            "#panel-container .shell-widget > button,\n"
-            "#panel-container menubutton.shell-widget > button {\n"
-            "    background-color: rgba(255, 255, 255, %s);\n"
-            "}\n\n",
-            f_chip);
     }
 }
 
@@ -498,11 +521,33 @@ shell_theme_compute_border_hex(const KajoThemeCfg *config, gchar out_hex[8])
     int sr = 0x14, sg = 0x14, sb = 0x14;
     if (config && config->surface_base)
         parse_hex_rgb(config->surface_base, &sr, &sg, &sb);
-    double surf_c = config ? CLAMP(config->surface_contrast, 0.0, 2.0) : 1.0;
-    int bd_r = clamp_u8(sr + (int)lround(23.0 * surf_c));
-    int bd_g = clamp_u8(sg + (int)lround(23.0 * surf_c));
-    int bd_b = clamp_u8(sb + (int)lround(23.0 * surf_c));
+    double surf_c    = surface_contrast_curve(config ? config->surface_contrast : 1.0);
+    double border_op = config ? CLAMP(config->border_opacity, 0.0, 1.0) : 1.0;
+    int bd_r = clamp_u8(sr + (int)lround(23.0 * surf_c * border_op));
+    int bd_g = clamp_u8(sg + (int)lround(23.0 * surf_c * border_op));
+    int bd_b = clamp_u8(sb + (int)lround(23.0 * surf_c * border_op));
     g_snprintf(out_hex, 8, "#%02x%02x%02x", bd_r, bd_g, bd_b);
+}
+
+void
+shell_theme_compute_glass_tint_hex(const KajoThemeCfg *config,
+                                   const gchar        *accent_hex,
+                                   gchar               out_hex[8])
+{
+    const gchar *accent = (accent_hex && accent_hex[0]) ? accent_hex
+                        : (config && config->accent_color ? config->accent_color : "#0078d4");
+    int ar = 0x00, ag = 0x78, ab = 0xd4;
+    parse_hex_rgb(accent, &ar, &ag, &ab);
+
+    int gr = 0x12, gg = 0x12, gb = 0x12;
+    if (config && config->glass_tint)
+        parse_hex_rgb(config->glass_tint, &gr, &gg, &gb);
+
+    double acc_tint = config ? CLAMP(config->accent_glass_tint, 0.0, 0.25) : 0.0;
+    int r = clamp_u8((int)lround((double)gr * (1.0 - acc_tint) + (double)ar * acc_tint));
+    int g = clamp_u8((int)lround((double)gg * (1.0 - acc_tint) + (double)ag * acc_tint));
+    int b = clamp_u8((int)lround((double)gb * (1.0 - acc_tint) + (double)ab * acc_tint));
+    g_snprintf(out_hex, 8, "#%02x%02x%02x", r, g, b);
 }
 
 static void
@@ -622,7 +667,13 @@ shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
         "}\n",
         badge_px);
 
-    g_file_set_contents(theme_css_path, css->str, css->len, NULL);
+    g_autofree gchar *existing = NULL;
+    gsize existing_len = 0;
+    gboolean same = g_file_get_contents(theme_css_path, &existing, &existing_len, NULL) &&
+                    existing_len == css->len &&
+                    memcmp(existing, css->str, css->len) == 0;
+    if (!same)
+        g_file_set_contents(theme_css_path, css->str, css->len, NULL);
     g_string_free(css, TRUE);
 }
 

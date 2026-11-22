@@ -24,6 +24,7 @@
       --surface-tier-3: #181818; /* Section card / Header bar */
       --surface-tier-4: #1a1a1a; /* Interactive control / Tile / Button */
       --metro-panel-bg: rgba(18, 18, 18, 0.58); /* Translucent panel surface (Aero glass) */
+      --metro-panel-chip: rgba(255, 255, 255, 0.0); /* Optional panel widget chip backing (widget_chip_opacity) */
       --metro-glass-bg: rgba(18, 18, 18, 0.62); /* Translucent popover / OSD / notification / launcher */
       --metro-glass-well: rgba(0, 0, 0, 0.24); /* Recessed code / media well inside glass */
       --metro-glass-header: rgba(255, 255, 255, 0.035); /* Translucent popover Zone 1/3 band */
@@ -2606,6 +2607,16 @@
               <div class="color-card-meta">
                 <div class="color-card-name">Translucent Panel Glass</div>
                 <div class="color-card-role">window.shell-panel (compositor Dual-Kawase blur)</div>
+              </div>
+            </div>
+
+            <div class="color-card" data-copy="@metro-panel-chip">
+              <div class="color-card-preview" style="background:rgba(255, 255, 255, 0.06); border:1px solid rgba(255, 255, 255, 0.10); color:#ffffff;">
+                <span>@metro-panel-chip</span><span>rgba(255,255,255,0.0)</span>
+              </div>
+              <div class="color-card-meta">
+                <div class="color-card-name">Panel Widget Chip Backing</div>
+                <div class="color-card-role">button.shell-widget &amp; menubutton.shell-widget &gt; button (preserves :hover/:checked)</div>
               </div>
             </div>
 
