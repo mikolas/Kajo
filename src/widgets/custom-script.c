@@ -30,7 +30,7 @@ on_script_btn_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     CustomScriptWidget *cs = user_data;
     if (cs && cs->click_left_cmd != NULL && cs->click_left_cmd[0] != '\0') {
-        g_spawn_command_line_async(cs->click_left_cmd, NULL);
+        kajo_spawn_detached_command_line(cs->click_left_cmd, NULL);
     }
 }
 
@@ -43,7 +43,7 @@ on_script_right_clicked(GtkGestureClick *gesture G_GNUC_UNUSED,
 {
     CustomScriptWidget *cs = user_data;
     if (cs && cs->click_right_cmd != NULL && cs->click_right_cmd[0] != '\0') {
-        g_spawn_command_line_async(cs->click_right_cmd, NULL);
+        kajo_spawn_detached_command_line(cs->click_right_cmd, NULL);
     }
 }
 

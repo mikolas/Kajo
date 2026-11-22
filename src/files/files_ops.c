@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 #include "files_ops.h"
+#include "../common/spawn_detached.h"
 #include <archive.h>
 #include <archive_entry.h>
 #include <glib/gstdio.h>
@@ -2214,8 +2215,8 @@ kajo_files_open_item_default(KajoFileItem *item, GtkWindow *parent G_GNUC_UNUSED
     g_autofree char *xdg_open = g_find_program_in_path("xdg-open");
     if (xdg_open) {
         g_autofree char *local_path = file ? g_file_get_path(file) : NULL;
-        char *argv[] = { xdg_open, (char *)(local_path ? local_path : uri), NULL };
-        g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+        const char *argv[] = { xdg_open, local_path ? local_path : uri, NULL };
+        kajo_spawn_detached_argv(NULL, argv, NULL, NULL);
     }
 }
 
@@ -2251,17 +2252,8 @@ kajo_files_open_terminal_at(GFile *dir)
         if (!bin || bin[0] == '\0') continue;
         g_autofree char *resolved = g_find_program_in_path(bin);
         if (resolved) {
-            char *argv[] = { resolved, NULL };
-            g_spawn_async(
-                path,
-                argv,
-                NULL,
-                G_SPAWN_SEARCH_PATH,
-                NULL,
-                NULL,
-                NULL,
-                NULL
-            );
+            const char *argv[] = { resolved, NULL };
+            kajo_spawn_detached_argv(path, argv, NULL, NULL);
             return;
         }
     }

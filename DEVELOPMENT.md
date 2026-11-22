@@ -25,7 +25,8 @@ src/
 ├── audio/
 │   └── pa_conn.h/c                 Shared PulseAudio/PipeWire connection + 2s auto-reconnect (volume, control-center, media, settings audio)
 ├── common/
-│   └── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
+│   ├── pdf_render.h/c              Poppler page → GdkTexture (files Quick Look & IDE Markdown)
+│   └── spawn_detached.h/c          Detached app spawning (setsid + SIGPIPE reset + systemd-run app.slice scope)
 ├── comp/                           kajo-comp scrollable-tiling Wayland compositor (docs/spec_kajo_comp.md)
 │   ├── main.c                      kajo-comp entry point: CLI options (--renderer, --mod, --greeter-mode, --exit-with-command)
 │   ├── comp_server.h/c             Server lifecycle (root talloc context), backend/renderer/allocator, VK_ERROR_DEVICE_LOST recovery
@@ -243,6 +244,7 @@ tests/
 ├── test_ide_strip.c                Kajo IDE 60/25/15 Code Strip layout math, magnetic follow, springs, trails & 1,000-tile stress tests
 ├── test_ide_strip_graph.c          Kajo IDE workspace-only call-graph indexer, Tree-sitter extractor, 4 lenses & mock-LSP bridge tests
 ├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
+├── test_spawn_detached.c           Detached app spawning: setsid/PGID/SID/SIGPIPE/cwd, parent PGID SIGTERM survival & systemd scope
 └── test_niri.c                     Mock kajo-comp ($KAJO_COMP_SOCKET) & mock Niri ($NIRI_SOCKET) IPC socket tests
 ```
 
@@ -267,7 +269,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 35 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 36 automated test suites:
 
 ```bash
 # Clone with the wlroots submodule (existing clones: git submodule update --init)
@@ -279,7 +281,7 @@ meson setup builddir
 # Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 35 automated test suites
+# Run all 36 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
@@ -322,6 +324,7 @@ meson install -C builddir --skip-subprojects
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, LSP manager workflows (including `ide_lsp_manager_request_raw()`), a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
 | `ide-strip` | `test-ide-strip` | Pure GTK-free Code Strip engine (`ide_strip_layout.c` + `comp_spring.c`): `60% \| 25% \| 15%` & Zen `96% \| 4%` geometry, promote/surface Ancestor Spine invariants, magnetic follow/unlink/resync & spring settling, vertical Trails, pin state, and a 1,000-tile stress test. |
 | `ide-strip-graph` | `test-ide-strip-graph` | Workspace-only call-graph indexer (`ide_strip_graph.c`): enclosing symbol detection, Tree-sitter + ripgrep fallback, stdlib/external suppression (`WS ONLY`), all 4 lenses (`CALLS`, `TYPES`, `IMPACT`, `DIFF`), 1,000-call stress, and async mock-LSP call hierarchy / definition queries. |
+| `spawn-detached` | `test-spawn-detached` | Detached app launcher helper (`src/common/spawn_detached.c`): missing/invalid command handling, `setsid()` new `PGID`/`SID`, `SIGPIPE` `SIG_DFL` restore, `cwd` preservation, survival across parent process-group `SIGTERM`, and transient `app.slice` systemd scope isolation when user systemd is reachable. |
 | `niri-ipc` | `test-niri` | Dual-compositor IPC client (`src/compositor/niri.c` + `kajo_comp_ipc.c`): mock `kajo-comp` (`$KAJO_COMP_SOCKET`) and mock Niri (`$NIRI_SOCKET`) sockets, priority selection when both env vars are set, `Outputs` query & `EventStream` parsing, `ToggleWindowFloating`, `ReloadConfig`, `SetOutputConfig`, `SetLayoutConfig`, `DpmsOff`, `ConfirmQuit`, output auto-matching, and rejection logging. |
 
 ### Running kajo-comp

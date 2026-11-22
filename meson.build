@@ -208,6 +208,7 @@ kajo_core = static_library(
   kajo_config_sources + files(
     'src/theme.c',
     'src/icons.c',
+    'src/common/spawn_detached.c',
     'src/compositor/niri.c',
     'src/compositor/kajo_comp_ipc.c',
     'src/app_init.c',
@@ -643,6 +644,7 @@ widget_sources = kajo_config_sources + files(
   'src/audio/pa_conn.c',
   'src/theme.c',
   'src/icons.c',
+  'src/common/spawn_detached.c',
   'src/dbus_helpers.c',
   'src/hardware/hw_caps.c',
   'src/hardware/kbd_backlight.c',
@@ -710,11 +712,19 @@ test('touch-gestures', test_touch_gestures_exe)
 
 test_files_model_exe = executable(
   'test-files-model',
-  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_ops.c', 'src/files/files_diskimage.c'),
+  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_ops.c', 'src/files/files_diskimage.c', 'src/common/spawn_detached.c'),
   dependencies: [gtk4_dep, gio_dep, gio_unix_dep, archive_dep],
   build_by_default: false,
 )
 test('files-model', test_files_model_exe)
+
+test_spawn_detached_exe = executable(
+  'test-spawn-detached',
+  files('tests/test_spawn_detached.c', 'src/common/spawn_detached.c'),
+  dependencies: [gio_dep],
+  build_by_default: false,
+)
+test('spawn-detached', test_spawn_detached_exe)
 
 test_player_queue_exe = executable(
   'test-player-queue',
@@ -809,6 +819,7 @@ test_ide_ipc_exe = executable(
     'src/ide/ide_markdown.c',
     'src/ide/ide_mermaid.c',
     'src/common/pdf_render.c',
+    'src/common/spawn_detached.c',
     'src/ide/ide_buffer.c',
     'src/ide/ide_syntax.c',
     'src/ide/ide_picker.c',

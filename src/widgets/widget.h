@@ -3,6 +3,7 @@
 
 #include <gtk/gtk.h>
 #include "../config.h"
+#include "../common/spawn_detached.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -153,7 +154,7 @@ shell_spawn_settings(const char *page, GtkWidget *popover)
         ? g_strdup_printf("%s --page %s", bin, page)
         : g_strdup(bin);
 
-    g_spawn_command_line_async(cmd, NULL);
+    kajo_spawn_detached_command_line(cmd, NULL);
 }
 
 void volume_widget_change_volume(ShellWidget *widget, gint delta_percent);
