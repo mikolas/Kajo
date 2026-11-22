@@ -13,9 +13,10 @@
 1. **Tree-sitter Syntax Highlighting** — C, C++, Java, Go, Rust, JavaScript/JSX, TypeScript/TSX, Bash/Zsh, Lua, Motorola 68000 (`m68k`: `.s`, `.S`, `.asm`, `.i`), JSON, TOML, YAML, CSS and HTML are parsed with Tree-sitter (incremental re-parse on every edit; only the changed region is re-tagged) and mapped onto the 11 semantic token classes of the active color scheme. Annotations, generics, records, methods vs. fields, constructors and calls are classified from the syntax tree rather than guessed. Other languages (Python, Makefile, meson.build, …) use the heuristic lexer. Grammars are optional build dependencies (see the README); a missing grammar degrades that language to the lexer.
 2. **Selection-First Modal Editing** — A deterministic 10-state finite state machine (`NORMAL`, `SELECT`, `INSERT`, `LEADER`, `MATCH`, `SEARCH`, `PICKER`, `TREE`, `DRAWER`, `HELP`) where motions highlight selections first and actions (`d`, `c`, `y`, `s`) operate on the active selection.
 3. **Nordic Keyboard Ergonomics** — First-class bindings for Finnish/Swedish keyboards (`ä` / `ö` diagnostic & hunk stepping, `m i/a` structural text objects that avoid Dead-Key / AltGr finger gymnastics, and `jk` fast-exit from `INSERT` mode) alongside standard desktop shortcuts (`Ctrl+S`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+C/X/V/A`, `F1`, `F5`–`F12`).
-4. **Code Intelligence & Debugger UI** — a real asynchronous stdio LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, …) provides diagnostics, hover, completion, definition/implementation, rename, code actions and formatting (§8); a real DAP client drives `gdb -i=dap`, `lldb-dap`, Delve and — through `jdtls` — Java (§9).
-5. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg` export.
-6. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers.
+4. **Code Intelligence & Debugger UI** — a real asynchronous stdio LSP client (`gopls`, `jdtls`, `clangd`, `rust-analyzer`, …) provides diagnostics, hover, completion, definition/implementation, workspace references, signature help, call hierarchy, rename, code actions and formatting (§8); a real DAP client drives `gdb -i=dap`, `lldb-dap`, Delve and — through `jdtls` — Java with conditional breakpoints, expandable locals, and watch expressions (§9).
+5. **Native GUI Markdown & Vector Cairo Mermaid Diagrams** — Real-time side-by-side graphical Markdown preview with interactive task checkboxes, GitHub-flavored callout alerts (`[!NOTE]`, `[!TIP]`, `[!IMPORTANT]`, `[!WARNING]`, `[!CAUTION]`), and a native C11 Cairo/Pango layout engine for Mermaid diagrams (`flowchart`, `sequenceDiagram`, `stateDiagram-v2`, `classDiagram`, `erDiagram`, `pie`) with interactive pan/zoom and `.svg`/`.png` export (§10).
+6. **AI Agent JSON-RPC 2.0 Socket & Atomic Batch Diff Review** — External coding agents can query buffers, diagnostics, and apply multi-file edits over `$XDG_RUNTIME_DIR/kajo-ide-<pid>.sock`, while the developer reviews, accepts (`Space d a`), or reverts (`Space d r`) every AI-modified buffer with inline gutter diff markers (§11).
+7. **Scrollable-Tiling Call-Depth Code Strip & Dependency Graph Lenses** — An opt-in `60% | 25% | 15%` workspace call-depth view (`Space t s` or `[ ▥ STRIP ]`) pairing a leftmost live `D0` editor with vertically scrollable peekish `D+1` workspace-only target tiles, cascading `D+2` micro-tiles, a far-left `28px` Ancestor Spine, Cairo Bezier call bridges, analytical spring magnetic following (`comp_spring`), 4 explicit dependency lenses (`CALLS`, `TYPES`, `IMPACT`, `DIFF`), Zen `96% | 4%`, Bird's-Eye Overview, and vertical Trails (§13).
 
 ---
 
@@ -40,7 +41,7 @@ When launched with a file path, `kajo-ide` automatically detects the enclosing G
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ ⌨ KAJO IDE  [🌲 TREE][🗺 MAP][📖 MD][🔍 FIND][❓ HELP]   src/ide/ide_window.c [⎇ main ●2]  [🗗][✕] │
+│ ⌨ KAJO IDE [🌲 TREE][🗺 MAP][📖 MD][▥ STRIP][🔍 FIND][❓ HELP] src/ide/ide_window.c [⎇ main] [▶][✕]│
 ├────────────────────────┬─────────────────────────────────────────────────────────────────────────┤
 │ EXPLORER     [a][A][r] │ [ ● ide_window.c × ] [ ide_fsm.c × ] [ kajo_ide_manual.md × ]           │
 │ ▾ 📁 src               ├────────┬───────────────────────────────────────────────────────┬────────┤
@@ -51,7 +52,7 @@ When launched with a file path, `kajo-ide` automatically detects the enclosing G
 │   ▸ 📁 settings        │  │ 46  │                                                       │        │
 ├────────────────────────┴────────┴───────────────────────────────────────────────────────┴────────┤
 │ [ 🐞 DEBUGGER (DAP) ] [ ⚠ DIAGNOSTICS ] [ 🔍 SEARCH & BUILD ] [ 📖 MARKDOWN ]              [✕]   │
-│  ▸ Call Stack                   │ ▸ Local Scopes (Variables)  │ ▸ Debug Console / REPL          │
+│  ▸ Call Stack                   │ ▸ Local Scopes & Watches    │ ▸ Debug Console / REPL          │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │  NORMAL  src/ide/ide_window.c [+]   Space → _                    LSP: clangd ●   UTF-8  C  44:12 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
@@ -62,10 +63,11 @@ When launched with a file path, `kajo-ide` automatically detects the enclosing G
   - `🌲 TREE` (`Space e`) — Focus or toggle the Project File Explorer.
   - `🗺 MAP` — Toggle the right-hand `GtkSourceMap` code minimap.
   - `📖 MD` (`Space m p`) — Toggle the 50/50 side-by-side Graphical Markdown & Mermaid Preview pane.
+  - `▥ STRIP` (`Space t s`) — Toggle the `60% | 25% | 15%` Call-Depth Code Strip & Dependency Graph Lenses view (§13).
   - `🔍 FIND` (`Space f f`) — Open the Fuzzy File Finder modal.
   - `❓ HELP` (`?` / `F1` / `Space h`) — Open the full-width Interactive Help Viewer & Command Palette.
 - **Center Cluster:** Active workspace-relative file breadcrumb (`src/ide/ide_window.c`) — deep paths (Java packages) are shortened to `repo ▸ … ▸ parent ▸ dir ▸ file` and ellipsized so the right-zone **BUILD** / **FLOAT / TILE** / close controls stay on screen; the full path is on hover — plus the live Git branch & dirty counter badge (`⎇ feat/kajo-ide ●3 +1`) and the AI Agent modification indicator (`🤖 AGENT MODIFIED`).
-- **Right Cluster:** `🔨 BUILD` quick-trigger (`meson compile -C builddir`), Niri `🗗 FLOAT / TILE` window toggle, and `✕` close button.
+- **Right Cluster:** `▶ BUILD` quick-trigger (runs the detected build task for the active file, §8b), compositor `🗗 FLOAT / TILE` window toggle, and `✕` close button.
 
 ### 3.2 Six-Column Cairo Editor Gutter (`68px`)
 Every open buffer renders a custom hardware-accelerated 6-column gutter (`src/ide/ide_gutter.c`) to the left of the source view:
@@ -201,6 +203,11 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 | `Space c a` | LSP | Code actions (quick fix / refactor) at the cursor or selection (`1`–`9` or `Enter`) |
 | `Space c r` | LSP | Rename symbol across the workspace via the language server |
 | `Space c f` | LSP | Format current buffer via the language server |
+| `Space g d` / `Space g i` | LSP | **Go to Definition** / **Go to Implementation** |
+| `Space g r` / `Space g s` | LSP | **Find References** / **Signature Help** popover |
+| `Space g c` / `Space g o` | LSP | **Call Hierarchy** (Incoming callers / Outgoing callees; `Tab` flips direction) |
+| `Space v r` | Layout | Toggle **Hybrid Relative Line Numbers** in the 6-column Cairo gutter |
+| `Space t s` / `Space t *` | Code Strip | Toggle **Call-Depth Code Strip** and run strip navigation/lens chords (full table in §13) |
 | `Space r b` / `r t` / `r r` / `r c` | Tasks | **Build** / **Test** / **Run** / **Clean** the project that owns the active file (output and clickable errors in the bottom *SEARCH / BUILD* drawer; modified buffers are saved first) |
 | `Space o` | Layout | Toggle bottom **Search / Build / DAP / Agent Drawer** |
 | `Space s r` | Search | Open **Buffer Search & Replace** in bottom drawer |
@@ -209,17 +216,17 @@ Pressing `Space` in `NORMAL` or `SELECT` mode opens the **Bottom-Right Chord HUD
 | `Space m p` | Markdown | Toggle **Side-by-Side Graphical Markdown & Mermaid Split** |
 | `Space m m` / `Space m d` | Markdown | Toggle **Bottom-Docked Markdown Preview Drawer** |
 | `Space m t` | Markdown | Toggle `- [ ]` / `- [x]` **Markdown Task Checkbox** on current line |
-| `Space d b` | Debugger | Toggle **DAP Breakpoint** on current line (same as `F9`) |
+| `Space d b` / `Space d B` | Debugger | Toggle **DAP Breakpoint** (`F9`) / **Conditional Breakpoint** (`Shift+F9`) |
 | `Space d d` / `Space d c` | Debugger | Start or Continue **DAP Debugger Session** (same as `F5`) |
-| `Space d p` | Debugger | **Pause** active DAP debuggee execution |
+| `Space d n` / `d i` / `d o` | Debugger | **Step Over** (`F10`), **Step Into** (`F11`), **Step Out** (`F12`) |
+| `Space d p` / `d q` / `d v` | Debugger | **Pause**, **Stop** (`Shift+F5`), or toggle **DAP Inspector Drawer** |
 | `Space d s` | AI Agent | Open **Agent Diff Review** for AI-modified buffers |
 | `Space d a` | AI Agent | **Accept All** pending AI agent edits in current buffer |
 | `Space d r` | AI Agent | **Revert All** pending AI agent edits in current buffer to pre-agent snapshot |
 
 ---
 
-
-### 5.5 Right-Click Code Menu & Mouse Navigation
+### 5.6 Right-Click Code Menu & Mouse Navigation
 
 Kajo is keyboard-first, but it is a native GTK4 window, not a terminal, so the mouse works too:
 
@@ -263,8 +270,8 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Navigation:** `↑` / `↓`, `Tab` / `Shift+Tab`, `Ctrl+n` / `Ctrl+p`, or mouse click to select; `Enter` or double-click to open the file at the exact line/column.
 
 ### 7.2 Interactive Help Viewer & Command Palette (`?`, `F1`, `Space h`, or `❓ HELP`)
-- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **120 commands** across 13 categories.
-- **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `TASKS`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
+- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **120 commands** across 13 filter pills.
+- **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `CODE STRIP`, `MOUSE`) to filter the table by subsystem.
 - **Instant Fuzzy Filter:** Type any key chord, command name, or description keyword to filter rows in real time.
 - **Executable Command Palette:** Pressing `Enter` or double-clicking any row immediately executes that command in the editor.
 - **Dismissing:** Press `Esc`, `F1`, click `✕ ESC`, or press `q` when the search query is empty (typing `q` when a filter query is already active appends `q` to the search string so you can search for `"quote"` or `"quickfix"`).
@@ -422,7 +429,7 @@ Open `kajo-settings` and select the **Kajo IDE & Code** page (`src/settings/page
   3. **`kajo-nord-frost`** — Arctic Nord Frost dark palette (`#14171d`).
   4. **`kajo-amber-crt`** — Retro monochrome amber phosphor CRT terminal palette (`#0c0900`).
   5. **`kajo-monokai-metro`** — Monokai Pro token palette on a sharp `#121212` Metro dark surface.
-- **Typography & Geometry:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter visibility, hybrid **Relative Line Numbers** (also toggleable live via `Space v r`), minimap visibility, and per-mode **Key Remapping** (`[keys.<state>]`).
+- **Typography, Geometry & Code Strip:** Editor font family (`Fira Code`, `JetBrains Mono`, `Iosevka`, `Source Code Pro`, `Hack`, `Monospace`; a missing family falls back to `Fira Code` / `FiraCode Nerd Font` / monospace), font size (`10px`–`24px`), tab width (`2`, `4`, `8`, segmented), insert spaces instead of tabs, word wrap, margin guide at column 100, current line highlight, gutter visibility, hybrid **Relative Line Numbers** (also toggleable live via `Space v r`), minimap visibility, **Start in Code Strip Mode** (`start_in_strip_mode`), **Magnetic Viewport Follow in Code Strip** (`strip_magnetic_follow`), and per-mode **Key Remapping** (`[keys.<state>]`).
 
 Edits on this page update the live preview only; press **`[ ✓ SAVE & APPLY ]`** in the page footer to write them to `~/.config/kajo/ide.toml` (or **`[ ↺ REVERT ]`** to discard them). Saved changes are hot-reloaded across all running `kajo-ide` windows via `KajoConfigStore`.
 
@@ -464,12 +471,60 @@ Every `[keys.<state>]` table (`normal`, `select`, `tree`, `drawer`, `insert`, `s
 
 ## 13. Call-Depth Code Strip & Dependency Graph Lenses (`Space t s`)
 
-Press **`Space t s`** (or click **`[ ▥ STRIP ]`** in the header bar, or enable `start_in_strip_mode = true` in `kajo-settings`) to switch between Classic File Tabs and the **`60% | 25% | 15%` Call-Depth Code Strip** (full specification in [`docs/spec_ide_code_strip.md`](spec_ide_code_strip.md)):
+> 📖 **Specification & Interactive Prototypes:** [`docs/spec_ide_code_strip.md`](spec_ide_code_strip.md) • [`docs/kajo-ide-strip-mockup.html`](kajo-ide-strip-mockup.html) • [`docs/kajo-ide-strip-storyboard.html`](kajo-ide-strip-storyboard.html)
 
-- **`D0` (`60%` Leftmost Active Editor):** Shares the exact canonical `GtkSourceBuffer` (undo, breakpoints, diagnostics, LSP `didChange`) with a soft out-of-scope dimming veil on promoted functions (`Space t f` toggles Full File) and an optional top `30%` pinned reference split (`Space t p`).
-- **`D+1` (`25%` Peekish Workspace Targets):** Lists every workspace-only target symbol (`WS ONLY`, suppressing external/stdlib noise) in source call order. Moving the cursor or scrolling `D0` magnetically springs `D+1` (`comp_spring`) so the active call's tile aligns opposite the cursor and accordion-expands a 5-line syntax peek. Manual wheel scrolling detaches auto-follow (`[ ⛓ RESYNC ]` / `Space t r`) so it never fights your scroll; `Space t /` filters dense tile lists live.
-- **`D+2` (`15%` Grandchild Micro-Tiles):** Compact `26px` chips cascading live from the active `D+1` tile; double-clicking dives two depths deep.
-- **Far-Left `28px` Ancestor Spine:** Appears once depth $\ge 1$; click any ancestor pill or press `Space t u` / `Alt+Left` to surface back right.
-- **Four Explicit Lenses (`Space t 1..4`):** `1 CALLS` (`#0078d4`), `2 TYPES` (`#00d8f0`), `3 IMPACT` (`#ffb900`), `4 DIFF` (`#b4009e`), degrading visibly (`[TS+RG FALLBACK]`) when no LSP server is installed.
-- **Bird's-Eye Overview (`Space t o`) & Zen Mode (`Space t z`, `96% | 4%`):** Interactive multi-depth Cairo dependency map with live filter, plus vertical Trails (`Space t b` branch, `Space t [` / `]` switch).
+Press **`Space t s`** (or click **`[ ▥ STRIP ]`** in the header bar, or enable `start_in_strip_mode = true` in `kajo-settings`) to switch between Classic File Tabs and the **`60% | 25% | 15%` Call-Depth Code Strip**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ [01 • Main] [+ BRANCH]   [1 CALLS][2 TYPES][3 IMPACT][4 DIFF]   [WS ONLY (311 EXT)] [⚠ TS+RG]  │
+│                                                                      [⤢ ZEN] [⬡ MAP] [✕ TABS]  │
+├───┬───────────────────────────────────────────────┬─┬───────────────────────┬─┬─────────────────┤
+│ S │ ƒ active_fn  src/ide/ide_window.c:42-98 [⤢]  │ │ D+1 TARGETS (136)     │ │ D+2 NEXT (4)    │
+│ P ├───────────────────────────────────────────────┤ │ [Filter tiles (/)   ] │ ├─────────────────┤
+│ I │  42 │ static void active_fn(...) {            │╭┼─▶ ƒ helper_a    ×2 📌→│╭┼─▶ ƒ leaf_x      │
+│ N │  43 │   helper_a(ctx);  ──────────────────────┼╯│ │  void helper_a(..) {│╯│  ƒ leaf_y       │
+│ E │  44 │   helper_b(ctx);                        │ │ │    leaf_x();        │ │  ƒ leaf_z       │
+│   │  45 │ }                                       │ │ │  }                  │ │  ƒ leaf_w       │
+│28p│      D0 (60% — Live GtkSourceView)            │ │ ƒ helper_b      ×7 📌→│ │  D+2 (15%)      │
+└───┴───────────────────────────────────────────────┴─┴───────────────────────┴─┴─────────────────┘
+```
+
+### 13.1 Column Anatomy & Scroll Model
+- **Far-Left `28px` Ancestor Spine:** Hidden at depth `0`; appears automatically once you promote a target tile (`depth >= 1`). Each vertical pill represents a caller frame (`D-1`, `D-2`, …). Click any pill—or press `Space t u` / `Alt+Left`—to surface back right.
+- **`D0` (`60%` Leftmost Active Editor):** Live `GtkSourceView` attached directly to the canonical `IdeBuffer`'s `GtkSourceBuffer` (shared undo stack, breakpoints, diagnostics, Git diff, and LSP `didChange`). Promoted functions show a soft view-local Cairo dimming veil outside their line span (`Space t f` toggles Full File). Press `Space t p` (or click `📌` on a `D+1` tile) to dock a read-only reference into a top `30%` vertical split inside `D0`.
+- **`D+1` (`25%` Peekish Workspace Targets):** Vertically scrollable list of **workspace-only** target tiles (`WS ONLY (N EXT)` suppresses stdlib/system/external library noise). Tiles sit at compact `32px` height; the single active/aligned tile accordion-expands a 5-line syntax preview, while tiles matching lines currently visible in `D0` show a `2px` accent left rail and out-of-band tiles dim slightly.
+- **`D+2` (`15%` Grandchild Micro-Tiles):** Compact `26px` chips cascading live from whichever `D+1` tile is active. Double-clicking a `D+2` micro-tile promotes two depths at once (`D0` and `D+1` both push onto the Ancestor Spine).
+- **Magnetic Viewport Following & Zero Tug-of-War:** Moving the cursor or scrolling `D0` springs `D+1` via `comp_spring` so the active call's tile aligns opposite the calling line (linked by a dashed Cairo cubic-Bezier bridge across the `12px` gutter). Manually scrolling `D+1` with the mouse wheel immediately detaches auto-follow and surfaces **`[ ⛓ RESYNC ]`** (`Space t r`)—the strip never fights your scroll. Multi-finger (2-/3-finger) swipes are never claimed by the strip so `kajo-comp` gestures remain conflict-free.
+
+### 13.2 Lenses, Fallbacks, Overview & Trails
+- **Four Explicit Lenses (`Space t 1..4`):**
+  1. **`1 CALLS`** (`#0078d4`) — Outgoing workspace function/method calls in source order.
+  2. **`2 TYPES`** (`#00d8f0`) — Workspace structs, types, and classes referenced in scope.
+  3. **`3 IMPACT`** (`#ffb900`) — Workspace callers and references (`incomingCalls` / references).
+  4. **`4 DIFF`** (`#b4009e`) — Workspace symbols modified in Git working tree (`git status` / diff hunks).
+- **Visible Engine Badge:** Displays `⚡ LSP` when live language-server call hierarchy/definitions are answering, or `⚠ TS+RG` when running on the built-in Tree-sitter + ripgrep workspace fallback.
+- **Zen Mode (`Space t z`, `96% | 4%`):** Expands `D0` to `96%` width with a slim `4%` right edge rail showing live `D+1`/`D+2` counts (click the rail or press `Space t z` to restore `60% | 25% | 15%`).
+- **Bird's-Eye Overview (`Space t o`):** Zooms out to an interactive Cairo multi-depth dependency map with live symbol filtering; click any node to focus it back in the strip.
+- **Vertical Trails (`Space t b` / `Space t [` / `Space t ]`):** Fork independent investigation trails (each with its own Ancestor Spine, `D0` root, lens, and pinned tile) and switch between them from the top toolbar or keyboard.
+
+### 13.3 Complete Code Strip Keybindings & Controls
+
+| Key / Control | Action |
+| :--- | :--- |
+| `Space t s` / `[ ▥ STRIP ]` | Toggle Code Strip (`60% \| 25% \| 15%`) ↔ Classic File Tabs |
+| `Space t j` / `Space t k` | Step active Peekish tile down / up inside `D+1` |
+| `Space t h` / `Space t l` | Move focus left / right between `D0`, `D+1`, and `D+2` columns |
+| `Space t e` / Double-click `D+1` / `→` | Promote active `D+1` tile left into `D0` (`+1` depth on Ancestor Spine) |
+| Double-click `D+2` | Dive 2× depth into grandchild tile |
+| `Space t u` / `Alt+Left` / Spine pill | Surface back `-1` depth (or click any earlier Spine pill to jump directly) |
+| `Space t f` / `[⤢ FULL FILE]` | Toggle `D0` symbol dimming veil vs. Full File view |
+| `Space t p` / `📌` on `D+1` tile | Pin / unpin active `D+1` target into top `30%` split inside `D0` |
+| `Space t r` / `[ ⛓ RESYNC ]` | Re-engage magnetic `D+1` spring alignment after manual wheel scroll |
+| `Space t /` | Focus inline `D+1` workspace tile filter (`Esc` clears/returns) |
+| `Space t 1` / `2` / `3` / `4` | Switch dependency lens (`CALLS`, `TYPES`, `IMPACT`, `DIFF`) |
+| `Space t z` | Toggle Zen `96% \| 4%` focus mode |
+| `Space t o` | Toggle Bird's-Eye Overview interactive dependency map |
+| `Space t b` / `Space t [` / `Space t ]` | Branch new vertical Trail / switch to previous or next Trail |
+
 

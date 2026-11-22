@@ -30,7 +30,7 @@ The repository builds and installs **eight integrated native executables** (plus
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
 | **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, Vulkan SDF shadows, Dual-Kawase frosted glass & window open/close/resize transitions, live-preview `Alt+Tab`, and in-compositor screenshots. |
-| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) with selection-first Nordic keybindings, 16-language Tree-sitter highlighting, async LSP & DAP debugger, Cairo Mermaid diagrams, and AI Agent IPC. |
+| **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) with selection-first Nordic keybindings, 16-language Tree-sitter highlighting, async LSP & DAP debugger, opt-in `60% \| 25% \| 15%` Call-Depth Code Strip, Cairo Mermaid diagrams, and AI Agent IPC. |
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, batch clipboard operations, and `Space` Quick Look preview. |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
 | **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Player** (`libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`) with hardware filter controls, HVSC lookup, and 60 FPS scope/FFT. |
@@ -52,11 +52,12 @@ The repository builds and installs **eight integrated native executables** (plus
 - **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `glass_style`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
 
 ### ⌨️ Kajo IDE (`kajo-ide`)
-> 📖 **Full Manual**: [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)
+> 📖 **Manual & Code Strip Docs**: [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) • [`docs/spec_ide_code_strip.md`](docs/spec_ide_code_strip.md) • [`docs/kajo-ide-strip-mockup.html`](docs/kajo-ide-strip-mockup.html) • [`docs/kajo-ide-strip-storyboard.html`](docs/kajo-ide-strip-storyboard.html)
 
-- **Selection-First Modal Editing & Nordic Ergonomics**: 10-state modal engine with Nordic bindings (`ä`/`ö` diagnostics, `Alt+ä`/`Alt+ö` Git hunks, `m i/a` structural text objects) and a 6-column `68px` Cairo gutter (breakpoints, diagnostics, Git diff, agent bars, folds).
-- **Tree-Sitter, LSP & DAP Debugger**: Incremental 16-language Tree-sitter highlighting, async JSON-RPC 2.0 LSP client (`clangd`, `gopls`, `rust-analyzer`, `jdtls`, `pyright`, …), project build/test runner (`Space r b/t/r/c`), and integrated DAP debugger (`gdb`, `lldb-dap`, `dlv`, Java via `jdtls`).
-- **Markdown, Vector Mermaid, Code Strip & Fuzzy Picker**: Side-by-side Markdown preview with interactive task checkboxes, native Cairo/Pango Mermaid diagram renderer with `.svg` export, opt-in `60% | 25% | 15%` Call-Depth Code Strip (`Space t s`) with peekish magnetic follow and 4 workspace-only dependency lenses, `ripgrep` project search (`Space f g`), and a 120-command Help Palette (`?`).
+- **Selection-First Modal Editing & Nordic Ergonomics**: 10-state modal engine with Nordic bindings (`ä`/`ö` diagnostics, `Alt+ä`/`Alt+ö` Git hunks, `m i/a` structural text objects), per-mode TOML key remapping (`[keys.<state>]`), and a 6-column `68px` Cairo gutter (breakpoints, diagnostics, Git diff, agent bars, absolute/hybrid relative line numbers via `Space v r`, folds).
+- **Tree-Sitter, LSP & DAP Debugger**: Incremental 16-language Tree-sitter highlighting, async JSON-RPC 2.0 LSP client (`clangd`, `gopls`, `rust-analyzer`, `jdtls`, `pyright`, … with references, signature help, and call hierarchy), project build/test runner (`Space r b/t/r/c`), and integrated DAP debugger (`gdb`, `lldb-dap`, `dlv`, Java via `jdtls` with conditional breakpoints, nested variable expansion, and watches).
+- **Call-Depth Code Strip & Dependency Graph Lenses (`Space t s`)**: Opt-in `60% | 25% | 15%` scrollable-tiling call-depth view (`D0` leftmost live editor sharing the canonical buffer + optional top `30%` pinned reference split, `D+1` vertically scrollable peekish workspace-only target tiles with spring-animated magnetic following and manual-scroll detach/`[ ⛓ RESYNC ]`, `D+2` grandchild micro-tiles, `28px` Ancestor Spine, Cairo Bezier bridges, 4 lenses `CALLS`/`TYPES`/`IMPACT`/`DIFF` with visible `⚠ TS+RG` fallback, Zen `96% | 4%`, Bird's-Eye Overview, and vertical Trails).
+- **Markdown, Vector Mermaid & Fuzzy Picker**: Side-by-side Markdown preview with interactive task checkboxes, native Cairo/Pango Mermaid diagram renderer with `.svg`/`.png` export, `ripgrep` project search (`Space f g`), and a 120-command Help Palette (`?`).
 - **AI Agent IPC & Diff Review**: Exposes `$KAJO_IDE_SOCKET` so external agents can query diagnostics and apply multi-file edits with atomic snapshot review (`Space d s/a/r`).
 
 ### 📁 Kajo Files (`kajo-files`)
@@ -98,7 +99,10 @@ The repository builds and installs **eight integrated native executables** (plus
 | **[`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md)** | Specification for Kajo's statically linked `wlroots-0.20.2` fork (`subprojects/wlroots`, `wlr_kfx_*` custom shader, pooled target & below-node pass APIs). |
 | **[`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)** | Interactive visual storyboard for **`kajo-comp`** strip mechanics, tabbed columns, `Alt+Tab` switcher, and screenshot UI. |
 | **[`docs/spec_toml_config.md`](docs/spec_toml_config.md)** | Specification for the per-domain TOML 1.1 configuration store (`theme`, `shell`, `ide`, `files`, `mod`, `comp`, `outputs`, `binds`, `rules`) and `conf.d/` overlays. |
-| **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, AI Agent IPC). |
+| **[`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md)** | Complete user & architecture manual for **`kajo-ide`** (modal states, Nordic chords, LSP/DAP, Mermaid, Code Strip & Lenses, AI Agent IPC). |
+| **[`docs/spec_ide_code_strip.md`](docs/spec_ide_code_strip.md)** | Architecture specification for **`kajo-ide`**'s `60% \| 25% \| 15%` Call-Depth Code Strip, peekish magnetic follow, workspace-only tiles, and 4 dependency lenses. |
+| **[`docs/kajo-ide-strip-mockup.html`](docs/kajo-ide-strip-mockup.html)** | Interactive HTML/CSS prototype for **`kajo-ide`** Code Strip (`60/25/15`, peekish tiles, Bezier bridges, Zen, Bird's-Eye Overview, Trails). |
+| **[`docs/kajo-ide-strip-storyboard.html`](docs/kajo-ide-strip-storyboard.html)** | Interactive 7-scenario workflow storyboard for **`kajo-ide`** Code Strip navigation, magnetic resync, promotion, and lens switching. |
 | **[`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)** | Architecture specification for **`kajo-mod`** (5-tier audio priority router, DSP pipeline, column reflow). |
 | **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
@@ -273,7 +277,7 @@ binds {
 | Path | Managed By | Purpose |
 | :--- | :--- | :--- |
 | **`~/.config/kajo/{comp,outputs,binds,rules}.toml`** | `kajo-settings` (`displays` / `niri`) / User | `kajo-comp` compositor configuration (`comp.toml` layout/springs/borders/input, `outputs.toml` monitor modes/scales/positions/VRR, `binds.toml` key & mouse bindings, `rules.toml` window & layer rules). |
-| **`~/.config/kajo/{theme,shell,ide,files,mod}.toml`** | `kajo-settings` / User | Per-domain TOML 1.1 configuration files (`theme.toml` accent, surface/glass presets & tokens, and typography; `shell.toml` panel/gestures/OSK/lock/widgets; `ide.toml` editor preferences; `files.toml` view/sort state; `mod.toml` DSP & HVSC settings). |
+| **`~/.config/kajo/{theme,shell,ide,files,mod}.toml`** | `kajo-settings` / User | Per-domain TOML 1.1 configuration files (`theme.toml` accent, surface/glass presets & tokens, and typography; `shell.toml` panel/gestures/OSK/lock/widgets; `ide.toml` editor, gutter, Code Strip & `[keys.<state>]` remap preferences; `files.toml` view/sort state; `mod.toml` DSP & HVSC settings). |
 | **`~/.config/kajo/conf.d/*.toml`** | User / Dotfiles | Lexicographical read-only drop-in overrides (`[comp.*]`, `[output.*]`, `[binds]`, `[window_rule]`, `[theme]`, `[shell.*]`, `[ide]`, `[files]`, `[mod]`) merged on top of base `.toml` files. |
 | **`~/.config/kajo/style.d/00-accent.css`** & **`theme-override.css`** | `kajo-settings` (`theme`) | Live `@metro-*` accent, surface, glass, border, and UI font tokens hot-reloaded across all Kajo processes. |
 | **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and layout/GLSL shader settings for Niri (`kajo-niri.desktop`). |
