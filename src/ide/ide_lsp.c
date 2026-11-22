@@ -801,6 +801,7 @@ typedef enum {
   CTX_SIGNATURE,
   CTX_CALL_PREPARE,
   CTX_CALL_LIST,
+  CTX_RAW,
 } CtxKind;
 
 typedef struct {
@@ -819,6 +820,8 @@ typedef struct {
   guint          tab_size;
   IdeLspCommandCb command_cb;
   gpointer        command_data;
+  IdeLspRawCb     raw_cb;
+  gpointer        raw_data;
 } RequestCtx;
 
 struct _DocState {
@@ -4334,5 +4337,51 @@ ide_lsp_manager_execute_command(IdeLspManager *lsp, const char *file_path, const
   ctx->command_data = user_data;
   ide_lsp_client_request(doc->client, "workspace/executeCommand", json_builder_get_root(b),
                          on_command_response, ctx);
+  return TRUE;
+}
+
+/* ─── Raw non-UI async query bridge ─── */
+
+static void
+on_raw_response(IdeLspClient *client, JsonNode *result, const char *error_message, gpointer user_data)
+{
+  (void)client;
+  RequestCtx *ctx = user_data;
+  IdeLspRawCb cb = ctx->raw_cb;
+  gpointer ud = ctx->raw_data;
+  gboolean quiet = ctx->mgr->shutting_down;
+  ctx_done(ctx);
+  if (cb != NULL && !quiet) {
+    cb(error_message == NULL ? result : NULL, error_message, ud);
+  }
+}
+
+gboolean
+ide_lsp_manager_request_raw(IdeLspManager *lsp,
+                            IdeBuffer     *buf,
+                            const char    *method,
+                            JsonNode      *params,
+                            IdeLspRawCb    cb,
+                            gpointer       user_data)
+{
+  g_autoptr(JsonNode) owned = params;
+  g_return_val_if_fail(lsp != NULL && method != NULL, FALSE);
+  if (buf == NULL) {
+    return FALSE;
+  }
+
+  DocState *doc = g_hash_table_lookup(lsp->docs, buf);
+  if (doc == NULL || doc->client == NULL || !doc->sent_open ||
+      ide_lsp_client_get_state(doc->client) != IDE_LSP_CLIENT_READY) {
+    return FALSE;
+  }
+
+  doc_send_change_now(doc);
+
+  RequestCtx *ctx = ctx_new(lsp, CTX_RAW, doc->uri);
+  ctx->raw_cb = cb;
+  ctx->raw_data = user_data;
+  ide_lsp_client_request(doc->client, method, g_steal_pointer(&owned),
+                         on_raw_response, ctx);
   return TRUE;
 }

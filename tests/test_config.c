@@ -159,16 +159,22 @@ test_domain_ide_files_mod(void)
     /* IDE */
     KajoIdeCfg *ide = kajo_ide_cfg_new_default();
     g_assert_false(ide->relative_line_numbers);
+    g_assert_false(ide->start_in_strip_mode);
+    g_assert_true(ide->strip_magnetic_follow);
     g_assert_nonnull(ide->key_remaps);
     g_assert_cmpuint(ide->key_remaps->len, ==, 0);
     ide->tab_width = 5; /* Not in {2, 4, 8} -> normalized to 4 on parse */
     ide->relative_line_numbers = TRUE;
+    ide->start_in_strip_mode = TRUE;
+    ide->strip_magnetic_follow = FALSE;
     g_autofree gchar *ide_str = kajo_cfg_domain_serialize_toml(s_ide, ide);
     g_assert_null(strstr(ide_str, "[keys."));
     KajoIdeCfg *ide2 = kajo_ide_cfg_new_default();
     g_assert_true(kajo_cfg_domain_parse_toml_str(s_ide, ide2, ide_str, -1, FALSE, "ide.toml"));
     g_assert_cmpint(ide2->tab_width, ==, 4);
     g_assert_true(ide2->relative_line_numbers);
+    g_assert_true(ide2->start_in_strip_mode);
+    g_assert_false(ide2->strip_magnetic_follow);
     ide->tab_width = 4;
     g_assert_true(kajo_cfg_domain_equal(s_ide, ide, ide2));
     kajo_ide_cfg_free(ide2);

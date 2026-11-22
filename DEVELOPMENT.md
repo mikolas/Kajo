@@ -97,7 +97,10 @@ src/
 │   ├── ide_ts_queries.c            Highlight queries for all 16 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, M68k, JSON, TOML, YAML, CSS, HTML)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
-│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 108-command Help Palette
+│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 120-command Help Palette
+│   ├── ide_strip_layout.h/c        Pure GTK-free 60/25/15 Code Strip depth model & comp_spring camera
+│   ├── ide_strip_graph.h/c         Workspace-only call-graph indexer, tree-sitter extractor & LSP bridge
+│   ├── ide_strip_view.h/c          GTK4 Code Strip UI (Ancestor Spine, Peekish D+1, Micro-Tiles D+2, Overview)
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
 │   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)
@@ -235,8 +238,10 @@ tests/
 ├── test_lsp_client.c               LSP client against tests/mock_lsp_server.py (handshake queueing, errors, cancel, server death)
 ├── mock_lsp_server.py              Scripted language server used by the LSP tests
 ├── test_ide_ts.c                   Tree-sitter engine: token classification for all 16 languages, query validity against the installed grammars, detection, incremental == fresh parse
-├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff & Agent snapshot tests
-├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, socket round-trip & stalled-client tests
+├── test_ide_buffer.c               Kajo IDE buffer undo/redo, semantic tokens, Git diff, Agent snapshots & palette/HUD cross-checks
+├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, LSP manager & stalled-client tests
+├── test_ide_strip.c                Kajo IDE 60/25/15 Code Strip layout math, magnetic follow, springs, trails & 1,000-tile stress tests
+├── test_ide_strip_graph.c          Kajo IDE workspace-only call-graph indexer, Tree-sitter extractor, 4 lenses & mock-LSP bridge tests
 ├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
 └── test_niri.c                     Mock kajo-comp ($KAJO_COMP_SOCKET) & mock Niri ($NIRI_SOCKET) IPC socket tests
 ```
@@ -262,7 +267,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 33 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 35 automated test suites:
 
 ```bash
 # Clone with the wlroots submodule (existing clones: git submodule update --init)
@@ -274,7 +279,7 @@ meson setup builddir
 # Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 33 automated test suites
+# Run all 35 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
@@ -308,13 +313,15 @@ meson install -C builddir --skip-subprojects
 | `files-model` | `test-files-model` | `KajoFileItem` formatting, sorting and filtering, async file operations (non-clobbering move, cancellation), breadcrumb chain and selection restore, clipboard parsing and 4 MB cap, executable toggle, `archive://` URI round-trip and path normalizer, archive listing/extraction/compression hardening (symlinked destination, hardlinks, `..`/absolute entries, modes, preview cache), disk-image classification and UDisks2 reply helpers. |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `mod-router` | `test-mod-router` | `kajo-mod` 5-tier format router (`UADE` vs `libsidplayfp` vs `libgme` vs `libopenmpt` vs `libxmp`), Amiga companion (`smpl.*`, `.ins`) & `.nfo` filtering, ProTracker sample header parsing, `libarchive` bundle extraction, and live non-zero PCM synthesis. |
-| `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects and `Space` leader chords. |
-| `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, stop, stack, evaluate, errors, adapter death) and debuggee/adapter discovery. |
+| `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects, `Space` leader chords (including all 20 `Space t *` Code Strip chords), and per-mode `[keys.<state>]` remapping. |
+| `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, conditional breakpoints, stop, stack, nested variable expansion, watch evaluation, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
-| `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition) and unit-tests text edits, snippets and the server registry. |
+| `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition, references, signature help, call hierarchy, raw request bridge) and unit-tests text edits, snippets and the server registry. |
 | `ide-ts` | `test-ide-ts` | Tree-sitter token classification for all 16 languages, language detection, incremental re-parse equals a fresh parse, error tolerance. |
-| `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots; also the regression test for the style-scheme use-after-free (run it under `scripts/asan-test.sh`). |
-| `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
+| `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots, Help Palette vs. `IdeFsm` chord cross-checks, Which-Key HUD forward/backward validation, documented 120-command palette count parity, and the style-scheme use-after-free regression test (run under `scripts/asan-test.sh`). |
+| `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, LSP manager workflows (including `ide_lsp_manager_request_raw()`), a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
+| `ide-strip` | `test-ide-strip` | Pure GTK-free Code Strip engine (`ide_strip_layout.c` + `comp_spring.c`): `60% \| 25% \| 15%` & Zen `96% \| 4%` geometry, promote/surface Ancestor Spine invariants, magnetic follow/unlink/resync & spring settling, vertical Trails, pin state, and a 1,000-tile stress test. |
+| `ide-strip-graph` | `test-ide-strip-graph` | Workspace-only call-graph indexer (`ide_strip_graph.c`): enclosing symbol detection, Tree-sitter + ripgrep fallback, stdlib/external suppression (`WS ONLY`), all 4 lenses (`CALLS`, `TYPES`, `IMPACT`, `DIFF`), 1,000-call stress, and async mock-LSP call hierarchy / definition queries. |
 | `niri-ipc` | `test-niri` | Dual-compositor IPC client (`src/compositor/niri.c` + `kajo_comp_ipc.c`): mock `kajo-comp` (`$KAJO_COMP_SOCKET`) and mock Niri (`$NIRI_SOCKET`) sockets, priority selection when both env vars are set, `Outputs` query & `EventStream` parsing, `ToggleWindowFloating`, `ReloadConfig`, `SetOutputConfig`, `SetLayoutConfig`, `DpmsOff`, `ConfirmQuit`, output auto-matching, and rejection logging. |
 
 ### Running kajo-comp
@@ -467,6 +474,7 @@ Renders a Kajo app in a nested `cage` compositor on wlroots' headless backend (i
 ```bash
 meson compile -C builddir
 scripts/ui-shot.sh -o /tmp/ide.png builddir/kajo-settings --page ide      # one settings page
+scripts/ui-shot.sh -o /tmp/ide-editor.png builddir/kajo-ide src/ide/ide_window.c
 scripts/ui-shot.sh -o /tmp/files.png builddir/kajo-files ~/Downloads
 scripts/ui-shot.sh -d 6 -o /tmp/p.png builddir/kajo-player some.mkv       # -d: seconds to wait
 ```

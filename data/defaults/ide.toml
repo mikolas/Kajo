@@ -11,3 +11,5 @@ show_minimap                   = true
 show_line_numbers              = true
 relative_line_numbers          = false
 highlight_current_line         = true
+start_in_strip_mode            = false
+strip_magnetic_follow          = true

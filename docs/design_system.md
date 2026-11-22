@@ -173,6 +173,8 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Used in Search & Replace (`Space s r` / `s p`) and Agent Transaction Review (`Space d s`). Hunk header strip (`@@ -140,6 +140,8 @@`) in `#181818` with `[ ✓ ACCEPT HUNK ]` / `[ ✕ REVERT HUNK ]` buttons; deleted lines use `rgba(232, 17, 35, 0.16)` with `#ff8080` text (`rgba(232, 17, 35, 0.42)` on changed tokens) and added lines use `rgba(16, 137, 62, 0.18)` with `#85e89d` text (`rgba(16, 137, 62, 0.45)` on changed tokens).
 - **DAP Debugger 3-Pane Inspector (`.ide-dap-inspector`):**
   - Horizontal 3-column layout in the bottom drawer: Call Stack list (active frame highlighted with `▶` `#ffd700`), expandable Scopes/Locals variable tree, and interactive Debug Console / REPL entry.
+- **Call-Depth Code Strip (`.ide-strip-toolbar`, `.ide-strip-spine`, `.ide-strip-col-d0/d1/d2`, `.ide-strip-peek-code`):**
+  - Opt-in `60% | 25% | 15%` spatial workspace (`Space t s`): far-left `28px` Ancestor Spine (`.ide-strip-spine-pill`), `60%` leftmost live `GtkSourceView` (`D0`, optional top `30%` `.ide-strip-pin-pane` & soft `#0a0a0a` out-of-scope veil), `25%` vertically scrollable Peekish `D+1` target list (`.in-band` `2px` accent rail, `.active-peek` 5-line syntax preview, amber `.ide-strip-resync-btn` on manual scroll), `15%` compact `D+2` Micro-Tiles, live Cairo Bezier dependency bridges, and 4 color-coded Lens buttons (`.lens-calls` `#0078d4`, `.lens-types` `#00d8f0`, `.lens-impact` `#ffb900`, `.lens-diff` `#b4009e`). Full interactive specimens in `docs/kajo-ide-strip-mockup.html` and `docs/kajo-ide-strip-storyboard.html`.
 
 ### 4.7 Full Graphical Markdown & Cairo Vector Mermaid Components (`.ide-md-document`)
 - **Document Typography & Inline Code:**

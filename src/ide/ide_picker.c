@@ -176,7 +176,21 @@ static const IdeHelpCommandSpec kHelpCommands[] = {
   { "LAYOUT", "Zoom Editor Font", "Increase, decrease, or reset editor font size (10-24px)", "Ctrl++ / Ctrl+- / Ctrl+0", IDE_ACTION_NONE },
   { "LAYOUT", "Toggle Relative Line Numbers", "Switch 6-column Cairo gutter between absolute and hybrid relative line numbers", "Space v r", IDE_ACTION_TOGGLE_RELATIVE_LINES },
 
-  /* 11. Mouse & Touchpad */
+  /* 11. Code Strip & Dependency Graph Lenses (60/25/15 Call-Depth View) */
+  { "CODE STRIP", "Toggle Code Strip", "Switch between Classic File Tabs and 60/25/15 Call-Depth Code Strip", "Space t s", IDE_ACTION_STRIP_TOGGLE },
+  { "CODE STRIP", "Promote D+1 Target -> D0", "Slide active D+1 target tile left into leftmost 60% editor", "Space t e", IDE_ACTION_STRIP_PROMOTE },
+  { "CODE STRIP", "Surface Back (-1 Depth)", "Pop Ancestor Spine and restore caller tile leftmost", "Space t u", IDE_ACTION_STRIP_SURFACE },
+  { "CODE STRIP", "Step D+1 Target Tiles", "Move active peekish tile down / up inside D+1 column", "Space t j / k", IDE_ACTION_STRIP_STEP_DOWN },
+  { "CODE STRIP", "Focus Strip Column", "Move focus right / left between D0, D+1, and D+2 columns", "Space t l / h", IDE_ACTION_STRIP_FOCUS_RIGHT },
+  { "CODE STRIP", "Toggle Symbol Veil / Full File", "Lift or restore out-of-scope dimming veil in D0", "Space t f", IDE_ACTION_STRIP_TOGGLE_FULL_FILE },
+  { "CODE STRIP", "Pin Reference Tile in D0", "Dock active D+1 target into top 30% vertical split in D0", "Space t p", IDE_ACTION_STRIP_PIN_TOGGLE },
+  { "CODE STRIP", "Resync Magnetic Follow", "Re-engage automatic D+1 spring alignment after manual scroll", "Space t r", IDE_ACTION_STRIP_RESYNC },
+  { "CODE STRIP", "Code Strip Zen (96/4)", "Expand D0 to 96% width with slim 4% right depth edge rail", "Space t z", IDE_ACTION_STRIP_TOGGLE_ZEN },
+  { "CODE STRIP", "Bird's-Eye Strip Overview", "Zoom out to interactive multi-depth dependency map with filter", "Space t o", IDE_ACTION_STRIP_TOGGLE_OVERVIEW },
+  { "CODE STRIP", "Switch Strip Lens (1..4)", "Switch D+1/D+2 lens: 1=CALLS, 2=TYPES, 3=IMPACT, 4=DIFF", "Space t 1 / 2 / 3 / 4", IDE_ACTION_STRIP_LENS_CALLS },
+  { "CODE STRIP", "Branch / Switch Trail", "Fork a vertical Trail or switch between saved Trails", "Space t b / [ / ]", IDE_ACTION_STRIP_BRANCH_TRAIL },
+
+  /* 12. Mouse & Touchpad */
   { "MOUSE", "Gutter Breakpoint", "Click column 1 in the left gutter to toggle a breakpoint", "Left Click Gutter", IDE_ACTION_NONE },
   { "MOUSE", "Splitter Drag", "Drag vertical or horizontal paned dividers to resize panes", "Drag Divider", IDE_ACTION_NONE },
   { "MOUSE", "Mermaid Pan & Zoom", "Use toolbar buttons (🔍-/100%/🔍+/⛶ FIT/💾 SVG) on diagrams", "Diagram Toolbar", IDE_ACTION_NONE },
@@ -197,6 +211,7 @@ static const char *const kHelpCategories[] = {
   "MARKDOWN",
   "AGENT",
   "LAYOUT",
+  "CODE STRIP",
   "MOUSE",
   NULL
 };

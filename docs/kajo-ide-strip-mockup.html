@@ -1,0 +1,4421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAJO IDE — v2 Call-Depth Columns &amp; Peekish Target Tiles</title>
+  <style>
+    /* ==========================================================================
+       KAJO "AERO + METRO" DESIGN TOKENS (Strict 0px Corner Radius)
+       ========================================================================== */
+    :root {
+      --metro-accent: #0078d4;
+      --metro-accent-hover: #1084df;
+      --metro-accent-rgb: 0, 120, 212;
+      --metro-telemetry: #00d8f0;
+      --metro-telemetry-rgb: 0, 216, 240;
+      --metro-success: #10893e;
+      --metro-warning: #ffb900;
+      --metro-warning-alt: #ff8c00;
+      --metro-urgent: #e81123;
+      --metro-urgent-text: #ff6b6b;
+      --metro-agent: #b4009e;
+      --metro-agent-rgb: 180, 0, 158;
+
+      --surface-0: #0a0a0a;
+      --surface-1: #101010;
+      --surface-2: #141414;
+      --surface-3: #181818;
+      --surface-4: #1e1e1e;
+      --surface-hover: #242424;
+      --surface-active: #2a2a2a;
+
+      --border-subtle: #202020;
+      --border-struct: #2b2b2b;
+      --border-strong: #3b3b3b;
+
+      --text-primary: #ffffff;
+      --text-secondary: #dddddd;
+      --text-muted: #929292;
+      --text-dim: #626262;
+
+      /* Kajo IDE Syntax Palette (Tree-sitter ide_ts_queries.c) */
+      --syn-kw: #569cd6;
+      --syn-ctrl: #c586c0;
+      --syn-fn: #dcdcaa;
+      --syn-ext: #8c96a6;
+      --syn-type: #4ec9b0;
+      --syn-str: #ce9178;
+      --syn-num: #b5cea8;
+      --syn-mac: #00d8f0;
+      --syn-cmt: #6a9955;
+
+      --font-mono: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+      --font-sans: 'Inter', 'Cantarell', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+      /* Active lens color (updated live by JS) */
+      --lens-color: #0078d4;
+      --lens-rgb: 0, 120, 212;
+      --row-h: 20px;
+    }
+
+    * {
+      box-sizing: border-box;
+      border-radius: 0 !important;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #060606;
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      font-size: 12.5px;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input {
+      font-family: var(--font-mono);
+      outline: none;
+    }
+
+    /* Slim 4px Metro Scrollbars */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+      background: var(--surface-1);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #333333;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #4e4e4e;
+    }
+
+    /* ==========================================================================
+       OUTER STAGE (Tiled vs Floating Niri Demo)
+       ========================================================================== */
+    .niri-stage {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: radial-gradient(circle at 18% 0%, rgba(0, 120, 212, 0.08), transparent 45%), #060606;
+      transition: padding 140ms ease;
+    }
+    .niri-stage.floating {
+      padding: 16px 24px;
+    }
+
+    .kajo-window {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-1);
+      border: 1px solid var(--metro-accent);
+      overflow: hidden;
+      position: relative;
+    }
+    .niri-stage.floating .kajo-window {
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(0, 120, 212, 0.4);
+    }
+
+    /* ==========================================================================
+       1. TOP FRAMELESS WINDOW HEADER BAR (34px)
+       ========================================================================== */
+    .ide-header-bar {
+      height: 34px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 8px 0 10px;
+      gap: 8px;
+      user-select: none;
+    }
+
+    .hdr-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .ide-brand {
+      font-family: var(--font-mono);
+      font-weight: 800;
+      font-size: 11.5px;
+      letter-spacing: 1px;
+      color: var(--text-primary);
+      padding-right: 8px;
+      border-right: 1px solid var(--border-struct);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ide-brand-dot {
+      width: 7px;
+      height: 7px;
+      background: var(--metro-accent);
+      display: inline-block;
+    }
+    .ide-brand-ver {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 4px;
+      background: rgba(var(--metro-telemetry-rgb), 0.14);
+      border: 1px solid rgba(var(--metro-telemetry-rgb), 0.45);
+      color: var(--metro-telemetry);
+      letter-spacing: 0.4px;
+    }
+
+    .branch-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 7px;
+      background: rgba(var(--metro-accent-rgb), 0.12);
+      border: 1px solid rgba(var(--metro-accent-rgb), 0.45);
+      color: #79c0ff;
+      letter-spacing: 0.3px;
+      white-space: nowrap;
+    }
+
+    .kajo-btn {
+      background: var(--surface-4);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-struct);
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.35px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+      transition: background 80ms ease, border-color 80ms ease, color 80ms ease;
+    }
+    .kajo-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: #ffffff;
+    }
+    .kajo-btn.active {
+      background: rgba(var(--metro-accent-rgb), 0.24);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .kajo-btn.telemetry-active {
+      background: rgba(var(--metro-telemetry-rgb), 0.18);
+      border-color: var(--metro-telemetry);
+      color: var(--metro-telemetry);
+    }
+    .kajo-btn.warn-active {
+      background: rgba(255, 185, 0, 0.16);
+      border-color: var(--metro-warning);
+      color: var(--metro-warning);
+    }
+    .kajo-btn.lsp-ok {
+      border-color: rgba(16, 137, 62, 0.72);
+      background: rgba(16, 137, 62, 0.15);
+      color: #72e6a1;
+    }
+    .kajo-btn.lsp-fallback {
+      border-color: var(--metro-warning);
+      background: rgba(255, 185, 0, 0.15);
+      color: var(--metro-warning);
+    }
+    .kajo-btn.close-btn {
+      padding: 3px 9px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .kajo-btn.close-btn:hover {
+      background: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+    .kajo-btn:disabled {
+      opacity: 0.36;
+      cursor: not-allowed;
+    }
+
+    .status-dot {
+      width: 6px;
+      height: 6px;
+      display: inline-block;
+      background: #10b981;
+    }
+    .lsp-fallback .status-dot {
+      background: var(--metro-warning);
+    }
+
+    .kbd {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--text-muted);
+      background: var(--surface-1);
+      border: 1px solid var(--border-struct);
+      padding: 0 3px;
+    }
+
+    /* ==========================================================================
+       2. STRIP TOOLBAR: SURFACE / TRAILS / 4 LENSES / LSP
+       ========================================================================== */
+    .strip-toolbar {
+      min-height: 30px;
+      flex-shrink: 0;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 3px 8px;
+      gap: 8px;
+      user-select: none;
+      flex-wrap: wrap;
+    }
+    .strip-toolbar.hidden {
+      display: none;
+    }
+
+    .trail-group {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+    }
+
+    .trail-pill {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-top: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      white-space: nowrap;
+    }
+    .trail-pill:hover {
+      background: var(--surface-4);
+      color: var(--text-secondary);
+    }
+    .trail-pill.active {
+      background: var(--surface-4);
+      color: #ffffff;
+      border-color: var(--border-strong);
+      border-top-color: var(--lens-color);
+    }
+    .trail-pill .t-idx {
+      color: var(--metro-telemetry);
+    }
+
+    .depth-crumb {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      padding-left: 6px;
+      border-left: 1px solid var(--border-struct);
+      max-width: 390px;
+      overflow: hidden;
+      white-space: nowrap;
+    }
+    .crumb-item {
+      cursor: pointer;
+      padding: 1px 4px;
+      color: var(--text-muted);
+    }
+    .crumb-item:hover {
+      background: var(--surface-4);
+      color: #ffffff;
+    }
+    .crumb-item.current {
+      color: #ffffff;
+      font-weight: 700;
+      background: rgba(var(--lens-rgb), 0.2);
+      border: 1px solid rgba(var(--lens-rgb), 0.55);
+    }
+    .crumb-sep {
+      color: var(--text-dim);
+      font-size: 9px;
+    }
+
+    /* Segmented 4-Lens Group */
+    .seg-group {
+      display: inline-flex;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-1);
+    }
+    .seg-btn {
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      letter-spacing: 0.4px;
+      transition: background 80ms ease, color 80ms ease;
+    }
+    .seg-btn:last-child { border-right: none; }
+    .seg-btn:hover { background: var(--surface-4); color: #ffffff; }
+    .seg-dot { width: 6px; height: 6px; display: inline-block; }
+
+    .seg-btn.active[data-lens="calls"] {
+      background: rgba(0, 120, 212, 0.28);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #0078d4;
+    }
+    .seg-btn.active[data-lens="types"] {
+      background: rgba(0, 216, 240, 0.22);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #00d8f0;
+    }
+    .seg-btn.active[data-lens="impact"] {
+      background: rgba(255, 185, 0, 0.22);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #ffb900;
+    }
+    .seg-btn.active[data-lens="diff"] {
+      background: rgba(180, 0, 158, 0.28);
+      color: #ffffff;
+      box-shadow: inset 0 -2px 0 #b4009e;
+    }
+
+    /* ==========================================================================
+       3. WORKSPACE BODY (Optional Tree + 60/25/15 Call-Depth Stage + Tabs)
+       ========================================================================== */
+    .workspace-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      position: relative;
+      background: var(--surface-0);
+      overflow: hidden;
+    }
+
+    /* Collapsible Project File Tree */
+    .ide-tree-sidebar {
+      width: 210px;
+      flex-shrink: 0;
+      background: var(--surface-2);
+      border-right: 1px solid var(--border-struct);
+      display: flex;
+      flex-direction: column;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      user-select: none;
+    }
+    .ide-tree-sidebar.collapsed { display: none; }
+    .ide-tree-header {
+      padding: 6px 10px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.7px;
+      display: flex;
+      justify-content: space-between;
+    }
+    .ide-tree-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+    }
+    .tree-row {
+      padding: 4px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--text-secondary);
+      cursor: pointer;
+      border-left: 2px solid transparent;
+    }
+    .tree-row:hover { background: var(--surface-4); }
+    .tree-row.active {
+      background: rgba(var(--metro-accent-rgb), 0.2);
+      border-left-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .tree-row.dir { color: var(--text-muted); font-weight: 700; cursor: default; }
+    .git-badge { font-size: 9px; font-weight: 800; padding: 0 4px; }
+    .git-badge.M { color: var(--metro-warning); }
+    .git-badge.AG { color: #e879f9; background: rgba(180, 0, 158, 0.24); }
+
+    /* ==========================================================================
+       4. CALL-DEPTH STAGE: [28px SPINE] + [60% D0] |14px| [25% D+1] |14px| [15% D+2]
+       ========================================================================== */
+    .strip-stage {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      background: var(--surface-0);
+    }
+    .strip-stage.hidden { display: none; }
+
+    /* Honest TS+RG Fallback Banner */
+    .fallback-banner {
+      position: absolute;
+      top: 4px;
+      right: 12px;
+      z-index: 40;
+      background: rgba(24, 18, 6, 0.96);
+      border: 1px solid var(--metro-warning);
+      border-left: 3px solid var(--metro-warning);
+      padding: 4px 9px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: #ffd666;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      box-shadow: 0 6px 18px rgba(0, 0, 0, 0.7);
+    }
+    .fallback-banner.visible { display: flex; }
+
+    /* Far-Left Ancestor Spine (28px when depth >= 1, 0px at depth 0) */
+    .ancestor-spine {
+      width: 0;
+      flex-shrink: 0;
+      overflow: hidden;
+      background: var(--surface-2);
+      border-right: 0 solid var(--border-struct);
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      transition: width 190ms cubic-bezier(0.2, 0.9, 0.25, 1), border-right-width 190ms ease;
+      z-index: 25;
+      user-select: none;
+    }
+    .ancestor-spine.visible {
+      width: 28px;
+      border-right-width: 1px;
+    }
+    .spine-top-btn {
+      height: 28px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border: none;
+      border-bottom: 1px solid var(--border-struct);
+      color: var(--metro-telemetry);
+      font-size: 11px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .spine-top-btn:hover {
+      background: var(--metro-accent);
+      color: #ffffff;
+    }
+    .spine-pills {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .spine-pill {
+      flex: 1 0 auto;
+      min-height: 92px;
+      max-height: 180px;
+      border-bottom: 1px solid var(--border-struct);
+      border-left: 2px solid var(--metro-accent);
+      background: var(--surface-2);
+      color: var(--text-secondary);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 0;
+      transition: background 90ms ease, color 90ms ease;
+      position: relative;
+    }
+    .spine-pill:hover {
+      background: rgba(var(--metro-accent-rgb), 0.26);
+      color: #ffffff;
+    }
+    .spine-pill-inner {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-height: 164px;
+    }
+    .spine-depth-tag {
+      color: var(--metro-telemetry);
+      font-size: 9px;
+    }
+
+    /* Main 3-Column Container (Exact 60% | 25% | 15% + 14px SVG bridge gutters) */
+    .columns-stage {
+      flex: 1;
+      min-width: 0;
+      height: 100%;
+      position: relative;
+      display: flex;
+      align-items: stretch;
+      overflow: hidden;
+    }
+    .columns-stage.slide-left {
+      animation: depthSlideLeft 210ms cubic-bezier(0.18, 0.9, 0.24, 1);
+    }
+    .columns-stage.slide-right {
+      animation: depthSlideRight 210ms cubic-bezier(0.18, 0.9, 0.24, 1);
+    }
+    @keyframes depthSlideLeft {
+      0% { transform: translateX(48px); opacity: 0.72; }
+      100% { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes depthSlideRight {
+      0% { transform: translateX(-48px); opacity: 0.72; }
+      100% { transform: translateX(0); opacity: 1; }
+    }
+
+    /* Live SVG Connector Overlay */
+    .connector-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 18;
+      overflow: visible;
+    }
+
+    /* Bridge Gutter between columns (14px for Cairo Bezier channels) */
+    .bridge-gutter {
+      width: 14px;
+      flex-shrink: 0;
+      background:
+        repeating-linear-gradient(180deg, rgba(255,255,255,0.025) 0 1px, transparent 1px 20px),
+        var(--surface-0);
+      border-left: 1px solid var(--border-subtle);
+      border-right: 1px solid var(--border-subtle);
+      position: relative;
+      z-index: 5;
+    }
+    .columns-stage.zen-mode .bridge-gutter {
+      display: none;
+    }
+
+    /* Exact Proportions: calc((100% - 28px) * 0.60 / 0.25 / 0.15) */
+    .col-d0 {
+      flex: 0 0 calc((100% - 28px) * 0.60);
+      min-width: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-1);
+      position: relative;
+      z-index: 10;
+      border-top: 2px solid var(--metro-accent);
+      transition: flex-basis 190ms cubic-bezier(0.2, 0.9, 0.25, 1);
+    }
+    .col-d1 {
+      flex: 0 0 calc((100% - 28px) * 0.25);
+      min-width: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-2);
+      position: relative;
+      z-index: 10;
+      border-top: 2px solid var(--lens-color);
+      transition: flex-basis 190ms cubic-bezier(0.2, 0.9, 0.25, 1), opacity 140ms ease;
+    }
+    .col-d2 {
+      flex: 0 0 calc((100% - 28px) * 0.15);
+      min-width: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-1);
+      position: relative;
+      z-index: 10;
+      border-top: 2px solid rgba(var(--lens-rgb), 0.55);
+      transition: flex-basis 190ms cubic-bezier(0.2, 0.9, 0.25, 1), opacity 140ms ease;
+    }
+
+    .col-d0.col-focused { box-shadow: inset 0 0 0 1px rgba(var(--metro-accent-rgb), 0.35); }
+    .col-d1.col-focused { box-shadow: inset 0 0 0 1px rgba(var(--lens-rgb), 0.45); }
+    .col-d2.col-focused { box-shadow: inset 0 0 0 1px rgba(var(--lens-rgb), 0.45); }
+
+    /* Zen Mode: 96% D0 | 4% Right Edge Count Strip */
+    .columns-stage.zen-mode .col-d0 {
+      flex: 0 0 96%;
+    }
+    .columns-stage.zen-mode .col-d1,
+    .columns-stage.zen-mode .col-d2 {
+      display: none;
+    }
+    .zen-rail {
+      display: none;
+      flex: 0 0 4%;
+      min-width: 38px;
+      background: var(--surface-2);
+      border-left: 1px solid var(--metro-accent);
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+      user-select: none;
+      z-index: 15;
+    }
+    .zen-rail:hover {
+      background: rgba(var(--metro-accent-rgb), 0.18);
+    }
+    .columns-stage.zen-mode .zen-rail {
+      display: flex;
+    }
+    .zen-rail-text {
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--metro-telemetry);
+      letter-spacing: 0.7px;
+      white-space: nowrap;
+    }
+
+    /* ==========================================================================
+       COLUMN HEADERS (28px Uniform Metro Headers)
+       ========================================================================== */
+    .col-header {
+      height: 29px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 0 7px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      user-select: none;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+    }
+    .col-hdr-left {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .col-hdr-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .depth-tag {
+      font-size: 9.5px;
+      font-weight: 800;
+      padding: 1px 5px;
+      background: rgba(var(--metro-accent-rgb), 0.22);
+      border: 1px solid var(--metro-accent);
+      color: #ffffff;
+      flex-shrink: 0;
+    }
+    .depth-tag.lens {
+      background: rgba(var(--lens-rgb), 0.22);
+      border-color: var(--lens-color);
+      color: #ffffff;
+    }
+    .depth-tag.d2 {
+      background: rgba(var(--lens-rgb), 0.14);
+      border-color: rgba(var(--lens-rgb), 0.55);
+      color: var(--text-secondary);
+    }
+
+    .col-sym-title {
+      font-weight: 800;
+      color: #ffffff;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .col-file-path {
+      color: var(--text-muted);
+      font-size: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .hdr-chip {
+      background: var(--surface-4);
+      border: 1px solid var(--border-struct);
+      color: var(--text-secondary);
+      font-size: 9.5px;
+      font-weight: 700;
+      padding: 2px 6px;
+      cursor: pointer;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .hdr-chip:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-strong);
+      color: #ffffff;
+    }
+    .hdr-chip.active {
+      background: rgba(var(--metro-accent-rgb), 0.26);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .hdr-chip.ws-badge {
+      background: rgba(16, 137, 62, 0.14);
+      border-color: rgba(16, 137, 62, 0.55);
+      color: #7ee7a8;
+      cursor: help;
+    }
+    .hdr-chip.resync-pill {
+      display: none;
+      background: rgba(255, 185, 0, 0.2);
+      border-color: var(--metro-warning);
+      color: var(--metro-warning);
+      animation: resyncPulse 1.6s ease-in-out infinite;
+    }
+    .hdr-chip.resync-pill.visible {
+      display: inline-flex;
+    }
+    .hdr-chip.resync-pill:hover {
+      background: var(--metro-warning);
+      color: #000000;
+    }
+    @keyframes resyncPulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 185, 0, 0.35); }
+      50% { box-shadow: 0 0 0 2px rgba(255, 185, 0, 0.12); }
+    }
+
+    /* ==========================================================================
+       5. COLUMN D0: PINNED REFERENCE SPLIT (30%) + LIVE EDITOR (70% / 100%)
+       ========================================================================== */
+    .d0-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Pinned Vertical Split (Top 30% of D0) */
+    .d0-pin-pane {
+      display: none;
+      flex: 0 0 30%;
+      min-height: 110px;
+      flex-direction: column;
+      background: #0d1115;
+      border-bottom: 2px solid var(--metro-telemetry);
+      overflow: hidden;
+    }
+    .d0-pin-pane.visible { display: flex; }
+    .d0-pin-header {
+      height: 24px;
+      flex-shrink: 0;
+      background: rgba(var(--metro-telemetry-rgb), 0.12);
+      border-bottom: 1px solid rgba(var(--metro-telemetry-rgb), 0.35);
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--metro-telemetry);
+      user-select: none;
+    }
+    .d0-pin-code {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 0;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 18px;
+    }
+    .pin-line {
+      display: flex;
+      padding: 0 8px;
+      white-space: pre;
+    }
+    .pin-ln {
+      width: 34px;
+      flex-shrink: 0;
+      text-align: right;
+      padding-right: 10px;
+      color: var(--text-dim);
+      user-select: none;
+    }
+
+    /* Live GtkSourceView Editor Pane */
+    .d0-editor-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: auto;
+      background: var(--surface-1);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      position: relative;
+    }
+
+    .code-row {
+      display: flex;
+      align-items: stretch;
+      height: var(--row-h);
+      line-height: var(--row-h);
+      cursor: pointer;
+      position: relative;
+      border-left: 2px solid transparent;
+    }
+    .code-row:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+    .code-row.cursor-line {
+      background: rgba(var(--metro-accent-rgb), 0.16);
+      border-left-color: var(--metro-accent);
+    }
+    .code-row.active-call-line {
+      background: rgba(var(--lens-rgb), 0.18);
+      border-left-color: var(--lens-color);
+    }
+    .code-row.veiled {
+      opacity: 0.33;
+      background: rgba(6, 6, 6, 0.65);
+    }
+    .code-row.veiled:hover {
+      opacity: 0.65;
+    }
+
+    /* 6-Column Cairo Gutter */
+    .gutter {
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      background: #0d0d0d;
+      border-right: 1px solid var(--border-subtle);
+      user-select: none;
+      font-size: 10.5px;
+    }
+    .g-bp {
+      width: 15px;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .g-bp:hover::after {
+      content: '';
+      width: 7px;
+      height: 7px;
+      background: rgba(232, 17, 35, 0.45);
+    }
+    .bp-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--metro-urgent);
+      display: inline-block;
+    }
+    .bp-dot.cond {
+      background: var(--metro-urgent);
+      box-shadow: 0 0 0 1.5px var(--metro-warning);
+    }
+    .g-diag {
+      width: 13px;
+      text-align: center;
+      font-size: 9px;
+      font-weight: 800;
+    }
+    .g-diag.err { color: var(--metro-urgent-text); }
+    .g-diag.warn { color: var(--metro-warning); }
+    .g-fold {
+      width: 11px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 9px;
+    }
+    .g-ln {
+      width: 34px;
+      text-align: right;
+      padding-right: 6px;
+      color: var(--text-dim);
+    }
+    .code-row.cursor-line .g-ln,
+    .code-row.active-call-line .g-ln {
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .g-diff {
+      width: 3px;
+      height: 100%;
+    }
+    .g-diff.add { background: var(--metro-success); }
+    .g-diff.mod { background: var(--metro-warning); }
+    .g-diff.agent { background: var(--metro-agent); }
+
+    .code-text {
+      flex: 1;
+      padding: 0 18px 0 10px;
+      white-space: pre;
+      color: #e4e4e4;
+      position: relative;
+    }
+    .g-call-anchor {
+      position: sticky;
+      right: 0;
+      width: 8px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .call-anchor-tick {
+      width: 6px;
+      height: 2px;
+      background: rgba(var(--lens-rgb), 0.45);
+    }
+    .code-row.active-call-line .call-anchor-tick {
+      width: 8px;
+      height: 3px;
+      background: var(--lens-color);
+    }
+
+    /* Syntax Token Spans */
+    .sk { color: var(--syn-kw); }
+    .sc { color: var(--syn-ctrl); }
+    .st { color: var(--syn-type); }
+    .sf { color: var(--syn-fn); }
+    .ss { color: var(--syn-str); }
+    .sn { color: var(--syn-num); }
+    .sm { color: var(--syn-mac); }
+    .scom { color: var(--syn-cmt); font-style: italic; }
+
+    .ws-tok {
+      color: var(--syn-fn);
+      border-bottom: 1px dotted rgba(var(--lens-rgb), 0.55);
+      cursor: pointer;
+      transition: background 80ms ease;
+    }
+    .ws-tok.type-tok {
+      color: var(--syn-type);
+    }
+    .ws-tok:hover {
+      background: rgba(var(--lens-rgb), 0.25);
+      color: #ffffff;
+    }
+    .ext-tok {
+      color: var(--syn-ext);
+      text-decoration: none;
+      opacity: 0.85;
+    }
+
+    /* ==========================================================================
+       6. COLUMN D+1 (25%): PEEKISH TARGET TILES (LoD 1) + INLINE / FILTER
+       ========================================================================== */
+    .d1-subbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 4px 6px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      flex-shrink: 0;
+    }
+    .d1-filter-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      background: var(--surface-1);
+      border: 1px solid var(--border-struct);
+      padding: 0 5px;
+      height: 22px;
+    }
+    .d1-filter-wrap:focus-within {
+      border-color: var(--lens-color);
+      background: var(--surface-3);
+    }
+    .d1-filter-slash {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--lens-color);
+      margin-right: 4px;
+    }
+    .d1-filter-input {
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: none;
+      color: #ffffff;
+      font-size: 10.5px;
+    }
+    .d1-filter-input::placeholder { color: var(--text-dim); }
+    .d1-filter-clear {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 10px;
+      cursor: pointer;
+      padding: 0 2px;
+      display: none;
+    }
+    .d1-filter-clear.visible { display: inline; }
+    .d1-filter-clear:hover { color: #ffffff; }
+
+    .d1-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 4px 6px 80px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      position: relative;
+    }
+
+    /* Peekish Target Tile (32px collapsed -> ~142px accordion-expanded) */
+    .d1-tile {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-left: 2px solid transparent;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      transition: opacity 120ms ease, border-color 110ms ease, background 110ms ease;
+      position: relative;
+    }
+    .d1-tile.out-band {
+      opacity: 0.48;
+    }
+    .d1-tile.in-band {
+      opacity: 1;
+      border-left: 2px solid var(--lens-color);
+    }
+    .d1-tile:hover {
+      opacity: 1;
+      background: var(--surface-4);
+      border-color: var(--border-strong);
+      border-left-color: var(--lens-color);
+    }
+    .d1-tile.expanded {
+      opacity: 1 !important;
+      background: #1a1f26;
+      border-color: var(--lens-color);
+      border-left: 3px solid var(--lens-color);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+    }
+
+    .d1-tile-head {
+      height: 30px;
+      padding: 0 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 5px;
+      cursor: pointer;
+      user-select: none;
+      font-family: var(--font-mono);
+    }
+    .d1-tile-left {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+      flex: 1;
+    }
+    .kind-badge {
+      font-size: 9px;
+      font-weight: 800;
+      width: 16px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      background: rgba(var(--lens-rgb), 0.16);
+      border: 1px solid rgba(var(--lens-rgb), 0.55);
+      color: var(--lens-color);
+    }
+    .kind-badge.k-struct { color: var(--syn-type); border-color: rgba(78, 201, 176, 0.55); background: rgba(78, 201, 176, 0.14); }
+    .kind-badge.k-agent { color: #e879f9; border-color: var(--metro-agent); background: rgba(180, 0, 158, 0.22); }
+    .kind-badge.k-git { color: #72e6a1; border-color: var(--metro-success); background: rgba(16, 137, 62, 0.22); }
+
+    .d1-sym-name {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .d1-tile-right {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .d1-loc {
+      font-size: 9.5px;
+      color: var(--text-muted);
+      white-space: nowrap;
+    }
+    .occ-chip {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 0 4px;
+      background: rgba(var(--lens-rgb), 0.2);
+      border: 1px solid rgba(var(--lens-rgb), 0.55);
+      color: #ffffff;
+    }
+    .tile-act-btn {
+      width: 20px;
+      height: 20px;
+      background: var(--surface-4);
+      border: 1px solid var(--border-struct);
+      color: var(--text-muted);
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.72;
+      transition: all 80ms ease;
+    }
+    .d1-tile:hover .tile-act-btn,
+    .d1-tile.expanded .tile-act-btn {
+      opacity: 1;
+    }
+    .tile-act-btn:hover {
+      background: var(--lens-color);
+      border-color: var(--lens-color);
+      color: #ffffff;
+    }
+    .tile-act-btn.pin-btn.pinned {
+      background: rgba(var(--metro-telemetry-rgb), 0.24);
+      border-color: var(--metro-telemetry);
+      color: var(--metro-telemetry);
+      opacity: 1;
+    }
+
+    /* Accordion Peek Drawer inside active D+1 tile */
+    .d1-peek-wrap {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 165ms cubic-bezier(0.2, 0.88, 0.25, 1);
+      background: #0d1014;
+      border-top: 0 solid var(--border-struct);
+    }
+    .d1-tile.expanded .d1-peek-wrap {
+      max-height: 118px;
+      border-top-width: 1px;
+    }
+    .d1-peek-meta {
+      padding: 3px 7px;
+      background: rgba(var(--lens-rgb), 0.09);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--text-muted);
+    }
+    .d1-peek-code {
+      padding: 5px 7px 6px 7px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      line-height: 16px;
+      white-space: pre;
+      overflow: hidden;
+      color: #d8d8d8;
+    }
+    .peek-line {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .peek-line.diff-add { background: rgba(16, 137, 62, 0.22); color: #a7f3d0; }
+    .peek-line.diff-del { background: rgba(232, 17, 35, 0.2); color: #fca5a5; }
+    .peek-line.diff-agent { background: rgba(180, 0, 158, 0.22); color: #f5d0fe; }
+
+    .diff-actions {
+      display: inline-flex;
+      gap: 4px;
+    }
+    .diff-act-btn {
+      font-size: 9px;
+      font-weight: 800;
+      padding: 1px 5px;
+      cursor: pointer;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-3);
+      color: #ffffff;
+    }
+    .diff-act-btn.accept { border-color: var(--metro-success); color: #72e6a1; }
+    .diff-act-btn.accept:hover { background: var(--metro-success); color: #ffffff; }
+    .diff-act-btn.revert { border-color: var(--metro-urgent); color: var(--metro-urgent-text); }
+    .diff-act-btn.revert:hover { background: var(--metro-urgent); color: #ffffff; }
+
+    /* ==========================================================================
+       7. COLUMN D+2 (15%): GRANDCHILD MICRO-TILES (LoD 0, 26px chips)
+       ========================================================================== */
+    .d2-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 4px 5px 40px 5px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .d2-list.cascade-in {
+      animation: d2Cascade 95ms cubic-bezier(0.2, 0.9, 0.3, 1);
+    }
+    @keyframes d2Cascade {
+      0% { opacity: 0.35; transform: translateY(7px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    .d2-chip {
+      height: 26px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-left: 2px solid rgba(var(--lens-rgb), 0.55);
+      padding: 0 5px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
+      cursor: pointer;
+      user-select: none;
+      font-family: var(--font-mono);
+      transition: background 75ms ease, border-color 75ms ease;
+    }
+    .d2-chip:hover,
+    .d2-chip.active {
+      background: var(--surface-4);
+      border-color: var(--lens-color);
+      border-left-color: var(--lens-color);
+      color: #ffffff;
+    }
+    .d2-chip-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      min-width: 0;
+      flex: 1;
+    }
+    .d2-kind {
+      font-size: 9px;
+      font-weight: 800;
+      color: var(--lens-color);
+      flex-shrink: 0;
+    }
+    .d2-name {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .d2-chip:hover .d2-name,
+    .d2-chip.active .d2-name { color: #ffffff; }
+    .d2-count {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-muted);
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      padding: 0 3px;
+      flex-shrink: 0;
+    }
+    .d2-diag-dot {
+      width: 5px;
+      height: 5px;
+      flex-shrink: 0;
+      background: var(--metro-warning);
+    }
+    .d2-diag-dot.err { background: var(--metro-urgent); }
+
+    .empty-col-note {
+      padding: 14px 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      text-align: center;
+      border: 1px dashed var(--border-struct);
+      margin-top: 6px;
+    }
+
+    /* ==========================================================================
+       8. CLASSIC FILE TABS COMPARISON VIEW (Toggle via [ ▥ STRIP ])
+       ========================================================================== */
+    .classic-tabs-view {
+      flex: 1;
+      min-width: 0;
+      display: none;
+      flex-direction: column;
+      background: var(--surface-1);
+    }
+    .classic-tabs-view.visible { display: flex; }
+    .classic-tab-strip {
+      height: 30px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      user-select: none;
+    }
+    .classic-tab {
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      border-right: 1px solid var(--border-struct);
+      border-top: 2px solid transparent;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .classic-tab:hover { background: var(--surface-3); color: #ffffff; }
+    .classic-tab.active {
+      background: var(--surface-1);
+      color: #ffffff;
+      border-top-color: var(--metro-accent);
+    }
+    .classic-notice {
+      padding: 5px 12px;
+      background: rgba(var(--metro-accent-rgb), 0.1);
+      border-bottom: 1px solid var(--border-struct);
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: #93c5fd;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .classic-code-wrap {
+      flex: 1;
+      overflow-y: auto;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    /* ==========================================================================
+       9. BIRD'S-EYE OVERVIEW OVERLAY ([ ⬡ OVERVIEW ] / o)
+       ========================================================================== */
+    .overview-modal {
+      position: absolute;
+      inset: 0;
+      z-index: 60;
+      background: rgba(8, 8, 10, 0.94);
+      display: none;
+      flex-direction: column;
+      border-top: 2px solid var(--metro-telemetry);
+    }
+    .overview-modal.visible { display: flex; }
+    .overview-header {
+      height: 36px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .overview-canvas {
+      flex: 1;
+      overflow: auto;
+      padding: 18px 20px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(220px, 1fr));
+      gap: 18px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 28px 28px,
+        linear-gradient(0deg, rgba(255,255,255,0.02) 1px, transparent 1px) 0 0 / 28px 28px,
+        #09090b;
+    }
+    .ov-col {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ov-col-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--metro-telemetry);
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border-struct);
+      letter-spacing: 0.6px;
+    }
+    .ov-node {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--border-strong);
+      padding: 6px 8px;
+      cursor: pointer;
+      font-family: var(--font-mono);
+    }
+    .ov-node:hover {
+      background: var(--surface-4);
+      border-color: var(--metro-accent);
+      border-left-color: var(--metro-accent);
+    }
+    .ov-node.in-path {
+      border-color: var(--lens-color);
+      border-left-color: var(--lens-color);
+      background: rgba(var(--lens-rgb), 0.14);
+    }
+    .ov-node-name { font-size: 11px; font-weight: 700; color: #ffffff; }
+    .ov-node-sub { font-size: 9.5px; color: var(--text-muted); margin-top: 2px; display: flex; justify-content: space-between; }
+
+    /* ==========================================================================
+       10. BOTTOM DEPTH MINIMAP + IDE STATUS BAR
+       ========================================================================== */
+    .minimap-bar {
+      height: 24px;
+      flex-shrink: 0;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-struct);
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      user-select: none;
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+    }
+    .minimap-bar.hidden { display: none; }
+    .minimap-slots {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+    .mm-slot {
+      height: 15px;
+      padding: 0 6px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-3);
+      color: var(--text-muted);
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mm-slot:hover { background: var(--surface-4); color: #ffffff; }
+    .mm-slot.mm-anc { border-left: 2px solid var(--text-dim); max-width: 115px; }
+    .mm-slot.mm-d0 {
+      flex: 0 1 280px;
+      border-color: var(--metro-accent);
+      background: rgba(var(--metro-accent-rgb), 0.22);
+      color: #ffffff;
+      font-weight: 700;
+    }
+    .mm-slot.mm-d1 {
+      flex: 0 1 130px;
+      border-color: var(--lens-color);
+      background: rgba(var(--lens-rgb), 0.16);
+      color: #ffffff;
+    }
+    .mm-slot.mm-d2 {
+      flex: 0 1 90px;
+      border-color: rgba(var(--lens-rgb), 0.45);
+      color: var(--text-secondary);
+    }
+
+    .status-bar {
+      height: 22px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-top: 1px solid var(--border-struct);
+      padding: 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-muted);
+      user-select: none;
+    }
+    .sb-group { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .mode-pill {
+      background: var(--metro-accent);
+      color: #ffffff;
+      font-weight: 800;
+      padding: 1px 6px;
+      letter-spacing: 0.6px;
+    }
+    .sb-sep { color: var(--border-strong); }
+    .sb-live { color: var(--text-secondary); }
+    .sb-magnetic { color: #72e6a1; font-weight: 700; }
+    .sb-magnetic.unlinked { color: var(--metro-warning); }
+
+    /* Toast feedback */
+    .toast-bar {
+      position: absolute;
+      bottom: 54px;
+      right: 16px;
+      z-index: 80;
+      background: var(--surface-3);
+      border: 1px solid var(--metro-accent);
+      border-left: 3px solid var(--metro-telemetry);
+      padding: 6px 12px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: #ffffff;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75);
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(6px);
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+    .toast-bar.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  </style>
+</head>
+<body>
+  <div class="niri-stage" id="niriStage">
+    <div class="kajo-window" id="kajoWindow">
+      <!-- 1. FRAMELESS HEADER BAR -->
+      <header class="ide-header-bar">
+        <div class="hdr-group">
+          <div class="ide-brand">
+            <span class="ide-brand-dot"></span>
+            KAJO IDE
+            <span class="ide-brand-ver">CODE STRIP v2</span>
+          </div>
+          <span class="branch-badge">⎇ feat/code-strip-v2</span>
+          <button class="kajo-btn" id="btnTree" title="Toggle project file tree">◧ TREE</button>
+          <button class="kajo-btn active" id="btnStripMode" title="Toggle Code Strip vs Classic File Tabs (Space t s / s)">▥ STRIP</button>
+        </div>
+
+        <div class="hdr-group">
+          <button class="kajo-btn" id="btnOverview" title="Bird's-Eye Multi-Depth Call-Tree Map (o)">⬡ OVERVIEW <span class="kbd">o</span></button>
+          <button class="kajo-btn" id="btnZen" title="Toggle 96% | 4% Zen Focus Mode (z)">⤢ ZEN <span class="kbd">z</span></button>
+          <button class="kajo-btn" id="btnFloat" title="Toggle Niri Floating / Tiled window framing">🗗 FLOAT / TILE</button>
+          <button class="kajo-btn close-btn" id="btnClose" title="Reset demo to Depth 0">✕</button>
+        </div>
+      </header>
+
+      <!-- 2. STRIP TOOLBAR: SURFACE / TRAILS / 4 LENSES / LSP -->
+      <div class="strip-toolbar" id="stripToolbar">
+        <div class="trail-group">
+          <button class="kajo-btn" id="btnSurface" disabled title="Surface back 1 depth (Backspace / Alt+←)">← SURFACE</button>
+          <button class="trail-pill active" data-trail="0"><span class="t-idx">T1</span> Frame Pipeline</button>
+          <button class="trail-pill" data-trail="1"><span class="t-idx">T2</span> Glass Shader</button>
+          <div class="depth-crumb" id="depthCrumb"></div>
+        </div>
+
+        <div class="hdr-group">
+          <div class="seg-group" id="lensGroup" role="group" aria-label="Dependency Lenses">
+            <button class="seg-btn active" data-lens="calls" title="Downstream workspace calls (1)">
+              <span class="seg-dot" style="background:#0078d4"></span>1 CALLS
+            </button>
+            <button class="seg-btn" data-lens="types" title="Referenced workspace types & structs (2)">
+              <span class="seg-dot" style="background:#00d8f0"></span>2 TYPES
+            </button>
+            <button class="seg-btn" data-lens="impact" title="Incoming workspace callers / blast radius (3)">
+              <span class="seg-dot" style="background:#ffb900"></span>3 IMPACT
+            </button>
+            <button class="seg-btn" data-lens="diff" title="Git & AI-Agent modified workspace symbols (4)">
+              <span class="seg-dot" style="background:#b4009e"></span>4 DIFF
+            </button>
+          </div>
+
+          <button class="kajo-btn lsp-ok" id="btnLspToggle" title="Toggle live clangd LSP vs honest Tree-sitter + ripgrep fallback">
+            <span class="status-dot"></span>
+            <span id="lspLabel">⚡ LSP: CLANGD ●</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- 3. MAIN WORKSPACE BODY -->
+      <div class="workspace-body">
+        <!-- Optional Collapsible Project File Tree -->
+        <aside class="ide-tree-sidebar collapsed" id="treeSidebar">
+          <div class="ide-tree-header">
+            <span>WORKSPACE · src/comp/</span>
+            <span style="color:var(--metro-telemetry)">WS ROOT</span>
+          </div>
+          <div class="ide-tree-list" id="treeList"></div>
+        </aside>
+
+        <!-- CODE STRIP STAGE (28px Ancestor Spine + 60% D0 | 25% D+1 | 15% D+2) -->
+        <section class="strip-stage" id="stripStage">
+          <!-- Honest TS+RG Fallback Banner -->
+          <div class="fallback-banner" id="fallbackBanner">
+            <span>⚠ TS+RG FALLBACK ACTIVE — No clangd running; calls resolved via tree-sitter (ide_ts) + async ripgrep (dashed bridges)</span>
+          </div>
+
+          <!-- Far-Left 28px Ancestor Spine (appears smoothly when depth >= 1) -->
+          <nav class="ancestor-spine" id="ancestorSpine" aria-label="Ancestor Callers Spine">
+            <button class="spine-top-btn" id="btnSpineSurface" title="Surface back 1 depth (Backspace / Alt+←)">◂</button>
+            <div class="spine-pills" id="spinePills"></div>
+          </nav>
+
+          <!-- 3-Column Stage + Live SVG Bezier Connector Overlay -->
+          <div class="columns-stage" id="columnsStage">
+            <svg class="connector-svg" id="connectorSvg"></svg>
+
+            <!-- COLUMN D0 (60%): Active Full-Column Live Editor -->
+            <div class="col-d0 col-focused" id="colD0">
+              <div class="col-header">
+                <div class="col-hdr-left">
+                  <span class="depth-tag" id="d0DepthTag">D0 · 60%</span>
+                  <span class="col-sym-title" id="d0SymTitle">kajo_frame_pipeline</span>
+                  <span class="col-file-path" id="d0FilePath">src/comp/comp_output.c</span>
+                </div>
+                <div class="col-hdr-right">
+                  <button class="hdr-chip" id="btnRelLines" title="Toggle relative line numbers"># REL</button>
+                  <button class="hdr-chip" id="btnFullFile" title="Toggle out-of-scope dimming veil (f)" style="display:none">⤢ FULL FILE</button>
+                </div>
+              </div>
+
+              <div class="d0-body">
+                <!-- Pinned Reference Split (Top 30% of D0 when pinned) -->
+                <div class="d0-pin-pane" id="d0PinPane">
+                  <div class="d0-pin-header">
+                    <span id="pinTitle">📌 PINNED · struct CompFxGlassParams</span>
+                    <div class="hdr-group">
+                      <button class="hdr-chip" id="btnPromotePinned" title="Promote pinned symbol to D0">→ PROMOTE</button>
+                      <button class="hdr-chip" id="btnUnpin" title="Unpin reference split (p)">✕ UNPIN</button>
+                    </div>
+                  </div>
+                  <div class="d0-pin-code" id="d0PinCode"></div>
+                </div>
+
+                <!-- Live Editor Scroll Viewport -->
+                <div class="d0-editor-scroll" id="d0EditorScroll" tabindex="0"></div>
+              </div>
+            </div>
+
+            <!-- Cairo Bridge Channel 0 -> 1 -->
+            <div class="bridge-gutter" id="bridge01"></div>
+
+            <!-- COLUMN D+1 (25%): Direct Workspace Target Tiles (Peekish LoD 1) -->
+            <div class="col-d1" id="colD1">
+              <div class="col-header">
+                <div class="col-hdr-left">
+                  <span class="depth-tag lens" id="d1DepthTag">D+1 · 25%</span>
+                  <span class="col-sym-title" id="d1Title">CALLS</span>
+                  <span class="col-file-path" id="d1CountLabel">28 tiles</span>
+                </div>
+                <div class="col-hdr-right">
+                  <span class="hdr-chip ws-badge" id="wsOnlyBadge" title="External/stdlib calls suppressed from tile columns">WS ONLY (14 ext hidden)</span>
+                  <button class="hdr-chip resync-pill" id="resyncPill" title="Re-engage magnetic scroll alignment with D0">⛓ UNLINKED · RESYNC</button>
+                </div>
+              </div>
+
+              <div class="d1-subbar">
+                <div class="d1-filter-wrap">
+                  <span class="d1-filter-slash">/</span>
+                  <input type="text" class="d1-filter-input" id="d1FilterInput" placeholder="Filter 28 workspace tiles..." autocomplete="off" spellcheck="false" />
+                  <button class="d1-filter-clear" id="d1FilterClear" title="Clear filter (Esc)">✕</button>
+                </div>
+              </div>
+
+              <div class="d1-list" id="d1List" tabindex="0"></div>
+            </div>
+
+            <!-- Cairo Bridge Channel 1 -> 2 -->
+            <div class="bridge-gutter" id="bridge12"></div>
+
+            <!-- COLUMN D+2 (15%): Grandchild Micro-Tiles (LoD 0) -->
+            <div class="col-d2" id="colD2">
+              <div class="col-header">
+                <div class="col-hdr-left">
+                  <span class="depth-tag d2" id="d2DepthTag">D+2 · 15%</span>
+                  <span class="col-sym-title" id="d2ParentName">fx_glass_render</span>
+                </div>
+                <div class="col-hdr-right">
+                  <span class="col-file-path" id="d2CountLabel">11</span>
+                </div>
+              </div>
+
+              <div class="d2-list" id="d2List" tabindex="0"></div>
+            </div>
+
+            <!-- Zen Mode Right 4% Collapse Rail -->
+            <div class="zen-rail" id="zenRail" title="Click or press z to restore 60% | 25% | 15% Strip">
+              <span class="zen-rail-text" id="zenRailText">D+1: 28 · D+2: 11 · CLICK TO RESTORE</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- CLASSIC FILE TABS COMPARISON VIEW -->
+        <section class="classic-tabs-view" id="classicTabsView">
+          <div class="classic-tab-strip" id="classicTabStrip"></div>
+          <div class="classic-notice">
+            <span>Classic File Tabs Mode — sharing the exact same live IdeBuffer pool as Code Strip. No call-depth columns or magnetic peek tiles active.</span>
+            <button class="kajo-btn active" id="btnBackToStrip">▥ RETURN TO CODE STRIP</button>
+          </div>
+          <div class="classic-code-wrap" id="classicCodeWrap"></div>
+        </section>
+
+        <!-- BIRD'S-EYE OVERVIEW MODAL -->
+        <div class="overview-modal" id="overviewModal">
+          <div class="overview-header">
+            <div class="hdr-group">
+              <span style="color:var(--metro-telemetry);font-weight:800">⬡ BIRD'S-EYE CALL-TREE OVERVIEW</span>
+              <span style="color:var(--text-muted)">Click any symbol across D0–D3 to jump directly into its call-depth context</span>
+            </div>
+            <button class="kajo-btn" id="btnCloseOverview">✕ CLOSE OVERVIEW <span class="kbd">Esc</span></button>
+          </div>
+          <div class="overview-canvas" id="overviewCanvas"></div>
+        </div>
+      </div>
+
+      <!-- 4. BOTTOM DEPTH MINIMAP BAR -->
+      <div class="minimap-bar" id="minimapBar">
+        <span style="color:var(--text-dim);font-weight:800;letter-spacing:0.5px">DEPTH STRIP</span>
+        <div class="minimap-slots" id="minimapSlots"></div>
+        <span style="color:var(--text-dim)">60% D0 · 25% D+1 · 15% D+2</span>
+      </div>
+
+      <!-- 5. IDE MODAL STATUS BAR -->
+      <footer class="status-bar">
+        <div class="sb-group">
+          <span class="mode-pill">NORMAL</span>
+          <span class="sb-live" id="sbLocation">src/comp/comp_output.c · Ln 46</span>
+          <span class="sb-sep">|</span>
+          <span id="sbFocus">FOCUS: D0</span>
+          <span class="sb-sep">|</span>
+          <span class="sb-magnetic" id="sbMagnetic">⛓ MAGNETIC FOLLOW</span>
+        </div>
+        <div class="sb-group">
+          <span style="color:var(--text-muted)">Click line / scroll D0: magnetic follow · DblClick / →: promote · Backspace / Spine: surface · /: filter · 📌: pin · 1–4: lenses</span>
+        </div>
+      </footer>
+
+      <div class="toast-bar" id="toastBar"></div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      /* ========================================================================
+         1. AUTHENTIC KAJO COMPOSITOR WORKSPACE CODEBASE (3–4 REAL CALL DEPTHS)
+         ======================================================================== */
+
+      const EXT_CALLS_SET = new Set([
+        'g_return_if_fail', 'g_return_val_if_fail', 'clock_gettime', 'g_list_foreach',
+        'wl_display_flush', 'vkCmdSetViewport', 'vkCmdSetScissor', 'vkQueueSubmit',
+        'vkCmdBindPipeline', 'vkCmdDraw', 'vkCmdPipelineBarrier', 'vkCmdPushConstants',
+        'vkCmdBindDescriptorSets', 'drmModeAtomicAddProperty', 'drmModeAtomicCommit',
+        'g_mutex_lock', 'g_mutex_unlock', 'wl_resource_post_event', 'g_array_set_size',
+        'fminf', 'fmaxf', 'expf', 'g_timer_elapsed', 'memcpy', 'memset', 'g_warn_if_fail'
+      ]);
+
+      const C_KEYWORDS = new Set([
+        'const', 'static', 'inline', 'struct', 'typedef', 'enum', 'void', 'bool',
+        'int', 'uint32_t', 'uint64_t', 'int32_t', 'float', 'double', 'size_t',
+        'true', 'false', 'NULL', 'extern', 'unsigned'
+      ]);
+      const C_CTRL = new Set([
+        'if', 'else', 'for', 'while', 'return', 'switch', 'case', 'break', 'continue', 'goto'
+      ]);
+
+      const SYMBOLS = {};
+
+      function regSym(def) {
+        SYMBOLS[def.id] = {
+          kind: 'fn',
+          extHiddenCount: 4,
+          extNames: ['g_return_if_fail', 'clock_gettime', 'g_mutex_lock', 'g_mutex_unlock'],
+          diffStatus: null,
+          diffSummary: '',
+          diagnostics: {},
+          breakpoints: {},
+          gitDiff: {},
+          types: [],
+          explicitCallees: [],
+          ...def
+        };
+      }
+
+      /* ------------------------------------------------------------------------
+         DEPTH 0 ROOT: src/comp/comp_output.c (114 lines, 28 workspace calls, 14 ext)
+         ------------------------------------------------------------------------ */
+      const COMP_OUTPUT_LINES = [
+        { ln: 1,  text: '/* src/comp/comp_output.c — Kajo Wayland/Vulkan Frame Pipeline */' },
+        { ln: 2,  text: '#include "comp_output.h"' },
+        { ln: 3,  text: '#include "comp_fx_glass.h"' },
+        { ln: 4,  text: '#include "comp_vrr.h"' },
+        { ln: 5,  text: '' },
+        { ln: 6,  text: 'void kajo_frame_pipeline(CompOutput *out, CompFrameState *frame) {' , typeRef: 'CompOutput' },
+        { ln: 7,  text: '    g_return_if_fail(out != NULL && frame != NULL);' , extCall: 'g_return_if_fail' },
+        { ln: 8,  text: '    struct timespec t_start;' },
+        { ln: 9,  text: '    clock_gettime(CLOCK_MONOTONIC, &t_start);' , extCall: 'clock_gettime' },
+        { ln: 10, text: '    g_mutex_lock(&out->frame_lock);' , extCall: 'g_mutex_lock' },
+        { ln: 11, text: '' },
+        { ln: 12, text: '    /* Phase 1: Frame Epoch, VRR Prediction & Input Latching */' },
+        { ln: 13, text: '    if (!comp_output_begin_frame(out, frame, &t_start)) {' , call: 'comp_output_begin_frame' },
+        { ln: 14, text: '        g_mutex_unlock(&out->frame_lock);' , extCall: 'g_mutex_unlock' },
+        { ln: 15, text: '        return;' },
+        { ln: 16, text: '    }' },
+        { ln: 17, text: '    frame->target_ns = comp_vrr_predict_present(out, frame->seq);' , call: 'comp_vrr_predict_present', typeRef: 'CompFrameState' },
+        { ln: 18, text: '    comp_input_flush_pending(out->seat, frame->target_ns);' , call: 'comp_input_flush_pending' },
+        { ln: 19, text: '' },
+        { ln: 20, text: '    /* Phase 2: Analytical Damped Springs & Strip Layout Reconcile */' },
+        { ln: 21, text: '    CompSpringState *springs = &out->workspace->springs;' , typeRef: 'CompSpringState' },
+        { ln: 22, text: '    float dt = fminf(g_timer_elapsed(out->frame_timer, NULL), 0.033f);' , extCall: 'fminf' },
+        { ln: 23, text: '    comp_spring_step_all(springs, dt);' , call: 'comp_spring_step_all' },
+        { ln: 24, text: '    comp_layout_reconcile_strip(out->workspace, frame->viewport);' , call: 'comp_layout_reconcile_strip' },
+        { ln: 25, text: '    comp_workspace_sync_focus(out->workspace, out->seat);' , call: 'comp_workspace_sync_focus' },
+        { ln: 26, text: '' },
+        { ln: 27, text: '    /* Phase 3: Scene Damage Accumulation & Occlusion Culling */' },
+        { ln: 28, text: '    CompDamageRegion damage = { 0 };' , typeRef: 'CompDamageRegion' },
+        { ln: 29, text: '    g_array_set_size(frame->opaque_list, 0);' , extCall: 'g_array_set_size' },
+        { ln: 30, text: '    comp_scene_damage_collect(out->scene, &damage, frame->age);' , call: 'comp_scene_damage_collect' },
+        { ln: 31, text: '    comp_occlusion_cull_nodes(out->scene, &damage, frame->opaque_list);' , call: 'comp_occlusion_cull_nodes' },
+        { ln: 32, text: '' },
+        { ln: 33, text: '    /* Verify XWayland explicit sync fences before GPU submit */' },
+        { ln: 34, text: '    if (out->has_xwayland_clients) {' },
+        { ln: 35, text: '        comp_xwayland_check_ready(out->xwm, frame->target_ns);' , call: 'comp_xwayland_check_ready' },
+        { ln: 36, text: '    }' },
+        { ln: 37, text: '' },
+        { ln: 38, text: '    /* Phase 4: DMA-BUF Direct Scanout Fast Path vs Vulkan Pass */' },
+        { ln: 39, text: '    if (comp_dmabuf_acquire_scanout(out, frame, &damage)) {' , call: 'comp_dmabuf_acquire_scanout' },
+        { ln: 40, text: '        comp_drm_atomic_commit(out, frame, true);' , call: 'comp_drm_atomic_commit' },
+        { ln: 41, text: '        goto finish_frame;' },
+        { ln: 42, text: '    }' },
+        { ln: 43, text: '' },
+        { ln: 44, text: '    CompVkPassCtx *vk = comp_vk_begin_render_pass(out, &damage);' , call: 'comp_vk_begin_render_pass', typeRef: 'CompVkPassCtx' },
+        { ln: 45, text: '    vkCmdSetViewport(vk->cmd, 0, 1, &out->vk_viewport);' , extCall: 'vkCmdSetViewport' },
+        { ln: 46, text: '    vkCmdSetScissor(vk->cmd, 0, 1, &damage.vk_scissor);' , extCall: 'vkCmdSetScissor' },
+        { ln: 47, text: '' },
+        { ln: 48, text: '    /* Phase 5: Wallpaper + Opaque Tiled Surface Pass */' },
+        { ln: 49, text: '    fx_wallpaper_draw_layer(vk, out->wallpaper, &damage);' , call: 'fx_wallpaper_draw_layer' },
+        { ln: 50, text: '    comp_scene_draw_opaque(vk, frame->opaque_list);' , call: 'comp_scene_draw_opaque' },
+        { ln: 51, text: '' },
+        { ln: 52, text: '    /* Phase 6: Aero+Metro Glass Blur, Shadows, Borders & Transitions */' },
+        { ln: 53, text: '    CompFxGlassParams glass = out->theme.glass_params;' , typeRef: 'CompFxGlassParams' },
+        { ln: 54, text: '    if (out->glass_surfaces->len > 0) {' },
+        { ln: 55, text: '        fx_glass_render(vk, out->glass_surfaces, &glass, &damage);' , call: 'fx_glass_render' },
+        { ln: 56, text: '    }' },
+        { ln: 57, text: '    CompShadowSpec shadow = out->theme.shadow_spec;' , typeRef: 'CompShadowSpec' },
+        { ln: 58, text: '    fx_shadow_render(vk, out->floating_nodes, &shadow);' , call: 'fx_shadow_render' },
+        { ln: 59, text: '    fx_border_draw_accent(vk, out->focused_node, out->theme.accent_rgba);' , call: 'fx_border_draw_accent' },
+        { ln: 60, text: '' },
+        { ln: 61, text: '    /* Animate workspace slide/zoom transitions with spring curve */' },
+        { ln: 62, text: '    if (out->active_transition != NULL) {' },
+        { ln: 63, text: '        fx_transition_tick(vk, out->active_transition, dt);' , call: 'fx_transition_tick' },
+        { ln: 64, text: '    }' },
+        { ln: 65, text: '' },
+        { ln: 66, text: '    /* Phase 7: Layer-Shell Panels, OSK & Hardware Cursor Plane */' },
+        { ln: 67, text: '    comp_layer_draw_panels(vk, out->layer_top, &glass);' , call: 'comp_layer_draw_panels' },
+        { ln: 68, text: '    if (out->osk_visible) {' },
+        { ln: 69, text: '        comp_osk_draw_overlay(vk, out->osk_surface, &glass);' , call: 'comp_osk_draw_overlay' },
+        { ln: 70, text: '    }' },
+        { ln: 71, text: '    comp_cursor_plane_update(out, out->seat->pointer_pos);' , call: 'comp_cursor_plane_update' },
+        { ln: 72, text: '' },
+        { ln: 73, text: '    /* Phase 8: HDR10 PQ Tonemapping & Vulkan Queue Submit */' },
+        { ln: 74, text: '    if (out->hdr_enabled) {' },
+        { ln: 75, text: '        comp_hdr_tonemap_pass(vk, out->hdr_lut, out->max_nits);' , call: 'comp_hdr_tonemap_pass' },
+        { ln: 76, text: '    }' },
+        { ln: 77, text: '    comp_vk_end_render_pass(vk);' , call: 'comp_vk_end_render_pass' },
+        { ln: 78, text: '    vkQueueSubmit(out->vk_queue, 1, &vk->submit_info, vk->fence);' , extCall: 'vkQueueSubmit' },
+        { ln: 79, text: '' },
+        { ln: 80, text: '    /* Phase 9: Explicit Timeline Syncobj & Atomic KMS Flip */' },
+        { ln: 81, text: '    comp_syncobj_signal_release(out->sync_timeline, frame->seq);' , call: 'comp_syncobj_signal_release' },
+        { ln: 82, text: '    CompDrmCommitPlan *plan = &out->commit_plan;' , typeRef: 'CompDrmCommitPlan' },
+        { ln: 83, text: '    drmModeAtomicAddProperty(plan->req, out->crtc_id, plan->fb_prop, frame->fb_id);' , extCall: 'drmModeAtomicAddProperty' },
+        { ln: 84, text: '    comp_drm_atomic_commit(out, frame, false);' , call: 'comp_drm_atomic_commit' },
+        { ln: 85, text: '' },
+        { ln: 86, text: '    /* Repeat glass pass for secondary PIP overlay if active */' },
+        { ln: 87, text: '    if (out->pip_glass_node != NULL) {' },
+        { ln: 88, text: '        fx_glass_render(vk, out->pip_glass_node, &glass, &damage);' , call: 'fx_glass_render' },
+        { ln: 89, text: '    }' },
+        { ln: 90, text: '' },
+        { ln: 91, text: 'finish_frame:' },
+        { ln: 92, text: '    /* Phase 10: Wayland Frame Callbacks, Telemetry & Idle Tracking */' },
+        { ln: 93, text: '    g_list_foreach(out->pending_cbs, comp_frame_callback_notify, frame);' , call: 'comp_frame_callback_notify', extCall: 'g_list_foreach' },
+        { ln: 94, text: '    wl_resource_post_event(out->wl_output, 0, frame->seq);' , extCall: 'wl_resource_post_event' },
+        { ln: 95, text: '    wl_display_flush(out->display);' , extCall: 'wl_display_flush' },
+        { ln: 96, text: '' },
+        { ln: 97, text: '    CompTelemetrySample sample = { .seq = frame->seq };' , typeRef: 'CompTelemetrySample' },
+        { ln: 98, text: '    comp_telemetry_record_frame(out->telemetry, &sample, &t_start);' , call: 'comp_telemetry_record_frame' },
+        { ln: 99, text: '    comp_idle_notify_check(out->idle_mgr, frame->target_ns);' , call: 'comp_idle_notify_check' },
+        { ln: 100, text: '    comp_output_schedule_next(out, frame->target_ns);' , call: 'comp_output_schedule_next' },
+        { ln: 101, text: '' },
+        { ln: 102, text: '    /* Guard secondary spring settle telemetry */' },
+        { ln: 103, text: '    if (springs->active_count > 0) {' },
+        { ln: 104, text: '        comp_telemetry_record_frame(out->telemetry, &sample, &t_start);' , call: 'comp_telemetry_record_frame' },
+        { ln: 105, text: '    }' },
+        { ln: 106, text: '    g_mutex_unlock(&out->frame_lock);' , extCall: 'g_mutex_unlock' },
+        { ln: 107, text: '}' }
+      ];
+
+      regSym({
+        id: 'kajo_frame_pipeline',
+        name: 'kajo_frame_pipeline',
+        file: 'src/comp/comp_output.c',
+        shortFile: 'comp_output.c',
+        line: 6,
+        scopeStart: 6,
+        scopeEnd: 107,
+        sig: 'void kajo_frame_pipeline(CompOutput *out, CompFrameState *frame)',
+        extHiddenCount: 14,
+        extNames: [
+          'g_return_if_fail', 'clock_gettime', 'g_mutex_lock', 'g_mutex_unlock',
+          'fminf', 'g_timer_elapsed', 'g_array_set_size', 'vkCmdSetViewport',
+          'vkCmdSetScissor', 'vkQueueSubmit', 'drmModeAtomicAddProperty',
+          'g_list_foreach', 'wl_resource_post_event', 'wl_display_flush'
+        ],
+        diffStatus: 'agent',
+        diffSummary: '+11 -2 · AI Agent',
+        breakpoints: { 30: { cond: null }, 55: { cond: 'glass.radius > 12.0f' } },
+        diagnostics: { 35: { sev: 'warn', msg: 'W: XWayland sync timeout may stall 165Hz VRR frame budget' } },
+        gitDiff: { 23: 'mod', 24: 'mod', 55: 'agent', 56: 'agent', 87: 'agent', 88: 'agent', 98: 'add' },
+        codeLines: COMP_OUTPUT_LINES
+      });
+
+      /* ------------------------------------------------------------------------
+         DEPTH 1 STAR BRANCH: fx_glass_render (src/comp/fx_glass.c, 11 calls)
+         Includes surrounding file lines for realistic [ ⤢ FULL FILE ] scope veil!
+         ------------------------------------------------------------------------ */
+      regSym({
+        id: 'fx_glass_render',
+        name: 'fx_glass_render',
+        file: 'src/comp/fx_glass.c',
+        shortFile: 'fx_glass.c',
+        line: 210,
+        scopeStart: 210,
+        scopeEnd: 262,
+        sig: 'void fx_glass_render(CompVkPassCtx *vk, GPtrArray *nodes, const CompFxGlassParams *p, const CompDamageRegion *dmg)',
+        extHiddenCount: 6,
+        extNames: ['g_return_if_fail', 'vkCmdBindPipeline', 'vkCmdSetScissor', 'fmaxf', 'memcpy', 'g_warn_if_fail'],
+        diffStatus: 'agent',
+        diffSummary: '+18 -4 · AI Agent',
+        breakpoints: { 228: { cond: 'roi.w > 640' } },
+        diagnostics: { 233: { sev: 'warn', msg: 'W: Dual-Kawase 5-pass exceeds 1.1ms GPU budget on iGPU at 4K' } },
+        gitDiff: { 226: 'agent', 227: 'agent', 228: 'agent', 233: 'agent', 249: 'add' },
+        codeLines: [
+          { ln: 201, text: '/* Surrounding file context in src/comp/fx_glass.c (veiled when scoped) */' },
+          { ln: 202, text: 'static float fx_glass_luma_weight(const CompFxGlassParams *p) {' , typeRef: 'CompFxGlassParams' },
+          { ln: 203, text: '    return fmaxf(0.08f, p->opacity * (1.0f - p->tint_mix * 0.35f));' , extCall: 'fmaxf' },
+          { ln: 204, text: '}' },
+          { ln: 205, text: '' },
+          { ln: 206, text: '/* ── Dual-Kawase Frosted Aero Glass Pipeline (Promoted Symbol) ── */' },
+          { ln: 210, text: 'void fx_glass_render(CompVkPassCtx *vk, GPtrArray *nodes,' , typeRef: 'CompVkPassCtx' },
+          { ln: 211, text: '                     const CompFxGlassParams *p, const CompDamageRegion *dmg) {' , typeRef: 'CompFxGlassParams' },
+          { ln: 212, text: '    g_return_if_fail(vk != NULL && p != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 213, text: '    if (!fx_glass_validate_params(p, vk->caps)) return;' , call: 'fx_glass_validate_params' },
+          { ln: 214, text: '' },
+          { ln: 215, text: '    CompDamageRegion roi = { 0 };' , typeRef: 'CompDamageRegion' },
+          { ln: 216, text: '    if (!fx_glass_compute_roi(nodes, dmg, p->blur_radius, &roi)) {' , call: 'fx_glass_compute_roi' },
+          { ln: 217, text: '        return;' },
+          { ln: 218, text: '    }' },
+          { ln: 219, text: '' },
+          { ln: 220, text: '    /* Acquire half-res ping-pong render targets from Vulkan pool */' },
+          { ln: 221, text: '    KfxRenderTarget *rt = kfx_rt_acquire_pingpong(vk->pool, &roi);' , call: 'kfx_rt_acquire_pingpong', typeRef: 'KfxRenderTarget' },
+          { ln: 222, text: '    KfxKawaseConfig cfg = { .passes = p->kawase_passes, .offset = p->offset };' , typeRef: 'KfxKawaseConfig' },
+          { ln: 223, text: '' },
+          { ln: 224, text: '    /* Dual-Kawase Downsample & Upsample Cascade */' },
+          { ln: 225, text: '    for (uint32_t i = 0; i < cfg.passes; i++) {' },
+          { ln: 226, text: '        blur_down_pass(vk, rt, &cfg, i);' , call: 'blur_down_pass' },
+          { ln: 227, text: '    }' },
+          { ln: 228, text: '    for (int32_t i = (int32_t)cfg.passes - 1; i >= 0; i--) {' },
+          { ln: 229, text: '        blur_up_pass(vk, rt, &cfg, (uint32_t)i);' , call: 'blur_up_pass' },
+          { ln: 230, text: '    }' },
+          { ln: 231, text: '' },
+          { ln: 232, text: '    /* Bind blue-noise micro-grain & tint UBO before composite */' },
+          { ln: 233, text: '    fx_noise_sample_bind(vk, p->noise_strength);' , call: 'fx_noise_sample_bind' },
+          { ln: 234, text: '    fx_glass_bind_tint_ubo(vk, p, rt->uv_scale);' , call: 'fx_glass_bind_tint_ubo' },
+          { ln: 235, text: '    vkCmdSetScissor(vk->cmd, 0, 1, &roi.vk_scissor);' , extCall: 'vkCmdSetScissor' },
+          { ln: 236, text: '' },
+          { ln: 237, text: '    /* Composite frosted glass quad + 1px specular Metro bezel */' },
+          { ln: 238, text: '    KfxQuadPushConst push = { .opacity = p->opacity, .radius = 0.0f };' , typeRef: 'KfxQuadPushConst' },
+          { ln: 239, text: '    kfx_vk_dispatch_quad(vk, rt->sampled_view, &push);' , call: 'kfx_vk_dispatch_quad' },
+          { ln: 240, text: '    if (p->specular_border) {' },
+          { ln: 241, text: '        fx_glass_specular_edge(vk, nodes, p->border_rgba);' , call: 'fx_glass_specular_edge' },
+          { ln: 242, text: '    }' },
+          { ln: 243, text: '' },
+          { ln: 244, text: '    /* Return transient targets & log GPU pass timing */' },
+          { ln: 245, text: '    kfx_rt_release_pingpong(vk->pool, rt);' , call: 'kfx_rt_release_pingpong' },
+          { ln: 246, text: '    comp_telemetry_add_gpu_pass(vk->telemetry, "fx_glass", cfg.passes * 2);' , call: 'comp_telemetry_add_gpu_pass' },
+          { ln: 247, text: '}' },
+          { ln: 248, text: '' },
+          { ln: 249, text: '/* Trailing file context in src/comp/fx_glass.c (veiled when scoped) */' },
+          { ln: 250, text: 'void fx_glass_destroy_cache(CompVkPassCtx *vk) {' },
+          { ln: 251, text: '    g_warn_if_fail(vk != NULL);' , extCall: 'g_warn_if_fail' },
+          { ln: 252, text: '    memset(&vk->glass_stats, 0, sizeof(vk->glass_stats));' , extCall: 'memset' },
+          { ln: 253, text: '}' }
+        ]
+      });
+
+      /* ------------------------------------------------------------------------
+         DEPTH 2 STAR BRANCH: blur_down_pass (src/comp/fx_blur.c, 6 calls)
+         ------------------------------------------------------------------------ */
+      regSym({
+        id: 'blur_down_pass',
+        name: 'blur_down_pass',
+        file: 'src/comp/fx_blur.c',
+        shortFile: 'fx_blur.c',
+        line: 104,
+        scopeStart: 104,
+        scopeEnd: 138,
+        sig: 'void blur_down_pass(CompVkPassCtx *vk, KfxRenderTarget *rt, const KfxKawaseConfig *cfg, uint32_t mip)',
+        extHiddenCount: 3,
+        extNames: ['g_return_if_fail', 'vkCmdBindPipeline', 'vkCmdSetViewport'],
+        diffStatus: 'git',
+        diffSummary: '+7 -2 · Git',
+        breakpoints: { 121: { cond: 'mip == 2' } },
+        gitDiff: { 114: 'mod', 121: 'add', 122: 'add' },
+        codeLines: [
+          { ln: 98,  text: '/* Surrounding helper in src/comp/fx_blur.c */' },
+          { ln: 99,  text: 'static inline uint32_t mip_dim(uint32_t v, uint32_t m) { return (v >> m) | 1u; }' },
+          { ln: 100, text: '' },
+          { ln: 104, text: 'void blur_down_pass(CompVkPassCtx *vk, KfxRenderTarget *rt,' , typeRef: 'KfxRenderTarget' },
+          { ln: 105, text: '                    const KfxKawaseConfig *cfg, uint32_t mip) {' , typeRef: 'KfxKawaseConfig' },
+          { ln: 106, text: '    g_return_if_fail(vk != NULL && rt != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 107, text: '    KfxQuadPushConst pc = { 0 };' , typeRef: 'KfxQuadPushConst' },
+          { ln: 108, text: '' },
+          { ln: 109, text: '    /* Compute half-pixel Kawase kernel taps for this mip level */' },
+          { ln: 110, text: '    kfx_blur_calc_kawase_offsets(rt, cfg->offset, mip, &pc);' , call: 'kfx_blur_calc_kawase_offsets' },
+          { ln: 111, text: '' },
+          { ln: 112, text: '    /* Transition destination mip image to COLOR_ATTACHMENT_OPTIMAL */' },
+          { ln: 113, text: '    kfx_vk_transition_image(vk, rt->dst_img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);' , call: 'kfx_vk_transition_image' },
+          { ln: 114, text: '    VkPipeline pipe = kfx_shader_get_pipeline(vk->shaders, KFX_PIPE_KAWASE_DOWN);' , call: 'kfx_shader_get_pipeline' },
+          { ln: 115, text: '    vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);' , extCall: 'vkCmdBindPipeline' },
+          { ln: 116, text: '' },
+          { ln: 117, text: '    /* Upload tap offsets via push constants & issue fullscreen triangle */' },
+          { ln: 118, text: '    kfx_vk_push_constants(vk, pipe, &pc, sizeof(pc));' , call: 'kfx_vk_push_constants' },
+          { ln: 119, text: '    vkCmdSetViewport(vk->cmd, 0, 1, &rt->mip_viewports[mip]);' , extCall: 'vkCmdSetViewport' },
+          { ln: 120, text: '    kfx_vk_dispatch_quad(vk, rt->src_view, &pc);' , call: 'kfx_vk_dispatch_quad' },
+          { ln: 121, text: '    kfx_rt_swap_targets(rt);' , call: 'kfx_rt_swap_targets' },
+          { ln: 122, text: '}' },
+          { ln: 123, text: '' },
+          { ln: 124, text: '/* Trailing context in src/comp/fx_blur.c */' },
+          { ln: 125, text: 'uint32_t blur_max_mips(uint32_t w, uint32_t h) { return (w > 2560 || h > 1440) ? 5 : 4; }' }
+        ]
+      });
+
+      /* ------------------------------------------------------------------------
+         DEPTH 3 STAR BRANCH: kfx_vk_dispatch_quad (src/comp/kfx_vk.c, 4 calls)
+         ------------------------------------------------------------------------ */
+      regSym({
+        id: 'kfx_vk_dispatch_quad',
+        name: 'kfx_vk_dispatch_quad',
+        file: 'src/comp/kfx_vk.c',
+        shortFile: 'kfx_vk.c',
+        line: 118,
+        scopeStart: 118,
+        scopeEnd: 145,
+        sig: 'void kfx_vk_dispatch_quad(CompVkPassCtx *vk, VkImageView src, const KfxQuadPushConst *pc)',
+        extHiddenCount: 3,
+        extNames: ['vkCmdPushConstants', 'vkCmdDraw', 'vkCmdPipelineBarrier'],
+        diffStatus: 'git',
+        diffSummary: '+4 -1 · Git',
+        gitDiff: { 127: 'add', 132: 'mod' },
+        codeLines: [
+          { ln: 113, text: '/* src/comp/kfx_vk.c — Low-level Vulkan Fullscreen Quad Emitter */' },
+          { ln: 118, text: 'void kfx_vk_dispatch_quad(CompVkPassCtx *vk, VkImageView src,' , typeRef: 'CompVkPassCtx' },
+          { ln: 119, text: '                          const KfxQuadPushConst *pc) {' , typeRef: 'KfxQuadPushConst' },
+          { ln: 120, text: '    if (!kfx_vk_validate_cmd_buf(vk)) return;' , call: 'kfx_vk_validate_cmd_buf' },
+          { ln: 121, text: '' },
+          { ln: 122, text: '    /* Bind sampled backdrop texture into set 0 */' },
+          { ln: 123, text: '    kfx_vk_bind_descriptor_set(vk, 0, src);' , call: 'kfx_vk_bind_descriptor_set' },
+          { ln: 124, text: '    vkCmdPushConstants(vk->cmd, vk->active_layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(*pc), pc);' , extCall: 'vkCmdPushConstants' },
+          { ln: 125, text: '' },
+          { ln: 126, text: '    /* Issue single oversized triangle (zero vertex buffer stalls) */' },
+          { ln: 127, text: '    kfx_vk_emit_fullscreen_tri(vk);' , call: 'kfx_vk_emit_fullscreen_tri' },
+          { ln: 128, text: '    vkCmdDraw(vk->cmd, 3, 1, 0, 0);' , extCall: 'vkCmdDraw' },
+          { ln: 129, text: '' },
+          { ln: 130, text: '    /* Insert fragment read-after-write memory barrier */' },
+          { ln: 131, text: '    kfx_vk_insert_barrier(vk, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);' , call: 'kfx_vk_insert_barrier' },
+          { ln: 132, text: '}' }
+        ]
+      });
+
+      /* ------------------------------------------------------------------------
+         RICH SIBLING BRANCHES (So clicking ANY major tile gives real multi-depth code!)
+         ------------------------------------------------------------------------ */
+      regSym({
+        id: 'comp_scene_damage_collect',
+        name: 'comp_scene_damage_collect',
+        file: 'src/comp/comp_scene.c',
+        shortFile: 'comp_scene.c',
+        line: 142,
+        scopeStart: 142,
+        scopeEnd: 174,
+        sig: 'void comp_scene_damage_collect(CompScene *scene, CompDamageRegion *out_dmg, uint32_t buf_age)',
+        extHiddenCount: 3,
+        extNames: ['g_return_if_fail', 'memcpy', 'g_array_set_size'],
+        diffStatus: 'git',
+        diffSummary: '+9 -3 · Git',
+        gitDiff: { 151: 'mod', 156: 'add' },
+        codeLines: [
+          { ln: 138, text: '/* src/comp/comp_scene.c — Hierarchical Damage Ring Collector */' },
+          { ln: 142, text: 'void comp_scene_damage_collect(CompScene *scene, CompDamageRegion *out_dmg, uint32_t buf_age) {' , typeRef: 'CompDamageRegion' },
+          { ln: 143, text: '    g_return_if_fail(scene != NULL && out_dmg != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 144, text: '    comp_damage_reset_bounds(out_dmg, scene->output_rect);' , call: 'comp_damage_reset_bounds' },
+          { ln: 145, text: '    if (buf_age == 0 || buf_age > COMP_DAMAGE_RING_MAX) {' },
+          { ln: 146, text: '        comp_damage_mark_full_output(out_dmg, scene->output_rect);' , call: 'comp_damage_mark_full_output' },
+          { ln: 147, text: '        return;' },
+          { ln: 148, text: '    }' },
+          { ln: 149, text: '    comp_damage_union_ring_history(scene->ring, buf_age, out_dmg);' , call: 'comp_damage_union_ring_history' },
+          { ln: 150, text: '    comp_scene_walk_dirty_subsurfaces(scene->root, out_dmg);' , call: 'comp_scene_walk_dirty_subsurfaces' },
+          { ln: 151, text: '    comp_damage_expand_for_blur(out_dmg, scene->max_blur_radius);' , call: 'comp_damage_expand_for_blur' },
+          { ln: 152, text: '}' }
+        ]
+      });
+
+      regSym({
+        id: 'fx_shadow_render',
+        name: 'fx_shadow_render',
+        file: 'src/comp/fx_shadow.c',
+        shortFile: 'fx_shadow.c',
+        line: 76,
+        scopeStart: 76,
+        scopeEnd: 102,
+        sig: 'void fx_shadow_render(CompVkPassCtx *vk, GPtrArray *floating, const CompShadowSpec *spec)',
+        extHiddenCount: 3,
+        extNames: ['g_return_if_fail', 'vkCmdBindPipeline', 'fminf'],
+        diffStatus: 'git',
+        diffSummary: '+5 -1 · Git',
+        gitDiff: { 86: 'add' },
+        codeLines: [
+          { ln: 72, text: '/* src/comp/fx_shadow.c — Analytical 0px-Radius Metro Drop Shadow Pass */' },
+          { ln: 76, text: 'void fx_shadow_render(CompVkPassCtx *vk, GPtrArray *floating, const CompShadowSpec *spec) {' , typeRef: 'CompShadowSpec' },
+          { ln: 77, text: '    g_return_if_fail(vk != NULL && spec != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 78, text: '    if (floating->len == 0) return;' },
+          { ln: 79, text: '    VkPipeline pipe = kfx_shader_get_pipeline(vk->shaders, KFX_PIPE_SHADOW_BOX);' , call: 'kfx_shader_get_pipeline' },
+          { ln: 80, text: '    vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);' , extCall: 'vkCmdBindPipeline' },
+          { ln: 81, text: '    for (uint32_t i = 0; i < floating->len; i++) {' },
+          { ln: 82, text: '        CompShadowRect box = fx_shadow_expand_rect(floating->pdata[i], spec);' , call: 'fx_shadow_expand_rect' },
+          { ln: 83, text: '        fx_shadow_upload_uniforms(vk, &box, spec->alpha);' , call: 'fx_shadow_upload_uniforms' },
+          { ln: 84, text: '        kfx_vk_dispatch_quad(vk, vk->dummy_white_view, &box.push);' , call: 'kfx_vk_dispatch_quad' },
+          { ln: 85, text: '    }' },
+          { ln: 86, text: '    comp_telemetry_add_gpu_pass(vk->telemetry, "fx_shadow", floating->len);' , call: 'comp_telemetry_add_gpu_pass' },
+          { ln: 87, text: '}' }
+        ]
+      });
+
+      regSym({
+        id: 'fx_transition_tick',
+        name: 'fx_transition_tick',
+        file: 'src/comp/fx_transition.c',
+        shortFile: 'fx_transition.c',
+        line: 118,
+        scopeStart: 118,
+        scopeEnd: 144,
+        sig: 'void fx_transition_tick(CompVkPassCtx *vk, CompTransitionNode *tr, float dt)',
+        extHiddenCount: 2,
+        extNames: ['g_return_if_fail', 'fminf'],
+        diffStatus: 'agent',
+        diffSummary: '+12 -4 · AI Agent',
+        gitDiff: { 124: 'agent', 125: 'agent', 128: 'agent' },
+        codeLines: [
+          { ln: 114, text: '/* src/comp/fx_transition.c — Spring-Driven Overview & Workspace Transition */' },
+          { ln: 118, text: 'void fx_transition_tick(CompVkPassCtx *vk, CompTransitionNode *tr, float dt) {' , typeRef: 'CompTransitionNode' },
+          { ln: 119, text: '    g_return_if_fail(vk != NULL && tr != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 120, text: '    comp_spring_step_single(&tr->spring, dt);' , call: 'comp_spring_step_single' },
+          { ln: 121, text: '    float p = fminf(1.0f, tr->spring.value);' , extCall: 'fminf' },
+          { ln: 122, text: '    fx_transition_compute_matrix(tr, p, &tr->mvp);' , call: 'fx_transition_compute_matrix' },
+          { ln: 123, text: '    kfx_vk_push_constants(vk, tr->pipe, &tr->mvp, sizeof(tr->mvp));' , call: 'kfx_vk_push_constants' },
+          { ln: 124, text: '    kfx_vk_dispatch_quad(vk, tr->snapshot_view, &tr->push);' , call: 'kfx_vk_dispatch_quad' },
+          { ln: 125, text: '    if (comp_spring_is_settled(&tr->spring)) {' , call: 'comp_spring_is_settled' },
+          { ln: 126, text: '        fx_transition_complete(tr);' , call: 'fx_transition_complete' },
+          { ln: 127, text: '    }' },
+          { ln: 128, text: '}' }
+        ]
+      });
+
+      regSym({
+        id: 'comp_xwayland_check_ready',
+        name: 'comp_xwayland_check_ready',
+        file: 'src/comp/comp_xwayland.c',
+        shortFile: 'comp_xwayland.c',
+        line: 204,
+        scopeStart: 204,
+        scopeEnd: 230,
+        sig: 'void comp_xwayland_check_ready(CompXwm *xwm, uint64_t deadline_ns)',
+        extHiddenCount: 3,
+        extNames: ['g_return_if_fail', 'clock_gettime', 'wl_display_flush'],
+        diagnostics: { 214: { sev: 'warn', msg: 'W: Pending X11 sync alarm falls back to 2ms grace window' } },
+        codeLines: [
+          { ln: 200, text: '/* src/comp/comp_xwayland.c — Explicit Sync Fence Gate for XWayland */' },
+          { ln: 204, text: 'void comp_xwayland_check_ready(CompXwm *xwm, uint64_t deadline_ns) {' , typeRef: 'CompXwaylandSurface' },
+          { ln: 205, text: '    g_return_if_fail(xwm != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 206, text: '    comp_xwayland_poll_sync_counters(xwm);' , call: 'comp_xwayland_poll_sync_counters' },
+          { ln: 207, text: '    for (uint32_t i = 0; i < xwm->pending->len; i++) {' },
+          { ln: 208, text: '        CompXwaylandSurface *xs = xwm->pending->pdata[i];' , typeRef: 'CompXwaylandSurface' },
+          { ln: 209, text: '        if (comp_syncobj_is_signaled(xs->acquire_timeline, xs->point)) {' , call: 'comp_syncobj_is_signaled' },
+          { ln: 210, text: '            comp_xwayland_commit_surface(xwm, xs);' , call: 'comp_xwayland_commit_surface' },
+          { ln: 211, text: '        } else if (comp_xwayland_past_grace(xs, deadline_ns)) {' , call: 'comp_xwayland_past_grace' },
+          { ln: 212, text: '            comp_telemetry_record_x11_stall(xwm->telemetry, xs->win_id);' , call: 'comp_telemetry_record_x11_stall' },
+          { ln: 213, text: '        }' },
+          { ln: 214, text: '    }' },
+          { ln: 215, text: '}' }
+        ]
+      });
+
+      regSym({
+        id: 'comp_spring_step_all',
+        name: 'comp_spring_step_all',
+        file: 'src/comp/comp_spring.c',
+        shortFile: 'comp_spring.c',
+        line: 48,
+        scopeStart: 48,
+        scopeEnd: 74,
+        sig: 'void comp_spring_step_all(CompSpringState *pool, float dt)',
+        extHiddenCount: 2,
+        extNames: ['g_return_if_fail', 'expf'],
+        diffStatus: 'git',
+        diffSummary: '+6 -2 · Git',
+        gitDiff: { 56: 'mod', 57: 'add' },
+        codeLines: [
+          { ln: 44, text: '/* src/comp/comp_spring.c — Analytical Damped Harmonic Oscillator */' },
+          { ln: 48, text: 'void comp_spring_step_all(CompSpringState *pool, float dt) {' , typeRef: 'CompSpringState' },
+          { ln: 49, text: '    g_return_if_fail(pool != NULL);' , extCall: 'g_return_if_fail' },
+          { ln: 50, text: '    pool->active_count = 0;' },
+          { ln: 51, text: '    for (uint32_t i = 0; i < pool->count; i++) {' },
+          { ln: 52, text: '        CompSpring *s = &pool->items[i];' },
+          { ln: 53, text: '        if (comp_spring_is_settled(s)) continue;' , call: 'comp_spring_is_settled' },
+          { ln: 54, text: '        comp_spring_step_single(s, dt);' , call: 'comp_spring_step_single' },
+          { ln: 55, text: '        comp_spring_clamp_overshoot(s);' , call: 'comp_spring_clamp_overshoot' },
+          { ln: 56, text: '        pool->active_count++;' },
+          { ln: 57, text: '    }' },
+          { ln: 58, text: '}' }
+        ]
+      });
+
+      regSym({
+        id: 'blur_up_pass',
+        name: 'blur_up_pass',
+        file: 'src/comp/fx_blur.c',
+        shortFile: 'fx_blur.c',
+        line: 172,
+        scopeStart: 172,
+        scopeEnd: 194,
+        sig: 'void blur_up_pass(CompVkPassCtx *vk, KfxRenderTarget *rt, const KfxKawaseConfig *cfg, uint32_t mip)',
+        extHiddenCount: 2,
+        extNames: ['vkCmdBindPipeline', 'vkCmdSetViewport'],
+        codeLines: [
+          { ln: 168, text: '/* Dual-Kawase 8-Tap Upsample Reconstruction Pass */' },
+          { ln: 172, text: 'void blur_up_pass(CompVkPassCtx *vk, KfxRenderTarget *rt,' , typeRef: 'KfxRenderTarget' },
+          { ln: 173, text: '                  const KfxKawaseConfig *cfg, uint32_t mip) {' , typeRef: 'KfxKawaseConfig' },
+          { ln: 174, text: '    KfxQuadPushConst pc = { 0 };' , typeRef: 'KfxQuadPushConst' },
+          { ln: 175, text: '    kfx_blur_calc_kawase_offsets(rt, cfg->offset, mip, &pc);' , call: 'kfx_blur_calc_kawase_offsets' },
+          { ln: 176, text: '    VkPipeline pipe = kfx_shader_get_pipeline(vk->shaders, KFX_PIPE_KAWASE_UP);' , call: 'kfx_shader_get_pipeline' },
+          { ln: 177, text: '    vkCmdBindPipeline(vk->cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);' , extCall: 'vkCmdBindPipeline' },
+          { ln: 178, text: '    kfx_vk_dispatch_quad(vk, rt->src_view, &pc);' , call: 'kfx_vk_dispatch_quad' },
+          { ln: 179, text: '    kfx_rt_swap_targets(rt);' , call: 'kfx_rt_swap_targets' },
+          { ln: 180, text: '}' }
+        ]
+      });
+
+      regSym({
+        id: 'comp_drm_atomic_commit',
+        name: 'comp_drm_atomic_commit',
+        file: 'src/comp/comp_drm.c',
+        shortFile: 'comp_drm.c',
+        line: 245,
+        scopeStart: 245,
+        scopeEnd: 270,
+        sig: 'bool comp_drm_atomic_commit(CompOutput *out, CompFrameState *frame, bool direct_scanout)',
+        extHiddenCount: 3,
+        extNames: ['drmModeAtomicCommit', 'drmModeAtomicAddProperty', 'clock_gettime'],
+        diffStatus: 'git',
+        diffSummary: '+5 -2 · Git',
+        gitDiff: { 253: 'mod', 256: 'add' },
+        codeLines: [
+          { ln: 241, text: '/* src/comp/comp_drm.c — Atomic KMS Pageflip & VRR Commit */' },
+          { ln: 245, text: 'bool comp_drm_atomic_commit(CompOutput *out, CompFrameState *frame, bool direct_scanout) {' , typeRef: 'CompDrmCommitPlan' },
+          { ln: 246, text: '    CompDrmCommitPlan *plan = &out->commit_plan;' , typeRef: 'CompDrmCommitPlan' },
+          { ln: 247, text: '    comp_drm_prepare_plane_props(plan, out, frame, direct_scanout);' , call: 'comp_drm_prepare_plane_props' },
+          { ln: 248, text: '    comp_vrr_apply_kms_props(plan, out->vrr_enabled);' , call: 'comp_vrr_apply_kms_props' },
+          { ln: 249, text: '    uint32_t flags = DRM_MODE_ATOMIC_NONBLOCK | DRM_MODE_PAGE_FLIP_EVENT;' },
+          { ln: 250, text: '    int rc = drmModeAtomicCommit(out->drm_fd, plan->req, flags, out);' , extCall: 'drmModeAtomicCommit' },
+          { ln: 251, text: '    if (rc != 0) {' },
+          { ln: 252, text: '        comp_drm_recover_commit_err(out, rc);' , call: 'comp_drm_recover_commit_err' },
+          { ln: 253, text: '        return false;' },
+          { ln: 254, text: '    }' },
+          { ln: 255, text: '    comp_telemetry_mark_flip_queued(out->telemetry, frame->seq);' , call: 'comp_telemetry_mark_flip_queued' },
+          { ln: 256, text: '    return true;' },
+          { ln: 257, text: '}' }
+        ]
+      });
+
+      /* Helper to register authentic workspace functions for all remaining tiles & sub-nodes */
+      function regQuickFn(id, file, line, sig, callees, extra = {}) {
+        const shortFile = file.split('/').pop();
+        const lines = [
+          { ln: line - 3, text: `/* ${file} — Kajo Compositor Workspace Subsystem */` },
+          { ln: line, text: `${sig} {`, ...(extra.typeRef ? { typeRef: extra.typeRef } : {}) },
+          { ln: line + 1, text: '    g_return_if_fail(ctx != NULL);', extCall: 'g_return_if_fail' }
+        ];
+        let cur = line + 2;
+        callees.forEach((cId, idx) => {
+          lines.push({
+            ln: cur++,
+            text: `    ${cId}(ctx, &stage_arg_${idx});`,
+            call: cId
+          });
+        });
+        if (callees.length === 0) {
+          lines.push({ ln: cur++, text: '    /* Leaf workspace routine — zero downstream workspace calls */' });
+          lines.push({ ln: cur++, text: '    ctx->flags |= COMP_STATE_READY;' });
+        }
+        lines.push({ ln: cur, text: '}' });
+
+        regSym({
+          id,
+          name: id,
+          file,
+          shortFile,
+          line,
+          scopeStart: line,
+          scopeEnd: cur,
+          sig,
+          extHiddenCount: extra.extHiddenCount ?? 2,
+          extNames: extra.extNames ?? ['g_return_if_fail', 'clock_gettime'],
+          diffStatus: extra.diffStatus ?? null,
+          diffSummary: extra.diffSummary ?? '',
+          gitDiff: extra.gitDiff ?? {},
+          diagnostics: extra.diagnostics ?? {},
+          codeLines: lines
+        });
+      }
+
+      /* Register remaining 22 of the 28 root workspace calls with real sub-callees */
+      regQuickFn('comp_output_begin_frame', 'src/comp/comp_output.c', 28,
+        'bool comp_output_begin_frame(CompOutput *out, CompFrameState *frame, const struct timespec *ts)',
+        ['comp_output_reset_metrics', 'comp_vrr_latch_epoch', 'comp_damage_rotate_ring'],
+        { typeRef: 'CompOutput' });
+      regQuickFn('comp_vrr_predict_present', 'src/comp/comp_vrr.c', 94,
+        'uint64_t comp_vrr_predict_present(CompOutput *out, uint64_t seq)',
+        ['comp_vrr_filter_refresh_hz', 'comp_vrr_clamp_lfc_window'],
+        { typeRef: 'CompFrameState' });
+      regQuickFn('comp_input_flush_pending', 'src/comp/comp_input.c', 112,
+        'void comp_input_flush_pending(CompSeat *seat, uint64_t target_ns)',
+        ['comp_input_coalesce_motion', 'comp_gesture_eval_bezel', 'comp_seat_notify_focus']);
+      regQuickFn('comp_layout_reconcile_strip', 'src/comp/comp_layout.c', 186,
+        'void comp_layout_reconcile_strip(CompWorkspace *ws, CompRect viewport)',
+        ['comp_layout_compute_columns', 'comp_layout_apply_spring_x', 'comp_window_configure_bounds'],
+        { diffStatus: 'agent', diffSummary: '+9 -3 · AI Agent', gitDiff: { 188: 'agent', 189: 'agent' } });
+      regQuickFn('comp_workspace_sync_focus', 'src/comp/comp_workspace.c', 74,
+        'void comp_workspace_sync_focus(CompWorkspace *ws, CompSeat *seat)',
+        ['comp_seat_notify_focus', 'comp_window_raise_border']);
+      regQuickFn('comp_occlusion_cull_nodes', 'src/comp/comp_occlusion.c', 63,
+        'void comp_occlusion_cull_nodes(CompScene *scene, const CompDamageRegion *dmg, GArray *out_list)',
+        ['comp_occlusion_build_opaque_mask', 'comp_occlusion_test_bounds'],
+        { typeRef: 'CompDamageRegion' });
+      regQuickFn('comp_dmabuf_acquire_scanout', 'src/comp/comp_dmabuf.c', 88,
+        'bool comp_dmabuf_acquire_scanout(CompOutput *out, CompFrameState *frame, const CompDamageRegion *dmg)',
+        ['comp_dmabuf_check_modifiers', 'comp_drm_import_fb_id']);
+      regQuickFn('comp_vk_begin_render_pass', 'src/comp/comp_vk.c', 155,
+        'CompVkPassCtx *comp_vk_begin_render_pass(CompOutput *out, const CompDamageRegion *dmg)',
+        ['kfx_vk_validate_cmd_buf', 'kfx_vk_transition_image', 'kfx_rt_acquire_pingpong'],
+        { typeRef: 'CompVkPassCtx' });
+      regQuickFn('fx_wallpaper_draw_layer', 'src/comp/fx_wallpaper.c', 42,
+        'void fx_wallpaper_draw_layer(CompVkPassCtx *vk, CompWallpaper *wp, const CompDamageRegion *dmg)',
+        ['kfx_shader_get_pipeline', 'kfx_vk_dispatch_quad']);
+      regQuickFn('comp_scene_draw_opaque', 'src/comp/comp_scene.c', 218,
+        'void comp_scene_draw_opaque(CompVkPassCtx *vk, GArray *opaque_list)',
+        ['kfx_shader_get_pipeline', 'kfx_vk_bind_descriptor_set', 'kfx_vk_dispatch_quad']);
+      regQuickFn('fx_border_draw_accent', 'src/comp/fx_border.c', 34,
+        'void fx_border_draw_accent(CompVkPassCtx *vk, CompNode *node, const float rgba[4])',
+        ['kfx_shader_get_pipeline', 'kfx_vk_push_constants', 'kfx_vk_dispatch_quad']);
+      regQuickFn('comp_layer_draw_panels', 'src/comp/comp_layer.c', 164,
+        'void comp_layer_draw_panels(CompVkPassCtx *vk, GPtrArray *panels, const CompFxGlassParams *glass)',
+        ['fx_glass_render', 'kfx_vk_dispatch_quad'],
+        { typeRef: 'CompFxGlassParams' });
+      regQuickFn('comp_osk_draw_overlay', 'src/comp/comp_osk.c', 92,
+        'void comp_osk_draw_overlay(CompVkPassCtx *vk, CompNode *osk, const CompFxGlassParams *glass)',
+        ['fx_glass_render', 'fx_border_draw_accent']);
+      regQuickFn('comp_cursor_plane_update', 'src/comp/comp_cursor.c', 54,
+        'void comp_cursor_plane_update(CompOutput *out, CompPoint pos)',
+        ['comp_drm_move_cursor_plane', 'comp_cursor_upload_buffer']);
+      regQuickFn('comp_hdr_tonemap_pass', 'src/comp/comp_hdr.c', 131,
+        'void comp_hdr_tonemap_pass(CompVkPassCtx *vk, CompHdrLut *lut, float max_nits)',
+        ['kfx_shader_get_pipeline', 'kfx_vk_bind_descriptor_set', 'kfx_vk_dispatch_quad']);
+      regQuickFn('comp_vk_end_render_pass', 'src/comp/comp_vk.c', 212,
+        'void comp_vk_end_render_pass(CompVkPassCtx *vk)',
+        ['kfx_vk_insert_barrier', 'kfx_vk_transition_image']);
+      regQuickFn('comp_syncobj_signal_release', 'src/comp/comp_syncobj.c', 67,
+        'void comp_syncobj_signal_release(CompSyncTimeline *tl, uint64_t seq)',
+        ['comp_syncobj_export_syncfile', 'comp_syncobj_notify_waiters']);
+      regQuickFn('comp_frame_callback_notify', 'src/comp/comp_output.c', 312,
+        'void comp_frame_callback_notify(gpointer cb, gpointer user_data)',
+        ['comp_output_timestamp_ms']);
+      regQuickFn('comp_telemetry_record_frame', 'src/comp/comp_telemetry.c', 84,
+        'void comp_telemetry_record_frame(CompTelemetry *tel, const CompTelemetrySample *s, const struct timespec *ts)',
+        ['comp_telemetry_push_ring', 'comp_telemetry_update_p99'],
+        { typeRef: 'CompTelemetrySample', diffStatus: 'git', diffSummary: '+4 -0 · Git', gitDiff: { 86: 'add' } });
+      regQuickFn('comp_idle_notify_check', 'src/comp/comp_idle.c', 49,
+        'void comp_idle_notify_check(CompIdleMgr *idle, uint64_t now_ns)',
+        ['comp_idle_fire_expired_inhibitors']);
+      regQuickFn('comp_output_schedule_next', 'src/comp/comp_output.c', 358,
+        'void comp_output_schedule_next(CompOutput *out, uint64_t target_ns)',
+        ['comp_vrr_predict_present', 'comp_output_arm_timerfd']);
+
+      /* Sub-callees for Depth 1 -> Depth 2 -> Depth 3 -> Depth 4 */
+      regQuickFn('fx_glass_validate_params', 'src/comp/fx_glass.c', 44,
+        'bool fx_glass_validate_params(const CompFxGlassParams *p, const CompVkCaps *caps)',
+        ['kfx_shader_check_fp16'], { typeRef: 'CompFxGlassParams' });
+      regQuickFn('fx_glass_compute_roi', 'src/comp/fx_glass.c', 88,
+        'bool fx_glass_compute_roi(GPtrArray *nodes, const CompDamageRegion *dmg, float radius, CompDamageRegion *out_roi)',
+        ['comp_damage_expand_for_blur'], { typeRef: 'CompDamageRegion' });
+      regQuickFn('kfx_rt_acquire_pingpong', 'src/comp/kfx_rt.c', 52,
+        'KfxRenderTarget *kfx_rt_acquire_pingpong(KfxRtPool *pool, const CompDamageRegion *roi)',
+        ['kfx_rt_match_extent', 'kfx_rt_alloc_mip_views', 'kfx_vk_transition_image'], { typeRef: 'KfxRenderTarget' });
+      regQuickFn('fx_noise_sample_bind', 'src/comp/fx_noise.c', 38,
+        'void fx_noise_sample_bind(CompVkPassCtx *vk, float strength)',
+        ['kfx_vk_bind_descriptor_set']);
+      regQuickFn('fx_glass_bind_tint_ubo', 'src/comp/fx_glass.c', 156,
+        'void fx_glass_bind_tint_ubo(CompVkPassCtx *vk, const CompFxGlassParams *p, float uv_scale)',
+        ['kfx_vk_push_constants'], { typeRef: 'CompFxGlassParams' });
+      regQuickFn('fx_glass_specular_edge', 'src/comp/fx_glass.c', 274,
+        'void fx_glass_specular_edge(CompVkPassCtx *vk, GPtrArray *nodes, const float rgba[4])',
+        ['kfx_shader_get_pipeline', 'kfx_vk_dispatch_quad']);
+      regQuickFn('kfx_rt_release_pingpong', 'src/comp/kfx_rt.c', 96,
+        'void kfx_rt_release_pingpong(KfxRtPool *pool, KfxRenderTarget *rt)',
+        ['kfx_rt_mark_lru']);
+      regQuickFn('comp_telemetry_add_gpu_pass', 'src/comp/comp_telemetry.c', 142,
+        'void comp_telemetry_add_gpu_pass(CompTelemetry *tel, const char *name, uint32_t draws)',
+        ['comp_telemetry_push_ring']);
+
+      regQuickFn('kfx_blur_calc_kawase_offsets', 'src/comp/fx_blur.c', 32,
+        'void kfx_blur_calc_kawase_offsets(const KfxRenderTarget *rt, float offset, uint32_t mip, KfxQuadPushConst *out)',
+        ['kfx_rt_get_texel_size']);
+      regQuickFn('kfx_vk_transition_image', 'src/comp/kfx_vk.c', 64,
+        'void kfx_vk_transition_image(CompVkPassCtx *vk, VkImage img, VkImageLayout dst)',
+        ['kfx_vk_insert_barrier']);
+      regQuickFn('kfx_shader_get_pipeline', 'src/comp/kfx_shader.c', 88,
+        'VkPipeline kfx_shader_get_pipeline(KfxShaderCache *cache, KfxPipeId id)',
+        ['kfx_shader_lookup_spirv', 'kfx_shader_compile_variant']);
+      regQuickFn('kfx_vk_push_constants', 'src/comp/kfx_vk.c', 98,
+        'void kfx_vk_push_constants(CompVkPassCtx *vk, VkPipeline pipe, const void *data, size_t len)',
+        ['kfx_vk_validate_cmd_buf']);
+      regQuickFn('kfx_rt_swap_targets', 'src/comp/kfx_rt.c', 128,
+        'void kfx_rt_swap_targets(KfxRenderTarget *rt)', []);
+      regQuickFn('kfx_vk_validate_cmd_buf', 'src/comp/kfx_vk.c', 34,
+        'bool kfx_vk_validate_cmd_buf(CompVkPassCtx *vk)', []);
+      regQuickFn('kfx_vk_bind_descriptor_set', 'src/comp/kfx_vk.c', 76,
+        'void kfx_vk_bind_descriptor_set(CompVkPassCtx *vk, uint32_t set_idx, VkImageView view)', []);
+      regQuickFn('kfx_vk_emit_fullscreen_tri', 'src/comp/kfx_vk.c', 154,
+        'void kfx_vk_emit_fullscreen_tri(CompVkPassCtx *vk)', []);
+      regQuickFn('kfx_vk_insert_barrier', 'src/comp/kfx_vk.c', 188,
+        'void kfx_vk_insert_barrier(CompVkPassCtx *vk, VkPipelineStageFlags stage)', []);
+
+      /* Leaf & helper workspace functions referenced by sibling branches */
+      const LEAF_HELPERS = [
+        ['comp_output_reset_metrics', 'src/comp/comp_output.c', 14],
+        ['comp_vrr_latch_epoch', 'src/comp/comp_vrr.c', 42],
+        ['comp_damage_rotate_ring', 'src/comp/comp_scene.c', 36],
+        ['comp_vrr_filter_refresh_hz', 'src/comp/comp_vrr.c', 64],
+        ['comp_vrr_clamp_lfc_window', 'src/comp/comp_vrr.c', 78],
+        ['comp_input_coalesce_motion', 'src/comp/comp_input.c', 58],
+        ['comp_gesture_eval_bezel', 'src/comp/comp_input.c', 84],
+        ['comp_seat_notify_focus', 'src/comp/comp_input.c', 148],
+        ['comp_layout_compute_columns', 'src/comp/comp_layout.c', 92],
+        ['comp_layout_apply_spring_x', 'src/comp/comp_layout.c', 134],
+        ['comp_window_configure_bounds', 'src/comp/comp_layout.c', 162],
+        ['comp_window_raise_border', 'src/comp/comp_workspace.c', 46],
+        ['comp_damage_reset_bounds', 'src/comp/comp_scene.c', 58],
+        ['comp_damage_mark_full_output', 'src/comp/comp_scene.c', 74],
+        ['comp_damage_union_ring_history', 'src/comp/comp_scene.c', 92],
+        ['comp_scene_walk_dirty_subsurfaces', 'src/comp/comp_scene.c', 112],
+        ['comp_damage_expand_for_blur', 'src/comp/comp_scene.c', 128],
+        ['comp_occlusion_build_opaque_mask', 'src/comp/comp_occlusion.c', 22],
+        ['comp_occlusion_test_bounds', 'src/comp/comp_occlusion.c', 44],
+        ['comp_xwayland_poll_sync_counters', 'src/comp/comp_xwayland.c', 118],
+        ['comp_syncobj_is_signaled', 'src/comp/comp_syncobj.c', 32],
+        ['comp_xwayland_commit_surface', 'src/comp/comp_xwayland.c', 148],
+        ['comp_xwayland_past_grace', 'src/comp/comp_xwayland.c', 176],
+        ['comp_telemetry_record_x11_stall', 'src/comp/comp_telemetry.c', 168],
+        ['comp_dmabuf_check_modifiers', 'src/comp/comp_dmabuf.c', 36],
+        ['comp_drm_import_fb_id', 'src/comp/comp_drm.c', 122],
+        ['fx_shadow_expand_rect', 'src/comp/fx_shadow.c', 24],
+        ['fx_shadow_upload_uniforms', 'src/comp/fx_shadow.c', 48],
+        ['comp_spring_step_single', 'src/comp/comp_spring.c', 18],
+        ['comp_spring_is_settled', 'src/comp/comp_spring.c', 34],
+        ['comp_spring_clamp_overshoot', 'src/comp/comp_spring.c', 40],
+        ['fx_transition_compute_matrix', 'src/comp/fx_transition.c', 64],
+        ['fx_transition_complete', 'src/comp/fx_transition.c', 96],
+        ['comp_drm_move_cursor_plane', 'src/comp/comp_drm.c', 164],
+        ['comp_cursor_upload_buffer', 'src/comp/comp_cursor.c', 28],
+        ['comp_syncobj_export_syncfile', 'src/comp/comp_syncobj.c', 48],
+        ['comp_syncobj_notify_waiters', 'src/comp/comp_syncobj.c', 88],
+        ['comp_drm_prepare_plane_props', 'src/comp/comp_drm.c', 188],
+        ['comp_vrr_apply_kms_props', 'src/comp/comp_vrr.c', 128],
+        ['comp_drm_recover_commit_err', 'src/comp/comp_drm.c', 218],
+        ['comp_telemetry_mark_flip_queued', 'src/comp/comp_telemetry.c', 112],
+        ['comp_output_timestamp_ms', 'src/comp/comp_output.c', 298],
+        ['comp_telemetry_push_ring', 'src/comp/comp_telemetry.c', 34],
+        ['comp_telemetry_update_p99', 'src/comp/comp_telemetry.c', 58],
+        ['comp_idle_fire_expired_inhibitors', 'src/comp/comp_idle.c', 24],
+        ['comp_output_arm_timerfd', 'src/comp/comp_output.c', 340],
+        ['kfx_shader_check_fp16', 'src/comp/kfx_shader.c', 22],
+        ['kfx_rt_match_extent', 'src/comp/kfx_rt.c', 24],
+        ['kfx_rt_alloc_mip_views', 'src/comp/kfx_rt.c', 38],
+        ['kfx_rt_mark_lru', 'src/comp/kfx_rt.c', 82],
+        ['kfx_rt_get_texel_size', 'src/comp/kfx_rt.c', 112],
+        ['kfx_shader_lookup_spirv', 'src/comp/kfx_shader.c', 44],
+        ['kfx_shader_compile_variant', 'src/comp/kfx_shader.c', 66]
+      ];
+      LEAF_HELPERS.forEach(([id, file, line]) => {
+        regQuickFn(id, file, line, `static void ${id}(CompCtx *ctx, void *arg)`, []);
+      });
+
+      /* Upstream entrypoints (so IMPACT lens shows realistic callers of root!) */
+      regQuickFn('comp_drm_pageflip_cb', 'src/comp/comp_drm.c', 310,
+        'static void comp_drm_pageflip_cb(int fd, unsigned seq, unsigned tv_sec, unsigned tv_usec, void *data)',
+        ['kajo_frame_pipeline']);
+      regQuickFn('comp_output_timer_dispatch', 'src/comp/comp_output.c', 402,
+        'static gboolean comp_output_timer_dispatch(gpointer user_data)',
+        ['kajo_frame_pipeline']);
+      regQuickFn('comp_main_event_loop', 'src/comp/main.c', 142,
+        'int comp_main_event_loop(CompApp *app)',
+        ['comp_drm_pageflip_cb', 'comp_output_timer_dispatch']);
+
+      /* ------------------------------------------------------------------------
+         WORKSPACE STRUCT / TYPE DEFINITIONS (For TYPES Lens + Pin Reference!)
+         ------------------------------------------------------------------------ */
+      function regType(id, file, line, bodyLines, nestedTypes = []) {
+        const shortFile = file.split('/').pop();
+        const codeLines = bodyLines.map((text, idx) => ({
+          ln: line + idx,
+          text,
+          ...(nestedTypes[idx] ? { typeRef: nestedTypes[idx] } : {})
+        }));
+        regSym({
+          id,
+          name: `struct ${id}`,
+          file,
+          shortFile,
+          line,
+          scopeStart: line,
+          scopeEnd: line + bodyLines.length - 1,
+          kind: 'struct',
+          sig: `typedef struct ${id} ${id};`,
+          extHiddenCount: 0,
+          extNames: [],
+          codeLines
+        });
+      }
+
+      regType('CompFxGlassParams', 'src/comp/comp_fx_glass.h', 18, [
+        'typedef struct CompFxGlassParams {',
+        '    float    blur_radius;      /* Dual-Kawase radius in px (default 14.0) */',
+        '    uint32_t kawase_passes;    /* 3..5 downsample/upsample iterations     */',
+        '    float    offset;           /* Half-pixel tap multiplier (1.25)        */',
+        '    float    opacity;          /* Aero surface alpha (0.62)               */',
+        '    float    tint_mix;         /* Accent glass tint weight (0.0..0.35)    */',
+        '    float    noise_strength;   /* Blue-noise anti-banding dither (0.018)  */',
+        '    bool     specular_border;  /* 1px crisp Aero specular bezel           */',
+        '    float    border_rgba[4];   /* Specular highlight tint                 */',
+        '} CompFxGlassParams;'
+      ]);
+      regType('CompOutput', 'src/comp/comp_output.h', 24, [
+        'typedef struct CompOutput {',
+        '    uint32_t          crtc_id;',
+        '    int               drm_fd;',
+        '    bool              vrr_enabled;',
+        '    bool              hdr_enabled;',
+        '    float             max_nits;',
+        '    CompWorkspace    *workspace;',
+        '    CompDrmCommitPlan commit_plan;',
+        '    CompTelemetry    *telemetry;',
+        '} CompOutput;'
+      ], { 7: 'CompDrmCommitPlan', 8: 'CompTelemetrySample' });
+      regType('CompFrameState', 'src/comp/comp_output.h', 52, [
+        'typedef struct CompFrameState {',
+        '    uint64_t         seq;',
+        '    uint64_t         target_ns;',
+        '    uint32_t         fb_id;',
+        '    uint32_t         age;',
+        '    CompDamageRegion damage;',
+        '    GArray          *opaque_list;',
+        '} CompFrameState;'
+      ], { 5: 'CompDamageRegion' });
+      regType('CompSpringState', 'src/comp/comp_spring.h', 14, [
+        'typedef struct CompSpringState {',
+        '    float    stiffness;        /* Analytical spring k (260.0)             */',
+        '    float    damping;          /* Critical damping c (28.0)               */',
+        '    uint32_t count;',
+        '    uint32_t active_count;',
+        '} CompSpringState;'
+      ]);
+      regType('CompDamageRegion', 'src/comp/comp_scene.h', 19, [
+        'typedef struct CompDamageRegion {',
+        '    int32_t  x, y, w, h;',
+        '    bool     full_output;',
+        '    VkRect2D vk_scissor;',
+        '} CompDamageRegion;'
+      ]);
+      regType('CompVkPassCtx', 'src/comp/comp_vk.h', 28, [
+        'typedef struct CompVkPassCtx {',
+        '    VkCommandBuffer   cmd;',
+        '    VkPipelineLayout  active_layout;',
+        '    KfxRtPool        *pool;',
+        '    KfxShaderCache   *shaders;',
+        '    CompTelemetry    *telemetry;',
+        '} CompVkPassCtx;'
+      ], { 3: 'KfxRenderTarget' });
+      regType('CompShadowSpec', 'src/comp/fx_shadow.h', 12, [
+        'typedef struct CompShadowSpec {',
+        '    float spread_px;',
+        '    float offset_y_px;',
+        '    float alpha;',
+        '    float corner_radius;       /* Always 0.0f under Kajo Aero+Metro      */',
+        '} CompShadowSpec;'
+      ]);
+      regType('CompDrmCommitPlan', 'src/comp/comp_drm.h', 31, [
+        'typedef struct CompDrmCommitPlan {',
+        '    drmModeAtomicReq *req;',
+        '    uint32_t          fb_prop;',
+        '    uint32_t          vrr_prop;',
+        '    bool              allow_modeset;',
+        '} CompDrmCommitPlan;'
+      ]);
+      regType('CompTelemetrySample', 'src/comp/comp_telemetry.h', 16, [
+        'typedef struct CompTelemetrySample {',
+        '    uint64_t seq;',
+        '    uint32_t cpu_us;',
+        '    uint32_t gpu_us;',
+        '    uint32_t gpu_passes;',
+        '} CompTelemetrySample;'
+      ]);
+      regType('KfxRenderTarget', 'src/comp/kfx_rt.h', 15, [
+        'typedef struct KfxRenderTarget {',
+        '    VkImage       src_img, dst_img;',
+        '    VkImageView   src_view, sampled_view;',
+        '    VkViewport    mip_viewports[6];',
+        '    float         uv_scale;',
+        '} KfxRenderTarget;'
+      ]);
+      regType('KfxKawaseConfig', 'src/comp/fx_blur.h', 11, [
+        'typedef struct KfxKawaseConfig {',
+        '    uint32_t passes;',
+        '    float    offset;',
+        '} KfxKawaseConfig;'
+      ]);
+      regType('KfxQuadPushConst', 'src/comp/kfx_vk.h', 14, [
+        'typedef struct KfxQuadPushConst {',
+        '    float texel_dx, texel_dy;',
+        '    float opacity;',
+        '    float radius;',
+        '} KfxQuadPushConst;'
+      ]);
+      regType('CompTransitionNode', 'src/comp/fx_transition.h', 19, [
+        'typedef struct CompTransitionNode {',
+        '    CompSpringState  spring;',
+        '    VkImageView      snapshot_view;',
+        '    KfxQuadPushConst push;',
+        '} CompTransitionNode;'
+      ], { 1: 'CompSpringState', 3: 'KfxQuadPushConst' });
+      regType('CompXwaylandSurface', 'src/comp/comp_xwayland.h', 22, [
+        'typedef struct CompXwaylandSurface {',
+        '    uint32_t          win_id;',
+        '    CompSyncTimeline *acquire_timeline;',
+        '    uint64_t          point;',
+        '} CompXwaylandSurface;'
+      ]);
+
+      /* ------------------------------------------------------------------------
+         BUILD GRAPH INDICES (Source-Order Callees, Types, Reverse Callers)
+         ------------------------------------------------------------------------ */
+      const CALLERS_MAP = {};
+      Object.values(SYMBOLS).forEach((sym) => {
+        CALLERS_MAP[sym.id] = [];
+      });
+
+      Object.values(SYMBOLS).forEach((sym) => {
+        const calleeMap = new Map();
+        const typeMap = new Map();
+        sym.codeLines.forEach((row) => {
+          if (row.call && SYMBOLS[row.call] && row.call !== sym.id) {
+            if (!calleeMap.has(row.call)) {
+              calleeMap.set(row.call, { id: row.call, lines: [] });
+            }
+            calleeMap.get(row.call).lines.push(row.ln);
+          }
+          if (row.typeRef && SYMBOLS[row.typeRef] && row.typeRef !== sym.id) {
+            if (!typeMap.has(row.typeRef)) {
+              typeMap.set(row.typeRef, { id: row.typeRef, lines: [] });
+            }
+            typeMap.get(row.typeRef).lines.push(row.ln);
+          }
+        });
+        sym.callees = Array.from(calleeMap.values());
+        sym.typeRefs = Array.from(typeMap.values());
+
+        sym.callees.forEach((c) => {
+          if (!CALLERS_MAP[c.id]) CALLERS_MAP[c.id] = [];
+          CALLERS_MAP[c.id].push({ id: sym.id, lines: c.lines });
+        });
+      });
+
+      const DIFF_SYMBOLS = Object.values(SYMBOLS)
+        .filter((s) => s.diffStatus)
+        .map((s) => s.id);
+
+      const PROJECT_FILES = [
+        { type: 'dir', name: 'src/comp/' },
+        { type: 'file', name: 'comp_output.c', sym: 'kajo_frame_pipeline', badge: 'AG' },
+        { type: 'file', name: 'fx_glass.c', sym: 'fx_glass_render', badge: 'AG' },
+        { type: 'file', name: 'fx_blur.c', sym: 'blur_down_pass', badge: 'M' },
+        { type: 'file', name: 'kfx_vk.c', sym: 'kfx_vk_dispatch_quad', badge: 'M' },
+        { type: 'file', name: 'comp_scene.c', sym: 'comp_scene_damage_collect', badge: 'M' },
+        { type: 'file', name: 'fx_shadow.c', sym: 'fx_shadow_render', badge: 'M' },
+        { type: 'file', name: 'fx_transition.c', sym: 'fx_transition_tick', badge: 'AG' },
+        { type: 'file', name: 'comp_spring.c', sym: 'comp_spring_step_all', badge: 'M' },
+        { type: 'file', name: 'comp_xwayland.c', sym: 'comp_xwayland_check_ready', badge: '' },
+        { type: 'file', name: 'comp_drm.c', sym: 'comp_drm_atomic_commit', badge: 'M' },
+        { type: 'file', name: 'comp_fx_glass.h', sym: 'CompFxGlassParams', badge: '' }
+      ];
+
+      /* ========================================================================
+         2. ANALYTICAL DAMPED SPRING ENGINE (comp_spring.c port)
+         ======================================================================== */
+      class DampedSpring {
+        constructor(stiffness = 260, damping = 28) {
+          this.k = stiffness;
+          this.c = damping;
+          this.pos = 0;
+          this.vel = 0;
+          this.target = 0;
+          this.active = false;
+        }
+        snap(val) {
+          this.pos = val;
+          this.target = val;
+          this.vel = 0;
+          this.active = false;
+        }
+        setTarget(val, currentPos) {
+          if (typeof currentPos === 'number' && !this.active) {
+            this.pos = currentPos;
+          }
+          this.target = val;
+          this.active = true;
+        }
+        step(dt) {
+          if (!this.active) return this.pos;
+          const clampedDt = Math.min(dt, 0.032);
+          const force = -this.k * (this.pos - this.target) - this.c * this.vel;
+          this.vel += force * clampedDt;
+          this.pos += this.vel * clampedDt;
+          if (Math.abs(this.pos - this.target) < 0.4 && Math.abs(this.vel) < 1.2) {
+            this.pos = this.target;
+            this.vel = 0;
+            this.active = false;
+          }
+          return this.pos;
+        }
+      }
+
+      /* ========================================================================
+         3. APPLICATION STATE
+         ======================================================================== */
+      const LENS_META = {
+        calls:  { label: 'CALLS',  color: '#0078d4', rgb: '0, 120, 212',   kind: 'ƒ' },
+        types:  { label: 'TYPES',  color: '#00d8f0', rgb: '0, 216, 240',   kind: 'S' },
+        impact: { label: 'IMPACT', color: '#ffb900', rgb: '255, 185, 0',   kind: '↖' },
+        diff:   { label: 'DIFF',   color: '#b4009e', rgb: '180, 0, 158',   kind: 'Δ' }
+      };
+
+      const TRAILS = [
+        {
+          name: 'Frame Pipeline',
+          stack: [{ symbolId: 'kajo_frame_pipeline', cursorLine: 55, scrollTop: 0 }]
+        },
+        {
+          name: 'Glass Shader',
+          stack: [
+            { symbolId: 'kajo_frame_pipeline', cursorLine: 55, scrollTop: 520 },
+            { symbolId: 'fx_glass_render', cursorLine: 226, scrollTop: 120 }
+          ]
+        }
+      ];
+
+      const state = {
+        mode: 'strip',
+        overview: false,
+        zen: false,
+        floating: false,
+        treeOpen: false,
+        relLines: false,
+        fullFileVeilOff: false,
+        lspFallback: false,
+        lens: 'calls',
+        activeTrailIdx: 0,
+        depthStack: TRAILS[0].stack.map((x) => ({ ...x })),
+        cursorLine: 55,
+        focusedCol: 'd0',
+        activeD1Id: 'fx_glass_render',
+        activeD2Id: null,
+        d1Filter: '',
+        magneticLinked: true,
+        pinnedSymbolId: null,
+        diffDecisions: {},
+        classicTabId: 'kajo_frame_pipeline'
+      };
+
+      const d1Spring = new DampedSpring(270, 29);
+      let rafId = null;
+      let lastFrameTime = performance.now();
+      let connectorTrackUntil = 0;
+      let d0ScrollDebounce = null;
+      let toastTimer = null;
+
+      /* ========================================================================
+         4. DOM ELEMENT REFERENCES
+         ======================================================================== */
+      const el = {
+        niriStage: document.getElementById('niriStage'),
+        stripToolbar: document.getElementById('stripToolbar'),
+        stripStage: document.getElementById('stripStage'),
+        classicTabsView: document.getElementById('classicTabsView'),
+        classicTabStrip: document.getElementById('classicTabStrip'),
+        classicCodeWrap: document.getElementById('classicCodeWrap'),
+        treeSidebar: document.getElementById('treeSidebar'),
+        treeList: document.getElementById('treeList'),
+        fallbackBanner: document.getElementById('fallbackBanner'),
+        ancestorSpine: document.getElementById('ancestorSpine'),
+        spinePills: document.getElementById('spinePills'),
+        columnsStage: document.getElementById('columnsStage'),
+        connectorSvg: document.getElementById('connectorSvg'),
+        colD0: document.getElementById('colD0'),
+        colD1: document.getElementById('colD1'),
+        colD2: document.getElementById('colD2'),
+        d0DepthTag: document.getElementById('d0DepthTag'),
+        d0SymTitle: document.getElementById('d0SymTitle'),
+        d0FilePath: document.getElementById('d0FilePath'),
+        btnRelLines: document.getElementById('btnRelLines'),
+        btnFullFile: document.getElementById('btnFullFile'),
+        d0PinPane: document.getElementById('d0PinPane'),
+        pinTitle: document.getElementById('pinTitle'),
+        d0PinCode: document.getElementById('d0PinCode'),
+        btnPromotePinned: document.getElementById('btnPromotePinned'),
+        btnUnpin: document.getElementById('btnUnpin'),
+        d0EditorScroll: document.getElementById('d0EditorScroll'),
+        d1DepthTag: document.getElementById('d1DepthTag'),
+        d1Title: document.getElementById('d1Title'),
+        d1CountLabel: document.getElementById('d1CountLabel'),
+        wsOnlyBadge: document.getElementById('wsOnlyBadge'),
+        resyncPill: document.getElementById('resyncPill'),
+        d1FilterInput: document.getElementById('d1FilterInput'),
+        d1FilterClear: document.getElementById('d1FilterClear'),
+        d1List: document.getElementById('d1List'),
+        d2DepthTag: document.getElementById('d2DepthTag'),
+        d2ParentName: document.getElementById('d2ParentName'),
+        d2CountLabel: document.getElementById('d2CountLabel'),
+        d2List: document.getElementById('d2List'),
+        zenRail: document.getElementById('zenRail'),
+        zenRailText: document.getElementById('zenRailText'),
+        depthCrumb: document.getElementById('depthCrumb'),
+        minimapBar: document.getElementById('minimapBar'),
+        minimapSlots: document.getElementById('minimapSlots'),
+        overviewModal: document.getElementById('overviewModal'),
+        overviewCanvas: document.getElementById('overviewCanvas'),
+        btnTree: document.getElementById('btnTree'),
+        btnStripMode: document.getElementById('btnStripMode'),
+        btnBackToStrip: document.getElementById('btnBackToStrip'),
+        btnOverview: document.getElementById('btnOverview'),
+        btnCloseOverview: document.getElementById('btnCloseOverview'),
+        btnZen: document.getElementById('btnZen'),
+        btnFloat: document.getElementById('btnFloat'),
+        btnClose: document.getElementById('btnClose'),
+        btnSurface: document.getElementById('btnSurface'),
+        btnSpineSurface: document.getElementById('btnSpineSurface'),
+        btnLspToggle: document.getElementById('btnLspToggle'),
+        lspLabel: document.getElementById('lspLabel'),
+        lensGroup: document.getElementById('lensGroup'),
+        sbLocation: document.getElementById('sbLocation'),
+        sbFocus: document.getElementById('sbFocus'),
+        sbMagnetic: document.getElementById('sbMagnetic'),
+        toastBar: document.getElementById('toastBar')
+      };
+
+      /* ========================================================================
+         5. SYNTAX HIGHLIGHTER & HELPERS
+         ======================================================================== */
+      function escHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      function highlightLine(text, rowMeta) {
+        if (!text) return ' ';
+        const trimmed = text.trim();
+        if (trimmed.startsWith('/*') || trimmed.startsWith('*') || trimmed.startsWith('//')) {
+          return `<span class="scom">${escHtml(text)}</span>`;
+        }
+        if (trimmed.startsWith('#')) {
+          return `<span class="sm">${escHtml(text)}</span>`;
+        }
+
+        // Split out trailing inline comment if present
+        let codePart = text;
+        let cmtPart = '';
+        const cmtIdx = text.indexOf('/*');
+        if (cmtIdx !== -1) {
+          codePart = text.slice(0, cmtIdx);
+          cmtPart = text.slice(cmtIdx);
+        }
+
+        // Tokenize identifiers, strings, numbers
+        const out = codePart.replace(
+          /("[^"]*")|\b(0x[0-9a-fA-F]+|\d+(?:\.\d+)?[uUfF]?)\b|\b([A-Za-z_][A-Za-z0-9_]*)\b/g,
+          (match, str, num, ident) => {
+            if (str) return `<span class="ss">${escHtml(str)}</span>`;
+            if (num) return `<span class="sn">${escHtml(num)}</span>`;
+            if (ident) {
+              if (C_CTRL.has(ident)) return `<span class="sc">${ident}</span>`;
+              if (C_KEYWORDS.has(ident)) return `<span class="sk">${ident}</span>`;
+              if (rowMeta && rowMeta.call === ident && SYMBOLS[ident]) {
+                return `<span class="ws-tok" data-jump="${ident}" title="Workspace target · Ctrl+Click or DblClick to promote">${ident}</span>`;
+              }
+              if (rowMeta && rowMeta.typeRef === ident && SYMBOLS[ident]) {
+                return `<span class="ws-tok type-tok" data-jump="${ident}" title="Workspace type · Ctrl+Click or DblClick to promote">${ident}</span>`;
+              }
+              if (EXT_CALLS_SET.has(ident)) {
+                return `<span class="ext-tok" title="External/stdlib symbol — suppressed from tile columns (WS ONLY)">${ident}</span>`;
+              }
+              if (SYMBOLS[ident] && SYMBOLS[ident].kind === 'struct') {
+                return `<span class="st">${ident}</span>`;
+              }
+              if (/^[A-Z][A-Z0-9_]{2,}$/.test(ident)) {
+                return `<span class="sm">${ident}</span>`;
+              }
+              if (/^[A-Z][a-zA-Z0-9_]+$/.test(ident)) {
+                return `<span class="st">${ident}</span>`;
+              }
+              return ident;
+            }
+            return escHtml(match);
+          }
+        );
+        return cmtPart ? `${out}<span class="scom">${escHtml(cmtPart)}</span>` : out;
+      }
+
+      function showToast(msg) {
+        el.toastBar.textContent = msg;
+        el.toastBar.classList.add('visible');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => el.toastBar.classList.remove('visible'), 2300);
+      }
+
+      function currentDepthEntry() {
+        return state.depthStack[state.depthStack.length - 1];
+      }
+
+      function currentD0Sym() {
+        return SYMBOLS[currentDepthEntry().symbolId];
+      }
+
+      function getTargetListFor(symId, lens) {
+        const sym = SYMBOLS[symId];
+        if (!sym) return [];
+        if (lens === 'calls') {
+          return sym.callees.map((c) => ({
+            id: c.id,
+            sym: SYMBOLS[c.id],
+            lines: c.lines,
+            occ: c.lines.length,
+            badge: 'ƒ'
+          }));
+        }
+        if (lens === 'types') {
+          return sym.typeRefs.map((t) => ({
+            id: t.id,
+            sym: SYMBOLS[t.id],
+            lines: t.lines,
+            occ: t.lines.length,
+            badge: 'S'
+          }));
+        }
+        if (lens === 'impact') {
+          const callers = CALLERS_MAP[symId] || [];
+          return callers.map((c) => ({
+            id: c.id,
+            sym: SYMBOLS[c.id],
+            lines: [sym.line],
+            occ: c.lines.length,
+            badge: '↖'
+          }));
+        }
+        if (lens === 'diff') {
+          // Show diff-modified symbols reachable from D0 first, then other modified workspace symbols
+          const calleeMap = new Map(sym.callees.map((c) => [c.id, c.lines]));
+          const list = [];
+          DIFF_SYMBOLS.forEach((id) => {
+            if (id === symId) return;
+            const s = SYMBOLS[id];
+            const lines = calleeMap.get(id) || [sym.line];
+            list.push({
+              id,
+              sym: s,
+              lines,
+              occ: calleeMap.has(id) ? lines.length : 1,
+              badge: s.diffStatus === 'agent' ? 'A' : 'M',
+              inDirect: calleeMap.has(id)
+            });
+          });
+          list.sort((a, b) => (b.inDirect ? 1 : 0) - (a.inDirect ? 1 : 0) || a.lines[0] - b.lines[0]);
+          return list;
+        }
+        return [];
+      }
+
+      function getFilteredD1Items() {
+        const d0 = currentD0Sym();
+        const all = getTargetListFor(d0.id, state.lens);
+        const q = state.d1Filter.trim().toLowerCase();
+        if (!q) return all;
+        return all.filter((it) =>
+          it.sym.name.toLowerCase().includes(q) ||
+          it.sym.shortFile.toLowerCase().includes(q)
+        );
+      }
+
+      function getD2Items(parentId) {
+        if (!parentId || !SYMBOLS[parentId]) return [];
+        const items = getTargetListFor(parentId, state.lens);
+        return items.map((it) => {
+          const grandChildren = getTargetListFor(it.id, state.lens);
+          return {
+            ...it,
+            childCount: grandChildren.length
+          };
+        });
+      }
+
+      /* ========================================================================
+         6. RENDERING FUNCTIONS
+         ======================================================================== */
+      function applyLensTheme() {
+        const meta = LENS_META[state.lens];
+        document.documentElement.style.setProperty('--lens-color', meta.color);
+        document.documentElement.style.setProperty('--lens-rgb', meta.rgb);
+        el.lensGroup.querySelectorAll('.seg-btn').forEach((b) => {
+          b.classList.toggle('active', b.dataset.lens === state.lens);
+        });
+      }
+
+      function renderTreeSidebar() {
+        const activeFile = currentD0Sym().shortFile;
+        el.treeList.innerHTML = PROJECT_FILES.map((item) => {
+          if (item.type === 'dir') {
+            return `<div class="tree-row dir"><span>▾ ${item.name}</span></div>`;
+          }
+          const isAct = item.name === activeFile;
+          const badge = item.badge ? `<span class="git-badge ${item.badge}">${item.badge}</span>` : '';
+          return `<div class="tree-row ${isAct ? 'active' : ''}" data-tree-sym="${item.sym}">
+            <span>&nbsp;&nbsp;${item.name}</span>${badge}
+          </div>`;
+        }).join('');
+      }
+
+      function renderAncestorSpine() {
+        const depth = state.depthStack.length - 1;
+        el.ancestorSpine.classList.toggle('visible', depth > 0);
+        el.btnSurface.disabled = depth === 0;
+
+        if (depth === 0) {
+          el.spinePills.innerHTML = '';
+        } else {
+          const ancestors = state.depthStack.slice(0, depth);
+          el.spinePills.innerHTML = ancestors.map((entry, idx) => {
+            const sym = SYMBOLS[entry.symbolId];
+            return `<button class="spine-pill" data-surface-idx="${idx}" title="Surface back to D${idx}: ${sym.name} (${sym.shortFile}:L${entry.cursorLine})">
+              <span class="spine-pill-inner">
+                <span class="spine-depth-tag">D${idx}</span>
+                <span>${escHtml(sym.name)}</span>
+                <span style="color:var(--text-dim)">▸</span>
+              </span>
+            </button>`;
+          }).join('');
+        }
+
+        // Top Breadcrumb
+        el.depthCrumb.innerHTML = state.depthStack.map((entry, idx) => {
+          const sym = SYMBOLS[entry.symbolId];
+          const isCurr = idx === depth;
+          const sep = idx > 0 ? '<span class="crumb-sep">▸</span>' : '';
+          return `${sep}<span class="crumb-item ${isCurr ? 'current' : ''}" data-surface-idx="${idx}">D${idx}:${escHtml(sym.name)}</span>`;
+        }).join('');
+      }
+
+      function renderPinnedPane() {
+        if (!state.pinnedSymbolId || !SYMBOLS[state.pinnedSymbolId]) {
+          el.d0PinPane.classList.remove('visible');
+          return;
+        }
+        const psym = SYMBOLS[state.pinnedSymbolId];
+        el.d0PinPane.classList.add('visible');
+        el.pinTitle.textContent = `📌 PINNED (${psym.shortFile}:L${psym.line}) · ${psym.name}`;
+        el.d0PinCode.innerHTML = psym.codeLines.map((row) =>
+          `<div class="pin-line"><span class="pin-ln">${row.ln}</span><span>${highlightLine(row.text, row)}</span></div>`
+        ).join('');
+      }
+
+      function renderD0() {
+        const sym = currentD0Sym();
+        const depth = state.depthStack.length - 1;
+        el.d0DepthTag.textContent = `D${depth} · 60%`;
+        el.d0SymTitle.textContent = sym.name;
+        el.d0FilePath.textContent = `${sym.file}:L${sym.line}`;
+
+        const hasVeilLines = sym.codeLines.some((r) => r.ln < sym.scopeStart || r.ln > sym.scopeEnd);
+        el.btnFullFile.style.display = (depth > 0 && hasVeilLines) ? 'inline-flex' : 'none';
+        el.btnFullFile.classList.toggle('active', state.fullFileVeilOff);
+        el.btnFullFile.textContent = state.fullFileVeilOff ? '⤢ VEIL OFF' : '⤢ FULL FILE';
+        el.btnRelLines.classList.toggle('active', state.relLines);
+
+        // Determine which line is linked to activeD1Id
+        const d1Items = getTargetListFor(sym.id, state.lens);
+        const activeItem = d1Items.find((x) => x.id === state.activeD1Id);
+        const activeCallLines = new Set(activeItem ? activeItem.lines : []);
+        const allTargetLines = new Set();
+        d1Items.forEach((it) => it.lines.forEach((l) => allTargetLines.add(l)));
+
+        el.d0EditorScroll.innerHTML = sym.codeLines.map((row) => {
+          const isCursor = row.ln === state.cursorLine;
+          const isActiveCall = activeCallLines.has(row.ln);
+          const isVeiled = depth > 0 && !state.fullFileVeilOff && (row.ln < sym.scopeStart || row.ln > sym.scopeEnd);
+          const bp = sym.breakpoints[row.ln];
+          const diag = sym.diagnostics[row.ln];
+          const gd = sym.gitDiff[row.ln];
+          const hasFold = row.text.includes('{') && !row.text.includes('}');
+          const dispLn = state.relLines ? (isCursor ? row.ln : Math.abs(row.ln - state.cursorLine)) : row.ln;
+
+          const bpHtml = bp
+            ? `<span class="bp-dot ${bp.cond ? 'cond' : ''}" title="${bp.cond ? 'Conditional BP: ' + escHtml(bp.cond) : 'Breakpoint'}"></span>`
+            : '';
+          const diagHtml = diag
+            ? `<span class="g-diag ${diag.sev}" title="${escHtml(diag.msg)}">${diag.sev === 'err' ? '✖' : '▲'}</span>`
+            : '<span class="g-diag"></span>';
+
+          const anchorHtml = allTargetLines.has(row.ln)
+            ? '<span class="g-call-anchor"><span class="call-anchor-tick"></span></span>'
+            : '<span class="g-call-anchor"></span>';
+
+          return `<div class="code-row ${isCursor ? 'cursor-line' : ''} ${isActiveCall ? 'active-call-line' : ''} ${isVeiled ? 'veiled' : ''}" data-ln="${row.ln}">
+            <div class="gutter">
+              <span class="g-bp" data-bp-ln="${row.ln}" title="Click to toggle breakpoint · Shift+Click for conditional">${bpHtml}</span>
+              ${diagHtml}
+              <span class="g-fold">${hasFold ? '▾' : ''}</span>
+              <span class="g-ln">${dispLn}</span>
+              <span class="g-diff ${gd || ''}"></span>
+            </div>
+            <div class="code-text">${highlightLine(row.text, row)}</div>
+            ${anchorHtml}
+          </div>`;
+        }).join('');
+
+        renderPinnedPane();
+      }
+
+      function renderD1() {
+        const d0 = currentD0Sym();
+        const depth = state.depthStack.length - 1;
+        const meta = LENS_META[state.lens];
+        const allItems = getTargetListFor(d0.id, state.lens);
+        const items = getFilteredD1Items();
+
+        el.d1DepthTag.textContent = `D+${depth + 1} · 25%`;
+        el.d1Title.textContent = meta.label;
+        el.d1CountLabel.textContent = `${items.length}${items.length !== allItems.length ? '/' + allItems.length : ''} tiles`;
+        el.d1FilterInput.placeholder = `Filter ${allItems.length} workspace tiles...`;
+        el.d1FilterClear.classList.toggle('visible', state.d1Filter.length > 0);
+
+        el.wsOnlyBadge.textContent = `WS ONLY (${d0.extHiddenCount} ext hidden)`;
+        el.wsOnlyBadge.title = d0.extNames.length
+          ? `Suppressed external/stdlib calls:\n${d0.extNames.join(', ')}`
+          : 'Workspace-only symbols shown';
+
+        el.resyncPill.classList.toggle('visible', !state.magneticLinked);
+
+        // Ensure activeD1Id is valid
+        if (items.length > 0 && !items.some((x) => x.id === state.activeD1Id)) {
+          state.activeD1Id = items[0].id;
+        } else if (items.length === 0) {
+          state.activeD1Id = null;
+        }
+
+        if (items.length === 0) {
+          el.d1List.innerHTML = `<div class="empty-col-note">No workspace ${meta.label.toLowerCase()} matching "${escHtml(state.d1Filter || 'this scope')}".</div>`;
+          renderD2(false);
+          return;
+        }
+
+        el.d1List.innerHTML = items.map((item) => {
+          const s = item.sym;
+          const isExp = item.id === state.activeD1Id;
+          const isPinned = state.pinnedSymbolId === item.id;
+          const kindClass = s.kind === 'struct'
+            ? 'k-struct'
+            : (state.lens === 'diff' ? (s.diffStatus === 'agent' ? 'k-agent' : 'k-git') : '');
+          const occHtml = item.occ > 1 ? `<span class="occ-chip">×${item.occ}</span>` : '';
+
+          // Build 5-line syntax-highlighted peek from the symbol's scope
+          const scopeLines = s.codeLines.filter((r) => r.ln >= s.scopeStart).slice(0, 5);
+          const peekHtml = scopeLines.map((r) => {
+            let cls = '';
+            if (state.lens === 'diff') {
+              const gd = s.gitDiff[r.ln];
+              if (gd === 'agent') cls = 'diff-agent';
+              else if (gd === 'add' || gd === 'mod') cls = 'diff-add';
+            }
+            return `<div class="peek-line ${cls}">${highlightLine(r.text, r)}</div>`;
+          }).join('');
+
+          const decision = state.diffDecisions[item.id];
+          const diffCtrl = state.lens === 'diff'
+            ? (decision
+              ? `<span style="color:${decision === 'accepted' ? '#72e6a1' : '#ff6b6b'};font-weight:800">${decision === 'accepted' ? '✓ ACCEPTED' : '✕ REVERTED'}</span>`
+              : `<span class="diff-actions">
+                  <button class="diff-act-btn accept" data-diff-act="accept" data-sym="${item.id}">✓ ACCEPT</button>
+                  <button class="diff-act-btn revert" data-diff-act="revert" data-sym="${item.id}">✕ REVERT</button>
+                </span>`)
+            : `<span>L${item.lines.join(', L')}</span>`;
+
+          return `<div class="d1-tile ${isExp ? 'expanded' : ''}" data-tile-id="${item.id}" data-call-lines="${item.lines.join(',')}">
+            <div class="d1-tile-head">
+              <div class="d1-tile-left">
+                <span class="kind-badge ${kindClass}">${item.badge}</span>
+                <span class="d1-sym-name" title="${escHtml(s.sig)}">${escHtml(s.name)}</span>
+              </div>
+              <div class="d1-tile-right">
+                <span class="d1-loc">${escHtml(s.shortFile)}:${s.line}</span>
+                ${occHtml}
+                <button class="tile-act-btn pin-btn ${isPinned ? 'pinned' : ''}" data-pin-id="${item.id}" title="Pin reference split at top 30% of D0">📌</button>
+                <button class="tile-act-btn promote-btn" data-promote-id="${item.id}" title="Promote to D0 (slide world left)">→</button>
+              </div>
+            </div>
+            <div class="d1-peek-wrap">
+              <div class="d1-peek-meta">
+                <span>${state.lens === 'diff' ? escHtml(s.diffSummary || 'Workspace diff') : escHtml(s.file)}</span>
+                ${diffCtrl}
+              </div>
+              <div class="d1-peek-code">${peekHtml}</div>
+            </div>
+          </div>`;
+        }).join('');
+
+        updateViewportBandStyling();
+        renderD2(false);
+        renderMinimap();
+      }
+
+      function renderD2(animate = true) {
+        const depth = state.depthStack.length - 1;
+        el.d2DepthTag.textContent = `D+${depth + 2} · 15%`;
+
+        if (!state.activeD1Id || !SYMBOLS[state.activeD1Id]) {
+          el.d2ParentName.textContent = '—';
+          el.d2CountLabel.textContent = '0';
+          el.d2List.innerHTML = '<div class="empty-col-note">Select a D+1 tile to inspect next call depth.</div>';
+          updateZenRailText();
+          return;
+        }
+
+        const parentSym = SYMBOLS[state.activeD1Id];
+        const items = getD2Items(state.activeD1Id);
+        el.d2ParentName.textContent = parentSym.name;
+        el.d2CountLabel.textContent = String(items.length);
+
+        if (animate) {
+          el.d2List.classList.remove('cascade-in');
+          void el.d2List.offsetWidth;
+          el.d2List.classList.add('cascade-in');
+        }
+
+        if (items.length === 0) {
+          el.d2List.innerHTML = `<div class="empty-col-note">Leaf workspace symbol<br/>(0 downstream WS targets)</div>`;
+          state.activeD2Id = null;
+        } else {
+          if (!items.some((x) => x.id === state.activeD2Id)) {
+            state.activeD2Id = items[0].id;
+          }
+          el.d2List.innerHTML = items.map((item) => {
+            const s = item.sym;
+            const hasDiag = Object.keys(s.diagnostics || {}).length > 0;
+            const isAct = item.id === state.activeD2Id;
+            return `<div class="d2-chip ${isAct ? 'active' : ''}" data-d2-id="${item.id}" title="${escHtml(s.sig)}\nDouble-click to promote 2 depths into D0">
+              <div class="d2-chip-left">
+                <span class="d2-kind">${item.badge}</span>
+                <span class="d2-name">${escHtml(s.name)}</span>
+              </div>
+              ${hasDiag ? '<span class="d2-diag-dot" title="Diagnostic warning in target"></span>' : ''}
+              <span class="d2-count">→${item.childCount}</span>
+            </div>`;
+          }).join('');
+        }
+
+        updateZenRailText();
+        renderMinimap();
+      }
+
+      function updateZenRailText() {
+        const d1Count = getFilteredD1Items().length;
+        const d2Count = state.activeD1Id ? getD2Items(state.activeD1Id).length : 0;
+        el.zenRailText.textContent = `D+1: ${d1Count} · D+2: ${d2Count} · CLICK TO RESTORE`;
+      }
+
+      function renderMinimap() {
+        const depth = state.depthStack.length - 1;
+        const d0 = currentD0Sym();
+        const d1Count = getFilteredD1Items().length;
+        const d2Count = state.activeD1Id ? getD2Items(state.activeD1Id).length : 0;
+
+        let html = '';
+        state.depthStack.slice(0, depth).forEach((entry, idx) => {
+          const sym = SYMBOLS[entry.symbolId];
+          html += `<button class="mm-slot mm-anc" data-surface-idx="${idx}" title="Surface to D${idx}: ${sym.name}">D${idx} ${escHtml(sym.name)}</button>`;
+        });
+        html += `<button class="mm-slot mm-d0" data-focus-col="d0">D${depth} [60%] ${escHtml(d0.name)}</button>`;
+        html += `<button class="mm-slot mm-d1" data-focus-col="d1">D+${depth + 1} [25%] ${d1Count} tiles</button>`;
+        html += `<button class="mm-slot mm-d2" data-focus-col="d2">D+${depth + 2} [15%] ${d2Count} chips</button>`;
+        el.minimapSlots.innerHTML = html;
+      }
+
+      function renderStatusBar() {
+        const d0 = currentD0Sym();
+        el.sbLocation.textContent = `${d0.file} · ${d0.name} · Ln ${state.cursorLine}`;
+        const fMap = { d0: 'FOCUS: D0 (60% EDITOR)', d1: 'FOCUS: D+1 (25% TILES)', d2: 'FOCUS: D+2 (15% HORIZON)' };
+        el.sbFocus.textContent = fMap[state.focusedCol];
+        el.sbMagnetic.textContent = state.magneticLinked ? '⛓ MAGNETIC FOLLOW' : '⛓ UNLINKED (MANUAL D+1)';
+        el.sbMagnetic.classList.toggle('unlinked', !state.magneticLinked);
+
+        el.colD0.classList.toggle('col-focused', state.focusedCol === 'd0');
+        el.colD1.classList.toggle('col-focused', state.focusedCol === 'd1');
+        el.colD2.classList.toggle('col-focused', state.focusedCol === 'd2');
+      }
+
+      function renderClassicTabs() {
+        const openSyms = ['kajo_frame_pipeline', 'fx_glass_render', 'blur_down_pass', 'kfx_vk_dispatch_quad', 'CompFxGlassParams'];
+        if (!openSyms.includes(state.classicTabId)) openSyms.unshift(state.classicTabId);
+
+        el.classicTabStrip.innerHTML = openSyms.map((id) => {
+          const s = SYMBOLS[id];
+          const act = id === state.classicTabId;
+          return `<div class="classic-tab ${act ? 'active' : ''}" data-classic-id="${id}">
+            <span>${escHtml(s.shortFile)}</span>
+            <span style="color:var(--text-dim);font-size:9.5px">${escHtml(s.name)}</span>
+          </div>`;
+        }).join('');
+
+        const sym = SYMBOLS[state.classicTabId] || currentD0Sym();
+        el.classicCodeWrap.innerHTML = sym.codeLines.map((row) => `
+          <div class="code-row">
+            <div class="gutter">
+              <span class="g-bp"></span>
+              <span class="g-diag"></span>
+              <span class="g-fold"></span>
+              <span class="g-ln">${row.ln}</span>
+              <span class="g-diff ${sym.gitDiff[row.ln] || ''}"></span>
+            </div>
+            <div class="code-text">${highlightLine(row.text, row)}</div>
+          </div>
+        `).join('');
+      }
+
+      function renderOverview() {
+        const d0Root = SYMBOLS['kajo_frame_pipeline'];
+        const activeIds = new Set(state.depthStack.map((x) => x.symbolId));
+        if (state.activeD1Id) activeIds.add(state.activeD1Id);
+
+        const col0 = [{ id: 'kajo_frame_pipeline', path: ['kajo_frame_pipeline'] }];
+        const col1 = [
+          'fx_glass_render', 'comp_scene_damage_collect', 'fx_shadow_render',
+          'fx_transition_tick', 'comp_xwayland_check_ready', 'comp_spring_step_all',
+          'comp_drm_atomic_commit', 'comp_layout_reconcile_strip'
+        ].map((id) => ({ id, path: ['kajo_frame_pipeline', id] }));
+        const col2 = [
+          { id: 'blur_down_pass', path: ['kajo_frame_pipeline', 'fx_glass_render', 'blur_down_pass'] },
+          { id: 'blur_up_pass', path: ['kajo_frame_pipeline', 'fx_glass_render', 'blur_up_pass'] },
+          { id: 'kfx_rt_acquire_pingpong', path: ['kajo_frame_pipeline', 'fx_glass_render', 'kfx_rt_acquire_pingpong'] },
+          { id: 'fx_glass_bind_tint_ubo', path: ['kajo_frame_pipeline', 'fx_glass_render', 'fx_glass_bind_tint_ubo'] },
+          { id: 'fx_glass_specular_edge', path: ['kajo_frame_pipeline', 'fx_glass_render', 'fx_glass_specular_edge'] },
+          { id: 'comp_damage_expand_for_blur', path: ['kajo_frame_pipeline', 'comp_scene_damage_collect', 'comp_damage_expand_for_blur'] },
+          { id: 'comp_syncobj_is_signaled', path: ['kajo_frame_pipeline', 'comp_xwayland_check_ready', 'comp_syncobj_is_signaled'] }
+        ];
+        const col3 = [
+          'kfx_vk_dispatch_quad', 'kfx_vk_transition_image', 'kfx_shader_get_pipeline',
+          'kfx_vk_push_constants', 'kfx_vk_emit_fullscreen_tri', 'kfx_vk_insert_barrier'
+        ].map((id) => ({ id, path: ['kajo_frame_pipeline', 'fx_glass_render', 'blur_down_pass', id] }));
+
+        const cols = [
+          { title: 'DEPTH 0 · ENTRY PIPELINE', nodes: col0 },
+          { title: 'DEPTH 1 · DIRECT SUBSYSTEMS', nodes: col1 },
+          { title: 'DEPTH 2 · RENDER PASSES & HELPERS', nodes: col2 },
+          { title: 'DEPTH 3 · VULKAN KERNEL LEAF', nodes: col3 }
+        ];
+
+        el.overviewCanvas.innerHTML = cols.map((c) => `
+          <div class="ov-col">
+            <div class="ov-col-title">${c.title}</div>
+            ${c.nodes.filter((n) => SYMBOLS[n.id]).map((n) => {
+              const s = SYMBOLS[n.id];
+              const inPath = activeIds.has(n.id);
+              const pathStr = n.path.join(',');
+              return `<div class="ov-node ${inPath ? 'in-path' : ''}" data-ov-path="${pathStr}">
+                <div class="ov-node-name">${escHtml(s.name)}</div>
+                <div class="ov-node-sub">
+                  <span>${escHtml(s.shortFile)}:${s.line}</span>
+                  <span>→${s.callees.length} WS</span>
+                </div>
+              </div>`;
+            }).join('')}
+          </div>
+        `).join('');
+      }
+
+      /* ========================================================================
+         7. VIEWPORT BAND HIGHLIGHTING + MAGNETIC CODE-FOLLOWING + SVG CONNECTORS
+         ======================================================================== */
+      function getD0VisibleLineRange() {
+        const sym = currentD0Sym();
+        const sc = el.d0EditorScroll;
+        const rowH = 20;
+        const firstIdx = Math.max(0, Math.floor(sc.scrollTop / rowH));
+        const visCount = Math.max(1, Math.ceil(sc.clientHeight / rowH));
+        const lastIdx = Math.min(sym.codeLines.length - 1, firstIdx + visCount);
+        const visTop = sym.codeLines[firstIdx] ? sym.codeLines[firstIdx].ln : 0;
+        const visBot = sym.codeLines[lastIdx] ? sym.codeLines[lastIdx].ln : 999999;
+        return { visTop, visBot, firstIdx, lastIdx };
+      }
+
+      function updateViewportBandStyling() {
+        const { visTop, visBot } = getD0VisibleLineRange();
+        el.d1List.querySelectorAll('.d1-tile').forEach((tile) => {
+          const lines = (tile.dataset.callLines || '').split(',').map(Number).filter(Boolean);
+          const inBand = lines.some((ln) => ln >= visTop && ln <= visBot);
+          tile.classList.toggle('in-band', inBand);
+          tile.classList.toggle('out-band', !inBand);
+        });
+      }
+
+      function setActiveD1Tile(tileId, { springAlign = false, anchorLine = null, animateD2 = true } = {}) {
+        const changed = state.activeD1Id !== tileId;
+        state.activeD1Id = tileId;
+
+        el.d1List.querySelectorAll('.d1-tile').forEach((tile) => {
+          tile.classList.toggle('expanded', tile.dataset.tileId === tileId);
+        });
+
+        // Update active call line highlight in D0
+        const d0 = currentD0Sym();
+        const items = getTargetListFor(d0.id, state.lens);
+        const item = items.find((x) => x.id === tileId);
+        const activeLines = new Set(item ? item.lines : []);
+        el.d0EditorScroll.querySelectorAll('.code-row').forEach((row) => {
+          const ln = Number(row.dataset.ln);
+          row.classList.toggle('active-call-line', activeLines.has(ln));
+        });
+
+        if (changed) {
+          renderD2(animateD2);
+          trackConnectorsFor(220);
+        }
+
+        if (springAlign && state.magneticLinked && tileId) {
+          const targetTile = el.d1List.querySelector(`.d1-tile[data-tile-id="${tileId}"]`);
+          if (targetTile) {
+            // Align tile header Y directly opposite the calling line in D0!
+            const refLine = anchorLine || (item && item.lines[0]) || state.cursorLine;
+            const d0Row = el.d0EditorScroll.querySelector(`.code-row[data-ln="${refLine}"]`);
+            const listRect = el.d1List.getBoundingClientRect();
+            let desiredOffsetInList = listRect.height * 0.30;
+
+            if (d0Row) {
+              const rowRect = d0Row.getBoundingClientRect();
+              desiredOffsetInList = Math.max(8, Math.min(listRect.height - 150, rowRect.top - listRect.top - 5));
+            }
+            const maxScroll = Math.max(0, el.d1List.scrollHeight - el.d1List.clientHeight);
+            const targetScroll = Math.max(0, Math.min(maxScroll, targetTile.offsetTop - desiredOffsetInList));
+            d1Spring.setTarget(targetScroll, el.d1List.scrollTop);
+            ensureRaf();
+          }
+        }
+        drawConnectors();
+      }
+
+      function findNearestTargetForLine(lineNo) {
+        const items = getFilteredD1Items();
+        if (items.length === 0) return null;
+        let best = null;
+        let bestDist = Infinity;
+        let bestLine = lineNo;
+
+        items.forEach((it) => {
+          it.lines.forEach((ln) => {
+            const d = Math.abs(ln - lineNo);
+            if (d < bestDist) {
+              bestDist = d;
+              best = it;
+              bestLine = ln;
+            }
+          });
+        });
+        return best ? { item: best, line: bestLine } : null;
+      }
+
+      function selectD0Line(lineNo, { reengageMagnetic = true } = {}) {
+        const sym = currentD0Sym();
+        const exists = sym.codeLines.some((r) => r.ln === lineNo);
+        if (!exists) return;
+
+        state.cursorLine = lineNo;
+        currentDepthEntry().cursorLine = lineNo;
+
+        el.d0EditorScroll.querySelectorAll('.code-row').forEach((r) => {
+          const ln = Number(r.dataset.ln);
+          r.classList.toggle('cursor-line', ln === lineNo);
+          if (state.relLines) {
+            const lnSpan = r.querySelector('.g-ln');
+            if (lnSpan) lnSpan.textContent = ln === lineNo ? String(ln) : String(Math.abs(ln - lineNo));
+          }
+        });
+
+        if (reengageMagnetic && !state.magneticLinked) {
+          state.magneticLinked = true;
+          el.resyncPill.classList.remove('visible');
+        }
+
+        const match = findNearestTargetForLine(lineNo);
+        if (match) {
+          setActiveD1Tile(match.item.id, { springAlign: true, anchorLine: match.line, animateD2: true });
+        }
+        renderStatusBar();
+      }
+
+      function handleD0ScrollMagnetic() {
+        updateViewportBandStyling();
+        drawConnectors();
+        if (!state.magneticLinked) return;
+
+        clearTimeout(d0ScrollDebounce);
+        d0ScrollDebounce = setTimeout(() => {
+          if (!state.magneticLinked) return;
+          const sym = currentD0Sym();
+          const sc = el.d0EditorScroll;
+          // Focal point: ~32% down from top of D0 viewport
+          const focalIdx = Math.min(
+            sym.codeLines.length - 1,
+            Math.max(0, Math.floor((sc.scrollTop + sc.clientHeight * 0.32) / 20))
+          );
+          const focalLn = sym.codeLines[focalIdx] ? sym.codeLines[focalIdx].ln : state.cursorLine;
+          const match = findNearestTargetForLine(focalLn);
+          if (match) {
+            setActiveD1Tile(match.item.id, { springAlign: true, anchorLine: match.line, animateD2: true });
+          }
+        }, 55);
+      }
+
+      function detachMagneticFollow() {
+        if (!state.magneticLinked) return;
+        state.magneticLinked = false;
+        d1Spring.active = false;
+        el.resyncPill.classList.add('visible');
+        renderStatusBar();
+      }
+
+      function resyncMagneticFollow() {
+        state.magneticLinked = true;
+        el.resyncPill.classList.remove('visible');
+        const match = findNearestTargetForLine(state.cursorLine);
+        if (match) {
+          setActiveD1Tile(match.item.id, { springAlign: true, anchorLine: match.line, animateD2: false });
+        }
+        renderStatusBar();
+        showToast('⛓ Magnetic code-following re-engaged');
+      }
+
+      /* Live SVG Bezier Connector Renderer (D0 -> D+1 -> D+2) */
+      function drawConnectors() {
+        if (state.mode !== 'strip' || state.zen) {
+          el.connectorSvg.innerHTML = '';
+          return;
+        }
+        const stageRect = el.columnsStage.getBoundingClientRect();
+        const d0Rect = el.d0EditorScroll.getBoundingClientRect();
+        const d1Rect = el.d1List.getBoundingClientRect();
+        const d2Rect = el.d2List.getBoundingClientRect();
+
+        if (stageRect.width <= 0) return;
+
+        const meta = LENS_META[state.lens];
+        const dash = state.lspFallback ? ' stroke-dasharray="4 3"' : '';
+        const paths = [];
+
+        // 1. D0 -> D+1 connectors (muted 0.8px for visible-band tiles, bright 1.5px for active tile)
+        const tiles = Array.from(el.d1List.querySelectorAll('.d1-tile'));
+        let activeTileRect = null;
+
+        tiles.forEach((tile) => {
+          const tRect = tile.getBoundingClientRect();
+          // Skip tiles scrolled completely outside D+1 visible viewport
+          if (tRect.bottom < d1Rect.top || tRect.top > d1Rect.bottom) return;
+
+          const isExp = tile.classList.contains('expanded');
+          const isInBand = tile.classList.contains('in-band');
+          if (isExp) activeTileRect = tRect;
+          if (!isExp && !isInBand) return;
+
+          const callLines = (tile.dataset.callLines || '').split(',').map(Number).filter(Boolean);
+          // Pick the call line nearest to cursorLine if multiple occurrences
+          let bestLn = callLines[0];
+          let minD = Infinity;
+          callLines.forEach((ln) => {
+            const d = Math.abs(ln - state.cursorLine);
+            if (d < minD) { minD = d; bestLn = ln; }
+          });
+
+          const rowEl = el.d0EditorScroll.querySelector(`.code-row[data-ln="${bestLn}"]`);
+          if (!rowEl) return;
+          const rRect = rowEl.getBoundingClientRect();
+          if (rRect.bottom < d0Rect.top || rRect.top > d0Rect.bottom) return;
+
+          const x1 = d0Rect.right - stageRect.left;
+          const y1 = Math.max(d0Rect.top + 4, Math.min(d0Rect.bottom - 4, rRect.top + rRect.height * 0.5)) - stageRect.top;
+          const x2 = tRect.left - stageRect.left;
+          const y2 = Math.max(d1Rect.top + 6, Math.min(d1Rect.bottom - 6, tRect.top + 15)) - stageRect.top;
+          const cx = (x1 + x2) * 0.5;
+
+          if (isExp) {
+            // Draw active connector on top later
+            paths.push({
+              priority: 2,
+              svg: `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${cx.toFixed(1)} ${y1.toFixed(1)}, ${cx.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${meta.color}" stroke-width="1.65" opacity="0.98"${dash}/>` +
+                   `<rect x="${(x1 - 2.5).toFixed(1)}" y="${(y1 - 2.5).toFixed(1)}" width="5" height="5" fill="${meta.color}"/>` +
+                   `<rect x="${(x2 - 2.5).toFixed(1)}" y="${(y2 - 2.5).toFixed(1)}" width="5" height="5" fill="${meta.color}"/>`
+            });
+          } else {
+            paths.push({
+              priority: 0,
+              svg: `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} C ${cx.toFixed(1)} ${y1.toFixed(1)}, ${cx.toFixed(1)} ${y2.toFixed(1)}, ${x2.toFixed(1)} ${y2.toFixed(1)}" fill="none" stroke="${meta.color}" stroke-width="0.85" opacity="0.28"${dash}/>`
+            });
+          }
+        });
+
+        // 2. Active D+1 tile -> D+2 micro-tiles connectors
+        if (activeTileRect && activeTileRect.bottom >= d1Rect.top && activeTileRect.top <= d1Rect.bottom) {
+          const sx = activeTileRect.right - stageRect.left;
+          const sy = Math.max(d1Rect.top + 8, Math.min(d1Rect.bottom - 8, activeTileRect.top + 15)) - stageRect.top;
+          const chips = Array.from(el.d2List.querySelectorAll('.d2-chip'));
+
+          chips.forEach((chip) => {
+            const cRect = chip.getBoundingClientRect();
+            if (cRect.bottom < d2Rect.top || cRect.top > d2Rect.bottom) return;
+            const tx = cRect.left - stageRect.left;
+            const ty = (cRect.top + cRect.height * 0.5) - stageRect.top;
+            const cx = (sx + tx) * 0.5;
+            const isAct = chip.classList.contains('active');
+
+            paths.push({
+              priority: isAct ? 2 : 1,
+              svg: `<path d="M ${sx.toFixed(1)} ${sy.toFixed(1)} C ${cx.toFixed(1)} ${sy.toFixed(1)}, ${cx.toFixed(1)} ${ty.toFixed(1)}, ${tx.toFixed(1)} ${ty.toFixed(1)}" fill="none" stroke="${meta.color}" stroke-width="${isAct ? '1.35' : '0.8'}" opacity="${isAct ? '0.88' : '0.32'}"${dash}/>`
+            });
+          });
+        }
+
+        paths.sort((a, b) => a.priority - b.priority);
+        el.connectorSvg.innerHTML = paths.map((p) => p.svg).join('');
+      }
+
+      function trackConnectorsFor(ms) {
+        connectorTrackUntil = Math.max(connectorTrackUntil, performance.now() + ms);
+        ensureRaf();
+      }
+
+      function ensureRaf() {
+        if (rafId !== null) return;
+        lastFrameTime = performance.now();
+        rafId = requestAnimationFrame(tickLoop);
+      }
+
+      function tickLoop(now) {
+        const dt = (now - lastFrameTime) / 1000;
+        lastFrameTime = now;
+        let needMore = false;
+
+        if (d1Spring.active) {
+          const nextTop = d1Spring.step(dt);
+          el.d1List.scrollTop = nextTop;
+          drawConnectors();
+          needMore = true;
+        }
+        if (now < connectorTrackUntil) {
+          drawConnectors();
+          needMore = true;
+        }
+
+        if (needMore) {
+          rafId = requestAnimationFrame(tickLoop);
+        } else {
+          rafId = null;
+          drawConnectors();
+        }
+      }
+
+      /* ========================================================================
+         8. DEPTH NAVIGATION: PROMOTE (SLIDE LEFT) & SURFACE (SLIDE RIGHT)
+         ======================================================================== */
+      function triggerDepthAnim(dir) {
+        el.columnsStage.classList.remove('slide-left', 'slide-right');
+        void el.columnsStage.offsetWidth;
+        el.columnsStage.classList.add(dir === 'left' ? 'slide-left' : 'slide-right');
+        trackConnectorsFor(240);
+      }
+
+      function promoteSymbol(targetId, intermediateId = null) {
+        if (!SYMBOLS[targetId]) return;
+        // Save current D0 scroll position before pushing
+        currentDepthEntry().scrollTop = el.d0EditorScroll.scrollTop;
+        currentDepthEntry().cursorLine = state.cursorLine;
+
+        if (intermediateId && SYMBOLS[intermediateId] && intermediateId !== targetId) {
+          const midSym = SYMBOLS[intermediateId];
+          state.depthStack.push({ symbolId: intermediateId, cursorLine: midSym.line, scrollTop: 0 });
+        }
+
+        const sym = SYMBOLS[targetId];
+        const firstCallRow = sym.codeLines.find((r) => r.call) || sym.codeLines.find((r) => r.ln >= sym.scopeStart) || sym.codeLines[0];
+        state.depthStack.push({ symbolId: targetId, cursorLine: firstCallRow.ln, scrollTop: 0 });
+        state.cursorLine = firstCallRow.ln;
+        state.d1Filter = '';
+        el.d1FilterInput.value = '';
+        state.magneticLinked = true;
+        state.fullFileVeilOff = false;
+
+        // Preselect first tile of promoted symbol
+        const nextItems = getTargetListFor(targetId, state.lens);
+        state.activeD1Id = nextItems.length ? nextItems[0].id : null;
+
+        syncTrailCopy();
+        renderAll();
+        // Scroll promoted D0 to its scopeStart smoothly
+        const scopeIdx = Math.max(0, sym.codeLines.findIndex((r) => r.ln >= sym.scopeStart) - 2);
+        el.d0EditorScroll.scrollTop = scopeIdx * 20;
+        el.d1List.scrollTop = 0;
+        d1Spring.snap(0);
+
+        triggerDepthAnim('left');
+        showToast(intermediateId
+          ? `⇢ Jumped 2 depths → ${sym.name} (${intermediateId} docked in Ancestor Spine)`
+          : `→ Promoted ${sym.name} to D${state.depthStack.length - 1}`);
+      }
+
+      function surfaceToDepth(targetIdx) {
+        if (targetIdx < 0 || targetIdx >= state.depthStack.length - 1) return;
+        state.depthStack = state.depthStack.slice(0, targetIdx + 1);
+        const top = currentDepthEntry();
+        state.cursorLine = top.cursorLine;
+        state.d1Filter = '';
+        el.d1FilterInput.value = '';
+        state.magneticLinked = true;
+
+        syncTrailCopy();
+        renderAll();
+        el.d0EditorScroll.scrollTop = top.scrollTop || 0;
+        const match = findNearestTargetForLine(state.cursorLine);
+        if (match) {
+          setActiveD1Tile(match.item.id, { springAlign: true, anchorLine: match.line, animateD2: false });
+        }
+        triggerDepthAnim('right');
+        showToast(`← Surfaced back to D${targetIdx}: ${SYMBOLS[top.symbolId].name}`);
+      }
+
+      function jumpOverviewPath(ids) {
+        if (!ids.length) return;
+        state.depthStack = ids.map((id) => {
+          const s = SYMBOLS[id];
+          const r = s.codeLines.find((x) => x.call) || s.codeLines[0];
+          return { symbolId: id, cursorLine: r.ln, scrollTop: 0 };
+        });
+        state.cursorLine = currentDepthEntry().cursorLine;
+        state.overview = false;
+        el.overviewModal.classList.remove('visible');
+        el.btnOverview.classList.remove('telemetry-active');
+        state.magneticLinked = true;
+        renderAll();
+        el.d0EditorScroll.scrollTop = 0;
+        el.d1List.scrollTop = 0;
+        d1Spring.snap(0);
+        triggerDepthAnim('left');
+        showToast(`⬡ Jumped to D${ids.length - 1}: ${SYMBOLS[ids[ids.length - 1]].name}`);
+      }
+
+      function syncTrailCopy() {
+        TRAILS[state.activeTrailIdx].stack = state.depthStack.map((x) => ({ ...x }));
+      }
+
+      function switchTrail(idx) {
+        if (idx === state.activeTrailIdx) return;
+        syncTrailCopy();
+        state.activeTrailIdx = idx;
+        state.depthStack = TRAILS[idx].stack.map((x) => ({ ...x }));
+        state.cursorLine = currentDepthEntry().cursorLine;
+        state.magneticLinked = true;
+        document.querySelectorAll('.trail-pill').forEach((p) => {
+          p.classList.toggle('active', Number(p.dataset.trail) === idx);
+        });
+        renderAll();
+        el.d0EditorScroll.scrollTop = currentDepthEntry().scrollTop || 0;
+        const match = findNearestTargetForLine(state.cursorLine);
+        if (match) setActiveD1Tile(match.item.id, { springAlign: true, anchorLine: match.line, animateD2: true });
+        triggerDepthAnim('left');
+      }
+
+      function renderAll() {
+        applyLensTheme();
+        renderTreeSidebar();
+        renderAncestorSpine();
+        renderD0();
+        renderD1();
+        renderStatusBar();
+        updateViewportBandStyling();
+        requestAnimationFrame(drawConnectors);
+      }
+
+      /* ========================================================================
+         9. EVENT LISTENERS (WHEEL / CLICK / DOUBLE-CLICK / KEYBOARD CHORDS)
+         ======================================================================== */
+
+      // D0 click on code row (line select + magnetic follow, BP toggle, or Ctrl+Click promote)
+      el.d0EditorScroll.addEventListener('click', (e) => {
+        state.focusedCol = 'd0';
+        const bpCell = e.target.closest('.g-bp');
+        if (bpCell) {
+          const ln = Number(bpCell.dataset.bpLn);
+          const sym = currentD0Sym();
+          if (sym.breakpoints[ln]) {
+            delete sym.breakpoints[ln];
+            showToast(`Breakpoint removed at L${ln}`);
+          } else {
+            sym.breakpoints[ln] = { cond: e.shiftKey ? 'frame->seq % 60 == 0' : null };
+            showToast(e.shiftKey ? `Conditional BP set at L${ln}` : `Breakpoint set at L${ln}`);
+          }
+          renderD0();
+          drawConnectors();
+          return;
+        }
+
+        const tok = e.target.closest('.ws-tok');
+        if (tok && (e.ctrlKey || e.metaKey)) {
+          promoteSymbol(tok.dataset.jump);
+          return;
+        }
+
+        const row = e.target.closest('.code-row');
+        if (row) {
+          selectD0Line(Number(row.dataset.ln), { reengageMagnetic: true });
+        }
+      });
+
+      // D0 double-click on workspace token promotes directly
+      el.d0EditorScroll.addEventListener('dblclick', (e) => {
+        const tok = e.target.closest('.ws-tok');
+        if (tok && SYMBOLS[tok.dataset.jump]) {
+          promoteSymbol(tok.dataset.jump);
+        }
+      });
+
+      // D0 scroll -> magnetic code-following + viewport band update
+      el.d0EditorScroll.addEventListener('scroll', handleD0ScrollMagnetic, { passive: true });
+
+      // D+1 manual wheel scroll -> IMMEDIATE manual scroll yield (zero tug-of-war!)
+      el.d1List.addEventListener('wheel', () => {
+        detachMagneticFollow();
+      }, { passive: true });
+      el.d1List.addEventListener('scroll', () => {
+        drawConnectors();
+      }, { passive: true });
+
+      // D+1 click / double-click / pin / promote / diff accept-revert
+      el.d1List.addEventListener('click', (e) => {
+        state.focusedCol = 'd1';
+        renderStatusBar();
+
+        const diffBtn = e.target.closest('.diff-act-btn');
+        if (diffBtn) {
+          e.stopPropagation();
+          const symId = diffBtn.dataset.sym;
+          const act = diffBtn.dataset.diffAct;
+          state.diffDecisions[symId] = act === 'accept' ? 'accepted' : 'reverted';
+          renderD1();
+          showToast(`${act === 'accept' ? '✓ Accepted' : '✕ Reverted'} diff hunk for ${SYMBOLS[symId].name}`);
+          return;
+        }
+
+        const pinBtn = e.target.closest('.pin-btn');
+        if (pinBtn) {
+          e.stopPropagation();
+          const pid = pinBtn.dataset.pinId;
+          state.pinnedSymbolId = state.pinnedSymbolId === pid ? null : pid;
+          renderPinnedPane();
+          renderD1();
+          trackConnectorsFor(180);
+          showToast(state.pinnedSymbolId ? `📌 Pinned ${SYMBOLS[pid].name} to top 30% of D0` : 'Unpinned reference split');
+          return;
+        }
+
+        const promBtn = e.target.closest('.promote-btn');
+        if (promBtn) {
+          e.stopPropagation();
+          promoteSymbol(promBtn.dataset.promoteId);
+          return;
+        }
+
+        const tile = e.target.closest('.d1-tile');
+        if (tile) {
+          const tid = tile.dataset.tileId;
+          detachMagneticFollow();
+          setActiveD1Tile(tid, { springAlign: false, animateD2: true });
+        }
+      });
+
+      el.d1List.addEventListener('dblclick', (e) => {
+        const tile = e.target.closest('.d1-tile');
+        if (tile && !e.target.closest('button')) {
+          promoteSymbol(tile.dataset.tileId);
+        }
+      });
+
+      // D+1 inline filter
+      el.d1FilterInput.addEventListener('input', () => {
+        state.d1Filter = el.d1FilterInput.value;
+        renderD1();
+        drawConnectors();
+      });
+      el.d1FilterClear.addEventListener('click', () => {
+        state.d1Filter = '';
+        el.d1FilterInput.value = '';
+        renderD1();
+        drawConnectors();
+      });
+
+      // Resync magnetic follow pill
+      el.resyncPill.addEventListener('click', resyncMagneticFollow);
+
+      // D+2 click (highlight) & double-click (promote 2 depths!)
+      el.d2List.addEventListener('scroll', () => drawConnectors(), { passive: true });
+      el.d2List.addEventListener('click', (e) => {
+        state.focusedCol = 'd2';
+        renderStatusBar();
+        const chip = e.target.closest('.d2-chip');
+        if (chip) {
+          state.activeD2Id = chip.dataset.d2Id;
+          el.d2List.querySelectorAll('.d2-chip').forEach((c) => c.classList.toggle('active', c === chip));
+          drawConnectors();
+        }
+      });
+      el.d2List.addEventListener('dblclick', (e) => {
+        const chip = e.target.closest('.d2-chip');
+        if (chip) {
+          promoteSymbol(chip.dataset.d2Id, state.activeD1Id);
+        }
+      });
+
+      // Ancestor Spine & Breadcrumb & Minimap clicks
+      el.spinePills.addEventListener('click', (e) => {
+        const pill = e.target.closest('[data-surface-idx]');
+        if (pill) surfaceToDepth(Number(pill.dataset.surfaceIdx));
+      });
+      el.depthCrumb.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-surface-idx]');
+        if (item) surfaceToDepth(Number(item.dataset.surfaceIdx));
+      });
+      el.minimapSlots.addEventListener('click', (e) => {
+        const anc = e.target.closest('[data-surface-idx]');
+        if (anc) { surfaceToDepth(Number(anc.dataset.surfaceIdx)); return; }
+        const fc = e.target.closest('[data-focus-col]');
+        if (fc) {
+          state.focusedCol = fc.dataset.focusCol;
+          renderStatusBar();
+        }
+      });
+
+      el.btnSurface.addEventListener('click', () => surfaceToDepth(state.depthStack.length - 2));
+      el.btnSpineSurface.addEventListener('click', () => surfaceToDepth(state.depthStack.length - 2));
+
+      // Trails
+      document.querySelectorAll('.trail-pill').forEach((btn) => {
+        btn.addEventListener('click', () => switchTrail(Number(btn.dataset.trail)));
+      });
+
+      // 4 Lenses
+      function setLens(lens) {
+        if (!LENS_META[lens]) return;
+        state.lens = lens;
+        state.d1Filter = '';
+        el.d1FilterInput.value = '';
+        state.magneticLinked = true;
+        renderAll();
+        const match = findNearestTargetForLine(state.cursorLine);
+        if (match) {
+          setActiveD1Tile(match.item.id, { springAlign: true, anchorLine: match.line, animateD2: true });
+        }
+        showToast(`Lens switched → ${LENS_META[lens].label}`);
+      }
+      el.lensGroup.addEventListener('click', (e) => {
+        const btn = e.target.closest('.seg-btn');
+        if (btn) setLens(btn.dataset.lens);
+      });
+
+      // LSP vs TS+RG Fallback Toggle
+      el.btnLspToggle.addEventListener('click', () => {
+        state.lspFallback = !state.lspFallback;
+        el.btnLspToggle.classList.toggle('lsp-ok', !state.lspFallback);
+        el.btnLspToggle.classList.toggle('lsp-fallback', state.lspFallback);
+        el.lspLabel.textContent = state.lspFallback ? '⚠ TS+RG FALLBACK' : '⚡ LSP: CLANGD ●';
+        el.fallbackBanner.classList.toggle('visible', state.lspFallback);
+        drawConnectors();
+        showToast(state.lspFallback
+          ? '⚠ Switched to honest Tree-sitter + ripgrep fallback (dashed connectors)'
+          : '⚡ Connected to clangd LSP 3.17 (solid connectors)');
+      });
+
+      // D0 Header Toggles (# REL, FULL FILE VEIL, PIN CONTROLS)
+      el.btnRelLines.addEventListener('click', () => {
+        state.relLines = !state.relLines;
+        renderD0();
+      });
+      el.btnFullFile.addEventListener('click', () => {
+        state.fullFileVeilOff = !state.fullFileVeilOff;
+        renderD0();
+        drawConnectors();
+      });
+      el.btnUnpin.addEventListener('click', () => {
+        state.pinnedSymbolId = null;
+        renderPinnedPane();
+        renderD1();
+        trackConnectorsFor(180);
+      });
+      el.btnPromotePinned.addEventListener('click', () => {
+        if (state.pinnedSymbolId) {
+          const id = state.pinnedSymbolId;
+          state.pinnedSymbolId = null;
+          promoteSymbol(id);
+        }
+      });
+
+      // Top Header Bar Toggles
+      el.btnTree.addEventListener('click', () => {
+        state.treeOpen = !state.treeOpen;
+        el.treeSidebar.classList.toggle('collapsed', !state.treeOpen);
+        el.btnTree.classList.toggle('active', state.treeOpen);
+        trackConnectorsFor(180);
+      });
+      el.treeList.addEventListener('click', (e) => {
+        const row = e.target.closest('[data-tree-sym]');
+        if (!row) return;
+        const symId = row.dataset.treeSym;
+        if (symId === 'kajo_frame_pipeline') {
+          surfaceToDepth(0);
+        } else {
+          promoteSymbol(symId);
+        }
+      });
+
+      function toggleStripMode() {
+        state.mode = state.mode === 'strip' ? 'tabs' : 'strip';
+        const isStrip = state.mode === 'strip';
+        el.stripStage.classList.toggle('hidden', !isStrip);
+        el.stripToolbar.classList.toggle('hidden', !isStrip);
+        el.minimapBar.classList.toggle('hidden', !isStrip);
+        el.classicTabsView.classList.toggle('visible', !isStrip);
+        el.btnStripMode.classList.toggle('active', isStrip);
+        el.btnStripMode.textContent = isStrip ? '▥ STRIP' : '▤ TABS';
+        if (!isStrip) {
+          state.classicTabId = currentD0Sym().id;
+          renderClassicTabs();
+        } else {
+          trackConnectorsFor(180);
+        }
+      }
+      el.btnStripMode.addEventListener('click', toggleStripMode);
+      el.btnBackToStrip.addEventListener('click', toggleStripMode);
+      el.classicTabStrip.addEventListener('click', (e) => {
+        const tab = e.target.closest('.classic-tab');
+        if (tab) {
+          state.classicTabId = tab.dataset.classicId;
+          renderClassicTabs();
+        }
+      });
+
+      function toggleZen() {
+        state.zen = !state.zen;
+        el.columnsStage.classList.toggle('zen-mode', state.zen);
+        el.btnZen.classList.toggle('active', state.zen);
+        trackConnectorsFor(220);
+        showToast(state.zen ? '⤢ Zen Focus Mode (96% D0 | 4% strip)' : 'Restored 60% | 25% | 15% Call-Depth Strip');
+      }
+      el.btnZen.addEventListener('click', toggleZen);
+      el.zenRail.addEventListener('click', toggleZen);
+
+      function toggleOverview() {
+        state.overview = !state.overview;
+        el.overviewModal.classList.toggle('visible', state.overview);
+        el.btnOverview.classList.toggle('telemetry-active', state.overview);
+        if (state.overview) renderOverview();
+      }
+      el.btnOverview.addEventListener('click', toggleOverview);
+      el.btnCloseOverview.addEventListener('click', toggleOverview);
+      el.overviewCanvas.addEventListener('click', (e) => {
+        const node = e.target.closest('.ov-node');
+        if (node) {
+          jumpOverviewPath(node.dataset.ovPath.split(','));
+        }
+      });
+
+      el.btnFloat.addEventListener('click', () => {
+        state.floating = !state.floating;
+        el.niriStage.classList.toggle('floating', state.floating);
+        el.btnFloat.classList.toggle('active', state.floating);
+        trackConnectorsFor(220);
+      });
+
+      el.btnClose.addEventListener('click', () => {
+        state.depthStack = [{ symbolId: 'kajo_frame_pipeline', cursorLine: 55, scrollTop: 0 }];
+        state.cursorLine = 55;
+        state.pinnedSymbolId = null;
+        state.lens = 'calls';
+        state.zen = false;
+        state.overview = false;
+        state.magneticLinked = true;
+        el.columnsStage.classList.remove('zen-mode');
+        el.overviewModal.classList.remove('visible');
+        el.btnZen.classList.remove('active');
+        el.btnOverview.classList.remove('telemetry-active');
+        renderAll();
+        showToast('Reset mockup to Depth 0 (comp_output.c)');
+      });
+
+      // Mouse Back button (Button 3/8) surfaces back cleanly
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 3 && state.depthStack.length > 1) {
+          e.preventDefault();
+          surfaceToDepth(state.depthStack.length - 2);
+        }
+      });
+
+      // Keyboard Shortcuts (matching spec_ide_code_strip.md §4.2)
+      let gPending = false;
+      window.addEventListener('keydown', (e) => {
+        const inFilter = document.activeElement === el.d1FilterInput;
+        if (inFilter) {
+          if (e.key === 'Escape') {
+            state.d1Filter = '';
+            el.d1FilterInput.value = '';
+            el.d1FilterInput.blur();
+            renderD1();
+            drawConnectors();
+          } else if (e.key === 'Enter') {
+            el.d1FilterInput.blur();
+            state.focusedCol = 'd1';
+            renderStatusBar();
+          }
+          return;
+        }
+
+        if (e.key === 'Escape') {
+          if (state.overview) { toggleOverview(); return; }
+          if (state.zen) { toggleZen(); return; }
+          return;
+        }
+
+        // Alt+Left or Backspace -> Surface back 1 depth
+        if ((e.altKey && e.key === 'ArrowLeft') || e.key === 'Backspace') {
+          if (state.depthStack.length > 1) {
+            e.preventDefault();
+            surfaceToDepth(state.depthStack.length - 2);
+          }
+          return;
+        }
+
+        // Alt+H / Alt+L -> switch column focus
+        if (e.altKey && (e.key === 'h' || e.key === 'H')) {
+          e.preventDefault();
+          state.focusedCol = state.focusedCol === 'd2' ? 'd1' : 'd0';
+          renderStatusBar();
+          return;
+        }
+        if (e.altKey && (e.key === 'l' || e.key === 'L')) {
+          e.preventDefault();
+          state.focusedCol = state.focusedCol === 'd0' ? 'd1' : 'd2';
+          renderStatusBar();
+          return;
+        }
+
+        // g d chord -> promote symbol on current D0 line
+        if (gPending) {
+          gPending = false;
+          if (e.key === 'd') {
+            const sym = currentD0Sym();
+            const row = sym.codeLines.find((r) => r.ln === state.cursorLine);
+            const target = (row && (row.call || row.typeRef)) || state.activeD1Id;
+            if (target && SYMBOLS[target]) promoteSymbol(target);
+            return;
+          }
+        }
+        if (e.key === 'g' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          gPending = true;
+          setTimeout(() => { gPending = false; }, 600);
+          return;
+        }
+
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+        // Lens shortcuts 1-4
+        if (e.key === '1') { setLens('calls'); return; }
+        if (e.key === '2') { setLens('types'); return; }
+        if (e.key === '3') { setLens('impact'); return; }
+        if (e.key === '4') { setLens('diff'); return; }
+
+        if (e.key === '/') {
+          e.preventDefault();
+          el.d1FilterInput.focus();
+          return;
+        }
+        if (e.key === 'z') { toggleZen(); return; }
+        if (e.key === 'o') { toggleOverview(); return; }
+        if (e.key === 's') { toggleStripMode(); return; }
+        if (e.key === 'r' && !state.magneticLinked) { resyncMagneticFollow(); return; }
+        if (e.key === 'f' && state.depthStack.length > 1) {
+          state.fullFileVeilOff = !state.fullFileVeilOff;
+          renderD0();
+          drawConnectors();
+          return;
+        }
+        if (e.key === 'p' && state.activeD1Id) {
+          state.pinnedSymbolId = state.pinnedSymbolId === state.activeD1Id ? null : state.activeD1Id;
+          renderPinnedPane();
+          renderD1();
+          trackConnectorsFor(180);
+          return;
+        }
+
+        // j / k / ArrowDown / ArrowUp inside focused column
+        if (e.key === 'j' || e.key === 'ArrowDown' || e.key === 'k' || e.key === 'ArrowUp') {
+          e.preventDefault();
+          const dir = (e.key === 'j' || e.key === 'ArrowDown') ? 1 : -1;
+          if (state.focusedCol === 'd0') {
+            const sym = currentD0Sym();
+            const idx = sym.codeLines.findIndex((r) => r.ln === state.cursorLine);
+            const nextIdx = Math.max(0, Math.min(sym.codeLines.length - 1, idx + dir));
+            const nextLn = sym.codeLines[nextIdx].ln;
+            selectD0Line(nextLn, { reengageMagnetic: true });
+            const rowEl = el.d0EditorScroll.querySelector(`.code-row[data-ln="${nextLn}"]`);
+            if (rowEl) rowEl.scrollIntoView({ block: 'nearest' });
+          } else if (state.focusedCol === 'd1') {
+            const items = getFilteredD1Items();
+            if (!items.length) return;
+            const idx = items.findIndex((x) => x.id === state.activeD1Id);
+            const next = items[Math.max(0, Math.min(items.length - 1, idx + dir))];
+            detachMagneticFollow();
+            setActiveD1Tile(next.id, { springAlign: false, animateD2: true });
+            const tEl = el.d1List.querySelector(`.d1-tile[data-tile-id="${next.id}"]`);
+            if (tEl) tEl.scrollIntoView({ block: 'nearest' });
+          } else if (state.focusedCol === 'd2') {
+            const items = getD2Items(state.activeD1Id);
+            if (!items.length) return;
+            const idx = items.findIndex((x) => x.id === state.activeD2Id);
+            const next = items[Math.max(0, Math.min(items.length - 1, idx + dir))];
+            state.activeD2Id = next.id;
+            el.d2List.querySelectorAll('.d2-chip').forEach((c) => c.classList.toggle('active', c.dataset.d2Id === next.id));
+            drawConnectors();
+          }
+          return;
+        }
+
+        if (e.key === 'Enter') {
+          if (state.focusedCol === 'd1' && state.activeD1Id) {
+            promoteSymbol(state.activeD1Id);
+          } else if (state.focusedCol === 'd2' && state.activeD2Id) {
+            promoteSymbol(state.activeD2Id, state.activeD1Id);
+          }
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        updateViewportBandStyling();
+        drawConnectors();
+      });
+
+      /* ========================================================================
+         10. INITIAL BOOT (Land on comp_output.c L55 -> fx_glass_render aligned!)
+         ======================================================================== */
+      renderAll();
+      // Position D0 so Phase 4–7 (including L55 fx_glass_render) is centered cleanly
+      requestAnimationFrame(() => {
+        el.d0EditorScroll.scrollTop = 440;
+        updateViewportBandStyling();
+        setActiveD1Tile('fx_glass_render', { springAlign: true, anchorLine: 55, animateD2: false });
+        // Snap initial alignment cleanly on first paint
+        if (d1Spring.active) {
+          d1Spring.snap(d1Spring.target);
+          el.d1List.scrollTop = d1Spring.pos;
+        }
+        drawConnectors();
+      });
+    })();
+  </script>
+</body>
+</html>

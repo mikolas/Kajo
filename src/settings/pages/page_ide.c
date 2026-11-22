@@ -101,6 +101,8 @@ typedef struct _SettingsPageIde {
     GtkWidget      *sw_gutter;
     GtkWidget      *sw_rel_lines;
     GtkWidget      *sw_cur_line;
+    GtkWidget      *sw_start_strip;
+    GtkWidget      *sw_strip_magnetic;
 
     GtkWidget      *card_remaps;
     GtkWidget      *remap_list_box;
@@ -124,6 +126,8 @@ typedef struct _SettingsPageIde {
     gboolean        saved_gutter;
     gboolean        saved_rel_lines;
     gboolean        saved_cur_line;
+    gboolean        saved_start_strip;
+    gboolean        saved_strip_magnetic;
 
     gboolean        syncing_ui;
 } SettingsPageIde;
@@ -396,6 +400,8 @@ compute_ide_dirty(SettingsPageIde *self)
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_gutter)) != self->saved_gutter) return TRUE;
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines)) != self->saved_rel_lines) return TRUE;
     if (gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line)) != self->saved_cur_line) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_start_strip)) != self->saved_start_strip) return TRUE;
+    if (gtk_switch_get_active(GTK_SWITCH(self->sw_strip_magnetic)) != self->saved_strip_magnetic) return TRUE;
     if (!remap_arrays_equal(self->draft_remaps, self->saved_remaps)) return TRUE;
     return FALSE;
 }
@@ -513,6 +519,8 @@ action_reset_ide_defaults(gpointer user_data)
     gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), TRUE);
     gtk_switch_set_active(GTK_SWITCH(self->sw_rel_lines), FALSE);
     gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), TRUE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_start_strip), FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_strip_magnetic), TRUE);
     if (self->draft_remaps)
         g_ptr_array_set_size(self->draft_remaps, 0);
     if (self->entry_remap_key)
@@ -564,6 +572,8 @@ action_revert_ide(gpointer user_data)
     gtk_switch_set_active(GTK_SWITCH(self->sw_gutter), self->saved_gutter);
     gtk_switch_set_active(GTK_SWITCH(self->sw_rel_lines), self->saved_rel_lines);
     gtk_switch_set_active(GTK_SWITCH(self->sw_cur_line), self->saved_cur_line);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_start_strip), self->saved_start_strip);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_strip_magnetic), self->saved_strip_magnetic);
     g_clear_pointer(&self->draft_remaps, g_ptr_array_unref);
     self->draft_remaps = clone_remap_array(self->saved_remaps);
     if (self->entry_remap_key)
@@ -589,6 +599,8 @@ typedef struct {
     gboolean         wrap;
     gboolean         margin;
     gboolean         spaces;
+    gboolean         start_strip;
+    gboolean         strip_magnetic;
     const GPtrArray *remaps;
 } SaveIdeCtx;
 
@@ -609,6 +621,8 @@ mutate_save_ide(KajoIdeCfg *config, gpointer user_data)
     config->word_wrap = ctx->wrap;
     config->show_margin_guide = ctx->margin;
     config->insert_spaces = ctx->spaces;
+    config->start_in_strip_mode = ctx->start_strip;
+    config->strip_magnetic_follow = ctx->strip_magnetic;
     if (config->key_remaps)
         g_ptr_array_free(config->key_remaps, TRUE);
     config->key_remaps = clone_remap_array(ctx->remaps);
@@ -630,13 +644,15 @@ action_save_ide(gpointer user_data)
     guint t_idx = segmented_group_get_selected(self->seg_tab_width);
     int tab_w = (t_idx == 1) ? 4 : ((t_idx == 2) ? 8 : 2);
 
-    gboolean spaces    = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
-    gboolean wrap      = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
-    gboolean margin    = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
-    gboolean minimap   = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
-    gboolean gutter    = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
-    gboolean rel_lines = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
-    gboolean cur_line  = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
+    gboolean spaces         = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
+    gboolean wrap           = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
+    gboolean margin         = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
+    gboolean minimap        = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
+    gboolean gutter         = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    gboolean rel_lines      = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
+    gboolean cur_line       = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
+    gboolean start_strip    = gtk_switch_get_active(GTK_SWITCH(self->sw_start_strip));
+    gboolean strip_magnetic = gtk_switch_get_active(GTK_SWITCH(self->sw_strip_magnetic));
 
     SaveIdeCtx ctx = {
         IDE_SCHEMES[s_idx].id,
@@ -650,21 +666,25 @@ action_save_ide(gpointer user_data)
         wrap,
         margin,
         spaces,
+        start_strip,
+        strip_magnetic,
         self->draft_remaps,
     };
     kajo_config_store_update_ide(NULL, mutate_save_ide, &ctx, NULL);
 
-    self->saved_scheme_idx = s_idx;
-    self->saved_font_idx   = f_idx;
-    self->saved_font_px    = font_px;
-    self->saved_tab_idx    = t_idx;
-    self->saved_spaces     = spaces;
-    self->saved_wrap       = wrap;
-    self->saved_margin     = margin;
-    self->saved_minimap    = minimap;
-    self->saved_gutter     = gutter;
-    self->saved_rel_lines  = rel_lines;
-    self->saved_cur_line   = cur_line;
+    self->saved_scheme_idx     = s_idx;
+    self->saved_font_idx       = f_idx;
+    self->saved_font_px        = font_px;
+    self->saved_tab_idx        = t_idx;
+    self->saved_spaces         = spaces;
+    self->saved_wrap           = wrap;
+    self->saved_margin         = margin;
+    self->saved_minimap        = minimap;
+    self->saved_gutter         = gutter;
+    self->saved_rel_lines      = rel_lines;
+    self->saved_cur_line       = cur_line;
+    self->saved_start_strip    = start_strip;
+    self->saved_strip_magnetic = strip_magnetic;
     g_clear_pointer(&self->saved_remaps, g_ptr_array_unref);
     self->saved_remaps = clone_remap_array(self->draft_remaps);
 
@@ -964,6 +984,24 @@ build_page_ide(void)
         "Thin vertical guide marking the 100-column boundary",
         self->sw_margin_guide));
 
+    self->sw_start_strip = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_start_strip, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_start_strip), config ? config->start_in_strip_mode : FALSE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "▥",
+        "Start in Code Strip Mode",
+        "Open workspaces in 60/25/15 Call-Depth Code Strip instead of Classic File Tabs (Space t s)",
+        self->sw_start_strip));
+
+    self->sw_strip_magnetic = gtk_switch_new();
+    gtk_widget_set_valign(self->sw_strip_magnetic, GTK_ALIGN_CENTER);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_strip_magnetic), config ? config->strip_magnetic_follow : TRUE);
+    gtk_box_append(GTK_BOX(card_chrome), create_boxed_row(
+        "🧲",
+        "Code Strip Magnetic Follow",
+        "Automatically spring-align D+1 target tiles opposite the active call line in D0",
+        self->sw_strip_magnetic));
+
     settings_bento_add_full(GTK_WIDGET(self), card_chrome);
 
     /* ─── Card 4: Key Remapping (ide.toml) ─── */
@@ -1023,9 +1061,11 @@ build_page_ide(void)
     self->saved_wrap       = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
     self->saved_margin     = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
     self->saved_minimap    = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
-    self->saved_gutter     = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
-    self->saved_rel_lines  = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
-    self->saved_cur_line   = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
+    self->saved_gutter         = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    self->saved_rel_lines      = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
+    self->saved_cur_line       = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
+    self->saved_start_strip    = gtk_switch_get_active(GTK_SWITCH(self->sw_start_strip));
+    self->saved_strip_magnetic = gtk_switch_get_active(GTK_SWITCH(self->sw_strip_magnetic));
 
     select_ide_scheme(self, init_scheme_idx, FALSE);
     self->syncing_ui = FALSE;
@@ -1040,6 +1080,8 @@ build_page_ide(void)
     g_signal_connect(self->sw_gutter, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
     g_signal_connect(self->sw_rel_lines, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
     g_signal_connect(self->sw_cur_line, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_start_strip, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
+    g_signal_connect(self->sw_strip_magnetic, "notify::active", G_CALLBACK(on_ide_switch_changed), self);
     g_signal_connect(self->btn_remap_add, "clicked", G_CALLBACK(on_remap_add_clicked), self);
     g_signal_connect(self->entry_remap_action, "activate", G_CALLBACK(on_remap_add_clicked), self);
     g_signal_connect(self, "map", G_CALLBACK(on_ide_page_mapped), NULL);

@@ -167,6 +167,20 @@ static const KajoFieldSpec k_ide_fields[] = {
         .offset  = offsetof(KajoIdeCfg, highlight_current_line),
         .def.b   = TRUE,
     },
+    {
+        .section = NULL,
+        .key     = KAJO_CFG_KEY_IDE_START_IN_STRIP,
+        .type    = KAJO_FIELD_BOOL,
+        .offset  = offsetof(KajoIdeCfg, start_in_strip_mode),
+        .def.b   = FALSE,
+    },
+    {
+        .section = NULL,
+        .key     = KAJO_CFG_KEY_IDE_STRIP_MAGNETIC,
+        .type    = KAJO_FIELD_BOOL,
+        .offset  = offsetof(KajoIdeCfg, strip_magnetic_follow),
+        .def.b   = TRUE,
+    },
 };
 
 static void

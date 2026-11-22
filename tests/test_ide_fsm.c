@@ -403,6 +403,37 @@ test_fsm_new_lsp_dap_view_chords_and_state_names(void)
   act = ide_fsm_handle_key(fsm, "tab");
   g_assert_cmpint(act.type, ==, IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE);
 
+  /* Code Strip Space t * chords */
+  ide_fsm_set_state(fsm, IDE_STATE_NORMAL);
+  const struct { const char *k; IdeActionType want; } strip_cases[] = {
+    { "s", IDE_ACTION_STRIP_TOGGLE },
+    { "h", IDE_ACTION_STRIP_FOCUS_LEFT },
+    { "l", IDE_ACTION_STRIP_FOCUS_RIGHT },
+    { "j", IDE_ACTION_STRIP_STEP_DOWN },
+    { "k", IDE_ACTION_STRIP_STEP_UP },
+    { "e", IDE_ACTION_STRIP_PROMOTE },
+    { "u", IDE_ACTION_STRIP_SURFACE },
+    { "f", IDE_ACTION_STRIP_TOGGLE_FULL_FILE },
+    { "z", IDE_ACTION_STRIP_TOGGLE_ZEN },
+    { "o", IDE_ACTION_STRIP_TOGGLE_OVERVIEW },
+    { "p", IDE_ACTION_STRIP_PIN_TOGGLE },
+    { "r", IDE_ACTION_STRIP_RESYNC },
+    { "1", IDE_ACTION_STRIP_LENS_CALLS },
+    { "2", IDE_ACTION_STRIP_LENS_TYPES },
+    { "3", IDE_ACTION_STRIP_LENS_IMPACT },
+    { "4", IDE_ACTION_STRIP_LENS_DIFF },
+    { "b", IDE_ACTION_STRIP_BRANCH_TRAIL },
+    { "[", IDE_ACTION_STRIP_PREV_TRAIL },
+    { "]", IDE_ACTION_STRIP_NEXT_TRAIL },
+    { "/", IDE_ACTION_STRIP_FILTER },
+  };
+  for (gsize i = 0; i < G_N_ELEMENTS(strip_cases); i++) {
+    ide_fsm_handle_key(fsm, "Space");
+    ide_fsm_handle_key(fsm, "t");
+    act = ide_fsm_handle_key(fsm, strip_cases[i].k);
+    g_assert_cmpint(act.type, ==, strip_cases[i].want);
+  }
+
   ide_fsm_free(fsm);
 }
 

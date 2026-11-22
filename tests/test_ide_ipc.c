@@ -951,6 +951,97 @@ static void test_lsp_manager_without_server(void) {
   g_free(probe.last_msg);
 }
 
+typedef struct {
+  gboolean  done;
+  JsonNode *result_copy;
+  char     *error;
+} RawProbe;
+
+static void on_raw_probe(JsonNode *result, const char *error, gpointer ud) {
+  RawProbe *p = ud;
+  p->done = TRUE;
+  g_clear_pointer(&p->result_copy, json_node_unref);
+  g_clear_pointer(&p->error, g_free);
+  if (result != NULL) {
+    p->result_copy = json_node_copy(result);
+  }
+  if (error != NULL) {
+    p->error = g_strdup(error);
+  }
+}
+
+static void test_lsp_manager_request_raw(void) {
+  g_autofree char *script = g_build_filename(KAJO_SOURCE_DIR, "tests", "mock_lsp_server.py", NULL);
+  g_autofree char *cmd = g_strdup_printf("python3 %s", script);
+  g_setenv("KAJO_LSP_MOCK_CMD", cmd, TRUE);
+
+  g_autofree char *ws = g_dir_make_tmp("kajo-lsp-raw-XXXXXX", NULL);
+  g_autofree char *path = g_build_filename(ws, "raw.kajo-mock", NULL);
+  g_autofree char *txt_path = g_build_filename(ws, "plain.txt", NULL);
+  const char *src = "alpha := foo(1)\nfoo(2)\nvalue\n";
+  g_file_set_contents(path, src, -1, NULL);
+  g_file_set_contents(txt_path, "no server\n", -1, NULL);
+
+  MgrProbe probe = { 0 };
+  IdeLspManager *lsp = ide_lsp_manager_new(ws, probe_jump, probe_status, &probe);
+  ide_lsp_manager_set_callbacks(lsp, probe_diag, probe_msg, probe_ui, &probe);
+
+  IdeBuffer *buf = ide_buffer_new(path);
+  g_assert_true(ide_buffer_load_from_disk(buf, NULL));
+  ide_lsp_manager_notify_open(lsp, buf);
+
+  IdeBuffer *no_srv_buf = ide_buffer_new(txt_path);
+  g_assert_true(ide_buffer_load_from_disk(no_srv_buf, NULL));
+  ide_lsp_manager_notify_open(lsp, no_srv_buf);
+
+  /* Wait until the mock server finishes initialize */
+  SPIN_UNTIL(ide_lsp_manager_is_ready(lsp, buf));
+
+  /* 1. No-server buffer returns FALSE without invoking cb and frees params cleanly */
+  RawProbe rp_none = { 0 };
+  g_autofree char *txt_uri = g_filename_to_uri(txt_path, NULL, NULL);
+  g_assert_false(ide_lsp_manager_request_raw(
+      lsp, no_srv_buf, "textDocument/references",
+      ide_lsp_position_params(txt_uri, 0, 0), on_raw_probe, &rp_none));
+  g_assert_false(rp_none.done);
+
+  /* 2. Ready server answers textDocument/references via raw bridge */
+  RawProbe rp_refs = { 0 };
+  g_autofree char *uri = g_filename_to_uri(path, NULL, NULL);
+  JsonNode *ref_params = ide_lsp_position_params(uri, 0, 10);
+  JsonObject *cobj = json_object_new();
+  json_object_set_boolean_member(cobj, "includeDeclaration", FALSE);
+  json_object_set_object_member(json_node_get_object(ref_params), "context", cobj);
+  g_assert_true(ide_lsp_manager_request_raw(
+      lsp, buf, "textDocument/references", ref_params, on_raw_probe, &rp_refs));
+  SPIN_UNTIL(rp_refs.done);
+  g_assert_null(rp_refs.error);
+  g_assert_nonnull(rp_refs.result_copy);
+  g_autoptr(GPtrArray) locs = ide_lsp_parse_locations(rp_refs.result_copy);
+  g_assert_cmpuint(locs->len, ==, 2);
+  g_clear_pointer(&rp_refs.result_copy, json_node_unref);
+
+  /* 3. Unknown method delivers server error cleanly */
+  RawProbe rp_err = { 0 };
+  g_assert_true(ide_lsp_manager_request_raw(
+      lsp, buf, "custom/nonexistentMethod", NULL, on_raw_probe, &rp_err));
+  SPIN_UNTIL(rp_err.done);
+  g_assert_null(rp_err.result_copy);
+  g_assert_nonnull(rp_err.error);
+  g_assert_nonnull(strstr(rp_err.error, "method not found"));
+  g_clear_pointer(&rp_err.error, g_free);
+
+  ide_buffer_free(no_srv_buf);
+  ide_buffer_free(buf);
+  ide_lsp_manager_free(lsp);
+  g_free(probe.last_msg);
+  g_free(probe.jump_path);
+  unlink(path);
+  unlink(txt_path);
+  rmdir(ws);
+  g_unsetenv("KAJO_LSP_MOCK_CMD");
+}
+
 int main(int argc, char **argv) {
   g_test_init(&argc, &argv, NULL);
   g_test_add_func("/ide/ipc/jsonrpc-framing",
@@ -975,5 +1066,6 @@ int main(int argc, char **argv) {
   g_test_add_func("/ide/lsp/server-registry", test_lsp_server_registry);
   g_test_add_func("/ide/lsp/manager-mock-server", test_lsp_manager_with_mock_server);
   g_test_add_func("/ide/lsp/manager-without-server", test_lsp_manager_without_server);
+  g_test_add_func("/ide/lsp/manager-request-raw", test_lsp_manager_request_raw);
   return g_test_run();
 }

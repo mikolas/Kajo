@@ -477,6 +477,10 @@ ide_sources = files(
   'src/ide/ide_agent_ipc.c',
   'src/ide/ide_markdown.c',
   'src/ide/ide_mermaid.c',
+  'src/ide/ide_strip_layout.c',
+  'src/ide/ide_strip_graph.c',
+  'src/ide/ide_strip_view.c',
+  'src/comp/core/comp_spring.c',
   'src/common/pdf_render.c',
   'src/compositor/niri.c',
 )
@@ -816,6 +820,39 @@ test_ide_ipc_exe = executable(
   build_by_default: false,
 )
 test('ide-ipc', test_ide_ipc_exe)
+
+test_ide_strip_exe = executable(
+  'test-ide-strip',
+  files(
+    'tests/test_ide_strip.c',
+    'src/ide/ide_strip_layout.c',
+    'src/comp/core/comp_spring.c',
+  ),
+  dependencies: [gio_dep, m_dep],
+  build_by_default: false,
+)
+test('ide-strip', test_ide_strip_exe)
+
+test_ide_strip_graph_exe = executable(
+  'test-ide-strip-graph',
+  files(
+    'tests/test_ide_strip_graph.c',
+    'src/ide/ide_strip_graph.c',
+    'src/ide/ide_lsp.c',
+    'src/ide/ide_lsp_client.c',
+    'src/ide/ide_jsonrpc.c',
+    'src/ide/ide_lsp_servers.c',
+    'src/ide/ide_buffer.c',
+    'src/ide/ide_syntax.c',
+    'src/ide/ide_picker.c',
+    'src/ide/ide_search.c',
+    'src/ide/ide_tasks.c',
+    'src/ide/ide_native_exe.c',
+  ),
+  dependencies: [gtk4_dep, gtksourceview_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep, ide_ts_dep],
+  build_by_default: false,
+)
+test('ide-strip-graph', test_ide_strip_graph_exe, timeout: 60)
 
 test_mod_router_exe = executable(
   'test-mod-router',

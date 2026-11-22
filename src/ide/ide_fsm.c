@@ -24,7 +24,8 @@ static const char *const kValidLeaderChords[] = {
   "ns", "ps", "ds", "da", "dr", "db", "dB", "dd", "dc", "dn", "di", "do", "dp", "dq",
   "dv", "ca", "cr", "cf", "ch", "rb", "rt", "rr", "rc", "gd", "gi", "gr", "gs", "gc", "go",
   "vr", "sr", "sp", "sf", "s/", "ws", "wa", "wq", "w>", "w<", "w+", "w-", "ww", "wh", "wl",
-  "wj", "wk", NULL
+  "wj", "wk", "ts", "th", "tl", "tj", "tk", "te", "tu", "tf", "tz", "to", "tp", "tr",
+  "t1", "t2", "t3", "t4", "tb", "t[", "t]", "t/", NULL
 };
 
 static gboolean
@@ -335,6 +336,13 @@ ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
     if (g_strcmp0(chord, "v") == 0) {
       return "v r  Relative Line Numbers";
     }
+    if (g_strcmp0(chord, "t") == 0) {
+      return "t s  Toggle Code Strip    t h / t l  Focus Col    t j / t k  Step D+1\n"
+             "t e  Promote D+1 -> D0    t u  Surface Back       t f  Symbol / File\n"
+             "t z  Zen 96/4             t o  Bird's-Eye Map     t p  Pin in D0\n"
+             "t r  Resync Magnetic      t 1  Calls  t 2  Types  t 3  Impact  t 4  Diff\n"
+             "t b  Branch Trail         t [ / t ]  Switch Trail t /  Filter D+1";
+    }
     if (g_strcmp0(chord, "m") == 0) {
       return "m p  Toggle Markdown GUI  m m / m d  Mermaid Drawer\n"
              "m t  Toggle Checklist";
@@ -363,9 +371,9 @@ ide_fsm_get_chord_hud_text(IdeState state, const char *pending_chord)
     return "f / SPC  Find Files      b / ,  Buffers     /  Live Grep\n"
            "e        File Tree       a      Alt File    w  Window / Save\n"
            "m        Markdown/Merm   s      Search/Rep  d  Agent / Debug\n"
-           "c        Code / Format   r      Run / Build q / Q  Close Buffer\n"
+           "c        Code / Format   r      Run / Build t  Code Strip / Lenses\n"
            "g        Goto / LSP      n / p  Next/Prev   v  View Options\n"
-           "o        Drawer          k      Hover Docs  ? / h  Help";
+           "q / Q    Close Buffer    o      Drawer      k  Hover   ? / h  Help";
   }
   if (state == IDE_STATE_MATCH_PENDING) {
     return "i + ( [ { \" ' w f c b a   Select Inside Delimiter / Word / AST\n"
@@ -602,6 +610,27 @@ ide_action_type_from_name(const char *name)
     { "help", IDE_ACTION_HELP_TOGGLE },
     { "help_open", IDE_ACTION_HELP_OPEN },
     { "help_cancel", IDE_ACTION_HELP_CANCEL },
+    { "strip_toggle", IDE_ACTION_STRIP_TOGGLE },
+    { "code_strip", IDE_ACTION_STRIP_TOGGLE },
+    { "strip_focus_left", IDE_ACTION_STRIP_FOCUS_LEFT },
+    { "strip_focus_right", IDE_ACTION_STRIP_FOCUS_RIGHT },
+    { "strip_step_down", IDE_ACTION_STRIP_STEP_DOWN },
+    { "strip_step_up", IDE_ACTION_STRIP_STEP_UP },
+    { "strip_promote", IDE_ACTION_STRIP_PROMOTE },
+    { "strip_surface", IDE_ACTION_STRIP_SURFACE },
+    { "strip_toggle_full_file", IDE_ACTION_STRIP_TOGGLE_FULL_FILE },
+    { "strip_toggle_zen", IDE_ACTION_STRIP_TOGGLE_ZEN },
+    { "strip_toggle_overview", IDE_ACTION_STRIP_TOGGLE_OVERVIEW },
+    { "strip_pin_toggle", IDE_ACTION_STRIP_PIN_TOGGLE },
+    { "strip_resync", IDE_ACTION_STRIP_RESYNC },
+    { "strip_lens_calls", IDE_ACTION_STRIP_LENS_CALLS },
+    { "strip_lens_types", IDE_ACTION_STRIP_LENS_TYPES },
+    { "strip_lens_impact", IDE_ACTION_STRIP_LENS_IMPACT },
+    { "strip_lens_diff", IDE_ACTION_STRIP_LENS_DIFF },
+    { "strip_branch_trail", IDE_ACTION_STRIP_BRANCH_TRAIL },
+    { "strip_prev_trail", IDE_ACTION_STRIP_PREV_TRAIL },
+    { "strip_next_trail", IDE_ACTION_STRIP_NEXT_TRAIL },
+    { "strip_filter", IDE_ACTION_STRIP_FILTER },
     { NULL, IDE_ACTION_NONE }
   };
 
@@ -1451,6 +1480,39 @@ handle_leader(IdeFsm *fsm, const char *key)
     fsm->state = IDE_STATE_NORMAL;
     fsm->leader_buf[0] = '\0';
     return ide_action_make(IDE_ACTION_TOGGLE_RELATIVE_LINES);
+  }
+
+  /* Code Strip & Dependency Graph Lenses (Space t *) */
+  if (b[0] == 't' && b[1] != '\0' && b[2] == '\0') {
+    IdeActionType strip_act = IDE_ACTION_NONE;
+    switch (b[1]) {
+      case 's': strip_act = IDE_ACTION_STRIP_TOGGLE; break;
+      case 'h': strip_act = IDE_ACTION_STRIP_FOCUS_LEFT; break;
+      case 'l': strip_act = IDE_ACTION_STRIP_FOCUS_RIGHT; break;
+      case 'j': strip_act = IDE_ACTION_STRIP_STEP_DOWN; break;
+      case 'k': strip_act = IDE_ACTION_STRIP_STEP_UP; break;
+      case 'e': strip_act = IDE_ACTION_STRIP_PROMOTE; break;
+      case 'u': strip_act = IDE_ACTION_STRIP_SURFACE; break;
+      case 'f': strip_act = IDE_ACTION_STRIP_TOGGLE_FULL_FILE; break;
+      case 'z': strip_act = IDE_ACTION_STRIP_TOGGLE_ZEN; break;
+      case 'o': strip_act = IDE_ACTION_STRIP_TOGGLE_OVERVIEW; break;
+      case 'p': strip_act = IDE_ACTION_STRIP_PIN_TOGGLE; break;
+      case 'r': strip_act = IDE_ACTION_STRIP_RESYNC; break;
+      case '1': strip_act = IDE_ACTION_STRIP_LENS_CALLS; break;
+      case '2': strip_act = IDE_ACTION_STRIP_LENS_TYPES; break;
+      case '3': strip_act = IDE_ACTION_STRIP_LENS_IMPACT; break;
+      case '4': strip_act = IDE_ACTION_STRIP_LENS_DIFF; break;
+      case 'b': strip_act = IDE_ACTION_STRIP_BRANCH_TRAIL; break;
+      case '[': strip_act = IDE_ACTION_STRIP_PREV_TRAIL; break;
+      case ']': strip_act = IDE_ACTION_STRIP_NEXT_TRAIL; break;
+      case '/': strip_act = IDE_ACTION_STRIP_FILTER; break;
+      default: break;
+    }
+    if (strip_act != IDE_ACTION_NONE) {
+      fsm->state = IDE_STATE_NORMAL;
+      fsm->leader_buf[0] = '\0';
+      return ide_action_make(strip_act);
+    }
   }
   if (g_strcmp0(b, "k") == 0) {
     fsm->state = IDE_STATE_NORMAL;

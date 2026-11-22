@@ -17,6 +17,7 @@
 #include "ide_markdown.h"
 #include "ide_picker.h"
 #include "ide_search.h"
+#include "ide_strip_view.h"
 #include "ide_tree.h"
 #include <gdk/gdkkeysyms.h>
 #include <gtksourceview/gtksource.h>
@@ -48,11 +49,13 @@ struct _KajoIdeWindow {
   IdeAgentIpc     *agent_ipc;
   IdeMarkdownView *md_split_view;
   IdeMarkdownView *md_drawer_view;
+  IdeStripView    *strip_view;
 
   /* Top Chrome & Tab Ribbon */
   GtkWidget       *btn_hdr_tree;
   GtkWidget       *btn_hdr_map;
   GtkWidget       *btn_hdr_md;
+  GtkWidget       *btn_hdr_strip;
   GtkWidget       *btn_hdr_help;
   GtkWidget       *hdr_breadcrumb;
   GtkWidget       *ws_badge;
@@ -62,6 +65,7 @@ struct _KajoIdeWindow {
   /* Main Editor Stage & Resizable GtkPaned Splitters */
   GtkWidget       *vertical_paned;
   GtkWidget       *tree_paned;
+  GtkWidget       *workspace_stack;
   GtkWidget       *editor_md_paned;
   GtkWidget       *tree_container;
   GtkWidget       *source_scroll;
@@ -113,6 +117,7 @@ struct _KajoIdeWindow {
   char            *active_font_family;
   int              active_font_size_px;
   gboolean         config_minimap_enabled;
+  gboolean         initial_config_applied;
 
   /* In-buffer search bar */
   GtkWidget       *inline_search_bar;
@@ -133,6 +138,9 @@ struct _KajoIdeWindow {
 
 /* Shared helpers (defined in ide_window.c) */
 IdeBuffer *ide_window_get_active_buffer(KajoIdeWindow *self);
+GtkWidget *ide_window_get_active_source_view(KajoIdeWindow *self);
+void       ide_window_toggle_strip_mode(KajoIdeWindow *self);
+void       ide_window_set_strip_mode(KajoIdeWindow *self, gboolean enabled);
 void       ide_window_record_jumplist_here(KajoIdeWindow *self);
 void       ide_window_show_toast(KajoIdeWindow *self, const char *msg);
 void       ide_window_sync_conflict_bar(KajoIdeWindow *self);

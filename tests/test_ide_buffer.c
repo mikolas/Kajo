@@ -448,7 +448,7 @@ test_which_key_hud_matches_chord_table(void)
   }
 
   /* Backward: every "x y" pair a group HUD advertises is a real chord. */
-  const char groups[] = "bcdfgmnprsw";
+  const char groups[] = "bcdfgmnprstvw";
   for (const char *g = groups; *g; g++) {
     char pending[2] = { *g, '\0' };
     const char *hud = ide_fsm_get_chord_hud_text(IDE_STATE_LEADER, pending);
