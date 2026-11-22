@@ -378,20 +378,28 @@ static void execute_buffer_motion_or_edit(KajoIdeWindow *self,
   else
     gtk_text_buffer_place_cursor(tbuf, &ins);
 
-scroll_and_done:
-  gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(self->source_view),
-                                     gtk_text_buffer_get_insert(tbuf));
+scroll_and_done: {
+  GtkWidget *av = ide_window_get_active_source_view(self);
+  if (av)
+    gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(av),
+                                       gtk_text_buffer_get_insert(tbuf));
   goto done;
+}
 
-post_edit:
+post_edit: {
   ide_buffer_recompute_diffs(buf);
   ide_lsp_manager_notify_change(self->lsp, buf);
+  if (self->strip_view) ide_strip_view_notify_buffer_changed(self->strip_view, buf);
   ide_window_schedule_markdown_sync(self);
   if (ide_buffer_get_modified(buf) != was_modified)
     ide_window_rebuild_tab_ribbon(self);
-  gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(self->source_view),
-                                     gtk_text_buffer_get_insert(tbuf));
-  gtk_widget_queue_draw(self->source_view);
+  GtkWidget *av = ide_window_get_active_source_view(self);
+  if (av) {
+    gtk_text_view_scroll_mark_onscreen(GTK_TEXT_VIEW(av),
+                                       gtk_text_buffer_get_insert(tbuf));
+    gtk_widget_queue_draw(av);
+  }
+}
 
 done:
   ide_window_update_status_bar_and_hud(self);
@@ -719,6 +727,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_SAVE:
       if (buf && ide_buffer_save(buf, NULL)) {
         ide_lsp_manager_notify_save(self->lsp, buf);
+        if (self->strip_view) ide_strip_view_notify_buffer_saved(self->strip_view, buf);
         ide_tree_refresh(self->tree);
         ide_window_sync_conflict_bar(self);
         ide_window_rebuild_tab_ribbon(self);
@@ -728,8 +737,10 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_SAVE_ALL:
       for (guint i = 0; i < self->buffers->len; i++) {
         IdeBuffer *b = g_ptr_array_index(self->buffers, i);
-        if (ide_buffer_get_file_path(b) && ide_buffer_save(b, NULL))
+        if (ide_buffer_get_file_path(b) && ide_buffer_save(b, NULL)) {
           ide_lsp_manager_notify_save(self->lsp, b);
+          if (self->strip_view) ide_strip_view_notify_buffer_saved(self->strip_view, b);
+        }
       }
       ide_tree_refresh(self->tree);
       ide_window_sync_conflict_bar(self);
@@ -744,6 +755,7 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
           GtkSourceBuffer *old_sb = ide_buffer_get_source_buffer(closing);
           if (old_sb)
             g_signal_handlers_disconnect_by_data(old_sb, self);
+          if (self->strip_view) ide_strip_view_notify_buffer_closed(self->strip_view, closing);
         }
         g_ptr_array_remove_index(self->buffers, self->active_buf_idx);
         if (self->active_buf_idx >= self->buffers->len)
@@ -781,12 +793,12 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_LSP_HOVER:
       if (buf)
         ide_lsp_manager_request_hover(
-            self->lsp, self->source_view, buf, cur_line, cur_col);
+            self->lsp, ide_window_get_active_source_view(self), buf, cur_line, cur_col);
       break;
     case IDE_ACTION_LSP_COMPLETE:
       if (buf)
         ide_lsp_manager_request_completion(
-            self->lsp, self->source_view, buf, cur_line, cur_col);
+            self->lsp, ide_window_get_active_source_view(self), buf, cur_line, cur_col);
       break;
     case IDE_ACTION_LSP_DEFINITION:
       if (buf)
@@ -798,22 +810,22 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
     case IDE_ACTION_LSP_REFERENCES:
       if (buf)
         ide_lsp_manager_request_references(
-            self->lsp, self->source_view, buf, cur_line, cur_col);
+            self->lsp, ide_window_get_active_source_view(self), buf, cur_line, cur_col);
       break;
     case IDE_ACTION_LSP_SIGNATURE_HELP:
       if (buf)
         ide_lsp_manager_request_signature_help(
-            self->lsp, self->source_view, buf, cur_line, cur_col);
+            self->lsp, ide_window_get_active_source_view(self), buf, cur_line, cur_col);
       break;
     case IDE_ACTION_LSP_CALL_HIERARCHY_IN:
       if (buf)
         ide_lsp_manager_request_call_hierarchy(
-            self->lsp, self->source_view, buf, FALSE);
+            self->lsp, ide_window_get_active_source_view(self), buf, FALSE);
       break;
     case IDE_ACTION_LSP_CALL_HIERARCHY_OUT:
       if (buf)
         ide_lsp_manager_request_call_hierarchy(
-            self->lsp, self->source_view, buf, TRUE);
+            self->lsp, ide_window_get_active_source_view(self), buf, TRUE);
       break;
     case IDE_ACTION_LSP_CALL_HIERARCHY_TOGGLE:
       ide_lsp_manager_toggle_call_hierarchy_dir(self->lsp);
@@ -822,10 +834,10 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       ide_window_toggle_relative_lines(self);
       break;
     case IDE_ACTION_LSP_CODE_ACTION:
-      if (buf) ide_lsp_manager_request_code_actions(self->lsp, self->source_view, buf);
+      if (buf) ide_lsp_manager_request_code_actions(self->lsp, ide_window_get_active_source_view(self), buf);
       break;
     case IDE_ACTION_LSP_RENAME:
-      if (buf) ide_lsp_manager_rename_begin(self->lsp, self->source_view, buf);
+      if (buf) ide_lsp_manager_rename_begin(self->lsp, ide_window_get_active_source_view(self), buf);
       break;
     case IDE_ACTION_TASK_BUILD:
     case IDE_ACTION_TASK_TEST:
@@ -1155,6 +1167,96 @@ void ide_window_dispatch_action(KajoIdeWindow *self, const IdeAction *act) {
       break;
     case IDE_ACTION_AGENT_REVERT_ALL:
       ide_agent_ipc_reject_all(self->agent_ipc);
+      break;
+
+    /* Code Strip & Dependency Graph Lenses (Space t *) */
+    case IDE_ACTION_STRIP_TOGGLE:
+      ide_window_toggle_strip_mode(self);
+      break;
+    case IDE_ACTION_STRIP_FOCUS_LEFT:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_focus_column(self->strip_view, -1);
+      break;
+    case IDE_ACTION_STRIP_FOCUS_RIGHT:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_focus_column(self->strip_view, 1);
+      break;
+    case IDE_ACTION_STRIP_STEP_DOWN:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        ide_strip_view_step_d1(self->strip_view, 1);
+      }
+      break;
+    case IDE_ACTION_STRIP_STEP_UP:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        ide_strip_view_step_d1(self->strip_view, -1);
+      }
+      break;
+    case IDE_ACTION_STRIP_PROMOTE:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_promote_active_d1(self->strip_view);
+      break;
+    case IDE_ACTION_STRIP_SURFACE:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_surface_one(self->strip_view);
+      break;
+    case IDE_ACTION_STRIP_TOGGLE_FULL_FILE:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_toggle_full_file(self->strip_view);
+      break;
+    case IDE_ACTION_STRIP_TOGGLE_ZEN:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        ide_strip_view_toggle_zen(self->strip_view);
+      }
+      break;
+    case IDE_ACTION_STRIP_TOGGLE_OVERVIEW:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        ide_strip_view_toggle_overview(self->strip_view);
+      }
+      break;
+    case IDE_ACTION_STRIP_PIN_TOGGLE:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_pin_active_d1(self->strip_view);
+      break;
+    case IDE_ACTION_STRIP_RESYNC:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_resync_d1(self->strip_view);
+      break;
+    case IDE_ACTION_STRIP_LENS_CALLS:
+    case IDE_ACTION_STRIP_LENS_TYPES:
+    case IDE_ACTION_STRIP_LENS_IMPACT:
+    case IDE_ACTION_STRIP_LENS_DIFF:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        IdeStripLens lens = act->type == IDE_ACTION_STRIP_LENS_CALLS ? IDE_STRIP_LENS_CALLS
+                          : act->type == IDE_ACTION_STRIP_LENS_TYPES ? IDE_STRIP_LENS_TYPES
+                          : act->type == IDE_ACTION_STRIP_LENS_IMPACT ? IDE_STRIP_LENS_IMPACT
+                                                                      : IDE_STRIP_LENS_DIFF;
+        ide_strip_view_set_lens(self->strip_view, lens);
+      }
+      break;
+    case IDE_ACTION_STRIP_BRANCH_TRAIL:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        ide_strip_view_branch_trail(self->strip_view);
+      }
+      break;
+    case IDE_ACTION_STRIP_PREV_TRAIL:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_switch_trail(self->strip_view, -1);
+      break;
+    case IDE_ACTION_STRIP_NEXT_TRAIL:
+      if (self->strip_view && ide_strip_view_is_active(self->strip_view))
+        ide_strip_view_switch_trail(self->strip_view, 1);
+      break;
+    case IDE_ACTION_STRIP_FILTER:
+      if (self->strip_view) {
+        if (!ide_strip_view_is_active(self->strip_view)) ide_window_set_strip_mode(self, TRUE);
+        ide_strip_view_focus_filter(self->strip_view);
+      }
       break;
 
     default:

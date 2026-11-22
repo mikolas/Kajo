@@ -1,6 +1,6 @@
 # Kajo IDE — Scrollable-Tiling Code Strip & Dependency Graph Lenses (`spec_ide_code_strip.md`)
 
-**Status:** 📋 Specification Draft v2 (for review — not implemented yet)  
+**Status:** ✅ Implemented (M0–M5; opt-in via `Space t s` / `[ ▥ STRIP ]` / `ide.toml` `start_in_strip_mode`)  
 **Target Binary:** `kajo-ide` (`org.kajo.IDE`)  
 **Interactive Companions:**
 - High-Fidelity Interactive UI Mockup: [`docs/kajo-ide-strip-mockup.html`](kajo-ide-strip-mockup.html)

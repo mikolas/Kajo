@@ -126,6 +126,8 @@
 #define KAJO_CFG_KEY_IDE_LINE_NUMBERS     "show_line_numbers"
 #define KAJO_CFG_KEY_IDE_RELATIVE_NUMBERS "relative_line_numbers"
 #define KAJO_CFG_KEY_IDE_CUR_LINE         "highlight_current_line"
+#define KAJO_CFG_KEY_IDE_START_IN_STRIP   "start_in_strip_mode"
+#define KAJO_CFG_KEY_IDE_STRIP_MAGNETIC   "strip_magnetic_follow"
 
 /* files.toml */
 #define KAJO_CFG_KEY_FILES_VIEW_MODE      "view_mode"

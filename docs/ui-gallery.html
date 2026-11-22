@@ -4396,6 +4396,42 @@
               </div>
             </div>
           </div>
+
+          <!-- Code Strip (60% | 25% | 15% + 28px Ancestor Spine) Compact Specimen -->
+          <div style="margin-top:14px; border:1px solid var(--border-struct); background:#101010;">
+            <div style="display:flex; align-items:center; gap:8px; padding:4px 10px; background:#141414; border-bottom:1px solid var(--border-struct); font-family:var(--font-mono); font-size:10.5px;">
+              <span class="shell-popover-badge accent">▥ CODE STRIP (Space t s)</span>
+              <span class="shell-popover-badge">01 · fx_glass</span>
+              <span class="shell-popover-badge accent">1 CALLS</span>
+              <span class="shell-popover-badge">2 TYPES</span>
+              <span class="shell-popover-badge">3 IMPACT</span>
+              <span class="shell-popover-badge">4 DIFF</span>
+              <span style="margin-left:auto; color:#888;">WS ONLY (14 ext hidden) · <a href="kajo-ide-strip-mockup.html" style="color:var(--metro-telemetry);">Interactive Mockup ↗</a> · <a href="kajo-ide-strip-storyboard.html" style="color:var(--metro-telemetry);">Storyboard ↗</a></span>
+            </div>
+            <div style="display:grid; grid-template-columns: 28px 60% 25% 1fr; min-height:132px; font-family:var(--font-mono); font-size:11px;">
+              <div style="background:#141414; border-right:1px solid var(--border-struct); display:flex; align-items:center; justify-content:center; color:#aaa; writing-mode:vertical-rl; transform:rotate(180deg); font-size:10px; padding:4px;">D0 comp_output_frame</div>
+              <div style="border-right:1px solid var(--border-struct); padding:6px 10px;">
+                <div style="color:#fff; font-weight:700; border-bottom:1px solid #222; padding-bottom:4px; margin-bottom:5px;">ƒ fx_glass_render <span style="color:#888; font-weight:400;">fx_glass.c:L210–L268</span></div>
+                <div style="color:#555;">209  /* dimmed out-of-scope context veil */</div>
+                <div style="color:#e4e4e4; background:rgba(var(--metro-accent-rgb),0.15); border-left:2px solid var(--metro-accent); padding-left:4px;">224  blur_down_pass(ctx, &amp;params, 0);</div>
+                <div style="color:#ccc;">225  blur_up_pass(ctx, &amp;params, 1);</div>
+              </div>
+              <div style="border-right:1px solid var(--border-struct); background:#141414; padding:6px;">
+                <div style="font-size:10px; color:#888; margin-bottom:4px; display:flex; justify-content:space-between;"><span>D+1 TARGETS (11)</span><span style="color:var(--metro-warning);">⛓ MAGNETIC</span></div>
+                <div style="background:#1a1a1a; border-left:3px solid var(--metro-accent); padding:4px 6px; margin-bottom:4px;">
+                  <div style="color:#fff; font-weight:700;">ƒ blur_down_pass <span style="color:#888; float:right;">L92</span></div>
+                  <div style="background:#0d0d0d; border-left:2px solid var(--metro-telemetry); padding:3px 5px; margin-top:3px; font-size:10px; color:#bbb;">static void blur_down_pass(...)<br/>kfx_vk_dispatch_quad(ctx, down);</div>
+                </div>
+                <div style="padding:3px 6px; border-left:2px solid var(--metro-accent); color:#ccc;">ƒ blur_up_pass <span style="color:#888; float:right;">L140</span></div>
+              </div>
+              <div style="background:#101010; padding:6px;">
+                <div style="font-size:10px; color:#888; margin-bottom:4px;">D+2 NEXT (6)</div>
+                <div style="padding:2px 4px; color:#ddd; border-bottom:1px solid #1e1e1e;">ƒ kfx_vk_dispatch_quad</div>
+                <div style="padding:2px 4px; color:#bbb; border-bottom:1px solid #1e1e1e;">ƒ kfx_rt_acquire</div>
+                <div style="padding:2px 4px; color:#bbb;">ƒ kfx_push_constants</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>

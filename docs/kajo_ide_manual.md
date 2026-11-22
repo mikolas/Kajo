@@ -263,7 +263,7 @@ The left-hand **Project File Explorer** (`src/ide/ide_tree.c`) provides a scroll
 - **Navigation:** `↑` / `↓`, `Tab` / `Shift+Tab`, `Ctrl+n` / `Ctrl+p`, or mouse click to select; `Enter` or double-click to open the file at the exact line/column.
 
 ### 7.2 Interactive Help Viewer & Command Palette (`?`, `F1`, `Space h`, or `❓ HELP`)
-- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **108 commands** across 12 categories.
+- Displays a **full-width (`920px`) 4-column interactive reference table** (`CHORD / KEYBINDING`, `COMMAND`, `CATEGORY`, `ACTION DESCRIPTION`) covering all **120 commands** across 13 categories.
 - **Category Filter Pills:** Click any category pill (`ALL`, `NAVIGATION`, `SELECT & EDIT`, `OBJECTS`, `LEADER`, `FILE TREE`, `LSP`, `TASKS`, `DEBUGGER`, `MARKDOWN`, `AGENT`, `LAYOUT`, `MOUSE`) to filter the table by subsystem.
 - **Instant Fuzzy Filter:** Type any key chord, command name, or description keyword to filter rows in real time.
 - **Executable Command Palette:** Pressing `Enter` or double-clicking any row immediately executes that command in the editor.
@@ -447,6 +447,8 @@ show_minimap           = true
 show_line_numbers      = true
 relative_line_numbers  = false
 highlight_current_line = true
+start_in_strip_mode    = false
+strip_magnetic_follow  = true
 
 [keys.normal]
 "j" = "move_down"
@@ -457,4 +459,17 @@ highlight_current_line = true
 ```
 
 Every `[keys.<state>]` table (`normal`, `select`, `tree`, `drawer`, `insert`, `search`, `help`) maps a key name to an `IdeActionType` name (`ide_action_type_from_name()`). Remaps are hot-reloaded into `IdeFsm` whenever `ide.toml` is saved.
+
+---
+
+## 13. Call-Depth Code Strip & Dependency Graph Lenses (`Space t s`)
+
+Press **`Space t s`** (or click **`[ ▥ STRIP ]`** in the header bar, or enable `start_in_strip_mode = true` in `kajo-settings`) to switch between Classic File Tabs and the **`60% | 25% | 15%` Call-Depth Code Strip** (full specification in [`docs/spec_ide_code_strip.md`](spec_ide_code_strip.md)):
+
+- **`D0` (`60%` Leftmost Active Editor):** Shares the exact canonical `GtkSourceBuffer` (undo, breakpoints, diagnostics, LSP `didChange`) with a soft out-of-scope dimming veil on promoted functions (`Space t f` toggles Full File) and an optional top `30%` pinned reference split (`Space t p`).
+- **`D+1` (`25%` Peekish Workspace Targets):** Lists every workspace-only target symbol (`WS ONLY`, suppressing external/stdlib noise) in source call order. Moving the cursor or scrolling `D0` magnetically springs `D+1` (`comp_spring`) so the active call's tile aligns opposite the cursor and accordion-expands a 5-line syntax peek. Manual wheel scrolling detaches auto-follow (`[ ⛓ RESYNC ]` / `Space t r`) so it never fights your scroll; `Space t /` filters dense tile lists live.
+- **`D+2` (`15%` Grandchild Micro-Tiles):** Compact `26px` chips cascading live from the active `D+1` tile; double-clicking dives two depths deep.
+- **Far-Left `28px` Ancestor Spine:** Appears once depth $\ge 1$; click any ancestor pill or press `Space t u` / `Alt+Left` to surface back right.
+- **Four Explicit Lenses (`Space t 1..4`):** `1 CALLS` (`#0078d4`), `2 TYPES` (`#00d8f0`), `3 IMPACT` (`#ffb900`), `4 DIFF` (`#b4009e`), degrading visibly (`[TS+RG FALLBACK]`) when no LSP server is installed.
+- **Bird's-Eye Overview (`Space t o`) & Zen Mode (`Space t z`, `96% | 4%`):** Interactive multi-depth Cairo dependency map with live filter, plus vertical Trails (`Space t b` branch, `Space t [` / `]` switch).
 

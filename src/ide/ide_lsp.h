@@ -155,6 +155,19 @@ gboolean       ide_lsp_manager_execute_command(IdeLspManager *lsp,
                                                IdeLspCommandCb cb,
                                                gpointer       user_data);
 
+/* Raw non-UI async LSP request on the ready server attached to `buf`.
+ * `params` ownership is transferred (and unreffed cleanly if returning FALSE).
+ * `result` is borrowed during the callback; on error `result` is NULL and
+ * `error` is set. Returns FALSE (without invoking `cb`) when no ready server
+ * handles `buf`. */
+typedef void (*IdeLspRawCb)(JsonNode *result, const char *error, gpointer user_data);
+gboolean       ide_lsp_manager_request_raw(IdeLspManager *lsp,
+                                           IdeBuffer     *buf,
+                                           const char    *method,
+                                           JsonNode      *params,
+                                           IdeLspRawCb    cb,
+                                           gpointer       user_data);
+
 /* TRUE when a language server is attached to `buf` (starting or ready). */
 gboolean       ide_lsp_manager_has_server(IdeLspManager *lsp, IdeBuffer *buf);
 /* TRUE when the server for `buf` finished initialization. */

@@ -97,7 +97,10 @@ src/
 │   ├── ide_ts_queries.c            Highlight queries for all 16 languages (C, C++, Java, Go, Rust, Bash, JS/TS/TSX, Lua, M68k, JSON, TOML, YAML, CSS, HTML)
 │   ├── ide_gutter.h/c              68px 6-column Cairo gutter (DAP, LSP, Git, Agent, line nums, folds)
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
-│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 108-command Help Palette
+│   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 120-command Help Palette
+│   ├── ide_strip_layout.h/c        Pure GTK-free 60/25/15 Code Strip depth model & comp_spring camera
+│   ├── ide_strip_graph.h/c         Workspace-only call-graph indexer, tree-sitter extractor & LSP bridge
+│   ├── ide_strip_view.h/c          GTK4 Code Strip UI (Ancestor Spine, Peekish D+1, Micro-Tiles D+2, Overview)
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
 │   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)

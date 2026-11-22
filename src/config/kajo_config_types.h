@@ -244,6 +244,8 @@ typedef struct {
     gboolean   show_line_numbers;
     gboolean   relative_line_numbers;
     gboolean   highlight_current_line;
+    gboolean   start_in_strip_mode;
+    gboolean   strip_magnetic_follow;
     GPtrArray *key_remaps;             /* KajoIdeKeyRemap* */
 } KajoIdeCfg;
 

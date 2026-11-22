@@ -310,6 +310,24 @@ void ide_window_apply_config(KajoIdeWindow *self) {
     }
   }
 
+  if (self->strip_view) {
+    ide_strip_view_apply_editor_settings(self->strip_view,
+                                         self->active_font_family,
+                                         self->active_font_size_px,
+                                         CLAMP(cfg->tab_width, 2, 8),
+                                         cfg->insert_spaces,
+                                         cfg->word_wrap,
+                                         cfg->show_margin_guide,
+                                         cfg->highlight_current_line,
+                                         cfg->show_line_numbers,
+                                         cfg->relative_line_numbers,
+                                         cfg->strip_magnetic_follow);
+    if (!self->initial_config_applied && cfg->start_in_strip_mode) {
+      ide_window_set_strip_mode(self, TRUE);
+    }
+  }
+  self->initial_config_applied = TRUE;
+
   if (self->source_view) gtk_widget_queue_draw(self->source_view);
 }
 
@@ -414,6 +432,106 @@ static void on_gutter_cond_bp_requested(IdeBuffer *buf G_GNUC_UNUSED,
                                         guint      line_1based,
                                         gpointer   user_data) {
   ide_window_open_cond_bp_bar(KAJO_IDE_WINDOW(user_data), line_1based);
+}
+
+GtkWidget *ide_window_get_active_source_view(KajoIdeWindow *self) {
+  if (!self) return NULL;
+  if (self->strip_view && ide_strip_view_is_active(self->strip_view)) {
+    GtkWidget *d0 = ide_strip_view_get_d0_source_view(self->strip_view);
+    if (d0) return d0;
+  }
+  return self->source_view;
+}
+
+void ide_window_set_strip_mode(KajoIdeWindow *self, gboolean enabled) {
+  if (!self || !self->strip_view || !self->workspace_stack) return;
+  gboolean cur = ide_strip_view_is_active(self->strip_view);
+  if (cur == enabled) return;
+
+  ide_strip_view_set_active(self->strip_view, enabled);
+  gtk_stack_set_visible_child_name(GTK_STACK(self->workspace_stack),
+                                   enabled ? "strip" : "classic");
+  if (self->tab_ribbon_box)
+    gtk_widget_set_visible(self->tab_ribbon_box, !enabled);
+  if (self->btn_hdr_strip) {
+    if (enabled)
+      gtk_widget_add_css_class(self->btn_hdr_strip, "active");
+    else
+      gtk_widget_remove_css_class(self->btn_hdr_strip, "active");
+  }
+
+  if (enabled) {
+    IdeBuffer *buf = ide_window_get_active_buffer(self);
+    guint line = 1, col = 1;
+    ide_window_get_cursor_line_col(self, &line, &col);
+    if (buf) ide_strip_view_bind_buffer(self->strip_view, buf, line, FALSE);
+    GtkWidget *d0 = ide_strip_view_get_d0_source_view(self->strip_view);
+    if (d0) gtk_widget_grab_focus(d0);
+  } else {
+    if (self->source_view) gtk_widget_grab_focus(self->source_view);
+  }
+  ide_window_update_status_bar_and_hud(self);
+}
+
+void ide_window_toggle_strip_mode(KajoIdeWindow *self) {
+  if (!self || !self->strip_view) return;
+  ide_window_set_strip_mode(self, !ide_strip_view_is_active(self->strip_view));
+}
+
+static void on_external_buffer_change(IdeBuffer *buf,
+                                      gboolean   reloaded_cleanly,
+                                      gpointer   user_data);
+
+static IdeBuffer *on_strip_open_buffer(const char *abs_path,
+                                       guint       line_1based,
+                                       gboolean    focus_buffer,
+                                       gpointer    user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  if (!self || !abs_path || !*abs_path) return NULL;
+  for (guint i = 0; i < self->buffers->len; i++) {
+    IdeBuffer *b = g_ptr_array_index(self->buffers, i);
+    if (g_strcmp0(ide_buffer_get_file_path(b), abs_path) == 0) {
+      if (focus_buffer) {
+        self->active_buf_idx = i;
+        ide_window_bind_active_buffer_to_view(self);
+        if (line_1based > 0) ide_window_move_cursor_to_line_col(self, line_1based, 1);
+      }
+      return b;
+    }
+  }
+  IdeBuffer *nbuf = ide_buffer_new(abs_path);
+  if (!ide_buffer_load_from_disk(nbuf, NULL)) {
+    ide_buffer_free(nbuf);
+    return NULL;
+  }
+  if (self->active_scheme_id)
+    ide_buffer_set_style_scheme(nbuf, self->active_scheme_id);
+  ide_buffer_set_external_change_callback(nbuf, on_external_buffer_change, self);
+  ide_lsp_manager_notify_open(self->lsp, nbuf);
+  g_ptr_array_add(self->buffers, nbuf);
+  if (focus_buffer) {
+    self->active_buf_idx = self->buffers->len - 1;
+    ide_window_bind_active_buffer_to_view(self);
+    if (line_1based > 0) ide_window_move_cursor_to_line_col(self, line_1based, 1);
+  }
+  return nbuf;
+}
+
+static GPtrArray *on_strip_get_buffers(gpointer user_data) {
+  KajoIdeWindow *self = KAJO_IDE_WINDOW(user_data);
+  return self ? self->buffers : NULL;
+}
+
+static void on_strip_status(const char *msg, gpointer user_data) {
+  ide_window_show_toast(KAJO_IDE_WINDOW(user_data), msg);
+}
+
+static void on_strip_exit_mode(gpointer user_data) {
+  ide_window_set_strip_mode(KAJO_IDE_WINDOW(user_data), FALSE);
+}
+
+static void on_hdr_strip_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
+  ide_window_toggle_strip_mode(KAJO_IDE_WINDOW(d));
 }
 
 void ide_window_zoom_editor_font(KajoIdeWindow *self, int delta_or_zero) {
@@ -701,9 +819,17 @@ void ide_window_bind_active_buffer_to_view(KajoIdeWindow *self) {
   ide_window_rebuild_tab_ribbon(self);
   ide_window_sync_conflict_bar(self);
   ide_window_sync_markdown_views(self);
+  if (self->strip_view && ide_strip_view_is_active(self->strip_view)) {
+    guint line = 1, col = 1;
+    ide_window_get_cursor_line_col(self, &line, &col);
+    ide_strip_view_bind_buffer(self->strip_view, buf, line, FALSE);
+  }
   ide_window_update_status_bar_and_hud(self);
-  gtk_widget_grab_focus(self->source_view);
-  gtk_widget_queue_draw(self->source_view);
+  GtkWidget *active_view = ide_window_get_active_source_view(self);
+  if (active_view) {
+    gtk_widget_grab_focus(active_view);
+    gtk_widget_queue_draw(active_view);
+  }
 }
 
 static void on_tab_btn_clicked(GtkButton *btn, gpointer user_data) {
@@ -729,6 +855,7 @@ static void on_tab_close_btn_clicked(GtkButton *btn, gpointer user_data) {
       IdeBuffer *fresh = ide_buffer_new(NULL);
       if (self->active_scheme_id)
         ide_buffer_set_style_scheme(fresh, self->active_scheme_id);
+      if (self->strip_view) ide_strip_view_notify_buffer_closed(self->strip_view, only);
       g_ptr_array_remove_index(self->buffers, 0);
       g_ptr_array_add(self->buffers, fresh);
       self->active_buf_idx = 0;
@@ -741,6 +868,7 @@ static void on_tab_close_btn_clicked(GtkButton *btn, gpointer user_data) {
     GtkSourceBuffer *old_sb = closing ? ide_buffer_get_source_buffer(closing) : NULL;
     if (old_sb)
       g_signal_handlers_disconnect_by_func(old_sb, G_CALLBACK(on_buffer_mark_set), self);
+    if (self->strip_view) ide_strip_view_notify_buffer_closed(self->strip_view, closing);
     g_ptr_array_remove_index(self->buffers, idx);
     if (self->active_buf_idx >= self->buffers->len)
       self->active_buf_idx = self->buffers->len - 1;
@@ -828,6 +956,7 @@ void kajo_ide_window_open_path(KajoIdeWindow *self,
     IdeBuffer *first = g_ptr_array_index(self->buffers, 0);
     if (ide_buffer_get_file_path(first) == NULL &&
         !ide_buffer_get_modified(first)) {
+      if (self->strip_view) ide_strip_view_notify_buffer_closed(self->strip_view, first);
       g_ptr_array_remove_index(self->buffers, 0);
     }
   }
@@ -857,6 +986,8 @@ static void ide_window_set_workspace_root(KajoIdeWindow *self,
   if (self->dap)
     ide_dap_view_set_context(self->dap, self->workspace_root,
                              on_dap_breakpoints, on_dap_frame, NULL, self);
+  if (self->strip_view)
+    ide_strip_view_set_workspace_root(self->strip_view, self->workspace_root);
   ide_window_update_status_bar_and_hud(self);
 }
 
@@ -1002,9 +1133,16 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
   GtkWidget *focus = gtk_window_get_focus(GTK_WINDOW(self));
   GtkWidget *repl_entry = self->dap ? ide_dap_view_get_repl_entry(self->dap) : NULL;
   GtkWidget *watch_entry = self->dap ? ide_dap_view_get_watch_entry(self->dap) : NULL;
+  GtkWidget *strip_filter = self->strip_view ? ide_strip_view_get_filter_entry(self->strip_view) : NULL;
+  GtkWidget *strip_ov = self->strip_view ? ide_strip_view_get_overview_entry(self->strip_view) : NULL;
   gboolean in_cond_bp = (focus && self->cond_bp_entry &&
                          (focus == self->cond_bp_entry ||
                           gtk_widget_is_ancestor(focus, self->cond_bp_entry)));
+  gboolean in_strip_entry = (focus &&
+                             ((strip_filter &&
+                               (focus == strip_filter || gtk_widget_is_ancestor(focus, strip_filter))) ||
+                              (strip_ov &&
+                               (focus == strip_ov || gtk_widget_is_ancestor(focus, strip_ov)))));
   gboolean in_dap_entry = (focus &&
                            ((repl_entry &&
                              (focus == repl_entry || gtk_widget_is_ancestor(focus, repl_entry))) ||
@@ -1017,14 +1155,43 @@ static gboolean on_window_key_pressed(GtkEventControllerKey *controller,
     }
     return FALSE;
   }
+  if (in_strip_entry) {
+    if (keyval == GDK_KEY_Escape) {
+      if (strip_ov && (focus == strip_ov || gtk_widget_is_ancestor(focus, strip_ov)) &&
+          ide_strip_view_is_overview(self->strip_view)) {
+        ide_strip_view_toggle_overview(self->strip_view);
+      }
+      GtkWidget *av = ide_window_get_active_source_view(self);
+      if (av) gtk_widget_grab_focus(av);
+      return TRUE;
+    }
+    return FALSE;
+  }
   if (in_dap_entry) {
     if (keyval == GDK_KEY_Escape) {
       ide_fsm_set_state(self->fsm, IDE_STATE_NORMAL);
-      gtk_widget_grab_focus(self->source_view);
+      GtkWidget *av = ide_window_get_active_source_view(self);
+      if (av) gtk_widget_grab_focus(av);
       ide_window_update_status_bar_and_hud(self);
       return TRUE;
     }
     return FALSE;
+  }
+
+  /* In Code Strip Overview, Escape closes Overview cleanly */
+  if (self->strip_view && ide_strip_view_is_active(self->strip_view) &&
+      ide_strip_view_is_overview(self->strip_view) && keyval == GDK_KEY_Escape) {
+    ide_strip_view_toggle_overview(self->strip_view);
+    GtkWidget *av = ide_window_get_active_source_view(self);
+    if (av) gtk_widget_grab_focus(av);
+    return TRUE;
+  }
+
+  /* In Code Strip mode, Alt+Left surfaces back -1 depth via Ancestor Spine */
+  if (self->strip_view && ide_strip_view_is_active(self->strip_view) &&
+      (state & GDK_ALT_MASK) != 0 && keyval == GDK_KEY_Left) {
+    ide_strip_view_surface_one(self->strip_view);
+    return TRUE;
   }
 
   /* In HELP mode, 'q' only closes Help when the search query is empty;
@@ -1409,6 +1576,7 @@ static void kajo_ide_window_dispose(GObject *object) {
   g_clear_pointer(&self->agent_ipc, ide_agent_ipc_free);
   g_clear_pointer(&self->md_split_view, ide_markdown_view_free);
   g_clear_pointer(&self->md_drawer_view, ide_markdown_view_free);
+  g_clear_pointer(&self->strip_view, ide_strip_view_free);
   if (self->buffers) {
     g_ptr_array_free(self->buffers, TRUE);
     self->buffers = NULL;
@@ -1721,6 +1889,15 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   g_signal_connect(
       self->btn_hdr_md, "clicked", G_CALLBACK(on_hdr_md_clicked), self);
 
+  self->btn_hdr_strip = gtk_button_new_with_label("▥ STRIP");
+  gtk_widget_set_focusable(self->btn_hdr_strip, FALSE);
+  gtk_widget_add_css_class(self->btn_hdr_strip, "files-nav-btn");
+  gtk_widget_set_valign(self->btn_hdr_strip, GTK_ALIGN_CENTER);
+  gtk_widget_set_tooltip_text(self->btn_hdr_strip,
+                              "Toggle 60/25/15 Call-Depth Code Strip (Space t s)");
+  g_signal_connect(
+      self->btn_hdr_strip, "clicked", G_CALLBACK(on_hdr_strip_clicked), self);
+
   GtkWidget *btn_find = gtk_button_new_with_label("🔍 FIND");
   gtk_widget_set_focusable(btn_find, FALSE);
   gtk_widget_add_css_class(btn_find, "files-nav-btn");
@@ -1737,6 +1914,7 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_tree);
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_map);
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_md);
+  gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_strip);
   gtk_box_append(GTK_BOX(nav_cluster), btn_find);
   gtk_box_append(GTK_BOX(nav_cluster), self->btn_hdr_help);
 
@@ -2000,7 +2178,36 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_paned_set_shrink_end_child(GTK_PANED(self->editor_md_paned), TRUE);
   gtk_paned_set_position(GTK_PANED(self->editor_md_paned), 540);
 
-  gtk_paned_set_end_child(GTK_PANED(self->tree_paned), self->editor_md_paned);
+  /* LSP Manager (initialized before Code Strip so Strip can query LSP) */
+  self->lsp = ide_lsp_manager_new(
+      self->workspace_root, on_picker_open_file, on_lsp_status_changed, self);
+  ide_lsp_manager_set_callbacks(
+      self->lsp, on_lsp_diagnostics, on_lsp_message, on_lsp_ui_state, self);
+
+  /* Code Strip View (60% | 25% | 15% Call-Depth Columns + Ancestor Spine) */
+  self->strip_view = ide_strip_view_new(self->workspace_root,
+                                        self->lsp,
+                                        on_strip_open_buffer,
+                                        on_strip_get_buffers,
+                                        on_strip_status,
+                                        on_strip_exit_mode,
+                                        self);
+  ide_strip_view_set_gutter_callbacks(self->strip_view,
+                                      on_gutter_bp_toggled,
+                                      on_gutter_cond_bp_requested,
+                                      self);
+
+  self->workspace_stack = gtk_stack_new();
+  gtk_widget_set_hexpand(self->workspace_stack, TRUE);
+  gtk_widget_set_vexpand(self->workspace_stack, TRUE);
+  gtk_stack_set_transition_type(GTK_STACK(self->workspace_stack),
+                                GTK_STACK_TRANSITION_TYPE_NONE);
+  gtk_stack_add_named(GTK_STACK(self->workspace_stack), self->editor_md_paned, "classic");
+  gtk_stack_add_named(GTK_STACK(self->workspace_stack),
+                      ide_strip_view_get_widget(self->strip_view), "strip");
+  gtk_stack_set_visible_child_name(GTK_STACK(self->workspace_stack), "classic");
+
+  gtk_paned_set_end_child(GTK_PANED(self->tree_paned), self->workspace_stack);
   gtk_paned_set_resize_end_child(GTK_PANED(self->tree_paned), TRUE);
   gtk_paned_set_shrink_end_child(GTK_PANED(self->tree_paned), FALSE);
 
@@ -2223,12 +2430,6 @@ static void kajo_ide_window_init(KajoIdeWindow *self) {
   gtk_box_append(GTK_BOX(status_bar), self->diag_status_label);
   gtk_box_append(GTK_BOX(status_bar), self->cursor_pos_label);
   gtk_box_append(GTK_BOX(root_vbox), status_bar);
-
-  /* LSP Manager */
-  self->lsp = ide_lsp_manager_new(
-      self->workspace_root, on_picker_open_file, on_lsp_status_changed, self);
-  ide_lsp_manager_set_callbacks(
-      self->lsp, on_lsp_diagnostics, on_lsp_message, on_lsp_ui_state, self);
 
   /* Initial empty buffer */
   IdeBuffer *init_buf = ide_buffer_new(NULL);
