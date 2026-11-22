@@ -1,14 +1,10 @@
 /* comp_config.c — multi-file TOML configuration loader & merger (pure C). */
-#include "comp_config.h"
-
-#include "comp_schema_keys.h"
-#include "../../vendor/tomlc17/tomlc17.h"
+#include "comp_config_private.h"
 
 #include <ctype.h>
 #include <dirent.h>
 #include <glob.h>
 #include <limits.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -208,27 +204,6 @@ comp_config_horizontal_drag_action(const CompConfig *cfg, bool touchpad)
     return cfg->touch_swipe_horizontal;
 }
 
-static bool
-parse_hex_rgba(const char *s, float out[4])
-{
-    if (!s || s[0] != '#')
-        return false;
-    size_t len = strlen(s + 1);
-    if (len != 6 && len != 8)
-        return false;
-    unsigned int vals[4] = { 0, 0, 0, 255 };
-    size_t nbytes = len / 2;
-    for (size_t i = 0; i < nbytes; i++) {
-        char hex[3] = { s[1 + i * 2], s[2 + i * 2], '\0' };
-        if (!isxdigit((unsigned char)hex[0]) || !isxdigit((unsigned char)hex[1]))
-            return false;
-        vals[i] = (unsigned int)strtoul(hex, NULL, 16);
-    }
-    for (int i = 0; i < 4; i++)
-        out[i] = (float)vals[i] / 255.0f;
-    return true;
-}
-
 static char *
 str_lower_dup(const char *s)
 {
@@ -291,13 +266,13 @@ comp_config_new_defaults(uint32_t mod_mask)
     comp_fx_config_defaults(&cfg->fx);
     cfg->border_px = 1;
 
-    (void)parse_hex_rgba("#0078d4", cfg->accent_rgba);
+    (void)comp_config_parse_hex_rgba("#0078d4", cfg->accent_rgba);
     cfg->active_border_tracks_accent   = true;
     cfg->switcher_active_tracks_accent = true;
     sync_accent_dependents(cfg);
-    (void)parse_hex_rgba("#2b2b2b", cfg->inactive_border_rgba);
-    (void)parse_hex_rgba("#e81123", cfg->urgent_border_rgba);
-    (void)parse_hex_rgba("#e81123", cfg->switcher_urgent_rgba);
+    (void)comp_config_parse_hex_rgba("#2b2b2b", cfg->inactive_border_rgba);
+    (void)comp_config_parse_hex_rgba("#e81123", cfg->urgent_border_rgba);
+    (void)comp_config_parse_hex_rgba("#e81123", cfg->switcher_urgent_rgba);
 
     cfg->screenshot_path   = strdup("~/Pictures/Screenshots/Screenshot from %Y-%m-%d %H-%M-%S.png");
     cfg->screenshot_copy   = true;
@@ -365,20 +340,6 @@ comp_config_free(CompConfig *cfg)
     free(cfg);
 }
 
-static bool
-datum_as_double(toml_datum_t d, double *out)
-{
-    if (d.type == TOML_FP64 && isfinite(d.u.fp64)) {
-        *out = d.u.fp64;
-        return true;
-    }
-    if (d.type == TOML_INT64) {
-        *out = (double)d.u.int64;
-        return true;
-    }
-    return false;
-}
-
 static void
 parse_color_or_accent(toml_datum_t d, float out_rgba[4], bool *tracks_accent,
                       const float accent_rgba[4], const char *key,
@@ -391,7 +352,7 @@ parse_color_or_accent(toml_datum_t d, float out_rgba[4], bool *tracks_accent,
         memcpy(out_rgba, accent_rgba, 4 * sizeof(float));
         return;
     }
-    if (d.type == TOML_STRING && parse_hex_rgba(d.u.s, out_rgba)) {
+    if (d.type == TOML_STRING && comp_config_parse_hex_rgba(d.u.s, out_rgba)) {
         if (tracks_accent)
             *tracks_accent = false;
         return;
@@ -414,7 +375,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
     double v = 0.0;
     toml_datum_t gap = toml_get(tab, COMP_KEY_GAP_PX);
     if (gap.type != TOML_UNKNOWN) {
-        if (datum_as_double(gap, &v) && v >= 0.0 && v <= 200.0)
+        if (comp_config_datum_as_double(gap, &v) && v >= 0.0 && v <= 200.0)
             cfg->layout.gap = v;
         else
             comp_diag_add(diag, src, gap.lineno, "'gap_px' must be a number in 0..200; ignored");
@@ -451,7 +412,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
 
     toml_datum_t dcw = toml_get(tab, COMP_KEY_DEFAULT_COLUMN_WIDTH);
     if (dcw.type != TOML_UNKNOWN) {
-        if (datum_as_double(dcw, &v) && v >= 0.05 && v <= 1.0)
+        if (comp_config_datum_as_double(dcw, &v) && v >= 0.05 && v <= 1.0)
             cfg->layout.default_width = v;
         else
             comp_diag_add(diag, src, dcw.lineno, "'default_column_width' must be in 0.05..1.0; ignored");
@@ -462,7 +423,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
         double tmp[COMP_LAYOUT_MAX_PRESETS];
         bool ok = true;
         for (int i = 0; i < pw.u.arr.size; i++) {
-            if (!datum_as_double(pw.u.arr.elem[i], &tmp[i]) || tmp[i] < 0.05 || tmp[i] > 1.0)
+            if (!comp_config_datum_as_double(pw.u.arr.elem[i], &tmp[i]) || tmp[i] < 0.05 || tmp[i] > 1.0)
                 ok = false;
         }
         if (ok) {
@@ -478,7 +439,7 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
         double tmp[COMP_LAYOUT_MAX_PRESETS];
         bool ok = true;
         for (int i = 0; i < ph.u.arr.size; i++) {
-            if (!datum_as_double(ph.u.arr.elem[i], &tmp[i]) || tmp[i] < 0.1 || tmp[i] > 1.0)
+            if (!comp_config_datum_as_double(ph.u.arr.elem[i], &tmp[i]) || tmp[i] < 0.1 || tmp[i] > 1.0)
                 ok = false;
         }
         if (ok) {
@@ -488,52 +449,6 @@ merge_layout_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDia
             comp_diag_add(diag, src, ph.lineno, "'preset_heights' elements must be numbers in 0.1..1.0; ignored");
         }
     }
-}
-
-static void
-merge_spring_subtable(CompSpringParams *sp, toml_datum_t sub, const char *name,
-                      const char *src, CompDiagList *diag)
-{
-    if (sub.type != TOML_TABLE)
-        return;
-    CompSpringParams cand = *sp;
-    double v = 0.0;
-    toml_datum_t dr = toml_get(sub, COMP_KEY_DAMPING_RATIO);
-    if (dr.type != TOML_UNKNOWN && datum_as_double(dr, &v))
-        cand.damping_ratio = v;
-    toml_datum_t st = toml_get(sub, COMP_KEY_STIFFNESS);
-    if (st.type != TOML_UNKNOWN && datum_as_double(st, &v))
-        cand.stiffness = v;
-    toml_datum_t ep = toml_get(sub, COMP_KEY_EPSILON);
-    if (ep.type != TOML_UNKNOWN && datum_as_double(ep, &v))
-        cand.epsilon = v;
-
-    if (comp_spring_params_valid(&cand))
-        *sp = cand;
-    else
-        comp_diag_add(diag, src, sub.lineno, "[animations.%s] parameters out of valid range; ignored", name);
-}
-
-static void
-merge_animations_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDiagList *diag)
-{
-    if (tab.type != TOML_TABLE)
-        return;
-    toml_datum_t en = toml_get(tab, COMP_KEY_ENABLED);
-    if (en.type == TOML_BOOLEAN)
-        cfg->motion.enabled = en.u.boolean;
-
-    double v = 0.0;
-    toml_datum_t sd = toml_get(tab, COMP_KEY_SLOWDOWN);
-    if (sd.type != TOML_UNKNOWN && datum_as_double(sd, &v) && v >= 0.0 && v <= 100.0)
-        cfg->motion.slowdown = v;
-
-    merge_spring_subtable(&cfg->motion.workspace_switch,
-                          toml_get(tab, COMP_SEC_ANIM_WORKSPACE_SWITCH), COMP_SEC_ANIM_WORKSPACE_SWITCH, src, diag);
-    merge_spring_subtable(&cfg->motion.horizontal_scroll,
-                          toml_get(tab, COMP_SEC_ANIM_HORIZONTAL_SCROLL), COMP_SEC_ANIM_HORIZONTAL_SCROLL, src, diag);
-    merge_spring_subtable(&cfg->motion.window_movement,
-                          toml_get(tab, COMP_SEC_ANIM_WINDOW_MOVEMENT), COMP_SEC_ANIM_WINDOW_MOVEMENT, src, diag);
 }
 
 static void
@@ -686,7 +601,7 @@ merge_input_section(CompConfig *cfg, toml_datum_t tab, const char *src, CompDiag
         }
         double spd = 0.0;
         toml_datum_t as = toml_get(ms, COMP_KEY_ACCEL_SPEED);
-        if (as.type != TOML_UNKNOWN && datum_as_double(as, &spd) && spd >= -1.0 && spd <= 1.0)
+        if (as.type != TOML_UNKNOWN && comp_config_datum_as_double(as, &spd) && spd >= -1.0 && spd <= 1.0)
             cfg->mouse_accel_speed = spd;
         toml_datum_t ns = toml_get(ms, COMP_KEY_NATURAL_SCROLL);
         if (ns.type == TOML_BOOLEAN)
@@ -746,7 +661,7 @@ merge_output_array(CompConfig *cfg, toml_datum_t arr, const char *src, CompDiagL
         double sc = 1.0;
         toml_datum_t scale = toml_get(t, COMP_KEY_SCALE);
         if (scale.type != TOML_UNKNOWN) {
-            if (datum_as_double(scale, &sc) && sc >= 0.5 && sc <= 4.0) {
+            if (comp_config_datum_as_double(scale, &sc) && sc >= 0.5 && sc <= 4.0) {
                 rule->has_scale = true;
                 rule->scale     = sc;
             } else {
@@ -905,380 +820,14 @@ merge_touch_section(CompConfig *cfg, toml_datum_t tch)
 }
 
 static void
-merge_effects_shadow_layers(CompFxShadowConfig *sh, toml_datum_t arr,
-                            const char *src, CompDiagList *diag)
-{
-    if (arr.type == TOML_UNKNOWN)
-        return;
-    if (arr.type != TOML_ARRAY) {
-        comp_diag_add(diag, src, arr.lineno, "[effects.shadow] 'layers' must be an array of tables; ignored");
-        return;
-    }
-
-    size_t count = (size_t)arr.u.arr.size;
-    if (count > COMP_FX_SHADOW_MAX_LAYERS) {
-        comp_diag_add(diag, src, arr.lineno,
-                      "[effects.shadow] at most %d layers supported; truncating extras",
-                      COMP_FX_SHADOW_MAX_LAYERS);
-        count = COMP_FX_SHADOW_MAX_LAYERS;
-    }
-
-    CompFxShadowLayer parsed[COMP_FX_SHADOW_MAX_LAYERS];
-    memset(parsed, 0, sizeof(parsed));
-    size_t valid_n = 0;
-
-    for (size_t i = 0; i < count; i++) {
-        toml_datum_t elem = arr.u.arr.elem[i];
-        if (elem.type != TOML_TABLE) {
-            comp_diag_add(diag, src, elem.lineno, "[effects.shadow] layer entry must be a table; ignored");
-            continue;
-        }
-        CompFxShadowLayer l = { .sigma = 6.0, .offset_x = 0.0, .offset_y = 0.0, .opacity = 0.25 };
-        double v = 0.0;
-        toml_datum_t sg = toml_get(elem, COMP_KEY_SIGMA);
-        if (sg.type != TOML_UNKNOWN) {
-            if (datum_as_double(sg, &v) && v > 0.0 && v <= 256.0)
-                l.sigma = v;
-            else
-                comp_diag_add(diag, src, sg.lineno, "[effects.shadow] 'sigma' must be in (0..256]; ignored");
-        }
-        toml_datum_t ox = toml_get(elem, COMP_KEY_OFFSET_X);
-        if (ox.type != TOML_UNKNOWN) {
-            if (datum_as_double(ox, &v) && v >= -256.0 && v <= 256.0)
-                l.offset_x = v;
-            else
-                comp_diag_add(diag, src, ox.lineno, "[effects.shadow] 'offset_x' must be in -256..256; ignored");
-        }
-        toml_datum_t oy = toml_get(elem, COMP_KEY_OFFSET_Y);
-        if (oy.type != TOML_UNKNOWN) {
-            if (datum_as_double(oy, &v) && v >= -256.0 && v <= 256.0)
-                l.offset_y = v;
-            else
-                comp_diag_add(diag, src, oy.lineno, "[effects.shadow] 'offset_y' must be in -256..256; ignored");
-        }
-        toml_datum_t op = toml_get(elem, COMP_KEY_OPACITY);
-        if (op.type != TOML_UNKNOWN) {
-            if (datum_as_double(op, &v) && v >= 0.0 && v <= 1.0)
-                l.opacity = v;
-            else
-                comp_diag_add(diag, src, op.lineno, "[effects.shadow] 'opacity' must be in 0..1; ignored");
-        }
-        parsed[valid_n++] = l;
-    }
-
-    sh->n_layers = valid_n;
-    if (valid_n > 0)
-        memcpy(sh->layers, parsed, valid_n * sizeof(parsed[0]));
-}
-
-static void
-merge_effects_section(CompConfig *cfg, toml_datum_t fx, const char *src, CompDiagList *diag)
-{
-    if (fx.type != TOML_TABLE)
-        return;
-
-    toml_datum_t en = toml_get(fx, COMP_KEY_ENABLED);
-    if (en.type == TOML_BOOLEAN)
-        cfg->fx.enabled = en.u.boolean;
-    toml_datum_t di = toml_get(fx, COMP_KEY_DITHER);
-    if (di.type == TOML_BOOLEAN)
-        cfg->fx.dither = di.u.boolean;
-
-    toml_datum_t cf = toml_get(fx, COMP_KEY_COLOR_FILTER);
-    if (cf.type != TOML_UNKNOWN) {
-        CompFxColorFilter parsed_cf = COMP_FX_FILTER_NONE;
-        if (cf.type == TOML_STRING && comp_fx_color_filter_from_str(cf.u.s, &parsed_cf))
-            cfg->fx.color_filter = parsed_cf;
-        else
-            comp_diag_add(diag, src, cf.lineno,
-                          "[effects] invalid 'color_filter' (expected none|grayscale|night-light|protanopia|deuteranopia|tritanopia); ignored");
-    }
-
-    double fx_dval = 0.0;
-    toml_datum_t cfs = toml_get(fx, COMP_KEY_COLOR_FILTER_STRENGTH);
-    if (cfs.type != TOML_UNKNOWN) {
-        if (datum_as_double(cfs, &fx_dval) && fx_dval >= 0.0 && fx_dval <= 1.0)
-            cfg->fx.color_filter_strength = fx_dval;
-        else
-            comp_diag_add(diag, src, cfs.lineno, "[effects] 'color_filter_strength' must be in 0..1; ignored");
-    }
-
-    toml_datum_t nlt = toml_get(fx, COMP_KEY_NIGHT_LIGHT_TEMPERATURE);
-    if (nlt.type != TOML_UNKNOWN) {
-        if (nlt.type == TOML_INT64 && nlt.u.int64 >= 1500 && nlt.u.int64 <= 6500)
-            cfg->fx.night_light_temperature = (int32_t)nlt.u.int64;
-        else
-            comp_diag_add(diag, src, nlt.lineno, "[effects] 'night_light_temperature' must be an integer in 1500..6500; ignored");
-    }
-
-    toml_datum_t swn = toml_get(fx, COMP_KEY_SDR_WHITE_NITS);
-    if (swn.type != TOML_UNKNOWN) {
-        if (datum_as_double(swn, &fx_dval) && (fx_dval == 0.0 || (fx_dval >= 80.0 && fx_dval <= 1000.0)))
-            cfg->fx.sdr_white_nits = fx_dval;
-        else
-            comp_diag_add(diag, src, swn.lineno, "[effects] 'sdr_white_nits' must be 0 or in 80..1000; ignored");
-    }
-
-    toml_datum_t tm = toml_get(fx, COMP_KEY_TONEMAP);
-    if (tm.type == TOML_BOOLEAN)
-        cfg->fx.tonemap = tm.u.boolean;
-
-    toml_datum_t tmpk = toml_get(fx, COMP_KEY_TONEMAP_PEAK_NITS);
-    if (tmpk.type != TOML_UNKNOWN) {
-        if (datum_as_double(tmpk, &fx_dval) && (fx_dval == 0.0 || (fx_dval >= 100.0 && fx_dval <= 10000.0)))
-            cfg->fx.tonemap_peak_nits = fx_dval;
-        else
-            comp_diag_add(diag, src, tmpk.lineno, "[effects] 'tonemap_peak_nits' must be 0 or in 100..10000; ignored");
-    }
-
-    toml_datum_t sh = toml_get(fx, COMP_SEC_FX_SHADOW);
-    if (sh.type == TOML_TABLE) {
-        toml_datum_t sen = toml_get(sh, COMP_KEY_ENABLED);
-        if (sen.type == TOML_BOOLEAN)
-            cfg->fx.shadow.enabled = sen.u.boolean;
-        toml_datum_t scol = toml_get(sh, COMP_KEY_COLOR);
-        if (scol.type == TOML_STRING && !parse_hex_rgba(scol.u.s, cfg->fx.shadow.color_rgba))
-            comp_diag_add(diag, src, scol.lineno, "[effects.shadow] invalid hex color '%s'; ignored", scol.u.s);
-        toml_datum_t us = toml_get(sh, COMP_KEY_UNFOCUSED_SCALE);
-        double dval = 0.0;
-        if (us.type != TOML_UNKNOWN) {
-            if (datum_as_double(us, &dval) && dval >= 0.0 && dval <= 2.0)
-                cfg->fx.shadow.unfocused_scale = dval;
-            else
-                comp_diag_add(diag, src, us.lineno, "[effects.shadow] 'unfocused_scale' must be in 0..2; ignored");
-        }
-        toml_datum_t st = toml_get(sh, COMP_KEY_STRENGTH);
-        if (st.type != TOML_UNKNOWN) {
-            if (datum_as_double(st, &dval) && dval >= 0.0 && dval <= 2.0)
-                cfg->fx.shadow.strength = dval;
-            else
-                comp_diag_add(diag, src, st.lineno, "[effects.shadow] 'strength' must be in 0..2; ignored");
-        }
-        toml_datum_t dur = toml_get(sh, COMP_KEY_DURATION_MS);
-        if (dur.type == TOML_INT64 && dur.u.int64 >= 0 && dur.u.int64 <= 5000)
-            cfg->fx.shadow.duration_ms = (int32_t)dur.u.int64;
-        merge_effects_shadow_layers(&cfg->fx.shadow, toml_get(sh, COMP_KEY_LAYERS), src, diag);
-    }
-
-    toml_datum_t dm = toml_get(fx, COMP_SEC_FX_DIM);
-    if (dm.type == TOML_TABLE) {
-        toml_datum_t den = toml_get(dm, COMP_KEY_ENABLED);
-        if (den.type == TOML_BOOLEAN)
-            cfg->fx.dim.enabled = den.u.boolean;
-        toml_datum_t dcol = toml_get(dm, COMP_KEY_COLOR);
-        if (dcol.type == TOML_STRING && !parse_hex_rgba(dcol.u.s, cfg->fx.dim.color_rgba))
-            comp_diag_add(diag, src, dcol.lineno, "[effects.dim] invalid hex color '%s'; ignored", dcol.u.s);
-        toml_datum_t dop = toml_get(dm, COMP_KEY_OPACITY);
-        double dval = 0.0;
-        if (dop.type != TOML_UNKNOWN) {
-            if (datum_as_double(dop, &dval) && dval >= 0.0 && dval <= 1.0)
-                cfg->fx.dim.opacity = dval;
-            else
-                comp_diag_add(diag, src, dop.lineno, "[effects.dim] 'opacity' must be in 0..1; ignored");
-        }
-        toml_datum_t ddur = toml_get(dm, COMP_KEY_DURATION_MS);
-        if (ddur.type == TOML_INT64 && ddur.u.int64 >= 0 && ddur.u.int64 <= 5000)
-            cfg->fx.dim.duration_ms = (int32_t)ddur.u.int64;
-    }
-
-    toml_datum_t gl = toml_get(fx, COMP_SEC_FX_GLASS);
-    if (gl.type == TOML_TABLE) {
-        toml_datum_t gen = toml_get(gl, COMP_KEY_ENABLED);
-        if (gen.type == TOML_BOOLEAN)
-            cfg->fx.glass.enabled = gen.u.boolean;
-
-        toml_datum_t gpa = toml_get(gl, COMP_KEY_PASSES);
-        if (gpa.type != TOML_UNKNOWN) {
-            if (gpa.type == TOML_INT64 && gpa.u.int64 >= 1 && gpa.u.int64 <= COMP_FX_GLASS_MAX_PASSES)
-                cfg->fx.glass.passes = (int32_t)gpa.u.int64;
-            else
-                comp_diag_add(diag, src, gpa.lineno, "[effects.glass] 'passes' must be an integer in 1..%d; ignored",
-                              COMP_FX_GLASS_MAX_PASSES);
-        }
-
-        double dval = 0.0;
-        toml_datum_t gof = toml_get(gl, COMP_KEY_OFFSET);
-        if (gof.type != TOML_UNKNOWN) {
-            if (datum_as_double(gof, &dval) && dval >= 0.0 && dval <= 16.0)
-                cfg->fx.glass.offset = dval;
-            else
-                comp_diag_add(diag, src, gof.lineno, "[effects.glass] 'offset' must be in 0..16; ignored");
-        }
-
-        toml_datum_t gsa = toml_get(gl, COMP_KEY_SATURATION);
-        if (gsa.type != TOML_UNKNOWN) {
-            if (datum_as_double(gsa, &dval) && dval >= 0.0 && dval <= 4.0)
-                cfg->fx.glass.saturation = dval;
-            else
-                comp_diag_add(diag, src, gsa.lineno, "[effects.glass] 'saturation' must be in 0..4; ignored");
-        }
-
-        toml_datum_t gbr = toml_get(gl, COMP_KEY_BRIGHTNESS);
-        if (gbr.type != TOML_UNKNOWN) {
-            if (datum_as_double(gbr, &dval) && dval >= 0.0 && dval <= 4.0)
-                cfg->fx.glass.brightness = dval;
-            else
-                comp_diag_add(diag, src, gbr.lineno, "[effects.glass] 'brightness' must be in 0..4; ignored");
-        }
-
-        toml_datum_t gti = toml_get(gl, COMP_KEY_TINT);
-        if (gti.type == TOML_STRING && !parse_hex_rgba(gti.u.s, cfg->fx.glass.tint_rgba))
-            comp_diag_add(diag, src, gti.lineno, "[effects.glass] invalid hex color '%s'; ignored", gti.u.s);
-
-        toml_datum_t gta = toml_get(gl, COMP_KEY_TINT_ALPHA);
-        if (gta.type != TOML_UNKNOWN) {
-            if (datum_as_double(gta, &dval) && dval >= 0.0 && dval <= 1.0)
-                cfg->fx.glass.tint_alpha = dval;
-            else
-                comp_diag_add(diag, src, gta.lineno, "[effects.glass] 'tint_alpha' must be in 0..1; ignored");
-        }
-
-        toml_datum_t mhz = toml_get(gl, COMP_KEY_MAX_RECOMPUTE_HZ);
-        if (mhz.type != TOML_UNKNOWN) {
-            if (mhz.type == TOML_INT64 && mhz.u.int64 >= 0 && mhz.u.int64 <= 1000)
-                cfg->fx.glass.max_recompute_hz = (int32_t)mhz.u.int64;
-            else
-                comp_diag_add(diag, src, mhz.lineno, "[effects.glass] 'max_recompute_hz' must be in 0..1000; ignored");
-        }
-
-        toml_datum_t gst = toml_get(gl, COMP_KEY_STYLE);
-        if (gst.type != TOML_UNKNOWN) {
-            CompFxGlassStyle st = COMP_FX_GLASS_FROSTED;
-            if (gst.type == TOML_STRING && comp_fx_glass_style_from_str(gst.u.s, &st))
-                cfg->fx.glass.style = st;
-            else
-                comp_diag_add(diag, src, gst.lineno,
-                              "[effects.glass] 'style' must be frosted|liquid|halation|fluted|acrylic|aero|dichroic; ignored");
-        }
-
-        toml_datum_t gref = toml_get(gl, COMP_KEY_REFRACTION);
-        if (gref.type != TOML_UNKNOWN) {
-            if (datum_as_double(gref, &dval) && dval >= 0.0 && dval <= 2.0)
-                cfg->fx.glass.refraction = dval;
-            else
-                comp_diag_add(diag, src, gref.lineno, "[effects.glass] 'refraction' must be in 0..2; ignored");
-        }
-
-        toml_datum_t gdisp = toml_get(gl, COMP_KEY_DISPERSION);
-        if (gdisp.type != TOML_UNKNOWN) {
-            if (datum_as_double(gdisp, &dval) && dval >= 0.0 && dval <= 1.0)
-                cfg->fx.glass.dispersion = dval;
-            else
-                comp_diag_add(diag, src, gdisp.lineno, "[effects.glass] 'dispersion' must be in 0..1; ignored");
-        }
-
-        toml_datum_t gbev = toml_get(gl, COMP_KEY_BEVEL_PX);
-        if (gbev.type != TOML_UNKNOWN) {
-            if (datum_as_double(gbev, &dval) && dval >= 2.0 && dval <= 64.0)
-                cfg->fx.glass.bevel_px = dval;
-            else
-                comp_diag_add(diag, src, gbev.lineno, "[effects.glass] 'bevel_px' must be in 2..64; ignored");
-        }
-
-        toml_datum_t gspec = toml_get(gl, COMP_KEY_SPECULAR);
-        if (gspec.type != TOML_UNKNOWN) {
-            if (datum_as_double(gspec, &dval) && dval >= 0.0 && dval <= 2.0)
-                cfg->fx.glass.specular = dval;
-            else
-                comp_diag_add(diag, src, gspec.lineno, "[effects.glass] 'specular' must be in 0..2; ignored");
-        }
-
-        toml_datum_t ggr = toml_get(gl, COMP_KEY_GRAIN);
-        if (ggr.type != TOML_UNKNOWN) {
-            if (datum_as_double(ggr, &dval) && dval >= 0.0 && dval <= 1.0)
-                cfg->fx.glass.grain = dval;
-            else
-                comp_diag_add(diag, src, ggr.lineno, "[effects.glass] 'grain' must be in 0..1; ignored");
-        }
-
-        toml_datum_t gfp = toml_get(gl, COMP_KEY_FLUTE_PX);
-        if (gfp.type != TOML_UNKNOWN) {
-            if (datum_as_double(gfp, &dval) && dval >= 4.0 && dval <= 64.0)
-                cfg->fx.glass.flute_px = dval;
-            else
-                comp_diag_add(diag, src, gfp.lineno, "[effects.glass] 'flute_px' must be in 4..64; ignored");
-        }
-
-        toml_datum_t gfa = toml_get(gl, COMP_KEY_FLUTE_AXIS);
-        if (gfa.type != TOML_UNKNOWN) {
-            CompFxFluteAxis ax = COMP_FX_FLUTE_VERTICAL;
-            if (gfa.type == TOML_STRING && comp_fx_flute_axis_from_str(gfa.u.s, &ax))
-                cfg->fx.glass.flute_axis = ax;
-            else
-                comp_diag_add(diag, src, gfa.lineno,
-                              "[effects.glass] 'flute_axis' must be 'vertical' or 'horizontal'; ignored");
-        }
-    }
-
-    toml_datum_t tr = toml_get(fx, COMP_SEC_FX_TRANSITIONS);
-    if (tr.type == TOML_TABLE) {
-        toml_datum_t ten = toml_get(tr, COMP_KEY_ENABLED);
-        if (ten.type == TOML_BOOLEAN)
-            cfg->fx.transitions.enabled = ten.u.boolean;
-
-        toml_datum_t op = toml_get(tr, COMP_KEY_OPEN_PRESET);
-        if (op.type == TOML_STRING) {
-            CompFxOpenPreset p = COMP_FX_OPEN_DEFAULT;
-            if (comp_fx_open_preset_from_str(op.u.s, &p))
-                cfg->fx.transitions.open_preset = p;
-            else
-                comp_diag_add(diag, src, op.lineno, "[effects.transitions] unknown open_preset '%s'; ignored", op.u.s);
-        }
-        toml_datum_t od = toml_get(tr, COMP_KEY_OPEN_DURATION_MS);
-        if (od.type == TOML_INT64 && od.u.int64 >= 0 && od.u.int64 <= 2000)
-            cfg->fx.transitions.open_duration_ms = (int32_t)od.u.int64;
-        toml_datum_t oc = toml_get(tr, COMP_KEY_OPEN_CURVE);
-        if (oc.type == TOML_STRING) {
-            CompFxTransitionCurve c = COMP_FX_CURVE_EASE_OUT_EXPO;
-            if (comp_fx_curve_from_str(oc.u.s, &c))
-                cfg->fx.transitions.open_curve = c;
-            else
-                comp_diag_add(diag, src, oc.lineno, "[effects.transitions] unknown open_curve '%s'; ignored", oc.u.s);
-        }
-
-        toml_datum_t cp = toml_get(tr, COMP_KEY_CLOSE_PRESET);
-        if (cp.type == TOML_STRING) {
-            CompFxClosePreset p = COMP_FX_CLOSE_DEFAULT;
-            if (comp_fx_close_preset_from_str(cp.u.s, &p))
-                cfg->fx.transitions.close_preset = p;
-            else
-                comp_diag_add(diag, src, cp.lineno, "[effects.transitions] unknown close_preset '%s'; ignored", cp.u.s);
-        }
-        toml_datum_t cd = toml_get(tr, COMP_KEY_CLOSE_DURATION_MS);
-        if (cd.type == TOML_INT64 && cd.u.int64 >= 0 && cd.u.int64 <= 2000)
-            cfg->fx.transitions.close_duration_ms = (int32_t)cd.u.int64;
-        toml_datum_t cc = toml_get(tr, COMP_KEY_CLOSE_CURVE);
-        if (cc.type == TOML_STRING) {
-            CompFxTransitionCurve c = COMP_FX_CURVE_EASE_OUT_QUAD;
-            if (comp_fx_curve_from_str(cc.u.s, &c))
-                cfg->fx.transitions.close_curve = c;
-            else
-                comp_diag_add(diag, src, cc.lineno, "[effects.transitions] unknown close_curve '%s'; ignored", cc.u.s);
-        }
-
-        toml_datum_t rp = toml_get(tr, COMP_KEY_RESIZE_PRESET);
-        if (rp.type == TOML_STRING) {
-            CompFxResizePreset p = COMP_FX_RESIZE_DEFAULT;
-            if (comp_fx_resize_preset_from_str(rp.u.s, &p))
-                cfg->fx.transitions.resize_preset = p;
-            else
-                comp_diag_add(diag, src, rp.lineno, "[effects.transitions] unknown resize_preset '%s'; ignored", rp.u.s);
-        }
-        toml_datum_t rd = toml_get(tr, COMP_KEY_RESIZE_DURATION_MS);
-        if (rd.type == TOML_INT64 && rd.u.int64 >= 0 && rd.u.int64 <= 2000)
-            cfg->fx.transitions.resize_duration_ms = (int32_t)rd.u.int64;
-    }
-}
-
-static void
 merge_comp_sections_from_table(CompConfig *cfg, toml_datum_t tab, const char *name, CompDiagList *diag)
 {
     if (tab.type != TOML_TABLE)
         return;
 
     merge_layout_section(cfg, toml_get(tab, COMP_SEC_LAYOUT), name, diag);
-    merge_animations_section(cfg, toml_get(tab, COMP_SEC_ANIMATIONS), name, diag);
-    merge_effects_section(cfg, toml_get(tab, COMP_SEC_EFFECTS), name, diag);
+    comp_config_merge_animations_section(cfg, toml_get(tab, COMP_SEC_ANIMATIONS), name, diag);
+    comp_config_merge_effects_section(cfg, toml_get(tab, COMP_SEC_EFFECTS), name, diag);
 
     toml_datum_t sw = toml_get(tab, COMP_SEC_SWITCHER);
     if (sw.type == TOML_TABLE) {
@@ -1349,12 +898,12 @@ merge_toml_internal(CompConfig *cfg, const char *src, size_t len,
 
     /* 1. Top-level or [theme]-scoped accent_color */
     toml_datum_t acc = toml_get(res.toptab, COMP_KEY_ACCENT_COLOR);
-    if (acc.type == TOML_STRING && parse_hex_rgba(acc.u.s, cfg->accent_rgba))
+    if (acc.type == TOML_STRING && comp_config_parse_hex_rgba(acc.u.s, cfg->accent_rgba))
         sync_accent_dependents(cfg);
     toml_datum_t theme_tab = toml_get(res.toptab, COMP_SEC_THEME);
     if (theme_tab.type == TOML_TABLE) {
         toml_datum_t tacc = toml_get(theme_tab, COMP_KEY_ACCENT_COLOR);
-        if (tacc.type == TOML_STRING && parse_hex_rgba(tacc.u.s, cfg->accent_rgba))
+        if (tacc.type == TOML_STRING && comp_config_parse_hex_rgba(tacc.u.s, cfg->accent_rgba))
             sync_accent_dependents(cfg);
     }
 

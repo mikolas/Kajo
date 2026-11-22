@@ -216,6 +216,16 @@ shell_theme_new(const gchar *css_path)
         if (theme->monitor) {
             g_signal_connect(theme->monitor, "changed", G_CALLBACK(on_css_file_changed), theme);
         }
+
+        g_autofree gchar *css_dir = g_path_get_dirname(theme->css_path);
+        g_autofree gchar *styles_dir = g_build_filename(css_dir, "styles", NULL);
+        if (g_file_test(styles_dir, G_FILE_TEST_IS_DIR)) {
+            g_autoptr(GFile) sdir = g_file_new_for_path(styles_dir);
+            theme->styles_dir_monitor = g_file_monitor_directory(sdir, G_FILE_MONITOR_NONE, NULL, NULL);
+            if (theme->styles_dir_monitor) {
+                g_signal_connect(theme->styles_dir_monitor, "changed", G_CALLBACK(on_css_file_changed), theme);
+            }
+        }
     } else {
         g_message("Loading embedded fallback CSS from GResource '/org/kajo/shell/defaults/style.css'");
         gtk_css_provider_load_from_resource(theme->provider, "/org/kajo/shell/defaults/style.css");
@@ -284,6 +294,12 @@ shell_theme_destroy(ShellTheme *theme)
         g_signal_handlers_disconnect_by_data(theme->monitor, theme);
         g_file_monitor_cancel(theme->monitor);
         g_object_unref(theme->monitor);
+    }
+
+    if (theme->styles_dir_monitor) {
+        g_signal_handlers_disconnect_by_data(theme->styles_dir_monitor, theme);
+        g_file_monitor_cancel(theme->styles_dir_monitor);
+        g_object_unref(theme->styles_dir_monitor);
     }
 
     if (theme->override_monitor) {

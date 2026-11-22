@@ -1,100 +1,4 @@
-#include "mod_window.h"
-#include "mod_engine.h"
-#include "mod_audio.h"
-#include "mod_playlist.h"
-#include "../config.h"
-#include "../compositor/compositor.h"
-#include <string.h>
-
-struct _KajoModWindow {
-    GtkApplicationWindow parent_instance;
-
-    GtkWidget *root_vbox;
-    int        sim_col_width;
-
-    /* Backend Audio, Playlist & DSP State */
-    KajoModAudio     *audio;
-    KajoModPlaylist  *playlist;
-    KajoModDspConfig  dsp;
-    int               active_pl_index;
-    guint             tick_id;
-    gboolean          updating_seek;
-    gboolean          solo_ch[4];
-
-    /* Header & Telemetry */
-    GtkWidget *hdr_engine_badge;
-    GtkWidget *lbl_title;
-    GtkWidget *lbl_sub;
-    GtkWidget *bdg_engine;
-    GtkWidget *bdg_format;
-    GtkWidget *bdg_chip;
-
-    /* 6-Column Homogeneous Counter Strip (reflows to 3x2 when <760px) */
-    GtkWidget *cnt_grid;
-    GtkWidget *cnt_cells[6];
-    GtkWidget *cnt_sub;
-    GtkWidget *cnt_voices;
-    GtkWidget *cnt_timing;
-    GtkWidget *cnt_clock;
-    GtkWidget *cnt_time;
-
-    /* Transport & Subsong */
-    GtkWidget *lbl_t0;
-    GtkWidget *lbl_t1;
-    GtkWidget *seek_scale;
-    GtkWidget *btn_play;
-    GtkWidget *lbl_sub_readout;
-    GtkWidget *lbl_vol_readout;
-    int        sub_cur;
-    int        sub_max;
-    gboolean   playing;
-
-    /* DSP Strip */
-    GtkWidget    *loop_seg;
-    GtkWidget    *grp_filter;
-    GtkWidget    *grp_led;
-    GtkWidget    *grp_sid;
-    GtkWidget    *grp_tempo;
-    GtkWidget    *scale_sep;
-    GtkWidget    *lbl_sep_readout;
-    GtkWidget    *lbl_tempo_readout;
-    GtkWidget    *scale_tempo;
-    guint         cfg_sub_id;
-
-    /* Voice Header & Scope/FFT */
-    GtkWidget *ch_grid;
-    GtkWidget *ch_pills[4];
-    GtkWidget *ch_names[4];
-    GtkWidget *ch_vus[4];
-    GtkWidget *ch_btn_m[4];
-    GtkWidget *ch_btn_s[4];
-    GtkWidget *scope_area;
-    GtkWidget *fft_area;
-
-    /* Zone 6: Inspector & Controlled Niri Column Reflow (<760px vs >=760px) */
-    GtkWidget *bdg_col_mode;
-    GtkWidget *box_narrow_tabs;
-    GtkWidget *btn_tab_samples;
-    GtkWidget *btn_tab_stil;
-    GtkWidget *col_samples;
-    GtkWidget *col_stil;
-    GtkWidget *lbl_sample_hdr_left;
-    GtkWidget *lbl_sample_hdr_right;
-    GtkWidget *lbl_stil_hdr_right;
-    GtkWidget *box_sample_rows;
-    GtkTextBuffer *stil_buffer;
-    gboolean   is_narrow_column;
-    gboolean   narrow_show_stil;
-
-    /* Zone 6B: Docked Playlist Queue */
-    GtkWidget *lbl_pl_title;
-    GtkWidget *pl_listbox;
-    GtkWidget *entry_filter;
-
-    /* Zone 7: Status Bar */
-    GtkWidget *lbl_status_engine;
-    GtkWidget *bdg_mode;
-};
+#include "mod_window_private.h"
 
 G_DEFINE_TYPE(KajoModWindow, kajo_mod_window, GTK_TYPE_APPLICATION_WINDOW)
 
@@ -114,16 +18,16 @@ seg_btn_ctx_free(gpointer data, GClosure *closure G_GNUC_UNUSED)
     g_free(ctx);
 }
 
-static GWeakRef *
-weak_ref_new(gpointer obj)
+GWeakRef *
+mod_window_weak_ref_new(gpointer obj)
 {
     GWeakRef *wr = g_new0(GWeakRef, 1);
     g_weak_ref_init(wr, obj);
     return wr;
 }
 
-static void
-weak_ref_free(gpointer data)
+void
+mod_window_weak_ref_free(gpointer data)
 {
     GWeakRef *wr = (GWeakRef *)data;
     if (!wr) return;
@@ -199,9 +103,6 @@ on_mod_config_changed(KajoConfigStore *store G_GNUC_UNUSED,
     apply_shell_config_to_mod(self, TRUE);
 }
 
-static void activate_playlist_index(KajoModWindow *self, int idx);
-static void rebuild_playlist_rows(KajoModWindow *self);
-
 static void
 on_close_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
@@ -223,8 +124,9 @@ update_subsong_labels(KajoModWindow *self)
     gtk_label_set_text(GTK_LABEL(self->lbl_sub_readout), rd);
 }
 
-static void
-append_row_label(GtkWidget *row, const char *text, const char *css, int width, float xalign, gboolean hexpand)
+void
+mod_window_append_row_label(GtkWidget *row, const char *text, const char *css,
+                            int width, float xalign, gboolean hexpand)
 {
     GtkWidget *l = gtk_label_new(text ? text : "");
     if (css) gtk_widget_add_css_class(l, css);
@@ -238,8 +140,8 @@ append_row_label(GtkWidget *row, const char *text, const char *css, int width, f
     gtk_box_append(GTK_BOX(row), l);
 }
 
-static GtkWidget *
-create_nav_button(const char *label, GCallback cb, gpointer user_data)
+GtkWidget *
+mod_window_create_nav_button(const char *label, GCallback cb, gpointer user_data)
 {
     GtkWidget *btn = gtk_button_new_with_label(label);
     gtk_widget_add_css_class(btn, "files-nav-btn");
@@ -248,8 +150,8 @@ create_nav_button(const char *label, GCallback cb, gpointer user_data)
     return btn;
 }
 
-static GtkWidget *
-create_badge_label(const char *text, const char *extra_css)
+GtkWidget *
+mod_window_create_badge_label(const char *text, const char *extra_css)
 {
     GtkWidget *l = gtk_label_new(text);
     gtk_widget_add_css_class(l, "shell-popover-badge");
@@ -259,7 +161,8 @@ create_badge_label(const char *text, const char *extra_css)
 }
 
 static GtkWidget *
-create_scale_widget(double min_v, double max_v, double init_v, const char *css, int min_w, GCallback cb, gpointer user_data)
+create_scale_widget(double min_v, double max_v, double init_v, const char *css,
+                    int min_w, GCallback cb, gpointer user_data)
 {
     GtkWidget *s = gtk_scale_new_with_range(GTK_ORIENTATION_HORIZONTAL, min_v, max_v, 1.0);
     gtk_scale_set_draw_value(GTK_SCALE(s), FALSE);
@@ -271,47 +174,8 @@ create_scale_widget(double min_v, double max_v, double init_v, const char *css, 
     return s;
 }
 
-static void
-populate_inspector_rows_from_array(KajoModWindow          *self,
-                                   const KajoModSampleRow *rows,
-                                   int                     n_rows)
-{
-    GtkWidget *child = NULL;
-    while ((child = gtk_widget_get_first_child(self->box_sample_rows)) != NULL) {
-        gtk_box_remove(GTK_BOX(self->box_sample_rows), child);
-    }
-
-    for (int i = 0; i < n_rows; i++) {
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-        gtk_widget_add_css_class(row, "mod-sample-row");
-        append_row_label(row, rows[i].idx_hex,    NULL, 24, 0.0f, FALSE);
-        append_row_label(row, rows[i].ascii_name, NULL, -1, 0.0f, TRUE);
-        append_row_label(row, rows[i].length,     NULL, 52, 1.0f, FALSE);
-        append_row_label(row, rows[i].loop,       NULL, 74, 1.0f, FALSE);
-        append_row_label(row, rows[i].vol,        NULL, 64, 1.0f, FALSE);
-        gtk_box_append(GTK_BOX(self->box_sample_rows), row);
-    }
-}
-
-static void
-update_live_inspector_rows(KajoModWindow *self, const KajoModTelemetry *tel)
-{
-    if (!tel || !tel->has_live_rows || tel->n_live_rows <= 0) return;
-    GtkWidget *row = gtk_widget_get_first_child(self->box_sample_rows);
-    for (int i = 0; i < tel->n_live_rows && row != NULL; i++) {
-        const KajoModSampleRow *r = &tel->live_rows[i];
-        const char *vals[5] = { r->idx_hex, r->ascii_name, r->length, r->loop, r->vol };
-        GtkWidget *cell = gtk_widget_get_first_child(row);
-        for (int c = 0; c < 5 && cell != NULL; c++) {
-            if (GTK_IS_LABEL(cell)) gtk_label_set_text(GTK_LABEL(cell), vals[c]);
-            cell = gtk_widget_get_next_sibling(cell);
-        }
-        row = gtk_widget_get_next_sibling(row);
-    }
-}
-
-static void
-reset_ui_to_idle_state(KajoModWindow *self)
+void
+mod_window_reset_ui_to_idle(KajoModWindow *self)
 {
     if (!self) return;
     gtk_label_set_text(GTK_LABEL(self->hdr_engine_badge), "IDLE • READY");
@@ -353,7 +217,7 @@ reset_ui_to_idle_state(KajoModWindow *self)
     gtk_label_set_text(GTK_LABEL(self->lbl_sample_hdr_left), "SAMPLES / INSTRUMENTS / REGISTERS");
     gtk_label_set_text(GTK_LABEL(self->lbl_sample_hdr_right), "IDLE");
     gtk_label_set_text(GTK_LABEL(self->lbl_stil_hdr_right), "NONE");
-    populate_inspector_rows_from_array(self, NULL, 0);
+    mod_inspector_populate_rows(self, NULL, 0);
     gtk_text_buffer_set_text(self->stil_buffer, "", -1);
 
     gtk_label_set_text(GTK_LABEL(self->lbl_status_engine),
@@ -411,11 +275,11 @@ apply_metadata_to_ui(KajoModWindow *self, const KajoModMetadata *m)
                        m->stil_hdr_right ? m->stil_hdr_right : "INFO");
 
     if (m->samples && m->samples->len > 0) {
-        populate_inspector_rows_from_array(self,
-                                           (const KajoModSampleRow *)m->samples->data,
-                                           (int)m->samples->len);
+        mod_inspector_populate_rows(self,
+                                    (const KajoModSampleRow *)m->samples->data,
+                                    (int)m->samples->len);
     } else {
-        populate_inspector_rows_from_array(self, NULL, 0);
+        mod_inspector_populate_rows(self, NULL, 0);
     }
     gtk_text_buffer_set_text(self->stil_buffer, m->stil_text ? m->stil_text : "", -1);
     gtk_label_set_text(GTK_LABEL(self->lbl_status_engine),
@@ -528,14 +392,14 @@ static void on_sub_next_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
 static void on_prev_track_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
     KajoModWindow *self = KAJO_MOD_WINDOW(d);
     if (self->sub_cur > 1) switch_subsong(self, self->sub_cur - 1);
-    else if (self->active_pl_index > 0) activate_playlist_index(self, self->active_pl_index - 1);
+    else if (self->active_pl_index > 0) mod_window_activate_playlist_index(self, self->active_pl_index - 1);
 }
 
 static void on_next_track_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
     KajoModWindow *self = KAJO_MOD_WINDOW(d);
     if (self->sub_cur < self->sub_max) switch_subsong(self, self->sub_cur + 1);
     else if (self->playlist && self->active_pl_index + 1 < (int)self->playlist->items->len)
-        activate_playlist_index(self, self->active_pl_index + 1);
+        mod_window_activate_playlist_index(self, self->active_pl_index + 1);
 }
 
 static void on_play_toggle_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
@@ -543,7 +407,7 @@ static void on_play_toggle_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
     if (!kajo_mod_audio_is_active(self->audio)) {
         if (self->playlist && self->playlist->items->len > 0) {
             int idx = (self->active_pl_index >= 0) ? self->active_pl_index : 0;
-            activate_playlist_index(self, idx);
+            mod_window_activate_playlist_index(self, idx);
         }
         return;
     }
@@ -651,61 +515,9 @@ on_solo_clicked(GtkButton *btn, gpointer user_data)
     sync_channel_mute_state(self);
 }
 
-static void
-reflow_grid_items(GtkWidget *grid, GtkWidget **items, int count, int cols)
-{
-    if (!grid || !items[0]) return;
-    for (int i = 0; i < count; i++) {
-        g_object_ref(items[i]);
-        gtk_grid_remove(GTK_GRID(grid), items[i]);
-    }
-    for (int i = 0; i < count; i++) {
-        gtk_grid_attach(GTK_GRID(grid), items[i], i % cols, i / cols, 1, 1);
-        g_object_unref(items[i]);
-    }
-}
-
-static void
-apply_inspector_responsive_reflow(KajoModWindow *self, int width)
-{
-    if (!self || !self->col_samples || !self->col_stil) return;
-
-    int effective_w = (self->sim_col_width >= 480) ? self->sim_col_width : width;
-    gboolean narrow = (effective_w > 0 && effective_w < 760);
-    self->is_narrow_column = narrow;
-
-    reflow_grid_items(self->cnt_grid, self->cnt_cells, 6, narrow ? 3 : 6);
-    reflow_grid_items(self->ch_grid, self->ch_pills, 4, narrow ? 2 : 4);
-
-    gtk_widget_set_visible(self->bdg_col_mode, !narrow);
-    gtk_widget_set_visible(self->box_narrow_tabs, narrow);
-    gtk_widget_set_visible(self->col_samples, !narrow || !self->narrow_show_stil);
-    gtk_widget_set_visible(self->col_stil, !narrow || self->narrow_show_stil);
-    if (!narrow)
-        gtk_widget_add_css_class(self->col_samples, "mod-inspector-left");
-    else
-        gtk_widget_remove_css_class(self->col_samples, "mod-inspector-left");
-}
-
-static void on_narrow_tab_samples_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    self->narrow_show_stil = FALSE;
-    gtk_widget_add_css_class(self->btn_tab_samples, "active");
-    gtk_widget_remove_css_class(self->btn_tab_stil, "active");
-    apply_inspector_responsive_reflow(self, gtk_widget_get_width(GTK_WIDGET(self)));
-}
-
-static void on_narrow_tab_stil_clicked(GtkButton *b G_GNUC_UNUSED, gpointer d) {
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    self->narrow_show_stil = TRUE;
-    gtk_widget_remove_css_class(self->btn_tab_samples, "active");
-    gtk_widget_add_css_class(self->btn_tab_stil, "active");
-    apply_inspector_responsive_reflow(self, gtk_widget_get_width(GTK_WIDGET(self)));
-}
-
 static void on_surface_width_changed(GdkSurface *surface, GParamSpec *p G_GNUC_UNUSED, gpointer d) {
     int w = gdk_surface_get_width(surface);
-    if (w > 0) apply_inspector_responsive_reflow(KAJO_MOD_WINDOW(d), w);
+    if (w > 0) mod_inspector_apply_responsive_reflow(KAJO_MOD_WINDOW(d), w);
 }
 
 static void on_window_realize(GtkWidget *widget, gpointer d G_GNUC_UNUSED) {
@@ -714,7 +526,7 @@ static void on_window_realize(GtkWidget *widget, gpointer d G_GNUC_UNUSED) {
     if (surface) {
         g_signal_connect_object(surface, "notify::width", G_CALLBACK(on_surface_width_changed), self, 0);
         int w = gdk_surface_get_width(surface);
-        if (w > 0) apply_inspector_responsive_reflow(self, w);
+        if (w > 0) mod_inspector_apply_responsive_reflow(self, w);
     }
 }
 
@@ -760,7 +572,7 @@ on_ui_tick(gpointer user_data)
         gtk_label_set_text(GTK_LABEL(self->cnt_clock), snap.telemetry.cnt_clock);
     if (snap.telemetry.bdg_chip[0])
         gtk_label_set_text(GTK_LABEL(self->bdg_chip), snap.telemetry.bdg_chip);
-    update_live_inspector_rows(self, &snap.telemetry);
+    mod_inspector_update_live_rows(self, &snap.telemetry);
 
     if (snap.playing) {
         kajo_mod_scope_set_pcm(self->scope_area, snap.scope_l, snap.scope_r, KAJO_MOD_SCOPE_SAMPLES);
@@ -771,7 +583,7 @@ on_ui_tick(gpointer user_data)
         if (self->dsp.end_action == KAJO_MOD_END_NEXT_SUB && self->sub_cur < self->sub_max) {
             switch_subsong(self, self->sub_cur + 1);
         } else if (self->playlist && self->active_pl_index + 1 < (int)self->playlist->items->len) {
-            activate_playlist_index(self, self->active_pl_index + 1);
+            mod_window_activate_playlist_index(self, self->active_pl_index + 1);
         } else {
             self->playing = FALSE;
             gtk_button_set_label(GTK_BUTTON(self->btn_play), "▶ PLAY");
@@ -780,54 +592,8 @@ on_ui_tick(gpointer user_data)
     return G_SOURCE_CONTINUE;
 }
 
-static void
-rebuild_playlist_rows(KajoModWindow *self)
-{
-    GtkWidget *child = NULL;
-    while ((child = gtk_widget_get_first_child(self->pl_listbox)) != NULL) {
-        gtk_list_box_remove(GTK_LIST_BOX(self->pl_listbox), child);
-    }
-
-    guint count = self->playlist ? self->playlist->items->len : 0;
-    g_autofree gchar *hdr = g_strdup_printf("📂 PLAYLIST & ARCHIVE QUEUE (%u TRACK%s)",
-                                            count, count == 1 ? "" : "S");
-    gtk_label_set_text(GTK_LABEL(self->lbl_pl_title), hdr);
-
-    const char *q = gtk_editable_get_text(GTK_EDITABLE(self->entry_filter));
-    g_autofree gchar *q_low = g_ascii_strdown(q ? q : "", -1);
-
-    for (guint i = 0; i < count; i++) {
-        KajoModPlaylistItem *it = g_ptr_array_index(self->playlist->items, i);
-        GtkWidget *rbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-        g_autofree gchar *num_str = g_strdup_printf("%02u", i + 1);
-
-        append_row_label(rbox, num_str, "mod-pl-text", 22, 0.0f, FALSE);
-        append_row_label(rbox, it->display_title ? it->display_title : "Track", "mod-pl-text", -1, 0.0f, TRUE);
-
-        GtkWidget *l_b = gtk_label_new(it->badge ? it->badge : "MOD");
-        gtk_widget_add_css_class(l_b, "shell-popover-badge");
-        if (it->badge_css && it->badge_css[0] != '\0')
-            gtk_widget_add_css_class(l_b, it->badge_css);
-        gtk_widget_set_valign(l_b, GTK_ALIGN_CENTER);
-        gtk_box_append(GTK_BOX(rbox), l_b);
-
-        append_row_label(rbox, it->sub_text ? it->sub_text : "1 SUB", "mod-pl-text", 40, 0.0f, FALSE);
-        append_row_label(rbox, it->dur_text ? it->dur_text : "--:--", "mod-pl-text", 40, 1.0f, FALSE);
-
-        GtkWidget *row = gtk_list_box_row_new();
-        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), rbox);
-
-        g_autofree gchar *t_low = g_ascii_strdown(it->display_title ? it->display_title : "", -1);
-        g_autofree gchar *b_low = g_ascii_strdown(it->badge ? it->badge : "", -1);
-        gboolean match = (!q_low[0] || strstr(t_low, q_low) != NULL || strstr(b_low, q_low) != NULL);
-        gtk_widget_set_visible(row, match);
-
-        gtk_list_box_append(GTK_LIST_BOX(self->pl_listbox), row);
-    }
-}
-
-static void
-activate_playlist_index(KajoModWindow *self, int idx)
+void
+mod_window_activate_playlist_index(KajoModWindow *self, int idx)
 {
     if (!self->playlist || idx < 0 || idx >= (int)self->playlist->items->len) return;
     self->active_pl_index = idx;
@@ -845,7 +611,7 @@ activate_playlist_index(KajoModWindow *self, int idx)
     }
 
     kajo_mod_playlist_item_update_from_meta(it, &eng->meta);
-    rebuild_playlist_rows(self);
+    mod_inspector_rebuild_playlist_rows(self);
     apply_metadata_to_ui(self, &eng->meta);
     self->playing = TRUE;
     gtk_button_set_label(GTK_BUTTON(self->btn_play), "▶ PLAY");
@@ -855,90 +621,6 @@ activate_playlist_index(KajoModWindow *self, int idx)
     if (row && gtk_list_box_get_selected_row(GTK_LIST_BOX(self->pl_listbox)) != row) {
         gtk_list_box_select_row(GTK_LIST_BOX(self->pl_listbox), row);
     }
-}
-
-static void on_pl_row_selected(GtkListBox *box G_GNUC_UNUSED, GtkListBoxRow *row, gpointer d) {
-    if (!row) return;
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    int idx = gtk_list_box_row_get_index(row);
-    if (idx >= 0 && idx != self->active_pl_index) activate_playlist_index(self, idx);
-}
-
-static void on_filter_changed(GtkEditable *editable G_GNUC_UNUSED, gpointer d) {
-    rebuild_playlist_rows(KAJO_MOD_WINDOW(d));
-}
-
-static void on_add_files_finish(GObject *source, GAsyncResult *res, gpointer user_data) {
-    GWeakRef *wr = (GWeakRef *)user_data;
-    g_autoptr(GError) err = NULL;
-    g_autoptr(GListModel) files = gtk_file_dialog_open_multiple_finish(GTK_FILE_DIALOG(source), res, &err);
-    g_autoptr(KajoModWindow) self = g_weak_ref_get(wr);
-    weak_ref_free(wr);
-    if (!self || !files || err) return;
-
-    guint n = g_list_model_get_n_items(files);
-    g_autoptr(GPtrArray) paths = g_ptr_array_new_with_free_func(g_free);
-    for (guint i = 0; i < n; i++) {
-        g_autoptr(GFile) f = g_list_model_get_item(files, i);
-        gchar *p = g_file_get_path(f);
-        if (p) g_ptr_array_add(paths, p);
-    }
-    if (paths->len > 0)
-        kajo_mod_window_open_paths(self, (const char * const *)paths->pdata, (int)paths->len);
-}
-
-static void on_add_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer d) {
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    g_autoptr(GtkFileDialog) dlg = gtk_file_dialog_new();
-    gtk_file_dialog_set_title(dlg, "Add Modules or Archives (.lha, .zip, .sid, .mod, ...)");
-    gtk_file_dialog_open_multiple(dlg, GTK_WINDOW(self), NULL, on_add_files_finish, weak_ref_new(self));
-}
-
-static void on_add_dir_finish(GObject *source, GAsyncResult *res, gpointer user_data) {
-    GWeakRef *wr = (GWeakRef *)user_data;
-    g_autoptr(GError) err = NULL;
-    g_autoptr(GFile) folder = gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(source), res, &err);
-    g_autoptr(KajoModWindow) self = g_weak_ref_get(wr);
-    weak_ref_free(wr);
-    if (!self || !folder || err) return;
-
-    g_autofree gchar *p = g_file_get_path(folder);
-    if (p) {
-        const char *paths[1] = { p };
-        kajo_mod_window_open_paths(self, paths, 1);
-    }
-}
-
-static void on_dir_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer d) {
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    g_autoptr(GtkFileDialog) dlg = gtk_file_dialog_new();
-    gtk_file_dialog_set_title(dlg, "Add Folder of Modules / HVSC / Archives");
-    gtk_file_dialog_select_folder(dlg, GTK_WINDOW(self), NULL, on_add_dir_finish, weak_ref_new(self));
-}
-
-static void on_rem_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer d) {
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    GtkListBoxRow *row = gtk_list_box_get_selected_row(GTK_LIST_BOX(self->pl_listbox));
-    if (!row) return;
-    int idx = gtk_list_box_row_get_index(row);
-    if (idx >= 0) {
-        kajo_mod_playlist_remove_at(self->playlist, (guint)idx);
-        if (self->playlist->items->len == 0) {
-            kajo_mod_audio_set_engine(self->audio, NULL, FALSE);
-            self->active_pl_index = -1;
-            reset_ui_to_idle_state(self);
-        }
-        rebuild_playlist_rows(self);
-    }
-}
-
-static void on_clr_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer d) {
-    KajoModWindow *self = KAJO_MOD_WINDOW(d);
-    kajo_mod_audio_set_engine(self->audio, NULL, FALSE);
-    kajo_mod_playlist_clear(self->playlist);
-    self->active_pl_index = -1;
-    reset_ui_to_idle_state(self);
-    rebuild_playlist_rows(self);
 }
 
 void
@@ -955,11 +637,11 @@ kajo_mod_window_open_paths(KajoModWindow *self, const char * const *paths, int n
             first_new_idx = (int)before;
         }
     }
-    rebuild_playlist_rows(self);
+    mod_inspector_rebuild_playlist_rows(self);
     if (first_new_idx >= 0 && first_new_idx < (int)self->playlist->items->len) {
-        activate_playlist_index(self, first_new_idx);
+        mod_window_activate_playlist_index(self, first_new_idx);
     } else if (self->playlist->items->len > 0) {
-        activate_playlist_index(self, 0);
+        mod_window_activate_playlist_index(self, 0);
     }
 }
 
@@ -981,7 +663,7 @@ kajo_mod_window_set_simulated_column_width(KajoModWindow *self, int col_width)
         gtk_window_set_child(GTK_WINDOW(self), hpaned);
         g_object_unref(self->root_vbox);
 
-        apply_inspector_responsive_reflow(self, col_width);
+        mod_inspector_apply_responsive_reflow(self, col_width);
     }
 }
 
@@ -1012,7 +694,8 @@ create_counter_cell(const char *lbl, const char *val, gboolean accent_val, gbool
 }
 
 static GtkWidget *
-create_dsp_seg_group(KajoModWindow *self, const char *title, int kind, const char *const *labels, int count, int active)
+create_dsp_seg_group(KajoModWindow *self, const char *title, int kind,
+                     const char *const *labels, int count, int active)
 {
     GtkWidget *grp = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 2);
     gtk_widget_add_css_class(grp, "mod-dsp-group");
@@ -1049,9 +732,9 @@ append_telemetry_and_transport(KajoModWindow *self, GtkWidget *top_vbox)
 
     GtkWidget *bdg_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
     gtk_widget_set_valign(bdg_box, GTK_ALIGN_CENTER);
-    self->bdg_engine = create_badge_label("UADE / SID / GME", "accent");
-    self->bdg_format = create_badge_label("--", NULL);
-    self->bdg_chip   = create_badge_label("48.0 kHz", "success");
+    self->bdg_engine = mod_window_create_badge_label("UADE / SID / GME", "accent");
+    self->bdg_format = mod_window_create_badge_label("--", NULL);
+    self->bdg_chip   = mod_window_create_badge_label("48.0 kHz", "success");
     gtk_box_append(GTK_BOX(bdg_box), self->bdg_engine);
     gtk_box_append(GTK_BOX(bdg_box), self->bdg_format);
     gtk_box_append(GTK_BOX(bdg_box), self->bdg_chip);
@@ -1118,13 +801,13 @@ append_telemetry_and_transport(KajoModWindow *self, GtkWidget *top_vbox)
     GtkWidget *btn_cluster = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 3);
     gtk_widget_set_valign(btn_cluster, GTK_ALIGN_CENTER);
 
-    self->btn_play = create_nav_button("▶ PLAY", G_CALLBACK(on_play_toggle_clicked), self);
+    self->btn_play = mod_window_create_nav_button("▶ PLAY", G_CALLBACK(on_play_toggle_clicked), self);
     gtk_widget_add_css_class(self->btn_play, "action-btn-primary");
-    gtk_box_append(GTK_BOX(btn_cluster), create_nav_button("⏮", G_CALLBACK(on_prev_track_clicked), self));
+    gtk_box_append(GTK_BOX(btn_cluster), mod_window_create_nav_button("⏮", G_CALLBACK(on_prev_track_clicked), self));
     gtk_box_append(GTK_BOX(btn_cluster), self->btn_play);
-    gtk_box_append(GTK_BOX(btn_cluster), create_nav_button("⏸", G_CALLBACK(on_play_toggle_clicked), self));
-    gtk_box_append(GTK_BOX(btn_cluster), create_nav_button("⏹", G_CALLBACK(on_stop_clicked), self));
-    gtk_box_append(GTK_BOX(btn_cluster), create_nav_button("⏭", G_CALLBACK(on_next_track_clicked), self));
+    gtk_box_append(GTK_BOX(btn_cluster), mod_window_create_nav_button("⏸", G_CALLBACK(on_play_toggle_clicked), self));
+    gtk_box_append(GTK_BOX(btn_cluster), mod_window_create_nav_button("⏹", G_CALLBACK(on_stop_clicked), self));
+    gtk_box_append(GTK_BOX(btn_cluster), mod_window_create_nav_button("⏭", G_CALLBACK(on_next_track_clicked), self));
 
     static const char *const k_loop_labels[] = { "ADVANCE", "LOOP", "FADE" };
     GtkWidget *loop_seg = build_segmented_group(self, 0, k_loop_labels, 3, (int)self->dsp.end_action);
@@ -1212,7 +895,8 @@ build_top_fixed_zones(KajoModWindow *self)
     gtk_box_append(GTK_BOX(self->grp_tempo), lbl_tmp);
     gtk_box_append(GTK_BOX(self->grp_tempo), self->scale_tempo);
     gtk_box_append(GTK_BOX(self->grp_tempo), self->lbl_tempo_readout);
-    gtk_box_append(GTK_BOX(self->grp_tempo), create_nav_button("1:1", G_CALLBACK(on_tempo_reset_clicked), self));
+    gtk_box_append(GTK_BOX(self->grp_tempo),
+                   mod_window_create_nav_button("1:1", G_CALLBACK(on_tempo_reset_clicked), self));
 
     gtk_grid_attach(GTK_GRID(dsp_row2), box_sep, 0, 0, 1, 1);
     gtk_grid_attach(GTK_GRID(dsp_row2), self->grp_tempo, 1, 0, 1, 1);
@@ -1289,154 +973,6 @@ build_top_fixed_zones(KajoModWindow *self)
     return top_vbox;
 }
 
-static GtkWidget *
-build_upper_inspector_card(KajoModWindow *self)
-{
-    GtkWidget *upper_card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_add_css_class(upper_card, "mod-pane-card");
-    gtk_widget_set_vexpand(upper_card, TRUE);
-
-    GtkWidget *up_tb = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_widget_add_css_class(up_tb, "mod-pane-toolbar");
-    append_row_label(up_tb, "📋 MODULE, HARDWARE & ARCHIVE INSPECTOR", "mod-pane-title", -1, 0.0f, TRUE);
-    self->bdg_col_mode = create_badge_label("2-COL SPLIT (≥760px)", NULL);
-
-    self->box_narrow_tabs = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_add_css_class(self->box_narrow_tabs, "segmented-group");
-    self->btn_tab_samples = create_nav_button("SAMPLES / VOICES", G_CALLBACK(on_narrow_tab_samples_clicked), self);
-    gtk_widget_add_css_class(self->btn_tab_samples, "active");
-    self->btn_tab_stil = create_nav_button("STIL / .NFO", G_CALLBACK(on_narrow_tab_stil_clicked), self);
-    gtk_box_append(GTK_BOX(self->box_narrow_tabs), self->btn_tab_samples);
-    gtk_box_append(GTK_BOX(self->box_narrow_tabs), self->btn_tab_stil);
-    gtk_widget_set_visible(self->box_narrow_tabs, FALSE);
-
-    gtk_box_append(GTK_BOX(up_tb), self->bdg_col_mode);
-    gtk_box_append(GTK_BOX(up_tb), self->box_narrow_tabs);
-
-    GtkWidget *insp_body = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
-    gtk_widget_set_vexpand(insp_body, TRUE);
-    gtk_widget_set_hexpand(insp_body, TRUE);
-
-    self->col_samples = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_add_css_class(self->col_samples, "mod-inspector-left");
-    gtk_widget_set_hexpand(self->col_samples, TRUE);
-    gtk_widget_set_vexpand(self->col_samples, TRUE);
-
-    GtkWidget *s_hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_widget_add_css_class(s_hdr, "mod-subcol-hdr");
-    self->lbl_sample_hdr_left = gtk_label_new("SAMPLES / INSTRUMENTS / REGISTERS");
-    gtk_label_set_xalign(GTK_LABEL(self->lbl_sample_hdr_left), 0.0f);
-    gtk_label_set_ellipsize(GTK_LABEL(self->lbl_sample_hdr_left), PANGO_ELLIPSIZE_END);
-    gtk_widget_set_hexpand(self->lbl_sample_hdr_left, TRUE);
-    self->lbl_sample_hdr_right = gtk_label_new("IDLE");
-    gtk_widget_add_css_class(self->lbl_sample_hdr_right, "mod-counter-val");
-    gtk_widget_add_css_class(self->lbl_sample_hdr_right, "accent");
-    gtk_box_append(GTK_BOX(s_hdr), self->lbl_sample_hdr_left);
-    gtk_box_append(GTK_BOX(s_hdr), self->lbl_sample_hdr_right);
-
-    GtkWidget *s_scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(s_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(s_scroll, TRUE);
-    self->box_sample_rows = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(s_scroll), self->box_sample_rows);
-    gtk_box_append(GTK_BOX(self->col_samples), s_hdr);
-    gtk_box_append(GTK_BOX(self->col_samples), s_scroll);
-
-    self->col_stil = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_hexpand(self->col_stil, TRUE);
-    gtk_widget_set_vexpand(self->col_stil, TRUE);
-
-    GtkWidget *m_hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    gtk_widget_add_css_class(m_hdr, "mod-subcol-hdr");
-    append_row_label(m_hdr, "ARCHIVE .NFO / HVSC STIL / SONG MESSAGE", NULL, -1, 0.0f, TRUE);
-    self->lbl_stil_hdr_right = create_badge_label("NONE", "warning");
-    gtk_box_append(GTK_BOX(m_hdr), self->lbl_stil_hdr_right);
-
-    GtkWidget *m_scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(m_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(m_scroll, TRUE);
-
-    GtkWidget *stil_tv = gtk_text_view_new();
-    gtk_widget_add_css_class(stil_tv, "mod-stil-view");
-    gtk_text_view_set_editable(GTK_TEXT_VIEW(stil_tv), FALSE);
-    gtk_text_view_set_cursor_visible(GTK_TEXT_VIEW(stil_tv), FALSE);
-    gtk_text_view_set_wrap_mode(GTK_TEXT_VIEW(stil_tv), GTK_WRAP_WORD_CHAR);
-    gtk_text_view_set_left_margin(GTK_TEXT_VIEW(stil_tv), 8);
-    gtk_text_view_set_right_margin(GTK_TEXT_VIEW(stil_tv), 8);
-    gtk_text_view_set_top_margin(GTK_TEXT_VIEW(stil_tv), 6);
-    gtk_text_view_set_bottom_margin(GTK_TEXT_VIEW(stil_tv), 6);
-    self->stil_buffer = gtk_text_view_get_buffer(GTK_TEXT_VIEW(stil_tv));
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(m_scroll), stil_tv);
-
-    gtk_box_append(GTK_BOX(self->col_stil), m_hdr);
-    gtk_box_append(GTK_BOX(self->col_stil), m_scroll);
-
-    gtk_box_append(GTK_BOX(insp_body), self->col_samples);
-    gtk_box_append(GTK_BOX(insp_body), self->col_stil);
-    gtk_box_append(GTK_BOX(upper_card), up_tb);
-    gtk_box_append(GTK_BOX(upper_card), insp_body);
-    return upper_card;
-}
-
-static GtkWidget *
-build_expanding_paned(KajoModWindow *self)
-{
-    GtkWidget *paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
-    gtk_widget_set_vexpand(paned, TRUE);
-    gtk_widget_set_hexpand(paned, TRUE);
-    gtk_widget_set_margin_start(paned, 8);
-    gtk_widget_set_margin_end(paned, 8);
-    gtk_widget_set_margin_top(paned, 5);
-    gtk_widget_set_margin_bottom(paned, 6);
-    gtk_paned_set_resize_start_child(GTK_PANED(paned), TRUE);
-    gtk_paned_set_shrink_start_child(GTK_PANED(paned), FALSE);
-    gtk_paned_set_resize_end_child(GTK_PANED(paned), TRUE);
-    gtk_paned_set_shrink_end_child(GTK_PANED(paned), FALSE);
-    gtk_paned_set_position(GTK_PANED(paned), 195);
-
-    GtkWidget *lower_card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_add_css_class(lower_card, "mod-pane-card");
-    gtk_widget_set_vexpand(lower_card, TRUE);
-
-    GtkWidget *pl_tb = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
-    gtk_widget_add_css_class(pl_tb, "mod-pane-toolbar");
-    self->lbl_pl_title = gtk_label_new("📂 PLAYLIST & ARCHIVE QUEUE (0 TRACKS)");
-    gtk_widget_add_css_class(self->lbl_pl_title, "mod-pane-title");
-    gtk_label_set_xalign(GTK_LABEL(self->lbl_pl_title), 0.0f);
-    gtk_label_set_ellipsize(GTK_LABEL(self->lbl_pl_title), PANGO_ELLIPSIZE_END);
-    gtk_widget_set_hexpand(self->lbl_pl_title, TRUE);
-
-    self->entry_filter = gtk_entry_new();
-    gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_filter), "🔍 Filter...");
-    gtk_editable_set_width_chars(GTK_EDITABLE(self->entry_filter), 5);
-    gtk_editable_set_max_width_chars(GTK_EDITABLE(self->entry_filter), 12);
-    g_signal_connect(self->entry_filter, "changed", G_CALLBACK(on_filter_changed), self);
-
-    gtk_box_append(GTK_BOX(pl_tb), self->lbl_pl_title);
-    gtk_box_append(GTK_BOX(pl_tb), create_nav_button("+ ADD", G_CALLBACK(on_add_clicked), self));
-    gtk_box_append(GTK_BOX(pl_tb), create_nav_button("+ DIR", G_CALLBACK(on_dir_clicked), self));
-    gtk_box_append(GTK_BOX(pl_tb), create_nav_button("− REM", G_CALLBACK(on_rem_clicked), self));
-    gtk_box_append(GTK_BOX(pl_tb), create_nav_button("CLR",   G_CALLBACK(on_clr_clicked), self));
-    gtk_box_append(GTK_BOX(pl_tb), self->entry_filter);
-
-    GtkWidget *pl_scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(pl_scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_widget_set_vexpand(pl_scroll, TRUE);
-
-    self->pl_listbox = gtk_list_box_new();
-    gtk_widget_add_css_class(self->pl_listbox, "mod-pl-listbox");
-    gtk_list_box_set_selection_mode(GTK_LIST_BOX(self->pl_listbox), GTK_SELECTION_SINGLE);
-    g_signal_connect(self->pl_listbox, "row-selected", G_CALLBACK(on_pl_row_selected), self);
-
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(pl_scroll), self->pl_listbox);
-    gtk_box_append(GTK_BOX(lower_card), pl_tb);
-    gtk_box_append(GTK_BOX(lower_card), pl_scroll);
-
-    gtk_paned_set_start_child(GTK_PANED(paned), build_upper_inspector_card(self));
-    gtk_paned_set_end_child(GTK_PANED(paned), lower_card);
-    return paned;
-}
-
 static gboolean
 on_key_pressed(GtkEventControllerKey *ctrl G_GNUC_UNUSED,
                guint                  keyval,
@@ -1486,7 +1022,7 @@ kajo_mod_window_init(KajoModWindow *self)
 
     self->cfg_sub_id = kajo_config_store_subscribe(
         NULL, KAJO_CONFIG_DOMAIN_MOD, on_mod_config_changed,
-        weak_ref_new(self), weak_ref_free);
+        mod_window_weak_ref_new(self), mod_window_weak_ref_free);
 
     gtk_window_set_decorated(GTK_WINDOW(self), FALSE);
     gtk_window_set_title(GTK_WINDOW(self), "Kajo Mod");
@@ -1500,15 +1036,16 @@ kajo_mod_window_init(KajoModWindow *self)
     GtkWidget *hdr_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_add_css_class(hdr_bar, "settings-header-bar");
 
-    append_row_label(hdr_bar, "🎹 KAJO MOD", "settings-header-title", -1, 0.0f, FALSE);
-    self->hdr_engine_badge = create_badge_label("IDLE • READY", "accent");
+    mod_window_append_row_label(hdr_bar, "🎹 KAJO MOD", "settings-header-title", -1, 0.0f, FALSE);
+    self->hdr_engine_badge = mod_window_create_badge_label("IDLE • READY", "accent");
     gtk_label_set_ellipsize(GTK_LABEL(self->hdr_engine_badge), PANGO_ELLIPSIZE_END);
     gtk_box_append(GTK_BOX(hdr_bar), self->hdr_engine_badge);
 
     GtkWidget *hdr_spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
     gtk_widget_set_hexpand(hdr_spacer, TRUE);
     gtk_box_append(GTK_BOX(hdr_bar), hdr_spacer);
-    gtk_box_append(GTK_BOX(hdr_bar), create_nav_button("🗗 FLOAT / TILE", G_CALLBACK(on_float_tile_clicked), self));
+    gtk_box_append(GTK_BOX(hdr_bar),
+                   mod_window_create_nav_button("🗗 FLOAT / TILE", G_CALLBACK(on_float_tile_clicked), self));
 
     GtkWidget *btn_close = gtk_button_new_with_label("✕");
     gtk_widget_add_css_class(btn_close, "settings-close-btn");
@@ -1519,11 +1056,11 @@ kajo_mod_window_init(KajoModWindow *self)
     gtk_window_handle_set_child(GTK_WINDOW_HANDLE(win_handle), hdr_bar);
     gtk_box_append(GTK_BOX(self->root_vbox), win_handle);
     gtk_box_append(GTK_BOX(self->root_vbox), build_top_fixed_zones(self));
-    gtk_box_append(GTK_BOX(self->root_vbox), build_expanding_paned(self));
+    gtk_box_append(GTK_BOX(self->root_vbox), mod_inspector_build_paned(self));
 
     GtkWidget *status_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
     gtk_widget_add_css_class(status_bar, "mod-status-bar");
-    append_row_label(status_bar, "● PW 48kHz/S16 │", NULL, -1, 0.0f, FALSE);
+    mod_window_append_row_label(status_bar, "● PW 48kHz/S16 │", NULL, -1, 0.0f, FALSE);
 
     self->lbl_status_engine = gtk_label_new("");
     gtk_label_set_ellipsize(GTK_LABEL(self->lbl_status_engine), PANGO_ELLIPSIZE_END);
@@ -1532,9 +1069,9 @@ kajo_mod_window_init(KajoModWindow *self)
     gtk_widget_set_valign(self->lbl_status_engine, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(status_bar), self->lbl_status_engine);
 
-    self->bdg_mode = create_badge_label("IDLE", NULL);
+    self->bdg_mode = mod_window_create_badge_label("IDLE", NULL);
     gtk_box_append(GTK_BOX(status_bar), self->bdg_mode);
-    append_row_label(status_bar, "SPACE:PLAY  ALT+◀/▶:SUB", NULL, -1, 1.0f, FALSE);
+    mod_window_append_row_label(status_bar, "SPACE:PLAY  ALT+◀/▶:SUB", NULL, -1, 1.0f, FALSE);
     gtk_box_append(GTK_BOX(self->root_vbox), status_bar);
 
     GtkEventController *key_ctrl = gtk_event_controller_key_new();
@@ -1545,8 +1082,8 @@ kajo_mod_window_init(KajoModWindow *self)
     g_signal_connect(self, "map", G_CALLBACK(on_window_map), NULL);
     g_signal_connect(self, "unmap", G_CALLBACK(on_window_unmap), NULL);
 
-    reset_ui_to_idle_state(self);
-    rebuild_playlist_rows(self);
+    mod_window_reset_ui_to_idle(self);
+    mod_inspector_rebuild_playlist_rows(self);
 
     self->tick_id = g_timeout_add(50, on_ui_tick, self);
 }
@@ -1569,6 +1106,6 @@ kajo_mod_window_new(GtkApplication *app, int initial_width, int initial_height)
                                        "default-width", w,
                                        "default-height", h,
                                        NULL);
-    apply_inspector_responsive_reflow(self, w);
+    mod_inspector_apply_responsive_reflow(self, w);
     return self;
 }

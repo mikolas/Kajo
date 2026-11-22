@@ -1,0 +1,1183 @@
+/* ─── Pure Flat Metro Popovers (GTK4 Clean Selectors) ─── */
+/* ═══════════════════════════════════════════════ */
+
+popover,
+popover.shell-popover,
+window.shell-settings-window popover {
+    background: transparent;
+    background-image: none;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+popover > contents,
+popover contents {
+    background-color: @metro-glass-bg;
+    background-image: none;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    outline: none;
+    padding: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+popover contents:focus {
+    border-color: @metro-accent;
+}
+
+/* Right-click code menu (go to definition, rename, …) in kajo-ide and any
+ * GtkTextView context menu: match the zero-radius Aero+Metro popover look. */
+popover.menu modelbutton {
+    border-radius: 0px;
+    padding: 4px 10px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+popover.menu modelbutton:hover {
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+popover.menu separator {
+    background-color: @metro-border;
+    min-height: 1px;
+    margin: 2px 0;
+}
+
+popover > arrow {
+    background-color: @metro-glass-bg;
+    border: 1px solid @metro-accent;
+}
+
+/* ─── Standard Popover Width Tiers ─── */
+.popover-compact {
+    min-width: 280px;
+}
+
+.popover-medium,
+.popover-standard {
+    min-width: 380px;
+}
+
+.popover-expanded,
+.popover-wide {
+    min-width: 480px;
+}
+
+/* ─── 3-Zone Architecture & Canonical Typography ─── */
+.shell-popover-header,
+popover .shell-popover-header,
+window.shell-settings-window popover .shell-popover-header {
+    background-color: @metro-glass-header;
+    padding: 10px 14px;
+    border-bottom: 1px solid @metro-glass-border;
+}
+
+.shell-popover-title,
+.heading,
+.shell-popover-section-title,
+.settings-section-title {
+    font-size: 13px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: @metro-accent;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.row-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+}
+
+.row-subtitle,
+.dim-label {
+    font-size: 12px;
+    color: @metro-fg-secondary;
+}
+
+.shell-popover-subtitle {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    color: @metro-fg-secondary;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.empty-state-label,
+.shell-device-placeholder {
+    font-size: 12px;
+    color: @metro-fg-secondary;
+    padding: 12px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.shell-popover-badge {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: @metro-fg-primary;
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    border-radius: 0px;
+    padding: 2px 6px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+.shell-popover-badge.accent,
+.shell-popover-badge.active {
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+    border-color: @metro-fg-primary;
+}
+
+.shell-popover-badge.urgent,
+.shell-popover-badge.peak-clip {
+    background-color: @metro-urgent;
+    color: @metro-fg-primary;
+    border-color: @metro-urgent;
+}
+
+.shell-popover-badge.peak-warn {
+    background-color: alpha(@metro-warning, 0.18);
+    color: @metro-warning;
+    border-color: @metro-warning;
+}
+
+.shell-popover-badge.success {
+    background-color: alpha(@metro-success, 0.22);
+    color: @metro-fg-primary;
+    border-color: @metro-success;
+}
+
+.code-preview-box {
+    background-color: @metro-glass-well;
+    border: 1px solid @metro-glass-border;
+    border-left: 3px solid @metro-accent;
+    padding: 12px 14px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: @metro-fg-primary;
+}
+
+.shell-popover-body {
+    padding: 12px 14px;
+}
+
+.shell-popover-footer,
+popover .shell-popover-footer,
+window.shell-settings-window popover .shell-popover-footer {
+    background-color: @metro-glass-header;
+    padding: 10px 14px;
+    border-top: 1px solid @metro-glass-border;
+}
+
+.shell-popover-list {
+    background: transparent;
+    border: none;
+    padding: 0px;
+    margin-bottom: 6px;
+}
+
+.shell-popover-list > row {
+    padding: 0px;
+    margin: 0px;
+    border: none;
+    background: transparent;
+}
+
+/* ─── Uniform Row Item Indicators ─── */
+.shell-row-item,
+.shell-device-row {
+    padding: 7px 10px;
+    border-radius: 0px;
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    border-left: 3px solid transparent;
+}
+
+.shell-row-item:hover,
+.shell-device-row:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+}
+
+.shell-row-item.active,
+.shell-row-item.connected,
+.shell-device-row.active,
+.shell-device-row.connected {
+    border-color: @metro-accent;
+    border-left: 3px solid @metro-fg-primary;
+    background-color: alpha(@metro-accent, 0.35);
+    color: @metro-fg-primary;
+}
+
+.shell-row-item.urgent,
+.shell-row-item.error {
+    border-left: 3px solid @metro-urgent;
+    background-color: rgba(232, 17, 35, 0.14);
+}
+
+/* ─── Toggle Cards (.toggle-card; also the Control Center quick tiles) ─── */
+/* A feature toggle with a status line. State is shown by a 4px left indicator
+ * bar (same language as .shell-notification-card): dim when off, lit with
+ * @metro-accent when on. The card body only gets a faint tint so the title and
+ * subtitle keep their contrast. Use GtkToggleButton (:checked); the panel's
+ * Control Center tiles drive the equivalent .active class. */
+window.shell-settings-window button.toggle-card {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    border-left: 4px solid @metro-border;
+    border-radius: 0px;
+    padding: 8px 12px;
+    color: @metro-fg-primary;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-settings-window button.toggle-card:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    border-left-color: @metro-accent;
+}
+
+button.toggle-card,
+button.control-center-tile,
+popover button.toggle-card,
+popover button.control-center-tile,
+window.shell-settings-window popover button.toggle-card {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    border-left: 4px solid rgba(255, 255, 255, 0.22);
+    border-radius: 0px;
+    padding: 8px 12px;
+    color: @metro-fg-primary;
+    box-shadow: none;
+    outline: none;
+}
+
+button.toggle-card:hover,
+button.control-center-tile:hover,
+popover button.toggle-card:hover,
+popover button.control-center-tile:hover,
+window.shell-settings-window popover button.toggle-card:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    border-left-color: @metro-accent;
+}
+
+button.toggle-card:checked,
+button.control-center-tile.active,
+popover button.toggle-card:checked,
+popover button.control-center-tile.active,
+window.shell-settings-window button.toggle-card:checked,
+window.shell-settings-window popover button.toggle-card:checked {
+    background-color: alpha(@metro-accent, 0.18);
+    border-color: alpha(@metro-accent, 0.45);
+    border-left: 4px solid @metro-accent;
+    color: @metro-fg-primary;
+}
+
+button.toggle-card:checked:hover,
+button.control-center-tile.active:hover,
+popover button.toggle-card:checked:hover,
+popover button.control-center-tile.active:hover,
+window.shell-settings-window button.toggle-card:checked:hover,
+window.shell-settings-window popover button.toggle-card:checked:hover {
+    background-color: alpha(@metro-accent, 0.28);
+    border-color: @metro-accent;
+}
+
+button.toggle-card:disabled,
+button.control-center-tile:disabled,
+popover button.toggle-card:disabled,
+popover button.control-center-tile:disabled,
+window.shell-settings-window button.toggle-card:disabled {
+    opacity: 0.45;
+    border-left-color: @metro-glass-border;
+}
+
+.tile-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: @metro-fg-primary;
+}
+
+.tile-subtitle {
+    font-size: 11px;
+    color: @metro-fg-secondary;
+}
+
+/* ─── Media Artwork & Labels ─── */
+.shell-media-art {
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+}
+
+.shell-media-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+}
+
+.shell-media-artist {
+    font-size: 12px;
+    color: @metro-fg-secondary;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── OSD Overlays & Notification Toasts ─── */
+/* ═══════════════════════════════════════════════ */
+
+.shell-osd-card {
+    background-color: @metro-glass-bg;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 12px 18px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.72);
+}
+
+.shell-notification-card {
+    background-color: @metro-glass-bg;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-left: 4px solid @metro-accent;
+    border-radius: 0px;
+    padding: 12px 14px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.72);
+}
+
+.shell-notification-card.critical,
+.shell-notification-card.urgent {
+    border-color: @metro-urgent;
+    border-left: 4px solid @metro-urgent;
+}
+
+.shell-notification-card.critical .shell-popover-title,
+.shell-notification-card.urgent .shell-popover-title {
+    color: @metro-urgent-text;
+}
+
+.shell-osd-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+    min-width: 42px;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Metro Launcher Surface & Canonical Inputs ─── */
+/* ═══════════════════════════════════════════════ */
+
+.shell-launcher-card {
+    background-color: @metro-glass-bg;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 16px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+}
+
+window.shell-settings-window entry,
+window.shell-settings-window passwordentry,
+window.shell-settings-window searchentry {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    padding: 5px 10px;
+    min-height: 30px;
+    font-size: 14px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    outline: none;
+    box-shadow: none;
+}
+
+popover entry,
+popover passwordentry,
+popover searchentry,
+window.shell-settings-window popover entry,
+window.shell-settings-window popover passwordentry,
+window.shell-settings-window popover searchentry,
+.shell-launcher-input {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-glass-border;
+    border-radius: 0px;
+    padding: 5px 10px;
+    min-height: 30px;
+    font-size: 14px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    outline: none;
+    box-shadow: none;
+}
+
+window.shell-settings-window entry > text,
+window.shell-settings-window passwordentry > text,
+window.shell-settings-window searchentry > text,
+popover entry > text,
+popover passwordentry > text,
+popover searchentry > text,
+.shell-launcher-input > text {
+    background: transparent;
+    color: @metro-fg-primary;
+}
+
+window.shell-settings-window entry:focus,
+window.shell-settings-window entry:focus-within,
+window.shell-settings-window passwordentry:focus-within,
+window.shell-settings-window searchentry:focus-within {
+    border-color: @metro-accent;
+    background-color: #1e1e1e;
+    outline: none;
+    box-shadow: none;
+}
+
+popover entry:focus,
+popover entry:focus-within,
+popover passwordentry:focus-within,
+popover searchentry:focus-within,
+window.shell-settings-window popover entry:focus,
+window.shell-settings-window popover entry:focus-within,
+window.shell-settings-window popover passwordentry:focus-within,
+window.shell-settings-window popover searchentry:focus-within,
+.shell-launcher-input:focus,
+.shell-launcher-input:focus-within {
+    border-color: @metro-accent;
+    background-color: @metro-glass-hover;
+    outline: none;
+    box-shadow: none;
+}
+
+.shell-launcher-listbox {
+    background: transparent;
+    border: none;
+    margin-top: 8px;
+}
+
+.shell-launcher-row {
+    padding: 8px 12px;
+    border-radius: 0px;
+    border-left: 3px solid transparent;
+    background: transparent;
+    color: @metro-fg-primary;
+}
+
+.shell-launcher-row:hover {
+    background-color: @metro-glass-hover;
+}
+
+.shell-launcher-row label {
+    color: @metro-fg-primary;
+    font-size: 14px;
+}
+
+.shell-launcher-listbox row:selected .shell-launcher-row {
+    background-color: @metro-accent;
+    border-left: 3px solid @metro-fg-primary;
+}
+
+.shell-launcher-listbox row:selected .shell-launcher-row label {
+    color: @metro-fg-primary;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Canonical Buttons, Switches, Checks & Sliders ─── */
+/* ═══════════════════════════════════════════════ */
+
+menubutton,
+window.shell-settings-window menubutton,
+popover menubutton,
+dropdown,
+window.shell-settings-window dropdown,
+popover dropdown,
+window.shell-lock-window dropdown {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-settings-window button {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    color: #dddddd;
+    padding: 6px 12px;
+    min-height: 28px;
+    font-weight: 600;
+    font-size: 12px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-settings-window button:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover button,
+window.shell-settings-window popover button {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    border-radius: 0px;
+    color: #e6e6e6;
+    padding: 6px 12px;
+    min-height: 28px;
+    font-weight: 600;
+    font-size: 12px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    box-shadow: none;
+    outline: none;
+}
+
+popover button:hover,
+window.shell-settings-window popover button:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover button:active,
+popover button.active,
+window.shell-settings-window button:active,
+window.shell-settings-window button.active,
+window.shell-settings-window popover button:active,
+window.shell-settings-window popover button.active {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+/* Primary Accent CTA Button */
+popover button.action-btn-primary,
+popover button.files-accent-btn,
+window.shell-settings-window button.action-btn-primary,
+window.shell-settings-window button.files-accent-btn,
+window.shell-settings-window popover button.action-btn-primary,
+window.shell-settings-window popover button.files-accent-btn {
+    background-color: @metro-accent;
+    border: 1px solid @metro-accent;
+    color: @metro-fg-primary;
+    font-weight: 700;
+    padding: 6px 14px;
+}
+
+popover button.action-btn-primary:hover,
+popover button.files-accent-btn:hover,
+window.shell-settings-window button.action-btn-primary:hover,
+window.shell-settings-window button.files-accent-btn:hover,
+window.shell-settings-window popover button.action-btn-primary:hover,
+window.shell-settings-window popover button.files-accent-btn:hover {
+    background-color: @metro-accent-hover;
+    border-color: @metro-fg-primary;
+    color: @metro-fg-primary;
+}
+
+/* Compact Toolbar / Navigation Button */
+window.shell-settings-window button.files-nav-btn,
+window.shell-settings-window button.player-transport-btn,
+window.shell-settings-window menubutton.files-nav-btn > button {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px 8px;
+    border: 1px solid @metro-border;
+    background-color: @metro-surface-4;
+    color: @metro-fg-soft;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+window.shell-settings-window button.files-nav-btn:hover,
+window.shell-settings-window button.player-transport-btn:hover,
+window.shell-settings-window menubutton.files-nav-btn > button:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover button.files-nav-btn,
+popover button.player-transport-btn,
+window.shell-settings-window popover button.files-nav-btn,
+window.shell-settings-window popover button.player-transport-btn {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 2px 8px;
+    border: 1px solid @metro-glass-border;
+    background-color: @metro-glass-control;
+    color: #e6e6e6;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+popover button.files-nav-btn:hover,
+popover button.player-transport-btn:hover,
+window.shell-settings-window popover button.files-nav-btn:hover,
+window.shell-settings-window popover button.player-transport-btn:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover button.files-nav-btn.active,
+popover button.player-transport-btn.active,
+window.shell-settings-window button.files-nav-btn.active,
+window.shell-settings-window button.player-transport-btn.active,
+window.shell-settings-window popover button.files-nav-btn.active,
+window.shell-settings-window popover button.player-transport-btn.active,
+window.shell-settings-window menubutton.files-nav-btn > button:checked {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+/* Segmented Control Group (gallery §04): joined GtkToggleButtons, one active */
+.segmented-group {
+    background: none;
+}
+
+popover .segmented-group button,
+window.shell-settings-window .segmented-group button {
+    min-width: 0;
+    min-height: 26px;
+    padding: 2px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 0px;
+}
+
+popover .segmented-group button + button,
+window.shell-settings-window .segmented-group button + button {
+    margin-left: -1px;
+}
+
+popover .segmented-group button:checked,
+window.shell-settings-window .segmented-group button:checked,
+window.shell-settings-window popover .segmented-group button:checked {
+    background-color: @metro-accent;
+    border-color: @metro-fg-primary;
+    color: @metro-fg-primary;
+}
+
+/* Destructive / Danger Button */
+window.shell-settings-window button.destructive-action,
+window.shell-settings-window button.action-btn-danger {
+    background-color: #2a1215;
+    border: 1px solid #5c1e24;
+    color: @metro-urgent-text;
+    font-weight: 700;
+}
+
+popover button.destructive-action,
+popover button.action-btn-danger,
+window.shell-settings-window popover button.destructive-action,
+window.shell-settings-window popover button.action-btn-danger {
+    background-color: rgba(232, 17, 35, 0.16);
+    border: 1px solid rgba(232, 17, 35, 0.45);
+    color: @metro-urgent-text;
+    font-weight: 700;
+}
+
+popover button.destructive-action:hover,
+popover button.action-btn-danger:hover,
+window.shell-settings-window button.destructive-action:hover,
+window.shell-settings-window button.action-btn-danger:hover,
+window.shell-settings-window popover button.destructive-action:hover,
+window.shell-settings-window popover button.action-btn-danger:hover {
+    background-color: @metro-urgent;
+    border-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+/* Toggle Switches (GtkSwitch) */
+switch {
+    background: none;
+    background-image: none;
+    background-color: @metro-border-subtle;
+    border: 1px solid #3a3a3a;
+    border-radius: 0px;
+    min-width: 44px;
+    min-height: 22px;
+    padding: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+popover switch,
+window.shell-settings-window popover switch {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+switch:hover,
+popover switch:hover,
+window.shell-settings-window popover switch:hover {
+    border-color: @metro-accent;
+}
+
+switch:checked,
+popover switch:checked,
+window.shell-settings-window popover switch:checked {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+}
+
+switch:disabled {
+    opacity: 0.45;
+}
+
+switch slider {
+    background: none;
+    background-image: none;
+    background-color: #aaaaaa;
+    border: none;
+    border-radius: 0px;
+    min-width: 16px;
+    min-height: 16px;
+    margin: 2px;
+    box-shadow: none;
+}
+
+switch:checked slider {
+    background-color: @metro-fg-primary;
+}
+
+/* Separators */
+window.shell-settings-window separator {
+    margin: 6px 0;
+    background-color: @metro-border;
+    min-height: 1px;
+}
+
+popover separator,
+window.shell-settings-window popover separator {
+    margin: 6px 0;
+    background-color: @metro-glass-border;
+    min-height: 1px;
+}
+
+/* Sliders (GtkScale — Canonical 14x14 Square Thumb) */
+window.shell-settings-window scale trough {
+    background: none;
+    background-image: none;
+    background-color: @metro-border;
+    border-radius: 0px;
+    min-height: 4px;
+}
+
+popover scale trough,
+window.shell-settings-window popover scale trough {
+    background: none;
+    background-image: none;
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 0px;
+    min-height: 4px;
+}
+
+popover scale trough highlight,
+window.shell-settings-window scale trough highlight {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+popover scale slider,
+window.shell-settings-window scale slider {
+    background: none;
+    background-image: none;
+    background-color: @metro-fg-primary;
+    border: 2px solid @metro-accent;
+    border-radius: 0px;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -5px 0;
+    box-shadow: none;
+}
+
+popover scale slider:hover,
+window.shell-settings-window scale slider:hover {
+    background-color: @metro-accent;
+    border-color: @metro-fg-primary;
+}
+
+/* Level Bars (Popovers, OSD & Settings) */
+window.shell-settings-window levelbar trough {
+    background: none;
+    background-image: none;
+    background-color: @metro-border;
+    border: none;
+    border-radius: 0px;
+    min-height: 6px;
+}
+
+popover levelbar trough,
+window.shell-settings-window popover levelbar trough,
+window.shell-osd levelbar trough,
+.shell-osd-card levelbar trough {
+    background: none;
+    background-image: none;
+    background-color: rgba(255, 255, 255, 0.12);
+    border: none;
+    border-radius: 0px;
+    min-height: 6px;
+}
+
+/* OSD Level Bars (Always Pure Accent — No Low/High/Full Traffic-Light Shifts) */
+window.shell-osd levelbar trough block.filled,
+window.shell-osd levelbar trough block.low,
+window.shell-osd levelbar trough block.high,
+window.shell-osd levelbar trough block.full,
+.shell-osd-card levelbar trough block.filled,
+.shell-osd-card levelbar trough block.low,
+.shell-osd-card levelbar trough block.high,
+.shell-osd-card levelbar trough block.full {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border: none;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.filled,
+window.shell-settings-window levelbar trough block.filled {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border: none;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.low,
+window.shell-settings-window levelbar trough block.low {
+    background: none;
+    background-image: none;
+    background-color: @metro-success;
+    border: none;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.high,
+window.shell-settings-window levelbar trough block.high {
+    background: none;
+    background-image: none;
+    background-color: @metro-warning;
+    border: none;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.full,
+window.shell-settings-window levelbar trough block.full {
+    background: none;
+    background-image: none;
+    background-color: @metro-urgent;
+    border: none;
+    border-radius: 0px;
+}
+
+popover levelbar trough block.empty,
+window.shell-osd levelbar trough block.empty,
+.shell-osd-card levelbar trough block.empty,
+window.shell-settings-window levelbar trough block.empty {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+}
+
+/* Radio / Check Buttons */
+popover checkbutton,
+window.shell-settings-window checkbutton {
+    padding: 5px 8px;
+    border-radius: 0px;
+    color: @metro-fg-primary;
+}
+
+window.shell-settings-window checkbutton:hover {
+    background-color: @metro-surface-hover;
+}
+
+popover checkbutton:hover,
+window.shell-settings-window popover checkbutton:hover {
+    background-color: @metro-glass-hover;
+}
+
+window.shell-settings-window checkbutton check,
+window.shell-settings-window checkbutton radio {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid #444444;
+    border-radius: 0px;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+popover checkbutton check,
+popover checkbutton radio,
+window.shell-settings-window popover checkbutton check,
+window.shell-settings-window popover checkbutton radio {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 0px;
+    min-width: 16px;
+    min-height: 16px;
+}
+
+popover checkbutton:hover check,
+popover checkbutton:hover radio,
+window.shell-settings-window checkbutton:hover check,
+window.shell-settings-window checkbutton:hover radio {
+    border-color: @metro-accent;
+}
+
+popover checkbutton:checked check,
+popover checkbutton:checked radio,
+window.shell-settings-window checkbutton:checked check,
+window.shell-settings-window checkbutton:checked radio,
+window.shell-settings-window popover checkbutton:checked check,
+window.shell-settings-window popover checkbutton:checked radio {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+/* Calendar */
+popover calendar {
+    background-color: transparent;
+    color: @metro-fg-primary;
+    border: none;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}
+
+popover calendar header {
+    color: @metro-fg-primary;
+    font-weight: 600;
+}
+
+popover calendar .day:selected {
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+    border-radius: 0px;
+}
+
+/* Process List */
+.process-row {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    padding: 3px 6px;
+    color: @metro-fg-primary;
+    background-color: transparent;
+}
+
+.process-row:hover {
+    background-color: @metro-glass-hover;
+}
+
+/* Metro GtkDropDown & Popover List Styling (Zero Double-Border) */
+dropdown > button,
+window.shell-settings-window dropdown > button {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 6px 10px;
+    min-height: 30px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: none;
+    outline: none;
+}
+
+dropdown > button:hover,
+window.shell-settings-window dropdown > button:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover dropdown > button,
+window.shell-settings-window popover dropdown > button {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-glass-border;
+    border-radius: 0px;
+    padding: 6px 10px;
+    min-height: 30px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 14px;
+    font-weight: 500;
+    box-shadow: none;
+    outline: none;
+}
+
+popover dropdown > button:hover,
+window.shell-settings-window popover dropdown > button:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+dropdown > popover,
+window.shell-settings-window dropdown > popover,
+window.shell-lock-window dropdown > popover {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    box-shadow: none;
+    outline: none;
+}
+
+dropdown > popover > contents,
+window.shell-settings-window dropdown > popover > contents,
+window.shell-lock-window dropdown > popover > contents {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-bg;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 2px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
+    outline: none;
+}
+
+dropdown listview {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+}
+
+dropdown listview row {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    color: @metro-fg-primary;
+    padding: 7px 12px;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 14px;
+}
+
+dropdown listview row:hover {
+    background-color: @metro-glass-hover;
+    color: @metro-fg-primary;
+}
+
+dropdown listview row:selected {
+    background-color: @metro-accent;
+    border-left: 3px solid @metro-fg-primary;
+    color: @metro-fg-primary;
+    font-weight: 700;
+}
+
+/* Metro Album Art Thumbnail */
+.shell-media-art {
+    background-color: #0c0c0c;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 2px;
+}
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Media VU Meter & LevelBar Color Coding ─── */
+.shell-popover levelbar block.low {
+    background-color: @metro-success;
+    border-radius: 0px;
+}
+
+.shell-popover levelbar block.high {
+    background-color: @metro-warning;
+    border-radius: 0px;
+}
+
+.shell-popover levelbar block.full {
+    background-color: @metro-urgent;
+    border-radius: 0px;
+}
+
+.shell-popover levelbar trough {
+    background-color: rgba(255, 255, 255, 0.08);
+    border: none;
+    border-radius: 0px;
+    padding: 1px;
+}
+
+.peak-warn {
+    color: @metro-warning;
+    font-weight: 600;
+}
+
+.peak-clip {
+    color: @metro-urgent;
+    font-weight: 700;
+}
+
+.shell-media-art-hero {
+    background-color: @metro-glass-well;
+    border: 1px solid @metro-glass-border;
+    border-radius: 0px;
+    min-width: 128px;
+    min-height: 128px;
+}
+
+/* ─── 16-Band Hero Spectrum Analyzer ─── */
+.shell-popover levelbar block {
+    border-radius: 0px;
+}
+
+.shell-popover levelbar.vertical block.filled {
+    background-color: @metro-accent;
+    border: none;
+    margin: 0 1px;
+}
+
+.shell-popover levelbar.vertical block.empty {
+    background-color: rgba(255, 255, 255, 0.05);
+    border: none;
+    margin: 0 1px;
+}
+

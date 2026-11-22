@@ -1,0 +1,53 @@
+/* Kajo — Aero + Metro Design Tokens & Global Font Reset
+ * Loaded first via @import from data/defaults/style.css.
+ * Runtime accent/surface/typography overrides live in ~/.config/kajo/style.d/00-accent.css.
+ */
+
+@define-color metro-panel-bg      rgba(18, 18, 18, 0.58);
+@define-color metro-glass-bg      rgba(18, 18, 18, 0.62);
+@define-color metro-glass-well    rgba(0, 0, 0, 0.24);
+@define-color metro-glass-header  rgba(255, 255, 255, 0.035);
+@define-color metro-glass-control rgba(255, 255, 255, 0.065);
+@define-color metro-glass-hover   rgba(255, 255, 255, 0.13);
+@define-color metro-glass-border  rgba(255, 255, 255, 0.10);
+
+/* Surface elevation ladder (docs/design_system.md §2) */
+@define-color metro-surface-0     #101010;  /* recessed canvas: code viewer, media well */
+@define-color metro-surface-1     #121212;  /* recessed secondary surface */
+@define-color metro-surface-bg    #141414;  /* primary window background */
+@define-color metro-surface-2     #161616;  /* secondary ribbon / sub-toolbar */
+@define-color metro-surface-3     #181818;  /* popover body, list row, table header */
+@define-color metro-surface-4     #1a1a1a;  /* interactive button, tile / section card */
+@define-color metro-surface-hover #222222;  /* hover fill */
+
+/* Border hierarchy */
+@define-color metro-border-subtle #242424;  /* inner divider / low-contrast hairline */
+@define-color metro-border        #2b2b2b;  /* structural 1px hairline */
+@define-color metro-border-strong #333333;  /* elevated control/input border */
+
+/* Foreground hierarchy */
+@define-color metro-fg-primary    #ffffff;  /* primary active label */
+@define-color metro-fg-bright     #f0f0f0;  /* high-contrast body text */
+@define-color metro-fg-soft       #e0e0e0;  /* card headings & button labels */
+@define-color metro-fg-body       #cccccc;  /* standard body/code label */
+@define-color metro-fg-secondary  #a0a0a0;  /* secondary metadata */
+@define-color metro-fg-muted      #999999;  /* muted metadata */
+@define-color metro-fg-dim        #888888;  /* dim captions & line locations */
+
+/* Accent & semantic status colors */
+@define-color metro-accent        #0078d4;  /* Windows Cobalt Blue */
+@define-color metro-accent-hover  #1084d8;
+@define-color metro-urgent        #e81123;  /* Metro Crimson */
+@define-color metro-urgent-text   #ff6b6b;  /* error / danger TEXT on dark surfaces */
+@define-color metro-warning       #ff8c00;
+@define-color metro-success       #10893e;
+@define-color metro-telemetry     #00d8f0;
+@define-color metro-magenta       #b4009e;  /* SELECT mode / AI agent / DIFF lens */
+
+/* ═══════════════════════════════════════════════ */
+/* ─── Global Font Reset (Fira Code) ─── */
+/* ═══════════════════════════════════════════════ */
+
+* {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+}

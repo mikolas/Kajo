@@ -2,7 +2,7 @@
 #define KAJO_IDE_WINDOW_PRIVATE_H
 
 /* Internal to src/ide/: the KajoIdeWindow instance struct and helpers shared
- * between ide_window.c and ide_actions.c. Not a public API. */
+ * between ide_window.c, ide_window_ui.c, and ide_actions.c. Not a public API. */
 
 #include "ide_window.h"
 #include "../compositor/compositor.h"
@@ -22,7 +22,6 @@
 #include <gdk/gdkkeysyms.h>
 #include <gtksourceview/gtksource.h>
 #include <string.h>
-
 
 G_BEGIN_DECLS
 
@@ -135,26 +134,32 @@ struct _KajoIdeWindow {
   int              saved_drawer_pos;
 };
 
-
 /* Shared helpers (defined in ide_window.c) */
 IdeBuffer *ide_window_get_active_buffer(KajoIdeWindow *self);
 GtkWidget *ide_window_get_active_source_view(KajoIdeWindow *self);
 void       ide_window_toggle_strip_mode(KajoIdeWindow *self);
 void       ide_window_set_strip_mode(KajoIdeWindow *self, gboolean enabled);
 void       ide_window_record_jumplist_here(KajoIdeWindow *self);
-void       ide_window_show_toast(KajoIdeWindow *self, const char *msg);
-void       ide_window_sync_conflict_bar(KajoIdeWindow *self);
-void       ide_window_open_cond_bp_bar(KajoIdeWindow *self, guint line_1based);
 void       ide_window_toggle_relative_lines(KajoIdeWindow *self);
 void       ide_window_sync_markdown_views(KajoIdeWindow *self);
 void       ide_window_schedule_markdown_sync(KajoIdeWindow *self);
 void       ide_window_zoom_editor_font(KajoIdeWindow *self, int delta_or_zero);
-void       ide_window_update_status_bar_and_hud(KajoIdeWindow *self);
-void       ide_window_rebuild_tab_ribbon(KajoIdeWindow *self);
 void       ide_window_bind_active_buffer_to_view(KajoIdeWindow *self);
+void       ide_window_close_buffer_at(KajoIdeWindow *self, guint idx);
 void       ide_window_apply_config(KajoIdeWindow *self);
 void       ide_window_get_cursor_line_col(KajoIdeWindow *self, guint *out_line, guint *out_col);
 void       ide_window_move_cursor_to_line_col(KajoIdeWindow *self, guint line_1based, guint col_1based);
+void       ide_window_on_gutter_bp_toggled(IdeBuffer *buf, guint line_1based, gboolean enabled, gpointer user_data);
+void       ide_window_on_gutter_cond_bp_requested(IdeBuffer *buf, guint line_1based, gpointer user_data);
+
+/* UI construction & chrome helpers (defined in ide_window_ui.c) */
+void       ide_window_build_ui(KajoIdeWindow *self);
+void       ide_window_show_toast(KajoIdeWindow *self, const char *msg);
+void       ide_window_sync_conflict_bar(KajoIdeWindow *self);
+void       ide_window_open_cond_bp_bar(KajoIdeWindow *self, guint line_1based);
+void       ide_window_close_cond_bp_bar(KajoIdeWindow *self);
+void       ide_window_update_status_bar_and_hud(KajoIdeWindow *self);
+void       ide_window_rebuild_tab_ribbon(KajoIdeWindow *self);
 
 /* Defined in ide_actions.c */
 void       ide_window_show_drawer_page(KajoIdeWindow *self, const char *page_name);

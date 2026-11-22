@@ -91,6 +91,8 @@ done
 
 echo "==> Installing default CSS theme, TOML defaults & icons to /usr/local/share/kajo/..."
 install -Dm644 "$PROJECT_ROOT/data/defaults/style.css" /usr/local/share/kajo/defaults/style.css
+install -dm755 /usr/local/share/kajo/defaults/styles
+cp -r "$PROJECT_ROOT/data/defaults/styles/"*.css /usr/local/share/kajo/defaults/styles/
 for toml_file in theme.toml shell.toml ide.toml files.toml mod.toml comp.toml binds.toml rules.toml; do
     install -Dm644 "$PROJECT_ROOT/data/defaults/$toml_file" "/usr/local/share/kajo/defaults/$toml_file"
 done

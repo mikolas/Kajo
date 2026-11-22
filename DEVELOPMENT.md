@@ -31,17 +31,20 @@ src/
 │   ├── main.c                      kajo-comp entry point: CLI options (--renderer, --mod, --greeter-mode, --exit-with-command)
 │   ├── comp_server.h/c             Server lifecycle (root talloc context), backend/renderer/allocator, VK_ERROR_DEVICE_LOST recovery
 │   ├── comp_output.c               Outputs: modes, DRM atomic test-before-commit cascade, vrr="on-demand", scene render, hot-unplug
-│   ├── comp_window.c               xdg_toplevel/popup, 1px @metro-accent borders, SSD bars, 24px tabbed column headers, interactive drag
+│   ├── comp_window.c               xdg_toplevel/popup lifecycle, activation, interactive drag & focus rules
+│   ├── comp_window_chrome.c        1px @metro-accent borders, SSD bars & 24px tabbed column headers (comp_window_private.h)
 │   ├── comp_layer.c                zwlr_layer_shell_v1 4-layer exclusive-zone arrangement, focus semantics & layer_rule matching
 │   ├── comp_lock_idle.c            ext-session-lock-v1 veil, ext-idle-notify-v1, idle-inhibit-v1 & output-power-management DPMS
 │   ├── comp_protocols.c            Wayland globals (screencopy, data-control, virtual-kbd/ptr, IMv2, text-input-v3, fractional-scale, etc.)
 │   ├── comp_xwayland.c             wlr_xwayland lazy bridge (immediate DISPLAY export on init): tiled/floating X11 clients & dialog detection
 │   ├── comp_input.c                Seat, keyboards (xkb), libinput devices, bezel/3-finger swipe gestures & Ctrl+Alt+Fn VT switch
-│   ├── comp_ipc.c                  $XDG_RUNTIME_DIR/kajo-comp.sock line-delimited JSON server: queries, EventStream & 63 actions
+│   ├── comp_ipc.c                  $XDG_RUNTIME_DIR/kajo-comp.sock line-delimited JSON server: queries & 63 actions
+│   ├── comp_ipc_watch.c            IPC EventStream subscribers, JSON event broadcasts & connection queues (comp_ipc_private.h)
 │   ├── comp_spawn.c                fork/exec without a shell (own session), SIGCHLD reaping, startup command & --exit-with-command
 │   ├── comp_text.h/c               PangoCairo ARGB32 text-to-wlr_buffer helper (SSD titlebars, tabbed column headers, overlays)
 │   ├── comp_switcher.h/c           Alt+Tab / Alt+Grave MRU window switcher overlay with live wlr_surface thumbnails
-│   ├── comp_screenshot.h/c         Interactive in-compositor screenshot UI (Region/Screen/Window), PNG writer & wl-copy pipe
+│   ├── comp_screenshot.h/c         In-compositor screencopy capture, PNG writer & wl-copy pipe
+│   ├── comp_screenshot_ui.c        Interactive Region/Screen/Window screenshot overlay & pointer/key UI (comp_screenshot_private.h)
 │   ├── comp_listen.h/c             comp_listen(): talloc-owned listeners that unlink themselves when freed
 │   ├── comp_log.h                  COMP_WARN_RETURN (rate-limited, never aborts); no logging of key input
 │   ├── fx/                         Vulkan visual effects (docs/spec_comp_effects.md; sole consumer of wlr_kfx_*)
@@ -59,12 +62,14 @@ src/
 │       ├── comp_schema_keys.h      Canonical schema key tables for comp.toml, outputs.toml, binds.toml & rules.toml
 │       ├── comp_diag.h/c           Collected config diagnostics ("binds.toml:12: unknown action ...")
 │       ├── comp_spring.h/c         Analytical 2nd-order damped spring; retargeting preserves position and velocity
-│       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, tabbed/stacked, floating & camera target
+│       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, tabbed/stacked & camera target
+│       ├── comp_layout_float.c     Floating window stack, move/resize clamping & focus tracking (comp_layout_private.h)
 │       ├── comp_motion.h/c         Spring-animated strip camera, window geometry & workspace transitions
 │       ├── comp_gesture.h/c        3-finger drag & flick velocity/position release state machine
 │       ├── comp_binds.h/c          binds.toml parser (xkbcommon keysyms, wheel triggers) and key/wheel lookup
 │       ├── comp_rules.h/c          rules.toml parser (PCRE2 regexes) and window/layer rule matching
 │       ├── comp_config.h/c         comp.toml & outputs.toml parser, conf.d overlay merger & theme.toml accent reader
+│       ├── comp_config_effects.c   [effects] & glass/shadow/transition TOML section parser (comp_config_private.h)
 │       ├── comp_fx_core.h/c        Pure FX math: SDF shadow box expansion, Dual-Kawase pyramid sizes & std140 UBO packing
 │       └── comp_touch.h/c          Multi-finger touchpad swipe & screen-edge bezel gesture state machines
 ├── compositor/
@@ -75,10 +80,12 @@ src/
 │   ├── main.c                      kajo-files standalone entry point (org.kajo.Files)
 │   ├── files_window.h/c            Main window controller, history stack, breadcrumbs & shortcuts
 │   ├── files_window_private.h      Window struct + helpers shared by the files_window_* modules (internal)
+│   ├── files_window_views.c        Icon/List view item factories, selection & directory population
 │   ├── files_window_ctxmenu.c      Context menu popover + Open With sub-view
 │   ├── files_window_keys.c         Keyboard shortcut controller (Space Quick Look, navigation, clipboard)
 │   ├── files_model.h/c             KajoFileItem GObject, async GVFS + archive:// enumerator, sort & filter, breadcrumb chain
-│   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir, archive extract/compress & clipboard
+│   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir & clipboard
+│   ├── files_ops_archive.c         libarchive async extract/compress workers & conflict handling (files_ops_private.h)
 │   ├── files_diskimage.h/c         UDisks2 loop-mount of ISO / raw disk images (LoopSetup -> Mount -> autoclear)
 │   ├── files_sidebar.h/c           Places, Trash, GVolumeMonitor drives & inline GVFS/LUKS auth
 │   └── files_quicklook.h/c         Inspector drawer & Space Quick Look modal (img/media/PDF/archive/code)
@@ -88,10 +95,12 @@ src/
 │   └── touch_gestures.h/c          Edge layer-shell bezel swipe gesture recognizers
 ├── ide/
 │   ├── main.c                      kajo-ide standalone entry point (org.kajo.IDE)
-│   ├── ide_window.h/c              Main IDE window, 3-zone header, tab ribbon, status bar & chord HUD
-│   ├── ide_window_private.h        Window struct + helpers shared with ide_actions.c (internal)
+│   ├── ide_window.h/c              Main IDE window lifecycle, tab/document coordination & LSP/DAP/Strip wiring
+│   ├── ide_window_ui.c             3-zone header, tab ribbon, status bar, chord HUD & bottom drawers
+│   ├── ide_window_private.h        Window struct + helpers shared by ide_window*.c & ide_actions.c (internal)
 │   ├── ide_actions.c               Action dispatcher + buffer motion/edit execution
 │   ├── ide_fsm.h/c                 10-state selection-first modal FSM & Nordic text objects (m i/a)
+│   ├── ide_fsm_tables.c            FSM action-name lookup tables & chord hint metadata (ide_fsm_private.h)
 │   ├── ide_buffer.h/c              IdeBuffer, text objects, Git diff & Agent snapshots, scheme search paths
 │   ├── ide_syntax.c                11-token highlighter (ide_highlight_source_buffer): drives the tree-sitter engine, heuristic lexer fallback
 │   ├── ide_ts.c / ide_ts.h         Tree-sitter engine: incremental parse, base token pass + per-language query layer (no GTK)
@@ -100,12 +109,19 @@ src/
 │   ├── ide_tree.h/c                Scroll-stable Project File Explorer, Git porcelain parser & CRUD
 │   ├── ide_picker.h/c              Fuzzy File/Buffer/Ripgrep modal & 120-command Help Palette
 │   ├── ide_strip_layout.h/c        Pure GTK-free 60/25/15 Code Strip depth model & comp_spring camera
-│   ├── ide_strip_graph.h/c         Workspace-only call-graph indexer, tree-sitter extractor & LSP bridge
-│   ├── ide_strip_view.h/c          GTK4 Code Strip UI (Ancestor Spine, Peekish D+1, Micro-Tiles D+2, Overview)
+│   ├── ide_strip_graph.h/c         Workspace-only call-graph indexer, 4 graph lenses & LSP bridge
+│   ├── ide_strip_graph_ts.c        Tree-sitter symbol/edge extractor & workspace file walker (ide_strip_graph_private.h)
+│   ├── ide_strip_view.h/c          GTK4 Code Strip coordinator, navigation, keyboard & LSP sync
+│   ├── ide_strip_tiles.c           Code Strip Ancestor Spine, Peekish D+1 & Micro-Tile D+2 widgets (ide_strip_view_private.h)
+│   ├── ide_strip_canvas.c          Code Strip Cairo Bezier edge connectors & Overview strip canvas (ide_strip_view_private.h)
 │   ├── ide_search.h/c              Regex Search & Replace + async compiler build output drawer
-│   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync, diagnostics, hover/completion/definition/rename/code actions/format popovers (ripgrep fallbacks)
+│   ├── ide_lsp.h/c                 LSP manager: per-root clients, document sync & diagnostics lifecycle
+│   ├── ide_lsp_parse.c             LSP JSON-RPC location/hover/completion/edit parsers (ide_lsp_private.h)
+│   ├── ide_lsp_popovers.c          LSP hover/completion/definition/rename/code-action GTK4 popovers
+│   ├── ide_lsp_actions.c           LSP action dispatchers, workspace edits & ripgrep fallbacks
 │   ├── ide_lsp_client.h/c          GTK-free async JSON-RPC 2.0 / LSP client (GSubprocess, framing, request queue, capabilities)
-│   ├── ide_dap.h/c                 Debugger view: session state machine, call stack / locals / console panes
+│   ├── ide_dap.h/c                 Debugger session state machine, breakpoint sync & stepping commands
+│   ├── ide_dap_ui.c                Debugger GTK4 UI panes: call stack, locals, watches & console (ide_dap_private.h)
 │   ├── ide_dap_client.h/c          GTK-free async DAP client (adapter process or any GIO stream pair)
 │   ├── ide_dap_launch.h/c          Adapter + debuggee discovery (.kajo/debug.json, Meson introspection, Cargo, Delve)
 │   ├── ide_dap_java.h/c            Java debug preparation: jdtls executeCommand chain (main class, classpath, JDK, debug port) + TCP connect
@@ -113,7 +129,8 @@ src/
 │   ├── ide_tasks.h/c               Build-system detection (Maven/Gradle/Meson/CMake/Cargo/Go/Make/vasm) -> build/test/run/clean commands (no GTK)
 │   ├── ide_lsp_servers.h/c         Server registry: extension -> server, project-root markers, launch argv (jdtls JDK, clangd compile db)
 │   ├── ide_native_exe.h/c          Native executable discovery for run/debug (Meson/CMake/Make build trees)
-│   ├── ide_markdown.h/c            Graphical Markdown preview, live task checkboxes & GitHub alerts
+│   ├── ide_markdown.h/c            Graphical Markdown preview parser, headings/lists/tables & live task checkboxes
+│   ├── ide_markdown_embeds.c       Markdown code blocks, Mermaid diagrams, PDF/image embeds & alerts (ide_markdown_private.h)
 │   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
 │   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
 ├── ipc/
@@ -142,13 +159,15 @@ src/
 │   └── posture_manager.h/c         360° hinge angle posture state machine & auto-rotation
 ├── player/
 │   ├── main.c                      kajo-player standalone entry point (org.kajo.Player)
-│   ├── player_window.h/c           Main window, fullscreen overlay HUD, subtitle/audio/speed popovers
+│   ├── player_window.h/c           Main window, fullscreen overlay HUD & playback controls
+│   ├── player_popovers.c           Subtitle, audio track, speed & chapter popovers (player_window_private.h)
 │   ├── player_mpv.h/c              libmpv + GtkGLArea OpenGL/EGL engine, track/chapter/telemetry parser
 │   ├── player_queue.h/c            Sibling folder media scanner, KajoMediaTrack & queue drawer
 │   └── player_mpris.h/c            MPRIS2 D-Bus server (org.mpris.MediaPlayer2.kajo_player)
 ├── mod/
 │   ├── main.c                      kajo-mod standalone entry point (org.kajo.Mod)
-│   ├── mod_window.h/c              Main window, telemetry deck, DSP strip, 4-voice header, inspector & column reflow
+│   ├── mod_window.h/c              Main window, telemetry deck, DSP strip, 4-voice header & column reflow
+│   ├── mod_inspector.c             Sample/instrument table, STIL/HVSC notes & .nfo inspector drawer (mod_window_private.h)
 │   ├── mod_vis.h/c                 Cairo 512-sample stereo oscilloscope & 16-band logarithmic FFT spectrum with peak hold
 │   ├── mod_engine.h/c              KajoModEngine VTable, strict 5-tier format router & ProTracker sample header parser
 │   ├── mod_backend_uade.c          Priority 1: libuade Amiga 68000 + Paula BLEP/LED filter & eagleplayer engine
@@ -163,8 +182,9 @@ src/
 │   ├── settings_window.h/c         Responsive 3-tier column shell, icon-rail/sidebar & GtkStack
 │   ├── settings_common.h/c         Shared Metro card, bento grid, tile, dropdown & IPC helpers
 │   └── pages/
-│       └── page_*.c                12 modular preference pages (displays, network, bluetooth,
-│                                   audio, theme, panel, widgets, notifications, ide, mod, niri, about)
+│       ├── page_*.c                12 modular preference pages (displays, network, bluetooth,
+│       │                           audio, theme, panel, widgets, notifications, ide, mod, niri, about)
+│       └── page_niri_effects.c     Compositor FX controls: shadows, glass materials & transitions (page_niri_private.h)
 ├── vendor/
 │   ├── tomlc17/                    Vendored TOML 1.1 parser (CK Tan, MIT)
 │   └── tinyexpr/                   TinyExpr recursive-descent math expression evaluator
@@ -184,7 +204,9 @@ data/
 ├── defaults/
 │   ├── {comp,outputs,binds,rules}.toml   Shipped kajo-comp TOML 1.1 default configurations
 │   ├── {theme,shell,ide,files,mod}.toml  Shipped per-domain TOML 1.1 default configurations
-│   ├── style.css                   Master GTK4 CSS stylesheet (panel, popovers, settings, files, ide, osk, lock, greeter)
+│   ├── style.css                   Master GTK4 CSS manifest (@import url("styles/..."))
+│   ├── styles/                     8 modular CSS partials (00-tokens, 10-panel, 20-popovers-controls, 30-settings,
+│   │                               40-lock-greeter-osk, 50-files-player, 60-ide, 70-mod)
 │   └── icon-map.json               Logical-to-symbolic icon mappings
 ├── session/
 │   ├── kajo-session                Session wrapper launching kajo-comp (with D-Bus/systemd env export & crash-loop guard)

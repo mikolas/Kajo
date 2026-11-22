@@ -172,8 +172,16 @@ GType kajo_files_window_get_type(void);
 
 /* Shared helpers (defined in files_window.c) */
 void files_window_set_status_message(KajoFilesWindow *self, const char *msg, gboolean is_error);
+void files_window_update_status_and_capacity_bar(KajoFilesWindow *self);
+void files_window_save_prefs(KajoFilesWindow *self);
 void files_window_reload_directory(KajoFilesWindow *self);
+
+/* Defined in files_window_views.c */
 void files_window_rebuild_filtered_view(KajoFilesWindow *self);
+void files_window_rebuild_breadcrumbs(KajoFilesWindow *self);
+void files_window_views_init_breadcrumbs(KajoFilesWindow *self);
+void files_window_views_setup_models(KajoFilesWindow *self);
+void files_window_views_connect_toolbar_signals(KajoFilesWindow *self);
 
 /* Helpers shared across the window modules (defined in files_window.c unless noted). */
 gboolean files_window_is_read_only_archive(const KajoFilesWindow *self);

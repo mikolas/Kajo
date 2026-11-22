@@ -770,12 +770,9 @@ settings_page_theme_class_init(SettingsPageThemeClass *klass)
     object_class->dispose = settings_page_theme_dispose;
 }
 
-GtkWidget *
-build_page_theme(void)
+static void
+theme_init_providers_and_config(SettingsPageTheme *self, GdkDisplay *display)
 {
-    SettingsPageTheme *self = g_object_new(settings_page_theme_get_type(), NULL);
-    GdkDisplay *display = gdk_display_get_default();
-
     self->preview_provider = gtk_css_provider_new();
     self->custom_swatch_provider = gtk_css_provider_new();
     self->glass_swatch_provider = gtk_css_provider_new();
@@ -842,7 +839,11 @@ build_page_theme(void)
     self->saved_surface_contrast_pct = (int)lround(CLAMP(config ? config->surface_contrast : 1.0, 0.0, 2.0) * 100.0);
     self->saved_border_opacity_pct   = (int)lround(CLAMP(config ? config->border_opacity : 1.0, 0.0, 1.0) * 100.0);
     self->saved_secondary_fg_pct     = (int)lround(CLAMP(config ? config->secondary_fg_contrast : 1.0, 0.5, 1.5) * 100.0);
+}
 
+static GtkWidget *
+theme_build_card_palette(SettingsPageTheme *self, GdkDisplay *display)
+{
     /* ─── Card 1: Metro Accent Color Palette (8 Presets + Custom Hex) ─── */
     self->card_palette = create_section_card(
         SETTINGS_CARD_LEFT,
@@ -933,6 +934,12 @@ build_page_theme(void)
         hex_box);
     gtk_box_append(GTK_BOX(self->card_palette), row_hex);
 
+    return self->card_palette;
+}
+
+static GtkWidget *
+theme_build_card_typography(SettingsPageTheme *self)
+{
     /* ─── Card 2: Typography & Font Scale ─── */
     GtkWidget *btn_reset_hdr = gtk_button_new_with_label("↺ RESET DEFAULTS");
     gtk_widget_add_css_class(btn_reset_hdr, "files-nav-btn");
@@ -988,8 +995,12 @@ build_page_theme(void)
         "font_badge_size_px (9–16px, default 11px)",
         w_bdg));
 
-    settings_bento_add_pair(GTK_WIDGET(self), self->card_palette, card_typo);
+    return card_typo;
+}
 
+static GtkWidget *
+theme_build_card_glass(SettingsPageTheme *self)
+{
     /* ─── Card 3: Frosted Glass & Panel Surfaces ─── */
     GtkWidget *btn_reset_surf = gtk_button_new_with_label("↺ RESET SURFACES");
     gtk_widget_add_css_class(btn_reset_surf, "files-nav-btn");
@@ -1086,6 +1097,12 @@ build_page_theme(void)
         "accent_glass_tint — blend accent color into glass surfaces (0–25%)",
         w_acc_glass));
 
+    return card_glass;
+}
+
+static GtkWidget *
+theme_build_card_surface(SettingsPageTheme *self)
+{
     /* ─── Card 4: Opaque Surfaces, Borders & Legibility ─── */
     GtkWidget *card_surface = create_section_card(
         SETTINGS_CARD_CENTER,
@@ -1138,18 +1155,12 @@ build_page_theme(void)
         "secondary_fg_contrast — subtitles & metadata legibility (50–150%)",
         w_sec_fg));
 
-    settings_bento_add_pair(GTK_WIDGET(self), card_glass, card_surface);
+    return card_surface;
+}
 
-    /* Sync initial UI state & wire signals */
-    self->syncing_ui = TRUE;
-    gtk_editable_set_text(GTK_EDITABLE(self->entry_hex), self->current_accent_hex);
-    gtk_editable_set_text(GTK_EDITABLE(self->entry_ui_font), self->saved_ui_font_family);
-    gtk_editable_set_text(GTK_EDITABLE(self->entry_glass_tint), self->current_glass_tint);
-    gtk_editable_set_text(GTK_EDITABLE(self->entry_surface_base), self->current_surface_base);
-    sync_swatch_highlight(self);
-    update_custom_swatch_css(self);
-    self->syncing_ui = FALSE;
-
+static void
+theme_connect_signals(SettingsPageTheme *self)
+{
     g_signal_connect(self->entry_hex, "changed", G_CALLBACK(on_hex_entry_changed), self);
     g_signal_connect(self->entry_ui_font, "changed", G_CALLBACK(on_ui_font_entry_changed), self);
     g_signal_connect(self->entry_glass_tint, "changed", G_CALLBACK(on_glass_tint_entry_changed), self);
@@ -1167,6 +1178,35 @@ build_page_theme(void)
     g_signal_connect(self->scale_border_opacity, "value-changed", G_CALLBACK(on_scale_font_changed), self);
     g_signal_connect(self->scale_secondary_fg, "value-changed", G_CALLBACK(on_scale_font_changed), self);
     g_signal_connect(self, "map", G_CALLBACK(on_theme_page_mapped), NULL);
+}
+
+GtkWidget *
+build_page_theme(void)
+{
+    SettingsPageTheme *self = g_object_new(settings_page_theme_get_type(), NULL);
+    GdkDisplay *display = gdk_display_get_default();
+
+    theme_init_providers_and_config(self, display);
+
+    GtkWidget *card_palette = theme_build_card_palette(self, display);
+    GtkWidget *card_typo    = theme_build_card_typography(self);
+    settings_bento_add_pair(GTK_WIDGET(self), card_palette, card_typo);
+
+    GtkWidget *card_glass   = theme_build_card_glass(self);
+    GtkWidget *card_surface = theme_build_card_surface(self);
+    settings_bento_add_pair(GTK_WIDGET(self), card_glass, card_surface);
+
+    /* Sync initial UI state & wire signals */
+    self->syncing_ui = TRUE;
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_hex), self->current_accent_hex);
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_ui_font), self->saved_ui_font_family);
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_glass_tint), self->current_glass_tint);
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_surface_base), self->current_surface_base);
+    sync_swatch_highlight(self);
+    update_custom_swatch_css(self);
+    self->syncing_ui = FALSE;
+
+    theme_connect_signals(self);
 
     settings_page_bind_actions(
         GTK_WIDGET(self),

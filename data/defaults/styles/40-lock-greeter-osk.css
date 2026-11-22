@@ -1,0 +1,319 @@
+/* ─── Wayland Session Lock Screen (.shell-lock-window) ─── */
+window.shell-lock-window {
+    background-color: @metro-surface-0;
+    background-image: radial-gradient(circle at 50% 35%, alpha(@metro-accent, 0.14) 0%, rgba(16, 16, 16, 0.98) 68%);
+    color: #f4f4f6;
+}
+
+window.shell-lock-window .lock-clock-label {
+    font-size: 72px;
+    font-weight: 200;
+    letter-spacing: 2px;
+    color: @metro-fg-primary;
+}
+
+window.shell-lock-window .lock-date-label {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: @metro-accent;
+}
+
+window.shell-lock-window .lock-card {
+    background-color: rgba(20, 20, 20, 0.96);
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
+    padding: 28px 32px;
+}
+
+window.shell-lock-window .lock-avatar-ring {
+    min-width: 64px;
+    min-height: 64px;
+    background-color: alpha(@metro-accent, 0.16);
+    border: 2px solid @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-lock-window .lock-username-label {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: @metro-fg-primary;
+}
+
+window.shell-lock-window .lock-badge-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: @metro-fg-dim;
+}
+
+window.shell-lock-window button {
+    background: none;
+    background-image: none;
+    box-shadow: none;
+    text-shadow: none;
+    outline: none;
+}
+
+window.shell-lock-window .lock-password-entry,
+window.shell-lock-window .lock-password-entry > text {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    color: @metro-fg-primary;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-lock-window .lock-password-entry {
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    padding: 8px 12px;
+    min-height: 38px;
+}
+
+window.shell-lock-window .lock-password-entry > image {
+    color: @metro-fg-dim;
+    background: transparent;
+}
+
+window.shell-lock-window .lock-password-entry > image:hover {
+    color: @metro-fg-primary;
+}
+
+window.shell-lock-window .lock-password-entry:focus-within {
+    border-color: @metro-accent;
+}
+
+window.shell-lock-window .lock-submit-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    box-shadow: none;
+    font-size: 16px;
+    font-weight: 700;
+    min-width: 44px;
+    min-height: 38px;
+}
+
+window.shell-lock-window .lock-submit-btn:hover {
+    background-image: none;
+    background-color: @metro-accent-hover;
+    border-color: @metro-fg-primary;
+}
+
+window.shell-lock-window .lock-status-label {
+    font-size: 12px;
+    color: @metro-fg-dim;
+    margin-top: 4px;
+}
+
+window.shell-lock-window .lock-status-label.verifying {
+    color: @metro-telemetry;
+    font-weight: 600;
+}
+
+window.shell-lock-window .lock-status-label.error {
+    color: @metro-urgent-text;
+    font-weight: 700;
+}
+
+window.shell-lock-window .lock-action-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    box-shadow: none;
+    color: #dddddd;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    padding: 8px 18px;
+}
+
+window.shell-lock-window .lock-action-btn:hover {
+    background-image: none;
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+/* ─── Metro Screen Saver Overlay (.shell-screensaver-window) ─── */
+window.shell-screensaver-window {
+    background-color: #050505;
+    color: #f4f4f6;
+}
+
+window.shell-screensaver-window .screensaver-floating-tile {
+    background-color: rgba(18, 18, 18, 0.94);
+    border: 1px solid @metro-border;
+    border-left: 4px solid @metro-accent;
+    padding: 20px 32px;
+}
+
+window.shell-screensaver-window .screensaver-clock-label {
+    font-size: 64px;
+    font-weight: 200;
+    letter-spacing: 2px;
+    color: @metro-fg-primary;
+}
+
+window.shell-screensaver-window .screensaver-date-label {
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 2.5px;
+    color: @metro-accent;
+}
+
+window.shell-screensaver-window .screensaver-hint-label {
+    font-size: 12px;
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.35);
+}
+
+/* ─── Kajo Greeter Surface (.shell-greeter-window) ─── */
+window.shell-lock-window .greeter-top-bar {
+    background-color: rgba(20, 20, 20, 0.90);
+    border-bottom: 1px solid @metro-border;
+    padding: 8px 16px;
+}
+
+window.shell-lock-window .lock-card.auth-error {
+    border-color: @metro-urgent;
+    border-top: 3px solid @metro-urgent;
+}
+
+window.shell-lock-window .greeter-field-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: @metro-fg-dim;
+    margin-top: 4px;
+}
+
+window.shell-lock-window .greeter-dropdown > button {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    box-shadow: none;
+    color: @metro-fg-primary;
+    padding: 8px 12px;
+    min-height: 36px;
+}
+
+window.shell-lock-window .greeter-dropdown > button:hover,
+window.shell-lock-window .greeter-dropdown > button:focus {
+    background-image: none;
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+}
+
+window.shell-lock-window .greeter-poweroff-btn:hover {
+    background-image: none;
+    background-color: @metro-urgent;
+    border-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+/* ─── Kajo Virtual Keyboard (window.osk-window) — Windows Touch Keyboard flat design ─── */
+window.osk-window {
+    background-color: @metro-glass-bg;
+    border-top: 2px solid @metro-accent;
+    color: #f4f4f6;
+}
+
+window.osk-window .osk-container {
+    background-color: transparent;
+}
+
+window.osk-window button.osk-key {
+    background: none;
+    background-image: none;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid @metro-glass-border;
+    border-radius: 3px;
+    box-shadow: none;
+    text-shadow: none;
+    outline: none;
+    color: #f6f6fa;
+    padding: 0px;
+    min-height: 40px;
+    min-width: 24px;
+}
+
+window.osk-window button.osk-key:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-color: @metro-accent;
+}
+
+window.osk-window button.osk-key:active {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.osk-window button.osk-key.osk-key-special {
+    background-color: @metro-glass-well;
+    border: 1px solid @metro-glass-border;
+    color: #9e9e9e;
+}
+
+window.osk-window button.osk-key.osk-key-special:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.osk-window button.osk-key.osk-key-special:active {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.osk-window button.osk-key.osk-key-latched,
+window.osk-window button.osk-key.osk-key-special.osk-key-latched,
+window.osk-window button.osk-key.osk-key-latched:hover,
+window.osk-window button.osk-key.osk-key-special.osk-key-latched:hover {
+    background-color: @metro-accent;
+    border-color: @metro-fg-primary;
+    color: @metro-fg-primary;
+}
+
+window.osk-window button.osk-key.osk-key-locked,
+window.osk-window button.osk-key.osk-key-special.osk-key-locked,
+window.osk-window button.osk-key.osk-key-locked:hover,
+window.osk-window button.osk-key.osk-key-special.osk-key-locked:hover {
+    background-color: @metro-accent;
+    border-color: @metro-fg-primary;
+    box-shadow: inset 0 -3px 0 @metro-fg-primary;
+    color: @metro-fg-primary;
+}
+
+window.osk-window .osk-key-label {
+    font-size: 18px;
+    font-weight: 500;
+    color: inherit;
+}
+
+window.osk-window button.osk-key-special .osk-key-label {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+window.osk-window .osk-key-hint {
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.45);
+    margin-right: 5px;
+    margin-top: 3px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
