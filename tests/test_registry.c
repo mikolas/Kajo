@@ -3,6 +3,7 @@
 #include "../src/panel.h"
 #include "../src/autohide.h"
 #include "../src/config.h"
+#include "../src/theme.h"
 #include "../src/osd/osd.h"
 #include "../src/ipc/socket.h"
 #include "../src/notifications/daemon.h"
@@ -321,6 +322,78 @@ test_style_css_and_widget_ui_contract(void)
     shell_widget_registry_destroy(reg);
 }
 
+static void
+test_theme_token_generation_contract(void)
+{
+    KajoThemeCfg cfg = {
+        .accent_color           = "#0078d4",
+        .ui_font_family         = "Fira Code",
+        .glass_tint             = "#121212",
+        .panel_opacity          = 0.58,
+        .glass_opacity          = 0.62,
+        .glass_control_contrast = 1.0,
+        .widget_chip_opacity    = 0.12,
+        .accent_glass_tint      = 0.20,
+        .surface_base           = "#141414",
+        .surface_contrast       = 1.0,
+        .border_opacity         = 1.0,
+        .secondary_fg_contrast  = 1.0,
+    };
+
+    /* 1. Exact default surface, border & foreground tokens at contrast = 1.0 */
+    g_autofree gchar *css = shell_theme_build_token_css(&cfg, "#0078d4", "#1084d8");
+    g_assert_nonnull(css);
+    g_assert_nonnull(strstr(css, "@define-color metro-panel-chip rgba(255, 255, 255, 0.120);"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-0 #101010;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-1 #121212;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-bg #141414;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-2 #161616;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-3 #181818;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-4 #1a1a1a;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-surface-hover #222222;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-border-subtle #242424;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-border #2b2b2b;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-border-strong #333333;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-fg-secondary #a0a0a0;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-fg-muted #999999;"));
+    g_assert_nonnull(strstr(css, "@define-color metro-fg-dim #888888;"));
+    /* Must never emit the high-specificity #panel-container rule that clobbers :hover/:checked */
+    g_assert_null(strstr(css, "#panel-container"));
+
+    /* 2. Border hex responds to border_opacity and surface_contrast */
+    gchar bdr_full[8] = {0}, bdr_zero[8] = {0}, bdr_hi[8] = {0};
+    shell_theme_compute_border_hex(&cfg, bdr_full);
+    g_assert_cmpstr(bdr_full, ==, "#2b2b2b");
+
+    cfg.border_opacity = 0.0;
+    shell_theme_compute_border_hex(&cfg, bdr_zero);
+    g_assert_cmpstr(bdr_zero, ==, "#141414");
+
+    cfg.border_opacity = 1.0;
+    cfg.surface_contrast = 2.0;
+    shell_theme_compute_border_hex(&cfg, bdr_hi);
+    g_assert_cmpstr(bdr_hi, !=, "#2b2b2b");
+
+    /* 3. Glass tint hex blends accent_glass_tint */
+    gchar tint_blended[8] = {0}, tint_pure[8] = {0};
+    shell_theme_compute_glass_tint_hex(&cfg, "#0078d4", tint_blended);
+    g_assert_cmpstr(tint_blended, !=, "#121212");
+
+    cfg.accent_glass_tint = 0.0;
+    shell_theme_compute_glass_tint_hex(&cfg, "#0078d4", tint_pure);
+    g_assert_cmpstr(tint_pure, ==, "#121212");
+
+    /* 4. Generated token CSS parses with zero GTK4 CSS errors */
+    if (gtk_init_check()) {
+        GtkCssProvider *provider = gtk_css_provider_new();
+        guint parse_errors = 0;
+        g_signal_connect(provider, "parsing-error", G_CALLBACK(on_css_parse_error), &parse_errors);
+        gtk_css_provider_load_from_string(provider, css);
+        g_assert_cmpuint(parse_errors, ==, 0);
+        g_object_unref(provider);
+    }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -328,6 +401,7 @@ main(int argc, char *argv[])
 
     g_test_add_func("/registry/widget-classes-integrity", test_widget_registry_integrity);
     g_test_add_func("/registry/style-css-and-widget-ui-contract", test_style_css_and_widget_ui_contract);
+    g_test_add_func("/registry/theme-token-generation-contract", test_theme_token_generation_contract);
 
     return g_test_run();
 }

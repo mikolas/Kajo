@@ -16,8 +16,8 @@ window.shell-panel,
 
 #panel-container {
     background-color: @metro-panel-bg;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid @metro-glass-border;
+    border-top: 1px solid @metro-glass-border;
 }
 
 #panel-container.autohide-hidden {
@@ -27,8 +27,8 @@ window.shell-panel,
 
 #panel-container.autohide-visible {
     background-color: @metro-panel-bg;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid @metro-glass-border;
+    border-top: 1px solid @metro-glass-border;
 }
 
 /* ─── Base Panel Widgets (MenuButtons / Buttons) ─── */
@@ -49,6 +49,11 @@ menubutton.shell-widget > button {
     font-size: 14px;
     font-weight: 500;
     min-height: 0px;
+}
+
+button.shell-widget,
+menubutton.shell-widget > button {
+    background-color: @metro-panel-chip;
 }
 
 .shell-widget:hover,

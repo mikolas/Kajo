@@ -735,7 +735,7 @@ build_fx_glass_rows(SettingsPageNiri *self, GtkWidget *card_fx)
     self->row_glass_tint = create_boxed_row(
         NULL,
         "Glass Tint & Strength",
-        "[effects.glass] tint hex & tint_alpha blend",
+        "[effects.glass] compositor backdrop tint & strength (hex synced from Theme)",
         gt_box);
     gtk_box_append(GTK_BOX(card_fx), self->row_glass_tint);
 

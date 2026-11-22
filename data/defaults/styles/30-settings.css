@@ -232,7 +232,7 @@ window.shell-settings-window .section-card {
 window.shell-settings-window .section-card:hover,
 window.shell-settings-window .section-card.active {
     border-color: @metro-accent;
-    background-color: #1e1e1e;
+    background-color: @metro-surface-hover;
 }
 
 window.shell-settings-window .section-card-left {
@@ -371,7 +371,7 @@ window.shell-settings-app .navigation-sidebar row {
     padding: 5px 8px;
     min-height: 30px;
     margin-bottom: 1px;
-    color: #a8a8a8;
+    color: @metro-fg-secondary;
 }
 
 window.shell-settings-app .navigation-sidebar row:hover {
@@ -424,7 +424,7 @@ window.shell-settings-app .sidebar-nav-badge {
     padding: 1px 5px;
     background-color: @metro-surface-4;
     border: 1px solid @metro-border;
-    color: #b0b0b0;
+    color: @metro-fg-secondary;
     border-radius: 0px;
 }
 
@@ -479,19 +479,19 @@ window.shell-settings-app .settings-page-deck .shell-popover-title {
 
 window.shell-settings-app .settings-page-deck .shell-popover-subtitle {
     font-size: 11px;
-    color: #8c8c8c;
+    color: @metro-fg-secondary;
 }
 
 window.shell-settings-app .settings-counter-strip {
     background-color: @metro-surface-0;
-    border: 1px solid #252525;
+    border: 1px solid @metro-border-subtle;
     margin-top: 6px;
 }
 
 window.shell-settings-app .settings-counter-cell {
     background-color: @metro-surface-0;
-    border-right: 1px solid #1f1f1f;
-    border-bottom: 1px solid #1f1f1f;
+    border-right: 1px solid @metro-border-subtle;
+    border-bottom: 1px solid @metro-border-subtle;
     padding: 4px 8px;
 }
 
@@ -500,7 +500,7 @@ window.shell-settings-app .settings-counter-key {
     font-size: 10px;
     font-weight: 700;
     letter-spacing: 0.6px;
-    color: #787878;
+    color: @metro-fg-dim;
 }
 
 window.shell-settings-app .settings-counter-val {
@@ -644,7 +644,81 @@ window.shell-settings-app .row-title {
 window.shell-settings-app .row-subtitle {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
-    color: #8c8c8c;
+    color: @metro-fg-secondary;
+}
+
+/* Live Glass & Panel Preview Stage inside Theme Settings Card 3 */
+window.shell-settings-app .theme-glass-preview-stage {
+    background-image: linear-gradient(135deg, #1b3a5c 0%, #2a1d42 42%, #114348 76%, #2e2518 100%);
+    border: 1px solid @metro-border;
+    padding: 10px;
+}
+
+window.shell-settings-app .theme-preview-bar {
+    background-color: @metro-panel-bg;
+    border-top: 1px solid @metro-glass-border;
+    border-bottom: 1px solid @metro-glass-border;
+    padding: 3px 6px;
+}
+
+window.shell-settings-app .theme-preview-chip {
+    background-color: @metro-panel-chip;
+    color: @metro-fg-primary;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+window.shell-settings-app .theme-preview-chip-hover {
+    background-color: @metro-glass-hover;
+    color: @metro-fg-primary;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 600;
+}
+
+window.shell-settings-app .theme-preview-chip-active {
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+    padding: 2px 6px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+window.shell-settings-app .theme-preview-popover {
+    background-color: @metro-glass-bg;
+    border: 1px solid @metro-accent;
+}
+
+window.shell-settings-app .theme-preview-pop-hdr {
+    background-color: @metro-glass-header;
+    border-bottom: 1px solid @metro-glass-border;
+    padding: 4px 8px;
+}
+
+window.shell-settings-app .theme-preview-pop-title {
+    color: @metro-accent;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+}
+
+window.shell-settings-app .theme-preview-pop-ctrl {
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    padding: 4px 8px;
+}
+
+window.shell-settings-app .theme-preview-pop-well {
+    background-color: @metro-glass-well;
+    border: 1px solid @metro-glass-border;
+    border-left: 2px solid @metro-accent;
+    padding: 4px 8px;
+}
+
+window.shell-settings-app .theme-preview-sub {
+    color: @metro-fg-secondary;
+    font-size: 10px;
 }
 
 window.shell-settings-app dropdown > button {

@@ -203,6 +203,10 @@ gboolean kajo_config_comp_save_inactive_border_color(const char *config_dir,
                                                      const char *hex_color,
                                                      GError    **error);
 
+gboolean kajo_config_comp_save_glass_tint(const char *config_dir,
+                                          const char *hex_color,
+                                          GError    **error);
+
 gboolean kajo_config_comp_save_output_rule(const char *config_dir,
                                            const char *out_name,
                                            const char *make_model,

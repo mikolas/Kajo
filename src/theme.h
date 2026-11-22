@@ -65,6 +65,9 @@ gchar      *shell_theme_build_token_css(const KajoThemeCfg *config,
                                         const gchar        *accent_hex,
                                         const gchar        *hover_hex);
 void        shell_theme_compute_border_hex(const KajoThemeCfg *config, gchar out_hex[8]);
+void        shell_theme_compute_glass_tint_hex(const KajoThemeCfg *config,
+                                               const gchar        *accent_hex,
+                                               gchar               out_hex[8]);
 
 /* Pango font-family list for the kajo-ide editor font: the user's choice first,
  * then the same fallbacks the generated CSS uses ("Fira Code", "FiraCode Nerd

@@ -177,7 +177,7 @@ static void
 reset_niri_defaults_in_memory(SettingsPageNiri *self)
 {
     for (int i = 0; i < N_NIRI_NAMESPACES; i++) {
-        self->ns_opacity[i] = 85;
+        self->ns_opacity[i] = 100;
         self->ns_xray[i]    = (i == 0);
     }
     self->gap_px            = 12;
@@ -896,11 +896,11 @@ build_card_layer_layout(SettingsPageNiri *self)
         "Wayland layer-shell surface namespace",
         self->combo_ns));
 
-    GtkWidget *w_op = create_scale_with_badge(20, 100, 1, 85, "%.0f%%", &self->scale_op, NULL);
+    GtkWidget *w_op = create_scale_with_badge(20, 100, 1, 100, "%.0f%%", &self->scale_op, NULL);
     gtk_box_append(GTK_BOX(card_layer), create_boxed_row(
         "◐",
         "Surface Layer Opacity",
-        "Compositor opacity rule for selected namespace",
+        "Whole-surface alpha (text + bg); keep 100% & use Theme opacity for crisp glass text",
         w_op));
 
     GtkWidget *w_gap = create_scale_with_badge(0, 32, 1, 12, "%.0fpx", &self->scale_gap, NULL);

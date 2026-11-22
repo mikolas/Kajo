@@ -820,10 +820,12 @@ test_comp_toml_helpers_roundtrip(void)
     g_assert_true(read_xray[1]);
 
     g_assert_true(kajo_config_comp_save_inactive_border_color(tmpdir, "#333842", NULL));
+    g_assert_true(kajo_config_comp_save_glass_tint(tmpdir, "#101824", NULL));
     g_autofree gchar *comp_after_bdr = NULL;
     g_assert_true(g_file_get_contents(comp_path, &comp_after_bdr, NULL, NULL));
     g_assert_nonnull(strstr(comp_after_bdr, "inactive_border_color"));
     g_assert_nonnull(strstr(comp_after_bdr, "\"#333842\""));
+    g_assert_nonnull(strstr(comp_after_bdr, "\"#101824\""));
 
     opacities[0] = 0;
     opacities[1] = 0;
