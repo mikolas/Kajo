@@ -1,5 +1,6 @@
 #include "ide_markdown.h"
 #include "../common/pdf_render.h"
+#include "../common/spawn_detached.h"
 #include "ide_buffer.h"
 #include <archive.h>
 #include <archive_entry.h>
@@ -661,8 +662,8 @@ static void open_or_navigate_target(IdeMarkdownView *md, const char *uri_or_ref)
       g_str_has_prefix(uri_or_ref, "https://") ||
       g_str_has_prefix(uri_or_ref, "mailto:")) {
     if (!g_app_info_launch_default_for_uri(uri_or_ref, NULL, NULL)) {
-      char *argv[] = { (char *)"xdg-open", (char *)uri_or_ref, NULL };
-      g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+      const char *argv[] = { "xdg-open", uri_or_ref, NULL };
+      kajo_spawn_detached_argv(NULL, argv, NULL, NULL);
     }
     return;
   }
@@ -683,8 +684,8 @@ static void open_or_navigate_target(IdeMarkdownView *md, const char *uri_or_ref)
   g_autofree char *file_uri = g_filename_to_uri(resolved, NULL, NULL);
   if (file_uri) {
     if (!g_app_info_launch_default_for_uri(file_uri, NULL, NULL)) {
-      char *argv[] = { (char *)"xdg-open", resolved, NULL };
-      g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+      const char *argv[] = { "xdg-open", resolved, NULL };
+      kajo_spawn_detached_argv(NULL, argv, NULL, NULL);
     }
   }
 }
@@ -970,8 +971,8 @@ static void on_img_open_clicked(GtkButton *btn, gpointer user_data) {
   } else if (st->resolved_path && *st->resolved_path) {
     g_autofree char *uri = g_filename_to_uri(st->resolved_path, NULL, NULL);
     if (uri && !g_app_info_launch_default_for_uri(uri, NULL, NULL)) {
-      char *argv[] = { (char *)"xdg-open", st->resolved_path, NULL };
-      g_spawn_async(NULL, argv, NULL, G_SPAWN_SEARCH_PATH, NULL, NULL, NULL, NULL);
+      const char *argv[] = { "xdg-open", st->resolved_path, NULL };
+      kajo_spawn_detached_argv(NULL, argv, NULL, NULL);
     }
   }
 }

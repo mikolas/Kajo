@@ -9,6 +9,7 @@ ConditionEnvironment=WAYLAND_DISPLAY
 Slice=session.slice
 Type=simple
 ExecStart=/usr/bin/kajo
+KillMode=process
 Restart=on-failure
 RestartSec=1
 

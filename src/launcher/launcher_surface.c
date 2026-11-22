@@ -1,5 +1,6 @@
 #include "launcher_surface.h"
 #include "emoji_dataset.h"
+#include "../common/spawn_detached.h"
 #include "../compositor/compositor.h"
 #include "../icons.h"
 #include "../vendor/tinyexpr/tinyexpr.h"
@@ -278,7 +279,7 @@ on_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data)
                         break;
                     }
                 }
-                g_spawn_command_line_async(item->payload, NULL);
+                kajo_spawn_detached_command_line(item->payload, NULL);
                 break;
             case LAUNCHER_ITEM_EMOJI:
             case LAUNCHER_ITEM_CALC:
@@ -286,8 +287,8 @@ on_row_activated(GtkListBox *box, GtkListBoxRow *row, gpointer user_data)
                 break;
             case LAUNCHER_ITEM_CMD: {
                 gchar *terminal_cmd = g_strdup_printf("x-terminal-emulator -e %s", item->payload);
-                if (!g_spawn_command_line_async(terminal_cmd, NULL)) {
-                    g_spawn_command_line_async(item->payload, NULL);
+                if (!kajo_spawn_detached_command_line(terminal_cmd, NULL)) {
+                    kajo_spawn_detached_command_line(item->payload, NULL);
                 }
                 g_free(terminal_cmd);
                 break;
