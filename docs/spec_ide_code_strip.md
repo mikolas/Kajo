@@ -60,15 +60,15 @@ For any viewport width `W` (minus `28px` Ancestor Spine when `depth > 0` and two
 - **Vertical Pin Split Inside `D0` (`Space t p`):** When you need to edit or reference a second symbol (e.g., a `struct` definition) alongside the active function without stealing width from `D+1`/`D+2`, pinning docks it vertically at the top of `D0` (`30%` pinned / `70%` active).
 
 ### 2.2 Three-Tier Tile Level-of-Detail (LoD) & 1,000-Tile Performance
-Rendering 1,000 `GtkSourceView` widgets would destroy memory and frame rate. Instead, `kajo-ide` keeps **at most 1–2 live `GtkSourceView` widgets** (in `D0`, plus optional pinned split) while `D+1` and `D+2` use virtualized native GTK4 list views (`GtkListView` / recycled rows + Pango-highlighted peek labels):
+Rendering 1,000 `GtkSourceView` widgets would destroy memory and frame rate. Instead, `kajo-ide` keeps **at most 1–2 live `GtkSourceView` widgets** (in `D0`, plus optional pinned split) while `D+1` and `D+2` use lightweight `GtkListBox` rows bounded to a capped visible slice (`STRIP_D1_MAX_ROWS` / `STRIP_D2_MAX_ROWS`, with an inline `/` filter and `"+N more"` overflow cue when a file exposes hundreds of targets):
 
 | Tier | Column | Height | Visual Content | Widget Weight |
 | :--- | :--- | :---: | :--- | :--- |
 | **LoD 2 — Live Editor** | `D0` (`60%`) | `100%` column height | Real `GtkSourceView` attached directly to canonical `IdeBuffer`'s `GtkSourceBuffer` + 6-col Cairo gutter + optional out-of-scope dimming veil (`[ ⤢ FULL FILE ]`). | 1 live `GtkSourceView` |
-| **LoD 1 — Peekish Tile** | `D+1` (`25%`) | `32px` collapsed; `124–160px` accordion-expanded (active tile only) | Header: `[kind]` `symbol_name`, `file:L`, occurrence badge (`×3`), `→` promote button. Active/selected tile smoothly expands to show signature + 4–6 syntax-highlighted preview lines (reusing `ide_ts` token colors via Pango markup). | Virtualized `GtkListView` row |
-| **LoD 0 — Micro-Tile** | `D+2` (`15%`) | `26px` | Compact Metro chip: `[kind]` `symbol_name` + right-aligned `→N` downstream count / `✖` diagnostic dot. Fits 22–28 tiles per screen height. | Virtualized `GtkListView` row |
+| **LoD 1 — Peekish Tile** | `D+1` (`25%`) | `32px` collapsed; accordion-expanded (active tile only) | Header: `[kind]` `symbol_name`, `file:L`, occurrence badge (`×3`), `📌` pin & `→` promote buttons. Active/selected tile expands to show a 5-line syntax preview label. | Bounded `GtkListBoxRow` |
+| **LoD 0 — Micro-Tile** | `D+2` (`15%`) | `26px` | Compact Metro chip: `[kind]` `symbol_name` + right-aligned `→N` downstream count. | Bounded `GtkListBoxRow` |
 
-Because `GtkListView` recycles only the ~25–35 visible rows on screen, a column holding **1,000 workspace calls** renders at 60 FPS with constant `O(visible_rows)` memory and `< 0.05%` idle CPU.
+Because the model (`ide_strip_layout.c` / `ide_strip_graph.c`) indexes 1,000+ targets in pure C while the view caps live GTK rows and removes its frame-clock spring tick as soon as springs settle, idle CPU stays `< 0.05%`.
 
 ---
 
@@ -106,16 +106,18 @@ When `D0` is a large source file or complex dispatcher containing tens or hundre
 ### 4.2 Horizontal Depth Navigation (Dive In ← / Surface Out →)
 | Action | Keyboard | Mouse / Touchscreen |
 | :--- | :--- | :--- |
-| **Select / Peek tile in `D+1`** | `j` / `k` in `D+1` (or magnetic cursor follow in `D0`) | Single-click tile in `D+1` |
-| **Promote tile to Leftmost `D0` (Dive +1 depth)** | `Enter` on tile in `D+1`, or `g d` on call site in `D0` | **Double-click** tile in `D+1`, or click its `→` promote button |
-| **Jump directly 2 depths (`D+2 → D0`)** | `Enter` on tile in `D+2` | **Double-click** micro-tile in `D+2` (promotes intermediate `D+1` into Ancestor Spine and lands target in `D0`) |
-| **Surface Back (-1 depth)** | `Backspace` (in `D+1`/`D+2`), `Alt+Left`, or `Space t h` | Click any pill in far-left **Ancestor Spine**, or **Mouse Back (`Button 8`)** |
-| **Move Focus Between `D0 ↔ D+1 ↔ D+2`** | `Alt+H` / `Alt+L` or `Tab` / `Shift+Tab` (in strip nav) | Click anywhere in target column |
-| **Scrub Depth Strip Without Changing Focus** | `Space t [` / `Space t ]` | **`Shift + Mouse Wheel`**, click **bottom Depth Minimap**, or **1-finger drag on top Trail Header bar** |
-| **Toggle `D0` Symbol Veil ↔ Full File** | `Space t f` | Click `[ ⤢ ]` in `D0` header |
-| **Pin / Unpin Reference Tile at Top of `D0`** | `Space t p` | Click `[ 📌 ]` on any `D+1` tile |
-| **Toggle Bird's-Eye Overview / Zen Mode** | `Space t o` / `Space t z` | Click `[ ⬡ OVERVIEW ]` / `[ ⤢ ZEN ]` |
-| **Toggle Classic File Tabs ↔ Code Strip** | `Space t s` | Click `[ ▥ STRIP ]` in IDE header |
+| **Select / Peek tile in `D+1`** | `Space t j` / `Space t k` (or magnetic cursor follow in `D0`) | Single-click tile in `D+1` |
+| **Promote tile to Leftmost `D0` (Dive +1 depth)** | `Space t e` | **Double-click** tile in `D+1`, or click its `→` promote button |
+| **Jump directly 2 depths (`D+2 → D0`)** | Focus `D+2` + `Enter` | **Double-click** micro-tile in `D+2` (promotes intermediate `D+1` into Ancestor Spine and lands target in `D0`) |
+| **Surface Back (-1 depth)** | `Space t u` or `Alt+Left` | Click any pill in far-left **Ancestor Spine** |
+| **Move Focus Between `D0 ↔ D+1 ↔ D+2`** | `Space t h` / `Space t l` | Click anywhere in target column |
+| **Branch / Switch Vertical Trails** | `Space t b` / `Space t [` / `Space t ]` | Click Trail pills or `[ + BRANCH ]` in top strip toolbar |
+| **Filter `D+1` Workspace Tiles** | `Space t /` | Click inline `Filter workspace tiles (/)` entry |
+| **Resync Magnetic Follow** | `Space t r` | Click `[ ⛓ RESYNC ]` in `D+1` header |
+| **Toggle `D0` Symbol Veil ↔ Full File** | `Space t f` | Click `[ ⤢ FULL FILE ]` / `[ ⤡ SYMBOL FOCUS ]` in `D0` header |
+| **Pin / Unpin Reference Tile at Top of `D0`** | `Space t p` | Click `📌` on any `D+1` tile |
+| **Toggle Bird's-Eye Overview / Zen Mode** | `Space t o` / `Space t z` | Click `[ ⬡ MAP ]` / `[ ⤢ ZEN ]` |
+| **Toggle Classic File Tabs ↔ Code Strip** | `Space t s` | Click `[ ▥ STRIP ]` in IDE header or `[ ✕ TABS ]` in strip bar |
 
 ---
 
@@ -126,12 +128,12 @@ Switching Lenses changes *what relationship populates `D+1` and `D+2`* while kee
 | Key | Lens | Connector Color | What Populates `D+1` & `D+2` (Workspace-Only) |
 | :--- | :--- | :---: | :--- |
 | **`Space t 1`** | **`CALLS`** *(Default)* | `@metro-accent` (`#0078d4`) | Downstream workspace function/method calls (`D+1` = callees of `D0` in call order; `D+2` = callees of active `D+1` tile). |
-| **`Space t 2`** | **`TYPES`** | `@metro-telemetry` (`#00d8f0`) | Workspace `struct`, `enum`, `typedef`, `class`, and `interface` definitions referenced in `D0` (`D+2` = nested member types / functions accepting that type). |
-| **`Space t 3`** | **`IMPACT`** | `@metro-warning` (`#ffb900`) | Incoming callers / `textDocument/references` of `D0` (`D+1` = direct callers in workspace; `D+2` = callers-of-callers — full blast radius while refactoring!). |
-| **`Space t 4`** | **`DIFF`** | `#b4009e` (Agent) / `#10893e` (Git) | Git- or AI-Agent-modified workspace symbols ordered in call-depth flow, with `[ ✓ ACCEPT ]` / `[ ✕ REVERT ]` actions on headers. |
+| **`Space t 2`** | **`TYPES`** | `@metro-telemetry` (`#00d8f0`) | Workspace `struct`, `enum`, `typedef`, `class`, and `interface` definitions referenced in `D0` (`D+2` = nested member types / targets of active type). |
+| **`Space t 3`** | **`IMPACT`** | `@metro-warning` (`#ffb900`) | Incoming callers / references of `D0` (`D+1` = direct callers in workspace; `D+2` = callers-of-callers — blast radius while refactoring). |
+| **`Space t 4`** | **`DIFF`** | `#b4009e` | Git-modified workspace symbols ordered in workspace flow (pair with `Space d s/a/r` for AI agent diff review). |
 
 ### Honest Fallback Without LSP
-When no language server is running for a file, `ide_strip_graph` extracts calls and types using bundled **tree-sitter grammars (`ide_ts`, 16 languages)** + workspace-scoped async **`ripgrep`** index, displaying a visible **`[TS+RG FALLBACK]`** chip in the strip bar and dashed connectors.
+When no language server is running for a file, `ide_strip_graph` extracts calls and types using bundled **tree-sitter grammars (`ide_ts`, 16 languages)** + workspace-scoped **`ripgrep`** / text search, displaying a visible **`⚠ TS+RG`** chip in the strip bar (`⚡ LSP` when live LSP answers).
 
 ---
 
@@ -147,19 +149,19 @@ When no language server is running for a file, `ide_strip_graph` extracts calls 
 
 | Module | Responsibility | GTK-Free? |
 | :--- | :--- | :---: |
-| `src/ide/ide_strip_layout.{h,c}` | Pure depth-stack state (`IdeStripTrail`, `IdeStripDepthCol`, `IdeStripTile`, `IdeStripAnchorSpine`), `60/25/15` geometry, magnetic scroll target calculation, manual-override state, and `comp_spring` camera/scroll springs. | **Yes** (`tests/test_ide_strip.c`) |
-| `src/ide/ide_strip_graph.{h,c}` | Workspace-only symbol filter (`is_inside_workspace`), source-order call extractor (`ide_ts`), async LSP `callHierarchy` / `references` / `definition` resolver + `[TS+RG FALLBACK]`, and per-buffer call-graph cache invalidated on edit. | **Yes** (`tests/test_ide_ipc.c` + `mock_lsp_server.py`) |
-| `src/ide/ide_strip_view.{h,c}` | GTK4 widget tree: `28px` Ancestor Spine, `60%` live `GtkSourceView` (`D0`) with optional pin split & scope veil, `25%` virtualized `GtkListView` (`D+1` Peekish accordion rows), `15%` virtualized `GtkListView` (`D+2` Micro-Tiles), Cairo bridge connector overlay, and Bird's-Eye Overview canvas. | GTK4 UI |
+| `src/ide/ide_strip_layout.{h,c}` | Pure depth-stack state (`IdeStripTrail`, `IdeStripTile`, `IdeStripAncestor`), `60/25/15` & Zen `96/4` geometry, magnetic scroll target calculation, manual-override state, and `comp_spring` camera/scroll springs. | **Yes** (`tests/test_ide_strip.c`) |
+| `src/ide/ide_strip_graph.{h,c}` | Workspace-only symbol filter (`is_inside_workspace`), source-order call extractor (`ide_ts`), async LSP `callHierarchy` / `references` / `definition` resolver (`ide_lsp_manager_request_raw`) + `⚠ TS+RG` fallback, and per-buffer call-graph cache invalidated on edit/save. | **Yes** (`tests/test_ide_strip_graph.c` + `tests/test_ide_ipc.c`) |
+| `src/ide/ide_strip_view.{h,c}` | GTK4 widget tree: `28px` Ancestor Spine, `60%` live `GtkSourceView` (`D0`) with optional pin split & scope veil, `25%` bounded `GtkListBox` (`D+1` Peekish accordion rows + `/` filter), `15%` bounded `GtkListBox` (`D+2` Micro-Tiles), Cairo Bezier bridge overlay, and Bird's-Eye Overview canvas. | GTK4 UI |
 
 ---
 
 ## 8. Phased Implementation Milestones (M0–M5)
 
-| Milestone | Scope | Verification Gate |
-| :--- | :--- | :--- |
-| **M0 — Spec, Mockup & Storyboard** | `spec_ide_code_strip.md` v2, `kajo-ide-strip-mockup.html`, `kajo-ide-strip-storyboard.html` | User visual review & sign-off |
-| **M1 — Pure Depth Model & Spring Engine** | `ide_strip_layout.{h,c}` sharing `comp_spring.c`, `60/25/15` math, Ancestor Spine push/pop, magnetic align + manual-override state machine, `tests/test_ide_strip.c` | 100% unit tests + ASan/UBSan |
-| **M2 — Workspace Call-Graph Indexer & Cache** | `ide_strip_graph.{h,c}`, strict `workspace_root` filter, `ide_ts` source-order call extraction, LSP + `[TS+RG FALLBACK]`, 1,000-call benchmark test | Mock LSP tests + stress test |
-| **M3 — Live `60/25/15` Strip View & Peekish Accordion** | `ide_strip_view.{h,c}`, `D0` shared `GtkSourceView` + scope veil + pin split, virtualized `D+1` Peekish + `D+2` Micro-Tiles, magnetic follow, Cairo connectors, `Space t *` FSM bindings | `scripts/ui-shot.sh` + `test_ide_fsm` + ASan |
-| **M4 — Lenses (`TYPES`, `IMPACT`, `DIFF`) & Bird's-Eye Overview** | All 4 lenses + `Space t o` overview canvas + `/` inline column filter + vertical Trails (`Space t b` / `[` / `]`) | Mock LSP + Cairo headless test |
-| **M5 — Settings, Gallery & Docs** | `ide.toml` options, `kajo-settings`, Help Palette, `ui-gallery.html`, `design_system.md`, `kajo_ide_manual.md`, `ROADMAP.md` | Full test suite + live session check |
+| Milestone | Status | Scope | Verification Gate |
+| :--- | :---: | :--- | :--- |
+| **M0 — Spec, Mockup & Storyboard** | ✅ Done | `spec_ide_code_strip.md` v2, `kajo-ide-strip-mockup.html`, `kajo-ide-strip-storyboard.html` | User visual review & sign-off |
+| **M1 — Pure Depth Model & Spring Engine** | ✅ Done | `ide_strip_layout.{h,c}` sharing `comp_spring.c`, `60/25/15` math, Ancestor Spine push/pop, magnetic align + manual-override state machine, `tests/test_ide_strip.c` | 100% unit tests + ASan/UBSan |
+| **M2 — Workspace Call-Graph Indexer & Cache** | ✅ Done | `ide_strip_graph.{h,c}`, strict `workspace_root` filter, `ide_ts` source-order call extraction, LSP + `⚠ TS+RG` fallback, 1,000-call benchmark test | `test_ide_strip_graph` + mock LSP |
+| **M3 — Live `60/25/15` Strip View & Peekish Accordion** | ✅ Done | `ide_strip_view.{h,c}`, `D0` shared `GtkSourceView` + scope veil + pin split, `D+1` Peekish + `D+2` Micro-Tiles, magnetic follow, Cairo connectors, 20 `Space t *` FSM bindings | Headless `cage`+`grim` ASan capture + `test_ide_fsm` |
+| **M4 — Lenses (`TYPES`, `IMPACT`, `DIFF`) & Bird's-Eye Overview** | ✅ Done | All 4 lenses + `Space t o` overview canvas + `/` inline column filter + vertical Trails (`Space t b` / `[` / `]`) | Mock LSP + unit tests |
+| **M5 — Settings, Gallery & Docs** | ✅ Done | `ide.toml` options, `kajo-settings`, 120-command Help Palette, `ui-gallery.html`, `design_system.md`, `kajo_ide_manual.md`, `ROADMAP.md`, `README.md`, `DEVELOPMENT.md` | 35/35 Meson suites + headless UI shot |
