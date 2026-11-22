@@ -1,0 +1,450 @@
+/* ─── Kajo Files (window.shell-files-window) — Aero + Metro Style ─── */
+/* ═══════════════════════════════════════════════════════════════════ */
+
+window.shell-files-window .files-action-ribbon {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 5px 12px;
+}
+
+window.shell-files-window .files-breadcrumb-btn {
+    padding: 2px 8px;
+    min-height: 24px;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    color: #c8c8c8;
+    font-size: 12px;
+}
+
+window.shell-files-window .files-breadcrumb-btn:hover {
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window .files-breadcrumb-btn.active {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+    font-weight: 700;
+}
+
+window.shell-files-window .files-context-banner {
+    margin: 8px 12px 0px 12px;
+}
+
+window.shell-files-window .files-prompt-bar {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-accent;
+    padding: 10px 14px;
+}
+
+window.shell-files-window .files-auth-bar {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-warning;
+    padding: 12px 14px;
+}
+
+/* Inline passphrase / status banner in kajo-settings (same pattern as .files-auth-bar) */
+window.shell-settings-window .settings-auth-bar {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-warning;
+    padding: 10px 14px;
+}
+
+window.shell-files-window .files-trash-bar {
+    background-color: #1f1214;
+    border: 1px solid #4a1c20;
+    border-left: 3px solid @metro-urgent;
+    padding: 8px 14px;
+}
+
+/* Metro Tile Grid View (Virtualized GtkGridView) */
+window.shell-files-window .files-tile-grid {
+    padding: 12px;
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+}
+
+window.shell-files-window .files-tile-grid > child,
+window.shell-files-window .files-tile-grid flowboxchild {
+    padding: 4px;
+    margin: 0px;
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    outline: none;
+    box-shadow: none;
+}
+
+window.shell-files-window .files-tile-card {
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    padding: 8px;
+}
+
+window.shell-files-window .files-tile-card.files-tile-folder {
+    border-top: 2px solid @metro-accent;
+}
+
+window.shell-files-window .files-tile-card:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+}
+
+window.shell-files-window .files-tile-grid > child:selected .files-tile-card,
+window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card {
+    background-color: alpha(@metro-accent, 0.45);
+    border: 1px solid @metro-fg-primary;
+    box-shadow: inset 0 0 0 1px @metro-accent;
+}
+
+window.shell-files-window .files-tile-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window .files-tile-sub {
+    font-size: 11px;
+    color: #8c8c8c;
+}
+
+window.shell-files-window .files-tile-grid > child:selected .files-tile-card .files-tile-sub,
+window.shell-files-window .files-tile-grid flowboxchild:selected .files-tile-card .files-tile-sub {
+    color: @metro-fg-bright;
+}
+
+/* Details List View */
+window.shell-files-window .files-list-header {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 4px 16px;
+}
+
+window.shell-files-window .files-col-header,
+window.shell-files-window button.files-col-header-btn {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0px;
+    padding: 3px 6px;
+    min-height: 22px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: @metro-fg-dim;
+}
+
+window.shell-files-window button.files-col-header-btn:hover {
+    color: @metro-fg-primary;
+    background-color: @metro-border-subtle;
+}
+
+window.shell-files-window button.files-col-header-btn.active {
+    color: @metro-accent;
+    border-bottom-color: @metro-accent;
+}
+
+/* Sort & Context Menu Popovers */
+window.shell-files-window popover.files-sort-popover > contents,
+window.shell-files-window popover.files-context-popover > contents {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-bg;
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 0px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.72);
+}
+
+window.shell-files-window button.files-menu-row {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    padding: 6px 10px;
+    min-height: 28px;
+    color: @metro-fg-soft;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+window.shell-files-window button.files-menu-row:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window button.files-menu-row.active {
+    background-color: alpha(@metro-accent, 0.35);
+    border-color: @metro-accent;
+    border-left: 3px solid @metro-fg-primary;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window .files-ctx-shortcut {
+    font-size: 11px;
+    font-weight: 600;
+    color: @metro-fg-dim;
+}
+
+window.shell-files-window .files-details-list {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    padding: 4px 8px;
+}
+
+window.shell-files-window .files-details-list > row {
+    padding: 0px;
+    margin: 0px 0px 2px 0px;
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    outline: none;
+    box-shadow: none;
+}
+
+window.shell-files-window .files-list-row {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border-subtle;
+    border-left: 3px solid transparent;
+    padding: 6px 10px;
+}
+
+window.shell-files-window .files-list-row:hover {
+    background-color: @metro-border-subtle;
+    border-color: #363636;
+}
+
+window.shell-files-window .files-details-list > row:selected .files-list-row,
+window.shell-files-window .files-list-row:selected {
+    background-color: alpha(@metro-accent, 0.45);
+    border-color: @metro-accent;
+    border-left: 3px solid @metro-fg-primary;
+}
+
+window.shell-files-window .files-list-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window .files-list-meta {
+    font-size: 12px;
+    color: #9a9a9a;
+}
+
+window.shell-files-window .files-details-list > row:selected .files-list-meta,
+window.shell-files-window .files-list-row:selected .files-list-meta {
+    color: #efefef;
+}
+
+/* Inspector Pane (Shared across Files & Player) */
+window.shell-settings-window .files-inspector-pane {
+    background-color: @metro-surface-bg;
+    border-left: 1px solid @metro-border;
+}
+
+window.shell-files-window .files-inspector-thumb {
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border;
+    padding: 8px;
+}
+
+window.shell-files-window .files-meta-key {
+    font-size: 12px;
+    font-weight: 700;
+    color: @metro-fg-dim;
+}
+
+window.shell-files-window .files-meta-val {
+    font-size: 12px;
+    color: #e6e6e6;
+}
+
+/* Quick Look Modal Overlay (Space) */
+window.shell-files-window .files-quicklook-backdrop {
+    background-color: rgba(0, 0, 0, 0.74);
+}
+
+window.shell-files-window .files-quicklook-card {
+    background-color: @metro-surface-bg;
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.85);
+}
+
+window.shell-files-window .files-quicklook-textview,
+window.shell-files-window .files-quicklook-textview text {
+    background-color: @metro-surface-0;
+    color: #e8e8e8;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+}
+
+window.shell-files-window .files-quicklook-meta {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 13px;
+    color: @metro-fg-soft;
+}
+
+/* Sidebar Drive Capacity & Status Bar */
+window.shell-files-window .files-drive-bar trough {
+    background-color: @metro-border-subtle;
+    min-height: 5px;
+    border-radius: 0px;
+}
+
+window.shell-files-window .files-drive-bar block.filled {
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+window.shell-files-window .files-drive-bar.critical block.filled,
+window.shell-files-window .files-drive-bar block.full {
+    background-color: @metro-urgent;
+    border-radius: 0px;
+}
+
+window.shell-files-window .files-eject-btn {
+    padding: 1px 6px;
+    min-height: 20px;
+    font-size: 11px;
+}
+
+window.shell-files-window .files-status-bar {
+    background-color: @metro-surface-3;
+    border-top: 1px solid @metro-border;
+    padding: 5px 12px;
+}
+
+window.shell-files-window .files-status-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: #989898;
+}
+
+window.shell-files-window .files-status-error {
+    color: @metro-urgent-text;
+    font-weight: 700;
+}
+
+/* ============================================================================
+ * KAJO PLAYER (org.kajo.Player — Aero + Metro Media Deck)
+ * ============================================================================ */
+
+window.shell-player-window {
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
+}
+
+window.shell-player-window.player-fullscreen {
+    background-color: #000000;
+    border: none;
+    border-top: none;
+}
+
+window.shell-player-window.player-fullscreen .player-video-stage {
+    background-color: #000000;
+}
+
+window.shell-player-window.player-fullscreen .player-header-bar {
+    background-color: rgba(18, 18, 18, 0.94);
+}
+
+window.shell-player-window.player-fullscreen .player-transport-deck {
+    background-color: rgba(18, 18, 18, 0.94);
+    border-top: 1px solid @metro-accent;
+}
+
+window.shell-player-window .player-header-bar {
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
+    padding: 6px 12px;
+}
+
+window.shell-player-window .player-video-stage {
+    background-color: @metro-surface-0;
+}
+
+window.shell-player-window .player-audio-card {
+    background-color: @metro-surface-bg;
+    border: 1px solid @metro-border;
+    border-top: 2px solid @metro-accent;
+    padding: 36px 56px;
+}
+
+window.shell-player-window .player-stats-osd {
+    background-color: rgba(17, 17, 17, 0.94);
+    border: 1px solid @metro-accent;
+    border-left: 3px solid @metro-accent;
+    padding: 10px 14px;
+}
+
+window.shell-player-window .player-stats-text {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    color: @metro-fg-soft;
+}
+
+window.shell-player-window .player-transport-deck {
+    background-color: @metro-surface-bg;
+    border-top: 1px solid @metro-border;
+    padding: 10px 14px 12px 14px;
+}
+
+window.shell-player-window .player-timecode {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 700;
+    color: #d6d6d6;
+}
+
+window.shell-player-window .player-play-btn {
+    min-width: 86px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+window.shell-settings-window .player-seek-scale trough,
+window.shell-settings-window .player-volume-scale trough {
+    background: none;
+    background-image: none;
+    background-color: @metro-border-subtle;
+    min-height: 6px;
+    border-radius: 0px;
+}
+
+window.shell-settings-window .player-seek-scale highlight,
+window.shell-settings-window .player-volume-scale highlight {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border-radius: 0px;
+}
+
+window.shell-settings-window .player-seek-scale slider,
+window.shell-settings-window .player-volume-scale slider {
+    background: none;
+    background-image: none;
+    background-color: @metro-fg-primary;
+    border: 2px solid @metro-accent;
+    border-radius: 0px;
+    min-width: 14px;
+    min-height: 14px;
+    margin: -4px 0;
+}
+

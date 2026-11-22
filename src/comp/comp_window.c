@@ -1,173 +1,24 @@
-/* comp_window.c — xdg-shell windows, popups, server-side decorations, 1px borders,
- * CompLayout + CompMotion wiring, click-to-focus, and floating move/resize (Phase 2b).
+/* comp_window.c — xdg-shell windows, XWayland/foreign toplevel lifecycle,
+ * map/unmap, focus, close, rules, and CompLayout bridge (Phase 2b).
  */
-#include "comp_server.h"
+#include "comp_window_private.h"
 
 #include "comp_log.h"
-#include "fx/comp_fx.h"
 
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 #include <talloc.h>
-#include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
 #include <wlr/types/wlr_ext_image_capture_source_v1.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output_layout.h>
-#include <wlr/types/wlr_scene.h>
 #include <wlr/types/wlr_seat.h>
 #include <wlr/types/wlr_tearing_control_v1.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_dialog_v1.h>
-#include <wlr/types/wlr_xdg_shell.h>
 #include <wlr/util/edges.h>
-#include <wlr/xwayland/xwayland.h>
-
-#define COMP_BORDER_PX 1
-#define COMP_MAX_TABS  16
-
-/* Aero + Metro default border colors (spec §5.2.1 & §3.9 T3):
- *   active:       #0078d4 (0.000, 0.471, 0.831, 1.0)
- *   inactive:     #2b2b2b (0.169, 0.169, 0.169, 1.0)
- *   tab_inactive: #444444 (0.267, 0.267, 0.267, 1.0)
- *   backdrop:     #000000 (0.000, 0.000, 0.000, 1.0)
- */
-static const float k_color_active[4]       = { 0.0f, 0.470588f, 0.831373f, 1.0f };
-static const float k_color_inactive[4]     = { 0.168627f, 0.168627f, 0.168627f, 1.0f };
-static const float k_color_urgent[4]       = { 0.909804f, 0.066667f, 0.137255f, 1.0f };
-static const float k_color_tab_inactive[4] = { 0.266667f, 0.266667f, 0.266667f, 1.0f };
-static const float k_color_backdrop[4]     = { 0.0f, 0.0f, 0.0f, 1.0f };
-
-typedef struct {
-    int32_t        tile_w;
-    int32_t        tile_h;
-    int32_t        border_px;
-    struct wlr_box geom;
-    bool           has_mapped_surf;
-    bool           fullscreen;
-    bool           focused;
-    bool           urgent;
-    bool           maximized;
-    bool           tabbed;
-    bool           resizing;
-    bool           floating;
-    bool           has_rule_shadow;
-    bool           rule_shadow;
-    bool             has_rule_blur;
-    bool             rule_blur;
-    bool             has_rule_glass_style;
-    CompFxGlassStyle rule_glass_style;
-    bool           mapped;
-    size_t         tab_count;
-    size_t         tab_index;
-    float          col_active[4];
-    float          col_inactive[4];
-    float          col_urgent[4];
-} CompBorderState;
-
-typedef struct CompWindow {
-    struct wl_list                          link;        /* CompServer.windows (mapped only) */
-    CompServer                             *server;
-    CompWinId                               id;          /* 0 when unmapped */
-    struct wlr_xdg_toplevel                *toplevel;
-    struct wlr_xwayland_surface            *xsurf;
-
-    struct wlr_scene_tree                  *scene_tree;  /* node.data == CompWindow* */
-    struct wlr_scene_rect                  *backdrop;    /* solid #000000 behind fullscreen */
-    struct wlr_scene_tree                  *xdg_tree;    /* client surface + subsurfaces (clipped) */
-    struct wlr_scene_rect                  *border[4];   /* top, bottom, left, right 1px rects */
-    struct wlr_scene_rect                  *tabs[COMP_MAX_TABS]; /* spec §3.9 T3 tab strip */
-    struct wlr_scene_tree                  *popup_tree;  /* xdg_popup trees (unclipped, above borders) */
-    CompFxSurface                          *fx;
-
-    struct wlr_foreign_toplevel_handle_v1      *foreign_handle;
-    struct wlr_ext_foreign_toplevel_handle_v1  *ext_foreign_handle;
-    struct wlr_ext_image_capture_source_v1     *capture_source;
-    void                                       *foreign_listeners;
-
-    char                                   *title;
-    char                                   *app_id;
-    uint64_t                                focus_timestamp;
-
-    bool                                    mapped;
-    bool                                    tick_seen;
-    bool                                    pending_open_transition;
-    bool                                    was_resizing;
-    bool                                    was_fullscreen;
-    bool                                    was_floating;
-    int32_t                                 last_outer_w;
-    int32_t                                 last_outer_h;
-    int32_t                                 resize_start_w;
-    int32_t                                 resize_start_h;
-    int32_t                                 resize_target_w;
-    int32_t                                 resize_target_h;
-    bool                                    is_floating;
-    bool                                    is_fullscreen;
-    bool                                    is_urgent;
-    bool                                    manually_floated;
-    bool                                    rule_vrr;
-    bool                                    has_rule_shadow;
-    bool                                    rule_shadow;
-    bool                                    has_rule_blur;
-    bool                                    rule_blur;
-    bool                                    has_rule_blur_popups;
-    bool                                    rule_blur_popups;
-    bool                                    has_rule_glass_style;
-    CompFxGlassStyle                        rule_glass_style;
-    double                                  scroll_factor;
-    bool                                    maximized_to_edges;
-
-    int32_t                                 cfg_w;
-    int32_t                                 cfg_h;
-    int32_t                                 cfg_x;
-    int32_t                                 cfg_y;
-    bool                                    cfg_activated;
-    bool                                    cfg_fullscreen;
-    bool                                    cfg_maximized;
-    uint32_t                                cfg_tiled;
-
-    bool                                    border_state_valid;
-    CompBorderState                         last_border;
-    bool                                    has_last_g;
-    int32_t                                 last_rw;
-    int32_t                                 last_rh;
-    CompWindowGeometry                      last_g;
-
-    CompRect                                last_screen_rect;
-} CompWindow;
-
-static int32_t
-server_border_px(const CompServer *s)
-{
-    return (s && s->config) ? s->config->border_px : COMP_BORDER_PX;
-}
-
-static int32_t
-clamp_i32(double v, int32_t lo, int32_t hi)
-{
-    if (!isfinite(v)) return lo;
-    double r = round(v);
-    if (r < (double)lo) return lo;
-    if (r > (double)hi) return hi;
-    return (int32_t)r;
-}
-
-/* Spec §3.11 L6: at least clamp(floor(dim / 4), 10, 75) px of a floating window
- * must remain inside the working area on all four edges. */
-static CompRect
-clamp_floating_rect(CompRect r, double vw, double vh)
-{
-    if (r.w < 50.0) r.w = 50.0;
-    if (r.h < 50.0) r.h = 50.0;
-    double vis_w = fmin(75.0, fmax(10.0, floor(r.w / 4.0)));
-    double vis_h = fmin(75.0, fmax(10.0, floor(r.h / 4.0)));
-    r.x = fmin(vw - vis_w, fmax(vis_w - r.w, r.x));
-    r.y = fmin(vh - vis_h, fmax(0.0, r.y));
-    return r;
-}
 
 #define COMP_MAX_META_LEN 512
 
@@ -204,261 +55,6 @@ update_window_strings(CompWindow *w)
             .app_id = w->app_id ? w->app_id : "",
         };
         wlr_ext_foreign_toplevel_handle_v1_update_state(w->ext_foreign_handle, &st);
-    }
-}
-
-static void
-update_window_borders(CompWindow *w, int32_t tile_w, int32_t tile_h,
-                      const CompWindowGeometry *g)
-{
-    CompServer *s = w->server;
-    int32_t b = server_border_px(s);
-    bool fullscreen = g->fullscreen;
-    bool focused    = g->focused;
-    bool hide_border = fullscreen || w->maximized_to_edges || b <= 0;
-    const float *col_active   = (s && s->config) ? s->config->active_border_rgba   : k_color_active;
-    const float *col_inactive = (s && s->config) ? s->config->inactive_border_rgba : k_color_inactive;
-    const float *col_urgent   = (s && s->config) ? s->config->urgent_border_rgba   : k_color_urgent;
-
-    struct wlr_box geom = {0};
-    bool has_mapped_surf = false;
-    if (w->toplevel && w->toplevel->base &&
-        w->toplevel->base->surface && w->toplevel->base->surface->mapped) {
-        has_mapped_surf = true;
-        geom = w->toplevel->base->geometry;
-    } else if (w->xsurf && w->xsurf->surface && w->xsurf->surface->mapped) {
-        has_mapped_surf = true;
-    }
-
-    w->last_rw    = tile_w;
-    w->last_rh    = tile_h;
-    w->last_g     = *g;
-    w->has_last_g = true;
-
-    CompBorderState st = {
-        .tile_w          = tile_w,
-        .tile_h          = tile_h,
-        .border_px       = b,
-        .geom            = geom,
-        .has_mapped_surf = has_mapped_surf,
-        .fullscreen      = fullscreen,
-        .focused         = focused,
-        .urgent          = w->is_urgent,
-        .maximized       = w->maximized_to_edges,
-        .tabbed          = g->tabbed,
-        .resizing        = g->resizing && !fullscreen,
-        .floating        = g->floating,
-        .has_rule_shadow = w->has_rule_shadow,
-        .rule_shadow     = w->rule_shadow,
-        .has_rule_blur        = w->has_rule_blur,
-        .rule_blur            = w->rule_blur,
-        .has_rule_glass_style = w->has_rule_glass_style,
-        .rule_glass_style     = w->rule_glass_style,
-        .mapped          = w->mapped,
-        .tab_count       = g->tab_count,
-        .tab_index       = g->tab_index,
-    };
-    memcpy(st.col_active,   col_active,   sizeof(st.col_active));
-    memcpy(st.col_inactive, col_inactive, sizeof(st.col_inactive));
-    memcpy(st.col_urgent,   col_urgent,   sizeof(st.col_urgent));
-
-    if (w->border_state_valid && memcmp(&st, &w->last_border, sizeof(st)) == 0)
-        return;
-    w->last_border        = st;
-    w->border_state_valid = true;
-
-    const float *col = focused ? col_active : (w->is_urgent ? col_urgent : col_inactive);
-    for (int i = 0; i < 4; i++) {
-        if (!w->border[i])
-            continue;
-        wlr_scene_node_set_enabled(&w->border[i]->node, !hide_border);
-        if (!hide_border)
-            wlr_scene_rect_set_color(w->border[i], col);
-    }
-    int32_t cw = hide_border ? (tile_w > 1 ? tile_w : 1)
-                             : (tile_w > 2 * b ? tile_w - 2 * b : 1);
-    int32_t ch = hide_border ? (tile_h > 1 ? tile_h : 1)
-                             : (tile_h > 2 * b ? tile_h - 2 * b : 1);
-
-    /* M5: while the displayed size animates, the client buffer may already be smaller
-     * than the box (shrinking): fill the box with the backdrop instead of showing what
-     * is behind the window. Fullscreen uses the backdrop for the whole output. */
-    if (w->backdrop) {
-        bool show = fullscreen || st.resizing;
-        wlr_scene_node_set_enabled(&w->backdrop->node, show);
-        if (fullscreen) {
-            wlr_scene_node_set_position(&w->backdrop->node, 0, 0);
-            wlr_scene_rect_set_size(w->backdrop, tile_w, tile_h);
-        } else if (show) {
-            int32_t off = hide_border ? 0 : b;
-            wlr_scene_node_set_position(&w->backdrop->node, off, off);
-            wlr_scene_rect_set_size(w->backdrop, cw, ch);
-        }
-    }
-
-    if (has_mapped_surf && w->xdg_tree) {
-        struct wlr_box clip = {
-            .x      = geom.x,
-            .y      = geom.y,
-            .width  = cw,
-            .height = ch,
-        };
-        wlr_scene_subsurface_tree_set_clip(&w->xdg_tree->node, &clip);
-    }
-
-    int32_t outer_w = cw;
-    int32_t outer_h = ch;
-    int32_t surf_x  = 0;
-    int32_t surf_y  = 0;
-    int32_t surf_w  = cw;
-    int32_t surf_h  = ch;
-
-    if (!hide_border) {
-        /* Borders hug a client that is smaller than its tile, except while the size animates (M5) */
-        int32_t bw = (!st.resizing && geom.width > 0 && geom.width < cw) ? geom.width : cw;
-        int32_t bh = (!st.resizing && geom.height > 0 && geom.height < ch) ? geom.height : ch;
-        outer_w = bw + 2 * b;
-        outer_h = bh + 2 * b;
-        surf_x  = b;
-        surf_y  = b;
-        surf_w  = bw;
-        surf_h  = bh;
-        /* top, bottom, left, right around client at (b, b) */
-        wlr_scene_node_set_position(&w->border[0]->node, 0, 0);
-        wlr_scene_rect_set_size(w->border[0], bw + 2 * b, b);
-
-        wlr_scene_node_set_position(&w->border[1]->node, 0, bh + b);
-        wlr_scene_rect_set_size(w->border[1], bw + 2 * b, b);
-
-        wlr_scene_node_set_position(&w->border[2]->node, 0, b);
-        wlr_scene_rect_set_size(w->border[2], b, bh);
-
-        wlr_scene_node_set_position(&w->border[3]->node, bw + b, b);
-        wlr_scene_rect_set_size(w->border[3], b, bh);
-
-        if (w->xdg_tree)
-            wlr_scene_node_set_position(&w->xdg_tree->node, b, b);
-        if (w->popup_tree)
-            wlr_scene_node_set_position(&w->popup_tree->node, b, b);
-    } else {
-        if (w->xdg_tree)
-            wlr_scene_node_set_position(&w->xdg_tree->node, 0, 0);
-        if (w->popup_tree)
-            wlr_scene_node_set_position(&w->popup_tree->node, 0, 0);
-    }
-
-    /* Spec §3.9 T3: 4px tab indicator strip at x = -6, 2px vertical gap */
-    size_t n_tabs = (g->tabbed && !fullscreen && g->tab_count > 0) ? g->tab_count : 0;
-    if (n_tabs > COMP_MAX_TABS)
-        n_tabs = COMP_MAX_TABS;
-    int32_t total_gaps = n_tabs > 1 ? (int32_t)(n_tabs - 1) * 2 : 0;
-    int32_t avail_h    = tile_h > total_gaps ? tile_h - total_gaps : (int32_t)n_tabs;
-    int32_t cur_y      = 0;
-    for (size_t i = 0; i < COMP_MAX_TABS; i++) {
-        if (i >= n_tabs) {
-            if (w->tabs[i])
-                wlr_scene_node_set_enabled(&w->tabs[i]->node, false);
-            continue;
-        }
-        if (!w->tabs[i]) {
-            w->tabs[i] = wlr_scene_rect_create(w->scene_tree, 4, 1, k_color_tab_inactive);
-            if (!w->tabs[i])
-                continue;
-            if (w->popup_tree)
-                wlr_scene_node_place_below(&w->tabs[i]->node, &w->popup_tree->node);
-        }
-        int32_t seg_h = (i + 1 == n_tabs) ? (tile_h - cur_y) : (avail_h / (int32_t)n_tabs);
-        if (seg_h < 1)
-            seg_h = 1;
-        wlr_scene_node_set_enabled(&w->tabs[i]->node, true);
-        wlr_scene_node_set_position(&w->tabs[i]->node, -6, cur_y);
-        wlr_scene_rect_set_size(w->tabs[i], 4, seg_h);
-        wlr_scene_rect_set_color(w->tabs[i], (i == g->tab_index) ? col_active : k_color_tab_inactive);
-        cur_y += seg_h + 2;
-    }
-
-    w->last_outer_w = outer_w;
-    w->last_outer_h = outer_h;
-
-    if (w->fx) {
-        CompFxSurfaceState fx_st = {
-            .outer_box       = { 0, 0, outer_w, outer_h },
-            .surface_box     = { surf_x, surf_y, surf_w, surf_h },
-            .shadow_below    = w->backdrop ? &w->backdrop->node
-                                           : (w->xdg_tree ? &w->xdg_tree->node : NULL),
-            .dim_above       = w->xdg_tree ? &w->xdg_tree->node : NULL,
-            .has_rule_shadow = w->has_rule_shadow,
-            .rule_shadow     = w->rule_shadow,
-            .has_rule_blur        = w->has_rule_blur,
-            .rule_blur            = w->rule_blur,
-            .has_rule_glass_style = w->has_rule_glass_style,
-            .rule_glass_style     = w->rule_glass_style,
-            .is_floating     = g->floating,
-            .is_fullscreen   = fullscreen,
-            .is_focused      = focused,
-            .mapped          = w->mapped,
-        };
-        comp_fx_surface_sync(w->fx, &fx_st);
-    }
-}
-
-static void
-configure_window_toplevel(CompWindow *w, int32_t tile_x, int32_t tile_y,
-                          int32_t tile_w, int32_t tile_h,
-                          bool activated, bool fullscreen, bool floating)
-{
-    bool is_xdg = (w->toplevel && w->toplevel->base && w->toplevel->base->initialized);
-    bool is_x11 = (w->xsurf != NULL);
-    if (!is_xdg && !is_x11)
-        return;
-
-    bool hide_border = fullscreen || w->maximized_to_edges;
-    int32_t b = hide_border ? 0 : server_border_px(w->server);
-    int32_t cw = tile_w > 2 * b ? tile_w - 2 * b : 1;
-    int32_t ch = tile_h > 2 * b ? tile_h - 2 * b : 1;
-    uint32_t tiled = (!floating && !fullscreen)
-                         ? (WLR_EDGE_TOP | WLR_EDGE_BOTTOM | WLR_EDGE_LEFT | WLR_EDGE_RIGHT)
-                         : WLR_EDGE_NONE;
-
-    int32_t xw_x = tile_x + b;
-    int32_t xw_y = tile_y + b;
-
-    bool changed = (cw != w->cfg_w) || (ch != w->cfg_h) ||
-                   (is_x11 && (xw_x != w->cfg_x || xw_y != w->cfg_y)) ||
-                   (activated != w->cfg_activated) ||
-                   (fullscreen != w->cfg_fullscreen) ||
-                   (w->maximized_to_edges != w->cfg_maximized) ||
-                   (tiled != w->cfg_tiled);
-    if (!changed)
-        return;
-
-    w->cfg_w          = cw;
-    w->cfg_h          = ch;
-    w->cfg_x          = xw_x;
-    w->cfg_y          = xw_y;
-    w->cfg_activated  = activated;
-    w->cfg_fullscreen = fullscreen;
-    w->cfg_maximized  = w->maximized_to_edges;
-    w->cfg_tiled      = tiled;
-
-    if (is_xdg) {
-        wlr_xdg_toplevel_set_tiled(w->toplevel, tiled);
-        wlr_xdg_toplevel_set_activated(w->toplevel, activated);
-        wlr_xdg_toplevel_set_fullscreen(w->toplevel, fullscreen);
-        wlr_xdg_toplevel_set_maximized(w->toplevel, w->maximized_to_edges);
-        wlr_xdg_toplevel_set_size(w->toplevel, cw, ch);
-    } else if (is_x11) {
-        wlr_xwayland_surface_activate(w->xsurf, activated);
-        wlr_xwayland_surface_set_fullscreen(w->xsurf, fullscreen);
-        wlr_xwayland_surface_set_maximized(w->xsurf, w->maximized_to_edges, w->maximized_to_edges);
-        wlr_xwayland_surface_configure(w->xsurf, (int16_t)xw_x, (int16_t)xw_y,
-                                       (uint16_t)cw, (uint16_t)ch);
-    }
-
-    if (w->foreign_handle) {
-        wlr_foreign_toplevel_handle_v1_set_activated(w->foreign_handle, activated);
-        wlr_foreign_toplevel_handle_v1_set_fullscreen(w->foreign_handle, fullscreen);
-        wlr_foreign_toplevel_handle_v1_set_maximized(w->foreign_handle, w->maximized_to_edges);
     }
 }
 
@@ -511,8 +107,8 @@ comp_server_restore_keyboard_focus(CompServer *s)
     enter_keyboard_surface(s, comp_window_get_surface(w));
 }
 
-static CompWindowGeometry *
-ensure_geom_scratch(CompServer *s, size_t need)
+CompWindowGeometry *
+comp_window_ensure_geom_scratch(CompServer *s, size_t need)
 {
     if (need < 32)
         need = 32;
@@ -527,147 +123,6 @@ ensure_geom_scratch(CompServer *s, size_t need)
     s->geom_scratch     = nb;
     s->geom_scratch_cap = ncap;
     return s->geom_scratch;
-}
-
-void
-comp_window_tick_frame(CompServer *s, double now_s)
-{
-    if (!s || !s->motion)
-        return;
-
-    CompRect work = {0};
-    comp_server_working_area(s, &work);
-    double full_vw = 0.0, full_vh = 0.0;
-    comp_server_viewport_size(s, &full_vw, &full_vh);
-
-    size_t total = comp_layout_window_count(s->layout);
-    size_t cap = total + 8;
-    CompWindowGeometry *geoms = ensure_geom_scratch(s, cap);
-    if (!geoms)
-        return;
-
-    double view_x = 0.0, ws_y = 0.0;
-    size_t n = comp_motion_sample(s->motion, now_s, geoms, cap, &view_x, &ws_y);
-    if (n > cap)
-        n = cap;
-
-    CompWindow *w;
-    wl_list_for_each(w, &s->windows, link) {
-        w->tick_seen = false;
-    }
-
-    for (size_t i = 0; i < n; i++) {
-        const CompWindowGeometry *g = &geoms[i];
-        CompWindow *win = comp_win_from_id(s, g->id);
-        if (!win || !win->mapped || !win->scene_tree)
-            continue;
-
-        win->last_screen_rect = g->rect;
-        if (!g->visible)
-            continue;
-
-        win->tick_seen = true;
-
-        int32_t rx = g->fullscreen ? 0 : clamp_i32(g->rect.x + work.x, -32768, 32767);
-        /* WS7: fullscreen windows scroll with their workspace on the strip (rect.y is 0 when settled) */
-        int32_t ry = g->fullscreen ? clamp_i32(g->rect.y, -32768, 32767)
-                                   : clamp_i32(g->rect.y + work.y, -32768, 32767);
-        int32_t rw = g->fullscreen ? clamp_i32(full_vw, 1, 32767) : clamp_i32(g->rect.w, 1, 32767);
-        int32_t rh = g->fullscreen ? clamp_i32(full_vh, 1, 32767) : clamp_i32(g->rect.h, 1, 32767);
-
-        int32_t prev_ow = (win->last_outer_w > 0) ? win->last_outer_w : win->last_rw;
-        int32_t prev_oh = (win->last_outer_h > 0) ? win->last_outer_h : win->last_rh;
-        struct wlr_box prev_box = {
-            .x      = win->scene_tree->node.x,
-            .y      = win->scene_tree->node.y,
-            .width  = prev_ow,
-            .height = prev_oh,
-        };
-        struct wlr_box curr_box = { .x = rx, .y = ry, .width = rw, .height = rh };
-
-        bool already_trans = comp_fx_tree_is_transitioning(s, win->scene_tree);
-        bool same_layer    = !g->fullscreen && !win->was_fullscreen && (g->floating == win->was_floating);
-        bool start_resize  = !win->pending_open_transition &&
-                             !already_trans &&
-                             win->has_last_g &&
-                             same_layer &&
-                             !win->was_resizing && g->resizing &&
-                             prev_box.width > 0 && prev_box.height > 0 &&
-                             win->scene_tree->node.parent != NULL;
-
-        if (start_resize) {
-            int32_t b = (g->fullscreen || win->maximized_to_edges) ? 0 : server_border_px(s);
-            win->resize_start_w  = prev_box.width;
-            win->resize_start_h  = prev_box.height;
-            win->resize_target_w = (win->cfg_w > 0) ? (win->cfg_w + 2 * b) : rw;
-            win->resize_target_h = (win->cfg_h > 0) ? (win->cfg_h + 2 * b) : rh;
-            /* Capture pre-resize snapshot BEFORE updating borders/clip to the new size. */
-            comp_fx_transition_start_resize(s, win->scene_tree,
-                                            win->scene_tree->node.parent,
-                                            prev_box, curr_box);
-        }
-
-        wlr_scene_node_set_position(&win->scene_tree->node, rx, ry);
-        update_window_borders(win, rw, rh, g);
-
-        struct wlr_box live_box = {
-            .x      = rx,
-            .y      = ry,
-            .width  = (win->last_outer_w > 0) ? win->last_outer_w : rw,
-            .height = (win->last_outer_h > 0) ? win->last_outer_h : rh,
-        };
-
-        if (win->pending_open_transition) {
-            win->pending_open_transition = false;
-            if (live_box.width > 0 && live_box.height > 0 && win->scene_tree->node.parent) {
-                comp_fx_transition_start_open(s, win->scene_tree,
-                                              win->scene_tree->node.parent, live_box);
-            }
-        }
-
-        bool transitioning = comp_fx_tree_is_transitioning(s, win->scene_tree);
-        if (transitioning) {
-            bool synced_resize = false;
-            if (win->was_resizing || start_resize) {
-                double dw = fabs((double)win->resize_target_w - (double)win->resize_start_w);
-                double dh = fabs((double)win->resize_target_h - (double)win->resize_start_h);
-                double prog = 1.0;
-                if (g->resizing) {
-                    if (dw >= dh && dw > 1.0)
-                        prog = fabs((double)rw - (double)win->resize_start_w) / dw;
-                    else if (dh > 1.0)
-                        prog = fabs((double)rh - (double)win->resize_start_h) / dh;
-                    else
-                        prog = 0.0;
-                }
-                synced_resize = comp_fx_transition_sync_resize(
-                    s, win->scene_tree, live_box, prog, !g->resizing);
-                if (synced_resize && !g->resizing)
-                    transitioning = false;
-            }
-            if (!synced_resize) {
-                comp_fx_transition_update_live(s, win->scene_tree, live_box,
-                                               live_box.width, live_box.height, false);
-            }
-        }
-
-        win->was_resizing   = g->resizing;
-        win->was_fullscreen = g->fullscreen;
-        win->was_floating   = g->floating;
-        wlr_scene_node_set_enabled(&win->scene_tree->node, !transitioning);
-    }
-
-    wl_list_for_each(w, &s->windows, link) {
-        if (!w->tick_seen) {
-            /* Do not play a deferred Open animation later if a window mapped off-screen,
-             * and cancel any in-flight transition so its anchor never bleeds across workspaces. */
-            w->pending_open_transition = false;
-            if (w->scene_tree) {
-                comp_fx_transition_cancel_tree(s, w->scene_tree);
-                wlr_scene_node_set_enabled(&w->scene_tree->node, false);
-            }
-        }
-    }
 }
 
 void
@@ -687,7 +142,7 @@ comp_window_relayout(CompServer *s)
 
     size_t total = comp_layout_window_count(s->layout);
     size_t cap = total + 8;
-    CompWindowGeometry *geoms = ensure_geom_scratch(s, cap);
+    CompWindowGeometry *geoms = comp_window_ensure_geom_scratch(s, cap);
     if (!geoms)
         return;
 
@@ -717,11 +172,11 @@ comp_window_relayout(CompServer *s)
             wlr_scene_node_reparent(&w->scene_tree->node, target_parent);
         }
 
-        int32_t rx = g->fullscreen ? 0 : clamp_i32(g->rect.x + work.x, -32768, 32767);
-        int32_t ry = g->fullscreen ? 0 : clamp_i32(g->rect.y + work.y, -32768, 32767);
-        int32_t rw = g->fullscreen ? clamp_i32(full_vw, 1, 32767) : clamp_i32(g->rect.w, 1, 32767);
-        int32_t rh = g->fullscreen ? clamp_i32(full_vh, 1, 32767) : clamp_i32(g->rect.h, 1, 32767);
-        configure_window_toplevel(w, rx, ry, rw, rh, g->focused, g->fullscreen, g->floating);
+        int32_t rx = g->fullscreen ? 0 : comp_window_clamp_i32(g->rect.x + work.x, -32768, 32767);
+        int32_t ry = g->fullscreen ? 0 : comp_window_clamp_i32(g->rect.y + work.y, -32768, 32767);
+        int32_t rw = g->fullscreen ? comp_window_clamp_i32(full_vw, 1, 32767) : comp_window_clamp_i32(g->rect.w, 1, 32767);
+        int32_t rh = g->fullscreen ? comp_window_clamp_i32(full_vh, 1, 32767) : comp_window_clamp_i32(g->rect.h, 1, 32767);
+        comp_window_configure_toplevel(w, rx, ry, rw, rh, g->focused, g->fullscreen, g->floating);
     }
 
     CompWinId focused_id = comp_layout_focused_window(s->layout);
@@ -1027,38 +482,6 @@ comp_window_get_surface(const struct CompWindow *w)
     return NULL;
 }
 
-bool
-comp_window_get_capture_box(const struct CompWindow *w, bool include_border,
-                            struct wlr_scene_node **out_node, struct wlr_box *out_logical_box)
-{
-    if (!w || !w->mapped || !w->scene_tree || !w->xdg_tree || !out_node || !out_logical_box)
-        return false;
-
-    int32_t b = server_border_px(w->server);
-    bool hide_border = w->is_fullscreen || w->maximized_to_edges || b <= 0;
-    int32_t cw = w->cfg_w > 0 ? w->cfg_w : (int32_t)w->last_screen_rect.w;
-    int32_t ch = w->cfg_h > 0 ? w->cfg_h : (int32_t)w->last_screen_rect.h;
-    if (w->toplevel && w->toplevel->base && w->toplevel->base->surface &&
-        w->toplevel->base->surface->mapped) {
-        struct wlr_box geom = w->toplevel->base->geometry;
-        if (geom.width > 0 && geom.width < cw)
-            cw = geom.width;
-        if (geom.height > 0 && geom.height < ch)
-            ch = geom.height;
-    }
-    if (cw < 1) cw = 1;
-    if (ch < 1) ch = 1;
-
-    if (include_border && !hide_border) {
-        *out_node = &w->scene_tree->node;
-        *out_logical_box = (struct wlr_box){ .x = 0, .y = 0, .width = cw + 2 * b, .height = ch + 2 * b };
-    } else {
-        *out_node = &w->xdg_tree->node;
-        *out_logical_box = (struct wlr_box){ .x = 0, .y = 0, .width = cw, .height = ch };
-    }
-    return true;
-}
-
 void
 comp_window_accept_capture_request(
     CompServer *s,
@@ -1094,77 +517,6 @@ comp_window_destroy_capture_sources(CompServer *s)
 }
 
 void
-comp_window_update_grab(CompServer *s)
-{
-    if (!s || s->grab_win == 0)
-        return;
-    CompWindow *w = comp_win_from_id(s, s->grab_win);
-    if (!w || !w->mapped || !w->is_floating) {
-        comp_window_end_grab(s);
-        return;
-    }
-
-    double dx = s->cursor->x - s->grab_start_cx;
-    double dy = s->cursor->y - s->grab_start_cy;
-    CompRect r = s->grab_start_rect;
-    int32_t b = server_border_px(s);
-
-    if (!s->grab_resizing) {
-        r.x += dx;
-        r.y += dy;
-    } else {
-        double min_w = 50.0, min_h = 50.0;
-        if (w->toplevel && w->toplevel->current.min_width > 0)
-            min_w = (double)w->toplevel->current.min_width + 2 * b;
-        else if (w->xsurf && w->xsurf->size_hints && w->xsurf->size_hints->min_width > 0)
-            min_w = (double)w->xsurf->size_hints->min_width + 2 * b;
-        if (w->toplevel && w->toplevel->current.min_height > 0)
-            min_h = (double)w->toplevel->current.min_height + 2 * b;
-        else if (w->xsurf && w->xsurf->size_hints && w->xsurf->size_hints->min_height > 0)
-            min_h = (double)w->xsurf->size_hints->min_height + 2 * b;
-
-        if (s->grab_edges & WLR_EDGE_LEFT) {
-            double new_w = r.w - dx;
-            if (new_w < min_w) new_w = min_w;
-            r.x += r.w - new_w;
-            r.w = new_w;
-        } else if (s->grab_edges & WLR_EDGE_RIGHT) {
-            r.w += dx;
-            if (r.w < min_w) r.w = min_w;
-        }
-        if (s->grab_edges & WLR_EDGE_TOP) {
-            double new_h = r.h - dy;
-            if (new_h < min_h) new_h = min_h;
-            r.y += r.h - new_h;
-            r.h = new_h;
-        } else if (s->grab_edges & WLR_EDGE_BOTTOM) {
-            r.h += dy;
-            if (r.h < min_h) r.h = min_h;
-        }
-    }
-
-    CompRect work = {0};
-    comp_server_working_area(s, &work);
-    r = clamp_floating_rect(r, work.w, work.h);
-
-    if (comp_layout_set_floating_rect(s->layout, w->id, r))
-        comp_window_relayout(s);
-}
-
-void
-comp_window_end_grab(CompServer *s)
-{
-    if (!s || s->grab_win == 0)
-        return;
-    CompWindow *w = comp_win_from_id(s, s->grab_win);
-    if (w && w->mapped && s->grab_resizing && w->toplevel && w->toplevel->base->initialized)
-        wlr_xdg_toplevel_set_resizing(w->toplevel, false);
-    s->grab_win      = 0;
-    s->grab_resizing = false;
-    s->grab_edges    = 0;
-}
-
-void
 comp_window_get_popup_trees(const struct CompWindow *w,
                             struct wlr_scene_tree **out_popup_tree,
                             struct wlr_scene_node **out_xdg_node)
@@ -1188,49 +540,6 @@ comp_window_get_popup_fx_rules(const struct CompWindow *w,
         *out_has_blur = w ? w->has_rule_blur_popups : false;
     if (out_blur)
         *out_blur = w ? w->rule_blur_popups : false;
-}
-
-static void
-resize_layout_axis(CompServer *s, double axis_px, double min_prop,
-                   double delta, CompDeltaMode mode,
-                   bool (*adjust_fn)(CompLayout *, double))
-{
-    double d = delta;
-    if (mode == COMP_DELTA_REL_PX && axis_px > 0.0)
-        d = delta / axis_px;
-    if (mode == COMP_DELTA_SET_PROP || mode == COMP_DELTA_SET_PX) {
-        double prop = (mode == COMP_DELTA_SET_PROP)
-                          ? delta
-                          : (axis_px > 0.0 ? delta / axis_px : 0.5);
-        adjust_fn(s->layout, -1.0);
-        adjust_fn(s->layout, prop - min_prop);
-    } else {
-        adjust_fn(s->layout, d);
-    }
-    comp_window_relayout(s);
-}
-
-void
-comp_window_resize_column(CompServer *s, double delta, CompDeltaMode mode)
-{
-    if (!s || !s->layout)
-        return;
-    CompWindow *fw = comp_win_from_id(s, comp_layout_focused_window(s->layout));
-    if (fw)
-        fw->maximized_to_edges = false;
-    double vw = 0.0, vh = 0.0;
-    comp_server_viewport_size(s, &vw, &vh);
-    resize_layout_axis(s, vw, 0.05, delta, mode, comp_layout_adjust_column_width);
-}
-
-void
-comp_window_resize_height(CompServer *s, double delta, CompDeltaMode mode)
-{
-    if (!s || !s->layout)
-        return;
-    double vw = 0.0, vh = 0.0;
-    comp_server_viewport_size(s, &vw, &vh);
-    resize_layout_axis(s, vh, 0.1, delta, mode, comp_layout_adjust_window_height);
 }
 
 bool
@@ -1499,8 +808,8 @@ handle_toplevel_commit(void *owner, void *data)
         if (w->toplevel->requested.fullscreen) {
             double full_vw = 0.0, full_vh = 0.0;
             comp_server_viewport_size(s, &full_vw, &full_vh);
-            configure_window_toplevel(w, 0, 0, clamp_i32(full_vw, 1, 32767),
-                                      clamp_i32(full_vh, 1, 32767), false, true, false);
+            comp_window_configure_toplevel(w, 0, 0, comp_window_clamp_i32(full_vw, 1, 32767),
+                                           comp_window_clamp_i32(full_vh, 1, 32767), false, true, false);
         } else if (!should_open_floating(w, &rr)) {
             CompRect work = {0};
             comp_server_working_area(s, &work);
@@ -1512,9 +821,9 @@ handle_toplevel_commit(void *owner, void *data)
                                          : 0.5);
             if (w->toplevel->requested.maximized)
                 col_prop = 1.0;
-            int32_t tile_w = clamp_i32((work.w - gap) * col_prop - gap, 1, 32767);
-            int32_t tile_h = clamp_i32(work.h - 2.0 * gap, 1, 32767);
-            configure_window_toplevel(w, 0, 0, tile_w, tile_h, false, false, false);
+            int32_t tile_w = comp_window_clamp_i32((work.w - gap) * col_prop - gap, 1, 32767);
+            int32_t tile_h = comp_window_clamp_i32(work.h - 2.0 * gap, 1, 32767);
+            comp_window_configure_toplevel(w, 0, 0, tile_w, tile_h, false, false, false);
         } else {
             wlr_xdg_toplevel_set_size(w->toplevel, 0, 0);
         }
@@ -1524,7 +833,7 @@ handle_toplevel_commit(void *owner, void *data)
     if (w->mapped && w->has_last_g && w->scene_tree) {
         bool transitioning = comp_fx_tree_is_transitioning(s, w->scene_tree);
         if (w->scene_tree->node.enabled || transitioning)
-            update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
+            comp_window_update_borders(w, w->last_rw, w->last_rh, &w->last_g);
         if (transitioning) {
             int32_t lw = (w->last_outer_w > 0) ? w->last_outer_w : w->last_rw;
             int32_t lh = (w->last_outer_h > 0) ? w->last_outer_h : w->last_rh;
@@ -1539,65 +848,6 @@ handle_toplevel_commit(void *owner, void *data)
             comp_fx_transition_update_live(s, w->scene_tree, live_box, cap_w, cap_h, true);
         }
     }
-}
-
-static CompRect
-initial_floating_rect(const CompWindow *w, const CompWindowRuleResult *rr, double vw, double vh)
-{
-    double fw = 0.0, fh = 0.0;
-    if (w->toplevel && w->toplevel->base) {
-        fw = (double)w->toplevel->base->geometry.width;
-        fh = (double)w->toplevel->base->geometry.height;
-        if (fw <= 0.0 && w->toplevel->base->surface)
-            fw = (double)w->toplevel->base->surface->current.width;
-        if (fh <= 0.0 && w->toplevel->base->surface)
-            fh = (double)w->toplevel->base->surface->current.height;
-    } else if (w->xsurf) {
-        fw = (double)w->xsurf->width;
-        fh = (double)w->xsurf->height;
-    }
-    if (fw <= 0.0) fw = fmin(800.0, round(vw * 0.6));
-    if (fh <= 0.0) fh = fmin(600.0, round(vh * 0.6));
-    double b = (double)server_border_px(w->server);
-    fw += 2.0 * b;
-    fh += 2.0 * b;
-
-    double fx = round((vw - fw) * 0.5);
-    double fy = round((vh - fh) * 0.5);
-
-    const CompWindow *pw = NULL;
-    if (w->toplevel && w->toplevel->parent && w->toplevel->parent->base)
-        pw = w->toplevel->parent->base->data;
-    else if (w->xsurf && w->xsurf->parent)
-        pw = w->xsurf->parent->data;
-    if (pw && pw->mapped) {
-        fx = round(pw->last_screen_rect.x + (pw->last_screen_rect.w - fw) * 0.5);
-        fy = round(pw->last_screen_rect.y + (pw->last_screen_rect.h - fh) * 0.5);
-    }
-
-    if (rr && rr->has_anchor) {
-        switch (rr->corner) {
-        case COMP_CORNER_TOP_LEFT:
-            fx = rr->anchor_x;
-            fy = rr->anchor_y;
-            break;
-        case COMP_CORNER_TOP_RIGHT:
-            fx = vw - fw - rr->anchor_x;
-            fy = rr->anchor_y;
-            break;
-        case COMP_CORNER_BOTTOM_LEFT:
-            fx = rr->anchor_x;
-            fy = vh - fh - rr->anchor_y;
-            break;
-        case COMP_CORNER_BOTTOM_RIGHT:
-            fx = vw - fw - rr->anchor_x;
-            fy = vh - fh - rr->anchor_y;
-            break;
-        }
-    }
-
-    CompRect r = { .x = fx, .y = fy, .w = fw, .h = fh };
-    return clamp_floating_rect(r, vw, vh);
 }
 
 static void
@@ -1628,7 +878,7 @@ reapply_dynamic_rules_for_window(CompWindow *w)
     if (!w->manually_floated && !w->is_floating && should_open_floating(w, &rr)) {
         CompRect work = {0};
         comp_server_working_area(s, &work);
-        CompRect r = initial_floating_rect(w, &rr, work.w, work.h);
+        CompRect r = comp_window_initial_floating_rect(w, &rr, work.w, work.h);
         CompWinId prev_focus = comp_layout_focused_window(s->layout);
         comp_layout_focus_window(s->layout, w->id);
         if (comp_layout_apply(s->layout, COMP_ACT_TOGGLE_WINDOW_FLOATING)) {
@@ -1640,7 +890,7 @@ reapply_dynamic_rules_for_window(CompWindow *w)
         comp_window_relayout(s);
     } else {
         if (w->has_last_g)
-            update_window_borders(w, w->last_rw, w->last_rh, &w->last_g);
+            comp_window_update_borders(w, w->last_rw, w->last_rh, &w->last_g);
         comp_output_update_vrr(s);
     }
 }
@@ -1728,7 +978,7 @@ handle_toplevel_map(void *owner, void *data)
     w->is_floating = floating;
 
     if (floating) {
-        CompRect r = initial_floating_rect(w, &rr, vw, vh);
+        CompRect r = comp_window_initial_floating_rect(w, &rr, vw, vh);
         comp_layout_add_floating(s->layout, w->id, r);
         if (w->scene_tree) {
             wlr_scene_node_reparent(&w->scene_tree->node, s->tree_floating);
@@ -1876,53 +1126,6 @@ handle_request_minimize(void *owner, void *data)
         wlr_xdg_surface_schedule_configure(w->toplevel->base);
 }
 
-static bool
-validate_grab_serial(CompServer *s, CompWindow *w, uint32_t serial)
-{
-    if (!s || !s->seat || !w)
-        return false;
-    struct wlr_surface *surf = comp_window_get_surface(w);
-    if (!surf)
-        return false;
-    return wlr_seat_validate_pointer_grab_serial(s->seat, surf, serial) ||
-           wlr_seat_validate_touch_grab_serial(s->seat, surf, serial, NULL);
-}
-
-static void
-handle_request_move(void *owner, void *data)
-{
-    CompWindow *w = owner;
-    CompServer *s = w->server;
-    const struct wlr_xdg_toplevel_move_event *ev = data;
-    /* Spec §3.11 L8: interactive move is supported on floating windows. */
-    if (!w->mapped || !w->is_floating || !ev || !validate_grab_serial(s, w, ev->serial))
-        return;
-    s->grab_win      = w->id;
-    s->grab_resizing = false;
-    s->grab_edges    = 0;
-    s->grab_start_cx = s->cursor->x;
-    s->grab_start_cy = s->cursor->y;
-    s->grab_start_rect = w->last_screen_rect;
-}
-
-static void
-handle_request_resize(void *owner, void *data)
-{
-    CompWindow *w = owner;
-    CompServer *s = w->server;
-    const struct wlr_xdg_toplevel_resize_event *ev = data;
-    if (!w->mapped || !w->is_floating || !ev || !validate_grab_serial(s, w, ev->serial))
-        return;
-    s->grab_win      = w->id;
-    s->grab_resizing = true;
-    s->grab_edges    = ev->edges;
-    s->grab_start_cx = s->cursor->x;
-    s->grab_start_cy = s->cursor->y;
-    s->grab_start_rect = w->last_screen_rect;
-    if (w->toplevel->base->initialized)
-        wlr_xdg_toplevel_set_resizing(w->toplevel, true);
-}
-
 static void
 handle_set_parent(void *owner, void *data)
 {
@@ -1959,33 +1162,10 @@ handle_new_toplevel(void *owner, void *data)
     toplevel->base->data = w;
     talloc_set_destructor(w, window_destructor);
 
-    w->scene_tree = wlr_scene_tree_create(s->tree_tiled);
-    if (!w->scene_tree) {
+    if (!comp_window_create_chrome(w, toplevel->base)) {
         talloc_free(w);
         return;
     }
-    w->scene_tree->node.data = w;
-    wlr_scene_node_set_enabled(&w->scene_tree->node, false);
-
-    w->backdrop = wlr_scene_rect_create(w->scene_tree, 0, 0, k_color_backdrop);
-    if (w->backdrop)
-        wlr_scene_node_set_enabled(&w->backdrop->node, false);
-
-    w->xdg_tree = wlr_scene_xdg_surface_create(w->scene_tree, toplevel->base);
-    if (!w->xdg_tree) {
-        talloc_free(w);
-        return;
-    }
-
-    for (int i = 0; i < 4; i++)
-        w->border[i] = wlr_scene_rect_create(w->scene_tree, 0, 0, k_color_inactive);
-
-    w->popup_tree = wlr_scene_tree_create(w->scene_tree);
-    if (!w->popup_tree) {
-        talloc_free(w);
-        return;
-    }
-    w->fx = comp_fx_surface_create(s, w->scene_tree, COMP_FX_SURFACE_WINDOW);
 
     update_window_strings(w);
 
@@ -1997,8 +1177,8 @@ handle_new_toplevel(void *owner, void *data)
               comp_listen(w, &toplevel->events.request_maximize, handle_request_maximize) &&
               comp_listen(w, &toplevel->events.request_fullscreen, handle_request_fullscreen) &&
               comp_listen(w, &toplevel->events.request_minimize, handle_request_minimize) &&
-              comp_listen(w, &toplevel->events.request_move, handle_request_move) &&
-              comp_listen(w, &toplevel->events.request_resize, handle_request_resize) &&
+              comp_listen(w, &toplevel->events.request_move, comp_window_handle_request_move) &&
+              comp_listen(w, &toplevel->events.request_resize, comp_window_handle_request_resize) &&
               comp_listen(w, &toplevel->events.set_parent, handle_set_parent) &&
               comp_listen(w, &toplevel->events.set_title, handle_set_metadata) &&
               comp_listen(w, &toplevel->events.set_app_id, handle_set_metadata);
@@ -2022,27 +1202,10 @@ comp_window_create_xwayland(CompServer *s, struct wlr_xwayland_surface *xsurf)
     xsurf->data      = w;
     talloc_set_destructor(w, window_destructor);
 
-    w->scene_tree = wlr_scene_tree_create(s->tree_tiled);
-    if (!w->scene_tree) {
+    if (!comp_window_create_chrome(w, NULL)) {
         talloc_free(w);
         return NULL;
     }
-    w->scene_tree->node.data = w;
-    wlr_scene_node_set_enabled(&w->scene_tree->node, false);
-
-    w->backdrop = wlr_scene_rect_create(w->scene_tree, 0, 0, k_color_backdrop);
-    if (w->backdrop)
-        wlr_scene_node_set_enabled(&w->backdrop->node, false);
-
-    for (int i = 0; i < 4; i++)
-        w->border[i] = wlr_scene_rect_create(w->scene_tree, 0, 0, k_color_inactive);
-
-    w->popup_tree = wlr_scene_tree_create(w->scene_tree);
-    if (!w->popup_tree) {
-        talloc_free(w);
-        return NULL;
-    }
-    w->fx = comp_fx_surface_create(s, w->scene_tree, COMP_FX_SURFACE_WINDOW);
     update_window_strings(w);
     return w;
 }

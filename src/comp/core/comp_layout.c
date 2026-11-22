@@ -1,61 +1,14 @@
 /* comp_layout.c — see comp_layout.h. */
-#include "comp_layout.h"
+#include "comp_layout_private.h"
 
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MIN_COL_WIDTH   0.05
-#define MIN_WIN_HEIGHT  0.10
-#define WIDTH_EPS       1e-6
-
-typedef struct {
-    CompWinId id;
-    double    height;      /* proportion of the column height, 0 = automatic */
-    int       preset;      /* index into preset_heights of the last switch, -1 none */
-} Win;
-
-typedef struct {
-    Win    *wins;
-    size_t  n, cap;
-    size_t  focus;
-    double  width;          /* proportion of the viewport */
-    double  width_saved;    /* restored when maximize is toggled off */
-    bool    maximized;
-    bool    fullscreen;
-    bool    tabbed;
-} Column;
-
-typedef struct {
-    CompWinId id;
-    CompRect  rect;         /* viewport-relative; w or h <= 0 means "pick a default" */
-} Floater;
-
-typedef struct {
-    Column  *cols;
-    size_t   n, cap;
-    size_t   focus;
-    Floater *fl;
-    size_t   nfl, capfl;
-    size_t   fl_focus;
-    bool     focus_floating;
-    bool     center_once;
-    bool     center_visible_once;
-    uint64_t id;            /* stable across reordering and removal of other workspaces */
-} Workspace;
-
-struct CompLayout {
-    CompLayoutConfig cfg;
-    Workspace       *ws;
-    size_t           nws, capws;
-    size_t           active;
-    uint64_t         next_ws_id;
-};
-
 /* ───────────────────────── small helpers ───────────────────────── */
 
-static bool
-grow(void **arr, size_t *cap, size_t need, size_t elem)
+bool
+comp_layout_grow(void **arr, size_t *cap, size_t need, size_t elem)
 {
     if (need <= *cap)
         return true;
@@ -102,13 +55,13 @@ workspace_empty(const Workspace *w)
 static Workspace *
 active_ws(const CompLayout *L)
 {
-    return &L->ws[L->active];
+    return comp_layout_active_ws(L);
 }
 
 static Column *
 focused_col(const Workspace *w)
 {
-    return w->n ? &w->cols[w->focus] : NULL;
+    return comp_layout_focused_col(w);
 }
 
 /* ───────────────────────── configuration ───────────────────────── */
@@ -157,7 +110,7 @@ comp_layout_config_valid(const CompLayoutConfig *cfg)
 static bool
 append_empty_workspace(CompLayout *L)
 {
-    if (!grow((void **)&L->ws, &L->capws, L->nws + 1, sizeof(Workspace)))
+    if (!comp_layout_grow((void **)&L->ws, &L->capws, L->nws + 1, sizeof(Workspace)))
         return false;
     memset(&L->ws[L->nws], 0, sizeof(Workspace));
     L->ws[L->nws].id = ++L->next_ws_id;
@@ -202,8 +155,8 @@ comp_layout_set_config(CompLayout *L, const CompLayoutConfig *cfg)
 }
 
 /* Keep exactly one empty workspace at the end; drop other empty, unfocused ones. */
-static void
-normalize_workspaces(CompLayout *L)
+void
+comp_layout_normalize_workspaces(CompLayout *L)
 {
     size_t i = 0;
     while (i + 1 < L->nws) {
@@ -226,15 +179,16 @@ normalize_workspaces(CompLayout *L)
     }
 }
 
+static inline void
+normalize_workspaces(CompLayout *L)
+{
+    comp_layout_normalize_workspaces(L);
+}
+
 /* ───────────────────────── lookup ───────────────────────── */
 
-typedef struct {
-    size_t ws, col, win, fl;
-    bool   floating;
-} Loc;
-
-static bool
-find_window(const CompLayout *L, CompWinId id, Loc *out)
+bool
+comp_layout_find_window(const CompLayout *L, CompWinId id, Loc *out)
 {
     if (id == 0)
         return false;
@@ -256,6 +210,12 @@ find_window(const CompLayout *L, CompWinId id, Loc *out)
         }
     }
     return false;
+}
+
+static inline bool
+find_window(const CompLayout *L, CompWinId id, Loc *out)
+{
+    return comp_layout_find_window(L, id, out);
 }
 
 bool
@@ -294,7 +254,7 @@ comp_layout_focused_window(const CompLayout *L)
 static bool
 insert_column(Workspace *ws, size_t at, Column col)
 {
-    if (!grow((void **)&ws->cols, &ws->cap, ws->n + 1, sizeof(Column)))
+    if (!comp_layout_grow((void **)&ws->cols, &ws->cap, ws->n + 1, sizeof(Column)))
         return false;
     memmove(&ws->cols[at + 1], &ws->cols[at], (ws->n - at) * sizeof(Column));
     ws->cols[at] = col;
@@ -306,7 +266,7 @@ static bool
 column_new_with(Column *col, Win win, double width)
 {
     memset(col, 0, sizeof(*col));
-    if (!grow((void **)&col->wins, &col->cap, 1, sizeof(Win)))
+    if (!comp_layout_grow((void **)&col->wins, &col->cap, 1, sizeof(Win)))
         return false;
     col->wins[0] = win;
     col->n       = 1;
@@ -315,8 +275,8 @@ column_new_with(Column *col, Win win, double width)
 }
 
 /* Removes column `at` (already emptied or to be freed by caller) and fixes focus. */
-static void
-remove_column(Workspace *ws, size_t at, bool free_it)
+void
+comp_layout_remove_column(Workspace *ws, size_t at, bool free_it)
 {
     if (free_it)
         column_free(&ws->cols[at]);
@@ -328,8 +288,14 @@ remove_column(Workspace *ws, size_t at, bool free_it)
         ws->focus = ws->focus ? ws->focus - 1 : 0;
 }
 
-static Win
-column_take(Column *c, size_t at)
+static inline void
+remove_column(Workspace *ws, size_t at, bool free_it)
+{
+    comp_layout_remove_column(ws, at, free_it);
+}
+
+Win
+comp_layout_column_take(Column *c, size_t at)
 {
     Win w = c->wins[at];
     memmove(&c->wins[at], &c->wins[at + 1], (c->n - at - 1) * sizeof(Win));
@@ -341,8 +307,14 @@ column_take(Column *c, size_t at)
     return w;
 }
 
-static bool
-add_tiled_to(CompLayout *L, size_t wsi, Win win, double width)
+static inline Win
+column_take(Column *c, size_t at)
+{
+    return comp_layout_column_take(c, at);
+}
+
+bool
+comp_layout_add_tiled_to(CompLayout *L, size_t wsi, Win win, double width)
 {
     Workspace *ws = &L->ws[wsi];
     Column col;
@@ -364,48 +336,10 @@ comp_layout_add_window(CompLayout *L, CompWinId id)
     if (!L || id == 0 || comp_layout_contains(L, id))
         return false;
     Win win = { .id = id, .height = 0.0, .preset = -1 };
-    if (!add_tiled_to(L, L->active, win, L->cfg.default_width))
+    if (!comp_layout_add_tiled_to(L, L->active, win, L->cfg.default_width))
         return false;
     normalize_workspaces(L);
     return true;
-}
-
-static bool
-add_floating_to(Workspace *ws, CompWinId id, CompRect rect)
-{
-    if (!grow((void **)&ws->fl, &ws->capfl, ws->nfl + 1, sizeof(Floater)))
-        return false;
-    ws->fl[ws->nfl] = (Floater){ .id = id, .rect = rect };
-    ws->fl_focus    = ws->nfl;
-    ws->nfl++;
-    ws->focus_floating = true;
-    return true;
-}
-
-bool
-comp_layout_add_floating(CompLayout *L, CompWinId id, CompRect rect)
-{
-    if (!L || id == 0 || comp_layout_contains(L, id))
-        return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) || !isfinite(rect.w) || !isfinite(rect.h))
-        rect = (CompRect){ 0 };
-    if (!add_floating_to(active_ws(L), id, rect))
-        return false;
-    normalize_workspaces(L);
-    return true;
-}
-
-static void
-remove_floating_at(Workspace *ws, size_t f)
-{
-    memmove(&ws->fl[f], &ws->fl[f + 1], (ws->nfl - f - 1) * sizeof(Floater));
-    ws->nfl--;
-    if (ws->nfl == 0) {
-        ws->fl_focus       = 0;
-        ws->focus_floating = false;
-    } else if (ws->fl_focus > f || ws->fl_focus >= ws->nfl) {
-        ws->fl_focus = ws->fl_focus ? ws->fl_focus - 1 : 0;
-    }
 }
 
 bool
@@ -416,7 +350,7 @@ comp_layout_remove_window(CompLayout *L, CompWinId id)
         return false;
     Workspace *ws = &L->ws[loc.ws];
     if (loc.floating) {
-        remove_floating_at(ws, loc.fl);
+        comp_layout_remove_floating_at(ws, loc.fl);
     } else {
         Column *c = &ws->cols[loc.col];
         (void)column_take(c, loc.win);
@@ -426,18 +360,6 @@ comp_layout_remove_window(CompLayout *L, CompWinId id)
             ws->focus_floating = true;
     }
     normalize_workspaces(L);
-    return true;
-}
-
-bool
-comp_layout_set_floating_rect(CompLayout *L, CompWinId id, CompRect rect)
-{
-    Loc loc;
-    if (!L || !find_window(L, id, &loc) || !loc.floating)
-        return false;
-    if (!isfinite(rect.x) || !isfinite(rect.y) || !isfinite(rect.w) || !isfinite(rect.h))
-        return false;
-    L->ws[loc.ws].fl[loc.fl].rect = rect;
     return true;
 }
 
@@ -683,39 +605,13 @@ switch_preset_height(const CompLayoutConfig *cfg, Column *c)
 }
 
 static bool
-toggle_floating(CompLayout *L)
-{
-    Workspace *ws = active_ws(L);
-    if (ws->focus_floating && ws->nfl) {
-        Floater f = ws->fl[ws->fl_focus];
-        remove_floating_at(ws, ws->fl_focus);
-        Win win = { .id = f.id, .height = 0.0, .preset = -1 };
-        if (!add_tiled_to(L, L->active, win, L->cfg.default_width)) {
-            (void)add_floating_to(active_ws(L), f.id, f.rect);
-            return false;
-        }
-        return true;
-    }
-    Column *c = focused_col(ws);
-    if (!c)
-        return false;
-    CompWinId id = c->wins[c->focus].id;
-    if (!add_floating_to(ws, id, (CompRect){ 0 }))
-        return false;
-    (void)column_take(c, c->focus);
-    if (c->n == 0)
-        remove_column(ws, ws->focus, true);
-    return true;
-}
-
-static bool
 consume_into_left(Workspace *ws)
 {
     if (ws->focus_floating || ws->n < 2 || ws->focus == 0)
         return false;
     Column *c    = &ws->cols[ws->focus];
     Column *left = &ws->cols[ws->focus - 1];
-    if (!grow((void **)&left->wins, &left->cap, left->n + 1, sizeof(Win)))
+    if (!comp_layout_grow((void **)&left->wins, &left->cap, left->n + 1, sizeof(Win)))
         return false;
     Win w = column_take(c, c->focus);
     left->wins[left->n] = w;
@@ -735,7 +631,7 @@ consume_into_right(Workspace *ws)
         return false;
     Column *c     = &ws->cols[ws->focus];
     Column *right = &ws->cols[ws->focus + 1];
-    if (!grow((void **)&right->wins, &right->cap, right->n + 1, sizeof(Win)))
+    if (!comp_layout_grow((void **)&right->wins, &right->cap, right->n + 1, sizeof(Win)))
         return false;
     Win w = column_take(c, c->focus);
     right->wins[right->n] = w;
@@ -955,7 +851,7 @@ comp_layout_apply(CompLayout *L, CompAction a)
     case COMP_ACT_MOVE_WORKSPACE_DOWN:
         return swap_workspace(L, false);
     case COMP_ACT_TOGGLE_WINDOW_FLOATING: {
-        bool ok = toggle_floating(L);
+        bool ok = comp_layout_toggle_floating(L);
         normalize_workspaces(L);
         return ok;
     }
@@ -1013,64 +909,6 @@ comp_layout_adjust_window_height(CompLayout *L, double delta)
     w->height = nh;
     w->preset = -1;
     return changed;
-}
-
-/* ───────────────────────── action names ───────────────────────── */
-
-static const char *const k_action_names[COMP_ACT__COUNT] = {
-    [COMP_ACT_FOCUS_COLUMN_LEFT]              = "focus-column-left",
-    [COMP_ACT_FOCUS_COLUMN_RIGHT]             = "focus-column-right",
-    [COMP_ACT_FOCUS_COLUMN_FIRST]             = "focus-column-first",
-    [COMP_ACT_FOCUS_COLUMN_LAST]              = "focus-column-last",
-    [COMP_ACT_FOCUS_WINDOW_UP]                = "focus-window-up",
-    [COMP_ACT_FOCUS_WINDOW_DOWN]              = "focus-window-down",
-    [COMP_ACT_MOVE_COLUMN_LEFT]               = "move-column-left",
-    [COMP_ACT_MOVE_COLUMN_RIGHT]              = "move-column-right",
-    [COMP_ACT_MOVE_COLUMN_TO_FIRST]           = "move-column-to-first",
-    [COMP_ACT_MOVE_COLUMN_TO_LAST]            = "move-column-to-last",
-    [COMP_ACT_MOVE_WINDOW_UP]                 = "move-window-up",
-    [COMP_ACT_MOVE_WINDOW_DOWN]               = "move-window-down",
-    [COMP_ACT_CONSUME_INTO_COLUMN_LEFT]       = "consume-window-into-column",
-    [COMP_ACT_EXPEL_FROM_COLUMN]              = "expel-window-from-column",
-    [COMP_ACT_CONSUME_OR_EXPEL_LEFT]          = "consume-or-expel-window-left",
-    [COMP_ACT_CONSUME_OR_EXPEL_RIGHT]         = "consume-or-expel-window-right",
-    [COMP_ACT_FOCUS_WORKSPACE_UP]             = "focus-workspace-up",
-    [COMP_ACT_FOCUS_WORKSPACE_DOWN]           = "focus-workspace-down",
-    [COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_UP]    = "move-column-to-workspace-up",
-    [COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_DOWN]  = "move-column-to-workspace-down",
-    [COMP_ACT_MOVE_WORKSPACE_UP]              = "move-workspace-up",
-    [COMP_ACT_MOVE_WORKSPACE_DOWN]            = "move-workspace-down",
-    [COMP_ACT_SWITCH_PRESET_COLUMN_WIDTH]     = "switch-preset-column-width",
-    [COMP_ACT_SWITCH_PRESET_WINDOW_HEIGHT]    = "switch-preset-window-height",
-    [COMP_ACT_RESET_WINDOW_HEIGHT]            = "reset-window-height",
-    [COMP_ACT_MAXIMIZE_COLUMN]                = "maximize-column",
-    [COMP_ACT_EXPAND_COLUMN_TO_AVAILABLE]     = "expand-column-to-available-width",
-    [COMP_ACT_TOGGLE_COLUMN_TABBED]           = "toggle-column-tabbed",
-    [COMP_ACT_TOGGLE_WINDOW_FLOATING]         = "toggle-window-floating",
-    [COMP_ACT_SWITCH_FOCUS_FLOATING_TILING]   = "switch-focus-floating-tiling",
-    [COMP_ACT_CENTER_COLUMN]                  = "center-column",
-    [COMP_ACT_CENTER_VISIBLE_COLUMNS]         = "center-visible-columns",
-};
-
-const char *
-comp_action_name(CompAction a)
-{
-    return a < COMP_ACT__COUNT ? k_action_names[a] : NULL;
-}
-
-bool
-comp_action_from_name(const char *name, CompAction *out)
-{
-    if (!name)
-        return false;
-    for (size_t i = 0; i < COMP_ACT__COUNT; i++) {
-        if (k_action_names[i] && strcmp(k_action_names[i], name) == 0) {
-            if (out)
-                *out = (CompAction)i;
-            return true;
-        }
-    }
-    return false;
 }
 
 /* ───────────────────────── geometry ───────────────────────── */

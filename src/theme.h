@@ -42,6 +42,7 @@ extern const ShellSurfacePreset shell_surface_presets[SHELL_N_SURFACE_PRESETS];
 struct _ShellTheme {
     GtkCssProvider *provider;
     GFileMonitor   *monitor;
+    GFileMonitor   *styles_dir_monitor;
     gchar          *css_path;
 
     GtkCssProvider *override_provider;

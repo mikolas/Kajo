@@ -1,0 +1,259 @@
+/* ═══════════════════════════════════════════════ */
+/* ─── Panel Surface ─── */
+/* ═══════════════════════════════════════════════ */
+
+window,
+window.shell-panel,
+.shell-panel {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    padding: 0;
+    margin: 0;
+    border: none;
+    box-shadow: none;
+}
+
+#panel-container {
+    background-color: @metro-panel-bg;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#panel-container.autohide-hidden {
+    background-color: rgba(0, 0, 0, 0.01);
+    border: none;
+}
+
+#panel-container.autohide-visible {
+    background-color: @metro-panel-bg;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ─── Base Panel Widgets (MenuButtons / Buttons) ─── */
+
+.shell-widget,
+.shell-widget > button,
+menubutton.shell-widget > button {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0px;
+    box-shadow: none;
+    outline: none;
+    color: @metro-fg-primary;
+    padding: 0 6px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 14px;
+    font-weight: 500;
+    min-height: 0px;
+}
+
+.shell-widget:hover,
+.shell-widget > button:hover,
+menubutton.shell-widget > button:hover {
+    background-color: @metro-glass-hover;
+    border-radius: 0px;
+}
+
+.shell-widget:active,
+.shell-widget:checked,
+.shell-widget > button:active,
+.shell-widget > button:checked,
+menubutton.shell-widget:checked > button,
+menubutton.shell-widget > button:active,
+menubutton.shell-widget > button:checked {
+    background-color: @metro-accent;
+    border-radius: 0px;
+    color: @metro-fg-primary;
+}
+
+button.shell-widget image,
+menubutton.shell-widget > button image {
+    color: @metro-fg-primary;
+}
+
+button.shell-widget label,
+menubutton.shell-widget > button label,
+.shell-widget-label {
+    color: @metro-fg-primary;
+}
+
+/* ─── Clock ─── */
+menubutton.shell-widget-clock > button label,
+button.shell-widget-clock label {
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* ─── Multi-Item Strip Containers (Workspaces & Tray) ─── */
+.shell-widget-workspaces,
+.shell-widget-workspaces:hover,
+.shell-widget-tray,
+.shell-widget-tray:hover {
+    background: transparent;
+    background-color: transparent;
+}
+
+/* ─── Workspaces (Flat Sharp Tiles) ─── */
+.shell-widget-workspaces {
+    padding: 0 2px;
+}
+
+.shell-widget-workspaces .workspace {
+    padding: 2px 8px;
+    border-radius: 0px;
+    margin: 0 2px;
+    border: 1px solid transparent;
+}
+
+.shell-widget-workspaces .workspace:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-glass-border;
+}
+
+.shell-widget-workspaces .workspace.active,
+.shell-widget-workspaces .workspace.focused {
+    background-color: alpha(@metro-accent, 0.14);
+    border-bottom: 2px solid @metro-accent;
+    color: @metro-fg-primary;
+}
+
+.shell-widget-workspaces .workspace.urgent {
+    background-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+.shell-widget-workspaces button {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    box-shadow: none;
+    outline: none;
+    color: @metro-fg-primary;
+    padding: 0 2px;
+    min-height: 0px;
+}
+
+.shell-widget-workspaces button label {
+    color: @metro-fg-primary;
+    font-weight: 600;
+}
+
+.shell-widget-workspaces .workspace.active button label {
+    color: @metro-fg-primary;
+}
+
+.shell-widget-workspaces .workspace-app-icon {
+    padding: 0 2px;
+    min-width: 18px;
+    min-height: 18px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+.shell-widget-workspaces .workspace-app-icon:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 0px;
+}
+
+.shell-widget-workspaces .workspace-app-icon image {
+    color: @metro-fg-primary;
+    opacity: 0.95;
+}
+
+/* ─── System Tray (SNI) ─── */
+.shell-widget-tray {
+    padding: 0 2px;
+}
+
+.shell-widget-tray button.tray-item-button {
+    background: transparent;
+    background-color: transparent;
+    background-image: none;
+    border: none;
+    border-radius: 0px;
+    box-shadow: none;
+    outline: none;
+    padding: 0 4px;
+    min-height: 0px;
+}
+
+.shell-widget-tray button.tray-item-button:hover {
+    background-color: @metro-glass-hover;
+}
+
+.shell-widget-tray button.tray-item-button:active,
+.shell-widget-tray button.tray-item-button:checked {
+    background-color: @metro-accent;
+}
+
+/* ─── Semantic Bar Chip States (Scoped to Bar Buttons Only — Never Leak Into Popovers) ─── */
+button.shell-widget-volume.muted label,
+button.shell-widget-volume.muted image,
+menubutton.shell-widget-volume.muted > button:not(:checked):not(:active) label,
+menubutton.shell-widget-volume.muted > button:not(:checked):not(:active) image {
+    color: @metro-fg-secondary;
+}
+
+button.shell-widget-battery.critical,
+menubutton.shell-widget-battery.critical > button {
+    border-bottom: 2px solid @metro-urgent;
+}
+
+button.shell-widget-battery.critical:not(:checked):not(:active) label,
+button.shell-widget-battery.critical:not(:checked):not(:active) image,
+menubutton.shell-widget-battery.critical > button:not(:checked):not(:active) label,
+menubutton.shell-widget-battery.critical > button:not(:checked):not(:active) image {
+    color: @metro-urgent-text;
+}
+
+button.shell-widget-dnd.active,
+menubutton.shell-widget-dnd.active > button,
+button.shell-widget-privacy.active,
+menubutton.shell-widget-privacy.active > button {
+    border-bottom: 2px solid @metro-warning;
+}
+
+button.shell-widget-dnd.active:not(:checked):not(:active) label,
+button.shell-widget-dnd.active:not(:checked):not(:active) image,
+menubutton.shell-widget-dnd.active > button:not(:checked):not(:active) label,
+menubutton.shell-widget-dnd.active > button:not(:checked):not(:active) image,
+button.shell-widget-privacy.active:not(:checked):not(:active) label,
+button.shell-widget-privacy.active:not(:checked):not(:active) image,
+menubutton.shell-widget-privacy.active > button:not(:checked):not(:active) label,
+menubutton.shell-widget-privacy.active > button:not(:checked):not(:active) image {
+    color: @metro-warning;
+}
+
+button.shell-widget-idle-inhibitor.active,
+menubutton.shell-widget-idle-inhibitor.active > button {
+    border-bottom: 2px solid @metro-telemetry;
+}
+
+button.shell-widget-idle-inhibitor.active:not(:checked):not(:active) label,
+button.shell-widget-idle-inhibitor.active:not(:checked):not(:active) image,
+menubutton.shell-widget-idle-inhibitor.active > button:not(:checked):not(:active) label,
+menubutton.shell-widget-idle-inhibitor.active > button:not(:checked):not(:active) image {
+    color: @metro-telemetry;
+}
+
+/* ─── Window Title ─── */
+button.shell-widget-window:not(:checked):not(:active) label,
+menubutton.shell-widget-window > button:not(:checked):not(:active) label {
+    color: @metro-fg-secondary;
+    font-weight: 400;
+}
+
+/* ─── Layout Sections ─── */
+.shell-panel-left,
+.shell-panel-center,
+.shell-panel-right {
+    padding: 0 4px;
+}
+
+/* ═══════════════════════════════════════════════ */

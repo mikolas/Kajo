@@ -17,5 +17,13 @@
     <file compressed="true" alias="ui/files_window.ui">files_window.ui</file>
     <file compressed="true" alias="ui/player_window.ui">player_window.ui</file>
     <file compressed="true" alias="defaults/style.css">defaults/style.css</file>
+    <file compressed="true" alias="defaults/styles/00-tokens.css">defaults/styles/00-tokens.css</file>
+    <file compressed="true" alias="defaults/styles/10-panel.css">defaults/styles/10-panel.css</file>
+    <file compressed="true" alias="defaults/styles/20-popovers-controls.css">defaults/styles/20-popovers-controls.css</file>
+    <file compressed="true" alias="defaults/styles/30-settings.css">defaults/styles/30-settings.css</file>
+    <file compressed="true" alias="defaults/styles/40-lock-greeter-osk.css">defaults/styles/40-lock-greeter-osk.css</file>
+    <file compressed="true" alias="defaults/styles/50-files-player.css">defaults/styles/50-files-player.css</file>
+    <file compressed="true" alias="defaults/styles/60-ide.css">defaults/styles/60-ide.css</file>
+    <file compressed="true" alias="defaults/styles/70-mod.css">defaults/styles/70-mod.css</file>
   </gresource>
 </gresources>

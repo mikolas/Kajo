@@ -143,8 +143,9 @@ EOF
 }
 
 cmd_colors() {
-    echo "== raw hex colours in data/defaults/style.css (token roles: @metro-*; fold repeats into tokens)"
-    grep -v '^@define-color' data/defaults/style.css | grep -oiE '#[0-9a-f]{6}\b' | tr 'A-F' 'a-f' \
+    echo "== raw hex colours in data/defaults/style.css & styles/*.css (token roles: @metro-*; fold repeats into tokens)"
+    grep -hv '^@define-color' data/defaults/style.css data/defaults/styles/*.css \
+        | grep -oiE '#[0-9a-f]{6}\b' | tr 'A-F' 'a-f' \
         | sort | uniq -c | sort -rn | head -20
 }
 

@@ -746,16 +746,10 @@ settings_page_ide_class_init(SettingsPageIdeClass *klass)
     object_class->dispose = settings_page_ide_dispose;
 }
 
-GtkWidget *
-build_page_ide(void)
+static GtkWidget *
+ide_build_card_schemes(SettingsPageIde *self, KajoIdeCfgRef *config,
+                       GdkDisplay *display, guint *out_init_scheme_idx)
 {
-    SettingsPageIde *self = g_object_new(settings_page_ide_get_type(), NULL);
-    self->syncing_ui = TRUE;
-
-    g_autoptr(KajoIdeCfgRef) config = kajo_config_store_acquire_ide(NULL);
-
-    GdkDisplay *display = gdk_display_get_default();
-
     /* ─── Card 1: Editor Color Scheme (6 Presets) & Live Syntax Preview ─── */
     GtkWidget *card_schemes = create_section_card(
         SETTINGS_CARD_LEFT,
@@ -858,6 +852,14 @@ build_page_ide(void)
     }
     gtk_box_append(GTK_BOX(card_schemes), self->preview_box);
 
+    *out_init_scheme_idx = init_scheme_idx;
+    return card_schemes;
+}
+
+static GtkWidget *
+ide_build_card_typography(SettingsPageIde *self, KajoIdeCfgRef *config,
+                          guint *out_init_font_idx, int *out_init_px, guint *out_init_tab_idx)
+{
     /* ─── Card 2: Editor Typography & Indentation ─── */
     GtkWidget *btn_card_reset = gtk_button_new_with_label("↺ DEFAULTS");
     gtk_widget_add_css_class(btn_card_reset, "files-nav-btn");
@@ -920,8 +922,15 @@ build_page_ide(void)
         "Tab key inserts spaces; off inserts literal \\t",
         self->sw_spaces));
 
-    settings_bento_add_pair(GTK_WIDGET(self), card_schemes, card_typo);
+    *out_init_font_idx = init_font_idx;
+    *out_init_px = init_px;
+    *out_init_tab_idx = init_tab_idx;
+    return card_typo;
+}
 
+static GtkWidget *
+ide_build_card_chrome(SettingsPageIde *self, KajoIdeCfgRef *config)
+{
     /* ─── Card 3: Workspace Chrome & 6-Column Cairo Gutter ─── */
     GtkWidget *card_chrome = create_section_card(
         SETTINGS_CARD_RIGHT,
@@ -1002,8 +1011,12 @@ build_page_ide(void)
         "Automatically spring-align D+1 target tiles opposite the active call line in D0",
         self->sw_strip_magnetic));
 
-    settings_bento_add_full(GTK_WIDGET(self), card_chrome);
+    return card_chrome;
+}
 
+static GtkWidget *
+ide_build_card_remaps(SettingsPageIde *self)
+{
     /* ─── Card 4: Key Remapping (ide.toml) ─── */
     self->card_remaps = create_section_card(
         SETTINGS_CARD_LEFT,
@@ -1047,29 +1060,12 @@ build_page_ide(void)
     gtk_box_append(GTK_BOX(add_bar), self->btn_remap_add);
     gtk_box_append(GTK_BOX(self->card_remaps), add_bar);
 
-    settings_bento_add_full(GTK_WIDGET(self), self->card_remaps);
+    return self->card_remaps;
+}
 
-    self->saved_remaps = clone_remap_array(config ? config->key_remaps : NULL);
-    self->draft_remaps = clone_remap_array(self->saved_remaps);
-    rebuild_remap_rows(self);
-
-    self->saved_scheme_idx = init_scheme_idx;
-    self->saved_font_idx   = init_font_idx;
-    self->saved_font_px    = init_px;
-    self->saved_tab_idx    = init_tab_idx;
-    self->saved_spaces     = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
-    self->saved_wrap       = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
-    self->saved_margin     = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
-    self->saved_minimap    = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
-    self->saved_gutter         = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
-    self->saved_rel_lines      = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
-    self->saved_cur_line       = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
-    self->saved_start_strip    = gtk_switch_get_active(GTK_SWITCH(self->sw_start_strip));
-    self->saved_strip_magnetic = gtk_switch_get_active(GTK_SWITCH(self->sw_strip_magnetic));
-
-    select_ide_scheme(self, init_scheme_idx, FALSE);
-    self->syncing_ui = FALSE;
-
+static void
+ide_connect_signals(SettingsPageIde *self)
+{
     g_signal_connect(self->combo_font, "notify::selected", G_CALLBACK(on_ide_dropdown_changed), self);
     g_signal_connect(self->scale_font_size, "value-changed", G_CALLBACK(on_ide_font_size_changed), self);
     segmented_group_connect(self->seg_tab_width, on_ide_segment_changed, self);
@@ -1085,6 +1081,51 @@ build_page_ide(void)
     g_signal_connect(self->btn_remap_add, "clicked", G_CALLBACK(on_remap_add_clicked), self);
     g_signal_connect(self->entry_remap_action, "activate", G_CALLBACK(on_remap_add_clicked), self);
     g_signal_connect(self, "map", G_CALLBACK(on_ide_page_mapped), NULL);
+}
+
+GtkWidget *
+build_page_ide(void)
+{
+    SettingsPageIde *self = g_object_new(settings_page_ide_get_type(), NULL);
+    self->syncing_ui = TRUE;
+
+    g_autoptr(KajoIdeCfgRef) config = kajo_config_store_acquire_ide(NULL);
+    GdkDisplay *display = gdk_display_get_default();
+
+    guint init_scheme_idx = 0;
+    guint init_font_idx = 0;
+    int init_px = 13;
+    guint init_tab_idx = 0;
+
+    GtkWidget *card_schemes = ide_build_card_schemes(self, config, display, &init_scheme_idx);
+    GtkWidget *card_typo    = ide_build_card_typography(self, config, &init_font_idx, &init_px, &init_tab_idx);
+    settings_bento_add_pair(GTK_WIDGET(self), card_schemes, card_typo);
+
+    settings_bento_add_full(GTK_WIDGET(self), ide_build_card_chrome(self, config));
+    settings_bento_add_full(GTK_WIDGET(self), ide_build_card_remaps(self));
+
+    self->saved_remaps = clone_remap_array(config ? config->key_remaps : NULL);
+    self->draft_remaps = clone_remap_array(self->saved_remaps);
+    rebuild_remap_rows(self);
+
+    self->saved_scheme_idx     = init_scheme_idx;
+    self->saved_font_idx       = init_font_idx;
+    self->saved_font_px        = init_px;
+    self->saved_tab_idx        = init_tab_idx;
+    self->saved_spaces         = gtk_switch_get_active(GTK_SWITCH(self->sw_spaces));
+    self->saved_wrap           = gtk_switch_get_active(GTK_SWITCH(self->sw_word_wrap));
+    self->saved_margin         = gtk_switch_get_active(GTK_SWITCH(self->sw_margin_guide));
+    self->saved_minimap        = gtk_switch_get_active(GTK_SWITCH(self->sw_minimap));
+    self->saved_gutter         = gtk_switch_get_active(GTK_SWITCH(self->sw_gutter));
+    self->saved_rel_lines      = gtk_switch_get_active(GTK_SWITCH(self->sw_rel_lines));
+    self->saved_cur_line       = gtk_switch_get_active(GTK_SWITCH(self->sw_cur_line));
+    self->saved_start_strip    = gtk_switch_get_active(GTK_SWITCH(self->sw_start_strip));
+    self->saved_strip_magnetic = gtk_switch_get_active(GTK_SWITCH(self->sw_strip_magnetic));
+
+    select_ide_scheme(self, init_scheme_idx, FALSE);
+    self->syncing_ui = FALSE;
+
+    ide_connect_signals(self);
 
     settings_page_bind_actions(
         GTK_WIDGET(self),

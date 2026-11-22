@@ -55,9 +55,13 @@ chmod 700 "$work/runtime"
 [ -d "$HOME/.config/kajo" ] && cp -r "$HOME/.config/kajo" "$work/config/kajo" || mkdir -p "$work/config/kajo"
 [ -d "$HOME/.local/share/kajo" ] && cp -r "$HOME/.local/share/kajo" "$work/data/kajo" || mkdir -p "$work/data/kajo/defaults"
 if [ "$keep_css" -eq 0 ]; then
-    mkdir -p "$work/data/kajo/defaults"
+    mkdir -p "$work/data/kajo/defaults/styles" "$work/config/kajo/styles"
     cp "$src_dir/data/defaults/style.css" "$work/config/kajo/style.css"
     cp "$src_dir/data/defaults/style.css" "$work/data/kajo/defaults/style.css"
+    if [ -d "$src_dir/data/defaults/styles" ]; then
+        cp -r "$src_dir/data/defaults/styles/." "$work/config/kajo/styles/"
+        cp -r "$src_dir/data/defaults/styles/." "$work/data/kajo/defaults/styles/"
+    fi
 fi
 
 cage_pid=""

@@ -1,172 +1,26 @@
-/* comp_ipc.c — $XDG_RUNTIME_DIR/kajo-comp.sock IPC server, event broadcast,
- * inotify config watcher (50 ms debounce), and atomic CompConfig hot-reload (Phase 2d).
+/* comp_ipc.c — $XDG_RUNTIME_DIR/kajo-comp.sock IPC server, client framing,
+ * EventStream delivery, and request/action dispatch (Phase 2d).
  */
-#include "comp_server.h"
+#include "comp_ipc_private.h"
 
 #include "comp_log.h"
 #include "core/comp_schema_keys.h"
 
 #include <ctype.h>
-#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <libgen.h>
 #include <limits.h>
 #include <math.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
-#include <sys/inotify.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <talloc.h>
 #include <unistd.h>
 #include <wlr/types/wlr_output.h>
-
-#define IPC_MAX_FRAME   65536
-#define IPC_MAX_CLIENTS 64
-
-enum {
-    SUB_WORKSPACES       = 1u << 0,
-    SUB_WINDOWS          = 1u << 1,
-    SUB_KEYBOARD_LAYOUTS = 1u << 2,
-    SUB_OUTPUTS          = 1u << 3,
-    SUB_TOUCH_GESTURES   = 1u << 4,
-    SUB_SCREENSHOTS      = 1u << 5,
-    SUB_ALL              = 0x3fu,
-};
-
-typedef struct {
-    struct wl_list          link;   /* CompIpcState.clients */
-    CompServer             *server;
-    int                     fd;
-    struct wl_event_source *ev;
-    uint32_t                subs;
-    char                    rbuf[IPC_MAX_FRAME];
-    size_t                  rlen;
-    char                   *wbuf;
-    size_t                  wlen;
-    size_t                  wcap;
-    bool                    closing, in_dispatch;
-} CompIpcClient;
-
-struct CompIpcState {
-    CompServer             *server;
-    char                   *socket_path;
-    int                     listen_fd;
-    struct wl_event_source *listen_ev;
-    bool                    has_socket_stat;
-    dev_t                   socket_dev;
-    ino_t                   socket_ino;
-    struct wl_list          clients;        /* CompIpcClient.link */
-    size_t                  n_clients;
-
-    char                   *config_dir;
-    int                     inotify_fd;
-    int                     wd_root;
-    int                     wd_confd;
-    struct wl_event_source *inotify_ev;
-    struct wl_event_source *debounce_timer;
-};
-
-/* ───────────────────────── Minimal JSON Builder ───────────────────────── */
-
-typedef struct {
-    void   *ctx;
-    char   *buf;
-    size_t  len;
-    size_t  cap;
-} JsonBuf;
-
-static void
-jbuf_init(JsonBuf *b, void *talloc_ctx)
-{
-    b->ctx = talloc_ctx;
-    b->cap = 512;
-    b->len = 0;
-    b->buf = talloc_zero_array(talloc_ctx, char, (unsigned)b->cap);
-}
-
-static bool
-jbuf_reserve(JsonBuf *b, size_t extra)
-{
-    if (!b->buf)
-        return false;
-    if (b->len + extra + 1 <= b->cap)
-        return true;
-    size_t ncap = b->cap * 2;
-    while (ncap < b->len + extra + 1)
-        ncap *= 2;
-    char *nb = talloc_realloc(b->ctx, b->buf, char, (unsigned)ncap);
-    if (!nb)
-        return false;
-    b->buf = nb;
-    b->cap = ncap;
-    return true;
-}
-
-static void
-jbuf_append_raw(JsonBuf *b, const char *s, size_t n)
-{
-    if (!jbuf_reserve(b, n))
-        return;
-    memcpy(b->buf + b->len, s, n);
-    b->len += n;
-    b->buf[b->len] = '\0';
-}
-
-static void
-jbuf_puts(JsonBuf *b, const char *s)
-{
-    if (s)
-        jbuf_append_raw(b, s, strlen(s));
-}
-
-__attribute__((format(printf, 2, 3)))
-static void
-jbuf_printf(JsonBuf *b, const char *fmt, ...)
-{
-    va_list ap, ap2;
-    va_start(ap, fmt);
-    va_copy(ap2, ap);
-    int need = vsnprintf(NULL, 0, fmt, ap);
-    va_end(ap);
-    if (need > 0 && jbuf_reserve(b, (size_t)need)) {
-        vsnprintf(b->buf + b->len, (size_t)need + 1, fmt, ap2);
-        b->len += (size_t)need;
-    }
-    va_end(ap2);
-}
-
-static void
-jbuf_str(JsonBuf *b, const char *s)
-{
-    if (!s)
-        s = "";
-    jbuf_puts(b, "\"");
-    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
-        unsigned char c = *p;
-        switch (c) {
-        case '"':  jbuf_puts(b, "\\\""); break;
-        case '\\': jbuf_puts(b, "\\\\"); break;
-        case '\b': jbuf_puts(b, "\\b");  break;
-        case '\f': jbuf_puts(b, "\\f");  break;
-        case '\n': jbuf_puts(b, "\\n");  break;
-        case '\r': jbuf_puts(b, "\\r");  break;
-        case '\t': jbuf_puts(b, "\\t");  break;
-        default:
-            if (c < 0x20)
-                jbuf_printf(b, "\\u%04x", (unsigned)c);
-            else
-                jbuf_append_raw(b, (const char *)p, 1);
-            break;
-        }
-    }
-    jbuf_puts(b, "\"");
-}
 
 /* ───────────────────────── Minimal JSON Parser ───────────────────────── */
 
@@ -448,124 +302,6 @@ jobj_i32_bounded(const JVal *obj, const char *key, int lo, int hi, int *out)
     return true;
 }
 
-/* ───────────────────────── Payload Serializers ───────────────────────── */
-
-static void
-append_outputs_array(JsonBuf *b, const CompServer *s)
-{
-    jbuf_puts(b, "[");
-    bool first = true;
-    const CompOutput *o;
-    wl_list_for_each(o, &s->outputs, link) {
-        const struct wlr_output *wo = o->wlr_output;
-        if (!wo)
-            continue;
-        if (!first)
-            jbuf_puts(b, ",");
-        first = false;
-        jbuf_puts(b, "{\"name\":");
-        jbuf_str(b, wo->name ? wo->name : "unknown");
-        jbuf_puts(b, ",\"make\":");
-        jbuf_str(b, wo->make ? wo->make : "");
-        jbuf_puts(b, ",\"model\":");
-        jbuf_str(b, wo->model ? wo->model : "");
-        jbuf_printf(b, ",\"active\":%s,\"width\":%d,\"height\":%d,\"refresh_mhz\":%d,\"scale\":%.4g,\"transform\":",
-                    wo->enabled ? "true" : "false",
-                    wo->width, wo->height, wo->refresh, (double)wo->scale);
-        jbuf_str(b, comp_transform_to_str((CompTransform)wo->transform));
-        jbuf_puts(b, ",\"vrr\":");
-        jbuf_str(b, comp_vrr_policy_to_str(o->vrr_policy));
-        jbuf_puts(b, ",\"modes\":[");
-        bool first_m = true;
-        const struct wlr_output_mode *m;
-        wl_list_for_each(m, &wo->modes, link) {
-            if (!first_m)
-                jbuf_puts(b, ",");
-            first_m = false;
-            jbuf_printf(b, "{\"width\":%d,\"height\":%d,\"refresh_mhz\":%d,\"preferred\":%s}",
-                        m->width, m->height, m->refresh, m->preferred ? "true" : "false");
-        }
-        jbuf_puts(b, "]}");
-    }
-    jbuf_puts(b, "]");
-}
-
-static void
-append_workspaces_array(JsonBuf *b, const CompServer *s)
-{
-    jbuf_puts(b, "[");
-    size_t n_ws = s->layout ? comp_layout_workspace_count(s->layout) : 1;
-    size_t active_ws = s->layout ? comp_layout_active_workspace(s->layout) : 0;
-
-    /* Check urgency per workspace */
-    size_t n_wins = comp_window_list_info(s, NULL, 0);
-    CompWindowInfo *wins = n_wins > 0 ? talloc_array(b->ctx, CompWindowInfo, (unsigned)n_wins) : NULL;
-    if (wins)
-        comp_window_list_info(s, wins, n_wins);
-
-    for (size_t i = 0; i < n_ws; i++) {
-        if (i > 0)
-            jbuf_puts(b, ",");
-        size_t wcount = s->layout ? comp_layout_workspace_window_count(s->layout, i) : 0;
-        bool urgent = false;
-        for (size_t k = 0; k < n_wins && wins; k++) {
-            if (wins[k].workspace_idx == i + 1 && wins[k].is_urgent) {
-                urgent = true;
-                break;
-            }
-        }
-        jbuf_printf(b, "{\"idx\":%zu,\"id\":%zu,\"is_active\":%s,\"is_urgent\":%s,\"window_count\":%zu}",
-                    i + 1, i + 1,
-                    (i == active_ws) ? "true" : "false",
-                    urgent ? "true" : "false",
-                    wcount);
-    }
-    jbuf_puts(b, "]");
-}
-
-static void
-append_windows_array(JsonBuf *b, const CompServer *s)
-{
-    jbuf_puts(b, "[");
-    size_t n_wins = comp_window_list_info(s, NULL, 0);
-    CompWindowInfo *wins = n_wins > 0 ? talloc_array(b->ctx, CompWindowInfo, (unsigned)n_wins) : NULL;
-    if (wins) {
-        n_wins = comp_window_list_info(s, wins, n_wins);
-        for (size_t i = 0; i < n_wins; i++) {
-            if (i > 0)
-                jbuf_puts(b, ",");
-            jbuf_printf(b, "{\"id\":%llu,\"title\":", (unsigned long long)wins[i].id);
-            jbuf_str(b, wins[i].title);
-            jbuf_puts(b, ",\"app_id\":");
-            jbuf_str(b, wins[i].app_id);
-            jbuf_printf(b, ",\"workspace_idx\":%zu,\"is_focused\":%s,\"is_floating\":%s,\"is_fullscreen\":%s,\"is_urgent\":%s}",
-                        wins[i].workspace_idx,
-                        wins[i].is_focused ? "true" : "false",
-                        wins[i].is_floating ? "true" : "false",
-                        wins[i].is_fullscreen ? "true" : "false",
-                        wins[i].is_urgent ? "true" : "false");
-        }
-    }
-    jbuf_puts(b, "]");
-}
-
-static void
-append_keyboard_layouts_fields(JsonBuf *b, const CompServer *s)
-{
-    const char *names[16];
-    uint32_t cur = 0;
-    size_t n = comp_input_get_keyboard_layouts(s, names, 16, &cur);
-    if (n > 16)
-        n = 16;
-    jbuf_puts(b, "\"names\":[");
-    for (size_t i = 0; i < n; i++) {
-        if (i > 0)
-            jbuf_puts(b, ",");
-        jbuf_str(b, names[i]);
-    }
-    jbuf_printf(b, "],\"current_idx\":%u", cur);
-}
-
 /* ───────────────────────── Client Write Queue ───────────────────────── */
 
 static int handle_client_fd(int fd, uint32_t mask, void *data);
@@ -636,18 +372,18 @@ client_reply_error(CompIpcClient *c, const char *msg)
 {
     void *tmp = talloc_new(c);
     JsonBuf b;
-    jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"error\":");
-    jbuf_str(&b, msg ? msg : "error");
-    jbuf_puts(&b, "}\n");
+    comp_ipc_jbuf_init(&b, tmp);
+    comp_ipc_jbuf_puts(&b, "{\"error\":");
+    comp_ipc_jbuf_str(&b, msg ? msg : "error");
+    comp_ipc_jbuf_puts(&b, "}\n");
     client_queue_line(c, b.buf);
     talloc_free(tmp);
 }
 
 /* ───────────────────────── Event Broadcast ───────────────────────── */
 
-static bool
-has_subscribers(const CompServer *s, uint32_t sub_bit)
+bool
+comp_ipc_has_subscribers(const CompServer *s, uint32_t sub_bit)
 {
     if (!s || !s->ipc || wl_list_empty(&s->ipc->clients))
         return false;
@@ -659,8 +395,8 @@ has_subscribers(const CompServer *s, uint32_t sub_bit)
     return false;
 }
 
-static void
-broadcast_event(CompServer *s, uint32_t sub_bit, const char *line)
+void
+comp_ipc_broadcast_event(CompServer *s, uint32_t sub_bit, const char *line)
 {
     if (!s || !s->ipc || !line)
         return;
@@ -672,101 +408,6 @@ broadcast_event(CompServer *s, uint32_t sub_bit, const char *line)
                 talloc_free(c);
         }
     }
-}
-
-static void
-build_workspaces_event(JsonBuf *b, const CompServer *s)
-{
-    b->len = 0;
-    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_WORKSPACES_CHANGED "\",\"workspaces\":");
-    append_workspaces_array(b, s);
-    jbuf_puts(b, "}\n");
-}
-
-static void
-build_windows_event(JsonBuf *b, const CompServer *s)
-{
-    b->len = 0;
-    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_WINDOWS_CHANGED "\",\"windows\":");
-    append_windows_array(b, s);
-    jbuf_puts(b, "}\n");
-}
-
-static void
-build_keyboard_layouts_event(JsonBuf *b, const CompServer *s)
-{
-    b->len = 0;
-    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_KEYBOARD_LAYOUTS_CHANGED "\",");
-    append_keyboard_layouts_fields(b, s);
-    jbuf_puts(b, "}\n");
-}
-
-static void
-build_outputs_event(JsonBuf *b, const CompServer *s)
-{
-    b->len = 0;
-    jbuf_puts(b, "{\"event\":\"" COMP_IPC_EVENT_OUTPUTS_CHANGED "\",\"outputs\":");
-    append_outputs_array(b, s);
-    jbuf_puts(b, "}\n");
-}
-
-static void
-emit_built_event(CompServer *s, uint32_t sub_bit, void (*builder)(JsonBuf *, const CompServer *))
-{
-    if (!has_subscribers(s, sub_bit))
-        return;
-    void *tmp = talloc_new(s->ipc);
-    JsonBuf b;
-    jbuf_init(&b, tmp);
-    builder(&b, s);
-    broadcast_event(s, sub_bit, b.buf);
-    talloc_free(tmp);
-}
-
-void comp_ipc_emit_workspaces(CompServer *s)       { emit_built_event(s, SUB_WORKSPACES, build_workspaces_event); }
-void comp_ipc_emit_windows(CompServer *s)          { emit_built_event(s, SUB_WINDOWS, build_windows_event); }
-void comp_ipc_emit_keyboard_layouts(CompServer *s) { emit_built_event(s, SUB_KEYBOARD_LAYOUTS, build_keyboard_layouts_event); }
-void comp_ipc_emit_outputs(CompServer *s)          { emit_built_event(s, SUB_OUTPUTS, build_outputs_event); }
-
-void
-comp_ipc_emit_focus(CompServer *s, CompWinId focused_id)
-{
-    if (!has_subscribers(s, SUB_WINDOWS))
-        return;
-    char buf[128];
-    snprintf(buf, sizeof(buf), "{\"event\":\"" COMP_IPC_EVENT_WINDOW_FOCUS_CHANGED "\",\"id\":%llu}\n",
-             (unsigned long long)focused_id);
-    broadcast_event(s, SUB_WINDOWS, buf);
-}
-
-void
-comp_ipc_emit_touch_bezel_swipe(CompServer *s, const char *edge, double x_ratio)
-{
-    if (!has_subscribers(s, SUB_TOUCH_GESTURES))
-        return;
-    void *tmp = talloc_new(s->ipc);
-    JsonBuf b;
-    jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"" COMP_IPC_EVENT_TOUCH_BEZEL_SWIPE "\",\"edge\":");
-    jbuf_str(&b, edge ? edge : COMP_IPC_EDGE_BOTTOM);
-    jbuf_printf(&b, ",\"x_ratio\":%.4f}\n", x_ratio);
-    broadcast_event(s, SUB_TOUCH_GESTURES, b.buf);
-    talloc_free(tmp);
-}
-
-void
-comp_ipc_emit_screenshot_saved(CompServer *s, const char *path, bool copied)
-{
-    if (!has_subscribers(s, SUB_SCREENSHOTS))
-        return;
-    void *tmp = talloc_new(s->ipc);
-    JsonBuf b;
-    jbuf_init(&b, tmp);
-    jbuf_puts(&b, "{\"event\":\"" COMP_IPC_EVENT_SCREENSHOT_SAVED "\",\"path\":");
-    jbuf_str(&b, path ? path : "");
-    jbuf_printf(&b, ",\"copied\":%s}\n", copied ? "true" : "false");
-    broadcast_event(s, SUB_SCREENSHOTS, b.buf);
-    talloc_free(tmp);
 }
 
 /* ───────────────────────── Request Dispatch ───────────────────────── */
@@ -1134,25 +775,25 @@ handle_subscribe_cmd(CompIpcClient *c, const JVal *req, JsonBuf *b)
 
     /* Initial snapshot events per spec §5.3 */
     if (mask & SUB_WORKSPACES) {
-        build_workspaces_event(b, s);
+        comp_ipc_build_workspaces_event(b, s);
         client_queue_line(c, b->buf);
     }
     if (mask & SUB_WINDOWS) {
-        build_windows_event(b, s);
+        comp_ipc_build_windows_event(b, s);
         client_queue_line(c, b->buf);
 
         CompWinId fid = s->layout ? comp_layout_focused_window(s->layout) : 0;
         b->len = 0;
-        jbuf_printf(b, "{\"event\":\"" COMP_IPC_EVENT_WINDOW_FOCUS_CHANGED "\",\"id\":%llu}\n",
-                    (unsigned long long)fid);
+        comp_ipc_jbuf_printf(b, "{\"event\":\"" COMP_IPC_EVENT_WINDOW_FOCUS_CHANGED "\",\"id\":%llu}\n",
+                             (unsigned long long)fid);
         client_queue_line(c, b->buf);
     }
     if (mask & SUB_KEYBOARD_LAYOUTS) {
-        build_keyboard_layouts_event(b, s);
+        comp_ipc_build_keyboard_layouts_event(b, s);
         client_queue_line(c, b->buf);
     }
     if (mask & SUB_OUTPUTS) {
-        build_outputs_event(b, s);
+        comp_ipc_build_outputs_event(b, s);
         client_queue_line(c, b->buf);
     }
 }
@@ -1186,31 +827,31 @@ handle_client_line(CompIpcClient *c, const char *line)
     }
 
     JsonBuf b;
-    jbuf_init(&b, tmp);
+    comp_ipc_jbuf_init(&b, tmp);
 
     switch (cmd) {
     case IPC_CMD_GET_OUTPUTS:
-        jbuf_puts(&b, "{\"ok\":{\"outputs\":");
-        append_outputs_array(&b, s);
-        jbuf_puts(&b, "}}\n");
+        comp_ipc_jbuf_puts(&b, "{\"ok\":{\"outputs\":");
+        comp_ipc_append_outputs_array(&b, s);
+        comp_ipc_jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
         break;
     case IPC_CMD_GET_WORKSPACES:
-        jbuf_puts(&b, "{\"ok\":{\"workspaces\":");
-        append_workspaces_array(&b, s);
-        jbuf_puts(&b, "}}\n");
+        comp_ipc_jbuf_puts(&b, "{\"ok\":{\"workspaces\":");
+        comp_ipc_append_workspaces_array(&b, s);
+        comp_ipc_jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
         break;
     case IPC_CMD_GET_WINDOWS:
-        jbuf_puts(&b, "{\"ok\":{\"windows\":");
-        append_windows_array(&b, s);
-        jbuf_puts(&b, "}}\n");
+        comp_ipc_jbuf_puts(&b, "{\"ok\":{\"windows\":");
+        comp_ipc_append_windows_array(&b, s);
+        comp_ipc_jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
         break;
     case IPC_CMD_GET_KEYBOARD_LAYOUTS:
-        jbuf_puts(&b, "{\"ok\":{");
-        append_keyboard_layouts_fields(&b, s);
-        jbuf_puts(&b, "}}\n");
+        comp_ipc_jbuf_puts(&b, "{\"ok\":{");
+        comp_ipc_append_keyboard_layouts_fields(&b, s);
+        comp_ipc_jbuf_puts(&b, "}}\n");
         client_queue_line(c, b.buf);
         break;
     case IPC_CMD_DEBUG_MEM: {
@@ -1218,9 +859,9 @@ handle_client_line(CompIpcClient *c, const char *line)
         size_t rep_len = 0;
         FILE *fp = open_memstream(&rep, &rep_len);
         if (fp) { talloc_report_full(s, fp); fclose(fp); }
-        jbuf_puts(&b, "{\"ok\":{\"report\":");
-        jbuf_str(&b, rep ? rep : "");
-        jbuf_puts(&b, "}}\n");
+        comp_ipc_jbuf_puts(&b, "{\"ok\":{\"report\":");
+        comp_ipc_jbuf_str(&b, rep ? rep : "");
+        comp_ipc_jbuf_puts(&b, "}}\n");
         free(rep);
         client_queue_line(c, b.buf);
         break;
@@ -1359,87 +1000,7 @@ handle_ipc_accept(int fd, uint32_t mask, void *data)
     return 0;
 }
 
-/* ───────────────────────── Config Inotify ───────────────────────── */
-
-static int
-handle_debounce_timer(void *data)
-{
-    CompServer *s = data;
-    wlr_log(WLR_INFO, "hot-reloading compositor configuration");
-    comp_server_reload_config(s);
-    return 0;
-}
-
-static void
-refresh_confd_watch(struct CompIpcState *ipc)
-{
-    if (!ipc || ipc->inotify_fd < 0 || !ipc->config_dir)
-        return;
-    DIR *d = opendir(ipc->config_dir);
-    if (!d)
-        return;
-    struct dirent *de;
-    while ((de = readdir(d)) != NULL) {
-        if (de->d_name[0] == '.')
-            continue;
-        char sub[PATH_MAX];
-        snprintf(sub, sizeof(sub), "%s/%s", ipc->config_dir, de->d_name);
-        struct stat st;
-        if (stat(sub, &st) == 0 && S_ISDIR(st.st_mode)) {
-            int wd = inotify_add_watch(ipc->inotify_fd, sub,
-                                       IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_ATTRIB);
-            if (strcmp(de->d_name, COMP_CFG_DIR_CONFD) == 0)
-                ipc->wd_confd = wd;
-        }
-    }
-    closedir(d);
-}
-
-static bool
-is_comp_root_toml(const char *name)
-{
-    return strcmp(name, COMP_CFG_FILE_THEME) == 0 ||
-           strcmp(name, COMP_CFG_FILE_SHELL) == 0 ||
-           strcmp(name, COMP_CFG_FILE_COMP) == 0 ||
-           strcmp(name, COMP_CFG_FILE_OUTPUTS) == 0 ||
-           strcmp(name, COMP_CFG_FILE_BINDS) == 0 ||
-           strcmp(name, COMP_CFG_FILE_RULES) == 0;
-}
-
-static int
-handle_inotify_fd(int fd, uint32_t mask, void *data)
-{
-    (void)mask;
-    CompServer *s = data;
-    struct CompIpcState *ipc = s->ipc;
-    char buf[4096] __attribute__((aligned(__alignof__(struct inotify_event))));
-    bool trigger = false;
-
-    for (;;) {
-        ssize_t n = read(fd, buf, sizeof(buf));
-        if (n <= 0)
-            break;
-        const char *p = buf;
-        while (p < buf + n) {
-            const struct inotify_event *ev = (const struct inotify_event *)p;
-            if (ev->len > 0) {
-                size_t nl = strlen(ev->name);
-                if (nl > 5 && strcmp(ev->name + nl - 5, COMP_CFG_EXT_TOML) == 0) {
-                    if (!ipc || ev->wd != ipc->wd_root || is_comp_root_toml(ev->name))
-                        trigger = true;
-                } else if ((ev->mask & IN_ISDIR) || strcmp(ev->name, COMP_CFG_DIR_CONFD) == 0) {
-                    refresh_confd_watch(ipc);
-                    trigger = true;
-                }
-            }
-            p += sizeof(struct inotify_event) + ev->len;
-        }
-    }
-
-    if (trigger && ipc && ipc->debounce_timer)
-        wl_event_source_timer_update(ipc->debounce_timer, 50);
-    return 0;
-}
+/* ───────────────────────── IPC Socket Lifecycle ───────────────────────── */
 
 static int
 ipc_state_destructor(struct CompIpcState *ipc)
@@ -1448,18 +1009,7 @@ ipc_state_destructor(struct CompIpcState *ipc)
     wl_list_for_each_safe(c, tmp, &ipc->clients, link) {
         talloc_free(c);
     }
-    if (ipc->debounce_timer) {
-        wl_event_source_remove(ipc->debounce_timer);
-        ipc->debounce_timer = NULL;
-    }
-    if (ipc->inotify_ev) {
-        wl_event_source_remove(ipc->inotify_ev);
-        ipc->inotify_ev = NULL;
-    }
-    if (ipc->inotify_fd >= 0) {
-        close(ipc->inotify_fd);
-        ipc->inotify_fd = -1;
-    }
+    comp_ipc_watch_finish(ipc);
     if (ipc->listen_ev) {
         wl_event_source_remove(ipc->listen_ev);
         ipc->listen_ev = NULL;
@@ -1603,17 +1153,7 @@ comp_ipc_init(CompServer *s)
     ipc->config_dir = comp_server_resolve_config_dir(ipc, &s->opts);
 
     /* Watch config directory via inotify on wl_event_loop */
-    if (ipc->config_dir && !s->opts.greeter_mode) {
-        int ifd = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
-        if (ifd >= 0) {
-            ipc->inotify_fd = ifd;
-            ipc->wd_root = inotify_add_watch(ifd, ipc->config_dir,
-                                             IN_CLOSE_WRITE | IN_MOVED_TO | IN_CREATE | IN_DELETE | IN_ATTRIB);
-            refresh_confd_watch(ipc);
-            ipc->debounce_timer = wl_event_loop_add_timer(s->loop, handle_debounce_timer, s);
-            ipc->inotify_ev = wl_event_loop_add_fd(s->loop, ifd, WL_EVENT_READABLE, handle_inotify_fd, s);
-        }
-    }
+    comp_ipc_watch_init(s, ipc);
 
     if (s->opts.greeter_mode)
         return true;
