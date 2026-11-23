@@ -7,6 +7,7 @@
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_xcursor_manager.h>
 #include <wlr/util/edges.h>
 
 /* Aero + Metro default border colors (spec §5.2.1 & §3.9 T3):
@@ -584,11 +585,16 @@ comp_window_handle_request_move(void *owner, void *data)
     /* Spec §3.11 L8: interactive move is supported on floating windows. */
     if (!w->mapped || !w->is_floating || !ev || !validate_grab_serial(s, w, ev->serial))
         return;
-    s->grab_win      = w->id;
-    s->grab_resizing = false;
-    s->grab_edges    = 0;
-    s->grab_start_cx = s->cursor->x;
-    s->grab_start_cy = s->cursor->y;
+    s->grab_win        = w->id;
+    s->grab_mode       = COMP_GRAB_FLOATING_MOVE;
+    s->grab_resizing   = false;
+    s->grab_from_mod   = false;
+    s->grab_button     = 0;
+    s->grab_edges      = 0;
+    s->grab_start_cx   = s->cursor->x;
+    s->grab_start_cy   = s->cursor->y;
+    s->grab_last_step_x = s->cursor->x;
+    s->grab_last_step_y = s->cursor->y;
     s->grab_start_rect = w->last_screen_rect;
 }
 
@@ -600,23 +606,174 @@ comp_window_handle_request_resize(void *owner, void *data)
     const struct wlr_xdg_toplevel_resize_event *ev = data;
     if (!w->mapped || !w->is_floating || !ev || !validate_grab_serial(s, w, ev->serial))
         return;
-    s->grab_win      = w->id;
-    s->grab_resizing = true;
-    s->grab_edges    = ev->edges;
-    s->grab_start_cx = s->cursor->x;
-    s->grab_start_cy = s->cursor->y;
+    s->grab_win        = w->id;
+    s->grab_mode       = COMP_GRAB_FLOATING_RESIZE;
+    s->grab_resizing   = true;
+    s->grab_from_mod   = false;
+    s->grab_button     = 0;
+    s->grab_edges      = ev->edges;
+    s->grab_start_cx   = s->cursor->x;
+    s->grab_start_cy   = s->cursor->y;
+    s->grab_last_step_x = s->cursor->x;
+    s->grab_last_step_y = s->cursor->y;
     s->grab_start_rect = w->last_screen_rect;
-    if (w->toplevel->base->initialized)
+    if (w->toplevel && w->toplevel->base->initialized)
         wlr_xdg_toplevel_set_resizing(w->toplevel, true);
+}
+
+bool
+comp_window_begin_mod_grab(CompServer *s, struct CompWindow *w, bool resize, uint32_t button)
+{
+    if (!s || !w || !w->mapped || !s->cursor || w->is_fullscreen)
+        return false;
+
+    s->grab_win         = w->id;
+    s->grab_from_mod    = true;
+    s->grab_button      = button;
+    s->grab_start_cx    = s->cursor->x;
+    s->grab_start_cy    = s->cursor->y;
+    s->grab_last_step_x = s->cursor->x;
+    s->grab_last_step_y = s->cursor->y;
+    s->grab_start_rect  = w->last_screen_rect;
+    s->grab_edges       = 0;
+
+    if (w->is_floating) {
+        s->grab_mode     = resize ? COMP_GRAB_FLOATING_RESIZE : COMP_GRAB_FLOATING_MOVE;
+        s->grab_resizing = resize;
+        if (resize) {
+            CompRect work = {0};
+            comp_server_working_area(s, &work);
+            double rel_x = (s->cursor->x - work.x) - w->last_screen_rect.x;
+            double rel_y = (s->cursor->y - work.y) - w->last_screen_rect.y;
+            s->grab_edges = (rel_x < w->last_screen_rect.w * 0.5 ? WLR_EDGE_LEFT : WLR_EDGE_RIGHT) |
+                            (rel_y < w->last_screen_rect.h * 0.5 ? WLR_EDGE_TOP : WLR_EDGE_BOTTOM);
+            if (w->toplevel && w->toplevel->base->initialized)
+                wlr_xdg_toplevel_set_resizing(w->toplevel, true);
+        }
+    } else {
+        s->grab_mode        = resize ? COMP_GRAB_TILED_RESIZE : COMP_GRAB_TILED_MOVE;
+        s->grab_resizing    = resize;
+        s->grab_start_col_w = w->last_screen_rect.w > 1.0 ? w->last_screen_rect.w : 600.0;
+        if (resize) {
+            w->maximized_to_edges = false;
+            if (w->toplevel && w->toplevel->base->initialized)
+                wlr_xdg_toplevel_set_resizing(w->toplevel, true);
+        }
+    }
+
+    if (s->cursor_mgr) {
+        const char *cname = resize
+            ? (w->is_floating ? "se-resize" : "ew-resize")
+            : "grabbing";
+        wlr_cursor_set_xcursor(s->cursor, s->cursor_mgr, cname);
+    }
+    return true;
+}
+
+static void
+update_tiled_grab(CompServer *s, CompWindow *w)
+{
+    CompRect work = {0};
+    comp_server_working_area(s, &work);
+    double vw = work.w > 1.0 ? work.w : 1280.0;
+    double vh = work.h > 1.0 ? work.h : 720.0;
+    double gap = (s->config && s->config->layout.gap >= 0.0) ? s->config->layout.gap : 6.0;
+
+    if (s->grab_mode == COMP_GRAB_TILED_RESIZE) {
+        double dx = s->cursor->x - s->grab_start_cx;
+        double min_w = fmax(160.0, vw * 0.10);
+        double max_w = fmax(min_w, vw - 2.0 * gap);
+        double target_px = s->grab_start_col_w + dx;
+        if (target_px < min_w) target_px = min_w;
+        if (target_px > max_w) target_px = max_w;
+        double denom = vw - gap;
+        double prop = denom > 1.0 ? (target_px + gap) / denom : 0.5;
+        if (comp_layout_set_column_width(s->layout, prop)) {
+            comp_window_relayout(s);
+            comp_ipc_emit_windows(s);
+        }
+        return;
+    }
+
+    /* COMP_GRAB_TILED_MOVE: reorder columns left/right & move across workspaces up/down */
+    size_t col = 0;
+    size_t ws_idx = comp_layout_active_workspace(s->layout);
+    size_t n_cols = comp_layout_column_count(s->layout, ws_idx);
+    if (!comp_layout_focused_column(s->layout, &col)) {
+        (void)w;
+        return;
+    }
+
+    double dx_step = s->cursor->x - s->grab_last_step_x;
+    double dy_step = s->cursor->y - s->grab_last_step_y;
+
+    double right_thresh = 100.0;
+    if (col + 1 < n_cols) {
+        double nx = 0.0, nw = 0.0;
+        if (comp_layout_column_bounds(s->layout, ws_idx, col + 1, vw, &nx, &nw))
+            right_thresh = fmin(140.0, fmax(48.0, nw * 0.45));
+    }
+    double left_thresh = 100.0;
+    if (col > 0) {
+        double px = 0.0, pw = 0.0;
+        if (comp_layout_column_bounds(s->layout, ws_idx, col - 1, vw, &px, &pw))
+            left_thresh = fmin(140.0, fmax(48.0, pw * 0.45));
+    }
+
+    bool changed = false;
+    if (dx_step > right_thresh && col + 1 < n_cols) {
+        if (comp_layout_apply(s->layout, COMP_ACT_MOVE_COLUMN_RIGHT)) {
+            s->grab_last_step_x = s->cursor->x;
+            changed = true;
+        }
+    } else if (dx_step < -left_thresh && col > 0) {
+        if (comp_layout_apply(s->layout, COMP_ACT_MOVE_COLUMN_LEFT)) {
+            s->grab_last_step_x = s->cursor->x;
+            changed = true;
+        }
+    }
+
+    double ws_thresh = fmax(110.0, vh * 0.22);
+    if (dy_step > ws_thresh) {
+        if (comp_layout_apply(s->layout, COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_DOWN)) {
+            s->grab_last_step_y = s->cursor->y;
+            changed = true;
+        }
+    } else if (dy_step < -ws_thresh) {
+        if (comp_layout_apply(s->layout, COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_UP)) {
+            s->grab_last_step_y = s->cursor->y;
+            changed = true;
+        }
+    }
+
+    if (changed) {
+        comp_window_relayout(s);
+        comp_ipc_emit_workspaces(s);
+        comp_ipc_emit_windows(s);
+    }
 }
 
 void
 comp_window_update_grab(CompServer *s)
 {
-    if (!s || s->grab_win == 0)
+    if (!s || s->grab_win == 0 || s->grab_mode == COMP_GRAB_NONE)
         return;
     CompWindow *w = comp_win_from_id(s, s->grab_win);
-    if (!w || !w->mapped || !w->is_floating) {
+    if (!w || !w->mapped) {
+        comp_window_end_grab(s);
+        return;
+    }
+
+    if (s->grab_mode == COMP_GRAB_TILED_MOVE || s->grab_mode == COMP_GRAB_TILED_RESIZE) {
+        if (w->is_floating || w->is_fullscreen) {
+            comp_window_end_grab(s);
+            return;
+        }
+        update_tiled_grab(s, w);
+        return;
+    }
+
+    if (!w->is_floating) {
         comp_window_end_grab(s);
         return;
     }
@@ -671,13 +828,18 @@ comp_window_update_grab(CompServer *s)
 void
 comp_window_end_grab(CompServer *s)
 {
-    if (!s || s->grab_win == 0)
+    if (!s || (s->grab_win == 0 && s->grab_mode == COMP_GRAB_NONE))
         return;
     CompWindow *w = comp_win_from_id(s, s->grab_win);
     if (w && w->mapped && s->grab_resizing && w->toplevel && w->toplevel->base->initialized)
         wlr_xdg_toplevel_set_resizing(w->toplevel, false);
+    if (s->grab_from_mod && s->cursor && s->cursor_mgr)
+        wlr_cursor_set_xcursor(s->cursor, s->cursor_mgr, "default");
     s->grab_win      = 0;
+    s->grab_mode     = COMP_GRAB_NONE;
     s->grab_resizing = false;
+    s->grab_from_mod = false;
+    s->grab_button   = 0;
     s->grab_edges    = 0;
 }
 

@@ -559,4 +559,20 @@ if command -v Xwayland >/dev/null 2>&1; then
     check "xwayland.enabled = false leaves DISPLAY unset" 0 $XW_OFF_RC
 fi
 
+# Zoomed overview IPC toggle with a mapped client window
+OV_RC=0
+timeout 30 "$KC" -q --exit-with-command -- sh -c "
+    set -e
+    \"$CL\" hold '$RT/ov.ready' >/dev/null 2>&1 &
+    PID=\$!
+    for _ in \$(seq 50); do [ -f '$RT/ov.ready' ] && break; sleep 0.02; done
+    \"$KC\" msg action toggle-overview | grep -q '\"ok\"'
+    sleep 0.05
+    \"$KC\" msg action toggle-overview | grep -q '\"ok\"'
+    \"$KC\" msg get-windows | grep -q '\"ok\"'
+    rm -f '$RT/ov.ready'
+    wait \"\$PID\" || true
+" || OV_RC=1
+check "toggle-overview IPC opens and closes cleanly with mapped window" 0 $OV_RC
+
 exit $fail

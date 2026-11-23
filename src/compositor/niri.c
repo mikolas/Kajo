@@ -694,7 +694,7 @@ static const struct {
     { "FocusWorkspaceUp",     COMP_IPC_ACT_FOCUS_WORKSPACE_UP,     "{\"Action\":{\"FocusWorkspaceUp\":{}}}" },
     { "FocusColumnRight",     COMP_IPC_ACT_FOCUS_COLUMN_RIGHT,     "{\"Action\":{\"FocusColumnRight\":{}}}" },
     { "FocusColumnLeft",      COMP_IPC_ACT_FOCUS_COLUMN_LEFT,      "{\"Action\":{\"FocusColumnLeft\":{}}}" },
-    { "ToggleOverview",       COMP_IPC_ACT_SWITCH_WINDOW_NEXT,     "{\"Action\":{\"ToggleOverview\":{}}}" },
+    { "ToggleOverview",       COMP_IPC_ACT_TOGGLE_OVERVIEW,        "{\"Action\":{\"ToggleOverview\":{}}}" },
     { "PowerOnMonitors",      COMP_IPC_ACT_POWER_ON_MONITORS,      "{\"Action\":{\"PowerOnMonitors\":{}}}" },
     { "PowerOffMonitors",     COMP_IPC_ACT_POWER_OFF_MONITORS,     "{\"Action\":{\"PowerOffMonitors\":{}}}" },
     { "Quit",                 COMP_IPC_ACT_QUIT,                   "{\"Action\":{\"Quit\":{\"skip_confirmation\":true}}}" },

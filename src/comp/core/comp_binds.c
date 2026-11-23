@@ -37,10 +37,10 @@ static const struct {
     { "screenshot",                       COMP_BIND_SCREENSHOT },
     { "screenshot-window",                COMP_BIND_SCREENSHOT_WINDOW },
     { "screenshot-screen",                COMP_BIND_SCREENSHOT_SCREEN },
+    { "toggle-overview",                  COMP_BIND_TOGGLE_OVERVIEW },
 };
 
 static const char *const k_planned_actions[] = {
-    "toggle-overview",
     "show-hotkey-overlay",
 };
 

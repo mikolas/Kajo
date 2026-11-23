@@ -64,6 +64,7 @@ src/
 │       ├── comp_spring.h/c         Analytical 2nd-order damped spring; retargeting preserves position and velocity
 │       ├── comp_layout.h/c         Scrolling-tiling model: workspaces, columns, windows, tabbed/stacked & camera target
 │       ├── comp_layout_float.c     Floating window stack, move/resize clamping & focus tracking (comp_layout_private.h)
+│       ├── comp_overview_core.h/c  Zoomed-out workspace overview band/card geometry & hit-testing (no wlroots/GLib)
 │       ├── comp_motion.h/c         Spring-animated strip camera, window geometry & workspace transitions
 │       ├── comp_gesture.h/c        3-finger drag & flick velocity/position release state machine
 │       ├── comp_binds.h/c          binds.toml parser (xkbcommon keysyms, wheel triggers) and key/wheel lookup
@@ -86,6 +87,9 @@ src/
 │   ├── files_model.h/c             KajoFileItem GObject, async GVFS + archive:// enumerator, sort & filter, breadcrumb chain
 │   ├── files_ops.h/c               Async Copy/Move/Trash/Restore/Delete/Rename/Mkdir & clipboard
 │   ├── files_ops_archive.c         libarchive async extract/compress workers & conflict handling (files_ops_private.h)
+│   ├── files_dnd.h/c               Wayland Drag-and-Drop (GtkDragSource / GtkDropTarget) for views, folders, breadcrumbs & sidebar
+│   ├── files_portal.h/c            D-Bus FileChooser portal backend (org.freedesktop.impl.portal.FileChooser + Request)
+│   ├── files_chooser.h/c           Aero+Metro 880x580 native FileChooser portal dialog window
 │   ├── files_diskimage.h/c         UDisks2 loop-mount of ISO / raw disk images (LoopSetup -> Mount -> autoclear)
 │   ├── files_sidebar.h/c           Places, Trash, GVolumeMonitor drives & inline GVFS/LUKS auth
 │   └── files_quicklook.h/c         Inspector drawer & Space Quick Look modal (img/media/PDF/archive/code)
@@ -157,6 +161,8 @@ src/
 │   └── osk_xkb.h/c                 XKB keymap builder & keycode/keysym lookup
 ├── posture/
 │   └── posture_manager.h/c         360° hinge angle posture state machine & auto-rotation
+├── portal/
+│   └── portal_settings.h/c         org.freedesktop.impl.portal.Settings backend hosted in kajo shell
 ├── player/
 │   ├── main.c                      kajo-player standalone entry point (org.kajo.Player)
 │   ├── player_window.h/c           Main window, fullscreen overlay HUD & playback controls

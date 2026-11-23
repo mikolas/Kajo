@@ -149,7 +149,7 @@ test_binds_errors(void)
     CompDiagList d;
     CompBinds *b = parse_binds(
         "[[bind]]\nkey = \"mod+h\"\naction = \"focus-colum-left\"\n"                  /* typo */
-        "[[bind]]\nkey = \"mod+d\"\naction = \"toggle-overview\"\n"                   /* planned */
+        "[[bind]]\nkey = \"mod+d\"\naction = \"show-hotkey-overlay\"\n"               /* planned */
         "[[bind]]\nkey = \"hyper+x\"\naction = \"close-window\"\n"                    /* bad modifier */
         "[[bind]]\nkey = \"mod+nosuchkey\"\naction = \"close-window\"\n"              /* bad key */
         "[[bind]]\nkey = \"mod+shift+mod+x\"\naction = \"close-window\"\n"            /* modifier twice */
@@ -168,7 +168,7 @@ test_binds_errors(void)
     dump_diag(&d);
     g_assert_nonnull(b);
     g_assert_true(comp_diag_contains(&d, "'mod+h': unknown action 'focus-colum-left'"));
-    g_assert_true(comp_diag_contains(&d, "'mod+d': action 'toggle-overview' is planned but not available in this version"));
+    g_assert_true(comp_diag_contains(&d, "'mod+d': action 'show-hotkey-overlay' is planned but not available in this version"));
     g_assert_true(comp_diag_contains(&d, "'hyper+x': unknown modifier"));
     g_assert_true(comp_diag_contains(&d, "'mod+nosuchkey': unknown key name"));
     g_assert_true(comp_diag_contains(&d, "'mod+shift+mod+x': modifier given twice"));

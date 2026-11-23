@@ -118,6 +118,13 @@ typedef enum {
 bool        comp_layout_apply(CompLayout *layout, CompAction action);
 /* Change the focused column's width by `delta` (proportion, e.g. +0.1), clamped to (0.05, 1]. */
 bool        comp_layout_adjust_column_width(CompLayout *layout, double delta);
+/* Set the focused column's width proportion directly, clamped to [0.05, 1.0]. */
+bool        comp_layout_set_column_width(CompLayout *layout, double width_prop);
+/* Move the focused column on the active workspace to `target_index`. */
+bool        comp_layout_move_column_to_index(CompLayout *layout, size_t target_index);
+/* Strip x and pixel width of column `col_index` on workspace `ws_index`. */
+bool        comp_layout_column_bounds(const CompLayout *layout, size_t ws_index, size_t col_index,
+                                      double view_w, double *out_x, double *out_w);
 /* Change the focused window's height proportion by `delta`, clamped to [0.1, 1]. */
 bool        comp_layout_adjust_window_height(CompLayout *layout, double delta);
 

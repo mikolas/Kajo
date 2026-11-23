@@ -1352,6 +1352,7 @@ kajo_files_window_init(KajoFilesWindow *self)
         on_sidebar_status,
         self
     );
+    kajo_files_sidebar_set_drop_handler(self->sidebar, files_window_dnd_execute_drop, self);
 
     files_window_views_connect_toolbar_signals(self);
     g_signal_connect(self->btn_cancel_op, "clicked", G_CALLBACK(on_btn_cancel_op_clicked), self);
@@ -1371,6 +1372,83 @@ kajo_files_window_init(KajoFilesWindow *self)
     gtk_widget_add_controller(GTK_WIDGET(self), key_ctrl);
 
     g_signal_connect(self, "realize", G_CALLBACK(on_window_realize), self);
+}
+
+GPtrArray *
+files_window_dnd_get_drag_files(KajoFileItem *anchor_item, gpointer user_data)
+{
+    KajoFilesWindow *self = KAJO_FILES_WINDOW(user_data);
+    GPtrArray *out = g_ptr_array_new_with_free_func(g_object_unref);
+    if (!self || !anchor_item)
+        return out;
+
+    const char *anchor_uri = kajo_file_item_get_uri(anchor_item);
+    g_autoptr(GPtrArray) sel = files_window_get_selected_items(self);
+    gboolean anchor_in_sel = FALSE;
+    if (sel && anchor_uri) {
+        for (guint i = 0; i < sel->len; i++) {
+            KajoFileItem *it = g_ptr_array_index(sel, i);
+            if (g_strcmp0(kajo_file_item_get_uri(it), anchor_uri) == 0) {
+                anchor_in_sel = TRUE;
+                break;
+            }
+        }
+    }
+
+    if (anchor_in_sel && sel && sel->len > 1) {
+        for (guint i = 0; i < sel->len; i++) {
+            KajoFileItem *it = g_ptr_array_index(sel, i);
+            if (kajo_files_dnd_item_is_draggable(it)) {
+                GFile *f = kajo_file_item_get_file(it);
+                if (f)
+                    g_ptr_array_add(out, g_object_ref(f));
+            }
+        }
+    } else if (kajo_files_dnd_item_is_draggable(anchor_item)) {
+        GFile *f = kajo_file_item_get_file(anchor_item);
+        if (f)
+            g_ptr_array_add(out, g_object_ref(f));
+    }
+    return out;
+}
+
+GFile *
+files_window_dnd_get_current_dir(gpointer user_data)
+{
+    KajoFilesWindow *self = KAJO_FILES_WINDOW(user_data);
+    return (self && self->current_dir) ? g_object_ref(self->current_dir) : NULL;
+}
+
+gboolean
+files_window_dnd_execute_drop(GPtrArray     *files,
+                              GFile         *dest_dir,
+                              GdkDragAction  action,
+                              gpointer       user_data)
+{
+    KajoFilesWindow *self = KAJO_FILES_WINDOW(user_data);
+    gboolean is_trash = FALSE;
+    if (!self || !kajo_files_dnd_can_drop_files(files, dest_dir, &is_trash))
+        return FALSE;
+
+    if (is_trash) {
+        files_window_begin_op(self, "Moving dropped items to Trash...");
+        kajo_files_op_trash_async(files, self->ops_cancel,
+                                  files_window_on_file_op_completed,
+                                  files_window_op_weak_new(self));
+        return TRUE;
+    }
+
+    gboolean is_move = (action == GDK_ACTION_MOVE);
+    g_autofree char *dest_base = g_file_get_basename(dest_dir);
+    g_autofree char *msg = g_strdup_printf("%s %u item(s) into %s...",
+                                           is_move ? "Moving" : "Copying",
+                                           files->len,
+                                           dest_base ? dest_base : "folder");
+    files_window_begin_op(self, msg);
+    kajo_files_op_transfer_async(files, dest_dir, is_move, self->ops_cancel,
+                                 files_window_on_file_op_completed,
+                                 files_window_op_weak_new(self));
+    return TRUE;
 }
 
 GtkWidget *

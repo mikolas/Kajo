@@ -1,5 +1,6 @@
 /* Tests for src/comp/core/comp_layout.c, comp_motion.c, and comp_touch.c (pure core, no wlroots). */
 #include "../src/comp/core/comp_layout.h"
+#include "../src/comp/core/comp_overview_core.h"
 #include "../src/comp/core/comp_motion.h"
 #include "../src/comp/core/comp_touch.h"
 
@@ -567,6 +568,99 @@ test_touch_gestures_and_touchpad_swipes(void)
     g_assert_cmpuint(tp.fingers, ==, 0);
 }
 
+static void
+test_column_set_width_move_and_bounds(void)
+{
+    CompLayout *L = new_default();
+    g_assert_true(comp_layout_add_window(L, 10));
+    g_assert_true(comp_layout_add_window(L, 20));
+    g_assert_true(comp_layout_add_window(L, 30));
+    assert_ok(L);
+
+    /* Direct width proportion set + clamping */
+    g_assert_true(comp_layout_set_column_width(L, 0.72));
+    double cx = 0.0, cw = 0.0;
+    g_assert_true(comp_layout_column_bounds(L, 0, 2, VW, &cx, &cw));
+    g_assert_cmpfloat_with_epsilon(cw, (VW - 6.0) * 0.72 - 6.0, 1e-3);
+
+    g_assert_true(comp_layout_set_column_width(L, 0.01)); /* clamped to 0.05 */
+    g_assert_true(comp_layout_column_bounds(L, 0, 2, VW, &cx, &cw));
+    g_assert_cmpfloat_with_epsilon(cw, (VW - 6.0) * 0.05 - 6.0, 1e-3);
+    g_assert_false(comp_layout_set_column_width(L, NAN));
+
+    /* Direct move to column index 0 */
+    g_assert_true(comp_layout_move_column_to_index(L, 0));
+    size_t col = 99;
+    g_assert_true(comp_layout_focused_column(L, &col));
+    g_assert_cmpuint(col, ==, 0);
+    g_assert_cmpuint(comp_layout_focused_window(L), ==, 30);
+    g_assert_false(comp_layout_move_column_to_index(L, 0));
+    g_assert_false(comp_layout_move_column_to_index(L, 99));
+    assert_ok(L);
+    comp_layout_free(L);
+}
+
+static void
+test_overview_layout_and_hit_test(void)
+{
+    CompLayout *L = new_default();
+    g_assert_true(comp_layout_add_window(L, 1));
+    g_assert_true(comp_layout_add_window(L, 2));
+    /* Move second window down to workspace 2 so we have 3 workspaces (WS1, WS2, empty WS3) */
+    g_assert_true(comp_layout_apply(L, COMP_ACT_MOVE_COLUMN_TO_WORKSPACE_DOWN));
+    /* Add a floating window on WS2 */
+    g_assert_true(comp_layout_add_floating(L, 3, (CompRect){ 100.0, 100.0, 400.0, 300.0 }));
+    assert_ok(L);
+
+    CompOverviewWsBand bands[16];
+    CompOverviewCard cards[32];
+    CompOverviewScene scene;
+    comp_overview_compute(L, VW, VH, 0.0, 1, 3, bands, 16, cards, 32, &scene);
+
+    g_assert_cmpuint(scene.n_bands, ==, 3);
+    g_assert_cmpuint(scene.n_cards, ==, 3);
+    g_assert_true(bands[1].is_selected);
+    g_assert_cmpuint(bands[2].window_count, ==, 0);
+
+    /* Hit-testing the floating card returns window 3 on WS 1 */
+    const CompOverviewCard *c3 = NULL;
+    for (size_t i = 0; i < scene.n_cards; i++) {
+        if (scene.cards[i].id == 3) {
+            c3 = &scene.cards[i];
+            break;
+        }
+    }
+    g_assert_nonnull(c3);
+    g_assert_true(c3->is_selected);
+
+    size_t hit_ws = 99;
+    CompWinId hit_win = 99;
+    g_assert_true(comp_overview_hit_test(&scene,
+                                         c3->card.x + c3->card.w * 0.5,
+                                         c3->card.y + c3->card.h * 0.5,
+                                         &hit_ws, &hit_win));
+    g_assert_cmpuint(hit_ws, ==, 1);
+    g_assert_cmpuint(hit_win, ==, 3);
+
+    /* Hit-testing the empty WS 3 band returns ws=2, win=0 */
+    g_assert_true(comp_overview_hit_test(&scene,
+                                         bands[2].band.x + 20.0,
+                                         bands[2].band.y + 20.0,
+                                         &hit_ws, &hit_win));
+    g_assert_cmpuint(hit_ws, ==, 2);
+    g_assert_cmpuint(hit_win, ==, 0);
+
+    /* Hit-testing outside bands (header bar) returns false */
+    g_assert_false(comp_overview_hit_test(&scene, 10.0, 5.0, &hit_ws, &hit_win));
+
+    /* Scrolling ensures bottom workspace is within view */
+    double sy = comp_overview_ensure_ws_visible(&scene, VH, 0.0, 2);
+    g_assert_cmpfloat(sy, >=, 0.0);
+    g_assert_cmpfloat(sy, <=, scene.max_scroll_y);
+
+    comp_layout_free(L);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -583,6 +677,8 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/layout/workspaces", test_workspaces);
     g_test_add_func("/comp/layout/action-names", test_action_names);
     g_test_add_func("/comp/layout/touch-and-touchpad", test_touch_gestures_and_touchpad_swipes);
+    g_test_add_func("/comp/layout/column-set-width-move-bounds", test_column_set_width_move_and_bounds);
+    g_test_add_func("/comp/layout/overview-layout-and-hit-test", test_overview_layout_and_hit_test);
     g_test_add_func("/comp/layout/monkey", test_monkey);
     return g_test_run();
 }

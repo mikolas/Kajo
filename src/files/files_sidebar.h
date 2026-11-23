@@ -9,6 +9,7 @@ G_BEGIN_DECLS
 typedef void (*KajoSidebarNavigateFunc)(const char *uri, gpointer user_data);
 typedef void (*KajoSidebarConnectServerFunc)(gpointer user_data);
 typedef void (*KajoSidebarStatusFunc)(const char *status_msg, gboolean is_error, gpointer user_data);
+typedef gboolean (*KajoSidebarDropFunc)(GPtrArray *files, GFile *dest_dir, GdkDragAction action, gpointer user_data);
 
 typedef struct _KajoFilesSidebar KajoFilesSidebar;
 
@@ -17,6 +18,10 @@ KajoFilesSidebar *kajo_files_sidebar_new(GtkListBox *list_box,
                                          KajoSidebarNavigateFunc nav_cb,
                                          KajoSidebarConnectServerFunc connect_cb,
                                          KajoSidebarStatusFunc status_cb,
+                                         gpointer user_data);
+
+void kajo_files_sidebar_set_drop_handler(KajoFilesSidebar *self,
+                                         KajoSidebarDropFunc drop_cb,
                                          gpointer user_data);
 
 void kajo_files_sidebar_free(KajoFilesSidebar *self);

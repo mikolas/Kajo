@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include "../src/files/files_model.h"
 #include "../src/files/files_network.h"
+#include "../src/files/files_dnd.h"
 #include "../src/files/files_ops.h"
 #include "../src/files/files_diskimage.h"
 
@@ -1302,6 +1303,90 @@ test_network_uri_and_shortcut_items(void)
     g_rmdir(tmp_dir);
 }
 
+static void
+test_dnd_validation_and_actions(void)
+{
+    g_autofree char *tmp = g_dir_make_tmp("kajo-dnd-XXXXXX", NULL);
+    g_assert_nonnull(tmp);
+    g_autofree char *dir_a = g_build_filename(tmp, "a", NULL);
+    g_autofree char *dir_a_sub = g_build_filename(dir_a, "sub", NULL);
+    g_autofree char *dir_b = g_build_filename(tmp, "b", NULL);
+    g_autofree char *file_in_a = g_build_filename(dir_a, "doc.txt", NULL);
+    g_assert_cmpint(g_mkdir_with_parents(dir_a_sub, 0755), ==, 0);
+    g_assert_cmpint(g_mkdir_with_parents(dir_b, 0755), ==, 0);
+    g_assert_true(g_file_set_contents(file_in_a, "hello", -1, NULL));
+
+    g_autoptr(GFile) fa = g_file_new_for_path(dir_a);
+    g_autoptr(GFile) fa_sub = g_file_new_for_path(dir_a_sub);
+    g_autoptr(GFile) fb = g_file_new_for_path(dir_b);
+    g_autoptr(GFile) fdoc = g_file_new_for_path(file_in_a);
+    g_autoptr(GFile) ftrash = g_file_new_for_uri("trash:///");
+    g_autoptr(GFile) farch = g_file_new_for_uri("archive:///tmp/x.zip!/");
+    g_autoptr(GFile) frec = g_file_new_for_uri("recent:///");
+    g_autoptr(GFile) fnet = g_file_new_for_uri("network:///");
+
+    /* Destination writability */
+    g_assert_true(kajo_files_dnd_dest_is_writable(fb));
+    g_assert_true(kajo_files_dnd_dest_is_writable(ftrash));
+    g_assert_false(kajo_files_dnd_dest_is_writable(farch));
+    g_assert_false(kajo_files_dnd_dest_is_writable(frec));
+    g_assert_false(kajo_files_dnd_dest_is_writable(fnet));
+    g_assert_false(kajo_files_dnd_dest_is_writable(NULL));
+
+    /* Reject dropping folder onto itself or into its descendant */
+    g_autoptr(GPtrArray) src_dir = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(src_dir, g_object_ref(fa));
+    gboolean is_trash = FALSE;
+    g_assert_false(kajo_files_dnd_can_drop_files(src_dir, fa, &is_trash));
+    g_assert_false(kajo_files_dnd_can_drop_files(src_dir, fa_sub, &is_trash));
+    g_assert_true(kajo_files_dnd_can_drop_files(src_dir, fb, &is_trash));
+    g_assert_false(is_trash);
+
+    /* Drop onto Trash sets is_trash = TRUE and action = MOVE */
+    g_assert_true(kajo_files_dnd_can_drop_files(src_dir, ftrash, &is_trash));
+    g_assert_true(is_trash);
+    g_assert_cmpuint(kajo_files_dnd_choose_action(src_dir, ftrash, 0), ==, GDK_ACTION_MOVE);
+
+    /* Same-filesystem move vs same-dir move no-op vs explicit copy */
+    g_autoptr(GPtrArray) src_file = g_ptr_array_new_with_free_func(g_object_unref);
+    g_ptr_array_add(src_file, g_object_ref(fdoc));
+    g_assert_cmpuint(kajo_files_dnd_choose_action(src_file, fb, 0), ==, GDK_ACTION_MOVE);
+    g_assert_cmpuint(kajo_files_dnd_choose_action(src_file, fb, GDK_ACTION_COPY), ==, GDK_ACTION_COPY);
+    g_assert_cmpuint(kajo_files_dnd_choose_action(src_file, fa, 0), ==, 0);
+    g_assert_cmpuint(kajo_files_dnd_choose_action(src_file, fa, GDK_ACTION_COPY), ==, GDK_ACTION_COPY);
+
+    /* GDK_TYPE_FILE_LIST and text/uri-list GValue extraction */
+    GSList *fl = g_slist_append(NULL, fdoc);
+    GdkFileList *gdk_fl = gdk_file_list_new_from_list(fl);
+    g_slist_free(fl);
+    GValue v_fl = G_VALUE_INIT;
+    g_value_init(&v_fl, GDK_TYPE_FILE_LIST);
+    g_value_set_boxed(&v_fl, gdk_fl);
+    g_boxed_free(GDK_TYPE_FILE_LIST, gdk_fl);
+    g_autoptr(GPtrArray) ext1 = kajo_files_dnd_extract_files_from_value(&v_fl);
+    g_value_unset(&v_fl);
+    g_assert_nonnull(ext1);
+    g_assert_cmpuint(ext1->len, ==, 1);
+    g_assert_true(g_file_equal(g_ptr_array_index(ext1, 0), fdoc));
+
+    g_autofree char *uri_a = g_file_get_uri(fdoc);
+    g_autofree char *uri_list = g_strdup_printf("# comment\r\n%s\r\n", uri_a);
+    GValue v_str = G_VALUE_INIT;
+    g_value_init(&v_str, G_TYPE_STRING);
+    g_value_set_string(&v_str, uri_list);
+    g_autoptr(GPtrArray) ext2 = kajo_files_dnd_extract_files_from_value(&v_str);
+    g_value_unset(&v_str);
+    g_assert_nonnull(ext2);
+    g_assert_cmpuint(ext2->len, ==, 1);
+    g_assert_true(g_file_equal(g_ptr_array_index(ext2, 0), fdoc));
+
+    g_unlink(file_in_a);
+    g_rmdir(dir_a_sub);
+    g_rmdir(dir_a);
+    g_rmdir(dir_b);
+    g_rmdir(tmp);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1328,6 +1413,7 @@ main(int argc, char *argv[])
     g_test_add_func("/files/disk-image-udisks-reply-helpers", test_diskimage_reply_helpers);
     g_test_add_func("/files/archive-virtual-folders-and-ops", test_archive_virtual_folders_and_ops);
     g_test_add_func("/files/network-uri-and-shortcut-items", test_network_uri_and_shortcut_items);
+    g_test_add_func("/files/dnd-validation-and-actions", test_dnd_validation_and_actions);
 
     return g_test_run();
 }

@@ -889,6 +889,32 @@ comp_layout_adjust_column_width(CompLayout *L, double delta)
 }
 
 bool
+comp_layout_set_column_width(CompLayout *L, double width_prop)
+{
+    if (!L || !isfinite(width_prop))
+        return false;
+    Column *c = focused_col(active_ws(L));
+    if (!c)
+        return false;
+    double nw = clampd(width_prop, MIN_COL_WIDTH, 1.0);
+    bool changed = fabs(nw - c->width) > WIDTH_EPS || c->maximized;
+    c->width     = nw;
+    c->maximized = false;
+    return changed;
+}
+
+bool
+comp_layout_move_column_to_index(CompLayout *L, size_t target_index)
+{
+    if (!L)
+        return false;
+    Workspace *ws = active_ws(L);
+    if (!ws || ws->focus_floating)
+        return false;
+    return move_column_to(ws, target_index);
+}
+
+bool
 comp_layout_adjust_window_height(CompLayout *L, double delta)
 {
     if (!L || !isfinite(delta))
@@ -935,6 +961,22 @@ static double
 strip_width(const CompLayoutConfig *cfg, const Workspace *ws, double view_w)
 {
     return ws->n ? column_x(cfg, ws, ws->n, view_w) : 0.0;
+}
+
+bool
+comp_layout_column_bounds(const CompLayout *L, size_t ws_index, size_t col_index,
+                          double view_w, double *out_x, double *out_w)
+{
+    if (!L || ws_index >= L->nws || !(view_w > 0.0) || !isfinite(view_w))
+        return false;
+    const Workspace *ws = &L->ws[ws_index];
+    if (col_index >= ws->n)
+        return false;
+    if (out_x)
+        *out_x = column_x(&L->cfg, ws, col_index, view_w);
+    if (out_w)
+        *out_w = column_px_width(&L->cfg, &ws->cols[col_index], view_w);
+    return true;
 }
 
 static void

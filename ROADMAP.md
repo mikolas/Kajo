@@ -51,15 +51,16 @@ All Kajo components and standalone applications share a unified design language:
 | **kajo-comp: wlroots fork for visual effects** | ✅ Done | `kajo-comp` — see §3.6 below (fork branch `kajo/0.20.2`, built as a static submodule) |
 | **kajo-comp: HDR10 output & mixed SDR/HDR pipeline** | 📋 Planned | `kajo-comp` — §3.7.1 (blocked on `libdisplay-info >= 0.4.0` on Host A) |
 | **kajo-comp: soft shadows, glassy backdrop blur, output stage (SDR white, tone mapping), transitions** | ✅ Done | `kajo-comp` + wlroots fork — [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (M1–M5 complete) |
-| **kajo-comp: overview zoom, `Mod + drag` tiled columns, layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
-| **Portal backends: Settings (theme/accent) and FileChooser** | 🧪 Beta | `kajo` shell (`src/portal/portal_settings.c`) + `kajo-files --portal` (`src/files/files_{portal,chooser}.c`) — §3.8 |
-| **Apply the Kajo theme to other apps (GTK, Qt)** | 🧪 Beta | `kajo-settings` (`src/theme_export.c` + `page_theme.c`, opt-in with exact snapshot backup & revert) — §3.9 |
+| **kajo-comp: overview zoom (`toggle-overview`), `Mod + drag` tiled columns** | ✅ Done | `kajo-comp` (`src/comp/comp_overview.c`, `src/comp/core/comp_overview_core.c`, `src/comp/comp_window_chrome.c`, `Mod+O` / IPC `toggle-overview`, `Mod + Left/Right Button` tiled column move/resize) |
+| **kajo-comp: layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
+| **Portal backends: Settings (theme/accent) and FileChooser** | ✅ Done | `kajo` shell (`src/portal/portal_settings.c`) + `kajo-files --portal` (`src/files/files_{portal,chooser}.c`, `kajo-files-portal.service`) — §3.8 |
+| **Apply the Kajo theme to other apps (GTK, Qt)** | ✅ Done | `kajo-settings` (`src/theme_export.c` + `page_theme.c`, opt-in with exact snapshot backup & revert) — §3.9 |
 
 ### 3.1 [PLANNED] `kajo-files` Future Enhancements
-- **Drag-and-Drop (`GtkDragSource` / `GtkDropTarget`):**
-  - Drag files between `kajo-files` windows or drop onto external Wayland applications.
 - **Additional Quick Look Renderers:**
   - Office/EPUB document text/thumbnail preview, font specimen preview (`.ttf` / `.otf` waterfall rendering), and audio waveform/cover-art view for `.mp3` / `.flac`.
+
+*(Completed in `kajo-files`: Wayland Drag-and-Drop (`src/files/files_dnd.{h,c}`) supporting outbound `GDK_TYPE_FILE_LIST` drags and inbound drops onto directory views, subfolders, breadcrumb segments, Places/Drives, and Trash.)*
 
 ---
 
@@ -119,9 +120,7 @@ The compositor spec describes what is built; everything below is not implemented
 | Item | Why not built yet / blocker | Starting approach |
 | :--- | :--- | :--- |
 | **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). Fork output-stage SDR white & BT.2390 tone mapping are already in place (M4). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
-| **Overview zoom (`toggle-overview`)** | `wlr_scene` has no tree scale transform; zooming means recomputing positions and `wlr_scene_buffer_set_dest_size()` for every surface, subsurface and popup. | Manual scene-buffer scaling pass, or a scale-aware scene node in the fork. |
 | **OSK: keep the focused text field visible** | Push-up is built: with `[osk] push_windows = true` the shell sets a layer-shell exclusive zone (`src/osk/osk.c`) and `kajo-comp` shrinks the working area and relays out (`comp_layer_arrange`). Checked by eye on Host A with kitty and Thorium (native Wayland). Missing: scrolling the focused column / window so the text cursor stays above the keyboard when the field is hidden even after the shrink. | Use the `text-input-v3` cursor rectangle to offset the camera. |
-| **`Mod + drag` interactive move/resize of tiled columns** | Keyboard-first workflow and presets cover v1; client-initiated move/resize exists for floating windows (`L8`). | `Mod + Left/Right Button` tiled grab. |
 | **Layout extras** | Not needed for v1. | Evaluate individually: `focus-follows-mouse`, `switch-preset-column-width-back`, a `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts. |
 | **Multi-monitor sessions** | v1 policy drives one active output (spec §3.13 `OUT1–OUT4`; greeter mode is the exception). | Workspaces per output, layer surfaces and IPC per output. Expect a few thousand lines. |
 | **Fix touchscreen gestures** | The 3-finger touchscreen drag (spec §3.15 GS1–GS6, `touch_drag_*` in `src/comp/comp_input.c`) works on Host A hardware but is buggy. Low priority; the touchpad path is verified. | Reproduce on hardware, write down each bug with steps, then cover it with a `test_comp_motion` / `test_comp_config` case before fixing. |

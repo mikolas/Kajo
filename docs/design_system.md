@@ -158,6 +158,8 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - **Trash Action Banner (`.files-trash-bar`):** `#1f1214` surface with `1px solid #4a1c20` and `border-left: 3px solid #e81123`, offering `[ ↺ RESTORE ALL ]` and destructive `[ 🗑 EMPTY TRASH ]`.
 - **Native FileChooser Portal Dialog (`.shell-files-chooser`, `.files-chooser-toolbar`, `.files-chooser-footer`):**
   - Undecorated `880×580` `GtkWindow` (`org.kajo.Files.Chooser`, floating rule in `rules.toml`) reusing `KajoFilesSidebar`, virtualized Grid/List views, breadcrumbs/URI edit, `+ 📁` inline folder creation, `Space` Quick Look, and a bottom `.files-chooser-footer` hosting caller `choices` (checkboxes/dropdowns), `FILENAME:` entry (save modes), MIME/glob filter `GtkDropDown`, `[ CANCEL ]`, and primary `.action-btn-primary` accept button.
+- **Drag-and-Drop Feedback (`.files-drop-target-hover`, `.files-dnd-badge`):**
+  - Drop targets (Grid/List canvas, folder tiles/rows, breadcrumb segments, Places/Drives/Trash sidebar rows) highlight with `alpha(@metro-accent, 0.22)` background and `1px solid @metro-accent` border; outbound drags display a monospace `.files-dnd-badge` (`@metro-surface-3`, `1px solid @metro-accent`).
 
 ### 4.6 Kajo IDE (`kajo-ide`) Code Canvas, Tree Explorer, Diff & Debugger Components
 - **Buffer Tab Ribbon (`.ide-tab-ribbon`, `.ide-tab-pill`):**
