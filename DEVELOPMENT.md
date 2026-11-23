@@ -213,10 +213,14 @@ data/
 │   ├── kajo.desktop                Primary Wayland session entry (Exec=kajo-session)
 │   ├── kajo-debug.desktop          Debug Wayland session entry (Exec=kajo-session --debug)
 │   ├── kajo-niri.desktop           Alternative Wayland session entry for Niri (Exec=niri-session)
-│   └── kajo-portals.conf           xdg-desktop-portal backend configuration (wlr + gtk)
+│   ├── kajo-portals.conf           xdg-desktop-portal backend routing (kajo + kajo-files + wlr + gtk)
+│   ├── kajo.portal                 Portal descriptor for Settings backend (org.freedesktop.impl.portal.desktop.kajo)
+│   ├── kajo-files.portal           Portal descriptor for FileChooser backend (org.freedesktop.impl.portal.desktop.kajo.Files)
+│   └── org.freedesktop.impl.portal.desktop.kajo.Files.service.in  D-Bus activation service (delegates to kajo-files-portal.service)
 ├── systemd/
 │   ├── kajo-comp.service           Optional user systemd unit for kajo-comp
 │   ├── kajo.service                Optional user systemd unit for kajo shell
+│   ├── kajo-files-portal.service.in  D-Bus-activated user systemd unit for kajo-files --portal
 │   └── kajo-shutdown.target        Graphical session shutdown target
 ├── greetd/
 │   ├── comp-greeter.toml           Locked-down kajo-comp configuration for greetd (--greeter-mode)
@@ -253,6 +257,7 @@ tests/
 ├── test_osk_xkb.c                  XKB keymap compilation & keysym/keycode resolution tests
 ├── test_touch_gestures.c           Bezel touch gesture directional threshold & dual-compositor trigger tests
 ├── test_files_model.c              KajoFileItem formatting, sorting, filtering & async file op tests
+├── test_portals.c                  Settings & FileChooser D-Bus portal backend tests + external GTK/Qt theme backup/revert tests
 ├── test_player_queue.c             KajoPlayer time/size formatting, media detection & mpv track label tests
 ├── test_ide_fsm.c                  Kajo IDE 10-state modal FSM, Nordic text objects & chord tests
 ├── test_dap_client.c               DAP client against tests/mock_dap_adapter.py + launch resolution
@@ -291,7 +296,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 36 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 37 automated test suites:
 
 ```bash
 # Clone with the wlroots submodule (existing clones: git submodule update --init)
@@ -303,12 +308,17 @@ meson setup builddir
 # Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 36 automated test suites
+# Run all 37 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
 # statically linked wlroots (headers, .a, .pc) out of the install tree.
 meson install -C builddir --skip-subprojects
+
+# When updating portal/systemd units inside an already-running session:
+systemctl --user daemon-reload
+systemctl --user reload dbus-broker
+systemctl --user restart xdg-desktop-portal
 ```
 
 ### Automated Test Suites (`meson test -C builddir`)
@@ -335,6 +345,7 @@ meson install -C builddir --skip-subprojects
 | `osk-xkb` | `test-osk-xkb` | XKB keymap generation (`us`, `fi`, etc.) and keysym/keycode resolution for `ShellOSK`. |
 | `touch-gestures` | `test-touch-gestures` | Bezel swipe gesture directional thresholds, off-axis rejection, and action dispatch against both mock `kajo-comp` and mock Niri sockets. |
 | `files-model` | `test-files-model` | `KajoFileItem` formatting, sorting and filtering, async file operations (non-clobbering move, cancellation), breadcrumb chain and selection restore, clipboard parsing and 4 MB cap, executable toggle, `archive://` URI round-trip and path normalizer, archive listing/extraction/compression hardening (symlinked destination, hardlinks, `..`/absolute entries, modes, preview cache), disk-image classification and UDisks2 reply helpers. |
+| `portals` | `test-portals` | `org.freedesktop.impl.portal.Settings` (`ReadAll`, `Read`, `NotFound`, `SettingChanged` over private `GTestDBus`), `org.freedesktop.impl.portal.FileChooser` (`OpenFile`, `SaveFile`, `SaveFiles`, `Request.Close()`, glob/MIME filters, non-clobbering target URIs), and external GTK/Qt theme export (pre-Kajo backup snapshot, accent update, partial disable, bit-exact full revert). |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `mod-router` | `test-mod-router` | `kajo-mod` 5-tier format router (`UADE` vs `libsidplayfp` vs `libgme` vs `libopenmpt` vs `libxmp`), Amiga companion (`smpl.*`, `.ins`) & `.nfo` filtering, ProTracker sample header parsing, `libarchive` bundle extraction, and live non-zero PCM synthesis. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects, `Space` leader chords (including all 20 `Space t *` Code Strip chords), and per-mode `[keys.<state>]` remapping. |

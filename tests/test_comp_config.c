@@ -1048,6 +1048,41 @@ test_session_portals_conf(void)
             g_assert_cmpstr(backends[j], !=, "gnome");
         }
     }
+
+    /* Cross-check kajo-files.portal, D-Bus activation service, and systemd user unit agree on names */
+    g_autofree gchar *pfiles = g_build_filename(root, "data", "session", "kajo-files.portal", NULL);
+    g_autoptr(GKeyFile) kf_pf = g_key_file_new();
+    g_assert_true(g_key_file_load_from_file(kf_pf, pfiles, G_KEY_FILE_NONE, &err));
+    g_assert_no_error(err);
+    g_autofree gchar *pf_bus = g_key_file_get_string(kf_pf, "portal", "DBusName", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(pf_bus, ==, "org.freedesktop.impl.portal.desktop.kajo.Files");
+
+    g_autofree gchar *dbus_svc = g_build_filename(
+        root, "data", "session", "org.freedesktop.impl.portal.desktop.kajo.Files.service.in", NULL);
+    g_autoptr(GKeyFile) kf_db = g_key_file_new();
+    g_assert_true(g_key_file_load_from_file(kf_db, dbus_svc, G_KEY_FILE_NONE, &err));
+    g_assert_no_error(err);
+    g_autofree gchar *db_name = g_key_file_get_string(kf_db, "D-BUS Service", "Name", &err);
+    g_assert_no_error(err);
+    g_autofree gchar *db_unit = g_key_file_get_string(kf_db, "D-BUS Service", "SystemdService", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(db_name, ==, pf_bus);
+    g_assert_cmpstr(db_unit, ==, "kajo-files-portal.service");
+
+    g_autofree gchar *sd_unit = g_build_filename(root, "data", "systemd", "kajo-files-portal.service.in", NULL);
+    g_autoptr(GKeyFile) kf_sd = g_key_file_new();
+    g_assert_true(g_key_file_load_from_file(kf_sd, sd_unit, G_KEY_FILE_NONE, &err));
+    g_assert_no_error(err);
+    g_autofree gchar *sd_type = g_key_file_get_string(kf_sd, "Service", "Type", &err);
+    g_assert_no_error(err);
+    g_autofree gchar *sd_bus = g_key_file_get_string(kf_sd, "Service", "BusName", &err);
+    g_assert_no_error(err);
+    g_autofree gchar *sd_partof = g_key_file_get_string(kf_sd, "Unit", "PartOf", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(sd_type, ==, "dbus");
+    g_assert_cmpstr(sd_bus, ==, pf_bus);
+    g_assert_cmpstr(sd_partof, ==, "graphical-session.target");
 }
 
 int

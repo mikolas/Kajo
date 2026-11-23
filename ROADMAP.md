@@ -155,10 +155,10 @@ Implemented from the public D-Bus portal interface specifications with GTK kept 
 - **Verified:** mock D-Bus unit tests in `tests/test_portals.c` (including ASan/UBSan). Live `xdg-desktop-portal` routing after `meson install` + shell restart still needs manual confirmation.
 
 #### 3.8.2 FileChooser (`kajo-files --portal`)
-- **Implemented** in `src/files/files_portal.{h,c}` + `src/files/files_chooser.{h,c}`, D-Bus activated on demand via `data/session/kajo-files.portal` (`org.freedesktop.impl.portal.desktop.kajo.Files`) and `data/session/org.freedesktop.impl.portal.desktop.kajo.Files.service.in` (`Exec=@BINDIR@/kajo-files --portal`).
+- **Implemented** in `src/files/files_portal.{h,c}` + `src/files/files_chooser.{h,c}`, D-Bus activated on demand via `data/session/kajo-files.portal` (`org.freedesktop.impl.portal.desktop.kajo.Files`), `data/session/org.freedesktop.impl.portal.desktop.kajo.Files.service.in` (`SystemdService=kajo-files-portal.service`), and `data/systemd/kajo-files-portal.service.in` (`Type=dbus`, `PartOf=graphical-session.target`).
 - Handles `OpenFile`, `SaveFile`, `SaveFiles`, and per-request `org.freedesktop.impl.portal.Request.Close()` cancellation, including `multiple`, `directory`, `filters` (glob + MIME), `current_filter`, `current_folder`, `current_name`, `current_file`, `accept_label`, `choices` (checkboxes & dropdowns), `modal`, and `file://` URI normalization.
 - Undecorated `880×580` Aero+Metro `KajoFilesChooser` window (`.shell-files-chooser`, floating rule in `data/defaults/rules.toml`) with `KajoFilesSidebar`, Browse Network, inline auth/connect, inline overwrite confirm, `+ 📁` new folder, `Space` Quick Look, and Wayland parent attachment (`gdk_wayland_toplevel_set_transient_for_exported()` + `gtk_window_set_modal()`).
-- **Verified:** mock D-Bus protocol/cancellation/filter tests in `tests/test_portals.c` (including ASan/UBSan) and headless UI render (`kajo-files --chooser-preview`). Live end-to-end invocation from third-party Wayland apps via `xdg-desktop-portal` still needs manual verification after install.
+- **Verified:** mock D-Bus protocol/cancellation/filter tests in `tests/test_portals.c` (including ASan/UBSan), portal/service/unit cross-check in `tests/test_comp_config.c`, and headless UI render (`kajo-files --chooser-preview`). When installing into an already-running session, run `systemctl --user daemon-reload && systemctl --user reload dbus-broker && systemctl --user restart xdg-desktop-portal` so `dbus-broker` picks up the new service file without a re-login.
 
 ---
 
