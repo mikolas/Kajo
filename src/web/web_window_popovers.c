@@ -38,16 +38,24 @@ on_open_settings_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     kajo_web_win_open_settings();
 }
 
+static void
+on_update_lists_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoWebWindow *w = user_data;
+    web_adblock_update_lists_async(w->adblock);
+    gtk_popover_popdown(GTK_POPOVER(w->pop_shield));
+}
+
 void
 kajo_web_win_show_shield_popover(KajoWebWindow *w)
 {
     g_autoptr(KajoWebCfgRef) cfg = kajo_config_store_acquire_web(NULL);
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
-    gtk_widget_set_size_request(box, 300, -1);
+    gtk_widget_set_size_request(box, 310, -1);
     gtk_widget_add_css_class(box, "web-popover-box");
 
-    g_autofree gchar *hdr_txt = g_strdup_printf("🛡 CONTENT BLOCKER • %u RULES",
-                                                web_adblock_get_rule_count(w->adblock));
+    g_autofree gchar *hdr_txt = g_strdup_printf("🛡 CONTENT BLOCKER • %s",
+                                                web_adblock_get_status_text(w->adblock));
     GtkWidget *hdr = gtk_label_new(hdr_txt);
     gtk_widget_set_halign(hdr, GTK_ALIGN_START);
     gtk_widget_add_css_class(hdr, "web-popover-title");
@@ -59,6 +67,14 @@ kajo_web_win_show_shield_popover(KajoWebWindow *w)
     gtk_widget_add_css_class(b_ab, (cfg && cfg->adblock_enabled) ? "action-btn-primary" : "files-nav-btn");
     g_signal_connect(b_ab, "clicked", G_CALLBACK(on_toggle_adblock_btn), w);
     gtk_box_append(GTK_BOX(box), b_ab);
+
+    GtkWidget *b_upd = gtk_button_new_with_label(
+        web_adblock_is_updating(w->adblock) ? "↻ UPDATING COMMUNITY LISTS..."
+                                            : "↻ UPDATE FILTER LISTS (~3,700+ DOMAINS)");
+    gtk_widget_add_css_class(b_upd, "files-nav-btn");
+    gtk_widget_set_sensitive(b_upd, !web_adblock_is_updating(w->adblock));
+    g_signal_connect(b_upd, "clicked", G_CALLBACK(on_update_lists_clicked), w);
+    gtk_box_append(GTK_BOX(box), b_upd);
 
     g_autofree gchar *us_lbl = g_strdup_printf("USER SCRIPTS & CSS (%u): %s",
                                                web_adblock_get_user_script_count(w->adblock),

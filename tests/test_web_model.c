@@ -25,14 +25,17 @@ test_rail_fsm_transitions(void)
     g_assert_cmpint(web_rail_fsm_reveal_timeout(&fsm), ==, KAJO_RAIL_ACT_NONE);
     g_assert_cmpint(fsm.state, ==, KAJO_RAIL_FSM_COLLAPSED);
 
-    /* Hover again + wait -> expands */
+    /* Hover again + wait -> expands (pointer_on_rail set so synthetic trigger leave doesn't collapse!) */
     g_assert_cmpint(web_rail_fsm_trigger_enter(&fsm), ==, KAJO_RAIL_ACT_START_REVEAL_TIMER);
     g_assert_cmpint(web_rail_fsm_reveal_timeout(&fsm), ==, KAJO_RAIL_ACT_EXPAND);
     g_assert_cmpint(fsm.state, ==, KAJO_RAIL_FSM_EXPANDED);
 
-    /* Pointer moves onto rail, leaves trigger -> stays expanded */
-    g_assert_cmpint(web_rail_fsm_rail_enter(&fsm), ==, KAJO_RAIL_ACT_NONE);
+    /* Synthetic leave on trigger when rail overlays it -> MUST stay expanded! */
     g_assert_cmpint(web_rail_fsm_trigger_leave(&fsm), ==, KAJO_RAIL_ACT_NONE);
+    g_assert_cmpint(fsm.state, ==, KAJO_RAIL_FSM_EXPANDED);
+
+    /* Explicit rail enter -> stays expanded */
+    g_assert_cmpint(web_rail_fsm_rail_enter(&fsm), ==, KAJO_RAIL_ACT_NONE);
     g_assert_cmpint(fsm.state, ==, KAJO_RAIL_FSM_EXPANDED);
 
     /* Hold open (e.g. context menu / drag) prevents hide timer on leave */

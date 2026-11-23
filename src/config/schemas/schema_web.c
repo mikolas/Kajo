@@ -129,7 +129,7 @@ static const KajoFieldSpec k_web_fields[] = {
     { NULL, KAJO_CFG_KEY_WEB_RAIL_MODE,        KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, rail_mode),                 .def.e = KAJO_WEB_RAIL_AUTOHIDE, .enum_map = k_web_rail_mode_map },
     { NULL, KAJO_CFG_KEY_WEB_RAIL_SIDE,        KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, rail_side),                 .def.e = KAJO_WEB_SIDE_LEFT,     .enum_map = k_web_rail_side_map },
     { NULL, KAJO_CFG_KEY_WEB_RAIL_WIDTH_PX,    KAJO_FIELD_INT,    offsetof(KajoWebCfg, rail_width_px),             .def.i = 240,  .min_int = 180, .max_int = 360 },
-    { NULL, KAJO_CFG_KEY_WEB_RAIL_REV_DELAY,   KAJO_FIELD_INT,    offsetof(KajoWebCfg, rail_reveal_delay_ms),      .def.i = 80,   .min_int = 0,   .max_int = 300 },
+    { NULL, KAJO_CFG_KEY_WEB_RAIL_REV_DELAY,   KAJO_FIELD_INT,    offsetof(KajoWebCfg, rail_reveal_delay_ms),      .def.i = 35,   .min_int = 0,   .max_int = 300 },
     { NULL, KAJO_CFG_KEY_WEB_RAIL_HIDE_DELAY,  KAJO_FIELD_INT,    offsetof(KajoWebCfg, rail_hide_delay_ms),        .def.i = 220,  .min_int = 50,  .max_int = 1000 },
     { NULL, KAJO_CFG_KEY_WEB_TOP_BAR_MODE,     KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, top_bar_mode),              .def.e = KAJO_WEB_TOPBAR_ALWAYS, .enum_map = k_web_topbar_map },
     { NULL, KAJO_CFG_KEY_WEB_SHOW_DOMAINS,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, show_tab_domains),          .def.b = TRUE },

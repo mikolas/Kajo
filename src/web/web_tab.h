@@ -14,6 +14,7 @@ typedef struct _KajoWebTab KajoWebTab;
 
 typedef struct {
     void (*on_changed)(KajoWebTab *tab, gpointer ud);
+    void (*on_progress)(KajoWebTab *tab, gdouble progress, gboolean loading, gpointer ud);
     void (*on_new_tab_requested)(const gchar *uri, gboolean background, gpointer ud);
     void (*on_permission_requested)(KajoWebTab *tab, WebKitPermissionRequest *req, gpointer ud);
     void (*on_download_started)(KajoWebTab *tab, WebKitDownload *dl, gpointer ud);

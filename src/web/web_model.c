@@ -91,6 +91,22 @@ web_rail_fsm_reveal_timeout(KajoWebRailFsm *fsm)
         fsm->state = KAJO_RAIL_FSM_COLLAPSED;
         return KAJO_RAIL_ACT_NONE;
     }
+    /* When the overlay rail maps on top of the trigger strip under a stationary
+     * pointer, GTK emits a synthetic leave on the trigger before/without an
+     * enter on the rail. Mark pointer_on_rail=TRUE so the rail stays open
+     * until the pointer actually leaves the expanded rail. */
+    if (fsm->pointer_on_trigger)
+        fsm->pointer_on_rail = TRUE;
+    fsm->state = KAJO_RAIL_FSM_EXPANDED;
+    return KAJO_RAIL_ACT_EXPAND;
+}
+
+KajoWebRailFsmAction
+web_rail_fsm_trigger_click(KajoWebRailFsm *fsm)
+{
+    if (!fsm)
+        return KAJO_RAIL_ACT_NONE;
+    fsm->pointer_on_rail = TRUE;
     fsm->state = KAJO_RAIL_FSM_EXPANDED;
     return KAJO_RAIL_ACT_EXPAND;
 }

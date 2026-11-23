@@ -17,7 +17,8 @@ typedef struct {
 } PalItem;
 
 typedef struct {
-    GtkWidget              *root;
+    GtkWidget              *root;     /* Full-viewport dim scrim */
+    GtkWidget              *card;
     GtkWidget              *entry;
     GtkWidget              *listbox;
     KajoWebPaletteCallbacks cbs;
@@ -97,18 +98,21 @@ rebuild_rows(PalCtx *ctx, const gchar *filter)
             if (!strstr(ll, fq) && !strstr(ls, fq))
                 continue;
         }
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
         gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
         gtk_widget_add_css_class(row, "web-palette-row");
 
         GtkWidget *tag = gtk_label_new(it->tag);
         gtk_widget_set_valign(tag, GTK_ALIGN_CENTER);
         gtk_widget_add_css_class(tag, "shell-popover-badge");
+        gtk_widget_add_css_class(tag, "web-palette-tag");
+
         GtkWidget *lbl = gtk_label_new(it->label);
         gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
         gtk_widget_set_hexpand(lbl, TRUE);
         gtk_widget_set_halign(lbl, GTK_ALIGN_START);
         gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+
         GtkWidget *sub = gtk_label_new(it->sub);
         gtk_label_set_ellipsize(GTK_LABEL(sub), PANGO_ELLIPSIZE_END);
         gtk_widget_set_valign(sub, GTK_ALIGN_CENTER);
@@ -152,6 +156,16 @@ on_row_activated(GtkListBox *lb G_GNUC_UNUSED, GtkListBoxRow *row, gpointer ud)
         activate_item(ctx, g_object_get_data(G_OBJECT(row), "pal-item"));
 }
 
+static void
+move_selection(PalCtx *ctx, gint delta)
+{
+    GtkListBoxRow *cur = gtk_list_box_get_selected_row(GTK_LIST_BOX(ctx->listbox));
+    gint idx = cur ? gtk_list_box_row_get_index(cur) : 0;
+    GtkListBoxRow *next = gtk_list_box_get_row_at_index(GTK_LIST_BOX(ctx->listbox), MAX(0, idx + delta));
+    if (next)
+        gtk_list_box_select_row(GTK_LIST_BOX(ctx->listbox), next);
+}
+
 static gboolean
 on_pal_key(GtkEventControllerKey *c G_GNUC_UNUSED, guint keyval, guint kc G_GNUC_UNUSED,
            GdkModifierType st G_GNUC_UNUSED, gpointer ud)
@@ -161,7 +175,27 @@ on_pal_key(GtkEventControllerKey *c G_GNUC_UNUSED, guint keyval, guint kc G_GNUC
         gtk_widget_set_visible(ctx->root, FALSE);
         return TRUE;
     }
+    if (keyval == GDK_KEY_Down) {
+        move_selection(ctx, 1);
+        return TRUE;
+    }
+    if (keyval == GDK_KEY_Up) {
+        move_selection(ctx, -1);
+        return TRUE;
+    }
     return FALSE;
+}
+
+static void
+on_scrim_clicked(GtkGestureClick *g G_GNUC_UNUSED, gint n G_GNUC_UNUSED, double x, double y, gpointer ud)
+{
+    PalCtx *ctx = ud;
+    graphene_rect_t bounds;
+    if (gtk_widget_compute_bounds(ctx->card, ctx->root, &bounds)) {
+        graphene_point_t pt = GRAPHENE_POINT_INIT((float)x, (float)y);
+        if (!graphene_rect_contains_point(&bounds, &pt))
+            gtk_widget_set_visible(ctx->root, FALSE);
+    }
 }
 
 GtkWidget *
@@ -173,14 +207,24 @@ web_palette_new(const KajoWebPaletteCallbacks *cbs, gpointer user_data)
     ctx->ud = user_data;
     ctx->all_items = g_ptr_array_new_with_free_func(pal_item_free);
 
+    /* Full-viewport dim backdrop scrim matching mockup */
     ctx->root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
-    gtk_widget_set_halign(ctx->root, GTK_ALIGN_CENTER);
-    gtk_widget_set_valign(ctx->root, GTK_ALIGN_START);
-    gtk_widget_set_margin_top(ctx->root, 54);
-    gtk_widget_set_size_request(ctx->root, 580, -1);
-    gtk_widget_add_css_class(ctx->root, "web-palette-card");
+    gtk_widget_set_hexpand(ctx->root, TRUE);
+    gtk_widget_set_vexpand(ctx->root, TRUE);
+    gtk_widget_add_css_class(ctx->root, "web-palette-scrim");
     gtk_widget_set_visible(ctx->root, FALSE);
     g_object_set_data_full(G_OBJECT(ctx->root), "pal-ctx", ctx, pal_ctx_free);
+
+    GtkGesture *scrim_click = gtk_gesture_click_new();
+    g_signal_connect(scrim_click, "pressed", G_CALLBACK(on_scrim_clicked), ctx);
+    gtk_widget_add_controller(ctx->root, GTK_EVENT_CONTROLLER(scrim_click));
+
+    ctx->card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+    gtk_widget_set_halign(ctx->card, GTK_ALIGN_CENTER);
+    gtk_widget_set_valign(ctx->card, GTK_ALIGN_START);
+    gtk_widget_set_margin_top(ctx->card, 58);
+    gtk_widget_set_size_request(ctx->card, 580, -1);
+    gtk_widget_add_css_class(ctx->card, "web-palette-card");
 
     ctx->entry = gtk_entry_new();
     gtk_entry_set_placeholder_text(GTK_ENTRY(ctx->entry), "⌘ Jump to tab, bookmark, history, or command...");
@@ -194,16 +238,18 @@ web_palette_new(const KajoWebPaletteCallbacks *cbs, gpointer user_data)
 
     GtkWidget *scroll = gtk_scrolled_window_new();
     gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroll), 300);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroll), 290);
     gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroll), TRUE);
 
     ctx->listbox = gtk_list_box_new();
+    gtk_widget_add_css_class(ctx->listbox, "web-palette-list");
     gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(ctx->listbox), TRUE);
     g_signal_connect(ctx->listbox, "row-activated", G_CALLBACK(on_row_activated), ctx);
     gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), ctx->listbox);
 
-    gtk_box_append(GTK_BOX(ctx->root), ctx->entry);
-    gtk_box_append(GTK_BOX(ctx->root), scroll);
+    gtk_box_append(GTK_BOX(ctx->card), ctx->entry);
+    gtk_box_append(GTK_BOX(ctx->card), scroll);
+    gtk_box_append(GTK_BOX(ctx->root), ctx->card);
     return ctx->root;
 }
 

@@ -70,20 +70,6 @@ configure_webkit_settings(WebKitWebView *view, const KajoWebCfg *cfg)
     const gchar *ua = resolve_ua_string(cfg);
     webkit_settings_set_user_agent(s, ua);
 
-    /* Optional WebGL GPU process feature flag when available */
-    WebKitFeatureList *fl = webkit_settings_get_all_features();
-    if (fl) {
-        gsize n = webkit_feature_list_get_length(fl);
-        for (gsize i = 0; i < n; i++) {
-            WebKitFeature *f = webkit_feature_list_get(fl, i);
-            if (f && g_strcmp0(webkit_feature_get_identifier(f), "UseGPUProcessForWebGL") == 0) {
-                webkit_settings_set_feature_enabled(s, f, cfg->gpu_process_webgl);
-                break;
-            }
-        }
-        webkit_feature_list_unref(fl);
-    }
-
     webkit_web_view_set_zoom_level(view, (gdouble)CLAMP(cfg->default_zoom_pct, 50, 200) / 100.0);
 }
 
@@ -95,20 +81,38 @@ notify_tab_changed(KajoWebTab *tab)
 }
 
 static void
+on_notify_progress(WebKitWebView *view, GParamSpec *ps G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (tab && tab->cbs.on_progress) {
+        tab->cbs.on_progress(tab,
+                             webkit_web_view_get_estimated_load_progress(view),
+                             webkit_web_view_is_loading(view),
+                             tab->ud);
+    }
+}
+
+static void
 on_notify_prop(WebKitWebView *view G_GNUC_UNUSED, GParamSpec *ps G_GNUC_UNUSED, gpointer user_data)
 {
     KajoWebTab *tab = user_data;
     const gchar *u = webkit_web_view_get_uri(tab->view);
     const gchar *t = webkit_web_view_get_title(tab->view);
-    if (u && *u) {
+    gboolean changed = FALSE;
+    if (u && *u && g_strcmp0(u, tab->last_uri) != 0) {
         g_free(tab->last_uri);
         tab->last_uri = g_strdup(u);
+        changed = TRUE;
     }
-    if (t && *t) {
+    if (t && *t && g_strcmp0(t, tab->last_title) != 0) {
         g_free(tab->last_title);
         tab->last_title = g_strdup(t);
+        changed = TRUE;
     }
-    notify_tab_changed(tab);
+    if (ps && g_strcmp0(ps->name, "is-playing-audio") == 0)
+        changed = TRUE;
+    if (changed)
+        notify_tab_changed(tab);
 }
 
 static void
@@ -224,6 +228,37 @@ on_resource_resp_bridge(WebKitWebResource *res, GParamSpec *ps, gpointer user_da
         on_resource_response(res, ps, tab);
 }
 
+static gboolean
+uri_obviously_non_media(const gchar *uri)
+{
+    if (!uri || (!g_str_has_prefix(uri, "http://") && !g_str_has_prefix(uri, "https://")))
+        return TRUE;
+    const gchar *q = strchr(uri, '?');
+    const gchar *end = q ? q : uri + strlen(uri);
+    const gchar *dot = NULL;
+    for (const gchar *p = end; p > uri && *p != '/'; p--) {
+        if (*p == '.') {
+            dot = p + 1;
+            break;
+        }
+    }
+    if (!dot || dot >= end)
+        return FALSE;
+    gsize ext_len = (gsize)(end - dot);
+    if (ext_len > 6)
+        return FALSE;
+    static const char *const k_skip[] = {
+        "js", "mjs", "css", "png", "jpg", "jpeg", "webp", "gif", "svg",
+        "ico", "woff", "woff2", "ttf", "otf", "eot", "json", "xml", "txt",
+        "html", "htm", "avif", "map", "wasm"
+    };
+    for (gsize i = 0; i < G_N_ELEMENTS(k_skip); i++) {
+        if (strlen(k_skip[i]) == ext_len && g_ascii_strncasecmp(dot, k_skip[i], ext_len) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
 static void
 on_resource_load_started_safe(WebKitWebView     *view G_GNUC_UNUSED,
                               WebKitWebResource *res,
@@ -232,6 +267,9 @@ on_resource_load_started_safe(WebKitWebView     *view G_GNUC_UNUSED,
 {
     KajoWebTab *tab = user_data;
     const gchar *uri = req ? webkit_uri_request_get_uri(req) : NULL;
+    if (uri_obviously_non_media(uri))
+        return;
+
     KajoWebMediaKind early = web_media_classify_resource(uri, NULL, 0);
     if (early == KAJO_MEDIA_HLS || early == KAJO_MEDIA_DASH) {
         const gchar *lbl = (early == KAJO_MEDIA_HLS) ? "HLS Playlist (.m3u8)" : "DASH Manifest (.mpd)";
@@ -241,9 +279,15 @@ on_resource_load_started_safe(WebKitWebView     *view G_GNUC_UNUSED,
             if (tab->cbs.on_media_detected)
                 tab->cbs.on_media_detected(tab, tab->ud);
         }
+        return;
     }
-    g_object_set_data(G_OBJECT(res), "kajo-tab", tab);
-    g_signal_connect_object(res, "notify::response", G_CALLBACK(on_resource_resp_bridge), tab->container, 0);
+    /* Only watch response headers for plausible video/stream endpoints */
+    if (strstr(uri, ".mp4") || strstr(uri, ".webm") || strstr(uri, ".m4v") ||
+        strstr(uri, "video") || strstr(uri, "stream") || strstr(uri, "media") ||
+        strstr(uri, "playlist") || strstr(uri, "manifest")) {
+        g_object_set_data(G_OBJECT(res), "kajo-tab", tab);
+        g_signal_connect_object(res, "notify::response", G_CALLBACK(on_resource_resp_bridge), tab->container, 0);
+    }
 }
 
 static void
@@ -319,14 +363,16 @@ create_backing_view(KajoWebTab *tab, const KajoWebCfg *cfg)
         NULL));
 
     configure_webkit_settings(tab->view, cfg);
+    static const GdkRGBA k_dark_bg = { 0.063f, 0.063f, 0.063f, 1.0f };
+    webkit_web_view_set_background_color(tab->view, &k_dark_bg);
     webkit_web_view_set_is_muted(tab->view, tab->muted);
     gtk_widget_set_hexpand(GTK_WIDGET(tab->view), TRUE);
     gtk_widget_set_vexpand(GTK_WIDGET(tab->view), TRUE);
 
     g_signal_connect(tab->view, "notify::title", G_CALLBACK(on_notify_prop), tab);
     g_signal_connect(tab->view, "notify::uri", G_CALLBACK(on_notify_prop), tab);
-    g_signal_connect(tab->view, "notify::estimated-load-progress", G_CALLBACK(on_notify_prop), tab);
-    g_signal_connect(tab->view, "notify::is-loading", G_CALLBACK(on_notify_prop), tab);
+    g_signal_connect(tab->view, "notify::estimated-load-progress", G_CALLBACK(on_notify_progress), tab);
+    g_signal_connect(tab->view, "notify::is-loading", G_CALLBACK(on_notify_progress), tab);
     g_signal_connect(tab->view, "notify::is-playing-audio", G_CALLBACK(on_notify_prop), tab);
     g_signal_connect(tab->view, "load-changed", G_CALLBACK(on_load_changed), tab);
     g_signal_connect(tab->view, "permission-request", G_CALLBACK(on_permission_request), tab);

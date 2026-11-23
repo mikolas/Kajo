@@ -4,7 +4,7 @@
 rail_mode                 = "autohide"
 rail_side                 = "left"
 rail_width_px             = 240
-rail_reveal_delay_ms      = 80
+rail_reveal_delay_ms      = 35
 rail_hide_delay_ms        = 220
 top_bar_mode              = "always"
 show_tab_domains          = true

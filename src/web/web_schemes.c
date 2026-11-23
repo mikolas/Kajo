@@ -8,37 +8,74 @@ append_base_head(GString *h, const gchar *title, const gchar *accent)
     g_string_append_printf(h,
         "<!DOCTYPE html><html><head><meta charset='utf-8'><title>%s</title><style>"
         "*{box-sizing:border-box;border-radius:0!important;margin:0;padding:0;}"
-        "body{background:#101010;color:#fff;font-family:'Fira Code',monospace;font-size:13px;padding:34px 40px;}"
-        ".wrap{max-width:860px;margin:0 auto;}"
-        "h1{font-size:18px;letter-spacing:1.4px;border-bottom:1px solid #2b2b2b;padding-bottom:10px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;}"
-        ".sub{font-size:10px;color:#888;font-weight:400;}"
-        ".grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:18px 0;}"
-        ".card{background:#181818;border:1px solid #2b2b2b;border-top:2px solid %s;padding:12px;text-decoration:none;color:#fff;display:block;}"
-        ".card:hover{background:#222;border-color:%s;}"
-        ".k{font-size:9.5px;color:#888;letter-spacing:.6px;}"
-        ".v{font-size:12px;font-weight:700;color:#00d8f0;margin-top:4px;}"
+        "body{background:#111111;color:#fff;font-family:'Fira Code',monospace;font-size:13px;padding:30px 38px;}"
+        ".wrap{max-width:840px;margin:16px auto 0;}"
+        "h1{font-size:18px;font-weight:800;letter-spacing:1.8px;border-bottom:1px solid #2b2b2b;padding-bottom:10px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;}"
+        ".sub{font-size:10px;color:#888;font-weight:400;letter-spacing:.6px;}"
+        ".search{display:flex;border:1px solid #3a3a3a;background:#101010;margin-bottom:22px;}"
+        ".search:focus-within{border-color:%s;}"
+        ".search input{flex:1;background:transparent;border:0;color:#fff;font-family:'Fira Code',monospace;font-size:13px;padding:10px 12px;outline:none;}"
+        ".search button{background:%s;border:0;color:#fff;font-family:'Fira Code',monospace;font-size:11px;font-weight:700;padding:0 18px;cursor:pointer;}"
+        ".grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px;}"
+        ".tile{background:#181818;border:1px solid #2b2b2b;border-top:2px solid %s;padding:14px;text-decoration:none;color:#fff;display:block;}"
+        ".tile:hover{background:#222222;border-color:%s;}"
+        ".ico{font-size:18px;margin-bottom:8px;}"
+        ".nm{font-size:12px;font-weight:700;color:#fff;}"
+        ".url{font-size:10px;color:#787878;margin-top:2px;}"
+        ".tele-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:18px;}"
+        ".tele{background:#161616;border:1px solid #242424;padding:10px 12px;}"
+        ".k{font-size:9.5px;color:#787878;letter-spacing:.6px;}"
+        ".v{font-size:12px;font-weight:700;color:#00d8f0;margin-top:3px;}"
         ".ok{color:#4ce886;} .warn{color:#ffb84d;}"
         "table{width:100%%;border-collapse:collapse;margin-top:12px;}"
         "th,td{border:1px solid #2b2b2b;padding:8px 10px;text-align:left;font-size:11.5px;}"
-        "th{background:#181818;color:#999;font-size:10px;letter-spacing:.6px;}"
-        "td{background:#131313;}"
+        "th{background:#181818;color:#a0a0a0;font-size:10px;letter-spacing:.6px;}"
+        "td{background:#121212;}"
         "a.row{display:flex;justify-content:space-between;padding:8px 10px;background:#161616;border:1px solid #242424;margin-bottom:6px;color:#e0e0e0;text-decoration:none;}"
         "a.row:hover{background:#222;border-color:%s;color:#fff;}"
         "</style></head><body><div class='wrap'>",
-        title, accent, accent, accent);
+        title, accent, accent, accent, accent, accent);
+}
+
+static const gchar *
+search_url_prefix(const KajoWebCfg *wcfg)
+{
+    if (!wcfg)
+        return "https://duckduckgo.com/?q=";
+    switch (wcfg->search_engine) {
+    case KAJO_WEB_SEARCH_KAGI:       return "https://kagi.com/search?q=";
+    case KAJO_WEB_SEARCH_STARTPAGE:  return "https://www.startpage.com/sp/search?query=";
+    case KAJO_WEB_SEARCH_BRAVE:      return "https://search.brave.com/search?q=";
+    case KAJO_WEB_SEARCH_GOOGLE:     return "https://www.google.com/search?q=";
+    case KAJO_WEB_SEARCH_DUCKDUCKGO:
+    default:                         return "https://duckduckgo.com/?q=";
+    }
 }
 
 static void
 render_newtab(GString *h, const KajoWebSchemeContext *sctx, const KajoWebCfg *wcfg, const gchar *accent)
 {
     append_base_head(h, "KAJO WEB // SPEED DIAL", accent);
-    g_string_append(h, "<h1><span>❖ KAJO WEB // SPEED DIAL</span><span class='sub'>HOVER EDGE FOR TABS • CTRL+K PALETTE</span></h1>");
+    g_string_append(h,
+        "<h1><span>❖ KAJO WEB // SPEED DIAL</span>"
+        "<span class='sub'>HOVER EDGE FOR TABS • CTRL+K PALETTE</span></h1>");
 
-    g_string_append(h, "<div class='grid'>"
-        "<a class='card' href='https://github.com'><div class='k'>CODE</div><div class='v' style='color:#fff;'>GitHub</div></a>"
-        "<a class='card' href='https://wiki.archlinux.org'><div class='k'>DOCS</div><div class='v' style='color:#fff;'>ArchWiki</div></a>"
-        "<a class='card' href='https://developer.mozilla.org'><div class='k'>WEB</div><div class='v' style='color:#fff;'>MDN Docs</div></a>"
-        "<a class='card' href='kajo://gpu'><div class='k'>DIAGNOSTICS</div><div class='v'>kajo://gpu</div></a>"
+    g_string_append_printf(h,
+        "<form class='search' onsubmit=\"event.preventDefault();"
+        "var q=this.q.value.trim();if(!q)return;"
+        "if(/^(https?:\\/\\/|kajo:\\/\\/)/.test(q)){location.href=q;}"
+        "else if(/^[^\\s]+\\.[a-z]{2,}(\\/.*)?$/i.test(q)){location.href='https://'+q;}"
+        "else{location.href='%s'+encodeURIComponent(q);}\">"
+        "<input name='q' placeholder='Search or enter URL (press Ctrl+L for omnibar bangs)...' autocomplete='off'/>"
+        "<button type='submit'>GO</button></form>",
+        search_url_prefix(wcfg));
+
+    g_string_append(h,
+        "<div class='grid'>"
+        "<a class='tile' href='https://github.com'><div class='ico'>⌘</div><div class='nm'>GitHub</div><div class='url'>github.com</div></a>"
+        "<a class='tile' href='https://wiki.archlinux.org'><div class='ico'>📘</div><div class='nm'>ArchWiki</div><div class='url'>wiki.archlinux.org</div></a>"
+        "<a class='tile' href='https://developer.mozilla.org'><div class='ico'>🌐</div><div class='nm'>MDN Docs</div><div class='url'>developer.mozilla.org</div></a>"
+        "<a class='tile' href='kajo://gpu'><div class='ico'>⚡</div><div class='nm'>GPU Telemetry</div><div class='url'>kajo://gpu</div></a>"
         "</div>");
 
     gboolean is_sw = (wcfg && wcfg->hardware_acceleration == KAJO_WEB_HW_NEVER) || (sctx && sctx->hw_disabled_override);
@@ -47,21 +84,21 @@ render_newtab(GString *h, const KajoWebSchemeContext *sctx, const KajoWebCfg *wc
     gboolean ab_on = (sctx && sctx->adblock) ? web_adblock_is_enabled(sctx->adblock) : TRUE;
 
     g_string_append_printf(h,
-        "<div class='grid'>"
-        "<div class='card'><div class='k'>PROFILE</div><div class='v'>%s%s</div></div>"
-        "<div class='card'><div class='k'>RENDER PIPELINE</div><div class='v %s'>%s</div></div>"
-        "<div class='card'><div class='k'>CONTENT BLOCKER</div><div class='v'>%s (%u RULES)</div></div>"
-        "<div class='card'><div class='k'>ENGINE</div><div class='v'>WEBKITGTK %u.%u.%u</div></div>"
+        "<div class='tele-grid'>"
+        "<div class='tele'><div class='k'>PROFILE</div><div class='v'>%s%s</div></div>"
+        "<div class='tele'><div class='k'>RENDER PIPELINE</div><div class='v %s'>%s</div></div>"
+        "<div class='tele'><div class='k'>CONTENT BLOCKER</div><div class='v %s'>%s (%u RULES)</div></div>"
+        "<div class='tele'><div class='k'>ENGINE</div><div class='v'>WEBKITGTK %u.%u.%u</div></div>"
         "</div>",
         prof, (sctx && sctx->sync_enabled) ? " • ☁" : "",
         is_sw ? "warn" : "ok", is_sw ? "⚠ SW FALLBACK" : "SKIA + DMABUF",
-        ab_on ? "ON" : "OFF", rules,
+        ab_on ? "ok" : "warn", ab_on ? "ON" : "OFF", rules,
         webkit_get_major_version(), webkit_get_minor_version(), webkit_get_micro_version());
 
     if (sctx && sctx->storage && !sctx->is_private) {
         g_autoptr(GPtrArray) bms = web_storage_list_bookmarks(sctx->storage, FALSE);
         if (bms && bms->len > 0) {
-            g_string_append(h, "<div class='k' style='margin:16px 0 8px;'>BOOKMARKS</div>");
+            g_string_append(h, "<div class='k' style='margin:14px 0 8px;'>BOOKMARKS</div>");
             guint lim = MIN(bms->len, 10);
             for (guint i = 0; i < lim; i++) {
                 const KajoWebBookmark *bm = g_ptr_array_index(bms, i);
@@ -80,16 +117,17 @@ render_gpu(GString *h, const KajoWebSchemeContext *sctx, const KajoWebCfg *wcfg,
     append_base_head(h, "KAJO WEB // GPU TELEMETRY", accent);
     gboolean is_sw = (wcfg && wcfg->hardware_acceleration == KAJO_WEB_HW_NEVER) || (sctx && sctx->hw_disabled_override);
     const gchar *pol = is_sw ? "NEVER (Software Fallback)"
-        : ((wcfg && wcfg->hardware_acceleration == KAJO_WEB_HW_ON_DEMAND) ? "ON-DEMAND (Skia + DMA-BUF)" : "ALWAYS (Skia + DMA-BUF)");
-    gboolean has_ffmpeg = g_find_program_in_path("ffmpeg") != NULL;
-    gboolean has_ytdlp  = g_find_program_in_path("yt-dlp") != NULL;
+        : ((wcfg && wcfg->hardware_acceleration == KAJO_WEB_HW_ON_DEMAND) ? "AUTO (Skia + DMA-BUF)" : "ALWAYS (Skia + DMA-BUF)");
+    g_autofree gchar *ffp = g_find_program_in_path("ffmpeg");
+    g_autofree gchar *ytp = g_find_program_in_path("yt-dlp");
 
     g_string_append_printf(h,
         "<h1><span>⚡ kajo://gpu — GRAPHICS &amp; RUNTIME TELEMETRY</span><span class='sub'>WEBKITGTK %u.%u.%u</span></h1>"
         "<table><thead><tr><th>SUBSYSTEM</th><th>STATUS</th><th>DETAILS</th></tr></thead><tbody>"
-        "<tr><td>WebKitGTK Runtime</td><td class='ok'>%u.%u.%u</td><td>GTK4 + libsoup3</td></tr>"
+        "<tr><td>WebKitGTK Runtime</td><td class='ok'>%u.%u.%u</td><td>GTK4 + libsoup3 + WEB_BROWSER Cache Model</td></tr>"
         "<tr><td>Hardware Acceleration</td><td class='%s'>%s</td><td>%s</td></tr>"
-        "<tr><td>WebGL &amp; GPU Process</td><td class='%s'>%s</td><td>enable_webgl=%s, gpu_process=%s</td></tr>"
+        "<tr><td>WebGL</td><td class='%s'>%s</td><td>enable_webgl=%s</td></tr>"
+        "<tr><td>Content Blocker</td><td class='ok'>%s</td><td>WebKitUserContentFilterStore compiled bytecode (%u rules)</td></tr>"
         "<tr><td>Sandbox</td><td class='ok'>MANDATORY ENFORCED</td><td>bubblewrap + xdg-dbus-proxy + seccomp</td></tr>"
         "<tr><td>Memory Limit</td><td class='ok'>%d MB</td><td>WebKitMemoryPressureSettings (idle suspend=%dm)</td></tr>"
         "<tr><td>Media Downloader</td><td class='ok'>ffmpeg: %s • yt-dlp: %s</td><td>Tier 1 HTML5 + Tier 2 HLS/DASH sniffer + Tier 3 yt-dlp</td></tr>"
@@ -101,11 +139,12 @@ render_gpu(GString *h, const KajoWebSchemeContext *sctx, const KajoWebCfg *wcfg,
         (wcfg && wcfg->enable_webgl) ? "ok" : "warn",
         (wcfg && wcfg->enable_webgl) ? "ENABLED" : "DISABLED",
         (wcfg && wcfg->enable_webgl) ? "true" : "false",
-        (wcfg && wcfg->gpu_process_webgl) ? "true" : "false",
+        (sctx && sctx->adblock) ? web_adblock_get_status_text(sctx->adblock) : "ACTIVE",
+        (sctx && sctx->adblock) ? web_adblock_get_rule_count(sctx->adblock) : 0,
         wcfg ? wcfg->memory_limit_mb : 2048,
         wcfg ? wcfg->suspend_idle_min : 30,
-        has_ffmpeg ? "FOUND" : "MISSING",
-        has_ytdlp ? "FOUND" : "OPTIONAL (NOT INSTALLED)");
+        ffp ? "FOUND" : "MISSING",
+        ytp ? "FOUND" : "OPTIONAL (NOT INSTALLED)");
 }
 
 static void

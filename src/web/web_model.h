@@ -39,6 +39,7 @@ KajoWebRailFsmAction web_rail_fsm_rail_enter(KajoWebRailFsm *fsm);
 KajoWebRailFsmAction web_rail_fsm_rail_leave(KajoWebRailFsm *fsm);
 KajoWebRailFsmAction web_rail_fsm_reveal_timeout(KajoWebRailFsm *fsm);
 KajoWebRailFsmAction web_rail_fsm_hide_timeout(KajoWebRailFsm *fsm);
+KajoWebRailFsmAction web_rail_fsm_trigger_click(KajoWebRailFsm *fsm);
 KajoWebRailFsmAction web_rail_fsm_keyboard_reveal(KajoWebRailFsm *fsm);
 KajoWebRailFsmAction web_rail_fsm_escape(KajoWebRailFsm *fsm);
 KajoWebRailFsmAction web_rail_fsm_focus_lost(KajoWebRailFsm *fsm);

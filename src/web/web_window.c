@@ -74,9 +74,12 @@ kajo_web_win_sync_chrome(KajoWebWindow *w)
 
     const gchar *uri = t ? web_tab_get_uri(t) : "kajo://newtab";
     if (!gtk_widget_has_focus(w->omni_entry)) {
-        w->updating_omni = TRUE;
-        gtk_editable_set_text(GTK_EDITABLE(w->omni_entry), uri);
-        w->updating_omni = FALSE;
+        const gchar *cur_txt = gtk_editable_get_text(GTK_EDITABLE(w->omni_entry));
+        if (g_strcmp0(cur_txt, uri) != 0) {
+            w->updating_omni = TRUE;
+            gtk_editable_set_text(GTK_EDITABLE(w->omni_entry), uri);
+            w->updating_omni = FALSE;
+        }
     }
 
     if (g_str_has_prefix(uri, "kajo://"))
@@ -94,6 +97,10 @@ kajo_web_win_sync_chrome(KajoWebWindow *w)
 
     gboolean ab_on = web_adblock_is_enabled(w->adblock);
     gtk_button_set_label(GTK_BUTTON(w->btn_shield), ab_on ? "🛡 ON" : "🛡 OFF");
+    if (ab_on)
+        gtk_widget_remove_css_class(w->btn_shield, "off");
+    else
+        gtk_widget_add_css_class(w->btn_shield, "off");
 
     gboolean is_sw = w->hw_disabled_override || (cfg && cfg->hardware_acceleration == KAJO_WEB_HW_NEVER);
     gtk_widget_set_visible(w->chip_sw, is_sw);
@@ -110,28 +117,61 @@ kajo_web_win_sync_chrome(KajoWebWindow *w)
 
     if (t) {
         g_autofree gchar *wt = g_strdup_printf("%s — Kajo Web", web_tab_get_title(t));
-        gtk_window_set_title(w->win, wt);
+        if (g_strcmp0(gtk_window_get_title(w->win), wt) != 0)
+            gtk_window_set_title(w->win, wt);
     }
-    web_tab_rail_rebuild(w->rail, w->model);
 }
 
 static void add_and_activate_tab(KajoWebWindow *w, const gchar *uri, gboolean background);
+
+static void
+on_tab_progress(KajoWebTab *tab, gdouble progress, gboolean loading, gpointer ud)
+{
+    KajoWebWindow *w = ud;
+    if (tab != kajo_web_win_active_tab(w))
+        return;
+    gboolean show = loading && progress > 0.0 && progress < 1.0;
+    gtk_widget_set_visible(w->omni_progress, show);
+    if (show)
+        gtk_progress_bar_set_fraction(GTK_PROGRESS_BAR(w->omni_progress), progress);
+    gtk_button_set_label(GTK_BUTTON(w->btn_reload), loading ? "✕" : "↻");
+    gtk_widget_set_sensitive(w->btn_back, web_tab_can_go_back(tab));
+    gtk_widget_set_sensitive(w->btn_fwd, web_tab_can_go_forward(tab));
+}
 
 static void
 on_tab_changed(KajoWebTab *tab, gpointer ud)
 {
     KajoWebWindow *w = ud;
     KajoWebTabMeta *meta = web_model_find_tab(w->model, web_tab_get_id(tab));
+    gboolean rail_dirty = FALSE;
     if (meta) {
-        g_free(meta->title);
-        meta->title = g_strdup(web_tab_get_title(tab));
-        g_free(meta->uri);
-        meta->uri = g_strdup(web_tab_get_uri(tab));
-        meta->audible = web_tab_is_playing_audio(tab);
-        meta->muted = web_tab_is_muted(tab);
-        meta->suspended = web_tab_is_suspended(tab);
+        const gchar *nt = web_tab_get_title(tab);
+        const gchar *nu = web_tab_get_uri(tab);
+        gboolean na = web_tab_is_playing_audio(tab);
+        gboolean nm = web_tab_is_muted(tab);
+        gboolean ns = web_tab_is_suspended(tab);
+        if (g_strcmp0(meta->title, nt) != 0) {
+            g_free(meta->title);
+            meta->title = g_strdup(nt);
+            rail_dirty = TRUE;
+        }
+        if (g_strcmp0(meta->uri, nu) != 0) {
+            g_free(meta->uri);
+            meta->uri = g_strdup(nu);
+            rail_dirty = TRUE;
+        }
+        if (meta->audible != na || meta->muted != nm || meta->suspended != ns) {
+            meta->audible = na;
+            meta->muted = nm;
+            meta->suspended = ns;
+            rail_dirty = TRUE;
+        }
     }
-    kajo_web_win_sync_chrome(w);
+    if (tab == kajo_web_win_active_tab(w))
+        kajo_web_win_sync_chrome(w);
+    if (rail_dirty)
+        web_tab_rail_rebuild(w->rail, w->model);
 }
 
 static void
@@ -192,6 +232,7 @@ select_tab_by_id(KajoWebWindow *w, guint64 tab_id)
     g_autofree gchar *name = g_strdup_printf("tab-%" G_GUINT64_FORMAT, tab_id);
     gtk_stack_set_visible_child_name(GTK_STACK(w->web_stack), name);
     kajo_web_win_sync_chrome(w);
+    web_tab_rail_rebuild(w->rail, w->model);
 }
 
 static void
@@ -209,9 +250,13 @@ add_and_activate_tab(KajoWebWindow *w, const gchar *uri, gboolean background)
             target = "kajo://newtab";
     }
 
+    guint64 prev_active = w->model->active_id;
     KajoWebTabMeta *meta = web_model_add_tab(w->model, target, target, NULL, FALSE, g_get_monotonic_time());
+    if (background && prev_active != 0)
+        w->model->active_id = prev_active;
     KajoWebTabCallbacks cbs = {
         .on_changed = on_tab_changed,
+        .on_progress = on_tab_progress,
         .on_new_tab_requested = on_tab_new_requested,
         .on_permission_requested = on_tab_permission_requested,
         .on_media_detected = on_tab_media_detected,
@@ -224,10 +269,12 @@ add_and_activate_tab(KajoWebWindow *w, const gchar *uri, gboolean background)
     gtk_stack_add_named(GTK_STACK(w->web_stack), web_tab_get_widget(tab), sname);
     web_tab_load_uri(tab, target);
 
-    if (!background)
+    if (!background) {
         select_tab_by_id(w, meta->id);
-    else
+    } else {
         kajo_web_win_sync_chrome(w);
+        web_tab_rail_rebuild(w->rail, w->model);
+    }
 }
 
 static void
@@ -541,7 +588,13 @@ apply_web_config_live(KajoWebWindow *w, const KajoWebCfg *cfg)
     web_tab_rail_apply_config(w->rail, cfg);
     apply_profile_border_accent(w, cfg);
 
-    /* Docked pinned mode vs overlay mode */
+    /* Docked pinned mode vs overlay mode + compact spacer side placement */
+    GtkWidget *spacer_w = web_tab_rail_get_compact_spacer(w->rail);
+    if (spacer_w && gtk_widget_get_parent(spacer_w) == w->body_hbox) {
+        gtk_box_reorder_child_after(GTK_BOX(w->body_hbox), spacer_w,
+                                    (cfg->rail_side == KAJO_WEB_SIDE_RIGHT) ? w->viewport_overlay : NULL);
+    }
+
     GtkWidget *rail_w = web_tab_rail_get_widget(w->rail);
     GtkWidget *parent = gtk_widget_get_parent(rail_w);
     if (cfg->rail_mode == KAJO_WEB_RAIL_PINNED) {
@@ -551,6 +604,9 @@ apply_web_config_live(KajoWebWindow *w, const KajoWebCfg *cfg)
                 gtk_box_append(GTK_BOX(w->body_hbox), rail_w);
             else
                 gtk_box_prepend(GTK_BOX(w->body_hbox), rail_w);
+        } else if (parent == w->body_hbox) {
+            gtk_box_reorder_child_after(GTK_BOX(w->body_hbox), rail_w,
+                                        (cfg->rail_side == KAJO_WEB_SIDE_RIGHT) ? w->viewport_overlay : NULL);
         }
     } else {
         if (parent == w->body_hbox) {
@@ -570,6 +626,7 @@ apply_web_config_live(KajoWebWindow *w, const KajoWebCfg *cfg)
         web_tab_apply_config(val, cfg);
 
     kajo_web_win_sync_chrome(w);
+    web_tab_rail_rebuild(w->rail, w->model);
 }
 
 static void
@@ -698,6 +755,7 @@ kajo_web_window_new(GtkApplication                  *app,
     g_autofree gchar *cache_dir = web_profile_manager_get_cache_dir(pm, w->profile_id);
 
     w->web_ctx = webkit_web_context_new();
+    webkit_web_context_set_cache_model(w->web_ctx, WEBKIT_CACHE_MODEL_WEB_BROWSER);
     w->session = web_profile_manager_get_session(pm, w->profile_id, is_private, cfg);
     g_signal_connect(w->session, "download-started", G_CALLBACK(on_session_download_started), w);
 
@@ -762,7 +820,7 @@ kajo_web_window_new(GtkApplication                  *app,
 
     GtkWidget *brand = gtk_label_new("🌐 KAJO WEB");
     gtk_widget_set_valign(brand, GTK_ALIGN_CENTER);
-    gtk_widget_add_css_class(brand, "settings-header-title");
+    gtk_widget_add_css_class(brand, "web-brand-mark");
     gtk_box_append(GTK_BOX(hdr), brand);
 
     w->btn_back = gtk_button_new_with_label("◀");

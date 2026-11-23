@@ -1,5 +1,6 @@
 /* ============================================================================
  * KAJO WEB (org.kajo.Web — Aero + Metro WebKitGTK 6.0 Browser)
+ * Matches docs/kajo-web-mockup.html tokens, sizing, and strict 0px geometry.
  * ============================================================================ */
 
 window.shell-web-window,
@@ -10,16 +11,34 @@ window.shell-web-picker {
 }
 
 window.shell-web-window.web-private-window {
-    border-color: #a855f7;
+    border-color: #b4009e;
 }
 
-/* ─── Minimalist 34px Top Chrome Bar ─── */
+/* Zen Top Bar Hover Trigger (never opacity: 0) */
+window.shell-web-window .web-top-zen-trigger {
+    background-color: rgba(0, 0, 0, 0.01);
+    border-top: 2px solid alpha(@metro-accent, 0.55);
+    min-height: 6px;
+}
+
+/* ─── 1. Minimalist 34px Top Chrome Bar ─── */
 
 window.shell-web-window .web-header-bar {
-    background-color: @metro-surface-bg;
+    background-color: @metro-surface-3;
     border-bottom: 1px solid @metro-border;
-    padding: 3px 6px;
+    padding: 0px 6px 0px 8px;
     min-height: 34px;
+}
+
+window.shell-web-window .web-brand-mark {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.9px;
+    color: @metro-fg-primary;
+    padding-right: 8px;
+    margin-right: 2px;
+    border-right: 1px solid @metro-border;
 }
 
 window.shell-web-window button.web-chrome-btn {
@@ -29,9 +48,9 @@ window.shell-web-window button.web-chrome-btn {
     color: @metro-fg-body;
     border: 1px solid transparent;
     border-radius: 0px;
-    padding: 2px 7px;
-    min-height: 26px;
-    min-width: 26px;
+    padding: 0px 6px;
+    min-height: 24px;
+    min-width: 24px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 11px;
     font-weight: 700;
@@ -43,34 +62,41 @@ window.shell-web-window button.web-chrome-btn:hover {
     color: @metro-fg-primary;
 }
 
+window.shell-web-window button.web-chrome-btn.active {
+    background-color: alpha(@metro-accent, 0.22);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
 window.shell-web-window button.web-chrome-btn:disabled {
-    opacity: 0.35;
+    opacity: 0.32;
 }
 
-/* Omnibar pill + inline progress bar */
-
-window.shell-web-window .web-omnibar-wrap {
-    min-height: 26px;
-}
+/* Unified Minimalist Omnibar (24px tall) */
 
 window.shell-web-window .web-omnibar-box {
     background-color: @metro-surface-0;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    padding: 0px 6px;
-    min-height: 26px;
+    padding: 0px 5px;
+    min-height: 24px;
+}
+
+window.shell-web-window .web-omnibar-box:hover {
+    border-color: @metro-border-strong;
 }
 
 window.shell-web-window .web-omnibar-box:focus-within {
     border-color: @metro-accent;
-    background-color: #0b0b0b;
+    background-color: #0d0d0d;
 }
 
 window.shell-web-window .web-omni-tls {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 10px;
+    font-weight: 700;
     color: @metro-telemetry;
-    padding-right: 4px;
+    padding: 0px 4px 0px 2px;
 }
 
 window.shell-web-window entry.web-omni-entry {
@@ -83,9 +109,36 @@ window.shell-web-window entry.web-omni-entry {
     border-radius: 0px;
     color: @metro-fg-primary;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
-    min-height: 24px;
+    font-size: 11px;
+    min-height: 22px;
     padding: 0px 2px;
+}
+
+window.shell-web-window button.web-omni-shield {
+    background: none;
+    background-image: none;
+    background-color: alpha(@metro-accent, 0.14);
+    border: 1px solid alpha(@metro-accent, 0.55);
+    border-radius: 0px;
+    color: @metro-telemetry;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    min-height: 18px;
+    min-width: 0px;
+    padding: 0px 6px;
+}
+
+window.shell-web-window button.web-omni-shield:hover {
+    background-color: alpha(@metro-accent, 0.28);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window button.web-omni-shield.off {
+    background-color: @metro-surface-3;
+    border-color: @metro-border;
+    color: @metro-fg-secondary;
 }
 
 window.shell-web-window progressbar.web-omni-progress trough {
@@ -104,26 +157,48 @@ window.shell-web-window progressbar.web-omni-progress progress {
     min-height: 2px;
 }
 
-/* Top-bar badges & chips */
+/* Status Chips & Profile Button */
 
 window.shell-web-window .web-chip-warn {
     background-color: alpha(@metro-warning, 0.16);
-    color: @metro-warning;
+    color: #ffb84d;
     border: 1px solid @metro-warning;
     padding: 1px 6px;
+    min-height: 20px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10px;
     font-weight: 700;
 }
 
 window.shell-web-window .web-chip-priv {
-    background-color: rgba(168, 85, 247, 0.18);
-    color: #c084fc;
-    border: 1px solid #a855f7;
+    background-color: rgba(180, 0, 158, 0.20);
+    color: #f4a4eb;
+    border: 1px solid #b4009e;
     padding: 1px 6px;
+    min-height: 20px;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10px;
     font-weight: 700;
+}
+
+window.shell-web-window button.web-chip-dl {
+    background: none;
+    background-image: none;
+    background-color: alpha(@metro-telemetry, 0.12);
+    border: 1px solid @metro-telemetry;
+    border-radius: 0px;
+    color: @metro-telemetry;
+    padding: 0px 6px;
+    min-height: 22px;
+    min-width: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+window.shell-web-window button.web-chip-dl:hover {
+    background-color: alpha(@metro-telemetry, 0.24);
+    color: @metro-fg-primary;
 }
 
 window.shell-web-window button.web-profile-chip {
@@ -132,8 +207,8 @@ window.shell-web-window button.web-profile-chip {
     background-color: @metro-surface-2;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    padding: 2px 8px;
-    min-height: 24px;
+    padding: 0px 8px;
+    min-height: 22px;
     color: @metro-fg-primary;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10px;
@@ -152,125 +227,149 @@ window.shell-web-window .web-profile-dot {
     border-radius: 0px;
 }
 
-/* ─── Autohide Vertical Tab Rail & 4px Edge Trigger Strip ─── */
+/* ─── 2. Vertical Tab Rail (Autohide / Compact / Pinned) ─── */
 
 /* IMPORTANT: Never use opacity: 0 on Wayland edge trigger strips (AGENTS.md §4D) */
 window.shell-web-window .web-rail-trigger {
     background-color: rgba(0, 0, 0, 0.01);
-    min-width: 4px;
-    padding: 4px 0px;
+    min-width: 12px;
+    padding: 0px;
+}
+
+window.shell-web-window .web-rail-trigger:hover {
+    background-color: alpha(@metro-accent, 0.14);
+    border-left: 2px solid @metro-accent;
+}
+
+window.shell-web-window .web-rail-trigger.rail-right:hover {
+    border-left: none;
+    border-right: 2px solid @metro-accent;
 }
 
 window.shell-web-window .web-rail-tick {
-    background-color: alpha(@metro-fg-secondary, 0.45);
+    background-color: #3a3a3a;
     min-width: 2px;
-    min-height: 12px;
-    margin-bottom: 3px;
+    min-height: 14px;
 }
 
-window.shell-web-window .web-rail-tick.active,
 window.shell-web-window .web-rail-tick-active {
     background-color: @metro-accent;
     min-width: 2px;
     min-height: 22px;
-    margin-bottom: 3px;
 }
 
 window.shell-web-window .web-tab-rail {
-    background-color: alpha(@metro-surface-bg, 0.96);
+    background-color: rgba(18, 18, 18, 0.96);
     border-right: 1px solid @metro-border;
+}
+
+window.shell-web-window .web-tab-rail.rail-right {
+    border-right: none;
     border-left: 1px solid @metro-border;
 }
 
-window.shell-web-window .web-tab-rail-head {
-    background-color: @metro-surface-1;
-    border-bottom: 1px solid @metro-border;
-    padding: 6px 8px;
-    min-height: 30px;
+window.shell-web-window .web-tab-rail.overlay-elevated {
+    box-shadow: 10px 0px 28px rgba(0, 0, 0, 0.78);
+}
+
+window.shell-web-window .web-tab-rail.overlay-elevated.rail-right {
+    box-shadow: -10px 0px 28px rgba(0, 0, 0, 0.78);
+}
+
+window.shell-web-window .web-rail-header {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border-subtle;
+    padding: 0px 8px;
+    min-height: 28px;
 }
 
 window.shell-web-window .web-rail-title {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10px;
     font-weight: 700;
+    letter-spacing: 0.6px;
     color: @metro-fg-secondary;
 }
 
 window.shell-web-window .web-pin-grid {
-    padding: 6px 6px 4px 6px;
-    border-bottom: 1px solid @metro-border-subtle;
+    padding: 6px 8px;
+    border-bottom: 1px solid @metro-border;
+}
+
+window.shell-web-window .web-tab-rail.compact-collapsed .web-pin-grid {
+    padding: 5px 4px;
 }
 
 window.shell-web-window button.web-pin-tile {
     background: none;
     background-image: none;
-    background-color: @metro-surface-2;
+    background-color: @metro-surface-3;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    min-width: 34px;
+    min-width: 30px;
     min-height: 30px;
-    padding: 2px;
+    padding: 0px;
     color: @metro-fg-primary;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 12px;
     font-weight: 700;
 }
 
 window.shell-web-window button.web-pin-tile:hover {
     background-color: @metro-surface-hover;
-    border-color: @metro-accent;
+    border-color: @metro-border-strong;
 }
 
 window.shell-web-window button.web-pin-tile.active {
     background-color: alpha(@metro-accent, 0.22);
     border-color: @metro-accent;
+    border-bottom: 2px solid @metro-accent;
 }
 
-window.shell-web-window .web-tab-listbox {
-    background-color: transparent;
-}
-
-window.shell-web-window .web-tab-listbox row {
-    background: none;
-    background-image: none;
-    background-color: transparent;
-    border-bottom: 1px solid @metro-surface-2;
-    border-left: 3px solid transparent;
-    padding: 4px 6px;
-    min-height: 34px;
-}
-
-window.shell-web-window .web-tab-listbox row:hover {
-    background-color: @metro-surface-3;
-}
-
-window.shell-web-window .web-tab-listbox row:selected,
-window.shell-web-window .web-tab-listbox row.active-tab {
-    background: none;
-    background-image: none;
-    background-color: alpha(@metro-accent, 0.18);
+window.shell-web-window .web-tab-group-hdr {
     border-left: 3px solid @metro-accent;
+    padding: 5px 8px;
+    margin-top: 4px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    color: @metro-fg-secondary;
+}
+
+window.shell-web-window .web-tab-group-count {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 1px 5px;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    color: @metro-fg-secondary;
 }
 
 window.shell-web-window .web-tab-row {
     background-color: transparent;
-    border-bottom: 1px solid @metro-surface-2;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
     border-left: 3px solid transparent;
-    padding: 2px 4px;
+    padding: 0px 4px 0px 5px;
     min-height: 34px;
 }
 
+window.shell-web-window .web-tab-rail.compact-collapsed .web-tab-row {
+    padding: 0px 2px;
+}
+
 window.shell-web-window .web-tab-row:hover {
-    background-color: @metro-surface-3;
+    background-color: @metro-surface-hover;
 }
 
 window.shell-web-window .web-tab-row.active {
-    background-color: alpha(@metro-accent, 0.18);
-    border-left: 3px solid @metro-accent;
+    background-color: alpha(@metro-accent, 0.24);
+    border-left: 3px solid #ffffff;
 }
 
 window.shell-web-window .web-tab-row.suspended {
-    opacity: 0.55;
+    opacity: 0.56;
 }
 
 window.shell-web-window button.web-tab-select-btn {
@@ -279,23 +378,74 @@ window.shell-web-window button.web-tab-select-btn {
     background-color: transparent;
     border: none;
     border-radius: 0px;
-    padding: 2px 4px;
-    min-height: 28px;
+    padding: 2px 2px;
+    min-height: 30px;
+    min-width: 0px;
 }
 
-window.shell-web-window button.web-tab-mini-btn,
+window.shell-web-window .web-tab-ico {
+    font-size: 13px;
+    min-width: 18px;
+}
+
+window.shell-web-window .web-tab-title {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: #f0f0f0;
+}
+
+window.shell-web-window .web-tab-row.active .web-tab-title {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+window.shell-web-window .web-tab-domain {
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 9px;
+    color: #787878;
+}
+
+window.shell-web-window button.web-tab-mini-btn {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 0px;
+    padding: 0px;
+    min-width: 20px;
+    min-height: 20px;
+    color: @metro-telemetry;
+    font-size: 10px;
+}
+
+window.shell-web-window button.web-tab-mini-btn:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-border-strong;
+}
+
+window.shell-web-window button.web-tab-mini-btn.muted {
+    color: #787878;
+}
+
 window.shell-web-window button.web-tab-close-btn {
     background: none;
     background-image: none;
     background-color: transparent;
     border: none;
     border-radius: 0px;
-    padding: 2px 5px;
-    min-width: 20px;
-    min-height: 20px;
-    color: @metro-fg-secondary;
+    padding: 0px;
+    min-width: 18px;
+    min-height: 18px;
+    color: #787878;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10px;
+    opacity: 0.25;
+}
+
+window.shell-web-window .web-tab-row:hover button.web-tab-close-btn,
+window.shell-web-window .web-tab-row.active button.web-tab-close-btn {
+    opacity: 1.0;
 }
 
 window.shell-web-window button.web-tab-close-btn:hover {
@@ -303,42 +453,62 @@ window.shell-web-window button.web-tab-close-btn:hover {
     color: #ffffff;
 }
 
-window.shell-web-window .web-tab-title {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
-    font-weight: 600;
-    color: @metro-fg-primary;
-}
-
-window.shell-web-window .web-tab-host,
-window.shell-web-window .web-tab-domain {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
-    color: @metro-fg-secondary;
-}
-
-window.shell-web-window .web-tab-suspended {
-    opacity: 0.55;
-}
-
-window.shell-web-window .web-tab-rail-foot {
-    background-color: @metro-surface-1;
+window.shell-web-window .web-rail-footer {
+    background-color: @metro-surface-2;
     border-top: 1px solid @metro-border;
     padding: 6px;
 }
 
-/* ─── Inline Find Bar & Permission Infobar ─── */
+window.shell-web-window .web-tab-rail.compact-collapsed .web-rail-footer {
+    padding: 4px;
+}
 
-window.shell-web-window .web-find-bar,
-window.shell-web-window .web-perm-bar {
-    background-color: @metro-surface-1;
-    border-bottom: 1px solid @metro-border;
-    padding: 4px 10px;
-    min-height: 30px;
+window.shell-web-window button.web-rail-foot-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    color: #e0e0e0;
+    min-height: 26px;
+    min-width: 0px;
+    padding: 0px 6px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+window.shell-web-window button.web-rail-foot-btn:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-web-window button.web-rail-foot-btn.primary {
+    background-color: alpha(@metro-accent, 0.24);
+    border-color: @metro-accent;
+    color: #ffffff;
+}
+
+window.shell-web-window button.web-rail-foot-btn.primary:hover {
+    background-color: @metro-accent;
+}
+
+/* ─── 3. Inline Find Bar & Permission Infobar ─── */
+
+window.shell-web-window .web-find-bar {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-accent;
+    padding: 5px 8px;
+    box-shadow: 0px 10px 28px rgba(0, 0, 0, 0.85);
 }
 
 window.shell-web-window .web-perm-bar {
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-warning;
     border-left: 3px solid @metro-warning;
+    padding: 5px 12px;
+    min-height: 30px;
 }
 
 /* ─── Status Cards (Crashed / Suspended) ─── */
@@ -350,13 +520,14 @@ window.shell-web-window .web-status-card {
     padding: 20px 26px;
 }
 
-/* ─── Popovers (Shield, Media Sniffer, Downloads, Profile Switcher) ─── */
+/* ─── 4. Popovers (Shield, Media Sniffer, Downloads, Profile Switcher) ─── */
 
 popover.web-popover > contents {
-    background-color: @metro-surface-1;
+    background-color: @metro-surface-3;
     border: 1px solid @metro-accent;
     border-radius: 0px;
     padding: 10px;
+    box-shadow: 0px 16px 42px rgba(0, 0, 0, 0.88);
 }
 
 .web-popover-box {
@@ -368,7 +539,7 @@ popover.web-popover > contents {
     font-size: 11px;
     font-weight: 700;
     color: @metro-fg-primary;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.6px;
 }
 
 .web-dim-label {
@@ -385,15 +556,15 @@ popover.web-popover > contents {
 }
 
 .web-dl-card {
-    background-color: @metro-surface-0;
-    border: 1px solid @metro-border;
-    padding: 6px 8px;
+    background-color: @metro-surface-1;
+    border: 1px solid @metro-border-subtle;
+    padding: 7px 9px;
 }
 
 button.web-mini-btn {
     background: none;
     background-image: none;
-    background-color: @metro-surface-2;
+    background-color: @metro-surface-4;
     border: 1px solid @metro-border;
     border-radius: 0px;
     padding: 2px 6px;
@@ -410,23 +581,12 @@ button.web-mini-btn:hover {
     color: @metro-fg-primary;
 }
 
-/* ─── Startup Profile Picker (760x480 Frameless Metro Window) ─── */
-
-window.shell-web-picker .web-picker-body {
-    padding: 18px 22px;
-}
-
-window.shell-web-picker .web-picker-heading {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 16px;
-    font-weight: 700;
-    color: @metro-fg-primary;
-}
+/* ─── 5. Startup Profile Picker (760x480 Frameless Metro Window) ─── */
 
 window.shell-web-picker button.web-picker-card {
     background: none;
     background-image: none;
-    background-color: @metro-surface-1;
+    background-color: @metro-surface-2;
     border: 1px solid @metro-border;
     border-top: 3px solid @metro-accent;
     border-radius: 0px;
@@ -436,12 +596,8 @@ window.shell-web-picker button.web-picker-card {
 }
 
 window.shell-web-picker button.web-picker-card:hover {
-    background-color: @metro-surface-3;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
-}
-
-window.shell-web-picker .web-picker-icon {
-    font-size: 26px;
 }
 
 window.shell-web-picker .web-picker-name {
@@ -452,54 +608,52 @@ window.shell-web-picker .web-picker-name {
 }
 
 window.shell-web-picker .web-picker-foot {
-    background-color: @metro-surface-bg;
+    background-color: @metro-surface-2;
     border-top: 1px solid @metro-border;
     padding: 8px 16px;
 }
 
-/* ─── Ctrl+K Command Palette Scrim & Card ─── */
+/* ─── 6. Ctrl+K Command & Tab Palette ─── */
 
 .web-palette-scrim {
-    background-color: rgba(0, 0, 0, 0.58);
+    background-color: rgba(0, 0, 0, 0.62);
 }
 
 .web-palette-card {
-    background-color: @metro-surface-1;
+    background-color: @metro-surface-3;
     border: 1px solid @metro-accent;
-    min-width: 520px;
-    padding: 10px;
+    box-shadow: 0px 22px 60px rgba(0, 0, 0, 0.92);
 }
 
-.web-palette-entry {
+entry.web-palette-entry {
     background: none;
     background-image: none;
     background-color: @metro-surface-0;
-    border: 1px solid @metro-border;
+    border: none;
+    border-bottom: 1px solid @metro-border;
     border-radius: 0px;
     color: @metro-fg-primary;
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
-    padding: 6px 10px;
-}
-
-.web-palette-entry:focus {
-    border-color: @metro-accent;
+    font-size: 13px;
+    min-height: 36px;
+    padding: 6px 12px;
 }
 
 .web-palette-list {
-    background-color: @metro-surface-0;
-    border: 1px solid @metro-border;
+    background-color: @metro-surface-3;
 }
 
 .web-palette-list row {
     background: none;
     background-image: none;
     background-color: transparent;
-    border-bottom: 1px solid @metro-surface-2;
-    padding: 6px 10px;
+    border-bottom: 1px solid @metro-border-subtle;
+    padding: 7px 12px;
 }
 
 .web-palette-list row:selected,
 .web-palette-list row:hover {
+    background: none;
+    background-image: none;
     background-color: alpha(@metro-accent, 0.22);
 }

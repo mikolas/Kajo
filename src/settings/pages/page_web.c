@@ -10,10 +10,10 @@ static const char *const WEB_TOPBAR_LABELS[]     = { "VISIBLE", "AUTOHIDE", NULL
 static const char *const WEB_NEWTAB_LABELS[]     = { "START", "BLANK", "CUSTOM", NULL };
 static const char *const WEB_HW_LABELS[]         = { "ALWAYS", "AUTO", "NEVER", NULL };
 static const char *const WEB_COOKIE_LABELS[]     = { "NO 3RD", "ALWAYS", "NEVER", NULL };
-static const char *const WEB_AUTOPLAY_LABELS[]   = { "MUTED", "DENY", "ALLOW", NULL };
-static const char *const WEB_SEARCH_LABELS[]     = { "DDG", "KAGI", "GOOGLE", "STARTPAGE", "CUSTOM", NULL };
-static const char *const WEB_UA_LABELS[]         = { "DEFAULT", "LINUX", "CUSTOM", NULL };
-static const char *const WEB_SCHEME_LABELS[]     = { "DARK", "LIGHT", "FOLLOW", NULL };
+static const char *const WEB_AUTOPLAY_LABELS[]   = { "MUTED", "ALLOW", "DENY", NULL };
+static const char *const WEB_SEARCH_LABELS[]     = { "DDG", "KAGI", "STARTPAGE", "BRAVE", "GOOGLE", "CUSTOM", NULL };
+static const char *const WEB_UA_LABELS[]         = { "DEFAULT", "SAFARI", "CHROME", "CUSTOM", NULL };
+static const char *const WEB_SCHEME_LABELS[]     = { "FOLLOW", "DARK", "LIGHT", NULL };
 static const char *const WEB_DL_FMT_LABELS[]     = { "BEST MP4", "1080P", "720P", "OPUS", "MP3", NULL };
 
 typedef struct _SettingsPageWeb {
@@ -145,11 +145,11 @@ collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
     out->sync_settings        = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_settings));
     out->sync_e2ee_enabled    = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_e2ee));
 
-    out->search_engine        = (KajoWebSearchEngine)MIN(gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_search)), 4u);
+    out->search_engine        = (KajoWebSearchEngine)MIN(gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_search)), 5u);
     g_free(out->search_custom_url);
     out->search_custom_url    = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_search_url)));
     out->default_zoom_pct     = CLAMP((int)(gtk_range_get_value(GTK_RANGE(self->scale_zoom)) + 0.5), 50, 200);
-    out->user_agent_preset    = (KajoWebUaPreset)MIN(segmented_group_get_selected(self->seg_ua), 2u);
+    out->user_agent_preset    = (KajoWebUaPreset)MIN(segmented_group_get_selected(self->seg_ua), 3u);
     g_free(out->user_agent_custom);
     out->user_agent_custom    = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_ua_custom)));
 
@@ -238,7 +238,7 @@ update_web_telemetry_and_dirty(SettingsPageWeb *self)
     const gchar *hw_str   = (cur->hardware_acceleration == KAJO_WEB_HW_ALWAYS) ? "GPU ALWAYS"
                           : (cur->hardware_acceleration == KAJO_WEB_HW_ON_DEMAND) ? "ON DEMAND" : "⚠ SW ONLY";
     const gchar *ab_str   = cur->adblock_enabled ? "SHIELD ON" : "SHIELD OFF";
-    const gchar *srch_str = WEB_SEARCH_LABELS[MIN((guint)cur->search_engine, 4u)];
+    const gchar *srch_str = WEB_SEARCH_LABELS[MIN((guint)cur->search_engine, 5u)];
 
     settings_page_set_counter(page, 0, "RAIL", rail_str, "accent");
     settings_page_set_counter(page, 1, "GPU", hw_str,
@@ -391,7 +391,7 @@ build_page_web(void)
     g_signal_connect(self->scale_rail_w, "value-changed", G_CALLBACK(on_web_scale_changed), self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("↔", "Expanded Rail Width", "Width of expanded vertical tab drawer", rw_wrap));
 
-    GtkWidget *rd_wrap = create_scale_with_badge(0, 300, 10, 80, "%.0fMS", &self->scale_reveal_ms, &self->lbl_reveal_ms);
+    GtkWidget *rd_wrap = create_scale_with_badge(0, 300, 5, 35, "%.0fMS", &self->scale_reveal_ms, &self->lbl_reveal_ms);
     g_signal_connect(self->scale_reveal_ms, "value-changed", G_CALLBACK(on_web_scale_changed), self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("⏱", "Autohide Reveal Delay", "Hover dwell before rail slides open", rd_wrap));
 
