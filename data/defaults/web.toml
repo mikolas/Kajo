@@ -1,0 +1,60 @@
+# web.toml — Kajo Web Browser Defaults (~/.config/kajo/web.toml)
+
+# === Vertical Tab Rail & Minimalist Chrome ===
+rail_mode                 = "autohide"
+rail_side                 = "left"
+rail_width_px             = 240
+rail_reveal_delay_ms      = 80
+rail_hide_delay_ms        = 220
+top_bar_mode              = "always"
+show_tab_domains          = true
+new_tab_page              = "dashboard"
+new_tab_custom_url        = ""
+restore_session           = true
+
+# === Hardware Acceleration & Performance ===
+hardware_acceleration     = "always"
+enable_webgl              = true
+gpu_process_webgl         = true
+smooth_scrolling          = true
+suspend_idle_min          = 30
+memory_limit_mb           = 2048
+
+# === Privacy, Content Blocking & Media ===
+adblock_enabled           = true
+adblock_custom_rules_path = ""
+user_scripts_enabled      = false
+itp_enabled               = true
+cookie_policy             = "no-third-party"
+https_only                = true
+autoplay_policy           = "allow-without-sound"
+enable_webrtc             = true
+dns_prefetch              = true
+media_download_format     = "best-mp4"
+
+# === Search & Navigation ===
+search_engine             = "duckduckgo"
+search_custom_url         = ""
+default_zoom_pct          = 100
+user_agent_preset         = "default"
+user_agent_custom         = ""
+
+# === Appearance, Fonts & Developer Tools ===
+color_scheme              = "follow-kajo"
+default_font_size_px      = 16
+mono_font_size_px         = 13
+min_font_size_px          = 9
+download_dir              = ""
+ask_download_location     = false
+developer_extras          = true
+
+# === Profiles & Google Drive AppData Sync ===
+show_picker_on_startup    = true
+profile_border_accent     = true
+sync_oauth_client_id      = ""
+sync_oauth_client_secret  = ""
+sync_bookmarks            = true
+sync_history              = true
+sync_tabs_and_groups      = true
+sync_settings             = true
+sync_e2ee_enabled         = false

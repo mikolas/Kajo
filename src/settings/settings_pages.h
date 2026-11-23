@@ -16,6 +16,7 @@ GtkWidget *build_page_notifications(void);
 GtkWidget *build_page_theme(void);
 GtkWidget *build_page_ide(void);
 GtkWidget *build_page_mod(void);
+GtkWidget *build_page_web(void);
 GtkWidget *build_page_about(void);
 
 G_END_DECLS

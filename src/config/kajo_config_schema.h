@@ -65,6 +65,7 @@ const KajoDomainSchema *kajo_schema_get_shell(void);
 const KajoDomainSchema *kajo_schema_get_ide(void);
 const KajoDomainSchema *kajo_schema_get_files(void);
 const KajoDomainSchema *kajo_schema_get_mod(void);
+const KajoDomainSchema *kajo_schema_get_web(void);
 const KajoDomainSchema *kajo_config_get_domain_schema(KajoConfigDomain domain);
 
 /* Generic Schema Engine Operations */

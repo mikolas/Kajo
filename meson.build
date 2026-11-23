@@ -48,6 +48,11 @@ stilview_dep = dependency('libstilview')
 gme_dep = dependency('libgme')
 openmpt_dep = dependency('libopenmpt')
 xmp_dep = dependency('libxmp')
+webkitgtk_dep = dependency('webkitgtk-6.0', version: '>= 2.48')
+soup3_dep = dependency('libsoup-3.0')
+sqlite3_dep = dependency('sqlite3')
+secret_dep = dependency('libsecret-1')
+gcrypt_dep = dependency('libgcrypt')
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -201,6 +206,7 @@ kajo_config_sources = files(
   'src/config/schemas/schema_ide.c',
   'src/config/schemas/schema_files.c',
   'src/config/schemas/schema_mod.c',
+  'src/config/schemas/schema_web.c',
 )
 
 # Sources shared by every executable are compiled once instead of once per binary.
@@ -263,6 +269,7 @@ settings_sources = files(
   'src/settings/pages/page_theme.c',
   'src/settings/pages/page_ide.c',
   'src/settings/pages/page_mod.c',
+  'src/settings/pages/page_web.c',
   'src/settings/pages/page_about.c',
   'src/dbus_helpers.c',
   'src/hardware/hw_caps.c',
@@ -391,7 +398,50 @@ executable(
 install_data(
   'data/org.kajo.Player.desktop',
   'data/org.kajo.Mod.desktop',
+  'data/org.kajo.Web.desktop',
   install_dir: get_option('datadir') / 'applications',
+)
+
+web_core_sources = files(
+  'src/web/web_model.c',
+  'src/web/web_sync_merge.c',
+  'src/web/web_media_sniff_core.c',
+)
+
+web_sources = files(
+  'src/web/main.c',
+  'src/web/web_profiles.c',
+  'src/web/web_storage.c',
+  'src/web/web_adblock.c',
+  'src/web/web_schemes.c',
+  'src/web/web_sync.c',
+  'src/web/web_downloads.c',
+  'src/web/web_tab.c',
+  'src/web/web_tab_rail.c',
+  'src/web/web_picker.c',
+  'src/web/web_palette.c',
+  'src/web/web_window.c',
+  'src/web/web_window_popovers.c',
+) + web_core_sources
+
+executable(
+  'kajo-web',
+  web_sources,
+  shell_resources,
+  dependencies: [
+    gtk4_dep,
+    webkitgtk_dep,
+    soup3_dep,
+    sqlite3_dep,
+    secret_dep,
+    gcrypt_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    m_dep,
+  ],
+  link_with: kajo_core,
+  install: true,
 )
 
 mod_engine_sources = files(
@@ -626,6 +676,7 @@ install_data(
   'data/icons/kajo-files.svg',
   'data/icons/kajo-player.svg',
   'data/icons/kajo-mod.svg',
+  'data/icons/kajo-web.svg',
   'data/icons/kajo-settings.svg',
   'data/icons/kajo-greeter.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
@@ -948,6 +999,14 @@ test_mod_router_exe = executable(
   build_by_default: false,
 )
 test('mod-router', test_mod_router_exe)
+
+test_web_model_exe = executable(
+  'test-web-model',
+  files('tests/test_web_model.c') + web_core_sources + kajo_config_sources,
+  dependencies: [gio_dep, json_glib_dep, gcrypt_dep, m_dep],
+  build_by_default: false,
+)
+test('web-model', test_web_model_exe)
 
 # ─── kajo-comp (compositor) ───────────────────────────────────────────────
 # Pure core: no wlroots, Vulkan or GLib headers (spec §7.2.4). Built with the

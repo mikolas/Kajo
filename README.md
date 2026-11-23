@@ -25,7 +25,7 @@ Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. *
 
 ## 🧩 The Kajo Application Suite
 
-The repository builds and installs **eight integrated native executables** (plus `kajo-session` and `kajo-greeter-session` wrappers):
+The repository builds and installs **nine integrated native executables** (plus `kajo-session` and `kajo-greeter-session` wrappers):
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
@@ -34,7 +34,8 @@ The repository builds and installs **eight integrated native executables** (plus
 | **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager & FileChooser Portal** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, live network discovery, Wayland Drag-and-Drop, native `FileChooser` portal (`--portal`), and `Space` Quick Look preview. |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
 | **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Player** (`libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`) with hardware filter controls, HVSC lookup, and 60 FPS scope/FFT. |
-| **`kajo-settings`** | `org.kajo.Settings` | **12-Page System & Suite Control Deck** managing displays, Wi-Fi, Bluetooth, PipeWire audio, Metro themes (including opt-in revertible GTK/Qt external app theming), panel/widgets, compositor layout, IDE/Mod preferences, and hardware telemetry. |
+| **`kajo-web`** | `org.kajo.Web` | **Hardware-Accelerated Aero + Metro Web Browser** (`WebKitGTK 6.0` + `libsoup3` + `sqlite3` + `libsecret` + `libgcrypt`) with autohide/compact/pinned vertical tab rail, isolated multi-profiles + startup profile picker, free per-profile Google Drive AppData sync (with optional AES-256-GCM E2EE), native content blocker, and passive HLS/DASH/video stream sniffer (`ffmpeg` + optional `yt-dlp`). |
+| **`kajo-settings`** | `org.kajo.Settings` | **13-Page System & Suite Control Deck** managing displays, Wi-Fi, Bluetooth, PipeWire audio, Metro themes (including opt-in revertible GTK/Qt external app theming), panel/widgets, compositor layout, IDE/Mod/Web preferences, and hardware telemetry. |
 | **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell, Settings Portal & Hardware Daemon** providing the status panel (22 widgets), app launcher, OSDs, virtual touch keyboard (`ShellOSK`), notifications, `org.freedesktop.impl.portal.Settings`, screen saver, and PAM session lock. |
 | **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting `kajo-comp --greeter-mode`, `niri`, `cage`, and desktop `--test` preview mode. |
 
@@ -76,8 +77,16 @@ The repository builds and installs **eight integrated native executables** (plus
 - **5-Tier Retro Audio Router**: Priority dispatch across **`libuade`** (cycle-exact Amiga 68000 + Paula BLEP for 150+ formats), **`libsidplayfp`/`reSIDfp`** (C64 6581/8580 SID + HVSC `Songlengths.md5` & `STIL.txt`), **`libgme`** (console chiptunes), **`libopenmpt`**, and **`libxmp`**.
 - **Hardware DSP & 60 FPS Telemetry**: Live Paula `A500`/`A1200` & LED filter switches, SID chip selector, stereo crossfeed, 4-voice Mute/Solo, `$D400` SID register / sample inspector, `.lha`/`.zip` bundle extraction, and a 60 FPS stereo oscilloscope + 16-band FFT analyzer.
 
+### 🌐 Kajo Web (`kajo-web`)
+> 📖 **Specification & Interactive Prototypes**: [`docs/spec_kajo_web.md`](docs/spec_kajo_web.md) • [`docs/kajo-web-mockup.html`](docs/kajo-web-mockup.html) • [`docs/kajo-web-storyboard.html`](docs/kajo-web-storyboard.html)
+
+- **Autohide Vertical Tab Rail & Zero-Reflow Chrome**: `34px` Aero + Metro top chrome bar with omnibar (`!g`, `!ddg`, `!w`, `!gh` bangs), `4px` `rgba(0,0,0,0.01)` edge trigger strip with `2px` tab ticks, real `80ms`/`220ms` GLib reveal/hide timers (plus `compact` and `pinned` modes), pinned favicon tiles, `Ctrl+Shift+T` undo stack, `Ctrl+K` command palette, and idle tab suspension (`WebKitWebViewSessionState`).
+- **Hardware Acceleration by Default**: Uses WebKitGTK 6.0 `WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS` (Skia 2D + Skia web-process compositor + Wayland DMA-BUF, WebGL GPU process), `kajo://gpu` diagnostics, and a visible `[ ⚠ SW RENDER ]` badge whenever disabled (`--no-hw-accel` or `hardware_acceleration = "never"`).
+- **Multiple Profiles & Free Google Drive AppData Sync**: Isolated `WebKitNetworkSession` profiles (`profiles.toml`), frameless `760×480` Startup Profile Picker (`--profile-picker`, `1`–`9` launch), ephemeral Guest/Private windows, and optional per-profile PKCE OAuth 2.0 `drive.appdata` sync (`libsecret` token storage, UUID/tombstone CRDT bookmark merge, optional `AES-256-GCM` E2EE via `libgcrypt`).
+- **Content Blocker & VDH-Style Media Downloader**: Native `WebKitUserContentFilterStore` bytecode ad/tracker blocker with honest `[ 🛡 ON ]`/`[ 🛡 OFF ]` shield, opt-in `~/.config/kajo/web/scripts/*.{js,css}`, passive `.m3u8`/`.mpd`/progressive video stream sniffer (`ffmpeg` lossless remux with profile cookies/Referer), optional `yt-dlp` integration, and direct `▶ OPEN IN KAJO PLAYER` / `📁 KAJO FILES` handoff.
+
 ### ⚙️ Kajo Settings (`kajo-settings`)
-- **12 Live System & Suite Pages**: Modular control deck (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `niri`, `about`) with responsive 3-tier column reflow and zero mock data.
+- **13 Live System & Suite Pages**: Modular control deck (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `web`, `niri`, `about`) with responsive 3-tier column reflow and zero mock data.
 - **Dual-Compositor & Live Theme Sync**: Compositor-agnostic **Compositor & Effects** page synchronizing display modes/scale/VRR, layout/border geometry, glass/shadow/dim optical knobs, and window transition presets across both `kajo-comp` (`comp.toml` / `outputs.toml`) and Niri (`config.kdl`), plus live `@metro-accent`, surface/glass preset, and typography hot-reload across all running Kajo apps and compositor borders.
 - **Opt-In Revertible External App Theming (`Theme` → Card 5)**: Optionally exports Kajo's active accent and dark surface palette to external GTK3, GTK4/libadwaita, and Qt 6 (`qt6ct`) apps, snapshotting pre-Kajo user configs and GSettings into `~/.config/kajo/external-theme-backup.json` for bit-exact 1-click restoration (`↺ RESTORE ORIGINAL DEFAULTS`).
 
@@ -106,6 +115,7 @@ The repository builds and installs **eight integrated native executables** (plus
 | **[`docs/kajo-ide-strip-mockup.html`](docs/kajo-ide-strip-mockup.html)** | Interactive HTML/CSS prototype for **`kajo-ide`** Code Strip (`60/25/15`, peekish tiles, Bezier bridges, Zen, Bird's-Eye Overview, Trails). |
 | **[`docs/kajo-ide-strip-storyboard.html`](docs/kajo-ide-strip-storyboard.html)** | Interactive 7-scenario workflow storyboard for **`kajo-ide`** Code Strip navigation, magnetic resync, promotion, and lens switching. |
 | **[`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)** | Architecture specification for **`kajo-mod`** (5-tier audio priority router, DSP pipeline, column reflow). |
+| **[`docs/spec_kajo_web.md`](docs/spec_kajo_web.md)** | Architecture specification for **`kajo-web`** (autohide vertical rail, GPU pipeline, profiles, Drive AppData sync, content blocker, media sniffer). |
 | **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
 | **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
@@ -122,6 +132,7 @@ sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-pro
     libdrm seatd libdisplay-info libliftoff lcms2 pixman mesa vulkan-headers glslang hwdata \
     libxcb xcb-util-wm xcb-util-renderutil xcb-util-errors \
     xorg-xwayland json-glib glib2 libpulse pam poppler-glib libarchive mpv \
+    webkitgtk-6.0 libsoup3 sqlite libsecret libgcrypt ffmpeg \
     libsidplayfp libgme libopenmpt libxmp gvfs gvfs-smb udisks2 blueprint-compiler meson ninja
 paru -S --needed uade bencodetools
 ```
@@ -145,7 +156,7 @@ sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
 For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server` (language server) and `vasmm68k_mot` from the [vasm](http://sun.hasenbraten.de/vasm/) distribution (build task and diagnostics) must be on `PATH`; both are optional.
 
 ### 2. Build, Verify & Install (`~/.local`)
-By default, `meson.build` configures `prefix=~/.local`, installing all eight binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
+By default, `meson.build` configures `prefix=~/.local`, installing all nine binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
 
 ```bash
 git clone --recursive https://github.com/mikolas/Kajo.git   # existing clones: git submodule update --init

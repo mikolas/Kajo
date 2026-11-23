@@ -31,6 +31,7 @@ struct _KajoConfigStore {
     const KajoIdeCfg   *ide_snap;
     const KajoFilesCfg *files_snap;
     const KajoModCfg   *mod_snap;
+    const KajoWebCfg   *web_snap;
 
     /* Directory monitors & debounce state */
     GFileMonitor       *base_monitor;
@@ -332,6 +333,28 @@ kajo_config_store_reload(KajoConfigStore *store, KajoConfigDomain domains)
         }
     }
 
+    if (domains & KAJO_CONFIG_DOMAIN_WEB) {
+        const KajoDomainSchema *s = kajo_schema_get_web();
+        const KajoWebCfg *new_snap = (const KajoWebCfg *)build_effective_rc_snapshot(store, s, store->web_snap == NULL);
+        const KajoWebCfg *old_snap = NULL;
+
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->web_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->web_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_WEB;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
+
+            if (old_snap) kajo_web_cfg_unref(old_snap);
+            if (new_snap) kajo_web_cfg_unref(new_snap);
+        }
+    }
+
     if (changed_mask != 0) {
         notify_subscribers(store, changed_mask);
     }
@@ -383,6 +406,8 @@ match_base_domain_gfile(GFile *f)
         return KAJO_CONFIG_DOMAIN_FILES;
     if (g_strcmp0(basename, KAJO_CFG_FILE_MOD) == 0)
         return KAJO_CONFIG_DOMAIN_MOD;
+    if (g_strcmp0(basename, KAJO_CFG_FILE_WEB) == 0)
+        return KAJO_CONFIG_DOMAIN_WEB;
     return 0;
 }
 
@@ -468,6 +493,7 @@ kajo_config_store_new_for_dir(const gchar *config_dir)
     store->ide_snap   = (const KajoIdeCfg *)build_effective_rc_snapshot(store, kajo_schema_get_ide(), TRUE);
     store->files_snap = (const KajoFilesCfg *)build_effective_rc_snapshot(store, kajo_schema_get_files(), TRUE);
     store->mod_snap   = (const KajoModCfg *)build_effective_rc_snapshot(store, kajo_schema_get_mod(), TRUE);
+    store->web_snap   = (const KajoWebCfg *)build_effective_rc_snapshot(store, kajo_schema_get_web(), TRUE);
 
     /* Attach GFileMonitors to config_dir and config_dir/conf.d */
     g_autoptr(GFile) base_gfile = g_file_new_for_path(store->config_dir);
@@ -522,6 +548,7 @@ kajo_config_store_destroy(KajoConfigStore *store)
     kajo_ide_cfg_unref(store->ide_snap);
     kajo_files_cfg_unref(store->files_snap);
     kajo_mod_cfg_unref(store->mod_snap);
+    kajo_web_cfg_unref(store->web_snap);
 
     g_free(store->config_dir);
     g_mutex_clear(&store->write_lock);
@@ -602,6 +629,17 @@ kajo_config_store_acquire_mod(KajoConfigStore *store)
         store = kajo_config_store_get_default();
     g_mutex_lock(&store->lock);
     const KajoModCfg *res = kajo_mod_cfg_ref(store->mod_snap);
+    g_mutex_unlock(&store->lock);
+    return res;
+}
+
+const KajoWebCfg *
+kajo_config_store_acquire_web(KajoConfigStore *store)
+{
+    if (!store)
+        store = kajo_config_store_get_default();
+    g_mutex_lock(&store->lock);
+    const KajoWebCfg *res = kajo_web_cfg_ref(store->web_snap);
     g_mutex_unlock(&store->lock);
     return res;
 }
@@ -799,6 +837,28 @@ kajo_config_store_update_mod(KajoConfigStore *store,
 {
     ModMutCtx ctx = { mutate_fn, user_data };
     return update_domain_generic(store, kajo_schema_get_mod(), mod_mutate_trampoline, &ctx, error);
+}
+
+typedef struct {
+    KajoWebMutateFn fn;
+    gpointer        ud;
+} WebMutCtx;
+
+static void
+web_mutate_trampoline(void *draft, gpointer ud)
+{
+    WebMutCtx *ctx = (WebMutCtx *)ud;
+    ctx->fn((KajoWebCfg *)draft, ctx->ud);
+}
+
+gboolean
+kajo_config_store_update_web(KajoConfigStore *store,
+                             KajoWebMutateFn  mutate_fn,
+                             gpointer         user_data,
+                             GError         **error)
+{
+    WebMutCtx ctx = { mutate_fn, user_data };
+    return update_domain_generic(store, kajo_schema_get_web(), web_mutate_trampoline, &ctx, error);
 }
 
 /* ─── Pub/Sub Subscription Management ─── */
