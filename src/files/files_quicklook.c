@@ -863,7 +863,10 @@ on_folder_preview_enum_ready(GPtrArray *items, GError *error, gpointer user_data
         GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
         gtk_widget_add_css_class(row, "widget-row-card");
 
-        GtkWidget *ic = gtk_image_new_from_icon_name(kajo_file_item_get_icon_name(it));
+        GIcon *gicon = kajo_file_item_get_gicon(it);
+        GtkWidget *ic = gicon
+            ? gtk_image_new_from_gicon(gicon)
+            : gtk_image_new_from_icon_name(kajo_file_item_get_icon_name(it));
         gtk_image_set_pixel_size(GTK_IMAGE(ic), 16);
 
         GtkWidget *nm = gtk_label_new(kajo_file_item_get_display_name(it));
@@ -871,7 +874,7 @@ on_folder_preview_enum_ready(GPtrArray *items, GError *error, gpointer user_data
         gtk_widget_set_hexpand(nm, TRUE);
         gtk_label_set_ellipsize(GTK_LABEL(nm), PANGO_ELLIPSIZE_END);
 
-        g_autofree char *sz = kajo_files_format_size(kajo_file_item_get_size(it), kajo_file_item_is_dir(it));
+        g_autofree char *sz = kajo_file_item_format_subtitle(it);
         GtkWidget *sz_lbl = gtk_label_new(sz);
         gtk_widget_add_css_class(sz_lbl, "shell-popover-subtitle");
 
@@ -891,11 +894,15 @@ populate_quicklook_info_card(KajoQuickLook *self, KajoFileItem *item)
     const char *disp = kajo_file_item_get_display_name(item);
     const char *ctype = kajo_file_item_get_content_type(item);
     gboolean is_dir = kajo_file_item_is_dir(item);
-    g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), is_dir);
+    g_autofree char *sz_str = kajo_file_item_format_subtitle(item);
     g_autofree char *mtime_str = kajo_files_format_mtime(kajo_file_item_get_mtime(item));
 
     gtk_stack_set_visible_child_name(GTK_STACK(self->ql_stack), "info");
-    gtk_image_set_from_icon_name(GTK_IMAGE(self->ql_info_icon), kajo_file_item_get_icon_name(item));
+    GIcon *ql_gicon = kajo_file_item_get_gicon(item);
+    if (ql_gicon)
+        gtk_image_set_from_gicon(GTK_IMAGE(self->ql_info_icon), ql_gicon);
+    else
+        gtk_image_set_from_icon_name(GTK_IMAGE(self->ql_info_icon), kajo_file_item_get_icon_name(item));
 
     g_autofree char *perms = kajo_files_format_permissions(
         kajo_file_item_get_unix_mode(item),
@@ -1216,14 +1223,18 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
             g_task_run_in_thread(task, insp_pdf_thumb_thread_cb);
         }
     } else {
-        gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
+        GIcon *insp_gicon = kajo_file_item_get_gicon(item);
+        if (insp_gicon)
+            gtk_image_set_from_gicon(GTK_IMAGE(self->insp_icon), insp_gicon);
+        else
+            gtk_image_set_from_icon_name(GTK_IMAGE(self->insp_icon), kajo_file_item_get_icon_name(item));
         gtk_stack_set_visible_child_name(GTK_STACK(self->insp_preview_stack), "icon");
     }
 
     gtk_label_set_text(GTK_LABEL(self->insp_title_lbl), kajo_file_item_get_display_name(item));
     gtk_label_set_text(GTK_LABEL(self->insp_type_badge), kajo_file_item_get_type_description(item));
 
-    g_autofree char *sz = kajo_files_format_size(kajo_file_item_get_size(item), kajo_file_item_is_dir(item));
+    g_autofree char *sz = kajo_file_item_format_subtitle(item);
     g_autofree char *mt = kajo_files_format_mtime(kajo_file_item_get_mtime(item));
     g_autofree char *pm = kajo_files_format_permissions(
         kajo_file_item_get_unix_mode(item),

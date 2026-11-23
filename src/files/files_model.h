@@ -33,6 +33,12 @@ KajoFileItem *kajo_file_item_new_manual(GFile *file,
                                         gboolean is_dir,
                                         gboolean is_hidden);
 
+KajoFileItem *kajo_file_item_new_network_location(const char *display_name,
+                                                  const char *target_uri,
+                                                  const char *type_description,
+                                                  const char *icon_name,
+                                                  GIcon      *gicon);
+
 GFile      *kajo_file_item_get_file(const KajoFileItem *self);
 const char *kajo_file_item_get_uri(const KajoFileItem *self);
 const char *kajo_file_item_get_target_uri(const KajoFileItem *self);
@@ -55,6 +61,7 @@ const char *kajo_file_item_get_trash_deletion_date(const KajoFileItem *self);
 
 /* Formatting & Comparison Utilities */
 char    *kajo_files_format_size(guint64 bytes, gboolean is_dir);
+char    *kajo_file_item_format_subtitle(const KajoFileItem *self);
 char    *kajo_files_format_permissions(guint32 mode, gboolean is_dir, gboolean is_symlink);
 char    *kajo_files_format_mtime(gint64 mtime_sec);
 gboolean kajo_files_is_text_or_code(const char *content_type, const char *filename);

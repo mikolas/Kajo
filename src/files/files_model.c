@@ -1,4 +1,5 @@
 #include "files_model.h"
+#include "files_network.h"
 #include <archive.h>
 #include <archive_entry.h>
 #include <string.h>
@@ -101,9 +102,12 @@ resolve_fallback_icon_name(const char *content_type, gboolean is_dir, gboolean i
 }
 
 static char *
-resolve_type_description(const char *content_type, gboolean is_dir, gboolean is_mountable)
+resolve_type_description(const char *content_type,
+                         gboolean is_dir,
+                         gboolean is_mountable,
+                         const char *uri)
 {
-    if (is_mountable) return g_strdup("Network Location");
+    if (is_mountable) return g_strdup(kajo_files_network_scheme_description(uri));
     if (is_dir) return g_strdup("Folder");
     if (!content_type || content_type[0] == '\0') return g_strdup("File");
 
@@ -122,11 +126,12 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
 
     KajoFileItem *self = g_object_new(KAJO_TYPE_FILE_ITEM, NULL);
 
-    const char *name = g_file_info_get_name(info);
-    if (!name) name = g_file_info_get_display_name(info);
+    const char *name = g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_NAME)
+        ? g_file_info_get_name(info) : NULL;
+    const char *disp = g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME)
+        ? g_file_info_get_display_name(info) : NULL;
+    if (!name) name = disp;
     if (!name) name = "unknown";
-
-    const char *disp = g_file_info_get_display_name(info);
     if (!disp || disp[0] == '\0') disp = name;
 
     self->name = g_strdup(name);
@@ -145,9 +150,13 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
 
     GFileType ftype = g_file_info_get_file_type(info);
     self->is_dir = (ftype == G_FILE_TYPE_DIRECTORY);
-    self->is_mountable = (ftype == G_FILE_TYPE_MOUNTABLE);
-    self->is_hidden = g_file_info_get_is_hidden(info) || (name[0] == '.');
-    self->is_symlink = g_file_info_get_is_symlink(info);
+    self->is_mountable = (ftype == G_FILE_TYPE_MOUNTABLE) ||
+                         (ftype == G_FILE_TYPE_SHORTCUT && self->target_uri != NULL);
+    gboolean attr_hidden = g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN)
+        ? g_file_info_get_is_hidden(info) : FALSE;
+    self->is_hidden = attr_hidden || (name[0] == '.');
+    self->is_symlink = g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_IS_SYMLINK)
+        ? g_file_info_get_is_symlink(info) : FALSE;
 
     const char *ctype = g_file_info_get_attribute_string(info, G_FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE);
     if (!ctype && g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_CONTENT_TYPE))
@@ -165,7 +174,8 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
     }
     self->icon_name = resolve_fallback_icon_name(self->content_type, self->is_dir, self->is_mountable);
 
-    self->size = (guint64)g_file_info_get_size(info);
+    self->size = g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_SIZE)
+        ? (guint64)g_file_info_get_size(info) : 0;
 
     if (g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_TIME_MODIFIED)) {
         self->mtime_sec = (gint64)g_file_info_get_attribute_uint64(info, G_FILE_ATTRIBUTE_TIME_MODIFIED);
@@ -179,7 +189,7 @@ kajo_file_item_new_from_info(GFile *parent_dir, GFileInfo *info)
     else
         self->unix_mode = self->is_dir ? 0755 : 0644;
 
-    if (self->is_symlink) {
+    if (self->is_symlink && g_file_info_has_attribute(info, G_FILE_ATTRIBUTE_STANDARD_SYMLINK_TARGET)) {
         const char *sym = g_file_info_get_symlink_target(info);
         if (sym) self->symlink_target = g_strdup(sym);
     }
@@ -226,13 +236,50 @@ kajo_file_item_new_manual(GFile *file,
         self->display_folded ? self->display_folded : self->display_name, -1
     );
     self->content_type = g_strdup(content_type ? content_type : (is_dir ? "inode/directory" : "application/octet-stream"));
-    self->type_description = resolve_type_description(self->content_type, is_dir, FALSE);
+    self->type_description = resolve_type_description(self->content_type, is_dir, FALSE, self->uri);
     self->icon_name = resolve_fallback_icon_name(self->content_type, is_dir, FALSE);
     self->size = size;
     self->mtime_sec = mtime_sec;
     self->unix_mode = unix_mode;
     self->is_dir = is_dir;
     self->is_hidden = is_hidden;
+
+    return self;
+}
+
+KajoFileItem *
+kajo_file_item_new_network_location(const char *display_name,
+                                    const char *target_uri,
+                                    const char *type_description,
+                                    const char *icon_name,
+                                    GIcon      *gicon)
+{
+    g_return_val_if_fail(target_uri != NULL && target_uri[0] != '\0', NULL);
+
+    KajoFileItem *self = g_object_new(KAJO_TYPE_FILE_ITEM, NULL);
+
+    const char *label = (display_name && display_name[0] != '\0') ? display_name : target_uri;
+    self->file = g_file_new_for_uri(target_uri);
+    self->uri = g_strdup(target_uri);
+    self->target_uri = g_strdup(target_uri);
+    self->name = g_strdup(label);
+    self->display_name = g_strdup(label);
+    self->name_folded = g_utf8_casefold(self->name, -1);
+    self->display_folded = g_utf8_casefold(self->display_name, -1);
+    self->collate_key = g_utf8_collate_key_for_filename(
+        self->display_folded ? self->display_folded : self->display_name, -1
+    );
+    self->content_type = g_strdup("inode/directory");
+    self->type_description = (type_description && type_description[0] != '\0')
+        ? g_strdup(type_description)
+        : g_strdup(kajo_files_network_scheme_description(target_uri));
+    self->icon_name = g_strdup((icon_name && icon_name[0] != '\0') ? icon_name : "network-server-symbolic");
+    if (gicon)
+        self->gicon = g_object_ref(gicon);
+    self->is_dir = FALSE;
+    self->is_mountable = TRUE;
+    self->is_hidden = FALSE;
+    self->unix_mode = 0755;
 
     return self;
 }
@@ -250,7 +297,8 @@ kajo_file_item_get_type_description(const KajoFileItem *self)
     if (!self->type_description) {
         KajoFileItem *mutable_self = (KajoFileItem *)self;
         mutable_self->type_description = resolve_type_description(
-            self->content_type, self->is_dir, self->is_mountable
+            self->content_type, self->is_dir, self->is_mountable,
+            self->target_uri ? self->target_uri : self->uri
         );
     }
     return self->type_description ? self->type_description : "";
@@ -280,6 +328,18 @@ kajo_files_format_size(guint64 bytes, gboolean is_dir)
     if (bytes < 1024ULL * 1024ULL * 1024ULL)
         return g_strdup_printf("%.1f MB", (double)bytes / (1024.0 * 1024.0));
     return g_strdup_printf("%.2f GB", (double)bytes / (1024.0 * 1024.0 * 1024.0));
+}
+
+char *
+kajo_file_item_format_subtitle(const KajoFileItem *self)
+{
+    if (!self)
+        return g_strdup("");
+    if (self->is_mountable) {
+        const char *u = self->target_uri ? self->target_uri : self->uri;
+        return g_strdup(kajo_files_network_scheme_label(u));
+    }
+    return kajo_files_format_size(self->size, self->is_dir);
 }
 
 char *
@@ -646,8 +706,10 @@ kajo_file_item_compare_full(const KajoFileItem *a,
     if (!a) return -1;
     if (!b) return 1;
 
-    if (folders_first && a->is_dir != b->is_dir)
-        return a->is_dir ? -1 : 1;
+    gboolean a_folderish = a->is_dir || a->is_mountable;
+    gboolean b_folderish = b->is_dir || b->is_mountable;
+    if (folders_first && a_folderish != b_folderish)
+        return a_folderish ? -1 : 1;
 
     int cmp = 0;
     switch (field) {
@@ -870,6 +932,7 @@ kajo_files_match_selection_uris(GPtrArray *visible_items, GPtrArray *selected_ur
     G_FILE_ATTRIBUTE_STANDARD_DISPLAY_NAME "," \
     G_FILE_ATTRIBUTE_STANDARD_TYPE "," \
     G_FILE_ATTRIBUTE_STANDARD_SIZE "," \
+    G_FILE_ATTRIBUTE_STANDARD_ICON "," \
     G_FILE_ATTRIBUTE_STANDARD_FAST_CONTENT_TYPE "," \
     G_FILE_ATTRIBUTE_STANDARD_IS_HIDDEN "," \
     G_FILE_ATTRIBUTE_STANDARD_IS_SYMLINK "," \
@@ -883,6 +946,7 @@ kajo_files_match_selection_uris(GPtrArray *visible_items, GPtrArray *selected_ur
 
 typedef struct {
     GFile *dir;
+    GPtrArray *mounted_snapshot;
     KajoDirEnumCallback callback;
     gpointer user_data;
 } EnumTaskData;
@@ -892,6 +956,7 @@ enum_task_data_free(EnumTaskData *d)
 {
     if (!d) return;
     g_clear_object(&d->dir);
+    g_clear_pointer(&d->mounted_snapshot, g_ptr_array_unref);
     g_free(d);
 }
 
@@ -1182,6 +1247,18 @@ enumerate_thread_cb(GTask *task,
     EnumTaskData *d = task_data;
     GError *error = NULL;
 
+    if (d->dir && g_file_has_uri_scheme(d->dir, "network")) {
+        GPtrArray *net_items = kajo_files_network_enumerate_sync(
+            d->dir, d->mounted_snapshot, cancellable, &error
+        );
+        if (!net_items) {
+            g_task_return_error(task, error);
+            return;
+        }
+        g_task_return_pointer(task, net_items, (GDestroyNotify)g_ptr_array_unref);
+        return;
+    }
+
     g_autofree char *dir_uri = d->dir ? g_file_get_uri(d->dir) : NULL;
     g_autofree char *arch_path = NULL;
     g_autofree char *inner_path = NULL;
@@ -1267,6 +1344,8 @@ kajo_files_enumerate_async(GFile *dir,
 
     EnumTaskData *d = g_new0(EnumTaskData, 1);
     d->dir = g_object_ref(dir);
+    if (g_file_has_uri_scheme(dir, "network"))
+        d->mounted_snapshot = kajo_files_network_snapshot_active_mounts();
     d->callback = callback;
     d->user_data = user_data;
 

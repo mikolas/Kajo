@@ -10,6 +10,7 @@
 #include <utime.h>
 #include <stdlib.h>
 #include "../src/files/files_model.h"
+#include "../src/files/files_network.h"
 #include "../src/files/files_ops.h"
 #include "../src/files/files_diskimage.h"
 
@@ -1193,6 +1194,114 @@ test_diskimage_reply_helpers(void)
     g_assert_null(kajo_diskimage_first_mount_point(NULL, "/x"));
 }
 
+static void
+test_network_uri_and_shortcut_items(void)
+{
+    /* 1. G_FILE_TYPE_SHORTCUT with target_uri becomes mountable & keeps GIcon */
+    g_autoptr(GFile) net_root = g_file_new_for_uri("network:///");
+    g_autoptr(GFileInfo) sc_info = g_file_info_new();
+    g_file_info_set_name(sc_info, "dnssd-domain-MEDIASERVER._smb._tcp");
+    g_file_info_set_display_name(sc_info, "MEDIASERVER");
+    g_file_info_set_file_type(sc_info, G_FILE_TYPE_SHORTCUT);
+    g_file_info_set_attribute_string(sc_info, G_FILE_ATTRIBUTE_STANDARD_TARGET_URI, "smb://192.168.0.154/");
+    g_autoptr(GIcon) themed = g_themed_icon_new("network-server-symbolic");
+    g_file_info_set_icon(sc_info, themed);
+
+    g_autoptr(KajoFileItem) sc_item = kajo_file_item_new_from_info(net_root, sc_info);
+    g_assert_nonnull(sc_item);
+    g_assert_true(kajo_file_item_is_mountable(sc_item));
+    g_assert_false(kajo_file_item_is_dir(sc_item));
+    g_assert_cmpstr(kajo_file_item_get_target_uri(sc_item), ==, "smb://192.168.0.154/");
+    g_assert_nonnull(kajo_file_item_get_gicon(sc_item));
+    g_assert_cmpstr(kajo_file_item_get_type_description(sc_item), ==, "SMB Network Location");
+    g_autofree char *sub_smb = kajo_file_item_format_subtitle(sc_item);
+    g_assert_cmpstr(sub_smb, ==, "[ SMB ]");
+
+    /* Shortcut without target_uri stays non-mountable */
+    g_autoptr(GFileInfo) bare_sc = g_file_info_new();
+    g_file_info_set_name(bare_sc, "orphan");
+    g_file_info_set_file_type(bare_sc, G_FILE_TYPE_SHORTCUT);
+    g_autoptr(KajoFileItem) bare_item = kajo_file_item_new_from_info(net_root, bare_sc);
+    g_assert_nonnull(bare_item);
+    g_assert_false(kajo_file_item_is_mountable(bare_item));
+
+    /* 2. Remote scheme detection, labels, and URI canonicalization */
+    g_assert_true(kajo_files_network_is_remote_uri("smb://192.168.0.154/"));
+    g_assert_true(kajo_files_network_is_remote_uri("sftp://user@nas.local/data"));
+    g_assert_true(kajo_files_network_is_remote_uri("davs://cloud.example/remote.php/dav"));
+    g_assert_false(kajo_files_network_is_remote_uri("file:///home/user"));
+    g_assert_false(kajo_files_network_is_remote_uri("network:///"));
+    g_assert_false(kajo_files_network_is_remote_uri("trash:///"));
+
+    g_assert_cmpstr(kajo_files_network_scheme_label("smb://192.168.0.154/"), ==, "[ SMB ]");
+    g_assert_cmpstr(kajo_files_network_scheme_label("sftp://host/"), ==, "[ SFTP ]");
+    g_assert_cmpstr(kajo_files_network_scheme_label("davs://host/"), ==, "[ WEBDAV ]");
+    g_assert_cmpstr(kajo_files_network_scheme_label("ftp://host/"), ==, "[ FTP ]");
+    g_assert_cmpstr(kajo_files_network_scheme_label("nfs://host/"), ==, "[ NFS ]");
+
+    g_autofree char *c1 = kajo_files_network_canonicalize_uri("SMB://MEDIASERVER.LOCAL/");
+    g_autofree char *c2 = kajo_files_network_canonicalize_uri("smb://mediaserver.local");
+    g_assert_cmpstr(c1, ==, c2);
+    g_assert_cmpstr(c1, ==, "smb://mediaserver.local");
+
+    /* 3. Avahi DNS-SD service URI builder */
+    g_autofree char *u_smb = kajo_files_network_build_service_uri("_smb._tcp", "mediaserver.local", "192.168.0.154", 445, NULL, NULL);
+    g_assert_cmpstr(u_smb, ==, "smb://192.168.0.154/");
+
+    g_autofree char *u_smb_port = kajo_files_network_build_service_uri("_smb._tcp", "mediaserver.local", "192.168.0.154", 1445, NULL, NULL);
+    g_assert_cmpstr(u_smb_port, ==, "smb://192.168.0.154:1445/");
+
+    g_autofree char *u_smb_v6 = kajo_files_network_build_service_uri("_smb._tcp", "mediaserver.local", "fd5d::1", 445, NULL, NULL);
+    g_assert_cmpstr(u_smb_v6, ==, "smb://[fd5d::1]/");
+
+    g_autofree char *u_sftp = kajo_files_network_build_service_uri("_sftp-ssh._tcp", "nas.local", NULL, 2222, "srv/files", "alice");
+    g_assert_cmpstr(u_sftp, ==, "sftp://alice@nas.local:2222/srv/files");
+
+    g_autofree char *u_davs = kajo_files_network_build_service_uri("_webdavs._tcp", "cloud.local", "10.0.0.5", 443, "/remote.php/dav", NULL);
+    g_assert_cmpstr(u_davs, ==, "davs://10.0.0.5/remote.php/dav");
+
+    g_assert_null(kajo_files_network_build_service_uri("_airplay._tcp", "tv.local", "10.0.0.9", 7000, NULL, NULL));
+
+    /* 4. XBEL saved servers persistence and deduplication */
+    g_autoptr(GError) err = NULL;
+    g_autofree char *tmp_dir = g_dir_make_tmp("kajo-net-servers-XXXXXX", &err);
+    g_assert_no_error(err);
+    g_autofree char *servers_path = g_build_filename(tmp_dir, "gtk-4.0", "servers", NULL);
+
+    g_assert_true(kajo_files_network_record_server_to_file(servers_path, "smb://192.168.0.154/", "Windows shares on 192.168.0.154", &err));
+    g_assert_no_error(err);
+    g_assert_true(kajo_files_network_record_server_to_file(servers_path, "sftp://nas.local/media", NULL, &err));
+    g_assert_no_error(err);
+    g_assert_false(kajo_files_network_record_server_to_file(servers_path, "file:///tmp", "Local", &err));
+    g_assert_nonnull(err);
+    g_clear_error(&err);
+
+    g_autoptr(GPtrArray) loaded = g_ptr_array_new_with_free_func(g_object_unref);
+    g_autoptr(GHashTable) seen = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    /* Pre-seed SMB server without trailing slash to test canonical deduplication */
+    g_hash_table_add(seen, kajo_files_network_canonicalize_uri("smb://192.168.0.154"));
+
+    kajo_files_network_load_saved_servers_from_file(servers_path, loaded, seen);
+    g_assert_cmpuint(loaded->len, ==, 1);
+    KajoFileItem *only = g_ptr_array_index(loaded, 0);
+    g_assert_cmpstr(kajo_file_item_get_target_uri(only), ==, "sftp://nas.local/media");
+    g_assert_cmpstr(kajo_file_item_get_display_name(only), ==, "media on nas.local");
+    g_assert_true(kajo_file_item_is_mountable(only));
+
+    /* 5. Cancelled network:/// enumeration returns G_IO_ERROR_CANCELLED immediately */
+    g_autoptr(GCancellable) cancel = g_cancellable_new();
+    g_cancellable_cancel(cancel);
+    GPtrArray *cancelled_res = kajo_files_network_enumerate_sync(net_root, NULL, cancel, &err);
+    g_assert_null(cancelled_res);
+    g_assert_true(g_error_matches(err, G_IO_ERROR, G_IO_ERROR_CANCELLED));
+    g_clear_error(&err);
+
+    g_unlink(servers_path);
+    g_autofree char *gtk4_dir = g_build_filename(tmp_dir, "gtk-4.0", NULL);
+    g_rmdir(gtk4_dir);
+    g_rmdir(tmp_dir);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1218,6 +1327,7 @@ main(int argc, char *argv[])
     g_test_add_func("/files/disk-image-classification", test_disk_image_classification);
     g_test_add_func("/files/disk-image-udisks-reply-helpers", test_diskimage_reply_helpers);
     g_test_add_func("/files/archive-virtual-folders-and-ops", test_archive_virtual_folders_and_ops);
+    g_test_add_func("/files/network-uri-and-shortcut-items", test_network_uri_and_shortcut_items);
 
     return g_test_run();
 }

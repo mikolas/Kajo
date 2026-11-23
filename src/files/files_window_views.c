@@ -579,20 +579,17 @@ on_grid_item_bind(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
         g_clear_object(&w->thumb_cancel);
     }
 
-    if (kajo_file_item_is_dir(item))
+    if (kajo_file_item_is_dir(item) || kajo_file_item_is_mountable(item))
         gtk_widget_add_css_class(w->card, "files-tile-folder");
     else
         gtk_widget_remove_css_class(w->card, "files-tile-folder");
 
-    gtk_image_set_from_icon_name(GTK_IMAGE(w->icon), kajo_file_item_get_icon_name(item));
+    files_window_set_image_for_item(GTK_IMAGE(w->icon), item);
     gtk_image_set_pixel_size(GTK_IMAGE(w->icon), 42);
 
     gtk_label_set_text(GTK_LABEL(w->name_lbl), kajo_file_item_get_display_name(item));
 
-    g_autofree char *sz_str = kajo_files_format_size(
-        kajo_file_item_get_size(item),
-        kajo_file_item_is_dir(item)
-    );
+    g_autofree char *sz_str = kajo_file_item_format_subtitle(item);
     gtk_label_set_text(GTK_LABEL(w->sub_lbl), sz_str);
 
     g_object_set_data_full(G_OBJECT(w->card), "file-item", g_object_ref(item), g_object_unref);
@@ -694,13 +691,10 @@ on_list_item_bind(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
     KajoFileItem *item = gtk_list_item_get_item(list_item);
     if (!w || !item) return;
 
-    gtk_image_set_from_icon_name(GTK_IMAGE(w->icon), kajo_file_item_get_icon_name(item));
+    files_window_set_image_for_item(GTK_IMAGE(w->icon), item);
     gtk_label_set_text(GTK_LABEL(w->name_lbl), kajo_file_item_get_display_name(item));
 
-    g_autofree char *sz_str = kajo_files_format_size(
-        kajo_file_item_get_size(item),
-        kajo_file_item_is_dir(item)
-    );
+    g_autofree char *sz_str = kajo_file_item_format_subtitle(item);
     gtk_label_set_text(GTK_LABEL(w->sz_lbl), sz_str);
     gtk_label_set_text(GTK_LABEL(w->type_lbl), kajo_file_item_get_type_description(item));
 

@@ -1,5 +1,6 @@
 #include "files_window_private.h"
 #include "files_diskimage.h"
+#include "files_network.h"
 #include "../config.h"
 #include <glib/gstdio.h>
 #include <errno.h>
@@ -60,10 +61,12 @@ files_window_update_status_and_capacity_bar(KajoFilesWindow *self)
 
     guint total_vis = self->visible_items ? self->visible_items->len : 0;
     guint dirs = 0, files = 0;
+    gboolean is_network = files_window_is_virtual_network(self);
+    gboolean is_archive = files_window_is_read_only_archive(self);
 
     for (guint i = 0; i < total_vis; i++) {
         KajoFileItem *it = g_ptr_array_index(self->visible_items, i);
-        if (kajo_file_item_is_dir(it))
+        if (kajo_file_item_is_dir(it) || kajo_file_item_is_mountable(it))
             dirs++;
         else
             files++;
@@ -74,7 +77,7 @@ files_window_update_status_and_capacity_bar(KajoFilesWindow *self)
         guint64 sel_bytes = 0;
         for (guint i = 0; i < sel_items->len; i++) {
             KajoFileItem *it = g_ptr_array_index(sel_items, i);
-            if (!kajo_file_item_is_dir(it))
+            if (!kajo_file_item_is_dir(it) && !kajo_file_item_is_mountable(it))
                 sel_bytes += kajo_file_item_get_size(it);
         }
         g_autofree char *sel_sz = kajo_files_format_size(sel_bytes, FALSE);
@@ -86,26 +89,27 @@ files_window_update_status_and_capacity_bar(KajoFilesWindow *self)
         );
         files_window_set_status_message(self, left, FALSE);
     } else if (self->selected_item) {
-        g_autofree char *sel_sz = kajo_files_format_size(
-            kajo_file_item_get_size(self->selected_item),
-            kajo_file_item_is_dir(self->selected_item)
-        );
-        g_autofree char *left = g_strdup_printf(
-            "%u ITEMS (%u FOLDERS, %u FILES)  |  SELECTED: %s (%s)",
-            total_vis, dirs, files,
-            kajo_file_item_get_display_name(self->selected_item),
-            sel_sz
-        );
+        g_autofree char *sel_sz = kajo_file_item_format_subtitle(self->selected_item);
+        g_autofree char *left = is_network
+            ? g_strdup_printf(
+                "%u NETWORK LOCATION(S)  |  SELECTED: %s (%s)",
+                total_vis,
+                kajo_file_item_get_display_name(self->selected_item),
+                sel_sz)
+            : g_strdup_printf(
+                "%u ITEMS (%u FOLDERS, %u FILES)  |  SELECTED: %s (%s)",
+                total_vis, dirs, files,
+                kajo_file_item_get_display_name(self->selected_item),
+                sel_sz);
         files_window_set_status_message(self, left, FALSE);
     } else {
-        g_autofree char *left = g_strdup_printf(
-            "%u ITEMS (%u FOLDERS, %u FILES)",
-            total_vis, dirs, files
-        );
+        g_autofree char *left = is_network
+            ? g_strdup_printf("%u NETWORK LOCATION(S)", total_vis)
+            : g_strdup_printf("%u ITEMS (%u FOLDERS, %u FILES)", total_vis, dirs, files);
         files_window_set_status_message(self, left, FALSE);
     }
 
-    if (self->current_dir) {
+    if (self->current_dir && !is_network && !is_archive) {
         g_autoptr(GFileInfo) fs_info = g_file_query_filesystem_info(
             self->current_dir,
             G_FILE_ATTRIBUTE_FILESYSTEM_SIZE "," G_FILE_ATTRIBUTE_FILESYSTEM_FREE,
@@ -131,7 +135,7 @@ files_window_update_status_and_capacity_bar(KajoFilesWindow *self)
 
     gtk_label_set_text(
         GTK_LABEL(self->status_right_label),
-        files_window_is_read_only_archive(self) ? "READ-ONLY ARCHIVE" : "GVFS VIRTUAL FS"
+        is_archive ? "READ-ONLY ARCHIVE" : (is_network ? "NETWORK DISCOVERY" : "GVFS VIRTUAL FS")
     );
     gtk_widget_set_visible(self->fs_usage_bar, FALSE);
 }
@@ -225,10 +229,12 @@ static void
 on_connect_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 {
     KajoFilesWindow *self = user_data;
-    const char *uri = gtk_editable_get_text(GTK_EDITABLE(self->connect_entry));
+    g_autofree char *uri = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->connect_entry)));
     gtk_revealer_set_reveal_child(GTK_REVEALER(self->connect_banner_revealer), FALSE);
-    if (uri && uri[0] != '\0') {
-        kajo_files_window_navigate_uri(self, uri);
+    if (uri) {
+        g_strstrip(uri);
+        if (uri[0] != '\0')
+            kajo_files_window_navigate_uri(self, uri);
     }
 }
 
@@ -329,6 +335,26 @@ files_window_is_read_only_archive(const KajoFilesWindow *self)
         return FALSE;
     g_autofree char *uri = g_file_get_uri(self->current_dir);
     return kajo_files_parse_archive_uri(uri, NULL, NULL);
+}
+
+gboolean
+files_window_is_virtual_network(const KajoFilesWindow *self)
+{
+    if (!self || !self->current_dir)
+        return FALSE;
+    return g_file_has_uri_scheme(self->current_dir, "network");
+}
+
+void
+files_window_set_image_for_item(GtkImage *img, const KajoFileItem *item)
+{
+    if (!img || !item)
+        return;
+    GIcon *gicon = kajo_file_item_get_gicon(item);
+    if (gicon)
+        gtk_image_set_from_gicon(img, gicon);
+    else
+        gtk_image_set_from_icon_name(img, kajo_file_item_get_icon_name(item));
 }
 
 /* A nested archive was extracted into the preview cache; walk the recorded origins back to the
@@ -853,9 +879,14 @@ on_directory_enumerated(GPtrArray *items, GError *error, gpointer user_data)
             return;
 
         if (g_error_matches(error, G_IO_ERROR, G_IO_ERROR_NOT_MOUNTED) && self->current_dir) {
-            files_window_set_status_message(self, "Mounting remote / encrypted volume...", FALSE);
-            kajo_files_sidebar_mount_uri(self->sidebar, self->current_dir);
-            return;
+            g_autofree char *cur_uri = g_file_get_uri(self->current_dir);
+            if (cur_uri && g_strcmp0(self->last_mount_attempt_uri, cur_uri) != 0) {
+                g_free(self->last_mount_attempt_uri);
+                self->last_mount_attempt_uri = g_strdup(cur_uri);
+                files_window_set_status_message(self, "Mounting remote / encrypted volume...", FALSE);
+                kajo_files_sidebar_mount_uri(self->sidebar, self->current_dir);
+                return;
+            }
         }
 
         files_window_set_status_message(self, error->message, TRUE);
@@ -864,7 +895,15 @@ on_directory_enumerated(GPtrArray *items, GError *error, gpointer user_data)
         return;
     }
 
-    gtk_label_set_text(GTK_LABEL(self->empty_label), "DIRECTORY IS EMPTY");
+    g_clear_pointer(&self->last_mount_attempt_uri, g_free);
+
+    gboolean is_network = files_window_is_virtual_network(self);
+    gtk_label_set_text(
+        GTK_LABEL(self->empty_label),
+        is_network
+            ? "NO NETWORK SERVERS FOUND — USE '+ CONNECT TO SERVER' TO ADD SMB / SFTP / WEBDAV"
+            : "DIRECTORY IS EMPTY"
+    );
 
     if (self->all_items)
         g_ptr_array_unref(self->all_items);
@@ -877,6 +916,9 @@ on_directory_enumerated(GPtrArray *items, GError *error, gpointer user_data)
         g_autofree char *inner_path = NULL;
         gboolean is_trash = (g_strcmp0(scheme, "trash") == 0);
         gboolean is_archive = (dir_uri && kajo_files_parse_archive_uri(dir_uri, &arch_path, &inner_path));
+
+        if (dir_uri && kajo_files_network_is_remote_uri(dir_uri))
+            kajo_files_network_record_server(dir_uri, NULL);
 
         gtk_revealer_set_reveal_child(GTK_REVEALER(self->trash_banner_revealer), is_trash);
         if (is_trash) {
@@ -915,6 +957,8 @@ files_window_reload_directory(KajoFilesWindow *self)
     }
 
     gboolean is_archive = files_window_is_read_only_archive(self);
+    gboolean is_network = files_window_is_virtual_network(self);
+    gboolean read_only = is_archive || is_network;
     if (!is_archive) {
         self->dir_monitor = g_file_monitor_directory(
             self->current_dir,
@@ -927,9 +971,11 @@ files_window_reload_directory(KajoFilesWindow *self)
         }
     }
 
-    gtk_widget_set_sensitive(self->btn_new_folder, !is_archive);
-    gtk_widget_set_sensitive(self->btn_new_file, !is_archive);
-    gtk_widget_set_sensitive(self->btn_paste, !is_archive && kajo_files_clipboard_has_files());
+    gtk_widget_set_sensitive(self->btn_new_folder, !read_only);
+    gtk_widget_set_sensitive(self->btn_new_file, !read_only);
+    gtk_widget_set_sensitive(self->btn_paste, !read_only && kajo_files_clipboard_has_files());
+    if (is_network)
+        files_window_set_status_message(self, "Scanning local network...", FALSE);
     kajo_files_enumerate_async(self->current_dir, self->enum_cancel, on_directory_enumerated, self);
 }
 
@@ -952,6 +998,7 @@ kajo_files_window_navigate_uri(KajoFilesWindow *self, const char *uri_or_path)
 
     gboolean dir_changed = (!self->current_dir || !g_file_equal(self->current_dir, target));
     if (dir_changed) {
+        g_clear_pointer(&self->last_mount_attempt_uri, g_free);
         self->autoselect_pending = TRUE; /* fresh folder: select the first entry once it loads */
         g_clear_object(&self->selected_item);
         if (self->selection_model) {
@@ -1158,6 +1205,7 @@ kajo_files_window_dispose(GObject *object)
     }
 
     g_clear_pointer(&self->bc_pop_target_uri, g_free);
+    g_clear_pointer(&self->last_mount_attempt_uri, g_free);
     g_clear_pointer(&self->nested_archive_origin, g_hash_table_destroy);
     g_clear_pointer(&self->breadcrumb_popover, gtk_widget_unparent);
     g_clear_pointer(&self->context_popover, gtk_widget_unparent);
