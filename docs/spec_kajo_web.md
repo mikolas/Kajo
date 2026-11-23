@@ -44,15 +44,15 @@ Per Kajo's engineering honesty rules (`AGENTS.md` §8), `kajo-web` documents Web
 | :--- | :--- | :--- |
 | **Modern Web / JS / CSS / WASM** | Full (WebKit / JavaScriptCore) | Matches Safari/WebKitGTK `2.54+` (Skia renderer, linear text blending, IndexedDB, Service Workers, ES2025+). |
 | **Wayland Zero-Copy GPU Acceleration** | Default ON (`ALWAYS`) | Skia + GBM DMA-BUF + damage propagation (`WebKitGTK 2.50+`), WebGL GPU process (`UseGPUProcessForWebGL`). |
-| **Native Ad & Tracker Blocking** | Built-in (`WebKitUserContentFilterStore`) | Compiles Safari-format JSON rulepacks to native bytecode filters inside WebKit—fast, zero JS extension overhead. |
-| **User Scripts & User CSS** | Built-in (`WebKitUserContentManager`) | Per-origin or global CSS/JS injection in isolated `WebKitScriptWorld`s. |
+| **Native Ad & Tracker Blocking** | Two-layer (`WebKitUserContentFilterStore` + User Scripts) | Layer 1 compiles Safari-format JSON rulepacks (EasyList/EasyPrivacy) into fast native DFA bytecode (URL block + CSS hide; no native per-page block count API, so Omnibar shows real `ON`/`OFF` + compiled rule count). Layer 2 supports opt-in URL-scoped `~/.config/kajo/web/scripts/*.{js,css}` via `WebKitUserContentManager` for cosmetic/cookie-banner/YouTube mitigation. |
+| **Normal Web Video (YouTube & Social)** | Hardware-accelerated (`gstreamer` `va` + DMA-BUF) | Verified on Host A (`gstreamer 1.28.9` + `gst-plugins-bad` unified `va` plugin: `vah264dec`, `vavp9dec`, `vaav1dec` zero-copy into WebKit DMA-BUF). Plays YouTube (up to 4K60 H.264/VP9/AV1), Reddit, X, Instagram, TikTok, Twitch, Vimeo; plus **`▶ OPEN IN KAJO PLAYER`** (`libmpv`). |
+| **Built-In Video / Audio Downloader** | Two-tier (`WebKitDownload` + optional `yt-dlp`/`ffmpeg`) | Tier A downloads direct HTML5 `<video>`/`<audio>` elements natively. Tier B spawns async `yt-dlp` + `ffmpeg` (`GSubprocess`) for YouTube/social DASH/HLS streams (Best MP4 / 1080p / 720p / Audio Only), streaming live progress into the Downloads Popover. Clearly disabled with `"Requires yt-dlp"` hint if `yt-dlp` is not on `PATH`. |
 | **Mandatory Process Sandboxing** | Always ON | WebKitGTK 6.0 enforces Bubblewrap + `xdg-dbus-proxy` + `seccomp` (cannot be disabled in API). |
 | **DevTools / Web Inspector** | Built-in (`WebKitWebInspector`) | Dockable bottom/right or detached WebKit Inspector (`F12` / `Ctrl+Shift+I`). |
 | **Multiple Profiles & Google Web Login** | Full (`WebKitNetworkSession`) | Isolated cookies, IndexedDB, cache, history, bookmarks, and Google Workspace/Gmail web sessions per profile window. |
 | **Cross-Device Sync (`kajo-web` $\leftrightarrow$ `kajo-web`)** | Built-in (Google Drive `drive.appdata`, free) | Uses official public Google Drive API v3 `appDataFolder` + PKCE OAuth 2.0 (`libsecret` token storage, optional `AES-256-GCM` E2EE). **Does not** sync into Google Chrome/Thorium's private Chrome Sync database (restricted by Google to official Chrome keys since 2021). |
 | **Widevine Commercial DRM** | **Not supported** | WebKitGTK ships W3C ClearKey EME only; Netflix/Disney+/Spotify full-DRM streams require Chromium/Firefox. |
 | **Chrome / Firefox Browser Extensions** | **Not supported** | `WebKitWebExtension` in 2.54 only parses manifests/metadata—not a full MV2/MV3 extension runtime. Native content blocking + user scripts cover ad-blocking and tweaks instead. |
-| **Video/Audio Decoding** | GStreamer (`gst-plugins-*` + VA-API) | Hardware decode quality depends on installed GStreamer plugins (`gst-libav`, `gst-plugins-good/bad`, `gstreamer-vaapi`). |
 
 ---
 
@@ -62,7 +62,7 @@ Per Kajo's engineering honesty rules (`AGENTS.md` §8), `kajo-web` documents Web
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│ [🌐] [◀][▶][↻] [◧] │ [🔒 docs.kajo.local/spec  🛡14] │ [↓2] [⚙] [🗗] [✕]   │  34px Top Chrome
+│ [🌐] [◀][▶][↻] [◧] │ [🔒 docs.kajo.local/spec  🛡ON] │ [⬇][↓1][●WORK][⚙][🗗][✕]│  34px Top Chrome
 ├────┬─────────────────────────────────────────────────────────────────────────┤
 │ ▌  │                                                                         │
 │ ▌  │                                                                         │
@@ -134,13 +134,15 @@ Every transition is driven by explicit `GLib` timers cancelled on dispose (match
 - **Left Cluster:**
   - Compact app icon (`🌐` / `kajo-web.svg`), Back (`◀`), Forward (`▶`), Reload/Stop (`↻`/`✕`), Rail Pin/Mode quick toggle (`◧`).
 - **Center Unified Omnibar (`flex: 1`, centered max-width `760px`):**
-  - **Resting (unfocused):** Single flat `26px` monospace bar showing TLS status (`🔒` green HTTPS / `⚠` orange HTTP / `❖` cyan `kajo://`), bold host (`github.com`) + muted path (`/mikolas/Kajo`), inline ad-block counter pill (`[ 🛡 14 ]` clickable for per-site whitelist toggle), and a `2px` bottom loading progress hairline (`@metro-accent`).
+  - **Resting (unfocused):** Single flat `26px` monospace bar showing TLS status (`🔒` green HTTPS / `⚠` orange HTTP / `❖` cyan `kajo://`), bold host (`github.com`) + muted path (`/mikolas/Kajo`), inline ad-block shield pill (`[ 🛡 ON ]` / `[ 🛡 OFF ]` clickable for per-site allowlist toggle and compiled rulepack status — never a fake request count), and a `2px` bottom loading progress hairline (`@metro-accent`).
   - **Focused (`Ctrl+L` or click):** Expands to full editable URL/search input with instant dropdown suggestions (open tabs `[ TAB ]`, bookmarks `[ ★ ]`, history `[ ↺ ]`, search engine / bang expansion `[ 🔍 DDG ]`).
 - **Right Cluster (Minimalist — Conditional Badges Only):**
   - `[ ⚠ SW RENDER ]` (amber warning — **only** when hardware acceleration is disabled or fell back).
   - `[ 🕶 PRIVATE ]` (magenta — **only** in ephemeral private windows).
   - `[ 125% ]` (zoom reset button — **only** when zoom `!= 100%`).
-  - `[ ↓ 2 ]` (downloads progress badge — **only** when downloads are active or completed this session).
+  - `[ ⬇ MEDIA ]` (video/audio download & `▶ OPEN IN KAJO PLAYER` popover — shown on video/media pages or via context menu).
+  - `[ ↓ 1 ]` (downloads progress badge — **only** when downloads or `yt-dlp` jobs are active/completed this session).
+  - `[ ● WORK ]` (active profile chip & switcher).
   - `[ ⚙ ]` (launches `kajo-settings --page web`), `[ 🗗 ]` (`shell_compositor_toggle_floating()`), `[ ✕ ]` (`.settings-close-btn`, `#e81123` hover).
 - **Zero Chrome Mode (`Ctrl+Shift+U` / `F11`):** Hides the `34px` top bar into a `2px` top hover strip (`rgba(0,0,0,0.01)`), leaving only the web canvas.
 
@@ -214,12 +216,14 @@ memory_limit_mb           = 2048            # 512..16384
 # === Privacy, Content Blocking & Media ===
 adblock_enabled           = true
 adblock_custom_rules_path = ""              # optional path to Safari JSON content filter
+user_scripts_enabled      = false           # opt-in ~/.config/kajo/web/scripts/*.{js,css}
 itp_enabled               = true            # Intelligent Tracking Prevention
 cookie_policy             = "no-third-party" # "always" | "no-third-party" | "never"
 https_only                = true
 autoplay_policy           = "allow-without-sound" # "allow" | "allow-without-sound" | "deny"
 enable_webrtc             = true
 dns_prefetch              = true
+media_download_format     = "best-mp4"      # "best-mp4" | "1080p" | "720p" | "audio-opus" | "audio-mp3"
 
 # === Search & Navigation ===
 search_engine             = "duckduckgo"    # "duckduckgo" | "kagi" | "startpage" | "brave" | "google" | "custom"
@@ -268,9 +272,11 @@ Follows `docs/design_system.md` §4.3 control-selection rules (Toggle Cards for 
    - Memory Limit slider (`512–16384 MB`)
 3. **Card 3 — Privacy, Ad-Blocking & Media:**
    - **Native Content Blocker** Toggle Card (status line: `ACTIVE • 42,180 COMPILED RULES` + custom JSON filter file picker + `[ ↻ RECOMPILE FILTERS ]`)
+   - **User Scripts & CSS** Toggle Card (opt-in `~/.config/kajo/web/scripts/*.{js,css}` via `WebKitUserContentManager`, status shows loaded script count)
    - Switch rows: **Intelligent Tracking Prevention (ITP)**, **HTTPS-Only Mode**, **WebRTC**
    - Cookie Policy segmented group (`BLOCK 3P` | `BLOCK ALL` | `ALLOW`)
    - Autoplay Policy segmented group (`MUTE ONLY` | `DENY ALL` | `ALLOW`)
+   - Media Downloader default preset (`BEST MP4` | `1080P` | `720P` | `AUDIO`) + live `yt-dlp` / `ffmpeg` availability badge
    - Danger action row: `[ 🗑 CLEAR CACHE & COOKIES ]` (with inline confirmation, no modal dialog)
 4. **Card 4 — Profiles & Google Drive AppData Sync:**
    - Profile manager list (`WORK`, `PERSONAL`, `DEV`, …) with `[ + NEW PROFILE ]`, rename/icon/accent editor, and delete (inline confirm)
@@ -398,9 +404,9 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
 | `src/web/web_tab.{h,c}` | `KajoWebTab` lifecycle wrapping `WebKitWebView` bound to the window's profile `WebKitNetworkSession`: hardware-acceleration settings, `WebKitWebViewSessionState` suspension/wake, crash recovery UI, per-site policies, context menu, and `WebKitFileChooserRequest` portal bridge. |
 | `src/web/web_omnibar.{h,c}` | Minimalist resting domain pill + TLS/adblock badges $\leftrightarrow$ focused editable URL/search bar with async autocomplete dropdown. |
 | `src/web/web_palette.{h,c}` | `Ctrl+K` fuzzy command, open-tab, closed-tab, bookmark, history, and profile-switch modal switcher. |
-| `src/web/web_adblock.{h,c}` | `WebKitUserContentFilterStore` async rulepack compiler, per-domain exception list, blocked-request counter bridge (`WebKitUserMessage`). |
+| `src/web/web_adblock.{h,c}` | `WebKitUserContentFilterStore` async JSON rulepack compiler, per-domain allowlist (`unless-domain`), and opt-in `~/.config/kajo/web/scripts/*.{js,css}` loader (`WebKitUserContentManager`). |
 | `src/web/web_storage.{h,c}` | Per-profile async SQLite (`history.db`, FTS5) bookmarks/history store + atomic `session.json` save/restore. |
-| `src/web/web_downloads.{h,c}` | `WebKitDownload` tracker, progress badges, Aero + Metro downloads popover, and `kajo-files` reveal integration. |
+| `src/web/web_downloads.{h,c}` | Unified `WebKitDownload` + async `yt-dlp`/`ffmpeg` (`GSubprocess` + `GCancellable`) media downloader with quality picker (`Best MP4`, `1080p`, `720p`, `Audio`), live progress in Downloads Popover, **`▶ OPEN IN KAJO PLAYER`**, and **`📁 SHOW IN KAJO FILES`**. |
 | `src/web/web_schemes.{h,c}` | Custom `kajo://` URI scheme handler (`newtab`, `gpu`, `history`, `bookmarks`, `downloads`) styled with live `@metro-accent`. |
 | `src/settings/pages/page_web.c` | `kajo-settings` Page 13 (`13 / 13 • KAJO WEB`) with live GPU telemetry readout, 6 configuration cards (including Profiles & Drive AppData Sync), and `SAVE & APPLY` / `REVERT`. |
 | `data/defaults/styles/80-web.css` | Scoped Aero + Metro CSS partial imported by `data/defaults/style.css`. |

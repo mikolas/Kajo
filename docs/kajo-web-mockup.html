@@ -1306,7 +1306,7 @@
               <span class="omni-path" id="omniPath"></span>
             </div>
             <input class="omni-input" id="omniInput" type="text" value="kajo://newtab" spellcheck="false" />
-            <button class="omni-shield" id="btnShield" title="Native Content Blocker">🛡 14</button>
+            <button class="omni-shield" id="btnShield" title="Native Content Blocker (WebKitUserContentFilterStore)">🛡 ON</button>
             <div class="omni-progress" id="omniProgress"></div>
           </div>
           <div class="omni-dropdown" id="omniDrop">
@@ -1320,6 +1320,7 @@
         <div class="hdr-right">
           <span class="status-chip warn" id="chipSw" style="display:none;" title="Hardware acceleration disabled — running software renderer">⚠ SW RENDER</span>
           <span class="status-chip priv" id="chipPriv" style="display:none;" title="Ephemeral session — no history or cookies saved">🕶 PRIVATE</span>
+          <button class="status-chip" id="btnMediaDl" title="Video / Audio Downloader (HTML5 + yt-dlp/ffmpeg) &amp; Open in Kajo Player" style="border-color:rgba(0,216,240,0.45); color:var(--metro-telemetry);">⬇ MEDIA</button>
           <button class="status-chip dl" id="btnDownloads" title="Downloads (Ctrl+J)">↓ 1</button>
           <button class="profile-chip" id="btnProfileChip" title="Profile &amp; Google Drive AppData Sync (Ctrl+Shift+M)"><span class="profile-dot" id="profDot"></span><span id="profChipName">WORK</span></button>
           <button class="chrome-btn" id="btnPalette" title="Quick Command &amp; Tab Switcher (Ctrl+K)">⌘</button>
@@ -1527,15 +1528,41 @@ smooth_scrolling      = true</div>
       <div class="popover" id="popShield" style="right:auto; left:50%; transform:translateX(-50%);">
         <div class="pop-head">
           <span>🛡 NATIVE CONTENT BLOCKER</span>
-          <span style="color:#4ce886;">ACTIVE</span>
+          <span style="color:#4ce886;">42,180 RULES</span>
         </div>
         <div class="pop-body">
-          <div style="color:var(--fg-body);">WebKitUserContentFilterStore blocked <strong style="color:var(--metro-telemetry);">14</strong> requests on this site.</div>
+          <div style="color:var(--fg-body); font-size:10.5px;">Compiled Safari-JSON DFA bytecode (<code>WebKitUserContentFilterStore</code>) + optional user scripts.</div>
           <div class="toggle-card on" id="toggleSiteAdblock">
-            <div><div style="font-weight:700;">Block Ads &amp; Trackers</div><div style="font-size:10px; color:var(--fg-dim);">Native compiled JSON bytecode</div></div>
+            <div><div style="font-weight:700;">Block Ads &amp; Trackers</div><div style="font-size:10px; color:var(--fg-dim);">EasyList + EasyPrivacy JSON</div></div>
             <span id="siteAdblockState" style="color:var(--metro-telemetry); font-weight:700;">ON</span>
           </div>
+          <div class="toggle-card" id="toggleUserScripts">
+            <div><div style="font-weight:700;">User Scripts &amp; CSS</div><div style="font-size:10px; color:var(--fg-dim);">~/.config/kajo/web/scripts/ (opt-in)</div></div>
+            <span id="userScriptsState" style="color:var(--fg-dim); font-weight:700;">OFF</span>
+          </div>
           <button class="demo-btn" id="btnOpenSettingsFromShield">⚙ CONFIGURE FILTER LISTS IN KAJO SETTINGS</button>
+        </div>
+      </div>
+
+      <!-- Video / Audio Downloader Popover -->
+      <div class="popover" id="popMediaDl" style="width:335px;">
+        <div class="pop-head">
+          <span>⬇ VIDEO / AUDIO DOWNLOADER</span>
+          <span style="color:#4ce886;">YT-DLP + FFMPEG</span>
+        </div>
+        <div class="pop-body">
+          <div style="background:var(--surface-1); border:1px solid var(--border-subtle); padding:8px;">
+            <div style="font-weight:700; color:#fff;">Detected Stream: 2160p60 AV1 / VP9</div>
+            <div style="font-size:9.5px; color:var(--fg-dim); margin-top:2px;">HW Decode: GStreamer va (vaav1dec → DMA-BUF)</div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
+            <button class="demo-btn on" data-dl-fmt="Best MP4 (4K)">⬇ BEST MP4</button>
+            <button class="demo-btn" data-dl-fmt="1080p MP4">⬇ 1080P MP4</button>
+            <button class="demo-btn" data-dl-fmt="720p MP4">⬇ 720P MP4</button>
+            <button class="demo-btn" data-dl-fmt="Audio (Opus)">🎵 AUDIO ONLY</button>
+          </div>
+          <button class="demo-btn" id="btnOpenInPlayer" style="border-color:var(--metro-telemetry); color:var(--metro-telemetry);">▶ OPEN STREAM IN KAJO PLAYER (libmpv)</button>
+          <div id="mediaDlStatus" style="font-size:10px; color:var(--fg-dim);">Runs asynchronously via GSubprocess into Downloads Popover.</div>
         </div>
       </div>
 
@@ -1948,7 +1975,7 @@ smooth_scrolling      = true</div>
     state.adblock = on;
     const sh = document.getElementById('btnShield');
     sh.classList.toggle('off', !on);
-    sh.textContent = on ? '🛡 14' : '🛡 OFF';
+    sh.textContent = on ? '🛡 ON' : '🛡 OFF';
     document.getElementById('ntAdblock').textContent = on ? '42,180 RULES' : 'DISABLED';
     document.getElementById('toggleSiteAdblock').classList.toggle('on', on);
     document.getElementById('siteAdblockState').textContent = on ? 'ON' : 'OFF';
@@ -2049,6 +2076,7 @@ smooth_scrolling      = true</div>
   // Popovers & Drawers
   function closePopovers() {
     document.getElementById('popShield').classList.remove('show');
+    document.getElementById('popMediaDl').classList.remove('show');
     document.getElementById('popDownloads').classList.remove('show');
     document.getElementById('popProfile').classList.remove('show');
   }
@@ -2154,6 +2182,31 @@ smooth_scrolling      = true</div>
     if (!was) el.classList.add('show');
   };
   document.getElementById('btnCloseDl').onclick = closePopovers;
+  document.getElementById('btnMediaDl').onclick = (e) => {
+    e.stopPropagation();
+    const el = document.getElementById('popMediaDl');
+    const was = el.classList.contains('show');
+    closePopovers();
+    if (!was) el.classList.add('show');
+  };
+  document.querySelectorAll('#popMediaDl [data-dl-fmt]').forEach(btn => {
+    btn.onclick = () => {
+      document.getElementById('mediaDlStatus').textContent = `Queued yt-dlp (${btn.dataset.dlFmt}) → check Downloads Popover (↓)`;
+      document.getElementById('mediaDlStatus').style.color = '#4ce886';
+      document.getElementById('btnDownloads').textContent = '↓ 2';
+    };
+  });
+  document.getElementById('btnOpenInPlayer').onclick = () => {
+    document.getElementById('mediaDlStatus').textContent = 'Spawned: kajo-player <stream-url> (libmpv VA-API)';
+    document.getElementById('mediaDlStatus').style.color = 'var(--metro-telemetry)';
+  };
+  document.getElementById('toggleUserScripts').onclick = (e) => {
+    const card = e.currentTarget;
+    const on = card.classList.toggle('on');
+    const lbl = document.getElementById('userScriptsState');
+    lbl.textContent = on ? 'ON' : 'OFF';
+    lbl.style.color = on ? 'var(--metro-telemetry)' : 'var(--fg-dim)';
+  };
   document.getElementById('toggleSiteAdblock').onclick = () => syncAdblock(!state.adblock);
   document.getElementById('tcAdblock').onclick = () => syncAdblock(!state.adblock);
 
@@ -2241,7 +2294,7 @@ smooth_scrolling      = true</div>
   });
 
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.popover') && !e.target.closest('#btnShield') && !e.target.closest('#btnDownloads') && !e.target.closest('#btnProfileChip')) {
+    if (!e.target.closest('.popover') && !e.target.closest('#btnShield') && !e.target.closest('#btnMediaDl') && !e.target.closest('#btnDownloads') && !e.target.closest('#btnProfileChip')) {
       closePopovers();
     }
   });

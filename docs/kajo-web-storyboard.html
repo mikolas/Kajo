@@ -468,12 +468,12 @@ const SCENARIOS = [
     steps: [
       {
         title: '1. Resting Minimalist Top Bar (34px)',
-        desc: 'Unfocused chrome stays ultra-clean: navigation arrows, rail pin button, a centered domain pill (bold host + muted path + TLS lock + native ad-block badge [🛡 14]), settings, float, and close.',
+        desc: 'Unfocused chrome stays ultra-clean: navigation arrows, rail pin button, a centered domain pill (bold host + muted path + TLS lock + native content blocker [🛡 ON]), media downloader, profile chip, settings, float, and close.',
         key: '',
         cursor: { x: 600, y: 300 },
-        callout: { x: 350, y: 74, text: '34px top bar: only active badges are rendered' },
-        st: { omnibar: 'RESTING', adblock: '14 blocked', top_bar: '34px', palette: 'CLOSED' },
-        spec: '§3.4 — Conditional right-side chips (Downloads, Zoom, Private, SW Render) stay hidden when inactive so chrome stays visually calm.',
+        callout: { x: 350, y: 74, text: '34px top bar: real [🛡 ON] filter state (never a fake counter)' },
+        st: { omnibar: 'RESTING', adblock: 'ON (42k rules)', top_bar: '34px', palette: 'CLOSED' },
+        spec: '§3.4 — Conditional right-side chips (Media Download, Downloads, Zoom, Private, SW Render) stay hidden when inactive.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github' }
       },
       {
@@ -651,12 +651,22 @@ const SCENARIOS = [
         view: { railMode: 'autohide', railOpen: false, tab: 'github', portalOpen: true }
       },
       {
-        title: '3. Docked WebKit Web Inspector (F12)',
+        title: '3. Video Downloader & Kajo Player Handoff',
+        desc: 'On YouTube or social video pages, [⬇ MEDIA] downloads HTML5 video directly or spawns async yt-dlp + ffmpeg (Best MP4 / 1080p / Audio) into the Downloads Popover—or hands the stream directly to kajo-player (libmpv).',
+        key: '⬇ MEDIA → YT-DLP / KAJO-PLAYER',
+        cursor: { x: 930, y: 120 },
+        callout: { x: 355, y: 225, text: 'GStreamer va (vaav1dec/vavp9dec) HW decode + async yt-dlp downloader' },
+        st: { hw_decode: 'GStreamer va', downloader: 'yt-dlp+ffmpeg', handoff: 'kajo-player', blocking: 'NONE (async)' },
+        spec: '§2 & §9 — Uses GSubprocess + GCancellable; cleanly shows "Requires yt-dlp" if absent on PATH.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'arch', mediaPop: true }
+      },
+      {
+        title: '4. Docked WebKit Web Inspector (F12)',
         desc: 'Pressing F12 docks WebKitWebInspector natively at the bottom of the active tab with Elements, Console, Network, and Skia Graphics timelines.',
         key: 'F12 → WEB INSPECTOR',
         cursor: { x: 600, y: 580 },
         callout: { x: 560, y: 455, text: 'Native WebKitWebInspector docked inside KajoWebWindow' },
-        st: { devtools: 'DOCKED', tab: 'GRAPHICS', frame_ms: '1.4 ms', blocked: '14 trackers' },
+        st: { devtools: 'DOCKED', tab: 'GRAPHICS', frame_ms: '1.4 ms', adblock: '42k RULES' },
         spec: '§7 & §9 — Controlled by developer_extras in web.toml (enabled by default).',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', inspector: true }
       }
@@ -766,7 +776,7 @@ function renderViewport(v) {
         <div class="sb-card-grid">
           <div class="sb-card"><div class="k">COMPOSITOR</div><div class="v">kajo-comp</div></div>
           <div class="sb-card"><div class="k">AUDIO</div><div class="v">PipeWire Native</div></div>
-          <div class="sb-card"><div class="k">ADBLOCK</div><div class="v">14 Blocked</div></div>
+          <div class="sb-card"><div class="k">ADBLOCK</div><div class="v">42k RULES</div></div>
         </div>`
     },
     gpu: {
@@ -836,7 +846,7 @@ function renderViewport(v) {
           <div class="sb-omni ${v.omniFocus ? 'focus' : ''}">
             <span style="color:${pg.tls === '❖' ? 'var(--telemetry)' : '#4ce886'};">${pg.tls}</span>
             <span style="flex:1; color:#fff;">${v.omniFocus ? v.omniFocus : `<strong>${pg.host}</strong><span style="color:#777;">${pg.path}</span>`}</span>
-            <span class="sb-badge shield">🛡 14</span>
+            <span class="sb-badge shield">🛡 ON</span>
           </div>
           ${v.swFallback ? '<span class="sb-badge warn">⚠ SW RENDER</span>' : ''}
           <span class="sb-badge" style="border-color:var(--accent); color:#fff;">● WORK</span>
@@ -862,7 +872,7 @@ function renderViewport(v) {
           <div class="sb-viewport">
             ${v.permBar ? `<div class="sb-perm"><span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Mic (XDG Portal)</span><span><span class="sb-badge shield">ALLOW ONCE</span> <span class="sb-badge">DENY</span></span></div>` : ''}
             <div class="sb-page">${pg.html}</div>
-            ${v.inspector ? `<div class="sb-insp"><strong>WEBKIT WEB INSPECTOR (DOCKED)</strong> • ELEMENTS | CONSOLE | NETWORK | GRAPHICS<br/>[Skia] Frame #4821 — 1.4ms GPU raster — DMA-BUF zero-copy committed (damage: 1 rect)<br/>[ContentFilter] 14 tracker requests blocked via native bytecode rules</div>` : ''}
+            ${v.inspector ? `<div class="sb-insp"><strong>WEBKIT WEB INSPECTOR (DOCKED)</strong> • ELEMENTS | CONSOLE | NETWORK | GRAPHICS<br/>[Skia] Frame #4821 — 1.4ms GPU raster — DMA-BUF zero-copy committed (damage: 1 rect)<br/>[ContentFilter] WebKitUserContentFilterStore active (42,180 compiled DFA rules)</div>` : ''}
           </div>
           ${v.palette ? `
             <div class="sb-palette">
@@ -889,6 +899,16 @@ function renderViewport(v) {
               <div class="sb-card" style="border-top-color:#10893e;"><div class="k">DRIVE SYNC</div><div class="v" style="color:#4ce886;">☁ SYNCED</div></div>
             </div>
           </div>
+        </div>` : ''}
+      ${v.mediaPop ? `
+        <div class="sb-palette" style="left:auto; right:26px; top:44px; transform:none; width:340px;">
+          <div class="sb-pal-in" style="display:flex; justify-content:space-between; font-size:10.5px;">
+            <strong>⬇ VIDEO / AUDIO DOWNLOADER</strong>
+            <span style="color:#4ce886;">YT-DLP + FFMPEG</span>
+          </div>
+          <div class="sb-pal-row on"><span>⬇ Best MP4 (2160p60 AV1)</span><span style="margin-left:auto; color:var(--telemetry); font-size:10px;">GSubprocess</span></div>
+          <div class="sb-pal-row"><span>⬇ 1080p MP4  /  🎵 Audio Only (Opus)</span></div>
+          <div class="sb-pal-row" style="color:var(--telemetry);"><span>▶ Open Stream in Kajo Player (libmpv)</span></div>
         </div>` : ''}
       ${v.syncPop ? `
         <div class="sb-palette" style="left:auto; right:26px; top:44px; transform:none; width:340px;">
