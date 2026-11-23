@@ -27,7 +27,7 @@
 5. **Strong Configurability via `kajo-settings` (`web.toml`):**
    - Keeps the browser window clean by moving deep configuration into a dedicated **`13 / 13 • KAJO WEB`** page in **`kajo-settings`** backed by `~/.config/kajo/web.toml` (plus `conf.d/*.toml` drop-ins), hot-reloaded across all open `kajo-web` windows via `KajoConfigStore` (`GFileMonitor`).
 6. **Chrome/Thorium-Style Multiple Profiles & Free Google Drive AppData Sync:**
-   - First-class isolated profiles (`WORK`, `PERSONAL`, `DEV`, …) powered by per-profile `WebKitNetworkSession` containers, an Aero + Metro **Startup Profile Picker** (`760×480` card grid), a top-bar profile chip & switcher (`[ ● WORK ]`), optional per-profile `1px` window border tinting, and a 1-click **Chrome/Thorium Bookmarks Importer**.
+   - First-class isolated profiles (`WORK`, `PERSONAL`, `DEV`, …) powered by per-profile `WebKitNetworkSession` containers, an Aero + Metro **Startup Profile Picker** (`760×480` card grid), a top-bar profile chip & switcher (`[ ● WORK ]`), and optional per-profile `1px` window border tinting.
    - Optional **per-profile Google Drive AppData sync** (`https://www.googleapis.com/auth/drive.appdata`, 100% free via personal Google Cloud OAuth 2.0 PKCE, refresh tokens stored in `libsecret`, optional client-side `AES-256-GCM` E2EE) synchronizing bookmarks, history deltas, pinned tabs/groups, and settings across `kajo-web` machines.
 7. **First-Class Native Suite & Portal Integration:**
    - Delegates `<input type="file">` (`WebKitFileChooserRequest`) to Kajo's native `kajo-files` FileChooser portal (`org.freedesktop.impl.portal.FileChooser`).
@@ -49,7 +49,7 @@ Per Kajo's engineering honesty rules (`AGENTS.md` §8), `kajo-web` documents Web
 | **Mandatory Process Sandboxing** | Always ON | WebKitGTK 6.0 enforces Bubblewrap + `xdg-dbus-proxy` + `seccomp` (cannot be disabled in API). |
 | **DevTools / Web Inspector** | Built-in (`WebKitWebInspector`) | Dockable bottom/right or detached WebKit Inspector (`F12` / `Ctrl+Shift+I`). |
 | **Multiple Profiles & Google Web Login** | Full (`WebKitNetworkSession`) | Isolated cookies, IndexedDB, cache, history, bookmarks, and Google Workspace/Gmail web sessions per profile window. |
-| **Cross-Device Sync (`kajo-web` $\leftrightarrow$ `kajo-web`)** | Built-in (Google Drive `drive.appdata`, free) | Uses official public Google Drive API v3 `appDataFolder` + PKCE OAuth 2.0 (`libsecret` token storage, optional `AES-256-GCM` E2EE). **Does not** sync into Google Chrome/Thorium's private Chrome Sync database (restricted by Google to official Chrome keys since 2021); a 1-click Chrome/Thorium local Bookmarks importer bridges migration. |
+| **Cross-Device Sync (`kajo-web` $\leftrightarrow$ `kajo-web`)** | Built-in (Google Drive `drive.appdata`, free) | Uses official public Google Drive API v3 `appDataFolder` + PKCE OAuth 2.0 (`libsecret` token storage, optional `AES-256-GCM` E2EE). **Does not** sync into Google Chrome/Thorium's private Chrome Sync database (restricted by Google to official Chrome keys since 2021). |
 | **Widevine Commercial DRM** | **Not supported** | WebKitGTK ships W3C ClearKey EME only; Netflix/Disney+/Spotify full-DRM streams require Chromium/Firefox. |
 | **Chrome / Firefox Browser Extensions** | **Not supported** | `WebKitWebExtension` in 2.54 only parses manifests/metadata—not a full MV2/MV3 extension runtime. Native content blocking + user scripts cover ad-blocking and tweaks instead. |
 | **Video/Audio Decoding** | GStreamer (`gst-plugins-*` + VA-API) | Hardware decode quality depends on installed GStreamer plugins (`gst-libav`, `gst-plugins-good/bad`, `gstreamer-vaapi`). |
@@ -273,7 +273,7 @@ Follows `docs/design_system.md` §4.3 control-selection rules (Toggle Cards for 
    - Autoplay Policy segmented group (`MUTE ONLY` | `DENY ALL` | `ALLOW`)
    - Danger action row: `[ 🗑 CLEAR CACHE & COOKIES ]` (with inline confirmation, no modal dialog)
 4. **Card 4 — Profiles & Google Drive AppData Sync:**
-   - Profile manager list (`WORK`, `PERSONAL`, `DEV`, …) with `[ + NEW PROFILE ]`, rename/icon/accent editor, `[ 📥 IMPORT FROM THORIUM / CHROME ]`, and delete (inline confirm)
+   - Profile manager list (`WORK`, `PERSONAL`, `DEV`, …) with `[ + NEW PROFILE ]`, rename/icon/accent editor, and delete (inline confirm)
    - Switch rows: **Show Profile Picker on Startup** (when `> 1` profile) and **Tint Window Border by Profile Accent**
    - **Google Drive AppData Sync** Toggle Card (per-profile status: `CONNECTED: mikolas@… • SYNCED 2M AGO` or `LOCAL ONLY`), `[ SIGN IN WITH GOOGLE ]` / `[ ↻ SYNC NOW ]` / `[ SIGN OUT ]`
    - Personal Google Cloud OAuth Client ID/Secret entries (with concise inline tip noting *"Set OAuth Consent Screen to In Production (Unverified, Free) to avoid 7-day token expiry"*)
@@ -324,9 +324,7 @@ Modeled directly on Chrome/Thorium's window-scoped profile UX, backed natively b
 - **In-Browser Profile Chip & Switcher Popover:**
   - Minimalist top-right chip (`[ ● WORK ]` with profile accent dot; hidden when only 1 unconfigured profile exists unless hovered/enabled).
   - When `profile_border_accent = true`, the window's `1px` active border tints to that profile's Metro accent so side-by-side `WORK` / `PERSONAL` windows in `kajo-comp` are visually unmistakable.
-  - Clicking `[ ● WORK ]` opens a compact **Profile Switcher Popover**: active profile sync status + `[ ↻ SYNC NOW ]`, one-click switch/focus to other profiles, `[ + NEW PROFILE ]`, `[ 🕶 PRIVATE WINDOW ]`, `[ ⊞ PROFILE PICKER ]`, `[ 📥 IMPORT FROM THORIUM / CHROME ]`, and `[ ⚙ MANAGE ]`.
-- **Chrome / Thorium Bookmarks Importer (`src/web/web_profiles.c`):**
-  - Read-only parser for `~/.config/{thorium,google-chrome,chromium}/<Profile>/Bookmarks` (standard Chromium JSON) plus Netscape HTML bookmark exports, importing folders and URLs cleanly into the selected `kajo-web` profile with generated UUIDs.
+  - Clicking `[ ● WORK ]` opens a compact **Profile Switcher Popover**: active profile sync status + `[ ↻ SYNC NOW ]`, one-click switch/focus to other profiles, `[ + NEW PROFILE ]`, `[ 🕶 PRIVATE WINDOW ]`, `[ ⊞ PROFILE PICKER ]`, and `[ ⚙ MANAGE ]`.
 
 ### 6.3 Free Per-Profile Google Drive AppData Sync (`drive.appdata`)
 
@@ -390,7 +388,7 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
 | Module | Responsibility |
 | :--- | :--- |
 | `src/web/web_model.{h,c}` | **Pure GTK-free core** (testable without Wayland/WebKit): tab tree, pinned/group ordering, MRU stack, closed-tab undo stack, omnibar URL vs. search/bang classifier (`!gh`, `!arch`, etc.), autohide rail FSM math, idle suspension selector. |
-| `src/web/web_sync_merge.{h,c}` | **Pure GTK-free sync & import core**: UUID/timestamp/tombstone CRDT merge for bookmarks/history/tabs, optional `libgcrypt` `AES-256-GCM` + `PBKDF2` E2EE envelope, and read-only Chrome/Thorium `Bookmarks` JSON importer. |
+| `src/web/web_sync_merge.{h,c}` | **Pure GTK-free sync core**: UUID/timestamp/tombstone CRDT merge for bookmarks/history/tabs and optional `libgcrypt` `AES-256-GCM` + `PBKDF2` E2EE envelope. |
 | `src/web/main.c` | `GtkApplication` (`org.kajo.Web`), `kajo_app_init_theme()`, CLI flags (`[URL...]`, `--profile <id>`, `--profile-picker`, `--private`, `--no-hw-accel`), single-instance URL & profile window dispatch (`G_APPLICATION_HANDLES_OPEN`). |
 | `src/web/web_profiles.{h,c}` | Profile registry (`profiles.toml`), per-profile directory bootstrap, and `WebKitNetworkSession` lifecycle cache (including ephemeral Private/Guest sessions). |
 | `src/web/web_picker.{h,c}` | Frameless `760×480` Aero + Metro Startup Profile Picker window (`.shell-web-picker`) with card grid, inline profile creator/editor, and keyboard `1`–`9` launch. |
@@ -416,7 +414,7 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
    - Omnibar classifier (`localhost:8080`, `kajo://gpu`, `https://...`, bare hostnames, `!gh`/`!arch` bangs, plain search queries).
    - Autohide Rail FSM transitions: trigger enter $\rightarrow$ reveal timer $\rightarrow$ expanded $\rightarrow$ leave $\rightarrow$ hide timer $\rightarrow$ collapsed, plus hold-open cancellation, re-enter cancellation, focus-loss collapse, and Escape dismissal (both immediate and "wait, then input" timing tests).
    - Idle suspension eligibility (verifies pinned, audible, active, and capture-active tabs are never suspended).
-   - Profile registry round-trip (`profiles.toml`), Chrome/Thorium `Bookmarks` JSON importer, UUID/tombstone CRDT sync merge conflict cases, and `AES-256-GCM` E2EE encrypt/decrypt round-trip + wrong-passphrase rejection.
+   - Profile registry round-trip (`profiles.toml`), UUID/tombstone CRDT sync merge conflict cases, and `AES-256-GCM` E2EE encrypt/decrypt round-trip + wrong-passphrase rejection.
 2. **Config Store Parity (`tests/test_config.c`):**
    - Add `web.toml` to `config-roundtrip` and `fuzz-toml-config` verifying compiled-vs-shipped default parity, value clamping, `conf.d` overrides, and comment-preserving patching.
 3. **Sanitizer Gate (`scripts/asan-test.sh`):**
@@ -435,5 +433,5 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
 | **Phase 1 — Core, Profiles, Config & Skeleton** | `web.toml` schema (`schema_web.c`), `web_model.{h,c}` + `test_web_model.c`, `web_profiles.{h,c}` (`WebKitNetworkSession` per profile) + `web_picker.{h,c}`, `kajo-web` frameless window + `WebKitWebView` with hardware acceleration (`ALWAYS`) + minimalist top bar + `kajo://gpu`. | `meson compile && meson test` pass (0 warnings), `kajo-web` launches isolated profile windows with Skia + DMA-BUF. |
 | **Phase 2 — Vertical Autohide Tab Rail** | `web_tab_rail.{h,c}` (`autohide` / `compact` / `pinned`, left/right, `4px` trigger strip, real reveal/hide timers, pinned tiles, groups, mute/close, drag-reorder, `Ctrl+B`, `Ctrl+Shift+T`). | Rail FSM tests + headless visual captures for all 3 rail modes. |
 | **Phase 3 — `kajo-settings` Page 13 & Live Reload** | `src/settings/pages/page_web.c` (all 6 cards, `SAVE & APPLY` / `REVERT`) + `GFileMonitor` hot-reload in `kajo-web`. | Changing rail mode, side, profile border accent, search engine, ad-blocker, or zoom in `kajo-settings` updates open `kajo-web` windows immediately. |
-| **Phase 4 — Omnibar, Palette, Storage & Ad-Blocker** | `web_omnibar.{h,c}`, `web_palette.{h,c}` (`Ctrl+K`), `web_storage.{h,c}` (per-profile SQLite FTS5 + session restore + Thorium/Chrome bookmark importer), `web_adblock.{h,c}` (`WebKitUserContentFilterStore` + bundled rules), `kajo://newtab` / `history` / `bookmarks`. | Unit + ASan tests pass; native content filter compiles & blocks ads with counter badge. |
+| **Phase 4 — Omnibar, Palette, Storage & Ad-Blocker** | `web_omnibar.{h,c}`, `web_palette.{h,c}` (`Ctrl+K`), `web_storage.{h,c}` (per-profile SQLite FTS5 + session restore), `web_adblock.{h,c}` (`WebKitUserContentFilterStore` + bundled rules), `kajo://newtab` / `history` / `bookmarks`. | Unit + ASan tests pass; native content filter compiles & blocks ads with counter badge. |
 | **Phase 5 — Google Drive AppData Sync & Overlays** | `web_sync_merge.{h,c}`, `web_sync.{h,c}` (`drive.appdata` PKCE OAuth + `libsecret` + optional `AES-256-GCM` E2EE), inline Find Bar (`Ctrl+F`), Permission Infobar, Downloads Popover, idle tab suspension (`WebKitWebViewSessionState`), `WebKitFileChooserRequest` portal bridge, docked Web Inspector (`F12`), gallery & docs sync. | Full build, test, ASan, `ui-shot.sh`, and live Host A verification (including multi-profile + Drive AppData sync) complete. |

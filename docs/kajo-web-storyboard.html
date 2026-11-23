@@ -703,7 +703,7 @@ const SCENARIOS = [
         cursor: { x: 1020, y: 112 },
         callout: { x: 360, y: 240, text: 'AES-256-GCM ciphertext synced across Host A laptop ↔ Host B desktop' },
         st: { status: '☁ SYNCED', e2ee: 'AES-256-GCM', merge: 'UUID+TOMBSTONE', idle_cpu: '< 0.05%' },
-        spec: '§6.3 — Debounced 30s after edits + on startup/close; plus 1-click Chrome/Thorium Bookmarks JSON importer.',
+        spec: '§6.3 — Debounced 30s after edits + on startup/close with zero background polling loops.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', syncPop: 'done' }
       }
     ]

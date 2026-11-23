@@ -1579,7 +1579,7 @@ smooth_scrolling      = true</div>
           <div id="popProfList" style="display:flex; flex-direction:column; gap:5px;"></div>
           <div style="display:flex; gap:5px; margin-top:4px;">
             <button class="demo-btn" id="btnOpenPickerFromPop" style="flex:1;">⊞ PROFILE PICKER</button>
-            <button class="demo-btn" id="btnImportThorium" style="flex:1;">📥 IMPORT THORIUM</button>
+            <button class="demo-btn" id="btnPrivFromPop" style="flex:1;">🕶 PRIVATE WINDOW</button>
           </div>
         </div>
       </div>
@@ -2117,10 +2117,11 @@ smooth_scrolling      = true</div>
       renderProfiles();
     }, 550);
   };
-  document.getElementById('btnImportThorium').onclick = () => {
-    const b = document.getElementById('btnImportThorium');
-    b.textContent = '✓ IMPORTED 84 BM';
-    setTimeout(() => { b.textContent = '📥 IMPORT THORIUM'; }, 1600);
+  document.getElementById('btnPrivFromPop').onclick = () => {
+    state.isPrivate = true;
+    document.getElementById('chipPriv').style.display = 'inline-flex';
+    document.getElementById('btnPrivate').classList.add('on');
+    closePopovers();
   };
   function openPicker() { closePopovers(); document.getElementById('pickerModal').classList.add('show'); }
   document.getElementById('btnPicker').onclick = openPicker;
