@@ -232,6 +232,7 @@ typedef struct CompServer {
     bool                                  last_wants_vrr;
 
     int                                   startup_pid;  /* 0 when none or already exited */
+    int                                   dbus_env_pid; /* 0 unless waiting to start graphical-session.target */
     int                                   exit_status;  /* main() returns this */
     bool                                  nested_at_startup; /* true if WAYLAND_DISPLAY was set before start */
 

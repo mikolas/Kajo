@@ -998,6 +998,50 @@ test_effects_and_shadow_rules(void)
     g_free(tmp);
 }
 
+static void
+test_session_portals_conf(void)
+{
+    const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
+    if (!root)
+        root = KAJO_SOURCE_DIR;
+    g_autofree gchar *path = g_build_filename(root, "data", "session", "kajo-portals.conf", NULL);
+
+    g_autoptr(GKeyFile) kf = g_key_file_new();
+    g_autoptr(GError) err = NULL;
+    g_assert_true(g_key_file_load_from_file(kf, path, G_KEY_FILE_NONE, &err));
+    g_assert_no_error(err);
+
+    g_autofree gchar *def = g_key_file_get_string(kf, "preferred", "default", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(def, ==, "gtk;");
+
+    g_autofree gchar *sc = g_key_file_get_string(kf, "preferred", "org.freedesktop.impl.portal.ScreenCast", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(sc, ==, "wlr");
+
+    g_autofree gchar *ss = g_key_file_get_string(kf, "preferred", "org.freedesktop.impl.portal.Screenshot", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(ss, ==, "wlr");
+
+    g_autofree gchar *sec = g_key_file_get_string(kf, "preferred", "org.freedesktop.impl.portal.Secret", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(sec, ==, "gnome-keyring;");
+
+    /* Ensure no portal routes to org.freedesktop.impl.portal.desktop.gnome (requires GNOME Shell/Mutter) */
+    gsize n_keys = 0;
+    g_auto(GStrv) keys = g_key_file_get_keys(kf, "preferred", &n_keys, &err);
+    g_assert_no_error(err);
+    for (gsize i = 0; i < n_keys; i++) {
+        g_autofree gchar *val = g_key_file_get_string(kf, "preferred", keys[i], NULL);
+        g_assert_nonnull(val);
+        g_auto(GStrv) backends = g_strsplit(val, ";", -1);
+        for (gsize j = 0; backends[j] != NULL; j++) {
+            g_strstrip(backends[j]);
+            g_assert_cmpstr(backends[j], !=, "gnome");
+        }
+    }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -1014,6 +1058,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
     g_test_add_func("/comp/config/greeter-filtering", test_greeter_config_filtering);
     g_test_add_func("/comp/config/effects-and-shadow-rules", test_effects_and_shadow_rules);
+    g_test_add_func("/comp/session/portals-conf", test_session_portals_conf);
     g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
     g_test_add_func("/comp/touch/horizontal-drag-routing", test_horizontal_drag_routing);
     return g_test_run();

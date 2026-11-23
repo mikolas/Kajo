@@ -51,6 +51,20 @@ handle_sigchld(int sig, void *data)
         pid_t pid = waitpid(-1, &status, WNOHANG);
         if (pid <= 0)
             break;
+        if (s->dbus_env_pid && pid == s->dbus_env_pid) {
+            int code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
+            s->dbus_env_pid = 0;
+            if (code == 0) {
+                const char *const target_argv[] = {
+                    "systemctl", "--user", "start", "--no-block",
+                    "graphical-session.target", NULL,
+                };
+                comp_spawn(s, target_argv);
+            } else {
+                wlr_log(WLR_ERROR, "dbus-update-activation-environment exited with status %d; "
+                        "skipping graphical-session.target activation", code);
+            }
+        }
         if (s->startup_pid && pid == s->startup_pid) {
             int code = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + (WIFSIGNALED(status) ? WTERMSIG(status) : 0);
             if (s->opts.greeter_mode && code == 127)

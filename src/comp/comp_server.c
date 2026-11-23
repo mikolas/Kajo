@@ -512,7 +512,13 @@ comp_server_start(CompServer *s)
                 "XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "XDG_SESSION_TYPE",
                 NULL,
             };
-            comp_spawn(s, dbus_argv);
+            int pid = comp_spawn(s, dbus_argv);
+            /* When launched directly (not via kajo-comp.service), bring up
+             * graphical-session.target once dbus-update-activation-environment
+             * exits cleanly so Requisite=graphical-session.target user units
+             * (portals, session daemons) can activate. */
+            if (pid > 0 && !getenv("NOTIFY_SOCKET"))
+                s->dbus_env_pid = pid;
         }
         comp_sd_notify("READY=1");
         s->watchdog_timer = wl_event_loop_add_timer(s->loop, handle_watchdog_timer, s);

@@ -180,6 +180,7 @@ fi
 cleanup_login_session() {
     if command -v systemctl >/dev/null 2>&1 && [ "${KAJO_COMP_NO_DBUS_ENV:-0}" != "1" ]; then
         systemctl --user start kajo-shutdown.target >/dev/null 2>&1 || true
+        systemctl --user stop graphical-session.target >/dev/null 2>&1 || true
         systemctl --user unset-environment \
             WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP \
             XDG_SESSION_DESKTOP KAJO_COMP_SOCKET NIRI_SOCKET SWAYSOCK >/dev/null 2>&1 || true
