@@ -46,7 +46,7 @@ Per Kajo's engineering honesty rules (`AGENTS.md` §8), `kajo-web` documents Web
 | **Wayland Zero-Copy GPU Acceleration** | Default ON (`ALWAYS`) | Skia + GBM DMA-BUF + damage propagation (`WebKitGTK 2.50+`), WebGL GPU process (`UseGPUProcessForWebGL`). |
 | **Native Ad & Tracker Blocking** | Two-layer (`WebKitUserContentFilterStore` + User Scripts) | Layer 1 compiles Safari-format JSON rulepacks (EasyList/EasyPrivacy) into fast native DFA bytecode (URL block + CSS hide; no native per-page block count API, so Omnibar shows real `ON`/`OFF` + compiled rule count). Layer 2 supports opt-in URL-scoped `~/.config/kajo/web/scripts/*.{js,css}` via `WebKitUserContentManager` for cosmetic/cookie-banner/YouTube mitigation. |
 | **Normal Web Video (YouTube & Social)** | Hardware-accelerated (`gstreamer` `va` + DMA-BUF) | Verified on Host A (`gstreamer 1.28.9` + `gst-plugins-bad` unified `va` plugin: `vah264dec`, `vavp9dec`, `vaav1dec` zero-copy into WebKit DMA-BUF). Plays YouTube (up to 4K60 H.264/VP9/AV1), Reddit, X, Instagram, TikTok, Twitch, Vimeo; plus **`▶ OPEN IN KAJO PLAYER`** (`libmpv`). |
-| **Built-In Video / Audio Downloader** | Two-tier (`WebKitDownload` + optional `yt-dlp`/`ffmpeg`) | Tier A downloads direct HTML5 `<video>`/`<audio>` elements natively. Tier B spawns async `yt-dlp` + `ffmpeg` (`GSubprocess`) for YouTube/social DASH/HLS streams (Best MP4 / 1080p / 720p / Audio Only), streaming live progress into the Downloads Popover. Clearly disabled with `"Requires yt-dlp"` hint if `yt-dlp` is not on `PATH`. |
+| **Built-In Video / Audio Downloader** | Three-tier (`WebKitDownload` + VDH-style `.m3u8`/`.mpd` sniffer $\rightarrow$ `ffmpeg` + optional `yt-dlp`) | Tier 1 downloads direct HTML5 `<video>`/`<audio>` natively. Tier 2 passively sniffs HLS (`.m3u8`), DASH (`.mpd`), and progressive video streams via `WebKitWebView::resource-load-started` (like Video DownloadHelper, with zero Companion App), parses resolution variants, and remuxes via system `ffmpeg` (`-c copy`) with profile cookies/Referer. Tier 3 spawns optional async `yt-dlp` + `ffmpeg` for JS-obfuscated YouTube/social sites (clearly disabled with `"Requires yt-dlp"` if absent). |
 | **Mandatory Process Sandboxing** | Always ON | WebKitGTK 6.0 enforces Bubblewrap + `xdg-dbus-proxy` + `seccomp` (cannot be disabled in API). |
 | **DevTools / Web Inspector** | Built-in (`WebKitWebInspector`) | Dockable bottom/right or detached WebKit Inspector (`F12` / `Ctrl+Shift+I`). |
 | **Multiple Profiles & Google Web Login** | Full (`WebKitNetworkSession`) | Isolated cookies, IndexedDB, cache, history, bookmarks, and Google Workspace/Gmail web sessions per profile window. |
@@ -347,6 +347,32 @@ Modeled directly on Chrome/Thorium's window-scoped profile UX, backed natively b
 - **Event-Driven Resource Discipline (`AGENTS.md` §4D):**
   - Zero tight background polling. Sync executes asynchronously on: (1) profile startup, (2) `30s` debounce after bookmark/setting mutations, (3) clean profile window close, and (4) explicit `[ ↻ SYNC NOW ]`. All network calls run via `libsoup3` async `GTask` + `GCancellable` (`GWeakRef` safe).
 
+### 6.4 Native Stream Sniffer & Three-Tier Video Downloader (VDH-Style, No Companion App)
+
+Because `kajo-web` is both the browser and a native C17 process, it implements Video DownloadHelper's passive stream-detection architecture natively without a separate Companion App:
+
+```text
+WebKitWebView::resource-load-started ──► WebKitURIResponse (URI + MIME + Content-Length)
+        │
+        ├──► Tier 1: Direct <video>/<audio> / progressive .mp4/.webm (≥ 512 KB) ──► WebKitDownload
+        ├──► Tier 2: Sniffed HLS (.m3u8) / DASH (.mpd) manifests ──► variant parser ──► system ffmpeg (-c copy)
+        └──► Tier 3: JS-obfuscated sites (YouTube, Reddit, X, TikTok, IG) ──► optional async yt-dlp + ffmpeg
+```
+
+- **Passive Network Sniffing (`src/web/web_media_sniff.{h,c}`):**
+  - Attaches to `WebKitWebView::resource-load-started` and `WebKitWebResource::notify::response` on each tab to detect:
+    - **HLS manifests:** `.m3u8` / `application/vnd.apple.mpegurl` / `application/x-mpegurl`.
+    - **DASH manifests:** `.mpd` / `application/dash+xml`.
+    - **Progressive streams:** `.mp4` / `.webm` / `video/*` with `content_length >= 512 KB` (filtering out tiny tracking/ad loops).
+  - Deduplicates per-tab detected streams and clears the tab's stream list on every `WEBKIT_LOAD_COMMITTED` navigation.
+  - When streams are detected, the conditional top-bar chip lights up with the count (`[ ⬇ 3 ]`); clicking it opens the **Media Popover** listing parsed resolution/bitrate variants (`#EXT-X-STREAM-INF` for HLS, `<Representation>` for DASH).
+- **Authenticated Lossless Remux via System `ffmpeg`:**
+  - Captures the page `Referer`, `User-Agent`, and active profile's cookies (`webkit_cookie_manager_get_cookies()` on the profile's `WebKitNetworkSession`), passing headers to `ffmpeg` via a `0600` private temporary file (unlinked on completion/cancellation — never exposed in process `argv`) so signed/authenticated CDN streams download cleanly without `403`.
+  - Runs asynchronously via `GSubprocess` + `GCancellable` using lossless remux (`-c copy -movflags +faststart`) by default, streaming live `%` and speed into the Downloads Popover.
+- **Optional `yt-dlp` Backend & `kajo-player` Handoff:**
+  - For sites whose media URLs/signatures are JS-computed (YouTube, Reddit, X, TikTok, Instagram), runs optional `yt-dlp` + `ffmpeg` asynchronously (`Best MP4`, `1080p`, `720p`, `Audio Only`). If `yt-dlp` is not found on `PATH`, Tier 3 options are visibly disabled with `"Requires yt-dlp"` while Tiers 1 & 2 continue working via `WebKitDownload` + `ffmpeg`.
+  - Every detected stream or completed download offers **`▶ OPEN IN KAJO PLAYER`** (`libmpv`) and **`📁 SHOW IN KAJO FILES`**.
+
 ---
 
 ## 7. Keyboard Ergonomics & Command Palette
@@ -406,7 +432,8 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
 | `src/web/web_palette.{h,c}` | `Ctrl+K` fuzzy command, open-tab, closed-tab, bookmark, history, and profile-switch modal switcher. |
 | `src/web/web_adblock.{h,c}` | `WebKitUserContentFilterStore` async JSON rulepack compiler, per-domain allowlist (`unless-domain`), and opt-in `~/.config/kajo/web/scripts/*.{js,css}` loader (`WebKitUserContentManager`). |
 | `src/web/web_storage.{h,c}` | Per-profile async SQLite (`history.db`, FTS5) bookmarks/history store + atomic `session.json` save/restore. |
-| `src/web/web_downloads.{h,c}` | Unified `WebKitDownload` + async `yt-dlp`/`ffmpeg` (`GSubprocess` + `GCancellable`) media downloader with quality picker (`Best MP4`, `1080p`, `720p`, `Audio`), live progress in Downloads Popover, **`▶ OPEN IN KAJO PLAYER`**, and **`📁 SHOW IN KAJO FILES`**. |
+| `src/web/web_media_sniff.{h,c}` | **Pure GTK-free manifest & stream classifier + WebKit resource hook**: detects `.m3u8`, `.mpd`, and progressive `video/*` streams via `resource-load-started`, parses HLS `#EXT-X-STREAM-INF` / DASH `<Representation>` variants, and tracks per-tab detected media. |
+| `src/web/web_downloads.{h,c}` | Unified three-tier downloader (`WebKitDownload` + async system `ffmpeg` lossless remux with `0600` cookie/header handoff + optional `yt-dlp`), live progress in Downloads Popover, **`▶ OPEN IN KAJO PLAYER`**, and **`📁 SHOW IN KAJO FILES`**. |
 | `src/web/web_schemes.{h,c}` | Custom `kajo://` URI scheme handler (`newtab`, `gpu`, `history`, `bookmarks`, `downloads`) styled with live `@metro-accent`. |
 | `src/settings/pages/page_web.c` | `kajo-settings` Page 13 (`13 / 13 • KAJO WEB`) with live GPU telemetry readout, 6 configuration cards (including Profiles & Drive AppData Sync), and `SAVE & APPLY` / `REVERT`. |
 | `data/defaults/styles/80-web.css` | Scoped Aero + Metro CSS partial imported by `data/defaults/style.css`. |
@@ -420,7 +447,7 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
    - Omnibar classifier (`localhost:8080`, `kajo://gpu`, `https://...`, bare hostnames, `!gh`/`!arch` bangs, plain search queries).
    - Autohide Rail FSM transitions: trigger enter $\rightarrow$ reveal timer $\rightarrow$ expanded $\rightarrow$ leave $\rightarrow$ hide timer $\rightarrow$ collapsed, plus hold-open cancellation, re-enter cancellation, focus-loss collapse, and Escape dismissal (both immediate and "wait, then input" timing tests).
    - Idle suspension eligibility (verifies pinned, audible, active, and capture-active tabs are never suspended).
-   - Profile registry round-trip (`profiles.toml`), UUID/tombstone CRDT sync merge conflict cases, and `AES-256-GCM` E2EE encrypt/decrypt round-trip + wrong-passphrase rejection.
+   - Profile registry round-trip (`profiles.toml`), UUID/tombstone CRDT sync merge conflict cases, `AES-256-GCM` E2EE encrypt/decrypt round-trip + wrong-passphrase rejection, and VDH-style stream sniffer tests (HLS `#EXT-X-STREAM-INF` master playlist parsing, DASH `<Representation>` parsing, MIME/512 KB size filtering, and deduplication).
 2. **Config Store Parity (`tests/test_config.c`):**
    - Add `web.toml` to `config-roundtrip` and `fuzz-toml-config` verifying compiled-vs-shipped default parity, value clamping, `conf.d` overrides, and comment-preserving patching.
 3. **Sanitizer Gate (`scripts/asan-test.sh`):**
@@ -439,5 +466,5 @@ Strict adherence to `AGENTS.md` §5 (`< 1500` lines per file, `< 150` lines per 
 | **Phase 1 — Core, Profiles, Config & Skeleton** | `web.toml` schema (`schema_web.c`), `web_model.{h,c}` + `test_web_model.c`, `web_profiles.{h,c}` (`WebKitNetworkSession` per profile) + `web_picker.{h,c}`, `kajo-web` frameless window + `WebKitWebView` with hardware acceleration (`ALWAYS`) + minimalist top bar + `kajo://gpu`. | `meson compile && meson test` pass (0 warnings), `kajo-web` launches isolated profile windows with Skia + DMA-BUF. |
 | **Phase 2 — Vertical Autohide Tab Rail** | `web_tab_rail.{h,c}` (`autohide` / `compact` / `pinned`, left/right, `4px` trigger strip, real reveal/hide timers, pinned tiles, groups, mute/close, drag-reorder, `Ctrl+B`, `Ctrl+Shift+T`). | Rail FSM tests + headless visual captures for all 3 rail modes. |
 | **Phase 3 — `kajo-settings` Page 13 & Live Reload** | `src/settings/pages/page_web.c` (all 6 cards, `SAVE & APPLY` / `REVERT`) + `GFileMonitor` hot-reload in `kajo-web`. | Changing rail mode, side, profile border accent, search engine, ad-blocker, or zoom in `kajo-settings` updates open `kajo-web` windows immediately. |
-| **Phase 4 — Omnibar, Palette, Storage & Ad-Blocker** | `web_omnibar.{h,c}`, `web_palette.{h,c}` (`Ctrl+K`), `web_storage.{h,c}` (per-profile SQLite FTS5 + session restore), `web_adblock.{h,c}` (`WebKitUserContentFilterStore` + bundled rules), `kajo://newtab` / `history` / `bookmarks`. | Unit + ASan tests pass; native content filter compiles & blocks ads with counter badge. |
-| **Phase 5 — Google Drive AppData Sync & Overlays** | `web_sync_merge.{h,c}`, `web_sync.{h,c}` (`drive.appdata` PKCE OAuth + `libsecret` + optional `AES-256-GCM` E2EE), inline Find Bar (`Ctrl+F`), Permission Infobar, Downloads Popover, idle tab suspension (`WebKitWebViewSessionState`), `WebKitFileChooserRequest` portal bridge, docked Web Inspector (`F12`), gallery & docs sync. | Full build, test, ASan, `ui-shot.sh`, and live Host A verification (including multi-profile + Drive AppData sync) complete. |
+| **Phase 4 — Omnibar, Palette, Storage & Ad-Blocker** | `web_omnibar.{h,c}`, `web_palette.{h,c}` (`Ctrl+K`), `web_storage.{h,c}` (per-profile SQLite FTS5 + session restore), `web_adblock.{h,c}` (`WebKitUserContentFilterStore` + bundled rules + opt-in user scripts), `kajo://newtab` / `history` / `bookmarks`. | Unit + ASan tests pass; native content filter compiles & blocks ads with live `ON`/`OFF` shield & rule count. |
+| **Phase 5 — Drive Sync, Stream Sniffer & Overlays** | `web_sync_merge.{h,c}`, `web_sync.{h,c}` (`drive.appdata` PKCE OAuth + `libsecret` + optional `AES-256-GCM` E2EE), `web_media_sniff.{h,c}` (`.m3u8`/`.mpd`/`.mp4` sniffer $\rightarrow$ `ffmpeg` + optional `yt-dlp` + `kajo-player` handoff), inline Find Bar (`Ctrl+F`), Permission Infobar, Downloads Popover, idle tab suspension (`WebKitWebViewSessionState`), `WebKitFileChooserRequest` portal bridge, docked Web Inspector (`F12`), gallery & docs sync. | Full build, test, ASan, `ui-shot.sh`, and live Host A verification (including multi-profile, Drive AppData sync, and stream sniffing/remux) complete. |
