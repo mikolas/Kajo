@@ -1047,6 +1047,108 @@
     }
     .pal-row:hover { background: rgba(var(--metro-accent-rgb), 0.22); }
 
+    /* Profile Chip & Startup Profile Picker Modal */
+    .profile-chip {
+      height: 22px;
+      padding: 0 7px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-2);
+      color: var(--fg-primary);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+    .profile-chip:hover { background: var(--surface-hover); border-color: var(--metro-accent); }
+    .profile-dot { width: 7px; height: 7px; background: var(--metro-accent); display: inline-block; }
+
+    .prof-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--p-col, var(--metro-accent));
+      cursor: pointer;
+    }
+    .prof-row:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+    .prof-row.active { background: rgba(var(--metro-accent-rgb), 0.18); border-color: var(--metro-accent); }
+
+    .picker-backdrop {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 5, 5, 0.86);
+      backdrop-filter: blur(8px);
+      z-index: 98;
+      align-items: center;
+      justify-content: center;
+    }
+    .picker-backdrop.show { display: flex; }
+    .picker-win {
+      width: 740px;
+      max-width: 94%;
+      background: var(--surface-bg);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 28px 72px rgba(0, 0, 0, 0.95);
+      display: flex;
+      flex-direction: column;
+    }
+    .picker-hdr {
+      height: 36px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+    }
+    .picker-body { padding: 20px; }
+    .picker-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .picker-card {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-top: 3px solid var(--p-col, var(--metro-accent));
+      padding: 16px 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+    }
+    .picker-card:hover { background: var(--surface-hover); border-color: var(--p-col, var(--metro-accent)); }
+    .picker-card.active { background: rgba(var(--metro-accent-rgb), 0.14); border-color: var(--p-col, var(--metro-accent)); }
+    .picker-card .pk-top { display: flex; align-items: center; justify-content: space-between; font-size: 20px; }
+    .picker-card .pk-key { font-family: var(--font-mono); font-size: 10px; color: var(--fg-dim); border: 1px solid var(--border-struct); padding: 1px 5px; }
+    .picker-card .pk-name { font-family: var(--font-mono); font-size: 13px; font-weight: 800; letter-spacing: 0.6px; }
+    .picker-card .pk-mail { font-family: var(--font-mono); font-size: 10px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-card .pk-sync { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--metro-telemetry); margin-top: 4px; }
+    .picker-foot {
+      padding: 12px 20px;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--fg-secondary);
+    }
+
     /* Embedded Kajo Settings (13 / 13 • KAJO WEB) Live Preview Drawer */
     .settings-drawer {
       display: none;
@@ -1164,6 +1266,7 @@
       </div>
     </div>
     <button class="demo-btn" id="btnTopAuto">ZEN TOP BAR</button>
+    <button class="demo-btn" id="btnPicker">⊞ PROFILE PICKER</button>
     <button class="demo-btn" id="btnPrivate">PRIVATE</button>
     <button class="demo-btn" id="btnPerm">PERMISSION BAR</button>
     <button class="demo-btn" id="btnFloat">FLOAT WINDOW</button>
@@ -1218,6 +1321,7 @@
           <span class="status-chip warn" id="chipSw" style="display:none;" title="Hardware acceleration disabled — running software renderer">⚠ SW RENDER</span>
           <span class="status-chip priv" id="chipPriv" style="display:none;" title="Ephemeral session — no history or cookies saved">🕶 PRIVATE</span>
           <button class="status-chip dl" id="btnDownloads" title="Downloads (Ctrl+J)">↓ 1</button>
+          <button class="profile-chip" id="btnProfileChip" title="Profile &amp; Google Drive AppData Sync (Ctrl+Shift+M)"><span class="profile-dot" id="profDot"></span><span id="profChipName">WORK</span></button>
           <button class="chrome-btn" id="btnPalette" title="Quick Command &amp; Tab Switcher (Ctrl+K)">⌘</button>
           <button class="chrome-btn" id="btnFind" title="Find in Page (Ctrl+F)">⌕</button>
           <button class="chrome-btn" id="btnInspector" title="WebKit Web Inspector (F12)">&lt;/&gt;</button>
@@ -1310,7 +1414,7 @@
                   </div>
                 </div>
                 <div class="tele-strip">
-                  <div class="tele-card"><div class="tele-k">ENGINE</div><div class="tele-v">WEBKITGTK 2.54</div></div>
+                  <div class="tele-card"><div class="tele-k">PROFILE &amp; DRIVE SYNC</div><div class="tele-v" id="ntProfile">WORK • ☁ SYNCED</div></div>
                   <div class="tele-card"><div class="tele-k">RENDER PIPELINE</div><div class="tele-v" id="ntGpu">SKIA + DMABUF</div></div>
                   <div class="tele-card"><div class="tele-k">CONTENT BLOCKER</div><div class="tele-v" id="ntAdblock">42,180 RULES</div></div>
                   <div class="tele-card"><div class="tele-k">SANDBOX</div><div class="tele-v">BWRAP + SECCOMP</div></div>
@@ -1457,6 +1561,55 @@ smooth_scrolling      = true</div>
         </div>
       </div>
 
+      <!-- Profile Switcher & Drive AppData Sync Popover -->
+      <div class="popover" id="popProfile" style="width:330px;">
+        <div class="pop-head">
+          <span id="popProfTitle">● WORK PROFILE</span>
+          <span id="popProfSyncBadge" style="color:#4ce886;">☁ SYNCED 2M AGO</span>
+        </div>
+        <div class="pop-body">
+          <div style="display:flex; align-items:center; justify-content:space-between; background:var(--surface-1); border:1px solid var(--border-subtle); padding:8px;">
+            <div>
+              <div id="popProfEmail" style="font-weight:700; color:#fff;">mikolas@work.dev</div>
+              <div style="font-size:9.5px; color:var(--fg-dim); margin-top:2px;">Google Drive appDataFolder • AES-256-GCM</div>
+            </div>
+            <button class="demo-btn on" id="btnSyncNow">↻ SYNC</button>
+          </div>
+          <div style="font-size:9.5px; color:var(--fg-dim); font-weight:700; letter-spacing:0.6px; margin-top:2px;">SWITCH ISOLATED PROFILE (WebKitNetworkSession)</div>
+          <div id="popProfList" style="display:flex; flex-direction:column; gap:5px;"></div>
+          <div style="display:flex; gap:5px; margin-top:4px;">
+            <button class="demo-btn" id="btnOpenPickerFromPop" style="flex:1;">⊞ PROFILE PICKER</button>
+            <button class="demo-btn" id="btnImportThorium" style="flex:1;">📥 IMPORT THORIUM</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Startup Profile Picker Modal (760x480) -->
+      <div class="picker-backdrop" id="pickerModal">
+        <div class="picker-win">
+          <div class="picker-hdr">
+            <span>🌐 KAJO WEB // SELECT PROFILE (WebKitNetworkSession)</span>
+            <button class="chrome-btn close-btn" id="btnClosePicker">✕</button>
+          </div>
+          <div class="picker-body">
+            <div style="font-family:var(--font-mono); font-size:11px; color:var(--fg-secondary); margin-bottom:14px;">
+              Each profile isolates cookies, IndexedDB, cache, Google web logins, and optional free Google Drive AppData sync.
+            </div>
+            <div class="picker-grid" id="pickerGrid"></div>
+          </div>
+          <div class="picker-foot">
+            <div style="display:flex; gap:8px;">
+              <button class="demo-btn on" id="btnAddProfile">+ ADD PROFILE</button>
+              <button class="demo-btn" id="btnGuestLaunch">🕶 GUEST / PRIVATE</button>
+            </div>
+            <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:var(--metro-accent);" />
+              <span>SHOW ON STARTUP (&gt;1 PROFILE)</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
       <!-- Embedded Kajo Settings (13 / 13 • KAJO WEB) Live Preview -->
       <div class="settings-drawer" id="settingsDrawer">
         <div class="set-hdr">
@@ -1531,6 +1684,21 @@ smooth_scrolling      = true</div>
               <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">SYNCED</span>
             </div>
           </div>
+          <div class="set-card">
+            <div class="set-card-title">4. PROFILES &amp; GOOGLE DRIVE APPDATA SYNC</div>
+            <div class="toggle-card on" id="tcDriveSync">
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">Google Drive AppData Sync (Free)</div><div style="font-size:10px; color:var(--fg-dim);">drive.appdata • libsecret • AES-256-GCM E2EE</div></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:#4ce886; font-weight:700;">ACTIVE</span>
+            </div>
+            <div class="set-row">
+              <div><strong>Startup Profile Picker</strong><small>Shown automatically when &gt;1 profile exists</small></div>
+              <button class="demo-btn" id="btnOpenPickerFromSettings">⊞ PREVIEW</button>
+            </div>
+            <div class="set-row">
+              <div><strong>Synced Data (kajo-web ↔ kajo-web)</strong><small>Bookmarks • History • Tabs • Settings</small></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">CRDT MERGE</span>
+            </div>
+          </div>
         </div>
         <div class="set-footer">
           <span>LIVE HOT-RELOAD • ~/.config/kajo/web.toml</span>
@@ -1558,6 +1726,12 @@ smooth_scrolling      = true</div>
     gpuPolicy: 'always',
     adblock: true,
     isPrivate: false,
+    activeProfile: 'work',
+    profiles: [
+      { id: 'work', name: 'WORK', ico: '💼', hex: '#0078d4', rgb: '0, 120, 212', email: 'mikolas@work.dev', sync: '☁ SYNCED 2M AGO', synced: true },
+      { id: 'personal', name: 'PERSONAL', ico: '🏠', hex: '#10893e', rgb: '16, 137, 62', email: 'mikolas@gmail.com', sync: '☁ SYNCED 8M AGO', synced: true },
+      { id: 'dev', name: 'DEV', ico: '⚙', hex: '#d83b01', rgb: '216, 59, 1', email: 'No Google Account', sync: 'LOCAL ONLY', synced: false }
+    ],
     activeTab: 'tab-newtab',
     closedStack: [],
     tabs: [
@@ -1876,7 +2050,94 @@ smooth_scrolling      = true</div>
   function closePopovers() {
     document.getElementById('popShield').classList.remove('show');
     document.getElementById('popDownloads').classList.remove('show');
+    document.getElementById('popProfile').classList.remove('show');
   }
+
+  function renderProfiles() {
+    const cur = state.profiles.find(p => p.id === state.activeProfile) || state.profiles[0];
+    document.documentElement.style.setProperty('--metro-accent', cur.hex);
+    document.documentElement.style.setProperty('--metro-accent-rgb', cur.rgb);
+    document.getElementById('profChipName').textContent = cur.name;
+    document.getElementById('profDot').style.background = cur.hex;
+    document.getElementById('popProfTitle').textContent = `● ${cur.name} PROFILE`;
+    document.getElementById('popProfEmail').textContent = cur.email;
+    document.getElementById('popProfSyncBadge').textContent = cur.sync;
+    document.getElementById('popProfSyncBadge').style.color = cur.synced ? '#4ce886' : 'var(--fg-dim)';
+    document.getElementById('ntProfile').textContent = `${cur.name} • ${cur.synced ? '☁ SYNCED' : 'LOCAL'}`;
+
+    const pl = document.getElementById('popProfList');
+    pl.innerHTML = '';
+    state.profiles.forEach(p => {
+      const r = document.createElement('div');
+      r.className = 'prof-row' + (p.id === state.activeProfile ? ' active' : '');
+      r.style.setProperty('--p-col', p.hex);
+      r.innerHTML = `<span>${p.ico}</span><div style="flex:1;"><div style="font-weight:700; color:#fff;">${p.name}</div><div style="font-size:9.5px; color:var(--fg-dim);">${p.email}</div></div><span style="font-size:9.5px; color:${p.synced ? 'var(--metro-telemetry)' : 'var(--fg-dim)'};">${p.synced ? '☁' : 'LOCAL'}</span>`;
+      r.onclick = () => { state.activeProfile = p.id; renderProfiles(); closePopovers(); };
+      pl.appendChild(r);
+    });
+
+    const pg = document.getElementById('pickerGrid');
+    pg.innerHTML = '';
+    state.profiles.forEach((p, idx) => {
+      const c = document.createElement('div');
+      c.className = 'picker-card' + (p.id === state.activeProfile ? ' active' : '');
+      c.style.setProperty('--p-col', p.hex);
+      c.innerHTML = `
+        <div class="pk-top"><span>${p.ico}</span><span class="pk-key">${idx + 1}</span></div>
+        <div class="pk-name">${p.name}</div>
+        <div class="pk-mail">${p.email}</div>
+        <div class="pk-sync" style="color:${p.synced ? 'var(--metro-telemetry)' : 'var(--fg-dim)'};">${p.sync}</div>
+      `;
+      c.onclick = () => {
+        state.activeProfile = p.id;
+        state.isPrivate = false;
+        document.getElementById('chipPriv').style.display = 'none';
+        document.getElementById('btnPrivate').classList.remove('on');
+        renderProfiles();
+        document.getElementById('pickerModal').classList.remove('show');
+      };
+      pg.appendChild(c);
+    });
+  }
+
+  document.getElementById('btnProfileChip').onclick = (e) => {
+    e.stopPropagation();
+    const el = document.getElementById('popProfile');
+    const was = el.classList.contains('show');
+    closePopovers();
+    if (!was) el.classList.add('show');
+  };
+  document.getElementById('btnSyncNow').onclick = () => {
+    const badge = document.getElementById('popProfSyncBadge');
+    badge.textContent = '↻ SYNCING…';
+    badge.style.color = 'var(--metro-telemetry)';
+    setTimeout(() => {
+      const cur = state.profiles.find(p => p.id === state.activeProfile);
+      if (cur) { cur.synced = true; cur.sync = '☁ SYNCED JUST NOW'; }
+      renderProfiles();
+    }, 550);
+  };
+  document.getElementById('btnImportThorium').onclick = () => {
+    const b = document.getElementById('btnImportThorium');
+    b.textContent = '✓ IMPORTED 84 BM';
+    setTimeout(() => { b.textContent = '📥 IMPORT THORIUM'; }, 1600);
+  };
+  function openPicker() { closePopovers(); document.getElementById('pickerModal').classList.add('show'); }
+  document.getElementById('btnPicker').onclick = openPicker;
+  document.getElementById('btnOpenPickerFromPop').onclick = openPicker;
+  document.getElementById('btnOpenPickerFromSettings').onclick = openPicker;
+  document.getElementById('btnClosePicker').onclick = () => document.getElementById('pickerModal').classList.remove('show');
+  document.getElementById('btnGuestLaunch').onclick = () => {
+    state.isPrivate = true;
+    document.getElementById('chipPriv').style.display = 'inline-flex';
+    document.getElementById('btnPrivate').classList.add('on');
+    document.getElementById('pickerModal').classList.remove('show');
+  };
+  document.getElementById('btnAddProfile').onclick = () => {
+    const n = state.profiles.length + 1;
+    state.profiles.push({ id: 'prof-' + n, name: 'PROFILE ' + n, ico: '❖', hex: '#00b7c3', rgb: '0, 183, 195', email: 'Not signed in', sync: 'LOCAL ONLY', synced: false });
+    renderProfiles();
+  };
   document.getElementById('btnShield').onclick = (e) => {
     e.stopPropagation();
     const el = document.getElementById('popShield');
@@ -1979,11 +2240,12 @@ smooth_scrolling      = true</div>
   });
 
   document.addEventListener('click', (e) => {
-    if (!e.target.closest('.popover') && !e.target.closest('#btnShield') && !e.target.closest('#btnDownloads')) {
+    if (!e.target.closest('.popover') && !e.target.closest('#btnShield') && !e.target.closest('#btnDownloads') && !e.target.closest('#btnProfileChip')) {
       closePopovers();
     }
   });
 
+  renderProfiles();
   renderTabs();
 })();
 </script>
