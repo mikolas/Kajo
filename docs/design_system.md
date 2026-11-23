@@ -156,6 +156,8 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - **Virtual Read-Only Archive Banner (`.files-prompt-bar`):** Shown when browsing inside `archive://<path>!/<subpath>`, displaying `📦 ARCHIVE VIEW (READ-ONLY) — <archive> / <subpath>` alongside `[ 📦 EXTRACT ALL ]` and `[ ↩ EXIT ]` buttons.
   - **LUKS / SMB Authentication Bar (`.files-auth-bar`):** `#181818` surface with `border-left: 3px solid #ff8c00`, passphrase `GtkPasswordEntry` (or username/domain/password fields for `smb://`), and `[ 🔓 UNLOCK ]` action.
   - **Trash Action Banner (`.files-trash-bar`):** `#1f1214` surface with `1px solid #4a1c20` and `border-left: 3px solid #e81123`, offering `[ ↺ RESTORE ALL ]` and destructive `[ 🗑 EMPTY TRASH ]`.
+- **Native FileChooser Portal Dialog (`.shell-files-chooser`, `.files-chooser-toolbar`, `.files-chooser-footer`):**
+  - Undecorated `880×580` `GtkWindow` (`org.kajo.Files.Chooser`, floating rule in `rules.toml`) reusing `KajoFilesSidebar`, virtualized Grid/List views, breadcrumbs/URI edit, `+ 📁` inline folder creation, `Space` Quick Look, and a bottom `.files-chooser-footer` hosting caller `choices` (checkboxes/dropdowns), `FILENAME:` entry (save modes), MIME/glob filter `GtkDropDown`, `[ CANCEL ]`, and primary `.action-btn-primary` accept button.
 
 ### 4.6 Kajo IDE (`kajo-ide`) Code Canvas, Tree Explorer, Diff & Debugger Components
 - **Buffer Tab Ribbon (`.ide-tab-ribbon`, `.ide-tab-pill`):**

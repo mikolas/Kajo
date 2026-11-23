@@ -299,6 +299,19 @@ window.shell-files-window .files-quicklook-meta {
     color: @metro-fg-soft;
 }
 
+/* Native Portal FileChooser Dialog (kajo-files --portal) */
+window.shell-files-chooser .files-chooser-toolbar {
+    background-color: @metro-surface-1;
+    border-bottom: 1px solid @metro-border;
+    padding: 6px 10px;
+}
+
+window.shell-files-chooser .files-chooser-footer {
+    background-color: @metro-surface-1;
+    border-top: 1px solid @metro-border;
+    padding: 8px 12px;
+}
+
 /* Sidebar Drive Capacity & Status Bar */
 window.shell-files-window .files-drive-bar trough {
     background-color: @metro-border-subtle;

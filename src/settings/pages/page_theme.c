@@ -1,6 +1,7 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
 #include "../../theme.h"
+#include "../../theme_export.h"
 #include "../../config/kajo_config_schema.h"
 #include <ctype.h>
 #include <gio/gio.h>
@@ -45,6 +46,16 @@ typedef struct _SettingsPageTheme {
     GtkWidget      *scale_surface_contrast;
     GtkWidget      *scale_border_opacity;
     GtkWidget      *scale_secondary_fg;
+
+    /* Opt-in External Toolkit Theming (GTK3/GTK4 + Qt 6) */
+    GtkWidget      *card_external;
+    GtkWidget      *toggle_ext_gtk;
+    GtkWidget      *toggle_ext_qt;
+    GtkWidget      *btn_restore_ext;
+    GtkWidget      *lbl_ext_note;
+    gboolean        qt6ct_available;
+    gboolean        saved_ext_gtk;
+    gboolean        saved_ext_qt;
 
     gchar          *current_accent_hex;
     gchar          *saved_accent_hex;
@@ -195,9 +206,13 @@ populate_draft_cfg_from_ui(SettingsPageTheme *self, KajoThemeCfg *out_cfg)
 
     out_cfg->surface_base = (gchar *)((self->current_surface_base && is_valid_hex_color(self->current_surface_base))
         ? self->current_surface_base : "#141414");
-    out_cfg->surface_contrast = gtk_range_get_value(GTK_RANGE(self->scale_surface_contrast)) / 100.0;
-    out_cfg->border_opacity = gtk_range_get_value(GTK_RANGE(self->scale_border_opacity)) / 100.0;
+    out_cfg->surface_contrast      = gtk_range_get_value(GTK_RANGE(self->scale_surface_contrast)) / 100.0;
+    out_cfg->border_opacity        = gtk_range_get_value(GTK_RANGE(self->scale_border_opacity)) / 100.0;
     out_cfg->secondary_fg_contrast = gtk_range_get_value(GTK_RANGE(self->scale_secondary_fg)) / 100.0;
+    out_cfg->theme_external_gtk    = self->toggle_ext_gtk
+        ? gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_ext_gtk)) : FALSE;
+    out_cfg->theme_external_qt     = (self->toggle_ext_qt && self->qt6ct_available)
+        ? gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_ext_qt)) : FALSE;
 }
 
 static void
@@ -302,6 +317,13 @@ compute_theme_is_dirty(SettingsPageTheme *self)
     if ((int)lround(gtk_range_get_value(GTK_RANGE(self->scale_border_opacity))) != self->saved_border_opacity_pct)
         return TRUE;
     if ((int)lround(gtk_range_get_value(GTK_RANGE(self->scale_secondary_fg))) != self->saved_secondary_fg_pct)
+        return TRUE;
+
+    gboolean cur_ext_gtk = self->toggle_ext_gtk
+        ? gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_ext_gtk)) : FALSE;
+    gboolean cur_ext_qt = (self->toggle_ext_qt && self->qt6ct_available)
+        ? gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_ext_qt)) : FALSE;
+    if (cur_ext_gtk != self->saved_ext_gtk || cur_ext_qt != self->saved_ext_qt)
         return TRUE;
 
     return FALSE;
@@ -577,6 +599,10 @@ action_revert_theme(gpointer user_data)
     gtk_range_set_value(GTK_RANGE(self->scale_surface_contrast), self->saved_surface_contrast_pct);
     gtk_range_set_value(GTK_RANGE(self->scale_border_opacity), self->saved_border_opacity_pct);
     gtk_range_set_value(GTK_RANGE(self->scale_secondary_fg), self->saved_secondary_fg_pct);
+    if (self->toggle_ext_gtk)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_ext_gtk), self->saved_ext_gtk);
+    if (self->toggle_ext_qt)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_ext_qt), self->saved_ext_qt);
 
     update_custom_swatch_css(self);
     self->syncing_ui = FALSE;
@@ -624,7 +650,11 @@ mutate_save_theme(KajoThemeCfg *draft, gpointer user_data)
     draft->surface_contrast      = s->surface_contrast;
     draft->border_opacity        = s->border_opacity;
     draft->secondary_fg_contrast = s->secondary_fg_contrast;
+    draft->theme_external_gtk    = s->theme_external_gtk;
+    draft->theme_external_qt     = s->theme_external_qt;
 }
+
+static void sync_external_theme_ui(SettingsPageTheme *self);
 
 static void
 action_save_theme(gpointer user_data)
@@ -689,6 +719,13 @@ action_save_theme(gpointer user_data)
     self->saved_surface_contrast_pct = (int)lround(draft.surface_contrast * 100.0);
     self->saved_border_opacity_pct   = (int)lround(draft.border_opacity * 100.0);
     self->saved_secondary_fg_pct     = (int)lround(draft.secondary_fg_contrast * 100.0);
+    self->saved_ext_gtk              = draft.theme_external_gtk;
+    self->saved_ext_qt               = draft.theme_external_qt;
+
+    g_autoptr(GError) ext_err = NULL;
+    if (!kajo_theme_export_sync(saved ? saved : &draft, NULL, TRUE, &ext_err) && ext_err)
+        g_warning("theme-export: sync failed: %s", ext_err->message);
+    sync_external_theme_ui(self);
 
     apply_live_window_preview_css(self, FALSE);
     settings_reload_global_theme();
@@ -843,6 +880,9 @@ theme_init_providers_and_config(SettingsPageTheme *self, GdkDisplay *display)
     self->saved_surface_contrast_pct = (int)lround(CLAMP(config ? config->surface_contrast : 1.0, 0.0, 2.0) * 100.0);
     self->saved_border_opacity_pct   = (int)lround(CLAMP(config ? config->border_opacity : 1.0, 0.0, 1.0) * 100.0);
     self->saved_secondary_fg_pct     = (int)lround(CLAMP(config ? config->secondary_fg_contrast : 1.0, 0.5, 1.5) * 100.0);
+    self->qt6ct_available            = kajo_theme_export_qt6ct_available();
+    self->saved_ext_gtk              = config ? config->theme_external_gtk : FALSE;
+    self->saved_ext_qt               = (config && self->qt6ct_available) ? config->theme_external_qt : FALSE;
 }
 
 static GtkWidget *
@@ -1235,6 +1275,156 @@ theme_build_card_surface(SettingsPageTheme *self)
 }
 
 static void
+sync_external_theme_ui(SettingsPageTheme *self)
+{
+    if (!self)
+        return;
+
+    gboolean has_backup = kajo_theme_export_has_backup(NULL);
+    gboolean gtk_on = self->toggle_ext_gtk &&
+                      gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_ext_gtk));
+    gboolean qt_on  = self->toggle_ext_qt && self->qt6ct_available &&
+                      gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(self->toggle_ext_qt));
+
+    if (self->toggle_ext_gtk) {
+        const char *sub = gtk_on
+            ? (self->saved_ext_gtk
+                ? "ACTIVE — gtk-3.0/4.0 kajo-theme.css & GSettings dark (backup saved)"
+                : "PENDING SAVE — will back up original GTK & GSettings before applying")
+            : (self->saved_ext_gtk
+                ? "PENDING REVERT — SAVE & APPLY restores original GTK & GSettings"
+                : "OFF — external GTK apps keep your default system theme");
+        toggle_card_set_subtitle(self->toggle_ext_gtk, sub);
+    }
+
+    if (self->toggle_ext_qt) {
+        if (!self->qt6ct_available) {
+            toggle_card_set_subtitle(self->toggle_ext_qt, "UNSUPPORTED — install qt6ct to theme Qt 6 apps");
+        } else {
+            const char *sub = qt_on
+                ? (self->saved_ext_qt
+                    ? "ACTIVE — qt6ct kajo-metro.conf & QT_QPA_PLATFORMTHEME=qt6ct"
+                    : "PENDING SAVE — will back up qt6ct.conf before applying")
+                : (self->saved_ext_qt
+                    ? "PENDING REVERT — SAVE & APPLY restores original qt6ct.conf"
+                    : "OFF — Qt 6 apps keep your default system theme");
+            toggle_card_set_subtitle(self->toggle_ext_qt, sub);
+        }
+    }
+
+    if (self->btn_restore_ext)
+        gtk_widget_set_sensitive(self->btn_restore_ext, has_backup || self->saved_ext_gtk || self->saved_ext_qt);
+
+    if (self->card_external) {
+        if (self->saved_ext_gtk || self->saved_ext_qt)
+            section_card_set_badge(self->card_external, has_backup ? "BACKUP SAVED" : "ACTIVE", "accent");
+        else if (has_backup)
+            section_card_set_badge(self->card_external, "BACKUP READY", NULL);
+        else
+            section_card_set_badge(self->card_external, "OPT-IN", NULL);
+    }
+}
+
+static void
+on_ext_toggle_toggled(GtkToggleButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageTheme *self = (SettingsPageTheme *)user_data;
+    if (self->syncing_ui)
+        return;
+    sync_external_theme_ui(self);
+    update_theme_telemetry_and_dirty(self);
+}
+
+static void
+mutate_disable_external(KajoThemeCfg *draft, gpointer user_data G_GNUC_UNUSED)
+{
+    draft->theme_external_gtk = FALSE;
+    draft->theme_external_qt  = FALSE;
+}
+
+static void
+on_restore_external_defaults_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageTheme *self = (SettingsPageTheme *)user_data;
+    if (!self)
+        return;
+
+    g_autoptr(GError) err = NULL;
+    if (!kajo_theme_export_revert_all(NULL, TRUE, &err) && err) {
+        g_warning("theme-export: restore failed: %s", err->message);
+        settings_page_set_live_status(GTK_WIDGET(self), "ERROR", err->message);
+        return;
+    }
+
+    kajo_config_store_update_theme(NULL, mutate_disable_external, NULL, NULL);
+
+    self->syncing_ui = TRUE;
+    self->saved_ext_gtk = FALSE;
+    self->saved_ext_qt  = FALSE;
+    if (self->toggle_ext_gtk)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_ext_gtk), FALSE);
+    if (self->toggle_ext_qt)
+        gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->toggle_ext_qt), FALSE);
+    self->syncing_ui = FALSE;
+
+    sync_external_theme_ui(self);
+    update_theme_telemetry_and_dirty(self);
+    settings_page_set_live_status(GTK_WIDGET(self), "RESTORED",
+                                  "Restored original GTK, GSettings & Qt defaults");
+}
+
+static GtkWidget *
+theme_build_card_external(SettingsPageTheme *self)
+{
+    self->btn_restore_ext = gtk_button_new_with_label("↺ RESTORE ORIGINAL DEFAULTS");
+    gtk_widget_add_css_class(self->btn_restore_ext, "files-nav-btn");
+    g_signal_connect(self->btn_restore_ext, "clicked",
+                     G_CALLBACK(on_restore_external_defaults_clicked), self);
+
+    self->card_external = create_section_card(
+        SETTINGS_CARD_RIGHT,
+        "5. EXTERNAL APP THEMING (GTK3 / GTK4 & QT 6)",
+        "OPT-IN",
+        NULL,
+        self->btn_restore_ext);
+
+    self->toggle_ext_gtk = create_toggle_card(
+        "applications-graphics-symbolic",
+        "Theme GTK3 / GTK4 & libadwaita Apps",
+        "OFF — external GTK apps keep your default system theme",
+        self->saved_ext_gtk);
+    gtk_box_append(GTK_BOX(self->card_external), self->toggle_ext_gtk);
+
+    self->toggle_ext_qt = create_toggle_card(
+        "preferences-desktop-theme-symbolic",
+        "Theme Qt 6 Apps (via qt6ct)",
+        self->qt6ct_available
+            ? "OFF — Qt 6 apps keep your default system theme"
+            : "UNSUPPORTED — install qt6ct to theme Qt 6 apps",
+        self->saved_ext_qt);
+    gtk_widget_set_sensitive(self->toggle_ext_qt, self->qt6ct_available);
+    gtk_box_append(GTK_BOX(self->card_external), self->toggle_ext_qt);
+
+    g_autofree char *leftovers = kajo_theme_export_detect_leftovers(NULL);
+    g_autofree char *note_txt = leftovers
+        ? g_strdup_printf(
+            "Snapshots your original GTK, GSettings & qt6ct configs on first enable so you can revert cleanly at any time. "
+            "Note: unused third-party CSS detected in ~/.config/gtk-*: %s (untouched).", leftovers)
+        : g_strdup(
+            "Snapshots your original GTK, GSettings & qt6ct configs on first enable so you can revert cleanly at any time. "
+            "Portal dark-mode & accent color are always provided via org.freedesktop.impl.portal.Settings.");
+    self->lbl_ext_note = gtk_label_new(note_txt);
+    gtk_widget_add_css_class(self->lbl_ext_note, "row-subtitle");
+    gtk_label_set_wrap(GTK_LABEL(self->lbl_ext_note), TRUE);
+    gtk_label_set_xalign(GTK_LABEL(self->lbl_ext_note), 0.0f);
+    gtk_widget_set_margin_top(self->lbl_ext_note, 4);
+    gtk_box_append(GTK_BOX(self->card_external), self->lbl_ext_note);
+
+    sync_external_theme_ui(self);
+    return self->card_external;
+}
+
+static void
 theme_connect_signals(SettingsPageTheme *self)
 {
     g_signal_connect(self->entry_hex, "changed", G_CALLBACK(on_hex_entry_changed), self);
@@ -1253,6 +1443,8 @@ theme_connect_signals(SettingsPageTheme *self)
     g_signal_connect(self->scale_surface_contrast, "value-changed", G_CALLBACK(on_scale_font_changed), self);
     g_signal_connect(self->scale_border_opacity, "value-changed", G_CALLBACK(on_scale_font_changed), self);
     g_signal_connect(self->scale_secondary_fg, "value-changed", G_CALLBACK(on_scale_font_changed), self);
+    g_signal_connect(self->toggle_ext_gtk, "toggled", G_CALLBACK(on_ext_toggle_toggled), self);
+    g_signal_connect(self->toggle_ext_qt, "toggled", G_CALLBACK(on_ext_toggle_toggled), self);
     g_signal_connect(self, "map", G_CALLBACK(on_theme_page_mapped), NULL);
 }
 
@@ -1271,6 +1463,9 @@ build_page_theme(void)
     GtkWidget *card_glass   = theme_build_card_glass(self);
     GtkWidget *card_surface = theme_build_card_surface(self);
     settings_bento_add_pair(GTK_WIDGET(self), card_glass, card_surface);
+
+    GtkWidget *card_ext = theme_build_card_external(self);
+    settings_bento_add_full(GTK_WIDGET(self), card_ext);
 
     /* Sync initial UI state & wire signals */
     self->syncing_ui = TRUE;

@@ -16,6 +16,7 @@ app_id = [
     '^blueman-manager$',
     '^xdg-desktop-portal',
     '^org\.freedesktop\.impl\.portal\.',
+    '^org\.kajo\.Files\.Chooser$',
 ]
 floating = true
 

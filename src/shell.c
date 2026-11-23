@@ -16,6 +16,7 @@
 #include "osk/osk.h"
 #include "hardware/hw_caps.h"
 #include "hardware/touch_gestures.h"
+#include "portal/portal_settings.h"
 
 static void
 shell_app_instantiate_widgets(ShellApp *self, GPtrArray *configs, PanelWidgetPosition position)
@@ -64,6 +65,8 @@ on_shell_store_changed(KajoConfigStore *store G_GNUC_UNUSED,
         shell_theme_sync_from_theme_cfg(tcfg);
         if (self->theme)
             shell_theme_reload(self->theme);
+        if (self->portal_settings)
+            kajo_portal_settings_update_from_theme(self->portal_settings, tcfg);
     }
     if (changed_domains & KAJO_CONFIG_DOMAIN_SHELL) {
         shell_app_apply_shell_config(self);
@@ -143,6 +146,10 @@ shell_app_activate(ShellApp *self)
     self->osk             = shell_osk_new(self);
     self->touch_gestures  = shell_touch_gestures_new(self);
     self->ipc             = shell_ipc_socket_new(self);
+    {
+        g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
+        self->portal_settings = kajo_portal_settings_new(tcfg);
+    }
 
     /* Instantiate widgets from config layout */
     shell_app_instantiate_widgets(self, self->config->layout_left, PANEL_WIDGET_LEFT);
@@ -219,6 +226,11 @@ shell_app_destroy(ShellApp *self)
         }
         g_ptr_array_free(self->active_widgets, TRUE);
         self->active_widgets = NULL;
+    }
+
+    if (self->portal_settings) {
+        kajo_portal_settings_destroy(self->portal_settings);
+        self->portal_settings = NULL;
     }
 
     if (self->ipc) {
@@ -553,4 +565,6 @@ shell_app_reload_theme(ShellApp *self)
     g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
     shell_theme_sync_from_theme_cfg(tcfg);
     shell_theme_reload(self->theme);
+    if (self->portal_settings)
+        kajo_portal_settings_update_from_theme(self->portal_settings, tcfg);
 }

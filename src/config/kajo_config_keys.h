@@ -45,6 +45,8 @@
 #define KAJO_CFG_KEY_CSS_PATH              "css_path"
 #define KAJO_CFG_KEY_SETTINGS_WIDTH        "settings_width"
 #define KAJO_CFG_KEY_SETTINGS_HEIGHT       "settings_height"
+#define KAJO_CFG_KEY_THEME_EXTERNAL_GTK    "theme_external_gtk"
+#define KAJO_CFG_KEY_THEME_EXTERNAL_QT     "theme_external_qt"
 
 /* shell.toml sections */
 #define KAJO_CFG_SEC_PANEL                "panel"

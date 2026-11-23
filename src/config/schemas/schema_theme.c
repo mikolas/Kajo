@@ -162,6 +162,20 @@ static const KajoFieldSpec k_theme_fields[] = {
         .min_int = 360,
         .max_int = 2160,
     },
+    {
+        .section = NULL,
+        .key     = KAJO_CFG_KEY_THEME_EXTERNAL_GTK,
+        .type    = KAJO_FIELD_BOOL,
+        .offset  = offsetof(KajoThemeCfg, theme_external_gtk),
+        .def.b   = FALSE,
+    },
+    {
+        .section = NULL,
+        .key     = KAJO_CFG_KEY_THEME_EXTERNAL_QT,
+        .type    = KAJO_FIELD_BOOL,
+        .offset  = offsetof(KajoThemeCfg, theme_external_qt),
+        .def.b   = FALSE,
+    },
 };
 
 static const KajoDomainSchema k_theme_schema = {

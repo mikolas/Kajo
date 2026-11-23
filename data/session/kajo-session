@@ -173,6 +173,10 @@ export XDG_SESSION_DESKTOP="kajo"
 export ELECTRON_OZONE_PLATFORM_HINT="auto"
 export QT_WAYLAND_RECONNECT="1"
 
+if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/environment.d/90-kajo-qt.conf" ]; then
+    export QT_QPA_PLATFORMTHEME="qt6ct"
+fi
+
 if [ "$COMPOSITOR" = "niri" ]; then
     export XDG_CURRENT_DESKTOP="kajo:niri"
 fi
@@ -192,7 +196,8 @@ if command -v systemctl >/dev/null 2>&1 && [ "${KAJO_COMP_NO_DBUS_ENV:-0}" != "1
     systemctl --user reset-failed >/dev/null 2>&1 || true
     systemctl --user import-environment \
         PATH SSH_AUTH_SOCK XDG_SESSION_TYPE XDG_CURRENT_DESKTOP \
-        XDG_SESSION_DESKTOP ELECTRON_OZONE_PLATFORM_HINT QT_WAYLAND_RECONNECT >/dev/null 2>&1 || true
+        XDG_SESSION_DESKTOP ELECTRON_OZONE_PLATFORM_HINT QT_WAYLAND_RECONNECT \
+        QT_QPA_PLATFORMTHEME >/dev/null 2>&1 || true
 fi
 
 if [ "$COMPOSITOR" = "niri" ]; then

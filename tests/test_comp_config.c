@@ -1015,6 +1015,14 @@ test_session_portals_conf(void)
     g_assert_no_error(err);
     g_assert_cmpstr(def, ==, "gtk;");
 
+    g_autofree gchar *pset = g_key_file_get_string(kf, "preferred", "org.freedesktop.impl.portal.Settings", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(pset, ==, "kajo;gtk;");
+
+    g_autofree gchar *pfc = g_key_file_get_string(kf, "preferred", "org.freedesktop.impl.portal.FileChooser", &err);
+    g_assert_no_error(err);
+    g_assert_cmpstr(pfc, ==, "kajo-files;gtk;");
+
     g_autofree gchar *sc = g_key_file_get_string(kf, "preferred", "org.freedesktop.impl.portal.ScreenCast", &err);
     g_assert_no_error(err);
     g_assert_cmpstr(sc, ==, "wlr");

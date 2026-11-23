@@ -146,6 +146,7 @@ sources = files(
   'src/ipc/socket.c',
   'src/ipc/ipc_client.c',
   'src/compositor/niri.c',
+  'src/portal/portal_settings.c',
 )
 
 fs = import('fs')
@@ -207,6 +208,7 @@ kajo_core = static_library(
   'kajo-core',
   kajo_config_sources + files(
     'src/theme.c',
+    'src/theme_export.c',
     'src/icons.c',
     'src/common/spawn_detached.c',
     'src/compositor/niri.c',
@@ -318,6 +320,8 @@ files_sources = files(
   'src/files/files_window_keys.c',
   'src/files/files_model.c',
   'src/files/files_network.c',
+  'src/files/files_portal.c',
+  'src/files/files_chooser.c',
   'src/files/files_ops.c',
   'src/files/files_ops_archive.c',
   'src/files/files_diskimage.c',
@@ -334,6 +338,7 @@ executable(
   shell_resources,
   dependencies: [
     gtk4_dep,
+    gtk4_wayland_dep,
     json_glib_dep,
     gio_dep,
     gio_unix_dep,
@@ -552,6 +557,22 @@ install_data(
 )
 
 install_data(
+  'data/session/kajo.portal',
+  'data/session/kajo-files.portal',
+  install_dir: get_option('datadir') / 'xdg-desktop-portal' / 'portals',
+)
+
+portal_service_conf = configuration_data()
+portal_service_conf.set('BINDIR', get_option('prefix') / get_option('bindir'))
+configure_file(
+  input: 'data/session/org.freedesktop.impl.portal.desktop.kajo.Files.service.in',
+  output: 'org.freedesktop.impl.portal.desktop.kajo.Files.service',
+  configuration: portal_service_conf,
+  install: true,
+  install_dir: get_option('datadir') / 'dbus-1' / 'services',
+)
+
+install_data(
   'data/systemd/kajo-comp.service',
   'data/systemd/kajo.service',
   'data/systemd/kajo-shutdown.target',
@@ -733,6 +754,21 @@ test_files_model_exe = executable(
   build_by_default: false,
 )
 test('files-model', test_files_model_exe)
+
+test_portals_exe = executable(
+  'test-portals',
+  files(
+    'tests/test_portals.c',
+    'src/portal/portal_settings.c',
+    'src/files/files_portal.c',
+    'src/files/files_model.c',
+    'src/files/files_network.c',
+  ),
+  dependencies: [gtk4_dep, gio_dep, gio_unix_dep, json_glib_dep, archive_dep, m_dep],
+  link_with: kajo_core,
+  build_by_default: false,
+)
+test('portals', test_portals_exe)
 
 test_spawn_detached_exe = executable(
   'test-spawn-detached',
