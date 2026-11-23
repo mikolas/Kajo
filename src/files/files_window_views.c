@@ -465,6 +465,8 @@ files_window_rebuild_breadcrumbs(KajoFilesWindow *self)
         g_signal_connect(click_gest, "pressed", G_CALLBACK(on_breadcrumb_btn_pressed), self);
         gtk_widget_add_controller(btn, GTK_EVENT_CONTROLLER(click_gest));
 
+        kajo_files_dnd_attach_uri_drop_target(btn, seg->uri, files_window_dnd_execute_drop, self);
+
         gtk_box_append(GTK_BOX(self->breadcrumb_box), btn);
     }
 
@@ -535,8 +537,9 @@ on_thumb_load_ready(GObject *source G_GNUC_UNUSED,
 static void
 on_grid_item_setup(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
                    GtkListItem *list_item,
-                   gpointer user_data G_GNUC_UNUSED)
+                   gpointer user_data)
 {
+    KajoFilesWindow *self = KAJO_FILES_WINDOW(user_data);
     GridTileWidgets *w = g_new0(GridTileWidgets, 1);
 
     w->card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
@@ -560,6 +563,13 @@ on_grid_item_setup(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
     gtk_widget_add_css_class(w->sub_lbl, "files-tile-sub");
     gtk_widget_set_halign(w->sub_lbl, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(w->card), w->sub_lbl);
+
+    kajo_files_dnd_attach_item_controllers(
+        w->card,
+        files_window_dnd_get_drag_files,
+        files_window_dnd_execute_drop,
+        self
+    );
 
     g_object_set_data_full(G_OBJECT(list_item), "tile-widgets", w, grid_tile_widgets_free);
     gtk_list_item_set_child(list_item, w->card);
@@ -633,8 +643,9 @@ typedef struct {
 static void
 on_list_item_setup(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
                    GtkListItem *list_item,
-                   gpointer user_data G_GNUC_UNUSED)
+                   gpointer user_data)
 {
+    KajoFilesWindow *self = KAJO_FILES_WINDOW(user_data);
     ListRowWidgets *w = g_new0(ListRowWidgets, 1);
 
     w->hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
@@ -677,6 +688,13 @@ on_list_item_setup(GtkSignalListItemFactory *factory G_GNUC_UNUSED,
     gtk_box_append(GTK_BOX(w->hbox), w->sz_lbl);
     gtk_box_append(GTK_BOX(w->hbox), w->type_lbl);
     gtk_box_append(GTK_BOX(w->hbox), w->mtime_lbl);
+
+    kajo_files_dnd_attach_item_controllers(
+        w->hbox,
+        files_window_dnd_get_drag_files,
+        files_window_dnd_execute_drop,
+        self
+    );
 
     g_object_set_data_full(G_OBJECT(list_item), "row-widgets", w, g_free);
     gtk_list_item_set_child(list_item, w->hbox);
@@ -959,6 +977,19 @@ files_window_views_setup_models(KajoFilesWindow *self)
     gtk_list_view_set_model(self->details_listview, GTK_SELECTION_MODEL(self->selection_model));
     gtk_list_view_set_factory(self->details_listview, list_factory);
     g_object_unref(list_factory);
+
+    kajo_files_dnd_attach_view_drop_target(
+        GTK_WIDGET(self->grid_view),
+        files_window_dnd_get_current_dir,
+        files_window_dnd_execute_drop,
+        self
+    );
+    kajo_files_dnd_attach_view_drop_target(
+        GTK_WIDGET(self->details_listview),
+        files_window_dnd_get_current_dir,
+        files_window_dnd_execute_drop,
+        self
+    );
 }
 
 /* ─── Header & Ribbon Button Handlers ─── */

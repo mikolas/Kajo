@@ -12,6 +12,11 @@ key = "mod+space"
 spawn = ["kajo", "--toggle-launcher"]
 
 [[bind]]
+key = "mod+o"
+action = "toggle-overview"
+repeat = false
+
+[[bind]]
 keys = ["mod+shift+s", "print"]
 action = "screenshot"                                         # Phase 3 (§4.2)
 

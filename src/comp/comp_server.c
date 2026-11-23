@@ -466,6 +466,7 @@ comp_server_create(const CompServerOptions *opts)
     comp_input_init(s);
     comp_spawn_init(s);
     comp_switcher_init(s);
+    comp_overview_init(s);
     comp_screenshot_init(s);
     comp_ipc_init(s);
     if (!comp_server_reload_config(s) && s->opts.greeter_mode &&

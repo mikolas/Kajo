@@ -79,6 +79,7 @@ typedef enum {
     COMP_BIND_SCREENSHOT,
     COMP_BIND_SCREENSHOT_WINDOW,
     COMP_BIND_SCREENSHOT_SCREEN,
+    COMP_BIND_TOGGLE_OVERVIEW,
 } CompBindKind;
 
 typedef enum {

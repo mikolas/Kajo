@@ -561,6 +561,11 @@ handle_bind_kind_action_cmd(CompIpcClient *c, const JVal *req, CompBindKind kind
         else client_reply_ok(c);
         return true;
 
+    case COMP_BIND_TOGGLE_OVERVIEW:
+        comp_overview_toggle(s);
+        client_reply_ok(c);
+        return true;
+
     case COMP_BIND_QUIT:
         client_reply_ok(c);
         if (!s->opts.greeter_mode && c->fd >= 0 && s->display)

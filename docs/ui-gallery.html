@@ -2859,9 +2859,12 @@
             <span class="specimen-box-title">INTERACTIVE WINDOW CHROME SPECIMEN (TRY CLICKING BREADCRUMB ✎, VIEW MODES &amp; SIDEBAR)</span>
             <div class="tag-cluster">
               <span class="gtk-class-tag" data-copy="window.shell-settings-window">window.shell-settings-window</span>
+              <span class="gtk-class-tag" data-copy=".shell-files-chooser">.shell-files-chooser</span>
               <span class="gtk-class-tag" data-copy=".settings-header-bar">.settings-header-bar</span>
               <span class="gtk-class-tag" data-copy=".files-action-ribbon">.files-action-ribbon</span>
               <span class="gtk-class-tag" data-copy=".navigation-sidebar">.navigation-sidebar</span>
+              <span class="gtk-class-tag" data-copy=".files-drop-target-hover">.files-drop-target-hover</span>
+              <span class="gtk-class-tag" data-copy=".files-dnd-badge">.files-dnd-badge</span>
               <span class="gtk-class-tag" data-copy=".files-status-bar">.files-status-bar</span>
             </div>
           </div>
@@ -2987,7 +2990,7 @@
                   </div>
                 </div>
                 <div class="specimen-note" style="margin-top:12px;">
-                  Selected sidebar items and list rows always render a crisp <code>3px solid #ffffff</code> left indicator bar against <code>@metro-accent</code>. Rubber-band multi-selection is preserved by URI across live directory refreshes.
+                  Selected sidebar items and list rows always render a crisp <code>3px solid #ffffff</code> left indicator bar against <code>@metro-accent</code>. Rubber-band multi-selection is preserved by URI across live directory refreshes. During Wayland Drag-and-Drop, valid drop targets (views, folders, breadcrumbs, Places/Drives, Trash) highlight via <code>.files-drop-target-hover</code> (<code>alpha(@metro-accent, 0.22)</code> + <code>1px solid @metro-accent</code>) and outbound drags show a monospace <code>.files-dnd-badge</code>. Native portal dialogs (<code>kajo-files --portal</code>) reuse this exact chrome inside <code>window.shell-files-chooser</code> (<code>880×580</code>).
                 </div>
               </div>
             </div>

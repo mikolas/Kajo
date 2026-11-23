@@ -1,6 +1,7 @@
 #include "files_sidebar.h"
 #include "files_model.h"
 #include "files_network.h"
+#include "files_dnd.h"
 #include <string.h>
 
 struct _KajoFilesSidebar {
@@ -21,6 +22,9 @@ struct _KajoFilesSidebar {
     KajoSidebarConnectServerFunc connect_cb;
     KajoSidebarStatusFunc status_cb;
     gpointer user_data;
+
+    KajoSidebarDropFunc drop_cb;
+    gpointer drop_user_data;
 
     char *current_uri;
     gboolean suppress_select;
@@ -372,13 +376,14 @@ append_category_header(GtkListBox *box, const char *title)
 }
 
 static void
-append_place_row(GtkListBox *box,
+append_place_row(KajoFilesSidebar *self,
                  const char *icon_name,
                  const char *title,
                  const char *subtitle,
                  const char *uri,
                  const char *action_tag)
 {
+    GtkListBox *box = self->list_box;
     GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
 
@@ -421,6 +426,8 @@ append_place_row(GtkListBox *box,
 
     GtkWidget *row = gtk_list_box_row_new();
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), hbox);
+    if (uri && self->drop_cb)
+        kajo_files_dnd_attach_uri_drop_target(row, uri, self->drop_cb, self->drop_user_data);
     gtk_list_box_append(box, row);
 }
 
@@ -515,6 +522,10 @@ append_drive_row(KajoFilesSidebar *self,
 
     GtkWidget *row = gtk_list_box_row_new();
     gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(row), vbox_outer);
+    if (mount_root && self->drop_cb) {
+        g_autofree char *uri = g_file_get_uri(mount_root);
+        kajo_files_dnd_attach_uri_drop_target(row, uri, self->drop_cb, self->drop_user_data);
+    }
     gtk_list_box_append(self->list_box, row);
 }
 
@@ -552,7 +563,7 @@ kajo_files_sidebar_refresh(KajoFilesSidebar *self)
 
     g_autoptr(GFile) home_file = g_file_new_for_path(g_get_home_dir());
     g_autofree char *home_uri = g_file_get_uri(home_file);
-    append_place_row(self->list_box, "user-home-symbolic", "Home", NULL, home_uri, NULL);
+    append_place_row(self, "user-home-symbolic", "Home", NULL, home_uri, NULL);
 
     struct {
         GUserDirectory dir;
@@ -572,17 +583,17 @@ kajo_files_sidebar_refresh(KajoFilesSidebar *self)
         if (path && g_file_test(path, G_FILE_TEST_IS_DIR)) {
             g_autoptr(GFile) f = g_file_new_for_path(path);
             g_autofree char *uri = g_file_get_uri(f);
-            append_place_row(self->list_box, xdg_dirs[i].icon, xdg_dirs[i].fallback_name, NULL, uri, NULL);
+            append_place_row(self, xdg_dirs[i].icon, xdg_dirs[i].fallback_name, NULL, uri, NULL);
         }
     }
 
-    append_place_row(self->list_box, "document-open-recent-symbolic", "Recent", NULL, "recent:///", NULL);
+    append_place_row(self, "document-open-recent-symbolic", "Recent", NULL, "recent:///", NULL);
 
     guint trash_cnt = query_trash_item_count();
     g_autofree char *trash_lbl = (trash_cnt > 0)
         ? g_strdup_printf("Trash (%u)", trash_cnt)
         : g_strdup("Trash");
-    append_place_row(self->list_box, "user-trash-symbolic", trash_lbl, NULL, "trash:///", NULL);
+    append_place_row(self, "user-trash-symbolic", trash_lbl, NULL, "trash:///", NULL);
 
     /* 2. DEVICES & DRIVES */
     append_category_header(self->list_box, "DEVICES & DRIVES");
@@ -633,8 +644,8 @@ kajo_files_sidebar_refresh(KajoFilesSidebar *self)
 
     /* 3. NETWORK */
     append_category_header(self->list_box, "NETWORK");
-    append_place_row(self->list_box, "network-workgroup-symbolic", "Browse Network", "LAN / SMB / SFTP", "network:///", NULL);
-    append_place_row(self->list_box, "network-server-symbolic", "+ CONNECT TO SERVER", "smb://, sftp://, davs://", NULL, "connect-server");
+    append_place_row(self, "network-workgroup-symbolic", "Browse Network", "LAN / SMB / SFTP", "network:///", NULL);
+    append_place_row(self, "network-server-symbolic", "+ CONNECT TO SERVER", "smb://, sftp://, davs://", NULL, "connect-server");
 
     self->suppress_select = FALSE;
     if (self->current_uri)
@@ -749,6 +760,17 @@ kajo_files_sidebar_new(GtkListBox *list_box,
     kajo_files_sidebar_refresh(self);
 
     return self;
+}
+
+void
+kajo_files_sidebar_set_drop_handler(KajoFilesSidebar *self,
+                                    KajoSidebarDropFunc drop_cb,
+                                    gpointer user_data)
+{
+    if (!self) return;
+    self->drop_cb = drop_cb;
+    self->drop_user_data = user_data;
+    kajo_files_sidebar_refresh(self);
 }
 
 void

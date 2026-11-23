@@ -11,6 +11,7 @@
 #include "core/comp_schema_keys.h"
 
 #include <libinput.h>
+#include <linux/input-event-codes.h>
 #include <math.h>
 #include <talloc.h>
 #include <time.h>
@@ -217,6 +218,25 @@ keyboard_handle_key(void *owner, void *data)
         if (!handled && comp_screenshot_is_active(s)) {
             for (int i = 0; i < n && !handled; i++)
                 handled = comp_screenshot_handle_key(s, mods, syms[i]);
+            handled = true;
+        }
+        if (!handled && comp_overview_is_active(s)) {
+            xkb_layout_index_t layout = xkb_state_key_get_layout(k->wlr_keyboard->xkb_state, keycode);
+            const xkb_keysym_t *base;
+            int nb = xkb_keymap_key_get_syms_by_level(k->wlr_keyboard->keymap, keycode,
+                                                      layout == XKB_LAYOUT_INVALID ? 0 : layout,
+                                                      0, &base);
+            for (int i = 0; i < nb && !handled; i++) {
+                if (s->binds) {
+                    const CompBind *b = comp_binds_lookup_key(s->binds, mods, base[i]);
+                    if (b && b->kind == COMP_BIND_TOGGLE_OVERVIEW) {
+                        comp_overview_close(s, false);
+                        handled = true;
+                        break;
+                    }
+                }
+                handled = comp_overview_handle_key(s, mods, base[i]);
+            }
             handled = true;
         }
         if (!handled && comp_switcher_is_active(s)) {
@@ -678,6 +698,10 @@ cursor_motion(void *owner, void *data)
         comp_screenshot_handle_motion(s, s->cursor->x, s->cursor->y);
         return;
     }
+    if (comp_overview_is_active(s)) {
+        comp_overview_handle_motion(s, s->cursor->x, s->cursor->y);
+        return;
+    }
     if (s->grab_win != 0 && !s->locked)
         comp_window_update_grab(s);
     pointer_focus_at_cursor(s, ev->time_msec);
@@ -692,6 +716,10 @@ cursor_motion_absolute(void *owner, void *data)
     wlr_cursor_warp_absolute(s->cursor, &ev->pointer->base, ev->x, ev->y);
     if (comp_screenshot_is_active(s)) {
         comp_screenshot_handle_motion(s, s->cursor->x, s->cursor->y);
+        return;
+    }
+    if (comp_overview_is_active(s)) {
+        comp_overview_handle_motion(s, s->cursor->x, s->cursor->y);
         return;
     }
     if (s->grab_win != 0 && !s->locked)
@@ -725,14 +753,37 @@ cursor_button(void *owner, void *data)
                                       s->cursor->x, s->cursor->y);
         return;
     }
+    if (comp_overview_is_active(s)) {
+        comp_overview_handle_button(s, ev->button,
+                                    ev->state == WL_POINTER_BUTTON_STATE_PRESSED,
+                                    s->cursor->x, s->cursor->y);
+        return;
+    }
     if (comp_switcher_is_active(s)) {
         if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED)
             comp_switcher_handle_click(s, s->cursor->x, s->cursor->y);
         return;
     }
     if (ev->state == WL_POINTER_BUTTON_STATE_RELEASED && s->grab_win != 0) {
+        bool was_mod = s->grab_from_mod;
         comp_window_end_grab(s);
+        if (was_mod)
+            return;
     } else if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED && !s->locked) {
+        /* Mod + Left/Right Button interactive move/resize for tiled columns & floating windows */
+        struct wlr_keyboard *kb = s->seat ? wlr_seat_get_keyboard(s->seat) : NULL;
+        uint32_t mods = kb ? comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(kb)) : 0;
+        uint32_t mod_mask = s->opts.mod_mask ? s->opts.mod_mask : COMP_MOD_SUPER;
+        if ((mods & mod_mask) != 0 &&
+            (ev->button == BTN_LEFT || ev->button == BTN_RIGHT)) {
+            struct CompWindow *w = comp_window_at(s, s->cursor->x, s->cursor->y, NULL, NULL, NULL);
+            if (w) {
+                comp_window_focus(s, w);
+                if (comp_window_begin_mod_grab(s, w, ev->button == BTN_RIGHT, ev->button))
+                    return;
+            }
+        }
+
         /* Spec §3.5 F4 & F5: click-to-focus and pass-through */
         struct wlr_surface *surf = NULL;
         double sx = 0.0, sy = 0.0;
@@ -754,6 +805,11 @@ cursor_axis(void *owner, void *data)
     CompServer *s = owner;
     struct wlr_pointer_axis_event *ev = data;
     comp_lock_idle_notify_activity(s);
+    if (comp_overview_is_active(s)) {
+        if (ev->orientation == WL_POINTER_AXIS_VERTICAL_SCROLL)
+            comp_overview_handle_axis(s, ev->delta);
+        return;
+    }
     if (s->binds && ev->delta != 0.0 && !s->locked) {
         struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
         uint32_t mods = kb ? comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(kb)) : 0;

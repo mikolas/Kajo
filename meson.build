@@ -324,6 +324,7 @@ files_sources = files(
   'src/files/files_chooser.c',
   'src/files/files_ops.c',
   'src/files/files_ops_archive.c',
+  'src/files/files_dnd.c',
   'src/files/files_diskimage.c',
   'src/files/files_sidebar.c',
   'src/files/files_quicklook.c',
@@ -763,7 +764,7 @@ test('touch-gestures', test_touch_gestures_exe)
 
 test_files_model_exe = executable(
   'test-files-model',
-  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_network.c', 'src/files/files_ops.c', 'src/files/files_ops_archive.c', 'src/files/files_diskimage.c', 'src/common/spawn_detached.c'),
+  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_network.c', 'src/files/files_dnd.c', 'src/files/files_ops.c', 'src/files/files_ops_archive.c', 'src/files/files_diskimage.c', 'src/common/spawn_detached.c'),
   dependencies: [gtk4_dep, gio_dep, gio_unix_dep, archive_dep],
   build_by_default: false,
 )
@@ -967,6 +968,7 @@ comp_core_lib = static_library(
     'src/comp/core/comp_spring.c',
     'src/comp/core/comp_layout.c',
     'src/comp/core/comp_layout_float.c',
+    'src/comp/core/comp_overview_core.c',
     'src/comp/core/comp_motion.c',
     'src/comp/core/comp_binds.c',
     'src/comp/core/comp_rules.c',
@@ -1120,6 +1122,7 @@ kajo_comp_exe = executable(
     'src/comp/comp_spawn.c',
     'src/comp/comp_text.c',
     'src/comp/comp_switcher.c',
+    'src/comp/comp_overview.c',
     'src/comp/comp_screenshot.c',
     'src/comp/comp_screenshot_ui.c',
   ),
@@ -1291,6 +1294,7 @@ test_fuzz_ipc_socket_exe = executable(
     'src/comp/comp_spawn.c',
     'src/comp/comp_text.c',
     'src/comp/comp_switcher.c',
+    'src/comp/comp_overview.c',
     'src/comp/comp_screenshot.c',
     'src/comp/comp_screenshot_ui.c',
   ),

@@ -7,6 +7,7 @@
 #include "files_window.h"
 #include "files_model.h"
 #include "files_ops.h"
+#include "files_dnd.h"
 #include "files_sidebar.h"
 #include "files_quicklook.h"
 #include "../compositor/compositor.h"
@@ -212,6 +213,9 @@ void     on_connect_cancel_clicked(GtkButton *btn, gpointer user_data);
 int        files_window_get_selected_item_index(KajoFilesWindow *self);
 GPtrArray *files_window_get_selected_items(KajoFilesWindow *self);
 void       files_window_select_all(KajoFilesWindow *self);
+GPtrArray *files_window_dnd_get_drag_files(KajoFileItem *anchor_item, gpointer user_data);
+GFile     *files_window_dnd_get_current_dir(gpointer user_data);
+gboolean   files_window_dnd_execute_drop(GPtrArray *files, GFile *dest_dir, GdkDragAction action, gpointer user_data);
 /* Mounts a disk image via UDisks2 and navigates into it; `fallback_to_archive` (ISO only) browses
  * it as archive:// when mounting is not possible. */
 void       files_window_open_disk_image(KajoFilesWindow *self, GFile *image, gboolean fallback_to_archive);

@@ -72,7 +72,7 @@ root (wlr_scene)
 ├── floating_tree          (floating layer of active workspace: dialogs, PiP, calculators, Steam toasts, 🗗 FLOAT windows)
 ├── layer_top              (kajo panel, launcher)
 ├── fullscreen_tree        (focused stationary fullscreen window + black backdrop; direct-scanout eligible)
-├── layer_overlay          (kajo OSD, notifications, Alt+Tab switcher, in-compositor screenshot UI)
+├── layer_overlay          (kajo OSD, notifications, Alt+Tab switcher, zoomed overview, in-compositor screenshot UI)
 └── session_lock_tree      (ext-session-lock-v1: obscures and blocks all lower trees while locked)
 ```
 
@@ -90,7 +90,7 @@ root (wlr_scene)
 ### 2.5 Application Compatibility & XDG Desktop Portal Wiring
 
 1. **XDG Desktop Portals & Environment Activation:**
-   - Ship `data/kajo-portals.conf` routing `org.freedesktop.impl.portal.ScreenCast=wlr` and `org.freedesktop.impl.portal.Screenshot=wlr` to `xdg-desktop-portal-wlr`, `org.freedesktop.impl.portal.Secret=gnome-keyring`, and `default=gtk`.
+   - Ship `data/session/kajo-portals.conf` routing `org.freedesktop.impl.portal.Settings=kajo;gtk;` (`kajo.portal`, hosted in `kajo`), `org.freedesktop.impl.portal.FileChooser=kajo-files;gtk;` (`kajo-files.portal` + D-Bus-activated `kajo-files-portal.service`), `org.freedesktop.impl.portal.ScreenCast=wlr` and `org.freedesktop.impl.portal.Screenshot=wlr` to `xdg-desktop-portal-wlr`, `org.freedesktop.impl.portal.Secret=gnome-keyring`, and `default=gtk`.
    - Expose `wlr_screencopy_v1`, `wlr_ext_image_copy_capture_v1`, `wlr_output_management_v1`, and `wlr_xdg_output_v1` for PipeWire screen sharing (OBS, WebRTC, Discord, Zoom).
    - Export `XDG_CURRENT_DESKTOP=kajo` and update `systemd --user` / D-Bus activation environment immediately once sockets bind (§6.4) so GTK/Electron/Flatpak startups never block on D-Bus portal timeouts.
 2. **3D Games, Proton/Steam & DCC Viewports (`pointer-constraints-v1` + `relative-pointer-v1`):**
@@ -361,7 +361,7 @@ The screenshot UI is built directly into `kajo-comp` with zero external CLI help
 
 1. **GTK4 CSS & Layer Opacity:**
    - `kajo` surfaces (`kajo`, `kajo-launcher`, `kajo-notification`, `kajo-osk`, `kajo-osd`) render premultiplied-alpha DMABUFs styled by `data/defaults/style.css` and `style.d/00-accent.css`.
-   - `kajo-comp` applies `[[layer_rule]]` `opacity` and `popup_opacity` (`0.85` default) via `wlr_scene_buffer_set_opacity()`. (Background blur is future work, `ROADMAP.md` §3.7.2; the unsupported keys `blur`, `xray`, and `blur_popups` in `rules.toml` emit a non-fatal diagnostic).
+   - `kajo-comp` applies `[[layer_rule]]` `opacity` and `popup_opacity` via `wlr_scene_buffer_set_opacity()`, and when built with the Vulkan FX fork (`docs/spec_comp_effects.md`) applies `blur`, `blur_popups`, `xray`, and `glass_style`.
 2. **`zwlr_layer_shell_v1` Semantics:**
    - Supports animated margin commits for `src/autohide.c`, exclusive zones for `src/panel.c`, `src/osk/osk.c`, and `src/lock/screensaver.c`, `KEYBOARD_INTERACTIVITY_EXCLUSIVE` for the app launcher, and `KEYBOARD_INTERACTIVITY_NONE` for `ShellOSK`.
 
@@ -520,6 +520,11 @@ vrr = "on-demand"                       # Engages adaptive sync only for fullscr
 [[bind]]
 key = "mod+space"
 spawn = ["kajo", "--toggle-launcher"]
+
+[[bind]]
+key = "mod+o"
+action = "toggle-overview"
+repeat = false
 
 [[bind]]
 keys = ["mod+shift+s", "print"]
@@ -819,6 +824,7 @@ app_id = [
     '^blueman-manager$',
     '^xdg-desktop-portal',
     '^org\.freedesktop\.impl\.portal\.',
+    '^org\.kajo\.Files\.Chooser$',
 ]
 floating = true
 
@@ -883,7 +889,7 @@ popup_opacity = 0.85
 
 | Action `name` | Additional JSON Fields | Behavior |
 | :--- | :--- | :--- |
-| Any zero-arg layout/compositor action (`focus-column-left`, `move-column-right`, `toggle-window-floating`, `switch-focus-floating-tiling`, `toggle-column-tabbed`, `maximize-column`, `expand-column-to-available-width`, `switch-preset-column-width`, `switch-preset-window-height`, `reset-window-height`, `center-column`, `center-visible-columns`, `consume-or-expel-window-left/right`, `consume-window-into-column`, `expel-window-from-column`, `focus-workspace-up/down`, `move-column-to-workspace-up/down`, `move-workspace-up/down`, `fullscreen-window`, `screenshot`, `screenshot-window`, `screenshot-screen`, `reload-config`, `break-keyboard-shortcuts-inhibit`, `quit`) | *(none)* | Executes the named action on the currently focused window/column/workspace. |
+| Any zero-arg layout/compositor action (`focus-column-left`, `move-column-right`, `toggle-window-floating`, `switch-focus-floating-tiling`, `toggle-column-tabbed`, `maximize-column`, `expand-column-to-available-width`, `switch-preset-column-width`, `switch-preset-window-height`, `reset-window-height`, `center-column`, `center-visible-columns`, `consume-or-expel-window-left/right`, `consume-window-into-column`, `expel-window-from-column`, `focus-workspace-up/down`, `move-column-to-workspace-up/down`, `move-workspace-up/down`, `fullscreen-window`, `toggle-overview`, `screenshot`, `screenshot-window`, `screenshot-screen`, `reload-config`, `break-keyboard-shortcuts-inhibit`, `quit`) | *(none)* | Executes the named action on the currently focused window/column/workspace (or toggles the zoomed overview). |
 | `set-column-width` / `set-window-height` | `"delta": "+10%" \| "-10%" \| "50%" \| "+20" \| "-20" \| "800"` | Resizes focused column width or window height per `W4`. |
 | `switch-workspace` | `"idx": <1..K>` | Switches to the `1`-based dynamic workspace index (`WS6`). |
 | `focus-window` | `"id": <uint64>` | Focuses the window with generational ID `id` (switching workspaces if needed). |
@@ -944,9 +950,13 @@ IPC Subcommands (`kajo-comp msg` — connects to $KAJO_COMP_SOCKET, prints JSON 
 /usr/share/wayland-sessions/kajo.desktop            # Production Kajo Desktop (kajo-comp)
 /usr/share/wayland-sessions/kajo-debug.desktop      # Kajo Desktop w/ Vulkan validation + trace logs
 /usr/share/wayland-sessions/kajo-niri.desktop       # Side-by-side Kajo on Niri session (fallback)
-/usr/share/xdg-desktop-portal/kajo-portals.conf     # Portal routing (ScreenCast/Screenshot -> wlr, default -> gtk)
+/usr/share/xdg-desktop-portal/kajo-portals.conf     # Portal routing (Settings -> kajo;gtk, FileChooser -> kajo-files;gtk, ScreenCast/Screenshot -> wlr, default -> gtk)
+/usr/share/xdg-desktop-portal/portals/kajo.portal   # Settings portal descriptor hosted in kajo shell
+/usr/share/xdg-desktop-portal/portals/kajo-files.portal # FileChooser portal descriptor hosted in kajo-files --portal
+/usr/share/dbus-1/services/org.freedesktop.impl.portal.desktop.kajo.Files.service # D-Bus activation for kajo-files-portal.service
 /usr/lib/systemd/user/kajo-comp.service             # Type=notify compositor unit bound to graphical-session.target
 /usr/lib/systemd/user/kajo.service                  # Kajo panel/shell unit ordered After=kajo-comp.service
+/usr/lib/systemd/user/kajo-files-portal.service     # Type=dbus unit activating kajo-files --portal on demand
 /usr/lib/systemd/user/kajo-shutdown.target          # Clean session teardown target
 /usr/local/bin/kajo-greeter                         # Wayland login greeter
 /usr/local/bin/kajo-greeter-session                 # Greeter wrapper with kajo-comp -> niri -> cage fallback chain
@@ -1112,11 +1122,14 @@ Once `kajo-comp --session` binds `WAYLAND_DISPLAY`, `DISPLAY` (`wlr_xwayland`), 
 
 ---
 
-## 9. Future Work
+## 9. Extensions & Future Work
 
-Not part of this specification: the sections above describe what `kajo-comp` implements. Planned compositor work is tracked in [`ROADMAP.md`](../ROADMAP.md):
+Vulkan visual effects (soft SDF drop shadows, 7 optical glass backdrop materials, unfocused dimming, linear colour filters, SDR white/BT.2390 PQ output stage, and window open/close/resize snapshot transitions) are specified in [`docs/spec_comp_effects.md`](spec_comp_effects.md) and [`docs/spec_comp_glass_styles.md`](spec_comp_glass_styles.md). Zoomed workspace overview (`toggle-overview`), `Mod + drag` tiled column reorder/resize, XDG portal backends (`kajo` Settings & `kajo-files` FileChooser), and opt-in external GTK/Qt theming are implemented and tracked in [`ROADMAP.md`](../ROADMAP.md) §2 / §3.8 / §3.9.
 
-- §3.6: wlroots fork for visual effects (Vulkan effect passes, built as a static submodule);
-- §3.7: HDR10 output, SDR white level and tone mapping (with the Phase 0 hardware findings), backdrop blur design, window transitions, overview zoom, drop shadows, OSK text-field visibility, `Mod + drag` tiled columns, layout extras and multi-monitor sessions;
-- §3.8: portal backends for Settings (theme, accent) and FileChooser (`kajo-files --portal`);
-- §3.9: applying the Kajo theme to other GTK and Qt apps.
+Remaining planned compositor work is tracked in [`ROADMAP.md`](../ROADMAP.md) §3.7:
+
+- HDR10 output & mixed SDR/HDR pipeline (blocked on `libdisplay-info >= 0.4.0` on Host A; output-stage SDR white & BT.2390 PQ tone mapping are already implemented in the wlroots fork);
+- OSK cursor visibility (scrolling the focused column/window above the keyboard via `text-input-v3` cursor rectangles);
+- Layout extras (`focus-follows-mouse`, named workspaces, `maximize-window-to-edges`, custom struts);
+- Multi-monitor sessions;
+- 3-finger touchscreen gesture bug fixes.

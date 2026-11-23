@@ -609,6 +609,10 @@ comp_window_handle_bind(CompServer *s, const CompBind *bind)
         comp_screenshot_screen(s);
         return true;
 
+    case COMP_BIND_TOGGLE_OVERVIEW:
+        comp_overview_toggle(s);
+        return true;
+
     case COMP_BIND_SET_COLUMN_WIDTH:
         comp_window_resize_column(s, bind->delta, bind->delta_mode);
         return true;
@@ -1009,6 +1013,7 @@ handle_toplevel_map(void *owner, void *data)
         comp_layout_focus_window(s->layout, prev_focus);
 
     comp_window_relayout(s);
+    comp_overview_on_layout_changed(s);
     comp_ipc_emit_workspaces(s);
     comp_ipc_emit_windows(s);
 }
@@ -1059,6 +1064,7 @@ handle_toplevel_unmap(void *owner, void *data)
 
     comp_switcher_on_window_unmap(s, old_id);
     comp_window_relayout(s);
+    comp_overview_on_layout_changed(s);
     comp_ipc_emit_workspaces(s);
     comp_ipc_emit_windows(s);
 }

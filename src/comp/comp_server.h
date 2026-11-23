@@ -85,8 +85,17 @@ struct wlr_xwayland_surface;
 
 struct CompWindow;
 struct CompSwitcher;
+struct CompOverview;
 struct CompScreenshot;
 struct CompFxSystem;
+
+typedef enum {
+    COMP_GRAB_NONE = 0,
+    COMP_GRAB_FLOATING_MOVE,
+    COMP_GRAB_FLOATING_RESIZE,
+    COMP_GRAB_TILED_MOVE,
+    COMP_GRAB_TILED_RESIZE,
+} CompGrabMode;
 
 typedef struct CompServerOptions {
     const char *const *startup_argv;      /* optional: run once the socket exists (no shell) */
@@ -208,6 +217,7 @@ typedef struct CompServer {
     CompRules                            *rules;
     struct CompIpcState                  *ipc;
     struct CompSwitcher                  *switcher;
+    struct CompOverview                  *overview;
     struct CompScreenshot                *screenshot;
     struct CompFxSystem                  *fx;
     size_t                                last_active_ws;
@@ -219,11 +229,16 @@ typedef struct CompServer {
     uint64_t                              focus_seq;
     CompWinId                             last_focused_id;
 
-    /* Client-initiated floating move/resize grab (spec §3.11 L8) */
+    /* Interactive move/resize grab: client-initiated floating (L8) and Mod+drag tiled/floating */
     CompWinId                             grab_win;
+    CompGrabMode                          grab_mode;
     bool                                  grab_resizing;
+    bool                                  grab_from_mod;
+    uint32_t                              grab_button;
     uint32_t                              grab_edges;
     double                                grab_start_cx, grab_start_cy;
+    double                                grab_last_step_x, grab_last_step_y;
+    double                                grab_start_col_w;
     CompRect                              grab_start_rect;
 
     /* Persistent scratch buffer for comp_window_tick_frame / comp_window_relayout */
@@ -346,6 +361,7 @@ void               comp_window_unmap_xwayland(struct CompWindow *w);
 void               comp_window_update_xwayland_metadata(struct CompWindow *w);
 void               comp_window_set_xwayland_fullscreen(struct CompWindow *w, bool fullscreen);
 void               comp_window_set_xwayland_maximized(struct CompWindow *w, bool maximized);
+bool               comp_window_begin_mod_grab(CompServer *server, struct CompWindow *w, bool resize, uint32_t button);
 void               comp_window_update_grab(CompServer *server);
 void               comp_window_end_grab(CompServer *server);
 bool               comp_window_handle_bind(CompServer *server, const CompBind *bind);
@@ -369,6 +385,17 @@ void comp_switcher_on_window_unmap(CompServer *server, CompWinId id);
 void comp_switcher_handle_modifiers(CompServer *server, uint32_t mods);
 bool comp_switcher_handle_key(CompServer *server, uint32_t mods, uint32_t keysym);
 bool comp_switcher_handle_click(CompServer *server, double lx, double ly);
+/* comp_overview.c */
+void comp_overview_init(CompServer *server);
+bool comp_overview_is_active(const CompServer *server);
+void comp_overview_open(CompServer *server);
+void comp_overview_close(CompServer *server, bool commit);
+void comp_overview_toggle(CompServer *server);
+void comp_overview_on_layout_changed(CompServer *server);
+bool comp_overview_handle_key(CompServer *server, uint32_t mods, uint32_t keysym);
+bool comp_overview_handle_motion(CompServer *server, double lx, double ly);
+bool comp_overview_handle_button(CompServer *server, uint32_t button, bool pressed, double lx, double ly);
+bool comp_overview_handle_axis(CompServer *server, double delta_y);
 /* comp_screenshot.c */
 void comp_screenshot_init(CompServer *server);
 bool comp_screenshot_is_active(const CompServer *server);
