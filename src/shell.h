@@ -22,6 +22,7 @@ typedef struct _ShellIdleManager     ShellIdleManager;
 typedef struct _ShellPostureManager  ShellPostureManager;
 typedef struct _ShellOSK             ShellOSK;
 typedef struct _ShellTouchGestures   ShellTouchGestures;
+typedef struct _KajoPortalSettings   KajoPortalSettings;
 
 typedef struct _ShellApp ShellApp;
 
@@ -43,6 +44,7 @@ struct _ShellApp {
     ShellPostureManager     *posture_manager;
     ShellOSK                *osk;
     ShellTouchGestures      *touch_gestures;
+    KajoPortalSettings      *portal_settings;
     GPtrArray               *active_widgets;
 };
 

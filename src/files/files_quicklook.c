@@ -1141,6 +1141,16 @@ kajo_quicklook_set_item(KajoQuickLook *self, KajoFileItem *item, GFile *current_
     g_set_object(&self->current_item, item);
     g_set_object(&self->current_dir, current_dir);
 
+    if (!self->inspector_box || !self->insp_preview_stack) {
+        if (kajo_quicklook_is_visible(self)) {
+            if (item)
+                populate_quicklook_modal(self);
+            else
+                kajo_quicklook_hide(self);
+        }
+        return;
+    }
+
     g_autofree char *cur_uri = current_dir ? g_file_get_uri(current_dir) : NULL;
     g_autofree char *arch_path = NULL;
     g_autofree char *inner_path = NULL;

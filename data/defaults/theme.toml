@@ -19,3 +19,5 @@ secondary_fg_contrast          = 1.0
 css_path                       = ""
 settings_width                 = 900
 settings_height                = 640
+theme_external_gtk             = false
+theme_external_qt              = false

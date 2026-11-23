@@ -159,6 +159,8 @@ typedef struct {
     gchar   *css_path;              /* Optional custom CSS override path or "" */
     gint     settings_width;        /* [480..3840], default 900 */
     gint     settings_height;       /* [360..2160], default 640 */
+    gboolean theme_external_gtk;    /* opt-in GTK3/GTK4 + GSettings theming, default FALSE */
+    gboolean theme_external_qt;     /* opt-in Qt 6 (qt6ct) theming, default FALSE */
 } KajoThemeCfg;
 
 /* ─── 2. Wayland Shell Domain (shell.toml) ─── */
