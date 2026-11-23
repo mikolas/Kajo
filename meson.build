@@ -572,11 +572,25 @@ configure_file(
   install_dir: get_option('datadir') / 'dbus-1' / 'services',
 )
 
+if get_option('prefix').startswith('/usr')
+  systemd_user_unit_dir = get_option('prefix') / 'lib' / 'systemd' / 'user'
+else
+  systemd_user_unit_dir = get_option('datadir') / 'systemd' / 'user'
+endif
+
+configure_file(
+  input: 'data/systemd/kajo-files-portal.service.in',
+  output: 'kajo-files-portal.service',
+  configuration: portal_service_conf,
+  install: true,
+  install_dir: systemd_user_unit_dir,
+)
+
 install_data(
   'data/systemd/kajo-comp.service',
   'data/systemd/kajo.service',
   'data/systemd/kajo-shutdown.target',
-  install_dir: get_option('prefix') / 'lib' / 'systemd' / 'user',
+  install_dir: systemd_user_unit_dir,
 )
 
 install_subdir(

@@ -1,0 +1,10 @@
+[Unit]
+Description=Portal service (Kajo Files FileChooser implementation)
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.freedesktop.impl.portal.desktop.kajo.Files
+ExecStart=@BINDIR@/kajo-files --portal
+Slice=session.slice

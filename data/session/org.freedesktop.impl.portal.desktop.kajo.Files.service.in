@@ -1,3 +1,4 @@
 [D-BUS Service]
 Name=org.freedesktop.impl.portal.desktop.kajo.Files
 Exec=@BINDIR@/kajo-files --portal
+SystemdService=kajo-files-portal.service

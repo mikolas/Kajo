@@ -153,6 +153,14 @@ meson test -C builddir
 meson install -C builddir --skip-subprojects   # keeps the statically linked wlroots out of the install tree
 ```
 
+If upgrading inside an already-running session (without logging out), reload systemd and `dbus-broker` so newly installed portal `.service` and systemd user units (`kajo-files-portal.service`) become activatable immediately:
+```bash
+systemctl --user daemon-reload
+systemctl --user reload dbus-broker
+systemctl --user restart xdg-desktop-portal
+```
+(Restart the `kajo` shell process as well if you updated the `org.freedesktop.impl.portal.Settings` backend inside `kajo`.)
+
 ---
 
 ## 🖥️ Compositor Sessions & Configuration (`kajo-comp` & Niri)
