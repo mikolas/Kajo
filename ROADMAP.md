@@ -1,6 +1,6 @@
 # Kajo Desktop Environment — Roadmap & Future Ideas (`ROADMAP.md`)
 
-This document tracks completed milestones, active specifications, and future first-party applications and enhancements planned for the **Kajo** desktop suite on the **Niri Wayland Compositor**.
+This document tracks completed milestones, active specifications, and future first-party applications and enhancements planned for the **Kajo** desktop suite on **`kajo-comp`** and the **Niri Wayland Compositor**.
 
 ---
 
@@ -18,16 +18,16 @@ All Kajo components and standalone applications share a unified design language:
 
 | Component / Binary | Status | Specification / Notes |
 | :--- | :---: | :--- |
-| **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 20+ widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, App Launcher, Session Lock & Screensaver |
-| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 12 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Surface/Glass Presets, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Compositor & Effects, About) with responsive 3-tier column reflow |
+| **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 22 widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, `org.freedesktop.impl.portal.Settings` backend, App Launcher, Session Lock & Screensaver |
+| **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 12 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Surface/Glass Presets + opt-in revertible GTK/Qt external theming, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Compositor & Effects, About) with responsive 3-tier column reflow |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
 | **Foldable & 2-in-1 Posture Manager** | ✅ Done | Hinge angle, tablet mode, IIO accelerometer auto-rotation (`src/posture/posture_manager.c`) |
 | **Compositor Window Transitions & Shaders** | ✅ Done | Live preset switcher for window open/close/resize animations on both `kajo-comp` (Vulkan snapshot transitions) and Niri (GLSL shaders) via `src/settings/pages/page_niri.c` |
 | **Touchscreen Bezel Swipe Gestures** | ✅ Done | Edge layer-shell recognizers for Launcher, Overview, OSK, and Notifications (`src/hardware/touch_gestures.c`) |
 | **kajo-comp: 3-Finger Drag & Flick** | 🧪 Beta | `kajo-comp` (`src/comp/comp_drag.c`, `src/comp/core/comp_gesture.c`): touchscreen and touchpad drags follow the fingers along the strip or between workspaces and snap on release by position or velocity (spec §3.15 GS1–GS6). Touchpad verified on Host A hardware; the touchscreen drag works on hardware but has known bugs (§3.7, "Fix touchscreen gestures"). |
-| **kajo-comp: Workspace Strip & Animated Resize** | ✅ Done | `kajo-comp` (`src/comp/core/comp_motion.c`): continuous vertical workspace strip with per-workspace cameras (WS7) and animated displayed size on resize (M5). |
+| **kajo-comp: Workspace Strip, Overview & `Mod + Drag`** | ✅ Done | `kajo-comp` (`src/comp/core/comp_motion.c`, `comp_overview_core.c`, `comp_overview.c`, `comp_window_chrome.c`): continuous vertical workspace strip with per-workspace cameras (WS7), animated displayed size on resize (M5), zoomed workspace overview (`Mod+O` / `toggle-overview`), and `Mod + Left/Right Button` tiled column reorder/resize (verified via unit/headless tests & headless renders; pending live desktop session verification). |
 | **Virtual Keyboard (`ShellOSK`)** | ✅ Done | Windows Touch Keyboard flat 28-column proportional grid with XKB keymap & layout switching (`src/osk/osk.c`) |
-| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🧪 Alpha | GVFS/UDisks2 file manager with natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
+| **Kajo Files (`kajo-files`, `org.kajo.Files`)** | 🚀 Beta | GVFS/UDisks2 file manager with virtual `archive://` browsing, ISO loop-mounting, live network discovery, Wayland Drag-and-Drop (`src/files/files_dnd.c`), native `org.freedesktop.impl.portal.FileChooser` backend (`--portal`), natural sorting, hit-tested context menu (`Open With / Set Default`, `libarchive` `Extract Here`), and `Space` Quick Look (`GtkPicture`, `libmpv` + `GtkGLArea`, Poppler PDFs, `libarchive` archives, code/text) |
 | **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
 | **Kajo Mod (`kajo-mod`, `org.kajo.Mod`)** | 🚀 Beta | [`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md) — Retro Amiga (`libuade`), C64 SID (`libsidplayfp`/`reSIDfp` + HVSC), Chiptune (`libgme`), and Tracker (`libopenmpt` + `libxmp`) music player with subsongs, Paula A500/A1200 & LED filter, MOS 6581/8580 SID selector, live `$D400` register & sample/STIL inspector, `.lha`/`.zip` multi-file bundle loading, and 60 FPS oscilloscope + 16-band log FFT |
 | **Kajo IDE (`kajo-ide`, `org.kajo.IDE`)** | 🧪 Beta | [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) — Selection-first modal GTK4 + `GtkSourceView-5` IDE with Nordic text objects (`m i/a`), 6-column Cairo gutter (absolute & hybrid relative line numbers), opt-in `60% | 25% | 15%` Call-Depth Code Strip & Dependency Graph Lenses (`Space t s`, [`docs/spec_ide_code_strip.md`](docs/spec_ide_code_strip.md)), tree-sitter highlighting and text objects (16 languages), real async LSP (`gopls`, `jdtls`, `clangd`, `rust-analyzer`), DAP debugger (expandable variables, watches, conditional breakpoints), project tasks, user key remapping (`ide.toml` `[keys.*]`), GUI Markdown + Cairo vector Mermaid, 120-command Help Palette, and AI Agent JSON-RPC 2.0 IPC |
@@ -144,28 +144,28 @@ Superseded by [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) §10 (gla
 
 ---
 
-### 3.8 [BETA] Portal backends (`org.freedesktop.impl.portal.*`): Settings and FileChooser
+### 3.8 [DONE] Portal backends (`org.freedesktop.impl.portal.*`): Settings and FileChooser
 
 Implemented from the public D-Bus portal interface specifications with GTK kept as the fallback backend in `data/session/kajo-portals.conf` (`org.freedesktop.impl.portal.Settings=kajo;gtk;`, `org.freedesktop.impl.portal.FileChooser=kajo-files;gtk;`). ScreenCast and Screenshot remain on `xdg-desktop-portal-wlr`; Secret remains on `gnome-keyring`.
 
 #### 3.8.1 Settings backend (`org.freedesktop.impl.portal.Settings`)
 - **Implemented** in `src/portal/portal_settings.{h,c}`, hosted directly by the always-running `kajo` shell (`org.freedesktop.impl.portal.desktop.kajo`, `data/session/kajo.portal`).
 - Serves `org.freedesktop.appearance` (`color-scheme = 1`, `accent-color = (ddd)` from `theme.toml`, `contrast`, `reduced-motion`), supports `ReadAll` namespace globbing, returns `org.freedesktop.portal.Error.NotFound` on missing keys, and emits `SettingChanged` whenever `kajo-settings` updates `theme.toml`.
-- **Verified:** mock D-Bus unit tests in `tests/test_portals.c` (including ASan/UBSan). Live `xdg-desktop-portal` routing after `meson install` + shell restart still needs manual confirmation.
+- **Verified:** mock D-Bus unit tests in `tests/test_portals.c` (including ASan/UBSan) and live session verification on Host A.
 
 #### 3.8.2 FileChooser (`kajo-files --portal`)
 - **Implemented** in `src/files/files_portal.{h,c}` + `src/files/files_chooser.{h,c}`, D-Bus activated on demand via `data/session/kajo-files.portal` (`org.freedesktop.impl.portal.desktop.kajo.Files`), `data/session/org.freedesktop.impl.portal.desktop.kajo.Files.service.in` (`SystemdService=kajo-files-portal.service`), and `data/systemd/kajo-files-portal.service.in` (`Type=dbus`, `PartOf=graphical-session.target`).
 - Handles `OpenFile`, `SaveFile`, `SaveFiles`, and per-request `org.freedesktop.impl.portal.Request.Close()` cancellation, including `multiple`, `directory`, `filters` (glob + MIME), `current_filter`, `current_folder`, `current_name`, `current_file`, `accept_label`, `choices` (checkboxes & dropdowns), `modal`, and `file://` URI normalization.
 - Undecorated `880×580` Aero+Metro `KajoFilesChooser` window (`.shell-files-chooser`, floating rule in `data/defaults/rules.toml`) with `KajoFilesSidebar`, Browse Network, inline auth/connect, inline overwrite confirm, `+ 📁` new folder, `Space` Quick Look, and Wayland parent attachment (`gdk_wayland_toplevel_set_transient_for_exported()` + `gtk_window_set_modal()`).
-- **Verified:** mock D-Bus protocol/cancellation/filter tests in `tests/test_portals.c` (including ASan/UBSan), portal/service/unit cross-check in `tests/test_comp_config.c`, and headless UI render (`kajo-files --chooser-preview`). When installing into an already-running session, run `systemctl --user daemon-reload && systemctl --user reload dbus-broker && systemctl --user restart xdg-desktop-portal` so `dbus-broker` picks up the new service file without a re-login.
+- **Verified:** mock D-Bus protocol/cancellation/filter tests in `tests/test_portals.c` (including ASan/UBSan), portal/service/unit cross-check in `tests/test_comp_config.c`, headless UI render (`kajo-files --chooser-preview`), and live browser file-chooser activation on Host A. When installing into an already-running session, run `systemctl --user daemon-reload && systemctl --user reload dbus-broker && systemctl --user restart xdg-desktop-portal` so `dbus-broker` picks up the new service file without a re-login.
 
 ---
 
-### 3.9 [BETA] Apply the Kajo theme to other apps (GTK, Qt)
+### 3.9 [DONE] Apply the Kajo theme to other apps (GTK, Qt)
 
 **Implemented** in `src/theme_export.{h,c}` and `kajo-settings → Theme` (Card 5: `5. EXTERNAL APP THEMING`), backed by opt-in `theme_external_gtk` and `theme_external_qt` keys in `theme.toml` (both `false` by default).
 
 - **Exact pre-Kajo snapshot & revert:** On first opt-in, snapshots existing user files (`gtk-4.0/{gtk.css,settings.ini}`, `gtk-3.0/{gtk.css,settings.ini}`, `qt6ct/qt6ct.conf`) and `org.gnome.desktop.interface` GSettings (`color-scheme`, `accent-color`, `gtk-theme`) into `~/.config/kajo/external-theme-backup.json` (never overwritten while active). Disabling a layer or clicking **`↺ RESTORE ORIGINAL DEFAULTS`** restores every file and GSettings key to its exact original state and removes all Kajo-managed files.
 - **GTK3 & GTK4/libadwaita:** Writes `~/.config/gtk-{3.0,4.0}/kajo-theme.css` from Kajo's active accent and dark surface tokens (`0px` geometry, `:not(.osk-key)`), appends a clearly marked `@import url("kajo-theme.css");` block to `gtk.css` without clobbering existing user rules, warns on unused leftovers (`dank-colors.css`, `colors.css`, `matugen.css`), and updates `settings.ini` + `org.gnome.desktop.interface`.
 - **Qt 6 (`qt6ct`):** Generates a 21-color `~/.config/qt6ct/colors/kajo-metro.conf`, configures `qt6ct.conf`, writes `~/.config/environment.d/90-kajo-qt.conf` (`QT_QPA_PLATFORMTHEME=qt6ct`), updates `systemctl --user` environment, and hooks `data/session/kajo-session` on login.
-- **Verified:** isolated temp-directory backup, apply, accent-update, partial-disable, and bit-exact full-revert tests in `tests/test_portals.c` (including ASan/UBSan) and headless `kajo-settings --page theme` render. Live visual verification against real GTK3, GTK4/libadwaita, and Qt 6 apps still needs manual confirmation after install.
+- **Verified:** isolated temp-directory backup, apply, accent-update, partial-disable, and bit-exact full-revert tests in `tests/test_portals.c` (including ASan/UBSan), headless `kajo-settings --page theme` render, and live session verification on Host A.

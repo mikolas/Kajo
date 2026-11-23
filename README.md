@@ -29,13 +29,13 @@ The repository builds and installs **eight integrated native executables** (plus
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
-| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, Vulkan SDF shadows, Dual-Kawase frosted glass & window open/close/resize transitions, live-preview `Alt+Tab`, and in-compositor screenshots. |
+| **`kajo-comp`** | `org.kajo.comp` | **Scrollable-Tiling Wayland Compositor** (`wlroots-0.20` + Vulkan) with an infinite horizontal strip, analytical spring physics, tabbed/stacked columns, `Mod + drag` column move/resize, Vulkan SDF shadows, Dual-Kawase frosted glass & window transitions, zoomed workspace overview (`Mod+O`), live-preview `Alt+Tab`, and in-compositor screenshots. |
 | **`kajo-ide`** | `org.kajo.IDE` | **Modal Code Editor & IDE** (`GtkSourceView-5`) with selection-first Nordic keybindings, 16-language Tree-sitter highlighting, async LSP & DAP debugger, opt-in `60% \| 25% \| 15%` Call-Depth Code Strip, Cairo Mermaid diagrams, and AI Agent IPC. |
-| **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, batch clipboard operations, and `Space` Quick Look preview. |
+| **`kajo-files`** | `org.kajo.Files` | **URI-First File Manager & FileChooser Portal** (`GIO` / `GVFS` / `UDisks2`) with virtual `archive://` browsing, ISO/disk-image mounting, live network discovery, Wayland Drag-and-Drop, native `FileChooser` portal (`--portal`), and `Space` Quick Look preview. |
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
 | **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Player** (`libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`) with hardware filter controls, HVSC lookup, and 60 FPS scope/FFT. |
-| **`kajo-settings`** | `org.kajo.Settings` | **12-Page System & Suite Control Deck** managing displays, Wi-Fi, Bluetooth, PipeWire audio, Metro themes, panel/widgets, compositor layout, IDE/Mod preferences, and hardware telemetry. |
-| **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell & Hardware Daemon** providing the status panel (22 widgets), app launcher, OSDs, virtual touch keyboard (`ShellOSK`), notifications, screen saver, and PAM session lock. |
+| **`kajo-settings`** | `org.kajo.Settings` | **12-Page System & Suite Control Deck** managing displays, Wi-Fi, Bluetooth, PipeWire audio, Metro themes (including opt-in revertible GTK/Qt external app theming), panel/widgets, compositor layout, IDE/Mod preferences, and hardware telemetry. |
+| **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell, Settings Portal & Hardware Daemon** providing the status panel (22 widgets), app launcher, OSDs, virtual touch keyboard (`ShellOSK`), notifications, `org.freedesktop.impl.portal.Settings`, screen saver, and PAM session lock. |
 | **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting `kajo-comp --greeter-mode`, `niri`, `cage`, and desktop `--test` preview mode. |
 
 ---
@@ -45,10 +45,10 @@ The repository builds and installs **eight integrated native executables** (plus
 ### ❖ Kajo Compositor (`kajo-comp`)
 > 📖 **Specifications & Storyboard**: [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) • [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) • [`docs/spec_comp_glass_styles.md`](docs/spec_comp_glass_styles.md) • [`docs/spec_wlroots_fork.md`](docs/spec_wlroots_fork.md) • [`docs/kajo-comp-storyboard.html`](docs/kajo-comp-storyboard.html)
 
-- **Infinite Scrolling Strip & Spring Physics**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), and a closed-form 2nd-order damped spring solver. Resizes animate, and workspaces form one continuous vertical strip (both stay visible while switching).
+- **Infinite Scrolling Strip, Spring Physics & Pointer Manipulation**: Per-output dynamic workspaces with variable-width columns (`1/3`, `1/2`, `2/3`), vertical window stacking, tabbed columns (`24px` `Fira Code` tab headers), `Mod + Left/Right Button` pointer dragging to reorder or resize tiled columns and floating windows, and a closed-form 2nd-order damped spring solver. Resizes animate, and workspaces form one continuous vertical strip (both stay visible while switching).
 - **3-Finger Drag & Flick**: On the touchscreen and touchpad the view follows three fingers along the strip or between workspaces and snaps on release: a slow drag switches by position, a quick flick by velocity, and a short drag springs back (a glance).
 - **Vulkan Scene Graph & Shader Effects (`subprojects/wlroots` `kajo-0.20.2-fx10`)**: `0px` corner geometry with `1px` live `@metro-accent` active borders, 2-layer analytical SDF drop shadows, 7 optical glass & light-scattering backdrop materials (`frosted`, `liquid`, `halation`, `fluted`, `acrylic`, `aero`, `dichroic`, with top-edge specular hairline, cross-GPU FP32-quantized 16×16 Ulichney blue-noise dither, and `xray` background-only blur for docked/overlay panels), inactive-window dimming, window open/close/resize snapshot transitions (`[effects.transitions]`, 18 ported presets), subpass-1 output colour stage (per-pixel linear $3\times 3$ colour filters: grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids; adjustable SDR reference white and ITU-R BT.2390 PQ tone mapping), lazy XWayland with immediate `DISPLAY` export, DRM atomic test-before-commit cascade, `vrr = "on-demand"`, and automatic `VK_ERROR_DEVICE_LOST` GPU reset recovery (with zero-overhead fallback to `gles2`/`pixman` or when `llvmpipe` is detected).
-- **Built-In Switcher & Screenshot UI**: Live-thumbnail `Alt+Tab` MRU overlay and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
+- **Built-In Overview, Switcher & Screenshot UI**: Zoomed-out workspace overview (`Mod+O` / `toggle-overview`) rendering all workspaces as horizontal bands with live thumbnail cards (click or keyboard navigation with `Enter`/`Esc`), live-thumbnail `Alt+Tab` MRU overlay, and interactive frozen-screen `Region` / `Screen` / `Window` screenshot capture (`Print`) to PNG + Wayland clipboard.
 - **TOML Configuration & IPC**: Configured via `~/.config/kajo/{comp,outputs,binds,rules}.toml` (+ `conf.d/*.toml`) with live hot-reload, PCRE2 window/layer rules (`shadow`, `blur`, `blur_popups`, `xray`, `glass_style`, `dim_inactive`, `opacity`), `--greeter-mode` lockdown, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC.
 
 ### ⌨️ Kajo IDE (`kajo-ide`)
@@ -61,8 +61,9 @@ The repository builds and installs **eight integrated native executables** (plus
 - **AI Agent IPC & Diff Review**: Exposes `$KAJO_IDE_SOCKET` so external agents can query diagnostics and apply multi-file edits with atomic snapshot review (`Space d s/a/r`).
 
 ### 📁 Kajo Files (`kajo-files`)
-- **URI-First Navigation & Breadcrumbs**: Non-blocking GIO/GVFS enumeration (`trash:///`, `recent:///`, `smb://`, `sftp://`, UDisks2 drives, inline LUKS/SMB auth) with auto-scrolling root-to-leaf breadcrumbs and right-click subfolder jump popovers.
+- **URI-First Navigation, Network Discovery & Breadcrumbs**: Non-blocking GIO/GVFS enumeration (`trash:///`, `recent:///`, live `network:///` discovery, `smb://`, `sftp://`, UDisks2 drives, inline LUKS/SMB auth) with auto-scrolling root-to-leaf breadcrumbs and right-click subfolder jump popovers.
 - **Seamless Archives & Disk Images**: Browse `.zip`, `.tar.*`, `.7z`, `.rar`, and `.iso` files directly as read-only `archive://` folders, loop-mount disk images via UDisks2, or run background `libarchive` extraction and compression (`Ctrl+Shift+A`).
+- **Wayland Drag-and-Drop & Native FileChooser Portal**: Full outbound/inbound `GDK_TYPE_FILE_LIST` Drag-and-Drop across Grid/List views, subfolder tiles/rows, breadcrumb segments, Places/Drives, Trash, and external Wayland apps (same-filesystem `Move`, cross-filesystem or `Ctrl` `Copy`), plus a D-Bus-activated `org.freedesktop.impl.portal.FileChooser` backend (`kajo-files --portal`, `kajo-files-portal.service`) serving native Aero + Metro `OpenFile` / `SaveFile` / `SaveFiles` dialogs to browsers and desktop apps.
 - **`Space` Quick Look & Batch Operations**: Instant modal previews for images, hardware-decoded video/audio (`libmpv`), PDFs (`poppler-glib`), archives, and code, alongside rubber-band multi-selection, natural filename sorting, and Wayland clipboard transfers.
 
 ### 🎬 Kajo Player (`kajo-player`)
@@ -78,9 +79,10 @@ The repository builds and installs **eight integrated native executables** (plus
 ### ⚙️ Kajo Settings (`kajo-settings`)
 - **12 Live System & Suite Pages**: Modular control deck (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `niri`, `about`) with responsive 3-tier column reflow and zero mock data.
 - **Dual-Compositor & Live Theme Sync**: Compositor-agnostic **Compositor & Effects** page synchronizing display modes/scale/VRR, layout/border geometry, glass/shadow/dim optical knobs, and window transition presets across both `kajo-comp` (`comp.toml` / `outputs.toml`) and Niri (`config.kdl`), plus live `@metro-accent`, surface/glass preset, and typography hot-reload across all running Kajo apps and compositor borders.
+- **Opt-In Revertible External App Theming (`Theme` → Card 5)**: Optionally exports Kajo's active accent and dark surface palette to external GTK3, GTK4/libadwaita, and Qt 6 (`qt6ct`) apps, snapshotting pre-Kajo user configs and GSettings into `~/.config/kajo/external-theme-backup.json` for bit-exact 1-click restoration (`↺ RESTORE ORIGINAL DEFAULTS`).
 
 ### 🖥️ Kajo Desktop Shell (`kajo`) & Greeter (`kajo-greeter`)
-- **Panel, Launcher & Notifications**: 22 live panel widgets (including a popout-corked 30 FPS FFT media visualizer and SNI system tray), `Mod+D` multi-plugin launcher (apps, `:emoji`, `=calc`, `>shell`, `w:window`), OSDs, and a `freedesktop.org` notification daemon.
+- **Panel, Launcher, Notifications & Settings Portal**: 22 live panel widgets (including a popout-corked 30 FPS FFT media visualizer and SNI system tray), `Mod+D` multi-plugin launcher (apps, `:emoji`, `=calc`, `>shell`, `w:window`), OSDs, a `freedesktop.org` notification daemon, and the native `org.freedesktop.impl.portal.Settings` backend serving `org.freedesktop.appearance` (`color-scheme`, live `accent-color`, `contrast`, `reduced-motion`) with `SettingChanged` broadcasts.
 - **Touch, Lock & Convertible Hardware**: Proportional 28-column virtual keyboard (`ShellOSK`), bezel edge swipe gestures, `ext-idle-notify-v1` OLED screen saver, `ext-session-lock-v1` PAM lock screen, and 360° foldable posture / EC backlight management.
 - **`greetd` Login Greeter (`kajo-greeter`)**: Hardened login screen (`explicit_bzero`, `PR_SET_DUMPABLE=0`) running on `kajo-comp --greeter-mode`, `niri`, `cage`, or desktop `--test` preview mode.
 
@@ -271,7 +273,7 @@ binds {
 | :--- | :--- | :--- |
 | **`kajo-comp`** | `kajo-comp [--config-dir <DIR>] [--renderer vulkan\|gles2\|pixman] [--mod super\|alt] [--greeter-mode] [--exit-with-command] [-- <CMD>...]` | Starts the Kajo scrollable-tiling Wayland compositor (`org.kajo.comp`) and listens on `$XDG_RUNTIME_DIR/kajo-comp.sock`. |
 | **`kajo-ide`** | `kajo-ide [DIR \| FILES...]` | Opens a project workspace directory or specific source files in Kajo IDE. |
-| **`kajo-files`** | `kajo-files [PATH_OR_URI...]` | Opens local folders or GVFS URIs (`trash:///`, `recent:///`, `smb://`, `sftp://`). |
+| **`kajo-files`** | `kajo-files [--portal \| --chooser-preview [DIR] \| PATH_OR_URI...]` | Opens local folders or GVFS URIs (`trash:///`, `recent:///`, `network:///`, `smb://`, `sftp://`), runs the D-Bus `FileChooser` portal backend (`--portal`), or previews the chooser window (`--chooser-preview`). |
 | **`kajo-player`** | `kajo-player [FILE_OR_URI...]` | Opens video/audio media files in Kajo Player with sibling folder queue discovery. |
 | **`kajo-mod`** | `kajo-mod [FILES \| ARCHIVES \| DIRS...]` | Opens Amiga, C64 SID, chiptune, or tracker modules, `.lha`/`.zip` archives, or folders in Kajo Mod. |
 | **`kajo-settings`** | `kajo-settings [-p <PAGE>]` | Opens System Settings (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `niri`, `about`). |
@@ -288,6 +290,7 @@ binds {
 | **`~/.config/kajo/{theme,shell,ide,files,mod}.toml`** | `kajo-settings` / User | Per-domain TOML 1.1 configuration files (`theme.toml` accent, surface/glass presets & tokens, and typography; `shell.toml` panel/gestures/OSK/lock/widgets; `ide.toml` editor, gutter, Code Strip & `[keys.<state>]` remap preferences; `files.toml` view/sort state; `mod.toml` DSP & HVSC settings). |
 | **`~/.config/kajo/conf.d/*.toml`** | User / Dotfiles | Lexicographical read-only drop-in overrides (`[comp.*]`, `[output.*]`, `[binds]`, `[window_rule]`, `[theme]`, `[shell.*]`, `[ide]`, `[files]`, `[mod]`) merged on top of base `.toml` files. |
 | **`~/.config/kajo/style.d/00-accent.css`** & **`theme-override.css`** | `kajo-settings` (`theme`) | Live `@metro-*` accent, surface, glass, border, and UI font tokens hot-reloaded across all Kajo processes. |
+| **`~/.config/kajo/external-theme-backup.json`** | `kajo-settings` (`theme`) | Pre-Kajo snapshot of external GTK3/GTK4, `org.gnome.desktop.interface` GSettings, and `qt6ct` files used for bit-exact revert when opt-in external app theming is disabled or reset. |
 | **`~/.config/niri/config.kdl`** | `kajo-settings` (`displays` / `niri`) | Output resolution/scale/transform/VRR blocks and layout/GLSL shader settings for Niri (`kajo-niri.desktop`). |
 | **`/var/cache/kajo-greeter/state.json`** | `kajo-greeter` | Persists `last_user` and `last_session` across logins. |
 
