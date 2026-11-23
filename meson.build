@@ -317,6 +317,7 @@ files_sources = files(
   'src/files/files_window_ctxmenu.c',
   'src/files/files_window_keys.c',
   'src/files/files_model.c',
+  'src/files/files_network.c',
   'src/files/files_ops.c',
   'src/files/files_ops_archive.c',
   'src/files/files_diskimage.c',
@@ -727,7 +728,7 @@ test('touch-gestures', test_touch_gestures_exe)
 
 test_files_model_exe = executable(
   'test-files-model',
-  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_ops.c', 'src/files/files_ops_archive.c', 'src/files/files_diskimage.c', 'src/common/spawn_detached.c'),
+  files('tests/test_files_model.c', 'src/files/files_model.c', 'src/files/files_network.c', 'src/files/files_ops.c', 'src/files/files_ops_archive.c', 'src/files/files_diskimage.c', 'src/common/spawn_detached.c'),
   dependencies: [gtk4_dep, gio_dep, gio_unix_dep, archive_dep],
   build_by_default: false,
 )

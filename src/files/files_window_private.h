@@ -151,6 +151,7 @@ struct _KajoFilesWindow {
     GtkMultiSelection *selection_model;
     gboolean suppress_selection_sync;
     GHashTable *nested_archive_origin; /* preview-cache archive path -> outer archive:// folder URI */
+    char *last_mount_attempt_uri; /* guards against infinite NOT_MOUNTED retry loops */
     gboolean autoselect_pending; /* select first entry on the next rebuild (new folder) */
     KajoFileItem *selected_item;
 
@@ -185,6 +186,8 @@ void files_window_views_connect_toolbar_signals(KajoFilesWindow *self);
 
 /* Helpers shared across the window modules (defined in files_window.c unless noted). */
 gboolean files_window_is_read_only_archive(const KajoFilesWindow *self);
+gboolean files_window_is_virtual_network(const KajoFilesWindow *self);
+void     files_window_set_image_for_item(GtkImage *img, const KajoFileItem *item);
 void     files_window_activate_file_item(KajoFilesWindow *self, KajoFileItem *item);
 void     files_window_set_selected_item_by_index(KajoFilesWindow *self, int idx);
 void     files_window_show_inline_prompt(KajoFilesWindow *self, InlinePromptKind kind);

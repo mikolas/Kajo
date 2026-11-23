@@ -1,5 +1,6 @@
 #include "files_sidebar.h"
 #include "files_model.h"
+#include "files_network.h"
 #include <string.h>
 
 struct _KajoFilesSidebar {
@@ -13,6 +14,7 @@ struct _KajoFilesSidebar {
     GVolumeMonitor *vol_monitor;
     GCancellable *alive; /* cancelled in _free(); async callbacks check it before touching self */
     GMountOperation *active_mount_op;
+    GAskPasswordFlags active_mount_flags;
     GFile *pending_nav_file;
 
     KajoSidebarNavigateFunc nav_cb;
@@ -80,12 +82,21 @@ on_auth_submit_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     const char *domain = gtk_editable_get_text(GTK_EDITABLE(self->auth_domain_entry));
     const char *pass = gtk_editable_get_text(GTK_EDITABLE(self->auth_pass_entry));
 
-    if (gtk_widget_get_visible(self->auth_user_entry) && user && user[0] != '\0')
-        g_mount_operation_set_username(self->active_mount_op, user);
-    if (gtk_widget_get_visible(self->auth_domain_entry) && domain && domain[0] != '\0')
-        g_mount_operation_set_domain(self->active_mount_op, domain);
-    if (pass)
-        g_mount_operation_set_password(self->active_mount_op, pass);
+    gboolean empty_user = (!gtk_widget_get_visible(self->auth_user_entry) || !user || user[0] == '\0');
+    gboolean empty_pass = (!pass || pass[0] == '\0');
+
+    if ((self->active_mount_flags & G_ASK_PASSWORD_ANONYMOUS_SUPPORTED) != 0 &&
+        empty_user && empty_pass) {
+        g_mount_operation_set_anonymous(self->active_mount_op, TRUE);
+    } else {
+        g_mount_operation_set_anonymous(self->active_mount_op, FALSE);
+        if (gtk_widget_get_visible(self->auth_user_entry) && user && user[0] != '\0')
+            g_mount_operation_set_username(self->active_mount_op, user);
+        if (gtk_widget_get_visible(self->auth_domain_entry) && domain && domain[0] != '\0')
+            g_mount_operation_set_domain(self->active_mount_op, domain);
+        if (pass)
+            g_mount_operation_set_password(self->active_mount_op, pass);
+    }
 
     gtk_editable_set_text(GTK_EDITABLE(self->auth_pass_entry), "");
     gtk_revealer_set_reveal_child(GTK_REVEALER(self->auth_revealer), FALSE);
@@ -164,6 +175,7 @@ on_mount_op_ask_password(GMountOperation *op,
         return;
     }
     g_set_object(&self->active_mount_op, op);
+    self->active_mount_flags = flags;
 
     g_autofree char *title = g_strdup_printf("🔒 %s", message ? message : "AUTHENTICATION / PASSPHRASE REQUIRED");
     gtk_label_set_text(GTK_LABEL(self->auth_title_lbl), title);
@@ -179,7 +191,14 @@ on_mount_op_ask_password(GMountOperation *op,
     if (need_domain && default_domain)
         gtk_editable_set_text(GTK_EDITABLE(self->auth_domain_entry), default_domain);
 
+    gtk_password_entry_set_extra_menu(GTK_PASSWORD_ENTRY(self->auth_pass_entry), NULL);
     gtk_editable_set_text(GTK_EDITABLE(self->auth_pass_entry), "");
+    g_object_set(self->auth_pass_entry,
+                 "placeholder-text",
+                 (flags & G_ASK_PASSWORD_ANONYMOUS_SUPPORTED)
+                     ? "Password (leave empty for guest)"
+                     : "Password / Passphrase",
+                 NULL);
     gtk_revealer_set_reveal_child(GTK_REVEALER(self->auth_revealer), TRUE);
     gtk_widget_grab_focus(self->auth_pass_entry);
 }
@@ -252,6 +271,8 @@ on_enclosing_mount_ready(GObject *source, GAsyncResult *res, gpointer user_data)
     }
 
     g_autofree char *uri = g_file_get_uri(file);
+    if (uri && kajo_files_network_is_remote_uri(uri))
+        kajo_files_network_record_server(uri, NULL);
     kajo_files_sidebar_refresh(self);
     if (uri && self->nav_cb)
         self->nav_cb(uri, self->user_data);
@@ -452,12 +473,15 @@ append_drive_row(KajoFilesSidebar *self,
         g_autofree char *uri = g_file_get_uri(mount_root);
         g_object_set_data_full(G_OBJECT(vbox_outer), "target-uri", g_strdup(uri), g_free);
 
-        g_autoptr(GFileInfo) fs_info = g_file_query_filesystem_info(
-            mount_root,
-            G_FILE_ATTRIBUTE_FILESYSTEM_SIZE "," G_FILE_ATTRIBUTE_FILESYSTEM_FREE,
-            NULL,
-            NULL
-        );
+        /* Avoid synchronous network RPCs on the GTK main loop for remote mounts */
+        g_autoptr(GFileInfo) fs_info = g_file_is_native(mount_root)
+            ? g_file_query_filesystem_info(
+                mount_root,
+                G_FILE_ATTRIBUTE_FILESYSTEM_SIZE "," G_FILE_ATTRIBUTE_FILESYSTEM_FREE,
+                NULL,
+                NULL
+            )
+            : NULL;
         if (fs_info && g_file_info_has_attribute(fs_info, G_FILE_ATTRIBUTE_FILESYSTEM_SIZE)) {
             guint64 total = g_file_info_get_attribute_uint64(fs_info, G_FILE_ATTRIBUTE_FILESYSTEM_SIZE);
             guint64 free_b = g_file_info_get_attribute_uint64(fs_info, G_FILE_ATTRIBUTE_FILESYSTEM_FREE);
@@ -572,9 +596,12 @@ kajo_files_sidebar_refresh(KajoFilesSidebar *self)
             GMount *m = G_MOUNT(l->data);
             g_autoptr(GFile) m_root = g_mount_get_root(m);
             g_autofree char *m_name = g_mount_get_name(m);
+            const char *m_icon = (m_root && !g_file_is_native(m_root))
+                ? "folder-remote-symbolic"
+                : "drive-removable-media-symbolic";
             append_drive_row(
                 self,
-                "drive-removable-media-symbolic",
+                m_icon,
                 m_name ? m_name : "Mounted Volume",
                 m_root,
                 m,
@@ -606,7 +633,7 @@ kajo_files_sidebar_refresh(KajoFilesSidebar *self)
 
     /* 3. NETWORK */
     append_category_header(self->list_box, "NETWORK");
-    append_place_row(self->list_box, "network-workgroup-symbolic", "Browse Network", "SMB / SFTP / WSDD", "network:///", NULL);
+    append_place_row(self->list_box, "network-workgroup-symbolic", "Browse Network", "LAN / SMB / SFTP", "network:///", NULL);
     append_place_row(self->list_box, "network-server-symbolic", "+ CONNECT TO SERVER", "smb://, sftp://, davs://", NULL, "connect-server");
 
     self->suppress_select = FALSE;

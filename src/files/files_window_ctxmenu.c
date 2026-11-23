@@ -103,7 +103,8 @@ on_ctx_item_newwin_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     GtkApplication *app = gtk_window_get_application(GTK_WINDOW(self));
     const char *uri = NULL;
     g_autofree char *dir_uri = NULL;
-    if (self->selected_item && kajo_file_item_is_dir(self->selected_item)) {
+    if (self->selected_item &&
+        (kajo_file_item_is_dir(self->selected_item) || kajo_file_item_is_mountable(self->selected_item))) {
         uri = kajo_file_item_get_target_uri(self->selected_item);
         if (!uri) uri = kajo_file_item_get_uri(self->selected_item);
     } else if (self->current_dir) {
@@ -640,6 +641,7 @@ open_context_menu_at(KajoFilesWindow *self, KajoFileItem *item, int x, int y)
 
     gboolean is_trash = FALSE;
     gboolean is_archive = files_window_is_read_only_archive(self);
+    gboolean is_network = files_window_is_virtual_network(self);
     if (self->current_dir) {
         g_autofree char *scheme = g_file_get_uri_scheme(self->current_dir);
         is_trash = (g_strcmp0(scheme, "trash") == 0);
@@ -649,9 +651,11 @@ open_context_menu_at(KajoFilesWindow *self, KajoFileItem *item, int x, int y)
         g_autoptr(GPtrArray) sel_items = files_window_get_selected_items(self);
         gboolean multi = (sel_items && sel_items->len > 1);
         gboolean is_dir = kajo_file_item_is_dir(item);
+        gboolean is_mountable = kajo_file_item_is_mountable(item);
+        gboolean is_virtual_remote = is_network || is_mountable;
         const char *ctype = kajo_file_item_get_content_type(item);
         const char *name = kajo_file_item_get_name(item);
-        g_autofree char *sz_str = kajo_files_format_size(kajo_file_item_get_size(item), is_dir);
+        g_autofree char *sz_str = kajo_file_item_format_subtitle(item);
 
         if (multi) {
             g_autofree char *multi_title = g_strdup_printf("%u ITEMS SELECTED", sel_items->len);
@@ -659,7 +663,7 @@ open_context_menu_at(KajoFilesWindow *self, KajoFileItem *item, int x, int y)
             gtk_label_set_text(GTK_LABEL(self->ctx_hdr_title_lbl), multi_title);
             gtk_label_set_text(GTK_LABEL(self->ctx_hdr_badge_lbl), "BATCH");
         } else {
-            gtk_image_set_from_icon_name(GTK_IMAGE(self->ctx_hdr_icon), kajo_file_item_get_icon_name(item));
+            files_window_set_image_for_item(GTK_IMAGE(self->ctx_hdr_icon), item);
             gtk_label_set_text(GTK_LABEL(self->ctx_hdr_title_lbl), kajo_file_item_get_display_name(item));
             gtk_label_set_text(GTK_LABEL(self->ctx_hdr_badge_lbl), sz_str);
         }
@@ -668,17 +672,17 @@ open_context_menu_at(KajoFilesWindow *self, KajoFileItem *item, int x, int y)
         gtk_widget_set_visible(self->ctx_bg_box, FALSE);
 
         gtk_widget_set_visible(self->ctx_btn_open, !multi);
-        gtk_widget_set_visible(self->ctx_btn_open_with, !multi && !is_dir && !is_archive);
-        gtk_widget_set_visible(self->ctx_btn_quicklook, !multi);
-        gtk_widget_set_visible(self->ctx_btn_extract, !multi && !is_dir && !is_archive && kajo_files_is_archive(ctype, name));
-        gtk_widget_set_visible(self->ctx_btn_compress, !is_trash && !is_archive);
-        gtk_widget_set_visible(self->ctx_btn_item_terminal, !multi && is_dir && !is_archive);
-        gtk_widget_set_visible(self->ctx_btn_item_newwin, !multi && is_dir);
+        gtk_widget_set_visible(self->ctx_btn_open_with, !multi && !is_dir && !is_archive && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_quicklook, !multi && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_extract, !multi && !is_dir && !is_archive && !is_virtual_remote && kajo_files_is_archive(ctype, name));
+        gtk_widget_set_visible(self->ctx_btn_compress, !is_trash && !is_archive && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_item_terminal, !multi && is_dir && !is_archive && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_item_newwin, !multi && (is_dir || is_mountable));
         gtk_widget_set_visible(self->ctx_btn_restore_trash, is_trash);
-        gtk_widget_set_sensitive(self->ctx_btn_cut, !is_archive && !is_trash);
-        gtk_widget_set_visible(self->ctx_btn_rename, !multi && !is_archive && !is_trash);
-        gtk_widget_set_visible(self->ctx_btn_move_trash, !is_trash && !is_archive);
-        gtk_widget_set_visible(self->ctx_btn_delete_perm, !is_archive);
+        gtk_widget_set_sensitive(self->ctx_btn_cut, !is_archive && !is_trash && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_rename, !multi && !is_archive && !is_trash && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_move_trash, !is_trash && !is_archive && !is_virtual_remote);
+        gtk_widget_set_visible(self->ctx_btn_delete_perm, !is_archive && !is_virtual_remote);
     } else {
         g_autofree char *base = NULL;
         if (is_archive && self->current_dir) {
@@ -691,18 +695,22 @@ open_context_menu_at(KajoFilesWindow *self, KajoFileItem *item, int x, int y)
                 else if (arch_path)
                     base = g_path_get_basename(arch_path);
             }
+        } else if (is_network) {
+            base = g_strdup("NETWORK");
         } else if (self->current_dir) {
             base = g_file_get_basename(self->current_dir);
         }
-        gtk_image_set_from_icon_name(GTK_IMAGE(self->ctx_hdr_icon), is_archive ? "package-x-generic" : "folder");
+        gtk_image_set_from_icon_name(GTK_IMAGE(self->ctx_hdr_icon),
+            is_archive ? "package-x-generic" : (is_network ? "network-workgroup-symbolic" : "folder"));
         gtk_label_set_text(GTK_LABEL(self->ctx_hdr_title_lbl), base ? base : "CURRENT FOLDER");
-        gtk_label_set_text(GTK_LABEL(self->ctx_hdr_badge_lbl), is_archive ? "ARCHIVE" : "DIR");
+        gtk_label_set_text(GTK_LABEL(self->ctx_hdr_badge_lbl),
+            is_archive ? "ARCHIVE" : (is_network ? "LAN" : "DIR"));
 
         gtk_widget_set_visible(self->ctx_item_box, FALSE);
         gtk_widget_set_visible(self->ctx_bg_box, TRUE);
-        gtk_widget_set_sensitive(self->ctx_btn_bg_mkdir, !is_archive && !is_trash);
-        gtk_widget_set_sensitive(self->ctx_btn_bg_new_file, !is_archive && !is_trash);
-        gtk_widget_set_sensitive(self->ctx_btn_bg_paste, !is_archive && !is_trash && kajo_files_clipboard_has_files());
+        gtk_widget_set_sensitive(self->ctx_btn_bg_mkdir, !is_archive && !is_trash && !is_network);
+        gtk_widget_set_sensitive(self->ctx_btn_bg_new_file, !is_archive && !is_trash && !is_network);
+        gtk_widget_set_sensitive(self->ctx_btn_bg_paste, !is_archive && !is_trash && !is_network && kajo_files_clipboard_has_files());
     }
 
     GdkRectangle rect = { MAX(1, x), MAX(1, y), 1, 1 };
