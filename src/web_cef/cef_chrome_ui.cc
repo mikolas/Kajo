@@ -369,6 +369,33 @@ std::string ChromeStateStore::SnapshotJson() const {
       << ",\"label\":\"" << JsonEscape(sp.label) << "\""
       << ",\"allow\":" << (sp.allow ? "true" : "false") << "}";
   }
+  o << "],";
+
+  o << "\"install_draft\":{"
+    << "\"name\":\"" << JsonEscape(s.install_draft.name) << "\""
+    << ",\"start_url\":\"" << JsonEscape(s.install_draft.start_url) << "\""
+    << ",\"scope\":\"" << JsonEscape(s.install_draft.scope) << "\""
+    << ",\"theme_color\":\"" << JsonEscape(s.install_draft.theme_color) << "\""
+    << ",\"icon_url\":\"" << JsonEscape(s.install_draft.icon_url) << "\""
+    << ",\"manifest_url\":\"" << JsonEscape(s.install_draft.manifest_url) << "\""
+    << ",\"already_installed\":" << (s.install_draft.already_installed ? "true" : "false")
+    << ",\"existing_id\":\"" << JsonEscape(s.install_draft.existing_id) << "\"},";
+
+  o << "\"webapps\":[";
+  for (size_t i = 0; i < s.webapps.size(); ++i) {
+    const auto& wa = s.webapps[i];
+    if (i) o << ",";
+    o << "{\"id\":\"" << JsonEscape(wa.id) << "\""
+      << ",\"name\":\"" << JsonEscape(wa.name) << "\""
+      << ",\"start_url\":\"" << JsonEscape(wa.start_url) << "\""
+      << ",\"scope\":\"" << JsonEscape(wa.scope) << "\""
+      << ",\"theme_color\":\"" << JsonEscape(wa.theme_color) << "\""
+      << ",\"icon_url\":\"" << JsonEscape(wa.icon_url) << "\""
+      << ",\"icon_path\":\"" << JsonEscape(wa.icon_path) << "\""
+      << ",\"desktop_id\":\"" << JsonEscape(wa.desktop_id) << "\""
+      << ",\"wayland_app_id\":\"" << JsonEscape(wa.wayland_app_id) << "\""
+      << ",\"last_launched_epoch\":" << wa.last_launched_epoch << "}";
+  }
   o << "]";
 
   o << "}";
@@ -645,6 +672,7 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
       <button id="btnShield" class="pill shield-on" title="Adblock &amp; Trackers">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 2L3 4v4c0 3.2 2.1 5.1 5 6 2.9-.9 5-2.8 5-6V4L8 2z"/></svg><span id="blockedNum">0</span>
       </button>
+      <button id="btnInstallApp" class="pill hidden" title="Install Site as Web App" aria-label="Install Web App"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><rect x="2" y="2.5" width="9" height="9"/><path d="M5 13.5h9v-9"/><path d="M6.5 5.2v3.6M4.7 7h3.6"/></svg></button>
       <button id="btnStar" class="pill" title="Bookmark Page (Ctrl+D)" aria-label="Bookmark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg></button>
     </div>
 
@@ -695,6 +723,7 @@ const btnRail = document.getElementById('btnRail');
 const secBadge = document.getElementById('secBadge');
 const btnShield = document.getElementById('btnShield');
 const blockedNum = document.getElementById('blockedNum');
+const btnInstallApp = document.getElementById('btnInstallApp');
 const btnStar = document.getElementById('btnStar');
 const btnSwRender = document.getElementById('btnSwRender');
 const btnMedia = document.getElementById('btnMedia');
@@ -828,6 +857,14 @@ window.__kajoApply = (s) => {
   }
   btnStar.classList.toggle('star-on', !!s.is_bookmarked);
 
+  const canInstallApp = !!s.active_url && (s.active_url.startsWith('http://') || s.active_url.startsWith('https://'));
+  btnInstallApp.classList.toggle('hidden', !canInstallApp);
+  const appInstalled = !!(s.install_draft && s.install_draft.already_installed);
+  btnInstallApp.classList.toggle('star-on', appInstalled);
+  btnInstallApp.title = appInstalled
+    ? ('Web App Installed: ' + (s.install_draft.name || '') + ' (Click to Launch or Manage)')
+    : 'Install Site as Web App (Chromeless Window)';
+
   btnSwRender.classList.toggle('hidden', s.hw_accel_enabled !== false);
 
   const mc = (s.media_streams || []).length;
@@ -922,6 +959,7 @@ btnFwd.onclick = () => send('forward');
 btnReload.onclick = () => send('reload_or_stop');
 btnRail.onclick = () => send('toggle_rail');
 btnShield.onclick = () => send('toggle_overlay', { mode: 'adblock' });
+btnInstallApp.onclick = () => send('open_install_app');
 btnStar.onclick = () => send('toggle_bookmark');
 btnSwRender.onclick = () => send('open_kajo_page', { page: 'kajo://gpu' });
 btnMedia.onclick = () => send('toggle_overlay', { mode: 'media' });
@@ -931,6 +969,19 @@ btnProfile.onclick = () => send('toggle_overlay', { mode: 'profiles' });
 document.getElementById('btnSettings').onclick = () => send('open_settings');
 document.getElementById('btnFloat').onclick = () => send('toggle_float');
 document.getElementById('btnClose').onclick = () => send('close_window');
+
+window.__kajoSetBlocked = (tabBlocked, totalBlocked) => {
+  const tb = Number(tabBlocked) || 0;
+  const tot = Number(totalBlocked) || 0;
+  blockedNum.textContent = String(tb);
+  if (lastState) {
+    lastState.tab_blocked = tb;
+    lastState.total_blocked = tot;
+    if (!lastState.host_paused) {
+      btnShield.title = 'Adblock active · ' + tb + ' blocked on tab · ' + tot + ' session';
+    }
+  }
+};
 
 send('get_state').then(s => { if (s) window.__kajoApply(s); });
 </script>
@@ -1534,8 +1585,26 @@ function attachDragHandlers(el, t) {
   });
 }
 
+let lastRailSig = '';
+
 window.__kajoApply = (s) => {
   lastRailState = s;
+  const tabsSig = (s.tabs || []).map(t =>
+    [t.id, t.title || '', t.url || '', t.domain || '', t.group || '', t.favicon_url || '',
+     t.pinned ? 1 : 0, t.active ? 1 : 0, t.loading ? 1 : 0, t.audible ? 1 : 0, t.muted ? 1 : 0, t.suspended ? 1 : 0].join('\x1f')
+  ).join('\x1e');
+  const railSig = [
+    s.private_mode ? 1 : 0, s.profile_accent || '', s.accent_color || '',
+    s.ui_font_family || '', s.ui_font_size_px || 0, s.heading_size_px || 0,
+    s.sub_size_px || 0, s.badge_size_px || 0, s.topbar_height_px || 0,
+    s.control_height_px || 0, s.icon_size_px || 0,
+    s.rail_mode, s.rail_side, s.rail_hover_open ? 1 : 0,
+    s.closed_tab_count || 0, s.show_tab_domains ? 1 : 0,
+    (s.collapsed_groups || []).join(','), tabsSig
+  ].join('|');
+  if (railSig === lastRailSig) return;
+  lastRailSig = railSig;
+
   const ds = document.documentElement.style;
   const acc = s.private_mode ? '#b146c2' : (s.profile_accent || s.accent_color || '#0078d4');
   ds.setProperty('--metro-accent', acc);
@@ -2397,6 +2466,107 @@ window.__kajoApply = (s) => {
     act.append(bSet, bClear);
     root.appendChild(act);
     setTimeout(() => { gInp.focus(); gInp.select(); }, 10);
+  } else if (mode === 'install_app') {
+    const d = s.install_draft || {};
+    const existingInp = root.querySelector('#appNameInp');
+    if (!modeChanged && existingInp) {
+      if (d.name && !existingInp.dataset.dirty) existingInp.value = d.name;
+      const scInp = root.querySelector('#appScopeInp');
+      if (d.scope && scInp && !scInp.dataset.dirty) scInp.value = d.scope;
+      const thInp = root.querySelector('#appThemeInp');
+      const sw = root.querySelector('#appThemeSwatch');
+      if (d.theme_color && thInp && !thInp.dataset.dirty) {
+        thInp.value = d.theme_color;
+        if (sw) sw.style.background = d.theme_color;
+      }
+      const icInp = root.querySelector('#appIconInp');
+      if (d.icon_url && icInp && !icInp.dataset.dirty) icInp.value = d.icon_url;
+      return;
+    }
+    root.appendChild(renderHeader(d.already_installed ? '⊞ MANAGE WEB APP' : '⊞ INSTALL WEB APP'));
+    const body = document.createElement('div');
+    body.className = 'form-body';
+    const mkField = (id, label, val, ph) => {
+      const lbl = document.createElement('div');
+      lbl.className = 'form-lbl';
+      lbl.textContent = label;
+      const inp = document.createElement('input');
+      inp.id = id;
+      inp.className = 'form-inp';
+      inp.value = val || '';
+      inp.placeholder = ph || '';
+      inp.addEventListener('input', () => { inp.dataset.dirty = '1'; });
+      body.append(lbl, inp);
+      return inp;
+    };
+    const nameInp = mkField('appNameInp', 'Application Name', d.name || s.active_title || s.active_host, 'e.g. Apple Music');
+    const urlInp = mkField('appUrlInp', 'Start URL', d.start_url || s.active_url, 'https://...');
+    const scopeInp = mkField('appScopeInp', 'App Scope Prefix', d.scope || '', 'https://example.com/');
+
+    const thLbl = document.createElement('div');
+    thLbl.className = 'form-lbl';
+    thLbl.textContent = 'Window Accent Color (#rrggbb)';
+    const thRow = document.createElement('div');
+    thRow.style.cssText = 'display:flex;gap:6px;align-items:center;';
+    const sw = document.createElement('span');
+    sw.id = 'appThemeSwatch';
+    sw.style.cssText = 'width:26px;height:26px;border:1px solid #3c3c3c;display:inline-block;flex-shrink:0;';
+    sw.style.background = d.theme_color || '#0078d4';
+    const thInp = document.createElement('input');
+    thInp.id = 'appThemeInp';
+    thInp.className = 'form-inp';
+    thInp.style.flex = '1';
+    thInp.value = d.theme_color || '#0078d4';
+    thInp.placeholder = '#0078d4';
+    thInp.addEventListener('input', () => {
+      thInp.dataset.dirty = '1';
+      if (/^#[0-9a-fA-F]{6}$/.test(thInp.value.trim())) sw.style.background = thInp.value.trim();
+    });
+    thRow.append(sw, thInp);
+    body.append(thLbl, thRow);
+
+    const iconInp = mkField('appIconInp', 'Icon URL (optional — monogram generated if empty)', d.icon_url || '', 'https://.../icon.png');
+    root.appendChild(body);
+
+    const submit = () => send('install_webapp', {
+      name: nameInp.value.trim() || s.active_host || 'Web App',
+      start_url: urlInp.value.trim() || s.active_url || '',
+      scope: scopeInp.value.trim(),
+      theme_color: thInp.value.trim() || '#0078d4',
+      icon_url: iconInp.value.trim()
+    });
+    for (const inp of [nameInp, urlInp, scopeInp, thInp, iconInp]) {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); submit(); }
+        else if (e.key === 'Escape') { e.preventDefault(); send('close_overlay'); }
+      });
+    }
+
+    const act = document.createElement('div');
+    act.className = 'act-row';
+    const bSave = document.createElement('button');
+    bSave.className = 'btn primary';
+    bSave.textContent = d.already_installed ? 'Update & Launch' : 'Install App';
+    bSave.onclick = submit;
+    act.appendChild(bSave);
+    if (d.already_installed && d.existing_id) {
+      const bLaunch = document.createElement('button');
+      bLaunch.className = 'btn';
+      bLaunch.textContent = 'Launch';
+      bLaunch.onclick = () => send('launch_webapp', { id: d.existing_id });
+      const bDel = document.createElement('button');
+      bDel.className = 'btn bad';
+      bDel.textContent = 'Uninstall';
+      bDel.onclick = () => send('uninstall_webapp', { id: d.existing_id });
+      act.append(bLaunch, bDel);
+    }
+    const bCancel = document.createElement('button');
+    bCancel.className = 'btn';
+    bCancel.textContent = 'Cancel';
+    bCancel.onclick = () => send('close_overlay');
+    act.appendChild(bCancel);
+    root.appendChild(act);
+    setTimeout(() => { nameInp.focus(); nameInp.select(); }, 10);
   } else if (mode === 'profiles') {
     root.appendChild(renderHeader('● PROFILES & PRIVATE MODE'));
     const list = document.createElement('div');
@@ -2586,6 +2756,7 @@ static std::string BuildKajoShellPage(const ChromeStateSnapshot& s,
     << "<a href='kajo://history' class='" << (active_nav == "history" ? "act" : "") << "'>HISTORY</a>"
     << "<a href='kajo://adblock' class='" << (active_nav == "adblock" ? "act" : "") << "'>ADBLOCK</a>"
     << "<a href='kajo://permissions' class='" << (active_nav == "permissions" ? "act" : "") << "'>PERMISSIONS</a>"
+    << "<a href='kajo://apps' class='" << (active_nav == "apps" ? "act" : "") << "'>APPS</a>"
     << "<a href='kajo://downloads' class='" << (active_nav == "downloads" ? "act" : "") << "'>DOWNLOADS</a>"
     << "<a href='kajo://gpu' class='" << (active_nav == "gpu" ? "act" : "") << "'>GPU &amp; VA-API</a>"
     << "<a href='kajo://about' class='" << (active_nav == "about" ? "act" : "") << "'>ABOUT</a>"
@@ -2862,6 +3033,47 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
     }
     b << "</table>";
     *out_body = BuildKajoShellPage(s, "permissions", "Kajo — Permissions", b.str());
+    return true;
+  }
+
+  if (page == "apps") {
+    std::ostringstream b;
+    b << "<h1>INSTALLED WEB APPS (" << s.webapps.size() << ")</h1>"
+      << "<p style='color:var(--dim);font-size:var(--fs-sub);margin:0 0 14px 0;'>"
+      << "Web Apps share this profile's cookies, login sessions, adblock &amp; permissions while running in dedicated chromeless Wayland windows and registering into ~/.local/share/applications/."
+      << "</p>"
+      << "<form action='kajo://apps' method='get' class='card' style='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px;'>"
+      << "<input type='hidden' name='action' value='install'>"
+      << "<input type='text' name='url' placeholder='App URL (e.g. https://music.apple.com)' style='flex:2;min-width:240px;' required>"
+      << "<input type='text' name='name' placeholder='App Name (optional)' style='flex:1;min-width:140px;'>"
+      << "<input type='text' name='theme_color' placeholder='#0078d4' value='#0078d4' style='width:96px;'>"
+      << "<button class='btn pri' type='submit'>⊞ INSTALL WEB APP</button></form>"
+      << "<table><tr><th>App</th><th>Start URL &amp; Scope</th><th>Accent</th><th>Desktop ID</th><th>Actions</th></tr>";
+    for (const auto& wa : s.webapps) {
+      b << "<tr>"
+        << "<td style='color:#fff;font-weight:700;'>" << HtmlEscape(wa.name) << "</td>"
+        << "<td style='word-break:break-all;'><div><a href='" << HtmlEscape(wa.start_url)
+        << "'>" << HtmlEscape(wa.start_url) << "</a></div>"
+        << "<div style='color:var(--dim);font-size:var(--fs-badge);'>Scope: "
+        << HtmlEscape(wa.scope) << "</div></td>"
+        << "<td><span style='display:inline-block;width:12px;height:12px;vertical-align:middle;margin-right:6px;background:"
+        << HtmlEscape(SanitizeHexColor(wa.theme_color, "#0078d4")) << ";'></span>"
+        << HtmlEscape(wa.theme_color) << "</td>"
+        << "<td style='color:var(--dim);font-size:var(--fs-badge);'>"
+        << HtmlEscape(wa.wayland_app_id) << "</td>"
+        << "<td style='white-space:nowrap;'>"
+        << "<a class='btn pri' href='kajo://apps?action=launch&id="
+        << UrlEncodeQuery(wa.id) << "'>▶ LAUNCH</a> "
+        << "<a class='btn bad' href='kajo://apps?action=uninstall&id="
+        << UrlEncodeQuery(wa.id) << "'>✕ UNINSTALL</a></td></tr>";
+    }
+    if (s.webapps.empty()) {
+      b << "<tr><td colspan='5' style='color:var(--dim);padding:16px;'>"
+        << "No Web Apps installed in this profile yet. Click ⊞ in the address bar on any site or use the form above."
+        << "</td></tr>";
+    }
+    b << "</table>";
+    *out_body = BuildKajoShellPage(s, "apps", "Kajo — Web Apps", b.str());
     return true;
   }
 

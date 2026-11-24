@@ -47,7 +47,9 @@
 | **Wayland GPU & VA-API Video Decode** | Implemented (Default ON) | `--use-gl=angle --use-angle=gl --ozone-platform=wayland` + VA-API flags (`--enable-features=VaapiVideoDecoder,...`). Passing `--no-hw-accel` or `hardware_acceleration = "never"` switches to SwiftShader/software rendering and surfaces an amber `[ ⚠ SW RENDER ]` badge in the top bar and `kajo://gpu`. |
 | **IO-Thread Ad & Tracker Blocking** | Implemented (`CefAdblockEngine`) | Network + third-party + resource-type + hosts-file filter matching (`CefResourceRequestHandler::OnBeforeResourceLoad` on `TID_IO`), cosmetic CSS selector injection (`OnLoadEnd` in main/subframes), `[ 🛡 ON ]`/`[ 🛡 OFF ]` per-site allowlist toggle, optional EasyList/EasyPrivacy background auto-sync (`adblock_auto_sync`), custom filter file (`adblock_custom_rules_path`), opt-in `~/.config/kajo/web/scripts/*.{js,css}`, and `kajo://adblock` dashboard. |
 | **Downloads Popout & History Manager** | Implemented | Always-visible topbar `↓` chip + 3-zone Aero Downloads popout (`Pause`/`Resume`/`Cancel`/`Open File`/`Open Folder` + link to `kajo://downloads`), SQLite `downloads` table persistence, configurable `download_dir` (including `~` expansion), `ask_download_location`, and `downloads_auto_open` (via `xdg-open` for completed non-dangerous files). |
-| **Per-Profile Site Permissions** | Implemented | Interactive infobar for Mic/Cam/Geolocation/Notifications/Clipboard persisted per `(origin, key)` in `permissions.json` (`PermissionStore`), viewable and revocable on `kajo://permissions`. |
+| **Per-Profile Site Permissions** | Implemented | Interactive infobar for Mic/Cam/Geolocation/Notifications/Clipboard persisted per `(origin, key)` in `permissions.json` (`PermissionStore`), viewable and revocable on `kajo://permissions` (shared across browser & Web App windows). |
+| **Web Apps (`--app-id` / `--app`)** | Implemented | Shared-profile multi-window chromeless app mode (`KajoWebAppWindow` with per-app `wayland_app_id`, scope/auth routing, XDG `.desktop` + hicolor icon installer in `~/.local/share/applications/` & `~/.local/share/icons/hicolor/`, `webapps.json` registry, and `kajo://apps` manager). |
+| **Desktop Web Notifications** | Implemented | Renderer V8 `window.Notification` & `ServiceWorkerRegistration.prototype.showNotification` bridge wired to async `org.freedesktop.Notifications` D-Bus (`Notify`, `CloseNotification`, click-to-focus `ActionInvoked`, `NotificationClosed`) honored across browser tabs and Web App windows. |
 | **Isolated Multi-Profiles & Private Windows** | Implemented | Per-profile `CefRequestContext` + Startup Profile Picker + topbar Profile Switcher + Private in-memory context + `profile_border_accent`. |
 | **Google Drive AppData Sync (`sync_*`)** | **Not implemented** in `kajo-web` | CRDT merge & E2EE helpers exist in `src/web/web_sync_merge.c` (tested by `web-model`) and keys remain in `web.toml` for schema parity, but live OAuth/Drive sync is not wired into `kajo-web` or `page_web.c`. |
 | **HLS/DASH Media Sniffer & `yt-dlp` Downloader** | **Not implemented** in `kajo-web` | Pure parser helpers exist in `src/web/web_media_sniff_core.c`, but passive stream sniffing/`ffmpeg`/`yt-dlp` UI are not active in `kajo-web` or `page_web.c`. |
@@ -103,6 +105,7 @@
 - **`kajo://downloads`**: Live-updating active downloads + SQLite download history with search, status filters (`ALL` / `ACTIVE` / `COMPLETED`), `Pause` / `Resume` / `Cancel` / `Retry`, `OPEN`, `📁` (`Open Folder`), and `Remove` / `CLEAR FINISHED`.
 - **`kajo://adblock`**: Global on/off toggle, per-site paused hosts list + unpause, manual list update (`EasyList` / `EasyPrivacy`), rule statistics, and user-script count.
 - **`kajo://permissions`**: List of granted/denied origin permissions with single-entry revoke and `CLEAR ALL PERMISSIONS`.
+- **`kajo://apps`**: Installed profile Web Apps manager with quick URL install, launch (`KajoWebAppWindow`), and uninstall (removing desktop/icon files).
 - **`kajo://gpu`**, **`kajo://crashed`**, **`kajo://about`**: Hardware acceleration / VA-API diagnostics (+ link to `chrome://gpu`), tab crash recovery, and suite runtime info.
 
 ---
@@ -111,9 +114,13 @@
 
 | Module / Test | Role |
 | :--- | :--- |
-| `src/web_cef/main.cc` | Entry point, CLI parsing (`--profile`, `--private`, `--no-hw-accel`, `--no-adblock-sync`, `[URL...]`), Wayland/Ozone defaults, legacy cache profile migration. |
-| `src/web_cef/cef_app.{h,cc}` | `KajoCefApp`: Chromium GPU/VA-API/WebRTC switches, `kajo-chrome://` & `kajo://` scheme factories. |
-| `src/web_cef/cef_window.{h,cc}` | Alloy Views host window, tab lifecycle, idle suspension timer, Find Bar, Command Palette, Downloads tracking, Filter updates, `KajoConfigStore` subscriber. |
+| `src/web_cef/main.cc` | Entry point, CLI parsing (`--profile`, `--app-id`, `--app`, `--private`, `--no-hw-accel`, `--no-adblock-sync`, `[URL...]`), Wayland/Ozone defaults, single-instance forwarding, legacy cache profile migration. |
+| `src/web_cef/cef_app.{h,cc}` | `KajoCefApp` & `BrowserHostCoordinator`: Chromium GPU/VA-API/WebRTC switches, shared `CefRequestContext`/`PermissionStore`/`WebAppStore`, `ProfileIpcServer` & `WebNotificationBridge`, multi-window lifecycle, renderer V8 `Notification` shim & manifest prober. |
+| `src/web_cef/cef_window.{h,cc}` | Primary Alloy Views browser host window, tab lifecycle, idle suspension timer, Find Bar, Command Palette, Downloads tracking, Filter updates, `install_app` overlay, `KajoConfigStore` subscriber. |
+| `src/web_cef/cef_webapp_window.{h,cc}` | Chromeless `KajoWebAppWindow` sharing profile cookies/permissions/notifications with per-app `wayland_app_id`, scope/SSO navigation routing, and isolated permission infobar. |
+| `src/web_cef/cef_webapps.{h,cc}` | Pure `WebAppStore` (`webapps.json`), Web App Manifest parser, scope & OAuth/SSO matcher, fallback monogram SVG, XDG `.desktop` + hicolor icon installer. |
+| `src/web_cef/cef_notify.{h,cc}` | Async `org.freedesktop.Notifications` D-Bus bridge on dedicated GLib worker thread (`Notify`, `CloseNotification`, `ActionInvoked`, `NotificationClosed`). |
+| `src/web_cef/cef_host_coord.h` | Coordinator interface connecting `KajoCefApp`, `KajoBrowserWindow`, and `KajoWebAppWindow`. |
 | `src/web_cef/cef_tab.{h,cc}` | Per-tab `CefClient` callbacks (navigation, title, favicon, HTTPS-Only & cookie policy, downloads, JS dialogs, permission prompts, crash handler, shortcuts). |
 | `src/web_cef/cef_chrome_ui.{h,cc}` | HTML/CSS/JS chrome builder (`topbar`, `rail`, `overlay`, theme CSS tokens, inline SVGs) and `kajo://*` scheme responses. |
 | `src/web_cef/cef_ipc.{h,cc}` | Per-profile single-instance Unix socket server (`ProfileIpcServer`) and external URL forwarding (`TryForwardToRunningInstance`). |

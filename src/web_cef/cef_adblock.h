@@ -53,7 +53,10 @@ struct FilterSnapshot {
   std::unordered_set<std::string> block_domains;
   std::unordered_set<std::string> exc_domains;
   std::unordered_map<std::string, std::vector<NetRule>> domain_rules;
+  std::unordered_map<std::string, std::vector<NetRule>> exc_domain_rules;
   std::vector<NetRule> generic_rules;
+  std::unordered_map<std::string, std::vector<uint32_t>> generic_token_index;
+  std::vector<uint32_t> generic_fallback;
   std::vector<NetRule> exc_rules;
   std::vector<CosmeticRule> global_cosmetic;
   std::unordered_map<std::string, std::vector<CosmeticRule>> domain_cosmetic;

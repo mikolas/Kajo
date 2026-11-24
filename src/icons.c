@@ -52,25 +52,72 @@ shell_icons_cleanup(void)
 }
 
 static const gchar *
+probe_user_hicolor_icon(const gchar *icon_name, gchar *buf, gsize buf_size)
+{
+    if (!icon_name || icon_name[0] == '\0' || strchr(icon_name, '/') != NULL)
+        return NULL;
+
+    const gchar *udata = g_get_user_data_dir();
+    if (!udata || udata[0] == '\0')
+        return NULL;
+
+    static const struct {
+        const gchar *subdir;
+        const gchar *ext;
+    } slots[] = {
+        { "icons/hicolor/256x256/apps", ".png" },
+        { "icons/hicolor/scalable/apps", ".svg" },
+        { "icons/hicolor/128x128/apps", ".png" },
+        { "icons/hicolor/64x64/apps", ".png" },
+        { "icons/hicolor/48x48/apps", ".png" },
+    };
+
+    for (gsize i = 0; i < G_N_ELEMENTS(slots); i++) {
+        g_autofree gchar *fname = g_strconcat(icon_name, slots[i].ext, NULL);
+        g_autofree gchar *path = g_build_filename(udata, slots[i].subdir, fname, NULL);
+        if (g_file_test(path, G_FILE_TEST_IS_REGULAR)) {
+            g_strlcpy(buf, path, buf_size);
+            return buf;
+        }
+    }
+    return NULL;
+}
+
+static const gchar *
 try_resolve_name(GtkIconTheme *theme, const gchar *icon_name, gchar *buf, gsize buf_size)
 {
     if (!icon_name || icon_name[0] == '\0')
         return NULL;
 
+    /* 0. Direct absolute path (e.g. from ~/.local/share/applications Desktop Entry Icon=) */
+    if (g_path_is_absolute(icon_name)) {
+        if (g_file_test(icon_name, G_FILE_TEST_IS_REGULAR)) {
+            g_strlcpy(buf, icon_name, buf_size);
+            return buf;
+        }
+        return NULL;
+    }
+
     /* 1. Check exact name */
-    if (gtk_icon_theme_has_icon(theme, icon_name)) {
+    if (theme && gtk_icon_theme_has_icon(theme, icon_name)) {
         g_strlcpy(buf, icon_name, buf_size);
         return buf;
     }
 
     /* 2. Check lowercased name */
-    gchar *lower = g_ascii_strdown(icon_name, -1);
-    if (gtk_icon_theme_has_icon(theme, lower)) {
+    g_autofree gchar *lower = g_ascii_strdown(icon_name, -1);
+    if (theme && gtk_icon_theme_has_icon(theme, lower)) {
         g_strlcpy(buf, lower, buf_size);
-        g_free(lower);
         return buf;
     }
-    g_free(lower);
+
+    /* 3. Probe ~/.local/share/icons/hicolor/ directly so newly installed Web App icons
+     * resolve immediately without rebuilding icon caches or restarting kajo. */
+    const gchar *user_hit = probe_user_hicolor_icon(icon_name, buf, buf_size);
+    if (user_hit) return user_hit;
+
+    user_hit = probe_user_hicolor_icon(lower, buf, buf_size);
+    if (user_hit) return user_hit;
 
     return NULL;
 }
@@ -94,9 +141,24 @@ try_desktop_file_icon(GtkIconTheme *theme, const gchar *desktop_filename, gchar 
     } else {
         loaded = g_key_file_load_from_data_dirs(kf, desktop_id, NULL, G_KEY_FILE_NONE, NULL);
         if (!loaded) {
-            gchar *full_app_path = g_build_filename("/usr/share/applications", desktop_id, NULL);
-            loaded = g_key_file_load_from_file(kf, full_app_path, G_KEY_FILE_NONE, NULL);
-            g_free(full_app_path);
+            const gchar *udata = g_get_user_data_dir();
+            gchar *user_app_path = (udata && udata[0] != '\0')
+                                   ? g_build_filename(udata, "applications", desktop_id, NULL)
+                                   : NULL;
+            const gchar *candidates[] = {
+                user_app_path,
+                "/usr/local/share/applications",
+                "/usr/share/applications",
+            };
+            if (user_app_path) {
+                loaded = g_key_file_load_from_file(kf, user_app_path, G_KEY_FILE_NONE, NULL);
+                g_free(user_app_path);
+            }
+            for (gsize i = 1; !loaded && i < G_N_ELEMENTS(candidates); i++) {
+                gchar *full_app_path = g_build_filename(candidates[i], desktop_id, NULL);
+                loaded = g_key_file_load_from_file(kf, full_app_path, G_KEY_FILE_NONE, NULL);
+                g_free(full_app_path);
+            }
         }
     }
 
@@ -116,7 +178,7 @@ try_desktop_file_icon(GtkIconTheme *theme, const gchar *desktop_filename, gchar 
 const gchar *
 shell_icons_resolve_app_id(const gchar *app_id)
 {
-    static gchar buf[256];
+    static gchar buf[512];
 
     if (app_id == NULL || app_id[0] == '\0')
         return fallback_icon;
@@ -188,12 +250,35 @@ shell_icons_resolve_app_id(const gchar *app_id)
     return fallback_icon;
 }
 
+void
+shell_icons_set_image_for_app_id(GtkImage *image, const gchar *app_id, gint pixel_size)
+{
+    if (!image) return;
+    const gchar *resolved = shell_icons_resolve_app_id(app_id);
+    if (resolved && g_path_is_absolute(resolved) && g_file_test(resolved, G_FILE_TEST_IS_REGULAR)) {
+        g_autoptr(GFile) file = g_file_new_for_path(resolved);
+        g_autoptr(GIcon) gicon = g_file_icon_new(file);
+        gtk_image_set_from_gicon(image, gicon);
+        if (pixel_size > 0) {
+            gtk_image_set_pixel_size(image, pixel_size);
+        } else if (gtk_image_get_pixel_size(image) <= 0) {
+            gtk_image_set_pixel_size(image, 16);
+        }
+        return;
+    }
+
+    const gchar *name = (resolved && *resolved)
+                        ? resolved
+                        : (fallback_icon ? fallback_icon : "application-x-executable-symbolic");
+    gtk_image_set_from_icon_name(image, name);
+    if (pixel_size > 0)
+        gtk_image_set_pixel_size(image, pixel_size);
+}
+
 GtkWidget *
 shell_icons_create_app_icon_widget(const gchar *app_id, gint pixel_size)
 {
-    const gchar *resolved_icon = shell_icons_resolve_app_id(app_id);
-    GtkWidget *image = gtk_image_new_from_icon_name(resolved_icon);
-    if (pixel_size > 0)
-        gtk_image_set_pixel_size(GTK_IMAGE(image), pixel_size);
+    GtkWidget *image = gtk_image_new();
+    shell_icons_set_image_for_app_id(GTK_IMAGE(image), app_id, pixel_size);
     return image;
 }

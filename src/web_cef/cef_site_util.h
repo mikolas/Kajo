@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -205,6 +206,34 @@ inline ChromeUiMetrics ComputeChromeUiMetrics(int ui_font_size_px) {
   m.findbar_height_px = std::max(48, m.topbar_height_px + 8);
   m.compact_rail_width_px = std::max(48, m.control_height_px + 18);
   return m;
+}
+
+enum class ZoomShortcutAction {
+  kNone = 0,
+  kZoomIn,
+  kZoomOut,
+  kZoomReset,
+};
+
+inline ZoomShortcutAction ClassifyZoomShortcutKey(int vk, int ch, int unmod_ch) {
+  if (vk == 0xBB /*VK_OEM_PLUS*/ || vk == 0x6B /*VK_ADD*/ ||
+      ch == '+' || ch == '=' || unmod_ch == '+' || unmod_ch == '=') {
+    return ZoomShortcutAction::kZoomIn;
+  }
+  if (vk == 0xBD /*VK_OEM_MINUS*/ || vk == 0x6D /*VK_SUBTRACT*/ ||
+      ch == '-' || unmod_ch == '-') {
+    return ZoomShortcutAction::kZoomOut;
+  }
+  if (vk == '0' || vk == 0x60 /*VK_NUMPAD0*/ ||
+      ch == '0' || unmod_ch == '0') {
+    return ZoomShortcutAction::kZoomReset;
+  }
+  return ZoomShortcutAction::kNone;
+}
+
+inline double ZoomPercentToCefLevel(int zoom_pct) {
+  if (zoom_pct <= 0 || zoom_pct == 100) return 0.0;
+  return std::log(static_cast<double>(zoom_pct) / 100.0) / std::log(1.2);
 }
 
 }  // namespace kajo_web

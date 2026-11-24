@@ -88,6 +88,14 @@ int main(int argc, char** argv) {
       } else if (strncmp(a, "--profile=", 10) == 0) {
         cfg.profile_id = SanitizeSlug(a + 10);
         explicit_profile = true;
+      } else if (strcmp(a, "--app-id") == 0 && i + 1 < argc) {
+        cfg.app_id = argv[++i];
+      } else if (strncmp(a, "--app-id=", 9) == 0) {
+        cfg.app_id = a + 9;
+      } else if (strcmp(a, "--app") == 0 && i + 1 < argc) {
+        cfg.app_url = argv[++i];
+      } else if (strncmp(a, "--app=", 6) == 0) {
+        cfg.app_url = a + 6;
       } else if (a[0] != '-') {
         cfg.initial_urls.emplace_back(a);
       }
@@ -125,7 +133,11 @@ int main(int argc, char** argv) {
 
     if (!cfg.private_mode) {
       const std::string sock = kajo_web::ProfileIpcSocketPath(subdir);
-      if (kajo_web::TryForwardToRunningInstance(sock, cfg.initial_urls)) {
+      kajo_web::IpcOpenRequest req;
+      req.app_id = cfg.app_id;
+      req.app_url = cfg.app_url;
+      req.urls = cfg.initial_urls;
+      if (kajo_web::TryForwardAppToRunningInstance(sock, req)) {
         return 0;
       }
     }

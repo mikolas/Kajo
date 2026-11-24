@@ -21,6 +21,7 @@
 #include "include/cef_urlrequest.h"
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_sync_merge.h"
+#include "web_cef/cef_host_coord.h"
 #include "web_cef/cef_site_util.h"
 
 namespace kajo_web {
@@ -296,13 +297,55 @@ private:
   IMPLEMENT_REFCOUNTING(FilterDownloadClient);
 };
 
+class WebAssetFetchClient : public CefURLRequestClient {
+public:
+  using DoneCb = std::function<void(bool ok,
+                                    int http_status,
+                                    const std::string& content_type,
+                                    std::vector<uint8_t> body)>;
+
+  explicit WebAssetFetchClient(DoneCb cb) : cb_(std::move(cb)) {}
+
+  void OnRequestComplete(CefRefPtr<CefURLRequest> request) override {
+    const int status = (request && request->GetResponse())
+                           ? request->GetResponse()->GetStatus()
+                           : 0;
+    const std::string mime = (request && request->GetResponse())
+                                 ? request->GetResponse()->GetMimeType().ToString()
+                                 : "";
+    const bool ok = request && request->GetRequestStatus() == UR_SUCCESS && status >= 200 && status < 300;
+    if (cb_) cb_(ok, status, mime, std::move(body_));
+    cb_ = nullptr;
+  }
+
+  void OnUploadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadData(CefRefPtr<CefURLRequest>, const void* data, size_t len) override {
+    if (data && len > 0 && body_.size() + len <= 4U * 1024U * 1024U) {
+      const auto* p = static_cast<const uint8_t*>(data);
+      body_.insert(body_.end(), p, p + len);
+    }
+  }
+  bool GetAuthCredentials(bool, const CefString&, int, const CefString&,
+                          const CefString&, CefRefPtr<CefAuthCallback>) override {
+    return false;
+  }
+
+private:
+  DoneCb cb_;
+  std::vector<uint8_t> body_;
+  IMPLEMENT_REFCOUNTING(WebAssetFetchClient);
+};
+
 }  // namespace
 
-KajoBrowserWindow::KajoBrowserWindow(const LaunchConfig& cfg,
+KajoBrowserWindow::KajoBrowserWindow(BrowserHostCoordinator* coordinator,
+                                     const LaunchConfig& cfg,
                                      std::shared_ptr<CefAdblockEngine> adblock,
                                      std::shared_ptr<ChromeStateStore> store,
                                      CefRefPtr<CefRequestContext> request_context)
-    : cfg_(cfg),
+    : coord_(coordinator),
+      cfg_(cfg),
       adblock_(std::move(adblock)),
       store_(std::move(store)),
       request_context_(std::move(request_context)) {
@@ -313,11 +356,8 @@ KajoBrowserWindow::KajoBrowserWindow(const LaunchConfig& cfg,
 }
 
 KajoBrowserWindow::~KajoBrowserWindow() {
-  if (ipc_server_) {
-    ipc_server_->Stop();
-    ipc_server_.reset();
-  }
   ++push_gen_;
+  ++blocked_push_gen_;
   ++rail_hover_gen_;
   ++topbar_hover_gen_;
   ++suspend_timer_gen_;
@@ -333,12 +373,6 @@ KajoBrowserWindow::~KajoBrowserWindow() {
 void KajoBrowserWindow::InitBackend() {
   model_ = web_model_new();
   storage_ = web_storage_new(cfg_.data_dir.c_str());
-
-  g_autofree gchar* perm_p = g_build_filename(cfg_.data_dir.c_str(), "permissions.json", nullptr);
-  if (perm_p) {
-    permission_store_path_ = perm_p;
-    if (!cfg_.private_mode) permission_store_.Load(permission_store_path_);
-  }
 
   profiles_ = web_profile_registry_new();
   g_autofree gchar* reg_path = g_build_filename(
@@ -713,20 +747,6 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   UpdateOverlayBounds();
   ScheduleIdleSuspendTimer();
 
-  if (!cfg_.private_mode) {
-    ipc_server_ = std::make_unique<ProfileIpcServer>();
-    CefRefPtr<KajoBrowserWindow> self(this);
-    const std::string subdir =
-        (cfg_.profile_id.empty() || cfg_.profile_id == "default")
-            ? "default"
-            : cfg_.profile_id;
-    ipc_server_->Start(ProfileIpcSocketPath(subdir), [self](std::vector<std::string> urls) {
-      CefPostTask(TID_UI, new UiTask([self, u = std::move(urls)]() {
-        if (!self->closing_) self->HandleExternalOpen(u);
-      }));
-    });
-  }
-
   /* Open CLI URLs, saved session (lazy-restoring inactive tabs as suspended), or default New Tab */
   if (!cfg_.initial_urls.empty()) {
     for (size_t i = 0; i < cfg_.initial_urls.size(); ++i) {
@@ -984,6 +1004,10 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
       } else if (overlay_mode_ == "new_group") {
         int w = std::min(360, wb.width - 24);
         ob = CefRect((wb.width - w) / 2, b + top_h + 64, w, 170);
+      } else if (overlay_mode_ == "install_app") {
+        int w = std::min(460, wb.width - 24);
+        int h = std::min(420, wb.height - 60);
+        ob = CefRect((wb.width - w) / 2, b + top_h + 18, w, h);
       } else if (overlay_mode_ == "palette") {
         int w = std::clamp(wb.width - 80, 360, 680);
         int h = std::min(440, wb.height - 100);
@@ -1023,11 +1047,8 @@ bool KajoBrowserWindow::CanClose(CefRefPtr<CefWindow> window) {
 
 void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
   closing_ = true;
-  if (ipc_server_) {
-    ipc_server_->Stop();
-    ipc_server_.reset();
-  }
   ++push_gen_;
+  ++blocked_push_gen_;
   ++rail_hover_gen_;
   ++topbar_hover_gen_;
   ++suspend_timer_gen_;
@@ -1047,7 +1068,6 @@ void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
   active_filter_reqs_.clear();
   PersistSession();
   if (request_context_) {
-    request_context_->ClearSchemeHandlerFactories();
     if (CefRefPtr<CefCookieManager> cm = request_context_->GetCookieManager(nullptr)) {
       cm->FlushStore(nullptr);
     }
@@ -1112,7 +1132,7 @@ void KajoBrowserWindow::OnWindowDestroyed(CefRefPtr<CefWindow> window) {
   tabs_.clear();
   router_ = nullptr;
   request_context_ = nullptr;
-  CefQuitMessageLoop();
+  if (coord_) coord_->OnMainWindowDestroyed();
 }
 
 void KajoBrowserWindow::OnWindowActivationChanged(CefRefPtr<CefWindow> window, bool active) {
@@ -1133,6 +1153,7 @@ void KajoBrowserWindow::OnWindowActivationChanged(CefRefPtr<CefWindow> window, b
       ActivateTab(act->id);
     } else {
       act->last_active_us = now;
+      PushStateToChrome();
     }
   }
 }
@@ -1466,9 +1487,10 @@ void KajoBrowserWindow::OpenBookmarkPopover() {
 }
 
 void KajoBrowserWindow::ResolvePermissionReq(PendingPermissionReq& req, bool allow, bool persist) {
-  if (persist && !cfg_.private_mode && !req.origin.empty() && !req.perm_key.empty()) {
-    permission_store_.Set(req.origin, req.perm_key, allow);
-    if (!permission_store_path_.empty()) permission_store_.Save(permission_store_path_);
+  if (persist && !cfg_.private_mode && !req.origin.empty() && !req.perm_key.empty() &&
+      coord_ && coord_->SharedPermissions()) {
+    coord_->SharedPermissions()->Set(req.origin, req.perm_key, allow);
+    coord_->SaveSharedPermissions();
   }
   if (req.media_cb) {
     if (allow) req.media_cb->Continue(req.media_perms);
@@ -1478,6 +1500,14 @@ void KajoBrowserWindow::ResolvePermissionReq(PendingPermissionReq& req, bool all
   if (req.prompt_cb) {
     req.prompt_cb->Continue(allow ? CEF_PERMISSION_RESULT_ACCEPT : CEF_PERMISSION_RESULT_DENY);
     req.prompt_cb = nullptr;
+  }
+  if (req.notify_js_req_id >= 0) {
+    if (allow && !persist && coord_) {
+      coord_->GrantSessionNotification(req.notify_origin);
+    }
+    DeliverNotifyPermResult(req.tab_id, req.notify_js_req_id, req.notify_origin,
+                            allow ? "granted" : "denied");
+    req.notify_js_req_id = -1;
   }
 }
 
@@ -1692,6 +1722,8 @@ void KajoBrowserWindow::BuildPalette(const std::string& query) {
       {"Open History Manager", "kajo://history", "open_kajo_page", "kajo://history"},
       {"Open Downloads Manager", "kajo://downloads", "open_kajo_page", "kajo://downloads"},
       {"Open Site Permissions", "kajo://permissions", "open_kajo_page", "kajo://permissions"},
+      {"Install Site as Web App", "Chromeless Window", "open_install_app", ""},
+      {"Manage Web Apps", "kajo://apps", "open_kajo_page", "kajo://apps"},
       {"Open Web Settings", "Ctrl+, · kajo-settings", "open_settings", ""},
       {"Toggle Niri Float / Tile", "Compositor", "toggle_float", ""},
       {"Open Private Window", "Ctrl+Shift+N", "launch_private", ""},
@@ -1856,6 +1888,29 @@ void KajoBrowserWindow::PushStateToChrome() {
   }), 30);
 }
 
+void KajoBrowserWindow::ScheduleBlockedBadgePush() {
+  if (closing_ || blocked_push_pending_) return;
+  blocked_push_pending_ = true;
+  const uint64_t gen = ++blocked_push_gen_;
+  CefRefPtr<KajoBrowserWindow> self(this);
+  CefPostDelayedTask(TID_UI, new UiTask([self, gen]() {
+    if (self->closing_ || self->blocked_push_gen_ != gen) return;
+    self->blocked_push_pending_ = false;
+    if (!self->window_active_ || !self->adblock_ || !self->model_ ||
+        !self->topbar_browser_ || !self->topbar_browser_->GetMainFrame()) {
+      return;
+    }
+    const int64_t tab_blocked =
+        self->adblock_->GetBlockedCountForTab(static_cast<int>(self->model_->active_id));
+    const int64_t total_blocked = self->adblock_->GetTotalBlockedCount();
+    const std::string js = "window.__kajoSetBlocked && window.__kajoSetBlocked(" +
+                           std::to_string(tab_blocked) + "," +
+                           std::to_string(total_blocked) + ");";
+    self->topbar_browser_->GetMainFrame()->ExecuteJavaScript(
+        js, self->topbar_browser_->GetMainFrame()->GetURL(), 0);
+  }), 300);
+}
+
 void KajoBrowserWindow::PushStateImmediate() {
   if (!store_ || !model_ || closing_) return;
   ChromeStateSnapshot s;
@@ -2018,9 +2073,36 @@ void KajoBrowserWindow::PushStateImmediate() {
   s.downloads_filter = downloads_filter_;
   s.downloads_search_query = downloads_search_query_;
   s.downloads = downloads_;
-  for (const auto& pe : permission_store_.ListEntries()) {
-    s.saved_permissions.push_back(
-        {pe.origin, pe.perm_key, FormatPermissionKeyLabel(pe.perm_key), pe.allow});
+  if (coord_ && coord_->SharedPermissions()) {
+    for (const auto& pe : coord_->SharedPermissions()->ListEntries()) {
+      s.saved_permissions.push_back(
+          {pe.origin, pe.perm_key, FormatPermissionKeyLabel(pe.perm_key), pe.allow});
+    }
+  }
+  s.install_draft = install_draft_;
+  if (coord_ && coord_->AppStore()) {
+    if (auto match = coord_->AppStore()->FindBestMatchForUrl(s.active_url)) {
+      s.install_draft.already_installed = true;
+      s.install_draft.existing_id = match->id;
+      if (s.install_draft.name.empty()) s.install_draft.name = match->name;
+    } else {
+      s.install_draft.already_installed = false;
+      s.install_draft.existing_id.clear();
+    }
+    for (const auto& wa : coord_->AppStore()->List()) {
+      ChromeWebAppView wv;
+      wv.id = wa.id;
+      wv.name = wa.name;
+      wv.start_url = wa.start_url;
+      wv.scope = wa.scope;
+      wv.theme_color = wa.theme_color;
+      wv.icon_url = wa.icon_url;
+      wv.icon_path = wa.icon_path;
+      wv.desktop_id = wa.desktop_id;
+      wv.wayland_app_id = wa.wayland_app_id;
+      wv.last_launched_epoch = wa.last_launched_epoch;
+      s.webapps.push_back(std::move(wv));
+    }
   }
   s.autocomplete = ac_results_;
   s.palette_results = palette_results_;
@@ -2468,6 +2550,8 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       PushStateImmediate();
     } else if (act == "open_kajo_page") {
       NavigateActive(pay);
+    } else if (act == "open_install_app") {
+      OpenInstallAppOverlay();
     } else if (act == "open_settings") {
       OnAccelerator(window_, ACCEL_SETTINGS);
     } else if (act == "toggle_float") {
@@ -2665,6 +2749,31 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       }
       PushStateImmediate();
     }
+  } else if (cmd == "open_install_app") {
+    OpenInstallAppOverlay();
+  } else if (cmd == "install_webapp") {
+    const std::string existing_id =
+        (install_draft_.already_installed && !install_draft_.existing_id.empty())
+            ? install_draft_.existing_id
+            : "";
+    StartWebAppInstall(get_str("name"),
+                       get_str("start_url"),
+                       get_str("scope"),
+                       get_str("theme_color"),
+                       get_str("icon_url"),
+                       existing_id,
+                       true);
+  } else if (cmd == "launch_webapp") {
+    const std::string app_id = get_str("id");
+    CloseOverlay();
+    if (coord_ && !app_id.empty()) coord_->OpenOrFocusWebApp(app_id);
+  } else if (cmd == "uninstall_webapp") {
+    const std::string app_id = get_str("id");
+    CloseOverlay();
+    if (coord_ && !app_id.empty()) {
+      coord_->UninstallWebApp(app_id);
+      PushStateImmediate();
+    }
   } else if (cmd == "open_settings") {
     const char* argv[] = {"kajo-settings", "--page", "web", nullptr};
     kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
@@ -2815,13 +2924,15 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
       }
       return true;
     }
-    if (vk == 0xBB /*'='*/ || vk == '0' || vk == 0xBD /*'-'*/) {
+    if (const ZoomShortcutAction zact = ClassifyZoomShortcutKey(
+            vk, static_cast<int>(event.character), static_cast<int>(event.unmodified_character));
+        zact != ZoomShortcutAction::kNone) {
       if (TabEntry* e = ActiveEntry()) {
         if (e->browser && e->browser->GetHost()) {
           double cur = e->browser->GetHost()->GetZoomLevel();
-          if (vk == '0') cur = DefaultZoomLevel();
-          else if (vk == 0xBB) cur += 0.5;
-          else cur -= 0.5;
+          if (zact == ZoomShortcutAction::kZoomReset) cur = DefaultZoomLevel();
+          else if (zact == ZoomShortcutAction::kZoomIn) cur = std::min(5.0, cur + 0.5);
+          else cur = std::max(-5.0, cur - 0.5);
           e->browser->GetHost()->SetZoomLevel(cur);
           PushStateImmediate();
         }
@@ -2966,23 +3077,34 @@ void KajoBrowserWindow::OnTabAddressChanged(uint64_t tab_id, const std::string& 
 
 void KajoBrowserWindow::OnTabTitleChanged(uint64_t tab_id, const std::string& title) {
   if (!model_) return;
+  bool changed = false;
   if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
-    g_free(t->title);
-    t->title = g_strdup(title.c_str());
-    if (!cfg_.private_mode && storage_ && t->uri &&
-        (strncmp(t->uri, "http://", 7) == 0 || strncmp(t->uri, "https://", 8) == 0)) {
-      TabEntry* e = FindEntry(tab_id);
+    TabEntry* e = FindEntry(tab_id);
+    const bool same_title = (g_strcmp0(t->title, title.c_str()) == 0);
+    const bool is_http = t->uri &&
+                         (strncmp(t->uri, "http://", 7) == 0 || strncmp(t->uri, "https://", 8) == 0);
+    const bool visit_recorded = !is_http || cfg_.private_mode || !storage_ ||
+                                (e && e->last_recorded_visit_uri == t->uri);
+    if (same_title && visit_recorded) return;
+
+    if (!same_title) {
+      g_free(t->title);
+      t->title = g_strdup(title.c_str());
+      changed = true;
+    }
+    if (!cfg_.private_mode && storage_ && is_http) {
       const std::string cur_uri = t->uri;
       if (e && e->last_recorded_visit_uri != cur_uri) {
         web_storage_record_visit(storage_, t->uri, title.c_str());
         e->last_recorded_visit_uri = cur_uri;
         RefreshStorageCache();
-      } else {
+        changed = true;
+      } else if (!same_title) {
         web_storage_update_title(storage_, t->uri, title.c_str());
       }
     }
   }
-  PushStateToChrome();
+  if (changed) PushStateToChrome();
 }
 
 void KajoBrowserWindow::OnTabFaviconChanged(uint64_t tab_id, const std::string& favicon_url) {
@@ -3010,14 +3132,22 @@ void KajoBrowserWindow::OnTabLoadingChanged(uint64_t tab_id,
                                             bool loading,
                                             bool can_back,
                                             bool can_forward) {
+  bool changed = false;
   if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
-    t->loading = loading;
+    const gboolean new_loading = loading ? TRUE : FALSE;
+    if (t->loading != new_loading) {
+      t->loading = new_loading;
+      changed = true;
+    }
   }
   if (TabEntry* e = FindEntry(tab_id)) {
-    e->can_go_back = can_back;
-    e->can_go_forward = can_forward;
+    if (e->can_go_back != can_back || e->can_go_forward != can_forward) {
+      e->can_go_back = can_back;
+      e->can_go_forward = can_forward;
+      if (model_ && tab_id == model_->active_id) changed = true;
+    }
   }
-  PushStateToChrome();
+  if (changed) PushStateToChrome();
 }
 
 void KajoBrowserWindow::OnTabFullscreenChanged(uint64_t tab_id, bool fullscreen) {
@@ -3034,8 +3164,11 @@ void KajoBrowserWindow::OnTabFullscreenChanged(uint64_t tab_id, bool fullscreen)
 
 void KajoBrowserWindow::OnTabAudioStateChanged(uint64_t tab_id, bool audible) {
   if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
-    t->audible = audible;
-    PushStateToChrome();
+    const gboolean next = audible ? TRUE : FALSE;
+    if (t->audible != next) {
+      t->audible = next;
+      PushStateToChrome();
+    }
   }
 }
 
@@ -3192,18 +3325,51 @@ bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id,
       RemoveDownload(did, db_id, true);
     }
   } else if (base == "kajo://permissions") {
-    if (act == "revoke") {
-      const std::string orig = GetQueryParam(query, "origin");
-      const std::string key = GetQueryParam(query, "key");
-      if (!orig.empty() && !key.empty() && permission_store_.Remove(orig, key)) {
-        if (!cfg_.private_mode && !permission_store_path_.empty()) {
-          permission_store_.Save(permission_store_path_);
+    if (coord_ && coord_->SharedPermissions()) {
+      if (act == "revoke") {
+        const std::string orig = GetQueryParam(query, "origin");
+        const std::string key = GetQueryParam(query, "key");
+        if (!orig.empty() && !key.empty() && coord_->SharedPermissions()->Remove(orig, key)) {
+          coord_->SaveSharedPermissions();
         }
+      } else if (act == "clear_all") {
+        coord_->SharedPermissions()->Clear();
+        coord_->SaveSharedPermissions();
       }
-    } else if (act == "clear_all") {
-      permission_store_.Clear();
-      if (!cfg_.private_mode && !permission_store_path_.empty()) {
-        permission_store_.Save(permission_store_path_);
+    }
+  } else if (base == "kajo://apps") {
+    if (act == "launch" && coord_) {
+      const std::string id = GetQueryParam(query, "id");
+      if (!id.empty()) {
+        CefPostTask(TID_UI, new UiTask([self = CefRefPtr<KajoBrowserWindow>(this), id]() {
+          if (!self->closing_ && self->coord_) self->coord_->OpenOrFocusWebApp(id);
+        }));
+      }
+    } else if (act == "uninstall" && coord_) {
+      const std::string id = GetQueryParam(query, "id");
+      if (!id.empty()) {
+        coord_->UninstallWebApp(id);
+      }
+    } else if (act == "install" && coord_) {
+      std::string url = GetQueryParam(query, "url");
+      std::string name = GetQueryParam(query, "name");
+      std::string theme = GetQueryParam(query, "theme_color");
+      if (!url.empty()) {
+        CefPostTask(TID_UI, new UiTask([self = CefRefPtr<KajoBrowserWindow>(this),
+                                        url,
+                                        name,
+                                        theme]() {
+          if (self->closing_) return;
+          g_autofree gchar* host = web_model_extract_host(url.c_str());
+          const std::string resolved_name = !name.empty() ? name : (host ? std::string(host) : "Web App");
+          self->StartWebAppInstall(resolved_name,
+                                   url,
+                                   DeriveOriginFromUrl(url),
+                                   SanitizeHexColor(theme, "#0078d4"),
+                                   DeriveOriginFaviconFallback(url),
+                                   "",
+                                   true);
+        }));
       }
     }
   } else if (base == "kajo://crashed") {
@@ -3282,7 +3448,13 @@ void KajoBrowserWindow::OnTabMediaDetected(uint64_t tab_id,
 }
 
 void KajoBrowserWindow::OnTabBlockedChanged(uint64_t tab_id) {
-  PushStateToChrome();
+  if (closing_ || !model_) return;
+  if (overlay_mode_ == "adblock") {
+    PushStateToChrome();
+    return;
+  }
+  if (!window_active_ || tab_id != model_->active_id) return;
+  ScheduleBlockedBadgePush();
 }
 
 void KajoBrowserWindow::OnTabFindResult(uint64_t tab_id,
@@ -3423,7 +3595,9 @@ bool KajoBrowserWindow::OnTabMediaPermissionRequest(
     CefRefPtr<CefMediaAccessCallback> callback) {
   if (!callback || closing_) return false;
   const std::string key = PermissionKey(perms, 0);
-  const int decision = cfg_.private_mode ? 0 : permission_store_.Lookup(origin, key);
+  const int decision = (coord_ && coord_->SharedPermissions() && !cfg_.private_mode)
+                           ? coord_->SharedPermissions()->Lookup(origin, key)
+                           : 0;
   if (decision == 1) {
     callback->Continue(perms);
     return true;
@@ -3454,7 +3628,9 @@ bool KajoBrowserWindow::OnTabPermissionPrompt(
     CefRefPtr<CefPermissionPromptCallback> callback) {
   if (!callback || closing_) return false;
   const std::string key = PermissionKey(0, perms);
-  const int decision = cfg_.private_mode ? 0 : permission_store_.Lookup(origin, key);
+  const int decision = (coord_ && coord_->SharedPermissions() && !cfg_.private_mode)
+                           ? coord_->SharedPermissions()->Lookup(origin, key)
+                           : 0;
   if (decision == 1) {
     callback->Continue(CEF_PERMISSION_RESULT_ACCEPT);
     return true;
@@ -3491,6 +3667,319 @@ void KajoBrowserWindow::OnTabPermissionDismiss(uint64_t tab_id, uint64_t prompt_
     UpdateOverlayBounds();
     PushStateImmediate();
   }
+}
+
+void KajoBrowserWindow::FocusAndActivate() {
+  CEF_REQUIRE_UI_THREAD();
+  if (window_) {
+    window_->Show();
+    window_->Activate();
+  }
+}
+
+void KajoBrowserWindow::FocusTabById(uint64_t tab_id) {
+  CEF_REQUIRE_UI_THREAD();
+  if (closing_) return;
+  if (tab_id && web_model_find_tab(model_, tab_id)) {
+    ActivateTab(tab_id);
+  }
+  FocusAndActivate();
+}
+
+void KajoBrowserWindow::DispatchNotificationEvent(int browser_id,
+                                                    uint64_t tab_id,
+                                                    const std::string& js_notif_id,
+                                                    const std::string& event_type) {
+  CEF_REQUIRE_UI_THREAD();
+  if (closing_ || js_notif_id.empty()) return;
+  CefRefPtr<CefBrowser> target_browser;
+  if (TabEntry* e = FindEntry(tab_id)) {
+    target_browser = e->browser;
+  }
+  if (!target_browser && browser_id > 0) {
+    for (const auto& kv : tabs_) {
+      if (kv.second.browser && kv.second.browser->GetIdentifier() == browser_id) {
+        target_browser = kv.second.browser;
+        break;
+      }
+    }
+  }
+  if (target_browser && target_browser->GetMainFrame()) {
+    CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("kajo-notify-event");
+    CefRefPtr<CefListValue> args = msg->GetArgumentList();
+    args->SetString(0, js_notif_id);
+    args->SetString(1, event_type);
+    target_browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+  }
+}
+
+void KajoBrowserWindow::RefreshWebAppsState() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!closing_) PushStateImmediate();
+}
+
+void KajoBrowserWindow::DeliverNotifyPermResult(uint64_t tab_id,
+                                                int js_req_id,
+                                                const std::string& origin,
+                                                const std::string& perm) {
+  TabEntry* e = FindEntry(tab_id);
+  if (!e || !e->browser || !e->browser->GetMainFrame()) return;
+  CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("kajo-notify-perm-result");
+  CefRefPtr<CefListValue> args = msg->GetArgumentList();
+  args->SetInt(0, js_req_id);
+  args->SetString(1, origin);
+  args->SetString(2, perm);
+  e->browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+}
+
+void KajoBrowserWindow::OnTabWebNotifyShow(uint64_t tab_id,
+                                             const std::string& origin,
+                                             const std::string& title,
+                                             const std::string& body,
+                                             const std::string& tag,
+                                             const std::string& js_notif_id) {
+  if (!coord_ || !coord_->Notifications() || closing_) return;
+  const std::string key = PermissionKey(0, CEF_PERMISSION_TYPE_NOTIFICATIONS);
+  int decision = (coord_->SharedPermissions() && !cfg_.private_mode)
+                     ? coord_->SharedPermissions()->Lookup(origin, key)
+                     : 0;
+  if (decision == 0 && coord_->HasSessionNotificationGrant(origin)) decision = 1;
+  if (decision != 1) return;
+
+  TabEntry* e = FindEntry(tab_id);
+  WebNotificationRequest req;
+  req.origin = NormalizeOrigin(origin);
+  req.title = title;
+  req.body = body;
+  req.tag = tag;
+  req.app_name = "Kajo Web";
+  req.desktop_entry = "org.kajo.Web";
+  req.icon_path = "org.kajo.Web";
+  req.browser_id = (e && e->browser) ? e->browser->GetIdentifier() : 0;
+  req.tab_id = tab_id;
+  req.js_notif_id = js_notif_id;
+  coord_->Notifications()->SendNotification(std::move(req));
+}
+
+void KajoBrowserWindow::OnTabWebNotifyClose(uint64_t /*tab_id*/,
+                                              const std::string& js_notif_id) {
+  if (coord_ && coord_->Notifications()) {
+    coord_->Notifications()->CloseByJsId(js_notif_id);
+  }
+}
+
+void KajoBrowserWindow::OnTabWebNotifyRequestPerm(uint64_t tab_id,
+                                                    const std::string& origin,
+                                                    int req_id) {
+  if (closing_) return;
+  const std::string norm = NormalizeOrigin(origin);
+  const std::string key = PermissionKey(0, CEF_PERMISSION_TYPE_NOTIFICATIONS);
+  int decision = (coord_ && coord_->SharedPermissions() && !cfg_.private_mode)
+                     ? coord_->SharedPermissions()->Lookup(norm, key)
+                     : 0;
+  if (decision == 0 && coord_->HasSessionNotificationGrant(norm)) decision = 1;
+  if (decision == 1) {
+    DeliverNotifyPermResult(tab_id, req_id, norm, "granted");
+    return;
+  }
+  if (decision == -1) {
+    DeliverNotifyPermResult(tab_id, req_id, norm, "denied");
+    return;
+  }
+  PendingPermissionReq req;
+  req.req_id = next_perm_req_id_++;
+  req.tab_id = tab_id;
+  req.origin = norm;
+  req.label = FormatPermissionLabel(0, CEF_PERMISSION_TYPE_NOTIFICATIONS);
+  req.perm_key = key;
+  req.notify_js_req_id = req_id;
+  req.notify_origin = norm;
+  pending_permissions_.push_back(std::move(req));
+  UpdateOverlayBounds();
+  PushStateImmediate();
+}
+
+std::string KajoBrowserWindow::QueryTabWebNotifyPermission(uint64_t /*tab_id*/,
+                                                           const std::string& origin) {
+  if (!coord_) return "default";
+  if (coord_->HasSessionNotificationGrant(origin)) return "granted";
+  if (!coord_->SharedPermissions() || cfg_.private_mode) return "default";
+  const int d = coord_->SharedPermissions()->Lookup(
+      origin, PermissionKey(0, CEF_PERMISSION_TYPE_NOTIFICATIONS));
+  if (d == 1) return "granted";
+  if (d == -1) return "denied";
+  return "default";
+}
+
+void KajoBrowserWindow::OpenInstallAppOverlay() {
+  if (closing_) return;
+  KajoWebTabMeta* t = web_model_get_active(model_);
+  if (!t || !t->uri) return;
+  const std::string url = t->uri;
+  if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return;
+
+  install_draft_ = ChromeInstallAppDraft{};
+  install_draft_.start_url = url;
+  install_draft_.scope = DeriveOriginFromUrl(url);
+  g_autofree gchar* host = web_model_extract_host(url.c_str());
+  install_draft_.name = (t->title && t->title[0] != '\0')
+                            ? t->title
+                            : (host ? host : "Web App");
+  install_draft_.theme_color = SanitizeHexColor(accent_color_, "#0078d4");
+  install_draft_.icon_url = (t->favicon_url && t->favicon_url[0] != '\0')
+                                ? t->favicon_url
+                                : DeriveOriginFaviconFallback(url);
+
+  if (coord_ && coord_->AppStore()) {
+    if (auto existing = coord_->AppStore()->FindBestMatchForUrl(url)) {
+      install_draft_.already_installed = true;
+      install_draft_.existing_id = existing->id;
+      install_draft_.name = existing->name;
+      install_draft_.start_url = existing->start_url;
+      install_draft_.scope = existing->scope;
+      install_draft_.theme_color = existing->theme_color;
+      if (!existing->icon_url.empty()) install_draft_.icon_url = existing->icon_url;
+    }
+  }
+
+  ToggleOverlay("install_app");
+
+  if (TabEntry* e = FindEntry(t->id)) {
+    if (e->browser && e->browser->GetMainFrame()) {
+      CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("kajo-probe-webapp");
+      e->browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, msg);
+    }
+  }
+}
+
+void KajoBrowserWindow::OnTabWebAppProbeResult(uint64_t tab_id,
+                                               const std::string& page_url,
+                                               const std::string& manifest_url,
+                                               const std::string& icon_url,
+                                               const std::string& title,
+                                               const std::string& theme_color) {
+  if (closing_ || overlay_mode_ != "install_app") return;
+  KajoWebTabMeta* active = web_model_get_active(model_);
+  if (!active || active->id != tab_id) return;
+
+  if (!install_draft_.already_installed) {
+    if (!title.empty()) install_draft_.name = title;
+    if (!theme_color.empty()) {
+      install_draft_.theme_color = SanitizeHexColor(theme_color, install_draft_.theme_color.c_str());
+    }
+    if (!icon_url.empty()) install_draft_.icon_url = icon_url;
+  }
+  install_draft_.manifest_url = manifest_url;
+  PushStateImmediate();
+
+  if (manifest_url.empty() || !request_context_ ||
+      (manifest_url.rfind("http://", 0) != 0 && manifest_url.rfind("https://", 0) != 0)) {
+    return;
+  }
+
+  CefRefPtr<KajoBrowserWindow> self(this);
+  std::string m_url = manifest_url;
+  std::string p_url = page_url;
+  CefRefPtr<CefRequest> req = CefRequest::Create();
+  req->SetURL(manifest_url);
+  req->SetMethod("GET");
+  auto r = CefURLRequest::Create(
+      req,
+      new WebAssetFetchClient([self, m_url, p_url](bool ok,
+                                                   int /*status*/,
+                                                   const std::string& /*mime*/,
+                                                   std::vector<uint8_t> body) {
+        if (!ok || body.empty() || self->closing_ || self->overlay_mode_ != "install_app") return;
+        std::string json_text(reinterpret_cast<const char*>(body.data()), body.size());
+        WebManifestParseResult parsed = ParseWebManifestJson(json_text, m_url, p_url);
+        if (!parsed.valid) return;
+        if (!self->install_draft_.already_installed) {
+          if (!parsed.name.empty()) self->install_draft_.name = parsed.name;
+          if (!parsed.start_url.empty()) self->install_draft_.start_url = parsed.start_url;
+          if (!parsed.scope.empty()) self->install_draft_.scope = parsed.scope;
+          if (!parsed.theme_color.empty()) self->install_draft_.theme_color = parsed.theme_color;
+          if (!parsed.best_icon_url.empty()) self->install_draft_.icon_url = parsed.best_icon_url;
+          self->PushStateImmediate();
+        }
+      }),
+      request_context_);
+  if (r) active_filter_reqs_.push_back(r);
+}
+
+void KajoBrowserWindow::StartWebAppInstall(std::string name,
+                                             std::string start_url,
+                                             std::string scope,
+                                             std::string theme_color,
+                                             std::string icon_url,
+                                             std::string existing_id,
+                                             bool launch_after) {
+  if (closing_ || !coord_ || !coord_->AppStore()) return;
+  if (start_url.empty()) return;
+  if (start_url.rfind("http://", 0) != 0 && start_url.rfind("https://", 0) != 0) {
+    start_url = "https://" + start_url;
+  }
+  if (scope.empty()) scope = DeriveOriginFromUrl(start_url);
+  if (name.empty()) {
+    g_autofree gchar* host = web_model_extract_host(start_url.c_str());
+    name = host ? host : "Web App";
+  }
+
+  WebAppEntry entry;
+  entry.profile_id = cfg_.profile_id.empty() ? "default" : cfg_.profile_id;
+  if (!existing_id.empty()) {
+    entry.id = existing_id;
+    if (auto cur = coord_->AppStore()->FindById(existing_id)) {
+      entry.created_epoch = cur->created_epoch;
+    }
+  } else {
+    entry.id = coord_->AppStore()->MakeUniqueId(SanitizeWebAppId(name));
+  }
+  entry.name = std::move(name);
+  entry.start_url = std::move(start_url);
+  entry.scope = std::move(scope);
+  entry.theme_color = SanitizeHexColor(theme_color, "#0078d4");
+  entry.icon_url = icon_url.empty() ? DeriveOriginFaviconFallback(entry.start_url) : icon_url;
+  entry.desktop_id = WebAppDesktopId(entry.profile_id, entry.id);
+  entry.wayland_app_id = WebAppWaylandAppId(entry.profile_id, entry.id);
+
+  auto finish_install = [self = CefRefPtr<KajoBrowserWindow>(this), entry, launch_after](
+                            const std::vector<uint8_t>& icon_bytes,
+                            const std::string& mime) mutable {
+    if (self->closing_ || !self->coord_ || !self->coord_->AppStore()) return;
+    std::string out_icon, out_desktop;
+    InstallWebAppDesktopFiles(entry, self->coord_->Config().exe_path, icon_bytes, mime,
+                              &out_icon, &out_desktop);
+    entry.icon_path = out_icon;
+    self->coord_->AppStore()->Upsert(entry);
+    self->coord_->AppStore()->Save(self->coord_->WebAppsFilePath());
+    self->coord_->NotifyWebAppsChanged();
+    self->CloseOverlay();
+    if (launch_after) {
+      self->coord_->OpenOrFocusWebApp(entry.id);
+    }
+  };
+
+  if (!entry.icon_url.empty() && request_context_ &&
+      (entry.icon_url.rfind("http://", 0) == 0 || entry.icon_url.rfind("https://", 0) == 0)) {
+    CefRefPtr<CefRequest> req = CefRequest::Create();
+    req->SetURL(entry.icon_url);
+    req->SetMethod("GET");
+    auto r = CefURLRequest::Create(
+        req,
+        new WebAssetFetchClient([finish_install](bool ok,
+                                                 int /*status*/,
+                                                 const std::string& mime,
+                                                 std::vector<uint8_t> body) mutable {
+          if (ok && !body.empty()) finish_install(body, mime);
+          else finish_install({}, "");
+        }),
+        request_context_);
+    if (r) {
+      active_filter_reqs_.push_back(r);
+      return;
+    }
+  }
+  finish_install({}, "");
 }
 
 }  // namespace kajo_web

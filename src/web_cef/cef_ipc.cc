@@ -97,17 +97,25 @@ std::string ProfileIpcSocketPath(const std::string& profile_id) {
   return fallback ? std::string(fallback) : "";
 }
 
-bool TryForwardToRunningInstance(const std::string& socket_path,
-                                 const std::vector<std::string>& urls,
-                                 int timeout_ms) {
+bool TryForwardAppToRunningInstance(const std::string& socket_path,
+                                    const IpcOpenRequest& req,
+                                    int timeout_ms) {
   int fd = ConnectWithTimeout(socket_path, timeout_ms);
   if (fd < 0) return false;
 
   g_autoptr(JsonBuilder) jb = json_builder_new();
   json_builder_begin_object(jb);
+  if (!req.app_id.empty()) {
+    json_builder_set_member_name(jb, "app_id");
+    json_builder_add_string_value(jb, req.app_id.c_str());
+  }
+  if (!req.app_url.empty()) {
+    json_builder_set_member_name(jb, "app_url");
+    json_builder_add_string_value(jb, req.app_url.c_str());
+  }
   json_builder_set_member_name(jb, "urls");
   json_builder_begin_array(jb);
-  for (const auto& u : urls) {
+  for (const auto& u : req.urls) {
     json_builder_add_string_value(jb, u.c_str());
   }
   json_builder_end_array(jb);
@@ -133,6 +141,14 @@ bool TryForwardToRunningInstance(const std::string& socket_path,
   }
   close(fd);
   return ok;
+}
+
+bool TryForwardToRunningInstance(const std::string& socket_path,
+                                 const std::vector<std::string>& urls,
+                                 int timeout_ms) {
+  IpcOpenRequest req;
+  req.urls = urls;
+  return TryForwardAppToRunningInstance(socket_path, req, timeout_ms);
 }
 
 bool IsProfileInstanceRunning(const std::string& profile_id, int timeout_ms) {
@@ -161,6 +177,14 @@ ProfileIpcServer::~ProfileIpcServer() {
 
 bool ProfileIpcServer::Start(const std::string& socket_path,
                              std::function<void(std::vector<std::string>)> on_open) {
+  return StartEx(socket_path,
+                 [cb = std::move(on_open)](IpcOpenRequest req) {
+                   if (cb) cb(std::move(req.urls));
+                 });
+}
+
+bool ProfileIpcServer::StartEx(const std::string& socket_path,
+                               std::function<void(IpcOpenRequest)> on_open_req) {
   Stop();
   struct sockaddr_un addr {};
   if (!FillSockAddr(socket_path, &addr)) return false;
@@ -193,7 +217,7 @@ bool ProfileIpcServer::Start(const std::string& socket_path,
   }
 
   socket_path_ = socket_path;
-  on_open_ = std::move(on_open);
+  on_open_req_ = std::move(on_open_req);
   listen_fd_ = lfd;
   running_.store(true, std::memory_order_release);
   thread_ = std::thread(&ProfileIpcServer::RunLoop, this);
@@ -225,7 +249,7 @@ void ProfileIpcServer::Stop() {
     unlink(socket_path_.c_str());
     socket_path_.clear();
   }
-  on_open_ = nullptr;
+  on_open_req_ = nullptr;
 }
 
 void ProfileIpcServer::RunLoop() {
@@ -286,7 +310,7 @@ void ProfileIpcServer::HandleClient(int client_fd) {
   if (nl != std::string::npos) buf.resize(nl);
 
   bool is_ping = false;
-  std::vector<std::string> urls;
+  IpcOpenRequest req;
   if (!buf.empty()) {
     g_autoptr(JsonParser) parser = json_parser_new();
     if (json_parser_load_from_data(parser, buf.data(), static_cast<gssize>(buf.size()), nullptr)) {
@@ -295,12 +319,22 @@ void ProfileIpcServer::HandleClient(int client_fd) {
         JsonObject* obj = json_node_get_object(root);
         is_ping = json_object_has_member(obj, "ping") &&
                   json_object_get_boolean_member(obj, "ping");
-        if (!is_ping && json_object_has_member(obj, "urls")) {
-          JsonArray* arr = json_object_get_array_member(obj, "urls");
-          guint n = arr ? json_array_get_length(arr) : 0;
-          for (guint i = 0; i < n; ++i) {
-            const gchar* s = json_array_get_string_element(arr, i);
-            if (s && s[0] != '\0') urls.emplace_back(s);
+        if (!is_ping) {
+          if (json_object_has_member(obj, "app_id")) {
+            const gchar* s = json_object_get_string_member(obj, "app_id");
+            if (s) req.app_id = s;
+          }
+          if (json_object_has_member(obj, "app_url")) {
+            const gchar* s = json_object_get_string_member(obj, "app_url");
+            if (s) req.app_url = s;
+          }
+          if (json_object_has_member(obj, "urls")) {
+            JsonArray* arr = json_object_get_array_member(obj, "urls");
+            guint n = arr ? json_array_get_length(arr) : 0;
+            for (guint i = 0; i < n; ++i) {
+              const gchar* s = json_array_get_string_element(arr, i);
+              if (s && s[0] != '\0') req.urls.emplace_back(s);
+            }
           }
         }
       }
@@ -309,8 +343,8 @@ void ProfileIpcServer::HandleClient(int client_fd) {
 
   static constexpr char kOk[] = "OK\n";
   WriteAllFd(client_fd, kOk, sizeof(kOk) - 1, 200);
-  if (!is_ping && on_open_) {
-    on_open_(std::move(urls));
+  if (!is_ping && on_open_req_) {
+    on_open_req_(std::move(req));
   }
 }
 

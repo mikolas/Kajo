@@ -105,6 +105,30 @@ struct ChromeSavedPermissionView {
   bool allow = false;
 };
 
+struct ChromeWebAppView {
+  std::string id;
+  std::string name;
+  std::string start_url;
+  std::string scope;
+  std::string theme_color;
+  std::string icon_url;
+  std::string icon_path;
+  std::string desktop_id;
+  std::string wayland_app_id;
+  int64_t last_launched_epoch = 0;
+};
+
+struct ChromeInstallAppDraft {
+  std::string name;
+  std::string start_url;
+  std::string scope;
+  std::string theme_color;
+  std::string icon_url;
+  std::string manifest_url;
+  bool already_installed = false;
+  std::string existing_id;
+};
+
 struct ChromeStateSnapshot {
   /* Window & layout state */
   bool private_mode = false;
@@ -184,6 +208,8 @@ struct ChromeStateSnapshot {
   std::vector<std::string> bookmark_folders;
   ChromePermissionView active_permission;
   std::vector<ChromeSavedPermissionView> saved_permissions;
+  ChromeInstallAppDraft install_draft;
+  std::vector<ChromeWebAppView> webapps;
   std::vector<ChromeHistoryView> recent_history;
   std::vector<ChromeHistoryView> history_query_results;
   std::string history_search_query;

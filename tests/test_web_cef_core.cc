@@ -1,6 +1,7 @@
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_ipc.h"
 #include "web_cef/cef_site_util.h"
+#include "web_cef/cef_webapps.h"
 
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -216,6 +217,176 @@ static void test_site_util_and_ipc(void) {
   g_assert_cmpint(m_14.topbar_height_px, >=, m_11.topbar_height_px);
 }
 
+static void test_webapps_core_and_manifest(void) {
+  const std::string id1 = SanitizeWebAppId("Apple Music");
+  const std::string id2 = SanitizeWebAppId("  Microsoft Teams (Work)! ");
+  const std::string id3 = SanitizeWebAppId("///");
+  g_assert_cmpstr(id1.c_str(), ==, "apple-music");
+  g_assert_cmpstr(id2.c_str(), ==, "microsoft-teams-work");
+  g_assert_cmpstr(id3.c_str(), ==, "webapp");
+
+  const std::string wid = WebAppWaylandAppId("Work", "Apple Music");
+  const std::string did = WebAppDesktopId("default", "teams");
+  g_assert_cmpstr(wid.c_str(), ==, "kajo-webapp-work-apple-music");
+  g_assert_cmpstr(did.c_str(), ==, "kajo-webapp-default-teams.desktop");
+
+  const std::string orig = DeriveOriginFromUrl("https://music.apple.com/us/browse");
+  const std::string res_rel = ResolveUrlAgainstBase("https://web.whatsapp.com/app/", "../icons/wa.png");
+  g_assert_cmpstr(orig.c_str(), ==, "https://music.apple.com/");
+  g_assert_cmpstr(res_rel.c_str(), ==, "https://web.whatsapp.com/icons/wa.png");
+
+  const std::string manifest = R"JSON({
+    "name": "Apple Music",
+    "short_name": "Music",
+    "start_url": "/us/home?l=en",
+    "scope": "/",
+    "theme_color": "#f43",
+    "display": "standalone",
+    "icons": [
+      { "src": "/img/icon-64.png", "sizes": "64x64", "type": "image/png" },
+      { "src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+    ]
+  })JSON";
+  WebManifestParseResult parsed =
+      ParseWebManifestJson(manifest, "https://music.apple.com/manifest.webmanifest", "https://music.apple.com/");
+  g_assert_true(parsed.valid);
+  g_assert_cmpstr(parsed.name.c_str(), ==, "Apple Music");
+  g_assert_cmpstr(parsed.start_url.c_str(), ==, "https://music.apple.com/us/home?l=en");
+  g_assert_cmpstr(parsed.scope.c_str(), ==, "https://music.apple.com/");
+  g_assert_cmpstr(parsed.theme_color.c_str(), ==, "#ff4433");
+  g_assert_cmpstr(parsed.best_icon_url.c_str(), ==, "https://music.apple.com/img/icon-512.png");
+
+  WebAppEntry teams;
+  teams.id = "microsoft-teams";
+  teams.name = "Microsoft Teams";
+  teams.profile_id = "work";
+  teams.start_url = "https://teams.microsoft.com/v2/";
+  teams.scope = "https://teams.microsoft.com/";
+  teams.theme_color = "#5b5fc7";
+
+  g_assert_true(IsUrlInWebAppScope(teams, "https://teams.microsoft.com/v2/#/chats"));
+  g_assert_false(IsUrlInWebAppScope(teams, "https://github.com/org/repo"));
+  g_assert_true(IsLikelyAuthFlowUrl("https://login.microsoftonline.com/common/oauth2/authorize"));
+  g_assert_true(IsLikelyAuthFlowUrl("https://idmsa.apple.com/IDMSWebAuth/signin"));
+  g_assert_false(IsLikelyAuthFlowUrl("https://example.com/blog/post"));
+
+  g_autofree gchar* tmp_dir = g_dir_make_tmp("kajo-cef-webapps-XXXXXX", nullptr);
+  g_autofree gchar* store_path = g_build_filename(tmp_dir, "webapps.json", nullptr);
+  WebAppStore store;
+  store.Upsert(teams);
+  const std::string uniq = store.MakeUniqueId("microsoft-teams");
+  g_assert_cmpstr(uniq.c_str(), ==, "microsoft-teams-2");
+  g_assert_true(store.TouchLaunched("microsoft-teams"));
+  g_assert_true(store.Save(store_path));
+
+  WebAppStore reloaded;
+  g_assert_true(reloaded.Load(store_path));
+  g_assert_cmpuint(reloaded.Size(), ==, 1);
+  auto match = reloaded.FindBestMatchForUrl("https://teams.microsoft.com/v2/");
+  g_assert_true(match.has_value());
+  g_assert_cmpstr(match->desktop_id.c_str(), ==, "kajo-webapp-work-microsoft-teams.desktop");
+
+  std::string out_icon, out_desktop;
+  g_assert_true(InstallWebAppDesktopFilesWithDirs(
+      *match, "/usr/local/bin/kajo-web", {}, "", tmp_dir, &out_icon, &out_desktop));
+  g_assert_true(g_file_test(out_icon.c_str(), G_FILE_TEST_EXISTS));
+  g_assert_true(g_file_test(out_desktop.c_str(), G_FILE_TEST_EXISTS));
+  g_assert_nonnull(strstr(out_icon.c_str(), ".svg"));
+  RemoveWebAppDesktopFilesWithDirs(*match, tmp_dir);
+  g_assert_false(g_file_test(out_icon.c_str(), G_FILE_TEST_EXISTS));
+  g_assert_false(g_file_test(out_desktop.c_str(), G_FILE_TEST_EXISTS));
+
+  std::vector<uint8_t> fake_png = {0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0};
+  std::string png_icon, png_desktop;
+  g_assert_true(InstallWebAppDesktopFilesWithDirs(
+      *match, "/usr/local/bin/kajo-web", fake_png, "image/png", tmp_dir, &png_icon, &png_desktop));
+  g_assert_nonnull(strstr(png_icon.c_str(), ".png"));
+  g_assert_true(g_file_test(png_icon.c_str(), G_FILE_TEST_EXISTS));
+  RemoveWebAppDesktopFilesWithDirs(*match, tmp_dir);
+
+  g_unlink(store_path);
+  g_autofree gchar* apps_d = g_build_filename(tmp_dir, "applications", nullptr);
+  g_autofree gchar* d1 = g_build_filename(tmp_dir, "icons/hicolor/scalable/apps", nullptr);
+  g_autofree gchar* d2 = g_build_filename(tmp_dir, "icons/hicolor/256x256/apps", nullptr);
+  g_autofree gchar* d3 = g_build_filename(tmp_dir, "icons/hicolor/scalable", nullptr);
+  g_autofree gchar* d4 = g_build_filename(tmp_dir, "icons/hicolor/256x256", nullptr);
+  g_autofree gchar* d5 = g_build_filename(tmp_dir, "icons/hicolor", nullptr);
+  g_autofree gchar* d6 = g_build_filename(tmp_dir, "icons", nullptr);
+  g_rmdir(apps_d);
+  g_rmdir(d1);
+  g_rmdir(d2);
+  g_rmdir(d3);
+  g_rmdir(d4);
+  g_rmdir(d5);
+  g_rmdir(d6);
+  g_rmdir(tmp_dir);
+}
+
+static void test_ipc_app_forwarding(void) {
+  g_autofree gchar* tmp_dir = g_dir_make_tmp("kajo-cef-ipc-app-XXXXXX", nullptr);
+  g_autofree gchar* sock_path = g_build_filename(tmp_dir, "app.sock", nullptr);
+
+  IpcOpenRequest got;
+  GMutex mu;
+  GCond cond;
+  g_mutex_init(&mu);
+  g_cond_init(&cond);
+  bool received = false;
+
+  ProfileIpcServer srv;
+  g_assert_true(srv.StartEx(sock_path, [&](IpcOpenRequest req) {
+    g_mutex_lock(&mu);
+    got = std::move(req);
+    received = true;
+    g_cond_signal(&cond);
+    g_mutex_unlock(&mu);
+  }));
+
+  IpcOpenRequest send_req;
+  send_req.app_id = "apple-music";
+  send_req.app_url = "https://music.apple.com/us/browse";
+  send_req.urls = {"https://example.org"};
+  g_assert_true(TryForwardAppToRunningInstance(sock_path, send_req, 500));
+
+  g_mutex_lock(&mu);
+  const gint64 end_us = g_get_monotonic_time() + 1000000;
+  while (!received) {
+    if (!g_cond_wait_until(&cond, &mu, end_us)) break;
+  }
+  g_mutex_unlock(&mu);
+
+  g_assert_true(received);
+  g_assert_cmpstr(got.app_id.c_str(), ==, "apple-music");
+  g_assert_cmpstr(got.app_url.c_str(), ==, "https://music.apple.com/us/browse");
+  g_assert_cmpuint(got.urls.size(), ==, 1);
+  g_assert_cmpstr(got.urls[0].c_str(), ==, "https://example.org");
+
+  srv.Stop();
+  g_cond_clear(&cond);
+  g_mutex_clear(&mu);
+  g_rmdir(tmp_dir);
+}
+
+static void test_zoom_shortcut_classifier_and_levels(void) {
+  /* US OEM keys */
+  g_assert_true(ClassifyZoomShortcutKey(0xBB, '=', '=') == ZoomShortcutAction::kZoomIn);
+  g_assert_true(ClassifyZoomShortcutKey(0xBD, '-', '-') == ZoomShortcutAction::kZoomOut);
+  g_assert_true(ClassifyZoomShortcutKey('0', '0', '0') == ZoomShortcutAction::kZoomReset);
+  /* Nordic/European '+' key (VK may differ, character/unmodified_character is '+') */
+  g_assert_true(ClassifyZoomShortcutKey(0x6B, 0, 0) == ZoomShortcutAction::kZoomIn);
+  g_assert_true(ClassifyZoomShortcutKey(0, '+', '+') == ZoomShortcutAction::kZoomIn);
+  g_assert_true(ClassifyZoomShortcutKey(0, '-', '-') == ZoomShortcutAction::kZoomOut);
+  /* Numpad */
+  g_assert_true(ClassifyZoomShortcutKey(0x6D, 0, 0) == ZoomShortcutAction::kZoomOut);
+  g_assert_true(ClassifyZoomShortcutKey(0x60, 0, 0) == ZoomShortcutAction::kZoomReset);
+  g_assert_true(ClassifyZoomShortcutKey('A', 'a', 'a') == ZoomShortcutAction::kNone);
+
+  g_assert_cmpfloat(ZoomPercentToCefLevel(100), ==, 0.0);
+  g_assert_cmpfloat(ZoomPercentToCefLevel(120), >, 0.99);
+  g_assert_cmpfloat(ZoomPercentToCefLevel(120), <, 1.01);
+  g_assert_cmpfloat(ZoomPercentToCefLevel(80), <, 0.0);
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
   g_test_add_func("/web_cef/core/log_severity", test_log_severity_parsing);
@@ -224,5 +395,8 @@ int main(int argc, char** argv) {
   g_test_add_func("/web_cef/core/permissions", test_permission_store_and_labels);
   g_test_add_func("/web_cef/core/slug_and_color", test_profile_slug_and_hex_color);
   g_test_add_func("/web_cef/core/site_util_and_ipc", test_site_util_and_ipc);
+  g_test_add_func("/web_cef/core/webapps", test_webapps_core_and_manifest);
+  g_test_add_func("/web_cef/core/ipc_app_forwarding", test_ipc_app_forwarding);
+  g_test_add_func("/web_cef/core/zoom_shortcuts", test_zoom_shortcut_classifier_and_levels);
   return g_test_run();
 }
