@@ -47,6 +47,7 @@ typedef struct {
     const CompBind         *repeat_bind;
     uint32_t                repeat_keycode;
     uint64_t                consumed_keys[8]; /* 512-bit bitmap of compositor-consumed key presses */
+    bool                    is_virtual;
 } CompKeyboard;
 
 typedef struct {
@@ -157,17 +158,73 @@ keyboard_allowed_while_locked(const CompServer *s, struct wlr_keyboard *wk)
            wl_resource_get_client(s->active_lock->resource);
 }
 
+static struct wlr_keyboard *
+find_primary_keyboard(const CompServer *s)
+{
+    if (!s)
+        return NULL;
+    struct wlr_keyboard *seat_kb = s->seat ? wlr_seat_get_keyboard(s->seat) : NULL;
+    if (seat_kb && seat_kb->keymap &&
+        wlr_input_device_get_virtual_keyboard(&seat_kb->base) == NULL) {
+        return seat_kb;
+    }
+    const CompKeyboard *k;
+    wl_list_for_each(k, &s->keyboards, link) {
+        if (!k->is_virtual && k->wlr_keyboard && k->wlr_keyboard->keymap)
+            return k->wlr_keyboard;
+    }
+    if (seat_kb && seat_kb->keymap)
+        return seat_kb;
+    wl_list_for_each(k, &s->keyboards, link) {
+        if (k->wlr_keyboard && k->wlr_keyboard->keymap)
+            return k->wlr_keyboard;
+    }
+    return NULL;
+}
+
 static void
 keyboard_handle_modifiers(void *owner, void *data)
 {
     CompKeyboard *k = owner;
     CompServer *s = k->server;
     (void)data;
+    if (s->syncing_layout_group)
+        return;
     if (!keyboard_allowed_while_locked(s, k->wlr_keyboard))
         return;
     keyboard_disarm_repeat(k);
     wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);
     wlr_seat_keyboard_notify_modifiers(s->seat, &k->wlr_keyboard->modifiers);
+
+    if (!k->is_virtual && k->wlr_keyboard && k->wlr_keyboard->xkb_state) {
+        xkb_layout_index_t n_layouts = k->wlr_keyboard->keymap
+                                           ? xkb_keymap_num_layouts(k->wlr_keyboard->keymap)
+                                           : 0;
+        xkb_layout_index_t cur = xkb_state_serialize_layout(
+            k->wlr_keyboard->xkb_state, XKB_STATE_LAYOUT_EFFECTIVE);
+        if (cur != XKB_LAYOUT_INVALID &&
+            (n_layouts == 0 || cur < n_layouts) &&
+            (uint32_t)cur != s->active_layout_group) {
+            s->active_layout_group = (uint32_t)cur;
+            s->syncing_layout_group = true;
+            CompKeyboard *other;
+            wl_list_for_each(other, &s->keyboards, link) {
+                struct wlr_keyboard *wk = other->wlr_keyboard;
+                if (!wk || wk == k->wlr_keyboard || !wk->keymap || !wk->xkb_state)
+                    continue;
+                if (cur >= xkb_keymap_num_layouts(wk->keymap))
+                    continue;
+                wlr_keyboard_notify_modifiers(wk,
+                                              wk->modifiers.depressed,
+                                              wk->modifiers.latched,
+                                              wk->modifiers.locked,
+                                              cur);
+            }
+            s->syncing_layout_group = false;
+            comp_ipc_emit_keyboard_layouts(s);
+        }
+    }
+
     if (comp_switcher_is_active(s)) {
         uint32_t mods = comp_input_mods_from_wlr(wlr_keyboard_get_modifiers(k->wlr_keyboard));
         comp_switcher_handle_modifiers(s, mods);
@@ -324,14 +381,20 @@ configure_keyboard(CompServer *s, struct wlr_keyboard *wk, bool is_new)
         km = xkb_keymap_new_from_names(ctx, NULL, XKB_KEYMAP_COMPILE_NO_FLAGS);
     if (km) {
         wlr_keyboard_set_keymap(wk, km);
+        xkb_layout_index_t n_layouts = xkb_keymap_num_layouts(km);
+        uint32_t group = (s && n_layouts > 0 && s->active_layout_group < n_layouts)
+                             ? s->active_layout_group
+                             : 0;
+        uint32_t locked = wk->modifiers.locked;
         if (is_new && s && s->config && s->config->numlock_on_startup) {
             xkb_mod_index_t numlock_idx = xkb_keymap_mod_get_index(km, XKB_MOD_NAME_NUM);
-            if (numlock_idx != XKB_MOD_INVALID) {
-                uint32_t locked = wk->modifiers.locked | (1u << numlock_idx);
-                wlr_keyboard_notify_modifiers(wk, wk->modifiers.depressed,
-                                              wk->modifiers.latched, locked,
-                                              wk->modifiers.group);
-            }
+            if (numlock_idx != XKB_MOD_INVALID)
+                locked |= (1u << numlock_idx);
+        }
+        if (locked != wk->modifiers.locked || group != wk->modifiers.group) {
+            wlr_keyboard_notify_modifiers(wk, wk->modifiers.depressed,
+                                          wk->modifiers.latched, locked,
+                                          group);
         }
         xkb_keymap_unref(km);
     } else {
@@ -384,6 +447,15 @@ comp_input_apply_config(CompServer *s)
         keyboard_disarm_repeat(k);
         configure_keyboard(s, k->wlr_keyboard, false);
     }
+    struct wlr_keyboard *primary = find_primary_keyboard(s);
+    xkb_layout_index_t n_layouts = (primary && primary->keymap)
+                                       ? xkb_keymap_num_layouts(primary->keymap)
+                                       : 0;
+    if (n_layouts == 0 || s->active_layout_group >= n_layouts)
+        s->active_layout_group = 0;
+    if (primary && s->seat)
+        wlr_seat_set_keyboard(s->seat, primary);
+
     CompInputDev *id;
     wl_list_for_each(id, &s->input_devs, link) {
         configure_libinput_device(s, id->dev);
@@ -412,11 +484,7 @@ comp_input_switch_keyboard_layout(CompServer *s, int idx)
 {
     if (!s || wl_list_empty(&s->keyboards))
         return false;
-    struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
-    if (!kb) {
-        CompKeyboard *first = wl_container_of(s->keyboards.next, first, link);
-        kb = first->wlr_keyboard;
-    }
+    struct wlr_keyboard *kb = find_primary_keyboard(s);
     if (!kb || !kb->keymap || !kb->xkb_state)
         return false;
 
@@ -429,16 +497,26 @@ comp_input_switch_keyboard_layout(CompServer *s, int idx)
     if (target >= n_layouts)
         return false;
 
+    s->active_layout_group = (uint32_t)target;
+    s->syncing_layout_group = true;
+
     CompKeyboard *k;
     wl_list_for_each(k, &s->keyboards, link) {
         struct wlr_keyboard *wk = k->wlr_keyboard;
-        if (!wk || !wk->xkb_state)
+        if (!wk || !wk->keymap || !wk->xkb_state)
+            continue;
+        if (target >= xkb_keymap_num_layouts(wk->keymap))
             continue;
         wlr_keyboard_notify_modifiers(wk,
                                       wk->modifiers.depressed,
                                       wk->modifiers.latched,
                                       wk->modifiers.locked,
                                       target);
+    }
+    s->syncing_layout_group = false;
+    if (s->seat) {
+        wlr_seat_set_keyboard(s->seat, kb);
+        wlr_seat_keyboard_notify_modifiers(s->seat, &kb->modifiers);
     }
     comp_ipc_emit_keyboard_layouts(s);
     return true;
@@ -453,11 +531,7 @@ comp_input_get_keyboard_layouts(const CompServer *s, const char **names_out,
     if (!s)
         return 0;
 
-    struct wlr_keyboard *kb = s->seat ? wlr_seat_get_keyboard(s->seat) : NULL;
-    if (!kb && !wl_list_empty(&s->keyboards)) {
-        const CompKeyboard *first = wl_container_of(s->keyboards.next, first, link);
-        kb = first->wlr_keyboard;
-    }
+    struct wlr_keyboard *kb = find_primary_keyboard(s);
     if (kb && kb->keymap) {
         xkb_layout_index_t n = xkb_keymap_num_layouts(kb->keymap);
         if (current_idx_out && kb->xkb_state && n > 0) {
@@ -487,6 +561,7 @@ new_keyboard(CompServer *s, struct wlr_input_device *dev)
     talloc_set_name_const(k, "CompKeyboard");
     k->server = s;
     k->wlr_keyboard = wk;
+    k->is_virtual = (wlr_input_device_get_virtual_keyboard(dev) != NULL);
     wl_list_insert(&s->keyboards, &k->link);
     talloc_set_destructor(k, keyboard_destructor);
     if (s->loop)
@@ -500,8 +575,10 @@ new_keyboard(CompServer *s, struct wlr_input_device *dev)
         talloc_free(k);
         return;
     }
-    wlr_seat_set_keyboard(s->seat, wk);
-    comp_ipc_emit_keyboard_layouts(s);
+    if (!k->is_virtual || wlr_seat_get_keyboard(s->seat) == NULL)
+        wlr_seat_set_keyboard(s->seat, wk);
+    if (!k->is_virtual || wl_list_length(&s->keyboards) == 1)
+        comp_ipc_emit_keyboard_layouts(s);
 }
 
 void

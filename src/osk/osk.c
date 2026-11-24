@@ -67,6 +67,12 @@ struct _ShellOSK {
     /* Input-method state */
     gboolean                               pending_im_active;
     gboolean                               im_active;
+    uint32_t                               im_serial;
+    gboolean                               has_compositor_keymap;
+    gboolean                               vkbd_keymap_uploaded;
+    char                                  *last_raw_keymap;
+    size_t                                 last_raw_keymap_len;
+    guint                                  layout_update_idle_id;
     gboolean                               visible;
     gboolean                               manual_pinned;
 
@@ -85,11 +91,14 @@ struct _ShellOSK {
     /* GTK4 UI */
     GtkWindow                             *window;
     GtkStack                              *layer_stack;
-    GPtrArray                             *key_buttons; /* Array of OskKeyButton* */
+    ShellOskAlphaLayout                    current_alpha_layout;
+    GPtrArray                             *alpha_buttons; /* Array of OskKeyButton* on alpha layer */
+    GPtrArray                             *sym_buttons;   /* Array of OskKeyButton* on symbols layer */
 };
 
 static void refresh_all_key_labels(ShellOSK *self);
 static void fire_key_button(ShellOSK *self, OskKeyButton *kb);
+static void rebuild_alpha_layer(ShellOSK *self, const ShellOskAlphaLayout *layout);
 
 static uint32_t get_monotonic_ms(void) {
     struct timespec ts;
@@ -128,6 +137,7 @@ static void upload_current_xkb_keymap(ShellOSK *self) {
             fd,
             (uint32_t)size
         );
+        self->vkbd_keymap_uploaded = TRUE;
         if (self->wl_display) {
             wl_display_flush(self->wl_display);
         }
@@ -146,13 +156,73 @@ static uint32_t compute_active_depressed_mods(ShellOSK *self) {
     return mods;
 }
 
-static void sync_vkbd_modifiers(ShellOSK *self, uint32_t depressed_override, gboolean use_override) {
+static void sync_vkbd_modifiers_with_group(
+    ShellOSK *self, uint32_t depressed_override, gboolean use_override, uint32_t group
+) {
     if (!self || !self->vkbd || !self->xkb) return;
+    if (!self->vkbd_keymap_uploaded) {
+        upload_current_xkb_keymap(self);
+    }
     uint32_t depressed = use_override ? depressed_override : compute_active_depressed_mods(self);
     uint32_t locked = (self->mod_shift == MOD_STATE_LOCKED) ? shell_osk_xkb_get_caps_mask(self->xkb) : 0;
-    uint32_t group = shell_osk_xkb_get_group(self->xkb);
 
     zwp_virtual_keyboard_v1_modifiers(self->vkbd, depressed, 0, locked, group);
+}
+
+static void sync_vkbd_modifiers(ShellOSK *self, uint32_t depressed_override, gboolean use_override) {
+    if (!self || !self->xkb) return;
+    sync_vkbd_modifiers_with_group(
+        self, depressed_override, use_override, shell_osk_xkb_get_group(self->xkb)
+    );
+}
+
+static gboolean sync_group_from_compositor(ShellOSK *self) {
+    if (!self || !self->xkb || !self->app || !self->app->compositor) return FALSE;
+    const CompositorKeyboardLayouts *kl = shell_compositor_get_keyboard_layouts(self->app->compositor);
+    if (!kl || !kl->names || !kl->names[0]) return FALSE;
+
+    uint32_t num_groups = shell_osk_xkb_get_num_groups(self->xkb);
+    if (num_groups == 0 || kl->current_idx >= num_groups) return FALSE;
+
+    if (shell_osk_xkb_get_group(self->xkb) != kl->current_idx) {
+        shell_osk_xkb_set_group(self->xkb, kl->current_idx);
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static void apply_layout_update(ShellOSK *self) {
+    if (!self || !self->xkb) return;
+
+    ShellOskAlphaLayout next_layout;
+    shell_osk_xkb_compute_alpha_layout(self->xkb, &next_layout);
+    if (memcmp(&next_layout, &self->current_alpha_layout, sizeof(next_layout)) != 0) {
+        rebuild_alpha_layer(self, &next_layout);
+    }
+
+    refresh_all_key_labels(self);
+}
+
+static gboolean on_layout_update_idle(gpointer user_data) {
+    ShellOSK *self = user_data;
+    if (!self) return G_SOURCE_REMOVE;
+    self->layout_update_idle_id = 0;
+    apply_layout_update(self);
+    return G_SOURCE_REMOVE;
+}
+
+static void schedule_layout_update(ShellOSK *self) {
+    if (!self || self->layout_update_idle_id > 0) return;
+    self->layout_update_idle_id = g_idle_add(on_layout_update_idle, self);
+}
+
+static void on_compositor_keyboard_layout_changed(
+    ShellCompositor *compositor G_GNUC_UNUSED, gpointer userdata
+) {
+    ShellOSK *self = userdata;
+    if (!self) return;
+    sync_group_from_compositor(self);
+    schedule_layout_update(self);
 }
 
 static void clear_latched_modifiers(ShellOSK *self) {
@@ -170,20 +240,29 @@ static void clear_latched_modifiers(ShellOSK *self) {
     }
 }
 
-static void send_evdev_key_tap(ShellOSK *self, uint32_t evdev_code, uint32_t mods_mask, gboolean use_mods_override) {
+static void send_evdev_key_tap_in_group(
+    ShellOSK *self, uint32_t evdev_code, uint32_t mods_mask, gboolean use_mods_override, uint32_t group
+) {
     if (!self || !self->vkbd || evdev_code == 0) return;
 
     uint32_t now = get_monotonic_ms();
-    sync_vkbd_modifiers(self, mods_mask, use_mods_override);
+    sync_vkbd_modifiers_with_group(self, mods_mask, use_mods_override, group);
     zwp_virtual_keyboard_v1_key(self->vkbd, now, evdev_code, WL_KEYBOARD_KEY_STATE_PRESSED);
     zwp_virtual_keyboard_v1_key(self->vkbd, now + 1, evdev_code, WL_KEYBOARD_KEY_STATE_RELEASED);
 
-    if (use_mods_override) {
+    if (use_mods_override || group != shell_osk_xkb_get_group(self->xkb)) {
         sync_vkbd_modifiers(self, 0, FALSE);
     }
     if (self->wl_display) {
         wl_display_flush(self->wl_display);
     }
+}
+
+static void send_evdev_key_tap(ShellOSK *self, uint32_t evdev_code, uint32_t mods_mask, gboolean use_mods_override) {
+    if (!self || !self->xkb) return;
+    send_evdev_key_tap_in_group(
+        self, evdev_code, mods_mask, use_mods_override, shell_osk_xkb_get_group(self->xkb)
+    );
 }
 
 /* --- Wayland Seat & Keyboard Listeners --- */
@@ -202,15 +281,36 @@ static void on_kb_keymap(void *data, struct wl_keyboard *wl_kb G_GNUC_UNUSED,
             map = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
         }
         if (map != MAP_FAILED) {
-            shell_osk_xkb_load_from_string(self->xkb, (const char *)map);
+            if (self->has_compositor_keymap &&
+                self->vkbd_keymap_uploaded &&
+                self->last_raw_keymap &&
+                self->last_raw_keymap_len == size &&
+                memcmp(self->last_raw_keymap, map, size) == 0) {
+                munmap(map, size);
+                close(fd);
+                return;
+            }
+            char *copy = g_malloc(size + 1);
+            memcpy(copy, map, size);
+            copy[size] = '\0';
             munmap(map, size);
+
+            g_free(self->last_raw_keymap);
+            self->last_raw_keymap = copy;
+            self->last_raw_keymap_len = size;
+
+            if (shell_osk_xkb_load_from_string(self->xkb, copy)) {
+                self->has_compositor_keymap = TRUE;
+            }
         }
         if (self->vkbd) {
             lseek(fd, 0, SEEK_SET);
             zwp_virtual_keyboard_v1_keymap(self->vkbd, format, fd, size);
+            self->vkbd_keymap_uploaded = TRUE;
             if (self->wl_display) wl_display_flush(self->wl_display);
         }
-        refresh_all_key_labels(self);
+        sync_group_from_compositor(self);
+        schedule_layout_update(self);
     }
 
     if (fd >= 0) close(fd);
@@ -235,8 +335,7 @@ static void on_kb_modifiers(void *data, struct wl_keyboard *wl_kb G_GNUC_UNUSED,
     if (!self || !self->xkb) return;
     if (shell_osk_xkb_get_group(self->xkb) != group) {
         shell_osk_xkb_set_group(self->xkb, group);
-        sync_vkbd_modifiers(self, 0, FALSE);
-        refresh_all_key_labels(self);
+        schedule_layout_update(self);
     }
 }
 
@@ -326,6 +425,7 @@ static void on_im_done(void *data, struct zwp_input_method_v2 *im G_GNUC_UNUSED)
     ShellOSK *self = data;
     if (!self) return;
 
+    self->im_serial++;
     gboolean prev = self->im_active;
     self->im_active = self->pending_im_active;
 
@@ -366,7 +466,9 @@ static void try_bind_seat_protocols(ShellOSK *self) {
         self->vkbd = zwp_virtual_keyboard_manager_v1_create_virtual_keyboard(
             self->vkbd_manager, self->wl_seat
         );
-        upload_current_xkb_keymap(self);
+        if (self->has_compositor_keymap) {
+            upload_current_xkb_keymap(self);
+        }
     }
 
     if (self->im_manager && !self->im) {
@@ -462,14 +564,26 @@ static void fire_key_button(ShellOSK *self, OskKeyButton *kb) {
         }
         case OSK_BTN_SYMBOL: {
             if (!kb->symbol_utf8) break;
+            uint32_t active_group = shell_osk_xkb_get_group(self->xkb);
+            uint32_t extra_mods = compute_active_depressed_mods(self) &
+                ~(shell_osk_xkb_get_shift_mask(self->xkb) | shell_osk_xkb_get_altgr_mask(self->xkb));
             ShellOskSymbolBinding bind = shell_osk_xkb_find_symbol(self->xkb, kb->symbol_utf8);
-            if (bind.found) {
-                uint32_t extra_mods = compute_active_depressed_mods(self) &
-                    ~(shell_osk_xkb_get_shift_mask(self->xkb) | shell_osk_xkb_get_altgr_mask(self->xkb));
-                send_evdev_key_tap(self, bind.evdev_code, bind.mods_mask | extra_mods, TRUE);
+            if (bind.found && bind.group == active_group) {
+                send_evdev_key_tap_in_group(self, bind.evdev_code, bind.mods_mask | extra_mods, TRUE, active_group);
                 if (bind.is_dead_key) {
                     /* Commit dead accent as literal ASCII character by tapping Space (57) */
-                    send_evdev_key_tap(self, 57, 0, TRUE);
+                    send_evdev_key_tap_in_group(self, 57, 0, TRUE, active_group);
+                }
+            } else if (extra_mods == 0 && self->im && self->im_active) {
+                zwp_input_method_v2_commit_string(self->im, kb->symbol_utf8);
+                zwp_input_method_v2_commit(self->im, self->im_serial);
+                if (self->wl_display) {
+                    wl_display_flush(self->wl_display);
+                }
+            } else if (bind.found) {
+                send_evdev_key_tap_in_group(self, bind.evdev_code, bind.mods_mask | extra_mods, TRUE, bind.group);
+                if (bind.is_dead_key) {
+                    send_evdev_key_tap_in_group(self, 57, 0, TRUE, bind.group);
                 }
             }
             clear_latched_modifiers(self);
@@ -507,8 +621,7 @@ static void fire_key_button(ShellOSK *self, OskKeyButton *kb) {
             if (self->app && self->app->compositor) {
                 shell_compositor_switch_keyboard_layout_idx(self->app->compositor, (guint8)next_group);
             }
-            sync_vkbd_modifiers(self, 0, FALSE);
-            refresh_all_key_labels(self);
+            schedule_layout_update(self);
             break;
         }
         case OSK_BTN_HIDE:
@@ -525,11 +638,12 @@ static void on_key_gesture_pressed(GtkGestureClick *gesture G_GNUC_UNUSED,
     OskKeyButton *kb = user_data;
     if (!kb || !kb->osk) return;
     ShellOSK *self = kb->osk;
+    gboolean repeatable = kb->repeatable;
 
     stop_repeat_timers(self);
     fire_key_button(self, kb);
 
-    if (kb->repeatable) {
+    if (repeatable) {
         self->repeat_btn = kb;
         self->repeat_delay_id = g_timeout_add(400, on_repeat_delay_done, self);
     }
@@ -565,18 +679,17 @@ static void update_mod_button_classes(GtkWidget *btn, OskModState state) {
     }
 }
 
-static void refresh_all_key_labels(ShellOSK *self) {
-    if (!self || !self->key_buttons || !self->xkb) return;
-
-    gboolean shift_on = (self->mod_shift == MOD_STATE_LATCHED);
-    gboolean caps_on  = (self->mod_shift == MOD_STATE_LOCKED);
-    gboolean altgr_on = (self->mod_altgr != MOD_STATE_OFF);
-
-    char group_short[8] = "US";
-    shell_osk_xkb_get_short_group_label(self->xkb, group_short, sizeof(group_short));
-
-    for (guint i = 0; i < self->key_buttons->len; i++) {
-        OskKeyButton *kb = g_ptr_array_index(self->key_buttons, i);
+static void refresh_button_array(
+    ShellOSK   *self,
+    GPtrArray  *buttons,
+    gboolean    shift_on,
+    gboolean    caps_on,
+    gboolean    altgr_on,
+    const char *group_short
+) {
+    if (!buttons) return;
+    for (guint i = 0; i < buttons->len; i++) {
+        OskKeyButton *kb = g_ptr_array_index(buttons, i);
         if (!kb) continue;
 
         if (kb->kind == OSK_BTN_EVDEV && kb->static_label == NULL) {
@@ -616,8 +729,23 @@ static void refresh_all_key_labels(ShellOSK *self) {
     }
 }
 
+static void refresh_all_key_labels(ShellOSK *self) {
+    if (!self || !self->xkb) return;
+
+    gboolean shift_on = (self->mod_shift == MOD_STATE_LATCHED);
+    gboolean caps_on  = (self->mod_shift == MOD_STATE_LOCKED);
+    gboolean altgr_on = (self->mod_altgr != MOD_STATE_OFF);
+
+    char group_short[8] = "US";
+    shell_osk_xkb_get_short_group_label(self->xkb, group_short, sizeof(group_short));
+
+    refresh_button_array(self, self->alpha_buttons, shift_on, caps_on, altgr_on, group_short);
+    refresh_button_array(self, self->sym_buttons, shift_on, caps_on, altgr_on, group_short);
+}
+
 static GtkWidget *create_osk_key(
     ShellOSK     *self,
+    GPtrArray    *target_array,
     OskButtonKind kind,
     uint32_t      evdev_code,
     const char   *static_label,
@@ -681,8 +809,17 @@ static GtkWidget *create_osk_key(
 
     kb->button = btn;
     kb->primary_label = lbl;
-    g_ptr_array_add(self->key_buttons, kb);
+    g_ptr_array_add(target_array, kb);
     return btn;
+}
+
+static GtkWidget *create_osk_row_grid(void) {
+    GtkWidget *grid = gtk_grid_new();
+    gtk_grid_set_column_homogeneous(GTK_GRID(grid), TRUE);
+    gtk_grid_set_column_spacing(GTK_GRID(grid), 4);
+    gtk_widget_set_hexpand(grid, TRUE);
+    gtk_widget_set_vexpand(grid, TRUE);
+    return grid;
 }
 
 static GtkWidget *create_osk_grid(void) {
@@ -696,66 +833,98 @@ static GtkWidget *create_osk_grid(void) {
     return grid;
 }
 
-static GtkWidget *build_alpha_layer(ShellOSK *self) {
-    /* 28-column homogeneous grid (1 standard key = 2 columns) modeled after Windows Touch Keyboard */
-    GtkWidget *grid = create_osk_grid();
+static GtkWidget *build_alpha_layer(ShellOSK *self, const ShellOskAlphaLayout *layout) {
+    GtkWidget *vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 4);
+    gtk_box_set_homogeneous(GTK_BOX(vbox), TRUE);
+    gtk_widget_set_hexpand(vbox, TRUE);
+    gtk_widget_set_vexpand(vbox, TRUE);
+
+    /* Row 0: Esc (2) + adaptive number/top row keys (2 each) + Backspace (4) */
+    GtkWidget *row0 = create_osk_row_grid();
     int col = 0;
-
-    /* Row 0: Esc (2), 1..0 + (22), Backspace (4) = 28 cols */
-    col = 0;
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row0), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
     col += 2;
-    for (uint32_t code = 2; code <= 12; code++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 0, 2, 1);
+    for (uint32_t i = 0; i < layout->rows[0].count; i++) {
+        gtk_grid_attach(GTK_GRID(row0), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, layout->rows[0].evdev_codes[i], NULL, NULL, FALSE, FALSE, FALSE), col, 0, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE), col, 0, 4, 1);
+    gtk_grid_attach(GTK_GRID(row0), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE), col, 0, 4, 1);
+    gtk_box_append(GTK_BOX(vbox), row0);
 
-    /* Row 1: Tab (3), q w e r t y u i o p å (22), Del (3) = 28 cols */
+    /* Row 1: Tab (3) + adaptive top alpha keys (2 each) + Del (3) */
+    GtkWidget *row1 = create_osk_row_grid();
     col = 0;
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 15, "Tab", NULL, FALSE, TRUE, FALSE), col, 1, 3, 1);
+    gtk_grid_attach(GTK_GRID(row1), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, 15, "Tab", NULL, FALSE, TRUE, FALSE), col, 0, 3, 1);
     col += 3;
-    for (uint32_t code = 16; code <= 26; code++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 1, 2, 1);
+    for (uint32_t i = 0; i < layout->rows[1].count; i++) {
+        gtk_grid_attach(GTK_GRID(row1), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, layout->rows[1].evdev_codes[i], NULL, NULL, FALSE, FALSE, FALSE), col, 0, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE, TRUE, FALSE), col, 1, 3, 1);
+    gtk_grid_attach(GTK_GRID(row1), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE, TRUE, FALSE), col, 0, 3, 1);
+    gtk_box_append(GTK_BOX(vbox), row1);
 
-    /* Row 2: <> (2), a s d f g h j k l ö ä (22), Enter (4) = 28 cols */
+    /* Row 2: adaptive home keys (2 each) + Enter (4) */
+    GtkWidget *row2 = create_osk_row_grid();
     col = 0;
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 86, NULL, NULL, FALSE, FALSE, FALSE), col, 2, 2, 1);
-    col += 2;
-    for (uint32_t code = 30; code <= 40; code++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 2, 2, 1);
+    for (uint32_t i = 0; i < layout->rows[2].count; i++) {
+        gtk_grid_attach(GTK_GRID(row2), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, layout->rows[2].evdev_codes[i], NULL, NULL, FALSE, FALSE, FALSE), col, 0, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 28, "⏎", NULL, FALSE, TRUE, FALSE), col, 2, 4, 1);
+    gtk_grid_attach(GTK_GRID(row2), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, 28, "⏎", NULL, FALSE, TRUE, FALSE), col, 0, 4, 1);
+    gtk_box_append(GTK_BOX(vbox), row2);
 
-    /* Row 3: Left Shift (4), z x c v b n m , . - (20), Right Shift (4) = 28 cols */
+    /* Row 3: Left Shift (4) + adaptive bottom alpha keys (2 each) + Right Shift (4) */
+    GtkWidget *row3 = create_osk_row_grid();
     col = 0;
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SHIFT, 0, "⇧", NULL, FALSE, TRUE, FALSE), col, 3, 4, 1);
+    gtk_grid_attach(GTK_GRID(row3), create_osk_key(self, self->alpha_buttons, OSK_BTN_MOD_SHIFT, 0, "⇧", NULL, FALSE, TRUE, FALSE), col, 0, 4, 1);
     col += 4;
-    for (uint32_t code = 44; code <= 53; code++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, code, NULL, NULL, FALSE, FALSE, FALSE), col, 3, 2, 1);
+    for (uint32_t i = 0; i < layout->rows[3].count; i++) {
+        gtk_grid_attach(GTK_GRID(row3), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV, layout->rows[3].evdev_codes[i], NULL, NULL, FALSE, FALSE, FALSE), col, 0, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SHIFT, 0, "⇧", NULL, FALSE, TRUE, FALSE), col, 3, 4, 1);
+    gtk_grid_attach(GTK_GRID(row3), create_osk_key(self, self->alpha_buttons, OSK_BTN_MOD_SHIFT, 0, "⇧", NULL, FALSE, TRUE, FALSE), col, 0, 4, 1);
+    gtk_box_append(GTK_BOX(vbox), row3);
 
     /* Row 4: &123 (2), Ctrl (2), Super (2), Alt (2), Globe (2), Space (6), AltGr (2), Arrows (8), Hide (2) = 28 cols */
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_LAYER_SYM, 0, "&123",  NULL, FALSE, TRUE,  FALSE),  0, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_CTRL,  0, "Ctrl",  NULL, FALSE, TRUE,  FALSE),  2, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SUPER, 0, "Super", NULL, FALSE, TRUE,  FALSE),  4, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALT,   0, "Alt",   NULL, FALSE, TRUE,  FALSE),  6, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_GLOBE,     0, "FI",    NULL, FALSE, TRUE,  FALSE),  8, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,    57, "",      NULL, TRUE,  FALSE, TRUE),  10, 4, 6, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALTGR, 0, "AltGr", NULL, FALSE, TRUE,  FALSE), 16, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   105, "←",     NULL, TRUE,  TRUE,  FALSE), 18, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   103, "↑",     NULL, TRUE,  TRUE,  FALSE), 20, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   108, "↓",     NULL, TRUE,  TRUE,  FALSE), 22, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,   106, "→",     NULL, TRUE,  TRUE,  FALSE), 24, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_HIDE,      0, "⌨↓",    NULL, FALSE, TRUE,  FALSE), 26, 4, 2, 1);
+    GtkWidget *row4 = create_osk_row_grid();
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_LAYER_SYM, 0, "&123",  NULL, FALSE, TRUE,  FALSE),  0, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_MOD_CTRL,  0, "Ctrl",  NULL, FALSE, TRUE,  FALSE),  2, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_MOD_SUPER, 0, "Super", NULL, FALSE, TRUE,  FALSE),  4, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_MOD_ALT,   0, "Alt",   NULL, FALSE, TRUE,  FALSE),  6, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_GLOBE,     0, "",      NULL, FALSE, TRUE,  FALSE),  8, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV,    57, "",      NULL, TRUE,  FALSE, TRUE),  10, 0, 6, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_MOD_ALTGR, 0, "AltGr", NULL, FALSE, TRUE,  FALSE), 16, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV,   105, "←",     NULL, TRUE,  TRUE,  FALSE), 18, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV,   103, "↑",     NULL, TRUE,  TRUE,  FALSE), 20, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV,   108, "↓",     NULL, TRUE,  TRUE,  FALSE), 22, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_EVDEV,   106, "→",     NULL, TRUE,  TRUE,  FALSE), 24, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(row4), create_osk_key(self, self->alpha_buttons, OSK_BTN_HIDE,      0, "⌨↓",    NULL, FALSE, TRUE,  FALSE), 26, 0, 2, 1);
+    gtk_box_append(GTK_BOX(vbox), row4);
 
-    return grid;
+    return vbox;
+}
+
+static void rebuild_alpha_layer(ShellOSK *self, const ShellOskAlphaLayout *layout) {
+    if (!self || !self->layer_stack || !layout) return;
+    stop_repeat_timers(self);
+
+    const char *vis_name = gtk_stack_get_visible_child_name(self->layer_stack);
+    gboolean was_symbols = (g_strcmp0(vis_name, "symbols") == 0);
+
+    guint old_duration = gtk_stack_get_transition_duration(self->layer_stack);
+    gtk_stack_set_transition_duration(self->layer_stack, 0);
+
+    GtkWidget *old_alpha = gtk_stack_get_child_by_name(self->layer_stack, "alpha");
+    if (old_alpha) {
+        gtk_stack_remove(self->layer_stack, old_alpha);
+    }
+    g_ptr_array_set_size(self->alpha_buttons, 0);
+
+    self->current_alpha_layout = *layout;
+    GtkWidget *new_alpha = build_alpha_layer(self, layout);
+    gtk_stack_add_named(self->layer_stack, new_alpha, "alpha");
+    gtk_stack_set_visible_child_name(self->layer_stack, was_symbols ? "symbols" : "alpha");
+    gtk_stack_set_transition_duration(self->layer_stack, old_duration);
 }
 
 static GtkWidget *build_symbols_layer(ShellOSK *self) {
@@ -764,63 +933,63 @@ static GtkWidget *build_symbols_layer(ShellOSK *self) {
 
     /* Row 0: Esc (2), F1..F12 (24), Backspace (2) = 28 cols */
     col = 0;
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 1, "Esc", NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
     col += 2;
     static const struct { uint32_t code; const char *lbl; } fkeys[] = {
         {59, "F1"}, {60, "F2"}, {61, "F3"}, {62, "F4"}, {63, "F5"}, {64, "F6"},
         {65, "F7"}, {66, "F8"}, {67, "F9"}, {68, "F10"}, {87, "F11"}, {88, "F12"}
     };
     for (size_t i = 0; i < G_N_ELEMENTS(fkeys); i++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, fkeys[i].code, fkeys[i].lbl, NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, fkeys[i].code, fkeys[i].lbl, NULL, FALSE, TRUE, FALSE), col, 0, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE), col, 0, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 14, "⌫", NULL, TRUE, TRUE, FALSE), col, 0, 2, 1);
 
     /* Row 1: Direct one-tap symbols (@ # € $ % & { [ ] } \ |) (24) + Home (2) + End (2) = 28 cols */
     col = 0;
     static const char *sym_row1[] = { "@", "#", "€", "$", "%", "&", "{", "[", "]", "}", "\\", "|" };
     for (size_t i = 0; i < G_N_ELEMENTS(sym_row1); i++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row1[i], FALSE, FALSE, FALSE), col, 1, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_SYMBOL, 0, NULL, sym_row1[i], FALSE, FALSE, FALSE), col, 1, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 102, "Home", NULL, FALSE, TRUE, FALSE), 24, 1, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 107, "End",  NULL, FALSE, TRUE, FALSE), 26, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 102, "Home", NULL, FALSE, TRUE, FALSE), 24, 1, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 107, "End",  NULL, FALSE, TRUE, FALSE), 26, 1, 2, 1);
 
     /* Row 2: Direct one-tap symbols (~ ^ < > ( ) - _ = + * /) (24) + PgUp (2) + PgDn (2) = 28 cols */
     col = 0;
     static const char *sym_row2[] = { "~", "^", "<", ">", "(", ")", "-", "_", "=", "+", "*", "/" };
     for (size_t i = 0; i < G_N_ELEMENTS(sym_row2); i++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row2[i], FALSE, FALSE, FALSE), col, 2, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_SYMBOL, 0, NULL, sym_row2[i], FALSE, FALSE, FALSE), col, 2, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 104, "PgUp", NULL, FALSE, TRUE, FALSE), 24, 2, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 109, "PgDn", NULL, FALSE, TRUE, FALSE), 26, 2, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 104, "PgUp", NULL, FALSE, TRUE, FALSE), 24, 2, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 109, "PgDn", NULL, FALSE, TRUE, FALSE), 26, 2, 2, 1);
 
     /* Row 3: Direct one-tap punctuation (! ? " ' ` : ; , .) + ´ + Ins + Del + Enter (4) = 28 cols */
     col = 0;
     static const char *sym_row3[] = { "!", "?", "\"", "'", "`", ":", ";", ",", "." };
     for (size_t i = 0; i < G_N_ELEMENTS(sym_row3); i++) {
-        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_SYMBOL, 0, NULL, sym_row3[i], FALSE, FALSE, FALSE), col, 3, 2, 1);
+        gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_SYMBOL, 0, NULL, sym_row3[i], FALSE, FALSE, FALSE), col, 3, 2, 1);
         col += 2;
     }
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 13,  NULL,  NULL, FALSE, FALSE, FALSE), 18, 3, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 110, "Ins", NULL, FALSE, TRUE,  FALSE), 20, 3, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE,  TRUE,  FALSE), 22, 3, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV, 28,  "⏎",   NULL, FALSE, TRUE,  FALSE), 24, 3, 4, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 13,  NULL,  NULL, FALSE, FALSE, FALSE), 18, 3, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 110, "Ins", NULL, FALSE, TRUE,  FALSE), 20, 3, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 111, "Del", NULL, TRUE,  TRUE,  FALSE), 22, 3, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV, 28,  "⏎",   NULL, FALSE, TRUE,  FALSE), 24, 3, 4, 1);
 
     /* Row 4: ABC (2), Ctrl (2), Super (2), Alt (2), Globe (2), Space (6), AltGr (2), Arrows (8), Hide (2) = 28 cols */
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_LAYER_ALPHA, 0, "ABC",   NULL, FALSE, TRUE,  FALSE),  0, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_CTRL,    0, "Ctrl",  NULL, FALSE, TRUE,  FALSE),  2, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_SUPER,   0, "Super", NULL, FALSE, TRUE,  FALSE),  4, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALT,     0, "Alt",   NULL, FALSE, TRUE,  FALSE),  6, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_GLOBE,       0, "FI",    NULL, FALSE, TRUE,  FALSE),  8, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,      57, "",      NULL, TRUE,  FALSE, TRUE),  10, 4, 6, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_MOD_ALTGR,   0, "AltGr", NULL, FALSE, TRUE,  FALSE), 16, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     105, "←",     NULL, TRUE,  TRUE,  FALSE), 18, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     103, "↑",     NULL, TRUE,  TRUE,  FALSE), 20, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     108, "↓",     NULL, TRUE,  TRUE,  FALSE), 22, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_EVDEV,     106, "→",     NULL, TRUE,  TRUE,  FALSE), 24, 4, 2, 1);
-    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, OSK_BTN_HIDE,        0, "⌨↓",    NULL, FALSE, TRUE,  FALSE), 26, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_LAYER_ALPHA, 0, "ABC",   NULL, FALSE, TRUE,  FALSE),  0, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_MOD_CTRL,    0, "Ctrl",  NULL, FALSE, TRUE,  FALSE),  2, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_MOD_SUPER,   0, "Super", NULL, FALSE, TRUE,  FALSE),  4, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_MOD_ALT,     0, "Alt",   NULL, FALSE, TRUE,  FALSE),  6, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_GLOBE,       0, "",      NULL, FALSE, TRUE,  FALSE),  8, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV,      57, "",      NULL, TRUE,  FALSE, TRUE),  10, 4, 6, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_MOD_ALTGR,   0, "AltGr", NULL, FALSE, TRUE,  FALSE), 16, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV,     105, "←",     NULL, TRUE,  TRUE,  FALSE), 18, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV,     103, "↑",     NULL, TRUE,  TRUE,  FALSE), 20, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV,     108, "↓",     NULL, TRUE,  TRUE,  FALSE), 22, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_EVDEV,     106, "→",     NULL, TRUE,  TRUE,  FALSE), 24, 4, 2, 1);
+    gtk_grid_attach(GTK_GRID(grid), create_osk_key(self, self->sym_buttons, OSK_BTN_HIDE,        0, "⌨↓",    NULL, FALSE, TRUE,  FALSE), 26, 4, 2, 1);
 
     return grid;
 }
@@ -859,7 +1028,8 @@ static void build_osk_window(ShellOSK *self) {
     gtk_stack_set_transition_type(self->layer_stack, GTK_STACK_TRANSITION_TYPE_CROSSFADE);
     gtk_stack_set_transition_duration(self->layer_stack, 120);
 
-    gtk_stack_add_named(self->layer_stack, build_alpha_layer(self), "alpha");
+    shell_osk_xkb_compute_alpha_layout(self->xkb, &self->current_alpha_layout);
+    gtk_stack_add_named(self->layer_stack, build_alpha_layer(self, &self->current_alpha_layout), "alpha");
     gtk_stack_add_named(self->layer_stack, build_symbols_layer(self), "symbols");
 
     gtk_box_append(GTK_BOX(outer), stack);
@@ -875,9 +1045,20 @@ ShellOSK *shell_osk_new(ShellApp *app) {
     ShellOSK *self = g_new0(ShellOSK, 1);
     self->app = app;
     self->xkb = shell_osk_xkb_new();
-    self->key_buttons = g_ptr_array_new_with_free_func(g_free);
+    self->alpha_buttons = g_ptr_array_new_with_free_func(g_free);
+    self->sym_buttons = g_ptr_array_new_with_free_func(g_free);
+
+    if (self->app && self->app->compositor) {
+        sync_group_from_compositor(self);
+    }
 
     build_osk_window(self);
+
+    if (self->app && self->app->compositor) {
+        shell_compositor_on_keyboard_layout_changed(
+            self->app->compositor, on_compositor_keyboard_layout_changed, self
+        );
+    }
 
     GdkDisplay *display = gdk_display_get_default();
     if (display && GDK_IS_WAYLAND_DISPLAY(display)) {
@@ -924,7 +1105,12 @@ void shell_osk_show(ShellOSK *self, gboolean manual_pin) {
     }
     self->visible = TRUE;
     shell_osk_apply_config(self);
-    refresh_all_key_labels(self);
+    if (self->layout_update_idle_id > 0) {
+        g_source_remove(self->layout_update_idle_id);
+        self->layout_update_idle_id = 0;
+    }
+    sync_group_from_compositor(self);
+    apply_layout_update(self);
     gtk_widget_set_visible(GTK_WIDGET(self->window), TRUE);
 }
 
@@ -954,7 +1140,17 @@ gboolean shell_osk_is_visible(ShellOSK *self) {
 void shell_osk_destroy(ShellOSK *self) {
     if (!self) return;
 
+    if (self->app && self->app->compositor) {
+        shell_compositor_remove_callbacks(self->app->compositor, self);
+    }
+
+    if (self->layout_update_idle_id > 0) {
+        g_source_remove(self->layout_update_idle_id);
+        self->layout_update_idle_id = 0;
+    }
     stop_repeat_timers(self);
+    g_clear_pointer(&self->last_raw_keymap, g_free);
+    self->last_raw_keymap_len = 0;
 
     if (self->window) {
         gtk_window_destroy(self->window);
@@ -990,9 +1186,13 @@ void shell_osk_destroy(ShellOSK *self) {
         self->wl_registry = NULL;
     }
 
-    if (self->key_buttons) {
-        g_ptr_array_free(self->key_buttons, TRUE);
-        self->key_buttons = NULL;
+    if (self->alpha_buttons) {
+        g_ptr_array_free(self->alpha_buttons, TRUE);
+        self->alpha_buttons = NULL;
+    }
+    if (self->sym_buttons) {
+        g_ptr_array_free(self->sym_buttons, TRUE);
+        self->sym_buttons = NULL;
     }
     if (self->xkb) {
         shell_osk_xkb_free(self->xkb);

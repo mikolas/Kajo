@@ -9,9 +9,21 @@ typedef struct _ShellOskXkb ShellOskXkb;
 typedef struct {
     uint32_t evdev_code;
     uint32_t mods_mask;
+    uint32_t group;
     gboolean is_dead_key;
     gboolean found;
 } ShellOskSymbolBinding;
+
+#define SHELL_OSK_MAX_ROW_KEYS 16
+
+typedef struct {
+    uint32_t evdev_codes[SHELL_OSK_MAX_ROW_KEYS];
+    uint32_t count;
+} ShellOskRowSpec;
+
+typedef struct {
+    ShellOskRowSpec rows[4]; /* 0: numbers, 1: top alpha, 2: home alpha, 3: bottom alpha */
+} ShellOskAlphaLayout;
 
 ShellOskXkb *shell_osk_xkb_new(void);
 void shell_osk_xkb_free(ShellOskXkb *self);
@@ -59,5 +71,9 @@ gboolean shell_osk_xkb_get_key_hint(
 );
 
 /* Reverse-resolve a desired UTF-8 symbol (e.g. "@", "€", "{", "[", "]", "}", "~")
- * to its (evdev_code, mods_mask) in the currently active layout group. */
+ * to its (evdev_code, mods_mask, group), preferring the currently active layout group
+ * and falling back across the remaining loaded layout groups. */
 ShellOskSymbolBinding shell_osk_xkb_find_symbol(ShellOskXkb *self, const char *utf8_symbol);
+
+/* Compute the adaptive 4-row alphanumeric evdev keycode layout for the active group */
+void shell_osk_xkb_compute_alpha_layout(ShellOskXkb *self, ShellOskAlphaLayout *out_layout);
