@@ -1,0 +1,2059 @@
+#include "web_cef/cef_window.h"
+
+#include <gio/gio.h>
+#include <glib.h>
+#include <json-glib/json-glib.h>
+
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <cstring>
+
+#include "common/spawn_detached.h"
+#include "compositor/compositor.h"
+#include "config/kajo_config_store.h"
+#include "include/cef_app.h"
+#include "include/cef_request.h"
+#include "include/cef_task.h"
+#include "include/cef_urlrequest.h"
+#include "include/wrapper/cef_helpers.h"
+#include "web/web_sync_merge.h"
+
+namespace kajo_web {
+
+namespace {
+
+enum ChromeRole {
+  ROLE_TOPBAR = 1,
+  ROLE_RAIL = 2,
+  ROLE_OVERLAY = 3,
+  ROLE_AC = 4,
+};
+
+enum WindowAccelId {
+  ACCEL_NEW_TAB = 1001,
+  ACCEL_CLOSE_TAB,
+  ACCEL_REOPEN_TAB,
+  ACCEL_FOCUS_OMNIBAR,
+  ACCEL_PALETTE,
+  ACCEL_FIND,
+  ACCEL_RELOAD,
+  ACCEL_TOGGLE_RAIL,
+  ACCEL_BOOKMARK,
+  ACCEL_ZOOM_IN,
+  ACCEL_ZOOM_OUT,
+  ACCEL_ZOOM_RESET,
+  ACCEL_NEXT_TAB,
+  ACCEL_PREV_TAB,
+  ACCEL_FULLSCREEN,
+  ACCEL_DEVTOOLS,
+  ACCEL_ESC,
+};
+
+std::string ToLowerCopy(const std::string& s) {
+  std::string out = s;
+  for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return out;
+}
+
+bool ContainsInsensitive(const std::string& hay, const std::string& needle) {
+  if (needle.empty()) return true;
+  return ToLowerCopy(hay).find(ToLowerCopy(needle)) != std::string::npos;
+}
+
+std::string GetQueryParam(const std::string& query, const std::string& key) {
+  if (query.empty()) return "";
+  std::string k = key + "=";
+  size_t pos = 0;
+  while (pos < query.size()) {
+    size_t amp = query.find('&', pos);
+    std::string pair = (amp == std::string::npos) ? query.substr(pos) : query.substr(pos, amp - pos);
+    if (pair.rfind(k, 0) == 0) {
+      std::string val = pair.substr(k.size());
+      for (char& c : val) {
+        if (c == '+') c = ' ';
+      }
+      g_autofree gchar* unescaped = g_uri_unescape_string(val.c_str(), nullptr);
+      return unescaped ? std::string(unescaped) : val;
+    }
+    if (amp == std::string::npos) break;
+    pos = amp + 1;
+  }
+  return "";
+}
+
+class UiTask : public CefTask {
+public:
+  explicit UiTask(std::function<void()> fn) : fn_(std::move(fn)) {}
+  void Execute() override {
+    if (fn_) fn_();
+  }
+
+private:
+  std::function<void()> fn_;
+  IMPLEMENT_REFCOUNTING(UiTask);
+};
+
+class ChromeViewClient : public CefClient,
+                         public CefLifeSpanHandler,
+                         public CefDragHandler,
+                         public CefKeyboardHandler,
+                         public CefRequestHandler {
+public:
+  ChromeViewClient(KajoBrowserWindow* owner, ChromeRole role)
+      : owner_(owner), role_(role) {}
+
+  void Detach() { owner_ = nullptr; }
+
+  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+  CefRefPtr<CefDragHandler> GetDragHandler() override { return this; }
+  CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+  void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
+    if (owner_) owner_->OnChromeBrowserCreated(role_, browser);
+  }
+
+  void OnBeforeClose(CefRefPtr<CefBrowser> browser) override {
+    if (owner_ && owner_->router()) owner_->router()->OnBeforeClose(browser);
+  }
+
+  void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                 TerminationStatus status,
+                                 int error_code,
+                                 const CefString& error_string) override {
+    if (owner_ && owner_->router()) owner_->router()->OnRenderProcessTerminated(browser);
+  }
+
+  bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefFrame> frame,
+                      CefRefPtr<CefRequest> request,
+                      bool user_gesture,
+                      bool is_redirect) override {
+    if (owner_ && owner_->router()) owner_->router()->OnBeforeBrowse(browser, frame);
+    return false;
+  }
+
+  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                CefProcessId source_process,
+                                CefRefPtr<CefProcessMessage> message) override {
+    if (owner_ && owner_->router()) {
+      return owner_->router()->OnProcessMessageReceived(browser, frame, source_process, message);
+    }
+    return false;
+  }
+
+  void OnDraggableRegionsChanged(CefRefPtr<CefBrowser> browser,
+                                 CefRefPtr<CefFrame> frame,
+                                 const std::vector<CefDraggableRegion>& regions) override {
+    if (owner_ && role_ == ROLE_TOPBAR) {
+      owner_->OnChromeDraggableRegions(regions);
+    }
+  }
+
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                     const CefKeyEvent& event,
+                     CefEventHandle os_event,
+                     bool* is_keyboard_shortcut) override {
+    if (owner_ && owner_->OnChromeShortcut(event)) {
+      return true;
+    }
+    return false;
+  }
+
+private:
+  KajoBrowserWindow* owner_;
+  ChromeRole role_;
+  IMPLEMENT_REFCOUNTING(ChromeViewClient);
+};
+
+class KajoBrowserViewDelegate : public CefBrowserViewDelegate {
+public:
+  explicit KajoBrowserViewDelegate(KajoBrowserWindow* owner) : owner_(owner) {}
+
+  void Detach() { owner_ = nullptr; }
+
+  cef_runtime_style_t GetBrowserRuntimeStyle() override {
+    return CEF_RUNTIME_STYLE_ALLOY;
+  }
+
+  CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
+    if (owner_) return owner_->GetPreferredChromeViewSize(view);
+    return CefSize();
+  }
+
+  bool OnPopupBrowserViewCreated(CefRefPtr<CefBrowserView> browser_view,
+                                 CefRefPtr<CefBrowserView> popup_browser_view,
+                                 bool is_devtools) override {
+    /* Let DevTools or explicit opener popups open in their own window */
+    return false;
+  }
+
+private:
+  KajoBrowserWindow* owner_;
+  IMPLEMENT_REFCOUNTING(KajoBrowserViewDelegate);
+};
+
+class KajoPanelDelegate : public CefPanelDelegate {
+public:
+  explicit KajoPanelDelegate(KajoBrowserWindow* owner) : owner_(owner) {}
+
+  void Detach() { owner_ = nullptr; }
+
+  CefSize GetPreferredSize(CefRefPtr<CefView> view) override {
+    if (owner_) return owner_->GetPreferredChromeViewSize(view);
+    return CefSize();
+  }
+
+private:
+  KajoBrowserWindow* owner_;
+  IMPLEMENT_REFCOUNTING(KajoPanelDelegate);
+};
+
+class FilterDownloadClient : public CefURLRequestClient {
+public:
+  FilterDownloadClient(CefRefPtr<KajoBrowserWindow> win, std::string id)
+      : win_(std::move(win)), id_(std::move(id)) {}
+
+  void OnRequestComplete(CefRefPtr<CefURLRequest> request) override {
+    const int status = (request && request->GetResponse())
+                           ? request->GetResponse()->GetStatus()
+                           : 0;
+    const bool ok = request && request->GetRequestStatus() == UR_SUCCESS && status == 200;
+    win_->HandleFilterListDownloadComplete(id_, ok, status, body_);
+  }
+
+  void OnUploadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadProgress(CefRefPtr<CefURLRequest>, int64_t, int64_t) override {}
+  void OnDownloadData(CefRefPtr<CefURLRequest>, const void* data, size_t len) override {
+    if (data && len > 0 && body_.size() < 32U * 1024U * 1024U) {
+      body_.append(static_cast<const char*>(data), len);
+    }
+  }
+  bool GetAuthCredentials(bool, const CefString&, int, const CefString&,
+                          const CefString&, CefRefPtr<CefAuthCallback>) override {
+    return false;
+  }
+
+private:
+  CefRefPtr<KajoBrowserWindow> win_;
+  std::string id_;
+  std::string body_;
+  IMPLEMENT_REFCOUNTING(FilterDownloadClient);
+};
+
+}  // namespace
+
+KajoBrowserWindow::KajoBrowserWindow(const LaunchConfig& cfg,
+                                     CefAdblockEngine* adblock,
+                                     ChromeStateStore* store,
+                                     CefRefPtr<CefRequestContext> request_context)
+    : cfg_(cfg),
+      adblock_(adblock),
+      store_(store),
+      request_context_(std::move(request_context)) {
+  CefMessageRouterConfig rc;
+  router_ = CefMessageRouterBrowserSide::Create(rc);
+  router_->AddHandler(this, true);
+  InitBackend();
+}
+
+KajoBrowserWindow::~KajoBrowserWindow() {
+  ++push_gen_;
+  ++rail_hover_gen_;
+  if (model_) web_model_free(model_);
+  if (storage_) web_storage_free(storage_);
+  if (profiles_) web_profile_registry_free(profiles_);
+}
+
+void KajoBrowserWindow::InitBackend() {
+  model_ = web_model_new();
+  storage_ = web_storage_new(cfg_.data_dir.c_str());
+
+  profiles_ = web_profile_registry_new();
+  g_autofree gchar* reg_path = g_build_filename(
+      g_get_user_data_dir(), "kajo", "web", "profiles.toml", nullptr);
+  web_profile_registry_load(profiles_, reg_path);
+
+  if (KajoWebProfileInfo* p = web_profile_registry_find(profiles_, cfg_.profile_id.c_str())) {
+    profile_name_ = p->name ? p->name : "DEFAULT";
+    profile_icon_ = p->icon ? p->icon : "🌐";
+    profile_accent_ = p->accent_color ? p->accent_color : "#0078d4";
+  }
+
+  ReloadThemeAndConfig();
+  if (adblock_ && !adblock_custom_rules_path_.empty()) {
+    adblock_->ReloadFromDisk(adblock_custom_rules_path_);
+  }
+  RefreshStorageCache();
+
+  if (KajoConfigStore* cs = kajo_config_store_get_default()) {
+    CefRefPtr<KajoBrowserWindow> self(this);
+    auto* weak_holder = new CefRefPtr<KajoBrowserWindow>(self);
+    config_sub_id_ = kajo_config_store_subscribe(
+        cs,
+        static_cast<KajoConfigDomain>(KAJO_CONFIG_DOMAIN_WEB | KAJO_CONFIG_DOMAIN_THEME),
+        [](KajoConfigStore*, KajoConfigDomain, gpointer ud) {
+          auto* ref = static_cast<CefRefPtr<KajoBrowserWindow>*>(ud);
+          if (!ref || !(*ref)) return;
+          CefRefPtr<KajoBrowserWindow> w = *ref;
+          CefPostTask(TID_UI, new UiTask([w]() { w->OnConfigStoreChanged(); }));
+        },
+        weak_holder,
+        [](gpointer ud) {
+          delete static_cast<CefRefPtr<KajoBrowserWindow>*>(ud);
+        });
+  }
+}
+
+void KajoBrowserWindow::OnConfigStoreChanged() {
+  if (closing_) return;
+  const std::string prev_custom_rules = adblock_custom_rules_path_;
+  ReloadThemeAndConfig();
+  if (adblock_ && adblock_custom_rules_path_ != prev_custom_rules) {
+    CefRefPtr<KajoBrowserWindow> self(this);
+    CefAdblockEngine* eng = adblock_;
+    std::string custom_path = adblock_custom_rules_path_;
+    CefPostTask(TID_FILE_USER_VISIBLE, new UiTask([self, eng, custom_path]() {
+      eng->ReloadFromDisk(custom_path);
+      CefPostTask(TID_UI, new UiTask([self]() {
+        if (!self->closing_) self->PushStateImmediate();
+      }));
+    }));
+  }
+  for (auto& kv : tabs_) {
+    if (kv.second.client) kv.second.client->SetHttpsOnly(https_only_);
+  }
+  RebuildLayout();
+  PushStateImmediate();
+}
+
+void KajoBrowserWindow::RefreshStorageCache() {
+  cached_bookmarks_.clear();
+  cached_recent_history_.clear();
+  if (!storage_) return;
+  if (GPtrArray* bms = web_storage_list_bookmarks(storage_, FALSE)) {
+    for (guint i = 0; i < bms->len; ++i) {
+      const auto* b = static_cast<const KajoWebBookmark*>(g_ptr_array_index(bms, i));
+      cached_bookmarks_.push_back({b->uuid ? b->uuid : "", b->title ? b->title : "",
+                                   b->uri ? b->uri : "", b->folder ? b->folder : ""});
+    }
+    g_ptr_array_unref(bms);
+  }
+  if (GPtrArray* hist = web_storage_search_history(storage_, "", 25)) {
+    for (guint i = 0; i < hist->len; ++i) {
+      const auto* h = static_cast<const KajoWebHistoryEntry*>(g_ptr_array_index(hist, i));
+      cached_recent_history_.push_back({h->title ? h->title : "", h->uri ? h->uri : "",
+                                        h->visit_count, h->last_visit_ms});
+    }
+    g_ptr_array_unref(hist);
+  }
+}
+
+CefBrowserSettings KajoBrowserWindow::MakeContentBrowserSettings() const {
+  CefBrowserSettings bs;
+  bs.background_color = CefColorSetARGB(255, 0x14, 0x14, 0x14);
+  bs.default_font_size = default_font_size_px_;
+  bs.default_fixed_font_size = mono_font_size_px_;
+  bs.minimum_font_size = min_font_size_px_;
+  bs.webgl = enable_webgl_ ? STATE_ENABLED : STATE_DISABLED;
+  return bs;
+}
+
+void KajoBrowserWindow::ReloadThemeAndConfig() {
+  KajoConfigStore* cs = kajo_config_store_get_default();
+  if (!cs) return;
+
+  if (const KajoThemeCfg* t = kajo_config_store_acquire_theme(cs)) {
+    accent_color_ = t->accent_color ? t->accent_color : "#0078d4";
+    ui_font_family_ = t->ui_font_family ? t->ui_font_family : "Fira Code";
+    ui_font_size_px_ = CLAMP(t->ui_font_size_px, 11, 18);
+    badge_size_px_ = CLAMP(t->font_badge_size_px, 9, 15);
+    kajo_theme_cfg_unref(t);
+  }
+
+  if (const KajoWebCfg* w = kajo_config_store_acquire_web(cs)) {
+    rail_mode_ = w->rail_mode;
+    rail_side_ = w->rail_side;
+    rail_width_px_ = CLAMP(w->rail_width_px, 180, 360);
+    topbar_mode_ = w->top_bar_mode;
+    show_tab_domains_ = w->show_tab_domains;
+    newtab_mode_ = w->new_tab_page;
+    newtab_custom_url_ = w->new_tab_custom_url ? w->new_tab_custom_url : "";
+    restore_session_ = w->restore_session;
+    search_engine_ = w->search_engine;
+    search_custom_url_ = w->search_custom_url ? w->search_custom_url : "";
+    default_zoom_pct_ = CLAMP(w->default_zoom_pct, 50, 200);
+    default_font_size_px_ = CLAMP(w->default_font_size_px, 10, 32);
+    mono_font_size_px_ = CLAMP(w->mono_font_size_px, 10, 28);
+    min_font_size_px_ = CLAMP(w->min_font_size_px, 0, 24);
+    enable_webgl_ = w->enable_webgl;
+    https_only_ = w->https_only;
+    ask_download_location_ = w->ask_download_location;
+    if (w->download_dir && w->download_dir[0] != '\0') {
+      download_dir_ = w->download_dir;
+    } else if (const gchar* dl = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD)) {
+      download_dir_ = dl;
+    } else {
+      download_dir_ = g_get_home_dir();
+    }
+    if (adblock_) {
+      adblock_->SetEnabled(w->adblock_enabled);
+      adblock_custom_rules_path_ =
+          w->adblock_custom_rules_path ? w->adblock_custom_rules_path : "";
+    }
+    kajo_web_cfg_unref(w);
+  }
+}
+
+void KajoBrowserWindow::PersistRailMode(int mode) {
+  if (auto* cs = kajo_config_store_get_default()) {
+    kajo_config_store_update_web(
+        cs,
+        [](KajoWebCfg* draft, gpointer ud) {
+          draft->rail_mode = static_cast<KajoWebRailMode>(GPOINTER_TO_INT(ud));
+        },
+        GINT_TO_POINTER(mode),
+        nullptr);
+  }
+}
+
+std::string KajoBrowserWindow::DefaultNewTabUrl() const {
+  if (newtab_mode_ == KAJO_WEB_NEWTAB_BLANK) return "about:blank";
+  if (newtab_mode_ == KAJO_WEB_NEWTAB_CUSTOM && !newtab_custom_url_.empty()) {
+    return newtab_custom_url_;
+  }
+  return "kajo://newtab";
+}
+
+void KajoBrowserWindow::ShowWindow() {
+  CEF_REQUIRE_UI_THREAD();
+  PushStateImmediate();
+  window_ = CefWindow::CreateTopLevelWindow(this);
+}
+
+void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
+  window_ = window;
+  window_->SetTitle(cfg_.private_mode ? "Kajo Web (Private)" : "Kajo Web");
+  window_->SetBackgroundColor(CefColorSetARGB(255, 0x14, 0x14, 0x14));
+
+  bv_delegate_ = new KajoBrowserViewDelegate(this);
+  panel_delegate_ = new KajoPanelDelegate(this);
+  CefBrowserSettings bs;
+  bs.background_color = CefColorSetARGB(255, 0x14, 0x14, 0x14);
+  CefBrowserSettings rail_bs;
+  rail_bs.background_color = CefColorSetARGB(0, 0, 0, 0);
+
+  CefRefPtr<CefClient> top_c(new ChromeViewClient(this, ROLE_TOPBAR));
+  CefRefPtr<CefClient> rail_c(new ChromeViewClient(this, ROLE_RAIL));
+  CefRefPtr<CefClient> ov_c(new ChromeViewClient(this, ROLE_OVERLAY));
+  CefRefPtr<CefClient> ac_c(new ChromeViewClient(this, ROLE_AC));
+  chrome_clients_ = {top_c, rail_c, ov_c, ac_c};
+
+  topbar_view_ = CefBrowserView::CreateBrowserView(
+      top_c, "kajo-chrome://ui/topbar.html", bs, nullptr, request_context_, bv_delegate_);
+  rail_view_ = CefBrowserView::CreateBrowserView(
+      rail_c, "kajo-chrome://ui/rail.html", rail_bs, nullptr, request_context_, bv_delegate_);
+  overlay_view_ = CefBrowserView::CreateBrowserView(
+      ov_c, "kajo-chrome://ui/overlay.html", bs, nullptr, request_context_, bv_delegate_);
+  ac_view_ = CefBrowserView::CreateBrowserView(
+      ac_c, "kajo-chrome://ui/overlay.html?role=ac", bs, nullptr, request_context_, bv_delegate_);
+
+  body_panel_ = CefPanel::CreatePanel(nullptr);
+  rail_spacer_ = CefPanel::CreatePanel(panel_delegate_);
+  rail_spacer_->SetBackgroundColor(CefColorSetARGB(255, 0x11, 0x11, 0x11));
+  content_panel_ = CefPanel::CreatePanel(nullptr);
+  content_panel_->SetToFillLayout();
+  content_panel_->SetBackgroundColor(CefColorSetARGB(255, 0x14, 0x14, 0x14));
+
+  RebuildLayout();
+  rail_ctrl_ = window_->AddOverlayView(rail_view_, CEF_DOCKING_MODE_CUSTOM, false);
+  overlay_ctrl_ = window_->AddOverlayView(overlay_view_, CEF_DOCKING_MODE_CUSTOM, true);
+  if (overlay_ctrl_) overlay_ctrl_->SetVisible(false);
+  ac_ctrl_ = window_->AddOverlayView(ac_view_, CEF_DOCKING_MODE_CUSTOM, false);
+  if (ac_ctrl_) ac_ctrl_->SetVisible(false);
+
+  window_->Show();
+  UpdateOverlayBounds();
+
+  /* Open CLI URLs, saved session, or default New Tab */
+  if (!cfg_.initial_urls.empty()) {
+    for (size_t i = 0; i < cfg_.initial_urls.size(); ++i) {
+      const std::string& raw = cfg_.initial_urls[i];
+      std::string target;
+      if (raw.rfind("chrome://", 0) == 0 || raw.rfind("devtools://", 0) == 0) {
+        target = raw;
+      } else {
+        g_autofree gchar* resolved = web_model_resolve_input(
+            raw.c_str(),
+            static_cast<KajoWebSearchEngine>(search_engine_),
+            search_custom_url_.empty() ? nullptr : search_custom_url_.c_str());
+        target = resolved ? resolved : raw;
+      }
+      OpenNewTab(target, i == cfg_.initial_urls.size() - 1);
+    }
+  } else if (!cfg_.private_mode && restore_session_ && storage_) {
+    KajoWebModel* saved = web_model_new();
+    if (web_storage_load_session(storage_, saved) && saved->tabs->len > 0) {
+      guint64 target_active = 0;
+      for (guint i = 0; i < saved->tabs->len; ++i) {
+        const auto* st = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(saved->tabs, i));
+        const bool is_active = (st->id == saved->active_id);
+        uint64_t new_id = OpenNewTab(st->uri ? st->uri : DefaultNewTabUrl(), is_active,
+                                     st->group ? st->group : "");
+        if (new_id) {
+          if (st->pinned) web_model_set_pinned(model_, new_id, true);
+          if (is_active) target_active = new_id;
+        }
+      }
+      if (target_active) ActivateTab(target_active);
+    } else {
+      OpenNewTab(DefaultNewTabUrl(), true);
+    }
+    web_model_free(saved);
+  } else {
+    OpenNewTab(DefaultNewTabUrl(), true);
+  }
+
+  if (cfg_.auto_adblock_sync && adblock_ && adblock_->IsEnabled() &&
+      adblock_->HasMissingOrStaleLists(24)) {
+    CefRefPtr<KajoBrowserWindow> self(this);
+    CefPostDelayedTask(TID_UI, new UiTask([self]() {
+      if (!self->closing_) self->StartFilterListUpdates();
+    }), 400);
+  }
+}
+
+int KajoBrowserWindow::CurrentDockedRailWidth() const {
+  if (web_fullscreen_) return 0;
+  if (rail_mode_ == KAJO_WEB_RAIL_PINNED) return rail_width_px_;
+  if (rail_mode_ == KAJO_WEB_RAIL_COMPACT) return 44;
+  return 0;
+}
+
+int KajoBrowserWindow::CurrentRailOverlayWidth() const {
+  if (web_fullscreen_) return 0;
+  if (rail_mode_ == KAJO_WEB_RAIL_PINNED) return rail_width_px_;
+  if (rail_mode_ == KAJO_WEB_RAIL_COMPACT) return rail_hover_open_ ? rail_width_px_ : 44;
+  return rail_hover_open_ ? rail_width_px_ : 8;
+}
+
+CefSize KajoBrowserWindow::GetPreferredChromeViewSize(CefRefPtr<CefView> view) const {
+  if (!view) return CefSize();
+  if (topbar_view_ && view->IsSame(topbar_view_)) {
+    return web_fullscreen_ ? CefSize(1, 1) : CefSize(100, 34);
+  }
+  if (rail_spacer_ && view->IsSame(rail_spacer_)) {
+    const int w = CurrentDockedRailWidth();
+    return w > 0 ? CefSize(w, 100) : CefSize(1, 1);
+  }
+  if (rail_view_ && view->IsSame(rail_view_)) {
+    const int w = CurrentRailOverlayWidth();
+    return w > 0 ? CefSize(w, 100) : CefSize(1, 1);
+  }
+  if (overlay_view_ && view->IsSame(overlay_view_)) {
+    return CefSize(100, 100);
+  }
+  return CefSize(100, 100);
+}
+
+void KajoBrowserWindow::RebuildLayout() {
+  if (!window_ || !body_panel_ || !rail_spacer_ || !content_panel_) return;
+
+  if (!layout_built_) {
+    CefBoxLayoutSettings vset;
+    vset.horizontal = 0;
+    vset.main_axis_alignment = CEF_AXIS_ALIGNMENT_START;
+    vset.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
+    CefRefPtr<CefBoxLayout> vlayout = window_->SetToBoxLayout(vset);
+    window_->AddChildView(topbar_view_);
+    vlayout->SetFlexForView(topbar_view_, 0);
+    window_->AddChildView(body_panel_);
+    vlayout->SetFlexForView(body_panel_, 1);
+
+    CefBoxLayoutSettings hset;
+    hset.horizontal = 1;
+    hset.main_axis_alignment = CEF_AXIS_ALIGNMENT_START;
+    hset.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
+    CefRefPtr<CefBoxLayout> hlayout = body_panel_->SetToBoxLayout(hset);
+    if (rail_side_ == KAJO_WEB_SIDE_RIGHT) {
+      body_panel_->AddChildView(content_panel_);
+      body_panel_->AddChildView(rail_spacer_);
+    } else {
+      body_panel_->AddChildView(rail_spacer_);
+      body_panel_->AddChildView(content_panel_);
+    }
+    hlayout->SetFlexForView(rail_spacer_, 0);
+    hlayout->SetFlexForView(content_panel_, 1);
+    layout_built_ = true;
+  }
+
+  topbar_view_->SetVisible(!web_fullscreen_);
+  topbar_view_->InvalidateLayout();
+  if (rail_side_ == KAJO_WEB_SIDE_RIGHT) {
+    body_panel_->ReorderChildView(content_panel_, 0);
+    body_panel_->ReorderChildView(rail_spacer_, 1);
+  } else {
+    body_panel_->ReorderChildView(rail_spacer_, 0);
+    body_panel_->ReorderChildView(content_panel_, 1);
+  }
+
+  ApplyRailSizing();
+  window_->Layout();
+}
+
+void KajoBrowserWindow::ApplyRailSizing() {
+  if (!rail_spacer_ || !window_) return;
+  const int w = CurrentDockedRailWidth();
+  rail_spacer_->SetVisible(!web_fullscreen_ && w > 0);
+  rail_spacer_->InvalidateLayout();
+  body_panel_->Layout();
+  window_->Layout();
+  UpdateOverlayBounds();
+}
+
+void KajoBrowserWindow::UpdateOverlayBounds() {
+  if (!window_) return;
+  CefRect wb = window_->GetBounds();
+  if (wb.width < 200 || wb.height < 120) return;
+
+  if (rail_ctrl_) {
+    const int w = CurrentRailOverlayWidth();
+    if (web_fullscreen_ || w <= 0) {
+      rail_ctrl_->SetVisible(false);
+    } else {
+      const int y = 34;
+      const int h = std::max(0, wb.height - y);
+      const int x = (rail_side_ == KAJO_WEB_SIDE_RIGHT) ? std::max(0, wb.width - w) : 0;
+      rail_ctrl_->SetBounds(CefRect(x, y, w, h));
+      rail_ctrl_->SetVisible(true);
+    }
+  }
+
+  if (ac_ctrl_) {
+    if (!ac_visible_ || web_fullscreen_) {
+      ac_ctrl_->SetVisible(false);
+    } else {
+      int rw = CurrentDockedRailWidth();
+      int x = (rail_side_ == KAJO_WEB_SIDE_LEFT ? rw : 0) + 120;
+      int w = std::clamp(wb.width - rw - 240, 320, 740);
+      int h = std::min(340, wb.height - 60);
+      ac_ctrl_->SetBounds(CefRect(std::max(12, std::min(x, wb.width - w - 12)), 36, w, h));
+      ac_ctrl_->SetVisible(true);
+    }
+  }
+
+  if (overlay_ctrl_) {
+    if (overlay_mode_.empty() || web_fullscreen_) {
+      overlay_ctrl_->SetVisible(false);
+    } else {
+      CefRect ob;
+      if (overlay_mode_ == "find") {
+        ob = CefRect(std::max(12, wb.width - 392), 40, 380, 44);
+      } else if (overlay_mode_ == "palette") {
+        int w = std::clamp(wb.width - 80, 360, 680);
+        int h = std::min(440, wb.height - 100);
+        ob = CefRect((wb.width - w) / 2, 72, w, h);
+      } else {
+        int w = std::min(420, wb.width - 24);
+        int h = std::min(420, wb.height - 60);
+        ob = CefRect(std::max(12, wb.width - w - 12), 36, w, h);
+      }
+      overlay_ctrl_->SetBounds(ob);
+      overlay_ctrl_->SetVisible(true);
+    }
+  }
+}
+
+void KajoBrowserWindow::OnWindowBoundsChanged(CefRefPtr<CefWindow> window,
+                                              const CefRect& new_bounds) {
+  if (window_) window_->Layout();
+  UpdateOverlayBounds();
+}
+
+CefRect KajoBrowserWindow::GetInitialBounds(CefRefPtr<CefWindow> window) {
+  return CefRect(0, 0, 1440, 900);
+}
+
+bool KajoBrowserWindow::GetLinuxWindowProperties(CefRefPtr<CefWindow> window,
+                                                 CefLinuxWindowProperties& properties) {
+  CefString(&properties.wayland_app_id) = "org.kajo.WebCef";
+  CefString(&properties.wm_class_class) = "org.kajo.WebCef";
+  CefString(&properties.wm_class_name) = "kajo-web-cef";
+  return true;
+}
+
+bool KajoBrowserWindow::CanClose(CefRefPtr<CefWindow> window) {
+  return true;
+}
+
+void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
+  closing_ = true;
+  ++push_gen_;
+  ++rail_hover_gen_;
+  if (config_sub_id_) {
+    if (auto* cs = kajo_config_store_get_default()) {
+      kajo_config_store_unsubscribe(cs, config_sub_id_);
+    }
+    config_sub_id_ = 0;
+  }
+  for (auto& req : active_filter_reqs_) {
+    if (req) req->Cancel();
+  }
+  active_filter_reqs_.clear();
+  PersistSession();
+  if (request_context_) {
+    if (CefRefPtr<CefCookieManager> cm = request_context_->GetCookieManager(nullptr)) {
+      cm->FlushStore(nullptr);
+    }
+  }
+  for (auto& cc : chrome_clients_) {
+    if (cc) static_cast<ChromeViewClient*>(cc.get())->Detach();
+  }
+  chrome_clients_.clear();
+  if (bv_delegate_) {
+    static_cast<KajoBrowserViewDelegate*>(bv_delegate_.get())->Detach();
+    bv_delegate_ = nullptr;
+  }
+  if (panel_delegate_) {
+    static_cast<KajoPanelDelegate*>(panel_delegate_.get())->Detach();
+    panel_delegate_ = nullptr;
+  }
+  if (topbar_view_) {
+    if (auto b = topbar_view_->GetBrowser()) router_->OnBeforeClose(b);
+  }
+  if (rail_view_) {
+    if (auto b = rail_view_->GetBrowser()) router_->OnBeforeClose(b);
+  }
+  if (overlay_view_) {
+    if (auto b = overlay_view_->GetBrowser()) router_->OnBeforeClose(b);
+  }
+  if (ac_view_) {
+    if (auto b = ac_view_->GetBrowser()) router_->OnBeforeClose(b);
+  }
+  for (auto& kv : tabs_) {
+    if (kv.second.client) kv.second.client->DetachCallbacks();
+  }
+  download_callbacks_.clear();
+  if (router_) router_->RemoveHandler(this);
+}
+
+void KajoBrowserWindow::OnWindowDestroyed(CefRefPtr<CefWindow> window) {
+  window_ = nullptr;
+  body_panel_ = nullptr;
+  rail_spacer_ = nullptr;
+  content_panel_ = nullptr;
+  topbar_view_ = nullptr;
+  rail_view_ = nullptr;
+  overlay_view_ = nullptr;
+  ac_view_ = nullptr;
+  rail_ctrl_ = nullptr;
+  overlay_ctrl_ = nullptr;
+  ac_ctrl_ = nullptr;
+  topbar_browser_ = nullptr;
+  rail_browser_ = nullptr;
+  overlay_browser_ = nullptr;
+  ac_browser_ = nullptr;
+  chrome_clients_.clear();
+  active_filter_reqs_.clear();
+  download_callbacks_.clear();
+  tabs_.clear();
+  router_ = nullptr;
+  request_context_ = nullptr;
+  CefQuitMessageLoop();
+}
+
+void KajoBrowserWindow::OnChromeBrowserCreated(int role, CefRefPtr<CefBrowser> browser) {
+  if (role == ROLE_TOPBAR) topbar_browser_ = browser;
+  else if (role == ROLE_RAIL) rail_browser_ = browser;
+  else if (role == ROLE_OVERLAY) overlay_browser_ = browser;
+  else if (role == ROLE_AC) ac_browser_ = browser;
+  PushStateImmediate();
+}
+
+void KajoBrowserWindow::OnChromeDraggableRegions(const std::vector<CefDraggableRegion>& regions) {
+  if (!window_ || !topbar_view_) return;
+  std::vector<CefDraggableRegion> mapped;
+  mapped.reserve(regions.size());
+  for (const auto& r : regions) {
+    CefDraggableRegion out = r;
+    CefPoint pt(r.bounds.x, r.bounds.y);
+    if (topbar_view_->ConvertPointToWindow(pt)) {
+      out.bounds.x = pt.x;
+      out.bounds.y = pt.y;
+    }
+    mapped.push_back(out);
+  }
+  window_->SetDraggableRegions(mapped);
+}
+
+bool KajoBrowserWindow::OnChromeShortcut(const CefKeyEvent& event) {
+  return OnTabShortcut(model_ ? model_->active_id : 0, event);
+}
+
+void KajoBrowserWindow::AttachTabView(uint64_t tab_id, const std::string& target, bool foreground) {
+  TabEntry entry;
+  entry.id = tab_id;
+  entry.client = new CefTabClient(tab_id, adblock_, this);
+  entry.client->SetHttpsOnly(https_only_);
+  tabs_[tab_id] = entry;
+
+  CefBrowserSettings bs = MakeContentBrowserSettings();
+  CefRefPtr<CefBrowserView> view = CefBrowserView::CreateBrowserView(
+      entry.client, target, bs, nullptr, request_context_, bv_delegate_);
+
+  tabs_[tab_id].view = view;
+  content_panel_->AddChildView(view);
+  view->SetVisible(false);
+  if (!tabs_[tab_id].browser && view && view->GetBrowser()) {
+    tabs_[tab_id].browser = view->GetBrowser();
+  }
+
+  if (foreground || tabs_.size() == 1) {
+    ActivateTab(tab_id);
+  } else {
+    PushStateToChrome();
+  }
+}
+
+uint64_t KajoBrowserWindow::OpenNewTab(const std::string& url,
+                                       bool foreground,
+                                       const std::string& group) {
+  const std::string target = url.empty() ? DefaultNewTabUrl() : url;
+  KajoWebTabMeta* meta = web_model_add_tab(
+      model_, target.c_str(), "Loading...",
+      group.empty() ? nullptr : group.c_str(), FALSE, g_get_monotonic_time());
+  if (!meta) return 0;
+  AttachTabView(meta->id, target, foreground);
+  return meta->id;
+}
+
+void KajoBrowserWindow::ActivateTab(uint64_t tab_id) {
+  if (!model_ || !web_model_activate(model_, tab_id, g_get_monotonic_time())) return;
+  for (auto& kv : tabs_) {
+    const bool is_act = (kv.first == tab_id);
+    if (kv.second.view) kv.second.view->SetVisible(is_act);
+    if (is_act && kv.second.browser && kv.second.browser->GetHost()) {
+      kv.second.view->RequestFocus();
+    }
+  }
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    t->suspended = FALSE;
+  }
+  if (content_panel_) content_panel_->Layout();
+  if (window_) window_->Layout();
+  PushStateImmediate();
+}
+
+void KajoBrowserWindow::CloseTab(uint64_t tab_id) {
+  if (!model_) return;
+  auto it = tabs_.find(tab_id);
+  if (it != tabs_.end()) {
+    if (it->second.client) it->second.client->DetachCallbacks();
+    if (it->second.browser && it->second.browser->GetHost()) {
+      it->second.browser->GetHost()->CloseBrowser(true);
+    }
+    if (content_panel_ && it->second.view) {
+      content_panel_->RemoveChildView(it->second.view);
+    }
+    tabs_.erase(it);
+  }
+
+  web_model_close_tab(model_, tab_id);
+  if (model_->tabs->len == 0) {
+    OpenNewTab(DefaultNewTabUrl(), true);
+  } else {
+    ActivateTab(model_->active_id);
+  }
+  PersistSession();
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::ReopenClosedTab() {
+  if (!model_) return;
+  KajoWebTabMeta* reopened = web_model_reopen_closed(model_, g_get_monotonic_time());
+  if (!reopened) return;
+  const std::string uri = reopened->uri ? reopened->uri : DefaultNewTabUrl();
+  AttachTabView(reopened->id, uri, true);
+  PersistSession();
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::NavigateActive(const std::string& raw_input) {
+  if (raw_input.empty()) return;
+  std::string target;
+  if (raw_input.rfind("chrome://", 0) == 0 || raw_input.rfind("devtools://", 0) == 0) {
+    target = raw_input;
+  } else {
+    g_autofree gchar* resolved = web_model_resolve_input(
+        raw_input.c_str(),
+        static_cast<KajoWebSearchEngine>(search_engine_),
+        search_custom_url_.empty() ? nullptr : search_custom_url_.c_str());
+    target = resolved ? resolved : raw_input;
+  }
+  HideAutocomplete();
+  CloseOverlay();
+  if (TabEntry* e = ActiveEntry()) {
+    if (e->browser && e->browser->GetMainFrame()) {
+      e->browser->GetMainFrame()->LoadURL(target);
+      if (e->view) e->view->RequestFocus();
+    }
+  }
+}
+
+void KajoBrowserWindow::ToggleActiveBookmark() {
+  KajoWebTabMeta* t = web_model_get_active(model_);
+  if (!t || !t->uri || !storage_) return;
+  g_autofree gchar* existing_uuid = nullptr;
+  if (web_storage_is_bookmarked(storage_, t->uri, &existing_uuid) && existing_uuid) {
+    web_storage_delete_bookmark(storage_, existing_uuid);
+  } else {
+    g_autofree gchar* uuid = g_uuid_string_random();
+    KajoWebBookmark* bm = web_bookmark_new(
+        uuid, (t->title && t->title[0]) ? t->title : t->uri,
+        t->uri, "", g_get_real_time() / 1000, FALSE);
+    web_storage_upsert_bookmark(storage_, bm);
+    web_bookmark_free(bm);
+  }
+  RefreshStorageCache();
+  PushStateImmediate();
+}
+
+void KajoBrowserWindow::ToggleOverlay(const std::string& mode) {
+  HideAutocomplete();
+  if (overlay_mode_ == mode) {
+    CloseOverlay();
+    return;
+  }
+  overlay_mode_ = mode;
+  if (mode == "palette") BuildPalette("");
+  UpdateOverlayBounds();
+  PushStateImmediate();
+  if (overlay_view_ && overlay_browser_) {
+    overlay_view_->RequestFocus();
+    if (auto f = overlay_browser_->GetMainFrame()) {
+      f->ExecuteJavaScript("window.__kajoOverlayFocus && window.__kajoOverlayFocus();", f->GetURL(), 0);
+    }
+  }
+}
+
+void KajoBrowserWindow::CloseOverlay() {
+  if (overlay_mode_.empty()) return;
+  if (overlay_mode_ == "find") {
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StopFinding(true);
+    }
+    find_count_ = 0;
+    find_active_ = 0;
+  }
+  overlay_mode_.clear();
+  if (overlay_ctrl_) overlay_ctrl_->SetVisible(false);
+  if (TabEntry* e = ActiveEntry()) {
+    if (e->view) e->view->RequestFocus();
+  }
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::HideAutocomplete() {
+  if (!ac_visible_ && ac_results_.empty()) return;
+  ac_visible_ = false;
+  ac_selected_idx_ = -1;
+  ac_results_.clear();
+  if (ac_ctrl_) ac_ctrl_->SetVisible(false);
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::BuildAutocomplete(const std::string& query) {
+  ac_query_ = query;
+  ac_selected_idx_ = -1;
+  ac_results_.clear();
+  if (query.empty()) {
+    HideAutocomplete();
+    return;
+  }
+  /* Open tabs matching */
+  for (guint i = 0; model_ && i < model_->tabs->len && ac_results_.size() < 4; ++i) {
+    const auto* t = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, i));
+    if (ContainsInsensitive(t->title ? t->title : "", query) ||
+        ContainsInsensitive(t->uri ? t->uri : "", query)) {
+      ChromeSuggestionView s;
+      s.kind = "tab";
+      s.label = t->title ? t->title : "";
+      s.sublabel = t->uri ? t->uri : "";
+      s.action = "activate_tab";
+      s.tab_id = t->id;
+      ac_results_.push_back(s);
+    }
+  }
+  /* History + Bookmarks via SQLite */
+  if (storage_) {
+    GPtrArray* bms = web_storage_list_bookmarks(storage_, FALSE);
+    for (guint i = 0; bms && i < bms->len && ac_results_.size() < 7; ++i) {
+      const auto* b = static_cast<const KajoWebBookmark*>(g_ptr_array_index(bms, i));
+      if (ContainsInsensitive(b->title ? b->title : "", query) ||
+          ContainsInsensitive(b->uri ? b->uri : "", query)) {
+        ChromeSuggestionView s;
+        s.kind = "bookmark";
+        s.label = b->title ? b->title : b->uri;
+        s.sublabel = b->uri ? b->uri : "";
+        s.action = "navigate";
+        s.payload = s.sublabel;
+        ac_results_.push_back(s);
+      }
+    }
+    if (bms) g_ptr_array_unref(bms);
+
+    GPtrArray* hist = web_storage_search_history(storage_, query.c_str(), 6);
+    for (guint i = 0; hist && i < hist->len && ac_results_.size() < 10; ++i) {
+      const auto* h = static_cast<const KajoWebHistoryEntry*>(g_ptr_array_index(hist, i));
+      ChromeSuggestionView s;
+      s.kind = "history";
+      s.label = (h->title && h->title[0]) ? h->title : (h->uri ? h->uri : "");
+      s.sublabel = h->uri ? h->uri : "";
+      s.action = "navigate";
+      s.payload = s.sublabel;
+      ac_results_.push_back(s);
+    }
+    if (hist) g_ptr_array_unref(hist);
+  }
+  /* Fallback explicit search/navigate entry */
+  ChromeSuggestionView direct;
+  direct.kind = "search";
+  direct.label = "Go / Search: " + query;
+  direct.sublabel = "Press Enter to navigate";
+  direct.action = "navigate";
+  direct.payload = query;
+  ac_results_.push_back(direct);
+
+  ac_visible_ = true;
+  UpdateOverlayBounds();
+  PushStateImmediate();
+}
+
+void KajoBrowserWindow::BuildPalette(const std::string& query) {
+  palette_query_ = query;
+  palette_results_.clear();
+
+  struct BuiltinCmd { const char* label; const char* sub; const char* act; const char* pay; };
+  const BuiltinCmd cmds[] = {
+      {"New Tab", "Ctrl+T", "new_tab", ""},
+      {"Toggle Vertical Tab Rail", "Ctrl+B", "toggle_rail", ""},
+      {"Cycle Rail Mode (Compact/Pinned/Autohide)", "Layout", "cycle_rail_mode", ""},
+      {"Open Adblock Dashboard", "kajo://adblock", "open_kajo_page", "kajo://adblock"},
+      {"Open GPU & VA-API Diagnostics", "kajo://gpu", "open_kajo_page", "kajo://gpu"},
+      {"Open Bookmarks Manager", "kajo://bookmarks", "open_kajo_page", "kajo://bookmarks"},
+      {"Open History Manager", "kajo://history", "open_kajo_page", "kajo://history"},
+      {"Open Downloads Manager", "kajo://downloads", "open_kajo_page", "kajo://downloads"},
+      {"Open Web Settings", "kajo-settings --page web", "open_settings", ""},
+      {"Toggle Niri Float / Tile", "Compositor", "toggle_float", ""},
+      {"Open Private Window", "Incognito", "launch_private", ""},
+  };
+  for (const auto& c : cmds) {
+    if (ContainsInsensitive(c.label, query) || ContainsInsensitive(c.sub, query)) {
+      ChromeSuggestionView v;
+      v.kind = "command";
+      v.label = c.label;
+      v.sublabel = c.sub;
+      v.action = c.act;
+      v.payload = c.pay;
+      palette_results_.push_back(v);
+    }
+  }
+  for (guint i = 0; model_ && i < model_->tabs->len; ++i) {
+    const auto* t = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, i));
+    if (ContainsInsensitive(t->title ? t->title : "", query) ||
+        ContainsInsensitive(t->uri ? t->uri : "", query)) {
+      ChromeSuggestionView v;
+      v.kind = "tab";
+      v.label = t->title ? t->title : "Tab";
+      v.sublabel = t->uri ? t->uri : "";
+      v.action = "activate_tab";
+      v.tab_id = t->id;
+      palette_results_.push_back(v);
+    }
+  }
+}
+
+void KajoBrowserWindow::StartFilterListUpdates() {
+  if (filter_update_busy_ || !adblock_ || closing_) return;
+  const auto specs = GetDefaultFilterListSpecs();
+  filter_update_busy_ = true;
+  filter_updates_pending_ = specs.size();
+  filter_updates_ok_ = 0;
+  filter_updates_failed_ = 0;
+  filter_update_status_ = "Downloading filter lists (0/" + std::to_string(specs.size()) + ")...";
+  active_filter_reqs_.clear();
+  PushStateToChrome();
+
+  for (const auto& spec : specs) {
+    CefRefPtr<CefRequest> req = CefRequest::Create();
+    req->SetURL(spec.url);
+    req->SetMethod("GET");
+    auto r = CefURLRequest::Create(req, new FilterDownloadClient(this, spec.slug), request_context_);
+    if (r) active_filter_reqs_.push_back(r);
+  }
+}
+
+void KajoBrowserWindow::HandleFilterListDownloadComplete(const std::string& id,
+                                                       bool ok,
+                                                       int http_status,
+                                                       const std::string& body) {
+  if (closing_) return;
+  if (ok && !body.empty() && adblock_) {
+    if (adblock_->WriteListFileOnly(id, body)) {
+      ++filter_updates_ok_;
+    } else {
+      ++filter_updates_failed_;
+    }
+  } else {
+    ++filter_updates_failed_;
+    if (http_status > 0) {
+      filter_update_status_ = "List '" + id + "' HTTP " + std::to_string(http_status);
+    }
+  }
+  if (filter_updates_pending_ > 0) --filter_updates_pending_;
+  if (filter_updates_pending_ == 0) {
+    active_filter_reqs_.clear();
+    filter_update_status_ = "Compiling filter lists...";
+    PushStateToChrome();
+    CefRefPtr<KajoBrowserWindow> self(this);
+    CefAdblockEngine* eng = adblock_;
+    std::string custom_path = adblock_custom_rules_path_;
+    size_t ok_cnt = filter_updates_ok_;
+    size_t fail_cnt = filter_updates_failed_;
+    CefPostTask(TID_FILE_USER_VISIBLE, new UiTask([self, eng, custom_path, ok_cnt, fail_cnt]() {
+      eng->ReloadFromDisk(custom_path);
+      CefPostTask(TID_UI, new UiTask([self, ok_cnt, fail_cnt]() {
+        if (!self->closing_) self->FinishFilterListReloadOnUi(ok_cnt, fail_cnt);
+      }));
+    }));
+  } else {
+    filter_update_status_ = "Downloading filter lists (" +
+                            std::to_string(filter_updates_ok_ + filter_updates_failed_) + "/" +
+                            std::to_string(filter_updates_ok_ + filter_updates_failed_ + filter_updates_pending_) + ")...";
+    PushStateToChrome();
+  }
+}
+
+void KajoBrowserWindow::FinishFilterListReloadOnUi(size_t ok_count, size_t fail_count) {
+  filter_update_busy_ = false;
+  const size_t total_rules = adblock_ ? adblock_->GetRuleCount() : 0;
+  if (fail_count > 0 && ok_count == 0) {
+    filter_update_status_ = "Update failed (" + std::to_string(fail_count) + " lists failed; " +
+                            std::to_string(total_rules) + " baseline rules active)";
+  } else if (fail_count > 0) {
+    filter_update_status_ = "Updated " + std::to_string(ok_count) + " lists (" +
+                            std::to_string(fail_count) + " failed) · " +
+                            std::to_string(total_rules) + " rules";
+  } else {
+    filter_update_status_ = "Updated all " + std::to_string(ok_count) + " lists · " +
+                            std::to_string(total_rules) + " rules";
+  }
+  PushStateImmediate();
+
+  /* Reload any open internal adblock/newtab tab so live rule counts show up cleanly */
+  for (auto& kv : tabs_) {
+    KajoWebTabMeta* t = web_model_find_tab(model_, kv.first);
+    if (t && t->uri &&
+        (strncmp(t->uri, "kajo://adblock", 14) == 0 ||
+         strncmp(t->uri, "kajo://newtab", 13) == 0)) {
+      CefRefPtr<CefBrowser> b = kv.second.browser
+                                    ? kv.second.browser
+                                    : (kv.second.view ? kv.second.view->GetBrowser() : nullptr);
+      if (b) b->ReloadIgnoreCache();
+    }
+  }
+}
+
+KajoBrowserWindow::TabEntry* KajoBrowserWindow::FindEntry(uint64_t tab_id) {
+  auto it = tabs_.find(tab_id);
+  return (it == tabs_.end()) ? nullptr : &it->second;
+}
+
+KajoBrowserWindow::TabEntry* KajoBrowserWindow::ActiveEntry() {
+  return model_ ? FindEntry(model_->active_id) : nullptr;
+}
+
+void KajoBrowserWindow::PersistSession() {
+  if (!cfg_.private_mode && storage_ && model_) {
+    web_storage_save_session(storage_, model_);
+  }
+}
+
+void KajoBrowserWindow::PushStateToChrome() {
+  if (closing_ || push_pending_) return;
+  push_pending_ = true;
+  const uint64_t gen = ++push_gen_;
+  CefRefPtr<KajoBrowserWindow> self(this);
+  CefPostDelayedTask(TID_UI, new UiTask([self, gen]() {
+    if (!self->closing_ && self->push_gen_ == gen) {
+      self->push_pending_ = false;
+      self->PushStateImmediate();
+    }
+  }), 30);
+}
+
+void KajoBrowserWindow::PushStateImmediate() {
+  if (!store_ || !model_ || closing_) return;
+  ChromeStateSnapshot s;
+  s.private_mode = cfg_.private_mode;
+  s.is_maximized = window_ ? window_->IsMaximized() : false;
+  s.rail_mode = rail_mode_;
+  s.rail_side = rail_side_;
+  s.rail_hover_open = rail_hover_open_;
+  s.rail_width_px = rail_width_px_;
+  s.topbar_mode = topbar_mode_;
+  s.show_tab_domains = show_tab_domains_;
+  s.ac_visible = ac_visible_;
+  s.ac_selected_idx = ac_selected_idx_;
+  s.overlay_mode = overlay_mode_;
+  s.accent_color = accent_color_;
+  s.profile_accent = profile_accent_;
+  s.profile_id = cfg_.profile_id;
+  s.profile_name = profile_name_;
+  s.profile_icon = profile_icon_;
+  s.ui_font_family = ui_font_family_;
+  s.ui_font_size_px = ui_font_size_px_;
+  s.badge_size_px = badge_size_px_;
+  s.hw_accel_enabled = cfg_.hw_accel_enabled;
+  s.widevine_available = cfg_.widevine_available;
+  s.widevine_path = cfg_.widevine_path;
+  s.user_agent = cfg_.user_agent;
+  s.find_query = find_query_;
+  s.find_active = find_active_;
+  s.find_count = find_count_;
+  s.find_match_case = find_match_case_;
+  s.filter_update_busy = filter_update_busy_;
+  s.filter_update_status = filter_update_status_;
+
+  KajoWebTabMeta* act = web_model_get_active(model_);
+  TabEntry* act_e = ActiveEntry();
+  if (act) {
+    s.active_tab_id = act->id;
+    s.active_url = act->uri ? act->uri : "";
+    s.active_title = act->title ? act->title : "";
+    g_autofree gchar* host = web_model_extract_host(s.active_url.c_str());
+    s.active_host = host ? host : "";
+    s.is_loading = act->loading;
+  }
+  if (act_e) {
+    s.can_go_back = act_e->can_go_back;
+    s.can_go_forward = act_e->can_go_forward;
+    s.media_streams = act_e->media;
+    if (act_e->browser && act_e->browser->GetHost()) {
+      double zl = act_e->browser->GetHost()->GetZoomLevel();
+      s.zoom_pct = static_cast<int>(100.0 * pow(1.2, zl) + 0.5);
+    }
+  }
+  if (storage_ && !s.active_url.empty()) {
+    s.is_bookmarked = web_storage_is_bookmarked(storage_, s.active_url.c_str(), nullptr);
+  }
+
+  if (adblock_) {
+    s.adblock_enabled = adblock_->IsEnabled();
+    s.host_paused = !s.active_url.empty() && adblock_->IsHostPaused(s.active_url);
+    s.tab_blocked = adblock_->GetBlockedCountForTab(static_cast<int>(s.active_tab_id));
+    s.total_blocked = adblock_->GetTotalBlockedCount();
+    s.baseline_rules = adblock_->GetBaselineRuleCount();
+    s.adblock_rules = adblock_->GetRuleCount();
+    s.paused_hosts = adblock_->GetPausedHostCount();
+    s.allowlist_hosts = adblock_->GetPausedHosts();
+    for (const auto& sp : GetDefaultFilterListSpecs()) {
+      ChromeFilterListView fl;
+      fl.id = sp.slug;
+      fl.name = sp.title;
+      fl.url = sp.url;
+      fl.rule_count = adblock_->GetRuleCountForList(sp.slug);
+      fl.enabled = (fl.rule_count > 0);
+      s.filter_lists.push_back(fl);
+    }
+  }
+
+  for (guint i = 0; i < model_->tabs->len; ++i) {
+    const auto* t = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, i));
+    ChromeTabView tv;
+    tv.id = t->id;
+    tv.title = t->title ? t->title : "";
+    tv.url = t->uri ? t->uri : "";
+    g_autofree gchar* dom = web_model_extract_host(tv.url.c_str());
+    tv.domain = dom ? dom : "";
+    tv.group = t->group ? t->group : "";
+    if (TabEntry* e = FindEntry(t->id)) tv.favicon_url = e->favicon_url;
+    tv.pinned = t->pinned;
+    tv.active = (t->id == model_->active_id);
+    tv.loading = t->loading;
+    tv.audible = t->audible;
+    tv.muted = t->muted;
+    tv.suspended = t->suspended;
+    tv.blocked_count = adblock_ ? adblock_->GetBlockedCountForTab(static_cast<int>(t->id)) : 0;
+    s.tabs.push_back(tv);
+  }
+
+  if (model_->collapsed_grps) {
+    GHashTableIter it;
+    gpointer k = nullptr, v = nullptr;
+    g_hash_table_iter_init(&it, model_->collapsed_grps);
+    while (g_hash_table_iter_next(&it, &k, &v)) {
+      if (k) s.collapsed_groups.emplace_back(static_cast<const char*>(k));
+    }
+  }
+
+  if (profiles_ && profiles_->profiles) {
+    for (guint i = 0; i < profiles_->profiles->len; ++i) {
+      const auto* p = static_cast<const KajoWebProfileInfo*>(g_ptr_array_index(profiles_->profiles, i));
+      ChromeProfileView pv;
+      pv.id = p->id ? p->id : "default";
+      pv.name = p->name ? p->name : "DEFAULT";
+      pv.icon = p->icon ? p->icon : "🌐";
+      pv.accent_color = p->accent_color ? p->accent_color : "#0078d4";
+      pv.active = (pv.id == cfg_.profile_id);
+      s.profiles.push_back(pv);
+    }
+  }
+
+  s.bookmarks = cached_bookmarks_;
+  s.recent_history = cached_recent_history_;
+  if (storage_ && !history_query_.empty()) {
+    s.history_search_query = history_query_;
+    s.history_query_results = history_results_;
+  }
+
+  s.downloads = downloads_;
+  s.autocomplete = ac_results_;
+  s.palette_results = palette_results_;
+
+  store_->Update(s);
+  const std::string json = store_->SnapshotJson();
+  const std::string js = "window.__kajoApply && window.__kajoApply(" + json + ");";
+
+  auto push_to = [&js](CefRefPtr<CefBrowser> b) {
+    if (b && b->GetMainFrame()) {
+      b->GetMainFrame()->ExecuteJavaScript(js, b->GetMainFrame()->GetURL(), 0);
+    }
+  };
+  push_to(topbar_browser_);
+  push_to(rail_browser_);
+  push_to(overlay_browser_);
+  push_to(ac_browser_);
+}
+
+bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                int64_t query_id,
+                                const CefString& request,
+                                bool persistent,
+                                CefRefPtr<Callback> callback) {
+  if (!frame || frame->GetURL().ToString().rfind("kajo-chrome://", 0) != 0) {
+    return false;
+  }
+
+  g_autoptr(JsonParser) parser = json_parser_new();
+  const std::string req_str = request.ToString();
+  if (!json_parser_load_from_data(parser, req_str.c_str(), static_cast<gssize>(req_str.size()), nullptr)) {
+    callback->Failure(-1, "invalid json");
+    return true;
+  }
+  JsonNode* root = json_parser_get_root(parser);
+  if (!root || !JSON_NODE_HOLDS_OBJECT(root)) {
+    callback->Failure(-1, "expected object");
+    return true;
+  }
+  JsonObject* obj = json_node_get_object(root);
+  const gchar* cmd_c = json_object_has_member(obj, "cmd") ? json_object_get_string_member(obj, "cmd") : "";
+  std::string cmd = cmd_c ? cmd_c : "";
+
+  auto get_str = [&](const char* k) -> std::string {
+    if (!json_object_has_member(obj, k)) return "";
+    const gchar* v = json_object_get_string_member(obj, k);
+    return v ? v : "";
+  };
+  auto get_bool = [&](const char* k) -> bool {
+    return json_object_has_member(obj, k) && json_object_get_boolean_member(obj, k);
+  };
+  auto get_int = [&](const char* k) -> int64_t {
+    return json_object_has_member(obj, k) ? json_object_get_int_member(obj, k) : 0;
+  };
+
+  if (cmd == "get_state") {
+    callback->Success(store_->SnapshotJson());
+    return true;
+  } else if (cmd == "back") {
+    if (TabEntry* e = ActiveEntry()) { if (e->browser) e->browser->GoBack(); }
+  } else if (cmd == "forward") {
+    if (TabEntry* e = ActiveEntry()) { if (e->browser) e->browser->GoForward(); }
+  } else if (cmd == "reload_or_stop") {
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser) {
+        if (e->browser->IsLoading()) e->browser->StopLoad();
+        else e->browser->Reload();
+      }
+    }
+  } else if (cmd == "navigate") {
+    NavigateActive(get_str("input"));
+  } else if (cmd == "new_tab") {
+    OpenNewTab(DefaultNewTabUrl(), true);
+  } else if (cmd == "activate_tab") {
+    ActivateTab(static_cast<uint64_t>(get_int("tab_id")));
+  } else if (cmd == "close_tab") {
+    CloseTab(static_cast<uint64_t>(get_int("tab_id")));
+  } else if (cmd == "toggle_pin") {
+    uint64_t tid = static_cast<uint64_t>(get_int("tab_id"));
+    if (KajoWebTabMeta* t = web_model_find_tab(model_, tid)) {
+      web_model_set_pinned(model_, tid, !t->pinned);
+      PushStateToChrome();
+    }
+  } else if (cmd == "toggle_mute") {
+    uint64_t tid = static_cast<uint64_t>(get_int("tab_id"));
+    if (KajoWebTabMeta* t = web_model_find_tab(model_, tid)) {
+      t->muted = !t->muted;
+      if (TabEntry* e = FindEntry(tid)) {
+        if (e->browser && e->browser->GetHost()) e->browser->GetHost()->SetAudioMuted(t->muted);
+      }
+      PushStateToChrome();
+    }
+  } else if (cmd == "toggle_group") {
+    const std::string g = get_str("group");
+    if (!g.empty()) {
+      bool cur = web_model_is_group_collapsed(model_, g.c_str());
+      web_model_set_group_collapsed(model_, g.c_str(), !cur);
+      PushStateToChrome();
+    }
+  } else if (cmd == "toggle_rail") {
+    if (rail_mode_ == KAJO_WEB_RAIL_PINNED) {
+      rail_mode_ = KAJO_WEB_RAIL_COMPACT;
+      rail_hover_open_ = false;
+      ++rail_hover_gen_;
+      PersistRailMode(rail_mode_);
+    } else {
+      rail_hover_open_ = !rail_hover_open_;
+      ++rail_hover_gen_;
+    }
+    ApplyRailSizing();
+    PushStateImmediate();
+  } else if (cmd == "cycle_rail_mode") {
+    rail_mode_ = (rail_mode_ + 1) % 3;
+    rail_hover_open_ = false;
+    ++rail_hover_gen_;
+    PersistRailMode(rail_mode_);
+    ApplyRailSizing();
+    PushStateImmediate();
+  } else if (cmd == "rail_hover") {
+    if (rail_mode_ == KAJO_WEB_RAIL_AUTOHIDE || rail_mode_ == KAJO_WEB_RAIL_COMPACT) {
+      const bool inside = get_bool("inside");
+      const uint64_t gen = ++rail_hover_gen_;
+      CefRefPtr<KajoBrowserWindow> self(this);
+      CefPostDelayedTask(TID_UI, new UiTask([self, gen, inside]() {
+        if (self->closing_ || self->rail_hover_gen_ != gen) return;
+        if (self->rail_mode_ != KAJO_WEB_RAIL_AUTOHIDE &&
+            self->rail_mode_ != KAJO_WEB_RAIL_COMPACT) {
+          return;
+        }
+        if (self->rail_hover_open_ != inside) {
+          self->rail_hover_open_ = inside;
+          self->ApplyRailSizing();
+          self->PushStateImmediate();
+        }
+      }), inside ? 40 : 220);
+    }
+  } else if (cmd == "toggle_bookmark") {
+    ToggleActiveBookmark();
+  } else if (cmd == "toggle_overlay") {
+    ToggleOverlay(get_str("mode"));
+  } else if (cmd == "close_overlay") {
+    CloseOverlay();
+  } else if (cmd == "close_overlay_if_mode") {
+    if (overlay_mode_ == get_str("mode")) CloseOverlay();
+  } else if (cmd == "focus_content") {
+    if (TabEntry* e = ActiveEntry()) { if (e->view) e->view->RequestFocus(); }
+  } else if (cmd == "ac_query") {
+    BuildAutocomplete(get_str("query"));
+  } else if (cmd == "ac_step") {
+    int idx = static_cast<int>(get_int("index"));
+    if (!ac_results_.empty()) {
+      ac_selected_idx_ = std::clamp(idx, -1, static_cast<int>(ac_results_.size()) - 1);
+      PushStateImmediate();
+    }
+  } else if (cmd == "ac_accept") {
+    int idx = static_cast<int>(get_int("index"));
+    if (idx >= 0 && idx < static_cast<int>(ac_results_.size())) {
+      const auto it = ac_results_[static_cast<size_t>(idx)];
+      HideAutocomplete();
+      if (it.action == "activate_tab") ActivateTab(it.tab_id);
+      else if (it.action == "navigate") NavigateActive(it.payload);
+    }
+  } else if (cmd == "ac_close") {
+    HideAutocomplete();
+  } else if (cmd == "palette_query") {
+    BuildPalette(get_str("query"));
+    PushStateImmediate();
+  } else if (cmd == "overlay_step") {
+    if (overlay_browser_ && overlay_browser_->GetMainFrame()) {
+      std::string js = "window.__kajoOverlayStep && window.__kajoOverlayStep(" +
+                       std::to_string(get_int("delta")) + ");";
+      overlay_browser_->GetMainFrame()->ExecuteJavaScript(js, "", 0);
+    }
+  } else if (cmd == "run_suggestion") {
+    const std::string act = get_str("action");
+    const std::string pay = get_str("payload");
+    uint64_t tid = static_cast<uint64_t>(get_int("tab_id"));
+    HideAutocomplete();
+    CloseOverlay();
+    if (act == "activate_tab") ActivateTab(tid);
+    else if (act == "navigate") NavigateActive(pay);
+    else if (act == "new_tab") OpenNewTab(DefaultNewTabUrl(), true);
+    else if (act == "toggle_rail") {
+      if (rail_mode_ == KAJO_WEB_RAIL_PINNED) {
+        rail_mode_ = KAJO_WEB_RAIL_COMPACT;
+        rail_hover_open_ = false;
+        ++rail_hover_gen_;
+        PersistRailMode(rail_mode_);
+      } else {
+        rail_hover_open_ = !rail_hover_open_;
+        ++rail_hover_gen_;
+      }
+      ApplyRailSizing();
+      PushStateImmediate();
+    } else if (act == "cycle_rail_mode") {
+      rail_mode_ = (rail_mode_ + 1) % 3;
+      rail_hover_open_ = false;
+      ++rail_hover_gen_;
+      PersistRailMode(rail_mode_);
+      ApplyRailSizing();
+      PushStateImmediate();
+    } else if (act == "open_kajo_page") {
+      NavigateActive(pay);
+    } else if (act == "open_settings") {
+      const char* argv[] = {"kajo-settings", "--page", "web", nullptr};
+      kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    } else if (act == "toggle_float") {
+      niri_toggle_window_floating();
+    } else if (act == "launch_private") {
+      const char* argv[] = {cfg_.exe_path.c_str(), "--private", nullptr};
+      kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    }
+  } else if (cmd == "find_query") {
+    find_query_ = get_str("query");
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser && e->browser->GetHost()) {
+        if (find_query_.empty()) e->browser->GetHost()->StopFinding(true);
+        else e->browser->GetHost()->Find(find_query_, true, find_match_case_, false);
+      }
+    }
+    PushStateToChrome();
+  } else if (cmd == "find_step") {
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser && e->browser->GetHost() && !find_query_.empty()) {
+        e->browser->GetHost()->Find(find_query_, get_bool("forward"), find_match_case_, true);
+      }
+    }
+  } else if (cmd == "find_toggle_case") {
+    find_match_case_ = !find_match_case_;
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser && e->browser->GetHost() && !find_query_.empty()) {
+        e->browser->GetHost()->Find(find_query_, true, find_match_case_, false);
+      }
+    }
+    PushStateImmediate();
+  } else if (cmd == "toggle_host_adblock") {
+    if (KajoWebTabMeta* t = web_model_get_active(model_)) {
+      if (t->uri && adblock_) {
+        adblock_->ToggleHostPaused(t->uri);
+        if (TabEntry* e = ActiveEntry()) {
+          if (e->browser) e->client->RefreshCosmeticInjection(e->browser, e->browser->GetMainFrame());
+        }
+        PushStateImmediate();
+      }
+    }
+  } else if (cmd == "update_filter_lists") {
+    StartFilterListUpdates();
+  } else if (cmd == "open_kajo_page") {
+    NavigateActive(get_str("page"));
+  } else if (cmd == "play_in_kajo_player") {
+    const std::string uri = get_str("uri");
+    if (!uri.empty()) {
+      const char* argv[] = {"kajo-player", uri.c_str(), nullptr};
+      kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    }
+  } else if (cmd == "download_media_uri") {
+    const std::string uri = get_str("uri");
+    if (!uri.empty()) {
+      if (TabEntry* e = ActiveEntry()) {
+        if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StartDownload(uri);
+      }
+    }
+  } else if (cmd == "cancel_download") {
+    uint32_t did = static_cast<uint32_t>(get_int("id"));
+    auto it = download_callbacks_.find(did);
+    if (it != download_callbacks_.end() && it->second) {
+      it->second->Cancel();
+    }
+  } else if (cmd == "open_download_folder") {
+    const std::string path = get_str("path");
+    g_autofree gchar* dir = path.empty() ? g_strdup(download_dir_.c_str()) : g_path_get_dirname(path.c_str());
+    const char* argv[] = {"kajo-files", dir, nullptr};
+    kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+  } else if (cmd == "launch_profile") {
+    const std::string pid = get_str("id");
+    const bool priv = get_bool("private_mode");
+    if (!priv && !pid.empty() && profiles_) {
+      g_free(profiles_->last_profile_id);
+      profiles_->last_profile_id = g_strdup(pid.c_str());
+      g_autofree gchar* reg_dir = g_build_filename(
+          g_get_user_data_dir(), "kajo", "web", nullptr);
+      g_autofree gchar* reg_path = g_build_filename(reg_dir, "profiles.toml", nullptr);
+      g_mkdir_with_parents(reg_dir, 0700);
+      web_profile_registry_save(profiles_, reg_path, nullptr);
+    }
+    std::vector<const char*> argv = {cfg_.exe_path.c_str()};
+    if (!pid.empty()) { argv.push_back("--profile"); argv.push_back(pid.c_str()); }
+    if (priv) argv.push_back("--private");
+    argv.push_back(nullptr);
+    kajo_spawn_detached_argv(nullptr, argv.data(), nullptr, nullptr);
+    CloseOverlay();
+  } else if (cmd == "create_profile") {
+    const std::string name = get_str("name");
+    if (!name.empty() && profiles_) {
+      web_profile_registry_add(profiles_, name.c_str(), "🌐", accent_color_.c_str());
+      g_autofree gchar* reg_path = g_build_filename(
+          g_get_user_data_dir(), "kajo", "web", "profiles.toml", nullptr);
+      web_profile_registry_save(profiles_, reg_path, nullptr);
+      PushStateImmediate();
+    }
+  } else if (cmd == "zoom_reset") {
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser && e->browser->GetHost()) e->browser->GetHost()->SetZoomLevel(0.0);
+      PushStateImmediate();
+    }
+  } else if (cmd == "open_settings") {
+    const char* argv[] = {"kajo-settings", "--page", "web", nullptr};
+    kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+  } else if (cmd == "toggle_float") {
+    niri_toggle_window_floating();
+  } else if (cmd == "close_window") {
+    if (window_) window_->Close();
+  }
+
+  callback->Success("{}");
+  return true;
+}
+
+bool KajoBrowserWindow::OnAccelerator(CefRefPtr<CefWindow> window, int command_id) {
+  switch (command_id) {
+    case ACCEL_NEW_TAB:
+      OpenNewTab(DefaultNewTabUrl(), true);
+      return true;
+    case ACCEL_CLOSE_TAB:
+      if (model_ && model_->active_id) CloseTab(model_->active_id);
+      return true;
+    case ACCEL_REOPEN_TAB:
+      ReopenClosedTab();
+      return true;
+    case ACCEL_FOCUS_OMNIBAR:
+      if (topbar_view_ && topbar_browser_ && topbar_browser_->GetMainFrame()) {
+        topbar_view_->RequestFocus();
+        topbar_browser_->GetMainFrame()->ExecuteJavaScript(
+            "window.__kajoFocusOmnibar && window.__kajoFocusOmnibar();", "", 0);
+      }
+      return true;
+    case ACCEL_PALETTE:
+      ToggleOverlay("palette");
+      return true;
+    case ACCEL_FIND:
+      ToggleOverlay("find");
+      return true;
+    case ACCEL_RELOAD:
+      if (TabEntry* e = ActiveEntry()) { if (e->browser) e->browser->Reload(); }
+      return true;
+    case ACCEL_TOGGLE_RAIL:
+      if (rail_mode_ == KAJO_WEB_RAIL_PINNED) {
+        rail_mode_ = KAJO_WEB_RAIL_COMPACT;
+        rail_hover_open_ = false;
+        ++rail_hover_gen_;
+        PersistRailMode(rail_mode_);
+      } else {
+        rail_hover_open_ = !rail_hover_open_;
+        ++rail_hover_gen_;
+      }
+      ApplyRailSizing();
+      PushStateImmediate();
+      return true;
+    case ACCEL_BOOKMARK:
+      ToggleActiveBookmark();
+      return true;
+    case ACCEL_FULLSCREEN:
+      web_fullscreen_ = !web_fullscreen_;
+      if (window_) {
+        window_->SetFullscreen(web_fullscreen_);
+        if (web_fullscreen_) window_->SetDraggableRegions({});
+      }
+      RebuildLayout();
+      UpdateOverlayBounds();
+      return true;
+    case ACCEL_DEVTOOLS:
+      if (TabEntry* e = ActiveEntry()) {
+        if (e->browser && e->browser->GetHost()) {
+          CefWindowInfo wi;
+          CefBrowserSettings bs;
+          e->browser->GetHost()->ShowDevTools(wi, nullptr, bs, CefPoint());
+        }
+      }
+      return true;
+    default:
+      return false;
+  }
+}
+
+bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) {
+  if (event.type != KEYEVENT_RAWKEYDOWN) return false;
+  const bool ctrl = (event.modifiers & EVENTFLAG_CONTROL_DOWN) != 0;
+  const bool shift = (event.modifiers & EVENTFLAG_SHIFT_DOWN) != 0;
+  const bool alt = (event.modifiers & EVENTFLAG_ALT_DOWN) != 0;
+  const int vk = event.windows_key_code;
+
+  if (ctrl && !alt) {
+    if (vk == 'T') return OnAccelerator(window_, shift ? ACCEL_REOPEN_TAB : ACCEL_NEW_TAB);
+    if (vk == 'W') return OnAccelerator(window_, ACCEL_CLOSE_TAB);
+    if (vk == 'L') return OnAccelerator(window_, ACCEL_FOCUS_OMNIBAR);
+    if (vk == 'K') return OnAccelerator(window_, ACCEL_PALETTE);
+    if (vk == 'F') return OnAccelerator(window_, ACCEL_FIND);
+    if (vk == 'R') return OnAccelerator(window_, ACCEL_RELOAD);
+    if (vk == 'B') return OnAccelerator(window_, ACCEL_TOGGLE_RAIL);
+    if (vk == 'D') return OnAccelerator(window_, ACCEL_BOOKMARK);
+    if (vk == 0x09 /*VK_TAB*/) {
+      if (model_) {
+        guint64 next_id = web_model_cycle_visual(model_, !shift);
+        if (next_id) ActivateTab(next_id);
+      }
+      return true;
+    }
+    if (vk == 0xBB /*'='*/ || vk == '0' || vk == 0xBD /*'-'*/) {
+      if (TabEntry* e = ActiveEntry()) {
+        if (e->browser && e->browser->GetHost()) {
+          double cur = e->browser->GetHost()->GetZoomLevel();
+          if (vk == '0') cur = 0.0;
+          else if (vk == 0xBB) cur += 0.5;
+          else cur -= 0.5;
+          e->browser->GetHost()->SetZoomLevel(cur);
+          PushStateImmediate();
+        }
+      }
+      return true;
+    }
+  }
+  if (alt && !ctrl && (vk == 0x25 /*LEFT*/ || vk == 0x27 /*RIGHT*/)) {
+    if (TabEntry* e = ActiveEntry()) {
+      if (e->browser) {
+        if (vk == 0x25) e->browser->GoBack();
+        else e->browser->GoForward();
+      }
+    }
+    return true;
+  }
+  if (vk == 0x74 /*F5*/) return OnAccelerator(window_, ACCEL_RELOAD);
+  if (vk == 0x7A /*F11*/) return OnAccelerator(window_, ACCEL_FULLSCREEN);
+  if (vk == 0x7B /*F12*/) return OnAccelerator(window_, ACCEL_DEVTOOLS);
+  if (vk == 0x1B /*ESC*/) {
+    if (ac_visible_) {
+      HideAutocomplete();
+      return true;
+    }
+    if (!overlay_mode_.empty()) {
+      CloseOverlay();
+      return true;
+    }
+    if (rail_hover_open_ &&
+        (rail_mode_ == KAJO_WEB_RAIL_AUTOHIDE || rail_mode_ == KAJO_WEB_RAIL_COMPACT)) {
+      rail_hover_open_ = false;
+      ++rail_hover_gen_;
+      ApplyRailSizing();
+      PushStateImmediate();
+      return true;
+    }
+    if (web_fullscreen_) {
+      return OnAccelerator(window_, ACCEL_FULLSCREEN);
+    }
+  }
+  return false;
+}
+
+void KajoBrowserWindow::OnTabGotFocus(uint64_t tab_id) {
+  HideAutocomplete();
+  if (!overlay_mode_.empty() && overlay_mode_ != "find") {
+    CloseOverlay();
+  }
+  if (rail_hover_open_ &&
+      (rail_mode_ == KAJO_WEB_RAIL_AUTOHIDE || rail_mode_ == KAJO_WEB_RAIL_COMPACT)) {
+    rail_hover_open_ = false;
+    ++rail_hover_gen_;
+    ApplyRailSizing();
+    PushStateImmediate();
+  }
+}
+
+void KajoBrowserWindow::OnTabBrowserCreated(uint64_t tab_id, CefRefPtr<CefBrowser> browser) {
+  if (TabEntry* e = FindEntry(tab_id)) {
+    e->browser = browser;
+    if (default_zoom_pct_ != 100 && browser->GetHost()) {
+      browser->GetHost()->SetZoomLevel(log(default_zoom_pct_ / 100.0) / log(1.2));
+    }
+  }
+}
+
+void KajoBrowserWindow::OnTabBrowserClosing(uint64_t tab_id) {
+  if (TabEntry* e = FindEntry(tab_id)) e->browser = nullptr;
+}
+
+void KajoBrowserWindow::OnTabAddressChanged(uint64_t tab_id, const std::string& url) {
+  if (!model_) return;
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    g_free(t->uri);
+    t->uri = g_strdup(url.c_str());
+  }
+  if (TabEntry* e = FindEntry(tab_id)) {
+    e->media.clear();
+  }
+  PersistSession();
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::OnTabTitleChanged(uint64_t tab_id, const std::string& title) {
+  if (!model_) return;
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    g_free(t->title);
+    t->title = g_strdup(title.c_str());
+    if (!cfg_.private_mode && storage_ && t->uri &&
+        (strncmp(t->uri, "http://", 7) == 0 || strncmp(t->uri, "https://", 8) == 0)) {
+      web_storage_record_visit(storage_, t->uri, title.c_str());
+      RefreshStorageCache();
+    }
+  }
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::OnTabFaviconChanged(uint64_t tab_id, const std::string& favicon_url) {
+  if (TabEntry* e = FindEntry(tab_id)) {
+    e->favicon_url = favicon_url;
+    PushStateToChrome();
+  }
+}
+
+void KajoBrowserWindow::OnTabLoadingChanged(uint64_t tab_id,
+                                            bool loading,
+                                            bool can_back,
+                                            bool can_forward) {
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    t->loading = loading;
+  }
+  if (TabEntry* e = FindEntry(tab_id)) {
+    e->can_go_back = can_back;
+    e->can_go_forward = can_forward;
+  }
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::OnTabFullscreenChanged(uint64_t tab_id, bool fullscreen) {
+  if (model_ && tab_id == model_->active_id) {
+    web_fullscreen_ = fullscreen;
+    if (window_) {
+      window_->SetFullscreen(fullscreen);
+      if (fullscreen) window_->SetDraggableRegions({});
+    }
+    RebuildLayout();
+    UpdateOverlayBounds();
+  }
+}
+
+void KajoBrowserWindow::OnTabAudioStateChanged(uint64_t tab_id, bool audible) {
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    t->audible = audible;
+    PushStateToChrome();
+  }
+}
+
+void KajoBrowserWindow::OnTabOpenUrl(uint64_t from_tab_id, const std::string& url, bool foreground) {
+  std::string grp;
+  if (KajoWebTabMeta* src = web_model_find_tab(model_, from_tab_id)) {
+    if (src->group) grp = src->group;
+  }
+  OpenNewTab(url, foreground, grp);
+}
+
+bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id, const std::string& url) {
+  size_t qpos = url.find('?');
+  if (qpos == std::string::npos) return false;
+  std::string base = url.substr(0, qpos);
+  while (!base.empty() && base.back() == '/') base.pop_back();
+  const std::string query = url.substr(qpos + 1);
+  const std::string act = GetQueryParam(query, "action");
+  if (act.empty()) return false;
+
+  if (base == "kajo://newtab" && act == "search") {
+    const std::string q = GetQueryParam(query, "q");
+    if (!q.empty()) {
+      NavigateActive(q);
+      return true;
+    }
+  } else if (base == "kajo://bookmarks" && act == "delete" && storage_) {
+    const std::string uuid = GetQueryParam(query, "uuid");
+    if (!uuid.empty()) {
+      web_storage_delete_bookmark(storage_, uuid.c_str());
+      RefreshStorageCache();
+    }
+  } else if (base == "kajo://history" && storage_) {
+    if (act == "clear") {
+      web_storage_clear_history(storage_);
+      history_query_.clear();
+      history_results_.clear();
+      RefreshStorageCache();
+    } else if (act == "delete") {
+      const std::string uri = GetQueryParam(query, "uri");
+      if (!uri.empty()) {
+        web_storage_delete_history_uri(storage_, uri.c_str());
+        RefreshStorageCache();
+      }
+    } else if (act == "search") {
+      history_query_ = GetQueryParam(query, "q");
+      history_results_.clear();
+      GPtrArray* res = web_storage_search_history(storage_, history_query_.c_str(), 100);
+      for (guint i = 0; res && i < res->len; ++i) {
+        const auto* h = static_cast<const KajoWebHistoryEntry*>(g_ptr_array_index(res, i));
+        history_results_.push_back({h->title ? h->title : "", h->uri ? h->uri : "",
+                                    h->visit_count, h->last_visit_ms});
+      }
+      if (res) g_ptr_array_unref(res);
+    }
+  } else if (base == "kajo://adblock" && adblock_) {
+    if (act == "toggle_global") {
+      const bool next_enabled = !adblock_->IsEnabled();
+      adblock_->SetEnabled(next_enabled);
+      if (auto* cs = kajo_config_store_get_default()) {
+        kajo_config_store_update_web(
+            cs,
+            [](KajoWebCfg* draft, gpointer ud) {
+              draft->adblock_enabled = GPOINTER_TO_INT(ud) ? TRUE : FALSE;
+            },
+            GINT_TO_POINTER(next_enabled ? 1 : 0),
+            nullptr);
+      }
+    } else if (act == "unpause") {
+      const std::string h = GetQueryParam(query, "host");
+      if (!h.empty()) adblock_->ToggleHostPaused("https://" + h + "/");
+    } else if (act == "update_lists") {
+      StartFilterListUpdates();
+    }
+  } else if (base == "kajo://downloads" && act == "clear_done") {
+    downloads_.erase(
+        std::remove_if(downloads_.begin(), downloads_.end(),
+                       [](const ChromeDownloadView& d) { return d.complete || d.canceled; }),
+        downloads_.end());
+  } else if (base == "kajo://gpu" && act == "open_chrome_gpu") {
+    CefRefPtr<KajoBrowserWindow> self(this);
+    CefPostTask(TID_UI, new UiTask([self, tab_id]() {
+      if (self->closing_) return;
+      if (TabEntry* e = self->FindEntry(tab_id)) {
+        if (e->browser && e->browser->GetMainFrame()) {
+          e->browser->GetMainFrame()->LoadURL("chrome://gpu");
+        }
+      }
+    }));
+    return true;
+  }
+
+  PushStateImmediate();
+  CefRefPtr<KajoBrowserWindow> self(this);
+  CefPostTask(TID_UI, new UiTask([self, tab_id, base]() {
+    if (self->closing_) return;
+    if (TabEntry* e = self->FindEntry(tab_id)) {
+      if (e->browser && e->browser->GetMainFrame()) {
+        e->browser->GetMainFrame()->LoadURL(base);
+      }
+    }
+  }));
+  return true;
+}
+
+void KajoBrowserWindow::OnTabMediaDetected(uint64_t tab_id,
+                                           const std::string& kind,
+                                           const std::string& uri,
+                                           const std::string& mime,
+                                           int64_t size_bytes) {
+  TabEntry* e = FindEntry(tab_id);
+  if (!e) return;
+  for (const auto& existing : e->media) {
+    if (existing.uri == uri) return;
+  }
+  if (e->media.size() >= 32) return;
+  ChromeMediaView mv;
+  mv.kind = kind;
+  mv.uri = uri;
+  mv.mime_type = mime;
+  mv.size_bytes = size_bytes;
+  size_t slash = uri.find_last_of('/');
+  std::string tail = (slash != std::string::npos) ? uri.substr(slash + 1) : uri;
+  size_t q = tail.find('?');
+  if (q != std::string::npos) tail = tail.substr(0, q);
+  mv.label = kind + (tail.empty() ? "" : " · " + tail);
+  e->media.push_back(mv);
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::OnTabBlockedChanged(uint64_t tab_id) {
+  PushStateToChrome();
+}
+
+void KajoBrowserWindow::OnTabFindResult(uint64_t tab_id,
+                                        int count,
+                                        int active_ordinal,
+                                        bool final_update) {
+  if (model_ && tab_id == model_->active_id) {
+    find_count_ = count;
+    find_active_ = active_ordinal;
+    PushStateImmediate();
+  }
+}
+
+std::string KajoBrowserWindow::GetSuggestedDownloadPath(const std::string& suggested_name,
+                                                        bool* out_ask) {
+  if (out_ask) *out_ask = ask_download_location_;
+  g_mkdir_with_parents(download_dir_.c_str(), 0755);
+  std::string base = suggested_name.empty() ? "download" : suggested_name;
+  g_autofree gchar* full = g_build_filename(download_dir_.c_str(), base.c_str(), nullptr);
+  return full ? std::string(full) : base;
+}
+
+void KajoBrowserWindow::OnTabDownloadUpdated(const ChromeDownloadView& dl,
+                                             CefRefPtr<CefDownloadItemCallback> callback) {
+  if (dl.complete || dl.canceled) {
+    download_callbacks_.erase(dl.id);
+  } else if (callback) {
+    download_callbacks_[dl.id] = callback;
+  }
+  bool found = false;
+  for (auto& existing : downloads_) {
+    if (existing.id == dl.id) {
+      existing = dl;
+      found = true;
+      break;
+    }
+  }
+  if (!found) downloads_.insert(downloads_.begin(), dl);
+  PushStateToChrome();
+}
+
+bool KajoBrowserWindow::OnTabContextCommand(uint64_t tab_id,
+                                            int command_id,
+                                            const std::string& target_url) {
+  if (command_id == 1) {
+    OpenNewTab(target_url, true);
+    return true;
+  }
+  if (command_id == 2 && !target_url.empty()) {
+    const char* argv[] = {"kajo-player", target_url.c_str(), nullptr};
+    kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    return true;
+  }
+  return false;
+}
+
+}  // namespace kajo_web

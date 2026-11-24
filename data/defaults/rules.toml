@@ -43,6 +43,10 @@ title = ['brave', 'whatsapp', 'signal', 'thorium', 'chrome', 'chromium', 'code']
 scroll_factor = 0.15
 
 [[rule]]
+app_id = ['^org\.kajo\.WebCef$']
+scroll_factor = 0.25
+
+[[rule]]
 app_id = ['^org\.kajo\.player$', '^mpv$', '^steam_app_\d+$']
 vrr = true
 
