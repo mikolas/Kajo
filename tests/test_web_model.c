@@ -382,6 +382,42 @@ test_media_sniffer_core(void)
     }
     g_assert_cmpuint(dedup->len, ==, 32);
 
+    /* Media segment URL filtering (chunks/init segments ignored, manifests/progressive kept) */
+    g_assert_cmpint(web_media_classify_resource("https://cdn.example/seg/001.m4s", "video/mp4", 0),
+                    ==, KAJO_MEDIA_NONE);
+    g_assert_cmpint(web_media_classify_resource("https://cdn.example/seg/chunk01.ts", "video/mp2t", 0),
+                    ==, KAJO_MEDIA_NONE);
+    g_assert_cmpint(web_media_classify_resource("https://cdn.example/vod/init.mp4", "video/mp4", 0),
+                    ==, KAJO_MEDIA_NONE);
+    g_assert_cmpint(web_media_classify_resource("https://cdn.example/vod/chunk-0001.mp4", "video/mp4", 0),
+                    ==, KAJO_MEDIA_NONE);
+    g_assert_cmpint(web_media_classify_resource("https://cdn.example/videoplayback?mime=video/mp4&range=0-65535", "video/mp4", 0),
+                    ==, KAJO_MEDIA_NONE);
+    /* Pinned & smart after-tab insertion + reading-order invariants */
+    {
+        const gint64 t0 = 1000 * G_USEC_PER_SEC;
+        g_autoptr(KajoWebModel) tm = web_model_new();
+        KajoWebTabMeta *p = web_model_add_tab(tm, "https://pin.example", "Pin", NULL, TRUE, t0);
+        KajoWebTabMeta *t1 = web_model_add_tab(tm, "https://one.example", "1", NULL, FALSE, t0 + 1);
+        KajoWebTabMeta *t2 = web_model_add_tab(tm, "https://two.example", "2", NULL, FALSE, t0 + 2);
+        /* Inserting after t1 places child between t1 and t2 */
+        KajoWebTabMeta *c1 = web_model_add_tab_after(tm, t1->id, "https://c1.example", "C1", NULL, FALSE, FALSE, t0 + 3);
+        /* Inserting after c1 continues reading-order chain before t2 */
+        KajoWebTabMeta *c2 = web_model_add_tab_after(tm, c1->id, "https://c2.example", "C2", NULL, FALSE, FALSE, t0 + 4);
+        /* Inserting after a pinned tab skips past pinned tabs to first unpinned slot */
+        KajoWebTabMeta *cp = web_model_add_tab_after(tm, p->id, "https://cp.example", "CP", NULL, FALSE, FALSE, t0 + 5);
+        /* Regular add appends at the end */
+        KajoWebTabMeta *end_tab = web_model_add_tab(tm, "https://end.example", "End", NULL, FALSE, t0 + 6);
+        g_assert_cmpuint(tm->tabs->len, ==, 7);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 0))->id, ==, p->id);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 1))->id, ==, cp->id);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 2))->id, ==, t1->id);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 3))->id, ==, c1->id);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 4))->id, ==, c2->id);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 5))->id, ==, t2->id);
+        g_assert_cmpuint(((KajoWebTabMeta *)g_ptr_array_index(tm->tabs, 6))->id, ==, end_tab->id);
+    }
+
     g_ptr_array_unref(dedup);
     g_ptr_array_unref(dv);
     g_ptr_array_unref(hv);

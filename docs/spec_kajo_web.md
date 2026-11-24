@@ -52,7 +52,8 @@
 | **Desktop Web Notifications** | Implemented | Renderer V8 `window.Notification` & `ServiceWorkerRegistration.prototype.showNotification` bridge wired to async `org.freedesktop.Notifications` D-Bus (`Notify`, `CloseNotification`, click-to-focus `ActionInvoked`, `NotificationClosed`) honored across browser tabs and Web App windows. |
 | **Isolated Multi-Profiles & Private Windows** | Implemented | Per-profile `CefRequestContext` + Startup Profile Picker + topbar Profile Switcher + Private in-memory context + `profile_border_accent`. |
 | **Google Drive AppData Sync (`sync_*`)** | **Not implemented** in `kajo-web` | CRDT merge & E2EE helpers exist in `src/web/web_sync_merge.c` (tested by `web-model`) and keys remain in `web.toml` for schema parity, but live OAuth/Drive sync is not wired into `kajo-web` or `page_web.c`. |
-| **HLS/DASH Media Sniffer & `yt-dlp` Downloader** | **Not implemented** in `kajo-web` | Pure parser helpers exist in `src/web/web_media_sniff_core.c`, but passive stream sniffing/`ffmpeg`/`yt-dlp` UI are not active in `kajo-web` or `page_web.c`. |
+| **Media Sniffer & Stream Downloader** | Implemented (`MediaDownloadManager`) | Passive `OnResourceResponse` sniffing (`web_media_classify_resource`, ignoring `.ts`/`.m4s`/init/range chunks) surfaces the Media Streams popout (`⬇`); HLS (`.m3u8`) and DASH (`.mpd`) streams remux cleanly to MP4 (`.mkv` fallback) via asynchronous `ffmpeg` (`GSubprocess`) forwarding page `Referer`, `User-Agent`, and `CefCookieManager` cookies into `downloads_` + SQLite history. Optional `⬇ Download Page Video (yt-dlp)` button appears when `yt-dlp` is installed in `$PATH` (otherwise displays an availability note). |
+| **Rich Context Menu, Clipboard & View Source** | Implemented | Image (`Open Image in New Tab`, `Save Image As...`, native Chromium/Wayland PNG `Copy Image`, `Copy Image Address`), Link (`Open Link in New Tab` in background reading order, `Copy Link Address`, `Save Link As...`), Video/Audio (`Open Media in New Tab`, `Save Media As...`, `Copy Media Address`, `Play in kajo-player`), and in-tab `View Page Source` (`view-source:` tab via `Ctrl+U` or context menu). Smart reading-order tab placement inserts child/link tabs right after their parent tab while explicit `Ctrl+T` / `+ NEW TAB` append at the end. |
 | **Widevine Commercial DRM / Chrome Extensions** | **Not supported** | Alloy runtime does not ship Chrome's extension service runtime or proprietary Widevine CDM bundle. |
 
 ---
@@ -87,6 +88,7 @@
 | `Alt+1` .. `Alt+9` | Jump to tab `1..8` (`Alt+9` selects last tab) |
 | `Ctrl+R` / `Ctrl+Shift+R` / `Ctrl+F5` | Reload / Hard reload bypassing cache |
 | `Ctrl+F` | Toggle inline Find Bar |
+| `Ctrl+U` | View Page Source in a new tab (`view-source:`) |
 | `Ctrl+Shift+U` | Toggle Top Bar Zen Autohide |
 | `Ctrl+Shift+N` | Open Ephemeral Private Window |
 | `Ctrl+J` | Toggle Downloads Popout |
@@ -123,6 +125,8 @@
 | `src/web_cef/cef_host_coord.h` | Coordinator interface connecting `KajoCefApp`, `KajoBrowserWindow`, and `KajoWebAppWindow`. |
 | `src/web_cef/cef_tab.{h,cc}` | Per-tab `CefClient` callbacks (navigation, title, favicon, HTTPS-Only & cookie policy, downloads, JS dialogs, permission prompts, crash handler, shortcuts). |
 | `src/web_cef/cef_chrome_ui.{h,cc}` | HTML/CSS/JS chrome builder (`topbar`, `rail`, `overlay`, theme CSS tokens, inline SVGs) and `kajo://*` scheme responses. |
+| `src/web_cef/cef_clipboard.{h,cc}` | In-browser text & cookie-authenticated image-to-PNG clipboard helpers (`CopyTextViaBrowser`, `CopyImageViaBrowser`). |
+| `src/web_cef/cef_media_dl.{h,cc}` | Asynchronous `GSubprocess`-backed `ffmpeg` HLS/DASH remuxer & optional `yt-dlp` downloader integrated with `downloads_`. |
 | `src/web_cef/cef_ipc.{h,cc}` | Per-profile single-instance Unix socket server (`ProfileIpcServer`) and external URL forwarding (`TryForwardToRunningInstance`). |
 | `src/web_cef/cef_site_util.h` | Pure host/eTLD+1 matching, private-host check, color/href sanitization, origin favicon fallback, and `ComputeChromeUiMetrics`. |
 | `src/web_cef/cef_adblock.{h,cc}` | IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync cache. |

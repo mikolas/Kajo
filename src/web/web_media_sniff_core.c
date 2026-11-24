@@ -51,6 +51,49 @@ uri_path_has_ext(const gchar *uri, const gchar *ext)
     return g_ascii_strncasecmp(uri + len - ext_len, ext, ext_len) == 0;
 }
 
+static gboolean
+is_segment_like_uri(const gchar *uri)
+{
+    if (!uri)
+        return FALSE;
+    if (uri_path_has_ext(uri, ".m4s") ||
+        uri_path_has_ext(uri, ".ts") ||
+        uri_path_has_ext(uri, ".m4f") ||
+        uri_path_has_ext(uri, ".cmfv") ||
+        uri_path_has_ext(uri, ".cmfa")) {
+        return TRUE;
+    }
+
+    const char *q = strpbrk(uri, "?#");
+    gsize path_len = q ? (gsize)(q - uri) : strlen(uri);
+    g_autofree gchar *path = g_ascii_strdown(uri, (gssize)path_len);
+    if (g_str_has_suffix(path, "/init.mp4") ||
+        g_str_has_suffix(path, "/init.m4v") ||
+        g_str_has_suffix(path, "/init.m4a")) {
+        return TRUE;
+    }
+    const char *slash = strrchr(path, '/');
+    const char *base = slash ? slash + 1 : path;
+    if (g_str_has_suffix(base, ".mp4") &&
+        (g_str_has_prefix(base, "seg-") ||
+         g_str_has_prefix(base, "seg_") ||
+         g_str_has_prefix(base, "chunk-") ||
+         g_str_has_prefix(base, "chunk_") ||
+         g_str_has_prefix(base, "fragment-") ||
+         g_str_has_prefix(base, "frag-"))) {
+        return TRUE;
+    }
+
+    if (q && *q == '?') {
+        g_autofree gchar *qlow = g_ascii_strdown(q, -1);
+        if (strstr(qlow, "?range=") || strstr(qlow, "&range=") ||
+            strstr(qlow, "?sq=") || strstr(qlow, "&sq=")) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
 KajoWebMediaKind
 web_media_classify_resource(const gchar *uri,
                             const gchar *mime_type,
@@ -70,6 +113,9 @@ web_media_classify_resource(const gchar *uri,
         uri_path_has_ext(uri, ".mpd")) {
         return KAJO_MEDIA_DASH;
     }
+
+    if (is_segment_like_uri(uri))
+        return KAJO_MEDIA_NONE;
 
     gboolean is_video_mime = mime_type && g_str_has_prefix(mime_type, "video/") &&
                              g_ascii_strcasecmp(mime_type, "video/mp2t") != 0;

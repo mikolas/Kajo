@@ -223,6 +223,8 @@ std::string ChromeStateStore::SnapshotJson() const {
   o << "\"filter_update_busy\":" << (s.filter_update_busy ? "true" : "false") << ",";
   o << "\"filter_update_status\":\"" << JsonEscape(s.filter_update_status) << "\",";
   o << "\"hw_accel_enabled\":" << (s.hw_accel_enabled ? "true" : "false") << ",";
+  o << "\"ffmpeg_available\":" << (s.ffmpeg_available ? "true" : "false") << ",";
+  o << "\"yt_dlp_available\":" << (s.yt_dlp_available ? "true" : "false") << ",";
   o << "\"find_query\":\"" << JsonEscape(s.find_query) << "\",";
   o << "\"find_active\":" << s.find_active << ",";
   o << "\"find_count\":" << s.find_count << ",";
@@ -487,6 +489,21 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     letter-spacing: 0.4px;
     padding: 0 8px;
   }
+  .toast-pill {
+    height: var(--metro-ctrl-h);
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    background: var(--metro-surface-3);
+    border: 1px solid var(--metro-accent);
+    color: #ffffff;
+    font-size: var(--metro-badge-size);
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+  }
   .btn.close:hover {
     background: var(--metro-urgent);
     border-color: var(--metro-urgent);
@@ -679,6 +696,7 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     <div class="drag-spacer"></div>
 
     <div class="cluster">
+      <span id="toastPill" class="toast-pill hidden"></span>
       <button id="btnSwRender" class="btn sw-chip hidden" title="Hardware GPU acceleration disabled — open kajo://gpu">⚠ SW RENDER</button>
       <button id="btnMedia" class="btn hidden" title="Sniffed Media Streams"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg><span id="mediaCount" style="margin-left:4px;">0</span></button>
       <button id="btnDl" class="btn dl-btn" title="Downloads (Ctrl+J)" aria-label="Downloads">
@@ -726,6 +744,7 @@ const blockedNum = document.getElementById('blockedNum');
 const btnInstallApp = document.getElementById('btnInstallApp');
 const btnStar = document.getElementById('btnStar');
 const btnSwRender = document.getElementById('btnSwRender');
+const toastPill = document.getElementById('toastPill');
 const btnMedia = document.getElementById('btnMedia');
 const mediaCount = document.getElementById('mediaCount');
 const btnDl = document.getElementById('btnDl');
@@ -740,6 +759,22 @@ const loadBar = document.getElementById('loadBar');
 
 let lastState = null;
 let acSelectedIdx = -1;
+let toastTimer = null;
+
+window.__kajoToast = (msg) => {
+  if (!toastPill) return;
+  if (!msg) {
+    toastPill.classList.add('hidden');
+    return;
+  }
+  toastPill.textContent = msg;
+  toastPill.classList.remove('hidden');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    toastPill.classList.add('hidden');
+    toastTimer = null;
+  }, 1800);
+};
 
 function updateOmniDisplay(url) {
   omniHost.className = 'omni-host';
@@ -748,6 +783,12 @@ function updateOmniDisplay(url) {
   omniPh.classList.add('hidden');
   if (!url || url === 'about:blank') {
     omniPh.classList.remove('hidden');
+    return;
+  }
+  if (url.startsWith('view-source:')) {
+    omniHost.classList.add('kajo-scheme');
+    omniHost.textContent = 'view-source:';
+    omniPath.textContent = url.slice('view-source:'.length);
     return;
   }
   if (url.startsWith('kajo://') || url.startsWith('chrome://')) {
@@ -836,6 +877,9 @@ window.__kajoApply = (s) => {
   if (url.startsWith('https://')) {
     secBadge.textContent = '🔒 HTTPS';
     secBadge.classList.add('tls');
+  } else if (url.startsWith('view-source:')) {
+    secBadge.textContent = '⟨/⟩ SRC';
+    secBadge.classList.add('kajo');
   } else if (url.startsWith('kajo://')) {
     secBadge.textContent = '❖ KAJO';
     secBadge.classList.add('kajo');
@@ -2240,20 +2284,60 @@ window.__kajoApply = (s) => {
     act.append(bPause, bUpdate, bDash);
     root.appendChild(act);
   } else if (mode === 'media') {
-    root.appendChild(renderHeader('⬇ SNIFFED MEDIA STREAMS'));
+    root.appendChild(renderHeader('⬇ MEDIA STREAMS & DOWNLOADER'));
+    const bar = document.createElement('div');
+    bar.className = 'act-row';
+    if (s.yt_dlp_available && s.active_url &&
+        (s.active_url.startsWith('http://') || s.active_url.startsWith('https://'))) {
+      const bYt = document.createElement('button');
+      bYt.className = 'btn primary';
+      bYt.textContent = '⬇ Download Page Video (yt-dlp)';
+      bYt.onclick = () => send('download_page_ytdlp');
+      bar.appendChild(bYt);
+    } else {
+      const note = document.createElement('span');
+      note.className = 'item-sub';
+      note.style.marginRight = 'auto';
+      note.textContent = s.ffmpeg_available
+        ? 'HLS/DASH streams remux via ffmpeg · Install yt-dlp for full site extraction'
+        : 'ffmpeg not found in PATH — only direct MP4/WebM downloads available';
+      bar.appendChild(note);
+    }
+    root.appendChild(bar);
+
     const list = document.createElement('div');
     list.className = 'list';
-    for (const m of (s.media_streams || [])) {
+    const streams = s.media_streams || [];
+    if (!streams.length) {
+      const empty = document.createElement('div');
+      empty.className = 'stat-card';
+      empty.style.cssText = 'margin:8px;padding:14px;';
+      const t = document.createElement('div');
+      t.className = 'item-title';
+      t.textContent = 'No media streams sniffed on this tab yet';
+      const sub = document.createElement('div');
+      sub.className = 'item-sub';
+      sub.style.marginTop = '4px';
+      sub.textContent = 'Start video or audio playback to capture HLS (.m3u8), DASH (.mpd), or direct streams.';
+      empty.append(t, sub);
+      list.appendChild(empty);
+    }
+    for (const m of streams) {
       const row = document.createElement('div');
       row.className = 'item';
-      row.appendChild(makeMainBox(m.label || m.uri || '', (m.mime_type || '') + ' · ' + (m.uri || '')));
+      row.appendChild(makeMainBox(m.label || m.uri || '', (m.mime_type || m.kind || '') + ' · ' + (m.uri || '')));
       const play = document.createElement('button');
-      play.className = 'btn primary';
+      play.className = 'btn';
       play.textContent = '▶ kajo-player';
       play.onclick = (e) => { e.stopPropagation(); send('play_in_kajo_player', { uri: m.uri }); };
+      const isStream = (m.kind === 'HLS' || m.kind === 'DASH');
       const dl = document.createElement('button');
-      dl.className = 'btn';
-      dl.textContent = '⬇ Save';
+      dl.className = 'btn primary';
+      dl.textContent = isStream ? '⬇ Save MP4' : '⬇ Save';
+      if (isStream && !s.ffmpeg_available) {
+        dl.disabled = true;
+        dl.title = 'ffmpeg not found in PATH';
+      }
       dl.onclick = (e) => { e.stopPropagation(); send('download_media_uri', { uri: m.uri }); };
       row.append(play, dl);
       list.appendChild(row);

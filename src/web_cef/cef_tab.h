@@ -25,6 +25,21 @@
 
 namespace kajo_web {
 
+enum KajoContextCommand {
+  KAJO_CTX_OPEN_LINK_TAB = 1,
+  KAJO_CTX_COPY_LINK_URL = 2,
+  KAJO_CTX_SAVE_LINK_AS = 3,
+  KAJO_CTX_OPEN_IMAGE_TAB = 4,
+  KAJO_CTX_SAVE_IMAGE_AS = 5,
+  KAJO_CTX_COPY_IMAGE = 6,
+  KAJO_CTX_COPY_IMAGE_URL = 7,
+  KAJO_CTX_OPEN_MEDIA_TAB = 8,
+  KAJO_CTX_SAVE_MEDIA_AS = 9,
+  KAJO_CTX_COPY_MEDIA_URL = 10,
+  KAJO_CTX_PLAY_IN_PLAYER = 11,
+  KAJO_CTX_VIEW_SOURCE = 12,
+};
+
 class TabCallbacks {
 public:
   virtual ~TabCallbacks() = default;
@@ -47,7 +62,9 @@ public:
                                   const std::string& kind,
                                   const std::string& uri,
                                   const std::string& mime,
-                                  int64_t size_bytes) = 0;
+                                  int64_t size_bytes,
+                                  const std::string& referer,
+                                  const std::string& user_agent) = 0;
   virtual void OnTabBlockedChanged(uint64_t tab_id) = 0;
   virtual void OnTabFindResult(uint64_t tab_id, int count, int active_ordinal, bool final_update) = 0;
   virtual bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) = 0;

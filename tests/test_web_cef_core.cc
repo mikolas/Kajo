@@ -1,5 +1,6 @@
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_ipc.h"
+#include "web_cef/cef_media_dl.h"
 #include "web_cef/cef_site_util.h"
 #include "web_cef/cef_webapps.h"
 
@@ -387,6 +388,128 @@ static void test_zoom_shortcut_classifier_and_levels(void) {
   g_assert_cmpfloat(ZoomPercentToCefLevel(80), <, 0.0);
 }
 
+static void test_media_dl_helpers_and_ffmpeg(void) {
+  const std::string fn1 = SanitizeMediaFilename("My: Video / Test?.mp4", "vid");
+  const std::string fn2 = SanitizeMediaFilename("https://cdn.example.com/hls/master.m3u8?x=1", "stream");
+  const std::string fn3 = SanitizeMediaFilename("///", "fallback");
+  g_assert_cmpstr(fn1.c_str(), ==, "My_ Video _ Test");
+  g_assert_cmpstr(fn2.c_str(), ==, "master");
+  g_assert_cmpstr(fn3.c_str(), ==, "fallback");
+
+  const std::string hdr = BuildFfmpegHeaderArg(
+      "https://site.example/watch\r\nX-Injected: bad",
+      "sid=abc\n");
+  g_assert_cmpstr(hdr.c_str(), ==, "Referer: https://site.example/watchX-Injected: bad\r\nCookie: sid=abc\r\n");
+
+  const auto mp4_args = BuildFfmpegRemuxArgs(
+      "/usr/bin/ffmpeg", "https://cdn.example/master.m3u8", "/tmp/out.mp4",
+      hdr, "TestUA/1.0", false);
+  bool has_faststart = false, has_bsf = false, has_headers = false;
+  for (const auto& a : mp4_args) {
+    if (a == "+faststart") has_faststart = true;
+    if (a == "aac_adtstoasc") has_bsf = true;
+    if (a == "-headers") has_headers = true;
+  }
+  g_assert_true(has_faststart && has_bsf && has_headers);
+
+  const auto mkv_args = BuildFfmpegRemuxArgs(
+      "/usr/bin/ffmpeg", "/tmp/local.m3u8", "/tmp/out.mkv",
+      hdr, "TestUA/1.0", true);
+  bool mkv_has_bsf = false, mkv_has_headers = false;
+  for (const auto& a : mkv_args) {
+    if (a == "aac_adtstoasc") mkv_has_bsf = true;
+    if (a == "-headers") mkv_has_headers = true;
+  }
+  g_assert_false(mkv_has_bsf);
+  g_assert_false(mkv_has_headers); /* local path skips HTTP -headers */
+
+  MediaProgressSample sample;
+  g_assert_true(ParseFfmpegProgressLine("out_time_us=1500000", &sample));
+  g_assert_cmpint(sample.out_time_us, ==, 1500000);
+  g_assert_true(ParseFfmpegProgressLine("total_size=524288", &sample));
+  g_assert_cmpint(sample.total_size, ==, 524288);
+  g_assert_true(ParseFfmpegProgressLine("speed=2.5x", &sample));
+  g_assert_cmpfloat(sample.speed_x, >, 2.4);
+  g_assert_true(ParseFfmpegProgressLine("progress=end", &sample));
+  g_assert_true(sample.progress_end);
+
+  int pct = 0;
+  int64_t spd = 0, tot = 0;
+  g_assert_true(ParseYtDlpProgressLine(
+      "[download]  45.2% of ~  100.00MiB at    2.50MiB/s ETA 00:22", &pct, &spd, &tot));
+  g_assert_cmpint(pct, ==, 45);
+  g_assert_cmpint(tot, >, 100000000LL);
+  g_assert_cmpint(spd, >, 2000000LL);
+
+  g_autofree gchar* tmp_dir = g_dir_make_tmp("kajo-cef-dl-XXXXXX", nullptr);
+  g_assert_nonnull(tmp_dir);
+  g_autofree gchar* existing = g_build_filename(tmp_dir, "clip.mp4", nullptr);
+  g_file_set_contents(existing, "x", 1, nullptr);
+  const std::string uniq = BuildUniqueMediaPath(tmp_dir, "clip", "mp4");
+  g_assert_true(uniq.find("clip-1.mp4") != std::string::npos);
+
+  if (IsFfmpegAvailable()) {
+    g_autofree gchar* m3u8_path = g_build_filename(tmp_dir, "tiny.m3u8", nullptr);
+    g_autofree gchar* seg_tmpl = g_build_filename(tmp_dir, "tiny%d.ts", nullptr);
+    g_autofree gchar* seg0_path = g_build_filename(tmp_dir, "tiny0.ts", nullptr);
+    const gchar* gen_argv[] = {
+        "ffmpeg", "-y", "-nostdin", "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "color=c=black:s=64x64:d=0.4:r=25",
+        "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+        "-t", "0.4", "-pix_fmt", "yuv420p", "-c:v", "libx264", "-c:a", "aac",
+        "-hls_time", "1", "-hls_list_size", "0",
+        "-hls_segment_filename", seg_tmpl, m3u8_path, nullptr};
+    gint wait_status = 1;
+    const gboolean spawned = g_spawn_sync(
+        nullptr, const_cast<gchar**>(gen_argv), nullptr, G_SPAWN_SEARCH_PATH,
+        nullptr, nullptr, nullptr, nullptr, &wait_status, nullptr);
+    g_assert_true(spawned);
+    g_assert_true(g_spawn_check_wait_status(wait_status, nullptr));
+    g_assert_true(g_file_test(m3u8_path, G_FILE_TEST_EXISTS));
+
+    GMutex mu;
+    GCond cond;
+    g_mutex_init(&mu);
+    g_cond_init(&cond);
+    bool done = false;
+    ChromeDownloadView final_view;
+
+    MediaDownloadManager mgr([&](const ChromeDownloadView& v) {
+      g_mutex_lock(&mu);
+      final_view = v;
+      if (v.complete || v.canceled) {
+        done = true;
+        g_cond_signal(&cond);
+      }
+      g_mutex_unlock(&mu);
+    });
+    const uint32_t jid = mgr.StartFfmpegStream(
+        m3u8_path, "Synthetic Test Clip", tmp_dir, "", "", "");
+    g_assert_cmpuint(jid, >, 0);
+
+    g_mutex_lock(&mu);
+    const gint64 deadline = g_get_monotonic_time() + 10000000LL;
+    while (!done) {
+      if (!g_cond_wait_until(&cond, &mu, deadline)) break;
+    }
+    g_mutex_unlock(&mu);
+
+    g_assert_true(done);
+    g_assert_true(final_view.complete);
+    g_assert_false(final_view.canceled);
+    g_assert_true(g_file_test(final_view.full_path.c_str(), G_FILE_TEST_EXISTS));
+    g_assert_cmpint(final_view.total_bytes, >, 0);
+    if (!final_view.full_path.empty()) g_unlink(final_view.full_path.c_str());
+
+    g_cond_clear(&cond);
+    g_mutex_clear(&mu);
+    g_unlink(m3u8_path);
+    g_unlink(seg0_path);
+  }
+  g_unlink(existing);
+  g_rmdir(tmp_dir);
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
   g_test_add_func("/web_cef/core/log_severity", test_log_severity_parsing);
@@ -398,5 +521,6 @@ int main(int argc, char** argv) {
   g_test_add_func("/web_cef/core/webapps", test_webapps_core_and_manifest);
   g_test_add_func("/web_cef/core/ipc_app_forwarding", test_ipc_app_forwarding);
   g_test_add_func("/web_cef/core/zoom_shortcuts", test_zoom_shortcut_classifier_and_levels);
+  g_test_add_func("/web_cef/core/media_dl", test_media_dl_helpers_and_ffmpeg);
   return g_test_run();
 }

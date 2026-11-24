@@ -266,6 +266,37 @@ web_model_free(KajoWebModel *m)
     g_free(m);
 }
 
+static KajoWebTabMeta *
+web_model_insert_tab_at(KajoWebModel *m,
+                        guint         insert_at,
+                        const gchar  *uri,
+                        const gchar  *title,
+                        const gchar  *group,
+                        gboolean      pinned,
+                        gboolean      activate,
+                        gint64        now_us)
+{
+    KajoWebTabMeta *t = g_new0(KajoWebTabMeta, 1);
+    t->id = m->next_id++;
+    t->uri = g_strdup(uri && *uri ? uri : "kajo://newtab");
+    t->title = g_strdup(title && *title ? title : t->uri);
+    t->group = (group && *group) ? g_strdup(group) : NULL;
+    t->pinned = pinned;
+    t->last_active_us = now_us;
+
+    if (insert_at > m->tabs->len)
+        insert_at = m->tabs->len;
+    g_ptr_array_insert(m->tabs, (gint)insert_at, t);
+
+    if (activate || m->tabs->len == 1) {
+        m->active_id = t->id;
+        mru_bump(m, t->id);
+    } else {
+        g_array_append_val(m->mru_ids, t->id);
+    }
+    return t;
+}
+
 KajoWebTabMeta *
 web_model_add_tab_ex(KajoWebModel *m,
                      const gchar  *uri,
@@ -277,32 +308,49 @@ web_model_add_tab_ex(KajoWebModel *m,
 {
     if (!m)
         return NULL;
-    KajoWebTabMeta *t = g_new0(KajoWebTabMeta, 1);
-    t->id = m->next_id++;
-    t->uri = g_strdup(uri && *uri ? uri : "kajo://newtab");
-    t->title = g_strdup(title && *title ? title : t->uri);
-    t->group = (group && *group) ? g_strdup(group) : NULL;
-    t->pinned = pinned;
-    t->last_active_us = now_us;
-
+    guint insert_at = m->tabs->len;
     if (pinned) {
-        guint insert_at = 0;
+        insert_at = 0;
         while (insert_at < m->tabs->len &&
                ((KajoWebTabMeta *)g_ptr_array_index(m->tabs, insert_at))->pinned) {
             insert_at++;
         }
-        g_ptr_array_insert(m->tabs, (gint)insert_at, t);
-    } else {
-        g_ptr_array_add(m->tabs, t);
     }
+    return web_model_insert_tab_at(m, insert_at, uri, title, group, pinned, activate, now_us);
+}
 
-    if (activate || m->tabs->len == 1) {
-        m->active_id = t->id;
-        mru_bump(m, t->id);
-    } else {
-        g_array_append_val(m->mru_ids, t->id);
+KajoWebTabMeta *
+web_model_add_tab_after(KajoWebModel *m,
+                        guint64       after_tab_id,
+                        const gchar  *uri,
+                        const gchar  *title,
+                        const gchar  *group,
+                        gboolean      pinned,
+                        gboolean      activate,
+                        gint64        now_us)
+{
+    if (!m)
+        return NULL;
+    if (pinned || after_tab_id == 0)
+        return web_model_add_tab_ex(m, uri, title, group, pinned, activate, now_us);
+
+    gint found_idx = -1;
+    for (guint i = 0; i < m->tabs->len; i++) {
+        KajoWebTabMeta *cand = g_ptr_array_index(m->tabs, i);
+        if (cand->id == after_tab_id) {
+            found_idx = (gint)i;
+            break;
+        }
     }
-    return t;
+    if (found_idx < 0)
+        return web_model_add_tab_ex(m, uri, title, group, pinned, activate, now_us);
+
+    guint insert_at = (guint)found_idx + 1;
+    while (insert_at < m->tabs->len &&
+           ((KajoWebTabMeta *)g_ptr_array_index(m->tabs, insert_at))->pinned) {
+        insert_at++;
+    }
+    return web_model_insert_tab_at(m, insert_at, uri, title, group, pinned, activate, now_us);
 }
 
 KajoWebTabMeta *
@@ -614,6 +662,7 @@ web_model_resolve_input(const gchar         *raw_input,
         g_str_has_prefix(trimmed, "kajo://") ||
         g_str_has_prefix(trimmed, "chrome://") ||
         g_str_has_prefix(trimmed, "devtools://") ||
+        g_str_has_prefix(trimmed, "view-source:") ||
         g_str_has_prefix(trimmed, "file://") ||
         g_str_has_prefix(trimmed, "about:")) {
         return g_strdup(trimmed);

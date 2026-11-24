@@ -49,6 +49,8 @@ struct ChromeMediaView {
   std::string label;
   std::string uri;
   std::string mime_type;
+  std::string referer;
+  std::string user_agent;
   int64_t size_bytes = 0;
 };
 
@@ -185,6 +187,8 @@ struct ChromeStateSnapshot {
   std::string filter_update_status;
   bool hw_accel_enabled = true;
   bool widevine_available = false;
+  bool ffmpeg_available = false;
+  bool yt_dlp_available = false;
   std::string widevine_path;
   std::string user_agent;
 

@@ -16,11 +16,13 @@
 #include "compositor/compositor.h"
 #include "config/kajo_config_store.h"
 #include "include/cef_app.h"
+#include "include/cef_cookie.h"
 #include "include/cef_request.h"
 #include "include/cef_task.h"
 #include "include/cef_urlrequest.h"
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_sync_merge.h"
+#include "web_cef/cef_clipboard.h"
 #include "web_cef/cef_host_coord.h"
 #include "web_cef/cef_site_util.h"
 
@@ -55,6 +57,7 @@ enum WindowAccelId {
   ACCEL_SETTINGS,
   ACCEL_FULLSCREEN,
   ACCEL_DEVTOOLS,
+  ACCEL_VIEW_SOURCE,
 };
 
 std::string ToLowerCopy(const std::string& s) {
@@ -337,6 +340,53 @@ private:
   IMPLEMENT_REFCOUNTING(WebAssetFetchClient);
 };
 
+class CookieCollectVisitor : public CefCookieVisitor {
+public:
+  using DoneCb = std::function<void(std::string cookie_header)>;
+
+  explicit CookieCollectVisitor(DoneCb cb) : cb_(std::move(cb)) {}
+
+  ~CookieCollectVisitor() override {
+    if (!fired_ && cb_) {
+      auto cb = std::move(cb_);
+      std::string out = std::move(header_);
+      fired_ = true;
+      CefPostTask(TID_UI, new UiTask([cb = std::move(cb), out = std::move(out)]() {
+        cb(out);
+      }));
+    }
+  }
+
+  bool Visit(const CefCookie& cookie, int count, int total, bool& deleteCookie) override {
+    deleteCookie = false;
+    const std::string name = CefString(&cookie.name).ToString();
+    const std::string val = CefString(&cookie.value).ToString();
+    if (!name.empty()) {
+      if (!header_.empty()) header_ += "; ";
+      header_ += name + "=" + val;
+    }
+    if (count + 1 >= total) {
+      FinishNow();
+      return false;
+    }
+    return true;
+  }
+
+private:
+  void FinishNow() {
+    if (fired_ || !cb_) return;
+    fired_ = true;
+    auto cb = std::move(cb_);
+    std::string out = std::move(header_);
+    cb(std::move(out));
+  }
+
+  DoneCb cb_;
+  std::string header_;
+  bool fired_ = false;
+  IMPLEMENT_REFCOUNTING(CookieCollectVisitor);
+};
+
 }  // namespace
 
 KajoBrowserWindow::KajoBrowserWindow(BrowserHostCoordinator* coordinator,
@@ -365,6 +415,10 @@ KajoBrowserWindow::~KajoBrowserWindow() {
     ResolvePermissionReq(req, false, false);
   }
   pending_permissions_.clear();
+  if (media_dl_) {
+    media_dl_->CancelAll();
+    media_dl_.reset();
+  }
   if (model_) web_model_free(model_);
   if (storage_) web_storage_free(storage_);
   if (profiles_) web_profile_registry_free(profiles_);
@@ -373,6 +427,18 @@ KajoBrowserWindow::~KajoBrowserWindow() {
 void KajoBrowserWindow::InitBackend() {
   model_ = web_model_new();
   storage_ = web_storage_new(cfg_.data_dir.c_str());
+  ffmpeg_available_ = IsFfmpegAvailable();
+  yt_dlp_available_ = IsYtDlpAvailable();
+  KajoBrowserWindow* raw_self = this;
+  media_dl_ = std::make_unique<MediaDownloadManager>(
+      [raw_self](const ChromeDownloadView& dl) {
+        CefRefPtr<KajoBrowserWindow> self(raw_self);
+        CefPostTask(TID_UI, new UiTask([self, dl]() {
+          if (!self->closing_) {
+            self->OnTabDownloadUpdated(0, dl, nullptr);
+          }
+        }));
+      });
 
   profiles_ = web_profile_registry_new();
   g_autofree gchar* reg_path = g_build_filename(
@@ -740,6 +806,7 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   window_->SetAccelerator(ACCEL_PRIVATE_WINDOW, 'N', true, true, false, false);
   window_->SetAccelerator(ACCEL_PROFILES, 'M', true, true, false, false);
   window_->SetAccelerator(ACCEL_SETTINGS, 0xBC /*VK_OEM_COMMA*/, false, true, false, false);
+  window_->SetAccelerator(ACCEL_VIEW_SOURCE, 'U', false, true, false, false);
   window_->SetAccelerator(ACCEL_FULLSCREEN, 0x7A /*F11*/, false, false, false, false);
   window_->SetAccelerator(ACCEL_DEVTOOLS, 0x7B /*F12*/, false, false, false, false);
 
@@ -1103,6 +1170,10 @@ void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
     if (kv.second.client) kv.second.client->DetachCallbacks();
   }
   download_callbacks_.clear();
+  if (media_dl_) {
+    media_dl_->CancelAll();
+    media_dl_.reset();
+  }
   if (router_) router_->RemoveHandler(this);
 }
 
@@ -1249,8 +1320,71 @@ uint64_t KajoBrowserWindow::OpenNewTab(const std::string& url,
   return meta->id;
 }
 
+uint64_t KajoBrowserWindow::OpenNewTabAfter(uint64_t parent_tab_id,
+                                            const std::string& url,
+                                            bool foreground,
+                                            const std::string& group) {
+  const std::string target = url.empty() ? DefaultNewTabUrl() : url;
+  uint64_t anchor_id = parent_tab_id;
+  if (parent_tab_id != 0 && parent_tab_id == child_chain_parent_id_ &&
+      child_chain_last_id_ != 0 && web_model_find_tab(model_, child_chain_last_id_) != nullptr) {
+    anchor_id = child_chain_last_id_;
+  }
+  KajoWebTabMeta* meta = web_model_add_tab_after(
+      model_, anchor_id, target.c_str(), "Loading...",
+      group.empty() ? nullptr : group.c_str(), FALSE, foreground, g_get_monotonic_time());
+  if (!meta) return 0;
+  AttachTabView(meta->id, target, foreground);
+  if (!foreground && parent_tab_id != 0) {
+    child_chain_parent_id_ = parent_tab_id;
+    child_chain_last_id_ = meta->id;
+  }
+  return meta->id;
+}
+
+void KajoBrowserWindow::ShowTopbarToast(const std::string& msg) {
+  if (closing_ || !topbar_browser_ || !topbar_browser_->GetMainFrame() || msg.empty()) return;
+  const std::string js =
+      "window.__kajoToast && window.__kajoToast(\"" + JsonEscape(msg) + "\");";
+  topbar_browser_->GetMainFrame()->ExecuteJavaScript(
+      js, topbar_browser_->GetMainFrame()->GetURL(), 0);
+}
+
+void KajoBrowserWindow::StartStreamDownload(const std::string& uri,
+                                            const std::string& title,
+                                            const std::string& referer,
+                                            const std::string& user_agent) {
+  if (closing_ || !media_dl_ || uri.empty()) return;
+  if (!ffmpeg_available_) {
+    ShowTopbarToast("ffmpeg not installed");
+    return;
+  }
+  const std::string dl_dir = download_dir_;
+  const std::string effective_ua = user_agent.empty() ? cfg_.user_agent : user_agent;
+  if (request_context_) {
+    if (CefRefPtr<CefCookieManager> cm = request_context_->GetCookieManager(nullptr)) {
+      CefRefPtr<KajoBrowserWindow> self(this);
+      CefRefPtr<CookieCollectVisitor> visitor(new CookieCollectVisitor(
+          [self, uri, title, dl_dir, referer, effective_ua](std::string cookie_header) {
+            if (self->closing_ || !self->media_dl_) return;
+            self->media_dl_->StartFfmpegStream(
+                uri, title, dl_dir, referer, effective_ua, cookie_header);
+          }));
+      if (cm->VisitUrlCookies(uri, true, visitor)) {
+        return;
+      }
+    }
+  }
+  media_dl_->StartFfmpegStream(uri, title, dl_dir, referer, effective_ua, "");
+}
+
 void KajoBrowserWindow::ActivateTab(uint64_t tab_id) {
+  const uint64_t prev_active = model_ ? model_->active_id : 0;
   if (!model_ || !web_model_activate(model_, tab_id, g_get_monotonic_time())) return;
+  if (prev_active != tab_id) {
+    child_chain_parent_id_ = 0;
+    child_chain_last_id_ = 0;
+  }
   KajoWebTabMeta* target_meta = web_model_find_tab(model_, tab_id);
   TabEntry* existing = FindEntry(tab_id);
   if (target_meta && (target_meta->suspended || !existing || !existing->view)) {
@@ -1299,6 +1433,10 @@ void KajoBrowserWindow::DestroyTabView(CefRefPtr<CefBrowserView> view,
 
 void KajoBrowserWindow::CloseTab(uint64_t tab_id) {
   if (!model_ || closing_) return;
+  if (tab_id == child_chain_parent_id_ || tab_id == child_chain_last_id_) {
+    child_chain_parent_id_ = 0;
+    child_chain_last_id_ = 0;
+  }
   const bool was_active = (model_->active_id == tab_id);
   CancelPermissionsForTab(tab_id);
   if (adblock_) adblock_->RemoveTabBlockedCount(static_cast<int>(tab_id));
@@ -1345,7 +1483,7 @@ void KajoBrowserWindow::DuplicateTab(uint64_t tab_id) {
   if (fav.empty()) {
     if (TabEntry* se = FindEntry(tab_id)) fav = se->favicon_url;
   }
-  const uint64_t new_id = OpenNewTab(uri, true, grp);
+  const uint64_t new_id = OpenNewTabAfter(tab_id, uri, true, grp);
   if (new_id && !fav.empty()) {
     web_model_set_tab_favicon(model_, new_id, fav.c_str());
     if (TabEntry* ne = FindEntry(new_id)) ne->favicon_url = fav;
@@ -1545,7 +1683,9 @@ void KajoBrowserWindow::CancelPermissionsForTab(uint64_t tab_id) {
 void KajoBrowserWindow::NavigateActive(const std::string& raw_input) {
   if (raw_input.empty()) return;
   std::string target;
-  if (raw_input.rfind("chrome://", 0) == 0 || raw_input.rfind("devtools://", 0) == 0) {
+  if (raw_input.rfind("chrome://", 0) == 0 ||
+      raw_input.rfind("devtools://", 0) == 0 ||
+      raw_input.rfind("view-source:", 0) == 0) {
     target = raw_input;
   } else {
     g_autofree gchar* resolved = web_model_resolve_input(
@@ -1714,6 +1854,7 @@ void KajoBrowserWindow::BuildPalette(const std::string& query) {
       {"Toggle Top Bar Autohide (Zen Mode)", "Ctrl+Shift+U", "toggle_topbar_mode", ""},
       {"Bookmark Page", "Ctrl+D", "open_bookmark_popover", ""},
       {"Find in Page", "Ctrl+F", "open_find", ""},
+      {"View Page Source", "Ctrl+U", "view_source", ""},
       {"Open Downloads Overlay", "Ctrl+J", "open_downloads_overlay", ""},
       {"Open Profiles & Private Switcher", "Ctrl+Shift+M", "open_profiles_overlay", ""},
       {"Open Adblock Dashboard", "kajo://adblock", "open_kajo_page", "kajo://adblock"},
@@ -1944,6 +2085,8 @@ void KajoBrowserWindow::PushStateImmediate() {
   s.icon_size_px = metrics.icon_size_px;
   s.hw_accel_enabled = cfg_.hw_accel_enabled;
   s.widevine_available = cfg_.widevine_available;
+  s.ffmpeg_available = ffmpeg_available_;
+  s.yt_dlp_available = yt_dlp_available_;
   s.widevine_path = cfg_.widevine_path;
   s.user_agent = cfg_.user_agent;
   s.find_query = find_query_;
@@ -2156,6 +2299,9 @@ bool KajoBrowserWindow::IsKnownDownloadPath(const std::string& path) const {
 void KajoBrowserWindow::RemoveDownload(uint32_t did, int64_t db_id, bool cancel_active) {
   if (did != 0) {
     dismissed_downloads_.insert(did);
+    if (cancel_active && media_dl_ && media_dl_->HasJob(did)) {
+      media_dl_->Cancel(did);
+    }
     auto cb_it = download_callbacks_.find(did);
     if (cb_it != download_callbacks_.end()) {
       if (cancel_active && cb_it->second) cb_it->second->Cancel();
@@ -2535,6 +2681,8 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       OpenBookmarkPopover();
     } else if (act == "open_find") {
       ToggleOverlay("find");
+    } else if (act == "view_source") {
+      OnAccelerator(window_, ACCEL_VIEW_SOURCE);
     } else if (act == "open_downloads_overlay") {
       ToggleOverlay("downloads");
     } else if (act == "open_profiles_overlay") {
@@ -2606,8 +2754,39 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
   } else if (cmd == "download_media_uri") {
     const std::string uri = get_str("uri");
     if (!uri.empty()) {
+      ChromeMediaView matched;
       if (TabEntry* e = ActiveEntry()) {
+        for (const auto& mv : e->media) {
+          if (mv.uri == uri) {
+            matched = mv;
+            break;
+          }
+        }
+      }
+      const bool is_stream =
+          matched.kind == "HLS" || matched.kind == "DASH" ||
+          uri.find(".m3u8") != std::string::npos || uri.find(".mpd") != std::string::npos;
+      if (is_stream) {
+        std::string title;
+        if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+          if (act->title && act->title[0] != '\0') title = act->title;
+        }
+        StartStreamDownload(uri, title, matched.referer, matched.user_agent);
+        ShowTopbarToast(ffmpeg_available_ ? "Saving stream via ffmpeg..." : "ffmpeg not found");
+        if (ffmpeg_available_ && overlay_mode_ == "media") ToggleOverlay("downloads");
+      } else if (TabEntry* e = ActiveEntry()) {
         if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StartDownload(uri);
+      }
+    }
+  } else if (cmd == "download_page_ytdlp") {
+    KajoWebTabMeta* act = web_model_get_active(model_);
+    if (act && act->uri && media_dl_ && yt_dlp_available_) {
+      const std::string page_url = act->uri;
+      if (page_url.rfind("http://", 0) == 0 || page_url.rfind("https://", 0) == 0) {
+        const std::string title = (act->title && act->title[0]) ? act->title : "video";
+        media_dl_->StartYtDlp(page_url, title, download_dir_, cfg_.user_agent);
+        ShowTopbarToast("Downloading via yt-dlp...");
+        if (overlay_mode_ == "media") ToggleOverlay("downloads");
       }
     }
   } else if (cmd == "pause_download") {
@@ -2632,9 +2811,13 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     }
   } else if (cmd == "cancel_download") {
     uint32_t did = static_cast<uint32_t>(get_int("id"));
-    auto it = download_callbacks_.find(did);
-    if (it != download_callbacks_.end() && it->second) {
-      it->second->Cancel();
+    if (media_dl_ && media_dl_->HasJob(did)) {
+      media_dl_->Cancel(did);
+    } else {
+      auto it = download_callbacks_.find(did);
+      if (it != download_callbacks_.end() && it->second) {
+        it->second->Cancel();
+      }
     }
   } else if (cmd == "open_download_file") {
     const std::string path = get_str("path");
@@ -2887,6 +3070,17 @@ bool KajoBrowserWindow::OnAccelerator(CefRefPtr<CefWindow> window, int command_i
         }
       }
       return true;
+    case ACCEL_VIEW_SOURCE:
+      if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+        const std::string url = act->uri ? act->uri : "";
+        if ((url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0 ||
+             url.rfind("file://", 0) == 0) &&
+            url.rfind("view-source:", 0) != 0) {
+          const std::string grp = act->group ? act->group : "";
+          OpenNewTabAfter(act->id, "view-source:" + url, true, grp);
+        }
+      }
+      return true;
     default:
       return false;
   }
@@ -2908,7 +3102,7 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
     if (vk == 'R') return OnAccelerator(window_, shift ? ACCEL_HARD_RELOAD : ACCEL_RELOAD);
     if (vk == 0x74 /*Ctrl+F5*/ && !shift) return OnAccelerator(window_, ACCEL_HARD_RELOAD);
     if (vk == 'B' && !shift) return OnAccelerator(window_, ACCEL_TOGGLE_RAIL);
-    if (vk == 'U' && shift) return OnAccelerator(window_, ACCEL_TOGGLE_TOPBAR);
+    if (vk == 'U') return OnAccelerator(window_, shift ? ACCEL_TOGGLE_TOPBAR : ACCEL_VIEW_SOURCE);
     if (vk == 'D' && !shift) return OnAccelerator(window_, ACCEL_BOOKMARK);
     if (vk == 'M') return OnAccelerator(window_, shift ? ACCEL_PROFILES : ACCEL_MUTE_TAB);
     if (vk == 'J' && !shift) return OnAccelerator(window_, ACCEL_DOWNLOADS);
@@ -3177,7 +3371,7 @@ void KajoBrowserWindow::OnTabOpenUrl(uint64_t from_tab_id, const std::string& ur
   if (KajoWebTabMeta* src = web_model_find_tab(model_, from_tab_id)) {
     if (src->group) grp = src->group;
   }
-  OpenNewTab(url, foreground, grp);
+  OpenNewTabAfter(from_tab_id, url, foreground, grp);
 }
 
 bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id,
@@ -3426,7 +3620,9 @@ void KajoBrowserWindow::OnTabMediaDetected(uint64_t tab_id,
                                            const std::string& kind,
                                            const std::string& uri,
                                            const std::string& mime,
-                                           int64_t size_bytes) {
+                                           int64_t size_bytes,
+                                           const std::string& referer,
+                                           const std::string& user_agent) {
   TabEntry* e = FindEntry(tab_id);
   if (!e) return;
   for (const auto& existing : e->media) {
@@ -3437,6 +3633,8 @@ void KajoBrowserWindow::OnTabMediaDetected(uint64_t tab_id,
   mv.kind = kind;
   mv.uri = uri;
   mv.mime_type = mime;
+  mv.referer = referer;
+  mv.user_agent = user_agent;
   mv.size_bytes = size_bytes;
   size_t slash = uri.find_last_of('/');
   std::string tail = (slash != std::string::npos) ? uri.substr(slash + 1) : uri;
@@ -3470,7 +3668,9 @@ void KajoBrowserWindow::OnTabFindResult(uint64_t tab_id,
 
 std::string KajoBrowserWindow::GetSuggestedDownloadPath(const std::string& suggested_name,
                                                         bool* out_ask) {
-  if (out_ask) *out_ask = ask_download_location_;
+  const bool ask = ask_download_location_ || force_ask_next_download_;
+  force_ask_next_download_ = false;
+  if (out_ask) *out_ask = ask;
   g_mkdir_with_parents(download_dir_.c_str(), 0755);
   std::string base = suggested_name.empty() ? "download" : suggested_name;
   g_autofree gchar* full = g_build_filename(download_dir_.c_str(), base.c_str(), nullptr);
@@ -3541,18 +3741,80 @@ void KajoBrowserWindow::OnTabDownloadUpdated(uint64_t tab_id,
 bool KajoBrowserWindow::OnTabContextCommand(uint64_t tab_id,
                                             int command_id,
                                             const std::string& target_url) {
-  if (command_id == 1) {
-    OpenNewTab(target_url, true);
-    return true;
+  std::string grp;
+  if (KajoWebTabMeta* src = web_model_find_tab(model_, tab_id)) {
+    if (src->group) grp = src->group;
   }
-  if (command_id == 2 &&
-      (target_url.rfind("http://", 0) == 0 || target_url.rfind("https://", 0) == 0 ||
-       target_url.rfind("file://", 0) == 0)) {
-    const char* argv[] = {"kajo-player", "--", target_url.c_str(), nullptr};
-    kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
-    return true;
+  TabEntry* e = FindEntry(tab_id);
+  CefRefPtr<CefBrowser> b = e ? e->browser : nullptr;
+
+  switch (command_id) {
+    case KAJO_CTX_OPEN_LINK_TAB:
+      if (target_url.empty()) return false;
+      OpenNewTabAfter(tab_id, target_url, false, grp);
+      return true;
+    case KAJO_CTX_OPEN_IMAGE_TAB:
+    case KAJO_CTX_OPEN_MEDIA_TAB:
+      if (target_url.empty()) return false;
+      OpenNewTabAfter(tab_id, target_url, true, grp);
+      return true;
+    case KAJO_CTX_COPY_LINK_URL:
+    case KAJO_CTX_COPY_IMAGE_URL:
+    case KAJO_CTX_COPY_MEDIA_URL:
+      if (target_url.empty() || !b) return false;
+      clipboard_auto_allow_until_us_ = g_get_monotonic_time() + 2000000;
+      if (e && e->view) e->view->RequestFocus();
+      CopyTextViaBrowser(b, target_url);
+      ShowTopbarToast(command_id == KAJO_CTX_COPY_LINK_URL
+                          ? "Copied link"
+                          : (command_id == KAJO_CTX_COPY_IMAGE_URL ? "Copied image URL"
+                                                                  : "Copied media URL"));
+      return true;
+    case KAJO_CTX_COPY_IMAGE: {
+      if (target_url.empty() || !b) return false;
+      clipboard_auto_allow_until_us_ = g_get_monotonic_time() + 4000000;
+      if (e && e->view) e->view->RequestFocus();
+      ShowTopbarToast("Copying image...");
+      CefRefPtr<KajoBrowserWindow> self(this);
+      CopyImageViaBrowser(b, request_context_, target_url, [self](bool ok) {
+        if (!self->closing_) {
+          self->ShowTopbarToast(ok ? "Copied image" : "Copy image failed");
+        }
+      });
+      return true;
+    }
+    case KAJO_CTX_SAVE_LINK_AS:
+    case KAJO_CTX_SAVE_IMAGE_AS:
+    case KAJO_CTX_SAVE_MEDIA_AS:
+      if (target_url.empty() || !b || !b->GetHost()) return false;
+      if (target_url.find(".m3u8") != std::string::npos ||
+          target_url.find(".mpd") != std::string::npos) {
+        std::string title;
+        if (KajoWebTabMeta* src = web_model_find_tab(model_, tab_id)) {
+          if (src->title && src->title[0] != '\0') title = src->title;
+        }
+        StartStreamDownload(target_url, title, "", "");
+        ShowTopbarToast(ffmpeg_available_ ? "Saving stream via ffmpeg..." : "ffmpeg not found");
+        return true;
+      }
+      force_ask_next_download_ = true;
+      b->GetHost()->StartDownload(target_url);
+      return true;
+    case KAJO_CTX_PLAY_IN_PLAYER:
+      if (target_url.rfind("http://", 0) == 0 || target_url.rfind("https://", 0) == 0 ||
+          target_url.rfind("file://", 0) == 0) {
+        const char* argv[] = {"kajo-player", "--", target_url.c_str(), nullptr};
+        kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+        return true;
+      }
+      return false;
+    case KAJO_CTX_VIEW_SOURCE:
+      if (target_url.empty() || target_url.rfind("view-source:", 0) == 0) return false;
+      OpenNewTabAfter(tab_id, "view-source:" + target_url, true, grp);
+      return true;
+    default:
+      return false;
   }
-  return false;
 }
 
 void KajoBrowserWindow::OnTabCrashed(uint64_t tab_id,
@@ -3627,6 +3889,11 @@ bool KajoBrowserWindow::OnTabPermissionPrompt(
     uint32_t perms,
     CefRefPtr<CefPermissionPromptCallback> callback) {
   if (!callback || closing_) return false;
+  if ((perms & CEF_PERMISSION_TYPE_CLIPBOARD) != 0 &&
+      g_get_monotonic_time() <= clipboard_auto_allow_until_us_) {
+    callback->Continue(CEF_PERMISSION_RESULT_ACCEPT);
+    return true;
+  }
   const std::string key = PermissionKey(0, perms);
   const int decision = (coord_ && coord_->SharedPermissions() && !cfg_.private_mode)
                            ? coord_->SharedPermissions()->Lookup(origin, key)

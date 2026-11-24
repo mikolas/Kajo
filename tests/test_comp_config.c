@@ -515,6 +515,16 @@ test_config_shipped_defaults(void)
     comp_rules_match_window(cfg->rules, "org.freedesktop.impl.portal.desktop.gtk", "Select Folder", &wr);
     g_assert_true(wr.has_floating && wr.floating);
 
+    comp_rules_match_window(cfg->rules, "kajo-webapp-default-whatsapp", "WhatsApp", &wr);
+    g_assert_true(wr.has_scroll_factor);
+    g_assert_cmpfloat_with_epsilon(wr.scroll_factor, 1.0, 1e-12);
+    comp_rules_match_window(cfg->rules, "org.kajo.Web", "Kajo Web", &wr);
+    g_assert_true(wr.has_scroll_factor);
+    g_assert_cmpfloat_with_epsilon(wr.scroll_factor, 1.0, 1e-12);
+    comp_rules_match_window(cfg->rules, "brave-browser", "WhatsApp — Brave", &wr);
+    g_assert_true(wr.has_scroll_factor);
+    g_assert_cmpfloat_with_epsilon(wr.scroll_factor, 0.15, 1e-12);
+
     CompLayerRuleResult lr;
     comp_rules_match_layer(cfg->rules, "kajo", &lr);
     g_assert_true(lr.has_opacity);
