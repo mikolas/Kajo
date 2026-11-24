@@ -1,6 +1,8 @@
 #include "../src/web/web_model.h"
 #include "../src/web/web_sync_merge.h"
 #include "../src/web/web_media_sniff_core.h"
+#include "../src/web/web_abp_compiler.h"
+#include "../src/web/web_storage.h"
 #include <glib.h>
 #include <glib/gstdio.h>
 #include <string.h>
@@ -98,6 +100,15 @@ test_tab_model_and_suspension(void)
     web_model_find_tab(m, id_a)->audible = FALSE;
     web_model_find_tab(m, id_a)->capture_active = TRUE;
     g_assert_false(web_model_can_suspend(m, web_model_find_tab(m, id_a), 30, later));
+
+    /* Visual tab cycling (forward / backward with wraparound) */
+    g_assert_true(web_model_activate(m, id_c, later)); /* order in m->tabs: [C (pinned), A, B] */
+    g_assert_cmpuint(web_model_cycle_visual(m, TRUE), ==, id_a);
+    g_assert_true(web_model_activate(m, id_a, later));
+    g_assert_cmpuint(web_model_cycle_visual(m, TRUE), ==, id_b);
+    g_assert_true(web_model_activate(m, id_b, later));
+    g_assert_cmpuint(web_model_cycle_visual(m, TRUE), ==, id_c);
+    g_assert_cmpuint(web_model_cycle_visual(m, FALSE), ==, id_a);
 
     /* Close B and reopen via Ctrl+Shift+T LIFO stack */
     g_assert_true(web_model_close_tab(m, id_b));
@@ -298,17 +309,104 @@ test_media_sniffer_core(void)
     g_assert_cmpint(d0->kind, ==, KAJO_MEDIA_DASH);
     g_assert_cmpint(d0->height, ==, 1080);
 
-    /* Deduplication */
+    /* Deduplication (exact + ?range=/&range= byte-range normalization + 32-stream cap) */
     GPtrArray *dedup = g_ptr_array_new_with_free_func(web_media_stream_free);
     g_assert_true(web_media_list_add_unique(dedup,
         web_media_stream_new(KAJO_MEDIA_HLS, "https://x/a.m3u8", "A", NULL, 0, 0, 0, 0)));
     g_assert_false(web_media_list_add_unique(dedup,
         web_media_stream_new(KAJO_MEDIA_HLS, "https://x/a.m3u8", "A dup", NULL, 0, 0, 0, 0)));
-    g_assert_cmpuint(dedup->len, ==, 1);
+    g_assert_true(web_media_list_add_unique(dedup,
+        web_media_stream_new(KAJO_MEDIA_PROGRESSIVE, "https://cdn/vp?itag=18&range=0-1024", "S1", NULL, 0, 0, 0, 0)));
+    g_assert_false(web_media_list_add_unique(dedup,
+        web_media_stream_new(KAJO_MEDIA_PROGRESSIVE, "https://cdn/vp?itag=18&range=1025-4096", "S2", NULL, 0, 0, 0, 0)));
+    g_assert_cmpuint(dedup->len, ==, 2);
+    for (guint i = 2; i < 40; i++) {
+        g_autofree gchar *u = g_strdup_printf("https://cdn/stream_%u.mp4", i);
+        gboolean ok = web_media_list_add_unique(dedup,
+            web_media_stream_new(KAJO_MEDIA_PROGRESSIVE, u, "S", NULL, 0, 0, 0, 0));
+        if (i < 32)
+            g_assert_true(ok);
+        else
+            g_assert_false(ok);
+    }
+    g_assert_cmpuint(dedup->len, ==, 32);
 
     g_ptr_array_unref(dedup);
     g_ptr_array_unref(dv);
     g_ptr_array_unref(hv);
+}
+
+/* 7. ABP / EasyList -> WebKit Content Blocker Compiler Safety & Translation */
+static void
+test_abp_compiler_safety(void)
+{
+    /* Disjunctions, bounded quantifiers, lookaheads & PCRE shorthands MUST be rejected */
+    g_assert_false(web_abp_is_webkit_regex_safe("^https?://criteo\\.(com|net)/"));
+    g_assert_false(web_abp_is_webkit_regex_safe("^https?://a\\.b/[0-9]{2,4}"));
+    g_assert_false(web_abp_is_webkit_regex_safe("^https?://(?:foo)bar"));
+    g_assert_false(web_abp_is_webkit_regex_safe("^https?://foo/\\d+"));
+    g_assert_true(web_abp_is_webkit_regex_safe("^https?://([^/]+\\.)?adobedtm\\.com/"));
+
+    const char *sample =
+        "||doubleclick.net^\n"
+        "||aas.snmdt.fi^$third-party,script\n"
+        "@@||doubleclick.net/ok.js$domain=example.com\n"
+        "##.global-ad-banner\n"
+        "##div:has(> .sponsored)\n"
+        "~hs.fi##.unless-only-global\n"
+        "hs.fi##[data-ad-position]\n"
+        "hs.fi#?#div:has-text(Mainos)\n"
+        "0.0.0.0 tracker.test.invalid\n";
+    guint n = 0;
+    g_autofree gchar *json = web_abp_compile_text_to_json(sample, 100, &n);
+    g_assert_nonnull(json);
+    g_assert_cmpuint(n, ==, 5);
+    g_assert_nonnull(strstr(json, "snmdt"));
+    g_assert_nonnull(strstr(json, "ignore-previous-rules"));
+    g_assert_nonnull(strstr(json, "css-display-none"));
+    g_assert_null(strstr(json, "global-ad-banner"));
+    g_assert_null(strstr(json, "sponsored"));
+    g_assert_null(strstr(json, "unless-only-global"));
+    g_assert_null(strstr(json, "has-text"));
+}
+
+/* 8. SQLite History Persistence & Targeted Deletion */
+static void
+test_storage_history_and_delete(void)
+{
+    g_autoptr(GError) err = NULL;
+    g_autofree gchar *tmp = g_dir_make_tmp("kajo-web-test-XXXXXX", &err);
+    g_assert_no_error(err);
+    g_assert_nonnull(tmp);
+
+    KajoWebStorage *st = web_storage_new(tmp);
+    g_assert_nonnull(st);
+
+    web_storage_record_visit(st, "https://example.com/a", "Page A");
+    web_storage_record_visit(st, "https://example.org/b", "Page B");
+
+    g_autoptr(GPtrArray) all = web_storage_search_history(st, NULL, 20);
+    g_assert_cmpuint(all->len, ==, 2);
+
+    web_storage_delete_history_uri(st, "https://example.com/a");
+    g_autoptr(GPtrArray) after_del = web_storage_search_history(st, NULL, 20);
+    g_assert_cmpuint(after_del->len, ==, 1);
+    const KajoWebHistoryEntry *rem = g_ptr_array_index(after_del, 0);
+    g_assert_cmpstr(rem->uri, ==, "https://example.org/b");
+
+    web_storage_clear_history(st);
+    g_autoptr(GPtrArray) after_clr = web_storage_search_history(st, NULL, 20);
+    g_assert_cmpuint(after_clr->len, ==, 0);
+
+    web_storage_free(st);
+
+    g_autofree gchar *db = g_build_filename(tmp, "history.db", NULL);
+    g_autofree gchar *wal = g_build_filename(tmp, "history.db-wal", NULL);
+    g_autofree gchar *shm = g_build_filename(tmp, "history.db-shm", NULL);
+    g_unlink(db);
+    g_unlink(wal);
+    g_unlink(shm);
+    g_rmdir(tmp);
 }
 
 int
@@ -321,5 +419,7 @@ main(int argc, char **argv)
     g_test_add_func("/web/profile-registry-roundtrip", test_profile_registry_roundtrip);
     g_test_add_func("/web/sync-crdt-and-e2ee", test_sync_crdt_and_e2ee);
     g_test_add_func("/web/media-sniffer-core", test_media_sniffer_core);
+    g_test_add_func("/web/abp-compiler-safety", test_abp_compiler_safety);
+    g_test_add_func("/web/storage-history", test_storage_history_and_delete);
     return g_test_run();
 }

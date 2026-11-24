@@ -527,6 +527,10 @@ web_sync_trigger_now(KajoWebSync *sync, const KajoWebCfg *cfg, const gchar *pass
         !cfg->sync_oauth_client_id || !*cfg->sync_oauth_client_id) {
         return;
     }
+    if (!cfg->sync_bookmarks) {
+        emit_status(sync, "BOOKMARK SYNC DISABLED");
+        return;
+    }
     scrub_and_free(&sync->e2ee_passphrase);
     if (cfg->sync_e2ee_enabled && passphrase && *passphrase)
         sync->e2ee_passphrase = g_strdup(passphrase);

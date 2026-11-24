@@ -199,14 +199,46 @@ web_media_parse_dash_mpd(const gchar *mpd_text, const gchar *manifest_uri)
     return out;
 }
 
+#define KAJO_WEB_MAX_MEDIA_STREAMS 32
+
+/* Strip transient byte-range parameters (e.g. ?range=0-1024 / &range=...) so
+ * repeated DASH segment requests for the same stream collapse to one entry. */
+static gchar *
+media_uri_dedup_key(const gchar *uri)
+{
+    if (!uri)
+        return g_strdup("");
+    const gchar *q = strchr(uri, '?');
+    if (!q)
+        return g_strdup(uri);
+
+    GString *out = g_string_new_len(uri, (gssize)(q - uri));
+    g_auto(GStrv) parts = g_strsplit(q + 1, "&", -1);
+    gboolean first = TRUE;
+    for (int i = 0; parts && parts[i]; i++) {
+        if (g_str_has_prefix(parts[i], "range="))
+            continue;
+        g_string_append_c(out, first ? '?' : '&');
+        g_string_append(out, parts[i]);
+        first = FALSE;
+    }
+    return g_string_free(out, FALSE);
+}
+
 gboolean
 web_media_list_add_unique(GPtrArray *list, KajoWebMediaStream *stream)
 {
     if (!list || !stream)
         return FALSE;
+    if (list->len >= KAJO_WEB_MAX_MEDIA_STREAMS) {
+        web_media_stream_free(stream);
+        return FALSE;
+    }
+    g_autofree gchar *key = media_uri_dedup_key(stream->uri);
     for (guint i = 0; i < list->len; i++) {
         const KajoWebMediaStream *existing = g_ptr_array_index(list, i);
-        if (g_strcmp0(existing->uri, stream->uri) == 0) {
+        g_autofree gchar *ekey = media_uri_dedup_key(existing->uri);
+        if (g_strcmp0(ekey, key) == 0) {
             web_media_stream_free(stream);
             return FALSE;
         }

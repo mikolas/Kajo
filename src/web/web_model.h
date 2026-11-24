@@ -56,6 +56,7 @@ typedef struct {
     gboolean  pinned;
     gboolean  audible;
     gboolean  muted;
+    gboolean  loading;
     gboolean  suspended;
     gboolean  capture_active; /* WebRTC / mic / cam / download active */
     gint64    last_active_us; /* g_get_monotonic_time() */
@@ -94,6 +95,7 @@ gboolean         web_model_move_tab(KajoWebModel *m, guint64 id, guint target_in
 KajoWebTabMeta  *web_model_find_tab(KajoWebModel *m, guint64 id);
 KajoWebTabMeta  *web_model_get_active(KajoWebModel *m);
 guint64          web_model_cycle_mru(KajoWebModel *m, gboolean forward);
+guint64          web_model_cycle_visual(const KajoWebModel *m, gboolean forward);
 gboolean         web_model_can_suspend(const KajoWebModel   *m,
                                        const KajoWebTabMeta *t,
                                        gint                  suspend_idle_min,

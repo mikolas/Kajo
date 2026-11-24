@@ -25,6 +25,7 @@ static void
 init_schema(sqlite3 *db)
 {
     static const char *sql =
+        "PRAGMA busy_timeout=3000;"
         "PRAGMA journal_mode=WAL;"
         "PRAGMA synchronous=NORMAL;"
         "CREATE TABLE IF NOT EXISTS history ("
@@ -41,7 +42,8 @@ init_schema(sqlite3 *db)
         "  folder TEXT NOT NULL DEFAULT '',"
         "  updated_at INTEGER NOT NULL,"
         "  deleted INTEGER NOT NULL DEFAULT 0"
-        ");";
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_bookmarks_uri ON bookmarks(uri, deleted);";
     sqlite3_exec(db, sql, NULL, NULL, NULL);
 }
 
@@ -141,6 +143,19 @@ web_storage_search_history(KajoWebStorage *st, const gchar *query, gint limit)
     }
     sqlite3_finalize(stmt);
     return out;
+}
+
+void
+web_storage_delete_history_uri(KajoWebStorage *st, const gchar *uri)
+{
+    if (!st || !st->db || !uri || !*uri)
+        return;
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(st->db, "DELETE FROM history WHERE uri = ?1;", -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, uri, -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
 }
 
 void

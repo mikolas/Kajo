@@ -465,6 +465,27 @@ web_model_cycle_mru(KajoWebModel *m, gboolean forward)
                    : g_array_index(m->mru_ids, guint64, m->mru_ids->len - 1);
 }
 
+guint64
+web_model_cycle_visual(const KajoWebModel *m, gboolean forward)
+{
+    if (!m || m->tabs->len == 0)
+        return 0;
+    if (m->tabs->len == 1)
+        return ((const KajoWebTabMeta *)g_ptr_array_index(m->tabs, 0))->id;
+
+    guint cur = 0;
+    for (guint i = 0; i < m->tabs->len; i++) {
+        const KajoWebTabMeta *t = g_ptr_array_index(m->tabs, i);
+        if (t->id == m->active_id) {
+            cur = i;
+            break;
+        }
+    }
+    guint nxt = forward ? (cur + 1) % m->tabs->len
+                        : (cur + m->tabs->len - 1) % m->tabs->len;
+    return ((const KajoWebTabMeta *)g_ptr_array_index(m->tabs, nxt))->id;
+}
+
 gboolean
 web_model_can_suspend(const KajoWebModel   *m,
                       const KajoWebTabMeta *t,

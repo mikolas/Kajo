@@ -20,10 +20,14 @@ typedef struct {
     GtkWidget              *root;     /* Full-viewport dim scrim */
     GtkWidget              *card;
     GtkWidget              *entry;
+    GtkWidget              *scroll;
     GtkWidget              *listbox;
     KajoWebPaletteCallbacks cbs;
     gpointer                ud;
-    GPtrArray              *all_items; /* PalItem* */
+    GPtrArray              *all_items; /* PalItem* static/open items */
+    GPtrArray              *dyn_items; /* PalItem* query-time SQLite/fallback items */
+    const KajoWebModel     *model;
+    KajoWebStorage         *storage;
 } PalCtx;
 
 static void
@@ -46,6 +50,7 @@ pal_ctx_free(gpointer ptr)
     if (!ctx)
         return;
     g_clear_pointer(&ctx->all_items, g_ptr_array_unref);
+    g_clear_pointer(&ctx->dyn_items, g_ptr_array_unref);
     g_free(ctx);
 }
 
@@ -78,6 +83,53 @@ activate_item(PalCtx *ctx, const PalItem *it)
 }
 
 static void
+append_list_row(PalCtx *ctx, const PalItem *it, guint idx)
+{
+    GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(row, "web-palette-row");
+
+    GtkWidget *tag = gtk_label_new(it->tag);
+    gtk_widget_set_valign(tag, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(tag, "shell-popover-badge");
+    gtk_widget_add_css_class(tag, "web-palette-tag");
+
+    GtkWidget *lbl = gtk_label_new(it->label);
+    gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_hexpand(lbl, TRUE);
+    gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+    gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+
+    GtkWidget *sub = gtk_label_new(it->sub);
+    gtk_label_set_ellipsize(GTK_LABEL(sub), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_valign(sub, GTK_ALIGN_CENTER);
+    gtk_widget_add_css_class(sub, "web-dim-label");
+
+    gtk_box_append(GTK_BOX(row), tag);
+    gtk_box_append(GTK_BOX(row), lbl);
+    gtk_box_append(GTK_BOX(row), sub);
+
+    GtkWidget *lrow = gtk_list_box_row_new();
+    gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(lrow), row);
+    g_object_set_data(G_OBJECT(lrow), "pal-item", (gpointer)it);
+    gtk_list_box_append(GTK_LIST_BOX(ctx->listbox), lrow);
+    if (idx == 0)
+        gtk_list_box_select_row(GTK_LIST_BOX(ctx->listbox), GTK_LIST_BOX_ROW(lrow));
+}
+
+static gboolean
+has_shown_uri(GPtrArray *seen, const gchar *uri)
+{
+    if (!uri || !*uri)
+        return FALSE;
+    for (guint i = 0; i < seen->len; i++) {
+        if (g_strcmp0(g_ptr_array_index(seen, i), uri) == 0)
+            return TRUE;
+    }
+    return FALSE;
+}
+
+static void
 rebuild_rows(PalCtx *ctx, const gchar *filter)
 {
     GtkWidget *child = gtk_widget_get_first_child(ctx->listbox);
@@ -86,11 +138,13 @@ rebuild_rows(PalCtx *ctx, const gchar *filter)
         gtk_list_box_remove(GTK_LIST_BOX(ctx->listbox), child);
         child = next;
     }
+    g_ptr_array_set_size(ctx->dyn_items, 0);
 
     g_autofree gchar *fq = (filter && *filter) ? g_utf8_strdown(filter, -1) : NULL;
+    g_autoptr(GPtrArray) seen_uris = g_ptr_array_new_with_free_func(g_free);
     guint shown = 0;
 
-    for (guint i = 0; i < ctx->all_items->len && shown < 24; i++) {
+    for (guint i = 0; i < ctx->all_items->len && shown < 14; i++) {
         PalItem *it = g_ptr_array_index(ctx->all_items, i);
         if (fq) {
             g_autofree gchar *ll = g_utf8_strdown(it->label, -1);
@@ -98,37 +152,66 @@ rebuild_rows(PalCtx *ctx, const gchar *filter)
             if (!strstr(ll, fq) && !strstr(ls, fq))
                 continue;
         }
-        GtkWidget *row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
-        gtk_widget_set_valign(row, GTK_ALIGN_CENTER);
-        gtk_widget_add_css_class(row, "web-palette-row");
+        append_list_row(ctx, it, shown++);
+        if (it->kind == PAL_KIND_URI && it->payload && *it->payload)
+            g_ptr_array_add(seen_uris, g_strdup(it->payload));
+    }
 
-        GtkWidget *tag = gtk_label_new(it->tag);
-        gtk_widget_set_valign(tag, GTK_ALIGN_CENTER);
-        gtk_widget_add_css_class(tag, "shell-popover-badge");
-        gtk_widget_add_css_class(tag, "web-palette-tag");
+    if (ctx->storage) {
+        g_autoptr(GPtrArray) bms = web_storage_list_bookmarks(ctx->storage, FALSE);
+        for (guint i = 0; bms && i < bms->len && shown < 22; i++) {
+            const KajoWebBookmark *b = g_ptr_array_index(bms, i);
+            if (!b || !b->uri || has_shown_uri(seen_uris, b->uri))
+                continue;
+            const gchar *t = (b->title && *b->title) ? b->title : b->uri;
+            if (fq) {
+                g_autofree gchar *lt = g_utf8_strdown(t, -1);
+                g_autofree gchar *lu = g_utf8_strdown(b->uri, -1);
+                if (!strstr(lt, fq) && !strstr(lu, fq))
+                    continue;
+            }
+            PalItem *it = g_new0(PalItem, 1);
+            it->kind = PAL_KIND_URI;
+            it->tag = g_strdup("★ BM");
+            it->label = g_strdup(t);
+            it->sub = g_strdup(b->uri);
+            it->payload = g_strdup(b->uri);
+            g_ptr_array_add(ctx->dyn_items, it);
+            g_ptr_array_add(seen_uris, g_strdup(b->uri));
+            append_list_row(ctx, it, shown++);
+        }
 
-        GtkWidget *lbl = gtk_label_new(it->label);
-        gtk_label_set_ellipsize(GTK_LABEL(lbl), PANGO_ELLIPSIZE_END);
-        gtk_widget_set_hexpand(lbl, TRUE);
-        gtk_widget_set_halign(lbl, GTK_ALIGN_START);
-        gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
+        g_autoptr(GPtrArray) hist = web_storage_search_history(ctx->storage, filter, 12);
+        for (guint i = 0; hist && i < hist->len && shown < 28; i++) {
+            const KajoWebHistoryEntry *h = g_ptr_array_index(hist, i);
+            if (!h || !h->uri || has_shown_uri(seen_uris, h->uri))
+                continue;
+            const gchar *t = (h->title && *h->title) ? h->title : h->uri;
+            PalItem *it = g_new0(PalItem, 1);
+            it->kind = PAL_KIND_URI;
+            it->tag = g_strdup("↺ HIST");
+            it->label = g_strdup(t);
+            it->sub = g_strdup(h->uri);
+            it->payload = g_strdup(h->uri);
+            g_ptr_array_add(ctx->dyn_items, it);
+            g_ptr_array_add(seen_uris, g_strdup(h->uri));
+            append_list_row(ctx, it, shown++);
+        }
+    }
 
-        GtkWidget *sub = gtk_label_new(it->sub);
-        gtk_label_set_ellipsize(GTK_LABEL(sub), PANGO_ELLIPSIZE_END);
-        gtk_widget_set_valign(sub, GTK_ALIGN_CENTER);
-        gtk_widget_add_css_class(sub, "web-dim-label");
-
-        gtk_box_append(GTK_BOX(row), tag);
-        gtk_box_append(GTK_BOX(row), lbl);
-        gtk_box_append(GTK_BOX(row), sub);
-
-        GtkWidget *lrow = gtk_list_box_row_new();
-        gtk_list_box_row_set_child(GTK_LIST_BOX_ROW(lrow), row);
-        g_object_set_data(G_OBJECT(lrow), "pal-item", it);
-        gtk_list_box_append(GTK_LIST_BOX(ctx->listbox), lrow);
-        if (shown == 0)
-            gtk_list_box_select_row(GTK_LIST_BOX(ctx->listbox), GTK_LIST_BOX_ROW(lrow));
-        shown++;
+    if (shown == 0 && filter && *filter) {
+        g_autofree gchar *trimmed = g_strdup(filter);
+        g_strstrip(trimmed);
+        if (*trimmed) {
+            PalItem *it = g_new0(PalItem, 1);
+            it->kind = PAL_KIND_URI;
+            it->tag = g_strdup("GO");
+            it->label = g_strdup_printf("Open or search: %s", trimmed);
+            it->sub = g_strdup("Open URL or search engine");
+            it->payload = g_strdup(trimmed);
+            g_ptr_array_add(ctx->dyn_items, it);
+            append_list_row(ctx, it, shown++);
+        }
     }
 }
 
@@ -162,8 +245,23 @@ move_selection(PalCtx *ctx, gint delta)
     GtkListBoxRow *cur = gtk_list_box_get_selected_row(GTK_LIST_BOX(ctx->listbox));
     gint idx = cur ? gtk_list_box_row_get_index(cur) : 0;
     GtkListBoxRow *next = gtk_list_box_get_row_at_index(GTK_LIST_BOX(ctx->listbox), MAX(0, idx + delta));
-    if (next)
+    if (next) {
         gtk_list_box_select_row(GTK_LIST_BOX(ctx->listbox), next);
+        graphene_rect_t b;
+        if (ctx->scroll && gtk_widget_compute_bounds(GTK_WIDGET(next), ctx->listbox, &b)) {
+            GtkAdjustment *vadj = gtk_scrolled_window_get_vadjustment(GTK_SCROLLED_WINDOW(ctx->scroll));
+            if (vadj) {
+                double val = gtk_adjustment_get_value(vadj);
+                double page = gtk_adjustment_get_page_size(vadj);
+                double top = b.origin.y;
+                double bot = b.origin.y + b.size.height;
+                if (top < val)
+                    gtk_adjustment_set_value(vadj, top);
+                else if (bot > val + page)
+                    gtk_adjustment_set_value(vadj, bot - page);
+            }
+        }
+    }
 }
 
 static gboolean
@@ -206,6 +304,7 @@ web_palette_new(const KajoWebPaletteCallbacks *cbs, gpointer user_data)
         ctx->cbs = *cbs;
     ctx->ud = user_data;
     ctx->all_items = g_ptr_array_new_with_free_func(pal_item_free);
+    ctx->dyn_items = g_ptr_array_new_with_free_func(pal_item_free);
 
     /* Full-viewport dim backdrop scrim matching mockup */
     ctx->root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -236,19 +335,19 @@ web_palette_new(const KajoWebPaletteCallbacks *cbs, gpointer user_data)
     g_signal_connect(kc, "key-pressed", G_CALLBACK(on_pal_key), ctx);
     gtk_widget_add_controller(ctx->entry, kc);
 
-    GtkWidget *scroll = gtk_scrolled_window_new();
-    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(scroll), 290);
-    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(scroll), TRUE);
+    ctx->scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(ctx->scroll), GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_scrolled_window_set_max_content_height(GTK_SCROLLED_WINDOW(ctx->scroll), 320);
+    gtk_scrolled_window_set_propagate_natural_height(GTK_SCROLLED_WINDOW(ctx->scroll), TRUE);
 
     ctx->listbox = gtk_list_box_new();
     gtk_widget_add_css_class(ctx->listbox, "web-palette-list");
     gtk_list_box_set_activate_on_single_click(GTK_LIST_BOX(ctx->listbox), TRUE);
     g_signal_connect(ctx->listbox, "row-activated", G_CALLBACK(on_row_activated), ctx);
-    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(scroll), ctx->listbox);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(ctx->scroll), ctx->listbox);
 
     gtk_box_append(GTK_BOX(ctx->card), ctx->entry);
-    gtk_box_append(GTK_BOX(ctx->card), scroll);
+    gtk_box_append(GTK_BOX(ctx->card), ctx->scroll);
     gtk_box_append(GTK_BOX(ctx->root), ctx->card);
     return ctx->root;
 }
@@ -260,6 +359,8 @@ web_palette_open(GtkWidget *palette, const KajoWebModel *model, KajoWebStorage *
     if (!ctx)
         return;
 
+    ctx->model = model;
+    ctx->storage = storage;
     g_ptr_array_set_size(ctx->all_items, 0);
 
     if (model) {
@@ -271,25 +372,16 @@ web_palette_open(GtkWidget *palette, const KajoWebModel *model, KajoWebStorage *
 
     add_item(ctx, PAL_KIND_CMD, "CMD", "Toggle Vertical Tab Rail (Ctrl+B)", "rail", 0, "toggle-rail");
     add_item(ctx, PAL_KIND_CMD, "CMD", "Toggle Zen Top Chrome (Ctrl+Shift+U)", "zen", 0, "toggle-zen");
+    add_item(ctx, PAL_KIND_CMD, "CMD", "Toggle Fullscreen (F11)", "fullscreen", 0, "toggle-fullscreen");
+    add_item(ctx, PAL_KIND_CMD, "CMD", "Find in Page (Ctrl+F)", "find", 0, "open-find");
+    add_item(ctx, PAL_KIND_CMD, "CMD", "Print Page (Ctrl+P)", "print", 0, "print-page");
     add_item(ctx, PAL_KIND_CMD, "CMD", "Open Kajo Settings → Kajo Web (Ctrl+,)", "settings", 0, "open-settings");
     add_item(ctx, PAL_KIND_CMD, "CMD", "Open Profile Picker", "profiles", 0, "open-picker");
     add_item(ctx, PAL_KIND_CMD, "CMD", "Toggle WebKit Web Inspector (F12)", "devtools", 0, "toggle-inspector");
+    add_item(ctx, PAL_KIND_URI, "INT", "New Tab / Speed Dial", "kajo://newtab", 0, "kajo://newtab");
     add_item(ctx, PAL_KIND_URI, "INT", "GPU & DMA-BUF Telemetry", "kajo://gpu", 0, "kajo://gpu");
     add_item(ctx, PAL_KIND_URI, "INT", "History", "kajo://history", 0, "kajo://history");
     add_item(ctx, PAL_KIND_URI, "INT", "Bookmarks", "kajo://bookmarks", 0, "kajo://bookmarks");
-
-    if (storage) {
-        g_autoptr(GPtrArray) bms = web_storage_list_bookmarks(storage, FALSE);
-        for (guint i = 0; bms && i < MIN(bms->len, 15); i++) {
-            const KajoWebBookmark *b = g_ptr_array_index(bms, i);
-            add_item(ctx, PAL_KIND_URI, "★ BM", b->title && *b->title ? b->title : b->uri, b->uri, 0, b->uri);
-        }
-        g_autoptr(GPtrArray) hist = web_storage_search_history(storage, NULL, 15);
-        for (guint i = 0; hist && i < hist->len; i++) {
-            const KajoWebHistoryEntry *h = g_ptr_array_index(hist, i);
-            add_item(ctx, PAL_KIND_URI, "↺ HIST", h->title && *h->title ? h->title : h->uri, h->uri, 0, h->uri);
-        }
-    }
 
     gtk_editable_set_text(GTK_EDITABLE(ctx->entry), "");
     rebuild_rows(ctx, "");
@@ -302,4 +394,10 @@ web_palette_close(GtkWidget *palette)
 {
     if (palette)
         gtk_widget_set_visible(palette, FALSE);
+}
+
+gboolean
+web_palette_is_visible(GtkWidget *palette)
+{
+    return palette && gtk_widget_get_visible(palette);
 }

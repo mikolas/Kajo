@@ -17,6 +17,10 @@ apply_session_cfg(WebKitNetworkSession *session, const KajoWebCfg *cfg)
     webkit_network_session_set_persistent_credential_storage_enabled(
         session, !webkit_network_session_is_ephemeral(session));
 
+    WebKitWebsiteDataManager *dm = webkit_network_session_get_website_data_manager(session);
+    if (dm && !webkit_network_session_is_ephemeral(session))
+        webkit_website_data_manager_set_favicons_enabled(dm, TRUE);
+
     WebKitCookieManager *cm = webkit_network_session_get_cookie_manager(session);
     if (cm) {
         WebKitCookieAcceptPolicy pol = WEBKIT_COOKIE_POLICY_ACCEPT_NO_THIRD_PARTY;
@@ -102,8 +106,8 @@ apply_memory_pressure(const KajoWebCfg *cfg)
         return;
     WebKitMemoryPressureSettings *mps = webkit_memory_pressure_settings_new();
     webkit_memory_pressure_settings_set_memory_limit(mps, (guint)CLAMP(cfg->memory_limit_mb, 512, 16384));
-    webkit_memory_pressure_settings_set_strict_threshold(mps, 0.85);
-    webkit_memory_pressure_settings_set_conservative_threshold(mps, 0.60);
+    webkit_memory_pressure_settings_set_strict_threshold(mps, 0.90);
+    webkit_memory_pressure_settings_set_conservative_threshold(mps, 0.75);
     webkit_memory_pressure_settings_set_kill_threshold(mps, 1.0);
     webkit_network_session_set_memory_pressure_settings(mps);
     webkit_memory_pressure_settings_free(mps);

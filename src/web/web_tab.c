@@ -12,14 +12,28 @@ struct _KajoWebTab {
 
     GtkWidget                *container;     /* GtkStack: "web", "crashed", "suspended" */
     WebKitWebView            *view;
-    WebKitUserContentManager *ucm;
+    WebKitUserContentManager *ucm;           /* ref to shared or paused UCM from adblock */
+    gboolean                  using_paused_ucm;
     WebKitWebViewSessionState *saved_state;
+    GdkTexture               *favicon;
     gchar                    *last_uri;
     gchar                    *last_title;
+    gboolean                  loading;
     gboolean                  suspended;
     gboolean                  muted;
     GPtrArray                *media_streams; /* KajoWebMediaStream* */
     GCancellable             *cancellable;
+    guint                     swap_idle_id;
+    gchar                    *pending_swap_uri;
+    gboolean                  pending_swap_paused;
+    guint                     https_idle_id;
+    gchar                    *pending_https_uri;
+    gchar                    *last_https_upgrade;
+    gchar                    *last_https_orig;
+    GHashTable               *https_fallback_hosts;
+    KajoWebAutoplayPolicy     autoplay_policy;
+    gboolean                  https_only;
+    gint                      applied_default_zoom_pct;
 };
 
 static const gchar *
@@ -41,9 +55,9 @@ resolve_ua_string(const KajoWebCfg *cfg)
 }
 
 static void
-configure_webkit_settings(WebKitWebView *view, const KajoWebCfg *cfg)
+configure_webkit_settings(KajoWebTab *tab, WebKitWebView *view, const KajoWebCfg *cfg)
 {
-    if (!view || !cfg)
+    if (!tab || !view || !cfg)
         return;
     WebKitSettings *s = webkit_web_view_get_settings(view);
     if (!s)
@@ -57,9 +71,6 @@ configure_webkit_settings(WebKitWebView *view, const KajoWebCfg *cfg)
     webkit_settings_set_enable_webgl(s, cfg->enable_webgl);
     webkit_settings_set_enable_smooth_scrolling(s, cfg->smooth_scrolling);
     webkit_settings_set_enable_webrtc(s, cfg->enable_webrtc);
-    G_GNUC_BEGIN_IGNORE_DEPRECATIONS
-    webkit_settings_set_enable_dns_prefetching(s, cfg->dns_prefetch);
-    G_GNUC_END_IGNORE_DEPRECATIONS
     webkit_settings_set_enable_developer_extras(s, cfg->developer_extras);
     webkit_settings_set_enable_media_stream(s, cfg->enable_webrtc);
     webkit_settings_set_enable_mediasource(s, TRUE);
@@ -67,10 +78,26 @@ configure_webkit_settings(WebKitWebView *view, const KajoWebCfg *cfg)
     webkit_settings_set_default_monospace_font_size(s, (guint32)CLAMP(cfg->mono_font_size_px, 10, 28));
     webkit_settings_set_minimum_font_size(s, (guint32)CLAMP(cfg->min_font_size_px, 0, 24));
 
+    g_autoptr(WebKitFeatureList) feats = webkit_settings_get_all_features();
+    if (feats) {
+        WebKitFeature *wgl_gpu = webkit_feature_list_find(feats, "UseGPUProcessForWebGL");
+        if (wgl_gpu)
+            webkit_settings_set_feature_enabled(
+                s, wgl_gpu,
+                cfg->enable_webgl && cfg->gpu_process_webgl &&
+                cfg->hardware_acceleration != KAJO_WEB_HW_NEVER);
+    }
+
     const gchar *ua = resolve_ua_string(cfg);
     webkit_settings_set_user_agent(s, ua);
 
-    webkit_web_view_set_zoom_level(view, (gdouble)CLAMP(cfg->default_zoom_pct, 50, 200) / 100.0);
+    tab->autoplay_policy = cfg->autoplay_policy;
+    tab->https_only = cfg->https_only;
+
+    if (tab->applied_default_zoom_pct != cfg->default_zoom_pct) {
+        tab->applied_default_zoom_pct = cfg->default_zoom_pct;
+        webkit_web_view_set_zoom_level(view, (gdouble)CLAMP(cfg->default_zoom_pct, 50, 200) / 100.0);
+    }
 }
 
 static void
@@ -84,12 +111,30 @@ static void
 on_notify_progress(WebKitWebView *view, GParamSpec *ps G_GNUC_UNUSED, gpointer user_data)
 {
     KajoWebTab *tab = user_data;
-    if (tab && tab->cbs.on_progress) {
+    if (!tab)
+        return;
+    gboolean now_loading = webkit_web_view_is_loading(view);
+    if (now_loading != tab->loading) {
+        tab->loading = now_loading;
+        notify_tab_changed(tab);
+    }
+    if (tab->cbs.on_progress) {
         tab->cbs.on_progress(tab,
                              webkit_web_view_get_estimated_load_progress(view),
-                             webkit_web_view_is_loading(view),
+                             now_loading,
                              tab->ud);
     }
+}
+
+static void
+on_notify_favicon(WebKitWebView *view, GParamSpec *ps G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (!tab)
+        return;
+    GdkTexture *tex = webkit_web_view_get_favicon(view);
+    if (g_set_object(&tab->favicon, tex))
+        notify_tab_changed(tab);
 }
 
 static void
@@ -102,6 +147,8 @@ on_notify_prop(WebKitWebView *view G_GNUC_UNUSED, GParamSpec *ps G_GNUC_UNUSED, 
     if (u && *u && g_strcmp0(u, tab->last_uri) != 0) {
         g_free(tab->last_uri);
         tab->last_uri = g_strdup(u);
+        if (g_str_has_prefix(u, "kajo://") || g_str_has_prefix(u, "about:"))
+            g_clear_object(&tab->favicon);
         changed = TRUE;
     }
     if (t && *t && g_strcmp0(t, tab->last_title) != 0) {
@@ -119,6 +166,7 @@ static void
 on_load_changed(WebKitWebView *view, WebKitLoadEvent ev, gpointer user_data)
 {
     KajoWebTab *tab = user_data;
+    tab->loading = (ev != WEBKIT_LOAD_FINISHED);
     if (ev == WEBKIT_LOAD_COMMITTED) {
         g_ptr_array_set_size(tab->media_streams, 0);
         if (tab->cbs.on_media_detected)
@@ -142,6 +190,16 @@ on_load_changed(WebKitWebView *view, WebKitLoadEvent ev, gpointer user_data)
 }
 
 static gboolean
+nav_action_wants_background(WebKitNavigationAction *act)
+{
+    if (!act)
+        return FALSE;
+    guint btn = webkit_navigation_action_get_mouse_button(act);
+    guint mods = webkit_navigation_action_get_modifiers(act);
+    return (btn == 2 || (mods & GDK_CONTROL_MASK) != 0) && (mods & GDK_SHIFT_MASK) == 0;
+}
+
+static gboolean
 on_permission_request(WebKitWebView *view G_GNUC_UNUSED, WebKitPermissionRequest *req, gpointer user_data)
 {
     KajoWebTab *tab = user_data;
@@ -159,8 +217,113 @@ on_create_new_view(WebKitWebView *view G_GNUC_UNUSED, WebKitNavigationAction *ac
     WebKitURIRequest *req = webkit_navigation_action_get_request(action);
     const gchar *uri = req ? webkit_uri_request_get_uri(req) : NULL;
     if (uri && *uri && tab->cbs.on_new_tab_requested)
-        tab->cbs.on_new_tab_requested(uri, FALSE, tab->ud);
+        tab->cbs.on_new_tab_requested(uri, nav_action_wants_background(action), tab->ud);
     return NULL;
+}
+
+static void create_backing_view(KajoWebTab *tab, const KajoWebCfg *cfg, gboolean use_paused_ucm);
+
+static gboolean
+uri_is_adblock_paused(const KajoWebTab *tab, const gchar *uri)
+{
+    if (!tab || !tab->adblock || !uri)
+        return FALSE;
+    if (!g_str_has_prefix(uri, "http://") && !g_str_has_prefix(uri, "https://"))
+        return FALSE;
+    g_autofree gchar *host = web_model_extract_host(uri);
+    return host ? web_adblock_is_host_paused(tab->adblock, host) : FALSE;
+}
+
+static void
+swap_backing_view_ucm(KajoWebTab *tab, const KajoWebCfg *cfg,
+                      gboolean use_paused_ucm, const gchar *load_uri)
+{
+    if (!tab || tab->suspended)
+        return;
+    if (tab->view) {
+        g_clear_pointer(&tab->saved_state, webkit_web_view_session_state_unref);
+        tab->saved_state = webkit_web_view_get_session_state(tab->view);
+        if (tab->https_idle_id) {
+            g_source_remove(tab->https_idle_id);
+            tab->https_idle_id = 0;
+        }
+        g_clear_pointer(&tab->pending_https_uri, g_free);
+        WebKitFindController *fc = webkit_web_view_get_find_controller(tab->view);
+        if (fc)
+            g_signal_handlers_disconnect_by_data(fc, tab);
+        g_signal_handlers_disconnect_by_data(tab->view, tab);
+        GtkWidget *old = gtk_stack_get_child_by_name(GTK_STACK(tab->container), "web");
+        if (old)
+            gtk_stack_remove(GTK_STACK(tab->container), old);
+        tab->view = NULL;
+    }
+    g_clear_object(&tab->ucm);
+
+    create_backing_view(tab, cfg, use_paused_ucm);
+    if (tab->saved_state) {
+        webkit_web_view_restore_session_state(tab->view, tab->saved_state);
+        g_clear_pointer(&tab->saved_state, webkit_web_view_session_state_unref);
+    }
+    if (load_uri && *load_uri)
+        webkit_web_view_load_uri(tab->view, load_uri);
+}
+
+static gboolean
+on_deferred_ucm_swap(gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    tab->swap_idle_id = 0;
+    g_autofree gchar *dest = g_steal_pointer(&tab->pending_swap_uri);
+    if (dest && *dest)
+        swap_backing_view_ucm(tab, NULL, tab->pending_swap_paused, dest);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+host_is_local_plain(const gchar *host)
+{
+    if (!host || !*host)
+        return TRUE;
+    return g_ascii_strcasecmp(host, "localhost") == 0 ||
+           g_strcmp0(host, "127.0.0.1") == 0 ||
+           g_strcmp0(host, "::1") == 0 ||
+           g_strcmp0(host, "[::1]") == 0 ||
+           g_str_has_suffix(host, ".local") ||
+           strchr(host, '.') == NULL;
+}
+
+static gboolean
+on_deferred_https_upgrade(gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    tab->https_idle_id = 0;
+    g_autofree gchar *dest = g_steal_pointer(&tab->pending_https_uri);
+    if (dest && *dest && tab->view && !tab->suspended)
+        webkit_web_view_load_uri(tab->view, dest);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+on_load_failed(WebKitWebView  *view G_GNUC_UNUSED,
+               WebKitLoadEvent ev G_GNUC_UNUSED,
+               const gchar    *failing_uri,
+               GError         *error G_GNUC_UNUSED,
+               gpointer        user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (tab->last_https_upgrade && tab->last_https_orig && failing_uri &&
+        g_strcmp0(failing_uri, tab->last_https_upgrade) == 0) {
+        g_autofree gchar *host = web_model_extract_host(failing_uri);
+        if (host && *host && tab->https_fallback_hosts)
+            g_hash_table_add(tab->https_fallback_hosts, g_strdup(host));
+        g_clear_pointer(&tab->last_https_upgrade, g_free);
+        g_free(tab->pending_https_uri);
+        tab->pending_https_uri = g_steal_pointer(&tab->last_https_orig);
+        if (!tab->https_idle_id)
+            tab->https_idle_id = g_idle_add(on_deferred_https_upgrade, tab);
+        return TRUE;
+    }
+    return FALSE;
 }
 
 static gboolean
@@ -170,13 +333,86 @@ on_decide_policy(WebKitWebView            *view G_GNUC_UNUSED,
                  gpointer                  user_data)
 {
     KajoWebTab *tab = user_data;
+    if (type == WEBKIT_POLICY_DECISION_TYPE_NAVIGATION_ACTION) {
+        WebKitNavigationPolicyDecision *nd = WEBKIT_NAVIGATION_POLICY_DECISION(decision);
+        WebKitNavigationAction *act = webkit_navigation_policy_decision_get_navigation_action(nd);
+        WebKitURIRequest *req = act ? webkit_navigation_action_get_request(act) : NULL;
+        const gchar *uri = req ? webkit_uri_request_get_uri(req) : NULL;
+        const gchar *frame = act ? webkit_navigation_action_get_frame_name(act) : NULL;
+
+        if (uri && (!frame || !*frame) &&
+            (g_str_has_prefix(uri, "kajo://search") || g_str_has_prefix(uri, "kajo://action"))) {
+            if (tab->cbs.on_scheme_action && tab->cbs.on_scheme_action(tab, uri, tab->ud)) {
+                webkit_policy_decision_ignore(decision);
+                return TRUE;
+            }
+        }
+
+        if (act && webkit_navigation_action_get_navigation_type(act) == WEBKIT_NAVIGATION_TYPE_LINK_CLICKED &&
+            uri && *uri && tab->cbs.on_new_tab_requested) {
+            guint btn = webkit_navigation_action_get_mouse_button(act);
+            guint mods = webkit_navigation_action_get_modifiers(act);
+            if (btn == 2 || (mods & GDK_CONTROL_MASK) != 0) {
+                gboolean bg = (mods & GDK_SHIFT_MASK) == 0;
+                tab->cbs.on_new_tab_requested(uri, bg, tab->ud);
+                webkit_policy_decision_ignore(decision);
+                return TRUE;
+            }
+        }
+
+        if (tab->https_only && (!frame || !*frame) && uri && g_str_has_prefix(uri, "http://")) {
+            g_autofree gchar *host = web_model_extract_host(uri);
+            if (host && !host_is_local_plain(host) &&
+                (!tab->https_fallback_hosts || !g_hash_table_contains(tab->https_fallback_hosts, host))) {
+                g_autofree gchar *upgraded = g_strconcat("https://", uri + strlen("http://"), NULL);
+                g_free(tab->last_https_upgrade);
+                tab->last_https_upgrade = g_strdup(upgraded);
+                g_free(tab->last_https_orig);
+                tab->last_https_orig = g_strdup(uri);
+                g_free(tab->pending_https_uri);
+                tab->pending_https_uri = g_strdup(upgraded);
+                if (!tab->https_idle_id)
+                    tab->https_idle_id = g_idle_add(on_deferred_https_upgrade, tab);
+                webkit_policy_decision_ignore(decision);
+                return TRUE;
+            }
+        }
+
+        if (act && webkit_navigation_action_is_user_gesture(act) &&
+            (!frame || !*frame) && uri &&
+            (g_str_has_prefix(uri, "http://") || g_str_has_prefix(uri, "https://"))) {
+            gboolean want_paused = uri_is_adblock_paused(tab, uri);
+            if (want_paused != tab->using_paused_ucm) {
+                webkit_policy_decision_ignore(decision);
+                g_free(tab->pending_swap_uri);
+                tab->pending_swap_uri = g_strdup(uri);
+                tab->pending_swap_paused = want_paused;
+                if (!tab->swap_idle_id)
+                    tab->swap_idle_id = g_idle_add(on_deferred_ucm_swap, tab);
+                return TRUE;
+            }
+        }
+
+        if (!frame || !*frame) {
+            WebKitAutoplayPolicy ap = WEBKIT_AUTOPLAY_ALLOW_WITHOUT_SOUND;
+            if (tab->autoplay_policy == KAJO_WEB_AUTOPLAY_ALLOW)
+                ap = WEBKIT_AUTOPLAY_ALLOW;
+            else if (tab->autoplay_policy == KAJO_WEB_AUTOPLAY_DENY)
+                ap = WEBKIT_AUTOPLAY_DENY;
+            g_autoptr(WebKitWebsitePolicies) pol =
+                webkit_website_policies_new_with_policies("autoplay", ap, NULL);
+            webkit_policy_decision_use_with_policies(decision, pol);
+            return TRUE;
+        }
+        return FALSE;
+    }
     if (type == WEBKIT_POLICY_DECISION_TYPE_NEW_WINDOW_ACTION) {
         WebKitNavigationPolicyDecision *nd = WEBKIT_NAVIGATION_POLICY_DECISION(decision);
         WebKitNavigationAction *act = webkit_navigation_policy_decision_get_navigation_action(nd);
         WebKitURIRequest *req = act ? webkit_navigation_action_get_request(act) : NULL;
         const gchar *uri = req ? webkit_uri_request_get_uri(req) : NULL;
         if (uri && *uri && tab->cbs.on_new_tab_requested)
-            tab->cbs.on_new_tab_requested(uri, FALSE, tab->ud);
+            tab->cbs.on_new_tab_requested(uri, nav_action_wants_background(act), tab->ud);
         webkit_policy_decision_ignore(decision);
         return TRUE;
     }
@@ -233,6 +469,14 @@ uri_obviously_non_media(const gchar *uri)
 {
     if (!uri || (!g_str_has_prefix(uri, "http://") && !g_str_has_prefix(uri, "https://")))
         return TRUE;
+    if (strstr(uri, "googlevideo.com/videoplayback") ||
+        strstr(uri, "/generate_204") ||
+        strstr(uri, "/api/stats/") ||
+        strstr(uri, "/ptracking") ||
+        strstr(uri, "/log_event") ||
+        strstr(uri, "/youtubei/v1/")) {
+        return TRUE;
+    }
     const gchar *q = strchr(uri, '?');
     const gchar *end = q ? q : uri + strlen(uri);
     const gchar *dot = NULL;
@@ -346,14 +590,69 @@ on_crash_reload_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
 }
 
 static void
-create_backing_view(KajoWebTab *tab, const KajoWebCfg *cfg)
+on_mouse_target_changed(WebKitWebView       *view G_GNUC_UNUSED,
+                        WebKitHitTestResult *hit,
+                        guint                modifiers G_GNUC_UNUSED,
+                        gpointer             user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (!tab->cbs.on_hover_target)
+        return;
+    const gchar *link = (hit && webkit_hit_test_result_context_is_link(hit))
+        ? webkit_hit_test_result_get_link_uri(hit)
+        : NULL;
+    tab->cbs.on_hover_target(tab, (link && *link) ? link : NULL, tab->ud);
+}
+
+static gboolean
+on_enter_fullscreen(WebKitWebView *view G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (tab->cbs.on_fullscreen_changed)
+        return tab->cbs.on_fullscreen_changed(tab, TRUE, tab->ud);
+    return FALSE;
+}
+
+static gboolean
+on_leave_fullscreen(WebKitWebView *view G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (tab->cbs.on_fullscreen_changed)
+        return tab->cbs.on_fullscreen_changed(tab, FALSE, tab->ud);
+    return FALSE;
+}
+
+static void
+on_find_counted_matches(WebKitFindController *fc G_GNUC_UNUSED, guint match_count, gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (tab->cbs.on_find_state)
+        tab->cbs.on_find_state(tab, (gint)match_count, match_count > 0, tab->ud);
+}
+
+static void
+on_find_failed(WebKitFindController *fc G_GNUC_UNUSED, gpointer user_data)
+{
+    KajoWebTab *tab = user_data;
+    if (tab->cbs.on_find_state)
+        tab->cbs.on_find_state(tab, 0, FALSE, tab->ud);
+}
+
+static void
+create_backing_view(KajoWebTab *tab, const KajoWebCfg *cfg, gboolean use_paused_ucm)
 {
     if (tab->view)
         return;
 
-    tab->ucm = webkit_user_content_manager_new();
-    if (tab->adblock)
-        web_adblock_attach_manager(tab->adblock, tab->ucm);
+    tab->using_paused_ucm = use_paused_ucm;
+    if (tab->adblock) {
+        WebKitUserContentManager *shared = use_paused_ucm
+            ? web_adblock_get_paused_ucm(tab->adblock)
+            : web_adblock_get_shared_ucm(tab->adblock);
+        tab->ucm = shared ? g_object_ref(shared) : webkit_user_content_manager_new();
+    } else {
+        tab->ucm = webkit_user_content_manager_new();
+    }
 
     tab->view = WEBKIT_WEB_VIEW(g_object_new(
         WEBKIT_TYPE_WEB_VIEW,
@@ -362,7 +661,7 @@ create_backing_view(KajoWebTab *tab, const KajoWebCfg *cfg)
         "user-content-manager", tab->ucm,
         NULL));
 
-    configure_webkit_settings(tab->view, cfg);
+    configure_webkit_settings(tab, tab->view, cfg);
     static const GdkRGBA k_dark_bg = { 0.063f, 0.063f, 0.063f, 1.0f };
     webkit_web_view_set_background_color(tab->view, &k_dark_bg);
     webkit_web_view_set_is_muted(tab->view, tab->muted);
@@ -371,16 +670,27 @@ create_backing_view(KajoWebTab *tab, const KajoWebCfg *cfg)
 
     g_signal_connect(tab->view, "notify::title", G_CALLBACK(on_notify_prop), tab);
     g_signal_connect(tab->view, "notify::uri", G_CALLBACK(on_notify_prop), tab);
+    g_signal_connect(tab->view, "notify::favicon", G_CALLBACK(on_notify_favicon), tab);
     g_signal_connect(tab->view, "notify::estimated-load-progress", G_CALLBACK(on_notify_progress), tab);
     g_signal_connect(tab->view, "notify::is-loading", G_CALLBACK(on_notify_progress), tab);
     g_signal_connect(tab->view, "notify::is-playing-audio", G_CALLBACK(on_notify_prop), tab);
     g_signal_connect(tab->view, "load-changed", G_CALLBACK(on_load_changed), tab);
+    g_signal_connect(tab->view, "load-failed", G_CALLBACK(on_load_failed), tab);
     g_signal_connect(tab->view, "permission-request", G_CALLBACK(on_permission_request), tab);
     g_signal_connect(tab->view, "create", G_CALLBACK(on_create_new_view), tab);
     g_signal_connect(tab->view, "decide-policy", G_CALLBACK(on_decide_policy), tab);
     g_signal_connect(tab->view, "resource-load-started", G_CALLBACK(on_resource_load_started_safe), tab);
     g_signal_connect(tab->view, "context-menu", G_CALLBACK(on_context_menu), tab);
+    g_signal_connect(tab->view, "mouse-target-changed", G_CALLBACK(on_mouse_target_changed), tab);
+    g_signal_connect(tab->view, "enter-fullscreen", G_CALLBACK(on_enter_fullscreen), tab);
+    g_signal_connect(tab->view, "leave-fullscreen", G_CALLBACK(on_leave_fullscreen), tab);
     g_signal_connect(tab->view, "web-process-terminated", G_CALLBACK(on_web_process_terminated), tab);
+
+    WebKitFindController *fc = webkit_web_view_get_find_controller(tab->view);
+    if (fc) {
+        g_signal_connect(fc, "counted-matches", G_CALLBACK(on_find_counted_matches), tab);
+        g_signal_connect(fc, "failed-to-find-text", G_CALLBACK(on_find_failed), tab);
+    }
 
     GtkWidget *old = gtk_stack_get_child_by_name(GTK_STACK(tab->container), "web");
     if (old)
@@ -398,7 +708,7 @@ build_status_card(const gchar *title, const gchar *subtitle, gboolean with_reloa
     gtk_widget_add_css_class(box, "web-status-card");
 
     GtkWidget *t = gtk_label_new(title);
-    gtk_widget_add_css_class(t, "web-popover-title");
+    gtk_widget_add_css_class(t, "shell-popover-title");
     GtkWidget *s = gtk_label_new(subtitle);
     gtk_widget_add_css_class(s, "web-dim-label");
     gtk_box_append(GTK_BOX(box), t);
@@ -406,21 +716,22 @@ build_status_card(const gchar *title, const gchar *subtitle, gboolean with_reloa
 
     if (with_reload) {
         GtkWidget *btn = gtk_button_new_with_label("↻ RELOAD TAB");
-        gtk_widget_add_css_class(btn, "action-btn-primary");
+        gtk_widget_add_css_class(btn, "web-btn-primary");
         g_signal_connect(btn, "clicked", G_CALLBACK(on_crash_reload_clicked), tab);
         gtk_box_append(GTK_BOX(box), btn);
     }
     return box;
 }
 
-KajoWebTab *
-web_tab_new(guint64                    tab_id,
-            WebKitWebContext          *web_ctx,
-            WebKitNetworkSession      *session,
-            KajoWebAdblock            *adblock,
-            const KajoWebCfg          *cfg,
-            const KajoWebTabCallbacks *cbs,
-            gpointer                   user_data)
+static KajoWebTab *
+web_tab_alloc_common(guint64                    tab_id,
+                     WebKitWebContext          *web_ctx,
+                     WebKitNetworkSession      *session,
+                     KajoWebAdblock            *adblock,
+                     const gchar               *uri,
+                     const gchar               *title,
+                     const KajoWebTabCallbacks *cbs,
+                     gpointer                   user_data)
 {
     KajoWebTab *tab = g_new0(KajoWebTab, 1);
     tab->id = tab_id;
@@ -431,9 +742,11 @@ web_tab_new(guint64                    tab_id,
         tab->cbs = *cbs;
     tab->ud = user_data;
     tab->media_streams = g_ptr_array_new_with_free_func(web_media_stream_free);
+    tab->https_fallback_hosts = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
+    tab->applied_default_zoom_pct = -1;
     tab->cancellable = g_cancellable_new();
-    tab->last_uri = g_strdup("kajo://newtab");
-    tab->last_title = g_strdup("New Tab");
+    tab->last_uri = g_strdup((uri && *uri) ? uri : "kajo://newtab");
+    tab->last_title = g_strdup((title && *title) ? title : tab->last_uri);
 
     tab->container = gtk_stack_new();
     gtk_widget_set_hexpand(tab->container, TRUE);
@@ -448,8 +761,38 @@ web_tab_new(guint64                    tab_id,
                         build_status_card("💤 TAB SUSPENDED",
                                           "Unloaded to save memory. Restoring on focus...", FALSE, tab),
                         "suspended");
+    return tab;
+}
 
-    create_backing_view(tab, cfg);
+KajoWebTab *
+web_tab_new(guint64                    tab_id,
+            WebKitWebContext          *web_ctx,
+            WebKitNetworkSession      *session,
+            KajoWebAdblock            *adblock,
+            const KajoWebCfg          *cfg,
+            const KajoWebTabCallbacks *cbs,
+            gpointer                   user_data)
+{
+    KajoWebTab *tab = web_tab_alloc_common(tab_id, web_ctx, session, adblock,
+                                           "kajo://newtab", "New Tab", cbs, user_data);
+    create_backing_view(tab, cfg, uri_is_adblock_paused(tab, tab->last_uri));
+    return tab;
+}
+
+KajoWebTab *
+web_tab_new_suspended(guint64                    tab_id,
+                      WebKitWebContext          *web_ctx,
+                      WebKitNetworkSession      *session,
+                      KajoWebAdblock            *adblock,
+                      const gchar               *uri,
+                      const gchar               *title,
+                      const KajoWebTabCallbacks *cbs,
+                      gpointer                   user_data)
+{
+    KajoWebTab *tab = web_tab_alloc_common(tab_id, web_ctx, session, adblock,
+                                           uri, title, cbs, user_data);
+    tab->suspended = TRUE;
+    gtk_stack_set_visible_child_name(GTK_STACK(tab->container), "suspended");
     return tab;
 }
 
@@ -458,14 +801,30 @@ web_tab_free(KajoWebTab *tab)
 {
     if (!tab)
         return;
+    if (tab->swap_idle_id) {
+        g_source_remove(tab->swap_idle_id);
+        tab->swap_idle_id = 0;
+    }
+    if (tab->https_idle_id) {
+        g_source_remove(tab->https_idle_id);
+        tab->https_idle_id = 0;
+    }
+    g_clear_pointer(&tab->pending_swap_uri, g_free);
+    g_clear_pointer(&tab->pending_https_uri, g_free);
+    g_clear_pointer(&tab->last_https_upgrade, g_free);
+    g_clear_pointer(&tab->last_https_orig, g_free);
+    g_clear_pointer(&tab->https_fallback_hosts, g_hash_table_unref);
     if (tab->cancellable)
         g_cancellable_cancel(tab->cancellable);
     g_clear_object(&tab->cancellable);
-    if (tab->adblock && tab->ucm)
-        web_adblock_detach_manager(tab->adblock, tab->ucm);
-    if (tab->view)
+    if (tab->view) {
+        WebKitFindController *fc = webkit_web_view_get_find_controller(tab->view);
+        if (fc)
+            g_signal_handlers_disconnect_by_data(fc, tab);
         g_signal_handlers_disconnect_by_data(tab->view, tab);
+    }
     g_clear_pointer(&tab->saved_state, webkit_web_view_session_state_unref);
+    g_clear_object(&tab->favicon);
     g_clear_object(&tab->ucm);
     g_clear_object(&tab->container);
     tab->view = NULL;
@@ -495,6 +854,12 @@ web_tab_get_view(KajoWebTab *tab)
     return tab ? tab->view : NULL;
 }
 
+GdkTexture *
+web_tab_get_favicon(const KajoWebTab *tab)
+{
+    return tab ? tab->favicon : NULL;
+}
+
 void
 web_tab_load_uri(KajoWebTab *tab, const gchar *uri)
 {
@@ -502,6 +867,11 @@ web_tab_load_uri(KajoWebTab *tab, const gchar *uri)
         return;
     g_free(tab->last_uri);
     tab->last_uri = g_strdup(uri);
+    gboolean want_paused = uri_is_adblock_paused(tab, uri);
+    if (tab->view && want_paused != tab->using_paused_ucm) {
+        swap_backing_view_ucm(tab, NULL, want_paused, uri);
+        return;
+    }
     if (tab->view)
         webkit_web_view_load_uri(tab->view, uri);
 }
@@ -638,10 +1008,34 @@ web_tab_toggle_inspector(KajoWebTab *tab)
 }
 
 void
+web_tab_print(KajoWebTab *tab, GtkWindow *parent)
+{
+    if (!tab || !tab->view)
+        return;
+    g_autoptr(WebKitPrintOperation) op = webkit_print_operation_new(tab->view);
+    webkit_print_operation_run_dialog(op, parent);
+}
+
+void
 web_tab_apply_config(KajoWebTab *tab, const KajoWebCfg *cfg)
 {
     if (tab && tab->view && cfg)
-        configure_webkit_settings(tab->view, cfg);
+        configure_webkit_settings(tab, tab->view, cfg);
+}
+
+void
+web_tab_sync_adblock_pause(KajoWebTab *tab, const KajoWebCfg *cfg)
+{
+    if (!tab || tab->suspended || !tab->view)
+        return;
+    const gchar *uri = web_tab_get_uri(tab);
+    gboolean want_paused = uri_is_adblock_paused(tab, uri);
+    if (want_paused != tab->using_paused_ucm) {
+        g_autofree gchar *cur = g_strdup(uri);
+        swap_backing_view_ucm(tab, cfg, want_paused, cur);
+    } else {
+        webkit_web_view_reload(tab->view);
+    }
 }
 
 gboolean
@@ -658,8 +1052,15 @@ web_tab_suspend(KajoWebTab *tab)
     g_clear_pointer(&tab->saved_state, webkit_web_view_session_state_unref);
     tab->saved_state = webkit_web_view_get_session_state(tab->view);
 
-    if (tab->adblock && tab->ucm)
-        web_adblock_detach_manager(tab->adblock, tab->ucm);
+    if (tab->https_idle_id) {
+        g_source_remove(tab->https_idle_id);
+        tab->https_idle_id = 0;
+    }
+    g_clear_pointer(&tab->pending_https_uri, g_free);
+
+    WebKitFindController *fc = webkit_web_view_get_find_controller(tab->view);
+    if (fc)
+        g_signal_handlers_disconnect_by_data(fc, tab);
     g_signal_handlers_disconnect_by_data(tab->view, tab);
 
     GtkWidget *old = gtk_stack_get_child_by_name(GTK_STACK(tab->container), "web");
@@ -678,7 +1079,7 @@ web_tab_wake(KajoWebTab *tab, const KajoWebCfg *cfg)
     if (!tab || !tab->suspended)
         return;
     tab->suspended = FALSE;
-    create_backing_view(tab, cfg);
+    create_backing_view(tab, cfg, uri_is_adblock_paused(tab, tab->last_uri));
     if (tab->saved_state) {
         webkit_web_view_restore_session_state(tab->view, tab->saved_state);
         g_clear_pointer(&tab->saved_state, webkit_web_view_session_state_unref);
@@ -701,10 +1102,15 @@ web_tab_find_search(KajoWebTab *tab, const gchar *text)
     WebKitFindController *fc = webkit_web_view_get_find_controller(tab->view);
     if (!fc)
         return;
-    if (!text || !*text)
+    if (!text || !*text) {
         webkit_find_controller_search_finish(fc);
-    else
-        webkit_find_controller_search(fc, text, WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE | WEBKIT_FIND_OPTIONS_WRAP_AROUND, 500);
+        if (tab->cbs.on_find_state)
+            tab->cbs.on_find_state(tab, -1, FALSE, tab->ud);
+    } else {
+        guint32 opts = WEBKIT_FIND_OPTIONS_CASE_INSENSITIVE | WEBKIT_FIND_OPTIONS_WRAP_AROUND;
+        webkit_find_controller_search(fc, text, opts, 500);
+        webkit_find_controller_count_matches(fc, text, opts, 500);
+    }
 }
 
 void

@@ -17,6 +17,7 @@ typedef struct {
     gboolean         hw_disabled_override;
     KajoWebStorage  *storage;
     KajoWebAdblock  *adblock;
+    gchar            action_token[40];
 } KajoWebSchemeContext;
 
 void web_schemes_register(WebKitWebContext *ctx, KajoWebSchemeContext *sctx);

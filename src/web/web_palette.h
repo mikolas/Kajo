@@ -18,6 +18,7 @@ void       web_palette_open(GtkWidget            *palette,
                             const KajoWebModel   *model,
                             KajoWebStorage       *storage);
 void       web_palette_close(GtkWidget *palette);
+gboolean   web_palette_is_visible(GtkWidget *palette);
 
 G_END_DECLS
 

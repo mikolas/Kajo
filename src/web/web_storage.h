@@ -24,6 +24,7 @@ void            web_storage_free(KajoWebStorage *st);
 /* History (SQLite WAL + FTS5) */
 void            web_storage_record_visit(KajoWebStorage *st, const gchar *uri, const gchar *title);
 GPtrArray      *web_storage_search_history(KajoWebStorage *st, const gchar *query, gint limit);
+void            web_storage_delete_history_uri(KajoWebStorage *st, const gchar *uri);
 void            web_storage_clear_history(KajoWebStorage *st);
 
 /* Syncable Bookmarks (UUID + updated_at + tombstone) */

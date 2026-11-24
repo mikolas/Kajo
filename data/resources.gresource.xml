@@ -26,5 +26,6 @@
     <file compressed="true" alias="defaults/styles/60-ide.css">defaults/styles/60-ide.css</file>
     <file compressed="true" alias="defaults/styles/70-mod.css">defaults/styles/70-mod.css</file>
     <file compressed="true" alias="defaults/styles/80-web.css">defaults/styles/80-web.css</file>
+    <file compressed="true" alias="defaults/web-adblock.json">defaults/web-adblock.json</file>
   </gresource>
 </gresources>

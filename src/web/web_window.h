@@ -10,6 +10,7 @@ typedef struct _KajoWebWindow KajoWebWindow;
 
 typedef struct {
     void (*on_open_profile)(const gchar *profile_id, gboolean is_private, const gchar *initial_url, gpointer ud);
+    void (*on_new_window)(const gchar *profile_id, gboolean is_private, const gchar *initial_url, gpointer ud);
     void (*on_open_picker)(gpointer ud);
 } KajoWebWindowAppCallbacks;
 

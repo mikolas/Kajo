@@ -14,6 +14,11 @@ typedef void (*KajoWebDownloadsChangedCb)(KajoWebDownloads *dl, guint active_cou
 
 KajoWebDownloads *web_downloads_new(KajoWebDownloadsChangedCb on_changed, gpointer user_data);
 void              web_downloads_free(KajoWebDownloads *dl);
+void              web_downloads_set_parent(KajoWebDownloads *dl, GtkWindow *parent);
+void              web_downloads_apply_config(KajoWebDownloads *dl, const KajoWebCfg *cfg);
+void              web_downloads_cancel_job(KajoWebDownloads *dl, guint64 job_id);
+void              web_downloads_clear_finished(KajoWebDownloads *dl);
+gchar            *web_downloads_resolve_dir(const KajoWebCfg *cfg);
 
 /* Tier 1: Direct WebKitDownload */
 void              web_downloads_track_webkit(KajoWebDownloads *dl,

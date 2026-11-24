@@ -139,7 +139,7 @@ static const KajoFieldSpec k_web_fields[] = {
 
     { NULL, KAJO_CFG_KEY_WEB_HW_ACCEL,         KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, hardware_acceleration),     .def.e = KAJO_WEB_HW_ALWAYS,     .enum_map = k_web_hw_accel_map },
     { NULL, KAJO_CFG_KEY_WEB_ENABLE_WEBGL,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, enable_webgl),              .def.b = TRUE },
-    { NULL, KAJO_CFG_KEY_WEB_GPU_PROC_WEBGL,   KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, gpu_process_webgl),         .def.b = TRUE },
+    { NULL, KAJO_CFG_KEY_WEB_GPU_PROC_WEBGL,   KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, gpu_process_webgl),         .def.b = FALSE },
     { NULL, KAJO_CFG_KEY_WEB_SMOOTH_SCROLL,    KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, smooth_scrolling),          .def.b = TRUE },
     { NULL, KAJO_CFG_KEY_WEB_SUSPEND_IDLE_MIN, KAJO_FIELD_INT,    offsetof(KajoWebCfg, suspend_idle_min),          .def.i = 30,   .normalize_int = normalize_suspend_idle },
     { NULL, KAJO_CFG_KEY_WEB_MEMORY_LIMIT_MB,  KAJO_FIELD_INT,    offsetof(KajoWebCfg, memory_limit_mb),           .def.i = 2048, .min_int = 512, .max_int = 16384 },
@@ -150,7 +150,7 @@ static const KajoFieldSpec k_web_fields[] = {
     { NULL, KAJO_CFG_KEY_WEB_ITP_ENABLED,      KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, itp_enabled),               .def.b = TRUE },
     { NULL, KAJO_CFG_KEY_WEB_COOKIE_POLICY,    KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, cookie_policy),             .def.e = KAJO_WEB_COOKIES_NO_THIRD_PARTY, .enum_map = k_web_cookie_map },
     { NULL, KAJO_CFG_KEY_WEB_HTTPS_ONLY,       KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, https_only),                .def.b = TRUE },
-    { NULL, KAJO_CFG_KEY_WEB_AUTOPLAY_POLICY,  KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, autoplay_policy),           .def.e = KAJO_WEB_AUTOPLAY_MUTE, .enum_map = k_web_autoplay_map },
+    { NULL, KAJO_CFG_KEY_WEB_AUTOPLAY_POLICY,  KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, autoplay_policy),           .def.e = KAJO_WEB_AUTOPLAY_ALLOW, .enum_map = k_web_autoplay_map },
     { NULL, KAJO_CFG_KEY_WEB_ENABLE_WEBRTC,    KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, enable_webrtc),             .def.b = TRUE },
     { NULL, KAJO_CFG_KEY_WEB_DNS_PREFETCH,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, dns_prefetch),              .def.b = TRUE },
     { NULL, KAJO_CFG_KEY_WEB_MEDIA_DL_FMT,     KAJO_FIELD_ENUM,   offsetof(KajoWebCfg, media_download_format),     .def.e = KAJO_WEB_DL_BEST_MP4,   .enum_map = k_web_dl_fmt_map },

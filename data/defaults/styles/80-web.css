@@ -1,38 +1,61 @@
 /* ============================================================================
- * KAJO WEB (org.kajo.Web — Aero + Metro WebKitGTK 6.0 Browser)
- * Matches docs/kajo-web-mockup.html tokens, sizing, and strict 0px geometry.
+ * KAJO WEB (org.kajo.Web — Standalone Aero + Metro WebKitGTK 6.0 Browser)
+ *
+ * Strictly isolated from 30-settings.css (.shell-settings-window is NOT used).
+ * Every color and elevation surface comes from @metro-* tokens in 00-tokens.css
+ * and ~/.config/kajo/style.d/00-accent.css so user accents, surface presets,
+ * and typography scales (ui_font_size_px) apply automatically.
  * ============================================================================ */
 
-window.shell-web-window,
-window.shell-web-picker {
+window.shell-web-window {
     background-color: @metro-surface-0;
+    color: @metro-fg-primary;
     border: 1px solid @metro-accent;
     border-radius: 0px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 14px;
 }
 
 window.shell-web-window.web-private-window {
-    border-color: #b4009e;
+    border-color: @metro-magenta;
 }
 
-/* Zen Top Bar Hover Trigger (never opacity: 0) */
+window.shell-web-window.web-private-window .web-profile-dot {
+    background-color: @metro-magenta;
+}
+
+window.shell-web-window scrolledwindow,
+window.shell-web-window viewport,
+window.shell-web-window stack,
+window.shell-web-window flowbox,
+window.shell-web-window flowboxchild {
+    background: none;
+    background-color: transparent;
+    border: none;
+    padding: 0px;
+    margin: 0px;
+    outline: none;
+    box-shadow: none;
+}
+
+/* Zen Top Bar Hover Trigger (never opacity: 0 on Wayland) */
 window.shell-web-window .web-top-zen-trigger {
     background-color: rgba(0, 0, 0, 0.01);
     border-top: 2px solid alpha(@metro-accent, 0.55);
     min-height: 6px;
 }
 
-/* ─── 1. Minimalist 34px Top Chrome Bar ─── */
+/* ─── 1. 42px Top Chrome Bar (32px Hit Targets) ─── */
 
 window.shell-web-window .web-header-bar {
     background-color: @metro-surface-3;
     border-bottom: 1px solid @metro-border;
-    padding: 0px 6px 0px 8px;
-    min-height: 34px;
+    padding: 0px 8px;
+    min-height: 42px;
 }
 
 window.shell-web-window .web-brand-mark {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 800;
     letter-spacing: 0.9px;
     color: @metro-fg-primary;
@@ -48,38 +71,62 @@ window.shell-web-window button.web-chrome-btn {
     color: @metro-fg-body;
     border: 1px solid transparent;
     border-radius: 0px;
-    padding: 0px 6px;
-    min-height: 24px;
-    min-width: 24px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    padding: 0px 8px;
+    min-height: 32px;
+    min-width: 32px;
+    font-size: 14px;
     font-weight: 700;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-chrome-btn:hover {
     background-color: @metro-surface-hover;
-    border-color: @metro-border;
+    border-color: @metro-border-strong;
     color: @metro-fg-primary;
 }
 
+window.shell-web-window button.web-chrome-btn:active,
 window.shell-web-window button.web-chrome-btn.active {
-    background-color: alpha(@metro-accent, 0.22);
+    background-color: alpha(@metro-accent, 0.24);
     border-color: @metro-accent;
     color: @metro-fg-primary;
 }
 
 window.shell-web-window button.web-chrome-btn:disabled {
-    opacity: 0.32;
+    opacity: 0.30;
 }
 
-/* Unified Minimalist Omnibar (24px tall) */
+window.shell-web-window button.web-close-btn {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    color: @metro-fg-secondary;
+    border: 1px solid transparent;
+    border-radius: 0px;
+    padding: 0px 8px;
+    min-height: 32px;
+    min-width: 32px;
+    font-size: 14px;
+    font-weight: 700;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-web-window button.web-close-btn:hover {
+    background-color: @metro-urgent;
+    border-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+/* Unified Omnibar (32px box / 30px entry, zero-bounce progress overlay) */
 
 window.shell-web-window .web-omnibar-box {
     background-color: @metro-surface-0;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    padding: 0px 5px;
-    min-height: 24px;
+    padding: 0px 6px;
+    min-height: 32px;
 }
 
 window.shell-web-window .web-omnibar-box:hover {
@@ -88,18 +135,31 @@ window.shell-web-window .web-omnibar-box:hover {
 
 window.shell-web-window .web-omnibar-box:focus-within {
     border-color: @metro-accent;
-    background-color: #0d0d0d;
+    background-color: @metro-surface-1;
 }
 
 window.shell-web-window .web-omni-tls {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     color: @metro-telemetry;
-    padding: 0px 4px 0px 2px;
+    padding: 0px 6px 0px 4px;
 }
 
-window.shell-web-window entry.web-omni-entry {
+window.shell-web-window .web-omni-tls.tls-secure {
+    color: @metro-success;
+}
+
+window.shell-web-window .web-omni-tls.tls-warn {
+    color: @metro-warning;
+}
+
+window.shell-web-window .web-omni-tls.tls-kajo {
+    color: @metro-telemetry;
+}
+
+window.shell-web-window entry.web-omni-entry,
+window.shell-web-window entry.web-omni-entry:focus,
+window.shell-web-window entry.web-omni-entry:focus-within {
     background: none;
     background-image: none;
     background-color: transparent;
@@ -108,10 +168,48 @@ window.shell-web-window entry.web-omni-entry {
     outline: none;
     border-radius: 0px;
     color: @metro-fg-primary;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 14px;
+    min-height: 30px;
+    padding: 0px 4px;
+}
+
+window.shell-web-window entry.web-omni-entry > text {
+    background: transparent;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window button.web-omni-zoom,
+window.shell-web-window button.web-omni-star {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 0px;
+    color: @metro-fg-secondary;
     font-size: 11px;
-    min-height: 22px;
-    padding: 0px 2px;
+    font-weight: 700;
+    min-height: 24px;
+    min-width: 0px;
+    padding: 0px 6px;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-web-window button.web-omni-zoom {
+    background-color: alpha(@metro-telemetry, 0.14);
+    border-color: alpha(@metro-telemetry, 0.45);
+    color: @metro-telemetry;
+}
+
+window.shell-web-window button.web-omni-zoom:hover,
+window.shell-web-window button.web-omni-star:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-border-strong;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window button.web-omni-star.starred {
+    color: @metro-warning;
 }
 
 window.shell-web-window button.web-omni-shield {
@@ -121,12 +219,13 @@ window.shell-web-window button.web-omni-shield {
     border: 1px solid alpha(@metro-accent, 0.55);
     border-radius: 0px;
     color: @metro-telemetry;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
-    min-height: 18px;
+    min-height: 24px;
     min-width: 0px;
-    padding: 0px 6px;
+    padding: 0px 8px;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-omni-shield:hover {
@@ -141,11 +240,18 @@ window.shell-web-window button.web-omni-shield.off {
     color: @metro-fg-secondary;
 }
 
+window.shell-web-window progressbar.web-omni-progress {
+    margin: 0px;
+    min-width: 0px;
+}
+
 window.shell-web-window progressbar.web-omni-progress trough {
     background: none;
     background-image: none;
     background-color: transparent;
     border: none;
+    margin: 0px;
+    min-width: 0px;
     min-height: 2px;
 }
 
@@ -154,6 +260,8 @@ window.shell-web-window progressbar.web-omni-progress progress {
     background-image: none;
     background-color: @metro-accent;
     border: none;
+    margin: 0px;
+    min-width: 0px;
     min-height: 2px;
 }
 
@@ -161,43 +269,48 @@ window.shell-web-window progressbar.web-omni-progress progress {
 
 window.shell-web-window .web-chip-warn {
     background-color: alpha(@metro-warning, 0.16);
-    color: #ffb84d;
+    color: @metro-warning;
     border: 1px solid @metro-warning;
-    padding: 1px 6px;
-    min-height: 20px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    padding: 2px 8px;
+    min-height: 24px;
+    font-size: 11px;
     font-weight: 700;
 }
 
 window.shell-web-window .web-chip-priv {
-    background-color: rgba(180, 0, 158, 0.20);
-    color: #f4a4eb;
-    border: 1px solid #b4009e;
-    padding: 1px 6px;
-    min-height: 20px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    background-color: alpha(@metro-magenta, 0.20);
+    color: @metro-fg-primary;
+    border: 1px solid @metro-magenta;
+    padding: 2px 8px;
+    min-height: 24px;
+    font-size: 11px;
     font-weight: 700;
 }
 
 window.shell-web-window button.web-chip-dl {
     background: none;
     background-image: none;
-    background-color: alpha(@metro-telemetry, 0.12);
+    background-color: alpha(@metro-telemetry, 0.14);
     border: 1px solid @metro-telemetry;
     border-radius: 0px;
     color: @metro-telemetry;
-    padding: 0px 6px;
-    min-height: 22px;
+    padding: 0px 8px;
+    min-height: 28px;
     min-width: 0px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-chip-dl:hover {
-    background-color: alpha(@metro-telemetry, 0.24);
+    background-color: alpha(@metro-telemetry, 0.26);
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window button.web-chip-dl.has-active {
+    background-color: alpha(@metro-accent, 0.26);
+    border-color: @metro-accent;
     color: @metro-fg-primary;
 }
 
@@ -207,12 +320,13 @@ window.shell-web-window button.web-profile-chip {
     background-color: @metro-surface-2;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    padding: 0px 8px;
-    min-height: 22px;
+    padding: 0px 10px;
+    min-height: 28px;
     color: @metro-fg-primary;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    font-size: 11px;
     font-weight: 700;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-profile-chip:hover {
@@ -222,14 +336,14 @@ window.shell-web-window button.web-profile-chip:hover {
 
 window.shell-web-window .web-profile-dot {
     background-color: @metro-accent;
-    min-width: 7px;
-    min-height: 7px;
+    min-width: 8px;
+    min-height: 8px;
     border-radius: 0px;
 }
 
-/* ─── 2. Vertical Tab Rail (Autohide / Compact / Pinned) ─── */
+/* ─── 2. Vertical Tab Rail (Autohide / Compact 48px / Pinned) ─── */
 
-/* IMPORTANT: Never use opacity: 0 on Wayland edge trigger strips (AGENTS.md §4D) */
+/* Never use opacity: 0 on Wayland edge trigger strips (AGENTS.md §4D) */
 window.shell-web-window .web-rail-trigger {
     background-color: rgba(0, 0, 0, 0.01);
     min-width: 12px;
@@ -247,7 +361,7 @@ window.shell-web-window .web-rail-trigger.rail-right:hover {
 }
 
 window.shell-web-window .web-rail-tick {
-    background-color: #3a3a3a;
+    background-color: @metro-border-strong;
     min-width: 2px;
     min-height: 14px;
 }
@@ -259,7 +373,7 @@ window.shell-web-window .web-rail-tick-active {
 }
 
 window.shell-web-window .web-tab-rail {
-    background-color: rgba(18, 18, 18, 0.96);
+    background-color: @metro-surface-2;
     border-right: 1px solid @metro-border;
 }
 
@@ -269,35 +383,20 @@ window.shell-web-window .web-tab-rail.rail-right {
 }
 
 window.shell-web-window .web-tab-rail.overlay-elevated {
-    box-shadow: 10px 0px 28px rgba(0, 0, 0, 0.78);
+    background-color: @metro-surface-2;
+    border-right: 1px solid @metro-accent;
 }
 
 window.shell-web-window .web-tab-rail.overlay-elevated.rail-right {
-    box-shadow: -10px 0px 28px rgba(0, 0, 0, 0.78);
+    border-right: none;
+    border-left: 1px solid @metro-accent;
 }
 
-window.shell-web-window .web-rail-header {
-    background-color: @metro-surface-2;
-    border-bottom: 1px solid @metro-border-subtle;
-    padding: 0px 8px;
-    min-height: 28px;
-}
-
-window.shell-web-window .web-rail-title {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.6px;
-    color: @metro-fg-secondary;
-}
-
+/* Pinned Tabs Zone (zero vertical reflow in compact mode) */
 window.shell-web-window .web-pin-grid {
-    padding: 6px 8px;
+    padding: 5px;
     border-bottom: 1px solid @metro-border;
-}
-
-window.shell-web-window .web-tab-rail.compact-collapsed .web-pin-grid {
-    padding: 5px 4px;
+    background-color: @metro-surface-1;
 }
 
 window.shell-web-window button.web-pin-tile {
@@ -306,13 +405,14 @@ window.shell-web-window button.web-pin-tile {
     background-color: @metro-surface-3;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    min-width: 30px;
-    min-height: 30px;
+    min-width: 36px;
+    min-height: 36px;
     padding: 0px;
     color: @metro-fg-primary;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 700;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-pin-tile:hover {
@@ -321,42 +421,67 @@ window.shell-web-window button.web-pin-tile:hover {
 }
 
 window.shell-web-window button.web-pin-tile.active {
-    background-color: alpha(@metro-accent, 0.22);
+    background-color: alpha(@metro-accent, 0.24);
     border-color: @metro-accent;
     border-bottom: 2px solid @metro-accent;
 }
 
-window.shell-web-window .web-tab-group-hdr {
+/* Tab Group Divider (fixed 26px height across collapsed & expanded -> 0px jump) */
+window.shell-web-window button.web-tab-group-hdr {
+    background: none;
+    background-image: none;
+    border: none;
     border-left: 3px solid @metro-accent;
-    padding: 5px 8px;
-    margin-top: 4px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    border-bottom: 1px solid @metro-border-subtle;
+    border-radius: 0px;
+    background-color: @metro-surface-1;
+    padding: 0px 6px 0px 0px;
+    min-height: 26px;
+    font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.6px;
     color: @metro-fg-secondary;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-web-window button.web-tab-group-hdr:hover {
+    background-color: @metro-surface-hover;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window .web-tab-audio-dot {
+    background-color: @metro-telemetry;
+    border: 1px solid @metro-surface-0;
+}
+
+window.shell-web-window .web-tab-audio-dot.muted {
+    background-color: @metro-warning;
+}
+
+window.shell-web-window .web-tab-group-dot {
+    min-width: 44px;
+    font-size: 11px;
+    font-weight: 700;
+    color: @metro-accent;
 }
 
 window.shell-web-window .web-tab-group-count {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 9px;
+    font-size: 11px;
     font-weight: 700;
-    padding: 1px 5px;
+    padding: 0px 5px;
     background-color: @metro-surface-4;
     border: 1px solid @metro-border;
     color: @metro-fg-secondary;
 }
 
+/* Regular Vertical Tab Rows — IDENTICAL padding & 44px icon slot in collapsed & expanded */
 window.shell-web-window .web-tab-row {
     background-color: transparent;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid @metro-border-subtle;
     border-left: 3px solid transparent;
-    padding: 0px 4px 0px 5px;
-    min-height: 34px;
-}
-
-window.shell-web-window .web-tab-rail.compact-collapsed .web-tab-row {
-    padding: 0px 2px;
+    padding: 0px;
+    min-height: 44px;
 }
 
 window.shell-web-window .web-tab-row:hover {
@@ -364,46 +489,98 @@ window.shell-web-window .web-tab-row:hover {
 }
 
 window.shell-web-window .web-tab-row.active {
-    background-color: alpha(@metro-accent, 0.24);
-    border-left: 3px solid #ffffff;
+    background-color: alpha(@metro-accent, 0.20);
+    border-left: 3px solid @metro-accent;
 }
 
 window.shell-web-window .web-tab-row.suspended {
     opacity: 0.56;
 }
 
-window.shell-web-window button.web-tab-select-btn {
+window.shell-web-window .web-tab-row.drag-over,
+window.shell-web-window button.web-pin-tile.drag-over {
+    border-top: 2px solid @metro-accent;
+    background-color: alpha(@metro-accent, 0.22);
+}
+
+window.shell-web-window button.web-tab-select-btn,
+window.shell-web-window button.web-tab-select-btn:hover,
+window.shell-web-window button.web-tab-select-btn:active {
     background: none;
     background-image: none;
     background-color: transparent;
     border: none;
     border-radius: 0px;
-    padding: 2px 2px;
-    min-height: 30px;
+    padding: 0px;
+    min-height: 42px;
     min-width: 0px;
+    box-shadow: none;
+    outline: none;
 }
 
-window.shell-web-window .web-tab-ico {
-    font-size: 13px;
+/* Fixed 44px left slot (3px border + 44px slot + 1px rail border = 48px compact) */
+window.shell-web-window .web-tab-ico-slot {
+    min-width: 44px;
+    min-height: 42px;
+}
+
+window.shell-web-window .web-tab-badge {
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    color: @metro-fg-soft;
+    min-width: 24px;
+    min-height: 24px;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+window.shell-web-window .web-tab-row.active .web-tab-badge,
+window.shell-web-window button.web-pin-tile.active .web-tab-badge {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window .web-tab-badge.kajo {
+    border-color: alpha(@metro-telemetry, 0.6);
+    color: @metro-telemetry;
+}
+
+window.shell-web-window .web-tab-badge.suspended {
+    color: @metro-fg-dim;
+}
+
+window.shell-web-window .web-tab-favicon {
     min-width: 18px;
+    min-height: 18px;
+}
+
+window.shell-web-window .web-tab-loading {
+    color: @metro-accent;
+    font-size: 15px;
+    font-weight: 800;
+    min-width: 18px;
+    min-height: 18px;
+}
+
+window.shell-web-window .web-tab-text-col {
+    padding: 3px 4px 3px 2px;
 }
 
 window.shell-web-window .web-tab-title {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
-    color: #f0f0f0;
+    color: @metro-fg-bright;
 }
 
 window.shell-web-window .web-tab-row.active .web-tab-title {
-    color: #ffffff;
+    color: @metro-fg-primary;
     font-weight: 700;
 }
 
 window.shell-web-window .web-tab-domain {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 9px;
-    color: #787878;
+    font-size: 11px;
+    color: @metro-fg-dim;
 }
 
 window.shell-web-window button.web-tab-mini-btn {
@@ -413,19 +590,22 @@ window.shell-web-window button.web-tab-mini-btn {
     border: 1px solid transparent;
     border-radius: 0px;
     padding: 0px;
-    min-width: 20px;
-    min-height: 20px;
+    min-width: 26px;
+    min-height: 26px;
+    margin-right: 2px;
     color: @metro-telemetry;
-    font-size: 10px;
+    font-size: 12px;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-tab-mini-btn:hover {
-    background-color: @metro-surface-hover;
+    background-color: @metro-surface-4;
     border-color: @metro-border-strong;
 }
 
 window.shell-web-window button.web-tab-mini-btn.muted {
-    color: #787878;
+    color: @metro-fg-dim;
 }
 
 window.shell-web-window button.web-tab-close-btn {
@@ -435,12 +615,15 @@ window.shell-web-window button.web-tab-close-btn {
     border: none;
     border-radius: 0px;
     padding: 0px;
-    min-width: 18px;
-    min-height: 18px;
-    color: #787878;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
-    opacity: 0.25;
+    min-width: 26px;
+    min-height: 26px;
+    margin-right: 4px;
+    color: @metro-fg-dim;
+    font-size: 12px;
+    font-weight: 700;
+    opacity: 0.45;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window .web-tab-row:hover button.web-tab-close-btn,
@@ -449,18 +632,16 @@ window.shell-web-window .web-tab-row.active button.web-tab-close-btn {
 }
 
 window.shell-web-window button.web-tab-close-btn:hover {
-    background-color: #e81123;
-    color: #ffffff;
+    background-color: @metro-urgent;
+    color: @metro-fg-primary;
 }
 
+/* Fixed-Height Single-Row Rail Footer (identical height collapsed & expanded -> 0px jump) */
 window.shell-web-window .web-rail-footer {
-    background-color: @metro-surface-2;
+    background-color: @metro-surface-1;
     border-top: 1px solid @metro-border;
-    padding: 6px;
-}
-
-window.shell-web-window .web-tab-rail.compact-collapsed .web-rail-footer {
-    padding: 4px;
+    padding: 5px;
+    min-height: 42px;
 }
 
 window.shell-web-window button.web-rail-foot-btn {
@@ -469,49 +650,131 @@ window.shell-web-window button.web-rail-foot-btn {
     background-color: @metro-surface-4;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    color: #e0e0e0;
-    min-height: 26px;
-    min-width: 0px;
-    padding: 0px 6px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    color: @metro-fg-soft;
+    min-height: 32px;
+    min-width: 36px;
+    padding: 0px 8px;
+    font-size: 12px;
     font-weight: 700;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-window button.web-rail-foot-btn:hover {
     background-color: @metro-surface-hover;
     border-color: @metro-accent;
-    color: #ffffff;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-window button.web-rail-foot-btn:disabled {
+    opacity: 0.35;
 }
 
 window.shell-web-window button.web-rail-foot-btn.primary {
-    background-color: alpha(@metro-accent, 0.24);
+    background-color: alpha(@metro-accent, 0.22);
     border-color: @metro-accent;
-    color: #ffffff;
+    color: @metro-fg-primary;
 }
 
 window.shell-web-window button.web-rail-foot-btn.primary:hover {
     background-color: @metro-accent;
 }
 
-/* ─── 3. Inline Find Bar & Permission Infobar ─── */
+/* ─── 3. Inline Find Bar, Permission Infobar & Status Cards ─── */
 
 window.shell-web-window .web-find-bar {
-    background-color: @metro-surface-3;
+    background-color: @metro-glass-bg;
     border: 1px solid @metro-accent;
-    padding: 5px 8px;
-    box-shadow: 0px 10px 28px rgba(0, 0, 0, 0.85);
+    padding: 5px 7px;
+    box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.72);
+}
+
+window.shell-web-window .web-find-bar.not-found {
+    border-color: @metro-urgent;
+}
+
+window.shell-web-window .web-find-count {
+    color: @metro-fg-secondary;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 0px 6px;
+    min-width: 44px;
+}
+
+window.shell-web-window .web-find-bar.not-found .web-find-count {
+    color: @metro-urgent-text;
+}
+
+window.shell-web-window .web-hover-hud {
+    background-color: @metro-glass-bg;
+    border: 1px solid @metro-border;
+    border-left: 3px solid @metro-accent;
+    color: @metro-fg-secondary;
+    font-size: 11px;
+    padding: 3px 8px;
+    box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.65);
+}
+
+window.shell-web-window progressbar.web-dl-progress trough {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-3;
+    border: none;
+    border-radius: 0px;
+    min-height: 3px;
+}
+
+window.shell-web-window progressbar.web-dl-progress progress {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
+    border: none;
+    border-radius: 0px;
+    min-height: 3px;
+}
+
+window.shell-web-window .web-sync-err {
+    color: @metro-urgent-text;
+    font-size: 11px;
+}
+
+window.shell-web-window popover.web-omnibar-ac contents {
+    padding: 2px;
+}
+
+window.shell-web-window .web-omnibar-ac-row {
+    padding: 4px 6px;
+}
+
+window.shell-web-window entry.web-find-entry,
+window.shell-web-window entry.web-find-entry:focus,
+window.shell-web-window entry.web-find-entry:focus-within {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    color: @metro-fg-primary;
+    font-size: 13px;
+    min-height: 30px;
+    min-width: 210px;
+    padding: 0px 8px;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-web-window entry.web-find-entry:focus,
+window.shell-web-window entry.web-find-entry:focus-within {
+    border-color: @metro-accent;
 }
 
 window.shell-web-window .web-perm-bar {
     background-color: @metro-surface-3;
     border-bottom: 1px solid @metro-warning;
     border-left: 3px solid @metro-warning;
-    padding: 5px 12px;
-    min-height: 30px;
+    padding: 6px 12px;
+    min-height: 36px;
 }
-
-/* ─── Status Cards (Crashed / Suspended) ─── */
 
 window.shell-web-window .web-status-card {
     background-color: @metro-surface-1;
@@ -520,68 +783,125 @@ window.shell-web-window .web-status-card {
     padding: 20px 26px;
 }
 
-/* ─── 4. Popovers (Shield, Media Sniffer, Downloads, Profile Switcher) ─── */
-
-popover.web-popover > contents {
-    background-color: @metro-surface-3;
+/* Standalone Action Buttons inside Web Window & Picker (no settings CSS bleed) */
+window.shell-web-window button.web-btn-primary {
+    background: none;
+    background-image: none;
+    background-color: @metro-accent;
     border: 1px solid @metro-accent;
     border-radius: 0px;
-    padding: 10px;
-    box-shadow: 0px 16px 42px rgba(0, 0, 0, 0.88);
-}
-
-.web-popover-box {
-    background-color: transparent;
-}
-
-.web-popover-title {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
-    font-weight: 700;
     color: @metro-fg-primary;
-    letter-spacing: 0.6px;
-}
-
-.web-dim-label {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 11px;
-    color: @metro-fg-secondary;
-}
-
-.web-badge-telemetry {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
+    padding: 5px 14px;
+    min-height: 30px;
+    font-size: 12px;
     font-weight: 700;
-    color: @metro-telemetry;
+    box-shadow: none;
+    outline: none;
 }
 
-.web-dl-card {
-    background-color: @metro-surface-1;
-    border: 1px solid @metro-border-subtle;
-    padding: 7px 9px;
+window.shell-web-window button.web-btn-primary:hover {
+    background-color: @metro-accent-hover;
+    border-color: @metro-fg-primary;
 }
 
-button.web-mini-btn {
+window.shell-web-window button.web-btn-secondary {
     background: none;
     background-image: none;
     background-color: @metro-surface-4;
     border: 1px solid @metro-border;
     border-radius: 0px;
-    padding: 2px 6px;
-    min-height: 20px;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 10px;
-    font-weight: 700;
-    color: @metro-fg-body;
+    color: @metro-fg-soft;
+    padding: 5px 12px;
+    min-height: 30px;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: none;
+    outline: none;
 }
 
-button.web-mini-btn:hover {
+window.shell-web-window button.web-btn-secondary:hover {
     background-color: @metro-surface-hover;
     border-color: @metro-accent;
     color: @metro-fg-primary;
 }
 
+/* ─── 4. Shared Popover Cards & Micro Labels (uses Kajo 3-zone Aero Glass popovers) ─── */
+
+.web-dim-label {
+    font-size: 12px;
+    color: @metro-fg-secondary;
+}
+
+.web-badge-telemetry {
+    font-size: 11px;
+    font-weight: 700;
+    color: @metro-telemetry;
+}
+
+.web-dl-card {
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    padding: 8px 10px;
+}
+
+popover button.web-mini-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-control;
+    border: 1px solid @metro-glass-border;
+    border-radius: 0px;
+    padding: 2px 9px;
+    min-height: 26px;
+    font-size: 11px;
+    font-weight: 700;
+    color: @metro-fg-soft;
+    box-shadow: none;
+    outline: none;
+}
+
+popover button.web-mini-btn:hover {
+    background-color: @metro-glass-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover button.web-ctx-row {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-radius: 0px;
+    padding: 6px 12px;
+    min-height: 32px;
+    font-size: 12px;
+    font-weight: 600;
+    color: @metro-fg-bright;
+    box-shadow: none;
+    outline: none;
+}
+
+popover button.web-ctx-row:hover {
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+popover button.web-ctx-row.danger:hover {
+    background-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
 /* ─── 5. Startup Profile Picker (760x480 Frameless Metro Window) ─── */
+
+window.shell-web-picker {
+    background-color: @metro-surface-bg;
+}
+
+window.shell-web-picker .web-picker-title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    color: @metro-fg-primary;
+}
 
 window.shell-web-picker button.web-picker-card {
     background: none;
@@ -593,6 +913,8 @@ window.shell-web-picker button.web-picker-card {
     padding: 14px 12px;
     min-width: 150px;
     min-height: 126px;
+    box-shadow: none;
+    outline: none;
 }
 
 window.shell-web-picker button.web-picker-card:hover {
@@ -601,59 +923,127 @@ window.shell-web-picker button.web-picker-card:hover {
 }
 
 window.shell-web-picker .web-picker-name {
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 700;
     color: @metro-fg-primary;
 }
 
-window.shell-web-picker .web-picker-foot {
+window.shell-web-picker entry.web-picker-entry {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    color: @metro-fg-primary;
+    padding: 4px 10px;
+    min-height: 32px;
+    font-size: 13px;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-web-picker entry.web-picker-entry:focus,
+window.shell-web-picker entry.web-picker-entry:focus-within {
+    border-color: @metro-accent;
+}
+
+window.shell-web-picker checkbutton {
+    color: @metro-fg-soft;
+    font-size: 12px;
+}
+
+window.shell-web-picker checkbutton check {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    min-width: 14px;
+    min-height: 14px;
+}
+
+window.shell-web-picker checkbutton:checked check {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-web-picker .web-picker-footer {
     background-color: @metro-surface-2;
     border-top: 1px solid @metro-border;
     padding: 8px 16px;
 }
 
-/* ─── 6. Ctrl+K Command & Tab Palette ─── */
-
-.web-palette-scrim {
-    background-color: rgba(0, 0, 0, 0.62);
-}
-
-.web-palette-card {
-    background-color: @metro-surface-3;
-    border: 1px solid @metro-accent;
-    box-shadow: 0px 22px 60px rgba(0, 0, 0, 0.92);
-}
-
-entry.web-palette-entry {
+window.shell-web-picker button.web-picker-del-btn {
     background: none;
     background-image: none;
-    background-color: @metro-surface-0;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    color: @metro-fg-secondary;
+    min-width: 24px;
+    min-height: 24px;
+    padding: 0px 6px;
+    font-size: 11px;
+    font-weight: 700;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-web-picker button.web-picker-del-btn:hover {
+    background-color: @metro-urgent;
+    border-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+/* ─── 6. Ctrl+K Command & Tab Palette (Aero Glass Launcher Card) ─── */
+
+window.shell-web-window .web-palette-scrim {
+    background-color: rgba(0, 0, 0, 0.58);
+}
+
+window.shell-web-window .web-palette-card {
+    background-color: @metro-glass-bg;
+    border: 1px solid @metro-accent;
+    box-shadow: 0px 18px 48px rgba(0, 0, 0, 0.85);
+}
+
+window.shell-web-window entry.web-palette-entry,
+window.shell-web-window entry.web-palette-entry:focus,
+window.shell-web-window entry.web-palette-entry:focus-within {
+    background: none;
+    background-image: none;
+    background-color: @metro-glass-well;
     border: none;
-    border-bottom: 1px solid @metro-border;
+    border-bottom: 1px solid @metro-glass-border;
     border-radius: 0px;
     color: @metro-fg-primary;
-    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
-    font-size: 13px;
-    min-height: 36px;
+    font-size: 14px;
+    min-height: 40px;
     padding: 6px 12px;
+    box-shadow: none;
+    outline: none;
 }
 
-.web-palette-list {
-    background-color: @metro-surface-3;
+window.shell-web-window .web-palette-list {
+    background: transparent;
+    background-color: transparent;
 }
 
-.web-palette-list row {
+window.shell-web-window .web-palette-list row {
     background: none;
     background-image: none;
     background-color: transparent;
-    border-bottom: 1px solid @metro-border-subtle;
+    border-bottom: 1px solid @metro-glass-border;
+    border-left: 3px solid transparent;
     padding: 7px 12px;
 }
 
-.web-palette-list row:selected,
-.web-palette-list row:hover {
-    background: none;
-    background-image: none;
-    background-color: alpha(@metro-accent, 0.22);
+window.shell-web-window .web-palette-list row:hover {
+    background-color: @metro-glass-hover;
+}
+
+window.shell-web-window .web-palette-list row:selected {
+    background-color: alpha(@metro-accent, 0.28);
+    border-left: 3px solid @metro-accent;
 }

@@ -406,6 +406,7 @@ web_core_sources = files(
   'src/web/web_model.c',
   'src/web/web_sync_merge.c',
   'src/web/web_media_sniff_core.c',
+  'src/web/web_abp_compiler.c',
 )
 
 web_sources = files(
@@ -420,7 +421,9 @@ web_sources = files(
   'src/web/web_tab_rail.c',
   'src/web/web_picker.c',
   'src/web/web_palette.c',
+  'src/web/web_omnibar_ac.c',
   'src/web/web_window.c',
+  'src/web/web_window_actions.c',
   'src/web/web_window_popovers.c',
 ) + web_core_sources
 
@@ -1002,11 +1005,20 @@ test('mod-router', test_mod_router_exe)
 
 test_web_model_exe = executable(
   'test-web-model',
-  files('tests/test_web_model.c') + web_core_sources + kajo_config_sources,
-  dependencies: [gio_dep, json_glib_dep, gcrypt_dep, m_dep],
+  files('tests/test_web_model.c', 'src/web/web_storage.c') + web_core_sources + kajo_config_sources,
+  dependencies: [gio_dep, json_glib_dep, sqlite3_dep, gcrypt_dep, m_dep],
   build_by_default: false,
 )
 test('web-model', test_web_model_exe)
+
+test_web_adblock_exe = executable(
+  'test-web-adblock',
+  files('tests/test_web_adblock.c', 'src/web/web_abp_compiler.c'),
+  dependencies: [webkitgtk_dep, gio_dep, json_glib_dep],
+  build_by_default: false,
+)
+test('web-adblock', test_web_adblock_exe,
+  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
 
 # ─── kajo-comp (compositor) ───────────────────────────────────────────────
 # Pure core: no wlroots, Vulkan or GLib headers (spec §7.2.4). Built with the

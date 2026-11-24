@@ -15,7 +15,7 @@ restore_session           = true
 # === Hardware Acceleration & Performance ===
 hardware_acceleration     = "always"
 enable_webgl              = true
-gpu_process_webgl         = true
+gpu_process_webgl         = false
 smooth_scrolling          = true
 suspend_idle_min          = 30
 memory_limit_mb           = 2048
@@ -27,7 +27,7 @@ user_scripts_enabled      = false
 itp_enabled               = true
 cookie_policy             = "no-third-party"
 https_only                = true
-autoplay_policy           = "allow-without-sound"
+autoplay_policy           = "allow"
 enable_webrtc             = true
 dns_prefetch              = true
 media_download_format     = "best-mp4"

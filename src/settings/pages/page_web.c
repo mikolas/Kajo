@@ -8,7 +8,7 @@ static const char *const WEB_RAIL_MODE_LABELS[]  = { "AUTOHIDE", "COMPACT", "PIN
 static const char *const WEB_RAIL_SIDE_LABELS[]  = { "LEFT", "RIGHT", NULL };
 static const char *const WEB_TOPBAR_LABELS[]     = { "VISIBLE", "AUTOHIDE", NULL };
 static const char *const WEB_NEWTAB_LABELS[]     = { "START", "BLANK", "CUSTOM", NULL };
-static const char *const WEB_HW_LABELS[]         = { "ALWAYS", "AUTO", "NEVER", NULL };
+static const char *const WEB_HW_LABELS[]         = { "ALWAYS", "NEVER", NULL };
 static const char *const WEB_COOKIE_LABELS[]     = { "NO 3RD", "ALWAYS", "NEVER", NULL };
 static const char *const WEB_AUTOPLAY_LABELS[]   = { "MUTED", "ALLOW", "DENY", NULL };
 static const char *const WEB_SEARCH_LABELS[]     = { "DDG", "KAGI", "STARTPAGE", "BRAVE", "GOOGLE", "CUSTOM", NULL };
@@ -53,7 +53,6 @@ typedef struct _SettingsPageWeb {
     GtkWidget *sw_https_only;
     GtkWidget *seg_autoplay;
     GtkWidget *sw_webrtc;
-    GtkWidget *sw_dns_prefetch;
     GtkWidget *dd_dl_fmt;
 
     /* Card 4: Profiles & Google Drive AppData Sync */
@@ -112,7 +111,8 @@ collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
     out->new_tab_custom_url   = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_newtab_url)));
     out->restore_session      = gtk_switch_get_active(GTK_SWITCH(self->sw_restore));
 
-    out->hardware_acceleration = (KajoWebHwAccel)MIN(segmented_group_get_selected(self->seg_hw), 2u);
+    out->hardware_acceleration = (segmented_group_get_selected(self->seg_hw) == 1)
+        ? KAJO_WEB_HW_NEVER : KAJO_WEB_HW_ALWAYS;
     out->enable_webgl          = gtk_switch_get_active(GTK_SWITCH(self->sw_webgl));
     out->gpu_process_webgl     = gtk_switch_get_active(GTK_SWITCH(self->sw_gpu_webgl));
     out->smooth_scrolling      = gtk_switch_get_active(GTK_SWITCH(self->sw_smooth_scroll));
@@ -130,7 +130,7 @@ collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
     out->https_only           = gtk_switch_get_active(GTK_SWITCH(self->sw_https_only));
     out->autoplay_policy      = (KajoWebAutoplayPolicy)MIN(segmented_group_get_selected(self->seg_autoplay), 2u);
     out->enable_webrtc        = gtk_switch_get_active(GTK_SWITCH(self->sw_webrtc));
-    out->dns_prefetch         = gtk_switch_get_active(GTK_SWITCH(self->sw_dns_prefetch));
+    out->dns_prefetch         = self->saved ? self->saved->dns_prefetch : out->dns_prefetch;
     out->media_download_format = (KajoWebDownloadFmt)MIN(gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_dl_fmt)), 4u);
 
     out->show_picker_on_startup = gtk_switch_get_active(GTK_SWITCH(self->sw_picker_startup));
@@ -140,10 +140,10 @@ collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
     g_free(out->sync_oauth_client_secret);
     out->sync_oauth_client_secret = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_oauth_secret)));
     out->sync_bookmarks       = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_bookmarks));
-    out->sync_history         = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_history));
-    out->sync_tabs_and_groups = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_tabs));
-    out->sync_settings        = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_settings));
-    out->sync_e2ee_enabled    = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_e2ee));
+    out->sync_history         = self->saved ? self->saved->sync_history : FALSE;
+    out->sync_tabs_and_groups = self->saved ? self->saved->sync_tabs_and_groups : FALSE;
+    out->sync_settings        = self->saved ? self->saved->sync_settings : FALSE;
+    out->sync_e2ee_enabled    = self->saved ? self->saved->sync_e2ee_enabled : FALSE;
 
     out->search_engine        = (KajoWebSearchEngine)MIN(gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_search)), 5u);
     g_free(out->search_custom_url);
@@ -179,7 +179,7 @@ apply_cfg_to_ui(SettingsPageWeb *self, const KajoWebCfg *cfg)
     gtk_editable_set_text(GTK_EDITABLE(self->entry_newtab_url), cfg->new_tab_custom_url ? cfg->new_tab_custom_url : "");
     gtk_switch_set_active(GTK_SWITCH(self->sw_restore), cfg->restore_session);
 
-    segmented_group_set_selected(self->seg_hw, (guint)cfg->hardware_acceleration);
+    segmented_group_set_selected(self->seg_hw, (cfg->hardware_acceleration == KAJO_WEB_HW_NEVER) ? 1u : 0u);
     gtk_switch_set_active(GTK_SWITCH(self->sw_webgl), cfg->enable_webgl);
     gtk_switch_set_active(GTK_SWITCH(self->sw_gpu_webgl), cfg->gpu_process_webgl);
     gtk_switch_set_active(GTK_SWITCH(self->sw_smooth_scroll), cfg->smooth_scrolling);
@@ -194,7 +194,6 @@ apply_cfg_to_ui(SettingsPageWeb *self, const KajoWebCfg *cfg)
     gtk_switch_set_active(GTK_SWITCH(self->sw_https_only), cfg->https_only);
     segmented_group_set_selected(self->seg_autoplay, (guint)cfg->autoplay_policy);
     gtk_switch_set_active(GTK_SWITCH(self->sw_webrtc), cfg->enable_webrtc);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_dns_prefetch), cfg->dns_prefetch);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_dl_fmt), (guint)cfg->media_download_format);
 
     gtk_switch_set_active(GTK_SWITCH(self->sw_picker_startup), cfg->show_picker_on_startup);
@@ -202,10 +201,10 @@ apply_cfg_to_ui(SettingsPageWeb *self, const KajoWebCfg *cfg)
     gtk_editable_set_text(GTK_EDITABLE(self->entry_oauth_id), cfg->sync_oauth_client_id ? cfg->sync_oauth_client_id : "");
     gtk_editable_set_text(GTK_EDITABLE(self->entry_oauth_secret), cfg->sync_oauth_client_secret ? cfg->sync_oauth_client_secret : "");
     gtk_switch_set_active(GTK_SWITCH(self->sw_sync_bookmarks), cfg->sync_bookmarks);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_history), cfg->sync_history);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_tabs), cfg->sync_tabs_and_groups);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_settings), cfg->sync_settings);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_e2ee), cfg->sync_e2ee_enabled);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_history), FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_tabs), FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_settings), FALSE);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_e2ee), FALSE);
 
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_search), (guint)cfg->search_engine);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_search_url), cfg->search_custom_url ? cfg->search_custom_url : "");
@@ -380,7 +379,7 @@ build_page_web(void)
     self->seg_rail_mode = create_segmented_group(WEB_RAIL_MODE_LABELS, 0);
     segmented_group_connect(self->seg_rail_mode, on_web_seg_changed, self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("◧", "Vertical Rail Mode",
-        "Autohide overlays on edge hover (zero page reflow); Compact 44px; Pinned split", self->seg_rail_mode));
+        "Autohide overlays on edge hover (zero page reflow); Compact 48px; Pinned split", self->seg_rail_mode));
 
     self->seg_rail_side = create_segmented_group(WEB_RAIL_SIDE_LABELS, 0);
     segmented_group_connect(self->seg_rail_side, on_web_seg_changed, self);
@@ -401,7 +400,7 @@ build_page_web(void)
 
     self->seg_topbar = create_segmented_group(WEB_TOPBAR_LABELS, 0);
     segmented_group_connect(self->seg_topbar, on_web_seg_changed, self);
-    gtk_box_append(GTK_BOX(c1), create_boxed_row("▬", "Top Chrome Bar", "Always visible (34px) or Zen autohide", self->seg_topbar));
+    gtk_box_append(GTK_BOX(c1), create_boxed_row("▬", "Top Chrome Bar", "Always visible (42px) or Zen autohide", self->seg_topbar));
 
     self->sw_tab_domains = make_switch(self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("◉", "Show Domain Under Tab Title", "Display hostname subtitle on vertical tab rows", self->sw_tab_domains));
@@ -482,9 +481,6 @@ build_page_web(void)
     self->sw_webrtc = make_switch(self);
     gtk_box_append(GTK_BOX(c3), create_boxed_row("📹", "Enable WebRTC", "Needed for Meet/Jitsi/Discord calls; disable to prevent IP leaks", self->sw_webrtc));
 
-    self->sw_dns_prefetch = make_switch(self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("🌐", "DNS Prefetching", "Resolve hovered links ahead of navigation", self->sw_dns_prefetch));
-
     self->dd_dl_fmt = create_string_dropdown(WEB_DL_FMT_LABELS);
     settings_make_dropdown_shrinkable(self->dd_dl_fmt);
     g_signal_connect(self->dd_dl_fmt, "notify::selected", G_CALLBACK(on_web_prop_changed), self);
@@ -515,17 +511,21 @@ build_page_web(void)
     gtk_box_append(GTK_BOX(c4), create_boxed_row("★", "Sync Bookmarks", "CRDT UUID+tombstone merge via Drive appDataFolder", self->sw_sync_bookmarks));
 
     self->sw_sync_history = make_switch(self);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("🕘", "Sync History", "Include browsing history in profile sync payload", self->sw_sync_history));
+    gtk_widget_set_sensitive(self->sw_sync_history, FALSE);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("🕘", "Sync History (planned)", "Not yet wired into Drive payload", self->sw_sync_history));
 
     self->sw_sync_tabs = make_switch(self);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("📑", "Sync Open Tabs & Groups", "Sync active session tabs across devices", self->sw_sync_tabs));
+    gtk_widget_set_sensitive(self->sw_sync_tabs, FALSE);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("📑", "Sync Open Tabs & Groups (planned)", "Not yet wired into Drive payload", self->sw_sync_tabs));
 
     self->sw_sync_settings = make_switch(self);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("⚙", "Sync Browser Settings", "Sync web.toml preferences snapshot", self->sw_sync_settings));
+    gtk_widget_set_sensitive(self->sw_sync_settings, FALSE);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("⚙", "Sync Browser Settings (planned)", "Not yet wired into Drive payload", self->sw_sync_settings));
 
     self->sw_sync_e2ee = make_switch(self);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("🛡", "End-to-End Encryption (AES-256-GCM)",
-        "Encrypt Drive payloads locally with PBKDF2 passphrase before upload", self->sw_sync_e2ee));
+    gtk_widget_set_sensitive(self->sw_sync_e2ee, FALSE);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("🛡", "End-to-End Encryption (planned)",
+        "Not yet implemented (Drive payloads currently unencrypted JSON)", self->sw_sync_e2ee));
 
     settings_bento_add_pair(GTK_WIDGET(self), c3, c4);
 
