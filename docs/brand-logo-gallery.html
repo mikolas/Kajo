@@ -468,7 +468,7 @@
   <section>
     <div class="section-hdr">
       <span class="section-title">00 // 3:1 Hero Brand Banner (1200×400 — README &amp; Documentation Header)</span>
-      <span class="section-sub">docs/kajo-banner.svg • Font-independent vector KAJO wordmark + Concept A Emblem + 6-Binary Telemetry Strip</span>
+      <span class="section-sub">docs/kajo-banner.svg • Font-independent vector KAJO wordmark + Concept A Emblem + 9-Binary Telemetry Strip</span>
     </div>
     <div style="border: 1px solid var(--border-dim); background: #0a0a0a;">
       <img src="kajo-banner.svg" alt="Kajo 3:1 Hero Banner" style="width: 100%; height: auto; display: block;">
@@ -496,7 +496,7 @@
       </div>
       <div class="dna-card">
         <h3>4. Modular Suite Coherence</h3>
-        <p>Establishes a shared structural chassis for <code>kajo</code>, <code>kajo-ide</code>, <code>kajo-files</code>, <code>kajo-player</code>, <code>kajo-mod</code>, <code>kajo-settings</code>, and <code>kajo-greeter</code>.</p>
+        <p>Establishes a shared structural chassis for <code>kajo-comp</code>, <code>kajo</code>, <code>kajo-ide</code>, <code>kajo-files</code>, <code>kajo-player</code>, <code>kajo-mod</code>, <code>kajo-web</code>, <code>kajo-settings</code>, and <code>kajo-greeter</code>.</p>
       </div>
     </div>
   </section>
@@ -861,17 +861,17 @@
         </svg>
         <div class="wordmark-text">
           <div class="wordmark-main">KAJO<span>//</span>OS</div>
-          <div class="wordmark-sub">AERO + METRO NATIVE WORKSPACE SUITE • C11 / GTK4 / WAYLAND</div>
+          <div class="wordmark-sub">AERO + METRO NATIVE WORKSPACE SUITE • C17 / C++20 / GTK4 / CEF / WAYLAND</div>
         </div>
       </div>
       <div class="hud-badge">[ BORDER-RADIUS: 0PX // 1PX STRUCTURAL GRID ]</div>
     </div>
   </section>
 
-  <!-- SECTION 4: UNIFIED 8-APP SUITE ICON SYSTEM -->
+  <!-- SECTION 4: UNIFIED 9-APP SUITE ICON SYSTEM -->
   <section>
     <div class="section-hdr">
-      <span class="section-title">04 // Unified 8-Binary Suite Icon System</span>
+      <span class="section-title">04 // Unified 9-Binary Suite Icon System</span>
       <span class="section-sub">Shared 0px obsidian chassis + top-left Aero light catch + geometric inner glyph</span>
     </div>
 
@@ -922,7 +922,7 @@
         <div class="suite-role">Panel, 22 Widgets, Launcher &amp; Lock</div>
       </div>
 
-      <!-- 2. kajo-ide -->
+      <!-- 3. kajo-ide -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
@@ -940,7 +940,7 @@
         <div class="suite-role">Modal C11 / LSP / DAP Code Editor</div>
       </div>
 
-      <!-- 3. kajo-files -->
+      <!-- 4. kajo-files -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
@@ -958,7 +958,7 @@
         <div class="suite-role">GIO / GVFS File Manager &amp; Quick Look</div>
       </div>
 
-      <!-- 4. kajo-player -->
+      <!-- 5. kajo-player -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
@@ -975,7 +975,7 @@
         <div class="suite-role">Hardware libmpv + GtkGLArea Media</div>
       </div>
 
-      <!-- 5. kajo-mod -->
+      <!-- 6. kajo-mod -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
@@ -998,7 +998,45 @@
         <div class="suite-role">UADE 68k, C64 reSIDfp, GME &amp; Tracker</div>
       </div>
 
-      <!-- 5. kajo-settings -->
+      <!-- 7. kajo-web -->
+      <div class="suite-card">
+        <svg viewBox="0 0 256 256" width="84" height="84">
+          <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
+          <path d="M 8 96 L 8 8 L 128 8" fill="none" class="stroke-cyan" stroke="#00d8f0" stroke-width="5"/>
+          <!-- Minimalist Top Omnibar Strip & Shield Status -->
+          <rect x="32" y="34" width="192" height="22" fill="#1a1a1a" stroke="#2b2b2b" stroke-width="2"/>
+          <rect x="32" y="34" width="114" height="22" fill="url(#ca-lower)"/>
+          <rect x="44" y="42" width="54" height="6" fill="#ffffff"/>
+          <rect x="202" y="38" width="14" height="14" class="fill-cyan" fill="#00d8f0"/>
+          <!-- Left Vertical Autohide Tab Rail -->
+          <rect x="32" y="68" width="22" height="44" fill="#1c1c1c"/>
+          <rect x="32" y="68" width="5" height="44" class="fill-cyan" fill="#00d8f0"/>
+          <rect x="41" y="85" width="9" height="9" fill="#ffffff"/>
+          <rect x="32" y="120" width="22" height="42" fill="#181818" stroke="#303030" stroke-width="2"/>
+          <rect x="32" y="120" width="4" height="42" fill="#383838"/>
+          <rect x="32" y="170" width="22" height="42" fill="#181818" stroke="#303030" stroke-width="2"/>
+          <rect x="32" y="170" width="4" height="42" fill="#383838"/>
+          <!-- Hero Chamfered 0px Web Octagon & Refracted Compass Prism -->
+          <polygon points="116,70 176,70 218,112 218,172 176,214 116,214 74,172 74,112" fill="#111111" stroke="#383838" stroke-width="4"/>
+          <line x1="146" y1="74" x2="146" y2="210" stroke="#262626" stroke-width="3"/>
+          <line x1="78" y1="142" x2="214" y2="142" stroke="#262626" stroke-width="3"/>
+          <polygon points="146,76 184,142 146,208 108,142" fill="none" stroke="#2c2c2c" stroke-width="2.5"/>
+          <rect x="143" y="74" width="6" height="12" class="fill-accent" fill="#0078d4"/>
+          <rect x="143" y="198" width="6" height="12" class="fill-accent" fill="#0078d4"/>
+          <rect x="202" y="139" width="12" height="6" class="fill-accent" fill="#0078d4"/>
+          <rect x="78" y="139" width="12" height="6" class="fill-accent" fill="#0078d4"/>
+          <polygon points="198,90 132,128 146,142" class="fill-cyan" fill="#00d8f0"/>
+          <polygon points="198,90 146,142 160,156" fill="url(#ca-beam)"/>
+          <polygon points="94,194 132,128 146,142" fill="#e6e6e6"/>
+          <polygon points="94,194 146,142 160,156" fill="#3a3a3a"/>
+          <polygon points="146,132 156,142 146,152 136,142" fill="#ffffff"/>
+        </svg>
+        <div class="suite-title">KAJO WEB</div>
+        <div class="suite-app-id">org.kajo.Web</div>
+        <div class="suite-role">Chromium/CEF Alloy &amp; Native Wayland</div>
+      </div>
+
+      <!-- 8. kajo-settings -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>
@@ -1018,10 +1056,10 @@
         </svg>
         <div class="suite-title">KAJO SETTINGS</div>
         <div class="suite-app-id">org.kajo.Settings</div>
-        <div class="suite-role">11-Page System, Audio, Niri &amp; Theme</div>
+        <div class="suite-role">13-Page System, Audio, Web &amp; Theme</div>
       </div>
 
-      <!-- 6. kajo-greeter -->
+      <!-- 9. kajo-greeter -->
       <div class="suite-card">
         <svg viewBox="0 0 256 256" width="84" height="84">
           <rect x="8" y="8" width="240" height="240" fill="#111111" stroke="#2b2b2b" stroke-width="4"/>

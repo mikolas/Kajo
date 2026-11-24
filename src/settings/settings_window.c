@@ -19,7 +19,7 @@ typedef struct {
 
 static const SettingsPageMeta k_page_meta[] = {
     {
-        "displays", "01 / 12", "01 / 12 • DISPLAYS",
+        "displays", "01 / 13", "01 / 13 • DISPLAYS",
         "DISPLAYS, IDLE SCREENSAVER & 360° FOLDABLE POSTURE",
         "Compositor output management (outputs.toml), ext-idle-notify-v1 & IIO hinge sensors",
         "COMPOSITOR IPC", "OUTPUTS.TOML",
@@ -27,7 +27,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "Compositor IPC", "outputs.toml", "ext-idle-v1", "IIO Sensor" }
     },
     {
-        "network", "02 / 12", "02 / 12 • NETWORK",
+        "network", "02 / 13", "02 / 13 • NETWORK",
         "NETWORKMANAGER WI-FI & ACTIVE INTERFACES",
         "Live D-Bus org.freedesktop.NetworkManager access point scanning & inline WPA auth",
         "LIVE D-BUS", "NETWORKMANAGER",
@@ -35,7 +35,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "NetworkManager", "System Bus", "802.11", "Live Query" }
     },
     {
-        "bluetooth", "03 / 12", "03 / 12 • BLUETOOTH",
+        "bluetooth", "03 / 13", "03 / 13 • BLUETOOTH",
         "BLUEZ 5 BLUETOOTH ADAPTER & PERIPHERALS",
         "Live GDBusObjectManager org.bluez adapter power, pairing & audio profiles",
         "LIVE D-BUS", "ORG.BLUEZ",
@@ -43,7 +43,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "BlueZ 5", "org.bluez", "Live Query", "Idle" }
     },
     {
-        "audio", "04 / 12", "04 / 12 • AUDIO",
+        "audio", "04 / 13", "04 / 13 • AUDIO",
         "PIPEWIRE / PULSEAUDIO ROUTING & CHANNEL MAPS",
         "Multi-channel sink preservation (sink_channels), default routing & auto-reconnect",
         "PIPEWIRE", "LIBPULSE",
@@ -51,7 +51,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "PipeWire-Pulse", "Default Sink", "Preserved", "Auto-Reconnect" }
     },
     {
-        "theme", "05 / 12", "05 / 12 • THEME",
+        "theme", "05 / 13", "05 / 13 • THEME",
         "AERO + METRO ACCENT PALETTE & TYPOGRAPHY",
         "Live CSS token generation (~/.config/kajo/style.d/00-accent.css) & 4 font categories",
         "00-ACCENT.CSS", "FIRA CODE",
@@ -59,7 +59,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "#0078D4 COBALT", "14PX", "13PX", "11PX" }
     },
     {
-        "panel", "06 / 12", "06 / 12 • PANEL & OSK",
+        "panel", "06 / 13", "06 / 13 • PANEL & OSK",
         "WAYLAND PANEL, TOUCH GESTURES & VIRTUAL KEYBOARD",
         "Layer-shell anchor geometry, bezel swipe gestures & zwp_input_method_v2 ShellOSK",
         "LAYER-SHELL", "SHELLOSK",
@@ -67,7 +67,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "TOP (32PX)", "DISABLED", "ENABLED", "260PX" }
     },
     {
-        "widgets", "07 / 12", "07 / 12 • WIDGETS",
+        "widgets", "07 / 13", "07 / 13 • WIDGETS",
         "PANEL BAR WIDGET SECTIONS (LEFT / CENTER / RIGHT)",
         "Configure and reorder the 22 built-in ShellWidget modules across panel zones",
         "22 MODULES", "SHELL.TOML",
@@ -75,7 +75,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "0 WIDGETS", "0 WIDGETS", "0 WIDGETS", "0 ACTIVE" }
     },
     {
-        "notifications", "08 / 12", "08 / 12 • NOTIFICATIONS",
+        "notifications", "08 / 13", "08 / 13 • NOTIFICATIONS",
         "NOTIFICATION TOASTS & FREEDESKTOP DAEMON",
         "Toast timeout, source-window focus activation & Notification Center ring buffer",
         "DBUS DAEMON", "SHELL.TOML",
@@ -83,7 +83,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "OFF", "5000MS (5S)", "50 ITEMS", "FOCUS WINDOW" }
     },
     {
-        "niri", "09 / 12", "09 / 12 • COMPOSITOR & EFFECTS",
+        "niri", "09 / 13", "09 / 13 • COMPOSITOR & EFFECTS",
         "COMPOSITOR LAYOUT, EFFECTS & TRANSITIONS",
         "Unified compositor settings (comp.toml / rules.toml + Niri KDL compatibility)",
         "COMP.TOML", "RULES.TOML",
@@ -91,7 +91,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "kajo (85%)", "12PX", "DEFAULT", "DEFAULT" }
     },
     {
-        "ide", "10 / 12", "10 / 12 • KAJO IDE",
+        "ide", "10 / 13", "10 / 13 • KAJO IDE",
         "KAJO IDE — MODAL CODE EDITOR & CAIRO GUTTER",
         "GtkSourceView-5 color schemes, Tree-sitter queries, 6-column gutter & live preview",
         "ORG.KAJO.IDE", "TREE-SITTER",
@@ -99,7 +99,7 @@ static const SettingsPageMeta k_page_meta[] = {
         { "METRO DARK", "FIRA CODE 13PX", "4 SPACES", "6-COL CAIRO" }
     },
     {
-        "mod", "11 / 12", "11 / 12 • KAJO MOD",
+        "mod", "11 / 13", "11 / 13 • KAJO MOD",
         "KAJO MOD — RETRO AMIGA, C64 SID & TRACKER ENGINE",
         "Persistent global defaults in ~/.config/kajo/mod.toml • Live monitor in org.kajo.Mod",
         "LIBUADE + RESIDFP", "MOD.TOML",
@@ -107,12 +107,20 @@ static const SettingsPageMeta k_page_meta[] = {
         { "A500 + AUTO", "AUTO (PSID)", "70% SEP", "180S" }
     },
     {
-        "about", "12 / 12", "12 / 12 • ABOUT",
+        "web", "12 / 13", "12 / 13 • KAJO WEB",
+        "KAJO WEB — CHROMIUM BROWSER, PRIVACY & PERFORMANCE",
+        "Persistent browser defaults in ~/.config/kajo/web.toml • Live hot-reload in org.kajo.Web",
+        "CHROMIUM / CEF", "WEB.TOML",
+        { "RAIL", "GPU", "BLOCKER", "SEARCH" },
+        { "AUTOHIDE", "VA-API GPU", "SHIELD ON", "DDG" }
+    },
+    {
+        "about", "13 / 13", "13 / 13 • ABOUT",
         "ABOUT KAJO // OS & DESKTOP SUITE INVENTORY",
         "System kernel, CPU, memory & native C17 / GTK4 / Wayland application suite",
         "KAJO SUITE 0.1", "GTK4 WAYLAND",
         { "KERNEL", "TOOLKIT", "COMPOSITOR", "SUITE" },
-        { "Linux", "GTK4 + Layer", "Wayland / kajo-comp", "8 Binaries" }
+        { "Linux", "GTK4 + Layer", "Wayland / kajo-comp", "9 Binaries" }
     }
 };
 
@@ -158,7 +166,7 @@ populate_live_config_telemetry_defaults(const gchar *page_name,
         gboolean has_kc = shell_compositor_is_kajo_comp();
         out_vals[2] = g_strdup(has_kc ? "kajo-comp IPC Active"
                                       : ((niri_sock && niri_sock[0]) ? "Niri IPC Active" : "Wayland"));
-        out_vals[3] = g_strdup("8 Binaries");
+        out_vals[3] = g_strdup("9 Binaries");
         return;
     }
 
@@ -212,6 +220,13 @@ populate_live_config_telemetry_defaults(const gchar *page_name,
         out_vals[3] = (mcfg && mcfg->uade_timeout_sec == 0)
             ? g_strdup("INFINITE")
             : g_strdup_printf("%dS MAX", mcfg ? mcfg->uade_timeout_sec : 180);
+    } else if (g_strcmp0(page_name, "web") == 0) {
+        g_autoptr(KajoWebCfgRef) wcfg = kajo_config_store_acquire_web(NULL);
+        out_vals[0] = g_ascii_strup(kajo_web_rail_mode_to_string(wcfg ? wcfg->rail_mode : KAJO_WEB_RAIL_AUTOHIDE), -1);
+        out_vals[1] = g_strdup((!wcfg || wcfg->hardware_acceleration == KAJO_WEB_HW_ALWAYS) ? "GPU ALWAYS"
+                               : (wcfg->hardware_acceleration == KAJO_WEB_HW_ON_DEMAND ? "ON DEMAND" : "⚠ SW ONLY"));
+        out_vals[2] = g_strdup((!wcfg || wcfg->adblock_enabled) ? "SHIELD ON" : "SHIELD OFF");
+        out_vals[3] = g_ascii_strup(kajo_web_search_engine_to_string(wcfg ? wcfg->search_engine : KAJO_WEB_SEARCH_DUCKDUCKGO), -1);
     }
 }
 
@@ -390,6 +405,8 @@ ensure_settings_page(SettingsApp *app_ctx, const gchar *page_name)
         page = build_page_ide();
     else if (g_strcmp0(page_name, "mod") == 0)
         page = build_page_mod();
+    else if (g_strcmp0(page_name, "web") == 0)
+        page = build_page_web();
     else if (g_strcmp0(page_name, "about") == 0)
         page = build_page_about();
 
@@ -914,7 +931,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     gtk_widget_set_halign(app_ctx->hdr_title_lbl, GTK_ALIGN_START);
     gtk_widget_set_valign(app_ctx->hdr_title_lbl, GTK_ALIGN_CENTER);
 
-    app_ctx->hdr_page_badge = gtk_label_new("01 / 12 • DISPLAYS");
+    app_ctx->hdr_page_badge = gtk_label_new("01 / 13 • DISPLAYS");
     gtk_widget_add_css_class(app_ctx->hdr_page_badge, "shell-popover-badge");
     gtk_widget_add_css_class(app_ctx->hdr_page_badge, "accent");
     gtk_widget_set_valign(app_ctx->hdr_page_badge, GTK_ALIGN_CENTER);
@@ -1024,6 +1041,9 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
     append_nav_item(nav, "🎹", "Kajo Mod", mod_badge, NULL,
                     "Kajo Mod — Amiga UADE, C64 SID & Tracker Defaults", "mod",
                     "mod uade amiga paula sid c64 residfp openmpt tracker hvsc stereo archive kajo-mod");
+    append_nav_item(nav, "🌐", "Kajo Web", "WEB", NULL,
+                    "Kajo Web — Browser Rail, GPU, Ad Blocker, Permissions & Downloads", "web",
+                    "web browser chromium cef tabs rail autohide gpu vaapi hardware acceleration adblock privacy webrtc permissions downloads cookies user-agent kajo-web");
 
     /* Category 4: SYSTEM INFO */
     add_sidebar_category(nav, "SYSTEM INFO");

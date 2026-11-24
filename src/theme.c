@@ -603,7 +603,17 @@ shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
         ".shell-widget,\n"
         ".shell-widget > button,\n"
         "menubutton.shell-widget > button,\n"
-        ".shell-osd-label {\n"
+        ".shell-osd-label,\n"
+        "window.shell-web-window,\n"
+        "window.shell-web-picker,\n"
+        "window.shell-web-window entry.web-omni-entry,\n"
+        "window.shell-web-window entry.web-find-entry,\n"
+        "window.shell-web-window entry.web-palette-entry,\n"
+        "window.shell-web-window button.web-chrome-btn,\n"
+        "window.shell-web-window button.web-close-btn,\n"
+        "window.shell-web-window .web-tab-title,\n"
+        "window.shell-web-picker .web-picker-name,\n"
+        "window.shell-web-picker entry.web-picker-entry {\n"
         "    font-size: %dpx;\n"
         "}\n\n",
         body_px);
@@ -617,7 +627,9 @@ shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
         ".settings-section-title,\n"
         "window.shell-settings-window .sidebar-category-header,\n"
         "window.shell-lock-window .lock-date-label,\n"
-        "window.shell-screensaver-window .screensaver-date-label {\n"
+        "window.shell-screensaver-window .screensaver-date-label,\n"
+        "window.shell-web-window .web-brand-mark,\n"
+        "window.shell-web-picker .web-picker-title {\n"
         "    font-size: %dpx;\n"
         "}\n\n",
         heading_px);
@@ -644,12 +656,23 @@ shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
         "window.shell-files-window .files-quicklook-textview,\n"
         "window.shell-files-window .files-quicklook-textview text,\n"
         "popover checkbutton,\n"
-        "window.shell-settings-window checkbutton {\n"
+        "window.shell-settings-window checkbutton,\n"
+        "window.shell-web-window button.web-btn-primary,\n"
+        "window.shell-web-window button.web-btn-secondary,\n"
+        "window.shell-web-window button.web-rail-foot-btn,\n"
+        "window.shell-web-window button.web-pin-tile,\n"
+        "window.shell-web-window .web-tab-domain,\n"
+        "window.shell-web-window .web-tab-group-hdr,\n"
+        "window.shell-web-window .web-dim-label,\n"
+        "window.shell-web-picker .web-dim-label,\n"
+        "window.shell-web-picker checkbutton,\n"
+        "popover button.web-ctx-row {\n"
         "    font-size: %dpx;\n"
         "}\n\n",
         subtitle_px);
 
     /* 4. Technical Badges, Shortcuts & Micro Labels */
+    gint web_badge_px = MAX(badge_px, 11);
     g_string_append_printf(css,
         ".shell-popover-badge,\n"
         "window.shell-files-window .files-ctx-shortcut,\n"
@@ -664,8 +687,22 @@ shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
         "window.shell-lock-window .lock-badge-label,\n"
         "window.shell-lock-window .greeter-field-label {\n"
         "    font-size: %dpx;\n"
+        "}\n\n"
+        "window.shell-web-window .web-omni-tls,\n"
+        "window.shell-web-window button.web-omni-shield,\n"
+        "window.shell-web-window .web-chip-warn,\n"
+        "window.shell-web-window .web-chip-priv,\n"
+        "window.shell-web-window button.web-chip-dl,\n"
+        "window.shell-web-window button.web-profile-chip,\n"
+        "window.shell-web-window .web-tab-group-count,\n"
+        "window.shell-web-window button.web-tab-mini-btn,\n"
+        "window.shell-web-window button.web-tab-close-btn,\n"
+        "window.shell-web-window .web-badge-telemetry,\n"
+        "window.shell-web-picker .web-badge-telemetry,\n"
+        "popover button.web-mini-btn {\n"
+        "    font-size: %dpx;\n"
         "}\n",
-        badge_px);
+        badge_px, web_badge_px);
 
     g_autofree gchar *existing = NULL;
     gsize existing_len = 0;

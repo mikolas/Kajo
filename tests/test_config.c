@@ -41,6 +41,7 @@ test_defaults_file_parity(void)
         kajo_schema_get_ide(),
         kajo_schema_get_files(),
         kajo_schema_get_mod(),
+        kajo_schema_get_web(),
     };
 
     for (size_t i = 0; i < G_N_ELEMENTS(domains); i++) {
@@ -204,6 +205,23 @@ test_domain_ide_files_mod(void)
     g_assert_true(kajo_cfg_domain_equal(s_mod, mod, mod2));
     kajo_mod_cfg_free(mod2);
     kajo_mod_cfg_free(mod);
+
+    /* Web */
+    const KajoDomainSchema *s_web = kajo_schema_get_web();
+    KajoWebCfg *web = kajo_web_cfg_new_default();
+    g_assert_cmpint(web->hardware_acceleration, ==, KAJO_WEB_HW_ALWAYS);
+    g_assert_cmpint(web->rail_mode, ==, KAJO_WEB_RAIL_AUTOHIDE);
+    web->rail_mode = KAJO_WEB_RAIL_COMPACT;
+    web->rail_side = KAJO_WEB_SIDE_RIGHT;
+    web->rail_width_px = 280;
+    web->adblock_enabled = FALSE;
+    web->search_engine = KAJO_WEB_SEARCH_KAGI;
+    g_autofree gchar *web_str = kajo_cfg_domain_serialize_toml(s_web, web);
+    KajoWebCfg *web2 = kajo_web_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_web, web2, web_str, -1, FALSE, "web.toml"));
+    g_assert_true(kajo_cfg_domain_equal(s_web, web, web2));
+    kajo_web_cfg_free(web2);
+    kajo_web_cfg_free(web);
 }
 
 /* 3. conf.d/ Lexicographical Overlay & Base-Only Save Discipline */

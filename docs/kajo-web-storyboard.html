@@ -1,0 +1,1086 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KAJO WEB — Interactive Architecture &amp; UX Storyboard</title>
+<style>
+  :root {
+    --bg: #070707;
+    --surface-0: #0c0c0c;
+    --surface-1: #101010;
+    --surface-2: #141414;
+    --surface-3: #181818;
+    --surface-4: #1e1e1e;
+    --border: #2b2b2b;
+    --border-strong: #3c3c3c;
+    --text: #ffffff;
+    --subtext: #a4a4a4;
+    --dim: #767676;
+    --accent: #0078d4;
+    --accent-rgb: 0, 120, 212;
+    --telemetry: #00d8f0;
+    --success: #10893e;
+    --warning: #ff8c00;
+    --urgent: #e81123;
+    --magenta: #b4009e;
+    --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+    --font-sans: 'Inter', 'Cantarell', 'Segoe UI', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; border-radius: 0 !important; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); font-size: 13px;
+    user-select: none;
+  }
+  button { font-family: var(--font-mono); }
+
+  /* ── Top Bar (40px) ── */
+  .topbar {
+    height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    white-space: nowrap; overflow: hidden;
+  }
+  .title {
+    font-family: var(--font-mono); font-weight: 800; letter-spacing: .7px; font-size: 12px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .title .ico { color: var(--accent); font-size: 14px; }
+  .title small { color: var(--dim); font-weight: 400; font-size: 10px; }
+  .seg { display: flex; border: 1px solid var(--border); }
+  .seg button {
+    background: var(--surface-3); color: #bbb; border: 0;
+    border-right: 1px solid var(--border); padding: 3px 8px;
+    font-size: 10px; font-weight: 700; cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: #222; color: #fff; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .spacer { flex: 1; }
+  .btn {
+    background: var(--surface-3); color: #ddd; border: 1px solid var(--border);
+    padding: 4px 9px; font-size: 10px; font-weight: 700; cursor: pointer; letter-spacing: .4px;
+  }
+  .btn:hover { background: #222; color: #fff; border-color: var(--border-strong); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.playing { background: var(--urgent); border-color: var(--urgent); color: #fff; }
+  .btn:disabled { opacity: .35; pointer-events: none; }
+  .step-pill {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .6px;
+    padding: 4px 10px; border: 1px solid var(--accent);
+    background: rgba(var(--accent-rgb), .18); color: var(--telemetry);
+    min-width: 96px; text-align: center;
+  }
+
+  /* ── Main 2-Column Layout ── */
+  main { display: flex; height: calc(100vh - 40px - 28px); }
+  .stage-col { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px; gap: 10px; }
+
+  .scenario-strip {
+    display: flex; gap: 5px; flex-wrap: nowrap; overflow-x: auto; flex-shrink: 0;
+  }
+  .scenario-strip::-webkit-scrollbar { height: 3px; background: #0c0c0c; }
+  .scenario-strip::-webkit-scrollbar-thumb { background: #333; }
+  .sc-btn {
+    flex: 1;
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--subtext); padding: 5px 8px; font-size: 10px; font-weight: 700;
+    cursor: pointer; white-space: nowrap; text-align: center;
+  }
+  .sc-btn:hover { background: var(--surface-3); color: #fff; }
+  .sc-btn.on {
+    background: rgba(var(--accent-rgb), 0.22);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .screen-wrap {
+    flex: 1; min-height: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.014) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.010) 0 1px, transparent 1px 40px),
+      #050505;
+    border: 1px solid var(--border); overflow: hidden;
+  }
+
+  .bezel {
+    position: relative;
+    border: 1px solid var(--accent);
+    box-shadow: 0 14px 48px rgba(0, 0, 0, 0.88);
+    overflow: hidden;
+    background: var(--surface-0);
+  }
+
+  /* Scaled Compositor Desktop Inside Bezel (1200x720 logical) */
+  .sim-screen {
+    width: 1200px; height: 720px;
+    position: absolute; left: 0; top: 0; transform-origin: 0 0;
+    display: flex; flex-direction: column;
+    background: #0a0a0a;
+    overflow: hidden;
+  }
+
+  /* Simulated Kajo Top Panel (28px) */
+  .sim-panel {
+    height: 28px; flex-shrink: 0;
+    background: rgba(18, 18, 18, 0.90);
+    border-bottom: 1px solid #242424;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 10px; font-family: var(--font-mono); font-size: 10px; color: #bbb;
+  }
+  .sim-panel .ws-pills { display: flex; gap: 4px; }
+  .sim-panel .ws { padding: 1px 6px; border: 1px solid #2b2b2b; background: #141414; }
+  .sim-panel .ws.on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.25); color: #fff; }
+
+  /* Tiled Compositor Workspace */
+  .sim-ws {
+    flex: 1; min-height: 0; padding: 6px; display: flex; gap: 6px; position: relative;
+  }
+
+  /* Simulated kajo-web Window */
+  .sb-browser {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    background: #141414; border: 1px solid var(--accent); position: relative; overflow: hidden;
+  }
+  .sb-hdr {
+    height: 32px; background: #181818; border-bottom: 1px solid #2b2b2b;
+    display: flex; align-items: center; padding: 0 8px; gap: 6px;
+    font-family: var(--font-mono); font-size: 10.5px;
+    transition: transform 220ms ease;
+  }
+  .sb-omni {
+    flex: 1; max-width: 520px; margin: 0 auto; height: 22px;
+    background: #0e0e0e; border: 1px solid #2b2b2b;
+    display: flex; align-items: center; padding: 0 8px; gap: 6px;
+    font-size: 10.5px;
+  }
+  .sb-omni.focus { border-color: var(--accent); background: #080808; }
+  .sb-badge {
+    padding: 1px 6px; font-size: 9.5px; font-weight: 700;
+    border: 1px solid #2b2b2b; background: #141414; color: #ccc;
+  }
+  .sb-badge.shield { border-color: rgba(var(--accent-rgb), .5); color: var(--telemetry); background: rgba(var(--accent-rgb), .14); }
+  .sb-badge.warn { border-color: var(--warning); color: #ffb84d; background: rgba(255, 140, 0, .18); }
+
+  .sb-body {
+    flex: 1; min-height: 0; display: flex; position: relative; overflow: hidden; background: #101010;
+  }
+  .sb-browser.rail-right .sb-body { flex-direction: row-reverse; }
+
+  /* Trigger Strip */
+  .sb-trigger {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 6px; z-index: 20;
+    border-left: 2px solid transparent;
+  }
+  .sb-browser.rail-right .sb-trigger { left: auto; right: 0; }
+  .sb-trigger.lit { background: rgba(var(--accent-rgb), 0.35); border-left-color: var(--accent); }
+  .sb-ticks {
+    position: absolute; top: 14px; left: 0; width: 2px; display: flex; flex-direction: column; gap: 5px;
+  }
+  .sb-browser.rail-right .sb-ticks { left: auto; right: 0; }
+  .sb-tick { width: 2px; height: 14px; background: #383838; }
+  .sb-tick.on { height: 22px; background: var(--accent); }
+
+  /* Vertical Rail in Storyboard */
+  .sb-rail {
+    position: absolute; top: 0; bottom: 0; left: 0; width: 225px;
+    background: rgba(18, 18, 18, 0.96); border-right: 1px solid #2b2b2b;
+    display: flex; flex-direction: column; z-index: 25;
+    transform: translateX(-100%);
+    transition: transform 260ms cubic-bezier(0.2, 0.9, 0.2, 1), width 220ms ease;
+    box-shadow: 12px 0 32px rgba(0,0,0,0.8);
+  }
+  .sb-browser.rail-right .sb-rail {
+    left: auto; right: 0; border-right: 0; border-left: 1px solid #2b2b2b;
+    transform: translateX(100%);
+    box-shadow: -12px 0 32px rgba(0,0,0,0.8);
+  }
+  .sb-browser.rail-open .sb-rail { transform: translateX(0); }
+  .sb-browser.rail-compact .sb-rail {
+    position: relative; transform: none; width: 42px; box-shadow: none;
+  }
+  .sb-browser.rail-pinned .sb-rail {
+    position: relative; transform: none; width: 225px; box-shadow: none;
+  }
+
+  .sb-pin-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+    padding: 6px; border-bottom: 1px solid #2b2b2b;
+  }
+  .sb-browser.rail-compact .sb-pin-grid { grid-template-columns: 1fr; padding: 4px; }
+  .sb-pin {
+    height: 28px; background: #181818; border: 1px solid #2b2b2b;
+    display: flex; align-items: center; justify-content: center; font-size: 13px;
+  }
+  .sb-pin.on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.24); }
+  .sb-tab {
+    height: 32px; padding: 0 8px; display: flex; align-items: center; gap: 7px;
+    border-left: 3px solid transparent; font-size: 11px; color: #ccc;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .sb-tab.on { background: rgba(var(--accent-rgb), 0.24); border-left-color: #fff; color: #fff; font-weight: 600; }
+  .sb-tab.susp { opacity: 0.5; }
+  .sb-browser.rail-compact .sb-tab-txt { display: none; }
+  .sb-browser.rail-compact .sb-tab { justify-content: center; padding: 0; }
+  .sb-grp {
+    padding: 4px 9px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+    color: var(--dim); border-left: 3px solid var(--accent); margin-top: 4px;
+  }
+  .sb-browser.rail-compact .sb-grp { display: none; }
+
+  /* Viewport Content */
+  .sb-viewport {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative;
+  }
+  .sb-perm {
+    background: #1a1a1a; border-bottom: 1px solid var(--warning);
+    padding: 6px 12px; font-family: var(--font-mono); font-size: 10.5px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .sb-page {
+    flex: 1; padding: 24px 32px; overflow: hidden; position: relative;
+  }
+  .sb-page h2 { font-family: var(--font-mono); font-size: 18px; margin-bottom: 8px; }
+  .sb-page p { color: #bbb; font-size: 12.5px; line-height: 1.6; max-width: 680px; margin-bottom: 12px; }
+  .sb-card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; max-width: 720px; }
+  .sb-card {
+    background: #181818; border: 1px solid #2b2b2b; border-top: 2px solid var(--accent);
+    padding: 12px; font-family: var(--font-mono);
+  }
+  .sb-card .k { font-size: 9.5px; color: var(--dim); }
+  .sb-card .v { font-size: 12px; font-weight: 700; color: var(--telemetry); margin-top: 4px; }
+
+  /* Overlay Modals Inside Browser */
+  .sb-palette {
+    position: absolute; top: 48px; left: 50%; transform: translateX(-50%);
+    width: 480px; background: #181818; border: 1px solid var(--accent);
+    box-shadow: 0 18px 48px rgba(0,0,0,0.9); z-index: 40; font-family: var(--font-mono);
+  }
+  .sb-pal-in { padding: 9px 12px; background: #0e0e0e; border-bottom: 1px solid #2b2b2b; color: #fff; font-size: 12px; }
+  .sb-pal-row { padding: 7px 12px; border-bottom: 1px solid #222; font-size: 11px; display: flex; gap: 8px; }
+  .sb-pal-row.on { background: rgba(var(--accent-rgb), 0.25); }
+
+  /* Floating Native FileChooser Portal Window */
+  .sb-portal {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 560px; height: 340px; background: #141414; border: 1px solid var(--accent);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.92); z-index: 50;
+    display: flex; flex-direction: column; font-family: var(--font-mono);
+  }
+  .sb-portal-hdr {
+    height: 30px; background: #181818; border-bottom: 1px solid #2b2b2b;
+    padding: 0 10px; display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; font-weight: 700;
+  }
+  .sb-portal-body { flex: 1; display: flex; }
+  .sb-portal-side { width: 140px; background: #111; border-right: 1px solid #2b2b2b; padding: 8px; font-size: 10.5px; color: #aaa; display: flex; flex-direction: column; gap: 6px; }
+  .sb-portal-main { flex: 1; padding: 10px; font-size: 11px; display: flex; flex-direction: column; gap: 6px; }
+  .sb-portal-row { padding: 6px 8px; background: #181818; border: 1px solid #262626; display: flex; justify-content: space-between; }
+  .sb-portal-row.on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.24); }
+
+  /* Side-by-Side Tiled kajo-settings Column */
+  .sb-settings-col {
+    width: 390px; flex-shrink: 0; background: #141414; border: 1px solid #2b2b2b;
+    display: flex; flex-direction: column; font-family: var(--font-mono);
+  }
+  .sb-settings-col.focused { border-color: var(--accent); }
+  .sb-set-body { padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 11px; }
+  .sb-set-card { background: #181818; border: 1px solid #2b2b2b; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+  .sb-set-row { display: flex; justify-content: space-between; align-items: center; }
+
+  /* Docked Inspector */
+  .sb-insp {
+    height: 150px; background: #0e0e0e; border-top: 1px solid var(--accent);
+    padding: 8px 12px; font-family: var(--font-mono); font-size: 10.5px; color: #9cd4ff; line-height: 1.5;
+  }
+
+  /* Animated Cursor & Keystroke HUD */
+  .sim-cursor {
+    position: absolute; width: 14px; height: 14px;
+    border-left: 2px solid #fff; border-top: 2px solid #fff;
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.9);
+    z-index: 70; pointer-events: none;
+    transition: left 380ms cubic-bezier(0.2, 0.9, 0.2, 1), top 380ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 200ms ease;
+  }
+  .key-hud {
+    position: absolute; right: 16px; bottom: 16px;
+    background: rgba(14, 14, 14, 0.94); border: 1px solid var(--accent);
+    padding: 6px 12px; font-family: var(--font-mono); font-size: 12px; font-weight: 700;
+    color: var(--telemetry); z-index: 65; letter-spacing: 0.6px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.85);
+  }
+  .callout-box {
+    position: absolute; z-index: 60;
+    background: rgba(16, 16, 16, 0.95);
+    border: 1px solid var(--telemetry);
+    border-left: 4px solid var(--telemetry);
+    padding: 7px 10px; max-width: 310px;
+    font-family: var(--font-mono); font-size: 10.5px; color: #e8fbff;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.85);
+  }
+
+  /* ── Right Narration & State Sidebar (330px) ── */
+  .sidebar {
+    width: 330px; flex-shrink: 0; background: var(--surface-2);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .side-sec {
+    padding: 12px 14px; border-bottom: 1px solid var(--border);
+  }
+  .side-k {
+    font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+    color: var(--telemetry); letter-spacing: 0.7px; margin-bottom: 6px;
+  }
+  .side-title { font-family: var(--font-mono); font-size: 13px; font-weight: 800; margin-bottom: 6px; }
+  .side-desc { color: #cccccc; font-size: 12px; line-height: 1.55; }
+
+  .step-dots { display: flex; gap: 5px; margin-top: 10px; }
+  .sdot {
+    flex: 1; height: 4px; background: #2b2b2b; cursor: pointer;
+  }
+  .sdot.done { background: rgba(var(--accent-rgb), 0.55); }
+  .sdot.on { background: var(--accent); }
+
+  .state-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-family: var(--font-mono);
+  }
+  .st-kv {
+    background: var(--surface-1); border: 1px solid #242424; padding: 6px 8px;
+  }
+  .st-kv .k { font-size: 9px; color: var(--dim); }
+  .st-kv .v { font-size: 10.5px; font-weight: 700; color: #fff; margin-top: 2px; }
+  .st-kv .v.accent { color: var(--telemetry); }
+  .st-kv .v.warn { color: #ffb84d; }
+  .st-kv .v.ok { color: #4ce886; }
+
+  .spec-ref {
+    flex: 1; overflow-y: auto; padding: 12px 14px; font-family: var(--font-mono); font-size: 10.5px; color: var(--subtext); line-height: 1.55;
+  }
+
+  /* ── Bottom Status Footer (28px) ── */
+  footer {
+    height: 28px; background: var(--surface-1); border-top: 1px solid var(--border);
+    padding: 0 12px; display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-mono); font-size: 10px; color: var(--dim);
+  }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="title">
+      <span class="ico">🌐</span>
+      <span>KAJO WEB // STORYBOARD</span>
+      <small>7 SCENARIOS • SPEC docs/spec_kajo_web.md</small>
+    </div>
+    <div class="spacer"></div>
+    <button class="btn" id="btnPrev">◀ PREV</button>
+    <button class="btn primary" id="btnPlay">▶ PLAY</button>
+    <button class="btn" id="btnNext">NEXT ▶</button>
+    <button class="btn" id="btnReset">↺ RESET</button>
+    <div class="step-pill" id="stepPill">STEP 01 / 04</div>
+  </div>
+
+  <main>
+    <section class="stage-col">
+      <div class="scenario-strip" id="scenarioStrip"></div>
+      <div class="screen-wrap" id="screenWrap">
+        <div class="bezel" id="bezel">
+          <div class="sim-screen" id="simScreen"></div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="sidebar">
+      <div class="side-sec">
+        <div class="side-k" id="sideScLabel">SCENARIO 01</div>
+        <div class="side-title" id="sideStepTitle">Title</div>
+        <div class="side-desc" id="sideStepDesc">Description</div>
+        <div class="step-dots" id="stepDots"></div>
+      </div>
+      <div class="side-sec">
+        <div class="side-k">LIVE STATE INSPECTOR</div>
+        <div class="state-grid" id="stateGrid"></div>
+      </div>
+      <div class="spec-ref" id="specRef"></div>
+    </aside>
+  </main>
+
+  <footer>
+    <span>KEYBOARD: ← / → STEP • SPACE PLAY/PAUSE • 1–7 SCENARIOS</span>
+    <span>KAJO AERO + METRO • CHROMIUM/CEF ALLOY (WAYLAND + VA-API)</span>
+  </footer>
+
+<script>
+const SCENARIOS = [
+  {
+    id: 'S1',
+    name: 'S1: Autohide Rail',
+    steps: [
+      {
+        title: '1. Full-Viewport Resting State',
+        desc: 'In default autohide mode, kajo-web hides the vertical tab rail into a 4px left edge trigger strip (rgba(0,0,0,0.01)) with 2px accent ticks showing open tabs. The web page gets 100% of the tiled column.',
+        key: '',
+        cursor: { x: 640, y: 360 },
+        callout: { x: 26, y: 290, text: '4px trigger strip + 2px tab ticks: zero wasted horizontal width' },
+        st: { rail_mode: 'autohide', rail_state: 'COLLAPSED', reflow: '0 px', gpu: 'CEF+VAAPI' },
+        spec: '§3.2 & §3.3 — Autohide Rail FSM starts in COLLAPSED. Zero-reflow overlay rendered via kajo-chrome://ui/rail.html.',
+        view: { railMode: 'autohide', railOpen: false, triggerLit: false, tab: 'github' }
+      },
+      {
+        title: '2. Pointer Hits Left Edge Trigger (35ms Debounce)',
+        desc: 'Moving the pointer to x < 4px enters REVEAL_WAIT and starts a real 35ms debounce timer (configurable in web.toml). Accidental edge brushes that leave early cancel cleanly without flicker.',
+        key: 'POINTER → EDGE (35ms)',
+        cursor: { x: 10, y: 240 },
+        callout: { x: 28, y: 210, text: 'REVEAL_WAIT timer (35ms): cancels if pointer leaves early' },
+        st: { rail_mode: 'autohide', rail_state: 'REVEAL_WAIT', reflow: '0 px', gpu: 'CEF+VAAPI' },
+        spec: '§3.3 — Real timer transitions driven by web_model rail FSM (rail_reveal_delay_ms, 0..300ms).',
+        view: { railMode: 'autohide', railOpen: false, triggerLit: true, tab: 'github' }
+      },
+      {
+        title: '3. 240px Overlay Rail Slides Over Content',
+        desc: 'The 240px Aero + Metro vertical tab rail slides out directly over the CefBrowserView viewport. Notice the GitHub text behind it does NOT wrap or reflow—zero layout thrash!',
+        key: 'RAIL → EXPANDED',
+        cursor: { x: 120, y: 215 },
+        callout: { x: 255, y: 170, text: 'Overlay slide-over: CefBrowserView width stays constant (zero DOM reflow)' },
+        st: { rail_mode: 'autohide', rail_state: 'EXPANDED', reflow: '0 px (overlay)', gpu: 'CEF+VAAPI' },
+        spec: '§3.1 — Pinned square favicon tiles sit at top, collapsible color-coded groups below, active row marked with a crisp 3px accent bar.',
+        view: { railMode: 'autohide', railOpen: true, triggerLit: true, tab: 'github' }
+      },
+      {
+        title: '4. Click Tab → Pointer Leaves → Clean Auto-Retract',
+        desc: 'Clicking ArchWiki switches the active tab and moving the pointer back into the page starts the 220ms hide grace timer before smoothly sliding the rail away.',
+        key: 'CLICK TAB → 220ms HIDE',
+        cursor: { x: 520, y: 310 },
+        callout: { x: 28, y: 140, text: 'Switched to ArchWiki; rail retracted after 220ms grace period' },
+        st: { rail_mode: 'autohide', rail_state: 'COLLAPSED', reflow: '0 px', gpu: 'CEF+VAAPI' },
+        spec: '§3.3 — Hold-open pauses hiding whenever a tab drag, context menu, or rename entry is active; Escape dismisses immediately.',
+        view: { railMode: 'autohide', railOpen: false, triggerLit: false, tab: 'arch' }
+      }
+    ]
+  },
+  {
+    id: 'S2',
+    name: 'S2: Omnibar & Ctrl+K',
+    steps: [
+      {
+        title: '1. Resting Minimalist Top Bar (34px)',
+        desc: 'Top chrome stays ultra-clean: navigation buttons, rail pin toggle, editable omnibar (TLS icon + host + inline Adblock shield [🛡 ON]), always-visible Downloads chip (↓), profile chip, settings, float, and close.',
+        key: '',
+        cursor: { x: 600, y: 300 },
+        callout: { x: 350, y: 74, text: '34px kajo-chrome://ui/topbar.html with [🛡 ON] & always-visible ↓ chip' },
+        st: { omnibar: 'EDITABLE', adblock: 'IO-THREAD ABP', top_bar: '34px', palette: 'CLOSED' },
+        spec: '§3.4 — Always-visible ↓ Downloads chip lights up with live progress fill when active.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github' }
+      },
+      {
+        title: '2. Ctrl+L Focuses Omnibar & Bang Search',
+        desc: 'Pressing Ctrl+L or clicking anywhere in the address bar focuses and selects the URL in @metro-accent for instant navigation or keyword bangs (!arch, !gh, !g, !ddg) parsed by pure C web_model.c.',
+        key: 'Ctrl+L  "!arch wayland"',
+        cursor: { x: 580, y: 46 },
+        callout: { x: 340, y: 78, text: 'web_model classifies URLs, localhost, kajo:// & !bang shortcuts' },
+        st: { omnibar: 'FOCUSED', query: '!arch wayland', engine: 'ArchWiki', palette: 'CLOSED' },
+        spec: '§4 & §5 — web_model.c parses URL vs. bang vs. default search engine cleanly with live autocomplete from SQLite.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', omniFocus: '!arch wayland' }
+      },
+      {
+        title: '3. Ctrl+K Quick Command & Tab Palette',
+        desc: 'Pressing Ctrl+K opens a Kajo-native fuzzy modal searching open tabs and browser commands (bookmarks, downloads, permissions, suspend inactive tabs, settings)—matching kajo-ide aesthetics.',
+        key: 'Ctrl+K  "gpu"',
+        cursor: { x: 600, y: 170 },
+        callout: { x: 840, y: 110, text: 'Fuzzy jump across open tabs, internal pages & commands' },
+        st: { omnibar: 'READY', palette: 'OPEN (filter: gpu)', results: '3 matches', focus: 'PALETTE' },
+        spec: '§4 — Keyboard-first workflow: Ctrl+K switches tabs or runs commands without leaving the keyboard.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', palette: true }
+      },
+      {
+        title: '4. Instant Jump to kajo://gpu',
+        desc: 'Pressing Enter dismisses the palette and opens kajo://gpu via kajo:// scheme handler with live Chromium/CEF Ozone Wayland + VA-API diagnostics.',
+        key: 'Enter → kajo://gpu',
+        cursor: { x: 600, y: 310 },
+        callout: { x: 400, y: 320, text: 'Internal kajo:// pages share Kajo Aero + Metro theme tokens' },
+        st: { omnibar: 'kajo://gpu', palette: 'CLOSED', scheme: 'kajo://', gpu: 'CEF+VAAPI' },
+        spec: '§4.2 — Custom kajo:// scheme serves newtab, bookmarks, history, adblock, permissions, downloads, gpu, crashed & about.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'gpu' }
+      }
+    ]
+  },
+  {
+    id: 'S3',
+    name: 'S3: Groups & Suspend',
+    steps: [
+      {
+        title: '1. Pinned Grid & Color-Coded Groups',
+        desc: 'Pinned tabs live as compact square favicon tiles at the top of the rail. Regular tabs organize into collapsible WORK and DOCS groups with semantic accent bars.',
+        key: 'Ctrl+B (PIN RAIL)',
+        cursor: { x: 110, y: 110 },
+        callout: { x: 245, y: 80, text: 'Pinned square grid never auto-suspends' },
+        st: { rail_mode: 'pinned', pinned_tabs: '3', groups: 'WORK, DOCS', idle_susp: '30m' },
+        spec: '§1.2 & §5 — Pinned tabs and group metadata persist atomically in per-profile session JSON.',
+        view: { railMode: 'pinned', railOpen: true, tab: 'github' }
+      },
+      {
+        title: '2. Per-Tab Audio Indicator & One-Click Mute',
+        desc: 'Tabs playing media display a live cyan 🔊 badge. Clicking it toggles CefBrowserHost::SetAudioMuted() directly in the vertical rail without switching tabs.',
+        key: 'CLICK 🔊 → MUTE',
+        cursor: { x: 198, y: 204 },
+        callout: { x: 245, y: 188, text: 'Inline mute toggle via CefBrowserHost::SetAudioMuted()' },
+        st: { audio_tab: 'ArchWiki', muted: 'TRUE (🔇)', audible_protect: 'ACTIVE', gpu: 'CEF+VAAPI' },
+        spec: '§1.4 — Audible tabs are protected from automatic idle suspension.',
+        view: { railMode: 'pinned', railOpen: true, tab: 'github', muted: true }
+      },
+      {
+        title: '3. Automatic Idle Tab Suspension (💤)',
+        desc: 'After suspend_idle_min (default 30m), untouched background tabs release their backing CefBrowserView and renderer process while keeping URL, title, group, and rail slot (marked 💤).',
+        key: 'IDLE 30m → SUSPEND',
+        cursor: { x: 120, y: 316 },
+        callout: { x: 245, y: 298, text: '💤 Dimmed suspended tab: renderer freed, metadata preserved' },
+        st: { suspended: '1 tab (💤)', saved_ram: 'FREED', trigger: '30m idle', policy: 'CefBrowserView' },
+        spec: '§1.4 — Never suspends active, pinned, or audible tabs.',
+        view: { railMode: 'pinned', railOpen: true, tab: 'github', muted: true, showSusp: true }
+      },
+      {
+        title: '4. Click Suspended Tab → Seamless Wake',
+        desc: 'Clicking the suspended tab recreates its CefBrowserView immediately and restores it into the active viewport.',
+        key: 'CLICK → WAKE TAB',
+        cursor: { x: 540, y: 280 },
+        callout: { x: 260, y: 140, text: 'Backing CefBrowserView re-created on activation' },
+        st: { active_tab: 'Wayland Spec', state: 'RESTORED', backend: 'CEF ALLOY', suspend: 'IDLE 30m' },
+        spec: '§1.4 — Zero manual reload needed when waking suspended tabs.',
+        view: { railMode: 'pinned', railOpen: true, tab: 'restored', muted: true }
+      }
+    ]
+  },
+  {
+    id: 'S4',
+    name: 'S4: GPU & Fallback',
+    steps: [
+      {
+        title: '1. Default Hardware Acceleration (ALWAYS)',
+        desc: 'kajo-web starts on native Wayland (--ozone-platform=wayland --use-gl=angle --use-angle=gl) with hardware VA-API video decoding enabled and Vulkan disabled to avoid Ozone surface incompatibility.',
+        key: 'DEFAULT: ALWAYS',
+        cursor: { x: 580, y: 260 },
+        callout: { x: 560, y: 120, text: 'Native Wayland ANGLE GL + VA-API decode in Chromium/CEF' },
+        st: { hw_accel: 'ALWAYS', renderer: 'ANGLE GL', video: 'VA-API', sw_badge: 'HIDDEN' },
+        spec: '§2 & HARDWARE_FINDINGS.md §5 — Native Wayland EGL/ANGLE + VA-API by default.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'gpu', swFallback: false }
+      },
+      {
+        title: '2. Switching to Software Fallback in kajo-settings',
+        desc: 'If a broken driver or VM requires disabling GPU compositing, setting hardware_acceleration = "never" in kajo-settings (Page 12 / 13) switches CEF to SwiftShader software rendering on next launch (or --no-hw-accel).',
+        key: 'web.toml → NEVER',
+        cursor: { x: 1010, y: 240 },
+        callout: { x: 510, y: 180, text: 'Explicit opt-out in kajo-settings → Page 12 (requires browser restart)' },
+        st: { hw_accel: 'NEVER', backend: 'SWIFTSHADER', restart_req: 'YES', sw_badge: 'WILL SHOW' },
+        spec: '§3 — Settings Card 2 notes which startup flags require restarting kajo-web.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'gpu', settingsOpen: true, setGpu: 'never', swFallback: false }
+      },
+      {
+        title: '3. Honest Fallback Telemetry ([ ⚠ SW RENDER ])',
+        desc: 'Per AGENTS.md §8, fallbacks are never silent: kajo-web surfaces an amber [ ⚠ SW RENDER ] chip in the top bar (clicking opens kajo://gpu).',
+        key: 'FALLBACK VISIBLE',
+        cursor: { x: 960, y: 46 },
+        callout: { x: 640, y: 78, text: 'Visible [ ⚠ SW RENDER ] chip — never silently degrades performance' },
+        st: { hw_accel: 'NEVER', renderer: 'SWIFTSHADER', sw_badge: '⚠ SW RENDER', honesty: 'VERIFIED' },
+        spec: '§2 & AGENTS.md §8 — Every fallback path is surfaced clearly in both UI and diagnostics.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'gpu', swFallback: true }
+      }
+    ]
+  },
+  {
+    id: 'S5',
+    name: 'S5: Kajo Settings Sync',
+    steps: [
+      {
+        title: '1. Launch kajo-settings Side-by-Side (Ctrl+,)',
+        desc: 'Clicking ⚙ or pressing Ctrl+, opens kajo-settings --page web in the adjacent compositor column so you can tune every browser option while watching kajo-web live.',
+        key: 'Ctrl+, → kajo-settings',
+        cursor: { x: 980, y: 140 },
+        callout: { x: 450, y: 110, text: 'Page 12 / 13 • KAJO WEB edits ~/.config/kajo/web.toml cleanly' },
+        st: { config_file: 'web.toml', rail_mode: 'autohide', rail_side: 'left', sync: 'GFileMonitor' },
+        spec: '§3 & spec_toml_config.md — KajoConfigStore merges conf.d/*.toml and patches scalars without clobbering user comments.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', settingsOpen: true, setRail: 'autohide', setSide: 'left' }
+      },
+      {
+        title: '2. Switch Rail to COMPACT + RIGHT Side',
+        desc: 'In Card 1, select COMPACT (40px icon rail) and RIGHT side, tune suspension/privacy/downloads toggles, then click SAVE & APPLY.',
+        key: 'SAVE & APPLY',
+        cursor: { x: 1080, y: 640 },
+        callout: { x: 460, y: 240, text: 'Explicit SAVE & APPLY writes web.toml atomically' },
+        st: { pending: 'COMPACT + RIGHT', adblock: 'IO-THREAD ABP', https_only: 'ON', action: 'SAVE & APPLY' },
+        spec: 'AGENTS.md §7 — Settings pages use explicit SAVE & APPLY + REVERT.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', settingsOpen: true, setRail: 'compact', setSide: 'right' }
+      },
+      {
+        title: '3. Instant Live Hot-Reload in kajo-web',
+        desc: 'KajoConfigStore notifies all open kajo-web windows immediately: the 40px compact icon rail snaps to the right edge without restarting or losing page state!',
+        key: 'KajoConfigStore → RELOAD',
+        cursor: { x: 760, y: 240 },
+        callout: { x: 380, y: 150, text: 'Compact 40px icon rail docked on right edge immediately!' },
+        st: { rail_mode: 'compact', rail_side: 'right', hot_reload: '< 5ms', restart: 'NONE' },
+        spec: '§3 — Layout, chrome, privacy, ad-block, downloads, search, and zoom keys hot-reload live.',
+        view: { railMode: 'compact', railSide: 'right', railOpen: false, tab: 'github', settingsOpen: true, setRail: 'compact', setSide: 'right' }
+      }
+    ]
+  },
+  {
+    id: 'S6',
+    name: 'S6: Permissions & Downloads',
+    steps: [
+      {
+        title: '1. Non-Modal Permission Infobar & kajo://permissions',
+        desc: 'Permission requests (Camera, Mic, Notifications, Geolocation, Clipboard) render cleanly inside an Aero + Metro infobar and persist per (origin, key) in permissions.json — inspect/revoke anytime on kajo://permissions.',
+        key: 'PERMISSION REQUEST',
+        cursor: { x: 880, y: 80 },
+        callout: { x: 340, y: 112, text: 'Persisted per origin in permissions.json (revocable in kajo://permissions)' },
+        st: { prompt: 'CAMERA+MIC', modal: 'FALSE', storage: 'permissions.json', revoke: 'kajo://permissions' },
+        spec: '§2 & cef_prefs_helper.cc — Non-blocking permission decisions without modal freezes.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', permBar: true }
+      },
+      {
+        title: '2. Always-Visible ↓ Downloads Popout (Ctrl+J)',
+        desc: 'The top-right ↓ chip is always visible with a live active count and aggregate progress fill bar. Clicking ↓ (or Ctrl+J) opens the 3-zone Aero Downloads Popout with Pause/Resume/Cancel and Open File/Folder.',
+        key: 'Ctrl+J → ↓ DOWNLOADS',
+        cursor: { x: 960, y: 115 },
+        callout: { x: 380, y: 210, text: 'Always-visible ↓ chip with live % progress + Pause / Cancel / Open' },
+        st: { active_dl: '1 (68%)', popout: 'OPEN', auto_open: 'web.toml opt-in', portal: 'kajo-files' },
+        spec: '§2 — Downloads respect download_dir (~ expanded), ask_download_location, and downloads_auto_open.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', dlPop: true }
+      },
+      {
+        title: '3. Live kajo://downloads History Manager',
+        desc: 'All downloads persist into the per-profile SQLite downloads table (`history.db`). kajo://downloads updates live on 500ms tick with search, status filters (ALL/ACTIVE/COMPLETED), Retry, and Open Folder.',
+        key: 'kajo://downloads',
+        cursor: { x: 600, y: 310 },
+        callout: { x: 380, y: 310, text: 'Live DOM patching via window.__kajoUpdateDownloads() + SQLite WAL' },
+        st: { scheme: 'kajo://downloads', persistence: 'SQLite WAL', filters: 'ALL/ACTIVE/DONE', handoff: 'xdg-open' },
+        spec: '§4.2 & web_storage.c — Download history persists cleanly across restarts.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'downloads' }
+      },
+      {
+        title: '4. Native kajo-files FileChooser & Inspect Element',
+        desc: 'File uploads integrate with the Wayland FileChooser portal (`kajo-files --portal`), and right-clicking a page offers Inspect Element when `developer_extras = true`.',
+        key: 'PORTAL → kajo-files',
+        cursor: { x: 600, y: 360 },
+        callout: { x: 66, y: 240, text: 'org.freedesktop.impl.portal.FileChooser → kajo-files --portal' },
+        st: { portal: 'kajo-files', chooser: 'OPEN', devtools: 'INSPECT ELEMENT', style: '0px Metro' },
+        spec: '§3 — Configurable via developer_extras and portal services.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', portalOpen: true }
+      }
+    ]
+  },
+  {
+    id: 'S7',
+    name: 'S7: Profiles, Adblock & Private',
+    steps: [
+      {
+        title: '1. Startup Aero + Metro Profile Picker',
+        desc: 'When show_picker_on_startup is enabled with multiple profiles, kajo-web opens its sharp 0px Profile Picker overlay (or skip via --profile <id>). Each card launches its own isolated CefRequestContext.',
+        key: 'kajo-web (PICK PROFILE)',
+        cursor: { x: 430, y: 340 },
+        callout: { x: 40, y: 540, text: 'profiles.toml registry • launch any profile or Guest / Private mode' },
+        st: { picker: 'OPEN (3 profiles)', isolation: 'CefRequestContext', guest: 'EPHEMERAL', border_tint: 'ENABLED' },
+        spec: '§1.5 — Chrome-style startup picker backed by per-profile disk & cache paths.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', pickerModal: true }
+      },
+      {
+        title: '2. Concurrent Isolated Profile Windows',
+        desc: 'WORK (Cobalt Blue border) and PERSONAL (Emerald border) run side-by-side inside kajo-comp with completely partitioned cookies, cache, SQLite history, downloads, and permissions.',
+        key: 'WORK + PERSONAL SIDE-BY-SIDE',
+        cursor: { x: 860, y: 240 },
+        callout: { x: 420, y: 520, text: '1px profile accent borders keep side-by-side windows unmistakable' },
+        st: { win_1: 'WORK (#0078d4)', win_2: 'PERSONAL (#10893e)', cookies: 'ISOLATED', db: 'SEPARATE SQLITE' },
+        spec: '§1.5 — Per-profile CefRequestContext guarantees zero cross-profile storage leakage.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', dualProfile: true }
+      },
+      {
+        title: '3. IO-Thread ABP Ad Blocker (CefAdblockEngine)',
+        desc: 'CefAdblockEngine blocks third-party trackers & ads directly on Chromium TID_IO, injects cosmetic element-hiding CSS, auto-syncs EasyList/EasyPrivacy when enabled, and honors per-site [🛡 ON/OFF] pauses.',
+        key: '🛡 ON → IO-THREAD ABP',
+        cursor: { x: 640, y: 120 },
+        callout: { x: 350, y: 240, text: 'IO-thread network block + cosmetic CSS + kajo://adblock dashboard' },
+        st: { engine: 'CefAdblockEngine', thread: 'TID_IO', lists: 'EasyList+Privacy', dashboard: 'kajo://adblock' },
+        spec: '§2 & cef_adblock.cc — Fast network + host-file + cosmetic blocking with safe shutdown shared_ptr lifecycle.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', adblockPop: true }
+      },
+      {
+        title: '4. Ephemeral Private Window (Ctrl+Shift+N)',
+        desc: 'Private windows (--private / Ctrl+Shift+N) use an in-memory CefRequestContext with magenta chrome framing ([🕶 PRIVATE])—zero history, cookies, or download records written to SQLite.',
+        key: 'Ctrl+Shift+N → PRIVATE',
+        cursor: { x: 960, y: 46 },
+        callout: { x: 660, y: 78, text: 'In-memory CefRequestContext: zero disk cookies or SQLite history' },
+        st: { mode: 'PRIVATE', context: 'IN-MEMORY', border: '#b4009e', history_write: 'DISABLED' },
+        spec: '§1.5 — Isolated ephemeral context leaves zero local traces on window close.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', privateWin: true }
+      }
+    ]
+  }
+];
+
+let scIdx = 0;
+let stepIdx = 0;
+let playTimer = null;
+
+const stripEl = document.getElementById('scenarioStrip');
+const simEl = document.getElementById('simScreen');
+const bezelEl = document.getElementById('bezel');
+const wrapEl = document.getElementById('screenWrap');
+
+function fitBezel() {
+  const r = wrapEl.getBoundingClientRect();
+  const pad = 20;
+  const scale = Math.min((r.width - pad) / 1200, (r.height - pad) / 720, 1);
+  bezelEl.style.width = Math.round(1200 * scale) + 'px';
+  bezelEl.style.height = Math.round(720 * scale) + 'px';
+  simEl.style.transform = `scale(${scale})`;
+}
+window.addEventListener('resize', fitBezel);
+
+function renderStrip() {
+  stripEl.innerHTML = '';
+  SCENARIOS.forEach((sc, i) => {
+    const b = document.createElement('button');
+    b.className = 'sc-btn' + (i === scIdx ? ' on' : '');
+    b.textContent = sc.name;
+    b.onclick = () => { stopPlay(); scIdx = i; stepIdx = 0; render(); };
+    stripEl.appendChild(b);
+  });
+}
+
+function renderViewport(v) {
+  const railCls = [
+    v.railSide === 'right' ? 'rail-right' : '',
+    v.railMode === 'compact' ? 'rail-compact' : '',
+    v.railMode === 'pinned' ? 'rail-pinned' : '',
+    v.railOpen ? 'rail-open' : ''
+  ].filter(Boolean).join(' ');
+
+  const pageMap = {
+    github: {
+      host: 'github.com', path: '/mikolas/Kajo', tls: '🔒',
+      html: `<h2>mikolas / Kajo — Personal Native Wayland Suite</h2>
+        <p>Minimalist Aero + Metro browser viewport. Vertical autohide tab rail overlays cleanly without reflowing the page layout.</p>
+        <div class="sb-card-grid">
+          <div class="sb-card"><div class="k">BINARY</div><div class="v">kajo-web</div></div>
+          <div class="sb-card"><div class="k">ENGINE</div><div class="v">CEF Alloy Views</div></div>
+          <div class="sb-card"><div class="k">RENDER</div><div class="v">Wayland ANGLE + VA-API</div></div>
+        </div>`
+    },
+    arch: {
+      host: 'wiki.archlinux.org', path: '/title/Wayland', tls: '🔒',
+      html: `<h2>Wayland — ArchWiki</h2>
+        <p>Active audio stream tab. Chromium/CEF Alloy Views runs natively on Wayland inside kajo-comp.</p>
+        <div class="sb-card-grid">
+          <div class="sb-card"><div class="k">COMPOSITOR</div><div class="v">kajo-comp</div></div>
+          <div class="sb-card"><div class="k">AUDIO</div><div class="v">PipeWire Native</div></div>
+          <div class="sb-card"><div class="k">ADBLOCK</div><div class="v">IO-THREAD ABP</div></div>
+        </div>`
+    },
+    gpu: {
+      host: 'kajo://gpu', path: '', tls: '❖',
+      html: `<h2>⚡ kajo://gpu — Graphics &amp; Wayland Diagnostics</h2>
+        <p>Live hardware acceleration and ANGLE GL / VA-API diagnostics exposed via custom <code>kajo://</code> URI scheme.</p>
+        <div class="sb-card-grid">
+          <div class="sb-card"><div class="k">HW ACCEL POLICY</div><div class="v" style="color:${v.swFallback ? '#ffb84d' : '#4ce886'};">${v.swFallback ? 'NEVER (SW)' : 'ALWAYS'}</div></div>
+          <div class="sb-card"><div class="k">RENDERER</div><div class="v" style="color:${v.swFallback ? '#ffb84d' : 'var(--telemetry)'};">${v.swFallback ? 'SWIFTSHADER' : 'ANGLE GL + VA-API'}</div></div>
+          <div class="sb-card"><div class="k">OZONE PLATFORM</div><div class="v" style="color:#4ce886;">WAYLAND NATIVE</div></div>
+        </div>`
+    },
+    downloads: {
+      host: 'kajo://downloads', path: '', tls: '❖',
+      html: `<h2>↓ kajo://downloads — Live &amp; SQLite History</h2>
+        <p>Updates live every 500ms while transfers run; search and filter across ALL / ACTIVE / COMPLETED items persisted in <code>history.db</code>.</p>
+        <div class="sb-card-grid">
+          <div class="sb-card"><div class="k">kajo-0.20.2.tar.zst</div><div class="v" style="color:var(--telemetry);">68% • 8.4 MB/s</div></div>
+          <div class="sb-card"><div class="k">spec_kajo_web.pdf</div><div class="v" style="color:#4ce886;">COMPLETED • OPEN</div></div>
+          <div class="sb-card"><div class="k">STORAGE</div><div class="v">SQLITE WAL</div></div>
+        </div>`
+    },
+    restored: {
+      host: 'wayland.freedesktop.org', path: '/docs/html/', tls: '🔒',
+      html: `<h2>📄 Wayland Protocol Spec (Restored)</h2>
+        <p>Woke cleanly by recreating its backing <code>CefBrowserView</code> after 30-minute background suspension.</p>
+        <div class="sb-card-grid">
+          <div class="sb-card"><div class="k">STATE</div><div class="v" style="color:#4ce886;">RESTORED</div></div>
+          <div class="sb-card"><div class="k">SUSPEND IDLE</div><div class="v">30 MIN</div></div>
+          <div class="sb-card"><div class="k">HOST</div><div class="v">CEF ALLOY</div></div>
+        </div>`
+    }
+  };
+  const pg = pageMap[v.tab] || pageMap.github;
+
+  const settingsColHtml = v.settingsOpen ? `
+    <div class="sb-settings-col focused">
+      <div class="sb-hdr">
+        <span style="font-weight:800;">⚙ KAJO SETTINGS</span>
+        <span style="margin-left:auto; color:var(--telemetry); font-size:9.5px;">12 / 13 • KAJO WEB</span>
+      </div>
+      <div class="sb-set-body">
+        <div class="sb-set-card">
+          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">1. VERTICAL TAB RAIL</div>
+          <div class="sb-set-row"><span>Rail Mode</span><span class="sb-badge shield">${(v.setRail || 'autohide').toUpperCase()}</span></div>
+          <div class="sb-set-row"><span>Rail Side</span><span class="sb-badge">${(v.setSide || 'left').toUpperCase()}</span></div>
+          <div class="sb-set-row"><span>Width</span><span class="sb-badge">240 PX</span></div>
+        </div>
+        <div class="sb-set-card">
+          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">2. HARDWARE &amp; SUSPENSION</div>
+          <div class="sb-set-row"><span>GPU Policy</span><span class="sb-badge ${v.setGpu === 'never' ? 'warn' : 'shield'}">${(v.setGpu || 'always').toUpperCase()}</span></div>
+          <div class="sb-set-row"><span>Idle Suspend</span><span style="color:#4ce886; font-weight:700;">30 MIN</span></div>
+        </div>
+        <div class="sb-set-card">
+          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">3. PRIVACY &amp; ADBLOCK</div>
+          <div class="sb-set-row"><span>IO-Thread ABP</span><span style="color:#4ce886; font-weight:700;">ON + COSMETIC</span></div>
+          <div class="sb-set-row"><span>HTTPS-Only + 3P Cookies</span><span style="color:#4ce886; font-weight:700;">ON</span></div>
+        </div>
+        <div style="margin-top:auto; display:flex; justify-content:flex-end; gap:6px; padding-top:8px;">
+          <span class="sb-badge" style="background:var(--accent); border-color:var(--accent); color:#fff; padding:4px 10px;">✓ SAVE &amp; APPLY</span>
+        </div>
+      </div>
+    </div>` : '';
+
+  return `
+    <div class="sim-panel">
+      <div class="ws-pills"><span class="ws on">WS 1 • WEB</span><span class="ws">WS 2 • IDE</span></div>
+      <span>KAJO-COMP • 120 HZ • VULKAN</span>
+      <span>19:35</span>
+    </div>
+    <div class="sim-ws">
+      <div class="sb-browser ${railCls}" ${v.privateWin ? 'style="border-color:#b4009e;"' : ''}>
+        <div class="sb-hdr">
+          <span style="color:${v.privateWin ? '#b4009e' : 'var(--accent)'}; font-weight:800;">🌐 KAJO WEB</span>
+          <span style="color:#777;">◀ ▶ ↻</span>
+          <span class="sb-badge ${v.railMode === 'pinned' ? 'shield' : ''}">◧</span>
+          <div class="sb-omni ${v.omniFocus ? 'focus' : ''}">
+            <span style="color:${pg.tls === '❖' ? 'var(--telemetry)' : '#4ce886'};">${pg.tls}</span>
+            <span style="flex:1; color:#fff;">${v.omniFocus ? v.omniFocus : `<strong>${pg.host}</strong><span style="color:#777;">${pg.path}</span>`}</span>
+            <span class="sb-badge shield">🛡 ON</span>
+          </div>
+          ${v.swFallback ? '<span class="sb-badge warn">⚠ SW RENDER</span>' : ''}
+          ${v.privateWin ? '<span class="sb-badge" style="border-color:#b4009e; color:#f0a8ff;">🕶 PRIVATE</span>' : ''}
+          <span class="sb-badge ${v.dlPop ? 'shield' : ''}">↓ ${v.dlPop ? '1' : ''}</span>
+          <span class="sb-badge" style="border-color:${v.privateWin ? '#b4009e' : 'var(--accent)'}; color:#fff;">● ${v.privateWin ? 'PRIVATE' : 'WORK'}</span>
+          <span style="color:#aaa;">⚙ 🗗 ✕</span>
+        </div>
+        <div class="sb-body">
+          ${v.railMode === 'autohide' ? `<div class="sb-trigger ${v.triggerLit ? 'lit' : ''}"><div class="sb-ticks"><div class="sb-tick"></div><div class="sb-tick ${v.tab === 'github' ? 'on' : ''}"></div><div class="sb-tick ${v.tab === 'arch' ? 'on' : ''}"></div><div class="sb-tick ${v.tab === 'gpu' ? 'on' : ''}"></div></div></div>` : ''}
+          <div class="sb-rail">
+            <div class="sb-pin-grid">
+              <div class="sb-pin">❖</div>
+              <div class="sb-pin ${v.tab === 'github' ? 'on' : ''}">🐙</div>
+              <div class="sb-pin ${v.tab === 'gpu' ? 'on' : ''}">⚡</div>
+              <div class="sb-pin" style="color:var(--accent);">+</div>
+            </div>
+            <div class="sb-grp">▾ WORK (3)</div>
+            <div class="sb-tab ${v.tab === 'github' ? 'on' : ''}"><span>🐙</span><span class="sb-tab-txt" style="flex:1;">mikolas/Kajo</span></div>
+            <div class="sb-tab ${v.tab === 'arch' ? 'on' : ''}"><span>📘</span><span class="sb-tab-txt" style="flex:1;">Wayland — ArchWiki</span><span class="sb-tab-txt" style="color:${v.muted ? '#777' : 'var(--telemetry)'};">${v.muted ? '🔇' : '🔊'}</span></div>
+            <div class="sb-tab ${v.tab === 'gpu' ? 'on' : ''}"><span>⚡</span><span class="sb-tab-txt" style="flex:1;">kajo://gpu</span></div>
+            <div class="sb-grp" style="border-left-color:var(--telemetry);">▾ DOCS (2)</div>
+            <div class="sb-tab"><span>🧪</span><span class="sb-tab-txt" style="flex:1;">WebGL2 — MDN</span></div>
+            <div class="sb-tab ${v.tab === 'restored' ? 'on' : (v.showSusp ? 'susp' : '')}"><span>${v.tab === 'restored' ? '📄' : '💤'}</span><span class="sb-tab-txt" style="flex:1;">Wayland Spec</span></div>
+          </div>
+          <div class="sb-viewport">
+            ${v.permBar ? `<div class="sb-perm"><span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Mic (permissions.json)</span><span><span class="sb-badge shield">ALLOW</span> <span class="sb-badge">DENY</span></span></div>` : ''}
+            <div class="sb-page">${pg.html}</div>
+          </div>
+          ${v.palette ? `
+            <div class="sb-palette">
+              <div class="sb-pal-in">⌘ gpu_</div>
+              <div class="sb-pal-row on"><span class="sb-badge shield">INTERNAL</span><span>⚡ Open GPU &amp; VA-API Diagnostics (kajo://gpu)</span></div>
+              <div class="sb-pal-row"><span class="sb-badge">CMD</span><span>⚙ Toggle Hardware Acceleration in kajo-settings</span></div>
+              <div class="sb-pal-row"><span class="sb-badge">TAB</span><span>🧪 WebGL2RenderingContext — MDN</span></div>
+            </div>` : ''}
+        </div>
+      </div>
+      ${settingsColHtml}
+      ${v.dualProfile ? `
+        <div class="sb-browser" style="border-color:#10893e;">
+          <div class="sb-hdr">
+            <span style="color:#10893e; font-weight:800;">🌐 KAJO WEB</span>
+            <div class="sb-omni"><span style="color:#4ce886;">🔒</span><span style="flex:1; color:#fff;"><strong>mail.google.com</strong><span style="color:#777;">/mail/u/0/</span></span></div>
+            <span class="sb-badge" style="border-color:#10893e; color:#4ce886;">● PERSONAL</span>
+          </div>
+          <div class="sb-page">
+            <h2>Personal Profile (Isolated)</h2>
+            <p>Separate <code>CefRequestContext</code> (<code>~/.local/share/kajo/web/profiles/personal/</code>) with isolated cookies, SQLite storage, and permissions.</p>
+            <div class="sb-card-grid" style="grid-template-columns:1fr 1fr;">
+              <div class="sb-card" style="border-top-color:#10893e;"><div class="k">COOKIES</div><div class="v" style="color:#4ce886;">ISOLATED</div></div>
+              <div class="sb-card" style="border-top-color:#10893e;"><div class="k">STORAGE</div><div class="v" style="color:#4ce886;">SEPARATE SQLITE</div></div>
+            </div>
+          </div>
+        </div>` : ''}
+      ${v.dlPop ? `
+        <div class="sb-palette" style="left:auto; right:26px; top:44px; transform:none; width:340px;">
+          <div class="sb-pal-in" style="display:flex; justify-content:space-between; font-size:10.5px;">
+            <strong>↓ DOWNLOADS POPOUT</strong>
+            <span style="color:var(--telemetry);">1 ACTIVE • 68%</span>
+          </div>
+          <div class="sb-pal-row on" style="flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; width:100%;"><strong>kajo-0.20.2-fx10.tar.zst</strong><span style="color:var(--telemetry);">68%</span></div>
+            <div style="height:4px; background:#222; width:100%;"><div style="height:100%; width:68%; background:var(--accent);"></div></div>
+          </div>
+          <div class="sb-pal-row"><span>spec_kajo_web.pdf • DONE</span><span style="margin-left:auto; color:#4ce886; font-size:10px;">OPEN  |  📁</span></div>
+          <div class="sb-pal-row" style="color:var(--telemetry);"><span>All Downloads → kajo://downloads</span></div>
+        </div>` : ''}
+      ${v.adblockPop ? `
+        <div class="sb-palette" style="left:auto; right:26px; top:44px; transform:none; width:340px;">
+          <div class="sb-pal-in" style="display:flex; justify-content:space-between; font-size:10.5px;">
+            <strong>🛡 IO-THREAD ADBLOCK</strong>
+            <span style="color:#4ce886;">ON • TID_IO</span>
+          </div>
+          <div class="sb-pal-row on" style="flex-direction:column; gap:3px;">
+            <strong>CefAdblockEngine Active</strong>
+            <span style="font-size:9.5px; color:#999;">EasyList + EasyPrivacy auto-sync + cosmetic CSS filters</span>
+          </div>
+          <div class="sb-pal-row"><span>User Scripts (~/.config/kajo/web/scripts)</span><span style="margin-left:auto; color:var(--telemetry); font-size:10px;">OPT-IN</span></div>
+          <div class="sb-pal-row"><span>Open Dashboard</span><span style="margin-left:auto; color:var(--telemetry); font-size:10px;">kajo://adblock</span></div>
+        </div>` : ''}
+      ${v.pickerModal ? `
+        <div class="sb-portal" style="width:660px; height:360px;">
+          <div class="sb-portal-hdr"><span>🌐 KAJO WEB // SELECT PROFILE (CefRequestContext)</span><span style="color:var(--telemetry);">1–3 TO LAUNCH</span></div>
+          <div style="flex:1; padding:18px; display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
+            <div style="background:#181818; border:1px solid var(--accent); border-top:3px solid var(--accent); padding:14px; display:flex; flex-direction:column; gap:6px;">
+              <div style="display:flex; justify-content:space-between; font-size:18px;"><span>💼</span><span class="sb-badge">1</span></div>
+              <strong style="font-size:13px;">WORK</strong>
+              <span style="font-size:10px; color:#aaa;">CefRequestContext</span>
+              <span style="font-size:9.5px; color:var(--telemetry); margin-top:auto;">SQLITE WAL ACTIVE</span>
+            </div>
+            <div style="background:#181818; border:1px solid #2b2b2b; border-top:3px solid #10893e; padding:14px; display:flex; flex-direction:column; gap:6px;">
+              <div style="display:flex; justify-content:space-between; font-size:18px;"><span>🏠</span><span class="sb-badge">2</span></div>
+              <strong style="font-size:13px;">PERSONAL</strong>
+              <span style="font-size:10px; color:#aaa;">CefRequestContext</span>
+              <span style="font-size:9.5px; color:#4ce886; margin-top:auto;">SQLITE WAL ACTIVE</span>
+            </div>
+            <div style="background:#181818; border:1px solid #2b2b2b; border-top:3px solid #d83b01; padding:14px; display:flex; flex-direction:column; gap:6px;">
+              <div style="display:flex; justify-content:space-between; font-size:18px;"><span>⚙</span><span class="sb-badge">3</span></div>
+              <strong style="font-size:13px;">DEV</strong>
+              <span style="font-size:10px; color:#aaa;">Isolated Dev Profile</span>
+              <span style="font-size:9.5px; color:#777; margin-top:auto;">SQLITE WAL</span>
+            </div>
+          </div>
+          <div style="padding:10px 18px; background:#101010; border-top:1px solid #2b2b2b; display:flex; justify-content:space-between; font-size:10px; color:#aaa;">
+            <span><span class="sb-badge shield">+ ADD PROFILE</span> &nbsp; <span class="sb-badge">🕶 GUEST / PRIVATE</span></span>
+            <span>☑ SHOW ON STARTUP</span>
+          </div>
+        </div>` : ''}
+      ${v.portalOpen ? `
+        <div class="sb-portal">
+          <div class="sb-portal-hdr"><span>📁 KAJO FILES — OPEN FILE (PORTAL)</span><span style="color:var(--telemetry);">org.kajo.Files.Chooser</span></div>
+          <div class="sb-portal-body">
+            <div class="sb-portal-side">
+              <div style="color:#fff; border-left:3px solid var(--accent); padding-left:6px;">⌂ Home</div>
+              <div>⬇ Downloads</div>
+              <div>📄 Documents</div>
+              <div>🌐 Network</div>
+            </div>
+            <div class="sb-portal-main">
+              <div class="sb-portal-row on"><span>📄 architecture_diagram.png</span><span style="color:#888;">412 KB</span></div>
+              <div class="sb-portal-row"><span>📄 spec_kajo_web.md</span><span style="color:#888;">18.4 KB</span></div>
+              <div style="margin-top:auto; display:flex; justify-content:flex-end; gap:6px;">
+                <span class="sb-badge">CANCEL</span>
+                <span class="sb-badge" style="background:var(--accent); border-color:var(--accent); color:#fff;">OPEN</span>
+              </div>
+            </div>
+          </div>
+        </div>` : ''}
+    </div>
+  `;
+}
+
+function render() {
+  renderStrip();
+  const sc = SCENARIOS[scIdx];
+  const st = sc.steps[stepIdx];
+
+  document.getElementById('stepPill').textContent = `STEP 0${stepIdx + 1} / 0${sc.steps.length}`;
+  document.getElementById('sideScLabel').textContent = sc.name.toUpperCase();
+  document.getElementById('sideStepTitle').textContent = st.title;
+  document.getElementById('sideStepDesc').textContent = st.desc;
+  document.getElementById('specRef').innerHTML = `<div class="side-k">SPECIFICATION INVARIANT</div>${st.spec}`;
+
+  // Step dots
+  const dots = document.getElementById('stepDots');
+  dots.innerHTML = '';
+  sc.steps.forEach((_, idx) => {
+    const d = document.createElement('div');
+    d.className = 'sdot' + (idx < stepIdx ? ' done' : '') + (idx === stepIdx ? ' on' : '');
+    d.onclick = () => { stopPlay(); stepIdx = idx; render(); };
+    dots.appendChild(d);
+  });
+
+  // State Grid
+  const sg = document.getElementById('stateGrid');
+  sg.innerHTML = '';
+  Object.entries(st.st).forEach(([k, val]) => {
+    const cls = /WARN|SW|NEVER/.test(val) ? 'warn' : (/OK|ACTIVE|ON|RESTORED|VERIFIED/.test(val) ? 'ok' : 'accent');
+    const div = document.createElement('div');
+    div.className = 'st-kv';
+    div.innerHTML = `<div class="k">${k.toUpperCase()}</div><div class="v ${cls}">${val}</div>`;
+    sg.appendChild(div);
+  });
+
+  // Viewport + cursor + callout + key HUD
+  let html = renderViewport(st.view);
+  if (st.callout) {
+    html += `<div class="callout-box" style="left:${st.callout.x}px; top:${st.callout.y}px;">${st.callout.text}</div>`;
+  }
+  if (st.key) {
+    html += `<div class="key-hud">${st.key}</div>`;
+  }
+  if (st.cursor) {
+    html += `<div class="sim-cursor" style="left:${st.cursor.x}px; top:${st.cursor.y}px;"></div>`;
+  }
+  simEl.innerHTML = html;
+
+  document.getElementById('btnPrev').disabled = (stepIdx === 0 && scIdx === 0);
+  document.getElementById('btnNext').disabled = (stepIdx === sc.steps.length - 1 && scIdx === SCENARIOS.length - 1);
+  fitBezel();
+}
+
+function nextStep() {
+  const sc = SCENARIOS[scIdx];
+  if (stepIdx < sc.steps.length - 1) stepIdx++;
+  else if (scIdx < SCENARIOS.length - 1) { scIdx++; stepIdx = 0; }
+  else { stopPlay(); return; }
+  render();
+}
+function prevStep() {
+  if (stepIdx > 0) stepIdx--;
+  else if (scIdx > 0) { scIdx--; stepIdx = SCENARIOS[scIdx].steps.length - 1; }
+  render();
+}
+function stopPlay() {
+  clearInterval(playTimer);
+  playTimer = null;
+  const b = document.getElementById('btnPlay');
+  b.textContent = '▶ PLAY';
+  b.classList.remove('playing');
+  b.classList.add('primary');
+}
+function togglePlay() {
+  if (playTimer) { stopPlay(); return; }
+  const b = document.getElementById('btnPlay');
+  b.textContent = '⏸ PAUSE';
+  b.classList.remove('primary');
+  b.classList.add('playing');
+  playTimer = setInterval(nextStep, 2600);
+}
+
+document.getElementById('btnPrev').onclick = () => { stopPlay(); prevStep(); };
+document.getElementById('btnNext').onclick = () => { stopPlay(); nextStep(); };
+document.getElementById('btnPlay').onclick = togglePlay;
+document.getElementById('btnReset').onclick = () => { stopPlay(); stepIdx = 0; render(); };
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowRight') { stopPlay(); nextStep(); }
+  else if (e.key === 'ArrowLeft') { stopPlay(); prevStep(); }
+  else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key >= '1' && e.key <= '7') { stopPlay(); scIdx = parseInt(e.key, 10) - 1; stepIdx = 0; render(); }
+});
+
+render();
+</script>
+</body>
+</html>

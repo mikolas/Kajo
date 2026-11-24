@@ -1,0 +1,2240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAJO WEB — Interactive Aero + Metro Browser UI Mockup</title>
+  <style>
+    /* ==========================================================================
+       KAJO "AERO + METRO" DESIGN TOKENS (Strict 0px Corner Radius)
+       ========================================================================== */
+    :root {
+      --metro-accent: #0078d4;
+      --metro-accent-hover: #1084df;
+      --metro-accent-rgb: 0, 120, 212;
+      --metro-telemetry: #00d8f0;
+      --metro-success: #10893e;
+      --metro-warning: #ff8c00;
+      --metro-urgent: #e81123;
+      --metro-urgent-text: #ff6b6b;
+      --metro-magenta: #b4009e;
+
+      --surface-0: #101010;
+      --surface-1: #121212;
+      --surface-bg: #141414;
+      --surface-2: #161616;
+      --surface-3: #181818;
+      --surface-4: #1a1a1a;
+      --surface-hover: #222222;
+      --surface-active: #2a2a2a;
+
+      --border-subtle: #242424;
+      --border-struct: #2b2b2b;
+      --border-strong: #3a3a3a;
+
+      --fg-primary: #ffffff;
+      --fg-bright: #f0f0f0;
+      --fg-soft: #e0e0e0;
+      --fg-body: #cccccc;
+      --fg-secondary: #a0a0a0;
+      --fg-dim: #787878;
+
+      --font-mono: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+      --font-sans: 'Inter', 'Cantarell', 'Segoe UI', system-ui, sans-serif;
+
+      --rail-w: 240px;
+      --compact-w: 44px;
+    }
+
+    * {
+      box-sizing: border-box;
+      border-radius: 0 !important;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      background: #060606;
+      color: var(--fg-primary);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, input, select {
+      font-family: var(--font-mono);
+      outline: none;
+    }
+
+    ::-webkit-scrollbar { width: 4px; height: 4px; background: var(--surface-0); }
+    ::-webkit-scrollbar-thumb { background: #333333; }
+    ::-webkit-scrollbar-thumb:hover { background: #505050; }
+
+    /* ==========================================================================
+       OUTER STAGE & DEMO CONTROL STRIP
+       ========================================================================== */
+    .outer-shell {
+      width: 100%;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #060606;
+    }
+
+    .demo-bar {
+      height: 32px;
+      flex-shrink: 0;
+      background: #0c0c0c;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      padding: 0 10px;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--fg-secondary);
+      user-select: none;
+      overflow-x: auto;
+      white-space: nowrap;
+    }
+
+    .demo-tag {
+      color: var(--metro-telemetry);
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      padding-right: 8px;
+      border-right: 1px solid var(--border-struct);
+    }
+
+    .demo-group {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .demo-lbl {
+      color: var(--fg-dim);
+      font-weight: 700;
+      letter-spacing: 0.4px;
+    }
+
+    .seg {
+      display: inline-flex;
+      border: 1px solid var(--border-struct);
+    }
+
+    .seg button {
+      background: var(--surface-3);
+      color: var(--fg-secondary);
+      border: 0;
+      border-right: 1px solid var(--border-struct);
+      padding: 2px 7px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .seg button:last-child { border-right: 0; }
+    .seg button:hover { background: var(--surface-hover); color: #fff; }
+    .seg button.on { background: var(--metro-accent); color: #fff; }
+
+    .swatch-row { display: inline-flex; gap: 4px; align-items: center; }
+    .swatch {
+      width: 14px; height: 14px; border: 1px solid #3c3c3c; cursor: pointer;
+    }
+    .swatch.on { border-color: #ffffff; box-shadow: 0 0 0 1px #ffffff inset; }
+
+    .demo-btn {
+      background: var(--surface-3);
+      color: var(--fg-soft);
+      border: 1px solid var(--border-struct);
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .demo-btn:hover { background: var(--surface-hover); color: #fff; border-color: var(--border-strong); }
+    .demo-btn.on { border-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), 0.22); color: #fff; }
+
+    .comp-stage {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+      background: radial-gradient(circle at 22% 0%, rgba(var(--metro-accent-rgb), 0.10), transparent 48%), #050505;
+      transition: padding 140ms ease;
+    }
+    .comp-stage.floating { padding: 18px 28px; }
+
+    /* ==========================================================================
+       KAJO WEB WINDOW (.shell-settings-window.shell-web-window)
+       ========================================================================== */
+    .kajo-window {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: var(--surface-bg);
+      border: 1px solid var(--metro-accent);
+      overflow: hidden;
+      position: relative;
+    }
+    .comp-stage.floating .kajo-window {
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.88), 0 0 0 1px rgba(var(--metro-accent-rgb), 0.35);
+    }
+
+    /* Zen Mode Top Trigger */
+    .top-zen-trigger {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 5px;
+      background: rgba(0, 0, 0, 0.01);
+      z-index: 60;
+    }
+    .kajo-window.top-autohide .top-zen-trigger { display: block; }
+    .kajo-window.top-autohide .top-zen-trigger::after {
+      content: "";
+      display: block;
+      width: 72px;
+      height: 2px;
+      margin: 0 auto;
+      background: rgba(var(--metro-accent-rgb), 0.55);
+    }
+
+    /* ==========================================================================
+       1. MINIMALIST TOP CHROME BAR (34px)
+       ========================================================================== */
+    .web-header {
+      height: 34px;
+      flex-shrink: 0;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      padding: 0 6px 0 8px;
+      gap: 6px;
+      position: relative;
+      z-index: 50;
+      user-select: none;
+      transition: margin-top 120ms ease, opacity 120ms ease;
+    }
+
+    .kajo-window.top-autohide .web-header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      transform: translateY(-100%);
+      transition: transform 130ms cubic-bezier(0.2, 0.9, 0.2, 1);
+      box-shadow: 0 10px 28px rgba(0,0,0,0.75);
+    }
+    .kajo-window.top-autohide.top-revealed .web-header {
+      transform: translateY(0);
+    }
+
+    .hdr-left, .hdr-right {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .brand-mark {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.9px;
+      color: var(--fg-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding-right: 7px;
+      border-right: 1px solid var(--border-struct);
+    }
+    .brand-mark .glyph { color: var(--metro-accent); font-size: 13px; }
+
+    .chrome-btn {
+      height: 24px;
+      min-width: 24px;
+      padding: 0 6px;
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--fg-body);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .chrome-btn:hover {
+      background: var(--surface-hover);
+      border-color: var(--border-struct);
+      color: #ffffff;
+    }
+    .chrome-btn.active {
+      background: rgba(var(--metro-accent-rgb), 0.22);
+      border-color: var(--metro-accent);
+      color: #ffffff;
+    }
+    .chrome-btn:disabled { opacity: 0.32; cursor: default; pointer-events: none; }
+
+    .chrome-btn.close-btn:hover {
+      background: var(--metro-urgent);
+      border-color: var(--metro-urgent);
+      color: #ffffff;
+    }
+
+    .status-chip {
+      height: 22px;
+      padding: 0 6px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-2);
+      color: var(--fg-soft);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+    .status-chip:hover { background: var(--surface-hover); border-color: var(--border-strong); color: #fff; }
+    .status-chip.warn {
+      border-color: var(--metro-warning);
+      background: rgba(255, 140, 0, 0.16);
+      color: #ffb84d;
+    }
+    .status-chip.priv {
+      border-color: var(--metro-magenta);
+      background: rgba(180, 0, 158, 0.20);
+      color: #f4a4eb;
+    }
+    .status-chip.dl {
+      border-color: var(--metro-telemetry);
+      background: rgba(0, 216, 240, 0.12);
+      color: var(--metro-telemetry);
+    }
+
+    /* Unified Minimalist Omnibar */
+    .omnibar-wrap {
+      flex: 1;
+      min-width: 180px;
+      max-width: 760px;
+      margin: 0 auto;
+      position: relative;
+    }
+
+    .omnibar {
+      height: 24px;
+      background: var(--surface-0);
+      border: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      padding: 0 6px;
+      gap: 6px;
+      position: relative;
+      cursor: text;
+    }
+    .omnibar:hover { border-color: var(--border-strong); }
+    .omnibar.focused {
+      border-color: var(--metro-accent);
+      background: #0d0d0d;
+    }
+
+    .omni-tls {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--metro-success);
+      flex-shrink: 0;
+    }
+    .omni-tls.internal { color: var(--metro-telemetry); }
+    .omni-tls.insecure { color: var(--metro-warning); }
+
+    .omni-display {
+      flex: 1;
+      min-width: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 0;
+    }
+    .omni-host { color: var(--fg-primary); font-weight: 600; }
+    .omni-path { color: var(--fg-dim); }
+
+    .omni-input {
+      display: none;
+      flex: 1;
+      min-width: 0;
+      background: transparent;
+      border: 0;
+      color: var(--fg-primary);
+      font-size: 11.5px;
+    }
+    .omnibar.focused .omni-display { display: none; }
+    .omnibar.focused .omni-input { display: block; }
+
+    .omni-shield {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border: 1px solid rgba(var(--metro-accent-rgb), 0.45);
+      background: rgba(var(--metro-accent-rgb), 0.14);
+      color: var(--metro-telemetry);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .omni-shield.off {
+      border-color: var(--border-struct);
+      background: var(--surface-3);
+      color: var(--fg-dim);
+    }
+
+    .omni-progress {
+      position: absolute;
+      left: 0; bottom: -1px;
+      height: 2px;
+      width: 0%;
+      background: var(--metro-accent);
+      transition: width 220ms ease, opacity 200ms ease;
+      opacity: 0;
+    }
+    .omni-progress.loading { opacity: 1; }
+
+    /* Omnibar Dropdown Suggestions */
+    .omni-dropdown {
+      display: none;
+      position: absolute;
+      top: 26px; left: 0; right: 0;
+      background: var(--surface-3);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 14px 36px rgba(0, 0, 0, 0.85);
+      z-index: 80;
+    }
+    .omnibar-wrap.show-drop .omni-dropdown { display: block; }
+    .omni-sug {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .omni-sug:last-child { border-bottom: 0; }
+    .omni-sug:hover { background: var(--surface-hover); }
+    .omni-sug-tag {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 5px;
+      border: 1px solid var(--border-strong);
+      color: var(--metro-telemetry);
+      background: var(--surface-0);
+      min-width: 48px;
+      text-align: center;
+    }
+    .omni-sug-title { color: var(--fg-primary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .omni-sug-url { color: var(--fg-dim); font-size: 10px; }
+
+    /* ==========================================================================
+       2. MAIN BODY: VERTICAL TAB RAIL + VIEWPORT OVERLAY STAGE
+       ========================================================================== */
+    .web-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      position: relative;
+      overflow: hidden;
+      background: var(--surface-0);
+    }
+    .kajo-window.rail-right .web-body { flex-direction: row-reverse; }
+
+    /* 4px Edge Trigger Strip (Autohide mode) */
+    .rail-trigger {
+      display: none;
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      width: 6px;
+      background: rgba(0, 0, 0, 0.01);
+      z-index: 35;
+      cursor: ew-resize;
+    }
+    .kajo-window.rail-right .rail-trigger { left: auto; right: 0; }
+    .kajo-window.mode-autohide .rail-trigger { display: block; }
+
+    /* Subtle 2px tab-position ticks along collapsed edge */
+    .rail-ticks {
+      position: absolute;
+      top: 12px; left: 0;
+      width: 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      pointer-events: none;
+    }
+    .kajo-window.rail-right .rail-ticks { left: auto; right: 0; }
+    .rail-tick {
+      width: 2px; height: 14px;
+      background: #333333;
+    }
+    .rail-tick.active {
+      height: 22px;
+      background: var(--metro-accent);
+    }
+
+    /* Compact Spacer (so compact 44px rail docks while expansion overlays!) */
+    .compact-spacer {
+      display: none;
+      width: var(--compact-w);
+      flex-shrink: 0;
+    }
+    .kajo-window.mode-compact .compact-spacer { display: block; }
+
+    /* Vertical Tab Rail */
+    .tab-rail {
+      width: var(--rail-w);
+      background: rgba(18, 18, 18, 0.96);
+      backdrop-filter: blur(14px);
+      border-right: 1px solid var(--border-struct);
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      z-index: 40;
+      flex-shrink: 0;
+    }
+    .kajo-window.rail-right .tab-rail {
+      border-right: 0;
+      border-left: 1px solid var(--border-struct);
+    }
+
+    /* Mode: AUTOHIDE (Overlay, zero reflow) */
+    .kajo-window.mode-autohide .tab-rail {
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      transform: translateX(-100%);
+      transition: transform 130ms cubic-bezier(0.2, 0.9, 0.2, 1);
+      box-shadow: 12px 0 36px rgba(0, 0, 0, 0.80);
+    }
+    .kajo-window.mode-autohide.rail-right .tab-rail {
+      left: auto; right: 0;
+      transform: translateX(100%);
+      box-shadow: -12px 0 36px rgba(0, 0, 0, 0.80);
+    }
+    .kajo-window.mode-autohide.rail-open .tab-rail {
+      transform: translateX(0);
+    }
+
+    /* Mode: COMPACT (44px docked, expands to 240px overlay on hover) */
+    .kajo-window.mode-compact .tab-rail {
+      position: absolute;
+      top: 0; bottom: 0; left: 0;
+      width: var(--compact-w);
+      overflow: hidden;
+      transition: width 130ms cubic-bezier(0.2, 0.9, 0.2, 1);
+    }
+    .kajo-window.mode-compact.rail-right .tab-rail {
+      left: auto; right: 0;
+    }
+    .kajo-window.mode-compact.rail-open .tab-rail {
+      width: var(--rail-w);
+      box-shadow: 12px 0 36px rgba(0, 0, 0, 0.78);
+    }
+    .kajo-window.mode-compact.rail-right.rail-open .tab-rail {
+      box-shadow: -12px 0 36px rgba(0, 0, 0, 0.78);
+    }
+
+    /* Hide text cleanly when compact & collapsed */
+    .kajo-window.mode-compact:not(.rail-open) .hide-in-compact { display: none !important; }
+    .kajo-window.mode-compact:not(.rail-open) .pinned-grid {
+      grid-template-columns: 1fr;
+      padding: 6px 4px;
+    }
+    .kajo-window.mode-compact:not(.rail-open) .tab-row {
+      justify-content: center;
+      padding: 0;
+    }
+    .kajo-window.mode-compact:not(.rail-open) .rail-footer {
+      flex-direction: column;
+      padding: 4px;
+    }
+
+    /* Mode: PINNED (Docked split) */
+    .kajo-window.mode-pinned .tab-rail {
+      position: relative;
+      transform: none;
+    }
+
+    /* Rail Top Header */
+    .rail-head {
+      height: 28px;
+      padding: 0 8px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--fg-dim);
+      letter-spacing: 0.6px;
+    }
+
+    /* Pinned Favicon Grid */
+    .pinned-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 4px;
+      padding: 8px;
+      border-bottom: 1px solid var(--border-struct);
+    }
+    .pin-tile {
+      height: 32px;
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      cursor: pointer;
+      position: relative;
+    }
+    .pin-tile:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+    .pin-tile.active {
+      border-color: var(--metro-accent);
+      background: rgba(var(--metro-accent-rgb), 0.20);
+    }
+    .pin-tile.active::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 2px;
+      background: var(--metro-accent);
+    }
+
+    /* Tab Groups & List */
+    .rail-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+
+    .tab-group-hdr {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 10px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
+      color: var(--fg-secondary);
+      cursor: pointer;
+      border-left: 3px solid var(--grp-color, var(--metro-accent));
+      margin-top: 4px;
+    }
+    .tab-group-hdr:hover { background: var(--surface-hover); color: #fff; }
+    .grp-count {
+      font-size: 9px;
+      padding: 1px 5px;
+      background: var(--surface-4);
+      border: 1px solid var(--border-struct);
+      color: var(--fg-dim);
+    }
+
+    .tab-row {
+      height: 34px;
+      padding: 0 8px 0 9px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.025);
+      position: relative;
+    }
+    .tab-row:hover { background: var(--surface-hover); }
+    .tab-row.active {
+      background: rgba(var(--metro-accent-rgb), 0.24);
+      border-left-color: #ffffff;
+    }
+    .tab-row.suspended { opacity: 0.56; }
+
+    .tab-ico {
+      width: 18px;
+      text-align: center;
+      font-size: 13px;
+      flex-shrink: 0;
+    }
+    .tab-meta {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .tab-title {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--fg-bright);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .tab-row.active .tab-title { color: #ffffff; font-weight: 600; }
+    .tab-domain {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      color: var(--fg-dim);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tab-audio {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--metro-telemetry);
+      font-size: 11px;
+      width: 20px; height: 20px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tab-audio:hover { background: var(--surface-active); border-color: var(--border-strong); }
+    .tab-audio.muted { color: var(--fg-dim); }
+
+    .tab-close {
+      background: transparent;
+      border: 0;
+      color: var(--fg-dim);
+      font-size: 10px;
+      width: 18px; height: 18px;
+      cursor: pointer;
+      opacity: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .tab-row:hover .tab-close, .tab-row.active .tab-close { opacity: 1; }
+    .tab-close:hover { background: var(--metro-urgent); color: #ffffff; }
+
+    /* Rail Footer */
+    .rail-footer {
+      border-top: 1px solid var(--border-struct);
+      padding: 6px;
+      display: flex;
+      gap: 4px;
+      background: var(--surface-2);
+    }
+    .rail-foot-btn {
+      flex: 1;
+      height: 26px;
+      background: var(--surface-4);
+      border: 1px solid var(--border-struct);
+      color: var(--fg-soft);
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+    }
+    .rail-foot-btn:hover { background: var(--surface-hover); border-color: var(--metro-accent); color: #fff; }
+    .rail-foot-btn.primary { background: rgba(var(--metro-accent-rgb), 0.24); border-color: var(--metro-accent); color: #fff; }
+
+    /* ==========================================================================
+       3. VIEWPORT & RENDERED DEMO PAGES
+       ========================================================================== */
+    .viewport-col {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: var(--surface-0);
+    }
+
+    /* Non-modal Permission Infobar */
+    .perm-bar {
+      display: none;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--metro-warning);
+      padding: 6px 12px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .perm-bar.show { display: flex; }
+    .perm-actions { display: flex; gap: 6px; }
+
+    .web-canvas {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      position: relative;
+      background: #111111;
+    }
+
+    /* Simulated Page Styles */
+    .page-view { display: none; min-height: 100%; padding: 28px 36px; }
+    .page-view.active { display: block; }
+
+    .newtab-hero {
+      max-width: 820px;
+      margin: 26px auto 0;
+    }
+    .newtab-title {
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-struct);
+    }
+    .newtab-search {
+      display: flex;
+      border: 1px solid var(--border-strong);
+      background: var(--surface-0);
+      margin-bottom: 24px;
+    }
+    .newtab-search input {
+      flex: 1;
+      background: transparent;
+      border: 0;
+      color: #fff;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+    .newtab-search button {
+      background: var(--metro-accent);
+      border: 0;
+      color: #fff;
+      padding: 0 18px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .speed-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .speed-tile {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-top: 2px solid var(--tile-col, var(--metro-accent));
+      padding: 14px;
+      cursor: pointer;
+    }
+    .speed-tile:hover { background: var(--surface-hover); border-color: var(--metro-accent); }
+    .speed-tile .st-ico { font-size: 20px; margin-bottom: 8px; }
+    .speed-tile .st-name { font-family: var(--font-mono); font-size: 12px; font-weight: 700; color: #fff; }
+    .speed-tile .st-url { font-family: var(--font-mono); font-size: 10px; color: var(--fg-dim); margin-top: 2px; }
+
+    .tele-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .tele-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border-subtle);
+      padding: 10px 12px;
+      font-family: var(--font-mono);
+    }
+    .tele-k { font-size: 9.5px; color: var(--fg-dim); letter-spacing: 0.6px; }
+    .tele-v { font-size: 12px; font-weight: 700; color: var(--metro-telemetry); margin-top: 3px; }
+
+    /* Article / Repo / GPU Pages */
+    .doc-wrap { max-width: 860px; margin: 0 auto; }
+    .doc-h1 {
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    .doc-sub {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--fg-secondary);
+      margin-bottom: 18px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border-struct);
+    }
+    .doc-p { color: var(--fg-body); line-height: 1.65; margin-bottom: 14px; font-size: 13.5px; }
+    .doc-code {
+      background: var(--surface-0);
+      border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent);
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      color: #d4e4f7;
+      margin-bottom: 16px;
+      white-space: pre;
+      overflow-x: auto;
+    }
+    .gpu-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      margin-bottom: 16px;
+    }
+    .gpu-table th, .gpu-table td {
+      text-align: left;
+      padding: 8px 10px;
+      border: 1px solid var(--border-struct);
+    }
+    .gpu-table th { background: var(--surface-3); color: var(--fg-secondary); font-size: 10px; letter-spacing: 0.6px; }
+    .gpu-table td { background: var(--surface-1); }
+    .ok-val { color: #4ce886; font-weight: 700; }
+    .warn-val { color: #ffb84d; font-weight: 700; }
+
+    /* Inline Find Bar (bottom-right) */
+    .find-bar {
+      display: none;
+      position: absolute;
+      right: 16px; bottom: 16px;
+      background: var(--surface-3);
+      border: 1px solid var(--metro-accent);
+      padding: 5px 8px;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.85);
+      z-index: 45;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .find-bar.show { display: flex; }
+    .find-bar input {
+      width: 170px;
+      background: var(--surface-0);
+      border: 1px solid var(--border-struct);
+      color: #fff;
+      padding: 3px 6px;
+      font-size: 11px;
+    }
+
+    /* Docked Web Inspector (F12) */
+    .inspector-pane {
+      display: none;
+      height: 195px;
+      flex-shrink: 0;
+      background: var(--surface-1);
+      border-top: 1px solid var(--metro-accent);
+      flex-direction: column;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .inspector-pane.show { display: flex; }
+    .insp-tabs {
+      height: 26px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      gap: 10px;
+    }
+    .insp-tab { color: var(--fg-dim); cursor: pointer; font-weight: 700; font-size: 10px; }
+    .insp-tab.on { color: var(--metro-telemetry); }
+    .insp-body {
+      flex: 1;
+      padding: 10px 12px;
+      overflow-y: auto;
+      color: #b7d7f7;
+      line-height: 1.55;
+    }
+
+    /* ==========================================================================
+       4. POPOVERS & MODALS (AdBlock, Downloads, Ctrl+K Palette, Kajo Settings)
+       ========================================================================== */
+    .popover {
+      display: none;
+      position: absolute;
+      top: 38px;
+      right: 12px;
+      width: 310px;
+      background: var(--surface-3);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 16px 42px rgba(0, 0, 0, 0.88);
+      z-index: 90;
+      font-family: var(--font-mono);
+      font-size: 11px;
+    }
+    .popover.show { display: block; }
+    .pop-head {
+      padding: 8px 10px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 10.5px;
+      letter-spacing: 0.6px;
+    }
+    .pop-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+    .dl-item {
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      padding: 8px;
+    }
+    .dl-bar { height: 3px; background: var(--surface-4); margin-top: 6px; }
+    .dl-fill { height: 100%; background: var(--metro-accent); }
+
+    /* Ctrl+K Command & Tab Palette */
+    .palette-backdrop {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.62);
+      z-index: 95;
+      align-items: flex-start;
+      justify-content: center;
+      padding-top: 68px;
+    }
+    .palette-backdrop.show { display: flex; }
+    .palette-box {
+      width: 580px;
+      max-width: 92%;
+      background: var(--surface-3);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 22px 60px rgba(0, 0, 0, 0.92);
+    }
+    .palette-input {
+      width: 100%;
+      background: var(--surface-0);
+      border: 0;
+      border-bottom: 1px solid var(--border-struct);
+      color: #fff;
+      padding: 11px 14px;
+      font-size: 13px;
+    }
+    .palette-list { max-height: 290px; overflow-y: auto; }
+    .pal-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+    }
+    .pal-row:hover { background: rgba(var(--metro-accent-rgb), 0.22); }
+
+    /* Profile Chip & Startup Profile Picker Modal */
+    .profile-chip {
+      height: 22px;
+      padding: 0 7px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border: 1px solid var(--border-struct);
+      background: var(--surface-2);
+      color: var(--fg-primary);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+    }
+    .profile-chip:hover { background: var(--surface-hover); border-color: var(--metro-accent); }
+    .profile-dot { width: 7px; height: 7px; background: var(--metro-accent); display: inline-block; }
+
+    .prof-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      background: var(--surface-1);
+      border: 1px solid var(--border-subtle);
+      border-left: 3px solid var(--p-col, var(--metro-accent));
+      cursor: pointer;
+    }
+    .prof-row:hover { background: var(--surface-hover); border-color: var(--border-strong); }
+    .prof-row.active { background: rgba(var(--metro-accent-rgb), 0.18); border-color: var(--metro-accent); }
+
+    .picker-backdrop {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(5, 5, 5, 0.86);
+      backdrop-filter: blur(8px);
+      z-index: 98;
+      align-items: center;
+      justify-content: center;
+    }
+    .picker-backdrop.show { display: flex; }
+    .picker-win {
+      width: 740px;
+      max-width: 94%;
+      background: var(--surface-bg);
+      border: 1px solid var(--metro-accent);
+      box-shadow: 0 28px 72px rgba(0, 0, 0, 0.95);
+      display: flex;
+      flex-direction: column;
+    }
+    .picker-hdr {
+      height: 36px;
+      background: var(--surface-3);
+      border-bottom: 1px solid var(--border-struct);
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.8px;
+    }
+    .picker-body { padding: 20px; }
+    .picker-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .picker-card {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      border-top: 3px solid var(--p-col, var(--metro-accent));
+      padding: 16px 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+    }
+    .picker-card:hover { background: var(--surface-hover); border-color: var(--p-col, var(--metro-accent)); }
+    .picker-card.active { background: rgba(var(--metro-accent-rgb), 0.14); border-color: var(--p-col, var(--metro-accent)); }
+    .picker-card .pk-top { display: flex; align-items: center; justify-content: space-between; font-size: 20px; }
+    .picker-card .pk-key { font-family: var(--font-mono); font-size: 10px; color: var(--fg-dim); border: 1px solid var(--border-struct); padding: 1px 5px; }
+    .picker-card .pk-name { font-family: var(--font-mono); font-size: 13px; font-weight: 800; letter-spacing: 0.6px; }
+    .picker-card .pk-mail { font-family: var(--font-mono); font-size: 10px; color: var(--fg-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .picker-card .pk-sync { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; color: var(--metro-telemetry); margin-top: 4px; }
+    .picker-foot {
+      padding: 12px 20px;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--fg-secondary);
+    }
+
+    /* Embedded Kajo Settings (13 / 13 • KAJO WEB) Live Preview Drawer */
+    .settings-drawer {
+      display: none;
+      position: absolute;
+      top: 34px; right: 0; bottom: 0;
+      width: 460px;
+      max-width: 92%;
+      background: var(--surface-bg);
+      border-left: 1px solid var(--metro-accent);
+      box-shadow: -18px 0 48px rgba(0, 0, 0, 0.88);
+      z-index: 88;
+      flex-direction: column;
+    }
+    .settings-drawer.show { display: flex; }
+    .set-hdr {
+      padding: 12px 14px;
+      background: var(--surface-2);
+      border-bottom: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+    }
+    .set-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .set-card {
+      background: var(--surface-3);
+      border: 1px solid var(--border-struct);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .set-card-title {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--metro-telemetry);
+      letter-spacing: 0.7px;
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 6px;
+    }
+    .set-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+    }
+    .set-row small {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--fg-dim);
+      margin-top: 2px;
+    }
+    .toggle-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border-struct);
+      border-left: 4px solid #3a3a3a;
+      padding: 9px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+    }
+    .toggle-card.on {
+      border-left-color: var(--metro-accent);
+      background: rgba(var(--metro-accent-rgb), 0.12);
+    }
+    .set-footer {
+      padding: 10px 14px;
+      background: var(--surface-2);
+      border-top: 1px solid var(--border-struct);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--fg-dim);
+    }
+  </style>
+</head>
+<body>
+<div class="outer-shell">
+  <!-- Interactive Prototype Control Strip -->
+  <div class="demo-bar">
+    <span class="demo-tag">KAJO WEB // UI MOCKUP</span>
+    <div class="demo-group">
+      <span class="demo-lbl">RAIL:</span>
+      <div class="seg" id="segRailMode">
+        <button class="on" data-val="autohide">AUTOHIDE</button>
+        <button data-val="compact">COMPACT</button>
+        <button data-val="pinned">PINNED</button>
+      </div>
+    </div>
+    <div class="demo-group">
+      <span class="demo-lbl">SIDE:</span>
+      <div class="seg" id="segRailSide">
+        <button class="on" data-val="left">LEFT</button>
+        <button data-val="right">RIGHT</button>
+      </div>
+    </div>
+    <div class="demo-group">
+      <span class="demo-lbl">GPU:</span>
+      <div class="seg" id="segGpu">
+        <button class="on" data-val="always">CEF+VAAPI</button>
+        <button data-val="never">SW FALLBACK</button>
+      </div>
+    </div>
+    <button class="demo-btn" id="btnTopAuto">ZEN TOP BAR</button>
+    <button class="demo-btn" id="btnPicker">⊞ PROFILE PICKER</button>
+    <button class="demo-btn" id="btnPrivate">PRIVATE</button>
+    <button class="demo-btn" id="btnPerm">PERMISSION BAR</button>
+    <button class="demo-btn" id="btnFloat">FLOAT WINDOW</button>
+    <div class="demo-group" style="margin-left:auto;">
+      <span class="demo-lbl">ACCENT:</span>
+      <div class="swatch-row" id="swatches">
+        <div class="swatch on" style="background:#0078d4;" data-hex="#0078d4" data-rgb="0, 120, 212" title="Cobalt Blue"></div>
+        <div class="swatch" style="background:#00b7c3;" data-hex="#00b7c3" data-rgb="0, 183, 195" title="Cyan"></div>
+        <div class="swatch" style="background:#10893e;" data-hex="#10893e" data-rgb="16, 137, 62" title="Emerald"></div>
+        <div class="swatch" style="background:#d83b01;" data-hex="#d83b01" data-rgb="216, 59, 1" title="Metro Orange"></div>
+        <div class="swatch" style="background:#b4009e;" data-hex="#b4009e" data-rgb="180, 0, 158" title="Magenta"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Compositor Stage -->
+  <div class="comp-stage" id="compStage">
+    <div class="kajo-window mode-autohide" id="kajoWin">
+      <!-- Top Zen Hover Trigger -->
+      <div class="top-zen-trigger" id="topZenTrigger"></div>
+
+      <!-- 1. Minimalist 34px Top Control Bar -->
+      <header class="web-header" id="webHeader">
+        <div class="hdr-left">
+          <div class="brand-mark"><span class="glyph">🌐</span><span>KAJO WEB</span></div>
+          <button class="chrome-btn" id="btnBack" title="Back (Alt+Left)">◀</button>
+          <button class="chrome-btn" id="btnFwd" title="Forward (Alt+Right)" disabled>▶</button>
+          <button class="chrome-btn" id="btnReload" title="Reload (Ctrl+R)">↻</button>
+          <button class="chrome-btn" id="btnPinRail" title="Toggle / Pin Vertical Tab Rail (Ctrl+B)">◧</button>
+        </div>
+
+        <div class="omnibar-wrap" id="omniWrap">
+          <div class="omnibar" id="omnibar">
+            <span class="omni-tls internal" id="omniTls">❖</span>
+            <div class="omni-display" id="omniDisplay">
+              <span class="omni-host" id="omniHost">kajo://newtab</span>
+              <span class="omni-path" id="omniPath"></span>
+            </div>
+            <input class="omni-input" id="omniInput" type="text" value="kajo://newtab" spellcheck="false" />
+            <button class="omni-shield" id="btnShield" title="IO-Thread Ad &amp; Tracker Blocker (CefAdblockEngine)">🛡 ON</button>
+            <div class="omni-progress" id="omniProgress"></div>
+          </div>
+          <div class="omni-dropdown" id="omniDrop">
+            <div class="omni-sug" data-goto="tab-github"><span class="omni-sug-tag">TAB</span><span class="omni-sug-title">mikolas/Kajo — Wayland Desktop Suite</span><span class="omni-sug-url">github.com</span></div>
+            <div class="omni-sug" data-goto="tab-arch"><span class="omni-sug-tag">TAB</span><span class="omni-sug-title">Wayland — ArchWiki</span><span class="omni-sug-url">wiki.archlinux.org</span></div>
+            <div class="omni-sug" data-goto="tab-gpu"><span class="omni-sug-tag">INTERNAL</span><span class="omni-sug-title">GPU &amp; VA-API Diagnostics</span><span class="omni-sug-url">kajo://gpu</span></div>
+            <div class="omni-sug" data-goto="tab-mdn"><span class="omni-sug-tag">★ BM</span><span class="omni-sug-title">WebGL2RenderingContext — MDN</span><span class="omni-sug-url">developer.mozilla.org</span></div>
+          </div>
+        </div>
+
+        <div class="hdr-right">
+          <span class="status-chip warn" id="chipSw" style="display:none;" title="Hardware acceleration disabled — running software renderer">⚠ SW RENDER</span>
+          <span class="status-chip priv" id="chipPriv" style="display:none;" title="Ephemeral session — no history or cookies saved">🕶 PRIVATE</span>
+          <button class="status-chip dl" id="btnDownloads" title="Downloads Popout (Ctrl+J)">↓ 1</button>
+          <button class="profile-chip" id="btnProfileChip" title="Isolated Profile Switcher (Ctrl+Shift+M)"><span class="profile-dot" id="profDot"></span><span id="profChipName">WORK</span></button>
+          <button class="chrome-btn" id="btnPalette" title="Quick Command &amp; Tab Switcher (Ctrl+K)">⌘</button>
+          <button class="chrome-btn" id="btnFind" title="Find in Page (Ctrl+F)">⌕</button>
+          <button class="chrome-btn" id="btnSettings" title="Open kajo-settings → Kajo Web (Ctrl+,)">⚙</button>
+          <button class="chrome-btn" id="btnTileFloat" title="Toggle Compositor Float/Tile">🗗</button>
+          <button class="chrome-btn close-btn" title="Close Window">✕</button>
+        </div>
+      </header>
+
+      <!-- 2. Main Split / Overlay Body -->
+      <div class="web-body">
+        <!-- 4px Autohide Trigger Strip -->
+        <div class="rail-trigger" id="railTrigger" title="Hover to reveal Vertical Tab Rail">
+          <div class="rail-ticks" id="railTicks"></div>
+        </div>
+
+        <!-- Spacer when in compact mode so 44px docks cleanly -->
+        <div class="compact-spacer"></div>
+
+        <!-- Vertical Tab Rail -->
+        <aside class="tab-rail" id="tabRail">
+          <div class="rail-head hide-in-compact">
+            <span>TABS • VERTICAL</span>
+            <span id="railModeBadge" style="color:var(--metro-telemetry);">AUTOHIDE</span>
+          </div>
+
+          <!-- Pinned Square Favicon Grid -->
+          <div class="pinned-grid" id="pinnedGrid">
+            <div class="pin-tile active" data-tab="tab-newtab" title="Pinned: kajo://newtab">❖</div>
+            <div class="pin-tile" data-tab="tab-github" title="Pinned: github.com/mikolas/Kajo">🐙</div>
+            <div class="pin-tile" data-tab="tab-gpu" title="Pinned: kajo://gpu">⚡</div>
+            <div class="pin-tile" id="btnAddQuickTab" title="New Tab (Ctrl+T)" style="color:var(--metro-accent); font-weight:700;">+</div>
+          </div>
+
+          <!-- Grouped Regular Tabs -->
+          <div class="rail-scroll" id="railList"></div>
+
+          <!-- Rail Footer -->
+          <div class="rail-footer">
+            <button class="rail-foot-btn primary" id="btnNewTab" title="New Tab (Ctrl+T)"><span>+</span><span class="hide-in-compact">NEW TAB</span></button>
+            <button class="rail-foot-btn" id="btnUndoTab" title="Reopen Closed Tab (Ctrl+Shift+T)"><span>↺</span><span class="hide-in-compact">UNDO</span></button>
+          </div>
+        </aside>
+
+        <!-- 3. Web Viewport Column -->
+        <div class="viewport-col">
+          <!-- Non-modal Permission Bar -->
+          <div class="perm-bar" id="permBar">
+            <span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Microphone access (persisted to permissions.json)</span>
+            <div class="perm-actions">
+              <button class="demo-btn on" id="permAllow">ALLOW</button>
+              <button class="demo-btn" id="permAlways">ALWAYS</button>
+              <button class="demo-btn" id="permDeny" style="border-color:var(--metro-urgent); color:var(--metro-urgent-text);">DENY</button>
+            </div>
+          </div>
+
+          <!-- Simulated Chromium/CEF Alloy Viewport -->
+          <div class="web-canvas" id="webCanvas">
+            <!-- PAGE 1: kajo://newtab -->
+            <section class="page-view active" id="page-tab-newtab">
+              <div class="newtab-hero">
+                <div class="newtab-title">
+                  <span>❖ KAJO WEB // SPEED DIAL</span>
+                  <span style="font-size:10px; color:var(--fg-dim); font-weight:600;">HOVER LEFT EDGE FOR VERTICAL TABS • CTRL+K PALETTE</span>
+                </div>
+                <div class="newtab-search">
+                  <input id="newtabSearch" type="text" placeholder="Search with DuckDuckGo or type URL / !arch / !gh / !mdn..." />
+                  <button id="newtabGo">GO ↵</button>
+                </div>
+                <div class="speed-grid">
+                  <div class="speed-tile" style="--tile-col:#0078d4;" data-open="tab-github">
+                    <div class="st-ico">🐙</div>
+                    <div class="st-name">Kajo Repository</div>
+                    <div class="st-url">github.com/mikolas/Kajo</div>
+                  </div>
+                  <div class="speed-tile" style="--tile-col:#00d8f0;" data-open="tab-arch">
+                    <div class="st-ico">📘</div>
+                    <div class="st-name">ArchWiki Wayland</div>
+                    <div class="st-url">wiki.archlinux.org</div>
+                  </div>
+                  <div class="speed-tile" style="--tile-col:#10893e;" data-open="tab-mdn">
+                    <div class="st-ico">🧪</div>
+                    <div class="st-name">MDN WebGL2</div>
+                    <div class="st-url">developer.mozilla.org</div>
+                  </div>
+                  <div class="speed-tile" style="--tile-col:#ff8c00;" data-open="tab-gpu">
+                    <div class="st-ico">⚡</div>
+                    <div class="st-name">GPU Telemetry</div>
+                    <div class="st-url">kajo://gpu</div>
+                  </div>
+                </div>
+                <div class="tele-strip">
+                  <div class="tele-card"><div class="tele-k">PROFILE &amp; STORAGE</div><div class="tele-v" id="ntProfile">WORK • SQLITE</div></div>
+                  <div class="tele-card"><div class="tele-k">RENDER PIPELINE</div><div class="tele-v" id="ntGpu">CEF + VA-API</div></div>
+                  <div class="tele-card"><div class="tele-k">CONTENT BLOCKER</div><div class="tele-v" id="ntAdblock">IO-THREAD ABP</div></div>
+                  <div class="tele-card"><div class="tele-k">WAYLAND</div><div class="tele-v">OZONE NATIVE</div></div>
+                </div>
+              </div>
+            </section>
+
+            <!-- PAGE 2: GitHub -->
+            <section class="page-view" id="page-tab-github">
+              <div class="doc-wrap">
+                <h1 class="doc-h1">mikolas / Kajo — Personal Native Wayland Suite</h1>
+                <div class="doc-sub">HTTPS • TLS 1.3 • IO-thread CefAdblockEngine active • 0px Aero + Metro viewport</div>
+                <p class="doc-p">Notice how hovering the left 4px edge slides the vertical tab rail cleanly over this page with <strong>zero horizontal layout reflow</strong>. In compact mode, a 40px favicon rail stays visible and expands on hover; in pinned mode, it docks cleanly as a split pane.</p>
+                <div class="doc-code">meson setup builddir
+meson compile -C builddir
+meson test -C builddir
+./builddir/kajo-web https://github.com/mikolas/Kajo</div>
+                <p class="doc-p">Try pressing <strong>Ctrl+K</strong> for the fuzzy command &amp; tab switcher, <strong>Ctrl+F</strong> for the inline find bar, <strong>Ctrl+J</strong> for the Downloads popout, visiting <strong>kajo://permissions</strong>, or clicking <strong>⚙</strong> in the top-right to live-configure <code>web.toml</code> via <code>kajo-settings</code>.</p>
+              </div>
+            </section>
+
+            <!-- PAGE 3: Arch Wiki -->
+            <section class="page-view" id="page-tab-arch">
+              <div class="doc-wrap">
+                <h1 class="doc-h1">Wayland — ArchWiki (Audio Tab Demo)</h1>
+                <div class="doc-sub">HTTPS • wiki.archlinux.org • Chromium/CEF Alloy Views + ANGLE GL &amp; VA-API decode</div>
+                <p class="doc-p"><code>kajo-web</code> runs Chromium/CEF Alloy Views directly on native Wayland (`--ozone-platform=wayland --use-gl=angle --use-angle=gl`) with hardware VA-API video decoding and zero compositor round-trip bloat inside <code>kajo-comp</code>'s Vulkan scene graph.</p>
+                <div class="doc-code"># Hardware acceleration &amp; suspension (web.toml)
+hardware_acceleration = "always"
+enable_webgl          = true
+smooth_scrolling      = true
+suspend_idle_min      = 30</div>
+                <p class="doc-p">This tab also simulates an active audio stream—open the vertical tab rail and click the <strong>🔊</strong> icon on the ArchWiki tab row to toggle per-tab mute via <code>SetAudioMuted</code>.</p>
+              </div>
+            </section>
+
+            <!-- PAGE 4: MDN WebGL2 -->
+            <section class="page-view" id="page-tab-mdn">
+              <div class="doc-wrap">
+                <h1 class="doc-h1">WebGL2RenderingContext — MDN Web Docs</h1>
+                <div class="doc-sub">HTTPS • developer.mozilla.org • Chromium ANGLE GL + GPU Process Active</div>
+                <p class="doc-p">With <code>enable_webgl = true</code>, Chromium executes WebGL inside its GPU process via Mesa ANGLE GL/EGL on native Wayland (`--ozone-platform=wayland`, Vulkan disabled to avoid surface-factory incompatibility).</p>
+                <div class="doc-code">const gl = canvas.getContext("webgl2", { antialias: true, powerPreference: "high-performance" });
+// Rendered via Chromium GPU process + Mesa EGL/ANGLE on Wayland</div>
+              </div>
+            </section>
+
+            <!-- PAGE 5: kajo://gpu -->
+            <section class="page-view" id="page-tab-gpu">
+              <div class="doc-wrap">
+                <h1 class="doc-h1">⚡ kajo://gpu — Graphics &amp; Wayland Diagnostics</h1>
+                <div class="doc-sub">INTERNAL SCHEME • Live Chromium/CEF Alloy runtime diagnostics</div>
+                <table class="gpu-table">
+                  <thead><tr><th>SUBSYSTEM</th><th>STATUS</th><th>CONFIGURATION / BACKEND</th></tr></thead>
+                  <tbody>
+                    <tr><td>Chromium / CEF Runtime</td><td class="ok-val">Alloy Views Host (C++20)</td><td>kajo-chrome://ui/* + CEF_RUNTIME_STYLE_ALLOY</td></tr>
+                    <tr><td>Hardware Acceleration</td><td class="ok-val" id="gpuRowPolicy">ALWAYS (ANGLE GL + VA-API)</td><td id="gpuRowDetail">--use-gl=angle --use-angle=gl</td></tr>
+                    <tr><td>Video Decode</td><td class="ok-val" id="gpuRowSkia">VA-API Hardware Decode</td><td>VaapiVideoDecoder + VaapiIgnoreDriverChecks</td></tr>
+                    <tr><td>Wayland Backend</td><td class="ok-val">Ozone Wayland Native</td><td>--ozone-platform=wayland (Vulkan disabled)</td></tr>
+                    <tr><td>Storage &amp; Permissions</td><td class="ok-val">Per-Profile SQLite WAL/FTS5</td><td>history.db + permissions.json (kajo://permissions)</td></tr>
+                    <tr><td>Portal Integration</td><td class="ok-val">kajo + kajo-files</td><td>Settings (color-scheme) + FileChooser</td></tr>
+                    <tr><td>Idle Tab Suspension</td><td class="ok-val" id="gpuRowMem">30 min</td><td>Releases inactive CefBrowserView views automatically</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <!-- PAGE 6: Suspended Tab Wake Demo -->
+            <section class="page-view" id="page-tab-suspended">
+              <div class="doc-wrap">
+                <h1 class="doc-h1">💤 Suspended Tab Restored</h1>
+                <div class="doc-sub">Re-created CefBrowserView after 30m idle suspension</div>
+                <p class="doc-p">Background tabs idle longer than <code>suspend_idle_min</code> release their backing <code>CefBrowserView</code> and renderer memory automatically while retaining URL, title, group, and rail position. Clicking the tab wakes and reloads it seamlessly.</p>
+              </div>
+            </section>
+          </div>
+
+          <!-- Inline Find Bar -->
+          <div class="find-bar" id="findBar">
+            <span style="color:var(--metro-telemetry); font-weight:700;">FIND</span>
+            <input type="text" value="CEF" />
+            <span style="color:var(--fg-dim);">2 / 5</span>
+            <button class="chrome-btn">▲</button>
+            <button class="chrome-btn">▼</button>
+            <button class="chrome-btn" id="btnCloseFind">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- AdBlock Shield Popover -->
+      <div class="popover" id="popShield" style="right:auto; left:50%; transform:translateX(-50%);">
+        <div class="pop-head">
+          <span>🛡 IO-THREAD CONTENT BLOCKER</span>
+          <span style="color:#4ce886;">ABP + COSMETIC</span>
+        </div>
+        <div class="pop-body">
+          <div style="color:var(--fg-body); font-size:10.5px;">IO-thread ABP network + hosts filter (<code>CefAdblockEngine</code>) + EasyList/EasyPrivacy auto-sync + cosmetic CSS.</div>
+          <div class="toggle-card on" id="toggleSiteAdblock">
+            <div><div style="font-weight:700;">Block Ads &amp; Trackers</div><div style="font-size:10px; color:var(--fg-dim);">EasyList + EasyPrivacy + kajo://adblock</div></div>
+            <span id="siteAdblockState" style="color:var(--metro-telemetry); font-weight:700;">ON</span>
+          </div>
+          <div class="toggle-card" id="toggleUserScripts">
+            <div><div style="font-weight:700;">User Scripts &amp; CSS</div><div style="font-size:10px; color:var(--fg-dim);">~/.config/kajo/web/scripts/ (opt-in)</div></div>
+            <span id="userScriptsState" style="color:var(--fg-dim); font-weight:700;">OFF</span>
+          </div>
+          <button class="demo-btn" id="btnOpenSettingsFromShield">⚙ CONFIGURE FILTER LISTS IN KAJO SETTINGS</button>
+        </div>
+      </div>
+
+      <!-- Downloads Popover -->
+      <div class="popover" id="popDownloads">
+        <div class="pop-head">
+          <span>↓ DOWNLOADS</span>
+          <button class="chrome-btn" id="btnCloseDl">✕</button>
+        </div>
+        <div class="pop-body">
+          <div class="dl-item">
+            <div style="display:flex; justify-content:space-between;"><strong>kajo-0.20.2-fx10.tar.zst</strong><span style="color:var(--metro-telemetry);">68%</span></div>
+            <div style="font-size:10px; color:var(--fg-dim); margin-top:2px;">14.2 / 20.8 MB • 8.4 MB/s</div>
+            <div class="dl-bar"><div class="dl-fill" style="width:68%;"></div></div>
+            <div style="display:flex; gap:5px; margin-top:6px;">
+              <button class="demo-btn">⏸ PAUSE</button>
+              <button class="demo-btn" style="border-color:var(--metro-urgent); color:var(--metro-urgent-text);">✕ CANCEL</button>
+            </div>
+          </div>
+          <div class="dl-item">
+            <div style="display:flex; justify-content:space-between;"><strong>spec_kajo_web.pdf</strong><span style="color:#4ce886;">DONE</span></div>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+              <span style="font-size:10px; color:var(--fg-dim);">~/Downloads • 1.2 MB</span>
+              <div style="display:flex; gap:4px;">
+                <button class="demo-btn on">OPEN</button>
+                <button class="demo-btn">📁 FOLDER</button>
+              </div>
+            </div>
+          </div>
+          <button class="demo-btn" id="btnOpenDlPage" style="width:100%;">ALL DOWNLOADS (kajo://downloads)</button>
+        </div>
+      </div>
+
+      <!-- Profile Switcher Popover -->
+      <div class="popover" id="popProfile" style="width:330px;">
+        <div class="pop-head">
+          <span id="popProfTitle">● WORK PROFILE</span>
+          <span id="popProfSyncBadge" style="color:var(--metro-telemetry);">ISOLATED</span>
+        </div>
+        <div class="pop-body">
+          <div style="background:var(--surface-1); border:1px solid var(--border-subtle); padding:8px;">
+            <div id="popProfEmail" style="font-weight:700; color:#fff;">CefRequestContext • SQLite WAL</div>
+            <div style="font-size:9.5px; color:var(--fg-dim); margin-top:2px;">~/.local/share/kajo/web/profiles/work/</div>
+          </div>
+          <div style="font-size:9.5px; color:var(--fg-dim); font-weight:700; letter-spacing:0.6px; margin-top:2px;">SWITCH ISOLATED PROFILE (CefRequestContext)</div>
+          <div id="popProfList" style="display:flex; flex-direction:column; gap:5px;"></div>
+          <div style="display:flex; gap:5px; margin-top:4px;">
+            <button class="demo-btn" id="btnOpenPickerFromPop" style="flex:1;">⊞ PROFILE PICKER</button>
+            <button class="demo-btn" id="btnPrivFromPop" style="flex:1;">🕶 PRIVATE WINDOW</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Startup Profile Picker Modal (760x480) -->
+      <div class="picker-backdrop" id="pickerModal">
+        <div class="picker-win">
+          <div class="picker-hdr">
+            <span>🌐 KAJO WEB // SELECT PROFILE (CefRequestContext)</span>
+            <button class="chrome-btn close-btn" id="btnClosePicker">✕</button>
+          </div>
+          <div class="picker-body">
+            <div style="font-family:var(--font-mono); font-size:11px; color:var(--fg-secondary); margin-bottom:14px;">
+              Each profile isolates cookies, IndexedDB, cache, SQLite history/bookmarks/downloads, and site permissions.
+            </div>
+            <div class="picker-grid" id="pickerGrid"></div>
+          </div>
+          <div class="picker-foot">
+            <div style="display:flex; gap:8px;">
+              <button class="demo-btn on" id="btnAddProfile">+ ADD PROFILE</button>
+              <button class="demo-btn" id="btnGuestLaunch">🕶 GUEST / PRIVATE</button>
+            </div>
+            <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
+              <input type="checkbox" checked style="accent-color:var(--metro-accent);" />
+              <span>SHOW ON STARTUP</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Embedded Kajo Settings (12 / 13 • KAJO WEB) Live Preview -->
+      <div class="settings-drawer" id="settingsDrawer">
+        <div class="set-hdr">
+          <div>
+            <div style="font-size:10px; color:var(--metro-telemetry); font-weight:700;">12 / 13 • KAJO SETTINGS</div>
+            <div style="font-size:13px; font-weight:800; letter-spacing:0.6px;">🌐 KAJO WEB (web.toml)</div>
+          </div>
+          <button class="chrome-btn close-btn" id="btnCloseSettings">✕</button>
+        </div>
+        <div class="set-scroll">
+          <div class="set-card">
+            <div class="set-card-title">1. VERTICAL TAB RAIL &amp; MINIMALIST CHROME</div>
+            <div class="set-row">
+              <div><strong>Rail Mode</strong><small>Autohide slides over with zero reflow</small></div>
+              <div class="seg" id="setRailMode">
+                <button class="on" data-val="autohide">AUTO</button>
+                <button data-val="compact">ICON</button>
+                <button data-val="pinned">PIN</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <div><strong>Rail Side</strong><small>Edge anchor for trigger &amp; drawer</small></div>
+              <div class="seg" id="setRailSide">
+                <button class="on" data-val="left">LEFT</button>
+                <button data-val="right">RIGHT</button>
+              </div>
+            </div>
+            <div class="set-row">
+              <div><strong>Rail Width</strong><small id="lblRailW">240 px</small></div>
+              <input type="range" id="rngRailW" min="180" max="360" step="10" value="240" style="width:130px; accent-color:var(--metro-accent);" />
+            </div>
+            <div class="set-row">
+              <div><strong>Top Chrome</strong><small>Hide top bar into 2px edge trigger</small></div>
+              <div class="seg" id="setTopBar">
+                <button class="on" data-val="always">ALWAYS</button>
+                <button data-val="autohide">ZEN</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="set-card">
+            <div class="set-card-title">2. HARDWARE ACCELERATION &amp; SUSPENSION</div>
+            <div class="set-row">
+              <div><strong>GPU Acceleration</strong><small>CEF ANGLE GL + VA-API on Wayland</small></div>
+              <div class="seg" id="setGpu">
+                <button class="on" data-val="always">ALWAYS</button>
+                <button data-val="never">NEVER</button>
+              </div>
+            </div>
+            <div class="toggle-card on" id="tcWebgl">
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">WebGL + Smooth Scrolling</div><div style="font-size:10px; color:var(--fg-dim);">enable_webgl = true (restart on GPU change)</div></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">ON</span>
+            </div>
+            <div class="set-row">
+              <div><strong>Idle Tab Suspension</strong><small id="lblMem">30 min (0 = Off)</small></div>
+              <input type="range" id="rngMem" min="0" max="120" step="15" value="30" style="width:130px; accent-color:var(--metro-accent);" />
+            </div>
+          </div>
+
+          <div class="set-card">
+            <div class="set-card-title">3. PRIVACY, AD-BLOCKING &amp; PERMISSIONS</div>
+            <div class="toggle-card on" id="tcAdblock">
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">IO-Thread ABP Ad Blocker</div><div style="font-size:10px; color:var(--fg-dim);">CefAdblockEngine • EasyList + Cosmetic CSS</div></div>
+              <span id="tcAdblockLbl" style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">ON</span>
+            </div>
+            <div class="set-row">
+              <div><strong>HTTPS-Only &amp; 3P Cookies</strong><small>Block 3rd-party cookies + HTTPS upgrade</small></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:#4ce886; font-weight:700;">ENABLED</span>
+            </div>
+            <div class="set-row">
+              <div><strong>Site Permissions &amp; Portals</strong><small>kajo://permissions &amp; kajo-files chooser</small></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">ACTIVE</span>
+            </div>
+          </div>
+          <div class="set-card">
+            <div class="set-card-title">4. PROFILES &amp; DOWNLOADS</div>
+            <div class="toggle-card on" id="tcDriveSync">
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">Per-Profile Accent Borders</div><div style="font-size:10px; color:var(--fg-dim);">CefRequestContext isolation per window</div></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:#4ce886; font-weight:700;">ACTIVE</span>
+            </div>
+            <div class="set-row">
+              <div><strong>Startup Profile Picker</strong><small>Click cards 1–9 or Guest mode</small></div>
+              <button class="demo-btn" id="btnOpenPickerFromSettings">⊞ PREVIEW</button>
+            </div>
+            <div class="set-row">
+              <div><strong>Downloads Manager</strong><small>Always-visible ↓ popout &amp; kajo://downloads</small></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">SQLITE</span>
+            </div>
+          </div>
+        </div>
+        <div class="set-footer">
+          <span>LIVE HOT-RELOAD • ~/.config/kajo/web.toml</span>
+          <button class="demo-btn on" id="btnSaveSettings">✓ SAVE &amp; APPLY</button>
+        </div>
+      </div>
+
+      <!-- Ctrl+K Command & Tab Switcher Palette -->
+      <div class="palette-backdrop" id="paletteModal">
+        <div class="palette-box">
+          <input class="palette-input" id="paletteInput" type="text" placeholder="Jump to tab, bookmark, or command (e.g. 'gpu', 'pin', 'downloads', 'settings')..." />
+          <div class="palette-list" id="paletteList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const state = {
+    railMode: 'autohide',
+    railSide: 'left',
+    topAutohide: false,
+    gpuPolicy: 'always',
+    adblock: true,
+    isPrivate: false,
+    activeProfile: 'work',
+    profiles: [
+      { id: 'work', name: 'WORK', ico: '💼', hex: '#0078d4', rgb: '0, 120, 212', email: 'Isolated CefRequestContext', sync: 'SQLITE WAL', synced: true },
+      { id: 'personal', name: 'PERSONAL', ico: '🏠', hex: '#10893e', rgb: '16, 137, 62', email: 'Isolated CefRequestContext', sync: 'SQLITE WAL', synced: true },
+      { id: 'dev', name: 'DEV', ico: '⚙', hex: '#d83b01', rgb: '216, 59, 1', email: 'Local Dev Profile', sync: 'SQLITE WAL', synced: false }
+    ],
+    activeTab: 'tab-newtab',
+    closedStack: [],
+    tabs: [
+      { id: 'tab-newtab', group: 'PINNED', pinned: true, ico: '❖', title: 'Speed Dial', host: 'kajo://newtab', path: '', tls: 'internal' },
+      { id: 'tab-github', group: 'WORK', pinned: false, ico: '🐙', title: 'mikolas/Kajo — Wayland Suite', host: 'github.com', path: '/mikolas/Kajo', tls: 'https' },
+      { id: 'tab-arch', group: 'WORK', pinned: false, ico: '📘', title: 'Wayland — ArchWiki', host: 'wiki.archlinux.org', path: '/title/Wayland', tls: 'https', audio: true, muted: false },
+      { id: 'tab-gpu', group: 'WORK', pinned: false, ico: '⚡', title: 'GPU & DMA-BUF Telemetry', host: 'kajo://gpu', path: '', tls: 'internal' },
+      { id: 'tab-mdn', group: 'DOCS', pinned: false, ico: '🧪', title: 'WebGL2RenderingContext — MDN', host: 'developer.mozilla.org', path: '/en-US/docs/Web/API/WebGL2', tls: 'https' },
+      { id: 'tab-suspended', group: 'DOCS', pinned: false, ico: '💤', title: 'Wayland Spec (Suspended)', host: 'wayland.freedesktop.org', path: '/docs/html/', tls: 'https', suspended: true }
+    ],
+    collapsedGroups: {}
+  };
+
+  const kajoWin = document.getElementById('kajoWin');
+  const tabRail = document.getElementById('tabRail');
+  const railTrigger = document.getElementById('railTrigger');
+  const railList = document.getElementById('railList');
+  const railTicks = document.getElementById('railTicks');
+  const omniWrap = document.getElementById('omniWrap');
+  const omnibar = document.getElementById('omnibar');
+  const omniInput = document.getElementById('omniInput');
+  const omniProgress = document.getElementById('omniProgress');
+
+  let revealTimer = null;
+  let hideTimer = null;
+
+  function openRailImmediate() {
+    clearTimeout(hideTimer);
+    clearTimeout(revealTimer);
+    kajoWin.classList.add('rail-open');
+  }
+  function scheduleRailOpen() {
+    clearTimeout(hideTimer);
+    if (kajoWin.classList.contains('rail-open')) return;
+    revealTimer = setTimeout(() => kajoWin.classList.add('rail-open'), 80);
+  }
+  function scheduleRailClose() {
+    clearTimeout(revealTimer);
+    if (state.railMode === 'pinned') return;
+    hideTimer = setTimeout(() => kajoWin.classList.remove('rail-open'), 220);
+  }
+
+  railTrigger.addEventListener('mouseenter', scheduleRailOpen);
+  railTrigger.addEventListener('mouseleave', scheduleRailClose);
+  tabRail.addEventListener('mouseenter', () => {
+    clearTimeout(hideTimer);
+    if (state.railMode === 'compact') scheduleRailOpen();
+  });
+  tabRail.addEventListener('mouseleave', scheduleRailClose);
+
+  // Top Zen Autohide
+  const topTrigger = document.getElementById('topZenTrigger');
+  const webHeader = document.getElementById('webHeader');
+  let topHideTimer = null;
+  topTrigger.addEventListener('mouseenter', () => { clearTimeout(topHideTimer); kajoWin.classList.add('top-revealed'); });
+  webHeader.addEventListener('mouseenter', () => { clearTimeout(topHideTimer); });
+  webHeader.addEventListener('mouseleave', () => {
+    if (!state.topAutohide) return;
+    topHideTimer = setTimeout(() => kajoWin.classList.remove('top-revealed'), 240);
+  });
+
+  function renderTabs() {
+    railList.innerHTML = '';
+    railTicks.innerHTML = '';
+
+    const groups = [
+      { key: 'WORK', color: 'var(--metro-accent)' },
+      { key: 'DOCS', color: 'var(--metro-telemetry)' }
+    ];
+
+    state.tabs.forEach(t => {
+      const tick = document.createElement('div');
+      tick.className = 'rail-tick' + (t.id === state.activeTab ? ' active' : '');
+      railTicks.appendChild(tick);
+    });
+
+    groups.forEach(g => {
+      const gTabs = state.tabs.filter(t => t.group === g.key && !t.pinned);
+      if (!gTabs.length) return;
+      const hdr = document.createElement('div');
+      hdr.className = 'tab-group-hdr hide-in-compact';
+      hdr.style.setProperty('--grp-color', g.color);
+      const isCol = !!state.collapsedGroups[g.key];
+      hdr.innerHTML = `<span>${isCol ? '▸' : '▾'} ${g.key}</span><span class="grp-count">${gTabs.length}</span>`;
+      hdr.onclick = () => { state.collapsedGroups[g.key] = !isCol; renderTabs(); };
+      railList.appendChild(hdr);
+      if (isCol) return;
+
+      gTabs.forEach(t => {
+        const row = document.createElement('div');
+        row.className = 'tab-row' + (t.id === state.activeTab ? ' active' : '') + (t.suspended ? ' suspended' : '');
+        row.innerHTML = `
+          <span class="tab-ico">${t.ico}</span>
+          <div class="tab-meta hide-in-compact">
+            <span class="tab-title">${t.title}</span>
+            <span class="tab-domain">${t.host}</span>
+          </div>
+          ${t.audio ? `<button class="tab-audio hide-in-compact ${t.muted ? 'muted' : ''}" title="Toggle Mute">${t.muted ? '🔇' : '🔊'}</button>` : ''}
+          <button class="tab-close hide-in-compact" title="Close Tab">✕</button>
+        `;
+        row.onclick = (e) => {
+          if (e.target.closest('.tab-audio')) {
+            t.muted = !t.muted;
+            renderTabs();
+            return;
+          }
+          if (e.target.closest('.tab-close')) {
+            closeTab(t.id);
+            return;
+          }
+          selectTab(t.id);
+        };
+        railList.appendChild(row);
+      });
+    });
+
+    document.querySelectorAll('.pin-tile[data-tab]').forEach(el => {
+      el.classList.toggle('active', el.dataset.tab === state.activeTab);
+    });
+  }
+
+  function triggerLoadBar() {
+    omniProgress.classList.add('loading');
+    omniProgress.style.width = '35%';
+    setTimeout(() => { omniProgress.style.width = '100%'; }, 90);
+    setTimeout(() => { omniProgress.classList.remove('loading'); omniProgress.style.width = '0%'; }, 320);
+  }
+
+  function selectTab(id) {
+    const t = state.tabs.find(x => x.id === id);
+    if (!t) return;
+    if (t.suspended) {
+      t.suspended = false;
+      t.ico = '📄';
+      t.title = 'Wayland Spec (Restored)';
+    }
+    state.activeTab = id;
+    document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
+    const pg = document.getElementById('page-' + id) || document.getElementById('page-tab-newtab');
+    pg.classList.add('active');
+
+    const tlsEl = document.getElementById('omniTls');
+    tlsEl.className = 'omni-tls' + (t.tls === 'internal' ? ' internal' : '');
+    tlsEl.textContent = t.tls === 'internal' ? '❖' : '🔒';
+    document.getElementById('omniHost').textContent = t.host;
+    document.getElementById('omniPath').textContent = t.path;
+    omniInput.value = (t.tls === 'https' ? 'https://' : '') + t.host + t.path;
+
+    triggerLoadBar();
+    renderTabs();
+    if (state.railMode === 'autohide') scheduleRailClose();
+  }
+
+  function closeTab(id) {
+    const idx = state.tabs.findIndex(x => x.id === id);
+    if (idx === -1 || state.tabs.length <= 1) return;
+    const [removed] = state.tabs.splice(idx, 1);
+    state.closedStack.push(removed);
+    if (state.activeTab === id) selectTab(state.tabs[Math.max(0, idx - 1)].id);
+    else renderTabs();
+  }
+
+  function addNewTab() {
+    const num = state.tabs.length + 1;
+    const id = 'tab-dyn-' + Date.now();
+    state.tabs.push({ id, group: 'WORK', pinned: false, ico: '🌐', title: 'New Tab #' + num, host: 'kajo://newtab', path: '', tls: 'internal' });
+    selectTab(id);
+  }
+
+  function undoCloseTab() {
+    const t = state.closedStack.pop();
+    if (!t) return;
+    state.tabs.push(t);
+    selectTab(t.id);
+  }
+
+  function syncRailMode(mode) {
+    state.railMode = mode;
+    kajoWin.classList.remove('mode-autohide', 'mode-compact', 'mode-pinned', 'rail-open');
+    kajoWin.classList.add('mode-' + mode);
+    document.getElementById('railModeBadge').textContent = mode.toUpperCase();
+    document.getElementById('btnPinRail').classList.toggle('active', mode === 'pinned');
+    [document.getElementById('segRailMode'), document.getElementById('setRailMode')].forEach(seg => {
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === mode));
+    });
+  }
+
+  function syncRailSide(side) {
+    state.railSide = side;
+    kajoWin.classList.toggle('rail-right', side === 'right');
+    [document.getElementById('segRailSide'), document.getElementById('setRailSide')].forEach(seg => {
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === side));
+    });
+  }
+
+  function syncGpu(policy) {
+    state.gpuPolicy = policy;
+    const isSw = policy === 'never';
+    document.getElementById('chipSw').style.display = isSw ? 'inline-flex' : 'none';
+    document.getElementById('ntGpu').textContent = isSw ? '⚠ SOFTWARE' : 'CEF + VA-API';
+    document.getElementById('ntGpu').style.color = isSw ? '#ffb84d' : 'var(--metro-telemetry)';
+    const gp = document.getElementById('gpuRowPolicy');
+    gp.textContent = isSw ? 'NEVER (Software Fallback)' : 'ALWAYS (ANGLE GL + VA-API)';
+    gp.className = isSw ? 'warn-val' : 'ok-val';
+    document.getElementById('gpuRowDetail').textContent = isSw
+      ? '--no-hw-accel (SwiftShader software GL)'
+      : '--use-gl=angle --use-angle=gl';
+    [document.getElementById('segGpu'), document.getElementById('setGpu')].forEach(seg => {
+      seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === policy));
+    });
+  }
+
+  function syncAdblock(on) {
+    state.adblock = on;
+    const sh = document.getElementById('btnShield');
+    sh.classList.toggle('off', !on);
+    sh.textContent = on ? '🛡 ON' : '🛡 OFF';
+    document.getElementById('ntAdblock').textContent = on ? 'IO-THREAD ABP' : 'DISABLED';
+    document.getElementById('toggleSiteAdblock').classList.toggle('on', on);
+    document.getElementById('siteAdblockState').textContent = on ? 'ON' : 'OFF';
+    document.getElementById('tcAdblock').classList.toggle('on', on);
+    document.getElementById('tcAdblockLbl').textContent = on ? 'ON' : 'OFF';
+  }
+
+  // Bind Segmented Controls
+  function bindSeg(id, fn) {
+    document.getElementById(id).addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) fn(b.dataset.val);
+    });
+  }
+  bindSeg('segRailMode', syncRailMode);
+  bindSeg('setRailMode', syncRailMode);
+  bindSeg('segRailSide', syncRailSide);
+  bindSeg('setRailSide', syncRailSide);
+  bindSeg('segGpu', syncGpu);
+  bindSeg('setGpu', syncGpu);
+
+  bindSeg('setTopBar', (v) => {
+    state.topAutohide = (v === 'autohide');
+    kajoWin.classList.toggle('top-autohide', state.topAutohide);
+    document.getElementById('btnTopAuto').classList.toggle('on', state.topAutohide);
+    document.getElementById('setTopBar').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === v));
+  });
+
+  document.getElementById('btnTopAuto').onclick = () => {
+    state.topAutohide = !state.topAutohide;
+    kajoWin.classList.toggle('top-autohide', state.topAutohide);
+    document.getElementById('btnTopAuto').classList.toggle('on', state.topAutohide);
+    document.getElementById('setTopBar').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === (state.topAutohide ? 'autohide' : 'always')));
+  };
+
+  document.getElementById('btnPrivate').onclick = (e) => {
+    state.isPrivate = !state.isPrivate;
+    e.target.classList.toggle('on', state.isPrivate);
+    document.getElementById('chipPriv').style.display = state.isPrivate ? 'inline-flex' : 'none';
+  };
+  document.getElementById('btnPerm').onclick = (e) => {
+    const show = document.getElementById('permBar').classList.toggle('show');
+    e.target.classList.toggle('on', show);
+  };
+  ['permAllow', 'permAlways', 'permDeny'].forEach(id => {
+    document.getElementById(id).onclick = () => {
+      document.getElementById('permBar').classList.remove('show');
+      document.getElementById('btnPerm').classList.remove('on');
+    };
+  });
+
+  function toggleFloat() {
+    const on = document.getElementById('compStage').classList.toggle('floating');
+    document.getElementById('btnFloat').classList.toggle('on', on);
+  }
+  document.getElementById('btnFloat').onclick = toggleFloat;
+  document.getElementById('btnTileFloat').onclick = toggleFloat;
+
+  document.getElementById('swatches').addEventListener('click', (e) => {
+    const s = e.target.closest('.swatch');
+    if (!s) return;
+    document.documentElement.style.setProperty('--metro-accent', s.dataset.hex);
+    document.documentElement.style.setProperty('--metro-accent-rgb', s.dataset.rgb);
+    document.querySelectorAll('.swatch').forEach(x => x.classList.toggle('on', x === s));
+  });
+
+  // Rail Pin Toggle
+  document.getElementById('btnPinRail').onclick = () => {
+    syncRailMode(state.railMode === 'pinned' ? 'autohide' : 'pinned');
+  };
+
+  // Pinned tiles & speed tiles
+  document.querySelectorAll('.pin-tile[data-tab]').forEach(el => el.onclick = () => selectTab(el.dataset.tab));
+  document.querySelectorAll('.speed-tile[data-open]').forEach(el => el.onclick = () => selectTab(el.dataset.open));
+  document.getElementById('btnAddQuickTab').onclick = addNewTab;
+  document.getElementById('btnNewTab').onclick = addNewTab;
+  document.getElementById('btnUndoTab').onclick = undoCloseTab;
+  document.getElementById('btnReload').onclick = triggerLoadBar;
+
+  // Omnibar focus & dropdown
+  omnibar.addEventListener('click', (e) => {
+    if (e.target.closest('#btnShield')) return;
+    omnibar.classList.add('focused');
+    omniWrap.classList.add('show-drop');
+    omniInput.focus();
+    omniInput.select();
+  });
+  omniInput.addEventListener('blur', () => {
+    setTimeout(() => {
+      omnibar.classList.remove('focused');
+      omniWrap.classList.remove('show-drop');
+    }, 150);
+  });
+  document.querySelectorAll('.omni-sug').forEach(el => {
+    el.addEventListener('mousedown', () => selectTab(el.dataset.goto));
+  });
+
+  // Popovers & Drawers
+  function closePopovers() {
+    document.getElementById('popShield').classList.remove('show');
+    document.getElementById('popDownloads').classList.remove('show');
+    document.getElementById('popProfile').classList.remove('show');
+  }
+
+  function renderProfiles() {
+    const cur = state.profiles.find(p => p.id === state.activeProfile) || state.profiles[0];
+    document.documentElement.style.setProperty('--metro-accent', cur.hex);
+    document.documentElement.style.setProperty('--metro-accent-rgb', cur.rgb);
+    document.getElementById('profChipName').textContent = cur.name;
+    document.getElementById('profDot').style.background = cur.hex;
+    document.getElementById('popProfTitle').textContent = `● ${cur.name} PROFILE`;
+    document.getElementById('popProfEmail').textContent = cur.email;
+    document.getElementById('popProfSyncBadge').textContent = cur.sync;
+    document.getElementById('popProfSyncBadge').style.color = cur.synced ? 'var(--metro-telemetry)' : 'var(--fg-dim)';
+    document.getElementById('ntProfile').textContent = `${cur.name} • SQLITE`;
+
+    const pl = document.getElementById('popProfList');
+    pl.innerHTML = '';
+    state.profiles.forEach(p => {
+      const r = document.createElement('div');
+      r.className = 'prof-row' + (p.id === state.activeProfile ? ' active' : '');
+      r.style.setProperty('--p-col', p.hex);
+      r.innerHTML = `<span>${p.ico}</span><div style="flex:1;"><div style="font-weight:700; color:#fff;">${p.name}</div><div style="font-size:9.5px; color:var(--fg-dim);">${p.email}</div></div><span style="font-size:9.5px; color:var(--metro-telemetry);">${p.sync}</span>`;
+      r.onclick = () => { state.activeProfile = p.id; renderProfiles(); closePopovers(); };
+      pl.appendChild(r);
+    });
+
+    const pg = document.getElementById('pickerGrid');
+    pg.innerHTML = '';
+    state.profiles.forEach((p, idx) => {
+      const c = document.createElement('div');
+      c.className = 'picker-card' + (p.id === state.activeProfile ? ' active' : '');
+      c.style.setProperty('--p-col', p.hex);
+      c.innerHTML = `
+        <div class="pk-top"><span>${p.ico}</span><span class="pk-key">${idx + 1}</span></div>
+        <div class="pk-name">${p.name}</div>
+        <div class="pk-mail">${p.email}</div>
+        <div class="pk-sync" style="color:var(--metro-telemetry);">${p.sync}</div>
+      `;
+      c.onclick = () => {
+        state.activeProfile = p.id;
+        state.isPrivate = false;
+        document.getElementById('chipPriv').style.display = 'none';
+        document.getElementById('btnPrivate').classList.remove('on');
+        renderProfiles();
+        document.getElementById('pickerModal').classList.remove('show');
+      };
+      pg.appendChild(c);
+    });
+  }
+
+  document.getElementById('btnProfileChip').onclick = (e) => {
+    e.stopPropagation();
+    const el = document.getElementById('popProfile');
+    const was = el.classList.contains('show');
+    closePopovers();
+    if (!was) el.classList.add('show');
+  };
+  document.getElementById('btnOpenDlPage').onclick = closePopovers;
+  document.getElementById('btnPrivFromPop').onclick = () => {
+    state.isPrivate = true;
+    document.getElementById('chipPriv').style.display = 'inline-flex';
+    document.getElementById('btnPrivate').classList.add('on');
+    closePopovers();
+  };
+  function openPicker() { closePopovers(); document.getElementById('pickerModal').classList.add('show'); }
+  document.getElementById('btnPicker').onclick = openPicker;
+  document.getElementById('btnOpenPickerFromPop').onclick = openPicker;
+  document.getElementById('btnOpenPickerFromSettings').onclick = openPicker;
+  document.getElementById('btnClosePicker').onclick = () => document.getElementById('pickerModal').classList.remove('show');
+  document.getElementById('btnGuestLaunch').onclick = () => {
+    state.isPrivate = true;
+    document.getElementById('chipPriv').style.display = 'inline-flex';
+    document.getElementById('btnPrivate').classList.add('on');
+    document.getElementById('pickerModal').classList.remove('show');
+  };
+  document.getElementById('btnAddProfile').onclick = () => {
+    const n = state.profiles.length + 1;
+    state.profiles.push({ id: 'prof-' + n, name: 'PROFILE ' + n, ico: '❖', hex: '#00b7c3', rgb: '0, 183, 195', email: 'Isolated CefRequestContext', sync: 'SQLITE WAL', synced: false });
+    renderProfiles();
+  };
+  document.getElementById('btnShield').onclick = (e) => {
+    e.stopPropagation();
+    const el = document.getElementById('popShield');
+    const was = el.classList.contains('show');
+    closePopovers();
+    if (!was) el.classList.add('show');
+  };
+  document.getElementById('btnDownloads').onclick = (e) => {
+    e.stopPropagation();
+    const el = document.getElementById('popDownloads');
+    const was = el.classList.contains('show');
+    closePopovers();
+    if (!was) el.classList.add('show');
+  };
+  document.getElementById('btnCloseDl').onclick = closePopovers;
+  document.getElementById('toggleUserScripts').onclick = (e) => {
+    const card = e.currentTarget;
+    const on = card.classList.toggle('on');
+    const lbl = document.getElementById('userScriptsState');
+    lbl.textContent = on ? 'ON' : 'OFF';
+    lbl.style.color = on ? 'var(--metro-telemetry)' : 'var(--fg-dim)';
+  };
+  document.getElementById('toggleSiteAdblock').onclick = () => syncAdblock(!state.adblock);
+  document.getElementById('tcAdblock').onclick = () => syncAdblock(!state.adblock);
+
+  document.getElementById('btnSettings').onclick = () => {
+    closePopovers();
+    document.getElementById('settingsDrawer').classList.toggle('show');
+  };
+  document.getElementById('btnOpenSettingsFromShield').onclick = () => {
+    closePopovers();
+    document.getElementById('settingsDrawer').classList.add('show');
+  };
+  document.getElementById('btnCloseSettings').onclick = () => document.getElementById('settingsDrawer').classList.remove('show');
+  document.getElementById('btnSaveSettings').onclick = () => document.getElementById('settingsDrawer').classList.remove('show');
+
+  document.getElementById('rngRailW').oninput = (e) => {
+    document.documentElement.style.setProperty('--rail-w', e.target.value + 'px');
+    document.getElementById('lblRailW').textContent = e.target.value + ' px';
+  };
+  document.getElementById('rngMem').oninput = (e) => {
+    const v = parseInt(e.target.value, 10);
+    document.getElementById('lblMem').textContent = v === 0 ? 'Disabled (0)' : v + ' min';
+    document.getElementById('gpuRowMem').textContent = v === 0 ? 'Disabled' : v + ' min';
+  };
+
+  document.getElementById('btnFind').onclick = () => document.getElementById('findBar').classList.toggle('show');
+  document.getElementById('btnCloseFind').onclick = () => document.getElementById('findBar').classList.remove('show');
+
+  // Ctrl+K Palette
+  const palModal = document.getElementById('paletteModal');
+  const palInput = document.getElementById('paletteInput');
+  const palList = document.getElementById('paletteList');
+
+  function openPalette() {
+    closePopovers();
+    palModal.classList.add('show');
+    palInput.value = '';
+    renderPalette('');
+    palInput.focus();
+  }
+  function renderPalette(q) {
+    const lq = q.toLowerCase();
+    const items = [
+      ...state.tabs.map(t => ({ tag: 'TAB', label: `${t.ico} ${t.title}`, sub: t.host, run: () => selectTab(t.id) })),
+      { tag: 'CMD', label: 'Toggle Vertical Rail Pin (Ctrl+B)', sub: 'web.toml', run: () => syncRailMode(state.railMode === 'pinned' ? 'autohide' : 'pinned') },
+      { tag: 'CMD', label: 'Switch Rail to Compact Icon Mode', sub: 'web.toml', run: () => syncRailMode('compact') },
+      { tag: 'CMD', label: 'Open Downloads Popout (Ctrl+J)', sub: 'kajo://downloads', run: () => document.getElementById('popDownloads').classList.add('show') },
+      { tag: 'CMD', label: 'Open Kajo Settings → Kajo Web (Ctrl+,)', sub: 'kajo-settings', run: () => document.getElementById('settingsDrawer').classList.add('show') },
+      { tag: 'CMD', label: 'Open GPU & VA-API Diagnostics', sub: 'kajo://gpu', run: () => selectTab('tab-gpu') }
+    ].filter(x => !lq || x.label.toLowerCase().includes(lq) || x.sub.toLowerCase().includes(lq));
+
+    palList.innerHTML = '';
+    items.forEach(it => {
+      const r = document.createElement('div');
+      r.className = 'pal-row';
+      r.innerHTML = `<span class="omni-sug-tag">${it.tag}</span><span style="flex:1;">${it.label}</span><span style="color:var(--fg-dim); font-size:10px;">${it.sub}</span>`;
+      r.onclick = () => { palModal.classList.remove('show'); it.run(); };
+      palList.appendChild(r);
+    });
+  }
+  palInput.oninput = (e) => renderPalette(e.target.value);
+  document.getElementById('btnPalette').onclick = openPalette;
+  palModal.addEventListener('click', (e) => { if (e.target === palModal) palModal.classList.remove('show'); });
+
+  // Keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      palModal.classList.remove('show');
+      document.getElementById('findBar').classList.remove('show');
+      closePopovers();
+      if (state.railMode !== 'pinned') kajoWin.classList.remove('rail-open');
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault(); openPalette();
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'b') {
+      e.preventDefault();
+      if (state.railMode === 'autohide') kajoWin.classList.toggle('rail-open');
+      else syncRailMode(state.railMode === 'pinned' ? 'autohide' : 'pinned');
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'l') {
+      e.preventDefault(); omnibar.click();
+    } else if (e.ctrlKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault(); document.getElementById('findBar').classList.toggle('show');
+    } else if (e.key === 'F12') {
+      e.preventDefault(); document.getElementById('inspectorPane').classList.toggle('show');
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.popover') && !e.target.closest('#btnShield') && !e.target.closest('#btnMediaDl') && !e.target.closest('#btnDownloads') && !e.target.closest('#btnProfileChip')) {
+      closePopovers();
+    }
+  });
+
+  renderProfiles();
+  renderTabs();
+})();
+</script>
+</body>
+</html>

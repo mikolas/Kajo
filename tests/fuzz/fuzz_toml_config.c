@@ -33,6 +33,7 @@ LLVMFuzzerTestOneInput(const uint8_t *data, size_t size)
         kajo_schema_get_ide(),
         kajo_schema_get_files(),
         kajo_schema_get_mod(),
+        kajo_schema_get_web(),
     };
 
     for (size_t i = 0; i < G_N_ELEMENTS(domains); i++) {

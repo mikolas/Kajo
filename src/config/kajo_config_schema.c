@@ -351,6 +351,7 @@ kajo_config_get_domain_schema(KajoConfigDomain domain)
     case KAJO_CONFIG_DOMAIN_IDE:   return kajo_schema_get_ide();
     case KAJO_CONFIG_DOMAIN_FILES: return kajo_schema_get_files();
     case KAJO_CONFIG_DOMAIN_MOD:   return kajo_schema_get_mod();
+    case KAJO_CONFIG_DOMAIN_WEB:   return kajo_schema_get_web();
     default:                       return NULL;
     }
 }
@@ -493,6 +494,8 @@ kajo_cfg_domain_unref_rc(const KajoDomainSchema *schema, const void *rc_ptr)
         kajo_files_cfg_unref((const KajoFilesCfg *)rc_ptr);
     } else if (schema == kajo_schema_get_mod()) {
         kajo_mod_cfg_unref((const KajoModCfg *)rc_ptr);
+    } else if (schema == kajo_schema_get_web()) {
+        kajo_web_cfg_unref((const KajoWebCfg *)rc_ptr);
     }
 }
 
@@ -1351,3 +1354,4 @@ DEFINE_DOMAIN_LIFECYCLE(KajoShellCfg, kajo_shell_cfg, kajo_schema_get_shell)
 DEFINE_DOMAIN_LIFECYCLE(KajoIdeCfg,   kajo_ide_cfg,   kajo_schema_get_ide)
 DEFINE_DOMAIN_LIFECYCLE(KajoFilesCfg, kajo_files_cfg, kajo_schema_get_files)
 DEFINE_DOMAIN_LIFECYCLE(KajoModCfg,   kajo_mod_cfg,   kajo_schema_get_mod)
+DEFINE_DOMAIN_LIFECYCLE(KajoWebCfg,   kajo_web_cfg,   kajo_schema_get_web)

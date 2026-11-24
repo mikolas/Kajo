@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo-comp`, `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo-comp`, `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp`) using `wlroots-0.20`, `wayland-server`, `wayland-client`, `talloc`, `libinput`, `libpcre2-8`, `xkbcommon`, `cairo`, `pangocairo`, `libpng`, GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `json-glib-1.0`, `gio-2.0`, `libmpv`, `libuade`, `bencodetools`, `libsidplayfp`, `libstilview`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, and `libarchive`.
+The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp` and `src/web_cef/`) using `wlroots-0.20`, `wayland-server`, `wayland-client`, `talloc`, `libinput`, `libpcre2-8`, `xkbcommon`, `cairo`, `pangocairo`, `libpng`, GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `json-glib-1.0`, `gio-2.0`, `libmpv`, `sqlite3`, `libuade`, `bencodetools`, `libsidplayfp`, `libstilview`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, `libarchive`, and the Chromium Embedded Framework (`CEF`, Alloy Views) for `kajo-web`.
 
 ```
 src/
@@ -16,8 +16,8 @@ src/
 ├── autohide.h/c                    Autohide reveal/hide state machine & live config reload
 ├── config.h                        Thin include of the per-domain TOML store in config/ (docs/spec_toml_config.md)
 ├── config/
-│   ├── config_store.h/c            Per-domain TOML 1.1 store, conf.d overlay merger, comment-preserving patcher & GFileMonitor
-│   └── config_schema_*.c           Domain schemas & defaults (theme, shell, ide, files, mod)
+│   ├── kajo_config_store.h/c       Per-domain TOML 1.1 store, conf.d overlay merger, comment-preserving patcher & GFileMonitor
+│   └── schemas/schema_*.c          Domain schemas & defaults (theme, shell, ide, files, mod, web)
 ├── theme.h/c                       GTK CSS theme engine, override loader, GFileMonitor hot-reload, accent presets & shell_ide_font_stack()
 ├── theme_export.h/c                Opt-in revertible external GTK3/GTK4 & Qt 6 (qt6ct) theming with pre-Kajo snapshot backup/restore
 ├── app_init.h/c                    Standalone-app boot: kajo_app_init_theme() / kajo_app_shutdown_theme()
@@ -191,9 +191,25 @@ src/
 │   ├── settings_window.h/c         Responsive 3-tier column shell, icon-rail/sidebar & GtkStack
 │   ├── settings_common.h/c         Shared Metro card, bento grid, tile, dropdown & IPC helpers
 │   └── pages/
-│       ├── page_*.c                12 modular preference pages (displays, network, bluetooth,
-│       │                           audio, theme, panel, widgets, notifications, ide, mod, niri, about)
+│       ├── page_*.c                13 modular preference pages (displays, network, bluetooth,
+│       │                           audio, theme, panel, widgets, notifications, ide, mod, web, niri, about)
 │       └── page_niri_effects.c     Compositor FX controls: shadows, glass materials & transitions (page_niri_private.h)
+├── web/                            Shared GTK-free C17 core for kajo-web
+│   ├── web_model.h/c               Tab tree, pinned/group ordering, MRU/undo stacks, omnibar classifier, rail FSM & profile registry
+│   ├── web_storage.h/c             Per-profile SQLite WAL + FTS5 history, bookmarks, downloads & session JSON persistence
+│   ├── web_abp_compiler.h/c        ABP / EasyList safety validator & filter translation utilities
+│   ├── web_sync_merge.h/c          Pure UUID/tombstone CRDT merge & AES-256-GCM envelope primitives
+│   └── web_media_sniff_core.h/c    Pure HLS/DASH manifest parser & stream classifier utilities
+├── web_cef/                        Chromium/CEF Alloy Views browser (kajo-web, docs/spec_kajo_web.md)
+│   ├── main.cc                     CEF subprocess routing, --ozone-platform=wayland, single-instance IPC & profile launch args
+│   ├── cef_app.h/cc                KajoCefApp GPU/VA-API switches, kajo-chrome:// & kajo:// scheme registration
+│   ├── cef_window.h/cc             Frameless Alloy Views host window, tab reaper teardown, idle/window suspension, Downloads, Find Bar, Palette & config hot-reload
+│   ├── cef_tab.h/cc                CefTabClient load/title/favicon/popup isolation/permission/download/hotkey & crash recovery handlers
+│   ├── cef_chrome_ui.h/cc          Aero + Metro kajo-chrome://ui/* theme-scaled topbar/rail/popovers & kajo://* internal HTML pages
+│   ├── cef_adblock.h/cc            IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync
+│   ├── cef_ipc.h/cc                Per-profile single-instance UNIX domain socket server & URL forwarder
+│   ├── cef_site_util.h             Pure eTLD+1 site matching, private-host check, color/href sanitization, origin favicon fallback & ComputeChromeUiMetrics
+│   └── cef_prefs_helper.h/cc       Per-site permission JSON store, log severity, same-site cookie & user script loader
 ├── vendor/
 │   ├── tomlc17/                    Vendored TOML 1.1 parser (CK Tan, MIT)
 │   └── tinyexpr/                   TinyExpr recursive-descent math expression evaluator
@@ -205,14 +221,14 @@ src/
     └── *.c                         22 built-in panel widget implementations
 
 data/
-├── org.kajo.*.desktop              Desktop entries for kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings
+├── org.kajo.*.desktop              Desktop entries for kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-settings
 ├── icons/
-│   └── *.svg                       Suite application & UI vector icons (kajo-comp.svg, kajo-ide.svg, etc.)
+│   └── *.svg                       Suite application & UI vector icons (kajo-comp.svg, kajo-web.svg, kajo-ide.svg, etc.)
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
 │   ├── {comp,outputs,binds,rules}.toml   Shipped kajo-comp TOML 1.1 default configurations
-│   ├── {theme,shell,ide,files,mod}.toml  Shipped per-domain TOML 1.1 default configurations
+│   ├── {theme,shell,ide,files,mod,web}.toml  Shipped per-domain TOML 1.1 default configurations
 │   ├── style.css                   Master GTK4 CSS manifest (@import url("styles/..."))
 │   ├── styles/                     8 modular CSS partials (00-tokens, 10-panel, 20-popovers-controls, 30-settings,
 │   │                               40-lock-greeter-osk, 50-files-player, 60-ide, 70-mod)
@@ -253,7 +269,7 @@ tests/
 │   ├── comp_headless_smoke.sh      End-to-end headless kajo-comp integration test runner
 │   └── comp_fx_shadow_test.sh      Headless Vulkan pixel verification for SDF shadows, dimming, Dual-Kawase glass, xray panels & blue-noise dither
 ├── fuzz/
-│   ├── fuzz_toml_config.c          Corpus/libFuzzer target for the 5 app TOML domain schemas
+│   ├── fuzz_toml_config.c          Corpus/libFuzzer target for the 6 app TOML domain schemas
 │   ├── fuzz_comp_config.c          Corpus/libFuzzer target for comp/outputs/binds/rules TOML parsers
 │   ├── fuzz_comp_layout.c          Corpus/libFuzzer target for the compositor scrolling-tiling layout engine
 │   └── fuzz_ipc_socket.c           Corpus/libFuzzer target for $XDG_RUNTIME_DIR/kajo-comp.sock JSON IPC parser
@@ -280,6 +296,10 @@ tests/
 ├── test_ide_strip.c                Kajo IDE 60/25/15 Code Strip layout math, magnetic follow, springs, trails & 1,000-tile stress tests
 ├── test_ide_strip_graph.c          Kajo IDE workspace-only call-graph indexer, Tree-sitter extractor, 4 lenses & mock-LSP bridge tests
 ├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
+├── test_web_model.c                Kajo Web pure core: rail FSM, tab/MRU/undo, leave-time suspension, favicon persistence, omnibar bangs, profiles, SQLite FTS5 & merge tests
+├── test_web_cef_adblock.cc         Kajo Web CEF ABP network filter, host-file, cosmetic CSS & allowlist tests
+├── test_web_cef_core.cc            Kajo Web CEF permission store/labels, same-site cookies, site/UI metrics, IPC server, user scripts & log severity tests
+├── test_import_chromium_session.py One-shot Chromium/Thorium SNSS/Bookmarks + Favicons importer unit tests (`scripts/import-chromium-session.py`)
 ├── test_spawn_detached.c           Detached app spawning: setsid/PGID/SID/SIGPIPE/cwd, parent PGID SIGTERM survival & systemd scope
 └── test_niri.c                     Mock kajo-comp ($KAJO_COMP_SOCKET) & mock Niri ($NIRI_SOCKET) IPC socket tests
 ```
@@ -297,6 +317,8 @@ tests/
 - `pam` (`libpam`)
 - `poppler-glib`, `libarchive`, `mpv` (`libmpv`), `egl`, `glesv2`
 - `uade` (`libuade`), `bencodetools`, `libsidplayfp` (provides `libstilview`), `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
+- `sqlite3` (for `kajo-web` history, bookmarks, and download records)
+- Chromium Embedded Framework (`CEF` binary distribution under `/usr/lib/cef`, `/usr/include/cef`, `/usr/src/cef` by default, or overridden via `-Dcef_lib_dir=... -Dcef_include_dir=... -Dcef_src_dir=...` — required for `kajo-web` and its 2 C++ unit test suites `web-cef-adblock` & `web-cef-core`; skipped cleanly if absent)
 - `blueprint-compiler`, `meson`, `ninja`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
   - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
@@ -305,7 +327,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 37 automated test suites:
+Every change must compile with **0 errors and 0 warnings** and pass all 40 automated test suites (38 core + 2 CEF suites when CEF is installed):
 
 ```bash
 # Clone with the wlroots submodule (existing clones: git submodule update --init)
@@ -314,10 +336,10 @@ git clone --recursive https://github.com/mikolas/Kajo.git
 # Configure (defaults to prefix=~/.local)
 meson setup builddir
 
-# Compile all 8 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-settings, kajo-greeter)
+# Compile all 9 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 37 automated test suites
+# Run all 40 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
@@ -334,7 +356,7 @@ systemctl --user restart xdg-desktop-portal
 | Suite Name | Binary | Coverage |
 | :--- | :--- | :--- |
 | `config-roundtrip` | `test-config` | `KajoConfigStore` per-domain TOML: compiled-vs-shipped defaults parity, round trips and clamping, `conf.d` overlays with base-save isolation, concurrent readers, syntax-error preservation, comment/unknown-key preserving patch, patcher never writing an unparsable file, subscriber thread delivery, legacy `config.json` migration. |
-| `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
+| `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all six domain schemas (`theme`, `shell`, `ide`, `files`, `mod`, `web`). |
 | `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
 | `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, `comp_layout_set_column_width` / `comp_layout_move_column_to_index` / `comp_layout_column_bounds` (tiled `Mod + drag`), zoomed overview band/card geometry & hit-testing (`comp_overview_core.c`), camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
 | `comp-motion` | `test-comp-motion` | Compositor animation and gestures: animated resize of the rightmost column (the former no-animation case), snap mode and floating sizes, continuous workspace strip, per-workspace cameras, no animation when an empty workspace above is removed, drag override and velocity hand-off on release, stationary windows, stable workspace ids, side-effect-free drag release targets (column-edge resting positions, focus in the drag direction), and the 3-finger gesture state machine (axis lock, rubber band, velocity, projection, workspace picks, and release decisions from a snapshot taken before the gesture is reset). |
@@ -357,6 +379,10 @@ systemctl --user restart xdg-desktop-portal
 | `portals` | `test-portals` | `org.freedesktop.impl.portal.Settings` (`ReadAll`, `Read`, `NotFound`, `SettingChanged` over private `GTestDBus`), `org.freedesktop.impl.portal.FileChooser` (`OpenFile`, `SaveFile`, `SaveFiles`, `Request.Close()`, glob/MIME filters, non-clobbering target URIs), and external GTK/Qt theme export (pre-Kajo backup snapshot, accent update, partial disable, bit-exact full revert). |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `mod-router` | `test-mod-router` | `kajo-mod` 5-tier format router (`UADE` vs `libsidplayfp` vs `libgme` vs `libopenmpt` vs `libxmp`), Amiga companion (`smpl.*`, `.ins`) & `.nfo` filtering, ProTracker sample header parsing, `libarchive` bundle extraction, and live non-zero PCM synthesis. |
+| `web-model` | `test-web-model` | Pure C `kajo-web` core: vertical rail autohide/reveal/hold/focus FSM, tab tree/pin/group/MRU/undo invariants, leave-time idle suspension & favicon persistence, omnibar URL & bang classifier, profile registry round-trip, SQLite WAL + FTS5 history/bookmarks/downloads/session storage, CRDT sync merge & E2EE envelope, and stream classifier helpers. |
+| `web-cef-adblock` | `test-web-cef-adblock` | `CefAdblockEngine` ABP network rules (`$third-party`, `$script`, `$domain=...`, multi-part eTLD+1 matching, strict option validation, exceptions `@@`), hosts-file rules, cosmetic element-hiding selectors, per-host shield pause/allowlist, and filter pack loading. |
+| `web-cef-core` | `test-web-cef-core` | CEF preference/helper logic: permission store persistence & revocation, permission key/label formatting, same-site cookie matching, `IsLocalOrPrivateHost`, `SanitizeSafeHref`, `DeriveOriginFaviconFallback`, `ComputeChromeUiMetrics`, `ProfileIpcServer` round-trip, `~/.config/kajo/web/scripts/*.{js,css}` loader, and log severity parsing. |
+| *(Python unittest)* | `tests/test_import_chromium_session.py` | One-shot Chromium/Thorium session (`SNSS` / `Bookmarks`) and read-only `Favicons` DB importer (`scripts/import-chromium-session.py`): ordering, pins, groups, running-instance guard, backup, and merge. Run via `python3 -m unittest discover -s tests -p "test_import_chromium_session.py"`. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects, `Space` leader chords (including all 20 `Space t *` Code Strip chords), and per-mode `[keys.<state>]` remapping. |
 | `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, conditional breakpoints, stop, stack, nested variable expansion, watch evaluation, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
@@ -422,6 +448,10 @@ WLR_BACKENDS=wayland KAJO_GREETER_TEST=1 ./builddir/kajo-comp --greeter-mode --e
 
 # 6. Or run kajo-greeter inside a nested Niri compositor window on your desktop
 KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
+
+# 7. Run kajo-web (native Wayland CEF browser, or ephemeral software fallback)
+./builddir/kajo-web https://github.com/mikolas/Kajo
+./builddir/kajo-web --private --no-hw-accel kajo://gpu
 ```
 
 **Configuration while developing** (see `docs/spec_toml_config.md`):
@@ -522,6 +552,7 @@ scripts/ui-shot.sh -o /tmp/ide.png builddir/kajo-settings --page ide      # one 
 scripts/ui-shot.sh -o /tmp/ide-editor.png builddir/kajo-ide src/ide/ide_window.c
 scripts/ui-shot.sh -o /tmp/files.png builddir/kajo-files ~/Downloads
 scripts/ui-shot.sh -d 6 -o /tmp/p.png builddir/kajo-player some.mkv       # -d: seconds to wait
+scripts/ui-shot.sh -d 4 -o /tmp/web.png builddir/kajo-web --no-hw-accel --private kajo://newtab
 ```
 
 The script is isolated on purpose: private `XDG_RUNTIME_DIR`, `KAJO_COMP_SOCKET`/`NIRI_SOCKET`/`WAYLAND_DISPLAY`/`DISPLAY` unset (compositor actions and `kajo` IPC can never reach your real session), throwaway **copies** of `~/.config/kajo` and `~/.local/share/kajo`, and the working tree's `style.css` copied over the CSS so you see your changes (`-k` keeps your installed CSS). It refuses to run the `kajo` shell. The D-Bus buses are your real ones, so pages read live state (Wi-Fi list, paired devices) but nothing is clicked. Do not wrap it in `dbus-run-session` (it activates your installed services and leaves FUSE mounts behind).

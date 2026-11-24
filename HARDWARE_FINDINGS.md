@@ -152,3 +152,21 @@ Writing `1` (inhibit) or `0` (enable) to `/sys/class/input/input*/inhibited` dis
   - Exposes `HDR_OUTPUT_METADATA` (prop `8`), `Colorspace` (prop `403`, including `BT2020_RGB=9`), and `max bpc = 12` (prop `402`) on `eDP-1`.
 - **Niri Compositor Status (`niri 26.04`)**:
   - In `/home/mikolas/src/niri/src/backend/tty.rs`, `ConnectorProperties::reset_hdr()` explicitly zeroes `HDR_OUTPUT_METADATA` and sets `Colorspace = 0` (`Default`) on startup and VT resume because Niri does not yet implement an sRGB-to-BT.2020/PQ output compositing shader or `wp-color-management-v1`.
+
+---
+
+## 4. Intel Lunar Lake (`xe`) GTK4 Vulkan ↔ WebKitGTK EGL DMA-BUF Contention *(Historical Prototype Note)*
+
+*(Note: `kajo-web` subsequently replaced its WebKitGTK 6.0 prototype with Chromium/CEF Alloy Views on `feat/kajo-web-cef`; this finding remains relevant to GTK4 + WebKitGTK applications on Lunar Lake `xe`.)*
+
+- **Observed Hardware / Stack**: Intel Core Ultra 200V Arc Graphics 130V/140V (`[8086:64a0]`, `xe` kernel driver), Mesa `26.3.1` (`ANV` Vulkan + `Iris` EGL), `gtk4 4.24.1`, `webkitgtk-6.0 2.54.3`, `intel-media-driver 26.3.5`.
+- **Symptom**: During YouTube playback in the earlier WebKitGTK prototype, hardware VA-API decode (`libgstva.so` + `iHD_drv_video.so`, rank `257`) ran at `~1%` CPU inside `WebKitWebProcess`, yet the GTK4 UI process burned **`256–266%` CPU** (`67%` on main thread stalling in `drm_syncobj_array_wait_timeout`, `dma_buf_import_sync_file`, `drm_exec_lock_obj` + `~190%` across 7 cycling GLib `pool-*` worker threads also contending on `drm_exec_lock_obj`).
+- **Root Cause**: GTK 4.24 defaults to `GskVulkanRenderer` (`libvulkan_intel.so` ANV), whereas WebKitGTK's `WebKitWebProcess` renders into GBM/EGL (`Iris`) DMA-BUFs (`gdk_dmabuf_texture_builder_build()`). Cross-API Vulkan ↔ EGL DMA-BUF import on Lunar Lake (`xe`) hits severe reservation-lock and fallback upload/download contention on every video frame.
+- **Fix**: Defaulting `GSK_RENDERER=gl` (`g_setenv("GSK_RENDERER", "gl", FALSE)`, respecting explicit user overrides) aligns GTK4 onto the same Mesa `Iris` EGL driver as WebKitGTK, dropping UI CPU from **`256–266%` → `6.0%`** (**43× reduction**) and eliminating all 7 spinning `pool-*` threads.
+
+---
+
+## 5. Intel Lunar Lake (`xe`) Chromium/CEF Wayland & Vulkan Compatibility (`kajo-web`)
+
+- **Observed Symptom**: Launching `kajo-web` with `--ozone-platform=wayland` and Vulkan enabled emits Chromium Ozone's `wayland_surface_factory.cc:249`: `'--ozone-platform=wayland' is not compatible with Vulkan. Consider switching to '--ozone-platform=x11' or disabling Vulkan.`
+- **Configuration (`src/web_cef/cef_app.cc`)**: `kajo-web` stays native Wayland (`--ozone-platform=wayland`), enables ANGLE GL (`--use-gl=angle --use-angle=gl`), enables VA-API hardware video decoding (`VaapiVideoDecoder` / `VaapiIgnoreDriverChecks`), and avoids enabling Chromium's Vulkan feature on Wayland so GPU compositing and video decode stay cleanly on Mesa EGL / VA-API without Ozone surface warnings (`--no-hw-accel` or `hardware_acceleration = "never"` switches explicitly to SwiftShader software rendering).

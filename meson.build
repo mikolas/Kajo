@@ -48,6 +48,52 @@ stilview_dep = dependency('libstilview')
 gme_dep = dependency('libgme')
 openmpt_dep = dependency('libopenmpt')
 xmp_dep = dependency('libxmp')
+sqlite3_dep = dependency('sqlite3')
+gcrypt_dep = dependency('libgcrypt')
+
+cpp = meson.get_compiler('cpp')
+dl_dep = cc.find_library('dl', required: true)
+threads_dep = dependency('threads')
+
+fs = import('fs')
+cef_opt = get_option('web_cef')
+cef_lib_dir = get_option('cef_lib_dir')
+cef_include_dir = get_option('cef_include_dir')
+cef_src_dir = get_option('cef_src_dir')
+cef_has_files = (
+  cpp.has_header(cef_include_dir / 'include/cef_version.h')
+  and fs.exists(cef_lib_dir / 'libcef.so')
+  and fs.exists(cef_src_dir / 'libcef_dll/CMakeLists.txt')
+)
+if cef_opt.enabled() and not cef_has_files
+  error('web_cef enabled but CEF headers/library (' + cef_include_dir + ', ' + cef_lib_dir + '/libcef.so, ' + cef_src_dir + '/libcef_dll/CMakeLists.txt) not found')
+endif
+build_web_cef = not cef_opt.disabled() and cef_has_files
+if build_web_cef
+  cef_lib_dep = cpp.find_library('cef', dirs: [cef_lib_dir], required: true)
+  cef_wrapper_list = run_command(
+    'python3',
+    files('scripts/list_cef_wrapper_sources.py'),
+    cef_src_dir / 'libcef_dll/CMakeLists.txt',
+    check: true,
+  )
+  cef_wrapper_sources = files(cef_wrapper_list.stdout().strip().split('\n'))
+  cef_dll_wrapper = static_library(
+    'cef_dll_wrapper',
+    cef_wrapper_sources,
+    cpp_args: [
+      '-std=c++20',
+      '-w',
+      '-isystem', cef_include_dir,
+      '-I' + cef_src_dir,
+      '-DWRAPPING_CEF_SHARED',
+      '-DCEF_API_VERSION=CEF_API_VERSION_EXPERIMENTAL',
+    ],
+    override_options: ['warning_level=0', 'cpp_std=c++20'],
+    pic: true,
+    build_by_default: false,
+  )
+endif
 
 wayland_scanner = find_program('wayland-scanner', required: true)
 wl_protocols_dir = wayland_protocols_dep.get_variable(pkgconfig: 'pkgdatadir')
@@ -201,6 +247,7 @@ kajo_config_sources = files(
   'src/config/schemas/schema_ide.c',
   'src/config/schemas/schema_files.c',
   'src/config/schemas/schema_mod.c',
+  'src/config/schemas/schema_web.c',
 )
 
 # Sources shared by every executable are compiled once instead of once per binary.
@@ -263,6 +310,7 @@ settings_sources = files(
   'src/settings/pages/page_theme.c',
   'src/settings/pages/page_ide.c',
   'src/settings/pages/page_mod.c',
+  'src/settings/pages/page_web.c',
   'src/settings/pages/page_about.c',
   'src/dbus_helpers.c',
   'src/hardware/hw_caps.c',
@@ -391,8 +439,65 @@ executable(
 install_data(
   'data/org.kajo.Player.desktop',
   'data/org.kajo.Mod.desktop',
+  'data/org.kajo.Web.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
+
+web_core_sources = files(
+  'src/web/web_model.c',
+  'src/web/web_sync_merge.c',
+  'src/web/web_media_sniff_core.c',
+  'src/web/web_abp_compiler.c',
+)
+
+if build_web_cef
+  web_cef_sources = files(
+    'src/web_cef/main.cc',
+    'src/web_cef/cef_app.cc',
+    'src/web_cef/cef_adblock.cc',
+    'src/web_cef/cef_chrome_ui.cc',
+    'src/web_cef/cef_ipc.cc',
+    'src/web_cef/cef_prefs_helper.cc',
+    'src/web_cef/cef_tab.cc',
+    'src/web_cef/cef_window.cc',
+    'src/web/web_model.c',
+    'src/web/web_sync_merge.c',
+    'src/web/web_media_sniff_core.c',
+    'src/web/web_storage.c',
+    'src/compositor/niri.c',
+    'src/compositor/kajo_comp_ipc.c',
+    'src/common/spawn_detached.c',
+  ) + kajo_config_sources
+
+  executable(
+    'kajo-web',
+    web_cef_sources,
+    include_directories: include_directories('src'),
+    cpp_args: [
+      '-std=c++20',
+      '-fno-stack-protector',
+      '-isystem', cef_include_dir,
+      '-DCEF_API_VERSION=CEF_API_VERSION_EXPERIMENTAL',
+      '-DKAJO_CEF_LIB_DIR="' + cef_lib_dir + '"',
+    ],
+    override_options: ['cpp_std=c++20'],
+    build_rpath: cef_lib_dir,
+    install_rpath: cef_lib_dir,
+    link_with: cef_dll_wrapper,
+    dependencies: [
+      cef_lib_dep,
+      gio_dep,
+      gio_unix_dep,
+      json_glib_dep,
+      sqlite3_dep,
+      gcrypt_dep,
+      m_dep,
+      dl_dep,
+      threads_dep,
+    ],
+    install: true,
+  )
+endif
 
 mod_engine_sources = files(
   'src/mod/mod_archive.c',
@@ -626,6 +731,7 @@ install_data(
   'data/icons/kajo-files.svg',
   'data/icons/kajo-player.svg',
   'data/icons/kajo-mod.svg',
+  'data/icons/kajo-web.svg',
   'data/icons/kajo-settings.svg',
   'data/icons/kajo-greeter.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
@@ -948,6 +1054,38 @@ test_mod_router_exe = executable(
   build_by_default: false,
 )
 test('mod-router', test_mod_router_exe)
+
+test_web_model_exe = executable(
+  'test-web-model',
+  files('tests/test_web_model.c', 'src/web/web_storage.c') + web_core_sources + kajo_config_sources,
+  dependencies: [gio_dep, json_glib_dep, sqlite3_dep, gcrypt_dep, m_dep],
+  build_by_default: false,
+)
+test('web-model', test_web_model_exe)
+
+if build_web_cef
+  test_web_cef_adblock_exe = executable(
+    'test-web-cef-adblock',
+    files('tests/test_web_cef_adblock.cc', 'src/web_cef/cef_adblock.cc'),
+    include_directories: include_directories('src'),
+    cpp_args: ['-std=c++20'],
+    override_options: ['cpp_std=c++20'],
+    dependencies: [gio_dep, threads_dep],
+    build_by_default: false,
+  )
+  test('web-cef-adblock', test_web_cef_adblock_exe)
+
+  test_web_cef_core_exe = executable(
+    'test-web-cef-core',
+    files('tests/test_web_cef_core.cc', 'src/web_cef/cef_prefs_helper.cc', 'src/web_cef/cef_ipc.cc'),
+    include_directories: include_directories('src'),
+    cpp_args: ['-std=c++20', '-isystem', cef_include_dir],
+    override_options: ['cpp_std=c++20'],
+    dependencies: [gio_dep, json_glib_dep, threads_dep],
+    build_by_default: false,
+  )
+  test('web-cef-core', test_web_cef_core_exe)
+endif
 
 # ─── kajo-comp (compositor) ───────────────────────────────────────────────
 # Pure core: no wlroots, Vulkan or GLib headers (spec §7.2.4). Built with the

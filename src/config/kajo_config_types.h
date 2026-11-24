@@ -13,7 +13,8 @@ typedef enum {
     KAJO_CONFIG_DOMAIN_IDE   = 1 << 2,
     KAJO_CONFIG_DOMAIN_FILES = 1 << 3,
     KAJO_CONFIG_DOMAIN_MOD   = 1 << 4,
-    KAJO_CONFIG_DOMAIN_ALL   = (1 << 5) - 1,
+    KAJO_CONFIG_DOMAIN_WEB   = 1 << 5,
+    KAJO_CONFIG_DOMAIN_ALL   = (1 << 6) - 1,
 } KajoConfigDomain;
 
 /* ─── Shell Enums ─── */
@@ -119,6 +120,78 @@ typedef enum {
 } KajoModEndAction;
 
 #endif /* KAJO_MOD_DSP_ENUMS_DEFINED */
+
+/* ─── Web Browser Enums (web.toml) ─── */
+
+typedef enum {
+    KAJO_WEB_RAIL_AUTOHIDE = 0,
+    KAJO_WEB_RAIL_COMPACT,
+    KAJO_WEB_RAIL_PINNED,
+} KajoWebRailMode;
+
+typedef enum {
+    KAJO_WEB_SIDE_LEFT = 0,
+    KAJO_WEB_SIDE_RIGHT,
+} KajoWebRailSide;
+
+typedef enum {
+    KAJO_WEB_TOPBAR_ALWAYS = 0,
+    KAJO_WEB_TOPBAR_AUTOHIDE,
+} KajoWebTopBarMode;
+
+typedef enum {
+    KAJO_WEB_NEWTAB_DASHBOARD = 0,
+    KAJO_WEB_NEWTAB_BLANK,
+    KAJO_WEB_NEWTAB_CUSTOM,
+} KajoWebNewTabMode;
+
+typedef enum {
+    KAJO_WEB_HW_ALWAYS = 0,
+    KAJO_WEB_HW_ON_DEMAND,
+    KAJO_WEB_HW_NEVER,
+} KajoWebHwAccel;
+
+typedef enum {
+    KAJO_WEB_COOKIES_NO_THIRD_PARTY = 0,
+    KAJO_WEB_COOKIES_ALWAYS,
+    KAJO_WEB_COOKIES_NEVER,
+} KajoWebCookiePolicy;
+
+typedef enum {
+    KAJO_WEB_AUTOPLAY_MUTE = 0,
+    KAJO_WEB_AUTOPLAY_ALLOW,
+    KAJO_WEB_AUTOPLAY_DENY,
+} KajoWebAutoplayPolicy;
+
+typedef enum {
+    KAJO_WEB_SEARCH_DUCKDUCKGO = 0,
+    KAJO_WEB_SEARCH_KAGI,
+    KAJO_WEB_SEARCH_STARTPAGE,
+    KAJO_WEB_SEARCH_BRAVE,
+    KAJO_WEB_SEARCH_GOOGLE,
+    KAJO_WEB_SEARCH_CUSTOM,
+} KajoWebSearchEngine;
+
+typedef enum {
+    KAJO_WEB_UA_DEFAULT = 0,
+    KAJO_WEB_UA_SAFARI,
+    KAJO_WEB_UA_CHROME_LINUX,
+    KAJO_WEB_UA_CUSTOM,
+} KajoWebUaPreset;
+
+typedef enum {
+    KAJO_WEB_SCHEME_FOLLOW_KAJO = 0,
+    KAJO_WEB_SCHEME_DARK,
+    KAJO_WEB_SCHEME_LIGHT,
+} KajoWebColorScheme;
+
+typedef enum {
+    KAJO_WEB_DL_BEST_MP4 = 0,
+    KAJO_WEB_DL_1080P,
+    KAJO_WEB_DL_720P,
+    KAJO_WEB_DL_AUDIO_OPUS,
+    KAJO_WEB_DL_AUDIO_MP3,
+} KajoWebDownloadFmt;
 
 /* ─── Widget Item Struct ─── */
 
@@ -275,6 +348,65 @@ typedef struct {
     gchar            *hvsc_path;             /* "" */
 } KajoModCfg;
 
+/* ─── 6. Web Browser Domain (web.toml) ─── */
+
+typedef struct {
+    KajoWebRailMode       rail_mode;
+    KajoWebRailSide       rail_side;
+    gint                  rail_width_px;          /* [180..360], default 240 */
+    gint                  rail_reveal_delay_ms;   /* [0..300], default 80 */
+    gint                  rail_hide_delay_ms;     /* [50..1000], default 220 */
+    KajoWebTopBarMode     top_bar_mode;
+    gboolean              show_tab_domains;
+    KajoWebNewTabMode     new_tab_page;
+    gchar                *new_tab_custom_url;
+    gboolean              restore_session;
+
+    KajoWebHwAccel        hardware_acceleration;
+    gboolean              enable_webgl;
+    gboolean              gpu_process_webgl;
+    gboolean              smooth_scrolling;
+    gint                  suspend_idle_min;       /* 0 or [5..240], default 30 */
+    gint                  memory_limit_mb;        /* [512..16384], default 2048 */
+
+    gboolean              adblock_enabled;
+    gboolean              adblock_auto_sync;
+    gchar                *adblock_custom_rules_path;
+    gboolean              user_scripts_enabled;
+    gboolean              itp_enabled;
+    KajoWebCookiePolicy   cookie_policy;
+    gboolean              https_only;
+    KajoWebAutoplayPolicy autoplay_policy;
+    gboolean              enable_webrtc;
+    gboolean              dns_prefetch;
+    KajoWebDownloadFmt    media_download_format;
+
+    KajoWebSearchEngine   search_engine;
+    gchar                *search_custom_url;
+    gint                  default_zoom_pct;       /* [50..200], default 100 */
+    KajoWebUaPreset       user_agent_preset;
+    gchar                *user_agent_custom;
+
+    KajoWebColorScheme    color_scheme;
+    gint                  default_font_size_px;   /* [10..32], default 16 */
+    gint                  mono_font_size_px;      /* [10..28], default 13 */
+    gint                  min_font_size_px;       /* [0..24], default 9 */
+    gchar                *download_dir;
+    gboolean              ask_download_location;
+    gboolean              downloads_auto_open;
+    gboolean              developer_extras;
+
+    gboolean              show_picker_on_startup;
+    gboolean              profile_border_accent;
+    gchar                *sync_oauth_client_id;
+    gchar                *sync_oauth_client_secret;
+    gboolean              sync_bookmarks;
+    gboolean              sync_history;
+    gboolean              sync_tabs_and_groups;
+    gboolean              sync_settings;
+    gboolean              sync_e2ee_enabled;
+} KajoWebCfg;
+
 /* ─── Refcounted Snapshot Lifecycle ─── */
 
 const KajoThemeCfg *kajo_theme_cfg_ref(const KajoThemeCfg *cfg);
@@ -291,6 +423,9 @@ void                kajo_files_cfg_unref(const KajoFilesCfg *cfg);
 
 const KajoModCfg   *kajo_mod_cfg_ref(const KajoModCfg *cfg);
 void                kajo_mod_cfg_unref(const KajoModCfg *cfg);
+
+const KajoWebCfg   *kajo_web_cfg_ref(const KajoWebCfg *cfg);
+void                kajo_web_cfg_unref(const KajoWebCfg *cfg);
 
 /* Mutable deep-copy / default / free helpers for unit tests and mutators */
 KajoThemeCfg *kajo_theme_cfg_new_default(void);
@@ -312,6 +447,10 @@ void          kajo_files_cfg_free(KajoFilesCfg *cfg);
 KajoModCfg   *kajo_mod_cfg_new_default(void);
 KajoModCfg   *kajo_mod_cfg_copy(const KajoModCfg *src);
 void          kajo_mod_cfg_free(KajoModCfg *cfg);
+
+KajoWebCfg   *kajo_web_cfg_new_default(void);
+KajoWebCfg   *kajo_web_cfg_copy(const KajoWebCfg *src);
+void          kajo_web_cfg_free(KajoWebCfg *cfg);
 
 /* Enum <-> String conversion helpers */
 const gchar       *shell_panel_position_to_string(ShellPanelPosition pos);
@@ -341,23 +480,30 @@ KajoModSidModel    kajo_mod_sid_model_from_string(const gchar *str);
 const gchar       *kajo_mod_end_action_to_string(KajoModEndAction act);
 KajoModEndAction   kajo_mod_end_action_from_string(const gchar *str);
 
+const gchar       *kajo_web_rail_mode_to_string(KajoWebRailMode mode);
+const gchar       *kajo_web_hw_accel_to_string(KajoWebHwAccel hw);
+const gchar       *kajo_web_search_engine_to_string(KajoWebSearchEngine eng);
+
 typedef const KajoThemeCfg KajoThemeCfgRef;
 typedef const KajoShellCfg KajoShellCfgRef;
 typedef const KajoIdeCfg   KajoIdeCfgRef;
 typedef const KajoFilesCfg KajoFilesCfgRef;
 typedef const KajoModCfg   KajoModCfgRef;
+typedef const KajoWebCfg   KajoWebCfgRef;
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoThemeCfgRef, kajo_theme_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoShellCfgRef, kajo_shell_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoIdeCfgRef,   kajo_ide_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoFilesCfgRef, kajo_files_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoModCfgRef,   kajo_mod_cfg_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoWebCfgRef,   kajo_web_cfg_unref)
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoThemeCfg, kajo_theme_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoShellCfg, kajo_shell_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoIdeCfg,   kajo_ide_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoFilesCfg, kajo_files_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoModCfg,   kajo_mod_cfg_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoWebCfg,   kajo_web_cfg_free)
 
 #ifdef __cplusplus
 }
