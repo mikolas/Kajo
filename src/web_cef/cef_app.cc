@@ -181,15 +181,16 @@ void KajoCefApp::OnBeforeCommandLineProcessing(const CefString& process_type,
     command_line->AppendSwitchWithValue("ozone-platform-hint", "auto");
   }
 
-  /* Respect kajo_config hardware acceleration preference in browser process */
+  /* Respect kajo_config hardware acceleration & startup flags in browser process */
   bool hw_accel = cfg_.hw_accel_enabled;
-  if (process_type.empty() && hw_accel) {
+  if (process_type.empty()) {
     KajoConfigStore* cs = kajo_config_store_get_default();
     if (cs) {
       const KajoWebCfg* wcfg = kajo_config_store_acquire_web(cs);
       if (wcfg) {
         if (wcfg->hardware_acceleration == KAJO_WEB_HW_NEVER) {
           hw_accel = false;
+          cfg_.hw_accel_enabled = false;
         }
         if (wcfg->user_agent_preset == KAJO_WEB_UA_SAFARI) {
           command_line->AppendSwitchWithValue(
@@ -199,6 +200,18 @@ void KajoCefApp::OnBeforeCommandLineProcessing(const CefString& process_type,
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CUSTOM &&
                    wcfg->user_agent_custom && wcfg->user_agent_custom[0] != '\0') {
           command_line->AppendSwitchWithValue("user-agent", wcfg->user_agent_custom);
+        }
+        if (!command_line->HasSwitch("autoplay-policy")) {
+          const char* ap = "user-gesture-required";
+          if (wcfg->autoplay_policy == KAJO_WEB_AUTOPLAY_ALLOW) {
+            ap = "no-user-gesture-required";
+          } else if (wcfg->autoplay_policy == KAJO_WEB_AUTOPLAY_DENY) {
+            ap = "document-user-activation-required";
+          }
+          command_line->AppendSwitchWithValue("autoplay-policy", ap);
+        }
+        if (!wcfg->smooth_scrolling && !command_line->HasSwitch("disable-smooth-scrolling")) {
+          command_line->AppendSwitch("disable-smooth-scrolling");
         }
         kajo_web_cfg_unref(wcfg);
       }

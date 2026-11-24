@@ -159,9 +159,12 @@ std::string ChromeStateStore::SnapshotJson() const {
   o << "\"rail_hover_open\":" << (s.rail_hover_open ? "true" : "false") << ",";
   o << "\"rail_width_px\":" << s.rail_width_px << ",";
   o << "\"topbar_mode\":" << s.topbar_mode << ",";
+  o << "\"topbar_hover_open\":" << (s.topbar_hover_open ? "true" : "false") << ",";
+  o << "\"profile_border_accent\":" << (s.profile_border_accent ? "true" : "false") << ",";
   o << "\"show_tab_domains\":" << (s.show_tab_domains ? "true" : "false") << ",";
   o << "\"ac_visible\":" << (s.ac_visible ? "true" : "false") << ",";
   o << "\"ac_selected_idx\":" << s.ac_selected_idx << ",";
+  o << "\"closed_tab_count\":" << s.closed_tab_count << ",";
   o << "\"overlay_mode\":\"" << JsonEscape(s.overlay_mode) << "\",";
   o << "\"accent_color\":\"" << JsonEscape(s.accent_color) << "\",";
   o << "\"profile_accent\":\"" << JsonEscape(s.profile_accent) << "\",";
@@ -296,7 +299,26 @@ std::string ChromeStateStore::SnapshotJson() const {
       << ",\"enabled\":" << (f.enabled ? "true" : "false")
       << ",\"rule_count\":" << f.rule_count << "}";
   }
-  o << "]";
+  o << "],";
+
+  o << "\"active_bookmark\":{"
+    << "\"uuid\":\"" << JsonEscape(s.active_bookmark.uuid) << "\""
+    << ",\"title\":\"" << JsonEscape(s.active_bookmark.title) << "\""
+    << ",\"url\":\"" << JsonEscape(s.active_bookmark.url) << "\""
+    << ",\"folder\":\"" << JsonEscape(s.active_bookmark.folder) << "\"},";
+
+  o << "\"bookmark_folders\":[";
+  for (size_t i = 0; i < s.bookmark_folders.size(); ++i) {
+    if (i) o << ",";
+    o << "\"" << JsonEscape(s.bookmark_folders[i]) << "\"";
+  }
+  o << "],";
+
+  o << "\"active_permission\":{"
+    << "\"req_id\":" << s.active_permission.req_id
+    << ",\"origin\":\"" << JsonEscape(s.active_permission.origin) << "\""
+    << ",\"label\":\"" << JsonEscape(s.active_permission.label) << "\""
+    << ",\"perm_key\":\"" << JsonEscape(s.active_permission.perm_key) << "\"}";
 
   o << "}";
   return o.str();
@@ -309,11 +331,23 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
 <link rel="stylesheet" href="kajo-chrome://ui/theme.css">
 <style>
   html, body {
-    height: 34px;
+    height: 100vh;
     overflow: hidden;
+    background: transparent;
+  }
+  .bar-wrap {
+    height: 34px;
     background: var(--metro-surface-0);
     border-bottom: 1px solid var(--metro-border);
+    overflow: hidden;
   }
+  .bar-wrap.collapsed {
+    height: 6px;
+    background: rgba(0, 0, 0, 0.01);
+    border-bottom: none;
+    border-top: 2px solid var(--metro-border-strong);
+  }
+  .bar-wrap.collapsed .bar { display: none; }
   .bar {
     height: 33px;
     display: flex;
@@ -361,6 +395,13 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     border-color: var(--metro-accent);
     color: #ffffff;
   }
+  .btn.sw-chip {
+    border-color: var(--metro-warning);
+    color: #ffb347;
+    font-size: 10px;
+    letter-spacing: 0.4px;
+    padding: 0 7px;
+  }
   .btn.close:hover {
     background: var(--metro-urgent);
     border-color: var(--metro-urgent);
@@ -393,6 +434,32 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .sec-badge.tls { color: var(--metro-success); }
   .sec-badge.warn { color: var(--metro-warning); }
   .sec-badge.kajo { color: var(--metro-accent); }
+  .omni-display {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    font-size: 12px;
+    cursor: text;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .omni-host {
+    color: #ffffff;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .omni-host.kajo-scheme { color: var(--metro-accent); }
+  .omni-path {
+    color: var(--metro-fg-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .omni-ph { color: var(--metro-fg-dim); }
+  .omnibar-wrap:not(.focused) #omnibar { display: none; }
+  .omnibar-wrap.focused #omniDisplay { display: none; }
   #omnibar {
     flex: 1 1 auto;
     min-width: 0;
@@ -443,45 +510,52 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     transition: width 140ms linear, opacity 180ms ease;
     opacity: 0;
     pointer-events: none;
+    z-index: 5;
   }
   .load-bar.active { width: 72%; opacity: 1; }
 </style>
 </head>
 <body>
 <div id="loadBar" class="load-bar"></div>
-<div class="bar">
-  <div class="cluster">
-    <button id="btnBack" class="btn" title="Back (Alt+Left)">←</button>
-    <button id="btnFwd" class="btn" title="Forward (Alt+Right)">→</button>
-    <button id="btnReload" class="btn" title="Reload / Stop (Ctrl+R)">⟳</button>
-    <button id="btnRail" class="btn" title="Toggle Tab Rail (Ctrl+B)">◧</button>
-  </div>
+<div id="barWrap" class="bar-wrap">
+  <div class="bar">
+    <div class="cluster">
+      <button id="btnBack" class="btn" title="Back (Alt+Left)">←</button>
+      <button id="btnFwd" class="btn" title="Forward (Alt+Right)">→</button>
+      <button id="btnReload" class="btn" title="Reload / Stop (Ctrl+R · Shift+R Hard)">⟳</button>
+      <button id="btnRail" class="btn" title="Toggle Tab Rail (Ctrl+B)">◧</button>
+    </div>
 
-  <div class="drag-spacer"></div>
+    <div class="drag-spacer"></div>
 
-  <div id="omniWrap" class="omnibar-wrap">
-    <span id="secBadge" class="sec-badge">❖</span>
-    <input id="omnibar" type="text" spellcheck="false" autocomplete="off"
-           placeholder="Search or enter URL (Ctrl+L · Ctrl+K Palette)">
-    <button id="btnShield" class="pill shield-on" title="Adblock &amp; Trackers">
-      <span>🛡</span><span id="blockedNum">0</span>
-    </button>
-    <button id="btnStar" class="pill" title="Bookmark Page (Ctrl+D)">☆</button>
-  </div>
+    <div id="omniWrap" class="omnibar-wrap">
+      <span id="secBadge" class="sec-badge">❖</span>
+      <div id="omniDisplay" class="omni-display" tabindex="0">
+        <span id="omniHost" class="omni-host"></span><span id="omniPath" class="omni-path"></span><span id="omniPh" class="omni-ph hidden">Search or enter URL (Ctrl+L · Ctrl+K Palette)</span>
+      </div>
+      <input id="omnibar" type="text" spellcheck="false" autocomplete="off"
+             placeholder="Search or enter URL (Ctrl+L · Ctrl+K Palette)">
+      <button id="btnShield" class="pill shield-on" title="Adblock &amp; Trackers">
+        <span>🛡</span><span id="blockedNum">0</span>
+      </button>
+      <button id="btnStar" class="pill" title="Bookmark Page (Ctrl+D)">☆</button>
+    </div>
 
-  <div class="drag-spacer"></div>
+    <div class="drag-spacer"></div>
 
-  <div class="cluster">
-    <button id="btnMedia" class="btn hidden" title="Sniffed Media Streams">⬇ <span id="mediaCount">0</span></button>
-    <button id="btnDl" class="btn hidden" title="Downloads">↓ <span id="dlCount">0</span></button>
-    <button id="btnZoom" class="btn hidden" title="Reset Zoom (Ctrl+0)"><span id="zoomLabel">100%</span></button>
-    <button id="btnProfile" class="btn profile-btn" title="Profiles &amp; Private Mode">
-      <span id="profileDot" class="dot"></span>
-      <span id="profileLabel">DEFAULT</span>
-    </button>
-    <button id="btnSettings" class="btn" title="Web Settings">⚙</button>
-    <button id="btnFloat" class="btn" title="Float / Tile Window">🗗</button>
-    <button id="btnClose" class="btn close" title="Close Browser">✕</button>
+    <div class="cluster">
+      <button id="btnSwRender" class="btn sw-chip hidden" title="Hardware GPU acceleration disabled — open kajo://gpu">⚠ SW RENDER</button>
+      <button id="btnMedia" class="btn hidden" title="Sniffed Media Streams">⬇ <span id="mediaCount">0</span></button>
+      <button id="btnDl" class="btn hidden" title="Downloads (Ctrl+J)">↓ <span id="dlCount">0</span></button>
+      <button id="btnZoom" class="btn hidden" title="Reset Zoom (Ctrl+0)"><span id="zoomLabel">100%</span></button>
+      <button id="btnProfile" class="btn profile-btn" title="Profiles &amp; Private Mode (Ctrl+Shift+M)">
+        <span id="profileDot" class="dot"></span>
+        <span id="profileLabel">DEFAULT</span>
+      </button>
+      <button id="btnSettings" class="btn" title="Web Settings (Ctrl+,)">⚙</button>
+      <button id="btnFloat" class="btn" title="Float / Tile Window">🗗</button>
+      <button id="btnClose" class="btn close" title="Close Browser">✕</button>
+    </div>
   </div>
 </div>
 
@@ -497,8 +571,13 @@ const send = (cmd, extra = {}) => {
   });
 };
 
+const barWrap = document.getElementById('barWrap');
 const omni = document.getElementById('omnibar');
 const omniWrap = document.getElementById('omniWrap');
+const omniDisplay = document.getElementById('omniDisplay');
+const omniHost = document.getElementById('omniHost');
+const omniPath = document.getElementById('omniPath');
+const omniPh = document.getElementById('omniPh');
 const btnBack = document.getElementById('btnBack');
 const btnFwd = document.getElementById('btnFwd');
 const btnReload = document.getElementById('btnReload');
@@ -507,6 +586,7 @@ const secBadge = document.getElementById('secBadge');
 const btnShield = document.getElementById('btnShield');
 const blockedNum = document.getElementById('blockedNum');
 const btnStar = document.getElementById('btnStar');
+const btnSwRender = document.getElementById('btnSwRender');
 const btnMedia = document.getElementById('btnMedia');
 const mediaCount = document.getElementById('mediaCount');
 const btnDl = document.getElementById('btnDl');
@@ -521,14 +601,68 @@ const loadBar = document.getElementById('loadBar');
 let lastState = null;
 let acSelectedIdx = -1;
 
+function updateOmniDisplay(url) {
+  omniHost.className = 'omni-host';
+  omniHost.textContent = '';
+  omniPath.textContent = '';
+  omniPh.classList.add('hidden');
+  if (!url || url === 'about:blank') {
+    omniPh.classList.remove('hidden');
+    return;
+  }
+  if (url.startsWith('kajo://') || url.startsWith('chrome://')) {
+    omniHost.classList.add('kajo-scheme');
+    const idx = url.indexOf('/', url.indexOf('://') + 3);
+    if (idx >= 0) {
+      omniHost.textContent = url.slice(0, idx);
+      omniPath.textContent = url.slice(idx);
+    } else {
+      omniHost.textContent = url;
+    }
+    return;
+  }
+  try {
+    const u = new URL(url);
+    if (u.host) {
+      omniHost.textContent = u.host;
+      const tail = (u.pathname === '/' && !u.search && !u.hash) ? '' : (u.pathname + u.search + u.hash);
+      omniPath.textContent = tail;
+      return;
+    }
+  } catch (_) {}
+  omniHost.textContent = url;
+}
+
 window.__kajoFocusOmnibar = () => {
+  omniWrap.classList.add('focused');
   omni.focus();
   omni.select();
 };
 
+barWrap.addEventListener('mouseenter', () => {
+  if (lastState && lastState.topbar_mode === 1) send('topbar_hover', { inside: true });
+});
+barWrap.addEventListener('mousemove', () => {
+  if (lastState && lastState.topbar_mode === 1 && !lastState.topbar_hover_open) {
+    send('topbar_hover', { inside: true });
+  }
+});
+barWrap.addEventListener('mouseleave', () => {
+  if (lastState && lastState.topbar_mode === 1) send('topbar_hover', { inside: false });
+});
+
+omniDisplay.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  window.__kajoFocusOmnibar();
+});
+omniDisplay.addEventListener('focus', () => window.__kajoFocusOmnibar());
+
 window.__kajoApply = (s) => {
   lastState = s;
   acSelectedIdx = typeof s.ac_selected_idx === 'number' ? s.ac_selected_idx : -1;
+  const isCollapsed = (s.topbar_mode === 1 && !s.topbar_hover_open);
+  barWrap.className = 'bar-wrap' + (isCollapsed ? ' collapsed' : '');
+
   btnBack.disabled = !s.can_go_back;
   btnFwd.disabled = !s.can_go_forward;
   btnReload.textContent = s.is_loading ? '✕' : '⟳';
@@ -536,7 +670,9 @@ window.__kajoApply = (s) => {
   btnRail.classList.toggle('active', s.rail_mode === 2);
 
   if (document.activeElement !== omni) {
+    omniWrap.classList.remove('focused');
     omni.value = s.active_url || '';
+    updateOmniDisplay(s.active_url || '');
   }
 
   const url = s.active_url || '';
@@ -562,6 +698,8 @@ window.__kajoApply = (s) => {
   btnStar.textContent = s.is_bookmarked ? '★' : '☆';
   btnStar.classList.toggle('star-on', !!s.is_bookmarked);
 
+  btnSwRender.classList.toggle('hidden', s.hw_accel_enabled !== false);
+
   const mc = (s.media_streams || []).length;
   btnMedia.classList.toggle('hidden', mc === 0);
   mediaCount.textContent = String(mc);
@@ -580,11 +718,14 @@ window.__kajoApply = (s) => {
 
 omni.addEventListener('focus', () => {
   omniWrap.classList.add('focused');
+  send('topbar_focus', { focused: true });
   omni.select();
 });
 omni.addEventListener('blur', () => {
   omniWrap.classList.remove('focused');
+  if (lastState) updateOmniDisplay(lastState.active_url || '');
   acSelectedIdx = -1;
+  send('topbar_focus', { focused: false });
   setTimeout(() => {
     if (document.activeElement !== omni) {
       send('ac_close');
@@ -604,12 +745,19 @@ omni.addEventListener('keydown', (e) => {
       send('navigate', { input: omni.value });
     }
     acSelectedIdx = -1;
+    omniWrap.classList.remove('focused');
     omni.blur();
+    send('topbar_focus', { focused: false });
   } else if (e.key === 'Escape') {
     e.preventDefault();
     acSelectedIdx = -1;
-    if (lastState) omni.value = lastState.active_url || '';
+    if (lastState) {
+      omni.value = lastState.active_url || '';
+      updateOmniDisplay(omni.value);
+    }
+    omniWrap.classList.remove('focused');
     omni.blur();
+    send('topbar_focus', { focused: false });
     send('ac_close');
     send('focus_content');
   } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -628,6 +776,7 @@ btnReload.onclick = () => send('reload_or_stop');
 btnRail.onclick = () => send('toggle_rail');
 btnShield.onclick = () => send('toggle_overlay', { mode: 'adblock' });
 btnStar.onclick = () => send('toggle_bookmark');
+btnSwRender.onclick = () => send('open_kajo_page', { page: 'kajo://gpu' });
 btnMedia.onclick = () => send('toggle_overlay', { mode: 'media' });
 btnDl.onclick = () => send('toggle_overlay', { mode: 'downloads' });
 btnZoom.onclick = () => send('zoom_reset');
@@ -680,9 +829,152 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     border-left: none;
     border-right: 2px solid var(--metro-border-strong);
   }
+  .edge-ticks {
+    display: none;
+    position: fixed;
+    top: 8px;
+    bottom: 8px;
+    left: 0;
+    width: 3px;
+    flex-direction: column;
+    gap: 3px;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .rail.side-right .edge-ticks {
+    left: auto;
+    right: 0;
+  }
+  .rail.collapsed-strip .edge-ticks { display: flex; }
+  .edge-tick {
+    width: 3px;
+    height: 11px;
+    background: #555555;
+    flex-shrink: 0;
+  }
+  .edge-tick.active {
+    background: var(--metro-accent);
+    height: 16px;
+  }
+  .edge-tick.suspended { background: #2d2d2d; }
   .rail.collapsed-strip .rail-head,
+  .rail.collapsed-strip .pinned-grid,
   .rail.collapsed-strip .tab-list,
   .rail.collapsed-strip .rail-foot { display: none; }
+  .pinned-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 3px;
+    padding: 5px 6px;
+    border-bottom: 1px solid var(--metro-border);
+    background: var(--metro-surface-1);
+    flex-shrink: 0;
+  }
+  .pinned-grid.hidden { display: none; }
+  .rail.compact .pinned-grid {
+    grid-template-columns: 1fr;
+    padding: 4px;
+  }
+  .pin-tile {
+    position: relative;
+    height: 34px;
+    background: var(--metro-surface-2);
+    border: 1px solid var(--metro-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .pin-tile:hover { background: var(--metro-surface-3); border-color: var(--metro-border-strong); }
+  .pin-tile.active {
+    background: var(--metro-surface-3);
+    border-color: var(--metro-accent);
+    box-shadow: inset 0 -2px 0 var(--metro-accent);
+  }
+  .pin-tile.drop-above { border-left: 2px solid var(--metro-accent); }
+  .pin-tile.drop-below { border-right: 2px solid var(--metro-accent); }
+  .pin-mute {
+    position: absolute;
+    right: 1px;
+    bottom: 0;
+    font-size: 9px;
+    line-height: 1;
+  }
+  .tab-row.drop-above { box-shadow: inset 0 2px 0 var(--metro-accent); }
+  .tab-row.drop-below { box-shadow: inset 0 -2px 0 var(--metro-accent); }
+  .ctx-menu {
+    position: fixed;
+    z-index: 50;
+    min-width: 184px;
+    max-width: 224px;
+    background: var(--metro-surface-1);
+    border: 1px solid var(--metro-accent);
+    padding: 3px 0;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.7);
+  }
+  .ctx-menu.hidden { display: none; }
+  .ctx-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 5px 10px;
+    background: transparent;
+    border: none;
+    color: var(--metro-fg);
+    font-size: 11px;
+    text-align: left;
+    cursor: pointer;
+  }
+  .ctx-item:hover:not(:disabled) {
+    background: var(--metro-surface-4);
+    color: #ffffff;
+  }
+  .ctx-item:disabled { opacity: 0.35; cursor: default; }
+  .ctx-sep { height: 1px; background: var(--metro-border); margin: 3px 0; }
+  .ctx-sub {
+    padding: 4px 8px 6px 10px;
+    border-top: 1px solid var(--metro-border);
+    background: var(--metro-surface-0);
+  }
+  .ctx-sub-lbl {
+    font-size: 9px;
+    color: var(--metro-fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 4px;
+  }
+  .ctx-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-bottom: 4px;
+  }
+  .ctx-chip {
+    padding: 2px 6px;
+    font-size: 10px;
+    background: var(--metro-surface-2);
+    border: 1px solid var(--metro-border-strong);
+    color: var(--metro-fg);
+    cursor: pointer;
+  }
+  .ctx-chip.active, .ctx-chip:hover {
+    border-color: var(--metro-accent);
+    color: #ffffff;
+  }
+  .ctx-grp-row {
+    display: flex;
+    gap: 3px;
+  }
+  .ctx-grp-inp {
+    flex: 1;
+    min-width: 0;
+    padding: 2px 5px;
+    background: #0d0d0d;
+    border: 1px solid var(--metro-border-strong);
+    color: #ffffff;
+    font-size: 10px;
+  }
   .rail-head {
     display: flex;
     align-items: center;
@@ -842,19 +1134,25 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
 </head>
 <body>
 <div id="railRoot" class="rail">
+  <div id="edgeTicks" class="edge-ticks"></div>
   <div class="rail-head">
     <button id="btnNewTab" class="newtab-btn" title="New Tab (Ctrl+T)">
       <span id="newTabLabel">+ NEW TAB</span>
       <span class="rail-foot-label">^T</span>
     </button>
   </div>
+  <div id="pinnedGrid" class="pinned-grid hidden"></div>
   <div id="tabList" class="tab-list"></div>
   <div class="rail-foot">
     <span id="tabCount" class="rail-foot-label">1 TAB</span>
-    <button id="btnPalette" class="mode-btn rail-foot-label" title="Command Palette (Ctrl+K)">⌘K</button>
-    <button id="btnMode" class="mode-btn" title="Cycle Rail Mode (Compact / Pinned / Autohide)">⇆</button>
+    <div style="display:flex;gap:3px;align-items:center;">
+      <button id="btnReopen" class="mode-btn rail-foot-label" title="Reopen Closed Tab (Ctrl+Shift+T)" disabled>↺</button>
+      <button id="btnPalette" class="mode-btn rail-foot-label" title="Command Palette (Ctrl+K)">⌘K</button>
+      <button id="btnMode" class="mode-btn" title="Cycle Rail Mode (Compact / Pinned / Autohide)">⇆</button>
+    </div>
   </div>
 </div>
+<div id="tabCtxMenu" class="ctx-menu hidden"></div>
 
 <script>
 const send = (cmd, extra = {}) => {
@@ -869,14 +1167,35 @@ const send = (cmd, extra = {}) => {
 };
 
 const railRoot = document.getElementById('railRoot');
+const edgeTicks = document.getElementById('edgeTicks');
+const pinnedGrid = document.getElementById('pinnedGrid');
 const tabList = document.getElementById('tabList');
 const btnNewTab = document.getElementById('btnNewTab');
 const newTabLabel = document.getElementById('newTabLabel');
 const tabCount = document.getElementById('tabCount');
-
+const btnReopen = document.getElementById('btnReopen');
 const btnMode = document.getElementById('btnMode');
+const tabCtxMenu = document.getElementById('tabCtxMenu');
 
 let lastRailState = null;
+let ctxTabId = null;
+let dragTabId = null;
+let holdSent = false;
+
+function setRailHold(hold) {
+  if (holdSent === hold) return;
+  holdSent = hold;
+  send('rail_hold', { hold });
+}
+
+window.__kajoCloseCtxMenu = () => {
+  if (ctxTabId === null && tabCtxMenu.classList.contains('hidden')) return;
+  ctxTabId = null;
+  tabCtxMenu.classList.add('hidden');
+  tabCtxMenu.innerHTML = '';
+  if (!dragTabId) setRailHold(false);
+};
+
 railRoot.addEventListener('mouseenter', () => {
   send('rail_hover', { inside: true });
 });
@@ -886,15 +1205,30 @@ railRoot.addEventListener('mousemove', () => {
   }
 });
 railRoot.addEventListener('mouseleave', () => {
-  send('rail_hover', { inside: false });
+  if (ctxTabId === null && !dragTabId) {
+    send('rail_hover', { inside: false });
+  }
 });
 window.addEventListener('blur', () => {
+  window.__kajoCloseCtxMenu();
   if (lastRailState && lastRailState.rail_hover_open) {
     send('rail_hover', { inside: false });
   }
 });
+document.addEventListener('mousedown', (e) => {
+  if (ctxTabId !== null && !tabCtxMenu.contains(e.target)) {
+    window.__kajoCloseCtxMenu();
+  }
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && ctxTabId !== null) {
+    e.preventDefault();
+    window.__kajoCloseCtxMenu();
+  }
+});
 
 btnNewTab.onclick = () => send('new_tab');
+btnReopen.onclick = () => send('reopen_tab');
 document.getElementById('btnPalette').onclick = () => send('toggle_overlay', { mode: 'palette' });
 btnMode.onclick = () => send('cycle_rail_mode');
 
@@ -916,6 +1250,138 @@ function makeFavicon(t) {
   return box;
 }
 
+function openTabCtxMenu(t, x, y) {
+  if (!lastRailState) return;
+  ctxTabId = t.id;
+  setRailHold(true);
+  tabCtxMenu.innerHTML = '';
+
+  const addItem = (label, disabled, onClick) => {
+    const b = document.createElement('button');
+    b.className = 'ctx-item';
+    b.textContent = label;
+    b.disabled = !!disabled;
+    b.onclick = (e) => {
+      e.stopPropagation();
+      window.__kajoCloseCtxMenu();
+      onClick();
+    };
+    tabCtxMenu.appendChild(b);
+  };
+
+  addItem(t.pinned ? 'Unpin Tab' : 'Pin Tab', false, () => send('toggle_pin', { tab_id: t.id }));
+  addItem(t.muted ? 'Unmute Tab' : 'Mute Tab', false, () => send('toggle_mute', { tab_id: t.id }));
+  addItem('Duplicate Tab', false, () => send('duplicate_tab', { tab_id: t.id }));
+  addItem('Suspend Tab', t.active || t.suspended, () => send('suspend_tab', { tab_id: t.id }));
+
+  const sub = document.createElement('div');
+  sub.className = 'ctx-sub';
+  const subLbl = document.createElement('div');
+  subLbl.className = 'ctx-sub-lbl';
+  subLbl.textContent = 'Move to Group';
+  sub.appendChild(subLbl);
+
+  const groups = [];
+  for (const cand of (lastRailState.tabs || [])) {
+    if (cand.group && !groups.includes(cand.group)) groups.push(cand.group);
+  }
+  const chips = document.createElement('div');
+  chips.className = 'ctx-chips';
+  const addChip = (lbl, grpVal, isAct) => {
+    const ch = document.createElement('button');
+    ch.className = 'ctx-chip' + (isAct ? ' active' : '');
+    ch.textContent = lbl;
+    ch.onclick = (e) => {
+      e.stopPropagation();
+      window.__kajoCloseCtxMenu();
+      send('set_tab_group', { tab_id: t.id, group: grpVal });
+    };
+    chips.appendChild(ch);
+  };
+  if (t.group) addChip('None', '', false);
+  for (const g of groups) addChip(g, g, t.group === g);
+  if (groups.length || t.group) sub.appendChild(chips);
+
+  const grpRow = document.createElement('div');
+  grpRow.className = 'ctx-grp-row';
+  const grpInp = document.createElement('input');
+  grpInp.className = 'ctx-grp-inp';
+  grpInp.placeholder = 'New group...';
+  const grpBtn = document.createElement('button');
+  grpBtn.className = 'ctx-chip';
+  grpBtn.textContent = '+';
+  const commitGroup = () => {
+    const v = grpInp.value.trim();
+    if (!v) return;
+    window.__kajoCloseCtxMenu();
+    send('set_tab_group', { tab_id: t.id, group: v });
+  };
+  grpBtn.onclick = (e) => { e.stopPropagation(); commitGroup(); };
+  grpInp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commitGroup(); }
+    else if (e.key === 'Escape') { e.preventDefault(); window.__kajoCloseCtxMenu(); }
+  });
+  grpRow.append(grpInp, grpBtn);
+  sub.appendChild(grpRow);
+  tabCtxMenu.appendChild(sub);
+
+  const sep = document.createElement('div');
+  sep.className = 'ctx-sep';
+  tabCtxMenu.appendChild(sep);
+
+  addItem('Close Tab', false, () => send('close_tab', { tab_id: t.id }));
+  addItem('Close Other Tabs', (lastRailState.tabs || []).length <= 1, () => send('close_other_tabs', { tab_id: t.id }));
+
+  tabCtxMenu.classList.remove('hidden');
+  const mw = tabCtxMenu.offsetWidth || 190;
+  const mh = tabCtxMenu.offsetHeight || 220;
+  const px = Math.max(4, Math.min(x, window.innerWidth - mw - 4));
+  const py = Math.max(4, Math.min(y, window.innerHeight - mh - 4));
+  tabCtxMenu.style.left = px + 'px';
+  tabCtxMenu.style.top = py + 'px';
+}
+
+function attachDragHandlers(el, t) {
+  el.draggable = true;
+  el.addEventListener('dragstart', (e) => {
+    dragTabId = t.id;
+    setRailHold(true);
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', String(t.id));
+    }
+  });
+  el.addEventListener('dragover', (e) => {
+    if (dragTabId === null || dragTabId === t.id) return;
+    e.preventDefault();
+    const r = el.getBoundingClientRect();
+    const after = t.pinned ? (e.clientX > r.left + r.width / 2) : (e.clientY > r.top + r.height / 2);
+    el.classList.toggle('drop-above', !after);
+    el.classList.toggle('drop-below', after);
+  });
+  el.addEventListener('dragleave', () => {
+    el.classList.remove('drop-above', 'drop-below');
+  });
+  el.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const after = el.classList.contains('drop-below');
+    el.classList.remove('drop-above', 'drop-below');
+    const srcId = dragTabId;
+    dragTabId = null;
+    if (ctxTabId === null) setRailHold(false);
+    if (srcId !== null && srcId !== t.id) {
+      send('move_tab', { tab_id: srcId, target_id: t.id, after, group: t.group || '' });
+    }
+  });
+  el.addEventListener('dragend', () => {
+    dragTabId = null;
+    for (const d of document.querySelectorAll('.drop-above, .drop-below')) {
+      d.classList.remove('drop-above', 'drop-below');
+    }
+    if (ctxTabId === null) setRailHold(false);
+  });
+}
+
 window.__kajoApply = (s) => {
   lastRailState = s;
   const isCompact = (s.rail_mode === 1 && !s.rail_hover_open);
@@ -927,18 +1393,56 @@ window.__kajoApply = (s) => {
     (isOverlay ? ' overlay-elevated' : '') +
     (isAutohideCollapsed ? ' collapsed-strip' : '');
   btnMode.title = 'Rail Mode: ' + (s.rail_mode === 0 ? 'AUTOHIDE' : (s.rail_mode === 1 ? 'COMPACT' : 'PINNED')) + ' (click to cycle)';
+
   if (isAutohideCollapsed) {
+    edgeTicks.innerHTML = '';
+    for (const t of (s.tabs || []).slice(0, 48)) {
+      const tk = document.createElement('div');
+      tk.className = 'edge-tick' + (t.active ? ' active' : (t.suspended ? ' suspended' : ''));
+      edgeTicks.appendChild(tk);
+    }
+    pinnedGrid.innerHTML = '';
+    pinnedGrid.classList.add('hidden');
     tabList.innerHTML = '';
     return;
   }
+
   newTabLabel.textContent = isCompact ? '+' : '+ NEW TAB';
   tabCount.textContent = s.tabs.length + (s.tabs.length === 1 ? ' TAB' : ' TABS');
+  btnReopen.disabled = !(s.closed_tab_count > 0);
+
+  if (ctxTabId !== null && !(s.tabs || []).some(t => t.id === ctxTabId)) {
+    window.__kajoCloseCtxMenu();
+  }
+
+  const pinnedTabs = (s.tabs || []).filter(t => t.pinned);
+  pinnedGrid.innerHTML = '';
+  pinnedGrid.classList.toggle('hidden', pinnedTabs.length === 0);
+  for (const t of pinnedTabs) {
+    const tile = document.createElement('div');
+    tile.className = 'pin-tile' + (t.active ? ' active' : '') + (t.suspended ? ' suspended' : '');
+    tile.title = (t.title || t.url) + (t.url ? '\n' + t.url : '');
+    tile.appendChild(makeFavicon(t));
+    if (t.muted || t.audible) {
+      const pm = document.createElement('span');
+      pm.className = 'pin-mute';
+      pm.textContent = t.muted ? '🔇' : '🔊';
+      tile.appendChild(pm);
+    }
+    tile.onclick = () => send('activate_tab', { tab_id: t.id });
+    /* Pinned tabs ignore middle-click close */
+    tile.onauxclick = (e) => { if (e.button === 1) e.preventDefault(); };
+    tile.oncontextmenu = (e) => { e.preventDefault(); openTabCtxMenu(t, e.clientX, e.clientY); };
+    attachDragHandlers(tile, t);
+    pinnedGrid.appendChild(tile);
+  }
 
   const prevScroll = tabList.scrollTop;
   const collapsed = new Set(s.collapsed_groups || []);
   tabList.innerHTML = '';
 
   const renderTabs = (tabs, groupName) => {
+    if (!tabs.length) return;
     if (groupName) {
       const hdr = document.createElement('div');
       hdr.className = 'group-hdr';
@@ -957,12 +1461,12 @@ window.__kajoApply = (s) => {
       txt.className = 'tab-text';
       const title = document.createElement('div');
       title.className = 'tab-title';
-      title.textContent = (t.pinned ? '📌 ' : '') + (t.title || t.domain || 'New Tab');
+      title.textContent = (t.title || t.domain || 'New Tab');
       txt.appendChild(title);
-      if (s.show_tab_domains && t.domain) {
+      if (s.show_tab_domains && (t.domain || t.suspended)) {
         const dom = document.createElement('div');
         dom.className = 'tab-domain';
-        dom.textContent = t.domain + (t.suspended ? ' · zzz' : '');
+        dom.textContent = (t.domain || t.url || '') + (t.suspended ? ' · zzz' : '');
         txt.appendChild(dom);
       }
       row.appendChild(txt);
@@ -973,7 +1477,7 @@ window.__kajoApply = (s) => {
       mb.className = 'mini-btn';
       mb.textContent = t.muted ? '🔇' : '🔊';
       mb.style.opacity = (t.muted || t.audible) ? '1' : '0.45';
-      mb.title = t.muted ? 'Unmute Tab' : 'Mute Tab';
+      mb.title = t.muted ? 'Unmute Tab (Ctrl+M)' : 'Mute Tab (Ctrl+M)';
       mb.onclick = (e) => { e.stopPropagation(); send('toggle_mute', { tab_id: t.id }); };
       act.appendChild(mb);
       const pb = document.createElement('button');
@@ -992,20 +1496,22 @@ window.__kajoApply = (s) => {
       row.appendChild(act);
 
       row.onclick = () => send('activate_tab', { tab_id: t.id });
-      row.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); send('close_tab', { tab_id: t.id }); } };
+      row.onauxclick = (e) => { if (e.button === 1) { e.preventDefault(); if (!t.pinned) send('close_tab', { tab_id: t.id }); } };
+      row.oncontextmenu = (e) => { e.preventDefault(); openTabCtxMenu(t, e.clientX, e.clientY); };
+      attachDragHandlers(row, t);
       tabList.appendChild(row);
     }
   };
 
-  const ungrouped = s.tabs.filter(t => !t.group);
-  renderTabs(ungrouped, '');
+  const unpinned = (s.tabs || []).filter(t => !t.pinned);
+  renderTabs(unpinned.filter(t => !t.group), '');
 
   const seenGroups = [];
-  for (const t of s.tabs) {
+  for (const t of unpinned) {
     if (t.group && !seenGroups.includes(t.group)) seenGroups.push(t.group);
   }
   for (const g of seenGroups) {
-    renderTabs(s.tabs.filter(t => t.group === g), g);
+    renderTabs(unpinned.filter(t => t.group === g), g);
   }
   tabList.scrollTop = prevScroll;
 };
@@ -1161,6 +1667,49 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     border: 1px solid var(--metro-border);
   }
   .prog > div { height: 100%; background: var(--metro-accent); }
+  .perm-bar {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 10px;
+    background: var(--metro-surface-0);
+    border-left: 4px solid var(--metro-warning);
+  }
+  .perm-msg {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .perm-msg strong { color: #ffffff; }
+  .form-body {
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    flex: 1;
+  }
+  .form-lbl {
+    font-size: 10px;
+    color: var(--metro-fg-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 3px;
+  }
+  .form-inp {
+    width: 100%;
+    padding: 6px 8px;
+    background: #0d0d0d;
+    border: 1px solid var(--metro-border-strong);
+    color: #ffffff;
+    font-size: 12px;
+  }
+  .form-inp:focus { border-color: var(--metro-accent); }
+  .btn.bad:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #ffffff; }
 </style>
 </head>
 <body>
@@ -1178,9 +1727,13 @@ const send = (cmd, extra = {}) => {
 };
 
 const root = document.getElementById('root');
-const isAcRole = new URLSearchParams(location.search).get('role') === 'ac';
+const roleParam = new URLSearchParams(location.search).get('role');
+const isAcRole = roleParam === 'ac';
+const isPermRole = roleParam === 'perm';
 let curState = null;
 let selectedIdx = 0;
+let editingProfileId = '';
+let confirmDeleteProfileId = '';
 
 window.__kajoOverlayStep = (delta) => {
   const items = root.querySelectorAll('.item');
@@ -1191,7 +1744,7 @@ window.__kajoOverlayStep = (delta) => {
 };
 
 window.__kajoOverlayFocus = () => {
-  if (isAcRole) return;
+  if (isAcRole || isPermRole) return;
   const inp = root.querySelector('input');
   if (inp) { inp.focus(); inp.select(); }
 };
@@ -1211,9 +1764,54 @@ function renderHeader(title) {
 }
 
 window.__kajoApply = (s) => {
+  if (isPermRole) {
+    curState = s;
+    root.innerHTML = '';
+    const ap = s.active_permission || {};
+    if (!ap.req_id) return;
+    const bar = document.createElement('div');
+    bar.className = 'perm-bar';
+    const msg = document.createElement('div');
+    msg.className = 'perm-msg';
+    const s1 = document.createElement('strong');
+    s1.textContent = ap.origin || 'Site';
+    const mid = document.createTextNode(' requests ');
+    const s2 = document.createElement('strong');
+    s2.textContent = ap.label || 'Permission';
+    msg.append('⚠ ', s1, mid, s2);
+
+    const bOnce = document.createElement('button');
+    bOnce.className = 'btn';
+    bOnce.textContent = 'Allow Once';
+    bOnce.onclick = () => send('perm_respond', { req_id: ap.req_id, decision: 'once' });
+
+    const bAlways = document.createElement('button');
+    bAlways.className = 'btn primary';
+    bAlways.textContent = 'Always Allow';
+    bAlways.onclick = () => send('perm_respond', { req_id: ap.req_id, decision: 'always' });
+
+    const bDeny = document.createElement('button');
+    bDeny.className = 'btn bad';
+    bDeny.textContent = 'Deny';
+    bDeny.onclick = () => send('perm_respond', { req_id: ap.req_id, decision: 'deny' });
+
+    const bClose = document.createElement('button');
+    bClose.className = 'xbtn';
+    bClose.textContent = '✕';
+    bClose.onclick = () => send('perm_respond', { req_id: ap.req_id, decision: 'dismiss' });
+
+    bar.append(msg, bOnce, bAlways, bDeny, bClose);
+    root.appendChild(bar);
+    return;
+  }
+
   const modeChanged = !curState || curState.overlay_mode !== s.overlay_mode;
   curState = s;
-  if (modeChanged) selectedIdx = 0;
+  if (modeChanged) {
+    selectedIdx = 0;
+    editingProfileId = '';
+    confirmDeleteProfileId = '';
+  }
   const mode = isAcRole ? 'autocomplete' : (s.overlay_mode || '');
 
   if (mode === 'find') {
@@ -1455,6 +2053,67 @@ window.__kajoApply = (s) => {
     bAll.onclick = () => send('open_kajo_page', { page: 'kajo://downloads' });
     act.appendChild(bAll);
     root.appendChild(act);
+  } else if (mode === 'bookmark') {
+    if (!modeChanged && root.querySelector('#bmTitle')) return;
+    const bm = s.active_bookmark || {};
+    root.appendChild(renderHeader('★ BOOKMARK PAGE'));
+    const body = document.createElement('div');
+    body.className = 'form-body';
+
+    const tLbl = document.createElement('div');
+    tLbl.className = 'form-lbl';
+    tLbl.textContent = 'Title';
+    const tInp = document.createElement('input');
+    tInp.id = 'bmTitle';
+    tInp.className = 'form-inp';
+    tInp.value = bm.title || s.active_title || s.active_url || '';
+
+    const fLbl = document.createElement('div');
+    fLbl.className = 'form-lbl';
+    fLbl.textContent = 'Folder';
+    const fInp = document.createElement('input');
+    fInp.id = 'bmFolder';
+    fInp.className = 'form-inp';
+    fInp.setAttribute('list', 'bmFoldersList');
+    fInp.placeholder = 'Optional folder (e.g. Work, Reading)';
+    fInp.value = bm.folder || '';
+    const dl = document.createElement('datalist');
+    dl.id = 'bmFoldersList';
+    for (const fl of (s.bookmark_folders || [])) {
+      const opt = document.createElement('option');
+      opt.value = fl;
+      dl.appendChild(opt);
+    }
+
+    const save = () => send('save_bookmark', {
+      uuid: bm.uuid || '',
+      title: tInp.value.trim() || s.active_url || '',
+      folder: fInp.value.trim()
+    });
+    for (const inp of [tInp, fInp]) {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); save(); }
+        else if (e.key === 'Escape') { e.preventDefault(); send('close_overlay'); }
+      });
+    }
+
+    body.append(tLbl, tInp, fLbl, fInp, dl);
+    root.appendChild(body);
+
+    const act = document.createElement('div');
+    act.className = 'act-row';
+    const bSave = document.createElement('button');
+    bSave.className = 'btn primary';
+    bSave.textContent = 'Save Bookmark';
+    bSave.onclick = save;
+    const bDel = document.createElement('button');
+    bDel.className = 'btn bad';
+    bDel.textContent = 'Remove';
+    bDel.disabled = !bm.uuid;
+    bDel.onclick = () => send('delete_bookmark', { uuid: bm.uuid || '' });
+    act.append(bSave, bDel);
+    root.appendChild(act);
+    setTimeout(() => { tInp.focus(); tInp.select(); }, 10);
   } else if (mode === 'profiles') {
     root.appendChild(renderHeader('● PROFILES & PRIVATE MODE'));
     const list = document.createElement('div');
@@ -1462,11 +2121,67 @@ window.__kajoApply = (s) => {
     for (const p of (s.profiles || [])) {
       const row = document.createElement('div');
       row.className = 'item' + (p.active ? ' sel' : '');
-      const badge = document.createElement('span');
-      badge.className = 'badge' + (p.active ? ' accent' : '');
-      badge.textContent = p.active ? 'CURRENT' : 'LAUNCH';
-      row.append(makeMainBox((p.icon || '') + ' ' + (p.name || ''), 'Profile ID: ' + (p.id || '')), badge);
-      row.onclick = () => { if (!p.active) send('launch_profile', { id: p.id, private_mode: false }); };
+      if (editingProfileId === p.id) {
+        const rinp = document.createElement('input');
+        rinp.className = 'form-inp';
+        rinp.style.cssText = 'flex:1;padding:3px 6px;';
+        rinp.value = p.name || '';
+        const commitRename = () => {
+          const v = rinp.value.trim();
+          editingProfileId = '';
+          if (v) send('rename_profile', { id: p.id, name: v });
+          else window.__kajoApply(curState);
+        };
+        rinp.addEventListener('keydown', (e) => {
+          e.stopPropagation();
+          if (e.key === 'Enter') { e.preventDefault(); commitRename(); }
+          else if (e.key === 'Escape') { e.preventDefault(); editingProfileId = ''; window.__kajoApply(curState); }
+        });
+        const bOk = document.createElement('button');
+        bOk.className = 'btn primary';
+        bOk.textContent = '✓';
+        bOk.onclick = (e) => { e.stopPropagation(); commitRename(); };
+        const bCancel = document.createElement('button');
+        bCancel.className = 'btn';
+        bCancel.textContent = '✕';
+        bCancel.onclick = (e) => { e.stopPropagation(); editingProfileId = ''; window.__kajoApply(curState); };
+        row.append(rinp, bOk, bCancel);
+        setTimeout(() => { rinp.focus(); rinp.select(); }, 10);
+      } else {
+        const badge = document.createElement('span');
+        badge.className = 'badge' + (p.active ? ' accent' : '');
+        badge.textContent = p.active ? 'CURRENT' : 'LAUNCH';
+        row.append(makeMainBox((p.icon || '') + ' ' + (p.name || ''), 'Profile ID: ' + (p.id || '')), badge);
+        const bEdit = document.createElement('button');
+        bEdit.className = 'btn';
+        bEdit.textContent = '✎';
+        bEdit.title = 'Rename Profile';
+        bEdit.onclick = (e) => {
+          e.stopPropagation();
+          confirmDeleteProfileId = '';
+          editingProfileId = p.id;
+          window.__kajoApply(curState);
+        };
+        row.appendChild(bEdit);
+        if (p.id !== 'default' && !p.active) {
+          const bDel = document.createElement('button');
+          bDel.className = 'btn bad';
+          bDel.textContent = (confirmDeleteProfileId === p.id) ? 'DEL?' : '🗑';
+          bDel.title = 'Delete Profile';
+          bDel.onclick = (e) => {
+            e.stopPropagation();
+            if (confirmDeleteProfileId === p.id) {
+              confirmDeleteProfileId = '';
+              send('delete_profile', { id: p.id });
+            } else {
+              confirmDeleteProfileId = p.id;
+              window.__kajoApply(curState);
+            }
+          };
+          row.appendChild(bDel);
+        }
+        row.onclick = () => { if (!p.active) send('launch_profile', { id: p.id, private_mode: false }); };
+      }
       list.appendChild(row);
     }
     root.appendChild(list);
@@ -1482,7 +2197,13 @@ window.__kajoApply = (s) => {
     const bAdd = document.createElement('button');
     bAdd.className = 'btn';
     bAdd.textContent = '+ Create';
-    bAdd.onclick = () => { if (inp.value.trim()) send('create_profile', { name: inp.value.trim() }); };
+    const doCreate = () => {
+      if (inp.value.trim()) send('create_profile', { name: inp.value.trim() });
+    };
+    bAdd.onclick = doCreate;
+    inp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); doCreate(); }
+    });
     act.append(bPriv, inp, bAdd);
     root.appendChild(act);
   }
@@ -1719,12 +2440,61 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
     return true;
   }
 
+  if (page == "crashed") {
+    auto get_q = [&](const char* k) -> std::string {
+      std::string key = std::string(k) + "=";
+      size_t pos = 0;
+      while (pos < query.size()) {
+        size_t amp = query.find('&', pos);
+        std::string pair = (amp == std::string::npos) ? query.substr(pos) : query.substr(pos, amp - pos);
+        if (pair.rfind(key, 0) == 0) {
+          std::string raw = pair.substr(key.size());
+          std::string dec;
+          for (size_t i = 0; i < raw.size(); ++i) {
+            if (raw[i] == '+') dec.push_back(' ');
+            else if (raw[i] == '%' && i + 2 < raw.size()) {
+              char hex[3] = {raw[i + 1], raw[i + 2], 0};
+              char* endp = nullptr;
+              long v = strtol(hex, &endp, 16);
+              if (endp == hex + 2) {
+                dec.push_back(static_cast<char>(v));
+                i += 2;
+                continue;
+              }
+            } else {
+              dec.push_back(raw[i]);
+            }
+          }
+          return dec;
+        }
+        if (amp == std::string::npos) break;
+        pos = amp + 1;
+      }
+      return "";
+    };
+    const std::string reason = get_q("reason");
+    const std::string crashed_url = get_q("url");
+    std::ostringstream b;
+    b << "<div class='card' style='border-left:4px solid var(--err);padding:20px;'>"
+      << "<h1 style='border-left-color:var(--err);'>TAB RENDERER TERMINATED</h1>"
+      << "<p style='color:var(--dim);margin:8px 0;'>Reason: <strong style='color:#fff;'>"
+      << HtmlEscape(reason.empty() ? "Renderer exited unexpectedly" : reason) << "</strong></p>"
+      << "<p style='color:var(--dim);word-break:break-all;margin:8px 0 18px 0;'>URL: "
+      << HtmlEscape(crashed_url.empty() ? s.active_url : crashed_url) << "</p>"
+      << "<div style='display:flex;gap:8px;'>"
+      << "<a class='btn pri' href='kajo://crashed?action=reload'>↻ RELOAD TAB</a>"
+      << "<a class='btn bad' href='kajo://crashed?action=close'>CLOSE TAB</a>"
+      << "</div></div>";
+    *out_body = BuildKajoShellPage(s, "", "Kajo — Tab Crashed", b.str());
+    return true;
+  }
+
   if (page == "gpu") {
     std::ostringstream b;
     b << "<h1>GPU &amp; HARDWARE VIDEO PIPELINE</h1>"
       << "<div style='margin-bottom:16px;'><a class='btn pri' href='kajo://gpu?action=open_chrome_gpu'>OPEN RAW CHROME://GPU DIAGNOSTICS</a></div>"
       << "<table><tr><th>Subsystem</th><th>Configured State</th></tr>"
-      << "<tr><td>Video Hardware Acceleration</td><td>" << (s.hw_accel_enabled ? "VA-API Zero-Copy (Vulkan/EGL ANGLE)" : "Disabled (--no-hw-accel)") << "</td></tr>"
+      << "<tr><td>Video Hardware Acceleration</td><td>" << (s.hw_accel_enabled ? "VA-API Zero-Copy (GL/EGL ANGLE · Vulkan Disabled)" : "Disabled (Software Compositing)") << "</td></tr>"
       << "<tr><td>Widevine CDM Hint</td><td>" << (s.widevine_available ? HtmlEscape(s.widevine_path) : "Not found on system") << "</td></tr>"
       << "<tr><td>Native Wayland Ozone</td><td>Active (CEF Views Alloy Frameless Window)</td></tr>"
       << "<tr><td>User Agent</td><td style='color:var(--dim);'>" << HtmlEscape(s.user_agent) << "</td></tr>"

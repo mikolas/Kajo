@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 
@@ -15,10 +16,12 @@
 #include "include/cef_keyboard_handler.h"
 #include "include/cef_life_span_handler.h"
 #include "include/cef_load_handler.h"
+#include "include/cef_permission_handler.h"
 #include "include/cef_request_handler.h"
 #include "include/cef_resource_request_handler.h"
 #include "web_cef/cef_adblock.h"
 #include "web_cef/cef_chrome_ui.h"
+#include "web_cef/cef_prefs_helper.h"
 
 namespace kajo_web {
 
@@ -46,9 +49,24 @@ public:
   virtual bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) = 0;
   virtual void OnTabGotFocus(uint64_t tab_id) = 0;
   virtual std::string GetSuggestedDownloadPath(const std::string& suggested_name, bool* out_ask) = 0;
-  virtual void OnTabDownloadUpdated(const ChromeDownloadView& dl,
+  virtual void OnTabDownloadUpdated(uint64_t tab_id,
+                                    const ChromeDownloadView& dl,
                                     CefRefPtr<CefDownloadItemCallback> callback) = 0;
   virtual bool OnTabContextCommand(uint64_t tab_id, int command_id, const std::string& target_url) = 0;
+  virtual void OnTabCrashed(uint64_t tab_id,
+                            int status,
+                            int error_code,
+                            const std::string& error_string) = 0;
+  virtual bool OnTabMediaPermissionRequest(uint64_t tab_id,
+                                           const std::string& origin,
+                                           uint32_t perms,
+                                           CefRefPtr<CefMediaAccessCallback> callback) = 0;
+  virtual bool OnTabPermissionPrompt(uint64_t tab_id,
+                                     uint64_t prompt_id,
+                                     const std::string& origin,
+                                     uint32_t perms,
+                                     CefRefPtr<CefPermissionPromptCallback> callback) = 0;
+  virtual void OnTabPermissionDismiss(uint64_t tab_id, uint64_t prompt_id) = 0;
 };
 
 /* Per-tab CefClient handling blocking, media sniffing, popups, downloads, and events. */
@@ -58,6 +76,8 @@ class CefTabClient : public CefClient,
                      public CefDisplayHandler,
                      public CefRequestHandler,
                      public CefResourceRequestHandler,
+                     public CefCookieAccessFilter,
+                     public CefPermissionHandler,
                      public CefDownloadHandler,
                      public CefFindHandler,
                      public CefKeyboardHandler,
@@ -68,6 +88,8 @@ public:
 
   void DetachCallbacks();
   void SetHttpsOnly(bool https_only);
+  void SetCookiePolicy(int cookie_policy);
+  void SetUserScripts(bool enabled, std::shared_ptr<const LoadedUserScripts> scripts);
   void RefreshCosmeticInjection(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame);
 
   /* CefClient */
@@ -75,6 +97,7 @@ public:
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  CefRefPtr<CefPermissionHandler> GetPermissionHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
@@ -83,6 +106,7 @@ public:
 
   /* CefLifeSpanHandler */
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
+  bool DoClose(CefRefPtr<CefBrowser> browser) override;
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
   bool OnBeforePopup(CefRefPtr<CefBrowser> browser,
                      CefRefPtr<CefFrame> frame,
@@ -145,8 +169,16 @@ public:
       bool is_download,
       const CefString& request_initiator,
       bool& disable_default_handling) override;
+  void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                 TerminationStatus status,
+                                 int error_code,
+                                 const CefString& error_string) override;
 
   /* CefResourceRequestHandler (TID_IO) */
+  CefRefPtr<CefCookieAccessFilter> GetCookieAccessFilter(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      CefRefPtr<CefRequest> request) override;
   ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<CefFrame> frame,
                                    CefRefPtr<CefRequest> request,
@@ -155,6 +187,32 @@ public:
                           CefRefPtr<CefFrame> frame,
                           CefRefPtr<CefRequest> request,
                           CefRefPtr<CefResponse> response) override;
+
+  /* CefCookieAccessFilter (TID_IO) */
+  bool CanSendCookie(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     CefRefPtr<CefRequest> request,
+                     const CefCookie& cookie) override;
+  bool CanSaveCookie(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     CefRefPtr<CefRequest> request,
+                     CefRefPtr<CefResponse> response,
+                     const CefCookie& cookie) override;
+
+  /* CefPermissionHandler (TID_UI) */
+  bool OnRequestMediaAccessPermission(CefRefPtr<CefBrowser> browser,
+                                      CefRefPtr<CefFrame> frame,
+                                      const CefString& requesting_origin,
+                                      uint32_t requested_permissions,
+                                      CefRefPtr<CefMediaAccessCallback> callback) override;
+  bool OnShowPermissionPrompt(CefRefPtr<CefBrowser> browser,
+                              uint64_t prompt_id,
+                              const CefString& requesting_origin,
+                              uint32_t requested_permissions,
+                              CefRefPtr<CefPermissionPromptCallback> callback) override;
+  void OnDismissPermissionPrompt(CefRefPtr<CefBrowser> browser,
+                                 uint64_t prompt_id,
+                                 cef_permission_request_result_t result) override;
 
   /* CefDownloadHandler */
   bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
@@ -200,8 +258,12 @@ private:
   CefAdblockEngine* adblock_;
   std::mutex cb_mu_;
   std::mutex url_mu_;
+  std::mutex scripts_mu_;
   TabCallbacks* callbacks_;
   std::atomic<bool> https_only_{false};
+  std::atomic<int> cookie_policy_{0};
+  bool user_scripts_enabled_ = false;
+  std::shared_ptr<const LoadedUserScripts> user_scripts_;
   std::string last_top_url_;
 
   IMPLEMENT_REFCOUNTING(CefTabClient);

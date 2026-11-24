@@ -6,6 +6,7 @@
 #include <cctype>
 #include <functional>
 
+#include "config/kajo_config_types.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_media_sniff_core.h"
@@ -104,6 +105,17 @@ void CefTabClient::SetHttpsOnly(bool https_only) {
   https_only_.store(https_only, std::memory_order_relaxed);
 }
 
+void CefTabClient::SetCookiePolicy(int cookie_policy) {
+  cookie_policy_.store(cookie_policy, std::memory_order_relaxed);
+}
+
+void CefTabClient::SetUserScripts(bool enabled,
+                                  std::shared_ptr<const LoadedUserScripts> scripts) {
+  std::lock_guard<std::mutex> lock(scripts_mu_);
+  user_scripts_enabled_ = enabled;
+  user_scripts_ = std::move(scripts);
+}
+
 void CefTabClient::RefreshCosmeticInjection(CefRefPtr<CefBrowser> browser,
                                             CefRefPtr<CefFrame> frame) {
   if (!browser || !frame || !frame->IsMain() || !adblock_) return;
@@ -129,6 +141,12 @@ void CefTabClient::RefreshCosmeticInjection(CefRefPtr<CefBrowser> browser,
 
 void CefTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
   if (TabCallbacks* cb = GetCallbacks()) cb->OnTabBrowserCreated(tab_id_, browser);
+}
+
+bool CefTabClient::DoClose(CefRefPtr<CefBrowser> browser) {
+  /* Individual tabs are detached via RemoveChildView + CloseBrowser(true); returning
+   * true prevents CEF from forwarding a close notification to the parent CefWindow. */
+  return true;
 }
 
 void CefTabClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
@@ -188,6 +206,38 @@ void CefTabClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                              CefRefPtr<CefFrame> frame,
                              int httpStatusCode) {
   RefreshCosmeticInjection(browser, frame);
+  if (!browser || !frame || !frame->IsMain()) return;
+  const std::string url = frame->GetURL().ToString();
+  if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) return;
+
+  bool enabled = false;
+  std::shared_ptr<const LoadedUserScripts> scripts;
+  {
+    std::lock_guard<std::mutex> lock(scripts_mu_);
+    enabled = user_scripts_enabled_;
+    scripts = user_scripts_;
+  }
+  if (!enabled || !scripts) return;
+
+  if (!scripts->combined_css.empty()) {
+    const std::string css_js =
+        "(() => {"
+        "  let el = document.getElementById('kajo-user-css');"
+        "  if (!el) {"
+        "    el = document.createElement('style');"
+        "    el.id = 'kajo-user-css';"
+        "    (document.head || document.documentElement).appendChild(el);"
+        "  }"
+        "  el.textContent = \"" + JsonEscape(scripts->combined_css) + "\";"
+        "})();";
+    frame->ExecuteJavaScript(css_js, url, 0);
+  }
+  for (const auto& js_entry : scripts->js_files) {
+    if (!js_entry.second.empty()) {
+      frame->ExecuteJavaScript(
+          js_entry.second, "kajo-userscript://" + js_entry.first, 0);
+    }
+  }
 }
 
 void CefTabClient::OnLoadError(CefRefPtr<CefBrowser> browser,
@@ -288,6 +338,90 @@ CefRefPtr<CefResourceRequestHandler> CefTabClient::GetResourceRequestHandler(
     const CefString& request_initiator,
     bool& disable_default_handling) {
   return this;
+}
+
+void CefTabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                             TerminationStatus status,
+                                             int error_code,
+                                             const CefString& error_string) {
+  if (TabCallbacks* cb = GetCallbacks()) {
+    cb->OnTabCrashed(tab_id_, static_cast<int>(status), error_code, error_string.ToString());
+  }
+}
+
+CefRefPtr<CefCookieAccessFilter> CefTabClient::GetCookieAccessFilter(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request) {
+  CEF_REQUIRE_IO_THREAD();
+  if (cookie_policy_.load(std::memory_order_relaxed) == KAJO_WEB_COOKIES_ALWAYS) {
+    return nullptr;
+  }
+  return this;
+}
+
+bool CefTabClient::CanSendCookie(CefRefPtr<CefBrowser> browser,
+                                 CefRefPtr<CefFrame> frame,
+                                 CefRefPtr<CefRequest> request,
+                                 const CefCookie& cookie) {
+  CEF_REQUIRE_IO_THREAD();
+  const int policy = cookie_policy_.load(std::memory_order_relaxed);
+  if (policy == KAJO_WEB_COOKIES_NEVER) return false;
+  if (policy == KAJO_WEB_COOKIES_ALWAYS || !request) return true;
+  const std::string req_url = request->GetURL().ToString();
+  if (req_url.rfind("http://", 0) != 0 && req_url.rfind("https://", 0) != 0) return true;
+  std::string fp = request->GetFirstPartyForCookies().ToString();
+  if (fp.empty()) {
+    std::lock_guard<std::mutex> lock(url_mu_);
+    fp = last_top_url_;
+  }
+  return IsSameSiteUrl(req_url, fp);
+}
+
+bool CefTabClient::CanSaveCookie(CefRefPtr<CefBrowser> browser,
+                                 CefRefPtr<CefFrame> frame,
+                                 CefRefPtr<CefRequest> request,
+                                 CefRefPtr<CefResponse> response,
+                                 const CefCookie& cookie) {
+  CEF_REQUIRE_IO_THREAD();
+  return CanSendCookie(browser, frame, request, cookie);
+}
+
+bool CefTabClient::OnRequestMediaAccessPermission(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    const CefString& requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefMediaAccessCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (TabCallbacks* cb = GetCallbacks()) {
+    return cb->OnTabMediaPermissionRequest(
+        tab_id_, requesting_origin.ToString(), requested_permissions, callback);
+  }
+  return false;
+}
+
+bool CefTabClient::OnShowPermissionPrompt(
+    CefRefPtr<CefBrowser> browser,
+    uint64_t prompt_id,
+    const CefString& requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefPermissionPromptCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (TabCallbacks* cb = GetCallbacks()) {
+    return cb->OnTabPermissionPrompt(
+        tab_id_, prompt_id, requesting_origin.ToString(), requested_permissions, callback);
+  }
+  return false;
+}
+
+void CefTabClient::OnDismissPermissionPrompt(CefRefPtr<CefBrowser> browser,
+                                             uint64_t prompt_id,
+                                             cef_permission_request_result_t result) {
+  CEF_REQUIRE_UI_THREAD();
+  if (TabCallbacks* cb = GetCallbacks()) {
+    cb->OnTabPermissionDismiss(tab_id_, prompt_id);
+  }
 }
 
 CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
@@ -397,7 +531,7 @@ void CefTabClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
   dl.canceled = download_item->IsCanceled();
   dl.paused = download_item->IsPaused();
 
-  if (TabCallbacks* cb = GetCallbacks()) cb->OnTabDownloadUpdated(dl, callback);
+  if (TabCallbacks* cb = GetCallbacks()) cb->OnTabDownloadUpdated(tab_id_, dl, callback);
 }
 
 void CefTabClient::OnFindResult(CefRefPtr<CefBrowser> browser,

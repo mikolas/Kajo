@@ -494,6 +494,7 @@ if build_web_cef
     'src/web_cef/cef_app.cc',
     'src/web_cef/cef_adblock.cc',
     'src/web_cef/cef_chrome_ui.cc',
+    'src/web_cef/cef_prefs_helper.cc',
     'src/web_cef/cef_tab.cc',
     'src/web_cef/cef_window.cc',
     'src/web/web_model.c',
@@ -1118,6 +1119,17 @@ if build_web_cef
     build_by_default: false,
   )
   test('web-cef-adblock', test_web_cef_adblock_exe)
+
+  test_web_cef_core_exe = executable(
+    'test-web-cef-core',
+    files('tests/test_web_cef_core.cc', 'src/web_cef/cef_prefs_helper.cc'),
+    include_directories: include_directories('src'),
+    cpp_args: ['-std=c++20', '-isystem', '/usr/include/cef'],
+    override_options: ['cpp_std=c++20'],
+    dependencies: [gio_dep, json_glib_dep, threads_dep],
+    build_by_default: false,
+  )
+  test('web-cef-core', test_web_cef_core_exe)
 endif
 
 # ─── kajo-comp (compositor) ───────────────────────────────────────────────

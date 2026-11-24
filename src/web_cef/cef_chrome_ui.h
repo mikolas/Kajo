@@ -87,6 +87,13 @@ struct ChromeFilterListView {
   size_t rule_count = 0;
 };
 
+struct ChromePermissionView {
+  uint64_t req_id = 0;
+  std::string origin;
+  std::string label;
+  std::string perm_key;
+};
+
 struct ChromeStateSnapshot {
   /* Window & layout state */
   bool private_mode = false;
@@ -96,10 +103,13 @@ struct ChromeStateSnapshot {
   bool rail_hover_open = false;
   int rail_width_px = 240;
   int topbar_mode = 0; /* 0=always, 1=autohide */
+  bool topbar_hover_open = false;
+  bool profile_border_accent = true;
   bool show_tab_domains = true;
   bool ac_visible = false;
   int ac_selected_idx = -1;
-  std::string overlay_mode; /* "", "palette", "find", "adblock", "media", "downloads", "profiles" */
+  int closed_tab_count = 0;
+  std::string overlay_mode; /* "", "palette", "find", "adblock", "media", "downloads", "profiles", "bookmark" */
 
   /* Theme tokens */
   std::string accent_color = "#0078d4";
@@ -149,6 +159,9 @@ struct ChromeStateSnapshot {
   std::vector<ChromeDownloadView> downloads;
   std::vector<ChromeMediaView> media_streams;
   std::vector<ChromeBookmarkView> bookmarks;
+  ChromeBookmarkView active_bookmark;
+  std::vector<std::string> bookmark_folders;
+  ChromePermissionView active_permission;
   std::vector<ChromeHistoryView> recent_history;
   std::vector<ChromeHistoryView> history_query_results;
   std::string history_search_query;

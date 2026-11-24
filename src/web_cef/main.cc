@@ -11,6 +11,7 @@
 #include "config/kajo_config_store.h"
 #include "include/cef_app.h"
 #include "web/web_model.h"
+#include "web_cef/cef_prefs_helper.h"
 
 namespace {
 
@@ -178,7 +179,7 @@ int main(int argc, char** argv) {
       priv_root_dir.empty() ? (profile_dir.empty() ? cfg.cache_dir : profile_dir) : priv_root_dir;
   CefString(&settings.cache_path) = cfg.private_mode ? "" : profile_dir;
   settings.persist_session_cookies = !cfg.private_mode;
-  settings.log_severity = LOGSEVERITY_WARNING;
+  settings.log_severity = kajo_web::ParseCefLogSeverity(getenv("KAJO_CEF_LOG"));
 
   /* Enable CDP remote debugging when explicitly requested via env */
   if (const char* port_env = getenv("KAJO_CEF_DEBUG_PORT")) {
