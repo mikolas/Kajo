@@ -1,33 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="100%" height="100%">
   <defs>
-    <linearGradient id="web-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="kw-bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#181818"/>
       <stop offset="100%" stop-color="#0a0a0a"/>
     </linearGradient>
-    <linearGradient id="web-accent" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="kw-beam" x1="0%" y1="100%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#0078d4"/>
       <stop offset="100%" stop-color="#00d8f0"/>
     </linearGradient>
+    <linearGradient id="kw-lower" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#004578"/>
+      <stop offset="100%" stop-color="#0078d4"/>
+    </linearGradient>
   </defs>
-  <!-- Metro sharp frame -->
-  <rect x="8" y="8" width="240" height="240" fill="url(#web-bg)" stroke="#2b2b2b" stroke-width="4"/>
-  <!-- Top-left Aero + Metro cobalt/cyan accent bar -->
-  <path d="M 8 104 L 8 8 L 136 8" fill="none" stroke="#0078d4" stroke-width="6"/>
-  <!-- Minimalist browser top bar + omnibar pill -->
-  <rect x="28" y="28" width="200" height="26" fill="#141414" stroke="#2b2b2b" stroke-width="2"/>
-  <rect x="38" y="37" width="12" height="8" fill="#0078d4"/>
-  <rect x="60" y="36" width="128" height="10" fill="#0d0d0d" stroke="#2b2b2b" stroke-width="1.5"/>
-  <rect x="198" y="36" width="20" height="10" fill="#107c10"/>
-  <!-- Vertical autohide rail ticks on left -->
-  <rect x="28" y="64" width="6" height="28" fill="#00d8f0"/>
-  <rect x="28" y="98" width="6" height="20" fill="#3a3a3a"/>
-  <rect x="28" y="124" width="6" height="20" fill="#3a3a3a"/>
-  <!-- Geometric Metro globe wireframe -->
-  <circle cx="136" cy="144" r="62" fill="none" stroke="url(#web-accent)" stroke-width="6"/>
-  <ellipse cx="136" cy="144" rx="28" ry="62" fill="none" stroke="#00d8f0" stroke-width="4"/>
-  <line x1="74" y1="144" x2="198" y2="144" stroke="#0078d4" stroke-width="4"/>
-  <line x1="84" y1="114" x2="188" y2="114" stroke="#2b2b2b" stroke-width="3"/>
-  <line x1="84" y1="174" x2="188" y2="174" stroke="#2b2b2b" stroke-width="3"/>
-  <!-- Crisp compass diamond center -->
-  <polygon points="136,126 150,144 136,162 122,144" fill="#ffffff"/>
+  <!-- 0px Obsidian Outer Chassis -->
+  <rect x="8" y="8" width="240" height="240" fill="url(#kw-bg)" stroke="#2b2b2b" stroke-width="4"/>
+  <!-- Top-Left Aero Specular Edge Catch -->
+  <path d="M 8 96 L 8 8 L 128 8" fill="none" stroke="#00d8f0" stroke-width="6"/>
+  <!-- Minimalist 34px Top Omnibar Strip & Shield Status -->
+  <rect x="32" y="34" width="192" height="22" fill="#1a1a1a" stroke="#2b2b2b" stroke-width="2"/>
+  <rect x="32" y="34" width="114" height="22" fill="url(#kw-lower)"/>
+  <rect x="44" y="42" width="54" height="6" fill="#ffffff"/>
+  <rect x="202" y="38" width="14" height="14" fill="#00d8f0"/>
+  <!-- Left Vertical Autohide Tab Rail -->
+  <rect x="32" y="68" width="22" height="44" fill="#1c1c1c"/>
+  <rect x="32" y="68" width="5" height="44" fill="#00d8f0"/>
+  <rect x="41" y="85" width="9" height="9" fill="#ffffff"/>
+  <rect x="32" y="120" width="22" height="42" fill="#181818" stroke="#303030" stroke-width="2"/>
+  <rect x="32" y="120" width="4" height="42" fill="#383838"/>
+  <rect x="32" y="170" width="22" height="42" fill="#181818" stroke="#303030" stroke-width="2"/>
+  <rect x="32" y="170" width="4" height="42" fill="#383838"/>
+  <!-- Hero Chamfered 0px Web Octagon & Refracted Compass Prism -->
+  <polygon points="116,70 176,70 218,112 218,172 176,214 116,214 74,172 74,112" fill="#111111" stroke="#383838" stroke-width="4"/>
+  <line x1="146" y1="74" x2="146" y2="210" stroke="#262626" stroke-width="3"/>
+  <line x1="78" y1="142" x2="214" y2="142" stroke="#262626" stroke-width="3"/>
+  <polygon points="146,76 184,142 146,208 108,142" fill="none" stroke="#2c2c2c" stroke-width="2.5"/>
+  <!-- Cardinal Index Ticks -->
+  <rect x="143" y="74" width="6" height="12" fill="#0078d4"/>
+  <rect x="143" y="198" width="6" height="12" fill="#0078d4"/>
+  <rect x="202" y="139" width="12" height="6" fill="#0078d4"/>
+  <rect x="78" y="139" width="12" height="6" fill="#0078d4"/>
+  <!-- Refracted 45-Degree NE-SW Compass Needle -->
+  <polygon points="198,90 132,128 146,142" fill="#00d8f0"/>
+  <polygon points="198,90 146,142 160,156" fill="url(#kw-beam)"/>
+  <polygon points="94,194 132,128 146,142" fill="#e6e6e6"/>
+  <polygon points="94,194 146,142 160,156" fill="#3a3a3a"/>
+  <!-- Specular Core Pivot -->
+  <polygon points="146,132 156,142 146,152 136,142" fill="#ffffff"/>
 </svg>

@@ -73,7 +73,7 @@ action_copy_system_info(gpointer user_data)
         "Memory:     %s\n"
         "Compositor: %s\n"
         "Toolkit:    %s\n"
-        "Binaries:   kajo, kajo-settings, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-greeter\n",
+        "Binaries:   kajo-comp, kajo, kajo-settings, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-greeter\n",
         self->kernel_summary ? self->kernel_summary : "Unknown",
         self->cpu_summary ? self->cpu_summary : "Unknown",
         self->mem_summary ? self->mem_summary : "Unknown",
@@ -238,7 +238,7 @@ build_page_about(void)
     GtkWidget *card_stack = create_section_card(
         SETTINGS_CARD_CENTER,
         "2. TOOLKIT & SUBSYSTEM STACK",
-        "C17 • C++17",
+        "C17 • C++20",
         "peak-warn",
         NULL);
 
@@ -259,11 +259,11 @@ build_page_about(void)
 
     settings_bento_add_pair(GTK_WIDGET(self), card_hw, card_stack);
 
-    /* ─── Card 3: Kajo Desktop Application Suite (8 Native Binaries) ─── */
+    /* ─── Card 3: Kajo Desktop Application Suite (9 Native Binaries) ─── */
     GtkWidget *card_suite = create_section_card(
         SETTINGS_CARD_RIGHT,
-        "3. KAJO DESKTOP APPLICATION SUITE (8 NATIVE BINARIES)",
-        "8 BINARIES",
+        "3. KAJO DESKTOP APPLICATION SUITE (9 NATIVE BINARIES)",
+        "9 BINARIES",
         "success",
         NULL);
 
@@ -277,7 +277,7 @@ build_page_about(void)
         "SHELL", "accent"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "⚙", "kajo-settings — System & Suite Configurator (org.kajo.Settings)",
-        "12-page scalable compositor column UI with live D-Bus, PipeWire, TOML config & effects",
+        "13-page scalable compositor column UI with live D-Bus, PipeWire, TOML config & effects",
         "SETTINGS", "success"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🮖", "kajo-ide — Selection-First Modal Code Editor (org.kajo.IDE)",
@@ -295,6 +295,10 @@ build_page_about(void)
         "🎹", "kajo-mod — Retro Amiga, C64 SID & Tracker Player (org.kajo.Mod)",
         "4-tier router (libuade, libsidplayfp/reSIDfp, libgme, libopenmpt), HVSC STIL & archives",
         "MOD", NULL));
+    gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
+        "🌐", "kajo-web — Aero + Metro Web Browser (org.kajo.Web)",
+        "Chromium/CEF Alloy Views, native Wayland, IO-thread ABP adblock, tab suspension & downloads",
+        "WEB", NULL));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🔑", "kajo-greeter — Native Wayland Login Greeter (org.kajo.greeter)",
         "greetd IPC Wayland session greeter with PAM --test mode & multi-monitor Wayland support",
@@ -319,7 +323,7 @@ build_page_about(void)
                               shell_compositor_is_kajo_comp() ? "kajo-comp IPC Active"
                                                               : (niri_active ? "Niri IPC Active" : "Wayland"),
                               niri_active ? "success" : NULL);
-    settings_page_set_counter(root, 3, "SUITE", "8 Binaries", NULL);
+    settings_page_set_counter(root, 3, "SUITE", "9 Binaries", NULL);
 
     return root;
 }

@@ -1,7 +1,7 @@
 # Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
-**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
+**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-web` (`org.kajo.Web`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
 **Interactive Reference:** [`docs/ui-gallery.html`](file:///home/mikolas/src/Kajo/docs/ui-gallery.html)  
 **Master Stylesheet:** [`data/defaults/style.css`](file:///home/mikolas/src/Kajo/data/defaults/style.css)
 
@@ -226,15 +226,15 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
 ### 4.9 System & Suite Settings (`kajo-settings`) Scalable Niri Column Architecture
 - **Interactive Reference:** [`docs/kajo-settings-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-settings-mockup.html)
 - **3-Tier Niri Column Reflow (`540px` / `814px` / `1088px` / `1634px`, strict `min-width <= 480px`):**
-  - **Narrow Column ($< 720\text{px}$ — Niri `1/3` `0.33333` column at `~540px`):** Left navigation compacts to a **`46px` Icon Rail** (`.navigation-sidebar`, toggleable via `[☰]` in `.settings-header-bar`) so all **12 pages** remain 1-click accessible without a mobile "Back" drill-down, leaving `~494px` for the 1-column card canvas.
+  - **Narrow Column ($< 720\text{px}$ — Niri `1/3` `0.33333` column at `~540px`):** Left navigation compacts to a **`46px` Icon Rail** (`.navigation-sidebar`, toggleable via `[☰]` in `.settings-header-bar`) so all **13 pages** remain 1-click accessible without a mobile "Back" drill-down, leaving `~494px` for the 1-column card canvas.
   - **Default Column ($720\text{..}959\text{px}$ — Niri `1/2` `0.50` column at `~814px`):** Displays the **`196px` Category Sidebar** (`HARDWARE & SYSTEM`, `SHELL & COMPOSITOR`, `KAJO SUITE APPS`, `SYSTEM INFO` with right-aligned live telemetry micro-badges) + 1-column card stack.
   - **Wide Column ($\ge 960\text{px}$ — Niri `2/3` `0.66667` at `~1088px` & `1.0` at `~1634px`):** Displays the `196px` Category Sidebar + **2-column balanced Bento Card Grid** (`.settings-card-grid`, with `.span-full` for full-width matrices/lists).
 - **4-Zone Full-Height Vertical Architecture (`100vh`):**
-  1. **Zone 1 (`vexpand: FALSE`, `36px`):** Window Chrome Header Bar (`.settings-header-bar`) with `[☰]` rail toggle, `⚙ SYSTEM SETTINGS`, page index badge (`[ 11 / 12 • KAJO MOD ]`), live search filter (`Ctrl+F`), `[🗗 FLOAT / TILE]`, and `[✕]`.
+  1. **Zone 1 (`vexpand: FALSE`, `36px`):** Window Chrome Header Bar (`.settings-header-bar`) with `[☰]` rail toggle, `⚙ SYSTEM SETTINGS`, page index badge (`[ 12 / 13 • KAJO WEB ]`), live search filter (`Ctrl+F`), `[🗗 FLOAT / TILE]`, and `[✕]`.
   2. **Zone 2 (`vexpand: FALSE`, `58px`):** Pinned **Page Telemetry & Hardware Status Deck** (`.settings-page-deck`, `.settings-counter-strip`) displaying the page title, config/D-Bus subtitle, backend badges, and a **4-column homogeneous telemetry strip** that never wraps across `480px..1920px`.
   3. **Zone 3 (`vexpand: TRUE`):** Scrollable **Page Content Canvas** (`.settings-scroll-canvas`) where every setting row uses `.widget-row-card` (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END` on `.row-title` / `.row-subtitle`, zero hardcoded `width-chars` traps) and dynamic list/matrix cards set `vexpand: TRUE` to absorb Niri's full-height column.
   4. **Zone 4 (`vexpand: FALSE`, `36px`):** Docked **Action & Persistence Footer Bar** (`.settings-footer-bar`) pinned at the bottom of the viewport with live dirty/saved status indicator, page secondary action, `[ ↺ REVERT ]`, and `[ ✓ SAVE & APPLY ]`.
-- **12 Modular Pages:** `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, `ide`, **`mod` (`Kajo Mod`)**, and `about`.
+- **13 Modular Pages:** `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, `ide`, `mod`, **`web` (`Kajo Web`)**, and `about`.
 
 ### 4.10 Wayland Panel Bar, Widget Chips, 3-Zone Popovers & OSD (`kajo`)
 - **Panel Container (`window.shell-panel`, `#panel-container`, `.shell-panel-left`, `.shell-panel-center`, `.shell-panel-right`):**
@@ -260,15 +260,15 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - `.shell-notification-card` uses `1px solid @metro-accent` + `4px` left bar (`@metro-urgent` when `urgency == 2` via `.critical` in both live overlay toasts and notification history) and compact `.popover-dismiss-btn` (`✕`, `@metro-urgent` hover).
 
 ### 4.11 Kajo Web (`kajo-web`) Standalone Browser & Zero-Jump Tab Rail
-- **CSS Isolation + User Font Scaling (`window.shell-web-window`, `window.shell-web-picker`):**
-  - `kajo-web` does **not** carry `.shell-settings-window` or `.settings-header-bar` so `30-settings.css` layout rules never leak into browser chrome. All colors and elevation surfaces come from `@metro-*` tokens (`data/defaults/styles/80-web.css`), while `00-accent.css` (`src/theme.c`) explicitly scales `window.shell-web-window` and `window.shell-web-picker` across `ui_font_size_px` / heading / subtitle / badge (`>= 11px`) tiers.
-  - Private windows add `.web-private-window` (`border-color: @metro-magenta`); standard profile windows optionally tint the outer frame and `.web-profile-dot` via a per-window scoped provider.
-- **42px Top Chrome Bar (`.web-header-bar`, `.web-omnibar-box`, `.web-chrome-btn`, `.web-close-btn`):**
-  - `32×32px` navigation/action buttons (`web-chrome-btn`), semantic TLS indicator (`.tls-kajo` `@metro-telemetry`, `.tls-secure` `@metro-success`, `.tls-warn` `@metro-warning`), omnibar autocomplete (`popover.web-omnibar-ac`), inline clickable zoom pill (`.web-omni-zoom`) and bookmark toggle (`.web-omni-star`), zero-bounce `GtkOverlay` load progress bar (`.web-omni-progress`), inline shield chip (`.web-omni-shield`), media sniffer (`🎬`), always-visible downloads chip (`↓`), profile switcher chip (`.web-profile-chip`), and compact `☰` browser menu popover. Zen topbar uses a `350ms` leave grace timer; bottom-left link hover HUD (`.web-hover-hud`) and top-right Find bar (`.web-find-bar` with `N / M` counter and `.not-found` highlight) overlay the viewport.
-- **Zero-Jump Vertical Tab Rail (`body_overlay` + `.web-tab-rail`):**
-  - `body_overlay` wraps `body_hbox` (`[compact_spacer (48px), viewport_overlay]`) so the `6px` autohide edge trigger (`.web-rail-trigger`, `rgba(0,0,0,0.01)`) and `.web-tab-rail` anchor directly at the window edge (`x = 0` or `x = W`) over `compact_spacer` with zero dead void and zero page overlap when collapsed.
-  - No decorative rail header bar: tabs start at `y = 0`. Every `.web-tab-row` (`min-height: 44px`) keeps a fixed `44px` left `.web-tab-ico-slot` displaying a live spinner (`.web-tab-spinner`), cached site favicon (`.web-tab-favicon`), or `24×24px` `.web-tab-badge` domain monogram (with a `6×6px` `.web-tab-audio-dot` overlay when minimized/pinned), collapsible `button.web-tab-group-hdr` dividers, drag-and-drop reordering (`GtkDragSource` / `GtkDropTarget`, `.drag-over`), a single-row fixed-height `.web-rail-footer` (`min-height: 42px`), and a fixed 1-column `.web-pin-grid` (`36×36px` tiles) in `compact` mode so hover expand/collapse produces `0px` vertical or horizontal icon jump. Rows update strictly in place by `tab_id`; middle-click closes tabs and right-click opens an Aero + Metro context popover parented to the rail container.
-- **3-Zone Aero Glass Popovers & `Ctrl+K` Palette (`popover.shell-popover`, `.web-palette-card`):**
-  - Content Blocker (`.toggle-card` switches), Media Sniffer & Downloader, Downloads, and Profile Switcher all use Kajo's canonical 3-zone `.shell-popover-header` / `.shell-popover-body` / `.shell-popover-footer` glass popovers (`@metro-glass-bg`).
-  - Startup Profile Picker (`window.shell-web-picker`) renders per-profile accent top borders via scoped `.web-pcard-<idx>` rules and a docked `.web-picker-footer`.
-  - Full interactive reference: [`docs/kajo-web-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-web-mockup.html).
+- **Alloy Views + Aero + Metro Chrome (`kajo-chrome://ui/*`, `src/web_cef/`):**
+  - `kajo-web` runs as a frameless Chromium/CEF Alloy Views host window whose chrome views (`topbar.html`, `rail.html`, `overlay.html`, `picker.html`) synchronize dynamically with live `theme.toml` `@metro-*` CSS variables (`--metro-accent`, `--metro-surface-*`, `ui_font_family`, `0px` corner radius, `1px` borders).
+  - Private windows display a magenta `[ 🕶 PRIVATE ]` chip and border highlight; standard profile windows tint the `1px` frame and profile dot when `profile_border_accent = true`.
+- **34px Top Chrome Bar (`kajo-chrome://ui/topbar.html`):**
+  - Left: `◀`, `▶`, `↻`/`✕`, and vertical rail toggle `◧`.
+  - Center: Unified editable omnibar with semantic TLS indicator (`kajo://`, `HTTPS`, HTTP warning), domain/URL input + autocomplete dropdown (open tabs, bookmarks, history, `!` search bangs), zoom indicator pill (`100%` / reset), bookmark star (`☆`/`★`), inline ad-block shield (`[ 🛡 ON ]`/`[ 🛡 OFF ]`), and a `2px` bottom load progress hairline.
+  - Right: Contextual `[ ⚠ SW RENDER ]` badge (when GPU acceleration is disabled), `[ 🕶 PRIVATE ]`, **always-visible Downloads button (`↓`)** with active count + live aggregate progress fill bar, active Profile chip (`[ ● DEFAULT ]`), `[ ⚙ ]` (`kajo-settings --page web`), `[ 🗗 ]` (`niri_toggle_window_floating`), and `[ ✕ ]` (`#e81123` hover). Topbar supports `autohide` (Zen mode).
+- **Zero-Jump Vertical Tab Rail (`autohide` / `compact` / `pinned`):**
+  - Left or right vertical rail starting cleanly at `y = 0` with fixed `40px` icon slots (live spinner / site favicon / domain monogram badge + audio/mute dot), pinned favicon tiles, collapsible accent-bar groups, idle `💤` suspension indicator, drag-to-reorder, and a single-row footer (`+ NEW TAB`, refresh/collapse).
+- **Aero Popovers, Command Palette & Built-In `kajo://` Pages (`src/web_cef/cef_chrome_ui.cc`):**
+  - Shield (per-site allowlist + `kajo://adblock`), **Downloads** (active progress bars, speed/MB, Pause/Resume/Cancel, Open File/Folder, plus `kajo://downloads`), and **Profile Switcher** popovers follow Kajo's 3-zone Aero + Metro geometry inside `overlay.html`, alongside inline `Ctrl+F` Find Bar, `Ctrl+K` Command & Tab Palette, Startup Profile Picker, and themed internal pages (`kajo://newtab`, `kajo://history`, `kajo://bookmarks`, `kajo://adblock`, `kajo://permissions`, `kajo://downloads`, `kajo://gpu`, `kajo://crashed`, `kajo://about`).
+  - Specification: [`docs/spec_kajo_web.md`](file:///home/mikolas/src/Kajo/docs/spec_kajo_web.md).

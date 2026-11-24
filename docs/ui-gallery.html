@@ -5149,13 +5149,13 @@
                   </div>
                 </div>
                 <div style="flex:1; padding:14px; font-size:11px; color:#888; display:flex; align-items:center; justify-content:center;">
-                  WebKitWebView Viewport
+                  Chromium / CEF Alloy Viewport
                 </div>
               </div>
             </div>
 
             <div class="specimen-note">
-              No decorative header bar: tabs start at <code>y = 0</code> in all modes. Fixed <code>40px</code> left icon slot (<code>.web-tab-ico-slot</code>) and single-row <code>36px</code> footer guarantee <code>0px</code> vertical or horizontal icon shift on compact hover expand.
+              No decorative header bar: tabs start at <code>y = 0</code> in all modes. Fixed <code>40px</code> left icon slot and single-row footer guarantee <code>0px</code> vertical or horizontal icon shift on compact/autohide expand inside <code>kajo-chrome://ui/rail.html</code>.
             </div>
           </div>
 
@@ -5178,11 +5178,11 @@
               <div style="padding:12px 14px; display:flex; flex-direction:column; gap:8px;">
                 <div style="padding:8px 12px; background:rgba(0,120,212,0.18); border:1px solid rgba(0,120,212,0.45); border-left:4px solid var(--metro-accent);">
                   <div style="font-size:13px; font-weight:700; color:#fff;">Ads &amp; Trackers</div>
-                  <div style="font-size:11px; color:#a0a0a0;">WebKit ContentRuleList + YouTube skipper active</div>
+                  <div style="font-size:11px; color:#a0a0a0;">IO-thread ABP network filter + cosmetic CSS engine active</div>
                 </div>
                 <div style="padding:8px 12px; background:rgba(255,255,255,0.065); border:1px solid rgba(255,255,255,0.10); border-left:4px solid rgba(255,255,255,0.10);">
                   <div style="font-size:13px; font-weight:700; color:#fff;">User Scripts &amp; CSS</div>
-                  <div style="font-size:11px; color:#a0a0a0;">0 user scripts &amp; CSS loaded (~/.config/kajo/web-scripts)</div>
+                  <div style="font-size:11px; color:#a0a0a0;">0 user scripts &amp; CSS loaded (~/.config/kajo/web/scripts)</div>
                 </div>
               </div>
               <div style="display:flex; gap:6px; padding:10px 14px; background:rgba(255,255,255,0.035); border-top:1px solid rgba(255,255,255,0.10);">
@@ -5192,7 +5192,7 @@
             </div>
 
             <div class="specimen-note">
-              Shield, Media Sniffer, Downloads, and Profile Switcher popovers reuse Kajo's canonical 3-zone <code>.shell-popover</code> glass structure without requiring <code>.shell-settings-window</code>. Full mockup: <code>docs/kajo-web-mockup.html</code>.
+              Shield, Downloads (<code>↓</code>), and Profile Switcher popovers in <code>kajo-chrome://ui/overlay.html</code> reuse Kajo's canonical 3-zone Aero + Metro panel structure, paired with internal <code>kajo://downloads</code> and <code>kajo://permissions</code> pages.
             </div>
           </div>
         </div>
