@@ -450,7 +450,7 @@ build_page_web(void)
     gtk_box_append(GTK_BOX(c3), create_boxed_row("🍪", "Cookie Policy", "Block third-party cookies by default", self->seg_cookies));
 
     self->sw_https_only = make_switch(self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("🔒", "HTTPS-Only Mode", "Upgrade http:// main navigations to https:// (skips localhost)", self->sw_https_only));
+    gtk_box_append(GTK_BOX(c3), create_boxed_row("🔒", "HTTPS-Only Mode", "Upgrade http:// main navigations to https:// (skips localhost & LAN)", self->sw_https_only));
 
     self->seg_autoplay = create_segmented_group(WEB_AUTOPLAY_LABELS, 0);
     segmented_group_connect(self->seg_autoplay, on_web_seg_changed, self);
@@ -528,15 +528,15 @@ build_page_web(void)
 
     GtkWidget *fp_wrap = create_scale_with_badge(10, 32, 1, 16, "%.0fPX", &self->scale_font_px, &self->lbl_font_px);
     g_signal_connect(self->scale_font_px, "value-changed", G_CALLBACK(on_web_scale_changed), self);
-    gtk_box_append(GTK_BOX(c6), create_boxed_row("Aa", "Default Font Size", "Base proportional web font size", fp_wrap));
+    gtk_box_append(GTK_BOX(c6), create_boxed_row("Aa", "Default Font Size", "Base proportional web font size (applies to newly opened tabs)", fp_wrap));
 
     GtkWidget *mp_wrap = create_scale_with_badge(10, 28, 1, 13, "%.0fPX", &self->scale_mono_px, &self->lbl_mono_px);
     g_signal_connect(self->scale_mono_px, "value-changed", G_CALLBACK(on_web_scale_changed), self);
-    gtk_box_append(GTK_BOX(c6), create_boxed_row("<>", "Monospace Font Size", "Code block & <pre> font size", mp_wrap));
+    gtk_box_append(GTK_BOX(c6), create_boxed_row("<>", "Monospace Font Size", "Code block & <pre> font size (applies to newly opened tabs)", mp_wrap));
 
     GtkWidget *np_wrap = create_scale_with_badge(0, 24, 1, 9, "%.0fPX", &self->scale_min_px, &self->lbl_min_px);
     g_signal_connect(self->scale_min_px, "value-changed", G_CALLBACK(on_web_scale_changed), self);
-    gtk_box_append(GTK_BOX(c6), create_boxed_row("aa", "Minimum Font Size", "Floor for tiny web text (0 disables)", np_wrap));
+    gtk_box_append(GTK_BOX(c6), create_boxed_row("aa", "Minimum Font Size", "Floor for tiny web text (0 disables; applies to newly opened tabs)", np_wrap));
 
     self->entry_dl_dir = make_entry(self, "~/Downloads (empty = XDG)");
     gtk_box_append(GTK_BOX(c6), create_boxed_row("📁", "Download Directory", "Target folder for downloads (supports ~/ expansion)", self->entry_dl_dir));

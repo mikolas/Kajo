@@ -1,10 +1,12 @@
 #include "web_cef/cef_chrome_ui.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <sstream>
 
 #include "include/wrapper/cef_helpers.h"
+#include "web_cef/cef_site_util.h"
 
 namespace kajo_web {
 
@@ -45,6 +47,22 @@ std::string HtmlEscape(const std::string& s) {
       case '"': out += "&quot;"; break;
       case '\'': out += "&#39;"; break;
       default: out.push_back(c); break;
+    }
+  }
+  return out;
+}
+
+static std::string UrlEncodeQuery(const std::string& v) {
+  std::string out;
+  out.reserve(v.size() + 8);
+  for (unsigned char c : v) {
+    if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+        (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+      out.push_back(static_cast<char>(c));
+    } else {
+      char hex[4];
+      snprintf(hex, sizeof(hex), "%%%02X", c);
+      out += hex;
     }
   }
   return out;
@@ -101,13 +119,14 @@ std::string ChromeStateStore::RenderThemeCss() const {
   ChromeStateSnapshot s = Snapshot();
   std::string accent = s.private_mode ? "#b146c2" :
                        (!s.profile_accent.empty() ? s.profile_accent : s.accent_color);
-  if (accent.empty()) accent = "#0078d4";
+  accent = SanitizeHexColor(accent, "#0078d4");
+  const std::string theme_accent = SanitizeHexColor(s.accent_color, "#0078d4");
   std::string font = s.ui_font_family.empty() ? "Fira Code" : s.ui_font_family;
 
   std::ostringstream css;
   css << ":root {\n"
       << "  --metro-accent: " << accent << ";\n"
-      << "  --metro-theme-accent: " << s.accent_color << ";\n"
+      << "  --metro-theme-accent: " << theme_accent << ";\n"
       << "  --metro-surface-0: #111111;\n"
       << "  --metro-surface-1: #141414;\n"
       << "  --metro-surface-2: #181818;\n"
@@ -122,7 +141,12 @@ std::string ChromeStateStore::RenderThemeCss() const {
       << "  --metro-urgent: #e81123;\n"
       << "  --metro-font: \"" << JsonEscape(font) << "\", \"Fira Code\", monospace;\n"
       << "  --metro-font-size: " << s.ui_font_size_px << "px;\n"
+      << "  --metro-heading-size: " << s.heading_size_px << "px;\n"
+      << "  --metro-sub-size: " << s.sub_size_px << "px;\n"
       << "  --metro-badge-size: " << s.badge_size_px << "px;\n"
+      << "  --metro-topbar-h: " << s.topbar_height_px << "px;\n"
+      << "  --metro-ctrl-h: " << s.control_height_px << "px;\n"
+      << "  --metro-icon-size: " << s.icon_size_px << "px;\n"
       << "}\n"
       << "* { box-sizing: border-box; border-radius: 0 !important; }\n"
       << "html, body {\n"
@@ -166,11 +190,19 @@ std::string ChromeStateStore::SnapshotJson() const {
   o << "\"ac_selected_idx\":" << s.ac_selected_idx << ",";
   o << "\"closed_tab_count\":" << s.closed_tab_count << ",";
   o << "\"overlay_mode\":\"" << JsonEscape(s.overlay_mode) << "\",";
-  o << "\"accent_color\":\"" << JsonEscape(s.accent_color) << "\",";
-  o << "\"profile_accent\":\"" << JsonEscape(s.profile_accent) << "\",";
+  o << "\"accent_color\":\"" << JsonEscape(SanitizeHexColor(s.accent_color, "#0078d4")) << "\",";
+  o << "\"profile_accent\":\"" << JsonEscape(SanitizeHexColor(s.profile_accent, "#0078d4")) << "\",";
   o << "\"profile_id\":\"" << JsonEscape(s.profile_id) << "\",";
   o << "\"profile_name\":\"" << JsonEscape(s.profile_name) << "\",";
   o << "\"profile_icon\":\"" << JsonEscape(s.profile_icon) << "\",";
+  o << "\"ui_font_family\":\"" << JsonEscape(s.ui_font_family) << "\",";
+  o << "\"ui_font_size_px\":" << s.ui_font_size_px << ",";
+  o << "\"heading_size_px\":" << s.heading_size_px << ",";
+  o << "\"sub_size_px\":" << s.sub_size_px << ",";
+  o << "\"badge_size_px\":" << s.badge_size_px << ",";
+  o << "\"topbar_height_px\":" << s.topbar_height_px << ",";
+  o << "\"control_height_px\":" << s.control_height_px << ",";
+  o << "\"icon_size_px\":" << s.icon_size_px << ",";
   o << "\"active_tab_id\":" << s.active_tab_id << ",";
   o << "\"active_url\":\"" << JsonEscape(s.active_url) << "\",";
   o << "\"active_title\":\"" << JsonEscape(s.active_title) << "\",";
@@ -180,6 +212,7 @@ std::string ChromeStateStore::SnapshotJson() const {
   o << "\"is_loading\":" << (s.is_loading ? "true" : "false") << ",";
   o << "\"is_bookmarked\":" << (s.is_bookmarked ? "true" : "false") << ",";
   o << "\"zoom_pct\":" << s.zoom_pct << ",";
+  o << "\"default_zoom_pct\":" << s.default_zoom_pct << ",";
   o << "\"adblock_enabled\":" << (s.adblock_enabled ? "true" : "false") << ",";
   o << "\"host_paused\":" << (s.host_paused ? "true" : "false") << ",";
   o << "\"tab_blocked\":" << s.tab_blocked << ",";
@@ -354,7 +387,7 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     background: transparent;
   }
   .bar-wrap {
-    height: 34px;
+    height: var(--metro-topbar-h);
     background: var(--metro-surface-0);
     border-bottom: 1px solid var(--metro-border);
     overflow: hidden;
@@ -367,30 +400,30 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   }
   .bar-wrap.collapsed .bar { display: none; }
   .bar {
-    height: 33px;
+    height: calc(var(--metro-topbar-h) - 1px);
     display: flex;
     align-items: center;
-    gap: 3px;
-    padding: 0 5px;
+    gap: 4px;
+    padding: 0 8px;
     -webkit-app-region: drag;
   }
   .cluster {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 4px;
     -webkit-app-region: no-drag;
     flex-shrink: 0;
   }
   .drag-spacer {
     flex: 0 1 16px;
     min-width: 8px;
-    height: 33px;
+    height: calc(var(--metro-topbar-h) - 1px);
     -webkit-app-region: drag;
   }
   .btn {
-    height: 24px;
-    min-width: 24px;
-    padding: 0 6px;
+    height: var(--metro-ctrl-h);
+    min-width: var(--metro-ctrl-h);
+    padding: 0 8px;
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border);
     color: var(--metro-fg);
@@ -398,8 +431,15 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 12px;
+    font-size: var(--metro-sub-size);
+    font-weight: 600;
     line-height: 1;
+  }
+  .btn svg, .pill svg {
+    width: var(--metro-icon-size);
+    height: var(--metro-icon-size);
+    display: block;
+    flex-shrink: 0;
   }
   .btn:hover:not(:disabled) {
     background: var(--metro-surface-4);
@@ -416,9 +456,9 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .btn.sw-chip {
     border-color: var(--metro-warning);
     color: #ffb347;
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     letter-spacing: 0.4px;
-    padding: 0 7px;
+    padding: 0 8px;
   }
   .btn.close:hover {
     background: var(--metro-urgent);
@@ -428,7 +468,7 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .omnibar-wrap {
     flex: 1 1 auto;
     min-width: 180px;
-    height: 24px;
+    height: var(--metro-ctrl-h);
     display: flex;
     align-items: center;
     background: var(--metro-surface-2);
@@ -440,11 +480,12 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     background: #101010;
   }
   .sec-badge {
-    padding: 0 7px;
-    height: 22px;
+    padding: 0 8px;
+    height: calc(var(--metro-ctrl-h) - 2px);
     display: inline-flex;
     align-items: center;
-    font-size: 11px;
+    font-size: var(--metro-badge-size);
+    font-weight: 600;
     color: var(--metro-fg-dim);
     border-right: 1px solid var(--metro-border);
     flex-shrink: 0;
@@ -455,7 +496,7 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .omni-field {
     flex: 1 1 auto;
     min-width: 0;
-    height: 22px;
+    height: calc(var(--metro-ctrl-h) - 2px);
     position: relative;
     display: flex;
     align-items: center;
@@ -467,8 +508,8 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     pointer-events: none;
     display: flex;
     align-items: center;
-    padding: 0 8px;
-    font-size: 12px;
+    padding: 0 10px;
+    font-size: var(--metro-font-size);
     white-space: nowrap;
     overflow: hidden;
   }
@@ -487,13 +528,13 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .omnibar-wrap.focused #omniDisplay { display: none; }
   #omnibar {
     width: 100%;
-    height: 22px;
+    height: calc(var(--metro-ctrl-h) - 2px);
     position: relative;
     z-index: 2;
     background: transparent;
     border: none;
-    padding: 0 8px;
-    font-size: 12px;
+    padding: 0 10px;
+    font-size: var(--metro-font-size);
     color: var(--metro-fg);
   }
   .omnibar-wrap:not(.focused) #omnibar {
@@ -502,17 +543,18 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   }
   .omnibar-wrap:not(.focused) #omnibar::placeholder { color: transparent; }
   .pill {
-    height: 22px;
-    padding: 0 7px;
+    height: calc(var(--metro-ctrl-h) - 2px);
+    padding: 0 8px;
     background: transparent;
     border: none;
     border-left: 1px solid var(--metro-border);
     color: var(--metro-fg-dim);
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--metro-badge-size);
+    font-weight: 600;
     flex-shrink: 0;
   }
   .pill:hover { background: var(--metro-surface-4); color: #ffffff; }
@@ -522,8 +564,8 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .hidden { display: none !important; }
   .dl-btn {
     position: relative;
-    gap: 4px;
-    padding: 0 7px;
+    gap: 5px;
+    padding: 0 8px;
     overflow: hidden;
   }
   .dl-btn.dl-busy {
@@ -531,8 +573,8 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     color: #ffffff;
   }
   .dl-dot {
-    width: 5px;
-    height: 5px;
+    width: 6px;
+    height: 6px;
     background: var(--metro-success);
     display: none;
   }
@@ -553,14 +595,14 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     transition: width 120ms linear;
   }
   .profile-btn {
-    gap: 5px;
-    padding: 0 8px;
-    font-size: 11px;
+    gap: 6px;
+    padding: 0 10px;
+    font-size: var(--metro-sub-size);
     letter-spacing: 0.4px;
   }
   .dot {
-    width: 7px;
-    height: 7px;
+    width: 8px;
+    height: 8px;
     background: var(--metro-accent);
     display: inline-block;
   }
@@ -583,10 +625,10 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
 <div id="barWrap" class="bar-wrap">
   <div class="bar">
     <div class="cluster">
-      <button id="btnBack" class="btn" title="Back (Alt+Left)">←</button>
-      <button id="btnFwd" class="btn" title="Forward (Alt+Right)">→</button>
-      <button id="btnReload" class="btn" title="Reload / Stop (Ctrl+R · Shift+R Hard)">⟳</button>
-      <button id="btnRail" class="btn" title="Toggle Tab Rail (Ctrl+B)">◧</button>
+      <button id="btnBack" class="btn" title="Back (Alt+Left)" aria-label="Back"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M13 8H3.5M7.5 4L3.5 8l4 4"/></svg></button>
+      <button id="btnFwd" class="btn" title="Forward (Alt+Right)" aria-label="Forward"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M3 8h9.5M8.5 4l4 4-4 4"/></svg></button>
+      <button id="btnReload" class="btn" title="Reload / Stop (Ctrl+R · Shift+R Hard)" aria-label="Reload"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M13 8a5 5 0 1 1-1.35-3.42"/><path d="M13 2.5v3h-3"/></svg></button>
+      <button id="btnRail" class="btn" title="Toggle Tab Rail (Ctrl+B)" aria-label="Toggle Tab Rail"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><rect x="2" y="2.5" width="12" height="11"/><path d="M6 2.5v11"/></svg></button>
     </div>
 
     <div class="drag-spacer"></div>
@@ -601,18 +643,18 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
                placeholder="Search or enter URL (Ctrl+L · Ctrl+K Palette)">
       </div>
       <button id="btnShield" class="pill shield-on" title="Adblock &amp; Trackers">
-        <span>🛡</span><span id="blockedNum">0</span>
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 2L3 4v4c0 3.2 2.1 5.1 5 6 2.9-.9 5-2.8 5-6V4L8 2z"/></svg><span id="blockedNum">0</span>
       </button>
-      <button id="btnStar" class="pill" title="Bookmark Page (Ctrl+D)">☆</button>
+      <button id="btnStar" class="pill" title="Bookmark Page (Ctrl+D)" aria-label="Bookmark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg></button>
     </div>
 
     <div class="drag-spacer"></div>
 
     <div class="cluster">
       <button id="btnSwRender" class="btn sw-chip hidden" title="Hardware GPU acceleration disabled — open kajo://gpu">⚠ SW RENDER</button>
-      <button id="btnMedia" class="btn hidden" title="Sniffed Media Streams">⬇ <span id="mediaCount">0</span></button>
-      <button id="btnDl" class="btn dl-btn" title="Downloads (Ctrl+J)">
-        <span>↓</span><span id="dlCount"></span><span class="dl-dot"></span>
+      <button id="btnMedia" class="btn hidden" title="Sniffed Media Streams"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg><span id="mediaCount" style="margin-left:4px;">0</span></button>
+      <button id="btnDl" class="btn dl-btn" title="Downloads (Ctrl+J)" aria-label="Downloads">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/></svg><span id="dlCount"></span><span class="dl-dot"></span>
         <span class="dl-prog"><span id="dlProgBar" style="width:0%"></span></span>
       </button>
       <button id="btnZoom" class="btn hidden" title="Reset Zoom (Ctrl+0)"><span id="zoomLabel">100%</span></button>
@@ -620,9 +662,9 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
         <span id="profileDot" class="dot"></span>
         <span id="profileLabel">DEFAULT</span>
       </button>
-      <button id="btnSettings" class="btn" title="Web Settings (Ctrl+,)">⚙</button>
-      <button id="btnFloat" class="btn" title="Float / Tile Window">🗗</button>
-      <button id="btnClose" class="btn close" title="Close Browser">✕</button>
+      <button id="btnSettings" class="btn" title="Web Settings (Ctrl+,)" aria-label="Settings"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M12.4 3.6l-1.1 1.1M4.7 11.3l-1.1 1.1"/></svg></button>
+      <button id="btnFloat" class="btn" title="Float / Tile Window" aria-label="Float or Tile"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square" stroke-linejoin="miter"><rect x="2.5" y="5.5" width="8" height="8"/><path d="M5.5 5.5v-3h8v8h-3"/></svg></button>
+      <button id="btnClose" class="btn close" title="Close Browser" aria-label="Close"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg></button>
     </div>
   </div>
 </div>
@@ -720,15 +762,37 @@ barWrap.addEventListener('mouseleave', () => {
   if (lastState && lastState.topbar_mode === 1) send('topbar_hover', { inside: false });
 });
 
+const SVG_RELOAD = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="square" stroke-linejoin="miter"><path d="M13 8a5 5 0 1 1-1.35-3.42"/><path d="M13 2.5v3h-3"/></svg>';
+const SVG_STOP = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>';
+const SVG_STAR_OUTLINE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg>';
+const SVG_STAR_FILLED = '<svg viewBox="0 0 16 16" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg>';
+let lastIsLoading = null;
+let lastIsBookmarked = null;
+
 window.__kajoApply = (s) => {
   lastState = s;
+  const ds = document.documentElement.style;
+  const acc = s.private_mode ? '#b146c2' : (s.profile_accent || s.accent_color || '#0078d4');
+  ds.setProperty('--metro-accent', acc);
+  if (s.accent_color) ds.setProperty('--metro-theme-accent', s.accent_color);
+  if (s.ui_font_family) ds.setProperty('--metro-font', '"' + s.ui_font_family + '", "Fira Code", monospace');
+  if (s.ui_font_size_px) ds.setProperty('--metro-font-size', s.ui_font_size_px + 'px');
+  if (s.heading_size_px) ds.setProperty('--metro-heading-size', s.heading_size_px + 'px');
+  if (s.sub_size_px) ds.setProperty('--metro-sub-size', s.sub_size_px + 'px');
+  if (s.badge_size_px) ds.setProperty('--metro-badge-size', s.badge_size_px + 'px');
+  if (s.topbar_height_px) ds.setProperty('--metro-topbar-h', s.topbar_height_px + 'px');
+  if (s.control_height_px) ds.setProperty('--metro-ctrl-h', s.control_height_px + 'px');
+  if (s.icon_size_px) ds.setProperty('--metro-icon-size', s.icon_size_px + 'px');
   acSelectedIdx = typeof s.ac_selected_idx === 'number' ? s.ac_selected_idx : -1;
   const isCollapsed = (s.topbar_mode === 1 && !s.topbar_hover_open);
   barWrap.className = 'bar-wrap' + (isCollapsed ? ' collapsed' : '');
 
   btnBack.disabled = !s.can_go_back;
   btnFwd.disabled = !s.can_go_forward;
-  btnReload.textContent = s.is_loading ? '✕' : '⟳';
+  if (lastIsLoading !== !!s.is_loading) {
+    lastIsLoading = !!s.is_loading;
+    btnReload.innerHTML = lastIsLoading ? SVG_STOP : SVG_RELOAD;
+  }
   loadBar.classList.toggle('active', !!s.is_loading);
   btnRail.classList.toggle('active', s.rail_mode === 2);
 
@@ -758,7 +822,10 @@ window.__kajoApply = (s) => {
   btnShield.title = s.host_paused ? 'Protection paused on ' + (s.active_host || 'host') :
                     'Adblock active · ' + (s.tab_blocked || 0) + ' blocked on tab · ' + (s.total_blocked || 0) + ' session';
 
-  btnStar.textContent = s.is_bookmarked ? '★' : '☆';
+  if (lastIsBookmarked !== !!s.is_bookmarked) {
+    lastIsBookmarked = !!s.is_bookmarked;
+    btnStar.innerHTML = lastIsBookmarked ? SVG_STAR_FILLED : SVG_STAR_OUTLINE;
+  }
   btnStar.classList.toggle('star-on', !!s.is_bookmarked);
 
   btnSwRender.classList.toggle('hidden', s.hw_accel_enabled !== false);
@@ -787,7 +854,7 @@ window.__kajoApply = (s) => {
     btnDl.title = 'Downloads (' + dls.length + ' total) · Ctrl+J';
   }
 
-  btnZoom.classList.toggle('hidden', (s.zoom_pct || 100) === 100);
+  btnZoom.classList.toggle('hidden', (s.zoom_pct || 100) === (s.default_zoom_pct || 100));
   zoomLabel.textContent = (s.zoom_pct || 100) + '%';
 
   profileDot.style.background = s.private_mode ? '#b146c2' : (s.profile_accent || s.accent_color || '#0078d4');
@@ -957,7 +1024,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
   }
   .pin-tile {
     position: relative;
-    height: 34px;
+    height: calc(var(--metro-ctrl-h) + 8px);
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border);
     display: flex;
@@ -971,13 +1038,14 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     border-color: var(--metro-accent);
     box-shadow: inset 0 -2px 0 var(--metro-accent);
   }
+  .pin-tile.suspended { opacity: 0.72; }
   .pin-tile.drop-above { border-left: 2px solid var(--metro-accent); }
   .pin-tile.drop-below { border-right: 2px solid var(--metro-accent); }
   .pin-mute {
     position: absolute;
     right: 1px;
     bottom: 0;
-    font-size: 9px;
+    font-size: var(--metro-badge-size);
     line-height: 1;
   }
   .tab-row.drop-above { box-shadow: inset 0 2px 0 var(--metro-accent); }
@@ -985,8 +1053,8 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
   .ctx-menu {
     position: fixed;
     z-index: 50;
-    min-width: 184px;
-    max-width: 224px;
+    min-width: 204px;
+    max-width: 260px;
     background: var(--metro-surface-1);
     border: 1px solid var(--metro-accent);
     padding: 3px 0;
@@ -998,11 +1066,11 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     align-items: center;
     justify-content: space-between;
     width: 100%;
-    padding: 5px 10px;
+    padding: 6px 10px;
     background: transparent;
     border: none;
     color: var(--metro-fg);
-    font-size: 11px;
+    font-size: var(--metro-sub-size);
     text-align: left;
     cursor: pointer;
   }
@@ -1018,7 +1086,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     background: var(--metro-surface-0);
   }
   .ctx-sub-lbl {
-    font-size: 9px;
+    font-size: var(--metro-badge-size);
     color: var(--metro-fg-dim);
     text-transform: uppercase;
     letter-spacing: 0.6px;
@@ -1032,7 +1100,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
   }
   .ctx-chip {
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border-strong);
     color: var(--metro-fg);
@@ -1053,7 +1121,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     background: #0d0d0d;
     border: 1px solid var(--metro-border-strong);
     color: #ffffff;
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
   }
   .rail-head {
     display: flex;
@@ -1066,14 +1134,15 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
   }
   .newtab-btn {
     flex: 1;
-    height: 26px;
+    min-height: var(--metro-ctrl-h);
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border);
     color: var(--metro-fg);
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--metro-sub-size);
+    font-weight: 600;
     text-align: left;
-    padding: 0 8px;
+    padding: 0 10px;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1091,9 +1160,11 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 24px;
-    padding: 0 8px;
-    font-size: 10px;
+    min-height: calc(var(--metro-badge-size) + 15px);
+    height: auto;
+    padding: 3px 8px;
+    font-size: var(--metro-badge-size);
+    font-weight: 700;
     letter-spacing: 0.8px;
     color: var(--metro-fg-dim);
     background: var(--metro-surface-1);
@@ -1110,16 +1181,17 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     position: relative;
     display: flex;
     align-items: center;
-    gap: 7px;
-    padding: 0 8px 0 11px;
+    gap: 8px;
+    padding: 5px 8px 5px 11px;
     border-left: 3px solid transparent;
     cursor: pointer;
-    height: 42px;
+    min-height: calc(var(--metro-font-size) + var(--metro-badge-size) + 21px);
+    height: auto;
     overflow: hidden;
   }
   .rail.compact .tab-row {
     justify-content: flex-start;
-    padding: 0 2px 0 11px;
+    padding: 4px 2px 4px 11px;
     gap: 0;
   }
   .tab-row:hover { background: var(--metro-surface-3); }
@@ -1127,21 +1199,27 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     background: var(--metro-surface-3);
     border-left-color: var(--metro-accent);
   }
-  .tab-row.suspended { opacity: 0.55; }
+  .tab-row.suspended { opacity: 0.78; }
+  .tab-row.suspended .tab-title { color: var(--metro-fg-dim); }
+  .tab-row.suspended .fav, .pin-tile.suspended .fav {
+    filter: grayscale(100%);
+    opacity: 0.65;
+    border-style: dashed;
+  }
   .fav {
-    width: 16px;
-    height: 16px;
+    width: calc(var(--metro-icon-size) + 4px);
+    height: calc(var(--metro-icon-size) + 4px);
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border);
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     color: var(--metro-accent);
     overflow: hidden;
   }
-  .fav img { width: 14px; height: 14px; display: block; }
+  .fav img { width: var(--metro-icon-size); height: var(--metro-icon-size); display: block; }
   .tab-text {
     flex: 1 1 auto;
     min-width: 0;
@@ -1152,7 +1230,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
   .rail.compact .tab-actions,
   .rail.compact .rail-foot-label { display: none; }
   .tab-title {
-    font-size: 12px;
+    font-size: var(--metro-font-size);
     line-height: 1.25;
     color: var(--metro-fg);
     white-space: nowrap;
@@ -1160,7 +1238,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     text-overflow: ellipsis;
   }
   .tab-domain {
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     line-height: 1.2;
     color: var(--metro-fg-dim);
     white-space: nowrap;
@@ -1174,8 +1252,8 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     flex-shrink: 0;
   }
   .mini-btn {
-    width: 18px;
-    height: 18px;
+    width: calc(var(--metro-sub-size) + 10px);
+    height: calc(var(--metro-sub-size) + 10px);
     background: transparent;
     border: none;
     color: var(--metro-fg-dim);
@@ -1183,7 +1261,7 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: var(--metro-sub-size);
     padding: 0;
   }
   .mini-btn:hover { background: var(--metro-surface-4); color: #ffffff; }
@@ -1191,23 +1269,24 @@ static const char* kRailHtml = R"KAJO(<!doctype html>
   .tab-row:not(:hover) .mini-btn.close { opacity: 0.3; }
   .rail-foot {
     border-top: 1px solid var(--metro-border);
-    padding: 5px 6px;
+    padding: 6px 8px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 4px;
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     color: var(--metro-fg-dim);
     flex-shrink: 0;
   }
   .mode-btn {
-    height: 22px;
-    padding: 0 6px;
+    min-height: calc(var(--metro-ctrl-h) - 4px);
+    height: auto;
+    padding: 0 8px;
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border);
     color: var(--metro-fg-dim);
     cursor: pointer;
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
   }
   .mode-btn:hover { border-color: var(--metro-accent); color: #ffffff; }
 </style>
@@ -1321,8 +1400,12 @@ function makeFavicon(t) {
   }
   if (t.favicon_url) {
     const img = document.createElement('img');
+    img.referrerPolicy = 'no-referrer';
+    img.loading = 'lazy';
     img.src = t.favicon_url;
-    img.onerror = () => { box.textContent = (t.domain || 'K')[0].toUpperCase(); };
+    img.onerror = () => {
+      box.textContent = t.pinned ? '★' : ((t.domain || t.title || 'K')[0] || 'K').toUpperCase();
+    };
     box.appendChild(img);
     return box;
   }
@@ -1453,6 +1536,18 @@ function attachDragHandlers(el, t) {
 
 window.__kajoApply = (s) => {
   lastRailState = s;
+  const ds = document.documentElement.style;
+  const acc = s.private_mode ? '#b146c2' : (s.profile_accent || s.accent_color || '#0078d4');
+  ds.setProperty('--metro-accent', acc);
+  if (s.accent_color) ds.setProperty('--metro-theme-accent', s.accent_color);
+  if (s.ui_font_family) ds.setProperty('--metro-font', '"' + s.ui_font_family + '", "Fira Code", monospace');
+  if (s.ui_font_size_px) ds.setProperty('--metro-font-size', s.ui_font_size_px + 'px');
+  if (s.heading_size_px) ds.setProperty('--metro-heading-size', s.heading_size_px + 'px');
+  if (s.sub_size_px) ds.setProperty('--metro-sub-size', s.sub_size_px + 'px');
+  if (s.badge_size_px) ds.setProperty('--metro-badge-size', s.badge_size_px + 'px');
+  if (s.topbar_height_px) ds.setProperty('--metro-topbar-h', s.topbar_height_px + 'px');
+  if (s.control_height_px) ds.setProperty('--metro-ctrl-h', s.control_height_px + 'px');
+  if (s.icon_size_px) ds.setProperty('--metro-icon-size', s.icon_size_px + 'px');
   const isCompact = (s.rail_mode === 1 && !s.rail_hover_open);
   const isAutohideCollapsed = (s.rail_mode === 0 && !s.rail_hover_open);
   const isOverlay = (s.rail_hover_open && (s.rail_mode === 0 || s.rail_mode === 1));
@@ -1613,10 +1708,10 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 7px 10px;
+    padding: 8px 12px;
     background: var(--metro-surface-0);
     border-bottom: 1px solid var(--metro-border);
-    font-size: 11px;
+    font-size: var(--metro-heading-size);
     letter-spacing: 0.7px;
     text-transform: uppercase;
   }
@@ -1625,19 +1720,19 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     background: var(--metro-surface-2);
     border: 1px solid var(--metro-border);
     color: var(--metro-fg);
-    padding: 2px 8px;
+    padding: 4px 10px;
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--metro-badge-size);
   }
   .xbtn:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); }
   .search-box {
     width: 100%;
-    padding: 8px 10px;
+    padding: 9px 12px;
     background: #0d0d0d;
     border: none;
     border-bottom: 1px solid var(--metro-border-strong);
     color: #ffffff;
-    font-size: 13px;
+    font-size: var(--metro-font-size);
   }
   .list {
     flex: 1 1 auto;
@@ -1649,7 +1744,7 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    padding: 7px 9px;
+    padding: 8px 10px;
     border-left: 3px solid transparent;
     cursor: pointer;
     border-bottom: 1px solid #1e1e1e;
@@ -1661,21 +1756,21 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
   .item-main { min-width: 0; flex: 1; }
   .item-title {
     color: #ffffff;
-    font-size: 12px;
+    font-size: var(--metro-font-size);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .item-sub {
     color: var(--metro-fg-dim);
-    font-size: 11px;
+    font-size: var(--metro-sub-size);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .badge {
     padding: 2px 6px;
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     border: 1px solid var(--metro-border-strong);
     background: var(--metro-surface-2);
     color: var(--metro-fg-dim);
@@ -1697,7 +1792,7 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     border: 1px solid var(--metro-border-strong);
     color: var(--metro-fg);
     cursor: pointer;
-    font-size: 11px;
+    font-size: var(--metro-sub-size);
   }
   .btn:hover { background: var(--metro-surface-4); border-color: var(--metro-accent); }
   .btn.primary { background: var(--metro-accent); border-color: var(--metro-accent); color: #ffffff; }
@@ -1710,10 +1805,11 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
   }
   .find-input {
     flex: 1;
-    padding: 5px 8px;
+    padding: 6px 10px;
     background: #0d0d0d;
     border: 1px solid var(--metro-border-strong);
     color: #ffffff;
+    font-size: var(--metro-font-size);
   }
   .find-input:focus { border-color: var(--metro-accent); }
   .stat-grid {
@@ -1727,8 +1823,8 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     border: 1px solid var(--metro-border);
     padding: 8px;
   }
-  .stat-num { font-size: 16px; color: #ffffff; font-weight: 600; }
-  .stat-lbl { font-size: 10px; color: var(--metro-fg-dim); margin-top: 2px; }
+  .stat-num { font-size: calc(var(--metro-font-size) + 4px); color: #ffffff; font-weight: 600; }
+  .stat-lbl { font-size: var(--metro-badge-size); color: var(--metro-fg-dim); margin-top: 2px; }
   .prog {
     height: 4px;
     background: var(--metro-surface-0);
@@ -1749,7 +1845,7 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
   .perm-msg {
     flex: 1;
     min-width: 0;
-    font-size: 12px;
+    font-size: var(--metro-font-size);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1763,7 +1859,7 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
     flex: 1;
   }
   .form-lbl {
-    font-size: 10px;
+    font-size: var(--metro-badge-size);
     color: var(--metro-fg-dim);
     text-transform: uppercase;
     letter-spacing: 0.6px;
@@ -1771,11 +1867,11 @@ static const char* kOverlayHtml = R"KAJO(<!doctype html>
   }
   .form-inp {
     width: 100%;
-    padding: 6px 8px;
+    padding: 6px 10px;
     background: #0d0d0d;
     border: 1px solid var(--metro-border-strong);
     color: #ffffff;
-    font-size: 12px;
+    font-size: var(--metro-font-size);
   }
   .form-inp:focus { border-color: var(--metro-accent); }
   .btn.bad:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #ffffff; }
@@ -1833,6 +1929,18 @@ function renderHeader(title) {
 }
 
 window.__kajoApply = (s) => {
+  const ds = document.documentElement.style;
+  const acc = s.private_mode ? '#b146c2' : (s.profile_accent || s.accent_color || '#0078d4');
+  ds.setProperty('--metro-accent', acc);
+  if (s.accent_color) ds.setProperty('--metro-theme-accent', s.accent_color);
+  if (s.ui_font_family) ds.setProperty('--metro-font', '"' + s.ui_font_family + '", "Fira Code", monospace');
+  if (s.ui_font_size_px) ds.setProperty('--metro-font-size', s.ui_font_size_px + 'px');
+  if (s.heading_size_px) ds.setProperty('--metro-heading-size', s.heading_size_px + 'px');
+  if (s.sub_size_px) ds.setProperty('--metro-sub-size', s.sub_size_px + 'px');
+  if (s.badge_size_px) ds.setProperty('--metro-badge-size', s.badge_size_px + 'px');
+  if (s.topbar_height_px) ds.setProperty('--metro-topbar-h', s.topbar_height_px + 'px');
+  if (s.control_height_px) ds.setProperty('--metro-ctrl-h', s.control_height_px + 'px');
+  if (s.icon_size_px) ds.setProperty('--metro-icon-size', s.icon_size_px + 'px');
   if (isPermRole) {
     curState = s;
     root.innerHTML = '';
@@ -2436,34 +2544,40 @@ static std::string BuildKajoShellPage(const ChromeStateSnapshot& s,
                                       const std::string& body_html) {
   std::string accent = s.private_mode ? "#b146c2" :
                        (!s.profile_accent.empty() ? s.profile_accent : s.accent_color);
-  if (accent.empty()) accent = "#0078d4";
+  accent = SanitizeHexColor(accent, "#0078d4");
+  const std::string font = s.ui_font_family.empty() ? "Fira Code" : s.ui_font_family;
   std::ostringstream h;
   h << "<!doctype html><html><head><meta charset='utf-8'><title>" << HtmlEscape(title)
     << "</title><style>"
-    << ":root{--accent:" << accent << ";--bg0:#111111;--bg1:#141414;--bg2:#181818;--bg3:#1e1e1e;--b:#2b2b2b;--fg:#ececec;--dim:#999999;--ok:#2ea043;--warn:#d97706;--err:#e81123;}"
+    << ":root{--accent:" << accent << ";--bg0:#111111;--bg1:#141414;--bg2:#181818;--bg3:#1e1e1e;--b:#2b2b2b;--fg:#ececec;--dim:#999999;--ok:#2ea043;--warn:#d97706;--err:#e81123;"
+    << "--font:\"" << JsonEscape(font) << "\",\"Fira Code\",monospace;"
+    << "--fs:" << s.ui_font_size_px << "px;"
+    << "--fs-head:" << s.heading_size_px << "px;"
+    << "--fs-sub:" << s.sub_size_px << "px;"
+    << "--fs-badge:" << s.badge_size_px << "px;}"
     << "*{box-sizing:border-box;border-radius:0;}"
-    << "html,body{margin:0;padding:0;background:var(--bg1);color:var(--fg);font-family:'Fira Code',monospace;font-size:13px;}"
+    << "html,body{margin:0;padding:0;background:var(--bg1);color:var(--fg);font-family:var(--font);font-size:var(--fs);}"
     << ".nav{display:flex;gap:4px;padding:10px 24px;background:var(--bg0);border-bottom:1px solid var(--b);align-items:center;flex-wrap:wrap;}"
-    << ".brand{color:var(--accent);font-weight:700;letter-spacing:1.2px;margin-right:16px;}"
-    << ".nav a{color:var(--dim);text-decoration:none;padding:5px 10px;border:1px solid transparent;}"
+    << ".brand{color:var(--accent);font-weight:700;letter-spacing:1.2px;margin-right:16px;font-size:var(--fs-head);}"
+    << ".nav a{color:var(--dim);text-decoration:none;padding:5px 10px;border:1px solid transparent;font-size:var(--fs-sub);}"
     << ".nav a:hover{color:#fff;background:var(--bg2);border-color:var(--b);}"
     << ".nav a.act{color:#fff;border-color:var(--accent);background:var(--bg2);}"
     << ".wrap{max-width:1040px;margin:0 auto;padding:24px;}"
-    << "h1{margin:0 0 16px 0;font-size:18px;letter-spacing:0.8px;text-transform:uppercase;border-left:4px solid var(--accent);padding-left:10px;}"
-    << "h2{margin:20px 0 10px 0;font-size:13px;color:var(--dim);letter-spacing:0.8px;text-transform:uppercase;}"
+    << "h1{margin:0 0 16px 0;font-size:calc(var(--fs-head) + 5px);letter-spacing:0.8px;text-transform:uppercase;border-left:4px solid var(--accent);padding-left:10px;}"
+    << "h2{margin:20px 0 10px 0;font-size:var(--fs-head);color:var(--dim);letter-spacing:0.8px;text-transform:uppercase;}"
     << ".grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px;}"
     << ".card{background:var(--bg2);border:1px solid var(--b);padding:12px;display:block;color:inherit;text-decoration:none;}"
     << ".card:hover{border-color:var(--accent);background:var(--bg3);}"
-    << ".k{font-size:20px;font-weight:700;color:#fff;}"
-    << ".lbl{font-size:11px;color:var(--dim);margin-top:4px;text-transform:uppercase;}"
+    << ".k{font-size:calc(var(--fs) + 6px);font-weight:700;color:#fff;}"
+    << ".lbl{font-size:var(--fs-badge);color:var(--dim);margin-top:4px;text-transform:uppercase;}"
     << "table{width:100%;border-collapse:collapse;background:var(--bg2);border:1px solid var(--b);}"
     << "th,td{padding:8px 10px;border-bottom:1px solid var(--b);text-align:left;vertical-align:middle;}"
-    << "th{background:var(--bg0);color:var(--dim);font-size:11px;text-transform:uppercase;}"
-    << ".btn{display:inline-block;padding:5px 10px;background:var(--bg3);border:1px solid #3c3c3c;color:#fff;text-decoration:none;cursor:pointer;font-family:inherit;font-size:11px;}"
+    << "th{background:var(--bg0);color:var(--dim);font-size:var(--fs-badge);text-transform:uppercase;}"
+    << ".btn{display:inline-block;padding:6px 12px;background:var(--bg3);border:1px solid #3c3c3c;color:#fff;text-decoration:none;cursor:pointer;font-family:inherit;font-size:var(--fs-sub);}"
     << ".btn:hover{border-color:var(--accent);}"
     << ".btn.pri{background:var(--accent);border-color:var(--accent);}"
     << ".btn.bad:hover{background:var(--err);border-color:var(--err);}"
-    << "input[type=text]{padding:7px 10px;background:#0c0c0c;border:1px solid #3c3c3c;color:#fff;font-family:inherit;font-size:12px;}"
+    << "input[type=text]{padding:7px 10px;background:#0c0c0c;border:1px solid #3c3c3c;color:#fff;font-family:inherit;font-size:var(--fs);}"
     << "input[type=text]:focus{border-color:var(--accent);outline:none;}"
     << "</style></head><body>"
     << "<div class='nav'><span class='brand'>❖ KAJO // WEB</span>"
@@ -2504,7 +2618,7 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
     size_t count = std::min<size_t>(s.bookmarks.size(), 8);
     for (size_t i = 0; i < count; ++i) {
       const auto& bm = s.bookmarks[i];
-      b << "<a class='card' href='" << HtmlEscape(bm.url) << "'><div>"
+      b << "<a class='card' href='" << HtmlEscape(SanitizeSafeHref(bm.url)) << "'><div>"
         << HtmlEscape(bm.title.empty() ? bm.url : bm.title)
         << "</div><div class='lbl'>" << HtmlEscape(bm.url) << "</div></a>";
     }
@@ -2515,7 +2629,7 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
     size_t hcnt = std::min<size_t>(s.recent_history.size(), 8);
     for (size_t i = 0; i < hcnt; ++i) {
       const auto& he = s.recent_history[i];
-      b << "<tr><td><a style='color:#fff;text-decoration:none;' href='" << HtmlEscape(he.url) << "'>"
+      b << "<tr><td><a style='color:#fff;text-decoration:none;' href='" << HtmlEscape(SanitizeSafeHref(he.url)) << "'>"
         << HtmlEscape(he.title.empty() ? he.url : he.title) << "</a></td><td style='color:var(--dim);'>"
         << HtmlEscape(he.url) << "</td><td>" << he.visit_count << "</td></tr>";
     }
@@ -2529,10 +2643,10 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
     b << "<h1>BOOKMARKS (" << s.bookmarks.size() << ")</h1>"
       << "<table><tr><th>Title</th><th>Folder</th><th>URL</th><th>Actions</th></tr>";
     for (const auto& bm : s.bookmarks) {
-      b << "<tr><td><a style='color:#fff;' href='" << HtmlEscape(bm.url) << "'>"
+      b << "<tr><td><a style='color:#fff;' href='" << HtmlEscape(SanitizeSafeHref(bm.url)) << "'>"
         << HtmlEscape(bm.title) << "</a></td><td>" << HtmlEscape(bm.folder) << "</td><td style='color:var(--dim);'>"
         << HtmlEscape(bm.url) << "</td><td><a class='btn bad' href='kajo://bookmarks?action=delete&uuid="
-        << HtmlEscape(bm.uuid) << "'>DELETE</a></td></tr>";
+        << UrlEncodeQuery(bm.uuid) << "'>DELETE</a></td></tr>";
     }
     b << "</table>";
     *out_body = BuildKajoShellPage(s, "bookmarks", "Kajo — Bookmarks", b.str());
@@ -2551,10 +2665,10 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
       << "<a class='btn bad' href='kajo://history?action=clear'>CLEAR ALL HISTORY</a></div>"
       << "<table><tr><th>Title</th><th>URL</th><th>Visits</th><th>Remove</th></tr>";
     for (const auto& he : list) {
-      b << "<tr><td><a style='color:#fff;' href='" << HtmlEscape(he.url) << "'>"
+      b << "<tr><td><a style='color:#fff;' href='" << HtmlEscape(SanitizeSafeHref(he.url)) << "'>"
         << HtmlEscape(he.title.empty() ? he.url : he.title) << "</a></td><td style='color:var(--dim);'>"
         << HtmlEscape(he.url) << "</td><td>" << he.visit_count << "</td><td>"
-        << "<a class='btn bad' href='kajo://history?action=delete&uri=" << HtmlEscape(he.url) << "'>×</a></td></tr>";
+        << "<a class='btn bad' href='kajo://history?action=delete&uri=" << UrlEncodeQuery(he.url) << "'>×</a></td></tr>";
     }
     b << "</table>";
     *out_body = BuildKajoShellPage(s, "history", "Kajo — History", b.str());
@@ -2577,20 +2691,20 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
       << "<div class='card'><div class='k'>" << s.total_blocked << "</div><div class='lbl'>SESSION REQUESTS BLOCKED</div></div>"
       << "<div class='card'><div class='k'>" << s.allowlist_hosts.size() << "</div><div class='lbl'>PAUSED HOSTS</div></div></div>"
       << "<h2>FILTER LISTS</h2><table><tr><th>List</th><th>Rules</th><th>State</th></tr>"
-      << "<tr><td>Built-in Baseline (Ads &amp; YouTube Telemetry)<br><span style='color:var(--dim);font-size:11px;'>bundled offline fallback</span></td><td>"
+      << "<tr><td>Built-in Baseline (Ads &amp; YouTube Telemetry)<br><span style='color:var(--dim);font-size:var(--fs-badge);'>bundled offline fallback</span></td><td>"
       << s.baseline_rules << "</td><td>ACTIVE</td></tr>";
     for (const auto& fl : s.filter_lists) {
       const char* state_lbl = (fl.rule_count > 0)
                                   ? "LOADED"
                                   : (s.filter_update_busy ? "DOWNLOADING..." : "NOT LOADED (0)");
-      b << "<tr><td>" << HtmlEscape(fl.name) << "<br><span style='color:var(--dim);font-size:11px;'>"
+      b << "<tr><td>" << HtmlEscape(fl.name) << "<br><span style='color:var(--dim);font-size:var(--fs-badge);'>"
         << HtmlEscape(fl.url) << "</span></td><td>" << fl.rule_count << "</td><td>"
         << state_lbl << "</td></tr>";
     }
     b << "</table><h2>PAUSED / ALLOWLISTED HOSTS</h2><table><tr><th>Host</th><th>Action</th></tr>";
     for (const auto& h : s.allowlist_hosts) {
       b << "<tr><td>" << HtmlEscape(h) << "</td><td><a class='btn' href='kajo://adblock?action=unpause&host="
-        << HtmlEscape(h) << "'>RESUME BLOCKING</a></td></tr>";
+        << UrlEncodeQuery(h) << "'>RESUME BLOCKING</a></td></tr>";
     }
     if (s.allowlist_hosts.empty()) {
       b << "<tr><td colspan='2' style='color:var(--dim);'>No paused hosts</td></tr>";
@@ -2601,21 +2715,6 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
   }
 
   if (page == "downloads") {
-    auto esc_q = [](const std::string& v) -> std::string {
-      std::string out;
-      out.reserve(v.size() + 8);
-      for (unsigned char c : v) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
-          out.push_back(static_cast<char>(c));
-        } else {
-          char hex[4];
-          snprintf(hex, sizeof(hex), "%%%02X", c);
-          out += hex;
-        }
-      }
-      return out;
-    };
     auto contains_ci = [](const std::string& hay, const std::string& needle) -> bool {
       if (needle.empty()) return true;
       auto lower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
@@ -2635,7 +2734,7 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
       << "<div class='card'><div id='dlStatTotal' class='k'>" << s.downloads.size() << "</div><div class='lbl'>TOTAL ITEMS</div></div>"
       << "<div class='card'><div id='dlStatActive' class='k'>" << active_cnt << "</div><div class='lbl'>ACTIVE TRANSFERS</div></div>"
       << "<div class='card'><div id='dlStatDone' class='k'>" << done_cnt << "</div><div class='lbl'>COMPLETED</div></div>"
-      << "<div class='card'><div class='k' style='font-size:13px;word-break:break-all;'>"
+      << "<div class='card'><div class='k' style='font-size:var(--fs-head);word-break:break-all;'>"
       << HtmlEscape(s.download_dir.empty() ? "~/Downloads" : s.download_dir) << "</div><div class='lbl'>SAVE DIRECTORY</div></div>"
       << "</div>"
       << "<div style='display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;'>"
@@ -2667,14 +2766,14 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
       const std::string st_txt = d.complete ? "DONE" : (d.canceled ? "CANCELED" : (d.paused ? "PAUSED" : (d.percent >= 0 ? std::to_string(d.percent) + "%" : "ACTIVE")));
       b << "<tr>"
         << "<td><div style='color:#fff;font-weight:600;'>" << HtmlEscape(d.filename.empty() ? "download" : d.filename)
-        << "</div><div style='color:var(--dim);font-size:11px;word-break:break-all;'>"
+        << "</div><div style='color:var(--dim);font-size:var(--fs-badge);word-break:break-all;'>"
         << HtmlEscape(d.full_path.empty() ? d.url : d.full_path) << "</div></td>"
         << "<td style='min-width:150px;'><div>" << st_txt << "</div>"
         << "<div style='height:4px;background:var(--bg0);border:1px solid var(--b);margin-top:4px;'>"
         << "<div style='height:100%;width:" << pct << "%;background:" << bar_col << ";'></div></div></td>"
         << "<td>" << FormatBytes(d.received_bytes)
         << (d.total_bytes > 0 ? (" / " + FormatBytes(d.total_bytes)) : "")
-        << (d.in_progress && !d.paused && d.current_speed > 0 ? ("<div style='color:var(--dim);font-size:11px;'>" + FormatBytes(d.current_speed) + "/s</div>") : "")
+        << (d.in_progress && !d.paused && d.current_speed > 0 ? ("<div style='color:var(--dim);font-size:var(--fs-badge);'>" + FormatBytes(d.current_speed) + "/s</div>") : "")
         << "</td><td style='white-space:nowrap;'>";
       if (d.in_progress) {
         if (d.paused) {
@@ -2684,12 +2783,12 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
         }
         b << "<a class='btn bad' href='kajo://downloads?action=cancel&id=" << d.id << "'>✕ CANCEL</a>";
       } else if (d.complete) {
-        b << "<a class='btn pri' href='kajo://downloads?action=open_file&path=" << esc_q(d.full_path) << "'>OPEN</a> "
-          << "<a class='btn' href='kajo://downloads?action=open_folder&path=" << esc_q(d.full_path) << "'>📁</a> "
+        b << "<a class='btn pri' href='kajo://downloads?action=open_file&path=" << UrlEncodeQuery(d.full_path) << "'>OPEN</a> "
+          << "<a class='btn' href='kajo://downloads?action=open_folder&path=" << UrlEncodeQuery(d.full_path) << "'>📁</a> "
           << "<a class='btn bad' href='kajo://downloads?action=remove&id=" << d.id << "&db_id=" << d.db_id << "'>×</a>";
       } else {
         if (!d.url.empty()) {
-          b << "<a class='btn pri' href='kajo://downloads?action=retry&url=" << esc_q(d.url) << "'>↻ RETRY</a> ";
+          b << "<a class='btn pri' href='kajo://downloads?action=retry&url=" << UrlEncodeQuery(d.url) << "'>↻ RETRY</a> ";
         }
         b << "<a class='btn bad' href='kajo://downloads?action=remove&id=" << d.id << "&db_id=" << d.db_id << "'>×</a>";
       }
@@ -2718,7 +2817,7 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
       << "    const tr = document.createElement('tr');"
       << "    const td1 = document.createElement('td');"
       << "    const fn = document.createElement('div'); fn.style.cssText = 'color:#fff;font-weight:600;'; fn.textContent = d.filename || 'download';"
-      << "    const fp = document.createElement('div'); fp.style.cssText = 'color:var(--dim);font-size:11px;word-break:break-all;'; fp.textContent = d.full_path || d.url || '';"
+      << "    const fp = document.createElement('div'); fp.style.cssText = 'color:var(--dim);font-size:var(--fs-badge);word-break:break-all;'; fp.textContent = d.full_path || d.url || '';"
       << "    td1.append(fn, fp);"
       << "    const td2 = document.createElement('td'); td2.style.minWidth = '150px';"
       << "    const st = d.complete ? 'DONE' : (d.canceled ? 'CANCELED' : (d.paused ? 'PAUSED' : (d.percent >= 0 ? d.percent + '%' : 'ACTIVE')));"
@@ -2728,7 +2827,7 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
       << "    pbf.style.cssText = 'height:100%;width:' + pct + '%;background:' + (d.complete ? 'var(--ok)' : (d.canceled ? 'var(--err)' : (d.paused ? 'var(--warn)' : 'var(--accent)'))) + ';';"
       << "    pb.appendChild(pbf); td2.append(stDiv, pb);"
       << "    const td3 = document.createElement('td'); td3.textContent = fmt(d.received) + (d.total > 0 ? (' / ' + fmt(d.total)) : '');"
-      << "    if (d.in_progress && !d.paused && d.speed > 0) { const sp = document.createElement('div'); sp.style.cssText = 'color:var(--dim);font-size:11px;'; sp.textContent = fmt(d.speed) + '/s'; td3.appendChild(sp); }"
+      << "    if (d.in_progress && !d.paused && d.speed > 0) { const sp = document.createElement('div'); sp.style.cssText = 'color:var(--dim);font-size:var(--fs-badge);'; sp.textContent = fmt(d.speed) + '/s'; td3.appendChild(sp); }"
       << "    const td4 = document.createElement('td'); td4.style.whiteSpace = 'nowrap';"
       << "    const mkA = (cls, txt, href) => { const a = document.createElement('a'); a.className = 'btn ' + cls; a.textContent = txt; a.href = href; a.style.marginRight = '4px'; return a; };"
       << "    if (d.in_progress) { td4.appendChild(d.paused ? mkA('pri','▶ RESUME','kajo://downloads?action=resume&id='+d.id) : mkA('','⏸ PAUSE','kajo://downloads?action=pause&id='+d.id)); td4.appendChild(mkA('bad','✕ CANCEL','kajo://downloads?action=cancel&id='+d.id)); }"
@@ -2743,26 +2842,11 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
   }
 
   if (page == "permissions") {
-    auto esc_q = [](const std::string& v) -> std::string {
-      std::string out;
-      out.reserve(v.size() + 8);
-      for (unsigned char c : v) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
-          out.push_back(static_cast<char>(c));
-        } else {
-          char hex[4];
-          snprintf(hex, sizeof(hex), "%%%02X", c);
-          out += hex;
-        }
-      }
-      return out;
-    };
     std::ostringstream b;
     b << "<h1>SITE PERMISSIONS (" << s.saved_permissions.size() << ")</h1>"
       << "<div style='margin-bottom:14px;display:flex;gap:8px;align-items:center;'>"
       << "<a class='btn bad' href='kajo://permissions?action=clear_all'>CLEAR ALL PERMISSIONS</a>"
-      << "<span style='color:var(--dim);font-size:12px;'>Stored in current profile permissions.json (private sessions never persist)</span>"
+      << "<span style='color:var(--dim);font-size:var(--fs-sub);'>Stored in current profile permissions.json (private sessions never persist)</span>"
       << "</div>"
       << "<table><tr><th>Origin</th><th>Capability</th><th>Decision</th><th>Action</th></tr>";
     for (const auto& sp : s.saved_permissions) {
@@ -2771,7 +2855,7 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
         << "<td style='color:" << (sp.allow ? "var(--ok)" : "var(--err)") << ";font-weight:700;'>"
         << (sp.allow ? "ALLOW" : "DENY") << "</td>"
         << "<td><a class='btn bad' href='kajo://permissions?action=revoke&origin="
-        << esc_q(sp.origin) << "&key=" << esc_q(sp.perm_key) << "'>REVOKE</a></td></tr>";
+        << UrlEncodeQuery(sp.origin) << "&key=" << UrlEncodeQuery(sp.perm_key) << "'>REVOKE</a></td></tr>";
     }
     if (s.saved_permissions.empty()) {
       b << "<tr><td colspan='4' style='color:var(--dim);padding:16px;'>No saved site permission grants or denials</td></tr>";
@@ -2896,6 +2980,21 @@ public:
     response->SetCharset("utf-8");
     CefResponse::HeaderMap hdrs;
     hdrs.emplace("Cache-Control", "no-store");
+    hdrs.emplace("X-Content-Type-Options", "nosniff");
+    if (is_chrome_ui_) {
+      hdrs.emplace("Content-Security-Policy",
+                   "default-src 'self' 'unsafe-inline'; "
+                   "img-src * data: blob:; "
+                   "style-src 'self' 'unsafe-inline'; "
+                   "script-src 'self' 'unsafe-inline';");
+    } else {
+      hdrs.emplace("Content-Security-Policy",
+                   "default-src 'none'; "
+                   "style-src 'unsafe-inline'; "
+                   "script-src 'unsafe-inline'; "
+                   "img-src data:; "
+                   "form-action kajo:;");
+    }
     response->SetHeaderMap(hdrs);
     response_length = static_cast<int64_t>(data_.size());
   }
@@ -2967,8 +3066,7 @@ void RegisterKajoCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar) {
       "kajo",
       CEF_SCHEME_OPTION_STANDARD |
       CEF_SCHEME_OPTION_SECURE |
-      CEF_SCHEME_OPTION_CORS_ENABLED |
-      CEF_SCHEME_OPTION_FETCH_ENABLED);
+      CEF_SCHEME_OPTION_DISPLAY_ISOLATED);
 }
 
 }  // namespace kajo_web

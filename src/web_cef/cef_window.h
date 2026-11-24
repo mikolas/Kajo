@@ -5,6 +5,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "include/cef_browser.h"
@@ -28,6 +29,7 @@
 #include "web/web_storage.h"
 #include "web_cef/cef_adblock.h"
 #include "web_cef/cef_chrome_ui.h"
+#include "web_cef/cef_ipc.h"
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_tab.h"
 
@@ -79,6 +81,7 @@ public:
   void OnWindowCreated(CefRefPtr<CefWindow> window) override;
   void OnWindowClosing(CefRefPtr<CefWindow> window) override;
   void OnWindowDestroyed(CefRefPtr<CefWindow> window) override;
+  void OnWindowActivationChanged(CefRefPtr<CefWindow> window, bool active) override;
   void OnWindowBoundsChanged(CefRefPtr<CefWindow> window,
                              const CefRect& new_bounds) override;
   CefRect GetInitialBounds(CefRefPtr<CefWindow> window) override;
@@ -107,7 +110,11 @@ public:
   void OnTabFullscreenChanged(uint64_t tab_id, bool fullscreen) override;
   void OnTabAudioStateChanged(uint64_t tab_id, bool audible) override;
   void OnTabOpenUrl(uint64_t from_tab_id, const std::string& url, bool foreground) override;
-  bool OnTabBeforeBrowseAction(uint64_t tab_id, const std::string& url) override;
+  bool OnTabBeforeBrowseAction(uint64_t tab_id,
+                               const std::string& url,
+                               const std::string& prev_url,
+                               bool user_gesture) override;
+  void OnTabRequestClose(uint64_t tab_id) override;
   void OnTabMediaDetected(uint64_t tab_id,
                           const std::string& kind,
                           const std::string& uri,
@@ -158,6 +165,7 @@ private:
     CefRefPtr<CefBrowserView> view;
     CefRefPtr<CefBrowser> browser;
     std::string favicon_url;
+    std::string last_recorded_visit_uri;
     bool can_go_back = false;
     bool can_go_forward = false;
     int find_identifier = 0;
@@ -182,7 +190,12 @@ private:
   void CloseTab(uint64_t tab_id);
   void ReopenClosedTab();
   void DuplicateTab(uint64_t tab_id);
-  bool SuspendTab(uint64_t tab_id, bool manual);
+  void DestroyTabView(CefRefPtr<CefBrowserView> view,
+                      CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefTabClient> client);
+  bool SuspendTab(uint64_t tab_id,
+                  bool manual,
+                  bool allow_inactive_window_active = false);
   void SweepIdleTabs();
   void ScheduleIdleSuspendTimer();
   void PeekRailTemporarily(int duration_ms);
@@ -206,6 +219,13 @@ private:
   void PersistSession();
   CefBrowserSettings MakeContentBrowserSettings() const;
   std::string DefaultNewTabUrl() const;
+  bool IsFullscreen() const { return user_fullscreen_ || html_fullscreen_; }
+  double DefaultZoomLevel() const;
+  bool IsKnownDownloadPath(const std::string& path) const;
+  void RemoveDownload(uint32_t did, int64_t db_id, bool cancel_active);
+  void ApplyDraggableRegions();
+  void FinishFilterListWriteOnUi(const std::string& id, bool wrote_ok, int http_status);
+  void HandleExternalOpen(const std::vector<std::string>& urls);
   TabEntry* FindEntry(uint64_t tab_id);
   TabEntry* ActiveEntry();
 
@@ -243,6 +263,9 @@ private:
   std::map<uint32_t, uint64_t> active_download_tabs_;
   std::vector<ChromeDownloadView> downloads_;
   std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;
+  std::unordered_set<uint32_t> dismissed_downloads_;
+  std::unique_ptr<ProfileIpcServer> ipc_server_;
+  std::vector<CefDraggableRegion> cached_topbar_drag_regions_;
   std::vector<PendingPermissionReq> pending_permissions_;
   uint64_t next_perm_req_id_ = 1;
   PermissionStore permission_store_;
@@ -266,9 +289,14 @@ private:
   bool rail_hover_open_ = false;
   int rail_hold_count_ = 0;
   uint64_t group_prompt_tab_id_ = 0;
-  bool web_fullscreen_ = false;
+  bool user_fullscreen_ = false;
+  bool html_fullscreen_ = false;
+  bool kajo_theme_is_light_ = false;
   bool layout_built_ = false;
   bool ac_visible_ = false;
+  bool last_infobar_visible_ = false;
+  bool last_overlay_visible_ = false;
+  bool last_ac_visible_ = false;
   int ac_selected_idx_ = -1;
   std::string overlay_mode_;
   std::string find_query_;
@@ -295,7 +323,9 @@ private:
   std::string profile_name_ = "DEFAULT";
   std::string profile_icon_ = "🌐";
   std::string ui_font_family_ = "Fira Code";
-  int ui_font_size_px_ = 13;
+  int ui_font_size_px_ = 14;
+  int heading_size_px_ = 13;
+  int sub_size_px_ = 12;
   int badge_size_px_ = 11;
   int newtab_mode_ = 0;
   std::string newtab_custom_url_;
@@ -311,6 +341,8 @@ private:
   bool user_scripts_enabled_ = false;
   bool enable_webgl_ = true;
   bool enable_webrtc_ = true;
+  bool window_active_ = true;
+  gint64 window_inactive_since_us_ = 0;
   bool https_only_ = false;
   std::string download_dir_;
   bool ask_download_location_ = false;

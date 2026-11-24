@@ -100,6 +100,17 @@ test_tab_model_and_suspension(void)
     web_model_find_tab(m, id_a)->audible = FALSE;
     web_model_find_tab(m, id_a)->capture_active = TRUE;
     g_assert_false(web_model_can_suspend(m, web_model_find_tab(m, id_a), 30, later));
+    web_model_find_tab(m, id_a)->capture_active = FALSE;
+    web_model_find_tab(m, id_a)->download_active = TRUE;
+    g_assert_false(web_model_can_suspend(m, web_model_find_tab(m, id_a), 30, later));
+    web_model_find_tab(m, id_a)->download_active = FALSE;
+
+    /* Background tab creation preserves active_id and avoids hijacking MRU head */
+    KajoWebTabMeta *bg = web_model_add_tab_ex(m, "https://bg.example", "BG", NULL, FALSE, FALSE, t0 + 40);
+    g_assert_nonnull(bg);
+    g_assert_cmpuint(m->active_id, ==, id_c);
+    g_assert_cmpuint(web_model_cycle_mru(m, TRUE), ==, id_b);
+    g_assert_true(web_model_close_tab(m, bg->id));
 
     /* Visual tab cycling (forward / backward with wraparound) */
     g_assert_true(web_model_activate(m, id_c, later)); /* order in m->tabs: [C (pinned), A, B] */
@@ -123,6 +134,29 @@ test_tab_model_and_suspension(void)
     g_assert_false(web_model_is_group_collapsed(m, "WORK"));
     web_model_set_group_collapsed(m, "WORK", TRUE);
     g_assert_true(web_model_is_group_collapsed(m, "WORK"));
+
+    /* web_model_activate() stamps leave-time last_active_us on the previously active tab */
+    g_autoptr(KajoWebModel) m2 = web_model_new();
+    KajoWebTabMeta *x1 = web_model_add_tab(m2, "https://x1.example", "X1", NULL, FALSE, t0);
+    KajoWebTabMeta *x2 = web_model_add_tab(m2, "https://x2.example", "X2", NULL, FALSE, t0);
+    guint64 id_x1 = x1->id, id_x2 = x2->id;
+    const gint64 t_leave = t0 + 35LL * 60LL * G_USEC_PER_SEC;
+    g_assert_true(web_model_activate(m2, id_x1, t_leave - 10));
+    g_assert_true(web_model_activate(m2, id_x2, t_leave)); /* leave x1 at t_leave */
+    /* 10 min after leaving x1 (even though 45m after creation) -> MUST NOT suspend */
+    g_assert_false(web_model_can_suspend(m2, web_model_find_tab(m2, id_x1), 30,
+                                         t_leave + 10LL * 60LL * G_USEC_PER_SEC));
+    /* 30 min after leaving x1 -> MUST suspend */
+    g_assert_true(web_model_can_suspend(m2, web_model_find_tab(m2, id_x1), 30,
+                                        t_leave + 30LL * 60LL * G_USEC_PER_SEC));
+
+    /* Favicon preserved across close/reopen */
+    web_model_set_tab_favicon(m2, id_x1, "https://x1.example/icon.png");
+    g_assert_cmpstr(web_model_find_tab(m2, id_x1)->favicon_url, ==, "https://x1.example/icon.png");
+    g_assert_true(web_model_close_tab(m2, id_x1));
+    KajoWebTabMeta *x1_re = web_model_reopen_closed(m2, t_leave + 1);
+    g_assert_nonnull(x1_re);
+    g_assert_cmpstr(x1_re->favicon_url, ==, "https://x1.example/icon.png");
 }
 
 /* 3. Omnibar URL vs Bang vs Search Resolution */
@@ -131,6 +165,10 @@ test_omnibar_classifier(void)
 {
     g_autofree gchar *u1 = web_model_resolve_input("kajo://gpu", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
     g_assert_cmpstr(u1, ==, "kajo://gpu");
+    g_autofree gchar *u1b = web_model_resolve_input("chrome://gpu", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
+    g_assert_cmpstr(u1b, ==, "chrome://gpu");
+    g_autofree gchar *u1c = web_model_resolve_input("devtools://devtools/bundled/inspector.html", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
+    g_assert_cmpstr(u1c, ==, "devtools://devtools/bundled/inspector.html");
 
     g_autofree gchar *u2 = web_model_resolve_input("webkit.org/blog", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
     g_assert_cmpstr(u2, ==, "https://webkit.org/blog");
@@ -192,6 +230,19 @@ test_profile_registry_roundtrip(void)
     g_assert_false(web_profile_registry_remove(loaded, "default"));
     g_assert_true(web_profile_registry_remove(loaded, "work-dev"));
     g_assert_cmpuint(loaded->profiles->len, ==, 1);
+
+    /* Control chars / quotes / backslashes in profile name must escape safely in TOML */
+    KajoWebProfileInfo *special = web_profile_registry_add(loaded, "Line1\nLine2\t\"Quote\"\\End", "🌐", "#0078d4");
+    g_assert_nonnull(special);
+    g_free(special->name);
+    special->name = g_strdup("Line1\nLine2\t\"Quote\"\\End");
+    g_assert_true(web_profile_registry_save(loaded, path, &err));
+    g_assert_no_error(err);
+    g_autoptr(KajoWebProfileRegistry) reloaded_special = web_profile_registry_new();
+    g_assert_true(web_profile_registry_load(reloaded_special, path));
+    KajoWebProfileInfo *ls = web_profile_registry_find(reloaded_special, special->id);
+    g_assert_nonnull(ls);
+    g_assert_cmpstr(ls->name, ==, "Line1\nLine2\t\"Quote\"\\End");
 
     g_unlink(path);
     g_rmdir(tmpdir);
@@ -384,9 +435,17 @@ test_storage_history_and_delete(void)
 
     web_storage_record_visit(st, "https://example.com/a", "Page A");
     web_storage_record_visit(st, "https://example.org/b", "Page B");
+    web_storage_update_title(st, "https://example.org/b", "Page B Updated");
 
     g_autoptr(GPtrArray) all = web_storage_search_history(st, NULL, 20);
     g_assert_cmpuint(all->len, ==, 2);
+    for (guint i = 0; i < all->len; i++) {
+        const KajoWebHistoryEntry *he = g_ptr_array_index(all, i);
+        if (g_strcmp0(he->uri, "https://example.org/b") == 0) {
+            g_assert_cmpstr(he->title, ==, "Page B Updated");
+            g_assert_cmpint(he->visit_count, ==, 1);
+        }
+    }
 
     web_storage_delete_history_uri(st, "https://example.com/a");
     g_autoptr(GPtrArray) after_del = web_storage_search_history(st, NULL, 20);
@@ -417,6 +476,27 @@ test_storage_history_and_delete(void)
     web_storage_clear_downloads(st);
     g_autoptr(GPtrArray) dls_after_clr = web_storage_list_downloads(st, 20);
     g_assert_cmpuint(dls_after_clr->len, ==, 0);
+
+    /* Session save/load preserves favicon_url */
+    g_autoptr(KajoWebModel) sm = web_model_new();
+    KajoWebTabMeta *st1 = web_model_add_tab(sm, "https://fav.example/a", "Fav A", NULL, FALSE, 1000);
+    web_model_set_tab_favicon(sm, st1->id, "https://fav.example/assets/logo.png");
+    KajoWebTabMeta *st2 = web_model_add_tab(sm, "https://plain.example/b", "Plain B", NULL, TRUE, 2000);
+    g_assert_nonnull(st2);
+    g_assert_true(web_storage_save_session(st, sm));
+
+    g_autoptr(KajoWebModel) loaded_sm = web_model_new();
+    g_assert_true(web_storage_load_session(st, loaded_sm));
+    g_assert_cmpuint(loaded_sm->tabs->len, ==, 2);
+    KajoWebTabMeta *lt1 = web_model_find_tab(loaded_sm, 2);
+    KajoWebTabMeta *lt2 = web_model_find_tab(loaded_sm, 1);
+    g_assert_nonnull(lt1);
+    g_assert_nonnull(lt2);
+    g_assert_cmpstr(lt1->favicon_url, ==, "https://fav.example/assets/logo.png");
+    g_assert_null(lt2->favicon_url);
+
+    g_autofree gchar *sess_p = g_build_filename(tmp, "session.json", NULL);
+    g_unlink(sess_p);
 
     web_storage_free(st);
 

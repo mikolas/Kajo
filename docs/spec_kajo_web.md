@@ -13,24 +13,29 @@
 
 1. **Alloy Views Host + HTML/CSS Chrome (`src/web_cef/`):**
    - Runs **CEF in Alloy Runtime Style** (`CEF_RUNTIME_STYLE_ALLOY`) directly on native Wayland (`--ozone-platform=wayland`, VA-API enabled by default; Vulkan disabled on Wayland where Chromium warns of Wayland surface incompatibility).
-   - Window chrome is rendered inside dedicated chrome `CefBrowserView` layers served from internal **`kajo-chrome://ui/*`** (`topbar.html`, `rail.html`, `overlay.html`, `picker.html`) and synchronized in real time with `theme.toml` (`@metro-accent`, surface palette, typography, `0px` radius, `1px` borders).
+   - Window chrome is rendered inside dedicated chrome `CefBrowserView` layers served from internal **`kajo-chrome://ui/*`** (`topbar.html`, `rail.html`, `overlay.html`) and synchronized in real time with `theme.toml` (`@metro-accent`, surface palette, `ui_font_family`, all 4 Kajo font sizes `ui_font_size_px`, `font_heading_size_px`, `font_subtitle_size_px`, `font_badge_size_px`, dynamic `ComputeChromeUiMetrics` bar/control/icon sizing, `0px` radius, `1px` borders).
 2. **Vertical Tab Rail (Left or Right, Zero Page Reflow in Overlay Modes):**
    - Supports three modes (`rail_mode` in `web.toml`):
      - **`autohide`** *(default)*: Collapses to a `4px` edge trigger strip (`rgba(0,0,0,0.01)`) with `2px` tab ticks; reveals as a floating `240px` (`rail_width_px`) overlay over the viewport without reflowing page DOM.
-     - **`compact`**: Keeps a `40px` docked favicon rail and expands as an overlay on hover without vertical/horizontal icon jump (`0px` shift).
+     - **`compact`**: Keeps a docked favicon rail (`48px` at default `14px` UI font, scaling with `ui_font_size_px`) and expands as an overlay on hover without vertical/horizontal icon jump (`0px` shift).
      - **`pinned`**: Permanently docked sidebar sharing width cleanly with the active page viewport.
    - Configurable to **`left`** or **`right`** (`rail_side`), with configurable reveal/hide delays, optional domain subtitles (`show_tab_domains`), pinned favicon grid, collapsible colored tab groups, drag-to-reorder, mute toggle, and `Ctrl+Shift+T` closed-tab undo stack.
-3. **Minimalist `34px` Top Chrome (`kajo-chrome://ui/topbar.html`) & Zen Autohide:**
-   - **Left:** `◀`, `▶`, `↻`/`✕`, and vertical rail toggle `◧`.
-   - **Center:** Clickable & editable omnibar (`Ctrl+L` / `Alt+D`) with semantic TLS/scheme badge (`kajo://`, `HTTPS`, HTTP warning), autocomplete dropdown (open tabs, bookmarks, history, search engine / `!g`, `!ddg`, `!w`, `!gh` bangs), clickable Zoom pill, Bookmark star (`Ctrl+D`), inline `[ 🛡 ON ]`/`[ 🛡 OFF ]` Ad-Block Shield button, and a `2px` bottom loading progress hairline.
-   - **Right:** Conditional `[ ⚠ SW RENDER ]` warning badge (when `--no-hw-accel` or `hardware_acceleration = "never"`), `[ 🕶 PRIVATE ]` chip (in Private mode), **always-visible `↓` Downloads chip** (with active counter + live aggregate progress fill bar), active Profile chip (`[ ● <PROFILE> ]`), `[ ⚙ ]` (`kajo-settings --page web`), `[ 🗗 ]` (`niri_toggle_window_floating`), and `[ ✕ ]` close button.
+3. **Minimalist Theme-Scaled Top Chrome (`kajo-chrome://ui/topbar.html`) & Zen Autohide:**
+   - Topbar height, button size, and omnibar scale dynamically from `ui_font_size_px` (`42px` bar / `30px` controls / `16×16` crisp inline SVG icons at default `14px` font, clamping `40..54px` across `11..20px`).
+   - **Left:** Inline SVG Back, Forward, Reload/Stop, and vertical rail toggle buttons.
+   - **Center:** Clickable & editable omnibar (`Ctrl+L` / `Alt+D`) with semantic TLS/scheme badge (`kajo://`, `HTTPS`, HTTP warning), autocomplete dropdown (open tabs, bookmarks, history, search engine / `!g`, `!ddg`, `!w`, `!gh` bangs), clickable Zoom pill, Bookmark star (`Ctrl+D`), inline `[ 🛡 <N> ]` Ad-Block Shield button, and a `2px` bottom loading progress hairline.
+   - **Right:** Conditional `[ ⚠ SW RENDER ]` warning badge (when `--no-hw-accel` or `hardware_acceleration = "never"`), `[ 🕶 PRIVATE ]` chip (in Private mode), **always-visible `↓` Downloads chip** (with active counter + live aggregate progress fill bar), active Profile chip (`[ ● <PROFILE> ]`), Settings (`kajo-settings --page web`), Float/Tile (`niri_toggle_window_floating`), and Close buttons.
    - Supports `top_bar_mode = "autohide"` (`Ctrl+Shift+U` toggle).
-4. **Idle Tab Suspension & Crash Recovery:**
-   - Background tabs idle beyond `suspend_idle_min` (default `30` min; `0` = off; never active, pinned, or audible tabs) release their backing `CefBrowserView` while retaining URL, title, group, favicon, and position, marking the tab `💤`. Clicking a suspended tab re-creates its browser view and reloads it cleanly.
+4. **Idle Tab Suspension, Lazy Restore & Crash Recovery:**
+   - **Lazy session restore:** On startup, only the active tab instantiates a `CefBrowserView` while restored inactive tabs start suspended with their URL, title, group, pin state, and persisted favicon.
+   - **Idle suspension & renderer teardown:** Background tabs idle beyond `suspend_idle_min` (default `30` min; `0` = off; never pinned, audible, capturing, downloading, or `kajo://` tabs), plus the active tab of an unfocused window once both the window and tab have been idle past `suspend_idle_min`, detach and terminate their backing `CefBrowserView` + renderer cleanly via `TabReaperWindowDelegate` (`CloseBrowser(true)` → `DoClose(false)` → `OnBeforeClose()`). Idle countdown resets on leave-time (`web_model_activate()` / window deactivation), and refocusing an inactive window automatically wakes its active tab if suspended.
+   - **Sleeping tab visuals:** Suspended tabs retain their persisted `favicon_url` (with `Origin/favicon.ico` fallback) styled grayed-out (`grayscale(100%)`) with a dashed favicon border and `· zzz` marker. Clicking a suspended tab re-creates its browser view and reloads it cleanly.
    - Renderer crashes navigate to `kajo://crashed?reason=...` with one-click `[ ↻ RELOAD TAB ]` and `[ CLOSE TAB ]`.
-5. **Isolated Multi-Profiles & Ephemeral Private Mode:**
-   - Profile registry in `profiles.toml` (`WORK`, `PERSONAL`, etc.) isolates cookies, cache, storage, bookmarks, history, downloads, and site permissions via per-profile `CefRequestContext` instances (`~/.local/share/kajo/web/profiles/<id>/` + `~/.cache/kajo/web/profiles/<id>/`).
+5. **Isolated Multi-Profiles, Single-Instance IPC & Ephemeral Private Mode:**
+   - Profile registry in `profiles.toml` (`WORK`, `PERSONAL`, etc.) isolates cookies, cache, storage, bookmarks, history, downloads, and site permissions via per-profile `CefRequestContext` instances (`~/.local/share/kajo/web-cef/<id>/` with `profile/`, `session.json`, `history.db`, `permissions.json` + `~/.cache/kajo/web-cef/<id>/`).
+   - Per-profile UNIX socket IPC (`ProfileIpcServer` in `src/web_cef/cef_ipc.{h,cc}`) forwards external URL opens to an already-running instance of the same profile instead of racing `profile/` locks.
    - Startup Profile Picker (`show_picker_on_startup`) allows selecting, creating, renaming, accent-coloring, or launching into an **In-Memory Ephemeral Private Context** (`--private` / `Ctrl+Shift+N`).
+   - One-shot Chromium/Thorium tab & favicon migration into `session.json` is provided by `scripts/import-chromium-session.py` (SNSS session logs + `Bookmarks` folder fallback + read-only `Favicons` DB lookup).
 
 ---
 
@@ -94,7 +99,7 @@
 ### 4.2 Built-In `kajo://` Pages (`src/web_cef/cef_chrome_ui.cc`)
 
 - **`kajo://newtab`**: Speed-dial pinned bookmarks, recent history links, search box, active profile, GPU status, and ad-block rule count.
-- **`kajo://bookmarks`** & **`kajo://history`**: Searchable/filterable SQLite FTS5 tables (`~/.local/share/kajo/web/profiles/<id>/history.db`) with inline delete / clear.
+- **`kajo://bookmarks`** & **`kajo://history`**: Searchable/filterable SQLite FTS5 tables (`~/.local/share/kajo/web-cef/<id>/history.db`) with inline delete / clear.
 - **`kajo://downloads`**: Live-updating active downloads + SQLite download history with search, status filters (`ALL` / `ACTIVE` / `COMPLETED`), `Pause` / `Resume` / `Cancel` / `Retry`, `OPEN`, `📁` (`Open Folder`), and `Remove` / `CLEAR FINISHED`.
 - **`kajo://adblock`**: Global on/off toggle, per-site paused hosts list + unpause, manual list update (`EasyList` / `EasyPrivacy`), rule statistics, and user-script count.
 - **`kajo://permissions`**: List of granted/denied origin permissions with single-entry revoke and `CLEAR ALL PERMISSIONS`.
@@ -110,10 +115,13 @@
 | `src/web_cef/cef_app.{h,cc}` | `KajoCefApp`: Chromium GPU/VA-API/WebRTC switches, `kajo-chrome://` & `kajo://` scheme factories. |
 | `src/web_cef/cef_window.{h,cc}` | Alloy Views host window, tab lifecycle, idle suspension timer, Find Bar, Command Palette, Downloads tracking, Filter updates, `KajoConfigStore` subscriber. |
 | `src/web_cef/cef_tab.{h,cc}` | Per-tab `CefClient` callbacks (navigation, title, favicon, HTTPS-Only & cookie policy, downloads, JS dialogs, permission prompts, crash handler, shortcuts). |
-| `src/web_cef/cef_chrome_ui.{h,cc}` | HTML/CSS/JS chrome builder (`topbar`, `rail`, `overlay`, `picker`) and `kajo://*` scheme responses. |
+| `src/web_cef/cef_chrome_ui.{h,cc}` | HTML/CSS/JS chrome builder (`topbar`, `rail`, `overlay`, theme CSS tokens, inline SVGs) and `kajo://*` scheme responses. |
+| `src/web_cef/cef_ipc.{h,cc}` | Per-profile single-instance Unix socket server (`ProfileIpcServer`) and external URL forwarding (`TryForwardToRunningInstance`). |
+| `src/web_cef/cef_site_util.h` | Pure host/eTLD+1 matching, private-host check, color/href sanitization, origin favicon fallback, and `ComputeChromeUiMetrics`. |
 | `src/web_cef/cef_adblock.{h,cc}` | IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync cache. |
 | `src/web_cef/cef_prefs_helper.{h,cc}` | `PermissionStore`, user-script directory loader, same-site cookie matcher, log severity parser. |
 | `src/web/web_{model,storage,abp_compiler,sync_merge,media_sniff_core}.{h,c}` | Shared GTK-free C17 core (`web_model` + SQLite WAL/FTS5 `web_storage` used directly by `kajo-web` and `page_web.c`). |
-| `tests/test_web_model.c` (`web-model`) | Tests rail FSM, tab/MRU/undo invariants, omnibar classifier, profile registry, SQLite history/bookmarks/downloads storage, CRDT merge, ABP compiler safety, and manifest parsing. |
-| `tests/test_web_cef_adblock.cc` (`web-cef-adblock`) | Tests `CefAdblockEngine` ABP rules, `$third-party`, `$script`, `$domain`, exceptions `@@`, hosts entries, cosmetic CSS, and per-host allowlist. |
-| `tests/test_web_cef_core.cc` (`web-cef-core`) | Tests `PermissionStore` save/load/revoke, permission label formatting, same-site cookie matching, user scripts loader, and log severity parsing. |
+| `scripts/import-chromium-session.py` | One-shot Chromium/Thorium session (`SNSS` / `Bookmarks`) and `Favicons` importer targeting `session.json` (+ `tests/test_import_chromium_session.py`). |
+| `tests/test_web_model.c` (`web-model`) | Tests rail FSM, tab/MRU/undo invariants, leave-time suspension & favicon persistence, omnibar classifier, profile registry, SQLite history/bookmarks/downloads/session storage, CRDT merge, and ABP compiler safety. |
+| `tests/test_web_cef_adblock.cc` (`web-cef-adblock`) | Tests `CefAdblockEngine` ABP rules, `$third-party`, `$script`, `$domain`, multi-part eTLD+1 matching, strict option validation, exceptions `@@`, hosts entries, cosmetic CSS, and per-host allowlist. |
+| `tests/test_web_cef_core.cc` (`web-cef-core`) | Tests `PermissionStore` save/load/revoke, same-site cookies, user scripts loader, `IsLocalOrPrivateHost`, `SanitizeSafeHref`, `DeriveOriginFaviconFallback`, `ComputeChromeUiMetrics`, `ProfileIpcServer` round-trip, and log severity parsing. |

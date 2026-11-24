@@ -38,7 +38,11 @@ public:
   virtual void OnTabFullscreenChanged(uint64_t tab_id, bool fullscreen) = 0;
   virtual void OnTabAudioStateChanged(uint64_t tab_id, bool audible) = 0;
   virtual void OnTabOpenUrl(uint64_t from_tab_id, const std::string& url, bool foreground) = 0;
-  virtual bool OnTabBeforeBrowseAction(uint64_t tab_id, const std::string& url) = 0;
+  virtual bool OnTabBeforeBrowseAction(uint64_t tab_id,
+                                       const std::string& url,
+                                       const std::string& prev_url,
+                                       bool user_gesture) = 0;
+  virtual void OnTabRequestClose(uint64_t tab_id) = 0;
   virtual void OnTabMediaDetected(uint64_t tab_id,
                                   const std::string& kind,
                                   const std::string& uri,

@@ -53,19 +53,22 @@ typedef struct {
     gchar    *title;
     gchar    *uri;
     gchar    *group;          /* NULL or group name e.g. "WORK" */
+    gchar    *favicon_url;    /* NULL or favicon URI */
     gboolean  pinned;
     gboolean  audible;
     gboolean  muted;
     gboolean  loading;
     gboolean  suspended;
-    gboolean  capture_active; /* WebRTC / mic / cam / download active */
-    gint64    last_active_us; /* g_get_monotonic_time() */
+    gboolean  capture_active;  /* WebRTC / mic / cam active */
+    gboolean  download_active; /* Active download initiated by tab */
+    gint64    last_active_us;  /* g_get_monotonic_time() */
 } KajoWebTabMeta;
 
 typedef struct {
     gchar   *title;
     gchar   *uri;
     gchar   *group;
+    gchar   *favicon_url;
     gboolean pinned;
 } KajoWebClosedTab;
 
@@ -87,9 +90,17 @@ KajoWebTabMeta  *web_model_add_tab(KajoWebModel *m,
                                    const gchar  *group,
                                    gboolean      pinned,
                                    gint64        now_us);
+KajoWebTabMeta  *web_model_add_tab_ex(KajoWebModel *m,
+                                      const gchar  *uri,
+                                      const gchar  *title,
+                                      const gchar  *group,
+                                      gboolean      pinned,
+                                      gboolean      activate,
+                                      gint64        now_us);
 gboolean         web_model_close_tab(KajoWebModel *m, guint64 id);
 KajoWebTabMeta  *web_model_reopen_closed(KajoWebModel *m, gint64 now_us);
 gboolean         web_model_activate(KajoWebModel *m, guint64 id, gint64 now_us);
+void             web_model_set_tab_favicon(KajoWebModel *m, guint64 id, const gchar *favicon_url);
 gboolean         web_model_set_pinned(KajoWebModel *m, guint64 id, gboolean pinned);
 gboolean         web_model_move_tab(KajoWebModel *m, guint64 id, guint target_index);
 KajoWebTabMeta  *web_model_find_tab(KajoWebModel *m, guint64 id);

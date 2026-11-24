@@ -1,9 +1,12 @@
 #include "web_cef/cef_prefs_helper.h"
+#include "web_cef/cef_ipc.h"
+#include "web_cef/cef_site_util.h"
 
 #include <glib.h>
 #include <glib/gstdio.h>
 
 #include <string>
+#include <vector>
 
 using namespace kajo_web;
 
@@ -71,8 +74,8 @@ static void test_permission_store_and_labels(void) {
   g_assert_cmpint(reloaded.Lookup("https://other.example.com", key), ==, 0);
 
   const std::string nkey = PermissionKey(0, CEF_PERMISSION_TYPE_NOTIFICATIONS);
-  g_assert_cmpstr(FormatPermissionLabel(0, CEF_PERMISSION_TYPE_NOTIFICATIONS).c_str(),
-                  ==, "Notifications");
+  const std::string nl_label = FormatPermissionLabel(0, CEF_PERMISSION_TYPE_NOTIFICATIONS);
+  g_assert_cmpstr(nl_label.c_str(), ==, "Notifications");
   reloaded.Set("https://mail.example.com", nkey, false);
   g_assert_cmpint(reloaded.Lookup("https://mail.example.com/", nkey), ==, -1);
 
@@ -115,6 +118,104 @@ static void test_profile_slug_and_hex_color(void) {
   g_assert_cmpuint(ParseHexColorArgb("bad", 42), ==, 42);
 }
 
+static void test_site_util_and_ipc(void) {
+  g_assert_true(IsLocalOrPrivateHost("localhost"));
+  g_assert_true(IsLocalOrPrivateHost("app.localhost"));
+  g_assert_true(IsLocalOrPrivateHost("nas.local"));
+  g_assert_true(IsLocalOrPrivateHost("127.0.0.1"));
+  g_assert_true(IsLocalOrPrivateHost("::1"));
+  g_assert_true(IsLocalOrPrivateHost("[::1]"));
+  g_assert_true(IsLocalOrPrivateHost("10.0.0.1"));
+  g_assert_true(IsLocalOrPrivateHost("192.168.1.50"));
+  g_assert_true(IsLocalOrPrivateHost("172.16.0.1"));
+  g_assert_true(IsLocalOrPrivateHost("172.31.255.254"));
+  g_assert_false(IsLocalOrPrivateHost("172.15.0.1"));
+  g_assert_false(IsLocalOrPrivateHost("172.32.0.1"));
+  g_assert_false(IsLocalOrPrivateHost("example.com"));
+
+  const std::string href1 = SanitizeSafeHref("https://example.com/a?b=1");
+  const std::string href2 = SanitizeSafeHref("kajo://downloads");
+  const std::string href3 = SanitizeSafeHref("javascript:alert(1)");
+  const std::string href4 = SanitizeSafeHref("data:text/html,<script>");
+  g_assert_cmpstr(href1.c_str(), ==, "https://example.com/a?b=1");
+  g_assert_cmpstr(href2.c_str(), ==, "kajo://downloads");
+  g_assert_cmpstr(href3.c_str(), ==, "#");
+  g_assert_cmpstr(href4.c_str(), ==, "#");
+
+  const std::string col1 = SanitizeHexColor("#1a2B3c", "#0078d4");
+  const std::string col2 = SanitizeHexColor("red;color:x", "#0078d4");
+  g_assert_cmpstr(col1.c_str(), ==, "#1a2B3c");
+  g_assert_cmpstr(col2.c_str(), ==, "#0078d4");
+
+  g_autofree gchar* tmp_dir = g_dir_make_tmp("kajo-cef-ipc-XXXXXX", nullptr);
+  g_autofree gchar* sock_path = g_build_filename(tmp_dir, "test.sock", nullptr);
+  g_assert_false(TryForwardToRunningInstance(sock_path, {"https://a.example"}, 50));
+
+  std::vector<std::string> got;
+  GMutex mu;
+  GCond cond;
+  g_mutex_init(&mu);
+  g_cond_init(&cond);
+  bool received = false;
+
+  ProfileIpcServer srv;
+  g_assert_true(srv.Start(sock_path, [&](std::vector<std::string> urls) {
+    g_mutex_lock(&mu);
+    got = std::move(urls);
+    received = true;
+    g_cond_signal(&cond);
+    g_mutex_unlock(&mu);
+  }));
+
+  g_assert_true(TryForwardToRunningInstance(
+      sock_path, {"https://example.org", "https://kajo.local/test"}, 500));
+
+  g_mutex_lock(&mu);
+  const gint64 end_us = g_get_monotonic_time() + 1000000;
+  while (!received) {
+    if (!g_cond_wait_until(&cond, &mu, end_us)) break;
+  }
+  g_mutex_unlock(&mu);
+
+  g_assert_true(received);
+  g_assert_cmpuint(got.size(), ==, 2);
+  g_assert_cmpstr(got[0].c_str(), ==, "https://example.org");
+  g_assert_cmpstr(got[1].c_str(), ==, "https://kajo.local/test");
+
+  srv.Stop();
+  g_assert_false(TryForwardToRunningInstance(sock_path, {}, 50));
+  g_cond_clear(&cond);
+  g_mutex_clear(&mu);
+  g_rmdir(tmp_dir);
+
+  const std::string f1 = DeriveOriginFaviconFallback("https://github.com/org/repo?x=1");
+  const std::string f2 = DeriveOriginFaviconFallback("http://localhost:8080/app");
+  const std::string f3 = DeriveOriginFaviconFallback("https://user:pass@example.com/p");
+  const std::string f4 = DeriveOriginFaviconFallback("kajo://newtab");
+  const std::string f5 = DeriveOriginFaviconFallback("about:blank");
+  g_assert_cmpstr(f1.c_str(), ==, "https://github.com/favicon.ico");
+  g_assert_cmpstr(f2.c_str(), ==, "http://localhost:8080/favicon.ico");
+  g_assert_cmpstr(f3.c_str(), ==, "https://example.com/favicon.ico");
+  g_assert_cmpstr(f4.c_str(), ==, "");
+  g_assert_cmpstr(f5.c_str(), ==, "");
+
+  const ChromeUiMetrics m_min = ComputeChromeUiMetrics(4);
+  const ChromeUiMetrics m_11 = ComputeChromeUiMetrics(11);
+  const ChromeUiMetrics m_14 = ComputeChromeUiMetrics(14);
+  const ChromeUiMetrics m_20 = ComputeChromeUiMetrics(20);
+  const ChromeUiMetrics m_max = ComputeChromeUiMetrics(99);
+  g_assert_cmpint(m_min.topbar_height_px, ==, m_11.topbar_height_px);
+  g_assert_cmpint(m_max.topbar_height_px, ==, m_20.topbar_height_px);
+  g_assert_cmpint(m_14.topbar_height_px, ==, 42);
+  g_assert_cmpint(m_14.control_height_px, ==, 30);
+  g_assert_cmpint(m_14.icon_size_px, ==, 16);
+  g_assert_cmpint(m_14.infobar_height_px, ==, 44);
+  g_assert_cmpint(m_14.findbar_height_px, ==, 50);
+  g_assert_cmpint(m_14.compact_rail_width_px, ==, 48);
+  g_assert_cmpint(m_20.topbar_height_px, >, m_14.topbar_height_px);
+  g_assert_cmpint(m_14.topbar_height_px, >=, m_11.topbar_height_px);
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
   g_test_add_func("/web_cef/core/log_severity", test_log_severity_parsing);
@@ -122,5 +223,6 @@ int main(int argc, char** argv) {
   g_test_add_func("/web_cef/core/user_scripts", test_user_scripts_loader);
   g_test_add_func("/web_cef/core/permissions", test_permission_store_and_labels);
   g_test_add_func("/web_cef/core/slug_and_color", test_profile_slug_and_hex_color);
+  g_test_add_func("/web_cef/core/site_util_and_ipc", test_site_util_and_ipc);
   return g_test_run();
 }

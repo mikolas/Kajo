@@ -124,6 +124,22 @@ web_storage_record_visit(KajoWebStorage *st, const gchar *uri, const gchar *titl
     }
 }
 
+void
+web_storage_update_title(KajoWebStorage *st, const gchar *uri, const gchar *title)
+{
+    if (!st || !st->db || !uri || !*uri || !title || !*title ||
+        g_str_has_prefix(uri, "kajo://") || g_str_has_prefix(uri, "about:"))
+        return;
+    const char *sql = "UPDATE history SET title = ?2 WHERE uri = ?1 AND length(?2) > 0;";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(st->db, sql, -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_text(stmt, 1, uri, -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt, 2, title, -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
 GPtrArray *
 web_storage_search_history(KajoWebStorage *st, const gchar *query, gint limit)
 {
@@ -409,6 +425,8 @@ web_storage_save_session(KajoWebStorage *st, const KajoWebModel *model)
         json_builder_add_string_value(b, t->title ? t->title : "");
         json_builder_set_member_name(b, "group");
         json_builder_add_string_value(b, t->group ? t->group : "");
+        json_builder_set_member_name(b, "favicon_url");
+        json_builder_add_string_value(b, t->favicon_url ? t->favicon_url : "");
         json_builder_set_member_name(b, "pinned");
         json_builder_add_boolean_value(b, t->pinned);
         json_builder_end_object(b);
@@ -454,8 +472,11 @@ web_storage_load_session(KajoWebStorage *st, KajoWebModel *model)
         const gchar *uri = json_object_get_string_member_with_default(it, "uri", "kajo://newtab");
         const gchar *title = json_object_get_string_member_with_default(it, "title", "");
         const gchar *grp = json_object_get_string_member_with_default(it, "group", "");
+        const gchar *fav = json_object_get_string_member_with_default(it, "favicon_url", "");
         gboolean pinned = json_object_get_boolean_member_with_default(it, "pinned", FALSE);
         KajoWebTabMeta *t = web_model_add_tab(model, uri, title, *grp ? grp : NULL, pinned, now);
+        if (t && fav && *fav)
+            t->favicon_url = g_strdup(fav);
         if ((gint)i == active_idx && t)
             target_active_id = t->id;
     }

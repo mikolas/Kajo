@@ -57,21 +57,24 @@ threads_dep = dependency('threads')
 
 fs = import('fs')
 cef_opt = get_option('web_cef')
+cef_lib_dir = get_option('cef_lib_dir')
+cef_include_dir = get_option('cef_include_dir')
+cef_src_dir = get_option('cef_src_dir')
 cef_has_files = (
-  cpp.has_header('/usr/include/cef/include/cef_version.h')
-  and fs.exists('/usr/lib/cef/libcef.so')
-  and fs.exists('/usr/src/cef/libcef_dll/CMakeLists.txt')
+  cpp.has_header(cef_include_dir / 'include/cef_version.h')
+  and fs.exists(cef_lib_dir / 'libcef.so')
+  and fs.exists(cef_src_dir / 'libcef_dll/CMakeLists.txt')
 )
 if cef_opt.enabled() and not cef_has_files
-  error('web_cef enabled but CEF headers/library (/usr/include/cef, /usr/lib/cef/libcef.so, /usr/src/cef/libcef_dll/CMakeLists.txt) not found')
+  error('web_cef enabled but CEF headers/library (' + cef_include_dir + ', ' + cef_lib_dir + '/libcef.so, ' + cef_src_dir + '/libcef_dll/CMakeLists.txt) not found')
 endif
 build_web_cef = not cef_opt.disabled() and cef_has_files
 if build_web_cef
-  cef_lib_dep = cpp.find_library('cef', dirs: ['/usr/lib/cef'], required: true)
+  cef_lib_dep = cpp.find_library('cef', dirs: [cef_lib_dir], required: true)
   cef_wrapper_list = run_command(
     'python3',
     files('scripts/list_cef_wrapper_sources.py'),
-    '/usr/src/cef/libcef_dll/CMakeLists.txt',
+    cef_src_dir / 'libcef_dll/CMakeLists.txt',
     check: true,
   )
   cef_wrapper_sources = files(cef_wrapper_list.stdout().strip().split('\n'))
@@ -81,8 +84,8 @@ if build_web_cef
     cpp_args: [
       '-std=c++20',
       '-w',
-      '-isystem', '/usr/include/cef',
-      '-I/usr/src/cef',
+      '-isystem', cef_include_dir,
+      '-I' + cef_src_dir,
       '-DWRAPPING_CEF_SHARED',
       '-DCEF_API_VERSION=CEF_API_VERSION_EXPERIMENTAL',
     ],
@@ -453,6 +456,7 @@ if build_web_cef
     'src/web_cef/cef_app.cc',
     'src/web_cef/cef_adblock.cc',
     'src/web_cef/cef_chrome_ui.cc',
+    'src/web_cef/cef_ipc.cc',
     'src/web_cef/cef_prefs_helper.cc',
     'src/web_cef/cef_tab.cc',
     'src/web_cef/cef_window.cc',
@@ -472,12 +476,13 @@ if build_web_cef
     cpp_args: [
       '-std=c++20',
       '-fno-stack-protector',
-      '-isystem', '/usr/include/cef',
+      '-isystem', cef_include_dir,
       '-DCEF_API_VERSION=CEF_API_VERSION_EXPERIMENTAL',
+      '-DKAJO_CEF_LIB_DIR="' + cef_lib_dir + '"',
     ],
     override_options: ['cpp_std=c++20'],
-    build_rpath: '/usr/lib/cef',
-    install_rpath: '/usr/lib/cef',
+    build_rpath: cef_lib_dir,
+    install_rpath: cef_lib_dir,
     link_with: cef_dll_wrapper,
     dependencies: [
       cef_lib_dep,
@@ -1072,9 +1077,9 @@ if build_web_cef
 
   test_web_cef_core_exe = executable(
     'test-web-cef-core',
-    files('tests/test_web_cef_core.cc', 'src/web_cef/cef_prefs_helper.cc'),
+    files('tests/test_web_cef_core.cc', 'src/web_cef/cef_prefs_helper.cc', 'src/web_cef/cef_ipc.cc'),
     include_directories: include_directories('src'),
-    cpp_args: ['-std=c++20', '-isystem', '/usr/include/cef'],
+    cpp_args: ['-std=c++20', '-isystem', cef_include_dir],
     override_options: ['cpp_std=c++20'],
     dependencies: [gio_dep, json_glib_dep, threads_dep],
     build_by_default: false,

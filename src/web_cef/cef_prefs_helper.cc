@@ -9,16 +9,14 @@
 #include <fstream>
 #include <sstream>
 
+#include "web_cef/cef_site_util.h"
+
 namespace kajo_web {
 
 namespace {
 
 std::string ToLowerAscii(const std::string& s) {
-  std::string out = s;
-  for (char& c : out) {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return out;
+  return ToLowerAsciiCopy(s);
 }
 
 bool IsHttpOrHttps(const std::string& url, size_t* out_scheme_end) {
@@ -52,47 +50,6 @@ std::string ExtractLowerHost(const std::string& url) {
   return ToLowerAscii(auth);
 }
 
-bool IsIpLiteral(const std::string& host) {
-  if (host.find(':') != std::string::npos) return true;
-  bool all_digits_or_dots = !host.empty();
-  for (char c : host) {
-    if (!std::isdigit(static_cast<unsigned char>(c)) && c != '.') {
-      all_digits_or_dots = false;
-      break;
-    }
-  }
-  return all_digits_or_dots;
-}
-
-std::string RegistrableSite(const std::string& host) {
-  if (host.empty() || IsIpLiteral(host)) return host;
-  std::vector<std::string> labels;
-  size_t pos = 0;
-  while (pos < host.size()) {
-    size_t dot = host.find('.', pos);
-    if (dot == std::string::npos) {
-      labels.push_back(host.substr(pos));
-      break;
-    }
-    if (dot > pos) labels.push_back(host.substr(pos, dot - pos));
-    pos = dot + 1;
-  }
-  if (labels.size() <= 2) return host;
-  static const char* kMultiTlds[] = {
-      "co.uk", "org.uk", "ac.uk", "gov.uk",
-      "com.au", "net.au", "org.au",
-      "co.jp", "ne.jp", "or.jp",
-      "com.br", "co.nz", "co.za", "co.kr",
-  };
-  const std::string last2 = labels[labels.size() - 2] + "." + labels[labels.size() - 1];
-  for (const char* tld : kMultiTlds) {
-    if (last2 == tld && labels.size() >= 3) {
-      return labels[labels.size() - 3] + "." + last2;
-    }
-  }
-  return last2;
-}
-
 }  // namespace
 
 cef_log_severity_t ParseCefLogSeverity(const char* env_val) {
@@ -111,8 +68,7 @@ bool IsSameSiteUrl(const std::string& req_url, const std::string& first_party_ur
   const std::string req_host = ExtractLowerHost(req_url);
   const std::string fp_host = ExtractLowerHost(first_party_url);
   if (req_host.empty() || fp_host.empty()) return true;
-  if (req_host == fp_host) return true;
-  return RegistrableSite(req_host) == RegistrableSite(fp_host);
+  return IsSameSiteHost(req_host, fp_host);
 }
 
 LoadedUserScripts LoadUserScriptsFromDir(const std::string& scripts_dir) {

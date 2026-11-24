@@ -202,6 +202,7 @@ tab_meta_free(gpointer ptr)
     g_free(t->title);
     g_free(t->uri);
     g_free(t->group);
+    g_free(t->favicon_url);
     g_free(t);
 }
 
@@ -214,6 +215,7 @@ closed_tab_free(gpointer ptr)
     g_free(c->title);
     g_free(c->uri);
     g_free(c->group);
+    g_free(c->favicon_url);
     g_free(c);
 }
 
@@ -265,12 +267,13 @@ web_model_free(KajoWebModel *m)
 }
 
 KajoWebTabMeta *
-web_model_add_tab(KajoWebModel *m,
-                  const gchar  *uri,
-                  const gchar  *title,
-                  const gchar  *group,
-                  gboolean      pinned,
-                  gint64        now_us)
+web_model_add_tab_ex(KajoWebModel *m,
+                     const gchar  *uri,
+                     const gchar  *title,
+                     const gchar  *group,
+                     gboolean      pinned,
+                     gboolean      activate,
+                     gint64        now_us)
 {
     if (!m)
         return NULL;
@@ -293,9 +296,24 @@ web_model_add_tab(KajoWebModel *m,
         g_ptr_array_add(m->tabs, t);
     }
 
-    m->active_id = t->id;
-    mru_bump(m, t->id);
+    if (activate || m->tabs->len == 1) {
+        m->active_id = t->id;
+        mru_bump(m, t->id);
+    } else {
+        g_array_append_val(m->mru_ids, t->id);
+    }
     return t;
+}
+
+KajoWebTabMeta *
+web_model_add_tab(KajoWebModel *m,
+                  const gchar  *uri,
+                  const gchar  *title,
+                  const gchar  *group,
+                  gboolean      pinned,
+                  gint64        now_us)
+{
+    return web_model_add_tab_ex(m, uri, title, group, pinned, TRUE, now_us);
 }
 
 gboolean
@@ -312,6 +330,7 @@ web_model_close_tab(KajoWebModel *m, guint64 id)
         c->title = g_strdup(t->title);
         c->uri = g_strdup(t->uri);
         c->group = g_strdup(t->group);
+        c->favicon_url = g_strdup(t->favicon_url);
         c->pinned = t->pinned;
         if (m->closed_stack->len >= 64)
             g_ptr_array_remove_index(m->closed_stack, 0);
@@ -342,6 +361,9 @@ web_model_reopen_closed(KajoWebModel *m, gint64 now_us)
         return NULL;
     KajoWebClosedTab *c = g_ptr_array_index(m->closed_stack, m->closed_stack->len - 1);
     KajoWebTabMeta *t = web_model_add_tab(m, c->uri, c->title, c->group, c->pinned, now_us);
+    if (t && c->favicon_url) {
+        t->favicon_url = g_strdup(c->favicon_url);
+    }
     g_ptr_array_remove_index(m->closed_stack, m->closed_stack->len - 1);
     return t;
 }
@@ -352,11 +374,27 @@ web_model_activate(KajoWebModel *m, guint64 id, gint64 now_us)
     KajoWebTabMeta *t = web_model_find_tab(m, id);
     if (!t)
         return FALSE;
+    if (m->active_id != 0 && m->active_id != id) {
+        KajoWebTabMeta *prev = web_model_find_tab(m, m->active_id);
+        if (prev)
+            prev->last_active_us = now_us;
+    }
     t->suspended = FALSE;
     t->last_active_us = now_us;
     m->active_id = id;
     mru_bump(m, id);
     return TRUE;
+}
+
+void
+web_model_set_tab_favicon(KajoWebModel *m, guint64 id, const gchar *favicon_url)
+{
+    KajoWebTabMeta *t = web_model_find_tab(m, id);
+    if (!t)
+        return;
+    gchar *copy = (favicon_url && *favicon_url) ? g_strdup(favicon_url) : NULL;
+    g_free(t->favicon_url);
+    t->favicon_url = copy;
 }
 
 gboolean
@@ -494,7 +532,8 @@ web_model_can_suspend(const KajoWebModel   *m,
 {
     if (!m || !t || suspend_idle_min <= 0)
         return FALSE;
-    if (t->id == m->active_id || t->pinned || t->audible || t->suspended || t->capture_active)
+    if (t->id == m->active_id || t->pinned || t->audible || t->suspended ||
+        t->capture_active || t->download_active)
         return FALSE;
     if (t->uri && g_str_has_prefix(t->uri, "kajo://"))
         return FALSE;
@@ -573,6 +612,8 @@ web_model_resolve_input(const gchar         *raw_input,
     if (g_str_has_prefix(trimmed, "http://") ||
         g_str_has_prefix(trimmed, "https://") ||
         g_str_has_prefix(trimmed, "kajo://") ||
+        g_str_has_prefix(trimmed, "chrome://") ||
+        g_str_has_prefix(trimmed, "devtools://") ||
         g_str_has_prefix(trimmed, "file://") ||
         g_str_has_prefix(trimmed, "about:")) {
         return g_strdup(trimmed);
@@ -823,10 +864,22 @@ static void
 append_toml_str(GString *out, const gchar *val)
 {
     g_string_append_c(out, '"');
-    for (const char *p = val ? val : ""; *p; p++) {
-        if (*p == '\\' || *p == '"')
-            g_string_append_c(out, '\\');
-        g_string_append_c(out, *p);
+    for (const unsigned char *p = (const unsigned char *)(val ? val : ""); *p; p++) {
+        switch (*p) {
+        case '\\': g_string_append(out, "\\\\"); break;
+        case '"':  g_string_append(out, "\\\""); break;
+        case '\b': g_string_append(out, "\\b"); break;
+        case '\t': g_string_append(out, "\\t"); break;
+        case '\n': g_string_append(out, "\\n"); break;
+        case '\f': g_string_append(out, "\\f"); break;
+        case '\r': g_string_append(out, "\\r"); break;
+        default:
+            if (*p < 0x20 || *p == 0x7f)
+                g_string_append_printf(out, "\\u%04x", *p);
+            else
+                g_string_append_c(out, (gchar)*p);
+            break;
+        }
     }
     g_string_append_c(out, '"');
 }

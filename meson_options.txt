@@ -1,4 +1,10 @@
 option('wlroots', type: 'combo', choices: ['fork', 'system'], value: 'fork',
   description: 'Build kajo-comp against the bundled Kajo wlroots fork or system wlroots')
 option('web_cef', type: 'feature', value: 'auto',
-  description: 'Build kajo-web using system Chromium Embedded Framework (/usr/lib/cef)')
+  description: 'Build kajo-web using system Chromium Embedded Framework')
+option('cef_lib_dir', type: 'string', value: '/usr/lib/cef',
+  description: 'Directory containing libcef.so, resources, and locales/')
+option('cef_include_dir', type: 'string', value: '/usr/include/cef',
+  description: 'Directory containing CEF C/C++ headers (include/cef_version.h)')
+option('cef_src_dir', type: 'string', value: '/usr/src/cef',
+  description: 'Directory containing CEF libcef_dll wrapper sources')

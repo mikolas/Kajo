@@ -129,8 +129,13 @@ struct ChromeStateSnapshot {
   std::string profile_name = "DEFAULT";
   std::string profile_icon = "🌐";
   std::string ui_font_family = "Fira Code";
-  int ui_font_size_px = 13;
+  int ui_font_size_px = 14;
+  int heading_size_px = 13;
+  int sub_size_px = 12;
   int badge_size_px = 11;
+  int topbar_height_px = 42;
+  int control_height_px = 30;
+  int icon_size_px = 16;
 
   /* Active tab */
   uint64_t active_tab_id = 0;
@@ -142,6 +147,7 @@ struct ChromeStateSnapshot {
   bool is_loading = false;
   bool is_bookmarked = false;
   int zoom_pct = 100;
+  int default_zoom_pct = 100;
 
   /* Adblock & HW accel telemetry */
   bool adblock_enabled = true;

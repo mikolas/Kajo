@@ -9,6 +9,7 @@
 #include "config/kajo_config_store.h"
 #include "include/cef_browser.h"
 #include "include/cef_command_line.h"
+#include "include/cef_version.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace kajo_web {
@@ -24,9 +25,8 @@ const char* kWidevineSearchPaths[] = {
 
 const char* kYtAdSkipScript = R"JS(
 (() => {
-  if (window.__kajoYtAdSkip) return;
-  window.__kajoYtAdSkip = true;
-  window.__kajoYtSkipInstalled = true;
+  if (window.__kajoYtAdSkip && !window.__kajoYtAdSkip.stopped) return;
+  let stopped = false;
   let skipTimer = 0, obs = null, bootObs = null, bootStop = 0;
   let curPlayer = null, savedMute = null, inAd = false;
   const getPlayer = () =>
@@ -46,6 +46,7 @@ const char* kYtAdSkipScript = R"JS(
     if (skipTimer) { clearInterval(skipTimer); skipTimer = 0; }
   };
   const trySkip = () => {
+    if (stopped) { restorePlayer(); return; }
     const p = getPlayer();
     if (!p) { restorePlayer(); return; }
     const ad = p.classList.contains('ad-showing') || p.classList.contains('ad-interrupting');
@@ -66,7 +67,7 @@ const char* kYtAdSkipScript = R"JS(
     if (bootStop) { clearTimeout(bootStop); bootStop = 0; }
   };
   const onClass = () => {
-    if (!curPlayer) return;
+    if (stopped || !curPlayer) return;
     const ad = curPlayer.classList.contains('ad-showing') || curPlayer.classList.contains('ad-interrupting');
     if (ad) {
       trySkip();
@@ -76,6 +77,7 @@ const char* kYtAdSkipScript = R"JS(
     }
   };
   const attach = () => {
+    if (stopped) return false;
     const p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
     if (!p) return false;
     if (p !== curPlayer) {
@@ -90,6 +92,7 @@ const char* kYtAdSkipScript = R"JS(
     return true;
   };
   const boot = () => {
+    if (stopped) return;
     if (attach()) return;
     if (location.pathname.indexOf('/watch') === 0 || location.pathname.indexOf('/shorts') === 0) {
       if (document.body && !bootObs) {
@@ -99,8 +102,22 @@ const char* kYtAdSkipScript = R"JS(
       }
     }
   };
-  document.addEventListener('yt-navigate-finish', () => setTimeout(boot, 0));
-  document.addEventListener('yt-page-data-updated', () => attach());
+  const onNavFinish = () => setTimeout(boot, 0);
+  const onDataUpdated = () => attach();
+  const stop = () => {
+    stopped = true;
+    stopBoot();
+    if (obs) { obs.disconnect(); obs = null; }
+    restorePlayer();
+    curPlayer = null;
+    document.removeEventListener('yt-navigate-finish', onNavFinish);
+    document.removeEventListener('yt-page-data-updated', onDataUpdated);
+    document.removeEventListener('DOMContentLoaded', boot);
+  };
+  window.__kajoYtAdSkip = { stopped: false, stop };
+  window.__kajoYtSkipInstalled = true;
+  document.addEventListener('yt-navigate-finish', onNavFinish);
+  document.addEventListener('yt-page-data-updated', onDataUpdated);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
@@ -198,10 +215,11 @@ void KajoCefApp::OnBeforeCommandLineProcessing(const CefString& process_type,
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
               "(KHTML, like Gecko) Version/18.2 Safari/605.1.15");
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CHROME_LINUX) {
-          command_line->AppendSwitchWithValue(
-              "user-agent",
+          const std::string ua =
               "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36");
+              "(KHTML, like Gecko) Chrome/" + std::to_string(CHROME_VERSION_MAJOR) +
+              ".0.0.0 Safari/537.36";
+          command_line->AppendSwitchWithValue("user-agent", ua);
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CUSTOM &&
                    wcfg->user_agent_custom && wcfg->user_agent_custom[0] != '\0') {
           command_line->AppendSwitchWithValue("user-agent", wcfg->user_agent_custom);
@@ -327,6 +345,14 @@ bool KajoCefApp::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
 
     if (yt_skip) {
       frame->ExecuteJavaScript(kYtAdSkipScript, frame->GetURL(), 0);
+    } else {
+      frame->ExecuteJavaScript(
+          "if (window.__kajoYtAdSkip && window.__kajoYtAdSkip.stop) {"
+          "  window.__kajoYtAdSkip.stop();"
+          "  delete window.__kajoYtAdSkip;"
+          "  window.__kajoYtSkipInstalled = false;"
+          "}",
+          frame->GetURL(), 0);
     }
     return true;
   }

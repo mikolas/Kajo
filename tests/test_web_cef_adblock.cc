@@ -87,6 +87,39 @@ static void test_adblock_rules_and_blocking(void) {
   g_assert_false(engine.ShouldBlock("kajo-chrome://ui/topbar.html",
                                     "kajo-chrome://ui/topbar.html",
                                     ResourceTypeMask::RT_ANY));
+
+  /* Multi-part TLD $third-party boundary */
+  g_assert_true(engine.ShouldBlock("https://cdn.track3p.example/ad.js",
+                                   "https://bbc.co.uk/",
+                                   ResourceTypeMask::RT_SCRIPT));
+  engine.LoadAdditionalRulesText("||evil.co.uk^$third-party\n");
+  g_assert_true(engine.ShouldBlock("https://ads.evil.co.uk/ad.js",
+                                   "https://www.bbc.co.uk/news",
+                                   ResourceTypeMask::RT_SCRIPT));
+
+  /* WildcardMatch backtrack when first match lacks trailing separator */
+  engine.LoadAdditionalRulesText("/ad^$script\n");
+  g_assert_true(engine.ShouldBlock("https://site.com/admin/ad/x.js",
+                                   "https://site.com/",
+                                   ResourceTypeMask::RT_SCRIPT));
+
+  /* Unknown modifiers (e.g. $elemhide, $denyallow=) must be rejected, not stripped */
+  engine.LoadAdditionalRulesText(
+      "@@||ads.example.com^$elemhide\n"
+      "||site-deny.example^$denyallow=allowed.example\n"
+      "||example.com/ad.js\n");
+  g_assert_true(engine.ShouldBlock("https://ads.example.com/blocked.js",
+                                   "https://site.org/",
+                                   ResourceTypeMask::RT_SCRIPT));
+  g_assert_false(engine.ShouldBlock("https://site-deny.example/ok.js",
+                                    "https://allowed.example/",
+                                    ResourceTypeMask::RT_SCRIPT));
+
+  /* Literal '$' inside URL path should not be eaten as options */
+  engine.LoadAdditionalRulesText("||cdn.example.net/v1/$cash/track.js\n");
+  g_assert_true(engine.ShouldBlock("https://cdn.example.net/v1/$cash/track.js",
+                                   "https://example.net/",
+                                   ResourceTypeMask::RT_SCRIPT));
 }
 
 static void test_adblock_cosmetic_and_allowlist(void) {
@@ -102,9 +135,19 @@ static void test_adblock_cosmetic_and_allowlist(void) {
       "###universal-ad-box\n");
 
   std::string yt_css = engine.GetCosmeticCssForHost("www.youtube.com");
-  g_assert_nonnull(strstr(yt_css.c_str(), ".ytd-ad-slot-renderer"));
-  g_assert_nonnull(strstr(yt_css.c_str(), "#universal-ad-box"));
+  g_assert_nonnull(strstr(yt_css.c_str(), ".ytd-ad-slot-renderer{display:none!important;}"));
+  g_assert_nonnull(strstr(yt_css.c_str(), "#universal-ad-box{display:none!important;}"));
   g_assert_null(strstr(yt_css.c_str(), ".ad-box"));
+
+  /* Unsupported extended procedural CSS is rejected cleanly */
+  engine.LoadAdditionalRulesText(
+      "youtube.com##div:matches-css(opacity:0)\n"
+      "youtube.com##span:min-text-length(5)\n"
+      "youtube.com##bad{injected}\n");
+  std::string yt_css2 = engine.GetCosmeticCssForHost("www.youtube.com");
+  g_assert_null(strstr(yt_css2.c_str(), "matches-css"));
+  g_assert_null(strstr(yt_css2.c_str(), "min-text-length"));
+  g_assert_null(strstr(yt_css2.c_str(), "injected"));
 
   /* Per-host pause persists across ReloadFromDisk */
   g_assert_false(engine.IsHostPaused("https://www.youtube.com/watch?v=123"));
@@ -157,6 +200,10 @@ static void test_adblock_tab_counters(void) {
   engine.ResetTabBlockedCount(101);
   g_assert_cmpint(engine.GetBlockedCountForTab(101), ==, 0);
   g_assert_cmpint(engine.GetTotalBlockedCount(), ==, 3);
+
+  engine.RecordBlockedForTab(101);
+  engine.RemoveTabBlockedCount(101);
+  g_assert_cmpint(engine.GetBlockedCountForTab(101), ==, 0);
 }
 
 int main(int argc, char** argv) {

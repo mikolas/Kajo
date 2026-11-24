@@ -98,6 +98,7 @@ public:
   size_t GetLoadedListCount() const;
   void RecordBlockedForTab(int browser_id);
   void ResetTabBlockedCount(int browser_id);
+  void RemoveTabBlockedCount(int browser_id);
   uint64_t GetBlockedCountForTab(int browser_id) const;
   uint64_t GetTotalBlockedCount() const;
 

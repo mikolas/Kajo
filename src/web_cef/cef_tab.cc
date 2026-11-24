@@ -10,6 +10,7 @@
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_media_sniff_core.h"
+#include "web_cef/cef_site_util.h"
 
 namespace kajo_web {
 
@@ -81,8 +82,121 @@ std::string LoadErrorPageHtml(const std::string& url,
          "</style></head><body><div class='box'><h1>PAGE FAILED TO LOAD</h1>"
          "<p>URL: " + HtmlEscape(url) + "</p>"
          "<p>Error " + std::to_string(err_code) + ": " + HtmlEscape(err_text) + "</p>"
-         "<a class='btn' href='" + HtmlEscape(url) + "'>RETRY</a></div></body></html>";
+         "<a class='btn' href='" + HtmlEscape(SanitizeSafeHref(url)) + "'>RETRY</a></div></body></html>";
 }
+
+/* Isolated client for about:blank/empty-URL popups (e.g. OAuth/SSO flows) so
+ * they never reuse the opener tab's tab_id_ or clobber opener->browser. */
+class CefPopupClient : public CefClient,
+                       public CefLifeSpanHandler,
+                       public CefRequestHandler,
+                       public CefResourceRequestHandler,
+                       public CefCookieAccessFilter {
+public:
+  CefPopupClient(std::shared_ptr<CefAdblockEngine> adblock,
+                 bool https_only,
+                 int cookie_policy,
+                 std::string opener_url)
+      : adblock_(std::move(adblock)),
+        https_only_(https_only),
+        cookie_policy_(cookie_policy),
+        top_url_(std::move(opener_url)) {}
+
+  CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+  bool DoClose(CefRefPtr<CefBrowser> browser) override { return false; }
+
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      CefRefPtr<CefRequest> request,
+      bool is_navigation,
+      bool is_download,
+      const CefString& request_initiator,
+      bool& disable_default_handling) override {
+    return this;
+  }
+
+  CefRefPtr<CefCookieAccessFilter> GetCookieAccessFilter(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      CefRefPtr<CefRequest> request) override {
+    CEF_REQUIRE_IO_THREAD();
+    if (cookie_policy_ == KAJO_WEB_COOKIES_ALWAYS) return nullptr;
+    return this;
+  }
+
+  bool CanSendCookie(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     CefRefPtr<CefRequest> request,
+                     const CefCookie& cookie) override {
+    CEF_REQUIRE_IO_THREAD();
+    if (cookie_policy_ == KAJO_WEB_COOKIES_NEVER) return false;
+    if (cookie_policy_ == KAJO_WEB_COOKIES_ALWAYS || !request) return true;
+    const std::string req_url = request->GetURL().ToString();
+    if (req_url.rfind("http://", 0) != 0 && req_url.rfind("https://", 0) != 0) return true;
+    std::string fp = request->GetFirstPartyForCookies().ToString();
+    if (fp.empty() || fp == "about:blank") {
+      std::lock_guard<std::mutex> lock(mu_);
+      fp = top_url_;
+    }
+    return IsSameSiteUrl(req_url, fp);
+  }
+
+  bool CanSaveCookie(CefRefPtr<CefBrowser> browser,
+                     CefRefPtr<CefFrame> frame,
+                     CefRefPtr<CefRequest> request,
+                     CefRefPtr<CefResponse> response,
+                     const CefCookie& cookie) override {
+    CEF_REQUIRE_IO_THREAD();
+    return CanSendCookie(browser, frame, request, cookie);
+  }
+
+  ReturnValue OnBeforeResourceLoad(CefRefPtr<CefBrowser> browser,
+                                   CefRefPtr<CefFrame> frame,
+                                   CefRefPtr<CefRequest> request,
+                                   CefRefPtr<CefCallback> callback) override {
+    CEF_REQUIRE_IO_THREAD();
+    if (!request) return RV_CONTINUE;
+    const std::string url = request->GetURL().ToString();
+    if (https_only_ && url.rfind("http://", 0) == 0 &&
+        request->GetResourceType() == ::RT_MAIN_FRAME) {
+      const std::string host = CefAdblockEngine::ExtractHost(url);
+      if (!IsLocalOrPrivateHost(host)) {
+        request->SetURL("https://" + url.substr(7));
+      }
+    }
+    if (adblock_) {
+      std::string fp;
+      if (frame && frame->IsMain()) {
+        fp = frame->GetURL().ToString();
+        if (!fp.empty() && fp != "about:blank") {
+          std::lock_guard<std::mutex> lock(mu_);
+          top_url_ = fp;
+        }
+      }
+      if (fp.empty() || fp == "about:blank") {
+        std::lock_guard<std::mutex> lock(mu_);
+        fp = top_url_;
+      }
+      if (fp.empty() && frame) fp = frame->GetURL().ToString();
+      if (fp.empty()) fp = request->GetReferrerURL().ToString();
+      if (adblock_->ShouldBlock(url, fp, MapCefResourceType(request->GetResourceType()))) {
+        return RV_CANCEL;
+      }
+    }
+    return RV_CONTINUE;
+  }
+
+private:
+  std::shared_ptr<CefAdblockEngine> adblock_;
+  bool https_only_ = false;
+  int cookie_policy_ = 0;
+  std::mutex mu_;
+  std::string top_url_;
+  IMPLEMENT_REFCOUNTING(CefPopupClient);
+};
 
 }  // namespace
 
@@ -145,16 +259,33 @@ void CefTabClient::RefreshCosmeticInjection(CefRefPtr<CefBrowser> browser,
 }
 
 void CefTabClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
+  if (detached_.load(std::memory_order_acquire)) {
+    if (browser && browser->GetHost()) browser->GetHost()->CloseBrowser(true);
+    return;
+  }
   if (TabCallbacks* cb = GetCallbacks()) cb->OnTabBrowserCreated(tab_id_, browser);
 }
 
 bool CefTabClient::DoClose(CefRefPtr<CefBrowser> browser) {
-  /* Individual tabs are detached via RemoveChildView + CloseBrowser(true); returning
-   * true prevents CEF from forwarding a close notification to the parent CefWindow. */
+  /* If CloseTab() or SuspendTab() already detached this client and moved the
+   * CefBrowserView to the teardown window, return false so CEF finishes native
+   * browser teardown and terminates the renderer cleanly. If JS called
+   * window.close() directly on a live tab, defer to CloseTab() on TID_UI and
+   * return true so we don't close the parent CefWindow. */
+  if (detached_.load(std::memory_order_acquire)) {
+    return false;
+  }
+  CefRefPtr<CefTabClient> self(this);
+  CefPostTask(TID_UI, new UiClosureTask([self]() {
+    if (TabCallbacks* cb = self->GetCallbacks()) {
+      cb->OnTabRequestClose(self->tab_id_);
+    }
+  }));
   return true;
 }
 
 void CefTabClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
+  g_debug("kajo-web: tab %lu browser OnBeforeClose", static_cast<unsigned long>(tab_id_));
   if (TabCallbacks* cb = GetCallbacks()) cb->OnTabBrowserClosing(tab_id_);
 }
 
@@ -182,6 +313,16 @@ bool CefTabClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
     }));
     return true;
   }
+  std::string opener_url;
+  {
+    std::lock_guard<std::mutex> lock(url_mu_);
+    opener_url = last_top_url_;
+  }
+  client = new CefPopupClient(
+      adblock_,
+      https_only_.load(std::memory_order_relaxed),
+      cookie_policy_.load(std::memory_order_relaxed),
+      std::move(opener_url));
   return false;
 }
 
@@ -299,9 +440,10 @@ bool CefTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                   bool is_redirect) {
   if (!frame || !frame->IsMain() || !request) return false;
   const std::string url = request->GetURL().ToString();
+  const std::string prev_url = frame->GetURL().ToString();
   if (url.rfind("kajo://", 0) == 0) {
     if (TabCallbacks* cb = GetCallbacks()) {
-      if (cb->OnTabBeforeBrowseAction(tab_id_, url)) return true;
+      if (cb->OnTabBeforeBrowseAction(tab_id_, url, prev_url, user_gesture)) return true;
     }
   }
   if (url.rfind("data:", 0) != 0) {
@@ -378,7 +520,7 @@ bool CefTabClient::CanSendCookie(CefRefPtr<CefBrowser> browser,
   const std::string req_url = request->GetURL().ToString();
   if (req_url.rfind("http://", 0) != 0 && req_url.rfind("https://", 0) != 0) return true;
   std::string fp = request->GetFirstPartyForCookies().ToString();
-  if (fp.empty()) {
+  if (fp.empty() || fp == "about:blank") {
     std::lock_guard<std::mutex> lock(url_mu_);
     fp = last_top_url_;
   }
@@ -444,21 +586,24 @@ CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
   if (https_only_.load(std::memory_order_relaxed) && url.rfind("http://", 0) == 0 &&
       request->GetResourceType() == ::RT_MAIN_FRAME) {
     const std::string host = CefAdblockEngine::ExtractHost(url);
-    if (host != "localhost" && host != "127.0.0.1" && host != "::1") {
+    if (!IsLocalOrPrivateHost(host)) {
       request->SetURL("https://" + url.substr(7));
     }
   }
 
   if (adblock_) {
     std::string first_party;
-    if (frame) {
-      first_party = frame->GetURL().ToString();
-    }
-    if (first_party.empty()) {
+    {
       std::lock_guard<std::mutex> lock(url_mu_);
       first_party = last_top_url_;
     }
-    if (first_party.empty()) {
+    if ((first_party.empty() || first_party == "about:blank") && browser && browser->GetMainFrame()) {
+      first_party = browser->GetMainFrame()->GetURL().ToString();
+    }
+    if ((first_party.empty() || first_party == "about:blank") && frame) {
+      first_party = frame->GetURL().ToString();
+    }
+    if (first_party.empty() || first_party == "about:blank") {
       first_party = request->GetReferrerURL().ToString();
     }
     ResourceTypeMask rt = MapCefResourceType(request->GetResourceType());
@@ -599,13 +744,25 @@ bool CefTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
     browser->GetHost()->ShowDevTools(wi, nullptr, bs, pt);
     return true;
   }
-  if (command_id == CMD_KAJO_OPEN_LINK_TAB || command_id == CMD_KAJO_OPEN_PLAYER) {
+  if (command_id == CMD_KAJO_OPEN_LINK_TAB) {
+    const std::string link = params->GetLinkUrl().ToString();
+    if (!link.empty()) {
+      if (TabCallbacks* cb = GetCallbacks()) {
+        return cb->OnTabContextCommand(tab_id_, 1, link);
+      }
+    }
+    return false;
+  }
+  if (command_id == CMD_KAJO_OPEN_PLAYER) {
     std::string target = params->GetSourceUrl().ToString();
     if (target.empty()) target = params->GetLinkUrl().ToString();
     if (target.empty()) target = params->GetPageUrl().ToString();
-    if (TabCallbacks* cb = GetCallbacks()) {
-      return cb->OnTabContextCommand(tab_id_, command_id == CMD_KAJO_OPEN_LINK_TAB ? 1 : 2, target);
+    if (!target.empty()) {
+      if (TabCallbacks* cb = GetCallbacks()) {
+        return cb->OnTabContextCommand(tab_id_, 2, target);
+      }
     }
+    return false;
   }
   return false;
 }

@@ -6,6 +6,8 @@
 #include <fstream>
 #include <sstream>
 
+#include "web_cef/cef_site_util.h"
+
 namespace fs = std::filesystem;
 
 namespace kajo_web {
@@ -124,22 +126,7 @@ bool HasDomainInSet(const std::string &host,
 }
 
 bool IsSameSite(const std::string &a, const std::string &b) {
-  if (a.empty() || b.empty())
-    return true;
-  if (a == b)
-    return true;
-  if (HostMatchesOrSubdomain(a, b) || HostMatchesOrSubdomain(b, a))
-    return true;
-  auto last2 = [](const std::string &h) -> std::string_view {
-    size_t d1 = h.rfind('.');
-    if (d1 == std::string::npos || d1 == 0)
-      return h;
-    size_t d2 = h.rfind('.', d1 - 1);
-    if (d2 == std::string::npos)
-      return h;
-    return std::string_view(h).substr(d2 + 1);
-  };
-  return last2(a) == last2(b);
+  return IsSameSiteHost(a, b);
 }
 
 bool IsPlainDomainString(std::string_view sv) {
@@ -174,16 +161,26 @@ bool WildcardMatch(std::string_view text, std::string_view pat) {
         seg.remove_suffix(1);
       }
       if (!seg.empty()) {
-        size_t found = text.find(seg, cur);
-        if (found == std::string_view::npos)
-          return false;
-        size_t end_pos = found + seg.size();
-        if (sep_end && end_pos < text.size()) {
-          unsigned char ch = static_cast<unsigned char>(text[end_pos]);
-          if (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '.' || ch == '%')
+        size_t search_from = cur;
+        bool matched_seg = false;
+        while (search_from < text.size()) {
+          size_t found = text.find(seg, search_from);
+          if (found == std::string_view::npos)
             return false;
+          size_t end_pos = found + seg.size();
+          if (sep_end && end_pos < text.size()) {
+            unsigned char ch = static_cast<unsigned char>(text[end_pos]);
+            if (std::isalnum(ch) || ch == '_' || ch == '-' || ch == '.' || ch == '%') {
+              search_from = found + 1;
+              continue;
+            }
+          }
+          cur = end_pos;
+          matched_seg = true;
+          break;
         }
-        cur = end_pos;
+        if (!matched_seg)
+          return false;
       }
     }
     if (star == std::string_view::npos)
@@ -227,10 +224,9 @@ bool MatchRule(const NetRule &r, const std::string &host,
   if (r.pattern.empty())
     return true;
   if (!r.domain_anchor.empty()) {
-    size_t pos = host_and_rest.find(r.domain_anchor);
-    if (pos == std::string::npos)
+    if (host.size() > host_and_rest.size())
       return false;
-    std::string_view tail = std::string_view(host_and_rest).substr(pos + r.domain_anchor.size());
+    std::string_view tail = std::string_view(host_and_rest).substr(host.size());
     return WildcardMatch(tail, r.pattern);
   }
   return WildcardMatch(host_and_rest, r.pattern);
@@ -279,29 +275,34 @@ bool ParseOptions(std::string_view opts_sv, NetRule &rule) {
       exclude_mask |= RT_IMAGE;
     } else if (opt == "stylesheet" || opt == "css") {
       include_mask |= RT_STYLESHEET;
-    } else if (opt == "~stylesheet") {
+    } else if (opt == "~stylesheet" || opt == "~css") {
       exclude_mask |= RT_STYLESHEET;
     } else if (opt == "xmlhttprequest" || opt == "xhr" || opt == "fetch") {
       include_mask |= RT_XHR;
-    } else if (opt == "~xmlhttprequest" || opt == "~xhr") {
+    } else if (opt == "~xmlhttprequest" || opt == "~xhr" || opt == "~fetch") {
       exclude_mask |= RT_XHR;
     } else if (opt == "subdocument" || opt == "frame") {
       include_mask |= RT_SUBDOCUMENT;
-    } else if (opt == "~subdocument") {
+    } else if (opt == "~subdocument" || opt == "~frame") {
       exclude_mask |= RT_SUBDOCUMENT;
     } else if (opt == "font") {
       include_mask |= RT_FONT;
+    } else if (opt == "~font") {
+      exclude_mask |= RT_FONT;
     } else if (opt == "media") {
       include_mask |= RT_MEDIA;
+    } else if (opt == "~media") {
+      exclude_mask |= RT_MEDIA;
     } else if (opt == "other") {
       include_mask |= RT_OTHER;
+    } else if (opt == "~other") {
+      exclude_mask |= RT_OTHER;
     } else if (opt == "important" || opt == "match-case") {
       // Supported implicitly.
-    } else if (opt.rfind("redirect=", 0) == 0 ||
-               opt.rfind("csp=", 0) == 0 ||
-               opt.rfind("removeparam=", 0) == 0 ||
-               opt == "badfilter" || opt == "popup" || opt == "document") {
-      // Unsupported advanced modifiers -> skip rule cleanly.
+    } else {
+      // Reject unrecognized modifiers (e.g. $elemhide, $generichide, $denyallow,
+      // $redirect=, $csp=, $removeparam=, $badfilter, $popup, $document) so we
+      // never silently turn an element-hiding/scoped rule into a blanket allow/block.
       return false;
     }
   }
@@ -313,12 +314,35 @@ bool ParseOptions(std::string_view opts_sv, NetRule &rule) {
 }
 
 bool HasUnsupportedProceduralCss(std::string_view sel) {
-  return sel.find(":has-text(") != std::string_view::npos ||
-         sel.find(":-abp-") != std::string_view::npos ||
-         sel.find(":upward(") != std::string_view::npos ||
-         sel.find(":style(") != std::string_view::npos ||
-         sel.find(":xpath(") != std::string_view::npos ||
-         sel.find(":matches-path(") != std::string_view::npos;
+  if (sel.find(":has-text(") != std::string_view::npos ||
+      sel.find(":-abp-") != std::string_view::npos ||
+      sel.find(":upward(") != std::string_view::npos ||
+      sel.find(":style(") != std::string_view::npos ||
+      sel.find(":xpath(") != std::string_view::npos ||
+      sel.find(":matches-path(") != std::string_view::npos ||
+      sel.find(":matches-css") != std::string_view::npos ||
+      sel.find(":min-text-length(") != std::string_view::npos ||
+      sel.find(":watch-attr(") != std::string_view::npos ||
+      sel.find(":others(") != std::string_view::npos ||
+      sel.find(":remove(") != std::string_view::npos ||
+      sel.find(":remove-attr(") != std::string_view::npos ||
+      sel.find(":remove-class(") != std::string_view::npos ||
+      sel.find(":nth-ancestor(") != std::string_view::npos ||
+      sel.find('{') != std::string_view::npos ||
+      sel.find('}') != std::string_view::npos ||
+      sel.find('\n') != std::string_view::npos ||
+      sel.find('\r') != std::string_view::npos) {
+    return true;
+  }
+  int paren_depth = 0;
+  int bracket_depth = 0;
+  for (char c : sel) {
+    if (c == '(') ++paren_depth;
+    else if (c == ')' && --paren_depth < 0) return true;
+    else if (c == '[') ++bracket_depth;
+    else if (c == ']' && --bracket_depth < 0) return true;
+  }
+  return paren_depth != 0 || bracket_depth != 0;
 }
 
 } // namespace
@@ -448,8 +472,13 @@ size_t CefAdblockEngine::ParseFilterTextInto(const std::string &text,
 
     std::string_view opts_sv;
     if (auto dol = body.rfind('$'); dol != std::string_view::npos) {
-      opts_sv = body.substr(dol + 1);
-      body = body.substr(0, dol);
+      std::string_view cand = body.substr(dol + 1);
+      if (!cand.empty() &&
+          cand.find('/') == std::string_view::npos &&
+          cand.find('?') == std::string_view::npos) {
+        opts_sv = cand;
+        body = body.substr(0, dol);
+      }
     }
     if (body.empty())
       continue;
@@ -836,11 +865,8 @@ std::string CefAdblockEngine::GetCosmeticCssForHost(const std::string &host) con
   std::ostringstream css;
   size_t limit = std::min<size_t>(selectors.size(), 1500);
   for (size_t i = 0; i < limit; ++i) {
-    if (i > 0)
-      css << ",";
-    css << selectors[i];
+    css << selectors[i] << "{display:none!important;}\n";
   }
-  css << "{display:none!important;}";
   return css.str();
 }
 
@@ -913,6 +939,11 @@ void CefAdblockEngine::RecordBlockedForTab(int browser_id) {
 void CefAdblockEngine::ResetTabBlockedCount(int browser_id) {
   std::lock_guard<std::mutex> lk(count_mu_);
   blocked_per_tab_[browser_id] = 0;
+}
+
+void CefAdblockEngine::RemoveTabBlockedCount(int browser_id) {
+  std::lock_guard<std::mutex> lk(count_mu_);
+  blocked_per_tab_.erase(browser_id);
 }
 
 uint64_t CefAdblockEngine::GetBlockedCountForTab(int browser_id) const {

@@ -201,12 +201,14 @@ src/
 │   ├── web_sync_merge.h/c          Pure UUID/tombstone CRDT merge & AES-256-GCM envelope primitives
 │   └── web_media_sniff_core.h/c    Pure HLS/DASH manifest parser & stream classifier utilities
 ├── web_cef/                        Chromium/CEF Alloy Views browser (kajo-web, docs/spec_kajo_web.md)
-│   ├── main.cc                     CEF subprocess routing, --ozone-platform=wayland, profile & Private launch args
+│   ├── main.cc                     CEF subprocess routing, --ozone-platform=wayland, single-instance IPC & profile launch args
 │   ├── cef_app.h/cc                KajoCefApp GPU/VA-API switches, kajo-chrome:// & kajo:// scheme registration
-│   ├── cef_window.h/cc             Frameless Alloy Views host window, tab lifecycle, downloads, Find Bar, Palette & config hot-reload
-│   ├── cef_tab.h/cc                CefTabClient load/title/favicon/permission/download/hotkey & crash recovery handlers
-│   ├── cef_chrome_ui.h/cc          Aero + Metro kajo-chrome://ui/* topbar/rail/popovers & kajo://* internal HTML pages
+│   ├── cef_window.h/cc             Frameless Alloy Views host window, tab reaper teardown, idle/window suspension, Downloads, Find Bar, Palette & config hot-reload
+│   ├── cef_tab.h/cc                CefTabClient load/title/favicon/popup isolation/permission/download/hotkey & crash recovery handlers
+│   ├── cef_chrome_ui.h/cc          Aero + Metro kajo-chrome://ui/* theme-scaled topbar/rail/popovers & kajo://* internal HTML pages
 │   ├── cef_adblock.h/cc            IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync
+│   ├── cef_ipc.h/cc                Per-profile single-instance UNIX domain socket server & URL forwarder
+│   ├── cef_site_util.h             Pure eTLD+1 site matching, private-host check, color/href sanitization, origin favicon fallback & ComputeChromeUiMetrics
 │   └── cef_prefs_helper.h/cc       Per-site permission JSON store, log severity, same-site cookie & user script loader
 ├── vendor/
 │   ├── tomlc17/                    Vendored TOML 1.1 parser (CK Tan, MIT)
@@ -294,9 +296,10 @@ tests/
 ├── test_ide_strip.c                Kajo IDE 60/25/15 Code Strip layout math, magnetic follow, springs, trails & 1,000-tile stress tests
 ├── test_ide_strip_graph.c          Kajo IDE workspace-only call-graph indexer, Tree-sitter extractor, 4 lenses & mock-LSP bridge tests
 ├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
-├── test_web_model.c                Kajo Web pure core: rail FSM, tab/MRU/undo, omnibar bangs, profiles, SQLite FTS5 & merge tests
+├── test_web_model.c                Kajo Web pure core: rail FSM, tab/MRU/undo, leave-time suspension, favicon persistence, omnibar bangs, profiles, SQLite FTS5 & merge tests
 ├── test_web_cef_adblock.cc         Kajo Web CEF ABP network filter, host-file, cosmetic CSS & allowlist tests
-├── test_web_cef_core.cc            Kajo Web CEF permission store/labels, same-site cookies, user scripts & log severity tests
+├── test_web_cef_core.cc            Kajo Web CEF permission store/labels, same-site cookies, site/UI metrics, IPC server, user scripts & log severity tests
+├── test_import_chromium_session.py One-shot Chromium/Thorium SNSS/Bookmarks + Favicons importer unit tests (`scripts/import-chromium-session.py`)
 ├── test_spawn_detached.c           Detached app spawning: setsid/PGID/SID/SIGPIPE/cwd, parent PGID SIGTERM survival & systemd scope
 └── test_niri.c                     Mock kajo-comp ($KAJO_COMP_SOCKET) & mock Niri ($NIRI_SOCKET) IPC socket tests
 ```
@@ -315,7 +318,7 @@ tests/
 - `poppler-glib`, `libarchive`, `mpv` (`libmpv`), `egl`, `glesv2`
 - `uade` (`libuade`), `bencodetools`, `libsidplayfp` (provides `libstilview`), `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
 - `sqlite3` (for `kajo-web` history, bookmarks, and download records)
-- Chromium Embedded Framework (`CEF` binary distribution installed under `/opt/cef` or `-Dcef_dir=/path/to/cef` — required for `kajo-web` and its 2 C++ unit test suites `web-cef-adblock` & `web-cef-core`; skipped cleanly if absent)
+- Chromium Embedded Framework (`CEF` binary distribution under `/usr/lib/cef`, `/usr/include/cef`, `/usr/src/cef` by default, or overridden via `-Dcef_lib_dir=... -Dcef_include_dir=... -Dcef_src_dir=...` — required for `kajo-web` and its 2 C++ unit test suites `web-cef-adblock` & `web-cef-core`; skipped cleanly if absent)
 - `blueprint-compiler`, `meson`, `ninja`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
   - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
@@ -376,9 +379,10 @@ systemctl --user restart xdg-desktop-portal
 | `portals` | `test-portals` | `org.freedesktop.impl.portal.Settings` (`ReadAll`, `Read`, `NotFound`, `SettingChanged` over private `GTestDBus`), `org.freedesktop.impl.portal.FileChooser` (`OpenFile`, `SaveFile`, `SaveFiles`, `Request.Close()`, glob/MIME filters, non-clobbering target URIs), and external GTK/Qt theme export (pre-Kajo backup snapshot, accent update, partial disable, bit-exact full revert). |
 | `player-queue` | `test-player-queue` | `kajo-player` time/size formatting, sibling-folder media detection and mpv track-label helpers. |
 | `mod-router` | `test-mod-router` | `kajo-mod` 5-tier format router (`UADE` vs `libsidplayfp` vs `libgme` vs `libopenmpt` vs `libxmp`), Amiga companion (`smpl.*`, `.ins`) & `.nfo` filtering, ProTracker sample header parsing, `libarchive` bundle extraction, and live non-zero PCM synthesis. |
-| `web-model` | `test-web-model` | Pure C `kajo-web` core: vertical rail autohide/reveal/hold/focus FSM, tab tree/pin/group/MRU/undo invariants, omnibar URL & bang classifier, profile registry round-trip, SQLite WAL + FTS5 history/bookmarks/downloads storage, CRDT sync merge & E2EE envelope, and stream classifier helpers. |
-| `web-cef-adblock` | `test-web-cef-adblock` | `CefAdblockEngine` ABP network rules (`$third-party`, `$script`, `$domain=...`, exceptions `@@`), hosts-file rules, cosmetic element-hiding selectors, per-host shield pause/allowlist, and filter pack loading. |
-| `web-cef-core` | `test-web-cef-core` | CEF preference/helper logic: permission store persistence & revocation, permission key/label formatting, same-site cookie matching, `~/.config/kajo/web/scripts/*.{js,css}` loader, and log severity parsing. |
+| `web-model` | `test-web-model` | Pure C `kajo-web` core: vertical rail autohide/reveal/hold/focus FSM, tab tree/pin/group/MRU/undo invariants, leave-time idle suspension & favicon persistence, omnibar URL & bang classifier, profile registry round-trip, SQLite WAL + FTS5 history/bookmarks/downloads/session storage, CRDT sync merge & E2EE envelope, and stream classifier helpers. |
+| `web-cef-adblock` | `test-web-cef-adblock` | `CefAdblockEngine` ABP network rules (`$third-party`, `$script`, `$domain=...`, multi-part eTLD+1 matching, strict option validation, exceptions `@@`), hosts-file rules, cosmetic element-hiding selectors, per-host shield pause/allowlist, and filter pack loading. |
+| `web-cef-core` | `test-web-cef-core` | CEF preference/helper logic: permission store persistence & revocation, permission key/label formatting, same-site cookie matching, `IsLocalOrPrivateHost`, `SanitizeSafeHref`, `DeriveOriginFaviconFallback`, `ComputeChromeUiMetrics`, `ProfileIpcServer` round-trip, `~/.config/kajo/web/scripts/*.{js,css}` loader, and log severity parsing. |
+| *(Python unittest)* | `tests/test_import_chromium_session.py` | One-shot Chromium/Thorium session (`SNSS` / `Bookmarks`) and read-only `Favicons` DB importer (`scripts/import-chromium-session.py`): ordering, pins, groups, running-instance guard, backup, and merge. Run via `python3 -m unittest discover -s tests -p "test_import_chromium_session.py"`. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects, `Space` leader chords (including all 20 `Space t *` Code Strip chords), and per-mode `[keys.<state>]` remapping. |
 | `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, conditional breakpoints, stop, stack, nested variable expansion, watch evaluation, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |

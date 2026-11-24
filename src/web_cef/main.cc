@@ -10,8 +10,14 @@
 
 #include "config/kajo_config_store.h"
 #include "include/cef_app.h"
+#include "include/cef_version.h"
 #include "web/web_model.h"
+#include "web_cef/cef_ipc.h"
 #include "web_cef/cef_prefs_helper.h"
+
+#ifndef KAJO_CEF_LIB_DIR
+#define KAJO_CEF_LIB_DIR "/usr/lib/cef"
+#endif
 
 namespace {
 
@@ -117,6 +123,13 @@ int main(int argc, char** argv) {
             ? "default"
             : cfg.profile_id;
 
+    if (!cfg.private_mode) {
+      const std::string sock = kajo_web::ProfileIpcSocketPath(subdir);
+      if (kajo_web::TryForwardToRunningInstance(sock, cfg.initial_urls)) {
+        return 0;
+      }
+    }
+
     g_autofree gchar* pdata = g_build_filename(data_base, "kajo", "web-cef", subdir.c_str(), nullptr);
     g_autofree gchar* pcache = g_build_filename(cache_base, "kajo", "web-cef", subdir.c_str(), nullptr);
     g_mkdir_with_parents(pdata, 0700);
@@ -145,12 +158,14 @@ int main(int argc, char** argv) {
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CHROME_LINUX) {
           cfg.user_agent =
               "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-              "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
+              "(KHTML, like Gecko) Chrome/" + std::to_string(CHROME_VERSION_MAJOR) +
+              ".0.0.0 Safari/537.36";
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CUSTOM &&
                    wcfg->user_agent_custom && wcfg->user_agent_custom[0] != '\0') {
           cfg.user_agent = wcfg->user_agent_custom;
         } else {
-          cfg.user_agent = "Chromium / CEF 156 (Kajo Native Wayland)";
+          cfg.user_agent =
+              "Chromium / CEF " + std::string(CEF_VERSION) + " (Kajo Native Wayland)";
         }
         kajo_web_cfg_unref(wcfg);
       }
@@ -177,9 +192,9 @@ int main(int argc, char** argv) {
   CefSettings settings;
   settings.no_sandbox = false;
   CefString(&settings.browser_subprocess_path) = "";
-  CefString(&settings.resources_dir_path) = "/usr/lib/cef";
-  CefString(&settings.locales_dir_path) = "/usr/lib/cef/locales";
-  CefString(&settings.framework_dir_path) = "/usr/lib/cef";
+  CefString(&settings.resources_dir_path) = KAJO_CEF_LIB_DIR;
+  CefString(&settings.locales_dir_path) = std::string(KAJO_CEF_LIB_DIR) + "/locales";
+  CefString(&settings.framework_dir_path) = KAJO_CEF_LIB_DIR;
   CefString(&settings.root_cache_path) =
       priv_root_dir.empty() ? (profile_dir.empty() ? cfg.cache_dir : profile_dir) : priv_root_dir;
   CefString(&settings.cache_path) = cfg.private_mode ? "" : profile_dir;

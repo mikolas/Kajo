@@ -21,6 +21,7 @@
 #include "include/cef_urlrequest.h"
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_sync_merge.h"
+#include "web_cef/cef_site_util.h"
 
 namespace kajo_web {
 
@@ -51,14 +52,8 @@ enum WindowAccelId {
   ACCEL_PROFILES,
   ACCEL_PRIVATE_WINDOW,
   ACCEL_SETTINGS,
-  ACCEL_ZOOM_IN,
-  ACCEL_ZOOM_OUT,
-  ACCEL_ZOOM_RESET,
-  ACCEL_NEXT_TAB,
-  ACCEL_PREV_TAB,
   ACCEL_FULLSCREEN,
   ACCEL_DEVTOOLS,
-  ACCEL_ESC,
 };
 
 std::string ToLowerCopy(const std::string& s) {
@@ -103,6 +98,53 @@ public:
 private:
   std::function<void()> fn_;
   IMPLEMENT_REFCOUNTING(UiTask);
+};
+
+/* Hidden 1x1 Alloy window used exclusively to host a detached tab CefBrowserView
+ * long enough for CloseBrowser(true) -> DoClose(false) -> CloseHostWindow() ->
+ * OnWindowDestroyed() -> DestroyBrowser() -> OnBeforeClose() to terminate the
+ * Chromium renderer process without closing the main browser CefWindow. */
+class TabReaperWindowDelegate : public CefWindowDelegate {
+public:
+  TabReaperWindowDelegate(CefRefPtr<CefBrowserView> view, CefRefPtr<CefBrowser> browser)
+      : view_(std::move(view)), browser_(std::move(browser)) {}
+
+  cef_runtime_style_t GetWindowRuntimeStyle() override { return CEF_RUNTIME_STYLE_ALLOY; }
+  bool IsFrameless(CefRefPtr<CefWindow> window) override { return true; }
+  CefRect GetInitialBounds(CefRefPtr<CefWindow> window) override { return CefRect(0, 0, 1, 1); }
+  bool CanClose(CefRefPtr<CefWindow> window) override { return true; }
+
+  void OnWindowCreated(CefRefPtr<CefWindow> window) override {
+    win_ = window;
+    if (view_) {
+      window->AddChildView(view_);
+    }
+    CefRefPtr<CefBrowser> b = browser_;
+    if (!b && view_) b = view_->GetBrowser();
+    if (b && b->GetHost()) {
+      b->GetHost()->CloseBrowser(true);
+      CefRefPtr<TabReaperWindowDelegate> self(this);
+      CefPostDelayedTask(TID_UI, new UiTask([self]() {
+        if (self->win_ && !self->win_->IsClosed()) {
+          self->win_->Close();
+        }
+      }), 1500);
+    } else {
+      window->Close();
+    }
+  }
+
+  void OnWindowDestroyed(CefRefPtr<CefWindow> window) override {
+    view_ = nullptr;
+    browser_ = nullptr;
+    win_ = nullptr;
+  }
+
+private:
+  CefRefPtr<CefBrowserView> view_;
+  CefRefPtr<CefBrowser> browser_;
+  CefRefPtr<CefWindow> win_;
+  IMPLEMENT_REFCOUNTING(TabReaperWindowDelegate);
 };
 
 class ChromeViewClient : public CefClient,
@@ -271,6 +313,10 @@ KajoBrowserWindow::KajoBrowserWindow(const LaunchConfig& cfg,
 }
 
 KajoBrowserWindow::~KajoBrowserWindow() {
+  if (ipc_server_) {
+    ipc_server_->Stop();
+    ipc_server_.reset();
+  }
   ++push_gen_;
   ++rail_hover_gen_;
   ++topbar_hover_gen_;
@@ -302,7 +348,7 @@ void KajoBrowserWindow::InitBackend() {
   if (KajoWebProfileInfo* p = web_profile_registry_find(profiles_, cfg_.profile_id.c_str())) {
     profile_name_ = p->name ? p->name : "DEFAULT";
     profile_icon_ = p->icon ? p->icon : "🌐";
-    profile_accent_ = p->accent_color ? p->accent_color : "#0078d4";
+    profile_accent_ = SanitizeHexColor(p->accent_color ? p->accent_color : "#0078d4", "#0078d4");
   }
 
   ReloadThemeAndConfig();
@@ -412,10 +458,19 @@ void KajoBrowserWindow::ReloadThemeAndConfig() {
   if (!cs) return;
 
   if (const KajoThemeCfg* t = kajo_config_store_acquire_theme(cs)) {
-    accent_color_ = t->accent_color ? t->accent_color : "#0078d4";
+    accent_color_ = SanitizeHexColor(t->accent_color ? t->accent_color : "#0078d4", "#0078d4");
     ui_font_family_ = t->ui_font_family ? t->ui_font_family : "Fira Code";
-    ui_font_size_px_ = CLAMP(t->ui_font_size_px, 11, 18);
-    badge_size_px_ = CLAMP(t->font_badge_size_px, 9, 15);
+    ui_font_size_px_ = CLAMP(t->ui_font_size_px, 11, 20);
+    heading_size_px_ = CLAMP(t->font_heading_size_px, 10, 18);
+    sub_size_px_ = CLAMP(t->font_subtitle_size_px, 10, 18);
+    badge_size_px_ = CLAMP(t->font_badge_size_px, 9, 16);
+    const cef_color_t surf = ParseHexColorArgb(
+        t->surface_base ? t->surface_base : "#141414",
+        CefColorSetARGB(255, 0x14, 0x14, 0x14));
+    const double lum = (0.2126 * CefColorGetR(surf) +
+                        0.7152 * CefColorGetG(surf) +
+                        0.0722 * CefColorGetB(surf)) / 255.0;
+    kajo_theme_is_light_ = (lum > 0.5);
     kajo_theme_cfg_unref(t);
   }
 
@@ -492,7 +547,7 @@ void KajoBrowserWindow::PersistTopbarMode(int mode) {
 
 void KajoBrowserWindow::UpdateWindowBorderColor() {
   if (!window_) return;
-  if (web_fullscreen_) {
+  if (IsFullscreen()) {
     window_->SetBackgroundColor(CefColorSetARGB(255, 0, 0, 0));
     return;
   }
@@ -508,7 +563,8 @@ void KajoBrowserWindow::UpdateWindowBorderColor() {
 void KajoBrowserWindow::ApplyColorSchemeToContext() {
   if (!request_context_) return;
   cef_color_variant_t variant = CEF_COLOR_VARIANT_DARK;
-  if (color_scheme_ == KAJO_WEB_SCHEME_LIGHT) {
+  if (color_scheme_ == KAJO_WEB_SCHEME_LIGHT ||
+      (color_scheme_ == KAJO_WEB_SCHEME_FOLLOW_KAJO && kajo_theme_is_light_)) {
     variant = CEF_COLOR_VARIANT_LIGHT;
   }
   const cef_color_t tint = ParseHexColorArgb(
@@ -578,6 +634,12 @@ void KajoBrowserWindow::ShowWindow() {
   }
   PushStateImmediate();
   window_ = CefWindow::CreateTopLevelWindow(this);
+  if (!window_ && config_sub_id_) {
+    if (auto* cs = kajo_config_store_get_default()) {
+      kajo_config_store_unsubscribe(cs, config_sub_id_);
+    }
+    config_sub_id_ = 0;
+  }
 }
 
 void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
@@ -651,7 +713,21 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   UpdateOverlayBounds();
   ScheduleIdleSuspendTimer();
 
-  /* Open CLI URLs, saved session, or default New Tab */
+  if (!cfg_.private_mode) {
+    ipc_server_ = std::make_unique<ProfileIpcServer>();
+    CefRefPtr<KajoBrowserWindow> self(this);
+    const std::string subdir =
+        (cfg_.profile_id.empty() || cfg_.profile_id == "default")
+            ? "default"
+            : cfg_.profile_id;
+    ipc_server_->Start(ProfileIpcSocketPath(subdir), [self](std::vector<std::string> urls) {
+      CefPostTask(TID_UI, new UiTask([self, u = std::move(urls)]() {
+        if (!self->closing_) self->HandleExternalOpen(u);
+      }));
+    });
+  }
+
+  /* Open CLI URLs, saved session (lazy-restoring inactive tabs as suspended), or default New Tab */
   if (!cfg_.initial_urls.empty()) {
     for (size_t i = 0; i < cfg_.initial_urls.size(); ++i) {
       const std::string& raw = cfg_.initial_urls[i];
@@ -670,18 +746,40 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   } else if (!cfg_.private_mode && restore_session_ && storage_) {
     KajoWebModel* saved = web_model_new();
     if (web_storage_load_session(storage_, saved) && saved->tabs->len > 0) {
-      guint64 target_active = 0;
+      const gint64 now = g_get_monotonic_time();
+      uint64_t target_saved_id = saved->active_id;
+      if (target_saved_id == 0) {
+        target_saved_id = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(saved->tabs, 0))->id;
+      }
+      uint64_t target_active = 0;
       for (guint i = 0; i < saved->tabs->len; ++i) {
         const auto* st = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(saved->tabs, i));
-        const bool is_active = (st->id == saved->active_id);
-        uint64_t new_id = OpenNewTab(st->uri ? st->uri : DefaultNewTabUrl(), is_active,
-                                     st->group ? st->group : "");
-        if (new_id) {
-          if (st->pinned) web_model_set_pinned(model_, new_id, true);
-          if (is_active) target_active = new_id;
+        const bool is_active = (st->id == target_saved_id);
+        const std::string uri = st->uri ? st->uri : DefaultNewTabUrl();
+        const std::string title = (st->title && st->title[0]) ? st->title : uri;
+        KajoWebTabMeta* tm = web_model_add_tab_ex(
+            model_, uri.c_str(), title.c_str(),
+            st->group, st->pinned, is_active, now);
+        if (tm) {
+          if (st->favicon_url && st->favicon_url[0] != '\0') {
+            web_model_set_tab_favicon(model_, tm->id, st->favicon_url);
+          }
+          if (is_active) {
+            AttachTabView(tm->id, uri, true);
+            target_active = tm->id;
+          } else {
+            tm->suspended = TRUE;
+          }
         }
       }
+      if (!target_active && model_->tabs->len > 0) {
+        auto* first = static_cast<KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, 0));
+        first->suspended = FALSE;
+        AttachTabView(first->id, first->uri ? first->uri : DefaultNewTabUrl(), true);
+        target_active = first->id;
+      }
       if (target_active) ActivateTab(target_active);
+      PushStateToChrome();
     } else {
       OpenNewTab(DefaultNewTabUrl(), true);
     }
@@ -709,24 +807,28 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
 }
 
 int KajoBrowserWindow::CurrentDockedRailWidth() const {
-  if (web_fullscreen_) return 0;
+  if (IsFullscreen()) return 0;
   if (rail_mode_ == KAJO_WEB_RAIL_PINNED) return rail_width_px_;
-  if (rail_mode_ == KAJO_WEB_RAIL_COMPACT) return 44;
+  if (rail_mode_ == KAJO_WEB_RAIL_COMPACT) {
+    return ComputeChromeUiMetrics(ui_font_size_px_).compact_rail_width_px;
+  }
   return 0;
 }
 
 int KajoBrowserWindow::CurrentRailOverlayWidth() const {
-  if (web_fullscreen_) return 0;
+  if (IsFullscreen()) return 0;
   if (rail_mode_ == KAJO_WEB_RAIL_PINNED) return rail_width_px_;
-  if (rail_mode_ == KAJO_WEB_RAIL_COMPACT) return rail_hover_open_ ? rail_width_px_ : 44;
+  if (rail_mode_ == KAJO_WEB_RAIL_COMPACT) {
+    return rail_hover_open_ ? rail_width_px_ : ComputeChromeUiMetrics(ui_font_size_px_).compact_rail_width_px;
+  }
   return rail_hover_open_ ? rail_width_px_ : 8;
 }
 
 int KajoBrowserWindow::CurrentTopbarHeight() const {
-  if (web_fullscreen_) return 0;
+  if (IsFullscreen()) return 0;
   if (topbar_mode_ == KAJO_WEB_TOPBAR_ALWAYS ||
       topbar_hover_open_ || topbar_focused_ || ac_visible_ || !overlay_mode_.empty()) {
-    return 34;
+    return ComputeChromeUiMetrics(ui_font_size_px_).topbar_height_px;
   }
   return 6;
 }
@@ -746,7 +848,7 @@ CefSize KajoBrowserWindow::GetPreferredChromeViewSize(CefRefPtr<CefView> view) c
     return w > 0 ? CefSize(w, 100) : CefSize(1, 1);
   }
   if (infobar_view_ && view->IsSame(infobar_view_)) {
-    return CefSize(100, 38);
+    return CefSize(100, ComputeChromeUiMetrics(ui_font_size_px_).infobar_height_px);
   }
   if (overlay_view_ && view->IsSame(overlay_view_)) {
     return CefSize(100, 100);
@@ -802,16 +904,17 @@ void KajoBrowserWindow::RebuildLayout() {
 
 void KajoBrowserWindow::ApplyTopbarSizing() {
   if (!topbar_view_ || !window_) return;
-  topbar_view_->SetVisible(!web_fullscreen_);
+  topbar_view_->SetVisible(!IsFullscreen());
   topbar_view_->InvalidateLayout();
   window_->Layout();
+  ApplyDraggableRegions();
   UpdateOverlayBounds();
 }
 
 void KajoBrowserWindow::ApplyRailSizing() {
   if (!rail_spacer_ || !window_) return;
   const int w = CurrentDockedRailWidth();
-  rail_spacer_->SetVisible(!web_fullscreen_ && w > 0);
+  rail_spacer_->SetVisible(!IsFullscreen() && w > 0);
   rail_spacer_->InvalidateLayout();
   body_panel_->Layout();
   window_->Layout();
@@ -828,7 +931,7 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
 
   if (rail_ctrl_) {
     const int w = CurrentRailOverlayWidth();
-    if (web_fullscreen_ || w <= 0) {
+    if (IsFullscreen() || w <= 0) {
       rail_ctrl_->SetVisible(false);
     } else {
       const int y = b + top_h;
@@ -840,20 +943,20 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
   }
 
   if (infobar_ctrl_) {
-    if (pending_permissions_.empty() || web_fullscreen_) {
+    if (pending_permissions_.empty() || IsFullscreen()) {
       infobar_ctrl_->SetVisible(false);
     } else {
       const int rw = CurrentDockedRailWidth();
       const int x = b + (rail_side_ == KAJO_WEB_SIDE_LEFT ? rw : 0);
       const int w = std::max(240, inner_w - rw);
       const int y = b + top_h;
-      infobar_ctrl_->SetBounds(CefRect(x, y, w, 38));
+      infobar_ctrl_->SetBounds(CefRect(x, y, w, ComputeChromeUiMetrics(ui_font_size_px_).infobar_height_px));
       infobar_ctrl_->SetVisible(true);
     }
   }
 
   if (ac_ctrl_) {
-    if (!ac_visible_ || web_fullscreen_) {
+    if (!ac_visible_ || IsFullscreen()) {
       ac_ctrl_->SetVisible(false);
     } else {
       int rw = CurrentDockedRailWidth();
@@ -866,12 +969,15 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
   }
 
   if (overlay_ctrl_) {
-    if (overlay_mode_.empty() || web_fullscreen_) {
+    if (overlay_mode_.empty() || IsFullscreen()) {
       overlay_ctrl_->SetVisible(false);
     } else {
       CefRect ob;
       if (overlay_mode_ == "find") {
-        ob = CefRect(std::max(b + 12, wb.width - b - 392), b + top_h + 6, 380, 44);
+        ob = CefRect(std::max(b + 12, wb.width - b - 392),
+                     b + top_h + 6,
+                     380,
+                     ComputeChromeUiMetrics(ui_font_size_px_).findbar_height_px);
       } else if (overlay_mode_ == "bookmark") {
         int w = std::min(380, wb.width - 24);
         ob = CefRect(std::max(b + 12, wb.width - b - w - 160), b + top_h + 1, w, 246);
@@ -917,6 +1023,10 @@ bool KajoBrowserWindow::CanClose(CefRefPtr<CefWindow> window) {
 
 void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
   closing_ = true;
+  if (ipc_server_) {
+    ipc_server_->Stop();
+    ipc_server_.reset();
+  }
   ++push_gen_;
   ++rail_hover_gen_;
   ++topbar_hover_gen_;
@@ -1005,6 +1115,28 @@ void KajoBrowserWindow::OnWindowDestroyed(CefRefPtr<CefWindow> window) {
   CefQuitMessageLoop();
 }
 
+void KajoBrowserWindow::OnWindowActivationChanged(CefRefPtr<CefWindow> window, bool active) {
+  if (closing_) return;
+  const gint64 now = g_get_monotonic_time();
+  if (!active) {
+    window_active_ = false;
+    window_inactive_since_us_ = now;
+    if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+      act->last_active_us = now;
+    }
+    return;
+  }
+  window_active_ = true;
+  window_inactive_since_us_ = 0;
+  if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+    if (act->suspended) {
+      ActivateTab(act->id);
+    } else {
+      act->last_active_us = now;
+    }
+  }
+}
+
 void KajoBrowserWindow::OnChromeBrowserCreated(int role, CefRefPtr<CefBrowser> browser) {
   if (role == ROLE_TOPBAR) topbar_browser_ = browser;
   else if (role == ROLE_RAIL) rail_browser_ = browser;
@@ -1014,16 +1146,18 @@ void KajoBrowserWindow::OnChromeBrowserCreated(int role, CefRefPtr<CefBrowser> b
   PushStateImmediate();
 }
 
-void KajoBrowserWindow::OnChromeDraggableRegions(const std::vector<CefDraggableRegion>& regions) {
+void KajoBrowserWindow::ApplyDraggableRegions() {
   if (!window_ || !topbar_view_) return;
-  if (web_fullscreen_ ||
-      (topbar_mode_ == KAJO_WEB_TOPBAR_AUTOHIDE && !topbar_hover_open_ && !topbar_focused_)) {
+  if (IsFullscreen() ||
+      (topbar_mode_ == KAJO_WEB_TOPBAR_AUTOHIDE && !topbar_hover_open_ && !topbar_focused_ &&
+       !ac_visible_ && overlay_mode_.empty())) {
     window_->SetDraggableRegions({});
     return;
   }
+  if (cached_topbar_drag_regions_.empty()) return;
   std::vector<CefDraggableRegion> mapped;
-  mapped.reserve(regions.size());
-  for (const auto& r : regions) {
+  mapped.reserve(cached_topbar_drag_regions_.size());
+  for (const auto& r : cached_topbar_drag_regions_) {
     CefDraggableRegion out = r;
     CefPoint pt(r.bounds.x, r.bounds.y);
     if (topbar_view_->ConvertPointToWindow(pt)) {
@@ -1035,6 +1169,11 @@ void KajoBrowserWindow::OnChromeDraggableRegions(const std::vector<CefDraggableR
   window_->SetDraggableRegions(mapped);
 }
 
+void KajoBrowserWindow::OnChromeDraggableRegions(const std::vector<CefDraggableRegion>& regions) {
+  cached_topbar_drag_regions_ = regions;
+  ApplyDraggableRegions();
+}
+
 bool KajoBrowserWindow::OnChromeShortcut(const CefKeyEvent& event) {
   return OnTabShortcut(model_ ? model_->active_id : 0, event);
 }
@@ -1043,6 +1182,11 @@ void KajoBrowserWindow::AttachTabView(uint64_t tab_id, const std::string& target
   std::string preserved_favicon;
   if (auto it = tabs_.find(tab_id); it != tabs_.end()) {
     preserved_favicon = it->second.favicon_url;
+  }
+  if (preserved_favicon.empty() && model_) {
+    if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+      if (t->favicon_url) preserved_favicon = t->favicon_url;
+    }
   }
   TabEntry entry;
   entry.id = tab_id;
@@ -1076,9 +1220,9 @@ uint64_t KajoBrowserWindow::OpenNewTab(const std::string& url,
                                        bool foreground,
                                        const std::string& group) {
   const std::string target = url.empty() ? DefaultNewTabUrl() : url;
-  KajoWebTabMeta* meta = web_model_add_tab(
+  KajoWebTabMeta* meta = web_model_add_tab_ex(
       model_, target.c_str(), "Loading...",
-      group.empty() ? nullptr : group.c_str(), FALSE, g_get_monotonic_time());
+      group.empty() ? nullptr : group.c_str(), FALSE, foreground, g_get_monotonic_time());
   if (!meta) return 0;
   AttachTabView(meta->id, target, foreground);
   return meta->id;
@@ -1105,33 +1249,59 @@ void KajoBrowserWindow::ActivateTab(uint64_t tab_id) {
   PushStateImmediate();
 }
 
+void KajoBrowserWindow::DestroyTabView(CefRefPtr<CefBrowserView> view,
+                                       CefRefPtr<CefBrowser> browser,
+                                       CefRefPtr<CefTabClient> client) {
+  if (client) client->DetachCallbacks();
+  if (!browser && view) browser = view->GetBrowser();
+  if (content_panel_ && view) {
+    content_panel_->RemoveChildView(view);
+  }
+  if (closing_) {
+    view = nullptr;
+    if (browser && browser->GetHost()) {
+      browser->GetHost()->CloseBrowser(true);
+    }
+    return;
+  }
+  if (view) {
+    CefRefPtr<TabReaperWindowDelegate> reaper(
+        new TabReaperWindowDelegate(std::move(view), std::move(browser)));
+    CefRefPtr<CefWindow> rw = CefWindow::CreateTopLevelWindow(reaper);
+    if (!rw && browser && browser->GetHost()) {
+      browser->GetHost()->CloseBrowser(true);
+    }
+  } else if (browser && browser->GetHost()) {
+    browser->GetHost()->CloseBrowser(true);
+  }
+}
+
 void KajoBrowserWindow::CloseTab(uint64_t tab_id) {
-  if (!model_) return;
+  if (!model_ || closing_) return;
+  const bool was_active = (model_->active_id == tab_id);
   CancelPermissionsForTab(tab_id);
+  if (adblock_) adblock_->RemoveTabBlockedCount(static_cast<int>(tab_id));
   auto it = tabs_.find(tab_id);
   if (it != tabs_.end()) {
     CefRefPtr<CefBrowserView> v = it->second.view;
     CefRefPtr<CefBrowser> b = it->second.browser;
-    if (it->second.client) it->second.client->DetachCallbacks();
+    CefRefPtr<CefTabClient> c = it->second.client;
     tabs_.erase(it);
-    if (content_panel_ && v) {
-      content_panel_->RemoveChildView(v);
-    }
-    v = nullptr;
-    if (b && b->GetHost()) {
-      b->GetHost()->CloseBrowser(true);
-    }
-    b = nullptr;
+    DestroyTabView(std::move(v), std::move(b), std::move(c));
   }
 
   web_model_close_tab(model_, tab_id);
   if (model_->tabs->len == 0) {
     OpenNewTab(DefaultNewTabUrl(), true);
-  } else {
+  } else if (was_active) {
     ActivateTab(model_->active_id);
   }
   PersistSession();
   PushStateToChrome();
+}
+
+void KajoBrowserWindow::OnTabRequestClose(uint64_t tab_id) {
+  if (!closing_) CloseTab(tab_id);
 }
 
 void KajoBrowserWindow::ReopenClosedTab() {
@@ -1150,36 +1320,45 @@ void KajoBrowserWindow::DuplicateTab(uint64_t tab_id) {
   if (!src) return;
   const std::string uri = src->uri ? src->uri : DefaultNewTabUrl();
   const std::string grp = src->group ? src->group : "";
-  OpenNewTab(uri, true, grp);
+  std::string fav = src->favicon_url ? src->favicon_url : "";
+  if (fav.empty()) {
+    if (TabEntry* se = FindEntry(tab_id)) fav = se->favicon_url;
+  }
+  const uint64_t new_id = OpenNewTab(uri, true, grp);
+  if (new_id && !fav.empty()) {
+    web_model_set_tab_favicon(model_, new_id, fav.c_str());
+    if (TabEntry* ne = FindEntry(new_id)) ne->favicon_url = fav;
+  }
   PersistSession();
 }
 
-bool KajoBrowserWindow::SuspendTab(uint64_t tab_id, bool manual) {
+bool KajoBrowserWindow::SuspendTab(uint64_t tab_id,
+                                   bool manual,
+                                   bool allow_inactive_window_active) {
   if (!model_ || closing_) return false;
   KajoWebTabMeta* t = web_model_find_tab(model_, tab_id);
-  if (!t || t->id == model_->active_id || t->suspended || t->capture_active) return false;
-  if (!manual && !web_model_can_suspend(model_, t, suspend_idle_min_, g_get_monotonic_time())) {
+  if (!t || t->suspended || t->capture_active || t->download_active) {
+    return false;
+  }
+  if (t->id == model_->active_id && !(allow_inactive_window_active && !window_active_)) {
+    return false;
+  }
+  if (!manual && !allow_inactive_window_active &&
+      !web_model_can_suspend(model_, t, suspend_idle_min_, g_get_monotonic_time())) {
     return false;
   }
   CancelPermissionsForTab(tab_id);
   if (auto it = tabs_.find(tab_id); it != tabs_.end()) {
     CefRefPtr<CefBrowserView> v = it->second.view;
     CefRefPtr<CefBrowser> b = it->second.browser;
-    if (it->second.client) it->second.client->DetachCallbacks();
+    CefRefPtr<CefTabClient> c = it->second.client;
     it->second.client = nullptr;
     it->second.view = nullptr;
     it->second.browser = nullptr;
     it->second.can_go_back = false;
     it->second.can_go_forward = false;
     it->second.media.clear();
-    if (content_panel_ && v) {
-      content_panel_->RemoveChildView(v);
-    }
-    v = nullptr;
-    if (b && b->GetHost()) {
-      b->GetHost()->CloseBrowser(true);
-    }
-    b = nullptr;
+    DestroyTabView(std::move(v), std::move(b), std::move(c));
   }
   t->suspended = TRUE;
   t->loading = FALSE;
@@ -1200,6 +1379,18 @@ void KajoBrowserWindow::SweepIdleTabs() {
   bool any = false;
   for (uint64_t tid : to_suspend) {
     if (SuspendTab(tid, false)) any = true;
+  }
+  if (!window_active_ && window_inactive_since_us_ > 0) {
+    const gint64 threshold_us = static_cast<gint64>(suspend_idle_min_) * 60 * G_USEC_PER_SEC;
+    if ((now - window_inactive_since_us_) >= threshold_us) {
+      if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+        if (!act->suspended && !act->pinned && !act->audible && !act->capture_active &&
+            !act->download_active && !(act->uri && g_str_has_prefix(act->uri, "kajo://")) &&
+            (now - act->last_active_us) >= threshold_us) {
+          if (SuspendTab(act->id, false, true)) any = true;
+        }
+      }
+    }
   }
   if (any) PushStateToChrome();
 }
@@ -1557,11 +1748,26 @@ void KajoBrowserWindow::HandleFilterListDownloadComplete(const std::string& id,
                                                        const std::string& body) {
   if (closing_) return;
   if (ok && !body.empty() && adblock_) {
-    if (adblock_->WriteListFileOnly(id, body)) {
-      ++filter_updates_ok_;
-    } else {
-      ++filter_updates_failed_;
-    }
+    CefRefPtr<KajoBrowserWindow> self(this);
+    std::shared_ptr<CefAdblockEngine> eng = adblock_;
+    std::string body_copy = body;
+    CefPostTask(TID_FILE_USER_VISIBLE, new UiTask([self, eng, id, body_copy, http_status]() {
+      const bool wrote = eng ? eng->WriteListFileOnly(id, body_copy) : false;
+      CefPostTask(TID_UI, new UiTask([self, id, wrote, http_status]() {
+        self->FinishFilterListWriteOnUi(id, wrote, http_status);
+      }));
+    }));
+    return;
+  }
+  FinishFilterListWriteOnUi(id, false, http_status);
+}
+
+void KajoBrowserWindow::FinishFilterListWriteOnUi(const std::string& id,
+                                                  bool wrote_ok,
+                                                  int http_status) {
+  if (closing_) return;
+  if (wrote_ok) {
+    ++filter_updates_ok_;
   } else {
     ++filter_updates_failed_;
     if (http_status > 0) {
@@ -1672,9 +1878,15 @@ void KajoBrowserWindow::PushStateImmediate() {
   s.profile_id = cfg_.profile_id;
   s.profile_name = profile_name_;
   s.profile_icon = profile_icon_;
+  const ChromeUiMetrics metrics = ComputeChromeUiMetrics(ui_font_size_px_);
   s.ui_font_family = ui_font_family_;
   s.ui_font_size_px = ui_font_size_px_;
+  s.heading_size_px = heading_size_px_;
+  s.sub_size_px = sub_size_px_;
   s.badge_size_px = badge_size_px_;
+  s.topbar_height_px = metrics.topbar_height_px;
+  s.control_height_px = metrics.control_height_px;
+  s.icon_size_px = metrics.icon_size_px;
   s.hw_accel_enabled = cfg_.hw_accel_enabled;
   s.widevine_available = cfg_.widevine_available;
   s.widevine_path = cfg_.widevine_path;
@@ -1700,10 +1912,13 @@ void KajoBrowserWindow::PushStateImmediate() {
     s.can_go_back = act_e->can_go_back;
     s.can_go_forward = act_e->can_go_forward;
     s.media_streams = act_e->media;
+    s.default_zoom_pct = default_zoom_pct_;
     if (act_e->browser && act_e->browser->GetHost()) {
       double zl = act_e->browser->GetHost()->GetZoomLevel();
       s.zoom_pct = static_cast<int>(100.0 * pow(1.2, zl) + 0.5);
     }
+  } else {
+    s.default_zoom_pct = default_zoom_pct_;
   }
   if (storage_ && !s.active_url.empty()) {
     s.is_bookmarked = web_storage_is_bookmarked(storage_, s.active_url.c_str(), nullptr);
@@ -1738,7 +1953,13 @@ void KajoBrowserWindow::PushStateImmediate() {
     g_autofree gchar* dom = web_model_extract_host(tv.url.c_str());
     tv.domain = dom ? dom : "";
     tv.group = t->group ? t->group : "";
-    if (TabEntry* e = FindEntry(t->id)) tv.favicon_url = e->favicon_url;
+    if (TabEntry* e = FindEntry(t->id); e && !e->favicon_url.empty()) {
+      tv.favicon_url = e->favicon_url;
+    } else if (t->favicon_url && t->favicon_url[0] != '\0') {
+      tv.favicon_url = t->favicon_url;
+    } else {
+      tv.favicon_url = DeriveOriginFaviconFallback(tv.url);
+    }
     tv.pinned = t->pinned;
     tv.active = (t->id == model_->active_id);
     tv.loading = t->loading;
@@ -1808,6 +2029,10 @@ void KajoBrowserWindow::PushStateImmediate() {
   const std::string json = store_->SnapshotJson();
   const std::string js = "window.__kajoApply && window.__kajoApply(" + json + ");";
 
+  const bool inf_vis = !pending_permissions_.empty() && !IsFullscreen();
+  const bool ov_vis = !overlay_mode_.empty() && !IsFullscreen();
+  const bool ac_vis = ac_visible_ && !IsFullscreen();
+
   auto push_to = [&js](CefRefPtr<CefBrowser> b) {
     if (b && b->GetMainFrame()) {
       b->GetMainFrame()->ExecuteJavaScript(js, b->GetMainFrame()->GetURL(), 0);
@@ -1815,9 +2040,12 @@ void KajoBrowserWindow::PushStateImmediate() {
   };
   push_to(topbar_browser_);
   push_to(rail_browser_);
-  push_to(infobar_browser_);
-  push_to(overlay_browser_);
-  push_to(ac_browser_);
+  if (inf_vis || last_infobar_visible_) push_to(infobar_browser_);
+  if (ov_vis || last_overlay_visible_) push_to(overlay_browser_);
+  if (ac_vis || last_ac_visible_) push_to(ac_browser_);
+  last_infobar_visible_ = inf_vis;
+  last_overlay_visible_ = ov_vis;
+  last_ac_visible_ = ac_vis;
 
   const std::string dl_js = "window.__kajoDlUpdate && window.__kajoDlUpdate(" + json + ");";
   for (const auto& kv : tabs_) {
@@ -1828,6 +2056,70 @@ void KajoBrowserWindow::PushStateImmediate() {
           dl_js, kv.second.browser->GetMainFrame()->GetURL(), 0);
     }
   }
+}
+
+double KajoBrowserWindow::DefaultZoomLevel() const {
+  if (default_zoom_pct_ == 100) return 0.0;
+  return log(default_zoom_pct_ / 100.0) / log(1.2);
+}
+
+bool KajoBrowserWindow::IsKnownDownloadPath(const std::string& path) const {
+  if (path.empty() || path[0] != '/') return false;
+  for (const auto& d : downloads_) {
+    if (!d.full_path.empty() && d.full_path == path) return true;
+  }
+  return false;
+}
+
+void KajoBrowserWindow::RemoveDownload(uint32_t did, int64_t db_id, bool cancel_active) {
+  if (did != 0) {
+    dismissed_downloads_.insert(did);
+    auto cb_it = download_callbacks_.find(did);
+    if (cb_it != download_callbacks_.end()) {
+      if (cancel_active && cb_it->second) cb_it->second->Cancel();
+      download_callbacks_.erase(cb_it);
+    }
+    active_download_tabs_.erase(did);
+  }
+  downloads_.erase(
+      std::remove_if(downloads_.begin(), downloads_.end(),
+                     [did, db_id](const ChromeDownloadView& d) {
+                       if (did != 0 && d.id == did) return true;
+                       if (db_id > 0 && d.db_id == db_id) return true;
+                       return false;
+                     }),
+      downloads_.end());
+  if (model_) {
+    std::set<uint64_t> busy_tabs;
+    for (const auto& kv : active_download_tabs_) busy_tabs.insert(kv.second);
+    for (guint i = 0; i < model_->tabs->len; ++i) {
+      auto* t = static_cast<KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, i));
+      t->download_active = busy_tabs.count(t->id) ? TRUE : FALSE;
+    }
+  }
+  if (db_id > 0 && storage_ && !cfg_.private_mode) {
+    web_storage_delete_download(storage_, db_id);
+  }
+}
+
+void KajoBrowserWindow::HandleExternalOpen(const std::vector<std::string>& urls) {
+  if (closing_) return;
+  for (size_t i = 0; i < urls.size(); ++i) {
+    const std::string& raw = urls[i];
+    if (raw.empty()) continue;
+    std::string target;
+    if (raw.rfind("chrome://", 0) == 0 || raw.rfind("devtools://", 0) == 0) {
+      target = raw;
+    } else {
+      g_autofree gchar* resolved = web_model_resolve_input(
+          raw.c_str(),
+          static_cast<KajoWebSearchEngine>(search_engine_),
+          search_custom_url_.empty() ? nullptr : search_custom_url_.c_str());
+      target = resolved ? resolved : raw;
+    }
+    OpenNewTab(target, true);
+  }
+  if (window_) window_->Activate();
 }
 
 bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
@@ -1870,7 +2162,10 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
   if (cmd == "get_state") {
     callback->Success(store_->SnapshotJson());
     return true;
-  } else if (cmd == "back") {
+  }
+  window_active_ = true;
+  window_inactive_since_us_ = 0;
+  if (cmd == "back") {
     if (TabEntry* e = ActiveEntry()) { if (e->browser) e->browser->GoBack(); }
   } else if (cmd == "forward") {
     if (TabEntry* e = ActiveEntry()) { if (e->browser) e->browser->GoForward(); }
@@ -2219,8 +2514,9 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     NavigateActive(get_str("page"));
   } else if (cmd == "play_in_kajo_player") {
     const std::string uri = get_str("uri");
-    if (!uri.empty()) {
-      const char* argv[] = {"kajo-player", uri.c_str(), nullptr};
+    if (uri.rfind("http://", 0) == 0 || uri.rfind("https://", 0) == 0 ||
+        uri.rfind("file://", 0) == 0) {
+      const char* argv[] = {"kajo-player", "--", uri.c_str(), nullptr};
       kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
     }
   } else if (cmd == "download_media_uri") {
@@ -2258,7 +2554,7 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     }
   } else if (cmd == "open_download_file") {
     const std::string path = get_str("path");
-    if (!path.empty() && g_file_test(path.c_str(), G_FILE_TEST_EXISTS)) {
+    if (IsKnownDownloadPath(path) && g_file_test(path.c_str(), G_FILE_TEST_EXISTS)) {
       g_autofree gchar* uri = g_filename_to_uri(path.c_str(), nullptr, nullptr);
       g_autoptr(GError) err = nullptr;
       if (!uri || !g_app_info_launch_default_for_uri(uri, nullptr, &err)) {
@@ -2268,9 +2564,16 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     }
   } else if (cmd == "open_download_folder") {
     const std::string path = get_str("path");
-    g_autofree gchar* dir = path.empty() ? g_strdup(download_dir_.c_str()) : g_path_get_dirname(path.c_str());
-    const char* argv[] = {"kajo-files", dir, nullptr};
-    kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    g_autofree gchar* dir = nullptr;
+    if (path.empty()) {
+      dir = g_strdup(download_dir_.c_str());
+    } else if (IsKnownDownloadPath(path)) {
+      dir = g_path_get_dirname(path.c_str());
+    }
+    if (dir && dir[0] != '\0') {
+      const char* argv[] = {"kajo-files", "--", dir, nullptr};
+      kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    }
   } else if (cmd == "retry_download") {
     const std::string url = get_str("url");
     if (!url.empty()) {
@@ -2281,21 +2584,7 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
   } else if (cmd == "remove_download") {
     uint32_t did = static_cast<uint32_t>(get_int("id"));
     int64_t db_id = get_int("db_id");
-    if (did != 0) {
-      auto cb_it = download_callbacks_.find(did);
-      if (cb_it != download_callbacks_.end() && cb_it->second) cb_it->second->Cancel();
-    }
-    downloads_.erase(
-        std::remove_if(downloads_.begin(), downloads_.end(),
-                       [did, db_id](const ChromeDownloadView& d) {
-                         if (did != 0 && d.id == did) return true;
-                         if (db_id > 0 && d.db_id == db_id) return true;
-                         return false;
-                       }),
-        downloads_.end());
-    if (db_id > 0 && storage_ && !cfg_.private_mode) {
-      web_storage_delete_download(storage_, db_id);
-    }
+    RemoveDownload(did, db_id, true);
     PushStateImmediate();
   } else if (cmd == "clear_finished_downloads") {
     downloads_.erase(
@@ -2349,7 +2638,8 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     }
   } else if (cmd == "delete_profile") {
     const std::string pid = get_str("id");
-    if (IsSafeProfileSlug(pid) && pid != cfg_.profile_id && profiles_) {
+    if (IsSafeProfileSlug(pid) && pid != cfg_.profile_id && profiles_ &&
+        !IsProfileInstanceRunning(pid)) {
       if (web_profile_registry_remove(profiles_, pid.c_str())) {
         g_autofree gchar* reg_path = g_build_filename(
             g_get_user_data_dir(), "kajo", "web", "profiles.toml", nullptr);
@@ -2358,15 +2648,21 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
             g_get_user_data_dir(), "kajo", "web-cef", pid.c_str(), nullptr);
         g_autofree gchar* pcache = g_build_filename(
             g_get_user_cache_dir(), "kajo", "web-cef", pid.c_str(), nullptr);
-        std::error_code ec;
-        if (pdata) std::filesystem::remove_all(pdata, ec);
-        if (pcache) std::filesystem::remove_all(pcache, ec);
+        std::string pdata_s = pdata ? pdata : "";
+        std::string pcache_s = pcache ? pcache : "";
+        CefPostTask(TID_FILE_USER_VISIBLE, new UiTask([pdata_s, pcache_s]() {
+          std::error_code ec;
+          if (!pdata_s.empty()) std::filesystem::remove_all(pdata_s, ec);
+          if (!pcache_s.empty()) std::filesystem::remove_all(pcache_s, ec);
+        }));
         PushStateImmediate();
       }
     }
   } else if (cmd == "zoom_reset") {
     if (TabEntry* e = ActiveEntry()) {
-      if (e->browser && e->browser->GetHost()) e->browser->GetHost()->SetZoomLevel(0.0);
+      if (e->browser && e->browser->GetHost()) {
+        e->browser->GetHost()->SetZoomLevel(DefaultZoomLevel());
+      }
       PushStateImmediate();
     }
   } else if (cmd == "open_settings") {
@@ -2464,11 +2760,11 @@ bool KajoBrowserWindow::OnAccelerator(CefRefPtr<CefWindow> window, int command_i
       return true;
     }
     case ACCEL_FULLSCREEN:
-      web_fullscreen_ = !web_fullscreen_;
+      user_fullscreen_ = !user_fullscreen_;
       if (window_) {
-        window_->SetFullscreen(web_fullscreen_);
-        if (web_fullscreen_) window_->SetDraggableRegions({});
+        window_->SetFullscreen(IsFullscreen());
       }
+      ApplyDraggableRegions();
       RebuildLayout();
       UpdateOverlayBounds();
       return true;
@@ -2496,19 +2792,19 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
 
   if (ctrl && !alt) {
     if (vk == 'T') return OnAccelerator(window_, shift ? ACCEL_REOPEN_TAB : ACCEL_NEW_TAB);
-    if (vk == 'W') return OnAccelerator(window_, ACCEL_CLOSE_TAB);
-    if (vk == 'L') return OnAccelerator(window_, ACCEL_FOCUS_OMNIBAR);
-    if (vk == 'K') return OnAccelerator(window_, ACCEL_PALETTE);
-    if (vk == 'F') return OnAccelerator(window_, ACCEL_FIND);
+    if (vk == 'W' && !shift) return OnAccelerator(window_, ACCEL_CLOSE_TAB);
+    if (vk == 'L' && !shift) return OnAccelerator(window_, ACCEL_FOCUS_OMNIBAR);
+    if (vk == 'K' && !shift) return OnAccelerator(window_, ACCEL_PALETTE);
+    if (vk == 'F' && !shift) return OnAccelerator(window_, ACCEL_FIND);
     if (vk == 'R') return OnAccelerator(window_, shift ? ACCEL_HARD_RELOAD : ACCEL_RELOAD);
-    if (vk == 0x74 /*Ctrl+F5*/) return OnAccelerator(window_, ACCEL_HARD_RELOAD);
-    if (vk == 'B') return OnAccelerator(window_, ACCEL_TOGGLE_RAIL);
+    if (vk == 0x74 /*Ctrl+F5*/ && !shift) return OnAccelerator(window_, ACCEL_HARD_RELOAD);
+    if (vk == 'B' && !shift) return OnAccelerator(window_, ACCEL_TOGGLE_RAIL);
     if (vk == 'U' && shift) return OnAccelerator(window_, ACCEL_TOGGLE_TOPBAR);
-    if (vk == 'D') return OnAccelerator(window_, ACCEL_BOOKMARK);
+    if (vk == 'D' && !shift) return OnAccelerator(window_, ACCEL_BOOKMARK);
     if (vk == 'M') return OnAccelerator(window_, shift ? ACCEL_PROFILES : ACCEL_MUTE_TAB);
-    if (vk == 'J') return OnAccelerator(window_, ACCEL_DOWNLOADS);
+    if (vk == 'J' && !shift) return OnAccelerator(window_, ACCEL_DOWNLOADS);
     if (vk == 'N' && shift) return OnAccelerator(window_, ACCEL_PRIVATE_WINDOW);
-    if (vk == 0xBC /*VK_OEM_COMMA*/) return OnAccelerator(window_, ACCEL_SETTINGS);
+    if (vk == 0xBC /*VK_OEM_COMMA*/ && !shift) return OnAccelerator(window_, ACCEL_SETTINGS);
     if (vk == 0x09 /*VK_TAB*/) {
       if (model_) {
         guint64 next_id = web_model_cycle_visual(model_, !shift);
@@ -2523,7 +2819,7 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
       if (TabEntry* e = ActiveEntry()) {
         if (e->browser && e->browser->GetHost()) {
           double cur = e->browser->GetHost()->GetZoomLevel();
-          if (vk == '0') cur = 0.0;
+          if (vk == '0') cur = DefaultZoomLevel();
           else if (vk == 0xBB) cur += 0.5;
           else cur -= 0.5;
           e->browser->GetHost()->SetZoomLevel(cur);
@@ -2533,7 +2829,7 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
       return true;
     }
   }
-  if (alt && !ctrl) {
+  if (alt && !ctrl && !shift) {
     if (vk == 'D') return OnAccelerator(window_, ACCEL_FOCUS_OMNIBAR);
     if (vk >= '1' && vk <= '9' && model_ && model_->tabs->len > 0) {
       guint idx = (vk == '9') ? (model_->tabs->len - 1) : static_cast<guint>(vk - '1');
@@ -2556,9 +2852,11 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
       return true;
     }
   }
-  if (vk == 0x74 /*F5*/) return OnAccelerator(window_, ACCEL_RELOAD);
-  if (vk == 0x7A /*F11*/) return OnAccelerator(window_, ACCEL_FULLSCREEN);
-  if (vk == 0x7B /*F12*/) return OnAccelerator(window_, ACCEL_DEVTOOLS);
+  if (!ctrl && !alt && !shift) {
+    if (vk == 0x74 /*F5*/) return OnAccelerator(window_, ACCEL_RELOAD);
+    if (vk == 0x7A /*F11*/) return OnAccelerator(window_, ACCEL_FULLSCREEN);
+    if (vk == 0x7B /*F12*/) return OnAccelerator(window_, ACCEL_DEVTOOLS);
+  }
   if (vk == 0x1B /*ESC*/) {
     if (ac_visible_) {
       HideAutocomplete();
@@ -2592,7 +2890,7 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
       PushStateImmediate();
       return true;
     }
-    if (web_fullscreen_) {
+    if (user_fullscreen_) {
       return OnAccelerator(window_, ACCEL_FULLSCREEN);
     }
   }
@@ -2600,6 +2898,8 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
 }
 
 void KajoBrowserWindow::OnTabGotFocus(uint64_t tab_id) {
+  window_active_ = true;
+  window_inactive_since_us_ = 0;
   HideAutocomplete();
   if (!overlay_mode_.empty() && overlay_mode_ != "find") {
     CloseOverlay();
@@ -2625,7 +2925,7 @@ void KajoBrowserWindow::OnTabBrowserCreated(uint64_t tab_id, CefRefPtr<CefBrowse
     e->browser = browser;
     if (browser && browser->GetHost()) {
       if (default_zoom_pct_ != 100) {
-        browser->GetHost()->SetZoomLevel(log(default_zoom_pct_ / 100.0) / log(1.2));
+        browser->GetHost()->SetZoomLevel(DefaultZoomLevel());
       }
       if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
         if (t->muted) browser->GetHost()->SetAudioMuted(true);
@@ -2644,12 +2944,21 @@ void KajoBrowserWindow::OnTabAddressChanged(uint64_t tab_id, const std::string& 
   if (url.rfind("kajo://downloads", 0) == 0) {
     downloads_unseen_complete_ = false;
   }
+  bool host_changed = false;
   if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    g_autofree gchar* old_host = t->uri ? web_model_extract_host(t->uri) : nullptr;
+    g_autofree gchar* new_host = web_model_extract_host(url.c_str());
+    host_changed = (g_strcmp0(old_host, new_host) != 0);
     g_free(t->uri);
     t->uri = g_strdup(url.c_str());
+    if (host_changed) {
+      web_model_set_tab_favicon(model_, tab_id, nullptr);
+    }
   }
   if (TabEntry* e = FindEntry(tab_id)) {
     e->media.clear();
+    e->last_recorded_visit_uri.clear();
+    if (host_changed) e->favicon_url.clear();
   }
   PersistSession();
   PushStateToChrome();
@@ -2662,16 +2971,37 @@ void KajoBrowserWindow::OnTabTitleChanged(uint64_t tab_id, const std::string& ti
     t->title = g_strdup(title.c_str());
     if (!cfg_.private_mode && storage_ && t->uri &&
         (strncmp(t->uri, "http://", 7) == 0 || strncmp(t->uri, "https://", 8) == 0)) {
-      web_storage_record_visit(storage_, t->uri, title.c_str());
-      RefreshStorageCache();
+      TabEntry* e = FindEntry(tab_id);
+      const std::string cur_uri = t->uri;
+      if (e && e->last_recorded_visit_uri != cur_uri) {
+        web_storage_record_visit(storage_, t->uri, title.c_str());
+        e->last_recorded_visit_uri = cur_uri;
+        RefreshStorageCache();
+      } else {
+        web_storage_update_title(storage_, t->uri, title.c_str());
+      }
     }
   }
   PushStateToChrome();
 }
 
 void KajoBrowserWindow::OnTabFaviconChanged(uint64_t tab_id, const std::string& favicon_url) {
+  bool changed = false;
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    const char* cur = t->favicon_url ? t->favicon_url : "";
+    if (g_strcmp0(cur, favicon_url.c_str()) != 0) {
+      web_model_set_tab_favicon(model_, tab_id, favicon_url.c_str());
+      changed = true;
+    }
+  }
   if (TabEntry* e = FindEntry(tab_id)) {
-    e->favicon_url = favicon_url;
+    if (e->favicon_url != favicon_url) {
+      e->favicon_url = favicon_url;
+      changed = true;
+    }
+  }
+  if (changed) {
+    if (!cfg_.private_mode) PersistSession();
     PushStateToChrome();
   }
 }
@@ -2692,11 +3022,11 @@ void KajoBrowserWindow::OnTabLoadingChanged(uint64_t tab_id,
 
 void KajoBrowserWindow::OnTabFullscreenChanged(uint64_t tab_id, bool fullscreen) {
   if (model_ && tab_id == model_->active_id) {
-    web_fullscreen_ = fullscreen;
+    html_fullscreen_ = fullscreen;
     if (window_) {
-      window_->SetFullscreen(fullscreen);
-      if (fullscreen) window_->SetDraggableRegions({});
+      window_->SetFullscreen(IsFullscreen());
     }
+    ApplyDraggableRegions();
     RebuildLayout();
     UpdateOverlayBounds();
   }
@@ -2717,7 +3047,10 @@ void KajoBrowserWindow::OnTabOpenUrl(uint64_t from_tab_id, const std::string& ur
   OpenNewTab(url, foreground, grp);
 }
 
-bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id, const std::string& url) {
+bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id,
+                                                const std::string& url,
+                                                const std::string& prev_url,
+                                                bool user_gesture) {
   size_t qpos = url.find('?');
   if (qpos == std::string::npos) return false;
   std::string base = url.substr(0, qpos);
@@ -2725,6 +3058,21 @@ bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id, const std::stri
   const std::string query = url.substr(qpos + 1);
   const std::string act = GetQueryParam(query, "action");
   if (act.empty()) return false;
+
+  /* Require the initiating frame to already be on the matching kajo:// page so
+   * untrusted websites cannot trigger privileged kajo:// action URLs via CSRF. */
+  const bool from_same_kajo_page = (prev_url.rfind(base, 0) == 0);
+  if (!from_same_kajo_page) {
+    g_warning("kajo-web: blocked cross-origin action '%s' on %s from '%s'",
+              act.c_str(), base.c_str(), prev_url.c_str());
+    return true;
+  }
+  const bool is_read_filter = (act == "search" || act == "filter");
+  if (!is_read_filter && !user_gesture) {
+    g_warning("kajo-web: blocked non-gesture action '%s' on %s",
+              act.c_str(), base.c_str());
+    return true;
+  }
 
   if (base == "kajo://newtab" && act == "search") {
     const std::string q = GetQueryParam(query, "q");
@@ -2794,12 +3142,19 @@ bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id, const std::stri
       downloads_search_query_ = GetQueryParam(query, "q");
     } else if (act == "open_folder") {
       const std::string p = GetQueryParam(query, "path");
-      g_autofree gchar* dir = p.empty() ? g_strdup(download_dir_.c_str()) : g_path_get_dirname(p.c_str());
-      const char* argv[] = {"kajo-files", dir, nullptr};
-      kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+      g_autofree gchar* dir = nullptr;
+      if (p.empty()) {
+        dir = g_strdup(download_dir_.c_str());
+      } else if (IsKnownDownloadPath(p)) {
+        dir = g_path_get_dirname(p.c_str());
+      }
+      if (dir && dir[0] != '\0') {
+        const char* argv[] = {"kajo-files", "--", dir, nullptr};
+        kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+      }
     } else if (act == "open_file") {
       const std::string p = GetQueryParam(query, "path");
-      if (!p.empty() && g_file_test(p.c_str(), G_FILE_TEST_EXISTS)) {
+      if (IsKnownDownloadPath(p) && g_file_test(p.c_str(), G_FILE_TEST_EXISTS)) {
         g_autofree gchar* uri = g_filename_to_uri(p.c_str(), nullptr, nullptr);
         g_autoptr(GError) err = nullptr;
         if (!uri || !g_app_info_launch_default_for_uri(uri, nullptr, &err)) {
@@ -2834,15 +3189,7 @@ bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id, const std::stri
     } else if (act == "remove") {
       const uint32_t did = static_cast<uint32_t>(std::strtoul(GetQueryParam(query, "id").c_str(), nullptr, 10));
       const int64_t db_id = std::strtoll(GetQueryParam(query, "db_id").c_str(), nullptr, 10);
-      downloads_.erase(
-          std::remove_if(downloads_.begin(), downloads_.end(),
-                         [did, db_id](const ChromeDownloadView& d) {
-                           if (did != 0 && d.id == did) return true;
-                           if (db_id > 0 && d.db_id == db_id) return true;
-                           return false;
-                         }),
-          downloads_.end());
-      if (db_id > 0 && storage_ && !cfg_.private_mode) web_storage_delete_download(storage_, db_id);
+      RemoveDownload(did, db_id, true);
     }
   } else if (base == "kajo://permissions") {
     if (act == "revoke") {
@@ -2961,6 +3308,14 @@ std::string KajoBrowserWindow::GetSuggestedDownloadPath(const std::string& sugge
 void KajoBrowserWindow::OnTabDownloadUpdated(uint64_t tab_id,
                                              const ChromeDownloadView& dl,
                                              CefRefPtr<CefDownloadItemCallback> callback) {
+  if (dl.id != 0 && dismissed_downloads_.count(dl.id)) {
+    if (dl.complete || dl.canceled) {
+      dismissed_downloads_.erase(dl.id);
+    } else if (callback) {
+      callback->Cancel();
+    }
+    return;
+  }
   if (dl.complete || dl.canceled) {
     download_callbacks_.erase(dl.id);
     active_download_tabs_.erase(dl.id);
@@ -2973,7 +3328,7 @@ void KajoBrowserWindow::OnTabDownloadUpdated(uint64_t tab_id,
     for (const auto& kv : active_download_tabs_) busy_tabs.insert(kv.second);
     for (guint i = 0; i < model_->tabs->len; ++i) {
       auto* t = static_cast<KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, i));
-      t->capture_active = busy_tabs.count(t->id) ? TRUE : FALSE;
+      t->download_active = busy_tabs.count(t->id) ? TRUE : FALSE;
     }
   }
   bool found = false;
@@ -3018,8 +3373,10 @@ bool KajoBrowserWindow::OnTabContextCommand(uint64_t tab_id,
     OpenNewTab(target_url, true);
     return true;
   }
-  if (command_id == 2 && !target_url.empty()) {
-    const char* argv[] = {"kajo-player", target_url.c_str(), nullptr};
+  if (command_id == 2 &&
+      (target_url.rfind("http://", 0) == 0 || target_url.rfind("https://", 0) == 0 ||
+       target_url.rfind("file://", 0) == 0)) {
+    const char* argv[] = {"kajo-player", "--", target_url.c_str(), nullptr};
     kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
     return true;
   }
