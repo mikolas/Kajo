@@ -19,8 +19,18 @@ namespace {
 
 enum ContextCmd {
   CMD_KAJO_OPEN_LINK_TAB = MENU_ID_USER_FIRST + 1,
-  CMD_KAJO_OPEN_PLAYER = MENU_ID_USER_FIRST + 2,
-  CMD_KAJO_INSPECT = MENU_ID_USER_FIRST + 3,
+  CMD_KAJO_COPY_LINK_URL = MENU_ID_USER_FIRST + 2,
+  CMD_KAJO_SAVE_LINK_AS = MENU_ID_USER_FIRST + 3,
+  CMD_KAJO_OPEN_IMAGE_TAB = MENU_ID_USER_FIRST + 4,
+  CMD_KAJO_SAVE_IMAGE_AS = MENU_ID_USER_FIRST + 5,
+  CMD_KAJO_COPY_IMAGE = MENU_ID_USER_FIRST + 6,
+  CMD_KAJO_COPY_IMAGE_URL = MENU_ID_USER_FIRST + 7,
+  CMD_KAJO_OPEN_MEDIA_TAB = MENU_ID_USER_FIRST + 8,
+  CMD_KAJO_SAVE_MEDIA_AS = MENU_ID_USER_FIRST + 9,
+  CMD_KAJO_COPY_MEDIA_URL = MENU_ID_USER_FIRST + 10,
+  CMD_KAJO_OPEN_PLAYER = MENU_ID_USER_FIRST + 11,
+  CMD_KAJO_VIEW_SOURCE = MENU_ID_USER_FIRST + 12,
+  CMD_KAJO_INSPECT = MENU_ID_USER_FIRST + 13,
 };
 
 class UiClosureTask : public CefTask {
@@ -656,11 +666,14 @@ bool CefTabClient::OnResourceResponse(CefRefPtr<CefBrowser> browser,
     const char* kind_str = "VIDEO";
     if (kind == KAJO_MEDIA_HLS) kind_str = "HLS";
     else if (kind == KAJO_MEDIA_DASH) kind_str = "DASH";
+    std::string referer = request->GetReferrerURL().ToString();
+    if (referer.empty()) referer = request->GetHeaderByName("Referer").ToString();
+    std::string user_agent = request->GetHeaderByName("User-Agent").ToString();
     CefRefPtr<CefTabClient> self(this);
     std::string kstr(kind_str);
-    CefPostTask(TID_UI, new UiClosureTask([self, kstr, uri, mime, content_len]() {
+    CefPostTask(TID_UI, new UiClosureTask([self, kstr, uri, mime, content_len, referer, user_agent]() {
       if (TabCallbacks* cb = self->GetCallbacks()) {
-        cb->OnTabMediaDetected(self->tab_id_, kstr, uri, mime, content_len);
+        cb->OnTabMediaDetected(self->tab_id_, kstr, uri, mime, content_len, referer, user_agent);
       }
     }));
   }
@@ -730,16 +743,53 @@ void CefTabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
                                        CefRefPtr<CefContextMenuParams> params,
                                        CefRefPtr<CefMenuModel> model) {
   if (!model || !params) return;
+  const std::string link = params->GetLinkUrl().ToString();
+  const std::string src = params->GetSourceUrl().ToString();
+  const std::string page = params->GetPageUrl().ToString();
+  const cef_context_menu_media_type_t mtype = params->GetMediaType();
+  const bool is_image = (mtype == CM_MEDIATYPE_IMAGE) || (params->HasImageContents() && !src.empty());
+  const bool is_av = (mtype == CM_MEDIATYPE_VIDEO || mtype == CM_MEDIATYPE_AUDIO);
+
   model->AddSeparator();
-  if (!params->GetLinkUrl().empty()) {
+  if (!link.empty()) {
     model->AddItem(CMD_KAJO_OPEN_LINK_TAB, "Open Link in New Tab");
+    model->AddItem(CMD_KAJO_COPY_LINK_URL, "Copy Link Address");
+    if (link.rfind("http://", 0) == 0 || link.rfind("https://", 0) == 0 ||
+        link.rfind("data:", 0) == 0) {
+      model->AddItem(CMD_KAJO_SAVE_LINK_AS, "Save Link As...");
+    }
   }
-  std::string target = params->GetSourceUrl().ToString();
-  if (target.empty()) target = params->GetLinkUrl().ToString();
-  if (target.empty()) target = params->GetPageUrl().ToString();
-  if (!target.empty()) {
+
+  if (is_image && !src.empty()) {
+    if (!link.empty()) model->AddSeparator();
+    model->AddItem(CMD_KAJO_OPEN_IMAGE_TAB, "Open Image in New Tab");
+    model->AddItem(CMD_KAJO_SAVE_IMAGE_AS, "Save Image As...");
+    model->AddItem(CMD_KAJO_COPY_IMAGE, "Copy Image");
+    model->AddItem(CMD_KAJO_COPY_IMAGE_URL, "Copy Image Address");
+  }
+
+  if (is_av && !src.empty()) {
+    if (!link.empty() || is_image) model->AddSeparator();
+    model->AddItem(CMD_KAJO_OPEN_MEDIA_TAB, "Open Media in New Tab");
+    model->AddItem(CMD_KAJO_SAVE_MEDIA_AS, "Save Media As...");
+    model->AddItem(CMD_KAJO_COPY_MEDIA_URL, "Copy Media Address");
     model->AddItem(CMD_KAJO_OPEN_PLAYER, "Play in kajo-player");
+  } else {
+    std::string target = !src.empty() ? src : (!link.empty() ? link : page);
+    if (target.rfind("http://", 0) == 0 || target.rfind("https://", 0) == 0 ||
+        target.rfind("file://", 0) == 0) {
+      model->AddItem(CMD_KAJO_OPEN_PLAYER, "Play in kajo-player");
+    }
   }
+
+  const bool can_view_source =
+      (page.rfind("http://", 0) == 0 || page.rfind("https://", 0) == 0 ||
+       page.rfind("file://", 0) == 0) &&
+      page.rfind("view-source:", 0) != 0;
+  if (can_view_source && !model->IsVisible(MENU_ID_VIEW_SOURCE)) {
+    model->AddItem(CMD_KAJO_VIEW_SOURCE, "View Page Source");
+  }
+
   if (devtools_enabled_.load(std::memory_order_relaxed)) {
     model->AddItem(CMD_KAJO_INSPECT, "Inspect Element");
   }
@@ -759,27 +809,47 @@ bool CefTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
     browser->GetHost()->ShowDevTools(wi, nullptr, bs, pt);
     return true;
   }
-  if (command_id == CMD_KAJO_OPEN_LINK_TAB) {
-    const std::string link = params->GetLinkUrl().ToString();
-    if (!link.empty()) {
-      if (TabCallbacks* cb = GetCallbacks()) {
-        return cb->OnTabContextCommand(tab_id_, 1, link);
-      }
+  TabCallbacks* cb = GetCallbacks();
+  if (!cb) return false;
+
+  const std::string link = params->GetLinkUrl().ToString();
+  const std::string src = params->GetSourceUrl().ToString();
+  const std::string page = params->GetPageUrl().ToString();
+
+  switch (command_id) {
+    case CMD_KAJO_OPEN_LINK_TAB:
+      return !link.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_OPEN_LINK_TAB, link);
+    case CMD_KAJO_COPY_LINK_URL:
+      return !link.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_COPY_LINK_URL, link);
+    case CMD_KAJO_SAVE_LINK_AS:
+      return !link.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_SAVE_LINK_AS, link);
+    case CMD_KAJO_OPEN_IMAGE_TAB:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_OPEN_IMAGE_TAB, src);
+    case CMD_KAJO_SAVE_IMAGE_AS:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_SAVE_IMAGE_AS, src);
+    case CMD_KAJO_COPY_IMAGE:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_COPY_IMAGE, src);
+    case CMD_KAJO_COPY_IMAGE_URL:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_COPY_IMAGE_URL, src);
+    case CMD_KAJO_OPEN_MEDIA_TAB:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_OPEN_MEDIA_TAB, src);
+    case CMD_KAJO_SAVE_MEDIA_AS:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_SAVE_MEDIA_AS, src);
+    case CMD_KAJO_COPY_MEDIA_URL:
+      return !src.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_COPY_MEDIA_URL, src);
+    case CMD_KAJO_OPEN_PLAYER: {
+      std::string target = !src.empty() ? src : (!link.empty() ? link : page);
+      return !target.empty() && cb->OnTabContextCommand(tab_id_, KAJO_CTX_PLAY_IN_PLAYER, target);
     }
-    return false;
-  }
-  if (command_id == CMD_KAJO_OPEN_PLAYER) {
-    std::string target = params->GetSourceUrl().ToString();
-    if (target.empty()) target = params->GetLinkUrl().ToString();
-    if (target.empty()) target = params->GetPageUrl().ToString();
-    if (!target.empty()) {
-      if (TabCallbacks* cb = GetCallbacks()) {
-        return cb->OnTabContextCommand(tab_id_, 2, target);
+    case MENU_ID_VIEW_SOURCE:
+    case CMD_KAJO_VIEW_SOURCE:
+      if (!page.empty() && page.rfind("view-source:", 0) != 0) {
+        return cb->OnTabContextCommand(tab_id_, KAJO_CTX_VIEW_SOURCE, page);
       }
-    }
-    return false;
+      return true;
+    default:
+      return false;
   }
-  return false;
 }
 
 void CefTabClient::OnGotFocus(CefRefPtr<CefBrowser> browser) {

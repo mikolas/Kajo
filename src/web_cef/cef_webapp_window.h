@@ -90,7 +90,9 @@ public:
                           const std::string& kind,
                           const std::string& uri,
                           const std::string& mime,
-                          int64_t size_bytes) override {}
+                          int64_t size_bytes,
+                          const std::string& referer,
+                          const std::string& user_agent) override {}
   void OnTabBlockedChanged(uint64_t tab_id) override {}
   void OnTabFindResult(uint64_t tab_id, int count, int active_ordinal, bool final_update) override {}
   bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) override;
@@ -181,6 +183,8 @@ private:
   std::vector<PendingPermission> pending_permissions_;
   uint64_t next_perm_req_id_ = 1;
   int default_zoom_pct_ = 100;
+  bool force_ask_next_download_ = false;
+  int64_t clipboard_auto_allow_until_us_ = 0;
   bool closing_ = false;
   bool fullscreen_ = false;
 

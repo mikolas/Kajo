@@ -30,6 +30,7 @@
 #include "web_cef/cef_adblock.h"
 #include "web_cef/cef_chrome_ui.h"
 #include "web_cef/cef_ipc.h"
+#include "web_cef/cef_media_dl.h"
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_tab.h"
 #include "web_cef/cef_webapps.h"
@@ -133,7 +134,9 @@ public:
                           const std::string& kind,
                           const std::string& uri,
                           const std::string& mime,
-                          int64_t size_bytes) override;
+                          int64_t size_bytes,
+                          const std::string& referer,
+                          const std::string& user_agent) override;
   void OnTabBlockedChanged(uint64_t tab_id) override;
   void OnTabFindResult(uint64_t tab_id, int count, int active_ordinal, bool final_update) override;
   bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) override;
@@ -220,6 +223,15 @@ private:
   void ApplyTopbarSizing();
   void UpdateOverlayBounds();
   uint64_t OpenNewTab(const std::string& url, bool foreground, const std::string& group = "");
+  uint64_t OpenNewTabAfter(uint64_t parent_tab_id,
+                           const std::string& url,
+                           bool foreground,
+                           const std::string& group = "");
+  void ShowTopbarToast(const std::string& msg);
+  void StartStreamDownload(const std::string& uri,
+                           const std::string& title,
+                           const std::string& referer,
+                           const std::string& user_agent);
   void AttachTabView(uint64_t tab_id, const std::string& target, bool foreground);
   void ActivateTab(uint64_t tab_id);
   void CloseTab(uint64_t tab_id);
@@ -319,6 +331,13 @@ private:
   std::shared_ptr<const LoadedUserScripts> user_scripts_;
   std::vector<CefRefPtr<CefClient>> chrome_clients_;
   std::vector<CefRefPtr<CefURLRequest>> active_filter_reqs_;
+  std::unique_ptr<MediaDownloadManager> media_dl_;
+  bool ffmpeg_available_ = false;
+  bool yt_dlp_available_ = false;
+  bool force_ask_next_download_ = false;
+  int64_t clipboard_auto_allow_until_us_ = 0;
+  uint64_t child_chain_parent_id_ = 0;
+  uint64_t child_chain_last_id_ = 0;
   CefRefPtr<CefBrowserViewDelegate> bv_delegate_;
   CefRefPtr<CefPanelDelegate> panel_delegate_;
 

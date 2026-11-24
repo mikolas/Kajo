@@ -11,6 +11,7 @@
 #include "include/cef_app.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_helpers.h"
+#include "web_cef/cef_clipboard.h"
 #include "web_cef/cef_host_coord.h"
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_site_util.h"
@@ -622,7 +623,9 @@ bool KajoWebAppWindow::OnTabShortcut(uint64_t /*tab_id*/, const CefKeyEvent& eve
 
 std::string KajoWebAppWindow::GetSuggestedDownloadPath(const std::string& suggested_name,
                                                        bool* out_ask) {
-  if (out_ask) *out_ask = false;
+  const bool ask = force_ask_next_download_;
+  force_ask_next_download_ = false;
+  if (out_ask) *out_ask = ask;
   const char* dl = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD);
   std::string dir = dl ? std::string(dl) : (std::string(g_get_home_dir()) + "/Downloads");
   g_mkdir_with_parents(dir.c_str(), 0755);
@@ -637,17 +640,55 @@ std::string KajoWebAppWindow::GetSuggestedDownloadPath(const std::string& sugges
 bool KajoWebAppWindow::OnTabContextCommand(uint64_t /*tab_id*/,
                                            int command_id,
                                            const std::string& target_url) {
-  if (command_id == 1 && !target_url.empty() && coord_) {
-    coord_->OpenBrowserUrls({target_url});
-    return true;
+  switch (command_id) {
+    case KAJO_CTX_OPEN_LINK_TAB:
+    case KAJO_CTX_OPEN_IMAGE_TAB:
+    case KAJO_CTX_OPEN_MEDIA_TAB:
+      if (!target_url.empty() && coord_) {
+        coord_->OpenBrowserUrls({target_url});
+        return true;
+      }
+      return false;
+    case KAJO_CTX_COPY_LINK_URL:
+    case KAJO_CTX_COPY_IMAGE_URL:
+    case KAJO_CTX_COPY_MEDIA_URL:
+      if (target_url.empty() || !content_browser_) return false;
+      clipboard_auto_allow_until_us_ = g_get_monotonic_time() + 2000000;
+      if (content_view_) content_view_->RequestFocus();
+      CopyTextViaBrowser(content_browser_, target_url);
+      return true;
+    case KAJO_CTX_COPY_IMAGE: {
+      if (target_url.empty() || !content_browser_ || !coord_) return false;
+      clipboard_auto_allow_until_us_ = g_get_monotonic_time() + 4000000;
+      if (content_view_) content_view_->RequestFocus();
+      CopyImageViaBrowser(content_browser_, coord_->SharedRequestContext(), target_url, nullptr);
+      return true;
+    }
+    case KAJO_CTX_SAVE_LINK_AS:
+    case KAJO_CTX_SAVE_IMAGE_AS:
+    case KAJO_CTX_SAVE_MEDIA_AS:
+      if (target_url.empty() || !content_browser_ || !content_browser_->GetHost()) return false;
+      force_ask_next_download_ = true;
+      content_browser_->GetHost()->StartDownload(target_url);
+      return true;
+    case KAJO_CTX_PLAY_IN_PLAYER:
+      if (target_url.rfind("http://", 0) == 0 || target_url.rfind("https://", 0) == 0 ||
+          target_url.rfind("file://", 0) == 0) {
+        const gchar* argv[] = {"kajo-player", "--", target_url.c_str(), nullptr};
+        g_spawn_async(nullptr, const_cast<gchar**>(argv), nullptr,
+                      G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr, nullptr);
+        return true;
+      }
+      return false;
+    case KAJO_CTX_VIEW_SOURCE:
+      if (!target_url.empty() && target_url.rfind("view-source:", 0) != 0 && coord_) {
+        coord_->OpenBrowserUrls({"view-source:" + target_url});
+        return true;
+      }
+      return false;
+    default:
+      return false;
   }
-  if (command_id == 2 && !target_url.empty()) {
-    const gchar* argv[] = {"kajo-player", target_url.c_str(), nullptr};
-    g_spawn_async(nullptr, const_cast<gchar**>(argv), nullptr,
-                  G_SPAWN_SEARCH_PATH, nullptr, nullptr, nullptr, nullptr);
-    return true;
-  }
-  return false;
 }
 
 void KajoWebAppWindow::OnTabCrashed(uint64_t /*tab_id*/,
@@ -695,6 +736,11 @@ bool KajoWebAppWindow::OnTabPermissionPrompt(
     uint32_t perms,
     CefRefPtr<CefPermissionPromptCallback> callback) {
   if (!callback || closing_) return false;
+  if ((perms & CEF_PERMISSION_TYPE_CLIPBOARD) != 0 &&
+      g_get_monotonic_time() <= clipboard_auto_allow_until_us_) {
+    callback->Continue(CEF_PERMISSION_RESULT_ACCEPT);
+    return true;
+  }
   const std::string key = PermissionKey(0, perms);
   const int decision = (coord_ && coord_->SharedPermissions() && !coord_->Config().private_mode)
                            ? coord_->SharedPermissions()->Lookup(origin, key)

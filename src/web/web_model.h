@@ -97,6 +97,14 @@ KajoWebTabMeta  *web_model_add_tab_ex(KajoWebModel *m,
                                       gboolean      pinned,
                                       gboolean      activate,
                                       gint64        now_us);
+KajoWebTabMeta  *web_model_add_tab_after(KajoWebModel *m,
+                                         guint64       after_tab_id,
+                                         const gchar  *uri,
+                                         const gchar  *title,
+                                         const gchar  *group,
+                                         gboolean      pinned,
+                                         gboolean      activate,
+                                         gint64        now_us);
 gboolean         web_model_close_tab(KajoWebModel *m, guint64 id);
 KajoWebTabMeta  *web_model_reopen_closed(KajoWebModel *m, gint64 now_us);
 gboolean         web_model_activate(KajoWebModel *m, guint64 id, gint64 now_us);

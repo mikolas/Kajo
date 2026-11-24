@@ -208,8 +208,10 @@ src/
 │   ├── cef_webapp_window.h/cc      Chromeless shared-profile WebApp window (per-app wayland_app_id, scope/auth routing, permission infobar)
 │   ├── cef_webapps.h/cc            WebAppStore (webapps.json), Web Manifest parser, scope/auth helpers & XDG .desktop/icon installer
 │   ├── cef_notify.h/cc             Async GDBus WebNotificationBridge (org.freedesktop.Notifications)
-│   ├── cef_tab.h/cc                CefTabClient load/title/favicon/popup isolation/permission/download/hotkey & crash recovery handlers
+│   ├── cef_tab.h/cc                CefTabClient load/title/favicon/popup isolation/permission/download/context-menu/hotkey & crash handlers
 │   ├── cef_chrome_ui.h/cc          Aero + Metro kajo-chrome://ui/* theme-scaled topbar/rail/popovers & kajo://* internal HTML pages
+│   ├── cef_clipboard.h/cc          In-browser text & PNG-normalized image clipboard bridge (CopyTextViaBrowser, CopyImageViaBrowser)
+│   ├── cef_media_dl.h/cc           Async GSubprocess ffmpeg HLS/DASH remuxer & optional yt-dlp downloader
 │   ├── cef_adblock.h/cc            IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync
 │   ├── cef_ipc.h/cc                Per-profile single-instance UNIX domain socket server & URL/WebApp forwarder
 │   ├── cef_site_util.h             Pure eTLD+1 site matching, private-host check, color/href sanitization, origin favicon fallback & ComputeChromeUiMetrics
