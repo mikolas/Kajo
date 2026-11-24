@@ -5,8 +5,9 @@ the third-party works below, each under its own permissive licence. Their copyri
 and permission notices are reproduced here as those licences require.
 
 Libraries that Kajo links dynamically (for example `poppler-glib`, `libmpv`,
-`libsidplayfp`, `uade`) are not part of this repository; see the License section of
-the [README](README.md).
+`libsidplayfp`, `uade`, `sqlite3`, and `libcef` from Chromium Embedded
+Framework when `kajo-web` is enabled) are not part of this repository; see the
+License section of the [README](README.md).
 
 ## Vendored and statically linked source code
 

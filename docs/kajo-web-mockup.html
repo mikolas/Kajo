@@ -1261,7 +1261,7 @@
     <div class="demo-group">
       <span class="demo-lbl">GPU:</span>
       <div class="seg" id="segGpu">
-        <button class="on" data-val="always">SKIA+DMABUF</button>
+        <button class="on" data-val="always">CEF+VAAPI</button>
         <button data-val="never">SW FALLBACK</button>
       </div>
     </div>
@@ -1306,13 +1306,13 @@
               <span class="omni-path" id="omniPath"></span>
             </div>
             <input class="omni-input" id="omniInput" type="text" value="kajo://newtab" spellcheck="false" />
-            <button class="omni-shield" id="btnShield" title="Native Content Blocker (WebKitUserContentFilterStore)">🛡 ON</button>
+            <button class="omni-shield" id="btnShield" title="IO-Thread Ad &amp; Tracker Blocker (CefAdblockEngine)">🛡 ON</button>
             <div class="omni-progress" id="omniProgress"></div>
           </div>
           <div class="omni-dropdown" id="omniDrop">
             <div class="omni-sug" data-goto="tab-github"><span class="omni-sug-tag">TAB</span><span class="omni-sug-title">mikolas/Kajo — Wayland Desktop Suite</span><span class="omni-sug-url">github.com</span></div>
             <div class="omni-sug" data-goto="tab-arch"><span class="omni-sug-tag">TAB</span><span class="omni-sug-title">Wayland — ArchWiki</span><span class="omni-sug-url">wiki.archlinux.org</span></div>
-            <div class="omni-sug" data-goto="tab-gpu"><span class="omni-sug-tag">INTERNAL</span><span class="omni-sug-title">GPU &amp; Skia DMA-BUF Telemetry</span><span class="omni-sug-url">kajo://gpu</span></div>
+            <div class="omni-sug" data-goto="tab-gpu"><span class="omni-sug-tag">INTERNAL</span><span class="omni-sug-title">GPU &amp; VA-API Diagnostics</span><span class="omni-sug-url">kajo://gpu</span></div>
             <div class="omni-sug" data-goto="tab-mdn"><span class="omni-sug-tag">★ BM</span><span class="omni-sug-title">WebGL2RenderingContext — MDN</span><span class="omni-sug-url">developer.mozilla.org</span></div>
           </div>
         </div>
@@ -1320,12 +1320,10 @@
         <div class="hdr-right">
           <span class="status-chip warn" id="chipSw" style="display:none;" title="Hardware acceleration disabled — running software renderer">⚠ SW RENDER</span>
           <span class="status-chip priv" id="chipPriv" style="display:none;" title="Ephemeral session — no history or cookies saved">🕶 PRIVATE</span>
-          <button class="status-chip" id="btnMediaDl" title="Video / Audio Downloader (HTML5 + yt-dlp/ffmpeg) &amp; Open in Kajo Player" style="border-color:rgba(0,216,240,0.45); color:var(--metro-telemetry);">⬇ MEDIA</button>
-          <button class="status-chip dl" id="btnDownloads" title="Downloads (Ctrl+J)">↓ 1</button>
-          <button class="profile-chip" id="btnProfileChip" title="Profile &amp; Google Drive AppData Sync (Ctrl+Shift+M)"><span class="profile-dot" id="profDot"></span><span id="profChipName">WORK</span></button>
+          <button class="status-chip dl" id="btnDownloads" title="Downloads Popout (Ctrl+J)">↓ 1</button>
+          <button class="profile-chip" id="btnProfileChip" title="Isolated Profile Switcher (Ctrl+Shift+M)"><span class="profile-dot" id="profDot"></span><span id="profChipName">WORK</span></button>
           <button class="chrome-btn" id="btnPalette" title="Quick Command &amp; Tab Switcher (Ctrl+K)">⌘</button>
           <button class="chrome-btn" id="btnFind" title="Find in Page (Ctrl+F)">⌕</button>
-          <button class="chrome-btn" id="btnInspector" title="WebKit Web Inspector (F12)">&lt;/&gt;</button>
           <button class="chrome-btn" id="btnSettings" title="Open kajo-settings → Kajo Web (Ctrl+,)">⚙</button>
           <button class="chrome-btn" id="btnTileFloat" title="Toggle Compositor Float/Tile">🗗</button>
           <button class="chrome-btn close-btn" title="Close Window">✕</button>
@@ -1371,15 +1369,15 @@
         <div class="viewport-col">
           <!-- Non-modal Permission Bar -->
           <div class="perm-bar" id="permBar">
-            <span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Microphone access (via XDG Camera Portal)</span>
+            <span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Microphone access (persisted to permissions.json)</span>
             <div class="perm-actions">
-              <button class="demo-btn on" id="permAllow">ALLOW ONCE</button>
+              <button class="demo-btn on" id="permAllow">ALLOW</button>
               <button class="demo-btn" id="permAlways">ALWAYS</button>
               <button class="demo-btn" id="permDeny" style="border-color:var(--metro-urgent); color:var(--metro-urgent-text);">DENY</button>
             </div>
           </div>
 
-          <!-- Simulated WebKitWebView Canvas -->
+          <!-- Simulated Chromium/CEF Alloy Viewport -->
           <div class="web-canvas" id="webCanvas">
             <!-- PAGE 1: kajo://newtab -->
             <section class="page-view active" id="page-tab-newtab">
@@ -1415,10 +1413,10 @@
                   </div>
                 </div>
                 <div class="tele-strip">
-                  <div class="tele-card"><div class="tele-k">PROFILE &amp; DRIVE SYNC</div><div class="tele-v" id="ntProfile">WORK • ☁ SYNCED</div></div>
-                  <div class="tele-card"><div class="tele-k">RENDER PIPELINE</div><div class="tele-v" id="ntGpu">SKIA + DMABUF</div></div>
-                  <div class="tele-card"><div class="tele-k">CONTENT BLOCKER</div><div class="tele-v" id="ntAdblock">42,180 RULES</div></div>
-                  <div class="tele-card"><div class="tele-k">SANDBOX</div><div class="tele-v">BWRAP + SECCOMP</div></div>
+                  <div class="tele-card"><div class="tele-k">PROFILE &amp; STORAGE</div><div class="tele-v" id="ntProfile">WORK • SQLITE</div></div>
+                  <div class="tele-card"><div class="tele-k">RENDER PIPELINE</div><div class="tele-v" id="ntGpu">CEF + VA-API</div></div>
+                  <div class="tele-card"><div class="tele-k">CONTENT BLOCKER</div><div class="tele-v" id="ntAdblock">IO-THREAD ABP</div></div>
+                  <div class="tele-card"><div class="tele-k">WAYLAND</div><div class="tele-v">OZONE NATIVE</div></div>
                 </div>
               </div>
             </section>
@@ -1427,13 +1425,13 @@
             <section class="page-view" id="page-tab-github">
               <div class="doc-wrap">
                 <h1 class="doc-h1">mikolas / Kajo — Personal Native Wayland Suite</h1>
-                <div class="doc-sub">HTTPS • TLS 1.3 • 4 trackers blocked by WebKitUserContentFilterStore • 0px Aero + Metro viewport</div>
-                <p class="doc-p">Notice how hovering the left 4px edge slides the vertical tab rail cleanly over this page with <strong>zero horizontal layout reflow</strong>. In compact mode, a 44px favicon rail stays visible and expands on hover; in pinned mode, it docks cleanly as a split pane.</p>
+                <div class="doc-sub">HTTPS • TLS 1.3 • IO-thread CefAdblockEngine active • 0px Aero + Metro viewport</div>
+                <p class="doc-p">Notice how hovering the left 4px edge slides the vertical tab rail cleanly over this page with <strong>zero horizontal layout reflow</strong>. In compact mode, a 40px favicon rail stays visible and expands on hover; in pinned mode, it docks cleanly as a split pane.</p>
                 <div class="doc-code">meson setup builddir
 meson compile -C builddir
 meson test -C builddir
 ./builddir/kajo-web https://github.com/mikolas/Kajo</div>
-                <p class="doc-p">Try pressing <strong>Ctrl+K</strong> for the fuzzy command &amp; tab switcher, <strong>Ctrl+F</strong> for the bottom-right find bar, <strong>F12</strong> for the docked WebKit Inspector, or click <strong>⚙</strong> in the top-right to live-configure <code>web.toml</code> via <code>kajo-settings</code>.</p>
+                <p class="doc-p">Try pressing <strong>Ctrl+K</strong> for the fuzzy command &amp; tab switcher, <strong>Ctrl+F</strong> for the inline find bar, <strong>Ctrl+J</strong> for the Downloads popout, visiting <strong>kajo://permissions</strong>, or clicking <strong>⚙</strong> in the top-right to live-configure <code>web.toml</code> via <code>kajo-settings</code>.</p>
               </div>
             </section>
 
@@ -1441,14 +1439,14 @@ meson test -C builddir
             <section class="page-view" id="page-tab-arch">
               <div class="doc-wrap">
                 <h1 class="doc-h1">Wayland — ArchWiki (Audio Tab Demo)</h1>
-                <div class="doc-sub">HTTPS • wiki.archlinux.org • Hardware-accelerated Skia compositing + PipeWire audio stream</div>
-                <p class="doc-p">WebKitGTK 6.0 integrates directly with Wayland via GBM DMA-BUF buffer sharing and compositor damage propagation. On Intel Lunar Lake (Mesa Xe2) and AMD Radeon, frames composite zero-copy into <code>kajo-comp</code>'s Vulkan scene graph.</p>
-                <div class="doc-code"># Hardware acceleration policy (web.toml)
+                <div class="doc-sub">HTTPS • wiki.archlinux.org • Chromium/CEF Alloy Views + ANGLE GL &amp; VA-API decode</div>
+                <p class="doc-p"><code>kajo-web</code> runs Chromium/CEF Alloy Views directly on native Wayland (`--ozone-platform=wayland --use-gl=angle --use-angle=gl`) with hardware VA-API video decoding and zero compositor round-trip bloat inside <code>kajo-comp</code>'s Vulkan scene graph.</p>
+                <div class="doc-code"># Hardware acceleration &amp; suspension (web.toml)
 hardware_acceleration = "always"
 enable_webgl          = true
-gpu_process_webgl     = true
-smooth_scrolling      = true</div>
-                <p class="doc-p">This tab also simulates an active audio stream—open the vertical tab rail and click the <strong>🔊</strong> icon on the ArchWiki tab row to toggle per-tab mute.</p>
+smooth_scrolling      = true
+suspend_idle_min      = 30</div>
+                <p class="doc-p">This tab also simulates an active audio stream—open the vertical tab rail and click the <strong>🔊</strong> icon on the ArchWiki tab row to toggle per-tab mute via <code>SetAudioMuted</code>.</p>
               </div>
             </section>
 
@@ -1456,28 +1454,28 @@ smooth_scrolling      = true</div>
             <section class="page-view" id="page-tab-mdn">
               <div class="doc-wrap">
                 <h1 class="doc-h1">WebGL2RenderingContext — MDN Web Docs</h1>
-                <div class="doc-sub">HTTPS • developer.mozilla.org • GPU Process WebGL Isolation Active</div>
-                <p class="doc-p">With <code>UseGPUProcessForWebGL</code> enabled in WebKitGTK 2.48+, WebGL contexts execute in an isolated GPU process outside the untrusted web process, preventing driver hangs or memory faults from crashing the browser UI.</p>
+                <div class="doc-sub">HTTPS • developer.mozilla.org • Chromium ANGLE GL + GPU Process Active</div>
+                <p class="doc-p">With <code>enable_webgl = true</code>, Chromium executes WebGL inside its GPU process via Mesa ANGLE GL/EGL on native Wayland (`--ozone-platform=wayland`, Vulkan disabled to avoid surface-factory incompatibility).</p>
                 <div class="doc-code">const gl = canvas.getContext("webgl2", { antialias: true, powerPreference: "high-performance" });
-// Rendered via Skia + Mesa EGL/Vulkan DMA-BUF zero-copy handoff</div>
+// Rendered via Chromium GPU process + Mesa EGL/ANGLE on Wayland</div>
               </div>
             </section>
 
             <!-- PAGE 5: kajo://gpu -->
             <section class="page-view" id="page-tab-gpu">
               <div class="doc-wrap">
-                <h1 class="doc-h1">⚡ kajo://gpu — Graphics &amp; Sandbox Telemetry</h1>
-                <div class="doc-sub">INTERNAL SCHEME • Live WebKitGTK 6.0 runtime diagnostics</div>
+                <h1 class="doc-h1">⚡ kajo://gpu — Graphics &amp; Wayland Diagnostics</h1>
+                <div class="doc-sub">INTERNAL SCHEME • Live Chromium/CEF Alloy runtime diagnostics</div>
                 <table class="gpu-table">
                   <thead><tr><th>SUBSYSTEM</th><th>STATUS</th><th>CONFIGURATION / BACKEND</th></tr></thead>
                   <tbody>
-                    <tr><td>WebKitGTK Runtime</td><td class="ok-val">2.54.3 (GTK4 / libsoup3)</td><td>libwebkitgtk-6.0.so.4</td></tr>
-                    <tr><td>Hardware Acceleration</td><td class="ok-val" id="gpuRowPolicy">ALWAYS (Skia + DMA-BUF)</td><td id="gpuRowDetail">WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS</td></tr>
-                    <tr><td>2D &amp; Web Compositor</td><td class="ok-val" id="gpuRowSkia">Skia GPU Atlas + Threaded</td><td>Damage propagation enabled</td></tr>
-                    <tr><td>WebGL Isolation</td><td class="ok-val">GPU Process Enabled</td><td>UseGPUProcessForWebGL = true</td></tr>
-                    <tr><td>Process Sandbox</td><td class="ok-val">ENFORCED (Mandatory)</td><td>bubblewrap + xdg-dbus-proxy + seccomp</td></tr>
-                    <tr><td>Portal Integration</td><td class="ok-val">kajo + kajo-files</td><td>Settings (color-scheme/accent) + FileChooser</td></tr>
-                    <tr><td>Memory Pressure Limit</td><td class="ok-val" id="gpuRowMem">2048 MB</td><td>conservative=60%, strict=85%, idle suspend=30m</td></tr>
+                    <tr><td>Chromium / CEF Runtime</td><td class="ok-val">Alloy Views Host (C++20)</td><td>kajo-chrome://ui/* + CEF_RUNTIME_STYLE_ALLOY</td></tr>
+                    <tr><td>Hardware Acceleration</td><td class="ok-val" id="gpuRowPolicy">ALWAYS (ANGLE GL + VA-API)</td><td id="gpuRowDetail">--use-gl=angle --use-angle=gl</td></tr>
+                    <tr><td>Video Decode</td><td class="ok-val" id="gpuRowSkia">VA-API Hardware Decode</td><td>VaapiVideoDecoder + VaapiIgnoreDriverChecks</td></tr>
+                    <tr><td>Wayland Backend</td><td class="ok-val">Ozone Wayland Native</td><td>--ozone-platform=wayland (Vulkan disabled)</td></tr>
+                    <tr><td>Storage &amp; Permissions</td><td class="ok-val">Per-Profile SQLite WAL/FTS5</td><td>history.db + permissions.json (kajo://permissions)</td></tr>
+                    <tr><td>Portal Integration</td><td class="ok-val">kajo + kajo-files</td><td>Settings (color-scheme) + FileChooser</td></tr>
+                    <tr><td>Idle Tab Suspension</td><td class="ok-val" id="gpuRowMem">30 min</td><td>Releases inactive CefBrowserView views automatically</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -1487,8 +1485,8 @@ smooth_scrolling      = true</div>
             <section class="page-view" id="page-tab-suspended">
               <div class="doc-wrap">
                 <h1 class="doc-h1">💤 Suspended Tab Restored</h1>
-                <div class="doc-sub">Restored from WebKitWebViewSessionState after 30m idle suspension</div>
-                <p class="doc-p">Background tabs idle longer than <code>suspend_idle_min</code> release their WebKitWebProcess and GPU surfaces automatically. Clicking the tab restores its scroll position and back/forward history seamlessly.</p>
+                <div class="doc-sub">Re-created CefBrowserView after 30m idle suspension</div>
+                <p class="doc-p">Background tabs idle longer than <code>suspend_idle_min</code> release their backing <code>CefBrowserView</code> and renderer memory automatically while retaining URL, title, group, and rail position. Clicking the tab wakes and reloads it seamlessly.</p>
               </div>
             </section>
           </div>
@@ -1496,30 +1494,11 @@ smooth_scrolling      = true</div>
           <!-- Inline Find Bar -->
           <div class="find-bar" id="findBar">
             <span style="color:var(--metro-telemetry); font-weight:700;">FIND</span>
-            <input type="text" value="Skia" />
+            <input type="text" value="CEF" />
             <span style="color:var(--fg-dim);">2 / 5</span>
             <button class="chrome-btn">▲</button>
             <button class="chrome-btn">▼</button>
             <button class="chrome-btn" id="btnCloseFind">✕</button>
-          </div>
-
-          <!-- Docked WebKit Inspector -->
-          <div class="inspector-pane" id="inspectorPane">
-            <div class="insp-tabs">
-              <span class="insp-tab on">ELEMENTS</span>
-              <span class="insp-tab">CONSOLE</span>
-              <span class="insp-tab">NETWORK</span>
-              <span class="insp-tab">TIMELINES</span>
-              <span class="insp-tab">GRAPHICS (SKIA)</span>
-              <button class="chrome-btn" id="btnCloseInsp" style="margin-left:auto;">✕</button>
-            </div>
-            <div class="insp-body">&lt;html data-color-scheme="dark"&gt;
-  &lt;body class="kajo-viewport"&gt;
-    &lt;!-- WebKitWebInspector docked natively inside KajoWebWindow --&gt;
-    [Skia] Compositor frame #4821 — 1.4ms GPU raster — DMA-BUF zero-copy committed (damage: 1 rect)
-    [ContentFilter] Blocked 14 third-party tracker requests (0.04ms native bytecode match)
-  &lt;/body&gt;
-&lt;/html&gt;</div>
           </div>
         </div>
       </div>
@@ -1527,13 +1506,13 @@ smooth_scrolling      = true</div>
       <!-- AdBlock Shield Popover -->
       <div class="popover" id="popShield" style="right:auto; left:50%; transform:translateX(-50%);">
         <div class="pop-head">
-          <span>🛡 NATIVE CONTENT BLOCKER</span>
-          <span style="color:#4ce886;">42,180 RULES</span>
+          <span>🛡 IO-THREAD CONTENT BLOCKER</span>
+          <span style="color:#4ce886;">ABP + COSMETIC</span>
         </div>
         <div class="pop-body">
-          <div style="color:var(--fg-body); font-size:10.5px;">Compiled Safari-JSON DFA bytecode (<code>WebKitUserContentFilterStore</code>) + optional user scripts.</div>
+          <div style="color:var(--fg-body); font-size:10.5px;">IO-thread ABP network + hosts filter (<code>CefAdblockEngine</code>) + EasyList/EasyPrivacy auto-sync + cosmetic CSS.</div>
           <div class="toggle-card on" id="toggleSiteAdblock">
-            <div><div style="font-weight:700;">Block Ads &amp; Trackers</div><div style="font-size:10px; color:var(--fg-dim);">EasyList + EasyPrivacy JSON</div></div>
+            <div><div style="font-weight:700;">Block Ads &amp; Trackers</div><div style="font-size:10px; color:var(--fg-dim);">EasyList + EasyPrivacy + kajo://adblock</div></div>
             <span id="siteAdblockState" style="color:var(--metro-telemetry); font-weight:700;">ON</span>
           </div>
           <div class="toggle-card" id="toggleUserScripts">
@@ -1541,28 +1520,6 @@ smooth_scrolling      = true</div>
             <span id="userScriptsState" style="color:var(--fg-dim); font-weight:700;">OFF</span>
           </div>
           <button class="demo-btn" id="btnOpenSettingsFromShield">⚙ CONFIGURE FILTER LISTS IN KAJO SETTINGS</button>
-        </div>
-      </div>
-
-      <!-- Video / Audio Downloader Popover -->
-      <div class="popover" id="popMediaDl" style="width:335px;">
-        <div class="pop-head">
-          <span>⬇ VIDEO / AUDIO DOWNLOADER</span>
-          <span style="color:#4ce886;">YT-DLP + FFMPEG</span>
-        </div>
-        <div class="pop-body">
-          <div style="background:var(--surface-1); border:1px solid var(--border-subtle); padding:8px;">
-            <div style="font-weight:700; color:#fff;">Detected Stream: 2160p60 AV1 / VP9</div>
-            <div style="font-size:9.5px; color:var(--fg-dim); margin-top:2px;">HW Decode: GStreamer va (vaav1dec → DMA-BUF)</div>
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
-            <button class="demo-btn on" data-dl-fmt="Best MP4 (4K)">⬇ BEST MP4</button>
-            <button class="demo-btn" data-dl-fmt="1080p MP4">⬇ 1080P MP4</button>
-            <button class="demo-btn" data-dl-fmt="720p MP4">⬇ 720P MP4</button>
-            <button class="demo-btn" data-dl-fmt="Audio (Opus)">🎵 AUDIO ONLY</button>
-          </div>
-          <button class="demo-btn" id="btnOpenInPlayer" style="border-color:var(--metro-telemetry); color:var(--metro-telemetry);">▶ OPEN STREAM IN KAJO PLAYER (libmpv)</button>
-          <div id="mediaDlStatus" style="font-size:10px; color:var(--fg-dim);">Runs asynchronously via GSubprocess into Downloads Popover.</div>
         </div>
       </div>
 
@@ -1577,32 +1534,37 @@ smooth_scrolling      = true</div>
             <div style="display:flex; justify-content:space-between;"><strong>kajo-0.20.2-fx10.tar.zst</strong><span style="color:var(--metro-telemetry);">68%</span></div>
             <div style="font-size:10px; color:var(--fg-dim); margin-top:2px;">14.2 / 20.8 MB • 8.4 MB/s</div>
             <div class="dl-bar"><div class="dl-fill" style="width:68%;"></div></div>
+            <div style="display:flex; gap:5px; margin-top:6px;">
+              <button class="demo-btn">⏸ PAUSE</button>
+              <button class="demo-btn" style="border-color:var(--metro-urgent); color:var(--metro-urgent-text);">✕ CANCEL</button>
+            </div>
           </div>
           <div class="dl-item">
             <div style="display:flex; justify-content:space-between;"><strong>spec_kajo_web.pdf</strong><span style="color:#4ce886;">DONE</span></div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
               <span style="font-size:10px; color:var(--fg-dim);">~/Downloads • 1.2 MB</span>
-              <button class="demo-btn">📁 OPEN IN KAJO FILES</button>
+              <div style="display:flex; gap:4px;">
+                <button class="demo-btn on">OPEN</button>
+                <button class="demo-btn">📁 FOLDER</button>
+              </div>
             </div>
           </div>
+          <button class="demo-btn" id="btnOpenDlPage" style="width:100%;">ALL DOWNLOADS (kajo://downloads)</button>
         </div>
       </div>
 
-      <!-- Profile Switcher & Drive AppData Sync Popover -->
+      <!-- Profile Switcher Popover -->
       <div class="popover" id="popProfile" style="width:330px;">
         <div class="pop-head">
           <span id="popProfTitle">● WORK PROFILE</span>
-          <span id="popProfSyncBadge" style="color:#4ce886;">☁ SYNCED 2M AGO</span>
+          <span id="popProfSyncBadge" style="color:var(--metro-telemetry);">ISOLATED</span>
         </div>
         <div class="pop-body">
-          <div style="display:flex; align-items:center; justify-content:space-between; background:var(--surface-1); border:1px solid var(--border-subtle); padding:8px;">
-            <div>
-              <div id="popProfEmail" style="font-weight:700; color:#fff;">mikolas@work.dev</div>
-              <div style="font-size:9.5px; color:var(--fg-dim); margin-top:2px;">Google Drive appDataFolder • AES-256-GCM</div>
-            </div>
-            <button class="demo-btn on" id="btnSyncNow">↻ SYNC</button>
+          <div style="background:var(--surface-1); border:1px solid var(--border-subtle); padding:8px;">
+            <div id="popProfEmail" style="font-weight:700; color:#fff;">CefRequestContext • SQLite WAL</div>
+            <div style="font-size:9.5px; color:var(--fg-dim); margin-top:2px;">~/.local/share/kajo/web/profiles/work/</div>
           </div>
-          <div style="font-size:9.5px; color:var(--fg-dim); font-weight:700; letter-spacing:0.6px; margin-top:2px;">SWITCH ISOLATED PROFILE (WebKitNetworkSession)</div>
+          <div style="font-size:9.5px; color:var(--fg-dim); font-weight:700; letter-spacing:0.6px; margin-top:2px;">SWITCH ISOLATED PROFILE (CefRequestContext)</div>
           <div id="popProfList" style="display:flex; flex-direction:column; gap:5px;"></div>
           <div style="display:flex; gap:5px; margin-top:4px;">
             <button class="demo-btn" id="btnOpenPickerFromPop" style="flex:1;">⊞ PROFILE PICKER</button>
@@ -1615,12 +1577,12 @@ smooth_scrolling      = true</div>
       <div class="picker-backdrop" id="pickerModal">
         <div class="picker-win">
           <div class="picker-hdr">
-            <span>🌐 KAJO WEB // SELECT PROFILE (WebKitNetworkSession)</span>
+            <span>🌐 KAJO WEB // SELECT PROFILE (CefRequestContext)</span>
             <button class="chrome-btn close-btn" id="btnClosePicker">✕</button>
           </div>
           <div class="picker-body">
             <div style="font-family:var(--font-mono); font-size:11px; color:var(--fg-secondary); margin-bottom:14px;">
-              Each profile isolates cookies, IndexedDB, cache, Google web logins, and optional free Google Drive AppData sync.
+              Each profile isolates cookies, IndexedDB, cache, SQLite history/bookmarks/downloads, and site permissions.
             </div>
             <div class="picker-grid" id="pickerGrid"></div>
           </div>
@@ -1631,17 +1593,17 @@ smooth_scrolling      = true</div>
             </div>
             <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer;">
               <input type="checkbox" checked style="accent-color:var(--metro-accent);" />
-              <span>SHOW ON STARTUP (&gt;1 PROFILE)</span>
+              <span>SHOW ON STARTUP</span>
             </label>
           </div>
         </div>
       </div>
 
-      <!-- Embedded Kajo Settings (13 / 13 • KAJO WEB) Live Preview -->
+      <!-- Embedded Kajo Settings (12 / 13 • KAJO WEB) Live Preview -->
       <div class="settings-drawer" id="settingsDrawer">
         <div class="set-hdr">
           <div>
-            <div style="font-size:10px; color:var(--metro-telemetry); font-weight:700;">13 / 13 • KAJO SETTINGS</div>
+            <div style="font-size:10px; color:var(--metro-telemetry); font-weight:700;">12 / 13 • KAJO SETTINGS</div>
             <div style="font-size:13px; font-weight:800; letter-spacing:0.6px;">🌐 KAJO WEB (web.toml)</div>
           </div>
           <button class="chrome-btn close-btn" id="btnCloseSettings">✕</button>
@@ -1666,7 +1628,7 @@ smooth_scrolling      = true</div>
             </div>
             <div class="set-row">
               <div><strong>Rail Width</strong><small id="lblRailW">240 px</small></div>
-              <input type="range" id="rngRailW" min="180" max="320" step="10" value="240" style="width:130px; accent-color:var(--metro-accent);" />
+              <input type="range" id="rngRailW" min="180" max="360" step="10" value="240" style="width:130px; accent-color:var(--metro-accent);" />
             </div>
             <div class="set-row">
               <div><strong>Top Chrome</strong><small>Hide top bar into 2px edge trigger</small></div>
@@ -1678,52 +1640,52 @@ smooth_scrolling      = true</div>
           </div>
 
           <div class="set-card">
-            <div class="set-card-title">2. HARDWARE ACCELERATION &amp; RESOURCES</div>
+            <div class="set-card-title">2. HARDWARE ACCELERATION &amp; SUSPENSION</div>
             <div class="set-row">
-              <div><strong>GPU Acceleration</strong><small>Skia + Wayland DMA-BUF policy</small></div>
+              <div><strong>GPU Acceleration</strong><small>CEF ANGLE GL + VA-API on Wayland</small></div>
               <div class="seg" id="setGpu">
                 <button class="on" data-val="always">ALWAYS</button>
                 <button data-val="never">NEVER</button>
               </div>
             </div>
             <div class="toggle-card on" id="tcWebgl">
-              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">WebGL + GPU Process Isolation</div><div style="font-size:10px; color:var(--fg-dim);">UseGPUProcessForWebGL = true</div></div>
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">WebGL + Smooth Scrolling</div><div style="font-size:10px; color:var(--fg-dim);">enable_webgl = true (restart on GPU change)</div></div>
               <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">ON</span>
             </div>
             <div class="set-row">
-              <div><strong>Memory Limit</strong><small id="lblMem">2048 MB (WebKitMemoryPressure)</small></div>
-              <input type="range" id="rngMem" min="1024" max="8192" step="512" value="2048" style="width:130px; accent-color:var(--metro-accent);" />
+              <div><strong>Idle Tab Suspension</strong><small id="lblMem">30 min (0 = Off)</small></div>
+              <input type="range" id="rngMem" min="0" max="120" step="15" value="30" style="width:130px; accent-color:var(--metro-accent);" />
             </div>
           </div>
 
           <div class="set-card">
-            <div class="set-card-title">3. PRIVACY, AD-BLOCKING &amp; PORTALS</div>
+            <div class="set-card-title">3. PRIVACY, AD-BLOCKING &amp; PERMISSIONS</div>
             <div class="toggle-card on" id="tcAdblock">
-              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">Native Content Blocker</div><div style="font-size:10px; color:var(--fg-dim);">WebKitUserContentFilterStore • 42,180 rules</div></div>
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">IO-Thread ABP Ad Blocker</div><div style="font-size:10px; color:var(--fg-dim);">CefAdblockEngine • EasyList + Cosmetic CSS</div></div>
               <span id="tcAdblockLbl" style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">ON</span>
             </div>
             <div class="set-row">
-              <div><strong>HTTPS-Only + ITP</strong><small>Block 3rd-party cookies &amp; trackers</small></div>
+              <div><strong>HTTPS-Only &amp; 3P Cookies</strong><small>Block 3rd-party cookies + HTTPS upgrade</small></div>
               <span style="font-family:var(--font-mono); font-size:10px; color:#4ce886; font-weight:700;">ENABLED</span>
             </div>
             <div class="set-row">
-              <div><strong>File Picker &amp; Theme</strong><small>kajo-files portal &amp; kajo Settings portal</small></div>
-              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">SYNCED</span>
+              <div><strong>Site Permissions &amp; Portals</strong><small>kajo://permissions &amp; kajo-files chooser</small></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">ACTIVE</span>
             </div>
           </div>
           <div class="set-card">
-            <div class="set-card-title">4. PROFILES &amp; GOOGLE DRIVE APPDATA SYNC</div>
+            <div class="set-card-title">4. PROFILES &amp; DOWNLOADS</div>
             <div class="toggle-card on" id="tcDriveSync">
-              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">Google Drive AppData Sync (Free)</div><div style="font-size:10px; color:var(--fg-dim);">drive.appdata • libsecret • AES-256-GCM E2EE</div></div>
+              <div><div style="font-family:var(--font-mono); font-size:11px; font-weight:700;">Per-Profile Accent Borders</div><div style="font-size:10px; color:var(--fg-dim);">CefRequestContext isolation per window</div></div>
               <span style="font-family:var(--font-mono); font-size:10px; color:#4ce886; font-weight:700;">ACTIVE</span>
             </div>
             <div class="set-row">
-              <div><strong>Startup Profile Picker</strong><small>Shown automatically when &gt;1 profile exists</small></div>
+              <div><strong>Startup Profile Picker</strong><small>Click cards 1–9 or Guest mode</small></div>
               <button class="demo-btn" id="btnOpenPickerFromSettings">⊞ PREVIEW</button>
             </div>
             <div class="set-row">
-              <div><strong>Synced Data (kajo-web ↔ kajo-web)</strong><small>Bookmarks • History • Tabs • Settings</small></div>
-              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">CRDT MERGE</span>
+              <div><strong>Downloads Manager</strong><small>Always-visible ↓ popout &amp; kajo://downloads</small></div>
+              <span style="font-family:var(--font-mono); font-size:10px; color:var(--metro-telemetry); font-weight:700;">SQLITE</span>
             </div>
           </div>
         </div>
@@ -1736,7 +1698,7 @@ smooth_scrolling      = true</div>
       <!-- Ctrl+K Command & Tab Switcher Palette -->
       <div class="palette-backdrop" id="paletteModal">
         <div class="palette-box">
-          <input class="palette-input" id="paletteInput" type="text" placeholder="Jump to tab, bookmark, or command (e.g. 'gpu', 'pin', 'inspector', 'settings')..." />
+          <input class="palette-input" id="paletteInput" type="text" placeholder="Jump to tab, bookmark, or command (e.g. 'gpu', 'pin', 'downloads', 'settings')..." />
           <div class="palette-list" id="paletteList"></div>
         </div>
       </div>
@@ -1755,9 +1717,9 @@ smooth_scrolling      = true</div>
     isPrivate: false,
     activeProfile: 'work',
     profiles: [
-      { id: 'work', name: 'WORK', ico: '💼', hex: '#0078d4', rgb: '0, 120, 212', email: 'mikolas@work.dev', sync: '☁ SYNCED 2M AGO', synced: true },
-      { id: 'personal', name: 'PERSONAL', ico: '🏠', hex: '#10893e', rgb: '16, 137, 62', email: 'mikolas@gmail.com', sync: '☁ SYNCED 8M AGO', synced: true },
-      { id: 'dev', name: 'DEV', ico: '⚙', hex: '#d83b01', rgb: '216, 59, 1', email: 'No Google Account', sync: 'LOCAL ONLY', synced: false }
+      { id: 'work', name: 'WORK', ico: '💼', hex: '#0078d4', rgb: '0, 120, 212', email: 'Isolated CefRequestContext', sync: 'SQLITE WAL', synced: true },
+      { id: 'personal', name: 'PERSONAL', ico: '🏠', hex: '#10893e', rgb: '16, 137, 62', email: 'Isolated CefRequestContext', sync: 'SQLITE WAL', synced: true },
+      { id: 'dev', name: 'DEV', ico: '⚙', hex: '#d83b01', rgb: '216, 59, 1', email: 'Local Dev Profile', sync: 'SQLITE WAL', synced: false }
     ],
     activeTab: 'tab-newtab',
     closedStack: [],
@@ -1958,14 +1920,14 @@ smooth_scrolling      = true</div>
     state.gpuPolicy = policy;
     const isSw = policy === 'never';
     document.getElementById('chipSw').style.display = isSw ? 'inline-flex' : 'none';
-    document.getElementById('ntGpu').textContent = isSw ? '⚠ SOFTWARE' : 'SKIA + DMABUF';
+    document.getElementById('ntGpu').textContent = isSw ? '⚠ SOFTWARE' : 'CEF + VA-API';
     document.getElementById('ntGpu').style.color = isSw ? '#ffb84d' : 'var(--metro-telemetry)';
     const gp = document.getElementById('gpuRowPolicy');
-    gp.textContent = isSw ? 'NEVER (Software Fallback)' : 'ALWAYS (Skia + DMA-BUF)';
+    gp.textContent = isSw ? 'NEVER (Software Fallback)' : 'ALWAYS (ANGLE GL + VA-API)';
     gp.className = isSw ? 'warn-val' : 'ok-val';
     document.getElementById('gpuRowDetail').textContent = isSw
-      ? 'WEBKIT_DISABLE_DMABUF_RENDERER=1 (explicit fallback)'
-      : 'WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS';
+      ? '--no-hw-accel (SwiftShader software GL)'
+      : '--use-gl=angle --use-angle=gl';
     [document.getElementById('segGpu'), document.getElementById('setGpu')].forEach(seg => {
       seg.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.val === policy));
     });
@@ -1976,7 +1938,7 @@ smooth_scrolling      = true</div>
     const sh = document.getElementById('btnShield');
     sh.classList.toggle('off', !on);
     sh.textContent = on ? '🛡 ON' : '🛡 OFF';
-    document.getElementById('ntAdblock').textContent = on ? '42,180 RULES' : 'DISABLED';
+    document.getElementById('ntAdblock').textContent = on ? 'IO-THREAD ABP' : 'DISABLED';
     document.getElementById('toggleSiteAdblock').classList.toggle('on', on);
     document.getElementById('siteAdblockState').textContent = on ? 'ON' : 'OFF';
     document.getElementById('tcAdblock').classList.toggle('on', on);
@@ -2076,7 +2038,6 @@ smooth_scrolling      = true</div>
   // Popovers & Drawers
   function closePopovers() {
     document.getElementById('popShield').classList.remove('show');
-    document.getElementById('popMediaDl').classList.remove('show');
     document.getElementById('popDownloads').classList.remove('show');
     document.getElementById('popProfile').classList.remove('show');
   }
@@ -2090,8 +2051,8 @@ smooth_scrolling      = true</div>
     document.getElementById('popProfTitle').textContent = `● ${cur.name} PROFILE`;
     document.getElementById('popProfEmail').textContent = cur.email;
     document.getElementById('popProfSyncBadge').textContent = cur.sync;
-    document.getElementById('popProfSyncBadge').style.color = cur.synced ? '#4ce886' : 'var(--fg-dim)';
-    document.getElementById('ntProfile').textContent = `${cur.name} • ${cur.synced ? '☁ SYNCED' : 'LOCAL'}`;
+    document.getElementById('popProfSyncBadge').style.color = cur.synced ? 'var(--metro-telemetry)' : 'var(--fg-dim)';
+    document.getElementById('ntProfile').textContent = `${cur.name} • SQLITE`;
 
     const pl = document.getElementById('popProfList');
     pl.innerHTML = '';
@@ -2099,7 +2060,7 @@ smooth_scrolling      = true</div>
       const r = document.createElement('div');
       r.className = 'prof-row' + (p.id === state.activeProfile ? ' active' : '');
       r.style.setProperty('--p-col', p.hex);
-      r.innerHTML = `<span>${p.ico}</span><div style="flex:1;"><div style="font-weight:700; color:#fff;">${p.name}</div><div style="font-size:9.5px; color:var(--fg-dim);">${p.email}</div></div><span style="font-size:9.5px; color:${p.synced ? 'var(--metro-telemetry)' : 'var(--fg-dim)'};">${p.synced ? '☁' : 'LOCAL'}</span>`;
+      r.innerHTML = `<span>${p.ico}</span><div style="flex:1;"><div style="font-weight:700; color:#fff;">${p.name}</div><div style="font-size:9.5px; color:var(--fg-dim);">${p.email}</div></div><span style="font-size:9.5px; color:var(--metro-telemetry);">${p.sync}</span>`;
       r.onclick = () => { state.activeProfile = p.id; renderProfiles(); closePopovers(); };
       pl.appendChild(r);
     });
@@ -2114,7 +2075,7 @@ smooth_scrolling      = true</div>
         <div class="pk-top"><span>${p.ico}</span><span class="pk-key">${idx + 1}</span></div>
         <div class="pk-name">${p.name}</div>
         <div class="pk-mail">${p.email}</div>
-        <div class="pk-sync" style="color:${p.synced ? 'var(--metro-telemetry)' : 'var(--fg-dim)'};">${p.sync}</div>
+        <div class="pk-sync" style="color:var(--metro-telemetry);">${p.sync}</div>
       `;
       c.onclick = () => {
         state.activeProfile = p.id;
@@ -2135,16 +2096,7 @@ smooth_scrolling      = true</div>
     closePopovers();
     if (!was) el.classList.add('show');
   };
-  document.getElementById('btnSyncNow').onclick = () => {
-    const badge = document.getElementById('popProfSyncBadge');
-    badge.textContent = '↻ SYNCING…';
-    badge.style.color = 'var(--metro-telemetry)';
-    setTimeout(() => {
-      const cur = state.profiles.find(p => p.id === state.activeProfile);
-      if (cur) { cur.synced = true; cur.sync = '☁ SYNCED JUST NOW'; }
-      renderProfiles();
-    }, 550);
-  };
+  document.getElementById('btnOpenDlPage').onclick = closePopovers;
   document.getElementById('btnPrivFromPop').onclick = () => {
     state.isPrivate = true;
     document.getElementById('chipPriv').style.display = 'inline-flex';
@@ -2164,7 +2116,7 @@ smooth_scrolling      = true</div>
   };
   document.getElementById('btnAddProfile').onclick = () => {
     const n = state.profiles.length + 1;
-    state.profiles.push({ id: 'prof-' + n, name: 'PROFILE ' + n, ico: '❖', hex: '#00b7c3', rgb: '0, 183, 195', email: 'Not signed in', sync: 'LOCAL ONLY', synced: false });
+    state.profiles.push({ id: 'prof-' + n, name: 'PROFILE ' + n, ico: '❖', hex: '#00b7c3', rgb: '0, 183, 195', email: 'Isolated CefRequestContext', sync: 'SQLITE WAL', synced: false });
     renderProfiles();
   };
   document.getElementById('btnShield').onclick = (e) => {
@@ -2182,24 +2134,6 @@ smooth_scrolling      = true</div>
     if (!was) el.classList.add('show');
   };
   document.getElementById('btnCloseDl').onclick = closePopovers;
-  document.getElementById('btnMediaDl').onclick = (e) => {
-    e.stopPropagation();
-    const el = document.getElementById('popMediaDl');
-    const was = el.classList.contains('show');
-    closePopovers();
-    if (!was) el.classList.add('show');
-  };
-  document.querySelectorAll('#popMediaDl [data-dl-fmt]').forEach(btn => {
-    btn.onclick = () => {
-      document.getElementById('mediaDlStatus').textContent = `Queued yt-dlp (${btn.dataset.dlFmt}) → check Downloads Popover (↓)`;
-      document.getElementById('mediaDlStatus').style.color = '#4ce886';
-      document.getElementById('btnDownloads').textContent = '↓ 2';
-    };
-  });
-  document.getElementById('btnOpenInPlayer').onclick = () => {
-    document.getElementById('mediaDlStatus').textContent = 'Spawned: kajo-player <stream-url> (libmpv VA-API)';
-    document.getElementById('mediaDlStatus').style.color = 'var(--metro-telemetry)';
-  };
   document.getElementById('toggleUserScripts').onclick = (e) => {
     const card = e.currentTarget;
     const on = card.classList.toggle('on');
@@ -2226,14 +2160,13 @@ smooth_scrolling      = true</div>
     document.getElementById('lblRailW').textContent = e.target.value + ' px';
   };
   document.getElementById('rngMem').oninput = (e) => {
-    document.getElementById('lblMem').textContent = e.target.value + ' MB (WebKitMemoryPressure)';
-    document.getElementById('gpuRowMem').textContent = e.target.value + ' MB';
+    const v = parseInt(e.target.value, 10);
+    document.getElementById('lblMem').textContent = v === 0 ? 'Disabled (0)' : v + ' min';
+    document.getElementById('gpuRowMem').textContent = v === 0 ? 'Disabled' : v + ' min';
   };
 
   document.getElementById('btnFind').onclick = () => document.getElementById('findBar').classList.toggle('show');
   document.getElementById('btnCloseFind').onclick = () => document.getElementById('findBar').classList.remove('show');
-  document.getElementById('btnInspector').onclick = () => document.getElementById('inspectorPane').classList.toggle('show');
-  document.getElementById('btnCloseInsp').onclick = () => document.getElementById('inspectorPane').classList.remove('show');
 
   // Ctrl+K Palette
   const palModal = document.getElementById('paletteModal');
@@ -2253,9 +2186,9 @@ smooth_scrolling      = true</div>
       ...state.tabs.map(t => ({ tag: 'TAB', label: `${t.ico} ${t.title}`, sub: t.host, run: () => selectTab(t.id) })),
       { tag: 'CMD', label: 'Toggle Vertical Rail Pin (Ctrl+B)', sub: 'web.toml', run: () => syncRailMode(state.railMode === 'pinned' ? 'autohide' : 'pinned') },
       { tag: 'CMD', label: 'Switch Rail to Compact Icon Mode', sub: 'web.toml', run: () => syncRailMode('compact') },
+      { tag: 'CMD', label: 'Open Downloads Popout (Ctrl+J)', sub: 'kajo://downloads', run: () => document.getElementById('popDownloads').classList.add('show') },
       { tag: 'CMD', label: 'Open Kajo Settings → Kajo Web (Ctrl+,)', sub: 'kajo-settings', run: () => document.getElementById('settingsDrawer').classList.add('show') },
-      { tag: 'CMD', label: 'Toggle WebKit Web Inspector (F12)', sub: 'DevTools', run: () => document.getElementById('inspectorPane').classList.toggle('show') },
-      { tag: 'CMD', label: 'Open GPU & DMA-BUF Diagnostics', sub: 'kajo://gpu', run: () => selectTab('tab-gpu') }
+      { tag: 'CMD', label: 'Open GPU & VA-API Diagnostics', sub: 'kajo://gpu', run: () => selectTab('tab-gpu') }
     ].filter(x => !lq || x.label.toLowerCase().includes(lq) || x.sub.toLowerCase().includes(lq));
 
     palList.innerHTML = '';

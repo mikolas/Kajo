@@ -28,7 +28,7 @@ Now: small per-domain TOML files, typed enums, one table-driven schema engine, a
 | `src/config/kajo_config_migrate.{h,c}` | One-time `config.json` → `*.toml` importer (the only code using `json-glib`). |
 | `src/config/kajo_config_comp.c` | Shared compositor TOML read/write helpers (`comp.toml` `[layout] gap_px`, `rules.toml` `[[layer_rule]]`, `outputs.toml` `[[output]]`) used by `kajo-settings`. |
 | `src/config/schemas/schema_{theme,shell,ide,files,mod,web}.c` | One `KajoDomainSchema` per domain. `schema_shell.c` also parses and writes the `[layout]` widget arrays. |
-| `tests/test_config.c` | 12 GTest cases (section 8). |
+| `tests/test_config.c` | 13 GTest cases (section 10). |
 | `tests/fuzz/fuzz_toml_config.c` | Fuzz entry point over all schemas; also built as the meson test `fuzz-toml-config`. |
 
 ---
@@ -100,7 +100,7 @@ Limits to know about: comments *inside* the `[layout]` arrays are lost when the 
 - Snapshots are `g_atomic_rc_box` objects, immutable after publication. `acquire_*()` takes a reference under a short mutex; readers on any thread (for example the `kajo-mod` audio thread) never see a half-updated struct.
 - `GFileMonitor` watches the config directory and `conf.d`. Events are coalesced for 50 ms (`g_timeout_add`), then the affected domains are rebuilt. The snapshot is replaced only if the new value differs structurally (`kajo_cfg_domain_equal()`).
 - **Subscriber callbacks run on the GMainContext that was the thread-default context when `subscribe()` was called.** If that context is owned by the calling thread the callback runs immediately; otherwise it is queued there. Each subscription is reference-counted and has an `active` flag: a callback queued before `unsubscribe()` (or before the store is destroyed) is dropped rather than delivered, and `destroy_notify` runs when the last reference is released.
-- The store needs a GLib main loop (`GFileMonitor`, `g_timeout_add`). It is not usable inside a program whose only event loop is a `wl_event_loop` (such as the planned `kajo-comp`); that program should link the schema engine and read files directly.
+- The store needs a GLib main loop (`GFileMonitor`, `g_timeout_add`). It is not usable inside a program whose only event loop is a `wl_event_loop` (such as `kajo-comp`); that program links the schema engine/parsers and reads TOML files directly.
 
 ---
 
@@ -223,9 +223,9 @@ Key groups (full schema in `src/config/schemas/schema_web.c`, defaults in `data/
 
 ## 8. One-time legacy migration (`kajo_config_migrate.c`)
 
-- Runs when the store is created, only if `<config dir>/config.json` exists and at least one of the five domain files is missing.
+- Runs when the store is created, only if `<config dir>/config.json` exists and at least one of the five original migrated domain files (`theme`, `shell`, `ide`, `files`, `mod`) is missing (`web.toml` was always TOML-native).
 - Takes an exclusive `flock()` on `<config dir>/.migrate.lock` and re-checks the condition under the lock, so several processes starting together migrate once.
-- Parses the JSON (structured objects and the old flat keys) and writes each *missing* domain file; `shell.toml` is written last. When all five exist, `config.json` is renamed to `config.json.bak`. If a write fails, `config.json` stays and the next start retries.
+- Parses the JSON (structured objects and the old flat keys) and writes each *missing* domain file; `shell.toml` is written last. When all five migrated files exist, `config.json` is renamed to `config.json.bak`. If a write fails, `config.json` stays and the next start retries.
 - Ranges used while importing are the legacy ones and can differ from the schema ranges for some keys; the schema clamps again on the next load.
 
 Other JSON files are not configuration and stay JSON: the launcher frequency cache, Niri IPC, per-project `.kajo/{tasks,debug}.json`.
@@ -252,7 +252,7 @@ Other JSON files are not configuration and stay JSON: the launcher frequency cac
 
 `meson test` runs, among others:
 
-- `config-roundtrip` (`tests/test_config.c`, 11 cases): defaults-file parity; per-domain round trips and clamping; `conf.d` overlay with base-save isolation; concurrent readers during reload; syntax-error preservation and save refusal; comment/unknown-key/datetime-preserving patch; **patcher never writes an unparsable file** (quoted key, dotted key, inline table); **subscriber callbacks arrive on the subscriber's thread and are dropped after unsubscribe**; legacy migration.
+- `config-roundtrip` (`tests/test_config.c`, 13 cases): defaults-file parity; per-domain round trips and clamping; `conf.d` overlay with base-save isolation; concurrent readers during reload; syntax-error preservation and save refusal; comment/unknown-key/datetime-preserving patch; **patcher never writes an unparsable file** (quoted key, dotted key, inline table); **subscriber callbacks arrive on the subscriber's thread and are dropped after unsubscribe**; legacy migration.
 - `fuzz-toml-config`: smoke run of the fuzz entry point.
 - `autohide-state`: includes a check that `edge_strip_px` survives a live reload.
 

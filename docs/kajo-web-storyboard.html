@@ -411,7 +411,7 @@
 
   <footer>
     <span>KEYBOARD: ← / → STEP • SPACE PLAY/PAUSE • 1–7 SCENARIOS</span>
-    <span>KAJO AERO + METRO • WEBKITGTK 6.0 (SKIA + DMABUF)</span>
+    <span>KAJO AERO + METRO • CHROMIUM/CEF ALLOY (WAYLAND + VA-API)</span>
   </footer>
 
 <script>
@@ -422,32 +422,32 @@ const SCENARIOS = [
     steps: [
       {
         title: '1. Full-Viewport Resting State',
-        desc: 'In default autohide mode, kajo-web hides the vertical tab rail into a 4px left edge trigger strip (rgba(0,0,0,0.01) — never opacity: 0) with 2px accent ticks showing open tabs. The web page gets 100% of the tiled column.',
+        desc: 'In default autohide mode, kajo-web hides the vertical tab rail into a 4px left edge trigger strip (rgba(0,0,0,0.01)) with 2px accent ticks showing open tabs. The web page gets 100% of the tiled column.',
         key: '',
         cursor: { x: 640, y: 360 },
         callout: { x: 26, y: 290, text: '4px trigger strip + 2px tab ticks: zero wasted horizontal width' },
-        st: { rail_mode: 'autohide', rail_state: 'COLLAPSED', reflow: '0 px', gpu: 'SKIA+DMABUF' },
-        spec: '§3.2 & §3.3 — Autohide Rail FSM starts in COLLAPSED. Trigger strip uses rgba(0,0,0,0.01) per AGENTS.md §4D so GTK4/Wayland always commits the surface and delivers pointer enter events.',
+        st: { rail_mode: 'autohide', rail_state: 'COLLAPSED', reflow: '0 px', gpu: 'CEF+VAAPI' },
+        spec: '§3.2 & §3.3 — Autohide Rail FSM starts in COLLAPSED. Zero-reflow overlay rendered via kajo-chrome://ui/rail.html.',
         view: { railMode: 'autohide', railOpen: false, triggerLit: false, tab: 'github' }
       },
       {
-        title: '2. Pointer Hits Left Edge Trigger (80ms Debounce)',
-        desc: 'Moving the pointer to x < 4px enters REVEAL_WAIT and starts a real 80ms GLib timer. Accidental edge brushes that leave before 80ms cancel cleanly without flicker.',
-        key: 'POINTER → EDGE (80ms)',
+        title: '2. Pointer Hits Left Edge Trigger (35ms Debounce)',
+        desc: 'Moving the pointer to x < 4px enters REVEAL_WAIT and starts a real 35ms debounce timer (configurable in web.toml). Accidental edge brushes that leave early cancel cleanly without flicker.',
+        key: 'POINTER → EDGE (35ms)',
         cursor: { x: 10, y: 240 },
-        callout: { x: 28, y: 210, text: 'REVEAL_WAIT timer (80ms): cancels if pointer leaves early' },
-        st: { rail_mode: 'autohide', rail_state: 'REVEAL_WAIT', reflow: '0 px', gpu: 'SKIA+DMABUF' },
-        spec: '§3.3 — Real timer transitions (never evaluated lazily on next input). Reveal delay is configurable in web.toml (rail_reveal_delay_ms, 0..300ms).',
+        callout: { x: 28, y: 210, text: 'REVEAL_WAIT timer (35ms): cancels if pointer leaves early' },
+        st: { rail_mode: 'autohide', rail_state: 'REVEAL_WAIT', reflow: '0 px', gpu: 'CEF+VAAPI' },
+        spec: '§3.3 — Real timer transitions driven by web_model rail FSM (rail_reveal_delay_ms, 0..300ms).',
         view: { railMode: 'autohide', railOpen: false, triggerLit: true, tab: 'github' }
       },
       {
         title: '3. 240px Overlay Rail Slides Over Content',
-        desc: 'The 240px Aero + Metro vertical tab rail slides out inside GtkOverlay directly over the viewport. Notice the GitHub text behind it does NOT wrap or reflow—zero layout thrash!',
+        desc: 'The 240px Aero + Metro vertical tab rail slides out directly over the CefBrowserView viewport. Notice the GitHub text behind it does NOT wrap or reflow—zero layout thrash!',
         key: 'RAIL → EXPANDED',
         cursor: { x: 120, y: 215 },
-        callout: { x: 255, y: 170, text: 'Overlay slide-over: WebKitWebView width stays constant (zero DOM reflow)' },
-        st: { rail_mode: 'autohide', rail_state: 'EXPANDED', reflow: '0 px (overlay)', gpu: 'SKIA+DMABUF' },
-        spec: '§3.1 — Pinned square favicon tiles sit at top, collapsible color-coded groups below, active row marked with a crisp 3px white left bar on @metro-accent.',
+        callout: { x: 255, y: 170, text: 'Overlay slide-over: CefBrowserView width stays constant (zero DOM reflow)' },
+        st: { rail_mode: 'autohide', rail_state: 'EXPANDED', reflow: '0 px (overlay)', gpu: 'CEF+VAAPI' },
+        spec: '§3.1 — Pinned square favicon tiles sit at top, collapsible color-coded groups below, active row marked with a crisp 3px accent bar.',
         view: { railMode: 'autohide', railOpen: true, triggerLit: true, tab: 'github' }
       },
       {
@@ -456,8 +456,8 @@ const SCENARIOS = [
         key: 'CLICK TAB → 220ms HIDE',
         cursor: { x: 520, y: 310 },
         callout: { x: 28, y: 140, text: 'Switched to ArchWiki; rail retracted after 220ms grace period' },
-        st: { rail_mode: 'autohide', rail_state: 'COLLAPSED', reflow: '0 px', gpu: 'SKIA+DMABUF' },
-        spec: '§3.3 — Hold-open counter pauses hiding whenever a tab drag, context menu, or rename entry is active; Escape dismisses immediately.',
+        st: { rail_mode: 'autohide', rail_state: 'COLLAPSED', reflow: '0 px', gpu: 'CEF+VAAPI' },
+        spec: '§3.3 — Hold-open pauses hiding whenever a tab drag, context menu, or rename entry is active; Escape dismisses immediately.',
         view: { railMode: 'autohide', railOpen: false, triggerLit: false, tab: 'arch' }
       }
     ]
@@ -468,42 +468,42 @@ const SCENARIOS = [
     steps: [
       {
         title: '1. Resting Minimalist Top Bar (34px)',
-        desc: 'Unfocused chrome stays ultra-clean: navigation arrows, rail pin button, a centered domain pill (bold host + muted path + TLS lock + native content blocker [🛡 ON]), media downloader, profile chip, settings, float, and close.',
+        desc: 'Top chrome stays ultra-clean: navigation buttons, rail pin toggle, editable omnibar (TLS icon + host + inline Adblock shield [🛡 ON]), always-visible Downloads chip (↓), profile chip, settings, float, and close.',
         key: '',
         cursor: { x: 600, y: 300 },
-        callout: { x: 350, y: 74, text: '34px top bar: real [🛡 ON] filter state (never a fake counter)' },
-        st: { omnibar: 'RESTING', adblock: 'ON (42k rules)', top_bar: '34px', palette: 'CLOSED' },
-        spec: '§3.4 — Conditional right-side chips (Media Download, Downloads, Zoom, Private, SW Render) stay hidden when inactive.',
+        callout: { x: 350, y: 74, text: '34px kajo-chrome://ui/topbar.html with [🛡 ON] & always-visible ↓ chip' },
+        st: { omnibar: 'EDITABLE', adblock: 'IO-THREAD ABP', top_bar: '34px', palette: 'CLOSED' },
+        spec: '§3.4 — Always-visible ↓ Downloads chip lights up with live progress fill when active.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github' }
       },
       {
-        title: '2. Ctrl+L Expands Full URL & Bang Search',
-        desc: 'Pressing Ctrl+L highlights the omnibar in @metro-accent for instant URL entry or keyword bangs (!arch, !gh, !mdn) classified by the pure GTK-free web_model parser.',
+        title: '2. Ctrl+L Focuses Omnibar & Bang Search',
+        desc: 'Pressing Ctrl+L or clicking anywhere in the address bar focuses and selects the URL in @metro-accent for instant navigation or keyword bangs (!arch, !gh, !g, !ddg) parsed by pure C web_model.c.',
         key: 'Ctrl+L  "!arch wayland"',
         cursor: { x: 580, y: 46 },
         callout: { x: 340, y: 78, text: 'web_model classifies URLs, localhost, kajo:// & !bang shortcuts' },
         st: { omnibar: 'FOCUSED', query: '!arch wayland', engine: 'ArchWiki', palette: 'CLOSED' },
-        spec: '§5.1 & §8 — web_model.c parses URL vs. bang vs. default search engine cleanly without touching GTK or WebKit.',
+        spec: '§4 & §5 — web_model.c parses URL vs. bang vs. default search engine cleanly with live autocomplete from SQLite.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', omniFocus: '!arch wayland' }
       },
       {
         title: '3. Ctrl+K Quick Command & Tab Palette',
-        desc: 'Pressing Ctrl+K opens a Kajo-native fuzzy modal searching open tabs, recently closed tabs, SQLite FTS5 bookmarks/history, and browser commands—matching kajo-ide and kajo launcher aesthetics.',
+        desc: 'Pressing Ctrl+K opens a Kajo-native fuzzy modal searching open tabs and browser commands (bookmarks, downloads, permissions, suspend inactive tabs, settings)—matching kajo-ide aesthetics.',
         key: 'Ctrl+K  "gpu"',
         cursor: { x: 600, y: 170 },
-        callout: { x: 840, y: 110, text: 'Fuzzy jump across tabs, bookmarks, history & actions' },
-        st: { omnibar: 'RESTING', palette: 'OPEN (filter: gpu)', results: '3 matches', focus: 'PALETTE' },
-        spec: '§6 — Keyboard-first workflow: Ctrl+K switches tabs or runs commands without touching the mouse or leaving the page.',
+        callout: { x: 840, y: 110, text: 'Fuzzy jump across open tabs, internal pages & commands' },
+        st: { omnibar: 'READY', palette: 'OPEN (filter: gpu)', results: '3 matches', focus: 'PALETTE' },
+        spec: '§4 — Keyboard-first workflow: Ctrl+K switches tabs or runs commands without leaving the keyboard.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', palette: true }
       },
       {
         title: '4. Instant Jump to kajo://gpu',
-        desc: 'Pressing Enter dismisses the palette and opens kajo://gpu directly via WebKitURISchemeRequest with live Skia + DMA-BUF telemetry.',
+        desc: 'Pressing Enter dismisses the palette and opens kajo://gpu via kajo:// scheme handler with live Chromium/CEF Ozone Wayland + VA-API diagnostics.',
         key: 'Enter → kajo://gpu',
         cursor: { x: 600, y: 310 },
-        callout: { x: 400, y: 320, text: 'Internal kajo:// pages share Kajo Aero + Metro CSS tokens' },
-        st: { omnibar: 'kajo://gpu', palette: 'CLOSED', scheme: 'kajo://', gpu: 'SKIA+DMABUF' },
-        spec: '§7 — Registered via webkit_web_context_register_uri_scheme(ctx, "kajo", ...) for newtab, gpu, history, bookmarks, downloads.',
+        callout: { x: 400, y: 320, text: 'Internal kajo:// pages share Kajo Aero + Metro theme tokens' },
+        st: { omnibar: 'kajo://gpu', palette: 'CLOSED', scheme: 'kajo://', gpu: 'CEF+VAAPI' },
+        spec: '§4.2 — Custom kajo:// scheme serves newtab, bookmarks, history, adblock, permissions, downloads, gpu, crashed & about.',
         view: { railMode: 'autohide', railOpen: false, tab: 'gpu' }
       }
     ]
@@ -514,42 +514,42 @@ const SCENARIOS = [
     steps: [
       {
         title: '1. Pinned Grid & Color-Coded Groups',
-        desc: 'Pinned tabs live as compact 40×34px square favicon tiles at the top of the rail. Regular tabs organize into collapsible WORK and DOCS groups with semantic accent bars.',
+        desc: 'Pinned tabs live as compact square favicon tiles at the top of the rail. Regular tabs organize into collapsible WORK and DOCS groups with semantic accent bars.',
         key: 'Ctrl+B (PIN RAIL)',
         cursor: { x: 110, y: 110 },
-        callout: { x: 245, y: 80, text: 'Pinned square grid never auto-suspends or closes on middle-click' },
+        callout: { x: 245, y: 80, text: 'Pinned square grid never auto-suspends' },
         st: { rail_mode: 'pinned', pinned_tabs: '3', groups: 'WORK, DOCS', idle_susp: '30m' },
-        spec: '§3.5 — Pinned tabs and group metadata persist atomically in ~/.local/state/kajo/web-session.json.',
+        spec: '§1.2 & §5 — Pinned tabs and group metadata persist atomically in per-profile session JSON.',
         view: { railMode: 'pinned', railOpen: true, tab: 'github' }
       },
       {
         title: '2. Per-Tab Audio Indicator & One-Click Mute',
-        desc: 'Tabs playing media display a live cyan 🔊 badge. Clicking it toggles webkit_web_view_set_is_muted() directly in the vertical rail without switching tabs.',
+        desc: 'Tabs playing media display a live cyan 🔊 badge. Clicking it toggles CefBrowserHost::SetAudioMuted() directly in the vertical rail without switching tabs.',
         key: 'CLICK 🔊 → MUTE',
         cursor: { x: 198, y: 204 },
-        callout: { x: 245, y: 188, text: 'Inline mute toggle via webkit_web_view_set_is_muted()' },
-        st: { audio_tab: 'ArchWiki', muted: 'TRUE (🔇)', audible_protect: 'ACTIVE', gpu: 'SKIA+DMABUF' },
-        spec: '§3.5 — Audible tabs are protected from automatic idle suspension.',
+        callout: { x: 245, y: 188, text: 'Inline mute toggle via CefBrowserHost::SetAudioMuted()' },
+        st: { audio_tab: 'ArchWiki', muted: 'TRUE (🔇)', audible_protect: 'ACTIVE', gpu: 'CEF+VAAPI' },
+        spec: '§1.4 — Audible tabs are protected from automatic idle suspension.',
         view: { railMode: 'pinned', railOpen: true, tab: 'github', muted: true }
       },
       {
         title: '3. Automatic Idle Tab Suspension (💤)',
-        desc: 'After suspend_idle_min (default 30m), untouched background tabs save WebKitWebViewSessionState and release their WebKitWebProcess + Skia GPU textures to keep memory lean.',
+        desc: 'After suspend_idle_min (default 30m), untouched background tabs release their backing CefBrowserView and renderer process while keeping URL, title, group, and rail slot (marked 💤).',
         key: 'IDLE 30m → SUSPEND',
         cursor: { x: 120, y: 316 },
-        callout: { x: 245, y: 298, text: '💤 Dimmed suspended tab: 0 MB WebProcess, state preserved' },
-        st: { suspended: '1 tab (💤)', saved_ram: '~185 MB', mem_limit: '2048 MB', policy: 'WebKitMemPressure' },
-        spec: '§3.5 & §4.2 — Never suspends active, pinned, audible, download-active, or WebRTC capture tabs.',
+        callout: { x: 245, y: 298, text: '💤 Dimmed suspended tab: renderer freed, metadata preserved' },
+        st: { suspended: '1 tab (💤)', saved_ram: 'FREED', trigger: '30m idle', policy: 'CefBrowserView' },
+        spec: '§1.4 — Never suspends active, pinned, or audible tabs.',
         view: { railMode: 'pinned', railOpen: true, tab: 'github', muted: true, showSusp: true }
       },
       {
-        title: '4. Click Suspended Tab → Seamless Restore',
-        desc: 'Clicking the suspended tab recreates its WebKitWebView, restores back/forward history and scroll position from WebKitWebViewSessionState, and resumes instantly.',
+        title: '4. Click Suspended Tab → Seamless Wake',
+        desc: 'Clicking the suspended tab recreates its CefBrowserView immediately and restores it into the active viewport.',
         key: 'CLICK → WAKE TAB',
         cursor: { x: 540, y: 280 },
-        callout: { x: 260, y: 140, text: 'Restored from WebKitWebViewSessionState seamlessly' },
-        st: { active_tab: 'Wayland Spec', state: 'RESTORED', web_procs: '4 active', mem_limit: '2048 MB' },
-        spec: '§3.5 — Zero data loss on wake; session state is stored in memory while running and serialized on exit.',
+        callout: { x: 260, y: 140, text: 'Backing CefBrowserView re-created on activation' },
+        st: { active_tab: 'Wayland Spec', state: 'RESTORED', backend: 'CEF ALLOY', suspend: 'IDLE 30m' },
+        spec: '§1.4 — Zero manual reload needed when waking suspended tabs.',
         view: { railMode: 'pinned', railOpen: true, tab: 'restored', muted: true }
       }
     ]
@@ -560,32 +560,32 @@ const SCENARIOS = [
     steps: [
       {
         title: '1. Default Hardware Acceleration (ALWAYS)',
-        desc: 'kajo-web starts with WEBKIT_HARDWARE_ACCELERATION_POLICY_ALWAYS, Skia 2D + Skia web-process compositing, zero-copy Wayland DMA-BUF, and WebGL GPU process isolation enabled by default.',
+        desc: 'kajo-web starts on native Wayland (--ozone-platform=wayland --use-gl=angle --use-angle=gl) with hardware VA-API video decoding enabled and Vulkan disabled to avoid Ozone surface incompatibility.',
         key: 'DEFAULT: ALWAYS',
         cursor: { x: 580, y: 260 },
-        callout: { x: 560, y: 120, text: 'Zero-copy GBM DMA-BUF handoff directly into kajo-comp Vulkan scene' },
-        st: { hw_accel: 'ALWAYS', renderer: 'SKIA + DMABUF', webgl_gpu: 'ISOLATED', sw_badge: 'HIDDEN' },
-        spec: '§4.1 — Hardware acceleration is configured before the first WebKitWebView is created.',
+        callout: { x: 560, y: 120, text: 'Native Wayland ANGLE GL + VA-API decode in Chromium/CEF' },
+        st: { hw_accel: 'ALWAYS', renderer: 'ANGLE GL', video: 'VA-API', sw_badge: 'HIDDEN' },
+        spec: '§2 & HARDWARE_FINDINGS.md §5 — Native Wayland EGL/ANGLE + VA-API by default.',
         view: { railMode: 'autohide', railOpen: false, tab: 'gpu', swFallback: false }
       },
       {
         title: '2. Switching to Software Fallback in kajo-settings',
-        desc: 'If a broken driver or VM requires disabling GPU compositing, setting hardware_acceleration = "never" in kajo-settings sets WEBKIT_DISABLE_DMABUF_RENDERER=1 explicitly.',
+        desc: 'If a broken driver or VM requires disabling GPU compositing, setting hardware_acceleration = "never" in kajo-settings (Page 12 / 13) switches CEF to SwiftShader software rendering on next launch (or --no-hw-accel).',
         key: 'web.toml → NEVER',
         cursor: { x: 1010, y: 240 },
-        callout: { x: 510, y: 180, text: 'Explicit opt-out in kajo-settings → Page 13 (requires browser restart)' },
-        st: { hw_accel: 'NEVER', dmabuf: 'DISABLED', restart_req: 'YES', sw_badge: 'WILL SHOW' },
-        spec: '§4.1 & §5.2 — Settings banner clearly tells the user when a policy change requires restarting kajo-web.',
+        callout: { x: 510, y: 180, text: 'Explicit opt-out in kajo-settings → Page 12 (requires browser restart)' },
+        st: { hw_accel: 'NEVER', backend: 'SWIFTSHADER', restart_req: 'YES', sw_badge: 'WILL SHOW' },
+        spec: '§3 — Settings Card 2 notes which startup flags require restarting kajo-web.',
         view: { railMode: 'autohide', railOpen: false, tab: 'gpu', settingsOpen: true, setGpu: 'never', swFallback: false }
       },
       {
         title: '3. Honest Fallback Telemetry ([ ⚠ SW RENDER ])',
-        desc: 'Per AGENTS.md §8, fallbacks are never silent: kajo-web surfaces an amber [ ⚠ SW RENDER ] chip in the top chrome and flags the software path in kajo://gpu.',
+        desc: 'Per AGENTS.md §8, fallbacks are never silent: kajo-web surfaces an amber [ ⚠ SW RENDER ] chip in the top bar (clicking opens kajo://gpu).',
         key: 'FALLBACK VISIBLE',
         cursor: { x: 960, y: 46 },
         callout: { x: 640, y: 78, text: 'Visible [ ⚠ SW RENDER ] chip — never silently degrades performance' },
-        st: { hw_accel: 'NEVER', renderer: 'SOFTWARE', sw_badge: '⚠ SW RENDER', honesty: 'VERIFIED' },
-        spec: '§4.1 & AGENTS.md §8 — Every fallback path is surfaced clearly in both UI and diagnostics.',
+        st: { hw_accel: 'NEVER', renderer: 'SWIFTSHADER', sw_badge: '⚠ SW RENDER', honesty: 'VERIFIED' },
+        spec: '§2 & AGENTS.md §8 — Every fallback path is surfaced clearly in both UI and diagnostics.',
         view: { railMode: 'autohide', railOpen: false, tab: 'gpu', swFallback: true }
       }
     ]
@@ -596,125 +596,125 @@ const SCENARIOS = [
     steps: [
       {
         title: '1. Launch kajo-settings Side-by-Side (Ctrl+,)',
-        desc: 'Clicking ⚙ or pressing Ctrl+, opens kajo-settings --page web in the adjacent kajo-comp tiled column so you can tune every browser option while watching kajo-web live.',
+        desc: 'Clicking ⚙ or pressing Ctrl+, opens kajo-settings --page web in the adjacent compositor column so you can tune every browser option while watching kajo-web live.',
         key: 'Ctrl+, → kajo-settings',
         cursor: { x: 980, y: 140 },
-        callout: { x: 450, y: 110, text: 'Page 13 / 13 • KAJO WEB edits ~/.config/kajo/web.toml cleanly' },
+        callout: { x: 450, y: 110, text: 'Page 12 / 13 • KAJO WEB edits ~/.config/kajo/web.toml cleanly' },
         st: { config_file: 'web.toml', rail_mode: 'autohide', rail_side: 'left', sync: 'GFileMonitor' },
-        spec: '§5.1 & §5.2 — KajoConfigStore merges conf.d/*.toml drop-ins and patches scalars without clobbering user comments.',
+        spec: '§3 & spec_toml_config.md — KajoConfigStore merges conf.d/*.toml and patches scalars without clobbering user comments.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', settingsOpen: true, setRail: 'autohide', setSide: 'left' }
       },
       {
         title: '2. Switch Rail to COMPACT + RIGHT Side',
-        desc: 'In Card 1, select COMPACT (44px icon rail) and RIGHT side, adjust width and privacy toggles, then click SAVE & APPLY.',
+        desc: 'In Card 1, select COMPACT (40px icon rail) and RIGHT side, tune suspension/privacy/downloads toggles, then click SAVE & APPLY.',
         key: 'SAVE & APPLY',
         cursor: { x: 1080, y: 640 },
-        callout: { x: 460, y: 240, text: 'Explicit SAVE & APPLY writes web.toml atomically (no slider-tick disk spam)' },
-        st: { pending: 'COMPACT + RIGHT', adblock: 'ON (42k rules)', https_only: 'ON', action: 'SAVE & APPLY' },
-        spec: 'AGENTS.md §7 — Settings pages use explicit SAVE & APPLY + REVERT rather than writing on every tick.',
+        callout: { x: 460, y: 240, text: 'Explicit SAVE & APPLY writes web.toml atomically' },
+        st: { pending: 'COMPACT + RIGHT', adblock: 'IO-THREAD ABP', https_only: 'ON', action: 'SAVE & APPLY' },
+        spec: 'AGENTS.md §7 — Settings pages use explicit SAVE & APPLY + REVERT.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', settingsOpen: true, setRail: 'compact', setSide: 'right' }
       },
       {
         title: '3. Instant Live Hot-Reload in kajo-web',
-        desc: 'GFileMonitor notifies all open kajo-web windows immediately: the 44px compact icon rail snaps to the right edge without restarting or losing page state!',
-        key: 'GFileMonitor → RELOAD',
+        desc: 'KajoConfigStore notifies all open kajo-web windows immediately: the 40px compact icon rail snaps to the right edge without restarting or losing page state!',
+        key: 'KajoConfigStore → RELOAD',
         cursor: { x: 760, y: 240 },
-        callout: { x: 380, y: 150, text: 'Compact 44px icon rail docked on right edge immediately!' },
+        callout: { x: 380, y: 150, text: 'Compact 40px icon rail docked on right edge immediately!' },
         st: { rail_mode: 'compact', rail_side: 'right', hot_reload: '< 5ms', restart: 'NONE' },
-        spec: '§5.1 — All layout, chrome, privacy, ad-block, search, and zoom keys hot-reload live.',
+        spec: '§3 — Layout, chrome, privacy, ad-block, downloads, search, and zoom keys hot-reload live.',
         view: { railMode: 'compact', railSide: 'right', railOpen: false, tab: 'github', settingsOpen: true, setRail: 'compact', setSide: 'right' }
       }
     ]
   },
   {
     id: 'S6',
-    name: 'S6: Portals & DevTools',
+    name: 'S6: Permissions & Downloads',
     steps: [
       {
-        title: '1. Non-Modal Permission Infobar',
-        desc: 'WebKitPermissionRequest (Camera, Mic, Notifications, Geolocation) renders as a crisp Aero + Metro infobar inside the tab—never freezing other tabs with a modal popup.',
+        title: '1. Non-Modal Permission Infobar & kajo://permissions',
+        desc: 'Permission requests (Camera, Mic, Notifications, Geolocation, Clipboard) render cleanly inside an Aero + Metro infobar and persist per (origin, key) in permissions.json — inspect/revoke anytime on kajo://permissions.',
         key: 'PERMISSION REQUEST',
         cursor: { x: 880, y: 80 },
-        callout: { x: 340, y: 112, text: 'Non-modal infobar + XDG Camera Portal sandboxing' },
-        st: { prompt: 'CAMERA+MIC', modal: 'FALSE', portal: 'XDG Camera', other_tabs: 'RESPONSIVE' },
-        spec: '§3.4 & §8 — Permission requests use WebKitGTK 2.50+ XDG portal capture isolation.',
+        callout: { x: 340, y: 112, text: 'Persisted per origin in permissions.json (revocable in kajo://permissions)' },
+        st: { prompt: 'CAMERA+MIC', modal: 'FALSE', storage: 'permissions.json', revoke: 'kajo://permissions' },
+        spec: '§2 & cef_prefs_helper.cc — Non-blocking permission decisions without modal freezes.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', permBar: true }
       },
       {
-        title: '2. Native kajo-files FileChooser Portal',
-        desc: 'Clicking <input type="file"> routes WebKitFileChooserRequest straight to Kajo\'s native 880×580 Aero + Metro KajoFilesChooser portal—complete with Quick Look and network shares.',
-        key: 'OPEN FILE → PORTAL',
+        title: '2. Always-Visible ↓ Downloads Popout (Ctrl+J)',
+        desc: 'The top-right ↓ chip is always visible with a live active count and aggregate progress fill bar. Clicking ↓ (or Ctrl+J) opens the 3-zone Aero Downloads Popout with Pause/Resume/Cancel and Open File/Folder.',
+        key: 'Ctrl+J → ↓ DOWNLOADS',
+        cursor: { x: 960, y: 115 },
+        callout: { x: 380, y: 210, text: 'Always-visible ↓ chip with live % progress + Pause / Cancel / Open' },
+        st: { active_dl: '1 (68%)', popout: 'OPEN', auto_open: 'web.toml opt-in', portal: 'kajo-files' },
+        spec: '§2 — Downloads respect download_dir (~ expanded), ask_download_location, and downloads_auto_open.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', dlPop: true }
+      },
+      {
+        title: '3. Live kajo://downloads History Manager',
+        desc: 'All downloads persist into the per-profile SQLite downloads table (`history.db`). kajo://downloads updates live on 500ms tick with search, status filters (ALL/ACTIVE/COMPLETED), Retry, and Open Folder.',
+        key: 'kajo://downloads',
+        cursor: { x: 600, y: 310 },
+        callout: { x: 380, y: 310, text: 'Live DOM patching via window.__kajoUpdateDownloads() + SQLite WAL' },
+        st: { scheme: 'kajo://downloads', persistence: 'SQLite WAL', filters: 'ALL/ACTIVE/DONE', handoff: 'xdg-open' },
+        spec: '§4.2 & web_storage.c — Download history persists cleanly across restarts.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'downloads' }
+      },
+      {
+        title: '4. Native kajo-files FileChooser & Inspect Element',
+        desc: 'File uploads integrate with the Wayland FileChooser portal (`kajo-files --portal`), and right-clicking a page offers Inspect Element when `developer_extras = true`.',
+        key: 'PORTAL → kajo-files',
         cursor: { x: 600, y: 360 },
         callout: { x: 66, y: 240, text: 'org.freedesktop.impl.portal.FileChooser → kajo-files --portal' },
-        st: { portal: 'kajo-files', transient: 'xdg-foreign-v2', style: '0px Metro', chooser: 'OPEN' },
-        spec: '§1.6 — End-to-end visual continuity: browser file upload uses Kajo\'s own native FileChooser.',
+        st: { portal: 'kajo-files', chooser: 'OPEN', devtools: 'INSPECT ELEMENT', style: '0px Metro' },
+        spec: '§3 — Configurable via developer_extras and portal services.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', portalOpen: true }
-      },
-      {
-        title: '3. Video Downloader & Kajo Player Handoff',
-        desc: 'On YouTube or social video pages, [⬇ MEDIA] downloads HTML5 video directly or spawns async yt-dlp + ffmpeg (Best MP4 / 1080p / Audio) into the Downloads Popover—or hands the stream directly to kajo-player (libmpv).',
-        key: '⬇ MEDIA → YT-DLP / KAJO-PLAYER',
-        cursor: { x: 930, y: 120 },
-        callout: { x: 355, y: 225, text: 'GStreamer va (vaav1dec/vavp9dec) HW decode + async yt-dlp downloader' },
-        st: { hw_decode: 'GStreamer va', downloader: 'yt-dlp+ffmpeg', handoff: 'kajo-player', blocking: 'NONE (async)' },
-        spec: '§2 & §9 — Uses GSubprocess + GCancellable; cleanly shows "Requires yt-dlp" if absent on PATH.',
-        view: { railMode: 'autohide', railOpen: false, tab: 'arch', mediaPop: true }
-      },
-      {
-        title: '4. Docked WebKit Web Inspector (F12)',
-        desc: 'Pressing F12 docks WebKitWebInspector natively at the bottom of the active tab with Elements, Console, Network, and Skia Graphics timelines.',
-        key: 'F12 → WEB INSPECTOR',
-        cursor: { x: 600, y: 580 },
-        callout: { x: 560, y: 455, text: 'Native WebKitWebInspector docked inside KajoWebWindow' },
-        st: { devtools: 'DOCKED', tab: 'GRAPHICS', frame_ms: '1.4 ms', adblock: '42k RULES' },
-        spec: '§7 & §9 — Controlled by developer_extras in web.toml (enabled by default).',
-        view: { railMode: 'autohide', railOpen: false, tab: 'github', inspector: true }
       }
     ]
   },
   {
     id: 'S7',
-    name: 'S7: Profiles & Drive Sync',
+    name: 'S7: Profiles, Adblock & Private',
     steps: [
       {
         title: '1. Startup Aero + Metro Profile Picker',
-        desc: 'When >1 profile exists, launching kajo-web opens the 760×480 Aero + Metro Profile Picker (or skip via --profile work). Each card shows its accent color, Google email, and Drive AppData sync status.',
-        key: 'kajo-web  (1–3 PICK)',
+        desc: 'When show_picker_on_startup is enabled with multiple profiles, kajo-web opens its sharp 0px Profile Picker overlay (or skip via --profile <id>). Each card launches its own isolated CefRequestContext.',
+        key: 'kajo-web (PICK PROFILE)',
         cursor: { x: 430, y: 340 },
-        callout: { x: 40, y: 540, text: 'profiles.toml registry • press 1–9 or Enter to launch immediately' },
-        st: { picker: 'OPEN (3 profiles)', isolation: 'WebKitNetSession', guest: 'EPHEMERAL', border_tint: 'ENABLED' },
-        spec: '§6.1 & §6.2 — Chrome/Thorium-style startup picker with isolated data/cache dirs per profile and zero-trace ephemeral Guest mode.',
+        callout: { x: 40, y: 540, text: 'profiles.toml registry • launch any profile or Guest / Private mode' },
+        st: { picker: 'OPEN (3 profiles)', isolation: 'CefRequestContext', guest: 'EPHEMERAL', border_tint: 'ENABLED' },
+        spec: '§1.5 — Chrome-style startup picker backed by per-profile disk & cache paths.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', pickerModal: true }
       },
       {
         title: '2. Concurrent Isolated Profile Windows',
-        desc: 'WORK (Cobalt Blue border, Google Workspace login) and PERSONAL (Emerald border, personal Gmail) run side-by-side inside kajo-comp with zero cookie, cache, or history leakage.',
+        desc: 'WORK (Cobalt Blue border) and PERSONAL (Emerald border) run side-by-side inside kajo-comp with completely partitioned cookies, cache, SQLite history, downloads, and permissions.',
         key: 'WORK + PERSONAL SIDE-BY-SIDE',
         cursor: { x: 860, y: 240 },
         callout: { x: 420, y: 520, text: '1px profile accent borders keep side-by-side windows unmistakable' },
-        st: { win_1: 'WORK (#0078d4)', win_2: 'PERSONAL (#10893e)', cookies: 'ISOLATED', processes: '1 UI + N Web' },
-        spec: '§6.1 — Single GtkApplication hosts multiple profile windows while WebKitNetworkSession isolates storage and web processes.',
+        st: { win_1: 'WORK (#0078d4)', win_2: 'PERSONAL (#10893e)', cookies: 'ISOLATED', db: 'SEPARATE SQLITE' },
+        spec: '§1.5 — Per-profile CefRequestContext guarantees zero cross-profile storage leakage.',
         view: { railMode: 'autohide', railOpen: false, tab: 'github', dualProfile: true }
       },
       {
-        title: '3. Free Google Drive AppData OAuth (PKCE)',
-        desc: 'Clicking [● WORK] → Sign In launches a local 127.0.0.1 loopback PKCE OAuth flow for the narrow drive.appdata scope (free personal In-Production app → non-expiring token stored in libsecret).',
-        key: 'OAUTH PKCE → drive.appdata',
-        cursor: { x: 980, y: 120 },
-        callout: { x: 350, y: 240, text: 'Hidden appDataFolder only — cannot read normal Google Drive files' },
-        st: { scope: 'drive.appdata', cost: '$0 (FREE)', token_store: 'libsecret', expiry: 'NON-EXPIRING' },
-        spec: '§6.3 — Refresh tokens are stored in libsecret (never plaintext) and scrubbed with explicit_bzero().',
-        view: { railMode: 'autohide', railOpen: false, tab: 'github', syncPop: 'auth' }
+        title: '3. IO-Thread ABP Ad Blocker (CefAdblockEngine)',
+        desc: 'CefAdblockEngine blocks third-party trackers & ads directly on Chromium TID_IO, injects cosmetic element-hiding CSS, auto-syncs EasyList/EasyPrivacy when enabled, and honors per-site [🛡 ON/OFF] pauses.',
+        key: '🛡 ON → IO-THREAD ABP',
+        cursor: { x: 640, y: 120 },
+        callout: { x: 350, y: 240, text: 'IO-thread network block + cosmetic CSS + kajo://adblock dashboard' },
+        st: { engine: 'CefAdblockEngine', thread: 'TID_IO', lists: 'EasyList+Privacy', dashboard: 'kajo://adblock' },
+        spec: '§2 & cef_adblock.cc — Fast network + host-file + cosmetic blocking with safe shutdown shared_ptr lifecycle.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', adblockPop: true }
       },
       {
-        title: '4. Event-Driven Encrypted Sync (kajo-web ↔ kajo-web)',
-        desc: 'Bookmarks (UUID + tombstone CRDT), history delta, tabs, and settings encrypt locally with optional AES-256-GCM before uploading to appDataFolder—event-driven on startup/edits/close with zero polling.',
-        key: '☁ SYNCED JUST NOW',
-        cursor: { x: 1020, y: 112 },
-        callout: { x: 360, y: 240, text: 'AES-256-GCM ciphertext synced across Host A laptop ↔ Host B desktop' },
-        st: { status: '☁ SYNCED', e2ee: 'AES-256-GCM', merge: 'UUID+TOMBSTONE', idle_cpu: '< 0.05%' },
-        spec: '§6.3 — Debounced 30s after edits + on startup/close with zero background polling loops.',
-        view: { railMode: 'autohide', railOpen: false, tab: 'github', syncPop: 'done' }
+        title: '4. Ephemeral Private Window (Ctrl+Shift+N)',
+        desc: 'Private windows (--private / Ctrl+Shift+N) use an in-memory CefRequestContext with magenta chrome framing ([🕶 PRIVATE])—zero history, cookies, or download records written to SQLite.',
+        key: 'Ctrl+Shift+N → PRIVATE',
+        cursor: { x: 960, y: 46 },
+        callout: { x: 660, y: 78, text: 'In-memory CefRequestContext: zero disk cookies or SQLite history' },
+        st: { mode: 'PRIVATE', context: 'IN-MEMORY', border: '#b4009e', history_write: 'DISABLED' },
+        spec: '§1.5 — Isolated ephemeral context leaves zero local traces on window close.',
+        view: { railMode: 'autohide', railOpen: false, tab: 'github', privateWin: true }
       }
     ]
   }
@@ -765,38 +765,48 @@ function renderViewport(v) {
         <p>Minimalist Aero + Metro browser viewport. Vertical autohide tab rail overlays cleanly without reflowing the page layout.</p>
         <div class="sb-card-grid">
           <div class="sb-card"><div class="k">BINARY</div><div class="v">kajo-web</div></div>
-          <div class="sb-card"><div class="k">ENGINE</div><div class="v">WebKitGTK 2.54</div></div>
-          <div class="sb-card"><div class="k">RENDER</div><div class="v">Skia + DMA-BUF</div></div>
+          <div class="sb-card"><div class="k">ENGINE</div><div class="v">CEF Alloy Views</div></div>
+          <div class="sb-card"><div class="k">RENDER</div><div class="v">Wayland ANGLE + VA-API</div></div>
         </div>`
     },
     arch: {
       host: 'wiki.archlinux.org', path: '/title/Wayland', tls: '🔒',
       html: `<h2>Wayland — ArchWiki</h2>
-        <p>Active audio stream tab. WebKitGTK 6.0 presents frames via GBM DMA-BUF zero-copy directly to kajo-comp.</p>
+        <p>Active audio stream tab. Chromium/CEF Alloy Views runs natively on Wayland inside kajo-comp.</p>
         <div class="sb-card-grid">
           <div class="sb-card"><div class="k">COMPOSITOR</div><div class="v">kajo-comp</div></div>
           <div class="sb-card"><div class="k">AUDIO</div><div class="v">PipeWire Native</div></div>
-          <div class="sb-card"><div class="k">ADBLOCK</div><div class="v">42k RULES</div></div>
+          <div class="sb-card"><div class="k">ADBLOCK</div><div class="v">IO-THREAD ABP</div></div>
         </div>`
     },
     gpu: {
       host: 'kajo://gpu', path: '', tls: '❖',
-      html: `<h2>⚡ kajo://gpu — Graphics &amp; Sandbox Telemetry</h2>
-        <p>Live hardware acceleration and Bubblewrap sandbox diagnostics exposed via custom <code>kajo://</code> URI scheme.</p>
+      html: `<h2>⚡ kajo://gpu — Graphics &amp; Wayland Diagnostics</h2>
+        <p>Live hardware acceleration and ANGLE GL / VA-API diagnostics exposed via custom <code>kajo://</code> URI scheme.</p>
         <div class="sb-card-grid">
           <div class="sb-card"><div class="k">HW ACCEL POLICY</div><div class="v" style="color:${v.swFallback ? '#ffb84d' : '#4ce886'};">${v.swFallback ? 'NEVER (SW)' : 'ALWAYS'}</div></div>
-          <div class="sb-card"><div class="k">COMPOSITOR</div><div class="v" style="color:${v.swFallback ? '#ffb84d' : 'var(--telemetry)'};">${v.swFallback ? 'CPU FALLBACK' : 'SKIA + DMABUF'}</div></div>
-          <div class="sb-card"><div class="k">SANDBOX</div><div class="v" style="color:#4ce886;">BWRAP ACTIVE</div></div>
+          <div class="sb-card"><div class="k">RENDERER</div><div class="v" style="color:${v.swFallback ? '#ffb84d' : 'var(--telemetry)'};">${v.swFallback ? 'SWIFTSHADER' : 'ANGLE GL + VA-API'}</div></div>
+          <div class="sb-card"><div class="k">OZONE PLATFORM</div><div class="v" style="color:#4ce886;">WAYLAND NATIVE</div></div>
+        </div>`
+    },
+    downloads: {
+      host: 'kajo://downloads', path: '', tls: '❖',
+      html: `<h2>↓ kajo://downloads — Live &amp; SQLite History</h2>
+        <p>Updates live every 500ms while transfers run; search and filter across ALL / ACTIVE / COMPLETED items persisted in <code>history.db</code>.</p>
+        <div class="sb-card-grid">
+          <div class="sb-card"><div class="k">kajo-0.20.2.tar.zst</div><div class="v" style="color:var(--telemetry);">68% • 8.4 MB/s</div></div>
+          <div class="sb-card"><div class="k">spec_kajo_web.pdf</div><div class="v" style="color:#4ce886;">COMPLETED • OPEN</div></div>
+          <div class="sb-card"><div class="k">STORAGE</div><div class="v">SQLITE WAL</div></div>
         </div>`
     },
     restored: {
       host: 'wayland.freedesktop.org', path: '/docs/html/', tls: '🔒',
       html: `<h2>📄 Wayland Protocol Spec (Restored)</h2>
-        <p>Woke cleanly from <code>WebKitWebViewSessionState</code> after 30-minute background suspension—history and scroll offset preserved.</p>
+        <p>Woke cleanly by recreating its backing <code>CefBrowserView</code> after 30-minute background suspension.</p>
         <div class="sb-card-grid">
           <div class="sb-card"><div class="k">STATE</div><div class="v" style="color:#4ce886;">RESTORED</div></div>
           <div class="sb-card"><div class="k">SUSPEND IDLE</div><div class="v">30 MIN</div></div>
-          <div class="sb-card"><div class="k">MEM LIMIT</div><div class="v">2048 MB</div></div>
+          <div class="sb-card"><div class="k">HOST</div><div class="v">CEF ALLOY</div></div>
         </div>`
     }
   };
@@ -806,7 +816,7 @@ function renderViewport(v) {
     <div class="sb-settings-col focused">
       <div class="sb-hdr">
         <span style="font-weight:800;">⚙ KAJO SETTINGS</span>
-        <span style="margin-left:auto; color:var(--telemetry); font-size:9.5px;">13 / 13 • KAJO WEB</span>
+        <span style="margin-left:auto; color:var(--telemetry); font-size:9.5px;">12 / 13 • KAJO WEB</span>
       </div>
       <div class="sb-set-body">
         <div class="sb-set-card">
@@ -816,14 +826,14 @@ function renderViewport(v) {
           <div class="sb-set-row"><span>Width</span><span class="sb-badge">240 PX</span></div>
         </div>
         <div class="sb-set-card">
-          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">2. HARDWARE ACCELERATION</div>
+          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">2. HARDWARE &amp; SUSPENSION</div>
           <div class="sb-set-row"><span>GPU Policy</span><span class="sb-badge ${v.setGpu === 'never' ? 'warn' : 'shield'}">${(v.setGpu || 'always').toUpperCase()}</span></div>
-          <div class="sb-set-row"><span>WebGL GPU Proc</span><span style="color:#4ce886; font-weight:700;">ON</span></div>
+          <div class="sb-set-row"><span>Idle Suspend</span><span style="color:#4ce886; font-weight:700;">30 MIN</span></div>
         </div>
         <div class="sb-set-card">
-          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">3. PRIVACY &amp; BLOCKING</div>
-          <div class="sb-set-row"><span>Content Blocker</span><span style="color:#4ce886; font-weight:700;">42,180 RULES</span></div>
-          <div class="sb-set-row"><span>HTTPS-Only + ITP</span><span style="color:#4ce886; font-weight:700;">ON</span></div>
+          <div style="color:var(--telemetry); font-weight:700; font-size:10px;">3. PRIVACY &amp; ADBLOCK</div>
+          <div class="sb-set-row"><span>IO-Thread ABP</span><span style="color:#4ce886; font-weight:700;">ON + COSMETIC</span></div>
+          <div class="sb-set-row"><span>HTTPS-Only + 3P Cookies</span><span style="color:#4ce886; font-weight:700;">ON</span></div>
         </div>
         <div style="margin-top:auto; display:flex; justify-content:flex-end; gap:6px; padding-top:8px;">
           <span class="sb-badge" style="background:var(--accent); border-color:var(--accent); color:#fff; padding:4px 10px;">✓ SAVE &amp; APPLY</span>
@@ -838,9 +848,9 @@ function renderViewport(v) {
       <span>19:35</span>
     </div>
     <div class="sim-ws">
-      <div class="sb-browser ${railCls}">
+      <div class="sb-browser ${railCls}" ${v.privateWin ? 'style="border-color:#b4009e;"' : ''}>
         <div class="sb-hdr">
-          <span style="color:var(--accent); font-weight:800;">🌐 KAJO WEB</span>
+          <span style="color:${v.privateWin ? '#b4009e' : 'var(--accent)'}; font-weight:800;">🌐 KAJO WEB</span>
           <span style="color:#777;">◀ ▶ ↻</span>
           <span class="sb-badge ${v.railMode === 'pinned' ? 'shield' : ''}">◧</span>
           <div class="sb-omni ${v.omniFocus ? 'focus' : ''}">
@@ -849,7 +859,9 @@ function renderViewport(v) {
             <span class="sb-badge shield">🛡 ON</span>
           </div>
           ${v.swFallback ? '<span class="sb-badge warn">⚠ SW RENDER</span>' : ''}
-          <span class="sb-badge" style="border-color:var(--accent); color:#fff;">● WORK</span>
+          ${v.privateWin ? '<span class="sb-badge" style="border-color:#b4009e; color:#f0a8ff;">🕶 PRIVATE</span>' : ''}
+          <span class="sb-badge ${v.dlPop ? 'shield' : ''}">↓ ${v.dlPop ? '1' : ''}</span>
+          <span class="sb-badge" style="border-color:${v.privateWin ? '#b4009e' : 'var(--accent)'}; color:#fff;">● ${v.privateWin ? 'PRIVATE' : 'WORK'}</span>
           <span style="color:#aaa;">⚙ 🗗 ✕</span>
         </div>
         <div class="sb-body">
@@ -870,14 +882,13 @@ function renderViewport(v) {
             <div class="sb-tab ${v.tab === 'restored' ? 'on' : (v.showSusp ? 'susp' : '')}"><span>${v.tab === 'restored' ? '📄' : '💤'}</span><span class="sb-tab-txt" style="flex:1;">Wayland Spec</span></div>
           </div>
           <div class="sb-viewport">
-            ${v.permBar ? `<div class="sb-perm"><span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Mic (XDG Portal)</span><span><span class="sb-badge shield">ALLOW ONCE</span> <span class="sb-badge">DENY</span></span></div>` : ''}
+            ${v.permBar ? `<div class="sb-perm"><span>🎥 <strong>meet.kajo.local</strong> requests Camera &amp; Mic (permissions.json)</span><span><span class="sb-badge shield">ALLOW</span> <span class="sb-badge">DENY</span></span></div>` : ''}
             <div class="sb-page">${pg.html}</div>
-            ${v.inspector ? `<div class="sb-insp"><strong>WEBKIT WEB INSPECTOR (DOCKED)</strong> • ELEMENTS | CONSOLE | NETWORK | GRAPHICS<br/>[Skia] Frame #4821 — 1.4ms GPU raster — DMA-BUF zero-copy committed (damage: 1 rect)<br/>[ContentFilter] WebKitUserContentFilterStore active (42,180 compiled DFA rules)</div>` : ''}
           </div>
           ${v.palette ? `
             <div class="sb-palette">
               <div class="sb-pal-in">⌘ gpu_</div>
-              <div class="sb-pal-row on"><span class="sb-badge shield">INTERNAL</span><span>⚡ Open GPU &amp; DMA-BUF Telemetry (kajo://gpu)</span></div>
+              <div class="sb-pal-row on"><span class="sb-badge shield">INTERNAL</span><span>⚡ Open GPU &amp; VA-API Diagnostics (kajo://gpu)</span></div>
               <div class="sb-pal-row"><span class="sb-badge">CMD</span><span>⚙ Toggle Hardware Acceleration in kajo-settings</span></div>
               <div class="sb-pal-row"><span class="sb-badge">TAB</span><span>🧪 WebGL2RenderingContext — MDN</span></div>
             </div>` : ''}
@@ -893,57 +904,60 @@ function renderViewport(v) {
           </div>
           <div class="sb-page">
             <h2>Personal Profile (Isolated)</h2>
-            <p>Separate <code>WebKitNetworkSession</code> (<code>~/.local/share/kajo/web/profiles/personal/</code>) signed into personal Gmail &amp; Drive AppData sync.</p>
+            <p>Separate <code>CefRequestContext</code> (<code>~/.local/share/kajo/web/profiles/personal/</code>) with isolated cookies, SQLite storage, and permissions.</p>
             <div class="sb-card-grid" style="grid-template-columns:1fr 1fr;">
               <div class="sb-card" style="border-top-color:#10893e;"><div class="k">COOKIES</div><div class="v" style="color:#4ce886;">ISOLATED</div></div>
-              <div class="sb-card" style="border-top-color:#10893e;"><div class="k">DRIVE SYNC</div><div class="v" style="color:#4ce886;">☁ SYNCED</div></div>
+              <div class="sb-card" style="border-top-color:#10893e;"><div class="k">STORAGE</div><div class="v" style="color:#4ce886;">SEPARATE SQLITE</div></div>
             </div>
           </div>
         </div>` : ''}
-      ${v.mediaPop ? `
+      ${v.dlPop ? `
         <div class="sb-palette" style="left:auto; right:26px; top:44px; transform:none; width:340px;">
           <div class="sb-pal-in" style="display:flex; justify-content:space-between; font-size:10.5px;">
-            <strong>⬇ VIDEO / AUDIO DOWNLOADER</strong>
-            <span style="color:#4ce886;">YT-DLP + FFMPEG</span>
+            <strong>↓ DOWNLOADS POPOUT</strong>
+            <span style="color:var(--telemetry);">1 ACTIVE • 68%</span>
           </div>
-          <div class="sb-pal-row on"><span>⬇ Best MP4 (2160p60 AV1)</span><span style="margin-left:auto; color:var(--telemetry); font-size:10px;">GSubprocess</span></div>
-          <div class="sb-pal-row"><span>⬇ 1080p MP4  /  🎵 Audio Only (Opus)</span></div>
-          <div class="sb-pal-row" style="color:var(--telemetry);"><span>▶ Open Stream in Kajo Player (libmpv)</span></div>
+          <div class="sb-pal-row on" style="flex-direction:column; gap:4px;">
+            <div style="display:flex; justify-content:space-between; width:100%;"><strong>kajo-0.20.2-fx10.tar.zst</strong><span style="color:var(--telemetry);">68%</span></div>
+            <div style="height:4px; background:#222; width:100%;"><div style="height:100%; width:68%; background:var(--accent);"></div></div>
+          </div>
+          <div class="sb-pal-row"><span>spec_kajo_web.pdf • DONE</span><span style="margin-left:auto; color:#4ce886; font-size:10px;">OPEN  |  📁</span></div>
+          <div class="sb-pal-row" style="color:var(--telemetry);"><span>All Downloads → kajo://downloads</span></div>
         </div>` : ''}
-      ${v.syncPop ? `
+      ${v.adblockPop ? `
         <div class="sb-palette" style="left:auto; right:26px; top:44px; transform:none; width:340px;">
           <div class="sb-pal-in" style="display:flex; justify-content:space-between; font-size:10.5px;">
-            <strong>● WORK PROFILE</strong>
-            <span style="color:${v.syncPop === 'done' ? '#4ce886' : 'var(--telemetry)'};">${v.syncPop === 'done' ? '☁ SYNCED JUST NOW' : '↻ PKCE OAUTH…'}</span>
+            <strong>🛡 IO-THREAD ADBLOCK</strong>
+            <span style="color:#4ce886;">ON • TID_IO</span>
           </div>
           <div class="sb-pal-row on" style="flex-direction:column; gap:3px;">
-            <strong>mikolas@work.dev</strong>
-            <span style="font-size:9.5px; color:#999;">${v.syncPop === 'done' ? 'appDataFolder • 84 bookmarks + settings (AES-256-GCM)' : 'Loopback 127.0.0.1 PKCE → drive.appdata → libsecret'}</span>
+            <strong>CefAdblockEngine Active</strong>
+            <span style="font-size:9.5px; color:#999;">EasyList + EasyPrivacy auto-sync + cosmetic CSS filters</span>
           </div>
-          <div class="sb-pal-row"><span>🏠 PERSONAL</span><span style="margin-left:auto; color:#4ce886; font-size:10px;">☁ SYNCED</span></div>
-          <div class="sb-pal-row"><span>⚙ DEV</span><span style="margin-left:auto; color:#777; font-size:10px;">LOCAL ONLY</span></div>
+          <div class="sb-pal-row"><span>User Scripts (~/.config/kajo/web/scripts)</span><span style="margin-left:auto; color:var(--telemetry); font-size:10px;">OPT-IN</span></div>
+          <div class="sb-pal-row"><span>Open Dashboard</span><span style="margin-left:auto; color:var(--telemetry); font-size:10px;">kajo://adblock</span></div>
         </div>` : ''}
       ${v.pickerModal ? `
         <div class="sb-portal" style="width:660px; height:360px;">
-          <div class="sb-portal-hdr"><span>🌐 KAJO WEB // SELECT PROFILE (WebKitNetworkSession)</span><span style="color:var(--telemetry);">1–3 TO LAUNCH</span></div>
+          <div class="sb-portal-hdr"><span>🌐 KAJO WEB // SELECT PROFILE (CefRequestContext)</span><span style="color:var(--telemetry);">1–3 TO LAUNCH</span></div>
           <div style="flex:1; padding:18px; display:grid; grid-template-columns:repeat(3,1fr); gap:12px;">
             <div style="background:#181818; border:1px solid var(--accent); border-top:3px solid var(--accent); padding:14px; display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; justify-content:space-between; font-size:18px;"><span>💼</span><span class="sb-badge">1</span></div>
               <strong style="font-size:13px;">WORK</strong>
-              <span style="font-size:10px; color:#aaa;">mikolas@work.dev</span>
-              <span style="font-size:9.5px; color:var(--telemetry); margin-top:auto;">☁ SYNCED 2M AGO</span>
+              <span style="font-size:10px; color:#aaa;">CefRequestContext</span>
+              <span style="font-size:9.5px; color:var(--telemetry); margin-top:auto;">SQLITE WAL ACTIVE</span>
             </div>
             <div style="background:#181818; border:1px solid #2b2b2b; border-top:3px solid #10893e; padding:14px; display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; justify-content:space-between; font-size:18px;"><span>🏠</span><span class="sb-badge">2</span></div>
               <strong style="font-size:13px;">PERSONAL</strong>
-              <span style="font-size:10px; color:#aaa;">mikolas@gmail.com</span>
-              <span style="font-size:9.5px; color:#4ce886; margin-top:auto;">☁ SYNCED 8M AGO</span>
+              <span style="font-size:10px; color:#aaa;">CefRequestContext</span>
+              <span style="font-size:9.5px; color:#4ce886; margin-top:auto;">SQLITE WAL ACTIVE</span>
             </div>
             <div style="background:#181818; border:1px solid #2b2b2b; border-top:3px solid #d83b01; padding:14px; display:flex; flex-direction:column; gap:6px;">
               <div style="display:flex; justify-content:space-between; font-size:18px;"><span>⚙</span><span class="sb-badge">3</span></div>
               <strong style="font-size:13px;">DEV</strong>
-              <span style="font-size:10px; color:#aaa;">No Google Account</span>
-              <span style="font-size:9.5px; color:#777; margin-top:auto;">LOCAL ONLY</span>
+              <span style="font-size:10px; color:#aaa;">Isolated Dev Profile</span>
+              <span style="font-size:9.5px; color:#777; margin-top:auto;">SQLITE WAL</span>
             </div>
           </div>
           <div style="padding:10px 18px; background:#101010; border-top:1px solid #2b2b2b; display:flex; justify-content:space-between; font-size:10px; color:#aaa;">

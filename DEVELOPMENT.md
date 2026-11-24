@@ -267,7 +267,7 @@ tests/
 │   ├── comp_headless_smoke.sh      End-to-end headless kajo-comp integration test runner
 │   └── comp_fx_shadow_test.sh      Headless Vulkan pixel verification for SDF shadows, dimming, Dual-Kawase glass, xray panels & blue-noise dither
 ├── fuzz/
-│   ├── fuzz_toml_config.c          Corpus/libFuzzer target for the 5 app TOML domain schemas
+│   ├── fuzz_toml_config.c          Corpus/libFuzzer target for the 6 app TOML domain schemas
 │   ├── fuzz_comp_config.c          Corpus/libFuzzer target for comp/outputs/binds/rules TOML parsers
 │   ├── fuzz_comp_layout.c          Corpus/libFuzzer target for the compositor scrolling-tiling layout engine
 │   └── fuzz_ipc_socket.c           Corpus/libFuzzer target for $XDG_RUNTIME_DIR/kajo-comp.sock JSON IPC parser
@@ -353,7 +353,7 @@ systemctl --user restart xdg-desktop-portal
 | Suite Name | Binary | Coverage |
 | :--- | :--- | :--- |
 | `config-roundtrip` | `test-config` | `KajoConfigStore` per-domain TOML: compiled-vs-shipped defaults parity, round trips and clamping, `conf.d` overlays with base-save isolation, concurrent readers, syntax-error preservation, comment/unknown-key preserving patch, patcher never writing an unparsable file, subscriber thread delivery, legacy `config.json` migration. |
-| `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all five domain schemas. |
+| `fuzz-toml-config` | `test-fuzz-toml-config` | Smoke run of the libFuzzer entry point over all six domain schemas (`theme`, `shell`, `ide`, `files`, `mod`, `web`). |
 | `comp-spring` | `test-comp-spring` | Compositor spring: parameter validation, settling for the spring presets, analytical velocity vs numerical derivative, overshoot by damping class, continuity of position and velocity across retargets. |
 | `comp-layout` | `test-comp-layout` | Compositor layout model: add/remove/focus, exact column geometry, `comp_layout_set_column_width` / `comp_layout_move_column_to_index` / `comp_layout_column_bounds` (tiled `Mod + drag`), zoomed overview band/card geometry & hit-testing (`comp_overview_core.c`), camera target per centering mode, presets and maximize, consume/expel and window heights, tabbed columns, floating, dynamic workspaces, action-name table, and a 60 000-step randomized sequence checking invariants after every step. |
 | `comp-motion` | `test-comp-motion` | Compositor animation and gestures: animated resize of the rightmost column (the former no-animation case), snap mode and floating sizes, continuous workspace strip, per-workspace cameras, no animation when an empty workspace above is removed, drag override and velocity hand-off on release, stationary windows, stable workspace ids, side-effect-free drag release targets (column-edge resting positions, focus in the drag direction), and the 3-finger gesture state machine (axis lock, rubber band, velocity, projection, workspace picks, and release decisions from a snapshot taken before the gesture is reset). |
@@ -444,6 +444,10 @@ WLR_BACKENDS=wayland KAJO_GREETER_TEST=1 ./builddir/kajo-comp --greeter-mode --e
 
 # 6. Or run kajo-greeter inside a nested Niri compositor window on your desktop
 KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kdl
+
+# 7. Run kajo-web (native Wayland CEF browser, or ephemeral software fallback)
+./builddir/kajo-web https://github.com/mikolas/Kajo
+./builddir/kajo-web --private --no-hw-accel kajo://gpu
 ```
 
 **Configuration while developing** (see `docs/spec_toml_config.md`):
@@ -544,6 +548,7 @@ scripts/ui-shot.sh -o /tmp/ide.png builddir/kajo-settings --page ide      # one 
 scripts/ui-shot.sh -o /tmp/ide-editor.png builddir/kajo-ide src/ide/ide_window.c
 scripts/ui-shot.sh -o /tmp/files.png builddir/kajo-files ~/Downloads
 scripts/ui-shot.sh -d 6 -o /tmp/p.png builddir/kajo-player some.mkv       # -d: seconds to wait
+scripts/ui-shot.sh -d 4 -o /tmp/web.png builddir/kajo-web --no-hw-accel --private kajo://newtab
 ```
 
 The script is isolated on purpose: private `XDG_RUNTIME_DIR`, `KAJO_COMP_SOCKET`/`NIRI_SOCKET`/`WAYLAND_DISPLAY`/`DISPLAY` unset (compositor actions and `kajo` IPC can never reach your real session), throwaway **copies** of `~/.config/kajo` and `~/.local/share/kajo`, and the working tree's `style.css` copied over the CSS so you see your changes (`-k` keeps your installed CSS). It refuses to run the `kajo` shell. The D-Bus buses are your real ones, so pages read live state (Wi-Fi list, paired devices) but nothing is clicked. Do not wrap it in `dbus-run-session` (it activates your installed services and leaves FUSE mounts behind).

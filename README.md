@@ -78,7 +78,7 @@ The repository builds and installs **nine integrated native executables** (plus 
 - **Hardware DSP & 60 FPS Telemetry**: Live Paula `A500`/`A1200` & LED filter switches, SID chip selector, stereo crossfeed, 4-voice Mute/Solo, `$D400` SID register / sample inspector, `.lha`/`.zip` bundle extraction, and a 60 FPS stereo oscilloscope + 16-band FFT analyzer.
 
 ### 🌐 Kajo Web (`kajo-web`)
-> 📖 **Specification & Prototypes**: [`docs/spec_kajo_web.md`](docs/spec_kajo_web.md)
+> 📖 **Specification & Interactive Docs**: [`docs/spec_kajo_web.md`](docs/spec_kajo_web.md) • [`docs/kajo-web-mockup.html`](docs/kajo-web-mockup.html) • [`docs/kajo-web-storyboard.html`](docs/kajo-web-storyboard.html)
 
 - **Vertical Tab Rail, Omnibar & Tab Suspension**: `34px` Aero + Metro `kajo-chrome://ui/*` top chrome synced to live `theme.toml` accents, editable omnibar (`!g`, `!ddg`, `!w`, `!gh` bangs + bookmark/history/tab autocomplete), left/right vertical tab rail (`autohide` 4px edge trigger, `compact` favicon rail, `pinned` docked split), pinned favicon grid, collapsible tab groups, `Ctrl+Shift+T` undo stack, `Ctrl+K` command & tab palette, inline find bar (`Ctrl+F`), and configurable idle tab suspension (`suspend_idle_min`).
 - **Native Wayland GPU & Alloy Views**: Runs Chromium/CEF Alloy Views directly on native Wayland (`--ozone-platform=wayland`, VA-API hardware video decode, `--no-hw-accel` / `hardware_acceleration = "never"` software fallback with a visible `[ ⚠ SW RENDER ]` badge), live `kajo://gpu` diagnostics, and crash recovery cards (`kajo://crashed`).
@@ -116,6 +116,8 @@ The repository builds and installs **nine integrated native executables** (plus 
 | **[`docs/kajo-ide-strip-storyboard.html`](docs/kajo-ide-strip-storyboard.html)** | Interactive 7-scenario workflow storyboard for **`kajo-ide`** Code Strip navigation, magnetic resync, promotion, and lens switching. |
 | **[`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md)** | Architecture specification for **`kajo-mod`** (5-tier audio priority router, DSP pipeline, column reflow). |
 | **[`docs/spec_kajo_web.md`](docs/spec_kajo_web.md)** | Architecture specification for **`kajo-web`** (Chromium/CEF Alloy Views, native Wayland, vertical tab rail, profiles, IO-thread ABP ad blocker, Downloads popout, permissions & `web.toml`). |
+| **[`docs/kajo-web-mockup.html`](docs/kajo-web-mockup.html)** | Interactive UI mockup for **`kajo-web`** (autohide/compact/pinned rail, Shield, Downloads popout, Profiles, Settings drawer). |
+| **[`docs/kajo-web-storyboard.html`](docs/kajo-web-storyboard.html)** | Interactive 7-scenario storyboard for **`kajo-web`** rail FSM, GPU/fallback, Settings sync, Downloads, Profiles & Adblock. |
 | **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
 | **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
