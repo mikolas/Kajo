@@ -791,6 +791,13 @@ function updateOmniDisplay(url) {
     omniPath.textContent = url.slice('view-source:'.length);
     return;
   }
+  if (url.startsWith('file://')) {
+    omniHost.classList.add('kajo-scheme');
+    omniHost.textContent = 'file://';
+    const rawPath = url.slice('file://'.length);
+    try { omniPath.textContent = decodeURIComponent(rawPath); } catch (_) { omniPath.textContent = rawPath; }
+    return;
+  }
   if (url.startsWith('kajo://') || url.startsWith('chrome://')) {
     omniHost.classList.add('kajo-scheme');
     const idx = url.indexOf('/', url.indexOf('://') + 3);
@@ -882,6 +889,9 @@ window.__kajoApply = (s) => {
     secBadge.classList.add('kajo');
   } else if (url.startsWith('kajo://')) {
     secBadge.textContent = '❖ KAJO';
+    secBadge.classList.add('kajo');
+  } else if (url.startsWith('file://')) {
+    secBadge.textContent = '📄 FILE';
     secBadge.classList.add('kajo');
   } else if (url.startsWith('http://')) {
     secBadge.textContent = 'ⓘ HTTP';
