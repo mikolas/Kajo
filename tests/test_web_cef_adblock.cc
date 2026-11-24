@@ -206,10 +206,43 @@ static void test_adblock_tab_counters(void) {
   g_assert_cmpint(engine.GetBlockedCountForTab(101), ==, 0);
 }
 
+static void test_adblock_token_index_and_exceptions(void) {
+  CefAdblockEngine engine;
+  engine.SetEnabled(true);
+  engine.LoadAdditionalRulesText(
+      "*trackwildcard*\n"
+      "/metrics_v2/collect.js$script\n"
+      "@@/metrics_v2/collect.js$domain=trusted.example.org\n"
+      "@@||safe-host.example^\n"
+      "||blocked-host.example^\n"
+      "@@||blocked-host.example/health.json\n");
+
+  /* Fallback wildcard rule without interior delimiter token still blocks */
+  g_assert_true(engine.ShouldBlock("https://cdn.site.org/foo_trackwildcard_bar.js",
+                                   "https://site.org/",
+                                   ResourceTypeMask::RT_SCRIPT));
+  /* Token-indexed generic rule blocks */
+  g_assert_true(engine.ShouldBlock("https://cdn.site.org/metrics_v2/collect.js",
+                                   "https://other.org/",
+                                   ResourceTypeMask::RT_SCRIPT));
+  /* Non-domain @@ exception overrides token-indexed generic block for matching domain */
+  g_assert_false(engine.ShouldBlock("https://cdn.site.org/metrics_v2/collect.js",
+                                    "https://trusted.example.org/app",
+                                    ResourceTypeMask::RT_SCRIPT));
+  /* Domain-anchored exception overrides domain block */
+  g_assert_true(engine.ShouldBlock("https://blocked-host.example/ad.js",
+                                   "https://site.org/",
+                                   ResourceTypeMask::RT_SCRIPT));
+  g_assert_false(engine.ShouldBlock("https://blocked-host.example/health.json",
+                                    "https://site.org/",
+                                    ResourceTypeMask::RT_XHR));
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
   g_test_add_func("/web_cef/adblock/rules_and_blocking", test_adblock_rules_and_blocking);
   g_test_add_func("/web_cef/adblock/cosmetic_and_allowlist", test_adblock_cosmetic_and_allowlist);
   g_test_add_func("/web_cef/adblock/tab_counters", test_adblock_tab_counters);
+  g_test_add_func("/web_cef/adblock/token_index_and_exceptions", test_adblock_token_index_and_exceptions);
   return g_test_run();
 }

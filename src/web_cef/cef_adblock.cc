@@ -139,6 +139,53 @@ bool IsPlainDomainString(std::string_view sv) {
   return sv.find('.') != std::string_view::npos;
 }
 
+bool IsAlnumLowerChar(unsigned char c) {
+  return std::isalnum(c) != 0;
+}
+
+bool IsCommonUrlToken(std::string_view tok) {
+  static constexpr const char *kCommon[] = {
+      "com", "net", "org", "www", "http", "https", "html", "htm",
+      "php", "cdn", "api", "static", "img", "css", "app", "web",
+  };
+  for (const char *c : kCommon) {
+    if (tok == c) return true;
+  }
+  return false;
+}
+
+/* Extracts the most selective interior alphanumeric token of length >= 3 from
+ * |pat| that is bounded on both sides by non-wildcard delimiter characters.
+ * Guarantees zero false negatives: any matching URL string contains the exact
+ * same maximal alphanumeric run. Returns empty if no safe token exists. */
+std::string ExtractBestInteriorToken(std::string_view pat) {
+  std::string best;
+  int best_score = -1;
+  size_t i = 0;
+  while (i < pat.size()) {
+    while (i < pat.size() && !IsAlnumLowerChar(static_cast<unsigned char>(pat[i]))) {
+      ++i;
+    }
+    size_t start = i;
+    while (i < pat.size() && IsAlnumLowerChar(static_cast<unsigned char>(pat[i]))) {
+      ++i;
+    }
+    size_t end = i;
+    if (end - start < 3) continue;
+    if (start == 0 || end >= pat.size()) continue;
+    if (pat[start - 1] == '*' || pat[end] == '*') continue;
+
+    std::string_view cand = pat.substr(start, end - start);
+    int score = static_cast<int>(cand.size()) * 4;
+    if (IsCommonUrlToken(cand)) score -= 24;
+    if (score > best_score) {
+      best_score = score;
+      best.assign(cand);
+    }
+  }
+  return best;
+}
+
 bool WildcardMatch(std::string_view text, std::string_view pat) {
   if (pat.empty())
     return true;
@@ -517,7 +564,7 @@ size_t CefAdblockEngine::ParseFilterTextInto(const std::string &text,
         rule.domain_anchor = dom;
         rule.pattern = std::move(pat);
         if (is_exc)
-          snap.exc_rules.push_back(std::move(rule));
+          snap.exc_domain_rules[std::move(dom)].push_back(std::move(rule));
         else
           snap.domain_rules[std::move(dom)].push_back(std::move(rule));
         ++added;
@@ -532,12 +579,20 @@ size_t CefAdblockEngine::ParseFilterTextInto(const std::string &text,
     if (pat.size() < 4)
       continue;
     rule.pattern = std::move(pat);
-    if (is_exc)
+    if (is_exc) {
       snap.exc_rules.push_back(std::move(rule));
-    else if (rule.include_domains.size() == 1)
+    } else if (rule.include_domains.size() == 1) {
       snap.domain_rules[rule.include_domains[0]].push_back(std::move(rule));
-    else
+    } else {
+      const uint32_t idx = static_cast<uint32_t>(snap.generic_rules.size());
+      const std::string tok = ExtractBestInteriorToken(rule.pattern);
       snap.generic_rules.push_back(std::move(rule));
+      if (!tok.empty()) {
+        snap.generic_token_index[tok].push_back(idx);
+      } else {
+        snap.generic_fallback.push_back(idx);
+      }
+    }
     ++added;
   }
 
@@ -757,19 +812,11 @@ bool CefAdblockEngine::ShouldBlock(const std::string &url,
   bool is_3p = !IsSameSite(host, fp_host);
   std::string host_and_rest = host + rest;
 
-  if (HasDomainInSet(host, snap->exc_domains))
-    return false;
-  for (const auto &er : snap->exc_rules) {
-    if (MatchRule(er, host, host_and_rest, fp_host, is_3p, resource_type_mask))
-      return false;
-  }
-
-  if (HasDomainInSet(host, snap->block_domains))
-    return true;
-
-  auto check_bucket = [&](const std::string &key) -> bool {
-    auto it = snap->domain_rules.find(key);
-    if (it == snap->domain_rules.end())
+  auto check_domain_map =
+      [&](const std::unordered_map<std::string, std::vector<NetRule>> &rmap,
+          const std::string &key) -> bool {
+    auto it = rmap.find(key);
+    if (it == rmap.end())
       return false;
     for (const auto &r : it->second) {
       if (MatchRule(r, host, host_and_rest, fp_host, is_3p, resource_type_mask))
@@ -778,30 +825,82 @@ bool CefAdblockEngine::ShouldBlock(const std::string &url,
     return false;
   };
 
-  if (check_bucket(host))
-    return true;
-  size_t pos = 0;
-  while ((pos = host.find('.', pos)) != std::string::npos) {
-    ++pos;
-    if (pos < host.size() && check_bucket(host.substr(pos)))
+  auto check_host_chain =
+      [&](const std::unordered_map<std::string, std::vector<NetRule>> &rmap) -> bool {
+    if (check_domain_map(rmap, host))
       return true;
-  }
-  if (!fp_host.empty() && fp_host != host) {
-    if (check_bucket(fp_host))
-      return true;
-    pos = 0;
-    while ((pos = fp_host.find('.', pos)) != std::string::npos) {
+    size_t pos = 0;
+    while ((pos = host.find('.', pos)) != std::string::npos) {
       ++pos;
-      if (pos < fp_host.size() && check_bucket(fp_host.substr(pos)))
+      if (pos < host.size() && check_domain_map(rmap, host.substr(pos)))
         return true;
     }
-  }
+    if (!fp_host.empty() && fp_host != host) {
+      if (check_domain_map(rmap, fp_host))
+        return true;
+      pos = 0;
+      while ((pos = fp_host.find('.', pos)) != std::string::npos) {
+        ++pos;
+        if (pos < fp_host.size() && check_domain_map(rmap, fp_host.substr(pos)))
+          return true;
+      }
+    }
+    return false;
+  };
 
-  for (const auto &r : snap->generic_rules) {
-    if (MatchRule(r, host, host_and_rest, fp_host, is_3p, resource_type_mask))
-      return true;
+  /* 1. Evaluate block rules first; only check exceptions if something matched. */
+  bool blocked = HasDomainInSet(host, snap->block_domains);
+  if (!blocked) {
+    blocked = check_host_chain(snap->domain_rules);
   }
-  return false;
+  if (!blocked && !snap->generic_token_index.empty()) {
+    std::string tok;
+    size_t i = 0;
+    while (i < host_and_rest.size() && !blocked) {
+      while (i < host_and_rest.size() &&
+             !IsAlnumLowerChar(static_cast<unsigned char>(host_and_rest[i]))) {
+        ++i;
+      }
+      size_t start = i;
+      while (i < host_and_rest.size() &&
+             IsAlnumLowerChar(static_cast<unsigned char>(host_and_rest[i]))) {
+        ++i;
+      }
+      if (i - start < 3) continue;
+      tok.assign(host_and_rest, start, i - start);
+      auto it = snap->generic_token_index.find(tok);
+      if (it == snap->generic_token_index.end()) continue;
+      for (uint32_t idx : it->second) {
+        if (MatchRule(snap->generic_rules[idx], host, host_and_rest, fp_host,
+                      is_3p, resource_type_mask)) {
+          blocked = true;
+          break;
+        }
+      }
+    }
+  }
+  if (!blocked) {
+    for (uint32_t idx : snap->generic_fallback) {
+      if (MatchRule(snap->generic_rules[idx], host, host_and_rest, fp_host,
+                    is_3p, resource_type_mask)) {
+        blocked = true;
+        break;
+      }
+    }
+  }
+  if (!blocked)
+    return false;
+
+  /* 2. Check exceptions only when a block rule hit. */
+  if (HasDomainInSet(host, snap->exc_domains))
+    return false;
+  if (check_host_chain(snap->exc_domain_rules))
+    return false;
+  for (const auto &er : snap->exc_rules) {
+    if (MatchRule(er, host, host_and_rest, fp_host, is_3p, resource_type_mask))
+      return false;
+  }
+  return true;
 }
 
 static std::string NormalizeHostArg(const std::string &host_or_url) {

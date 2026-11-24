@@ -51,11 +51,13 @@ static void window_update(WindowWidget *win)
         gtk_widget_set_visible(win->button, FALSE);
     } else {
         win->focused_win_id = focused->id;
-        const gchar *icon_name = (focused->app_id && *focused->app_id)
-            ? shell_icons_resolve_app_id(focused->app_id)
-            : "tb-app-window-symbolic";
-        gtk_image_set_from_icon_name(GTK_IMAGE(win->icon_img),
-                                     (icon_name && *icon_name) ? icon_name : "tb-app-window-symbolic");
+        if (focused->app_id && *focused->app_id) {
+            shell_icons_set_image_for_app_id(GTK_IMAGE(win->icon_img),
+                                             focused->app_id,
+                                             shell_widget_get_icon_size((ShellWidget *)win));
+        } else {
+            gtk_image_set_from_icon_name(GTK_IMAGE(win->icon_img), "tb-app-window-symbolic");
+        }
         gtk_label_set_text(GTK_LABEL(win->label),
                            (focused->title && *focused->title) ? focused->title :
                            (focused->app_id ? focused->app_id : "Window"));

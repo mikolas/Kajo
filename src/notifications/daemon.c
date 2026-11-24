@@ -1,5 +1,6 @@
 #include "daemon.h"
 #include "../compositor/compositor.h"
+#include "../icons.h"
 #include "../shell.h"
 #include <gtk4-layer-shell.h>
 #include <math.h>
@@ -252,9 +253,12 @@ create_notification_toast_card(ShellNotificationDaemon *daemon, ShellNotificatio
     gtk_widget_set_size_request(card, 300, -1);
 
     /* Icon */
-    const gchar *icon_name = (toast->app_icon && *toast->app_icon) ? toast->app_icon : "preferences-system-notifications-symbolic";
-    GtkWidget *icon = gtk_image_new_from_icon_name(icon_name);
-    gtk_image_set_pixel_size(GTK_IMAGE(icon), 24);
+    const gchar *icon_key = (toast->app_icon && *toast->app_icon)
+                                ? toast->app_icon
+                                : ((toast->desktop_entry && *toast->desktop_entry)
+                                       ? toast->desktop_entry
+                                       : "preferences-system-notifications-symbolic");
+    GtkWidget *icon = shell_icons_create_app_icon_widget(icon_key, 24);
     gtk_widget_set_valign(icon, GTK_ALIGN_START);
 
     /* Text Column */

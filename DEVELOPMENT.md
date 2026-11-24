@@ -201,13 +201,17 @@ src/
 │   ├── web_sync_merge.h/c          Pure UUID/tombstone CRDT merge & AES-256-GCM envelope primitives
 │   └── web_media_sniff_core.h/c    Pure HLS/DASH manifest parser & stream classifier utilities
 ├── web_cef/                        Chromium/CEF Alloy Views browser (kajo-web, docs/spec_kajo_web.md)
-│   ├── main.cc                     CEF subprocess routing, --ozone-platform=wayland, single-instance IPC & profile launch args
-│   ├── cef_app.h/cc                KajoCefApp GPU/VA-API switches, kajo-chrome:// & kajo:// scheme registration
-│   ├── cef_window.h/cc             Frameless Alloy Views host window, tab reaper teardown, idle/window suspension, Downloads, Find Bar, Palette & config hot-reload
+│   ├── main.cc                     CEF subprocess routing, --ozone-platform=wayland, single-instance IPC, --app-id/--app & profile launch args
+│   ├── cef_app.h/cc                KajoCefApp & BrowserHostCoordinator: GPU/VA-API switches, scheme registration, multi-window orchestration, V8 Notification shim
+│   ├── cef_host_coord.h            Per-profile coordinator interface for browser & WebApp windows
+│   ├── cef_window.h/cc             Frameless Alloy Views host window, tab reaper teardown, idle/window suspension, Downloads, Find Bar, Palette, install_app & config hot-reload
+│   ├── cef_webapp_window.h/cc      Chromeless shared-profile WebApp window (per-app wayland_app_id, scope/auth routing, permission infobar)
+│   ├── cef_webapps.h/cc            WebAppStore (webapps.json), Web Manifest parser, scope/auth helpers & XDG .desktop/icon installer
+│   ├── cef_notify.h/cc             Async GDBus WebNotificationBridge (org.freedesktop.Notifications)
 │   ├── cef_tab.h/cc                CefTabClient load/title/favicon/popup isolation/permission/download/hotkey & crash recovery handlers
 │   ├── cef_chrome_ui.h/cc          Aero + Metro kajo-chrome://ui/* theme-scaled topbar/rail/popovers & kajo://* internal HTML pages
 │   ├── cef_adblock.h/cc            IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync
-│   ├── cef_ipc.h/cc                Per-profile single-instance UNIX domain socket server & URL forwarder
+│   ├── cef_ipc.h/cc                Per-profile single-instance UNIX domain socket server & URL/WebApp forwarder
 │   ├── cef_site_util.h             Pure eTLD+1 site matching, private-host check, color/href sanitization, origin favicon fallback & ComputeChromeUiMetrics
 │   └── cef_prefs_helper.h/cc       Per-site permission JSON store, log severity, same-site cookie & user script loader
 ├── vendor/
@@ -381,7 +385,7 @@ systemctl --user restart xdg-desktop-portal
 | `mod-router` | `test-mod-router` | `kajo-mod` 5-tier format router (`UADE` vs `libsidplayfp` vs `libgme` vs `libopenmpt` vs `libxmp`), Amiga companion (`smpl.*`, `.ins`) & `.nfo` filtering, ProTracker sample header parsing, `libarchive` bundle extraction, and live non-zero PCM synthesis. |
 | `web-model` | `test-web-model` | Pure C `kajo-web` core: vertical rail autohide/reveal/hold/focus FSM, tab tree/pin/group/MRU/undo invariants, leave-time idle suspension & favicon persistence, omnibar URL & bang classifier, profile registry round-trip, SQLite WAL + FTS5 history/bookmarks/downloads/session storage, CRDT sync merge & E2EE envelope, and stream classifier helpers. |
 | `web-cef-adblock` | `test-web-cef-adblock` | `CefAdblockEngine` ABP network rules (`$third-party`, `$script`, `$domain=...`, multi-part eTLD+1 matching, strict option validation, exceptions `@@`), hosts-file rules, cosmetic element-hiding selectors, per-host shield pause/allowlist, and filter pack loading. |
-| `web-cef-core` | `test-web-cef-core` | CEF preference/helper logic: permission store persistence & revocation, permission key/label formatting, same-site cookie matching, `IsLocalOrPrivateHost`, `SanitizeSafeHref`, `DeriveOriginFaviconFallback`, `ComputeChromeUiMetrics`, `ProfileIpcServer` round-trip, `~/.config/kajo/web/scripts/*.{js,css}` loader, and log severity parsing. |
+| `web-cef-core` | `test-web-cef-core` | CEF preference/helper logic: permission store persistence & revocation, permission key/label formatting, same-site cookie matching, `IsLocalOrPrivateHost`, `SanitizeSafeHref`, `DeriveOriginFaviconFallback`, `ComputeChromeUiMetrics`, `ProfileIpcServer` URL & WebApp forwarding round-trip, `WebAppStore`/manifest parsing/scope & auth matching/XDG desktop+icon install, `~/.config/kajo/web/scripts/*.{js,css}` loader, and log severity parsing. |
 | *(Python unittest)* | `tests/test_import_chromium_session.py` | One-shot Chromium/Thorium session (`SNSS` / `Bookmarks`) and read-only `Favicons` DB importer (`scripts/import-chromium-session.py`): ordering, pins, groups, running-instance guard, backup, and merge. Run via `python3 -m unittest discover -s tests -p "test_import_chromium_session.py"`. |
 | `ide-fsm` | `test-ide-fsm` | 10-state modal FSM transitions, Nordic text objects, `Space` leader chords (including all 20 `Space t *` Code Strip chords), and per-mode `[keys.<state>]` remapping. |
 | `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, conditional breakpoints, stop, stack, nested variable expansion, watch evaluation, evaluate, errors, adapter death) and debuggee/adapter discovery. |

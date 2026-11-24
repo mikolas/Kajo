@@ -457,8 +457,11 @@ if build_web_cef
     'src/web_cef/cef_adblock.cc',
     'src/web_cef/cef_chrome_ui.cc',
     'src/web_cef/cef_ipc.cc',
+    'src/web_cef/cef_notify.cc',
     'src/web_cef/cef_prefs_helper.cc',
     'src/web_cef/cef_tab.cc',
+    'src/web_cef/cef_webapp_window.cc',
+    'src/web_cef/cef_webapps.cc',
     'src/web_cef/cef_window.cc',
     'src/web/web_model.c',
     'src/web/web_sync_merge.c',
@@ -1077,7 +1080,12 @@ if build_web_cef
 
   test_web_cef_core_exe = executable(
     'test-web-cef-core',
-    files('tests/test_web_cef_core.cc', 'src/web_cef/cef_prefs_helper.cc', 'src/web_cef/cef_ipc.cc'),
+    files(
+      'tests/test_web_cef_core.cc',
+      'src/web_cef/cef_prefs_helper.cc',
+      'src/web_cef/cef_ipc.cc',
+      'src/web_cef/cef_webapps.cc',
+    ),
     include_directories: include_directories('src'),
     cpp_args: ['-std=c++20', '-isystem', cef_include_dir],
     override_options: ['cpp_std=c++20'],

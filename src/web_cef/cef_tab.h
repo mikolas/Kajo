@@ -71,6 +71,40 @@ public:
                                      uint32_t perms,
                                      CefRefPtr<CefPermissionPromptCallback> callback) = 0;
   virtual void OnTabPermissionDismiss(uint64_t tab_id, uint64_t prompt_id) = 0;
+
+  /* Optional hooks for WebApp navigation, native auth popups, Web Notifications & PWA probing. */
+  virtual bool ShouldAllowNativePopup(uint64_t /*tab_id*/,
+                                      const std::string& /*url*/,
+                                      cef_window_open_disposition_t /*disposition*/) {
+    return false;
+  }
+  virtual bool OnTabShouldInterceptNavigation(uint64_t /*tab_id*/,
+                                            const std::string& /*url*/,
+                                            bool /*is_redirect*/,
+                                            bool /*user_gesture*/) {
+    return false;
+  }
+  virtual void OnTabWebNotifyShow(uint64_t /*tab_id*/,
+                                    const std::string& /*origin*/,
+                                    const std::string& /*title*/,
+                                    const std::string& /*body*/,
+                                    const std::string& /*tag*/,
+                                    const std::string& /*js_notif_id*/) {}
+  virtual void OnTabWebNotifyClose(uint64_t /*tab_id*/,
+                                     const std::string& /*js_notif_id*/) {}
+  virtual void OnTabWebNotifyRequestPerm(uint64_t /*tab_id*/,
+                                           const std::string& /*origin*/,
+                                           int /*req_id*/) {}
+  virtual std::string QueryTabWebNotifyPermission(uint64_t /*tab_id*/,
+                                                  const std::string& /*origin*/) {
+    return "default";
+  }
+  virtual void OnTabWebAppProbeResult(uint64_t /*tab_id*/,
+                                      const std::string& /*page_url*/,
+                                      const std::string& /*manifest_url*/,
+                                      const std::string& /*icon_url*/,
+                                      const std::string& /*title*/,
+                                      const std::string& /*theme_color*/) {}
 };
 
 /* Per-tab CefClient handling blocking, media sniffing, popups, downloads, and events. */
@@ -110,6 +144,10 @@ public:
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
   CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
+  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                CefProcessId source_process,
+                                CefRefPtr<CefProcessMessage> message) override;
 
   /* CefLifeSpanHandler */
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override;
@@ -260,6 +298,7 @@ public:
 
 private:
   TabCallbacks* GetCallbacks();
+  void PushNotifyPermissionSync(CefRefPtr<CefBrowser> browser, const std::string& url);
 
   uint64_t tab_id_;
   std::shared_ptr<CefAdblockEngine> adblock_;

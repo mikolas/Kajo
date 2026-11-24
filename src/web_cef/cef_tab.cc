@@ -11,6 +11,7 @@
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_media_sniff_core.h"
 #include "web_cef/cef_site_util.h"
+#include "web_cef/cef_webapps.h"
 
 namespace kajo_web {
 
@@ -303,7 +304,15 @@ bool CefTabClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                                  CefRefPtr<CefDictionaryValue>& extra_info,
                                  bool* no_javascript_access) {
   const std::string url = target_url.ToString();
-  if (!url.empty() && url != "about:blank") {
+  bool allow_native = false;
+  if (url.empty() || url == "about:blank") {
+    allow_native = true;
+  } else if (target_disposition == CEF_WOD_NEW_POPUP && IsLikelyAuthFlowUrl(url)) {
+    allow_native = true;
+  } else if (TabCallbacks* cb = GetCallbacks()) {
+    allow_native = cb->ShouldAllowNativePopup(tab_id_, url, target_disposition);
+  }
+  if (!allow_native) {
     const bool bg = (target_disposition == CEF_WOD_NEW_BACKGROUND_TAB);
     CefRefPtr<CefTabClient> self(this);
     CefPostTask(TID_UI, new UiClosureTask([self, url, bg]() {
@@ -346,6 +355,7 @@ void CefTabClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
   }
   if (adblock_) adblock_->ResetTabBlockedCount(static_cast<int>(tab_id_));
   if (TabCallbacks* cb = GetCallbacks()) cb->OnTabBlockedChanged(tab_id_);
+  PushNotifyPermissionSync(browser, url);
 }
 
 void CefTabClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
@@ -444,6 +454,10 @@ bool CefTabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
   if (url.rfind("kajo://", 0) == 0) {
     if (TabCallbacks* cb = GetCallbacks()) {
       if (cb->OnTabBeforeBrowseAction(tab_id_, url, prev_url, user_gesture)) return true;
+    }
+  } else if (TabCallbacks* cb = GetCallbacks()) {
+    if (cb->OnTabShouldInterceptNavigation(tab_id_, url, is_redirect, user_gesture)) {
+      return true;
     }
   }
   if (url.rfind("data:", 0) != 0) {
@@ -583,6 +597,7 @@ CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
   if (detached_.load(std::memory_order_acquire) || !request) return RV_CONTINUE;
 
   const std::string url = request->GetURL().ToString();
+  const bool is_http = (url.rfind("http://", 0) == 0 || url.rfind("https://", 0) == 0);
   if (https_only_.load(std::memory_order_relaxed) && url.rfind("http://", 0) == 0 &&
       request->GetResourceType() == ::RT_MAIN_FRAME) {
     const std::string host = CefAdblockEngine::ExtractHost(url);
@@ -591,7 +606,7 @@ CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
     }
   }
 
-  if (adblock_) {
+  if (is_http && adblock_) {
     std::string first_party;
     {
       std::lock_guard<std::mutex> lock(url_mu_);
@@ -769,6 +784,69 @@ bool CefTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
 
 void CefTabClient::OnGotFocus(CefRefPtr<CefBrowser> browser) {
   if (TabCallbacks* cb = GetCallbacks()) cb->OnTabGotFocus(tab_id_);
+}
+
+void CefTabClient::PushNotifyPermissionSync(CefRefPtr<CefBrowser> browser, const std::string& url) {
+  if (!browser || (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0)) return;
+  TabCallbacks* cb = GetCallbacks();
+  if (!cb) return;
+  CefRefPtr<CefFrame> mf = browser->GetMainFrame();
+  if (!mf) return;
+  const std::string origin = DeriveOriginFromUrl(url);
+  if (origin.empty()) return;
+  const std::string perm = cb->QueryTabWebNotifyPermission(tab_id_, url);
+  CefRefPtr<CefProcessMessage> msg = CefProcessMessage::Create("kajo-notify-perm-sync");
+  CefRefPtr<CefListValue> args = msg->GetArgumentList();
+  args->SetString(0, origin);
+  args->SetString(1, perm);
+  mf->SendProcessMessage(PID_RENDERER, msg);
+}
+
+bool CefTabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+                                            CefRefPtr<CefFrame> frame,
+                                            CefProcessId source_process,
+                                            CefRefPtr<CefProcessMessage> message) {
+  if (source_process != PID_RENDERER || !message) return false;
+  const std::string name = message->GetName().ToString();
+  TabCallbacks* cb = GetCallbacks();
+  if (!cb) return false;
+  CefRefPtr<CefListValue> args = message->GetArgumentList();
+
+  if (name == "kajo-notify-sync-req") {
+    std::string url = frame ? frame->GetURL().ToString() : "";
+    if (url.empty() && browser && browser->GetMainFrame()) {
+      url = browser->GetMainFrame()->GetURL().ToString();
+    }
+    PushNotifyPermissionSync(browser, url);
+    return true;
+  }
+  if (name == "kajo-notify-show" && args && args->GetSize() >= 5) {
+    cb->OnTabWebNotifyShow(tab_id_,
+                             args->GetString(0).ToString(),
+                             args->GetString(1).ToString(),
+                             args->GetString(2).ToString(),
+                             args->GetString(3).ToString(),
+                             args->GetString(4).ToString());
+    return true;
+  }
+  if (name == "kajo-notify-close" && args && args->GetSize() >= 1) {
+    cb->OnTabWebNotifyClose(tab_id_, args->GetString(0).ToString());
+    return true;
+  }
+  if (name == "kajo-notify-req-perm" && args && args->GetSize() >= 2) {
+    cb->OnTabWebNotifyRequestPerm(tab_id_, args->GetString(0).ToString(), args->GetInt(1));
+    return true;
+  }
+  if (name == "kajo-webapp-probe-result" && args && args->GetSize() >= 5) {
+    cb->OnTabWebAppProbeResult(tab_id_,
+                               args->GetString(0).ToString(),
+                               args->GetString(1).ToString(),
+                               args->GetString(2).ToString(),
+                               args->GetString(3).ToString(),
+                               args->GetString(4).ToString());
+    return true;
+  }
+  return false;
 }
 
 }  // namespace kajo_web

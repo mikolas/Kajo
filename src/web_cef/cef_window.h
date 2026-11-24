@@ -32,8 +32,11 @@
 #include "web_cef/cef_ipc.h"
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_tab.h"
+#include "web_cef/cef_webapps.h"
 
 namespace kajo_web {
+
+class BrowserHostCoordinator;
 
 struct LaunchConfig {
   std::string exe_path;
@@ -47,6 +50,8 @@ struct LaunchConfig {
   std::string user_agent;
   std::string data_dir;
   std::string cache_dir;
+  std::string app_id;
+  std::string app_url;
   std::vector<std::string> initial_urls;
 };
 
@@ -55,13 +60,22 @@ class KajoBrowserWindow : public CefWindowDelegate,
                           public CefMessageRouterBrowserSide::Handler,
                           public TabCallbacks {
 public:
-  KajoBrowserWindow(const LaunchConfig& cfg,
+  KajoBrowserWindow(BrowserHostCoordinator* coordinator,
+                    const LaunchConfig& cfg,
                     std::shared_ptr<CefAdblockEngine> adblock,
                     std::shared_ptr<ChromeStateStore> store,
                     CefRefPtr<CefRequestContext> request_context);
   ~KajoBrowserWindow() override;
 
   void ShowWindow();
+  void FocusAndActivate();
+  void HandleExternalOpen(const std::vector<std::string>& urls);
+  void FocusTabById(uint64_t tab_id);
+  void DispatchNotificationEvent(int browser_id,
+                                 uint64_t tab_id,
+                                 const std::string& js_notif_id,
+                                 const std::string& event_type);
+  void RefreshWebAppsState();
 
   /* Called by chrome view clients for draggable regions & key shortcuts */
   void OnChromeBrowserCreated(int role, CefRefPtr<CefBrowser> browser);
@@ -143,6 +157,25 @@ public:
                              uint32_t perms,
                              CefRefPtr<CefPermissionPromptCallback> callback) override;
   void OnTabPermissionDismiss(uint64_t tab_id, uint64_t prompt_id) override;
+  void OnTabWebNotifyShow(uint64_t tab_id,
+                            const std::string& origin,
+                            const std::string& title,
+                            const std::string& body,
+                            const std::string& tag,
+                            const std::string& js_notif_id) override;
+  void OnTabWebNotifyClose(uint64_t tab_id,
+                             const std::string& js_notif_id) override;
+  void OnTabWebNotifyRequestPerm(uint64_t tab_id,
+                                   const std::string& origin,
+                                   int req_id) override;
+  std::string QueryTabWebNotifyPermission(uint64_t tab_id,
+                                          const std::string& origin) override;
+  void OnTabWebAppProbeResult(uint64_t tab_id,
+                              const std::string& page_url,
+                              const std::string& manifest_url,
+                              const std::string& icon_url,
+                              const std::string& title,
+                              const std::string& theme_color) override;
 
   CefRefPtr<CefMessageRouterBrowserSide> router() const { return router_; }
 
@@ -157,6 +190,8 @@ private:
     uint32_t media_perms = 0;
     CefRefPtr<CefMediaAccessCallback> media_cb;
     CefRefPtr<CefPermissionPromptCallback> prompt_cb;
+    int notify_js_req_id = -1;
+    std::string notify_origin;
   };
 
   struct TabEntry {
@@ -216,6 +251,7 @@ private:
   void RefreshStorageCache();
   void PushStateToChrome();
   void PushStateImmediate();
+  void ScheduleBlockedBadgePush();
   void PersistSession();
   CefBrowserSettings MakeContentBrowserSettings() const;
   std::string DefaultNewTabUrl() const;
@@ -225,10 +261,22 @@ private:
   void RemoveDownload(uint32_t did, int64_t db_id, bool cancel_active);
   void ApplyDraggableRegions();
   void FinishFilterListWriteOnUi(const std::string& id, bool wrote_ok, int http_status);
-  void HandleExternalOpen(const std::vector<std::string>& urls);
+  void OpenInstallAppOverlay();
+  void StartWebAppInstall(std::string name,
+                          std::string start_url,
+                          std::string scope,
+                          std::string theme_color,
+                          std::string icon_url,
+                          std::string existing_id,
+                          bool launch_after);
+  void DeliverNotifyPermResult(uint64_t tab_id,
+                               int js_req_id,
+                               const std::string& origin,
+                               const std::string& perm);
   TabEntry* FindEntry(uint64_t tab_id);
   TabEntry* ActiveEntry();
 
+  BrowserHostCoordinator* coord_;
   LaunchConfig cfg_;
   std::shared_ptr<CefAdblockEngine> adblock_;
   std::shared_ptr<ChromeStateStore> store_;
@@ -264,12 +312,10 @@ private:
   std::vector<ChromeDownloadView> downloads_;
   std::map<uint32_t, CefRefPtr<CefDownloadItemCallback>> download_callbacks_;
   std::unordered_set<uint32_t> dismissed_downloads_;
-  std::unique_ptr<ProfileIpcServer> ipc_server_;
   std::vector<CefDraggableRegion> cached_topbar_drag_regions_;
   std::vector<PendingPermissionReq> pending_permissions_;
   uint64_t next_perm_req_id_ = 1;
-  PermissionStore permission_store_;
-  std::string permission_store_path_;
+  ChromeInstallAppDraft install_draft_;
   std::shared_ptr<const LoadedUserScripts> user_scripts_;
   std::vector<CefRefPtr<CefClient>> chrome_clients_;
   std::vector<CefRefPtr<CefURLRequest>> active_filter_reqs_;
@@ -358,6 +404,8 @@ private:
 
   uint64_t push_gen_ = 0;
   bool push_pending_ = false;
+  uint64_t blocked_push_gen_ = 0;
+  bool blocked_push_pending_ = false;
   uint64_t rail_hover_gen_ = 0;
   uint64_t topbar_hover_gen_ = 0;
   uint64_t suspend_timer_gen_ = 0;
