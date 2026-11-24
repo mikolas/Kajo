@@ -120,8 +120,8 @@
 
     <!-- Right-Side Architecture Spec Callout -->
     <g transform="translate(568, 8)" font-family="'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace">
-      <rect x="0" y="0" width="168" height="28" fill="#0078d4"/>
-      <text x="12" y="19" fill="#ffffff" font-size="12.5" font-weight="700" letter-spacing="1.6">9-BINARY SUITE</text>
+      <rect x="0" y="0" width="174" height="28" fill="#0078d4"/>
+      <text x="11" y="19" fill="#ffffff" font-size="12" font-weight="700" letter-spacing="1.4">10-BINARY SUITE</text>
       <text x="2" y="54" fill="#e6e6e6" font-size="11.5" font-weight="700" letter-spacing="0.5">C17 • C++20 • GTK4 • WAYLAND</text>
       <text x="2" y="76" fill="#888888" font-size="10.0" letter-spacing="0.3">WLROOTS • CEF • PIPEWIRE • UADE</text>
     </g>
@@ -135,120 +135,136 @@
     AERO + METRO PERSONAL APPLICATION SUITE &amp; WAYLAND ENVIRONMENT
   </text>
 
-  <!-- 5. Bottom 9-Binary Suite Telemetry Strip (x=408..1142, y=272..340) -->
+  <!-- 5. Bottom 10-Binary Suite Telemetry Strip (x=408..1144, y=272..340) -->
   <g transform="translate(408, 272)" font-family="'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace">
 
     <!-- 01: kajo-comp (Compositor) -->
     <g transform="translate(0, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#00d8f0" stroke-width="3"/>
-      <rect x="8" y="14" width="4" height="17" fill="#2b2b2b"/>
-      <rect x="14" y="14" width="10" height="17" fill="#141414" stroke="#00d8f0" stroke-width="1.5"/>
-      <rect x="14" y="14" width="10" height="4" fill="#0078d4"/>
-      <rect x="26" y="14" width="5" height="8" fill="#0078d4"/>
-      <rect x="26" y="24" width="5" height="7" fill="#00d8f0"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">01//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">COMP</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">wlroots 0.20</text>
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#00d8f0" stroke-width="3"/>
+      <rect x="7" y="14" width="4" height="17" fill="#2b2b2b"/>
+      <rect x="13" y="14" width="10" height="17" fill="#141414" stroke="#00d8f0" stroke-width="1.5"/>
+      <rect x="13" y="14" width="10" height="4" fill="#0078d4"/>
+      <rect x="25" y="14" width="5" height="8" fill="#0078d4"/>
+      <rect x="25" y="24" width="5" height="7" fill="#00d8f0"/>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">01//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">COMP</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">wlroots 0.20</text>
     </g>
 
     <!-- 02: kajo (Shell) -->
-    <g transform="translate(82, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#0078d4" stroke-width="3"/>
+    <g transform="translate(74, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#0078d4" stroke-width="3"/>
       <polygon points="8,14 13,14 13,31 8,31" fill="#ffffff"/>
       <polygon points="15,22 23,14 28,14 19,24" fill="#00d8f0"/>
       <polygon points="20,25 28,31 23,31 15,26" fill="#0078d4"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">02//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">SHELL</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">Panel &amp; Lock</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">02//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">SHELL</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">Panel &amp; Lock</text>
     </g>
 
     <!-- 03: kajo-ide -->
-    <g transform="translate(164, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#00d8f0" stroke-width="3"/>
+    <g transform="translate(148, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#00d8f0" stroke-width="3"/>
       <polygon points="8,15 17,22 8,29 8,26 13,22 8,18" fill="#00d8f0"/>
       <rect x="20" y="15" width="7" height="15" fill="#dcdcaa"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">03//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">IDE</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">LSP + DAP</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">03//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">IDE</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">LSP + DAP</text>
     </g>
 
     <!-- 04: kajo-files -->
-    <g transform="translate(246, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#0078d4" stroke-width="3"/>
+    <g transform="translate(222, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#0078d4" stroke-width="3"/>
       <polygon points="8,14 16,14 19,18 28,18 28,31 8,31" fill="#0078d4"/>
       <rect x="8" y="20" width="20" height="3" fill="#00d8f0"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">04//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">FILES</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">GIO &amp; Portal</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">04//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">FILES</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">GIO &amp; Portal</text>
     </g>
 
     <!-- 05: kajo-player -->
-    <g transform="translate(328, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#c586c0" stroke-width="3"/>
+    <g transform="translate(296, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#c586c0" stroke-width="3"/>
       <polygon points="8,14 21,22 8,31" fill="#00d8f0"/>
       <rect x="23" y="19" width="3" height="12" fill="#c586c0"/>
       <rect x="28" y="14" width="3" height="17" fill="#0078d4"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">05//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">PLAYER</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">libmpv GL</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">05//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">PLAYER</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">libmpv GL</text>
     </g>
 
     <!-- 06: kajo-mod -->
-    <g transform="translate(410, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#ff8c00" stroke-width="3"/>
+    <g transform="translate(370, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#ff8c00" stroke-width="3"/>
       <polyline points="8,19 13,19 13,14 19,14 19,21 25,21 25,16 30,16" fill="none" stroke="#00d8f0" stroke-width="1.8" stroke-linecap="square" stroke-linejoin="miter"/>
       <rect x="8" y="25" width="4" height="7" fill="#0078d4"/>
       <rect x="14" y="23" width="4" height="9" fill="#ff8c00"/>
       <rect x="20" y="26" width="4" height="6" fill="#0078d4"/>
       <rect x="26" y="24" width="4" height="8" fill="#00d8f0"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">06//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">MOD</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">UADE + SID</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">06//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">MOD</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">UADE + SID</text>
     </g>
 
     <!-- 07: kajo-web -->
-    <g transform="translate(492, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#00d8f0" stroke-width="3"/>
-      <polygon points="16,13 24,13 29,18 29,26 24,31 16,31 11,26 11,18" fill="#181818" stroke="#383838" stroke-width="1.2"/>
-      <polygon points="27,15 18,20 20,22" fill="#00d8f0"/>
-      <polygon points="27,15 20,22 22,24" fill="#0078d4"/>
-      <polygon points="13,29 18,20 20,22" fill="#e6e6e6"/>
-      <polygon points="13,29 20,22 22,24" fill="#3a3a3a"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">07//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">WEB</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">CEF Wayland</text>
+    <g transform="translate(444, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#00d8f0" stroke-width="3"/>
+      <polygon points="15,13 23,13 28,18 28,26 23,31 15,31 10,26 10,18" fill="#181818" stroke="#383838" stroke-width="1.2"/>
+      <polygon points="26,15 17,20 19,22" fill="#00d8f0"/>
+      <polygon points="26,15 19,22 21,24" fill="#0078d4"/>
+      <polygon points="12,29 17,20 19,22" fill="#e6e6e6"/>
+      <polygon points="12,29 19,22 21,24" fill="#3a3a3a"/>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">07//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">WEB</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">CEF Wayland</text>
     </g>
 
-    <!-- 08: kajo-settings -->
-    <g transform="translate(574, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#0078d4" stroke-width="3"/>
+    <!-- 08: kajo-viewer -->
+    <g transform="translate(518, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#dcdcaa" stroke-width="3"/>
+      <polygon points="8,14 20,14 24,18 24,31 8,31" fill="#1c1c1c" stroke="#4a4a4a" stroke-width="1.2"/>
+      <polygon points="20,14 20,18 24,18" fill="#dcdcaa"/>
+      <rect x="11" y="18" width="8" height="2" fill="#ffffff"/>
+      <rect x="11" y="22" width="10" height="2" fill="#00d8f0"/>
+      <polygon points="19,21 25,21 27,23 27,29 25,31 19,31 17,29 17,23" fill="#0e0e0e" stroke="#00d8f0" stroke-width="1.6"/>
+      <rect x="21" y="25" width="2" height="2" fill="#ffffff"/>
+      <polygon points="26,28 28,26 32,30 30,32" fill="#0078d4"/>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">08//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">VIEWER</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">PDF•MD•IMG</text>
+    </g>
+
+    <!-- 09: kajo-settings -->
+    <g transform="translate(592, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#0078d4" stroke-width="3"/>
       <rect x="8" y="16" width="20" height="3" fill="#0078d4"/>
       <rect x="21" y="13" width="4" height="9" fill="#ffffff"/>
       <rect x="8" y="26" width="20" height="3" fill="#00d8f0"/>
       <rect x="13" y="23" width="4" height="9" fill="#ffffff"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">08//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">SETTINGS</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">13-Page Deck</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">09//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">SETTINGS</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">13-Page Deck</text>
     </g>
 
-    <!-- 09: kajo-greeter -->
-    <g transform="translate(656, 0)">
-      <rect x="0" y="0" width="78" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
-      <line x1="0" y1="0" x2="36" y2="0" stroke="#4ec9b0" stroke-width="3"/>
+    <!-- 10: kajo-greeter -->
+    <g transform="translate(666, 0)">
+      <rect x="0" y="0" width="70" height="68" fill="#141414" stroke="#2b2b2b" stroke-width="1.5"/>
+      <line x1="0" y1="0" x2="32" y2="0" stroke="#4ec9b0" stroke-width="3"/>
       <rect x="13" y="14" width="11" height="7" fill="none" stroke="#e6e6e6" stroke-width="2"/>
       <rect x="9" y="21" width="19" height="11" fill="#0078d4"/>
       <rect x="17" y="24" width="3" height="6" fill="#00d8f0"/>
-      <text x="38" y="22" fill="#666666" font-size="8.5" font-weight="700">09//</text>
-      <text x="8" y="47" fill="#f0f0f0" font-size="10.5" font-weight="700" letter-spacing="0.4">GREETER</text>
-      <text x="8" y="60" fill="#777777" font-size="7.5">greetd PAM</text>
+      <text x="40" y="22" fill="#666666" font-size="8" font-weight="700">10//</text>
+      <text x="7" y="47" fill="#f0f0f0" font-size="9.5" font-weight="700" letter-spacing="0.3">GREETER</text>
+      <text x="7" y="60" fill="#777777" font-size="7.2">greetd PAM</text>
     </g>
 
   </g>

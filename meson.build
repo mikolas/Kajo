@@ -798,6 +798,7 @@ install_data(
   'data/icons/kajo-player.svg',
   'data/icons/kajo-mod.svg',
   'data/icons/kajo-web.svg',
+  'data/icons/kajo-viewer.svg',
   'data/icons/kajo-settings.svg',
   'data/icons/kajo-greeter.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
