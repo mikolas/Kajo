@@ -67,8 +67,7 @@ public:
   CefSize GetPreferredChromeViewSize(CefRefPtr<CefView> view) const;
   int CurrentDockedRailWidth() const;
   int CurrentRailOverlayWidth() const;
-  int CurrentDockedTopbarHeight() const;
-  int CurrentTopbarOverlayHeight() const;
+  int CurrentTopbarHeight() const;
   void HandleFilterListDownloadComplete(const std::string& id,
                                         bool ok,
                                         int http_status,
@@ -219,7 +218,6 @@ private:
   guint config_sub_id_ = 0;
 
   CefRefPtr<CefWindow> window_;
-  CefRefPtr<CefPanel> topbar_spacer_;
   CefRefPtr<CefPanel> body_panel_;
   CefRefPtr<CefPanel> rail_spacer_;
   CefRefPtr<CefPanel> content_panel_;
@@ -228,7 +226,6 @@ private:
   CefRefPtr<CefBrowserView> infobar_view_;
   CefRefPtr<CefBrowserView> overlay_view_;
   CefRefPtr<CefBrowserView> ac_view_;
-  CefRefPtr<CefOverlayController> topbar_ctrl_;
   CefRefPtr<CefOverlayController> rail_ctrl_;
   CefRefPtr<CefOverlayController> infobar_ctrl_;
   CefRefPtr<CefOverlayController> overlay_ctrl_;
@@ -266,6 +263,7 @@ private:
   bool show_tab_domains_ = true;
   bool rail_hover_open_ = false;
   int rail_hold_count_ = 0;
+  uint64_t group_prompt_tab_id_ = 0;
   bool web_fullscreen_ = false;
   bool layout_built_ = false;
   bool ac_visible_ = false;

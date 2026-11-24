@@ -434,15 +434,23 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .sec-badge.tls { color: var(--metro-success); }
   .sec-badge.warn { color: var(--metro-warning); }
   .sec-badge.kajo { color: var(--metro-accent); }
-  .omni-display {
+  .omni-field {
     flex: 1 1 auto;
     min-width: 0;
     height: 22px;
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .omni-display {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
     display: flex;
     align-items: center;
     padding: 0 8px;
     font-size: 12px;
-    cursor: text;
     white-space: nowrap;
     overflow: hidden;
   }
@@ -458,18 +466,23 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     text-overflow: ellipsis;
   }
   .omni-ph { color: var(--metro-fg-dim); }
-  .omnibar-wrap:not(.focused) #omnibar { display: none; }
   .omnibar-wrap.focused #omniDisplay { display: none; }
   #omnibar {
-    flex: 1 1 auto;
-    min-width: 0;
+    width: 100%;
     height: 22px;
+    position: relative;
+    z-index: 2;
     background: transparent;
     border: none;
     padding: 0 8px;
     font-size: 12px;
     color: var(--metro-fg);
   }
+  .omnibar-wrap:not(.focused) #omnibar {
+    color: transparent;
+    caret-color: transparent;
+  }
+  .omnibar-wrap:not(.focused) #omnibar::placeholder { color: transparent; }
   .pill {
     height: 22px;
     padding: 0 7px;
@@ -530,11 +543,13 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
 
     <div id="omniWrap" class="omnibar-wrap">
       <span id="secBadge" class="sec-badge">❖</span>
-      <div id="omniDisplay" class="omni-display" tabindex="0">
-        <span id="omniHost" class="omni-host"></span><span id="omniPath" class="omni-path"></span><span id="omniPh" class="omni-ph hidden">Search or enter URL (Ctrl+L · Ctrl+K Palette)</span>
+      <div class="omni-field">
+        <div id="omniDisplay" class="omni-display">
+          <span id="omniHost" class="omni-host"></span><span id="omniPath" class="omni-path"></span><span id="omniPh" class="omni-ph hidden">Search or enter URL (Ctrl+L · Ctrl+K Palette)</span>
+        </div>
+        <input id="omnibar" type="text" spellcheck="false" autocomplete="off"
+               placeholder="Search or enter URL (Ctrl+L · Ctrl+K Palette)">
       </div>
-      <input id="omnibar" type="text" spellcheck="false" autocomplete="off"
-             placeholder="Search or enter URL (Ctrl+L · Ctrl+K Palette)">
       <button id="btnShield" class="pill shield-on" title="Adblock &amp; Trackers">
         <span>🛡</span><span id="blockedNum">0</span>
       </button>
@@ -651,12 +666,6 @@ barWrap.addEventListener('mouseleave', () => {
   if (lastState && lastState.topbar_mode === 1) send('topbar_hover', { inside: false });
 });
 
-omniDisplay.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  window.__kajoFocusOmnibar();
-});
-omniDisplay.addEventListener('focus', () => window.__kajoFocusOmnibar());
-
 window.__kajoApply = (s) => {
   lastState = s;
   acSelectedIdx = typeof s.ac_selected_idx === 'number' ? s.ac_selected_idx : -1;
@@ -719,7 +728,9 @@ window.__kajoApply = (s) => {
 omni.addEventListener('focus', () => {
   omniWrap.classList.add('focused');
   send('topbar_focus', { focused: true });
-  omni.select();
+  setTimeout(() => {
+    if (document.activeElement === omni) omni.select();
+  }, 0);
 });
 omni.addEventListener('blur', () => {
   omniWrap.classList.remove('focused');
@@ -1302,27 +1313,16 @@ function openTabCtxMenu(t, x, y) {
   for (const g of groups) addChip(g, g, t.group === g);
   if (groups.length || t.group) sub.appendChild(chips);
 
-  const grpRow = document.createElement('div');
-  grpRow.className = 'ctx-grp-row';
-  const grpInp = document.createElement('input');
-  grpInp.className = 'ctx-grp-inp';
-  grpInp.placeholder = 'New group...';
-  const grpBtn = document.createElement('button');
-  grpBtn.className = 'ctx-chip';
-  grpBtn.textContent = '+';
-  const commitGroup = () => {
-    const v = grpInp.value.trim();
-    if (!v) return;
+  const bNewGrp = document.createElement('button');
+  bNewGrp.className = 'ctx-chip';
+  bNewGrp.style.width = '100%';
+  bNewGrp.textContent = '+ New Group...';
+  bNewGrp.onclick = (e) => {
+    e.stopPropagation();
     window.__kajoCloseCtxMenu();
-    send('set_tab_group', { tab_id: t.id, group: v });
+    send('open_group_prompt', { tab_id: t.id });
   };
-  grpBtn.onclick = (e) => { e.stopPropagation(); commitGroup(); };
-  grpInp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); commitGroup(); }
-    else if (e.key === 'Escape') { e.preventDefault(); window.__kajoCloseCtxMenu(); }
-  });
-  grpRow.append(grpInp, grpBtn);
-  sub.appendChild(grpRow);
+  sub.appendChild(bNewGrp);
   tabCtxMenu.appendChild(sub);
 
   const sep = document.createElement('div');
@@ -2114,6 +2114,38 @@ window.__kajoApply = (s) => {
     act.append(bSave, bDel);
     root.appendChild(act);
     setTimeout(() => { tInp.focus(); tInp.select(); }, 10);
+  } else if (mode === 'new_group') {
+    if (!modeChanged && root.querySelector('#grpNameInp')) return;
+    root.appendChild(renderHeader('▤ ASSIGN TAB GROUP'));
+    const body = document.createElement('div');
+    body.className = 'form-body';
+    const gLbl = document.createElement('div');
+    gLbl.className = 'form-lbl';
+    gLbl.textContent = 'Group Name';
+    const gInp = document.createElement('input');
+    gInp.id = 'grpNameInp';
+    gInp.className = 'form-inp';
+    gInp.placeholder = 'e.g. WORK, RESEARCH, MEDIA';
+    const applyGrp = (val) => send('set_tab_group', { tab_id: 0, group: val });
+    gInp.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); if (gInp.value.trim()) applyGrp(gInp.value.trim()); }
+      else if (e.key === 'Escape') { e.preventDefault(); send('close_overlay'); }
+    });
+    body.append(gLbl, gInp);
+    root.appendChild(body);
+    const act = document.createElement('div');
+    act.className = 'act-row';
+    const bSet = document.createElement('button');
+    bSet.className = 'btn primary';
+    bSet.textContent = 'Assign Group';
+    bSet.onclick = () => { if (gInp.value.trim()) applyGrp(gInp.value.trim()); };
+    const bClear = document.createElement('button');
+    bClear.className = 'btn';
+    bClear.textContent = 'Ungroup';
+    bClear.onclick = () => applyGrp('');
+    act.append(bSet, bClear);
+    root.appendChild(act);
+    setTimeout(() => { gInp.focus(); gInp.select(); }, 10);
   } else if (mode === 'profiles') {
     root.appendChild(renderHeader('● PROFILES & PRIVATE MODE'));
     const list = document.createElement('div');

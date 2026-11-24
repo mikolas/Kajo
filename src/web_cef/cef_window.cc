@@ -549,7 +549,7 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   chrome_clients_ = {top_c, rail_c, inf_c, ov_c, ac_c};
 
   topbar_view_ = CefBrowserView::CreateBrowserView(
-      top_c, "kajo-chrome://ui/topbar.html", trans_bs, nullptr, request_context_, bv_delegate_);
+      top_c, "kajo-chrome://ui/topbar.html", bs, nullptr, request_context_, bv_delegate_);
   rail_view_ = CefBrowserView::CreateBrowserView(
       rail_c, "kajo-chrome://ui/rail.html", trans_bs, nullptr, request_context_, bv_delegate_);
   infobar_view_ = CefBrowserView::CreateBrowserView(
@@ -559,8 +559,6 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   ac_view_ = CefBrowserView::CreateBrowserView(
       ac_c, "kajo-chrome://ui/overlay.html?role=ac", bs, nullptr, request_context_, bv_delegate_);
 
-  topbar_spacer_ = CefPanel::CreatePanel(panel_delegate_);
-  topbar_spacer_->SetBackgroundColor(CefColorSetARGB(255, 0x11, 0x11, 0x11));
   body_panel_ = CefPanel::CreatePanel(nullptr);
   rail_spacer_ = CefPanel::CreatePanel(panel_delegate_);
   rail_spacer_->SetBackgroundColor(CefColorSetARGB(255, 0x11, 0x11, 0x11));
@@ -570,7 +568,6 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
 
   RebuildLayout();
   rail_ctrl_ = window_->AddOverlayView(rail_view_, CEF_DOCKING_MODE_CUSTOM, false);
-  topbar_ctrl_ = window_->AddOverlayView(topbar_view_, CEF_DOCKING_MODE_CUSTOM, false);
   infobar_ctrl_ = window_->AddOverlayView(infobar_view_, CEF_DOCKING_MODE_CUSTOM, false);
   if (infobar_ctrl_) infobar_ctrl_->SetVisible(false);
   ac_ctrl_ = window_->AddOverlayView(ac_view_, CEF_DOCKING_MODE_CUSTOM, false);
@@ -665,12 +662,7 @@ int KajoBrowserWindow::CurrentRailOverlayWidth() const {
   return rail_hover_open_ ? rail_width_px_ : 8;
 }
 
-int KajoBrowserWindow::CurrentDockedTopbarHeight() const {
-  if (web_fullscreen_ || topbar_mode_ == KAJO_WEB_TOPBAR_AUTOHIDE) return 0;
-  return 34;
-}
-
-int KajoBrowserWindow::CurrentTopbarOverlayHeight() const {
+int KajoBrowserWindow::CurrentTopbarHeight() const {
   if (web_fullscreen_) return 0;
   if (topbar_mode_ == KAJO_WEB_TOPBAR_ALWAYS ||
       topbar_hover_open_ || topbar_focused_ || ac_visible_ || !overlay_mode_.empty()) {
@@ -681,12 +673,8 @@ int KajoBrowserWindow::CurrentTopbarOverlayHeight() const {
 
 CefSize KajoBrowserWindow::GetPreferredChromeViewSize(CefRefPtr<CefView> view) const {
   if (!view) return CefSize();
-  if (topbar_spacer_ && view->IsSame(topbar_spacer_)) {
-    const int h = CurrentDockedTopbarHeight();
-    return h > 0 ? CefSize(100, h) : CefSize(1, 1);
-  }
   if (topbar_view_ && view->IsSame(topbar_view_)) {
-    const int h = CurrentTopbarOverlayHeight();
+    const int h = CurrentTopbarHeight();
     return h > 0 ? CefSize(100, h) : CefSize(1, 1);
   }
   if (rail_spacer_ && view->IsSame(rail_spacer_)) {
@@ -707,7 +695,7 @@ CefSize KajoBrowserWindow::GetPreferredChromeViewSize(CefRefPtr<CefView> view) c
 }
 
 void KajoBrowserWindow::RebuildLayout() {
-  if (!window_ || !topbar_spacer_ || !body_panel_ || !rail_spacer_ || !content_panel_) return;
+  if (!window_ || !topbar_view_ || !body_panel_ || !rail_spacer_ || !content_panel_) return;
 
   if (!layout_built_) {
     CefBoxLayoutSettings vset;
@@ -716,8 +704,8 @@ void KajoBrowserWindow::RebuildLayout() {
     vset.cross_axis_alignment = CEF_AXIS_ALIGNMENT_STRETCH;
     vset.inside_border_insets = {1, 1, 1, 1};
     CefRefPtr<CefBoxLayout> vlayout = window_->SetToBoxLayout(vset);
-    window_->AddChildView(topbar_spacer_);
-    vlayout->SetFlexForView(topbar_spacer_, 0);
+    window_->AddChildView(topbar_view_);
+    vlayout->SetFlexForView(topbar_view_, 0);
     window_->AddChildView(body_panel_);
     vlayout->SetFlexForView(body_panel_, 1);
 
@@ -753,10 +741,9 @@ void KajoBrowserWindow::RebuildLayout() {
 }
 
 void KajoBrowserWindow::ApplyTopbarSizing() {
-  if (!topbar_spacer_ || !window_) return;
-  const int dh = CurrentDockedTopbarHeight();
-  topbar_spacer_->SetVisible(!web_fullscreen_ && dh > 0);
-  topbar_spacer_->InvalidateLayout();
+  if (!topbar_view_ || !window_) return;
+  topbar_view_->SetVisible(!web_fullscreen_);
+  topbar_view_->InvalidateLayout();
   window_->Layout();
   UpdateOverlayBounds();
 }
@@ -777,24 +764,14 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
   if (wb.width < 200 || wb.height < 120) return;
   const int b = 1;
   const int inner_w = std::max(1, wb.width - 2 * b);
-  const int top_ov_h = CurrentTopbarOverlayHeight();
-
-  if (topbar_ctrl_) {
-    if (web_fullscreen_ || top_ov_h <= 0) {
-      topbar_ctrl_->SetVisible(false);
-    } else {
-      topbar_ctrl_->SetBounds(CefRect(b, b, inner_w, top_ov_h));
-      topbar_ctrl_->SetVisible(true);
-    }
-  }
+  const int top_h = CurrentTopbarHeight();
 
   if (rail_ctrl_) {
     const int w = CurrentRailOverlayWidth();
     if (web_fullscreen_ || w <= 0) {
       rail_ctrl_->SetVisible(false);
     } else {
-      const int top_off = CurrentDockedTopbarHeight();
-      const int y = b + top_off;
+      const int y = b + top_h;
       const int h = std::max(0, wb.height - b - y);
       const int x = (rail_side_ == KAJO_WEB_SIDE_RIGHT) ? std::max(b, wb.width - b - w) : b;
       rail_ctrl_->SetBounds(CefRect(x, y, w, h));
@@ -809,7 +786,7 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
       const int rw = CurrentDockedRailWidth();
       const int x = b + (rail_side_ == KAJO_WEB_SIDE_LEFT ? rw : 0);
       const int w = std::max(240, inner_w - rw);
-      const int y = b + std::max(top_ov_h, CurrentDockedTopbarHeight());
+      const int y = b + top_h;
       infobar_ctrl_->SetBounds(CefRect(x, y, w, 38));
       infobar_ctrl_->SetVisible(true);
     }
@@ -823,7 +800,7 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
       int x = b + (rail_side_ == KAJO_WEB_SIDE_LEFT ? rw : 0) + 120;
       int w = std::clamp(inner_w - rw - 240, 320, 740);
       int h = std::min(340, wb.height - 60);
-      ac_ctrl_->SetBounds(CefRect(std::max(b + 12, std::min(x, wb.width - b - w - 12)), b + 35, w, h));
+      ac_ctrl_->SetBounds(CefRect(std::max(b + 12, std::min(x, wb.width - b - w - 12)), b + top_h + 1, w, h));
       ac_ctrl_->SetVisible(true);
     }
   }
@@ -834,18 +811,21 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
     } else {
       CefRect ob;
       if (overlay_mode_ == "find") {
-        ob = CefRect(std::max(b + 12, wb.width - b - 392), b + 40, 380, 44);
+        ob = CefRect(std::max(b + 12, wb.width - b - 392), b + top_h + 6, 380, 44);
       } else if (overlay_mode_ == "bookmark") {
         int w = std::min(380, wb.width - 24);
-        ob = CefRect(std::max(b + 12, wb.width - b - w - 160), b + 35, w, 246);
+        ob = CefRect(std::max(b + 12, wb.width - b - w - 160), b + top_h + 1, w, 246);
+      } else if (overlay_mode_ == "new_group") {
+        int w = std::min(360, wb.width - 24);
+        ob = CefRect((wb.width - w) / 2, b + top_h + 64, w, 170);
       } else if (overlay_mode_ == "palette") {
         int w = std::clamp(wb.width - 80, 360, 680);
         int h = std::min(440, wb.height - 100);
-        ob = CefRect((wb.width - w) / 2, b + 72, w, h);
+        ob = CefRect((wb.width - w) / 2, b + top_h + 38, w, h);
       } else {
         int w = std::min(440, wb.width - 24);
         int h = std::min(420, wb.height - 60);
-        ob = CefRect(std::max(b + 12, wb.width - b - w - 12), b + 35, w, h);
+        ob = CefRect(std::max(b + 12, wb.width - b - w - 12), b + top_h + 1, w, h);
       }
       overlay_ctrl_->SetBounds(ob);
       overlay_ctrl_->SetVisible(true);
@@ -937,7 +917,6 @@ void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
 
 void KajoBrowserWindow::OnWindowDestroyed(CefRefPtr<CefWindow> window) {
   window_ = nullptr;
-  topbar_spacer_ = nullptr;
   body_panel_ = nullptr;
   rail_spacer_ = nullptr;
   content_panel_ = nullptr;
@@ -946,7 +925,6 @@ void KajoBrowserWindow::OnWindowDestroyed(CefRefPtr<CefWindow> window) {
   infobar_view_ = nullptr;
   overlay_view_ = nullptr;
   ac_view_ = nullptr;
-  topbar_ctrl_ = nullptr;
   rail_ctrl_ = nullptr;
   infobar_ctrl_ = nullptr;
   overlay_ctrl_ = nullptr;
@@ -1201,7 +1179,7 @@ void KajoBrowserWindow::FocusOmnibar() {
     ++topbar_hover_gen_;
   }
   topbar_focused_ = true;
-  UpdateOverlayBounds();
+  ApplyTopbarSizing();
   PushStateImmediate();
   if (topbar_view_ && topbar_browser_ && topbar_browser_->GetMainFrame()) {
     topbar_view_->RequestFocus();
@@ -1225,7 +1203,7 @@ void KajoBrowserWindow::OpenBookmarkPopover() {
   }
   if (topbar_mode_ == KAJO_WEB_TOPBAR_AUTOHIDE && !topbar_hover_open_) {
     topbar_hover_open_ = true;
-    UpdateOverlayBounds();
+    ApplyTopbarSizing();
   }
   if (overlay_mode_ == "bookmark") {
     CloseOverlay();
@@ -1859,6 +1837,7 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     }
   } else if (cmd == "set_tab_group") {
     uint64_t tid = static_cast<uint64_t>(get_int("tab_id"));
+    if (tid == 0) tid = group_prompt_tab_id_;
     const std::string grp = get_str("group");
     if (KajoWebTabMeta* t = web_model_find_tab(model_, tid)) {
       g_free(t->group);
@@ -1866,6 +1845,10 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       PersistSession();
       PushStateImmediate();
     }
+    if (overlay_mode_ == "new_group") CloseOverlay();
+  } else if (cmd == "open_group_prompt") {
+    group_prompt_tab_id_ = static_cast<uint64_t>(get_int("tab_id"));
+    if (group_prompt_tab_id_) ToggleOverlay("new_group");
   } else if (cmd == "move_tab") {
     uint64_t tid = static_cast<uint64_t>(get_int("tab_id"));
     uint64_t target_id = static_cast<uint64_t>(get_int("target_id"));
@@ -1972,7 +1955,7 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
         if (!inside && (self->topbar_focused_ || self->ac_visible_ || !self->overlay_mode_.empty())) return;
         if (self->topbar_hover_open_ != inside) {
           self->topbar_hover_open_ = inside;
-          self->UpdateOverlayBounds();
+          self->ApplyTopbarSizing();
           self->PushStateImmediate();
         }
       }), delay_ms);
@@ -1983,7 +1966,7 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       topbar_hover_open_ = true;
       ++topbar_hover_gen_;
     }
-    UpdateOverlayBounds();
+    ApplyTopbarSizing();
     PushStateImmediate();
   } else if (cmd == "toggle_bookmark") {
     OpenBookmarkPopover();
@@ -2457,7 +2440,7 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
       topbar_hover_open_ = false;
       topbar_focused_ = false;
       ++topbar_hover_gen_;
-      UpdateOverlayBounds();
+      ApplyTopbarSizing();
       PushStateImmediate();
       return true;
     }
@@ -2484,7 +2467,7 @@ void KajoBrowserWindow::OnTabGotFocus(uint64_t tab_id) {
     topbar_hover_open_ = false;
     topbar_focused_ = false;
     ++topbar_hover_gen_;
-    UpdateOverlayBounds();
+    ApplyTopbarSizing();
     PushStateImmediate();
   }
 }
