@@ -188,6 +188,8 @@ keyboard_handle_modifiers(void *owner, void *data)
     CompKeyboard *k = owner;
     CompServer *s = k->server;
     (void)data;
+    if (s->syncing_layout_group)
+        return;
     if (!keyboard_allowed_while_locked(s, k->wlr_keyboard))
         return;
     keyboard_disarm_repeat(k);
@@ -204,6 +206,7 @@ keyboard_handle_modifiers(void *owner, void *data)
             (n_layouts == 0 || cur < n_layouts) &&
             (uint32_t)cur != s->active_layout_group) {
             s->active_layout_group = (uint32_t)cur;
+            s->syncing_layout_group = true;
             CompKeyboard *other;
             wl_list_for_each(other, &s->keyboards, link) {
                 struct wlr_keyboard *wk = other->wlr_keyboard;
@@ -217,8 +220,7 @@ keyboard_handle_modifiers(void *owner, void *data)
                                               wk->modifiers.locked,
                                               cur);
             }
-            wlr_seat_set_keyboard(s->seat, k->wlr_keyboard);
-            wlr_seat_keyboard_notify_modifiers(s->seat, &k->wlr_keyboard->modifiers);
+            s->syncing_layout_group = false;
             comp_ipc_emit_keyboard_layouts(s);
         }
     }
@@ -496,6 +498,7 @@ comp_input_switch_keyboard_layout(CompServer *s, int idx)
         return false;
 
     s->active_layout_group = (uint32_t)target;
+    s->syncing_layout_group = true;
 
     CompKeyboard *k;
     wl_list_for_each(k, &s->keyboards, link) {
@@ -510,6 +513,7 @@ comp_input_switch_keyboard_layout(CompServer *s, int idx)
                                       wk->modifiers.locked,
                                       target);
     }
+    s->syncing_layout_group = false;
     if (s->seat) {
         wlr_seat_set_keyboard(s->seat, kb);
         wlr_seat_keyboard_notify_modifiers(s->seat, &kb->modifiers);

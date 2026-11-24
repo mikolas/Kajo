@@ -70,6 +70,9 @@ struct _ShellOSK {
     uint32_t                               im_serial;
     gboolean                               has_compositor_keymap;
     gboolean                               vkbd_keymap_uploaded;
+    char                                  *last_raw_keymap;
+    size_t                                 last_raw_keymap_len;
+    guint                                  layout_update_idle_id;
     gboolean                               visible;
     gboolean                               manual_pinned;
 
@@ -188,7 +191,7 @@ static gboolean sync_group_from_compositor(ShellOSK *self) {
     return FALSE;
 }
 
-static void apply_layout_update(ShellOSK *self, gboolean sync_vkbd) {
+static void apply_layout_update(ShellOSK *self) {
     if (!self || !self->xkb) return;
 
     ShellOskAlphaLayout next_layout;
@@ -197,14 +200,20 @@ static void apply_layout_update(ShellOSK *self, gboolean sync_vkbd) {
         rebuild_alpha_layer(self, &next_layout);
     }
 
-    if (sync_vkbd && self->vkbd && self->vkbd_keymap_uploaded) {
-        sync_vkbd_modifiers(self, 0, FALSE);
-        if (self->wl_display) {
-            wl_display_flush(self->wl_display);
-        }
-    }
-
     refresh_all_key_labels(self);
+}
+
+static gboolean on_layout_update_idle(gpointer user_data) {
+    ShellOSK *self = user_data;
+    if (!self) return G_SOURCE_REMOVE;
+    self->layout_update_idle_id = 0;
+    apply_layout_update(self);
+    return G_SOURCE_REMOVE;
+}
+
+static void schedule_layout_update(ShellOSK *self) {
+    if (!self || self->layout_update_idle_id > 0) return;
+    self->layout_update_idle_id = g_idle_add(on_layout_update_idle, self);
 }
 
 static void on_compositor_keyboard_layout_changed(
@@ -213,7 +222,7 @@ static void on_compositor_keyboard_layout_changed(
     ShellOSK *self = userdata;
     if (!self) return;
     sync_group_from_compositor(self);
-    apply_layout_update(self, TRUE);
+    schedule_layout_update(self);
 }
 
 static void clear_latched_modifiers(ShellOSK *self) {
@@ -272,10 +281,27 @@ static void on_kb_keymap(void *data, struct wl_keyboard *wl_kb G_GNUC_UNUSED,
             map = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
         }
         if (map != MAP_FAILED) {
-            if (shell_osk_xkb_load_from_string(self->xkb, (const char *)map)) {
+            if (self->has_compositor_keymap &&
+                self->vkbd_keymap_uploaded &&
+                self->last_raw_keymap &&
+                self->last_raw_keymap_len == size &&
+                memcmp(self->last_raw_keymap, map, size) == 0) {
+                munmap(map, size);
+                close(fd);
+                return;
+            }
+            char *copy = g_malloc(size + 1);
+            memcpy(copy, map, size);
+            copy[size] = '\0';
+            munmap(map, size);
+
+            g_free(self->last_raw_keymap);
+            self->last_raw_keymap = copy;
+            self->last_raw_keymap_len = size;
+
+            if (shell_osk_xkb_load_from_string(self->xkb, copy)) {
                 self->has_compositor_keymap = TRUE;
             }
-            munmap(map, size);
         }
         if (self->vkbd) {
             lseek(fd, 0, SEEK_SET);
@@ -284,7 +310,7 @@ static void on_kb_keymap(void *data, struct wl_keyboard *wl_kb G_GNUC_UNUSED,
             if (self->wl_display) wl_display_flush(self->wl_display);
         }
         sync_group_from_compositor(self);
-        apply_layout_update(self, TRUE);
+        schedule_layout_update(self);
     }
 
     if (fd >= 0) close(fd);
@@ -309,7 +335,7 @@ static void on_kb_modifiers(void *data, struct wl_keyboard *wl_kb G_GNUC_UNUSED,
     if (!self || !self->xkb) return;
     if (shell_osk_xkb_get_group(self->xkb) != group) {
         shell_osk_xkb_set_group(self->xkb, group);
-        apply_layout_update(self, TRUE);
+        schedule_layout_update(self);
     }
 }
 
@@ -595,7 +621,7 @@ static void fire_key_button(ShellOSK *self, OskKeyButton *kb) {
             if (self->app && self->app->compositor) {
                 shell_compositor_switch_keyboard_layout_idx(self->app->compositor, (guint8)next_group);
             }
-            apply_layout_update(self, TRUE);
+            schedule_layout_update(self);
             break;
         }
         case OSK_BTN_HIDE:
@@ -612,11 +638,12 @@ static void on_key_gesture_pressed(GtkGestureClick *gesture G_GNUC_UNUSED,
     OskKeyButton *kb = user_data;
     if (!kb || !kb->osk) return;
     ShellOSK *self = kb->osk;
+    gboolean repeatable = kb->repeatable;
 
     stop_repeat_timers(self);
     fire_key_button(self, kb);
 
-    if (kb->repeatable) {
+    if (repeatable) {
         self->repeat_btn = kb;
         self->repeat_delay_id = g_timeout_add(400, on_repeat_delay_done, self);
     }
@@ -1078,8 +1105,12 @@ void shell_osk_show(ShellOSK *self, gboolean manual_pin) {
     }
     self->visible = TRUE;
     shell_osk_apply_config(self);
+    if (self->layout_update_idle_id > 0) {
+        g_source_remove(self->layout_update_idle_id);
+        self->layout_update_idle_id = 0;
+    }
     sync_group_from_compositor(self);
-    apply_layout_update(self, FALSE);
+    apply_layout_update(self);
     gtk_widget_set_visible(GTK_WIDGET(self->window), TRUE);
 }
 
@@ -1113,7 +1144,13 @@ void shell_osk_destroy(ShellOSK *self) {
         shell_compositor_remove_callbacks(self->app->compositor, self);
     }
 
+    if (self->layout_update_idle_id > 0) {
+        g_source_remove(self->layout_update_idle_id);
+        self->layout_update_idle_id = 0;
+    }
     stop_repeat_timers(self);
+    g_clear_pointer(&self->last_raw_keymap, g_free);
+    self->last_raw_keymap_len = 0;
 
     if (self->window) {
         gtk_window_destroy(self->window);
