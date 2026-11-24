@@ -125,36 +125,49 @@ const char *shell_osk_xkb_get_group_name(ShellOskXkb *self, uint32_t group) {
 void shell_osk_xkb_get_short_group_label(ShellOskXkb *self, char *out_buf, size_t buf_len) {
     if (!out_buf || buf_len == 0) return;
     const char *full = shell_osk_xkb_get_group_name(self, self ? self->active_group : 0);
-    if (g_ascii_strncasecmp(full, "English (US)", 12) == 0 ||
-        g_ascii_strcasecmp(full, "English") == 0 ||
-        g_ascii_strcasecmp(full, "US") == 0) {
-        g_strlcpy(out_buf, "US", buf_len);
-        return;
-    }
-    if (g_ascii_strncasecmp(full, "English (UK)", 12) == 0 ||
-        g_ascii_strncasecmp(full, "English (British)", 17) == 0) {
-        g_strlcpy(out_buf, "GB", buf_len);
-        return;
-    }
-    if (g_ascii_strncasecmp(full, "Swedish", 7) == 0) {
-        g_strlcpy(out_buf, "SE", buf_len);
-        return;
-    }
-    if (g_ascii_strncasecmp(full, "German", 6) == 0) {
-        g_strlcpy(out_buf, "DE", buf_len);
-        return;
-    }
-    if (g_ascii_strncasecmp(full, "Spanish", 7) == 0) {
-        g_strlcpy(out_buf, "ES", buf_len);
-        return;
-    }
-    if (g_ascii_strncasecmp(full, "Polish", 6) == 0) {
-        g_strlcpy(out_buf, "PL", buf_len);
-        return;
-    }
-    if (g_ascii_strncasecmp(full, "Estonian", 8) == 0) {
-        g_strlcpy(out_buf, "EE", buf_len);
-        return;
+
+    static const struct {
+        const char *prefix;
+        gboolean    exact;
+        const char *code;
+    } label_map[] = {
+        { "English (US)",      FALSE, "US" },
+        { "English",           TRUE,  "US" },
+        { "US",                TRUE,  "US" },
+        { "English (UK)",      FALSE, "GB" },
+        { "English (British)", FALSE, "GB" },
+        { "Finnish",           FALSE, "FI" },
+        { "Russian",           FALSE, "RU" },
+        { "Swedish",           FALSE, "SE" },
+        { "German",            FALSE, "DE" },
+        { "French",            FALSE, "FR" },
+        { "Spanish",           FALSE, "ES" },
+        { "Italian",           FALSE, "IT" },
+        { "Portuguese",        FALSE, "PT" },
+        { "Dutch",             FALSE, "NL" },
+        { "Norwegian",         FALSE, "NO" },
+        { "Danish",            FALSE, "DK" },
+        { "Polish",            FALSE, "PL" },
+        { "Estonian",          FALSE, "EE" },
+        { "Ukrainian",         FALSE, "UA" },
+        { "Czech",             FALSE, "CZ" },
+        { "Hungarian",         FALSE, "HU" },
+        { "Turkish",           FALSE, "TR" },
+        { "Greek",             FALSE, "GR" },
+        { "Japanese",          FALSE, "JP" },
+        { "Korean",            FALSE, "KR" },
+        { "Arabic",            FALSE, "AR" },
+        { "Hebrew",            FALSE, "HE" },
+    };
+
+    for (size_t i = 0; i < G_N_ELEMENTS(label_map); i++) {
+        gboolean match = label_map[i].exact
+            ? (g_ascii_strcasecmp(full, label_map[i].prefix) == 0)
+            : (g_ascii_strncasecmp(full, label_map[i].prefix, strlen(label_map[i].prefix)) == 0);
+        if (match) {
+            g_strlcpy(out_buf, label_map[i].code, buf_len);
+            return;
+        }
     }
 
     char code[3] = { 'U', 'S', '\0' };
@@ -190,8 +203,9 @@ static const char *dead_keysym_to_str(xkb_keysym_t sym) {
     }
 }
 
-static gboolean query_keycode_with_masks(
+static gboolean query_keycode_in_group(
     ShellOskXkb *self,
+    uint32_t group,
     uint32_t evdev_code,
     uint32_t depressed_mods,
     uint32_t locked_mods,
@@ -203,10 +217,13 @@ static gboolean query_keycode_with_masks(
     if (!self || !self->keymap || !out_buf || buf_len == 0) return FALSE;
     out_buf[0] = '\0';
 
+    uint32_t n = xkb_keymap_num_layouts(self->keymap);
+    if (n > 0 && group >= n) return FALSE;
+
     struct xkb_state *state = xkb_state_new(self->keymap);
     if (!state) return FALSE;
 
-    xkb_state_update_mask(state, depressed_mods, 0, locked_mods, 0, 0, self->active_group);
+    xkb_state_update_mask(state, depressed_mods, 0, locked_mods, 0, 0, group);
     xkb_keycode_t kc = (xkb_keycode_t)(evdev_code + 8);
 
     char tmp[32] = {0};
@@ -228,6 +245,27 @@ static gboolean query_keycode_with_masks(
     }
 
     return FALSE;
+}
+
+static gboolean query_keycode_with_masks(
+    ShellOskXkb *self,
+    uint32_t evdev_code,
+    uint32_t depressed_mods,
+    uint32_t locked_mods,
+    char *out_buf,
+    size_t buf_len,
+    gboolean *out_is_dead
+) {
+    return query_keycode_in_group(
+        self,
+        self ? self->active_group : 0,
+        evdev_code,
+        depressed_mods,
+        locked_mods,
+        out_buf,
+        buf_len,
+        out_is_dead
+    );
 }
 
 gboolean shell_osk_xkb_get_key_label(
@@ -301,16 +339,19 @@ gboolean shell_osk_xkb_get_key_hint(
     return FALSE;
 }
 
-ShellOskSymbolBinding shell_osk_xkb_find_symbol(ShellOskXkb *self, const char *utf8_symbol) {
-    ShellOskSymbolBinding res = {0, 0, FALSE, FALSE};
-    if (!self || !self->keymap || !utf8_symbol || !*utf8_symbol) return res;
-
+static gboolean find_symbol_in_group(
+    ShellOskXkb *self,
+    uint32_t group,
+    const char *utf8_symbol,
+    ShellOskSymbolBinding *out_direct,
+    ShellOskSymbolBinding *inout_dead_fallback
+) {
     /* Candidate evdev keycodes on standard PC105 keyboard:
-     * Number row (2..13), QWERTY row (16..27), Home row (30..41, 43), Bottom row (86, 44..53) */
+     * Number row (2..13, 41), QWERTY row (16..27), Home row (30..40, 43), Bottom row (86, 44..53) */
     static const uint32_t candidate_codes[] = {
-        2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
+        41, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
         16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27,
-        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 43,
+        30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 43,
         86, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53
     };
 
@@ -321,8 +362,6 @@ ShellOskSymbolBinding shell_osk_xkb_find_symbol(ShellOskXkb *self, const char *u
         self->shift_mask | self->altgr_mask
     };
 
-    ShellOskSymbolBinding dead_fallback = {0, 0, TRUE, FALSE};
-
     for (size_t m = 0; m < G_N_ELEMENTS(mod_levels); m++) {
         uint32_t mods = mod_levels[m];
         if (m >= 2 && self->altgr_mask == 0) continue;
@@ -331,25 +370,206 @@ ShellOskSymbolBinding shell_osk_xkb_find_symbol(ShellOskXkb *self, const char *u
             uint32_t code = candidate_codes[i];
             char buf[16] = {0};
             gboolean is_dead = FALSE;
-            if (query_keycode_with_masks(self, code, mods, 0, buf, sizeof(buf), &is_dead)) {
+            if (query_keycode_in_group(self, group, code, mods, 0, buf, sizeof(buf), &is_dead)) {
                 if (g_strcmp0(buf, utf8_symbol) == 0) {
                     if (!is_dead) {
-                        res.evdev_code = code;
-                        res.mods_mask = mods;
-                        res.is_dead_key = FALSE;
-                        res.found = TRUE;
-                        return res;
-                    } else if (!dead_fallback.found) {
-                        dead_fallback.evdev_code = code;
-                        dead_fallback.mods_mask = mods;
-                        dead_fallback.is_dead_key = TRUE;
-                        dead_fallback.found = TRUE;
+                        out_direct->evdev_code = code;
+                        out_direct->mods_mask = mods;
+                        out_direct->group = group;
+                        out_direct->is_dead_key = FALSE;
+                        out_direct->found = TRUE;
+                        return TRUE;
+                    } else if (inout_dead_fallback && !inout_dead_fallback->found) {
+                        inout_dead_fallback->evdev_code = code;
+                        inout_dead_fallback->mods_mask = mods;
+                        inout_dead_fallback->group = group;
+                        inout_dead_fallback->is_dead_key = TRUE;
+                        inout_dead_fallback->found = TRUE;
                     }
                 }
             }
         }
     }
 
+    return FALSE;
+}
+
+ShellOskSymbolBinding shell_osk_xkb_find_symbol(ShellOskXkb *self, const char *utf8_symbol) {
+    ShellOskSymbolBinding res = {0, 0, 0, FALSE, FALSE};
+    if (!self || !self->keymap || !utf8_symbol || !*utf8_symbol) return res;
+
+    ShellOskSymbolBinding dead_fallback = {0, 0, 0, TRUE, FALSE};
+    if (find_symbol_in_group(self, self->active_group, utf8_symbol, &res, &dead_fallback)) {
+        return res;
+    }
+
+    uint32_t num_groups = shell_osk_xkb_get_num_groups(self);
+    for (uint32_t g = 0; g < num_groups; g++) {
+        if (g == self->active_group) continue;
+        if (find_symbol_in_group(self, g, utf8_symbol, &res, &dead_fallback)) {
+            return res;
+        }
+    }
+
     if (dead_fallback.found) return dead_fallback;
     return res;
+}
+
+static uint32_t resolve_evdev_by_name(struct xkb_keymap *km, const char *name, uint32_t fallback) {
+    if (!km || !name) return fallback;
+    xkb_keycode_t kc = xkb_keymap_key_by_name(km, name);
+    if (kc != XKB_KEYCODE_INVALID && kc >= 8) {
+        return (uint32_t)(kc - 8);
+    }
+    return fallback;
+}
+
+static void row_spec_push(ShellOskRowSpec *row, uint32_t evdev_code) {
+    if (!row || evdev_code == 0 || row->count >= SHELL_OSK_MAX_ROW_KEYS) return;
+    row->evdev_codes[row->count++] = evdev_code;
+}
+
+static gboolean is_alpha_key(
+    struct xkb_state *state_base,
+    struct xkb_state *state_shift,
+    uint32_t evdev_code
+) {
+    if (evdev_code == 0) return FALSE;
+    xkb_keycode_t kc = (xkb_keycode_t)(evdev_code + 8);
+    struct xkb_state *states[2] = { state_base, state_shift };
+    for (size_t i = 0; i < 2; i++) {
+        if (!states[i]) continue;
+        char buf[32] = {0};
+        int len = xkb_state_key_get_utf8(states[i], kc, buf, sizeof(buf));
+        if (len > 0 && g_utf8_validate(buf, len, NULL)) {
+            gunichar ch = g_utf8_get_char(buf);
+            if (g_unichar_isalpha(ch)) {
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
+static gboolean has_ascii_char(
+    struct xkb_state *state_base,
+    struct xkb_state *state_shift,
+    uint32_t evdev_code,
+    char target
+) {
+    if (evdev_code == 0) return FALSE;
+    xkb_keycode_t kc = (xkb_keycode_t)(evdev_code + 8);
+    struct xkb_state *states[2] = { state_base, state_shift };
+    for (size_t i = 0; i < 2; i++) {
+        if (!states[i]) continue;
+        char buf[32] = {0};
+        int len = xkb_state_key_get_utf8(states[i], kc, buf, sizeof(buf));
+        if (len == 1 && buf[0] == target) {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+void shell_osk_xkb_compute_alpha_layout(ShellOskXkb *self, ShellOskAlphaLayout *out_layout) {
+    if (!out_layout) return;
+    memset(out_layout, 0, sizeof(*out_layout));
+
+    if (!self || !self->keymap) {
+        for (uint32_t c = 2; c <= 12; c++) row_spec_push(&out_layout->rows[0], c);
+        for (uint32_t c = 16; c <= 25; c++) row_spec_push(&out_layout->rows[1], c);
+        for (uint32_t c = 30; c <= 40; c++) row_spec_push(&out_layout->rows[2], c);
+        for (uint32_t c = 44; c <= 53; c++) row_spec_push(&out_layout->rows[3], c);
+        return;
+    }
+
+    struct xkb_state *state_base = xkb_state_new(self->keymap);
+    struct xkb_state *state_shift = xkb_state_new(self->keymap);
+    if (state_base) {
+        xkb_state_update_mask(state_base, 0, 0, 0, 0, 0, self->active_group);
+    }
+    if (state_shift) {
+        xkb_state_update_mask(state_shift, self->shift_mask, 0, 0, 0, 0, self->active_group);
+    }
+
+    static const struct { const char *name; uint32_t fb; } row_e_core[] = {
+        { "AE01", 2 }, { "AE02", 3 }, { "AE03", 4 }, { "AE04", 5 },
+        { "AE05", 6 }, { "AE06", 7 }, { "AE07", 8 }, { "AE08", 9 },
+        { "AE09", 10 }, { "AE10", 11 }, { "AE11", 12 }
+    };
+    static const struct { const char *name; uint32_t fb; } row_d_core[] = {
+        { "AD01", 16 }, { "AD02", 17 }, { "AD03", 18 }, { "AD04", 19 },
+        { "AD05", 20 }, { "AD06", 21 }, { "AD07", 22 }, { "AD08", 23 },
+        { "AD09", 24 }, { "AD10", 25 }
+    };
+    static const struct { const char *name; uint32_t fb; } row_c_core[] = {
+        { "AC01", 30 }, { "AC02", 31 }, { "AC03", 32 }, { "AC04", 33 },
+        { "AC05", 34 }, { "AC06", 35 }, { "AC07", 36 }, { "AC08", 37 },
+        { "AC09", 38 }, { "AC10", 39 }, { "AC11", 40 }
+    };
+    static const struct { const char *name; uint32_t fb; } row_b_core[] = {
+        { "AB01", 44 }, { "AB02", 45 }, { "AB03", 46 }, { "AB04", 47 },
+        { "AB05", 48 }, { "AB06", 49 }, { "AB07", 50 }, { "AB08", 51 },
+        { "AB09", 52 }, { "AB10", 53 }
+    };
+
+    /* Row 0: optional TLDE + AE01..AE11 + optional AE12 */
+    uint32_t tlde = resolve_evdev_by_name(self->keymap, "TLDE", 41);
+    if (is_alpha_key(state_base, state_shift, tlde)) {
+        row_spec_push(&out_layout->rows[0], tlde);
+    }
+    for (size_t i = 0; i < G_N_ELEMENTS(row_e_core); i++) {
+        row_spec_push(&out_layout->rows[0],
+                      resolve_evdev_by_name(self->keymap, row_e_core[i].name, row_e_core[i].fb));
+    }
+    uint32_t ae12 = resolve_evdev_by_name(self->keymap, "AE12", 13);
+    if (is_alpha_key(state_base, state_shift, ae12)) {
+        row_spec_push(&out_layout->rows[0], ae12);
+    }
+
+    /* Row 1: AD01..AD10 + optional AD11/AD12 */
+    for (size_t i = 0; i < G_N_ELEMENTS(row_d_core); i++) {
+        row_spec_push(&out_layout->rows[1],
+                      resolve_evdev_by_name(self->keymap, row_d_core[i].name, row_d_core[i].fb));
+    }
+    uint32_t ad11 = resolve_evdev_by_name(self->keymap, "AD11", 26);
+    uint32_t ad12 = resolve_evdev_by_name(self->keymap, "AD12", 27);
+    gboolean ad11_alpha = is_alpha_key(state_base, state_shift, ad11);
+    gboolean ad12_alpha = is_alpha_key(state_base, state_shift, ad12);
+    if (ad11_alpha || ad12_alpha) {
+        row_spec_push(&out_layout->rows[1], ad11);
+    }
+    if (ad12_alpha) {
+        row_spec_push(&out_layout->rows[1], ad12);
+    }
+
+    /* Row 2: optional LSGT + AC01..AC11 + optional BKSL */
+    uint32_t lsgt = resolve_evdev_by_name(self->keymap, "LSGT", 86);
+    uint32_t ab08 = resolve_evdev_by_name(self->keymap, "AB08", 51);
+    uint32_t ab09 = resolve_evdev_by_name(self->keymap, "AB09", 52);
+    uint32_t ab10 = resolve_evdev_by_name(self->keymap, "AB10", 53);
+    gboolean ab_has_lt = has_ascii_char(state_base, state_shift, ab08, '<') ||
+                         has_ascii_char(state_base, state_shift, ab09, '<') ||
+                         has_ascii_char(state_base, state_shift, ab10, '<');
+    if (is_alpha_key(state_base, state_shift, lsgt) ||
+        (has_ascii_char(state_base, state_shift, lsgt, '<') && !ab_has_lt)) {
+        row_spec_push(&out_layout->rows[2], lsgt);
+    }
+    for (size_t i = 0; i < G_N_ELEMENTS(row_c_core); i++) {
+        row_spec_push(&out_layout->rows[2],
+                      resolve_evdev_by_name(self->keymap, row_c_core[i].name, row_c_core[i].fb));
+    }
+    uint32_t bksl = resolve_evdev_by_name(self->keymap, "BKSL", 43);
+    if (is_alpha_key(state_base, state_shift, bksl)) {
+        row_spec_push(&out_layout->rows[2], bksl);
+    }
+
+    /* Row 3: AB01..AB10 */
+    for (size_t i = 0; i < G_N_ELEMENTS(row_b_core); i++) {
+        row_spec_push(&out_layout->rows[3],
+                      resolve_evdev_by_name(self->keymap, row_b_core[i].name, row_b_core[i].fb));
+    }
+
+    if (state_base) xkb_state_unref(state_base);
+    if (state_shift) xkb_state_unref(state_shift);
 }

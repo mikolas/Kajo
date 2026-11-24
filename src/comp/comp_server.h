@@ -188,6 +188,7 @@ typedef struct CompServer {
     uint32_t                              gpu_recovery_count;
     struct wl_list                        outputs;        /* CompOutput.link (FIFO connector order) */
     struct wl_list                        keyboards;      /* CompKeyboard.link */
+    uint32_t                              active_layout_group;
     struct wl_list                        input_devs;     /* CompInputDev.link (pointer/touch/tablet) */
     struct wl_list                        windows;        /* CompWindow.link */
     struct wl_list                        layer_surfaces; /* CompLayerSurface.link */
