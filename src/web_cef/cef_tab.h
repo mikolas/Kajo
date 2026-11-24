@@ -91,6 +91,7 @@ public:
   void DetachCallbacks();
   void SetHttpsOnly(bool https_only);
   void SetCookiePolicy(int cookie_policy);
+  void SetDevToolsEnabled(bool enabled);
   void SetUserScripts(bool enabled, std::shared_ptr<const LoadedUserScripts> scripts);
   void RefreshCosmeticInjection(CefRefPtr<CefBrowser> browser, CefRefPtr<CefFrame> frame);
 
@@ -265,6 +266,7 @@ private:
   std::atomic<bool> detached_{false};
   std::atomic<bool> https_only_{false};
   std::atomic<int> cookie_policy_{0};
+  std::atomic<bool> devtools_enabled_{true};
   bool user_scripts_enabled_ = false;
   std::shared_ptr<const LoadedUserScripts> user_scripts_;
   std::string last_top_url_;

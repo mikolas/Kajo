@@ -29,12 +29,15 @@ struct ChromeTabView {
 
 struct ChromeDownloadView {
   uint32_t id = 0;
+  int64_t db_id = 0;
   std::string filename;
   std::string url;
   std::string full_path;
   int percent = 0;
   int64_t received_bytes = 0;
   int64_t total_bytes = 0;
+  int64_t current_speed = 0;
+  int64_t updated_at_ms = 0;
   bool in_progress = false;
   bool complete = false;
   bool canceled = false;
@@ -93,6 +96,13 @@ struct ChromePermissionView {
   std::string origin;
   std::string label;
   std::string perm_key;
+};
+
+struct ChromeSavedPermissionView {
+  std::string origin;
+  std::string perm_key;
+  std::string label;
+  bool allow = false;
 };
 
 struct ChromeStateSnapshot {
@@ -157,12 +167,17 @@ struct ChromeStateSnapshot {
   /* Collections */
   std::vector<ChromeTabView> tabs;
   std::vector<std::string> collapsed_groups;
+  bool downloads_unseen_complete = false;
+  std::string download_dir;
+  std::string downloads_filter;
+  std::string downloads_search_query;
   std::vector<ChromeDownloadView> downloads;
   std::vector<ChromeMediaView> media_streams;
   std::vector<ChromeBookmarkView> bookmarks;
   ChromeBookmarkView active_bookmark;
   std::vector<std::string> bookmark_folders;
   ChromePermissionView active_permission;
+  std::vector<ChromeSavedPermissionView> saved_permissions;
   std::vector<ChromeHistoryView> recent_history;
   std::vector<ChromeHistoryView> history_query_results;
   std::string history_search_query;

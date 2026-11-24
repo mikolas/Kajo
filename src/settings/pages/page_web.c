@@ -1,5 +1,6 @@
 #include "../settings_common.h"
 #include "../settings_pages.h"
+#include "../../common/spawn_detached.h"
 #include "../../web/web_model.h"
 #include <gio/gio.h>
 #include <string.h>
@@ -14,7 +15,6 @@ static const char *const WEB_AUTOPLAY_LABELS[]   = { "MUTED", "ALLOW", "DENY", N
 static const char *const WEB_SEARCH_LABELS[]     = { "DDG", "KAGI", "STARTPAGE", "BRAVE", "GOOGLE", "CUSTOM", NULL };
 static const char *const WEB_UA_LABELS[]         = { "DEFAULT", "SAFARI", "CHROME", "CUSTOM", NULL };
 static const char *const WEB_SCHEME_LABELS[]     = { "FOLLOW", "DARK", "LIGHT", NULL };
-static const char *const WEB_DL_FMT_LABELS[]     = { "BEST MP4", "1080P", "720P", "OPUS", "MP3", NULL };
 
 typedef struct _SettingsPageWeb {
     GtkBox parent_instance;
@@ -34,37 +34,26 @@ typedef struct _SettingsPageWeb {
     GtkWidget *entry_newtab_url;
     GtkWidget *sw_restore;
 
-    /* Card 2: Hardware Acceleration & Resources */
+    /* Card 2: GPU, Performance & Tab Suspension */
     GtkWidget *seg_hw;
     GtkWidget *sw_webgl;
-    GtkWidget *sw_gpu_webgl;
     GtkWidget *sw_smooth_scroll;
     GtkWidget *scale_suspend_min;
     GtkWidget *lbl_suspend_min;
-    GtkWidget *scale_mem_mb;
-    GtkWidget *lbl_mem_mb;
 
-    /* Card 3: Privacy, Ad Blocker & Media Downloader */
+    /* Card 3: Privacy, Ad Blocker & Permissions */
     GtkWidget *sw_adblock;
+    GtkWidget *sw_adblock_auto_sync;
     GtkWidget *entry_adblock_rules;
     GtkWidget *sw_userscripts;
-    GtkWidget *sw_itp;
     GtkWidget *seg_cookies;
     GtkWidget *sw_https_only;
     GtkWidget *seg_autoplay;
     GtkWidget *sw_webrtc;
-    GtkWidget *dd_dl_fmt;
 
-    /* Card 4: Profiles & Google Drive AppData Sync */
+    /* Card 4: Profiles, Permissions & Startup */
     GtkWidget *sw_picker_startup;
     GtkWidget *sw_profile_border;
-    GtkWidget *entry_oauth_id;
-    GtkWidget *entry_oauth_secret;
-    GtkWidget *sw_sync_bookmarks;
-    GtkWidget *sw_sync_history;
-    GtkWidget *sw_sync_tabs;
-    GtkWidget *sw_sync_settings;
-    GtkWidget *sw_sync_e2ee;
 
     /* Card 5: Search, Zoom & User-Agent */
     GtkWidget *dd_search;
@@ -84,6 +73,7 @@ typedef struct _SettingsPageWeb {
     GtkWidget *lbl_min_px;
     GtkWidget *entry_dl_dir;
     GtkWidget *sw_ask_dl;
+    GtkWidget *sw_downloads_auto_open;
     GtkWidget *sw_devtools;
 
     KajoWebCfg *saved;
@@ -99,6 +89,23 @@ G_DEFINE_TYPE(SettingsPageWeb, settings_page_web, GTK_TYPE_BOX)
 static void
 collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
 {
+    if (self->saved) {
+        out->gpu_process_webgl     = self->saved->gpu_process_webgl;
+        out->memory_limit_mb       = self->saved->memory_limit_mb;
+        out->itp_enabled           = self->saved->itp_enabled;
+        out->dns_prefetch          = self->saved->dns_prefetch;
+        out->media_download_format = self->saved->media_download_format;
+        g_free(out->sync_oauth_client_id);
+        out->sync_oauth_client_id = g_strdup(self->saved->sync_oauth_client_id);
+        g_free(out->sync_oauth_client_secret);
+        out->sync_oauth_client_secret = g_strdup(self->saved->sync_oauth_client_secret);
+        out->sync_bookmarks        = self->saved->sync_bookmarks;
+        out->sync_history          = self->saved->sync_history;
+        out->sync_tabs_and_groups  = self->saved->sync_tabs_and_groups;
+        out->sync_settings         = self->saved->sync_settings;
+        out->sync_e2ee_enabled     = self->saved->sync_e2ee_enabled;
+    }
+
     out->rail_mode            = (KajoWebRailMode)MIN(segmented_group_get_selected(self->seg_rail_mode), 2u);
     out->rail_side            = (KajoWebRailSide)MIN(segmented_group_get_selected(self->seg_rail_side), 1u);
     out->rail_width_px        = CLAMP((int)(gtk_range_get_value(GTK_RANGE(self->scale_rail_w)) + 0.5), 180, 360);
@@ -114,36 +121,23 @@ collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
     out->hardware_acceleration = (segmented_group_get_selected(self->seg_hw) == 1)
         ? KAJO_WEB_HW_NEVER : KAJO_WEB_HW_ALWAYS;
     out->enable_webgl          = gtk_switch_get_active(GTK_SWITCH(self->sw_webgl));
-    out->gpu_process_webgl     = gtk_switch_get_active(GTK_SWITCH(self->sw_gpu_webgl));
     out->smooth_scrolling      = gtk_switch_get_active(GTK_SWITCH(self->sw_smooth_scroll));
     out->suspend_idle_min      = CLAMP((int)(gtk_range_get_value(GTK_RANGE(self->scale_suspend_min)) + 0.5), 0, 240);
     if (out->suspend_idle_min > 0 && out->suspend_idle_min < 5)
         out->suspend_idle_min = 5;
-    out->memory_limit_mb       = CLAMP((int)(gtk_range_get_value(GTK_RANGE(self->scale_mem_mb)) + 0.5), 512, 16384);
 
     out->adblock_enabled      = gtk_switch_get_active(GTK_SWITCH(self->sw_adblock));
+    out->adblock_auto_sync    = gtk_switch_get_active(GTK_SWITCH(self->sw_adblock_auto_sync));
     g_free(out->adblock_custom_rules_path);
     out->adblock_custom_rules_path = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_adblock_rules)));
     out->user_scripts_enabled = gtk_switch_get_active(GTK_SWITCH(self->sw_userscripts));
-    out->itp_enabled          = gtk_switch_get_active(GTK_SWITCH(self->sw_itp));
     out->cookie_policy        = (KajoWebCookiePolicy)MIN(segmented_group_get_selected(self->seg_cookies), 2u);
     out->https_only           = gtk_switch_get_active(GTK_SWITCH(self->sw_https_only));
     out->autoplay_policy      = (KajoWebAutoplayPolicy)MIN(segmented_group_get_selected(self->seg_autoplay), 2u);
     out->enable_webrtc        = gtk_switch_get_active(GTK_SWITCH(self->sw_webrtc));
-    out->dns_prefetch         = self->saved ? self->saved->dns_prefetch : out->dns_prefetch;
-    out->media_download_format = (KajoWebDownloadFmt)MIN(gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_dl_fmt)), 4u);
 
     out->show_picker_on_startup = gtk_switch_get_active(GTK_SWITCH(self->sw_picker_startup));
     out->profile_border_accent  = gtk_switch_get_active(GTK_SWITCH(self->sw_profile_border));
-    g_free(out->sync_oauth_client_id);
-    out->sync_oauth_client_id = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_oauth_id)));
-    g_free(out->sync_oauth_client_secret);
-    out->sync_oauth_client_secret = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_oauth_secret)));
-    out->sync_bookmarks       = gtk_switch_get_active(GTK_SWITCH(self->sw_sync_bookmarks));
-    out->sync_history         = self->saved ? self->saved->sync_history : FALSE;
-    out->sync_tabs_and_groups = self->saved ? self->saved->sync_tabs_and_groups : FALSE;
-    out->sync_settings        = self->saved ? self->saved->sync_settings : FALSE;
-    out->sync_e2ee_enabled    = self->saved ? self->saved->sync_e2ee_enabled : FALSE;
 
     out->search_engine        = (KajoWebSearchEngine)MIN(gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_search)), 5u);
     g_free(out->search_custom_url);
@@ -160,6 +154,7 @@ collect_ui_into_cfg(SettingsPageWeb *self, KajoWebCfg *out)
     g_free(out->download_dir);
     out->download_dir         = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_dl_dir)));
     out->ask_download_location = gtk_switch_get_active(GTK_SWITCH(self->sw_ask_dl));
+    out->downloads_auto_open   = gtk_switch_get_active(GTK_SWITCH(self->sw_downloads_auto_open));
     out->developer_extras     = gtk_switch_get_active(GTK_SWITCH(self->sw_devtools));
 }
 
@@ -181,30 +176,20 @@ apply_cfg_to_ui(SettingsPageWeb *self, const KajoWebCfg *cfg)
 
     segmented_group_set_selected(self->seg_hw, (cfg->hardware_acceleration == KAJO_WEB_HW_NEVER) ? 1u : 0u);
     gtk_switch_set_active(GTK_SWITCH(self->sw_webgl), cfg->enable_webgl);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_gpu_webgl), cfg->gpu_process_webgl);
     gtk_switch_set_active(GTK_SWITCH(self->sw_smooth_scroll), cfg->smooth_scrolling);
     gtk_range_set_value(GTK_RANGE(self->scale_suspend_min), (double)cfg->suspend_idle_min);
-    gtk_range_set_value(GTK_RANGE(self->scale_mem_mb), (double)cfg->memory_limit_mb);
 
     gtk_switch_set_active(GTK_SWITCH(self->sw_adblock), cfg->adblock_enabled);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_adblock_auto_sync), cfg->adblock_auto_sync);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_adblock_rules), cfg->adblock_custom_rules_path ? cfg->adblock_custom_rules_path : "");
     gtk_switch_set_active(GTK_SWITCH(self->sw_userscripts), cfg->user_scripts_enabled);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_itp), cfg->itp_enabled);
     segmented_group_set_selected(self->seg_cookies, (guint)cfg->cookie_policy);
     gtk_switch_set_active(GTK_SWITCH(self->sw_https_only), cfg->https_only);
     segmented_group_set_selected(self->seg_autoplay, (guint)cfg->autoplay_policy);
     gtk_switch_set_active(GTK_SWITCH(self->sw_webrtc), cfg->enable_webrtc);
-    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_dl_fmt), (guint)cfg->media_download_format);
 
     gtk_switch_set_active(GTK_SWITCH(self->sw_picker_startup), cfg->show_picker_on_startup);
     gtk_switch_set_active(GTK_SWITCH(self->sw_profile_border), cfg->profile_border_accent);
-    gtk_editable_set_text(GTK_EDITABLE(self->entry_oauth_id), cfg->sync_oauth_client_id ? cfg->sync_oauth_client_id : "");
-    gtk_editable_set_text(GTK_EDITABLE(self->entry_oauth_secret), cfg->sync_oauth_client_secret ? cfg->sync_oauth_client_secret : "");
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_bookmarks), cfg->sync_bookmarks);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_history), FALSE);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_tabs), FALSE);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_settings), FALSE);
-    gtk_switch_set_active(GTK_SWITCH(self->sw_sync_e2ee), FALSE);
 
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_search), (guint)cfg->search_engine);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_search_url), cfg->search_custom_url ? cfg->search_custom_url : "");
@@ -218,6 +203,7 @@ apply_cfg_to_ui(SettingsPageWeb *self, const KajoWebCfg *cfg)
     gtk_range_set_value(GTK_RANGE(self->scale_min_px), (double)cfg->min_font_size_px);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_dl_dir), cfg->download_dir ? cfg->download_dir : "");
     gtk_switch_set_active(GTK_SWITCH(self->sw_ask_dl), cfg->ask_download_location);
+    gtk_switch_set_active(GTK_SWITCH(self->sw_downloads_auto_open), cfg->downloads_auto_open);
     gtk_switch_set_active(GTK_SWITCH(self->sw_devtools), cfg->developer_extras);
 
     self->syncing_ui = FALSE;
@@ -234,8 +220,7 @@ update_web_telemetry_and_dirty(SettingsPageWeb *self)
 
     GtkWidget *page = GTK_WIDGET(self);
     const gchar *rail_str = WEB_RAIL_MODE_LABELS[MIN((guint)cur->rail_mode, 2u)];
-    const gchar *hw_str   = (cur->hardware_acceleration == KAJO_WEB_HW_ALWAYS) ? "GPU ALWAYS"
-                          : (cur->hardware_acceleration == KAJO_WEB_HW_ON_DEMAND) ? "ON DEMAND" : "⚠ SW ONLY";
+    const gchar *hw_str   = (cur->hardware_acceleration == KAJO_WEB_HW_NEVER) ? "⚠ SW ONLY" : "VA-API GPU";
     const gchar *ab_str   = cur->adblock_enabled ? "SHIELD ON" : "SHIELD OFF";
     const gchar *srch_str = WEB_SEARCH_LABELS[MIN((guint)cur->search_engine, 5u)];
 
@@ -254,6 +239,16 @@ static void on_web_seg_changed(GtkWidget *g G_GNUC_UNUSED, guint s G_GNUC_UNUSED
 static void on_web_scale_changed(GtkRange *r G_GNUC_UNUSED, gpointer ud) { update_web_telemetry_and_dirty(ud); }
 static void on_web_prop_changed(GObject *o G_GNUC_UNUSED, GParamSpec *p G_GNUC_UNUSED, gpointer ud) { update_web_telemetry_and_dirty(ud); }
 static void on_web_entry_changed(GtkEditable *e G_GNUC_UNUSED, gpointer ud) { update_web_telemetry_and_dirty(ud); }
+
+static void
+on_open_kajo_page_clicked(GtkButton *btn, gpointer ud G_GNUC_UNUSED)
+{
+    const char *url = g_object_get_data(G_OBJECT(btn), "kajo-url");
+    if (!url || !*url)
+        return;
+    const gchar *argv[] = { "kajo-web", url, NULL };
+    kajo_spawn_detached_argv(NULL, argv, NULL, NULL);
+}
 
 static void
 action_reset_web_defaults(gpointer user_data)
@@ -278,7 +273,6 @@ mutate_save_web(KajoWebCfg *draft, gpointer user_data)
     const KajoWebCfg *src = user_data;
     g_autoptr(KajoWebCfg) copy = kajo_web_cfg_copy(src);
 
-    /* Transfer all fields cleanly */
     g_free(draft->new_tab_custom_url);
     g_free(draft->adblock_custom_rules_path);
     g_free(draft->search_custom_url);
@@ -323,14 +317,12 @@ make_switch(SettingsPageWeb *self)
 }
 
 static GtkWidget *
-make_entry(SettingsPageWeb *self, const gchar *placeholder, gboolean secret)
+make_entry(SettingsPageWeb *self, const gchar *placeholder)
 {
     GtkWidget *e = gtk_entry_new();
     gtk_editable_set_width_chars(GTK_EDITABLE(e), 12);
     gtk_editable_set_max_width_chars(GTK_EDITABLE(e), 28);
     gtk_entry_set_placeholder_text(GTK_ENTRY(e), placeholder);
-    if (secret)
-        gtk_entry_set_visibility(GTK_ENTRY(e), FALSE);
     gtk_widget_set_valign(e, GTK_ALIGN_CENTER);
     g_signal_connect(e, "changed", G_CALLBACK(on_web_entry_changed), self);
     return e;
@@ -379,7 +371,7 @@ build_page_web(void)
     self->seg_rail_mode = create_segmented_group(WEB_RAIL_MODE_LABELS, 0);
     segmented_group_connect(self->seg_rail_mode, on_web_seg_changed, self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("◧", "Vertical Rail Mode",
-        "Autohide overlays on edge hover (zero page reflow); Compact 48px; Pinned split", self->seg_rail_mode));
+        "Autohide overlays on edge hover (zero page reflow); Compact 44px; Pinned split", self->seg_rail_mode));
 
     self->seg_rail_side = create_segmented_group(WEB_RAIL_SIDE_LABELS, 0);
     segmented_group_connect(self->seg_rail_side, on_web_seg_changed, self);
@@ -400,7 +392,7 @@ build_page_web(void)
 
     self->seg_topbar = create_segmented_group(WEB_TOPBAR_LABELS, 0);
     segmented_group_connect(self->seg_topbar, on_web_seg_changed, self);
-    gtk_box_append(GTK_BOX(c1), create_boxed_row("▬", "Top Chrome Bar", "Always visible (42px) or Zen autohide", self->seg_topbar));
+    gtk_box_append(GTK_BOX(c1), create_boxed_row("▬", "Top Chrome Bar", "Always visible (34px) or Zen edge autohide", self->seg_topbar));
 
     self->sw_tab_domains = make_switch(self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("◉", "Show Domain Under Tab Title", "Display hostname subtitle on vertical tab rows", self->sw_tab_domains));
@@ -409,125 +401,101 @@ build_page_web(void)
     segmented_group_connect(self->seg_newtab, on_web_seg_changed, self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("+", "New Tab Page", "kajo://newtab speed dial, blank, or custom URL", self->seg_newtab));
 
-    self->entry_newtab_url = make_entry(self, "https://...", FALSE);
+    self->entry_newtab_url = make_entry(self, "https://...");
     gtk_box_append(GTK_BOX(c1), create_boxed_row("🔗", "Custom New Tab URL", "Used when New Tab Page is set to CUSTOM", self->entry_newtab_url));
 
     self->sw_restore = make_switch(self);
     gtk_box_append(GTK_BOX(c1), create_boxed_row("↺", "Restore Previous Session", "Reopen tabs & groups from last profile run", self->sw_restore));
 
-    /* ─── Card 2: Hardware Acceleration & Resources ─── */
-    GtkWidget *c2 = create_section_card(SETTINGS_CARD_CENTER, "2. HARDWARE ACCELERATION & RESOURCES", "DMA-BUF + SKIA", "success", NULL);
+    /* ─── Card 3: GPU, Performance & Tab Suspension ─── */
+    GtkWidget *c2 = create_section_card(SETTINGS_CARD_CENTER, "3. GPU, PERFORMANCE & TAB SUSPENSION", "CEF VA-API", "success", NULL);
 
     self->seg_hw = create_segmented_group(WEB_HW_LABELS, 0);
     segmented_group_connect(self->seg_hw, on_web_seg_changed, self);
     gtk_box_append(GTK_BOX(c2), create_boxed_row("⚡", "Hardware Acceleration",
-        "ALWAYS enables Skia GPU + zero-copy Wayland DMA-BUF; NEVER shows [⚠ SW RENDER]", self->seg_hw));
+        "ANGLE GL/EGL + VA-API zero-copy video; NEVER shows [⚠ SW RENDER] (restart required)", self->seg_hw));
 
     self->sw_webgl = make_switch(self);
-    gtk_box_append(GTK_BOX(c2), create_boxed_row("🧊", "Enable WebGL", "Hardware-accelerated 3D canvas rendering", self->sw_webgl));
-
-    self->sw_gpu_webgl = make_switch(self);
-    gtk_box_append(GTK_BOX(c2), create_boxed_row("🖥", "GPU Process for WebGL", "Isolate WebGL inside WebKit GPU process", self->sw_gpu_webgl));
+    gtk_box_append(GTK_BOX(c2), create_boxed_row("🧊", "Enable WebGL", "Hardware-accelerated 3D canvas for new tabs", self->sw_webgl));
 
     self->sw_smooth_scroll = make_switch(self);
-    gtk_box_append(GTK_BOX(c2), create_boxed_row("↕", "Smooth Scrolling", "120Hz/60Hz frame-paced wheel & kinetic scrolling", self->sw_smooth_scroll));
+    gtk_box_append(GTK_BOX(c2), create_boxed_row("↕", "Smooth Scrolling", "Smooth wheel & touchpad kinetic scrolling (restart required)", self->sw_smooth_scroll));
 
     GtkWidget *su_wrap = create_scale_with_badge(0, 240, 5, 30, "%.0fM", &self->scale_suspend_min, &self->lbl_suspend_min);
     g_signal_connect(self->scale_suspend_min, "value-changed", G_CALLBACK(on_web_scale_changed), self);
-    gtk_box_append(GTK_BOX(c2), create_boxed_row("💤", "Suspend Idle Tabs (Minutes)", "0 disables; unloads background web processes keeping session state", su_wrap));
+    gtk_box_append(GTK_BOX(c2), create_boxed_row("💤", "Suspend Idle Tabs (Minutes)", "0 disables; unloads idle non-pinned/silent background tabs", su_wrap));
 
-    GtkWidget *mm_wrap = create_scale_with_badge(512, 16384, 256, 2048, "%.0fMB", &self->scale_mem_mb, &self->lbl_mem_mb);
-    g_signal_connect(self->scale_mem_mb, "value-changed", G_CALLBACK(on_web_scale_changed), self);
-    gtk_box_append(GTK_BOX(c2), create_boxed_row("🧠", "Per-Tab Memory Limit", "WebKitMemoryPressureSettings threshold per web process", mm_wrap));
-
-    settings_bento_add_pair(GTK_WIDGET(self), c1, c2);
-
-    /* ─── Card 3: Privacy, Ad Blocker & Media Downloader ─── */
-    g_autofree gchar *ffmpeg_p = g_find_program_in_path("ffmpeg");
-    g_autofree gchar *ytdlp_p  = g_find_program_in_path("yt-dlp");
-    g_autofree gchar *c3_badge = g_strdup_printf("FFMPEG:%s YT-DLP:%s",
-                                                 ffmpeg_p ? "OK" : "NO",
-                                                 ytdlp_p  ? "OK" : "NO");
-    GtkWidget *c3 = create_section_card(SETTINGS_CARD_LEFT, "3. PRIVACY, AD BLOCKER & MEDIA DOWNLOADER",
-                                        c3_badge, ytdlp_p ? "success" : "peak-warn", NULL);
+    /* ─── Card 2: Privacy, Ad Blocker & Trackers ─── */
+    GtkWidget *c3 = create_section_card(SETTINGS_CARD_LEFT, "2. PRIVACY, AD BLOCKER & TRACKERS",
+                                        "IO-THREAD ABP", "success", NULL);
 
     self->sw_adblock = make_switch(self);
     gtk_box_append(GTK_BOX(c3), create_boxed_row("🛡", "Native Ad & Tracker Blocker",
-        "WebKitUserContentFilterStore compiled bytecode rules (zero JS overhead)", self->sw_adblock));
+        "IO-thread ABP + Hosts + cosmetic hiding + YouTube skip", self->sw_adblock));
 
-    self->entry_adblock_rules = make_entry(self, "~/.config/kajo/web/adblock-custom.json", FALSE);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("📄", "Custom Filter JSON Path",
-        "Optional Safari/WebKit JSON rulepack replacing built-in list", self->entry_adblock_rules));
+    self->sw_adblock_auto_sync = make_switch(self);
+    gtk_box_append(GTK_BOX(c3), create_boxed_row("⟳", "Auto-Sync Filter Lists (24h)",
+        "Refresh EasyList, EasyPrivacy, Regional & Cookie lists on startup", self->sw_adblock_auto_sync));
+
+    self->entry_adblock_rules = make_entry(self, "~/.config/kajo/web/adblock-custom.txt");
+    gtk_box_append(GTK_BOX(c3), create_boxed_row("📄", "Custom Filter Rules Path",
+        "Optional ABP/Hosts .txt rulepack merged on reload", self->entry_adblock_rules));
 
     self->sw_userscripts = make_switch(self);
     gtk_box_append(GTK_BOX(c3), create_boxed_row("📜", "Custom User Scripts & CSS",
         "Load ~/.config/kajo/web/scripts/*.{js,css} into pages (opt-in)", self->sw_userscripts));
-
-    self->sw_itp = make_switch(self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("🕵", "Intelligent Tracking Prevention (ITP)",
-        "Partition third-party trackers per WebKitNetworkSession", self->sw_itp));
 
     self->seg_cookies = create_segmented_group(WEB_COOKIE_LABELS, 0);
     segmented_group_connect(self->seg_cookies, on_web_seg_changed, self);
     gtk_box_append(GTK_BOX(c3), create_boxed_row("🍪", "Cookie Policy", "Block third-party cookies by default", self->seg_cookies));
 
     self->sw_https_only = make_switch(self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("🔒", "HTTPS-Only Mode", "Upgrade http:// navigations to https:// automatically", self->sw_https_only));
+    gtk_box_append(GTK_BOX(c3), create_boxed_row("🔒", "HTTPS-Only Mode", "Upgrade http:// main navigations to https:// (skips localhost)", self->sw_https_only));
 
     self->seg_autoplay = create_segmented_group(WEB_AUTOPLAY_LABELS, 0);
     segmented_group_connect(self->seg_autoplay, on_web_seg_changed, self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("▶", "Media Autoplay", "Allow muted video, block all, or allow with sound", self->seg_autoplay));
+    gtk_box_append(GTK_BOX(c3), create_boxed_row("▶", "Media Autoplay", "Allow muted, always allow, or require activation (restart required)", self->seg_autoplay));
 
     self->sw_webrtc = make_switch(self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("📹", "Enable WebRTC", "Needed for Meet/Jitsi/Discord calls; disable to prevent IP leaks", self->sw_webrtc));
+    gtk_box_append(GTK_BOX(c3), create_boxed_row("📹", "Enable WebRTC UDP", "Turn off to restrict non-proxied UDP IP leaks", self->sw_webrtc));
 
-    self->dd_dl_fmt = create_string_dropdown(WEB_DL_FMT_LABELS);
-    settings_make_dropdown_shrinkable(self->dd_dl_fmt);
-    g_signal_connect(self->dd_dl_fmt, "notify::selected", G_CALLBACK(on_web_prop_changed), self);
-    gtk_box_append(GTK_BOX(c3), create_boxed_row("⬇", "Default yt-dlp Download Format",
-        ytdlp_p ? "yt-dlp detected in PATH (Tier 3 active)" : "Requires yt-dlp in PATH (Tier 1 & Tier 2 ffmpeg still work)",
-        self->dd_dl_fmt));
-
-    /* ─── Card 4: Profiles & Google Drive AppData Sync ─── */
-    GtkWidget *c4 = create_section_card(SETTINGS_CARD_RIGHT, "4. PROFILES & GOOGLE DRIVE APPDATA SYNC", "DRIVE.APPDATA", "accent", NULL);
+    /* ─── Card 4: Profiles, Permissions & Quick Actions ─── */
+    GtkWidget *c4 = create_section_card(SETTINGS_CARD_RIGHT, "4. PROFILES, PERMISSIONS & QUICK ACTIONS", "ISOLATED", "accent", NULL);
 
     self->sw_picker_startup = make_switch(self);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("⊞", "Show Profile Picker on Startup",
-        "Open Chrome/Thorium-style profile grid when >1 profile exists", self->sw_picker_startup));
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("⊞", "Show Profile Switcher on Startup",
+        "Open Profiles switcher automatically when >1 profile exists", self->sw_picker_startup));
 
     self->sw_profile_border = make_switch(self);
     gtk_box_append(GTK_BOX(c4), create_boxed_row("▭", "Profile Window Accent Border",
         "Tint the 1px Metro window frame using each profile's accent color", self->sw_profile_border));
 
-    self->entry_oauth_id = make_entry(self, "Google Desktop OAuth Client ID", FALSE);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("🔑", "Google OAuth Client ID",
-        "Free Desktop App client ID for drive.appdata scope (PKCE loopback)", self->entry_oauth_id));
+    GtkWidget *btn_perms = gtk_button_new_with_label("OPEN PERMISSIONS");
+    gtk_widget_add_css_class(btn_perms, "files-nav-btn");
+    gtk_widget_set_valign(btn_perms, GTK_ALIGN_CENTER);
+    g_object_set_data(G_OBJECT(btn_perms), "kajo-url", "kajo://permissions");
+    g_signal_connect(btn_perms, "clicked", G_CALLBACK(on_open_kajo_page_clicked), NULL);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("🔐", "Site Permissions Manager",
+        "Review or revoke saved Camera, Mic, Notifications & Location grants", btn_perms));
 
-    self->entry_oauth_secret = make_entry(self, "Optional Client Secret", TRUE);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("🗝", "Google OAuth Client Secret",
-        "Optional desktop client secret; tokens stored in libsecret keyring", self->entry_oauth_secret));
+    GtkWidget *btn_dl_view = gtk_button_new_with_label("OPEN DOWNLOADS");
+    gtk_widget_add_css_class(btn_dl_view, "files-nav-btn");
+    gtk_widget_set_valign(btn_dl_view, GTK_ALIGN_CENTER);
+    g_object_set_data(G_OBJECT(btn_dl_view), "kajo-url", "kajo://downloads");
+    g_signal_connect(btn_dl_view, "clicked", G_CALLBACK(on_open_kajo_page_clicked), NULL);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("↓", "Downloads Manager",
+        "Open persistent download history in kajo://downloads", btn_dl_view));
 
-    self->sw_sync_bookmarks = make_switch(self);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("★", "Sync Bookmarks", "CRDT UUID+tombstone merge via Drive appDataFolder", self->sw_sync_bookmarks));
+    GtkWidget *btn_ab_view = gtk_button_new_with_label("OPEN ADBLOCK");
+    gtk_widget_add_css_class(btn_ab_view, "files-nav-btn");
+    gtk_widget_set_valign(btn_ab_view, GTK_ALIGN_CENTER);
+    g_object_set_data(G_OBJECT(btn_ab_view), "kajo-url", "kajo://adblock");
+    g_signal_connect(btn_ab_view, "clicked", G_CALLBACK(on_open_kajo_page_clicked), NULL);
+    gtk_box_append(GTK_BOX(c4), create_boxed_row("🛡", "Adblock Dashboard",
+        "Inspect loaded filter lists, rule counts & allowlisted hosts", btn_ab_view));
 
-    self->sw_sync_history = make_switch(self);
-    gtk_widget_set_sensitive(self->sw_sync_history, FALSE);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("🕘", "Sync History (planned)", "Not yet wired into Drive payload", self->sw_sync_history));
-
-    self->sw_sync_tabs = make_switch(self);
-    gtk_widget_set_sensitive(self->sw_sync_tabs, FALSE);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("📑", "Sync Open Tabs & Groups (planned)", "Not yet wired into Drive payload", self->sw_sync_tabs));
-
-    self->sw_sync_settings = make_switch(self);
-    gtk_widget_set_sensitive(self->sw_sync_settings, FALSE);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("⚙", "Sync Browser Settings (planned)", "Not yet wired into Drive payload", self->sw_sync_settings));
-
-    self->sw_sync_e2ee = make_switch(self);
-    gtk_widget_set_sensitive(self->sw_sync_e2ee, FALSE);
-    gtk_box_append(GTK_BOX(c4), create_boxed_row("🛡", "End-to-End Encryption (planned)",
-        "Not yet implemented (Drive payloads currently unencrypted JSON)", self->sw_sync_e2ee));
-
-    settings_bento_add_pair(GTK_WIDGET(self), c3, c4);
+    settings_bento_add_pair(GTK_WIDGET(self), c1, c3);
+    settings_bento_add_pair(GTK_WIDGET(self), c2, c4);
 
     /* ─── Card 5: Search, Zoom & User-Agent ─── */
     GtkWidget *c5 = create_section_card(SETTINGS_CARD_LEFT, "5. SEARCH, ZOOM & USER-AGENT", "OMNIBAR", NULL, NULL);
@@ -537,7 +505,7 @@ build_page_web(void)
     g_signal_connect(self->dd_search, "notify::selected", G_CALLBACK(on_web_prop_changed), self);
     gtk_box_append(GTK_BOX(c5), create_boxed_row("🔍", "Default Search Engine", "Used by omnibar queries (!g, !ddg, !w, !gh bangs always work)", self->dd_search));
 
-    self->entry_search_url = make_entry(self, "https://example.com/?q=%s", FALSE);
+    self->entry_search_url = make_entry(self, "https://example.com/?q=%s");
     gtk_box_append(GTK_BOX(c5), create_boxed_row("🔗", "Custom Search URL (%s)", "Query template when Search Engine is CUSTOM", self->entry_search_url));
 
     GtkWidget *zm_wrap = create_scale_with_badge(50, 200, 5, 100, "%.0f%%", &self->scale_zoom, &self->lbl_zoom);
@@ -546,10 +514,10 @@ build_page_web(void)
 
     self->seg_ua = create_segmented_group(WEB_UA_LABELS, 0);
     segmented_group_connect(self->seg_ua, on_web_seg_changed, self);
-    gtk_box_append(GTK_BOX(c5), create_boxed_row("🪪", "User-Agent Preset", "WebKit default, Linux Desktop, or custom string", self->seg_ua));
+    gtk_box_append(GTK_BOX(c5), create_boxed_row("🪪", "User-Agent Preset", "CEF default, Safari, Chrome Linux, or custom string (restart required)", self->seg_ua));
 
-    self->entry_ua_custom = make_entry(self, "Mozilla/5.0 ...", FALSE);
-    gtk_box_append(GTK_BOX(c5), create_boxed_row("✎", "Custom User-Agent", "Used when User-Agent Preset is CUSTOM", self->entry_ua_custom));
+    self->entry_ua_custom = make_entry(self, "Mozilla/5.0 ...");
+    gtk_box_append(GTK_BOX(c5), create_boxed_row("✎", "Custom User-Agent", "Used when User-Agent Preset is CUSTOM (restart required)", self->entry_ua_custom));
 
     /* ─── Card 6: Appearance, Downloads & DevTools ─── */
     GtkWidget *c6 = create_section_card(SETTINGS_CARD_RIGHT, "6. APPEARANCE, DOWNLOADS & DEVTOOLS", "WEB.TOML", NULL, NULL);
@@ -570,14 +538,17 @@ build_page_web(void)
     g_signal_connect(self->scale_min_px, "value-changed", G_CALLBACK(on_web_scale_changed), self);
     gtk_box_append(GTK_BOX(c6), create_boxed_row("aa", "Minimum Font Size", "Floor for tiny web text (0 disables)", np_wrap));
 
-    self->entry_dl_dir = make_entry(self, "~/Downloads (empty = XDG)", FALSE);
-    gtk_box_append(GTK_BOX(c6), create_boxed_row("📁", "Download Directory", "Target folder for direct, ffmpeg, and yt-dlp downloads", self->entry_dl_dir));
+    self->entry_dl_dir = make_entry(self, "~/Downloads (empty = XDG)");
+    gtk_box_append(GTK_BOX(c6), create_boxed_row("📁", "Download Directory", "Target folder for downloads (supports ~/ expansion)", self->entry_dl_dir));
 
     self->sw_ask_dl = make_switch(self);
     gtk_box_append(GTK_BOX(c6), create_boxed_row("❓", "Ask Where to Save", "Prompt before saving direct browser downloads", self->sw_ask_dl));
 
+    self->sw_downloads_auto_open = make_switch(self);
+    gtk_box_append(GTK_BOX(c6), create_boxed_row("↓", "Auto-Open Downloads Popout", "Open the topbar Downloads popout when a new download starts", self->sw_downloads_auto_open));
+
     self->sw_devtools = make_switch(self);
-    gtk_box_append(GTK_BOX(c6), create_boxed_row("🛠", "Enable Web Inspector (F12)", "Allow opening WebKitGTK Developer Extras", self->sw_devtools));
+    gtk_box_append(GTK_BOX(c6), create_boxed_row("🛠", "Enable DevTools (F12 / Inspect)", "Allow F12 and Inspect Element context menu", self->sw_devtools));
 
     settings_bento_add_pair(GTK_WIDGET(self), c5, c6);
 

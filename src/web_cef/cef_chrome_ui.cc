@@ -222,17 +222,24 @@ std::string ChromeStateStore::SnapshotJson() const {
   }
   o << "],";
 
+  o << "\"downloads_unseen_complete\":" << (s.downloads_unseen_complete ? "true" : "false") << ",";
+  o << "\"download_dir\":\"" << JsonEscape(s.download_dir) << "\",";
+  o << "\"downloads_filter\":\"" << JsonEscape(s.downloads_filter) << "\",";
+  o << "\"downloads_search_query\":\"" << JsonEscape(s.downloads_search_query) << "\",";
   o << "\"downloads\":[";
   for (size_t i = 0; i < s.downloads.size(); ++i) {
     const auto& d = s.downloads[i];
     if (i) o << ",";
     o << "{\"id\":" << d.id
+      << ",\"db_id\":" << d.db_id
       << ",\"filename\":\"" << JsonEscape(d.filename) << "\""
       << ",\"url\":\"" << JsonEscape(d.url) << "\""
       << ",\"full_path\":\"" << JsonEscape(d.full_path) << "\""
       << ",\"percent\":" << d.percent
       << ",\"received\":" << d.received_bytes
       << ",\"total\":" << d.total_bytes
+      << ",\"speed\":" << d.current_speed
+      << ",\"updated_at_ms\":" << d.updated_at_ms
       << ",\"in_progress\":" << (d.in_progress ? "true" : "false")
       << ",\"complete\":" << (d.complete ? "true" : "false")
       << ",\"canceled\":" << (d.canceled ? "true" : "false")
@@ -318,7 +325,18 @@ std::string ChromeStateStore::SnapshotJson() const {
     << "\"req_id\":" << s.active_permission.req_id
     << ",\"origin\":\"" << JsonEscape(s.active_permission.origin) << "\""
     << ",\"label\":\"" << JsonEscape(s.active_permission.label) << "\""
-    << ",\"perm_key\":\"" << JsonEscape(s.active_permission.perm_key) << "\"}";
+    << ",\"perm_key\":\"" << JsonEscape(s.active_permission.perm_key) << "\"},";
+
+  o << "\"saved_permissions\":[";
+  for (size_t i = 0; i < s.saved_permissions.size(); ++i) {
+    const auto& sp = s.saved_permissions[i];
+    if (i) o << ",";
+    o << "{\"origin\":\"" << JsonEscape(sp.origin) << "\""
+      << ",\"perm_key\":\"" << JsonEscape(sp.perm_key) << "\""
+      << ",\"label\":\"" << JsonEscape(sp.label) << "\""
+      << ",\"allow\":" << (sp.allow ? "true" : "false") << "}";
+  }
+  o << "]";
 
   o << "}";
   return o.str();
@@ -502,6 +520,38 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .pill.shield-paused { color: var(--metro-fg-dim); }
   .pill.star-on { color: #f5b942; }
   .hidden { display: none !important; }
+  .dl-btn {
+    position: relative;
+    gap: 4px;
+    padding: 0 7px;
+    overflow: hidden;
+  }
+  .dl-btn.dl-busy {
+    border-color: var(--metro-accent);
+    color: #ffffff;
+  }
+  .dl-dot {
+    width: 5px;
+    height: 5px;
+    background: var(--metro-success);
+    display: none;
+  }
+  .dl-btn.dl-done .dl-dot { display: inline-block; }
+  .dl-prog {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    height: 2px;
+    background: var(--metro-border);
+    display: none;
+    pointer-events: none;
+  }
+  .dl-btn.dl-busy .dl-prog { display: block; }
+  .dl-prog > span {
+    display: block;
+    height: 100%;
+    background: var(--metro-accent);
+    transition: width 120ms linear;
+  }
   .profile-btn {
     gap: 5px;
     padding: 0 8px;
@@ -561,7 +611,10 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
     <div class="cluster">
       <button id="btnSwRender" class="btn sw-chip hidden" title="Hardware GPU acceleration disabled — open kajo://gpu">⚠ SW RENDER</button>
       <button id="btnMedia" class="btn hidden" title="Sniffed Media Streams">⬇ <span id="mediaCount">0</span></button>
-      <button id="btnDl" class="btn hidden" title="Downloads (Ctrl+J)">↓ <span id="dlCount">0</span></button>
+      <button id="btnDl" class="btn dl-btn" title="Downloads (Ctrl+J)">
+        <span>↓</span><span id="dlCount"></span><span class="dl-dot"></span>
+        <span class="dl-prog"><span id="dlProgBar" style="width:0%"></span></span>
+      </button>
       <button id="btnZoom" class="btn hidden" title="Reset Zoom (Ctrl+0)"><span id="zoomLabel">100%</span></button>
       <button id="btnProfile" class="btn profile-btn" title="Profiles &amp; Private Mode (Ctrl+Shift+M)">
         <span id="profileDot" class="dot"></span>
@@ -606,6 +659,7 @@ const btnMedia = document.getElementById('btnMedia');
 const mediaCount = document.getElementById('mediaCount');
 const btnDl = document.getElementById('btnDl');
 const dlCount = document.getElementById('dlCount');
+const dlProgBar = document.getElementById('dlProgBar');
 const btnZoom = document.getElementById('btnZoom');
 const zoomLabel = document.getElementById('zoomLabel');
 const btnProfile = document.getElementById('btnProfile');
@@ -713,10 +767,25 @@ window.__kajoApply = (s) => {
   btnMedia.classList.toggle('hidden', mc === 0);
   mediaCount.textContent = String(mc);
 
-  const dc = (s.downloads || []).length;
-  btnDl.classList.toggle('hidden', dc === 0);
-  const activeDl = (s.downloads || []).filter(d => d.in_progress).length;
-  dlCount.textContent = activeDl > 0 ? (activeDl + '/' + dc) : String(dc);
+  const dls = s.downloads || [];
+  const activeDls = dls.filter(d => d.in_progress);
+  btnDl.classList.toggle('active', s.overlay_mode === 'downloads');
+  btnDl.classList.toggle('dl-busy', activeDls.length > 0);
+  btnDl.classList.toggle('dl-done', activeDls.length === 0 && !!s.downloads_unseen_complete);
+  if (activeDls.length > 0) {
+    let known = 0, sumPct = 0;
+    for (const d of activeDls) {
+      if (d.percent >= 0) { sumPct += Math.min(100, d.percent); ++known; }
+    }
+    const pct = known > 0 ? Math.round(sumPct / known) : -1;
+    dlCount.textContent = pct >= 0 ? (pct + '%') : String(activeDls.length);
+    dlProgBar.style.width = (pct >= 0 ? pct : 35) + '%';
+    btnDl.title = 'Downloads active (' + activeDls.length + ') · Click or Ctrl+J';
+  } else {
+    dlCount.textContent = '';
+    dlProgBar.style.width = '0%';
+    btnDl.title = 'Downloads (' + dls.length + ' total) · Ctrl+J';
+  }
 
   btnZoom.classList.toggle('hidden', (s.zoom_pct || 100) === 100);
   zoomLabel.textContent = (s.zoom_pct || 100) + '%';
@@ -2014,33 +2083,93 @@ window.__kajoApply = (s) => {
     }
     root.appendChild(list);
   } else if (mode === 'downloads') {
-    root.appendChild(renderHeader('↓ DOWNLOADS'));
+    const fmtBytes = (b) => {
+      if (!b || b <= 0) return '0 B';
+      if (b >= 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+      if (b >= 1048576) return (b / 1048576).toFixed(1) + ' MB';
+      if (b >= 1024) return (b / 1024).toFixed(1) + ' KB';
+      return b + ' B';
+    };
+    const dls = s.downloads || [];
+    root.appendChild(renderHeader('↓ DOWNLOADS (' + dls.length + ')'));
     const list = document.createElement('div');
     list.className = 'list';
-    for (const d of (s.downloads || [])) {
+    if (!dls.length) {
+      const empty = document.createElement('div');
+      empty.className = 'stat-card';
+      empty.style.cssText = 'margin:8px;padding:14px;';
+      const t = document.createElement('div');
+      t.className = 'item-title';
+      t.textContent = 'No downloads yet';
+      const sub = document.createElement('div');
+      sub.className = 'item-sub';
+      sub.style.marginTop = '4px';
+      sub.textContent = 'Save folder: ' + (s.download_dir || '~/Downloads');
+      empty.append(t, sub);
+      list.appendChild(empty);
+    }
+    for (const d of dls) {
       const row = document.createElement('div');
       row.className = 'item';
-      const st = d.complete ? 'COMPLETE' : (d.canceled ? 'CANCELED' : (d.percent >= 0 ? d.percent + '%' : 'ACTIVE'));
-      const mainBox = makeMainBox(d.filename || '', st + ' · ' + (d.full_path || d.url || ''));
+      row.style.cursor = 'default';
+      let st = 'ACTIVE';
+      if (d.complete) st = 'DONE';
+      else if (d.canceled) st = 'CANCELED';
+      else if (d.paused) st = 'PAUSED';
+      else if (d.percent >= 0) st = d.percent + '%';
+      const sz = fmtBytes(d.received) + (d.total > 0 ? (' / ' + fmtBytes(d.total)) : '');
+      const spd = (d.in_progress && !d.paused && d.speed > 0) ? (' · ' + fmtBytes(d.speed) + '/s') : '';
+      const mainBox = makeMainBox(d.filename || d.url || 'download', st + ' · ' + sz + spd);
       const prog = document.createElement('div');
       prog.className = 'prog';
       const bar = document.createElement('div');
-      bar.style.width = Math.max(0, Math.min(100, d.percent || 0)) + '%';
+      const w = d.complete ? 100 : Math.max(0, Math.min(100, d.percent || 0));
+      bar.style.width = w + '%';
+      if (d.complete) bar.style.background = 'var(--metro-success)';
+      else if (d.canceled) bar.style.background = 'var(--metro-urgent)';
+      else if (d.paused) bar.style.background = 'var(--metro-warning)';
       prog.appendChild(bar);
       mainBox.appendChild(prog);
       row.appendChild(mainBox);
+
       if (d.in_progress) {
+        if (d.paused) {
+          const r = document.createElement('button');
+          r.className = 'btn primary'; r.textContent = '▶'; r.title = 'Resume';
+          r.onclick = () => send('resume_download', { id: d.id });
+          row.appendChild(r);
+        } else {
+          const p = document.createElement('button');
+          p.className = 'btn'; p.textContent = '⏸'; p.title = 'Pause';
+          p.onclick = () => send('pause_download', { id: d.id });
+          row.appendChild(p);
+        }
         const c = document.createElement('button');
-        c.className = 'btn';
-        c.textContent = 'Cancel';
+        c.className = 'btn bad'; c.textContent = '✕'; c.title = 'Cancel';
         c.onclick = () => send('cancel_download', { id: d.id });
         row.appendChild(c);
       } else if (d.complete) {
         const o = document.createElement('button');
-        o.className = 'btn primary';
-        o.textContent = 'Open';
-        o.onclick = () => send('open_download_folder', { path: d.full_path });
-        row.appendChild(o);
+        o.className = 'btn primary'; o.textContent = 'Open'; o.title = 'Open file';
+        o.onclick = () => send('open_download_file', { path: d.full_path });
+        const f = document.createElement('button');
+        f.className = 'btn'; f.textContent = '📁'; f.title = 'Show in kajo-files';
+        f.onclick = () => send('open_download_folder', { path: d.full_path });
+        const rm = document.createElement('button');
+        rm.className = 'btn bad'; rm.textContent = '✕'; rm.title = 'Remove from list';
+        rm.onclick = () => send('remove_download', { id: d.id, db_id: d.db_id || 0 });
+        row.append(o, f, rm);
+      } else {
+        if (d.url) {
+          const rt = document.createElement('button');
+          rt.className = 'btn primary'; rt.textContent = '↻'; rt.title = 'Retry download';
+          rt.onclick = () => send('retry_download', { url: d.url });
+          row.appendChild(rt);
+        }
+        const rm = document.createElement('button');
+        rm.className = 'btn bad'; rm.textContent = '✕'; rm.title = 'Remove from list';
+        rm.onclick = () => send('remove_download', { id: d.id, db_id: d.db_id || 0 });
+        row.appendChild(rm);
       }
       list.appendChild(row);
     }
@@ -2048,10 +2177,24 @@ window.__kajoApply = (s) => {
     const act = document.createElement('div');
     act.className = 'act-row';
     const bAll = document.createElement('button');
-    bAll.className = 'btn';
-    bAll.textContent = 'Open kajo://downloads';
+    bAll.className = 'btn primary';
+    bAll.textContent = 'kajo://downloads';
     bAll.onclick = () => send('open_kajo_page', { page: 'kajo://downloads' });
-    act.appendChild(bAll);
+    const bDir = document.createElement('button');
+    bDir.className = 'btn';
+    bDir.textContent = '📁 Folder';
+    bDir.onclick = () => send('open_download_folder', { path: '' });
+    const bClr = document.createElement('button');
+    bClr.className = 'btn';
+    bClr.textContent = 'Clear Done';
+    bClr.disabled = !dls.some(d => d.complete || d.canceled);
+    bClr.onclick = () => send('clear_finished_downloads');
+    const bSet = document.createElement('button');
+    bSet.className = 'btn';
+    bSet.textContent = '⚙';
+    bSet.title = 'Download Settings';
+    bSet.onclick = () => send('open_settings');
+    act.append(bAll, bDir, bClr, bSet);
     root.appendChild(act);
   } else if (mode === 'bookmark') {
     if (!modeChanged && root.querySelector('#bmTitle')) return;
@@ -2323,11 +2466,12 @@ static std::string BuildKajoShellPage(const ChromeStateSnapshot& s,
     << "input[type=text]{padding:7px 10px;background:#0c0c0c;border:1px solid #3c3c3c;color:#fff;font-family:inherit;font-size:12px;}"
     << "input[type=text]:focus{border-color:var(--accent);outline:none;}"
     << "</style></head><body>"
-    << "<div class='nav'><span class='brand'>❖ KAJO // CEF</span>"
+    << "<div class='nav'><span class='brand'>❖ KAJO // WEB</span>"
     << "<a href='kajo://newtab' class='" << (active_nav == "newtab" ? "act" : "") << "'>NEWTAB</a>"
     << "<a href='kajo://bookmarks' class='" << (active_nav == "bookmarks" ? "act" : "") << "'>BOOKMARKS</a>"
     << "<a href='kajo://history' class='" << (active_nav == "history" ? "act" : "") << "'>HISTORY</a>"
     << "<a href='kajo://adblock' class='" << (active_nav == "adblock" ? "act" : "") << "'>ADBLOCK</a>"
+    << "<a href='kajo://permissions' class='" << (active_nav == "permissions" ? "act" : "") << "'>PERMISSIONS</a>"
     << "<a href='kajo://downloads' class='" << (active_nav == "downloads" ? "act" : "") << "'>DOWNLOADS</a>"
     << "<a href='kajo://gpu' class='" << (active_nav == "gpu" ? "act" : "") << "'>GPU &amp; VA-API</a>"
     << "<a href='kajo://about' class='" << (active_nav == "about" ? "act" : "") << "'>ABOUT</a>"
@@ -2457,18 +2601,183 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
   }
 
   if (page == "downloads") {
-    std::ostringstream b;
-    b << "<h1>DOWNLOADS (" << s.downloads.size() << ")</h1>"
-      << "<div style='margin-bottom:12px;'><a class='btn' href='kajo://downloads?action=clear_done'>CLEAR FINISHED</a></div>"
-      << "<table><tr><th>File</th><th>Progress</th><th>Size</th><th>Location</th></tr>";
+    auto esc_q = [](const std::string& v) -> std::string {
+      std::string out;
+      out.reserve(v.size() + 8);
+      for (unsigned char c : v) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+          out.push_back(static_cast<char>(c));
+        } else {
+          char hex[4];
+          snprintf(hex, sizeof(hex), "%%%02X", c);
+          out += hex;
+        }
+      }
+      return out;
+    };
+    auto contains_ci = [](const std::string& hay, const std::string& needle) -> bool {
+      if (needle.empty()) return true;
+      auto lower = [](unsigned char c) { return static_cast<char>(std::tolower(c)); };
+      std::string hl(hay.size(), '\0'), nl(needle.size(), '\0');
+      std::transform(hay.begin(), hay.end(), hl.begin(), lower);
+      std::transform(needle.begin(), needle.end(), nl.begin(), lower);
+      return hl.find(nl) != std::string::npos;
+    };
+    size_t active_cnt = 0, done_cnt = 0;
     for (const auto& d : s.downloads) {
-      b << "<tr><td>" << HtmlEscape(d.filename) << "</td><td>"
-        << (d.complete ? "100% DONE" : (d.canceled ? "CANCELED" : std::to_string(std::max(0, d.percent)) + "%"))
-        << "</td><td>" << FormatBytes(d.received_bytes) << " / " << FormatBytes(d.total_bytes)
-        << "</td><td style='color:var(--dim);'>" << HtmlEscape(d.full_path) << "</td></tr>";
+      if (d.in_progress) ++active_cnt;
+      else if (d.complete) ++done_cnt;
+    }
+    std::ostringstream b;
+    b << "<h1>DOWNLOADS</h1>"
+      << "<div class='grid' style='margin-bottom:14px;'>"
+      << "<div class='card'><div id='dlStatTotal' class='k'>" << s.downloads.size() << "</div><div class='lbl'>TOTAL ITEMS</div></div>"
+      << "<div class='card'><div id='dlStatActive' class='k'>" << active_cnt << "</div><div class='lbl'>ACTIVE TRANSFERS</div></div>"
+      << "<div class='card'><div id='dlStatDone' class='k'>" << done_cnt << "</div><div class='lbl'>COMPLETED</div></div>"
+      << "<div class='card'><div class='k' style='font-size:13px;word-break:break-all;'>"
+      << HtmlEscape(s.download_dir.empty() ? "~/Downloads" : s.download_dir) << "</div><div class='lbl'>SAVE DIRECTORY</div></div>"
+      << "</div>"
+      << "<div style='display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;'>"
+      << "<form action='kajo://downloads' method='get' style='display:flex;gap:6px;flex:1;min-width:220px;'>"
+      << "<input type='hidden' name='action' value='search'>"
+      << "<input type='text' name='q' value='" << HtmlEscape(s.downloads_search_query) << "' placeholder='Filter downloads by file or URL...' style='flex:1;'>"
+      << "<button class='btn pri' type='submit'>FILTER</button></form>"
+      << "<a class='btn " << (s.downloads_filter.empty() ? "pri" : "") << "' href='kajo://downloads?action=filter&f=all'>ALL</a>"
+      << "<a class='btn " << (s.downloads_filter == "active" ? "pri" : "") << "' href='kajo://downloads?action=filter&f=active'>ACTIVE</a>"
+      << "<a class='btn " << (s.downloads_filter == "completed" ? "pri" : "") << "' href='kajo://downloads?action=filter&f=completed'>COMPLETED</a>"
+      << "<a class='btn' href='kajo://downloads?action=open_folder'>📁 OPEN FOLDER</a>"
+      << "<a class='btn bad' href='kajo://downloads?action=clear_done'>CLEAR FINISHED</a>"
+      << "</div>"
+      << "<div style='border:1px solid var(--b);background:var(--bg2);'>"
+      << "<table style='border:none;'><thead><tr><th>File</th><th>Progress</th><th>Size / Speed</th><th>Actions</th></tr></thead>"
+      << "<tbody id='dlBody'>";
+    size_t shown = 0;
+    for (const auto& d : s.downloads) {
+      if (s.downloads_filter == "active" && !d.in_progress) continue;
+      if (s.downloads_filter == "completed" && !d.complete) continue;
+      if (!s.downloads_search_query.empty() &&
+          !contains_ci(d.filename, s.downloads_search_query) &&
+          !contains_ci(d.url, s.downloads_search_query)) {
+        continue;
+      }
+      ++shown;
+      const int pct = d.complete ? 100 : std::clamp(d.percent, 0, 100);
+      const char* bar_col = d.complete ? "var(--ok)" : (d.canceled ? "var(--err)" : (d.paused ? "var(--warn)" : "var(--accent)"));
+      const std::string st_txt = d.complete ? "DONE" : (d.canceled ? "CANCELED" : (d.paused ? "PAUSED" : (d.percent >= 0 ? std::to_string(d.percent) + "%" : "ACTIVE")));
+      b << "<tr>"
+        << "<td><div style='color:#fff;font-weight:600;'>" << HtmlEscape(d.filename.empty() ? "download" : d.filename)
+        << "</div><div style='color:var(--dim);font-size:11px;word-break:break-all;'>"
+        << HtmlEscape(d.full_path.empty() ? d.url : d.full_path) << "</div></td>"
+        << "<td style='min-width:150px;'><div>" << st_txt << "</div>"
+        << "<div style='height:4px;background:var(--bg0);border:1px solid var(--b);margin-top:4px;'>"
+        << "<div style='height:100%;width:" << pct << "%;background:" << bar_col << ";'></div></div></td>"
+        << "<td>" << FormatBytes(d.received_bytes)
+        << (d.total_bytes > 0 ? (" / " + FormatBytes(d.total_bytes)) : "")
+        << (d.in_progress && !d.paused && d.current_speed > 0 ? ("<div style='color:var(--dim);font-size:11px;'>" + FormatBytes(d.current_speed) + "/s</div>") : "")
+        << "</td><td style='white-space:nowrap;'>";
+      if (d.in_progress) {
+        if (d.paused) {
+          b << "<a class='btn pri' href='kajo://downloads?action=resume&id=" << d.id << "'>▶ RESUME</a> ";
+        } else {
+          b << "<a class='btn' href='kajo://downloads?action=pause&id=" << d.id << "'>⏸ PAUSE</a> ";
+        }
+        b << "<a class='btn bad' href='kajo://downloads?action=cancel&id=" << d.id << "'>✕ CANCEL</a>";
+      } else if (d.complete) {
+        b << "<a class='btn pri' href='kajo://downloads?action=open_file&path=" << esc_q(d.full_path) << "'>OPEN</a> "
+          << "<a class='btn' href='kajo://downloads?action=open_folder&path=" << esc_q(d.full_path) << "'>📁</a> "
+          << "<a class='btn bad' href='kajo://downloads?action=remove&id=" << d.id << "&db_id=" << d.db_id << "'>×</a>";
+      } else {
+        if (!d.url.empty()) {
+          b << "<a class='btn pri' href='kajo://downloads?action=retry&url=" << esc_q(d.url) << "'>↻ RETRY</a> ";
+        }
+        b << "<a class='btn bad' href='kajo://downloads?action=remove&id=" << d.id << "&db_id=" << d.db_id << "'>×</a>";
+      }
+      b << "</td></tr>";
+    }
+    if (shown == 0) {
+      b << "<tr><td colspan='4' style='color:var(--dim);padding:16px;'>No matching downloads</td></tr>";
+    }
+    b << "</tbody></table></div>"
+      << "<script>"
+      << "window.__kajoDlUpdate = (s) => {"
+      << "  const dls = s.downloads || [];"
+      << "  const tEl = document.getElementById('dlStatTotal');"
+      << "  const aEl = document.getElementById('dlStatActive');"
+      << "  const cEl = document.getElementById('dlStatDone');"
+      << "  if (tEl) tEl.textContent = String(dls.length);"
+      << "  if (aEl) aEl.textContent = String(dls.filter(d => d.in_progress).length);"
+      << "  if (cEl) cEl.textContent = String(dls.filter(d => d.complete).length);"
+      << "  const tb = document.getElementById('dlBody'); if (!tb) return;"
+      << "  const fmt = (b) => { if (!b || b <= 0) return '0 B'; if (b >= 1073741824) return (b/1073741824).toFixed(2)+' GB'; if (b >= 1048576) return (b/1048576).toFixed(1)+' MB'; if (b >= 1024) return (b/1024).toFixed(1)+' KB'; return b+' B'; };"
+      << "  const f = s.downloads_filter || ''; const q = (s.downloads_search_query || '').toLowerCase();"
+      << "  const vis = dls.filter(d => (!f || (f==='active' && d.in_progress) || (f==='completed' && d.complete)) && (!q || (d.filename||'').toLowerCase().includes(q) || (d.url||'').toLowerCase().includes(q)));"
+      << "  tb.innerHTML = '';"
+      << "  if (!vis.length) { const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 4; td.style.cssText = 'color:var(--dim);padding:16px;'; td.textContent = 'No matching downloads'; tr.appendChild(td); tb.appendChild(tr); return; }"
+      << "  for (const d of vis) {"
+      << "    const tr = document.createElement('tr');"
+      << "    const td1 = document.createElement('td');"
+      << "    const fn = document.createElement('div'); fn.style.cssText = 'color:#fff;font-weight:600;'; fn.textContent = d.filename || 'download';"
+      << "    const fp = document.createElement('div'); fp.style.cssText = 'color:var(--dim);font-size:11px;word-break:break-all;'; fp.textContent = d.full_path || d.url || '';"
+      << "    td1.append(fn, fp);"
+      << "    const td2 = document.createElement('td'); td2.style.minWidth = '150px';"
+      << "    const st = d.complete ? 'DONE' : (d.canceled ? 'CANCELED' : (d.paused ? 'PAUSED' : (d.percent >= 0 ? d.percent + '%' : 'ACTIVE')));"
+      << "    const stDiv = document.createElement('div'); stDiv.textContent = st;"
+      << "    const pb = document.createElement('div'); pb.style.cssText = 'height:4px;background:var(--bg0);border:1px solid var(--b);margin-top:4px;';"
+      << "    const pbf = document.createElement('div'); const pct = d.complete ? 100 : Math.max(0, Math.min(100, d.percent || 0));"
+      << "    pbf.style.cssText = 'height:100%;width:' + pct + '%;background:' + (d.complete ? 'var(--ok)' : (d.canceled ? 'var(--err)' : (d.paused ? 'var(--warn)' : 'var(--accent)'))) + ';';"
+      << "    pb.appendChild(pbf); td2.append(stDiv, pb);"
+      << "    const td3 = document.createElement('td'); td3.textContent = fmt(d.received) + (d.total > 0 ? (' / ' + fmt(d.total)) : '');"
+      << "    if (d.in_progress && !d.paused && d.speed > 0) { const sp = document.createElement('div'); sp.style.cssText = 'color:var(--dim);font-size:11px;'; sp.textContent = fmt(d.speed) + '/s'; td3.appendChild(sp); }"
+      << "    const td4 = document.createElement('td'); td4.style.whiteSpace = 'nowrap';"
+      << "    const mkA = (cls, txt, href) => { const a = document.createElement('a'); a.className = 'btn ' + cls; a.textContent = txt; a.href = href; a.style.marginRight = '4px'; return a; };"
+      << "    if (d.in_progress) { td4.appendChild(d.paused ? mkA('pri','▶ RESUME','kajo://downloads?action=resume&id='+d.id) : mkA('','⏸ PAUSE','kajo://downloads?action=pause&id='+d.id)); td4.appendChild(mkA('bad','✕ CANCEL','kajo://downloads?action=cancel&id='+d.id)); }"
+      << "    else if (d.complete) { td4.appendChild(mkA('pri','OPEN','kajo://downloads?action=open_file&path='+encodeURIComponent(d.full_path||''))); td4.appendChild(mkA('','📁','kajo://downloads?action=open_folder&path='+encodeURIComponent(d.full_path||''))); td4.appendChild(mkA('bad','×','kajo://downloads?action=remove&id='+d.id+'&db_id='+(d.db_id||0))); }"
+      << "    else { if (d.url) td4.appendChild(mkA('pri','↻ RETRY','kajo://downloads?action=retry&url='+encodeURIComponent(d.url))); td4.appendChild(mkA('bad','×','kajo://downloads?action=remove&id='+d.id+'&db_id='+(d.db_id||0))); }"
+      << "    tr.append(td1, td2, td3, td4); tb.appendChild(tr);"
+      << "  }"
+      << "};"
+      << "</script>";
+    *out_body = BuildKajoShellPage(s, "downloads", "Kajo — Downloads", b.str());
+    return true;
+  }
+
+  if (page == "permissions") {
+    auto esc_q = [](const std::string& v) -> std::string {
+      std::string out;
+      out.reserve(v.size() + 8);
+      for (unsigned char c : v) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+          out.push_back(static_cast<char>(c));
+        } else {
+          char hex[4];
+          snprintf(hex, sizeof(hex), "%%%02X", c);
+          out += hex;
+        }
+      }
+      return out;
+    };
+    std::ostringstream b;
+    b << "<h1>SITE PERMISSIONS (" << s.saved_permissions.size() << ")</h1>"
+      << "<div style='margin-bottom:14px;display:flex;gap:8px;align-items:center;'>"
+      << "<a class='btn bad' href='kajo://permissions?action=clear_all'>CLEAR ALL PERMISSIONS</a>"
+      << "<span style='color:var(--dim);font-size:12px;'>Stored in current profile permissions.json (private sessions never persist)</span>"
+      << "</div>"
+      << "<table><tr><th>Origin</th><th>Capability</th><th>Decision</th><th>Action</th></tr>";
+    for (const auto& sp : s.saved_permissions) {
+      b << "<tr><td style='color:#fff;'>" << HtmlEscape(sp.origin) << "</td>"
+        << "<td>" << HtmlEscape(sp.label) << "</td>"
+        << "<td style='color:" << (sp.allow ? "var(--ok)" : "var(--err)") << ";font-weight:700;'>"
+        << (sp.allow ? "ALLOW" : "DENY") << "</td>"
+        << "<td><a class='btn bad' href='kajo://permissions?action=revoke&origin="
+        << esc_q(sp.origin) << "&key=" << esc_q(sp.perm_key) << "'>REVOKE</a></td></tr>";
+    }
+    if (s.saved_permissions.empty()) {
+      b << "<tr><td colspan='4' style='color:var(--dim);padding:16px;'>No saved site permission grants or denials</td></tr>";
     }
     b << "</table>";
-    *out_body = BuildKajoShellPage(s, "downloads", "Kajo — Downloads", b.str());
+    *out_body = BuildKajoShellPage(s, "permissions", "Kajo — Permissions", b.str());
     return true;
   }
 
@@ -2537,9 +2846,9 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
 
   /* Default: kajo://about */
   std::ostringstream b;
-  b << "<h1>ABOUT KAJO BROWSER (CEF BACKEND)</h1>"
+  b << "<h1>ABOUT KAJO WEB</h1>"
     << "<table><tr><th>Component</th><th>Details</th></tr>"
-    << "<tr><td>Application</td><td>kajo-web-cef (Aero+Metro Alloy Views + Native Wayland)</td></tr>"
+    << "<tr><td>Application</td><td>kajo-web (Aero+Metro Chromium/CEF Alloy Views + Native Wayland)</td></tr>"
     << "<tr><td>Profile</td><td>" << HtmlEscape(s.profile_icon + " " + s.profile_name) << (s.private_mode ? " (Private)" : "") << "</td></tr>"
     << "<tr><td>Adblocker</td><td>IO-thread native ABP + Hosts + Cosmetic + YouTube Skip (" << s.adblock_rules << " rules)</td></tr>"
     << "<tr><td>DRM / Media</td><td>" << (s.widevine_available ? "Widevine CDM detected" : "Widevine CDM absent") << " + kajo-player handoff</td></tr>"

@@ -21,6 +21,19 @@ web_history_entry_free(gpointer ptr)
     g_free(e);
 }
 
+void
+web_download_record_free(gpointer ptr)
+{
+    KajoWebDownloadRecord *d = ptr;
+    if (!d)
+        return;
+    g_free(d->url);
+    g_free(d->filename);
+    g_free(d->full_path);
+    g_free(d->state);
+    g_free(d);
+}
+
 static void
 init_schema(sqlite3 *db)
 {
@@ -43,7 +56,18 @@ init_schema(sqlite3 *db)
         "  updated_at INTEGER NOT NULL,"
         "  deleted INTEGER NOT NULL DEFAULT 0"
         ");"
-        "CREATE INDEX IF NOT EXISTS idx_bookmarks_uri ON bookmarks(uri, deleted);";
+        "CREATE INDEX IF NOT EXISTS idx_bookmarks_uri ON bookmarks(uri, deleted);"
+        "CREATE TABLE IF NOT EXISTS downloads ("
+        "  id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  url TEXT NOT NULL DEFAULT '',"
+        "  filename TEXT NOT NULL DEFAULT '',"
+        "  full_path TEXT NOT NULL DEFAULT '',"
+        "  received_bytes INTEGER NOT NULL DEFAULT 0,"
+        "  total_bytes INTEGER NOT NULL DEFAULT 0,"
+        "  state TEXT NOT NULL DEFAULT 'complete',"
+        "  updated_at_ms INTEGER NOT NULL"
+        ");"
+        "CREATE INDEX IF NOT EXISTS idx_downloads_updated ON downloads(updated_at_ms DESC);";
     sqlite3_exec(db, sql, NULL, NULL, NULL);
 }
 
@@ -269,6 +293,93 @@ web_storage_replace_bookmarks(KajoWebStorage *st, const GPtrArray *merged)
         web_storage_upsert_bookmark(st, g_ptr_array_index(merged, i));
     }
     return sqlite3_exec(st->db, "COMMIT;", NULL, NULL, NULL) == SQLITE_OK;
+}
+
+gint64
+web_storage_record_download(KajoWebStorage *st,
+                            const gchar    *url,
+                            const gchar    *filename,
+                            const gchar    *full_path,
+                            gint64          received_bytes,
+                            gint64          total_bytes,
+                            const gchar    *state)
+{
+    if (!st || !st->db)
+        return 0;
+    const char *sql =
+        "INSERT INTO downloads(url, filename, full_path, received_bytes, total_bytes, state, updated_at_ms) "
+        "VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7);";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(st->db, sql, -1, &stmt, NULL) != SQLITE_OK)
+        return 0;
+    sqlite3_bind_text(stmt, 1, url ? url : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, filename ? filename : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, full_path ? full_path : "", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 4, received_bytes);
+    sqlite3_bind_int64(stmt, 5, total_bytes);
+    sqlite3_bind_text(stmt, 6, (state && *state) ? state : "complete", -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 7, g_get_real_time() / 1000);
+    gint64 row_id = 0;
+    if (sqlite3_step(stmt) == SQLITE_DONE)
+        row_id = (gint64)sqlite3_last_insert_rowid(st->db);
+    sqlite3_finalize(stmt);
+    return row_id;
+}
+
+GPtrArray *
+web_storage_list_downloads(KajoWebStorage *st, gint limit)
+{
+    GPtrArray *out = g_ptr_array_new_with_free_func(web_download_record_free);
+    if (!st || !st->db)
+        return out;
+    if (limit <= 0)
+        limit = 100;
+    const char *sql =
+        "SELECT id, url, filename, full_path, received_bytes, total_bytes, state, updated_at_ms "
+        "FROM downloads ORDER BY updated_at_ms DESC, id DESC LIMIT ?1;";
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(st->db, sql, -1, &stmt, NULL) != SQLITE_OK)
+        return out;
+    sqlite3_bind_int(stmt, 1, limit);
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        KajoWebDownloadRecord *d = g_new0(KajoWebDownloadRecord, 1);
+        const unsigned char *u = sqlite3_column_text(stmt, 1);
+        const unsigned char *f = sqlite3_column_text(stmt, 2);
+        const unsigned char *p = sqlite3_column_text(stmt, 3);
+        const unsigned char *s = sqlite3_column_text(stmt, 6);
+        d->id = sqlite3_column_int64(stmt, 0);
+        d->url = g_strdup(u ? (const char *)u : "");
+        d->filename = g_strdup(f ? (const char *)f : "");
+        d->full_path = g_strdup(p ? (const char *)p : "");
+        d->received_bytes = sqlite3_column_int64(stmt, 4);
+        d->total_bytes = sqlite3_column_int64(stmt, 5);
+        d->state = g_strdup(s ? (const char *)s : "complete");
+        d->updated_at_ms = sqlite3_column_int64(stmt, 7);
+        g_ptr_array_add(out, d);
+    }
+    sqlite3_finalize(stmt);
+    return out;
+}
+
+void
+web_storage_delete_download(KajoWebStorage *st, gint64 id)
+{
+    if (!st || !st->db || id <= 0)
+        return;
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(st->db, "DELETE FROM downloads WHERE id = ?1;", -1, &stmt, NULL) == SQLITE_OK) {
+        sqlite3_bind_int64(stmt, 1, id);
+        sqlite3_step(stmt);
+        sqlite3_finalize(stmt);
+    }
+}
+
+void
+web_storage_clear_downloads(KajoWebStorage *st)
+{
+    if (!st || !st->db)
+        return;
+    sqlite3_exec(st->db, "DELETE FROM downloads;", NULL, NULL, NULL);
 }
 
 gboolean

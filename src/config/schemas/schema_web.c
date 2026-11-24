@@ -145,6 +145,7 @@ static const KajoFieldSpec k_web_fields[] = {
     { NULL, KAJO_CFG_KEY_WEB_MEMORY_LIMIT_MB,  KAJO_FIELD_INT,    offsetof(KajoWebCfg, memory_limit_mb),           .def.i = 2048, .min_int = 512, .max_int = 16384 },
 
     { NULL, KAJO_CFG_KEY_WEB_ADBLOCK_ENABLED,  KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, adblock_enabled),           .def.b = TRUE },
+    { NULL, KAJO_CFG_KEY_WEB_ADBLOCK_SYNC,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, adblock_auto_sync),         .def.b = TRUE },
     { NULL, KAJO_CFG_KEY_WEB_ADBLOCK_RULES,    KAJO_FIELD_STRING, offsetof(KajoWebCfg, adblock_custom_rules_path), .def.s = "" },
     { NULL, KAJO_CFG_KEY_WEB_USER_SCRIPTS,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, user_scripts_enabled),      .def.b = FALSE },
     { NULL, KAJO_CFG_KEY_WEB_ITP_ENABLED,      KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, itp_enabled),               .def.b = TRUE },
@@ -167,6 +168,7 @@ static const KajoFieldSpec k_web_fields[] = {
     { NULL, KAJO_CFG_KEY_WEB_MIN_FONT_SIZE,    KAJO_FIELD_INT,    offsetof(KajoWebCfg, min_font_size_px),          .def.i = 9,    .min_int = 0,   .max_int = 24 },
     { NULL, KAJO_CFG_KEY_WEB_DOWNLOAD_DIR,     KAJO_FIELD_STRING, offsetof(KajoWebCfg, download_dir),              .def.s = "" },
     { NULL, KAJO_CFG_KEY_WEB_ASK_DOWNLOAD,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, ask_download_location),     .def.b = FALSE },
+    { NULL, KAJO_CFG_KEY_WEB_DL_AUTO_OPEN,     KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, downloads_auto_open),       .def.b = FALSE },
     { NULL, KAJO_CFG_KEY_WEB_DEV_EXTRAS,       KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, developer_extras),          .def.b = TRUE },
 
     { NULL, KAJO_CFG_KEY_WEB_SHOW_PICKER,      KAJO_FIELD_BOOL,   offsetof(KajoWebCfg, show_picker_on_startup),    .def.b = TRUE },

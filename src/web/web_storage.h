@@ -34,6 +34,30 @@ gboolean        web_storage_is_bookmarked(KajoWebStorage *st, const gchar *uri, 
 GPtrArray      *web_storage_list_bookmarks(KajoWebStorage *st, gboolean include_deleted);
 gboolean        web_storage_replace_bookmarks(KajoWebStorage *st, const GPtrArray *merged);
 
+/* Persistent Downloads History (SQLite) */
+typedef struct {
+    gint64 id;
+    gchar *url;
+    gchar *filename;
+    gchar *full_path;
+    gint64 received_bytes;
+    gint64 total_bytes;
+    gchar *state;
+    gint64 updated_at_ms;
+} KajoWebDownloadRecord;
+
+void            web_download_record_free(gpointer ptr);
+gint64          web_storage_record_download(KajoWebStorage *st,
+                                            const gchar    *url,
+                                            const gchar    *filename,
+                                            const gchar    *full_path,
+                                            gint64          received_bytes,
+                                            gint64          total_bytes,
+                                            const gchar    *state);
+GPtrArray      *web_storage_list_downloads(KajoWebStorage *st, gint limit);
+void            web_storage_delete_download(KajoWebStorage *st, gint64 id);
+void            web_storage_clear_downloads(KajoWebStorage *st);
+
 /* Session persistence (atomic session.json) */
 gboolean        web_storage_save_session(KajoWebStorage *st, const KajoWebModel *model);
 gboolean        web_storage_load_session(KajoWebStorage *st, KajoWebModel *model);

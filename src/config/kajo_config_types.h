@@ -370,6 +370,7 @@ typedef struct {
     gint                  memory_limit_mb;        /* [512..16384], default 2048 */
 
     gboolean              adblock_enabled;
+    gboolean              adblock_auto_sync;
     gchar                *adblock_custom_rules_path;
     gboolean              user_scripts_enabled;
     gboolean              itp_enabled;
@@ -392,6 +393,7 @@ typedef struct {
     gint                  min_font_size_px;       /* [0..24], default 9 */
     gchar                *download_dir;
     gboolean              ask_download_location;
+    gboolean              downloads_auto_open;
     gboolean              developer_extras;
 
     gboolean              show_picker_on_startup;

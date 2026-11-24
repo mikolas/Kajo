@@ -36,6 +36,7 @@ namespace kajo_web {
 struct LaunchConfig {
   std::string exe_path;
   std::string profile_id = "default";
+  bool explicit_profile = false;
   bool private_mode = false;
   bool hw_accel_enabled = true;
   bool auto_adblock_sync = true;
@@ -169,6 +170,7 @@ private:
   void PersistTopbarMode(int mode);
   void UpdateWindowBorderColor();
   void ApplyColorSchemeToContext();
+  void ApplyWebRtcPolicyToContext();
   void ReloadUserScripts();
   void RebuildLayout();
   void ApplyRailSizing();
@@ -308,9 +310,17 @@ private:
   int cookie_policy_ = 0;
   bool user_scripts_enabled_ = false;
   bool enable_webgl_ = true;
+  bool enable_webrtc_ = true;
   bool https_only_ = false;
   std::string download_dir_;
   bool ask_download_location_ = false;
+  bool downloads_auto_open_ = false;
+  bool downloads_unseen_complete_ = false;
+  std::string downloads_filter_;
+  std::string downloads_search_query_;
+  bool developer_extras_ = true;
+  bool show_picker_on_startup_ = true;
+  bool adblock_auto_sync_ = true;
   bool restore_session_ = true;
   std::string adblock_custom_rules_path_;
 

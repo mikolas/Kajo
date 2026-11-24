@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <set>
@@ -306,9 +307,36 @@ void KajoBrowserWindow::InitBackend() {
 
   ReloadThemeAndConfig();
   ApplyColorSchemeToContext();
+  ApplyWebRtcPolicyToContext();
   ReloadUserScripts();
   if (adblock_ && !adblock_custom_rules_path_.empty()) {
     adblock_->ReloadFromDisk(adblock_custom_rules_path_);
+  }
+  if (!cfg_.private_mode && storage_) {
+    if (GPtrArray* saved_dls = web_storage_list_downloads(storage_, 100)) {
+      for (guint i = 0; i < saved_dls->len; ++i) {
+        const auto* r = static_cast<const KajoWebDownloadRecord*>(g_ptr_array_index(saved_dls, i));
+        ChromeDownloadView dv;
+        dv.id = 0;
+        dv.db_id = r->id;
+        dv.url = r->url ? r->url : "";
+        dv.filename = r->filename ? r->filename : "";
+        dv.full_path = r->full_path ? r->full_path : "";
+        dv.received_bytes = r->received_bytes;
+        dv.total_bytes = r->total_bytes;
+        dv.updated_at_ms = r->updated_at_ms;
+        const std::string st = r->state ? r->state : "complete";
+        dv.complete = (st == "complete");
+        dv.canceled = (st == "canceled");
+        dv.percent = dv.complete
+                         ? 100
+                         : (dv.total_bytes > 0
+                                ? static_cast<int>((dv.received_bytes * 100) / dv.total_bytes)
+                                : 0);
+        downloads_.push_back(std::move(dv));
+      }
+      g_ptr_array_unref(saved_dls);
+    }
   }
   RefreshStorageCache();
 }
@@ -319,6 +347,7 @@ void KajoBrowserWindow::OnConfigStoreChanged() {
   const bool prev_us_enabled = user_scripts_enabled_;
   ReloadThemeAndConfig();
   ApplyColorSchemeToContext();
+  ApplyWebRtcPolicyToContext();
   UpdateWindowBorderColor();
   if (user_scripts_enabled_ != prev_us_enabled || (user_scripts_enabled_ && !user_scripts_)) {
     ReloadUserScripts();
@@ -338,6 +367,7 @@ void KajoBrowserWindow::OnConfigStoreChanged() {
     if (kv.second.client) {
       kv.second.client->SetHttpsOnly(https_only_);
       kv.second.client->SetCookiePolicy(cookie_policy_);
+      kv.second.client->SetDevToolsEnabled(developer_extras_);
       kv.second.client->SetUserScripts(user_scripts_enabled_, user_scripts_);
     }
   }
@@ -411,11 +441,17 @@ void KajoBrowserWindow::ReloadThemeAndConfig() {
     color_scheme_ = w->color_scheme;
     cookie_policy_ = w->cookie_policy;
     user_scripts_enabled_ = (w->user_scripts_enabled != FALSE);
-    enable_webgl_ = w->enable_webgl;
-    https_only_ = w->https_only;
-    ask_download_location_ = w->ask_download_location;
-    if (w->download_dir && w->download_dir[0] != '\0') {
-      download_dir_ = w->download_dir;
+    enable_webgl_ = (w->enable_webgl != FALSE);
+    enable_webrtc_ = (w->enable_webrtc != FALSE);
+    https_only_ = (w->https_only != FALSE);
+    ask_download_location_ = (w->ask_download_location != FALSE);
+    downloads_auto_open_ = (w->downloads_auto_open != FALSE);
+    developer_extras_ = (w->developer_extras != FALSE);
+    show_picker_on_startup_ = (w->show_picker_on_startup != FALSE);
+    adblock_auto_sync_ = (w->adblock_auto_sync != FALSE);
+    const std::string custom_dl = w->download_dir ? ExpandTildePath(w->download_dir) : "";
+    if (!custom_dl.empty()) {
+      download_dir_ = custom_dl;
     } else if (const gchar* dl = g_get_user_special_dir(G_USER_DIRECTORY_DOWNLOAD)) {
       download_dir_ = dl;
     } else {
@@ -424,7 +460,7 @@ void KajoBrowserWindow::ReloadThemeAndConfig() {
     if (adblock_) {
       adblock_->SetEnabled(w->adblock_enabled);
       adblock_custom_rules_path_ =
-          w->adblock_custom_rules_path ? w->adblock_custom_rules_path : "";
+          w->adblock_custom_rules_path ? ExpandTildePath(w->adblock_custom_rules_path) : "";
     }
     kajo_web_cfg_unref(w);
   }
@@ -479,6 +515,20 @@ void KajoBrowserWindow::ApplyColorSchemeToContext() {
       cfg_.private_mode ? "#b146c2" : profile_accent_,
       CefColorSetARGB(255, 0x00, 0x78, 0xd4));
   request_context_->SetChromeColorScheme(variant, tint);
+}
+
+void KajoBrowserWindow::ApplyWebRtcPolicyToContext() {
+  if (!request_context_) return;
+  const char* policy = enable_webrtc_ ? "default" : "disable_non_proxied_udp";
+  if (request_context_->CanSetPreference("webrtc.ip_handling_policy")) {
+    CefRefPtr<CefValue> val = CefValue::Create();
+    val->SetString(policy);
+    CefString err;
+    if (!request_context_->SetPreference("webrtc.ip_handling_policy", val, err)) {
+      g_warning("kajo-web: failed to set webrtc.ip_handling_policy: %s",
+                err.ToString().c_str());
+    }
+  }
 }
 
 void KajoBrowserWindow::ReloadUserScripts() {
@@ -640,12 +690,21 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
     OpenNewTab(DefaultNewTabUrl(), true);
   }
 
-  if (cfg_.auto_adblock_sync && adblock_ && adblock_->IsEnabled() &&
+  if (cfg_.auto_adblock_sync && adblock_auto_sync_ && adblock_ && adblock_->IsEnabled() &&
       adblock_->HasMissingOrStaleLists(24)) {
     CefRefPtr<KajoBrowserWindow> self(this);
     CefPostDelayedTask(TID_UI, new UiTask([self]() {
       if (!self->closing_) self->StartFilterListUpdates();
     }), 400);
+  }
+
+  if (show_picker_on_startup_ && !cfg_.private_mode && !cfg_.explicit_profile &&
+      cfg_.initial_urls.empty() && profiles_ && profiles_->profiles &&
+      profiles_->profiles->len > 1) {
+    CefRefPtr<KajoBrowserWindow> self(this);
+    CefPostDelayedTask(TID_UI, new UiTask([self]() {
+      if (!self->closing_) self->ToggleOverlay("profiles");
+    }), 120);
   }
 }
 
@@ -846,9 +905,9 @@ CefRect KajoBrowserWindow::GetInitialBounds(CefRefPtr<CefWindow> window) {
 
 bool KajoBrowserWindow::GetLinuxWindowProperties(CefRefPtr<CefWindow> window,
                                                  CefLinuxWindowProperties& properties) {
-  CefString(&properties.wayland_app_id) = "org.kajo.WebCef";
-  CefString(&properties.wm_class_class) = "org.kajo.WebCef";
-  CefString(&properties.wm_class_name) = "kajo-web-cef";
+  CefString(&properties.wayland_app_id) = "org.kajo.Web";
+  CefString(&properties.wm_class_class) = "org.kajo.Web";
+  CefString(&properties.wm_class_name) = "kajo-web";
   return true;
 }
 
@@ -991,6 +1050,7 @@ void KajoBrowserWindow::AttachTabView(uint64_t tab_id, const std::string& target
   entry.client = new CefTabClient(tab_id, adblock_, this);
   entry.client->SetHttpsOnly(https_only_);
   entry.client->SetCookiePolicy(cookie_policy_);
+  entry.client->SetDevToolsEnabled(developer_extras_);
   entry.client->SetUserScripts(user_scripts_enabled_, user_scripts_);
   tabs_[tab_id] = entry;
 
@@ -1309,6 +1369,7 @@ void KajoBrowserWindow::ToggleOverlay(const std::string& mode) {
   }
   overlay_mode_ = mode;
   if (mode == "palette") BuildPalette("");
+  if (mode == "downloads") downloads_unseen_complete_ = false;
   UpdateOverlayBounds();
   PushStateImmediate();
   if (overlay_view_ && overlay_browser_) {
@@ -1439,6 +1500,7 @@ void KajoBrowserWindow::BuildPalette(const std::string& query) {
       {"Open Bookmarks Manager", "kajo://bookmarks", "open_kajo_page", "kajo://bookmarks"},
       {"Open History Manager", "kajo://history", "open_kajo_page", "kajo://history"},
       {"Open Downloads Manager", "kajo://downloads", "open_kajo_page", "kajo://downloads"},
+      {"Open Site Permissions", "kajo://permissions", "open_kajo_page", "kajo://permissions"},
       {"Open Web Settings", "Ctrl+, · kajo-settings", "open_settings", ""},
       {"Toggle Niri Float / Tile", "Compositor", "toggle_float", ""},
       {"Open Private Window", "Ctrl+Shift+N", "launch_private", ""},
@@ -1730,7 +1792,15 @@ void KajoBrowserWindow::PushStateImmediate() {
     s.history_query_results = history_results_;
   }
 
+  s.downloads_unseen_complete = downloads_unseen_complete_;
+  s.download_dir = download_dir_;
+  s.downloads_filter = downloads_filter_;
+  s.downloads_search_query = downloads_search_query_;
   s.downloads = downloads_;
+  for (const auto& pe : permission_store_.ListEntries()) {
+    s.saved_permissions.push_back(
+        {pe.origin, pe.perm_key, FormatPermissionKeyLabel(pe.perm_key), pe.allow});
+  }
   s.autocomplete = ac_results_;
   s.palette_results = palette_results_;
 
@@ -1748,6 +1818,16 @@ void KajoBrowserWindow::PushStateImmediate() {
   push_to(infobar_browser_);
   push_to(overlay_browser_);
   push_to(ac_browser_);
+
+  const std::string dl_js = "window.__kajoDlUpdate && window.__kajoDlUpdate(" + json + ");";
+  for (const auto& kv : tabs_) {
+    KajoWebTabMeta* tm = web_model_find_tab(model_, kv.first);
+    if (tm && tm->uri && strncmp(tm->uri, "kajo://downloads", 16) == 0 &&
+        kv.second.browser && kv.second.browser->GetMainFrame()) {
+      kv.second.browser->GetMainFrame()->ExecuteJavaScript(
+          dl_js, kv.second.browser->GetMainFrame()->GetURL(), 0);
+    }
+  }
 }
 
 bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
@@ -2150,17 +2230,82 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
         if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StartDownload(uri);
       }
     }
+  } else if (cmd == "pause_download") {
+    uint32_t did = static_cast<uint32_t>(get_int("id"));
+    auto it = download_callbacks_.find(did);
+    if (it != download_callbacks_.end() && it->second) {
+      it->second->Pause();
+      for (auto& d : downloads_) {
+        if (d.id == did) { d.paused = true; break; }
+      }
+      PushStateImmediate();
+    }
+  } else if (cmd == "resume_download") {
+    uint32_t did = static_cast<uint32_t>(get_int("id"));
+    auto it = download_callbacks_.find(did);
+    if (it != download_callbacks_.end() && it->second) {
+      it->second->Resume();
+      for (auto& d : downloads_) {
+        if (d.id == did) { d.paused = false; break; }
+      }
+      PushStateImmediate();
+    }
   } else if (cmd == "cancel_download") {
     uint32_t did = static_cast<uint32_t>(get_int("id"));
     auto it = download_callbacks_.find(did);
     if (it != download_callbacks_.end() && it->second) {
       it->second->Cancel();
     }
+  } else if (cmd == "open_download_file") {
+    const std::string path = get_str("path");
+    if (!path.empty() && g_file_test(path.c_str(), G_FILE_TEST_EXISTS)) {
+      g_autofree gchar* uri = g_filename_to_uri(path.c_str(), nullptr, nullptr);
+      g_autoptr(GError) err = nullptr;
+      if (!uri || !g_app_info_launch_default_for_uri(uri, nullptr, &err)) {
+        const char* argv[] = {"xdg-open", path.c_str(), nullptr};
+        kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+      }
+    }
   } else if (cmd == "open_download_folder") {
     const std::string path = get_str("path");
     g_autofree gchar* dir = path.empty() ? g_strdup(download_dir_.c_str()) : g_path_get_dirname(path.c_str());
     const char* argv[] = {"kajo-files", dir, nullptr};
     kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+  } else if (cmd == "retry_download") {
+    const std::string url = get_str("url");
+    if (!url.empty()) {
+      if (TabEntry* e = ActiveEntry()) {
+        if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StartDownload(url);
+      }
+    }
+  } else if (cmd == "remove_download") {
+    uint32_t did = static_cast<uint32_t>(get_int("id"));
+    int64_t db_id = get_int("db_id");
+    if (did != 0) {
+      auto cb_it = download_callbacks_.find(did);
+      if (cb_it != download_callbacks_.end() && cb_it->second) cb_it->second->Cancel();
+    }
+    downloads_.erase(
+        std::remove_if(downloads_.begin(), downloads_.end(),
+                       [did, db_id](const ChromeDownloadView& d) {
+                         if (did != 0 && d.id == did) return true;
+                         if (db_id > 0 && d.db_id == db_id) return true;
+                         return false;
+                       }),
+        downloads_.end());
+    if (db_id > 0 && storage_ && !cfg_.private_mode) {
+      web_storage_delete_download(storage_, db_id);
+    }
+    PushStateImmediate();
+  } else if (cmd == "clear_finished_downloads") {
+    downloads_.erase(
+        std::remove_if(downloads_.begin(), downloads_.end(),
+                       [](const ChromeDownloadView& d) { return d.complete || d.canceled; }),
+        downloads_.end());
+    if (storage_ && !cfg_.private_mode) {
+      web_storage_clear_downloads(storage_);
+    }
+    PushStateImmediate();
   } else if (cmd == "launch_profile") {
     const std::string pid = get_str("id");
     const bool priv = get_bool("private_mode");
@@ -2328,6 +2473,7 @@ bool KajoBrowserWindow::OnAccelerator(CefRefPtr<CefWindow> window, int command_i
       UpdateOverlayBounds();
       return true;
     case ACCEL_DEVTOOLS:
+      if (!developer_extras_) return true;
       if (TabEntry* e = ActiveEntry()) {
         if (e->browser && e->browser->GetHost()) {
           CefWindowInfo wi;
@@ -2495,6 +2641,9 @@ void KajoBrowserWindow::OnTabBrowserClosing(uint64_t tab_id) {
 void KajoBrowserWindow::OnTabAddressChanged(uint64_t tab_id, const std::string& url) {
   if (!model_) return;
   if (url.rfind("kajo://crashed", 0) == 0) return;
+  if (url.rfind("kajo://downloads", 0) == 0) {
+    downloads_unseen_complete_ = false;
+  }
   if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
     g_free(t->uri);
     t->uri = g_strdup(url.c_str());
@@ -2631,11 +2780,85 @@ bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id, const std::stri
     } else if (act == "update_lists") {
       StartFilterListUpdates();
     }
-  } else if (base == "kajo://downloads" && act == "clear_done") {
-    downloads_.erase(
-        std::remove_if(downloads_.begin(), downloads_.end(),
-                       [](const ChromeDownloadView& d) { return d.complete || d.canceled; }),
-        downloads_.end());
+  } else if (base == "kajo://downloads") {
+    if (act == "clear_done") {
+      downloads_.erase(
+          std::remove_if(downloads_.begin(), downloads_.end(),
+                         [](const ChromeDownloadView& d) { return d.complete || d.canceled; }),
+          downloads_.end());
+      if (storage_ && !cfg_.private_mode) web_storage_clear_downloads(storage_);
+    } else if (act == "filter") {
+      const std::string f = GetQueryParam(query, "f");
+      downloads_filter_ = (f == "active" || f == "completed") ? f : "";
+    } else if (act == "search") {
+      downloads_search_query_ = GetQueryParam(query, "q");
+    } else if (act == "open_folder") {
+      const std::string p = GetQueryParam(query, "path");
+      g_autofree gchar* dir = p.empty() ? g_strdup(download_dir_.c_str()) : g_path_get_dirname(p.c_str());
+      const char* argv[] = {"kajo-files", dir, nullptr};
+      kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+    } else if (act == "open_file") {
+      const std::string p = GetQueryParam(query, "path");
+      if (!p.empty() && g_file_test(p.c_str(), G_FILE_TEST_EXISTS)) {
+        g_autofree gchar* uri = g_filename_to_uri(p.c_str(), nullptr, nullptr);
+        g_autoptr(GError) err = nullptr;
+        if (!uri || !g_app_info_launch_default_for_uri(uri, nullptr, &err)) {
+          const char* argv[] = {"xdg-open", p.c_str(), nullptr};
+          kajo_spawn_detached_argv(nullptr, argv, nullptr, nullptr);
+        }
+      }
+    } else if (act == "pause") {
+      const uint32_t did = static_cast<uint32_t>(std::strtoul(GetQueryParam(query, "id").c_str(), nullptr, 10));
+      if (auto it = download_callbacks_.find(did); it != download_callbacks_.end() && it->second) {
+        it->second->Pause();
+        for (auto& d : downloads_) { if (d.id == did) { d.paused = true; break; } }
+      }
+    } else if (act == "resume") {
+      const uint32_t did = static_cast<uint32_t>(std::strtoul(GetQueryParam(query, "id").c_str(), nullptr, 10));
+      if (auto it = download_callbacks_.find(did); it != download_callbacks_.end() && it->second) {
+        it->second->Resume();
+        for (auto& d : downloads_) { if (d.id == did) { d.paused = false; break; } }
+      }
+    } else if (act == "cancel") {
+      const uint32_t did = static_cast<uint32_t>(std::strtoul(GetQueryParam(query, "id").c_str(), nullptr, 10));
+      if (auto it = download_callbacks_.find(did); it != download_callbacks_.end() && it->second) {
+        it->second->Cancel();
+      }
+    } else if (act == "retry") {
+      const std::string target_url = GetQueryParam(query, "url");
+      if (!target_url.empty()) {
+        if (TabEntry* e = ActiveEntry()) {
+          if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StartDownload(target_url);
+        }
+      }
+    } else if (act == "remove") {
+      const uint32_t did = static_cast<uint32_t>(std::strtoul(GetQueryParam(query, "id").c_str(), nullptr, 10));
+      const int64_t db_id = std::strtoll(GetQueryParam(query, "db_id").c_str(), nullptr, 10);
+      downloads_.erase(
+          std::remove_if(downloads_.begin(), downloads_.end(),
+                         [did, db_id](const ChromeDownloadView& d) {
+                           if (did != 0 && d.id == did) return true;
+                           if (db_id > 0 && d.db_id == db_id) return true;
+                           return false;
+                         }),
+          downloads_.end());
+      if (db_id > 0 && storage_ && !cfg_.private_mode) web_storage_delete_download(storage_, db_id);
+    }
+  } else if (base == "kajo://permissions") {
+    if (act == "revoke") {
+      const std::string orig = GetQueryParam(query, "origin");
+      const std::string key = GetQueryParam(query, "key");
+      if (!orig.empty() && !key.empty() && permission_store_.Remove(orig, key)) {
+        if (!cfg_.private_mode && !permission_store_path_.empty()) {
+          permission_store_.Save(permission_store_path_);
+        }
+      }
+    } else if (act == "clear_all") {
+      permission_store_.Clear();
+      if (!cfg_.private_mode && !permission_store_path_.empty()) {
+        permission_store_.Save(permission_store_path_);
+      }
+    }
   } else if (base == "kajo://crashed") {
     if (act == "close") {
       CefRefPtr<KajoBrowserWindow> self(this);
@@ -2754,14 +2977,37 @@ void KajoBrowserWindow::OnTabDownloadUpdated(uint64_t tab_id,
     }
   }
   bool found = false;
+  bool became_complete = false;
+  ChromeDownloadView* target_ptr = nullptr;
   for (auto& existing : downloads_) {
-    if (existing.id == dl.id) {
+    if (existing.id != 0 && existing.id == dl.id) {
+      const int64_t prev_db_id = existing.db_id;
+      const bool prev_complete = existing.complete;
       existing = dl;
+      existing.db_id = prev_db_id;
+      if (!prev_complete && existing.complete) became_complete = true;
+      target_ptr = &existing;
       found = true;
       break;
     }
   }
-  if (!found) downloads_.insert(downloads_.begin(), dl);
+  if (!found) {
+    downloads_.insert(downloads_.begin(), dl);
+    target_ptr = &downloads_.front();
+    if (target_ptr->complete) became_complete = true;
+  }
+  if (target_ptr && (target_ptr->complete || target_ptr->canceled) &&
+      target_ptr->db_id == 0 && storage_ && !cfg_.private_mode && !target_ptr->filename.empty()) {
+    target_ptr->db_id = web_storage_record_download(
+        storage_, target_ptr->url.c_str(), target_ptr->filename.c_str(),
+        target_ptr->full_path.c_str(), target_ptr->received_bytes,
+        target_ptr->total_bytes, target_ptr->complete ? "complete" : "canceled");
+  }
+  if (!found && dl.in_progress && downloads_auto_open_ && overlay_mode_ != "downloads") {
+    ToggleOverlay("downloads");
+  } else if (became_complete && overlay_mode_ != "downloads") {
+    downloads_unseen_complete_ = true;
+  }
   PushStateToChrome();
 }
 

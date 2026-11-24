@@ -108,11 +108,11 @@ static const SettingsPageMeta k_page_meta[] = {
     },
     {
         "web", "12 / 13", "12 / 13 • KAJO WEB",
-        "KAJO WEB — HARDWARE-ACCELERATED BROWSER, PROFILES & SYNC",
+        "KAJO WEB — CHROMIUM BROWSER, PRIVACY & PERFORMANCE",
         "Persistent browser defaults in ~/.config/kajo/web.toml • Live hot-reload in org.kajo.Web",
-        "WEBKITGTK 6.0", "WEB.TOML",
+        "CHROMIUM / CEF", "WEB.TOML",
         { "RAIL", "GPU", "BLOCKER", "SEARCH" },
-        { "AUTOHIDE", "GPU ALWAYS", "SHIELD ON", "DDG" }
+        { "AUTOHIDE", "VA-API GPU", "SHIELD ON", "DDG" }
     },
     {
         "about", "13 / 13", "13 / 13 • ABOUT",
@@ -1042,8 +1042,8 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
                     "Kajo Mod — Amiga UADE, C64 SID & Tracker Defaults", "mod",
                     "mod uade amiga paula sid c64 residfp openmpt tracker hvsc stereo archive kajo-mod");
     append_nav_item(nav, "🌐", "Kajo Web", "WEB", NULL,
-                    "Kajo Web — Browser Rail, GPU, Ad Blocker, Profiles & Drive Sync", "web",
-                    "web browser webkit tabs rail autohide gpu hardware acceleration adblock privacy profile sync drive downloader yt-dlp ffmpeg kajo-web");
+                    "Kajo Web — Browser Rail, GPU, Ad Blocker, Permissions & Downloads", "web",
+                    "web browser chromium cef tabs rail autohide gpu vaapi hardware acceleration adblock privacy webrtc permissions downloads cookies user-agent kajo-web");
 
     /* Category 4: SYSTEM INFO */
     add_sidebar_category(nav, "SYSTEM INFO");

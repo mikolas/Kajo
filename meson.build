@@ -48,10 +48,7 @@ stilview_dep = dependency('libstilview')
 gme_dep = dependency('libgme')
 openmpt_dep = dependency('libopenmpt')
 xmp_dep = dependency('libxmp')
-webkitgtk_dep = dependency('webkitgtk-6.0', version: '>= 2.48')
-soup3_dep = dependency('libsoup-3.0')
 sqlite3_dep = dependency('sqlite3')
-secret_dep = dependency('libsecret-1')
 gcrypt_dep = dependency('libgcrypt')
 
 cpp = meson.get_compiler('cpp')
@@ -450,44 +447,6 @@ web_core_sources = files(
   'src/web/web_abp_compiler.c',
 )
 
-web_sources = files(
-  'src/web/main.c',
-  'src/web/web_profiles.c',
-  'src/web/web_storage.c',
-  'src/web/web_adblock.c',
-  'src/web/web_schemes.c',
-  'src/web/web_sync.c',
-  'src/web/web_downloads.c',
-  'src/web/web_tab.c',
-  'src/web/web_tab_rail.c',
-  'src/web/web_picker.c',
-  'src/web/web_palette.c',
-  'src/web/web_omnibar_ac.c',
-  'src/web/web_window.c',
-  'src/web/web_window_actions.c',
-  'src/web/web_window_popovers.c',
-) + web_core_sources
-
-executable(
-  'kajo-web',
-  web_sources,
-  shell_resources,
-  dependencies: [
-    gtk4_dep,
-    webkitgtk_dep,
-    soup3_dep,
-    sqlite3_dep,
-    secret_dep,
-    gcrypt_dep,
-    json_glib_dep,
-    gio_dep,
-    gio_unix_dep,
-    m_dep,
-  ],
-  link_with: kajo_core,
-  install: true,
-)
-
 if build_web_cef
   web_cef_sources = files(
     'src/web_cef/main.cc',
@@ -507,7 +466,7 @@ if build_web_cef
   ) + kajo_config_sources
 
   executable(
-    'kajo-web-cef',
+    'kajo-web',
     web_cef_sources,
     include_directories: include_directories('src'),
     cpp_args: [
@@ -1098,15 +1057,6 @@ test_web_model_exe = executable(
   build_by_default: false,
 )
 test('web-model', test_web_model_exe)
-
-test_web_adblock_exe = executable(
-  'test-web-adblock',
-  files('tests/test_web_adblock.c', 'src/web/web_abp_compiler.c'),
-  dependencies: [webkitgtk_dep, gio_dep, json_glib_dep],
-  build_by_default: false,
-)
-test('web-adblock', test_web_adblock_exe,
-  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()})
 
 if build_web_cef
   test_web_cef_adblock_exe = executable(

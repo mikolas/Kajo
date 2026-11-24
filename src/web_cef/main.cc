@@ -55,7 +55,7 @@ int main(int argc, char** argv) {
   CefMainArgs main_args(argc, argv);
 
   kajo_web::LaunchConfig cfg;
-  cfg.exe_path = (argc > 0 && argv[0]) ? argv[0] : "kajo-web-cef";
+  cfg.exe_path = (argc > 0 && argv[0]) ? argv[0] : "kajo-web";
 
   bool is_sub_process = false;
   for (int i = 1; i < argc; ++i) {
@@ -86,6 +86,7 @@ int main(int argc, char** argv) {
         cfg.initial_urls.emplace_back(a);
       }
     }
+    cfg.explicit_profile = explicit_profile;
 
     const gchar* data_base = g_get_user_data_dir();
     const gchar* cache_base = g_get_user_cache_dir();
@@ -141,6 +142,10 @@ int main(int argc, char** argv) {
           cfg.user_agent =
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
               "(KHTML, like Gecko) Version/18.2 Safari/605.1.15";
+        } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CHROME_LINUX) {
+          cfg.user_agent =
+              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36";
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CUSTOM &&
                    wcfg->user_agent_custom && wcfg->user_agent_custom[0] != '\0') {
           cfg.user_agent = wcfg->user_agent_custom;

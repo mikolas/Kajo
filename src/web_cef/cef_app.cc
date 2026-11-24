@@ -197,6 +197,11 @@ void KajoCefApp::OnBeforeCommandLineProcessing(const CefString& process_type,
               "user-agent",
               "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
               "(KHTML, like Gecko) Version/18.2 Safari/605.1.15");
+        } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CHROME_LINUX) {
+          command_line->AppendSwitchWithValue(
+              "user-agent",
+              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36");
         } else if (wcfg->user_agent_preset == KAJO_WEB_UA_CUSTOM &&
                    wcfg->user_agent_custom && wcfg->user_agent_custom[0] != '\0') {
           command_line->AppendSwitchWithValue("user-agent", wcfg->user_agent_custom);

@@ -31,12 +31,20 @@ LoadedUserScripts LoadUserScriptsFromDir(const std::string& scripts_dir);
 /* Persists site permission grants/denials in JSON ("origin|perm_key": "allow"|"deny"). */
 class PermissionStore {
 public:
+  struct Entry {
+    std::string origin;
+    std::string perm_key;
+    bool allow = false;
+  };
+
   bool Load(const std::string& filepath);
   bool Save(const std::string& filepath) const;
 
   /* Returns 1 if allowed, -1 if denied, 0 if not stored (ask). */
   int Lookup(const std::string& origin, const std::string& perm_key) const;
   void Set(const std::string& origin, const std::string& perm_key, bool allow);
+  bool Remove(const std::string& origin, const std::string& perm_key);
+  std::vector<Entry> ListEntries() const;
   void Clear();
   size_t Size() const { return entries_.size(); }
 
@@ -47,7 +55,11 @@ private:
 
 /* Human-readable permission label & persistence key from CEF bitmasks. */
 std::string FormatPermissionLabel(uint32_t media_perms, uint32_t perm_types);
+std::string FormatPermissionKeyLabel(const std::string& perm_key);
 std::string PermissionKey(uint32_t media_perms, uint32_t perm_types);
+
+/* Expands leading ~/ or ~ and trims whitespace. */
+std::string ExpandTildePath(const std::string& raw);
 
 /* True when |id| is a non-default slug safe for profile deletion ([a-z0-9_-]+). */
 bool IsSafeProfileSlug(const std::string& id);

@@ -240,6 +240,25 @@ void PermissionStore::Set(const std::string& origin, const std::string& perm_key
   entries_[MakeKey(origin, perm_key)] = allow;
 }
 
+bool PermissionStore::Remove(const std::string& origin, const std::string& perm_key) {
+  return entries_.erase(MakeKey(origin, perm_key)) > 0;
+}
+
+std::vector<PermissionStore::Entry> PermissionStore::ListEntries() const {
+  std::vector<Entry> out;
+  out.reserve(entries_.size());
+  for (const auto& kv : entries_) {
+    size_t bar = kv.first.rfind('|');
+    if (bar == std::string::npos) continue;
+    Entry e;
+    e.origin = kv.first.substr(0, bar);
+    e.perm_key = kv.first.substr(bar + 1);
+    e.allow = kv.second;
+    out.push_back(std::move(e));
+  }
+  return out;
+}
+
 void PermissionStore::Clear() {
   entries_.clear();
 }
@@ -284,6 +303,32 @@ std::string PermissionKey(uint32_t media_perms, uint32_t perm_types) {
   std::ostringstream o;
   o << "m" << media_perms << "_p" << perm_types;
   return o.str();
+}
+
+std::string FormatPermissionKeyLabel(const std::string& perm_key) {
+  if (perm_key.size() < 4 || perm_key[0] != 'm') return "Site Permission";
+  size_t sep = perm_key.find("_p");
+  if (sep == std::string::npos) return "Site Permission";
+  uint32_t media_perms = static_cast<uint32_t>(std::strtoul(perm_key.c_str() + 1, nullptr, 10));
+  uint32_t perm_types = static_cast<uint32_t>(std::strtoul(perm_key.c_str() + sep + 2, nullptr, 10));
+  return FormatPermissionLabel(media_perms, perm_types);
+}
+
+std::string ExpandTildePath(const std::string& raw) {
+  size_t start = 0;
+  while (start < raw.size() && std::isspace(static_cast<unsigned char>(raw[start]))) ++start;
+  size_t end = raw.size();
+  while (end > start && std::isspace(static_cast<unsigned char>(raw[end - 1]))) --end;
+  std::string s = raw.substr(start, end - start);
+  if (s.empty()) return "";
+  const gchar* home = g_get_home_dir();
+  if (!home) return s;
+  if (s == "~") return std::string(home);
+  if (s.rfind("~/", 0) == 0) {
+    g_autofree gchar* joined = g_build_filename(home, s.c_str() + 2, nullptr);
+    return joined ? std::string(joined) : s;
+  }
+  return s;
 }
 
 bool IsSafeProfileSlug(const std::string& id) {

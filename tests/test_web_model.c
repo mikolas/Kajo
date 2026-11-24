@@ -398,6 +398,26 @@ test_storage_history_and_delete(void)
     g_autoptr(GPtrArray) after_clr = web_storage_search_history(st, NULL, 20);
     g_assert_cmpuint(after_clr->len, ==, 0);
 
+    gint64 d1 = web_storage_record_download(st, "https://example.com/a.iso", "a.iso", "/tmp/a.iso", 1024, 1024, "complete");
+    gint64 d2 = web_storage_record_download(st, "https://example.com/b.tar", "b.tar", "/tmp/b.tar", 512, 2048, "canceled");
+    g_assert_cmpint(d1, >, 0);
+    g_assert_cmpint(d2, >, d1);
+    g_autoptr(GPtrArray) dls = web_storage_list_downloads(st, 20);
+    g_assert_cmpuint(dls->len, ==, 2);
+    const KajoWebDownloadRecord *first = g_ptr_array_index(dls, 0);
+    g_assert_cmpint(first->id, ==, d2);
+    g_assert_cmpstr(first->filename, ==, "b.tar");
+    g_assert_cmpstr(first->state, ==, "canceled");
+
+    web_storage_delete_download(st, d2);
+    g_autoptr(GPtrArray) dls_after_del = web_storage_list_downloads(st, 20);
+    g_assert_cmpuint(dls_after_del->len, ==, 1);
+    g_assert_cmpint(((const KajoWebDownloadRecord *)g_ptr_array_index(dls_after_del, 0))->id, ==, d1);
+
+    web_storage_clear_downloads(st);
+    g_autoptr(GPtrArray) dls_after_clr = web_storage_list_downloads(st, 20);
+    g_assert_cmpuint(dls_after_clr->len, ==, 0);
+
     web_storage_free(st);
 
     g_autofree gchar *db = g_build_filename(tmp, "history.db", NULL);

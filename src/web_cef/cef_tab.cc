@@ -110,6 +110,10 @@ void CefTabClient::SetCookiePolicy(int cookie_policy) {
   cookie_policy_.store(cookie_policy, std::memory_order_relaxed);
 }
 
+void CefTabClient::SetDevToolsEnabled(bool enabled) {
+  devtools_enabled_.store(enabled, std::memory_order_relaxed);
+}
+
 void CefTabClient::SetUserScripts(bool enabled,
                                   std::shared_ptr<const LoadedUserScripts> scripts) {
   std::lock_guard<std::mutex> lock(scripts_mu_);
@@ -532,6 +536,8 @@ void CefTabClient::OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
   dl.percent = download_item->GetPercentComplete();
   dl.received_bytes = download_item->GetReceivedBytes();
   dl.total_bytes = download_item->GetTotalBytes();
+  dl.current_speed = download_item->GetCurrentSpeed();
+  dl.updated_at_ms = g_get_real_time() / 1000;
   dl.in_progress = download_item->IsInProgress();
   dl.complete = download_item->IsComplete();
   dl.canceled = download_item->IsCanceled();
@@ -574,7 +580,9 @@ void CefTabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
   if (!target.empty()) {
     model->AddItem(CMD_KAJO_OPEN_PLAYER, "Play in kajo-player");
   }
-  model->AddItem(CMD_KAJO_INSPECT, "Inspect Element");
+  if (devtools_enabled_.load(std::memory_order_relaxed)) {
+    model->AddItem(CMD_KAJO_INSPECT, "Inspect Element");
+  }
 }
 
 bool CefTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
@@ -583,7 +591,8 @@ bool CefTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                         int command_id,
                                         EventFlags event_flags) {
   if (!params) return false;
-  if (command_id == CMD_KAJO_INSPECT && browser && browser->GetHost()) {
+  if (command_id == CMD_KAJO_INSPECT && devtools_enabled_.load(std::memory_order_relaxed) &&
+      browser && browser->GetHost()) {
     CefWindowInfo wi;
     CefBrowserSettings bs;
     CefPoint pt(params->GetXCoord(), params->GetYCoord());

@@ -76,6 +76,26 @@ static void test_permission_store_and_labels(void) {
   reloaded.Set("https://mail.example.com", nkey, false);
   g_assert_cmpint(reloaded.Lookup("https://mail.example.com/", nkey), ==, -1);
 
+  auto list = reloaded.ListEntries();
+  g_assert_cmpuint(list.size(), ==, 2);
+  const std::string klbl = FormatPermissionKeyLabel(key);
+  const std::string nlbl = FormatPermissionKeyLabel(nkey);
+  g_assert_cmpstr(klbl.c_str(), ==, "Camera & Microphone");
+  g_assert_cmpstr(nlbl.c_str(), ==, "Notifications");
+  g_assert_true(reloaded.Remove("https://mail.example.com/", nkey));
+  g_assert_cmpuint(reloaded.Size(), ==, 1);
+
+  const std::string home = g_get_home_dir() ? g_get_home_dir() : "";
+  const std::string e_empty = ExpandTildePath("");
+  const std::string e_tilde = ExpandTildePath(" ~ ");
+  const std::string e_dl = ExpandTildePath("~/Downloads");
+  const std::string e_abs = ExpandTildePath("/tmp/dl");
+  const std::string exp_dl = home.empty() ? "~/Downloads" : (home + "/Downloads");
+  g_assert_cmpstr(e_empty.c_str(), ==, "");
+  g_assert_cmpstr(e_tilde.c_str(), ==, home.c_str());
+  g_assert_cmpstr(e_dl.c_str(), ==, exp_dl.c_str());
+  g_assert_cmpstr(e_abs.c_str(), ==, "/tmp/dl");
+
   g_unlink(path);
   g_rmdir(tmp_dir);
 }
