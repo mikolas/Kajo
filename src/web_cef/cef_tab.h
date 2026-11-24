@@ -84,7 +84,9 @@ class CefTabClient : public CefClient,
                      public CefContextMenuHandler,
                      public CefFocusHandler {
 public:
-  CefTabClient(uint64_t tab_id, CefAdblockEngine* adblock, TabCallbacks* callbacks);
+  CefTabClient(uint64_t tab_id,
+               std::shared_ptr<CefAdblockEngine> adblock,
+               TabCallbacks* callbacks);
 
   void DetachCallbacks();
   void SetHttpsOnly(bool https_only);
@@ -255,11 +257,12 @@ private:
   TabCallbacks* GetCallbacks();
 
   uint64_t tab_id_;
-  CefAdblockEngine* adblock_;
+  std::shared_ptr<CefAdblockEngine> adblock_;
   std::mutex cb_mu_;
   std::mutex url_mu_;
   std::mutex scripts_mu_;
   TabCallbacks* callbacks_;
+  std::atomic<bool> detached_{false};
   std::atomic<bool> https_only_{false};
   std::atomic<int> cookie_policy_{0};
   bool user_scripts_enabled_ = false;

@@ -54,8 +54,8 @@ public:
 
 private:
   LaunchConfig cfg_;
-  std::unique_ptr<CefAdblockEngine> adblock_;
-  std::unique_ptr<ChromeStateStore> store_;
+  std::shared_ptr<CefAdblockEngine> adblock_;
+  std::shared_ptr<ChromeStateStore> store_;
   CefRefPtr<CefMessageRouterRendererSide> renderer_router_;
   CefRefPtr<KajoBrowserWindow> main_window_;
 

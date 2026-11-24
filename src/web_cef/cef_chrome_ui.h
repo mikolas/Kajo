@@ -2,6 +2,7 @@
 #define KAJO_WEB_CEF_CHROME_UI_H
 
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -196,7 +197,7 @@ std::string HtmlEscape(const std::string& s);
 
 /* Registers kajo-chrome:// and kajo:// scheme handlers on a request context. */
 void RegisterKajoSchemeHandlers(CefRefPtr<CefRequestContext> ctx,
-                                ChromeStateStore* store);
+                                std::shared_ptr<ChromeStateStore> store);
 
 /* Builds custom scheme privileges for CefApp::OnRegisterCustomSchemes. */
 void RegisterKajoCustomSchemes(CefRawPtr<CefSchemeRegistrar> registrar);

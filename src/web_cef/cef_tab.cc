@@ -87,11 +87,12 @@ std::string LoadErrorPageHtml(const std::string& url,
 }  // namespace
 
 CefTabClient::CefTabClient(uint64_t tab_id,
-                           CefAdblockEngine* adblock,
+                           std::shared_ptr<CefAdblockEngine> adblock,
                            TabCallbacks* callbacks)
-    : tab_id_(tab_id), adblock_(adblock), callbacks_(callbacks) {}
+    : tab_id_(tab_id), adblock_(std::move(adblock)), callbacks_(callbacks) {}
 
 void CefTabClient::DetachCallbacks() {
+  detached_.store(true, std::memory_order_release);
   std::lock_guard<std::mutex> lock(cb_mu_);
   callbacks_ = nullptr;
 }
@@ -354,6 +355,7 @@ CefRefPtr<CefCookieAccessFilter> CefTabClient::GetCookieAccessFilter(
     CefRefPtr<CefFrame> frame,
     CefRefPtr<CefRequest> request) {
   CEF_REQUIRE_IO_THREAD();
+  if (detached_.load(std::memory_order_acquire)) return nullptr;
   if (cookie_policy_.load(std::memory_order_relaxed) == KAJO_WEB_COOKIES_ALWAYS) {
     return nullptr;
   }
@@ -365,6 +367,7 @@ bool CefTabClient::CanSendCookie(CefRefPtr<CefBrowser> browser,
                                  CefRefPtr<CefRequest> request,
                                  const CefCookie& cookie) {
   CEF_REQUIRE_IO_THREAD();
+  if (detached_.load(std::memory_order_acquire)) return true;
   const int policy = cookie_policy_.load(std::memory_order_relaxed);
   if (policy == KAJO_WEB_COOKIES_NEVER) return false;
   if (policy == KAJO_WEB_COOKIES_ALWAYS || !request) return true;
@@ -384,6 +387,7 @@ bool CefTabClient::CanSaveCookie(CefRefPtr<CefBrowser> browser,
                                  CefRefPtr<CefResponse> response,
                                  const CefCookie& cookie) {
   CEF_REQUIRE_IO_THREAD();
+  if (detached_.load(std::memory_order_acquire)) return true;
   return CanSendCookie(browser, frame, request, cookie);
 }
 
@@ -430,7 +434,7 @@ CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
     CefRefPtr<CefRequest> request,
     CefRefPtr<CefCallback> callback) {
   CEF_REQUIRE_IO_THREAD();
-  if (!request) return RV_CONTINUE;
+  if (detached_.load(std::memory_order_acquire) || !request) return RV_CONTINUE;
 
   const std::string url = request->GetURL().ToString();
   if (https_only_.load(std::memory_order_relaxed) && url.rfind("http://", 0) == 0 &&
@@ -456,10 +460,12 @@ CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
     ResourceTypeMask rt = MapCefResourceType(request->GetResourceType());
     if (adblock_->ShouldBlock(url, first_party, rt)) {
       adblock_->RecordBlockedForTab(static_cast<int>(tab_id_));
-      CefRefPtr<CefTabClient> self(this);
-      CefPostTask(TID_UI, new UiClosureTask([self]() {
-        if (TabCallbacks* cb = self->GetCallbacks()) cb->OnTabBlockedChanged(self->tab_id_);
-      }));
+      if (!detached_.load(std::memory_order_acquire)) {
+        CefRefPtr<CefTabClient> self(this);
+        CefPostTask(TID_UI, new UiClosureTask([self]() {
+          if (TabCallbacks* cb = self->GetCallbacks()) cb->OnTabBlockedChanged(self->tab_id_);
+        }));
+      }
       return RV_CANCEL;
     }
   }
@@ -471,7 +477,7 @@ bool CefTabClient::OnResourceResponse(CefRefPtr<CefBrowser> browser,
                                       CefRefPtr<CefRequest> request,
                                       CefRefPtr<CefResponse> response) {
   CEF_REQUIRE_IO_THREAD();
-  if (!request || !response) return false;
+  if (detached_.load(std::memory_order_acquire) || !request || !response) return false;
   const std::string uri = request->GetURL().ToString();
   if (uri.rfind("http://", 0) != 0 && uri.rfind("https://", 0) != 0) return false;
 
@@ -482,7 +488,7 @@ bool CefTabClient::OnResourceResponse(CefRefPtr<CefBrowser> browser,
     content_len = std::strtoll(len_str.c_str(), nullptr, 10);
   }
   KajoWebMediaKind kind = web_media_classify_resource(uri.c_str(), mime.c_str(), content_len);
-  if (kind != KAJO_MEDIA_NONE) {
+  if (kind != KAJO_MEDIA_NONE && !detached_.load(std::memory_order_acquire)) {
     const char* kind_str = "VIDEO";
     if (kind == KAJO_MEDIA_HLS) kind_str = "HLS";
     else if (kind == KAJO_MEDIA_DASH) kind_str = "DASH";

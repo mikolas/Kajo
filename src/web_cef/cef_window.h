@@ -53,8 +53,8 @@ class KajoBrowserWindow : public CefWindowDelegate,
                           public TabCallbacks {
 public:
   KajoBrowserWindow(const LaunchConfig& cfg,
-                    CefAdblockEngine* adblock,
-                    ChromeStateStore* store,
+                    std::shared_ptr<CefAdblockEngine> adblock,
+                    std::shared_ptr<ChromeStateStore> store,
                     CefRefPtr<CefRequestContext> request_context);
   ~KajoBrowserWindow() override;
 
@@ -208,8 +208,8 @@ private:
   TabEntry* ActiveEntry();
 
   LaunchConfig cfg_;
-  CefAdblockEngine* adblock_;
-  ChromeStateStore* store_;
+  std::shared_ptr<CefAdblockEngine> adblock_;
+  std::shared_ptr<ChromeStateStore> store_;
   CefRefPtr<CefRequestContext> request_context_;
 
   KajoWebModel* model_ = nullptr;

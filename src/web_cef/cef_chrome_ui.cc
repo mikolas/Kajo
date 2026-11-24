@@ -2550,14 +2550,21 @@ bool ChromeStateStore::RenderKajoPage(const std::string& url,
 
 class MemoryResourceHandler : public CefResourceHandler {
 public:
-  MemoryResourceHandler(ChromeStateStore* store, bool is_chrome_ui)
-      : store_(store), is_chrome_ui_(is_chrome_ui) {}
+  MemoryResourceHandler(std::shared_ptr<ChromeStateStore> store, bool is_chrome_ui)
+      : store_(std::move(store)), is_chrome_ui_(is_chrome_ui) {}
 
   bool Open(CefRefPtr<CefRequest> request,
             bool& handle_request,
             CefRefPtr<CefCallback> callback) override {
     handle_request = true;
     const std::string url = request->GetURL().ToString();
+    if (!store_) {
+      status_code_ = 503;
+      mime_ = "text/plain";
+      data_ = "Unavailable";
+      offset_ = 0;
+      return true;
+    }
     bool ok = is_chrome_ui_
                   ? store_->RenderChromeAsset(url, &data_, &mime_)
                   : store_->RenderKajoPage(url, &data_, &mime_);
@@ -2603,7 +2610,7 @@ public:
   void Cancel() override {}
 
 private:
-  ChromeStateStore* store_;
+  std::shared_ptr<ChromeStateStore> store_;
   bool is_chrome_ui_;
   std::string data_;
   std::string mime_ = "text/html";
@@ -2615,8 +2622,8 @@ private:
 
 class KajoSchemeHandlerFactory : public CefSchemeHandlerFactory {
 public:
-  KajoSchemeHandlerFactory(ChromeStateStore* store, bool is_chrome_ui)
-      : store_(store), is_chrome_ui_(is_chrome_ui) {}
+  KajoSchemeHandlerFactory(std::shared_ptr<ChromeStateStore> store, bool is_chrome_ui)
+      : store_(std::move(store)), is_chrome_ui_(is_chrome_ui) {}
 
   CefRefPtr<CefResourceHandler> Create(CefRefPtr<CefBrowser> browser,
                                        CefRefPtr<CefFrame> frame,
@@ -2626,14 +2633,14 @@ public:
   }
 
 private:
-  ChromeStateStore* store_;
+  std::shared_ptr<ChromeStateStore> store_;
   bool is_chrome_ui_;
 
   IMPLEMENT_REFCOUNTING(KajoSchemeHandlerFactory);
 };
 
 void RegisterKajoSchemeHandlers(CefRefPtr<CefRequestContext> ctx,
-                                ChromeStateStore* store) {
+                                std::shared_ptr<ChromeStateStore> store) {
   if (!ctx || !store) return;
   ctx->RegisterSchemeHandlerFactory("kajo-chrome", "", new KajoSchemeHandlerFactory(store, true));
   ctx->RegisterSchemeHandlerFactory("kajo", "", new KajoSchemeHandlerFactory(store, false));

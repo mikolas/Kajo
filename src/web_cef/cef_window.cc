@@ -256,12 +256,12 @@ private:
 }  // namespace
 
 KajoBrowserWindow::KajoBrowserWindow(const LaunchConfig& cfg,
-                                     CefAdblockEngine* adblock,
-                                     ChromeStateStore* store,
+                                     std::shared_ptr<CefAdblockEngine> adblock,
+                                     std::shared_ptr<ChromeStateStore> store,
                                      CefRefPtr<CefRequestContext> request_context)
     : cfg_(cfg),
-      adblock_(adblock),
-      store_(store),
+      adblock_(std::move(adblock)),
+      store_(std::move(store)),
       request_context_(std::move(request_context)) {
   CefMessageRouterConfig rc;
   router_ = CefMessageRouterBrowserSide::Create(rc);
@@ -311,24 +311,6 @@ void KajoBrowserWindow::InitBackend() {
     adblock_->ReloadFromDisk(adblock_custom_rules_path_);
   }
   RefreshStorageCache();
-
-  if (KajoConfigStore* cs = kajo_config_store_get_default()) {
-    CefRefPtr<KajoBrowserWindow> self(this);
-    auto* weak_holder = new CefRefPtr<KajoBrowserWindow>(self);
-    config_sub_id_ = kajo_config_store_subscribe(
-        cs,
-        static_cast<KajoConfigDomain>(KAJO_CONFIG_DOMAIN_WEB | KAJO_CONFIG_DOMAIN_THEME),
-        [](KajoConfigStore*, KajoConfigDomain, gpointer ud) {
-          auto* ref = static_cast<CefRefPtr<KajoBrowserWindow>*>(ud);
-          if (!ref || !(*ref)) return;
-          CefRefPtr<KajoBrowserWindow> w = *ref;
-          CefPostTask(TID_UI, new UiTask([w]() { w->OnConfigStoreChanged(); }));
-        },
-        weak_holder,
-        [](gpointer ud) {
-          delete static_cast<CefRefPtr<KajoBrowserWindow>*>(ud);
-        });
-  }
 }
 
 void KajoBrowserWindow::OnConfigStoreChanged() {
@@ -343,7 +325,7 @@ void KajoBrowserWindow::OnConfigStoreChanged() {
   }
   if (adblock_ && adblock_custom_rules_path_ != prev_custom_rules) {
     CefRefPtr<KajoBrowserWindow> self(this);
-    CefAdblockEngine* eng = adblock_;
+    std::shared_ptr<CefAdblockEngine> eng = adblock_;
     std::string custom_path = adblock_custom_rules_path_;
     CefPostTask(TID_FILE_USER_VISIBLE, new UiTask([self, eng, custom_path]() {
       eng->ReloadFromDisk(custom_path);
@@ -525,6 +507,25 @@ std::string KajoBrowserWindow::DefaultNewTabUrl() const {
 
 void KajoBrowserWindow::ShowWindow() {
   CEF_REQUIRE_UI_THREAD();
+  if (config_sub_id_ == 0) {
+    if (KajoConfigStore* cs = kajo_config_store_get_default()) {
+      CefRefPtr<KajoBrowserWindow> self(this);
+      auto* weak_holder = new CefRefPtr<KajoBrowserWindow>(self);
+      config_sub_id_ = kajo_config_store_subscribe(
+          cs,
+          static_cast<KajoConfigDomain>(KAJO_CONFIG_DOMAIN_WEB | KAJO_CONFIG_DOMAIN_THEME),
+          [](KajoConfigStore*, KajoConfigDomain, gpointer ud) {
+            auto* ref = static_cast<CefRefPtr<KajoBrowserWindow>*>(ud);
+            if (!ref || !(*ref)) return;
+            CefRefPtr<KajoBrowserWindow> w = *ref;
+            CefPostTask(TID_UI, new UiTask([w]() { w->OnConfigStoreChanged(); }));
+          },
+          weak_holder,
+          [](gpointer ud) {
+            delete static_cast<CefRefPtr<KajoBrowserWindow>*>(ud);
+          });
+    }
+  }
   PushStateImmediate();
   window_ = CefWindow::CreateTopLevelWindow(this);
 }
@@ -877,6 +878,7 @@ void KajoBrowserWindow::OnWindowClosing(CefRefPtr<CefWindow> window) {
   active_filter_reqs_.clear();
   PersistSession();
   if (request_context_) {
+    request_context_->ClearSchemeHandlerFactories();
     if (CefRefPtr<CefCookieManager> cm = request_context_->GetCookieManager(nullptr)) {
       cm->FlushStore(nullptr);
     }
@@ -1510,12 +1512,12 @@ void KajoBrowserWindow::HandleFilterListDownloadComplete(const std::string& id,
     filter_update_status_ = "Compiling filter lists...";
     PushStateToChrome();
     CefRefPtr<KajoBrowserWindow> self(this);
-    CefAdblockEngine* eng = adblock_;
+    std::shared_ptr<CefAdblockEngine> eng = adblock_;
     std::string custom_path = adblock_custom_rules_path_;
     size_t ok_cnt = filter_updates_ok_;
     size_t fail_cnt = filter_updates_failed_;
     CefPostTask(TID_FILE_USER_VISIBLE, new UiTask([self, eng, custom_path, ok_cnt, fail_cnt]() {
-      eng->ReloadFromDisk(custom_path);
+      if (eng) eng->ReloadFromDisk(custom_path);
       CefPostTask(TID_UI, new UiTask([self, ok_cnt, fail_cnt]() {
         if (!self->closing_) self->FinishFilterListReloadOnUi(ok_cnt, fail_cnt);
       }));

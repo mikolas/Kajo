@@ -253,23 +253,21 @@ void KajoCefApp::OnBeforeCommandLineProcessing(const CefString& process_type,
 void KajoCefApp::OnContextInitialized() {
   CEF_REQUIRE_UI_THREAD();
 
-  adblock_ = std::make_unique<CefAdblockEngine>();
+  adblock_ = std::make_shared<CefAdblockEngine>();
   adblock_->SetDirectories(cfg_.cache_dir, cfg_.data_dir);
   adblock_->ReloadFromDisk();
 
-  store_ = std::make_unique<ChromeStateStore>();
+  store_ = std::make_shared<ChromeStateStore>();
 
   CefRefPtr<CefRequestContext> ctx = CefRequestContext::GetGlobalContext();
-  RegisterKajoSchemeHandlers(ctx, store_.get());
+  RegisterKajoSchemeHandlers(ctx, store_);
 
-  main_window_ = new KajoBrowserWindow(cfg_, adblock_.get(), store_.get(), ctx);
+  main_window_ = new KajoBrowserWindow(cfg_, adblock_, store_, ctx);
   main_window_->ShowWindow();
 }
 
 void KajoCefApp::ShutdownRelease() {
   main_window_ = nullptr;
-  store_.reset();
-  adblock_.reset();
 }
 
 void KajoCefApp::OnWebKitInitialized() {
