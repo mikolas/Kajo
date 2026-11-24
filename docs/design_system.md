@@ -1,7 +1,7 @@
 # Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
-**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-web` (`org.kajo.Web`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-viewer`, `kajo-monitor`, `kajo-capture`)  
+**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-web` (`org.kajo.Web`), `kajo-viewer` (`org.kajo.Viewer`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-monitor`, `kajo-capture`)  
 **Interactive Reference:** [`docs/ui-gallery.html`](file:///home/mikolas/src/Kajo/docs/ui-gallery.html)  
 **Master Stylesheet:** [`data/defaults/style.css`](file:///home/mikolas/src/Kajo/data/defaults/style.css)
 
@@ -271,7 +271,6 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Left or right vertical rail starting cleanly at `y = 0` with `48px`-default compact rail (`ui_font_size_px`-scaled), fixed icon slots (live spinner / site favicon / domain monogram badge + audio/mute dot), pinned favicon tiles, collapsible accent-bar groups, grayed-out dashed favicons + `· zzz` badge on sleeping/lazy-restored tabs, drag-to-reorder, and a single-row footer (`+ NEW TAB`, reopen/palette/mode).
 - **Aero Popovers, Command Palette & Built-In `kajo://` Pages (`src/web_cef/cef_chrome_ui.cc`):**
   - Shield (per-site allowlist + `kajo://adblock`), **Downloads** (active progress bars, speed/MB, Pause/Resume/Cancel, Open File/Folder, plus `kajo://downloads`), and **Profile Switcher** popovers follow Kajo's 3-zone Aero + Metro geometry inside `overlay.html`, alongside inline `Ctrl+F` Find Bar, `Ctrl+K` Command & Tab Palette, Startup Profile Picker, and themed internal pages (`kajo://newtab`, `kajo://history`, `kajo://bookmarks`, `kajo://adblock`, `kajo://permissions`, `kajo://downloads`, `kajo://gpu`, `kajo://crashed`, `kajo://about`).
-  - Aero Popovers, Command Palette & Built-In `kajo://` Pages (`src/web_cef/cef_chrome_ui.cc`): ...
   - Specification: [`docs/spec_kajo_web.md`](file:///home/mikolas/src/Kajo/docs/spec_kajo_web.md).
 
 ### 4.12 Kajo Viewer (`kajo-viewer`) Document & Image Chrome

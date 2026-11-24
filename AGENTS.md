@@ -1,6 +1,6 @@
 # AGENTS.md — Kajo Desktop Suite Engineering & AI Agent Rules
 
-This document is the authoritative engineering manual for AI coding assistants working on the **Kajo Application Suite & Desktop Environment** (`kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-settings`, `kajo-greeter`). Follow every rule strictly to maximize development velocity and maintain zero-warning, zero-regression quality.
+This document is the authoritative engineering manual for AI coding assistants working on the **Kajo Application Suite & Desktop Environment** (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, `kajo-viewer`, `kajo-settings`, `kajo-greeter`). Follow every rule strictly to maximize development velocity and maintain zero-warning, zero-regression quality.
 
 ---
 
@@ -42,6 +42,7 @@ This document is the authoritative engineering manual for AI coding assistants w
 | **`kajo-player`** | `org.kajo.Player` | *(Beta)* Hardware-accelerated `libmpv` + `GtkGLArea` video/audio player (`src/player/`) with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-step, chapters, fullscreen bottom-edge overlay HUD, and MPRIS2 D-Bus provider. |
 | **`kajo-mod`** | `org.kajo.Mod` | *(Beta)* 5-tier retro Amiga, C64 SID & tracker player (`src/mod/`, `libuade`, `libsidplayfp`/`reSIDfp`, `libgme`, `libopenmpt`, `libxmp`) with hardware filter controls, HVSC STIL lookup, `.lha`/`.zip` extraction, and 60 FPS oscilloscope/FFT. |
 | **`kajo-web`** | `org.kajo.Web` | *(Beta)* Chromium/CEF Alloy Views browser (`src/web_cef/` + `src/web/` core) with native Wayland GPU + VA-API, `kajo-chrome://ui/*` chrome, vertical tab rail (`autohide`/`compact`/`pinned`), isolated multi-profiles + Private mode, IO-thread ABP/cosmetic adblock, idle tab suspension, always-visible Downloads popout + `kajo://downloads`, and `kajo://permissions`. |
+| **`kajo-viewer`** | `org.kajo.Viewer` | *(Beta)* Strictly read-only PDF, Markdown (+ Cairo Mermaid) & Image viewer (`src/viewer/`) sharing Poppler + `IdeMarkdownView` cores with `1P`/`2P SPREAD` PDF (`PAPER`/`SEPIA`/`DARK`, outline/thumbnails, `Ctrl+F` highlights, encrypted unlock), live-monitored Markdown + Heading TOC + `RAW SOURCE`, and `glycin-gtk4-2`/`librsvg-2.0`/`libexif` pan-zoom images + filmstrip. |
 | **`kajo-greeter`** | `org.kajo.greeter` | Native `greetd` Wayland login greeter (`src/greeter/`) with PAM `--test` mode and multi-monitor `kajo-comp` / Niri / Cage support. |
 
 ---

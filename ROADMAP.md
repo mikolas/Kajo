@@ -18,6 +18,7 @@ All Kajo components and standalone applications share a unified design language:
 
 | Component / Binary | Status | Specification / Notes |
 | :--- | :---: | :--- |
+| **`kajo-comp` (`org.kajo.comp`)** | ✅ Done | [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) — Scrollable-tiling Wayland compositor (`wlroots-0.20` + Vulkan `kajo-0.20.2-fx10`), analytical springs, workspace strip, zoomed overview (`Mod+O`), MRU `Alt+Tab` switcher, screenshot UI, Dual-Kawase glass, SDF shadows, transitions & JSON IPC |
 | **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 22 widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, `org.freedesktop.impl.portal.Settings` backend, App Launcher, Session Lock & Screensaver |
 | **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 13 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Surface/Glass Presets + opt-in revertible GTK/Qt external theming, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Kajo Web, Compositor & Effects, About) with responsive 3-tier column reflow |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
@@ -66,9 +67,9 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.3 [PLANNED] Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
-- Dedicated full-window PDF, EPUB, and high-resolution image viewer sharing the Poppler + Cairo rendering pipeline from `kajo-files`.
-- Features continuous/two-page PDF scrolling, document outline/bookmarks sidebar, full-text search, zoom presets, and image rotation/cropping.
+### 3.3 [DONE — BETA] Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
+- Implemented in `src/viewer/` ([`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md), [`docs/kajo-viewer-mockup.html`](docs/kajo-viewer-mockup.html), [`data/icons/kajo-viewer.svg`](data/icons/kajo-viewer.svg)) as a **strictly read-only** Aero + Metro viewer sharing Poppler + Cairo rendering (`src/common/pdf_render.c`) and `IdeMarkdownView` + Cairo Mermaid (`src/ide/ide_markdown.c`).
+- Includes continuous `1P`/`2P SPREAD` PDF browsing (`PAPER`/`SEPIA`/`DARK`, `OUTLINE`/`PAGES` thumbnails, `Ctrl+F` search highlights, encrypted PDF unlock), live-monitored Markdown + Heading Outline + `RAW SOURCE`, and `glycin-gtk4-2`/`librsvg-2.0`/`libexif` pan-zoom images + collapsible filmstrip. (EPUB remains out of scope.)
 
 ---
 
