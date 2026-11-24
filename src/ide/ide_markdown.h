@@ -1,7 +1,6 @@
 #ifndef KAJO_IDE_MARKDOWN_H
 #define KAJO_IDE_MARKDOWN_H
 
-#include "ide_buffer.h"
 #include "ide_mermaid.h"
 #include <gtk/gtk.h>
 
@@ -45,6 +44,15 @@ IdeMarkdownEmbedKind ide_markdown_classify_asset(const char *path_or_ref);
 gboolean             ide_markdown_is_table_separator_row(const char *line);
 gboolean             ide_markdown_is_markdown_path(const char *path_or_title);
 
+typedef struct {
+  guint level;
+  guint line_1based;
+  char *title;
+} IdeMarkdownHeading;
+
+/* Pure heading outline extractor (GArray of IdeMarkdownHeading, caller frees via g_array_unref) */
+GArray          *ide_markdown_extract_headings(const char *markdown_text);
+
 /* Full Graphical Markdown, Embedded Media/Image/PDF/Archive & Cairo Vector Mermaid View */
 IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
                                        IdeMarkdownBufferEditCb edit_cb,
@@ -54,9 +62,15 @@ void             ide_markdown_view_set_open_file_cb(IdeMarkdownView      *md,
 void             ide_markdown_view_set_context(IdeMarkdownView *md,
                                                const char      *doc_file_path,
                                                const char      *workspace_root);
+void             ide_markdown_view_set_read_only(IdeMarkdownView *md,
+                                                 gboolean         read_only);
+void             ide_markdown_view_set_show_header_bar(IdeMarkdownView *md,
+                                                       gboolean         show);
 void             ide_markdown_view_free(IdeMarkdownView *md);
 
 GtkWidget       *ide_markdown_view_get_widget(IdeMarkdownView *md);
+GtkWidget       *ide_markdown_view_get_scroll_window(IdeMarkdownView *md);
+GtkWidget       *ide_markdown_view_get_doc_box(IdeMarkdownView *md);
 const char      *ide_markdown_view_get_doc_path(const IdeMarkdownView *md);
 void             ide_markdown_view_render(IdeMarkdownView *md,
                                           const char      *markdown_text);
@@ -64,6 +78,9 @@ void             ide_markdown_view_show_notice(IdeMarkdownView *md,
                                                const char      *notice_text);
 void             ide_markdown_view_sync_scroll(IdeMarkdownView *md,
                                                double           scroll_fraction);
+void             ide_markdown_view_scroll_to_line(IdeMarkdownView *md,
+                                                  guint            line_1based,
+                                                  guint            total_lines);
 
 G_END_DECLS
 

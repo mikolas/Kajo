@@ -1,0 +1,337 @@
+/* ─── Kajo Viewer (org.kajo.Viewer) — Aero + Metro PDF / Markdown / Image Styles ─── */
+
+window.shell-viewer-window .viewer-hdr-filename {
+    font-size: 12px;
+    font-weight: 600;
+    color: @metro-fg-bright;
+}
+
+window.shell-viewer-window .settings-close-btn {
+    color: @metro-fg-bright;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+window.shell-viewer-window .settings-close-btn:hover {
+    background-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window .viewer-mode-ribbon {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 5px 8px;
+    min-height: 36px;
+}
+
+window.shell-viewer-window .viewer-ribbon-sep {
+    background-color: @metro-border;
+    min-width: 1px;
+    min-height: 18px;
+    margin: 0 2px;
+}
+
+window.shell-viewer-window button.viewer-tool-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    box-shadow: none;
+    color: @metro-fg-body;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    min-height: 24px;
+}
+
+window.shell-viewer-window button.viewer-tool-btn:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window button.viewer-tool-btn.active {
+    background-color: alpha(@metro-accent, 0.24);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window .viewer-seg-group {
+    border: 1px solid @metro-border-strong;
+    background-color: @metro-surface-0;
+}
+
+window.shell-viewer-window button.viewer-seg-btn {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-right: 1px solid @metro-border;
+    border-radius: 0px;
+    box-shadow: none;
+    color: @metro-fg-secondary;
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 2px 8px;
+    min-height: 22px;
+}
+
+window.shell-viewer-window button.viewer-seg-btn:last-child {
+    border-right: none;
+}
+
+window.shell-viewer-window button.viewer-seg-btn:hover {
+    background-color: @metro-surface-hover;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window button.viewer-seg-btn.active {
+    background-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window entry.viewer-page-input,
+window.shell-viewer-window entry.viewer-find-input {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    box-shadow: none;
+    color: @metro-fg-primary;
+    font-size: 11px;
+    min-height: 24px;
+    padding: 0 6px;
+}
+
+window.shell-viewer-window entry.viewer-page-input:focus,
+window.shell-viewer-window entry.viewer-find-input:focus {
+    border-color: @metro-accent;
+}
+
+/* Sidebar */
+window.shell-viewer-window .viewer-sidebar {
+    background-color: @metro-surface-1;
+    border-right: 1px solid @metro-border;
+}
+
+window.shell-viewer-window .viewer-sidebar-hdr {
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
+    padding: 7px 8px;
+}
+
+window.shell-viewer-window .viewer-sidebar-title {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.7px;
+    color: @metro-fg-secondary;
+}
+
+window.shell-viewer-window .viewer-sidebar-content {
+    padding: 6px;
+}
+
+window.shell-viewer-window button.viewer-toc-item {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    border-radius: 0px;
+    box-shadow: none;
+    padding: 5px 7px;
+    color: @metro-fg-body;
+    font-size: 11px;
+}
+
+window.shell-viewer-window button.viewer-toc-item.lvl-2 {
+    color: @metro-fg-secondary;
+}
+
+window.shell-viewer-window button.viewer-toc-item.lvl-3 {
+    color: @metro-fg-muted;
+    font-size: 10.5px;
+}
+
+window.shell-viewer-window button.viewer-toc-item:hover {
+    background-color: @metro-surface-hover;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window button.viewer-toc-item.active {
+    background-color: @metro-surface-4;
+    border-left-color: @metro-accent;
+    color: @metro-fg-primary;
+    font-weight: 700;
+}
+
+window.shell-viewer-window .viewer-toc-page {
+    font-size: 10px;
+    color: @metro-fg-dim;
+}
+
+window.shell-viewer-window button.viewer-thumb-card {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    box-shadow: none;
+    padding: 6px;
+}
+
+window.shell-viewer-window button.viewer-thumb-card:hover {
+    background-color: @metro-surface-4;
+    border-color: @metro-border-strong;
+}
+
+window.shell-viewer-window button.viewer-thumb-card.active {
+    border-color: @metro-accent;
+    box-shadow: inset 3px 0 0 @metro-accent;
+}
+
+window.shell-viewer-window .viewer-thumb-preview {
+    background-color: #ffffff;
+    border: 1px solid @metro-border-strong;
+}
+
+window.shell-viewer-window .viewer-thumb-label {
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-secondary;
+}
+
+window.shell-viewer-window .viewer-meta-section {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+}
+
+window.shell-viewer-window .viewer-meta-head {
+    background-color: @metro-surface-4;
+    border-bottom: 1px solid @metro-border-subtle;
+    color: @metro-telemetry;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    padding: 5px 8px;
+}
+
+window.shell-viewer-window .viewer-meta-row {
+    border-bottom: 1px solid @metro-border-subtle;
+    padding: 4px 8px;
+}
+
+window.shell-viewer-window .viewer-meta-row:last-child {
+    border-bottom: none;
+}
+
+window.shell-viewer-window .viewer-meta-k {
+    font-size: 10.5px;
+    color: @metro-fg-muted;
+}
+
+window.shell-viewer-window .viewer-meta-v {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: @metro-fg-bright;
+}
+
+/* Inline Find / Encrypted PDF Bars */
+window.shell-viewer-window .viewer-inline-bar {
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
+    padding: 5px 10px;
+}
+
+window.shell-viewer-window .viewer-inline-bar.warn {
+    background-color: alpha(@metro-warning, 0.12);
+    border-bottom-color: alpha(@metro-warning, 0.6);
+}
+
+window.shell-viewer-window .viewer-find-tag {
+    color: @metro-telemetry;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+window.shell-viewer-window .viewer-warn-tag {
+    color: @metro-warning;
+    font-size: 11px;
+    font-weight: 700;
+}
+
+/* Recessed Canvas */
+window.shell-viewer-window .viewer-canvas-scroll,
+window.shell-viewer-window .viewer-md-raw {
+    background-color: @metro-surface-0;
+}
+
+window.shell-viewer-window .viewer-pdf-sheet {
+    border: 1px solid @metro-border-strong;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);
+}
+
+window.shell-viewer-window .viewer-filmstrip {
+    background-color: @metro-surface-2;
+    border-top: 1px solid @metro-border;
+}
+
+window.shell-viewer-window button.viewer-film-thumb {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    box-shadow: none;
+    padding: 4px 8px;
+    min-width: 110px;
+}
+
+window.shell-viewer-window button.viewer-film-thumb.active {
+    border-color: @metro-accent;
+    box-shadow: inset 0 -3px 0 @metro-accent;
+}
+
+window.shell-viewer-window .viewer-film-kind {
+    font-size: 9.5px;
+    font-weight: 700;
+    color: @metro-telemetry;
+}
+
+window.shell-viewer-window .viewer-empty-drop {
+    background-color: @metro-surface-3;
+    border: 1px dashed @metro-border-strong;
+    padding: 36px 32px;
+}
+
+window.shell-viewer-window .viewer-empty-icon {
+    font-size: 28px;
+    color: @metro-accent;
+}
+
+window.shell-viewer-window .viewer-empty-title {
+    font-size: 13px;
+    font-weight: 800;
+    color: @metro-fg-primary;
+}
+
+window.shell-viewer-window .viewer-empty-hint {
+    font-size: 11px;
+    color: @metro-fg-secondary;
+}
+
+window.shell-viewer-window .viewer-status-strip {
+    background-color: @metro-surface-3;
+    border-top: 1px solid @metro-border;
+    padding: 4px 10px;
+    min-height: 26px;
+    font-size: 10.5px;
+    color: @metro-fg-secondary;
+}
+
+window.shell-viewer-window .viewer-status-accent {
+    color: @metro-telemetry;
+    font-weight: 700;
+}

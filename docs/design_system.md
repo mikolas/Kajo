@@ -271,4 +271,13 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Left or right vertical rail starting cleanly at `y = 0` with `48px`-default compact rail (`ui_font_size_px`-scaled), fixed icon slots (live spinner / site favicon / domain monogram badge + audio/mute dot), pinned favicon tiles, collapsible accent-bar groups, grayed-out dashed favicons + `· zzz` badge on sleeping/lazy-restored tabs, drag-to-reorder, and a single-row footer (`+ NEW TAB`, reopen/palette/mode).
 - **Aero Popovers, Command Palette & Built-In `kajo://` Pages (`src/web_cef/cef_chrome_ui.cc`):**
   - Shield (per-site allowlist + `kajo://adblock`), **Downloads** (active progress bars, speed/MB, Pause/Resume/Cancel, Open File/Folder, plus `kajo://downloads`), and **Profile Switcher** popovers follow Kajo's 3-zone Aero + Metro geometry inside `overlay.html`, alongside inline `Ctrl+F` Find Bar, `Ctrl+K` Command & Tab Palette, Startup Profile Picker, and themed internal pages (`kajo://newtab`, `kajo://history`, `kajo://bookmarks`, `kajo://adblock`, `kajo://permissions`, `kajo://downloads`, `kajo://gpu`, `kajo://crashed`, `kajo://about`).
+  - Aero Popovers, Command Palette & Built-In `kajo://` Pages (`src/web_cef/cef_chrome_ui.cc`): ...
   - Specification: [`docs/spec_kajo_web.md`](file:///home/mikolas/src/Kajo/docs/spec_kajo_web.md).
+
+### 4.12 Kajo Viewer (`kajo-viewer`) Document & Image Chrome
+- **Frameless Aero + Metro Read-Only Window (`.shell-viewer-window`, `data/defaults/styles/55-viewer.css`):**
+  - 34px `GtkWindowHandle` top bar (`▤ KAJO VIEWER`, active filename, format/size `.shell-popover-badge`, `📂 OPEN`, `🗗 FLOAT / TILE`, close button).
+  - 36px **Contextual Mode Ribbon** (`.viewer-mode-ribbon`) switching controls between PDF (`1P`/`2P SPREAD`, `FIT W`/`FIT P`/`100%`, `90°`, `PAPER`/`SEPIA`/`DARK`), Markdown (`NARROW`/`COMFORT`/`FULL`, `A-`/`A+`, `RAW SOURCE`, `🔒 READ-ONLY`, `✎ OPEN IN IDE`), and Image (`PREV`/`NEXT`, `FIT`/`1:1`/`FILL`, `90°`, `FLIP`, `ALPHA`, `STRIP`, `COPY`) using `.viewer-seg-group` / `.viewer-seg-btn` and `.viewer-tool-btn` (`0px` corners).
+  - Collapsible 240px left sidebar (`.viewer-sidebar`) hosting PDF `OUTLINE` / `PAGES` thumbnails, Markdown auto-generated Heading Outline, and Image EXIF/Decoder Inspector.
+  - Opt-in inline `Ctrl+F` Find bar & Encrypted PDF unlock bar (`.viewer-inline-bar`, `.warn`), recessed `#101010` document canvas (`.viewer-canvas-scroll`), optional bottom filmstrip (`.viewer-filmstrip`), and 26px telemetry strip (`.viewer-status-strip`).
+  - Specification: [`docs/spec_kajo_viewer.md`](file:///home/mikolas/src/Kajo/docs/spec_kajo_viewer.md) & interactive mockup [`docs/kajo-viewer-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-viewer-mockup.html).

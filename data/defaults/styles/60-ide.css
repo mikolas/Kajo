@@ -33,7 +33,8 @@ window.shell-ide-window .ide-header-breadcrumb {
     background-color: rgba(16, 137, 62, 0.16);
 }
 
-window.shell-ide-window button.ide-toolbar-btn {
+window.shell-ide-window button.ide-toolbar-btn,
+window.shell-viewer-window button.ide-toolbar-btn {
     background: none;
     background-image: none;
     background-color: #1c1c1c;
@@ -47,7 +48,8 @@ window.shell-ide-window button.ide-toolbar-btn {
     color: #dcdcdc;
 }
 
-window.shell-ide-window button.ide-toolbar-btn:hover {
+window.shell-ide-window button.ide-toolbar-btn:hover,
+window.shell-viewer-window button.ide-toolbar-btn:hover {
     background-color: @metro-border-subtle;
     border-color: @metro-accent;
     color: @metro-fg-primary;
@@ -168,7 +170,8 @@ window.shell-ide-window .ide-tree-header {
     padding: 6px 12px;
 }
 
-window.shell-ide-window .ide-tree-header-title {
+window.shell-ide-window .ide-tree-header-title,
+window.shell-viewer-window .ide-tree-header-title {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 10px;
     font-weight: 700;
@@ -339,7 +342,8 @@ window.shell-ide-window .ide-minimap {
     border-left: 1px solid @metro-surface-hover;
 }
 
-window.shell-ide-window separator.ide-md-hr {
+window.shell-ide-window separator.ide-md-hr,
+window.shell-viewer-window separator.ide-md-hr {
     background-color: @metro-border;
     min-height: 1px;
     margin: 6px 0px;
@@ -559,12 +563,14 @@ window.shell-ide-window button.ide-btn-reject:hover {
 }
 
 /* Graphical Markdown & Cairo Vector Mermaid Canvas */
-window.shell-ide-window .ide-markdown-pane {
+window.shell-ide-window .ide-markdown-pane,
+window.shell-viewer-window .ide-markdown-pane {
     background-color: @metro-surface-1;
     border-left: 1px solid @metro-border;
 }
 
-window.shell-ide-window .ide-md-h1 {
+window.shell-ide-window .ide-md-h1,
+window.shell-viewer-window .ide-md-h1 {
     font-size: 20px;
     font-weight: 800;
     color: @metro-fg-primary;
@@ -572,7 +578,8 @@ window.shell-ide-window .ide-md-h1 {
     padding-bottom: 6px;
 }
 
-window.shell-ide-window .ide-md-h2 {
+window.shell-ide-window .ide-md-h2,
+window.shell-viewer-window .ide-md-h2 {
     font-size: 15px;
     font-weight: 700;
     color: @metro-fg-bright;
@@ -580,82 +587,96 @@ window.shell-ide-window .ide-md-h2 {
     padding-bottom: 4px;
 }
 
-window.shell-ide-window .ide-md-h3 {
+window.shell-ide-window .ide-md-h3,
+window.shell-viewer-window .ide-md-h3 {
     font-size: 13px;
     font-weight: 700;
     color: @metro-accent;
 }
 
-window.shell-ide-window .ide-md-h4 {
+window.shell-ide-window .ide-md-h4,
+window.shell-viewer-window .ide-md-h4 {
     font-size: 12px;
     font-weight: 700;
     color: @metro-fg-soft;
     letter-spacing: 0.5px;
 }
 
-window.shell-ide-window .ide-md-h5 {
+window.shell-ide-window .ide-md-h5,
+window.shell-viewer-window .ide-md-h5 {
     font-size: 11px;
     font-weight: 700;
     color: #9e9e9e;
     letter-spacing: 0.8px;
 }
 
-window.shell-ide-window .ide-md-list-bullet {
+window.shell-ide-window .ide-md-list-bullet,
+window.shell-viewer-window .ide-md-list-bullet {
     color: @metro-accent;
     font-family: "Fira Code", monospace;
     font-weight: 700;
     min-width: 18px;
 }
 
-window.shell-ide-window .ide-md-figure-card {
+window.shell-ide-window .ide-md-figure-card,
+window.shell-viewer-window .ide-md-figure-card {
     background-color: #0d0d0d;
 }
 
-window.shell-ide-window .ide-md-alert {
+window.shell-ide-window .ide-md-alert,
+window.shell-viewer-window .ide-md-alert {
     background-color: @metro-surface-2;
     border: 1px solid @metro-border-subtle;
     border-left: 3px solid @metro-accent;
     padding: 10px 14px;
 }
 
-window.shell-ide-window .ide-md-alert.ide-md-alert-note {
+window.shell-ide-window .ide-md-alert.ide-md-alert-note,
+window.shell-viewer-window .ide-md-alert.ide-md-alert-note {
     border-left-color: @metro-accent;
     background-color: rgba(0, 120, 212, 0.08);
 }
 
-window.shell-ide-window .ide-md-alert.ide-md-alert-tip {
+window.shell-ide-window .ide-md-alert.ide-md-alert-tip,
+window.shell-viewer-window .ide-md-alert.ide-md-alert-tip {
     border-left-color: @metro-success;
     background-color: rgba(16, 137, 62, 0.08);
 }
 
-window.shell-ide-window .ide-md-alert.ide-md-alert-important {
+window.shell-ide-window .ide-md-alert.ide-md-alert-important,
+window.shell-viewer-window .ide-md-alert.ide-md-alert-important {
     border-left-color: @metro-magenta;
     background-color: rgba(180, 0, 158, 0.08);
 }
 
-window.shell-ide-window .ide-md-alert.ide-md-alert-warning {
+window.shell-ide-window .ide-md-alert.ide-md-alert-warning,
+window.shell-viewer-window .ide-md-alert.ide-md-alert-warning {
     border-left-color: @metro-warning;
     background-color: rgba(255, 140, 0, 0.08);
 }
 
-window.shell-ide-window .ide-md-alert.ide-md-alert-caution {
+window.shell-ide-window .ide-md-alert.ide-md-alert-caution,
+window.shell-viewer-window .ide-md-alert.ide-md-alert-caution {
     border-left-color: @metro-urgent;
     background-color: rgba(232, 17, 35, 0.08);
 }
 
-window.shell-ide-window .ide-mermaid-card {
+window.shell-ide-window .ide-mermaid-card,
+window.shell-viewer-window .ide-mermaid-card {
     background-color: @metro-surface-0;
     border: 1px solid @metro-border;
     border-top: 2px solid @metro-accent;
 }
 
-window.shell-ide-window .ide-mermaid-toolbar {
+window.shell-ide-window .ide-mermaid-toolbar,
+window.shell-viewer-window .ide-mermaid-toolbar {
     background-color: @metro-surface-3;
     border-bottom: 1px solid @metro-border-subtle;
     padding: 4px 10px;
 }
 
-window.shell-ide-window .ide-md-table {
+window.shell-ide-window .ide-md-table,
+window.shell-viewer-window .ide-md-table {
     background-color: #151515;
     border: 1px solid @metro-border;
     padding: 8px 12px;

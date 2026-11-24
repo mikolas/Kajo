@@ -1,0 +1,12 @@
+[Desktop Entry]
+Name=Kajo Viewer
+Comment=Read-only PDF, Markdown, and Image Viewer for the Kajo Desktop
+Exec=kajo-viewer %U
+Icon=kajo-viewer
+Terminal=false
+Type=Application
+Categories=Graphics;Viewer;Office;GTK;
+MimeType=application/pdf;text/markdown;text/x-markdown;image/png;image/jpeg;image/webp;image/avif;image/heif;image/heic;image/jxl;image/gif;image/svg+xml;image/bmp;image/tiff;
+StartupNotify=true
+StartupWMClass=org.kajo.Viewer
+Keywords=pdf;markdown;image;viewer;svg;photo;kajo;

@@ -91,12 +91,11 @@ All files stay modular and strictly scoped (`< 1500` LOC each):
 - **Auto-Generated Heading Outline Sidebar:** Parses `#`..`####` headings (skipping fenced code blocks) into a clickable indentation-leveled sidebar outline that tracks scroll position cleanly.
 - **Live File Reload:** Watches the open `.md` file via `g_file_monitor_file()`; coalesced `150ms` debounce re-renders the view while preserving scroll fraction (`scroll_frac`) so edits in `kajo-ide` or a terminal update live.
 - **In-Viewer Relative Navigation:** Clicking a relative link (`[spec](spec_kajo_comp.md#3.1)` or `./diagram.png` or `./report.pdf`) resolves against `doc_dir` and pushes the current file + scroll position onto the `ViewerNavHistory` stack before opening the target directly inside `kajo-viewer` (`Alt+←` / `Alt+→` to navigate back/forward). External `https://` links open via `g_app_info_launch_default_for_uri()`.
-- **Reading Controls:**
+- **Reading Controls (Strictly Read-Only):**
   - **Width Segmented Group:** `[ NARROW (680) ]` `[ COMFORT (860) ]` `[ FULL ]`
   - **Typography Scale:** `[ A- ]` `100%` `[ A+ ]` (`80%..180%`, `Ctrl+=` / `Ctrl+-` / `Ctrl+0`)
-  - **Mode Toggle:** `[ VIEW ]` / `[ RAW ]` (monospace source preview for inspecting raw Markdown/frontmatter)
-  - **Checklist Policy:** Configurable in `viewer.toml` (`markdown_checklist_readonly`, default `true`) with explicit `[ 🔒 READ-ONLY ]` / `[ ☑ ALLOW EDIT ]` indicator button so accidental clicks don't modify files unasked (`AGENTS.md §8.4`).
-  - **IDE Handoff:** `[ ✎ OPEN IN IDE ]` launches `kajo-ide <file>` via shared `kajo_spawn_detached()`.
+  - **Mode Toggle:** `[ VIEW ]` / `[ RAW ]` (read-only monospace source preview for inspecting raw Markdown/frontmatter)
+  - **IDE Handoff:** `[ ✎ OPEN IN IDE ]` launches `kajo-ide <file>` via shared `kajo_spawn_detached()` when editing is desired.
 
 ---
 
@@ -163,7 +162,6 @@ Managed through `KajoConfigStore` (`KAJO_CONFIG_DOMAIN_VIEWER`):
 | `markdown_width` | `enum ("narrow" \| "comfort" \| "full") = "comfort"` | Markdown column width (`680px` / `860px` / `100%`). |
 | `markdown_font_pct` | `int (80..180) = 100` | Markdown reading font scale percentage. |
 | `markdown_live_reload` | `bool = true` | Auto-reload `.md` when modified on disk. |
-| `markdown_checklist_readonly` | `bool = true` | Protect viewed Markdown files unless user explicitly toggles edit mode. |
 | `image_checkerboard` | `bool = false` | Show alpha transparency checkerboard behind images. |
 | `image_filmstrip` | `bool = false` | Show bottom thumbnail filmstrip when browsing an image folder. |
 

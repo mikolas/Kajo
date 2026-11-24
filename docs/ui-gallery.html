@@ -2508,6 +2508,7 @@
         <a class="gallery-nav-link" href="#sec-ide-drawers"><span>12</span>IDE DRAWERS &amp; GUI MARKDOWN</a>
         <a class="gallery-nav-link" href="#sec-mod-player"><span>13</span>RETRO MUSIC DECK</a>
         <a class="gallery-nav-link" href="#sec-web-browser"><span>14</span>KAJO WEB BROWSER</a>
+        <a class="gallery-nav-link" href="#sec-viewer"><span>15</span>KAJO VIEWER</a>
       </div>
     </nav>
   </header>
@@ -5196,6 +5197,72 @@
               Shield, Downloads (<code>↓</code>), and Profile Switcher popovers in <code>kajo-chrome://ui/overlay.html</code> reuse Kajo's canonical 3-zone Aero + Metro panel structure, paired with internal <code>kajo://downloads</code> and <code>kajo://permissions</code> pages.
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ======================================================================
+         SECTION 15: KAJO VIEWER (PDF, MARKDOWN + MERMAID, IMAGES)
+         ====================================================================== -->
+    <section id="sec-viewer" class="gallery-section">
+      <div class="section-header">
+        <div>
+          <div class="section-eyebrow">15 // DOCUMENT &amp; IMAGE VIEWER</div>
+          <h2 class="section-title">Kajo Viewer Read-Only Chrome</h2>
+        </div>
+        <div class="tag-cluster">
+          <span class="gtk-class-tag" data-copy="window.shell-viewer-window">window.shell-viewer-window</span>
+          <span class="gtk-class-tag" data-copy=".viewer-mode-ribbon">.viewer-mode-ribbon</span>
+          <span class="gtk-class-tag" data-copy=".viewer-sidebar">.viewer-sidebar</span>
+          <span class="gtk-class-tag" data-copy=".viewer-status-strip">.viewer-status-strip</span>
+        </div>
+      </div>
+
+      <div class="specimen-box">
+        <div class="specimen-box-header">
+          <span class="specimen-box-title">CONTEXTUAL MODE RIBBON &amp; PAPER TONE PRESETS</span>
+          <span class="shell-popover-badge accent">READ-ONLY · ZERO EDITING</span>
+        </div>
+        <div style="border:1px solid var(--metro-accent); background:var(--surface-bg); display:flex; flex-direction:column;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:var(--surface-3); border-bottom:1px solid var(--border-struct);">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-weight:700; font-size:11px; letter-spacing:1px;">▤ KAJO VIEWER</span>
+              <span style="color:#f0f0f0; font-size:11.5px;">spec_kajo_viewer.pdf</span>
+              <span class="shell-popover-badge">PDF · 12P · 2.4 MB</span>
+            </div>
+            <div style="display:flex; gap:6px;">
+              <button class="kajo-btn">📂 OPEN</button>
+              <button class="kajo-btn">🗗 FLOAT / TILE</button>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:5px 8px; background:var(--surface-2); border-bottom:1px solid var(--border-struct); font-size:11px;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <button class="kajo-btn active">☰ SIDEBAR</button>
+              <button class="kajo-btn">◀ PREV</button>
+              <span class="shell-popover-badge">2 / 12</span>
+              <button class="kajo-btn">NEXT ▶</button>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <div class="segmented-group" style="margin:0;">
+                <button class="seg-btn active">PAPER</button>
+                <button class="seg-btn">SEPIA</button>
+                <button class="seg-btn">DARK</button>
+              </div>
+              <button class="kajo-btn">🔍 FIND</button>
+            </div>
+          </div>
+          <div style="padding:18px; background:var(--surface-0); display:flex; justify-content:center; gap:12px;">
+            <div style="width:170px; height:86px; background:#ffffff; color:#111; border:1px solid #333; padding:8px; font-size:9px; font-family:var(--font-sans);"><strong>PAPER</strong><br/>Faithful white sheet</div>
+            <div style="width:170px; height:86px; background:#f4ecd8; color:#2b2419; border:1px solid #6b5e49; padding:8px; font-size:9px; font-family:var(--font-sans);"><strong>SEPIA</strong><br/>Warm daytime tone</div>
+            <div style="width:170px; height:86px; background:#17191d; color:#dcdcdc; border:1px solid var(--metro-accent); padding:8px; font-size:9px; font-family:var(--font-sans);"><strong>DARK</strong><br/>Night luminance invert</div>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:4px 10px; background:var(--surface-3); border-top:1px solid var(--border-struct); font-size:10.5px; color:#a0a0a0;">
+            <span><strong style="color:var(--metro-telemetry);">PAGE 2 / 12</strong> · ZOOM 110% · 1P CONTINUOUS</span>
+            <span>~/docs/spec_kajo_viewer.pdf</span>
+          </div>
+        </div>
+        <div class="specimen-note">
+          Full interactive prototype: <code>docs/kajo-viewer-mockup.html</code>. Strictly read-only across PDF (<code>poppler-glib</code>), Markdown + Mermaid (shared <code>src/ide/ide_markdown.c</code>), and Images (<code>glycin-gtk4-2</code> / <code>librsvg-2.0</code> / <code>libexif</code>).
         </div>
       </div>
     </section>

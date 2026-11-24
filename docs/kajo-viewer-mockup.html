@@ -1042,7 +1042,6 @@ const state = {
   mdWidth: 'comfort',
   mdFontPct: 100,
   mdRaw: false,
-  mdEditable: false,
   mdHistoryIdx: 1,
   mdChecks: [true, true, false, false],
 
@@ -1243,7 +1242,7 @@ function renderRibbon() {
       </div>
       <div class="ribbon-right">
         <button class="tool-btn ${state.mdRaw?'active':''}" onclick="state.mdRaw=!state.mdRaw;render()">${state.mdRaw?'RENDERED':'RAW SOURCE'}</button>
-        <button class="tool-btn ${state.mdEditable?'active':''}" onclick="state.mdEditable=!state.mdEditable;render()">${state.mdEditable?'☑ EDIT CHECKS':'🔒 READ-ONLY'}</button>
+        <span class="metro-badge">🔒 READ-ONLY</span>
         <button class="tool-btn">✎ OPEN IN IDE</button>
         ${findBtn}
       </div>`;
@@ -1423,8 +1422,7 @@ GdkTexture *kajo_pdf_render_page_scaled(PopplerDocument *doc, int page_idx, doub
       'kajo-viewer M4: Glycin (AVIF/HEIF/JXL) + Librsvg crisp vector zoom'
     ].map((txt, idx) => `
       <li>
-        <span class="md-check-box ${state.mdChecks[idx]?'checked':''} ${state.mdEditable?'':'readonly'}"
-              onclick="if(state.mdEditable){state.mdChecks[${idx}]=!state.mdChecks[${idx}];render();}">
+        <span class="md-check-box ${state.mdChecks[idx]?'checked':''} readonly">
           ${state.mdChecks[idx]?'✓':''}
         </span>
         <span>${highlightText(txt)}</span>
@@ -1572,7 +1570,7 @@ function renderStatus() {
         <span class="status-accent">MARKDOWN + MERMAID</span>
         <span>WIDTH: ${state.mdWidth.toUpperCase()}</span>
         <span>FONT: ${state.mdFontPct}%</span>
-        <span>${state.mdEditable ? 'CHECKLISTS: EDITABLE' : 'READ-ONLY'}</span>
+        <span>READ-ONLY</span>
       </div>
       <div class="status-right"><span>~/src/Kajo/ROADMAP.md</span></div>`;
   } else if (state.mode === 'image') {

@@ -1,6 +1,6 @@
 #include "ide_markdown_private.h"
-#include "../common/spawn_detached.h"
 #include "ide_buffer.h"
+#include "../common/spawn_detached.h"
 #include <gio/gio.h>
 #include <gtksourceview/gtksource.h>
 #include <string.h>
@@ -215,7 +215,7 @@ static void update_task_badge(IdeMarkdownView *md) {
 
 static void on_checklist_toggled(GtkCheckButton *chk, gpointer user_data) {
   IdeMarkdownView *md = user_data;
-  if (!md || md->updating_checklists || !md->current_markdown) return;
+  if (!md || md->updating_checklists || md->read_only || !md->current_markdown) return;
   guint line_1based =
       GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(chk), "md-line"));
   if (line_1based == 0) return;
@@ -502,6 +502,9 @@ static void render_checklist_item(IdeMarkdownView *md,
   GtkWidget *chk = gtk_check_button_new();
   gtk_widget_set_focusable(chk, FALSE);
   gtk_widget_set_valign(chk, GTK_ALIGN_CENTER);
+  if (md->read_only || !md->edit_cb) {
+    gtk_widget_set_sensitive(chk, FALSE);
+  }
   md->updating_checklists = TRUE;
   gtk_check_button_set_active(GTK_CHECK_BUTTON(chk), checked);
   md->updating_checklists = FALSE;
@@ -598,6 +601,7 @@ static void render_pipe_table_block(IdeMarkdownView *md,
         if (!cell_widget) {
           cell_widget = create_rich_markdown_label(
               md, cell_txt, row_idx == 0 ? "shell-popover-badge" : NULL);
+          gtk_label_set_wrap(GTK_LABEL(cell_widget), FALSE);
           gtk_widget_set_valign(cell_widget, GTK_ALIGN_CENTER);
         }
         gtk_grid_attach(
@@ -872,6 +876,93 @@ GtkWidget *ide_markdown_view_get_widget(IdeMarkdownView *md) {
   return md ? md->root_box : NULL;
 }
 
+GtkWidget *ide_markdown_view_get_scroll_window(IdeMarkdownView *md) {
+  return md ? md->scroll_win : NULL;
+}
+
+GtkWidget *ide_markdown_view_get_doc_box(IdeMarkdownView *md) {
+  return md ? md->doc_box : NULL;
+}
+
+void ide_markdown_view_set_read_only(IdeMarkdownView *md, gboolean read_only) {
+  if (!md) return;
+  md->read_only = read_only;
+}
+
+void ide_markdown_view_set_show_header_bar(IdeMarkdownView *md, gboolean show) {
+  if (!md || !md->header_bar) return;
+  gtk_widget_set_visible(md->header_bar, show);
+}
+
+void ide_markdown_view_scroll_to_line(IdeMarkdownView *md,
+                                      guint            line_1based,
+                                      guint            total_lines) {
+  if (!md || !md->scroll_win || total_lines <= 1) return;
+  double frac = (double)(line_1based > 0 ? line_1based - 1 : 0) / (double)(total_lines - 1);
+  ide_markdown_view_sync_scroll(md, CLAMP(frac, 0.0, 1.0));
+}
+
+static void clear_heading_entry(gpointer data) {
+  IdeMarkdownHeading *h = data;
+  if (h) g_free(h->title);
+}
+
+GArray *ide_markdown_extract_headings(const char *markdown_text) {
+  GArray *arr = g_array_new(FALSE, TRUE, sizeof(IdeMarkdownHeading));
+  g_array_set_clear_func(arr, clear_heading_entry);
+  if (!markdown_text || !*markdown_text) return arr;
+
+  g_auto(GStrv) lines = g_strsplit(markdown_text, "\n", -1);
+  gboolean in_fence = FALSE;
+  char fence_char = '\0';
+
+  for (guint i = 0; lines[i] != NULL; i++) {
+    const char *p = lines[i];
+    while (*p == ' ' || *p == '\t') p++;
+    if (g_str_has_prefix(p, "```") || g_str_has_prefix(p, "~~~")) {
+      char fc = p[0];
+      if (!in_fence) {
+        in_fence = TRUE;
+        fence_char = fc;
+      } else if (fc == fence_char) {
+        in_fence = FALSE;
+      }
+      continue;
+    }
+    if (in_fence) continue;
+
+    if (p[0] == '#') {
+      guint lvl = 0;
+      while (p[lvl] == '#' && lvl < 6) lvl++;
+      if (lvl >= 1 && lvl <= 4 && (p[lvl] == ' ' || p[lvl] == '\t')) {
+        const char *title = p + lvl;
+        while (*title == ' ' || *title == '\t') title++;
+        g_autofree char *clean = g_strdup(title);
+        g_strstrip(clean);
+        /* Strip trailing ATX closing hashes if preceded by whitespace (or alone) */
+        size_t len = strlen(clean);
+        if (len > 0 && clean[len - 1] == '#') {
+          size_t pos = len;
+          while (pos > 0 && clean[pos - 1] == '#') pos--;
+          if (pos == 0 || clean[pos - 1] == ' ' || clean[pos - 1] == '\t') {
+            clean[pos] = '\0';
+            g_strstrip(clean);
+          }
+        }
+        if (*clean) {
+          IdeMarkdownHeading h = {
+            .level = lvl,
+            .line_1based = i + 1,
+            .title = g_strdup(clean),
+          };
+          g_array_append_val(arr, h);
+        }
+      }
+    }
+  }
+  return arr;
+}
+
 void ide_markdown_view_set_open_file_cb(IdeMarkdownView      *md,
                                         IdeMarkdownOpenFileCb open_file_cb) {
   if (!md) return;
@@ -925,6 +1016,7 @@ IdeMarkdownView *ide_markdown_view_new(IdeMarkdownJumpCb       jump_cb,
   gtk_widget_set_vexpand(md->root_box, TRUE);
 
   GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  md->header_bar = hdr;
   gtk_widget_add_css_class(hdr, "ide-drawer-header");
   gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
 
