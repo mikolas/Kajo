@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>KAJO AMIGA — Aero + Metro 68000 / OCS–AGA IDE Mockup (v3)</title>
+  <style>
+    :root {
+      --metro-accent: #0078d4;
+      --metro-accent-hover: #1084df;
+      --metro-accent-rgb: 0, 120, 212;
+      --metro-telemetry: #00d8f0;
+      --metro-success: #10893e;
+      --metro-warning: #ff8c00;
+      --metro-urgent: #e81123;
+      --metro-urgent-text: #ff6b6b;
+      --metro-magenta: #b4009e;
+
+      --surface-0: #101010;
+      --surface-1: #121212;
+      --surface-bg: #141414;
+      --surface-2: #161616;
+      --surface-3: #181818;
+      --surface-4: #1a1a1a;
+      --surface-hover: #222222;
+      --surface-active: #2a2a2a;
+
+      --border-subtle: #242424;
+      --border-struct: #2b2b2b;
+      --border-strong: #333333;
+
+      --text-primary: #ffffff;
+      --text-bright: #f0f0f0;
+      --text-soft: #e0e0e0;
+      --text-body: #cccccc;
+      --text-secondary: #a0a0a0;
+      --text-muted: #999999;
+      --text-dim: #777777;
+
+      --font-mono: 'Fira Code', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+      --font-sans: 'Inter', 'Cantarell', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    * { box-sizing: border-box; border-radius: 0 !important; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100vh; overflow: hidden;
+      background: #070707; color: var(--text-primary);
+      font-family: var(--font-mono); font-size: 12px; line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+    }
+    button, input, select { font-family: var(--font-mono); outline: none; color: inherit; }
+    ::-webkit-scrollbar { width: 5px; height: 5px; background: var(--surface-0); }
+    ::-webkit-scrollbar-thumb { background: #333333; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--metro-accent); }
+    .hidden { display: none !important; }
+
+    /* Outside Demo Control Strip */
+    .demo-shell { display: flex; flex-direction: column; width: 100%; height: 100vh; }
+    .demo-bar {
+      height: 30px; flex-shrink: 0; background: #0b0b0b; border-bottom: 1px solid #222;
+      display: flex; align-items: center; justify-content: space-between; padding: 0 10px;
+      font-size: 11px; color: var(--text-muted); gap: 8px; user-select: none; overflow-x: auto;
+    }
+    .demo-group { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .demo-lbl { font-size: 9.5px; letter-spacing: 0.7px; text-transform: uppercase; color: var(--text-dim); margin-right: 3px; }
+    .demo-btn {
+      background: #151515; border: 1px solid #2b2b2b; color: var(--text-secondary);
+      padding: 2px 7px; font-size: 10px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .demo-btn:hover { background: #222; border-color: var(--metro-accent); color: #fff; }
+    .demo-btn.active { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
+    .swatch-dot { width: 13px; height: 13px; border: 1px solid #333; cursor: pointer; }
+    .swatch-dot.active { border: 1px solid #fff; box-shadow: inset 0 0 0 2px #0b0b0b; }
+
+    .niri-stage {
+      flex: 1; min-height: 0; display: flex; align-items: stretch; justify-content: center;
+      background: radial-gradient(circle at 20% 0%, rgba(var(--metro-accent-rgb), 0.09), transparent 48%), #070707;
+      overflow: hidden;
+    }
+    .niri-stage.floating { padding: 14px 20px; }
+
+    /* Main Frameless Aero + Metro Window */
+    .amiga-window {
+      width: 100%; height: 100%; display: flex; flex-direction: column;
+      background: var(--surface-bg); border: 1px solid var(--metro-accent); overflow: hidden;
+      transition: width 140ms ease;
+    }
+    .niri-stage.floating .amiga-window { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.85); }
+    .amiga-window.w-2-3 { width: 1088px; max-width: 100%; }
+    .amiga-window.w-1-2 { width: 814px; max-width: 100%; }
+
+    /* Zone 1: Header Bar (34px) */
+    .amiga-header {
+      height: 34px; flex-shrink: 0; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; padding: 0 6px 0 10px; gap: 6px; user-select: none;
+    }
+    .hdr-left, .hdr-center, .hdr-right { display: flex; align-items: center; gap: 5px; min-width: 0; }
+    .hdr-brand {
+      font-weight: 800; font-size: 11px; letter-spacing: 0.9px; color: #fff;
+      padding-right: 8px; border-right: 1px solid var(--border-struct); white-space: nowrap;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .hdr-brand .gem { color: var(--metro-accent); }
+    .hdr-pill, .hdr-select {
+      height: 22px; padding: 0 6px; background: var(--surface-4); border: 1px solid var(--border-struct);
+      color: var(--text-secondary); font-size: 10px; font-weight: 700; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    .hdr-pill:hover, .hdr-select:hover { background: var(--surface-hover); border-color: var(--metro-accent); color: #fff; }
+    .hdr-pill.active { background: rgba(var(--metro-accent-rgb), 0.24); border-color: var(--metro-accent); color: #fff; }
+    select.hdr-select, select.mini-select {
+      -webkit-appearance: none; appearance: none;
+      background-color: var(--surface-0); color: var(--text-bright);
+      padding-right: 18px;
+      background-image: linear-gradient(45deg, transparent 50%, var(--text-secondary) 50%), linear-gradient(135deg, var(--text-secondary) 50%, transparent 50%);
+      background-position: calc(100% - 10px) 50%, calc(100% - 6px) 50%;
+      background-size: 4px 4px, 4px 4px;
+      background-repeat: no-repeat;
+    }
+    select option { background: #141414; color: #f0f0f0; }
+    .hdr-btn {
+      height: 24px; padding: 0 7px; background: var(--surface-4); border: 1px solid var(--border-struct);
+      color: var(--text-soft); font-size: 10px; font-weight: 700; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    .hdr-btn:hover { background: var(--surface-hover); border-color: var(--metro-accent); color: #fff; }
+    .hdr-btn.primary { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
+    .hdr-btn.warn { border-color: var(--metro-warning); color: #ffb84d; }
+    .hdr-btn.danger { border-color: var(--metro-urgent); color: var(--metro-urgent-text); }
+    .hdr-btn.close { width: 26px; justify-content: center; padding: 0; }
+    .hdr-btn.close:hover { background: var(--metro-urgent); border-color: var(--metro-urgent); color: #fff; }
+
+    .metro-badge {
+      display: inline-flex; align-items: center; gap: 4px; padding: 2px 6px;
+      font-size: 9.5px; font-weight: 700; letter-spacing: 0.4px;
+      background: var(--surface-0); border: 1px solid var(--border-struct); color: var(--metro-telemetry); white-space: nowrap;
+    }
+    .metro-badge.live { color: #4cd964; border-color: rgba(16, 137, 62, 0.6); }
+    .metro-badge.warn { color: var(--metro-warning); border-color: rgba(255, 140, 0, 0.55); background: rgba(255, 140, 0, 0.10); }
+    .metro-badge.dim  { color: var(--text-muted); }
+    .metro-badge.mag  { color: #f08ee6; border-color: rgba(180, 0, 158, 0.65); background: rgba(180, 0, 158, 0.14); }
+
+    /* Honest State / Setup Banner */
+    .sys-banner {
+      flex-shrink: 0; padding: 5px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
+      border-left: 4px solid var(--metro-warning); display: flex; align-items: center; justify-content: space-between;
+      gap: 10px; font-size: 10.5px; color: var(--text-body);
+    }
+    .sys-banner.info { border-left-color: var(--metro-telemetry); }
+
+    /* Zone 2: 68000 CPU & Beam Strip */
+    .cpu-strip {
+      flex-shrink: 0; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
+      padding: 4px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; user-select: none;
+    }
+    .cpu-regs-wrap { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+    .cpu-reg-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .reg-chip {
+      display: inline-flex; align-items: center; gap: 4px; padding: 1px 5px;
+      background: var(--surface-0); border: 1px solid var(--border-subtle); font-size: 10.5px; cursor: pointer;
+    }
+    .reg-chip:hover { border-color: var(--metro-accent); }
+    .reg-chip.changed { border-color: var(--metro-warning); background: rgba(255, 140, 0, 0.14); }
+    .reg-name { color: var(--text-dim); font-weight: 700; }
+    .reg-val { color: var(--text-bright); font-weight: 600; }
+    .reg-chip.changed .reg-val { color: #ffb84d; }
+    .sr-strip { display: inline-flex; gap: 2px; margin-left: 4px; }
+    .sr-bit {
+      width: 15px; height: 17px; display: inline-flex; align-items: center; justify-content: center;
+      font-size: 9.5px; font-weight: 700; background: var(--surface-0); border: 1px solid var(--border-subtle); color: var(--text-dim); cursor: pointer;
+    }
+    .sr-bit:hover { border-color: var(--metro-accent); color: #fff; }
+    .sr-bit.set { background: rgba(0, 216, 240, 0.16); border-color: var(--metro-telemetry); color: var(--metro-telemetry); }
+    .cpu-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; flex-shrink: 0; }
+    .beam-row, .step-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+
+    .tool-btn {
+      height: 22px; padding: 0 7px; background: var(--surface-4); border: 1px solid var(--border-struct);
+      color: var(--text-body); font-size: 10px; font-weight: 700; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 4px; white-space: nowrap;
+    }
+    .tool-btn:hover { background: var(--surface-hover); border-color: var(--metro-accent); color: #fff; }
+    .tool-btn.active { background: var(--metro-accent); border-color: var(--metro-accent); color: #fff; }
+    .tool-btn.warn { border-color: var(--metro-warning); color: #ffb84d; }
+
+    /* Zone 3: 3-Pane Workspace */
+    .workspace-body { flex: 1; min-height: 0; display: flex; background: var(--surface-0); }
+
+    /* Left Sidebar */
+    .left-sidebar {
+      width: 220px; flex-shrink: 0; background: var(--surface-1); border-right: 1px solid var(--border-struct);
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .pane-hdr {
+      height: 28px; flex-shrink: 0; padding: 0 8px; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; font-size: 10px; font-weight: 700;
+      letter-spacing: 0.7px; color: var(--text-secondary); text-transform: uppercase; user-select: none;
+    }
+    .tree-scroll { flex: 1; overflow-y: auto; padding: 4px 0; }
+    .tree-cat { padding: 6px 8px 3px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.7px; color: var(--text-dim); text-transform: uppercase; }
+    .tree-row {
+      height: 24px; padding: 0 8px; display: flex; align-items: center; justify-content: space-between;
+      font-size: 10.5px; color: var(--text-body); cursor: pointer; border-left: 3px solid transparent;
+    }
+    .tree-row:hover { background: var(--surface-3); color: #fff; }
+    .tree-row.active { background: rgba(var(--metro-accent-rgb), 0.22); border-left-color: var(--metro-accent); color: #fff; }
+    .git-m { font-size: 9px; font-weight: 700; padding: 0 4px; border: 1px solid rgba(255, 140, 0, 0.5); color: var(--metro-warning); }
+
+    .hunk-panel {
+      border-top: 1px solid var(--border-struct); background: var(--surface-2);
+      padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; flex-shrink: 0;
+    }
+    .hunk-row {
+      display: flex; align-items: center; justify-content: space-between; font-size: 10px;
+      padding: 2px 5px; background: var(--surface-0); border: 1px solid var(--border-subtle); cursor: pointer;
+    }
+    .hunk-row:hover { border-color: var(--metro-accent); }
+    .hunk-name { color: var(--metro-telemetry); font-weight: 700; }
+    .level-trough { height: 6px; background: #262626; width: 100%; }
+    .level-fill { height: 100%; background: var(--metro-accent); }
+    .level-fill.warn { background: var(--metro-warning); }
+    .level-fill.ok { background: var(--metro-success); }
+    .level-fill.urgent { background: var(--metro-urgent); }
+
+    /* Center Editor / Disassembler Pane */
+    .editor-pane { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--surface-0); }
+    .tab-ribbon {
+      height: 28px; flex-shrink: 0; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; padding-right: 6px; user-select: none;
+    }
+    .tab-list { display: flex; align-items: stretch; height: 100%; overflow-x: auto; min-width: 0; flex: 1; }
+    .tab-pill {
+      padding: 0 10px; display: flex; align-items: center; gap: 6px; font-size: 10.5px;
+      color: var(--text-secondary); border-right: 1px solid var(--border-struct); border-top: 2px solid transparent; cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab-pill:hover { background: var(--surface-3); color: #fff; }
+    .tab-pill.active { background: var(--surface-0); color: #fff; border-top-color: var(--metro-accent); }
+    .seg-group { display: inline-flex; border: 1px solid var(--border-struct); background: var(--surface-0); flex-shrink: 0; }
+    .seg-btn {
+      padding: 2px 7px; background: transparent; border: none; border-right: 1px solid var(--border-struct);
+      font-size: 9.5px; font-weight: 700; color: var(--text-secondary); cursor: pointer; white-space: nowrap;
+    }
+    .seg-btn:last-child { border-right: none; }
+    .seg-btn.active { background: var(--metro-accent); color: #fff; }
+
+    .disasm-bar {
+      height: 28px; flex-shrink: 0; background: var(--surface-1); border-bottom: 1px solid var(--border-struct);
+      padding: 0 8px; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    }
+    .code-toolbar-hint {
+      height: 22px; flex-shrink: 0; background: #13161a; border-bottom: 1px solid var(--border-subtle);
+      padding: 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      font-size: 10px; color: var(--text-secondary); white-space: nowrap; overflow: hidden;
+    }
+    #code-hover-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+    .code-scroll { flex: 1; min-height: 0; overflow: auto; padding: 4px 0; font-size: 11.5px; line-height: 1.55; }
+    .code-line { display: flex; align-items: center; padding-right: 10px; white-space: pre; cursor: pointer; }
+    .code-line:hover { background: #151515; }
+    .code-line.cur-pc { background: rgba(255, 185, 0, 0.12); }
+    .code-line.sel-ln { background: rgba(var(--metro-accent-rgb), 0.22); }
+    .code-line.cur-pc.sel-ln { background: rgba(var(--metro-accent-rgb), 0.28); box-shadow: inset 2px 0 0 #ffb900; }
+    .gutter {
+      display: inline-flex; align-items: center; flex-shrink: 0; background: var(--surface-1);
+      border-right: 1px solid #222; margin-right: 10px; padding: 0 6px 0 4px; user-select: none; font-size: 10.5px;
+    }
+    .g-bp { width: 14px; text-align: center; cursor: pointer; color: transparent; font-weight: 700; }
+    .g-bp:hover { color: rgba(232, 17, 35, 0.55); }
+    .g-bp.on { color: var(--metro-urgent); }
+    .g-pc { width: 14px; text-align: center; color: #ffb900; font-weight: 800; }
+    .g-ln { width: 32px; text-align: right; color: var(--text-dim); padding-right: 6px; }
+    .g-addr { width: 62px; text-align: right; color: var(--metro-telemetry); padding-right: 6px; }
+    .g-ops { width: 82px; color: var(--text-dim); padding-right: 6px; border-left: 1px solid #222; padding-left: 6px; }
+    .g-git { width: 3px; height: 14px; margin-right: 6px; background: transparent; }
+    .g-git.mod { background: var(--metro-accent); }
+    .g-cyc { width: 66px; text-align: right; color: var(--metro-telemetry); font-size: 10px; opacity: 0.85; border-left: 1px solid #222; padding-left: 5px; }
+
+    .tok-lbl { color: #dcdcaa; font-weight: 700; }
+    .tok-op  { color: #569cd6; font-weight: 600; }
+    .tok-reg { color: #4ec9b0; }
+    .tok-num { color: #b5cea8; }
+    .tok-ea  { color: #8b949e; }
+    .tok-hw  { color: #ff8c00; text-decoration: underline dotted #ff8c00; cursor: pointer; }
+    .tok-cmt { color: #6a9955; font-style: italic; }
+
+    /* Right Hardware Inspector */
+    .inspector-pane {
+      width: 448px; flex-shrink: 0; background: var(--surface-1); border-left: 1px solid var(--border-struct);
+      display: flex; flex-direction: column; min-height: 0;
+    }
+    .insp-tabs { display: flex; background: var(--surface-3); border-bottom: 1px solid var(--border-struct); flex-shrink: 0; overflow-x: auto; }
+    .insp-tab {
+      flex: 1; height: 30px; padding: 0 5px; background: transparent; border: none;
+      border-right: 1px solid var(--border-struct); border-bottom: 2px solid transparent;
+      color: var(--text-secondary); font-size: 9.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+    }
+    .insp-tab:last-child { border-right: none; }
+    .insp-tab:hover { background: var(--surface-hover); color: #fff; }
+    .insp-tab.active { background: var(--surface-1); color: #fff; border-bottom-color: var(--metro-accent); }
+    .insp-content { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .insp-panel { display: none; flex-direction: column; gap: 8px; }
+    .insp-panel.active { display: flex; }
+
+    .card {
+      background: var(--surface-3); border: 1px solid var(--border-struct);
+      padding: 8px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .card.accent-left { border-left: 3px solid var(--metro-accent); }
+    .card.warn-left   { border-left: 3px solid var(--metro-warning); }
+    .card-hdr {
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      padding-bottom: 5px; border-bottom: 1px solid var(--border-subtle);
+    }
+    .card-title { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-bright); }
+    .prov-pill { font-size: 9px; font-weight: 700; padding: 1px 5px; border: 1px solid; white-space: nowrap; }
+    .prov-live    { color: #4cd964; border-color: rgba(16, 137, 62, 0.7); background: rgba(16, 137, 62, 0.14); }
+    .prov-snap    { color: var(--metro-telemetry); border-color: rgba(0, 216, 240, 0.55); background: rgba(0, 216, 240, 0.10); }
+    .prov-watched { color: #ffb84d; border-color: rgba(255, 140, 0, 0.7); background: rgba(255, 140, 0, 0.14); }
+    .prov-wo      { color: var(--text-dim); border-color: #383838; background: var(--surface-0); }
+
+    .ctrl-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .mini-input, .mini-select {
+      height: 22px; background: var(--surface-0); border: 1px solid var(--border-strong);
+      color: var(--text-bright); padding: 0 6px; font-size: 10px;
+    }
+    .mini-input:focus { border-color: var(--metro-accent); }
+
+    .bpl-canvas-box { background: #070707; border: 1px solid var(--border-strong); display: flex; align-items: center; justify-content: center; }
+    #bpl-canvas { width: 100%; height: auto; image-rendering: pixelated; display: block; cursor: crosshair; }
+    .palette-row { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .pal-swatch {
+      display: flex; align-items: center; gap: 4px; padding: 2px 5px;
+      background: var(--surface-0); border: 1px solid var(--border-struct); font-size: 9.5px;
+    }
+    .pal-swatch.hit { border-color: var(--metro-accent); }
+    .pal-box { width: 11px; height: 11px; border: 1px solid #444; }
+    .probe-bar {
+      padding: 4px 6px; background: var(--surface-0); border: 1px solid var(--border-subtle);
+      font-size: 10px; color: var(--metro-telemetry); display: flex; justify-content: space-between; gap: 6px; flex-wrap: wrap;
+    }
+
+    .cop-row {
+      display: grid; grid-template-columns: 52px 72px 1fr; gap: 6px; padding: 3px 6px;
+      background: var(--surface-0); border: 1px solid var(--border-subtle); border-left: 3px solid transparent; font-size: 10px;
+    }
+    .cop-row.wait    { border-left-color: var(--metro-warning); }
+    .cop-row.blt     { border-left-color: var(--metro-telemetry); }
+    .cop-row.barrier { border-left-color: var(--metro-urgent); background: rgba(232, 17, 35, 0.08); }
+    .cop-row.display { border-left-color: var(--metro-accent); }
+    .cop-addr { color: var(--text-dim); }
+    .cop-raw { color: var(--text-muted); }
+    .cop-dec { color: var(--text-bright); display: flex; justify-content: space-between; gap: 4px; }
+    .cop-note { color: var(--metro-warning); font-size: 9px; font-weight: 700; }
+
+    .kv-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; }
+    .kv-cell {
+      background: var(--surface-0); border: 1px solid var(--border-subtle); padding: 4px 6px;
+      display: flex; justify-content: space-between; font-size: 10px; gap: 4px;
+    }
+    .kv-k { color: var(--text-muted); }
+    .kv-v { color: var(--text-bright); font-weight: 600; }
+    .bit-pills { display: flex; gap: 3px; flex-wrap: wrap; }
+    .bit-pill { padding: 1px 5px; font-size: 9px; font-weight: 700; background: var(--surface-0); border: 1px solid var(--border-subtle); color: var(--text-dim); cursor: pointer; }
+    .bit-pill.on { border-color: var(--metro-success); color: #4cd964; background: rgba(16, 137, 62, 0.14); }
+    .bit-pill.trap-on { border-color: var(--metro-warning); color: #ffb84d; background: rgba(255, 140, 0, 0.14); }
+
+    .dma-strip { height: 22px; display: flex; background: var(--surface-0); border: 1px solid var(--border-strong); overflow: hidden; }
+    .dma-seg { height: 100%; display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: #fff; border-right: 1px solid #101010; }
+    .dma-legend { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10px; color: var(--text-secondary); }
+    .dma-dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; }
+    .slider-row { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 10px; }
+    .slider-row input[type="range"] { flex: 1; accent-color: var(--metro-accent); }
+
+    .md-h1 { font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border-struct); padding-bottom: 4px; }
+    .md-p  { font-family: var(--font-sans); font-size: 11.5px; color: var(--text-body); }
+    .md-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+    .md-table th, .md-table td { border: 1px solid var(--border-struct); padding: 3px 6px; text-align: left; }
+    .md-table th { background: var(--surface-0); color: var(--text-secondary); }
+
+    /* Zone 4: Bottom Ephemeral Drawer */
+    .bottom-drawer {
+      height: 174px; flex-shrink: 0; background: var(--surface-1);
+      border-top: 1px solid var(--metro-accent); display: flex; flex-direction: column;
+    }
+    .drawer-hdr {
+      height: 28px; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; padding-right: 6px; flex-shrink: 0;
+    }
+    .drawer-tabs { display: flex; height: 100%; }
+    .drawer-tab {
+      padding: 0 10px; background: transparent; border: none; border-right: 1px solid var(--border-struct);
+      color: var(--text-secondary); font-size: 10px; font-weight: 700; cursor: pointer;
+    }
+    .drawer-tab:hover { background: var(--surface-hover); color: #fff; }
+    .drawer-tab.active { background: var(--surface-1); color: #fff; border-top: 2px solid var(--metro-accent); }
+    .drawer-body { flex: 1; min-height: 0; overflow-y: auto; padding: 6px 10px; }
+    .drawer-panel { display: none; }
+    .drawer-panel.active { display: block; }
+    .debug-3col { display: grid; grid-template-columns: 1.15fr 1fr 1.15fr; gap: 8px; }
+    .mini-box { background: var(--surface-0); border: 1px solid var(--border-subtle); padding: 5px 7px; font-size: 10px; display: flex; flex-direction: column; gap: 3px; }
+    .mini-hdr { font-size: 9px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 2px; display: flex; justify-content: space-between; align-items: center; }
+    .watch-row { display: flex; align-items: center; justify-content: space-between; gap: 4px; }
+    .w-fmt { padding: 0 4px; border: 1px solid var(--border-struct); background: var(--surface-3); color: var(--metro-telemetry); font-size: 9px; cursor: pointer; }
+    .w-fmt:hover { border-color: var(--metro-accent); }
+    .repl-row { display: flex; gap: 4px; margin-top: 2px; }
+    .repl-input { flex: 1; background: var(--surface-2); border: 1px solid var(--border-strong); padding: 2px 6px; font-size: 10px; color: #fff; }
+    .hex-line { font-size: 10.5px; line-height: 1.45; white-space: pre; color: var(--text-body); }
+    .hex-addr { color: var(--metro-telemetry); }
+    .hex-chg  { color: #ffb84d; background: rgba(255, 140, 0, 0.16); font-weight: 700; }
+    .hex-asc  { color: var(--text-dim); }
+    .log-line { font-size: 10.5px; line-height: 1.45; }
+    .log-ok   { color: #4cd964; }
+    .log-kpf  { color: var(--metro-telemetry); }
+
+    /* Zone 5: Status Bar */
+    .status-bar {
+      height: 26px; flex-shrink: 0; background: var(--surface-3); border-top: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; padding-right: 10px; font-size: 10px; user-select: none;
+    }
+    .st-left, .st-right { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .mode-pill {
+      height: 26px; padding: 0 9px; background: var(--metro-accent); color: #fff;
+      font-weight: 800; font-size: 10px; display: inline-flex; align-items: center; letter-spacing: 0.5px; flex-shrink: 0;
+    }
+    .st-item { color: var(--text-secondary); white-space: nowrap; }
+    .st-item strong { color: var(--text-bright); }
+
+    /* Responsive Niri Half-Screen Reflow (< 900px matches spec §5) */
+    .amiga-window.w-2-3 .left-sidebar { display: none; }
+    .amiga-window.w-1-2 .left-sidebar { display: none; }
+    .amiga-window.w-1-2.half-show-editor .inspector-pane { display: none; }
+    .amiga-window.w-1-2.half-show-insp .editor-pane { display: none; }
+    .amiga-window.w-1-2.half-show-insp .inspector-pane { width: 100%; border-left: none; }
+    .amiga-window.w-1-2 .debug-3col { grid-template-columns: 1fr; }
+    .amiga-window.w-1-2 #profile-select { display: none; }
+  </style>
+</head>
+<body>
+<div class="demo-shell">
+  <!-- Outside Demo Switcher Bar -->
+  <div class="demo-bar">
+    <div class="demo-group">
+      <span class="demo-lbl">Session State</span>
+      <button class="demo-btn" data-st="idle" onclick="setSessionState('idle', this)">Disconnected / Setup</button>
+      <button class="demo-btn" data-st="running" onclick="setSessionState('running', this)">Running (50 FPS)</button>
+      <button class="demo-btn active" data-st="paused" onclick="setSessionState('paused', this)">Project · Paused</button>
+      <button class="demo-btn" data-st="attach" onclick="setSessionState('attach', this)">Attach Mode (No Source)</button>
+    </div>
+    <div class="demo-group">
+      <span class="demo-lbl">Niri Width</span>
+      <button class="demo-btn active" onclick="setWidth('full', this)">Full (100%)</button>
+      <button class="demo-btn" onclick="setWidth('2-3', this)">2/3 (1088px)</button>
+      <button class="demo-btn" onclick="setWidth('1-2', this)">1/2 (814px)</button>
+      <button class="demo-btn" onclick="setWidth('float', this)">Floating</button>
+    </div>
+    <div class="demo-group">
+      <span class="demo-lbl">Accent</span>
+      <div class="swatch-dot active" style="background:#0078d4" onclick="setAccent('#0078d4','0,120,212',this)" title="Metro Blue"></div>
+      <div class="swatch-dot" style="background:#ff8c00" onclick="setAccent('#ff8c00','255,140,0',this)" title="Amiga Amber"></div>
+      <div class="swatch-dot" style="background:#10893e" onclick="setAccent('#10893e','16,137,62',this)" title="Emerald"></div>
+      <div class="swatch-dot" style="background:#b4009e" onclick="setAccent('#b4009e','180,0,158',this)" title="Magenta"></div>
+      <div class="swatch-dot" style="background:#00b7c3" onclick="setAccent('#00b7c3','0,183,195',this)" title="Teal"></div>
+    </div>
+  </div>
+
+  <!-- Stage -->
+  <div id="niri-stage" class="niri-stage">
+    <div id="amiga-window" class="amiga-window half-show-editor">
+      <!-- ZONE 1: Header Bar -->
+      <header class="amiga-header">
+        <div class="hdr-left">
+          <div class="hdr-brand"><span class="gem">◈</span> KAJO AMIGA</div>
+          <button id="btn-tree" class="hdr-pill active" onclick="toggleTree()">🌲 TREE</button>
+          <button id="btn-cpu" class="hdr-pill active" onclick="toggleCpu()">⚙ CPU</button>
+          <div id="half-toggle" class="seg-group hidden" title="Niri <900px Split View Switcher">
+            <button id="half-ed-btn" class="seg-btn active" onclick="setHalfPane('editor')">📝 CODE</button>
+            <button id="half-in-btn" class="seg-btn" onclick="setHalfPane('insp')">🔧 INSPECTOR</button>
+          </div>
+          <select id="target-select" class="hdr-select" onchange="changeTarget(this.value)" title="Active .kajo-amiga.toml target">
+            <option value="bobs">seeandseedee ▸ bobs.asm</option>
+            <option value="gouraud">seeandseedee ▸ gouraud.asm</option>
+            <option value="cube">seeandseedee ▸ cube.asm</option>
+            <option value="copper_test">seeandseedee ▸ copper_test.asm</option>
+          </select>
+          <button id="boot-mode-btn" class="hdr-pill" onclick="toggleBootMode()" title="Packaging Target Mode (DH0 Directory vs in-process ADFlib .ADF)">DH0:</button>
+        </div>
+        <div class="hdr-center">
+          <select id="profile-select" class="hdr-select" title="Active Hardware Run Profile ([[profile]])">
+            <option value="a500_ocs">A500 · OCS · 512K · PAL</option>
+            <option value="a500p_ecs">A500+ · ECS · 1M · PAL</option>
+            <option value="a1200_aga">A1200 · 020 · AGA · 2M</option>
+          </select>
+          <span class="metro-badge warn" id="rsp-pill">AMIBERRY :2345 ● PAUSED @ L285</span>
+        </div>
+        <div class="hdr-right">
+          <button id="btn-build" class="hdr-btn" onclick="triggerBuildLog()">▶ BUILD</button>
+          <button id="btn-run" class="hdr-btn" onclick="setSessionState('running', findStBtn('running'))">▶ RUN</button>
+          <button id="btn-debug" class="hdr-btn primary" onclick="setSessionState('paused', findStBtn('paused'))">🐞 F5</button>
+          <button id="btn-pause" class="hdr-btn warn hidden" onclick="setSessionState('paused', findStBtn('paused'))">⏸ PAUSE</button>
+          <button id="btn-snap" class="hdr-btn hidden" onclick="takeSnapshot()">↻ SNAPSHOT</button>
+          <button id="btn-attach" class="hdr-btn" onclick="setSessionState('attach', findStBtn('attach'))">🔌 ATTACH</button>
+          <button id="btn-detach" class="hdr-btn hidden" onclick="setSessionState('idle', findStBtn('idle'))">🔌 DETACH</button>
+          <button id="btn-stop" class="hdr-btn danger hidden" onclick="setSessionState('idle', findStBtn('idle'))">■ STOP</button>
+          <button class="hdr-btn" onclick="toggleDrawer()">▼ DRAWER</button>
+          <button class="hdr-btn" onclick="openSettingsPreview()" title="Open Amiga Settings (Ctrl+, · kajo-settings --page amiga)">⚙</button>
+          <button class="hdr-btn close" title="Close">✕</button>
+        </div>
+      </header>
+
+      <!-- Honest State / Setup Banner -->
+      <div id="sys-banner" class="sys-banner hidden">
+        <span id="sys-banner-txt"></span>
+        <span id="sys-banner-actions"></span>
+      </div>
+
+      <!-- ZONE 2: 68000 CPU & Beam Telemetry Strip -->
+      <section id="cpu-strip" class="cpu-strip">
+        <div class="cpu-regs-wrap">
+          <div class="cpu-reg-row" id="cpu-row-d"></div>
+          <div class="cpu-reg-row" id="cpu-row-a"></div>
+        </div>
+        <div class="cpu-actions">
+          <div class="beam-row">
+            <span class="metro-badge" id="beam-badge">VPOS $08E (142) · HPOS $64 · FRAME #412</span>
+            <span class="metro-badge live" id="cyc-badge" title="Delta from qRcmd,execution-status cycles">+22 CYC</span>
+          </div>
+          <div class="step-row">
+            <button class="tool-btn active" onclick="stepCpu()" title="F10 Step Over (qRcmd,step-over)">↷ OVER</button>
+            <button class="tool-btn" onclick="stepCpu()" title="F11 Step Into (vCont;s)">⤵ INTO</button>
+            <button class="tool-btn" onclick="stepCpu()" title="F12 Step Out (A7)">⤴ OUT</button>
+            <button class="tool-btn" onclick="runMonitorPreset('checkpoint save /tmp/cp.uss')" title="qRcmd,checkpoint save">💾 CP</button>
+            <button class="tool-btn" onclick="runMonitorPreset('checkpoint restore /tmp/cp.uss')" title="qRcmd,checkpoint restore">⏮ CP</button>
+            <button class="tool-btn" onclick="setSessionState('running', findStBtn('running'))">▶ CONT</button>
+            <button class="tool-btn" id="btn-cyc-col" onclick="toggleCycleCol()">⏱ CYC: ON</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZONE 3: 3-Pane Workspace -->
+      <div class="workspace-body">
+        <!-- Left Sidebar: Files+Hunks (Project) or Tasks+Segments (Attach) -->
+        <aside id="left-sidebar" class="left-sidebar">
+          <div class="pane-hdr">
+            <span id="left-hdr-lbl">Workspace &amp; Hunks</span>
+            <span style="display:flex;align-items:center;gap:4px;">
+              <button class="w-fmt" onclick="openProjectSetupPreview()" title="Project Setup &amp; Targets (kajo-amiga.toml)">SETUP</button>
+              <span class="metro-badge dim" id="left-hdr-badge">ELF→HUNK</span>
+            </span>
+          </div>
+          <div class="tree-scroll" id="left-tree-body"></div>
+          <div class="hunk-panel" id="left-hunk-panel"></div>
+        </aside>
+
+        <!-- Center Source / Motorola Disassembly Pane -->
+        <main class="editor-pane">
+          <div class="tab-ribbon">
+            <div class="tab-list" id="center-tabs"></div>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="seg-group" title="Center View Mode">
+                <button id="btn-view-src" class="seg-btn active" onclick="setCenterView('source')">SOURCE</button>
+                <button id="btn-view-dis" class="seg-btn" onclick="setCenterView('disasm')">DISASM (M68K)</button>
+              </div>
+              <span class="metro-badge dim" id="disasm-src-badge" style="font-size:9px;">m68k · K:HRM</span>
+            </div>
+          </div>
+
+          <!-- Disassembly Nav Bar (Visible in DISASM view) -->
+          <div id="disasm-bar" class="disasm-bar hidden">
+            <div class="ctrl-row">
+              <button class="tool-btn" onclick="setCenterView('source')" title="Alt+Left Nav Back">←</button>
+              <input id="dis-goto" class="mini-input" style="width:118px;" value="$0212C8" title="Ctrl+G Go to Address / Symbol / Reg" onkeydown="if(event.key==='Enter')renderCenter()" />
+              <button class="tool-btn" onclick="renderCenter()">GO</button>
+              <button id="btn-follow-pc" class="tool-btn active" onclick="this.classList.toggle('active')">FOLLOW PC</button>
+            </div>
+            <div class="ctrl-row">
+              <button class="tool-btn" onclick="runMonitorPreset('history read 20')" title="qRcmd,history read (128-entry ring)">📜 TRACE (128)</button>
+              <button class="tool-btn warn" onclick="jumpMem('$0212C8','PATCH PC')">✏ PATCH</button>
+            </div>
+          </div>
+
+          <!-- Line-by-line Hint / Token Hover Bar -->
+          <div id="code-hint-bar" class="code-toolbar-hint">
+            <span id="code-hover-txt">Click / Shift-click lines to sum 68k cycles · Hover $DFFxxx / LVO</span>
+            <span style="color:var(--text-dim);flex-shrink:0;">● BP · Ctrl+F10 Run→Cur</span>
+          </div>
+
+          <div class="code-scroll" id="code-view"></div>
+        </main>
+
+        <!-- Right Hardware Inspector -->
+        <aside id="inspector-pane" class="inspector-pane">
+          <div class="insp-tabs">
+            <button class="insp-tab active" data-tab="bitplanes" onclick="switchInspector('bitplanes')">▤ BITPLANES</button>
+            <button class="insp-tab" data-tab="copper" onclick="switchInspector('copper')">⚡ COPPER</button>
+            <button class="insp-tab" data-tab="chips" onclick="switchInspector('chips')">🔧 CHIPS</button>
+            <button class="insp-tab" data-tab="dma" onclick="switchInspector('dma')">📊 DMA</button>
+            <button class="insp-tab" data-tab="hrm" onclick="switchInspector('hrm')">📖 HRM</button>
+          </div>
+
+          <div class="insp-content">
+            <!-- TAB 1: BITPLANES -->
+            <div id="tab-bitplanes" class="insp-panel active">
+              <div class="card accent-left">
+                <div class="card-hdr">
+                  <span class="card-title">Bitplane Viewer (On-Stop Snapshot)</span>
+                  <span class="prov-pill prov-snap" id="bpl-src-pill">EMU SNAP · BPL1PT $039800</span>
+                </div>
+                <div class="ctrl-row">
+                  <select id="bpl-source" class="mini-select" onchange="updateBitplaneMeta()">
+                    <option value="snap">Source: m dff000,200 (BPLxPT)</option>
+                    <option value="sym">Source: Symbol (scr0)</option>
+                    <option value="man">Source: Manual $Addr</option>
+                  </select>
+                  <select id="bpl-depth" class="mini-select" onchange="renderBitplanes()">
+                    <option value="1">1 BPL (2 col)</option>
+                    <option value="2" selected>2 BPL (4 col)</option>
+                    <option value="3">3 BPL (8 col)</option>
+                    <option value="4">4 BPL (16 col)</option>
+                    <option value="5">5 BPL (32 col)</option>
+                    <option value="6">6 BPL / EHB</option>
+                    <option value="ham6">HAM6 (4096)</option>
+                  </select>
+                  <select id="bpl-layout" class="mini-select" onchange="updateBitplaneMeta()">
+                    <option value="interleaved" selected>INTERLEAVED</option>
+                    <option value="planar">PLANAR</option>
+                    <option value="line2x">LINE ×2 (128→256)</option>
+                  </select>
+                </div>
+                <div class="ctrl-row" style="justify-content:space-between;">
+                  <div style="display:flex;gap:3px;" id="plane-btn-group">
+                    <button id="btn-p0" class="tool-btn active" onclick="togglePlane(0)">P0</button>
+                    <button id="btn-p1" class="tool-btn active" onclick="togglePlane(1)">P1</button>
+                    <button id="btn-p2" class="tool-btn" onclick="togglePlane(2)">P2</button>
+                    <button id="btn-p3" class="tool-btn" onclick="togglePlane(3)">P3</button>
+                    <button id="btn-grid" class="tool-btn" onclick="toggleGrid()">GRID 16px</button>
+                  </div>
+                  <div style="display:flex;gap:3px;">
+                    <button id="btn-front" class="tool-btn active" onclick="setBuf('front')">FRONT</button>
+                    <button id="btn-back" class="tool-btn" onclick="setBuf('back')">BACK</button>
+                    <button class="tool-btn" onclick="exportBitplanePng()">💾 PNG</button>
+                  </div>
+                </div>
+                <div class="bpl-canvas-box">
+                  <canvas id="bpl-canvas" width="320" height="256"></canvas>
+                </div>
+                <div class="palette-row" id="palette-row"></div>
+                <div class="probe-bar" id="pixel-probe">
+                  <span>HOVER CANVAS TO PROBE PIXEL</span>
+                  <span id="bpl-geom-lbl">320×256 · BPR: 40 · IMOD: 40</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 2: COPPERLIST -->
+            <div id="tab-copper" class="insp-panel">
+              <div class="card accent-left">
+                <div class="card-hdr">
+                  <span class="card-title">Copperlist Disassembler</span>
+                  <span class="prov-pill prov-snap" id="cop-src-pill">EMU SNAP · COP1LC $038200</span>
+                </div>
+                <div class="ctrl-row">
+                  <input id="cop-addr-inp" class="mini-input" style="width:92px;" value="$038200" title="Copperlist address or symbol" />
+                  <button class="tool-btn" onclick="loadCopperAddr()">LOAD</button>
+                  <button class="tool-btn" onclick="scanCopper()">🔎 SCAN COP</button>
+                  <button class="tool-btn warn" onclick="watchCop1lc()">👁 WATCH $DFF080</button>
+                </div>
+                <div class="ctrl-row">
+                  <button class="tool-btn active" onclick="filterCopper('all', this)">ALL (7)</button>
+                  <button class="tool-btn" onclick="filterCopper('wait', this)">WAITS / BFD=0</button>
+                  <button class="tool-btn" onclick="filterCopper('blt', this)">BLITTER MOVES</button>
+                  <button class="tool-btn" onclick="filterCopper('display', this)">DISPLAY</button>
+                </div>
+                <div id="copper-list" style="display:flex;flex-direction:column;gap:3px;"></div>
+                <div class="probe-bar" id="cop-footer">
+                  <span>COP1LC/COPCON from m dff000,200 · 22 odd slots · COPCON=$0002</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 3: CHIPS & BLITTER -->
+            <div id="tab-chips" class="insp-panel">
+              <div class="card accent-left">
+                <div class="card-hdr">
+                  <span class="card-title">OCS Readable Registers ($DFF002–$01E)</span>
+                  <span class="prov-pill prov-live">LIVE</span>
+                </div>
+                <div class="kv-grid">
+                  <div class="kv-cell"><span class="kv-k">DMACONR</span><span class="kv-v">$23C0</span></div>
+                  <div class="kv-cell"><span class="kv-k">INTENAR</span><span class="kv-v">$4010</span></div>
+                  <div class="kv-cell"><span class="kv-k">VPOSR ($1FA)</span><span class="kv-v">$2000 (PAL)</span></div>
+                  <div class="kv-cell"><span class="kv-k">VHPOSR</span><span class="kv-v">$8E64</span></div>
+                </div>
+                <div class="bit-pills">
+                  <span class="bit-pill on">DMAEN</span><span class="bit-pill on">BPLEN</span>
+                  <span class="bit-pill on">COPEN</span><span class="bit-pill on">BLTEN</span>
+                  <span class="bit-pill">BLTPRI</span><span class="bit-pill">SPREN</span>
+                  <span class="bit-pill">AUDEN</span><span class="bit-pill">BBUSY:0</span>
+                </div>
+              </div>
+
+              <div class="card warn-left">
+                <div class="card-hdr">
+                  <span class="card-title">Blitter &amp; Display Snapshot ($DFF040–$1BE)</span>
+                  <div style="display:flex;gap:4px;align-items:center;">
+                    <button id="btn-trace-blits" class="tool-btn" onclick="toggleTraceBlits()" title="Non-breaking log_only=1 watch range dff040 36 2 ... 1">👁 TRACE BLITS</button>
+                    <span class="prov-pill prov-snap" id="blt-prov-pill">EMU SNAPSHOT (m dff000,200)</span>
+                  </div>
+                </div>
+                <div class="kv-grid">
+                  <div class="kv-cell"><span class="kv-k">BLTCON0</span><span class="kv-v">$3FCA (ASH=3)</span></div>
+                  <div class="kv-cell"><span class="kv-k">BLTCON1</span><span class="kv-v">$3000 (BSH=3)</span></div>
+                  <div class="kv-cell"><span class="kv-k">MINTERM</span><span class="kv-v">$CA (A&amp;B)|(C&amp;~B)</span></div>
+                  <div class="kv-cell"><span class="kv-k">BLTSIZE</span><span class="kv-v">$0782 (30r×2w)</span></div>
+                  <div class="kv-cell"><span class="kv-k">BLTAPT</span><span class="kv-v">$0421E0 (mask)</span></div>
+                  <div class="kv-cell"><span class="kv-k">BLTBPT</span><span class="kv-v">$040C40 (bob)</span></div>
+                  <div class="kv-cell"><span class="kv-k">BLTCPT/DPT</span><span class="kv-v">$03F416 (scr)</span></div>
+                  <div class="kv-cell"><span class="kv-k">MOD A/B/C/D</span><span class="kv-v">0 / 0 / 36 / 36</span></div>
+                </div>
+              </div>
+
+              <div class="card">
+                <div class="card-hdr">
+                  <span class="card-title">Omitted From save_custom() Snapshot</span>
+                  <span class="prov-pill prov-wo">WO — UNAVAILABLE</span>
+                </div>
+                <div class="kv-grid">
+                  <div class="kv-cell"><span class="kv-k">AUD0–3 ($0A0–$0DF)</span><span class="kv-v" style="color:var(--text-dim);">zeroed (use watch)</span></div>
+                  <div class="kv-cell"><span class="kv-k">AGA Col 32–255 / Lo</span><span class="kv-v" style="color:var(--text-dim);">not in $DFF000+200</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 4: DMA TIMELINE & PARAMETERIZED BUDGET -->
+            <div id="tab-dma" class="insp-panel">
+              <div class="card accent-left">
+                <div class="card-hdr">
+                  <span class="card-title">PAL Scanline DMA (227 Color Clocks)</span>
+                  <span class="prov-pill prov-live">OCS MODEL</span>
+                </div>
+                <div class="dma-strip" id="dma-scanline-bar"></div>
+                <div class="dma-legend" id="dma-legend"></div>
+              </div>
+
+              <div class="card">
+                <div class="card-hdr">
+                  <span class="card-title">Parameterized Odd-Slot Budget</span>
+                  <span class="metro-badge" id="dma-budget-badge">0 / 0</span>
+                </div>
+                <div class="ctrl-row">
+                  <select id="dma-preset" class="mini-select" onchange="applyDmaPreset(this.value)">
+                    <option value="bobs15">Preset: 95 Cookie Bobs (32×15, 2 BPL)</option>
+                    <option value="bobs12">Preset: 100 Cookie Bobs (32×12, 2 BPL)</option>
+                    <option value="flat4">Preset: 64 Copy Blits (16×16, 4 BPL)</option>
+                  </select>
+                  <button id="btn-dma-hires" class="tool-btn" onclick="toggleDmaHires()">RES: LORES</button>
+                </div>
+                <div class="slider-row">
+                  <span style="width:94px;">Bitplanes: <strong id="lbl-bpl">2</strong></span>
+                  <input id="rng-bpl" type="range" min="1" max="6" value="2" oninput="updateDmaBudget()" />
+                </div>
+                <div class="slider-row">
+                  <span style="width:94px;">Blit Count: <strong id="lbl-blits">95</strong></span>
+                  <input id="rng-blits" type="range" min="0" max="150" value="95" oninput="updateDmaBudget()" />
+                </div>
+                <div class="ctrl-row" style="justify-content:space-between;">
+                  <span style="font-size:10px;">Channels:
+                    <button class="tool-btn active dma-ch" data-ch="A" onclick="toggleDmaCh(this)">A</button>
+                    <button class="tool-btn active dma-ch" data-ch="B" onclick="toggleDmaCh(this)">B</button>
+                    <button class="tool-btn active dma-ch" data-ch="C" onclick="toggleDmaCh(this)">C</button>
+                    <button class="tool-btn active dma-ch" data-ch="D" onclick="toggleDmaCh(this)">D</button>
+                  </span>
+                  <span style="font-size:10px;">
+                    W(w): <input id="inp-blt-w" type="number" min="1" max="40" value="2" class="mini-input" style="width:42px;" oninput="updateDmaBudget()">
+                    H(ln): <input id="inp-blt-h" type="number" min="1" max="256" value="30" class="mini-input" style="width:46px;" oninput="updateDmaBudget()">
+                  </span>
+                </div>
+                <div class="slider-row">
+                  <span style="width:94px;">Cop Moves: <strong id="lbl-cop">774</strong></span>
+                  <input id="rng-cop" type="range" min="0" max="2048" step="16" value="774" oninput="updateDmaBudget()" />
+                </div>
+                <div class="level-trough"><div id="dma-slot-fill" class="level-fill warn" style="width:97%"></div></div>
+                <div class="kv-grid">
+                  <div class="kv-cell"><span class="kv-k">Blitter Slots</span><span class="kv-v" id="dma-blt-val">22,800</span></div>
+                  <div class="kv-cell"><span class="kv-k">Copper Slots</span><span class="kv-v" id="dma-cop-val">1,548</span></div>
+                  <div class="kv-cell"><span class="kv-k">68k Even Headroom</span><span class="kv-v" id="dma-cpu-val">~141.8k cyc/f</span></div>
+                  <div class="kv-cell"><span class="kv-k">Odd-Slot Margin</span><span class="kv-v" id="dma-margin-val">+668 OK</span></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- TAB 5: HRM DOCS -->
+            <div id="tab-hrm" class="insp-panel">
+              <div class="card accent-left">
+                <div class="card-hdr">
+                  <span class="card-title">📖 Amiga HRM — docs/blitter.md</span>
+                  <span class="metro-badge">K LOOKUP: BLTCON0</span>
+                </div>
+                <div class="md-h1">BLTCON0 ($DFF040) &amp; BLTCON1 ($DFF042)</div>
+                <p class="md-p">
+                  Controls Blitter DMA channel enables (USEA..USED), barrel-shift distance (ASH/BSH), line/fill mode, and the 8-bit LF minterm truth table for <code>D = f(A, B, C)</code>.
+                </p>
+                <table class="md-table">
+                  <thead><tr><th>Bits</th><th>Field</th><th>Decoded Meaning ($3FCA)</th></tr></thead>
+                  <tbody>
+                    <tr><td>15–12</td><td>ASH</td><td>3 px right shift (sources A &amp; B aligned)</td></tr>
+                    <tr><td>11–8</td><td>USEA..D</td><td>$F (channels A, B, C, D active)</td></tr>
+                    <tr><td>7–0</td><td>LF Byte</td><td>$CA → (A &amp; B) | (C &amp; ~B) cookie-cut</td></tr>
+                  </tbody>
+                </table>
+                <div class="probe-bar"><span>Rendered via shared KajoMarkdownView · Press K over $DFFxxx</span></div>
+              </div>
+            </div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- ZONE 4: Bottom Ephemeral Drawer -->
+      <section id="bottom-drawer" class="bottom-drawer">
+        <div class="drawer-hdr">
+          <div class="drawer-tabs">
+            <button class="drawer-tab active" data-dtab="debug" onclick="switchDrawer('debug')">🐞 DEBUG, TRAPS &amp; WATCH</button>
+            <button class="drawer-tab" data-dtab="mem" onclick="switchDrawer('mem')">🧠 MEMORY HEX</button>
+            <button id="tab-btn-build" class="drawer-tab" data-dtab="build" onclick="switchDrawer('build')">🔨 BUILD &amp; GUEST OUTPUT</button>
+          </div>
+          <button class="hdr-btn close" onclick="toggleDrawer()" title="Hide Drawer">✕</button>
+        </div>
+        <div class="drawer-body">
+          <div id="dtab-debug" class="drawer-panel active">
+            <div class="debug-3col">
+              <div class="mini-box">
+                <div class="mini-hdr">
+                  <span>PC &amp; Raw (A7) Stack</span>
+                  <span style="display:flex;gap:2px;" title="qRcmd,exception mask Guru traps">
+                    <span class="bit-pill trap-on" onclick="this.classList.toggle('trap-on')">BUS#2</span>
+                    <span class="bit-pill trap-on" onclick="this.classList.toggle('trap-on')">ADR#3</span>
+                    <span class="bit-pill" onclick="this.classList.toggle('trap-on')">ILG#4</span>
+                  </span>
+                </div>
+                <div>▶ PC   = <span style="color:var(--metro-telemetry);">$0212C8</span> (draw_bobs+$4A · bobs.asm:285)</div>
+                <div>A7+00: <span style="color:#ddd;">$00021162</span> <span style="color:var(--text-dim);">(.main+$1C · H0+$0122)</span></div>
+                <div>A7+04: <span style="color:#ddd;">$00020814</span> <span style="color:var(--text-dim);">(_start+$24 · devharness)</span></div>
+                <div>A7+08: <span style="color:#ddd;">$00000001</span> <span style="color:var(--text-dim);">(raw stack word)</span></div>
+              </div>
+              <div class="mini-box">
+                <div class="mini-hdr">
+                  <span id="w-hdr-lbl">Typed Watches (.b/.w/.l/ptr)</span>
+                  <button class="w-fmt" onclick="toggleTraceBox(this)">TRACE (128)</button>
+                </div>
+                <div id="watches-body">
+                  <div class="watch-row"><span>xoffs1 ($021580) = <strong id="wval-0">$0140</strong></span><button class="w-fmt" onclick="cycleWatchFmt(0, this)">.w</button></div>
+                  <div class="watch-row"><span>bufs ($03E800)   = <strong id="wval-1">$0003E800</strong></span><button class="w-fmt" onclick="cycleWatchFmt(1, this)">ptr</button></div>
+                  <div class="watch-row"><span>BLTCON0 ($DFF040)= <strong id="wval-2">$3FCA [SNAP]</strong></span><button class="w-fmt" onclick="cycleWatchFmt(2, this)">.w</button></div>
+                </div>
+                <div id="trace-body" class="hidden">
+                  <div style="color:var(--metro-telemetry);">$0212C4  move.l ($00,a5,d4.w),d1   V:$08E H:$5E</div>
+                  <div style="color:var(--text-body);">$0212BE  move.l ($00,a4,d3.w),d0   V:$08E H:$54</div>
+                  <div style="color:var(--text-dim);">Ring: 128 instructions (qRcmd,history read)</div>
+                </div>
+              </div>
+              <div class="mini-box">
+                <div class="mini-hdr">
+                  <span>Amiberry GDB qRcmd Console</span>
+                  <span style="display:flex;gap:2px;">
+                    <button class="w-fmt" onclick="runMonitorPreset('execution-status')">status</button>
+                    <button class="w-fmt" onclick="runMonitorPreset('segments')">segs</button>
+                    <button class="w-fmt" onclick="runMonitorPreset('tasks')">tasks</button>
+                    <button class="w-fmt" onclick="runMonitorPreset('disasm 0212c8 3')">disasm</button>
+                  </span>
+                </div>
+                <div id="rsp-out" style="color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">→ {"execution":"stopped","debugger_stopped":true,"frame":412,"vpos":142,"hpos":100,"cycles":"29184420"}</div>
+                <div class="repl-row">
+                  <input id="rsp-cmd" class="repl-input" value="execution-status" onkeydown="if(event.key==='Enter')runMonitorCmd()" />
+                  <button class="tool-btn" onclick="runMonitorCmd()">SEND</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div id="dtab-mem" class="drawer-panel">
+            <div class="ctrl-row" style="justify-content:space-between;margin-bottom:5px;">
+              <div class="ctrl-row">
+                <input id="hex-jump-inp" class="mini-input" style="width:98px;" placeholder="$addr or sym" value="$038200" onkeydown="if(event.key==='Enter')jumpMemInput()" />
+                <button class="tool-btn" onclick="jumpMemInput()">GO</button>
+                <button class="tool-btn active" onclick="jumpMem('$038200', 'COP1LC')">COP1LC</button>
+                <button class="tool-btn" onclick="jumpMem('$039800', 'BPL1PT')">BPL1PT</button>
+                <button class="tool-btn" onclick="jumpMem('$0212C8', 'PC')">PC</button>
+                <input id="hex-find-inp" class="mini-input" style="width:92px;" placeholder="🔍 Hex/ASCII" onkeydown="if(event.key==='Enter')findMemPattern()" />
+              </div>
+              <div class="ctrl-row">
+                <div class="seg-group">
+                  <button class="seg-btn" onclick="setHexGroup(1, this)">8b</button>
+                  <button class="seg-btn active" onclick="setHexGroup(2, this)">16b</button>
+                  <button class="seg-btn" onclick="setHexGroup(4, this)">32b</button>
+                </div>
+                <button class="tool-btn" onclick="this.classList.toggle('active')" title="Auto-scroll with A0/COP1LC on step">📌 FOLLOW</button>
+                <button class="tool-btn warn" onclick="addWatchpointMsg('watch range')">+ WATCH</button>
+                <button class="tool-btn" onclick="addWatchpointMsg('dma-watch add')">+ DMA</button>
+                <button class="tool-btn" onclick="exportMemBin()">💾 .BIN</button>
+                <span class="metro-badge" id="mem-label">$038200</span>
+              </div>
+            </div>
+            <div id="hex-dump"></div>
+          </div>
+
+          <div id="dtab-build" class="drawer-panel">
+            <div class="log-line">vasmm68k_mot -Felf -m68000 -dwarf=3 effects/bobs.asm → obj/bobs.o</div>
+            <div class="log-line">m68k-amiga-elf-ld --emit-relocs -Ttext=0 -o out/bobs.elf obj/bobs.o</div>
+            <div class="log-line log-ok">elf2hunk out/bobs.elf out/bobs.exe — 0 errors, 0 warnings · qRcmd,process-break name bobs.exe armed</div>
+            <div class="log-line log-kpf">[guest-output #1] Trap 86: bobs: init_ytab=2048 entries, bobeja=50 copies @ $040C00</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ZONE 5: 26px Status Bar -->
+      <footer class="status-bar">
+        <div class="st-left">
+          <span class="mode-pill" id="st-mode-pill">NORMAL</span>
+          <span class="st-item" id="st-file"><strong>effects/bobs.asm</strong></span>
+          <span class="metro-badge live" id="st-lsp" style="height:18px;font-size:9px;">LSP: m68k-lsp ●</span>
+          <span class="metro-badge" id="st-rsp" style="height:18px;font-size:9px;">RSP :2345 ● PAUSED</span>
+          <span class="metro-badge" id="st-sel-cyc" style="height:18px;font-size:9px;" title="Line-by-line static sum over selected lines">SEL: 1 ln · 22(4/0) cyc</span>
+        </div>
+        <div class="st-right">
+          <span class="st-item" id="st-hunk">HUNK 0: <strong>$021040</strong></span>
+          <span class="st-item">CHIP: <strong>92 / 512 KB</strong></span>
+          <span class="st-item" id="st-pos">Ln 285, Col 5</span>
+        </div>
+      </footer>
+    </div>
+  </div>
+</div>
+
+<script>
+  const srcLines = [
+    { ln: 282, addr:'0212BE', cyc:'',          minC:0,  maxC:0,  rd:0, wr:0, ops:'',          html: '<span class="tok-lbl">.bob:</span>' },
+    { ln: 284, addr:'0212C4', cyc:'18(3/0)',   minC:18, maxC:18, rd:3, wr:0, ops:'2235 4000', html: '    <span class="tok-op">move.l</span>  (<span class="tok-reg">a5</span>,<span class="tok-reg">d4</span>.w),<span class="tok-reg">d1</span>        <span class="tok-cmt">; Y offset 1 from ytab</span>' },
+    { ln: 285, addr:'0212C8', cyc:'22(4/0)',   minC:22, maxC:22, rd:4, wr:0, ops:'D2B5 5000', html: '    <span class="tok-op">add.l</span>   (<span class="tok-reg">a5</span>,<span class="tok-reg">d5</span>.w),<span class="tok-reg">d1</span>        <span class="tok-cmt">; total Y byte offset</span>' },
+    { ln: 288, addr:'0212CC', cyc:'14(2/0)',   minC:14, maxC:14, rd:2, wr:0, ops:'3034 2000', html: '    <span class="tok-op">move.w</span>  (<span class="tok-reg">a4</span>,<span class="tok-reg">d2</span>.w),<span class="tok-reg">d0</span>        <span class="tok-cmt">; X1 (0..151)</span>' },
+    { ln: 293, addr:'0212D4', cyc:'6+2n(1/0)', minC:6,  maxC:38, rd:1, wr:0, ops:'E848',      html: '    <span class="tok-op">lsr.w</span>   <span class="tok-reg">d4</span>,<span class="tok-reg">d0</span>             <span class="tok-cmt">; variable shift (6+2n cyc)</span>' },
+    { ln: 302, addr:'0212EE', cyc:'12(2/1)',   minC:12, maxC:12, rd:2, wr:1, ops:'3340 0002', html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,<span class="tok-num">2</span>(<span class="tok-reg">a1</span>)          <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON1</span> = BSH</span>' },
+    { ln: 306, addr:'0212F4', cyc:'8(1/1)',    minC:8,  maxC:8,  rd:1, wr:1, ops:'3280',      html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,(<span class="tok-reg">a1</span>)           <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON0</span> = #$3FCA</span>' },
+    { ln: 309, addr:'0212FE', cyc:'8(1/1)',    minC:8,  maxC:8,  rd:1, wr:1, ops:'3686',      html: '    <span class="tok-op">move.w</span>  <span class="tok-reg">d6</span>,(<span class="tok-reg">a3</span>)           <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'chips\')">BLTSIZE</span> = trigger!</span>' },
+    { ln: 323, addr:'021308', cyc:'10/14',     minC:10, maxC:14, rd:2, wr:0, ops:'51CF FFB6', html: '    <span class="tok-op">dbf</span>     <span class="tok-reg">d7</span>,.bob           <span class="tok-cmt">; 10 taken / 14 exit</span>' }
+  ];
+
+  // Emulates authentic WinUAE m68k_disasm_2 output parsed & enriched by amiga_disasm.c
+  const disasmLines = [
+    { ln: 0, addr:'0212BE', cyc:'18(3/0)',  minC:18, maxC:18, rd:3, wr:0, ops:'2235 4000', html:'<span class="tok-op">move.l</span>  ($00,<span class="tok-reg">a5</span>,<span class="tok-reg">d4</span>.w),<span class="tok-reg">d1</span> <span class="tok-ea">== $00042290</span>  <span class="tok-cmt">; H0+$027E</span>' },
+    { ln: 1, addr:'0212C8', cyc:'22(4/0)',  minC:22, maxC:22, rd:4, wr:0, ops:'D2B5 5000', html:'<span class="tok-op">add.l</span>   ($00,<span class="tok-reg">a5</span>,<span class="tok-reg">d5</span>.w),<span class="tok-reg">d1</span> <span class="tok-ea">== $00042100</span>  <span class="tok-cmt">; ← PC</span>' },
+    { ln: 2, addr:'0212CC', cyc:'14(2/0)',  minC:14, maxC:14, rd:2, wr:0, ops:'3034 2000', html:'<span class="tok-op">move.w</span>  ($00,<span class="tok-reg">a4</span>,<span class="tok-reg">d2</span>.w),<span class="tok-reg">d0</span> <span class="tok-ea">== $00028400</span>' },
+    { ln: 3, addr:'0212EE', cyc:'12(2/1)',  minC:12, maxC:12, rd:2, wr:1, ops:'3340 0002', html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,($0002,<span class="tok-reg">a1</span>) <span class="tok-ea">== $00dff042</span>     <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON1</span></span>' },
+    { ln: 4, addr:'0212F4', cyc:'8(1/1)',   minC:8,  maxC:8,  rd:1, wr:1, ops:'3280',      html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d0</span>,(<span class="tok-reg">a1</span>) <span class="tok-ea">== $00dff040</span>          <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'hrm\')">BLTCON0</span></span>' },
+    { ln: 5, addr:'0212F6', cyc:'20(3/0)',  minC:20, maxC:20, rd:3, wr:0, ops:'4EAE FF70', html:'<span class="tok-op">jsr</span>     (-$0090,<span class="tok-reg">a6</span>) <span class="tok-ea">== $00fc1280</span>     <span class="tok-cmt">; exec:_LVOForbid</span>' },
+    { ln: 6, addr:'0212FE', cyc:'8(1/1)',   minC:8,  maxC:8,  rd:1, wr:1, ops:'3686',      html:'<span class="tok-op">move.w</span>  <span class="tok-reg">d6</span>,(<span class="tok-reg">a3</span>) <span class="tok-ea">== $00dff058</span>          <span class="tok-cmt">; <span class="tok-hw" onclick="event.stopPropagation();switchInspector(\'chips\')">BLTSIZE</span></span>' },
+    { ln: 7, addr:'021308', cyc:'10/14',    minC:10, maxC:14, rd:2, wr:0, ops:'51CF FFB6', html:'<span class="tok-op">dbf</span>     <span class="tok-reg">d7</span>,$000212be (T)            <span class="tok-cmt">; loop -74B</span>' }
+  ];
+
+  const breakpoints = new Set([284, 309]);
+  const physBps = new Set(['0212FE']);
+  let selectedIdx = new Set([2, 3, 4]); // 3 lines selected by default to demonstrate sum
+  let lastClickedIdx = 2;
+  let srBits = { T:false, S:true, I:false, X:false, N:false, Z:false, V:false, C:false };
+  let sessionState = 'paused';
+  let centerView = 'source';
+  let showCycles = true;
+  let stepIdx = 0;
+  let traceBlits = false;
+  let hexGroup = 2; // 1=8b, 2=16b, 4=32b
+  let curMemAddr = '$038200';
+  let showGrid = false;
+  let planeMask = [true, true, false, false];
+  let curBuf = 'front';
+  let copFilter = 'all';
+  let copWatched = false;
+  let dmaHires = false;
+  const watchFmts = ['.w', 'ptr', '.l'];
+  const watchSamples = [
+    { '.w':'$0140 (320)', '.b':'$01', '.l':'$014000C0', 'ptr':'→ $000140' },
+    { 'ptr':'$0003E800 (CHIP)', '.l':'$0003E800', '.w':'$0003', '.b':'$00' },
+    { '.w':'$3FCA [SNAP]', '.b':'$3F [SNAP]', '.l':'$3FCA3000', 'ptr':'$00DFF040' }
+  ];
+
+  function findStBtn(st) { return document.querySelector(`.demo-btn[data-st="${st}"]`); }
+
+  function setSessionState(st, btn) {
+    sessionState = st;
+    document.querySelectorAll('.demo-btn[data-st]').forEach(b => b.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+
+    const isIdle = st === 'idle';
+    const isRun = st === 'running';
+    const isAttach = st === 'attach';
+    centerView = isAttach ? 'disasm' : 'source';
+
+    document.getElementById('target-select').classList.toggle('hidden', isAttach);
+    document.getElementById('boot-mode-btn').classList.toggle('hidden', isAttach);
+    document.getElementById('btn-build').classList.toggle('hidden', isAttach);
+    document.getElementById('btn-run').classList.toggle('hidden', isAttach || isRun);
+    document.getElementById('btn-debug').classList.toggle('hidden', isAttach || isRun || st === 'paused');
+    document.getElementById('btn-pause').classList.toggle('hidden', !isRun);
+    document.getElementById('btn-snap').classList.toggle('hidden', !isRun);
+    document.getElementById('btn-attach').classList.toggle('hidden', !isIdle);
+    document.getElementById('btn-detach').classList.toggle('hidden', isIdle);
+    document.getElementById('btn-stop').classList.toggle('hidden', isIdle || isAttach);
+    document.getElementById('tab-btn-build').classList.toggle('hidden', isAttach);
+    if (isAttach && document.getElementById('dtab-build').classList.contains('active')) switchDrawer('debug');
+
+    const banner = document.getElementById('sys-banner');
+    const bTxt = document.getElementById('sys-banner-txt');
+    const bAct = document.getElementById('sys-banner-actions');
+    if (isIdle) {
+      banner.className = 'sys-banner';
+      bTxt.textContent = '⚠ Session stopped · Toolchain check: vasmm68k_mot, m68k-amiga-elf-gcc, elf2hunk missing from PATH (ADFlib built-in). Configure via ⚙ Settings or attach to Amiberry.';
+      bAct.innerHTML = '<button class="tool-btn" onclick="setSessionState(\'attach\', findStBtn(\'attach\'))">🔌 ATTACH :2345</button>';
+    } else if (isRun) {
+      banner.className = 'sys-banner info';
+      bTxt.textContent = '▶ Amiberry running at 50 FPS · Zero background RSP polling (<0.05% CPU). Click ↻ SNAPSHOT or ⏸ PAUSE to read m dff000,200 + Chip RAM.';
+      bAct.innerHTML = '<button class="tool-btn" onclick="takeSnapshot()">↻ SNAPSHOT NOW</button>';
+    } else if (isAttach) {
+      banner.className = 'sys-banner info';
+      bTxt.textContent = '🔌 ATTACH MODE (owns_amiberry=false) on 127.0.0.1:2345 · D detaches cleanly (clears Kajo BPs, resumes Amiberry).';
+      bAct.innerHTML = '<button class="tool-btn" onclick="scanCopper()">🔎 SCAN COPPER</button>';
+    } else {
+      banner.className = 'sys-banner hidden';
+    }
+
+    document.getElementById('cpu-strip').classList.toggle('hidden', isIdle || isRun);
+    const pill = document.getElementById('rsp-pill');
+    if (isIdle) { pill.className = 'metro-badge dim'; pill.textContent = 'AMIBERRY STOPPED · IDLE'; }
+    else if (isRun) { pill.className = 'metro-badge live'; pill.textContent = 'AMIBERRY 50 FPS ● RUNNING'; }
+    else if (isAttach) { pill.className = 'metro-badge mag'; pill.textContent = 'ATTACHED :2345 ● NO SOURCE'; }
+    else { pill.className = 'metro-badge warn'; pill.textContent = 'AMIBERRY :2345 ● PAUSED @ L285'; }
+
+    document.getElementById('st-mode-pill').textContent = isAttach ? 'DISASM' : 'NORMAL';
+    document.getElementById('st-rsp').textContent = isIdle ? 'RSP: CLOSED' : (isRun ? 'RSP: RUNNING (QUIET)' : 'RSP :2345 ● PAUSED');
+    document.getElementById('st-lsp').classList.toggle('hidden', isAttach);
+    document.getElementById('st-file').innerHTML = isAttach ? '<strong>$0212C8 (Live Process)</strong>' : `<strong>${document.getElementById('target-select').selectedOptions[0].text}</strong>`;
+
+    renderLeftSidebar();
+    renderCenter();
+    renderCpu();
+  }
+
+  function renderLeftSidebar() {
+    const body = document.getElementById('left-tree-body');
+    const hunk = document.getElementById('left-hunk-panel');
+    if (sessionState === 'attach') {
+      document.getElementById('left-hdr-lbl').textContent = 'Tasks & Segments';
+      document.getElementById('left-hdr-badge').textContent = 'EXEC PROC';
+      body.innerHTML = `
+        <div class="tree-cat">qRcmd,tasks (Exec)</div>
+        <div class="tree-row active" onclick="setCenterView('disasm')"><span>⚙ demo.exe</span><span class="hunk-name">SP $07FE00</span></div>
+        <div class="tree-row"><span>⚙ dos.library</span><span class="hunk-addr">WAIT</span></div>
+        <div class="tree-row"><span>⚙ input.device</span><span class="hunk-addr">WAIT</span></div>
+        <div class="tree-cat">qXfer:memory-map:read</div>
+        <div class="tree-row" onclick="jumpMem('$038200','Chip RAM')"><span>🧠 Chip RAM</span><span>512 KB</span></div>
+        <div class="tree-row" onclick="jumpMem('$F80000','Kickstart ROM')"><span>📘 Kick 1.3</span><span>$F80000</span></div>`;
+      hunk.innerHTML = `
+        <div class="tree-cat" style="padding:0;">qRcmd,segments</div>
+        <div class="hunk-row" onclick="jumpMem('$021040','Seg 0 .text')"><span class="hunk-name">Seg 0 .CODE</span><span>$021040</span></div>
+        <div class="hunk-row" onclick="jumpMem('$038200','Seg 1 .CHIP')"><span class="hunk-name">Seg 1 .CHIP</span><span>$038200</span></div>`;
+    } else {
+      document.getElementById('left-hdr-lbl').textContent = 'Workspace & Hunks';
+      document.getElementById('left-hdr-badge').textContent = 'ELF→HUNK';
+      body.innerHTML = `
+        <div class="tree-cat">effects/</div>
+        <div class="tree-row active" onclick="setCenterView('source')"><span>📄 bobs.asm</span><span class="git-m">M</span></div>
+        <div class="tree-row" onclick="changeTarget('gouraud')"><span>📄 gouraud.asm</span></div>
+        <div class="tree-row" onclick="changeTarget('cube')"><span>📄 cube.asm</span></div>
+        <div class="tree-row" onclick="changeTarget('copper_test')"><span>📄 copper_test.asm</span></div>
+        <div class="tree-cat">Outline (Space f s)</div>
+        <div class="tree-row" onclick="jumpMem('$0212BE','.bob loop')"><span>λ .bob</span><span class="hunk-name">L282</span></div>
+        <div class="tree-row" onclick="switchInspector('copper')"><span>⚡ cop_list</span><span class="hunk-name">CHIP</span></div>
+        <div class="tree-row" onclick="switchInspector('hrm')"><span>📖 blitter.md</span></div>`;
+      hunk.innerHTML = `
+        <div class="tree-cat" style="padding:0;">qRcmd,segments (bobs.exe)</div>
+        <div class="hunk-row" onclick="jumpMem('$021040','HUNK 0 .text')"><span class="hunk-name">H0 .text</span><span>$021040</span></div>
+        <div class="hunk-row" onclick="jumpMem('$038200','HUNK 1 .CHIP')"><span class="hunk-name">H1 .CHIP</span><span>$038200</span></div>`;
+    }
+  }
+
+  function renderCpu() {
+    const dVals = ['0000004E', stepIdx % 2 ? '00000A16' : '00000840', '05A0', '01E0', '0410', '02F0', '03C2', '001F'];
+    document.getElementById('cpu-row-d').innerHTML = dVals.map((v, i) => {
+      const n = parseInt(v, 16);
+      const tip = `D${i}: $${v} | dec=${n} | bin=${(n&0xff).toString(2).padStart(8,'0')} (click to jump/edit via G)`;
+      return `<div class="reg-chip ${i === 1 && stepIdx > 0 ? 'changed' : ''}" title="${tip}" onclick="document.getElementById('code-hover-txt').textContent='${tip}'"><span class="reg-name">D${i}</span><span class="reg-val">${v}</span></div>`;
+    }).join('') + `<div class="sr-strip" title="Click bit to toggle SR via G packet">` +
+      Object.keys(srBits).map(b => `<span class="sr-bit ${srBits[b]?'set':''}" onclick="toggleSrBit('${b}')">${b}</span>`).join('') + `</div>`;
+    const aVals = [['A0','0003E800'],['A1','00DFF040'],['A2','00DFF048'],['A3','00DFF058'],['A5','00042000'],['A7','0007FE00'],['PC','0212C8']];
+    document.getElementById('cpu-row-a').innerHTML = aVals.map(([k,v]) =>
+      `<div class="reg-chip ${k==='PC'?'changed':''}" title="Click to inspect ${k}=$${v} in Memory Hex" onclick="jumpMem('$${v.slice(-6)}','${k}')"><span class="reg-name">${k}</span><span class="reg-val">${v}</span></div>`
+    ).join('');
+  }
+  function toggleSrBit(b) { srBits[b] = !srBits[b]; renderCpu(); }
+
+  function renderCenter() {
+    document.getElementById('btn-view-src').classList.toggle('active', centerView === 'source');
+    document.getElementById('btn-view-dis').classList.toggle('active', centerView === 'disasm');
+    document.getElementById('disasm-bar').classList.toggle('hidden', centerView !== 'disasm');
+    document.getElementById('disasm-src-badge').textContent =
+      centerView === 'disasm' ? 'qRcmd,disasm · M68K' : 'm68k · K:HRM';
+    const tabsEl = document.getElementById('center-tabs');
+    tabsEl.innerHTML = sessionState === 'attach'
+      ? `<div class="tab-pill active">[DISASM] $0212C8 (Live Amiberry)</div><div class="tab-pill" onclick="switchInspector('copper')">[CHIP] $038200</div>`
+      : `<div class="tab-pill active">[1] effects/bobs.asm ●</div><div class="tab-pill" onclick="switchInspector('hrm')">[2] docs/blitter.md</div>`;
+
+    const isDis = centerView === 'disasm';
+    const rows = isDis ? disasmLines : srcLines;
+    document.getElementById('code-view').innerHTML = rows.map((r, idx) => {
+      const pcHit = (sessionState === 'paused' || sessionState === 'attach') && (r.addr === '0212C8');
+      const bpHit = isDis ? physBps.has(r.addr) : breakpoints.has(r.ln);
+      const selHit = selectedIdx.has(idx);
+      const col1 = isDis
+        ? `<span class="g-addr">$${r.addr}</span><span class="g-ops">${r.ops}</span>`
+        : `<span class="g-ln">${r.ln}</span><span class="g-git ${r.ln>=302&&r.ln<=309?'mod':''}"></span>`;
+      const bpClick = isDis ? `event.stopPropagation();togglePhysBp('${r.addr}')` : `event.stopPropagation();toggleBp(${r.ln})`;
+      return `<div class="code-line ${pcHit?'cur-pc':''} ${selHit?'sel-ln':''}" onclick="selectCodeRow(${idx}, event)">
+        <span class="gutter"><span class="g-bp ${bpHit?'on':''}" onclick="${bpClick}">●</span><span class="g-pc">${pcHit?'▶':''}</span>${col1}<span class="g-cyc ${showCycles?'':'hidden'}">${r.cyc}</span></span><span>${r.html}</span>
+      </div>`;
+    }).join('');
+    updateSelectionCycles();
+  }
+
+  function selectCodeRow(idx, ev) {
+    if (ev && ev.shiftKey) {
+      const lo = Math.min(lastClickedIdx, idx), hi = Math.max(lastClickedIdx, idx);
+      selectedIdx.clear();
+      for (let i = lo; i <= hi; i++) selectedIdx.add(i);
+    } else {
+      selectedIdx = new Set([idx]);
+      lastClickedIdx = idx;
+    }
+    const rows = centerView === 'disasm' ? disasmLines : srcLines;
+    const r = rows[idx];
+    if (r) document.getElementById('st-pos').textContent = `Ln ${r.ln || idx}, $` + r.addr;
+    renderCenter();
+  }
+
+  function updateSelectionCycles() {
+    const rows = centerView === 'disasm' ? disasmLines : srcLines;
+    let minC = 0, maxC = 0, rd = 0, wr = 0, n = 0;
+    selectedIdx.forEach(i => {
+      const r = rows[i];
+      if (r && r.cyc) { n++; minC += r.minC; maxC += r.maxC; rd += r.rd; wr += r.wr; }
+    });
+    const txt = minC === maxC ? `${minC}` : `${minC}–${maxC}`;
+    document.getElementById('st-sel-cyc').textContent = `SEL: ${n} ln · ${txt}(${rd}/${wr}) cyc`;
+  }
+
+  function setCenterView(v) { centerView = v; renderCenter(); }
+  function stepCpu() { stepIdx++; renderCpu(); }
+  function toggleBp(ln) { if (breakpoints.has(ln)) breakpoints.delete(ln); else breakpoints.add(ln); renderCenter(); }
+  function togglePhysBp(addr) { if (physBps.has(addr)) physBps.delete(addr); else physBps.add(addr); renderCenter(); }
+  function toggleCycleCol() { showCycles = !showCycles; document.getElementById('btn-cyc-col').textContent = showCycles ? '⏱ CYC: ON' : '⏱ CYC: OFF'; renderCenter(); }
+  function toggleBootMode() { const b = document.getElementById('boot-mode-btn'); b.textContent = b.textContent === 'DH0:' ? 'ADF (ADFlib)' : 'DH0:'; }
+  function openProjectSetupPreview() {
+    const b = document.getElementById('sys-banner');
+    const txt = document.getElementById('sys-banner-txt');
+    const act = document.getElementById('sys-banner-actions');
+    if (b.dataset.setupOpen === '1') { b.dataset.setupOpen = '0'; setSessionState(sessionState, findStBtn(sessionState)); return; }
+    b.dataset.setupOpen = '1'; b.dataset.settingsOpen = '0';
+    b.className = 'sys-banner info';
+    txt.textContent = '📁 Project Setup (kajo-amiga.toml) · Option D native DAG (-dependall=make / C -MMD) + ADFlib .adf packager + Hardware Profiles.';
+    act.innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').dataset.setupOpen=\'0\';setSessionState(sessionState,findStBtn(sessionState))">DISMISS</button>';
+  }
+  function changeTarget(val) { document.getElementById('st-file').innerHTML = `<strong>effects/${val}.asm</strong>`; }
+  function takeSnapshot() { renderBitplanes(); renderCopper(); document.getElementById('rsp-out').textContent = '→ ↻ Snapshot: Pause → g + m dff000,200 + Chip RAM → Continue'; }
+
+  /* Bitplanes */
+  const palColors = [
+    { idx:0, ocs:'$000', rgb:[0,0,0], hex:'#000000' },
+    { idx:1, ocs:'$FFF', rgb:[255,255,255], hex:'#ffffff' },
+    { idx:2, ocs:'$ABD', rgb:[170,187,221], hex:'#aabbdd' },
+    { idx:3, ocs:'$669', rgb:[102,102,153], hex:'#666699' }
+  ];
+  const bctx = document.getElementById('bpl-canvas').getContext('2d');
+  let bplIndices = new Uint8Array(320 * 256);
+  function buildScene() {
+    bplIndices.fill(0);
+    const phase = curBuf === 'front' ? 0 : 0.45;
+    for (let i = 0; i < 48; i++) {
+      const t = i * 0.24 + phase;
+      const bx = Math.round(152 + 126 * Math.cos(t * 1.15) * Math.sin(t * 0.4 + 0.5));
+      const by = Math.round(120 + 94 * Math.sin(t * 1.7 + 0.3));
+      for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
+        const d2 = dx*dx + dy*dy;
+        if (d2 <= 50 && bx+dx >= 0 && bx+dx < 320 && by+dy >= 0 && by+dy < 256) {
+          const hd = (dx+2)*(dx+2) + (dy+2)*(dy+2);
+          bplIndices[(by+dy)*320 + bx+dx] = hd <= 10 ? 1 : (d2 <= 30 ? 2 : 3);
+        }
+      }
+    }
+  }
+  function renderBitplanes() {
+    buildScene();
+    const img = bctx.createImageData(320, 256);
+    for (let i = 0; i < 320 * 256; i++) {
+      const r0 = bplIndices[i];
+      const idx = (planeMask[0] ? (r0 & 1) : 0) | ((planeMask[1] ? ((r0 >> 1) & 1) : 0) << 1);
+      const [r, g, b] = palColors[idx].rgb;
+      const o = i * 4; img.data[o] = r; img.data[o+1] = g; img.data[o+2] = b; img.data[o+3] = 255;
+    }
+    bctx.putImageData(img, 0, 0);
+    if (showGrid) {
+      bctx.strokeStyle = 'rgba(0,216,240,0.32)'; bctx.lineWidth = 1;
+      for (let x = 16; x < 320; x += 16) { bctx.beginPath(); bctx.moveTo(x+0.5, 0); bctx.lineTo(x+0.5, 256); bctx.stroke(); }
+    }
+    document.getElementById('palette-row').innerHTML = palColors.map(c =>
+      `<div id="pal-${c.idx}" class="pal-swatch"><span class="pal-box" style="background:${c.hex}"></span><span>C0${c.idx}:${c.ocs}</span></div>`
+    ).join('');
+  }
+  document.getElementById('bpl-canvas').addEventListener('mousemove', e => {
+    const r = e.target.getBoundingClientRect();
+    const x = Math.max(0, Math.min(319, Math.floor((e.clientX - r.left) * 320 / r.width)));
+    const y = Math.max(0, Math.min(255, Math.floor((e.clientY - r.top) * 256 / r.height)));
+    const raw = bplIndices[y * 320 + x];
+    const idx = (planeMask[0] ? (raw & 1) : 0) | ((planeMask[1] ? ((raw >> 1) & 1) : 0) << 1);
+    const chip = (curBuf === 'front' ? 0x039800 : 0x03E800) + y * 80 + (x >> 3);
+    document.getElementById('pixel-probe').innerHTML =
+      `<span>X:${String(x).padStart(3,'0')} Y:${String(y).padStart(3,'0')} · IDX:${idx} (${palColors[idx].ocs})</span><span>CHIP $${chip.toString(16).toUpperCase().padStart(6,'0')} b${7-(x&7)}</span>`;
+    palColors.forEach(c => document.getElementById(`pal-${c.idx}`).classList.toggle('hit', c.idx === idx));
+  });
+  function updateBitplaneMeta() {
+    const src = document.getElementById('bpl-source').value;
+    const lay = document.getElementById('bpl-layout').value;
+    document.getElementById('bpl-src-pill').textContent = src === 'snap' ? 'EMU SNAP · BPL1PT $039800' : (src === 'sym' ? 'SYM: scr0' : 'MANUAL $039800');
+    document.getElementById('bpl-geom-lbl').textContent = lay === 'line2x' ? '320×256 LINE×2 · BPR:40' : (lay === 'planar' ? '320×256 PLANAR · BPR:40' : '320×256 INTERLEAVED · IMOD:40');
+  }
+  function togglePlane(p) { planeMask[p] = !planeMask[p]; document.getElementById(`btn-p${p}`).classList.toggle('active', planeMask[p]); renderBitplanes(); }
+  function toggleGrid() { showGrid = !showGrid; document.getElementById('btn-grid').classList.toggle('active', showGrid); renderBitplanes(); }
+  function setBuf(b) { curBuf = b; document.getElementById('btn-front').classList.toggle('active', b==='front'); document.getElementById('btn-back').classList.toggle('active', b==='back'); renderBitplanes(); }
+  function exportBitplanePng() {
+    const a = document.createElement('a'); a.href = document.getElementById('bpl-canvas').toDataURL('image/png');
+    a.download = 'kajo-amiga-bitplanes.png'; a.click();
+  }
+
+  /* Copperlist */
+  const copperRows = [
+    { addr:'$038200', raw:'0100 2200', kind:'display', dec:'MOVE BPLCON0, $2200 (2 planes)', note:'' },
+    { addr:'$038208', raw:'00E0 0003', kind:'display', dec:'MOVE BPL1PTH, $0003', note:'' },
+    { addr:'$038210', raw:'0044 FFFF', kind:'blt',     dec:'MOVE BLTAFWM, $FFFF', note:'COPCON $0002' },
+    { addr:'$038218', raw:'0001 7FFE', kind:'wait',    dec:'WAIT (V=0, H=0)', note:'BFD=0 BLIT SYNC' },
+    { addr:'$03821C', raw:'0040 3FCA', kind:'blt',     dec:'MOVE BLTCON0, $3FCA (ASH=3)', note:'COOKIE-CUT' },
+    { addr:'$038224', raw:'0058 0782', kind:'blt',     dec:'MOVE BLTSIZE, $0782 (30r×2w)', note:'TRIGGER' },
+    { addr:'$038E40', raw:'FFDF FFFE', kind:'barrier', dec:'WAIT (V=$FF, H=$DF)', note:'LINE 255 BARRIER' }
+  ];
+  function renderCopper() {
+    const rows = copperRows.filter(r => copFilter==='all' || r.kind===copFilter || (copFilter==='wait'&&r.kind==='barrier'));
+    document.getElementById('copper-list').innerHTML = rows.map(r =>
+      `<div class="cop-row ${r.kind}"><span class="cop-addr">${r.addr}</span><span class="cop-raw">${r.raw}</span><span class="cop-dec"><span>${r.dec}</span><span class="cop-note">${r.note}</span></span></div>`
+    ).join('');
+  }
+  function filterCopper(k, b) { copFilter = k; b.parentElement.querySelectorAll('.tool-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active'); renderCopper(); }
+  function loadCopperAddr() { document.getElementById('cop-src-pill').textContent = 'MANUAL ' + document.getElementById('cop-addr-inp').value; }
+  function scanCopper() { document.getElementById('cop-addr-inp').value = '$038200'; document.getElementById('cop-src-pill').textContent = 'SCANNER HIT $038200'; switchInspector('copper'); }
+  function watchCop1lc() {
+    copWatched = !copWatched;
+    const pill = document.getElementById('cop-src-pill');
+    pill.className = 'prov-pill ' + (copWatched ? 'prov-watched' : 'prov-snap');
+    pill.textContent = copWatched ? 'WATCHED $DFF080 → $038200' : 'EMU SNAP · COP1LC $038200';
+    document.getElementById('cop-footer').textContent = copWatched
+      ? 'qRcmd,watch range dff080 8 2 ff ff ffffffff 0 0 0 1 → PC=$021094'
+      : 'COP1LC/COPCON from m dff000,200 · 22 odd slots · COPCON=$0002';
+  }
+  function toggleTraceBlits() {
+    traceBlits = !traceBlits;
+    const btn = document.getElementById('btn-trace-blits');
+    const pill = document.getElementById('blt-prov-pill');
+    btn.classList.toggle('active', traceBlits);
+    pill.className = 'prov-pill ' + (traceBlits ? 'prov-watched' : 'prov-snap');
+    pill.textContent = traceBlits ? 'WATCHED (log_only=1)' : 'EMU SNAPSHOT (m dff000,200)';
+  }
+
+  /* Parameterized DMA Budget */
+  function toggleDmaCh(btn) { btn.classList.toggle('active'); updateDmaBudget(); }
+  function toggleDmaHires() { dmaHires = !dmaHires; document.getElementById('btn-dma-hires').textContent = dmaHires ? 'RES: HIRES' : 'RES: LORES'; updateDmaBudget(); }
+  function applyDmaPreset(p) {
+    if (p === 'bobs15') { document.getElementById('rng-bpl').value=2; document.getElementById('rng-blits').value=95; document.getElementById('inp-blt-w').value=2; document.getElementById('inp-blt-h').value=30; document.getElementById('rng-cop').value=774; }
+    else if (p === 'bobs12') { document.getElementById('rng-bpl').value=2; document.getElementById('rng-blits').value=100; document.getElementById('inp-blt-w').value=2; document.getElementById('inp-blt-h').value=24; document.getElementById('rng-cop').value=814; }
+    else { document.getElementById('rng-bpl').value=4; document.getElementById('rng-blits').value=64; document.getElementById('inp-blt-w').value=1; document.getElementById('inp-blt-h').value=16; document.getElementById('rng-cop').value=40; }
+    updateDmaBudget();
+  }
+  function updateDmaBudget() {
+    const bpl = parseInt(document.getElementById('rng-bpl').value, 10);
+    const blits = parseInt(document.getElementById('rng-blits').value, 10);
+    const bw = Math.max(1, parseInt(document.getElementById('inp-blt-w').value, 10) || 1);
+    const bh = Math.max(1, parseInt(document.getElementById('inp-blt-h').value, 10) || 1);
+    const cop = parseInt(document.getElementById('rng-cop').value, 10);
+    const chCount = document.querySelectorAll('.dma-ch.active').length;
+
+    document.getElementById('lbl-bpl').textContent = bpl;
+    document.getElementById('lbl-blits').textContent = blits;
+    document.getElementById('lbl-cop').textContent = cop;
+
+    const bplPerLine = bpl * (dmaHires ? 40 : 20);
+    const freeVis = Math.max(0, 113 - bplPerLine);
+    const availOdd = 256 * freeVis + 56 * 113;
+    const bltTotal = blits * bw * bh * chCount;
+    const copTotal = cop * 2;
+    const used = bltTotal + copTotal;
+    const pct = Math.round((used / Math.max(1, availOdd)) * 100);
+    const margin = availOdd - used;
+
+    document.getElementById('dma-budget-badge').textContent = `${used.toLocaleString()} / ${availOdd.toLocaleString()} (${pct}%)`;
+    const fill = document.getElementById('dma-slot-fill');
+    fill.style.width = `${Math.min(100, pct)}%`;
+    fill.className = 'level-fill ' + (pct > 100 ? 'urgent' : pct > 88 ? 'warn' : 'ok');
+    document.getElementById('dma-blt-val').textContent = bltTotal.toLocaleString();
+    document.getElementById('dma-cop-val').textContent = copTotal.toLocaleString();
+    document.getElementById('dma-margin-val').textContent = margin >= 0 ? `+${margin.toLocaleString()} OK` : `${margin.toLocaleString()} OVER`;
+    document.getElementById('dma-margin-val').style.color = margin >= 0 ? '#4cd964' : '#ff6b6b';
+
+    const segs = [
+      { label:'REF', pct:3.5, color:'#444' },
+      { label:'DSK', pct:2.6, color:'#666' },
+      { label:'AUD', pct:3.5, color:'#10893e' },
+      { label:`BPL(${bpl})`, pct:Math.min(72,(bplPerLine/113)*85), color:'#0078d4' },
+      { label:'COP', pct:7, color:'#ff8c00' },
+      { label:'BLT', pct:Math.max(4, 100-16.6-Math.min(72,(bplPerLine/113)*85)), color:'#00d8f0' }
+    ];
+    document.getElementById('dma-scanline-bar').innerHTML = segs.map(s=>`<div class="dma-seg" style="width:${s.pct.toFixed(1)}%;background:${s.color};">${s.pct>7?s.label:''}</div>`).join('');
+    document.getElementById('dma-legend').innerHTML = segs.map(s=>`<span><span class="dma-dot" style="background:${s.color}"></span>${s.label}</span>`).join('');
+  }
+
+  /* Watches, Trace Toggle, RSP Monitor, Hex Dump */
+  function toggleTraceBox(btn) {
+    const w = document.getElementById('watches-body');
+    const t = document.getElementById('trace-body');
+    const showTrace = t.classList.contains('hidden');
+    w.classList.toggle('hidden', showTrace);
+    t.classList.toggle('hidden', !showTrace);
+    document.getElementById('w-hdr-lbl').textContent = showTrace ? 'Trace Ring (history read)' : 'Typed Watches (.b/.w/.l/ptr)';
+    btn.textContent = showTrace ? 'WATCHES' : 'TRACE (128)';
+  }
+  function cycleWatchFmt(idx, btn) {
+    const cur = btn.textContent;
+    const next = watchFmts[(watchFmts.indexOf(cur) + 1) % watchFmts.length];
+    btn.textContent = next;
+    document.getElementById(`wval-${idx}`).textContent = watchSamples[idx][next] || watchSamples[idx]['ptr'];
+  }
+  function runMonitorPreset(cmd) {
+    document.getElementById('rsp-cmd').value = cmd;
+    runMonitorCmd();
+    switchDrawer('debug');
+  }
+  function runMonitorCmd() {
+    const cmd = document.getElementById('rsp-cmd').value.trim();
+    const out = document.getElementById('rsp-out');
+    if (cmd.startsWith('segments')) out.textContent = '→ {"process":131584,"name":"bobs.exe","command":"bobs.exe","segments":[{"index":0,"address":135232,"size":4280},{"index":1,"address":229888,"size":88000}]}';
+    else if (cmd.startsWith('tasks')) out.textContent = '→ {"tasks":[{"address":131584,"name":"bobs.exe","type":13,"list":"current","saved_sp":523776}]}';
+    else if (cmd.startsWith('disasm')) out.textContent = '→ (text) 000212c8 d2b5 5000 add.l ($00,a5,d5.w),d1 == $00042100';
+    else if (cmd.startsWith('history')) out.textContent = '→ {"entries":[{"pc":135876,"frame":412,"vpos":142,"hpos":94},...]}';
+    else if (cmd.startsWith('checkpoint')) out.textContent = '→ OK (savestate .uss bound to active GDB session)';
+    else out.textContent = '→ {"execution":"stopped","debugger_stopped":true,"host_pause":0,"frame":412,"vpos":142,"hpos":100,"cycles":"29184420"}';
+  }
+  const hexData = {
+    '$038200': [['038200',['01','00','22','00','01','08','00','28','00','E0','00','03','00','E2','98','00'],'.."..(..........',[2,3]], ['038210',['00','44','FF','FF','00','4C','00','04','00','01','7F','FE','00','40','3F','CA'],'.D...L.......@?.',[15]]],
+    '$039800': [['039800',['00','00','00','00','00','00','0F','F0','00','00','00','00','3F','F8','00','00'],'............?...',[6,7]]],
+    '$0212C8': [['0212C8',['D2','B5','50','00','30','34','20','00','E8','48','33','40','00','02','32','80'],'..P.04 ..H3@..2.',[]]]
+  };
+  function formatHexBytes(bytes, chgIdx) {
+    let s = '';
+    for (let i = 0; i < bytes.length; i++) {
+      const b = chgIdx.includes(i) ? `<span class="hex-chg">${bytes[i]}</span>` : bytes[i];
+      s += b;
+      if ((i + 1) % hexGroup === 0) s += ' ';
+    }
+    return s;
+  }
+  function jumpMem(addr, lbl) {
+    curMemAddr = hexData[addr] ? addr : '$038200';
+    document.getElementById('hex-jump-inp').value = addr;
+    document.getElementById('mem-label').textContent = `${lbl||''} (${addr})`;
+    const rows = hexData[curMemAddr];
+    document.getElementById('hex-dump').innerHTML = rows.map(([a, bytes, asc, chg]) =>
+      `<div class="hex-line"><span class="hex-addr">${a}:</span>  ${formatHexBytes(bytes, chg)}  <span class="hex-asc">${asc}</span></div>`
+    ).join('');
+    switchDrawer('mem');
+  }
+  function jumpMemInput() { jumpMem(document.getElementById('hex-jump-inp').value.trim(), 'JUMP'); }
+  function findMemPattern() { const q = document.getElementById('hex-find-inp').value.trim(); if (q) document.getElementById('mem-label').textContent = `HIT "${q}" @ ${curMemAddr}`; }
+  function setHexGroup(g, btn) { hexGroup = g; btn.parentElement.querySelectorAll('.seg-btn').forEach(x=>x.classList.remove('active')); btn.classList.add('active'); jumpMem(curMemAddr, 'VIEW'); }
+  function addWatchpointMsg(cmd) { switchDrawer('debug'); document.getElementById('rsp-out').textContent = `→ qRcmd,${cmd} ${curMemAddr.replace('$','')} 4 2 ... installed`; }
+  function exportMemBin() { document.getElementById('mem-label').textContent = `EXPORTED ${curMemAddr}.bin`; }
+  function triggerBuildLog() { document.getElementById('bottom-drawer').classList.remove('hidden'); switchDrawer('build'); }
+
+  /* Tabs & Niri Width Reflow */
+  function switchInspector(tab) {
+    document.querySelectorAll('.insp-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.insp-panel').forEach(p => p.classList.toggle('active', p.id === `tab-${tab}`));
+    if (document.getElementById('amiga-window').classList.contains('w-1-2')) setHalfPane('insp');
+  }
+  function switchDrawer(tab) {
+    document.querySelectorAll('.drawer-tab').forEach(b => b.classList.toggle('active', b.dataset.dtab === tab));
+    document.querySelectorAll('.drawer-panel').forEach(p => p.classList.toggle('active', p.id === `dtab-${tab}`));
+    document.getElementById('bottom-drawer').classList.remove('hidden');
+  }
+  function toggleDrawer() { document.getElementById('bottom-drawer').classList.toggle('hidden'); }
+  function openSettingsPreview() {
+    const b = document.getElementById('sys-banner');
+    const txt = document.getElementById('sys-banner-txt');
+    const act = document.getElementById('sys-banner-actions');
+    if (b.dataset.settingsOpen === '1') { b.dataset.settingsOpen = '0'; setSessionState(sessionState, findStBtn(sessionState)); return; }
+    b.dataset.settingsOpen = '1';
+    b.className = 'sys-banner info';
+    txt.textContent = '⚙ kajo-settings --page amiga (13/14) · Edits ~/.config/kajo/amiga.toml + inherits Kajo IDE (10/14) font/scheme via live GFileMonitor hot-reload.';
+    act.innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').dataset.settingsOpen=\'0\';setSessionState(sessionState,findStBtn(sessionState))">DISMISS</button>';
+  }
+  function toggleTree() { const el=document.getElementById('left-sidebar'); el.classList.toggle('hidden'); document.getElementById('btn-tree').classList.toggle('active', !el.classList.contains('hidden')); }
+  function toggleCpu() { const el=document.getElementById('cpu-strip'); el.classList.toggle('hidden'); document.getElementById('btn-cpu').classList.toggle('active', !el.classList.contains('hidden')); }
+  function setHalfPane(which) {
+    const win = document.getElementById('amiga-window');
+    win.classList.toggle('half-show-editor', which === 'editor');
+    win.classList.toggle('half-show-insp', which === 'insp');
+    document.getElementById('half-ed-btn').classList.toggle('active', which === 'editor');
+    document.getElementById('half-in-btn').classList.toggle('active', which === 'insp');
+  }
+  function setWidth(w, btn) {
+    btn.parentElement.querySelectorAll('.demo-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const win = document.getElementById('amiga-window');
+    const stg = document.getElementById('niri-stage');
+    const half = win.classList.contains('half-show-insp') ? 'half-show-insp' : 'half-show-editor';
+    win.className = 'amiga-window ' + half;
+    stg.classList.toggle('floating', w === 'float');
+    if (w === '2-3') win.classList.add('w-2-3');
+    if (w === '1-2') win.classList.add('w-1-2');
+    document.getElementById('half-toggle').classList.toggle('hidden', w !== '1-2');
+    document.getElementById('btn-tree').classList.toggle('hidden', w === '1-2');
+  }
+  function setAccent(hex, rgb, dot) {
+    document.querySelectorAll('.swatch-dot').forEach(d => d.classList.remove('active'));
+    dot.classList.add('active');
+    document.documentElement.style.setProperty('--metro-accent', hex);
+    document.documentElement.style.setProperty('--metro-accent-rgb', rgb);
+  }
+
+  renderBitplanes();
+  renderCopper();
+  updateDmaBudget();
+  setSessionState('paused', findStBtn('paused'));
+  jumpMem('$038200', 'COP1LC');
+  switchDrawer('debug');
+</script>
+</body>
+</html>
