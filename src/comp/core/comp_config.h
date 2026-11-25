@@ -36,6 +36,12 @@ typedef enum {
 } CompVrrPolicy;
 
 typedef enum {
+    COMP_HDR_OFF  = 0,
+    COMP_HDR_ON   = 1,
+    COMP_HDR_AUTO = 2,
+} CompHdrPolicy;
+
+typedef enum {
     COMP_TRANSFORM_NORMAL      = 0,
     COMP_TRANSFORM_90          = 1,
     COMP_TRANSFORM_180         = 2,
@@ -65,6 +71,9 @@ typedef enum {
 bool                  comp_vrr_policy_from_str(const char *s, CompVrrPolicy *out);
 const char           *comp_vrr_policy_to_str(CompVrrPolicy policy);
 
+bool                  comp_hdr_policy_from_str(const char *s, CompHdrPolicy *out);
+const char           *comp_hdr_policy_to_str(CompHdrPolicy policy);
+
 bool                  comp_transform_from_str(const char *s, CompTransform *out);
 const char           *comp_transform_to_str(CompTransform tf);
 
@@ -92,6 +101,10 @@ typedef struct {
     CompTransform transform;      /* COMP_TRANSFORM_* */
     bool          has_vrr;
     CompVrrPolicy vrr;            /* COMP_VRR_* */
+    bool          has_hdr;
+    CompHdrPolicy hdr;            /* COMP_HDR_* */
+    bool          has_hdr_peak_nits;
+    int32_t       hdr_peak_nits;  /* 0 (EDID auto) or 100..10000 cd/m^2 */
 } CompOutputRule;
 
 typedef struct CompConfig {

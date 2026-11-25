@@ -373,4 +373,24 @@ void comp_fx_transition_pack(CompFxRect dst_box,
  * Returns false when animation should snap immediately (duration_ms <= 0 or slowdown <= 0). */
 bool comp_fx_focus_spring_params(int32_t duration_ms, double slowdown, CompSpringParams *out);
 
+typedef struct {
+    float max_cll_nits;
+    float max_fall_nits;
+    float min_luma_nits;
+    float effective_peak_nits;
+    float sdr_white_nits;
+} CompFxHdrLuminance;
+
+/* Physical luminance clamping invariants (spec_comp_hdr.md §2.4.3). */
+void comp_fx_clamp_hdr_luminance(float edid_max_cll, float edid_max_fall,
+                                 float edid_min_luma, int32_t peak_override_nits,
+                                 double config_sdr_white_nits,
+                                 CompFxHdrLuminance *out);
+
+/* Tone-maps an offscreen premultiplied linear RGBA16F (DRM_FORMAT_ABGR16161616F)
+ * buffer to premultiplied sRGB ARGB8888 for faithful SDR PNG/clipboard screenshots. */
+void comp_fx_tonemap_fp16_to_argb8888(const uint16_t *fp16_abgr,
+                                      uint8_t *out_argb8888,
+                                      int width, int height);
+
 #endif /* KAJO_COMP_FX_CORE_H */

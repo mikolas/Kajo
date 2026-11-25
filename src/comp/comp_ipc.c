@@ -421,6 +421,7 @@ typedef enum {
     IPC_ACT_SWITCH_KEYBOARD_LAYOUT,
     IPC_ACT_SET_OUTPUT_TRANSFORM,
     IPC_ACT_SET_OUTPUT_CONFIG,
+    IPC_ACT_SET_OUTPUT_HDR,
     IPC_ACT_SCREENSHOT_CONFIRM,
     IPC_ACT_SCREENSHOT_CANCEL,
     IPC_ACT_POWER_ON_MONITORS,
@@ -436,6 +437,7 @@ static const struct { const char *name; CompIpcExtraAction act; } k_ipc_extra_ac
     { COMP_IPC_ACT_SWITCH_KEYBOARD_LAYOUT, IPC_ACT_SWITCH_KEYBOARD_LAYOUT },
     { COMP_IPC_ACT_SET_OUTPUT_TRANSFORM,   IPC_ACT_SET_OUTPUT_TRANSFORM },
     { COMP_IPC_ACT_SET_OUTPUT_CONFIG,      IPC_ACT_SET_OUTPUT_CONFIG },
+    { COMP_IPC_ACT_SET_OUTPUT_HDR,         IPC_ACT_SET_OUTPUT_HDR },
     { COMP_IPC_ACT_SCREENSHOT_CONFIRM,     IPC_ACT_SCREENSHOT_CONFIRM },
     { COMP_IPC_ACT_SCREENSHOT_CANCEL,      IPC_ACT_SCREENSHOT_CANCEL },
     { COMP_IPC_ACT_POWER_ON_MONITORS,      IPC_ACT_POWER_ON_MONITORS },
@@ -662,7 +664,8 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
         CompTransform tf = COMP_TRANSFORM_NORMAL;
         bool tf_ok = comp_transform_from_str(jobj_str(req, COMP_KEY_TRANSFORM), &tf) &&
                      tf <= COMP_TRANSFORM_270;
-        if (!tf_ok || !comp_output_configure(s, jobj_str(req, COMP_IPC_KEY_OUTPUT), NULL, -1.0, (int)tf, -1))
+        if (!tf_ok || !comp_output_configure(s, jobj_str(req, COMP_IPC_KEY_OUTPUT),
+                                             NULL, -1.0, (int)tf, -1, -1, -1))
             client_reply_error(c, !tf_ok ? "invalid 'transform' (expected normal, 90, 180, or 270)"
                                          : "failed to configure output transform");
         else
@@ -672,18 +675,64 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
     case IPC_ACT_SET_OUTPUT_CONFIG: {
         const char *tf_str  = jobj_str(req, COMP_KEY_TRANSFORM);
         const char *vrr_str = jobj_str(req, COMP_KEY_VRR);
+        const JVal *hdr_v   = jobj_get(req, COMP_KEY_HDR);
+        const char *hdr_str = jobj_str(req, COMP_KEY_HDR);
         double scale = -1.0;
         jobj_num(req, COMP_KEY_SCALE, &scale);
-        CompTransform tf_val = COMP_TRANSFORM_NORMAL;
+        CompTransform tf_val  = COMP_TRANSFORM_NORMAL;
         CompVrrPolicy vrr_val = COMP_VRR_OFF;
-        bool tf_ok  = !tf_str || (comp_transform_from_str(tf_str, &tf_val) && tf_val <= COMP_TRANSFORM_270);
-        bool vrr_ok = !vrr_str || comp_vrr_policy_from_str(vrr_str, &vrr_val);
-        if (!tf_ok || !vrr_ok ||
+        CompHdrPolicy hdr_val = COMP_HDR_OFF;
+        bool tf_ok   = !tf_str  || (comp_transform_from_str(tf_str, &tf_val) && tf_val <= COMP_TRANSFORM_270);
+        bool vrr_ok  = !vrr_str || comp_vrr_policy_from_str(vrr_str, &vrr_val);
+        bool hdr_ok  = !hdr_v   || (hdr_str && comp_hdr_policy_from_str(hdr_str, &hdr_val));
+        int hdr_peak = -1;
+        bool peak_ok = true;
+        if (jobj_get(req, COMP_KEY_HDR_PEAK_NITS) != NULL) {
+            double peak_d = 0.0;
+            if (!jobj_num(req, COMP_KEY_HDR_PEAK_NITS, &peak_d) ||
+                (peak_d != 0.0 && (peak_d < 100.0 || peak_d > 10000.0)))
+                peak_ok = false;
+            else
+                hdr_peak = (int)llround(peak_d);
+        }
+        if (!tf_ok || !vrr_ok || !hdr_ok || !peak_ok ||
             !comp_output_configure(s, jobj_str(req, COMP_IPC_KEY_OUTPUT),
                                    jobj_str(req, COMP_KEY_MODE), scale,
                                    tf_str ? (int)tf_val : -1,
-                                   vrr_str ? (int)vrr_val : -1))
+                                   vrr_str ? (int)vrr_val : -1,
+                                   hdr_str ? (int)hdr_val : -1,
+                                   hdr_peak))
             client_reply_error(c, "output configuration rejected");
+        else
+            client_reply_ok(c);
+        return;
+    }
+    case IPC_ACT_SET_OUTPUT_HDR: {
+        const JVal *hdr_v   = jobj_get(req, COMP_KEY_HDR);
+        const char *hdr_str = jobj_str(req, COMP_KEY_HDR);
+        const JVal *peak_v  = jobj_get(req, COMP_KEY_HDR_PEAK_NITS);
+        if (!hdr_v && !peak_v) {
+            client_reply_error(c, "set-output-hdr requires 'hdr' or 'hdr_peak_nits'");
+            return;
+        }
+        CompHdrPolicy hdr_val = COMP_HDR_OFF;
+        if (hdr_v != NULL && (!hdr_str || !comp_hdr_policy_from_str(hdr_str, &hdr_val))) {
+            client_reply_error(c, "invalid 'hdr' (expected off, on, or auto)");
+            return;
+        }
+        int hdr_peak = -1;
+        if (peak_v != NULL) {
+            double peak_d = 0.0;
+            if (!jobj_num(req, COMP_KEY_HDR_PEAK_NITS, &peak_d) ||
+                (peak_d != 0.0 && (peak_d < 100.0 || peak_d > 10000.0))) {
+                client_reply_error(c, "invalid 'hdr_peak_nits' (expected 0 or 100..10000)");
+                return;
+            }
+            hdr_peak = (int)llround(peak_d);
+        }
+        if (!comp_output_configure_hdr(s, jobj_str(req, COMP_IPC_KEY_OUTPUT),
+                                       hdr_str ? (int)hdr_val : -1, hdr_peak))
+            client_reply_error(c, "failed to configure output HDR");
         else
             client_reply_ok(c);
         return;

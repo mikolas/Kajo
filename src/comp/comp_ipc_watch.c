@@ -3,6 +3,7 @@
 
 #include "comp_log.h"
 #include "core/comp_schema_keys.h"
+#include "fx/comp_fx.h"
 
 #include <dirent.h>
 #include <limits.h>
@@ -131,6 +132,23 @@ comp_ipc_append_outputs_array(JsonBuf *b, const CompServer *s)
         comp_ipc_jbuf_str(b, comp_transform_to_str((CompTransform)wo->transform));
         comp_ipc_jbuf_puts(b, ",\"vrr\":");
         comp_ipc_jbuf_str(b, comp_vrr_policy_to_str(o->vrr_policy));
+        float sdr_w = comp_fx_output_get_sdr_white_nits((struct wlr_output *)wo);
+        if (sdr_w <= 0.0f)
+            sdr_w = 203.0f;
+        float headroom = comp_fx_output_get_hdr_headroom((struct wlr_output *)wo);
+        comp_ipc_jbuf_printf(b, ",\"hdr_supported\":%s,\"hdr_active\":%s,\"hdr_policy\":",
+                             o->hdr_supported ? "true" : "false",
+                             o->hdr_active ? "true" : "false");
+        comp_ipc_jbuf_str(b, comp_hdr_policy_to_str(o->hdr_policy));
+        comp_ipc_jbuf_puts(b, ",\"hdr_reason\":");
+        comp_ipc_jbuf_str(b, o->hdr_reason ? o->hdr_reason : "");
+        comp_ipc_jbuf_printf(b,
+                             ",\"hdr_max_nits\":%.1f,\"hdr_peak_nits\":%d,"
+                             "\"hdr_sdr_white_nits\":%.1f,\"hdr_headroom\":%.3f",
+                             (double)o->hdr_effective_peak_nits,
+                             (int)o->hdr_peak_nits,
+                             (double)sdr_w,
+                             (double)headroom);
         comp_ipc_jbuf_puts(b, ",\"modes\":[");
         bool first_m = true;
         const struct wlr_output_mode *m;

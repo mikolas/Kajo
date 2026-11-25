@@ -869,6 +869,8 @@ test_comp_toml_helpers_roundtrip(void)
         "1.50",
         "90",
         "on",
+        "auto",
+        617,
         NULL));
 
     g_autofree gchar *out_after = NULL;
@@ -881,6 +883,17 @@ test_comp_toml_helpers_roundtrip(void)
     /* Newly added rule escaped quotes in match */
     g_assert_nonnull(strstr(out_after, "match = \"Dell \\\"UltraSharp\\\" 27\""));
     g_assert_nonnull(strstr(out_after, "mode = \"2560x1440@144.000\""));
+    g_assert_nonnull(strstr(out_after, "hdr = \"auto\""));
+    g_assert_nonnull(strstr(out_after, "hdr_peak_nits = 617"));
+
+    g_assert_false(kajo_config_comp_save_sdr_white_nits(tmpdir, 50, NULL));
+    g_assert_true(kajo_config_comp_save_sdr_white_nits(tmpdir, 260, NULL));
+    g_assert_cmpint(kajo_config_comp_read_sdr_white_nits(tmpdir), ==, 260);
+    g_autofree gchar *comp_after_sdr = NULL;
+    g_assert_true(g_file_get_contents(comp_path, &comp_after_sdr, NULL, NULL));
+    g_assert_nonnull(strstr(comp_after_sdr, "sdr_white_nits = 260.0"));
+    g_assert_nonnull(strstr(comp_after_sdr, "inactive_border_color"));
+    g_assert_nonnull(strstr(comp_after_sdr, "\"#101824\""));
 
     rm_rf(tmpdir);
 }
@@ -972,6 +985,71 @@ test_domain_ide_key_remaps(void)
     g_assert_cmpstr(o3->action, ==, "move_up");
 }
 
+static void
+test_comp_toml_hdr_roundtrip(void)
+{
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-cfg-hdr-XXXXXX", NULL);
+    g_assert_nonnull(tmpdir);
+
+    g_autofree gchar *comp_path = g_build_filename(tmpdir, "comp.toml", NULL);
+    g_autofree gchar *out_path  = g_build_filename(tmpdir, "outputs.toml", NULL);
+
+    g_assert_true(g_file_set_contents(comp_path,
+        "# Preserve header\n"
+        "[layout]\n"
+        "inactive_border_color = \"#333842\"\n"
+        "[effects]\n"
+        "dither = true\n"
+        "[effects.glass]\n"
+        "tint = \"#101824\"\n", -1, NULL));
+
+    g_assert_true(g_file_set_contents(out_path,
+        "[[output]]\n"
+        "match = \"HDMI-A-1\"\n"
+        "enabled = false\n"
+        "vrr = \"on-demand\"\n", -1, NULL));
+
+    g_assert_true(kajo_config_comp_save_output_rule(
+        tmpdir,
+        "eDP-1",
+        "Samsung Display Corp. 0x41AA",
+        "2880x1800@120.000",
+        "2.00",
+        "normal",
+        "off",
+        "auto",
+        617,
+        NULL));
+
+    g_autofree gchar *out_after = NULL;
+    g_assert_true(g_file_get_contents(out_path, &out_after, NULL, NULL));
+    g_assert_nonnull(strstr(out_after, "match = \"HDMI-A-1\""));
+    g_assert_nonnull(strstr(out_after, "enabled = false"));
+    g_assert_nonnull(strstr(out_after, "match = \"eDP-1\""));
+    g_assert_nonnull(strstr(out_after, "hdr = \"auto\""));
+    g_assert_nonnull(strstr(out_after, "hdr_peak_nits = 617"));
+
+    g_assert_cmpint(kajo_config_comp_read_sdr_white_nits(tmpdir), ==, 203);
+    g_assert_false(kajo_config_comp_save_sdr_white_nits(tmpdir, 50, NULL));
+    g_assert_false(kajo_config_comp_save_sdr_white_nits(tmpdir, 1200, NULL));
+    g_assert_true(kajo_config_comp_save_sdr_white_nits(tmpdir, 260, NULL));
+    g_assert_cmpint(kajo_config_comp_read_sdr_white_nits(tmpdir), ==, 260);
+
+    g_autofree gchar *comp_after = NULL;
+    g_assert_true(g_file_get_contents(comp_path, &comp_after, NULL, NULL));
+    g_assert_nonnull(strstr(comp_after, "# Preserve header"));
+    g_assert_nonnull(strstr(comp_after, "sdr_white_nits"));
+    g_assert_nonnull(strstr(comp_after, "= 260.0"));
+    g_assert_nonnull(strstr(comp_after, "inactive_border_color = \"#333842\""));
+    g_assert_nonnull(strstr(comp_after, "tint = \"#101824\""));
+
+    /* In-place update preserves existing scalar layout */
+    g_assert_true(kajo_config_comp_save_sdr_white_nits(tmpdir, 300, NULL));
+    g_assert_cmpint(kajo_config_comp_read_sdr_white_nits(tmpdir), ==, 300);
+
+    rm_rf(tmpdir);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -990,6 +1068,7 @@ main(int argc, char *argv[])
     g_test_add_func("/config/store/patcher-never-writes-unparsable-file", test_patcher_never_writes_unparsable_file);
     g_test_add_func("/config/store/subscriber-runs-on-subscriber-thread", test_subscriber_runs_on_subscriber_thread);
     g_test_add_func("/config/comp-toml-helpers/roundtrip", test_comp_toml_helpers_roundtrip);
+    g_test_add_func("/config/comp-toml-helpers/hdr-roundtrip", test_comp_toml_hdr_roundtrip);
 
     return g_test_run();
 }

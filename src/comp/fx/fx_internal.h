@@ -114,6 +114,7 @@ struct CompFxSystem {
     struct wlr_kfx_shader   *transition_resize_shader;
 
     struct wlr_color_transform *color_transform;
+    struct wlr_color_transform *hdr_screenshot_transform;
     float                       color_matrix[9];
     bool                        has_color_matrix;
 };

@@ -9,12 +9,14 @@
 #include <string.h>
 #include <strings.h>
 #include <talloc.h>
+#include <wlr/types/wlr_color_management_v1.h>
 #include <wlr/types/wlr_ext_foreign_toplevel_list_v1.h>
 #include <wlr/types/wlr_ext_image_capture_source_v1.h>
 #include <wlr/types/wlr_foreign_toplevel_management_v1.h>
 #include <wlr/types/wlr_keyboard.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_seat.h>
+#include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_tearing_control_v1.h>
 #include <wlr/types/wlr_xdg_activation_v1.h>
 #include <wlr/types/wlr_xdg_dialog_v1.h>
@@ -215,6 +217,7 @@ comp_window_relayout(CompServer *s)
     bool wants_vrr = comp_window_focused_wants_vrr(s);
     if (focus_changed || wants_vrr != s->last_wants_vrr)
         comp_output_update_vrr(s);
+    comp_output_update_hdr_auto(s);
     comp_server_schedule_frames(s);
 
     if (ws_changed)
@@ -394,6 +397,47 @@ comp_window_focused_wants_tearing(const CompServer *s)
         return false;
     return wlr_tearing_control_manager_v1_surface_hint_from_surface(s->tearing_mgr, surf) ==
            WP_TEARING_CONTROL_V1_PRESENTATION_HINT_ASYNC;
+}
+
+static bool
+surface_tree_is_hdr(struct wlr_surface *surface, int depth)
+{
+    if (!surface || depth > 16)
+        return false;
+    const struct wlr_image_description_v1_data *data =
+        wlr_surface_get_image_description_v1_data(surface);
+    if (data && surface->mapped &&
+        (data->tf_named == WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ ||
+         data->tf_named == WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR ||
+         (data->has_mastering_luminance && data->mastering_luminance.max > 250.0f))) {
+        return true;
+    }
+    struct wlr_subsurface *sub;
+    wl_list_for_each(sub, &surface->current.subsurfaces_below, current.link) {
+        if (sub->surface && surface_tree_is_hdr(sub->surface, depth + 1))
+            return true;
+    }
+    wl_list_for_each(sub, &surface->current.subsurfaces_above, current.link) {
+        if (sub->surface && surface_tree_is_hdr(sub->surface, depth + 1))
+            return true;
+    }
+    return false;
+}
+
+bool
+comp_window_has_visible_hdr_surface(const CompServer *s)
+{
+    if (!s)
+        return false;
+    const CompWindow *w;
+    wl_list_for_each(w, &s->windows, link) {
+        if (!w->mapped || !w->scene_tree || !w->scene_tree->node.enabled)
+            continue;
+        struct wlr_surface *surf = comp_window_get_surface(w);
+        if (surf && surface_tree_is_hdr(surf, 0))
+            return true;
+    }
+    return false;
 }
 
 static struct wlr_scene_node *
@@ -1014,6 +1058,7 @@ handle_toplevel_map(void *owner, void *data)
 
     comp_window_relayout(s);
     comp_overview_on_layout_changed(s);
+    comp_protocols_update_surface_preferred_image_description(s, comp_window_get_surface(w));
     comp_ipc_emit_workspaces(s);
     comp_ipc_emit_windows(s);
 }

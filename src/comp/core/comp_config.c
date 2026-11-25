@@ -56,6 +56,39 @@ comp_vrr_policy_to_str(CompVrrPolicy policy)
 
 static const struct {
     const char   *name;
+    CompHdrPolicy val;
+} k_hdr_policies[] = {
+    { "off",  COMP_HDR_OFF },
+    { "on",   COMP_HDR_ON },
+    { "auto", COMP_HDR_AUTO },
+};
+
+bool
+comp_hdr_policy_from_str(const char *s, CompHdrPolicy *out)
+{
+    if (!s || !out)
+        return false;
+    for (size_t i = 0; i < sizeof(k_hdr_policies) / sizeof(k_hdr_policies[0]); i++) {
+        if (strcasecmp(s, k_hdr_policies[i].name) == 0) {
+            *out = k_hdr_policies[i].val;
+            return true;
+        }
+    }
+    return false;
+}
+
+const char *
+comp_hdr_policy_to_str(CompHdrPolicy policy)
+{
+    for (size_t i = 0; i < sizeof(k_hdr_policies) / sizeof(k_hdr_policies[0]); i++) {
+        if (k_hdr_policies[i].val == policy)
+            return k_hdr_policies[i].name;
+    }
+    return "off";
+}
+
+static const struct {
+    const char   *name;
     CompTransform val;
 } k_transforms[] = {
     { "normal",      COMP_TRANSFORM_NORMAL },
@@ -688,6 +721,29 @@ merge_output_array(CompConfig *cfg, toml_datum_t arr, const char *src, CompDiagL
             } else {
                 comp_diag_add(diag, src, vrr.lineno,
                               "[[output]] 'vrr' must be \"off\", \"on\", or \"on-demand\"; ignored");
+            }
+        }
+        toml_datum_t hdr = toml_get(t, COMP_KEY_HDR);
+        if (hdr.type != TOML_UNKNOWN) {
+            CompHdrPolicy hp = COMP_HDR_OFF;
+            if (hdr.type == TOML_STRING && comp_hdr_policy_from_str(hdr.u.s, &hp)) {
+                rule->has_hdr = true;
+                rule->hdr     = hp;
+            } else {
+                comp_diag_add(diag, src, hdr.lineno,
+                              "[[output]] 'hdr' must be \"off\", \"on\", or \"auto\"; ignored");
+            }
+        }
+        toml_datum_t hpk = toml_get(t, COMP_KEY_HDR_PEAK_NITS);
+        if (hpk.type != TOML_UNKNOWN) {
+            double pk_d = -1.0;
+            if (comp_config_datum_as_double(hpk, &pk_d) &&
+                (fabs(pk_d) < 1e-9 || (pk_d >= 100.0 && pk_d <= 10000.0))) {
+                rule->has_hdr_peak_nits = true;
+                rule->hdr_peak_nits     = (int32_t)llround(pk_d);
+            } else {
+                comp_diag_add(diag, src, hpk.lineno,
+                              "[[output]] 'hdr_peak_nits' must be 0 or in 100..10000; ignored");
             }
         }
     }

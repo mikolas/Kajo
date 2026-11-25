@@ -1017,6 +1017,8 @@ kajo_config_comp_save_output_rule(const char *config_dir,
                                   const char *scale_buf,
                                   const char *transform_str,
                                   const char *vrr_str,
+                                  const char *hdr_str,
+                                  int         hdr_peak_nits,
                                   GError    **error)
 {
     g_autofree gchar *dir = (config_dir && *config_dir)
@@ -1044,8 +1046,82 @@ kajo_config_comp_save_output_rule(const char *config_dir,
         append_output_kv_quoted(out_s, COMP_KEY_TRANSFORM, transform_str);
     if (vrr_str && *vrr_str)
         append_output_kv_quoted(out_s, COMP_KEY_VRR, vrr_str);
+    if (hdr_str && *hdr_str)
+        append_output_kv_quoted(out_s, COMP_KEY_HDR, hdr_str);
+    if (hdr_peak_nits >= 100 && hdr_peak_nits <= 10000)
+        g_string_append_printf(out_s, "%s = %d\n", COMP_KEY_HDR_PEAK_NITS, hdr_peak_nits);
 
     gboolean ok = g_file_set_contents(outputs_path, out_s->str, (gssize)out_s->len, error);
     g_string_free(out_s, TRUE);
+    return ok;
+}
+
+int
+kajo_config_comp_read_sdr_white_nits(const char *config_dir)
+{
+    g_autofree gchar *dir = (config_dir && *config_dir)
+        ? g_strdup(config_dir)
+        : kajo_config_resolve_user_dir();
+    g_autofree gchar *comp_path = g_build_filename(dir, COMP_CFG_FILE_COMP, NULL);
+    g_autofree gchar *comp_text = NULL;
+    if (!g_file_get_contents(comp_path, &comp_text, NULL, NULL)) {
+        g_autofree gchar *def_comp = kajo_config_find_default_file(COMP_CFG_FILE_COMP);
+        if (def_comp)
+            (void)g_file_get_contents(def_comp, &comp_text, NULL, NULL);
+    }
+
+    int result = 203;
+    if (!comp_text || !*comp_text)
+        return result;
+
+    toml_result_t r = toml_parse(comp_text, (int)strlen(comp_text));
+    if (r.ok) {
+        toml_datum_t fx = toml_get(r.toptab, COMP_SEC_EFFECTS);
+        double dv = 0.0;
+        if (fx.type == TOML_TABLE &&
+            toml_datum_as_double(toml_get(fx, COMP_KEY_SDR_WHITE_NITS), &dv) &&
+            dv >= 80.0 && dv <= 1000.0) {
+            result = (int)(dv + 0.5);
+        }
+    }
+    toml_free(r);
+    return result;
+}
+
+gboolean
+kajo_config_comp_save_sdr_white_nits(const char *config_dir,
+                                     int         sdr_white_nits,
+                                     GError    **error)
+{
+    if (sdr_white_nits != 0 && (sdr_white_nits < 80 || sdr_white_nits > 1000)) {
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_INVAL,
+                    "sdr_white_nits must be 0 or in 80..1000 (got %d)", sdr_white_nits);
+        return FALSE;
+    }
+
+    g_autofree gchar *dir = (config_dir && *config_dir)
+        ? g_strdup(config_dir)
+        : kajo_config_resolve_user_dir();
+    if (g_mkdir_with_parents(dir, 0755) != 0) {
+        g_set_error(error, G_FILE_ERROR, G_FILE_ERROR_FAILED,
+                    "Failed to create config directory '%s'", dir);
+        return FALSE;
+    }
+
+    g_autofree gchar *comp_path = g_build_filename(dir, COMP_CFG_FILE_COMP, NULL);
+    g_autofree gchar *comp_existing = NULL;
+    if (!g_file_get_contents(comp_path, &comp_existing, NULL, NULL)) {
+        g_autofree gchar *def_comp = kajo_config_find_default_file(COMP_CFG_FILE_COMP);
+        if (def_comp)
+            (void)g_file_get_contents(def_comp, &comp_existing, NULL, NULL);
+    }
+
+    GString *comp_doc = g_string_new(comp_existing ? comp_existing : "");
+    char val_buf[32];
+    snprintf(val_buf, sizeof(val_buf), "%d.0", sdr_white_nits);
+    kajo_toml_patch_or_insert_scalar(comp_doc, COMP_SEC_EFFECTS, COMP_KEY_SDR_WHITE_NITS, val_buf);
+
+    gboolean ok = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);
+    g_string_free(comp_doc, TRUE);
     return ok;
 }

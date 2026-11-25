@@ -29,6 +29,14 @@ typedef struct _SettingsPageDisplays {
     GtkWidget *seg_scale;
     GtkWidget *row_vrr;
     GtkWidget *seg_vrr;
+    GtkWidget *row_hdr;
+    GtkWidget *seg_hdr;
+    GtkWidget *row_hdr_sdr_white;
+    GtkWidget *scale_hdr_sdr_white;
+    GtkWidget *badge_hdr_sdr_white;
+    GtkWidget *row_hdr_peak;
+    GtkWidget *scale_hdr_peak;
+    GtkWidget *badge_hdr_peak;
 
     gchar     *out_name;
     gchar     *make_model;
@@ -37,6 +45,14 @@ typedef struct _SettingsPageDisplays {
     gboolean   vrr_avail;
     gboolean   saved_vrr_active;
     guint      saved_vrr_idx;
+    gboolean   hdr_supported;
+    gboolean   hdr_active;
+    gchar     *hdr_reason;
+    double     hdr_max_nits;
+    double     hdr_headroom;
+    guint      saved_hdr_idx;
+    int        saved_hdr_peak_nits;
+    int        saved_sdr_white_nits;
     guint      saved_mode_idx;
     guint      saved_orient_idx;
     guint      saved_scale_idx;
@@ -249,6 +265,94 @@ on_vrr_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint idx, gpointer user_
 }
 
 static void
+sync_hdr_peak_badge(SettingsPageDisplays *self)
+{
+    if (!self || !self->scale_hdr_peak || !self->badge_hdr_peak)
+        return;
+    double val = gtk_range_get_value(GTK_RANGE(self->scale_hdr_peak));
+    if (val < 100.0) {
+        if (self->hdr_max_nits >= 100.0) {
+            g_autofree gchar *txt = g_strdup_printf("AUTO (%.0f)", self->hdr_max_nits);
+            gtk_label_set_text(GTK_LABEL(self->badge_hdr_peak), txt);
+        } else {
+            gtk_label_set_text(GTK_LABEL(self->badge_hdr_peak), "AUTO (EDID)");
+        }
+    } else {
+        g_autofree gchar *txt = g_strdup_printf("%.0f cd/m²", val);
+        gtk_label_set_text(GTK_LABEL(self->badge_hdr_peak), txt);
+    }
+}
+
+static void
+sync_hdr_row_subtitle(SettingsPageDisplays *self, guint hdr_idx)
+{
+    if (!self || !self->row_hdr)
+        return;
+    if (!self->hdr_supported) {
+        const char *reason = self->hdr_reason ? self->hdr_reason : "";
+        const char *sub = "Unsupported by output";
+        if (g_strcmp0(reason, "requires_kajo_comp") == 0)
+            sub = "Requires kajo-comp Vulkan";
+        else if (g_strcmp0(reason, "no_vulkan_color_transform") == 0)
+            sub = "Needs Vulkan color transform";
+        else if (g_strcmp0(reason, "no_edid_support") == 0)
+            sub = "Display lacks BT.2020 / PQ";
+        else if (g_strcmp0(reason, "kms_rejected") == 0)
+            sub = "10-bit PQ rejected by KMS";
+        boxed_row_set_subtitle(self->row_hdr, sub);
+        return;
+    }
+
+    static const char *const k_pol_labels[] = { "OFF", "AUTO", "ON" };
+    const char *pol = (hdr_idx < G_N_ELEMENTS(k_pol_labels)) ? k_pol_labels[hdr_idx] : "OFF";
+    double peak = (self->hdr_max_nits >= 100.0) ? self->hdr_max_nits : 400.0;
+    double hr   = (self->hdr_headroom >= 1.0) ? self->hdr_headroom : 1.0;
+
+    if (g_strcmp0(self->hdr_reason, "kms_rejected") == 0 && !self->hdr_active) {
+        boxed_row_set_subtitle(self->row_hdr, "10-bit PQ rejected by display link (stepped down to SDR)");
+    } else if (self->hdr_active) {
+        g_autofree gchar *sub = g_strdup_printf(
+            "Active — %.0f cd/m² HDR10 (%.1f× headroom) • Policy: %s", peak, hr, pol);
+        boxed_row_set_subtitle(self->row_hdr, sub);
+    } else {
+        g_autofree gchar *sub = g_strdup_printf(
+            "Supported — %.0f cd/m² peak (Idle SDR) • Policy: %s", peak, pol);
+        boxed_row_set_subtitle(self->row_hdr, sub);
+    }
+}
+
+static void
+on_hdr_segment_changed(GtkWidget *group G_GNUC_UNUSED, guint idx, gpointer user_data)
+{
+    SettingsPageDisplays *self = user_data;
+    if (!self || self->syncing_ui)
+        return;
+    sync_hdr_row_subtitle(self, idx);
+    mark_displays_changed(self);
+}
+
+static void
+on_hdr_sdr_white_changed(GtkRange *range G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageDisplays *self = user_data;
+    if (!self || self->syncing_ui)
+        return;
+    mark_displays_changed(self);
+}
+
+static void
+on_hdr_peak_changed(GtkRange *range G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageDisplays *self = user_data;
+    if (!self)
+        return;
+    sync_hdr_peak_badge(self);
+    if (self->syncing_ui)
+        return;
+    mark_displays_changed(self);
+}
+
+static void
 on_lock_now_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data G_GNUC_UNUSED)
 {
     settings_send_ipc_command("lock");
@@ -266,10 +370,13 @@ save_outputs_toml_preserving_others(const char *out_name,
                                     const char *mode_str,
                                     const char *scale_buf,
                                     const char *orient,
-                                    const char *vrr_str)
+                                    const char *vrr_str,
+                                    const char *hdr_str,
+                                    int         hdr_peak_nits)
 {
     kajo_config_comp_save_output_rule(
-        NULL, out_name, make_model, mode_str, scale_buf, orient, vrr_str, NULL);
+        NULL, out_name, make_model, mode_str, scale_buf, orient, vrr_str,
+        hdr_str, hdr_peak_nits, NULL);
 }
 
 static void
@@ -281,11 +388,19 @@ load_niri_and_config_state(SettingsPageDisplays *self)
 
     g_free(self->out_name);
     g_free(self->make_model);
-    self->out_name   = g_strdup("eDP-1");
-    self->make_model = g_strdup("Built-in Display");
-    self->vrr_avail  = FALSE;
+    g_clear_pointer(&self->hdr_reason, g_free);
+    self->out_name      = g_strdup("eDP-1");
+    self->make_model    = g_strdup("Built-in Display");
+    self->vrr_avail     = FALSE;
+    self->hdr_supported = FALSE;
+    self->hdr_active    = FALSE;
+    self->hdr_max_nits  = 0.0;
+    self->hdr_headroom  = 1.0;
     gboolean vrr_active = FALSE;
     guint vrr_idx = 0;
+    guint hdr_idx = 0;
+    int hdr_peak_nits = 0;
+    int sdr_white_nits = 203;
     guint active_mode_idx = 0;
     double current_scale = 1.0;
     g_autofree gchar *current_transform = g_strdup("Normal");
@@ -348,6 +463,26 @@ load_niri_and_config_state(SettingsPageDisplays *self)
                                 vrr_idx = 2;
                                 vrr_active = TRUE;
                             }
+
+                            self->hdr_supported = json_object_get_boolean_member_with_default(
+                                out_info, "hdr_supported", FALSE);
+                            self->hdr_active = json_object_get_boolean_member_with_default(
+                                out_info, "hdr_active", FALSE);
+                            const gchar *hdr_s = json_object_has_member(out_info, "hdr_policy")
+                                ? json_object_get_string_member(out_info, "hdr_policy") : "off";
+                            if (g_strcmp0(hdr_s, "auto") == 0)
+                                hdr_idx = 1;
+                            else if (g_strcmp0(hdr_s, "on") == 0)
+                                hdr_idx = 2;
+                            if (json_object_has_member(out_info, "hdr_reason"))
+                                self->hdr_reason = g_strdup(json_object_get_string_member(out_info, "hdr_reason"));
+                            if (json_object_has_member(out_info, "hdr_max_nits"))
+                                self->hdr_max_nits = json_object_get_double_member(out_info, "hdr_max_nits");
+                            if (json_object_has_member(out_info, "hdr_headroom"))
+                                self->hdr_headroom = json_object_get_double_member(out_info, "hdr_headroom");
+                            if (json_object_has_member(out_info, "hdr_peak_nits"))
+                                hdr_peak_nits = (int)json_object_get_int_member(out_info, "hdr_peak_nits");
+                            sdr_white_nits = CLAMP(kajo_config_comp_read_sdr_white_nits(NULL), 80, 500);
 
                             if (json_object_has_member(out_info, "scale"))
                                 current_scale = json_object_get_double_member(out_info, "scale");
@@ -535,8 +670,12 @@ load_niri_and_config_state(SettingsPageDisplays *self)
     else if (current_scale >= 1.15) scale_sel = 1;
     segmented_group_set_selected(self->seg_scale, scale_sel);
 
-    if (!use_kajo_comp && vrr_active)
-        vrr_idx = 1;
+    if (!use_kajo_comp) {
+        if (vrr_active)
+            vrr_idx = 1;
+        g_free(self->hdr_reason);
+        self->hdr_reason = g_strdup("requires_kajo_comp");
+    }
 
     if (self->seg_vrr) {
         gtk_widget_set_sensitive(self->seg_vrr, self->vrr_avail);
@@ -544,11 +683,31 @@ load_niri_and_config_state(SettingsPageDisplays *self)
     }
     sync_vrr_row_subtitle(self, self->vrr_avail ? vrr_idx : 0);
 
-    self->saved_mode_idx   = active_mode_idx;
-    self->saved_orient_idx = orient_sel;
-    self->saved_scale_idx  = scale_sel;
-    self->saved_vrr_active = self->vrr_avail && vrr_active;
-    self->saved_vrr_idx    = self->vrr_avail ? vrr_idx : 0;
+    if (self->seg_hdr) {
+        gtk_widget_set_sensitive(self->seg_hdr, self->hdr_supported);
+        segmented_group_set_selected(self->seg_hdr, self->hdr_supported ? hdr_idx : 0);
+    }
+    sync_hdr_row_subtitle(self, self->hdr_supported ? hdr_idx : 0);
+    if (self->row_hdr_sdr_white)
+        gtk_widget_set_visible(self->row_hdr_sdr_white, self->hdr_supported);
+    if (self->row_hdr_peak)
+        gtk_widget_set_visible(self->row_hdr_peak, self->hdr_supported);
+    if (self->scale_hdr_sdr_white)
+        gtk_range_set_value(GTK_RANGE(self->scale_hdr_sdr_white), (double)sdr_white_nits);
+    if (self->scale_hdr_peak) {
+        gtk_range_set_value(GTK_RANGE(self->scale_hdr_peak),
+                            (hdr_peak_nits >= 100 && hdr_peak_nits <= 2000) ? (double)hdr_peak_nits : 0.0);
+        sync_hdr_peak_badge(self);
+    }
+
+    self->saved_mode_idx       = active_mode_idx;
+    self->saved_orient_idx     = orient_sel;
+    self->saved_scale_idx      = scale_sel;
+    self->saved_vrr_active     = self->vrr_avail && vrr_active;
+    self->saved_vrr_idx        = self->vrr_avail ? vrr_idx : 0;
+    self->saved_hdr_idx        = self->hdr_supported ? hdr_idx : 0;
+    self->saved_hdr_peak_nits  = hdr_peak_nits;
+    self->saved_sdr_white_nits = sdr_white_nits;
 
     /* Populate Idle / Screensaver / Backlight / Posture from KajoShellCfg */
     g_autoptr(KajoShellCfgRef) cfg = kajo_config_store_acquire_shell(NULL);
@@ -685,11 +844,24 @@ on_displays_save(gpointer user_data)
     const gchar *vrr_str = (vrr_sel < G_N_ELEMENTS(k_vrr_vals)) ? k_vrr_vals[vrr_sel] : "off";
     gboolean vrr = (vrr_sel > 0);
 
+    static const char *const k_hdr_vals[] = { "off", "auto", "on" };
+    guint hdr_sel = (self->hdr_supported && self->seg_hdr) ? segmented_group_get_selected(self->seg_hdr) : 0;
+    const gchar *hdr_str = (hdr_sel < G_N_ELEMENTS(k_hdr_vals)) ? k_hdr_vals[hdr_sel] : "off";
+    int hdr_peak = 0;
+    if (self->hdr_supported && self->scale_hdr_peak) {
+        int raw_p = (int)llround(gtk_range_get_value(GTK_RANGE(self->scale_hdr_peak)));
+        hdr_peak = (raw_p >= 100) ? CLAMP(raw_p, 100, 10000) : 0;
+    }
+    int sdr_white = self->scale_hdr_sdr_white
+        ? CLAMP((int)llround(gtk_range_get_value(GTK_RANGE(self->scale_hdr_sdr_white))), 80, 500)
+        : 203;
+
     gchar scale_buf[32];
     g_ascii_formatd(scale_buf, sizeof(scale_buf), "%.2f", sc);
 
     /* Save outputs.toml preserving unattached host output entries */
-    save_outputs_toml_preserving_others(out_name, self->make_model, res, scale_buf, orient, vrr_str);
+    save_outputs_toml_preserving_others(out_name, self->make_model, res, scale_buf, orient, vrr_str,
+                                        hdr_str, hdr_peak);
 
     /* Save 10-outputs.kdl for Niri session compatibility */
     g_autofree gchar *niri_dir = g_build_filename(g_get_user_config_dir(), "niri", "config.d", NULL);
@@ -710,12 +882,52 @@ on_displays_save(gpointer user_data)
     g_file_set_contents(kdl_path, kdl_content, -1, NULL);
 
     if (shell_compositor_is_kajo_comp()) {
+        if (self->hdr_supported) {
+            kajo_config_comp_save_sdr_white_nits(NULL, sdr_white, NULL);
+            shell_compositor_reload_config();
+        }
         const char *kc_mode = (g_strcmp0(res, "auto") == 0) ? "preferred" : res;
         g_autofree gchar *req = g_strdup_printf(
             "{\"cmd\":\"action\",\"name\":\"set-output-config\",\"output\":\"%s\","
-            "\"mode\":\"%s\",\"scale\":%s,\"transform\":\"%s\",\"vrr\":\"%s\"}",
-            out_name, kc_mode, scale_buf, orient, vrr_str);
+            "\"mode\":\"%s\",\"scale\":%s,\"transform\":\"%s\",\"vrr\":\"%s\","
+            "\"hdr\":\"%s\",\"hdr_peak_nits\":%d}",
+            out_name, kc_mode, scale_buf, orient, vrr_str, hdr_str, hdr_peak);
         g_autofree gchar *resp = kajo_comp_ipc_send_request(req);
+        (void)resp;
+        self->saved_hdr_idx        = hdr_sel;
+        self->saved_hdr_peak_nits  = hdr_peak;
+        self->saved_sdr_white_nits = sdr_white;
+        g_autofree gchar *hdr_poll = kajo_comp_ipc_send_request("{\"cmd\":\"get-outputs\"}");
+        if (hdr_poll) {
+            g_autoptr(JsonParser) p = json_parser_new();
+            if (json_parser_load_from_data(p, hdr_poll, -1, NULL)) {
+                JsonNode *rt = json_parser_get_root(p);
+                JsonObject *ro = (rt && JSON_NODE_HOLDS_OBJECT(rt)) ? json_node_get_object(rt) : NULL;
+                JsonObject *ok_o = (ro && json_object_has_member(ro, "ok") && !json_object_get_null_member(ro, "ok"))
+                    ? json_object_get_object_member(ro, "ok") : NULL;
+                JsonArray *arr = (ok_o && json_object_has_member(ok_o, "outputs"))
+                    ? json_object_get_array_member(ok_o, "outputs") : NULL;
+                for (guint i = 0; arr && i < json_array_get_length(arr); i++) {
+                    JsonObject *cand = json_array_get_object_element(arr, i);
+                    const gchar *cn = cand && json_object_has_member(cand, "name")
+                        ? json_object_get_string_member(cand, "name") : NULL;
+                    if (g_strcmp0(cn, out_name) == 0) {
+                        self->hdr_supported = json_object_get_boolean_member_with_default(cand, "hdr_supported", FALSE);
+                        self->hdr_active    = json_object_get_boolean_member_with_default(cand, "hdr_active", FALSE);
+                        g_clear_pointer(&self->hdr_reason, g_free);
+                        if (json_object_has_member(cand, "hdr_reason"))
+                            self->hdr_reason = g_strdup(json_object_get_string_member(cand, "hdr_reason"));
+                        if (json_object_has_member(cand, "hdr_max_nits"))
+                            self->hdr_max_nits = json_object_get_double_member(cand, "hdr_max_nits");
+                        if (json_object_has_member(cand, "hdr_headroom"))
+                            self->hdr_headroom = json_object_get_double_member(cand, "hdr_headroom");
+                        break;
+                    }
+                }
+            }
+        }
+        sync_hdr_row_subtitle(self, self->hdr_supported ? hdr_sel : 0);
+        sync_hdr_peak_badge(self);
     } else {
         run_niri_output_cmd_async(out_name, "mode", res);
         run_niri_output_cmd_async(out_name, "scale", scale_buf);
@@ -810,6 +1022,7 @@ settings_page_displays_dispose(GObject *object)
     SettingsPageDisplays *self = (SettingsPageDisplays *)object;
     g_clear_pointer(&self->out_name, g_free);
     g_clear_pointer(&self->make_model, g_free);
+    g_clear_pointer(&self->hdr_reason, g_free);
     if (self->raw_modes) {
         g_ptr_array_free(self->raw_modes, TRUE);
         self->raw_modes = NULL;
@@ -882,6 +1095,36 @@ build_page_displays(void)
                                      "Unsupported by this output",
                                      self->seg_vrr);
     gtk_box_append(GTK_BOX(self->card_mon), self->row_vrr);
+
+    static const char *const hdr_labels[] = { "OFF", "AUTO", "ON", NULL };
+    self->seg_hdr = create_segmented_group(hdr_labels, 0);
+    segmented_group_connect(self->seg_hdr, on_hdr_segment_changed, self);
+    self->row_hdr = create_boxed_row("☀", "High Dynamic Range (HDR10)",
+                                     "Requires kajo-comp Vulkan",
+                                     self->seg_hdr);
+    gtk_box_append(GTK_BOX(self->card_mon), self->row_hdr);
+
+    GtkWidget *sdr_white_ctl = create_scale_with_badge(
+        80.0, 500.0, 10.0, 203.0, "%.0f cd/m²",
+        &self->scale_hdr_sdr_white, &self->badge_hdr_sdr_white);
+    g_signal_connect(self->scale_hdr_sdr_white, "value-changed",
+                     G_CALLBACK(on_hdr_sdr_white_changed), self);
+    self->row_hdr_sdr_white = create_boxed_row(
+        "💡", "HDR SDR Reference White",
+        "Desktop & SDR app brightness when HDR10 is active (ITU-R BT.2408: 203 cd/m²)",
+        sdr_white_ctl);
+    gtk_box_append(GTK_BOX(self->card_mon), self->row_hdr_sdr_white);
+
+    GtkWidget *peak_ctl = create_scale_with_badge(
+        0.0, 2000.0, 50.0, 0.0, "%.0f cd/m²",
+        &self->scale_hdr_peak, &self->badge_hdr_peak);
+    g_signal_connect_after(self->scale_hdr_peak, "value-changed",
+                           G_CALLBACK(on_hdr_peak_changed), self);
+    self->row_hdr_peak = create_boxed_row(
+        "🔆", "HDR Peak Luminance Override",
+        "0 = Auto from EDID / DisplayID 2.0 metadata (override only if panel reports wrong peak)",
+        peak_ctl);
+    gtk_box_append(GTK_BOX(self->card_mon), self->row_hdr_peak);
 
     /* ─── Card 2: Idle Screensaver, DPMS & Session Lock ─── */
     GtkWidget *btn_lock_now = create_action_button("🔒 LOCK NOW", NULL, NULL, G_CALLBACK(on_lock_now_clicked), self);

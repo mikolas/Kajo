@@ -175,12 +175,43 @@ comp_fx_is_active(const struct CompServer *server)
     return false;
 }
 
+bool
+comp_fx_output_get_hdr_caps(struct wlr_output *output, CompFxOutputHdrCaps *out)
+{
+    (void)output;
+    if (out)
+        *out = (CompFxOutputHdrCaps){0};
+    return false;
+}
+
+float
+comp_fx_output_get_hdr_headroom(struct wlr_output *output)
+{
+    (void)output;
+    return 1.0f;
+}
+
+float
+comp_fx_output_get_sdr_white_nits(struct wlr_output *output)
+{
+    (void)output;
+    return 203.0f;
+}
+
 struct wlr_render_pass *
 comp_fx_screenshot_begin_pass(struct CompServer *server, struct wlr_buffer *buffer)
 {
     if (!server || !server->renderer || !buffer)
         return NULL;
     return wlr_renderer_begin_buffer_pass(server->renderer, buffer, NULL);
+}
+
+struct wlr_render_pass *
+comp_fx_screenshot_begin_hdr_pass(struct CompServer *server, struct wlr_buffer *buffer)
+{
+    (void)server;
+    (void)buffer;
+    return NULL;
 }
 
 bool

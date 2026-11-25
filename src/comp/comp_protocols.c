@@ -8,6 +8,7 @@
 #include "comp_log.h"
 #include "fx/comp_fx.h"
 
+#include <math.h>
 #include <stdlib.h>
 #include <talloc.h>
 #include <wlr/backend.h>
@@ -16,6 +17,7 @@
 #include <wlr/types/wlr_color_management_v1.h>
 #include <wlr/types/wlr_color_representation_v1.h>
 #include <wlr/types/wlr_compositor.h>
+#include <wlr/types/wlr_subcompositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_cursor_shape_v1.h>
 #include <wlr/types/wlr_export_dmabuf_v1.h>
@@ -514,7 +516,115 @@ handle_xdg_activation_request(void *owner, void *data)
         comp_window_request_activate(s, (struct CompWindow *)tl->base->data, ev->token);
 }
 
-/* ── Color management (SDR in v1) ── */
+/* ── Color management (HDR10 & SDR dynamic feedback) ── */
+
+static void
+handle_color_mgr_destroy(void *owner, void *data)
+{
+    CompServer *s = owner;
+    (void)data;
+    if (s)
+        s->color_mgr = NULL;
+}
+
+static void
+build_preferred_image_description(const CompServer *s,
+                                  struct wlr_image_description_v1_data *out)
+{
+    *out = (struct wlr_image_description_v1_data){
+        .tf_named        = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22,
+        .primaries_named = WP_COLOR_MANAGER_V1_PRIMARIES_SRGB,
+    };
+    if (!s || wl_list_empty(&s->outputs))
+        return;
+
+    const CompOutput *active = NULL;
+    const CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        if (o->wlr_output && o->wlr_output->enabled) {
+            active = o;
+            break;
+        }
+    }
+    if (!active)
+        active = wl_container_of(s->outputs.next, active, link);
+
+    if (active && active->hdr_active) {
+        float peak = active->hdr_effective_peak_nits >= 100.0f ? active->hdr_effective_peak_nits : 400.0f;
+        float fall = active->hdr_max_fall_nits >= 50.0f ? fminf(active->hdr_max_fall_nits, peak) : peak;
+        float min_l = active->hdr_min_luma_nits > 0.0f ? active->hdr_min_luma_nits : 0.005f;
+        out->tf_named                        = WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ;
+        out->primaries_named                 = WP_COLOR_MANAGER_V1_PRIMARIES_BT2020;
+        out->has_mastering_display_primaries = true;
+        out->mastering_display_primaries     = (struct wlr_color_primaries){
+            .red   = { 0.708f,  0.292f },
+            .green = { 0.170f,  0.797f },
+            .blue  = { 0.131f,  0.046f },
+            .white = { 0.3127f, 0.3290f },
+        };
+        out->has_mastering_luminance = true;
+        out->mastering_luminance.min = min_l;
+        out->mastering_luminance.max = peak;
+        out->max_cll                 = (uint32_t)lroundf(peak);
+        out->max_fall                = (uint32_t)lroundf(fall);
+    }
+}
+
+static void
+update_surface_tree_preferred(struct wlr_color_manager_v1 *cm,
+                              struct wlr_surface *surface,
+                              const struct wlr_image_description_v1_data *desc,
+                              int depth)
+{
+    if (!cm || !surface || !desc || depth > 16)
+        return;
+    wlr_color_manager_v1_set_surface_preferred_image_description(cm, surface, desc);
+
+    struct wlr_subsurface *sub;
+    wl_list_for_each(sub, &surface->current.subsurfaces_below, current.link) {
+        if (sub->surface)
+            update_surface_tree_preferred(cm, sub->surface, desc, depth + 1);
+    }
+    wl_list_for_each(sub, &surface->current.subsurfaces_above, current.link) {
+        if (sub->surface)
+            update_surface_tree_preferred(cm, sub->surface, desc, depth + 1);
+    }
+}
+
+void
+comp_protocols_update_surface_preferred_image_description(CompServer *s,
+                                                          struct wlr_surface *surface)
+{
+    if (!s || !s->color_mgr || !surface)
+        return;
+    struct wlr_image_description_v1_data desc;
+    build_preferred_image_description(s, &desc);
+    update_surface_tree_preferred(s->color_mgr, surface, &desc, 0);
+}
+
+void
+comp_protocols_update_preferred_image_descriptions(CompServer *s)
+{
+    if (!s || !s->color_mgr)
+        return;
+    struct wlr_image_description_v1_data desc;
+    build_preferred_image_description(s, &desc);
+
+    size_t n_wins = comp_window_list_info(s, NULL, 0);
+    if (n_wins == 0)
+        return;
+    CompWindowInfo *infos = talloc_array(s, CompWindowInfo, (unsigned)n_wins);
+    if (!infos)
+        return;
+    n_wins = comp_window_list_info(s, infos, n_wins);
+    for (size_t i = 0; i < n_wins; i++) {
+        struct CompWindow *w = comp_win_from_id(s, infos[i].id);
+        struct wlr_surface *surf = w ? comp_window_get_surface(w) : NULL;
+        if (surf)
+            update_surface_tree_preferred(s->color_mgr, surf, &desc, 0);
+    }
+    talloc_free(infos);
+}
 
 static void
 init_color_management(CompServer *s)
@@ -544,8 +654,11 @@ init_color_management(CompServer *s)
             .primaries_len = n_prim,
         };
         struct wlr_color_manager_v1 *cm = wlr_color_manager_v1_create(s->display, 1, &opts);
-        if (cm)
+        if (cm) {
+            s->color_mgr = cm;
+            comp_listen_ctx(s->listeners, s, &cm->events.destroy, handle_color_mgr_destroy);
             wlr_scene_set_color_manager_v1(s->scene, cm);
+        }
     }
     free(tfs);
     free(prims);

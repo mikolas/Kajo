@@ -1178,3 +1178,141 @@ comp_fx_transition_pack(CompFxRect dst_box,
     out->uv_scale1[0]   = (uv_scale1_x > 0.0f && uv_scale1_x <= 1.0f) ? uv_scale1_x : 1.0f;
     out->uv_scale1[1]   = (uv_scale1_y > 0.0f && uv_scale1_y <= 1.0f) ? uv_scale1_y : 1.0f;
 }
+
+static float
+clamp_rangef(float v, float lo, float hi)
+{
+    if (!isfinite(v) || v < lo)
+        return lo;
+    if (v > hi)
+        return hi;
+    return v;
+}
+
+void
+comp_fx_clamp_hdr_luminance(float edid_max_cll, float edid_max_fall,
+                            float edid_min_luma, int32_t peak_override_nits,
+                            double config_sdr_white_nits,
+                            CompFxHdrLuminance *out)
+{
+    if (!out)
+        return;
+
+    float max_cll = (isfinite(edid_max_cll) && edid_max_cll > 0.0f)
+                        ? clamp_rangef(edid_max_cll, 100.0f, 10000.0f)
+                        : 400.0f;
+    float eff_peak = (peak_override_nits >= 100 && peak_override_nits <= 10000)
+                         ? (float)peak_override_nits
+                         : max_cll;
+    float max_fall = (isfinite(edid_max_fall) && edid_max_fall > 0.0f)
+                         ? clamp_rangef(edid_max_fall, 50.0f, eff_peak)
+                         : eff_peak;
+    float min_luma = (isfinite(edid_min_luma) && edid_min_luma > 0.0f)
+                         ? clamp_rangef(edid_min_luma, 0.0001f, 5.0f)
+                         : 0.005f;
+
+    float raw_sdr = (isfinite(config_sdr_white_nits) && config_sdr_white_nits > 0.0)
+                        ? (float)config_sdr_white_nits
+                        : 203.0f;
+    float sdr_hi = fminf(500.0f, eff_peak);
+    if (sdr_hi < 80.0f)
+        sdr_hi = 80.0f;
+    float sdr_white = clamp_rangef(raw_sdr, 80.0f, sdr_hi);
+
+    out->max_cll_nits        = max_cll;
+    out->max_fall_nits       = max_fall;
+    out->min_luma_nits       = min_luma;
+    out->effective_peak_nits = eff_peak;
+    out->sdr_white_nits      = sdr_white;
+}
+
+static float
+fp16_to_f32(uint16_t h)
+{
+    uint32_t sign = (uint32_t)(h >> 15) & 1u;
+    uint32_t exp  = (uint32_t)(h >> 10) & 0x1fu;
+    uint32_t mant = (uint32_t)h & 0x3ffu;
+    float mag = 0.0f;
+    if (exp == 0) {
+        if (mant != 0)
+            mag = ldexpf((float)mant, -24);
+    } else if (exp == 31) {
+        mag = (mant == 0) ? 65504.0f : 0.0f;
+    } else {
+        mag = ldexpf((float)(mant | 0x400u), (int)exp - 25);
+    }
+    return sign ? -mag : mag;
+}
+
+static float
+linear_to_srgb_oetf(float c)
+{
+    float v = clamp01f(c);
+    if (v <= 0.0031308f)
+        return 12.92f * v;
+    return clamp01f(1.055f * powf(v, 1.0f / 2.4f) - 0.055f);
+}
+
+void
+comp_fx_tonemap_fp16_to_argb8888(const uint16_t *fp16_abgr,
+                                 uint8_t *out_argb8888,
+                                 int width, int height)
+{
+    if (!fp16_abgr || !out_argb8888 || width <= 0 || height <= 0)
+        return;
+
+    size_t total = (size_t)width * (size_t)height;
+    float max_val = 0.0f;
+    for (size_t i = 0; i < total; i++) {
+        const uint16_t *p = fp16_abgr + i * 4u;
+        float a = clamp01f(fp16_to_f32(p[3]));
+        if (a <= 1e-6f)
+            continue;
+        float r = fmaxf(0.0f, fp16_to_f32(p[0]) / a);
+        float g = fmaxf(0.0f, fp16_to_f32(p[1]) / a);
+        float b = fmaxf(0.0f, fp16_to_f32(p[2]) / a);
+        float m = fmaxf(r, fmaxf(g, b));
+        if (m > max_val)
+            max_val = m;
+    }
+
+    const float ks = 0.75f;
+    const float span = 1.0f - ks;
+    bool compress = (max_val > 1.001f);
+    float d_max = compress ? (max_val - ks) : 1.0f;
+    uint32_t *dst = (uint32_t *)(void *)out_argb8888;
+
+    for (size_t i = 0; i < total; i++) {
+        const uint16_t *p = fp16_abgr + i * 4u;
+        float a = clamp01f(fp16_to_f32(p[3]));
+        if (a <= 1e-6f) {
+            dst[i] = 0u;
+            continue;
+        }
+        float r = fmaxf(0.0f, fp16_to_f32(p[0]) / a);
+        float g = fmaxf(0.0f, fp16_to_f32(p[1]) / a);
+        float b = fmaxf(0.0f, fp16_to_f32(p[2]) / a);
+
+        if (compress) {
+            float lum = fmaxf(r, fmaxf(g, b));
+            if (lum > ks) {
+                float d = lum - ks;
+                float lum_out = ks + span * (d / (d + span)) * (1.0f + span / d_max);
+                float ratio = clamp01f(lum_out) / lum;
+                r *= ratio;
+                g *= ratio;
+                b *= ratio;
+            }
+        }
+
+        float sr = linear_to_srgb_oetf(r) * a;
+        float sg = linear_to_srgb_oetf(g) * a;
+        float sb = linear_to_srgb_oetf(b) * a;
+
+        uint32_t ua = (uint32_t)lroundf(clamp01f(a) * 255.0f);
+        uint32_t ur = (uint32_t)lroundf(clamp01f(sr) * 255.0f);
+        uint32_t ug = (uint32_t)lroundf(clamp01f(sg) * 255.0f);
+        uint32_t ub = (uint32_t)lroundf(clamp01f(sb) * 255.0f);
+        dst[i] = (ua << 24) | (ur << 16) | (ug << 8) | ub;
+    }
+}

@@ -244,6 +244,24 @@ WLR_HEADLESS_OUTPUTS=2 NOTIFY_SOCKET="$NOTIFY_SOCK" KAJO_WATCHDOG_MS=40 KAJO_COM
     \"$KC\" msg action set-output-config scale=1.5 vrr=on-demand | grep -q '\"ok\"'
     \"$KC\" msg get-outputs | grep -q '\"name\":\"HEADLESS-1\"[^}]*\"vrr\":\"on-demand\"'
 
+    # Stage 2 HDR IPC telemetry & set-output-hdr
+    HDR_OUT=\$(\"${KC}\" msg get-outputs)
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_supported\":false'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_active\":false'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_policy\":\"off\"'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_reason\":'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_max_nits\":'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_peak_nits\":0'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_sdr_white_nits\":'
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_headroom\":'
+    \"$KC\" msg action set-output-hdr hdr=auto hdr_peak_nits=617 | grep -q '\"ok\"'
+    HDR_OUT2=\$(\"${KC}\" msg get-outputs)
+    echo \"\$HDR_OUT2\" | grep -q '\"hdr_policy\":\"auto\"'
+    echo \"\$HDR_OUT2\" | grep -q '\"hdr_peak_nits\":617'
+    \"$KC\" msg action set-output-hdr hdr=off hdr_peak_nits=0 | grep -q '\"ok\"'
+    \"$KC\" msg get-outputs | grep -q '\"hdr_policy\":\"off\"[^}]*\"hdr_peak_nits\":0'
+    ! \"$KC\" msg action set-output-hdr hdr=bogus
+
     # Allow watchdog timer (40ms) to fire at least once
     sleep 0.12
 "

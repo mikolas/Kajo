@@ -1,8 +1,8 @@
 # Specification: `kajo-comp` HDR10 Output & Mixed SDR/HDR Pipeline (`docs/spec_comp_hdr.md`)
 
-**Status:** Planned Specification — design-only; **not yet implemented**  
+**Status:** Implemented & Verified (Stage 0–2 on `feat/comp-hdr`, pinned to wlroots fork tag `kajo-0.20.2-fx11`, verified on Host A bare-metal OLED)  
 **Target Binary:** `kajo-comp` (`org.kajo.comp`, `src/comp/`) + wlroots fork (`subprojects/wlroots`) + `kajo-settings` (`--page displays`)  
-**Prerequisites Already Complete:** [`docs/spec_wlroots_fork.md`](spec_wlroots_fork.md), [`docs/spec_comp_effects.md`](spec_comp_effects.md) (`kajo-0.20.2-fx10` Milestones 1–5)  
+**Prerequisites Already Complete:** [`docs/spec_wlroots_fork.md`](spec_wlroots_fork.md), [`docs/spec_comp_effects.md`](spec_comp_effects.md) (`kajo-0.20.2-fx11`)  
 **Primary Hardware Baseline:** Host A (`HP OmniBook X Flip 14` OLED `eDP-1`, `Samsung Display Corp. 0x41AA`, `2880×1800`, Intel Lunar Lake Xe2, Mesa `26.2.6`, `libdisplay-info 0.3.0`)
 
 ---
@@ -180,17 +180,14 @@ Extend `commit_output_cascade()` cleanly preserving the existing cascade contrac
 
 ### 5.1 Upgrading `init_color_management()` (`src/comp/comp_protocols.c:520`)
 
-Expand `wlr_color_manager_v1_options.features`:
+`wlr_color_manager_v1_options.features` in `wlroots 0.20.2` uses:
 - `.parametric = true` (already enabled)
-- `.set_primaries = true` (allows clients specifying custom gamut coordinates)
-- `.set_tf_power = true` (allows gamma-power parametric TFs from Chromium/games)
-- `.set_luminances = true` (allows HDR content to declare target min/max/reference luminance for accurate BT.2390 tone mapping)
 - `.set_mastering_display_primaries = true` (already enabled)
-- `.extended_target_volume = true` (allows wide-gamut / HDR highlights above reference white when `hdr` output is active)
-- `.windows_scrgb = true` (critical for Wine/Proton/DXVK scRGB linear float buffers!)
+- `WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ`, `WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR`, `WLR_COLOR_NAMED_PRIMARIES_BT2020`, `WLR_COLOR_NAMED_PRIMARIES_SRGB`
+- *(Deferred / not exposed by `wlroots 0.20.2` scene color manager: `set_luminances`, `extended_target_volume`, `windows_scrgb` — to be reconsidered on future upstream wlroots rebase.)*
 
 Add **surface preferred image description updates** in `src/comp/`:
-- Whenever the primary output switches between SDR ↔ HDR (or `hdr_peak_nits` / `sdr_white_nits` changes), update `wlr_color_manager_v1_set_surface_preferred_image_description()` for mapped surfaces on that output so video players (`mpv`, `kajo-player`) and games dynamically retarget output EOTF without needing restart.
+- Whenever the primary output switches between SDR ↔ HDR (or `hdr_peak_nits` / `sdr_white_nits` changes) or a new toplevel/popup surface maps, update `wlr_color_manager_v1_set_surface_preferred_image_description()` (`comp_protocols_update_preferred_image_descriptions()` / `comp_protocols_update_surface_preferred_image_description()`) so video players (`mpv`, `kajo-player`) and games dynamically retarget output EOTF without needing restart.
 
 ### 5.2 Output HDR Policy Modes (`off` | `on` | `auto`)
 
@@ -230,9 +227,11 @@ In fullscreen HDR video/games, `wlroots` attempts direct KMS scanout if buffer f
 
 ### 6.2 `$KAJO_COMP_SOCKET` JSON IPC
 
-- **`get_outputs` reply fields added per output:**
-  - `hdr_supported` (`bool`), `hdr_active` (`bool`), `hdr_policy` (`"off" | "on" | "auto"`), `hdr_reason` (`""` | `"no_edid_support"` | `"no_vulkan_color_transform"` | `"kms_rejected"`), `hdr_max_nits` (`double`), `hdr_sdr_white_nits` (`double`), `hdr_headroom` (`double`).
-- **Action:** `set_output_hdr` (`{ "output": "eDP-1", "hdr": "auto" }` / `"on"` / `"off"`), validated through `commit_output_cascade()` and persisted only when triggered via `kajo-settings`.
+- **`get-outputs` reply fields added per output:**
+  - `hdr_supported` (`bool`), `hdr_active` (`bool`), `hdr_policy` (`"off" | "on" | "auto"`), `hdr_reason` (`""` | `"no_edid_support"` | `"no_vulkan_color_transform"` | `"kms_rejected"`), `hdr_max_nits` (`double`), `hdr_peak_nits` (`int`), `hdr_sdr_white_nits` (`double`), `hdr_headroom` (`double`).
+- **Actions:**
+  - `set-output-hdr` (`{ "output": "eDP-1", "hdr": "auto" | "on" | "off", "hdr_peak_nits": 0 | 100..10000 }`), validated through `commit_output_cascade()`.
+  - `set-output-config` also accepts optional `"hdr"` and `"hdr_peak_nits"` alongside mode/scale/transform/vrr (`kajo-settings --page displays` persists `outputs.toml` and `comp.toml` `[effects] sdr_white_nits` explicitly on **SAVE & APPLY**).
 
 ### 6.3 `kajo-settings` Displays & Compositor Pages (`AGENTS.md §3.4`, `§8.1`)
 

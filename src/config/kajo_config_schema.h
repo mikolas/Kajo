@@ -215,7 +215,14 @@ gboolean kajo_config_comp_save_output_rule(const char *config_dir,
                                            const char *scale_buf,
                                            const char *transform_str,
                                            const char *vrr_str,
+                                           const char *hdr_str,
+                                           int         hdr_peak_nits,
                                            GError    **error);
+
+int      kajo_config_comp_read_sdr_white_nits(const char *config_dir);
+gboolean kajo_config_comp_save_sdr_white_nits(const char *config_dir,
+                                              int         sdr_white_nits,
+                                              GError    **error);
 
 #ifdef __cplusplus
 }
