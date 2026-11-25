@@ -1467,6 +1467,17 @@ test_comp_fx_scene_exe = executable(
 )
 test('comp-fx-scene', test_comp_fx_scene_exe)
 
+test_comp_hdr_exe = executable(
+  'test-comp-hdr',
+  files('tests/test_comp_hdr.c'),
+  comp_fx_sources,
+  comp_fx_shader_headers,
+  c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
+  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep, gio_dep],
+  build_by_default: false,
+)
+test('comp-hdr', test_comp_hdr_exe)
+
 test('comp-headless', find_program('tests/comp/comp_headless_smoke.sh'),
   args: [kajo_comp_exe, comp_test_client_exe],
   depends: [kajo_comp_exe, comp_test_client_exe],

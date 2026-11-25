@@ -489,6 +489,15 @@ test_config_shipped_defaults(void)
     g_assert_true(comp_vrr_policy_from_str("on-demand", &vrr));
     g_assert_cmpint(vrr, ==, COMP_VRR_ON_DEMAND);
     g_assert_cmpstr(comp_vrr_policy_to_str(vrr), ==, "on-demand");
+    CompHdrPolicy hdr = COMP_HDR_OFF;
+    g_assert_true(comp_hdr_policy_from_str("auto", &hdr));
+    g_assert_cmpint(hdr, ==, COMP_HDR_AUTO);
+    g_assert_cmpstr(comp_hdr_policy_to_str(hdr), ==, "auto");
+    g_assert_true(comp_hdr_policy_from_str("on", &hdr));
+    g_assert_cmpint(hdr, ==, COMP_HDR_ON);
+    g_assert_cmpstr(comp_hdr_policy_to_str(hdr), ==, "on");
+    g_assert_false(comp_hdr_policy_from_str("bogus", &hdr));
+
     CompAccelProfile ap = COMP_ACCEL_FLAT;
     g_assert_true(comp_accel_profile_from_str("adaptive", &ap));
     g_assert_cmpint(ap, ==, COMP_ACCEL_ADAPTIVE);
@@ -608,7 +617,9 @@ test_config_multifile_merge_and_confd(void)
         "[[output]]\n"
         "match = \"DP-1\"\n"
         "scale = 1.5\n"
-        "vrr = \"on-demand\"\n", -1, NULL));
+        "vrr = \"on-demand\"\n"
+        "hdr = \"auto\"\n"
+        "hdr_peak_nits = 617\n", -1, NULL));
     g_assert_true(g_file_set_contents(p_binds,
         "[[bind]]\n"
         "key = \"mod+q\"\n"
@@ -663,6 +674,30 @@ test_config_multifile_merge_and_confd(void)
     g_assert_true(orule->has_scale);
     g_assert_cmpfloat_with_epsilon(orule->scale, 1.5, 1e-9);
     g_assert_cmpint(orule->vrr, ==, COMP_VRR_ON_DEMAND);
+    g_assert_true(orule->has_hdr);
+    g_assert_cmpint(orule->hdr, ==, COMP_HDR_AUTO);
+    g_assert_true(orule->has_hdr_peak_nits);
+    g_assert_cmpint(orule->hdr_peak_nits, ==, 617);
+
+    /* Field-level HDR validation errors emit diagnostics without aborting load */
+    CompDiagList hdr_d;
+    comp_diag_init(&hdr_d);
+    CompConfig *hdr_bad = comp_config_new_defaults(COMP_MOD_SUPER);
+    const char *bad_out_toml =
+        "[[output]]\n"
+        "match = \"DP-1\"\n"
+        "hdr = \"supernova\"\n"
+        "hdr_peak_nits = 50\n";
+    g_assert_true(comp_config_merge_toml(hdr_bad, bad_out_toml, strlen(bad_out_toml),
+                                         "bad-out.toml", NULL, false, &hdr_d));
+    g_assert_true(comp_diag_contains(&hdr_d, "'hdr'"));
+    g_assert_true(comp_diag_contains(&hdr_d, "'hdr_peak_nits'"));
+    const CompOutputRule *bad_r = comp_config_match_output(hdr_bad, "DP-1", NULL);
+    g_assert_nonnull(bad_r);
+    g_assert_false(bad_r->has_hdr);
+    g_assert_false(bad_r->has_hdr_peak_nits);
+    comp_config_free(hdr_bad);
+    comp_diag_clear(&hdr_d);
     const CompOutputRule *orule2 = comp_config_match_output(cfg, "hdmi-a-2", NULL);
     g_assert_nonnull(orule2);
     g_assert_cmpfloat_with_epsilon(orule2->scale, 2.0, 1e-9);

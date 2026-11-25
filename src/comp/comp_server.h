@@ -27,6 +27,7 @@ struct wlr_allocator;
 struct wlr_backend;
 struct wlr_box;
 struct wlr_buffer;
+struct wlr_color_manager_v1;
 struct wlr_compositor;
 struct wlr_cursor;
 struct wlr_ext_foreign_toplevel_image_capture_source_manager_v1;
@@ -170,6 +171,7 @@ typedef struct CompServer {
     struct wlr_ext_output_image_capture_source_manager_v1 *ext_output_capture_mgr;
     struct wlr_security_context_manager_v1       *security_context_mgr;
     struct wlr_tearing_control_manager_v1        *tearing_mgr;
+    struct wlr_color_manager_v1                  *color_mgr;
     struct wlr_xwayland                          *xwayland;
     int                                           xwayland_last_dpi;
 
@@ -276,6 +278,25 @@ typedef struct CompOutput {
     CompTransform             manual_transform;
     bool                      has_manual_vrr;
     CompVrrPolicy             manual_vrr;
+
+    CompHdrPolicy             hdr_policy;
+    bool                      has_manual_hdr;
+    CompHdrPolicy             manual_hdr;
+    int32_t                   hdr_peak_nits;
+    bool                      has_manual_hdr_peak_nits;
+    int32_t                   hdr_manual_peak_nits;
+    bool                      hdr_supported;
+    bool                      hdr_active;
+    bool                      hdr_kms_rejected;
+    const char               *hdr_reason;
+    float                     hdr_edid_max_cll;
+    float                     hdr_edid_max_fall;
+    float                     hdr_edid_min_luma;
+    float                     hdr_effective_peak_nits;
+    float                     hdr_min_luma_nits;
+    float                     hdr_max_fall_nits;
+    struct wl_event_source   *hdr_auto_timer;
+    bool                      hdr_auto_timer_armed;
 } CompOutput;
 
 typedef struct CompWindowInfo {
@@ -320,8 +341,12 @@ void comp_output_init(CompServer *server);
 void comp_output_apply_config(CompServer *server);
 void comp_output_invalidate_changed_rules(CompServer *server, const CompConfig *old_cfg, const CompConfig *new_cfg);
 bool comp_output_configure(CompServer *server, const char *output_name,
-                           const char *mode_str, double scale, int transform, int vrr_policy);
+                           const char *mode_str, double scale, int transform,
+                           int vrr_policy, int hdr_policy, int hdr_peak_nits);
+bool comp_output_configure_hdr(CompServer *server, const char *output_name,
+                               int hdr_policy, int hdr_peak_nits);
 void comp_output_update_vrr(CompServer *server);
+void comp_output_update_hdr_auto(CompServer *server);
 /* comp_window.c */
 void               comp_window_init(CompServer *server);
 void               comp_window_relayout(CompServer *server);
@@ -345,6 +370,7 @@ void               comp_window_resize_height(CompServer *server, double delta, C
 double             comp_window_scroll_factor_for_surface(CompServer *server, struct wlr_surface *surface);
 bool               comp_window_focused_wants_vrr(const CompServer *server);
 bool               comp_window_focused_wants_tearing(const CompServer *server);
+bool               comp_window_has_visible_hdr_surface(const CompServer *server);
 bool               comp_server_surface_scene_coords(const CompServer *server,
                                                     const struct wlr_surface *surface,
                                                     int *out_lx, int *out_ly);
@@ -424,6 +450,9 @@ void comp_protocols_notify_focus_surface(CompServer *server, struct wlr_surface 
 void comp_protocols_check_pointer_constraint(CompServer *server, struct wlr_surface *surface);
 bool comp_protocols_shortcuts_inhibited(CompServer *server);
 void comp_protocols_break_shortcuts_inhibit(CompServer *server);
+void comp_protocols_update_preferred_image_descriptions(CompServer *server);
+void comp_protocols_update_surface_preferred_image_description(CompServer *server,
+                                                               struct wlr_surface *surface);
 /* comp_xwayland.c */
 void comp_xwayland_init(CompServer *server);
 void comp_xwayland_finish(CompServer *server);

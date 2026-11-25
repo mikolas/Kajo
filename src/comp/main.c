@@ -183,7 +183,8 @@ is_numeric_key_val(const char *key, const char *val)
 {
     if (strcmp(key, COMP_IPC_KEY_ID) != 0 &&
         strcmp(key, COMP_IPC_KEY_IDX) != 0 &&
-        strcmp(key, COMP_KEY_SCALE) != 0)
+        strcmp(key, COMP_KEY_SCALE) != 0 &&
+        strcmp(key, COMP_KEY_HDR_PEAK_NITS) != 0)
         return false;
     if (!val || !*val)
         return false;

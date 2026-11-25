@@ -7,6 +7,7 @@
 #include "core/comp_schema_keys.h"
 #include "fx/comp_fx.h"
 
+#include <drm_fourcc.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,6 +16,7 @@
 #include <talloc.h>
 #include <time.h>
 #include <wlr/backend.h>
+#include <wlr/render/wlr_renderer.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_drm_lease_v1.h>
 #include <wlr/types/wlr_output.h>
@@ -99,6 +101,14 @@ comp_output_invalidate_changed_rules(CompServer *s, const CompConfig *old_cfg, c
         bool ov = (ro && ro->has_vrr), nv = (rn && rn->has_vrr);
         if (ov != nv || (ov && ro->vrr != rn->vrr))
             o->has_manual_vrr = false;
+
+        bool oh = (ro && ro->has_hdr), nh = (rn && rn->has_hdr);
+        if (oh != nh || (oh && ro->hdr != rn->hdr))
+            o->has_manual_hdr = false;
+
+        bool op = (ro && ro->has_hdr_peak_nits), np = (rn && rn->has_hdr_peak_nits);
+        if (op != np || (op && ro->hdr_peak_nits != rn->hdr_peak_nits))
+            o->has_manual_hdr_peak_nits = false;
     }
 }
 
@@ -430,6 +440,11 @@ comp_server_schedule_frames(CompServer *s)
 static int
 output_destructor(CompOutput *o)
 {
+    if (o->hdr_auto_timer) {
+        wl_event_source_remove(o->hdr_auto_timer);
+        o->hdr_auto_timer = NULL;
+        o->hdr_auto_timer_armed = false;
+    }
     wl_list_remove(&o->link);
     return 0;
 }
@@ -463,6 +478,7 @@ handle_frame(void *owner, void *data)
     double now_s = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
 
     comp_window_tick_frame(s, now_s);
+    comp_output_update_hdr_auto(s);
     bool fx_animating = comp_fx_output_prepare(o, now_s);
 
     struct wlr_scene_output_state_options scene_opts = {
@@ -606,11 +622,112 @@ greeter_default_scale(const struct wlr_output *wo)
     return 1.0;
 }
 
-static bool
-try_test_and_commit(struct wlr_output *wo, const struct wlr_output_mode *mode,
-                    int custom_w, int custom_h, int32_t custom_mhz,
-                    double scale, int transform, int vrr_enable)
+static void
+disarm_hdr_auto_timer(CompOutput *o)
 {
+    if (!o)
+        return;
+    if (o->hdr_auto_timer)
+        wl_event_source_timer_update(o->hdr_auto_timer, 0);
+    o->hdr_auto_timer_armed = false;
+}
+
+static void
+output_refresh_hdr_caps(CompOutput *o)
+{
+    if (!o || !o->server || !o->wlr_output)
+        return;
+    CompServer *s = o->server;
+    struct wlr_output *wo = o->wlr_output;
+
+    CompFxOutputHdrCaps caps = {0};
+    bool caps_ok = comp_fx_output_get_hdr_caps(wo, &caps);
+    o->hdr_edid_max_cll  = caps.max_cll_nits;
+    o->hdr_edid_max_fall = caps.max_fall_nits;
+    o->hdr_edid_min_luma = caps.min_luma_nits;
+
+    bool has_renderer_ct = s->renderer &&
+                           s->renderer->features.input_color_transform &&
+                           s->renderer->features.output_color_transform;
+    if (!has_renderer_ct) {
+        o->hdr_supported = false;
+        o->hdr_reason    = "no_vulkan_color_transform";
+    } else if (!caps_ok || !caps.supported) {
+        o->hdr_supported = false;
+        o->hdr_reason    = "no_edid_support";
+    } else {
+        o->hdr_supported = true;
+        o->hdr_reason    = o->hdr_kms_rejected ? "kms_rejected" : "";
+    }
+
+    double cfg_sdr_white = s->config ? s->config->fx.sdr_white_nits : 0.0;
+    CompFxHdrLuminance lum;
+    comp_fx_clamp_hdr_luminance(caps.max_cll_nits, caps.max_fall_nits, caps.min_luma_nits,
+                                o->hdr_peak_nits, cfg_sdr_white, &lum);
+    o->hdr_effective_peak_nits = lum.effective_peak_nits;
+    o->hdr_max_fall_nits       = lum.max_fall_nits;
+    o->hdr_min_luma_nits       = lum.min_luma_nits;
+}
+
+static void
+build_hdr10_image_description(const CompOutput *o,
+                              struct wlr_output_image_description *out)
+{
+    float peak = (o && o->hdr_effective_peak_nits >= 100.0f) ? o->hdr_effective_peak_nits : 400.0f;
+    float fall = (o && o->hdr_max_fall_nits >= 50.0f) ? fminf(o->hdr_max_fall_nits, peak) : peak;
+    float min_l = (o && o->hdr_min_luma_nits > 0.0f) ? o->hdr_min_luma_nits : 0.0004f;
+    *out = (struct wlr_output_image_description){
+        .primaries         = WLR_COLOR_NAMED_PRIMARIES_BT2020,
+        .transfer_function = WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ,
+        .mastering_display_primaries = {
+            .red   = { 0.708f,  0.292f },
+            .green = { 0.170f,  0.797f },
+            .blue  = { 0.131f,  0.046f },
+            .white = { 0.3127f, 0.3290f },
+        },
+        .mastering_luminance = {
+            .min = min_l,
+            .max = peak,
+        },
+        .max_cll  = (unsigned)lroundf(peak),
+        .max_fall = (unsigned)lroundf(fall),
+    };
+}
+
+static void
+log_and_notify_hdr_transition(CompOutput *o)
+{
+    if (!o || !o->server || !o->wlr_output)
+        return;
+    struct wlr_output *wo = o->wlr_output;
+    float sdr_w = comp_fx_output_get_sdr_white_nits(wo);
+    float headroom = comp_fx_output_get_hdr_headroom(wo);
+    wlr_log(WLR_INFO,
+            "output %s: HDR10 %s (policy=%s, edid=[%.1f/%.1f/%.4f], eff_peak=%.1f, "
+            "sdr_white=%.1f, headroom=%.2f, max_cll=%.0f, max_fall=%.0f, reason=%s)",
+            wo->name ? wo->name : "unknown",
+            o->hdr_active ? "enabled" : "disabled",
+            comp_hdr_policy_to_str(o->hdr_policy),
+            o->hdr_edid_max_cll, o->hdr_edid_max_fall, o->hdr_edid_min_luma,
+            o->hdr_effective_peak_nits,
+            sdr_w > 0.0f ? sdr_w : 203.0f,
+            headroom,
+            o->hdr_effective_peak_nits, o->hdr_max_fall_nits,
+            (o->hdr_reason && *o->hdr_reason) ? o->hdr_reason : "none");
+    comp_protocols_update_preferred_image_descriptions(o->server);
+}
+
+static bool
+try_test_and_commit_with_format(CompOutput *o, const struct wlr_output_mode *mode,
+                                int custom_w, int custom_h, int32_t custom_mhz,
+                                double scale, int transform, int vrr_enable,
+                                bool want_hdr, uint32_t render_fmt,
+                                bool apply_render_fmt, bool set_img_desc)
+{
+    CompServer *s = o->server;
+    struct wlr_output *wo = o->wlr_output;
+    bool prev_hdr_active = o->hdr_active;
+    struct wlr_output_image_description img_desc;
     struct wlr_output_state st;
     wlr_output_state_init(&st);
     wlr_output_state_set_enabled(&st, true);
@@ -625,14 +742,91 @@ try_test_and_commit(struct wlr_output *wo, const struct wlr_output_mode *mode,
     if (vrr_enable >= 0)
         wlr_output_state_set_adaptive_sync_enabled(&st, vrr_enable != 0);
 
+    if (want_hdr) {
+        build_hdr10_image_description(o, &img_desc);
+        wlr_output_state_set_render_format(&st, render_fmt);
+        wlr_output_state_set_image_description(&st, &img_desc);
+        o->hdr_active = true;
+    } else if (set_img_desc) {
+        if (apply_render_fmt)
+            wlr_output_state_set_render_format(&st, render_fmt);
+        wlr_output_state_set_image_description(&st, NULL);
+        o->hdr_active = false;
+    }
+
+    if ((want_hdr || set_img_desc) && o->scene_output) {
+        struct timespec now;
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        double now_s = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
+        (void)comp_fx_output_prepare(o, now_s);
+        struct wlr_scene_output_state_options scene_opts = {
+            .color_transform = comp_fx_output_get_color_transform(o),
+        };
+        const struct wlr_scene_output_state_options *opts_ptr =
+            scene_opts.color_transform ? &scene_opts : NULL;
+        if (!wlr_scene_output_build_state(o->scene_output, &st, opts_ptr)) {
+            o->hdr_active = prev_hdr_active;
+            wlr_output_state_finish(&st);
+            return false;
+        }
+    }
+
     bool ok = wlr_output_test_state(wo, &st) && wlr_output_commit_state(wo, &st);
     wlr_output_state_finish(&st);
-    return ok;
+    if (!ok) {
+        o->hdr_active = prev_hdr_active;
+        return false;
+    }
+    if (want_hdr) {
+        o->hdr_kms_rejected = false;
+        o->hdr_reason       = "";
+    }
+    if (s && set_img_desc && !want_hdr)
+        o->hdr_active = false;
+    return true;
 }
 
-/* Spec §7.3.1: Atomic KMS Test-Before-Commit Cascade.
- * Tests full requested state first; on failure steps down:
- *   vrr = "off" -> lower refresh rate at same WxH -> preferred mode -> scale/transform only.
+static bool
+try_test_and_commit(CompOutput *o, const struct wlr_output_mode *mode,
+                    int custom_w, int custom_h, int32_t custom_mhz,
+                    double scale, int transform, int vrr_enable, bool want_hdr)
+{
+    struct wlr_output *wo = o->wlr_output;
+    if (want_hdr) {
+        static const uint32_t k_hdr10_fmts[] = {
+            DRM_FORMAT_XRGB2101010,
+            DRM_FORMAT_XBGR2101010,
+        };
+        for (size_t i = 0; i < sizeof(k_hdr10_fmts) / sizeof(k_hdr10_fmts[0]); i++) {
+            if (try_test_and_commit_with_format(o, mode, custom_w, custom_h, custom_mhz,
+                                                scale, transform, vrr_enable, true,
+                                                k_hdr10_fmts[i], true, true)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    if (o->hdr_active || wo->image_description != NULL) {
+        if (try_test_and_commit_with_format(o, mode, custom_w, custom_h, custom_mhz,
+                                            scale, transform, vrr_enable, false,
+                                            DRM_FORMAT_XRGB8888, true, true)) {
+            return true;
+        }
+        return try_test_and_commit_with_format(o, mode, custom_w, custom_h, custom_mhz,
+                                               scale, transform, vrr_enable, false,
+                                               DRM_FORMAT_INVALID, false, true);
+    }
+
+    return try_test_and_commit_with_format(o, mode, custom_w, custom_h, custom_mhz,
+                                           scale, transform, vrr_enable, false,
+                                           DRM_FORMAT_INVALID, false, false);
+}
+
+/* Spec §7.3.1 & spec_comp_hdr.md §3.3: Atomic KMS Test-Before-Commit Cascade.
+ * Tests full requested state (including 10-bit PQ HDR10 when requested) first;
+ * on failure steps down: vrr="off" -> hdr="off" (SDR 8-bit) -> lower refresh
+ * -> preferred mode -> scale/transform only.
  */
 static bool
 commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
@@ -646,6 +840,20 @@ commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
     if (vrr_policy >= 0 && vrr_policy <= COMP_VRR_ON_DEMAND)
         o->vrr_policy = (CompVrrPolicy)vrr_policy;
     o->vrr_unsupported = false;
+
+    output_refresh_hdr_caps(o);
+    if (o->hdr_policy != COMP_HDR_AUTO)
+        disarm_hdr_auto_timer(o);
+
+    bool prev_hdr_active = o->hdr_active;
+    bool want_hdr = false;
+    if (o->hdr_supported) {
+        if (o->hdr_policy == COMP_HDR_ON)
+            want_hdr = true;
+        else if (o->hdr_policy == COMP_HDR_AUTO)
+            want_hdr = comp_window_has_visible_hdr_surface(s) ||
+                       (o->hdr_active && o->hdr_auto_timer_armed);
+    }
 
     const struct wlr_output_mode *req_mode = NULL;
     int req_w = 0, req_h = 0;
@@ -688,21 +896,32 @@ commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
                     (o->vrr_policy == COMP_VRR_ON_DEMAND && comp_window_focused_wants_vrr(s));
     int vrr_arg = want_vrr ? 1 : -1;
 
-    /* Step 1: Full requested state */
-    if (try_test_and_commit(wo, req_mode, req_w, req_h, req_mhz, scale, transform, vrr_arg))
+    /* Step 1: Full requested state (with HDR10 if requested) */
+    if (try_test_and_commit(o, req_mode, req_w, req_h, req_mhz, scale, transform, vrr_arg, want_hdr)) {
+        if (o->hdr_active != prev_hdr_active)
+            log_and_notify_hdr_transition(o);
         return true;
+    }
 
     bool stepped_down = false;
 
-    /* Step 2: Step down VRR -> "off" */
-    if (want_vrr && try_test_and_commit(wo, req_mode, req_w, req_h, req_mhz, scale, transform, 0)) {
+    /* Step 2: Step down VRR -> "off" (keep HDR10 if requested) */
+    if (want_vrr && try_test_and_commit(o, req_mode, req_w, req_h, req_mhz, scale, transform, 0, want_hdr)) {
         o->vrr_policy      = COMP_VRR_OFF;
         o->vrr_unsupported = true;
         stepped_down       = true;
         goto out_ok;
     }
 
-    /* Step 3: Step down to lower refresh rate at the same WxH resolution */
+    /* Step 3: Step down HDR10 -> SDR 8-bit at the requested mode */
+    if (want_hdr && try_test_and_commit(o, req_mode, req_w, req_h, req_mhz, scale, transform, vrr_arg, false)) {
+        o->hdr_kms_rejected = true;
+        o->hdr_reason       = "kms_rejected";
+        stepped_down        = true;
+        goto out_ok;
+    }
+
+    /* Step 4: Step down to lower refresh rate at the same WxH resolution (SDR) */
     if (req_w > 0 && req_h > 0 && !wl_list_empty(&wo->modes)) {
         int32_t ceil_mhz = req_mode ? req_mode->refresh : (req_mhz > 0 ? req_mhz : 0x7fffffff);
         for (;;) {
@@ -717,29 +936,43 @@ commit_output_cascade(CompOutput *o, const char *mode_str, double scale,
             if (!cand)
                 break;
             ceil_mhz = cand->refresh;
-            if (try_test_and_commit(wo, cand, 0, 0, 0, scale, transform, -1)) {
+            if (try_test_and_commit(o, cand, 0, 0, 0, scale, transform, -1, false)) {
+                if (want_hdr) {
+                    o->hdr_kms_rejected = true;
+                    o->hdr_reason       = "kms_rejected";
+                }
                 stepped_down = true;
                 goto out_ok;
             }
         }
     }
 
-    /* Step 4: Step down to preferred mode */
+    /* Step 5: Step down to preferred mode (SDR) */
     const struct wlr_output_mode *pm = wlr_output_preferred_mode(wo);
-    if (pm && try_test_and_commit(wo, pm, 0, 0, 0, scale, transform, -1)) {
-        stepped_down = has_explicit_mode;
+    if (pm && try_test_and_commit(o, pm, 0, 0, 0, scale, transform, -1, false)) {
+        if (want_hdr) {
+            o->hdr_kms_rejected = true;
+            o->hdr_reason       = "kms_rejected";
+        }
+        stepped_down = has_explicit_mode || want_hdr;
         goto out_ok;
     }
 
-    /* Step 5: Apply scale/transform on current mode (e.g. headless/nested fixed mode) */
-    if (try_test_and_commit(wo, NULL, 0, 0, 0, scale, transform, -1)) {
-        stepped_down = has_explicit_mode;
+    /* Step 6: Apply scale/transform on current mode (SDR) */
+    if (try_test_and_commit(o, NULL, 0, 0, 0, scale, transform, -1, false)) {
+        if (want_hdr) {
+            o->hdr_kms_rejected = true;
+            o->hdr_reason       = "kms_rejected";
+        }
+        stepped_down = has_explicit_mode || want_hdr;
         goto out_ok;
     }
 
     return false;
 
 out_ok:
+    if (o->hdr_active != prev_hdr_active)
+        log_and_notify_hdr_transition(o);
     if (stepped_down) {
         if (o->has_manual_mode && wo->width > 0 && wo->height > 0) {
             char fallback_mode[64];
@@ -755,14 +988,15 @@ out_ok:
         }
         if (o->has_manual_vrr)
             o->manual_vrr = o->vrr_policy;
-        wlr_log(WLR_ERROR, "output %s: requested KMS state rejected; stepped down to %dx%d @ %.2f Hz (vrr=%s)",
+        wlr_log(WLR_ERROR, "output %s: requested KMS state rejected; stepped down to %dx%d @ %.2f Hz (vrr=%s, hdr=%s)",
                 wo->name ? wo->name : "unknown", wo->width, wo->height,
-                (double)wo->refresh / 1000.0, comp_vrr_policy_to_str(o->vrr_policy));
+                (double)wo->refresh / 1000.0, comp_vrr_policy_to_str(o->vrr_policy),
+                o->hdr_active ? "on" : "off");
         if (s->opts.session_mode && !s->opts.greeter_mode && !getenv("KAJO_COMP_NO_DBUS_ENV")) {
             const char *const notify_argv[] = {
                 "notify-send", "-a", "kajo-comp",
                 "Display Configuration Stepped Down",
-                "Requested display mode or VRR was rejected by hardware; using safe fallback mode.",
+                "Requested display mode, VRR, or HDR was rejected by hardware; using safe fallback mode.",
                 NULL,
             };
             comp_spawn(s, notify_argv);
@@ -771,9 +1005,73 @@ out_ok:
     return true;
 }
 
+static int
+handle_hdr_auto_timer(void *data)
+{
+    CompOutput *o = data;
+    if (!o || !o->server || !o->wlr_output)
+        return 0;
+    o->hdr_auto_timer_armed = false;
+    if (!o->wlr_output->enabled || o->hdr_policy != COMP_HDR_AUTO || !o->hdr_active)
+        return 0;
+    if (comp_window_has_visible_hdr_surface(o->server))
+        return 0;
+
+    if (try_test_and_commit(o, NULL, 0, 0, 0, -1.0, -1, -1, false)) {
+        log_and_notify_hdr_transition(o);
+        comp_ipc_emit_outputs(o->server);
+    }
+    return 0;
+}
+
+void
+comp_output_update_hdr_auto(CompServer *s)
+{
+    if (!s || wl_list_empty(&s->outputs))
+        return;
+
+    bool have_hdr_surface = false;
+    bool checked_surfaces = false;
+    CompOutput *o;
+    wl_list_for_each(o, &s->outputs, link) {
+        struct wlr_output *wo = o->wlr_output;
+        if (!wo || !wo->enabled || !o->hdr_supported || o->hdr_policy != COMP_HDR_AUTO) {
+            if (o->hdr_auto_timer_armed)
+                disarm_hdr_auto_timer(o);
+            continue;
+        }
+        if (!checked_surfaces) {
+            have_hdr_surface = comp_window_has_visible_hdr_surface(s);
+            checked_surfaces = true;
+        }
+        if (have_hdr_surface) {
+            if (o->hdr_auto_timer_armed)
+                disarm_hdr_auto_timer(o);
+            if (!o->hdr_active && !o->hdr_kms_rejected) {
+                if (try_test_and_commit(o, NULL, 0, 0, 0, -1.0, -1, -1, true)) {
+                    log_and_notify_hdr_transition(o);
+                    comp_ipc_emit_outputs(s);
+                } else {
+                    o->hdr_kms_rejected = true;
+                    o->hdr_reason       = "kms_rejected";
+                    comp_ipc_emit_outputs(s);
+                }
+            }
+        } else if (o->hdr_active && !o->hdr_auto_timer_armed) {
+            if (!o->hdr_auto_timer && s->loop)
+                o->hdr_auto_timer = wl_event_loop_add_timer(s->loop, handle_hdr_auto_timer, o);
+            if (o->hdr_auto_timer) {
+                wl_event_source_timer_update(o->hdr_auto_timer, 2000);
+                o->hdr_auto_timer_armed = true;
+            }
+        }
+    }
+}
+
 bool
 comp_output_configure(CompServer *s, const char *output_name,
-                      const char *mode_str, double scale, int transform, int vrr_policy)
+                      const char *mode_str, double scale, int transform,
+                      int vrr_policy, int hdr_policy, int hdr_peak_nits)
 {
     if (!s || wl_list_empty(&s->outputs))
         return false;
@@ -811,12 +1109,35 @@ comp_output_configure(CompServer *s, const char *output_name,
         target->has_manual_vrr = true;
         target->manual_vrr     = (CompVrrPolicy)vrr_policy;
     }
+    if (hdr_policy >= 0 && hdr_policy <= COMP_HDR_AUTO) {
+        target->has_manual_hdr   = true;
+        target->manual_hdr       = (CompHdrPolicy)hdr_policy;
+        target->hdr_policy       = (CompHdrPolicy)hdr_policy;
+        target->hdr_kms_rejected = false;
+    }
+    if (hdr_peak_nits >= 0) {
+        int32_t clamped_peak = (hdr_peak_nits == 0)
+            ? 0
+            : (hdr_peak_nits < 100 ? 100 : (hdr_peak_nits > 10000 ? 10000 : hdr_peak_nits));
+        target->has_manual_hdr_peak_nits = true;
+        target->hdr_manual_peak_nits     = clamped_peak;
+        target->hdr_peak_nits            = clamped_peak;
+        target->hdr_kms_rejected         = false;
+    }
 
     bool ok = commit_output_cascade(target, mode_str, scale, transform, vrr_policy);
     comp_output_update_vrr(s);
     sync_primary_output_devices(s);
     comp_output_post_change(s);
     return ok;
+}
+
+bool
+comp_output_configure_hdr(CompServer *s, const char *output_name,
+                          int hdr_policy, int hdr_peak_nits)
+{
+    return comp_output_configure(s, output_name, NULL, -1.0, -1, -1,
+                                 hdr_policy, hdr_peak_nits);
 }
 
 void
@@ -860,6 +1181,11 @@ comp_output_apply_config(CompServer *s)
                                          : ((r && r->has_transform) ? (int)r->transform : -1);
         int vrr = o->has_manual_vrr ? (int)o->manual_vrr
                                     : ((r && r->has_vrr) ? (int)r->vrr : -1);
+        o->hdr_policy = o->has_manual_hdr ? o->manual_hdr
+                                          : ((r && r->has_hdr) ? r->hdr : COMP_HDR_OFF);
+        o->hdr_peak_nits = o->has_manual_hdr_peak_nits ? o->hdr_manual_peak_nits
+                                                      : ((r && r->has_hdr_peak_nits) ? r->hdr_peak_nits : 0);
+        o->hdr_kms_rejected = false;
 
         if (!commit_output_cascade(o, mode_str, scale, tf, vrr)) {
             wlr_log(WLR_ERROR, "output %s: failed to enable output", wo->name);

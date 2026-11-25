@@ -105,6 +105,8 @@
 #define COMP_KEY_SCALE                    "scale"
 #define COMP_KEY_TRANSFORM                "transform"
 #define COMP_KEY_VRR                      "vrr"
+#define COMP_KEY_HDR                      "hdr"
+#define COMP_KEY_HDR_PEAK_NITS            "hdr_peak_nits"
 #define COMP_VAL_PREFERRED                "preferred"
 
 /* ───────────────────────── [[bind]] Keys & Tokens ───────────────────────── */
@@ -235,6 +237,7 @@
 #define COMP_IPC_ACT_SWITCH_KEYBOARD_LAYOUT "switch-keyboard-layout"
 #define COMP_IPC_ACT_SET_OUTPUT_TRANSFORM   "set-output-transform"
 #define COMP_IPC_ACT_SET_OUTPUT_CONFIG      "set-output-config"
+#define COMP_IPC_ACT_SET_OUTPUT_HDR         "set-output-hdr"
 #define COMP_IPC_ACT_SCREENSHOT_CONFIRM     "screenshot-confirm"
 #define COMP_IPC_ACT_SCREENSHOT_CANCEL      "screenshot-cancel"
 #define COMP_IPC_ACT_TOGGLE_WINDOW_FLOATING "toggle-window-floating"

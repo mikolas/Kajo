@@ -17,9 +17,17 @@ struct CompOutput;
 struct CompServer;
 struct wlr_buffer;
 struct wlr_color_transform;
+struct wlr_output;
 struct wlr_render_pass;
 struct wlr_scene_node;
 struct wlr_scene_tree;
+
+typedef struct {
+    bool  supported;
+    float max_cll_nits;
+    float max_fall_nits;
+    float min_luma_nits;
+} CompFxOutputHdrCaps;
 
 typedef struct CompFxSurface CompFxSurface;
 
@@ -98,9 +106,16 @@ bool comp_fx_tree_is_transitioning(const struct CompServer *server,
 
 bool comp_fx_is_active(const struct CompServer *server);
 
+/* Output HDR capabilities & state helpers (keeps wlr_kfx_* isolated inside src/comp/fx/). */
+bool  comp_fx_output_get_hdr_caps(struct wlr_output *output, CompFxOutputHdrCaps *out);
+float comp_fx_output_get_hdr_headroom(struct wlr_output *output);
+float comp_fx_output_get_sdr_white_nits(struct wlr_output *output);
+
 /* Screenshot capture helpers (keeps wlr_kfx_* isolated inside src/comp/fx/). */
 struct wlr_render_pass *comp_fx_screenshot_begin_pass(struct CompServer *server,
                                                       struct wlr_buffer *buffer);
+struct wlr_render_pass *comp_fx_screenshot_begin_hdr_pass(struct CompServer *server,
+                                                          struct wlr_buffer *buffer);
 bool comp_fx_screenshot_render_node(struct CompServer *server,
                                     struct wlr_render_pass *pass,
                                     struct wlr_scene_node *node,

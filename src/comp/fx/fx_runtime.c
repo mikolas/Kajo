@@ -422,6 +422,10 @@ update_system_color_transform(CompFxSystem *sys, bool force_rebuild)
             wlr_color_transform_unref(sys->color_transform);
             sys->color_transform = NULL;
         }
+        if (sys->hdr_screenshot_transform) {
+            wlr_color_transform_unref(sys->hdr_screenshot_transform);
+            sys->hdr_screenshot_transform = NULL;
+        }
         sys->has_color_matrix = false;
         return;
     }
@@ -436,6 +440,11 @@ update_system_color_transform(CompFxSystem *sys, bool force_rebuild)
         }
         if (same)
             return;
+    }
+
+    if (sys->hdr_screenshot_transform) {
+        wlr_color_transform_unref(sys->hdr_screenshot_transform);
+        sys->hdr_screenshot_transform = NULL;
     }
 
     struct wlr_color_transform *m_tr = wlr_color_transform_init_matrix(mat);
@@ -612,6 +621,10 @@ comp_fx_finish(struct CompServer *server)
         wlr_color_transform_unref(sys->color_transform);
         sys->color_transform = NULL;
     }
+    if (sys->hdr_screenshot_transform) {
+        wlr_color_transform_unref(sys->hdr_screenshot_transform);
+        sys->hdr_screenshot_transform = NULL;
+    }
     sys->has_color_matrix = false;
 
     if (sys->blank_buf) {
@@ -621,6 +634,40 @@ comp_fx_finish(struct CompServer *server)
 
     server->fx = NULL;
     free(sys);
+}
+
+static void
+apply_output_fx_color_settings(CompFxSystem *sys, struct CompOutput *out)
+{
+    if (!sys || !out || !out->wlr_output)
+        return;
+    struct wlr_output *wo = out->wlr_output;
+    if (!sys->supported || !sys->cfg.enabled) {
+        wlr_kfx_output_set_dither(wo, false);
+        wlr_kfx_output_set_sdr_white_nits(wo, 0.0f);
+        wlr_kfx_output_set_tonemap(wo, false, 0.0f);
+        return;
+    }
+
+    float sdr_white = (float)sys->cfg.sdr_white_nits;
+    bool is_pq = out->hdr_active ||
+                 (wo->image_description &&
+                  wo->image_description->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ);
+    if (is_pq) {
+        float edid_cll = (out->hdr_edid_max_cll > 0.0f)
+                             ? out->hdr_edid_max_cll
+                             : (wo->image_description
+                                    ? (float)wo->image_description->mastering_luminance.max
+                                    : 0.0f);
+        CompFxHdrLuminance lum;
+        comp_fx_clamp_hdr_luminance(edid_cll, out->hdr_edid_max_fall, out->hdr_edid_min_luma,
+                                    out->hdr_peak_nits, sys->cfg.sdr_white_nits, &lum);
+        sdr_white = lum.sdr_white_nits;
+    }
+
+    wlr_kfx_output_set_dither(wo, sys->cfg.dither);
+    wlr_kfx_output_set_sdr_white_nits(wo, sdr_white);
+    wlr_kfx_output_set_tonemap(wo, sys->cfg.tonemap, (float)sys->cfg.tonemap_peak_nits);
 }
 
 void
@@ -639,18 +686,7 @@ comp_fx_config_apply(struct CompServer *server, const struct CompConfig *cfg)
     if (server) {
         struct CompOutput *out;
         wl_list_for_each(out, &server->outputs, link) {
-            if (!out->wlr_output)
-                continue;
-            if (!sys->supported || !sys->cfg.enabled) {
-                wlr_kfx_output_set_dither(out->wlr_output, false);
-                wlr_kfx_output_set_sdr_white_nits(out->wlr_output, 0.0f);
-                wlr_kfx_output_set_tonemap(out->wlr_output, false, 0.0f);
-            } else {
-                wlr_kfx_output_set_dither(out->wlr_output, sys->cfg.dither);
-                wlr_kfx_output_set_sdr_white_nits(out->wlr_output, (float)sys->cfg.sdr_white_nits);
-                wlr_kfx_output_set_tonemap(out->wlr_output, sys->cfg.tonemap,
-                                           (float)sys->cfg.tonemap_peak_nits);
-            }
+            apply_output_fx_color_settings(sys, out);
         }
     }
 
@@ -691,6 +727,10 @@ comp_fx_renderer_lost(struct CompServer *server)
         wlr_color_transform_unref(sys->color_transform);
         sys->color_transform = NULL;
     }
+    if (sys->hdr_screenshot_transform) {
+        wlr_color_transform_unref(sys->hdr_screenshot_transform);
+        sys->hdr_screenshot_transform = NULL;
+    }
     sys->has_color_matrix = false;
 
     sys->supported = server->renderer && wlr_kfx_is_supported(server->renderer);
@@ -725,21 +765,9 @@ comp_fx_output_prepare(struct CompOutput *output, double now_s)
     if (!output || !output->server || !output->server->fx)
         return false;
     CompFxSystem *sys = output->server->fx;
-    if (!sys->supported || !sys->cfg.enabled) {
-        if (output->wlr_output) {
-            wlr_kfx_output_set_dither(output->wlr_output, false);
-            wlr_kfx_output_set_sdr_white_nits(output->wlr_output, 0.0f);
-            wlr_kfx_output_set_tonemap(output->wlr_output, false, 0.0f);
-        }
+    apply_output_fx_color_settings(sys, output);
+    if (!sys->supported || !sys->cfg.enabled)
         return false;
-    }
-
-    if (output->wlr_output) {
-        wlr_kfx_output_set_dither(output->wlr_output, sys->cfg.dither);
-        wlr_kfx_output_set_sdr_white_nits(output->wlr_output, (float)sys->cfg.sdr_white_nits);
-        wlr_kfx_output_set_tonemap(output->wlr_output, sys->cfg.tonemap,
-                                   (float)sys->cfg.tonemap_peak_nits);
-    }
 
     CompFxOutputTrack *track = ensure_output_track(sys, output->scene_output);
     if (track && output->wlr_output) {
@@ -914,6 +942,90 @@ comp_fx_is_active(const struct CompServer *server)
     return server && server->fx && server->fx->supported && server->fx->cfg.enabled;
 }
 
+bool
+comp_fx_output_get_hdr_caps(struct wlr_output *output, CompFxOutputHdrCaps *out)
+{
+    if (!out)
+        return false;
+    *out = (CompFxOutputHdrCaps){0};
+    struct wlr_kfx_output_hdr_caps kcaps = {0};
+    if (!output || !wlr_kfx_output_get_hdr_caps(output, &kcaps))
+        return false;
+    out->supported     = kcaps.supported;
+    out->max_cll_nits  = kcaps.max_cll_nits;
+    out->max_fall_nits = kcaps.max_fall_nits;
+    out->min_luma_nits = kcaps.min_luma_nits;
+    return true;
+}
+
+float
+comp_fx_output_get_hdr_headroom(struct wlr_output *output)
+{
+    if (!output)
+        return 1.0f;
+    return wlr_kfx_output_get_hdr_headroom(output);
+}
+
+float
+comp_fx_output_get_sdr_white_nits(struct wlr_output *output)
+{
+    if (!output)
+        return 203.0f;
+    return wlr_kfx_output_get_sdr_white_nits(output);
+}
+
+static struct wlr_color_transform *
+ensure_hdr_screenshot_transform(CompFxSystem *sys)
+{
+    if (!sys)
+        return NULL;
+    if (sys->hdr_screenshot_transform)
+        return sys->hdr_screenshot_transform;
+
+    struct wlr_color_transform *e_tr = wlr_color_transform_init_linear_to_inverse_eotf(
+        WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR);
+    if (!e_tr)
+        return NULL;
+
+    if (sys->has_color_matrix) {
+        struct wlr_color_transform *m_tr = wlr_color_transform_init_matrix(sys->color_matrix);
+        struct wlr_color_transform *pipe = NULL;
+        if (m_tr) {
+            struct wlr_color_transform *stages[2] = { m_tr, e_tr };
+            pipe = wlr_color_transform_init_pipeline(stages, 2);
+            wlr_color_transform_unref(m_tr);
+        }
+        wlr_color_transform_unref(e_tr);
+        sys->hdr_screenshot_transform = pipe;
+        return pipe;
+    }
+
+    sys->hdr_screenshot_transform = e_tr;
+    return e_tr;
+}
+
+struct wlr_render_pass *
+comp_fx_screenshot_begin_hdr_pass(struct CompServer *server, struct wlr_buffer *buffer)
+{
+    if (!server || !server->renderer || !buffer || !server->fx || !server->fx->supported)
+        return NULL;
+
+    double now_s = comp_now_sec();
+    struct CompOutput *out;
+    wl_list_for_each(out, &server->outputs, link) {
+        (void)comp_fx_output_prepare(out, now_s);
+    }
+
+    struct wlr_color_transform *tr = ensure_hdr_screenshot_transform(server->fx);
+    if (!tr)
+        return NULL;
+
+    struct wlr_buffer_pass_options pass_opts = {
+        .color_transform = tr,
+    };
+    return wlr_kfx_renderer_begin_buffer_pass(server->renderer, buffer, &pass_opts, true);
+}
+
 struct wlr_render_pass *
 comp_fx_screenshot_begin_pass(struct CompServer *server, struct wlr_buffer *buffer)
 {
@@ -1078,10 +1190,23 @@ CompFxSurface *comp_fx_surface_create(struct CompServer *s, struct wlr_scene_tre
 void comp_fx_surface_sync(CompFxSurface *fx, const CompFxSurfaceState *state) { (void)fx; (void)state; }
 void comp_fx_surface_destroy(CompFxSurface *fx) { (void)fx; }
 bool comp_fx_is_active(const struct CompServer *server) { (void)server; return false; }
+bool comp_fx_output_get_hdr_caps(struct wlr_output *output, CompFxOutputHdrCaps *out) {
+    (void)output;
+    if (out)
+        *out = (CompFxOutputHdrCaps){0};
+    return false;
+}
+float comp_fx_output_get_hdr_headroom(struct wlr_output *output) { (void)output; return 1.0f; }
+float comp_fx_output_get_sdr_white_nits(struct wlr_output *output) { (void)output; return 203.0f; }
 struct wlr_render_pass *comp_fx_screenshot_begin_pass(struct CompServer *server, struct wlr_buffer *buffer) {
     if (!server || !server->renderer || !buffer)
         return NULL;
     return wlr_renderer_begin_buffer_pass(server->renderer, buffer, NULL);
+}
+struct wlr_render_pass *comp_fx_screenshot_begin_hdr_pass(struct CompServer *server, struct wlr_buffer *buffer) {
+    (void)server;
+    (void)buffer;
+    return NULL;
 }
 bool comp_fx_screenshot_render_node(struct CompServer *server, struct wlr_render_pass *pass,
                                     struct wlr_scene_node *node, const struct wlr_box *dst_box,

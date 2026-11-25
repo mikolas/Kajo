@@ -224,8 +224,33 @@ renderer_get_render_formats(struct wlr_renderer *r)
     return r->WLR_PRIVATE.impl->get_render_formats(r);
 }
 
+static bool
+scene_subtree_has_hdr(const struct wlr_scene_node *node)
+{
+    if (!node || !node->enabled)
+        return false;
+    if (node->type == WLR_SCENE_NODE_TREE) {
+        struct wlr_scene_tree *tree = wlr_scene_tree_from_node((struct wlr_scene_node *)node);
+        struct wlr_scene_node *child;
+        wl_list_for_each(child, &tree->children, link) {
+            if (scene_subtree_has_hdr(child))
+                return true;
+        }
+        return false;
+    }
+    if (node->type == WLR_SCENE_NODE_BUFFER) {
+        struct wlr_scene_buffer *sbuf = wlr_scene_buffer_from_node((struct wlr_scene_node *)node);
+        if (!sbuf->buffer || sbuf->opacity <= 0.0f)
+            return false;
+        return sbuf->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ ||
+               sbuf->transfer_function == WLR_COLOR_TRANSFER_FUNCTION_EXT_LINEAR;
+    }
+    return false;
+}
+
 static struct wlr_buffer *
-allocate_offscreen_buffer(CompServer *s, int width, int height)
+allocate_offscreen_format_buffer(CompServer *s, int width, int height,
+                                 const uint32_t *try_fmts, size_t n_fmts)
 {
     if (!s || !s->allocator || !s->renderer || width <= 0 || height <= 0)
         return NULL;
@@ -240,16 +265,10 @@ allocate_offscreen_buffer(CompServer *s, int width, int height)
         if (tex_fmts && wlr_drm_format_set_intersect(&usable, render_fmts, tex_fmts))
             pick_set = &usable;
 
-        static const uint32_t k_try_fmts[] = {
-            DRM_FORMAT_ARGB8888,
-            DRM_FORMAT_ABGR8888,
-            DRM_FORMAT_XRGB8888,
-            DRM_FORMAT_XBGR8888,
-        };
-        for (size_t i = 0; i < sizeof(k_try_fmts) / sizeof(k_try_fmts[0]); i++) {
-            if (tex_fmts && !wlr_drm_format_set_get(tex_fmts, k_try_fmts[i]))
+        for (size_t i = 0; i < n_fmts; i++) {
+            if (tex_fmts && !wlr_drm_format_set_get(tex_fmts, try_fmts[i]))
                 continue;
-            const struct wlr_drm_format *fmt = wlr_drm_format_set_get(pick_set, k_try_fmts[i]);
+            const struct wlr_drm_format *fmt = wlr_drm_format_set_get(pick_set, try_fmts[i]);
             if (fmt) {
                 struct wlr_buffer *b = wlr_allocator_create_buffer(s->allocator, width, height, fmt);
                 if (b) {
@@ -260,12 +279,85 @@ allocate_offscreen_buffer(CompServer *s, int width, int height)
         }
         wlr_drm_format_set_finish(&usable);
     }
+    return NULL;
+}
+
+static struct wlr_buffer *
+allocate_offscreen_buffer(CompServer *s, int width, int height)
+{
+    static const uint32_t k_try_fmts[] = {
+        DRM_FORMAT_ARGB8888,
+        DRM_FORMAT_ABGR8888,
+        DRM_FORMAT_XRGB8888,
+        DRM_FORMAT_XBGR8888,
+    };
+    struct wlr_buffer *b = allocate_offscreen_format_buffer(
+        s, width, height, k_try_fmts, sizeof(k_try_fmts) / sizeof(k_try_fmts[0]));
+    if (b)
+        return b;
 
     struct wlr_output *out = comp_server_primary_output(s);
     if (out && out->swapchain) {
         return wlr_allocator_create_buffer(s->allocator, width, height, &out->swapchain->format);
     }
     return NULL;
+}
+
+static uint8_t *
+try_render_hdr_subtree_to_argb8888(CompServer *s, struct wlr_scene_node *root_node,
+                                   int parent_lx, int parent_ly,
+                                   int origin_lx, int origin_ly,
+                                   int phys_w, int phys_h, double scale, bool opaque_bg)
+{
+    static const uint32_t k_hdr_fmts[] = { DRM_FORMAT_ABGR16161616F };
+    struct wlr_buffer *hdr_buf = allocate_offscreen_format_buffer(s, phys_w, phys_h, k_hdr_fmts, 1);
+    if (!hdr_buf)
+        return NULL;
+
+    struct wlr_render_pass *pass = comp_fx_screenshot_begin_hdr_pass(s, hdr_buf);
+    if (!pass) {
+        wlr_buffer_drop(hdr_buf);
+        return NULL;
+    }
+
+    wlr_render_pass_add_rect(pass, &(struct wlr_render_rect_options){
+        .box        = { .x = 0, .y = 0, .width = phys_w, .height = phys_h },
+        .color      = { .r = 0.0f, .g = 0.0f, .b = 0.0f, .a = opaque_bg ? 1.0f : 0.0f },
+        .blend_mode = WLR_RENDER_BLEND_MODE_NONE,
+    });
+    render_node_recursive(s, pass, root_node, parent_lx, parent_ly,
+                          origin_lx, origin_ly, scale, phys_w, phys_h);
+    if (!wlr_render_pass_submit(pass)) {
+        wlr_buffer_drop(hdr_buf);
+        return NULL;
+    }
+
+    size_t fp16_stride = (size_t)phys_w * 8u;
+    uint16_t *fp16_pixels = malloc(fp16_stride * (size_t)phys_h);
+    uint8_t *argb_pixels = malloc((size_t)phys_w * 4u * (size_t)phys_h);
+    bool read_ok = false;
+    if (fp16_pixels && argb_pixels) {
+        struct wlr_texture *tex = wlr_texture_from_buffer(s->renderer, hdr_buf);
+        if (tex) {
+            read_ok = wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+                .data   = fp16_pixels,
+                .format = DRM_FORMAT_ABGR16161616F,
+                .stride = (uint32_t)fp16_stride,
+            });
+            wlr_texture_destroy(tex);
+        }
+    }
+    wlr_buffer_drop(hdr_buf);
+
+    if (!read_ok) {
+        free(fp16_pixels);
+        free(argb_pixels);
+        return NULL;
+    }
+
+    comp_fx_tonemap_fp16_to_argb8888(fp16_pixels, argb_pixels, phys_w, phys_h);
+    free(fp16_pixels);
+    return argb_pixels;
 }
 
 static void
@@ -323,6 +415,17 @@ render_subtree_to_argb8888(CompServer *s, struct wlr_scene_node *root_node,
     int phys_h = (int)lround((double)logical_h * scale);
     if (phys_w < 1) phys_w = 1;
     if (phys_h < 1) phys_h = 1;
+
+    if (scene_subtree_has_hdr(root_node)) {
+        uint8_t *hdr_argb = try_render_hdr_subtree_to_argb8888(
+            s, root_node, parent_lx, parent_ly, origin_lx, origin_ly,
+            phys_w, phys_h, scale, opaque_bg);
+        if (hdr_argb) {
+            if (out_phys_w) *out_phys_w = phys_w;
+            if (out_phys_h) *out_phys_h = phys_h;
+            return hdr_argb;
+        }
+    }
 
     struct wlr_buffer *gpu_buf = allocate_offscreen_buffer(s, phys_w, phys_h);
     if (!gpu_buf)
