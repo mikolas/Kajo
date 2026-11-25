@@ -13,6 +13,7 @@
 typedef struct {
   IdeMarkdownView *md;
   IdeMermaidGraph *graph;
+  GtkWidget       *canvas_scroll;
   GtkWidget       *drawing_area;
   GtkWidget       *zoom_label;
   double           zoom;
@@ -616,7 +617,13 @@ static void on_zoom_out_clicked(GtkButton *btn, gpointer user_data) {
 static void on_zoom_reset_clicked(GtkButton *btn, gpointer user_data) {
   (void)btn;
   MermaidCardState *st = user_data;
-  update_mermaid_zoom(st, 1.0);
+  if (!st || !st->graph) return;
+  int avail_w = st->canvas_scroll ? gtk_widget_get_width(st->canvas_scroll) - 8 : 0;
+  double fit_zoom = 1.0;
+  if (avail_w > 120 && st->graph->canvas_width > (double)avail_w) {
+    fit_zoom = CLAMP((double)avail_w / st->graph->canvas_width, 0.5, 1.0);
+  }
+  update_mermaid_zoom(st, fit_zoom);
 }
 
 static void on_zoom_in_clicked(GtkButton *btn, gpointer user_data) {
@@ -642,7 +649,10 @@ static void on_mermaid_canvas_clicked(GtkGestureClick *gesture,
   (void)n_press;
   MermaidCardState *st = user_data;
   if (!st || !st->graph || !st->md) return;
-  const IdeMermaidNode *hit = ide_mermaid_hit_test_node(st->graph, st->zoom, x, y);
+  double draw_w = st->drawing_area ? (double)gtk_widget_get_width(st->drawing_area) : 0.0;
+  double offset_x = MAX(0.0, (draw_w - st->graph->canvas_width * st->zoom) * 0.5);
+  double adj_x = x - offset_x;
+  const IdeMermaidNode *hit = ide_mermaid_hit_test_node(st->graph, st->zoom, adj_x, y);
   if (hit && st->md->jump_cb && hit->source_line_1based > 0) {
     st->md->jump_cb(hit->source_line_1based, st->md->user_data);
   }
@@ -735,6 +745,7 @@ GtkWidget *ide_markdown_build_mermaid_card(IdeMarkdownView *md,
   gtk_widget_add_controller(st->drawing_area, GTK_EVENT_CONTROLLER(click));
 
   GtkWidget *canvas_scroll = gtk_scrolled_window_new();
+  st->canvas_scroll = canvas_scroll;
   gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(canvas_scroll),
                                  GTK_POLICY_AUTOMATIC,
                                  GTK_POLICY_NEVER);

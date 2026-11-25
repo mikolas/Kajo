@@ -336,6 +336,67 @@ static IdeMermaidNode *find_node_by_id(const IdeMermaidGraph *g, const char *id)
   return NULL;
 }
 
+typedef struct {
+  double          bary;
+  int             orig;
+  IdeMermaidNode *node;
+} MermaidBaryItem;
+
+static void sort_rank_by_barycenter(const IdeMermaidGraph *g,
+                                    GPtrArray             *nodes,
+                                    gboolean               by_predecessors) {
+  if (!nodes || nodes->len <= 1) return;
+  guint len = nodes->len;
+  g_autofree MermaidBaryItem *items = g_new0(MermaidBaryItem, len);
+
+  for (guint i = 0; i < len; i++) {
+    IdeMermaidNode *n = g_ptr_array_index(nodes, i);
+    double sum = 0.0;
+    int cnt = 0;
+    for (guint e_idx = 0; e_idx < g->edges->len; e_idx++) {
+      const IdeMermaidEdge *e = g_ptr_array_index(g->edges, e_idx);
+      if (by_predecessors) {
+        if (g_strcmp0(e->to_id, n->id) == 0) {
+          const IdeMermaidNode *u = find_node_by_id(g, e->from_id);
+          if (u && u->rank < n->rank) {
+            sum += (double)u->order_in_rank;
+            cnt++;
+          }
+        }
+      } else {
+        if (g_strcmp0(e->from_id, n->id) == 0) {
+          const IdeMermaidNode *v = find_node_by_id(g, e->to_id);
+          if (v && v->rank > n->rank) {
+            sum += (double)v->order_in_rank;
+            cnt++;
+          }
+        }
+      }
+    }
+    items[i].bary = (cnt > 0) ? (sum / (double)cnt) : (double)n->order_in_rank;
+    items[i].orig = (int)i;
+    items[i].node = n;
+  }
+
+  for (guint i = 1; i < len; i++) {
+    MermaidBaryItem key = items[i];
+    guint j = i;
+    while (j > 0 &&
+           (items[j - 1].bary > key.bary + 1e-6 ||
+            (fabs(items[j - 1].bary - key.bary) <= 1e-6 &&
+             items[j - 1].orig > key.orig))) {
+      items[j] = items[j - 1];
+      j--;
+    }
+    items[j] = key;
+  }
+
+  for (guint i = 0; i < len; i++) {
+    nodes->pdata[i] = items[i].node;
+    items[i].node->order_in_rank = (int)i;
+  }
+}
+
 void ide_mermaid_layout_graph(IdeMermaidGraph *graph) {
   if (!graph || graph->nodes->len == 0) {
     if (graph) {
@@ -349,9 +410,24 @@ void ide_mermaid_layout_graph(IdeMermaidGraph *graph) {
     IdeMermaidNode *n = g_ptr_array_index(graph->nodes, i);
     n->rank = 0;
     n->order_in_rank = 0;
-    gsize lbl_len = n->label ? g_utf8_strlen(n->label, -1) : 4;
-    n->width = CLAMP((double)lbl_len * 8.5 + 32.0, 110.0, 240.0);
-    n->height = 42.0;
+
+    guint max_line_chars = 4;
+    guint wrapped_lines = 1;
+    if (n->label && *n->label) {
+      g_auto(GStrv) lines = g_strsplit(n->label, "\n", -1);
+      max_line_chars = 0;
+      wrapped_lines = 0;
+      for (guint li = 0; lines[li] != NULL; li++) {
+        guint len = (guint)g_utf8_strlen(lines[li], -1);
+        if (len > max_line_chars) max_line_chars = len;
+        wrapped_lines += MAX(1u, (len + 25u) / 26u);
+      }
+      if (max_line_chars < 4) max_line_chars = 4;
+      if (wrapped_lines == 0) wrapped_lines = 1;
+    }
+
+    n->width = CLAMP((double)MIN(max_line_chars, 26u) * 8.2 + 32.0, 112.0, 248.0);
+    n->height = MAX(42.0, (double)wrapped_lines * 18.0 + 20.0);
   }
 
   guint max_iters = graph->nodes->len;
@@ -376,10 +452,43 @@ void ide_mermaid_layout_graph(IdeMermaidGraph *graph) {
     if (n->rank > max_rank) max_rank = n->rank;
   }
 
-  g_autofree int *rank_counts = g_new0(int, max_rank + 1);
+  GPtrArray **rank_lists = g_new0(GPtrArray *, max_rank + 1);
+  for (int r = 0; r <= max_rank; r++) {
+    rank_lists[r] = g_ptr_array_new();
+  }
   for (guint i = 0; i < graph->nodes->len; i++) {
     IdeMermaidNode *n = g_ptr_array_index(graph->nodes, i);
-    n->order_in_rank = rank_counts[n->rank]++;
+    n->order_in_rank = (int)rank_lists[n->rank]->len;
+    g_ptr_array_add(rank_lists[n->rank], n);
+  }
+
+  /* 4 alternating forward/backward barycenter sweeps to reduce crossings */
+  for (int pass = 0; pass < 2; pass++) {
+    for (int r = 1; r <= max_rank; r++) {
+      sort_rank_by_barycenter(graph, rank_lists[r], TRUE);
+    }
+    for (int r = max_rank - 1; r >= 0; r--) {
+      sort_rank_by_barycenter(graph, rank_lists[r], FALSE);
+    }
+  }
+
+  const double PAD_X = 36.0;
+  const double PAD_Y = 32.0;
+  const double MAIN_GAP = 60.0;
+  const double CROSS_GAP = 28.0;
+
+  g_autofree double *gap_after = g_new0(double, max_rank + 1);
+  for (int r = 0; r <= max_rank; r++) {
+    gap_after[r] = MAIN_GAP;
+  }
+  for (guint e_idx = 0; e_idx < graph->edges->len; e_idx++) {
+    const IdeMermaidEdge *e = g_ptr_array_index(graph->edges, e_idx);
+    if (!e->label || !*e->label) continue;
+    const IdeMermaidNode *u = find_node_by_id(graph, e->from_id);
+    const IdeMermaidNode *v = find_node_by_id(graph, e->to_id);
+    if (u && v && u->rank < v->rank && u->rank <= max_rank) {
+      gap_after[u->rank] = MAIN_GAP + 22.0;
+    }
   }
 
   gboolean horizontal = (graph->kind == IDE_MERMAID_FLOWCHART_LR ||
@@ -387,21 +496,83 @@ void ide_mermaid_layout_graph(IdeMermaidGraph *graph) {
   double max_x = 320.0;
   double max_y = 160.0;
 
-  for (guint i = 0; i < graph->nodes->len; i++) {
-    IdeMermaidNode *n = g_ptr_array_index(graph->nodes, i);
-    if (horizontal) {
-      n->x = 36.0 + n->rank * 210.0;
-      n->y = 36.0 + n->order_in_rank * 78.0;
-    } else {
-      n->x = 48.0 + n->order_in_rank * 220.0;
-      n->y = 32.0 + n->rank * 86.0;
+  if (!horizontal) {
+    g_autofree double *rank_h = g_new0(double, max_rank + 1);
+    g_autofree double *rank_total_w = g_new0(double, max_rank + 1);
+    double max_span = 0.0;
+
+    for (int r = 0; r <= max_rank; r++) {
+      GPtrArray *rl = rank_lists[r];
+      double tot = 0.0;
+      double mh = 42.0;
+      for (guint k = 0; k < rl->len; k++) {
+        IdeMermaidNode *n = g_ptr_array_index(rl, k);
+        if (k > 0) tot += CROSS_GAP;
+        tot += n->width;
+        if (n->height > mh) mh = n->height;
+      }
+      rank_h[r] = mh;
+      rank_total_w[r] = tot;
+      if (tot > max_span) max_span = tot;
     }
-    if (n->x + n->width + 40.0 > max_x) max_x = n->x + n->width + 40.0;
-    if (n->y + n->height + 40.0 > max_y) max_y = n->y + n->height + 40.0;
+
+    double y_cur = PAD_Y;
+    for (int r = 0; r <= max_rank; r++) {
+      GPtrArray *rl = rank_lists[r];
+      double x_cur = PAD_X + (max_span - rank_total_w[r]) * 0.5;
+      for (guint k = 0; k < rl->len; k++) {
+        IdeMermaidNode *n = g_ptr_array_index(rl, k);
+        n->x = x_cur;
+        n->y = y_cur + (rank_h[r] - n->height) * 0.5;
+        x_cur += n->width + CROSS_GAP;
+      }
+      y_cur += rank_h[r] + (r < max_rank ? gap_after[r] : 0.0);
+    }
+    max_x = PAD_X + max_span;
+    max_y = y_cur;
+  } else {
+    g_autofree double *rank_w = g_new0(double, max_rank + 1);
+    g_autofree double *rank_total_h = g_new0(double, max_rank + 1);
+    double max_span = 0.0;
+
+    for (int r = 0; r <= max_rank; r++) {
+      GPtrArray *rl = rank_lists[r];
+      double tot = 0.0;
+      double mw = 112.0;
+      for (guint k = 0; k < rl->len; k++) {
+        IdeMermaidNode *n = g_ptr_array_index(rl, k);
+        if (k > 0) tot += CROSS_GAP;
+        tot += n->height;
+        if (n->width > mw) mw = n->width;
+      }
+      rank_w[r] = mw;
+      rank_total_h[r] = tot;
+      if (tot > max_span) max_span = tot;
+    }
+
+    double x_cur = PAD_X;
+    for (int r = 0; r <= max_rank; r++) {
+      GPtrArray *rl = rank_lists[r];
+      double y_cur = PAD_Y + (max_span - rank_total_h[r]) * 0.5;
+      for (guint k = 0; k < rl->len; k++) {
+        IdeMermaidNode *n = g_ptr_array_index(rl, k);
+        n->x = x_cur + (rank_w[r] - n->width) * 0.5;
+        n->y = y_cur;
+        y_cur += n->height + CROSS_GAP;
+      }
+      x_cur += rank_w[r] + (r < max_rank ? gap_after[r] : 0.0);
+    }
+    max_x = x_cur;
+    max_y = PAD_Y + max_span;
   }
 
-  graph->canvas_width = max_x;
-  graph->canvas_height = max_y;
+  for (int r = 0; r <= max_rank; r++) {
+    g_ptr_array_free(rank_lists[r], TRUE);
+  }
+  g_free(rank_lists);
+
+  graph->canvas_width = MAX(320.0, max_x + PAD_X);
+  graph->canvas_height = MAX(160.0, max_y + PAD_Y);
 }
 
 const IdeMermaidNode *ide_mermaid_hit_test_node(const IdeMermaidGraph *graph,
@@ -440,6 +611,8 @@ void ide_mermaid_render_cairo(const IdeMermaidGraph *graph,
   }
   cairo_fill(cr);
 
+  double offset_x = MAX(0.0, (width - graph->canvas_width * zoom) * 0.5);
+  cairo_translate(cr, offset_x, 0.0);
   cairo_scale(cr, zoom, zoom);
 
   PangoFontDescription *font =
@@ -449,6 +622,9 @@ void ide_mermaid_render_cairo(const IdeMermaidGraph *graph,
 
   gboolean horizontal = (graph->kind == IDE_MERMAID_FLOWCHART_LR ||
                          graph->kind == IDE_MERMAID_SEQUENCE);
+  double graph_mid_cross = horizontal
+      ? (graph->canvas_height * 0.5)
+      : (graph->canvas_width * 0.5);
 
   for (guint i = 0; i < graph->edges->len; i++) {
     const IdeMermaidEdge *e = g_ptr_array_index(graph->edges, i);
@@ -456,31 +632,94 @@ void ide_mermaid_render_cairo(const IdeMermaidGraph *graph,
     const IdeMermaidNode *v = find_node_by_id(graph, e->to_id);
     if (!u || !v) continue;
 
+    /* Compute spread port slots ordered by opposite endpoint cross coordinate */
+    double v_cross = horizontal ? (v->y + v->height * 0.5) : (v->x + v->width * 0.5);
+    double u_cross = horizontal ? (u->y + u->height * 0.5) : (u->x + u->width * 0.5);
+    int out_cnt = 0, out_slot = 0;
+    int in_cnt = 0, in_slot = 0;
+    for (guint j = 0; j < graph->edges->len; j++) {
+      const IdeMermaidEdge *ej = g_ptr_array_index(graph->edges, j);
+      const IdeMermaidNode *uj = find_node_by_id(graph, ej->from_id);
+      const IdeMermaidNode *vj = find_node_by_id(graph, ej->to_id);
+      if (!uj || !vj) continue;
+      if (uj == u) {
+        out_cnt++;
+        if (j != i) {
+          double vj_cross = horizontal ? (vj->y + vj->height * 0.5) : (vj->x + vj->width * 0.5);
+          if (vj_cross < v_cross - 1e-6 || (fabs(vj_cross - v_cross) <= 1e-6 && j < i))
+            out_slot++;
+        }
+      }
+      if (vj == v) {
+        in_cnt++;
+        if (j != i) {
+          double uj_cross = horizontal ? (uj->y + uj->height * 0.5) : (uj->x + uj->width * 0.5);
+          if (uj_cross < u_cross - 1e-6 || (fabs(uj_cross - u_cross) <= 1e-6 && j < i))
+            in_slot++;
+        }
+      }
+    }
+    double out_frac = (out_cnt <= 1) ? 0.0 : (((double)out_slot / (double)(out_cnt - 1)) - 0.5) * 0.45;
+    double in_frac  = (in_cnt  <= 1) ? 0.0 : (((double)in_slot  / (double)(in_cnt  - 1)) - 0.5) * 0.45;
+
+    int dr = v->rank - u->rank;
     double x1, y1, x2, y2, cx1, cy1, cx2, cy2;
     if (horizontal) {
-      x1 = u->x + u->width;
-      y1 = u->y + u->height * 0.5;
-      x2 = v->x;
-      y2 = v->y + v->height * 0.5;
-      if (x2 < x1) {
-        x1 = u->x;
-        x2 = v->x + v->width;
+      if (dr <= 0 || u == v) {
+        double drop = 36.0 + 18.0 * (double)(u == v ? 0 : -dr);
+        x1 = u->x + u->width * 0.5;
+        y1 = u->y + u->height;
+        x2 = v->x + v->width * 0.5;
+        y2 = v->y + v->height;
+        double base_y = MAX(y1, y2) + drop;
+        cx1 = x1;
+        cy1 = base_y;
+        cx2 = x2;
+        cy2 = base_y;
+      } else {
+        x1 = u->x + u->width;
+        y1 = u->y + u->height * (0.5 + out_frac);
+        x2 = v->x;
+        y2 = v->y + v->height * (0.5 + in_frac);
+        double dx = fabs(x2 - x1) * 0.45;
+        double bow = 0.0;
+        if (dr > 1) {
+          double side = ((y1 + y2) * 0.5 >= graph_mid_cross) ? 1.0 : -1.0;
+          bow = side * 26.0 * (double)(dr - 1);
+        }
+        cx1 = x1 + dx;
+        cy1 = y1 + bow;
+        cx2 = x2 - dx;
+        cy2 = y2 + bow;
       }
-      double dx = fabs(x2 - x1) * 0.45;
-      cx1 = x1 + (x2 >= x1 ? dx : -dx);
-      cy1 = y1;
-      cx2 = x2 - (x2 >= x1 ? dx : -dx);
-      cy2 = y2;
     } else {
-      x1 = u->x + u->width * 0.5;
-      y1 = u->y + u->height;
-      x2 = v->x + v->width * 0.5;
-      y2 = v->y;
-      double dy = fabs(y2 - y1) * 0.45;
-      cx1 = x1;
-      cy1 = y1 + dy;
-      cx2 = x2;
-      cy2 = y2 - dy;
+      if (dr <= 0 || u == v) {
+        double swing = 36.0 + 18.0 * (double)(u == v ? 0 : -dr);
+        x1 = u->x + u->width;
+        y1 = u->y + u->height * 0.5;
+        x2 = v->x + v->width;
+        y2 = v->y + v->height * 0.5;
+        double side_x = MAX(x1, x2) + swing;
+        cx1 = side_x;
+        cy1 = y1;
+        cx2 = side_x;
+        cy2 = y2;
+      } else {
+        x1 = u->x + u->width * (0.5 + out_frac);
+        y1 = u->y + u->height;
+        x2 = v->x + v->width * (0.5 + in_frac);
+        y2 = v->y;
+        double dy = fabs(y2 - y1) * 0.45;
+        double bow = 0.0;
+        if (dr > 1) {
+          double side = ((x1 + x2) * 0.5 >= graph_mid_cross) ? 1.0 : -1.0;
+          bow = side * 26.0 * (double)(dr - 1);
+        }
+        cx1 = x1 + bow;
+        cy1 = y1 + dy;
+        cx2 = x2 + bow;
+        cy2 = y2 - dy;
+      }
     }
 
     if (e->dashed) {
@@ -511,20 +750,27 @@ void ide_mermaid_render_cairo(const IdeMermaidGraph *graph,
     cairo_fill(cr);
 
     if (e->label && *e->label) {
-      double mx = (x1 + x2) * 0.5;
-      double my = (y1 + y2) * 0.5 - 10.0;
+      double mx = 0.125 * x1 + 0.375 * cx1 + 0.375 * cx2 + 0.125 * x2;
+      double my = 0.125 * y1 + 0.375 * cy1 + 0.375 * cy2 + 0.125 * y2;
       PangoLayout *elayout = pango_cairo_create_layout(cr);
       pango_layout_set_font_description(elayout, edge_font);
       pango_layout_set_text(elayout, e->label, -1);
       int tw = 0, th = 0;
       pango_layout_get_pixel_size(elayout, &tw, &th);
 
-      cairo_set_source_rgb(cr, 0.09, 0.09, 0.09);
-      cairo_rectangle(cr, mx - tw * 0.5 - 4, my - 2, tw + 8, th + 4);
-      cairo_fill(cr);
+      double rx = mx - tw * 0.5 - 5.0;
+      double ry = my - th * 0.5 - 2.0;
+      double rw = tw + 10.0;
+      double rh = th + 4.0;
+      cairo_set_source_rgb(cr, 0.078, 0.078, 0.078); /* #141414 */
+      cairo_rectangle(cr, rx, ry, rw, rh);
+      cairo_fill_preserve(cr);
+      cairo_set_source_rgb(cr, 0.169, 0.169, 0.169); /* #2b2b2b */
+      cairo_set_line_width(cr, 1.0);
+      cairo_stroke(cr);
 
-      cairo_set_source_rgb(cr, 0.65, 0.65, 0.65);
-      cairo_move_to(cr, mx - tw * 0.5, my);
+      cairo_set_source_rgb(cr, 0.78, 0.78, 0.78);
+      cairo_move_to(cr, mx - tw * 0.5, my - th * 0.5);
       pango_cairo_show_layout(cr, elayout);
       g_object_unref(elayout);
     }
@@ -549,13 +795,17 @@ void ide_mermaid_render_cairo(const IdeMermaidGraph *graph,
 
     PangoLayout *layout = pango_cairo_create_layout(cr);
     pango_layout_set_font_description(layout, font);
+    pango_layout_set_width(layout, (int)((n->width - 20.0) * PANGO_SCALE));
+    pango_layout_set_wrap(layout, PANGO_WRAP_WORD_CHAR);
+    pango_layout_set_alignment(layout, PANGO_ALIGN_CENTER);
     pango_layout_set_text(layout, n->label, -1);
     int tw = 0, th = 0;
     pango_layout_get_pixel_size(layout, &tw, &th);
+    (void)tw;
 
     cairo_set_source_rgb(cr, 0.94, 0.94, 0.94);
     cairo_move_to(cr,
-                  n->x + (n->width - tw) * 0.5,
+                  n->x + 10.0,
                   n->y + (n->height - th) * 0.5);
     pango_cairo_show_layout(cr, layout);
     g_object_unref(layout);

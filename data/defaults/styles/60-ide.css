@@ -350,7 +350,9 @@ window.shell-viewer-window separator.ide-md-hr {
 }
 
 window.shell-ide-window .ide-source-view,
-window.shell-ide-window .ide-source-view text {
+window.shell-ide-window .ide-source-view text,
+window.shell-viewer-window .ide-source-view,
+window.shell-viewer-window .ide-source-view text {
     font-family: "Fira Code", "FiraCode Nerd Font", monospace;
     font-size: 13px;
 }
