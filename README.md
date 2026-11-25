@@ -16,16 +16,16 @@ Kajo has evolved far beyond its origins as a simple Wayland panel or launcher. *
    - Rejects bloated, rounded toolkit defaults in favor of **strict `0px` sharp corner geometry**, OLED-native dark charcoal surfaces (`#111111`–`#1a1a1a`), `1px solid #2b2b2b` structural hairlines, live `@metro-accent` window framing, and high-density `Fira Code` monospace telemetry badges.
    - Every standalone application in the suite shares the exact same custom frameless window chrome, scrollable-tiling / floating compositor IPC (`🗗 FLOAT / TILE` across `kajo-comp` and Niri), and instant live CSS/accent hot-reload.
 2. **Pure Native C17/C++20 Performance, Minimal Runtime Overhead**
-   - Core desktop components (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-settings`, `kajo-greeter`) are built directly on `C17` (`C++20` for `libsidplayfp`), `wlroots-0.20`, `talloc`, `libinput`, `libpcre2-8`, `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libpng`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `poppler-glib`, and `libarchive`—with zero Electron or JVM bloat. **`kajo-web`** embeds Chromium Embedded Framework (`CEF`, Alloy Views + Native Wayland) inside a pure C++20/Wayland host for full modern web compatibility and VA-API video playback without Chromium's stock chrome overhead.
+   - Core desktop components (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-viewer`, `kajo-settings`, `kajo-greeter`) are built directly on `C17` (`C++20` for `libsidplayfp`), `wlroots-0.20`, `talloc`, `libinput`, `libpcre2-8`, `GTK4`, `GtkSourceView-5`, `Cairo`, `Pango`, `libpng`, `libmpv`, `libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `poppler-glib`, and `libarchive` (plus optional `glycin-2`, `glycin-gtk4-2`, `librsvg-2.0`, `libexif` for `kajo-viewer`)—with zero Electron or JVM bloat. **`kajo-web`** embeds Chromium Embedded Framework (`CEF`, Alloy Views + Native Wayland) inside a pure C++20/Wayland host for full modern web compatibility and VA-API video playback without Chromium's stock chrome overhead.
    - Strict map- and popout-gated resource discipline keeps background CPU usage below `0.05%`.
 3. **Tailored to Personal Workflows**
-   - Whether driving the infinite horizontal tiling strip in **`kajo-comp`**, writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or configuring multi-monitor outputs, tiling physics, compositor effects & shaders, and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
+   - Whether driving the infinite horizontal tiling strip in **`kajo-comp`**, writing C/Go/Rust/Python/M68k in **`kajo-ide`** with Nordic modal keybindings (`ä`/`ö` diagnostic stepping, `m i/a` structural text objects, native Cairo Mermaid diagrams, and AI agent JSON-RPC diff review), inspecting archives/PDFs/videos with `Space` Quick Look in **`kajo-files`**, reading PDF, Markdown + Mermaid, and high-res images in **`kajo-viewer`**, watching hardware-decoded media in **`kajo-player`**, listening to cycle-exact Amiga 68000 / C64 SID / tracker modules in **`kajo-mod`**, or configuring multi-monitor outputs, tiling physics, compositor effects & shaders, and 2-in-1 foldable sensors in **`kajo-settings`**, every tool is optimized to do exactly what is needed—nothing more, nothing less.
 
 ---
 
 ## 🧩 The Kajo Application Suite
 
-The repository builds and installs **nine integrated native executables** (plus `kajo-session` and `kajo-greeter-session` wrappers):
+The repository builds and installs **ten integrated native executables** (plus `kajo-session` and `kajo-greeter-session` wrappers):
 
 | Executable | App ID | Role in the Suite |
 | :--- | :--- | :--- |
@@ -35,6 +35,7 @@ The repository builds and installs **nine integrated native executables** (plus 
 | **`kajo-player`** | `org.kajo.Player` | **Hardware-Accelerated Media Player** (`libmpv` + `GtkGLArea`) with VA-API/NVDEC decoding, subtitle/audio track selectors, chapter queue, and MPRIS2 integration. |
 | **`kajo-mod`** | `org.kajo.Mod` | **Retro Amiga, C64 SID, Chiptune & Tracker Player** (`libuade`, `libsidplayfp`, `libgme`, `libopenmpt`, `libxmp`) with hardware filter controls, HVSC lookup, and 60 FPS scope/FFT. |
 | **`kajo-web`** | `org.kajo.Web` | **Aero + Metro Web Browser** (`Chromium/CEF` Alloy Views + `C++20` + `sqlite3` + `KajoConfigStore`) with native Wayland GPU + VA-API decoding, autohide/compact/pinned vertical tab rail, isolated multi-profiles + startup profile picker, shared-profile chromeless Web Apps (`--app-id`/`kajo://apps`), D-Bus Web Notifications, IO-thread ABP/cosmetic ad blocker, idle tab suspension, Downloads popout, and `kajo://permissions`. |
+| **`kajo-viewer`** | `org.kajo.Viewer` | **Read-Only PDF, Markdown & Image Viewer** sharing Poppler + Cairo (`kajo_pdf_render`) and `IdeMarkdownView` + Cairo Mermaid cores, with continuous `1P`/`2P` PDF (`PAPER`/`SEPIA`/`DARK`, outline/thumbnails, `Ctrl+F` highlights, encrypted unlock), live-monitored Markdown + Heading Outline + `RAW SOURCE`, and `glycin`/`librsvg`/`libexif` pan-zoom images + filmstrip. |
 | **`kajo-settings`** | `org.kajo.Settings` | **13-Page System & Suite Control Deck** managing displays, Wi-Fi, Bluetooth, PipeWire audio, Metro themes (including opt-in revertible GTK/Qt external app theming), panel/widgets, compositor layout, IDE/Mod/Web preferences, and hardware telemetry. |
 | **`kajo`** | `org.kajo.shell` | **Wayland Desktop Shell, Settings Portal & Hardware Daemon** providing the status panel (22 widgets), app launcher, OSDs, virtual touch keyboard (`ShellOSK`), notifications, `org.freedesktop.impl.portal.Settings`, screen saver, and PAM session lock. |
 | **`kajo-greeter`** | `org.kajo.greeter` | **Wayland Login Greeter for `greetd`** supporting `kajo-comp --greeter-mode`, `niri`, `cage`, and desktop `--test` preview mode. |
@@ -86,6 +87,14 @@ The repository builds and installs **nine integrated native executables** (plus 
 - **Shared-Profile Web Apps & D-Bus Web Notifications**: Install any site from the omnibar (`⊞`) or `kajo://apps` as a dedicated chromeless Wayland window (`--app-id <id>` / `--app <url>`) sharing its parent profile's cookies, logins, adblock, and `permissions.json`, registering XDG `.desktop` + hicolor icons for Kajo's launcher and panel while routing out-of-scope links back to the main browser and delivering JS `Notification` / `ServiceWorkerRegistration.showNotification` alerts to `org.freedesktop.Notifications`.
 - **IO-Thread Ad Blocker & Always-Visible Downloads Popout**: Built-in ABP network + host-file + cosmetic CSS blocker (`CefAdblockEngine`, EasyList/EasyPrivacy auto-sync, custom rules file, `~/.config/kajo/web/scripts/*.{js,css}` user scripts, `[ 🛡 ON ]`/`[ 🛡 OFF ]` site shield + `kajo://adblock`), paired with an always-visible `↓` Downloads chip (with live aggregate progress bar) opening a rich Downloads popout (`Pause`/`Resume`/`Cancel`/`Open File`/`Open Folder`, plus `kajo://downloads` history).
 
+### 📄 Kajo Viewer (`kajo-viewer`)
+> 📖 **Specification & Mockup**: [`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md) • [`docs/kajo-viewer-mockup.html`](docs/kajo-viewer-mockup.html)
+
+- **Strictly Read-Only Single-Document Workspace**: Opens PDF, Markdown, and Image files in tiling-friendly single-document windows with Back/Forward relative-link navigation history, inline `Ctrl+F` search, drag-and-drop file loading, and zero edit/write-back surface.
+- **PDF Mode (`poppler-glib`)**: Continuous `1P` and `2P SPREAD` rendering with bounded 12-page LRU cache and serialized worker thread, `FIT W` / `FIT P` / `100%` / wheel zoom, `90°` rotation, `PAPER` / `SEPIA` / `DARK` tones, `OUTLINE` / `PAGES` thumbnail sidebar, highlighted `Ctrl+F` search matches, drag-rectangle text selection copy, link navigation, and inline encrypted PDF unlock (`explicit_bzero` scrubbing).
+- **Markdown + Mermaid Mode**: Reuses `kajo-ide`'s read-only `IdeMarkdownView` + native Cairo vector Mermaid renderer alongside a `RAW SOURCE` toggle, dynamic `NARROW` / `COMFORT` / `FULL` column width, scoped `A-` / `A+` font scaling, auto-generated Heading Outline sidebar, 150ms `GFileMonitor` live reload, and `[ ✎ OPEN IN IDE ]` handoff.
+- **Image Mode (`glycin-gtk4-2` / `librsvg-2.0` / `libexif`)**: Smooth pan/zoom canvas with `glycin` async decoding (`gdk_texture_new_from_file` fallback), vector `librsvg` SVG zoom rendering, EXIF & colorimetry inspector sidebar, map-gated GIF/WebP animation playback, rotate/flip/checkerboard toggles, clipboard copy, and collapsible sibling-folder filmstrip.
+
 ### ⚙️ Kajo Settings (`kajo-settings`)
 - **13 Live System & Suite Pages**: Modular control deck (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `web`, `niri`, `about`) with responsive 3-tier column reflow and zero mock data.
 - **Dual-Compositor & Live Theme Sync**: Compositor-agnostic **Compositor & Effects** page synchronizing display modes/scale/VRR, layout/border geometry, glass/shadow/dim optical knobs, and window transition presets across both `kajo-comp` (`comp.toml` / `outputs.toml`) and Niri (`config.kdl`), plus live `@metro-accent`, surface/glass preset, and typography hot-reload across all running Kajo apps and compositor borders.
@@ -104,7 +113,7 @@ The repository builds and installs **nine integrated native executables** (plus 
 | :--- | :--- |
 | **[`docs/design_system.md`](docs/design_system.md)** | Authoritative **Aero + Metro** visual design specification (color tokens, `0px` geometry, typography, component anatomy). |
 | **[`docs/ui-gallery.html`](docs/ui-gallery.html)** | Interactive HTML/CSS visual reference gallery for every Kajo component and application layout. |
-| **[`docs/brand-logo-gallery.html`](docs/brand-logo-gallery.html)** | Brand & application vector icon system gallery across all 9 Kajo executables. |
+| **[`docs/brand-logo-gallery.html`](docs/brand-logo-gallery.html)** | Brand & application vector icon system gallery across all 10 Kajo executables. |
 | **[`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md)** | Complete architecture specification for **`kajo-comp`** (scrollable-tiling strip, analytical springs, Wayland protocols, TOML schemas, IPC). |
 | **[`docs/spec_comp_effects.md`](docs/spec_comp_effects.md)** | Specification for **`kajo-comp`** Vulkan visual effects (2-layer SDF drop shadows, Dual-Kawase frosted glass, `xray` panel blur, inactive dimming, output colour stage, and window open/close/resize transitions). |
 | **[`docs/spec_comp_glass_styles.md`](docs/spec_comp_glass_styles.md)** | Specification for **`kajo-comp`** optical glass & light-scattering material styles (`frosted`, `liquid`, `halation`, `fluted`, `acrylic`, `aero`, `dichroic`). |
@@ -119,6 +128,8 @@ The repository builds and installs **nine integrated native executables** (plus 
 | **[`docs/spec_kajo_web.md`](docs/spec_kajo_web.md)** | Architecture specification for **`kajo-web`** (Chromium/CEF Alloy Views, native Wayland, vertical tab rail, profiles, IO-thread ABP ad blocker, Downloads popout, permissions & `web.toml`). |
 | **[`docs/kajo-web-mockup.html`](docs/kajo-web-mockup.html)** | Interactive UI mockup for **`kajo-web`** (autohide/compact/pinned rail, Shield, Downloads popout, Profiles, Settings drawer). |
 | **[`docs/kajo-web-storyboard.html`](docs/kajo-web-storyboard.html)** | Interactive 7-scenario storyboard for **`kajo-web`** rail FSM, GPU/fallback, Settings sync, Downloads, Profiles & Adblock. |
+| **[`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md)** | Architecture specification for **`kajo-viewer`** (strictly read-only Poppler PDF, shared Markdown + Mermaid, `glycin`/`librsvg`/`libexif` images). |
+| **[`docs/kajo-viewer-mockup.html`](docs/kajo-viewer-mockup.html)** | Interactive UI mockup for **`kajo-viewer`** across PDF, Markdown, and Image modes. |
 | **[`docs/script_widgets.md`](docs/script_widgets.md)** | Guide for authoring custom panel script widgets for **`kajo`**. |
 | **[`DEVELOPMENT.md`](DEVELOPMENT.md)** | Developer architecture guide, build instructions, and subsystem testing handbook. |
 | **[`ROADMAP.md`](ROADMAP.md)** | Suite milestone tracking and upcoming engineering phases. |
@@ -139,7 +150,8 @@ sudo pacman -S --needed gtk4 gtksourceview5 gtk4-layer-shell wayland wayland-pro
 paru -S --needed uade bencodetools
 ```
 
-To build **`kajo-web`** (`CEF`), unpack the Chromium Embedded Framework Linux x86\_64 binary distribution under `/opt/cef` (or pass `-Dcef_dir=/path/to/cef` to `meson setup`); if CEF is absent, `meson setup` skips `kajo-web` and builds the remaining 8 binaries cleanly.
+To build **`kajo-web`** (`CEF`), unpack the Chromium Embedded Framework Linux x86\_64 binary distribution under `/opt/cef` (or pass `-Dcef_dir=/path/to/cef` to `meson setup`); if CEF is absent, `meson setup` skips `kajo-web` and builds the remaining 9 binaries cleanly.
+For full format/EXIF/vector support in **`kajo-viewer`**, also install optional `glycin` (`glycin-2`, `glycin-gtk4-2`), `librsvg`, and `libexif` (`meson setup` enables each automatically when detected and falls back cleanly otherwise).
 
 **Tree-sitter syntax engine** for `kajo-ide` (incremental parsing, AST-based highlighting). The runtime comes from the official repositories; the grammars are split between the official/CachyOS repositories and the AUR (use `paru` or `yay`):
 ```bash
@@ -160,7 +172,7 @@ sudo pacman -S --needed ripgrep clang gopls rust-analyzer pyright gdb lldb delve
 For Motorola 68000 / Amiga assembly (`.s`, `.S`, `.asm`, `.i`): `m68k-lsp-server` (language server) and `vasmm68k_mot` from the [vasm](http://sun.hasenbraten.de/vasm/) distribution (build task and diagnostics) must be on `PATH`; both are optional.
 
 ### 2. Build, Verify & Install (`~/.local`)
-By default, `meson.build` configures `prefix=~/.local`, installing all nine binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
+By default, `meson.build` configures `prefix=~/.local`, installing all ten binaries (`kajo-comp`, `kajo`, `kajo-ide`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, `kajo-viewer`, `kajo-settings`, `kajo-greeter`) plus `kajo-session` and `kajo-greeter-session` to `~/.local/bin` and theme/syntax/icon/default config assets to `~/.local/share/kajo/`:
 
 ```bash
 git clone --recursive https://github.com/mikolas/Kajo.git   # existing clones: git submodule update --init
@@ -292,6 +304,7 @@ binds {
 | **`kajo-player`** | `kajo-player [FILE_OR_URI...]` | Opens video/audio media files in Kajo Player with sibling folder queue discovery. |
 | **`kajo-mod`** | `kajo-mod [FILES \| ARCHIVES \| DIRS...]` | Opens Amiga, C64 SID, chiptune, or tracker modules, `.lha`/`.zip` archives, or folders in Kajo Mod. |
 | **`kajo-web`** | `kajo-web [--profile <ID>] [--app-id <ID> \| --app <URL>] [--private] [--no-hw-accel] [--no-adblock-sync] [URL...]` | Opens the Chromium/CEF Aero + Metro browser, a chromeless profile Web App window, an ephemeral Private window, or software-render mode. |
+| **`kajo-viewer`** | `kajo-viewer [--preview-mode pdf\|md\|image] [FILE_OR_URI...]` | Opens PDF, Markdown (+ Mermaid), or Image files in a strictly read-only Aero + Metro viewer window (or renders a standalone `--preview-mode` specimen). |
 | **`kajo-settings`** | `kajo-settings [-p <PAGE>]` | Opens System Settings (`displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `ide`, `mod`, `web`, `niri`, `about`). |
 | **`kajo`** | `kajo [--toggle-launcher \| --lock \| --screensaver \| --toggle-osk \| --volume-up \| ...]` | Starts the Wayland shell daemon (no args) or dispatches an instant command over `$XDG_RUNTIME_DIR/kajo.sock`. |
 | **`kajo-greeter`** | `kajo-greeter [--test] [--fullscreen] [--cmd <SESSION>]` | Runs the `greetd` login greeter (use `--test` to preview safely in a `1280×800` desktop window). |

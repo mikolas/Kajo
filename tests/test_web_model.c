@@ -189,6 +189,52 @@ test_omnibar_classifier(void)
     g_assert_cmpstr(h1, ==, "docs.gtk.org");
     g_autofree gchar *h2 = web_model_extract_host("kajo://newtab");
     g_assert_cmpstr(h2, ==, "kajo://newtab");
+
+    g_autofree gchar *f1 = web_model_resolve_input("/tmp/my page.html", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
+    g_assert_cmpstr(f1, ==, "file:///tmp/my%20page.html");
+
+    g_autofree gchar *f2 = web_model_resolve_input("~/docs/index.html", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
+    {
+        g_autofree gchar *home_doc = g_build_filename(g_get_home_dir(), "docs", "index.html", NULL);
+        g_autofree gchar *exp_uri = g_filename_to_uri(home_doc, NULL, NULL);
+        g_assert_cmpstr(f2, ==, exp_uri);
+    }
+
+    g_autofree gchar *f3 = web_model_resolve_input("file:///tmp/a.html", KAJO_WEB_SEARCH_DUCKDUCKGO, NULL);
+    g_assert_cmpstr(f3, ==, "file:///tmp/a.html");
+
+    /* CLI local file resolution (absolute, relative from cwd, #fragment) */
+    g_autofree gchar *tmpdir = g_dir_make_tmp("kajo-web-cli-XXXXXX", NULL);
+    g_autofree gchar *html_path = g_build_filename(tmpdir, "test page.html", NULL);
+    g_assert_true(g_file_set_contents(html_path, "<!doctype html><h1>ok</h1>", -1, NULL));
+
+    g_autofree gchar *expected_file_uri = g_filename_to_uri(html_path, NULL, NULL);
+    g_autofree gchar *cli_abs = web_model_resolve_cli_arg(html_path);
+    g_assert_cmpstr(cli_abs, ==, expected_file_uri);
+
+    g_autofree gchar *abs_frag_in = g_strconcat(html_path, "#sec-1", NULL);
+    g_autofree gchar *abs_frag_exp = g_strconcat(expected_file_uri, "#sec-1", NULL);
+    g_autofree gchar *cli_abs_frag = web_model_resolve_cli_arg(abs_frag_in);
+    g_assert_cmpstr(cli_abs_frag, ==, abs_frag_exp);
+
+    g_autofree gchar *orig_cwd = g_get_current_dir();
+    g_assert_cmpint(g_chdir(tmpdir), ==, 0);
+    g_autofree gchar *cli_rel = web_model_resolve_cli_arg("test page.html");
+    g_autofree gchar *cli_rel_frag = web_model_resolve_cli_arg("test page.html#top");
+    g_assert_cmpstr(cli_rel, ==, expected_file_uri);
+    {
+        g_autofree gchar *rel_frag_exp = g_strconcat(expected_file_uri, "#top", NULL);
+        g_assert_cmpstr(cli_rel_frag, ==, rel_frag_exp);
+    }
+    g_assert_cmpint(g_chdir(orig_cwd), ==, 0);
+
+    g_autofree gchar *cli_url = web_model_resolve_cli_arg("https://example.com");
+    g_assert_cmpstr(cli_url, ==, "https://example.com");
+    g_autofree gchar *cli_host = web_model_resolve_cli_arg("example.com");
+    g_assert_cmpstr(cli_host, ==, "example.com");
+
+    g_unlink(html_path);
+    g_rmdir(tmpdir);
 }
 
 /* 4. Profile Registry (profiles.toml) Persistence & Sanitization */

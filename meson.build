@@ -50,6 +50,10 @@ openmpt_dep = dependency('libopenmpt')
 xmp_dep = dependency('libxmp')
 sqlite3_dep = dependency('sqlite3')
 gcrypt_dep = dependency('libgcrypt')
+glycin_dep = dependency('glycin-2', required: false)
+glycin_gtk4_dep = dependency('glycin-gtk4-2', required: false)
+rsvg_dep = dependency('librsvg-2.0', required: false)
+exif_dep = dependency('libexif', required: false)
 
 cpp = meson.get_compiler('cpp')
 dl_dep = cc.find_library('dl', required: true)
@@ -642,6 +646,63 @@ install_data(
   install_dir: get_option('datadir') / 'applications',
 )
 
+viewer_c_args = []
+viewer_deps = [
+  gtk4_dep,
+  gtksourceview_dep,
+  json_glib_dep,
+  gio_dep,
+  gio_unix_dep,
+  poppler_dep,
+  archive_dep,
+  m_dep,
+  ide_ts_dep,
+]
+if glycin_dep.found() and glycin_gtk4_dep.found()
+  viewer_c_args += '-DHAVE_GLYCIN=1'
+  viewer_deps += [glycin_dep, glycin_gtk4_dep]
+endif
+if rsvg_dep.found()
+  viewer_c_args += '-DHAVE_LIBRSVG=1'
+  viewer_deps += rsvg_dep
+endif
+if exif_dep.found()
+  viewer_c_args += '-DHAVE_LIBEXIF=1'
+  viewer_deps += exif_dep
+endif
+
+viewer_sources = files(
+  'src/viewer/main.c',
+  'src/viewer/viewer_window.c',
+  'src/viewer/viewer_model.c',
+  'src/viewer/viewer_sidebar.c',
+  'src/viewer/viewer_pdf.c',
+  'src/viewer/viewer_markdown.c',
+  'src/viewer/viewer_image.c',
+  'src/common/pdf_render.c',
+  'src/common/spawn_detached.c',
+  'src/ide/ide_markdown.c',
+  'src/ide/ide_markdown_embeds.c',
+  'src/ide/ide_mermaid.c',
+  'src/ide/ide_syntax.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-viewer',
+  viewer_sources,
+  shell_resources,
+  c_args: viewer_c_args,
+  dependencies: viewer_deps,
+  link_with: kajo_core,
+  install: true,
+)
+
+install_data(
+  'data/org.kajo.Viewer.desktop',
+  install_dir: get_option('datadir') / 'applications',
+)
+
 install_data(
   'data/session/kajo-session',
   'data/greetd/kajo-greeter-session',
@@ -737,6 +798,7 @@ install_data(
   'data/icons/kajo-player.svg',
   'data/icons/kajo-mod.svg',
   'data/icons/kajo-web.svg',
+  'data/icons/kajo-viewer.svg',
   'data/icons/kajo-settings.svg',
   'data/icons/kajo-greeter.svg',
   install_dir: get_option('datadir') / 'icons' / 'hicolor' / 'scalable' / 'apps',
@@ -1059,6 +1121,23 @@ test_mod_router_exe = executable(
   build_by_default: false,
 )
 test('mod-router', test_mod_router_exe)
+
+test_viewer_model_exe = executable(
+  'test-viewer-model',
+  files(
+    'tests/test_viewer_model.c',
+    'src/viewer/viewer_model.c',
+    'src/ide/ide_markdown.c',
+    'src/ide/ide_markdown_embeds.c',
+    'src/ide/ide_mermaid.c',
+    'src/ide/ide_syntax.c',
+    'src/common/pdf_render.c',
+    'src/common/spawn_detached.c',
+  ),
+  dependencies: [gtk4_dep, gtksourceview_dep, gio_dep, poppler_dep, archive_dep, m_dep, ide_ts_dep],
+  build_by_default: false,
+)
+test('viewer-model', test_viewer_model_exe)
 
 test_web_model_exe = executable(
   'test-web-model',

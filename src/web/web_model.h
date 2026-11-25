@@ -127,6 +127,7 @@ gboolean         web_model_is_group_collapsed(const KajoWebModel *m, const gchar
 gchar *web_model_resolve_input(const gchar         *raw_input,
                                KajoWebSearchEngine  engine,
                                const gchar         *custom_search_url);
+gchar *web_model_resolve_cli_arg(const gchar       *arg);
 gchar *web_model_extract_host(const gchar *uri);
 
 /* ─── Multi-Profile Registry (profiles.toml) ─── */

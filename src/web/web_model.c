@@ -645,6 +645,78 @@ looks_like_host(const gchar *s)
     return TRUE;
 }
 
+static gboolean
+has_explicit_scheme(const gchar *s)
+{
+    return s &&
+           (g_str_has_prefix(s, "http://") ||
+            g_str_has_prefix(s, "https://") ||
+            g_str_has_prefix(s, "kajo://") ||
+            g_str_has_prefix(s, "chrome://") ||
+            g_str_has_prefix(s, "devtools://") ||
+            g_str_has_prefix(s, "view-source:") ||
+            g_str_has_prefix(s, "file://") ||
+            g_str_has_prefix(s, "about:"));
+}
+
+static gchar *
+local_path_to_file_uri(const gchar *path)
+{
+    if (!path || !*path)
+        return NULL;
+
+    g_autofree gchar *expanded = NULL;
+    if (g_strcmp0(path, "~") == 0) {
+        expanded = g_strdup(g_get_home_dir());
+    } else if (g_str_has_prefix(path, "~/")) {
+        expanded = g_build_filename(g_get_home_dir(), path + 2, NULL);
+    } else {
+        expanded = g_strdup(path);
+    }
+
+    g_autofree gchar *canon = g_canonicalize_filename(expanded, NULL);
+    if (!canon)
+        return g_strdup(path);
+
+    if (!g_file_test(canon, G_FILE_TEST_EXISTS)) {
+        const char *sep = strpbrk(canon, "#?");
+        if (sep && sep > canon) {
+            g_autofree gchar *prefix = g_strndup(canon, (gsize)(sep - canon));
+            if (g_file_test(prefix, G_FILE_TEST_EXISTS)) {
+                g_autofree gchar *uri = g_filename_to_uri(prefix, NULL, NULL);
+                if (uri)
+                    return g_strconcat(uri, sep, NULL);
+            }
+        }
+    }
+
+    g_autofree gchar *uri = g_filename_to_uri(canon, NULL, NULL);
+    return uri ? g_steal_pointer(&uri) : g_strdup(path);
+}
+
+gchar *
+web_model_resolve_cli_arg(const gchar *arg)
+{
+    if (!arg || !*arg)
+        return g_strdup("");
+    if (has_explicit_scheme(arg))
+        return g_strdup(arg);
+
+    if (arg[0] == '/' || g_str_has_prefix(arg, "~/") || g_strcmp0(arg, "~") == 0 ||
+        g_file_test(arg, G_FILE_TEST_EXISTS)) {
+        return local_path_to_file_uri(arg);
+    }
+
+    const char *sep = strpbrk(arg, "#?");
+    if (sep && sep > arg) {
+        g_autofree gchar *prefix = g_strndup(arg, (gsize)(sep - arg));
+        if (g_file_test(prefix, G_FILE_TEST_EXISTS))
+            return local_path_to_file_uri(arg);
+    }
+
+    return g_strdup(arg);
+}
+
 gchar *
 web_model_resolve_input(const gchar         *raw_input,
                         KajoWebSearchEngine  engine,
@@ -657,15 +729,13 @@ web_model_resolve_input(const gchar         *raw_input,
         return g_strdup("kajo://newtab");
 
     /* Explicit schemes */
-    if (g_str_has_prefix(trimmed, "http://") ||
-        g_str_has_prefix(trimmed, "https://") ||
-        g_str_has_prefix(trimmed, "kajo://") ||
-        g_str_has_prefix(trimmed, "chrome://") ||
-        g_str_has_prefix(trimmed, "devtools://") ||
-        g_str_has_prefix(trimmed, "view-source:") ||
-        g_str_has_prefix(trimmed, "file://") ||
-        g_str_has_prefix(trimmed, "about:")) {
+    if (has_explicit_scheme(trimmed)) {
         return g_strdup(trimmed);
+    }
+
+    /* Local POSIX / home paths */
+    if (trimmed[0] == '/' || g_str_has_prefix(trimmed, "~/") || g_strcmp0(trimmed, "~") == 0) {
+        return local_path_to_file_uri(trimmed);
     }
 
     /* Keyword bangs (!g, !gh, !arch, !mdn, !w, !yt, !ddg) */

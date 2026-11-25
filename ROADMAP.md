@@ -18,6 +18,7 @@ All Kajo components and standalone applications share a unified design language:
 
 | Component / Binary | Status | Specification / Notes |
 | :--- | :---: | :--- |
+| **`kajo-comp` (`org.kajo.comp`)** | ✅ Done | [`docs/spec_kajo_comp.md`](docs/spec_kajo_comp.md) — Scrollable-tiling Wayland compositor (`wlroots-0.20` + Vulkan `kajo-0.20.2-fx10`), analytical springs, workspace strip, zoomed overview (`Mod+O`), MRU `Alt+Tab` switcher, screenshot UI, Dual-Kawase glass, SDF shadows, transitions & JSON IPC |
 | **`kajo` (Core Shell & Panel)** | ✅ Done | Panel, 22 widgets, 16-band FFT Spectrum Analyzer, MPRIS2, SNI Tray, Notification Daemon, `org.freedesktop.impl.portal.Settings` backend, App Launcher, Session Lock & Screensaver |
 | **`kajo-settings` (`org.kajo.Settings`)** | ✅ Done | 13 modular settings pages (Displays, Network, Bluetooth, Audio, Theme & Surface/Glass Presets + opt-in revertible GTK/Qt external theming, Panel & Touch, Widgets, Notifications, Kajo IDE & Code, Kajo Mod & DSP, Kajo Web, Compositor & Effects, About) with responsive 3-tier column reflow |
 | **`kajo-greeter`** | ✅ Done | Native `greetd` Wayland login greeter with PAM authentication & session selector |
@@ -31,6 +32,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo Player (`kajo-player`, `org.kajo.Player`)** | 🚀 Beta | `libmpv` + `GtkGLArea` media player with subtitle/audio stream selectors, external `.srt`/`.ass` loading, sync delay, speed/frame-stepping, chapters, screenshots, fullscreen overlay HUD, and MPRIS2 D-Bus integration |
 | **Kajo Mod (`kajo-mod`, `org.kajo.Mod`)** | 🚀 Beta | [`docs/spec_kajo_mod.md`](docs/spec_kajo_mod.md) — Retro Amiga (`libuade`), C64 SID (`libsidplayfp`/`reSIDfp` + HVSC), Chiptune (`libgme`), and Tracker (`libopenmpt` + `libxmp`) music player with subsongs, Paula A500/A1200 & LED filter, MOS 6581/8580 SID selector, live `$D400` register & sample/STIL inspector, `.lha`/`.zip` multi-file bundle loading, and 60 FPS oscilloscope + 16-band log FFT |
 | **Kajo Web (`kajo-web`, `org.kajo.Web`)** | 🧪 Beta | [`docs/spec_kajo_web.md`](docs/spec_kajo_web.md) — Chromium/CEF Alloy Views Aero + Metro browser (`C++20` + native Wayland + VA-API) with `autohide`/`compact`/`pinned` vertical tab rail, isolated multi-profiles + Startup Profile Picker & ephemeral Private windows, IO-thread ABP + cosmetic CSS ad blocker (EasyList/EasyPrivacy auto-sync), idle tab suspension, always-visible Downloads popout + live `kajo://downloads` manager, `kajo://permissions`, SQLite WAL/FTS5 persistence, and `web.toml` + `kajo-settings` Page 12 (`--page web`) |
+| **Kajo Viewer (`kajo-viewer`, `org.kajo.Viewer`)** | 🚀 Beta | [`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md) — Strictly read-only Aero + Metro viewer (`src/viewer/`) sharing Poppler PDF + Kajo Markdown/Mermaid cores with continuous/2-page PDF (`1P`/`2P`, `PAPER`/`SEPIA`/`DARK`, Outline + Thumbnails, `Ctrl+F` highlights, encrypted unlock), live-monitored Markdown + Heading TOC, and `glycin`/`librsvg`/`libexif` pan-zoom image viewer + filmstrip |
 | **Kajo IDE (`kajo-ide`, `org.kajo.IDE`)** | 🧪 Beta | [`docs/kajo_ide_manual.md`](docs/kajo_ide_manual.md) — Selection-first modal GTK4 + `GtkSourceView-5` IDE with Nordic text objects (`m i/a`), 6-column Cairo gutter (absolute & hybrid relative line numbers), opt-in `60% | 25% | 15%` Call-Depth Code Strip & Dependency Graph Lenses (`Space t s`, [`docs/spec_ide_code_strip.md`](docs/spec_ide_code_strip.md)), tree-sitter highlighting and text objects (16 languages), real async LSP (`gopls`, `jdtls`, `clangd`, `rust-analyzer`), DAP debugger (expandable variables, watches, conditional breakpoints), project tasks, user key remapping (`ide.toml` `[keys.*]`), GUI Markdown + Cairo vector Mermaid, 120-command Help Palette, and AI Agent JSON-RPC 2.0 IPC |
 | **Kajo "Aero + Metro" UI Design System** | ✅ Done | [`docs/design_system.md`](docs/design_system.md) & [`docs/ui-gallery.html`](docs/ui-gallery.html) — Canonical GTK4 CSS style guide and interactive web component gallery |
 
@@ -46,7 +48,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo IDE: user key remapping** | ✅ Done | `kajo-ide` + `kajo-settings` (`ide.toml` `[keys.<state>]` schema, hot-reloaded into `IdeFsm`, editable in `kajo-settings` → Kajo IDE & Code) |
 | **Kajo IDE: Scrollable-Tiling Code Strip & Dependency Graph Lenses** | ✅ Done | `kajo-ide` — [`docs/spec_ide_code_strip.md`](docs/spec_ide_code_strip.md), [`docs/kajo-ide-strip-mockup.html`](docs/kajo-ide-strip-mockup.html), [`docs/kajo-ide-strip-storyboard.html`](docs/kajo-ide-strip-storyboard.html): opt-in `60% | 25% | 15%` Call-Depth Strip (`Space t s`) with `28px` Ancestor Spine, peekish magnetic follow (`comp_spring`), 4 workspace-only lenses (`CALLS`/`TYPES`/`IMPACT`/`DIFF`), vertical pin split, Zen `96/4`, Bird's-Eye Overview, and `kajo-settings` controls |
 | **`kajo-files` Phase 2** | ✅ Done | [`docs/spec_files_phase2.md`](docs/spec_files_phase2.md) — Virtual read-only archive folders (`archive://`), smart extraction, archive compression, UDisks2 ISO/disk image loop-mounting, global view/sort persistence, breadcrumb auto-scroll & sibling jump popover, and multi-selection |
-| **Kajo Document & Image Viewer** | 📋 Planned | `kajo-viewer` (`org.kajo.Viewer`) |
+| **Kajo Document & Image Viewer** | ✅ Implemented (Beta) | `kajo-viewer` (`org.kajo.Viewer`, [`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md)) |
 | **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
 | **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
 | **kajo-comp: wlroots fork for visual effects** | ✅ Done | `kajo-comp` — see §3.6 below (fork branch `kajo/0.20.2`, built as a static submodule) |
@@ -65,9 +67,9 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.3 [PLANNED] Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
-- Dedicated full-window PDF, EPUB, and high-resolution image viewer sharing the Poppler + Cairo rendering pipeline from `kajo-files`.
-- Features continuous/two-page PDF scrolling, document outline/bookmarks sidebar, full-text search, zoom presets, and image rotation/cropping.
+### 3.3 [DONE — BETA] Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
+- Implemented in `src/viewer/` ([`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md), [`docs/kajo-viewer-mockup.html`](docs/kajo-viewer-mockup.html), [`data/icons/kajo-viewer.svg`](data/icons/kajo-viewer.svg)) as a **strictly read-only** Aero + Metro viewer sharing Poppler + Cairo rendering (`src/common/pdf_render.c`) and `IdeMarkdownView` + Cairo Mermaid (`src/ide/ide_markdown.c`).
+- Includes continuous `1P`/`2P SPREAD` PDF browsing (`PAPER`/`SEPIA`/`DARK`, `OUTLINE`/`PAGES` thumbnails, `Ctrl+F` search highlights, encrypted PDF unlock), live-monitored Markdown + Heading Outline + `RAW SOURCE`, and `glycin-gtk4-2`/`librsvg-2.0`/`libexif` pan-zoom images + collapsible filmstrip. (EPUB remains out of scope.)
 
 ---
 

@@ -19,11 +19,13 @@ struct _IdeMarkdownView {
   char                   *workspace_root;
 
   GtkWidget              *root_box;
+  GtkWidget              *header_bar;
   GtkWidget              *scroll_win;
   GtkWidget              *doc_box;
   GtkWidget              *doc_badge;
   GtkWidget              *task_badge;
   char                   *current_markdown;
+  gboolean                read_only;
   gboolean                updating_checklists;
   gboolean                context_dirty;
   guint                   tasks_done;

@@ -74,30 +74,34 @@ int main(int argc, char** argv) {
   std::string profile_dir;
   if (!is_sub_process) {
     bool explicit_profile = false;
+    bool end_of_opts = false;
     for (int i = 1; i < argc; ++i) {
       const char* a = argv[i];
-      if (strcmp(a, "--private") == 0 || strcmp(a, "-p") == 0) {
+      if (!end_of_opts && strcmp(a, "--") == 0) {
+        end_of_opts = true;
+      } else if (!end_of_opts && (strcmp(a, "--private") == 0 || strcmp(a, "-p") == 0)) {
         cfg.private_mode = true;
-      } else if (strcmp(a, "--no-hw-accel") == 0) {
+      } else if (!end_of_opts && strcmp(a, "--no-hw-accel") == 0) {
         cfg.hw_accel_enabled = false;
-      } else if (strcmp(a, "--no-adblock-sync") == 0) {
+      } else if (!end_of_opts && strcmp(a, "--no-adblock-sync") == 0) {
         cfg.auto_adblock_sync = false;
-      } else if (strcmp(a, "--profile") == 0 && i + 1 < argc) {
+      } else if (!end_of_opts && strcmp(a, "--profile") == 0 && i + 1 < argc) {
         cfg.profile_id = SanitizeSlug(argv[++i]);
         explicit_profile = true;
-      } else if (strncmp(a, "--profile=", 10) == 0) {
+      } else if (!end_of_opts && strncmp(a, "--profile=", 10) == 0) {
         cfg.profile_id = SanitizeSlug(a + 10);
         explicit_profile = true;
-      } else if (strcmp(a, "--app-id") == 0 && i + 1 < argc) {
+      } else if (!end_of_opts && strcmp(a, "--app-id") == 0 && i + 1 < argc) {
         cfg.app_id = argv[++i];
-      } else if (strncmp(a, "--app-id=", 9) == 0) {
+      } else if (!end_of_opts && strncmp(a, "--app-id=", 9) == 0) {
         cfg.app_id = a + 9;
-      } else if (strcmp(a, "--app") == 0 && i + 1 < argc) {
+      } else if (!end_of_opts && strcmp(a, "--app") == 0 && i + 1 < argc) {
         cfg.app_url = argv[++i];
-      } else if (strncmp(a, "--app=", 6) == 0) {
+      } else if (!end_of_opts && strncmp(a, "--app=", 6) == 0) {
         cfg.app_url = a + 6;
-      } else if (a[0] != '-') {
-        cfg.initial_urls.emplace_back(a);
+      } else if (end_of_opts || a[0] != '-') {
+        g_autofree gchar* resolved = web_model_resolve_cli_arg(a);
+        cfg.initial_urls.emplace_back((resolved && resolved[0] != '\0') ? resolved : a);
       }
     }
     cfg.explicit_profile = explicit_profile;
