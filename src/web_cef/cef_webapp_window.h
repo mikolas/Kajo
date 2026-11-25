@@ -48,6 +48,7 @@ public:
   int BrowserId() const;
 
   void OnInfobarBrowserCreated(CefRefPtr<CefBrowser> browser);
+  void OnCtxMenuBrowserCreated(CefRefPtr<CefBrowser> browser);
   bool HandleShortcut(const CefKeyEvent& event);
   CefSize GetPreferredInfobarSize() const;
   CefMessageRouterBrowserSide* Router() { return router_.get(); }
@@ -56,6 +57,7 @@ public:
   void OnWindowCreated(CefRefPtr<CefWindow> window) override;
   void OnWindowClosing(CefRefPtr<CefWindow> window) override;
   void OnWindowDestroyed(CefRefPtr<CefWindow> window) override;
+  void OnWindowActivationChanged(CefRefPtr<CefWindow> window, bool active) override;
   bool CanClose(CefRefPtr<CefWindow> window) override;
   void OnWindowBoundsChanged(CefRefPtr<CefWindow> window, const CefRect& new_bounds) override;
   CefRect GetInitialBounds(CefRefPtr<CefWindow> window) override;
@@ -96,12 +98,18 @@ public:
   void OnTabBlockedChanged(uint64_t tab_id) override {}
   void OnTabFindResult(uint64_t tab_id, int count, int active_ordinal, bool final_update) override {}
   bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) override;
-  void OnTabGotFocus(uint64_t tab_id) override {}
+  void OnTabGotFocus(uint64_t tab_id) override;
   std::string GetSuggestedDownloadPath(const std::string& suggested_name, bool* out_ask) override;
   void OnTabDownloadUpdated(uint64_t tab_id,
                             const ChromeDownloadView& dl,
                             CefRefPtr<CefDownloadItemCallback> callback) override {}
   bool OnTabContextCommand(uint64_t tab_id, int command_id, const std::string& target_url) override;
+  bool OnTabRunContextMenu(uint64_t tab_id,
+                           int x,
+                           int y,
+                           const std::vector<ChromeContextMenuItem>& items,
+                           CefRefPtr<CefRunContextMenuCallback> callback) override;
+  void OnTabContextMenuDismissed(uint64_t tab_id) override;
   void OnTabCrashed(uint64_t tab_id,
                     int status,
                     int error_code,
@@ -160,6 +168,8 @@ private:
   void ClearPermissionCallbacks();
   void DeliverNotifyPermResult(int js_req_id, const std::string& origin, const std::string& perm);
   void ApplyZoomDelta(ZoomShortcutAction act);
+  void DismissContextMenu(bool restore_focus);
+  void CompleteContextMenu(int command_id, cef_event_flags_t event_flags);
 
   BrowserHostCoordinator* coord_;
   std::string window_key_;
@@ -173,12 +183,19 @@ private:
   CefRefPtr<CefWindow> window_;
   CefRefPtr<CefBrowserView> content_view_;
   CefRefPtr<CefBrowserView> infobar_view_;
+  CefRefPtr<CefBrowserView> ctxmenu_view_;
   CefRefPtr<CefOverlayController> infobar_ctrl_;
+  CefRefPtr<CefOverlayController> ctxmenu_ctrl_;
   CefRefPtr<CefBrowser> content_browser_;
   CefRefPtr<CefBrowser> infobar_browser_;
+  CefRefPtr<CefBrowser> ctxmenu_browser_;
   CefRefPtr<CefTabClient> tab_client_;
   CefRefPtr<CefClient> infobar_client_;
+  CefRefPtr<CefClient> ctxmenu_client_;
   CefRefPtr<CefBrowserViewDelegate> bv_delegate_;
+  CefRefPtr<CefRunContextMenuCallback> ctxmenu_cb_;
+  bool ctxmenu_ready_ = false;
+  bool ctxmenu_open_ = false;
 
   std::vector<PendingPermission> pending_permissions_;
   uint64_t next_perm_req_id_ = 1;

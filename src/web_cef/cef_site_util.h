@@ -236,6 +236,100 @@ inline double ZoomPercentToCefLevel(int zoom_pct) {
   return std::log(static_cast<double>(zoom_pct) / 100.0) / std::log(1.2);
 }
 
+inline std::string StripMenuMnemonic(const std::string& raw) {
+  std::string out;
+  out.reserve(raw.size());
+  for (size_t i = 0; i < raw.size(); ++i) {
+    if (raw[i] == '&') {
+      if (i + 1 < raw.size() && raw[i + 1] == '&') {
+        out.push_back('&');
+        ++i;
+      } else if (i + 1 < raw.size() &&
+                 !std::isspace(static_cast<unsigned char>(raw[i + 1])) &&
+                 static_cast<unsigned char>(raw[i + 1]) >= 0x20) {
+        continue;
+      } else {
+        out.push_back('&');
+      }
+    } else {
+      out.push_back(raw[i]);
+    }
+  }
+  return out;
+}
+
+inline std::string FormatMenuAccelerator(int key_code, bool shift, bool ctrl, bool alt) {
+  if (key_code <= 0) return "";
+  std::string key;
+  if ((key_code >= 'A' && key_code <= 'Z') || (key_code >= '0' && key_code <= '9')) {
+    key.push_back(static_cast<char>(key_code));
+  } else if (key_code >= 0x70 && key_code <= 0x7B) {
+    key = "F" + std::to_string(key_code - 0x70 + 1);
+  } else {
+    switch (key_code) {
+      case 0x08: key = "Bksp"; break;
+      case 0x09: key = "Tab"; break;
+      case 0x0D: key = "Enter"; break;
+      case 0x1B: key = "Esc"; break;
+      case 0x20: key = "Space"; break;
+      case 0x25: key = "←"; break;
+      case 0x26: key = "↑"; break;
+      case 0x27: key = "→"; break;
+      case 0x28: key = "↓"; break;
+      case 0x2E: key = "Del"; break;
+      case 0xBB: key = "+"; break;
+      case 0xBD: key = "-"; break;
+      default: return "";
+    }
+  }
+  std::string out;
+  if (ctrl) out += "Ctrl+";
+  if (alt) out += "Alt+";
+  if (shift) out += "Shift+";
+  out += key;
+  return out;
+}
+
+struct ContextMenuBounds {
+  int x = 0;
+  int y = 0;
+  int max_h = 80;
+};
+
+inline ContextMenuBounds ComputeContextMenuBounds(int anchor_x,
+                                                  int anchor_y,
+                                                  int menu_w,
+                                                  int menu_h,
+                                                  int viewport_w,
+                                                  int viewport_h,
+                                                  int margin = 6) {
+  ContextMenuBounds b;
+  const int safe_w = std::max(1, menu_w);
+  const int safe_h = std::max(1, menu_h);
+  const int m = std::max(0, margin);
+  b.max_h = std::max(80, viewport_h - 2 * m);
+
+  if (anchor_x + safe_w + m <= viewport_w) {
+    b.x = anchor_x;
+  } else if (anchor_x - safe_w >= m) {
+    b.x = anchor_x - safe_w;
+  } else {
+    const int max_x = std::max(m, viewport_w - safe_w - m);
+    b.x = std::clamp(anchor_x, m, max_x);
+  }
+
+  const int eff_h = std::min(safe_h, b.max_h);
+  if (anchor_y + eff_h + m <= viewport_h) {
+    b.y = anchor_y;
+  } else if (anchor_y - eff_h >= m) {
+    b.y = anchor_y - eff_h;
+  } else {
+    const int max_y = std::max(m, viewport_h - eff_h - m);
+    b.y = std::clamp(anchor_y, m, max_y);
+  }
+  return b;
+}
+
 }  // namespace kajo_web
 
 #endif  // KAJO_WEB_CEF_SITE_UTIL_H

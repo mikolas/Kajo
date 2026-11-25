@@ -105,6 +105,107 @@ static void ExtractPathAndQuery(const std::string& url,
   *out_host_or_path = rest;
 }
 
+std::vector<ChromeContextMenuItem> SnapshotCefMenuModel(CefRefPtr<CefMenuModel> model,
+                                                        int depth) {
+  std::vector<ChromeContextMenuItem> out;
+  if (!model || depth >= 4) return out;
+  const size_t count = model->GetCount();
+  for (size_t i = 0; i < count; ++i) {
+    if (!model->IsVisibleAt(i)) continue;
+    const cef_menu_item_type_t mtype = model->GetTypeAt(i);
+    if (mtype == MENUITEMTYPE_NONE) continue;
+    if (mtype == MENUITEMTYPE_SEPARATOR) {
+      if (out.empty() || out.back().type == "separator") continue;
+      ChromeContextMenuItem sep;
+      sep.type = "separator";
+      out.push_back(std::move(sep));
+      continue;
+    }
+
+    ChromeContextMenuItem item;
+    item.command_id = model->GetCommandIdAt(i);
+    item.label = StripMenuMnemonic(model->GetLabelAt(i).ToString());
+    item.enabled = model->IsEnabledAt(i);
+    if (model->HasAcceleratorAt(i)) {
+      int key_code = 0;
+      bool shift = false;
+      bool ctrl = false;
+      bool alt = false;
+      if (model->GetAcceleratorAt(i, key_code, shift, ctrl, alt)) {
+        item.accel = FormatMenuAccelerator(key_code, shift, ctrl, alt);
+      }
+    }
+
+    switch (mtype) {
+      case MENUITEMTYPE_COMMAND:
+        item.type = "command";
+        break;
+      case MENUITEMTYPE_CHECK:
+        item.type = "check";
+        item.checked = model->IsCheckedAt(i);
+        break;
+      case MENUITEMTYPE_RADIO:
+        item.type = "radio";
+        item.checked = model->IsCheckedAt(i);
+        break;
+      case MENUITEMTYPE_SUBMENU:
+        item.type = "submenu";
+        item.children = SnapshotCefMenuModel(model->GetSubMenuAt(i), depth + 1);
+        if (item.children.empty()) continue;
+        break;
+      default:
+        continue;
+    }
+    out.push_back(std::move(item));
+  }
+  while (!out.empty() && out.back().type == "separator") {
+    out.pop_back();
+  }
+  return out;
+}
+
+static void AppendContextMenuItemsJson(std::ostringstream& o,
+                                       const std::vector<ChromeContextMenuItem>& items) {
+  o << "[";
+  for (size_t i = 0; i < items.size(); ++i) {
+    const auto& it = items[i];
+    if (i) o << ",";
+    o << "{\"type\":\"" << JsonEscape(it.type) << "\""
+      << ",\"id\":" << it.command_id
+      << ",\"label\":\"" << JsonEscape(it.label) << "\""
+      << ",\"accel\":\"" << JsonEscape(it.accel) << "\""
+      << ",\"enabled\":" << (it.enabled ? "true" : "false")
+      << ",\"checked\":" << (it.checked ? "true" : "false")
+      << ",\"children\":";
+    AppendContextMenuItemsJson(o, it.children);
+    o << "}";
+  }
+  o << "]";
+}
+
+std::string SerializeContextMenuPayloadJson(
+    int anchor_x,
+    int anchor_y,
+    const std::vector<ChromeContextMenuItem>& items,
+    const std::string& accent,
+    const std::string& font_family,
+    int font_size_px,
+    int sub_size_px,
+    int badge_size_px) {
+  std::ostringstream o;
+  o << "{\"x\":" << anchor_x
+    << ",\"y\":" << anchor_y
+    << ",\"accent\":\"" << JsonEscape(SanitizeHexColor(accent, "#0078d4")) << "\""
+    << ",\"font\":\"" << JsonEscape(font_family.empty() ? "Fira Code" : font_family) << "\""
+    << ",\"font_size\":" << std::clamp(font_size_px, 11, 20)
+    << ",\"sub_size\":" << std::clamp(sub_size_px, 10, 18)
+    << ",\"badge_size\":" << std::clamp(badge_size_px, 9, 16)
+    << ",\"items\":";
+  AppendContextMenuItemsJson(o, items);
+  o << "}";
+  return o.str();
+}
+
 void ChromeStateStore::Update(const ChromeStateSnapshot& snapshot) {
   std::lock_guard<std::mutex> lock(mu_);
   state_ = snapshot;
@@ -2769,6 +2870,426 @@ send('get_state').then(s => { if (s) window.__kajoApply(s); });
 </html>
 )KAJO";
 
+static const char* kCtxMenuHtml = R"KAJO(<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="kajo-chrome://ui/theme.css">
+<style>
+  html, body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent !important;
+    border: none !important;
+  }
+  .ctx-backdrop {
+    position: fixed;
+    inset: 0;
+    background: transparent;
+    z-index: 1;
+  }
+  #ctxRoot {
+    position: fixed;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .ctx-panel {
+    position: fixed;
+    z-index: 10;
+    pointer-events: auto;
+    min-width: 212px;
+    max-width: 340px;
+    max-height: calc(100vh - 12px);
+    overflow-y: auto;
+    background: var(--metro-surface-1);
+    border: 1px solid var(--metro-accent);
+    font-family: var(--metro-font);
+    padding: 3px 0;
+    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.78);
+  }
+  .ctx-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 12px 6px 8px;
+    background: transparent;
+    border: none;
+    border-left: 3px solid transparent;
+    color: var(--metro-fg);
+    font-size: var(--metro-sub-size);
+    text-align: left;
+    cursor: pointer;
+    line-height: 1.25;
+  }
+  .ctx-item.active:not(.disabled) {
+    background: var(--metro-surface-4);
+    border-left-color: var(--metro-accent);
+    color: #ffffff;
+  }
+  .ctx-item.disabled {
+    opacity: 0.36;
+    cursor: default;
+  }
+  .ctx-mark {
+    width: 14px;
+    text-align: center;
+    flex-shrink: 0;
+    color: var(--metro-accent);
+    font-size: var(--metro-sub-size);
+    font-weight: 700;
+  }
+  .ctx-lbl {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .ctx-accel {
+    margin-left: 16px;
+    color: var(--metro-fg-dim);
+    font-size: var(--metro-badge-size);
+    flex-shrink: 0;
+  }
+  .ctx-arrow {
+    margin-left: 12px;
+    color: var(--metro-fg-dim);
+    font-size: var(--metro-badge-size);
+    flex-shrink: 0;
+  }
+  .ctx-item.active:not(.disabled) .ctx-accel,
+  .ctx-item.active:not(.disabled) .ctx-arrow {
+    color: #dcdcdc;
+  }
+  .ctx-sep {
+    height: 1px;
+    background: var(--metro-border);
+    margin: 3px 0;
+  }
+</style>
+</head>
+<body tabindex="-1">
+<div id="ctxBackdrop" class="ctx-backdrop"></div>
+<div id="ctxRoot"></div>
+<script>
+const send = (cmd, extra = {}) => {
+  if (!window.cefQuery) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    window.cefQuery({
+      request: JSON.stringify({ cmd, ...extra }),
+      onSuccess: (res) => { try { resolve(JSON.parse(res)); } catch { resolve(null); } },
+      onFailure: () => resolve(null)
+    });
+  });
+};
+
+const backdrop = document.getElementById('ctxBackdrop');
+const root = document.getElementById('ctxRoot');
+let levels = [];
+
+function computeMenuPos(ax, ay, mw, mh, vw, vh, margin) {
+  const m = margin || 6;
+  const safeW = Math.max(1, mw);
+  const maxH = Math.max(80, vh - 2 * m);
+  const effH = Math.min(Math.max(1, mh), maxH);
+  let x;
+  if (ax + safeW + m <= vw) x = ax;
+  else if (ax - safeW >= m) x = ax - safeW;
+  else x = Math.max(m, Math.min(ax, Math.max(m, vw - safeW - m)));
+  let y;
+  if (ay + effH + m <= vh) y = ay;
+  else if (ay - effH >= m) y = ay - effH;
+  else y = Math.max(m, Math.min(ay, Math.max(m, vh - effH - m)));
+  return { x, y, maxH };
+}
+
+function closeLevelsFrom(startIdx) {
+  while (levels.length > startIdx) {
+    const removed = levels.pop();
+    if (removed && removed.panel && removed.panel.parentNode) {
+      removed.panel.parentNode.removeChild(removed.panel);
+    }
+  }
+}
+
+function setActiveIndex(levelIdx, rowIdx) {
+  const lv = levels[levelIdx];
+  if (!lv) return;
+  lv.rows.forEach((r, i) => {
+    if (r) r.el.classList.toggle('active', i === rowIdx && r.selectable);
+  });
+  lv.activeIdx = rowIdx;
+  if (rowIdx >= 0 && lv.rows[rowIdx]) {
+    lv.rows[rowIdx].el.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function selectItem(item, e) {
+  if (!item || !item.enabled || item.type === 'separator' || item.type === 'submenu') return;
+  window.__kajoClearCtxMenu();
+  send('ctx_select', {
+    command_id: item.id,
+    shift: !!(e && e.shiftKey),
+    ctrl: !!(e && e.ctrlKey),
+    alt: !!(e && e.altKey),
+    middle: !!(e && e.button === 1)
+  });
+}
+
+function openLevel(items, anchorRect, isSubmenu, parentLevelIdx, openerRowIdx) {
+  const levelIdx = levels.length;
+  const panel = document.createElement('div');
+  panel.className = 'ctx-panel';
+  panel.style.zIndex = String(10 + levelIdx * 2);
+
+  const lv = {
+    panel,
+    rows: [],
+    activeIdx: -1,
+    parentLevelIdx,
+    openerRowIdx
+  };
+
+  (items || []).forEach((item) => {
+    if (!item || item.type === 'separator') {
+      const sep = document.createElement('div');
+      sep.className = 'ctx-sep';
+      panel.appendChild(sep);
+      lv.rows.push(null);
+      return;
+    }
+
+    const rowIdx = lv.rows.length;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.tabIndex = -1;
+    btn.className = 'ctx-item' + (item.enabled ? '' : ' disabled');
+
+    const mark = document.createElement('span');
+    mark.className = 'ctx-mark';
+    if (item.checked) {
+      mark.textContent = (item.type === 'radio') ? '■' : '✓';
+    }
+    btn.appendChild(mark);
+
+    const lbl = document.createElement('span');
+    lbl.className = 'ctx-lbl';
+    lbl.textContent = item.label || '';
+    btn.appendChild(lbl);
+
+    if (item.accel) {
+      const acc = document.createElement('span');
+      acc.className = 'ctx-accel';
+      acc.textContent = item.accel;
+      btn.appendChild(acc);
+    }
+
+    if (item.type === 'submenu') {
+      const arr = document.createElement('span');
+      arr.className = 'ctx-arrow';
+      arr.textContent = '▸';
+      btn.appendChild(arr);
+    }
+
+    const selectable = !!item.enabled;
+    lv.rows.push({ el: btn, item, selectable });
+
+    btn.addEventListener('mouseenter', () => {
+      setActiveIndex(levelIdx, selectable ? rowIdx : -1);
+      const nextLv = levels[levelIdx + 1];
+      if (item.type === 'submenu' && item.enabled && item.children && item.children.length) {
+        if (nextLv && nextLv.openerRowIdx === rowIdx) return;
+        closeLevelsFrom(levelIdx + 1);
+        const rr = btn.getBoundingClientRect();
+        openLevel(item.children, rr, true, levelIdx, rowIdx);
+      } else {
+        closeLevelsFrom(levelIdx + 1);
+      }
+    });
+
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (item.type === 'submenu') {
+        if (item.enabled && item.children && item.children.length) {
+          closeLevelsFrom(levelIdx + 1);
+          const rr = btn.getBoundingClientRect();
+          openLevel(item.children, rr, true, levelIdx, rowIdx);
+        }
+        return;
+      }
+      selectItem(item, e);
+    });
+
+    btn.addEventListener('auxclick', (e) => {
+      if (e.button !== 1) return;
+      e.preventDefault();
+      e.stopPropagation();
+      selectItem(item, e);
+    });
+
+    panel.appendChild(btn);
+  });
+
+  levels.push(lv);
+  root.appendChild(panel);
+
+  const vw = window.innerWidth || 1280;
+  const vh = window.innerHeight || 720;
+  const rect = panel.getBoundingClientRect();
+  const mw = Math.ceil(rect.width);
+  const mh = Math.ceil(rect.height);
+
+  if (!isSubmenu) {
+    const pos = computeMenuPos(anchorRect.left, anchorRect.top, mw, mh, vw, vh, 6);
+    panel.style.left = pos.x + 'px';
+    panel.style.top = pos.y + 'px';
+    panel.style.maxHeight = pos.maxH + 'px';
+  } else {
+    const m = 6;
+    let x = Math.round(anchorRect.right - 1);
+    if (x + mw + m > vw) {
+      const flipped = Math.round(anchorRect.left - mw + 1);
+      x = (flipped >= m) ? flipped : Math.max(m, vw - mw - m);
+    }
+    const maxH = Math.max(80, vh - 2 * m);
+    const effH = Math.min(mh, maxH);
+    const desiredY = Math.round(anchorRect.top - 4);
+    const y = Math.max(m, Math.min(desiredY, Math.max(m, vh - effH - m)));
+    panel.style.left = x + 'px';
+    panel.style.top = y + 'px';
+    panel.style.maxHeight = maxH + 'px';
+  }
+  return lv;
+}
+
+window.__kajoClearCtxMenu = () => {
+  closeLevelsFrom(0);
+};
+
+window.__kajoOpenCtxMenu = (payload) => {
+  if (!payload) return;
+  const ds = document.documentElement.style;
+  if (payload.accent) ds.setProperty('--metro-accent', payload.accent);
+  if (payload.font) ds.setProperty('--metro-font', '"' + payload.font + '", "Fira Code", monospace');
+  if (payload.font_size) ds.setProperty('--metro-font-size', payload.font_size + 'px');
+  if (payload.sub_size) ds.setProperty('--metro-sub-size', payload.sub_size + 'px');
+  if (payload.badge_size) ds.setProperty('--metro-badge-size', payload.badge_size + 'px');
+
+  window.__kajoClearCtxMenu();
+  openLevel(payload.items || [], { left: payload.x || 0, top: payload.y || 0 }, false, -1, -1);
+  if (document.body) document.body.focus();
+  window.focus();
+};
+
+backdrop.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  window.__kajoClearCtxMenu();
+  send('ctx_cancel');
+});
+
+backdrop.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  window.__kajoClearCtxMenu();
+  send('ctx_cancel');
+});
+
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+});
+
+function moveActive(lv, delta) {
+  const indices = [];
+  lv.rows.forEach((r, i) => { if (r && r.selectable) indices.push(i); });
+  if (!indices.length) return;
+  const curPos = indices.indexOf(lv.activeIdx);
+  let nextPos;
+  if (curPos === -1) {
+    nextPos = (delta >= 0) ? 0 : (indices.length - 1);
+  } else {
+    nextPos = (curPos + delta + indices.length) % indices.length;
+  }
+  const levelIdx = levels.indexOf(lv);
+  if (levelIdx >= 0) {
+    closeLevelsFrom(levelIdx + 1);
+    setActiveIndex(levelIdx, indices[nextPos]);
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (!levels.length) return;
+  const levelIdx = levels.length - 1;
+  const lv = levels[levelIdx];
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    if (levels.length > 1) {
+      const opener = lv.openerRowIdx;
+      closeLevelsFrom(levelIdx);
+      if (opener >= 0) setActiveIndex(levelIdx - 1, opener);
+    } else {
+      window.__kajoClearCtxMenu();
+      send('ctx_cancel');
+    }
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    moveActive(lv, 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    moveActive(lv, -1);
+  } else if (e.key === 'Home') {
+    e.preventDefault();
+    const idx = lv.rows.findIndex(r => r && r.selectable);
+    if (idx >= 0) setActiveIndex(levelIdx, idx);
+  } else if (e.key === 'End') {
+    e.preventDefault();
+    for (let i = lv.rows.length - 1; i >= 0; --i) {
+      if (lv.rows[i] && lv.rows[i].selectable) {
+        setActiveIndex(levelIdx, i);
+        break;
+      }
+    }
+  } else if (e.key === 'ArrowRight') {
+    const r = (lv.activeIdx >= 0) ? lv.rows[lv.activeIdx] : null;
+    if (r && r.selectable && r.item.type === 'submenu' && r.item.children && r.item.children.length) {
+      e.preventDefault();
+      const rr = r.el.getBoundingClientRect();
+      const childLv = openLevel(r.item.children, rr, true, levelIdx, lv.activeIdx);
+      const firstIdx = childLv.rows.findIndex(cr => cr && cr.selectable);
+      if (firstIdx >= 0) setActiveIndex(levels.length - 1, firstIdx);
+    }
+  } else if (e.key === 'ArrowLeft') {
+    if (levels.length > 1) {
+      e.preventDefault();
+      const opener = lv.openerRowIdx;
+      closeLevelsFrom(levelIdx);
+      if (opener >= 0) setActiveIndex(levelIdx - 1, opener);
+    }
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    const r = (lv.activeIdx >= 0) ? lv.rows[lv.activeIdx] : null;
+    if (!r || !r.selectable) return;
+    e.preventDefault();
+    if (r.item.type === 'submenu' && r.item.children && r.item.children.length) {
+      const rr = r.el.getBoundingClientRect();
+      const childLv = openLevel(r.item.children, rr, true, levelIdx, lv.activeIdx);
+      const firstIdx = childLv.rows.findIndex(cr => cr && cr.selectable);
+      if (firstIdx >= 0) setActiveIndex(levels.length - 1, firstIdx);
+    } else {
+      selectItem(r.item, e);
+    }
+  }
+});
+
+send('ctx_ready');
+</script>
+</body>
+</html>
+)KAJO";
+
 bool ChromeStateStore::RenderChromeAsset(const std::string& url,
                                          std::string* out_body,
                                          std::string* out_mime) const {
@@ -2792,6 +3313,11 @@ bool ChromeStateStore::RenderChromeAsset(const std::string& url,
   if (path == "ui/overlay.html") {
     *out_mime = "text/html";
     *out_body = kOverlayHtml;
+    return true;
+  }
+  if (path == "ui/ctxmenu.html") {
+    *out_mime = "text/html";
+    *out_body = kCtxMenuHtml;
     return true;
   }
   if (path == "ui/state.json") {

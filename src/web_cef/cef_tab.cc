@@ -795,6 +795,31 @@ void CefTabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
   }
 }
 
+bool CefTabClient::RunContextMenu(CefRefPtr<CefBrowser> /*browser*/,
+                                  CefRefPtr<CefFrame> /*frame*/,
+                                  CefRefPtr<CefContextMenuParams> params,
+                                  CefRefPtr<CefMenuModel> model,
+                                  CefRefPtr<CefRunContextMenuCallback> callback) {
+  const std::vector<ChromeContextMenuItem> items = SnapshotCefMenuModel(model);
+  if (items.empty()) {
+    if (callback) callback->Cancel();
+    return true;
+  }
+  if (TabCallbacks* cb = GetCallbacks()) {
+    const int x = params ? params->GetXCoord() : 0;
+    const int y = params ? params->GetYCoord() : 0;
+    return cb->OnTabRunContextMenu(tab_id_, x, y, items, callback);
+  }
+  return false;
+}
+
+void CefTabClient::OnContextMenuDismissed(CefRefPtr<CefBrowser> /*browser*/,
+                                          CefRefPtr<CefFrame> /*frame*/) {
+  if (TabCallbacks* cb = GetCallbacks()) {
+    cb->OnTabContextMenuDismissed(tab_id_);
+  }
+}
+
 bool CefTabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                         CefRefPtr<CefFrame> frame,
                                         CefRefPtr<CefContextMenuParams> params,

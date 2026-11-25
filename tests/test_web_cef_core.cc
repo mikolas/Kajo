@@ -510,6 +510,36 @@ static void test_media_dl_helpers_and_ffmpeg(void) {
   g_rmdir(tmp_dir);
 }
 
+static void test_context_menu_helpers(void) {
+  g_assert_cmpstr(StripMenuMnemonic("&Back").c_str(), ==, "Back");
+  g_assert_cmpstr(StripMenuMnemonic("Save &As...").c_str(), ==, "Save As...");
+  g_assert_cmpstr(StripMenuMnemonic("A && B").c_str(), ==, "A & B");
+  g_assert_cmpstr(StripMenuMnemonic("Cut & Paste").c_str(), ==, "Cut & Paste");
+  g_assert_cmpstr(StripMenuMnemonic("Plain").c_str(), ==, "Plain");
+  g_assert_cmpstr(StripMenuMnemonic("End&").c_str(), ==, "End&");
+
+  g_assert_cmpstr(FormatMenuAccelerator('C', false, true, false).c_str(), ==, "Ctrl+C");
+  g_assert_cmpstr(FormatMenuAccelerator('I', true, true, false).c_str(), ==, "Ctrl+Shift+I");
+  g_assert_cmpstr(FormatMenuAccelerator(0x25, false, false, true).c_str(), ==, "Alt+←");
+  g_assert_cmpstr(FormatMenuAccelerator(0x74, false, false, false).c_str(), ==, "F5");
+  g_assert_cmpstr(FormatMenuAccelerator('0', false, true, false).c_str(), ==, "Ctrl+0");
+  g_assert_cmpstr(FormatMenuAccelerator(0, false, true, false).c_str(), ==, "");
+
+  const ContextMenuBounds normal = ComputeContextMenuBounds(100, 120, 220, 300, 1280, 720);
+  g_assert_cmpint(normal.x, ==, 100);
+  g_assert_cmpint(normal.y, ==, 120);
+  g_assert_cmpint(normal.max_h, ==, 708);
+
+  const ContextMenuBounds flipped = ComputeContextMenuBounds(1200, 680, 220, 300, 1280, 720);
+  g_assert_cmpint(flipped.x, ==, 980);
+  g_assert_cmpint(flipped.y, ==, 380);
+
+  const ContextMenuBounds tiny = ComputeContextMenuBounds(10, 10, 300, 400, 200, 150);
+  g_assert_cmpint(tiny.x, ==, 6);
+  g_assert_cmpint(tiny.y, ==, 6);
+  g_assert_cmpint(tiny.max_h, ==, 138);
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
   g_test_add_func("/web_cef/core/log_severity", test_log_severity_parsing);
@@ -522,5 +552,6 @@ int main(int argc, char** argv) {
   g_test_add_func("/web_cef/core/ipc_app_forwarding", test_ipc_app_forwarding);
   g_test_add_func("/web_cef/core/zoom_shortcuts", test_zoom_shortcut_classifier_and_levels);
   g_test_add_func("/web_cef/core/media_dl", test_media_dl_helpers_and_ffmpeg);
+  g_test_add_func("/web_cef/core/context_menu_helpers", test_context_menu_helpers);
   return g_test_run();
 }
