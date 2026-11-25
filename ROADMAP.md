@@ -53,7 +53,7 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo System Monitor** | 💡 Idea | `kajo-monitor` (`org.kajo.Monitor`, postponed; §3.4) |
 | **Kajo Capture** | 💡 Idea | `kajo-capture` (`org.kajo.Capture`, postponed; §3.5) |
 | **kajo-comp: wlroots fork for visual effects** | ✅ Done | `kajo-comp` — see §3.6 below (fork branch `kajo/0.20.2`, built as a static submodule) |
-| **kajo-comp: HDR10 output & mixed SDR/HDR pipeline** | 📋 Planned | `kajo-comp` — §3.7.1 (blocked on `libdisplay-info >= 0.4.0` on Host A) |
+| **kajo-comp: HDR10 output & mixed SDR/HDR pipeline** | 📋 Planned | `kajo-comp` — [`docs/spec_comp_hdr.md`](docs/spec_comp_hdr.md) (`libdisplay-info 0.3.0` DisplayID 2.0 gap resolved via §2 fallback design; §3.7.1) |
 | **kajo-comp: soft shadows, glassy backdrop blur, output stage (SDR white, tone mapping), transitions** | ✅ Done | `kajo-comp` + wlroots fork — [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (M1–M5 complete) |
 | **kajo-comp: overview zoom (`toggle-overview`), `Mod + drag` tiled columns** | ✅ Done | `kajo-comp` (`src/comp/comp_overview.c`, `src/comp/core/comp_overview_core.c`, `src/comp/comp_window_chrome.c`, `Mod+O` / IPC `toggle-overview`, `Mod + Left/Right Button` tiled column move/resize) |
 | **kajo-comp: layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
@@ -131,7 +131,7 @@ The compositor spec describes what is built; everything below is not implemented
 
 | Item | Why not built yet / blocker | Starting approach |
 | :--- | :--- | :--- |
-| **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). Fork output-stage SDR white & BT.2390 tone mapping are already in place (M4). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
+| **HDR10 output & mixed SDR/HDR pipeline** | Postponed after v1 8-bit SDR; fork output-stage SDR white & BT.2390 tone mapping are in place (M4), and the `libdisplay-info 0.3.0` DisplayID 2.0 gap is addressed by a small fallback parser / optional static subproject. | [`docs/spec_comp_hdr.md`](docs/spec_comp_hdr.md) + §3.7.1. Vulkan only (`input_color_transform` / `output_color_transform`). |
 | **OSK: keep the focused text field visible** | Push-up is built: with `[osk] push_windows = true` the shell sets a layer-shell exclusive zone (`src/osk/osk.c`) and `kajo-comp` shrinks the working area and relays out (`comp_layer_arrange`). Checked by eye on Host A with kitty and Thorium (native Wayland). Missing: scrolling the focused column / window so the text cursor stays above the keyboard when the field is hidden even after the shrink. | Use the `text-input-v3` cursor rectangle to offset the camera. |
 | **Layout extras** | Not needed for v1. | Evaluate individually: `focus-follows-mouse`, `switch-preset-column-width-back`, a `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts. |
 | **Multi-monitor sessions** | v1 policy drives one active output (spec §3.13 `OUT1–OUT4`; greeter mode is the exception). | Workspaces per output, layer surfaces and IPC per output. Expect a few thousand lines. |
