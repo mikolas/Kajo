@@ -88,6 +88,7 @@ public:
                              const std::vector<ChromeContextMenuItem>& items,
                              CefRefPtr<CefRunContextMenuCallback> callback);
   void OnChromeContextMenuDismissed(int role);
+  void OnChromeViewGotFocus(int role);
   CefSize GetPreferredChromeViewSize(CefRefPtr<CefView> view) const;
   int CurrentDockedRailWidth() const;
   int CurrentRailOverlayWidth() const;
@@ -277,6 +278,7 @@ private:
   void DismissContextMenu(bool restore_focus);
   void CompleteContextMenu(int command_id, cef_event_flags_t event_flags);
   void RestoreContextMenuFocus(uint64_t tab_id, int source_role);
+  void UpdateContextMenuBounds(int menu_w, int menu_h);
   void HideAutocomplete();
   void BuildAutocomplete(const std::string& query);
   void BuildPalette(const std::string& query);
@@ -345,6 +347,11 @@ private:
   CefRefPtr<CefRunContextMenuCallback> ctxmenu_cb_;
   bool ctxmenu_ready_ = false;
   bool ctxmenu_open_ = false;
+  uint64_t ctxmenu_seq_ = 0;
+  int ctxmenu_anchor_x_ = 0;
+  int ctxmenu_anchor_y_ = 0;
+  int ctxmenu_w_ = 224;
+  int ctxmenu_h_ = 120;
   uint64_t ctxmenu_tab_id_ = 0;
   int ctxmenu_source_role_ = 0;
   CefRefPtr<CefMessageRouterBrowserSide> router_;

@@ -157,7 +157,8 @@ class ChromeViewClient : public CefClient,
                          public CefDragHandler,
                          public CefKeyboardHandler,
                          public CefRequestHandler,
-                         public CefContextMenuHandler {
+                         public CefContextMenuHandler,
+                         public CefFocusHandler {
 public:
   ChromeViewClient(KajoBrowserWindow* owner, ChromeRole role)
       : owner_(owner), role_(role) {}
@@ -169,6 +170,7 @@ public:
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override { return this; }
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
 
   void OnAfterCreated(CefRefPtr<CefBrowser> browser) override {
     if (owner_) owner_->OnChromeBrowserCreated(role_, browser);
@@ -256,6 +258,12 @@ public:
   void OnContextMenuDismissed(CefRefPtr<CefBrowser> /*browser*/,
                               CefRefPtr<CefFrame> /*frame*/) override {
     if (owner_) owner_->OnChromeContextMenuDismissed(role_);
+  }
+
+  void OnGotFocus(CefRefPtr<CefBrowser> /*browser*/) override {
+    if (owner_ && role_ != ROLE_CTXMENU) {
+      owner_->OnChromeViewGotFocus(role_);
+    }
   }
 
 private:
@@ -811,7 +819,7 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   overlay_view_ = CefBrowserView::CreateBrowserView(
       ov_c, "kajo-chrome://ui/overlay.html", bs, nullptr, request_context_, bv_delegate_);
   ctxmenu_view_ = CefBrowserView::CreateBrowserView(
-      ctx_c, "kajo-chrome://ui/ctxmenu.html", trans_bs, nullptr, request_context_, bv_delegate_);
+      ctx_c, "kajo-chrome://ui/ctxmenu.html", bs, nullptr, request_context_, bv_delegate_);
   ac_view_ = CefBrowserView::CreateBrowserView(
       ac_c, "kajo-chrome://ui/overlay.html?role=ac", bs, nullptr, request_context_, bv_delegate_);
 
@@ -1141,8 +1149,7 @@ void KajoBrowserWindow::UpdateOverlayBounds() {
     if (!ctxmenu_open_) {
       ctxmenu_ctrl_->SetVisible(false);
     } else {
-      ctxmenu_ctrl_->SetBounds(CefRect(0, 0, wb.width, wb.height));
-      ctxmenu_ctrl_->SetVisible(true);
+      UpdateContextMenuBounds(ctxmenu_w_, ctxmenu_h_);
     }
   }
 }
@@ -2716,16 +2723,29 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     HideAutocomplete();
   } else if (cmd == "ctx_ready") {
     ctxmenu_ready_ = true;
+  } else if (cmd == "ctx_resize") {
+    const uint64_t seq = static_cast<uint64_t>(get_int("seq"));
+    const int w = static_cast<int>(get_int("w"));
+    const int h = static_cast<int>(get_int("h"));
+    if (ctxmenu_open_ && (seq == 0 || seq == ctxmenu_seq_)) {
+      UpdateContextMenuBounds(w, h);
+    }
   } else if (cmd == "ctx_cancel") {
-    DismissContextMenu(true);
+    const uint64_t seq = static_cast<uint64_t>(get_int("seq"));
+    if (seq == 0 || seq == ctxmenu_seq_) {
+      DismissContextMenu(true);
+    }
   } else if (cmd == "ctx_select") {
-    uint32_t flags = EVENTFLAG_NONE;
-    if (get_bool("shift")) flags |= EVENTFLAG_SHIFT_DOWN;
-    if (get_bool("ctrl")) flags |= EVENTFLAG_CONTROL_DOWN;
-    if (get_bool("alt")) flags |= EVENTFLAG_ALT_DOWN;
-    if (get_bool("middle")) flags |= EVENTFLAG_MIDDLE_MOUSE_BUTTON;
-    CompleteContextMenu(static_cast<int>(get_int("command_id")),
-                        static_cast<cef_event_flags_t>(flags));
+    const uint64_t seq = static_cast<uint64_t>(get_int("seq"));
+    if (seq == 0 || seq == ctxmenu_seq_) {
+      uint32_t flags = EVENTFLAG_NONE;
+      if (get_bool("shift")) flags |= EVENTFLAG_SHIFT_DOWN;
+      if (get_bool("ctrl")) flags |= EVENTFLAG_CONTROL_DOWN;
+      if (get_bool("alt")) flags |= EVENTFLAG_ALT_DOWN;
+      if (get_bool("middle")) flags |= EVENTFLAG_MIDDLE_MOUSE_BUTTON;
+      CompleteContextMenu(static_cast<int>(get_int("command_id")),
+                          static_cast<cef_event_flags_t>(flags));
+    }
   } else if (cmd == "palette_query") {
     BuildPalette(get_str("query"));
     PushStateImmediate();
@@ -3836,6 +3856,26 @@ void KajoBrowserWindow::OnTabDownloadUpdated(uint64_t tab_id,
   PushStateToChrome();
 }
 
+void KajoBrowserWindow::UpdateContextMenuBounds(int menu_w, int menu_h) {
+  if (!window_ || !ctxmenu_ctrl_ || !ctxmenu_open_) return;
+  CefRect wb = window_->GetBounds();
+  if (wb.width < 100 || wb.height < 100) return;
+  const int max_allowed_w = std::max(160, std::min(360, wb.width - 12));
+  ctxmenu_w_ = std::clamp(menu_w, 160, max_allowed_w);
+  ctxmenu_h_ = std::max(32, menu_h);
+  const ContextMenuBounds b = ComputeContextMenuBounds(
+      ctxmenu_anchor_x_, ctxmenu_anchor_y_, ctxmenu_w_, ctxmenu_h_, wb.width, wb.height, 6);
+  const int clamped_h = std::min(ctxmenu_h_, b.max_h);
+  ctxmenu_ctrl_->SetBounds(CefRect(b.x, b.y, ctxmenu_w_, clamped_h));
+  ctxmenu_ctrl_->SetVisible(true);
+}
+
+void KajoBrowserWindow::OnChromeViewGotFocus(int role) {
+  if (role != ROLE_CTXMENU && ctxmenu_open_) {
+    DismissContextMenu(false);
+  }
+}
+
 bool KajoBrowserWindow::OpenContextMenuCommon(
     CefRefPtr<CefView> source_view,
     uint64_t tab_id,
@@ -3862,18 +3902,21 @@ bool KajoBrowserWindow::OpenContextMenuCommon(
 
   ctxmenu_cb_ = std::move(callback);
   ctxmenu_open_ = true;
+  ++ctxmenu_seq_;
+  ctxmenu_anchor_x_ = pt.x;
+  ctxmenu_anchor_y_ = pt.y;
   ctxmenu_tab_id_ = tab_id;
   ctxmenu_source_role_ = source_role;
 
-  ctxmenu_ctrl_->SetBounds(CefRect(0, 0, wb.width, wb.height));
-  ctxmenu_ctrl_->SetVisible(true);
+  const ContextMenuSize sz = EstimateContextMenuSize(items, sub_size_px_, false);
+  UpdateContextMenuBounds(sz.width, sz.height);
   if (ctxmenu_view_) ctxmenu_view_->RequestFocus();
 
   const std::string eff_accent =
       cfg_.private_mode ? std::string("#b146c2")
                         : (!profile_accent_.empty() ? profile_accent_ : accent_color_);
   const std::string payload = SerializeContextMenuPayloadJson(
-      pt.x, pt.y, items, eff_accent, ui_font_family_,
+      ctxmenu_seq_, items, eff_accent, ui_font_family_,
       ui_font_size_px_, sub_size_px_, badge_size_px_);
   const std::string js = "window.__kajoOpenCtxMenu && window.__kajoOpenCtxMenu(" + payload + ");";
   mf->ExecuteJavaScript(js, mf->GetURL(), 0);
@@ -3907,6 +3950,7 @@ void KajoBrowserWindow::DismissContextMenu(bool restore_focus) {
   const bool was_open = ctxmenu_open_;
   const uint64_t tab_id = ctxmenu_tab_id_;
   const int source_role = ctxmenu_source_role_;
+  if (was_open) ++ctxmenu_seq_;
   ctxmenu_open_ = false;
   ctxmenu_tab_id_ = 0;
   ctxmenu_source_role_ = 0;
@@ -3929,6 +3973,7 @@ void KajoBrowserWindow::CompleteContextMenu(int command_id, cef_event_flags_t ev
   ctxmenu_cb_ = nullptr;
   const uint64_t tab_id = ctxmenu_tab_id_;
   const int source_role = ctxmenu_source_role_;
+  ++ctxmenu_seq_;
   ctxmenu_open_ = false;
   ctxmenu_tab_id_ = 0;
   ctxmenu_source_role_ = 0;
@@ -3963,6 +4008,7 @@ bool KajoBrowserWindow::OpenChromeContextMenu(
 void KajoBrowserWindow::OnChromeContextMenuDismissed(int role) {
   if (!ctxmenu_open_ || ctxmenu_source_role_ != role) return;
   ctxmenu_cb_ = nullptr;
+  ++ctxmenu_seq_;
   ctxmenu_open_ = false;
   ctxmenu_tab_id_ = 0;
   ctxmenu_source_role_ = 0;
@@ -3989,6 +4035,7 @@ bool KajoBrowserWindow::OnTabRunContextMenu(
 void KajoBrowserWindow::OnTabContextMenuDismissed(uint64_t tab_id) {
   if (!ctxmenu_open_ || ctxmenu_source_role_ != 0 || ctxmenu_tab_id_ != tab_id) return;
   ctxmenu_cb_ = nullptr;
+  ++ctxmenu_seq_;
   ctxmenu_open_ = false;
   ctxmenu_tab_id_ = 0;
   ctxmenu_source_role_ = 0;

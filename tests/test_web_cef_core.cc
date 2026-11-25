@@ -538,6 +538,15 @@ static void test_context_menu_helpers(void) {
   g_assert_cmpint(tiny.x, ==, 6);
   g_assert_cmpint(tiny.y, ==, 6);
   g_assert_cmpint(tiny.max_h, ==, 138);
+
+  const ContextMenuDimensions dim_root = EstimateContextMenuDimensions(6, 2, 20, 12, false);
+  g_assert_cmpint(dim_root.width, >=, 216);
+  g_assert_cmpint(dim_root.width, <=, 340);
+  g_assert_cmpint(dim_root.height, ==, 8 + 6 * 27 + 2 * 7);
+
+  const ContextMenuDimensions dim_sub = EstimateContextMenuDimensions(3, 0, 10, 12, true);
+  g_assert_cmpint(dim_sub.width, ==, 216);
+  g_assert_cmpint(dim_sub.height, >, 8 + 3 * 27);
 }
 
 int main(int argc, char** argv) {

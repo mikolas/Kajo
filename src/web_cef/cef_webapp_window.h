@@ -49,6 +49,7 @@ public:
 
   void OnInfobarBrowserCreated(CefRefPtr<CefBrowser> browser);
   void OnCtxMenuBrowserCreated(CefRefPtr<CefBrowser> browser);
+  void OnInfobarGotFocus();
   bool HandleShortcut(const CefKeyEvent& event);
   CefSize GetPreferredInfobarSize() const;
   CefMessageRouterBrowserSide* Router() { return router_.get(); }
@@ -170,6 +171,7 @@ private:
   void ApplyZoomDelta(ZoomShortcutAction act);
   void DismissContextMenu(bool restore_focus);
   void CompleteContextMenu(int command_id, cef_event_flags_t event_flags);
+  void UpdateContextMenuBounds(int menu_w, int menu_h);
 
   BrowserHostCoordinator* coord_;
   std::string window_key_;
@@ -196,6 +198,11 @@ private:
   CefRefPtr<CefRunContextMenuCallback> ctxmenu_cb_;
   bool ctxmenu_ready_ = false;
   bool ctxmenu_open_ = false;
+  uint64_t ctxmenu_seq_ = 0;
+  int ctxmenu_anchor_x_ = 0;
+  int ctxmenu_anchor_y_ = 0;
+  int ctxmenu_w_ = 224;
+  int ctxmenu_h_ = 120;
 
   std::vector<PendingPermission> pending_permissions_;
   uint64_t next_perm_req_id_ = 1;

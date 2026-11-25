@@ -164,6 +164,28 @@ std::vector<ChromeContextMenuItem> SnapshotCefMenuModel(CefRefPtr<CefMenuModel> 
   return out;
 }
 
+ContextMenuSize EstimateContextMenuSize(const std::vector<ChromeContextMenuItem>& items,
+                                          int sub_size_px,
+                                          bool has_back_header) {
+  size_t item_count = 0;
+  size_t sep_count = 0;
+  size_t max_chars = has_back_header ? 14 : 0;
+  for (const auto& it : items) {
+    if (it.type == "separator") {
+      ++sep_count;
+    } else {
+      ++item_count;
+      size_t chars = it.label.size();
+      if (!it.accel.empty()) chars += it.accel.size() + 3;
+      if (it.type == "submenu") chars += 3;
+      max_chars = std::max(max_chars, chars);
+    }
+  }
+  const ContextMenuDimensions d =
+      EstimateContextMenuDimensions(item_count, sep_count, max_chars, sub_size_px, has_back_header);
+  return {d.width, d.height};
+}
+
 static void AppendContextMenuItemsJson(std::ostringstream& o,
                                        const std::vector<ChromeContextMenuItem>& items) {
   o << "[";
@@ -184,8 +206,7 @@ static void AppendContextMenuItemsJson(std::ostringstream& o,
 }
 
 std::string SerializeContextMenuPayloadJson(
-    int anchor_x,
-    int anchor_y,
+    uint64_t seq,
     const std::vector<ChromeContextMenuItem>& items,
     const std::string& accent,
     const std::string& font_family,
@@ -193,8 +214,7 @@ std::string SerializeContextMenuPayloadJson(
     int sub_size_px,
     int badge_size_px) {
   std::ostringstream o;
-  o << "{\"x\":" << anchor_x
-    << ",\"y\":" << anchor_y
+  o << "{\"seq\":" << seq
     << ",\"accent\":\"" << JsonEscape(SanitizeHexColor(accent, "#0078d4")) << "\""
     << ",\"font\":\"" << JsonEscape(font_family.empty() ? "Fira Code" : font_family) << "\""
     << ",\"font_size\":" << std::clamp(font_size_px, 11, 20)
@@ -2880,34 +2900,42 @@ static const char* kCtxMenuHtml = R"KAJO(<!doctype html>
     width: 100vw;
     height: 100vh;
     overflow: hidden;
-    background: transparent !important;
-    border: none !important;
-  }
-  .ctx-backdrop {
-    position: fixed;
-    inset: 0;
-    background: transparent;
-    z-index: 1;
-  }
-  #ctxRoot {
-    position: fixed;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
-  }
-  .ctx-panel {
-    position: fixed;
-    z-index: 10;
-    pointer-events: auto;
-    min-width: 212px;
-    max-width: 340px;
-    max-height: calc(100vh - 12px);
-    overflow-y: auto;
     background: var(--metro-surface-1);
     border: 1px solid var(--metro-accent);
     font-family: var(--metro-font);
+  }
+  #ctxScroll {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: var(--metro-surface-1);
+  }
+  #ctxList {
     padding: 3px 0;
-    box-shadow: 0 6px 22px rgba(0, 0, 0, 0.78);
+  }
+  .ctx-back {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 10px;
+    background: var(--metro-surface-0);
+    border: none;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--metro-border);
+    color: var(--metro-fg-dim);
+    font-size: var(--metro-badge-size);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .ctx-back:hover, .ctx-back.active {
+    background: var(--metro-surface-3);
+    border-left-color: var(--metro-accent);
+    color: #ffffff;
   }
   .ctx-item {
     display: flex;
@@ -2972,8 +3000,7 @@ static const char* kCtxMenuHtml = R"KAJO(<!doctype html>
 </style>
 </head>
 <body tabindex="-1">
-<div id="ctxBackdrop" class="ctx-backdrop"></div>
-<div id="ctxRoot"></div>
+<div id="ctxScroll"><div id="ctxList"></div></div>
 <script>
 const send = (cmd, extra = {}) => {
   if (!window.cefQuery) return Promise.resolve(null);
@@ -2986,51 +3013,43 @@ const send = (cmd, extra = {}) => {
   });
 };
 
-const backdrop = document.getElementById('ctxBackdrop');
-const root = document.getElementById('ctxRoot');
-let levels = [];
+const scrollEl = document.getElementById('ctxScroll');
+const listEl = document.getElementById('ctxList');
+let currentSeq = 0;
+let hadFocus = false;
+let stack = [];
+let renderedRows = [];
 
-function computeMenuPos(ax, ay, mw, mh, vw, vh, margin) {
-  const m = margin || 6;
-  const safeW = Math.max(1, mw);
-  const maxH = Math.max(80, vh - 2 * m);
-  const effH = Math.min(Math.max(1, mh), maxH);
-  let x;
-  if (ax + safeW + m <= vw) x = ax;
-  else if (ax - safeW >= m) x = ax - safeW;
-  else x = Math.max(m, Math.min(ax, Math.max(m, vw - safeW - m)));
-  let y;
-  if (ay + effH + m <= vh) y = ay;
-  else if (ay - effH >= m) y = ay - effH;
-  else y = Math.max(m, Math.min(ay, Math.max(m, vh - effH - m)));
-  return { x, y, maxH };
+function curFrame() {
+  return stack.length ? stack[stack.length - 1] : null;
 }
 
-function closeLevelsFrom(startIdx) {
-  while (levels.length > startIdx) {
-    const removed = levels.pop();
-    if (removed && removed.panel && removed.panel.parentNode) {
-      removed.panel.parentNode.removeChild(removed.panel);
-    }
-  }
-}
-
-function setActiveIndex(levelIdx, rowIdx) {
-  const lv = levels[levelIdx];
-  if (!lv) return;
-  lv.rows.forEach((r, i) => {
-    if (r) r.el.classList.toggle('active', i === rowIdx && r.selectable);
+function setActiveIndex(rowIdx) {
+  const f = curFrame();
+  if (!f) return;
+  f.activeIdx = rowIdx;
+  renderedRows.forEach((r, i) => {
+    if (r && r.el) r.el.classList.toggle('active', i === rowIdx && r.selectable);
   });
-  lv.activeIdx = rowIdx;
-  if (rowIdx >= 0 && lv.rows[rowIdx]) {
-    lv.rows[rowIdx].el.scrollIntoView({ block: 'nearest' });
+  if (rowIdx >= 0 && renderedRows[rowIdx] && renderedRows[rowIdx].el) {
+    renderedRows[rowIdx].el.scrollIntoView({ block: 'nearest' });
   }
+}
+
+function clearUi() {
+  currentSeq = 0;
+  hadFocus = false;
+  stack = [];
+  renderedRows = [];
+  listEl.innerHTML = '';
 }
 
 function selectItem(item, e) {
   if (!item || !item.enabled || item.type === 'separator' || item.type === 'submenu') return;
-  window.__kajoClearCtxMenu();
+  const seq = currentSeq;
+  clearUi();
   send('ctx_select', {
+    seq,
     command_id: item.id,
     shift: !!(e && e.shiftKey),
     ctrl: !!(e && e.ctrlKey),
@@ -3039,30 +3058,59 @@ function selectItem(item, e) {
   });
 }
 
-function openLevel(items, anchorRect, isSubmenu, parentLevelIdx, openerRowIdx) {
-  const levelIdx = levels.length;
-  const panel = document.createElement('div');
-  panel.className = 'ctx-panel';
-  panel.style.zIndex = String(10 + levelIdx * 2);
+function cancelMenu() {
+  const seq = currentSeq;
+  if (!seq) return;
+  clearUi();
+  send('ctx_cancel', { seq });
+}
 
-  const lv = {
-    panel,
-    rows: [],
-    activeIdx: -1,
-    parentLevelIdx,
-    openerRowIdx
-  };
+function pushSubmenu(item) {
+  if (!item || !item.enabled || !item.children || !item.children.length) return;
+  stack.push({ title: item.label || 'SUBMENU', items: item.children, activeIdx: -1 });
+  renderCurrentLevel(true);
+}
 
-  (items || []).forEach((item) => {
+function popSubmenu() {
+  if (stack.length <= 1) return false;
+  stack.pop();
+  renderCurrentLevel(true);
+  return true;
+}
+
+function renderCurrentLevel(notifyResize) {
+  const f = curFrame();
+  listEl.innerHTML = '';
+  renderedRows = [];
+  if (!f) return;
+
+  if (stack.length > 1) {
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.tabIndex = -1;
+    backBtn.className = 'ctx-back';
+    backBtn.textContent = '‹ ' + (f.title || 'BACK');
+    const backIdx = renderedRows.length;
+    renderedRows.push({ el: backBtn, isBack: true, selectable: true });
+    backBtn.addEventListener('mouseenter', () => setActiveIndex(backIdx));
+    backBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      popSubmenu();
+    });
+    listEl.appendChild(backBtn);
+  }
+
+  (f.items || []).forEach((item) => {
     if (!item || item.type === 'separator') {
       const sep = document.createElement('div');
       sep.className = 'ctx-sep';
-      panel.appendChild(sep);
-      lv.rows.push(null);
+      listEl.appendChild(sep);
+      renderedRows.push(null);
       return;
     }
 
-    const rowIdx = lv.rows.length;
+    const rowIdx = renderedRows.length;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.tabIndex = -1;
@@ -3095,33 +3143,20 @@ function openLevel(items, anchorRect, isSubmenu, parentLevelIdx, openerRowIdx) {
     }
 
     const selectable = !!item.enabled;
-    lv.rows.push({ el: btn, item, selectable });
+    renderedRows.push({ el: btn, item, selectable });
 
     btn.addEventListener('mouseenter', () => {
-      setActiveIndex(levelIdx, selectable ? rowIdx : -1);
-      const nextLv = levels[levelIdx + 1];
-      if (item.type === 'submenu' && item.enabled && item.children && item.children.length) {
-        if (nextLv && nextLv.openerRowIdx === rowIdx) return;
-        closeLevelsFrom(levelIdx + 1);
-        const rr = btn.getBoundingClientRect();
-        openLevel(item.children, rr, true, levelIdx, rowIdx);
-      } else {
-        closeLevelsFrom(levelIdx + 1);
-      }
+      setActiveIndex(selectable ? rowIdx : -1);
     });
 
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
       if (item.type === 'submenu') {
-        if (item.enabled && item.children && item.children.length) {
-          closeLevelsFrom(levelIdx + 1);
-          const rr = btn.getBoundingClientRect();
-          openLevel(item.children, rr, true, levelIdx, rowIdx);
-        }
-        return;
+        pushSubmenu(item);
+      } else {
+        selectItem(item, e);
       }
-      selectItem(item, e);
     });
 
     btn.addEventListener('auxclick', (e) => {
@@ -3131,44 +3166,35 @@ function openLevel(items, anchorRect, isSubmenu, parentLevelIdx, openerRowIdx) {
       selectItem(item, e);
     });
 
-    panel.appendChild(btn);
+    listEl.appendChild(btn);
   });
 
-  levels.push(lv);
-  root.appendChild(panel);
-
-  const vw = window.innerWidth || 1280;
-  const vh = window.innerHeight || 720;
-  const rect = panel.getBoundingClientRect();
-  const mw = Math.ceil(rect.width);
-  const mh = Math.ceil(rect.height);
-
-  if (!isSubmenu) {
-    const pos = computeMenuPos(anchorRect.left, anchorRect.top, mw, mh, vw, vh, 6);
-    panel.style.left = pos.x + 'px';
-    panel.style.top = pos.y + 'px';
-    panel.style.maxHeight = pos.maxH + 'px';
+  if (f.activeIdx >= 0 && renderedRows[f.activeIdx] && renderedRows[f.activeIdx].selectable) {
+    setActiveIndex(f.activeIdx);
   } else {
-    const m = 6;
-    let x = Math.round(anchorRect.right - 1);
-    if (x + mw + m > vw) {
-      const flipped = Math.round(anchorRect.left - mw + 1);
-      x = (flipped >= m) ? flipped : Math.max(m, vw - mw - m);
-    }
-    const maxH = Math.max(80, vh - 2 * m);
-    const effH = Math.min(mh, maxH);
-    const desiredY = Math.round(anchorRect.top - 4);
-    const y = Math.max(m, Math.min(desiredY, Math.max(m, vh - effH - m)));
-    panel.style.left = x + 'px';
-    panel.style.top = y + 'px';
-    panel.style.maxHeight = maxH + 'px';
+    f.activeIdx = -1;
   }
-  return lv;
+  scrollEl.scrollTop = 0;
+
+  if (notifyResize && currentSeq) {
+    const reqSeq = currentSeq;
+    listEl.style.display = 'inline-block';
+    listEl.style.minWidth = '214px';
+    const natW = Math.ceil(listEl.getBoundingClientRect().width) + 2;
+    listEl.style.display = '';
+    listEl.style.minWidth = '';
+    const w = Math.max(216, Math.min(340, natW));
+    const h = Math.max(32, Math.ceil(listEl.getBoundingClientRect().height) + 2);
+    requestAnimationFrame(() => {
+      if (currentSeq !== reqSeq) return;
+      if (Math.abs(w - window.innerWidth) > 1 || Math.abs(h - window.innerHeight) > 1) {
+        send('ctx_resize', { seq: reqSeq, w, h });
+      }
+    });
+  }
 }
 
-window.__kajoClearCtxMenu = () => {
-  closeLevelsFrom(0);
-};
+window.__kajoClearCtxMenu = clearUi;
 
 window.__kajoOpenCtxMenu = (payload) => {
   if (!payload) return;
@@ -3179,105 +3205,87 @@ window.__kajoOpenCtxMenu = (payload) => {
   if (payload.sub_size) ds.setProperty('--metro-sub-size', payload.sub_size + 'px');
   if (payload.badge_size) ds.setProperty('--metro-badge-size', payload.badge_size + 'px');
 
-  window.__kajoClearCtxMenu();
-  openLevel(payload.items || [], { left: payload.x || 0, top: payload.y || 0 }, false, -1, -1);
+  currentSeq = Number(payload.seq) || 0;
+  hadFocus = document.hasFocus();
+  stack = [{ title: '', items: payload.items || [], activeIdx: -1 }];
+  renderCurrentLevel(true);
   if (document.body) document.body.focus();
   window.focus();
 };
 
-backdrop.addEventListener('mousedown', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  window.__kajoClearCtxMenu();
-  send('ctx_cancel');
+window.addEventListener('focus', () => {
+  hadFocus = true;
 });
 
-backdrop.addEventListener('contextmenu', (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  window.__kajoClearCtxMenu();
-  send('ctx_cancel');
+window.addEventListener('blur', () => {
+  if (currentSeq && hadFocus) {
+    cancelMenu();
+  }
 });
 
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
 });
 
-function moveActive(lv, delta) {
+function moveActive(delta) {
+  const f = curFrame();
+  if (!f) return;
   const indices = [];
-  lv.rows.forEach((r, i) => { if (r && r.selectable) indices.push(i); });
+  renderedRows.forEach((r, i) => { if (r && r.selectable) indices.push(i); });
   if (!indices.length) return;
-  const curPos = indices.indexOf(lv.activeIdx);
+  const curPos = indices.indexOf(f.activeIdx);
   let nextPos;
   if (curPos === -1) {
     nextPos = (delta >= 0) ? 0 : (indices.length - 1);
   } else {
     nextPos = (curPos + delta + indices.length) % indices.length;
   }
-  const levelIdx = levels.indexOf(lv);
-  if (levelIdx >= 0) {
-    closeLevelsFrom(levelIdx + 1);
-    setActiveIndex(levelIdx, indices[nextPos]);
-  }
+  setActiveIndex(indices[nextPos]);
 }
 
 document.addEventListener('keydown', (e) => {
-  if (!levels.length) return;
-  const levelIdx = levels.length - 1;
-  const lv = levels[levelIdx];
+  const f = curFrame();
+  if (!f || !currentSeq) return;
   if (e.key === 'Escape') {
     e.preventDefault();
-    if (levels.length > 1) {
-      const opener = lv.openerRowIdx;
-      closeLevelsFrom(levelIdx);
-      if (opener >= 0) setActiveIndex(levelIdx - 1, opener);
-    } else {
-      window.__kajoClearCtxMenu();
-      send('ctx_cancel');
-    }
+    if (!popSubmenu()) cancelMenu();
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
-    moveActive(lv, 1);
+    moveActive(1);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
-    moveActive(lv, -1);
+    moveActive(-1);
   } else if (e.key === 'Home') {
     e.preventDefault();
-    const idx = lv.rows.findIndex(r => r && r.selectable);
-    if (idx >= 0) setActiveIndex(levelIdx, idx);
+    const idx = renderedRows.findIndex(r => r && r.selectable);
+    if (idx >= 0) setActiveIndex(idx);
   } else if (e.key === 'End') {
     e.preventDefault();
-    for (let i = lv.rows.length - 1; i >= 0; --i) {
-      if (lv.rows[i] && lv.rows[i].selectable) {
-        setActiveIndex(levelIdx, i);
+    for (let i = renderedRows.length - 1; i >= 0; --i) {
+      if (renderedRows[i] && renderedRows[i].selectable) {
+        setActiveIndex(i);
         break;
       }
     }
   } else if (e.key === 'ArrowRight') {
-    const r = (lv.activeIdx >= 0) ? lv.rows[lv.activeIdx] : null;
-    if (r && r.selectable && r.item.type === 'submenu' && r.item.children && r.item.children.length) {
+    const r = (f.activeIdx >= 0) ? renderedRows[f.activeIdx] : null;
+    if (r && r.selectable && r.item && r.item.type === 'submenu') {
       e.preventDefault();
-      const rr = r.el.getBoundingClientRect();
-      const childLv = openLevel(r.item.children, rr, true, levelIdx, lv.activeIdx);
-      const firstIdx = childLv.rows.findIndex(cr => cr && cr.selectable);
-      if (firstIdx >= 0) setActiveIndex(levels.length - 1, firstIdx);
+      pushSubmenu(r.item);
     }
   } else if (e.key === 'ArrowLeft') {
-    if (levels.length > 1) {
+    if (stack.length > 1) {
       e.preventDefault();
-      const opener = lv.openerRowIdx;
-      closeLevelsFrom(levelIdx);
-      if (opener >= 0) setActiveIndex(levelIdx - 1, opener);
+      popSubmenu();
     }
   } else if (e.key === 'Enter' || e.key === ' ') {
-    const r = (lv.activeIdx >= 0) ? lv.rows[lv.activeIdx] : null;
+    const r = (f.activeIdx >= 0) ? renderedRows[f.activeIdx] : null;
     if (!r || !r.selectable) return;
     e.preventDefault();
-    if (r.item.type === 'submenu' && r.item.children && r.item.children.length) {
-      const rr = r.el.getBoundingClientRect();
-      const childLv = openLevel(r.item.children, rr, true, levelIdx, lv.activeIdx);
-      const firstIdx = childLv.rows.findIndex(cr => cr && cr.selectable);
-      if (firstIdx >= 0) setActiveIndex(levels.length - 1, firstIdx);
+    if (r.isBack) {
+      popSubmenu();
+    } else if (r.item && r.item.type === 'submenu') {
+      pushSubmenu(r.item);
     } else {
       selectItem(r.item, e);
     }

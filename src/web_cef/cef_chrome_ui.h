@@ -257,11 +257,18 @@ private:
 std::string JsonEscape(const std::string& s);
 std::string HtmlEscape(const std::string& s);
 
+struct ContextMenuSize {
+  int width = 224;
+  int height = 36;
+};
+
 std::vector<ChromeContextMenuItem> SnapshotCefMenuModel(CefRefPtr<CefMenuModel> model,
                                                         int depth = 0);
+ContextMenuSize EstimateContextMenuSize(const std::vector<ChromeContextMenuItem>& items,
+                                          int sub_size_px,
+                                          bool has_back_header = false);
 std::string SerializeContextMenuPayloadJson(
-    int anchor_x,
-    int anchor_y,
+    uint64_t seq,
     const std::vector<ChromeContextMenuItem>& items,
     const std::string& accent,
     const std::string& font_family,

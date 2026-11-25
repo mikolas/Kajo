@@ -330,6 +330,26 @@ inline ContextMenuBounds ComputeContextMenuBounds(int anchor_x,
   return b;
 }
 
+struct ContextMenuDimensions {
+  int width = 224;
+  int height = 36;
+};
+
+inline ContextMenuDimensions EstimateContextMenuDimensions(size_t item_count,
+                                                           size_t sep_count,
+                                                           size_t max_chars,
+                                                           int sub_size_px,
+                                                           bool has_back_header = false) {
+  const int fs = std::clamp(sub_size_px, 10, 18);
+  const int row_h = 12 + static_cast<int>(std::ceil(fs * 1.25));
+  const int sep_h = 7;
+  const int back_h = has_back_header ? (10 + fs) : 0;
+  const int w = std::clamp(static_cast<int>(std::ceil(max_chars * fs * 0.66)) + 52, 216, 340);
+  const int h = std::max(32, 8 + back_h + static_cast<int>(item_count) * row_h +
+                                 static_cast<int>(sep_count) * sep_h);
+  return {w, h};
+}
+
 }  // namespace kajo_web
 
 #endif  // KAJO_WEB_CEF_SITE_UTIL_H
