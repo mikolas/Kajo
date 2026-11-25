@@ -1,3 +1,4 @@
+#include "config/kajo_config_types.h"
 #include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_ipc.h"
 #include "web_cef/cef_media_dl.h"
@@ -549,6 +550,72 @@ static void test_context_menu_helpers(void) {
   g_assert_cmpint(dim_sub.height, >, 8 + 3 * 27);
 }
 
+static void test_color_scheme_and_canvas_defaults(void) {
+  const cef_color_t canvas_bg = ContentBrowserDefaultBackgroundColor();
+  g_assert_cmpuint(canvas_bg, ==, 0);
+  g_assert_cmpuint(CefColorGetA(canvas_bg), ==, 0);
+
+  g_assert_false(IsLightSurfaceHex("#141414"));
+  g_assert_false(IsLightSurfaceHex(""));
+  g_assert_false(IsLightSurfaceHex("invalid"));
+  g_assert_true(IsLightSurfaceHex("#f5f5f5"));
+  g_assert_true(IsLightSurfaceHex("#ffffff"));
+
+  g_assert_cmpint(ResolveWebColorSchemeVariant(KAJO_WEB_SCHEME_FOLLOW_KAJO, false),
+                  ==,
+                  CEF_COLOR_VARIANT_DARK);
+  g_assert_cmpint(ResolveWebColorSchemeVariant(KAJO_WEB_SCHEME_FOLLOW_KAJO, true),
+                  ==,
+                  CEF_COLOR_VARIANT_LIGHT);
+  g_assert_cmpint(ResolveWebColorSchemeVariant(KAJO_WEB_SCHEME_DARK, false),
+                  ==,
+                  CEF_COLOR_VARIANT_DARK);
+  g_assert_cmpint(ResolveWebColorSchemeVariant(KAJO_WEB_SCHEME_DARK, true),
+                  ==,
+                  CEF_COLOR_VARIANT_DARK);
+  g_assert_cmpint(ResolveWebColorSchemeVariant(KAJO_WEB_SCHEME_LIGHT, false),
+                  ==,
+                  CEF_COLOR_VARIANT_LIGHT);
+  g_assert_cmpint(ResolveWebColorSchemeVariant(KAJO_WEB_SCHEME_LIGHT, true),
+                  ==,
+                  CEF_COLOR_VARIANT_LIGHT);
+
+  /* Per-tab override cycles immediately to the opposite of current default */
+  g_assert_cmpint(
+      static_cast<int>(NextTabColorSchemeOverride(TabColorSchemeOverride::AUTO, true)),
+      ==,
+      static_cast<int>(TabColorSchemeOverride::LIGHT));
+  g_assert_cmpint(
+      static_cast<int>(NextTabColorSchemeOverride(TabColorSchemeOverride::LIGHT, true)),
+      ==,
+      static_cast<int>(TabColorSchemeOverride::DARK));
+  g_assert_cmpint(
+      static_cast<int>(NextTabColorSchemeOverride(TabColorSchemeOverride::DARK, true)),
+      ==,
+      static_cast<int>(TabColorSchemeOverride::AUTO));
+
+  g_assert_cmpint(
+      static_cast<int>(NextTabColorSchemeOverride(TabColorSchemeOverride::AUTO, false)),
+      ==,
+      static_cast<int>(TabColorSchemeOverride::DARK));
+  g_assert_cmpint(
+      static_cast<int>(NextTabColorSchemeOverride(TabColorSchemeOverride::DARK, false)),
+      ==,
+      static_cast<int>(TabColorSchemeOverride::LIGHT));
+  g_assert_cmpint(
+      static_cast<int>(NextTabColorSchemeOverride(TabColorSchemeOverride::LIGHT, false)),
+      ==,
+      static_cast<int>(TabColorSchemeOverride::AUTO));
+
+  g_assert_cmpstr(TabColorSchemeEmulatedMediaValue(TabColorSchemeOverride::AUTO), ==, "");
+  g_assert_cmpstr(TabColorSchemeEmulatedMediaValue(TabColorSchemeOverride::LIGHT), ==, "light");
+  g_assert_cmpstr(TabColorSchemeEmulatedMediaValue(TabColorSchemeOverride::DARK), ==, "dark");
+
+  g_assert_cmpstr(TabColorSchemeOverrideLabel(TabColorSchemeOverride::AUTO), ==, "AUTO");
+  g_assert_cmpstr(TabColorSchemeOverrideLabel(TabColorSchemeOverride::LIGHT), ==, "LIGHT");
+  g_assert_cmpstr(TabColorSchemeOverrideLabel(TabColorSchemeOverride::DARK), ==, "DARK");
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
   g_test_add_func("/web_cef/core/log_severity", test_log_severity_parsing);
@@ -562,5 +629,6 @@ int main(int argc, char** argv) {
   g_test_add_func("/web_cef/core/zoom_shortcuts", test_zoom_shortcut_classifier_and_levels);
   g_test_add_func("/web_cef/core/media_dl", test_media_dl_helpers_and_ffmpeg);
   g_test_add_func("/web_cef/core/context_menu_helpers", test_context_menu_helpers);
+  g_test_add_func("/web_cef/core/color_scheme_and_canvas", test_color_scheme_and_canvas_defaults);
   return g_test_run();
 }

@@ -332,6 +332,8 @@ std::string ChromeStateStore::SnapshotJson() const {
   o << "\"can_go_forward\":" << (s.can_go_forward ? "true" : "false") << ",";
   o << "\"is_loading\":" << (s.is_loading ? "true" : "false") << ",";
   o << "\"is_bookmarked\":" << (s.is_bookmarked ? "true" : "false") << ",";
+  o << "\"active_tab_color_scheme\":" << s.active_tab_color_scheme << ",";
+  o << "\"default_color_scheme_dark\":" << (s.default_color_scheme_dark ? "true" : "false") << ",";
   o << "\"zoom_pct\":" << s.zoom_pct << ",";
   o << "\"default_zoom_pct\":" << s.default_zoom_pct << ",";
   o << "\"adblock_enabled\":" << (s.adblock_enabled ? "true" : "false") << ",";
@@ -726,6 +728,8 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
   .pill.shield-on { color: #ff8c38; }
   .pill.shield-paused { color: var(--metro-fg-dim); }
   .pill.star-on { color: #f5b942; }
+  .pill.theme-light { color: #f5b942; }
+  .pill.theme-dark { color: var(--metro-accent); }
   .hidden { display: none !important; }
   .dl-btn {
     position: relative;
@@ -810,6 +814,7 @@ static const char* kTopbarHtml = R"KAJO(<!doctype html>
       <button id="btnShield" class="pill shield-on" title="Adblock &amp; Trackers">
         <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><path d="M8 2L3 4v4c0 3.2 2.1 5.1 5 6 2.9-.9 5-2.8 5-6V4L8 2z"/></svg><span id="blockedNum">0</span>
       </button>
+      <button id="btnTabTheme" class="pill hidden" title="Tab Color Scheme (Auto)" aria-label="Tab Color Scheme"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="currentColor" stroke="none"/></svg></button>
       <button id="btnInstallApp" class="pill hidden" title="Install Site as Web App" aria-label="Install Web App"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="square" stroke-linejoin="miter"><rect x="2" y="2.5" width="9" height="9"/><path d="M5 13.5h9v-9"/><path d="M6.5 5.2v3.6M4.7 7h3.6"/></svg></button>
       <button id="btnStar" class="pill" title="Bookmark Page (Ctrl+D)" aria-label="Bookmark"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg></button>
     </div>
@@ -862,6 +867,7 @@ const btnRail = document.getElementById('btnRail');
 const secBadge = document.getElementById('secBadge');
 const btnShield = document.getElementById('btnShield');
 const blockedNum = document.getElementById('blockedNum');
+const btnTabTheme = document.getElementById('btnTabTheme');
 const btnInstallApp = document.getElementById('btnInstallApp');
 const btnStar = document.getElementById('btnStar');
 const btnSwRender = document.getElementById('btnSwRender');
@@ -964,8 +970,12 @@ const SVG_RELOAD = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" s
 const SVG_STOP = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="square"><path d="M3.5 3.5l9 9M12.5 3.5l-9 9"/></svg>';
 const SVG_STAR_OUTLINE = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg>';
 const SVG_STAR_FILLED = '<svg viewBox="0 0 16 16" fill="currentColor" stroke="currentColor" stroke-width="1.2" stroke-linejoin="miter"><polygon points="8,2.2 9.8,6 14,6.6 11,9.5 11.7,13.7 8,11.7 4.3,13.7 5,9.5 2,6.6 6.2,6"/></svg>';
+const SVG_THEME_AUTO = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="8" cy="8" r="5.5"/><path d="M8 2.5A5.5 5.5 0 0 1 8 13.5Z" fill="currentColor" stroke="none"/></svg>';
+const SVG_THEME_LIGHT = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="square"><circle cx="8" cy="8" r="3"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M12.6 3.4l-1.4 1.4M4.8 11.2l-1.4 1.4"/></svg>';
+const SVG_THEME_DARK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="miter"><path d="M12.8 10.2A5.5 5.5 0 0 1 5.8 3.2a5.5 5.5 0 1 0 7 7z"/></svg>';
 let lastIsLoading = null;
 let lastIsBookmarked = null;
+let lastTabTheme = null;
 
 window.__kajoApply = (s) => {
   lastState = s;
@@ -1025,6 +1035,25 @@ window.__kajoApply = (s) => {
   btnShield.className = 'pill ' + ((s.adblock_enabled && !s.host_paused) ? 'shield-on' : 'shield-paused');
   btnShield.title = s.host_paused ? 'Protection paused on ' + (s.active_host || 'host') :
                     'Adblock active · ' + (s.tab_blocked || 0) + ' blocked on tab · ' + (s.total_blocked || 0) + ' session';
+
+  const canTabTheme = !!s.active_url && (s.active_url.startsWith('http://') ||
+                      s.active_url.startsWith('https://') || s.active_url.startsWith('file://'));
+  btnTabTheme.classList.toggle('hidden', !canTabTheme);
+  const ts = Number(s.active_tab_color_scheme) || 0;
+  const defDark = s.default_color_scheme_dark !== false;
+  if (lastTabTheme !== ts) {
+    lastTabTheme = ts;
+    btnTabTheme.innerHTML = ts === 1 ? SVG_THEME_LIGHT : (ts === 2 ? SVG_THEME_DARK : SVG_THEME_AUTO);
+  }
+  btnTabTheme.classList.toggle('theme-light', ts === 1);
+  btnTabTheme.classList.toggle('theme-dark', ts === 2);
+  if (ts === 1) {
+    btnTabTheme.title = 'Tab theme: Light (this tab) · Click for ' + (defDark ? 'Dark' : 'Auto');
+  } else if (ts === 2) {
+    btnTabTheme.title = 'Tab theme: Dark (this tab) · Click for ' + (defDark ? 'Auto' : 'Light');
+  } else {
+    btnTabTheme.title = 'Tab theme: Auto (' + (defDark ? 'Dark' : 'Light') + ') · Click for ' + (defDark ? 'Light' : 'Dark');
+  }
 
   if (lastIsBookmarked !== !!s.is_bookmarked) {
     lastIsBookmarked = !!s.is_bookmarked;
@@ -1134,6 +1163,7 @@ btnFwd.onclick = () => send('forward');
 btnReload.onclick = () => send('reload_or_stop');
 btnRail.onclick = () => send('toggle_rail');
 btnShield.onclick = () => send('toggle_overlay', { mode: 'adblock' });
+btnTabTheme.onclick = () => send('cycle_tab_theme');
 btnInstallApp.onclick = () => send('open_install_app');
 btnStar.onclick = () => send('toggle_bookmark');
 btnSwRender.onclick = () => send('open_kajo_page', { page: 'kajo://gpu' });

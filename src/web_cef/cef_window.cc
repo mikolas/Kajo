@@ -593,7 +593,7 @@ void KajoBrowserWindow::RefreshStorageCache() {
 
 CefBrowserSettings KajoBrowserWindow::MakeContentBrowserSettings() const {
   CefBrowserSettings bs;
-  bs.background_color = CefColorSetARGB(255, 0x14, 0x14, 0x14);
+  bs.background_color = ContentBrowserDefaultBackgroundColor();
   bs.default_font_size = default_font_size_px_;
   bs.default_fixed_font_size = mono_font_size_px_;
   bs.minimum_font_size = min_font_size_px_;
@@ -612,13 +612,7 @@ void KajoBrowserWindow::ReloadThemeAndConfig() {
     heading_size_px_ = CLAMP(t->font_heading_size_px, 10, 18);
     sub_size_px_ = CLAMP(t->font_subtitle_size_px, 10, 18);
     badge_size_px_ = CLAMP(t->font_badge_size_px, 9, 16);
-    const cef_color_t surf = ParseHexColorArgb(
-        t->surface_base ? t->surface_base : "#141414",
-        CefColorSetARGB(255, 0x14, 0x14, 0x14));
-    const double lum = (0.2126 * CefColorGetR(surf) +
-                        0.7152 * CefColorGetG(surf) +
-                        0.0722 * CefColorGetB(surf)) / 255.0;
-    kajo_theme_is_light_ = (lum > 0.5);
+    kajo_theme_is_light_ = IsLightSurfaceHex(t->surface_base ? t->surface_base : "#141414");
     kajo_theme_cfg_unref(t);
   }
 
@@ -710,15 +704,54 @@ void KajoBrowserWindow::UpdateWindowBorderColor() {
 
 void KajoBrowserWindow::ApplyColorSchemeToContext() {
   if (!request_context_) return;
-  cef_color_variant_t variant = CEF_COLOR_VARIANT_DARK;
-  if (color_scheme_ == KAJO_WEB_SCHEME_LIGHT ||
-      (color_scheme_ == KAJO_WEB_SCHEME_FOLLOW_KAJO && kajo_theme_is_light_)) {
-    variant = CEF_COLOR_VARIANT_LIGHT;
-  }
+  const cef_color_variant_t variant =
+      ResolveWebColorSchemeVariant(color_scheme_, kajo_theme_is_light_);
   const cef_color_t tint = ParseHexColorArgb(
       cfg_.private_mode ? "#b146c2" : profile_accent_,
       CefColorSetARGB(255, 0x00, 0x78, 0xd4));
   request_context_->SetChromeColorScheme(variant, tint);
+}
+
+void KajoBrowserWindow::ApplyTabColorScheme(uint64_t tab_id, bool force_clear_auto) {
+  TabEntry* e = FindEntry(tab_id);
+  if (!e) return;
+  if (e->color_scheme_override == TabColorSchemeOverride::AUTO && !force_clear_auto) {
+    return;
+  }
+  CefRefPtr<CefBrowser> browser =
+      e->browser ? e->browser : (e->view ? e->view->GetBrowser() : nullptr);
+  if (!browser || !browser->GetHost()) return;
+
+  CefRefPtr<CefDictionaryValue> feat = CefDictionaryValue::Create();
+  feat->SetString("name", "prefers-color-scheme");
+  feat->SetString("value", TabColorSchemeEmulatedMediaValue(e->color_scheme_override));
+  CefRefPtr<CefListValue> features = CefListValue::Create();
+  features->SetDictionary(0, feat);
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetList("features", features);
+  browser->GetHost()->ExecuteDevToolsMethod(0, "Emulation.setEmulatedMedia", params);
+}
+
+void KajoBrowserWindow::CycleActiveTabColorScheme() {
+  TabEntry* e = ActiveEntry();
+  if (!e) return;
+  if (model_) {
+    KajoWebTabMeta* t = web_model_find_tab(model_, e->id);
+    const std::string uri = (t && t->uri) ? t->uri : "";
+    if (uri.rfind("http://", 0) != 0 &&
+        uri.rfind("https://", 0) != 0 &&
+        uri.rfind("file://", 0) != 0) {
+      return;
+    }
+  }
+  const bool default_is_dark =
+      (ResolveWebColorSchemeVariant(color_scheme_, kajo_theme_is_light_) == CEF_COLOR_VARIANT_DARK);
+  e->color_scheme_override =
+      NextTabColorSchemeOverride(e->color_scheme_override, default_is_dark);
+  ApplyTabColorScheme(e->id, /*force_clear_auto=*/true);
+  ShowTopbarToast(std::string("TAB THEME: ") +
+                  TabColorSchemeOverrideLabel(e->color_scheme_override));
+  PushStateImmediate();
 }
 
 void KajoBrowserWindow::ApplyWebRtcPolicyToContext() {
@@ -1353,8 +1386,10 @@ bool KajoBrowserWindow::OnChromeShortcut(const CefKeyEvent& event) {
 
 void KajoBrowserWindow::AttachTabView(uint64_t tab_id, const std::string& target, bool foreground) {
   std::string preserved_favicon;
+  TabColorSchemeOverride preserved_scheme = TabColorSchemeOverride::AUTO;
   if (auto it = tabs_.find(tab_id); it != tabs_.end()) {
     preserved_favicon = it->second.favicon_url;
+    preserved_scheme = it->second.color_scheme_override;
   }
   if (preserved_favicon.empty() && model_) {
     if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
@@ -1364,6 +1399,7 @@ void KajoBrowserWindow::AttachTabView(uint64_t tab_id, const std::string& target
   TabEntry entry;
   entry.id = tab_id;
   entry.favicon_url = preserved_favicon;
+  entry.color_scheme_override = preserved_scheme;
   entry.client = new CefTabClient(tab_id, adblock_, this);
   entry.client->SetHttpsOnly(https_only_);
   entry.client->SetCookiePolicy(cookie_policy_);
@@ -1565,13 +1601,24 @@ void KajoBrowserWindow::DuplicateTab(uint64_t tab_id) {
   const std::string uri = src->uri ? src->uri : DefaultNewTabUrl();
   const std::string grp = src->group ? src->group : "";
   std::string fav = src->favicon_url ? src->favicon_url : "";
-  if (fav.empty()) {
-    if (TabEntry* se = FindEntry(tab_id)) fav = se->favicon_url;
+  TabColorSchemeOverride src_scheme = TabColorSchemeOverride::AUTO;
+  if (TabEntry* se = FindEntry(tab_id)) {
+    if (fav.empty()) fav = se->favicon_url;
+    src_scheme = se->color_scheme_override;
   }
   const uint64_t new_id = OpenNewTabAfter(tab_id, uri, true, grp);
-  if (new_id && !fav.empty()) {
-    web_model_set_tab_favicon(model_, new_id, fav.c_str());
-    if (TabEntry* ne = FindEntry(new_id)) ne->favicon_url = fav;
+  if (new_id) {
+    if (!fav.empty()) {
+      web_model_set_tab_favicon(model_, new_id, fav.c_str());
+      if (TabEntry* ne = FindEntry(new_id)) ne->favicon_url = fav;
+    }
+    if (src_scheme != TabColorSchemeOverride::AUTO) {
+      if (TabEntry* ne = FindEntry(new_id)) {
+        ne->color_scheme_override = src_scheme;
+      }
+      ApplyTabColorScheme(new_id, false);
+      PushStateToChrome();
+    }
   }
   PersistSession();
 }
@@ -1944,6 +1991,7 @@ void KajoBrowserWindow::BuildPalette(const std::string& query) {
       {"Cycle Rail Mode (Compact/Pinned/Autohide)", "Layout", "cycle_rail_mode", ""},
       {"Toggle Top Bar Autohide (Zen Mode)", "Ctrl+Shift+U", "toggle_topbar_mode", ""},
       {"Bookmark Page", "Ctrl+D", "open_bookmark_popover", ""},
+      {"Cycle Active Tab Theme (Auto / Light / Dark)", "prefers-color-scheme", "cycle_tab_theme", ""},
       {"Find in Page", "Ctrl+F", "open_find", ""},
       {"View Page Source", "Ctrl+U", "view_source", ""},
       {"Open Downloads Overlay", "Ctrl+J", "open_downloads_overlay", ""},
@@ -2197,11 +2245,14 @@ void KajoBrowserWindow::PushStateImmediate() {
     s.active_host = host ? host : "";
     s.is_loading = act->loading;
   }
+  s.default_color_scheme_dark =
+      (ResolveWebColorSchemeVariant(color_scheme_, kajo_theme_is_light_) == CEF_COLOR_VARIANT_DARK);
   if (act_e) {
     s.can_go_back = act_e->can_go_back;
     s.can_go_forward = act_e->can_go_forward;
     s.media_streams = act_e->media;
     s.default_zoom_pct = default_zoom_pct_;
+    s.active_tab_color_scheme = static_cast<int>(act_e->color_scheme_override);
     if (act_e->browser && act_e->browser->GetHost()) {
       double zl = act_e->browser->GetHost()->GetZoomLevel();
       s.zoom_pct = static_cast<int>(100.0 * pow(1.2, zl) + 0.5);
@@ -2665,6 +2716,8 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     PushStateImmediate();
   } else if (cmd == "toggle_bookmark") {
     OpenBookmarkPopover();
+  } else if (cmd == "cycle_tab_theme") {
+    CycleActiveTabColorScheme();
   } else if (cmd == "save_bookmark") {
     KajoWebTabMeta* t = web_model_get_active(model_);
     if (t && t->uri && storage_) {
@@ -2794,6 +2847,8 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       OnAccelerator(window_, ACCEL_TOGGLE_TOPBAR);
     } else if (act == "open_bookmark_popover") {
       OpenBookmarkPopover();
+    } else if (act == "cycle_tab_theme") {
+      CycleActiveTabColorScheme();
     } else if (act == "open_find") {
       ToggleOverlay("find");
     } else if (act == "view_source") {
@@ -3357,6 +3412,9 @@ void KajoBrowserWindow::OnTabBrowserCreated(uint64_t tab_id, CefRefPtr<CefBrowse
       if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
         if (t->muted) browser->GetHost()->SetAudioMuted(true);
       }
+      if (e->color_scheme_override != TabColorSchemeOverride::AUTO) {
+        ApplyTabColorScheme(tab_id, false);
+      }
     }
   }
 }
@@ -3386,6 +3444,9 @@ void KajoBrowserWindow::OnTabAddressChanged(uint64_t tab_id, const std::string& 
     e->media.clear();
     e->last_recorded_visit_uri.clear();
     if (host_changed) e->favicon_url.clear();
+    if (e->color_scheme_override != TabColorSchemeOverride::AUTO) {
+      ApplyTabColorScheme(tab_id, false);
+    }
   }
   PersistSession();
   PushStateToChrome();

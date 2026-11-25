@@ -12,6 +12,7 @@
 #include "include/cef_task.h"
 #include "include/cef_version.h"
 #include "include/wrapper/cef_helpers.h"
+#include "web_cef/cef_prefs_helper.h"
 #include "web_cef/cef_webapps.h"
 
 namespace kajo_web {
@@ -560,6 +561,28 @@ void KajoCefApp::OnContextInitialized() {
 
   request_context_ = CefRequestContext::GetGlobalContext();
   RegisterKajoSchemeHandlers(request_context_, store_);
+  if (request_context_) {
+    bool is_light_surface = false;
+    int color_scheme = KAJO_WEB_SCHEME_FOLLOW_KAJO;
+    std::string accent_hex = "#0078d4";
+    if (KajoConfigStore* cs = kajo_config_store_get_default()) {
+      if (const KajoThemeCfg* t = kajo_config_store_acquire_theme(cs)) {
+        if (t->accent_color && t->accent_color[0] != '\0') accent_hex = t->accent_color;
+        is_light_surface = IsLightSurfaceHex(t->surface_base ? t->surface_base : "#141414");
+        kajo_theme_cfg_unref(t);
+      }
+      if (const KajoWebCfg* w = kajo_config_store_acquire_web(cs)) {
+        color_scheme = w->color_scheme;
+        kajo_web_cfg_unref(w);
+      }
+    }
+    const cef_color_variant_t variant =
+        ResolveWebColorSchemeVariant(color_scheme, is_light_surface);
+    const cef_color_t tint = ParseHexColorArgb(
+        cfg_.private_mode ? "#b146c2" : accent_hex,
+        CefColorSetARGB(255, 0x00, 0x78, 0xd4));
+    request_context_->SetChromeColorScheme(variant, tint);
+  }
 
   CefRefPtr<KajoCefApp> self(this);
   notifications_ = std::make_unique<WebNotificationBridge>(

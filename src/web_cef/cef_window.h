@@ -220,6 +220,7 @@ private:
     bool can_go_back = false;
     bool can_go_forward = false;
     int find_identifier = 0;
+    TabColorSchemeOverride color_scheme_override = TabColorSchemeOverride::AUTO;
     std::vector<ChromeMediaView> media;
   };
 
@@ -229,6 +230,8 @@ private:
   void PersistTopbarMode(int mode);
   void UpdateWindowBorderColor();
   void ApplyColorSchemeToContext();
+  void ApplyTabColorScheme(uint64_t tab_id, bool force_clear_auto = false);
+  void CycleActiveTabColorScheme();
   void ApplyWebRtcPolicyToContext();
   void ReloadUserScripts();
   void RebuildLayout();

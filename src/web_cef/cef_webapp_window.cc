@@ -242,16 +242,16 @@ void KajoWebAppWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   infobar_client_ = new WebAppInfobarClient(this, false);
   ctxmenu_client_ = new WebAppInfobarClient(this, true);
 
-  CefBrowserSettings bs;
-  bs.background_color = CefColorSetARGB(255, 0x14, 0x14, 0x14);
-  CefBrowserSettings trans_bs;
-  trans_bs.background_color = CefColorSetARGB(0, 0, 0, 0);
+  CefBrowserSettings content_bs;
+  content_bs.background_color = ContentBrowserDefaultBackgroundColor();
+  CefBrowserSettings chrome_bs;
+  chrome_bs.background_color = CefColorSetARGB(255, 0x14, 0x14, 0x14);
   if (KajoConfigStore* cs = kajo_config_store_get_default()) {
     if (const KajoWebCfg* w = kajo_config_store_acquire_web(cs)) {
-      bs.default_font_size = CLAMP(w->default_font_size_px, 10, 32);
-      bs.default_fixed_font_size = CLAMP(w->mono_font_size_px, 10, 28);
-      bs.minimum_font_size = CLAMP(w->min_font_size_px, 0, 24);
-      bs.webgl = w->enable_webgl ? STATE_ENABLED : STATE_DISABLED;
+      content_bs.default_font_size = CLAMP(w->default_font_size_px, 10, 32);
+      content_bs.default_fixed_font_size = CLAMP(w->mono_font_size_px, 10, 28);
+      content_bs.minimum_font_size = CLAMP(w->min_font_size_px, 0, 24);
+      content_bs.webgl = w->enable_webgl ? STATE_ENABLED : STATE_DISABLED;
       default_zoom_pct_ = CLAMP(w->default_zoom_pct, 50, 200);
       kajo_web_cfg_unref(w);
     }
@@ -259,12 +259,12 @@ void KajoWebAppWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
 
   CefRefPtr<CefRequestContext> rc = coord_ ? coord_->SharedRequestContext() : nullptr;
   content_view_ = CefBrowserView::CreateBrowserView(
-      tab_client_, initial_url_, bs, nullptr, rc, bv_delegate_);
+      tab_client_, initial_url_, content_bs, nullptr, rc, bv_delegate_);
   infobar_view_ = CefBrowserView::CreateBrowserView(
-      infobar_client_, "kajo-chrome://ui/overlay.html?role=perm", bs, nullptr, rc, bv_delegate_);
+      infobar_client_, "kajo-chrome://ui/overlay.html?role=perm", chrome_bs, nullptr, rc, bv_delegate_);
   if (infobar_view_) infobar_view_->SetID(910);
   ctxmenu_view_ = CefBrowserView::CreateBrowserView(
-      ctxmenu_client_, "kajo-chrome://ui/ctxmenu.html", bs, nullptr, rc, bv_delegate_);
+      ctxmenu_client_, "kajo-chrome://ui/ctxmenu.html", chrome_bs, nullptr, rc, bv_delegate_);
   if (ctxmenu_view_) ctxmenu_view_->SetID(911);
 
   CefBoxLayoutSettings vset;

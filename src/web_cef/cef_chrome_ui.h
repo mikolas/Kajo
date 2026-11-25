@@ -183,6 +183,8 @@ struct ChromeStateSnapshot {
   bool can_go_forward = false;
   bool is_loading = false;
   bool is_bookmarked = false;
+  int active_tab_color_scheme = 0; /* 0=auto, 1=light, 2=dark */
+  bool default_color_scheme_dark = true;
   int zoom_pct = 100;
   int default_zoom_pct = 100;
 
