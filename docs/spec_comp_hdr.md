@@ -56,15 +56,17 @@ System `libdisplay-info 0.3.0` (`di_displayid2` in `/usr/include/libdisplay-info
 
 1. **DisplayID 2.0 extension block validation (`parse_did2_cta_hdr`):**
    - Base EDID is 128-byte aligned; scan extension block `b` (`offset = 128 * k`, `k >= 1`) where `b[0] == 0x70`.
-   - Validate DisplayID v2 outer section checksum (`sum(b[1 .. 5 + section_len]) mod 256 == 0`) where `section_len = b[2]` and `payload_len <= 121`.
-   - Iterate DisplayID Data Blocks starting at `b + 6` (`tag = db[0]`, `rev = db[1]`, `len = db[2]`, bounds-checked strictly against section end).
-   - For `tag == 0x81` (**CTA-861 Data Block** inside DisplayID 2.0), iterate nested CTA Data Blocks (`header = cdb[0]`, `tag_code = header >> 5`, `len = header & 0x1F`):
+   - Validate **both** the outer EDID checksum (`sum(b[0..127]) mod 256 == 0`) **and** the DisplayID v2 section checksum (`sum(b[1 .. 5 + section_len]) mod 256 == 0`) where `section_len = b[2]` and `section_len <= 121` (`b[1]` revision, `b[3]` primary use case, `b[4]` extension count).
+   - Iterate DisplayID Data Blocks starting at **`b + 5`** up to `b + 5 + section_len` (`tag = db[0]`, `rev = db[1]`, `len = db[2]`, total size `3 + len`, strictly bounds-checked against `5 + section_len`). Stop on `len == 0 && tag == 0` padding.
+   - For `tag == 0x81` (**CTA-861 Data Block** inside DisplayID 2.0), iterate nested CTA Data Blocks (`header = cdb[0]`, `tag_code = header >> 5`, `len = header & 0x1F`, total size `1 + len`, strictly bounds-checked against `db` end):
      - When `tag_code == 7` (Extended Tag Block, `len >= 2`): check `ext_tag = cdb[1]`:
-       - `ext_tag == 0x05` (**Colorimetry Data Block**, `len >= 3`): check byte `cdb[2]` bits `[5..7]` / byte `cdb[3]` bit `0` (`BT2020_cYCC`, `BT2020_YCC`, `BT2020_RGB`). Set `WLR_COLOR_NAMED_PRIMARIES_BT2020` if `conn->props.colorspace != 0`.
-       - `ext_tag == 0x06` (**HDR Static Metadata Data Block**, `len >= 3`): check `eotf_mask = cdb[2]` bit `2` (SMPTE ST 2084 / PQ) and `sm_desc_mask = cdb[3]` bit `0` (Static Metadata Type 1). Set `WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ` if `conn->props.hdr_output_metadata != 0`. Extract optional bytes:
-         - `desired_max_luma` (`cdb[4]` if `len >= 4`): `50.0 * pow(2.0, val / 32.0)` cd/m²
-         - `desired_max_fall` (`cdb[5]` if `len >= 5`): `50.0 * pow(2.0, val / 32.0)` cd/m²
-         - `desired_min_luma` (`cdb[6]` if `len >= 6`): `desired_max_luma * pow(val / 255.0, 2.0) / 100.0` cd/m²
+       - `ext_tag == 0x05` (**Colorimetry Data Block**, `len >= 3`): check `cdb[2] & 0xE0` (`BT2020cYCC | BT2020YCC | BT2020RGB`). Set `WLR_COLOR_NAMED_PRIMARIES_BT2020` if `conn->props.colorspace != 0`.
+       - `ext_tag == 0x06` (**HDR Static Metadata Data Block**, `len >= 3`): check `eotf_mask = cdb[2]` bit `2` (`0x04`, SMPTE ST 2084 / PQ) and `sm_desc_mask = cdb[3]` bit `0` (`0x01`, Static Metadata Type 1). Set `WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ` if `conn->props.hdr_output_metadata != 0`. Extract optional bytes per ANSI/CTA-861-H §7.5.13 (**checking `CV == 0` → `0.0f` unset, never `50 * 2^0 = 50`!**):
+         - `desired_max_luma` (`cdb[4]` if `len >= 4`): `(CV == 0) ? 0.0f : 50.0f * powf(2.0f, CV / 32.0f)` cd/m²
+         - `desired_max_fall` (`cdb[5]` if `len >= 5`): `(CV == 0) ? 0.0f : 50.0f * powf(2.0f, CV / 32.0f)` cd/m²
+         - `desired_min_luma` (`cdb[6]` if `len >= 6`): `(CV == 0 || max_luma <= 0.0f) ? 0.0f : max_luma * powf(CV / 255.0f, 2.0f) / 100.0f` cd/m²
+   - **Verified Hardware Reference Vector (Host A `/sys/class/drm/card0-eDP-1/edid`):**
+     - `ext[1]` has `tag=0x70`, `ver=0x20`, `section_len=121`, `tag=0x81` at offset `87` (`len=31`) containing CTA Extended Colorimetry (`e3 05 80 00` → `BT2020RGB`) and CTA HDR Static Metadata (`e6 06 05 01 74 60 02` → PQ + Type 1, `CV 0x74=116 -> 616.884 cd/m²`, `CV 0x60=96 -> 400.000 cd/m²`, `CV 0x02=2 -> 0.000379 cd/m²`), matching `edid-decode` output cleanly.
 2. **Fork HDR capability query (`wlr/kfx/scene.h` or `wlr_output` addon in fork):**
    - Upstream `struct wlr_output` exposes `supported_primaries`, `supported_transfer_functions`, and `default_primaries`, **not** the EDID-reported HDR peak/sustained/min luminance numbers.
    - Add a read-only helper in `wlr/kfx/scene.h`:
@@ -79,6 +81,27 @@ System `libdisplay-info 0.3.0` (`di_displayid2` in `/usr/include/libdisplay-info
                                       struct wlr_kfx_output_hdr_caps *out);
      ```
    - `parse_edid()` populates `max_cll_nits` / `max_fall_nits` / `min_luma_nits` both when `di_info_get_hdr_static_metadata()` succeeds (future `0.4.0+` or CTA-861 base blocks) AND in the DisplayID 2.0 fallback, stored privately on the DRM connector so zero upstream public structs change layout (`spec_wlroots_fork.md` ABI compatibility).
+
+### 2.4 Luminance Unit Bugs & "Supernova" Prevention Invariants
+
+Inspection of `subprojects/wlroots` against Linux `<drm/drm_mode.h>` and `edid-decode` surfaced **two concrete unit/scaling bugs** that must be fixed in our `wlroots` fork before enabling HDR10 (otherwise brightness explodes or bottoms out):
+
+1. **Bug 1 — DRM `min_display_mastering_luminance` unit inversion (`subprojects/wlroots/backend/drm/atomic.c:238`):**
+   - Per `<drm/drm_mode.h:1062-1067>`, `min_display_mastering_luminance` is a `uint16_t` coded in units of **`0.0001 cd/m²`** (`0x0001 = 0.0001 cd/m²`), whereas `max_display_mastering_luminance`, `max_cll`, and `max_fall` are coded in `1 cd/m²`.
+   - `wlroots 0.20.2` has `.min_display_mastering_luminance = img_desc->mastering_luminance.min * 0.0001;` (dividing instead of multiplying — truncating `0.0004 cd/m²` to `0`!).
+   - **Fix in fork:** Encode as `(uint16_t)fmin(65535.0, round(fmax(0.0, img_desc->mastering_luminance.min) * 10000.0))`, and clamp `max_display_mastering_luminance`, `max_cll`, and `max_fall` to `[0, 65535]`.
+2. **Bug 2 — Mixed SDR/HDR `sdr_white_nits` supernova coupling (`types/scene/wlr_scene.c:1554-1560` vs `2313-2320`):**
+   - `wlr_scene.c` normalizes incoming HDR PQ buffers in `scene_entry_render()` using `srgb_lum / src_lum` where `ST2084_PQ` has hardcoded `reference = 203 cd/m²` (`src_lum.reference`), so HDR `600 cd/m²` enters the RGBA16F blend buffer as `600 / 203 = 2.9557`.
+   - At output encoding (`scene_output_combine_color_transforms`), `dst_lum.reference` is set to **`sdr_white_nits`** (`kfx_output_get_sdr_white_nits`), multiplying **every** blend-buffer pixel (including HDR PQ clients!) by `sdr_white_nits / 10000`.
+   - Therefore, raising `sdr_white_nits` (e.g. `400 cd/m²`) currently multiplies HDR video by `400 / 203 ≈ 1.97×` (**supernova**!), while lowering it dims HDR movies!
+   - **Fix in fork:** In `scene_entry_render()` (`wlr_scene.c:1554`), when `scene_buffer->transfer_function` carries absolute luminance (`WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ` or `EXT_LINEAR` scRGB), normalize using the output's active `sdr_white_nits` (matching `dst_lum.reference`) rather than hardcoded `203` whenever no explicit client luminance overrides it — guaranteeing `L cd/m²` HDR content exits at exact `L cd/m²` regardless of `sdr_white_nits`, while untagged SDR (`1.0`) scales cleanly to `sdr_white_nits`.
+3. **Hard Physical Clamps & Startup Telemetry Log:**
+   - Reject/clamp implausible EDID or user values before touching KMS or shader matrices:
+     - `max_cll_nits`: `clamp(v, 100.0, 10000.0)` (if `0` / unset, default `400.0` cd/m², never unscaled `10000` unless panel declares it)
+     - `max_fall_nits`: `clamp(v, 50.0, effective_peak_nits)`
+     - `min_luma_nits`: `clamp(v, 0.0001, 5.0)` (if `0` / unset, default `0.005`)
+     - `sdr_white_nits`: `clamp(v, 80.0, fmin(500.0, effective_peak_nits))`
+   - Log exact decoded EDID nits (`did2` vs `di`), active `sdr_white_nits`, `effective_peak_nits`, `hdr_headroom`, and InfoFrame fields (`WLR_INFO`) on every SDR↔HDR commit.
 
 ---
 
@@ -223,11 +246,16 @@ In fullscreen HDR video/games, `wlroots` attempts direct KMS scanout if buffer f
 
 ### Phase 1 — DisplayID 2.0 EDID Fallback & Capabilities (`subprojects/wlroots`)
 - Implement `kfx_edid_scan_did2_cta_hdr()` in `subprojects/wlroots/backend/drm/util.c` + `wlr_kfx_output_get_hdr_caps()` in `wlr/kfx/scene.h`.
-- **Gate:** Capture Host A's real 256/384-byte EDID (`/sys/class/drm/card*-eDP-1/edid`) as a test fixture (alongside synthetic malformed/truncated/bad-checksum EDIDs) and assert exact `BT2020`, `ST2084_PQ`, `max_cll ≈ 616.9`, `max_fall ≈ 400`, `min_luma ≈ 0.0004` extraction cleanly under ASan/UBSan.
+- Fix `atomic.c:238` `min_display_mastering_luminance` scaling (`* 10000.0`, clamped `[0, 65535]`) and verify CTA-861-H `CV == 0` unset handling.
+- **Gate:** Capture Host A's real 256-byte EDID (`/sys/class/drm/card0-eDP-1/edid`) as a unit-test fixture (alongside synthetic `CV == 0`, malformed, truncated, and bad-checksum EDIDs) and assert exact `BT2020`, `ST2084_PQ`, `max_cll ≈ 616.884`, `max_fall = 400.0`, `min_luma ≈ 0.000379` extraction cleanly under ASan/UBSan.
 
-### Phase 2 — Atomic HDR10 Scanout, `auto` Hysteresis & Colour Filter Safety
+### Phase 2 — Atomic HDR10 Scanout, Supernova Fix, `auto` Hysteresis & Colour Filter Safety
+- Fix `scene_entry_render()` vs `scene_output_combine_color_transforms()` `sdr_white_nits` coupling in `subprojects/wlroots/types/scene/wlr_scene.c` so `sdr_white_nits` scales SDR surfaces only and leaves HDR PQ luminance invariant.
 - Extend `commit_output_cascade()` (`comp_output.c`) with 10-bit PQ commit + SDR fallback step-down, add `[[output]]` `hdr` & `hdr_peak_nits` schema keys, add `auto` HDR surface detection + `2000ms` hysteresis timer, and verify unclamped night-light / colour-filter matrix folding in `output.frag`.
-- **Gate:** Headless Vulkan test (`WLR_BACKENDS=headless WLR_RENDERER=vulkan`) committing `BT2020 + ST2084_PQ` on a virtual output and verifying 10-bit PQ transfer values, BT.2390 highlight rolloff, and linear night-light preservation above `1.0`.
+- **Gate (Explicit Nits & Supernova Readback Assertions):** Headless Vulkan test (`WLR_BACKENDS=headless WLR_RENDERER=vulkan`) committing `BT2020 + ST2084_PQ` on a 10-bit virtual output (`XRGB2101010`), reading back rendered pixels and asserting:
+  - SDR white `1.0` at `sdr_white_nits = 203` decodes to `PQ(203 / 10000) ≈ 0.58069` → code **`594 ± 1 / 1023`** (immediately fails on unscaled `1023/1023` supernova!).
+  - HDR PQ `600 cd/m²` input at `sdr_white_nits = 100`, `203`, and `400` all read back **`PQ(600 / 10000) ≈ 0.7009` → `717 ± 1 / 1023`** (proving `sdr_white_nits` never multiplies HDR content).
+  - BT.2390 highlight rolloff above `hdr_peak_nits` and linear night-light warmth preservation above `1.0`.
 
 ### Phase 3 — Wayland Color Manager Features & Screenshot Tone Mapping
 - Enable full `wp-color-management-v1` features (`extended_target_volume`, `windows_scrgb`, `set_luminances`, `set_primaries`) in `comp_protocols.c`, preferred image description updates on mode change, and sRGB tone-mapped capture in `comp_screenshot.c`.
