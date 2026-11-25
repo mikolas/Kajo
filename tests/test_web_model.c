@@ -150,6 +150,36 @@ test_tab_model_and_suspension(void)
     g_assert_true(web_model_can_suspend(m2, web_model_find_tab(m2, id_x1), 30,
                                         t_leave + 30LL * 60LL * G_USEC_PER_SEC));
 
+    /* Opening a foreground tab after sitting on a tab >= 30m must stamp leave-time on it */
+    g_autoptr(KajoWebModel) m3 = web_model_new();
+    KajoWebTabMeta *chat = web_model_add_tab(m3, "https://chat.example", "Chat", NULL, FALSE, t0);
+    guint64 id_chat = chat->id;
+    const gint64 t_open = t0 + 35LL * 60LL * G_USEC_PER_SEC;
+    /* Background child tab must keep chat active and unaffected */
+    KajoWebTabMeta *bg_child = web_model_add_tab_after(
+        m3, id_chat, "https://bg-child.example", "BG Child", NULL, FALSE, FALSE, t_open - 60);
+    g_assert_nonnull(bg_child);
+    g_assert_cmpuint(m3->active_id, ==, id_chat);
+    g_assert_false(web_model_can_suspend(m3, web_model_find_tab(m3, id_chat), 30, t_open));
+    /* Foreground tab opened via web_model_add_tab_after() stamps chat->last_active_us = t_open */
+    KajoWebTabMeta *fg_child = web_model_add_tab_after(
+        m3, id_chat, "https://fg-child.example", "FG Child", NULL, FALSE, TRUE, t_open);
+    g_assert_nonnull(fg_child);
+    g_assert_cmpuint(m3->active_id, ==, fg_child->id);
+    g_assert_false(web_model_can_suspend(m3, web_model_find_tab(m3, id_chat), 30,
+                                         t_open + 60LL * G_USEC_PER_SEC));
+    g_assert_true(web_model_can_suspend(m3, web_model_find_tab(m3, id_chat), 30,
+                                        t_open + 30LL * 60LL * G_USEC_PER_SEC));
+    /* Foreground tab opened via web_model_add_tab() stamps fg_child->last_active_us = t_open2 */
+    const gint64 t_open2 = t_open + 35LL * 60LL * G_USEC_PER_SEC;
+    KajoWebTabMeta *fg_new = web_model_add_tab(m3, "https://new.example", "New", NULL, FALSE, t_open2);
+    g_assert_nonnull(fg_new);
+    g_assert_cmpuint(m3->active_id, ==, fg_new->id);
+    g_assert_false(web_model_can_suspend(m3, web_model_find_tab(m3, fg_child->id), 30,
+                                         t_open2 + 60LL * G_USEC_PER_SEC));
+    g_assert_true(web_model_can_suspend(m3, web_model_find_tab(m3, fg_child->id), 30,
+                                        t_open2 + 30LL * 60LL * G_USEC_PER_SEC));
+
     /* Favicon preserved across close/reopen */
     web_model_set_tab_favicon(m2, id_x1, "https://x1.example/icon.png");
     g_assert_cmpstr(web_model_find_tab(m2, id_x1)->favicon_url, ==, "https://x1.example/icon.png");

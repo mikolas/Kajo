@@ -1287,14 +1287,12 @@ void KajoBrowserWindow::OnWindowActivationChanged(CefRefPtr<CefWindow> window, b
   if (!active) {
     DismissContextMenu(false);
     window_active_ = false;
-    window_inactive_since_us_ = now;
     if (KajoWebTabMeta* act = web_model_get_active(model_)) {
       act->last_active_us = now;
     }
     return;
   }
   window_active_ = true;
-  window_inactive_since_us_ = 0;
   if (KajoWebTabMeta* act = web_model_get_active(model_)) {
     if (act->suspended) {
       ActivateTab(act->id);
@@ -1578,19 +1576,27 @@ void KajoBrowserWindow::DuplicateTab(uint64_t tab_id) {
   PersistSession();
 }
 
-bool KajoBrowserWindow::SuspendTab(uint64_t tab_id,
-                                   bool manual,
-                                   bool allow_inactive_window_active) {
+bool KajoBrowserWindow::HasGrantedNotificationsForTab(const KajoWebTabMeta* t) {
+  if (!t || !t->uri ||
+      (!g_str_has_prefix(t->uri, "http://") && !g_str_has_prefix(t->uri, "https://"))) {
+    return false;
+  }
+  const std::string origin = DeriveOriginFromUrl(t->uri);
+  return !origin.empty() && QueryTabWebNotifyPermission(t->id, origin) == "granted";
+}
+
+bool KajoBrowserWindow::SuspendTab(uint64_t tab_id, bool manual) {
   if (!model_ || closing_) return false;
   KajoWebTabMeta* t = web_model_find_tab(model_, tab_id);
   if (!t || t->suspended || t->capture_active || t->download_active) {
     return false;
   }
-  if (t->id == model_->active_id && !(allow_inactive_window_active && !window_active_)) {
+  if (t->id == model_->active_id) {
     return false;
   }
-  if (!manual && !allow_inactive_window_active &&
-      !web_model_can_suspend(model_, t, suspend_idle_min_, g_get_monotonic_time())) {
+  if (!manual &&
+      (HasGrantedNotificationsForTab(t) ||
+       !web_model_can_suspend(model_, t, suspend_idle_min_, g_get_monotonic_time()))) {
     return false;
   }
   CancelPermissionsForTab(tab_id);
@@ -1615,28 +1621,22 @@ bool KajoBrowserWindow::SuspendTab(uint64_t tab_id,
 void KajoBrowserWindow::SweepIdleTabs() {
   if (!model_ || closing_ || suspend_idle_min_ <= 0) return;
   const gint64 now = g_get_monotonic_time();
+  if (window_active_) {
+    if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+      act->last_active_us = now;
+    }
+  }
   std::vector<uint64_t> to_suspend;
   for (guint i = 0; i < model_->tabs->len; ++i) {
     const auto* t = static_cast<const KajoWebTabMeta*>(g_ptr_array_index(model_->tabs, i));
-    if (web_model_can_suspend(model_, t, suspend_idle_min_, now)) {
+    if (web_model_can_suspend(model_, t, suspend_idle_min_, now) &&
+        !HasGrantedNotificationsForTab(t)) {
       to_suspend.push_back(t->id);
     }
   }
   bool any = false;
   for (uint64_t tid : to_suspend) {
     if (SuspendTab(tid, false)) any = true;
-  }
-  if (!window_active_ && window_inactive_since_us_ > 0) {
-    const gint64 threshold_us = static_cast<gint64>(suspend_idle_min_) * 60 * G_USEC_PER_SEC;
-    if ((now - window_inactive_since_us_) >= threshold_us) {
-      if (KajoWebTabMeta* act = web_model_get_active(model_)) {
-        if (!act->suspended && !act->pinned && !act->audible && !act->capture_active &&
-            !act->download_active && !(act->uri && g_str_has_prefix(act->uri, "kajo://")) &&
-            (now - act->last_active_us) >= threshold_us) {
-          if (SuspendTab(act->id, false, true)) any = true;
-        }
-      }
-    }
   }
   if (any) PushStateToChrome();
 }
@@ -1769,6 +1769,9 @@ void KajoBrowserWindow::CancelPermissionsForTab(uint64_t tab_id) {
 
 void KajoBrowserWindow::NavigateActive(const std::string& raw_input) {
   if (raw_input.empty()) return;
+  if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+    act->last_active_us = g_get_monotonic_time();
+  }
   std::string target;
   if (raw_input.rfind("chrome://", 0) == 0 ||
       raw_input.rfind("devtools://", 0) == 0 ||
@@ -2480,7 +2483,6 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     return true;
   }
   window_active_ = true;
-  window_inactive_since_us_ = 0;
   if (cmd == "back") {
     if (TabEntry* e = ActiveEntry()) { if (e->browser) e->browser->GoBack(); }
   } else if (cmd == "forward") {
@@ -3321,7 +3323,9 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
 
 void KajoBrowserWindow::OnTabGotFocus(uint64_t tab_id) {
   window_active_ = true;
-  window_inactive_since_us_ = 0;
+  if (KajoWebTabMeta* t = web_model_find_tab(model_, tab_id)) {
+    t->last_active_us = g_get_monotonic_time();
+  }
   if (ctxmenu_open_) DismissContextMenu(false);
   HideAutocomplete();
   if (!overlay_mode_.empty() && overlay_mode_ != "find") {
