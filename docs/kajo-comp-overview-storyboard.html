@@ -966,7 +966,9 @@ const state = {
   },
 
   // History for live oscilloscope
-  history: [], // { dtFromLaunch, t, target }
+  history: [], // { dt, t, target }
+  simTime: 0.0,
+  lastRafMs: null,
   runStartTime: 0.0,
   lastSimTime: 0.0,
   peakOvershootPos: 0.0,
@@ -978,6 +980,7 @@ const state = {
   scenarioStep: 0,
   scenarioAuto: false,
   scenarioTimer: null,
+  pendingTimeouts: [],
 
   // Computed geometry cache
   sceneGeom: null,
@@ -1419,11 +1422,26 @@ function applyOverviewFrame(t) {
 }
 
 /* ── Animation Control & Lifecycle Transitions ── */
-function nowSimSec() { return performance.now() / 1000.0; }
+function nowSimSec() { return state.simTime; }
+
+function scheduleTimeout(fn, ms) {
+  const id = setTimeout(() => {
+    state.pendingTimeouts = state.pendingTimeouts.filter(x => x !== id);
+    fn();
+  }, ms);
+  state.pendingTimeouts.push(id);
+  return id;
+}
+
+function clearPendingTimeouts() {
+  for (const id of state.pendingTimeouts) clearTimeout(id);
+  state.pendingTimeouts = [];
+}
 
 function startSegment(toTarget) {
   const now = nowSimSec();
   state.manualScrub = false;
+  state.paused = false;
 
   if (state.cfg.mode === 'instant' || state.cfg.slowdown <= 0) {
     state.target = toTarget;
@@ -1503,6 +1521,15 @@ function closeOverview(commit) {
 }
 
 function toggleOverview() {
+  if (state.manualScrub) {
+    state.manualScrub = false;
+    if (state.progress >= 0.5) {
+      closeOverview(false);
+    } else {
+      openOverview();
+    }
+    return;
+  }
   if (state.ovState === 'OPENING' || state.ovState === 'OPEN') {
     closeOverview(false);
   } else {
@@ -1513,12 +1540,12 @@ function toggleOverview() {
 function midFlightReverse() {
   if (state.ovState === 'CLOSED') {
     openOverview();
-    setTimeout(() => {
+    scheduleTimeout(() => {
       if (state.ovState === 'OPENING') closeOverview(false);
     }, 150);
   } else if (state.ovState === 'OPEN') {
     closeOverview(false);
-    setTimeout(() => {
+    scheduleTimeout(() => {
       if (state.ovState === 'CLOSING') openOverview();
     }, 150);
   } else if (state.ovState === 'OPENING') {
@@ -1550,8 +1577,8 @@ function closeWindowById(winId) {
   }
 }
 
-function resetDemo() {
-  stopAutoScenario();
+function resetStage() {
+  clearPendingTimeouts();
   state.workspaces = createInitialWorkspaces();
   state.activeWs = 0;
   state.focusedWin = 1;
@@ -1576,13 +1603,22 @@ function resetDemo() {
   updateHudAndScope();
 }
 
-function stepAnimation(now) {
-  const dtRaw = now - state.lastSimTime;
-  state.lastSimTime = now;
+function resetDemo() {
+  stopAutoScenario();
+  resetStage();
+}
+
+function stepAnimation(rafMs) {
+  if (state.lastRafMs === null) {
+    state.lastRafMs = rafMs;
+  }
+  const dtReal = clamp((rafMs - state.lastRafMs) / 1000.0, 0, 0.05);
+  state.lastRafMs = rafMs;
 
   if (!state.manualScrub && !state.paused && (state.ovState === 'OPENING' || state.ovState === 'CLOSING')) {
     const slowdown = Math.max(0.05, state.cfg.slowdown);
-    const effDt = ((now - state.seg.startTime) * state.speed) / slowdown;
+    state.simTime += (dtReal * state.speed) / slowdown;
+    const effDt = Math.max(0, state.simTime - state.seg.startTime);
 
     if (state.cfg.mode === 'spring') {
       const ev = springEval(
@@ -1599,7 +1635,7 @@ function stepAnimation(now) {
       if (Math.abs(ev.disp) <= tol && Math.abs(ev.vel) <= tol && effDt > 0.01) {
         state.progress = state.seg.to;
         state.velocity = 0;
-        state.lastSettleMs = Math.round((now - state.runStartTime) * 1000 * state.speed / slowdown);
+        state.lastSettleMs = Math.round((state.simTime - state.runStartTime) * 1000);
         state.ovState = state.seg.to >= 0.5 ? 'OPEN' : 'CLOSED';
       }
     } else if (state.cfg.mode === 'curve') {
@@ -1623,7 +1659,7 @@ function stepAnimation(now) {
       state.peakOvershootNeg = Math.max(state.peakOvershootNeg, -state.progress);
 
     state.history.push({
-      dt: now - state.runStartTime,
+      dt: state.simTime - state.runStartTime,
       t: state.progress,
       target: state.target
     });
@@ -1705,11 +1741,12 @@ function drawScope() {
     const previewDur = 0.85;
     for (let i = 0; i <= 120; i++) {
       const dt = (i / 120) * previewDur;
+      const slowdown = Math.max(0.05, state.cfg.slowdown);
       let val = 1;
       if (state.cfg.mode === 'spring') {
-        val = 1.0 + springEval(state.cfg.zeta, state.cfg.stiffness, -1.0, 0.0, dt * state.cfg.slowdown).disp;
+        val = 1.0 + springEval(state.cfg.zeta, state.cfg.stiffness, -1.0, 0.0, dt / slowdown).disp;
       } else if (state.cfg.mode === 'curve') {
-        const dur = Math.max(0.01, (state.cfg.durationMs / 1000) * state.cfg.slowdown);
+        const dur = Math.max(0.01, (state.cfg.durationMs / 1000) * slowdown);
         val = evalCurve(state.cfg.curve, clamp(dt / dur, 0, 1));
       } else {
         val = dt > 0 ? 1 : 0;
@@ -1881,7 +1918,7 @@ const SCENARIOS = [
       {
         title: 'Desktop Rest State (WS 1)',
         text: 'Desktop shows tiled <code>kajo-ide</code> + <code>foot</code> and floating <code>kajo-mod</code>. Overview tree is unallocated; <b>0% idle CPU</b>.',
-        act: () => { resetDemo(); applyPreset('spring-bounce'); }
+        act: () => { resetStage(); applyPreset('spring-bounce'); }
       },
       {
         title: 'Spring Open with ~8.5% Overshoot',
@@ -1901,7 +1938,7 @@ const SCENARIOS = [
       {
         title: 'Open Overview from WS 1',
         text: 'Starting on <code>WS 1 (CODE)</code>, toggle overview open.',
-        act: () => { resetDemo(); applyPreset('spring-bounce'); openOverview(); }
+        act: () => { resetStage(); applyPreset('spring-bounce'); openOverview(); }
       },
       {
         title: 'Select KAJO-WEB on WS 2',
@@ -1921,13 +1958,13 @@ const SCENARIOS = [
       {
         title: 'Begin Opening',
         text: 'Start opening with slow-motion (<code>0.5×</code>) so you can watch velocity continuity clearly on the oscilloscope.',
-        act: () => { resetDemo(); setSpeed(0.5); applyPreset('spring-bounce'); openOverview(); }
+        act: () => { resetStage(); setSpeed(0.5); applyPreset('spring-bounce'); openOverview(); }
       },
       {
         title: 'Retarget Mid-Flight (t ≈ 0.5)',
         text: 'Firing <code>Mod+O</code> while still <code>OPENING</code> calls <code>comp_spring_retarget()</code>: initial displacement &amp; instantaneous velocity are preserved so the motion reverses cleanly without snapping.',
         act: () => {
-          setTimeout(() => { if (state.ovState === 'OPENING') closeOverview(false); }, 180);
+          scheduleTimeout(() => { if (state.ovState === 'OPENING') closeOverview(false); }, 180);
         }
       }
     ]
@@ -1939,10 +1976,10 @@ const SCENARIOS = [
         title: 'Triple-Tap Mod+O',
         text: 'Simulates 3 rapid toggles 140ms apart (<code>CLOSED → OPENING → CLOSING → OPENING</code>). Watch the oscilloscope trace stay C1-continuous through all reversals.',
         act: () => {
-          resetDemo(); setSpeed(0.5); applyPreset('spring-elastic');
+          resetStage(); setSpeed(0.5); applyPreset('spring-elastic');
           openOverview();
-          setTimeout(() => closeOverview(false), 140);
-          setTimeout(() => openOverview(), 280);
+          scheduleTimeout(() => closeOverview(false), 140);
+          scheduleTimeout(() => openOverview(), 280);
         }
       }
     ]
@@ -1953,17 +1990,17 @@ const SCENARIOS = [
       {
         title: 'spring-elastic (ζ=0.48, +18%)',
         text: 'Lively under-damped spring with strong bounce.',
-        act: () => { resetDemo(); setSpeed(0.5); applyPreset('spring-elastic'); openOverview(); }
+        act: () => { resetStage(); setSpeed(0.5); applyPreset('spring-elastic'); openOverview(); }
       },
       {
         title: 'spring-snappy (ζ=0.80, +1.5%)',
         text: 'Close to Niri’s crisp workspace feel — fast settle, minimal overshoot.',
-        act: () => { closeOverview(false); setTimeout(() => { applyPreset('spring-snappy'); openOverview(); }, 320); }
+        act: () => { closeOverview(false); scheduleTimeout(() => { applyPreset('spring-snappy'); openOverview(); }, 320); }
       },
       {
         title: 'ease-out-back (260ms curve)',
         text: 'Deterministic non-spring cubic overshoot curve.',
-        act: () => { closeOverview(false); setTimeout(() => { applyPreset('ease-out-back'); openOverview(); }, 320); }
+        act: () => { closeOverview(false); scheduleTimeout(() => { applyPreset('ease-out-back'); openOverview(); }, 320); }
       }
     ]
   },
@@ -1973,12 +2010,12 @@ const SCENARIOS = [
       {
         title: 'Open Overview',
         text: 'Open in <code>0.25×</code> slow motion.',
-        act: () => { resetDemo(); setSpeed(0.25); applyPreset('spring-bounce'); openOverview(); }
+        act: () => { resetStage(); setSpeed(0.25); applyPreset('spring-bounce'); openOverview(); }
       },
       {
         title: 'Close Window #2 Mid-Flight',
         text: 'Pressing <code>Q</code> / middle-click closes <code>FOOT (#2)</code> at <code>t &lt; 1</code>. Layout rebuilds scene nodes and immediately re-applies the active spring progress — zero 1-frame flash at <code>t=1</code>.',
-        act: () => { setTimeout(() => closeWindowById(2), 260); }
+        act: () => { scheduleTimeout(() => closeWindowById(2), 260); }
       }
     ]
   },
@@ -1988,7 +2025,7 @@ const SCENARIOS = [
       {
         title: '1-Frame Instant Open',
         text: 'With <code>instant</code> (<code>animations.enabled = false</code>), overview snaps cleanly to <code>OPEN</code> in a single frame with zero vblank scheduling.',
-        act: () => { resetDemo(); applyPreset('instant'); openOverview(); }
+        act: () => { resetStage(); applyPreset('instant'); openOverview(); }
       },
       {
         title: '1-Frame Instant Close',
@@ -2011,6 +2048,16 @@ function renderScenarioList() {
   });
 }
 
+function updateScenarioUi() {
+  const sc = SCENARIOS[state.activeScenario];
+  const st = sc.steps[state.scenarioStep];
+  document.getElementById('narrTitle').textContent = `${sc.id}: ${st.title}`;
+  document.getElementById('narrStep').textContent = `${state.scenarioStep + 1} / ${sc.steps.length}`;
+  document.getElementById('narrText').innerHTML = st.text;
+  document.getElementById('btnScenPrev').disabled = state.scenarioStep === 0;
+  document.getElementById('btnScenNext').disabled = state.scenarioStep >= sc.steps.length - 1;
+}
+
 function loadScenario(scenIdx, stepIdx) {
   stopAutoScenario();
   state.activeScenario = scenIdx;
@@ -2021,18 +2068,14 @@ function loadScenario(scenIdx, stepIdx) {
 }
 
 function runCurrentScenarioStep() {
+  updateScenarioUi();
   const sc = SCENARIOS[state.activeScenario];
-  const st = sc.steps[state.scenarioStep];
-  document.getElementById('narrTitle').textContent = `${sc.id}: ${st.title}`;
-  document.getElementById('narrStep').textContent = `${state.scenarioStep + 1} / ${sc.steps.length}`;
-  document.getElementById('narrText').innerHTML = st.text;
-  document.getElementById('btnScenPrev').disabled = state.scenarioStep === 0;
-  document.getElementById('btnScenNext').disabled = state.scenarioStep >= sc.steps.length - 1;
-  st.act();
+  sc.steps[state.scenarioStep].act();
 }
 
 function stopAutoScenario() {
   state.scenarioAuto = false;
+  clearPendingTimeouts();
   if (state.scenarioTimer) {
     clearInterval(state.scenarioTimer);
     state.scenarioTimer = null;
@@ -2146,15 +2189,24 @@ document.getElementById('btnScenPlay').addEventListener('click', () => {
   }
   state.scenarioAuto = true;
   document.getElementById('btnScenPlay').textContent = '■ STOP';
+  state.scenarioStep = 0;
+  runCurrentScenarioStep();
+
+  const sc = SCENARIOS[state.activeScenario];
+  if (sc.steps.length <= 1) {
+    scheduleTimeout(() => stopAutoScenario(), 1200);
+    return;
+  }
+  const intervalMs = state.speed < 1.0 ? 2200 : 1600;
   state.scenarioTimer = setInterval(() => {
-    const sc = SCENARIOS[state.activeScenario];
-    if (state.scenarioStep + 1 < sc.steps.length) {
+    const curSc = SCENARIOS[state.activeScenario];
+    if (state.scenarioStep + 1 < curSc.steps.length) {
       state.scenarioStep++;
       runCurrentScenarioStep();
     } else {
       stopAutoScenario();
     }
-  }, 1400);
+  }, intervalMs);
 });
 
 window.addEventListener('keydown', (e) => {
@@ -2219,9 +2271,9 @@ window.addEventListener('resize', () => { layoutBezel(); drawScope(); });
 
 renderDesktop();
 renderScenarioList();
+updateScenarioUi();
 applyPreset('spring-bounce');
 layoutBezel();
-state.lastSimTime = nowSimSec();
 requestAnimationFrame(stepAnimation);
 </script>
 </body>
