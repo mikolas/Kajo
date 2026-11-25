@@ -3,7 +3,8 @@
 /* ─── Context Menu Popover (Item Context + Directory Background + Open With) ─── */
 
 static GtkWidget *
-create_ctx_action_button(const char *label_text,
+create_ctx_action_button(const char *icon_name,
+                         const char *label_text,
                          const char *shortcut_text,
                          gboolean is_danger,
                          GCallback callback,
@@ -11,16 +12,23 @@ create_ctx_action_button(const char *label_text,
 {
     GtkWidget *btn = gtk_button_new();
     gtk_widget_add_css_class(btn, "flat");
-    gtk_widget_add_css_class(btn, "files-menu-row");
+    gtk_widget_add_css_class(btn, "files-ctx-item");
     if (is_danger)
-        gtk_widget_add_css_class(btn, "action-btn-danger");
+        gtk_widget_add_css_class(btn, "files-ctx-danger");
 
-    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    GtkWidget *hbox = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     gtk_widget_set_valign(hbox, GTK_ALIGN_CENTER);
+
+    GtkWidget *ic = gtk_image_new_from_icon_name(icon_name);
+    gtk_image_set_pixel_size(GTK_IMAGE(ic), 14);
+    gtk_widget_add_css_class(ic, "files-ctx-icon");
+    gtk_widget_set_valign(ic, GTK_ALIGN_CENTER);
+    gtk_box_append(GTK_BOX(hbox), ic);
 
     GtkWidget *lbl = gtk_label_new(label_text);
     gtk_widget_set_hexpand(lbl, TRUE);
-    gtk_widget_set_halign(lbl, GTK_ALIGN_START);
+    gtk_widget_set_halign(lbl, GTK_ALIGN_FILL);
+    gtk_label_set_xalign(GTK_LABEL(lbl), 0.0f);
     gtk_widget_set_valign(lbl, GTK_ALIGN_CENTER);
     gtk_box_append(GTK_BOX(hbox), lbl);
 
@@ -350,7 +358,7 @@ on_ctx_open_with_clicked(GtkButton *btn G_GNUC_UNUSED, gpointer user_data)
     g_autofree char *item_local = g_file_get_path(kajo_file_item_get_file(self->selected_item));
     if (item_local && kajo_files_is_disk_image(ctype, item_name)) {
         gtk_box_append(GTK_BOX(self->ctx_ow_list_box), create_ctx_action_button(
-            "💿  Mount Disk Image", "", FALSE, G_CALLBACK(on_ow_mount_image_clicked), self));
+            "drive-optical-symbolic", "Mount Disk Image", "", FALSE, G_CALLBACK(on_ow_mount_image_clicked), self));
     }
 
     g_autoptr(GAppInfo) default_app = ctype ? g_app_info_get_default_for_type(ctype, FALSE) : NULL;
@@ -443,13 +451,16 @@ files_window_build_context_menu_popover(KajoFilesWindow *self)
     self->context_popover = gtk_popover_new();
     gtk_popover_set_has_arrow(GTK_POPOVER(self->context_popover), FALSE);
     gtk_popover_set_autohide(GTK_POPOVER(self->context_popover), TRUE);
+    gtk_popover_set_position(GTK_POPOVER(self->context_popover), GTK_POS_RIGHT);
     gtk_widget_add_css_class(self->context_popover, "shell-popover");
     gtk_widget_add_css_class(self->context_popover, "files-context-popover");
     gtk_widget_set_parent(self->context_popover, GTK_WIDGET(self->view_stack));
 
     self->ctx_stack = gtk_stack_new();
     gtk_stack_set_transition_type(GTK_STACK(self->ctx_stack), GTK_STACK_TRANSITION_TYPE_SLIDE_LEFT_RIGHT);
-    gtk_widget_set_size_request(self->ctx_stack, 286, -1);
+    gtk_stack_set_vhomogeneous(GTK_STACK(self->ctx_stack), FALSE);
+    gtk_stack_set_hhomogeneous(GTK_STACK(self->ctx_stack), FALSE);
+    gtk_widget_set_size_request(self->ctx_stack, 260, -1);
 
     /* ── Page 1: Main Context Menu (Item or Directory Background) ── */
     GtkWidget *main_page = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
@@ -463,12 +474,12 @@ files_window_build_context_menu_popover(KajoFilesWindow *self)
     gtk_widget_set_valign(self->ctx_hdr_icon, GTK_ALIGN_CENTER);
 
     self->ctx_hdr_title_lbl = gtk_label_new("ITEM");
-    gtk_widget_add_css_class(self->ctx_hdr_title_lbl, "heading");
+    gtk_widget_add_css_class(self->ctx_hdr_title_lbl, "files-ctx-title");
     gtk_widget_set_hexpand(self->ctx_hdr_title_lbl, TRUE);
-    gtk_widget_set_halign(self->ctx_hdr_title_lbl, GTK_ALIGN_START);
+    gtk_widget_set_halign(self->ctx_hdr_title_lbl, GTK_ALIGN_FILL);
+    gtk_label_set_xalign(GTK_LABEL(self->ctx_hdr_title_lbl), 0.0f);
     gtk_widget_set_valign(self->ctx_hdr_title_lbl, GTK_ALIGN_CENTER);
     gtk_label_set_ellipsize(GTK_LABEL(self->ctx_hdr_title_lbl), PANGO_ELLIPSIZE_MIDDLE);
-    gtk_label_set_max_width_chars(GTK_LABEL(self->ctx_hdr_title_lbl), 22);
 
     self->ctx_hdr_badge_lbl = gtk_label_new("");
     gtk_widget_add_css_class(self->ctx_hdr_badge_lbl, "shell-popover-badge");
@@ -481,102 +492,102 @@ files_window_build_context_menu_popover(KajoFilesWindow *self)
     gtk_box_append(GTK_BOX(main_page), hdr);
 
     /* Item Actions Box */
-    self->ctx_item_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    self->ctx_item_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_widget_add_css_class(self->ctx_item_box, "shell-popover-body");
 
     self->ctx_btn_open = create_ctx_action_button(
-        "▶  Open", "Enter", FALSE, G_CALLBACK(on_ctx_open_clicked), self);
+        "media-playback-start-symbolic", "Open", "Enter", FALSE, G_CALLBACK(on_ctx_open_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_open);
 
     self->ctx_btn_open_with = create_ctx_action_button(
-        "⚙  Open With...", "▸", FALSE, G_CALLBACK(on_ctx_open_with_clicked), self);
+        "system-run-symbolic", "Open With...", "▸", FALSE, G_CALLBACK(on_ctx_open_with_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_open_with);
 
     self->ctx_btn_quicklook = create_ctx_action_button(
-        "👁  Quick Look", "Space", FALSE, G_CALLBACK(on_ctx_quicklook_clicked), self);
+        "view-reveal-symbolic", "Quick Look", "Space", FALSE, G_CALLBACK(on_ctx_quicklook_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_quicklook);
 
     self->ctx_btn_extract = create_ctx_action_button(
-        "📦  Extract Here", "", FALSE, G_CALLBACK(on_ctx_extract_clicked), self);
+        "package-x-generic-symbolic", "Extract Here", "", FALSE, G_CALLBACK(on_ctx_extract_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_extract);
 
     self->ctx_btn_compress = create_ctx_action_button(
-        "📦  Compress to Archive...", "Ctrl+Shift+A", FALSE, G_CALLBACK(on_ctx_compress_clicked), self);
+        "package-x-generic-symbolic", "Compress to Archive...", "Ctrl+Shift+A", FALSE, G_CALLBACK(on_ctx_compress_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_compress);
 
     self->ctx_btn_item_terminal = create_ctx_action_button(
-        ">_  Open Terminal Here", "", FALSE, G_CALLBACK(on_ctx_item_terminal_clicked), self);
+        "utilities-terminal-symbolic", "Open Terminal Here", "", FALSE, G_CALLBACK(on_ctx_item_terminal_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_item_terminal);
 
     self->ctx_btn_item_newwin = create_ctx_action_button(
-        "🗔  Open in New Window", "Ctrl+N", FALSE, G_CALLBACK(on_ctx_item_newwin_clicked), self);
+        "window-new-symbolic", "Open in New Window", "Ctrl+N", FALSE, G_CALLBACK(on_ctx_item_newwin_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_item_newwin);
 
     self->ctx_btn_restore_trash = create_ctx_action_button(
-        "↺  Restore from Trash", "", FALSE, G_CALLBACK(on_ctx_restore_trash_clicked), self);
+        "edit-undo-symbolic", "Restore from Trash", "", FALSE, G_CALLBACK(on_ctx_restore_trash_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_restore_trash);
 
     gtk_box_append(GTK_BOX(self->ctx_item_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
     gtk_box_append(GTK_BOX(self->ctx_item_box),
-        create_ctx_action_button("📋  Copy", "Ctrl+C", FALSE, G_CALLBACK(on_ctx_copy_clicked), self));
+        create_ctx_action_button("edit-copy-symbolic", "Copy", "Ctrl+C", FALSE, G_CALLBACK(on_ctx_copy_clicked), self));
     self->ctx_btn_cut = create_ctx_action_button(
-        "✂  Cut", "Ctrl+X", FALSE, G_CALLBACK(on_ctx_cut_clicked), self);
+        "edit-cut-symbolic", "Cut", "Ctrl+X", FALSE, G_CALLBACK(on_ctx_cut_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_cut);
     gtk_box_append(GTK_BOX(self->ctx_item_box),
-        create_ctx_action_button("🔗  Copy Path / URI", "Ctrl+Shift+C", FALSE, G_CALLBACK(on_ctx_copy_path_clicked), self));
+        create_ctx_action_button("insert-link-symbolic", "Copy Path / URI", "Ctrl+Shift+C", FALSE, G_CALLBACK(on_ctx_copy_path_clicked), self));
 
     gtk_box_append(GTK_BOX(self->ctx_item_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
     self->ctx_btn_rename = create_ctx_action_button(
-        "✏  Rename...", "F2", FALSE, G_CALLBACK(on_ctx_rename_clicked), self);
+        "document-edit-symbolic", "Rename...", "F2", FALSE, G_CALLBACK(on_ctx_rename_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_rename);
 
     self->ctx_btn_move_trash = create_ctx_action_button(
-        "🗑  Move to Trash", "Del", FALSE, G_CALLBACK(on_ctx_move_trash_clicked), self);
+        "user-trash-symbolic", "Move to Trash", "Del", FALSE, G_CALLBACK(on_ctx_move_trash_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_move_trash);
 
     self->ctx_btn_delete_perm = create_ctx_action_button(
-        "⚠  Delete Permanently", "Shift+Del", TRUE, G_CALLBACK(on_ctx_delete_perm_clicked), self);
+        "edit-delete-symbolic", "Delete Permanently", "Shift+Del", TRUE, G_CALLBACK(on_ctx_delete_perm_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_item_box), self->ctx_btn_delete_perm);
 
     gtk_box_append(GTK_BOX(self->ctx_item_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
     gtk_box_append(GTK_BOX(self->ctx_item_box),
-        create_ctx_action_button("ⓘ  Toggle Inspector", "Ctrl+I", FALSE, G_CALLBACK(on_ctx_inspector_clicked), self));
+        create_ctx_action_button("dialog-information-symbolic", "Toggle Inspector", "Ctrl+I", FALSE, G_CALLBACK(on_ctx_inspector_clicked), self));
 
     gtk_box_append(GTK_BOX(main_page), self->ctx_item_box);
 
     /* Directory Background Actions Box */
-    self->ctx_bg_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 3);
+    self->ctx_bg_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 1);
     gtk_widget_add_css_class(self->ctx_bg_box, "shell-popover-body");
 
     self->ctx_btn_bg_mkdir = create_ctx_action_button(
-        "+  New Folder...", "Ctrl+Shift+N", FALSE, G_CALLBACK(on_ctx_bg_mkdir_clicked), self);
+        "folder-new-symbolic", "New Folder...", "Ctrl+Shift+N", FALSE, G_CALLBACK(on_ctx_bg_mkdir_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_bg_box), self->ctx_btn_bg_mkdir);
     self->ctx_btn_bg_new_file = create_ctx_action_button(
-        "+  New Empty File...", "Ctrl+Alt+N", FALSE, G_CALLBACK(on_ctx_bg_new_file_clicked), self);
+        "document-new-symbolic", "New Empty File...", "Ctrl+Alt+N", FALSE, G_CALLBACK(on_ctx_bg_new_file_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_bg_box), self->ctx_btn_bg_new_file);
 
     self->ctx_btn_bg_paste = create_ctx_action_button(
-        "📋  Paste Here", "Ctrl+V", FALSE, G_CALLBACK(on_ctx_bg_paste_clicked), self);
+        "edit-paste-symbolic", "Paste Here", "Ctrl+V", FALSE, G_CALLBACK(on_ctx_bg_paste_clicked), self);
     gtk_box_append(GTK_BOX(self->ctx_bg_box), self->ctx_btn_bg_paste);
 
     gtk_box_append(GTK_BOX(self->ctx_bg_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
     gtk_box_append(GTK_BOX(self->ctx_bg_box),
-        create_ctx_action_button(">_  Open Terminal Here", "Ctrl+Shift+T", FALSE, G_CALLBACK(on_ctx_bg_terminal_clicked), self));
+        create_ctx_action_button("utilities-terminal-symbolic", "Open Terminal Here", "Ctrl+Shift+T", FALSE, G_CALLBACK(on_ctx_bg_terminal_clicked), self));
     gtk_box_append(GTK_BOX(self->ctx_bg_box),
-        create_ctx_action_button("🗔  Open in New Window", "Ctrl+N", FALSE, G_CALLBACK(on_ctx_bg_newwin_clicked), self));
+        create_ctx_action_button("window-new-symbolic", "Open in New Window", "Ctrl+N", FALSE, G_CALLBACK(on_ctx_bg_newwin_clicked), self));
 
     gtk_box_append(GTK_BOX(self->ctx_bg_box), gtk_separator_new(GTK_ORIENTATION_HORIZONTAL));
 
     gtk_box_append(GTK_BOX(self->ctx_bg_box),
-        create_ctx_action_button("👁  Toggle Hidden Files", "Ctrl+H", FALSE, G_CALLBACK(on_ctx_bg_hidden_clicked), self));
+        create_ctx_action_button("view-reveal-symbolic", "Toggle Hidden Files", "Ctrl+H", FALSE, G_CALLBACK(on_ctx_bg_hidden_clicked), self));
     gtk_box_append(GTK_BOX(self->ctx_bg_box),
-        create_ctx_action_button("↻  Reload Directory", "Ctrl+R", FALSE, G_CALLBACK(on_ctx_bg_reload_clicked), self));
+        create_ctx_action_button("view-refresh-symbolic", "Reload Directory", "Ctrl+R", FALSE, G_CALLBACK(on_ctx_bg_reload_clicked), self));
     gtk_box_append(GTK_BOX(self->ctx_bg_box),
-        create_ctx_action_button("ⓘ  Toggle Inspector", "Ctrl+I", FALSE, G_CALLBACK(on_ctx_inspector_clicked), self));
+        create_ctx_action_button("dialog-information-symbolic", "Toggle Inspector", "Ctrl+I", FALSE, G_CALLBACK(on_ctx_inspector_clicked), self));
 
     gtk_box_append(GTK_BOX(main_page), self->ctx_bg_box);
     gtk_stack_add_named(GTK_STACK(self->ctx_stack), main_page, "main");
@@ -723,7 +734,7 @@ files_window_open_context_menu_for_selection(KajoFilesWindow *self)
 {
     if (!self) return;
 
-    int x = gtk_widget_get_width(GTK_WIDGET(self->view_stack)) / 2;
+    int x = gtk_widget_get_width(GTK_WIDGET(self->view_stack)) / 3;
     int y = gtk_widget_get_height(GTK_WIDGET(self->view_stack)) / 3;
 
     open_context_menu_at(self, self->selected_item, x, y);

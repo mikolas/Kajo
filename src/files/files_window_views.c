@@ -260,9 +260,10 @@ files_window_views_init_breadcrumbs(KajoFilesWindow *self)
     gtk_widget_set_valign(hdr_icon, GTK_ALIGN_CENTER);
 
     self->bc_pop_hdr_lbl = gtk_label_new("FOLDER");
-    gtk_widget_add_css_class(self->bc_pop_hdr_lbl, "heading");
+    gtk_widget_add_css_class(self->bc_pop_hdr_lbl, "files-ctx-title");
     gtk_widget_set_hexpand(self->bc_pop_hdr_lbl, TRUE);
-    gtk_widget_set_halign(self->bc_pop_hdr_lbl, GTK_ALIGN_START);
+    gtk_widget_set_halign(self->bc_pop_hdr_lbl, GTK_ALIGN_FILL);
+    gtk_label_set_xalign(GTK_LABEL(self->bc_pop_hdr_lbl), 0.0f);
     gtk_widget_set_valign(self->bc_pop_hdr_lbl, GTK_ALIGN_CENTER);
     gtk_label_set_ellipsize(GTK_LABEL(self->bc_pop_hdr_lbl), PANGO_ELLIPSIZE_MIDDLE);
 
