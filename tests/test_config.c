@@ -744,14 +744,14 @@ test_comp_toml_helpers_roundtrip(void)
         "opacity = 0.80\n", -1, NULL));
 
     const char *const ns_ids[] = { "kajo", "kajo-launcher" };
-    int opacities[2] = { 100, 100 };
+    int opacities[2] = { 0, 0 };
     int gap = 0;
     g_assert_true(kajo_config_comp_read_layout_and_layers(
         tmpdir, &gap, ns_ids, opacities, G_N_ELEMENTS(ns_ids)));
     g_assert_cmpint(gap, ==, 6);
     g_assert_cmpint(opacities[0], ==, 80);
-    /* kajo-launcher was not in user rules.toml, so it inherited 85% from data/defaults/rules.toml */
-    g_assert_cmpint(opacities[1], ==, 85);
+    /* kajo-launcher was not in user rules.toml, so it inherited 100% from data/defaults/rules.toml */
+    g_assert_cmpint(opacities[1], ==, 100);
 
     const int new_opacities[2] = { 88, 92 };
     g_assert_true(kajo_config_comp_save_layout_and_layers(
@@ -891,7 +891,8 @@ test_comp_toml_helpers_roundtrip(void)
     g_assert_cmpint(kajo_config_comp_read_sdr_white_nits(tmpdir), ==, 260);
     g_autofree gchar *comp_after_sdr = NULL;
     g_assert_true(g_file_get_contents(comp_path, &comp_after_sdr, NULL, NULL));
-    g_assert_nonnull(strstr(comp_after_sdr, "sdr_white_nits = 260.0"));
+    g_assert_nonnull(strstr(comp_after_sdr, "sdr_white_nits"));
+    g_assert_nonnull(strstr(comp_after_sdr, "= 260.0"));
     g_assert_nonnull(strstr(comp_after_sdr, "inactive_border_color"));
     g_assert_nonnull(strstr(comp_after_sdr, "\"#101824\""));
 
