@@ -81,6 +81,25 @@ bool IsLightSurfaceHex(const std::string& hex);
 cef_color_variant_t ResolveWebColorSchemeVariant(int color_scheme,
                                                  bool kajo_theme_is_light);
 
+enum class TabColorSchemeOverride : int {
+  AUTO = 0,
+  LIGHT = 1,
+  DARK = 2,
+};
+
+/* Cycles per-tab prefers-color-scheme override. First click from AUTO jumps to
+ * the opposite of |default_is_dark| so the user gets an immediate change:
+ *   default_is_dark=true : AUTO -> LIGHT -> DARK -> AUTO
+ *   default_is_dark=false: AUTO -> DARK -> LIGHT -> AUTO */
+TabColorSchemeOverride NextTabColorSchemeOverride(TabColorSchemeOverride cur,
+                                                  bool default_is_dark);
+
+/* Value for CDP Emulation.setEmulatedMedia prefers-color-scheme ("", "light", "dark"). */
+const char* TabColorSchemeEmulatedMediaValue(TabColorSchemeOverride ov);
+
+/* Short uppercase label ("AUTO", "LIGHT", "DARK") for topbar toast/status. */
+const char* TabColorSchemeOverrideLabel(TabColorSchemeOverride ov);
+
 /* Extracts normalized http/https origin ("https://host[:port]") or full string. */
 std::string NormalizeOrigin(const std::string& url_or_origin);
 

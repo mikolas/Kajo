@@ -339,6 +339,42 @@ cef_color_variant_t ResolveWebColorSchemeVariant(int color_scheme,
   return CEF_COLOR_VARIANT_DARK;
 }
 
+TabColorSchemeOverride NextTabColorSchemeOverride(TabColorSchemeOverride cur,
+                                                  bool default_is_dark) {
+  if (default_is_dark) {
+    switch (cur) {
+      case TabColorSchemeOverride::AUTO: return TabColorSchemeOverride::LIGHT;
+      case TabColorSchemeOverride::LIGHT: return TabColorSchemeOverride::DARK;
+      case TabColorSchemeOverride::DARK: return TabColorSchemeOverride::AUTO;
+    }
+  } else {
+    switch (cur) {
+      case TabColorSchemeOverride::AUTO: return TabColorSchemeOverride::DARK;
+      case TabColorSchemeOverride::DARK: return TabColorSchemeOverride::LIGHT;
+      case TabColorSchemeOverride::LIGHT: return TabColorSchemeOverride::AUTO;
+    }
+  }
+  return TabColorSchemeOverride::AUTO;
+}
+
+const char* TabColorSchemeEmulatedMediaValue(TabColorSchemeOverride ov) {
+  switch (ov) {
+    case TabColorSchemeOverride::LIGHT: return "light";
+    case TabColorSchemeOverride::DARK: return "dark";
+    case TabColorSchemeOverride::AUTO: return "";
+  }
+  return "";
+}
+
+const char* TabColorSchemeOverrideLabel(TabColorSchemeOverride ov) {
+  switch (ov) {
+    case TabColorSchemeOverride::LIGHT: return "LIGHT";
+    case TabColorSchemeOverride::DARK: return "DARK";
+    case TabColorSchemeOverride::AUTO: return "AUTO";
+  }
+  return "AUTO";
+}
+
 std::string NormalizeOrigin(const std::string& url_or_origin) {
   size_t pos = 0;
   if (!IsHttpOrHttps(url_or_origin, &pos)) return ToLowerAscii(url_or_origin);
