@@ -434,6 +434,63 @@ toml_datum_as_double(toml_datum_t d, double *out)
 }
 
 static void
+apply_overview_preset_to_cfg(const char *preset, KajoCompEffectsCfg *fx)
+{
+    if (!preset || !fx)
+        return;
+    if (g_ascii_strcasecmp(preset, "spring-bounce") == 0) {
+        g_strlcpy(fx->overview_mode, "spring", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 0.62;
+        fx->overview_stiffness        = 380.0;
+        g_strlcpy(fx->overview_curve, "ease-out-back", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 260;
+        fx->overview_close_bounce_pct = 60;
+    } else if (g_ascii_strcasecmp(preset, "spring-snappy") == 0) {
+        g_strlcpy(fx->overview_mode, "spring", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 0.80;
+        fx->overview_stiffness        = 620.0;
+        g_strlcpy(fx->overview_curve, "ease-out-expo", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 200;
+        fx->overview_close_bounce_pct = 30;
+    } else if (g_ascii_strcasecmp(preset, "spring-elastic") == 0) {
+        g_strlcpy(fx->overview_mode, "spring", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 0.48;
+        fx->overview_stiffness        = 320.0;
+        g_strlcpy(fx->overview_curve, "ease-out-back", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 320;
+        fx->overview_close_bounce_pct = 85;
+    } else if (g_ascii_strcasecmp(preset, "spring-smooth") == 0) {
+        g_strlcpy(fx->overview_mode, "spring", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 1.00;
+        fx->overview_stiffness        = 460.0;
+        g_strlcpy(fx->overview_curve, "ease-out-cubic", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 250;
+        fx->overview_close_bounce_pct = 0;
+    } else if (g_ascii_strcasecmp(preset, "ease-out-back") == 0) {
+        g_strlcpy(fx->overview_mode, "curve", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 0.62;
+        fx->overview_stiffness        = 380.0;
+        g_strlcpy(fx->overview_curve, "ease-out-back", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 260;
+        fx->overview_close_bounce_pct = 50;
+    } else if (g_ascii_strcasecmp(preset, "ease-out-expo") == 0) {
+        g_strlcpy(fx->overview_mode, "curve", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 1.00;
+        fx->overview_stiffness        = 460.0;
+        g_strlcpy(fx->overview_curve, "ease-out-expo", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 220;
+        fx->overview_close_bounce_pct = 0;
+    } else if (g_ascii_strcasecmp(preset, "instant") == 0) {
+        g_strlcpy(fx->overview_mode, "instant", sizeof(fx->overview_mode));
+        fx->overview_damping_ratio    = 1.00;
+        fx->overview_stiffness        = 460.0;
+        g_strlcpy(fx->overview_curve, "linear", sizeof(fx->overview_curve));
+        fx->overview_duration_ms      = 0;
+        fx->overview_close_bounce_pct = 0;
+    }
+}
+
+static void
 apply_effects_table_to_state(toml_datum_t        tab,
                              KajoCompEffectsCfg *inout_fx,
                              const char *const  *ns_ids,
@@ -565,6 +622,38 @@ apply_effects_table_to_state(toml_datum_t        tab,
                     g_strlcpy(inout_fx->resize_preset, rp.u.s, sizeof(inout_fx->resize_preset));
             }
         }
+
+        toml_datum_t anim = toml_get(tab, COMP_SEC_ANIMATIONS);
+        if (anim.type == TOML_TABLE) {
+            toml_datum_t ov = toml_get(anim, COMP_SEC_ANIM_OVERVIEW);
+            if (ov.type == TOML_TABLE) {
+                toml_datum_t pr = toml_get(ov, COMP_KEY_PRESET);
+                if (pr.type == TOML_STRING && pr.u.s && *pr.u.s) {
+                    g_strlcpy(inout_fx->overview_preset, pr.u.s, sizeof(inout_fx->overview_preset));
+                    if (g_ascii_strcasecmp(pr.u.s, "custom") != 0)
+                        apply_overview_preset_to_cfg(pr.u.s, inout_fx);
+                }
+                toml_datum_t md = toml_get(ov, COMP_KEY_MODE);
+                if (md.type == TOML_STRING && md.u.s && *md.u.s)
+                    g_strlcpy(inout_fx->overview_mode, md.u.s, sizeof(inout_fx->overview_mode));
+                double ov_v = 0.0;
+                if (toml_datum_as_double(toml_get(ov, COMP_KEY_DAMPING_RATIO), &ov_v) &&
+                    ov_v >= 0.35 && ov_v <= 1.30)
+                    inout_fx->overview_damping_ratio = ov_v;
+                if (toml_datum_as_double(toml_get(ov, COMP_KEY_STIFFNESS), &ov_v) &&
+                    ov_v >= 150.0 && ov_v <= 900.0)
+                    inout_fx->overview_stiffness = ov_v;
+                toml_datum_t cv = toml_get(ov, COMP_KEY_CURVE);
+                if (cv.type == TOML_STRING && cv.u.s && *cv.u.s)
+                    g_strlcpy(inout_fx->overview_curve, cv.u.s, sizeof(inout_fx->overview_curve));
+                toml_datum_t dur = toml_get(ov, COMP_KEY_DURATION_MS);
+                if (dur.type == TOML_INT64 && dur.u.int64 >= 0 && dur.u.int64 <= 2000)
+                    inout_fx->overview_duration_ms = (int)dur.u.int64;
+                if (toml_datum_as_double(toml_get(ov, COMP_KEY_CLOSE_BOUNCE_GAIN), &ov_v) &&
+                    ov_v >= 0.0 && ov_v <= 1.0)
+                    inout_fx->overview_close_bounce_pct = (int)(ov_v * 100.0 + 0.5);
+            }
+        }
     }
 
     if (ns_ids && inout_ns_xray && n_ns > 0) {
@@ -647,6 +736,13 @@ kajo_config_comp_read_effects(const char         *config_dir,
         out_fx->close_duration_ms          = 200;
         g_strlcpy(out_fx->close_curve, "ease-out-quad", sizeof(out_fx->close_curve));
         g_strlcpy(out_fx->resize_preset, "default", sizeof(out_fx->resize_preset));
+        g_strlcpy(out_fx->overview_preset, "spring-bounce", sizeof(out_fx->overview_preset));
+        g_strlcpy(out_fx->overview_mode, "spring", sizeof(out_fx->overview_mode));
+        out_fx->overview_damping_ratio    = 0.62;
+        out_fx->overview_stiffness        = 380.0;
+        g_strlcpy(out_fx->overview_curve, "ease-out-back", sizeof(out_fx->overview_curve));
+        out_fx->overview_duration_ms      = 260;
+        out_fx->overview_close_bounce_pct = 60;
     }
     if (ns_ids && inout_ns_xray) {
         for (size_t i = 0; i < n_ns; i++)
@@ -817,6 +913,30 @@ kajo_config_comp_save_effects(const char               *config_dir,
         kajo_toml_append_quoted_string(tr_rhs, fx->resize_preset[0] ? fx->resize_preset : "default");
         kajo_toml_patch_or_insert_scalar(comp_doc, sec_tr, COMP_KEY_RESIZE_PRESET, tr_rhs->str);
         g_string_free(tr_rhs, TRUE);
+
+        const char *sec_ov = COMP_SEC_ANIMATIONS "." COMP_SEC_ANIM_OVERVIEW;
+        GString *ov_rhs = g_string_new(NULL);
+        kajo_toml_append_quoted_string(ov_rhs, fx->overview_preset[0] ? fx->overview_preset : "spring-bounce");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_PRESET, ov_rhs->str);
+        g_string_truncate(ov_rhs, 0);
+        kajo_toml_append_quoted_string(ov_rhs, fx->overview_mode[0] ? fx->overview_mode : "spring");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_MODE, ov_rhs->str);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f",
+                        CLAMP(fx->overview_damping_ratio > 0.0 ? fx->overview_damping_ratio : 0.62, 0.35, 1.30));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_DAMPING_RATIO, num_buf);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.1f",
+                        CLAMP(fx->overview_stiffness > 0.0 ? fx->overview_stiffness : 380.0, 150.0, 900.0));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_STIFFNESS, num_buf);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_EPSILON, "0.0005");
+        g_string_truncate(ov_rhs, 0);
+        kajo_toml_append_quoted_string(ov_rhs, fx->overview_curve[0] ? fx->overview_curve : "ease-out-back");
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_CURVE, ov_rhs->str);
+        g_autofree gchar *ov_dur_rhs = g_strdup_printf("%d", CLAMP(fx->overview_duration_ms, 0, 2000));
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_DURATION_MS, ov_dur_rhs);
+        g_ascii_formatd(num_buf, sizeof(num_buf), "%.2f",
+                        (double)CLAMP(fx->overview_close_bounce_pct, 0, 100) / 100.0);
+        kajo_toml_patch_or_insert_scalar(comp_doc, sec_ov, COMP_KEY_CLOSE_BOUNCE_GAIN, num_buf);
+        g_string_free(ov_rhs, TRUE);
 
         gboolean ok_comp = g_file_set_contents(comp_path, comp_doc->str, (gssize)comp_doc->len, error);
         g_string_free(comp_doc, TRUE);

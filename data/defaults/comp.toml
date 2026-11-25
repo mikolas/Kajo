@@ -30,6 +30,16 @@ damping_ratio = 0.75
 stiffness = 323.0
 epsilon = 0.0001
 
+[animations.overview]
+preset = "spring-bounce"                # "spring-bounce" | "spring-snappy" | "spring-elastic" | "spring-smooth" | "ease-out-back" | "ease-out-expo" | "instant" | "custom"
+mode = "spring"                         # "spring" | "curve" | "instant"
+damping_ratio = 0.62
+stiffness = 380.0
+epsilon = 0.0005
+curve = "ease-out-back"                 # "ease-out-back" | "ease-out-expo" | "ease-out-cubic" | "ease-out-quad" | "linear"
+duration_ms = 260
+close_bounce_gain = 0.60
+
 [effects]
 enabled = true
 dither = true

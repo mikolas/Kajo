@@ -1044,6 +1044,81 @@ test_effects_and_shadow_rules(void)
 }
 
 static void
+test_overview_anim_config(void)
+{
+    gchar *tmp = g_dir_make_tmp("kajo-ov-cfg-XXXXXX", NULL);
+    g_assert_nonnull(tmp);
+    gchar *p_cfg = g_build_filename(tmp, "comp.toml", NULL);
+
+    const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
+    if (!root)
+        root = KAJO_SOURCE_DIR;
+    g_autofree gchar *defaults_dir = g_build_filename(root, "data", "defaults", NULL);
+
+    /* 1. Preset-only config fills preset defaults */
+    g_assert_true(g_file_set_contents(p_cfg,
+        "[animations.overview]\n"
+        "preset = \"spring-elastic\"\n", -1, NULL));
+
+    CompDiagList d;
+    comp_diag_init(&d);
+    CompConfig *cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    g_assert_nonnull(cfg);
+    g_assert_cmpuint(d.n, ==, 0);
+    g_assert_cmpint(cfg->overview_anim.preset, ==, COMP_OVERVIEW_PRESET_SPRING_ELASTIC);
+    g_assert_cmpint(cfg->overview_anim.mode, ==, COMP_OVERVIEW_ANIM_SPRING);
+    g_assert_cmpfloat_with_epsilon(cfg->overview_anim.spring.damping_ratio, 0.48, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->overview_anim.spring.stiffness, 320.0, 1e-6);
+    g_assert_cmpfloat_with_epsilon(cfg->overview_anim.close_bounce_gain, 0.85, 1e-6);
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    /* 2. Curve mode with custom override */
+    g_assert_true(g_file_set_contents(p_cfg,
+        "[animations.overview]\n"
+        "preset = \"ease-out-back\"\n"
+        "duration_ms = 340\n"
+        "close_bounce_gain = 0.25\n", -1, NULL));
+
+    comp_diag_init(&d);
+    cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    g_assert_nonnull(cfg);
+    g_assert_cmpuint(d.n, ==, 0);
+    g_assert_cmpint(cfg->overview_anim.preset, ==, COMP_OVERVIEW_PRESET_EASE_OUT_BACK);
+    g_assert_cmpint(cfg->overview_anim.mode, ==, COMP_OVERVIEW_ANIM_CURVE);
+    g_assert_cmpint(cfg->overview_anim.curve, ==, COMP_OVERVIEW_CURVE_EASE_OUT_BACK);
+    g_assert_cmpint(cfg->overview_anim.duration_ms, ==, 340);
+    g_assert_cmpfloat_with_epsilon(cfg->overview_anim.close_bounce_gain, 0.25, 1e-6);
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    /* 3. Instant mode & invalid diagnostics */
+    g_assert_true(g_file_set_contents(p_cfg,
+        "[animations.overview]\n"
+        "preset = \"bogus-preset\"\n"
+        "mode = \"bad-mode\"\n"
+        "curve = \"bad-curve\"\n"
+        "duration_ms = 9999\n"
+        "close_bounce_gain = 1.5\n", -1, NULL));
+
+    comp_diag_init(&d);
+    cfg = comp_config_load_dir(tmp, defaults_dir, NULL, COMP_MOD_SUPER, &d);
+    g_assert_nonnull(cfg);
+    g_assert_true(comp_diag_contains(&d, "[animations.overview] invalid 'preset'"));
+    g_assert_true(comp_diag_contains(&d, "[animations.overview] 'mode'"));
+    g_assert_true(comp_diag_contains(&d, "[animations.overview] invalid 'curve'"));
+    g_assert_true(comp_diag_contains(&d, "[animations.overview] 'duration_ms'"));
+    g_assert_true(comp_diag_contains(&d, "[animations.overview] 'close_bounce_gain'"));
+    comp_config_free(cfg);
+    comp_diag_clear(&d);
+
+    g_unlink(p_cfg);
+    g_free(p_cfg);
+    g_rmdir(tmp);
+    g_free(tmp);
+}
+
+static void
 test_session_portals_conf(void)
 {
     const gchar *root = g_getenv("KAJO_SOURCE_ROOT");
@@ -1150,6 +1225,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/config/multifile-merge-and-confd", test_config_multifile_merge_and_confd);
     g_test_add_func("/comp/config/greeter-filtering", test_greeter_config_filtering);
     g_test_add_func("/comp/config/effects-and-shadow-rules", test_effects_and_shadow_rules);
+    g_test_add_func("/comp/config/overview-anim", test_overview_anim_config);
     g_test_add_func("/comp/session/portals-conf", test_session_portals_conf);
     g_test_add_func("/comp/touch/gestures-and-transforms", test_touch_gestures_and_transforms);
     g_test_add_func("/comp/touch/horizontal-drag-routing", test_horizontal_drag_routing);

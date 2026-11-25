@@ -185,6 +185,14 @@ typedef struct {
     int      close_duration_ms;
     char     close_curve[32];
     char     resize_preset[32];
+
+    char     overview_preset[32];        /* "spring-bounce" .. "instant" | "custom" */
+    char     overview_mode[16];          /* "spring" | "curve" | "instant" */
+    double   overview_damping_ratio;     /* 0.35..1.30 (default 0.62) */
+    double   overview_stiffness;         /* 150..900 (default 380.0) */
+    char     overview_curve[32];         /* "ease-out-back" | "ease-out-expo" | ... */
+    int      overview_duration_ms;       /* 0..2000 (default 260) */
+    int      overview_close_bounce_pct;  /* 0..100 (default 60) */
 } KajoCompEffectsCfg;
 
 gboolean kajo_config_comp_read_effects(const char         *config_dir,

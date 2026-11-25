@@ -52,6 +52,94 @@ merge_spring_subtable(CompSpringParams *sp, toml_datum_t sub, const char *name,
         comp_diag_add(diag, src, sub.lineno, "[animations.%s] parameters out of valid range; ignored", name);
 }
 
+static void
+merge_overview_anim_subtable(CompOverviewAnimConfig *oa, toml_datum_t sub,
+                             const char *src, CompDiagList *diag)
+{
+    if (sub.type != TOML_TABLE)
+        return;
+
+    CompOverviewAnimConfig cand = *oa;
+
+    toml_datum_t pr = toml_get(sub, COMP_KEY_PRESET);
+    if (pr.type != TOML_UNKNOWN) {
+        CompOverviewPreset parsed = COMP_OVERVIEW_PRESET_SPRING_BOUNCE;
+        if (pr.type == TOML_STRING && comp_overview_preset_from_str(pr.u.s, &parsed)) {
+            if (parsed != COMP_OVERVIEW_PRESET_CUSTOM)
+                comp_overview_anim_apply_preset(&cand, parsed);
+            else
+                cand.preset = COMP_OVERVIEW_PRESET_CUSTOM;
+        } else {
+            comp_diag_add(diag, src, pr.lineno,
+                          "[animations.overview] invalid 'preset'; ignored");
+        }
+    }
+
+    toml_datum_t md = toml_get(sub, COMP_KEY_MODE);
+    if (md.type != TOML_UNKNOWN) {
+        CompOverviewAnimMode parsed_mode = COMP_OVERVIEW_ANIM_SPRING;
+        if (md.type == TOML_STRING && comp_overview_anim_mode_from_str(md.u.s, &parsed_mode)) {
+            cand.mode = parsed_mode;
+        } else {
+            comp_diag_add(diag, src, md.lineno,
+                          "[animations.overview] 'mode' must be \"spring\", \"curve\", or \"instant\"; ignored");
+        }
+    }
+
+    double v = 0.0;
+    toml_datum_t dr = toml_get(sub, COMP_KEY_DAMPING_RATIO);
+    if (dr.type != TOML_UNKNOWN) {
+        if (comp_config_datum_as_double(dr, &v))
+            cand.spring.damping_ratio = v;
+        else
+            comp_diag_add(diag, src, dr.lineno, "[animations.overview] invalid 'damping_ratio'; ignored");
+    }
+    toml_datum_t st = toml_get(sub, COMP_KEY_STIFFNESS);
+    if (st.type != TOML_UNKNOWN) {
+        if (comp_config_datum_as_double(st, &v))
+            cand.spring.stiffness = v;
+        else
+            comp_diag_add(diag, src, st.lineno, "[animations.overview] invalid 'stiffness'; ignored");
+    }
+    toml_datum_t ep = toml_get(sub, COMP_KEY_EPSILON);
+    if (ep.type != TOML_UNKNOWN) {
+        if (comp_config_datum_as_double(ep, &v))
+            cand.spring.epsilon = v;
+        else
+            comp_diag_add(diag, src, ep.lineno, "[animations.overview] invalid 'epsilon'; ignored");
+    }
+
+    toml_datum_t cv = toml_get(sub, COMP_KEY_CURVE);
+    if (cv.type != TOML_UNKNOWN) {
+        CompOverviewCurve parsed_curve = COMP_OVERVIEW_CURVE_EASE_OUT_BACK;
+        if (cv.type == TOML_STRING && comp_overview_curve_from_str(cv.u.s, &parsed_curve))
+            cand.curve = parsed_curve;
+        else
+            comp_diag_add(diag, src, cv.lineno, "[animations.overview] invalid 'curve'; ignored");
+    }
+
+    toml_datum_t dur = toml_get(sub, COMP_KEY_DURATION_MS);
+    if (dur.type != TOML_UNKNOWN) {
+        if (dur.type == TOML_INT64 && dur.u.int64 >= 0 && dur.u.int64 <= 2000)
+            cand.duration_ms = (int32_t)dur.u.int64;
+        else
+            comp_diag_add(diag, src, dur.lineno, "[animations.overview] 'duration_ms' must be in 0..2000; ignored");
+    }
+
+    toml_datum_t cb = toml_get(sub, COMP_KEY_CLOSE_BOUNCE_GAIN);
+    if (cb.type != TOML_UNKNOWN) {
+        if (comp_config_datum_as_double(cb, &v) && v >= 0.0 && v <= 1.0)
+            cand.close_bounce_gain = v;
+        else
+            comp_diag_add(diag, src, cb.lineno, "[animations.overview] 'close_bounce_gain' must be in 0..1; ignored");
+    }
+
+    if (comp_overview_anim_config_valid(&cand))
+        *oa = cand;
+    else
+        comp_diag_add(diag, src, sub.lineno, "[animations.overview] parameters out of valid range; ignored");
+}
+
 void
 comp_config_merge_animations_section(CompConfig *cfg, toml_datum_t tab,
                                      const char *src, CompDiagList *diag)
@@ -76,6 +164,9 @@ comp_config_merge_animations_section(CompConfig *cfg, toml_datum_t tab,
     merge_spring_subtable(&cfg->motion.window_movement,
                           toml_get(tab, COMP_SEC_ANIM_WINDOW_MOVEMENT),
                           COMP_SEC_ANIM_WINDOW_MOVEMENT, src, diag);
+    merge_overview_anim_subtable(&cfg->overview_anim,
+                                 toml_get(tab, COMP_SEC_ANIM_OVERVIEW),
+                                 src, diag);
 }
 
 /* ───────────────────────── [effects.*] ───────────────────────── */

@@ -57,9 +57,13 @@
 #define COMP_SEC_ANIM_WORKSPACE_SWITCH    "workspace_switch"
 #define COMP_SEC_ANIM_HORIZONTAL_SCROLL   "horizontal_scroll"
 #define COMP_SEC_ANIM_WINDOW_MOVEMENT     "window_movement"
+#define COMP_SEC_ANIM_OVERVIEW            "overview"
 #define COMP_KEY_DAMPING_RATIO            "damping_ratio"
 #define COMP_KEY_STIFFNESS                "stiffness"
 #define COMP_KEY_EPSILON                  "epsilon"
+#define COMP_KEY_PRESET                   "preset"
+#define COMP_KEY_CURVE                    "curve"
+#define COMP_KEY_CLOSE_BOUNCE_GAIN        "close_bounce_gain"
 
 /* ───────────────────────── [switcher] Keys ───────────────────────── */
 #define COMP_KEY_ACTIVE_COLOR             "active_color"

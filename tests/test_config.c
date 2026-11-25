@@ -801,6 +801,13 @@ test_comp_toml_helpers_roundtrip(void)
         .close_duration_ms          = 360,
         .close_curve                = "linear",
         .resize_preset              = "glitch-morph",
+        .overview_preset            = "spring-elastic",
+        .overview_mode              = "spring",
+        .overview_damping_ratio     = 0.48,
+        .overview_stiffness         = 320.0,
+        .overview_curve             = "ease-out-back",
+        .overview_duration_ms       = 320,
+        .overview_close_bounce_pct  = 85,
     };
     const gboolean new_xray[2] = { FALSE, TRUE };
     g_assert_true(kajo_config_comp_save_effects(
@@ -834,6 +841,13 @@ test_comp_toml_helpers_roundtrip(void)
     g_assert_cmpint(fx_out.close_duration_ms, ==, 360);
     g_assert_cmpstr(fx_out.close_curve, ==, "linear");
     g_assert_cmpstr(fx_out.resize_preset, ==, "glitch-morph");
+    g_assert_cmpstr(fx_out.overview_preset, ==, "spring-elastic");
+    g_assert_cmpstr(fx_out.overview_mode, ==, "spring");
+    g_assert_cmpfloat_with_epsilon(fx_out.overview_damping_ratio, 0.48, 1e-3);
+    g_assert_cmpfloat_with_epsilon(fx_out.overview_stiffness, 320.0, 1e-1);
+    g_assert_cmpstr(fx_out.overview_curve, ==, "ease-out-back");
+    g_assert_cmpint(fx_out.overview_duration_ms, ==, 320);
+    g_assert_cmpint(fx_out.overview_close_bounce_pct, ==, 85);
     g_assert_false(read_xray[0]);
     g_assert_true(read_xray[1]);
 

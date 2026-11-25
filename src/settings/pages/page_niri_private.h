@@ -15,6 +15,9 @@
 #define N_CLOSE_PRESETS   7
 #define N_RESIZE_PRESETS  4
 #define N_COLOR_FILTERS   6
+#define N_OVERVIEW_PRESETS 8
+#define N_OVERVIEW_MODES   3
+#define N_OVERVIEW_CURVES  5
 
 typedef struct {
     const char *id;
@@ -22,6 +25,17 @@ typedef struct {
     int         rec_duration_ms;
     guint       rec_curve_idx;
 } ShaderPreset;
+
+typedef struct {
+    const char *id;
+    const char *label;
+    guint       mode_idx;         /* 0=spring, 1=curve, 2=instant */
+    double      damping_ratio;
+    double      stiffness;
+    guint       curve_idx;
+    int         duration_ms;
+    int         close_bounce_pct;
+} OverviewAnimPreset;
 
 typedef struct _SettingsPageNiri {
     GtkBox parent_instance;
@@ -43,6 +57,20 @@ typedef struct _SettingsPageNiri {
     GtkWidget *combo_close_curve;
 
     GtkWidget *combo_shader_resize;
+
+    GtkWidget *row_overview_preset;
+    GtkWidget *combo_overview_preset;
+    GtkWidget *seg_overview_mode;
+    GtkWidget *row_overview_zeta;
+    GtkWidget *scale_overview_zeta;
+    GtkWidget *row_overview_stiffness;
+    GtkWidget *scale_overview_stiffness;
+    GtkWidget *row_overview_curve;
+    GtkWidget *combo_overview_curve;
+    GtkWidget *row_overview_duration;
+    GtkWidget *scale_overview_duration;
+    GtkWidget *row_overview_close_bounce;
+    GtkWidget *scale_overview_close_bounce;
 
     GtkWidget *tc_glass;
     GtkWidget *tc_shadow;
@@ -101,6 +129,14 @@ typedef struct _SettingsPageNiri {
 
     guint    resize_preset_idx;
 
+    guint    overview_preset_idx;
+    guint    overview_mode_idx;
+    double   overview_damping_ratio;
+    double   overview_stiffness;
+    guint    overview_curve_idx;
+    int      overview_duration_ms;
+    int      overview_close_bounce_pct;
+
     guint    preview_spawn_timer_id;
     gboolean syncing_ui;
 } SettingsPageNiri;
@@ -111,6 +147,9 @@ extern const ShaderPreset PAGE_NIRI_OPEN_PRESETS[N_OPEN_PRESETS];
 extern const ShaderPreset PAGE_NIRI_CLOSE_PRESETS[N_CLOSE_PRESETS];
 extern const ShaderPreset PAGE_NIRI_RESIZE_PRESETS[N_RESIZE_PRESETS];
 extern const char *const PAGE_NIRI_COLOR_FILTER_IDS[N_COLOR_FILTERS];
+extern const OverviewAnimPreset PAGE_NIRI_OVERVIEW_PRESETS[N_OVERVIEW_PRESETS];
+extern const char *const PAGE_NIRI_OVERVIEW_MODE_IDS[N_OVERVIEW_MODES + 1];
+extern const char *const PAGE_NIRI_OVERVIEW_CURVE_NAMES[N_OVERVIEW_CURVES + 1];
 
 /* Shared helper defined in page_niri.c */
 void page_niri_update_subtitles_and_telemetry(SettingsPageNiri *self);
@@ -122,6 +161,7 @@ void       page_niri_effects_sync_widgets(SettingsPageNiri *self);
 void       page_niri_effects_collect_state(SettingsPageNiri *self);
 GtkWidget *page_niri_build_card_effects(SettingsPageNiri *self);
 GtkWidget *page_niri_build_card_shaders(SettingsPageNiri *self);
+GtkWidget *page_niri_build_card_overview(SettingsPageNiri *self);
 void       page_niri_effects_connect_signals(SettingsPageNiri *self);
 
 #endif /* KAJO_SETTINGS_PAGE_NIRI_PRIVATE_H */

@@ -661,6 +661,113 @@ test_overview_layout_and_hit_test(void)
     comp_layout_free(L);
 }
 
+static void
+test_overview_animation_presets_and_interp(void)
+{
+    CompOverviewPreset p = COMP_OVERVIEW_PRESET_CUSTOM;
+    g_assert_true(comp_overview_preset_from_str("spring-bounce", &p));
+    g_assert_cmpint(p, ==, COMP_OVERVIEW_PRESET_SPRING_BOUNCE);
+    g_assert_cmpstr(comp_overview_preset_to_str(p), ==, "spring-bounce");
+
+    g_assert_true(comp_overview_preset_from_str("spring-elastic", &p));
+    g_assert_cmpint(p, ==, COMP_OVERVIEW_PRESET_SPRING_ELASTIC);
+    g_assert_cmpstr(comp_overview_preset_to_str(p), ==, "spring-elastic");
+
+    CompOverviewAnimMode m = COMP_OVERVIEW_ANIM_INSTANT;
+    g_assert_true(comp_overview_anim_mode_from_str("curve", &m));
+    g_assert_cmpint(m, ==, COMP_OVERVIEW_ANIM_CURVE);
+    g_assert_cmpstr(comp_overview_anim_mode_to_str(m), ==, "curve");
+
+    CompOverviewCurve c = COMP_OVERVIEW_CURVE_LINEAR;
+    g_assert_true(comp_overview_curve_from_str("ease-out-back", &c));
+    g_assert_cmpint(c, ==, COMP_OVERVIEW_CURVE_EASE_OUT_BACK);
+    g_assert_cmpstr(comp_overview_curve_to_str(c), ==, "ease-out-back");
+
+    CompOverviewAnimConfig cfg;
+    comp_overview_anim_config_defaults(&cfg);
+    g_assert_true(comp_overview_anim_config_valid(&cfg));
+    g_assert_cmpint(cfg.preset, ==, COMP_OVERVIEW_PRESET_SPRING_BOUNCE);
+    g_assert_cmpint(cfg.mode, ==, COMP_OVERVIEW_ANIM_SPRING);
+
+    /* Verify spring-bounce overshoots past 1.0 (~8.5%) and settles cleanly */
+    CompSpring sp;
+    comp_spring_init(&sp, &cfg.spring, 0.0, 1.0, 0.0);
+    double max_val = 0.0;
+    for (double dt = 0.0; dt <= 1.0; dt += 0.002) {
+        double v = comp_spring_value(&sp, dt);
+        if (v > max_val)
+            max_val = v;
+    }
+    g_assert_cmpfloat(max_val, >, 1.05);
+    g_assert_cmpfloat(max_val, <, 1.15);
+
+    /* Verify ease-out-back curve endpoints and overshoot */
+    g_assert_cmpfloat_with_epsilon(comp_overview_eval_curve(COMP_OVERVIEW_CURVE_EASE_OUT_BACK, 0.0), 0.0, 1e-6);
+    g_assert_cmpfloat_with_epsilon(comp_overview_eval_curve(COMP_OVERVIEW_CURVE_EASE_OUT_BACK, 1.0), 1.0, 1e-6);
+    g_assert_cmpfloat(comp_overview_eval_curve(COMP_OVERVIEW_CURVE_EASE_OUT_BACK, 0.65), >, 1.05);
+
+    /* Pure interpolation checks across t ∈ [-0.08, 1.15] */
+    CompOverviewWsBand b0 = {
+        .ws_index = 0,
+        .band = { 24.0, 60.0, 1598.0, 420.0 },
+    };
+    CompOverviewWsBand b1 = {
+        .ws_index = 1,
+        .band = { 24.0, 496.0, 1598.0, 420.0 },
+    };
+    CompOverviewCard card = {
+        .id = 1,
+        .ws_index = 0,
+        .card = { 100.0, 100.0, 320.0, 200.0 },
+        .thumb = { 102.0, 102.0, 316.0, 176.0 },
+        .caption = { 102.0, 279.0, 316.0, 20.0 },
+    };
+    CompRect live_rect = { 6.0, 38.0, 814.0, 985.0 };
+
+    double ts[5] = { -0.08, 0.0, 0.5, 1.0, 1.15 };
+    for (int i = 0; i < 5; i++) {
+        double t = ts[i];
+        float bg_a = -1.0f;
+        comp_overview_interp_backdrop(t, &bg_a);
+        g_assert_cmpfloat(bg_a, >=, 0.0f);
+        g_assert_cmpfloat(bg_a, <=, 0.9201f);
+
+        CompOverviewHeaderAnim ha;
+        comp_overview_interp_header(t, &ha);
+        g_assert_cmpfloat(ha.alpha, >=, 0.0f);
+        g_assert_cmpfloat(ha.alpha, <=, 1.0f);
+
+        CompOverviewBandAnim ba0, ba1;
+        comp_overview_interp_band(t, VW, VH, 0, &b0, &b0, &ba0);
+        comp_overview_interp_band(t, VW, VH, 0, &b0, &b1, &ba1);
+        g_assert_cmpfloat(ba0.alpha, >=, 0.0f);
+        g_assert_cmpfloat(ba0.alpha, <=, 1.0f);
+        g_assert_cmpfloat(ba1.badge_alpha, >=, 0.0f);
+        g_assert_cmpfloat(ba1.badge_alpha, <=, 1.0f);
+
+        CompOverviewCardAnim ca;
+        comp_overview_interp_card(t, VW, VH, 0, 0.60, &b0, &ba0, &card, true, live_rect, &ca);
+        g_assert_cmpfloat(ca.card_alpha, >=, 0.0f);
+        g_assert_cmpfloat(ca.card_alpha, <=, 1.0f);
+        g_assert_cmpfloat(ca.thumb_alpha, >=, 0.0f);
+        g_assert_cmpfloat(ca.thumb_alpha, <=, 1.0f);
+        g_assert_cmpfloat(ca.thumb.w, >=, 16.0);
+        g_assert_cmpfloat(ca.thumb.h, >=, 16.0);
+
+        if (i == 0) {
+            g_assert_cmpfloat(ca.thumb.w, >, live_rect.w);
+        } else if (i == 1) {
+            g_assert_cmpfloat_with_epsilon(ca.thumb.x, live_rect.x, 1e-6);
+            g_assert_cmpfloat_with_epsilon(ca.thumb.w, live_rect.w, 1e-6);
+        } else if (i == 3) {
+            g_assert_cmpfloat_with_epsilon(ca.thumb.x, card.thumb.x, 1e-6);
+            g_assert_cmpfloat_with_epsilon(ca.thumb.w, card.thumb.w, 1e-6);
+        } else if (i == 4) {
+            g_assert_cmpfloat(ca.thumb.w, <, card.thumb.w);
+        }
+    }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -679,6 +786,7 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/layout/touch-and-touchpad", test_touch_gestures_and_touchpad_swipes);
     g_test_add_func("/comp/layout/column-set-width-move-bounds", test_column_set_width_move_and_bounds);
     g_test_add_func("/comp/layout/overview-layout-and-hit-test", test_overview_layout_and_hit_test);
+    g_test_add_func("/comp/layout/overview-anim", test_overview_animation_presets_and_interp);
     g_test_add_func("/comp/layout/monkey", test_monkey);
     return g_test_run();
 }

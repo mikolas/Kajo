@@ -1031,7 +1031,7 @@ desktop_settings_window_new_with_page(GtkApplication *app, const char *initial_p
                     "notifications toast banner timeout history dnd do not disturb alert daemon focus");
     append_nav_item(nav, "❖", "Compositor & Effects", "COMP", NULL,
                     "Compositor Layout, Glass, Shadows, Color Filters & Transitions", "niri",
-                    "compositor niri kajo-comp rules layout gaps border blur glass shadow dim xray color filter night light window floating tiling kdl toml shader shaders glsl animation transitions");
+                    "compositor niri kajo-comp rules layout gaps border blur glass shadow dim xray color filter night light window floating tiling kdl toml shader shaders glsl animation transitions overview spring bounce zoom");
 
     /* Category 3: KAJO SUITE APPS */
     add_sidebar_category(nav, "KAJO SUITE APPS");
