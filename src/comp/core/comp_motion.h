@@ -73,6 +73,9 @@ size_t      comp_motion_sample(const CompMotion *m, double now,
 /* True while a drag is active or any camera, strip or window spring has not settled. */
 bool        comp_motion_is_animating(const CompMotion *m, double now);
 
+/* Immediately snap strip, cameras, and windows to their current targets. */
+void        comp_motion_snap(CompMotion *m, double now);
+
 /* Distance between the origins of adjacent workspaces (px), valid after a sync. */
 double      comp_motion_workspace_step(const CompMotion *m);
 

@@ -545,6 +545,52 @@ test_gesture_snap_picks(void)
     g_assert_cmpfloat_with_epsilon(comp_gesture_rubber_band(-5.0, 0.0, 10.0, 0.0), 0.0, 1e-12);
 }
 
+static void
+test_motion_snap_commits_target_camera_immediately(void)
+{
+    CompLayout *L = new_layout();
+    CompMotion *M = new_motion(true);
+    /* WS 0 has 3 half-width columns (col 2 is off-screen right initially);
+     * WS 1 has window 4. */
+    g_assert_true(comp_layout_add_window(L, 1));
+    g_assert_true(comp_layout_add_window(L, 2));
+    g_assert_true(comp_layout_add_window(L, 3));
+    g_assert_true(comp_layout_focus_workspace_index(L, 1));
+    g_assert_true(comp_layout_add_window(L, 4));
+    g_assert_true(comp_motion_sync(M, L, VW, VH, 0.0));
+
+    /* Simulate overview commit: switch from WS 1 straight to win 1 on WS 0 and snap. */
+    g_assert_true(comp_layout_focus_window(L, 1));
+    g_assert_true(comp_motion_sync(M, L, VW, VH, 1.0));
+    g_assert_true(comp_motion_is_animating(M, 1.0));
+
+    comp_motion_snap(M, 1.0);
+    g_assert_false(comp_motion_is_animating(M, 1.0));
+
+    CompWindowGeometry g[8];
+    double view_x = -1.0, ws_y = -1.0;
+    size_t n = comp_motion_sample(M, 1.0, g, 8, &view_x, &ws_y);
+    g_assert_cmpuint(n, ==, 4);
+    g_assert_cmpfloat_with_epsilon(ws_y, 0.0, 1e-6);
+
+    const CompWindowGeometry *w1 = NULL;
+    const CompWindowGeometry *w4 = NULL;
+    for (size_t i = 0; i < n; i++) {
+        if (g[i].id == 1) w1 = &g[i];
+        if (g[i].id == 4) w4 = &g[i];
+    }
+    g_assert_nonnull(w1);
+    g_assert_true(w1->visible);
+    g_assert_cmpfloat(w1->rect.x, >=, 0.0);
+    g_assert_cmpfloat(w1->rect.x + w1->rect.w, <=, VW + 1.0);
+
+    g_assert_nonnull(w4);
+    g_assert_false(w4->visible);
+
+    comp_motion_free(M);
+    comp_layout_free(L);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -562,5 +608,6 @@ main(int argc, char *argv[])
     g_test_add_func("/comp/gesture/velocity-and-projection", test_gesture_velocity_and_projection);
     g_test_add_func("/comp/gesture/snap-picks", test_gesture_snap_picks);
     g_test_add_func("/comp/gesture/release-snapshot", test_gesture_release_snapshot);
+    g_test_add_func("/comp/motion/snap-commits-target-camera", test_motion_snap_commits_target_camera_immediately);
     return g_test_run();
 }

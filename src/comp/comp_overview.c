@@ -330,7 +330,9 @@ overview_capture_live_rects(CompOverview *ov, double now_s)
     for (size_t i = 0; i < n_ws_wins && ov->n_live_rects < OVERVIEW_MAX_CARDS; i++) {
         CompWinId id = ws_geoms[i].id;
         CompRect r = {
-            .x = ws_geoms[i].fullscreen ? 0.0 : ws_geoms[i].rect.x + work.x - view_x,
+            .x = ws_geoms[i].fullscreen ? 0.0
+                 : (ws_geoms[i].floating ? ws_geoms[i].rect.x + work.x
+                                         : ws_geoms[i].rect.x + work.x - view_x),
             .y = ws_geoms[i].fullscreen ? 0.0 : ws_geoms[i].rect.y + work.y,
             .w = ws_geoms[i].fullscreen ? full_vw : ws_geoms[i].rect.w,
             .h = ws_geoms[i].fullscreen ? full_vh : ws_geoms[i].rect.h,
@@ -366,11 +368,60 @@ lookup_live_rect(const CompOverview *ov, CompWinId id, CompRect *out_rect)
 static void
 refresh_card_live_rects(CompOverview *ov)
 {
+    for (size_t i = 0; i < ov->n_band_nodes; i++) {
+        OverviewBandNode *bn = &ov->band_nodes[i];
+        bn->is_selected = (bn->ws_index == ov->selected_ws);
+    }
     for (size_t i = 0; i < ov->n_card_nodes; i++) {
         OverviewCardNode *cn = &ov->card_nodes[i];
+        cn->is_selected   = (cn->id == ov->selected_win && cn->ws_index == ov->selected_ws);
         cn->has_live_rect = (cn->ws_index == ov->anchor_ws) &&
                             lookup_live_rect(ov, cn->id, &cn->live_rect);
     }
+}
+
+static void
+raise_card_node(OverviewCardNode *cn)
+{
+    if (!cn)
+        return;
+    if (cn->bg)
+        wlr_scene_node_raise_to_top(&cn->bg->node);
+    if (cn->mirror && cn->mirror->thumb_buf)
+        wlr_scene_node_raise_to_top(&cn->mirror->thumb_buf->node);
+    if (cn->caption_buf)
+        wlr_scene_node_raise_to_top(&cn->caption_buf->node);
+    for (int i = 0; i < 4; i++) {
+        if (cn->border[i])
+            wlr_scene_node_raise_to_top(&cn->border[i]->node);
+    }
+}
+
+static void
+overview_raise_anchor_cards(CompOverview *ov, CompWinId focus_id)
+{
+    if (!ov || !ov->tree)
+        return;
+    OverviewCardNode *focused = NULL;
+    for (size_t i = 0; i < ov->n_card_nodes; i++) {
+        OverviewCardNode *cn = &ov->card_nodes[i];
+        if (cn->ws_index == ov->anchor_ws) {
+            if (focus_id != 0 && cn->id == focus_id)
+                focused = cn;
+            else
+                raise_card_node(cn);
+        }
+    }
+    if (focused)
+        raise_card_node(focused);
+    if (ov->hdr_rect)
+        wlr_scene_node_raise_to_top(&ov->hdr_rect->node);
+    if (ov->hdr_line)
+        wlr_scene_node_raise_to_top(&ov->hdr_line->node);
+    if (ov->hdr_title_buf)
+        wlr_scene_node_raise_to_top(&ov->hdr_title_buf->node);
+    if (ov->hdr_hint_buf)
+        wlr_scene_node_raise_to_top(&ov->hdr_hint_buf->node);
 }
 
 static void
@@ -734,6 +785,7 @@ overview_rebuild_scene(CompOverview *ov)
     overview_build_header(ov, iw, n_ws, scale, accent);
     overview_build_bands(ov, out_h, scale, accent);
     overview_build_cards(ov, out_h, scale, accent);
+    overview_raise_anchor_cards(ov, ov->selected_win);
 
     overview_apply_frame(ov, ov->progress);
     comp_server_schedule_frames(s);
@@ -862,6 +914,7 @@ comp_overview_open(CompServer *s)
 
         overview_capture_live_rects(ov, now_s);
         overview_rebuild_scene(ov);
+        overview_raise_anchor_cards(ov, ov->initial_win);
     }
 
     if (s->seat)
@@ -892,19 +945,25 @@ comp_overview_close(CompServer *s, bool commit)
         } else if (target_ws < comp_layout_workspace_count(s->layout)) {
             changed = comp_layout_focus_workspace_index(s->layout, target_ws);
         }
+        comp_window_relayout(s);
         if (changed) {
-            comp_window_relayout(s);
             comp_ipc_emit_workspaces(s);
             comp_ipc_emit_windows(s);
-        } else {
-            comp_server_restore_keyboard_focus(s);
+        }
+        if (s->motion) {
+            comp_motion_snap(s->motion, now_s);
+            comp_window_tick_frame(s, now_s);
         }
         ov->anchor_ws = target_ws;
         overview_capture_live_rects(ov, now_s);
         refresh_card_live_rects(ov);
+        overview_raise_anchor_cards(ov, target_win);
     } else {
         comp_server_restore_keyboard_focus(s);
         ov->anchor_ws = ov->initial_ws;
+        overview_capture_live_rects(ov, now_s);
+        refresh_card_live_rects(ov);
+        overview_raise_anchor_cards(ov, ov->initial_win);
     }
 
     comp_input_refresh_pointer_focus(s, (uint32_t)(now_s * 1000.0));
