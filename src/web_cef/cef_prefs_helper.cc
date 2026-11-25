@@ -9,6 +9,7 @@
 #include <fstream>
 #include <sstream>
 
+#include "config/kajo_config_types.h"
 #include "web_cef/cef_site_util.h"
 
 namespace kajo_web {
@@ -314,6 +315,28 @@ cef_color_t ParseHexColorArgb(const std::string& hex, cef_color_t fallback) {
   const uint8_t g = static_cast<uint8_t>((vals[2] << 4) | vals[3]);
   const uint8_t b = static_cast<uint8_t>((vals[4] << 4) | vals[5]);
   return CefColorSetARGB(255, r, g, b);
+}
+
+cef_color_t ContentBrowserDefaultBackgroundColor() {
+  return 0;
+}
+
+bool IsLightSurfaceHex(const std::string& hex) {
+  const cef_color_t surf = ParseHexColorArgb(
+      hex, CefColorSetARGB(255, 0x14, 0x14, 0x14));
+  const double lum = (0.2126 * CefColorGetR(surf) +
+                      0.7152 * CefColorGetG(surf) +
+                      0.0722 * CefColorGetB(surf)) / 255.0;
+  return lum > 0.5;
+}
+
+cef_color_variant_t ResolveWebColorSchemeVariant(int color_scheme,
+                                                 bool kajo_theme_is_light) {
+  if (color_scheme == KAJO_WEB_SCHEME_LIGHT ||
+      (color_scheme == KAJO_WEB_SCHEME_FOLLOW_KAJO && kajo_theme_is_light)) {
+    return CEF_COLOR_VARIANT_LIGHT;
+  }
+  return CEF_COLOR_VARIANT_DARK;
 }
 
 std::string NormalizeOrigin(const std::string& url_or_origin) {

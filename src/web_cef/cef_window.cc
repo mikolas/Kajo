@@ -593,7 +593,7 @@ void KajoBrowserWindow::RefreshStorageCache() {
 
 CefBrowserSettings KajoBrowserWindow::MakeContentBrowserSettings() const {
   CefBrowserSettings bs;
-  bs.background_color = CefColorSetARGB(255, 0x14, 0x14, 0x14);
+  bs.background_color = ContentBrowserDefaultBackgroundColor();
   bs.default_font_size = default_font_size_px_;
   bs.default_fixed_font_size = mono_font_size_px_;
   bs.minimum_font_size = min_font_size_px_;
@@ -612,13 +612,7 @@ void KajoBrowserWindow::ReloadThemeAndConfig() {
     heading_size_px_ = CLAMP(t->font_heading_size_px, 10, 18);
     sub_size_px_ = CLAMP(t->font_subtitle_size_px, 10, 18);
     badge_size_px_ = CLAMP(t->font_badge_size_px, 9, 16);
-    const cef_color_t surf = ParseHexColorArgb(
-        t->surface_base ? t->surface_base : "#141414",
-        CefColorSetARGB(255, 0x14, 0x14, 0x14));
-    const double lum = (0.2126 * CefColorGetR(surf) +
-                        0.7152 * CefColorGetG(surf) +
-                        0.0722 * CefColorGetB(surf)) / 255.0;
-    kajo_theme_is_light_ = (lum > 0.5);
+    kajo_theme_is_light_ = IsLightSurfaceHex(t->surface_base ? t->surface_base : "#141414");
     kajo_theme_cfg_unref(t);
   }
 
@@ -710,11 +704,8 @@ void KajoBrowserWindow::UpdateWindowBorderColor() {
 
 void KajoBrowserWindow::ApplyColorSchemeToContext() {
   if (!request_context_) return;
-  cef_color_variant_t variant = CEF_COLOR_VARIANT_DARK;
-  if (color_scheme_ == KAJO_WEB_SCHEME_LIGHT ||
-      (color_scheme_ == KAJO_WEB_SCHEME_FOLLOW_KAJO && kajo_theme_is_light_)) {
-    variant = CEF_COLOR_VARIANT_LIGHT;
-  }
+  const cef_color_variant_t variant =
+      ResolveWebColorSchemeVariant(color_scheme_, kajo_theme_is_light_);
   const cef_color_t tint = ParseHexColorArgb(
       cfg_.private_mode ? "#b146c2" : profile_accent_,
       CefColorSetARGB(255, 0x00, 0x78, 0xd4));
