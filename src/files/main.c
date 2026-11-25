@@ -103,6 +103,7 @@ main(int argc, char *argv[])
     }
 
     if (portal_mode) {
+        kajo_app_disable_portal_client();
         g_set_prgname("org.kajo.Files.Chooser");
         g_set_application_name("Kajo File Chooser");
 

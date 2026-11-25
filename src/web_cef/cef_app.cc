@@ -179,9 +179,12 @@ std::string DetectSystemWidevinePath() {
 void EnsureWidevineComponentHint(const std::string& root_cache_dir,
                                  const std::string& widevine_dir) {
   if (root_cache_dir.empty() || widevine_dir.empty()) return;
+  g_autofree gchar* hint_dir =
+      g_build_filename(root_cache_dir.c_str(), "WidevineCdm", nullptr);
   g_autofree gchar* hint_path =
-      g_build_filename(root_cache_dir.c_str(), "latest-component-updated-widevine-cdm", nullptr);
+      g_build_filename(hint_dir, "latest-component-updated-widevine-cdm", nullptr);
   if (g_file_test(hint_path, G_FILE_TEST_EXISTS)) return;
+  g_mkdir_with_parents(hint_dir, 0700);
   std::string body = "{\"Path\":\"" + JsonEscape(widevine_dir) + "\"}";
   g_file_set_contents(hint_path, body.c_str(), static_cast<gssize>(body.size()), nullptr);
 }

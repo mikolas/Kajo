@@ -1125,9 +1125,13 @@ test_session_portals_conf(void)
     g_assert_no_error(err);
     g_autofree gchar *sd_partof = g_key_file_get_string(kf_sd, "Unit", "PartOf", &err);
     g_assert_no_error(err);
+    g_autofree gchar *sd_env = g_key_file_get_string(kf_sd, "Service", "Environment", &err);
+    g_assert_no_error(err);
     g_assert_cmpstr(sd_type, ==, "dbus");
     g_assert_cmpstr(sd_bus, ==, pf_bus);
     g_assert_cmpstr(sd_partof, ==, "graphical-session.target");
+    g_assert_nonnull(strstr(sd_env, "GDK_DEBUG=no-portals"));
+    g_assert_nonnull(strstr(sd_env, "GIO_USE_PORTALS=0"));
 }
 
 int
