@@ -253,9 +253,8 @@ private:
   void DestroyTabView(CefRefPtr<CefBrowserView> view,
                       CefRefPtr<CefBrowser> browser,
                       CefRefPtr<CefTabClient> client);
-  bool SuspendTab(uint64_t tab_id,
-                  bool manual,
-                  bool allow_inactive_window_active = false);
+  bool HasGrantedNotificationsForTab(const KajoWebTabMeta* t);
+  bool SuspendTab(uint64_t tab_id, bool manual = false);
   void SweepIdleTabs();
   void ScheduleIdleSuspendTimer();
   void PeekRailTemporarily(int duration_ms);
@@ -444,7 +443,6 @@ private:
   bool enable_webgl_ = true;
   bool enable_webrtc_ = true;
   bool window_active_ = true;
-  gint64 window_inactive_since_us_ = 0;
   bool https_only_ = false;
   std::string download_dir_;
   bool ask_download_location_ = false;

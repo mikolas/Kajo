@@ -289,6 +289,11 @@ web_model_insert_tab_at(KajoWebModel *m,
     g_ptr_array_insert(m->tabs, (gint)insert_at, t);
 
     if (activate || m->tabs->len == 1) {
+        if (m->active_id != 0 && m->active_id != t->id) {
+            KajoWebTabMeta *prev = web_model_find_tab(m, m->active_id);
+            if (prev)
+                prev->last_active_us = now_us;
+        }
         m->active_id = t->id;
         mru_bump(m, t->id);
     } else {
