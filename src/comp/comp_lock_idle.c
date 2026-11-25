@@ -225,6 +225,7 @@ handle_new_session_lock(void *owner, void *data)
 
     s->locked      = true;
     s->active_lock = lock;
+    comp_overview_close_immediate(s);
     comp_window_destroy_capture_sources(s);
     comp_lock_idle_reconfigure_output(s);
     comp_layer_arrange(s);

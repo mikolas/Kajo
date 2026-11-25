@@ -23,6 +23,7 @@
 #include "comp_fx_core.h"
 #include "comp_layout.h"
 #include "comp_motion.h"
+#include "comp_overview_core.h"
 #include "comp_rules.h"
 
 #include <stdbool.h>
@@ -122,8 +123,9 @@ typedef struct CompConfig {
     bool                 switcher_active_tracks_accent;
     float                switcher_urgent_rgba[4];
 
-    CompMotionConfig     motion;
-    CompFxConfig         fx;
+    CompMotionConfig       motion;
+    CompOverviewAnimConfig overview_anim;
+    CompFxConfig           fx;
 
     char                *screenshot_path;
     bool                 screenshot_copy;

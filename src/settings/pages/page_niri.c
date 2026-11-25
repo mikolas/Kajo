@@ -189,6 +189,14 @@ reset_niri_defaults_in_memory(SettingsPageNiri *self)
     self->close_curve_idx   = 2;
     self->resize_preset_idx = 0;
 
+    self->overview_preset_idx       = 0;
+    self->overview_mode_idx         = 0;
+    self->overview_damping_ratio    = 0.62;
+    self->overview_stiffness        = 380.0;
+    self->overview_curve_idx        = 0;
+    self->overview_duration_ms      = 260;
+    self->overview_close_bounce_pct = 60;
+
     self->fx_cfg.border_px                  = 1;
     self->fx_cfg.glass_enabled              = TRUE;
     g_strlcpy(self->fx_cfg.glass_style, "frosted", sizeof(self->fx_cfg.glass_style));
@@ -334,6 +342,32 @@ load_existing_niri_config(SettingsPageNiri *self)
             break;
         }
     }
+
+    for (guint i = 0; i < N_OVERVIEW_PRESETS; i++) {
+        if (g_ascii_strcasecmp(PAGE_NIRI_OVERVIEW_PRESETS[i].id, self->fx_cfg.overview_preset) == 0) {
+            self->overview_preset_idx = i;
+            break;
+        }
+    }
+    for (guint i = 0; i < N_OVERVIEW_MODES; i++) {
+        if (g_ascii_strcasecmp(PAGE_NIRI_OVERVIEW_MODE_IDS[i], self->fx_cfg.overview_mode) == 0) {
+            self->overview_mode_idx = i;
+            break;
+        }
+    }
+    if (self->fx_cfg.overview_damping_ratio >= 0.35 && self->fx_cfg.overview_damping_ratio <= 1.30)
+        self->overview_damping_ratio = self->fx_cfg.overview_damping_ratio;
+    if (self->fx_cfg.overview_stiffness >= 150.0 && self->fx_cfg.overview_stiffness <= 900.0)
+        self->overview_stiffness = self->fx_cfg.overview_stiffness;
+    for (guint i = 0; i < N_OVERVIEW_CURVES; i++) {
+        if (g_ascii_strcasecmp(PAGE_NIRI_OVERVIEW_CURVE_NAMES[i], self->fx_cfg.overview_curve) == 0) {
+            self->overview_curve_idx = i;
+            break;
+        }
+    }
+    if (self->fx_cfg.overview_duration_ms >= 0 && self->fx_cfg.overview_duration_ms <= 2000)
+        self->overview_duration_ms = self->fx_cfg.overview_duration_ms;
+    self->overview_close_bounce_pct = CLAMP(self->fx_cfg.overview_close_bounce_pct, 0, 100);
 }
 
 /* ─── Non-Destructive KDL Animations Formatter ─── */
@@ -405,11 +439,30 @@ build_animations_kdl_block(SettingsPageNiri *self)
         "    screenshot-ui-open {\n"
         "        duration-ms 200\n"
         "        curve \"ease-out-quad\"\n"
-        "    }\n"
-        "    overview-open-close {\n"
-        "        spring damping-ratio=0.85 stiffness=800 epsilon=0.0001\n"
-        "    }\n"
-        "}\n");
+        "    }\n");
+
+    if (self->overview_mode_idx == 2) {
+        g_string_append(s, "    overview-open-close {\n        off\n    }\n");
+    } else if (self->overview_mode_idx == 1) {
+        guint oc = self->overview_curve_idx < N_OVERVIEW_CURVES ? self->overview_curve_idx : 0;
+        g_string_append_printf(s,
+            "    overview-open-close {\n"
+            "        duration-ms %d\n"
+            "        curve \"%s\"\n"
+            "    }\n",
+            self->overview_duration_ms > 0 ? self->overview_duration_ms : 260,
+            PAGE_NIRI_OVERVIEW_CURVE_NAMES[oc]);
+    } else {
+        char zeta_buf[32], stiff_buf[32];
+        g_ascii_formatd(zeta_buf, sizeof(zeta_buf), "%.2f", self->overview_damping_ratio);
+        g_ascii_formatd(stiff_buf, sizeof(stiff_buf), "%.1f", self->overview_stiffness);
+        g_string_append_printf(s,
+            "    overview-open-close {\n"
+            "        spring damping-ratio=%s stiffness=%s epsilon=0.0005\n"
+            "    }\n",
+            zeta_buf, stiff_buf);
+    }
+    g_string_append(s, "}\n");
 
     return g_string_free(s, FALSE);
 }
@@ -472,6 +525,24 @@ page_niri_update_subtitles_and_telemetry(SettingsPageNiri *self)
     if (self->row_close_shader) {
         g_autofree gchar *sub = g_strdup_printf("%dms • %s", self->close_duration_ms, PAGE_NIRI_CURVE_NAMES[close_crv]);
         boxed_row_set_subtitle(self->row_close_shader, sub);
+    }
+    if (self->row_overview_preset) {
+        g_autofree gchar *ov_sub = NULL;
+        if (self->overview_mode_idx == 2) {
+            ov_sub = g_strdup("Instant 1-frame snap • animations disabled for overview");
+        } else if (self->overview_mode_idx == 1) {
+            guint oc = self->overview_curve_idx < N_OVERVIEW_CURVES ? self->overview_curve_idx : 0;
+            ov_sub = g_strdup_printf("%dms • %s • close bounce %d%%",
+                                     self->overview_duration_ms,
+                                     PAGE_NIRI_OVERVIEW_CURVE_NAMES[oc],
+                                     self->overview_close_bounce_pct);
+        } else {
+            ov_sub = g_strdup_printf("Spring (ζ=%.2f, k=%.0f) • close bounce %d%%",
+                                     self->overview_damping_ratio,
+                                     self->overview_stiffness,
+                                     self->overview_close_bounce_pct);
+        }
+        boxed_row_set_subtitle(self->row_overview_preset, ov_sub);
     }
 
     guint cf_idx = self->color_filter_idx < N_COLOR_FILTERS ? self->color_filter_idx : 0;
@@ -633,6 +704,17 @@ save_and_reload_niri_config(SettingsPageNiri *self)
     self->fx_cfg.close_duration_ms = self->close_duration_ms;
     g_strlcpy(self->fx_cfg.close_curve, PAGE_NIRI_CURVE_NAMES[cc_i], sizeof(self->fx_cfg.close_curve));
     g_strlcpy(self->fx_cfg.resize_preset, PAGE_NIRI_RESIZE_PRESETS[rp_i].id, sizeof(self->fx_cfg.resize_preset));
+
+    guint ovp_i = self->overview_preset_idx < N_OVERVIEW_PRESETS ? self->overview_preset_idx : 0;
+    guint ovm_i = self->overview_mode_idx < N_OVERVIEW_MODES ? self->overview_mode_idx : 0;
+    guint ovc_i = self->overview_curve_idx < N_OVERVIEW_CURVES ? self->overview_curve_idx : 0;
+    g_strlcpy(self->fx_cfg.overview_preset, PAGE_NIRI_OVERVIEW_PRESETS[ovp_i].id, sizeof(self->fx_cfg.overview_preset));
+    g_strlcpy(self->fx_cfg.overview_mode, PAGE_NIRI_OVERVIEW_MODE_IDS[ovm_i], sizeof(self->fx_cfg.overview_mode));
+    self->fx_cfg.overview_damping_ratio    = self->overview_damping_ratio;
+    self->fx_cfg.overview_stiffness        = self->overview_stiffness;
+    g_strlcpy(self->fx_cfg.overview_curve, PAGE_NIRI_OVERVIEW_CURVE_NAMES[ovc_i], sizeof(self->fx_cfg.overview_curve));
+    self->fx_cfg.overview_duration_ms      = self->overview_duration_ms;
+    self->fx_cfg.overview_close_bounce_pct = self->overview_close_bounce_pct;
 
     kajo_config_comp_save_layout_and_layers(
         NULL, self->gap_px, NIRI_NS_IDS, self->ns_opacity, N_NIRI_NAMESPACES, NULL);
@@ -939,6 +1021,9 @@ build_page_niri(void)
 
     GtkWidget *card_shaders = page_niri_build_card_shaders(self);
     settings_bento_add_full(GTK_WIDGET(self), card_shaders);
+
+    GtkWidget *card_overview = page_niri_build_card_overview(self);
+    settings_bento_add_full(GTK_WIDGET(self), card_overview);
 
     sync_niri_widgets_from_state(self);
     settings_page_set_dirty(GTK_WIDGET(self), FALSE);

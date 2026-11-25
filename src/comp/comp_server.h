@@ -416,9 +416,12 @@ bool comp_switcher_handle_click(CompServer *server, double lx, double ly);
 /* comp_overview.c */
 void comp_overview_init(CompServer *server);
 bool comp_overview_is_active(const CompServer *server);
+bool comp_overview_is_animating(const CompServer *server);
 void comp_overview_open(CompServer *server);
 void comp_overview_close(CompServer *server, bool commit);
+void comp_overview_close_immediate(CompServer *server);
 void comp_overview_toggle(CompServer *server);
+bool comp_overview_tick_frame(CompServer *server, double now_s);
 void comp_overview_on_layout_changed(CompServer *server);
 bool comp_overview_handle_key(CompServer *server, uint32_t mods, uint32_t keysym);
 bool comp_overview_handle_motion(CompServer *server, double lx, double ly);

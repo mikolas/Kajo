@@ -478,6 +478,7 @@ handle_frame(void *owner, void *data)
     double now_s = (double)now.tv_sec + (double)now.tv_nsec / 1e9;
 
     comp_window_tick_frame(s, now_s);
+    bool ov_animating = comp_overview_tick_frame(s, now_s);
     comp_output_update_hdr_auto(s);
     bool fx_animating = comp_fx_output_prepare(o, now_s);
 
@@ -517,7 +518,7 @@ handle_frame(void *owner, void *data)
         uint32_t msec = (uint32_t)(now.tv_sec * 1000 + now.tv_nsec / 1000000);
         comp_input_refresh_pointer_focus(s, msec);
     }
-    if (animating || fx_animating)
+    if (animating || fx_animating || ov_animating)
         wlr_output_schedule_frame(o->wlr_output);
     o->was_animating = animating;
 }

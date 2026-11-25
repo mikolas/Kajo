@@ -296,6 +296,7 @@ comp_config_new_defaults(uint32_t mod_mask)
     cfg->mod_mask = mod_mask ? mod_mask : COMP_MOD_SUPER;
     comp_layout_config_defaults(&cfg->layout);
     comp_motion_config_defaults(&cfg->motion);
+    comp_overview_anim_config_defaults(&cfg->overview_anim);
     comp_fx_config_defaults(&cfg->fx);
     cfg->border_px = 1;
 

@@ -44,6 +44,40 @@ const char *const PAGE_NIRI_COLOR_FILTER_IDS[N_COLOR_FILTERS] = {
     "tritanopia",
 };
 
+const OverviewAnimPreset PAGE_NIRI_OVERVIEW_PRESETS[N_OVERVIEW_PRESETS] = {
+    { "spring-bounce",  "Spring Bounce (Default · +8.5% Overshoot)", 0, 0.62, 380.0, 0, 260, 60 },
+    { "spring-snappy",  "Spring Snappy (Crisp · +1.5% Settle)",     0, 0.80, 620.0, 1, 200, 30 },
+    { "spring-elastic", "Spring Elastic (Playful · +18% Bounce)",   0, 0.48, 320.0, 0, 320, 85 },
+    { "spring-smooth",  "Spring Smooth (Zero Overshoot)",           0, 1.00, 460.0, 2, 250,  0 },
+    { "ease-out-back",  "Back Overshoot Curve (260ms)",             1, 0.62, 380.0, 0, 260, 50 },
+    { "ease-out-expo",  "Expo Zoom Curve (220ms)",                  1, 1.00, 460.0, 1, 220,  0 },
+    { "instant",        "Instant (No Animation)",                   2, 1.00, 460.0, 4,   0,  0 },
+    { "custom",         "Custom (Manual Tuning)",                   0, 0.62, 380.0, 0, 260, 60 },
+};
+
+const char *const PAGE_NIRI_OVERVIEW_MODE_IDS[N_OVERVIEW_MODES + 1] = {
+    "spring",
+    "curve",
+    "instant",
+    NULL
+};
+
+static const char *const OVERVIEW_MODE_LABELS[] = {
+    "Spring",
+    "Curve",
+    "Instant",
+    NULL
+};
+
+const char *const PAGE_NIRI_OVERVIEW_CURVE_NAMES[N_OVERVIEW_CURVES + 1] = {
+    "ease-out-back",
+    "ease-out-expo",
+    "ease-out-cubic",
+    "ease-out-quad",
+    "linear",
+    NULL
+};
+
 static const char *const COLOR_FILTER_LABELS[] = {
     "None (Unfiltered sRGB / BT.2020)",
     "Grayscale (Rec.709 Luminance)",
@@ -190,6 +224,15 @@ page_niri_effects_update_row_sensitivity(SettingsPageNiri *self)
     if (self->row_dim_opacity)       gtk_widget_set_sensitive(self->row_dim_opacity, d_on);
     if (self->row_filter_strength)   gtk_widget_set_sensitive(self->row_filter_strength, self->color_filter_idx != 0);
     if (self->row_night_temp)        gtk_widget_set_sensitive(self->row_night_temp, self->color_filter_idx == 2);
+
+    gboolean ov_spring = (self->overview_mode_idx == 0);
+    gboolean ov_curve  = (self->overview_mode_idx == 1);
+    gboolean ov_anim   = (self->overview_mode_idx != 2);
+    if (self->row_overview_zeta)         gtk_widget_set_visible(self->row_overview_zeta, ov_spring);
+    if (self->row_overview_stiffness)    gtk_widget_set_visible(self->row_overview_stiffness, ov_spring);
+    if (self->row_overview_curve)        gtk_widget_set_visible(self->row_overview_curve, ov_curve);
+    if (self->row_overview_duration)     gtk_widget_set_visible(self->row_overview_duration, ov_curve);
+    if (self->row_overview_close_bounce) gtk_widget_set_visible(self->row_overview_close_bounce, ov_anim);
 }
 
 void
@@ -262,6 +305,22 @@ page_niri_effects_sync_widgets(SettingsPageNiri *self)
         gtk_range_set_value(GTK_RANGE(self->scale_filter_strength), self->fx_cfg.color_filter_strength_pct);
     if (self->scale_night_temp)
         gtk_range_set_value(GTK_RANGE(self->scale_night_temp), self->fx_cfg.night_light_temperature);
+
+    if (self->combo_overview_preset)
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_overview_preset), self->overview_preset_idx);
+    if (self->seg_overview_mode)
+        segmented_group_set_selected(self->seg_overview_mode, self->overview_mode_idx);
+    if (self->scale_overview_zeta)
+        gtk_range_set_value(GTK_RANGE(self->scale_overview_zeta), self->overview_damping_ratio);
+    if (self->scale_overview_stiffness)
+        gtk_range_set_value(GTK_RANGE(self->scale_overview_stiffness), self->overview_stiffness);
+    if (self->combo_overview_curve)
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_overview_curve), self->overview_curve_idx);
+    if (self->scale_overview_duration)
+        gtk_range_set_value(GTK_RANGE(self->scale_overview_duration), self->overview_duration_ms);
+    if (self->scale_overview_close_bounce)
+        gtk_range_set_value(GTK_RANGE(self->scale_overview_close_bounce), self->overview_close_bounce_pct);
+
     page_niri_effects_update_row_sensitivity(self);
 }
 
@@ -301,6 +360,21 @@ page_niri_effects_collect_state(SettingsPageNiri *self)
         self->fx_cfg.color_filter_strength_pct = (int)gtk_range_get_value(GTK_RANGE(self->scale_filter_strength));
     if (self->scale_night_temp)
         self->fx_cfg.night_light_temperature = (int)gtk_range_get_value(GTK_RANGE(self->scale_night_temp));
+
+    if (self->combo_overview_preset)
+        self->overview_preset_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_overview_preset));
+    if (self->seg_overview_mode)
+        self->overview_mode_idx = segmented_group_get_selected(self->seg_overview_mode);
+    if (self->scale_overview_zeta)
+        self->overview_damping_ratio = gtk_range_get_value(GTK_RANGE(self->scale_overview_zeta));
+    if (self->scale_overview_stiffness)
+        self->overview_stiffness = gtk_range_get_value(GTK_RANGE(self->scale_overview_stiffness));
+    if (self->combo_overview_curve)
+        self->overview_curve_idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->combo_overview_curve));
+    if (self->scale_overview_duration)
+        self->overview_duration_ms = (int)gtk_range_get_value(GTK_RANGE(self->scale_overview_duration));
+    if (self->scale_overview_close_bounce)
+        self->overview_close_bounce_pct = (int)gtk_range_get_value(GTK_RANGE(self->scale_overview_close_bounce));
 }
 
 /* ─── Signal Handlers: Transition Shaders ─── */
@@ -945,6 +1019,189 @@ page_niri_build_card_shaders(SettingsPageNiri *self)
     return card_shaders;
 }
 
+static void
+overview_mark_custom(SettingsPageNiri *self)
+{
+    self->overview_preset_idx = N_OVERVIEW_PRESETS - 1; /* "custom" */
+    if (self->combo_overview_preset) {
+        self->syncing_ui = TRUE;
+        gtk_drop_down_set_selected(GTK_DROP_DOWN(self->combo_overview_preset), self->overview_preset_idx);
+        self->syncing_ui = FALSE;
+    }
+    page_niri_effects_update_row_sensitivity(self);
+    page_niri_update_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_combo_overview_preset_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    if (idx >= N_OVERVIEW_PRESETS)
+        idx = 0;
+    self->overview_preset_idx = idx;
+    if (idx < N_OVERVIEW_PRESETS - 1) {
+        const OverviewAnimPreset *p = &PAGE_NIRI_OVERVIEW_PRESETS[idx];
+        self->overview_mode_idx         = p->mode_idx;
+        self->overview_damping_ratio    = p->damping_ratio;
+        self->overview_stiffness        = p->stiffness;
+        self->overview_curve_idx        = p->curve_idx;
+        self->overview_duration_ms      = p->duration_ms;
+        self->overview_close_bounce_pct = p->close_bounce_pct;
+
+        self->syncing_ui = TRUE;
+        page_niri_effects_sync_widgets(self);
+        self->syncing_ui = FALSE;
+    } else {
+        page_niri_effects_update_row_sensitivity(self);
+    }
+
+    page_niri_update_subtitles_and_telemetry(self);
+    settings_page_set_dirty(GTK_WIDGET(self), TRUE);
+}
+
+static void
+on_seg_overview_mode_changed(GtkWidget *group G_GNUC_UNUSED, guint idx, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->overview_mode_idx = (idx < N_OVERVIEW_MODES) ? idx : 0;
+    overview_mark_custom(self);
+}
+
+static void
+on_scale_overview_zeta_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->overview_damping_ratio = gtk_range_get_value(range);
+    overview_mark_custom(self);
+}
+
+static void
+on_scale_overview_stiffness_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->overview_stiffness = gtk_range_get_value(range);
+    overview_mark_custom(self);
+}
+
+static void
+on_combo_overview_curve_changed(GtkDropDown *dropdown, GParamSpec *pspec G_GNUC_UNUSED, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    guint idx = gtk_drop_down_get_selected(dropdown);
+    self->overview_curve_idx = (idx < N_OVERVIEW_CURVES) ? idx : 0;
+    overview_mark_custom(self);
+}
+
+static void
+on_scale_overview_duration_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->overview_duration_ms = (int)gtk_range_get_value(range);
+    overview_mark_custom(self);
+}
+
+static void
+on_scale_overview_close_bounce_changed(GtkRange *range, gpointer user_data)
+{
+    SettingsPageNiri *self = (SettingsPageNiri *)user_data;
+    if (self->syncing_ui)
+        return;
+    self->overview_close_bounce_pct = (int)gtk_range_get_value(range);
+    overview_mark_custom(self);
+}
+
+GtkWidget *
+page_niri_build_card_overview(SettingsPageNiri *self)
+{
+    GtkWidget *card = create_section_card(
+        SETTINGS_CARD_CENTER,
+        "4. OVERVIEW TOGGLE ANIMATION",
+        "comp.toml [animations.overview]",
+        "accent",
+        NULL);
+
+    const char *preset_labels[N_OVERVIEW_PRESETS + 1];
+    for (guint i = 0; i < N_OVERVIEW_PRESETS; i++)
+        preset_labels[i] = PAGE_NIRI_OVERVIEW_PRESETS[i].label;
+    preset_labels[N_OVERVIEW_PRESETS] = NULL;
+
+    self->combo_overview_preset = create_string_dropdown(preset_labels);
+    self->row_overview_preset = create_boxed_row(
+        "⊞",
+        "Overview Zoom Preset",
+        "Spring (ζ=0.62, k=380) • close bounce 60%",
+        self->combo_overview_preset);
+    gtk_box_append(GTK_BOX(card), self->row_overview_preset);
+
+    self->seg_overview_mode = create_segmented_group(OVERVIEW_MODE_LABELS, 0);
+    gtk_box_append(GTK_BOX(card), create_boxed_row(
+        NULL,
+        "Animation Engine",
+        "Analytical damped spring, fixed-duration curve, or 1-frame instant snap",
+        self->seg_overview_mode));
+
+    GtkWidget *w_zeta = create_scale_with_badge(
+        0.35, 1.30, 0.01, 0.62, "%.2f", &self->scale_overview_zeta, NULL);
+    self->row_overview_zeta = create_boxed_row(
+        NULL,
+        "Spring Damping Ratio (ζ)",
+        "Lower = stronger zoom-out bounce overshoot; 1.00 = critically damped",
+        w_zeta);
+    gtk_box_append(GTK_BOX(card), self->row_overview_zeta);
+
+    GtkWidget *w_stiff = create_scale_with_badge(
+        150, 900, 10, 380, "%.0f", &self->scale_overview_stiffness, NULL);
+    self->row_overview_stiffness = create_boxed_row(
+        NULL,
+        "Spring Stiffness (k)",
+        "Higher = snappier overview toggle velocity",
+        w_stiff);
+    gtk_box_append(GTK_BOX(card), self->row_overview_stiffness);
+
+    self->combo_overview_curve = create_string_dropdown(PAGE_NIRI_OVERVIEW_CURVE_NAMES);
+    self->row_overview_curve = create_boxed_row(
+        NULL,
+        "Zoom Easing Curve",
+        "Ease function (ease-out-back includes overshoot)",
+        self->combo_overview_curve);
+    gtk_box_append(GTK_BOX(card), self->row_overview_curve);
+
+    GtkWidget *w_dur = create_scale_with_badge(
+        100, 600, 10, 260, "%.0fms", &self->scale_overview_duration, NULL);
+    self->row_overview_duration = create_boxed_row(
+        NULL,
+        "Zoom Duration",
+        "Fixed animation duration in milliseconds",
+        w_dur);
+    gtk_box_append(GTK_BOX(card), self->row_overview_duration);
+
+    GtkWidget *w_cb = create_scale_with_badge(
+        0, 100, 5, 60, "%.0f%%", &self->scale_overview_close_bounce, NULL);
+    self->row_overview_close_bounce = create_boxed_row(
+        NULL,
+        "Close Zoom-In Bounce",
+        "Subtle scale overshoot punch when zooming back into the desktop",
+        w_cb);
+    gtk_box_append(GTK_BOX(card), self->row_overview_close_bounce);
+
+    return card;
+}
+
 void
 page_niri_effects_connect_signals(SettingsPageNiri *self)
 {
@@ -957,6 +1214,14 @@ page_niri_effects_connect_signals(SettingsPageNiri *self)
     g_signal_connect(self->combo_close_curve, "notify::selected", G_CALLBACK(on_combo_close_curve_changed), self);
 
     g_signal_connect(self->combo_shader_resize, "notify::selected", G_CALLBACK(on_combo_shader_resize_changed), self);
+
+    g_signal_connect(self->combo_overview_preset, "notify::selected", G_CALLBACK(on_combo_overview_preset_changed), self);
+    segmented_group_connect(self->seg_overview_mode, on_seg_overview_mode_changed, self);
+    g_signal_connect(self->scale_overview_zeta, "value-changed", G_CALLBACK(on_scale_overview_zeta_changed), self);
+    g_signal_connect(self->scale_overview_stiffness, "value-changed", G_CALLBACK(on_scale_overview_stiffness_changed), self);
+    g_signal_connect(self->combo_overview_curve, "notify::selected", G_CALLBACK(on_combo_overview_curve_changed), self);
+    g_signal_connect(self->scale_overview_duration, "value-changed", G_CALLBACK(on_scale_overview_duration_changed), self);
+    g_signal_connect(self->scale_overview_close_bounce, "value-changed", G_CALLBACK(on_scale_overview_close_bounce_changed), self);
 
     g_signal_connect(self->tc_glass, "toggled", G_CALLBACK(on_fx_toggle_changed), self);
     g_signal_connect(self->tc_shadow, "toggled", G_CALLBACK(on_fx_toggle_changed), self);

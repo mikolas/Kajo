@@ -433,6 +433,26 @@ comp_motion_is_animating(const CompMotion *m, double now)
     return false;
 }
 
+void
+comp_motion_snap(CompMotion *m, double now)
+{
+    if (!m)
+        return;
+    m->drag = COMP_MOTION_DRAG_NONE;
+    comp_spring_init(&m->strip, &m->strip.params, m->strip.to, m->strip.to, now);
+    for (size_t i = 0; i < m->ncams; i++) {
+        CompSpring *cam = &m->cams[i].cam;
+        comp_spring_init(cam, &cam->params, cam->to, cam->to, now);
+    }
+    for (size_t i = 0; i < m->nwins; i++) {
+        WinMotion *w = &m->wins[i];
+        comp_spring_init(&w->sx, &w->sx.params, w->sx.to, w->sx.to, now);
+        comp_spring_init(&w->sy, &w->sy.params, w->sy.to, w->sy.to, now);
+        comp_spring_init(&w->sw, &w->sw.params, w->sw.to, w->sw.to, now);
+        comp_spring_init(&w->sh, &w->sh.params, w->sh.to, w->sh.to, now);
+    }
+}
+
 double
 comp_motion_workspace_step(const CompMotion *m)
 {
