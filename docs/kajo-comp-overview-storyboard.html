@@ -1,0 +1,2228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KAJO-COMP // Overview Animation Storyboard (Option A)</title>
+<style>
+  :root {
+    --bg: #070707;
+    --surface-0: #0a0a0a;
+    --surface-1: #111111;
+    --surface-2: #141414;
+    --surface-3: #181818;
+    --surface-4: #1e1e1e;
+    --border: #2b2b2b;
+    --border-strong: #3d3d3d;
+    --text: #ffffff;
+    --subtext: #a0a0a0;
+    --dim: #747474;
+    --accent: #0078d4;
+    --accent-rgb: 0, 120, 212;
+    --telemetry: #00d8f0;
+    --telemetry-rgb: 0, 216, 240;
+    --success: #10893e;
+    --warning: #ffb900;
+    --warning-rgb: 255, 185, 0;
+    --urgent: #e81123;
+    --font-mono: 'Fira Code', 'JetBrains Mono', ui-monospace, monospace;
+    --font-sans: 'Inter', 'Cantarell', 'Segoe UI', system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; border-radius: 0 !important; margin: 0; padding: 0; }
+  html, body {
+    width: 100%; height: 100vh; overflow: hidden;
+    background: var(--bg); color: var(--text);
+    font-family: var(--font-sans); font-size: 13px;
+    user-select: none;
+  }
+  button, input, select { font-family: var(--font-mono); }
+
+  /* ── Topbar (40px) ── */
+  .topbar {
+    height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px;
+    background: var(--surface-2); border-bottom: 1px solid var(--border);
+    white-space: nowrap; overflow-x: auto; overflow-y: hidden;
+  }
+  .topbar::-webkit-scrollbar { height: 2px; background: #0c0c0c; }
+  .topbar::-webkit-scrollbar-thumb { background: #333; }
+  .title {
+    font-family: var(--font-mono); font-weight: 700; letter-spacing: .6px; font-size: 12px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .title .ico { color: var(--accent); font-size: 14px; }
+  .title small { color: var(--dim); font-weight: 400; letter-spacing: 0; font-size: 10px; }
+  .group { display: flex; align-items: center; gap: 6px; }
+  .glabel {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--dim);
+    text-transform: uppercase; letter-spacing: .5px;
+  }
+  .seg { display: flex; border: 1px solid var(--border); }
+  .seg button {
+    background: var(--surface-3); color: #bbb; border: 0;
+    border-right: 1px solid var(--border); padding: 3px 7px;
+    font-size: 10px; font-weight: 700; cursor: pointer;
+  }
+  .seg button:last-child { border-right: 0; }
+  .seg button:hover { background: #222; color: #fff; }
+  .seg button.on { background: var(--accent); color: #fff; }
+  .spacer { flex: 1; min-width: 8px; }
+  .btn {
+    background: var(--surface-3); color: #ddd; border: 1px solid var(--border);
+    padding: 4px 9px; font-size: 10px; font-weight: 700; cursor: pointer; letter-spacing: .4px;
+  }
+  .btn:hover { background: #222; color: #fff; border-color: var(--border-strong); }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary:hover { background: #1486de; border-color: #1486de; }
+  .btn.warn { border-color: rgba(var(--warning-rgb), .55); color: var(--warning); }
+  .btn.warn:hover { background: rgba(var(--warning-rgb), .12); color: #ffd24d; }
+  .btn:disabled { opacity: .35; pointer-events: none; }
+
+  /* ── Main Layout ── */
+  main { display: flex; height: calc(100vh - 40px - 26px); min-height: 0; }
+  .stage-col {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    padding: 10px; gap: 10px; background: var(--bg);
+  }
+  .screen-wrap {
+    flex: 1; min-height: 0; position: relative;
+    display: flex; align-items: center; justify-content: center;
+    background:
+      repeating-linear-gradient(90deg, rgba(255,255,255,.012) 0 1px, transparent 1px 40px),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.010) 0 1px, transparent 1px 40px),
+      #050505;
+    border: 1px solid var(--border); overflow: hidden;
+  }
+  .bezel {
+    position: relative; border: 1px solid var(--accent);
+    box-shadow: 0 14px 48px rgba(0,0,0,.88); overflow: hidden; background: var(--surface-0);
+  }
+  .sim-screen {
+    width: 1200px; height: 720px; position: absolute; left: 0; top: 0; transform-origin: 0 0;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 22% 28%, rgba(var(--accent-rgb), .14), transparent 52%),
+      radial-gradient(circle at 82% 76%, rgba(var(--telemetry-rgb), .07), transparent 46%),
+      #0b0c0f;
+  }
+
+  /* Desktop Chrome & Windows inside 1200x720 output */
+  .desk-layer { position: absolute; inset: 0; transform-origin: 50% 50%; will-change: transform; }
+  .kajo-panel {
+    position: absolute; left: 0; top: 0; right: 0; height: 32px; z-index: 40;
+    background: rgba(17,17,17,.94); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 12px; gap: 14px;
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #ddd;
+  }
+  .kajo-panel .logo { color: var(--accent); letter-spacing: .8px; }
+  .kajo-panel .ws-pills { display: flex; gap: 4px; }
+  .kajo-panel .ws-pill {
+    padding: 2px 7px; border: 1px solid #2b2b2b; background: #161616; color: #888; font-size: 10px;
+  }
+  .kajo-panel .ws-pill.on { border-color: var(--accent); background: rgba(var(--accent-rgb), .24); color: #fff; }
+  .kajo-panel .active-title { color: var(--subtext); font-weight: 400; font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kajo-panel .clock { margin-left: auto; color: var(--telemetry); font-size: 11px; }
+
+  .win-layer { position: absolute; inset: 0; z-index: 10; }
+  .desk-win {
+    position: absolute; background: var(--surface-1); border: 1px solid var(--border);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .desk-win.focused { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(var(--accent-rgb), .4); }
+  .desk-win.floating { box-shadow: 0 18px 46px rgba(0,0,0,.86); z-index: 25; }
+  .desk-win .wbar {
+    height: 28px; flex-shrink: 0; background: var(--surface-2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px; padding: 0 10px;
+    font-family: var(--font-mono); font-size: 11px; white-space: nowrap; overflow: hidden;
+  }
+  .desk-win .wbar .wid { color: var(--telemetry); font-weight: 700; font-size: 10px; }
+  .desk-win .wbar .wapp { color: #fff; font-weight: 700; letter-spacing: .4px; }
+  .desk-win .wbar .wtitle { color: var(--subtext); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+  .desk-win .wbody { flex: 1; padding: 14px; position: relative; overflow: hidden; background: #0f1013; }
+  .desk-win .wbody .code-line { height: 8px; margin-bottom: 10px; background: rgba(255,255,255,.06); }
+  .desk-win .wbody .accent-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; }
+  .desk-win .wbody .wmeta {
+    position: absolute; right: 10px; bottom: 8px; font-family: var(--font-mono);
+    font-size: 11px; color: rgba(255,255,255,.22); font-weight: 700;
+  }
+
+  /* Overview overlay scene (`s->tree_overlay`) */
+  .ov-layer { position: absolute; inset: 0; z-index: 80; pointer-events: none; display: none; }
+  .ov-layer.visible { display: block; pointer-events: auto; }
+  .ov-backdrop { position: absolute; inset: 0; background: #0a0a0a; opacity: 0; }
+  .ov-header {
+    position: absolute; left: 0; right: 0; top: 0; height: 40px; z-index: 90;
+    background: #141414; border-bottom: 1px solid var(--accent);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 16px;
+    font-family: var(--font-mono); font-size: 11px; will-change: transform, opacity;
+  }
+  .ov-header .ov-title { color: #ffffff; font-weight: 700; letter-spacing: .5px; }
+  .ov-header .ov-hint { color: var(--subtext); font-size: 10px; }
+  .ov-bands, .ov-cards { position: absolute; inset: 0; pointer-events: none; }
+  .ov-band {
+    position: absolute; background: #121212; border: 1px solid #2b2b2b; pointer-events: auto;
+    cursor: pointer; will-change: transform, opacity;
+  }
+  .ov-band.sel { border: 2px solid var(--accent); }
+  .ov-badge {
+    position: absolute; left: 8px; top: 4px; padding: 2px 8px;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    background: #181818; color: #a0a0a0; border: 1px solid #2b2b2b;
+  }
+  .ov-band.sel .ov-badge { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  .ov-card {
+    position: absolute; background: #181818; border: 1px solid #2b2b2b; pointer-events: auto;
+    cursor: pointer; overflow: hidden;
+  }
+  .ov-card.sel { border: 2px solid var(--accent); }
+  .ov-card-chrome {
+    position: absolute; inset: 0; background: #181818; pointer-events: none;
+  }
+  .ov-thumb {
+    position: absolute; overflow: hidden; background: #0e1013; pointer-events: none;
+    border: 1px solid rgba(255,255,255,.04);
+  }
+  .ov-caption {
+    position: absolute; background: #141414; border-top: 1px solid #242424;
+    padding: 0 6px; display: flex; align-items: center;
+    font-family: var(--font-mono); font-size: 10px; color: #a0a0a0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+  }
+  .ov-card.sel .ov-caption { color: #ffffff; }
+  .ov-card-border {
+    position: absolute; inset: 0; border: 1px solid #2b2b2b; pointer-events: none;
+  }
+  .ov-card.sel .ov-card-border { border: 2px solid var(--accent); }
+
+  /* Stage floating callout */
+  .stage-badge {
+    position: absolute; left: 10px; bottom: 10px; z-index: 95;
+    background: rgba(10,10,10,.88); border: 1px solid var(--border);
+    padding: 5px 8px; font-family: var(--font-mono); font-size: 10px;
+    color: var(--telemetry); pointer-events: none; display: flex; gap: 10px; align-items: center;
+  }
+  .stage-badge .pill {
+    padding: 1px 6px; background: rgba(var(--accent-rgb), .2); border: 1px solid var(--accent);
+    color: #fff; font-weight: 700;
+  }
+
+  /* ── Bottom Telemetry & Curve Strip (~125px) ── */
+  .telemetry-strip { height: 126px; display: flex; gap: 10px; flex-shrink: 0; }
+  .tbox {
+    background: var(--surface-1); border: 1px solid var(--border);
+    display: flex; flex-direction: column; min-width: 0;
+  }
+  .tbox-head {
+    height: 24px; padding: 0 8px; border-bottom: 1px solid var(--border);
+    background: var(--surface-2); display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--subtext);
+    letter-spacing: .5px; text-transform: uppercase;
+  }
+  .tbox-head .stats { color: var(--telemetry); font-weight: 700; }
+  .scope-col { flex: 0 0 65%; }
+  .hud-col { flex: 1; }
+  .scope-body { flex: 1; display: flex; flex-direction: column; padding: 6px 8px; gap: 4px; min-height: 0; }
+  #scopeCanvas { width: 100%; flex: 1; min-height: 54px; display: block; background: #08090b; border: 1px solid #1f1f1f; }
+  .scrub-row { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 10px; color: var(--dim); }
+  .scrub-row input[type="range"] { flex: 1; accent-color: var(--accent); cursor: pointer; height: 12px; }
+  .scrub-row .val { color: var(--telemetry); min-width: 58px; text-align: right; font-weight: 700; }
+
+  .hud-grid {
+    flex: 1; padding: 7px 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px;
+    font-family: var(--font-mono); font-size: 10px; align-content: center;
+  }
+  .hud-item { display: flex; flex-direction: column; gap: 1px; }
+  .hud-k { color: var(--dim); font-size: 9px; text-transform: uppercase; letter-spacing: .5px; }
+  .hud-v { color: #fff; font-weight: 700; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hud-v.state-CLOSED  { color: var(--subtext); }
+  .hud-v.state-OPENING { color: var(--telemetry); }
+  .hud-v.state-OPEN    { color: var(--success); }
+  .hud-v.state-CLOSING { color: var(--warning); }
+  .hud-v.active-cpu    { color: var(--telemetry); }
+  .hud-v.idle-cpu      { color: var(--success); }
+
+  /* ── Right Inspector Sidebar (420px) ── */
+  aside {
+    width: 420px; flex-shrink: 0; border-left: 1px solid var(--border);
+    background: var(--surface-1); display: flex; flex-direction: column; min-height: 0;
+  }
+  .tabs-head { display: flex; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .tabs-head button {
+    flex: 1; background: transparent; color: var(--subtext); border: 0;
+    border-right: 1px solid var(--border); padding: 9px 4px;
+    font-size: 10px; font-weight: 700; letter-spacing: .5px; cursor: pointer;
+  }
+  .tabs-head button:last-child { border-right: 0; }
+  .tabs-head button:hover { color: #fff; background: #191919; }
+  .tabs-head button.on {
+    color: #fff; background: var(--surface-3); box-shadow: inset 0 -2px 0 var(--accent);
+  }
+  .pane { display: none; flex: 1; overflow-y: auto; padding: 12px; min-height: 0; }
+  .pane.on { display: block; }
+  .pane::-webkit-scrollbar { width: 6px; background: #0d0d0d; }
+  .pane::-webkit-scrollbar-thumb { background: #2d2d2d; }
+
+  .sec-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--subtext);
+    text-transform: uppercase; letter-spacing: .6px; margin: 12px 0 6px;
+    padding-bottom: 4px; border-bottom: 1px solid var(--border);
+  }
+  .sec-hdr:first-child { margin-top: 0; }
+  .tag {
+    font-family: var(--font-mono); font-size: 9px; font-weight: 700;
+    padding: 1px 6px; border: 1px solid var(--border); background: var(--surface-3); color: var(--telemetry);
+  }
+  .tag.custom { border-color: var(--warning); color: var(--warning); }
+
+  /* Preset Cards */
+  .preset-grid { display: flex; flex-direction: column; gap: 5px; }
+  .pcard {
+    display: flex; align-items: center; gap: 10px; padding: 7px 9px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    cursor: pointer; text-align: left; width: 100%;
+  }
+  .pcard:hover { background: var(--surface-3); border-color: var(--border-strong); }
+  .pcard.on {
+    background: rgba(var(--accent-rgb), .14); border-color: var(--accent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .pcard svg { width: 64px; height: 30px; flex-shrink: 0; background: #0a0a0a; border: 1px solid #222; }
+  .pcard .pmeta { flex: 1; min-width: 0; }
+  .pcard .pname {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 700; color: #fff;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .pcard .prec {
+    font-size: 9px; padding: 0 4px; background: rgba(var(--accent-rgb), .25);
+    border: 1px solid var(--accent); color: var(--telemetry);
+  }
+  .pcard .pdesc { font-size: 11px; color: var(--subtext); margin-top: 2px; line-height: 1.3; }
+
+  /* Tuning Controls */
+  .ctrl-card { background: var(--surface-2); border: 1px solid var(--border); padding: 9px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .ctrl-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .ctrl-row label { font-family: var(--font-mono); font-size: 10px; color: var(--subtext); }
+  .ctrl-row .rval { font-family: var(--font-mono); font-size: 10px; color: var(--telemetry); min-width: 50px; text-align: right; font-weight: 700; }
+  .ctrl-row input[type="range"] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+  .ctrl-row select {
+    background: var(--surface-3); color: #fff; border: 1px solid var(--border);
+    padding: 3px 6px; font-size: 10px;
+  }
+  .ctrl-row.hidden { display: none; }
+
+  .toml-box {
+    background: #0a0b0d; border: 1px solid var(--border); padding: 9px 10px;
+    font-family: var(--font-mono); font-size: 10px; line-height: 1.5; color: #d6dde6;
+    white-space: pre; overflow-x: auto; user-select: text;
+  }
+  .toml-box .k-sec { color: var(--telemetry); font-weight: 700; }
+  .toml-box .k-cmt { color: var(--dim); }
+
+  /* Scenarios */
+  .scen-list { display: flex; flex-direction: column; gap: 4px; }
+  .scen {
+    width: 100%; text-align: left; background: var(--surface-2); color: #ddd;
+    border: 1px solid var(--border); padding: 7px 9px; font-size: 11px; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  }
+  .scen:hover { background: var(--surface-3); }
+  .scen.on {
+    border-color: var(--accent); background: rgba(var(--accent-rgb), .14); color: #fff;
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  .scen .sid { font-family: var(--font-mono); font-size: 10px; font-weight: 700; color: var(--telemetry); margin-right: 6px; }
+  .scen .stag { font-family: var(--font-mono); font-size: 9px; color: var(--dim); }
+
+  .narr-box { margin-top: 10px; border: 1px solid var(--border); background: var(--surface-2); }
+  .narr-head {
+    display: flex; align-items: center; justify-content: space-between; padding: 7px 10px;
+    border-bottom: 1px solid var(--border); font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+  }
+  .narr-head .scount { color: var(--telemetry); }
+  .narr-text { padding: 10px; font-size: 12px; line-height: 1.55; color: #ddd; min-height: 112px; }
+  .narr-text code { font-family: var(--font-mono); font-size: 11px; color: var(--telemetry); }
+  .narr-nav { display: flex; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--border); }
+
+  /* Architecture Tab */
+  .arch-block {
+    background: var(--surface-2); border: 1px solid var(--border); padding: 9px 10px;
+    margin-bottom: 10px; font-size: 11px; line-height: 1.5; color: #d4d4d4;
+  }
+  .arch-table { width: 100%; border-collapse: collapse; font-family: var(--font-mono); font-size: 10px; margin-top: 4px; }
+  .arch-table th, .arch-table td {
+    border: 1px solid var(--border); padding: 5px 6px; text-align: left; vertical-align: top;
+  }
+  .arch-table th { background: var(--surface-3); color: var(--telemetry); }
+  .arch-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .arch-list li {
+    padding-left: 10px; border-left: 2px solid var(--accent); font-size: 11px; line-height: 1.45;
+  }
+  .arch-list code { font-family: var(--font-mono); font-size: 10px; color: var(--telemetry); }
+
+  /* ── Footer (26px) ── */
+  footer {
+    height: 26px; display: flex; align-items: center; gap: 14px; padding: 0 12px;
+    border-top: 1px solid var(--border); background: var(--surface-2);
+    font-family: var(--font-mono); font-size: 10px; color: var(--dim);
+    white-space: nowrap; overflow: hidden;
+  }
+  footer kbd {
+    background: var(--surface-3); border: 1px solid var(--border); padding: 0 4px; color: #ddd;
+  }
+  footer .fsep { color: #383838; }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="title">
+    <span class="ico">⊞</span> KAJO-COMP // OVERVIEW ANIMATION STORYBOARD
+    <small>Option A · Live-Rect Zoom Morph + Spring Bounce</small>
+  </div>
+  <div class="group">
+    <span class="glabel">Preset</span>
+    <div class="seg" id="topPresets">
+      <button data-p="spring-bounce" class="on">BOUNCE</button>
+      <button data-p="spring-snappy">SNAPPY</button>
+      <button data-p="spring-elastic">ELASTIC</button>
+      <button data-p="spring-smooth">SMOOTH</button>
+      <button data-p="ease-out-back">BACK</button>
+      <button data-p="ease-out-expo">EXPO</button>
+      <button data-p="instant">INSTANT</button>
+    </div>
+  </div>
+  <div class="group">
+    <span class="glabel">Speed</span>
+    <div class="seg" id="topSpeed">
+      <button data-s="0.25">0.25×</button>
+      <button data-s="0.5">0.5×</button>
+      <button data-s="1" class="on">1.0×</button>
+      <button data-s="1.5">1.5×</button>
+    </div>
+  </div>
+  <div class="spacer"></div>
+  <button class="btn primary" id="btnToggle">TOGGLE OVERVIEW (O)</button>
+  <button class="btn warn" id="btnReverse">MID-FLIGHT REVERSE</button>
+  <button class="btn" id="btnReset">RESET</button>
+</header>
+
+<main>
+  <section class="stage-col">
+    <div class="screen-wrap" id="screenWrap">
+      <div class="bezel" id="bezel">
+        <div class="sim-screen" id="simScreen">
+          <div class="desk-layer" id="deskLayer">
+            <div class="kajo-panel" id="kajoPanel">
+              <span class="logo">KAJO</span>
+              <span class="ws-pills" id="panelWsPills"></span>
+              <span class="active-title" id="panelTitle"></span>
+              <span class="clock">20:32</span>
+            </div>
+            <div class="win-layer" id="winLayer"></div>
+          </div>
+
+          <div class="ov-layer" id="ovLayer">
+            <div class="ov-backdrop" id="ovBackdrop"></div>
+            <div class="ov-header" id="ovHeader">
+              <span class="ov-title" id="ovTitle">OVERVIEW • 4 WORKSPACES • 6 WINDOWS</span>
+              <span class="ov-hint">CLICK/ENTER FOCUS • ARROWS/HJKL NAV • MIDDLE-CLICK CLOSE • ESC EXIT</span>
+            </div>
+            <div class="ov-bands" id="ovBands"></div>
+            <div class="ov-cards" id="ovCards"></div>
+          </div>
+
+          <div class="stage-badge" id="stageBadge">
+            <span class="pill" id="badgeState">CLOSED</span>
+            <span id="badgeInfo">WS 1 · t = 0.000 · preset: spring-bounce</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="telemetry-strip">
+      <div class="tbox scope-col">
+        <div class="tbox-head">
+          <span>Spring / Curve Response Oscilloscope (t vs Time)</span>
+          <span class="stats" id="scopeStats">PEAK: +0.0% · SETTLE: 0ms</span>
+        </div>
+        <div class="scope-body">
+          <canvas id="scopeCanvas"></canvas>
+          <div class="scrub-row">
+            <span>MANUAL SCRUBBER (FREEZE &amp; INSPECT):</span>
+            <input type="range" id="scrubRange" min="-0.20" max="1.25" step="0.005" value="0.000" />
+            <span class="val" id="scrubVal">t = 0.000</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tbox hud-col">
+        <div class="tbox-head">
+          <span>State-Machine HUD</span>
+          <span class="stats" id="hudCommitType">COMMIT: IDLE</span>
+        </div>
+        <div class="hud-grid">
+          <div class="hud-item">
+            <span class="hud-k">State</span>
+            <span class="hud-v state-CLOSED" id="hudState">CLOSED</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-k">Progress (t) / Target</span>
+            <span class="hud-v" id="hudProgress">0.000 → 0.0</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-k">Velocity (dt/s)</span>
+            <span class="hud-v" id="hudVelocity">0.000 /s</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-k">Active → Selected</span>
+            <span class="hud-v" id="hudWs">WS 1 → WS 1 (win #1)</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-k">Vblank Scheduling</span>
+            <span class="hud-v idle-cpu" id="hudCpu">IDLE (0% CPU)</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-k">Active Engine</span>
+            <span class="hud-v" id="hudEngine">spring (ζ=0.62, k=380)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <aside>
+    <div class="tabs-head" id="tabsHead">
+      <button data-tab="presets" class="on">PRESETS &amp; TUNING</button>
+      <button data-tab="scenarios">SCENARIOS</button>
+      <button data-tab="arch">ARCHITECTURE</button>
+    </div>
+
+    <div class="pane on" id="pane-presets">
+      <div class="sec-hdr">
+        <span>Overview Animation Presets</span>
+        <span class="tag" id="activePresetTag">SPRING-BOUNCE</span>
+      </div>
+      <div class="preset-grid" id="presetGrid"></div>
+
+      <div class="sec-hdr">
+        <span>Fine-Tune Parameters</span>
+        <span class="tag" id="tuneModeTag">SPRING</span>
+      </div>
+      <div class="ctrl-card">
+        <div class="ctrl-row">
+          <label>Engine Mode</label>
+          <div class="seg" id="segMode">
+            <button data-m="spring" class="on">Spring</button>
+            <button data-m="curve">Curve</button>
+          </div>
+        </div>
+        <div class="ctrl-row" id="rowZeta">
+          <label>damping_ratio (ζ)</label>
+          <input type="range" id="slZeta" min="0.35" max="1.30" step="0.01" value="0.62" />
+          <span class="rval" id="valZeta">0.62</span>
+        </div>
+        <div class="ctrl-row" id="rowStiff">
+          <label>stiffness (k)</label>
+          <input type="range" id="slStiff" min="150" max="900" step="10" value="380" />
+          <span class="rval" id="valStiff">380</span>
+        </div>
+        <div class="ctrl-row hidden" id="rowCurve">
+          <label>Curve</label>
+          <select id="selCurve">
+            <option value="ease-out-back">ease-out-back</option>
+            <option value="ease-out-expo">ease-out-expo</option>
+            <option value="ease-out-cubic">ease-out-cubic</option>
+            <option value="ease-out-quad">ease-out-quad</option>
+            <option value="linear">linear</option>
+          </select>
+        </div>
+        <div class="ctrl-row hidden" id="rowDur">
+          <label>duration_ms</label>
+          <input type="range" id="slDur" min="100" max="600" step="10" value="260" />
+          <span class="rval" id="valDur">260ms</span>
+        </div>
+        <div class="ctrl-row">
+          <label>close_bounce_gain</label>
+          <input type="range" id="slCloseBounce" min="0" max="100" step="5" value="60" />
+          <span class="rval" id="valCloseBounce">60%</span>
+        </div>
+        <div class="ctrl-row">
+          <label>slowdown</label>
+          <input type="range" id="slSlowdown" min="0.25" max="2.00" step="0.05" value="1.00" />
+          <span class="rval" id="valSlowdown">1.00×</span>
+        </div>
+      </div>
+
+      <div class="sec-hdr">
+        <span>Proposed comp.toml Preview</span>
+        <span class="tag">[animations.overview]</span>
+      </div>
+      <div class="toml-box" id="tomlPreview"></div>
+    </div>
+
+    <div class="pane" id="pane-scenarios">
+      <div class="sec-hdr">
+        <span>Guided Interactive Scenarios</span>
+        <span class="tag">S1 – S7</span>
+      </div>
+      <div class="scen-list" id="scenList"></div>
+
+      <div class="narr-box">
+        <div class="narr-head">
+          <span id="narrTitle">Select a scenario</span>
+          <span class="scount" id="narrStep">0 / 0</span>
+        </div>
+        <div class="narr-text" id="narrText"></div>
+        <div class="narr-nav">
+          <button class="btn" id="btnScenPrev">◀ PREV</button>
+          <button class="btn primary" id="btnScenNext">NEXT ▶</button>
+          <button class="btn" id="btnScenPlay">▶ AUTO-PLAY</button>
+          <div class="spacer"></div>
+          <button class="btn" id="btnScenRestart">↺</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="pane" id="pane-arch">
+      <div class="sec-hdr">
+        <span>Overview State Machine</span>
+        <span class="tag">comp_overview.c</span>
+      </div>
+      <div class="arch-block">
+        Replaces boolean <code>ov-&gt;active</code> snap with an explicit 4-state lifecycle driven by <code>CompSpring</code> (or curve evaluator) in <code>handle_frame()</code>:
+        <table class="arch-table">
+          <tr><th>State</th><th>Triggers &amp; Transitions</th><th>Input / Focus Rule</th></tr>
+          <tr>
+            <td><b>CLOSED</b></td>
+            <td><code>Mod+O</code> → <code>OPENING</code> (target=1.0). Tree absent; zero frame wakeups.</td>
+            <td>Normal desktop dispatch.</td>
+          </tr>
+          <tr>
+            <td><b>OPENING</b></td>
+            <td>Spring <code>0→1</code>; settles → <code>OPEN</code>. <code>Mod+O</code>/<code>Esc</code> retargets → <code>CLOSING</code> preserving velocity.</td>
+            <td>Accepts nav/hover/click/middle-close without resetting spring.</td>
+          </tr>
+          <tr>
+            <td><b>OPEN</b></td>
+            <td>Idle at <code>t=1.0</code>. Selection/scroll updates geometry only. <code>Enter</code>/Click/<code>Esc</code>/<code>Mod+O</code> → <code>CLOSING</code>.</td>
+            <td>Full keyboard/pointer nav; 0% idle CPU.</td>
+          </tr>
+          <tr>
+            <td><b>CLOSING</b></td>
+            <td>On <code>commit=true</code>, focuses target ws/win first so live rects belong to target ws, then zooms <code>1→0</code> directly into it.</td>
+            <td><code>Mod+O</code> retargets → <code>OPENING</code>; destroy tree at settle.</td>
+          </tr>
+        </table>
+      </div>
+
+      <div class="sec-hdr">
+        <span>Planned C Implementation Touch List</span>
+        <span class="tag">POST-REVIEW</span>
+      </div>
+      <div class="arch-block">
+        <ul class="arch-list">
+          <li><code>src/comp/core/comp_overview_core.{h,c}</code>: Add pure <code>CompOverviewAnimFrame</code> + <code>comp_overview_interpolate()</code> with overshoot-safe clamp rules &amp; curve evaluator.</li>
+          <li><code>src/comp/comp_overview.c</code>: Replace per-call scene destruction during animation with persistent node handles + <code>comp_overview_tick_frame(s, now_s)</code> mutating pos/dest_size/opacity/color in place.</li>
+          <li><code>src/comp/comp_output.c</code>: Call <code>comp_overview_tick_frame(s, now_s)</code> inside <code>handle_frame()</code> and keep scheduling vblanks only while overview is animating.</li>
+          <li><code>src/comp/core/comp_config.{h,c}</code> &amp; <code>data/defaults/comp.toml</code>: Parse <code>[animations.overview]</code> (preset/mode/damping_ratio/stiffness/epsilon/duration_ms/curve/close_bounce_gain).</li>
+          <li><code>src/settings/pages/page_niri*.c</code>: Add Overview Animation Preset &amp; Curve controls + live TOML sync.</li>
+          <li><code>tests/test_comp_overview.c</code>: Unit tests for <code>comp_overview_interpolate()</code> across <code>t ∈ [-0.2, 1.25]</code>, mid-flight retarget continuity, and instant fallback.</li>
+        </ul>
+      </div>
+
+      <div class="sec-hdr">
+        <span>Overshoot Safety Invariants</span>
+        <span class="tag">VERIFIABLE</span>
+      </div>
+      <div class="arch-block">
+        <ul class="arch-list">
+          <li><b>Opacity clamp:</b> Backdrop &amp; fade expressions strictly clamp to <code>[0.0, 1.0]</code> even when spring <code>t &gt; 1.0</code> or <code>t &lt; 0.0</code>.</li>
+          <li><b>Minimum card geometry:</b> Overshoot zoom-out clamps <code>thumb.w/h &gt;= 16px</code> so zero/negative dest_size is impossible in <code>wlr_scene_buffer_set_dest_size()</code>.</li>
+          <li><b>Zoom-in settle:</b> On <code>CLOSED</code>, destroy <code>ov-&gt;tree</code> and reset live window rects to exact pixel-aligned layout coordinates.</li>
+          <li><b>Zero idle CPU:</b> Schedule next output frame only when <code>state == OPENING || state == CLOSING</code>.</li>
+        </ul>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<footer>
+  <span><kbd>O</kbd> Toggle</span><span class="fsep">·</span>
+  <span><kbd>Enter</kbd> Commit</span><span class="fsep">·</span>
+  <span><kbd>Esc</kbd> Cancel</span><span class="fsep">·</span>
+  <span><kbd>↑↓←→</kbd> / <kbd>HJKL</kbd> Nav</span><span class="fsep">·</span>
+  <span><kbd>1</kbd>–<kbd>4</kbd> Workspace</span><span class="fsep">·</span>
+  <span><kbd>Click</kbd> Focus &amp; Zoom In</span><span class="fsep">·</span>
+  <span><kbd>Middle-Click</kbd> / <kbd>Q</kbd> Close Window</span><span class="fsep">·</span>
+  <span><kbd>Space</kbd> Play/Pause</span>
+</footer>
+
+<script>
+'use strict';
+
+/* ── Constants mirroring src/comp/core/comp_overview_core.h & comp_overview.c ── */
+const OUT_W = 1200;
+const OUT_H = 720;
+const PANEL_H = 32;
+const COMP_OVERVIEW_HEADER_H = 40;
+const COMP_OVERVIEW_PAD_X = 24;
+const COMP_OVERVIEW_PAD_Y = 16;
+const COMP_OVERVIEW_WS_GAP = 16;
+const COMP_OVERVIEW_WS_HDR_H = 24;
+const GAP_PX = 6;
+
+const PRESETS = [
+  {
+    id: 'spring-bounce',
+    label: 'spring-bounce',
+    short: 'BOUNCE',
+    recommended: true,
+    mode: 'spring',
+    zeta: 0.62,
+    stiffness: 380,
+    epsilon: 0.0005,
+    curve: 'ease-out-back',
+    durationMs: 260,
+    closeBounceGain: 0.60,
+    desc: 'Recommended default: crisp ~8.5% zoom-out overshoot with gentle zoom-in bounce.'
+  },
+  {
+    id: 'spring-snappy',
+    label: 'spring-snappy',
+    short: 'SNAPPY',
+    recommended: false,
+    mode: 'spring',
+    zeta: 0.80,
+    stiffness: 620,
+    epsilon: 0.0005,
+    curve: 'ease-out-expo',
+    durationMs: 200,
+    closeBounceGain: 0.30,
+    desc: 'Fast ~1.5% micro-settle matching Niri-like snappy workspace energy.'
+  },
+  {
+    id: 'spring-elastic',
+    label: 'spring-elastic',
+    short: 'ELASTIC',
+    recommended: false,
+    mode: 'spring',
+    zeta: 0.48,
+    stiffness: 320,
+    epsilon: 0.0005,
+    curve: 'ease-out-back',
+    durationMs: 320,
+    closeBounceGain: 0.85,
+    desc: 'Playful ~18% rubbery zoom overshoot for expressive motion.'
+  },
+  {
+    id: 'spring-smooth',
+    label: 'spring-smooth',
+    short: 'SMOOTH',
+    recommended: false,
+    mode: 'spring',
+    zeta: 1.00,
+    stiffness: 460,
+    epsilon: 0.0005,
+    curve: 'ease-out-cubic',
+    durationMs: 250,
+    closeBounceGain: 0.0,
+    desc: 'Critically damped zero-overshoot spring settle.'
+  },
+  {
+    id: 'ease-out-back',
+    label: 'ease-out-back',
+    short: 'BACK',
+    recommended: false,
+    mode: 'curve',
+    zeta: 0.62,
+    stiffness: 380,
+    epsilon: 0.0005,
+    curve: 'ease-out-back',
+    durationMs: 260,
+    closeBounceGain: 0.50,
+    desc: 'Deterministic cubic Back overshoot (1.70158) in fixed duration_ms.'
+  },
+  {
+    id: 'ease-out-expo',
+    label: 'ease-out-expo',
+    short: 'EXPO',
+    recommended: false,
+    mode: 'curve',
+    zeta: 1.00,
+    stiffness: 460,
+    epsilon: 0.0005,
+    curve: 'ease-out-expo',
+    durationMs: 220,
+    closeBounceGain: 0.0,
+    desc: 'Matches kajo-comp window open_curve default (0% overshoot).'
+  },
+  {
+    id: 'instant',
+    label: 'instant',
+    short: 'INSTANT',
+    recommended: false,
+    mode: 'instant',
+    zeta: 1.00,
+    stiffness: 460,
+    epsilon: 0.0005,
+    curve: 'linear',
+    durationMs: 0,
+    closeBounceGain: 0.0,
+    desc: 'animations.enabled = false: immediate 1-frame snap.'
+  }
+];
+
+/* ── Exact port of src/comp/core/comp_spring.c ── */
+function springEval(zeta, stiffness, x0, v0, dt) {
+  if (dt <= 0) return { disp: x0, vel: v0 };
+  const w0 = Math.sqrt(stiffness);
+  if (Math.abs(zeta - 1.0) < 1e-6) {
+    const b = v0 + w0 * x0;
+    const e = Math.exp(-w0 * dt);
+    return {
+      disp: e * (x0 + b * dt),
+      vel:  e * (b - w0 * (x0 + b * dt))
+    };
+  } else if (zeta < 1.0) {
+    const wd = w0 * Math.sqrt(1.0 - zeta * zeta);
+    const a = zeta * w0;
+    const b = (v0 + a * x0) / wd;
+    const e = Math.exp(-a * dt);
+    const c = Math.cos(wd * dt);
+    const s = Math.sin(wd * dt);
+    return {
+      disp: e * (x0 * c + b * s),
+      vel:  e * ((b * wd - a * x0) * c - (x0 * wd + a * b) * s)
+    };
+  } else {
+    const root = Math.sqrt(zeta * zeta - 1.0);
+    const r1 = -w0 * (zeta - root);
+    const r2 = -w0 * (zeta + root);
+    const c2 = (v0 - r1 * x0) / (r2 - r1);
+    const c1 = x0 - c2;
+    const e1 = Math.exp(r1 * dt);
+    const e2 = Math.exp(r2 * dt);
+    return {
+      disp: c1 * e1 + c2 * e2,
+      vel:  c1 * r1 * e1 + c2 * r2 * e2
+    };
+  }
+}
+
+function evalCurve(curveName, u) {
+  u = Math.max(0, Math.min(1, u));
+  switch (curveName) {
+    case 'ease-out-back': {
+      const c1 = 1.70158;
+      const c3 = c1 + 1;
+      return 1 + c3 * Math.pow(u - 1, 3) + c1 * Math.pow(u - 1, 2);
+    }
+    case 'ease-out-expo':
+      return u >= 1 ? 1 : 1 - Math.pow(2, -10 * u);
+    case 'ease-out-cubic':
+      return 1 - Math.pow(1 - u, 3);
+    case 'ease-out-quad':
+      return 1 - (1 - u) * (1 - u);
+    case 'linear':
+    default:
+      return u;
+  }
+}
+
+function evalCurveDeriv(curveName, u, durSec) {
+  if (durSec <= 0) return 0;
+  const eps = 0.002;
+  const u0 = Math.max(0, u - eps);
+  const u1 = Math.min(1, u + eps);
+  const du = Math.max(1e-5, u1 - u0);
+  return ((evalCurve(curveName, u1) - evalCurve(curveName, u0)) / du) / durSec;
+}
+
+/* ── Workspace fixture matching realistic Kajo desktop ── */
+function createInitialWorkspaces() {
+  const workTop = PANEL_H + GAP_PX;
+  const workH = OUT_H - PANEL_H - 2 * GAP_PX;
+  const fullW = OUT_W - 2 * GAP_PX;
+  return [
+    {
+      name: 'CODE',
+      scrollX: 0,
+      windows: [
+        {
+          id: 1, app: 'KAJO-IDE', title: 'src/comp/comp_overview.c',
+          color: '#0078d4', floating: false,
+          rect: { x: GAP_PX, y: workTop, w: Math.floor((fullW - GAP_PX) * 0.55), h: workH },
+          stripRect: { x: GAP_PX, y: workTop, w: Math.floor((fullW - GAP_PX) * 0.55), h: workH }
+        },
+        {
+          id: 2, app: 'FOOT', title: 'meson test -C builddir',
+          color: '#10893e', floating: false,
+          rect: { x: GAP_PX + Math.floor((fullW - GAP_PX) * 0.55) + GAP_PX, y: workTop, w: fullW - Math.floor((fullW - GAP_PX) * 0.55) - GAP_PX, h: workH },
+          stripRect: { x: GAP_PX + Math.floor((fullW - GAP_PX) * 0.55) + GAP_PX, y: workTop, w: fullW - Math.floor((fullW - GAP_PX) * 0.55) - GAP_PX, h: workH }
+        },
+        {
+          id: 3, app: 'KAJO-VIEWER', title: 'docs/spec_comp_effects.md',
+          color: '#00d8f0', floating: false,
+          // Off-screen 3rd column on scrolling strip — visible when zoomed out in overview!
+          rect: { x: OUT_W + GAP_PX, y: workTop, w: 520, h: workH },
+          stripRect: { x: OUT_W + GAP_PX, y: workTop, w: 520, h: workH }
+        },
+        {
+          id: 4, app: 'KAJO-MOD', title: 'Turrican_II.sid',
+          color: '#ffb900', floating: true,
+          rect: { x: 760, y: 410, w: 380, h: 240 },
+          stripRect: { x: 760, y: 410, w: 380, h: 240 }
+        }
+      ]
+    },
+    {
+      name: 'WEB & MEDIA',
+      scrollX: 0,
+      windows: [
+        {
+          id: 5, app: 'KAJO-WEB', title: 'Kajo Suite Roadmap — Chromium/CEF',
+          color: '#0078d4', floating: false,
+          rect: { x: GAP_PX, y: workTop, w: Math.floor((fullW - GAP_PX) * 0.65), h: workH },
+          stripRect: { x: GAP_PX, y: workTop, w: Math.floor((fullW - GAP_PX) * 0.65), h: workH }
+        },
+        {
+          id: 6, app: 'KAJO-PLAYER', title: 'vulkan_capture_120fps.mkv',
+          color: '#b4009e', floating: false,
+          rect: { x: GAP_PX + Math.floor((fullW - GAP_PX) * 0.65) + GAP_PX, y: workTop, w: fullW - Math.floor((fullW - GAP_PX) * 0.65) - GAP_PX, h: workH },
+          stripRect: { x: GAP_PX + Math.floor((fullW - GAP_PX) * 0.65) + GAP_PX, y: workTop, w: fullW - Math.floor((fullW - GAP_PX) * 0.65) - GAP_PX, h: workH }
+        }
+      ]
+    },
+    {
+      name: 'FILES & COMMS',
+      scrollX: 0,
+      windows: [
+        {
+          id: 7, app: 'KAJO-FILES', title: '~/src/Kajo/src/comp',
+          color: '#00a8e8', floating: false,
+          rect: { x: GAP_PX, y: workTop, w: Math.floor((fullW - GAP_PX) * 0.50), h: workH },
+          stripRect: { x: GAP_PX, y: workTop, w: Math.floor((fullW - GAP_PX) * 0.50), h: workH }
+        },
+        {
+          id: 8, app: 'CHAT', title: '#kajo-dev — Matrix',
+          color: '#10893e', floating: false,
+          rect: { x: GAP_PX + Math.floor((fullW - GAP_PX) * 0.50) + GAP_PX, y: workTop, w: fullW - Math.floor((fullW - GAP_PX) * 0.50) - GAP_PX, h: workH },
+          stripRect: { x: GAP_PX + Math.floor((fullW - GAP_PX) * 0.50) + GAP_PX, y: workTop, w: fullW - Math.floor((fullW - GAP_PX) * 0.50) - GAP_PX, h: workH }
+        }
+      ]
+    },
+    {
+      name: 'EMPTY',
+      scrollX: 0,
+      windows: []
+    }
+  ];
+}
+
+/* ── Application State ── */
+const state = {
+  workspaces: createInitialWorkspaces(),
+  activeWs: 0,
+  focusedWin: 1,
+  initialWs: 0,
+  initialWin: 1,
+  selectedWs: 0,
+  selectedWin: 1,
+  scrollY: 0,
+  commitPending: false,
+
+  // Lifecycle: 'CLOSED' | 'OPENING' | 'OPEN' | 'CLOSING'
+  ovState: 'CLOSED',
+  progress: 0.0,
+  velocity: 0.0,
+  target: 0.0,
+  manualScrub: false,
+  paused: false,
+  speed: 1.0,
+
+  // Spring / Curve segment
+  presetId: 'spring-bounce',
+  custom: false,
+  cfg: {
+    mode: 'spring',
+    zeta: 0.62,
+    stiffness: 380,
+    epsilon: 0.0005,
+    curve: 'ease-out-back',
+    durationMs: 260,
+    closeBounceGain: 0.60,
+    slowdown: 1.00
+  },
+  seg: {
+    from: 0.0,
+    to: 0.0,
+    v0: 0.0,
+    startTime: 0.0,
+    scale: 1.0,
+    curveFrom: 0.0,
+    curveTo: 0.0
+  },
+
+  // History for live oscilloscope
+  history: [], // { dtFromLaunch, t, target }
+  runStartTime: 0.0,
+  lastSimTime: 0.0,
+  peakOvershootPos: 0.0,
+  peakOvershootNeg: 0.0,
+  lastSettleMs: 0,
+
+  // Scenario runner
+  activeScenario: 0,
+  scenarioStep: 0,
+  scenarioAuto: false,
+  scenarioTimer: null,
+
+  // Computed geometry cache
+  sceneGeom: null,
+  lastVisualSig: ''
+};
+
+/* ── Exact port of comp_overview_compute() & comp_overview_ensure_ws_visible() ── */
+function clamp(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpRect(r0, r1, t) {
+  return {
+    x: lerp(r0.x, r1.x, t),
+    y: lerp(r0.y, r1.y, t),
+    w: lerp(r0.w, r1.w, t),
+    h: lerp(r0.h, r1.h, t)
+  };
+}
+
+function computeOverviewGeometry(scrollY) {
+  const nWs = state.workspaces.length;
+  const availW = Math.max(200, OUT_W - 2 * COMP_OVERVIEW_PAD_X);
+  const availH = Math.max(160, OUT_H - COMP_OVERVIEW_HEADER_H - 2 * COMP_OVERVIEW_PAD_Y);
+
+  const targetRows = nWs <= 2 ? nWs : 2.35;
+  const bandH = clamp((availH - COMP_OVERVIEW_WS_GAP * (targetRows - 1)) / targetRows, 150, availH * 0.48);
+  const totalH = nWs * bandH + Math.max(0, nWs - 1) * COMP_OVERVIEW_WS_GAP;
+  const maxScroll = Math.max(0, totalH - availH);
+  const sy = clamp(scrollY, 0, maxScroll);
+
+  let baseY = COMP_OVERVIEW_HEADER_H + COMP_OVERVIEW_PAD_Y;
+  if (totalH < availH)
+    baseY += Math.floor((availH - totalH) * 0.5);
+
+  const bands = [];
+  const cards = [];
+
+  for (let ws = 0; ws < nWs; ws++) {
+    const wins = state.workspaces[ws].windows;
+    const by = Math.floor(baseY + ws * (bandH + COMP_OVERVIEW_WS_GAP) - sy);
+    const band = { x: COMP_OVERVIEW_PAD_X, y: by, w: availW, h: Math.floor(bandH) };
+    const innerPad = 10;
+    const content = {
+      x: band.x + innerPad,
+      y: band.y + COMP_OVERVIEW_WS_HDR_H + 6,
+      w: Math.max(64, band.w - 2 * innerPad),
+      h: Math.max(48, band.h - COMP_OVERVIEW_WS_HDR_H - 16)
+    };
+
+    let minX = 0, maxX = OUT_W;
+    for (const w of wins) {
+      if (w.rect.x < minX) minX = w.rect.x;
+      if (w.rect.x + w.rect.w > maxX) maxX = w.rect.x + w.rect.w;
+    }
+    const spanW = Math.max(OUT_W, maxX - minX);
+    const scale = clamp(Math.min(content.w / spanW, content.h / OUT_H), 0.08, 0.45);
+    const scaledW = spanW * scale;
+    const scaledH = OUT_H * scale;
+    const ox = Math.floor(content.x + (content.w - scaledW) * 0.5);
+    const oy = Math.floor(content.y + (content.h - scaledH) * 0.5);
+
+    bands.push({
+      wsIndex: ws,
+      name: state.workspaces[ws].name,
+      band, content, scale, ox, oy, minX, spanW,
+      windowCount: wins.length,
+      isSelected: ws === state.selectedWs
+    });
+
+    for (const w of wins) {
+      const cx = Math.floor(ox + (w.rect.x - minX) * scale);
+      const cy = Math.floor(oy + w.rect.y * scale);
+      const cw = Math.max(36, Math.floor(w.rect.w * scale));
+      const ch = Math.max(32, Math.floor(w.rect.h * scale));
+      const capH = ch >= 48 ? 20 : Math.max(12, Math.floor(ch * 0.35));
+      cards.push({
+        win: w,
+        wsIndex: ws,
+        card:    { x: cx, y: cy, w: cw, h: ch },
+        thumb:   { x: cx + 2, y: cy + 2, w: Math.max(1, cw - 4), h: Math.max(1, ch - capH - 4) },
+        caption: { x: cx + 2, y: cy + ch - capH - 1, w: Math.max(1, cw - 4), h: capH },
+        isSelected: w.id === state.selectedWin
+      });
+    }
+  }
+
+  return { bands, cards, totalH, maxScroll, scrollY: sy };
+}
+
+function ensureSelectedWsVisible(geom, sy) {
+  if (!geom || state.selectedWs >= geom.bands.length) return sy;
+  const topBound = COMP_OVERVIEW_HEADER_H + COMP_OVERVIEW_PAD_Y;
+  const botBound = OUT_H - COMP_OVERVIEW_PAD_Y;
+  const b = geom.bands[state.selectedWs];
+  let next = sy;
+  if (b.band.y < topBound) next -= (topBound - b.band.y);
+  else if (b.band.y + b.band.h > botBound) next += (b.band.y + b.band.h - botBound);
+  return clamp(next, 0, geom.maxScroll);
+}
+
+function rebuildOverviewSceneGeometry() {
+  let g = computeOverviewGeometry(state.scrollY);
+  const clampedSy = ensureSelectedWsVisible(g, state.scrollY);
+  if (Math.abs(clampedSy - state.scrollY) > 0.5) {
+    state.scrollY = clampedSy;
+    g = computeOverviewGeometry(state.scrollY);
+  }
+  state.sceneGeom = g;
+  buildOverviewDom(g);
+}
+
+/* ── Desktop & Overview DOM Builders ── */
+const dom = {
+  screenWrap: document.getElementById('screenWrap'),
+  bezel: document.getElementById('bezel'),
+  simScreen: document.getElementById('simScreen'),
+  deskLayer: document.getElementById('deskLayer'),
+  panelWsPills: document.getElementById('panelWsPills'),
+  panelTitle: document.getElementById('panelTitle'),
+  winLayer: document.getElementById('winLayer'),
+  ovLayer: document.getElementById('ovLayer'),
+  ovBackdrop: document.getElementById('ovBackdrop'),
+  ovHeader: document.getElementById('ovHeader'),
+  ovTitle: document.getElementById('ovTitle'),
+  ovBands: document.getElementById('ovBands'),
+  ovCards: document.getElementById('ovCards'),
+  badgeState: document.getElementById('badgeState'),
+  badgeInfo: document.getElementById('badgeInfo'),
+  scopeCanvas: document.getElementById('scopeCanvas'),
+  scopeStats: document.getElementById('scopeStats'),
+  scrubRange: document.getElementById('scrubRange'),
+  scrubVal: document.getElementById('scrubVal'),
+  hudState: document.getElementById('hudState'),
+  hudProgress: document.getElementById('hudProgress'),
+  hudVelocity: document.getElementById('hudVelocity'),
+  hudWs: document.getElementById('hudWs'),
+  hudCpu: document.getElementById('hudCpu'),
+  hudEngine: document.getElementById('hudEngine'),
+  hudCommitType: document.getElementById('hudCommitType')
+};
+
+function makeWindowBodyHtml(w) {
+  return `
+    <div class="wbar">
+      <span class="wid">#${w.id}</span>
+      <span class="wapp">${w.app}</span>
+      <span class="wtitle">${w.title}</span>
+    </div>
+    <div class="wbody">
+      <div class="accent-bar" style="background:${w.color}"></div>
+      <div class="code-line" style="width:72%"></div>
+      <div class="code-line" style="width:54%"></div>
+      <div class="code-line" style="width:86%"></div>
+      <div class="code-line" style="width:42%"></div>
+      <div class="code-line" style="width:65%"></div>
+      <div class="wmeta">${w.floating ? 'FLOAT' : 'TILED'}</div>
+    </div>`;
+}
+
+function renderDesktop() {
+  const ws = state.workspaces[state.activeWs];
+  dom.panelWsPills.innerHTML = state.workspaces.map((w, i) =>
+    `<span class="ws-pill ${i === state.activeWs ? 'on' : ''}">${i + 1}:${w.name}</span>`
+  ).join('');
+
+  const fw = ws.windows.find(w => w.id === state.focusedWin) || ws.windows[0] || null;
+  dom.panelTitle.textContent = fw ? `${fw.app} — ${fw.title}` : '[ Empty Workspace ]';
+
+  dom.winLayer.innerHTML = '';
+  for (const w of ws.windows) {
+    if (w.rect.x + w.rect.w <= 0 || w.rect.x >= OUT_W) continue;
+    const el = document.createElement('div');
+    el.className = 'desk-win' + (w.id === state.focusedWin ? ' focused' : '') + (w.floating ? ' floating' : '');
+    el.style.left = w.rect.x + 'px';
+    el.style.top = w.rect.y + 'px';
+    el.style.width = w.rect.w + 'px';
+    el.style.height = w.rect.h + 'px';
+    el.innerHTML = makeWindowBodyHtml(w);
+    dom.winLayer.appendChild(el);
+  }
+}
+
+let bandEls = [];
+let cardEls = [];
+
+function buildOverviewDom(geom) {
+  const nWs = state.workspaces.length;
+  const nWins = geom.cards.length;
+  dom.ovTitle.textContent = `OVERVIEW  •  ${nWs} WORKSPACE${nWs === 1 ? '' : 'S'}  •  ${nWins} WINDOW${nWins === 1 ? '' : 'S'}`;
+
+  dom.ovBands.innerHTML = '';
+  bandEls = [];
+  for (const b of geom.bands) {
+    const el = document.createElement('div');
+    el.className = 'ov-band' + (b.isSelected ? ' sel' : '');
+    const badge = document.createElement('div');
+    badge.className = 'ov-badge';
+    badge.textContent = b.windowCount === 0
+      ? `WORKSPACE ${b.wsIndex + 1}  [ EMPTY ]`
+      : `WORKSPACE ${b.wsIndex + 1} · ${b.name}  (${b.windowCount})`;
+    el.appendChild(badge);
+    el.addEventListener('mouseenter', () => {
+      if (state.ovState === 'OPEN' || state.ovState === 'OPENING') {
+        if (state.selectedWs !== b.wsIndex || (b.windowCount === 0 && state.selectedWin !== 0)) {
+          state.selectedWs = b.wsIndex;
+          state.selectedWin = b.windowCount ? state.workspaces[b.wsIndex].windows[0].id : 0;
+          updateSelectionClasses();
+        }
+      }
+    });
+    el.addEventListener('mousedown', (ev) => {
+      ev.stopPropagation();
+      if (ev.button === 0) {
+        state.selectedWs = b.wsIndex;
+        state.selectedWin = b.windowCount ? state.workspaces[b.wsIndex].windows[0].id : 0;
+        closeOverview(true);
+      } else if (ev.button === 2) {
+        closeOverview(false);
+      }
+    });
+    dom.ovBands.appendChild(el);
+    bandEls.push({ data: b, el, badge });
+  }
+
+  dom.ovCards.innerHTML = '';
+  cardEls = [];
+  for (const c of geom.cards) {
+    const el = document.createElement('div');
+    el.className = 'ov-card' + (c.isSelected ? ' sel' : '');
+
+    const chrome = document.createElement('div');
+    chrome.className = 'ov-card-chrome';
+
+    const thumb = document.createElement('div');
+    thumb.className = 'ov-thumb';
+    // Mirror the real window scaled to thumb size using an inner 1:1 wrapper
+    const inner = document.createElement('div');
+    inner.className = 'desk-win' + (c.isSelected ? ' focused' : '');
+    inner.style.left = '0px';
+    inner.style.top = '0px';
+    inner.style.width = c.win.rect.w + 'px';
+    inner.style.height = c.win.rect.h + 'px';
+    inner.style.transformOrigin = '0 0';
+    inner.innerHTML = makeWindowBodyHtml(c.win);
+    thumb.appendChild(inner);
+
+    const caption = document.createElement('div');
+    caption.className = 'ov-caption';
+    caption.textContent = `${c.win.app} — ${c.win.title}`;
+
+    const border = document.createElement('div');
+    border.className = 'ov-card-border';
+
+    el.appendChild(chrome);
+    el.appendChild(thumb);
+    el.appendChild(caption);
+    el.appendChild(border);
+
+    el.addEventListener('mouseenter', () => {
+      if (state.ovState === 'OPEN' || state.ovState === 'OPENING') {
+        if (state.selectedWs !== c.wsIndex || state.selectedWin !== c.win.id) {
+          state.selectedWs = c.wsIndex;
+          state.selectedWin = c.win.id;
+          updateSelectionClasses();
+        }
+      }
+    });
+    el.addEventListener('mousedown', (ev) => {
+      ev.stopPropagation();
+      if (ev.button === 0) {
+        state.selectedWs = c.wsIndex;
+        state.selectedWin = c.win.id;
+        closeOverview(true);
+      } else if (ev.button === 1) {
+        closeWindowById(c.win.id);
+      } else if (ev.button === 2) {
+        closeOverview(false);
+      }
+    });
+    el.addEventListener('contextmenu', e => e.preventDefault());
+
+    dom.ovCards.appendChild(el);
+    cardEls.push({ data: c, el, chrome, thumb, inner, caption, border });
+  }
+}
+
+function updateSelectionClasses() {
+  for (const b of bandEls) {
+    const sel = b.data.wsIndex === state.selectedWs;
+    b.data.isSelected = sel;
+    b.el.classList.toggle('sel', sel);
+  }
+  for (const c of cardEls) {
+    const sel = c.data.win.id === state.selectedWin && c.data.wsIndex === state.selectedWs;
+    c.data.isSelected = sel;
+    c.el.classList.toggle('sel', sel);
+  }
+}
+
+/* ── Option A Frame Evaluation (`evaluateOverviewFrame(t)`) ── */
+function applyOverviewFrame(t) {
+  const showOverlay = (state.ovState !== 'CLOSED') || state.manualScrub && Math.abs(t) > 0.0005;
+
+  // Close zoom-in bounce (`t < 0` on springy close): subtle scale punch around viewport center
+  if (t < 0 && state.cfg.closeBounceGain > 0) {
+    const punch = 1.0 + Math.abs(t) * 0.22 * state.cfg.closeBounceGain;
+    dom.deskLayer.style.transform = `scale(${punch.toFixed(5)})`;
+  } else {
+    dom.deskLayer.style.transform = 'scale(1)';
+  }
+
+  if (!showOverlay && t <= 0.0005) {
+    dom.ovLayer.classList.remove('visible');
+    return;
+  }
+
+  dom.ovLayer.classList.add('visible');
+  const geom = state.sceneGeom;
+  if (!geom) return;
+
+  // Backdrop alpha clamped strictly [0, 0.92]
+  const bgAlpha = clamp(t, 0, 1) * 0.92;
+  dom.ovBackdrop.style.opacity = bgAlpha.toFixed(4);
+
+  // Header slide & fade
+  const hdrT = clamp(t, 0, 1.06);
+  const hdrY = -COMP_OVERVIEW_HEADER_H * (1 - hdrT);
+  const hdrOp = clamp(t * 1.4, 0, 1);
+  dom.ovHeader.style.transform = `translateY(${hdrY.toFixed(2)}px)`;
+  dom.ovHeader.style.opacity = hdrOp.toFixed(4);
+
+  // Anchor workspace band (the active desktop workspace we zoom from/into)
+  const anchorWs = state.activeWs;
+  const anchorBandObj = geom.bands[anchorWs] || geom.bands[0];
+  const anchorDeskRect = { x: 0, y: 0, w: OUT_W, h: OUT_H };
+
+  // Bands interpolation
+  for (const item of bandEls) {
+    const b = item.data;
+    const isAnchor = (b.wsIndex === anchorWs);
+    const bandT = Math.max(0.0, t);
+    const r = isAnchor
+      ? lerpRect(anchorDeskRect, b.band, bandT)
+      : lerpRect(
+          { x: anchorBandObj.band.x, y: anchorBandObj.band.y + (b.wsIndex - anchorWs) * 90, w: anchorBandObj.band.w, h: anchorBandObj.band.h * 0.85 },
+          b.band,
+          bandT
+        );
+    const op = isAnchor ? clamp(t * 1.6, 0, 1) : clamp((t - 0.12) / 0.65, 0, 1);
+    item.el.style.left = r.x.toFixed(2) + 'px';
+    item.el.style.top = r.y.toFixed(2) + 'px';
+    item.el.style.width = Math.max(24, r.w).toFixed(2) + 'px';
+    item.el.style.height = Math.max(24, r.h).toFixed(2) + 'px';
+    item.el.style.opacity = op.toFixed(4);
+    item.badge.style.opacity = clamp((t - 0.25) / 0.55, 0, 1).toFixed(4);
+  }
+
+  // Cards / live-rect window morph
+  const chromeAlpha = clamp((t - 0.35) / 0.60, 0, 1);
+  for (const item of cardEls) {
+    const c = item.data;
+    const isAnchorWin = (c.wsIndex === anchorWs);
+    const parentBand = bandEls[c.wsIndex];
+
+    let curThumb;
+    let curCard;
+    let cardOpacity;
+
+    if (isAnchorWin) {
+      // Live-rect morph directly from live desktop rect (t=0) to overview thumb (t=1),
+      // naturally extrapolating on t > 1.0 for zoom-out bounce!
+      const liveRect = c.win.rect;
+      const morphT = t >= 0 ? t : 0; // t < 0 handled by deskLayer zoom-in bounce
+      curThumb = lerpRect(liveRect, c.thumb, morphT);
+      curThumb.w = Math.max(16, curThumb.w);
+      curThumb.h = Math.max(16, curThumb.h);
+
+      // Card chrome aligns smoothly around the morphing thumb
+      const capH = c.caption.h * chromeAlpha;
+      curCard = {
+        x: curThumb.x - 2 * chromeAlpha,
+        y: curThumb.y - 2 * chromeAlpha,
+        w: curThumb.w + 4 * chromeAlpha,
+        h: curThumb.h + 3 * chromeAlpha + capH
+      };
+      cardOpacity = t >= 0 ? 1.0 : clamp(1.0 + t * 5.0, 0, 1);
+    } else {
+      // Non-active workspaces emerge with their band
+      const bandRect = parentBand ? {
+        x: parseFloat(parentBand.el.style.left),
+        y: parseFloat(parentBand.el.style.top),
+        w: parseFloat(parentBand.el.style.width),
+        h: parseFloat(parentBand.el.style.height)
+      } : c.card;
+      const dx = c.card.x - geom.bands[c.wsIndex].band.x;
+      const dy = c.card.y - geom.bands[c.wsIndex].band.y;
+      const sx = bandRect.w / Math.max(1, geom.bands[c.wsIndex].band.w);
+      const sy = bandRect.h / Math.max(1, geom.bands[c.wsIndex].band.h);
+      curCard = {
+        x: bandRect.x + dx * sx,
+        y: bandRect.y + dy * sy,
+        w: Math.max(20, c.card.w * sx),
+        h: Math.max(20, c.card.h * sy)
+      };
+      curThumb = {
+        x: curCard.x + 2,
+        y: curCard.y + 2,
+        w: Math.max(16, curCard.w - 4),
+        h: Math.max(12, curCard.h - c.caption.h - 4)
+      };
+      cardOpacity = clamp((t - 0.14) / 0.65, 0, 1);
+    }
+
+    item.el.style.left = curCard.x.toFixed(2) + 'px';
+    item.el.style.top = curCard.y.toFixed(2) + 'px';
+    item.el.style.width = curCard.w.toFixed(2) + 'px';
+    item.el.style.height = curCard.h.toFixed(2) + 'px';
+    item.el.style.opacity = cardOpacity.toFixed(4);
+
+    // Relative thumb inside card
+    const relTx = curThumb.x - curCard.x;
+    const relTy = curThumb.y - curCard.y;
+    item.thumb.style.left = relTx.toFixed(2) + 'px';
+    item.thumb.style.top = relTy.toFixed(2) + 'px';
+    item.thumb.style.width = curThumb.w.toFixed(2) + 'px';
+    item.thumb.style.height = curThumb.h.toFixed(2) + 'px';
+
+    const scaleX = curThumb.w / Math.max(1, c.win.rect.w);
+    const scaleY = curThumb.h / Math.max(1, c.win.rect.h);
+    item.inner.style.transform = `scale(${scaleX.toFixed(5)}, ${scaleY.toFixed(5)})`;
+
+    item.chrome.style.opacity = chromeAlpha.toFixed(4);
+    item.border.style.opacity = chromeAlpha.toFixed(4);
+    item.caption.style.left = '2px';
+    item.caption.style.width = Math.max(1, curCard.w - 4).toFixed(2) + 'px';
+    item.caption.style.height = c.caption.h.toFixed(2) + 'px';
+    item.caption.style.top = Math.max(0, curCard.h - c.caption.h - 1).toFixed(2) + 'px';
+    item.caption.style.opacity = chromeAlpha.toFixed(4);
+  }
+}
+
+/* ── Animation Control & Lifecycle Transitions ── */
+function nowSimSec() { return performance.now() / 1000.0; }
+
+function startSegment(toTarget) {
+  const now = nowSimSec();
+  state.manualScrub = false;
+
+  if (state.cfg.mode === 'instant' || state.cfg.slowdown <= 0) {
+    state.target = toTarget;
+    state.progress = toTarget;
+    state.velocity = 0;
+    state.ovState = toTarget >= 0.5 ? 'OPEN' : 'CLOSED';
+    state.peakOvershootPos = 0;
+    state.peakOvershootNeg = 0;
+    state.lastSettleMs = 0;
+    state.history = [{ dt: 0, t: toTarget, target: toTarget }];
+    if (state.ovState === 'CLOSED') {
+      dom.ovLayer.classList.remove('visible');
+    }
+    applyOverviewFrame(state.progress);
+    updateHudAndScope();
+    return;
+  }
+
+  const prevTarget = state.target;
+  state.target = toTarget;
+  state.seg.from = state.progress;
+  state.seg.to = toTarget;
+  state.seg.v0 = state.velocity;
+  state.seg.startTime = now;
+  state.seg.scale = Math.max(1.0, Math.abs(state.seg.from - state.seg.to));
+  state.seg.curveFrom = state.progress;
+  state.seg.curveTo = toTarget;
+
+  if (prevTarget === state.progress && (state.ovState === 'CLOSED' || state.ovState === 'OPEN')) {
+    state.history = [];
+    state.runStartTime = now;
+    state.peakOvershootPos = 0;
+    state.peakOvershootNeg = 0;
+    state.lastSettleMs = 0;
+  }
+  state.ovState = toTarget >= 0.5 ? 'OPENING' : 'CLOSING';
+  applyOverviewFrame(state.progress);
+  updateHudAndScope();
+}
+
+function openOverview() {
+  if (state.ovState === 'OPENING' || state.ovState === 'OPEN') return;
+  if (state.ovState === 'CLOSED') {
+    state.initialWs = state.activeWs;
+    state.initialWin = state.focusedWin;
+    state.selectedWs = state.activeWs;
+    state.selectedWin = state.focusedWin;
+    state.scrollY = 0;
+    rebuildOverviewSceneGeometry();
+  }
+  state.commitPending = false;
+  startSegment(1.0);
+}
+
+function closeOverview(commit) {
+  if (state.ovState === 'CLOSED') return;
+  if (state.ovState === 'CLOSING' && !commit) return;
+
+  const targetWs = commit ? state.selectedWs : state.initialWs;
+  const targetWin = commit ? state.selectedWin : state.initialWin;
+  state.commitPending = commit;
+
+  if (commit) {
+    // Commit target workspace/window before zooming back to desktop so Option A morphs
+    // directly into the selected workspace's live windows!
+    state.activeWs = targetWs;
+    const wins = state.workspaces[targetWs].windows;
+    if (targetWin && wins.some(w => w.id === targetWin)) {
+      state.focusedWin = targetWin;
+    } else {
+      state.focusedWin = wins.length ? wins[0].id : 0;
+    }
+    renderDesktop();
+    updateSelectionClasses();
+  }
+  startSegment(0.0);
+}
+
+function toggleOverview() {
+  if (state.ovState === 'OPENING' || state.ovState === 'OPEN') {
+    closeOverview(false);
+  } else {
+    openOverview();
+  }
+}
+
+function midFlightReverse() {
+  if (state.ovState === 'CLOSED') {
+    openOverview();
+    setTimeout(() => {
+      if (state.ovState === 'OPENING') closeOverview(false);
+    }, 150);
+  } else if (state.ovState === 'OPEN') {
+    closeOverview(false);
+    setTimeout(() => {
+      if (state.ovState === 'CLOSING') openOverview();
+    }, 150);
+  } else if (state.ovState === 'OPENING') {
+    closeOverview(false);
+  } else if (state.ovState === 'CLOSING') {
+    openOverview();
+  }
+}
+
+function closeWindowById(winId) {
+  for (let wsIdx = 0; wsIdx < state.workspaces.length; wsIdx++) {
+    const ws = state.workspaces[wsIdx];
+    const idx = ws.windows.findIndex(w => w.id === winId);
+    if (idx !== -1) {
+      ws.windows.splice(idx, 1);
+      if (state.focusedWin === winId) {
+        state.focusedWin = ws.windows.length ? ws.windows[Math.min(idx, ws.windows.length - 1)].id : 0;
+      }
+      if (state.selectedWin === winId) {
+        state.selectedWin = ws.windows.length ? ws.windows[Math.min(idx, ws.windows.length - 1)].id : 0;
+      }
+      renderDesktop();
+      if (state.ovState !== 'CLOSED') {
+        rebuildOverviewSceneGeometry();
+        applyOverviewFrame(state.progress);
+      }
+      return;
+    }
+  }
+}
+
+function resetDemo() {
+  stopAutoScenario();
+  state.workspaces = createInitialWorkspaces();
+  state.activeWs = 0;
+  state.focusedWin = 1;
+  state.initialWs = 0;
+  state.initialWin = 1;
+  state.selectedWs = 0;
+  state.selectedWin = 1;
+  state.scrollY = 0;
+  state.ovState = 'CLOSED';
+  state.progress = 0;
+  state.velocity = 0;
+  state.target = 0;
+  state.manualScrub = false;
+  state.paused = false;
+  state.history = [];
+  state.peakOvershootPos = 0;
+  state.peakOvershootNeg = 0;
+  state.lastSettleMs = 0;
+  renderDesktop();
+  dom.ovLayer.classList.remove('visible');
+  applyOverviewFrame(0);
+  updateHudAndScope();
+}
+
+function stepAnimation(now) {
+  const dtRaw = now - state.lastSimTime;
+  state.lastSimTime = now;
+
+  if (!state.manualScrub && !state.paused && (state.ovState === 'OPENING' || state.ovState === 'CLOSING')) {
+    const slowdown = Math.max(0.05, state.cfg.slowdown);
+    const effDt = ((now - state.seg.startTime) * state.speed) / slowdown;
+
+    if (state.cfg.mode === 'spring') {
+      const ev = springEval(
+        state.cfg.zeta,
+        state.cfg.stiffness,
+        state.seg.from - state.seg.to,
+        state.seg.v0,
+        effDt
+      );
+      state.progress = state.seg.to + ev.disp;
+      state.velocity = ev.vel;
+
+      const tol = state.cfg.epsilon * state.seg.scale;
+      if (Math.abs(ev.disp) <= tol && Math.abs(ev.vel) <= tol && effDt > 0.01) {
+        state.progress = state.seg.to;
+        state.velocity = 0;
+        state.lastSettleMs = Math.round((now - state.runStartTime) * 1000 * state.speed / slowdown);
+        state.ovState = state.seg.to >= 0.5 ? 'OPEN' : 'CLOSED';
+      }
+    } else if (state.cfg.mode === 'curve') {
+      const dur = Math.max(0.01, state.cfg.durationMs / 1000.0);
+      const u = clamp(effDt / dur, 0, 1);
+      const k = evalCurve(state.cfg.curve, u);
+      const span = state.seg.curveTo - state.seg.curveFrom;
+      state.progress = state.seg.curveFrom + span * k;
+      state.velocity = span * evalCurveDeriv(state.cfg.curve, u, dur);
+      if (u >= 1.0) {
+        state.progress = state.seg.curveTo;
+        state.velocity = 0;
+        state.lastSettleMs = Math.round(state.cfg.durationMs);
+        state.ovState = state.seg.curveTo >= 0.5 ? 'OPEN' : 'CLOSED';
+      }
+    }
+
+    if (state.progress > 1.0)
+      state.peakOvershootPos = Math.max(state.peakOvershootPos, state.progress - 1.0);
+    if (state.progress < 0.0)
+      state.peakOvershootNeg = Math.max(state.peakOvershootNeg, -state.progress);
+
+    state.history.push({
+      dt: now - state.runStartTime,
+      t: state.progress,
+      target: state.target
+    });
+    if (state.history.length > 600) state.history.shift();
+
+    applyOverviewFrame(state.progress);
+    updateHudAndScope();
+  }
+
+  requestAnimationFrame(stepAnimation);
+}
+
+/* ── Oscilloscope & HUD Rendering ── */
+function drawScope() {
+  const c = dom.scopeCanvas;
+  const rect = c.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(100, Math.floor(rect.width * dpr));
+  const h = Math.max(40, Math.floor(rect.height * dpr));
+  if (c.width !== w || c.height !== h) {
+    c.width = w;
+    c.height = h;
+  }
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, w, h);
+
+  // Map t ∈ [-0.22, 1.25] vertically
+  const tMin = -0.22, tMax = 1.25;
+  const yOf = (tv) => h - ((tv - tMin) / (tMax - tMin)) * h;
+  const y0 = yOf(0.0);
+  const y1 = yOf(1.0);
+
+  // Overshoot bands
+  ctx.fillStyle = 'rgba(0, 216, 240, 0.09)';
+  ctx.fillRect(0, 0, w, y1);
+  ctx.fillStyle = 'rgba(255, 185, 0, 0.09)';
+  ctx.fillRect(0, y0, w, h - y0);
+
+  // Reference lines (0.0 DESKTOP and 1.0 OVERVIEW)
+  ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+  ctx.lineWidth = 1 * dpr;
+  ctx.setLineDash([4 * dpr, 4 * dpr]);
+  ctx.beginPath();
+  ctx.moveTo(0, y1); ctx.lineTo(w, y1);
+  ctx.moveTo(0, y0); ctx.lineTo(w, y0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.font = `${9 * dpr}px 'Fira Code', monospace`;
+  ctx.fillStyle = 'rgba(0, 216, 240, 0.75)';
+  ctx.fillText('1.0 OVERVIEW (+OVERSHOOT)', 6 * dpr, Math.max(10 * dpr, y1 - 3 * dpr));
+  ctx.fillStyle = 'rgba(255, 185, 0, 0.75)';
+  ctx.fillText('0.0 DESKTOP (-BOUNCE)', 6 * dpr, Math.min(h - 3 * dpr, y0 + 10 * dpr));
+
+  // Plot theoretical curve preview lightly when idle or live trace when history exists
+  const hist = state.history;
+  if (hist.length >= 2) {
+    const tSpan = Math.max(0.85, hist[hist.length - 1].dt * 1.05);
+    ctx.strokeStyle = '#00d8f0';
+    ctx.lineWidth = 2 * dpr;
+    ctx.beginPath();
+    for (let i = 0; i < hist.length; i++) {
+      const px = (hist[i].dt / tSpan) * (w - 16 * dpr) + 8 * dpr;
+      const py = yOf(clamp(hist[i].t, tMin, tMax));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    const last = hist[hist.length - 1];
+    const lx = (last.dt / tSpan) * (w - 16 * dpr) + 8 * dpr;
+    const ly = yOf(clamp(last.t, tMin, tMax));
+    ctx.fillStyle = last.t > 1.0 ? '#00d8f0' : (last.t < 0.0 ? '#ffb900' : '#ffffff');
+    ctx.fillRect(lx - 3 * dpr, ly - 3 * dpr, 6 * dpr, 6 * dpr);
+  } else {
+    // Static theoretical preview of 0 -> 1 step
+    ctx.strokeStyle = 'rgba(0, 120, 212, 0.65)';
+    ctx.lineWidth = 1.6 * dpr;
+    ctx.beginPath();
+    const previewDur = 0.85;
+    for (let i = 0; i <= 120; i++) {
+      const dt = (i / 120) * previewDur;
+      let val = 1;
+      if (state.cfg.mode === 'spring') {
+        val = 1.0 + springEval(state.cfg.zeta, state.cfg.stiffness, -1.0, 0.0, dt * state.cfg.slowdown).disp;
+      } else if (state.cfg.mode === 'curve') {
+        const dur = Math.max(0.01, (state.cfg.durationMs / 1000) * state.cfg.slowdown);
+        val = evalCurve(state.cfg.curve, clamp(dt / dur, 0, 1));
+      } else {
+        val = dt > 0 ? 1 : 0;
+      }
+      const px = (i / 120) * (w - 16 * dpr) + 8 * dpr;
+      const py = yOf(clamp(val, tMin, tMax));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+}
+
+function updateHudAndScope() {
+  const isAnimating = state.ovState === 'OPENING' || state.ovState === 'CLOSING';
+  dom.badgeState.textContent = state.manualScrub ? 'SCRUB' : state.ovState;
+  dom.badgeInfo.textContent = `WS ${state.activeWs + 1} · t = ${state.progress.toFixed(3)} · preset: ${state.custom ? 'custom' : state.presetId}`;
+
+  dom.hudState.textContent = state.manualScrub ? 'SCRUBBED' : state.ovState;
+  dom.hudState.className = 'hud-v state-' + state.ovState;
+  dom.hudProgress.textContent = `${state.progress.toFixed(3)} → ${state.target.toFixed(1)}`;
+  dom.hudVelocity.textContent = `${state.velocity.toFixed(2)} /s`;
+  dom.hudWs.textContent = `WS ${state.activeWs + 1} → WS ${state.selectedWs + 1} (win #${state.selectedWin || '–'})`;
+  dom.hudCpu.textContent = isAnimating ? 'ACTIVE (60Hz vblank)' : 'IDLE (0% CPU)';
+  dom.hudCpu.className = 'hud-v ' + (isAnimating ? 'active-cpu' : 'idle-cpu');
+  dom.hudCommitType.textContent = state.commitPending ? 'COMMIT: FOCUS TARGET' : 'COMMIT: CANCEL/IDLE';
+
+  if (state.cfg.mode === 'spring') {
+    dom.hudEngine.textContent = `spring (ζ=${state.cfg.zeta.toFixed(2)}, k=${state.cfg.stiffness})`;
+  } else if (state.cfg.mode === 'curve') {
+    dom.hudEngine.textContent = `${state.cfg.curve} (${state.cfg.durationMs}ms)`;
+  } else {
+    dom.hudEngine.textContent = 'instant (animations.enabled=false)';
+  }
+
+  const outPct = (state.peakOvershootPos * 100).toFixed(1);
+  const inPct = (state.peakOvershootNeg * 100).toFixed(1);
+  dom.scopeStats.textContent = `OUT +${outPct}% · IN -${inPct}% · SETTLE: ${state.lastSettleMs}ms`;
+
+  if (!state.manualScrub) {
+    dom.scrubRange.value = clamp(state.progress, -0.20, 1.25).toFixed(3);
+  }
+  dom.scrubVal.textContent = `t = ${state.progress.toFixed(3)}`;
+
+  drawScope();
+}
+
+/* ── Inspector Sidebar Builders (Presets, Sliders, TOML, Scenarios) ── */
+function makeMiniSvg(p) {
+  let path = '';
+  const dur = 0.7;
+  for (let i = 0; i <= 40; i++) {
+    const dt = (i / 40) * dur;
+    let val = 1;
+    if (p.mode === 'spring') {
+      val = 1.0 + springEval(p.zeta, p.stiffness, -1.0, 0.0, dt).disp;
+    } else if (p.mode === 'curve') {
+      val = evalCurve(p.curve, clamp(dt / Math.max(0.01, p.durationMs / 1000), 0, 1));
+    } else {
+      val = i === 0 ? 0 : 1;
+    }
+    const x = 2 + (i / 40) * 60;
+    const y = 26 - clamp(val, -0.1, 1.25) * 18;
+    path += (i === 0 ? 'M' : 'L') + x.toFixed(1) + ',' + y.toFixed(1) + ' ';
+  }
+  return `<svg viewBox="0 0 64 30">
+    <line x1="2" y1="8" x2="62" y2="8" stroke="#2c2c2c" stroke-dasharray="2,2" />
+    <path d="${path}" fill="none" stroke="#00d8f0" stroke-width="1.6" />
+  </svg>`;
+}
+
+function renderPresetCards() {
+  const grid = document.getElementById('presetGrid');
+  grid.innerHTML = '';
+  for (const p of PRESETS) {
+    const btn = document.createElement('button');
+    btn.className = 'pcard' + (!state.custom && state.presetId === p.id ? ' on' : '');
+    btn.innerHTML = `
+      ${makeMiniSvg(p)}
+      <div class="pmeta">
+        <div class="pname">${p.label}${p.recommended ? '<span class="prec">DEFAULT</span>' : ''}</div>
+        <div class="pdesc">${p.desc}</div>
+      </div>`;
+    btn.addEventListener('click', () => applyPreset(p.id));
+    grid.appendChild(btn);
+  }
+}
+
+function applyPreset(presetId) {
+  const p = PRESETS.find(x => x.id === presetId);
+  if (!p) return;
+  state.presetId = p.id;
+  state.custom = false;
+  state.cfg.mode = p.mode;
+  state.cfg.zeta = p.zeta;
+  state.cfg.stiffness = p.stiffness;
+  state.cfg.epsilon = p.epsilon;
+  state.cfg.curve = p.curve;
+  state.cfg.durationMs = p.durationMs;
+  state.cfg.closeBounceGain = p.closeBounceGain;
+  syncControlsFromState();
+}
+
+function syncControlsFromState() {
+  document.querySelectorAll('#topPresets button').forEach(b => {
+    b.classList.toggle('on', !state.custom && b.dataset.p === state.presetId);
+  });
+  renderPresetCards();
+
+  const tag = document.getElementById('activePresetTag');
+  tag.textContent = state.custom ? 'CUSTOM' : state.presetId.toUpperCase();
+  tag.classList.toggle('custom', state.custom);
+
+  document.getElementById('tuneModeTag').textContent = state.cfg.mode.toUpperCase();
+  document.querySelectorAll('#segMode button').forEach(b => {
+    b.classList.toggle('on', b.dataset.m === state.cfg.mode);
+  });
+
+  const isSpring = state.cfg.mode === 'spring';
+  const isCurve = state.cfg.mode === 'curve';
+  document.getElementById('rowZeta').classList.toggle('hidden', !isSpring);
+  document.getElementById('rowStiff').classList.toggle('hidden', !isSpring);
+  document.getElementById('rowCurve').classList.toggle('hidden', !isCurve);
+  document.getElementById('rowDur').classList.toggle('hidden', !isCurve);
+
+  document.getElementById('slZeta').value = state.cfg.zeta;
+  document.getElementById('valZeta').textContent = state.cfg.zeta.toFixed(2);
+  document.getElementById('slStiff').value = state.cfg.stiffness;
+  document.getElementById('valStiff').textContent = state.cfg.stiffness;
+  document.getElementById('selCurve').value = state.cfg.curve;
+  document.getElementById('slDur').value = state.cfg.durationMs;
+  document.getElementById('valDur').textContent = state.cfg.durationMs + 'ms';
+  document.getElementById('slCloseBounce').value = Math.round(state.cfg.closeBounceGain * 100);
+  document.getElementById('valCloseBounce').textContent = Math.round(state.cfg.closeBounceGain * 100) + '%';
+  document.getElementById('slSlowdown').value = state.cfg.slowdown;
+  document.getElementById('valSlowdown').textContent = state.cfg.slowdown.toFixed(2) + '×';
+
+  // Render live TOML preview
+  const box = document.getElementById('tomlPreview');
+  const lines = [];
+  lines.push(`<span class="k-sec">[animations]</span>`);
+  lines.push(`enabled = ${state.cfg.mode === 'instant' ? 'false' : 'true'}`);
+  lines.push(`slowdown = ${state.cfg.slowdown.toFixed(2)}`);
+  lines.push('');
+  lines.push(`<span class="k-sec">[animations.overview]</span>`);
+  lines.push(`preset = "${state.custom ? 'custom' : state.presetId}"`);
+  if (state.cfg.mode === 'spring') {
+    lines.push(`mode = "spring"`);
+    lines.push(`damping_ratio = ${state.cfg.zeta.toFixed(2)}`);
+    lines.push(`stiffness = ${state.cfg.stiffness}.0`);
+    lines.push(`epsilon = ${state.cfg.epsilon}`);
+  } else if (state.cfg.mode === 'curve') {
+    lines.push(`mode = "curve"`);
+    lines.push(`curve = "${state.cfg.curve}"`);
+    lines.push(`duration_ms = ${state.cfg.durationMs}`);
+  } else {
+    lines.push(`<span class="k-cmt"># instant snap when disabled</span>`);
+  }
+  lines.push(`close_bounce_gain = ${state.cfg.closeBounceGain.toFixed(2)}`);
+  box.innerHTML = lines.join('\n');
+
+  updateHudAndScope();
+}
+
+/* ── Guided Interactive Scenarios (S1–S7) ── */
+const SCENARIOS = [
+  {
+    id: 'S1', name: 'Springy Zoom-Out & Bounce-In', tag: 'Mod+O → Esc',
+    steps: [
+      {
+        title: 'Desktop Rest State (WS 1)',
+        text: 'Desktop shows tiled <code>kajo-ide</code> + <code>foot</code> and floating <code>kajo-mod</code>. Overview tree is unallocated; <b>0% idle CPU</b>.',
+        act: () => { resetDemo(); applyPreset('spring-bounce'); }
+      },
+      {
+        title: 'Spring Open with ~8.5% Overshoot',
+        text: 'Pressing <code>Mod+O</code> allocates persistent scene buffers once and starts <code>CompSpring</code> (<code>ζ=0.62, k=380</code>). Windows morph smoothly past <code>t=1.0</code> and bounce back into their cards.',
+        act: () => { applyPreset('spring-bounce'); openOverview(); }
+      },
+      {
+        title: 'Cancel Close with Zoom-In Punch',
+        text: 'Pressing <code>Esc</code> targets <code>0.0</code>. Because <code>close_bounce_gain = 0.60</code>, dipping below <code>0.0</code> gives a subtle zoom-in punch before snapping crisp on desktop.',
+        act: () => { closeOverview(false); }
+      }
+    ]
+  },
+  {
+    id: 'S2', name: 'Cross-Workspace Focus Morph', tag: 'Mod+O → WS2 → Enter',
+    steps: [
+      {
+        title: 'Open Overview from WS 1',
+        text: 'Starting on <code>WS 1 (CODE)</code>, toggle overview open.',
+        act: () => { resetDemo(); applyPreset('spring-bounce'); openOverview(); }
+      },
+      {
+        title: 'Select KAJO-WEB on WS 2',
+        text: 'Navigate down to <code>WS 2 (WEB &amp; MEDIA)</code> and select <code>KAJO-WEB</code>. Notice selection updates accent borders cleanly without restarting the spring.',
+        act: () => { state.selectedWs = 1; state.selectedWin = 5; updateSelectionClasses(); }
+      },
+      {
+        title: 'Commit Morph into WS 2',
+        text: 'Pressing <code>Enter</code> (or clicking the card) switches active layout focus to <code>WS 2</code> immediately, then morphs <code>t: 1→0</code> directly from WS 2’s cards into WS 2’s live desktop windows.',
+        act: () => { closeOverview(true); }
+      }
+    ]
+  },
+  {
+    id: 'S3', name: 'Mid-Flight Velocity Reversal', tag: 'comp_spring_retarget()',
+    steps: [
+      {
+        title: 'Begin Opening',
+        text: 'Start opening with slow-motion (<code>0.5×</code>) so you can watch velocity continuity clearly on the oscilloscope.',
+        act: () => { resetDemo(); setSpeed(0.5); applyPreset('spring-bounce'); openOverview(); }
+      },
+      {
+        title: 'Retarget Mid-Flight (t ≈ 0.5)',
+        text: 'Firing <code>Mod+O</code> while still <code>OPENING</code> calls <code>comp_spring_retarget()</code>: initial displacement &amp; instantaneous velocity are preserved so the motion reverses cleanly without snapping.',
+        act: () => {
+          setTimeout(() => { if (state.ovState === 'OPENING') closeOverview(false); }, 180);
+        }
+      }
+    ]
+  },
+  {
+    id: 'S4', name: 'Rapid Double-Toggle Stress', tag: '3× toggles @ 140ms',
+    steps: [
+      {
+        title: 'Triple-Tap Mod+O',
+        text: 'Simulates 3 rapid toggles 140ms apart (<code>CLOSED → OPENING → CLOSING → OPENING</code>). Watch the oscilloscope trace stay C1-continuous through all reversals.',
+        act: () => {
+          resetDemo(); setSpeed(0.5); applyPreset('spring-elastic');
+          openOverview();
+          setTimeout(() => closeOverview(false), 140);
+          setTimeout(() => openOverview(), 280);
+        }
+      }
+    ]
+  },
+  {
+    id: 'S5', name: 'Preset Showcase Comparison', tag: '6 Curves Back-to-Back',
+    steps: [
+      {
+        title: 'spring-elastic (ζ=0.48, +18%)',
+        text: 'Lively under-damped spring with strong bounce.',
+        act: () => { resetDemo(); setSpeed(0.5); applyPreset('spring-elastic'); openOverview(); }
+      },
+      {
+        title: 'spring-snappy (ζ=0.80, +1.5%)',
+        text: 'Close to Niri’s crisp workspace feel — fast settle, minimal overshoot.',
+        act: () => { closeOverview(false); setTimeout(() => { applyPreset('spring-snappy'); openOverview(); }, 320); }
+      },
+      {
+        title: 'ease-out-back (260ms curve)',
+        text: 'Deterministic non-spring cubic overshoot curve.',
+        act: () => { closeOverview(false); setTimeout(() => { applyPreset('ease-out-back'); openOverview(); }, 320); }
+      }
+    ]
+  },
+  {
+    id: 'S6', name: 'Mid-Animation Window Close', tag: 'Persistent Progress',
+    steps: [
+      {
+        title: 'Open Overview',
+        text: 'Open in <code>0.25×</code> slow motion.',
+        act: () => { resetDemo(); setSpeed(0.25); applyPreset('spring-bounce'); openOverview(); }
+      },
+      {
+        title: 'Close Window #2 Mid-Flight',
+        text: 'Pressing <code>Q</code> / middle-click closes <code>FOOT (#2)</code> at <code>t &lt; 1</code>. Layout rebuilds scene nodes and immediately re-applies the active spring progress — zero 1-frame flash at <code>t=1</code>.',
+        act: () => { setTimeout(() => closeWindowById(2), 260); }
+      }
+    ]
+  },
+  {
+    id: 'S7', name: 'Instant / Reduced Motion', tag: 'animations.enabled=false',
+    steps: [
+      {
+        title: '1-Frame Instant Open',
+        text: 'With <code>instant</code> (<code>animations.enabled = false</code>), overview snaps cleanly to <code>OPEN</code> in a single frame with zero vblank scheduling.',
+        act: () => { resetDemo(); applyPreset('instant'); openOverview(); }
+      },
+      {
+        title: '1-Frame Instant Close',
+        text: 'Closes immediately back to desktop with 0ms delay.',
+        act: () => { closeOverview(false); }
+      }
+    ]
+  }
+];
+
+function renderScenarioList() {
+  const list = document.getElementById('scenList');
+  list.innerHTML = '';
+  SCENARIOS.forEach((sc, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'scen' + (idx === state.activeScenario ? ' on' : '');
+    btn.innerHTML = `<span><span class="sid">${sc.id}</span>${sc.name}</span><span class="stag">${sc.tag}</span>`;
+    btn.addEventListener('click', () => loadScenario(idx, 0));
+    list.appendChild(btn);
+  });
+}
+
+function loadScenario(scenIdx, stepIdx) {
+  stopAutoScenario();
+  state.activeScenario = scenIdx;
+  const sc = SCENARIOS[scenIdx];
+  state.scenarioStep = clamp(stepIdx, 0, sc.steps.length - 1);
+  renderScenarioList();
+  runCurrentScenarioStep();
+}
+
+function runCurrentScenarioStep() {
+  const sc = SCENARIOS[state.activeScenario];
+  const st = sc.steps[state.scenarioStep];
+  document.getElementById('narrTitle').textContent = `${sc.id}: ${st.title}`;
+  document.getElementById('narrStep').textContent = `${state.scenarioStep + 1} / ${sc.steps.length}`;
+  document.getElementById('narrText').innerHTML = st.text;
+  document.getElementById('btnScenPrev').disabled = state.scenarioStep === 0;
+  document.getElementById('btnScenNext').disabled = state.scenarioStep >= sc.steps.length - 1;
+  st.act();
+}
+
+function stopAutoScenario() {
+  state.scenarioAuto = false;
+  if (state.scenarioTimer) {
+    clearInterval(state.scenarioTimer);
+    state.scenarioTimer = null;
+  }
+  document.getElementById('btnScenPlay').textContent = '▶ AUTO-PLAY';
+}
+
+/* ── Event Wiring & Responsive Bezel Sizing ── */
+function setSpeed(spd) {
+  state.speed = spd;
+  document.querySelectorAll('#topSpeed button').forEach(b => {
+    b.classList.toggle('on', parseFloat(b.dataset.s) === spd);
+  });
+}
+
+function layoutBezel() {
+  const r = dom.screenWrap.getBoundingClientRect();
+  const availW = Math.max(200, r.width - 24);
+  const availH = Math.max(120, r.height - 24);
+  const s = Math.min(availW / OUT_W, availH / OUT_H);
+  dom.bezel.style.width = Math.floor(OUT_W * s) + 'px';
+  dom.bezel.style.height = Math.floor(OUT_H * s) + 'px';
+  dom.simScreen.style.transform = `scale(${s.toFixed(6)})`;
+}
+
+document.getElementById('topPresets').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-p]');
+  if (btn) applyPreset(btn.dataset.p);
+});
+document.getElementById('topSpeed').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-s]');
+  if (btn) setSpeed(parseFloat(btn.dataset.s));
+});
+document.getElementById('btnToggle').addEventListener('click', toggleOverview);
+document.getElementById('btnReverse').addEventListener('click', midFlightReverse);
+document.getElementById('btnReset').addEventListener('click', resetDemo);
+
+document.getElementById('tabsHead').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-tab]');
+  if (!btn) return;
+  document.querySelectorAll('#tabsHead button').forEach(b => b.classList.toggle('on', b === btn));
+  document.querySelectorAll('.pane').forEach(p => p.classList.toggle('on', p.id === 'pane-' + btn.dataset.tab));
+});
+
+document.getElementById('segMode').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-m]');
+  if (!btn) return;
+  state.custom = true;
+  state.cfg.mode = btn.dataset.m;
+  syncControlsFromState();
+});
+
+function bindSlider(id, handler) {
+  document.getElementById(id).addEventListener('input', (e) => {
+    state.custom = true;
+    handler(e.target.value);
+    syncControlsFromState();
+  });
+}
+bindSlider('slZeta', v => { state.cfg.zeta = parseFloat(v); });
+bindSlider('slStiff', v => { state.cfg.stiffness = parseInt(v, 10); });
+bindSlider('slDur', v => { state.cfg.durationMs = parseInt(v, 10); });
+bindSlider('slCloseBounce', v => { state.cfg.closeBounceGain = parseInt(v, 10) / 100.0; });
+bindSlider('slSlowdown', v => { state.cfg.slowdown = parseFloat(v); });
+document.getElementById('selCurve').addEventListener('change', (e) => {
+  state.custom = true;
+  state.cfg.curve = e.target.value;
+  syncControlsFromState();
+});
+
+dom.scrubRange.addEventListener('input', (e) => {
+  const tv = parseFloat(e.target.value);
+  if (state.ovState === 'CLOSED') {
+    state.initialWs = state.activeWs;
+    state.initialWin = state.focusedWin;
+    state.selectedWs = state.activeWs;
+    state.selectedWin = state.focusedWin;
+    rebuildOverviewSceneGeometry();
+    state.ovState = 'OPENING';
+  }
+  state.manualScrub = true;
+  state.progress = tv;
+  state.velocity = 0;
+  applyOverviewFrame(tv);
+  updateHudAndScope();
+});
+
+dom.ovLayer.addEventListener('mousedown', (e) => {
+  if (e.target === dom.ovBackdrop || e.target === dom.ovLayer) {
+    closeOverview(false);
+  }
+});
+dom.ovLayer.addEventListener('wheel', (e) => {
+  if (state.ovState === 'OPEN' || state.ovState === 'OPENING') {
+    e.preventDefault();
+    const g = state.sceneGeom;
+    if (!g) return;
+    state.scrollY = clamp(state.scrollY + e.deltaY * 0.45, 0, g.maxScroll);
+    rebuildOverviewSceneGeometry();
+    applyOverviewFrame(state.progress);
+  }
+}, { passive: false });
+
+document.getElementById('btnScenPrev').addEventListener('click', () => loadScenario(state.activeScenario, state.scenarioStep - 1));
+document.getElementById('btnScenNext').addEventListener('click', () => loadScenario(state.activeScenario, state.scenarioStep + 1));
+document.getElementById('btnScenRestart').addEventListener('click', () => loadScenario(state.activeScenario, 0));
+document.getElementById('btnScenPlay').addEventListener('click', () => {
+  if (state.scenarioAuto) {
+    stopAutoScenario();
+    return;
+  }
+  state.scenarioAuto = true;
+  document.getElementById('btnScenPlay').textContent = '■ STOP';
+  state.scenarioTimer = setInterval(() => {
+    const sc = SCENARIOS[state.activeScenario];
+    if (state.scenarioStep + 1 < sc.steps.length) {
+      state.scenarioStep++;
+      runCurrentScenarioStep();
+    } else {
+      stopAutoScenario();
+    }
+  }, 1400);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (k === 'o') { e.preventDefault(); toggleOverview(); }
+  else if (k === ' ') {
+    e.preventDefault();
+    state.paused = !state.paused;
+    updateHudAndScope();
+  } else if (state.ovState === 'OPEN' || state.ovState === 'OPENING') {
+    if (e.key === 'Escape') { e.preventDefault(); closeOverview(false); }
+    else if (e.key === 'Enter') { e.preventDefault(); closeOverview(true); }
+    else if (k === 'q' || e.key === 'Delete' || e.key === 'Backspace') {
+      e.preventDefault();
+      if (state.selectedWin) closeWindowById(state.selectedWin);
+    } else if (k >= '1' && k <= '4') {
+      const idx = parseInt(k, 10) - 1;
+      if (idx < state.workspaces.length) {
+        state.selectedWs = idx;
+        const wins = state.workspaces[idx].windows;
+        state.selectedWin = wins.length ? wins[0].id : 0;
+        rebuildOverviewSceneGeometry();
+        applyOverviewFrame(state.progress);
+      }
+    } else if (e.key === 'ArrowUp' || k === 'k') {
+      e.preventDefault();
+      if (state.selectedWs > 0) {
+        state.selectedWs--;
+        const wins = state.workspaces[state.selectedWs].windows;
+        state.selectedWin = wins.length ? wins[0].id : 0;
+        rebuildOverviewSceneGeometry();
+        applyOverviewFrame(state.progress);
+      }
+    } else if (e.key === 'ArrowDown' || k === 'j') {
+      e.preventDefault();
+      if (state.selectedWs + 1 < state.workspaces.length) {
+        state.selectedWs++;
+        const wins = state.workspaces[state.selectedWs].windows;
+        state.selectedWin = wins.length ? wins[0].id : 0;
+        rebuildOverviewSceneGeometry();
+        applyOverviewFrame(state.progress);
+      }
+    } else if (e.key === 'ArrowLeft' || k === 'h' || e.key === 'ArrowRight' || k === 'l') {
+      e.preventDefault();
+      const wins = state.workspaces[state.selectedWs].windows;
+      if (wins.length) {
+        const curIdx = Math.max(0, wins.findIndex(w => w.id === state.selectedWin));
+        const nextIdx = (e.key === 'ArrowRight' || k === 'l')
+          ? Math.min(wins.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        state.selectedWin = wins[nextIdx].id;
+        updateSelectionClasses();
+      }
+    }
+  }
+});
+
+/* ── Boot ── */
+new ResizeObserver(layoutBezel).observe(dom.screenWrap);
+window.addEventListener('resize', () => { layoutBezel(); drawScope(); });
+
+renderDesktop();
+renderScenarioList();
+applyPreset('spring-bounce');
+layoutBezel();
+state.lastSimTime = nowSimSec();
+requestAnimationFrame(stepAnimation);
+</script>
+</body>
+</html>
