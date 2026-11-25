@@ -6,6 +6,7 @@
 #include "../src/portal/portal_settings.h"
 #include "../src/files/files_portal.h"
 #include "../src/theme_export.h"
+#include "../src/app_init.h"
 #include "../src/config/kajo_config_store.h"
 
 /* ─── Helpers ─── */
@@ -720,6 +721,39 @@ test_theme_export_backup_and_revert(void)
     rm_rf_temp(tmp_cfg);
 }
 
+static void
+test_disable_portal_client_env(void)
+{
+    g_autofree gchar *orig_gdk = g_strdup(g_getenv("GDK_DEBUG"));
+    g_autofree gchar *orig_gio = g_strdup(g_getenv("GIO_USE_PORTALS"));
+    g_autofree gchar *orig_gtk = g_strdup(g_getenv("GTK_USE_PORTAL"));
+
+    g_unsetenv("GDK_DEBUG");
+    g_unsetenv("GIO_USE_PORTALS");
+    g_unsetenv("GTK_USE_PORTAL");
+
+    kajo_app_disable_portal_client();
+    g_assert_cmpstr(g_getenv("GDK_DEBUG"), ==, "no-portals");
+    g_assert_cmpstr(g_getenv("GIO_USE_PORTALS"), ==, "0");
+    g_assert_cmpstr(g_getenv("GTK_USE_PORTAL"), ==, "0");
+
+    /* Token prefix collision check: "foo-no-portals" must still append ",no-portals" */
+    g_setenv("GDK_DEBUG", "opengl,foo-no-portals", TRUE);
+    kajo_app_disable_portal_client();
+    g_assert_cmpstr(g_getenv("GDK_DEBUG"), ==, "opengl,foo-no-portals,no-portals");
+
+    /* Calling again is idempotent */
+    kajo_app_disable_portal_client();
+    g_assert_cmpstr(g_getenv("GDK_DEBUG"), ==, "opengl,foo-no-portals,no-portals");
+
+    if (orig_gdk) g_setenv("GDK_DEBUG", orig_gdk, TRUE);
+    else g_unsetenv("GDK_DEBUG");
+    if (orig_gio) g_setenv("GIO_USE_PORTALS", orig_gio, TRUE);
+    else g_unsetenv("GIO_USE_PORTALS");
+    if (orig_gtk) g_setenv("GTK_USE_PORTAL", orig_gtk, TRUE);
+    else g_unsetenv("GTK_USE_PORTAL");
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -728,6 +762,7 @@ main(int argc, char *argv[])
     g_test_add_func("/portals/settings/dbus", test_settings_portal_dbus);
     g_test_add_func("/portals/filechooser/pure-helpers", test_filechooser_pure_helpers);
     g_test_add_func("/portals/filechooser/dbus", test_filechooser_portal_dbus);
+    g_test_add_func("/portals/disable-portal-client-env", test_disable_portal_client_env);
     g_test_add_func("/theme/export/backup-and-revert", test_theme_export_backup_and_revert);
     return g_test_run();
 }

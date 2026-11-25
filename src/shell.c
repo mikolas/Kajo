@@ -3,6 +3,7 @@
 #include "theme.h"
 #include "icons.h"
 #include "panel.h"
+#include "autohide.h"
 #include "widgets/registry.h"
 #include "compositor/compositor.h"
 #include "osd/osd.h"
@@ -94,6 +95,9 @@ shell_app_new(GtkApplication *app)
     /* Load theme */
     self->theme = shell_theme_new(css_path);
 
+    /* Claim org.freedesktop.impl.portal.desktop.kajo before panel/GTK init */
+    self->portal_settings = kajo_portal_settings_new(tcfg);
+
     self->config_sub_id = kajo_config_store_subscribe(
         NULL,
         (KajoConfigDomain)(KAJO_CONFIG_DOMAIN_SHELL | KAJO_CONFIG_DOMAIN_THEME),
@@ -146,7 +150,7 @@ shell_app_activate(ShellApp *self)
     self->osk             = shell_osk_new(self);
     self->touch_gestures  = shell_touch_gestures_new(self);
     self->ipc             = shell_ipc_socket_new(self);
-    {
+    if (!self->portal_settings) {
         g_autoptr(KajoThemeCfgRef) tcfg = kajo_config_store_acquire_theme(NULL);
         self->portal_settings = kajo_portal_settings_new(tcfg);
     }
@@ -161,6 +165,19 @@ shell_app_activate(ShellApp *self)
 
     /* Show the panel */
     shell_panel_show(self->panel);
+}
+
+void
+shell_app_present_panel(ShellApp *self)
+{
+    if (!self || !self->panel)
+        return;
+
+    ShellAutohide *ah = shell_panel_get_autohide(self->panel);
+    if (ah && ah->enabled)
+        shell_autohide_touch_reveal(ah, 2000);
+    else
+        shell_panel_show(self->panel);
 }
 
 void

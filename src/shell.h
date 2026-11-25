@@ -50,6 +50,7 @@ struct _ShellApp {
 
 ShellApp           *shell_app_new(GtkApplication *app);
 void                shell_app_activate(ShellApp *self);
+void                shell_app_present_panel(ShellApp *self);
 void                shell_app_destroy(ShellApp *self);
 void                shell_app_reload_config(ShellApp *self);
 void                shell_app_reload_theme(ShellApp *self);

@@ -8,6 +8,7 @@ ConditionEnvironment=WAYLAND_DISPLAY
 [Service]
 Slice=session.slice
 Type=simple
+Environment="GDK_DEBUG=no-portals" "GIO_USE_PORTALS=0"
 ExecStart=/usr/bin/kajo
 KillMode=process
 Restart=on-failure

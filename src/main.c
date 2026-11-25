@@ -1,4 +1,5 @@
 #include "shell.h"
+#include "app_init.h"
 #include "icons.h"
 #include "hardware/hw_caps.h"
 
@@ -15,6 +16,11 @@ static void
 on_activate(GtkApplication *app, gpointer user_data)
 {
     (void)user_data;
+
+    if (g_shell_app) {
+        shell_app_present_panel(g_shell_app);
+        return;
+    }
 
     g_shell_app = shell_app_new(app);
     shell_app_activate(g_shell_app);
@@ -93,6 +99,8 @@ main(int argc, char *argv[])
             }
         }
     }
+
+    kajo_app_disable_portal_client();
 
     g_autoptr(GtkApplication) app = gtk_application_new("org.kajo.shell", G_APPLICATION_DEFAULT_FLAGS);
     int status;
