@@ -90,6 +90,15 @@ public:
   virtual void OnTabPermissionDismiss(uint64_t tab_id, uint64_t prompt_id) = 0;
 
   /* Optional hooks for WebApp navigation, native auth popups, Web Notifications & PWA probing. */
+  virtual bool OnTabRunContextMenu(
+      uint64_t /*tab_id*/,
+      int /*x*/,
+      int /*y*/,
+      const std::vector<ChromeContextMenuItem>& /*items*/,
+      CefRefPtr<CefRunContextMenuCallback> /*callback*/) {
+    return false;
+  }
+  virtual void OnTabContextMenuDismissed(uint64_t /*tab_id*/) {}
   virtual bool ShouldAllowNativePopup(uint64_t /*tab_id*/,
                                       const std::string& /*url*/,
                                       cef_window_open_disposition_t /*disposition*/) {
@@ -304,11 +313,18 @@ public:
                            CefRefPtr<CefFrame> frame,
                            CefRefPtr<CefContextMenuParams> params,
                            CefRefPtr<CefMenuModel> model) override;
+  bool RunContextMenu(CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefFrame> frame,
+                      CefRefPtr<CefContextMenuParams> params,
+                      CefRefPtr<CefMenuModel> model,
+                      CefRefPtr<CefRunContextMenuCallback> callback) override;
   bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                             CefRefPtr<CefFrame> frame,
                             CefRefPtr<CefContextMenuParams> params,
                             int command_id,
                             EventFlags event_flags) override;
+  void OnContextMenuDismissed(CefRefPtr<CefBrowser> browser,
+                              CefRefPtr<CefFrame> frame) override;
 
   /* CefFocusHandler */
   void OnGotFocus(CefRefPtr<CefBrowser> browser) override;

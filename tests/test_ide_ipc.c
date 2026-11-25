@@ -1,10 +1,12 @@
 #include "../src/ide/ide_agent_ipc.h"
+#include "../src/ide/ide_buffer.h"
 #include "../src/ide/ide_dap.h"
 #include "../src/ide/ide_lsp.h"
 #include "../src/ide/ide_dap_launch.h"
 #include "../src/ide/ide_markdown.h"
 #include <gio/gunixsocketaddress.h>
 #include <glib.h>
+#include <math.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -472,6 +474,7 @@ static void test_mermaid_extended_syntax(void) {
 
   IdeMermaidNode *na = g_ptr_array_index(g->nodes, 0);
   g_assert_cmpstr(na->label, ==, "Stage 1\nInit");
+  g_assert_cmpfloat(na->height, >, 42.0);
 
   int writes_edges = 0;
   for (guint i = 0; i < g->edges->len; i++) {
@@ -480,6 +483,31 @@ static void test_mermaid_extended_syntax(void) {
   }
   g_assert_cmpint(writes_edges, ==, 2);
   ide_mermaid_graph_free(g);
+
+  /* Fan-out / fan-in TD layout: A and E centered over B..D span, zero sibling overlap */
+  const char *fan_flow =
+      "flowchart TD\n"
+      "  A[\"Start\"] --> B[\"Branch Left\"] & C[\"Branch Mid\"] & D[\"Branch Right\"]\n"
+      "  B & C & D --> E[\"Merge\"]\n";
+  IdeMermaidGraph *fg = ide_mermaid_parse_graph(fan_flow, 1);
+  g_assert_nonnull(fg);
+  g_assert_cmpuint(fg->nodes->len, ==, 5);
+  const IdeMermaidNode *fa = g_ptr_array_index(fg->nodes, 0);
+  const IdeMermaidNode *fb = g_ptr_array_index(fg->nodes, 1);
+  const IdeMermaidNode *fc = g_ptr_array_index(fg->nodes, 2);
+  const IdeMermaidNode *fd = g_ptr_array_index(fg->nodes, 3);
+  const IdeMermaidNode *fe = g_ptr_array_index(fg->nodes, 4);
+  double min_bx = MIN(fb->x, MIN(fc->x, fd->x));
+  double max_bx = MAX(fb->x + fb->width, MAX(fc->x + fc->width, fd->x + fd->width));
+  double mid_bcd = (min_bx + max_bx) * 0.5;
+  g_assert_cmpfloat(fabs((fa->x + fa->width * 0.5) - mid_bcd), <, 1.0);
+  g_assert_cmpfloat(fabs((fe->x + fe->width * 0.5) - mid_bcd), <, 1.0);
+  g_assert_cmpfloat(fc->x, >=, fb->x + fb->width);
+  g_assert_cmpfloat(fd->x, >=, fc->x + fc->width);
+  ide_mermaid_graph_free(fg);
+
+  /* Shared dark style scheme resolution works without creating an IdeBuffer */
+  g_assert_nonnull(ide_resolve_style_scheme("kajo-metro-dark"));
 
   /* Sequence diagram participant aliases & Note skipping */
   const char *seq =

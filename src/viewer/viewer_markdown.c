@@ -100,7 +100,7 @@ update_doc_width_margins(ViewerMarkdownView *view)
         target = 860;
 
     int margin = (view->width_mode == VIEWER_MD_WIDTH_FULL)
-        ? 24
+        ? 16
         : MAX(20, (vw - target) / 2);
 
     gtk_widget_set_margin_start(doc_box, margin);
@@ -307,7 +307,7 @@ viewer_markdown_view_new(ViewerMdStateCb      state_cb,
     view->state_cb = state_cb;
     view->open_cb = open_cb;
     view->user_data = user_data;
-    view->width_mode = VIEWER_MD_WIDTH_COMFORT;
+    view->width_mode = VIEWER_MD_WIDTH_FULL;
     view->font_pct = 100;
     view->matches = g_array_new(FALSE, TRUE, sizeof(MdSearchMatch));
     view->match_idx = -1;
@@ -462,7 +462,7 @@ viewer_markdown_view_set_width_mode(ViewerMarkdownView *view, ViewerMdWidthMode 
 ViewerMdWidthMode
 viewer_markdown_view_get_width_mode(const ViewerMarkdownView *view)
 {
-    return view ? view->width_mode : VIEWER_MD_WIDTH_COMFORT;
+    return view ? view->width_mode : VIEWER_MD_WIDTH_FULL;
 }
 
 void

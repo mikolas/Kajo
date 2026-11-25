@@ -7,9 +7,20 @@
 #include <string>
 #include <vector>
 
+#include "include/cef_menu_model.h"
 #include "include/cef_scheme.h"
 
 namespace kajo_web {
+
+struct ChromeContextMenuItem {
+  std::string type; /* "command", "check", "radio", "separator", "submenu" */
+  int command_id = 0;
+  std::string label;
+  std::string accel;
+  bool enabled = true;
+  bool checked = false;
+  std::vector<ChromeContextMenuItem> children;
+};
 
 struct ChromeTabView {
   uint64_t id = 0;
@@ -245,6 +256,25 @@ private:
 
 std::string JsonEscape(const std::string& s);
 std::string HtmlEscape(const std::string& s);
+
+struct ContextMenuSize {
+  int width = 224;
+  int height = 36;
+};
+
+std::vector<ChromeContextMenuItem> SnapshotCefMenuModel(CefRefPtr<CefMenuModel> model,
+                                                        int depth = 0);
+ContextMenuSize EstimateContextMenuSize(const std::vector<ChromeContextMenuItem>& items,
+                                          int sub_size_px,
+                                          bool has_back_header = false);
+std::string SerializeContextMenuPayloadJson(
+    uint64_t seq,
+    const std::vector<ChromeContextMenuItem>& items,
+    const std::string& accent,
+    const std::string& font_family,
+    int font_size_px,
+    int sub_size_px,
+    int badge_size_px);
 
 /* Registers kajo-chrome:// and kajo:// scheme handlers on a request context. */
 void RegisterKajoSchemeHandlers(CefRefPtr<CefRequestContext> ctx,

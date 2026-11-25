@@ -268,6 +268,15 @@ window.shell-viewer-window .viewer-md-raw {
     background-color: @metro-surface-0;
 }
 
+window.shell-viewer-window textview.ide-source-view,
+window.shell-viewer-window textview.ide-source-view text,
+window.shell-viewer-window textview.viewer-md-raw,
+window.shell-viewer-window textview.viewer-md-raw text {
+    background-color: @metro-surface-0;
+    color: @metro-fg-bright;
+    caret-color: @metro-accent;
+}
+
 window.shell-viewer-window .viewer-pdf-sheet {
     border: 1px solid @metro-border-strong;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55);

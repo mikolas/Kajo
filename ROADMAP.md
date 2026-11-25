@@ -48,11 +48,12 @@ All Kajo components and standalone applications share a unified design language:
 | **Kajo IDE: user key remapping** | ✅ Done | `kajo-ide` + `kajo-settings` (`ide.toml` `[keys.<state>]` schema, hot-reloaded into `IdeFsm`, editable in `kajo-settings` → Kajo IDE & Code) |
 | **Kajo IDE: Scrollable-Tiling Code Strip & Dependency Graph Lenses** | ✅ Done | `kajo-ide` — [`docs/spec_ide_code_strip.md`](docs/spec_ide_code_strip.md), [`docs/kajo-ide-strip-mockup.html`](docs/kajo-ide-strip-mockup.html), [`docs/kajo-ide-strip-storyboard.html`](docs/kajo-ide-strip-storyboard.html): opt-in `60% | 25% | 15%` Call-Depth Strip (`Space t s`) with `28px` Ancestor Spine, peekish magnetic follow (`comp_spring`), 4 workspace-only lenses (`CALLS`/`TYPES`/`IMPACT`/`DIFF`), vertical pin split, Zen `96/4`, Bird's-Eye Overview, and `kajo-settings` controls |
 | **`kajo-files` Phase 2** | ✅ Done | [`docs/spec_files_phase2.md`](docs/spec_files_phase2.md) — Virtual read-only archive folders (`archive://`), smart extraction, archive compression, UDisks2 ISO/disk image loop-mounting, global view/sort persistence, breadcrumb auto-scroll & sibling jump popover, and multi-selection |
+| **`kajo-web`: Cross-Device & Cross-Profile Sync** | 📋 Planned | `kajo-web` + `kajo-settings` + Windows Chrome MV3 extension — [`docs/spec_kajo_web_sync.md`](docs/spec_kajo_web_sync.md) (per-profile/device Firebase RTDB REST + client E2EE, *"Tabs from Other Devices"*, bookmarks & history merge; §3.2) |
 | **Kajo Document & Image Viewer** | ✅ Implemented (Beta) | `kajo-viewer` (`org.kajo.Viewer`, [`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md)) |
-| **Kajo System Monitor** | 📋 Planned | `kajo-monitor` (`org.kajo.Monitor`) |
-| **Kajo Capture** | 📋 Planned | `kajo-capture` (`org.kajo.Capture`) |
+| **Kajo System Monitor** | 💡 Idea | `kajo-monitor` (`org.kajo.Monitor`, postponed; §3.4) |
+| **Kajo Capture** | 💡 Idea | `kajo-capture` (`org.kajo.Capture`, postponed; §3.5) |
 | **kajo-comp: wlroots fork for visual effects** | ✅ Done | `kajo-comp` — see §3.6 below (fork branch `kajo/0.20.2`, built as a static submodule) |
-| **kajo-comp: HDR10 output & mixed SDR/HDR pipeline** | 📋 Planned | `kajo-comp` — §3.7.1 (blocked on `libdisplay-info >= 0.4.0` on Host A) |
+| **kajo-comp: HDR10 output & mixed SDR/HDR pipeline** | 📋 Planned | `kajo-comp` — [`docs/spec_comp_hdr.md`](docs/spec_comp_hdr.md) (`libdisplay-info 0.3.0` DisplayID 2.0 gap resolved via §2 fallback design; §3.7.1) |
 | **kajo-comp: soft shadows, glassy backdrop blur, output stage (SDR white, tone mapping), transitions** | ✅ Done | `kajo-comp` + wlroots fork — [`docs/spec_comp_effects.md`](docs/spec_comp_effects.md) (M1–M5 complete) |
 | **kajo-comp: overview zoom (`toggle-overview`), `Mod + drag` tiled columns** | ✅ Done | `kajo-comp` (`src/comp/comp_overview.c`, `src/comp/core/comp_overview_core.c`, `src/comp/comp_window_chrome.c`, `Mod+O` / IPC `toggle-overview`, `Mod + Left/Right Button` tiled column move/resize) |
 | **kajo-comp: layout extras, multi-monitor, touchscreen gesture fixes** | 📋 Planned | `kajo-comp` — §3.7 |
@@ -67,13 +68,21 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
+### 3.2 [PLANNED] Kajo Web Cross-Device & Cross-Profile Sync
+- Specification in [`docs/spec_kajo_web_sync.md`](docs/spec_kajo_web_sync.md) covering zero-backend sync between Linux `kajo-web` instances and Google Chrome on Windows via Firebase Authentication + Firebase Realtime Database REST:
+  - **Per-Profile & Per-Device Scoping:** Sync data partitioned strictly by `uid` → `sync_profile_slug` → `device_id`, preserving complete profile separation and excluding Private/Incognito sessions, passwords, and cookies.
+  - **Firefox-Style *"Tabs from Other Devices"*:** Read-only per-device tab snapshots (`devices/<device-id>`) plus deterministic bookmark CRDT merge (reusing [`src/web/web_sync_merge.c`](src/web/web_sync_merge.c)), bounded history merge, and Kajo-only portable prefs.
+  - **Client-Side E2EE & Keyring Security:** `aes-256-gcm-v1` (`PBKDF2-HMAC-SHA256` + `AES-256-GCM`) across `libgcrypt` and Chrome WebCrypto, `libsecret-1` token/passphrase storage on Linux, hourly + startup + close + manual sync cadence, `kajo://sync` UI, `kajo-settings --page web` Sync card, and a Windows Chrome MV3 companion extension (`extensions/kajo-sync-chrome/`).
+
+---
+
 ### 3.3 [DONE — BETA] Kajo Document & Image Viewer (`kajo-viewer`, `org.kajo.Viewer`)
 - Implemented in `src/viewer/` ([`docs/spec_kajo_viewer.md`](docs/spec_kajo_viewer.md), [`docs/kajo-viewer-mockup.html`](docs/kajo-viewer-mockup.html), [`data/icons/kajo-viewer.svg`](data/icons/kajo-viewer.svg)) as a **strictly read-only** Aero + Metro viewer sharing Poppler + Cairo rendering (`src/common/pdf_render.c`) and `IdeMarkdownView` + Cairo Mermaid (`src/ide/ide_markdown.c`).
 - Includes continuous `1P`/`2P SPREAD` PDF browsing (`PAPER`/`SEPIA`/`DARK`, `OUTLINE`/`PAGES` thumbnails, `Ctrl+F` search highlights, encrypted PDF unlock), live-monitored Markdown + Heading Outline + `RAW SOURCE`, and `glycin-gtk4-2`/`librsvg-2.0`/`libexif` pan-zoom images + collapsible filmstrip. (EPUB remains out of scope.)
 
 ---
 
-### 3.4 [PLANNED] Kajo System Monitor (`kajo-monitor`, `org.kajo.Monitor`)
+### 3.4 [IDEA — POSTPONED] Kajo System Monitor (`kajo-monitor`, `org.kajo.Monitor`)
 - Full-window companion to the panel `cpu-mem` telemetry widget:
   - Live per-core CPU frequency & utilization grid.
   - Memory, ZRAM/Swap, GPU, and NVMe I/O graphs.
@@ -81,7 +90,7 @@ All Kajo components and standalone applications share a unified design language:
 
 ---
 
-### 3.5 [PLANNED] Kajo Capture (`kajo-capture`, `org.kajo.Capture`)
+### 3.5 [IDEA — POSTPONED] Kajo Capture (`kajo-capture`, `org.kajo.Capture`)
 - Native Wayland screenshot & screen-recording utility integrating with Niri and PipeWire:
   - Region, active window, or full output capture.
   - Quick Metro markup bar (crop, arrow, rectangle, redact/pixelate, copy to Wayland clipboard, save to `~/Pictures/Screenshots`).
@@ -122,7 +131,7 @@ The compositor spec describes what is built; everything below is not implemented
 
 | Item | Why not built yet / blocker | Starting approach |
 | :--- | :--- | :--- |
-| **HDR10 output & mixed SDR/HDR pipeline** | v1 ships a solid 8-bit SDR compositor first. On Host A, `libdisplay-info` 0.3.0 misses the DisplayID 2.0 CTA HDR blocks (fixed in 0.4.0). Fork output-stage SDR white & BT.2390 tone mapping are already in place (M4). | §3.7.1. Vulkan only (GLES2 and pixman have no input/output colour transforms in wlroots 0.20.2). |
+| **HDR10 output & mixed SDR/HDR pipeline** | Postponed after v1 8-bit SDR; fork output-stage SDR white & BT.2390 tone mapping are in place (M4), and the `libdisplay-info 0.3.0` DisplayID 2.0 gap is addressed by a small fallback parser / optional static subproject. | [`docs/spec_comp_hdr.md`](docs/spec_comp_hdr.md) + §3.7.1. Vulkan only (`input_color_transform` / `output_color_transform`). |
 | **OSK: keep the focused text field visible** | Push-up is built: with `[osk] push_windows = true` the shell sets a layer-shell exclusive zone (`src/osk/osk.c`) and `kajo-comp` shrinks the working area and relays out (`comp_layer_arrange`). Checked by eye on Host A with kitty and Thorium (native Wayland). Missing: scrolling the focused column / window so the text cursor stays above the keyboard when the field is hidden even after the shrink. | Use the `text-input-v3` cursor rectangle to offset the camera. |
 | **Layout extras** | Not needed for v1. | Evaluate individually: `focus-follows-mouse`, `switch-preset-column-width-back`, a `maximize-window-to-edges` keybind, named workspaces, `empty-workspace-above-first`, `default-column-display`, custom struts. |
 | **Multi-monitor sessions** | v1 policy drives one active output (spec §3.13 `OUT1–OUT4`; greeter mode is the exception). | Workspaces per output, layer surfaces and IPC per output. Expect a few thousand lines. |

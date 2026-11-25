@@ -174,18 +174,101 @@ window.shell-files-window popover.files-sort-popover > contents,
 window.shell-files-window popover.files-context-popover > contents {
     background: none;
     background-image: none;
-    background-color: @metro-glass-bg;
+    background-color: @metro-surface-bg;
     border: 1px solid @metro-accent;
     border-radius: 0px;
     padding: 0px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.72);
 }
 
+window.shell-files-window popover.files-sort-popover .shell-popover-header,
+window.shell-files-window popover.files-context-popover .shell-popover-header {
+    background-color: @metro-surface-3;
+    border-bottom: 1px solid @metro-border;
+    padding: 7px 10px;
+}
+
+window.shell-files-window popover.files-context-popover .shell-popover-body {
+    padding: 4px 6px;
+}
+
+window.shell-files-window popover.files-sort-popover .shell-popover-body {
+    padding: 10px 12px;
+}
+
+window.shell-files-window popover.files-context-popover separator {
+    margin: 3px 4px;
+    background-color: @metro-border;
+    min-height: 1px;
+}
+
+window.shell-files-window .files-ctx-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: @metro-fg-primary;
+    letter-spacing: 0px;
+    text-transform: none;
+}
+
+window.shell-files-window popover button.files-ctx-item {
+    background: none;
+    background-image: none;
+    background-color: transparent;
+    border: 1px solid transparent;
+    border-radius: 0px;
+    padding: 3px 10px;
+    min-height: 20px;
+    color: @metro-fg-soft;
+    font-size: 12px;
+    font-weight: 500;
+    box-shadow: none;
+    outline: none;
+}
+
+window.shell-files-window popover button.files-ctx-item:hover {
+    background-color: @metro-accent;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window popover button.files-ctx-item:disabled {
+    color: @metro-fg-dim;
+    opacity: 0.45;
+}
+
+window.shell-files-window popover button.files-ctx-item.files-ctx-danger {
+    background-color: transparent;
+    border-color: transparent;
+    color: @metro-urgent-text;
+    font-weight: 600;
+}
+
+window.shell-files-window popover button.files-ctx-item.files-ctx-danger:hover {
+    background-color: @metro-urgent;
+    border-color: @metro-urgent;
+    color: @metro-fg-primary;
+}
+
+window.shell-files-window popover button.files-ctx-item .files-ctx-icon {
+    color: @metro-fg-secondary;
+}
+
+window.shell-files-window popover button.files-ctx-item.files-ctx-danger .files-ctx-icon {
+    color: @metro-urgent-text;
+}
+
+window.shell-files-window popover button.files-ctx-item:hover .files-ctx-icon,
+window.shell-files-window popover button.files-ctx-item:hover .files-ctx-shortcut,
+window.shell-files-window popover button.files-ctx-item.files-ctx-danger:hover .files-ctx-icon,
+window.shell-files-window popover button.files-ctx-item.files-ctx-danger:hover .files-ctx-shortcut {
+    color: @metro-fg-primary;
+}
+
 window.shell-files-window button.files-menu-row {
     background: none;
     background-image: none;
-    background-color: @metro-glass-control;
-    border: 1px solid @metro-glass-border;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border;
     border-left: 3px solid transparent;
     border-radius: 0px;
     padding: 6px 10px;
@@ -196,7 +279,7 @@ window.shell-files-window button.files-menu-row {
 }
 
 window.shell-files-window button.files-menu-row:hover {
-    background-color: @metro-glass-hover;
+    background-color: @metro-surface-hover;
     border-color: @metro-accent;
     color: @metro-fg-primary;
 }

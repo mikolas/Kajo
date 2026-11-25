@@ -666,6 +666,7 @@ shell_theme_write_override_css_internal(const KajoThemeCfg *cfg,
         "window.shell-web-window .web-dim-label,\n"
         "window.shell-web-picker .web-dim-label,\n"
         "window.shell-web-picker checkbutton,\n"
+        "window.shell-files-window popover button.files-ctx-item,\n"
         "popover button.web-ctx-row {\n"
         "    font-size: %dpx;\n"
         "}\n\n",

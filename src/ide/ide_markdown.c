@@ -168,9 +168,7 @@ static GtkWidget *build_code_block_widget(const char *lang_id, const char *code)
     GtkSourceLanguage *lang = gtk_source_language_manager_get_language(lm, lang_id);
     if (lang) gtk_source_buffer_set_language(sbuf, lang);
   }
-  GtkSourceStyleSchemeManager *sm = gtk_source_style_scheme_manager_get_default();
-  GtkSourceStyleScheme *scheme =
-      gtk_source_style_scheme_manager_get_scheme(sm, "kajo-metro-dark");
+  GtkSourceStyleScheme *scheme = ide_resolve_style_scheme("kajo-metro-dark");
   if (scheme) gtk_source_buffer_set_style_scheme(sbuf, scheme);
 
   gtk_text_buffer_set_text(GTK_TEXT_BUFFER(sbuf), code ? code : "", -1);
@@ -548,11 +546,8 @@ static void render_pipe_table_block(IdeMarkdownView *md,
                                     guint            n_lines,
                                     guint           *io_i) {
   guint i = *io_i;
-  GtkWidget *grid = gtk_grid_new();
-  gtk_widget_add_css_class(grid, "ide-md-table");
-  gtk_grid_set_column_spacing(GTK_GRID(grid), 12);
-  gtk_grid_set_row_spacing(GTK_GRID(grid), 6);
-  int row_idx = 0;
+  guint max_cols = 0;
+  GPtrArray *rows = g_ptr_array_new_with_free_func((GDestroyNotify)g_strfreev);
 
   while (i < n_lines) {
     const char *tline = lines[i];
@@ -562,65 +557,118 @@ static void render_pipe_table_block(IdeMarkdownView *md,
       break;
     }
     if (!ide_markdown_is_table_separator_row(tline)) {
-      g_auto(GStrv) cells = g_strsplit(tline, "|", -1);
-      int col_idx = 0;
+      char **cells = g_strsplit(tline, "|", -1);
+      guint ncols = 0;
       for (guint c = 1; cells[c] != NULL && cells[c + 1] != NULL; c++) {
-        g_autofree char *cell_txt = g_strstrip(g_strdup(cells[c]));
-        g_autofree char *c_alt = NULL;
-        g_autofree char *c_src = NULL;
-        g_autofree char *c_lnk = NULL;
-        GtkWidget *cell_widget = NULL;
-
-        if (ide_markdown_extract_embed(cell_txt, &c_alt, &c_src, &c_lnk)) {
-          g_autofree char *res = ide_markdown_resolve_asset_path(
-              c_src,
-              md ? md->doc_dir : NULL,
-              md ? md->workspace_root : NULL,
-              NULL);
-          if (res && g_file_test(res, G_FILE_TEST_EXISTS) &&
-              ide_markdown_classify_asset(res) == IDE_MD_EMBED_IMAGE) {
-            g_autoptr(GFile) gf = g_file_new_for_path(res);
-            GdkTexture *tex = gdk_texture_new_from_file(gf, NULL);
-            if (tex) {
-              GtkWidget *pic =
-                  gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
-              gtk_picture_set_can_shrink(GTK_PICTURE(pic), TRUE);
-              gtk_picture_set_content_fit(GTK_PICTURE(pic),
-                                          GTK_CONTENT_FIT_CONTAIN);
-              gtk_widget_set_size_request(pic, 32, 32);
-              gtk_widget_set_halign(pic, GTK_ALIGN_CENTER);
-              gtk_widget_set_valign(pic, GTK_ALIGN_CENTER);
-              if (c_alt && *c_alt)
-                gtk_widget_set_tooltip_text(pic, c_alt);
-              g_object_unref(tex);
-              cell_widget = pic;
-            }
-          }
-        }
-
-        if (!cell_widget) {
-          cell_widget = create_rich_markdown_label(
-              md, cell_txt, row_idx == 0 ? "shell-popover-badge" : NULL);
-          gtk_label_set_wrap(GTK_LABEL(cell_widget), FALSE);
-          gtk_widget_set_valign(cell_widget, GTK_ALIGN_CENTER);
-        }
-        gtk_grid_attach(
-            GTK_GRID(grid), cell_widget, col_idx++, row_idx, 1, 1);
+        g_strstrip(cells[c]);
+        ncols++;
       }
-      row_idx++;
+      if (ncols > max_cols)
+        max_cols = ncols;
+      g_ptr_array_add(rows, cells);
     }
     i++;
   }
-  GtkWidget *tbl_scroll = gtk_scrolled_window_new();
-  gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tbl_scroll),
-                                 GTK_POLICY_AUTOMATIC,
-                                 GTK_POLICY_NEVER);
-  gtk_scrolled_window_set_propagate_natural_width(
-      GTK_SCROLLED_WINDOW(tbl_scroll), FALSE);
-  gtk_scrolled_window_set_propagate_natural_height(
-      GTK_SCROLLED_WINDOW(tbl_scroll), TRUE);
-  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(tbl_scroll), grid);
-  gtk_box_append(GTK_BOX(target_box), tbl_scroll);
+
+  g_autofree guint *col_max_chars = g_new0(guint, MAX(1u, max_cols));
+  for (guint r = 0; r < rows->len; r++) {
+    char **cells = g_ptr_array_index(rows, r);
+    for (guint c = 1, col_idx = 0;
+         cells[c] != NULL && cells[c + 1] != NULL && col_idx < max_cols;
+         c++, col_idx++) {
+      guint len = (guint)g_utf8_strlen(cells[c], -1);
+      if (len > col_max_chars[col_idx])
+        col_max_chars[col_idx] = len;
+    }
+  }
+
+  GtkWidget *grid = gtk_grid_new();
+  gtk_widget_add_css_class(grid, "ide-md-table");
+  gtk_widget_set_hexpand(grid, TRUE);
+  gtk_widget_set_halign(grid, GTK_ALIGN_FILL);
+  gtk_grid_set_column_spacing(GTK_GRID(grid), 16);
+  gtk_grid_set_row_spacing(GTK_GRID(grid), 8);
+
+  for (guint r = 0; r < rows->len; r++) {
+    char **cells = g_ptr_array_index(rows, r);
+    for (guint c = 1, col_idx = 0;
+         cells[c] != NULL && cells[c + 1] != NULL && col_idx < max_cols;
+         c++, col_idx++) {
+      const char *cell_txt = cells[c];
+      g_autofree char *c_alt = NULL;
+      g_autofree char *c_src = NULL;
+      g_autofree char *c_lnk = NULL;
+      GtkWidget *cell_widget = NULL;
+
+      if (ide_markdown_extract_embed(cell_txt, &c_alt, &c_src, &c_lnk)) {
+        g_autofree char *res = ide_markdown_resolve_asset_path(
+            c_src,
+            md ? md->doc_dir : NULL,
+            md ? md->workspace_root : NULL,
+            NULL);
+        if (res && g_file_test(res, G_FILE_TEST_EXISTS) &&
+            ide_markdown_classify_asset(res) == IDE_MD_EMBED_IMAGE) {
+          g_autoptr(GFile) gf = g_file_new_for_path(res);
+          GdkTexture *tex = gdk_texture_new_from_file(gf, NULL);
+          if (tex) {
+            GtkWidget *pic =
+                gtk_picture_new_for_paintable(GDK_PAINTABLE(tex));
+            gtk_picture_set_can_shrink(GTK_PICTURE(pic), TRUE);
+            gtk_picture_set_content_fit(GTK_PICTURE(pic),
+                                        GTK_CONTENT_FIT_CONTAIN);
+            gtk_widget_set_size_request(pic, 32, 32);
+            gtk_widget_set_halign(pic, GTK_ALIGN_CENTER);
+            gtk_widget_set_valign(pic, GTK_ALIGN_CENTER);
+            if (c_alt && *c_alt)
+              gtk_widget_set_tooltip_text(pic, c_alt);
+            g_object_unref(tex);
+            cell_widget = pic;
+          }
+        }
+      }
+
+      if (!cell_widget) {
+        cell_widget = create_rich_markdown_label(
+            md, cell_txt, r == 0 ? "shell-popover-badge" : NULL);
+        if (r == 0) {
+          gtk_label_set_wrap(GTK_LABEL(cell_widget), FALSE);
+          gtk_widget_set_halign(cell_widget, GTK_ALIGN_START);
+          gtk_widget_set_valign(cell_widget, GTK_ALIGN_CENTER);
+        } else if (col_max_chars[col_idx] > 22) {
+          gtk_label_set_wrap(GTK_LABEL(cell_widget), TRUE);
+          gtk_label_set_wrap_mode(GTK_LABEL(cell_widget), PANGO_WRAP_WORD_CHAR);
+          gtk_widget_set_hexpand(cell_widget, TRUE);
+          gtk_widget_set_halign(cell_widget, GTK_ALIGN_FILL);
+          gtk_label_set_xalign(GTK_LABEL(cell_widget), 0.0f);
+          gtk_widget_set_valign(cell_widget, GTK_ALIGN_START);
+        } else {
+          gtk_label_set_wrap(GTK_LABEL(cell_widget), FALSE);
+          gtk_widget_set_hexpand(cell_widget, FALSE);
+          gtk_widget_set_halign(cell_widget, GTK_ALIGN_START);
+          gtk_widget_set_valign(cell_widget, GTK_ALIGN_START);
+        }
+      }
+      gtk_grid_attach(
+          GTK_GRID(grid), cell_widget, (int)col_idx, (int)r, 1, 1);
+    }
+  }
+
+  g_ptr_array_free(rows, TRUE);
+
+  if (max_cols <= 7) {
+    gtk_box_append(GTK_BOX(target_box), grid);
+  } else {
+    GtkWidget *tbl_scroll = gtk_scrolled_window_new();
+    gtk_scrolled_window_set_policy(GTK_SCROLLED_WINDOW(tbl_scroll),
+                                   GTK_POLICY_AUTOMATIC,
+                                   GTK_POLICY_NEVER);
+    gtk_scrolled_window_set_propagate_natural_width(
+        GTK_SCROLLED_WINDOW(tbl_scroll), FALSE);
+    gtk_scrolled_window_set_propagate_natural_height(
+        GTK_SCROLLED_WINDOW(tbl_scroll), TRUE);
+    gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(tbl_scroll), grid);
+    gtk_box_append(GTK_BOX(target_box), tbl_scroll);
+  }
   *io_i = i;
 }
 

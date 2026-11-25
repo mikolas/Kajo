@@ -82,6 +82,13 @@ public:
   void OnChromeBrowserCreated(int role, CefRefPtr<CefBrowser> browser);
   void OnChromeDraggableRegions(const std::vector<CefDraggableRegion>& regions);
   bool OnChromeShortcut(const CefKeyEvent& event);
+  bool OpenChromeContextMenu(int role,
+                             int x,
+                             int y,
+                             const std::vector<ChromeContextMenuItem>& items,
+                             CefRefPtr<CefRunContextMenuCallback> callback);
+  void OnChromeContextMenuDismissed(int role);
+  void OnChromeViewGotFocus(int role);
   CefSize GetPreferredChromeViewSize(CefRefPtr<CefView> view) const;
   int CurrentDockedRailWidth() const;
   int CurrentRailOverlayWidth() const;
@@ -146,6 +153,12 @@ public:
                             const ChromeDownloadView& dl,
                             CefRefPtr<CefDownloadItemCallback> callback) override;
   bool OnTabContextCommand(uint64_t tab_id, int command_id, const std::string& target_url) override;
+  bool OnTabRunContextMenu(uint64_t tab_id,
+                           int x,
+                           int y,
+                           const std::vector<ChromeContextMenuItem>& items,
+                           CefRefPtr<CefRunContextMenuCallback> callback) override;
+  void OnTabContextMenuDismissed(uint64_t tab_id) override;
   void OnTabCrashed(uint64_t tab_id,
                     int status,
                     int error_code,
@@ -255,6 +268,17 @@ private:
   void ToggleActiveBookmark();
   void ToggleOverlay(const std::string& mode);
   void CloseOverlay();
+  bool OpenContextMenuCommon(CefRefPtr<CefView> source_view,
+                             uint64_t tab_id,
+                             int source_role,
+                             int x,
+                             int y,
+                             const std::vector<ChromeContextMenuItem>& items,
+                             CefRefPtr<CefRunContextMenuCallback> callback);
+  void DismissContextMenu(bool restore_focus);
+  void CompleteContextMenu(int command_id, cef_event_flags_t event_flags);
+  void RestoreContextMenuFocus(uint64_t tab_id, int source_role);
+  void UpdateContextMenuBounds(int menu_w, int menu_h);
   void HideAutocomplete();
   void BuildAutocomplete(const std::string& query);
   void BuildPalette(const std::string& query);
@@ -307,16 +331,29 @@ private:
   CefRefPtr<CefBrowserView> rail_view_;
   CefRefPtr<CefBrowserView> infobar_view_;
   CefRefPtr<CefBrowserView> overlay_view_;
+  CefRefPtr<CefBrowserView> ctxmenu_view_;
   CefRefPtr<CefBrowserView> ac_view_;
   CefRefPtr<CefOverlayController> rail_ctrl_;
   CefRefPtr<CefOverlayController> infobar_ctrl_;
   CefRefPtr<CefOverlayController> overlay_ctrl_;
+  CefRefPtr<CefOverlayController> ctxmenu_ctrl_;
   CefRefPtr<CefOverlayController> ac_ctrl_;
   CefRefPtr<CefBrowser> topbar_browser_;
   CefRefPtr<CefBrowser> rail_browser_;
   CefRefPtr<CefBrowser> infobar_browser_;
   CefRefPtr<CefBrowser> overlay_browser_;
+  CefRefPtr<CefBrowser> ctxmenu_browser_;
   CefRefPtr<CefBrowser> ac_browser_;
+  CefRefPtr<CefRunContextMenuCallback> ctxmenu_cb_;
+  bool ctxmenu_ready_ = false;
+  bool ctxmenu_open_ = false;
+  uint64_t ctxmenu_seq_ = 0;
+  int ctxmenu_anchor_x_ = 0;
+  int ctxmenu_anchor_y_ = 0;
+  int ctxmenu_w_ = 224;
+  int ctxmenu_h_ = 120;
+  uint64_t ctxmenu_tab_id_ = 0;
+  int ctxmenu_source_role_ = 0;
   CefRefPtr<CefMessageRouterBrowserSide> router_;
 
   std::map<uint64_t, TabEntry> tabs_;

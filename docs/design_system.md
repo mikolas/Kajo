@@ -132,6 +132,9 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - All horizontal children (`icon`, `vbox`, `label`, `button`, `switch`) **MUST** set `valign: GTK_ALIGN_CENTER`.
   - `:hover`: `#242424` background, `border-color: @metro-accent`.
   - `:selected` / `.active`: `alpha(@metro-accent, 0.25)` background, `border-color: @metro-accent`, `border-left: 3px solid #ffffff` (or `@metro-accent` in menus).
+- **Files Context & Sort Popovers (`.files-context-popover`, `.files-sort-popover`, `.files-ctx-item`, `.files-ctx-danger`, `.files-ctx-icon`, `.files-ctx-title`):**
+  - Opaque `@metro-surface-bg` (`#141414`) background with `1px solid @metro-accent` border (never translucent glass over dense file grids), `@metro-surface-3` header (`padding: 7px 10px`) using `.files-ctx-title` (`12px` bold, un-uppercased, `GTK_ALIGN_FILL` + `xalign: 0.0`), and compact `.shell-popover-body` (`padding: 4px 6px`).
+  - Action rows use flat `button.files-ctx-item` (`12px`, `min-height: 20px`, `padding: 3px 10px`, transparent background, `@metro-accent` fill on `:hover`) with `14px` monochrome symbolic `.files-ctx-icon` and right-aligned `.files-ctx-shortcut`; destructive actions add `.files-ctx-danger` (`@metro-urgent-text`, `@metro-urgent` fill on `:hover`).
 - **Sortable Table Column Headers (`.files-list-header`, `button.files-col-header-btn`):**
   - `#181818` header bar with clickable `11px` uppercase column buttons (`NAME ▲`, `SIZE`, `TYPE`, `MODIFIED`). Active sort column has `color: @metro-accent; border-bottom: 2px solid @metro-accent;`.
 - **Metro Tile Grid Cards (`.files-tile-card`, `.files-tile-folder`):**
