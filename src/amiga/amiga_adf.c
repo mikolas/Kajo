@@ -201,18 +201,17 @@ amiga_adf_create_dos(const AmigaAdfDosSpec *spec, GError **error)
     uint8_t default_boot[1024];
     const uint8_t *boot_ptr = spec->bootblock;
     if (!boot_ptr) {
-      /* Standard minimal AmigaDOS bootcode (opens dos.library & runs s/startup-sequence) */
+      /* Verified Kickstart 1.3-3.1 AmigaDOS bootblock (FindResident("dos.library")->RT_INIT) */
       static const uint8_t dos_bootcode[] = {
-        0x43, 0xFA, 0x00, 0x3E, /* lea dosname(pc),a1 */
-        0x70, 0x25,             /* moveq #37,d0 */
-        0x4E, 0xAE, 0xFD, 0xD8, /* jsr -552(a6) (_LVOOpenLibrary) */
-        0x4A, 0x80,             /* tst.l d0 */
-        0x67, 0x0C,             /* beq.s err */
-        0x22, 0x40,             /* move.l d0,a1 */
-        0x08, 0xE9, 0x00, 0x00, 0x00, 0x06,
-        0x4E, 0xAE, 0xFE, 0x62,
-        0x60, 0x04,
-        0x70, 0xFF,             /* moveq #-1,d0 */
+        0x43, 0xFA, 0x00, 0x18, /* lea     dosname(pc),a1 (PC=14 + 24 = 38) */
+        0x4E, 0xAE, 0xFF, 0xA0, /* jsr     -96(a6)        (_LVOFindResident) */
+        0x4A, 0x80,             /* tst.l   d0 */
+        0x67, 0x0A,             /* beq.s   .err           (PC=24 + 10 = 34) */
+        0x20, 0x40,             /* movea.l d0,a0 */
+        0x20, 0x68, 0x00, 0x16, /* movea.l 22(a0),a0      (RT_INIT) */
+        0x70, 0x00,             /* moveq   #0,d0 */
+        0x4E, 0x75,             /* rts */
+        0x70, 0xFF,             /* .err: moveq #-1,d0 */
         0x4E, 0x75,             /* rts */
         'd', 'o', 's', '.', 'l', 'i', 'b', 'r', 'a', 'r', 'y', 0,
       };

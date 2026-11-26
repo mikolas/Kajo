@@ -36,6 +36,88 @@ find_reg_by_query(const char *q)
 }
 
 static bool
+search_hrm_markdown_content(const char  *dir_path,
+                            const char  *term_primary,
+                            const char  *term_alt,
+                            char       **out_md,
+                            char       **out_path)
+{
+  if (!dir_path || !term_primary || !term_primary[0]) return false;
+  GDir *gd = g_dir_open(dir_path, 0, NULL);
+  if (!gd) return false;
+
+  g_autoptr(GPtrArray) files = g_ptr_array_new_with_free_func(g_free);
+  const char *ent = NULL;
+  while ((ent = g_dir_read_name(gd)) != NULL) {
+    if (g_str_has_suffix(ent, ".md") || g_str_has_suffix(ent, ".MD")) {
+      g_ptr_array_add(files, g_strdup(ent));
+    }
+  }
+  g_dir_close(gd);
+
+  /* Sort filenames deterministically (prefer register-map.md first if present) */
+  for (guint i = 1; i < files->len; i++) {
+    char *k = g_ptr_array_index(files, i);
+    int j = (int)i - 1;
+    while (j >= 0 && g_strcmp0((const char *)g_ptr_array_index(files, j), k) > 0) {
+      files->pdata[j + 1] = files->pdata[j];
+      j--;
+    }
+    files->pdata[j + 1] = k;
+  }
+
+  g_autofree char *q1 = g_ascii_strdown(term_primary, -1);
+  g_autofree char *q2 = (term_alt && term_alt[0]) ? g_ascii_strdown(term_alt, -1) : NULL;
+
+  for (int pass = 0; pass < 2; pass++) {
+    for (guint i = 0; i < files->len; i++) {
+      const char *fn = g_ptr_array_index(files, i);
+      bool is_regmap = (g_ascii_strcasecmp(fn, "register-map.md") == 0);
+      if ((pass == 0 && !is_regmap) || (pass == 1 && is_regmap)) continue;
+
+      g_autofree char *full = g_build_filename(dir_path, fn, NULL);
+      g_autofree char *raw = NULL;
+      if (!g_file_get_contents(full, &raw, NULL, NULL) || !raw) continue;
+
+      g_autofree char *low = g_ascii_strdown(raw, -1);
+      const char *hit = strstr(low, q1);
+      if (!hit && q2) hit = strstr(low, q2);
+      if (!hit) continue;
+
+      /* Extract the markdown section or +/- 60 lines around the hit */
+      size_t off = (size_t)(hit - low);
+      size_t start = off;
+      int back_lines = 0;
+      while (start > 0 && back_lines < 18) {
+        start--;
+        if (raw[start] == '\n') back_lines++;
+        if (start + 2 < off && raw[start] == '\n' && raw[start + 1] == '#') {
+          start++;
+          break;
+        }
+      }
+      if (start > 0 && raw[start] == '\n') start++;
+
+      size_t end = off;
+      int fwd_lines = 0;
+      while (raw[end] != '\0' && fwd_lines < 48) {
+        if (raw[end] == '\n') {
+          fwd_lines++;
+          if (fwd_lines > 6 && raw[end + 1] == '#' && raw[end + 2] == '#') break;
+        }
+        end++;
+      }
+
+      g_autofree char *slice = g_strndup(raw + start, end - start);
+      *out_md = g_strdup_printf("> Match in `%s`\n\n%s", fn, slice);
+      *out_path = g_steal_pointer(&full);
+      return true;
+    }
+  }
+  return false;
+}
+
+static bool
 try_load_local_hrm(AmigaHrmView *self, const char *q, char **out_md, char **out_path)
 {
   if (!self->hrm_dir || !self->hrm_dir[0] || !g_file_test(self->hrm_dir, G_FILE_TEST_IS_DIR)) {
@@ -52,6 +134,15 @@ try_load_local_hrm(AmigaHrmView *self, const char *q, char **out_md, char **out_
     if (g_file_test(path, G_FILE_TEST_IS_REGULAR) &&
         g_file_get_contents(path, out_md, NULL, NULL)) {
       *out_path = g_steal_pointer(&path);
+      return true;
+    }
+  }
+
+  if (q && q[0]) {
+    const AmigaHwRegInfo *ri = find_reg_by_query(clean);
+    g_autofree char *alt = ri ? g_strdup_printf("DFF%03X", ri->offset) : NULL;
+    const char *primary = (ri && ri->name) ? ri->name : clean;
+    if (search_hrm_markdown_content(self->hrm_dir, primary, alt, out_md, out_path)) {
       return true;
     }
   }

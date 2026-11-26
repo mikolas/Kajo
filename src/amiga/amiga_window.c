@@ -10,8 +10,6 @@
 
 G_DEFINE_TYPE(KajoAmigaWindow, kajo_amiga_window, GTK_TYPE_APPLICATION_WINDOW)
 
-static void refresh_rsp_snapshot(KajoAmigaWindow *self);
-
 /* ─── Helpers & Toast ─── */
 
 static gboolean
@@ -35,8 +33,8 @@ amiga_window_show_toast(KajoAmigaWindow *self, const char *msg)
 
 #define show_toast amiga_window_show_toast
 
-static const AmigaTarget *
-get_selected_target(KajoAmigaWindow *self)
+const AmigaTarget *
+amiga_window_get_selected_target(KajoAmigaWindow *self)
 {
   if (!self->project || !self->project->targets || self->project->targets->len == 0) return NULL;
   guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_target));
@@ -44,8 +42,8 @@ get_selected_target(KajoAmigaWindow *self)
   return g_ptr_array_index(self->project->targets, idx);
 }
 
-static const AmigaHwProfile *
-get_selected_profile(KajoAmigaWindow *self)
+const AmigaHwProfile *
+amiga_window_get_selected_profile(KajoAmigaWindow *self)
 {
   if (!self->project || !self->project->profiles || self->project->profiles->len == 0) return NULL;
   guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_profile));
@@ -56,8 +54,8 @@ get_selected_profile(KajoAmigaWindow *self)
 static void
 sync_compat_badge(KajoAmigaWindow *self)
 {
-  const AmigaTarget *t = get_selected_target(self);
-  const AmigaHwProfile *p = get_selected_profile(self);
+  const AmigaTarget *t = amiga_window_get_selected_target(self);
+  const AmigaHwProfile *p = amiga_window_get_selected_profile(self);
   g_autofree char *warn = amiga_project_check_profile_compat(t, p);
   if (warn) {
     gtk_label_set_text(GTK_LABEL(self->compat_badge), warn);
@@ -137,8 +135,8 @@ update_cursor_and_selection_cycles(KajoAmigaWindow *self)
 
 /* ─── Editor Buffer Open, Outline & Save ─── */
 
-static void
-open_file_in_editor(KajoAmigaWindow *self, const char *abs_path, guint line_1based)
+void
+amiga_window_open_file_at_line(KajoAmigaWindow *self, const char *abs_path, guint line_1based)
 {
   if (!abs_path || !g_file_test(abs_path, G_FILE_TEST_IS_REGULAR)) return;
 
@@ -158,6 +156,9 @@ open_file_in_editor(KajoAmigaWindow *self, const char *abs_path, guint line_1bas
   kajo_ide_gutter_renderer_set_buffer(self->gutter, buf);
   self->editor_host.buffer = buf;
 
+  amiga_window_debug_sync_buffer_breakpoints(self, buf);
+  amiga_window_lsp_notify_open(self, buf);
+
   if (line_1based > 0) {
     GtkTextIter it;
     gtk_text_buffer_get_iter_at_line(GTK_TEXT_BUFFER(sbuf), &it, (int)(line_1based - 1u));
@@ -172,6 +173,8 @@ open_file_in_editor(KajoAmigaWindow *self, const char *abs_path, guint line_1bas
   amiga_window_refresh_source_gutter_and_outline(self);
   update_cursor_and_selection_cycles(self);
 }
+
+#define open_file_in_editor amiga_window_open_file_at_line
 
 static void
 on_outline_row_activated(GtkListBox *lb G_GNUC_UNUSED, GtkListBoxRow *row, gpointer ud)
@@ -223,10 +226,22 @@ save_active_buffer(KajoAmigaWindow *self)
   g_autoptr(GError) err = NULL;
   if (ide_buffer_save(self->active_buf, &err)) {
     amiga_window_refresh_source_gutter_and_outline(self);
+    amiga_window_lsp_notify_save(self, self->active_buf);
     show_toast(self, "✓ File saved");
   } else {
     show_toast(self, err ? err->message : "Save failed");
   }
+}
+
+void
+amiga_window_append_console(KajoAmigaWindow *self, const char *line)
+{
+  if (!self || !self->console_view || !line) return;
+  GtkTextBuffer *cb = gtk_text_view_get_buffer(GTK_TEXT_VIEW(self->console_view));
+  GtkTextIter end;
+  gtk_text_buffer_get_end_iter(cb, &end);
+  gtk_text_buffer_insert(cb, &end, line, -1);
+  if (!g_str_has_suffix(line, "\n")) gtk_text_buffer_insert(cb, &end, "\n", 1);
 }
 
 /* ─── Option D Async Build & Clickable Diagnostics ─── */
@@ -268,6 +283,8 @@ on_build_finished(GObject *src G_GNUC_UNUSED, GAsyncResult *res, gpointer ud)
   }
 
   self->building = false;
+  bool launch_pending = self->launch_after_build;
+  self->launch_after_build = false;
   gtk_widget_set_sensitive(self->btn_build, TRUE);
 
   GtkTextBuffer *cb = gtk_text_view_get_buffer(GTK_TEXT_VIEW(self->console_view));
@@ -304,16 +321,26 @@ on_build_finished(GObject *src G_GNUC_UNUSED, GAsyncResult *res, gpointer ud)
       gtk_list_box_append(GTK_LIST_BOX(self->diag_list), l);
     }
   }
-  show_toast(self, (br && br->success) ? "✓ Build succeeded" : "✗ Build failed (see diagnostics)");
+  bool ok = (br && br->success);
   amiga_build_result_free(br);
+  if (ok) {
+    amiga_window_debug_reload_symbols(self);
+    show_toast(self, "✓ Build succeeded");
+    if (launch_pending) {
+      amiga_window_debug_launch_after_build(self);
+    }
+  } else {
+    show_toast(self, "✗ Build failed (see diagnostics)");
+  }
 }
 
-static void
-trigger_build(KajoAmigaWindow *self)
+void
+amiga_window_trigger_build(KajoAmigaWindow *self)
 {
   if (!self->project || self->building) return;
-  const AmigaTarget *t = get_selected_target(self);
+  const AmigaTarget *t = amiga_window_get_selected_target(self);
   if (!t) {
+    self->launch_after_build = false;
     show_toast(self, "No target defined in project");
     return;
   }
@@ -336,108 +363,19 @@ trigger_build(KajoAmigaWindow *self)
                         self->build_cancel, on_build_finished, weak);
 }
 
-/* ─── RSP Callbacks & Snapshots ─── */
+#define trigger_build amiga_window_trigger_build
 
-static void
-on_custom_mem_done(GObject *src, GAsyncResult *res, gpointer ud)
-{
-  GWeakRef *weak = ud;
-  g_autoptr(GError) err = NULL;
-  g_autoptr(GBytes) bytes = amiga_rsp_client_read_mem_finish(AMIGA_RSP_CLIENT(src), res, &err);
-  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
-  g_weak_ref_clear(weak);
-  g_free(weak);
-  if (!self || !bytes || g_bytes_get_size(bytes) < 512) return;
+/* ─── View Callbacks ─── */
 
-  AmigaCustomSnapshot snap = {0};
-  amiga_rsp_decode_custom_snapshot(g_bytes_get_data(bytes, NULL), &snap);
-  amiga_mem_view_set_regs_and_custom(self->mem_view, NULL, &snap);
-  amiga_window_inspector_apply_snapshot(self, &snap, true);
-}
-
-static void
-on_disasm_rcmd_done(GObject *src, GAsyncResult *res, gpointer ud)
-{
-  GWeakRef *weak = ud;
-  g_autoptr(GError) err = NULL;
-  g_autofree char *txt = amiga_rsp_client_rcmd_finish(AMIGA_RSP_CLIENT(src), res, &err);
-  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
-  g_weak_ref_clear(weak);
-  g_free(weak);
-  if (!self || !txt) return;
-
-  g_autoptr(GPtrArray) rows = NULL;
-  if (amiga_disasm_parse(txt, self->symbols, &rows)) {
-    amiga_disasm_view_set_rows(
-        self->disasm_view, rows, amiga_disasm_view_get_base_addr(self->disasm_view), self->bp_addrs);
-  }
-}
-
-static void
-on_regs_done(GObject *src, GAsyncResult *res, gpointer ud)
-{
-  GWeakRef *weak = ud;
-  g_autoptr(GError) err = NULL;
-  AmigaCpuRegs regs = {0};
-  bool ok = amiga_rsp_client_read_regs_finish(AMIGA_RSP_CLIENT(src), res, &regs, &err);
-  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
-  g_weak_ref_clear(weak);
-  g_free(weak);
-  if (!self || !ok) return;
-
-  amiga_cpu_strip_update(self->cpu_strip, &regs, NULL, self->symbols, true);
-  amiga_mem_view_set_regs_and_custom(self->mem_view, &regs, NULL);
-  if (amiga_disasm_view_get_follow_pc(self->disasm_view)) {
-    amiga_disasm_view_go_to(self->disasm_view, regs.pc, false);
-  }
-}
-
-static void
-refresh_rsp_snapshot(KajoAmigaWindow *self)
-{
-  if (!self->rsp || amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_STOPPED) return;
-  GWeakRef *w1 = g_new0(GWeakRef, 1); g_weak_ref_init(w1, self);
-  amiga_rsp_client_read_regs_async(self->rsp, NULL, on_regs_done, w1);
-
-  GWeakRef *w2 = g_new0(GWeakRef, 1); g_weak_ref_init(w2, self);
-  amiga_rsp_client_read_mem_async(self->rsp, 0xDFF000u, 0x200u, NULL, on_custom_mem_done, w2);
-}
-
-static void
-on_rsp_stop(AmigaRspClient *c G_GNUC_UNUSED, const AmigaStopEvent *ev, gpointer ud)
-{
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  g_autofree char *msg = ev->entry_proc
-                             ? g_strdup_printf("Stopped: entry %s ($%08X)", ev->entry_proc, ev->pc)
-                             : g_strdup_printf("Stopped (sig=%u)", ev->signal_num);
-  show_toast(self, msg);
-  refresh_rsp_snapshot(self);
-}
-
-static void
-on_rsp_connect_done(GObject *src, GAsyncResult *res, gpointer ud)
-{
-  GWeakRef *weak = ud;
-  g_autoptr(GError) err = NULL;
-  bool ok = amiga_rsp_client_connect_finish(AMIGA_RSP_CLIENT(src), res, &err);
-  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
-  g_weak_ref_clear(weak);
-  g_free(weak);
-  if (!self) return;
-  if (!ok) {
-    show_toast(self, err ? err->message : "RSP connect failed");
-    return;
-  }
-  show_toast(self, "✓ Attached to Amiberry RSP");
-  refresh_rsp_snapshot(self);
-}
-
-/* View callbacks */
 static void on_strip_write_regs(AmigaCpuStrip *s G_GNUC_UNUSED, const AmigaCpuRegs *regs, gpointer ud) {
   KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
   if (self->rsp && amiga_rsp_client_get_state(self->rsp) == AMIGA_RSP_STOPPED) {
+    self->last_regs = *regs;
+    self->has_last_regs = true;
     amiga_rsp_client_write_regs_async(self->rsp, regs, NULL, NULL, NULL);
-    amiga_cpu_strip_update(self->cpu_strip, regs, NULL, self->symbols, true);
+    amiga_cpu_strip_update(self->cpu_strip, regs,
+                           self->has_last_exec_st ? &self->last_exec_st : NULL,
+                           self->symbols, true);
   }
 }
 
@@ -467,48 +405,6 @@ static void on_strip_cp(AmigaCpuStrip *s G_GNUC_UNUSED, bool restore, gpointer u
   g_autofree char *cmd = g_strdup_printf("checkpoint %s /tmp/kajo-amiga-cp.uss", restore ? "restore" : "save");
   amiga_rsp_client_rcmd_async(self->rsp, cmd, NULL, NULL, NULL);
   show_toast(self, restore ? "⏮ Restored checkpoint" : "💾 Saved checkpoint");
-}
-
-static void on_disasm_fetch(AmigaDisasmView *v G_GNUC_UNUSED, uint32_t addr, int count, gpointer ud) {
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  if (!self->rsp || amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_STOPPED) return;
-  g_autofree char *cmd = g_strdup_printf("disasm %x %d", addr, count);
-  GWeakRef *weak = g_new0(GWeakRef, 1); g_weak_ref_init(weak, self);
-  amiga_rsp_client_rcmd_async(self->rsp, cmd, NULL, on_disasm_rcmd_done, weak);
-}
-
-static void on_disasm_toggle_bp(AmigaDisasmView *v G_GNUC_UNUSED, uint32_t addr, gpointer ud) {
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  if (addr & 1u) return;
-  gpointer k = GUINT_TO_POINTER(addr);
-  if (g_hash_table_contains(self->bp_addrs, k)) {
-    g_hash_table_remove(self->bp_addrs, k);
-    if (self->rsp) amiga_rsp_client_bp_remove_async(self->rsp, addr, NULL, NULL, NULL);
-  } else {
-    g_hash_table_insert(self->bp_addrs, k, GINT_TO_POINTER(1));
-    if (self->rsp) amiga_rsp_client_bp_set_async(self->rsp, addr, NULL, NULL, NULL);
-  }
-}
-
-static void on_disasm_sel_cycles(AmigaDisasmView *v G_GNUC_UNUSED, const char *txt, gpointer ud) {
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  if (txt) {
-    gtk_label_set_text(GTK_LABEL(self->lbl_sel_cycles), txt);
-    gtk_widget_set_visible(self->lbl_sel_cycles, TRUE);
-  } else {
-    gtk_widget_set_visible(self->lbl_sel_cycles, FALSE);
-  }
-}
-
-static uint32_t on_disasm_resolve(AmigaDisasmView *v G_GNUC_UNUSED, const char *expr, bool *ok, gpointer ud) {
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  uint32_t val = 0;
-  if (self->symbols && amiga_symbols_lookup_name(self->symbols, expr, &val)) {
-    if (ok) *ok = true;
-    return val;
-  }
-  if (ok) *ok = false;
-  return 0;
 }
 
 static void on_mem_read_done(GObject *src, GAsyncResult *res, gpointer ud) {
@@ -563,57 +459,24 @@ static void on_hdr_build_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
 }
 
 static void on_hdr_debug_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  if (self->rsp && amiga_rsp_client_get_state(self->rsp) == AMIGA_RSP_STOPPED) {
-    amiga_rsp_client_continue_async(self->rsp, NULL, NULL, NULL);
-    show_toast(self, "▶ Running guest");
-    return;
-  }
-  const AmigaTarget *t = get_selected_target(self);
-  const AmigaHwProfile *p = get_selected_profile(self);
-  if (!self->project || !t || !self->toolchain || !self->toolchain->amiberry) {
-    show_toast(self, "Amiberry binary or project target missing");
-    return;
-  }
-  g_autofree char *dh0 = g_build_filename(
-      g_get_user_cache_dir(), "kajo", "amiga",
-      self->project->name ? self->project->name : "default", "dh0", NULL);
-  AmigaRunnerLaunchSpec spec = {
-    .amiberry_bin = self->toolchain->amiberry,
-    .profile = p,
-    .target_kind = t->kind,
-    .target_name = t->name,
-    .dh0_dir = dh0,
-    .adf_path = t->exe_path ? t->exe_path : "",
-    .gdb_port = 2345,
-    .uaeboard_guest_output = self->project->trap86_guest_output,
-  };
-  g_autoptr(GError) err = NULL;
-  if (amiga_runner_start(self->runner, &spec, self->project->root_dir, &err)) {
-    kajo_amiga_window_open_attach(self, "127.0.0.1", 2345);
-  } else {
-    show_toast(self, err ? err->message : "Launch failed");
-  }
+  amiga_window_debug_start_or_continue(KAJO_AMIGA_WINDOW(ud));
+}
+
+static void on_hdr_pause_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  amiga_window_debug_pause(KAJO_AMIGA_WINDOW(ud));
 }
 
 static void on_hdr_stop_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
-  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
-  if (self->rsp && amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_DISCONNECTED) {
-    amiga_rsp_client_detach_async(self->rsp, NULL, NULL, NULL);
-  }
-  if (amiga_runner_owns_process(self->runner)) {
-    amiga_runner_stop(self->runner);
-  }
-  amiga_cpu_strip_reset(self->cpu_strip);
-  show_toast(self, self->attach_mode ? "🔌 Detached safely" : "⏹ Stopped");
+  amiga_window_debug_stop(KAJO_AMIGA_WINDOW(ud));
 }
 
 static void on_hdr_attach_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
-  kajo_amiga_window_open_attach(KAJO_AMIGA_WINDOW(ud), "127.0.0.1", 2345);
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  kajo_amiga_window_open_attach(self, self->cfg_gdb_host, self->cfg_gdb_port);
 }
 
 static void on_hdr_snapshot_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
-  refresh_rsp_snapshot(KAJO_AMIGA_WINDOW(ud));
+  amiga_window_debug_refresh_snapshot(KAJO_AMIGA_WINDOW(ud));
 }
 
 static void on_hdr_float_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud G_GNUC_UNUSED) {
@@ -663,12 +526,32 @@ static void on_act_open_project(gpointer ud) {
 }
 
 static void on_act_attach(gpointer ud) {
-  kajo_amiga_window_open_attach(KAJO_AMIGA_WINDOW(ud), "127.0.0.1", 2345);
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  kajo_amiga_window_open_attach(self, self->cfg_gdb_host, self->cfg_gdb_port);
 }
 
 static void on_proj_saved(AmigaProject *p, gpointer ud) {
   KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (p && p->manifest_path && g_file_test(p->manifest_path, G_FILE_TEST_IS_REGULAR)) {
+    g_autoptr(GError) err = NULL;
+    AmigaProject *reloaded = amiga_project_load_dir(p->root_dir, &err);
+    if (reloaded) {
+      g_clear_pointer(&self->project, amiga_project_free);
+      self->project = reloaded;
+      p = reloaded;
+    }
+  }
+  amiga_window_populate_project_dropdowns(self);
+  amiga_project_setup_view_bind(self->setup_view, p, self->toolchain);
+  if (p->hrm_dir && p->hrm_dir[0]) {
+    g_autofree char *abs_hrm = g_path_is_absolute(p->hrm_dir)
+                                   ? g_strdup(p->hrm_dir)
+                                   : g_build_filename(p->root_dir, p->hrm_dir, NULL);
+    amiga_hrm_view_set_hrm_dir(self->hrm_view, abs_hrm);
+  }
   amiga_project_write_compile_commands(p, self->toolchain, NULL);
+  amiga_window_debug_reload_symbols(self);
+  amiga_window_lsp_sync_project(self);
   sync_compat_badge(self);
   show_toast(self, "✓ Project saved + compile_commands.json updated");
 }
@@ -680,9 +563,11 @@ amiga_window_sync_header_workspace(KajoAmigaWindow *self, bool in_ws) {
   gtk_widget_set_visible(self->dd_profile, in_ws);
   gtk_widget_set_visible(self->btn_build, in_ws);
   gtk_widget_set_visible(self->btn_debug, in_ws);
+  if (self->btn_pause) gtk_widget_set_visible(self->btn_pause, in_ws);
   gtk_widget_set_visible(self->btn_stop, in_ws);
   gtk_widget_set_visible(self->btn_snapshot, in_ws);
   if (!in_ws) gtk_widget_set_visible(self->compat_badge, FALSE);
+  amiga_window_debug_sync_ui(self);
 }
 
 static void on_center_tab_toggled(GtkToggleButton *tb, gpointer ud) {
@@ -844,8 +729,12 @@ on_window_key_pressed(GtkEventControllerKey *ctrl G_GNUC_UNUSED,
     return TRUE;
   }
   if (keyval == GDK_KEY_F5) {
-    if (shift_mod) on_hdr_stop_clicked(NULL, self);
-    else on_hdr_debug_clicked(NULL, self);
+    if (shift_mod) amiga_window_debug_stop(self);
+    else amiga_window_debug_start_or_continue(self);
+    return TRUE;
+  }
+  if (keyval == GDK_KEY_F6) {
+    amiga_window_debug_pause(self);
     return TRUE;
   }
   if (keyval == GDK_KEY_F9 && self->active_buf) {
@@ -853,17 +742,15 @@ on_window_key_pressed(GtkEventControllerKey *ctrl G_GNUC_UNUSED,
     GtkTextIter cur;
     gtk_text_buffer_get_iter_at_mark(tb, &cur, gtk_text_buffer_get_insert(tb));
     guint ln = (guint)gtk_text_iter_get_line(&cur) + 1u;
-    gboolean set = ide_buffer_toggle_breakpoint(self->active_buf, ln);
-    gtk_widget_queue_draw(self->source_view);
-    show_toast(self, set ? "● Breakpoint set (source line)" : "○ Breakpoint cleared");
+    amiga_window_debug_toggle_source_bp(self, self->active_buf, ln);
     return TRUE;
   }
-  if (keyval == GDK_KEY_F10 && self->rsp) {
-    amiga_rsp_client_step_over_async(self->rsp, NULL, NULL, NULL);
+  if (keyval == GDK_KEY_F10) {
+    amiga_window_debug_step_over(self);
     return TRUE;
   }
-  if (keyval == GDK_KEY_F11 && self->rsp) {
-    amiga_rsp_client_step_into_async(self->rsp, NULL, NULL, NULL);
+  if (keyval == GDK_KEY_F11) {
+    amiga_window_debug_step_into(self);
     return TRUE;
   }
   return FALSE;
@@ -901,7 +788,18 @@ amiga_window_populate_project_dropdowns(KajoAmigaWindow *self)
 static void
 on_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *ps G_GNUC_UNUSED, gpointer ud)
 {
-  sync_compat_badge(KAJO_AMIGA_WINDOW(ud));
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  amiga_window_debug_reload_symbols(self);
+  sync_compat_badge(self);
+}
+
+static void
+on_gutter_bp_toggled(IdeBuffer *buf,
+                     guint      line_1based,
+                     gboolean   enabled G_GNUC_UNUSED,
+                     gpointer   ud)
+{
+  amiga_window_debug_toggle_source_bp(KAJO_AMIGA_WINDOW(ud), buf, line_1based);
 }
 
 static void
@@ -1002,6 +900,11 @@ build_ui(KajoAmigaWindow *self)
   gtk_widget_add_css_class(self->btn_debug, "run-btn");
   g_signal_connect(self->btn_debug, "clicked", G_CALLBACK(on_hdr_debug_clicked), self);
 
+  self->btn_pause = gtk_button_new_with_label("⏸ PAUSE");
+  gtk_widget_add_css_class(self->btn_pause, "ide-toolbar-btn");
+  gtk_widget_set_sensitive(self->btn_pause, FALSE);
+  g_signal_connect(self->btn_pause, "clicked", G_CALLBACK(on_hdr_pause_clicked), self);
+
   self->btn_stop = gtk_button_new_with_label("⏹ STOP");
   gtk_widget_add_css_class(self->btn_stop, "ide-toolbar-btn");
   gtk_widget_add_css_class(self->btn_stop, "stop-btn");
@@ -1033,6 +936,7 @@ build_ui(KajoAmigaWindow *self)
   gtk_box_append(GTK_BOX(hdr), self->btn_narrow_switch);
   gtk_box_append(GTK_BOX(hdr), self->btn_build);
   gtk_box_append(GTK_BOX(hdr), self->btn_debug);
+  gtk_box_append(GTK_BOX(hdr), self->btn_pause);
   gtk_box_append(GTK_BOX(hdr), self->btn_stop);
   gtk_box_append(GTK_BOX(hdr), self->btn_attach);
   gtk_box_append(GTK_BOX(hdr), self->btn_snapshot);
@@ -1172,6 +1076,8 @@ build_ui(KajoAmigaWindow *self)
   GtkSourceGutter *lg = gtk_source_view_get_gutter(
       GTK_SOURCE_VIEW(self->source_view), GTK_TEXT_WINDOW_LEFT);
   self->gutter = KAJO_IDE_GUTTER_RENDERER(kajo_ide_gutter_renderer_new(NULL));
+  kajo_ide_gutter_renderer_set_breakpoint_callback(
+      self->gutter, on_gutter_bp_toggled, self);
   kajo_ide_gutter_renderer_set_annotation_callback(
       self->gutter, amiga_window_gutter_cycle_annotate, 76, self);
   gtk_source_gutter_insert(lg, GTK_SOURCE_GUTTER_RENDERER(self->gutter), 0);
@@ -1185,12 +1091,8 @@ build_ui(KajoAmigaWindow *self)
 
   /* Disasm view */
   self->disasm_view = amiga_disasm_view_new();
-  AmigaDisasmCallbacks dcbs = {
-    .fetch_disasm = on_disasm_fetch,
-    .toggle_bp = on_disasm_toggle_bp,
-    .selection_cycles = on_disasm_sel_cycles,
-    .resolve_expr = on_disasm_resolve,
-  };
+  AmigaDisasmCallbacks dcbs = {0};
+  amiga_window_debug_fill_disasm_callbacks(&dcbs);
   amiga_disasm_view_set_callbacks(self->disasm_view, &dcbs, self);
   gtk_stack_add_named(GTK_STACK(self->center_stack), GTK_WIDGET(self->disasm_view), "disasm");
 
@@ -1266,6 +1168,8 @@ build_ui(KajoAmigaWindow *self)
   };
   for (int i = 0; i < 5; i++) {
     self->exc_checks[i] = gtk_check_button_new_with_label(enames[i]);
+    g_signal_connect(self->exc_checks[i], "toggled",
+                     G_CALLBACK(amiga_window_debug_on_exc_toggled), self);
     gtk_box_append(GTK_BOX(exc_row), self->exc_checks[i]);
   }
   self->lbl_exc_last = gtk_label_new("No captured 68000 exception.");
@@ -1363,6 +1267,7 @@ kajo_amiga_window_dispose(GObject *obj)
   g_clear_pointer(&self->bp_addrs, g_hash_table_unref);
   g_free(self->attach_host);
   self->attach_host = NULL;
+  amiga_window_debug_dispose(self);
   G_OBJECT_CLASS(kajo_amiga_window_parent_class)->dispose(obj);
 }
 
@@ -1378,9 +1283,32 @@ apply_global_config(KajoAmigaWindow *self)
   g_autoptr(KajoAmigaCfgRef) acfg = kajo_config_store_acquire_amiga(NULL);
   if (!acfg) return;
 
+  g_free(self->cfg_amiberry_bin);
+  self->cfg_amiberry_bin = g_strdup(acfg->amiberry_bin);
+  g_free(self->cfg_kickstart_a500);
+  self->cfg_kickstart_a500 = g_strdup(acfg->kickstart_a500);
+  g_free(self->cfg_kickstart_a1200);
+  self->cfg_kickstart_a1200 = g_strdup(acfg->kickstart_a1200);
+  g_free(self->cfg_gdb_host);
+  self->cfg_gdb_host = g_strdup((acfg->gdb_host && acfg->gdb_host[0]) ? acfg->gdb_host : "127.0.0.1");
+  self->cfg_gdb_port = acfg->gdb_port ? (uint16_t)acfg->gdb_port : 2345;
+  self->cfg_entry_break_mode = acfg->entry_break_mode;
+  self->cfg_capture_guest_output = acfg->capture_guest_output;
+  self->cfg_enable_trace_history = acfg->enable_trace_history;
+  self->cfg_default_exc_mask = (uint8_t)acfg->default_exception_mask;
+  self->cfg_trace_blitter_writes = acfg->trace_blitter_writes;
+  self->cfg_hex_grouping = (acfg->default_hex_grouping == KAJO_AMIGA_HEX_8B) ? 1
+                         : (acfg->default_hex_grouping == KAJO_AMIGA_HEX_32B) ? 4 : 2;
+  self->cfg_bitplane_grid_16px = acfg->bitplane_grid_16px;
+  self->cfg_enable_m68k_lsp = acfg->enable_m68k_lsp;
+  self->cfg_enable_clangd = acfg->enable_clangd;
   self->show_cycle_gutter = acfg->show_cycle_gutter;
   self->show_sel_cycles = acfg->show_selection_cycle_sum;
   self->enable_hover_decoders = acfg->enable_hover_decoders;
+
+  if (self->mem_view) amiga_mem_view_set_grouping(self->mem_view, self->cfg_hex_grouping);
+  if (self->bpl_view) amiga_bitplane_view_set_grid(self->bpl_view, self->cfg_bitplane_grid_16px);
+  amiga_window_debug_apply_exc_mask(self, self->cfg_default_exc_mask);
 
   g_auto(GStrv) extra = (acfg->extra_bin_paths && acfg->extra_bin_paths[0])
                             ? g_strsplit(acfg->extra_bin_paths, ":", -1)
@@ -1389,6 +1317,16 @@ apply_global_config(KajoAmigaWindow *self)
       extra ? (const char *const *)extra : NULL);
   g_clear_pointer(&self->toolchain, amiga_toolchain_status_free);
   self->toolchain = ntc;
+  if (self->toolchain && self->cfg_amiberry_bin && self->cfg_amiberry_bin[0]) {
+    g_autofree char *resolved = g_find_program_in_path(self->cfg_amiberry_bin);
+    if (resolved) {
+      g_free(self->toolchain->amiberry);
+      self->toolchain->amiberry = g_steal_pointer(&resolved);
+    } else if (g_file_test(self->cfg_amiberry_bin, G_FILE_TEST_IS_EXECUTABLE)) {
+      g_free(self->toolchain->amiberry);
+      self->toolchain->amiberry = g_strdup(self->cfg_amiberry_bin);
+    }
+  }
 
   if (self->hrm_view && (!self->project || !self->project->hrm_dir || !self->project->hrm_dir[0])) {
     amiga_hrm_view_set_hrm_dir(self->hrm_view, acfg->hrm_dir);
@@ -1414,6 +1352,7 @@ apply_global_config(KajoAmigaWindow *self)
     if (self->active_buf) ide_buffer_set_style_scheme(self->active_buf, scheme);
     gtk_widget_queue_draw(self->source_view);
   }
+  amiga_window_lsp_sync_project(self);
   update_cursor_and_selection_cycles(self);
 }
 
@@ -1438,11 +1377,12 @@ cfg_weak_free(gpointer data)
 static void
 kajo_amiga_window_init(KajoAmigaWindow *self)
 {
+  amiga_window_debug_init(self);
   self->toolchain = amiga_project_probe_toolchain(NULL);
   self->symbols = amiga_symbols_new();
   self->runner = amiga_runner_new();
   self->rsp = amiga_rsp_client_new();
-  amiga_rsp_client_set_stop_callback(self->rsp, on_rsp_stop, self);
+  amiga_rsp_client_set_stop_callback(self->rsp, amiga_window_debug_on_rsp_stop, self);
   self->bp_addrs = g_hash_table_new(g_direct_hash, g_direct_equal);
   self->diags = g_ptr_array_new_with_free_func((GDestroyNotify)amiga_build_diag_free);
   self->fsm = ide_fsm_new();
@@ -1489,7 +1429,14 @@ kajo_amiga_window_open_project_dir(KajoAmigaWindow *self, const char *dir_path)
   ide_tree_set_workspace_root(self->file_tree, proj->root_dir);
   amiga_window_populate_project_dropdowns(self);
   amiga_project_setup_view_bind(self->setup_view, proj, self->toolchain);
-  amiga_hrm_view_set_hrm_dir(self->hrm_view, proj->hrm_dir);
+  if (proj->hrm_dir && proj->hrm_dir[0]) {
+    g_autofree char *abs_hrm = g_path_is_absolute(proj->hrm_dir)
+                                   ? g_strdup(proj->hrm_dir)
+                                   : g_build_filename(proj->root_dir, proj->hrm_dir, NULL);
+    amiga_hrm_view_set_hrm_dir(self->hrm_view, abs_hrm);
+  }
+  amiga_window_debug_reload_symbols(self);
+  amiga_window_lsp_sync_project(self);
 
   gtk_stack_set_visible_child_name(GTK_STACK(self->sidebar_stack), "project");
   gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "workspace");
@@ -1514,21 +1461,8 @@ void
 kajo_amiga_window_open_attach(KajoAmigaWindow *self, const char *host, uint16_t port)
 {
   g_return_if_fail(KAJO_IS_AMIGA_WINDOW(self));
-  self->attach_mode = true;
-  g_free(self->attach_host);
-  self->attach_host = g_strdup((host && host[0]) ? host : "127.0.0.1");
-  self->attach_port = port ? port : 2345;
-
-  gtk_stack_set_visible_child_name(GTK_STACK(self->sidebar_stack), "attach");
-  gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "workspace");
-  amiga_window_sync_header_workspace(self, true);
-  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_disasm), TRUE);
-  amiga_window_sync_mode_pill(self);
-
-  g_autofree char *lbl = g_strdup_printf("Attach %s:%u", self->attach_host, self->attach_port);
-  gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), lbl);
-
-  GWeakRef *weak = g_new0(GWeakRef, 1); g_weak_ref_init(weak, self);
-  amiga_rsp_client_connect_async(self->rsp, self->attach_host, self->attach_port,
-                                 NULL, on_rsp_connect_done, weak);
+  const char *h = (host && host[0]) ? host
+                : (self->cfg_gdb_host && self->cfg_gdb_host[0]) ? self->cfg_gdb_host : "127.0.0.1";
+  uint16_t p = port ? port : (self->cfg_gdb_port ? self->cfg_gdb_port : 2345);
+  amiga_window_debug_connect_with_retry(self, h, p, true, NULL);
 }

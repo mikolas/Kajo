@@ -3,6 +3,7 @@
 #include "amiga_window.h"
 
 #include "../app_init.h"
+#include "../config.h"
 #include "../ide/ide_buffer.h"
 #include <gtk/gtk.h>
 #include <gtksourceview/gtksource.h>
@@ -64,7 +65,12 @@ run_headless_cli_build(const char *dir, const char *target_name)
     return 1;
   }
 
-  AmigaToolchainStatus *tc = amiga_project_probe_toolchain(NULL);
+  g_autoptr(KajoAmigaCfgRef) acfg = kajo_config_store_acquire_amiga(NULL);
+  g_auto(GStrv) extra = (acfg && acfg->extra_bin_paths && acfg->extra_bin_paths[0])
+                            ? g_strsplit(acfg->extra_bin_paths, ":", -1)
+                            : NULL;
+  AmigaToolchainStatus *tc = amiga_project_probe_toolchain(
+      extra ? (const char *const *)extra : NULL);
   g_autofree char *staging = g_build_filename(
       g_get_user_cache_dir(), "kajo", "amiga",
       proj->name ? proj->name : "default", NULL);

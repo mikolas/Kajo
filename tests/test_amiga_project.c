@@ -35,6 +35,8 @@ test_toml_roundtrip_and_presets(void)
   proj->name = g_strdup("CopperTest");
   proj->build_mode = AMIGA_BUILD_NATIVE;
   proj->default_target = g_strdup("floppy");
+  proj->pre_build_cmd = g_strdup("echo pre");
+  proj->post_build_cmd = g_strdup("echo post");
   g_free(proj->default_profile);
   proj->default_profile = g_strdup("a500_ocs");
   proj->trap86_guest_output = true;
@@ -46,14 +48,21 @@ test_toml_roundtrip_and_presets(void)
 
   AmigaTarget *t = amiga_target_new("floppy");
   t->kind = AMIGA_TARGET_ADF_DOS;
+  t->format = AMIGA_ARTIFACT_RAW_BIN;
   g_free(t->cpu);
   t->cpu = g_strdup("68000");
-  t->toolchain = AMIGA_TOOLCHAIN_ELF2HUNK;
+  t->toolchain = AMIGA_TOOLCHAIN_ELF2BIN;
+  t->entry_symbol = g_strdup("_start");
+  t->load_addr = 0x10000u;
+  t->bin_path = g_strdup("out/floppy.bin");
+  t->boot_adf = g_strdup("out/trackmo.adf");
+  t->pack_cmd = g_strdup("doy {in} {out}");
   g_ptr_array_add(t->sources, g_strdup("src/main.c"));
   g_ptr_array_add(t->sources, g_strdup("src/irq.s"));
   g_ptr_array_add(t->includes, g_strdup("include"));
   g_ptr_array_add(t->defines, g_strdup("DEBUG=1"));
   g_ptr_array_add(t->extra_files, g_strdup("assets/mod.song"));
+  g_ptr_array_add(t->symbol_files, g_strdup("out/kernel.elf"));
   t->startup_sequence = g_strdup("floppy.exe");
   t->copper_symbol = g_strdup("_copper_list");
   t->bitplane_symbol = g_strdup("_bpl0");
@@ -85,9 +94,18 @@ test_toml_roundtrip_and_presets(void)
   const AmigaTarget *pt = amiga_project_find_target(parsed, "floppy");
   g_assert_nonnull(pt);
   g_assert_cmpint(pt->kind, ==, AMIGA_TARGET_ADF_DOS);
-  g_assert_cmpint(pt->toolchain, ==, AMIGA_TOOLCHAIN_ELF2HUNK);
+  g_assert_cmpint(pt->format, ==, AMIGA_ARTIFACT_RAW_BIN);
+  g_assert_cmpint(pt->toolchain, ==, AMIGA_TOOLCHAIN_ELF2BIN);
   g_assert_cmpuint(pt->sources->len, ==, 2);
+  g_assert_cmpuint(pt->symbol_files->len, ==, 1);
+  g_assert_cmpuint(pt->load_addr, ==, 0x10000u);
   g_assert_cmpuint(pt->entry_addr, ==, 0x20000u);
+  g_assert_cmpstr(pt->entry_symbol, ==, "_start");
+  g_assert_cmpstr(pt->bin_path, ==, "out/floppy.bin");
+  g_assert_cmpstr(pt->boot_adf, ==, "out/trackmo.adf");
+  g_assert_cmpstr(pt->pack_cmd, ==, "doy {in} {out}");
+  g_assert_cmpstr(parsed->pre_build_cmd, ==, "echo pre");
+  g_assert_cmpstr(parsed->post_build_cmd, ==, "echo post");
   g_assert_cmpstr(pt->copper_symbol, ==, "_copper_list");
 
   amiga_project_free(parsed);
@@ -150,17 +168,37 @@ test_templates_and_makefile_fallback(void)
   amiga_toolchain_status_free(tc);
   amiga_project_free(mixed);
 
-  /* External Makefile fallback on directory without kajo-amiga.toml */
+  /* External Makefile fallback (seeandseedee layout: framework + effects/ + docs/ + kick13.rom) */
   g_autofree char *mk_dir = g_build_filename(tmp, "external-make", NULL);
-  g_mkdir_with_parents(mk_dir, 0755);
+  g_autofree char *fw_dir = g_build_filename(mk_dir, "framework", NULL);
+  g_autofree char *fx_dir = g_build_filename(mk_dir, "effects", NULL);
+  g_autofree char *doc_dir = g_build_filename(mk_dir, "docs", NULL);
+  g_mkdir_with_parents(fw_dir, 0755);
+  g_mkdir_with_parents(fx_dir, 0755);
+  g_mkdir_with_parents(doc_dir, 0755);
   g_autofree char *mk_path = g_build_filename(mk_dir, "Makefile", NULL);
+  g_autofree char *dh_path = g_build_filename(fw_dir, "devharness.asm", NULL);
+  g_autofree char *cube_path = g_build_filename(fx_dir, "cube.asm", NULL);
+  g_autofree char *doc_path = g_build_filename(doc_dir, "blitter.md", NULL);
+  g_autofree char *kick_path = g_build_filename(mk_dir, "kick13.rom", NULL);
   g_assert_true(g_file_set_contents(mk_path, "all:\n\techo hi\n", -1, &err));
+  g_assert_true(g_file_set_contents(dh_path, "; harness\n", -1, &err));
+  g_assert_true(g_file_set_contents(cube_path, "; cube\n", -1, &err));
+  g_assert_true(g_file_set_contents(doc_path, "# Blitter\n", -1, &err));
+  g_assert_true(g_file_set_contents(kick_path, "ROM", -1, &err));
 
   AmigaProject *ext = amiga_project_load_dir(mk_dir, &err);
   g_assert_no_error(err);
   g_assert_nonnull(ext);
   g_assert_cmpint(ext->build_mode, ==, AMIGA_BUILD_EXTERNAL);
-  g_assert_cmpuint(ext->targets->len, >=, 1);
+  g_assert_cmpstr(ext->build_cmd, ==, "make -j4 effect={target}");
+  g_assert_cmpstr(ext->hrm_dir, ==, "docs");
+  g_assert_cmpuint(ext->shared_sources->len, ==, 1);
+  g_assert_cmpuint(ext->targets->len, ==, 1);
+  const AmigaTarget *et = amiga_project_find_target(ext, "cube");
+  g_assert_nonnull(et);
+  g_assert_cmpint(et->format, ==, AMIGA_ARTIFACT_HUNK_EXE);
+  g_assert_cmpstr(et->entry_symbol, ==, "_start");
   amiga_project_free(ext);
 
   rm_rf(tmp);

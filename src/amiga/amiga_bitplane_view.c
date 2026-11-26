@@ -626,3 +626,10 @@ amiga_bitplane_view_set_symbol_hint(AmigaBitplaneView *self, const char *sym_nam
   g_free(self->symbol_hint);
   self->symbol_hint = g_strdup(sym_name);
 }
+
+void
+amiga_bitplane_view_set_grid(AmigaBitplaneView *self, bool enabled)
+{
+  g_return_if_fail(AMIGA_IS_BITPLANE_VIEW(self));
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_grid), enabled);
+}

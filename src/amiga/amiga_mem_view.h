@@ -42,6 +42,7 @@ void amiga_mem_view_set_data(AmigaMemView  *self,
                              size_t         len);
 
 void     amiga_mem_view_jump_to(AmigaMemView *self, uint32_t addr);
+void     amiga_mem_view_set_grouping(AmigaMemView *self, int group_bytes);
 uint32_t amiga_mem_view_get_base_addr(AmigaMemView *self);
 
 G_END_DECLS

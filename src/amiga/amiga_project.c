@@ -76,11 +76,26 @@ amiga_target_kind_from_str(const char *s)
 }
 
 const char *
+amiga_artifact_format_to_str(AmigaArtifactFormat f)
+{
+  return (f == AMIGA_ARTIFACT_RAW_BIN) ? "raw_bin" : "hunk_exe";
+}
+
+AmigaArtifactFormat
+amiga_artifact_format_from_str(const char *s)
+{
+  if (g_strcmp0(s, "raw_bin") == 0) return AMIGA_ARTIFACT_RAW_BIN;
+  return AMIGA_ARTIFACT_HUNK_EXE;
+}
+
+const char *
 amiga_toolchain_kind_to_str(AmigaToolchainKind k)
 {
   switch (k) {
     case AMIGA_TOOLCHAIN_HUNK_VLINK: return "hunk_vlink";
     case AMIGA_TOOLCHAIN_SINGLE_ASM: return "single_asm";
+    case AMIGA_TOOLCHAIN_ELF2BIN:    return "elf2bin";
+    case AMIGA_TOOLCHAIN_VASM_BIN:   return "vasm_bin";
     case AMIGA_TOOLCHAIN_ELF2HUNK:
     default:
       return "elf2hunk";
@@ -93,6 +108,8 @@ amiga_toolchain_kind_from_str(const char *s)
   if (!s) return AMIGA_TOOLCHAIN_ELF2HUNK;
   if (g_strcmp0(s, "hunk_vlink") == 0) return AMIGA_TOOLCHAIN_HUNK_VLINK;
   if (g_strcmp0(s, "single_asm") == 0) return AMIGA_TOOLCHAIN_SINGLE_ASM;
+  if (g_strcmp0(s, "elf2bin") == 0) return AMIGA_TOOLCHAIN_ELF2BIN;
+  if (g_strcmp0(s, "vasm_bin") == 0) return AMIGA_TOOLCHAIN_VASM_BIN;
   return AMIGA_TOOLCHAIN_ELF2HUNK;
 }
 
@@ -102,12 +119,14 @@ amiga_target_new(const char *name)
   AmigaTarget *t = g_new0(AmigaTarget, 1);
   t->name = g_strdup(name ? name : "main");
   t->kind = AMIGA_TARGET_OS_EXE;
+  t->format = AMIGA_ARTIFACT_HUNK_EXE;
   t->cpu = g_strdup("68000");
   t->toolchain = AMIGA_TOOLCHAIN_ELF2HUNK;
   t->sources = g_ptr_array_new_with_free_func(g_free);
   t->includes = g_ptr_array_new_with_free_func(g_free);
   t->defines = g_ptr_array_new_with_free_func(g_free);
   t->extra_files = g_ptr_array_new_with_free_func(g_free);
+  t->symbol_files = g_ptr_array_new_with_free_func(g_free);
   return t;
 }
 
@@ -121,11 +140,16 @@ amiga_target_free(AmigaTarget *t)
   if (t->includes) g_ptr_array_unref(t->includes);
   if (t->defines) g_ptr_array_unref(t->defines);
   if (t->extra_files) g_ptr_array_unref(t->extra_files);
+  if (t->symbol_files) g_ptr_array_unref(t->symbol_files);
   g_free(t->startup_sequence);
   g_free(t->copper_symbol);
   g_free(t->bitplane_symbol);
+  g_free(t->entry_symbol);
   g_free(t->exe_path);
   g_free(t->elf_path);
+  g_free(t->bin_path);
+  g_free(t->boot_adf);
+  g_free(t->pack_cmd);
   g_free(t);
 }
 
@@ -337,6 +361,12 @@ amiga_project_parse_toml(const char    *toml_str,
       AmigaTarget *t = amiga_target_new(tname ? tname : "target");
       g_autofree char *kstr = toml_dup_str(tt, "kind");
       if (kstr) t->kind = amiga_target_kind_from_str(kstr);
+      g_autofree char *fstr = toml_dup_str(tt, "format");
+      if (fstr) {
+        t->format = amiga_artifact_format_from_str(fstr);
+      } else {
+        t->format = (t->kind == AMIGA_TARGET_ADF_RAW) ? AMIGA_ARTIFACT_RAW_BIN : AMIGA_ARTIFACT_HUNK_EXE;
+      }
       g_autofree char *cstr = toml_dup_str(tt, "cpu");
       if (cstr) { g_free(t->cpu); t->cpu = g_steal_pointer(&cstr); }
       g_autofree char *tc = toml_dup_str(tt, "toolchain");
@@ -345,11 +375,18 @@ amiga_project_parse_toml(const char    *toml_str,
       read_toml_str_array(tt, "includes", t->includes);
       read_toml_str_array(tt, "defines", t->defines);
       read_toml_str_array(tt, "extra_files", t->extra_files);
+      read_toml_str_array(tt, "symbol_files", t->symbol_files);
       t->startup_sequence = toml_dup_str(tt, "startup_sequence");
       t->copper_symbol = toml_dup_str(tt, "copper_symbol");
       t->bitplane_symbol = toml_dup_str(tt, "bitplane_symbol");
+      t->entry_symbol = toml_dup_str(tt, "entry_symbol");
       t->exe_path = toml_dup_str(tt, "exe_path");
       t->elf_path = toml_dup_str(tt, "elf_path");
+      t->bin_path = toml_dup_str(tt, "bin_path");
+      t->boot_adf = toml_dup_str(tt, "boot_adf");
+      t->pack_cmd = toml_dup_str(tt, "pack_cmd");
+      toml_datum_t la = toml_get(tt, "load_addr");
+      if (la.type == TOML_INT64 && la.u.int64 >= 0) t->load_addr = (uint32_t)la.u.int64;
       toml_datum_t ent = toml_get(tt, "entry_addr");
       if (ent.type == TOML_INT64 && ent.u.int64 >= 0) t->entry_addr = (uint32_t)ent.u.int64;
       g_ptr_array_add(proj->targets, t);
@@ -448,26 +485,84 @@ amiga_project_load_dir(const char *dir, GError **error)
   proj->build_cmd = g_strdup("make -j4");
   proj->clean_cmd = g_strdup("make clean");
 
+  static const char *const harness_parts[3] = {
+    "framework/devharness.asm",
+    "support/setsystem.asm",
+    "support/debug.asm",
+  };
+  for (size_t hi = 0; hi < G_N_ELEMENTS(harness_parts); hi++) {
+    g_autofree char *hp = g_build_filename(dir, harness_parts[hi], NULL);
+    if (g_file_test(hp, G_FILE_TEST_IS_REGULAR)) {
+      g_ptr_array_add(proj->shared_sources, g_strdup(harness_parts[hi]));
+    }
+  }
+
+  g_autofree char *docs_dir = g_build_filename(dir, "docs", NULL);
+  GDir *dgd = g_dir_open(docs_dir, 0, NULL);
+  if (dgd) {
+    const char *dent = NULL;
+    while ((dent = g_dir_read_name(dgd)) != NULL) {
+      if (g_str_has_suffix(dent, ".md")) {
+        proj->hrm_dir = g_strdup("docs");
+        break;
+      }
+    }
+    g_dir_close(dgd);
+  }
+
+  g_autofree char *kick13 = g_build_filename(dir, "kick13.rom", NULL);
+  if (g_file_test(kick13, G_FILE_TEST_IS_REGULAR)) {
+    AmigaHwProfile *a500 = (AmigaHwProfile *)amiga_project_find_profile(proj, "a500_ocs");
+    if (a500) {
+      g_free(a500->kickstart);
+      a500->kickstart = g_strdup(kick13);
+    }
+  }
+
   g_autofree char *effects_dir = g_build_filename(dir, "effects", NULL);
   GDir *gd = g_dir_open(effects_dir, 0, NULL);
   if (gd) {
+    g_autoptr(GPtrArray) efiles = g_ptr_array_new_with_free_func(g_free);
     const char *ent = NULL;
     while ((ent = g_dir_read_name(gd)) != NULL) {
       if (g_str_has_suffix(ent, ".asm") || g_str_has_suffix(ent, ".s")) {
-        g_autofree char *tname = g_strndup(ent, strlen(ent) - (g_str_has_suffix(ent, ".asm") ? 4 : 2));
+        g_ptr_array_add(efiles, g_strdup(ent));
+      }
+    }
+    g_dir_close(gd);
+    if (efiles->len > 0) {
+      /* Simple insertion sort for deterministic target order */
+      for (guint i = 1; i < efiles->len; i++) {
+        char *key = g_ptr_array_index(efiles, i);
+        int j = (int)i - 1;
+        while (j >= 0 && g_strcmp0((const char *)g_ptr_array_index(efiles, j), key) > 0) {
+          efiles->pdata[j + 1] = efiles->pdata[j];
+          j--;
+        }
+        efiles->pdata[j + 1] = key;
+      }
+      g_free(proj->build_cmd);
+      proj->build_cmd = g_strdup("make -j4 effect={target}");
+      for (guint i = 0; i < efiles->len; i++) {
+        const char *fn = g_ptr_array_index(efiles, i);
+        g_autofree char *tname = g_strndup(fn, strlen(fn) - (g_str_has_suffix(fn, ".asm") ? 4 : 2));
         AmigaTarget *t = amiga_target_new(tname);
-        g_ptr_array_add(t->sources, g_strdup_printf("effects/%s", ent));
+        t->format = AMIGA_ARTIFACT_HUNK_EXE;
+        t->entry_symbol = g_strdup("_start");
+        g_ptr_array_add(t->includes, g_strdup("."));
+        g_ptr_array_add(t->includes, g_strdup("$SDKDIR"));
+        g_ptr_array_add(t->sources, g_strdup_printf("effects/%s", fn));
         t->exe_path = g_strdup_printf("out/%s.exe", tname);
         t->elf_path = g_strdup_printf("out/%s.elf", tname);
         g_ptr_array_add(proj->targets, t);
         if (!proj->default_target) proj->default_target = g_strdup(tname);
       }
     }
-    g_dir_close(gd);
   }
   if (proj->targets->len == 0) {
     AmigaTarget *t = amiga_target_new(proj->name ? proj->name : "default");
     t->kind = AMIGA_TARGET_OS_EXE;
+    t->format = AMIGA_ARTIFACT_HUNK_EXE;
     g_ptr_array_add(proj->targets, t);
     if (!proj->default_target) {
       proj->default_target = g_strdup(t->name);
@@ -486,6 +581,8 @@ amiga_project_serialize_toml(const AmigaProject *proj)
                          proj->build_mode == AMIGA_BUILD_EXTERNAL ? "external" : "native");
   if (proj->build_cmd) { g_string_append(out, "build_cmd = "); append_toml_quoted(out, proj->build_cmd); g_string_append_c(out, '\n'); }
   if (proj->clean_cmd) { g_string_append(out, "clean_cmd = "); append_toml_quoted(out, proj->clean_cmd); g_string_append_c(out, '\n'); }
+  if (proj->pre_build_cmd) { g_string_append(out, "pre_build_cmd = "); append_toml_quoted(out, proj->pre_build_cmd); g_string_append_c(out, '\n'); }
+  if (proj->post_build_cmd) { g_string_append(out, "post_build_cmd = "); append_toml_quoted(out, proj->post_build_cmd); g_string_append_c(out, '\n'); }
   if (proj->default_target) { g_string_append(out, "default_target = "); append_toml_quoted(out, proj->default_target); g_string_append_c(out, '\n'); }
   if (proj->default_profile) { g_string_append(out, "default_profile = "); append_toml_quoted(out, proj->default_profile); g_string_append_c(out, '\n'); }
   g_string_append_printf(out, "trap86_guest_output = %s\n", proj->trap86_guest_output ? "true" : "false");
@@ -503,17 +600,24 @@ amiga_project_serialize_toml(const AmigaProject *proj)
     g_string_append(out, "\n[[target]]\n");
     g_string_append(out, "name = "); append_toml_quoted(out, t->name);
     g_string_append_printf(out, "\nkind = \"%s\"\n", amiga_target_kind_to_str(t->kind));
+    g_string_append_printf(out, "format = \"%s\"\n", amiga_artifact_format_to_str(t->format));
     g_string_append(out, "cpu = "); append_toml_quoted(out, t->cpu ? t->cpu : "68000");
     g_string_append_printf(out, "\ntoolchain = \"%s\"\n", amiga_toolchain_kind_to_str(t->toolchain));
     append_toml_str_array(out, "sources", t->sources);
     if (t->includes && t->includes->len > 0) append_toml_str_array(out, "includes", t->includes);
     if (t->defines && t->defines->len > 0) append_toml_str_array(out, "defines", t->defines);
     if (t->extra_files && t->extra_files->len > 0) append_toml_str_array(out, "extra_files", t->extra_files);
+    if (t->symbol_files && t->symbol_files->len > 0) append_toml_str_array(out, "symbol_files", t->symbol_files);
     if (t->startup_sequence) { g_string_append(out, "startup_sequence = "); append_toml_quoted(out, t->startup_sequence); g_string_append_c(out, '\n'); }
     if (t->copper_symbol) { g_string_append(out, "copper_symbol = "); append_toml_quoted(out, t->copper_symbol); g_string_append_c(out, '\n'); }
     if (t->bitplane_symbol) { g_string_append(out, "bitplane_symbol = "); append_toml_quoted(out, t->bitplane_symbol); g_string_append_c(out, '\n'); }
+    if (t->entry_symbol) { g_string_append(out, "entry_symbol = "); append_toml_quoted(out, t->entry_symbol); g_string_append_c(out, '\n'); }
     if (t->exe_path) { g_string_append(out, "exe_path = "); append_toml_quoted(out, t->exe_path); g_string_append_c(out, '\n'); }
     if (t->elf_path) { g_string_append(out, "elf_path = "); append_toml_quoted(out, t->elf_path); g_string_append_c(out, '\n'); }
+    if (t->bin_path) { g_string_append(out, "bin_path = "); append_toml_quoted(out, t->bin_path); g_string_append_c(out, '\n'); }
+    if (t->boot_adf) { g_string_append(out, "boot_adf = "); append_toml_quoted(out, t->boot_adf); g_string_append_c(out, '\n'); }
+    if (t->pack_cmd) { g_string_append(out, "pack_cmd = "); append_toml_quoted(out, t->pack_cmd); g_string_append_c(out, '\n'); }
+    if (t->load_addr != 0) g_string_append_printf(out, "load_addr = %u\n", t->load_addr);
     if (t->entry_addr != 0) g_string_append_printf(out, "entry_addr = %u\n", t->entry_addr);
   }
 
@@ -686,6 +790,7 @@ amiga_toolchain_status_free(AmigaToolchainStatus *st)
   g_free(st->m68k_elf_gcc);
   g_free(st->m68k_elf_ld);
   g_free(st->m68k_elf_objdump);
+  g_free(st->m68k_elf_objcopy);
   g_free(st->elf2hunk);
   g_free(st->vlink);
   g_free(st->vc);
@@ -705,6 +810,7 @@ amiga_project_probe_toolchain(const char *const *extra_bin_paths)
   st->m68k_elf_gcc = find_tool_in_paths("m68k-amiga-elf-gcc", extra_bin_paths);
   st->m68k_elf_ld = find_tool_in_paths("m68k-amiga-elf-ld", extra_bin_paths);
   st->m68k_elf_objdump = find_tool_in_paths("m68k-amiga-elf-objdump", extra_bin_paths);
+  st->m68k_elf_objcopy = find_tool_in_paths("m68k-amiga-elf-objcopy", extra_bin_paths);
   st->elf2hunk = find_tool_in_paths("elf2hunk", extra_bin_paths);
   st->vlink = find_tool_in_paths("vlink", extra_bin_paths);
   st->vc = find_tool_in_paths("vc", extra_bin_paths);

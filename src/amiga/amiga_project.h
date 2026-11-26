@@ -26,9 +26,16 @@ typedef enum {
 } AmigaTargetKind;
 
 typedef enum {
+  AMIGA_ARTIFACT_HUNK_EXE = 0,
+  AMIGA_ARTIFACT_RAW_BIN,
+} AmigaArtifactFormat;
+
+typedef enum {
   AMIGA_TOOLCHAIN_ELF2HUNK = 0,
   AMIGA_TOOLCHAIN_HUNK_VLINK,
   AMIGA_TOOLCHAIN_SINGLE_ASM,
+  AMIGA_TOOLCHAIN_ELF2BIN,
+  AMIGA_TOOLCHAIN_VASM_BIN,
 } AmigaToolchainKind;
 
 typedef enum {
@@ -39,20 +46,27 @@ typedef enum {
 } AmigaTemplateKind;
 
 typedef struct {
-  char               *name;
-  AmigaTargetKind     kind;
-  char               *cpu;       /* "68000", "68010", "68020", ... */
-  AmigaToolchainKind  toolchain;
-  GPtrArray          *sources;     /* char* */
-  GPtrArray          *includes;    /* char* */
-  GPtrArray          *defines;     /* char* */
-  GPtrArray          *extra_files; /* char* */
-  char               *startup_sequence;
-  char               *copper_symbol;
-  char               *bitplane_symbol;
-  uint32_t            entry_addr;  /* for adf_raw / OS-less targets */
-  char               *exe_path;    /* optional override */
-  char               *elf_path;    /* optional override */
+  char                *name;
+  AmigaTargetKind      kind;
+  AmigaArtifactFormat  format;
+  char                *cpu;       /* "68000", "68010", "68020", ... */
+  AmigaToolchainKind   toolchain;
+  GPtrArray           *sources;     /* char* */
+  GPtrArray           *includes;    /* char* */
+  GPtrArray           *defines;     /* char* */
+  GPtrArray           *extra_files; /* char* */
+  GPtrArray           *symbol_files;/* char* (e.g. fixed-address .elf files for trackmo debugging) */
+  char                *startup_sequence;
+  char                *copper_symbol;
+  char                *bitplane_symbol;
+  char                *entry_symbol; /* e.g. "_start" */
+  uint32_t             load_addr;    /* -Ttext=<load_addr> */
+  uint32_t             entry_addr;   /* for adf_raw / OS-less targets */
+  char                *exe_path;     /* optional override */
+  char                *elf_path;     /* optional override */
+  char                *bin_path;     /* optional override for raw_bin */
+  char                *boot_adf;     /* optional prebuilt floppy image to boot (-0) */
+  char                *pack_cmd;     /* optional packer template ({in}, {out}, {target}) */
 } AmigaTarget;
 
 typedef struct {
@@ -101,6 +115,7 @@ typedef struct {
   char *m68k_elf_gcc;
   char *m68k_elf_ld;
   char *m68k_elf_objdump;
+  char *m68k_elf_objcopy;
   char *elf2hunk;
   char *vlink;
   char *vc;
@@ -161,6 +176,8 @@ char                 *amiga_project_check_profile_compat(const AmigaTarget    *t
 
 const char           *amiga_target_kind_to_str(AmigaTargetKind k);
 AmigaTargetKind       amiga_target_kind_from_str(const char *s);
+const char           *amiga_artifact_format_to_str(AmigaArtifactFormat f);
+AmigaArtifactFormat   amiga_artifact_format_from_str(const char *s);
 const char           *amiga_toolchain_kind_to_str(AmigaToolchainKind k);
 AmigaToolchainKind    amiga_toolchain_kind_from_str(const char *s);
 

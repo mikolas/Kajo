@@ -379,6 +379,19 @@ amiga_mem_view_jump_to(AmigaMemView *self, uint32_t addr)
   if (self->read_cb) self->read_cb(self, addr, 256, self->user_data);
 }
 
+void
+amiga_mem_view_set_grouping(AmigaMemView *self, int group_bytes)
+{
+  g_return_if_fail(AMIGA_IS_MEM_VIEW(self));
+  if (group_bytes == 1) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_8b), TRUE);
+  } else if (group_bytes == 4) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_32b), TRUE);
+  } else {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_16b), TRUE);
+  }
+}
+
 uint32_t
 amiga_mem_view_get_base_addr(AmigaMemView *self)
 {

@@ -710,6 +710,7 @@ executable(
 amiga_ui_sources = files(
   'src/amiga/main.c',
   'src/amiga/amiga_window.c',
+  'src/amiga/amiga_window_debug.c',
   'src/amiga/amiga_window_inspector.c',
   'src/amiga/amiga_window_preview.c',
   'src/amiga/amiga_cpu_strip.c',

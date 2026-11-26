@@ -156,19 +156,22 @@ test_async_external_build_success_fail_and_cancel(void)
   g_autofree char *tmp = g_dir_make_tmp("kajo-amiga-async-XXXXXX", &err);
   g_assert_no_error(err);
 
-  /* 1. Passing external build command */
+  /* 1. Passing external build command with {target} expansion & DH0 staging */
   AmigaProject *proj = amiga_project_new();
   proj->root_dir = g_strdup(tmp);
   proj->build_mode = AMIGA_BUILD_EXTERNAL;
-  proj->build_cmd = g_strdup("mkdir -p build && printf HUNK > build/out.exe && echo built ok");
+  proj->pre_build_cmd = g_strdup("printf PRE > pre.txt");
+  proj->build_cmd = g_strdup("mkdir -p build && printf HUNK > build/{target}.exe && echo built {file_stem}");
+  proj->post_build_cmd = g_strdup("printf POST > post.txt");
 
   AmigaTarget *t = amiga_target_new("out");
   t->kind = AMIGA_TARGET_OS_EXE;
   t->exe_path = g_strdup("build/out.exe");
   g_ptr_array_add(proj->targets, t);
 
+  g_autofree char *stage = g_build_filename(tmp, "stage", NULL);
   GAsyncResult *res = NULL;
-  amiga_build_run_async(proj, t, NULL, tmp, NULL, on_build_done, &res);
+  amiga_build_run_async(proj, t, NULL, stage, NULL, on_build_done, &res);
   while (res == NULL) {
     g_main_context_iteration(NULL, TRUE);
   }
@@ -177,8 +180,16 @@ test_async_external_build_success_fail_and_cancel(void)
   g_assert_no_error(err);
   g_assert_nonnull(br);
   g_assert_true(br->success);
-  g_assert_nonnull(strstr(br->log_text, "built ok"));
+  g_assert_nonnull(strstr(br->log_text, "built out"));
+  g_autofree char *pre_f = g_build_filename(tmp, "pre.txt", NULL);
+  g_autofree char *post_f = g_build_filename(tmp, "post.txt", NULL);
+  g_autofree char *dh0_exe = g_build_filename(stage, "dh0", "out.exe", NULL);
+  g_assert_true(g_file_test(pre_f, G_FILE_TEST_EXISTS));
+  g_assert_true(g_file_test(post_f, G_FILE_TEST_EXISTS));
+  g_assert_true(g_file_test(dh0_exe, G_FILE_TEST_EXISTS));
   amiga_build_result_free(br);
+  g_clear_pointer(&proj->pre_build_cmd, g_free);
+  g_clear_pointer(&proj->post_build_cmd, g_free);
 
   /* 2. Failing external build command emits diagnostic */
   g_free(proj->build_cmd);
@@ -198,7 +209,7 @@ test_async_external_build_success_fail_and_cancel(void)
   g_assert_cmpuint(d0->line, ==, 9);
   amiga_build_result_free(br);
 
-  /* 3. Native build DAG planning sanity check (fake executable compiler in PATH) */
+  /* 3. Native build DAG planning checks: single_asm & elf2bin */
   proj->build_mode = AMIGA_BUILD_NATIVE;
   g_autofree char *src_dir = g_build_filename(tmp, "src", NULL);
   g_mkdir_with_parents(src_dir, 0755);
@@ -217,6 +228,20 @@ test_async_external_build_success_fail_and_cancel(void)
   g_assert_true(amiga_build_plan_steps(proj, t, tc, tmp, &steps, &err));
   g_assert_no_error(err);
   g_assert_cmpuint(steps->len, >=, 1);
+  AmigaBuildStep *s0 = g_ptr_array_index(steps, 0);
+  g_assert_cmpstr(s0->out_artifact, ==, "build/out.exe");
+  g_clear_pointer(&steps, g_ptr_array_unref);
+
+  t->format = AMIGA_ARTIFACT_RAW_BIN;
+  t->toolchain = AMIGA_TOOLCHAIN_ELF2BIN;
+  t->entry_symbol = g_strdup("_start");
+  t->load_addr = 0x10000u;
+  t->bin_path = g_strdup("out/part.bin");
+  g_assert_true(amiga_build_plan_steps(proj, t, tc, tmp, &steps, &err));
+  g_assert_no_error(err);
+  g_assert_cmpuint(steps->len, ==, 3); /* assemble + ld + objcopy */
+  AmigaBuildStep *last = g_ptr_array_index(steps, 2);
+  g_assert_cmpstr(last->out_artifact, ==, "out/part.bin");
   amiga_toolchain_status_free(tc);
 
   /* 4. Pre-cancelled async call returns G_IO_ERROR_CANCELLED */

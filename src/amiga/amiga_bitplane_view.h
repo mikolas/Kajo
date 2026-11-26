@@ -33,6 +33,7 @@ void amiga_bitplane_view_set_chip_ram(AmigaBitplaneView *self,
                                       size_t             chip_len);
 
 void amiga_bitplane_view_set_symbol_hint(AmigaBitplaneView *self, const char *sym_name);
+void amiga_bitplane_view_set_grid(AmigaBitplaneView *self, bool enabled);
 
 G_END_DECLS
 

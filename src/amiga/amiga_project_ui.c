@@ -366,8 +366,11 @@ struct _AmigaProjectSetupView {
   GtkWidget *dd_build_mode;
   GtkWidget *entry_build_cmd;
   GtkWidget *dd_target_kind;
+  GtkWidget *dd_format;
   GtkWidget *entry_target_cpu;
   GtkWidget *dd_toolchain;
+  GtkWidget *entry_entry_sym;
+  GtkWidget *entry_load_addr;
   GtkWidget *entry_sources;
 
   /* Hardware Profiles */
@@ -452,9 +455,20 @@ apply_form_to_project(AmigaProjectSetupView *self)
   if (p->targets && p->targets->len > 0) {
     AmigaTarget *t = g_ptr_array_index(p->targets, 0);
     t->kind = (AmigaTargetKind)gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_target_kind));
+    t->format = (AmigaArtifactFormat)gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_format));
     t->toolchain = (AmigaToolchainKind)gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_toolchain));
     g_free(t->cpu);
     t->cpu = g_strdup(gtk_editable_get_text(GTK_EDITABLE(self->entry_target_cpu)));
+    const char *es = gtk_editable_get_text(GTK_EDITABLE(self->entry_entry_sym));
+    g_free(t->entry_symbol);
+    t->entry_symbol = (es && es[0]) ? g_strdup(es) : NULL;
+    const char *la = gtk_editable_get_text(GTK_EDITABLE(self->entry_load_addr));
+    if (la && la[0]) {
+      const char *lp = (la[0] == '$') ? la + 1 : la;
+      t->load_addr = (uint32_t)strtoul(lp, NULL, 16);
+    } else {
+      t->load_addr = 0;
+    }
 
     g_ptr_array_set_size(t->sources, 0);
     const char *srcs = gtk_editable_get_text(GTK_EDITABLE(self->entry_sources));
@@ -626,21 +640,39 @@ amiga_project_setup_view_init(AmigaProjectSetupView *self)
   self->dd_build_mode = gtk_drop_down_new_from_strings(bmodes);
   self->entry_build_cmd = gtk_entry_new();
   gtk_widget_add_css_class(self->entry_build_cmd, "amiga-entry");
-  const char *kinds[] = { "os_exe (DH0:)", "adf_dos (OFS/FFS via adflib)", "adf_raw (Bootblock)", NULL };
+  const char *kinds[] = { "os_exe (DH0:)", "adf_dos (OFS/FFS via adflib)", "adf_raw (Trackdisk)", NULL };
   self->dd_target_kind = gtk_drop_down_new_from_strings(kinds);
+  const char *fmts[] = { "hunk_exe (AmigaDOS .exe)", "raw_bin (Fixed-address .bin)", NULL };
+  self->dd_format = gtk_drop_down_new_from_strings(fmts);
   self->entry_target_cpu = gtk_entry_new();
   gtk_widget_add_css_class(self->entry_target_cpu, "amiga-entry");
-  const char *tcs[] = { "elf2hunk (GCC+VASM)", "hunk_vlink (VBCC/VASM)", "single_asm (vasm -Fhunkexe)", NULL };
+  const char *tcs[] = {
+    "elf2hunk (GCC+VASM -> .exe)",
+    "hunk_vlink (VBCC/VASM -> .exe)",
+    "single_asm (vasm -Fhunkexe)",
+    "elf2bin (ELF -> objcopy -O binary)",
+    "vasm_bin (vasm -Fbin raw)",
+    NULL
+  };
   self->dd_toolchain = gtk_drop_down_new_from_strings(tcs);
+  self->entry_entry_sym = gtk_entry_new();
+  gtk_widget_add_css_class(self->entry_entry_sym, "amiga-entry");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_entry_sym), "_start");
+  self->entry_load_addr = gtk_entry_new();
+  gtk_widget_add_css_class(self->entry_load_addr, "amiga-entry");
+  gtk_entry_set_placeholder_text(GTK_ENTRY(self->entry_load_addr), "$00000000");
   self->entry_sources = gtk_entry_new();
   gtk_widget_add_css_class(self->entry_sources, "amiga-entry");
 
   gtk_box_append(GTK_BOX(p_targets), make_form_row("Project Name", self->entry_proj_name));
   gtk_box_append(GTK_BOX(p_targets), make_form_row("Build Mode", self->dd_build_mode));
   gtk_box_append(GTK_BOX(p_targets), make_form_row("External Command", self->entry_build_cmd));
-  gtk_box_append(GTK_BOX(p_targets), make_form_row("Target Packaging", self->dd_target_kind));
+  gtk_box_append(GTK_BOX(p_targets), make_form_row("Boot Packaging", self->dd_target_kind));
+  gtk_box_append(GTK_BOX(p_targets), make_form_row("Artifact Format", self->dd_format));
   gtk_box_append(GTK_BOX(p_targets), make_form_row("Target CPU", self->entry_target_cpu));
   gtk_box_append(GTK_BOX(p_targets), make_form_row("Toolchain", self->dd_toolchain));
+  gtk_box_append(GTK_BOX(p_targets), make_form_row("Entry Symbol", self->entry_entry_sym));
+  gtk_box_append(GTK_BOX(p_targets), make_form_row("Load Address", self->entry_load_addr));
   gtk_box_append(GTK_BOX(p_targets), make_form_row("Sources (CSV)", self->entry_sources));
   gtk_stack_add_named(GTK_STACK(self->form_stack), p_targets, "targets");
 
@@ -736,8 +768,12 @@ amiga_project_setup_view_bind(AmigaProjectSetupView      *self,
   if (proj->targets && proj->targets->len > 0) {
     const AmigaTarget *t = g_ptr_array_index(proj->targets, 0);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_target_kind), (guint)t->kind);
+    gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_format), (guint)t->format);
     gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_toolchain), (guint)t->toolchain);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_target_cpu), t->cpu ? t->cpu : "68000");
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_entry_sym), t->entry_symbol ? t->entry_symbol : "");
+    g_autofree char *la = t->load_addr ? g_strdup_printf("$%08X", t->load_addr) : g_strdup("");
+    gtk_editable_set_text(GTK_EDITABLE(self->entry_load_addr), la);
     gtk_editable_set_text(GTK_EDITABLE(self->entry_copper_sym), t->copper_symbol ? t->copper_symbol : "");
     gtk_editable_set_text(GTK_EDITABLE(self->entry_bpl_sym), t->bitplane_symbol ? t->bitplane_symbol : "");
 

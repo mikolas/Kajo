@@ -96,6 +96,16 @@ test_adflib_dos_ofs_and_ffs_roundtrip(void)
                        (uint32_t)(uint8_t)raw_buf[7];
   g_assert_cmpuint(stored_ck, ==, expected_ck);
 
+  /* Verify default DOS bootblock FindResident("dos.library") & PC-relative displacement */
+  g_assert_cmpuint((uint8_t)raw_buf[12], ==, 0x43u);
+  g_assert_cmpuint((uint8_t)raw_buf[13], ==, 0xFAu);
+  uint16_t lea_disp = (uint16_t)(((uint8_t)raw_buf[14] << 8) | (uint8_t)raw_buf[15]);
+  g_assert_cmpstr(raw_buf + 14 + lea_disp, ==, "dos.library");
+  g_assert_cmpuint((uint8_t)raw_buf[16], ==, 0x4Eu);
+  g_assert_cmpuint((uint8_t)raw_buf[17], ==, 0xAEu);
+  g_assert_cmpuint((uint8_t)raw_buf[18], ==, 0xFFu);
+  g_assert_cmpuint((uint8_t)raw_buf[19], ==, 0xA0u);
+
   g_autoptr(GPtrArray) paths = NULL;
   g_assert_true(amiga_adf_list_files(ofs_adf, &paths, &err));
   g_assert_no_error(err);
