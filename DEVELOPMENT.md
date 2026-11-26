@@ -199,7 +199,7 @@ src/
 │   ├── web_storage.h/c             Per-profile SQLite WAL + FTS5 history, bookmarks, downloads & session JSON persistence
 │   ├── web_abp_compiler.h/c        ABP / EasyList safety validator & filter translation utilities
 │   ├── web_sync_merge.h/c          Pure UUID/tombstone CRDT merge & AES-256-GCM envelope primitives
-│   └── web_media_sniff_core.h/c    Pure HLS/DASH manifest parser & stream classifier utilities
+│   └── web_media_sniff_core.h/c    Pure HLS/DASH/Vimeo manifest parser, DRM/audio detection & stream classifier utilities
 ├── web_cef/                        Chromium/CEF Alloy Views browser (kajo-web, docs/spec_kajo_web.md)
 │   ├── main.cc                     CEF subprocess routing, --ozone-platform=wayland, single-instance IPC, --app-id/--app & profile launch args
 │   ├── cef_app.h/cc                KajoCefApp & BrowserHostCoordinator: GPU/VA-API switches, scheme registration, multi-window orchestration, V8 Notification shim
@@ -211,7 +211,8 @@ src/
 │   ├── cef_tab.h/cc                CefTabClient load/title/favicon/popup isolation/permission/download/context-menu/hotkey & crash handlers
 │   ├── cef_chrome_ui.h/cc          Aero + Metro kajo-chrome://ui/* theme-scaled topbar/rail/popovers & kajo://* internal HTML pages
 │   ├── cef_clipboard.h/cc          In-browser text & PNG-normalized image clipboard bridge (CopyTextViaBrowser, CopyImageViaBrowser)
-│   ├── cef_media_dl.h/cc           Async GSubprocess ffmpeg HLS/DASH remuxer & optional yt-dlp downloader
+│   ├── cef_media_dl.h/cc           Authenticated loopback proxy, progressive fetcher, async ffmpeg HLS/DASH remuxer & yt-dlp probe/downloader
+│   ├── cef_media_net.h/cc          CEF CefURLRequest bridge & Netscape cookie-jar export for authenticated media downloads
 │   ├── cef_adblock.h/cc            IO-thread ABP network + host-file + cosmetic CSS blocker & EasyList/EasyPrivacy auto-sync
 │   ├── cef_ipc.h/cc                Per-profile single-instance UNIX domain socket server & URL/WebApp forwarder
 │   ├── cef_site_util.h             Pure eTLD+1 site matching, private-host check, color/href sanitization, origin favicon fallback & ComputeChromeUiMetrics

@@ -4,9 +4,11 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <functional>
 
 #include "config/kajo_config_types.h"
+#include "include/cef_response_filter.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "web/web_media_sniff_core.h"
@@ -80,6 +82,55 @@ bool IsYouTubeHost(const std::string& host) {
   return host == "youtube.com" ||
          (host.size() > 12 && host.compare(host.size() - 12, 12, ".youtube.com") == 0);
 }
+
+std::string LowerStr(const std::string& s) {
+  std::string out = s;
+  for (char& c : out) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  return out;
+}
+
+class ManifestCaptureFilter : public CefResponseFilter {
+public:
+  static constexpr size_t kMaxCaptureBytes = 2U * 1024U * 1024U;
+
+  bool InitFilter() override { return true; }
+
+  FilterStatus Filter(void* data_in,
+                      size_t data_in_size,
+                      size_t& data_in_read,
+                      void* data_out,
+                      size_t data_out_size,
+                      size_t& data_out_written) override {
+    if (!data_in || data_in_size == 0) {
+      data_in_read = 0;
+      data_out_written = 0;
+      return RESPONSE_FILTER_DONE;
+    }
+    const size_t n = std::min(data_in_size, data_out_size);
+    if (n > 0 && data_out) {
+      std::memcpy(data_out, data_in, n);
+    }
+    data_in_read = n;
+    data_out_written = n;
+    if (n > 0 && !overflow_) {
+      if (body_.size() + n <= kMaxCaptureBytes) {
+        body_.append(static_cast<const char*>(data_in), n);
+      } else {
+        overflow_ = true;
+        body_.clear();
+      }
+    }
+    return (n < data_in_size) ? RESPONSE_FILTER_NEED_MORE_DATA : RESPONSE_FILTER_DONE;
+  }
+
+  const std::string& body() const { return body_; }
+  bool overflow() const { return overflow_; }
+
+private:
+  std::string body_;
+  bool overflow_ = false;
+  IMPLEMENT_REFCOUNTING(ManifestCaptureFilter);
+};
 
 std::string LoadErrorPageHtml(const std::string& url,
                               int err_code,
@@ -218,8 +269,15 @@ CefTabClient::CefTabClient(uint64_t tab_id,
 
 void CefTabClient::DetachCallbacks() {
   detached_.store(true, std::memory_order_release);
-  std::lock_guard<std::mutex> lock(cb_mu_);
-  callbacks_ = nullptr;
+  {
+    std::lock_guard<std::mutex> lock(cb_mu_);
+    callbacks_ = nullptr;
+  }
+  {
+    std::lock_guard<std::mutex> mlock(media_mu_);
+    req_headers_.clear();
+    active_filters_.clear();
+  }
 }
 
 TabCallbacks* CefTabClient::GetCallbacks() {
@@ -363,8 +421,16 @@ void CefTabClient::OnLoadStart(CefRefPtr<CefBrowser> browser,
     std::lock_guard<std::mutex> lock(url_mu_);
     last_top_url_ = url;
   }
+  page_has_manifest_.store(false, std::memory_order_release);
+  {
+    std::lock_guard<std::mutex> mlock(media_mu_);
+    active_filters_.clear();
+  }
   if (adblock_) adblock_->ResetTabBlockedCount(static_cast<int>(tab_id_));
-  if (TabCallbacks* cb = GetCallbacks()) cb->OnTabBlockedChanged(tab_id_);
+  if (TabCallbacks* cb = GetCallbacks()) {
+    cb->OnTabMainNavigation(tab_id_, url);
+    cb->OnTabBlockedChanged(tab_id_);
+  }
   PushNotifyPermissionSync(browser, url);
 }
 
@@ -643,7 +709,71 @@ CefResourceRequestHandler::ReturnValue CefTabClient::OnBeforeResourceLoad(
       return RV_CANCEL;
     }
   }
+
+  if (is_http) {
+    const uint64_t req_id = request->GetIdentifier();
+    if (req_id != 0) {
+      CapturedReqHeaders cap;
+      cap.ts_us = g_get_monotonic_time();
+      cap.referer = request->GetReferrerURL().ToString();
+      CefRequest::HeaderMap hmap;
+      request->GetHeaderMap(hmap);
+      for (const auto& kv : hmap) {
+        const std::string k = kv.first.ToString();
+        const std::string v = kv.second.ToString();
+        const std::string lk = LowerStr(k);
+        if (lk.empty() || v.empty()) continue;
+        if (lk == "user-agent") {
+          cap.user_agent = v;
+        } else if (lk == "origin") {
+          cap.origin = v;
+          cap.headers[k] = v;
+        } else if (lk == "referer" && cap.referer.empty()) {
+          cap.referer = v;
+        } else if (lk == "authorization" || lk.rfind("x-", 0) == 0 ||
+                   lk == "accept-language" || lk == "sec-fetch-site" ||
+                   lk == "sec-fetch-mode" || lk == "sec-fetch-dest") {
+          cap.headers[k] = v;
+        }
+      }
+      std::lock_guard<std::mutex> mlock(media_mu_);
+      const int64_t cutoff = cap.ts_us - 600LL * 1000000LL;
+      for (auto it = req_headers_.begin(); it != req_headers_.end();) {
+        if (it->second.ts_us < cutoff || req_headers_.size() >= 256) {
+          it = req_headers_.erase(it);
+        } else {
+          ++it;
+        }
+      }
+      req_headers_[req_id] = std::move(cap);
+    }
+  }
   return RV_CONTINUE;
+}
+
+CefRefPtr<CefResponseFilter> CefTabClient::GetResourceResponseFilter(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    CefRefPtr<CefResponse> response) {
+  CEF_REQUIRE_IO_THREAD();
+  if (detached_.load(std::memory_order_acquire) || !request || !response) return nullptr;
+  const int st = response->GetStatus();
+  if (st < 200 || st >= 300) return nullptr;
+  const std::string uri = request->GetURL().ToString();
+  const std::string mime = response->GetMimeType().ToString();
+  if (!web_media_should_capture_manifest(uri.c_str(), mime.c_str())) return nullptr;
+
+  page_has_manifest_.store(true, std::memory_order_release);
+  const uint64_t req_id = request->GetIdentifier();
+  if (req_id == 0) return nullptr;
+  CefRefPtr<ManifestCaptureFilter> filter(new ManifestCaptureFilter());
+  {
+    std::lock_guard<std::mutex> mlock(media_mu_);
+    if (active_filters_.size() >= 64) active_filters_.clear();
+    active_filters_[req_id] = filter;
+  }
+  return filter;
 }
 
 bool CefTabClient::OnResourceResponse(CefRefPtr<CefBrowser> browser,
@@ -652,32 +782,124 @@ bool CefTabClient::OnResourceResponse(CefRefPtr<CefBrowser> browser,
                                       CefRefPtr<CefResponse> response) {
   CEF_REQUIRE_IO_THREAD();
   if (detached_.load(std::memory_order_acquire) || !request || !response) return false;
+  const int st = response->GetStatus();
+  if (st < 200 || st >= 300) return false;
   const std::string uri = request->GetURL().ToString();
   if (uri.rfind("http://", 0) != 0 && uri.rfind("https://", 0) != 0) return false;
 
   const std::string mime = response->GetMimeType().ToString();
-  const std::string len_str = response->GetHeaderByName("Content-Length").ToString();
-  int64_t content_len = 0;
-  if (!len_str.empty()) {
-    content_len = std::strtoll(len_str.c_str(), nullptr, 10);
+  if (web_media_should_capture_manifest(uri.c_str(), mime.c_str())) {
+    page_has_manifest_.store(true, std::memory_order_release);
+    return false; /* handled passively by GetResourceResponseFilter + OnResourceLoadComplete */
   }
-  KajoWebMediaKind kind = web_media_classify_resource(uri.c_str(), mime.c_str(), content_len);
-  if (kind != KAJO_MEDIA_NONE && !detached_.load(std::memory_order_acquire)) {
-    const char* kind_str = "VIDEO";
-    if (kind == KAJO_MEDIA_HLS) kind_str = "HLS";
-    else if (kind == KAJO_MEDIA_DASH) kind_str = "DASH";
-    std::string referer = request->GetReferrerURL().ToString();
-    if (referer.empty()) referer = request->GetHeaderByName("Referer").ToString();
-    std::string user_agent = request->GetHeaderByName("User-Agent").ToString();
+
+  const std::string len_str = response->GetHeaderByName("Content-Length").ToString();
+  const std::string range_str = response->GetHeaderByName("Content-Range").ToString();
+  const std::string disp_str = response->GetHeaderByName("Content-Disposition").ToString();
+  int64_t content_len = !len_str.empty() ? std::strtoll(len_str.c_str(), nullptr, 10) : 0;
+  int64_t range_total = !range_str.empty() ? web_media_parse_content_range_total(range_str.c_str()) : 0;
+  int64_t eff_size = range_total > 0 ? range_total : content_len;
+
+  KajoWebMediaKind kind = web_media_classify_resource_ex(
+      uri.c_str(), mime.c_str(), content_len,
+      range_str.empty() ? nullptr : range_str.c_str(),
+      page_has_manifest_.load(std::memory_order_acquire) ? TRUE : FALSE);
+  if (kind == KAJO_MEDIA_PROGRESSIVE && !detached_.load(std::memory_order_acquire)) {
+    TabMediaCapture cap;
+    cap.kind = (LowerStr(mime).rfind("audio/", 0) == 0) ? "AUDIO" : "VIDEO";
+    cap.uri = uri;
+    cap.mime = mime;
+    cap.size_bytes = eff_size;
+    if (!disp_str.empty()) {
+      g_autofree gchar* fn = web_media_parse_content_disposition_filename(disp_str.c_str());
+      if (fn) cap.suggested_filename = fn;
+    }
+    {
+      std::lock_guard<std::mutex> mlock(media_mu_);
+      auto it = req_headers_.find(request->GetIdentifier());
+      if (it != req_headers_.end()) {
+        cap.referer = it->second.referer;
+        cap.origin = it->second.origin;
+        cap.user_agent = it->second.user_agent;
+        cap.headers = it->second.headers;
+      }
+    }
+    if (cap.referer.empty()) cap.referer = request->GetReferrerURL().ToString();
+    if (cap.user_agent.empty()) cap.user_agent = request->GetHeaderByName("User-Agent").ToString();
+
     CefRefPtr<CefTabClient> self(this);
-    std::string kstr(kind_str);
-    CefPostTask(TID_UI, new UiClosureTask([self, kstr, uri, mime, content_len, referer, user_agent]() {
+    CefPostTask(TID_UI, new UiClosureTask([self, cap = std::move(cap)]() mutable {
       if (TabCallbacks* cb = self->GetCallbacks()) {
-        cb->OnTabMediaDetected(self->tab_id_, kstr, uri, mime, content_len, referer, user_agent);
+        cb->OnTabMediaCaptured(self->tab_id_, cap);
       }
     }));
   }
   return false;
+}
+
+void CefTabClient::OnResourceLoadComplete(CefRefPtr<CefBrowser> browser,
+                                          CefRefPtr<CefFrame> frame,
+                                          CefRefPtr<CefRequest> request,
+                                          CefRefPtr<CefResponse> response,
+                                          URLRequestStatus status,
+                                          int64_t received_content_length) {
+  CEF_REQUIRE_IO_THREAD();
+  if (!request) return;
+  const uint64_t req_id = request->GetIdentifier();
+  if (req_id == 0) return;
+
+  CefRefPtr<ManifestCaptureFilter> cap_filter;
+  CapturedReqHeaders hdrs;
+  bool had_hdrs = false;
+  {
+    std::lock_guard<std::mutex> mlock(media_mu_);
+    auto fit = active_filters_.find(req_id);
+    if (fit != active_filters_.end()) {
+      cap_filter = static_cast<ManifestCaptureFilter*>(fit->second.get());
+      active_filters_.erase(fit);
+    }
+    auto hit = req_headers_.find(req_id);
+    if (hit != req_headers_.end()) {
+      hdrs = std::move(hit->second);
+      had_hdrs = true;
+      req_headers_.erase(hit);
+    }
+  }
+
+  if (!cap_filter || detached_.load(std::memory_order_acquire) || status != UR_SUCCESS || !response) {
+    return;
+  }
+  if (cap_filter->overflow() || cap_filter->body().empty()) return;
+
+  const std::string uri = request->GetURL().ToString();
+  const std::string mime = response->GetMimeType().ToString();
+  TabMediaCapture cap;
+  cap.uri = uri;
+  cap.mime = mime;
+  cap.manifest_body = cap_filter->body();
+  cap.size_bytes = received_content_length;
+  if (LowerStr(uri).find("player.vimeo.com") != std::string::npos) {
+    cap.kind = "VIMEO";
+  } else if (LowerStr(mime).find("dash") != std::string::npos || LowerStr(uri).find(".mpd") != std::string::npos) {
+    cap.kind = "DASH";
+  } else {
+    cap.kind = "HLS";
+  }
+  if (had_hdrs) {
+    cap.referer = hdrs.referer;
+    cap.origin = hdrs.origin;
+    cap.user_agent = hdrs.user_agent;
+    cap.headers = std::move(hdrs.headers);
+  }
+  if (cap.referer.empty()) cap.referer = request->GetReferrerURL().ToString();
+  if (cap.user_agent.empty()) cap.user_agent = request->GetHeaderByName("User-Agent").ToString();
+
+  CefRefPtr<CefTabClient> self(this);
+  CefPostTask(TID_UI, new UiClosureTask([self, cap = std::move(cap)]() mutable {
+    if (TabCallbacks* cb = self->GetCallbacks()) {
+      cb->OnTabMediaCaptured(self->tab_id_, cap);
+    }
+  }));
 }
 
 bool CefTabClient::OnBeforeDownload(CefRefPtr<CefBrowser> browser,

@@ -436,7 +436,7 @@ test_media_sniffer_core(void)
     g_assert_cmpint(d0->kind, ==, KAJO_MEDIA_DASH);
     g_assert_cmpint(d0->height, ==, 1080);
 
-    /* Deduplication (exact + ?range=/&range= byte-range normalization + 32-stream cap) */
+    /* Deduplication (exact + ?range=/&range= byte-range normalization + 64-stream cap) */
     GPtrArray *dedup = g_ptr_array_new_with_free_func(web_media_stream_free);
     g_assert_true(web_media_list_add_unique(dedup,
         web_media_stream_new(KAJO_MEDIA_HLS, "https://x/a.m3u8", "A", NULL, 0, 0, 0, 0)));
@@ -447,16 +447,16 @@ test_media_sniffer_core(void)
     g_assert_false(web_media_list_add_unique(dedup,
         web_media_stream_new(KAJO_MEDIA_PROGRESSIVE, "https://cdn/vp?itag=18&range=1025-4096", "S2", NULL, 0, 0, 0, 0)));
     g_assert_cmpuint(dedup->len, ==, 2);
-    for (guint i = 2; i < 40; i++) {
+    for (guint i = 2; i < 72; i++) {
         g_autofree gchar *u = g_strdup_printf("https://cdn/stream_%u.mp4", i);
         gboolean ok = web_media_list_add_unique(dedup,
             web_media_stream_new(KAJO_MEDIA_PROGRESSIVE, u, "S", NULL, 0, 0, 0, 0));
-        if (i < 32)
+        if (i < 64)
             g_assert_true(ok);
         else
             g_assert_false(ok);
     }
-    g_assert_cmpuint(dedup->len, ==, 32);
+    g_assert_cmpuint(dedup->len, ==, 64);
 
     /* Media segment URL filtering (chunks/init segments ignored, manifests/progressive kept) */
     g_assert_cmpint(web_media_classify_resource("https://cdn.example/seg/001.m4s", "video/mp4", 0),
@@ -469,6 +469,86 @@ test_media_sniffer_core(void)
                     ==, KAJO_MEDIA_NONE);
     g_assert_cmpint(web_media_classify_resource("https://cdn.example/videoplayback?mime=video/mp4&range=0-65535", "video/mp4", 0),
                     ==, KAJO_MEDIA_NONE);
+
+    /* Extended header parsers, Content-Range, manifest capture & page_has_manifest filtering */
+    g_assert_cmpint(web_media_parse_content_range_total("bytes 0-65535/5242880"), ==, 5242880);
+    g_assert_cmpint(web_media_parse_content_range_total("bytes 0-65535/*"), ==, 0);
+    g_autofree gchar *cd1 = web_media_parse_content_disposition_filename("attachment; filename=\"clip.mp4\"");
+    g_assert_cmpstr(cd1, ==, "clip.mp4");
+    g_autofree gchar *cd2 = web_media_parse_content_disposition_filename("inline; filename*=UTF-8''my%20video.webm");
+    g_assert_cmpstr(cd2, ==, "my video.webm");
+    g_assert_cmpfloat(web_media_parse_iso8601_duration("PT1H2M3.5S"), >, 3723.0);
+    g_assert_true(web_media_should_capture_manifest("https://cdn.example/a.m3u8?x=1", "text/plain"));
+    g_assert_true(web_media_should_capture_manifest("https://player.vimeo.com/video/123456/config", "application/json"));
+    g_assert_false(web_media_should_capture_manifest("https://example.com/api/config", "application/json"));
+    g_assert_cmpint(web_media_classify_resource_ex("https://cdn.example/clip.mp4", "video/mp4", 1024, "bytes 0-1023/2097152", FALSE),
+                    ==, KAJO_MEDIA_PROGRESSIVE);
+    g_assert_cmpint(web_media_classify_resource_ex("https://cdn.example/small.mp4", "video/mp4", 5 * 1024 * 1024, NULL, TRUE),
+                    ==, KAJO_MEDIA_NONE);
+    g_assert_cmpint(web_media_classify_resource_ex("https://cdn.example/big.mp4", "video/mp4", 25 * 1024 * 1024, NULL, TRUE),
+                    ==, KAJO_MEDIA_PROGRESSIVE);
+
+    /* HLS master with EXT-X-MEDIA audio/subtitles + AES-128 vs SAMPLE-AES DRM */
+    const gchar *hls_av =
+        "#EXTM3U\n"
+        "#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID=\"aud\",NAME=\"English\",LANGUAGE=\"en\",DEFAULT=YES,URI=\"audio/en.m3u8\"\n"
+        "#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"EN\",LANGUAGE=\"en\",URI=\"subs/en.m3u8\"\n"
+        "#EXT-X-KEY:METHOD=AES-128,URI=\"key.bin\"\n"
+        "#EXT-X-STREAM-INF:BANDWIDTH=6000000,RESOLUTION=1920x1080,CODECS=\"avc1.640028\",AUDIO=\"aud\",SUBTITLES=\"subs\"\n"
+        "video/1080p.m3u8\n";
+    g_autoptr(GPtrArray) hav = web_media_parse_hls_master(hls_av, "https://cdn.example/v/master.m3u8");
+    g_assert_cmpuint(hav->len, ==, 2); /* 1080p + standalone audio rendition */
+    KajoWebMediaStream *hs0 = g_ptr_array_index(hav, 0);
+    g_assert_false(hs0->has_drm);
+    g_assert_false(hs0->is_audio_only);
+    g_assert_cmpstr(hs0->audio_uri, ==, "https://cdn.example/v/audio/en.m3u8");
+    g_assert_cmpstr(hs0->subtitle_uri, ==, "https://cdn.example/v/subs/en.m3u8");
+    g_assert_cmpstr(hs0->audio_lang, ==, "en");
+    KajoWebMediaStream *hs1 = g_ptr_array_index(hav, 1);
+    g_assert_true(hs1->is_audio_only);
+
+    const gchar *hls_media =
+        "#EXTM3U\n"
+        "#EXT-X-KEY:METHOD=SAMPLE-AES,URI=\"skd://key\"\n"
+        "#EXTINF:10.5,\nseg0.ts\n"
+        "#EXTINF:12.0,\nseg1.ts\n";
+    g_autoptr(GPtrArray) hm = web_media_parse_hls_master(hls_media, "https://cdn.example/v/index.m3u8");
+    g_assert_cmpuint(hm->len, ==, 1);
+    KajoWebMediaStream *hm0 = g_ptr_array_index(hm, 0);
+    g_assert_true(hm0->has_drm);
+    g_assert_cmpfloat(hm0->duration_sec, >, 22.0);
+
+    /* DASH MPD with ContentProtection Widevine UUID + audio/video AdaptationSets */
+    const gchar *mpd_drm =
+        "<MPD mediaPresentationDuration=\"PT2M15S\"><Period>"
+        "<AdaptationSet mimeType=\"video/mp4\" contentType=\"video\">"
+        "<ContentProtection schemeIdUri=\"urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed\"/>"
+        "<Representation id=\"v1\" width=\"1280\" height=\"720\" bandwidth=\"2500000\"/>"
+        "</AdaptationSet>"
+        "<AdaptationSet mimeType=\"audio/mp4\" contentType=\"audio\" lang=\"en\">"
+        "<Representation id=\"a1\" bandwidth=\"128000\"/>"
+        "</AdaptationSet></Period></MPD>";
+    g_autoptr(GPtrArray) mdv = web_media_parse_dash_mpd(mpd_drm, "https://cdn.example/dash/manifest.mpd");
+    g_assert_cmpuint(mdv->len, ==, 2);
+    KajoWebMediaStream *mv0 = g_ptr_array_index(mdv, 0);
+    KajoWebMediaStream *mv1 = g_ptr_array_index(mdv, 1);
+    g_assert_true(mv0->has_drm);
+    g_assert_cmpstr(mv0->rep_id, ==, "v1");
+    g_assert_cmpfloat(mv0->duration_sec, >, 134.0);
+    g_assert_true(mv1->is_audio_only);
+    g_assert_cmpstr(mv1->audio_lang, ==, "en");
+
+    /* Vimeo player config JSON extraction */
+    const gchar *vimeo_json =
+        "{\"video\":{\"title\":\"Demo Reel\",\"duration\":42},"
+        "\"request\":{\"files\":{"
+        "\"hls\":{\"default_cdn\":\"akfire\",\"cdns\":{\"akfire\":{\"url\":\"https://vod.example/master.m3u8\"}}},"
+        "\"progressive\":[{\"url\":\"https://vod.example/720p.mp4\",\"width\":1280,\"height\":720,\"quality\":\"720p\",\"mime\":\"video/mp4\"}]}}}";
+    g_autoptr(GPtrArray) vv = web_media_parse_vimeo_config(vimeo_json, "https://player.vimeo.com/video/99/config");
+    g_assert_cmpuint(vv->len, ==, 2);
+    KajoWebMediaStream *vs0 = g_ptr_array_index(vv, 0);
+    g_assert_cmpint(vs0->height, ==, 720);
+    g_assert_cmpfloat(vs0->duration_sec, >, 41.0);
     /* Pinned & smart after-tab insertion + reading-order invariants */
     {
         const gint64 t0 = 1000 * G_USEC_PER_SEC;

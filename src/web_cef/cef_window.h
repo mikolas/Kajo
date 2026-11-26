@@ -137,13 +137,8 @@ public:
                                const std::string& prev_url,
                                bool user_gesture) override;
   void OnTabRequestClose(uint64_t tab_id) override;
-  void OnTabMediaDetected(uint64_t tab_id,
-                          const std::string& kind,
-                          const std::string& uri,
-                          const std::string& mime,
-                          int64_t size_bytes,
-                          const std::string& referer,
-                          const std::string& user_agent) override;
+  void OnTabMediaCaptured(uint64_t tab_id, const TabMediaCapture& cap) override;
+  void OnTabMainNavigation(uint64_t tab_id, const std::string& url) override;
   void OnTabBlockedChanged(uint64_t tab_id) override;
   void OnTabFindResult(uint64_t tab_id, int count, int active_ordinal, bool final_update) override;
   bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) override;
@@ -222,6 +217,10 @@ private:
     int find_identifier = 0;
     TabColorSchemeOverride color_scheme_override = TabColorSchemeOverride::AUTO;
     std::vector<ChromeMediaView> media;
+    bool ytdlp_probing = false;
+    std::string ytdlp_probe_error;
+    std::string last_media_path_key;
+    std::string last_probe_url;
   };
 
   void InitBackend();
@@ -248,6 +247,11 @@ private:
                            const std::string& title,
                            const std::string& referer,
                            const std::string& user_agent);
+  void AppendMediaViewUnique(TabEntry* e, ChromeMediaView mv);
+  void StartDownloadForMediaView(const ChromeMediaView& mv,
+                                 const std::string& title,
+                                 const std::string& fallback_referer);
+  void StartYtDlpProbeForTab(uint64_t tab_id);
   void AttachTabView(uint64_t tab_id, const std::string& target, bool foreground);
   void ActivateTab(uint64_t tab_id);
   void CloseTab(uint64_t tab_id);
