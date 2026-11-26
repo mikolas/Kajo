@@ -1,7 +1,7 @@
 # Kajo "Aero + Metro" Unified UI Design System & Style Guide (`docs/design_system.md`)
 
 **Status:** Active Specification  
-**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-web` (`org.kajo.Web`), `kajo-viewer` (`org.kajo.Viewer`), `kajo-ide` (`org.kajo.IDE`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-monitor`, `kajo-capture`)  
+**Applies To:** `kajo` (`org.kajo.shell`), `kajo-settings` (`org.kajo.Settings`), `kajo-files` (`org.kajo.Files`), `kajo-player` (`org.kajo.Player`), `kajo-mod` (`org.kajo.Mod`), `kajo-web` (`org.kajo.Web`), `kajo-viewer` (`org.kajo.Viewer`), `kajo-ide` (`org.kajo.IDE`), `kajo-amiga` (`org.kajo.Amiga`), `kajo-greeter` (`org.kajo.greeter`), and future Kajo applications (`kajo-monitor`, `kajo-capture`)  
 **Interactive Reference:** [`docs/ui-gallery.html`](file:///home/mikolas/src/Kajo/docs/ui-gallery.html)  
 **Master Stylesheet:** [`data/defaults/style.css`](file:///home/mikolas/src/Kajo/data/defaults/style.css)
 
@@ -229,15 +229,15 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
 ### 4.9 System & Suite Settings (`kajo-settings`) Scalable Niri Column Architecture
 - **Interactive Reference:** [`docs/kajo-settings-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-settings-mockup.html)
 - **3-Tier Niri Column Reflow (`540px` / `814px` / `1088px` / `1634px`, strict `min-width <= 480px`):**
-  - **Narrow Column ($< 720\text{px}$ — Niri `1/3` `0.33333` column at `~540px`):** Left navigation compacts to a **`46px` Icon Rail** (`.navigation-sidebar`, toggleable via `[☰]` in `.settings-header-bar`) so all **13 pages** remain 1-click accessible without a mobile "Back" drill-down, leaving `~494px` for the 1-column card canvas.
+  - **Narrow Column ($< 720\text{px}$ — Niri `1/3` `0.33333` column at `~540px`):** Left navigation compacts to a **`46px` Icon Rail** (`.navigation-sidebar`, toggleable via `[☰]` in `.settings-header-bar`) so all **14 pages** remain 1-click accessible without a mobile "Back" drill-down, leaving `~494px` for the 1-column card canvas.
   - **Default Column ($720\text{..}959\text{px}$ — Niri `1/2` `0.50` column at `~814px`):** Displays the **`196px` Category Sidebar** (`HARDWARE & SYSTEM`, `SHELL & COMPOSITOR`, `KAJO SUITE APPS`, `SYSTEM INFO` with right-aligned live telemetry micro-badges) + 1-column card stack.
   - **Wide Column ($\ge 960\text{px}$ — Niri `2/3` `0.66667` at `~1088px` & `1.0` at `~1634px`):** Displays the `196px` Category Sidebar + **2-column balanced Bento Card Grid** (`.settings-card-grid`, with `.span-full` for full-width matrices/lists).
 - **4-Zone Full-Height Vertical Architecture (`100vh`):**
-  1. **Zone 1 (`vexpand: FALSE`, `36px`):** Window Chrome Header Bar (`.settings-header-bar`) with `[☰]` rail toggle, `⚙ SYSTEM SETTINGS`, page index badge (`[ 12 / 13 • KAJO WEB ]`), live search filter (`Ctrl+F`), `[🗗 FLOAT / TILE]`, and `[✕]`.
+  1. **Zone 1 (`vexpand: FALSE`, `36px`):** Window Chrome Header Bar (`.settings-header-bar`) with `[☰]` rail toggle, `⚙ SYSTEM SETTINGS`, page index badge (`[ 13 / 14 • KAJO AMIGA ]`), live search filter (`Ctrl+F`), `[🗗 FLOAT / TILE]`, and `[✕]`.
   2. **Zone 2 (`vexpand: FALSE`, `58px`):** Pinned **Page Telemetry & Hardware Status Deck** (`.settings-page-deck`, `.settings-counter-strip`) displaying the page title, config/D-Bus subtitle, backend badges, and a **4-column homogeneous telemetry strip** that never wraps across `480px..1920px`.
   3. **Zone 3 (`vexpand: TRUE`):** Scrollable **Page Content Canvas** (`.settings-scroll-canvas`) where every setting row uses `.widget-row-card` (`hexpand: TRUE`, `PANGO_ELLIPSIZE_END` on `.row-title` / `.row-subtitle`, zero hardcoded `width-chars` traps) and dynamic list/matrix cards set `vexpand: TRUE` to absorb Niri's full-height column.
   4. **Zone 4 (`vexpand: FALSE`, `36px`):** Docked **Action & Persistence Footer Bar** (`.settings-footer-bar`) pinned at the bottom of the viewport with live dirty/saved status indicator, page secondary action, `[ ↺ REVERT ]`, and `[ ✓ SAVE & APPLY ]`.
-- **13 Modular Pages:** `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, `ide`, `mod`, **`web` (`Kajo Web`)**, and `about`.
+- **14 Modular Pages:** `displays`, `network`, `bluetooth`, `audio`, `theme`, `panel`, `widgets`, `notifications`, `niri`, `ide`, `mod`, `web`, **`amiga` (`Kajo Amiga`)**, and `about`.
 
 ### 4.10 Wayland Panel Bar, Widget Chips, 3-Zone Popovers & OSD (`kajo`)
 - **Panel Container (`window.shell-panel`, `#panel-container`, `.shell-panel-left`, `.shell-panel-center`, `.shell-panel-right`):**
@@ -283,3 +283,12 @@ Never fake an on/off setting with a dropdown, and never ship a toggle that is no
   - Collapsible 240px left sidebar (`.viewer-sidebar`) hosting PDF `OUTLINE` / `PAGES` thumbnails, Markdown auto-generated Heading Outline, and Image EXIF/Decoder Inspector.
   - Opt-in inline `Ctrl+F` Find bar & Encrypted PDF unlock bar (`.viewer-inline-bar`, `.warn`), recessed `#101010` document canvas (`.viewer-canvas-scroll`), optional bottom filmstrip (`.viewer-filmstrip`), and 26px telemetry strip (`.viewer-status-strip`).
   - Specification: [`docs/spec_kajo_viewer.md`](file:///home/mikolas/src/Kajo/docs/spec_kajo_viewer.md) & interactive mockup [`docs/kajo-viewer-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-viewer-mockup.html).
+
+### 4.13 Kajo Amiga (`kajo-amiga`) 68000 IDE & Hardware Inspector Chrome
+- **Frameless Aero + Metro Window (`.shell-amiga-window`, `data/defaults/styles/85-amiga.css`):**
+  - Top bar with `📁 PROJ` workspace menu, `🌲 TREE`, target/profile dropdowns + mismatch badge (`.amiga-compat-warn`), `BUILD`/`DEBUG`/`STOP`/`ATTACH`/`↻ SNAP`, `FLOAT / TILE`, and close button.
+  - 2-row scrollable 68000 CPU register & beam strip (`.amiga-cpu-strip`, `.amiga-reg-chip`, `.amiga-sr-pill`, `.amiga-beam-meta`) with amber `.amiga-reg-changed` highlights and checkpoint triggers.
+  - Shared `src/ide/` editor core (`GtkSourceView-5` + Tree-sitter `m68k`/`c` + Column-7 static `n(r/w)` cycle gutter) paired with live Motorola disassembly (`.amiga-disasm-list`) and 4-tab `kajo-amiga.toml` Form / Raw TOML editor.
+  - Right 5-tab Hardware Inspector (`.amiga-insp-tabs`, `BPL`, `COP`, `CHIPS`, `DMA`, `HRM`) enforcing explicit provenance badges: `.amiga-badge-live` (`[ LIVE ]`), `.amiga-badge-snapshot` (`[ EMU SNAPSHOT ]`), `.amiga-badge-watched` (`[ WATCHED ]`), and `.amiga-badge-placeholder` (`[ WO — UNAVAILABLE ]`).
+  - Global configuration stored in `~/.config/kajo/amiga.toml` (`KajoAmigaCfg`, `kajo-settings --page amiga`).
+  - Specification: [`docs/spec_kajo_amiga.md`](file:///home/mikolas/src/Kajo/docs/spec_kajo_amiga.md) & interactive mockup [`docs/kajo-amiga-mockup.html`](file:///home/mikolas/src/Kajo/docs/kajo-amiga-mockup.html).

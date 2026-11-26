@@ -270,6 +270,7 @@ kajo_config_sources = files(
   'src/config/schemas/schema_files.c',
   'src/config/schemas/schema_mod.c',
   'src/config/schemas/schema_web.c',
+  'src/config/schemas/schema_amiga.c',
 )
 
 # Sources shared by every executable are compiled once instead of once per binary.
@@ -316,6 +317,28 @@ executable(
   install: true,
 )
 
+amiga_core_lib = static_library(
+  'kajo-amiga-core',
+  files(
+    'src/amiga/amiga_decode.c',
+    'src/amiga/amiga_adf.c',
+    'src/amiga/amiga_project.c',
+    'src/amiga/amiga_build.c',
+    'src/amiga/amiga_rsp.c',
+    'src/amiga/amiga_symbols.c',
+    'src/amiga/amiga_disasm.c',
+    'src/amiga/amiga_runner.c',
+  ),
+  c_args: amiga_c_args,
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
+  link_with: kajo_toml_lib,
+)
+amiga_core_dep = declare_dependency(
+  link_with: [amiga_core_lib, kajo_toml_lib],
+  compile_args: amiga_c_args,
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
+)
+
 settings_sources = files(
   'src/settings/main.c',
   'src/settings/settings_window.c',
@@ -334,6 +357,7 @@ settings_sources = files(
   'src/settings/pages/page_ide.c',
   'src/settings/pages/page_mod.c',
   'src/settings/pages/page_web.c',
+  'src/settings/pages/page_amiga.c',
   'src/settings/pages/page_about.c',
   'src/dbus_helpers.c',
   'src/hardware/hw_caps.c',
@@ -354,6 +378,7 @@ executable(
     pulse_dep,
     pulse_glib_dep,
     m_dep,
+    amiga_core_dep,
   ],
   link_with: kajo_core,
   install: true,
@@ -682,28 +707,6 @@ executable(
   install: true,
 )
 
-amiga_core_lib = static_library(
-  'kajo-amiga-core',
-  files(
-    'src/amiga/amiga_decode.c',
-    'src/amiga/amiga_adf.c',
-    'src/amiga/amiga_project.c',
-    'src/amiga/amiga_build.c',
-    'src/amiga/amiga_rsp.c',
-    'src/amiga/amiga_symbols.c',
-    'src/amiga/amiga_disasm.c',
-    'src/amiga/amiga_runner.c',
-  ),
-  c_args: amiga_c_args,
-  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
-  link_with: kajo_toml_lib,
-)
-amiga_core_dep = declare_dependency(
-  link_with: [amiga_core_lib, kajo_toml_lib],
-  compile_args: amiga_c_args,
-  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
-)
-
 amiga_ui_sources = files(
   'src/amiga/main.c',
   'src/amiga/amiga_window.c',
@@ -731,6 +734,7 @@ executable(
 
 install_data(
   'data/org.kajo.IDE.desktop',
+  'data/org.kajo.Amiga.desktop',
   install_dir: get_option('datadir') / 'applications',
 )
 
@@ -882,6 +886,7 @@ install_data(
   'data/icons/kajo-symbolic.svg',
   'data/icons/kajo-comp.svg',
   'data/icons/kajo-ide.svg',
+  'data/icons/kajo-amiga.svg',
   'data/icons/kajo-files.svg',
   'data/icons/kajo-player.svg',
   'data/icons/kajo-mod.svg',

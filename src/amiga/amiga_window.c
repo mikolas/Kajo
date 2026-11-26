@@ -103,7 +103,7 @@ update_cursor_and_selection_cycles(KajoAmigaWindow *self)
   gtk_label_set_text(GTK_LABEL(self->lbl_cursor), pos);
 
   GtkTextIter s, e;
-  if (gtk_text_buffer_get_selection_bounds(tb, &s, &e)) {
+  if (self->show_sel_cycles && gtk_text_buffer_get_selection_bounds(tb, &s, &e)) {
     int l1 = gtk_text_iter_get_line(&s);
     int l2 = gtk_text_iter_get_line(&e);
     if (l2 > l1) {
@@ -149,7 +149,7 @@ open_file_in_editor(KajoAmigaWindow *self, const char *abs_path, guint line_1bas
     show_toast(self, err ? err->message : "Open failed");
     return;
   }
-  ide_buffer_set_style_scheme(buf, "kajo-dark");
+  ide_buffer_set_style_scheme(buf, self->inherited_scheme ? self->inherited_scheme : "kajo-dark");
   if (self->active_buf) ide_buffer_free(self->active_buf);
   self->active_buf = buf;
 
@@ -1332,6 +1332,11 @@ static void
 kajo_amiga_window_dispose(GObject *obj)
 {
   KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(obj);
+  if (self->cfg_sub_id) {
+    kajo_config_store_unsubscribe(NULL, self->cfg_sub_id);
+    self->cfg_sub_id = 0;
+  }
+  g_clear_pointer(&self->inherited_scheme, g_free);
   g_clear_handle_id(&self->toast_timer_id, g_source_remove);
   if (self->build_cancel) {
     g_cancellable_cancel(self->build_cancel);
@@ -1368,6 +1373,69 @@ kajo_amiga_window_class_init(KajoAmigaWindowClass *klass)
 }
 
 static void
+apply_global_config(KajoAmigaWindow *self)
+{
+  g_autoptr(KajoAmigaCfgRef) acfg = kajo_config_store_acquire_amiga(NULL);
+  if (!acfg) return;
+
+  self->show_cycle_gutter = acfg->show_cycle_gutter;
+  self->show_sel_cycles = acfg->show_selection_cycle_sum;
+  self->enable_hover_decoders = acfg->enable_hover_decoders;
+
+  g_auto(GStrv) extra = (acfg->extra_bin_paths && acfg->extra_bin_paths[0])
+                            ? g_strsplit(acfg->extra_bin_paths, ":", -1)
+                            : NULL;
+  AmigaToolchainStatus *ntc = amiga_project_probe_toolchain(
+      extra ? (const char *const *)extra : NULL);
+  g_clear_pointer(&self->toolchain, amiga_toolchain_status_free);
+  self->toolchain = ntc;
+
+  if (self->hrm_view && (!self->project || !self->project->hrm_dir || !self->project->hrm_dir[0])) {
+    amiga_hrm_view_set_hrm_dir(self->hrm_view, acfg->hrm_dir);
+  }
+  if (!self->narrow_mode && self->inspector_box) {
+    gtk_widget_set_visible(self->inspector_box, acfg->inspector_visible);
+  }
+
+  const char *scheme = "kajo-dark";
+  int tab_w = 2;
+  if (acfg->inherit_ide_editor_prefs) {
+    g_autoptr(KajoIdeCfgRef) icfg = kajo_config_store_acquire_ide(NULL);
+    if (icfg) {
+      if (icfg->color_scheme && icfg->color_scheme[0]) scheme = icfg->color_scheme;
+      if (icfg->tab_width > 0) tab_w = icfg->tab_width;
+    }
+  }
+  g_free(self->inherited_scheme);
+  self->inherited_scheme = g_strdup(scheme);
+  self->inherited_tab_width = tab_w;
+  if (self->source_view) {
+    gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(self->source_view), (guint)tab_w);
+    if (self->active_buf) ide_buffer_set_style_scheme(self->active_buf, scheme);
+    gtk_widget_queue_draw(self->source_view);
+  }
+  update_cursor_and_selection_cycles(self);
+}
+
+static void
+on_global_cfg_changed(KajoConfigStore *store G_GNUC_UNUSED,
+                      KajoConfigDomain changed G_GNUC_UNUSED,
+                      gpointer         ud)
+{
+  GWeakRef *weak = ud;
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  if (self) apply_global_config(self);
+}
+
+static void
+cfg_weak_free(gpointer data)
+{
+  GWeakRef *weak = data;
+  g_weak_ref_clear(weak);
+  g_free(weak);
+}
+
+static void
 kajo_amiga_window_init(KajoAmigaWindow *self)
 {
   self->toolchain = amiga_project_probe_toolchain(NULL);
@@ -1378,12 +1446,23 @@ kajo_amiga_window_init(KajoAmigaWindow *self)
   self->bp_addrs = g_hash_table_new(g_direct_hash, g_direct_equal);
   self->diags = g_ptr_array_new_with_free_func((GDestroyNotify)amiga_build_diag_free);
   self->fsm = ide_fsm_new();
+  self->show_cycle_gutter = true;
+  self->show_sel_cycles = true;
+  self->enable_hover_decoders = true;
+  self->inherited_tab_width = 2;
 
   build_ui(self);
 
   self->editor_host.source_view = GTK_SOURCE_VIEW(self->source_view);
   self->editor_host.fsm = self->fsm;
   self->editor_host.yank_register = &self->yank_reg;
+
+  apply_global_config(self);
+  GWeakRef *weak = g_new0(GWeakRef, 1);
+  g_weak_ref_init(weak, self);
+  self->cfg_sub_id = kajo_config_store_subscribe(
+      NULL, (KajoConfigDomain)(KAJO_CONFIG_DOMAIN_AMIGA | KAJO_CONFIG_DOMAIN_IDE),
+      on_global_cfg_changed, weak, cfg_weak_free);
 }
 
 KajoAmigaWindow *

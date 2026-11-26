@@ -1,0 +1,31 @@
+# Kajo Amiga 68000 / C / OCS-AGA Studio global configuration
+
+amiberry_bin = "amiberry"
+default_profile = "a500_ocs"
+default_video = "pal"
+kickstart_a500 = ""
+kickstart_a1200 = ""
+default_boot_mode = "dh0"
+gdb_host = "127.0.0.1"
+gdb_port = 2345
+adf_uaeboard_guest_output = true
+
+default_toolchain = "elf2hunk"
+extra_bin_paths = ""
+hrm_dir = ""
+
+inherit_ide_editor_prefs = true
+show_cycle_gutter = true
+show_selection_cycle_sum = true
+enable_hover_decoders = true
+enable_m68k_lsp = true
+enable_clangd = true
+
+entry_break_mode = "entry_break"
+capture_guest_output = true
+enable_trace_history = false
+default_exception_mask = 0
+trace_blitter_writes = false
+default_hex_grouping = "16b"
+bitplane_grid_16px = false
+inspector_visible = true

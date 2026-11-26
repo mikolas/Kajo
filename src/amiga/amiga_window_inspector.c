@@ -305,8 +305,10 @@ amiga_window_gutter_cycle_annotate(IdeBuffer *buf,
                                    double    *out_r,
                                    double    *out_g,
                                    double    *out_b,
-                                   gpointer   ud G_GNUC_UNUSED)
+                                   gpointer   ud)
 {
+  KajoAmigaWindow *self = ud ? KAJO_AMIGA_WINDOW(ud) : NULL;
+  if (self && !self->show_cycle_gutter) return FALSE;
   if (!buf || line_1based == 0) return FALSE;
   const char *path = ide_buffer_get_file_path(buf);
   if (path && (g_str_has_suffix(path, ".c") || g_str_has_suffix(path, ".h"))) {
@@ -338,8 +340,10 @@ amiga_window_source_query_tooltip(GtkWidget  *widget,
                                   gint        y,
                                   gboolean    keyboard_mode G_GNUC_UNUSED,
                                   GtkTooltip *tooltip,
-                                  gpointer    ud G_GNUC_UNUSED)
+                                  gpointer    ud)
 {
+  KajoAmigaWindow *self = ud ? KAJO_AMIGA_WINDOW(ud) : NULL;
+  if (self && !self->enable_hover_decoders) return FALSE;
   GtkTextView *tv = GTK_TEXT_VIEW(widget);
   gint bx = 0, by = 0;
   gtk_text_view_window_to_buffer_coords(tv, GTK_TEXT_WINDOW_TEXT, x, y, &bx, &by);

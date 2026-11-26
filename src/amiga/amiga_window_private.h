@@ -19,6 +19,7 @@
 #include "amiga_symbols.h"
 #include "amiga_window.h"
 
+#include "../config.h"
 #include "../ide/ide_buffer.h"
 #include "../ide/ide_editor_ops.h"
 #include "../ide/ide_fsm.h"
@@ -45,6 +46,12 @@ struct _KajoAmigaWindow {
   bool                  building;
   bool                  narrow_mode;
   guint                 toast_timer_id;
+  guint                 cfg_sub_id;
+  bool                  show_cycle_gutter;
+  bool                  show_sel_cycles;
+  bool                  enable_hover_decoders;
+  char                 *inherited_scheme;
+  int                   inherited_tab_width;
 
   /* Shared editor state */
   IdeBuffer            *active_buf;

@@ -32,6 +32,7 @@ struct _KajoConfigStore {
     const KajoFilesCfg *files_snap;
     const KajoModCfg   *mod_snap;
     const KajoWebCfg   *web_snap;
+    const KajoAmigaCfg *amiga_snap;
 
     /* Directory monitors & debounce state */
     GFileMonitor       *base_monitor;
@@ -355,6 +356,28 @@ kajo_config_store_reload(KajoConfigStore *store, KajoConfigDomain domains)
         }
     }
 
+    if (domains & KAJO_CONFIG_DOMAIN_AMIGA) {
+        const KajoDomainSchema *s = kajo_schema_get_amiga();
+        const KajoAmigaCfg *new_snap = (const KajoAmigaCfg *)build_effective_rc_snapshot(store, s, store->amiga_snap == NULL);
+        const KajoAmigaCfg *old_snap = NULL;
+
+        if (new_snap) {
+            g_mutex_lock(&store->lock);
+            old_snap = store->amiga_snap;
+            if (!old_snap || !kajo_cfg_domain_equal(s, old_snap, new_snap)) {
+                store->amiga_snap = new_snap;
+                changed_mask |= KAJO_CONFIG_DOMAIN_AMIGA;
+                new_snap = NULL;
+            } else {
+                old_snap = NULL;
+            }
+            g_mutex_unlock(&store->lock);
+
+            if (old_snap) kajo_amiga_cfg_unref(old_snap);
+            if (new_snap) kajo_amiga_cfg_unref(new_snap);
+        }
+    }
+
     if (changed_mask != 0) {
         notify_subscribers(store, changed_mask);
     }
@@ -408,6 +431,8 @@ match_base_domain_gfile(GFile *f)
         return KAJO_CONFIG_DOMAIN_MOD;
     if (g_strcmp0(basename, KAJO_CFG_FILE_WEB) == 0)
         return KAJO_CONFIG_DOMAIN_WEB;
+    if (g_strcmp0(basename, KAJO_CFG_FILE_AMIGA) == 0)
+        return KAJO_CONFIG_DOMAIN_AMIGA;
     return 0;
 }
 
@@ -494,6 +519,7 @@ kajo_config_store_new_for_dir(const gchar *config_dir)
     store->files_snap = (const KajoFilesCfg *)build_effective_rc_snapshot(store, kajo_schema_get_files(), TRUE);
     store->mod_snap   = (const KajoModCfg *)build_effective_rc_snapshot(store, kajo_schema_get_mod(), TRUE);
     store->web_snap   = (const KajoWebCfg *)build_effective_rc_snapshot(store, kajo_schema_get_web(), TRUE);
+    store->amiga_snap = (const KajoAmigaCfg *)build_effective_rc_snapshot(store, kajo_schema_get_amiga(), TRUE);
 
     /* Attach GFileMonitors to config_dir and config_dir/conf.d */
     g_autoptr(GFile) base_gfile = g_file_new_for_path(store->config_dir);
@@ -549,6 +575,7 @@ kajo_config_store_destroy(KajoConfigStore *store)
     kajo_files_cfg_unref(store->files_snap);
     kajo_mod_cfg_unref(store->mod_snap);
     kajo_web_cfg_unref(store->web_snap);
+    kajo_amiga_cfg_unref(store->amiga_snap);
 
     g_free(store->config_dir);
     g_mutex_clear(&store->write_lock);
@@ -640,6 +667,17 @@ kajo_config_store_acquire_web(KajoConfigStore *store)
         store = kajo_config_store_get_default();
     g_mutex_lock(&store->lock);
     const KajoWebCfg *res = kajo_web_cfg_ref(store->web_snap);
+    g_mutex_unlock(&store->lock);
+    return res;
+}
+
+const KajoAmigaCfg *
+kajo_config_store_acquire_amiga(KajoConfigStore *store)
+{
+    if (!store)
+        store = kajo_config_store_get_default();
+    g_mutex_lock(&store->lock);
+    const KajoAmigaCfg *res = kajo_amiga_cfg_ref(store->amiga_snap);
     g_mutex_unlock(&store->lock);
     return res;
 }
@@ -859,6 +897,28 @@ kajo_config_store_update_web(KajoConfigStore *store,
 {
     WebMutCtx ctx = { mutate_fn, user_data };
     return update_domain_generic(store, kajo_schema_get_web(), web_mutate_trampoline, &ctx, error);
+}
+
+typedef struct {
+    KajoAmigaMutateFn fn;
+    gpointer          ud;
+} AmigaMutCtx;
+
+static void
+amiga_mutate_trampoline(void *draft, gpointer ud)
+{
+    AmigaMutCtx *ctx = (AmigaMutCtx *)ud;
+    ctx->fn((KajoAmigaCfg *)draft, ctx->ud);
+}
+
+gboolean
+kajo_config_store_update_amiga(KajoConfigStore  *store,
+                               KajoAmigaMutateFn mutate_fn,
+                               gpointer          user_data,
+                               GError          **error)
+{
+    AmigaMutCtx ctx = { mutate_fn, user_data };
+    return update_domain_generic(store, kajo_schema_get_amiga(), amiga_mutate_trampoline, &ctx, error);
 }
 
 /* ─── Pub/Sub Subscription Management ─── */

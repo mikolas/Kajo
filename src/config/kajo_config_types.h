@@ -14,7 +14,8 @@ typedef enum {
     KAJO_CONFIG_DOMAIN_FILES = 1 << 3,
     KAJO_CONFIG_DOMAIN_MOD   = 1 << 4,
     KAJO_CONFIG_DOMAIN_WEB   = 1 << 5,
-    KAJO_CONFIG_DOMAIN_ALL   = (1 << 6) - 1,
+    KAJO_CONFIG_DOMAIN_AMIGA = 1 << 6,
+    KAJO_CONFIG_DOMAIN_ALL   = (1 << 7) - 1,
 } KajoConfigDomain;
 
 /* ─── Shell Enums ─── */
@@ -407,6 +408,67 @@ typedef struct {
     gboolean              sync_e2ee_enabled;
 } KajoWebCfg;
 
+/* ─── 7. Kajo Amiga Studio Domain (amiga.toml) ─── */
+
+typedef enum {
+    KAJO_AMIGA_VIDEO_PAL = 0,
+    KAJO_AMIGA_VIDEO_NTSC,
+} KajoAmigaVideoMode;
+
+typedef enum {
+    KAJO_AMIGA_BOOT_DH0 = 0,
+    KAJO_AMIGA_BOOT_ADF,
+} KajoAmigaBootMode;
+
+typedef enum {
+    KAJO_AMIGA_TC_ELF2HUNK = 0,
+    KAJO_AMIGA_TC_HUNK_VLINK,
+    KAJO_AMIGA_TC_SINGLE_ASM,
+} KajoAmigaToolchain;
+
+typedef enum {
+    KAJO_AMIGA_ENTRY_BREAK = 0,
+    KAJO_AMIGA_RUN_TO_BP,
+} KajoAmigaEntryBreak;
+
+typedef enum {
+    KAJO_AMIGA_HEX_8B = 0,
+    KAJO_AMIGA_HEX_16B,
+    KAJO_AMIGA_HEX_32B,
+} KajoAmigaHexGroup;
+
+typedef struct {
+    gchar                *amiberry_bin;
+    gchar                *default_profile;
+    KajoAmigaVideoMode    default_video;
+    gchar                *kickstart_a500;
+    gchar                *kickstart_a1200;
+    KajoAmigaBootMode     default_boot_mode;
+    gchar                *gdb_host;
+    gint                  gdb_port;               /* [1024..65535], default 2345 */
+    gboolean              adf_uaeboard_guest_output;
+
+    KajoAmigaToolchain    default_toolchain;
+    gchar                *extra_bin_paths;        /* ':'-separated */
+    gchar                *hrm_dir;
+
+    gboolean              inherit_ide_editor_prefs;
+    gboolean              show_cycle_gutter;
+    gboolean              show_selection_cycle_sum;
+    gboolean              enable_hover_decoders;
+    gboolean              enable_m68k_lsp;
+    gboolean              enable_clangd;
+
+    KajoAmigaEntryBreak   entry_break_mode;
+    gboolean              capture_guest_output;
+    gboolean              enable_trace_history;
+    gint                  default_exception_mask; /* bitmask [0..255] */
+    gboolean              trace_blitter_writes;
+    KajoAmigaHexGroup     default_hex_grouping;
+    gboolean              bitplane_grid_16px;
+    gboolean              inspector_visible;
+} KajoAmigaCfg;
+
 /* ─── Refcounted Snapshot Lifecycle ─── */
 
 const KajoThemeCfg *kajo_theme_cfg_ref(const KajoThemeCfg *cfg);
@@ -426,6 +488,9 @@ void                kajo_mod_cfg_unref(const KajoModCfg *cfg);
 
 const KajoWebCfg   *kajo_web_cfg_ref(const KajoWebCfg *cfg);
 void                kajo_web_cfg_unref(const KajoWebCfg *cfg);
+
+const KajoAmigaCfg *kajo_amiga_cfg_ref(const KajoAmigaCfg *cfg);
+void                kajo_amiga_cfg_unref(const KajoAmigaCfg *cfg);
 
 /* Mutable deep-copy / default / free helpers for unit tests and mutators */
 KajoThemeCfg *kajo_theme_cfg_new_default(void);
@@ -451,6 +516,10 @@ void          kajo_mod_cfg_free(KajoModCfg *cfg);
 KajoWebCfg   *kajo_web_cfg_new_default(void);
 KajoWebCfg   *kajo_web_cfg_copy(const KajoWebCfg *src);
 void          kajo_web_cfg_free(KajoWebCfg *cfg);
+
+KajoAmigaCfg *kajo_amiga_cfg_new_default(void);
+KajoAmigaCfg *kajo_amiga_cfg_copy(const KajoAmigaCfg *src);
+void          kajo_amiga_cfg_free(KajoAmigaCfg *cfg);
 
 /* Enum <-> String conversion helpers */
 const gchar       *shell_panel_position_to_string(ShellPanelPosition pos);
@@ -484,12 +553,17 @@ const gchar       *kajo_web_rail_mode_to_string(KajoWebRailMode mode);
 const gchar       *kajo_web_hw_accel_to_string(KajoWebHwAccel hw);
 const gchar       *kajo_web_search_engine_to_string(KajoWebSearchEngine eng);
 
+const gchar       *kajo_amiga_video_to_string(KajoAmigaVideoMode mode);
+const gchar       *kajo_amiga_boot_mode_to_string(KajoAmigaBootMode mode);
+const gchar       *kajo_amiga_toolchain_to_string(KajoAmigaToolchain tc);
+
 typedef const KajoThemeCfg KajoThemeCfgRef;
 typedef const KajoShellCfg KajoShellCfgRef;
 typedef const KajoIdeCfg   KajoIdeCfgRef;
 typedef const KajoFilesCfg KajoFilesCfgRef;
 typedef const KajoModCfg   KajoModCfgRef;
 typedef const KajoWebCfg   KajoWebCfgRef;
+typedef const KajoAmigaCfg KajoAmigaCfgRef;
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoThemeCfgRef, kajo_theme_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoShellCfgRef, kajo_shell_cfg_unref)
@@ -497,6 +571,7 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoIdeCfgRef,   kajo_ide_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoFilesCfgRef, kajo_files_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoModCfgRef,   kajo_mod_cfg_unref)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoWebCfgRef,   kajo_web_cfg_unref)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoAmigaCfgRef, kajo_amiga_cfg_unref)
 
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoThemeCfg, kajo_theme_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoShellCfg, kajo_shell_cfg_free)
@@ -504,6 +579,7 @@ G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoIdeCfg,   kajo_ide_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoFilesCfg, kajo_files_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoModCfg,   kajo_mod_cfg_free)
 G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoWebCfg,   kajo_web_cfg_free)
+G_DEFINE_AUTOPTR_CLEANUP_FUNC(KajoAmigaCfg, kajo_amiga_cfg_free)
 
 #ifdef __cplusplus
 }

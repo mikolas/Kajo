@@ -259,11 +259,11 @@ build_page_about(void)
 
     settings_bento_add_pair(GTK_WIDGET(self), card_hw, card_stack);
 
-    /* ─── Card 3: Kajo Desktop Application Suite (9 Native Binaries) ─── */
+    /* ─── Card 3: Kajo Desktop Application Suite (11 Native Binaries) ─── */
     GtkWidget *card_suite = create_section_card(
         SETTINGS_CARD_RIGHT,
-        "3. KAJO DESKTOP APPLICATION SUITE (10 NATIVE BINARIES)",
-        "10 BINARIES",
+        "3. KAJO DESKTOP APPLICATION SUITE (11 NATIVE BINARIES)",
+        "11 BINARIES",
         "success",
         NULL);
 
@@ -277,7 +277,7 @@ build_page_about(void)
         "SHELL", "accent"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "⚙", "kajo-settings — System & Suite Configurator (org.kajo.Settings)",
-        "13-page scalable compositor column UI with live D-Bus, PipeWire, TOML config & effects",
+        "14-page scalable compositor column UI with live D-Bus, PipeWire, TOML config & effects",
         "SETTINGS", "success"));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🮖", "kajo-ide — Selection-First Modal Code Editor (org.kajo.IDE)",
@@ -304,6 +304,10 @@ build_page_about(void)
         "Poppler 1P/2P PDF, shared Cairo Mermaid Markdown & glycin/librsvg/libexif image canvas",
         "VIEWER", NULL));
     gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
+        "🕹", "kajo-amiga — 68000 / C / OCS-AGA Studio (org.kajo.Amiga)",
+        "Option D native DAG builder, adflib packager, Amiberry 8.5+ RSP & hardware inspectors",
+        "AMIGA", NULL));
+    gtk_box_append(GTK_BOX(card_suite), create_about_info_row(
         "🔑", "kajo-greeter — Native Wayland Login Greeter (org.kajo.greeter)",
         "greetd IPC Wayland session greeter with PAM --test mode & multi-monitor Wayland support",
         "GREETER", NULL));
@@ -327,7 +331,7 @@ build_page_about(void)
                               shell_compositor_is_kajo_comp() ? "kajo-comp IPC Active"
                                                               : (niri_active ? "Niri IPC Active" : "Wayland"),
                               niri_active ? "success" : NULL);
-    settings_page_set_counter(root, 3, "SUITE", "10 Binaries", NULL);
+    settings_page_set_counter(root, 3, "SUITE", "11 Binaries", NULL);
 
     return root;
 }
