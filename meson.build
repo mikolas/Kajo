@@ -707,10 +707,17 @@ amiga_core_dep = declare_dependency(
 amiga_ui_sources = files(
   'src/amiga/main.c',
   'src/amiga/amiga_window.c',
+  'src/amiga/amiga_window_inspector.c',
+  'src/amiga/amiga_window_preview.c',
   'src/amiga/amiga_cpu_strip.c',
   'src/amiga/amiga_disasm_view.c',
   'src/amiga/amiga_mem_view.c',
   'src/amiga/amiga_project_ui.c',
+  'src/amiga/amiga_bitplane_view.c',
+  'src/amiga/amiga_copper_view.c',
+  'src/amiga/amiga_chips_view.c',
+  'src/amiga/amiga_dma_view.c',
+  'src/amiga/amiga_hrm_view.c',
 )
 
 executable(

@@ -445,3 +445,118 @@ entry.amiga-entry:focus-within {
     color: @metro-fg-primary;
     font-size: 11px;
 }
+
+/* Stage 4 Hardware Inspector & Visualizers */
+.amiga-badge-watched {
+    background-color: alpha(@metro-warning, 0.18);
+    border: 1px solid @metro-warning;
+    color: #ffc266;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.amiga-insp-tabs {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 3px 6px;
+}
+
+togglebutton.amiga-insp-tab,
+button.amiga-insp-tab {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 2px 6px;
+    min-width: 0px;
+    min-height: 22px;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-secondary;
+}
+
+togglebutton.amiga-insp-tab:checked {
+    background-color: alpha(@metro-accent, 0.24);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+.amiga-bitplane-frame {
+    border: 1px solid @metro-border-strong;
+    background-color: @metro-surface-0;
+}
+
+.amiga-probe-bar {
+    background-color: @metro-surface-2;
+    border: 1px solid @metro-border;
+    padding: 3px 6px;
+    font-size: 10px;
+    color: @metro-telemetry;
+}
+
+.amiga-chip-pill {
+    background-color: @metro-surface-2;
+    border: 1px solid @metro-border;
+    padding: 1px 5px;
+    font-size: 9px;
+    font-weight: 700;
+    color: @metro-fg-dim;
+}
+
+.amiga-chip-pill.on {
+    background-color: alpha(@metro-success, 0.20);
+    border-color: @metro-success;
+    color: #8ce9a8;
+}
+
+levelbar.amiga-dma-meter-ok block.filled {
+    background-color: @metro-success;
+    border-radius: 0px;
+}
+
+levelbar.amiga-dma-meter-warn block.filled {
+    background-color: @metro-warning;
+    border-radius: 0px;
+}
+
+levelbar.amiga-dma-meter-over block.filled {
+    background-color: @metro-urgent;
+    border-radius: 0px;
+}
+
+.amiga-cop-addr {
+    color: @metro-fg-muted;
+    font-size: 10px;
+    min-width: 56px;
+}
+
+.amiga-cop-hex {
+    color: @metro-fg-dim;
+    font-size: 10px;
+    min-width: 66px;
+}
+
+.amiga-cop-text {
+    color: @metro-fg-bright;
+    font-size: 10px;
+    min-width: 0px;
+}
+
+spinbutton.amiga-spin {
+    min-width: 0px;
+    min-height: 22px;
+    font-size: 10px;
+}
+
+spinbutton.amiga-spin > button {
+    min-width: 18px;
+    min-height: 20px;
+    padding: 0px 3px;
+}
+
+spinbutton.amiga-spin > text {
+    min-width: 24px;
+    padding: 0px 3px;
+}
