@@ -50,6 +50,12 @@ openmpt_dep = dependency('libopenmpt')
 xmp_dep = dependency('libxmp')
 sqlite3_dep = dependency('sqlite3')
 gcrypt_dep = dependency('libgcrypt')
+adflib_dep = dependency('adflib', required: false)
+if not adflib_dep.found()
+  cmake = import('cmake')
+  adflib_sp = cmake.subproject('adflib')
+  adflib_dep = adflib_sp.dependency('adf')
+endif
 glycin_dep = dependency('glycin-2', required: false)
 glycin_gtk4_dep = dependency('glycin-gtk4-2', required: false)
 rsvg_dep = dependency('librsvg-2.0', required: false)
@@ -240,8 +246,12 @@ shell_resources = gnome.compile_resources(
   dependencies: compiled_blueprints,
 )
 
+kajo_toml_lib = static_library(
+  'kajo-toml',
+  files('src/vendor/tomlc17/tomlc17.c'),
+)
+
 kajo_config_sources = files(
-  'src/vendor/tomlc17/tomlc17.c',
   'src/config/kajo_config_schema.c',
   'src/config/kajo_config_comp.c',
   'src/config/kajo_config_migrate.c',
@@ -267,6 +277,7 @@ kajo_core = static_library(
     'src/app_init.c',
   ),
   dependencies: [gtk4_dep, json_glib_dep, gio_dep, gio_unix_dep, m_dep],
+  link_with: kajo_toml_lib,
 )
 
 executable(
@@ -492,7 +503,7 @@ if build_web_cef
     override_options: ['cpp_std=c++20'],
     build_rpath: cef_lib_dir,
     install_rpath: cef_lib_dir,
-    link_with: cef_dll_wrapper,
+    link_with: [cef_dll_wrapper, kajo_toml_lib],
     dependencies: [
       cef_lib_dep,
       gio_dep,
@@ -580,52 +591,29 @@ ide_ts_dep = declare_dependency(
   dependencies: ts_link_deps,
 )
 
-ide_sources = files(
-  'src/ide/main.c',
-  'src/ide/ide_window.c',
-  'src/ide/ide_window_ui.c',
-  'src/ide/ide_actions.c',
-  'src/ide/ide_fsm.c',
-  'src/ide/ide_fsm_tables.c',
-  'src/ide/ide_buffer.c',
-  'src/ide/ide_syntax.c',
-  'src/ide/ide_gutter.c',
-  'src/ide/ide_tree.c',
-  'src/ide/ide_picker.c',
-  'src/ide/ide_search.c',
-  'src/ide/ide_tasks.c',
-  'src/ide/ide_native_exe.c',
-  'src/ide/ide_lsp.c',
-  'src/ide/ide_lsp_parse.c',
-  'src/ide/ide_lsp_popovers.c',
-  'src/ide/ide_lsp_actions.c',
-  'src/ide/ide_lsp_client.c',
-  'src/ide/ide_jsonrpc.c',
-  'src/ide/ide_lsp_servers.c',
-  'src/ide/ide_dap.c',
-  'src/ide/ide_dap_ui.c',
-  'src/ide/ide_dap_client.c',
-  'src/ide/ide_dap_launch.c',
-  'src/ide/ide_dap_java.c',
-  'src/ide/ide_agent_ipc.c',
-  'src/ide/ide_markdown.c',
-  'src/ide/ide_markdown_embeds.c',
-  'src/ide/ide_mermaid.c',
-  'src/ide/ide_strip_layout.c',
-  'src/ide/ide_strip_graph.c',
-  'src/ide/ide_strip_graph_ts.c',
-  'src/ide/ide_strip_view.c',
-  'src/ide/ide_strip_tiles.c',
-  'src/ide/ide_strip_canvas.c',
-  'src/comp/core/comp_spring.c',
-  'src/common/pdf_render.c',
-  'src/compositor/niri.c',
-)
-
-executable(
-  'kajo-ide',
-  ide_sources,
-  shell_resources,
+ide_core_lib = static_library(
+  'kajo-ide-core',
+  files(
+    'src/ide/ide_fsm.c',
+    'src/ide/ide_fsm_tables.c',
+    'src/ide/ide_buffer.c',
+    'src/ide/ide_syntax.c',
+    'src/ide/ide_gutter.c',
+    'src/ide/ide_editor_ops.c',
+    'src/ide/ide_tree.c',
+    'src/ide/ide_picker.c',
+    'src/ide/ide_search.c',
+    'src/ide/ide_tasks.c',
+    'src/ide/ide_native_exe.c',
+    'src/ide/ide_lsp_client.c',
+    'src/ide/ide_lsp_parse.c',
+    'src/ide/ide_lsp_servers.c',
+    'src/ide/ide_jsonrpc.c',
+    'src/ide/ide_markdown.c',
+    'src/ide/ide_markdown_embeds.c',
+    'src/ide/ide_mermaid.c',
+    'src/common/pdf_render.c',
+  ),
   dependencies: [
     gtk4_dep,
     gtksourceview_dep,
@@ -637,8 +625,69 @@ executable(
     m_dep,
     ide_ts_dep,
   ],
+)
+ide_core_dep = declare_dependency(
+  link_with: ide_core_lib,
+  dependencies: [
+    gtk4_dep,
+    gtksourceview_dep,
+    json_glib_dep,
+    gio_dep,
+    gio_unix_dep,
+    poppler_dep,
+    archive_dep,
+    m_dep,
+    ide_ts_dep,
+  ],
+)
+
+ide_sources = files(
+  'src/ide/main.c',
+  'src/ide/ide_window.c',
+  'src/ide/ide_window_ui.c',
+  'src/ide/ide_actions.c',
+  'src/ide/ide_lsp.c',
+  'src/ide/ide_lsp_popovers.c',
+  'src/ide/ide_lsp_actions.c',
+  'src/ide/ide_dap.c',
+  'src/ide/ide_dap_ui.c',
+  'src/ide/ide_dap_client.c',
+  'src/ide/ide_dap_launch.c',
+  'src/ide/ide_dap_java.c',
+  'src/ide/ide_agent_ipc.c',
+  'src/ide/ide_strip_layout.c',
+  'src/ide/ide_strip_graph.c',
+  'src/ide/ide_strip_graph_ts.c',
+  'src/ide/ide_strip_view.c',
+  'src/ide/ide_strip_tiles.c',
+  'src/ide/ide_strip_canvas.c',
+  'src/comp/core/comp_spring.c',
+  'src/compositor/niri.c',
+)
+
+executable(
+  'kajo-ide',
+  ide_sources,
+  shell_resources,
+  dependencies: [ide_core_dep],
   link_with: kajo_core,
   install: true,
+)
+
+amiga_core_lib = static_library(
+  'kajo-amiga-core',
+  files(
+    'src/amiga/amiga_decode.c',
+    'src/amiga/amiga_adf.c',
+    'src/amiga/amiga_project.c',
+    'src/amiga/amiga_build.c',
+  ),
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep],
+  link_with: kajo_toml_lib,
+)
+amiga_core_dep = declare_dependency(
+  link_with: [amiga_core_lib, kajo_toml_lib],
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep],
 )
 
 install_data(
@@ -810,6 +859,7 @@ test_config_exe = executable(
   'test-config',
   files('tests/test_config.c') + kajo_config_sources,
   dependencies: [gio_dep, json_glib_dep, m_dep],
+  link_with: kajo_toml_lib,
   build_by_default: false,
 )
 test('config-roundtrip', test_config_exe,
@@ -819,6 +869,7 @@ test_fuzz_toml_exe = executable(
   'test-fuzz-toml-config',
   files('tests/fuzz/fuzz_toml_config.c') + kajo_config_sources,
   dependencies: [gio_dep, json_glib_dep, m_dep],
+  link_with: kajo_toml_lib,
   build_by_default: false,
 )
 test('fuzz-toml-config', test_fuzz_toml_exe)
@@ -853,6 +904,7 @@ test_autohide_exe = executable(
   'test-autohide',
   files('tests/test_autohide.c', 'src/autohide.c') + kajo_config_sources,
   dependencies: [layer_shell_dep, gtk4_dep, json_glib_dep, gio_dep],
+  link_with: kajo_toml_lib,
   build_by_default: false,
 )
 test('autohide-state', test_autohide_exe)
@@ -915,6 +967,7 @@ test_registry_exe = executable(
     pulse_glib_dep,
     m_dep,
   ],
+  link_with: kajo_toml_lib,
   build_by_default: false,
 )
 test('widget-registry', test_registry_exe)
@@ -1043,6 +1096,38 @@ test_lsp_client_exe = executable(
 )
 test('lsp-client', test_lsp_client_exe, timeout: 60)
 
+test_amiga_decode_exe = executable(
+  'test-amiga-decode',
+  files('tests/test_amiga_decode.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-decode', test_amiga_decode_exe)
+
+test_amiga_project_exe = executable(
+  'test-amiga-project',
+  files('tests/test_amiga_project.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-project', test_amiga_project_exe)
+
+test_amiga_adf_exe = executable(
+  'test-amiga-adf',
+  files('tests/test_amiga_adf.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-adf', test_amiga_adf_exe)
+
+test_amiga_build_exe = executable(
+  'test-amiga-build',
+  files('tests/test_amiga_build.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-build', test_amiga_build_exe, timeout: 30)
+
 test_ide_ipc_exe = executable(
   'test-ide-ipc',
   files(
@@ -1143,6 +1228,7 @@ test_web_model_exe = executable(
   'test-web-model',
   files('tests/test_web_model.c', 'src/web/web_storage.c') + web_core_sources + kajo_config_sources,
   dependencies: [gio_dep, json_glib_dep, sqlite3_dep, gcrypt_dep, m_dep],
+  link_with: kajo_toml_lib,
   build_by_default: false,
 )
 test('web-model', test_web_model_exe)
@@ -1188,7 +1274,7 @@ comp_strict_args = [
 comp_xkb_dep   = dependency('xkbcommon')
 comp_pcre2_dep = dependency('libpcre2-8')
 # The vendored TOML parser is third-party code: built without the strict set.
-comp_toml_lib = static_library('kajo-comp-toml', files('src/vendor/tomlc17/tomlc17.c'))
+comp_toml_lib = kajo_toml_lib
 comp_core_lib = static_library(
   'kajo-comp-core',
   files(

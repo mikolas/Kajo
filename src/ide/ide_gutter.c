@@ -10,6 +10,9 @@ struct _KajoIdeGutterRenderer {
   gpointer                     bp_cb_data;
   IdeGutterConditionalBpCb     cond_bp_cb;
   gpointer                     cond_bp_cb_data;
+  IdeGutterAnnotateLineCb      annotate_cb;
+  gpointer                     annotate_cb_data;
+  int                          annotate_width_px;
   char                        *font_family;
   int                          font_size_px;
   gboolean                     relative_numbers;
@@ -102,11 +105,12 @@ kajo_ide_gutter_renderer_measure(GtkWidget      *widget,
                                  int            *minimum_baseline,
                                  int            *natural_baseline)
 {
-  (void)widget;
+  KajoIdeGutterRenderer *self = KAJO_IDE_GUTTER_RENDERER(widget);
   (void)for_size;
+  int extra = (self->annotate_cb != NULL && self->annotate_width_px > 0) ? self->annotate_width_px : 0;
   if (orientation == GTK_ORIENTATION_HORIZONTAL) {
-    *minimum = 68;
-    *natural = 68;
+    *minimum = 68 + extra;
+    *natural = 68 + extra;
   } else {
     *minimum = 0;
     *natural = 0;
@@ -164,7 +168,9 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
   IdeDiffState diff_state = self->ide_buf ? ide_buffer_get_line_diff(self->ide_buf, line_1based) : IDE_DIFF_NONE;
   gboolean has_fold = line_has_fold_start(self->ide_buf, line);
 
-  graphene_rect_t bounds = GRAPHENE_RECT_INIT(0.0f, (float)y, 68.0f, (float)h);
+  int extra = (self->annotate_cb != NULL && self->annotate_width_px > 0) ? self->annotate_width_px : 0;
+  float total_w = (float)(68 + extra);
+  graphene_rect_t bounds = GRAPHENE_RECT_INIT(0.0f, (float)y, total_w, (float)h);
   cairo_t *cr = gtk_snapshot_append_cairo(snapshot, &bounds);
   double cy = y + h * 0.5;
 
@@ -174,7 +180,7 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
   } else {
     cairo_set_source_rgb(cr, 0.071, 0.071, 0.071); /* #121212 */
   }
-  cairo_rectangle(cr, 0.0, y, 68.0, h);
+  cairo_rectangle(cr, 0.0, y, total_w, h);
   cairo_fill(cr);
 
   /* 1. DAP Breakpoint circle (● #e81123; amber ring #ff8c00 when conditional) at x = 6 */
@@ -296,9 +302,37 @@ kajo_ide_gutter_renderer_snapshot_line(GtkSourceGutterRenderer *renderer,
     cairo_fill(cr);
   }
 
+  /* 7. Optional Column 7 Annotation (e.g. 68000 cycles in kajo-amiga) */
+  if (extra > 0) {
+    cairo_set_source_rgb(cr, 0.133, 0.133, 0.133);
+    cairo_rectangle(cr, 67.0, y, 1.0, h);
+    cairo_fill(cr);
+
+    char ann_buf[64] = {0};
+    double r = 0.0, g = 0.847, b = 0.941; /* #00d8f0 */
+    if (self->annotate_cb(self->ide_buf, line_1based, ann_buf, sizeof(ann_buf),
+                          &r, &g, &b, self->annotate_cb_data) &&
+        ann_buf[0] != '\0') {
+      PangoLayout *ann_layout = gtk_widget_create_pango_layout(GTK_WIDGET(self), ann_buf);
+      int ann_pt = MAX(7, (self->font_size_px > 0 ? self->font_size_px : 13) - 4);
+      g_autofree char *afstr = g_strdup_printf("%s %d",
+                                               self->font_family ? self->font_family : "Fira Code",
+                                               ann_pt);
+      PangoFontDescription *afdesc = pango_font_description_from_string(afstr);
+      pango_layout_set_font_description(ann_layout, afdesc);
+      int aw = 0, ah = 0;
+      pango_layout_get_pixel_size(ann_layout, &aw, &ah);
+      cairo_set_source_rgb(cr, r, g, b);
+      cairo_move_to(cr, (double)(68 + extra - 5) - aw, y + (h - ah) * 0.5);
+      pango_cairo_show_layout(cr, ann_layout);
+      pango_font_description_free(afdesc);
+      g_object_unref(ann_layout);
+    }
+  }
+
   /* Subtle right separator line (#222222) */
   cairo_set_source_rgb(cr, 0.133, 0.133, 0.133);
-  cairo_rectangle(cr, 67.0, y, 1.0, h);
+  cairo_rectangle(cr, (double)total_w - 1.0, y, 1.0, h);
   cairo_fill(cr);
 
   cairo_destroy(cr);
@@ -399,6 +433,20 @@ kajo_ide_gutter_renderer_set_conditional_bp_callback(KajoIdeGutterRenderer   *se
   g_return_if_fail(KAJO_IS_IDE_GUTTER_RENDERER(self));
   self->cond_bp_cb = cb;
   self->cond_bp_cb_data = user_data;
+}
+
+void
+kajo_ide_gutter_renderer_set_annotation_callback(KajoIdeGutterRenderer  *self,
+                                                 IdeGutterAnnotateLineCb cb,
+                                                 int                     width_px,
+                                                 gpointer                user_data)
+{
+  g_return_if_fail(KAJO_IS_IDE_GUTTER_RENDERER(self));
+  self->annotate_cb = cb;
+  self->annotate_cb_data = user_data;
+  self->annotate_width_px = CLAMP(width_px, 0, 160);
+  gtk_widget_queue_resize(GTK_WIDGET(self));
+  gtk_widget_queue_draw(GTK_WIDGET(self));
 }
 
 void
