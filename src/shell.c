@@ -334,9 +334,6 @@ shell_brightness_change(ShellApp *self, gint delta_percent)
     if (!self) return;
 
     const ShellHwCaps *caps = shell_hw_caps_get(FALSE);
-    if (!caps || !caps->has_display_backlight)
-        return;
-
     gint cur_pct = shell_hw_caps_get_display_brightness_pct(caps);
     if (cur_pct < 0)
         return;

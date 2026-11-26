@@ -7,18 +7,24 @@
  *      - Unclamped linear Night Light (3000K) over HDR PQ highlights
  */
 #include "../src/comp/comp_server.h"
+#include "../src/comp/core/comp_fx_core.h"
 #include "../src/comp/fx/comp_fx.h"
 #include "../src/comp/fx/fx_internal.h"
 
 #include <drm_fourcc.h>
 #include <glib.h>
 #include <math.h>
+#include <poll.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <time.h>
+#include <unistd.h>
+#include <wayland-client.h>
 #include <wayland-server-core.h>
 #include <wlr/backend/headless.h>
 #include <wlr/interfaces/wlr_buffer.h>
+#include <wlr/interfaces/wlr_output.h>
 #include <wlr/kfx/scene.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/color.h>
@@ -30,9 +36,11 @@
 #include <wlr/render/wlr_renderer.h>
 #include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_buffer.h>
+#include <wlr/types/wlr_color_management_v1.h>
 #include <wlr/types/wlr_output.h>
 #include <wlr/types/wlr_output_layout.h>
 #include <wlr/types/wlr_scene.h>
+#include "color-management-v1-client-protocol.h"
 
 double
 comp_now_sec(void)
@@ -147,6 +155,7 @@ typedef struct {
     struct wlr_buffer base;
     uint32_t         *pixels;
     size_t            stride;
+    uint32_t          format;
 } CpuPixelBuffer;
 
 static void
@@ -166,7 +175,7 @@ cpu_buf_begin_data_ptr_access(struct wlr_buffer *buffer, uint32_t flags,
         return false;
     CpuPixelBuffer *cb = wl_container_of(buffer, cb, base);
     *data   = cb->pixels;
-    *format = DRM_FORMAT_XRGB2101010;
+    *format = cb->format ? cb->format : DRM_FORMAT_XRGB2101010;
     *stride = cb->stride;
     return true;
 }
@@ -190,6 +199,7 @@ create_solid_xrgb2101010_buffer(int width, int height, uint32_t code10)
     uint32_t pixel = (0x3u << 30) | (c << 20) | (c << 10) | c;
     CpuPixelBuffer *cb = calloc(1, sizeof(*cb));
     g_assert_nonnull(cb);
+    cb->format = DRM_FORMAT_XRGB2101010;
     cb->stride = (size_t)width * sizeof(uint32_t);
     cb->pixels = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
     g_assert_nonnull(cb->pixels);
@@ -197,6 +207,43 @@ create_solid_xrgb2101010_buffer(int width, int height, uint32_t code10)
         cb->pixels[i] = pixel;
     wlr_buffer_init(&cb->base, &kCpuBufImpl, width, height);
     return &cb->base;
+}
+
+static struct wlr_buffer *
+create_stripe_xrgb8888_buffer(int width, int height)
+{
+    CpuPixelBuffer *cb = calloc(1, sizeof(*cb));
+    g_assert_nonnull(cb);
+    cb->format = DRM_FORMAT_XRGB8888;
+    cb->stride = (size_t)width * sizeof(uint32_t);
+    cb->pixels = calloc((size_t)width * (size_t)height, sizeof(uint32_t));
+    g_assert_nonnull(cb->pixels);
+    for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+            cb->pixels[y * width + x] = (x & 1) ? 0xFFFFFFFFu : 0xFF000000u;
+        }
+    }
+    wlr_buffer_init(&cb->base, &kCpuBufImpl, width, height);
+    return &cb->base;
+}
+
+static void
+read_xrgb8888_pixel(struct wlr_renderer *renderer, struct wlr_buffer *buf,
+                    int x, int y, int out_rgb[static 3])
+{
+    uint32_t px = 0;
+    struct wlr_texture *tex = wlr_texture_from_buffer(renderer, buf);
+    g_assert_nonnull(tex);
+    g_assert_true(wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){
+        .data    = &px,
+        .format  = DRM_FORMAT_XRGB8888,
+        .stride  = sizeof(px),
+        .src_box = { .x = x, .y = y, .width = 1, .height = 1 },
+    }));
+    wlr_texture_destroy(tex);
+    out_rgb[0] = (int)((px >> 16) & 0xFFu);
+    out_rgb[1] = (int)((px >> 8) & 0xFFu);
+    out_rgb[2] = (int)(px & 0xFFu);
 }
 
 static void
@@ -412,6 +459,45 @@ test_vulkan_10bit_pq_readback(void)
         g_assert_cmpint(px_c[ch], >, 695);
     }
 
+    /* 2b. SDR-preserving BT.2390 with sdr_white_nits=239.0 must keep SDR white 1:1 */
+    const int exp_pq_239   = (int)lroundf(comp_fx_linear_to_pq(239.0f / 10000.0f) * 1023.0f);
+    const int exp_pq_101_5 = (int)lroundf(comp_fx_linear_to_pq(101.5f / 10000.0f) * 1023.0f);
+    const int exp_pq_308_4 = (int)lroundf(comp_fx_linear_to_pq(308.442f / 10000.0f) * 1023.0f);
+
+    cfg->fx.sdr_white_nits    = 239.0;
+    cfg->fx.tonemap           = true;
+    cfg->fx.tonemap_peak_nits = 0.0;
+    comp_fx_config_apply(&srv, cfg);
+    comp_fx_output_prepare(&out, 4.25);
+    render_and_sample_hdr_frame(renderer, so, sc10, &hdr_desc, NULL, px_a, px_b, px_c);
+    g_test_message("H3 sdr_white=239 + auto-tonemap: SDR_A=(%d,%d,%d) exp=%d | PQ4000_C=(%d,%d,%d)",
+                   px_a[0], px_a[1], px_a[2], exp_pq_239, px_c[0], px_c[1], px_c[2]);
+    for (int ch = 0; ch < 3; ch++) {
+        g_assert_cmpint(abs(px_a[ch] - exp_pq_239), <=, 2);
+        g_assert_cmpint(px_c[ch], <=, exp_pq_peak + 1);
+        g_assert_cmpint(px_c[ch], >, 690);
+    }
+
+    /* 2c. Linear HDR output brightness scaling (0.5x) dims both SDR and HDR + scales tonemap peak */
+    wlr_kfx_output_set_brightness(wo, 0.5f);
+    cfg->fx.sdr_white_nits    = 0.0;
+    cfg->fx.tonemap           = true;
+    cfg->fx.tonemap_peak_nits = 0.0;
+    comp_fx_config_apply(&srv, cfg);
+    /* Re-apply explicit output brightness after comp_fx_config_apply (mirrors comp_output_set_brightness) */
+    wlr_kfx_output_set_brightness(wo, 0.5f);
+    render_and_sample_hdr_frame(renderer, so, sc10, &hdr_desc, NULL, px_a, px_b, px_c);
+    g_test_message("H3 brightness=0.5: SDR_A=(%d,%d,%d) exp=%d | PQ600_B=(%d,%d,%d) | PQ4000_C=(%d,%d,%d) peak0.5=%d",
+                   px_a[0], px_a[1], px_a[2], exp_pq_101_5,
+                   px_b[0], px_b[1], px_b[2],
+                   px_c[0], px_c[1], px_c[2], exp_pq_308_4);
+    for (int ch = 0; ch < 3; ch++) {
+        g_assert_cmpint(abs(px_a[ch] - exp_pq_101_5), <=, 2);
+        g_assert_cmpint(px_b[ch], <, exp_pq_600 - 30);
+        g_assert_cmpint(px_c[ch], <=, exp_pq_308_4 + 2);
+    }
+    wlr_kfx_output_set_brightness(wo, 1.0f);
+
     /* 3. Unclamped Night Light (3000K) over HDR PQ highlights */
     cfg->fx.tonemap                 = false;
     cfg->fx.color_filter            = COMP_FX_FILTER_NIGHT_LIGHT;
@@ -626,6 +712,569 @@ test_screenshot_fp16_tonemap(void)
     g_assert_cmpint(hue_g, >, hue_b);
 }
 
+static void
+test_fractional_scale_sharpness(void)
+{
+    setenv("WLR_BACKENDS", "headless", 1);
+    setenv("WLR_RENDERER", "vulkan", 1);
+
+    struct wl_display *dpy = wl_display_create();
+    g_assert_nonnull(dpy);
+    struct wl_event_loop *loop = wl_display_get_event_loop(dpy);
+    struct wlr_backend *backend = wlr_headless_backend_create(loop);
+    g_assert_nonnull(backend);
+    struct wlr_renderer *renderer = wlr_renderer_autocreate(backend);
+    if (!renderer || !wlr_renderer_is_vk(renderer)) {
+        g_test_skip("Headless Vulkan renderer unavailable");
+        if (renderer) wlr_renderer_destroy(renderer);
+        wlr_backend_destroy(backend);
+        wl_display_destroy(dpy);
+        return;
+    }
+    struct wlr_allocator *alloc = wlr_allocator_autocreate(backend, renderer);
+    g_assert_nonnull(alloc);
+
+    const struct wlr_drm_format_set *tex_fmts =
+        wlr_renderer_get_texture_formats(renderer, alloc->buffer_caps);
+    const struct wlr_drm_format *fmt_8 =
+        wlr_drm_format_set_get(tex_fmts, DRM_FORMAT_XRGB8888);
+    if (!fmt_8) {
+        g_test_skip("Vulkan XRGB8888 format unavailable");
+        wlr_allocator_destroy(alloc);
+        wlr_renderer_destroy(renderer);
+        wlr_backend_destroy(backend);
+        wl_display_destroy(dpy);
+        return;
+    }
+
+    struct wlr_swapchain *sc8 = wlr_swapchain_create(alloc, 280, 180, fmt_8);
+    g_assert_nonnull(sc8);
+    struct wlr_scene *scene = wlr_scene_create();
+    g_assert_nonnull(scene);
+    struct wlr_output *wo = wlr_headless_add_output(backend, 280, 180);
+    g_assert_nonnull(wo);
+    g_assert_true(wlr_output_init_render(wo, alloc, renderer));
+
+    struct wlr_output_state st;
+    wlr_output_state_init(&st);
+    wlr_output_state_set_enabled(&st, true);
+    wlr_output_state_set_custom_mode(&st, 280, 180, 60000);
+    wlr_output_state_set_scale(&st, 1.75f);
+    g_assert_true(wlr_output_commit_state(wo, &st));
+    wlr_output_state_finish(&st);
+    g_assert_true(wlr_backend_start(backend));
+
+    struct wlr_scene_output *so = wlr_scene_output_create(scene, wo);
+    g_assert_nonnull(so);
+
+    /* 1) +1px mismatch on both axes: 19x27 stripe buffer at (7, 7) inside
+     *    11x16 logical dest -> physical 20x28 (must never assert in add_texture). */
+    struct wlr_buffer *stripe_plus = create_stripe_xrgb8888_buffer(19, 27);
+    struct wlr_scene_buffer *sbuf = wlr_scene_buffer_create(&scene->tree, stripe_plus);
+    wlr_scene_node_set_position(&sbuf->node, 7, 7);
+    wlr_scene_buffer_set_dest_size(sbuf, 11, 16);
+    wlr_buffer_drop(stripe_plus);
+
+    struct wlr_scene_output_state_options s_opts = { .swapchain = sc8 };
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+
+    /* Physical origin (12, 12); sample columns 16..18 (texels 4..6). */
+    int p4[3] = {0}, p5[3] = {0}, p6[3] = {0};
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 4, 12 + 8, p4);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 5, 12 + 8, p5);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 6, 12 + 8, p6);
+    g_test_message("Fractional 1.75 +1px snap stripes: p4=(%d,%d,%d) p5=(%d,%d,%d) p6=(%d,%d,%d)",
+                   p4[0], p4[1], p4[2], p5[0], p5[1], p5[2], p6[0], p6[1], p6[2]);
+
+    g_assert_cmpint(p4[0], <=, 2);
+    g_assert_cmpint(p5[0], >=, 253);
+    g_assert_cmpint(p6[0], <=, 2);
+    wlr_output_state_finish(&st);
+
+    /* 2) -1px mismatch on X: 20x28 stripe buffer at (0, 0) inside 11x16 dest -> 19x28. */
+    struct wlr_buffer *stripe_minus = create_stripe_xrgb8888_buffer(20, 28);
+    wlr_scene_buffer_set_buffer(sbuf, stripe_minus);
+    wlr_scene_node_set_position(&sbuf->node, 0, 0);
+    wlr_scene_buffer_set_dest_size(sbuf, 11, 16);
+    wlr_buffer_drop(stripe_minus);
+
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+
+    read_xrgb8888_pixel(renderer, st.buffer, 4, 8, p4);
+    read_xrgb8888_pixel(renderer, st.buffer, 5, 8, p5);
+    read_xrgb8888_pixel(renderer, st.buffer, 6, 8, p6);
+    g_test_message("Fractional 1.75 -1px snap stripes: p4=(%d,%d,%d) p5=(%d,%d,%d) p6=(%d,%d,%d)",
+                   p4[0], p4[1], p4[2], p5[0], p5[1], p5[2], p6[0], p6[1], p6[2]);
+
+    g_assert_cmpint(p4[0], <=, 2);
+    g_assert_cmpint(p5[0], >=, 253);
+    g_assert_cmpint(p6[0], <=, 2);
+
+    wlr_output_state_finish(&st);
+
+    /* Explicit non-empty src_box matching buffer (kitty +1px dst_box):
+     * must not grow src_box past texture->width in wlr_render_pass_add_texture(). */
+    wlr_scene_buffer_set_source_box(sbuf, &(struct wlr_fbox){ 0, 0, 19, 16 });
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 4, 8, p4);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 5, 8, p5);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 6, 8, p6);
+    g_assert_cmpint(p4[0], <=, 2);
+    g_assert_cmpint(p5[0], >=, 253);
+    g_assert_cmpint(p6[0], <=, 2);
+    wlr_output_state_finish(&st);
+
+    /* Explicit non-empty src_box wider by +1px (-1px dst_box crop to 20px):
+     * shrinks src_box to 20px and keeps crisp nearest-neighbor stripes. */
+    struct wlr_buffer *stripe_wide = create_stripe_xrgb8888_buffer(21, 16);
+    wlr_scene_buffer_set_buffer(sbuf, stripe_wide);
+    wlr_scene_buffer_set_source_box(sbuf, &(struct wlr_fbox){ 0, 0, 21, 16 });
+    wlr_buffer_drop(stripe_wide);
+    wlr_output_state_init(&st);
+    g_assert_true(wlr_scene_output_build_state(so, &st, &s_opts));
+    g_assert_nonnull(st.buffer);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 4, 8, p4);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 5, 8, p5);
+    read_xrgb8888_pixel(renderer, st.buffer, 12 + 6, 8, p6);
+    g_assert_cmpint(p4[0], <=, 2);
+    g_assert_cmpint(p5[0], >=, 253);
+    g_assert_cmpint(p6[0], <=, 2);
+    wlr_output_state_finish(&st);
+
+    wlr_swapchain_destroy(sc8);
+    wlr_scene_node_destroy(&scene->tree.node);
+    wlr_allocator_destroy(alloc);
+    wlr_renderer_destroy(renderer);
+    wlr_backend_destroy(backend);
+    wl_display_destroy(dpy);
+}
+
+static void
+test_surface_hdr_classification(void)
+{
+    g_assert_false(comp_fx_image_desc_requests_hdr(false, false, 0.0f, 0, 0, 203.0f));
+    /* Chromium wraps SDR pages in BT2020/ST2084_PQ with max_cll=203, max_fall=203 */
+    g_assert_false(comp_fx_image_desc_requests_hdr(true, false, 0.0f, 203, 203, 203.0f));
+    g_assert_false(comp_fx_image_desc_requests_hdr(true, false, 0.0f, 203, 203, 239.0f));
+    g_assert_false(comp_fx_image_desc_requests_hdr(true, false, 0.0f, 203, 203, 120.0f));
+    g_assert_false(comp_fx_image_desc_requests_hdr(true, true, 203.0f, 0, 0, 239.0f));
+
+    /* Real HDR signals */
+    g_assert_true(comp_fx_image_desc_requests_hdr(true, false, 0.0f, 1000, 400, 239.0f));
+    g_assert_true(comp_fx_image_desc_requests_hdr(true, false, 0.0f, 0, 0, 239.0f));
+    g_assert_true(comp_fx_image_desc_requests_hdr(true, true, 600.0f, 203, 203, 239.0f));
+    g_assert_true(comp_fx_image_desc_requests_hdr(false, false, 0.0f, 600, 0, 239.0f));
+}
+
+typedef struct {
+    struct wl_output *wl_out;
+    struct wp_color_manager_v1 *cm_mgr;
+    int changed_count;
+    bool desc_ready;
+    bool info_done;
+    uint32_t tf_named;
+    uint32_t primaries_named;
+    uint32_t target_min;
+    uint32_t target_max;
+    uint32_t target_max_cll;
+    uint32_t target_max_fall;
+} CmTestClientState;
+
+static void
+pump_wayland_once(struct wl_display *srv_dpy, struct wl_display *cli_dpy)
+{
+    struct wl_event_loop *loop = wl_display_get_event_loop(srv_dpy);
+    wl_display_flush(cli_dpy);
+    wl_event_loop_dispatch(loop, 0);
+    wl_display_flush_clients(srv_dpy);
+    while (wl_display_prepare_read(cli_dpy) != 0)
+        wl_display_dispatch_pending(cli_dpy);
+    struct pollfd pfd = { .fd = wl_display_get_fd(cli_dpy), .events = POLLIN };
+    if (poll(&pfd, 1, 5) > 0)
+        wl_display_read_events(cli_dpy);
+    else
+        wl_display_cancel_read(cli_dpy);
+    wl_display_dispatch_pending(cli_dpy);
+}
+
+static void
+sync_cb_done(void *data, struct wl_callback *cb, uint32_t serial)
+{
+    (void)serial;
+    *(bool *)data = true;
+    wl_callback_destroy(cb);
+}
+
+static const struct wl_callback_listener kSyncCbListener = {
+    .done = sync_cb_done,
+};
+
+static void
+sync_wayland_pair(struct wl_display *srv_dpy, struct wl_display *cli_dpy)
+{
+    bool done = false;
+    struct wl_callback *cb = wl_display_sync(cli_dpy);
+    g_assert_nonnull(cb);
+    wl_callback_add_listener(cb, &kSyncCbListener, &done);
+    for (int i = 0; i < 64 && !done; i++)
+        pump_wayland_once(srv_dpy, cli_dpy);
+    g_assert_true(done);
+}
+
+static void
+reg_global(void *data, struct wl_registry *reg, uint32_t name,
+           const char *iface, uint32_t version)
+{
+    CmTestClientState *st = data;
+    if (strcmp(iface, wl_output_interface.name) == 0 && !st->wl_out) {
+        st->wl_out = wl_registry_bind(reg, name, &wl_output_interface,
+                                      version < 4 ? version : 4);
+    } else if (strcmp(iface, wp_color_manager_v1_interface.name) == 0 && !st->cm_mgr) {
+        st->cm_mgr = wl_registry_bind(reg, name, &wp_color_manager_v1_interface, 1);
+    }
+}
+
+static void
+reg_global_remove(void *data, struct wl_registry *reg, uint32_t name)
+{
+    (void)data;
+    (void)reg;
+    (void)name;
+}
+
+static const struct wl_registry_listener kRegListener = {
+    .global        = reg_global,
+    .global_remove = reg_global_remove,
+};
+
+static void
+cm_out_changed(void *data, struct wp_color_management_output_v1 *cm_out)
+{
+    (void)cm_out;
+    CmTestClientState *st = data;
+    st->changed_count++;
+}
+
+static const struct wp_color_management_output_v1_listener kCmOutListener = {
+    .image_description_changed = cm_out_changed,
+};
+
+static void
+img_desc_failed(void *data, struct wp_image_description_v1 *desc,
+                uint32_t cause, const char *msg)
+{
+    (void)data;
+    (void)desc;
+    g_error("wp_image_description_v1 failed (%u): %s", cause, msg ? msg : "");
+}
+
+static void
+img_desc_ready(void *data, struct wp_image_description_v1 *desc, uint32_t id)
+{
+    (void)desc;
+    (void)id;
+    ((CmTestClientState *)data)->desc_ready = true;
+}
+
+static void
+img_desc_ready2(void *data, struct wp_image_description_v1 *desc,
+                uint32_t hi, uint32_t lo)
+{
+    (void)desc;
+    (void)hi;
+    (void)lo;
+    ((CmTestClientState *)data)->desc_ready = true;
+}
+
+static const struct wp_image_description_v1_listener kImgDescListener = {
+    .failed = img_desc_failed,
+    .ready  = img_desc_ready,
+    .ready2 = img_desc_ready2,
+};
+
+static void info_done(void *d, struct wp_image_description_info_v1 *i)
+{
+    (void)i;
+    ((CmTestClientState *)d)->info_done = true;
+}
+static void info_icc(void *d, struct wp_image_description_info_v1 *i, int32_t fd, uint32_t sz)
+{
+    (void)d;
+    (void)i;
+    (void)sz;
+    if (fd >= 0) close(fd);
+}
+static void info_prim(void *d, struct wp_image_description_info_v1 *i,
+                      int32_t rx, int32_t ry, int32_t gx, int32_t gy,
+                      int32_t bx, int32_t by, int32_t wx, int32_t wy)
+{
+    (void)d; (void)i; (void)rx; (void)ry; (void)gx; (void)gy;
+    (void)bx; (void)by; (void)wx; (void)wy;
+}
+static void info_prim_named(void *d, struct wp_image_description_info_v1 *i, uint32_t p)
+{
+    (void)i;
+    ((CmTestClientState *)d)->primaries_named = p;
+}
+static void info_tf_pow(void *d, struct wp_image_description_info_v1 *i, uint32_t e)
+{
+    (void)d; (void)i; (void)e;
+}
+static void info_tf_named(void *d, struct wp_image_description_info_v1 *i, uint32_t tf)
+{
+    (void)i;
+    ((CmTestClientState *)d)->tf_named = tf;
+}
+static void info_lum(void *d, struct wp_image_description_info_v1 *i,
+                     uint32_t mn, uint32_t mx, uint32_t ref)
+{
+    (void)d; (void)i; (void)mn; (void)mx; (void)ref;
+}
+static void info_tgt_prim(void *d, struct wp_image_description_info_v1 *i,
+                          int32_t rx, int32_t ry, int32_t gx, int32_t gy,
+                          int32_t bx, int32_t by, int32_t wx, int32_t wy)
+{
+    (void)d; (void)i; (void)rx; (void)ry; (void)gx; (void)gy;
+    (void)bx; (void)by; (void)wx; (void)wy;
+}
+static void info_tgt_lum(void *d, struct wp_image_description_info_v1 *i,
+                         uint32_t mn, uint32_t mx)
+{
+    (void)i;
+    CmTestClientState *st = d;
+    st->target_min = mn;
+    st->target_max = mx;
+}
+static void info_tgt_cll(void *d, struct wp_image_description_info_v1 *i, uint32_t cll)
+{
+    (void)i;
+    ((CmTestClientState *)d)->target_max_cll = cll;
+}
+static void info_tgt_fall(void *d, struct wp_image_description_info_v1 *i, uint32_t fall)
+{
+    (void)i;
+    ((CmTestClientState *)d)->target_max_fall = fall;
+}
+
+static const struct wp_image_description_info_v1_listener kInfoListener = {
+    .done             = info_done,
+    .icc_file         = info_icc,
+    .primaries        = info_prim,
+    .primaries_named  = info_prim_named,
+    .tf_power         = info_tf_pow,
+    .tf_named         = info_tf_named,
+    .luminances       = info_lum,
+    .target_primaries = info_tgt_prim,
+    .target_luminance = info_tgt_lum,
+    .target_max_cll   = info_tgt_cll,
+    .target_max_fall  = info_tgt_fall,
+};
+
+static void
+query_output_cm_info(struct wl_display *srv_dpy, struct wl_display *cli_dpy,
+                     struct wp_color_management_output_v1 *cm_out,
+                     CmTestClientState *st)
+{
+    st->desc_ready = false;
+    st->info_done = false;
+    st->tf_named = 0;
+    st->primaries_named = 0;
+    st->target_min = 0;
+    st->target_max = 0;
+    st->target_max_cll = 0;
+    st->target_max_fall = 0;
+
+    struct wp_image_description_v1 *desc =
+        wp_color_management_output_v1_get_image_description(cm_out);
+    g_assert_nonnull(desc);
+    wp_image_description_v1_add_listener(desc, &kImgDescListener, st);
+    for (int i = 0; i < 64 && !st->desc_ready; i++)
+        pump_wayland_once(srv_dpy, cli_dpy);
+    g_assert_true(st->desc_ready);
+
+    struct wp_image_description_info_v1 *info =
+        wp_image_description_v1_get_information(desc);
+    g_assert_nonnull(info);
+    wp_image_description_info_v1_add_listener(info, &kInfoListener, st);
+    for (int i = 0; i < 64 && !st->info_done; i++)
+        pump_wayland_once(srv_dpy, cli_dpy);
+    g_assert_true(st->info_done);
+
+    wp_image_description_info_v1_destroy(info);
+    wp_image_description_v1_destroy(desc);
+    sync_wayland_pair(srv_dpy, cli_dpy);
+}
+
+static bool
+mock_hdr_output_test(struct wlr_output *output, const struct wlr_output_state *state)
+{
+    (void)output;
+    (void)state;
+    return true;
+}
+
+static bool
+mock_hdr_output_commit(struct wlr_output *output, const struct wlr_output_state *state)
+{
+    (void)output;
+    (void)state;
+    return true;
+}
+
+static const struct wlr_output_impl kMockHdrOutputImpl = {
+    .test   = mock_hdr_output_test,
+    .commit = mock_hdr_output_commit,
+};
+
+static void
+test_color_mgmt_output_changed(void)
+{
+    setenv("WLR_BACKENDS", "headless", 1);
+    setenv("WLR_RENDERER", "pixman", 1);
+
+    struct wl_display *srv_dpy = wl_display_create();
+    g_assert_nonnull(srv_dpy);
+    struct wl_event_loop *loop = wl_display_get_event_loop(srv_dpy);
+    struct wlr_backend *backend = wlr_headless_backend_create(loop);
+    g_assert_nonnull(backend);
+
+    struct wlr_output mock_wo = {0};
+    struct wlr_output_state init_st;
+    wlr_output_state_init(&init_st);
+    wlr_output_state_set_custom_mode(&init_st, 640, 480, 60000);
+    wlr_output_init(&mock_wo, backend, &kMockHdrOutputImpl, loop, &init_st);
+    wlr_output_state_finish(&init_st);
+    wlr_output_set_name(&mock_wo, "MOCK-HDR-1");
+    struct wlr_output *wo = &mock_wo;
+    wo->supported_primaries = WLR_COLOR_NAMED_PRIMARIES_BT2020;
+    wo->supported_transfer_functions = WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ;
+
+    static const enum wp_color_manager_v1_render_intent kIntents[] = {
+        WP_COLOR_MANAGER_V1_RENDER_INTENT_PERCEPTUAL,
+    };
+    static const enum wp_color_manager_v1_transfer_function kTfs[] = {
+        WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22,
+        WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ,
+    };
+    static const enum wp_color_manager_v1_primaries kPrims[] = {
+        WP_COLOR_MANAGER_V1_PRIMARIES_SRGB,
+        WP_COLOR_MANAGER_V1_PRIMARIES_BT2020,
+    };
+    struct wlr_color_manager_v1 *cm = wlr_color_manager_v1_create(srv_dpy, 1,
+        &(struct wlr_color_manager_v1_options){
+            .features = {
+                .parametric = true,
+                .set_mastering_display_primaries = true,
+            },
+            .render_intents = kIntents,
+            .render_intents_len = G_N_ELEMENTS(kIntents),
+            .transfer_functions = kTfs,
+            .transfer_functions_len = G_N_ELEMENTS(kTfs),
+            .primaries = kPrims,
+            .primaries_len = G_N_ELEMENTS(kPrims),
+        });
+    g_assert_nonnull(cm);
+
+    struct wlr_renderer *renderer = wlr_renderer_autocreate(backend);
+    g_assert_nonnull(renderer);
+    struct wlr_allocator *alloc = wlr_allocator_autocreate(backend, renderer);
+    g_assert_nonnull(alloc);
+    g_assert_true(wlr_output_init_render(wo, alloc, renderer));
+    g_assert_true(wlr_backend_start(backend));
+    wlr_output_create_global(wo, srv_dpy);
+
+    struct wlr_output_image_description hdr_desc = {
+        .primaries         = WLR_COLOR_NAMED_PRIMARIES_BT2020,
+        .transfer_function = WLR_COLOR_TRANSFER_FUNCTION_ST2084_PQ,
+        .mastering_display_primaries = {
+            .red   = { 0.708f,  0.292f },
+            .green = { 0.170f,  0.797f },
+            .blue  = { 0.131f,  0.046f },
+            .white = { 0.3127f, 0.3290f },
+        },
+        .mastering_luminance = { .min = 0.0004, .max = 616.9 },
+        .max_cll  = 617,
+        .max_fall = 400,
+    };
+    struct wlr_output_state ost;
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_enabled(&ost, true);
+    wlr_output_state_set_image_description(&ost, &hdr_desc);
+    g_assert_true(wlr_output_commit_state(wo, &ost));
+    wlr_output_state_finish(&ost);
+
+    int fds[2] = { -1, -1 };
+    g_assert_cmpint(socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, fds), ==, 0);
+    struct wl_client *srv_cli = wl_client_create(srv_dpy, fds[0]);
+    g_assert_nonnull(srv_cli);
+    struct wl_display *cli_dpy = wl_display_connect_to_fd(fds[1]);
+    g_assert_nonnull(cli_dpy);
+
+    CmTestClientState st = {0};
+    struct wl_registry *reg = wl_display_get_registry(cli_dpy);
+    g_assert_nonnull(reg);
+    wl_registry_add_listener(reg, &kRegListener, &st);
+    sync_wayland_pair(srv_dpy, cli_dpy);
+    g_assert_nonnull(st.wl_out);
+    g_assert_nonnull(st.cm_mgr);
+
+    struct wp_color_management_output_v1 *cm_out =
+        wp_color_manager_v1_get_output(st.cm_mgr, st.wl_out);
+    g_assert_nonnull(cm_out);
+    wp_color_management_output_v1_add_listener(cm_out, &kCmOutListener, &st);
+    sync_wayland_pair(srv_dpy, cli_dpy);
+
+    query_output_cm_info(srv_dpy, cli_dpy, cm_out, &st);
+    g_assert_cmpuint(st.tf_named, ==, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ);
+    g_assert_cmpuint(st.primaries_named, ==, WP_COLOR_MANAGER_V1_PRIMARIES_BT2020);
+    g_assert_cmpuint(st.target_min, ==, 4);
+    g_assert_cmpuint(st.target_max, ==, 617);
+    g_assert_cmpuint(st.target_max_cll, ==, 617);
+    g_assert_cmpuint(st.target_max_fall, ==, 400);
+    g_assert_cmpint(st.changed_count, ==, 0);
+
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_image_description(&ost, NULL);
+    g_assert_true(wlr_output_commit_state(wo, &ost));
+    wlr_output_state_finish(&ost);
+
+    sync_wayland_pair(srv_dpy, cli_dpy);
+    g_assert_cmpint(st.changed_count, ==, 1);
+
+    query_output_cm_info(srv_dpy, cli_dpy, cm_out, &st);
+    g_assert_cmpuint(st.tf_named, ==, WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_GAMMA22);
+    g_assert_cmpuint(st.primaries_named, ==, WP_COLOR_MANAGER_V1_PRIMARIES_SRGB);
+    g_assert_cmpuint(st.target_max, ==, 80);
+
+    /* Committing unchanged NULL image description must not emit another event */
+    wlr_output_state_init(&ost);
+    wlr_output_state_set_image_description(&ost, NULL);
+    g_assert_true(wlr_output_commit_state(wo, &ost));
+    wlr_output_state_finish(&ost);
+    sync_wayland_pair(srv_dpy, cli_dpy);
+    g_assert_cmpint(st.changed_count, ==, 1);
+
+    wp_color_management_output_v1_destroy(cm_out);
+    wp_color_manager_v1_destroy(st.cm_mgr);
+    wl_output_destroy(st.wl_out);
+    wl_registry_destroy(reg);
+    sync_wayland_pair(srv_dpy, cli_dpy);
+    wl_display_disconnect(cli_dpy);
+
+    wl_display_destroy_clients(srv_dpy);
+    wlr_output_finish(&mock_wo);
+    wlr_allocator_destroy(alloc);
+    wlr_renderer_destroy(renderer);
+    wlr_backend_destroy(backend);
+    wl_display_destroy(srv_dpy);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -634,5 +1283,8 @@ main(int argc, char **argv)
     g_test_add_func("/comp/hdr/clamp-invariants", test_hdr_clamp_invariants);
     g_test_add_func("/comp/hdr/screenshot-fp16-tonemap", test_screenshot_fp16_tonemap);
     g_test_add_func("/comp/hdr/vulkan-10bit-pq-readback", test_vulkan_10bit_pq_readback);
+    g_test_add_func("/comp/hdr/fractional-scale-sharpness", test_fractional_scale_sharpness);
+    g_test_add_func("/comp/hdr/surface-hdr-classification", test_surface_hdr_classification);
+    g_test_add_func("/comp/hdr/color-mgmt-output-changed", test_color_mgmt_output_changed);
     return g_test_run();
 }

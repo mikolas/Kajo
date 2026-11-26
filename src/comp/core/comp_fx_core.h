@@ -387,6 +387,16 @@ void comp_fx_clamp_hdr_luminance(float edid_max_cll, float edid_max_fall,
                                  double config_sdr_white_nits,
                                  CompFxHdrLuminance *out);
 
+/* Returns true if a surface's color-management description represents genuine
+ * HDR content (rather than SDR content wrapped in a PQ/linear container such
+ * as Chromium's SDR-in-PQ with max_cll=203, max_fall=203). */
+bool comp_fx_image_desc_requests_hdr(bool is_hdr_tf,
+                                     bool has_mastering_luminance,
+                                     float mastering_max_nits,
+                                     uint32_t max_cll,
+                                     uint32_t max_fall,
+                                     float sdr_white_nits);
+
 /* Tone-maps an offscreen premultiplied linear RGBA16F (DRM_FORMAT_ABGR16161616F)
  * buffer to premultiplied sRGB ARGB8888 for faithful SDR PNG/clipboard screenshots. */
 void comp_fx_tonemap_fp16_to_argb8888(const uint16_t *fp16_abgr,

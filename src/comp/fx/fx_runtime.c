@@ -646,6 +646,7 @@ apply_output_fx_color_settings(CompFxSystem *sys, struct CompOutput *out)
         wlr_kfx_output_set_dither(wo, false);
         wlr_kfx_output_set_sdr_white_nits(wo, 0.0f);
         wlr_kfx_output_set_tonemap(wo, false, 0.0f);
+        wlr_kfx_output_set_brightness(wo, 1.0f);
         return;
     }
 
@@ -665,9 +666,11 @@ apply_output_fx_color_settings(CompFxSystem *sys, struct CompOutput *out)
         sdr_white = lum.sdr_white_nits;
     }
 
+    float hdr_br = (is_pq && out->hdr_brightness > 0.0f) ? out->hdr_brightness : 1.0f;
     wlr_kfx_output_set_dither(wo, sys->cfg.dither);
     wlr_kfx_output_set_sdr_white_nits(wo, sdr_white);
     wlr_kfx_output_set_tonemap(wo, sys->cfg.tonemap, (float)sys->cfg.tonemap_peak_nits);
+    wlr_kfx_output_set_brightness(wo, hdr_br);
 }
 
 void
@@ -972,6 +975,14 @@ comp_fx_output_get_sdr_white_nits(struct wlr_output *output)
     if (!output)
         return 203.0f;
     return wlr_kfx_output_get_sdr_white_nits(output);
+}
+
+float
+comp_fx_output_get_brightness(struct wlr_output *output)
+{
+    if (!output)
+        return 1.0f;
+    return wlr_kfx_output_get_brightness(output);
 }
 
 static struct wlr_color_transform *

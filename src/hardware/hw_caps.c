@@ -1,5 +1,7 @@
 #include "hw_caps.h"
+#include "../compositor/kajo_comp_ipc.h"
 #include <gio/gio.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -265,9 +267,31 @@ shell_hw_caps_read_hinge_angle_deg(const ShellHwCaps *caps, gdouble *out_deg)
     return TRUE;
 }
 
+static gint
+hdr_brightness_to_pct(gdouble b)
+{
+    gdouble clamped = CLAMP(b, 0.05, 1.0);
+    gint pct = (gint)llround(1.0 + 99.0 * (clamped - 0.05) / 0.95);
+    return CLAMP(pct, 1, 100);
+}
+
+static gdouble
+pct_to_hdr_brightness(gint pct)
+{
+    gint clamped = CLAMP(pct, 1, 100);
+    return 0.05 + 0.95 * ((gdouble)(clamped - 1) / 99.0);
+}
+
 gint
 shell_hw_caps_get_display_brightness_pct(const ShellHwCaps *caps)
 {
+    if (kajo_comp_ipc_available()) {
+        gboolean hdr_active = FALSE;
+        gdouble hdr_br = 1.0;
+        if (kajo_comp_ipc_get_primary_hdr_brightness(&hdr_active, &hdr_br) && hdr_active)
+            return hdr_brightness_to_pct(hdr_br);
+    }
+
     if (!caps || !caps->has_display_backlight ||
         !caps->display_backlight_dir || caps->display_max_brightness <= 0)
         return -1;
@@ -323,11 +347,17 @@ get_active_login1_session_path(GDBusConnection *bus)
 gboolean
 shell_hw_caps_set_display_brightness_pct(const ShellHwCaps *caps, gint pct)
 {
+    gint clamped = CLAMP(pct, 1, 100);
+    if (kajo_comp_ipc_available()) {
+        gboolean hdr_active = FALSE;
+        if (kajo_comp_ipc_get_primary_hdr_brightness(&hdr_active, NULL) && hdr_active)
+            return kajo_comp_ipc_set_output_brightness(NULL, pct_to_hdr_brightness(clamped));
+    }
+
     if (!caps || !caps->has_display_backlight ||
         !caps->display_backlight_dir || caps->display_max_brightness <= 0)
         return FALSE;
 
-    gint clamped = CLAMP(pct, 1, 100);
     gint val = (clamped * caps->display_max_brightness) / 100;
     if (val < 1)
         val = 1;

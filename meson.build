@@ -1441,6 +1441,12 @@ viewporter_client_c = custom_target(
   output: 'viewporter-protocol.c',
   command: [wayland_scanner, 'private-code', '@INPUT@', '@OUTPUT@'],
 )
+color_mgmt_client_h = custom_target(
+  'color-management-v1-client-protocol.h',
+  input: wl_protocols_dir / 'staging/color-management/color-management-v1.xml',
+  output: 'color-management-v1-client-protocol.h',
+  command: [wayland_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
 
 comp_test_client_exe = executable(
   'comp-test-client',
@@ -1471,10 +1477,18 @@ test('comp-fx-scene', test_comp_fx_scene_exe)
 test_comp_hdr_exe = executable(
   'test-comp-hdr',
   files('tests/test_comp_hdr.c'),
+  color_mgmt_client_h,
   comp_fx_sources,
   comp_fx_shader_headers,
   c_args: comp_strict_args + ['-DWLR_USE_UNSTABLE'],
-  dependencies: [comp_core_dep, comp_wlroots_dep, comp_wl_server_dep, comp_talloc_dep, gio_dep],
+  dependencies: [
+    comp_core_dep,
+    comp_wlroots_dep,
+    comp_wl_server_dep,
+    dependency('wayland-client', include_type: 'system'),
+    comp_talloc_dep,
+    gio_dep,
+  ],
   build_by_default: false,
 )
 test('comp-hdr', test_comp_hdr_exe)

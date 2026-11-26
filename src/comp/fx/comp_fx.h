@@ -110,6 +110,7 @@ bool comp_fx_is_active(const struct CompServer *server);
 bool  comp_fx_output_get_hdr_caps(struct wlr_output *output, CompFxOutputHdrCaps *out);
 float comp_fx_output_get_hdr_headroom(struct wlr_output *output);
 float comp_fx_output_get_sdr_white_nits(struct wlr_output *output);
+float comp_fx_output_get_brightness(struct wlr_output *output);
 
 /* Screenshot capture helpers (keeps wlr_kfx_* isolated inside src/comp/fx/). */
 struct wlr_render_pass *comp_fx_screenshot_begin_pass(struct CompServer *server,

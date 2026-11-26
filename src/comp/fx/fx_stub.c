@@ -198,6 +198,13 @@ comp_fx_output_get_sdr_white_nits(struct wlr_output *output)
     return 203.0f;
 }
 
+float
+comp_fx_output_get_brightness(struct wlr_output *output)
+{
+    (void)output;
+    return 1.0f;
+}
+
 struct wlr_render_pass *
 comp_fx_screenshot_begin_pass(struct CompServer *server, struct wlr_buffer *buffer)
 {
