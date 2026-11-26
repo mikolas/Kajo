@@ -463,6 +463,7 @@ if build_web_cef
     'src/web_cef/cef_clipboard.cc',
     'src/web_cef/cef_ipc.cc',
     'src/web_cef/cef_media_dl.cc',
+    'src/web_cef/cef_media_net.cc',
     'src/web_cef/cef_notify.cc',
     'src/web_cef/cef_prefs_helper.cc',
     'src/web_cef/cef_tab.cc',

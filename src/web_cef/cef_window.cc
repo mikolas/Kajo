@@ -2,6 +2,7 @@
 
 #include <gio/gio.h>
 #include <glib.h>
+#include <glib/gstdio.h>
 #include <json-glib/json-glib.h>
 
 #include <algorithm>
@@ -21,9 +22,11 @@
 #include "include/cef_task.h"
 #include "include/cef_urlrequest.h"
 #include "include/wrapper/cef_helpers.h"
+#include "web/web_media_sniff_core.h"
 #include "web/web_sync_merge.h"
 #include "web_cef/cef_clipboard.h"
 #include "web_cef/cef_host_coord.h"
+#include "web_cef/cef_media_net.h"
 #include "web_cef/cef_site_util.h"
 
 namespace kajo_web {
@@ -59,7 +62,28 @@ enum WindowAccelId {
   ACCEL_FULLSCREEN,
   ACCEL_DEVTOOLS,
   ACCEL_VIEW_SOURCE,
+  ACCEL_MEDIA,
 };
+
+std::string ExtractUrlPathKey(const std::string& url) {
+  const size_t q = url.find_first_of("?#");
+  return (q == std::string::npos) ? url : url.substr(0, q);
+}
+
+std::string FormatByteSizeShort(int64_t b) {
+  if (b <= 0) return "";
+  char buf[32];
+  if (b >= 1073741824LL) {
+    g_snprintf(buf, sizeof(buf), "%.2f GB", static_cast<double>(b) / 1073741824.0);
+  } else if (b >= 1048576LL) {
+    g_snprintf(buf, sizeof(buf), "%.1f MB", static_cast<double>(b) / 1048576.0);
+  } else if (b >= 1024LL) {
+    g_snprintf(buf, sizeof(buf), "%.0f KB", static_cast<double>(b) / 1024.0);
+  } else {
+    g_snprintf(buf, sizeof(buf), "%" G_GINT64_FORMAT " B", b);
+  }
+  return std::string(buf);
+}
 
 std::string ToLowerCopy(const std::string& s) {
   std::string out = s;
@@ -385,53 +409,6 @@ private:
   DoneCb cb_;
   std::vector<uint8_t> body_;
   IMPLEMENT_REFCOUNTING(WebAssetFetchClient);
-};
-
-class CookieCollectVisitor : public CefCookieVisitor {
-public:
-  using DoneCb = std::function<void(std::string cookie_header)>;
-
-  explicit CookieCollectVisitor(DoneCb cb) : cb_(std::move(cb)) {}
-
-  ~CookieCollectVisitor() override {
-    if (!fired_ && cb_) {
-      auto cb = std::move(cb_);
-      std::string out = std::move(header_);
-      fired_ = true;
-      CefPostTask(TID_UI, new UiTask([cb = std::move(cb), out = std::move(out)]() {
-        cb(out);
-      }));
-    }
-  }
-
-  bool Visit(const CefCookie& cookie, int count, int total, bool& deleteCookie) override {
-    deleteCookie = false;
-    const std::string name = CefString(&cookie.name).ToString();
-    const std::string val = CefString(&cookie.value).ToString();
-    if (!name.empty()) {
-      if (!header_.empty()) header_ += "; ";
-      header_ += name + "=" + val;
-    }
-    if (count + 1 >= total) {
-      FinishNow();
-      return false;
-    }
-    return true;
-  }
-
-private:
-  void FinishNow() {
-    if (fired_ || !cb_) return;
-    fired_ = true;
-    auto cb = std::move(cb_);
-    std::string out = std::move(header_);
-    cb(std::move(out));
-  }
-
-  DoneCb cb_;
-  std::string header_;
-  bool fired_ = false;
-  IMPLEMENT_REFCOUNTING(CookieCollectVisitor);
 };
 
 }  // namespace
@@ -893,6 +870,7 @@ void KajoBrowserWindow::OnWindowCreated(CefRefPtr<CefWindow> window) {
   window_->SetAccelerator(ACCEL_PROFILES, 'M', true, true, false, false);
   window_->SetAccelerator(ACCEL_SETTINGS, 0xBC /*VK_OEM_COMMA*/, false, true, false, false);
   window_->SetAccelerator(ACCEL_VIEW_SOURCE, 'U', false, true, false, false);
+  window_->SetAccelerator(ACCEL_MEDIA, 'V', true, true, false, false);
   window_->SetAccelerator(ACCEL_FULLSCREEN, 0x7A /*F11*/, false, false, false, false);
   window_->SetAccelerator(ACCEL_DEVTOOLS, 0x7B /*F12*/, false, false, false, false);
 
@@ -1467,32 +1445,165 @@ void KajoBrowserWindow::ShowTopbarToast(const std::string& msg) {
       js, topbar_browser_->GetMainFrame()->GetURL(), 0);
 }
 
+void KajoBrowserWindow::AppendMediaViewUnique(TabEntry* e, ChromeMediaView mv) {
+  if (!e || e->media.size() >= 64) return;
+  for (auto& existing : e->media) {
+    if (existing.uri == mv.uri &&
+        existing.rep_id == mv.rep_id &&
+        existing.ytdlp_format_id == mv.ytdlp_format_id) {
+      if (mv.size_bytes > 0 && existing.size_bytes <= 0) existing.size_bytes = mv.size_bytes;
+      if (mv.has_drm) existing.has_drm = true;
+      if (existing.headers.empty() && !mv.headers.empty()) existing.headers = mv.headers;
+      if (existing.referer.empty() && !mv.referer.empty()) existing.referer = mv.referer;
+      return;
+    }
+  }
+  e->media.push_back(std::move(mv));
+}
+
+void KajoBrowserWindow::StartDownloadForMediaView(const ChromeMediaView& mv,
+                                                  const std::string& title,
+                                                  const std::string& fallback_referer) {
+  if (closing_ || !media_dl_ || mv.uri.empty()) return;
+  if (mv.has_drm) {
+    ShowTopbarToast("DRM-protected stream cannot be downloaded");
+    return;
+  }
+
+  const std::string effective_ua = !mv.user_agent.empty() ? mv.user_agent : cfg_.user_agent;
+  std::string referer = !mv.referer.empty() ? mv.referer : fallback_referer;
+  auto headers = mv.headers;
+  if (!mv.origin.empty() && headers.find("Origin") == headers.end()) {
+    headers["Origin"] = mv.origin;
+  }
+
+  MediaFetchStreamFn fetcher = CreateCefMediaFetcher(
+      request_context_, std::move(headers), referer, effective_ua);
+
+  const bool is_stream = (mv.kind == "HLS" || mv.kind == "DASH" ||
+                          mv.uri.find(".m3u8") != std::string::npos ||
+                          mv.uri.find(".mpd") != std::string::npos);
+  if (is_stream) {
+    if (!ffmpeg_available_) {
+      ShowTopbarToast("ffmpeg not installed");
+      return;
+    }
+    ProxiedStreamRequest req;
+    req.video_uri = mv.uri;
+    req.audio_uri = mv.audio_uri;
+    req.subtitle_uri = mv.subtitle_uri;
+    req.kind = (mv.kind == "DASH" || mv.uri.find(".mpd") != std::string::npos) ? "DASH" : "HLS";
+    req.dash_rep_id = mv.rep_id;
+    req.suggested_title = title;
+    req.download_dir = download_dir_;
+    req.duration_sec = mv.duration_sec;
+    req.audio_only = mv.is_audio_only;
+    media_dl_->StartProxiedStream(req, std::move(fetcher));
+    ShowTopbarToast("Saving stream via Chromium proxy + ffmpeg...");
+  } else {
+    ProgressiveDownloadRequest req;
+    req.uri = mv.uri;
+    req.suggested_title = title;
+    req.suggested_filename = mv.suggested_filename;
+    req.mime_type = mv.mime_type;
+    req.download_dir = download_dir_;
+    req.expected_size = mv.size_bytes;
+    media_dl_->StartProgressiveDownload(req, std::move(fetcher));
+    ShowTopbarToast("Downloading media...");
+  }
+}
+
 void KajoBrowserWindow::StartStreamDownload(const std::string& uri,
                                             const std::string& title,
                                             const std::string& referer,
                                             const std::string& user_agent) {
   if (closing_ || !media_dl_ || uri.empty()) return;
-  if (!ffmpeg_available_) {
-    ShowTopbarToast("ffmpeg not installed");
-    return;
-  }
-  const std::string dl_dir = download_dir_;
-  const std::string effective_ua = user_agent.empty() ? cfg_.user_agent : user_agent;
-  if (request_context_) {
-    if (CefRefPtr<CefCookieManager> cm = request_context_->GetCookieManager(nullptr)) {
-      CefRefPtr<KajoBrowserWindow> self(this);
-      CefRefPtr<CookieCollectVisitor> visitor(new CookieCollectVisitor(
-          [self, uri, title, dl_dir, referer, effective_ua](std::string cookie_header) {
-            if (self->closing_ || !self->media_dl_) return;
-            self->media_dl_->StartFfmpegStream(
-                uri, title, dl_dir, referer, effective_ua, cookie_header);
-          }));
-      if (cm->VisitUrlCookies(uri, true, visitor)) {
-        return;
+  ChromeMediaView mv;
+  mv.kind = (uri.find(".mpd") != std::string::npos)
+                ? "DASH"
+                : ((uri.find(".m3u8") != std::string::npos) ? "HLS" : "VIDEO");
+  mv.uri = uri;
+  mv.referer = referer;
+  mv.user_agent = user_agent;
+  if (TabEntry* e = ActiveEntry()) {
+    for (const auto& existing : e->media) {
+      if (existing.uri == uri || StripUrlFragment(existing.uri) == StripUrlFragment(uri)) {
+        mv = existing;
+        break;
       }
     }
   }
-  media_dl_->StartFfmpegStream(uri, title, dl_dir, referer, effective_ua, "");
+  std::string fb_ref;
+  if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+    if (act->uri) fb_ref = act->uri;
+  }
+  StartDownloadForMediaView(mv, title, fb_ref);
+}
+
+void KajoBrowserWindow::StartYtDlpProbeForTab(uint64_t tab_id) {
+  if (closing_ || !media_dl_ || !yt_dlp_available_) return;
+  KajoWebTabMeta* t = web_model_find_tab(model_, tab_id);
+  TabEntry* e = FindEntry(tab_id);
+  if (!t || !e || !t->uri || e->ytdlp_probing) return;
+
+  const std::string page_url = t->uri;
+  if (page_url.rfind("http://", 0) != 0 && page_url.rfind("https://", 0) != 0) return;
+
+  e->ytdlp_probing = true;
+  e->ytdlp_probe_error.clear();
+  e->last_probe_url = StripUrlFragment(page_url);
+  PushStateImmediate();
+
+  CefRefPtr<KajoBrowserWindow> self(this);
+  const std::string ua = cfg_.user_agent;
+  ExportNetscapeCookiesAsync(
+      request_context_, page_url,
+      [self, tab_id, page_url, ua](std::string cookie_file) {
+        if (self->closing_ || !self->media_dl_) {
+          if (!cookie_file.empty()) g_unlink(cookie_file.c_str());
+          return;
+        }
+        self->media_dl_->ProbeYtDlpAsync(
+            page_url, ua, page_url, cookie_file,
+            [self, tab_id, page_url](bool ok, std::string title,
+                                     std::vector<YtDlpFormatOption> formats, std::string err) {
+              CefPostTask(TID_UI, new UiTask(
+                  [self, tab_id, page_url, ok, title = std::move(title),
+                   formats = std::move(formats), err = std::move(err)]() {
+                    if (self->closing_) return;
+                    TabEntry* te = self->FindEntry(tab_id);
+                    if (!te) return;
+                    te->ytdlp_probing = false;
+                    if (!ok) {
+                      te->ytdlp_probe_error = err;
+                      self->PushStateImmediate();
+                      return;
+                    }
+                    te->ytdlp_probe_error.clear();
+                    te->media.erase(
+                        std::remove_if(te->media.begin(), te->media.end(),
+                                       [](const ChromeMediaView& m) { return m.source == "ytdlp"; }),
+                        te->media.end());
+                    for (const auto& f : formats) {
+                      ChromeMediaView mv;
+                      mv.kind = f.audio_only ? "AUDIO" : "VIDEO";
+                      mv.label = (!title.empty() ? (title + " — " + f.label) : f.label);
+                      mv.uri = "ytdlp://" + f.format_id + "#" + page_url;
+                      mv.mime_type = f.ext;
+                      mv.width = f.width;
+                      mv.height = f.height;
+                      mv.bandwidth = f.bandwidth;
+                      mv.size_bytes = f.filesize;
+                      mv.duration_sec = f.duration_sec;
+                      mv.is_audio_only = f.audio_only;
+                      mv.source = "ytdlp";
+                      mv.ytdlp_format_id = f.format_id;
+                      self->AppendMediaViewUnique(te, std::move(mv));
+                    }
+                    self->PushStateImmediate();
+                  }));
+            });
+      });
 }
 
 void KajoBrowserWindow::ActivateTab(uint64_t tab_id) {
@@ -1995,6 +2106,7 @@ void KajoBrowserWindow::BuildPalette(const std::string& query) {
       {"Find in Page", "Ctrl+F", "open_find", ""},
       {"View Page Source", "Ctrl+U", "view_source", ""},
       {"Open Downloads Overlay", "Ctrl+J", "open_downloads_overlay", ""},
+      {"Open Video & Media Downloader", "Ctrl+Shift+V", "open_media_overlay", ""},
       {"Open Profiles & Private Switcher", "Ctrl+Shift+M", "open_profiles_overlay", ""},
       {"Open Adblock Dashboard", "kajo://adblock", "open_kajo_page", "kajo://adblock"},
       {"Open GPU & VA-API Diagnostics", "kajo://gpu", "open_kajo_page", "kajo://gpu"},
@@ -2251,6 +2363,8 @@ void KajoBrowserWindow::PushStateImmediate() {
     s.can_go_back = act_e->can_go_back;
     s.can_go_forward = act_e->can_go_forward;
     s.media_streams = act_e->media;
+    s.ytdlp_probing = act_e->ytdlp_probing;
+    s.ytdlp_probe_error = act_e->ytdlp_probe_error;
     s.default_zoom_pct = default_zoom_pct_;
     s.active_tab_color_scheme = static_cast<int>(act_e->color_scheme_override);
     if (act_e->browser && act_e->browser->GetHost()) {
@@ -2855,6 +2969,8 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       OnAccelerator(window_, ACCEL_VIEW_SOURCE);
     } else if (act == "open_downloads_overlay") {
       ToggleOverlay("downloads");
+    } else if (act == "open_media_overlay") {
+      ToggleOverlay("media");
     } else if (act == "open_profiles_overlay") {
       ToggleOverlay("profiles");
     } else if (act == "toggle_rail") {
@@ -2923,30 +3039,67 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
     }
   } else if (cmd == "download_media_uri") {
     const std::string uri = get_str("uri");
+    const std::string req_fid = get_str("ytdlp_format_id");
+    const bool req_audio_only = get_bool("audio_only");
     if (!uri.empty()) {
       ChromeMediaView matched;
+      bool found = false;
       if (TabEntry* e = ActiveEntry()) {
         for (const auto& mv : e->media) {
-          if (mv.uri == uri) {
+          if (mv.uri == uri && (req_fid.empty() || mv.ytdlp_format_id == req_fid)) {
             matched = mv;
+            found = true;
             break;
           }
         }
       }
-      const bool is_stream =
-          matched.kind == "HLS" || matched.kind == "DASH" ||
-          uri.find(".m3u8") != std::string::npos || uri.find(".mpd") != std::string::npos;
-      if (is_stream) {
-        std::string title;
-        if (KajoWebTabMeta* act = web_model_get_active(model_)) {
-          if (act->title && act->title[0] != '\0') title = act->title;
-        }
-        StartStreamDownload(uri, title, matched.referer, matched.user_agent);
-        ShowTopbarToast(ffmpeg_available_ ? "Saving stream via ffmpeg..." : "ffmpeg not found");
-        if (ffmpeg_available_ && overlay_mode_ == "media") ToggleOverlay("downloads");
-      } else if (TabEntry* e = ActiveEntry()) {
-        if (e->browser && e->browser->GetHost()) e->browser->GetHost()->StartDownload(uri);
+      std::string title;
+      std::string page_url;
+      if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+        if (act->title && act->title[0] != '\0') title = act->title;
+        if (act->uri && act->uri[0] != '\0') page_url = act->uri;
       }
+      if (!found) {
+        matched.uri = uri;
+        matched.ytdlp_format_id = req_fid;
+        matched.is_audio_only = req_audio_only;
+        if (uri.rfind("ytdlp://", 0) == 0) matched.source = "ytdlp";
+        else if (uri.find(".mpd") != std::string::npos) matched.kind = "DASH";
+        else if (uri.find(".m3u8") != std::string::npos) matched.kind = "HLS";
+        else matched.kind = "VIDEO";
+      }
+
+      if (matched.source == "ytdlp") {
+        if (media_dl_ && yt_dlp_available_ &&
+            (page_url.rfind("http://", 0) == 0 || page_url.rfind("https://", 0) == 0)) {
+          const std::string dl_dir = download_dir_;
+          const std::string ua = cfg_.user_agent;
+          const std::string fid = matched.ytdlp_format_id;
+          const bool ao = matched.is_audio_only;
+          CefRefPtr<KajoBrowserWindow> self(this);
+          ExportNetscapeCookiesAsync(
+              request_context_, page_url,
+              [self, page_url, title, dl_dir, ua, fid, ao](std::string cookie_file) {
+                if (self->closing_ || !self->media_dl_) {
+                  if (!cookie_file.empty()) g_unlink(cookie_file.c_str());
+                  return;
+                }
+                self->media_dl_->StartYtDlp(page_url, title, dl_dir, ua, page_url, cookie_file, fid, ao);
+              });
+          ShowTopbarToast("Downloading via yt-dlp...");
+          if (overlay_mode_ == "media") ToggleOverlay("downloads");
+        }
+      } else {
+        const bool needs_ffmpeg = (matched.kind == "HLS" || matched.kind == "DASH");
+        StartDownloadForMediaView(matched, title, page_url);
+        if (!matched.has_drm && (!needs_ffmpeg || ffmpeg_available_) && overlay_mode_ == "media") {
+          ToggleOverlay("downloads");
+        }
+      }
+    }
+  } else if (cmd == "probe_page_ytdlp") {
+    if (KajoWebTabMeta* act = web_model_get_active(model_)) {
+      StartYtDlpProbeForTab(act->id);
     }
   } else if (cmd == "download_page_ytdlp") {
     KajoWebTabMeta* act = web_model_get_active(model_);
@@ -2954,10 +3107,27 @@ bool KajoBrowserWindow::OnQuery(CefRefPtr<CefBrowser> browser,
       const std::string page_url = act->uri;
       if (page_url.rfind("http://", 0) == 0 || page_url.rfind("https://", 0) == 0) {
         const std::string title = (act->title && act->title[0]) ? act->title : "video";
-        media_dl_->StartYtDlp(page_url, title, download_dir_, cfg_.user_agent);
+        const std::string dl_dir = download_dir_;
+        const std::string ua = cfg_.user_agent;
+        CefRefPtr<KajoBrowserWindow> self(this);
+        ExportNetscapeCookiesAsync(
+            request_context_, page_url,
+            [self, page_url, title, dl_dir, ua](std::string cookie_file) {
+              if (self->closing_ || !self->media_dl_) {
+                if (!cookie_file.empty()) g_unlink(cookie_file.c_str());
+                return;
+              }
+              self->media_dl_->StartYtDlp(page_url, title, dl_dir, ua, page_url, cookie_file);
+            });
         ShowTopbarToast("Downloading via yt-dlp...");
         if (overlay_mode_ == "media") ToggleOverlay("downloads");
       }
+    }
+  } else if (cmd == "clear_tab_media") {
+    if (TabEntry* e = ActiveEntry()) {
+      e->media.clear();
+      e->ytdlp_probe_error.clear();
+      PushStateImmediate();
     }
   } else if (cmd == "pause_download") {
     uint32_t did = static_cast<uint32_t>(get_int("id"));
@@ -3208,6 +3378,9 @@ bool KajoBrowserWindow::OnAccelerator(CefRefPtr<CefWindow> window, int command_i
     case ACCEL_DOWNLOADS:
       ToggleOverlay("downloads");
       return true;
+    case ACCEL_MEDIA:
+      ToggleOverlay("media");
+      return true;
     case ACCEL_PROFILES:
       ToggleOverlay("profiles");
       return true;
@@ -3276,6 +3449,7 @@ bool KajoBrowserWindow::OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event)
     if (vk == 'D' && !shift) return OnAccelerator(window_, ACCEL_BOOKMARK);
     if (vk == 'M') return OnAccelerator(window_, shift ? ACCEL_PROFILES : ACCEL_MUTE_TAB);
     if (vk == 'J' && !shift) return OnAccelerator(window_, ACCEL_DOWNLOADS);
+    if (vk == 'V' && shift) return OnAccelerator(window_, ACCEL_MEDIA);
     if (vk == 'N' && shift) return OnAccelerator(window_, ACCEL_PRIVATE_WINDOW);
     if (vk == 0xBC /*VK_OEM_COMMA*/ && !shift) return OnAccelerator(window_, ACCEL_SETTINGS);
     if (vk == 0x09 /*VK_TAB*/) {
@@ -3441,7 +3615,22 @@ void KajoBrowserWindow::OnTabAddressChanged(uint64_t tab_id, const std::string& 
     }
   }
   if (TabEntry* e = FindEntry(tab_id)) {
-    e->media.clear();
+    const std::string new_path_key = ExtractUrlPathKey(url);
+    const std::string new_probe_url = StripUrlFragment(url);
+    const bool path_changed = (!e->last_media_path_key.empty() && e->last_media_path_key != new_path_key);
+    if (host_changed || path_changed) {
+      e->media.clear();
+      e->ytdlp_probing = false;
+      e->ytdlp_probe_error.clear();
+    } else if (!e->last_probe_url.empty() && e->last_probe_url != new_probe_url) {
+      e->media.erase(
+          std::remove_if(e->media.begin(), e->media.end(),
+                         [](const ChromeMediaView& m) { return m.source == "ytdlp"; }),
+          e->media.end());
+      e->ytdlp_probe_error.clear();
+    }
+    e->last_media_path_key = new_path_key;
+    e->last_probe_url = new_probe_url;
     e->last_recorded_visit_uri.clear();
     if (host_changed) e->favicon_url.clear();
     if (e->color_scheme_override != TabColorSchemeOverride::AUTO) {
@@ -3799,32 +3988,93 @@ bool KajoBrowserWindow::OnTabBeforeBrowseAction(uint64_t tab_id,
   return true;
 }
 
-void KajoBrowserWindow::OnTabMediaDetected(uint64_t tab_id,
-                                           const std::string& kind,
-                                           const std::string& uri,
-                                           const std::string& mime,
-                                           int64_t size_bytes,
-                                           const std::string& referer,
-                                           const std::string& user_agent) {
-  TabEntry* e = FindEntry(tab_id);
-  if (!e) return;
-  for (const auto& existing : e->media) {
-    if (existing.uri == uri) return;
+void KajoBrowserWindow::OnTabMainNavigation(uint64_t tab_id, const std::string& url) {
+  if (TabEntry* e = FindEntry(tab_id)) {
+    e->media.clear();
+    e->ytdlp_probing = false;
+    e->ytdlp_probe_error.clear();
+    e->last_media_path_key = ExtractUrlPathKey(url);
+    e->last_probe_url = StripUrlFragment(url);
+    PushStateToChrome();
   }
-  if (e->media.size() >= 32) return;
+}
+
+void KajoBrowserWindow::OnTabMediaCaptured(uint64_t tab_id, const TabMediaCapture& cap) {
+  TabEntry* e = FindEntry(tab_id);
+  if (!e || closing_) return;
+
+  if (!cap.manifest_body.empty()) {
+    GPtrArray* parsed = nullptr;
+    if (cap.kind == "VIMEO") {
+      parsed = web_media_parse_vimeo_config(cap.manifest_body.c_str(), cap.uri.c_str());
+    } else if (cap.kind == "DASH") {
+      parsed = web_media_parse_dash_mpd(cap.manifest_body.c_str(), cap.uri.c_str());
+    } else {
+      parsed = web_media_parse_hls_master(cap.manifest_body.c_str(), cap.uri.c_str());
+    }
+
+    if (parsed && parsed->len > 0) {
+      for (guint i = 0; i < parsed->len; ++i) {
+        const auto* s = static_cast<const KajoWebMediaStream*>(g_ptr_array_index(parsed, i));
+        if (!s || !s->uri || !s->uri[0]) continue;
+        ChromeMediaView mv;
+        if (s->kind == KAJO_MEDIA_HLS) mv.kind = "HLS";
+        else if (s->kind == KAJO_MEDIA_DASH) mv.kind = "DASH";
+        else mv.kind = s->is_audio_only ? "AUDIO" : "VIDEO";
+        mv.uri = s->uri;
+        mv.label = s->label ? s->label : mv.uri;
+        mv.mime_type = s->mime_type ? s->mime_type : cap.mime;
+        mv.size_bytes = s->size_bytes;
+        mv.width = s->width;
+        mv.height = s->height;
+        mv.bandwidth = s->bandwidth;
+        mv.duration_sec = s->duration_sec;
+        mv.has_drm = (s->has_drm != FALSE);
+        mv.is_audio_only = (s->is_audio_only != FALSE);
+        if (s->audio_uri) mv.audio_uri = s->audio_uri;
+        if (s->subtitle_uri) mv.subtitle_uri = s->subtitle_uri;
+        if (s->audio_lang) mv.audio_lang = s->audio_lang;
+        if (s->codecs) mv.codecs = s->codecs;
+        if (s->group_id) mv.group_id = s->group_id;
+        if (s->rep_id) mv.rep_id = s->rep_id;
+        mv.referer = cap.referer;
+        mv.origin = cap.origin;
+        mv.user_agent = cap.user_agent;
+        mv.headers = cap.headers;
+        mv.source = "sniff";
+        AppendMediaViewUnique(e, std::move(mv));
+      }
+      g_ptr_array_unref(parsed);
+      PushStateToChrome();
+      return;
+    }
+    if (parsed) g_ptr_array_unref(parsed);
+    if (cap.kind == "VIMEO") return;
+  }
+
   ChromeMediaView mv;
-  mv.kind = kind;
-  mv.uri = uri;
-  mv.mime_type = mime;
-  mv.referer = referer;
-  mv.user_agent = user_agent;
-  mv.size_bytes = size_bytes;
-  size_t slash = uri.find_last_of('/');
-  std::string tail = (slash != std::string::npos) ? uri.substr(slash + 1) : uri;
-  size_t q = tail.find('?');
-  if (q != std::string::npos) tail = tail.substr(0, q);
-  mv.label = kind + (tail.empty() ? "" : " · " + tail);
-  e->media.push_back(mv);
+  mv.kind = cap.kind.empty() ? "VIDEO" : cap.kind;
+  mv.uri = cap.uri;
+  mv.mime_type = cap.mime;
+  mv.referer = cap.referer;
+  mv.origin = cap.origin;
+  mv.user_agent = cap.user_agent;
+  mv.suggested_filename = cap.suggested_filename;
+  mv.headers = cap.headers;
+  mv.size_bytes = cap.size_bytes;
+  mv.is_audio_only = (mv.kind == "AUDIO");
+  mv.source = "sniff";
+
+  std::string name = cap.suggested_filename;
+  if (name.empty()) {
+    size_t slash = cap.uri.find_last_of('/');
+    name = (slash != std::string::npos) ? cap.uri.substr(slash + 1) : cap.uri;
+    size_t q = name.find_first_of("?#");
+    if (q != std::string::npos) name = name.substr(0, q);
+  }
+  const std::string sz_str = FormatByteSizeShort(cap.size_bytes);
+  mv.label = mv.kind + (name.empty() ? "" : (" · " + name)) + (sz_str.empty() ? "" : (" (" + sz_str + ")"));
+  AppendMediaViewUnique(e, std::move(mv));
   PushStateToChrome();
 }
 

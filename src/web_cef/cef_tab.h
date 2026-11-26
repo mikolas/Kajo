@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,6 +41,19 @@ enum KajoContextCommand {
   KAJO_CTX_VIEW_SOURCE = 12,
 };
 
+struct TabMediaCapture {
+  std::string kind; /* "HLS", "DASH", "VIMEO", "VIDEO", "AUDIO" */
+  std::string uri;
+  std::string mime;
+  std::string manifest_body;
+  std::string referer;
+  std::string origin;
+  std::string user_agent;
+  std::string suggested_filename;
+  std::map<std::string, std::string> headers;
+  int64_t size_bytes = 0;
+};
+
 class TabCallbacks {
 public:
   virtual ~TabCallbacks() = default;
@@ -58,13 +72,13 @@ public:
                                        const std::string& prev_url,
                                        bool user_gesture) = 0;
   virtual void OnTabRequestClose(uint64_t tab_id) = 0;
-  virtual void OnTabMediaDetected(uint64_t tab_id,
-                                  const std::string& kind,
-                                  const std::string& uri,
-                                  const std::string& mime,
-                                  int64_t size_bytes,
-                                  const std::string& referer,
-                                  const std::string& user_agent) = 0;
+  virtual void OnTabMediaDetected(uint64_t /*tab_id*/,
+                                  const std::string& /*kind*/,
+                                  const std::string& /*uri*/,
+                                  const std::string& /*mime*/,
+                                  int64_t /*size_bytes*/,
+                                  const std::string& /*referer*/,
+                                  const std::string& /*user_agent*/) {}
   virtual void OnTabBlockedChanged(uint64_t tab_id) = 0;
   virtual void OnTabFindResult(uint64_t tab_id, int count, int active_ordinal, bool final_update) = 0;
   virtual bool OnTabShortcut(uint64_t tab_id, const CefKeyEvent& event) = 0;
@@ -131,6 +145,8 @@ public:
                                       const std::string& /*icon_url*/,
                                       const std::string& /*title*/,
                                       const std::string& /*theme_color*/) {}
+  virtual void OnTabMediaCaptured(uint64_t /*tab_id*/, const TabMediaCapture& /*cap*/) {}
+  virtual void OnTabMainNavigation(uint64_t /*tab_id*/, const std::string& /*url*/) {}
 };
 
 /* Per-tab CefClient handling blocking, media sniffing, popups, downloads, and events. */
@@ -258,6 +274,17 @@ public:
                           CefRefPtr<CefFrame> frame,
                           CefRefPtr<CefRequest> request,
                           CefRefPtr<CefResponse> response) override;
+  CefRefPtr<CefResponseFilter> GetResourceResponseFilter(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      CefRefPtr<CefRequest> request,
+      CefRefPtr<CefResponse> response) override;
+  void OnResourceLoadComplete(CefRefPtr<CefBrowser> browser,
+                              CefRefPtr<CefFrame> frame,
+                              CefRefPtr<CefRequest> request,
+                              CefRefPtr<CefResponse> response,
+                              URLRequestStatus status,
+                              int64_t received_content_length) override;
 
   /* CefCookieAccessFilter (TID_IO) */
   bool CanSendCookie(CefRefPtr<CefBrowser> browser,
@@ -338,14 +365,26 @@ private:
   std::mutex cb_mu_;
   std::mutex url_mu_;
   std::mutex scripts_mu_;
+  std::mutex media_mu_;
   TabCallbacks* callbacks_;
   std::atomic<bool> detached_{false};
   std::atomic<bool> https_only_{false};
   std::atomic<int> cookie_policy_{0};
   std::atomic<bool> devtools_enabled_{true};
+  std::atomic<bool> page_has_manifest_{false};
   bool user_scripts_enabled_ = false;
   std::shared_ptr<const LoadedUserScripts> user_scripts_;
   std::string last_top_url_;
+
+  struct CapturedReqHeaders {
+    int64_t ts_us = 0;
+    std::string referer;
+    std::string origin;
+    std::string user_agent;
+    std::map<std::string, std::string> headers;
+  };
+  std::map<uint64_t, CapturedReqHeaders> req_headers_;
+  std::map<uint64_t, CefRefPtr<CefResponseFilter>> active_filters_;
 
   IMPLEMENT_REFCOUNTING(CefTabClient);
 };

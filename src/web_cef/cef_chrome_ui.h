@@ -2,6 +2,7 @@
 #define KAJO_WEB_CEF_CHROME_UI_H
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -53,6 +54,7 @@ struct ChromeDownloadView {
   bool complete = false;
   bool canceled = false;
   bool paused = false;
+  std::string error_message;
 };
 
 struct ChromeMediaView {
@@ -61,8 +63,25 @@ struct ChromeMediaView {
   std::string uri;
   std::string mime_type;
   std::string referer;
+  std::string origin;
   std::string user_agent;
+  std::string audio_uri;
+  std::string subtitle_uri;
+  std::string audio_lang;
+  std::string codecs;
+  std::string group_id;
+  std::string rep_id;
+  std::string suggested_filename;
+  std::map<std::string, std::string> headers;
   int64_t size_bytes = 0;
+  int width = 0;
+  int height = 0;
+  int64_t bandwidth = 0;
+  double duration_sec = 0.0;
+  bool has_drm = false;
+  bool is_audio_only = false;
+  std::string source = "sniff";
+  std::string ytdlp_format_id;
 };
 
 struct ChromeBookmarkView {
@@ -202,6 +221,8 @@ struct ChromeStateSnapshot {
   bool widevine_available = false;
   bool ffmpeg_available = false;
   bool yt_dlp_available = false;
+  bool ytdlp_probing = false;
+  std::string ytdlp_probe_error;
   std::string widevine_path;
   std::string user_agent;
 

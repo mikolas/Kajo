@@ -5,9 +5,12 @@
 #include "web_cef/cef_site_util.h"
 #include "web_cef/cef_webapps.h"
 
+#include <gio/gio.h>
 #include <glib.h>
 #include <glib/gstdio.h>
 
+#include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -442,12 +445,182 @@ static void test_media_dl_helpers_and_ffmpeg(void) {
   g_assert_cmpint(tot, >, 100000000LL);
   g_assert_cmpint(spd, >, 2000000LL);
 
+  /* Manifest rewriting, Netscape cookies, yt-dlp JSON parser & proxied jobs */
+  const std::string hls_rewritten = RewriteHlsManifestForProxy(
+      "#EXTM3U\n"
+      "#EXT-X-KEY:METHOD=AES-128,URI=\"keys/k.bin\"\n"
+      "#EXT-X-MAP:URI=\"init.mp4\"\n"
+      "seg/0001.ts\n"
+      "https://other.cdn/0002.ts?tok=1\n",
+      "https://cdn.example/v/master.m3u8",
+      "http://127.0.0.1:9999/tok/fetch?u=");
+  g_assert_true(hls_rewritten.find("URI=\"http://127.0.0.1:9999/tok/fetch?u=https%3A%2F%2Fcdn.example%2Fv%2Fkeys%2Fk.bin\"") != std::string::npos);
+  g_assert_true(hls_rewritten.find("http://127.0.0.1:9999/tok/fetch?u=https%3A%2F%2Fcdn.example%2Fv%2Fseg%2F0001.ts") != std::string::npos);
+  g_assert_true(hls_rewritten.find("http://127.0.0.1:9999/tok/fetch?u=https%3A%2F%2Fother.cdn%2F0002.ts%3Ftok%3D1") != std::string::npos);
+
+  const std::string mpd_rewritten = RewriteDashManifestForProxy(
+      "<MPD><Period><AdaptationSet><Representation id=\"1\"/></AdaptationSet></Period></MPD>",
+      "https://cdn.example/dash/live.mpd?foo=1",
+      "http://127.0.0.1:9999/tok/rel/",
+      "http://127.0.0.1:9999/tok/fetch?u=");
+  g_assert_true(mpd_rewritten.find("<BaseURL>http://127.0.0.1:9999/tok/rel/") != std::string::npos);
+  const std::string expected_b64 = Base64UrlEncode("https://cdn.example/dash/");
+  const std::string decoded_b64 = Base64UrlDecode(expected_b64);
+  g_assert_cmpstr(decoded_b64.c_str(), ==, "https://cdn.example/dash/");
+
+  const std::string ck_line = FormatNetscapeCookieLine("example.com", true, "/", true, 1893456000, "sid", "xyz");
+  g_assert_cmpstr(ck_line.c_str(), ==, ".example.com\tTRUE\t/\tTRUE\t1893456000\tsid\txyz");
+
+  std::string yt_title;
+  const auto yt_fmts = ParseYtDlpInfoJson(
+      "{\"title\":\"Test Video\",\"duration\":90,\"formats\":["
+      "{\"format_id\":\"140\",\"ext\":\"m4a\",\"vcodec\":\"none\",\"acodec\":\"mp4a\",\"tbr\":128},"
+      "{\"format_id\":\"137\",\"ext\":\"mp4\",\"width\":1920,\"height\":1080,\"vcodec\":\"avc1\",\"acodec\":\"none\",\"tbr\":4200,\"format_note\":\"1080p\"},"
+      "{\"format_id\":\"sb0\",\"ext\":\"mhtml\",\"vcodec\":\"none\",\"acodec\":\"none\"}"
+      "]}",
+      &yt_title);
+  g_assert_cmpstr(yt_title.c_str(), ==, "Test Video");
+  g_assert_cmpuint(yt_fmts.size(), ==, 2);
+  g_assert_cmpstr(yt_fmts[0].format_id.c_str(), ==, "137");
+  g_assert_false(yt_fmts[0].audio_only);
+  g_assert_true(yt_fmts[1].audio_only);
+
+  /* Live MediaLoopbackProxy HTTP roundtrip (403 bad token + Range forward + .m3u8 rewrite) */
+  {
+    std::string last_req_url;
+    std::string last_range;
+    MediaLoopbackProxy proxy([&](const std::string& url,
+                                 const std::string& method G_GNUC_UNUSED,
+                                 const std::map<std::string, std::string>& req_hdrs,
+                                 const std::atomic<bool>* cancel G_GNUC_UNUSED,
+                                 std::function<void(int, const std::map<std::string, std::string>&)> on_headers,
+                                 std::function<bool(const char*, size_t)> on_chunk,
+                                 std::function<void(bool, const std::string&)> on_done) {
+      last_req_url = url;
+      auto rit = req_hdrs.find("Range");
+      last_range = (rit != req_hdrs.end()) ? rit->second : "";
+      if (url == "https://cdn.example/vod/master.m3u8") {
+        on_headers(200, {{"Content-Type", "application/vnd.apple.mpegurl"}});
+        const std::string body = "#EXTM3U\nchunk0.ts\n";
+        on_chunk(body.data(), body.size());
+        on_done(true, "");
+      } else {
+        on_headers(206, {{"Content-Type", "video/mp4"}, {"Content-Length", "5"}});
+        on_chunk("HELLO", 5);
+        on_done(true, "");
+      }
+    });
+    g_assert_true(proxy.Start());
+
+    auto http_get = [&](const std::string& path, const std::string& extra_hdr) -> std::string {
+      g_autoptr(GSocketClient) client = g_socket_client_new();
+      g_socket_client_set_enable_proxy(client, FALSE);
+      g_autoptr(GSocketConnection) conn = g_socket_client_connect_to_host(
+          client, "127.0.0.1", proxy.port(), nullptr, nullptr);
+      g_assert_nonnull(conn);
+      std::string req = "GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\n" + extra_hdr + "Connection: close\r\n\r\n";
+      g_output_stream_write_all(g_io_stream_get_output_stream(G_IO_STREAM(conn)),
+                                req.data(), req.size(), nullptr, nullptr, nullptr);
+      std::string resp;
+      char buf[4096];
+      for (;;) {
+        gssize n = g_input_stream_read(g_io_stream_get_input_stream(G_IO_STREAM(conn)),
+                                       buf, sizeof(buf), nullptr, nullptr);
+        if (n <= 0) break;
+        resp.append(buf, static_cast<size_t>(n));
+      }
+      return resp;
+    };
+
+    const std::string bad_resp = http_get("/wrongtoken/fetch?u=https%3A%2F%2Fx%2Fa.ts", "");
+    g_assert_true(bad_resp.find("403 Forbidden") != std::string::npos);
+
+    const std::string m3u8_resp = http_get(
+        "/" + proxy.token() + "/fetch?u=https%3A%2F%2Fcdn.example%2Fvod%2Fmaster.m3u8", "");
+    g_assert_true(m3u8_resp.find("200 OK") != std::string::npos);
+    g_assert_true(m3u8_resp.find(proxy.ProxyFetchPrefix() + "https%3A%2F%2Fcdn.example%2Fvod%2Fchunk0.ts") != std::string::npos);
+
+    const std::string rel_resp = http_get(
+        "/" + proxy.token() + "/rel/" + Base64UrlEncode("https://cdn.example/vod/") + "/seg0.m4s",
+        "Range: bytes=0-4\r\n");
+    g_assert_true(rel_resp.find("206 Partial Content") != std::string::npos);
+    g_assert_true(rel_resp.find("HELLO") != std::string::npos);
+    g_assert_cmpstr(last_req_url.c_str(), ==, "https://cdn.example/vod/seg0.m4s");
+    g_assert_cmpstr(last_range.c_str(), ==, "bytes=0-4");
+    proxy.Stop();
+  }
+
   g_autofree gchar* tmp_dir = g_dir_make_tmp("kajo-cef-dl-XXXXXX", nullptr);
   g_assert_nonnull(tmp_dir);
   g_autofree gchar* existing = g_build_filename(tmp_dir, "clip.mp4", nullptr);
   g_file_set_contents(existing, "x", 1, nullptr);
   const std::string uniq = BuildUniqueMediaPath(tmp_dir, "clip", "mp4");
   g_assert_true(uniq.find("clip-1.mp4") != std::string::npos);
+
+  /* Progressive download via MediaFetchStreamFn (success + HTTP error diagnostics) */
+  {
+    GMutex mu;
+    GCond cond;
+    g_mutex_init(&mu);
+    g_cond_init(&cond);
+    bool done = false;
+    ChromeDownloadView final_view;
+    MediaDownloadManager pmgr([&](const ChromeDownloadView& v) {
+      g_mutex_lock(&mu);
+      final_view = v;
+      if (v.complete || v.canceled) {
+        done = true;
+        g_cond_signal(&cond);
+      }
+      g_mutex_unlock(&mu);
+    });
+
+    ProgressiveDownloadRequest preq;
+    preq.uri = "https://cdn.example/sample.mp4";
+    preq.suggested_title = "ProgressiveClip";
+    preq.mime_type = "video/mp4";
+    preq.download_dir = tmp_dir;
+    const uint32_t jid = pmgr.StartProgressiveDownload(
+        preq,
+        [](const std::string&, const std::string&, const std::map<std::string, std::string>&,
+           const std::atomic<bool>*,
+           std::function<void(int, const std::map<std::string, std::string>&)> on_headers,
+           std::function<bool(const char*, size_t)> on_chunk,
+           std::function<void(bool, const std::string&)> on_done) {
+          on_headers(200, {{"Content-Type", "video/mp4"}, {"Content-Length", "12"}});
+          on_chunk("MP4TESTBYTES", 12);
+          on_done(true, "");
+        });
+    g_assert_cmpuint(jid, >, 0);
+    g_mutex_lock(&mu);
+    while (!done) g_cond_wait_until(&cond, &mu, g_get_monotonic_time() + 5000000LL);
+    g_mutex_unlock(&mu);
+    g_assert_true(final_view.complete);
+    g_assert_cmpint(final_view.total_bytes, ==, 12);
+    if (!final_view.full_path.empty()) g_unlink(final_view.full_path.c_str());
+
+    done = false;
+    final_view = ChromeDownloadView();
+    const uint32_t fail_jid = pmgr.StartProgressiveDownload(
+        preq,
+        [](const std::string&, const std::string&, const std::map<std::string, std::string>&,
+           const std::atomic<bool>*,
+           std::function<void(int, const std::map<std::string, std::string>&)> on_headers,
+           std::function<bool(const char*, size_t)>,
+           std::function<void(bool, const std::string&)> on_done) {
+          on_headers(403, {});
+          on_done(true, "");
+        });
+    g_assert_cmpuint(fail_jid, >, 0);
+    g_mutex_lock(&mu);
+    while (!done) g_cond_wait_until(&cond, &mu, g_get_monotonic_time() + 5000000LL);
+    g_mutex_unlock(&mu);
+    g_assert_true(final_view.canceled);
+    g_assert_true(final_view.error_message.find("403") != std::string::npos);
+
+    g_cond_clear(&cond);
+    g_mutex_clear(&mu);
+  }
 
   if (IsFfmpegAvailable()) {
     g_autofree gchar* m3u8_path = g_build_filename(tmp_dir, "tiny.m3u8", nullptr);
@@ -502,6 +675,59 @@ static void test_media_dl_helpers_and_ffmpeg(void) {
     g_assert_cmpint(final_view.total_bytes, >, 0);
     if (!final_view.full_path.empty()) g_unlink(final_view.full_path.c_str());
 
+    /* Also exercise StartProxiedStream end-to-end through MediaLoopbackProxy -> ffmpeg */
+    gchar* m3u8_raw = nullptr;
+    gsize m3u8_len = 0;
+    gchar* seg_raw = nullptr;
+    gsize seg_len = 0;
+    g_assert_true(g_file_get_contents(m3u8_path, &m3u8_raw, &m3u8_len, nullptr));
+    g_assert_true(g_file_get_contents(seg0_path, &seg_raw, &seg_len, nullptr));
+    std::string m3u8_str(m3u8_raw, m3u8_len);
+    std::string seg_str(seg_raw, seg_len);
+    g_free(m3u8_raw);
+    g_free(seg_raw);
+
+    done = false;
+    final_view = ChromeDownloadView();
+    ProxiedStreamRequest sreq;
+    sreq.video_uri = "https://cdn.example/hls/tiny.m3u8";
+    sreq.kind = "HLS";
+    sreq.suggested_title = "Proxied Clip";
+    sreq.download_dir = tmp_dir;
+    sreq.duration_sec = 0.4;
+    const uint32_t pjid = mgr.StartProxiedStream(
+        sreq,
+        [m3u8_str, seg_str](const std::string& url, const std::string&,
+                            const std::map<std::string, std::string>&,
+                            const std::atomic<bool>*,
+                            std::function<void(int, const std::map<std::string, std::string>&)> on_headers,
+                            std::function<bool(const char*, size_t)> on_chunk,
+                            std::function<void(bool, const std::string&)> on_done) {
+          if (url.find("tiny.m3u8") != std::string::npos) {
+            on_headers(200, {{"Content-Type", "application/vnd.apple.mpegurl"}});
+            on_chunk(m3u8_str.data(), m3u8_str.size());
+            on_done(true, "");
+          } else if (url.find("tiny0.ts") != std::string::npos) {
+            on_headers(200, {{"Content-Type", "video/mp2t"}});
+            on_chunk(seg_str.data(), seg_str.size());
+            on_done(true, "");
+          } else {
+            on_headers(404, {});
+            on_done(true, "");
+          }
+        });
+    g_assert_cmpuint(pjid, >, 0);
+    g_mutex_lock(&mu);
+    const gint64 pdeadline = g_get_monotonic_time() + 10000000LL;
+    while (!done) {
+      if (!g_cond_wait_until(&cond, &mu, pdeadline)) break;
+    }
+    g_mutex_unlock(&mu);
+    g_assert_true(done);
+    g_assert_true(final_view.complete);
+    g_assert_cmpint(final_view.total_bytes, >, 0);
+    if (!final_view.full_path.empty()) g_unlink(final_view.full_path.c_str());
+
     g_cond_clear(&cond);
     g_mutex_clear(&mu);
     g_unlink(m3u8_path);
@@ -512,19 +738,19 @@ static void test_media_dl_helpers_and_ffmpeg(void) {
 }
 
 static void test_context_menu_helpers(void) {
-  g_assert_cmpstr(StripMenuMnemonic("&Back").c_str(), ==, "Back");
-  g_assert_cmpstr(StripMenuMnemonic("Save &As...").c_str(), ==, "Save As...");
-  g_assert_cmpstr(StripMenuMnemonic("A && B").c_str(), ==, "A & B");
-  g_assert_cmpstr(StripMenuMnemonic("Cut & Paste").c_str(), ==, "Cut & Paste");
-  g_assert_cmpstr(StripMenuMnemonic("Plain").c_str(), ==, "Plain");
-  g_assert_cmpstr(StripMenuMnemonic("End&").c_str(), ==, "End&");
+  g_assert_true(StripMenuMnemonic("&Back") == "Back");
+  g_assert_true(StripMenuMnemonic("Save &As...") == "Save As...");
+  g_assert_true(StripMenuMnemonic("A && B") == "A & B");
+  g_assert_true(StripMenuMnemonic("Cut & Paste") == "Cut & Paste");
+  g_assert_true(StripMenuMnemonic("Plain") == "Plain");
+  g_assert_true(StripMenuMnemonic("End&") == "End&");
 
-  g_assert_cmpstr(FormatMenuAccelerator('C', false, true, false).c_str(), ==, "Ctrl+C");
-  g_assert_cmpstr(FormatMenuAccelerator('I', true, true, false).c_str(), ==, "Ctrl+Shift+I");
-  g_assert_cmpstr(FormatMenuAccelerator(0x25, false, false, true).c_str(), ==, "Alt+←");
-  g_assert_cmpstr(FormatMenuAccelerator(0x74, false, false, false).c_str(), ==, "F5");
-  g_assert_cmpstr(FormatMenuAccelerator('0', false, true, false).c_str(), ==, "Ctrl+0");
-  g_assert_cmpstr(FormatMenuAccelerator(0, false, true, false).c_str(), ==, "");
+  g_assert_true(FormatMenuAccelerator('C', false, true, false) == "Ctrl+C");
+  g_assert_true(FormatMenuAccelerator('I', true, true, false) == "Ctrl+Shift+I");
+  g_assert_true(FormatMenuAccelerator(0x25, false, false, true) == "Alt+←");
+  g_assert_true(FormatMenuAccelerator(0x74, false, false, false) == "F5");
+  g_assert_true(FormatMenuAccelerator('0', false, true, false) == "Ctrl+0");
+  g_assert_true(FormatMenuAccelerator(0, false, true, false) == "");
 
   const ContextMenuBounds normal = ComputeContextMenuBounds(100, 120, 220, 300, 1280, 720);
   g_assert_cmpint(normal.x, ==, 100);
