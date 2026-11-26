@@ -142,13 +142,16 @@ comp_ipc_append_outputs_array(JsonBuf *b, const CompServer *s)
         comp_ipc_jbuf_str(b, comp_hdr_policy_to_str(o->hdr_policy));
         comp_ipc_jbuf_puts(b, ",\"hdr_reason\":");
         comp_ipc_jbuf_str(b, o->hdr_reason ? o->hdr_reason : "");
+        float hdr_br = (o->hdr_brightness > 0.0f) ? o->hdr_brightness : 1.0f;
         comp_ipc_jbuf_printf(b,
                              ",\"hdr_max_nits\":%.1f,\"hdr_peak_nits\":%d,"
-                             "\"hdr_sdr_white_nits\":%.1f,\"hdr_headroom\":%.3f",
+                             "\"hdr_sdr_white_nits\":%.1f,\"hdr_headroom\":%.3f,"
+                             "\"hdr_brightness\":%.3f",
                              (double)o->hdr_effective_peak_nits,
                              (int)o->hdr_peak_nits,
                              (double)sdr_w,
-                             (double)headroom);
+                             (double)headroom,
+                             (double)hdr_br);
         comp_ipc_jbuf_puts(b, ",\"modes\":[");
         bool first_m = true;
         const struct wlr_output_mode *m;

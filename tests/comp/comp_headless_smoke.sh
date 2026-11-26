@@ -262,6 +262,15 @@ WLR_HEADLESS_OUTPUTS=2 NOTIFY_SOCKET="$NOTIFY_SOCK" KAJO_WATCHDOG_MS=40 KAJO_COM
     \"$KC\" msg get-outputs | grep -q '\"hdr_policy\":\"off\"[^}]*\"hdr_peak_nits\":0'
     ! \"$KC\" msg action set-output-hdr hdr=bogus
 
+    # HDR linear output brightness IPC
+    echo \"\$HDR_OUT\" | grep -q '\"hdr_brightness\":1.000'
+    \"$KC\" msg action set-output-brightness brightness=0.5 | grep -q '\"ok\"'
+    \"$KC\" msg get-outputs | grep -q '\"hdr_brightness\":0.500'
+    \"$KC\" msg action set-output-brightness brightness=1.0 | grep -q '\"ok\"'
+    \"$KC\" msg get-outputs | grep -q '\"hdr_brightness\":1.000'
+    ! \"$KC\" msg action set-output-brightness brightness=1.5
+    ! \"$KC\" msg action set-output-brightness brightness=-0.1
+
     # Allow watchdog timer (40ms) to fire at least once
     sleep 0.12
 "

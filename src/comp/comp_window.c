@@ -4,6 +4,7 @@
 #include "comp_window_private.h"
 
 #include "comp_log.h"
+#include "core/comp_fx_core.h"
 
 #include <stdlib.h>
 #include <string.h>
@@ -400,25 +401,31 @@ comp_window_focused_wants_tearing(const CompServer *s)
 }
 
 static bool
-surface_tree_is_hdr(struct wlr_surface *surface, int depth)
+surface_tree_is_hdr(struct wlr_surface *surface, float sdr_white_nits, int depth)
 {
     if (!surface || depth > 16)
         return false;
     const struct wlr_image_description_v1_data *data =
         wlr_surface_get_image_description_v1_data(surface);
-    if (data && surface->mapped &&
-        (data->tf_named == WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ ||
-         data->tf_named == WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR ||
-         (data->has_mastering_luminance && data->mastering_luminance.max > 250.0f))) {
-        return true;
+    if (data && surface->mapped) {
+        bool is_hdr_tf =
+            (data->tf_named == WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_ST2084_PQ ||
+             data->tf_named == WP_COLOR_MANAGER_V1_TRANSFER_FUNCTION_EXT_LINEAR);
+        if (comp_fx_image_desc_requests_hdr(is_hdr_tf,
+                                            data->has_mastering_luminance,
+                                            data->mastering_luminance.max,
+                                            data->max_cll, data->max_fall,
+                                            sdr_white_nits)) {
+            return true;
+        }
     }
     struct wlr_subsurface *sub;
     wl_list_for_each(sub, &surface->current.subsurfaces_below, current.link) {
-        if (sub->surface && surface_tree_is_hdr(sub->surface, depth + 1))
+        if (sub->surface && surface_tree_is_hdr(sub->surface, sdr_white_nits, depth + 1))
             return true;
     }
     wl_list_for_each(sub, &surface->current.subsurfaces_above, current.link) {
-        if (sub->surface && surface_tree_is_hdr(sub->surface, depth + 1))
+        if (sub->surface && surface_tree_is_hdr(sub->surface, sdr_white_nits, depth + 1))
             return true;
     }
     return false;
@@ -429,12 +436,15 @@ comp_window_has_visible_hdr_surface(const CompServer *s)
 {
     if (!s)
         return false;
+    float sdr_white = (s->config && s->config->fx.sdr_white_nits > 0.0)
+                          ? (float)s->config->fx.sdr_white_nits
+                          : 203.0f;
     const CompWindow *w;
     wl_list_for_each(w, &s->windows, link) {
         if (!w->mapped || !w->scene_tree || !w->scene_tree->node.enabled)
             continue;
         struct wlr_surface *surf = comp_window_get_surface(w);
-        if (surf && surface_tree_is_hdr(surf, 0))
+        if (surf && surface_tree_is_hdr(surf, sdr_white, 0))
             return true;
     }
     return false;

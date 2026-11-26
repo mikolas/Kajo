@@ -32,6 +32,12 @@ gboolean kajo_comp_ipc_toggle_floating(void);
 gboolean kajo_comp_ipc_reload_config(void);
 gboolean kajo_comp_ipc_quit(void);
 
+/* HDR output brightness helpers for active HDR10 panels */
+gboolean kajo_comp_ipc_get_primary_hdr_brightness(gboolean *out_hdr_active,
+                                                  gdouble  *out_brightness);
+gboolean kajo_comp_ipc_set_output_brightness(const gchar *output_name,
+                                             gdouble      brightness);
+
 #ifdef __cplusplus
 }
 #endif

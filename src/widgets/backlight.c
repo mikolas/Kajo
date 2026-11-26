@@ -167,24 +167,22 @@ backlight_refresh_ui(BacklightWidget *bl)
     bl->updating_ui = TRUE;
 
     /* 1. Display Brightness */
-    gboolean has_disp = (caps && caps->has_display_backlight);
+    gint pct = shell_hw_caps_get_display_brightness_pct(caps);
+    gboolean has_disp = (pct >= 0);
     if (bl->box_display)
         gtk_widget_set_visible(bl->box_display, has_disp);
 
     if (has_disp) {
-        gint pct = shell_hw_caps_get_display_brightness_pct(caps);
-        if (pct >= 0) {
-            g_autofree gchar *pct_str = g_strdup_printf("%d%%", pct);
-            gtk_label_set_text(GTK_LABEL(bl->panel_label), pct_str);
-            if (bl->lbl_display_pct)
-                gtk_label_set_text(GTK_LABEL(bl->lbl_display_pct), pct_str);
-            if (bl->status_badge) {
-                g_autofree gchar *badge = g_strdup_printf("[ %d%% ]", pct);
-                gtk_label_set_text(GTK_LABEL(bl->status_badge), badge);
-            }
-            if (bl->scale_display)
-                gtk_range_set_value(GTK_RANGE(bl->scale_display), (gdouble)pct);
+        g_autofree gchar *pct_str = g_strdup_printf("%d%%", pct);
+        gtk_label_set_text(GTK_LABEL(bl->panel_label), pct_str);
+        if (bl->lbl_display_pct)
+            gtk_label_set_text(GTK_LABEL(bl->lbl_display_pct), pct_str);
+        if (bl->status_badge) {
+            g_autofree gchar *badge = g_strdup_printf("[ %d%% ]", pct);
+            gtk_label_set_text(GTK_LABEL(bl->status_badge), badge);
         }
+        if (bl->scale_display)
+            gtk_range_set_value(GTK_RANGE(bl->scale_display), (gdouble)pct);
     }
 
     /* 2. Keyboard Backlight & Timeout */

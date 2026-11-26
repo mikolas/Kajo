@@ -27,6 +27,10 @@ This document is the authoritative engineering manual for AI coding assistants w
    - For visual checks use `scripts/ui-shot.sh` (isolated headless render). See `DEVELOPMENT.md` §6.
 7. **VERIFY UI CHANGES VISUALLY**:
    - A UI change is not done until it was rendered (`scripts/ui-shot.sh`) and compared with `docs/ui-gallery.html`. Compile + tests do not catch layout, CSS or contrast bugs.
+8. **NEVER EDIT `subprojects/wlroots` DIRECTLY**:
+   - The wlroots fork is maintained in the standalone sibling repository `/home/mikolas/src/wlroots` (`../wlroots`, branch `kajo/0.20.2`, SSH `origin`).
+   - `subprojects/wlroots` is a **read-only pinned git submodule** (`docs/spec_wlroots_fork.md` §1 F4–F5). **NEVER** modify files or make commits directly inside `subprojects/wlroots`.
+   - Workflow: make all edits and commits in `../wlroots`, then sync `subprojects/wlroots` to the committed ref (`git -C subprojects/wlroots fetch ../wlroots` for local testing, or `git -C subprojects/wlroots fetch --tags && git -C subprojects/wlroots checkout kajo-0.20.2-fx<N>` after pushing a tag from `../wlroots`). Always install Kajo with `meson install -C builddir --skip-subprojects` (`docs/spec_wlroots_fork.md` §4 K3).
 
 ---
 
@@ -143,6 +147,8 @@ Every standalone Kajo application (`kajo-settings`, `kajo-files`, future `kajo-p
    - Keep commits local until the user asks to open a PR or push.
    - When asked to open a PR: push the branch (`git push -u origin <branch>`) and run `gh pr create`.
    - When asked to merge: run `gh pr merge <num> --merge --delete-branch`, verify `master` is updated locally, and keep `README.md`, `DEVELOPMENT.md`, and `ROADMAP.md` synchronized with the merged state.
+3. **wlroots Fork Submodule (`../wlroots`)**:
+   - Keep `subprojects/wlroots` clean at a pinned commit/tag from `/home/mikolas/src/wlroots` (`../wlroots`). All `wlroots` edits, commits, and tags (`kajo-0.20.2-fx<N>`) happen in `../wlroots`, then `subprojects/wlroots` is updated to point at that commit (`docs/spec_wlroots_fork.md` §1 F4–F5).
 
 ---
 

@@ -295,6 +295,7 @@ typedef struct CompOutput {
     float                     hdr_effective_peak_nits;
     float                     hdr_min_luma_nits;
     float                     hdr_max_fall_nits;
+    float                     hdr_brightness;
     struct wl_event_source   *hdr_auto_timer;
     bool                      hdr_auto_timer_armed;
 } CompOutput;
@@ -345,6 +346,8 @@ bool comp_output_configure(CompServer *server, const char *output_name,
                            int vrr_policy, int hdr_policy, int hdr_peak_nits);
 bool comp_output_configure_hdr(CompServer *server, const char *output_name,
                                int hdr_policy, int hdr_peak_nits);
+bool comp_output_set_brightness(CompServer *server, const char *output_name,
+                                float brightness);
 void comp_output_update_vrr(CompServer *server);
 void comp_output_update_hdr_auto(CompServer *server);
 /* comp_window.c */

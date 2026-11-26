@@ -5,6 +5,7 @@
  * (the action is a struct variant and must be {"Action":{"ToggleWindowFloating":{}}}). */
 
 #include "../src/compositor/compositor.h"
+#include "../src/compositor/kajo_comp_ipc.h"
 
 #include <gio/gio.h>
 #include <gio/gunixsocketaddress.h>
@@ -85,6 +86,13 @@ handle_mock_connection(gpointer data)
     }
 
     g_async_queue_push(g_requests, g_strdup(line));
+
+    if (strstr(line, "\"cmd\":\"get-outputs\"") != NULL) {
+        const char *reply = "{\"ok\":{\"outputs\":[{\"name\":\"eDP-1\",\"active\":true,"
+                            "\"hdr_active\":true,\"hdr_brightness\":0.420}]}}\n";
+        g_output_stream_write_all(out, reply, strlen(reply), NULL, NULL, NULL);
+        return NULL;
+    }
 
     if (strstr(line, "\"cmd\":\"action\"") != NULL) {
         const char *reply = "{\"ok\":true}\n";
@@ -434,6 +442,31 @@ test_kajo_comp_actions_and_events(void)
     mock_niri_stop(m);
 }
 
+static void
+test_kajo_comp_hdr_brightness_ipc(void)
+{
+    MockNiri *m = mock_kajo_comp_start();
+    g_assert_true(kajo_comp_ipc_available());
+
+    gboolean hdr_active = FALSE;
+    gdouble hdr_br = 0.0;
+    g_assert_true(kajo_comp_ipc_get_primary_hdr_brightness(&hdr_active, &hdr_br));
+    g_assert_true(hdr_active);
+    g_assert_cmpfloat_with_epsilon(hdr_br, 0.42, 1e-4);
+
+    g_autofree char *req_get = g_async_queue_timeout_pop(g_requests, 2 * G_USEC_PER_SEC);
+    g_assert_nonnull(req_get);
+    g_assert_nonnull(strstr(req_get, "\"get-outputs\""));
+
+    g_assert_true(kajo_comp_ipc_set_output_brightness(NULL, 0.75));
+    g_autofree char *req_set = g_async_queue_timeout_pop(g_requests, 2 * G_USEC_PER_SEC);
+    g_assert_nonnull(req_set);
+    g_assert_nonnull(strstr(req_set, "\"set-output-brightness\""));
+    g_assert_nonnull(strstr(req_set, "0.75"));
+
+    mock_niri_stop(m);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -445,5 +478,6 @@ main(int argc, char **argv)
     g_test_add_func("/niri/action/rejection-is-logged", test_send_action_logs_niri_rejection);
     g_test_add_func("/niri/events/stream-parsing", test_event_stream_parsing);
     g_test_add_func("/kajo-comp/ipc/actions-and-events", test_kajo_comp_actions_and_events);
+    g_test_add_func("/kajo-comp/ipc/hdr-brightness", test_kajo_comp_hdr_brightness_ipc);
     return g_test_run();
 }

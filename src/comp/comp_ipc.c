@@ -422,6 +422,7 @@ typedef enum {
     IPC_ACT_SET_OUTPUT_TRANSFORM,
     IPC_ACT_SET_OUTPUT_CONFIG,
     IPC_ACT_SET_OUTPUT_HDR,
+    IPC_ACT_SET_OUTPUT_BRIGHTNESS,
     IPC_ACT_SCREENSHOT_CONFIRM,
     IPC_ACT_SCREENSHOT_CANCEL,
     IPC_ACT_POWER_ON_MONITORS,
@@ -438,6 +439,7 @@ static const struct { const char *name; CompIpcExtraAction act; } k_ipc_extra_ac
     { COMP_IPC_ACT_SET_OUTPUT_TRANSFORM,   IPC_ACT_SET_OUTPUT_TRANSFORM },
     { COMP_IPC_ACT_SET_OUTPUT_CONFIG,      IPC_ACT_SET_OUTPUT_CONFIG },
     { COMP_IPC_ACT_SET_OUTPUT_HDR,         IPC_ACT_SET_OUTPUT_HDR },
+    { COMP_IPC_ACT_SET_OUTPUT_BRIGHTNESS,  IPC_ACT_SET_OUTPUT_BRIGHTNESS },
     { COMP_IPC_ACT_SCREENSHOT_CONFIRM,     IPC_ACT_SCREENSHOT_CONFIRM },
     { COMP_IPC_ACT_SCREENSHOT_CANCEL,      IPC_ACT_SCREENSHOT_CANCEL },
     { COMP_IPC_ACT_POWER_ON_MONITORS,      IPC_ACT_POWER_ON_MONITORS },
@@ -733,6 +735,18 @@ handle_action_cmd(CompIpcClient *c, const JVal *req)
         if (!comp_output_configure_hdr(s, jobj_str(req, COMP_IPC_KEY_OUTPUT),
                                        hdr_str ? (int)hdr_val : -1, hdr_peak))
             client_reply_error(c, "failed to configure output HDR");
+        else
+            client_reply_ok(c);
+        return;
+    }
+    case IPC_ACT_SET_OUTPUT_BRIGHTNESS: {
+        double br = 1.0;
+        if (!jobj_num(req, COMP_KEY_BRIGHTNESS, &br) || !isfinite(br) || br < 0.0 || br > 1.0) {
+            client_reply_error(c, "set-output-brightness requires numeric 'brightness' in 0.0..1.0");
+            return;
+        }
+        if (!comp_output_set_brightness(s, jobj_str(req, COMP_IPC_KEY_OUTPUT), (float)br))
+            client_reply_error(c, "failed to configure output brightness");
         else
             client_reply_ok(c);
         return;

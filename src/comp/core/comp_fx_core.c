@@ -1316,3 +1316,28 @@ comp_fx_tonemap_fp16_to_argb8888(const uint16_t *fp16_abgr,
         dst[i] = (ua << 24) | (ur << 16) | (ug << 8) | ub;
     }
 }
+
+bool
+comp_fx_image_desc_requests_hdr(bool is_hdr_tf,
+                                bool has_mastering_luminance,
+                                float mastering_max_nits,
+                                uint32_t max_cll,
+                                uint32_t max_fall,
+                                float sdr_white_nits)
+{
+    float sdr_ceil = (sdr_white_nits > 250.0f) ? sdr_white_nits : 250.0f;
+    uint32_t sdr_ceil_u = (uint32_t)lroundf(sdr_ceil);
+
+    if (max_cll > sdr_ceil_u || max_fall > sdr_ceil_u)
+        return true;
+    if (has_mastering_luminance && mastering_max_nits > sdr_ceil)
+        return true;
+    if (is_hdr_tf) {
+        /* Clients like Chromium carry plain SDR pages in an ST2084_PQ container
+         * with max_cll/max_fall capped at SDR white (~203 cd/m^2). Dedicated HDR
+         * players (e.g. mpv) set ST2084_PQ/EXT_LINEAR with unset (0) caps. */
+        bool capped_to_sdr = (max_cll > 0 || max_fall > 0 || has_mastering_luminance);
+        return !capped_to_sdr;
+    }
+    return false;
+}

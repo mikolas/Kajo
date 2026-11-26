@@ -1,5 +1,7 @@
 #include "page_niri_private.h"
 
+#include <math.h>
+
 static const char *const NIRI_NS_IDS[N_NIRI_NAMESPACES] = {
     "kajo",
     "kajo-launcher",
@@ -453,14 +455,16 @@ build_animations_kdl_block(SettingsPageNiri *self)
             self->overview_duration_ms > 0 ? self->overview_duration_ms : 260,
             PAGE_NIRI_OVERVIEW_CURVE_NAMES[oc]);
     } else {
-        char zeta_buf[32], stiff_buf[32];
+        char zeta_buf[32];
         g_ascii_formatd(zeta_buf, sizeof(zeta_buf), "%.2f", self->overview_damping_ratio);
-        g_ascii_formatd(stiff_buf, sizeof(stiff_buf), "%.1f", self->overview_stiffness);
+        int stiff_i = (int)llround(self->overview_stiffness);
+        if (stiff_i < 1)
+            stiff_i = 1;
         g_string_append_printf(s,
             "    overview-open-close {\n"
-            "        spring damping-ratio=%s stiffness=%s epsilon=0.0005\n"
+            "        spring damping-ratio=%s stiffness=%d epsilon=0.0005\n"
             "    }\n",
-            zeta_buf, stiff_buf);
+            zeta_buf, stiff_i);
     }
     g_string_append(s, "}\n");
 

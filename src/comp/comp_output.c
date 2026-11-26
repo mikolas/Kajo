@@ -1141,6 +1141,39 @@ comp_output_configure_hdr(CompServer *s, const char *output_name,
                                  hdr_policy, hdr_peak_nits);
 }
 
+bool
+comp_output_set_brightness(CompServer *s, const char *output_name, float brightness)
+{
+    if (!s || wl_list_empty(&s->outputs))
+        return false;
+    if (!isfinite(brightness) || brightness < 0.0f || brightness > 1.0f)
+        return false;
+
+    CompOutput *target = NULL;
+    if (!output_name || !*output_name) {
+        target = select_primary_output(s);
+    } else {
+        CompOutput *o;
+        wl_list_for_each(o, &s->outputs, link) {
+            if (o->wlr_output && o->wlr_output->name &&
+                strcasecmp(o->wlr_output->name, output_name) == 0) {
+                target = o;
+                break;
+            }
+        }
+    }
+    if (!target || !target->wlr_output)
+        return false;
+
+    float b = brightness < 0.05f ? 0.05f : (brightness > 1.0f ? 1.0f : brightness);
+    target->hdr_brightness = b;
+    (void)comp_fx_output_prepare(target, comp_now_sec());
+    if (target->wlr_output->enabled)
+        wlr_output_schedule_frame(target->wlr_output);
+    comp_ipc_emit_outputs(s);
+    return true;
+}
+
 void
 comp_output_apply_config(CompServer *s)
 {
@@ -1224,6 +1257,7 @@ handle_new_output(void *owner, void *data)
     talloc_set_name_const(o, "CompOutput");
     o->server = s;
     o->wlr_output = wo;
+    o->hdr_brightness = 1.0f;
     /* Insert at tail to preserve connector arrival order (OUT2 & §6.5.3) */
     wl_list_insert(s->outputs.prev, &o->link);
     talloc_set_destructor(o, output_destructor);
