@@ -434,6 +434,111 @@
     .amiga-window.w-1-2.half-show-insp .inspector-pane { width: 100%; border-left: none; }
     .amiga-window.w-1-2 .debug-3col { grid-template-columns: 1fr; }
     .amiga-window.w-1-2 #profile-select { display: none; }
+
+    /* Project Menu Popover */
+    .proj-menu-wrap { position: relative; display: inline-flex; }
+    .proj-popover {
+      position: absolute; top: 26px; left: 0; width: 250px; z-index: 150;
+      background: var(--surface-3); border: 1px solid var(--metro-accent);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.85); padding: 4px 0;
+    }
+    .proj-item {
+      display: flex; align-items: center; justify-content: space-between; width: 100%;
+      padding: 5px 10px; background: transparent; border: none; text-align: left;
+      font-size: 10.5px; color: var(--text-soft); cursor: pointer;
+    }
+    .proj-item:hover { background: rgba(var(--metro-accent-rgb), 0.22); color: #fff; }
+    .proj-kbd { font-size: 9.5px; color: var(--text-dim); }
+    .proj-sep { height: 1px; background: var(--border-struct); margin: 4px 0; }
+
+    /* Welcome / Start Screen */
+    .welcome-view {
+      flex: 1; min-height: 0; overflow-y: auto; background: var(--surface-0); padding: 24px 32px;
+      display: flex; justify-content: center; align-items: flex-start;
+    }
+    .welcome-grid {
+      width: 100%; max-width: 980px; display: grid; grid-template-columns: 1.15fr 1fr; gap: 18px;
+    }
+    .welcome-hero {
+      grid-column: 1 / -1; background: var(--surface-2); border: 1px solid var(--border-struct);
+      border-left: 4px solid var(--metro-accent); padding: 14px 18px;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .welcome-title { font-size: 15px; font-weight: 800; letter-spacing: 0.8px; color: #fff; }
+    .welcome-sub { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+    .welcome-act {
+      width: 100%; padding: 9px 12px; background: var(--surface-2); border: 1px solid var(--border-struct);
+      border-left: 3px solid var(--metro-accent); display: flex; align-items: center; justify-content: space-between;
+      cursor: pointer; text-align: left;
+    }
+    .welcome-act:hover { background: var(--surface-hover); border-color: var(--metro-accent); }
+    .welcome-act.primary { background: rgba(var(--metro-accent-rgb), 0.16); border-color: var(--metro-accent); }
+    .recent-row {
+      display: flex; align-items: center; justify-content: space-between; padding: 6px 8px;
+      background: var(--surface-0); border: 1px solid var(--border-subtle); cursor: pointer; font-size: 10.5px;
+    }
+    .recent-row:hover { border-color: var(--metro-accent); background: var(--surface-2); }
+
+    /* Center-Pane Project Setup ([kajo-amiga.toml]) */
+    .setup-view { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface-0); overflow: hidden; }
+    .setup-topbar {
+      flex-shrink: 0; padding: 6px 10px; background: var(--surface-2); border-bottom: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+    }
+    .setup-tabs { display: flex; background: var(--surface-1); border-bottom: 1px solid var(--border-struct); flex-shrink: 0; }
+    .setup-tab {
+      flex: 1; height: 28px; padding: 0 8px; background: transparent; border: none; border-right: 1px solid var(--border-struct);
+      border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 10px; font-weight: 700; cursor: pointer;
+    }
+    .setup-tab:last-child { border-right: none; }
+    .setup-tab:hover { background: var(--surface-hover); color: #fff; }
+    .setup-tab.active { background: var(--surface-0); color: #fff; border-bottom-color: var(--metro-accent); }
+    .setup-body { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+    .setup-split { display: grid; grid-template-columns: 185px 1fr; gap: 10px; }
+    .setup-list-item {
+      padding: 6px 8px; background: var(--surface-0); border: 1px solid var(--border-subtle);
+      border-left: 3px solid transparent; font-size: 10.5px; cursor: pointer;
+      display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    }
+    .setup-list-item:hover { background: var(--surface-2); }
+    .setup-list-item.active { border-left-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), 0.16); color: #fff; }
+    .form-grid { display: grid; grid-template-columns: 112px 1fr; gap: 6px 10px; align-items: center; font-size: 10.5px; }
+    .form-grid .mini-input { width: 100%; }
+    .form-lbl { color: var(--text-secondary); font-weight: 700; font-size: 10px; }
+    .raw-toml {
+      flex: 1; min-height: 0; overflow: auto; padding: 10px 14px; font-size: 11px; line-height: 1.5;
+      color: var(--text-soft); white-space: pre; background: #0c0c0c;
+    }
+
+    /* New Project Wizard Modal */
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.72); z-index: 200;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+    }
+    .modal-card {
+      width: 680px; max-width: 100%; max-height: calc(100vh - 48px);
+      background: var(--surface-2); border: 1px solid var(--metro-accent);
+      box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9); display: flex; flex-direction: column;
+    }
+    .modal-hdr {
+      height: 32px; background: var(--surface-3); border-bottom: 1px solid var(--border-struct);
+      padding: 0 10px; display: flex; align-items: center; justify-content: space-between;
+      font-size: 10.5px; font-weight: 800; letter-spacing: 0.6px;
+    }
+    .modal-body { padding: 12px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+    .tpl-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .tpl-card {
+      background: var(--surface-0); border: 1px solid var(--border-struct); border-left: 3px solid transparent;
+      padding: 8px 10px; cursor: pointer; text-align: left; display: flex; flex-direction: column; gap: 3px;
+    }
+    .tpl-card:hover { border-color: var(--metro-accent); background: var(--surface-2); }
+    .tpl-card.active { border-color: var(--metro-accent); border-left-color: var(--metro-accent); background: rgba(var(--metro-accent-rgb), 0.16); }
+    .tpl-name { font-size: 11px; font-weight: 700; color: #fff; }
+    .tpl-desc { font-size: 10px; color: var(--text-secondary); }
+    .modal-ftr {
+      padding: 8px 14px; background: var(--surface-3); border-top: 1px solid var(--border-struct);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -441,11 +546,14 @@
   <!-- Outside Demo Switcher Bar -->
   <div class="demo-bar">
     <div class="demo-group">
-      <span class="demo-lbl">Session State</span>
-      <button class="demo-btn" data-st="idle" onclick="setSessionState('idle', this)">Disconnected / Setup</button>
-      <button class="demo-btn" data-st="running" onclick="setSessionState('running', this)">Running (50 FPS)</button>
-      <button class="demo-btn active" data-st="paused" onclick="setSessionState('paused', this)">Project · Paused</button>
-      <button class="demo-btn" data-st="attach" onclick="setSessionState('attach', this)">Attach Mode (No Source)</button>
+      <span class="demo-lbl">View / State</span>
+      <button class="demo-btn" data-st="welcome" onclick="setSessionState('welcome', this)">Welcome</button>
+      <button class="demo-btn" data-st="idle" onclick="setSessionState('idle', this)">Disconnected</button>
+      <button class="demo-btn" data-st="running" onclick="setSessionState('running', this)">Running</button>
+      <button class="demo-btn active" data-st="paused" onclick="setSessionState('paused', this)">Paused</button>
+      <button class="demo-btn" data-st="attach" onclick="setSessionState('attach', this)">Attach</button>
+      <button class="demo-btn" id="demo-btn-setup" onclick="setSessionState('paused', findStBtn('paused')); setCenterView('setup');">⚙ Project Setup</button>
+      <button class="demo-btn" id="demo-btn-new" onclick="openNewProjectModal()">+ New Project</button>
     </div>
     <div class="demo-group">
       <span class="demo-lbl">Niri Width</span>
@@ -471,27 +579,39 @@
       <header class="amiga-header">
         <div class="hdr-left">
           <div class="hdr-brand"><span class="gem">◈</span> KAJO AMIGA</div>
-          <button id="btn-tree" class="hdr-pill active" onclick="toggleTree()">🌲 TREE</button>
+          <div class="proj-menu-wrap">
+            <button id="btn-proj-menu" class="hdr-pill" onclick="toggleProjMenu(event)" title="Project Creation, Switcher &amp; Setup">📁 PROJ ▾</button>
+            <div id="proj-popover" class="proj-popover hidden">
+              <button class="proj-item" onclick="closeProjMenu();openNewProjectModal()"><span>+ New Project Wizard…</span><span class="proj-kbd">Ctrl+Shift+N</span></button>
+              <button class="proj-item" onclick="closeProjMenu();setSessionState('welcome',findStBtn('welcome'))"><span>📂 Open / Recent Projects…</span><span class="proj-kbd">Ctrl+O</span></button>
+              <button class="proj-item" onclick="closeProjMenu();setSessionState('paused',findStBtn('paused'));setCenterView('setup')"><span>⚙ Project Setup (kajo-amiga.toml)</span><span class="proj-kbd">Ctrl+Shift+P</span></button>
+              <button class="proj-item" onclick="closeProjMenu();exportMakefileToast()"><span>📄 Export GNU Makefile</span><span class="proj-kbd"></span></button>
+              <div class="proj-sep"></div>
+              <button class="proj-item" onclick="closeProjMenu();setSessionState('attach',findStBtn('attach'))"><span>🔌 Attach to Amiberry :2345</span><span class="proj-kbd">Ctrl+Shift+A</span></button>
+              <button class="proj-item" onclick="closeProjMenu();setSessionState('welcome',findStBtn('welcome'))"><span>🏠 Welcome / Start Screen</span><span class="proj-kbd"></span></button>
+            </div>
+          </div>
+          <button id="btn-tree" class="hdr-pill active" onclick="toggleTree()" title="Toggle Left Sidebar (Space e)">🌲</button>
           <button id="btn-cpu" class="hdr-pill active" onclick="toggleCpu()">⚙ CPU</button>
           <div id="half-toggle" class="seg-group hidden" title="Niri <900px Split View Switcher">
             <button id="half-ed-btn" class="seg-btn active" onclick="setHalfPane('editor')">📝 CODE</button>
             <button id="half-in-btn" class="seg-btn" onclick="setHalfPane('insp')">🔧 INSPECTOR</button>
           </div>
-          <select id="target-select" class="hdr-select" onchange="changeTarget(this.value)" title="Active .kajo-amiga.toml target">
-            <option value="bobs">seeandseedee ▸ bobs.asm</option>
-            <option value="gouraud">seeandseedee ▸ gouraud.asm</option>
-            <option value="cube">seeandseedee ▸ cube.asm</option>
-            <option value="copper_test">seeandseedee ▸ copper_test.asm</option>
+          <select id="target-select" class="hdr-select" style="max-width:154px;" onchange="changeTarget(this.value)" title="Active [[target]] in kajo-amiga.toml">
+            <option value="bobs">bobs (DH0:)</option>
+            <option value="demo_disk">demo_disk (ADFlib)</option>
+            <option value="gouraud">gouraud (DH0:)</option>
+            <option value="cube">cube (DH0:)</option>
           </select>
           <button id="boot-mode-btn" class="hdr-pill" onclick="toggleBootMode()" title="Packaging Target Mode (DH0 Directory vs in-process ADFlib .ADF)">DH0:</button>
         </div>
         <div class="hdr-center">
-          <select id="profile-select" class="hdr-select" title="Active Hardware Run Profile ([[profile]])">
-            <option value="a500_ocs">A500 · OCS · 512K · PAL</option>
-            <option value="a500p_ecs">A500+ · ECS · 1M · PAL</option>
-            <option value="a1200_aga">A1200 · 020 · AGA · 2M</option>
+          <select id="profile-select" class="hdr-select" style="max-width:152px;" title="Active Hardware Run Profile ([[profile]])">
+            <option value="a500_ocs">A500 OCS · 512K</option>
+            <option value="a500p_ecs">A500+ ECS · 1M</option>
+            <option value="a1200_aga">A1200 020 · AGA</option>
           </select>
-          <span class="metro-badge warn" id="rsp-pill">AMIBERRY :2345 ● PAUSED @ L285</span>
+          <span class="metro-badge warn" id="rsp-pill">AMIBERRY :2345 ● PAUSED</span>
         </div>
         <div class="hdr-right">
           <button id="btn-build" class="hdr-btn" onclick="triggerBuildLog()">▶ BUILD</button>
@@ -543,23 +663,91 @@
         <aside id="left-sidebar" class="left-sidebar">
           <div class="pane-hdr">
             <span id="left-hdr-lbl">Workspace &amp; Hunks</span>
-            <span style="display:flex;align-items:center;gap:4px;">
-              <button class="w-fmt" onclick="openProjectSetupPreview()" title="Project Setup &amp; Targets (kajo-amiga.toml)">SETUP</button>
-              <span class="metro-badge dim" id="left-hdr-badge">ELF→HUNK</span>
+            <span style="display:flex;align-items:center;gap:3px;">
+              <button class="w-fmt" onclick="openNewProjectModal()" title="New Project Wizard (Ctrl+Shift+N)">+NEW</button>
+              <button class="w-fmt" onclick="setSessionState('paused',findStBtn('paused'));setCenterView('setup')" title="Project Setup (kajo-amiga.toml · Ctrl+Shift+P)">SETUP</button>
             </span>
           </div>
           <div class="tree-scroll" id="left-tree-body"></div>
           <div class="hunk-panel" id="left-hunk-panel"></div>
         </aside>
 
-        <!-- Center Source / Motorola Disassembly Pane -->
-        <main class="editor-pane">
+        <!-- Welcome / Start Screen (Shown when no workspace is open) -->
+        <section id="welcome-view" class="welcome-view hidden">
+          <div class="welcome-grid">
+            <div class="welcome-hero">
+              <div>
+                <div class="welcome-title"><span style="color:var(--metro-accent);">◈</span> KAJO AMIGA // 68000 · C · OCS–AGA IDE</div>
+                <div class="welcome-sub">Self-contained Option D builder (<span style="color:var(--metro-telemetry);">kajo-amiga.toml</span>), mixed C + ASM, in-process ADFlib packager &amp; live Amiberry 8.5.0 RSP inspector.</div>
+              </div>
+              <button class="hdr-btn" onclick="openSettingsPreview()" title="kajo-settings --page amiga">⚙ SUITE SETTINGS</button>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <button class="welcome-act primary" onclick="openNewProjectModal()">
+                <div><div style="font-weight:800;font-size:11.5px;color:#fff;">+ NEW AMIGA PROJECT</div><div style="font-size:10px;color:var(--text-secondary);">68k ASM, Bare-Metal OCS, Mixed C+ASM, or Bootable ADF</div></div>
+                <span class="metro-badge">Ctrl+Shift+N</span>
+              </button>
+              <button class="welcome-act" onclick="setSessionState('paused',findStBtn('paused'))">
+                <div><div style="font-weight:800;font-size:11.5px;color:#fff;">📂 OPEN WORKSPACE / IMPORT MAKEFILE</div><div style="font-size:10px;color:var(--text-secondary);">Load kajo-amiga.toml or wrap Makefile project (Option D)</div></div>
+                <span class="metro-badge dim">Ctrl+O</span>
+              </button>
+              <button class="welcome-act" onclick="setSessionState('attach',findStBtn('attach'))">
+                <div><div style="font-weight:800;font-size:11.5px;color:#fff;">🔌 ATTACH TO RUNNING AMIBERRY (:2345)</div><div style="font-size:10px;color:var(--text-secondary);">Zero-source Motorola disasm, Bitplanes, Copper &amp; Memory Hex</div></div>
+                <span class="metro-badge mag">Ctrl+Shift+A</span>
+              </button>
+              <div class="card" style="margin-top:2px;">
+                <div class="card-hdr"><span class="card-title">Recent Projects</span><span class="metro-badge dim">3</span></div>
+                <div class="recent-row" onclick="setSessionState('paused',findStBtn('paused'))">
+                  <span><strong>seeandseedee</strong> <span style="color:var(--text-dim);">~/src/seeandseedee · A500 OCS</span></span>
+                  <span class="metro-badge">ASM · DH0:</span>
+                </div>
+                <div class="recent-row" onclick="setSessionState('paused',findStBtn('paused'));setCenterView('setup')">
+                  <span><strong>tracker_hud_c</strong> <span style="color:var(--text-dim);">~/src/amiga/tracker_hud · A1200</span></span>
+                  <span class="metro-badge live">C+ASM · elf2hunk</span>
+                </div>
+                <div class="recent-row" onclick="setSessionState('paused',findStBtn('paused'));setCenterView('setup');switchSetupTab('targets',null)">
+                  <span><strong>copper_trackmo</strong> <span style="color:var(--text-dim);">~/src/amiga/trackmo · A500</span></span>
+                  <span class="metro-badge warn">ADFlib (.adf)</span>
+                </div>
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <div class="card accent-left">
+                <div class="card-hdr"><span class="card-title">System &amp; Toolchain Readiness</span><span class="prov-pill prov-live">DETECTED</span></div>
+                <div class="kv-grid">
+                  <div class="kv-cell"><span class="kv-k">amiberry (gdbserver)</span><span class="kv-v" style="color:#4cd964;">✓ 8.5.0</span></div>
+                  <div class="kv-cell"><span class="kv-k">adflib (in-process)</span><span class="kv-v" style="color:#4cd964;">✓ 0.10.7</span></div>
+                  <div class="kv-cell"><span class="kv-k">m68k-lsp-server</span><span class="kv-v" style="color:#4cd964;">✓ /usr/bin</span></div>
+                  <div class="kv-cell"><span class="kv-k">clangd (C LSP)</span><span class="kv-v" style="color:#4cd964;">✓ /usr/bin</span></div>
+                  <div class="kv-cell"><span class="kv-k">vasmm68k_mot</span><span class="kv-v" style="color:#ffb84d;">⚠ extra_bin_paths</span></div>
+                  <div class="kv-cell"><span class="kv-k">m68k-amiga-elf-gcc</span><span class="kv-v" style="color:#ffb84d;">⚠ extra_bin_paths</span></div>
+                  <div class="kv-cell"><span class="kv-k">elf2hunk / ld</span><span class="kv-v" style="color:#ffb84d;">⚠ extra_bin_paths</span></div>
+                  <div class="kv-cell"><span class="kv-k">Kickstart 1.3 / 3.1</span><span class="kv-v" style="color:var(--metro-telemetry);">kajo-settings</span></div>
+                </div>
+                <div class="probe-bar"><span>Paths configured in ~/.config/kajo/amiga.toml</span><span style="cursor:pointer;text-decoration:underline;" onclick="openSettingsPreview()">Edit extra_bin_paths →</span></div>
+              </div>
+              <div class="card">
+                <div class="card-hdr"><span class="card-title">Hardware Profiles (amiga.toml)</span><span class="metro-badge dim">4 PRESETS</span></div>
+                <div class="kv-grid">
+                  <div class="kv-cell"><span class="kv-k">a500_ocs</span><span class="kv-v">68000 · 512K · PAL</span></div>
+                  <div class="kv-cell"><span class="kv-k">a500p_ecs</span><span class="kv-v">68000 · 1M · K2.04</span></div>
+                  <div class="kv-cell"><span class="kv-k">a1200_aga</span><span class="kv-v">68020 · 2M · K3.1</span></div>
+                  <div class="kv-cell"><span class="kv-k">a1200_fast</span><span class="kv-v">68020 · +8M FAST</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- Center Source / Motorola Disassembly / Project Setup Pane -->
+        <main id="editor-pane" class="editor-pane">
           <div class="tab-ribbon">
             <div class="tab-list" id="center-tabs"></div>
             <div style="display:flex;align-items:center;gap:6px;">
               <div class="seg-group" title="Center View Mode">
                 <button id="btn-view-src" class="seg-btn active" onclick="setCenterView('source')">SOURCE</button>
                 <button id="btn-view-dis" class="seg-btn" onclick="setCenterView('disasm')">DISASM (M68K)</button>
+                <button id="btn-view-set" class="seg-btn" onclick="setCenterView('setup')">⚙ SETUP</button>
               </div>
               <span class="metro-badge dim" id="disasm-src-badge" style="font-size:9px;">m68k · K:HRM</span>
             </div>
@@ -586,6 +774,32 @@
           </div>
 
           <div class="code-scroll" id="code-view"></div>
+
+          <!-- Center-Pane Project Setup View ([kajo-amiga.toml]) -->
+          <div id="project-setup-view" class="setup-view hidden">
+            <div class="setup-topbar">
+              <div style="display:flex;align-items:center;gap:8px;">
+                <strong style="font-size:11px;color:#fff;">kajo-amiga.toml — seeandseedee</strong>
+                <span class="prov-pill prov-live">OPTION D: NATIVE DAG</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:5px;">
+                <div class="seg-group">
+                  <button id="setup-mode-form" class="seg-btn active" onclick="setSetupMode('form')">FORM</button>
+                  <button id="setup-mode-raw" class="seg-btn" onclick="setSetupMode('raw')">RAW TOML</button>
+                </div>
+                <button class="tool-btn" onclick="exportMakefileToast()">📄 EXPORT MAKEFILE</button>
+                <button class="hdr-btn primary" onclick="saveProjectSetupToast()">💾 SAVE</button>
+              </div>
+            </div>
+            <div id="setup-tabs-bar" class="setup-tabs">
+              <button class="setup-tab active" data-stab="targets" onclick="switchSetupTab('targets', this)">📦 TARGETS &amp; PACKAGING</button>
+              <button class="setup-tab" data-stab="profiles" onclick="switchSetupTab('profiles', this)">🖥 HARDWARE PROFILES</button>
+              <button class="setup-tab" data-stab="assets" onclick="switchSetupTab('assets', this)">🎨 ASSETS &amp; HOOKS</button>
+              <button class="setup-tab" data-stab="debug" onclick="switchSetupTab('debug', this)">🐞 BUILD, C LSP &amp; DEBUG</button>
+            </div>
+            <div id="setup-form-area" class="setup-body"></div>
+            <div id="setup-raw-area" class="raw-toml hidden"></div>
+          </div>
         </main>
 
         <!-- Right Hardware Inspector -->
@@ -929,6 +1143,81 @@
       </footer>
     </div>
   </div>
+
+  <!-- New Project Wizard Modal (Ctrl+Shift+N) -->
+  <div id="new-project-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeNewProjectModal()">
+    <div class="modal-card">
+      <div class="modal-hdr">
+        <span><span style="color:var(--metro-accent);">◈</span> NEW AMIGA PROJECT WIZARD (Ctrl+Shift+N)</span>
+        <button class="hdr-btn close" onclick="closeNewProjectModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:grid;grid-template-columns:1fr 1.3fr;gap:8px;">
+          <div>
+            <div class="form-lbl" style="margin-bottom:3px;">PROJECT NAME</div>
+            <input id="new-proj-name" class="mini-input" style="width:100%;" value="amiga_bobs_demo" />
+          </div>
+          <div>
+            <div class="form-lbl" style="margin-bottom:3px;">WORKSPACE DIRECTORY</div>
+            <input class="mini-input" style="width:100%;" value="/home/mikolas/src/amiga_bobs_demo" />
+          </div>
+        </div>
+
+        <div>
+          <div class="form-lbl" style="margin-bottom:5px;">STARTER TEMPLATE</div>
+          <div class="tpl-grid">
+            <button class="tpl-card active" onclick="selectTpl('asm_os', this)">
+              <span class="tpl-name">AmigaDOS 68k ASM (DH0:)</span>
+              <span class="tpl-desc">vasmm68k_mot + elf2hunk · OS-friendly startup &amp; Trap 86</span>
+            </button>
+            <button class="tpl-card" onclick="selectTpl('bare_ocs', this)">
+              <span class="tpl-name">Bare-Metal OCS/ECS Demo</span>
+              <span class="tpl-desc">System takeover, custom Copperlist &amp; 2 BPL double buffer</span>
+            </button>
+            <button class="tpl-card" onclick="selectTpl('adf_flop', this)">
+              <span class="tpl-name">Bootable Floppy .ADF (ADFlib)</span>
+              <span class="tpl-desc">In-process OFS/FFS bootblock disk or raw trackloader .adf</span>
+            </button>
+            <button class="tpl-card" onclick="selectTpl('mixed_c', this)">
+              <span class="tpl-name">Mixed C + 68k ASM (gcc + vasm)</span>
+              <span class="tpl-desc">m68k-amiga-elf-gcc + clangd compile_commands + DWARF3 lines</span>
+            </button>
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div class="form-lbl" style="margin-bottom:4px;">DEFAULT HARDWARE PROFILE</div>
+            <div class="seg-group">
+              <button class="seg-btn active" onclick="pickModalSeg(this)">A500 OCS (68000)</button>
+              <button class="seg-btn" onclick="pickModalSeg(this)">A500+ ECS (1M)</button>
+              <button class="seg-btn" onclick="pickModalSeg(this)">A1200 AGA (020)</button>
+            </div>
+          </div>
+          <div>
+            <div class="form-lbl" style="margin-bottom:4px;">PACKAGING TARGET</div>
+            <div class="seg-group">
+              <button class="seg-btn active" onclick="pickModalSeg(this)">DH0: os_exe</button>
+              <button class="seg-btn" onclick="pickModalSeg(this)">ADF DOS (ADFlib)</button>
+              <button class="seg-btn" onclick="pickModalSeg(this)">ADF Raw</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="probe-bar">
+          <span>Tools: ✓ amiberry 8.5.0 · ✓ adflib 0.10.7 · ✓ m68k-lsp · <span style="color:#ffb84d;">⚠ vasm/gcc via extra_bin_paths</span></span>
+          <span style="color:#fff;">Creates kajo-amiga.toml + src/</span>
+        </div>
+      </div>
+      <div class="modal-ftr">
+        <span style="font-size:10px;color:var(--text-secondary);">Option D native DAG builder · C &amp; ASM ready</span>
+        <div style="display:flex;gap:6px;">
+          <button class="tool-btn" onclick="closeNewProjectModal()">CANCEL</button>
+          <button class="hdr-btn primary" onclick="createNewProject()">✓ CREATE &amp; OPEN</button>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -988,28 +1277,38 @@
     document.querySelectorAll('.demo-btn[data-st]').forEach(b => b.classList.remove('active'));
     if (btn) btn.classList.add('active');
 
+    const isWelcome = st === 'welcome';
     const isIdle = st === 'idle';
     const isRun = st === 'running';
     const isAttach = st === 'attach';
-    centerView = isAttach ? 'disasm' : 'source';
+    if (isAttach) centerView = 'disasm';
+    else if (centerView !== 'setup' && centerView !== 'disasm') centerView = 'source';
 
-    document.getElementById('target-select').classList.toggle('hidden', isAttach);
-    document.getElementById('boot-mode-btn').classList.toggle('hidden', isAttach);
-    document.getElementById('btn-build').classList.toggle('hidden', isAttach);
-    document.getElementById('btn-run').classList.toggle('hidden', isAttach || isRun);
-    document.getElementById('btn-debug').classList.toggle('hidden', isAttach || isRun || st === 'paused');
+    document.getElementById('welcome-view').classList.toggle('hidden', !isWelcome);
+    document.getElementById('left-sidebar').classList.toggle('hidden', isWelcome);
+    document.getElementById('editor-pane').classList.toggle('hidden', isWelcome);
+    document.getElementById('inspector-pane').classList.toggle('hidden', isWelcome);
+    document.getElementById('bottom-drawer').classList.toggle('hidden', isWelcome);
+
+    document.getElementById('target-select').classList.toggle('hidden', isAttach || isWelcome);
+    document.getElementById('boot-mode-btn').classList.toggle('hidden', isAttach || isWelcome);
+    document.getElementById('btn-build').classList.toggle('hidden', isAttach || isWelcome);
+    document.getElementById('btn-run').classList.toggle('hidden', isAttach || isRun || isWelcome);
+    document.getElementById('btn-debug').classList.toggle('hidden', isAttach || isRun || st === 'paused' || isWelcome);
     document.getElementById('btn-pause').classList.toggle('hidden', !isRun);
     document.getElementById('btn-snap').classList.toggle('hidden', !isRun);
-    document.getElementById('btn-attach').classList.toggle('hidden', !isIdle);
-    document.getElementById('btn-detach').classList.toggle('hidden', isIdle);
-    document.getElementById('btn-stop').classList.toggle('hidden', isIdle || isAttach);
+    document.getElementById('btn-attach').classList.toggle('hidden', !(isIdle || isWelcome));
+    document.getElementById('btn-detach').classList.toggle('hidden', isIdle || isWelcome);
+    document.getElementById('btn-stop').classList.toggle('hidden', isIdle || isAttach || isWelcome);
     document.getElementById('tab-btn-build').classList.toggle('hidden', isAttach);
     if (isAttach && document.getElementById('dtab-build').classList.contains('active')) switchDrawer('debug');
 
     const banner = document.getElementById('sys-banner');
     const bTxt = document.getElementById('sys-banner-txt');
     const bAct = document.getElementById('sys-banner-actions');
-    if (isIdle) {
+    if (isWelcome) {
+      banner.className = 'sys-banner hidden';
+    } else if (isIdle) {
       banner.className = 'sys-banner';
       bTxt.textContent = '⚠ Session stopped · Toolchain check: vasmm68k_mot, m68k-amiga-elf-gcc, elf2hunk missing from PATH (ADFlib built-in). Configure via ⚙ Settings or attach to Amiberry.';
       bAct.innerHTML = '<button class="tool-btn" onclick="setSessionState(\'attach\', findStBtn(\'attach\'))">🔌 ATTACH :2345</button>';
@@ -1025,29 +1324,33 @@
       banner.className = 'sys-banner hidden';
     }
 
-    document.getElementById('cpu-strip').classList.toggle('hidden', isIdle || isRun);
+    document.getElementById('cpu-strip').classList.toggle('hidden', isIdle || isRun || isWelcome);
     const pill = document.getElementById('rsp-pill');
-    if (isIdle) { pill.className = 'metro-badge dim'; pill.textContent = 'AMIBERRY STOPPED · IDLE'; }
+    if (isWelcome) { pill.className = 'metro-badge dim'; pill.textContent = 'NO WORKSPACE'; }
+    else if (isIdle) { pill.className = 'metro-badge dim'; pill.textContent = 'AMIBERRY STOPPED · IDLE'; }
     else if (isRun) { pill.className = 'metro-badge live'; pill.textContent = 'AMIBERRY 50 FPS ● RUNNING'; }
     else if (isAttach) { pill.className = 'metro-badge mag'; pill.textContent = 'ATTACHED :2345 ● NO SOURCE'; }
-    else { pill.className = 'metro-badge warn'; pill.textContent = 'AMIBERRY :2345 ● PAUSED @ L285'; }
+    else { pill.className = 'metro-badge warn'; pill.textContent = 'AMIBERRY :2345 ● PAUSED'; }
 
-    document.getElementById('st-mode-pill').textContent = isAttach ? 'DISASM' : 'NORMAL';
-    document.getElementById('st-rsp').textContent = isIdle ? 'RSP: CLOSED' : (isRun ? 'RSP: RUNNING (QUIET)' : 'RSP :2345 ● PAUSED');
-    document.getElementById('st-lsp').classList.toggle('hidden', isAttach);
-    document.getElementById('st-file').innerHTML = isAttach ? '<strong>$0212C8 (Live Process)</strong>' : `<strong>${document.getElementById('target-select').selectedOptions[0].text}</strong>`;
+    document.getElementById('st-mode-pill').textContent = isWelcome ? 'WELCOME' : (isAttach ? 'DISASM' : 'NORMAL');
+    document.getElementById('st-rsp').textContent = (isIdle || isWelcome) ? 'RSP: CLOSED' : (isRun ? 'RSP: RUNNING (QUIET)' : 'RSP :2345 ● PAUSED');
+    document.getElementById('st-lsp').classList.toggle('hidden', isAttach || isWelcome);
+    document.getElementById('st-sel-cyc').classList.toggle('hidden', isWelcome);
+    document.getElementById('st-hunk').classList.toggle('hidden', isWelcome);
+    document.getElementById('st-file').innerHTML = isWelcome ? '<strong>Start Screen</strong>' : (isAttach ? '<strong>$0212C8 (Live Process)</strong>' : `<strong>${document.getElementById('target-select').selectedOptions[0].text}</strong>`);
 
-    renderLeftSidebar();
-    renderCenter();
-    renderCpu();
+    if (!isWelcome) {
+      renderLeftSidebar();
+      renderCenter();
+      renderCpu();
+    }
   }
 
   function renderLeftSidebar() {
     const body = document.getElementById('left-tree-body');
     const hunk = document.getElementById('left-hunk-panel');
     if (sessionState === 'attach') {
-      document.getElementById('left-hdr-lbl').textContent = 'Tasks & Segments';
-      document.getElementById('left-hdr-badge').textContent = 'EXEC PROC';
+      document.getElementById('left-hdr-lbl').textContent = 'TASKS & SEGS';
       body.innerHTML = `
         <div class="tree-cat">qRcmd,tasks (Exec)</div>
         <div class="tree-row active" onclick="setCenterView('disasm')"><span>⚙ demo.exe</span><span class="hunk-name">SP $07FE00</span></div>
@@ -1061,8 +1364,7 @@
         <div class="hunk-row" onclick="jumpMem('$021040','Seg 0 .text')"><span class="hunk-name">Seg 0 .CODE</span><span>$021040</span></div>
         <div class="hunk-row" onclick="jumpMem('$038200','Seg 1 .CHIP')"><span class="hunk-name">Seg 1 .CHIP</span><span>$038200</span></div>`;
     } else {
-      document.getElementById('left-hdr-lbl').textContent = 'Workspace & Hunks';
-      document.getElementById('left-hdr-badge').textContent = 'ELF→HUNK';
+      document.getElementById('left-hdr-lbl').textContent = 'WORKSPACE';
       body.innerHTML = `
         <div class="tree-cat">effects/</div>
         <div class="tree-row active" onclick="setCenterView('source')"><span>📄 bobs.asm</span><span class="git-m">M</span></div>
@@ -1096,17 +1398,26 @@
   function toggleSrBit(b) { srBits[b] = !srBits[b]; renderCpu(); }
 
   function renderCenter() {
+    const isSet = centerView === 'setup';
+    const isDis = centerView === 'disasm';
     document.getElementById('btn-view-src').classList.toggle('active', centerView === 'source');
-    document.getElementById('btn-view-dis').classList.toggle('active', centerView === 'disasm');
-    document.getElementById('disasm-bar').classList.toggle('hidden', centerView !== 'disasm');
+    document.getElementById('btn-view-dis').classList.toggle('active', isDis);
+    document.getElementById('btn-view-set').classList.toggle('active', isSet);
+    document.getElementById('disasm-bar').classList.toggle('hidden', !isDis);
+    document.getElementById('code-hint-bar').classList.toggle('hidden', isSet);
+    document.getElementById('code-view').classList.toggle('hidden', isSet);
+    document.getElementById('project-setup-view').classList.toggle('hidden', !isSet);
+    document.getElementById('disasm-src-badge').classList.toggle('hidden', isSet);
     document.getElementById('disasm-src-badge').textContent =
-      centerView === 'disasm' ? 'qRcmd,disasm · M68K' : 'm68k · K:HRM';
+      isDis ? 'qRcmd,disasm · M68K' : 'm68k+c · K:HRM';
+
     const tabsEl = document.getElementById('center-tabs');
     tabsEl.innerHTML = sessionState === 'attach'
-      ? `<div class="tab-pill active">[DISASM] $0212C8 (Live Amiberry)</div><div class="tab-pill" onclick="switchInspector('copper')">[CHIP] $038200</div>`
-      : `<div class="tab-pill active">[1] effects/bobs.asm ●</div><div class="tab-pill" onclick="switchInspector('hrm')">[2] docs/blitter.md</div>`;
+      ? `<div class="tab-pill ${isDis?'active':''}" onclick="setCenterView('disasm')">[DISASM] $0212C8</div><div class="tab-pill" onclick="switchInspector('copper')">[CHIP] $038200</div>`
+      : `<div class="tab-pill ${centerView==='source'?'active':''}" onclick="setCenterView('source')">[1] bobs.asm ●</div><div class="tab-pill ${isDis?'active':''}" onclick="setCenterView('disasm')">[DISASM]</div><div class="tab-pill ${isSet?'active':''}" onclick="setCenterView('setup')">⚙ kajo-amiga.toml</div>`;
 
-    const isDis = centerView === 'disasm';
+    if (isSet) { renderProjectSetup(); return; }
+
     const rows = isDis ? disasmLines : srcLines;
     document.getElementById('code-view').innerHTML = rows.map((r, idx) => {
       const pcHit = (sessionState === 'paused' || sessionState === 'attach') && (r.addr === '0212C8');
@@ -1121,6 +1432,192 @@
       </div>`;
     }).join('');
     updateSelectionCycles();
+  }
+
+  /* Project Management: Header Menu, Wizard Modal & 4-Tab Setup */
+  let setupTab = 'targets';
+  let setupMode = 'form';
+  let activeSetupTarget = 0;
+  let activeSetupProfile = 0;
+  const setupTargets = [
+    { name:'bobs', kind:'os_exe (DH0:)', cpu:'68000', toolchain:'elf2hunk (C + ASM)', sources:'effects/bobs.asm, framework/devharness.asm, support/debug.asm', includes:'., $SDKDIR', defines:'DEV_MODE=1', extra:'DH0:s/startup-sequence' },
+    { name:'demo_disk', kind:'adf_dos (ADFlib)', cpu:'68000', toolchain:'elf2hunk (C + ASM)', sources:'src/main.c, src/copper_irq.asm', includes:'., src/, $SDKDIR', defines:'TRACKMO=1', extra:'data/font.raw, s/startup-sequence' },
+    { name:'trackmo', kind:'adf_raw (Bootblock)', cpu:'68000', toolchain:'hunk_vlink', sources:'bootblock.asm, loader.asm, effects/*.asm', includes:'.', defines:'TRACKMO=1, NOPAUSE', extra:'bootblock @ $70000' }
+  ];
+  const setupProfiles = [
+    { id:'a500_ocs', model:'A500', cpu:'68000', chipset:'OCS', ram:'512K Chip + 512K Slow', kick:'kick13.rom', video:'PAL (50 Hz)', exact:'true' },
+    { id:'a500p_ecs', model:'A500+', cpu:'68000', chipset:'ECS', ram:'1024K Chip', kick:'kick204.rom', video:'PAL (50 Hz)', exact:'true' },
+    { id:'a1200_aga', model:'A1200', cpu:'68020', chipset:'AGA', ram:'2048K Chip', kick:'kick31.rom', video:'PAL (50 Hz)', exact:'true' }
+  ];
+
+  function toggleProjMenu(ev) {
+    if (ev) ev.stopPropagation();
+    document.getElementById('proj-popover').classList.toggle('hidden');
+  }
+  function closeProjMenu() { document.getElementById('proj-popover').classList.add('hidden'); }
+  document.addEventListener('click', () => closeProjMenu());
+
+  function openNewProjectModal() { closeProjMenu(); document.getElementById('new-project-modal').classList.remove('hidden'); }
+  function closeNewProjectModal() { document.getElementById('new-project-modal').classList.add('hidden'); }
+  function selectTpl(id, btn) { btn.parentElement.querySelectorAll('.tpl-card').forEach(c => c.classList.remove('active')); btn.classList.add('active'); }
+  function pickModalSeg(btn) { btn.parentElement.querySelectorAll('.seg-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
+  function createNewProject() {
+    closeNewProjectModal();
+    setSessionState('paused', findStBtn('paused'));
+    setCenterView('setup');
+  }
+  function setSetupMode(m) {
+    setupMode = m;
+    document.getElementById('setup-mode-form').classList.toggle('active', m === 'form');
+    document.getElementById('setup-mode-raw').classList.toggle('active', m === 'raw');
+    document.getElementById('setup-tabs-bar').classList.toggle('hidden', m === 'raw');
+    document.getElementById('setup-form-area').classList.toggle('hidden', m === 'raw');
+    document.getElementById('setup-raw-area').classList.toggle('hidden', m !== 'raw');
+    renderProjectSetup();
+  }
+  function switchSetupTab(t, btn) {
+    setupTab = t;
+    document.querySelectorAll('.setup-tab').forEach(b => b.classList.toggle('active', b.dataset.stab === t));
+    renderProjectSetup();
+  }
+  function saveProjectSetupToast() {
+    const b = document.getElementById('sys-banner');
+    b.className = 'sys-banner info';
+    document.getElementById('sys-banner-txt').textContent = '💾 Saved kajo-amiga.toml & regenerated .kajo-amiga/compile_commands.json for clangd + m68k-lsp-server.';
+    document.getElementById('sys-banner-actions').innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').className=\'sys-banner hidden\'">OK</button>';
+  }
+  function exportMakefileToast() {
+    const b = document.getElementById('sys-banner');
+    b.className = 'sys-banner info';
+    document.getElementById('sys-banner-txt').textContent = '📄 Exported standalone GNU Makefile mirroring kajo-amiga.toml (targets: bobs, demo_disk, trackmo).';
+    document.getElementById('sys-banner-actions').innerHTML = '<button class="tool-btn" onclick="document.getElementById(\'sys-banner\').className=\'sys-banner hidden\'">OK</button>';
+  }
+
+  function renderProjectSetup() {
+    if (setupMode === 'raw') {
+      document.getElementById('setup-raw-area').textContent =
+`[project]
+name = "seeandseedee"
+build_mode = "native"          # "native" (Option D DAG) | "external"
+default_target = "bobs"
+default_profile = "a500_ocs"
+shared_sources = ["framework/devharness.asm", "support/setsystem.asm", "support/debug.asm"]
+
+[[target]]
+name = "bobs"
+kind = "os_exe"                # "os_exe" (DH0:) | "adf_dos" (ADFlib) | "adf_raw"
+cpu = "68000"
+toolchain = "elf2hunk"         # C + 68k ASM -> DWARF3 ELF + AmigaDOS Hunk
+sources = ["effects/bobs.asm"]
+includes = [".", "$SDKDIR"]
+defines = ["DEV_MODE=1"]
+
+[[target]]
+name = "demo_disk"
+kind = "adf_dos"               # Packaged in-process via adflib (OFS/FFS)
+cpu = "68000"
+toolchain = "elf2hunk"
+sources = ["src/main.c", "src/copper_irq.asm"]
+extra_files = ["data/font.raw", "s/startup-sequence"]
+
+[[asset]]
+name = "bob16_tables"
+inputs = ["assets/bobs.png"]
+outputs = ["data/bobs_planar.i"]
+cmd = "python3 tools/gen_bob16.py assets/bobs.png data/bobs_planar.i"`;
+      return;
+    }
+
+    const area = document.getElementById('setup-form-area');
+    if (setupTab === 'targets') {
+      const t = setupTargets[activeSetupTarget];
+      area.innerHTML = `
+        <div class="setup-split">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+              <span class="form-lbl">[[TARGET]] LIST</span>
+              <button class="w-fmt" onclick="alert('Add new [[target]] in kajo-amiga.toml')">+ ADD</button>
+            </div>
+            ${setupTargets.map((x, i) => `
+              <div class="setup-list-item ${i===activeSetupTarget?'active':''}" onclick="activeSetupTarget=${i};renderProjectSetup()">
+                <strong>${x.name}</strong><span class="metro-badge dim" style="font-size:8.5px;">${x.kind.split(' ')[0]}</span>
+              </div>`).join('')}
+          </div>
+          <div class="card accent-left">
+            <div class="card-hdr"><span class="card-title">Target: ${t.name}</span><span class="prov-pill prov-snap">${t.kind}</span></div>
+            <div class="form-grid">
+              <span class="form-lbl">PACKAGING</span>
+              <div class="seg-group">
+                <button class="seg-btn ${t.kind.startsWith('os_exe')?'active':''}">DH0: os_exe</button>
+                <button class="seg-btn ${t.kind.startsWith('adf_dos')?'active':''}">ADF DOS (ADFlib)</button>
+                <button class="seg-btn ${t.kind.startsWith('adf_raw')?'active':''}">ADF Raw</button>
+              </div>
+              <span class="form-lbl">TOOLCHAIN</span>
+              <div class="seg-group">
+                <button class="seg-btn ${t.toolchain.startsWith('elf2hunk')?'active':''}">elf2hunk (C+ASM)</button>
+                <button class="seg-btn ${t.toolchain==='hunk_vlink'?'active':''}">vlink / vbcc</button>
+                <button class="seg-btn">single_asm</button>
+              </div>
+              <span class="form-lbl">CPU MODEL</span>
+              <div class="seg-group">
+                <button class="seg-btn active">68000</button><button class="seg-btn">68020</button><button class="seg-btn">68030</button>
+              </div>
+              <span class="form-lbl">SOURCES</span><input class="mini-input" value="${t.sources}" />
+              <span class="form-lbl">INCLUDES</span><input class="mini-input" value="${t.includes}" />
+              <span class="form-lbl">DEFINES (-D)</span><input class="mini-input" value="${t.defines}" />
+              <span class="form-lbl">STAGED FILES</span><input class="mini-input" value="${t.extra}" />
+            </div>
+          </div>
+        </div>`;
+    } else if (setupTab === 'profiles') {
+      const p = setupProfiles[activeSetupProfile];
+      area.innerHTML = `
+        <div class="setup-split">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+              <span class="form-lbl">[[PROFILE]] PRESETS</span>
+              <button class="w-fmt">+ CLONE</button>
+            </div>
+            ${setupProfiles.map((x, i) => `
+              <div class="setup-list-item ${i===activeSetupProfile?'active':''}" onclick="activeSetupProfile=${i};renderProjectSetup()">
+                <strong>${x.id}</strong><span style="font-size:9px;color:var(--text-dim);">${x.chipset}</span>
+              </div>`).join('')}
+          </div>
+          <div class="card accent-left">
+            <div class="card-hdr"><span class="card-title">Hardware Run Profile: ${p.id}</span><span class="prov-pill prov-live">AMIBERRY</span></div>
+            <div class="form-grid">
+              <span class="form-lbl">MODEL / CPU</span><input class="mini-input" value="${p.model} (${p.cpu} · ${p.chipset})" />
+              <span class="form-lbl">MEMORY</span><input class="mini-input" value="${p.ram}" />
+              <span class="form-lbl">KICKSTART ROM</span><input class="mini-input" value="${p.kick}" />
+              <span class="form-lbl">VIDEO / SYNC</span><input class="mini-input" value="${p.video} · cycle_exact=${p.exact}" />
+            </div>
+          </div>
+        </div>`;
+    } else if (setupTab === 'assets') {
+      area.innerHTML = `
+        <div class="card accent-left">
+          <div class="card-hdr"><span class="card-title">[[asset]] Pre-Build Steps (Mtime Cached)</span><button class="w-fmt">+ ADD ASSET</button></div>
+          <div class="kv-grid" style="grid-template-columns:1fr;">
+            <div class="kv-cell"><span><strong>bob16_tables</strong> · assets/bobs.png → data/bobs_planar.i</span><span style="color:#4cd964;">✓ UP-TO-DATE</span></div>
+            <div class="kv-cell"><span><strong>sinetab1024</strong> · tools/gen_sinetab.py → data/sincos1024.i</span><span style="color:#4cd964;">✓ UP-TO-DATE</span></div>
+            <div class="kv-cell"><span><strong>post_crunch</strong> · shrinkler -h -o -1 out/demo.exe</span><span style="color:var(--text-dim);">OPTIONAL (TRACKMO)</span></div>
+          </div>
+        </div>`;
+    } else {
+      area.innerHTML = `
+        <div class="card accent-left">
+          <div class="card-hdr"><span class="card-title">Option D Builder, C LSP &amp; Debugger</span><span class="prov-pill prov-live">SYNCED</span></div>
+          <div class="form-grid">
+            <span class="form-lbl">BUILD MODE</span>
+            <div class="seg-group"><button class="seg-btn active">Native DAG (kajo-amiga --build)</button><button class="seg-btn">External (Makefile)</button></div>
+            <span class="form-lbl">ENTRY BREAK</span>
+            <div class="seg-group"><button class="seg-btn active">qRcmd,process-break name</button><button class="seg-btn">Physical $Addr (Raw)</button></div>
+            <span class="form-lbl">C LSP + DWARF</span><span style="color:#4cd964;">✓ Auto-generate .kajo-amiga/compile_commands.json (clangd) + vCont;r line step</span>
+            <span class="form-lbl">GUEST OUTPUT</span><span style="color:var(--metro-telemetry);">✓ qRcmd,guest-output on (Trap 86 · auto -s uaeboard=1 on .adf)</span>
+            <span class="form-lbl">HRM DOCS DIR</span><input class="mini-input" value="docs/amiga-hrm" />
+          </div>
+        </div>`;
+    }
   }
 
   function selectCodeRow(idx, ev) {
@@ -1443,6 +1940,14 @@
   setSessionState('paused', findStBtn('paused'));
   jumpMem('$038200', 'COP1LC');
   switchDrawer('debug');
+
+  const urlView = new URLSearchParams(location.search).get('view');
+  if (urlView === 'welcome') setSessionState('welcome', findStBtn('welcome'));
+  else if (urlView === 'idle') setSessionState('idle', findStBtn('idle'));
+  else if (urlView === 'running') setSessionState('running', findStBtn('running'));
+  else if (urlView === 'attach') setSessionState('attach', findStBtn('attach'));
+  else if (urlView === 'setup') { setSessionState('paused', findStBtn('paused')); setCenterView('setup'); }
+  else if (urlView === 'new') { setSessionState('paused', findStBtn('paused')); openNewProjectModal(); }
 </script>
 </body>
 </html>
