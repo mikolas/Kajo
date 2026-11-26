@@ -704,6 +704,24 @@ amiga_core_dep = declare_dependency(
   dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
 )
 
+amiga_ui_sources = files(
+  'src/amiga/main.c',
+  'src/amiga/amiga_window.c',
+  'src/amiga/amiga_cpu_strip.c',
+  'src/amiga/amiga_disasm_view.c',
+  'src/amiga/amiga_mem_view.c',
+  'src/amiga/amiga_project_ui.c',
+)
+
+executable(
+  'kajo-amiga',
+  amiga_ui_sources,
+  shell_resources,
+  dependencies: [ide_core_dep, amiga_core_dep],
+  link_with: kajo_core,
+  install: true,
+)
+
 install_data(
   'data/org.kajo.IDE.desktop',
   install_dir: get_option('datadir') / 'applications',

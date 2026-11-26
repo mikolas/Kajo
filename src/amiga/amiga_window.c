@@ -1,0 +1,1786 @@
+#include "amiga_window.h"
+#include "amiga_build.h"
+#include "amiga_cpu_strip.h"
+#include "amiga_decode.h"
+#include "amiga_disasm.h"
+#include "amiga_disasm_view.h"
+#include "amiga_mem_view.h"
+#include "amiga_project.h"
+#include "amiga_project_ui.h"
+#include "amiga_rsp.h"
+#include "amiga_runner.h"
+#include "amiga_symbols.h"
+
+#include "../common/spawn_detached.h"
+#include "../compositor/compositor.h"
+#include "../ide/ide_buffer.h"
+#include "../ide/ide_editor_ops.h"
+#include "../ide/ide_fsm.h"
+#include "../ide/ide_gutter.h"
+#include "../ide/ide_tree.h"
+
+#include <glib/gstdio.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+struct _KajoAmigaWindow {
+  GtkApplicationWindow parent_instance;
+
+  /* Core non-UI state */
+  AmigaProject         *project;
+  AmigaToolchainStatus *toolchain;
+  AmigaSymbolTable     *symbols;
+  AmigaRunner          *runner;
+  AmigaRspClient       *rsp;
+  GCancellable         *build_cancel;
+  GHashTable           *bp_addrs; /* GUINT_TO_POINTER(even_addr) -> 1 */
+
+  bool                  attach_mode;
+  char                 *attach_host;
+  uint16_t              attach_port;
+  bool                  building;
+  bool                  narrow_mode;
+  guint                 toast_timer_id;
+
+  /* Shared editor state */
+  IdeBuffer            *active_buf;
+  IdeFsm               *fsm;
+  char                 *yank_reg;
+  IdeEditorHost         editor_host;
+
+  /* Top chrome */
+  GtkWidget            *root_stack;     /* "welcome" | "workspace" */
+  GtkWidget            *welcome_slot;
+  GtkWidget            *btn_proj_menu;
+  GtkWidget            *btn_hdr_tree;
+  GtkWidget            *dd_target;
+  GtkWidget            *dd_profile;
+  GtkWidget            *compat_badge;
+  GtkWidget            *btn_build;
+  GtkWidget            *btn_debug;
+  GtkWidget            *btn_stop;
+  GtkWidget            *btn_attach;
+  GtkWidget            *btn_snapshot;
+  GtkWidget            *btn_narrow_switch;
+  AmigaCpuStrip        *cpu_strip;
+
+  /* Workspace layout */
+  GtkWidget            *main_paned;     /* sidebar | right-half */
+  GtkWidget            *vert_paned;     /* center+inspector | drawer */
+  GtkWidget            *center_paned;   /* center_stack | inspector */
+  GtkWidget            *sidebar_box;
+  GtkWidget            *sidebar_stack;  /* "project" | "attach" */
+  GtkWidget            *tree_slot;
+  IdeTree              *file_tree;
+  GtkWidget            *outline_list;
+  GtkWidget            *attach_list;
+
+  GtkWidget            *center_stack;   /* "source" | "disasm" | "setup" */
+  GtkWidget            *btn_tab_source;
+  GtkWidget            *btn_tab_disasm;
+  GtkWidget            *btn_tab_setup;
+  GtkWidget            *source_view;
+  KajoIdeGutterRenderer *gutter;
+  AmigaDisasmView      *disasm_view;
+  AmigaProjectSetupView *setup_view;
+
+  /* Inspector (M3 snapshot + M4 placeholders) */
+  GtkWidget            *inspector_box;
+  GtkWidget            *lbl_custom_snap;
+
+  /* Drawer */
+  GtkWidget            *drawer_stack;   /* "build" | "hex" | "debug" */
+  GtkWidget            *btn_drw_build;
+  GtkWidget            *btn_drw_hex;
+  GtkWidget            *btn_drw_debug;
+  GtkWidget            *console_view;
+  GtkWidget            *diag_list;
+  GPtrArray            *diags;          /* AmigaBuildDiag* */
+  AmigaMemView         *mem_view;
+  GtkWidget            *exc_checks[5];
+  GtkWidget            *lbl_exc_last;
+
+  /* Status bar & Toast */
+  GtkWidget            *mode_pill;
+  GtkWidget            *lbl_ws_state;
+  GtkWidget            *lbl_cursor;
+  GtkWidget            *lbl_sel_cycles;
+  GtkWidget            *toast_bar;
+  GtkWidget            *toast_lbl;
+};
+
+G_DEFINE_TYPE(KajoAmigaWindow, kajo_amiga_window, GTK_TYPE_APPLICATION_WINDOW)
+
+static void refresh_source_gutter_and_outline(KajoAmigaWindow *self);
+static void refresh_rsp_snapshot(KajoAmigaWindow *self);
+
+/* ─── Helpers & Toast ─── */
+
+static gboolean
+on_toast_hide(gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  self->toast_timer_id = 0;
+  if (self->toast_bar) gtk_widget_set_visible(self->toast_bar, FALSE);
+  return G_SOURCE_REMOVE;
+}
+
+static void
+show_toast(KajoAmigaWindow *self, const char *msg)
+{
+  if (!self || !self->toast_bar || !msg) return;
+  gtk_label_set_text(GTK_LABEL(self->toast_lbl), msg);
+  gtk_widget_set_visible(self->toast_bar, TRUE);
+  g_clear_handle_id(&self->toast_timer_id, g_source_remove);
+  self->toast_timer_id = g_timeout_add(3200, on_toast_hide, self);
+}
+
+static const AmigaTarget *
+get_selected_target(KajoAmigaWindow *self)
+{
+  if (!self->project || !self->project->targets || self->project->targets->len == 0) return NULL;
+  guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_target));
+  if (idx >= self->project->targets->len) idx = 0;
+  return g_ptr_array_index(self->project->targets, idx);
+}
+
+static const AmigaHwProfile *
+get_selected_profile(KajoAmigaWindow *self)
+{
+  if (!self->project || !self->project->profiles || self->project->profiles->len == 0) return NULL;
+  guint idx = gtk_drop_down_get_selected(GTK_DROP_DOWN(self->dd_profile));
+  if (idx >= self->project->profiles->len) idx = 0;
+  return g_ptr_array_index(self->project->profiles, idx);
+}
+
+static void
+sync_compat_badge(KajoAmigaWindow *self)
+{
+  const AmigaTarget *t = get_selected_target(self);
+  const AmigaHwProfile *p = get_selected_profile(self);
+  g_autofree char *warn = amiga_project_check_profile_compat(t, p);
+  if (warn) {
+    gtk_label_set_text(GTK_LABEL(self->compat_badge), warn);
+    gtk_widget_set_visible(self->compat_badge, TRUE);
+  } else {
+    gtk_widget_set_visible(self->compat_badge, FALSE);
+  }
+}
+
+static void
+sync_mode_pill(KajoAmigaWindow *self)
+{
+  if (!self->mode_pill) return;
+  gtk_widget_remove_css_class(self->mode_pill, "insert");
+  gtk_widget_remove_css_class(self->mode_pill, "select");
+  gtk_widget_remove_css_class(self->mode_pill, "attach");
+
+  if (self->attach_mode) {
+    gtk_label_set_text(GTK_LABEL(self->mode_pill), "ATTACH");
+    gtk_widget_add_css_class(self->mode_pill, "attach");
+    return;
+  }
+  IdeState st = self->fsm ? ide_fsm_get_state(self->fsm) : IDE_STATE_NORMAL;
+  gtk_label_set_text(GTK_LABEL(self->mode_pill), ide_state_to_string(st));
+  if (st == IDE_STATE_INSERT) gtk_widget_add_css_class(self->mode_pill, "insert");
+  else if (st == IDE_STATE_SELECT) gtk_widget_add_css_class(self->mode_pill, "select");
+}
+
+static void
+update_cursor_and_selection_cycles(KajoAmigaWindow *self)
+{
+  if (!self->active_buf) {
+    gtk_label_set_text(GTK_LABEL(self->lbl_cursor), "Ln 1, Col 1");
+    gtk_widget_set_visible(self->lbl_sel_cycles, FALSE);
+    return;
+  }
+  GtkTextBuffer *tb = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(self->active_buf));
+  GtkTextIter cur;
+  gtk_text_buffer_get_iter_at_mark(tb, &cur, gtk_text_buffer_get_insert(tb));
+  g_autofree char *pos = g_strdup_printf("Ln %d, Col %d",
+                                         gtk_text_iter_get_line(&cur) + 1,
+                                         gtk_text_iter_get_line_offset(&cur) + 1);
+  gtk_label_set_text(GTK_LABEL(self->lbl_cursor), pos);
+
+  GtkTextIter s, e;
+  if (gtk_text_buffer_get_selection_bounds(tb, &s, &e)) {
+    int l1 = gtk_text_iter_get_line(&s);
+    int l2 = gtk_text_iter_get_line(&e);
+    if (l2 > l1) {
+      GPtrArray *lines = g_ptr_array_new_with_free_func(g_free);
+      for (int ln = l1; ln <= l2; ln++) {
+        GtkTextIter ls, le;
+        gtk_text_buffer_get_iter_at_line(tb, &ls, ln);
+        le = ls;
+        if (!gtk_text_iter_ends_line(&le)) gtk_text_iter_forward_to_line_end(&le);
+        g_ptr_array_add(lines, gtk_text_buffer_get_text(tb, &ls, &le, FALSE));
+      }
+      AmigaCycleSum sum = amiga_m68k_sum_cycles(
+          (const char *const *)lines->pdata, lines->len);
+      g_ptr_array_unref(lines);
+      if (sum.instr_count > 0) {
+        g_autofree char *cs = (sum.min_cycles == sum.max_cycles)
+                                  ? g_strdup_printf("SEL: %u ln · %u(%u/%u) cyc",
+                                                    sum.instr_count, sum.min_cycles,
+                                                    sum.reads, sum.writes)
+                                  : g_strdup_printf("SEL: %u ln · %u-%u(%u/%u) cyc",
+                                                    sum.instr_count, sum.min_cycles,
+                                                    sum.max_cycles, sum.reads, sum.writes);
+        gtk_label_set_text(GTK_LABEL(self->lbl_sel_cycles), cs);
+        gtk_widget_set_visible(self->lbl_sel_cycles, TRUE);
+        return;
+      }
+    }
+  }
+  gtk_widget_set_visible(self->lbl_sel_cycles, FALSE);
+}
+
+/* ─── Gutter Column 7 Static Cycle Callback + Hover Tooltip ─── */
+
+static gboolean
+on_gutter_cycle_annotate(IdeBuffer *buf,
+                         guint      line_1based,
+                         char      *out_text,
+                         gsize      out_cap,
+                         double    *out_r,
+                         double    *out_g,
+                         double    *out_b,
+                         gpointer   ud G_GNUC_UNUSED)
+{
+  if (!buf || line_1based == 0) return FALSE;
+  const char *path = ide_buffer_get_file_path(buf);
+  if (path && (g_str_has_suffix(path, ".c") || g_str_has_suffix(path, ".h"))) {
+    return FALSE;
+  }
+  GtkTextBuffer *tb = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(buf));
+  GtkTextIter s, e;
+  gtk_text_buffer_get_iter_at_line(tb, &s, (int)(line_1based - 1u));
+  e = s;
+  if (!gtk_text_iter_ends_line(&e)) gtk_text_iter_forward_to_line_end(&e);
+  g_autofree char *line = gtk_text_buffer_get_text(tb, &s, &e, FALSE);
+  AmigaCycleInfo ci = amiga_m68k_line_cycles(line);
+  if (!ci.has_cycles) return FALSE;
+
+  g_strlcpy(out_text, ci.display, out_cap);
+  if (ci.is_branch) {
+    *out_r = 0.0; *out_g = 0.85; *out_b = 0.94;
+  } else if (ci.max_cycles >= 16) {
+    *out_r = 1.0; *out_g = 0.55; *out_b = 0.0;
+  } else {
+    *out_r = 0.65; *out_g = 0.78; *out_b = 0.65;
+  }
+  return TRUE;
+}
+
+static gboolean
+on_source_query_tooltip(GtkWidget  *widget,
+                        gint        x,
+                        gint        y,
+                        gboolean    keyboard_mode G_GNUC_UNUSED,
+                        GtkTooltip *tooltip,
+                        gpointer    ud G_GNUC_UNUSED)
+{
+  GtkTextView *tv = GTK_TEXT_VIEW(widget);
+  gint bx = 0, by = 0;
+  gtk_text_view_window_to_buffer_coords(tv, GTK_TEXT_WINDOW_TEXT, x, y, &bx, &by);
+  GtkTextIter iter;
+  if (!gtk_text_view_get_iter_at_location(tv, &iter, bx, by)) return FALSE;
+
+  GtkTextIter ws = iter, we = iter;
+  while (!gtk_text_iter_starts_line(&ws)) {
+    GtkTextIter prev = ws;
+    gtk_text_iter_backward_char(&prev);
+    gunichar c = gtk_text_iter_get_char(&prev);
+    if (!g_unichar_isalnum(c) && c != '_' && c != '$' && c != '#' && c != '-') break;
+    ws = prev;
+  }
+  while (!gtk_text_iter_ends_line(&we)) {
+    gunichar c = gtk_text_iter_get_char(&we);
+    if (!g_unichar_isalnum(c) && c != '_') break;
+    gtk_text_iter_forward_char(&we);
+  }
+  g_autofree char *tok = gtk_text_buffer_get_text(gtk_text_view_get_buffer(tv), &ws, &we, FALSE);
+  if (!tok || !tok[0]) return FALSE;
+
+  /* 1. $DFFxxx check */
+  const char *hex_p = strchr(tok, '$');
+  if (hex_p) {
+    unsigned long v = strtoul(hex_p + 1, NULL, 16);
+    if (v >= 0xDFF000ul && v <= 0xDFF1FEul) {
+      const AmigaHwRegInfo *ri = amiga_hw_reg_lookup((uint16_t)(v & 0x1FEu));
+      if (ri) {
+        const char *acc = (ri->access == AMIGA_REG_R) ? "RO"
+                        : (ri->access == AMIGA_REG_W) ? "WO" : "RW";
+        g_autofree char *tip = g_strdup_printf("$DFF%03X  %s [%s]\n%s",
+                                               ri->offset, ri->name, acc, ri->summary);
+        gtk_tooltip_set_text(tooltip, tip);
+        return TRUE;
+      }
+    } else if (tok[0] == '#' && v <= 0xFFFFul) {
+      uint8_t r = 0, g = 0, b = 0;
+      amiga_decode_ocs_rgb12((uint16_t)(v & 0x0FFFu), &r, &g, &b);
+      AmigaBltcon0Info blt = amiga_decode_bltcon0((uint16_t)v);
+      g_autofree char *tip = g_strdup_printf(
+          "#$%04lX = %lu dec\nOCS RGB12 #%02X%02X%02X · BLTCON0 ash=%u LF=$%02X (%s)",
+          v, v, r, g, b, blt.ash, blt.lf_byte, blt.equation);
+      gtk_tooltip_set_text(tooltip, tip);
+      return TRUE;
+    }
+  }
+
+  /* 2. _LVO* check */
+  if (g_str_has_prefix(tok, "_LVO") || g_str_has_prefix(tok, "-")) {
+    if (tok[0] == '-') {
+      long lvo = strtol(tok, NULL, 10);
+      const char *nm = amiga_lvo_lookup(NULL, (int16_t)lvo);
+      if (nm) {
+        g_autofree char *tip = g_strdup_printf("LVO %ld → %s", lvo, nm);
+        gtk_tooltip_set_text(tooltip, tip);
+        return TRUE;
+      }
+    }
+  }
+  return FALSE;
+}
+
+/* ─── Editor Buffer Open, Outline & Save ─── */
+
+static void
+open_file_in_editor(KajoAmigaWindow *self, const char *abs_path, guint line_1based)
+{
+  if (!abs_path || !g_file_test(abs_path, G_FILE_TEST_IS_REGULAR)) return;
+
+  IdeBuffer *buf = ide_buffer_new(abs_path);
+  g_autoptr(GError) err = NULL;
+  if (!ide_buffer_load_from_disk(buf, &err)) {
+    ide_buffer_free(buf);
+    show_toast(self, err ? err->message : "Open failed");
+    return;
+  }
+  ide_buffer_set_style_scheme(buf, "kajo-dark");
+  if (self->active_buf) ide_buffer_free(self->active_buf);
+  self->active_buf = buf;
+
+  GtkSourceBuffer *sbuf = ide_buffer_get_source_buffer(buf);
+  gtk_text_view_set_buffer(GTK_TEXT_VIEW(self->source_view), GTK_TEXT_BUFFER(sbuf));
+  kajo_ide_gutter_renderer_set_buffer(self->gutter, buf);
+  self->editor_host.buffer = buf;
+
+  if (line_1based > 0) {
+    GtkTextIter it;
+    gtk_text_buffer_get_iter_at_line(GTK_TEXT_BUFFER(sbuf), &it, (int)(line_1based - 1u));
+    gtk_text_buffer_place_cursor(GTK_TEXT_BUFFER(sbuf), &it);
+    gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(self->source_view), &it, 0.2, FALSE, 0, 0.5);
+  }
+  gtk_stack_set_visible_child_name(GTK_STACK(self->center_stack), "source");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_source), TRUE);
+
+  g_autofree char *title = g_path_get_basename(abs_path);
+  gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), title);
+  refresh_source_gutter_and_outline(self);
+  update_cursor_and_selection_cycles(self);
+}
+
+static void
+on_outline_row_activated(GtkListBox *lb G_GNUC_UNUSED, GtkListBoxRow *row, gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  guint line = GPOINTER_TO_UINT(g_object_get_data(G_OBJECT(row), "outline-line"));
+  if (!self->active_buf || line == 0) return;
+  GtkTextBuffer *tb = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(self->active_buf));
+  GtkTextIter it;
+  gtk_text_buffer_get_iter_at_line(tb, &it, (int)(line - 1u));
+  gtk_text_buffer_place_cursor(tb, &it);
+  gtk_text_view_scroll_to_iter(GTK_TEXT_VIEW(self->source_view), &it, 0.2, FALSE, 0, 0.5);
+  gtk_stack_set_visible_child_name(GTK_STACK(self->center_stack), "source");
+}
+
+static void
+refresh_source_gutter_and_outline(KajoAmigaWindow *self)
+{
+  if (!self->outline_list) return;
+  GtkWidget *ch;
+  while ((ch = gtk_widget_get_first_child(self->outline_list)) != NULL) {
+    gtk_list_box_remove(GTK_LIST_BOX(self->outline_list), ch);
+  }
+  if (!self->active_buf) return;
+  g_autofree char *txt = ide_buffer_get_text(self->active_buf);
+  const char *p = ide_buffer_get_file_path(self->active_buf);
+  bool is_c = p && (g_str_has_suffix(p, ".c") || g_str_has_suffix(p, ".h"));
+  g_autoptr(GPtrArray) items = amiga_symbols_extract_outline(txt ? txt : "", is_c);
+
+  for (guint i = 0; i < items->len; i++) {
+    const AmigaOutlineItem *it = g_ptr_array_index(items, i);
+    const char *tag = (it->kind == AMIGA_OUTLINE_SECTION) ? "SEC"
+                    : (it->kind == AMIGA_OUTLINE_FUNCTION) ? "FN "
+                    : (it->kind == AMIGA_OUTLINE_MACRO) ? "MAC"
+                    : (it->kind == AMIGA_OUTLINE_EQU) ? "EQU" : "LBL";
+    g_autofree char *lbl = g_strdup_printf("%s %-16s :%u", tag, it->name, it->line);
+    GtkWidget *w = gtk_label_new(lbl);
+    gtk_label_set_xalign(GTK_LABEL(w), 0.0f);
+    gtk_list_box_append(GTK_LIST_BOX(self->outline_list), w);
+    GtkListBoxRow *row = gtk_list_box_get_row_at_index(GTK_LIST_BOX(self->outline_list), (int)i);
+    if (row) g_object_set_data(G_OBJECT(row), "outline-line", GUINT_TO_POINTER(it->line));
+  }
+}
+
+static void
+save_active_buffer(KajoAmigaWindow *self)
+{
+  if (!self->active_buf) return;
+  g_autoptr(GError) err = NULL;
+  if (ide_buffer_save(self->active_buf, &err)) {
+    refresh_source_gutter_and_outline(self);
+    show_toast(self, "✓ File saved");
+  } else {
+    show_toast(self, err ? err->message : "Save failed");
+  }
+}
+
+/* ─── Option D Async Build & Clickable Diagnostics ─── */
+
+static void
+on_diag_row_activated(GtkListBox *lb G_GNUC_UNUSED, GtkListBoxRow *row, gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  int idx = gtk_list_box_row_get_index(row);
+  if (idx < 0 || !self->diags || (guint)idx >= self->diags->len) return;
+  AmigaBuildDiag *d = g_ptr_array_index(self->diags, (guint)idx);
+  if (!d->file) return;
+  g_autofree char *abs = g_path_is_absolute(d->file) || !self->project || !self->project->root_dir
+                             ? g_strdup(d->file)
+                             : g_build_filename(self->project->root_dir, d->file, NULL);
+  open_file_in_editor(self, abs, d->line);
+  if (self->active_buf) {
+    ide_buffer_clear_diagnostics(self->active_buf);
+    ide_buffer_add_diagnostic(
+        self->active_buf, d->line, d->col,
+        d->severity == AMIGA_DIAG_WARNING ? IDE_DIAG_WARNING : IDE_DIAG_ERROR,
+        d->message, "amiga-build");
+    gtk_widget_queue_draw(self->source_view);
+  }
+}
+
+static void
+on_build_finished(GObject *src G_GNUC_UNUSED, GAsyncResult *res, gpointer ud)
+{
+  GWeakRef *weak = ud;
+  g_autoptr(GError) err = NULL;
+  AmigaBuildResult *br = amiga_build_run_finish(res, &err);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (!self) {
+    amiga_build_result_free(br);
+    return;
+  }
+
+  self->building = false;
+  gtk_widget_set_sensitive(self->btn_build, TRUE);
+
+  GtkTextBuffer *cb = gtk_text_view_get_buffer(GTK_TEXT_VIEW(self->console_view));
+  if (err) {
+    gtk_text_buffer_set_text(cb, err->message, -1);
+    show_toast(self, err->message);
+    return;
+  }
+  gtk_text_buffer_set_text(cb, (br && br->log_text) ? br->log_text : "", -1);
+
+  g_ptr_array_set_size(self->diags, 0);
+  GtkWidget *ch;
+  while ((ch = gtk_widget_get_first_child(self->diag_list)) != NULL) {
+    gtk_list_box_remove(GTK_LIST_BOX(self->diag_list), ch);
+  }
+  if (br && br->diagnostics) {
+    for (guint i = 0; i < br->diagnostics->len; i++) {
+      AmigaBuildDiag *d = g_ptr_array_index(br->diagnostics, i);
+      AmigaBuildDiag *cp = g_new0(AmigaBuildDiag, 1);
+      cp->file = g_strdup(d->file);
+      cp->line = d->line;
+      cp->col = d->col;
+      cp->severity = d->severity;
+      cp->message = g_strdup(d->message);
+      g_ptr_array_add(self->diags, cp);
+
+      g_autofree char *line = g_strdup_printf("%s:%u:%u  %s",
+                                              d->file ? d->file : "?", d->line, d->col,
+                                              d->message ? d->message : "");
+      GtkWidget *l = gtk_label_new(line);
+      gtk_label_set_xalign(GTK_LABEL(l), 0.0f);
+      gtk_widget_add_css_class(
+          l, d->severity == AMIGA_DIAG_WARNING ? "amiga-diag-warn" : "amiga-diag-error");
+      gtk_list_box_append(GTK_LIST_BOX(self->diag_list), l);
+    }
+  }
+  show_toast(self, (br && br->success) ? "✓ Build succeeded" : "✗ Build failed (see diagnostics)");
+  amiga_build_result_free(br);
+}
+
+static void
+trigger_build(KajoAmigaWindow *self)
+{
+  if (!self->project || self->building) return;
+  const AmigaTarget *t = get_selected_target(self);
+  if (!t) {
+    show_toast(self, "No target defined in project");
+    return;
+  }
+  save_active_buffer(self);
+  self->building = true;
+  gtk_widget_set_sensitive(self->btn_build, FALSE);
+  gtk_stack_set_visible_child_name(GTK_STACK(self->drawer_stack), "build");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_drw_build), TRUE);
+
+  g_cancellable_cancel(self->build_cancel);
+  g_clear_object(&self->build_cancel);
+  self->build_cancel = g_cancellable_new();
+
+  g_autofree char *staging = g_build_filename(
+      g_get_user_cache_dir(), "kajo", "amiga",
+      self->project->name ? self->project->name : "default", NULL);
+  GWeakRef *weak = g_new0(GWeakRef, 1);
+  g_weak_ref_init(weak, self);
+  amiga_build_run_async(self->project, t, self->toolchain, staging,
+                        self->build_cancel, on_build_finished, weak);
+}
+
+/* ─── RSP Callbacks & Snapshots ─── */
+
+static void
+on_custom_mem_done(GObject *src, GAsyncResult *res, gpointer ud)
+{
+  GWeakRef *weak = ud;
+  g_autoptr(GError) err = NULL;
+  g_autoptr(GBytes) bytes = amiga_rsp_client_read_mem_finish(AMIGA_RSP_CLIENT(src), res, &err);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (!self || !bytes || g_bytes_get_size(bytes) < 512) return;
+
+  AmigaCustomSnapshot snap = {0};
+  amiga_rsp_decode_custom_snapshot(g_bytes_get_data(bytes, NULL), &snap);
+  amiga_mem_view_set_regs_and_custom(self->mem_view, NULL, &snap);
+
+  g_autofree char *summary = g_strdup_printf(
+      "DMACONR: $%04X   VPOSR: $%04X   (%s)\n"
+      "COP1LC:  $%08X   BPLCON0: $%04X\n"
+      "BPL1PT:  $%08X   BLTSIZE: $%04X\n"
+      "COL00-03: $%03X  $%03X  $%03X  $%03X",
+      snap.dmaconr, snap.vposr, snap.ntsc ? "NTSC" : "PAL",
+      snap.cop1lc, snap.bplcon[0],
+      snap.bplpt[0], snap.bltsize,
+      snap.color[0], snap.color[1], snap.color[2], snap.color[3]);
+  gtk_label_set_text(GTK_LABEL(self->lbl_custom_snap), summary);
+}
+
+static void
+on_disasm_rcmd_done(GObject *src, GAsyncResult *res, gpointer ud)
+{
+  GWeakRef *weak = ud;
+  g_autoptr(GError) err = NULL;
+  g_autofree char *txt = amiga_rsp_client_rcmd_finish(AMIGA_RSP_CLIENT(src), res, &err);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (!self || !txt) return;
+
+  g_autoptr(GPtrArray) rows = NULL;
+  if (amiga_disasm_parse(txt, self->symbols, &rows)) {
+    amiga_disasm_view_set_rows(
+        self->disasm_view, rows, amiga_disasm_view_get_base_addr(self->disasm_view), self->bp_addrs);
+  }
+}
+
+static void
+on_regs_done(GObject *src, GAsyncResult *res, gpointer ud)
+{
+  GWeakRef *weak = ud;
+  g_autoptr(GError) err = NULL;
+  AmigaCpuRegs regs = {0};
+  bool ok = amiga_rsp_client_read_regs_finish(AMIGA_RSP_CLIENT(src), res, &regs, &err);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (!self || !ok) return;
+
+  amiga_cpu_strip_update(self->cpu_strip, &regs, NULL, self->symbols, true);
+  amiga_mem_view_set_regs_and_custom(self->mem_view, &regs, NULL);
+  if (amiga_disasm_view_get_follow_pc(self->disasm_view)) {
+    amiga_disasm_view_go_to(self->disasm_view, regs.pc, false);
+  }
+}
+
+static void
+refresh_rsp_snapshot(KajoAmigaWindow *self)
+{
+  if (!self->rsp || amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_STOPPED) return;
+  GWeakRef *w1 = g_new0(GWeakRef, 1); g_weak_ref_init(w1, self);
+  amiga_rsp_client_read_regs_async(self->rsp, NULL, on_regs_done, w1);
+
+  GWeakRef *w2 = g_new0(GWeakRef, 1); g_weak_ref_init(w2, self);
+  amiga_rsp_client_read_mem_async(self->rsp, 0xDFF000u, 0x200u, NULL, on_custom_mem_done, w2);
+}
+
+static void
+on_rsp_stop(AmigaRspClient *c G_GNUC_UNUSED, const AmigaStopEvent *ev, gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  g_autofree char *msg = ev->entry_proc
+                             ? g_strdup_printf("Stopped: entry %s ($%08X)", ev->entry_proc, ev->pc)
+                             : g_strdup_printf("Stopped (sig=%u)", ev->signal_num);
+  show_toast(self, msg);
+  refresh_rsp_snapshot(self);
+}
+
+static void
+on_rsp_connect_done(GObject *src, GAsyncResult *res, gpointer ud)
+{
+  GWeakRef *weak = ud;
+  g_autoptr(GError) err = NULL;
+  bool ok = amiga_rsp_client_connect_finish(AMIGA_RSP_CLIENT(src), res, &err);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (!self) return;
+  if (!ok) {
+    show_toast(self, err ? err->message : "RSP connect failed");
+    return;
+  }
+  show_toast(self, "✓ Attached to Amiberry RSP");
+  refresh_rsp_snapshot(self);
+}
+
+/* View callbacks */
+static void on_strip_write_regs(AmigaCpuStrip *s G_GNUC_UNUSED, const AmigaCpuRegs *regs, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (self->rsp && amiga_rsp_client_get_state(self->rsp) == AMIGA_RSP_STOPPED) {
+    amiga_rsp_client_write_regs_async(self->rsp, regs, NULL, NULL, NULL);
+    amiga_cpu_strip_update(self->cpu_strip, regs, NULL, self->symbols, true);
+  }
+}
+
+static void on_strip_jump(AmigaCpuStrip *s G_GNUC_UNUSED, uint32_t addr, bool to_mem, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (to_mem) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->drawer_stack), "hex");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_drw_hex), TRUE);
+    amiga_mem_view_jump_to(self->mem_view, addr);
+  } else {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->center_stack), "disasm");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_disasm), TRUE);
+    amiga_disasm_view_go_to(self->disasm_view, addr, true);
+  }
+}
+
+static void on_strip_cp(AmigaCpuStrip *s G_GNUC_UNUSED, bool restore, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (!self->rsp || amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_STOPPED) return;
+  g_autofree char *cmd = g_strdup_printf("checkpoint %s /tmp/kajo-amiga-cp.uss", restore ? "restore" : "save");
+  amiga_rsp_client_rcmd_async(self->rsp, cmd, NULL, NULL, NULL);
+  show_toast(self, restore ? "⏮ Restored checkpoint" : "💾 Saved checkpoint");
+}
+
+static void on_disasm_fetch(AmigaDisasmView *v G_GNUC_UNUSED, uint32_t addr, int count, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (!self->rsp || amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_STOPPED) return;
+  g_autofree char *cmd = g_strdup_printf("disasm %x %d", addr, count);
+  GWeakRef *weak = g_new0(GWeakRef, 1); g_weak_ref_init(weak, self);
+  amiga_rsp_client_rcmd_async(self->rsp, cmd, NULL, on_disasm_rcmd_done, weak);
+}
+
+static void on_disasm_toggle_bp(AmigaDisasmView *v G_GNUC_UNUSED, uint32_t addr, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (addr & 1u) return;
+  gpointer k = GUINT_TO_POINTER(addr);
+  if (g_hash_table_contains(self->bp_addrs, k)) {
+    g_hash_table_remove(self->bp_addrs, k);
+    if (self->rsp) amiga_rsp_client_bp_remove_async(self->rsp, addr, NULL, NULL, NULL);
+  } else {
+    g_hash_table_insert(self->bp_addrs, k, GINT_TO_POINTER(1));
+    if (self->rsp) amiga_rsp_client_bp_set_async(self->rsp, addr, NULL, NULL, NULL);
+  }
+}
+
+static void on_disasm_sel_cycles(AmigaDisasmView *v G_GNUC_UNUSED, const char *txt, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (txt) {
+    gtk_label_set_text(GTK_LABEL(self->lbl_sel_cycles), txt);
+    gtk_widget_set_visible(self->lbl_sel_cycles, TRUE);
+  } else {
+    gtk_widget_set_visible(self->lbl_sel_cycles, FALSE);
+  }
+}
+
+static uint32_t on_disasm_resolve(AmigaDisasmView *v G_GNUC_UNUSED, const char *expr, bool *ok, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  uint32_t val = 0;
+  if (self->symbols && amiga_symbols_lookup_name(self->symbols, expr, &val)) {
+    if (ok) *ok = true;
+    return val;
+  }
+  if (ok) *ok = false;
+  return 0;
+}
+
+static void on_mem_read_done(GObject *src, GAsyncResult *res, gpointer ud) {
+  GWeakRef *weak = ud;
+  g_autoptr(GError) err = NULL;
+  g_autoptr(GBytes) bytes = amiga_rsp_client_read_mem_finish(AMIGA_RSP_CLIENT(src), res, &err);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (!self || !bytes) return;
+  gsize len = 0;
+  const uint8_t *raw = g_bytes_get_data(bytes, &len);
+  amiga_mem_view_set_data(self->mem_view, amiga_mem_view_get_base_addr(self->mem_view), raw, len);
+}
+
+static void on_mem_read_cb(AmigaMemView *v G_GNUC_UNUSED, uint32_t addr, size_t len, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (!self->rsp || amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_STOPPED) return;
+  GWeakRef *weak = g_new0(GWeakRef, 1); g_weak_ref_init(weak, self);
+  amiga_rsp_client_read_mem_async(self->rsp, addr, len, NULL, on_mem_read_done, weak);
+}
+
+static void on_mem_write_cb(AmigaMemView *v G_GNUC_UNUSED, uint32_t addr, const uint8_t *b, size_t len, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (self->rsp && amiga_rsp_client_get_state(self->rsp) == AMIGA_RSP_STOPPED) {
+    amiga_rsp_client_write_mem_async(self->rsp, addr, b, len, NULL, NULL, NULL);
+    on_mem_read_cb(self->mem_view, addr, 256, self);
+  }
+}
+
+static void on_mem_watch_cb(AmigaMemView *v G_GNUC_UNUSED, uint8_t zt, uint32_t addr, uint32_t len, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (self->rsp && amiga_rsp_client_get_state(self->rsp) == AMIGA_RSP_STOPPED) {
+    amiga_rsp_client_watch_set_async(self->rsp, zt, addr, len, NULL, NULL, NULL);
+    show_toast(self, "👁 Watchpoint requested");
+  }
+}
+
+/* ─── Header & Project Wiring ─── */
+
+static void on_tree_file_open(const char *abs_path, gpointer ud) {
+  open_file_in_editor(KAJO_AMIGA_WINDOW(ud), abs_path, 1);
+}
+
+static void on_hdr_tree_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  gtk_widget_set_visible(self->sidebar_box, !gtk_widget_get_visible(self->sidebar_box));
+}
+
+static void on_hdr_build_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  trigger_build(KAJO_AMIGA_WINDOW(ud));
+}
+
+static void on_hdr_debug_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (self->rsp && amiga_rsp_client_get_state(self->rsp) == AMIGA_RSP_STOPPED) {
+    amiga_rsp_client_continue_async(self->rsp, NULL, NULL, NULL);
+    show_toast(self, "▶ Running guest");
+    return;
+  }
+  const AmigaTarget *t = get_selected_target(self);
+  const AmigaHwProfile *p = get_selected_profile(self);
+  if (!self->project || !t || !self->toolchain || !self->toolchain->amiberry) {
+    show_toast(self, "Amiberry binary or project target missing");
+    return;
+  }
+  g_autofree char *dh0 = g_build_filename(
+      g_get_user_cache_dir(), "kajo", "amiga",
+      self->project->name ? self->project->name : "default", "dh0", NULL);
+  AmigaRunnerLaunchSpec spec = {
+    .amiberry_bin = self->toolchain->amiberry,
+    .profile = p,
+    .target_kind = t->kind,
+    .target_name = t->name,
+    .dh0_dir = dh0,
+    .adf_path = t->exe_path ? t->exe_path : "",
+    .gdb_port = 2345,
+    .uaeboard_guest_output = self->project->trap86_guest_output,
+  };
+  g_autoptr(GError) err = NULL;
+  if (amiga_runner_start(self->runner, &spec, self->project->root_dir, &err)) {
+    kajo_amiga_window_open_attach(self, "127.0.0.1", 2345);
+  } else {
+    show_toast(self, err ? err->message : "Launch failed");
+  }
+}
+
+static void on_hdr_stop_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (self->rsp && amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_DISCONNECTED) {
+    amiga_rsp_client_detach_async(self->rsp, NULL, NULL, NULL);
+  }
+  if (amiga_runner_owns_process(self->runner)) {
+    amiga_runner_stop(self->runner);
+  }
+  amiga_cpu_strip_reset(self->cpu_strip);
+  show_toast(self, self->attach_mode ? "🔌 Detached safely" : "⏹ Stopped");
+}
+
+static void on_hdr_attach_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  kajo_amiga_window_open_attach(KAJO_AMIGA_WINDOW(ud), "127.0.0.1", 2345);
+}
+
+static void on_hdr_snapshot_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  refresh_rsp_snapshot(KAJO_AMIGA_WINDOW(ud));
+}
+
+static void on_hdr_float_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud G_GNUC_UNUSED) {
+  niri_toggle_window_floating();
+}
+
+static void on_hdr_close_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  gtk_window_close(GTK_WINDOW(ud));
+}
+
+static void on_hdr_settings_clicked(gpointer ud G_GNUC_UNUSED) {
+  const char *argv[] = { "kajo-settings", "--page", "amiga", NULL };
+  kajo_spawn_detached_argv(NULL, argv, NULL, NULL);
+}
+
+static void on_wizard_created(const char *dir, gpointer ud) {
+  kajo_amiga_window_open_project_dir(KAJO_AMIGA_WINDOW(ud), dir);
+}
+
+static void on_act_new_project(gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  amiga_project_wizard_present(GTK_WINDOW(self), self->toolchain, on_wizard_created, self);
+}
+
+static void on_open_folder_done(GObject *src, GAsyncResult *res, gpointer ud) {
+  GWeakRef *weak = ud;
+  g_autoptr(GFile) f = gtk_file_dialog_select_folder_finish(GTK_FILE_DIALOG(src), res, NULL);
+  g_autoptr(KajoAmigaWindow) self = g_weak_ref_get(weak);
+  g_weak_ref_clear(weak);
+  g_free(weak);
+  if (self && f) {
+    g_autofree char *p = g_file_get_path(f);
+    if (p) kajo_amiga_window_open_project_dir(self, p);
+  }
+}
+
+static void on_act_open_project(gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  g_autoptr(GtkFileDialog) dlg = gtk_file_dialog_new();
+  gtk_file_dialog_set_title(dlg, "Open Amiga Project Folder");
+  GWeakRef *weak = g_new0(GWeakRef, 1); g_weak_ref_init(weak, self);
+  gtk_file_dialog_select_folder(dlg, GTK_WINDOW(self), NULL, on_open_folder_done, weak);
+}
+
+static void on_act_attach(gpointer ud) {
+  kajo_amiga_window_open_attach(KAJO_AMIGA_WINDOW(ud), "127.0.0.1", 2345);
+}
+
+static void on_proj_saved(AmigaProject *p, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  amiga_project_write_compile_commands(p, self->toolchain, NULL);
+  sync_compat_badge(self);
+  show_toast(self, "✓ Project saved + compile_commands.json updated");
+}
+
+static void sync_header_workspace(KajoAmigaWindow *self, bool in_ws) {
+  gtk_widget_set_visible(self->btn_hdr_tree, in_ws);
+  gtk_widget_set_visible(self->dd_target, in_ws);
+  gtk_widget_set_visible(self->dd_profile, in_ws);
+  gtk_widget_set_visible(self->btn_build, in_ws);
+  gtk_widget_set_visible(self->btn_debug, in_ws);
+  gtk_widget_set_visible(self->btn_stop, in_ws);
+  gtk_widget_set_visible(self->btn_snapshot, in_ws);
+  if (!in_ws) gtk_widget_set_visible(self->compat_badge, FALSE);
+}
+
+static void on_center_tab_toggled(GtkToggleButton *tb, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (!self->center_stack || !gtk_toggle_button_get_active(tb)) return;
+  if (GTK_WIDGET(tb) == self->btn_tab_source) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->center_stack), "source");
+  } else if (GTK_WIDGET(tb) == self->btn_tab_disasm) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->center_stack), "disasm");
+  } else if (GTK_WIDGET(tb) == self->btn_tab_setup) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->center_stack), "setup");
+  }
+}
+
+static void on_drawer_tab_toggled(GtkToggleButton *tb, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (!self->drawer_stack || !gtk_toggle_button_get_active(tb)) return;
+  if (GTK_WIDGET(tb) == self->btn_drw_build) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->drawer_stack), "build");
+  } else if (GTK_WIDGET(tb) == self->btn_drw_hex) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->drawer_stack), "hex");
+  } else if (GTK_WIDGET(tb) == self->btn_drw_debug) {
+    gtk_stack_set_visible_child_name(GTK_STACK(self->drawer_stack), "debug");
+  }
+}
+
+static void on_narrow_switch_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud) {
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  bool show_insp = !gtk_widget_get_visible(self->inspector_box);
+  gtk_widget_set_visible(self->inspector_box, show_insp);
+  if (self->narrow_mode) {
+    gtk_widget_set_visible(self->center_stack, !show_insp);
+  }
+}
+
+static void
+on_window_width_changed(GObject *obj, GParamSpec *pspec G_GNUC_UNUSED, gpointer ud G_GNUC_UNUSED)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(obj);
+  int w = gtk_widget_get_width(GTK_WIDGET(self));
+  if (w <= 0) return;
+  bool narrow = (w < 900);
+  if (narrow == self->narrow_mode) return;
+  self->narrow_mode = narrow;
+  gtk_widget_set_visible(self->btn_narrow_switch, narrow);
+  if (narrow) {
+    gtk_widget_set_visible(self->sidebar_box, FALSE);
+    gtk_widget_set_visible(self->inspector_box, FALSE);
+    gtk_widget_set_visible(self->center_stack, TRUE);
+  } else {
+    gtk_widget_set_visible(self->center_stack, TRUE);
+    gtk_widget_set_visible(self->inspector_box, TRUE);
+    if (w >= 1200) gtk_widget_set_visible(self->sidebar_box, TRUE);
+  }
+}
+
+static void
+on_sb_setup_clicked(GtkButton *b G_GNUC_UNUSED, gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (self->btn_tab_setup) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_setup), TRUE);
+  }
+}
+
+static gboolean
+on_source_key_pressed(GtkEventControllerKey *ctrl G_GNUC_UNUSED,
+                      guint                  keyval,
+                      guint                  keycode G_GNUC_UNUSED,
+                      GdkModifierType        state,
+                      gpointer               ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  if (!self->fsm) return FALSE;
+  g_autofree char *key_str = ide_editor_translate_gdk_key(keyval, state);
+  if (!key_str) return FALSE;
+  IdeAction act = ide_fsm_handle_key(self->fsm, key_str);
+  sync_mode_pill(self);
+  const char *toast = NULL;
+  IdeEditorOpOutcome out = ide_editor_ops_execute(&self->editor_host, &act, &toast);
+  if (out != IDE_EDITOR_OP_UNHANDLED) {
+    if (toast) show_toast(self, toast);
+    update_cursor_and_selection_cycles(self);
+    return TRUE;
+  }
+  if (act.type == IDE_ACTION_SAVE || act.type == IDE_ACTION_SAVE_ALL) { save_active_buffer(self); return TRUE; }
+  if (act.type == IDE_ACTION_TASK_BUILD || act.type == IDE_ACTION_TASK_RUN) { trigger_build(self); return TRUE; }
+  if (act.type == IDE_ACTION_TOGGLE_FILE_TREE) { on_hdr_tree_clicked(NULL, self); return TRUE; }
+  return FALSE;
+}
+
+static gboolean
+on_window_key_pressed(GtkEventControllerKey *ctrl G_GNUC_UNUSED,
+                      guint                  keyval,
+                      guint                  keycode G_GNUC_UNUSED,
+                      GdkModifierType        state,
+                      gpointer               ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  bool ctrl_mod = (state & GDK_CONTROL_MASK) != 0;
+  bool shift_mod = (state & GDK_SHIFT_MASK) != 0;
+  bool alt_mod = (state & GDK_ALT_MASK) != 0;
+
+  if (ctrl_mod && shift_mod && (keyval == GDK_KEY_N || keyval == GDK_KEY_n)) {
+    on_act_new_project(self);
+    return TRUE;
+  }
+  if (ctrl_mod && !shift_mod && (keyval == GDK_KEY_o || keyval == GDK_KEY_O)) {
+    on_act_open_project(self);
+    return TRUE;
+  }
+  if (ctrl_mod && shift_mod && (keyval == GDK_KEY_P || keyval == GDK_KEY_p)) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_setup), TRUE);
+    return TRUE;
+  }
+  if (ctrl_mod && shift_mod && (keyval == GDK_KEY_A || keyval == GDK_KEY_a)) {
+    on_act_attach(self);
+    return TRUE;
+  }
+  if (ctrl_mod && (keyval == GDK_KEY_comma)) {
+    on_hdr_settings_clicked(self);
+    return TRUE;
+  }
+  if (ctrl_mod && (keyval == GDK_KEY_g || keyval == GDK_KEY_G)) {
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_disasm), TRUE);
+    amiga_disasm_view_focus_goto(self->disasm_view);
+    return TRUE;
+  }
+  if (alt_mod && keyval == GDK_KEY_Left) {
+    amiga_disasm_view_nav_back(self->disasm_view);
+    return TRUE;
+  }
+  if (alt_mod && keyval == GDK_KEY_Right) {
+    amiga_disasm_view_nav_fwd(self->disasm_view);
+    return TRUE;
+  }
+  if (keyval == GDK_KEY_F5) {
+    if (shift_mod) on_hdr_stop_clicked(NULL, self);
+    else on_hdr_debug_clicked(NULL, self);
+    return TRUE;
+  }
+  if (keyval == GDK_KEY_F9 && self->active_buf) {
+    GtkTextBuffer *tb = GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(self->active_buf));
+    GtkTextIter cur;
+    gtk_text_buffer_get_iter_at_mark(tb, &cur, gtk_text_buffer_get_insert(tb));
+    guint ln = (guint)gtk_text_iter_get_line(&cur) + 1u;
+    gboolean set = ide_buffer_toggle_breakpoint(self->active_buf, ln);
+    gtk_widget_queue_draw(self->source_view);
+    show_toast(self, set ? "● Breakpoint set (source line)" : "○ Breakpoint cleared");
+    return TRUE;
+  }
+  if (keyval == GDK_KEY_F10 && self->rsp) {
+    amiga_rsp_client_step_over_async(self->rsp, NULL, NULL, NULL);
+    return TRUE;
+  }
+  if (keyval == GDK_KEY_F11 && self->rsp) {
+    amiga_rsp_client_step_into_async(self->rsp, NULL, NULL, NULL);
+    return TRUE;
+  }
+  return FALSE;
+}
+
+static void
+populate_project_dropdowns(KajoAmigaWindow *self)
+{
+  if (!self->project) return;
+  g_autoptr(GPtrArray) tnames = g_ptr_array_new_with_free_func(g_free);
+  for (guint i = 0; i < self->project->targets->len; i++) {
+    AmigaTarget *t = g_ptr_array_index(self->project->targets, i);
+    g_ptr_array_add(tnames, g_strdup(t->name));
+  }
+  if (tnames->len == 0) g_ptr_array_add(tnames, g_strdup("default"));
+  g_ptr_array_add(tnames, NULL);
+  gtk_drop_down_set_model(GTK_DROP_DOWN(self->dd_target),
+                          G_LIST_MODEL(gtk_string_list_new((const char *const *)tnames->pdata)));
+
+  g_autoptr(GPtrArray) pnames = g_ptr_array_new_with_free_func(g_free);
+  guint def_pidx = 0;
+  for (guint i = 0; i < self->project->profiles->len; i++) {
+    AmigaHwProfile *p = g_ptr_array_index(self->project->profiles, i);
+    g_ptr_array_add(pnames, g_strdup(p->id));
+    if (g_strcmp0(p->id, self->project->default_profile) == 0) def_pidx = i;
+  }
+  if (pnames->len == 0) g_ptr_array_add(pnames, g_strdup("a500_ocs"));
+  g_ptr_array_add(pnames, NULL);
+  gtk_drop_down_set_model(GTK_DROP_DOWN(self->dd_profile),
+                          G_LIST_MODEL(gtk_string_list_new((const char *const *)pnames->pdata)));
+  gtk_drop_down_set_selected(GTK_DROP_DOWN(self->dd_profile), def_pidx);
+  sync_compat_badge(self);
+}
+
+static void
+on_dropdown_changed(GObject *obj G_GNUC_UNUSED, GParamSpec *ps G_GNUC_UNUSED, gpointer ud)
+{
+  sync_compat_badge(KAJO_AMIGA_WINDOW(ud));
+}
+
+static void
+on_proj_menu_action(GSimpleAction *a, GVariant *p G_GNUC_UNUSED, gpointer ud)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(ud);
+  const char *nm = g_action_get_name(G_ACTION(a));
+  if (g_strcmp0(nm, "new") == 0) on_act_new_project(self);
+  else if (g_strcmp0(nm, "open") == 0) on_act_open_project(self);
+  else if (g_strcmp0(nm, "setup") == 0) {
+    sync_header_workspace(self, true);
+    gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "workspace");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_setup), TRUE);
+  } else if (g_strcmp0(nm, "welcome") == 0) {
+    sync_header_workspace(self, false);
+    gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "welcome");
+  } else if (g_strcmp0(nm, "settings") == 0) {
+    on_hdr_settings_clicked(self);
+  }
+}
+
+static void
+build_ui(KajoAmigaWindow *self)
+{
+  gtk_window_set_decorated(GTK_WINDOW(self), FALSE);
+  gtk_window_set_default_size(GTK_WINDOW(self), 1240, 700);
+  gtk_widget_add_css_class(GTK_WIDGET(self), "shell-settings-window");
+  gtk_widget_add_css_class(GTK_WIDGET(self), "shell-amiga-window");
+
+  GtkWidget *outer = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+
+  /* Header Bar */
+  GtkWidget *handle = gtk_window_handle_new();
+  GtkWidget *hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+  gtk_widget_add_css_class(hdr, "settings-header-bar");
+  gtk_widget_set_valign(hdr, GTK_ALIGN_CENTER);
+
+  GtkWidget *title = gtk_label_new("⚙ KAJO AMIGA");
+  gtk_widget_add_css_class(title, "settings-header-title");
+  gtk_widget_set_valign(title, GTK_ALIGN_CENTER);
+
+  /* 📁 PROJ ▾ menu button */
+  GSimpleActionGroup *pg = g_simple_action_group_new();
+  const char *pacts[] = { "new", "open", "setup", "welcome", "settings" };
+  for (gsize i = 0; i < G_N_ELEMENTS(pacts); i++) {
+    GSimpleAction *sa = g_simple_action_new(pacts[i], NULL);
+    g_signal_connect(sa, "activate", G_CALLBACK(on_proj_menu_action), self);
+    g_action_map_add_action(G_ACTION_MAP(pg), G_ACTION(sa));
+    g_object_unref(sa);
+  }
+  gtk_widget_insert_action_group(GTK_WIDGET(self), "proj", G_ACTION_GROUP(pg));
+  g_object_unref(pg);
+
+  GMenu *pmenu = g_menu_new();
+  g_menu_append(pmenu, "New Project…\tCtrl+Shift+N", "proj.new");
+  g_menu_append(pmenu, "Open Workspace…\tCtrl+O", "proj.open");
+  g_menu_append(pmenu, "Project Setup (kajo-amiga.toml)", "proj.setup");
+  g_menu_append(pmenu, "Welcome Screen", "proj.welcome");
+  g_menu_append(pmenu, "Toolchain Settings…\tCtrl+,", "proj.settings");
+
+  self->btn_proj_menu = gtk_menu_button_new();
+  gtk_menu_button_set_label(GTK_MENU_BUTTON(self->btn_proj_menu), "📁 PROJ");
+  gtk_menu_button_set_menu_model(GTK_MENU_BUTTON(self->btn_proj_menu), G_MENU_MODEL(pmenu));
+  gtk_widget_add_css_class(self->btn_proj_menu, "ide-toolbar-btn");
+  g_object_unref(pmenu);
+
+  self->btn_hdr_tree = gtk_button_new_with_label("🌲 TREE");
+  gtk_widget_add_css_class(self->btn_hdr_tree, "ide-toolbar-btn");
+  g_signal_connect(self->btn_hdr_tree, "clicked", G_CALLBACK(on_hdr_tree_clicked), self);
+
+  self->dd_target = gtk_drop_down_new_from_strings((const char *[]){"default", NULL});
+  gtk_widget_add_css_class(self->dd_target, "amiga-header-dd");
+  g_signal_connect(self->dd_target, "notify::selected", G_CALLBACK(on_dropdown_changed), self);
+
+  self->dd_profile = gtk_drop_down_new_from_strings((const char *[]){"a500_ocs", NULL});
+  gtk_widget_add_css_class(self->dd_profile, "amiga-header-dd");
+  g_signal_connect(self->dd_profile, "notify::selected", G_CALLBACK(on_dropdown_changed), self);
+
+  self->compat_badge = gtk_label_new("");
+  gtk_widget_add_css_class(self->compat_badge, "amiga-compat-warn");
+  gtk_widget_set_visible(self->compat_badge, FALSE);
+
+  GtkWidget *spacer = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+  gtk_widget_set_hexpand(spacer, TRUE);
+
+  self->btn_narrow_switch = gtk_button_new_with_label("🔧 INSPECTOR");
+  gtk_widget_add_css_class(self->btn_narrow_switch, "ide-toolbar-btn");
+  gtk_widget_set_visible(self->btn_narrow_switch, FALSE);
+  g_signal_connect(self->btn_narrow_switch, "clicked", G_CALLBACK(on_narrow_switch_clicked), self);
+
+  self->btn_build = gtk_button_new_with_label("🔨 BUILD");
+  gtk_widget_add_css_class(self->btn_build, "ide-toolbar-btn");
+  gtk_widget_add_css_class(self->btn_build, "accent-btn");
+  g_signal_connect(self->btn_build, "clicked", G_CALLBACK(on_hdr_build_clicked), self);
+
+  self->btn_debug = gtk_button_new_with_label("▶ DEBUG");
+  gtk_widget_add_css_class(self->btn_debug, "ide-toolbar-btn");
+  gtk_widget_add_css_class(self->btn_debug, "run-btn");
+  g_signal_connect(self->btn_debug, "clicked", G_CALLBACK(on_hdr_debug_clicked), self);
+
+  self->btn_stop = gtk_button_new_with_label("⏹ STOP");
+  gtk_widget_add_css_class(self->btn_stop, "ide-toolbar-btn");
+  gtk_widget_add_css_class(self->btn_stop, "stop-btn");
+  g_signal_connect(self->btn_stop, "clicked", G_CALLBACK(on_hdr_stop_clicked), self);
+
+  self->btn_attach = gtk_button_new_with_label("🔌 ATTACH");
+  gtk_widget_add_css_class(self->btn_attach, "ide-toolbar-btn");
+  g_signal_connect(self->btn_attach, "clicked", G_CALLBACK(on_hdr_attach_clicked), self);
+
+  self->btn_snapshot = gtk_button_new_with_label("↻ SNAP");
+  gtk_widget_add_css_class(self->btn_snapshot, "ide-toolbar-btn");
+  g_signal_connect(self->btn_snapshot, "clicked", G_CALLBACK(on_hdr_snapshot_clicked), self);
+
+  GtkWidget *btn_float = gtk_button_new_with_label("🗗 FLOAT / TILE");
+  gtk_widget_add_css_class(btn_float, "ide-toolbar-btn");
+  g_signal_connect(btn_float, "clicked", G_CALLBACK(on_hdr_float_clicked), self);
+
+  GtkWidget *btn_close = gtk_button_new_with_label("✕");
+  gtk_widget_add_css_class(btn_close, "settings-close-btn");
+  g_signal_connect(btn_close, "clicked", G_CALLBACK(on_hdr_close_clicked), self);
+
+  gtk_box_append(GTK_BOX(hdr), title);
+  gtk_box_append(GTK_BOX(hdr), self->btn_proj_menu);
+  gtk_box_append(GTK_BOX(hdr), self->btn_hdr_tree);
+  gtk_box_append(GTK_BOX(hdr), self->dd_target);
+  gtk_box_append(GTK_BOX(hdr), self->dd_profile);
+  gtk_box_append(GTK_BOX(hdr), self->compat_badge);
+  gtk_box_append(GTK_BOX(hdr), spacer);
+  gtk_box_append(GTK_BOX(hdr), self->btn_narrow_switch);
+  gtk_box_append(GTK_BOX(hdr), self->btn_build);
+  gtk_box_append(GTK_BOX(hdr), self->btn_debug);
+  gtk_box_append(GTK_BOX(hdr), self->btn_stop);
+  gtk_box_append(GTK_BOX(hdr), self->btn_attach);
+  gtk_box_append(GTK_BOX(hdr), self->btn_snapshot);
+  gtk_box_append(GTK_BOX(hdr), btn_float);
+  gtk_box_append(GTK_BOX(hdr), btn_close);
+  gtk_window_handle_set_child(GTK_WINDOW_HANDLE(handle), hdr);
+  gtk_box_append(GTK_BOX(outer), handle);
+
+  /* Root stack ("welcome" | "workspace") */
+  self->root_stack = gtk_stack_new();
+  gtk_widget_set_hexpand(self->root_stack, TRUE);
+  gtk_widget_set_vexpand(self->root_stack, TRUE);
+
+  self->welcome_slot = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_box_append(GTK_BOX(self->welcome_slot),
+                 amiga_welcome_view_new(self->toolchain, on_act_new_project, on_act_open_project,
+                                        on_act_attach, on_hdr_settings_clicked, self));
+  gtk_stack_add_named(GTK_STACK(self->root_stack), self->welcome_slot, "welcome");
+
+  /* Workspace container */
+  GtkWidget *ws_vbox = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  self->cpu_strip = amiga_cpu_strip_new();
+  amiga_cpu_strip_set_callbacks(self->cpu_strip, on_strip_write_regs, on_strip_jump, on_strip_cp, self);
+  gtk_box_append(GTK_BOX(ws_vbox), GTK_WIDGET(self->cpu_strip));
+
+  self->main_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_add_css_class(self->main_paned, "ide-paned");
+  gtk_widget_set_hexpand(self->main_paned, TRUE);
+  gtk_widget_set_vexpand(self->main_paned, TRUE);
+
+  /* Left Sidebar */
+  self->sidebar_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(self->sidebar_box, "amiga-sidebar");
+  gtk_widget_set_size_request(self->sidebar_box, 204, -1);
+
+  self->sidebar_stack = gtk_stack_new();
+  gtk_widget_set_vexpand(self->sidebar_stack, TRUE);
+
+  GtkWidget *proj_sb = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *sb_hdr = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(sb_hdr, "amiga-pane-header");
+  GtkWidget *sb_lbl = gtk_label_new("FILES & OUTLINE");
+  gtk_widget_set_hexpand(sb_lbl, TRUE);
+  gtk_label_set_xalign(GTK_LABEL(sb_lbl), 0.0f);
+  GtkWidget *b_sb_setup = gtk_button_new_with_label("⚙");
+  gtk_widget_add_css_class(b_sb_setup, "ide-toolbar-btn");
+  g_signal_connect(b_sb_setup, "clicked", G_CALLBACK(on_sb_setup_clicked), self);
+  gtk_box_append(GTK_BOX(sb_hdr), sb_lbl);
+  gtk_box_append(GTK_BOX(sb_hdr), b_sb_setup);
+  gtk_box_append(GTK_BOX(proj_sb), sb_hdr);
+
+  self->tree_slot = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_vexpand(self->tree_slot, TRUE);
+  self->file_tree = ide_tree_new(".", on_tree_file_open, self);
+  gtk_box_append(GTK_BOX(self->tree_slot), ide_tree_get_widget(self->file_tree));
+
+  GtkWidget *out_hdr = gtk_label_new("68k / C OUTLINE");
+  gtk_widget_add_css_class(out_hdr, "amiga-pane-header");
+  gtk_label_set_xalign(GTK_LABEL(out_hdr), 0.0f);
+  GtkWidget *out_scroll = gtk_scrolled_window_new();
+  gtk_widget_set_size_request(out_scroll, -1, 180);
+  self->outline_list = gtk_list_box_new();
+  gtk_widget_add_css_class(self->outline_list, "amiga-diag-list");
+  g_signal_connect(self->outline_list, "row-activated", G_CALLBACK(on_outline_row_activated), self);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(out_scroll), self->outline_list);
+
+  gtk_box_append(GTK_BOX(proj_sb), self->tree_slot);
+  gtk_box_append(GTK_BOX(proj_sb), out_hdr);
+  gtk_box_append(GTK_BOX(proj_sb), out_scroll);
+  gtk_stack_add_named(GTK_STACK(self->sidebar_stack), proj_sb, "project");
+
+  GtkWidget *att_sb = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  GtkWidget *att_hdr = gtk_label_new("LIVE TASKS & MEMORY MAP");
+  gtk_widget_add_css_class(att_hdr, "amiga-pane-header");
+  gtk_label_set_xalign(GTK_LABEL(att_hdr), 0.0f);
+  self->attach_list = gtk_list_box_new();
+  gtk_widget_add_css_class(self->attach_list, "amiga-diag-list");
+  GtkWidget *att_scroll = gtk_scrolled_window_new();
+  gtk_widget_set_vexpand(att_scroll, TRUE);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(att_scroll), self->attach_list);
+  gtk_box_append(GTK_BOX(att_sb), att_hdr);
+  gtk_box_append(GTK_BOX(att_sb), att_scroll);
+  gtk_stack_add_named(GTK_STACK(self->sidebar_stack), att_sb, "attach");
+
+  gtk_box_append(GTK_BOX(self->sidebar_box), self->sidebar_stack);
+  gtk_paned_set_start_child(GTK_PANED(self->main_paned), self->sidebar_box);
+  gtk_paned_set_resize_start_child(GTK_PANED(self->main_paned), FALSE);
+
+  /* Right half: vert_paned (center_paned / bottom_drawer) */
+  self->vert_paned = gtk_paned_new(GTK_ORIENTATION_VERTICAL);
+  gtk_widget_add_css_class(self->vert_paned, "ide-paned");
+  gtk_widget_set_hexpand(self->vert_paned, TRUE);
+  gtk_widget_set_vexpand(self->vert_paned, TRUE);
+
+  self->center_paned = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_add_css_class(self->center_paned, "ide-paned");
+
+  /* Center Stack + Tab Strip */
+  GtkWidget *center_col = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_set_hexpand(center_col, TRUE);
+  gtk_widget_set_vexpand(center_col, TRUE);
+
+  GtkWidget *ctabs = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(ctabs, "amiga-drawer-tabs");
+  self->btn_tab_source = gtk_toggle_button_new_with_label("📝 SOURCE");
+  self->btn_tab_disasm = gtk_toggle_button_new_with_label("⚙ DISASM");
+  self->btn_tab_setup = gtk_toggle_button_new_with_label("🛠 kajo-amiga.toml");
+  gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(self->btn_tab_disasm), GTK_TOGGLE_BUTTON(self->btn_tab_source));
+  gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(self->btn_tab_setup), GTK_TOGGLE_BUTTON(self->btn_tab_source));
+  gtk_widget_add_css_class(self->btn_tab_source, "amiga-seg-btn");
+  gtk_widget_add_css_class(self->btn_tab_disasm, "amiga-seg-btn");
+  gtk_widget_add_css_class(self->btn_tab_setup, "amiga-seg-btn");
+  g_signal_connect(self->btn_tab_source, "toggled", G_CALLBACK(on_center_tab_toggled), self);
+  g_signal_connect(self->btn_tab_disasm, "toggled", G_CALLBACK(on_center_tab_toggled), self);
+  g_signal_connect(self->btn_tab_setup, "toggled", G_CALLBACK(on_center_tab_toggled), self);
+  gtk_box_append(GTK_BOX(ctabs), self->btn_tab_source);
+  gtk_box_append(GTK_BOX(ctabs), self->btn_tab_disasm);
+  gtk_box_append(GTK_BOX(ctabs), self->btn_tab_setup);
+  gtk_box_append(GTK_BOX(center_col), ctabs);
+
+  self->center_stack = gtk_stack_new();
+  gtk_widget_set_hexpand(self->center_stack, TRUE);
+  gtk_widget_set_vexpand(self->center_stack, TRUE);
+
+  /* Source view + Column 7 Cycle Gutter + Hover */
+  GtkWidget *src_scroll = gtk_scrolled_window_new();
+  self->source_view = gtk_source_view_new();
+  gtk_source_view_set_tab_width(GTK_SOURCE_VIEW(self->source_view), 2);
+  gtk_source_view_set_highlight_current_line(GTK_SOURCE_VIEW(self->source_view), TRUE);
+  gtk_text_view_set_monospace(GTK_TEXT_VIEW(self->source_view), TRUE);
+  gtk_widget_set_has_tooltip(self->source_view, TRUE);
+  g_signal_connect(self->source_view, "query-tooltip", G_CALLBACK(on_source_query_tooltip), self);
+
+  GtkSourceGutter *lg = gtk_source_view_get_gutter(
+      GTK_SOURCE_VIEW(self->source_view), GTK_TEXT_WINDOW_LEFT);
+  self->gutter = KAJO_IDE_GUTTER_RENDERER(kajo_ide_gutter_renderer_new(NULL));
+  kajo_ide_gutter_renderer_set_annotation_callback(
+      self->gutter, on_gutter_cycle_annotate, 76, self);
+  gtk_source_gutter_insert(lg, GTK_SOURCE_GUTTER_RENDERER(self->gutter), 0);
+
+  GtkEventController *sk = gtk_event_controller_key_new();
+  g_signal_connect(sk, "key-pressed", G_CALLBACK(on_source_key_pressed), self);
+  gtk_widget_add_controller(self->source_view, sk);
+
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(src_scroll), self->source_view);
+  gtk_stack_add_named(GTK_STACK(self->center_stack), src_scroll, "source");
+
+  /* Disasm view */
+  self->disasm_view = amiga_disasm_view_new();
+  AmigaDisasmCallbacks dcbs = {
+    .fetch_disasm = on_disasm_fetch,
+    .toggle_bp = on_disasm_toggle_bp,
+    .selection_cycles = on_disasm_sel_cycles,
+    .resolve_expr = on_disasm_resolve,
+  };
+  amiga_disasm_view_set_callbacks(self->disasm_view, &dcbs, self);
+  gtk_stack_add_named(GTK_STACK(self->center_stack), GTK_WIDGET(self->disasm_view), "disasm");
+
+  /* Project Setup view */
+  self->setup_view = amiga_project_setup_view_new(on_proj_saved, self);
+  gtk_stack_add_named(GTK_STACK(self->center_stack), GTK_WIDGET(self->setup_view), "setup");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_source), TRUE);
+
+  gtk_box_append(GTK_BOX(center_col), self->center_stack);
+  gtk_paned_set_start_child(GTK_PANED(self->center_paned), center_col);
+  gtk_paned_set_resize_start_child(GTK_PANED(self->center_paned), TRUE);
+
+  /* Right Inspector (M3 live custom snapshot summary + honest Stage 4 cards) */
+  self->inspector_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_add_css_class(self->inspector_box, "amiga-inspector");
+  gtk_widget_set_size_request(self->inspector_box, 300, -1);
+
+  GtkWidget *ihdr = gtk_label_new("HARDWARE INSPECTOR ($DFF000 SNAPSHOT)");
+  gtk_widget_add_css_class(ihdr, "amiga-pane-header");
+  gtk_label_set_xalign(GTK_LABEL(ihdr), 0.0f);
+  gtk_box_append(GTK_BOX(self->inspector_box), ihdr);
+
+  GtkWidget *snap_card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_add_css_class(snap_card, "amiga-section-card");
+  gtk_widget_set_margin_start(snap_card, 8);
+  gtk_widget_set_margin_end(snap_card, 8);
+  GtkWidget *snap_tag = gtk_label_new("[ EMU SNAPSHOT · m dff000,200 ]");
+  gtk_widget_add_css_class(snap_tag, "amiga-badge-snapshot");
+  gtk_widget_set_halign(snap_tag, GTK_ALIGN_START);
+  self->lbl_custom_snap = gtk_label_new("Pause or click ↻ SNAP to read Amiberry custom shadow.");
+  gtk_label_set_xalign(GTK_LABEL(self->lbl_custom_snap), 0.0f);
+  gtk_label_set_wrap(GTK_LABEL(self->lbl_custom_snap), TRUE);
+  gtk_box_append(GTK_BOX(snap_card), snap_tag);
+  gtk_box_append(GTK_BOX(snap_card), self->lbl_custom_snap);
+  gtk_box_append(GTK_BOX(self->inspector_box), snap_card);
+
+  GtkWidget *m4_card = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+  gtk_widget_add_css_class(m4_card, "amiga-section-card");
+  gtk_widget_set_margin_start(m4_card, 8);
+  gtk_widget_set_margin_end(m4_card, 8);
+  GtkWidget *m4_tag = gtk_label_new("STAGE 4 VISUALIZERS (PLANNED)");
+  gtk_widget_add_css_class(m4_tag, "amiga-badge-placeholder");
+  gtk_widget_set_halign(m4_tag, GTK_ALIGN_START);
+  GtkWidget *m4_txt = gtk_label_new(
+      "Bitplanes (1-6 BPL / HAM6 / EHB), Copperlist Disasm & Chip Scan, Chips/Blitter trace, and 227-Clock DMA Bar arrive in Stage 4 (M4).");
+  gtk_label_set_wrap(GTK_LABEL(m4_txt), TRUE);
+  gtk_label_set_xalign(GTK_LABEL(m4_txt), 0.0f);
+  gtk_box_append(GTK_BOX(m4_card), m4_tag);
+  gtk_box_append(GTK_BOX(m4_card), m4_txt);
+  gtk_box_append(GTK_BOX(self->inspector_box), m4_card);
+
+  gtk_paned_set_end_child(GTK_PANED(self->center_paned), self->inspector_box);
+  gtk_paned_set_resize_end_child(GTK_PANED(self->center_paned), FALSE);
+  gtk_paned_set_start_child(GTK_PANED(self->vert_paned), self->center_paned);
+  gtk_paned_set_resize_start_child(GTK_PANED(self->vert_paned), TRUE);
+
+  /* Bottom Drawer */
+  GtkWidget *drawer_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 0);
+  gtk_widget_add_css_class(drawer_box, "amiga-drawer");
+  gtk_widget_set_size_request(drawer_box, -1, 148);
+
+  GtkWidget *dtabs = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+  gtk_widget_add_css_class(dtabs, "amiga-drawer-tabs");
+  self->btn_drw_build = gtk_toggle_button_new_with_label("🔨 BUILD & DIAGNOSTICS");
+  self->btn_drw_hex = gtk_toggle_button_new_with_label("▓ MEMORY HEX");
+  self->btn_drw_debug = gtk_toggle_button_new_with_label("🐞 EXCEPTIONS & CHECKPOINTS");
+  gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(self->btn_drw_hex), GTK_TOGGLE_BUTTON(self->btn_drw_build));
+  gtk_toggle_button_set_group(GTK_TOGGLE_BUTTON(self->btn_drw_debug), GTK_TOGGLE_BUTTON(self->btn_drw_build));
+  gtk_widget_add_css_class(self->btn_drw_build, "amiga-seg-btn");
+  gtk_widget_add_css_class(self->btn_drw_hex, "amiga-seg-btn");
+  gtk_widget_add_css_class(self->btn_drw_debug, "amiga-seg-btn");
+  g_signal_connect(self->btn_drw_build, "toggled", G_CALLBACK(on_drawer_tab_toggled), self);
+  g_signal_connect(self->btn_drw_hex, "toggled", G_CALLBACK(on_drawer_tab_toggled), self);
+  g_signal_connect(self->btn_drw_debug, "toggled", G_CALLBACK(on_drawer_tab_toggled), self);
+  gtk_box_append(GTK_BOX(dtabs), self->btn_drw_build);
+  gtk_box_append(GTK_BOX(dtabs), self->btn_drw_hex);
+  gtk_box_append(GTK_BOX(dtabs), self->btn_drw_debug);
+  gtk_box_append(GTK_BOX(drawer_box), dtabs);
+
+  self->drawer_stack = gtk_stack_new();
+  gtk_widget_set_vexpand(self->drawer_stack, TRUE);
+
+  GtkWidget *build_split = gtk_paned_new(GTK_ORIENTATION_HORIZONTAL);
+  gtk_widget_add_css_class(build_split, "ide-paned");
+  GtkWidget *c_scr = gtk_scrolled_window_new();
+  self->console_view = gtk_text_view_new();
+  gtk_text_view_set_editable(GTK_TEXT_VIEW(self->console_view), FALSE);
+  gtk_text_view_set_monospace(GTK_TEXT_VIEW(self->console_view), TRUE);
+  gtk_widget_add_css_class(self->console_view, "amiga-console-view");
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(c_scr), self->console_view);
+  GtkWidget *d_scr = gtk_scrolled_window_new();
+  self->diag_list = gtk_list_box_new();
+  gtk_widget_add_css_class(self->diag_list, "amiga-diag-list");
+  g_signal_connect(self->diag_list, "row-activated", G_CALLBACK(on_diag_row_activated), self);
+  gtk_scrolled_window_set_child(GTK_SCROLLED_WINDOW(d_scr), self->diag_list);
+  gtk_paned_set_start_child(GTK_PANED(build_split), c_scr);
+  gtk_paned_set_end_child(GTK_PANED(build_split), d_scr);
+  gtk_paned_set_position(GTK_PANED(build_split), 640);
+  gtk_stack_add_named(GTK_STACK(self->drawer_stack), build_split, "build");
+
+  self->mem_view = amiga_mem_view_new();
+  amiga_mem_view_set_callbacks(self->mem_view, on_mem_read_cb, on_mem_write_cb, on_mem_watch_cb, self);
+  gtk_stack_add_named(GTK_STACK(self->drawer_stack), GTK_WIDGET(self->mem_view), "hex");
+
+  GtkWidget *dbg_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+  gtk_widget_set_margin_top(dbg_box, 10);
+  gtk_widget_set_margin_start(dbg_box, 10);
+  GtkWidget *exc_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  static const char *const enames[5] = {
+    "Bus (#2)", "Addr (#3)", "Illegal (#4)", "Div0 (#5)", "Privilege (#8)"
+  };
+  for (int i = 0; i < 5; i++) {
+    self->exc_checks[i] = gtk_check_button_new_with_label(enames[i]);
+    gtk_box_append(GTK_BOX(exc_row), self->exc_checks[i]);
+  }
+  self->lbl_exc_last = gtk_label_new("No captured 68000 exception.");
+  gtk_label_set_xalign(GTK_LABEL(self->lbl_exc_last), 0.0f);
+  gtk_box_append(GTK_BOX(dbg_box), exc_row);
+  gtk_box_append(GTK_BOX(dbg_box), self->lbl_exc_last);
+  gtk_stack_add_named(GTK_STACK(self->drawer_stack), dbg_box, "debug");
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_drw_build), TRUE);
+
+  gtk_box_append(GTK_BOX(drawer_box), self->drawer_stack);
+  gtk_paned_set_end_child(GTK_PANED(self->vert_paned), drawer_box);
+  gtk_paned_set_resize_end_child(GTK_PANED(self->vert_paned), FALSE);
+
+  gtk_paned_set_end_child(GTK_PANED(self->main_paned), self->vert_paned);
+  gtk_paned_set_resize_end_child(GTK_PANED(self->main_paned), TRUE);
+
+  gtk_box_append(GTK_BOX(ws_vbox), self->main_paned);
+  gtk_stack_add_named(GTK_STACK(self->root_stack), ws_vbox, "workspace");
+  gtk_box_append(GTK_BOX(outer), self->root_stack);
+
+  /* Toast Banner + Status Bar */
+  self->toast_bar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+  gtk_widget_add_css_class(self->toast_bar, "amiga-toast-banner");
+  gtk_widget_set_visible(self->toast_bar, FALSE);
+  self->toast_lbl = gtk_label_new("");
+  gtk_label_set_xalign(GTK_LABEL(self->toast_lbl), 0.0f);
+  gtk_widget_set_hexpand(self->toast_lbl, TRUE);
+  gtk_box_append(GTK_BOX(self->toast_bar), self->toast_lbl);
+  gtk_box_append(GTK_BOX(outer), self->toast_bar);
+
+  GtkWidget *sbar = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+  gtk_widget_add_css_class(sbar, "amiga-status-bar");
+  gtk_widget_set_valign(sbar, GTK_ALIGN_CENTER);
+
+  self->mode_pill = gtk_label_new("NORMAL");
+  gtk_widget_add_css_class(self->mode_pill, "amiga-mode-pill");
+  self->lbl_ws_state = gtk_label_new("Welcome");
+  gtk_widget_set_hexpand(self->lbl_ws_state, TRUE);
+  gtk_label_set_xalign(GTK_LABEL(self->lbl_ws_state), 0.0f);
+  self->lbl_sel_cycles = gtk_label_new("");
+  gtk_widget_add_css_class(self->lbl_sel_cycles, "amiga-disasm-cycle-col");
+  gtk_widget_set_visible(self->lbl_sel_cycles, FALSE);
+  self->lbl_cursor = gtk_label_new("Ln 1, Col 1");
+
+  gtk_box_append(GTK_BOX(sbar), self->mode_pill);
+  gtk_box_append(GTK_BOX(sbar), self->lbl_ws_state);
+  gtk_box_append(GTK_BOX(sbar), self->lbl_sel_cycles);
+  gtk_box_append(GTK_BOX(sbar), self->lbl_cursor);
+  gtk_box_append(GTK_BOX(outer), sbar);
+
+  gtk_window_set_child(GTK_WINDOW(self), outer);
+
+  GtkEventController *wk = gtk_event_controller_key_new();
+  gtk_event_controller_set_propagation_phase(wk, GTK_PHASE_CAPTURE);
+  g_signal_connect(wk, "key-pressed", G_CALLBACK(on_window_key_pressed), self);
+  gtk_widget_add_controller(GTK_WIDGET(self), wk);
+
+  g_signal_connect(self, "notify::default-width", G_CALLBACK(on_window_width_changed), NULL);
+  g_signal_connect(self->source_view, "notify::width-request", G_CALLBACK(on_window_width_changed), NULL);
+  sync_header_workspace(self, false);
+}
+
+static void
+kajo_amiga_window_dispose(GObject *obj)
+{
+  KajoAmigaWindow *self = KAJO_AMIGA_WINDOW(obj);
+  g_clear_handle_id(&self->toast_timer_id, g_source_remove);
+  if (self->build_cancel) {
+    g_cancellable_cancel(self->build_cancel);
+    g_clear_object(&self->build_cancel);
+  }
+  if (self->rsp && amiga_rsp_client_get_state(self->rsp) != AMIGA_RSP_DISCONNECTED) {
+    amiga_rsp_client_set_stop_callback(self->rsp, NULL, NULL);
+  }
+  g_clear_object(&self->rsp);
+  if (self->runner) {
+    amiga_runner_set_callbacks(self->runner, NULL, NULL, NULL);
+    if (amiga_runner_owns_process(self->runner)) amiga_runner_stop(self->runner);
+    g_clear_object(&self->runner);
+  }
+  g_clear_pointer(&self->active_buf, ide_buffer_free);
+  g_clear_pointer(&self->file_tree, ide_tree_free);
+  g_clear_pointer(&self->fsm, ide_fsm_free);
+  g_clear_pointer(&self->yank_reg, g_free);
+  g_clear_pointer(&self->symbols, amiga_symbols_free);
+  g_clear_pointer(&self->project, amiga_project_free);
+  g_clear_pointer(&self->toolchain, amiga_toolchain_status_free);
+  g_clear_pointer(&self->diags, g_ptr_array_unref);
+  g_clear_pointer(&self->bp_addrs, g_hash_table_unref);
+  g_free(self->attach_host);
+  self->attach_host = NULL;
+  G_OBJECT_CLASS(kajo_amiga_window_parent_class)->dispose(obj);
+}
+
+static void
+kajo_amiga_window_class_init(KajoAmigaWindowClass *klass)
+{
+  G_OBJECT_CLASS(klass)->dispose = kajo_amiga_window_dispose;
+}
+
+static void
+kajo_amiga_window_init(KajoAmigaWindow *self)
+{
+  self->toolchain = amiga_project_probe_toolchain(NULL);
+  self->symbols = amiga_symbols_new();
+  self->runner = amiga_runner_new();
+  self->rsp = amiga_rsp_client_new();
+  amiga_rsp_client_set_stop_callback(self->rsp, on_rsp_stop, self);
+  self->bp_addrs = g_hash_table_new(g_direct_hash, g_direct_equal);
+  self->diags = g_ptr_array_new_with_free_func((GDestroyNotify)amiga_build_diag_free);
+  self->fsm = ide_fsm_new();
+
+  build_ui(self);
+
+  self->editor_host.source_view = GTK_SOURCE_VIEW(self->source_view);
+  self->editor_host.fsm = self->fsm;
+  self->editor_host.yank_register = &self->yank_reg;
+}
+
+KajoAmigaWindow *
+kajo_amiga_window_new(GtkApplication *app)
+{
+  return g_object_new(KAJO_TYPE_AMIGA_WINDOW, "application", app, NULL);
+}
+
+void
+kajo_amiga_window_open_project_dir(KajoAmigaWindow *self, const char *dir_path)
+{
+  g_return_if_fail(KAJO_IS_AMIGA_WINDOW(self));
+  g_autoptr(GError) err = NULL;
+  AmigaProject *proj = amiga_project_load_dir(dir_path, &err);
+  if (!proj) {
+    show_toast(self, err ? err->message : "Cannot load Amiga project");
+    return;
+  }
+  g_clear_pointer(&self->project, amiga_project_free);
+  self->project = proj;
+  self->attach_mode = false;
+
+  amiga_project_write_compile_commands(proj, self->toolchain, NULL);
+  ide_tree_set_workspace_root(self->file_tree, proj->root_dir);
+  populate_project_dropdowns(self);
+  amiga_project_setup_view_bind(self->setup_view, proj, self->toolchain);
+
+  gtk_stack_set_visible_child_name(GTK_STACK(self->sidebar_stack), "project");
+  gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "workspace");
+  sync_header_workspace(self, true);
+  sync_mode_pill(self);
+  gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), proj->name ? proj->name : dir_path);
+
+  if (proj->targets->len > 0) {
+    AmigaTarget *t = g_ptr_array_index(proj->targets, 0);
+    if (t->sources->len > 0) {
+      const char *rel = g_ptr_array_index(t->sources, 0);
+      g_autofree char *abs = g_build_filename(proj->root_dir, rel, NULL);
+      open_file_in_editor(self, abs, 1);
+    }
+  }
+}
+
+void
+kajo_amiga_window_open_attach(KajoAmigaWindow *self, const char *host, uint16_t port)
+{
+  g_return_if_fail(KAJO_IS_AMIGA_WINDOW(self));
+  self->attach_mode = true;
+  g_free(self->attach_host);
+  self->attach_host = g_strdup((host && host[0]) ? host : "127.0.0.1");
+  self->attach_port = port ? port : 2345;
+
+  gtk_stack_set_visible_child_name(GTK_STACK(self->sidebar_stack), "attach");
+  gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "workspace");
+  sync_header_workspace(self, true);
+  gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_disasm), TRUE);
+  sync_mode_pill(self);
+
+  g_autofree char *lbl = g_strdup_printf("Attach %s:%u", self->attach_host, self->attach_port);
+  gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), lbl);
+
+  GWeakRef *weak = g_new0(GWeakRef, 1); g_weak_ref_init(weak, self);
+  amiga_rsp_client_connect_async(self->rsp, self->attach_host, self->attach_port,
+                                 NULL, on_rsp_connect_done, weak);
+}
+
+void
+kajo_amiga_window_set_preview_mode(KajoAmigaWindow *self, const char *mode)
+{
+  g_return_if_fail(KAJO_IS_AMIGA_WINDOW(self));
+  if (!mode || g_strcmp0(mode, "welcome") == 0) {
+    sync_header_workspace(self, false);
+    gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), "Welcome");
+    gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "welcome");
+    return;
+  }
+
+  /* Deterministic read-only sample state for visual QA without touching user disk files */
+  if (!self->project) {
+    self->project = amiga_project_new();
+    self->project->name = g_strdup("CopperBars");
+    self->project->root_dir = g_strdup("/tmp/copper-demo-preview");
+    AmigaTarget *t = amiga_target_new("copper_bars");
+    t->kind = AMIGA_TARGET_ADF_DOS;
+    g_ptr_array_add(t->sources, g_strdup("src/main.s"));
+    t->copper_symbol = g_strdup("copper_list");
+    t->bitplane_symbol = g_strdup("bpl0");
+    g_ptr_array_add(self->project->targets, t);
+    populate_project_dropdowns(self);
+    amiga_project_setup_view_bind(self->setup_view, self->project, self->toolchain);
+  }
+
+  sync_header_workspace(self, true);
+  gtk_stack_set_visible_child_name(GTK_STACK(self->root_stack), "workspace");
+
+  /* Seed realistic 68k sample source + gutter cycles + CPU strip + snapshot */
+  const char *sample_s =
+      "  section code,code_c\n"
+      "start:\n"
+      "  move.w #$0020,$dff09a  ; disable INTENA\n"
+      "  lea    copper_list(pc),a0\n"
+      "  move.l a0,$dff080      ; COP1LC\n"
+      "main_loop:\n"
+      "  move.w $dff004,d0      ; wait VPOSR\n"
+      "  bne.s  main_loop\n"
+      "  rts\n";
+  if (self->active_buf) ide_buffer_free(self->active_buf);
+  self->active_buf = ide_buffer_new("src/main.s");
+  ide_buffer_set_text(self->active_buf, sample_s);
+  ide_buffer_set_style_scheme(self->active_buf, "kajo-dark");
+  gtk_text_view_set_buffer(GTK_TEXT_VIEW(self->source_view),
+                           GTK_TEXT_BUFFER(ide_buffer_get_source_buffer(self->active_buf)));
+  kajo_ide_gutter_renderer_set_buffer(self->gutter, self->active_buf);
+  self->editor_host.buffer = self->active_buf;
+  refresh_source_gutter_and_outline(self);
+
+  AmigaCpuRegs r = {
+    .d = { 0x00002C00u, 0x00000F00u, 0x00000004u, 0, 0xDEAD0001u, 0, 0, 0 },
+    .a = { 0x00020100u, 0x00DFF000u, 0, 0, 0, 0, 0x00F80000u, 0x0007FF00u },
+    .sr = 0x2004u,
+    .pc = 0x00020014u,
+  };
+  AmigaExecStatus es = {
+    .execution = "stopped", .debugger_stopped = true,
+    .frame = 128, .vpos = 44, .hpos = 96, .cycles = 4412800u,
+  };
+  amiga_cpu_strip_update(self->cpu_strip, &r, &es, NULL, true);
+
+  uint8_t custom[512];
+  memset(custom, 0, sizeof(custom));
+  custom[0x002] = 0x03; custom[0x003] = 0xF0;
+  custom[0x004] = 0x20; custom[0x005] = 0x00;
+  custom[0x080] = 0x00; custom[0x081] = 0x02; custom[0x082] = 0x01; custom[0x083] = 0x00;
+  custom[0x100] = 0x42; custom[0x101] = 0x00;
+  custom[0x0E0] = 0x00; custom[0x0E1] = 0x03;
+  custom[0x180] = 0x0F; custom[0x181] = 0x00;
+  custom[0x182] = 0x0F; custom[0x183] = 0xFF;
+  amiga_mem_view_set_data(self->mem_view, 0x00DFF000u, custom, 128);
+  gtk_label_set_text(GTK_LABEL(self->lbl_custom_snap),
+                     "DMACONR: $03F0   VPOSR: $2000   (PAL)\n"
+                     "COP1LC:  $00020100   BPLCON0: $4200\n"
+                     "BPL1PT:  $00030000   BLTSIZE: $0000\n"
+                     "COL00-03: $F00  $FFF  $000  $000");
+
+  if (g_strcmp0(mode, "setup") == 0) {
+    gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), "CopperBars · kajo-amiga.toml");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_setup), TRUE);
+  } else if (g_strcmp0(mode, "attach") == 0) {
+    self->attach_mode = true;
+    sync_mode_pill(self);
+    gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), "Attach 127.0.0.1:2345");
+    gtk_stack_set_visible_child_name(GTK_STACK(self->sidebar_stack), "attach");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_disasm), TRUE);
+    GtkWidget *old;
+    while ((old = gtk_widget_get_first_child(self->attach_list)) != NULL) {
+      gtk_list_box_remove(GTK_LIST_BOX(self->attach_list), old);
+    }
+    static const char *const preview_rows[3] = {
+      "[CUR] demo.exe · SP $0007FF00",
+      "RAM   Chip · $00000000..$00080000",
+      "SEG0  .text · $00020000 (4096 B)"
+    };
+    for (int i = 0; i < 3; i++) {
+      GtkWidget *l = gtk_label_new(preview_rows[i]);
+      gtk_label_set_xalign(GTK_LABEL(l), 0.0f);
+      gtk_list_box_append(GTK_LIST_BOX(self->attach_list), l);
+    }
+    g_autoptr(GPtrArray) drows = NULL;
+    amiga_disasm_parse(
+        "Segment 00 ($00020000)\n"
+        "00020014 33fc 0f00 00df f180  move.w #$0f00,$00dff180\n"
+        "0002001c 4eae ff7c            jsr -$0084(a6) == $00f81234\n"
+        "00020020 66f2                 bne.b #$f2 == $00020014 (T)\n",
+        NULL, &drows);
+    amiga_disasm_view_set_rows(self->disasm_view, drows, 0x00020014u, self->bp_addrs);
+  } else if (g_strcmp0(mode, "wizard") == 0) {
+    gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), "CopperBars · New Project Wizard");
+    on_act_new_project(self);
+  } else {
+    gtk_label_set_text(GTK_LABEL(self->lbl_ws_state), "CopperBars · src/main.s");
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(self->btn_tab_source), TRUE);
+  }
+}

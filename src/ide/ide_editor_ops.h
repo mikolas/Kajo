@@ -28,6 +28,8 @@ IdeEditorOpOutcome ide_editor_ops_execute(IdeEditorHost   *host,
                                           const IdeAction *act,
                                           const char     **out_toast);
 
+char              *ide_editor_translate_gdk_key(guint keyval, GdkModifierType state);
+
 G_END_DECLS
 
 #endif /* KAJO_IDE_EDITOR_OPS_H */
