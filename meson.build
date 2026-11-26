@@ -56,6 +56,14 @@ if not adflib_dep.found()
   adflib_sp = cmake.subproject('adflib')
   adflib_dep = adflib_sp.dependency('adf')
 endif
+elf_dep = dependency('libelf', required: false)
+dw_dep = dependency('libdw', required: false)
+amiga_extra_deps = []
+amiga_c_args = []
+if elf_dep.found() and dw_dep.found()
+  amiga_extra_deps += [elf_dep, dw_dep]
+  amiga_c_args += '-DHAVE_ELFUTILS=1'
+endif
 glycin_dep = dependency('glycin-2', required: false)
 glycin_gtk4_dep = dependency('glycin-gtk4-2', required: false)
 rsvg_dep = dependency('librsvg-2.0', required: false)
@@ -681,13 +689,19 @@ amiga_core_lib = static_library(
     'src/amiga/amiga_adf.c',
     'src/amiga/amiga_project.c',
     'src/amiga/amiga_build.c',
+    'src/amiga/amiga_rsp.c',
+    'src/amiga/amiga_symbols.c',
+    'src/amiga/amiga_disasm.c',
+    'src/amiga/amiga_runner.c',
   ),
-  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep],
+  c_args: amiga_c_args,
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
   link_with: kajo_toml_lib,
 )
 amiga_core_dep = declare_dependency(
   link_with: [amiga_core_lib, kajo_toml_lib],
-  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep],
+  compile_args: amiga_c_args,
+  dependencies: [gio_dep, gio_unix_dep, json_glib_dep, adflib_dep, m_dep] + amiga_extra_deps,
 )
 
 install_data(
@@ -1127,6 +1141,40 @@ test_amiga_build_exe = executable(
   build_by_default: false,
 )
 test('amiga-build', test_amiga_build_exe, timeout: 30)
+
+test_amiga_rsp_exe = executable(
+  'test-amiga-rsp',
+  files('tests/test_amiga_rsp.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-rsp', test_amiga_rsp_exe,
+  env: {'KAJO_SOURCE_ROOT': meson.project_source_root()},
+  timeout: 30)
+
+test_amiga_symbols_exe = executable(
+  'test-amiga-symbols',
+  files('tests/test_amiga_symbols.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-symbols', test_amiga_symbols_exe)
+
+test_amiga_disasm_exe = executable(
+  'test-amiga-disasm',
+  files('tests/test_amiga_disasm.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-disasm', test_amiga_disasm_exe)
+
+test_amiga_runner_exe = executable(
+  'test-amiga-runner',
+  files('tests/test_amiga_runner.c'),
+  dependencies: [amiga_core_dep],
+  build_by_default: false,
+)
+test('amiga-runner', test_amiga_runner_exe, timeout: 30)
 
 test_ide_ipc_exe = executable(
   'test-ide-ipc',
