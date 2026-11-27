@@ -1,12 +1,12 @@
 # Developer Guide & Contribution Rules
 
-This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo-comp`, `kajo`, `kajo-ide`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, `kajo-viewer`, and `kajo-greeter`.
+This document provides technical guidelines, architecture maps, testing workflows, and contribution standards for developers working on `kajo-comp`, `kajo`, `kajo-ide`, `kajo-amiga`, `kajo-settings`, `kajo-files`, `kajo-player`, `kajo-mod`, `kajo-web`, `kajo-viewer`, and `kajo-greeter`.
 
 ---
 
 ## 1. Architecture & Source File Map
 
-The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp` and `src/web_cef/`) using `wlroots-0.20`, `wayland-server`, `wayland-client`, `talloc`, `libinput`, `libpcre2-8`, `xkbcommon`, `cairo`, `pangocairo`, `libpng`, GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `json-glib-1.0`, `gio-2.0`, `libmpv`, `sqlite3`, `libuade`, `bencodetools`, `libsidplayfp`, `libstilview`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, `libarchive` (plus optional `glycin-2`, `glycin-gtk4-2`, `librsvg-2.0`, `libexif` for `kajo-viewer`), and the Chromium Embedded Framework (`CEF`, Alloy Views) for `kajo-web`.
+The codebase is written in standard C17 (`-std=c17`, plus C++20 `-std=c++20` for `src/mod/mod_backend_sid.cpp` and `src/web_cef/`) using `wlroots-0.20`, `wayland-server`, `wayland-client`, `talloc`, `libinput`, `libpcre2-8`, `xkbcommon`, `cairo`, `pangocairo`, `libpng`, GTK4, `gtksourceview-5`, `gtk4-layer-shell-0` (including `gtk4-session-lock`), `json-glib-1.0`, `gio-2.0`, `libmpv`, `sqlite3`, `libgcrypt`, `adflib` (system or CMake wrap), `libuade`, `bencodetools`, `libsidplayfp`, `libstilview`, `libgme`, `libopenmpt`, `libxmp`, `libpulse`, `libpulse-mainloop-glib`, `libpam`, `poppler-glib`, `libarchive` (plus optional `glycin-2`, `glycin-gtk4-2`, `librsvg-2.0`, `libexif` for `kajo-viewer`, and optional `libelf`/`libdw` `elfutils` for `kajo-amiga`), and the Chromium Embedded Framework (`CEF`, Alloy Views) for `kajo-web`.
 
 ```
 src/
@@ -17,7 +17,7 @@ src/
 ├── config.h                        Thin include of the per-domain TOML store in config/ (docs/spec_toml_config.md)
 ├── config/
 │   ├── kajo_config_store.h/c       Per-domain TOML 1.1 store, conf.d overlay merger, comment-preserving patcher & GFileMonitor
-│   └── schemas/schema_*.c          Domain schemas & defaults (theme, shell, ide, files, mod, web)
+│   └── schemas/schema_*.c          Domain schemas & defaults (theme, shell, ide, files, mod, web, amiga)
 ├── theme.h/c                       GTK CSS theme engine, override loader, GFileMonitor hot-reload, accent presets & shell_ide_font_stack()
 ├── theme_export.h/c                Opt-in revertible external GTK3/GTK4 & Qt 6 (qt6ct) theming with pre-Kajo snapshot backup/restore
 ├── app_init.h/c                    Standalone-app boot: kajo_app_init_theme() / kajo_app_shutdown_theme()
@@ -140,6 +140,30 @@ src/
 │   ├── ide_markdown_embeds.c       Markdown code blocks, Mermaid diagrams, PDF/image embeds & alerts (ide_markdown_private.h)
 │   ├── ide_mermaid.h/c             Pure C11 Cairo/Pango vector Mermaid diagram engine & SVG exporter
 │   └── ide_agent_ipc.h/c           AI Agent JSON-RPC 2.0 Unix socket & atomic multi-file diff review
+├── amiga/                          kajo-amiga M68k/C IDE & Amiberry debugger (docs/spec_kajo_amiga.md, docs/kajo_amiga_toolchain.md)
+│   ├── main.c                      Standalone entry point (org.kajo.Amiga, --attach, --build, --preview-mode)
+│   ├── amiga_window.h/c            Main IDE window, workspace layout, toolbar, LSP (`clangd` / `m68k-lsp-server`) & build orchestration
+│   ├── amiga_window_debug.c        Amiberry 8.5+ RSP debug loop, breakpoints, stepping, attach task/segment list & patch actions
+│   ├── amiga_window_inspector.c    Hardware inspector stack sync, sample/live snapshot routing & watchpoints
+│   ├── amiga_window_preview.c      Standalone UI preview-mode seeder (`--preview-mode`)
+│   ├── amiga_window_private.h      Internal window struct & helpers shared across amiga_window_*.c
+│   ├── amiga_project.h/c           `kajo-amiga.toml` schema, presets, multi-target (`hunk_exe`/`raw_bin`), toolchain probe & `seeandseedee` import
+│   ├── amiga_project_ui.c/h        Welcome view, New Project Wizard & Project Setup editor
+│   ├── amiga_build.h/c             Option D native C/ASM DAG build + depfiles, external `make`/`{target}` runner & `DH0:` staging
+│   ├── amiga_adf.h/c               OFS/FFS/raw bootable ADF creation via `adflib` + Kickstart 1.3–3.1 bootblock
+│   ├── amiga_runner.h/c            Amiberry 8.5+ / FS-UAE launcher, UAE config generator & async stdout/stderr log forwarding
+│   ├── amiga_rsp.h/c               GTK-free async Amiberry GDB RSP client (`qRcmd`, `vCont;r`, `QSetExceptionMask`, RLE, register/mem parsers)
+│   ├── amiga_symbols.h/c           Amiga Hunk (`HUNK_SYMBOL`/`DEBUG`/`LINE`) + ELF/DWARF3 (`libelf`/`libdw`) + linker `.map` symbol resolver
+│   ├── amiga_disasm.h/c            Amiberry `qd` text & fallback M68k disassembler with symbol + LVO enrichment
+│   ├── amiga_decode.h/c            Pure Amiga chipset/SR/cycle/Copper/Blitter/Sprite/Audio/Bitplane/DMA budget decoders
+│   ├── amiga_cpu_strip.h/c         D0-D7/A0-A7/PC/SR diff-highlighting CPU register strip & exception mask toggles
+│   ├── amiga_disasm_view.h/c       Disassembly view with gutter breakpoints, PC arrow, TO CURSOR/SET PC/PATCH/TRACE controls
+│   ├── amiga_bitplane_view.h/c     Live planar Chip RAM + COLORxx OCS/ECS/AGA framebuffer & plane mask inspector
+│   ├── amiga_copper_view.h/c       Decoded Copperlist WAIT/MOVE/SKIP view with COPCON/BLT flags & `qRcmd` scan hits
+│   ├── amiga_chips_view.h/c        Audio channel, Blitter minterm, Sprite & CIA-A/B timer inspector views
+│   ├── amiga_dma_view.h/c          Scanline DMA cycle budget & custom-chip conflict/contention visualizer
+│   ├── amiga_mem_view.h/c          Hex dump, Watchpoints & Register Diff drawer
+│   └── amiga_hrm_view.h/c          Offline Amiga Hardware Reference Manual (`$DFFxxx`) Markdown lookup & content search
 ├── ipc/
 │   ├── socket.h/c                  UNIX domain socket server ($XDG_RUNTIME_DIR/kajo.sock)
 │   └── ipc_client.h/c              shell_ipc_client_send(): one-line client used by the `kajo` CLI and kajo-settings
@@ -191,8 +215,8 @@ src/
 │   ├── settings_window.h/c         Responsive 3-tier column shell, icon-rail/sidebar & GtkStack
 │   ├── settings_common.h/c         Shared Metro card, bento grid, tile, dropdown & IPC helpers
 │   └── pages/
-│       ├── page_*.c                13 modular preference pages (displays, network, bluetooth,
-│       │                           audio, theme, panel, widgets, notifications, ide, mod, web, niri, about)
+│       ├── page_*.c                14 modular preference pages (displays, network, bluetooth,
+│       │                           audio, theme, panel, widgets, notifications, ide, mod, web, amiga, niri, about)
 │       └── page_niri_effects.c     Compositor FX controls: shadows, glass materials & transitions (page_niri_private.h)
 ├── web/                            Shared GTK-free C17 core for kajo-web
 │   ├── web_model.h/c               Tab tree, pinned/group ordering, MRU/undo stacks, omnibar classifier, rail FSM & profile registry
@@ -236,17 +260,17 @@ src/
     └── *.c                         22 built-in panel widget implementations
 
 data/
-├── org.kajo.*.desktop              Desktop entries for kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-viewer, kajo-settings
+├── org.kajo.*.desktop              Desktop entries for kajo, kajo-ide, kajo-amiga, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-viewer, kajo-settings
 ├── icons/
 │   └── *.svg                       Suite application & UI vector icons (kajo-comp.svg, kajo-web.svg, kajo-viewer.svg, kajo-ide.svg, etc.)
 ├── ide/
 │   └── *.xml                       5 bundled GtkSourceView-5 syntax schemes (kajo-metro-dark, etc.)
 ├── defaults/
 │   ├── {comp,outputs,binds,rules}.toml   Shipped kajo-comp TOML 1.1 default configurations
-│   ├── {theme,shell,ide,files,mod,web}.toml  Shipped per-domain TOML 1.1 default configurations
+│   ├── {theme,shell,ide,files,mod,web,amiga}.toml  Shipped per-domain TOML 1.1 default configurations
 │   ├── style.css                   Master GTK4 CSS manifest (@import url("styles/..."))
-│   ├── styles/                     10 modular CSS partials (00-tokens, 10-panel, 20-popovers-controls, 30-settings,
-│   │                               40-lock-greeter-osk, 50-files-player, 55-viewer, 60-ide, 70-mod, 80-web)
+│   ├── styles/                     11 modular CSS partials (00-tokens, 10-panel, 20-popovers-controls, 30-settings,
+│   │                               40-lock-greeter-osk, 50-files-player, 55-viewer, 60-ide, 70-mod, 80-web, 85-amiga)
 │   └── icon-map.json               Logical-to-symbolic icon mappings
 ├── session/
 │   ├── kajo-session                Session wrapper launching kajo-comp (with D-Bus/systemd env export & crash-loop guard)
@@ -279,6 +303,7 @@ tests/
 ├── test_comp_config.c              comp.toml, outputs.toml, binds.toml, rules.toml & spec_kajo_comp.md zero-diagnostic parity tests
 ├── test_comp_fx_core.c             Pure FX math: SDF shadow expansion, Dual-Kawase pyramid dimensions, std140 UBO packing & rect clamping
 ├── test_comp_fx_scene.c            Scene-graph FX anchor ordering, stacking-order glass prepare, target pooling/eviction & multi-output screenshot clipping
+├── test_comp_hdr.c                 DisplayID 2.0 CTA-861 EDID parser & headless Vulkan 10-bit PQ HDR10 readback invariants
 ├── comp/
 │   ├── comp_test_client.c          Wayland protocol test client (globals, toplevel, layer, lock, screencopy, IPC)
 │   ├── comp_headless_smoke.sh      End-to-end headless kajo-comp integration test runner
@@ -310,6 +335,14 @@ tests/
 ├── test_ide_ipc.c                  Kajo IDE JSON-RPC 2.0 framing, Agent IPC dispatch, LSP manager & stalled-client tests
 ├── test_ide_strip.c                Kajo IDE 60/25/15 Code Strip layout math, magnetic follow, springs, trails & 1,000-tile stress tests
 ├── test_ide_strip_graph.c          Kajo IDE workspace-only call-graph indexer, Tree-sitter extractor, 4 lenses & mock-LSP bridge tests
+├── test_amiga_decode.c             Kajo Amiga pure chipset, M68k cycles, Copper, Blitter, bitplane & DMA budget decoder tests
+├── test_amiga_project.c            `kajo-amiga.toml` roundtrip, presets, target artifacts, `seeandseedee` templates & toolchain probe tests
+├── test_amiga_adf.c                `adflib` OFS/FFS bootable ADF roundtrip, Kickstart 1.3–3.1 bootblock & raw ADF tests
+├── test_amiga_build.c              Option D depfile/mtime rebuild, `{target}`/`{file_stem}` external builds, diagnostics & `DH0:` staging tests
+├── test_amiga_rsp.c                Amiberry RSP RLE/framing/parsers & async mock RSP server session tests
+├── test_amiga_symbols.c            Hunk debug/line/reloc, ELF/DWARF3 loader & linker map symbol/outline tests
+├── test_amiga_disasm.c             Amiga disassembler output parsing & LVO/symbol/HW-register enrichment tests
+├── test_amiga_runner.c             Amiberry/FS-UAE argv builder, profile compatibility & async process log/exit forwarding tests
 ├── test_mod_router.c               Kajo Mod 5-tier format router, companion/NFO filter, archive extraction & live PCM synthesis tests
 ├── test_viewer_model.c             Kajo Viewer pure model: classification, natural sibling image sort, history, zoom math & MD headings
 ├── test_web_model.c                Kajo Web pure core: rail FSM, tab/MRU/undo, leave-time suspension, favicon persistence, omnibar bangs, profiles, SQLite FTS5 & merge tests
@@ -335,8 +368,11 @@ tests/
 - `glycin-2`, `glycin-gtk4-2`, `librsvg-2.0`, `libexif` *(optional for `kajo-viewer`; falls back cleanly if absent)*
 - `uade` (`libuade`), `bencodetools`, `libsidplayfp` (provides `libstilview`), `libgme`, `libopenmpt`, `libxmp` (for `kajo-mod`)
 - `sqlite3` (for `kajo-web` history, bookmarks, and download records)
+- `libgcrypt`
+- `adflib` (falls back cleanly to CMake subproject `subprojects/adflib.wrap` if absent, requiring `cmake`)
+- `elfutils` (`libelf`, `libdw` — optional for `kajo-amiga` DWARF3 symbol loading)
 - Chromium Embedded Framework (`CEF` binary distribution under `/usr/lib/cef`, `/usr/include/cef`, `/usr/src/cef` by default, or overridden via `-Dcef_lib_dir=... -Dcef_include_dir=... -Dcef_src_dir=...` — required for `kajo-web` and its 2 C++ unit test suites `web-cef-adblock` & `web-cef-core`; skipped cleanly if absent)
-- `blueprint-compiler`, `meson`, `ninja`
+- `blueprint-compiler`, `meson`, `ninja`, `cmake`
 - Tree-sitter (optional, enables the `kajo-ide` syntax engine). Runtime + grammars on Arch / CachyOS:
   - official / CachyOS repos: `tree-sitter`, `tree-sitter-c`, `tree-sitter-bash`, `tree-sitter-javascript`, `tree-sitter-lua`, `tree-sitter-rust`
   - AUR: `tree-sitter-cpp`, `tree-sitter-css`, `tree-sitter-go`, `tree-sitter-html`, `tree-sitter-java`, `tree-sitter-json`, `tree-sitter-toml`, `tree-sitter-typescript` (also provides TSX), `tree-sitter-yaml`, `tree-sitter-m68k`
@@ -344,7 +380,7 @@ tests/
   - Highlight rules for every tree-sitter language live in `src/ide/ide_ts_queries.c`. A shared base pass (`ide_ts.c`) colors comments, strings, numbers, keywords, operators and primitive types; the query adds the context-sensitive roles (methods vs. fields, declaration names, calls, annotations), with a small convention fallback (UPPER_SNAKE → constant; Java PascalCase → type). The `ide-ts` test compiles every query against the installed grammars, so a grammar update that renames a node fails `meson test` instead of silently dropping colors.
 
 ### Compiling & Running the Test Suite
-Every change must compile with **0 errors and 0 warnings** and pass all 41 automated test suites (39 core + 2 CEF suites when CEF is installed):
+Every change must compile with **0 errors and 0 warnings** and pass all 50 automated test suites (47 core + `comp-fx-shadow` with bundled wlroots + 2 CEF suites when CEF is installed):
 
 ```bash
 # Clone with the wlroots submodule (existing clones: git submodule update --init)
@@ -353,10 +389,10 @@ git clone --recursive https://github.com/mikolas/Kajo.git
 # Configure (defaults to prefix=~/.local)
 meson setup builddir
 
-# Compile all 10 targets (kajo-comp, kajo, kajo-ide, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-viewer, kajo-settings, kajo-greeter)
+# Compile all 11 targets (kajo-comp, kajo, kajo-ide, kajo-amiga, kajo-files, kajo-player, kajo-mod, kajo-web, kajo-viewer, kajo-settings, kajo-greeter)
 meson compile -C builddir
 
-# Run all 41 automated test suites
+# Run all 50 automated test suites
 meson test -C builddir
 
 # Install to ~/.local/bin and ~/.local/share/kajo. --skip-subprojects keeps the
@@ -380,6 +416,7 @@ systemctl --user restart xdg-desktop-portal
 | `comp-config` | `test-comp-config` | `comp.toml`, `outputs.toml`, `binds.toml`, and `rules.toml`: every accepted form, every rejection path with its exact message, duplicate keys, planned-but-unavailable actions, `toggle-overview`, regex semantics (PCRE2, `\d`, escaped dots, unanchored), rule override order, `[effects]` / `[effects.shadow]` (`strength`, `unfocused_scale`) / `[effects.glass]` / `[effects.dim]` / `[effects.transitions]` schemas, `kajo-portals.conf` / `.portal` / D-Bus `.service` / `kajo-files-portal.service` cross-checks, and that the `binds.toml` and `rules.toml` examples in `docs/spec_kajo_comp.md` parse with **zero** diagnostics. Also: `[touch].swipe_horizontal` steers only the touchscreen drag (the touchpad always scrolls columns). |
 | `comp-fx-core` | `test-comp-fx-core` | Pure FX math (`src/comp/core/comp_fx_core.c`): 2-layer SDF shadow anchor box expansion, Dual-Kawase pyramid dimensions (power-of-two halving + `16×16` floor), `std140` UBO packing for `shadow.frag`, `dim.frag`, `blur_down.frag`, `blur_up.frag`, `glass.frag`, `glass_dual.frag`, `transition_single.frag`, and `transition_resize.frag`, 7 optical glass style sample-reach & transform math (GS1–GS3), easing curves, effective output resolution under `WL_OUTPUT_TRANSFORM_*`, rectangle clamping, linear $3\times 3$ colour filter matrix builders (grayscale, night-light Kelvin white point, protanopia/deuteranopia/tritanopia CVD aids, strength interpolation), and ITU-R BT.2390 EETF PQ Hermite spline properties. |
 | `comp-fx-scene` | `test-comp-fx-scene` | Scene-graph FX anchor lifecycle & output stage (`src/comp/fx/`): `SHADOW_ANCHOR` / `GLASS_ANCHOR` / `DIM_ANCHOR` sibling ordering, `COMP_FX_SLOT_MAGIC` validation against non-FX `node.data` pointers, $O(N)$ stacking-order glass traversal, hidden-tree (`!wlr_scene_node_coords`) target release, target pool reuse/eviction, `kfx_vk_renderer_run_target_chain` validation, multi-output straddling screenshot clipping, 7 optical glass styles & `aux_target` lifecycle (GS4–GS9), cross-GPU FP32 8-bit/10-bit blue-noise dither quantization, per-pixel SDR/HDR colour filter readback, X6 SDR reference white scaling, and X6 ITU-R BT.2390 PQ tone-mapping verification on headless Vulkan. |
+| `comp-hdr` | `test-comp-hdr` | DisplayID 2.0 CTA-861 EDID parser and headless Vulkan 10-bit PQ (`DRM_FORMAT_XRGB2101010`) SDR/HDR white scaling, auto-peak BT.2390 tone mapping & linear Night Light invariants. |
 | `comp-fx-shadow` | `tests/comp/comp_fx_shadow_test.sh` | Headless Vulkan pixel verification: 2-layer SDF drop shadows (contact + ambient monotony, tiling suppression, `shadow = false` / `opacity = 0.0` rules, `scale = 2` HiDPI), inactive-window dimming (`dim_inactive`), 3-pass Dual-Kawase frosted glass (`blur = true`, `blur_popups = true`, `xray = true` panel over red window, retracted autohide strip suppression, adjacent opaque occluder halo check, and 16×16 blue-noise dither variance). |
 | `fuzz-comp-layout`, `fuzz-comp-config`, `fuzz-ipc-socket` | `test-fuzz-comp-*`, `test-fuzz-ipc-socket` | Corpus-driver builds of the three compositor libFuzzer targets in `tests/fuzz/` (layout engine, TOML config parsers, and `$XDG_RUNTIME_DIR/kajo-comp.sock` JSON IPC parser/dispatcher). |
 | `comp-headless` | `tests/comp/comp_headless_smoke.sh` | Runs `kajo-comp` on the wlroots headless backend with the pixman renderer and a private `XDG_RUNTIME_DIR`: required globals present, 200 connect/disconnect cycles, toplevel/popup/layer-shell/session-lock lifecycles, lazy XWayland `DISPLAY` export & `xwayland.enabled = false` isolation, IPC queries (`Version`, `Outputs`, `Workspaces`, `Windows`, `KeyboardLayouts`), `EventStream`, actions (including `toggle-overview`), `Alt+Tab` switcher, screenshot capture, and `--greeter-mode` lockdown. |
@@ -405,6 +442,14 @@ systemctl --user restart xdg-desktop-portal
 | `dap-client` | `test-dap-client` | DAP client session flow against the mock adapter (breakpoints, conditional breakpoints, stop, stack, nested variable expansion, watch evaluation, evaluate, errors, adapter death) and debuggee/adapter discovery. |
 | `ide-tasks` | `test-ide-tasks` | Build/test/run/clean command resolution for every supported build system. |
 | `lsp-client` | `test-lsp-client` | Async LSP client against the scripted mock server. The `ide-ipc` suite additionally drives `IdeLspManager` end to end (diagnostics, rename, format, definition, references, signature help, call hierarchy, raw request bridge) and unit-tests text edits, snippets and the server registry. |
+| `amiga-decode` | `test-amiga-decode` | Pure Amiga decoders: CPU `SR` flags, M68k cycle estimator, hardware register/LVO/Blitter/RGB tables, Copper disassembly/scan, bitplane rendering/probing & DMA budget. |
+| `amiga-project` | `test-amiga-project` | `kajo-amiga.toml` TOML roundtrip, presets, target artifacts (`hunk_exe`/`raw_bin`), `seeandseedee`/Makefile templates & toolchain probe. |
+| `amiga-adf` | `test-amiga-adf` | `adflib` OFS/FFS bootable ADF roundtrip, Kickstart 1.3–3.1 `FindResident("dos.library")` bootblock & raw ADF/error handling. |
+| `amiga-build` | `test-amiga-build` | Depfile/mtime incremental rebuilds, compiler diagnostics, automatic `DH0:` staging & async external build success/fail/cancel. |
+| `amiga-rsp` | `test-amiga-rsp` | Amiberry RSP packet framing, RLE decoding/register/memory parsers & async mock RSP server session (breakpoints, `vCont`, `qRcmd`). |
+| `amiga-symbols` | `test-amiga-symbols` | Amiga Hunk `SYMBOL`/`DEBUG`/`LINE` + relocation, ELF/DWARF3 loader (`libelf`/`libdw`) & linker `.map` symbol/outline lookups. |
+| `amiga-disasm` | `test-amiga-disasm` | Amiga disassembly block parsing with symbol, LVO (`exec.library`), and custom-chip register enrichment. |
+| `amiga-runner` | `test-amiga-runner` | Emulator `argv` construction, Amiberry/FS-UAE profile compatibility & async subprocess stdout/stderr/exit forwarding. |
 | `ide-ts` | `test-ide-ts` | Tree-sitter token classification for all 16 languages, language detection, incremental re-parse equals a fresh parse, error tolerance. |
 | `ide-buffer` | `test-ide-buffer` | `IdeBuffer` undo/redo, semantic tokens, Git diff, agent snapshots, Help Palette vs. `IdeFsm` chord cross-checks, Which-Key HUD forward/backward validation, documented 120-command palette count parity, and the style-scheme use-after-free regression test (run under `scripts/asan-test.sh`). |
 | `ide-ipc` | `test-ide-ipc` | JSON-RPC framing, agent IPC dispatch, LSP manager workflows (including `ide_lsp_manager_request_raw()`), a real unix-socket round-trip, and a stalled-client case proving the main loop is never blocked. |
@@ -473,6 +518,12 @@ KAJO_GREETER_TEST=1 KAJO_GREETER_QUIT_NIRI=1 niri -c data/greetd/niri-greeter.kd
 
 # 8. Run kajo-viewer (read-only PDF, Markdown, Image viewer or standalone previews)
 ./builddir/kajo-viewer --preview-mode md
+
+# 9. Run kajo-amiga (Amiga IDE, direct RSP attach, headless build, or UI preview)
+./builddir/kajo-amiga
+./builddir/kajo-amiga --attach 127.0.0.1:2345
+./builddir/kajo-amiga --build
+./builddir/kajo-amiga --preview-mode project
 ```
 
 **Configuration while developing** (see `docs/spec_toml_config.md`):
@@ -575,6 +626,7 @@ scripts/ui-shot.sh -o /tmp/files.png builddir/kajo-files ~/Downloads
 scripts/ui-shot.sh -d 6 -o /tmp/p.png builddir/kajo-player some.mkv       # -d: seconds to wait
 scripts/ui-shot.sh -d 4 -o /tmp/web.png builddir/kajo-web --no-hw-accel --private kajo://newtab
 scripts/ui-shot.sh -d 2.5 -o /tmp/viewer.png builddir/kajo-viewer --preview-mode pdf
+scripts/ui-shot.sh -o /tmp/amiga.png builddir/kajo-amiga --preview-mode project
 ```
 
 The script is isolated on purpose: private `XDG_RUNTIME_DIR`, `KAJO_COMP_SOCKET`/`NIRI_SOCKET`/`WAYLAND_DISPLAY`/`DISPLAY` unset (compositor actions and `kajo` IPC can never reach your real session), throwaway **copies** of `~/.config/kajo` and `~/.local/share/kajo`, and the working tree's `style.css` copied over the CSS so you see your changes (`-k` keeps your installed CSS). It refuses to run the `kajo` shell. The D-Bus buses are your real ones, so pages read live state (Wi-Fi list, paired devices) but nothing is clicked. Do not wrap it in `dbus-run-session` (it activates your installed services and leaves FUSE mounts behind).

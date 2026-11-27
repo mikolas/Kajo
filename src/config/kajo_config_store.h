@@ -26,6 +26,7 @@ const KajoIdeCfg   *kajo_config_store_acquire_ide(KajoConfigStore *store);
 const KajoFilesCfg *kajo_config_store_acquire_files(KajoConfigStore *store);
 const KajoModCfg   *kajo_config_store_acquire_mod(KajoConfigStore *store);
 const KajoWebCfg   *kajo_config_store_acquire_web(KajoConfigStore *store);
+const KajoAmigaCfg *kajo_config_store_acquire_amiga(KajoConfigStore *store);
 
 /* Transactional Base-File Read-Modify-Write Mutators */
 typedef void (*KajoThemeMutateFn)(KajoThemeCfg *draft, gpointer user_data);
@@ -34,6 +35,7 @@ typedef void (*KajoIdeMutateFn)  (KajoIdeCfg   *draft, gpointer user_data);
 typedef void (*KajoFilesMutateFn)(KajoFilesCfg *draft, gpointer user_data);
 typedef void (*KajoModMutateFn)  (KajoModCfg   *draft, gpointer user_data);
 typedef void (*KajoWebMutateFn)  (KajoWebCfg   *draft, gpointer user_data);
+typedef void (*KajoAmigaMutateFn)(KajoAmigaCfg *draft, gpointer user_data);
 
 gboolean kajo_config_store_update_theme(KajoConfigStore  *store,
                                         KajoThemeMutateFn mutate_fn,
@@ -64,6 +66,11 @@ gboolean kajo_config_store_update_web(KajoConfigStore  *store,
                                       KajoWebMutateFn   mutate_fn,
                                       gpointer          user_data,
                                       GError          **error);
+
+gboolean kajo_config_store_update_amiga(KajoConfigStore  *store,
+                                        KajoAmigaMutateFn mutate_fn,
+                                        gpointer          user_data,
+                                        GError          **error);
 
 /* Reload & Pub/Sub Notification */
 void kajo_config_store_reload(KajoConfigStore *store, KajoConfigDomain domains);

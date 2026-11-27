@@ -10,6 +10,7 @@
 #define KAJO_CFG_FILE_FILES               "files.toml"
 #define KAJO_CFG_FILE_MOD                 "mod.toml"
 #define KAJO_CFG_FILE_WEB                 "web.toml"
+#define KAJO_CFG_FILE_AMIGA               "amiga.toml"
 #define KAJO_CFG_FILE_COMP                COMP_CFG_FILE_COMP
 #define KAJO_CFG_FILE_OUTPUTS             COMP_CFG_FILE_OUTPUTS
 #define KAJO_CFG_FILE_BINDS               COMP_CFG_FILE_BINDS
@@ -25,6 +26,7 @@
 #define KAJO_CFG_DOMAIN_FILES             "files"
 #define KAJO_CFG_DOMAIN_MOD               "mod"
 #define KAJO_CFG_DOMAIN_WEB               "web"
+#define KAJO_CFG_DOMAIN_AMIGA             "amiga"
 #define KAJO_CFG_DOMAIN_COMP              COMP_SEC_COMP
 
 /* theme.toml */
@@ -201,5 +203,35 @@
 #define KAJO_CFG_KEY_WEB_SYNC_TABS        "sync_tabs_and_groups"
 #define KAJO_CFG_KEY_WEB_SYNC_SETTINGS    "sync_settings"
 #define KAJO_CFG_KEY_WEB_SYNC_E2EE        "sync_e2ee_enabled"
+
+/* amiga.toml */
+#define KAJO_CFG_KEY_AMIGA_AMIBERRY_BIN      "amiberry_bin"
+#define KAJO_CFG_KEY_AMIGA_DEFAULT_PROFILE   "default_profile"
+#define KAJO_CFG_KEY_AMIGA_DEFAULT_VIDEO     "default_video"
+#define KAJO_CFG_KEY_AMIGA_KICKSTART_A500    "kickstart_a500"
+#define KAJO_CFG_KEY_AMIGA_KICKSTART_A1200   "kickstart_a1200"
+#define KAJO_CFG_KEY_AMIGA_DEFAULT_BOOT_MODE "default_boot_mode"
+#define KAJO_CFG_KEY_AMIGA_GDB_HOST          "gdb_host"
+#define KAJO_CFG_KEY_AMIGA_GDB_PORT          "gdb_port"
+#define KAJO_CFG_KEY_AMIGA_ADF_UAEBOARD      "adf_uaeboard_guest_output"
+#define KAJO_CFG_KEY_AMIGA_DEFAULT_TOOLCHAIN "default_toolchain"
+#define KAJO_CFG_KEY_AMIGA_EXTRA_BIN_PATHS   "extra_bin_paths"
+#define KAJO_CFG_KEY_AMIGA_C_INCLUDE_DIRS    "c_include_dirs"
+#define KAJO_CFG_KEY_AMIGA_ASM_INCLUDE_DIRS  "asm_include_dirs"
+#define KAJO_CFG_KEY_AMIGA_HRM_DIR           "hrm_dir"
+#define KAJO_CFG_KEY_AMIGA_INHERIT_IDE_PREFS "inherit_ide_editor_prefs"
+#define KAJO_CFG_KEY_AMIGA_SHOW_CYCLE_GUTTER "show_cycle_gutter"
+#define KAJO_CFG_KEY_AMIGA_SHOW_SEL_CYCLES   "show_selection_cycle_sum"
+#define KAJO_CFG_KEY_AMIGA_HOVER_DECODERS    "enable_hover_decoders"
+#define KAJO_CFG_KEY_AMIGA_ENABLE_M68K_LSP   "enable_m68k_lsp"
+#define KAJO_CFG_KEY_AMIGA_ENABLE_CLANGD     "enable_clangd"
+#define KAJO_CFG_KEY_AMIGA_ENTRY_BREAK_MODE  "entry_break_mode"
+#define KAJO_CFG_KEY_AMIGA_CAPTURE_GUEST_OUT "capture_guest_output"
+#define KAJO_CFG_KEY_AMIGA_TRACE_HISTORY     "enable_trace_history"
+#define KAJO_CFG_KEY_AMIGA_EXC_MASK          "default_exception_mask"
+#define KAJO_CFG_KEY_AMIGA_TRACE_BLITS       "trace_blitter_writes"
+#define KAJO_CFG_KEY_AMIGA_HEX_GROUPING      "default_hex_grouping"
+#define KAJO_CFG_KEY_AMIGA_BPL_GRID_16PX     "bitplane_grid_16px"
+#define KAJO_CFG_KEY_AMIGA_INSPECTOR_VISIBLE "inspector_visible"
 
 #endif /* KAJO_CONFIG_KEYS_H */

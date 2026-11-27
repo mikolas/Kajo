@@ -5267,6 +5267,74 @@
       </div>
     </section>
 
+    <!-- ======================================================================
+         SECTION 16: KAJO AMIGA (68000 / C / OCS-AGA STUDIO)
+         ====================================================================== -->
+    <section id="sec-amiga" class="gallery-section">
+      <div class="section-header">
+        <div>
+          <div class="section-eyebrow">16 // 68000 / C + ASM STUDIO</div>
+          <h2 class="section-title">Kajo Amiga Studio &amp; Hardware Inspector</h2>
+        </div>
+        <div class="tag-cluster">
+          <span class="gtk-class-tag" data-copy="window.shell-amiga-window">window.shell-amiga-window</span>
+          <span class="gtk-class-tag" data-copy=".amiga-cpu-strip">.amiga-cpu-strip</span>
+          <span class="gtk-class-tag" data-copy=".amiga-badge-snapshot">.amiga-badge-snapshot</span>
+          <span class="gtk-class-tag" data-copy=".amiga-badge-watched">.amiga-badge-watched</span>
+        </div>
+      </div>
+
+      <div class="specimen-box">
+        <div class="specimen-box-header">
+          <span class="specimen-box-title">PROVENANCE BADGES, 68000 REGISTER STRIP &amp; MOTOROLA DISASM</span>
+          <span class="shell-popover-badge accent">AMIBERRY 8.5+ GDB RSP · ADFLIB</span>
+        </div>
+        <div style="border:1px solid var(--metro-accent); background:var(--surface-bg); display:flex; flex-direction:column;">
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 10px; background:var(--surface-3); border-bottom:1px solid var(--border-struct);">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-weight:700; font-size:11px; letter-spacing:1px;">⚙ KAJO AMIGA</span>
+              <span class="shell-popover-badge">copper_bars</span>
+              <span class="shell-popover-badge">a500_ocs</span>
+            </div>
+            <div style="display:flex; gap:4px; align-items:center;">
+              <span style="background:rgba(76,175,80,0.18); border:1px solid #4caf50; color:#8ce9a8; padding:1px 6px; font-size:10px; font-weight:700;">LIVE</span>
+              <span style="background:rgba(0,216,240,0.14); border:1px solid #00d8f0; color:#00d8f0; padding:1px 6px; font-size:10px; font-weight:700;">EMU SNAPSHOT</span>
+              <span style="background:rgba(255,140,0,0.18); border:1px solid #ff8c00; color:#ffc266; padding:1px 6px; font-size:10px; font-weight:700;">WATCHED</span>
+              <span style="background:var(--surface-2); border:1px solid #3a3a3a; color:#808080; padding:1px 6px; font-size:10px; font-weight:700;">WO — UNAVAILABLE</span>
+            </div>
+          </div>
+          <div style="padding:6px 10px; background:var(--surface-1); border-bottom:1px solid var(--border-struct); display:flex; gap:6px; flex-wrap:wrap; font-size:10.5px;">
+            <span style="background:var(--surface-3); border:1px solid var(--border-struct); padding:1px 5px;">D0:00002C00</span>
+            <span style="background:rgba(255,140,0,0.18); border:1px solid #ff8c00; color:#ffc266; padding:1px 5px;">D1:00000F00</span>
+            <span style="background:var(--surface-3); border:1px solid var(--border-struct); padding:1px 5px;">A0:00020100</span>
+            <span style="background:var(--surface-3); border:1px solid var(--border-struct); padding:1px 5px;">PC:00020014</span>
+            <span style="border:1px solid #00d8f0; background:rgba(0,216,240,0.20); color:#00d8f0; padding:1px 5px; font-weight:700;">S</span>
+            <span style="border:1px solid #00d8f0; background:rgba(0,216,240,0.20); color:#00d8f0; padding:1px 5px; font-weight:700;">Z</span>
+            <span style="border:1px solid var(--border-struct); color:#00d8f0; padding:1px 5px;">F128 V44 H96 +0 CYC</span>
+          </div>
+          <div style="padding:8px 10px; background:var(--surface-0); font-size:11px; display:flex; flex-direction:column; gap:3px;">
+            <div style="display:flex; gap:10px; background:rgba(0,216,240,0.14); border-left:3px solid #00d8f0; padding:2px 6px;">
+              <span style="color:#a0a0a0;">$00020014</span>
+              <span style="color:#707070;">33fc 0f00 00df f180</span>
+              <span style="color:#f0f0f0; flex:1;">move.w #$0f00,$00dff180</span>
+              <span style="color:#ff8c00;">20(4/1)</span>
+              <span class="shell-popover-badge">COLOR00 ($180)</span>
+            </div>
+            <div style="display:flex; gap:10px; padding:2px 6px;">
+              <span style="color:#a0a0a0;">$0002001C</span>
+              <span style="color:#707070;">4eae ff7c</span>
+              <span style="color:#f0f0f0; flex:1;">jsr -$0084(a6)</span>
+              <span style="color:#ff8c00;">18(2/2)</span>
+              <span class="shell-popover-badge">_LVOForbid</span>
+            </div>
+          </div>
+        </div>
+        <div class="specimen-note">
+          Full interactive prototype: <code>docs/kajo-amiga-mockup.html</code> · Specification: <code>docs/spec_kajo_amiga.md</code>. All 5 Inspector tabs (Bitplanes, Copper, Chips/Blitter, 227-CC DMA, HRM) refresh strictly on stop or explicit snapshot with zero background polling.
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Floating Clipboard Notification Toast -->

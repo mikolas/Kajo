@@ -421,6 +421,8 @@ build_client_capabilities(void)
   json_builder_begin_object(b);
   json_builder_set_member_name(b, "applyEdit");
   json_builder_add_boolean_value(b, TRUE);
+  json_builder_set_member_name(b, "configuration");
+  json_builder_add_boolean_value(b, TRUE);
   json_builder_set_member_name(b, "workspaceFolders");
   json_builder_add_boolean_value(b, TRUE);
   json_builder_end_object(b);

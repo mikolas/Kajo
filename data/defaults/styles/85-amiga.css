@@ -1,0 +1,499 @@
+/* ============================================================================
+ * KAJO AMIGA (org.kajo.Amiga — Self-Contained 68000/C OCS-AGA IDE & Inspector)
+ * Strict 0px Aero + Metro styling using 00-tokens.css @metro-* variables.
+ * Prefix widget selectors with window.shell-amiga-window to beat global rules.
+ * ============================================================================ */
+
+window.shell-amiga-window {
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-accent;
+    border-top: 3px solid @metro-accent;
+    border-radius: 0px;
+}
+
+window.shell-amiga-window .ide-paned > separator {
+    background: none;
+    background-image: none;
+    background-color: @metro-border-subtle;
+    min-width: 2px;
+    min-height: 2px;
+}
+
+window.shell-amiga-window .ide-paned > separator:hover,
+window.shell-amiga-window .ide-paned > separator:active {
+    background-color: @metro-accent;
+}
+
+window.shell-amiga-window button.ide-toolbar-btn,
+window.shell-amiga-modal button.ide-toolbar-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-4;
+    border: 1px solid @metro-border-strong;
+    border-radius: 0px;
+    padding: 2px 6px;
+    min-width: 0px;
+    min-height: 22px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-soft;
+}
+
+window.shell-amiga-window button.ide-toolbar-btn:hover,
+window.shell-amiga-modal button.ide-toolbar-btn:hover {
+    background-color: @metro-surface-hover;
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-amiga-window button.ide-toolbar-btn.accent-btn,
+window.shell-amiga-modal button.ide-toolbar-btn.accent-btn {
+    background-color: alpha(@metro-accent, 0.24);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-amiga-window button.ide-toolbar-btn.accent-btn:hover,
+window.shell-amiga-modal button.ide-toolbar-btn.accent-btn:hover {
+    background-color: @metro-accent;
+}
+
+window.shell-amiga-window button.ide-toolbar-btn.run-btn {
+    background-color: alpha(@metro-success, 0.22);
+    border-color: @metro-success;
+    color: @metro-fg-bright;
+}
+
+window.shell-amiga-window button.ide-toolbar-btn.stop-btn {
+    background-color: alpha(@metro-urgent, 0.18);
+    border-color: @metro-urgent;
+    color: @metro-urgent-text;
+}
+
+window.shell-amiga-window button.amiga-mini-btn,
+window.shell-amiga-window togglebutton.amiga-mini-btn,
+window.shell-amiga-modal button.amiga-mini-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 1px 4px;
+    min-width: 0px;
+    min-height: 18px;
+    font-size: 9.5px;
+    font-weight: 700;
+    color: @metro-fg-secondary;
+}
+
+window.shell-amiga-window button.amiga-mini-btn:hover,
+window.shell-amiga-window togglebutton.amiga-mini-btn:checked,
+window.shell-amiga-modal button.amiga-mini-btn:hover {
+    background-color: alpha(@metro-accent, 0.22);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+window.shell-amiga-window button.amiga-hdr-icon-btn,
+window.shell-amiga-window togglebutton.amiga-hdr-icon-btn,
+window.shell-amiga-window button.settings-close-btn {
+    min-width: 24px;
+    min-height: 22px;
+    padding: 0px 5px;
+    font-family: "FiraCode Nerd Font", "Fira Code", sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+window.shell-amiga-window togglebutton.ide-toolbar-btn,
+window.shell-amiga-window togglebutton.amiga-seg-btn,
+window.shell-amiga-modal togglebutton.amiga-seg-btn {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 2px 6px;
+    min-width: 0px;
+    min-height: 20px;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-secondary;
+}
+
+window.shell-amiga-window togglebutton.ide-toolbar-btn:checked,
+window.shell-amiga-window togglebutton.amiga-seg-btn:checked,
+window.shell-amiga-modal togglebutton.amiga-seg-btn:checked {
+    background-color: alpha(@metro-accent, 0.24);
+    border-color: @metro-accent;
+    color: @metro-fg-primary;
+}
+
+/* 3-Zone Header Transport Cluster */
+window.shell-amiga-window .amiga-transport-cluster {
+    background-color: @metro-surface-1;
+    border: 1px solid @metro-border;
+    padding: 2px 4px;
+}
+
+window.shell-amiga-window .amiga-state-badge {
+    padding: 1px 6px;
+    font-size: 9.5px;
+    font-weight: 800;
+    border: 1px solid @metro-border;
+    background-color: @metro-surface-0;
+    color: @metro-telemetry;
+}
+
+window.shell-amiga-window .amiga-state-badge.running { border-color: @metro-success; color: @metro-fg-bright; background-color: alpha(@metro-success, 0.24); }
+window.shell-amiga-window .amiga-state-badge.paused  { border-color: @metro-warning; color: @metro-warning; background-color: alpha(@metro-warning, 0.16); }
+window.shell-amiga-window .amiga-state-badge.attach  { border-color: @metro-magenta; color: @metro-fg-primary; background-color: alpha(@metro-magenta, 0.24); }
+
+window.shell-amiga-window dropdown.amiga-header-dd > button,
+window.shell-amiga-modal dropdown.amiga-header-dd > button {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    min-width: 0px;
+    min-height: 22px;
+    padding: 1px 6px;
+    font-size: 10px;
+    color: @metro-fg-bright;
+}
+
+window.shell-amiga-window .amiga-compat-warn {
+    background-color: alpha(@metro-warning, 0.18);
+    border: 1px solid @metro-warning;
+    color: @metro-warning;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+/* Multi-File Tab Strip & Half-Screen Strip */
+window.shell-amiga-window .amiga-tab-strip,
+window.shell-amiga-window .amiga-half-strip,
+window.shell-amiga-window .amiga-sb-tabs {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 2px 6px;
+}
+
+window.shell-amiga-window .amiga-file-tab {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    border-top: 2px solid transparent;
+    padding: 0px 3px;
+}
+
+window.shell-amiga-window .amiga-file-tab.active {
+    background-color: @metro-surface-0;
+    border-top-color: @metro-accent;
+}
+
+window.shell-amiga-window button.amiga-file-tab-btn {
+    background: none;
+    background-image: none;
+    border: none;
+    padding: 1px 5px;
+    min-width: 0px;
+    min-height: 18px;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-body;
+}
+
+/* Left Sidebar & Vertical 2-Column Debug Sidebar */
+window.shell-amiga-window .amiga-sidebar {
+    background-color: @metro-surface-1;
+    border-right: 1px solid @metro-border;
+}
+
+window.shell-amiga-window .amiga-inspector {
+    background-color: @metro-surface-bg;
+    border-left: 1px solid @metro-border;
+}
+
+window.shell-amiga-window .amiga-pane-header {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-muted;
+}
+
+window.shell-amiga-window .amiga-dbg-sec {
+    border-bottom: 1px solid @metro-border;
+}
+
+window.shell-amiga-window .amiga-dbg-sec-hdr {
+    background-color: @metro-surface-2;
+    padding: 1px 5px;
+}
+
+window.shell-amiga-window togglebutton.amiga-dbg-sec-toggle {
+    background: none;
+    background-image: none;
+    border: none;
+    padding: 1px 4px;
+    min-width: 0px;
+    min-height: 18px;
+    font-size: 9.5px;
+    font-weight: 800;
+    color: @metro-fg-soft;
+}
+
+window.shell-amiga-window .amiga-dbg-sec-body {
+    background-color: @metro-surface-1;
+    padding: 3px 5px;
+}
+
+window.shell-amiga-window button.amiga-reg-cell {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border-subtle;
+    border-radius: 0px;
+    padding: 1px 4px;
+    min-width: 0px;
+    min-height: 16px;
+    font-family: "Fira Code", "FiraCode Nerd Font", monospace;
+    font-size: 9.5px;
+    font-weight: 600;
+    color: @metro-fg-bright;
+}
+
+window.shell-amiga-window button.amiga-reg-cell:hover {
+    border-color: @metro-accent;
+}
+
+window.shell-amiga-window button.amiga-reg-cell.changed {
+    background-color: alpha(@metro-warning, 0.16);
+    border-color: @metro-warning;
+    color: @metro-warning;
+}
+
+window.shell-amiga-window .amiga-sr-hex {
+    font-size: 9px;
+    font-weight: 700;
+    color: @metro-fg-muted;
+    padding-right: 2px;
+}
+
+window.shell-amiga-window button.amiga-sr-pill {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 0px 2px;
+    min-width: 14px;
+    min-height: 16px;
+    font-size: 8.5px;
+    font-weight: 700;
+    color: @metro-fg-dim;
+}
+
+window.shell-amiga-window button.amiga-sr-pill.active {
+    background-color: alpha(@metro-telemetry, 0.20);
+    border-color: @metro-telemetry;
+    color: @metro-telemetry;
+}
+
+window.shell-amiga-window togglebutton.amiga-trap-pill {
+    background: none;
+    background-image: none;
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border;
+    border-radius: 0px;
+    padding: 1px 2px;
+    min-width: 0px;
+    min-height: 16px;
+    font-size: 8.5px;
+    font-weight: 700;
+    color: @metro-fg-muted;
+}
+
+window.shell-amiga-window togglebutton.amiga-trap-pill:checked {
+    background-color: alpha(@metro-warning, 0.18);
+    border-color: @metro-warning;
+    color: @metro-warning;
+}
+
+window.shell-amiga-window .amiga-beam-meta {
+    font-size: 9px;
+    font-weight: 700;
+    color: @metro-telemetry;
+    padding: 1px 4px;
+    border: 1px solid @metro-border;
+    background-color: @metro-surface-0;
+}
+
+window.shell-amiga-window .amiga-muted-hint { font-size: 9.5px; color: @metro-fg-dim; }
+window.shell-amiga-window .amiga-hunk-tag { font-size: 9px; font-weight: 700; color: @metro-telemetry; }
+
+/* KV Inspector Cards */
+window.shell-amiga-window .amiga-section-card {
+    background-color: @metro-surface-3;
+    border: 1px solid @metro-border;
+    padding: 7px 9px;
+}
+
+window.shell-amiga-window .amiga-kv-cell {
+    background-color: @metro-surface-0;
+    border: 1px solid @metro-border-subtle;
+    padding: 3px 6px;
+}
+
+window.shell-amiga-window .amiga-kv-val {
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-fg-bright;
+}
+
+window.shell-amiga-window button.amiga-kv-ptr {
+    background: none;
+    background-image: none;
+    background-color: alpha(@metro-accent, 0.16);
+    border: 1px solid @metro-accent;
+    border-radius: 0px;
+    padding: 0px 5px;
+    min-width: 0px;
+    min-height: 18px;
+    font-size: 10px;
+    font-weight: 700;
+    color: @metro-telemetry;
+}
+
+window.shell-amiga-window .amiga-badge-live {
+    background-color: alpha(@metro-success, 0.18);
+    border: 1px solid @metro-success;
+    color: @metro-fg-bright;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+window.shell-amiga-window .amiga-badge-snapshot {
+    background-color: alpha(@metro-telemetry, 0.14);
+    border: 1px solid @metro-telemetry;
+    color: @metro-telemetry;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+window.shell-amiga-window .amiga-badge-placeholder {
+    background-color: @metro-surface-2;
+    border: 1px solid @metro-border-strong;
+    color: @metro-fg-dim;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+window.shell-amiga-window .amiga-badge-watched {
+    background-color: alpha(@metro-warning, 0.18);
+    border: 1px solid @metro-warning;
+    color: @metro-warning;
+    padding: 1px 5px;
+    font-size: 9.5px;
+    font-weight: 700;
+}
+
+/* Motorola Disassembly View */
+window.shell-amiga-window .amiga-disasm-toolbar {
+    background-color: @metro-surface-2;
+    border-bottom: 1px solid @metro-border;
+    padding: 3px 6px;
+}
+
+window.shell-amiga-window list.amiga-disasm-list { background-color: @metro-surface-0; }
+window.shell-amiga-window list.amiga-disasm-list > row { padding: 1px 6px; border-bottom: 1px solid @metro-surface-2; border-radius: 0px; }
+window.shell-amiga-window list.amiga-disasm-list > row:selected { background: none; background-image: none; background-color: alpha(@metro-accent, 0.25); }
+window.shell-amiga-window list.amiga-disasm-list > row.pc-row { background-color: alpha(@metro-telemetry, 0.14); border-left: 3px solid @metro-telemetry; }
+
+window.shell-amiga-window .amiga-disasm-header { color: @metro-accent; font-weight: 700; font-size: 10.5px; padding: 3px 2px; }
+window.shell-amiga-window button.amiga-disasm-bp-dot { background: none; background-image: none; border: none; padding: 0px 4px; min-width: 16px; min-height: 16px; font-size: 11px; color: @metro-fg-dim; }
+window.shell-amiga-window button.amiga-disasm-bp-dot.bp-set { color: @metro-urgent-text; }
+window.shell-amiga-window .amiga-disasm-addr { color: @metro-fg-muted; font-size: 10px; min-width: 62px; }
+window.shell-amiga-window .amiga-disasm-opcodes { color: @metro-fg-dim; font-size: 10px; min-width: 88px; }
+window.shell-amiga-window .amiga-disasm-insn { color: @metro-fg-bright; font-size: 10px; min-width: 120px; }
+window.shell-amiga-window .amiga-disasm-cycle-col { color: @metro-warning; font-size: 10px; min-width: 48px; }
+window.shell-amiga-window .amiga-disasm-badge { background-color: @metro-surface-4; border: 1px solid @metro-border; color: @metro-telemetry; font-size: 9px; padding: 0px 4px; }
+
+/* Bottom Drawer & Filters */
+window.shell-amiga-window .amiga-drawer { background-color: @metro-surface-1; border-top: 1px solid @metro-accent; }
+window.shell-amiga-window .amiga-drawer-tabs { background-color: @metro-surface-3; border-bottom: 1px solid @metro-border; padding: 2px 6px; }
+window.shell-amiga-window togglebutton.amiga-filter-pill {
+    background: none; background-image: none; background-color: @metro-surface-0; border: 1px solid @metro-border;
+    border-radius: 0px; padding: 1px 6px; min-width: 0px; min-height: 18px; font-size: 9.5px; font-weight: 700; color: @metro-fg-secondary;
+}
+window.shell-amiga-window togglebutton.amiga-filter-pill:checked { background-color: alpha(@metro-accent, 0.22); border-color: @metro-accent; color: @metro-fg-primary; }
+
+window.shell-amiga-window textview.amiga-hex-view,
+window.shell-amiga-window textview.amiga-console-view { background-color: @metro-surface-0; color: @metro-fg-body; font-size: 11px; padding: 5px 8px; }
+window.shell-amiga-window list.amiga-diag-list { background-color: @metro-surface-0; }
+window.shell-amiga-window list.amiga-diag-list > row { padding: 2px 6px; border-bottom: 1px solid @metro-surface-2; }
+window.shell-amiga-window list.amiga-diag-list > row:hover { background-color: @metro-surface-4; }
+window.shell-amiga-window .amiga-diag-error { color: @metro-urgent-text; font-weight: 700; }
+window.shell-amiga-window .amiga-diag-warn { color: @metro-warning; font-weight: 700; }
+
+/* Welcome, Modal, Setup & Entries */
+window.shell-amiga-window .amiga-welcome-box { background-color: @metro-surface-0; padding: 22px; }
+window.shell-amiga-window .amiga-welcome-card { background-color: @metro-surface-3; border: 1px solid @metro-border; padding: 14px; }
+window.shell-amiga-modal { background-color: @metro-surface-bg; border: 1px solid @metro-accent; border-top: 3px solid @metro-accent; border-radius: 0px; }
+window.shell-amiga-modal togglebutton.amiga-template-card { background: none; background-image: none; background-color: @metro-surface-3; border: 1px solid @metro-border; border-radius: 0px; padding: 8px 10px; }
+window.shell-amiga-modal togglebutton.amiga-template-card:checked { background-color: alpha(@metro-accent, 0.16); border-color: @metro-accent; border-left: 4px solid @metro-accent; }
+window.shell-amiga-window .amiga-setup-tab-bar { background-color: @metro-surface-2; border-bottom: 1px solid @metro-border; padding: 5px 10px; }
+
+window.shell-amiga-window entry.amiga-entry,
+window.shell-amiga-modal entry.amiga-entry {
+    background: none; background-image: none; background-color: @metro-surface-0;
+    border: 1px solid @metro-border-strong; border-radius: 0px; color: @metro-fg-bright;
+    padding: 2px 6px; min-width: 0px; min-height: 20px; font-size: 10px;
+}
+window.shell-amiga-window entry.amiga-entry:focus-within,
+window.shell-amiga-modal entry.amiga-entry:focus-within { border-color: @metro-accent; }
+
+/* Status Bar & Inspector Sub-Controls */
+window.shell-amiga-window .amiga-status-bar { background-color: @metro-surface-2; border-top: 1px solid @metro-border; padding: 2px 8px; min-height: 22px; font-size: 10px; color: @metro-fg-secondary; }
+window.shell-amiga-window .amiga-mode-pill { background-color: @metro-accent; color: @metro-fg-primary; padding: 1px 8px; font-size: 9.5px; font-weight: 800; }
+window.shell-amiga-window .amiga-mode-pill.insert, window.shell-amiga-window .amiga-mode-pill.running { background-color: @metro-success; }
+window.shell-amiga-window .amiga-mode-pill.select, window.shell-amiga-window .amiga-mode-pill.attach { background-color: @metro-magenta; }
+window.shell-amiga-window .amiga-mode-pill.paused { background-color: @metro-warning; color: @metro-surface-0; }
+
+window.shell-amiga-window button.amiga-status-btn {
+    background: none; background-image: none; background-color: @metro-surface-3; border: 1px solid @metro-border;
+    border-radius: 0px; padding: 0px 6px; min-width: 0px; min-height: 18px; font-size: 9.5px; font-weight: 700; color: @metro-fg-bright;
+}
+window.shell-amiga-window button.amiga-status-btn:hover { border-color: @metro-accent; }
+
+window.shell-amiga-window .amiga-toast-banner { background-color: @metro-surface-4; border-top: 1px solid @metro-accent; padding: 3px 10px; color: @metro-fg-primary; font-size: 10.5px; }
+window.shell-amiga-window .amiga-insp-tabs { background-color: @metro-surface-2; border-bottom: 1px solid @metro-border; padding: 2px 4px; }
+window.shell-amiga-window togglebutton.amiga-insp-tab {
+    background: none; background-image: none; background-color: @metro-surface-3; border: 1px solid @metro-border;
+    border-radius: 0px; padding: 2px 5px; min-width: 0px; min-height: 20px; font-size: 9.5px; font-weight: 700; color: @metro-fg-secondary;
+}
+window.shell-amiga-window togglebutton.amiga-insp-tab:checked { background-color: alpha(@metro-accent, 0.24); border-color: @metro-accent; color: @metro-fg-primary; }
+
+window.shell-amiga-window .amiga-bitplane-frame { border: 1px solid @metro-border-strong; background-color: @metro-surface-0; }
+window.shell-amiga-window .amiga-probe-bar { background-color: @metro-surface-2; border: 1px solid @metro-border; padding: 2px 6px; font-size: 9.5px; color: @metro-telemetry; }
+window.shell-amiga-window .amiga-chip-pill { background-color: @metro-surface-2; border: 1px solid @metro-border; padding: 1px 5px; font-size: 9px; font-weight: 700; color: @metro-fg-dim; }
+window.shell-amiga-window .amiga-chip-pill.on { background-color: alpha(@metro-success, 0.20); border-color: @metro-success; color: @metro-fg-bright; }
+
+window.shell-amiga-window levelbar.amiga-dma-meter-ok block.filled { background-color: @metro-success; border-radius: 0px; }
+window.shell-amiga-window levelbar.amiga-dma-meter-warn block.filled { background-color: @metro-warning; border-radius: 0px; }
+window.shell-amiga-window levelbar.amiga-dma-meter-over block.filled { background-color: @metro-urgent; border-radius: 0px; }
+
+window.shell-amiga-window .amiga-cop-addr { color: @metro-fg-muted; font-size: 10px; min-width: 54px; }
+window.shell-amiga-window .amiga-cop-hex { color: @metro-fg-dim; font-size: 10px; min-width: 64px; }
+window.shell-amiga-window .amiga-cop-text { color: @metro-fg-bright; font-size: 10px; min-width: 0px; }
+
+window.shell-amiga-window spinbutton.amiga-spin { min-width: 0px; min-height: 20px; font-size: 10px; }
+window.shell-amiga-window spinbutton.amiga-spin > button { min-width: 16px; min-height: 18px; padding: 0px 2px; }
+window.shell-amiga-window spinbutton.amiga-spin > text { min-width: 24px; padding: 0px 2px; }

@@ -42,6 +42,7 @@ test_defaults_file_parity(void)
         kajo_schema_get_files(),
         kajo_schema_get_mod(),
         kajo_schema_get_web(),
+        kajo_schema_get_amiga(),
     };
 
     for (size_t i = 0; i < G_N_ELEMENTS(domains); i++) {
@@ -222,6 +223,28 @@ test_domain_ide_files_mod(void)
     g_assert_true(kajo_cfg_domain_equal(s_web, web, web2));
     kajo_web_cfg_free(web2);
     kajo_web_cfg_free(web);
+
+    /* Amiga */
+    const KajoDomainSchema *s_amiga = kajo_schema_get_amiga();
+    KajoAmigaCfg *amiga = kajo_amiga_cfg_new_default();
+    g_assert_cmpstr(amiga->amiberry_bin, ==, "amiberry");
+    g_assert_cmpstr(amiga->default_profile, ==, "a500_ocs");
+    g_assert_cmpint(amiga->gdb_port, ==, 2345);
+    g_assert_true(amiga->inherit_ide_editor_prefs);
+    g_assert_false(amiga->trace_blitter_writes);
+    amiga->default_video = KAJO_AMIGA_VIDEO_NTSC;
+    amiga->default_boot_mode = KAJO_AMIGA_BOOT_ADF;
+    amiga->default_toolchain = KAJO_AMIGA_TC_HUNK_VLINK;
+    amiga->gdb_port = 99999; /* clamped to 65535 on parse */
+    amiga->trace_blitter_writes = TRUE;
+    g_autofree gchar *amiga_str = kajo_cfg_domain_serialize_toml(s_amiga, amiga);
+    KajoAmigaCfg *amiga2 = kajo_amiga_cfg_new_default();
+    g_assert_true(kajo_cfg_domain_parse_toml_str(s_amiga, amiga2, amiga_str, -1, FALSE, "amiga.toml"));
+    g_assert_cmpint(amiga2->gdb_port, ==, 65535);
+    amiga->gdb_port = 65535;
+    g_assert_true(kajo_cfg_domain_equal(s_amiga, amiga, amiga2));
+    kajo_amiga_cfg_free(amiga2);
+    kajo_amiga_cfg_free(amiga);
 }
 
 /* 3. conf.d/ Lexicographical Overlay & Base-Only Save Discipline */

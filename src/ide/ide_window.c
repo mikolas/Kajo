@@ -1,4 +1,5 @@
 #include "ide_window_private.h"
+#include "ide_editor_ops.h"
 
 G_DEFINE_TYPE(KajoIdeWindow, kajo_ide_window, GTK_TYPE_WINDOW)
 
@@ -619,91 +620,7 @@ void kajo_ide_window_open_files(KajoIdeWindow *self,
 /* ─── Key Translation & Capture-Phase FSM Dispatcher ─── */
 
 static char *translate_gdk_key_to_fsm(guint keyval, GdkModifierType state) {
-  gboolean ctrl = (state & GDK_CONTROL_MASK) != 0;
-  gboolean alt = (state & GDK_ALT_MASK) != 0;
-  gboolean shift = (state & GDK_SHIFT_MASK) != 0;
-
-  if (alt) {
-    if (keyval >= GDK_KEY_1 && keyval <= GDK_KEY_9)
-      return g_strdup_printf("alt+%c", (char)('1' + (keyval - GDK_KEY_1)));
-    switch (keyval) {
-      case GDK_KEY_Left:  return g_strdup("alt+left");
-      case GDK_KEY_Right: return g_strdup("alt+right");
-      default: break;
-    }
-    gunichar uc = gdk_keyval_to_unicode(gdk_keyval_to_lower(keyval));
-    if (uc >= 'a' && uc <= 'z')
-      return g_strdup_printf("alt+%c", (char)uc);
-  }
-
-  if (ctrl) {
-    switch (keyval) {
-      case GDK_KEY_Left:  return g_strdup("ctrl+left");
-      case GDK_KEY_Right: return g_strdup("ctrl+right");
-      case GDK_KEY_Up:    return g_strdup("ctrl+up");
-      case GDK_KEY_Down:  return g_strdup("ctrl+down");
-      case GDK_KEY_Home:  return g_strdup("ctrl+home");
-      case GDK_KEY_End:   return g_strdup("ctrl+end");
-      case GDK_KEY_space: return g_strdup(shift ? "ctrl+shift+space" : "ctrl+space");
-      default: break;
-    }
-    gunichar uc = gdk_keyval_to_unicode(gdk_keyval_to_lower(keyval));
-    if (uc >= 'a' && uc <= 'z') {
-      if (shift && uc == 'z')
-        return g_strdup("ctrl+shift+z");
-      return g_strdup_printf("ctrl+%c", (char)uc);
-    }
-  }
-
-  if (shift) {
-    switch (keyval) {
-      case GDK_KEY_Tab:
-      case GDK_KEY_ISO_Left_Tab: return g_strdup("shift+tab");
-      case GDK_KEY_Left:         return g_strdup("shift+left");
-      case GDK_KEY_Right:        return g_strdup("shift+right");
-      case GDK_KEY_Up:           return g_strdup("shift+up");
-      case GDK_KEY_Down:         return g_strdup("shift+down");
-      case GDK_KEY_F5:           return g_strdup("shift+f5");
-      case GDK_KEY_F9:           return g_strdup("shift+f9");
-      case GDK_KEY_F11:          return g_strdup("shift+f11");
-      default: break;
-    }
-  }
-
-  switch (keyval) {
-    case GDK_KEY_Escape:       return g_strdup("esc");
-    case GDK_KEY_Return:
-    case GDK_KEY_KP_Enter:     return g_strdup("enter");
-    case GDK_KEY_Tab:          return g_strdup("tab");
-    case GDK_KEY_ISO_Left_Tab: return g_strdup("shift+tab");
-    case GDK_KEY_BackSpace:    return g_strdup("backspace");
-    case GDK_KEY_Delete:       return g_strdup("delete");
-    case GDK_KEY_space:        return g_strdup("Space");
-    case GDK_KEY_Up:           return g_strdup("up");
-    case GDK_KEY_Down:         return g_strdup("down");
-    case GDK_KEY_Left:         return g_strdup("left");
-    case GDK_KEY_Right:        return g_strdup("right");
-    case GDK_KEY_Page_Up:      return g_strdup("pgup");
-    case GDK_KEY_Page_Down:    return g_strdup("pgdown");
-    case GDK_KEY_Home:         return g_strdup("home");
-    case GDK_KEY_End:          return g_strdup("end");
-    case GDK_KEY_F1:           return g_strdup("f1");
-    case GDK_KEY_F5:           return g_strdup("f5");
-    case GDK_KEY_F9:           return g_strdup("f9");
-    case GDK_KEY_F10:          return g_strdup("f10");
-    case GDK_KEY_F11:          return g_strdup("f11");
-    case GDK_KEY_F12:          return g_strdup("f12");
-    default: break;
-  }
-
-  gunichar uc = gdk_keyval_to_unicode(keyval);
-  if (uc >= 32 && uc != 127) {
-    char utf8[8] = {0};
-    int len = g_unichar_to_utf8(uc, utf8);
-    utf8[len] = '\0';
-    return g_strdup(utf8);
-  }
-  return NULL;
+  return ide_editor_translate_gdk_key(keyval, state);
 }
 
 static gboolean on_window_key_pressed(GtkEventControllerKey *controller,

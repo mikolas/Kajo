@@ -47,6 +47,10 @@ app_id = ['^org\.kajo\.Web$', '^kajo-webapp-']
 scroll_factor = 1.0
 
 [[rule]]
+app_id = ['^org\.kajo\.Amiga$']
+floating = false
+
+[[rule]]
 app_id = ['^org\.kajo\.player$', '^mpv$', '^steam_app_\d+$']
 vrr = true
 

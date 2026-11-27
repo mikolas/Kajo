@@ -181,3 +181,11 @@ Implemented from the public D-Bus portal interface specifications with GTK kept 
 - **GTK3 & GTK4/libadwaita:** Writes `~/.config/gtk-{3.0,4.0}/kajo-theme.css` from Kajo's active accent and dark surface tokens (`0px` geometry, `:not(.osk-key)`), appends a clearly marked `@import url("kajo-theme.css");` block to `gtk.css` without clobbering existing user rules, warns on unused leftovers (`dank-colors.css`, `colors.css`, `matugen.css`), and updates `settings.ini` + `org.gnome.desktop.interface`.
 - **Qt 6 (`qt6ct`):** Generates a 21-color `~/.config/qt6ct/colors/kajo-metro.conf`, configures `qt6ct.conf`, writes `~/.config/environment.d/90-kajo-qt.conf` (`QT_QPA_PLATFORMTHEME=qt6ct`), updates `systemctl --user` environment, and hooks `data/session/kajo-session` on login.
 - **Verified:** isolated temp-directory backup, apply, accent-update, partial-disable, and bit-exact full-revert tests in `tests/test_portals.c` (including ASan/UBSan), headless `kajo-settings --page theme` render, and live session verification on Host A.
+
+---
+
+### 3.10 [PLANNED] Kajo Amiga Multipart Mastering, Assets & Crunchers
+- Currently `kajo-amiga` produces single-target artifacts (`exe_dh0`, `exe_adf`, `flat_bin`). Out-of-scope multipart mastering workflows are deferred cleanly until a dedicated mastering stage is designed:
+  - `[[asset]]` build generators (image → bitplane/copper converters, lookup tables) and post-link crunchers (`shrinkler`, `doy`, etc.).
+  - Multi-part disk / trackmo mastering (`extra_files`, multi-`.elf` symbol overlays per loaded part, custom raw trackdisk layout + bootblock writer).
+  - First-class `vc` (VBCC) compile pipeline option in `amiga_build.c` alongside `m68k-amiga-elf-gcc`.

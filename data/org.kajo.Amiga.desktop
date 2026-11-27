@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Kajo Amiga
+GenericName=Amiga 68000 / C / OCS-AGA Studio
+Comment=Self-contained 68000/C Amiga IDE, in-process ADFlib packager & Amiberry GDB RSP debugger
+Exec=kajo-amiga %F
+Icon=kajo-amiga
+Terminal=false
+Type=Application
+Categories=Development;IDE;GTK;
+StartupNotify=true
+StartupWMClass=org.kajo.Amiga

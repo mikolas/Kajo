@@ -1,0 +1,5 @@
+[wrap-git]
+url = https://github.com/adflib/ADFlib.git
+revision = v0.10.7
+depth = 1
+method = cmake
